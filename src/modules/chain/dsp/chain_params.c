@@ -876,6 +876,8 @@ chain_param_info_t *knob_find_param(chain_instance_t *inst, const char *target, 
         return find_param_info(inst->fx_params[1], inst->fx_param_counts[1], param);
     if (strcmp(target, "fx3") == 0 && inst->fx_count > 2)
         return find_param_info(inst->fx_params[2], inst->fx_param_counts[2], param);
+    if (strcmp(target, "fx4") == 0 && inst->fx_count > 3)
+        return find_param_info(inst->fx_params[3], inst->fx_param_counts[3], param);
     if (strcmp(target, "midi_fx1") == 0 && inst->midi_fx_count > 0)
         return find_param_info(inst->midi_fx_params[0], inst->midi_fx_param_counts[0], param);
     if (strcmp(target, "midi_fx2") == 0 && inst->midi_fx_count > 1)
@@ -897,6 +899,9 @@ void knob_forward_value(chain_instance_t *inst, const char *target, const char *
     } else if (strcmp(target, "fx3") == 0 && inst->fx_count > 2) {
         if (inst->fx_is_v2[2] && inst->fx_plugins_v2[2] && inst->fx_instances[2])
             inst->fx_plugins_v2[2]->set_param(inst->fx_instances[2], param, val_str);
+    } else if (strcmp(target, "fx4") == 0 && inst->fx_count > 3) {
+        if (inst->fx_is_v2[3] && inst->fx_plugins_v2[3] && inst->fx_instances[3])
+            inst->fx_plugins_v2[3]->set_param(inst->fx_instances[3], param, val_str);
     } else if (strcmp(target, "midi_fx1") == 0 && inst->midi_fx_count > 0) {
         if (inst->midi_fx_plugins[0] && inst->midi_fx_instances[0] && inst->midi_fx_plugins[0]->set_param)
             inst->midi_fx_plugins[0]->set_param(inst->midi_fx_instances[0], param, val_str);

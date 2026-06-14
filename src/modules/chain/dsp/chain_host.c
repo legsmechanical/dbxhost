@@ -803,6 +803,28 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
             update_master_preset(index, colon + 1);
         }
     }
+    /* Send FX preset commands (shared list across both send buses A/B) */
+    else if (strcmp(key, "save_send_preset") == 0) {
+        save_send_preset(val);
+    }
+    else if (strcmp(key, "delete_send_preset") == 0) {
+        delete_send_preset(atoi(val));
+    }
+    else if (strcmp(key, "update_send_preset") == 0) {
+        const char *colon = strchr(val, ':');
+        if (colon) update_send_preset(atoi(val), colon + 1);
+    }
+    /* Move FX preset commands (shared store across all 4 Move FX buses) */
+    else if (strcmp(key, "save_move_preset") == 0) {
+        save_move_preset(val);
+    }
+    else if (strcmp(key, "delete_move_preset") == 0) {
+        delete_move_preset(atoi(val));
+    }
+    else if (strcmp(key, "update_move_preset") == 0) {
+        const char *colon = strchr(val, ':');
+        if (colon) update_move_preset(atoi(val), colon + 1);
+    }
     else if (strncmp(key, "synth:", 6) == 0) {
         const char *subkey = key + 6;
         /* Intercept module change to swap synth dynamically */
@@ -909,6 +931,76 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
             if (strcmp(subkey, "plugin_id") == 0) {
                 inst->fx_param_counts[1] = 0;
                 inst->mod_param_refresh_ms_fx[1] = 0;
+            }
+            inst->dirty = 1;
+        }
+    }
+    else if (strncmp(key, "fx3:", 4) == 0) {
+        const char *subkey = key + 4;
+        /* Intercept module change to swap FX3 dynamically */
+        if (strcmp(subkey, "module") == 0) {
+            v2_load_audio_fx_slot(inst, 2, val);
+            smoother_reset(&inst->fx_smoothers[2]);  /* Reset smoother on module change */
+            inst->dirty = 1;
+        } else if (inst->fx_count > 2) {
+            if (chain_mod_is_target_active(inst, "fx3", subkey)) {
+                chain_mod_update_base_from_set_param(inst, "fx3", subkey, val);
+                mod_target_state_t *entry = chain_mod_find_target_entry(inst, "fx3", subkey);
+                if (entry) {
+                    chain_mod_apply_effective_value(inst, entry, 0);
+                    inst->dirty = 1;
+                    return;
+                }
+            }
+
+            float fval;
+            if (is_smoothable_float(val, &fval)) {
+                chain_param_info_t *pinfo = find_param_info(inst->fx_params[2], inst->fx_param_counts[2], subkey);
+                if (!pinfo || pinfo->type == KNOB_TYPE_FLOAT) {
+                    smoother_set_target(&inst->fx_smoothers[2], subkey, fval);
+                }
+            }
+            if (inst->fx_is_v2[2] && inst->fx_plugins_v2[2] && inst->fx_instances[2]) {
+                inst->fx_plugins_v2[2]->set_param(inst->fx_instances[2], subkey, val);
+            }
+            if (strcmp(subkey, "plugin_id") == 0) {
+                inst->fx_param_counts[2] = 0;
+                inst->mod_param_refresh_ms_fx[2] = 0;
+            }
+            inst->dirty = 1;
+        }
+    }
+    else if (strncmp(key, "fx4:", 4) == 0) {
+        const char *subkey = key + 4;
+        /* Intercept module change to swap FX4 dynamically */
+        if (strcmp(subkey, "module") == 0) {
+            v2_load_audio_fx_slot(inst, 3, val);
+            smoother_reset(&inst->fx_smoothers[3]);  /* Reset smoother on module change */
+            inst->dirty = 1;
+        } else if (inst->fx_count > 3) {
+            if (chain_mod_is_target_active(inst, "fx4", subkey)) {
+                chain_mod_update_base_from_set_param(inst, "fx4", subkey, val);
+                mod_target_state_t *entry = chain_mod_find_target_entry(inst, "fx4", subkey);
+                if (entry) {
+                    chain_mod_apply_effective_value(inst, entry, 0);
+                    inst->dirty = 1;
+                    return;
+                }
+            }
+
+            float fval;
+            if (is_smoothable_float(val, &fval)) {
+                chain_param_info_t *pinfo = find_param_info(inst->fx_params[3], inst->fx_param_counts[3], subkey);
+                if (!pinfo || pinfo->type == KNOB_TYPE_FLOAT) {
+                    smoother_set_target(&inst->fx_smoothers[3], subkey, fval);
+                }
+            }
+            if (inst->fx_is_v2[3] && inst->fx_plugins_v2[3] && inst->fx_instances[3]) {
+                inst->fx_plugins_v2[3]->set_param(inst->fx_instances[3], subkey, val);
+            }
+            if (strcmp(subkey, "plugin_id") == 0) {
+                inst->fx_param_counts[3] = 0;
+                inst->mod_param_refresh_ms_fx[3] = 0;
             }
             inst->dirty = 1;
         }
@@ -1077,6 +1169,8 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
                         pinfo = find_param_info(inst->fx_params[1], inst->fx_param_counts[1], param);
                     } else if (strcmp(target, "fx3") == 0 && inst->fx_count > 2) {
                         pinfo = find_param_info(inst->fx_params[2], inst->fx_param_counts[2], param);
+                    } else if (strcmp(target, "fx4") == 0 && inst->fx_count > 3) {
+                        pinfo = find_param_info(inst->fx_params[3], inst->fx_param_counts[3], param);
                     } else if (strcmp(target, "midi_fx1") == 0 && inst->midi_fx_count > 0) {
                         pinfo = find_param_info(inst->midi_fx_params[0], inst->midi_fx_param_counts[0], param);
                     } else if (strcmp(target, "midi_fx2") == 0 && inst->midi_fx_count > 1) {
@@ -1291,6 +1385,12 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
     if (strcmp(key, "fx2_module") == 0) {
         return snprintf(buf, buf_len, "%s", inst->current_fx_modules[1]);
     }
+    if (strcmp(key, "fx3_module") == 0) {
+        return snprintf(buf, buf_len, "%s", inst->current_fx_modules[2]);
+    }
+    if (strcmp(key, "fx4_module") == 0) {
+        return snprintf(buf, buf_len, "%s", inst->current_fx_modules[3]);
+    }
     if (strcmp(key, "midi_fx_count") == 0) {
         return snprintf(buf, buf_len, "%d", inst->midi_fx_count);
     }
@@ -1315,6 +1415,34 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
     if (strncmp(key, "master_preset_json_", 19) == 0) {
         int idx = atoi(key + 19);
         return load_master_preset_json(idx, buf, buf_len);
+    }
+    /* Send FX preset queries (shared list across both send buses A/B) */
+    if (strcmp(key, "send_preset_count") == 0) {
+        scan_send_presets();
+        return snprintf(buf, buf_len, "%d", send_preset_count);
+    }
+    if (strncmp(key, "send_preset_name_", 17) == 0) {
+        int idx = atoi(key + 17);
+        if (idx >= 0 && idx < send_preset_count)
+            return snprintf(buf, buf_len, "%s", send_preset_names[idx]);
+        return -1;
+    }
+    if (strncmp(key, "send_preset_json_", 17) == 0) {
+        return load_send_preset_json(atoi(key + 17), buf, buf_len);
+    }
+    /* Move FX preset queries (shared store across all 4 Move FX buses) */
+    if (strcmp(key, "move_preset_count") == 0) {
+        scan_move_presets();
+        return snprintf(buf, buf_len, "%d", move_preset_count);
+    }
+    if (strncmp(key, "move_preset_name_", 17) == 0) {
+        int idx = atoi(key + 17);
+        if (idx >= 0 && idx < move_preset_count)
+            return snprintf(buf, buf_len, "%s", move_preset_names[idx]);
+        return -1;
+    }
+    if (strncmp(key, "move_preset_json_", 17) == 0) {
+        return load_move_preset_json(atoi(key + 17), buf, buf_len);
     }
     if (strcmp(key, "fx_count") == 0) {
         return snprintf(buf, buf_len, "%d", inst->fx_count);
@@ -1409,6 +1537,12 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
             } else if (strcmp(target, "fx2") == 0 && inst->fx_count > 1 &&
                        inst->fx_is_v2[1] && inst->fx_plugins_v2[1] && inst->fx_instances[1]) {
                 got = inst->fx_plugins_v2[1]->get_param(inst->fx_instances[1], param, val_buf, sizeof(val_buf));
+            } else if (strcmp(target, "fx3") == 0 && inst->fx_count > 2 &&
+                       inst->fx_is_v2[2] && inst->fx_plugins_v2[2] && inst->fx_instances[2]) {
+                got = inst->fx_plugins_v2[2]->get_param(inst->fx_instances[2], param, val_buf, sizeof(val_buf));
+            } else if (strcmp(target, "fx4") == 0 && inst->fx_count > 3 &&
+                       inst->fx_is_v2[3] && inst->fx_plugins_v2[3] && inst->fx_instances[3]) {
+                got = inst->fx_plugins_v2[3]->get_param(inst->fx_instances[3], param, val_buf, sizeof(val_buf));
             } else if (strcmp(target, "midi_fx1") == 0 && inst->midi_fx_count > 0 &&
                        inst->midi_fx_plugins[0] && inst->midi_fx_instances[0]) {
                 got = inst->midi_fx_plugins[0]->get_param(inst->midi_fx_instances[0], param, val_buf, sizeof(val_buf));
@@ -1452,6 +1586,8 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
                         pinfo = find_param_info(inst->fx_params[1], inst->fx_param_counts[1], param);
                     } else if (strcmp(target, "fx3") == 0 && inst->fx_count > 2) {
                         pinfo = find_param_info(inst->fx_params[2], inst->fx_param_counts[2], param);
+                    } else if (strcmp(target, "fx4") == 0 && inst->fx_count > 3) {
+                        pinfo = find_param_info(inst->fx_params[3], inst->fx_param_counts[3], param);
                     } else if (strcmp(target, "midi_fx1") == 0 && inst->midi_fx_count > 0) {
                         pinfo = find_param_info(inst->midi_fx_params[0], inst->midi_fx_param_counts[0], param);
                     } else if (strcmp(target, "midi_fx2") == 0 && inst->midi_fx_count > 1) {
