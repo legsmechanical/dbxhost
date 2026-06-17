@@ -1855,6 +1855,152 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
         return -1;
     }
 
+    /* Route fx3: prefixed params to FX3 (strip prefix) [fork: blocks 3-4] */
+    if (strncmp(key, "fx3:", 4) == 0) {
+        const char *subkey = key + 4;
+        int base_result = chain_mod_get_base_for_subkey(inst, "fx3", subkey, buf, buf_len);
+        if (base_result >= 0) return base_result;
+        int mod_result = chain_mod_get_modulated_for_subkey(inst, "fx3", subkey, buf, buf_len);
+        if (mod_result >= 0) return mod_result;
+
+        /* For ui_hierarchy: return cached JSON from module.json, fall through to plugin if empty */
+        if (strcmp(subkey, "ui_hierarchy") == 0 && inst->fx_count > 2) {
+            if (inst->fx_ui_hierarchy[2][0]) {
+                int len = strlen(inst->fx_ui_hierarchy[2]);
+                if (len < buf_len) {
+                    strcpy(buf, inst->fx_ui_hierarchy[2]);
+                    return len;
+                }
+            }
+            /* Cache empty - fall through to plugin get_param below */
+        }
+
+        /* For chain_params: try plugin first, fall back to parsed module.json data */
+        if (strcmp(subkey, "chain_params") == 0 && inst->fx_count > 2) {
+            /* Try plugin's own chain_params handler first */
+            if (inst->fx_is_v2[2] && inst->fx_plugins_v2[2] && inst->fx_instances[2] && inst->fx_plugins_v2[2]->get_param) {
+                int result = inst->fx_plugins_v2[2]->get_param(inst->fx_instances[2], subkey, buf, buf_len);
+                if (result > 0) return result;
+            }
+            /* Fall back to parsed module.json data */
+            if (inst->fx_param_counts[2] > 0) {
+                int offset = 0;
+                offset += snprintf(buf + offset, buf_len - offset, "[");
+                for (int i = 0; i < inst->fx_param_counts[2] && offset < buf_len - 100; i++) {
+                    chain_param_info_t *p = &inst->fx_params[2][i];
+                    if (i > 0) offset += snprintf(buf + offset, buf_len - offset, ",");
+                    const char *type_str = (p->type == KNOB_TYPE_INT) ? "int" :
+                                          (p->type == KNOB_TYPE_ENUM) ? "enum" : "float";
+                    offset += snprintf(buf + offset, buf_len - offset,
+                        "{\"key\":\"%s\",\"name\":\"%s\",\"type\":\"%s\",\"min\":%g,\"max\":%g",
+                        p->key, p->name[0] ? p->name : p->key,
+                        type_str,
+                        p->min_val, p->max_val);
+                    /* Add options array for enum types */
+                    if (p->type == KNOB_TYPE_ENUM && p->option_count > 0) {
+                        offset += snprintf(buf + offset, buf_len - offset, ",\"options\":[");
+                        for (int j = 0; j < p->option_count && j < MAX_ENUM_OPTIONS; j++) {
+                            if (j > 0) offset += snprintf(buf + offset, buf_len - offset, ",");
+                            offset += snprintf(buf + offset, buf_len - offset, "\"%s\"", p->options[j]);
+                        }
+                        offset += snprintf(buf + offset, buf_len - offset, "]");
+                    }
+                    /* Add unit and display_format if present */
+                    if (p->unit[0]) {
+                        offset += snprintf(buf + offset, buf_len - offset, ",\"unit\":\"%s\"", p->unit);
+                    }
+                    if (p->display_format[0]) {
+                        offset += snprintf(buf + offset, buf_len - offset, ",\"display_format\":\"%s\"", p->display_format);
+                    }
+                    offset += snprintf(buf + offset, buf_len - offset, "}");
+                }
+                offset += snprintf(buf + offset, buf_len - offset, "]");
+                return offset;
+            }
+            return -1;
+        }
+
+        if (inst->fx_count > 2) {
+            if (inst->fx_is_v2[2] && inst->fx_plugins_v2[2] && inst->fx_instances[2] && inst->fx_plugins_v2[2]->get_param) {
+                return inst->fx_plugins_v2[2]->get_param(inst->fx_instances[2], subkey, buf, buf_len);
+            }
+        }
+        return -1;
+    }
+
+    /* Route fx4: prefixed params to FX4 (strip prefix) [fork: blocks 3-4] */
+    if (strncmp(key, "fx4:", 4) == 0) {
+        const char *subkey = key + 4;
+        int base_result = chain_mod_get_base_for_subkey(inst, "fx4", subkey, buf, buf_len);
+        if (base_result >= 0) return base_result;
+        int mod_result = chain_mod_get_modulated_for_subkey(inst, "fx4", subkey, buf, buf_len);
+        if (mod_result >= 0) return mod_result;
+
+        /* For ui_hierarchy: return cached JSON from module.json, fall through to plugin if empty */
+        if (strcmp(subkey, "ui_hierarchy") == 0 && inst->fx_count > 3) {
+            if (inst->fx_ui_hierarchy[3][0]) {
+                int len = strlen(inst->fx_ui_hierarchy[3]);
+                if (len < buf_len) {
+                    strcpy(buf, inst->fx_ui_hierarchy[3]);
+                    return len;
+                }
+            }
+            /* Cache empty - fall through to plugin get_param below */
+        }
+
+        /* For chain_params: try plugin first, fall back to parsed module.json data */
+        if (strcmp(subkey, "chain_params") == 0 && inst->fx_count > 3) {
+            /* Try plugin's own chain_params handler first */
+            if (inst->fx_is_v2[3] && inst->fx_plugins_v2[3] && inst->fx_instances[3] && inst->fx_plugins_v2[3]->get_param) {
+                int result = inst->fx_plugins_v2[3]->get_param(inst->fx_instances[3], subkey, buf, buf_len);
+                if (result > 0) return result;
+            }
+            /* Fall back to parsed module.json data */
+            if (inst->fx_param_counts[3] > 0) {
+                int offset = 0;
+                offset += snprintf(buf + offset, buf_len - offset, "[");
+                for (int i = 0; i < inst->fx_param_counts[3] && offset < buf_len - 100; i++) {
+                    chain_param_info_t *p = &inst->fx_params[3][i];
+                    if (i > 0) offset += snprintf(buf + offset, buf_len - offset, ",");
+                    const char *type_str = (p->type == KNOB_TYPE_INT) ? "int" :
+                                          (p->type == KNOB_TYPE_ENUM) ? "enum" : "float";
+                    offset += snprintf(buf + offset, buf_len - offset,
+                        "{\"key\":\"%s\",\"name\":\"%s\",\"type\":\"%s\",\"min\":%g,\"max\":%g",
+                        p->key, p->name[0] ? p->name : p->key,
+                        type_str,
+                        p->min_val, p->max_val);
+                    /* Add options array for enum types */
+                    if (p->type == KNOB_TYPE_ENUM && p->option_count > 0) {
+                        offset += snprintf(buf + offset, buf_len - offset, ",\"options\":[");
+                        for (int j = 0; j < p->option_count && j < MAX_ENUM_OPTIONS; j++) {
+                            if (j > 0) offset += snprintf(buf + offset, buf_len - offset, ",");
+                            offset += snprintf(buf + offset, buf_len - offset, "\"%s\"", p->options[j]);
+                        }
+                        offset += snprintf(buf + offset, buf_len - offset, "]");
+                    }
+                    /* Add unit and display_format if present */
+                    if (p->unit[0]) {
+                        offset += snprintf(buf + offset, buf_len - offset, ",\"unit\":\"%s\"", p->unit);
+                    }
+                    if (p->display_format[0]) {
+                        offset += snprintf(buf + offset, buf_len - offset, ",\"display_format\":\"%s\"", p->display_format);
+                    }
+                    offset += snprintf(buf + offset, buf_len - offset, "}");
+                }
+                offset += snprintf(buf + offset, buf_len - offset, "]");
+                return offset;
+            }
+            return -1;
+        }
+
+        if (inst->fx_count > 3) {
+            if (inst->fx_is_v2[3] && inst->fx_plugins_v2[3] && inst->fx_instances[3] && inst->fx_plugins_v2[3]->get_param) {
+                return inst->fx_plugins_v2[3]->get_param(inst->fx_instances[3], subkey, buf, buf_len);
+            }
+        }
+        return -1;
+    }
+
     /* Route midi_fx1: prefixed params to MIDI FX1 (strip prefix) */
     if (strncmp(key, "midi_fx1:", 9) == 0) {
         const char *subkey = key + 9;

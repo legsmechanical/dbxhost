@@ -6,6 +6,13 @@ Schwung is a framework for custom JavaScript and native DSP modules on Ableton M
 
 Keep this file, `docs/API.md`, `docs/MODULES.md`, and the user manual in `../schwung-catalog-site/manual.html` in sync with code changes (see Release Checklist).
 
+## ⚠️ Fork-only divergences (never push upstream)
+
+Some changes live in this fork's daily-driver build only and must **never** be carried into upstream PRs/syncs. Keep each one isolated in its own commit so it's easy to exclude when cherry-picking features upstream.
+
+- **Move FX = 4 insert blocks per slot** (upstream stays at 2). `MOVE_FX_BLOCKS = 4` in `src/host/shadow_chain_mgmt.h:25` and `MOVE_FX_BLOCKS_JS = 4` in `src/shadow/shadow_ui.js:859` — both bumped from 2→4, adding 2 extra effect blocks across the four shadow slots. Isolated in commit `ab5ec6da` (2026-06-09) specifically so the upstream Move FX feature (commit `08172e31`) stays identical to the 2-block version for future syncs. Both `#define`/`const` carry a `fork daily-driver build` comment.
+- **Slot synth-chain = 4 audio-FX blocks** (`fx1`..`fx4`, upstream had 2). The 3rd/4th insert FX inside a loaded synth's signal chain are fork-only. Because this divergence touches MANY sites (`CHAIN_COMPONENTS`/`createEmptyChainConfig` in `shadow_ui.js`; set+get_param prefix routing, `fxN:bypassed`, knob-mapping, and chain_params/ui_hierarchy fallbacks in `src/modules/chain/dsp/chain_host.c`; patch/preset parse in `chain_patch.c`; slot activation in `shadow_midi.c` + `shadow_chain_mgmt.c`), **any change to FX-block handling must be checked at fx3/fx4 too — they are easy to miss.** Known asymmetries that were NOT extended to fx3/fx4 (TODO if blocks 3-4 misbehave): slot lazy-activation probe (`shadow_midi.c:341`) and set-restore activation (`shadow_chain_mgmt.c:3504`) only check fx1/fx2; `chain/ui.js` component selector only handles fx1/fx2. The `fxN:` get_param routing (`chain_host.c`, ~line 1791) was missing fx3/fx4 — fixed so block 3-4 param pages open instead of dead-ending on "No presets".
+
 ## Code Style
 
 **C**: snake_case. Prefix module manager fns `mm_`, JS host bindings `js_`. Log with `mm:`, `host:`, `shim:` prefixes.
