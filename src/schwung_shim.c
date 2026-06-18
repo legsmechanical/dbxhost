@@ -18,6 +18,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <ucontext.h>
+#include <execinfo.h>
 #include <time.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
@@ -2859,6 +2860,25 @@ static void crash_signal_handler(int sig, siginfo_t *si, void *uctx_v)
     msg[pos] = '\0';
 
     unified_log_crash(msg);
+
+    /* Dump a call stack to a dedicated file for post-mortem symbolization.
+     * backtrace()/backtrace_symbols_fd() are async-signal-safe (no malloc).
+     * Symbolize: addr2line -e build/schwung-shim.so <+0xRVA>  (RVA is the
+     * "(+0x...)" form printed for static fns; named frames resolve directly). */
+    {
+        void *bt[48];
+        int n = backtrace(bt, 48);
+        int fd = open("/data/UserData/schwung/shim_crash_bt.txt",
+                      O_WRONLY | O_CREAT | O_APPEND, 0644);
+        if (fd >= 0) {
+            write(fd, msg, (size_t)pos);
+            write(fd, "\n", 1);
+            if (n > 0) backtrace_symbols_fd(bt, n, fd);
+            write(fd, "====\n", 5);
+            close(fd);
+        }
+    }
+
     _exit(128 + sig);
 }
 
