@@ -102,6 +102,42 @@ isolating commits.
 
 ---
 
+## MIDI_IN inject crash + hardening (2026-06-18)
+
+Investigated a hard device crash (MoveOriginal SIGABRT) hit by suspending an
+overtake tool (davebox, Clock Follow) mid-transport-arming. Root cause: the
+`/schwung-midi-inject` ring is de-facto **multi-producer** (shim overtake-exit
+cleanup + davebox MovePlay/JS host) but was single-writer in code → a torn slot
+(cable=0/CIN=0) reaches Move firmware → SIGABRT. Confirmed via shim backtrace
+(abort on a MoveOriginal worker thread; shim only the signal handler).
+
+- **Crash fix = upstream PR #106** (flagist0) — "MPSC-safe ring for
+  /schwung-midi-inject". Makes the inject ring a bounded MPSC queue (alloc/commit
+  cursors; single `shadow_midi_inject_push` helper). **Cherry-picked onto fork
+  main** (clean, no conflicts) and **verified on-device** (our repro that
+  crashed reliably no longer crashes, with no other change). **Our own
+  arming-guard fix (PR #124) was closed as superseded** — it was a narrower
+  workaround (defer the cleanup batch during arming) for the same race #106 fixes
+  properly. When #106 merges upstream and we sync, the cherry-pick dedupes.
+- **Filter — our PR #125** (`fix(shim): drop garbage MIDI_IN forwards to overtake
+  tools`, draft, off upstream/main). **Distinct path**: torn reads of the
+  *unfiltered hardware* MIDI_IN buffer forwarded *to overtake tools* via
+  `shadow_ui_midi_publish` (not the inject ring → Move). #106 doesn't touch it.
+  CIN-aware status-byte guard. Cherry-picked onto fork main. ✅ upstreamable.
+- **Backtrace instrumentation** (`crash_signal_handler` → dumps a symbolizable
+  stack to `/data/UserData/schwung/shim_crash_bt.txt`). Kept on fork main as a
+  diagnostic; candidate for a separate small upstream PR. ✅
+- **OPEN follow-up (not fixed): inject-pipe starvation / no QoS.** The inject
+  ring is a shared, throttled, flow-control-free side-channel into Move's
+  hardware mailbox; under a heavy ROUTE_MOVE note flood (e.g. davebox repeat-mode
+  many-pad 1/32) the MovePlay transport-control injects get starved → transport
+  won't start/stop reliably + transient desync. #106 makes it crash-safe (drops
+  on ring-full instead of corrupting) but adds no priority. Real fix = prioritize
+  transport-control injects over note floods (host) + davebox Clock-Follow
+  start-handshake robustness (module). See memory `schwung-corun-exit-crash`.
+
+---
+
 _Coverage: this file documents all non-merge fork-main commits not in
 `upstream/main` from 2026-06-14 onward. Re-check with
 `git log --no-merges upstream/main..main` and append new work here._
