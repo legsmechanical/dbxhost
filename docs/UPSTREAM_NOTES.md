@@ -91,3 +91,17 @@ Generally portable co-run improvements, but **coordinate with upstream**:
 See `CLAUDE.md` → "⚠️ Fork-only divergences (never push upstream)" for the full
 list (Move FX = 4 insert blocks; slot synth-chain = 4 audio-FX blocks) and the
 isolating commits.
+
+---
+
+## Build / minor — ✅
+
+- `df488264` **build: host target depends on all `src/host/*.h`**
+  — Make the host build target depend on every `src/host/*.h` so header changes
+  trigger a rebuild. Trivial, portable.
+
+---
+
+_Coverage: this file documents all non-merge fork-main commits not in
+`upstream/main` from 2026-06-14 onward. Re-check with
+`git log --no-merges upstream/main..main` and append new work here._
