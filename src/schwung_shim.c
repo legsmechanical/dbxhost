@@ -6015,28 +6015,14 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
             }
         }
 
-        /* Move-native knob coalesce: emit one consolidated CC per knob whose
-         * detents we suppressed above. Find empty (zeroed) slots in sh_midi
-         * and inject. Clamp deltas into the one-byte signed encoding (±63);
-         * any leftover spills to the next frame's accumulator naturally on
-         * the next inbound detent. */
-        for (int k = 0; k < 8; k++) {
-            if (corun_knob_delta[k] == 0) continue;
-            int16_t delta = corun_knob_delta[k];
-            if (delta > 63) delta = 63;
-            else if (delta < -63) delta = -63;
-            uint8_t d2 = (delta >= 0) ? (uint8_t)delta : (uint8_t)(delta + 128);
-            for (int j = 0; j < MIDI_BUFFER_SIZE; j += 4) {
-                if (sh_midi[j] == 0 && sh_midi[j + 1] == 0 &&
-                    sh_midi[j + 2] == 0 && sh_midi[j + 3] == 0) {
-                    sh_midi[j]     = 0x0B;     /* cable 0, CIN 0x0B = CC */
-                    sh_midi[j + 1] = 0xB0;     /* status: CC, channel 0 */
-                    sh_midi[j + 2] = (uint8_t)(71 + k);
-                    sh_midi[j + 3] = d2;
-                    break;
-                }
-            }
-        }
+        /* NOTE: a second, duplicate coalesce loop used to live here. It strided
+         * j += 4 over the 8-byte MIDI_IN events (the correct stride is 8, as in
+         * the loop above) and re-injected each corun_knob_delta a second time
+         * without zeroing the timestamp dword — double-injecting every knob CC
+         * and writing CCs at 4-byte offsets *inside* 8-byte events, the exact
+         * misalignment that causes a MIDI_IN SIGABRT (see docs/SPI_PROTOCOL.md).
+         * Removed (copy-paste artifact); the j += 8 loop above is sufficient
+         * (corun_knob_delta is frame-local and uncleared by either loop). */
     } else {
         /* Not in shadow mode - copy MIDI_IN directly */
         memcpy(sh_midi, hw_midi, MIDI_BUFFER_SIZE);
