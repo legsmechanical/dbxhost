@@ -1,4 +1,4 @@
-From 87a997d34c39cc8d5aa263ddc5783fe96e281d59 Mon Sep 17 00:00:00 2001
+From 54aa2669a6125cc4b5899336360c625552b8de89 Mon Sep 17 00:00:00 2001
 From: legsmechanical <joshgaine@gmail.com>
 Date: Sun, 14 Jun 2026 14:57:10 -0400
 Subject: [PATCH] feat(fx): Send FX + Move FX buses + generic FX-bus picker
@@ -1857,7 +1857,7 @@ index c5d43f30..2d4c45bb 100644
  int v2_parse_patch_file(chain_instance_t *inst, const char *path, patch_info_t *patch) {
      (void)inst;
 diff --git a/src/schwung_shim.c b/src/schwung_shim.c
-index 66a63863..f07fa036 100644
+index 9b51fb40..dd179835 100644
 --- a/src/schwung_shim.c
 +++ b/src/schwung_shim.c
 @@ -1890,6 +1890,27 @@ static void shadow_latency_delay_apply(int slot, const int16_t *in,
@@ -2068,7 +2068,7 @@ index 66a63863..f07fa036 100644
              }
          }
      }
-@@ -5867,6 +5993,29 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
+@@ -5868,6 +5994,29 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                  }
              }
          }
@@ -2099,10 +2099,10 @@ index 66a63863..f07fa036 100644
          /* Not in shadow mode - copy MIDI_IN directly */
          memcpy(sh_midi, hw_midi, MIDI_BUFFER_SIZE);
 diff --git a/src/shadow/shadow_ui.js b/src/shadow/shadow_ui.js
-index 30c1ee78..cd34d8c9 100644
+index 311b8c81..6bbdb3ec 100644
 --- a/src/shadow/shadow_ui.js
 +++ b/src/shadow/shadow_ui.js
-@@ -319,31 +319,34 @@ const VIEWS = {
+@@ -330,31 +330,34 @@ const VIEWS = {
      LFO_EDIT: "lfoedit",                      // LFO sub-menu editor
      ANALYTICS_PROMPT: "analyticsprompt",       // First-run analytics opt-out prompt
      LFO_TARGET_COMPONENT: "lfotargetcomp",    // LFO target picker step 1: component
@@ -2151,7 +2151,7 @@ index 30c1ee78..cd34d8c9 100644
  
  globalThis.shadow_corun_entries = function() {
      return Object.keys(CORUN_ENTRIES);
-@@ -359,8 +362,8 @@ globalThis.shadow_corun_open = function(id, keep_mask, args) {
+@@ -370,8 +373,8 @@ globalThis.shadow_corun_open = function(id, keep_mask, args) {
       * put so the consumer tool's state machine is undisturbed. */
      if (typeof shadow_corun_overlay === 'function') shadow_corun_overlay(1, keep_mask | 0);
      /* Mirror chain-edit co-run: keep the outer view at OVERTAKE_MODULE (so the
@@ -2162,7 +2162,7 @@ index 30c1ee78..cd34d8c9 100644
       * renders. runCoRunChainEdit captures view -> coRunView around the enter. */
      coRunView = VIEWS.OVERTAKE_MODULE;
      runCoRunChainEdit(function() { entry.enter(args); });
-@@ -379,7 +382,8 @@ globalThis.shadow_corun_close = function() {
+@@ -390,7 +393,8 @@ globalThis.shadow_corun_close = function() {
      if (typeof shadow_corun_overlay === 'function') shadow_corun_overlay(0, corunOverlayPrevMask | 0);
      needsRedraw = true;
  };
@@ -2172,7 +2172,7 @@ index 30c1ee78..cd34d8c9 100644
  
  /* Special action key for swap module option */
  const SWAP_MODULE_ACTION = "__swap_module__";
-@@ -390,7 +394,9 @@ const CHAIN_COMPONENTS = [
+@@ -401,7 +405,9 @@ const CHAIN_COMPONENTS = [
      { key: "synth", label: "Synth", position: 1 },
      { key: "fx1", label: "FX 1", position: 2 },
      { key: "fx2", label: "FX 2", position: 3 },
@@ -2183,7 +2183,7 @@ index 30c1ee78..cd34d8c9 100644
  ];
  
  /* Module abbreviations cache - populated from module.json "abbrev" field */
-@@ -403,10 +409,12 @@ const moduleAbbrevCache = {
+@@ -414,10 +420,12 @@ const moduleAbbrevCache = {
  /* In-memory chain configuration (for future save/load) */
  function createEmptyChainConfig() {
      return {
@@ -2200,7 +2200,7 @@ index 30c1ee78..cd34d8c9 100644
      };
  }
  
-@@ -834,6 +842,12 @@ let lastSlotModuleSignatures = [];  // Track per-slot module changes for knob ca
+@@ -845,6 +853,12 @@ let lastSlotModuleSignatures = [];  // Track per-slot module changes for knob ca
  let currentMasterFxId = "";  // Currently loaded master FX module ID
  let currentMasterFxPath = ""; // Full path to currently loaded DSP
  
@@ -2213,7 +2213,7 @@ index 30c1ee78..cd34d8c9 100644
  /* Master FX chain components (4 FX slots + settings) */
  const MASTER_FX_CHAIN_COMPONENTS = [
      { key: "fx1", label: "FX 1", position: 0, paramPrefix: "master_fx:fx1:" },
-@@ -843,6 +857,120 @@ const MASTER_FX_CHAIN_COMPONENTS = [
+@@ -854,6 +868,120 @@ const MASTER_FX_CHAIN_COMPONENTS = [
      { key: "settings", label: "Settings", position: 4, paramPrefix: "" }
  ];
  
@@ -2334,7 +2334,7 @@ index 30c1ee78..cd34d8c9 100644
  /* Master FX chain editing state */
  let masterFxConfig = {
      fx1: { module: "" },
-@@ -859,7 +987,7 @@ const MASTER_FX_SETTINGS_ITEMS_BASE = [
+@@ -870,7 +998,7 @@ const MASTER_FX_SETTINGS_ITEMS_BASE = [
      { key: "master_volume", label: "Volume", type: "float", min: 0, max: 1, step: 0.05 },
      { key: "mfx_lfo1", label: "LFO 1", type: "action" },
      { key: "mfx_lfo2", label: "LFO 2", type: "action" },
@@ -2343,7 +2343,7 @@ index 30c1ee78..cd34d8c9 100644
      { key: "save_as", label: "[Save As]", type: "action" },
      { key: "delete", label: "[Delete]", type: "action" }
  ];
-@@ -1128,14 +1256,38 @@ function parseResampleBridgeMode(raw) {
+@@ -1139,14 +1267,38 @@ function parseResampleBridgeMode(raw) {
  
  /* Get dynamic settings items based on whether preset is loaded */
  function getMasterFxSettingsItems() {
@@ -2388,7 +2388,7 @@ index 30c1ee78..cd34d8c9 100644
  }
  
  let selectedMasterFxSetting = 0;
-@@ -1359,6 +1511,9 @@ function checkForUpdatesInBackground() {
+@@ -1370,6 +1522,9 @@ function checkForUpdatesInBackground() {
  const CHAIN_SETTINGS_ITEMS = [
      { key: "knobs", label: "Knobs", type: "action" },  // Opens knob assignment editor
      { key: "slot:volume", label: "Volume", type: "float", min: 0, max: 4, step: 0.05 },
@@ -2398,7 +2398,7 @@ index 30c1ee78..cd34d8c9 100644
      { key: "slot:muted", label: "Muted", type: "int", min: 0, max: 1, step: 1 },
      { key: "slot:soloed", label: "Soloed", type: "int", min: 0, max: 1, step: 1 },
      { key: "slot:receive_channel", label: "Recv Ch", type: "int", min: 0, max: 16, step: 1 },
-@@ -1374,6 +1529,7 @@ const CHAIN_SETTINGS_ITEMS = [
+@@ -1385,6 +1540,7 @@ const CHAIN_SETTINGS_ITEMS = [
  ];
  let selectedChainSetting = 0;
  let editingChainSettingValue = false;
@@ -2406,7 +2406,7 @@ index 30c1ee78..cd34d8c9 100644
  
  /* LFO editor state — generic context drives slot or MFX LFO */
  let lfoCtx = null;  /* Active LFO context: { lfoIdx, getParam, setParam, getTargetComponents, getTargetParams, title, returnView, returnAnnounce } */
-@@ -2496,20 +2652,29 @@ function loadChainConfigFromSlot(slotIndex) {
+@@ -2507,20 +2663,29 @@ function loadChainConfigFromSlot(slotIndex) {
      const midiFxModule = getSlotParam(slotIndex, "midi_fx1_module");
      const fx1Module = getSlotParam(slotIndex, "fx1_module");
      const fx2Module = getSlotParam(slotIndex, "fx2_module");
@@ -2437,7 +2437,7 @@ index 30c1ee78..cd34d8c9 100644
  
      chainConfigs[slotIndex] = cfg;
      return cfg;
-@@ -2521,7 +2686,9 @@ function getSlotModuleSignature(slotIndex) {
+@@ -2532,7 +2697,9 @@ function getSlotModuleSignature(slotIndex) {
      const midiFxModule = getSlotParam(slotIndex, "midi_fx1_module") || "";
      const fx1Module = getSlotParam(slotIndex, "fx1_module") || "";
      const fx2Module = getSlotParam(slotIndex, "fx2_module") || "";
@@ -2448,7 +2448,7 @@ index 30c1ee78..cd34d8c9 100644
  }
  
  /* Refresh module signature for a slot and invalidate knob cache on changes */
-@@ -3542,6 +3709,8 @@ function getComponentChainParams(slot, componentKey) {
+@@ -3553,6 +3720,8 @@ function getComponentChainParams(slot, componentKey) {
      const key = componentKey === "synth" ? "synth:chain_params" :
                  componentKey === "fx1" ? "fx1:chain_params" :
                  componentKey === "fx2" ? "fx2:chain_params" :
@@ -2457,7 +2457,7 @@ index 30c1ee78..cd34d8c9 100644
                  componentKey === "midiFx" ? "midi_fx1:chain_params" : null;
      if (!key) return [];
  
-@@ -3580,6 +3749,8 @@ function getComponentHierarchy(slot, componentKey) {
+@@ -3591,6 +3760,8 @@ function getComponentHierarchy(slot, componentKey) {
      const key = componentKey === "synth" ? "synth:ui_hierarchy" :
                  componentKey === "fx1" ? "fx1:ui_hierarchy" :
                  componentKey === "fx2" ? "fx2:ui_hierarchy" :
@@ -2466,7 +2466,7 @@ index 30c1ee78..cd34d8c9 100644
                  componentKey === "midiFx" ? "midi_fx1:ui_hierarchy" : null;
      if (!key) {
          debugLog(`getComponentHierarchy: no key for componentKey=${componentKey}`);
-@@ -3599,9 +3770,8 @@ function getComponentHierarchy(slot, componentKey) {
+@@ -3610,9 +3781,8 @@ function getComponentHierarchy(slot, componentKey) {
  
  /* Fetch chain_params metadata from a Master FX slot */
  function getMasterFxChainParams(fxSlot) {
@@ -2478,7 +2478,7 @@ index 30c1ee78..cd34d8c9 100644
      const json = shadow_get_param(0, key);
      if (!json) return [];
      try {
-@@ -3613,9 +3783,8 @@ function getMasterFxChainParams(fxSlot) {
+@@ -3624,9 +3794,8 @@ function getMasterFxChainParams(fxSlot) {
  
  /* Fetch ui_hierarchy from a Master FX slot */
  function getMasterFxHierarchy(fxSlot) {
@@ -2490,7 +2490,7 @@ index 30c1ee78..cd34d8c9 100644
      const json = shadow_get_param(0, key);
      if (!json) return null;
      try {
-@@ -3710,7 +3879,10 @@ function saveChainConfigToDir(dir) {
+@@ -3721,7 +3890,10 @@ function saveChainConfigToDir(dir) {
              const fwd = parseInt(getSlotParam(i, "slot:forward_channel") || "-1");
              const muted = parseInt(getSlotParam(i, "slot:muted") || "0");
              const soloed = parseInt(getSlotParam(i, "slot:soloed") || "0");
@@ -2502,7 +2502,7 @@ index 30c1ee78..cd34d8c9 100644
          }
          host_write_file(path, JSON.stringify({ slots: cfgSlots }, null, 2) + "\n");
      } catch (e) {
-@@ -3891,6 +4063,21 @@ function loadChainConfigFromDir(dir) {
+@@ -3902,6 +4074,21 @@ function loadChainConfigFromDir(dir) {
              if (typeof s.forward_channel === "number") setSlotParamWithTimeout(i, "slot:forward_channel", String(s.forward_channel), 500);
              if (typeof s.muted === "number") setSlotParamWithTimeout(i, "slot:muted", String(s.muted), 500);
              if (typeof s.soloed === "number") setSlotParamWithTimeout(i, "slot:soloed", String(s.soloed), 500);
@@ -2524,7 +2524,7 @@ index 30c1ee78..cd34d8c9 100644
          }
          debugLog("SET_CHANGED: loaded chain config from " + path);
      } catch (e) {
-@@ -4130,6 +4317,50 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
+@@ -4141,6 +4328,50 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
              bypassed: parseInt(getSlotParam(slotIndex, "fx2:bypassed") || "0", 10) === 1 ? 1 : 0
          });
      }
@@ -2575,7 +2575,7 @@ index 30c1ee78..cd34d8c9 100644
  
      /* Include slot channel settings */
      const recvCh = getSlotParam(slotIndex, "slot:receive_channel");
-@@ -4347,12 +4578,12 @@ function announceSavePreview(name, selectedIndex, full = true) {
+@@ -4365,12 +4596,12 @@ function announceSavePreview(name, selectedIndex, full = true) {
  
  function loadMasterPresetList() {
      masterPresets = [];
@@ -2590,7 +2590,7 @@ index 30c1ee78..cd34d8c9 100644
          /* Hex dump first 20 chars to debug garbage issue */
          let hex = "";
          for (let j = 0; j < Math.min(20, name.length); j++) {
-@@ -4370,7 +4601,7 @@ function enterMasterPresetPicker() {
+@@ -4388,7 +4619,7 @@ function enterMasterPresetPicker() {
      needsRedraw = true;
  
      /* Announce menu title + initial selection */
@@ -2599,7 +2599,7 @@ index 30c1ee78..cd34d8c9 100644
  }
  
  function exitMasterPresetPicker() {
-@@ -4391,7 +4622,7 @@ function findMasterPresetByName(name) {
+@@ -4409,7 +4640,7 @@ function findMasterPresetByName(name) {
  
  function generateMasterPresetName() {
      const parts = [];
@@ -2608,7 +2608,7 @@ index 30c1ee78..cd34d8c9 100644
          const key = `fx${i + 1}`;
          const moduleId = masterFxConfig[key]?.module;
          if (moduleId) {
-@@ -4399,12 +4630,12 @@ function generateMasterPresetName() {
+@@ -4417,12 +4648,12 @@ function generateMasterPresetName() {
              parts.push(abbrev);
          }
      }
@@ -2624,7 +2624,7 @@ index 30c1ee78..cd34d8c9 100644
          setMasterFxSlotModule(i, "");
          masterFxConfig[`fx${i + 1}`].module = "";
      }
-@@ -4415,15 +4646,15 @@ function clearMasterFx() {
+@@ -4433,15 +4664,15 @@ function clearMasterFx() {
  
  function loadMasterPreset(index, presetName) {
      /* Get preset JSON from DSP */
@@ -2643,7 +2643,7 @@ index 30c1ee78..cd34d8c9 100644
              const key = `fx${i + 1}`;
              const fxConfig = fx[key];
              if (fxConfig && fxConfig.type) {
-@@ -4436,12 +4667,12 @@ function loadMasterPreset(index, presetName) {
+@@ -4454,12 +4685,12 @@ function loadMasterPreset(index, presetName) {
                      /* Restore plugin_id first (CLAP sub-plugin selection) */
                      if (fxConfig.params && typeof shadow_set_param === "function") {
                          if (fxConfig.params.plugin_id) {
@@ -2658,7 +2658,7 @@ index 30c1ee78..cd34d8c9 100644
                              }
                          }
                      }
-@@ -4456,17 +4687,19 @@ function loadMasterPreset(index, presetName) {
+@@ -4474,17 +4705,19 @@ function loadMasterPreset(index, presetName) {
              }
          }
  
@@ -2689,7 +2689,7 @@ index 30c1ee78..cd34d8c9 100644
                  }
              }
          }
-@@ -4484,15 +4717,15 @@ function loadMasterPreset(index, presetName) {
+@@ -4502,15 +4735,15 @@ function loadMasterPreset(index, presetName) {
  
  /* Build JSON for saving master preset */
  function buildMasterPresetJson(name) {
@@ -2713,7 +2713,7 @@ index 30c1ee78..cd34d8c9 100644
          const key = `fx${i + 1}`;
          const moduleId = masterFxConfig[key]?.module;
          if (moduleId) {
-@@ -4504,7 +4737,7 @@ function buildMasterPresetJson(name) {
+@@ -4522,7 +4755,7 @@ function buildMasterPresetJson(name) {
              /* Capture plugin_id (for CLAP sub-plugin selection) */
              if (typeof shadow_get_param === "function") {
                  try {
@@ -2722,7 +2722,7 @@ index 30c1ee78..cd34d8c9 100644
                      if (pluginId) {
                          slotPreset.params["plugin_id"] = pluginId;
                      }
-@@ -4515,7 +4748,7 @@ function buildMasterPresetJson(name) {
+@@ -4533,7 +4766,7 @@ function buildMasterPresetJson(name) {
                      const chainParams = getMasterFxChainParams(i);
                      if (chainParams && chainParams.length > 0) {
                          for (const p of chainParams) {
@@ -2731,7 +2731,7 @@ index 30c1ee78..cd34d8c9 100644
                              if (val !== null && val !== undefined && val !== "") {
                                  slotPreset.params[p.key] = val;
                              }
-@@ -4528,14 +4761,16 @@ function buildMasterPresetJson(name) {
+@@ -4546,14 +4779,16 @@ function buildMasterPresetJson(name) {
          }
      }
  
@@ -2756,7 +2756,7 @@ index 30c1ee78..cd34d8c9 100644
      }
  
      return JSON.stringify(preset);
-@@ -4552,10 +4787,10 @@ function doSaveMasterPreset(name) {
+@@ -4570,10 +4805,10 @@ function doSaveMasterPreset(name) {
  
      if (masterOverwriteTargetIndex >= 0) {
          /* Overwriting existing preset */
@@ -2769,7 +2769,7 @@ index 30c1ee78..cd34d8c9 100644
      }
  
      currentMasterPresetName = name;
-@@ -4781,7 +5016,7 @@ function handleMasterFxSettingsAction(key) {
+@@ -4799,7 +5034,7 @@ function handleMasterFxSettingsAction(key) {
  function doDeleteMasterPreset() {
      const index = findMasterPresetByName(currentMasterPresetName);
      if (index >= 0) {
@@ -2778,7 +2778,7 @@ index 30c1ee78..cd34d8c9 100644
      }
  
      /* Clear current preset and return to picker */
-@@ -5654,15 +5889,15 @@ function handleGlobalSettingsAction(key) {
+@@ -5672,15 +5907,15 @@ function handleGlobalSettingsAction(key) {
  
  /* Load master FX chain configuration from DSP */
  function loadMasterFxChainConfig() {
@@ -2801,7 +2801,7 @@ index 30c1ee78..cd34d8c9 100644
          const key = `fx${i}`;
          const moduleId = getMasterFxSlotModule(i - 1);
          masterFxConfig[key].module = moduleId || "";
-@@ -5673,30 +5908,30 @@ function loadMasterFxChainConfig() {
+@@ -5691,30 +5926,30 @@ function loadMasterFxChainConfig() {
  function getMasterFxParam(slotIndex, key) {
      if (typeof shadow_get_param !== "function") return "";
      try {
@@ -2837,7 +2837,7 @@ index 30c1ee78..cd34d8c9 100644
      } catch (e) {
          return false;
      }
-@@ -5704,7 +5939,7 @@ function setMasterFxSlotModule(slotIndex, dspPath) {
+@@ -5722,7 +5957,7 @@ function setMasterFxSlotModule(slotIndex, dspPath) {
  
  /* Enter module selection for a Master FX slot */
  function enterMasterFxModuleSelect(componentIndex) {
@@ -2846,7 +2846,7 @@ index 30c1ee78..cd34d8c9 100644
      if (!comp || comp.key === "settings") return;
  
      /* Set selection index to current module if any */
-@@ -5722,7 +5957,7 @@ function enterMasterFxModuleSelect(componentIndex) {
+@@ -5740,7 +5975,7 @@ function enterMasterFxModuleSelect(componentIndex) {
  
  /* Apply module selection for Master FX slot */
  function applyMasterFxModuleSelection() {
@@ -2855,7 +2855,7 @@ index 30c1ee78..cd34d8c9 100644
      if (!comp || comp.key === "settings") return;
  
      const selected = MASTER_FX_OPTIONS[selectedMasterFxModuleIndex];
-@@ -5747,6 +5982,13 @@ function applyMasterFxModuleSelection() {
+@@ -5765,6 +6000,13 @@ function applyMasterFxModuleSelection() {
  
  /* Save master FX chain configuration */
  function saveMasterFxChainConfig() {
@@ -2869,7 +2869,7 @@ index 30c1ee78..cd34d8c9 100644
      /* The shim persists the state, but we also save to shadow config */
      try {
          const configPath = "/data/UserData/schwung/shadow_config.json";
-@@ -6164,6 +6406,277 @@ function loadMasterFxChainFromConfig() {
+@@ -6182,6 +6424,277 @@ function loadMasterFxChainFromConfig() {
      }
  }
  
@@ -3147,7 +3147,7 @@ index 30c1ee78..cd34d8c9 100644
  /* Enter chain editing view for a slot */
  function enterChainEdit(slotIndex) {
      selectedSlot = slotIndex;
-@@ -6204,7 +6717,7 @@ function scanModulesForType(componentType) {
+@@ -6222,7 +6735,7 @@ function scanModulesForType(componentType) {
      } else if (componentType === "midiFx") {
          searchDirs = [`${MODULES_DIR}/midi_fx`];
          expectedTypes = ["midi_fx"];
@@ -3156,7 +3156,7 @@ index 30c1ee78..cd34d8c9 100644
          searchDirs = [`${MODULES_DIR}/audio_fx`];
          expectedTypes = ["audio_fx"];
      }
-@@ -6473,6 +6986,12 @@ function applyComponentSelection() {
+@@ -6531,6 +7044,12 @@ function applyComponentSelection() {
          case "fx2":
              paramKey = "fx2:module";
              break;
@@ -3169,7 +3169,7 @@ index 30c1ee78..cd34d8c9 100644
          case "midiFx":
              paramKey = "midi_fx1:module";
              break;
-@@ -6576,6 +7095,10 @@ function getChainSettingValue(slot, setting) {
+@@ -6634,6 +7153,10 @@ function getChainSettingValue(slot, setting) {
          const pct = Math.round(parseFloat(val) * 100);
          return `${pct}%`;
      }
@@ -3180,7 +3180,7 @@ index 30c1ee78..cd34d8c9 100644
      if (setting.key === "slot:muted") {
          return parseInt(val) ? "Yes" : "No";
      }
-@@ -6600,6 +7123,11 @@ function getChainSettingValue(slot, setting) {
+@@ -6658,6 +7181,11 @@ function getChainSettingValue(slot, setting) {
      if (setting.key === "midi_fx_pre_mode") {
          return parseInt(val) ? "Schw+Move" : "Schw";
      }
@@ -3192,7 +3192,7 @@ index 30c1ee78..cd34d8c9 100644
      return String(val);
  }
  
-@@ -6703,6 +7231,18 @@ function getKnobTargets(slot) {
+@@ -6761,6 +7289,18 @@ function getKnobTargets(slot) {
          targets.push({ id: "fx2", name: `FX2: ${name}` });
      }
  
@@ -3211,7 +3211,7 @@ index 30c1ee78..cd34d8c9 100644
      return targets;
  }
  
-@@ -7528,6 +8068,123 @@ function enterMasterFxHierarchyEditor(fxSlot) {
+@@ -7586,6 +8126,123 @@ function enterMasterFxHierarchyEditor(fxSlot) {
      }
  }
  
@@ -3335,7 +3335,7 @@ index 30c1ee78..cd34d8c9 100644
  /* Load params and knobs for current hierarchy level */
  function loadHierarchyLevel() {
      if (!hierEditorHierarchy) return;
-@@ -7727,7 +8384,12 @@ function exitHierarchyEditor() {
+@@ -7785,7 +8442,12 @@ function exitHierarchyEditor() {
      filepathBrowserParamKey = "";
      resetDynamicParamPickerState();
  
@@ -3349,7 +3349,7 @@ index 30c1ee78..cd34d8c9 100644
      needsRedraw = true;
  }
  
-@@ -8231,12 +8893,21 @@ function buildKnobContextForKnob(knobIndex) {
+@@ -8289,12 +8951,21 @@ function buildKnobContextForKnob(knobIndex) {
          }
      }
  
@@ -3375,7 +3375,7 @@ index 30c1ee78..cd34d8c9 100644
              const hasModule = pluginName && pluginName.length > 0;
  
              /* No module loaded in this slot */
-@@ -8248,7 +8919,7 @@ function buildKnobContextForKnob(knobIndex) {
+@@ -8306,7 +8977,7 @@ function buildKnobContextForKnob(knobIndex) {
                      meta: null,
                      pluginName: comp.label,
                      displayName: `Knob ${knobIndex + 1}`,
@@ -3384,7 +3384,7 @@ index 30c1ee78..cd34d8c9 100644
                      noModule: true,
                      isMasterFx: true,
                      masterFxSlot: selectedMasterFxComponent
-@@ -8268,7 +8939,7 @@ function buildKnobContextForKnob(knobIndex) {
+@@ -8326,7 +8997,7 @@ function buildKnobContextForKnob(knobIndex) {
                  }
                  if (levelDef && levelDef.knobs && knobIndex < levelDef.knobs.length) {
                      const key = levelDef.knobs[knobIndex];
@@ -3393,7 +3393,7 @@ index 30c1ee78..cd34d8c9 100644
                      const rawMeta = chainParams.find(p => p.key === key);
                      const meta = normalizeExpandedParamMeta(key, rawMeta);
                      const displayName = meta && meta.name ? meta.name : key.replace(/_/g, " ");
-@@ -8279,7 +8950,7 @@ function buildKnobContextForKnob(knobIndex) {
+@@ -8337,7 +9008,7 @@ function buildKnobContextForKnob(knobIndex) {
                          meta,
                          pluginName,
                          displayName,
@@ -3402,7 +3402,7 @@ index 30c1ee78..cd34d8c9 100644
                          isMasterFx: true,
                          masterFxSlot: selectedMasterFxComponent
                      };
-@@ -8299,7 +8970,7 @@ function buildKnobContextForKnob(knobIndex) {
+@@ -8357,7 +9028,7 @@ function buildKnobContextForKnob(knobIndex) {
                      meta: normalizeExpandedParamMeta(key, param),
                      pluginName,
                      displayName,
@@ -3411,7 +3411,7 @@ index 30c1ee78..cd34d8c9 100644
                      isMasterFx: true,
                      masterFxSlot: selectedMasterFxComponent
                  };
-@@ -8313,7 +8984,7 @@ function buildKnobContextForKnob(knobIndex) {
+@@ -8371,7 +9042,7 @@ function buildKnobContextForKnob(knobIndex) {
                  meta: null,
                  pluginName,
                  displayName: `Knob ${knobIndex + 1}`,
@@ -3420,7 +3420,7 @@ index 30c1ee78..cd34d8c9 100644
                  noMapping: true,
                  isMasterFx: true,
                  masterFxSlot: selectedMasterFxComponent
-@@ -8346,6 +9017,11 @@ function rebuildKnobContextCache() {
+@@ -8404,6 +9075,11 @@ function rebuildKnobContextCache() {
   * Uses caching to avoid IPC calls on every CC message
   */
  let cachedKnobContextsMasterFxComp = -1;  /* Track Master FX component for cache */
@@ -3432,7 +3432,7 @@ index 30c1ee78..cd34d8c9 100644
  
  function getKnobContext(knobIndex) {
      /* Check if cache is valid */
-@@ -8354,6 +9030,7 @@ function getKnobContext(knobIndex) {
+@@ -8412,6 +9088,7 @@ function getKnobContext(knobIndex) {
      const currentLevel = (view === VIEWS.HIERARCHY_EDITOR) ? hierEditorLevel : "";
      const currentChildIndex = (view === VIEWS.HIERARCHY_EDITOR) ? hierEditorChildIndex : -1;
      const currentMasterFxComp = (view === VIEWS.MASTER_FX) ? selectedMasterFxComponent : -1;
@@ -3440,7 +3440,7 @@ index 30c1ee78..cd34d8c9 100644
  
      const cacheValid = (
          cachedKnobContexts.length === NUM_KNOBS &&
-@@ -8362,12 +9039,14 @@ function getKnobContext(knobIndex) {
+@@ -8420,12 +9097,14 @@ function getKnobContext(knobIndex) {
          cachedKnobContextsComp === currentComp &&
          cachedKnobContextsLevel === currentLevel &&
          cachedKnobContextsChildIndex === currentChildIndex &&
@@ -3456,7 +3456,7 @@ index 30c1ee78..cd34d8c9 100644
      }
  
      return cachedKnobContexts[knobIndex] || null;
-@@ -10218,8 +10897,15 @@ function changeComponentPreset(delta) {
+@@ -10292,8 +10971,15 @@ function changeComponentPreset(delta) {
  
  /* Get Master FX setting current value for display */
  function getMasterFxSettingValue(setting) {
@@ -3473,7 +3473,7 @@ index 30c1ee78..cd34d8c9 100644
          if (!val) return "100%";
          const num = parseFloat(val);
          return isNaN(num) ? val : `${Math.round(num * 100)}%`;
-@@ -10327,11 +11013,20 @@ function getMasterFxSettingValue(setting) {
+@@ -10401,11 +11087,20 @@ function getMasterFxSettingValue(setting) {
  function adjustMasterFxSetting(setting, delta) {
      if (setting.type === "action") return;
  
@@ -3496,7 +3496,7 @@ index 30c1ee78..cd34d8c9 100644
          return;
      }
  
-@@ -10640,12 +11335,14 @@ function handleJog(delta) {
+@@ -10714,12 +11409,14 @@ function handleJog(delta) {
                  announceMenuItem("Module", module.name);
              } else {
                  /* Navigate chain components (-1 = preset selection, like instrument slots)
@@ -3514,7 +3514,7 @@ index 30c1ee78..cd34d8c9 100644
                      const compKey = comp.key;
                      const moduleName = masterFxConfig?.[compKey]?.module || "Empty";
                      announceMenuItem(comp.label, moduleName);
-@@ -10655,6 +11352,15 @@ function handleJog(delta) {
+@@ -10729,6 +11426,15 @@ function handleJog(delta) {
          case VIEWS.SLOT_SETTINGS:
              handleSlotSettingsJog(delta);
              break;
@@ -3530,7 +3530,7 @@ index 30c1ee78..cd34d8c9 100644
          case VIEWS.PATCHES:
              handlePatchesJog(delta);
              break;
-@@ -11077,7 +11783,7 @@ function handleSelect() {
+@@ -11157,7 +11863,7 @@ function handleSelect() {
                  /* Preset selected - enter preset picker */
                  enterMasterPresetPicker();
              } else {
@@ -3539,7 +3539,7 @@ index 30c1ee78..cd34d8c9 100644
                  if (selectedComp.key === "settings") {
                      /* Enter settings submenu */
                      inMasterFxSettingsMenu = true;
-@@ -11089,15 +11795,15 @@ function handleSelect() {
+@@ -11169,15 +11875,15 @@ function handleSelect() {
                      if (items.length > 0) {
                          const item = items[0];
                          const value = getMasterFxSettingValue(item);
@@ -3558,7 +3558,7 @@ index 30c1ee78..cd34d8c9 100644
                          const cur = parseInt(shadow_get_param(0, fullKey) || "0", 10);
                          const next = cur ? 0 : 1;
                          shadow_set_param(0, fullKey, String(next));
-@@ -11107,13 +11813,35 @@ function handleSelect() {
+@@ -11187,13 +11893,35 @@ function handleSelect() {
                      }
  
                      if (moduleData && moduleData.module) {
@@ -3600,7 +3600,7 @@ index 30c1ee78..cd34d8c9 100644
                          }
                      } else {
                          /* No module loaded - enter module selection */
-@@ -11125,6 +11853,35 @@ function handleSelect() {
+@@ -11205,6 +11933,35 @@ function handleSelect() {
          case VIEWS.SLOT_SETTINGS:
              handleSlotSettingsSelect();
              break;
@@ -3636,9 +3636,9 @@ index 30c1ee78..cd34d8c9 100644
          case VIEWS.PATCHES:
              handlePatchesSelect();
              break;
-@@ -11873,22 +12630,39 @@ function handleBack() {
-         case VIEWS.COMPONENT_PARAMS:
-             handleComponentParamsBack();
+@@ -11965,22 +12722,39 @@ function handleBack() {
+         case VIEWS.PRESET_DETAIL:
+             handlePresetDetailBack();
              break;
 +        case VIEWS.FX_BUS_PICKER:
 +            if (pendingMoveFxRouteConfirm >= 0) {
@@ -3679,7 +3679,7 @@ index 30c1ee78..cd34d8c9 100644
              } else if (helpDetailScrollState) {
                  helpDetailScrollState = null;
                  needsRedraw = true;
-@@ -11904,28 +12678,25 @@ function handleBack() {
+@@ -11996,28 +12770,25 @@ function handleBack() {
                      helpReturnView = null;
                      enterGlobalSettings();
                  } else {
@@ -3713,7 +3713,7 @@ index 30c1ee78..cd34d8c9 100644
              }
              break;
          case VIEWS.CHAIN_EDIT:
-@@ -12071,8 +12842,9 @@ function handleBack() {
+@@ -12163,8 +12934,9 @@ function handleBack() {
              } else {
                  /* At root level - exit hierarchy editor */
                  const wasMasterFx = hierEditorIsMasterFx;
@@ -3724,7 +3724,7 @@ index 30c1ee78..cd34d8c9 100644
              }
              break;
          }
-@@ -12349,12 +13121,12 @@ function drawChainEdit() {
+@@ -12441,12 +13213,12 @@ function drawChainEdit() {
      const cfg = chainConfigs[selectedSlot] || createEmptyChainConfig();
      const chainSelected = selectedChainComponent === -1;
  
@@ -3742,7 +3742,7 @@ index 30c1ee78..cd34d8c9 100644
      const BOX_Y = 20;  // Below header
  
      /* Draw slot indicators - 4 marks in left margin, spanning from below header to footer */
-@@ -12925,7 +13697,14 @@ function drawHelpDetail() {
+@@ -13017,7 +13789,14 @@ function drawHelpDetail() {
          get() { return masterConfirmIndex; }, enumerable: true
      });
  
@@ -3758,7 +3758,7 @@ index 30c1ee78..cd34d8c9 100644
  
      /* Utility functions */
      _ctx.setView = setView;
-@@ -13102,6 +13881,9 @@ function drawHelpDetail() {
+@@ -13196,6 +13975,9 @@ function drawHelpDetail() {
      _ctx.enterChainEdit = (...args) => enterChainEdit(...args);
      _ctx.enterPatchBrowser = (...args) => _enterPatchBrowser(...args);
      _ctx.enterMasterFxSettings = (...args) => enterMasterFxSettings(...args);
@@ -3768,7 +3768,7 @@ index 30c1ee78..cd34d8c9 100644
      _ctx.enterSlotSettings = (...args) => _enterSlotSettings(...args);
  })();
  
-@@ -13119,6 +13901,96 @@ function applyPatchSelection() { _applyPatchSelection(); }
+@@ -13216,6 +13998,96 @@ function applyPatchSelection() { _applyPatchSelection(); }
  function drawMasterFx() { _drawMasterFx(); }
  function getMasterFxDisplayName() { return _getMasterFxDisplayName(); }
  function enterMasterFxSettings() { _enterMasterFxSettings(); }
@@ -3865,7 +3865,7 @@ index 30c1ee78..cd34d8c9 100644
  function scanForToolModules() { return _scanForToolModules(); }
  function enterToolsMenu() {
      _enterToolsMenu();
-@@ -13551,6 +14423,10 @@ globalThis.init = function() {
+@@ -13648,6 +14520,10 @@ globalThis.init = function() {
      }
      /* Re-apply Master FX sync after activeSlotStateDir resolves to the active set. */
      loadMasterFxChainFromConfig();
@@ -3876,7 +3876,7 @@ index 30c1ee78..cd34d8c9 100644
  
      /* Sync dirty cache and slot names from autosave files (shim loaded them on startup) */
      for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
-@@ -13665,6 +14541,8 @@ globalThis.init = function() {
+@@ -13762,6 +14638,8 @@ globalThis.init = function() {
  globalThis.shadow_save_state_now = function() {
      autosaveAllSlots();
      saveMasterFxChainConfig();
@@ -3885,7 +3885,7 @@ index 30c1ee78..cd34d8c9 100644
      /* Also persist volumes/channels/mute/solo — otherwise the set's
       * shadow_chain_config.json drifts from slot_N.json across reboots,
       * e.g. toggling MPE (recv=All) before shutdown would revert on boot. */
-@@ -13734,6 +14612,7 @@ function dispatchCoRunDraw() {
+@@ -13834,6 +14712,7 @@ function dispatchCoRunDraw() {
          case VIEWS.LFO_TARGET_PARAM:     drawLfoTargetParam(); break;
          case VIEWS.STORE_PICKER_RESULT:  drawStorePickerResult(); break;
          case VIEWS.FILEPATH_BROWSER:     drawFilepathBrowser(); break;
@@ -3893,7 +3893,7 @@ index 30c1ee78..cd34d8c9 100644
          default:
              /* Unknown view in co-run — render slot list as a recoverable
               * fallback so user can navigate back. */
-@@ -13943,9 +14822,11 @@ globalThis.tick = function() {
+@@ -14049,9 +14928,11 @@ globalThis.tick = function() {
                  }
              }
              if (flags & SHADOW_UI_FLAG_JUMP_TO_MASTER_FX) {
@@ -3908,7 +3908,7 @@ index 30c1ee78..cd34d8c9 100644
                  if (typeof shadow_clear_ui_flags === "function") {
                      shadow_clear_ui_flags(SHADOW_UI_FLAG_JUMP_TO_MASTER_FX);
                  }
-@@ -14044,6 +14925,26 @@ globalThis.tick = function() {
+@@ -14150,6 +15031,26 @@ globalThis.tick = function() {
                          const mfx = host_read_file(copySourceDir + "/master_fx_" + i + ".json");
                          if (mfx) host_write_file(newDir + "/master_fx_" + i + ".json", mfx);
                      }
@@ -3935,7 +3935,7 @@ index 30c1ee78..cd34d8c9 100644
                      /* Also copy chain config */
                      const chainCfg = host_read_file(copySourceDir + "/shadow_chain_config.json");
                      if (chainCfg) host_write_file(newDir + "/shadow_chain_config.json", chainCfg);
-@@ -14054,6 +14955,18 @@ globalThis.tick = function() {
+@@ -14160,6 +15061,18 @@ globalThis.tick = function() {
                          host_write_file(newDir + "/slot_" + i + ".json", "{}\n");
                          host_write_file(newDir + "/master_fx_" + i + ".json", "{}\n");
                      }
@@ -3954,7 +3954,7 @@ index 30c1ee78..cd34d8c9 100644
                      /* Seed a default chain config so receive channels reset to
                       * per-track defaults (Ch 1-4). Without this, the upcoming
                       * loadChainConfigFromDir silently bails and the shim's
-@@ -14130,7 +15043,23 @@ globalThis.tick = function() {
+@@ -14236,7 +15149,23 @@ globalThis.tick = function() {
               * overwrite the freshly-written slot files */
              autosaveSuppressUntil = 150; /* ~5 seconds at 30fps */
  
@@ -3979,7 +3979,7 @@ index 30c1ee78..cd34d8c9 100644
              for (let mfxi = 0; mfxi < 4; mfxi++) {
                  const mfxPath = activeSlotStateDir + "/master_fx_" + mfxi + ".json";
                  let mfxDspPath = "";
-@@ -14176,6 +15105,13 @@ globalThis.tick = function() {
+@@ -14282,6 +15211,13 @@ globalThis.tick = function() {
                  }
                  debugLog("SET_CHANGED: MFX " + mfxi + " -> " + (mfxModuleId || "(none)"));
              }
@@ -3993,7 +3993,7 @@ index 30c1ee78..cd34d8c9 100644
              /* 8. Refresh slot names from new autosave files */
              for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
                  slots[i].name = "";
-@@ -14305,7 +15241,7 @@ globalThis.tick = function() {
+@@ -14411,7 +15347,7 @@ globalThis.tick = function() {
      /* Poll FX display_name for change-based announcements (e.g. key detection).
       * Check every ~1 second (30 ticks at 30fps). Only poll slots that have FX loaded. */
      if (!isOvertakeActive && refreshCounter % 30 === 0) {
@@ -4002,7 +4002,7 @@ index 30c1ee78..cd34d8c9 100644
          /* Per-slot FX */
          for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
              const cfg = chainConfigs[i];
-@@ -14528,6 +15464,9 @@ globalThis.tick = function() {
+@@ -14648,6 +15584,9 @@ globalThis.tick = function() {
          case VIEWS.MASTER_FX:
              drawMasterFx();
              break;
@@ -4012,7 +4012,7 @@ index 30c1ee78..cd34d8c9 100644
          case VIEWS.CHAIN_EDIT:
              drawChainEdit();
              break;
-@@ -14964,7 +15903,7 @@ globalThis.onMidiMessageInternal = function(data) {
+@@ -15091,7 +16030,7 @@ globalThis.onMidiMessageInternal = function(data) {
                  runCoRunChainEdit(function() {
                      if (hostShiftHeld && view === VIEWS.CHAIN_EDIT && selectedChainComponent >= 0) {
                          handleShiftSelect();
@@ -4021,7 +4021,7 @@ index 30c1ee78..cd34d8c9 100644
                          enterMasterFxModuleSelect(selectedMasterFxComponent);
                      } else {
                          handleSelect();
-@@ -15013,6 +15952,18 @@ globalThis.onMidiMessageInternal = function(data) {
+@@ -15140,6 +16079,18 @@ globalThis.onMidiMessageInternal = function(data) {
                  needsRedraw = true;
                  return;
              }
@@ -4040,7 +4040,7 @@ index 30c1ee78..cd34d8c9 100644
              /* Track buttons: CC 43=Track 1 (slot 0), CC 40=Track 4 (slot 3).
               * Chain-edit only — an overlay has no chain slot; swallow so a stray
               * track press can't flip it into chain-edit co-run. */
-@@ -15143,8 +16094,8 @@ globalThis.onMidiMessageInternal = function(data) {
+@@ -15270,8 +16221,8 @@ globalThis.onMidiMessageInternal = function(data) {
              /* Shift+Click in chain edit enters component edit mode */
              if (isShiftHeld() && view === VIEWS.CHAIN_EDIT && selectedChainComponent >= 0) {
                  handleShiftSelect();
@@ -4387,7 +4387,7 @@ index 8fc7a319..6c0fc7ff 100644
 -- 
 2.53.0
 
-From 72f8f641cbed917976cbd5a2d0436aaca59326ed Mon Sep 17 00:00:00 2001
+From 79a244e390dc3f75d8188e1e461482926eb91c8b Mon Sep 17 00:00:00 2001
 From: legsmechanical <joshgaine@gmail.com>
 Date: Wed, 17 Jun 2026 09:05:57 -0400
 Subject: [PATCH] fix(chain): route fx3/fx4 get_param so slot FX blocks 3-4
@@ -4412,7 +4412,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
  2 files changed, 153 insertions(+)
 
 diff --git a/CLAUDE.md b/CLAUDE.md
-index df095c75..3b076033 100644
+index ff2a63b1..cc3c1859 100644
 --- a/CLAUDE.md
 +++ b/CLAUDE.md
 @@ -6,6 +6,13 @@ Schwung is a framework for custom JavaScript and native DSP modules on Ableton M
