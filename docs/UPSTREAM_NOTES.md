@@ -70,14 +70,37 @@ Generally portable co-run improvements, but **coordinate with upstream**:
 
 ---
 
-## FX buses — 🟡 (mixed: must be split for upstream)
+## FX buses — 🟡 (draft upstream PR #121) · carried as a LOCAL PATCH on fork main
 
-- `28b44126` **feat(fx): Send FX + Move FX buses + generic FX-bus picker**
+- `87a997d3` **feat(fx): Send FX + Move FX buses + generic FX-bus picker** (folds #115 + #117)
   — **Send FX** (2 post-fader buses A/B + generic FX-bus picker) is ✅ upstreamable.
   — **Move FX** (4 per-Move-track insert buses) and the **fx3/fx4** chain-insert
   routing it carries are part of the ⛔ **fork-only 4-block divergence** (`MOVE_FX_BLOCKS=4`,
   slot synth-chain 2→4). For upstream, this commit must be split so only Send FX
   (built on the upstream 2-block model) goes out.
+- **Upstream status:** draft PR `charlesvestal/schwung#121` (`fx-buses-pr`). Parked as
+  **draft** 2026-06-24 — Charles needs time before he can review and it'll take work on his end.
+
+### ⚠️ LOCAL PATCH — re-apply on EVERY upstream rebase (until #121 merges)
+
+Because #121 is parked and the commit conflicts *inline* during a fork-main rebase
+(it edits `shadow_ui.js` / `shadow_chain_mgmt.c` in regions upstream's merged
+corun/preset work also touched), Send FX is carried as a standalone **3-way patch**:
+
+- **Patch file:** `../schwung-send-fx-local.patch` (workspace container, kept **out** of
+  this repo so it never leaks into upstream PRs). It's a `git format-patch` of the Send FX commit.
+- **Validated:** applies clean to `upstream/main` (`d4dd2cb8`, 2026-06-24) via
+  `git apply --3way` — the inline-rebase conflict is only a sequential-replay artifact.
+
+**Rebase procedure for fork `main`:**
+1. `git rebase upstream/main` — merged dups auto-drop; **drop the Send FX commit** if it
+   conflicts (`git rebase --skip` on it).
+2. After the rebase lands: `git am --3way ../schwung-send-fx-local.patch` (resolve only
+   if upstream touched those regions since the last regen).
+3. Regenerate the patch against the new base and overwrite the file:
+   `git format-patch -1 <new-send-fx-hash> --stdout > ../schwung-send-fx-local.patch`
+   (davebox `chore: regenerate … against <base>` convention).
+4. **Retire this whole dance once #121 merges** — it then auto-drops like the other PRs did.
 
 ---
 
