@@ -12,6 +12,27 @@ Most recent first. Hashes are fork-main commits.
 
 ---
 
+## ⛔ Fork-maintained docs — keep OURS, never adopt upstream's (on every rebase)
+
+`CLAUDE.md` (and the rest of the stripped set: `AGENTS.md`, `GEMINI.md`, `.cursorrules`,
+`docs/superpowers/`) are maintained **separately from upstream**. They're stripped from
+upstream PRs (see [[schwung-never-push-claudemd-upstream]]) *and* we must not pull
+upstream's versions back in. Because we rebuild fork `main` by cherry-picking fork commits
+**onto** `upstream/main`, the base brings upstream's `CLAUDE.md` — so the rebuild silently
+adopts it (caught + reverted 2026-06-24; this had been bleeding in across prior rebases).
+
+**On every rebase, after assembling the new fork main, restore ours:**
+```sh
+git checkout <pre-rebase-fork-ref> -- CLAUDE.md docs/superpowers/
+# (+ AGENTS.md / GEMINI.md / .cursorrules if they exist on the fork)
+git diff --staged --stat   # sanity: only fork-doc reverts
+```
+`merge=ours` does NOT help here — in a cherry-pick-onto-upstream, "ours" is the
+upstream-based branch, so it would keep upstream's. The explicit `checkout` is the
+reliable method. If you *want* an upstream CLAUDE.md improvement, port it in by hand.
+
+---
+
 ## Module User Presets (per-component preset snapshots) — ✅
 
 Self-contained feature; no fork-only dependencies. Good first upstream PR.

@@ -308,7 +308,7 @@ Long-press is suppressed once the volume knob is touched during a track press (s
 - **Mute + Jog Click** on focused chain/MFX module — toggle bypass. Audio passes through; MIDI FX become passthrough; synth render silenced while MIDI flows (state advances, tails ring out, clean unbypass). 4-row 'B' glyph above the module box.
 - **Mute + Track 1–4** — slot mute. **Shift + Mute + Track 1–4** — slot solo.
 
-Mute (CC 88) is passed through to Move firmware (even while shadow UI is shown) so Move-native **Mute + Pad** (per-drum mute) works. `shadow_mute_held` is tracked from the hardware buffer independently, so the shadow combos above still work. Consequences: a plain Mute tap also toggles Move's selected-track mute, and Mute + Track double-mutes (shadow slot + Move track) — these stay in sync, which is intended. Shadow slot mute/solo is set **only** by these combos — there is no D-Bus screen-reader text sync. (A former `shadow_dbus.c` auto-correct matched any announcement ending in " muted"/" soloed" and applied it to the selected slot; Move utters drum kit/pad names with those suffixes — e.g. "Lay Down Kit muted" — and Schwung's own TTS loops back through the same handler, so it spuriously muted slots and persisted the state, silencing audio across all projects. Removed; a version-stamped one-time heal in `shadow_state.c` clears any already-stuck persisted mute/solo on upgrade.) Bypass persists via per-slot autosave (`slot_N.json`, `master_fx_N.json`); patch-library reloads start with bypass=0.
+Mute (CC 88) is passed through to Move firmware (even while shadow UI is shown) so Move-native **Mute + Pad** (per-drum mute) works. `shadow_mute_held` is tracked from the hardware buffer independently, so the shadow combos above still work. Consequences: a plain Mute tap also toggles Move's selected-track mute, and Mute + Track double-mutes (shadow slot + Move track) — these stay in sync, which is intended. **Mute + Pad must NOT mute the shadow slot:** Move announces "<sample> muted" over D-Bus for a pad, and the slot-mute auto-correct (`shadow_dbus.c`) is gated to skip while a drum pad (note 68–99) is held so a pad mute doesn't silence the whole slot. Bypass persists via per-slot autosave (`slot_N.json`, `master_fx_N.json`); patch-library reloads start with bypass=0.
 
 ### Quantized Sampler
 
@@ -320,13 +320,7 @@ Loading a chain module / tool that consumes line-in shows "Speaker Feedback Risk
 
 Gate fires when: module's `capabilities.audio_in == true` AND `component_type` is NOT `audio_fx`/`midi_fx` AND `shadow_speaker_active` AND NOT `shadow_line_in_connected`.
 
-**Continuous feedback guard (bypass-on-risk, auto-clear when safe).** The interactive gate only runs on *user* selection, so a restored line-input slot would activate hot at cold boot (jack state is unknown to the shim there) and feed back. Now there's a continuous guard:
-- **Shim, at boot:** any restored line-input slot is brought up **BYPASSED** (real `synth:bypassed=1` — the visible "B" glyph) with `feedback_hold = 1` as the guard's marker (`shadow_slot_apply_boot_feedback_hold` in `shadow_chain_mgmt.c`, both boot-restore paths). Bypass is set *after* `load_file`, so it survives the per-set mute-state load (which only touches `muted`). Chain host exposes `synth:consumes_line_input` (parsed from `capabilities.audio_in` via the new `json_get_bool_in_section`, since `audio_in` is a JSON boolean) and `synth:bypassed` get/set.
-- **JS, continuously** (`reconcileFeedbackHolds` in `shadow_ui.js`, throttled ~4×/sec): for each Line In slot — **risk present** (`host_speaker_active() && !host_line_in_connected()`) → bypass + announce + raise the **"Feedback Risk"** modal when the shadow UI is on screen (gated on `shadow_get_display_mode() === 1` so it can't hijack Move's jog/back while hidden); **safe** → un-bypass + auto-dismiss the modal; **manual un-bypass (Mute+JogClick) or modal "Override"** → treated as a session override (no re-bypass until safe again or reboot). This re-bypasses on mid-session headphone *unplug*, not just at boot. Param plumbing: `slot:feedback_hold` get/set on the slot struct's new `feedback_hold` field. The modal (title/lines/footer/announce) is customizable via `confirmLineInput(label, cb, opts)` in `feedback_gate.mjs` + `drawConfirmOverlay(title, lines, footer)`; `feedbackGateCancel()` dismisses it programmatically when risk clears.
-
-**Global default always empty.** The one-time per-set migration (`shadow_batch_migrate_sets`, `shadow_set_pages.c`) no longer copies the global `slot_state` into each set — it seeds **empty** `{}` slot/master_fx files + a default chain config (`seed_empty_set_state`, mirroring the JS new-set path). A stale global slot (e.g. an old line-in + reverb autosave) can no longer propagate into every set and reload on boot. (This is migration-only and gated by `set_state/.migrated`; it does **not** scrub sets already migrated — those rely on the boot bypass or manual cleanup.)
-
-Impl: `src/shared/feedback_gate.mjs` (predicate + modal), `src/shadow/shadow_ui.js` (call sites + continuous guard), `src/schwung_shim.c` (XMOS CC 114 line-in, CC 115 line-out). Out of scope: Move firmware's autosample / line-in monitoring; Quantized Sampler "Move Input" toggle (fullscreen menu makes JS modal inert). See `docs/plans/2026-04-30-feedback-protection-design.md` and `docs/plans/2026-06-25-boot-feedback-fix.md`.
+Impl: `src/shared/feedback_gate.mjs` (predicate + modal), `src/shadow/shadow_ui.js` (call sites), `src/schwung_shim.c` (XMOS CC 114 line-in, CC 115 line-out). Out of scope: Move firmware's autosample / line-in monitoring; Quantized Sampler "Move Input" toggle (fullscreen menu makes JS modal inert). See `docs/plans/2026-04-30-feedback-protection-design.md`.
 
 ### Skipback
 
@@ -349,9 +343,31 @@ Each of the 4 slots has:
 
 **MPE controllers** (LinnStrument, Roli, Sensel): set Receive=All, Forward=THRU, enable MPE in the synth. Otherwise channel remap destroys per-note bend/pressure/slide.
 
-### User Presets
+### Module Presets
 
-Per-component preset snapshots for any chain module (synth, audio FX, or MIDI FX). Reached from a component's module-swap list in the shadow UI — an indented `[User Presets]` row tucked under the loaded module. A preset captures that component's opaque `<prefix>:state` blob (`synth` / `fx1`..`fx4` / `midi_fx1`) — the same string slot autosave and chain patches use — saved to `/data/UserData/schwung/presets/<module-id>/<name>.json`. Keyed by **module id**, so a preset saved on a module in one slot is offered wherever that module is loaded (cross-slot reuse). Scrolling the list **auditions live** (debounced); Back reverts to the slot's original state, the detail screen's Load commits. Autosave is suppressed while auditioning (`isPresetPreviewActive()`) so an uncommitted preview is never persisted into `slot_N.json`. Impl: `src/shadow/shadow_ui_presets.mjs` (view module). Developer state-contract notes in `docs/MODULES.md`.
+**Shift+Click any loaded chain component (synth / audio FX / MIDI FX) → the module
+picker → `[User Presets]`** (an indented row tucked directly beneath the
+loaded module; the cursor defaults to it on entry) opens
+a *per-component, per-module* preset browser (`src/shadow/shadow_ui_presets.mjs`).
+It rides the picker's existing synthetic-row pattern (`__user_presets__`, mirroring
+`__get_more__`) and is only shown for a loaded module. Distinct from chain
+**patches** (`[Save]/[Save As]/[Delete]`, whole-chain, global `patches/`): a module
+preset captures only that one component's `<prefix>:state` blob (`synth`,
+`fx1`..`fx4`, `midi_fx1` — the same opaque state the host reads for slot autosave),
+so it is generic across every component/module with no per-module code.
+
+- Stored at `/data/UserData/schwung/presets/<module-id>/<name>.json`
+  (`{name, module, version, state}`). The per-module folder makes the browser
+  filtered to the component's current module for free.
+- Recall sets `<prefix>:state` (the verified slot-load restore path), which marks
+  the slot dirty so the next autosave persists it.
+- Live audition: scrolling the list applies the highlighted preset (debounced via
+  `tickPresetPreview`, driven from the global tick) so it's heard before committing.
+  The slot's original `:state` is captured on entry; **Back reverts** to it, the
+  detail screen's **Load commits**. Disabled if the original can't be captured.
+- Save never overwrites — a name collision auto-appends a number (`Fat Brass 2`).
+  Delete (`os.remove`) lives in the per-preset detail screen with a confirm.
+- Naming uses the shared on-screen keyboard (`text_entry.mjs`).
 
 ### MIDI Cable Filtering
 
@@ -369,10 +385,6 @@ JS API: `host_ext_midi_remap_set(in_ch, out_ch)` (0–15; out_ch >= 16 or < 0 = 
 Shim reads the table every SPI frame (post-transfer), rewrites channel byte in-place in both hw mailbox and shadow buffer. System messages (`0xF*`) skipped. **Bypassed globally** if any chain slot is forward=THRU (MPE preservation). **Force-reset** to all-passthrough + disabled on overtake exit. Gated by `ext_midi_remap_enabled` in `features.json` (default `true`).
 
 SHM: `/schwung-ext-midi-remap`, 64 bytes, `schwung_ext_midi_remap_t` in `src/host/shadow_constants.h`. v1.
-
-### Co-run Input Ownership
-
-Co-run lets an **overtake tool share Move's control surface with a second UI** for one user-driven session — e.g. a sequencer keeps the pads/steps/transport while the Schwung chain editor (`CORUN_TARGET_CHAIN_EDIT`) takes the OLED + jog, or Move's native preset/synth editor (`CORUN_TARGET_MOVE_NATIVE`) takes its knobs. **Cede-by-default**: the tool keeps the whole surface and lists only the groups it *cedes* to the peer. Cedeable surface: pads, encoders, transport (Play/Rec/Sample/Loop), edit (Copy/Delete/Undo/Capture), and the 4 nav arrows, with an optional separate LED-keep mask and a canvas sub-view. JS API: `shadow_corun_begin_cede(target, id, cede_mask, flags)`, `shadow_corun_set_cede_mask`, `shadow_corun_set_led_cede_mask`, `shadow_corun_event_owner`; masks use `CORUN_GRP_*` bits (see `src/host/shadow_constants.h`). Full ownership model, group bits, and the cede↔keep complement in `docs/CORUN.md`.
 
 ### Master FX Chain
 
@@ -409,23 +421,6 @@ pointer screens ([Get more...] / [Module Store]). The old on-device store
 module is retired (source kept for the standalone/sim host; not shipped).
 
 Catalog: `https://raw.githubusercontent.com/charlesvestal/schwung/main/module-catalog.json`.
-
-**Shim mirror + stuck-shim repair (web update).** The manager runs as `ableton`
-and can't write `/usr/lib`, so a web update mirrors the new shim via the
-setuid-root `schwung-heal` helper (synchronously in `post-update.sh` + the
-manager), then **verifies `/data` shim == `/usr/lib` shim before stamping
-`version.txt`** — a failed mirror leaves the version old so it stays retryable
-instead of self-concealing ("already up to date"). This auto-fixes the shim only
-for devices whose `heal` is **blessed** (root-owned + setuid — i.e. they ran
-`install.sh`/GUI installer since heal landed in v0.9.10). Never-blessed devices
-(old pre-heal installs, web-only) can't be fixed over the web (no root foothold)
-— they need one `install.sh`/GUI installer, after which it self-maintains.
-`repair_status.go` detects the stuck state (`shimStale` md5 mismatch OR
-`healUnblessed` OR non-heal-aware entrypoint) and shows a **repair banner** +
-`/system/repair` page (SSH `chown root + chmod 4755 + heal --reboot`, or the GUI
-installer). See memory `web-update-shim-bootstrap-gap`.
-
-The manager also serves a **file browser** (`/files`, under `/data/UserData/`) and per-slot module **Remote UIs** (auto-discovers `web_ui.html` per module, served in a sandboxed iframe). The file browser is keyboard- and screen-reader-accessible: rows are `tabindex=0` with spoken `aria-label`s, **Enter opens** (dir → in, file → download), **Space selects**, with a checkbox column for multi-select. Source: `schwung-manager/templates/files.html`, `remote_ui.go`.
 
 ### Catalog Format (v2)
 
