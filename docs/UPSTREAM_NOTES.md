@@ -81,26 +81,32 @@ Generally portable co-run improvements, but **coordinate with upstream**:
 - **Upstream status:** draft PR `charlesvestal/schwung#121` (`fx-buses-pr`). Parked as
   **draft** 2026-06-24 — Charles needs time before he can review and it'll take work on his end.
 
-### ⚠️ LOCAL PATCH — re-apply on EVERY upstream rebase (until #121 merges)
+### ⚠️ LOCAL PATCH — re-apply on EVERY upstream rebase
 
-Because #121 is parked and the commit conflicts *inline* during a fork-main rebase
-(it edits `shadow_ui.js` / `shadow_chain_mgmt.c` in regions upstream's merged
-corun/preset work also touched), Send FX is carried as a standalone **3-way patch**:
+All our extra FX-block work is carried as a re-appliable patch committed to this repo
+(backed up on the fork remote): **`patches/fx-blocks-local.patch`** — a 2-commit
+`format-patch` series. See **`patches/README.md`** for the full procedure.
 
-- **Patch file:** `../schwung-send-fx-local.patch` (workspace container, kept **out** of
-  this repo so it never leaks into upstream PRs). It's a `git format-patch` of the Send FX commit.
-- **Validated:** applies clean to `upstream/main` (`d4dd2cb8`, 2026-06-24) via
-  `git apply --3way` — the inline-rebase conflict is only a sequential-replay artifact.
+- `87a997d3` **Send FX + Move FX buses** — Send FX is upstreamable (draft PR #121,
+  parked); Move FX (`MOVE_FX_BLOCKS=4`) is permanent fork-only.
+- `72f8f641` **slot synth-chain fx3/fx4 get_param routing** — permanent fork-only
+  (part of the 4-block divergence).
 
-**Rebase procedure for fork `main`:**
-1. `git rebase upstream/main` — merged dups auto-drop; **drop the Send FX commit** if it
-   conflicts (`git rebase --skip` on it).
-2. After the rebase lands: `git am --3way ../schwung-send-fx-local.patch` (resolve only
-   if upstream touched those regions since the last regen).
-3. Regenerate the patch against the new base and overwrite the file:
-   `git format-patch -1 <new-send-fx-hash> --stdout > ../schwung-send-fx-local.patch`
-   (davebox `chore: regenerate … against <base>` convention).
-4. **Retire this whole dance once #121 merges** — it then auto-drops like the other PRs did.
+**Why a patch:** these commits edit `shadow_ui.js` / `shadow_chain_mgmt.c` in regions
+upstream's merged corun/preset work also touched, so they conflict *inline* during a
+rebase. Carrying them as a patch makes the re-apply an explicit, documented step.
+
+**Rebase procedure (short — full version in `patches/README.md`):**
+1. `git rebase upstream/main` — merged dups auto-drop; **drop** `87a997d3` + `72f8f641`
+   if they conflict (`git rebase --skip`).
+2. `git apply --3way patches/fx-blocks-local.patch` — expect a **one-time** `shadow_ui.js`
+   conflict (Send FX + fx3/fx4 both edit it, vs upstream's moved version — inherent, not a
+   defect). Resolve, `git add -A && git commit`.
+3. **Regenerate** the patch against the new base (`git format-patch -1 <hash>` ×2 → overwrite
+   the file), davebox `chore: regenerate … against <base>` style.
+4. **Retire the Send FX half once #121 merges** (keep Move FX + fx3/fx4).
+
+> `patches/` is ⛔ fork-only — never include it in an upstream PR.
 
 ---
 
