@@ -133,9 +133,27 @@ func NewRemoteUI(shm *ShmParams, setRing *ShmWebParamSetRing, basePath string, l
 	}
 }
 
+// overtakeParamPrefix is the param prefix for an active overtake tool's DSP
+// (e.g. davebox). The shim routes "overtake_dsp:<key>" GET/SET on the
+// shadow_param ring straight to the loaded overtake DSP instance via
+// shim_handle_param_special — the same path shadow_ui.js uses on-device.
+const overtakeParamPrefix = "overtake_dsp:"
+
 // setParam writes a param using the fast ring buffer if available,
 // falling back to the old shared memory path.
 func (ru *RemoteUI) setParam(slot uint8, key, value string) error {
+	// Overtake-tool params MUST go through the reliable shadow_param ring
+	// (request_type=1), which the shim routes to the overtake DSP. The fast
+	// web_param_set ring's shadow_direct_set_param has no "overtake_dsp:"
+	// branch, so it would mis-route the key to a chain slot. The slow ring is
+	// fine here: overtake-tool edits are discrete ops, not knob-drag streams,
+	// and it lifts the fast ring's 255-byte value cap (64KB on the slow ring).
+	if strings.HasPrefix(key, overtakeParamPrefix) {
+		if shm := ru.ensureShm(); shm != nil {
+			return shm.SetParam(slot, key, value)
+		}
+		return fmt.Errorf("no shared memory available")
+	}
 	if ring := ru.ensureSetRing(); ring != nil {
 		return ring.SetParam(slot, key, value)
 	}
@@ -143,6 +161,23 @@ func (ru *RemoteUI) setParam(slot uint8, key, value string) error {
 		return shm.SetParamFast(slot, key, value)
 	}
 	return fmt.Errorf("no shared memory available")
+}
+
+// activeOvertakeToolID returns the module id of the overtake tool currently
+// loaded (e.g. "davebox") that opts into a remote UI by answering the
+// "overtake_dsp:module_id" probe, or "" if no such tool is active. The shim
+// returns an error for this GET when no overtake DSP is loaded (or the loaded
+// one predates the probe), so this is backward-safe.
+func (ru *RemoteUI) activeOvertakeToolID(slot uint8) string {
+	shm := ru.ensureShm()
+	if shm == nil {
+		return ""
+	}
+	id, err := shm.GetParam(slot, overtakeParamPrefix+"module_id")
+	if err != nil {
+		return ""
+	}
+	return id
 }
 
 // ensureSetRing attempts to open the web param set ring if not yet connected.
@@ -203,6 +238,15 @@ func (ru *RemoteUI) refreshLoop(ctx context.Context) {
 
 		activeSlots, _ := ru.activeSlotsAndMasterFx()
 		for _, slot := range activeSlots {
+			// Overtake-tool backstop: if an overtake tool (e.g. davebox) is the
+			// active module on this slot, re-read its "overtake_dsp:state" and
+			// fan out. (The web UI's own re-subscribe poll drives the fast live
+			// sync; this 30s loop just catches drift.) Skip the chain-slot scan
+			// for this slot — the tool owns it.
+			if toolID, ok, err := shm.TryGetParam(slot, overtakeParamPrefix+"module_id"); ok && err == nil && toolID != "" {
+				ru.broadcastInitialParamValues(ctx, slot, "overtake_dsp", ru.subscribedClients(slot))
+				continue
+			}
 			for _, comp := range componentPrefixes {
 				modID, _, err := shm.TryGetParam(slot, comp+"_module")
 				if err != nil || modID == "" {
@@ -301,6 +345,20 @@ func (ru *RemoteUI) handleSubscribe(ctx context.Context, c *ruClient, msg wsMess
 
 	// Send slot info (which components are loaded).
 	ru.sendSlotInfo(ctx, c, slot)
+
+	// Overtake tool priority: an overtake tool (e.g. davebox) runs in place of
+	// the chain slot and exposes its params under the "overtake_dsp:" prefix.
+	// When one is active and opts into a remote UI, serve ITS web_ui.html as the
+	// slot's custom UI and seed values from "overtake_dsp:state" — then skip the
+	// chain-slot path entirely (the user is in the tool, not the chain).
+	if toolID := ru.activeOvertakeToolID(slot); toolID != "" {
+		if url := ru.findModuleWebUI(toolID); url != "" {
+			ru.sendCustomUI(ctx, c, slot, "synth", url)
+		}
+		ru.sendAllParamsAtOnce(ctx, c, slot, "overtake_dsp")
+		ru.logger.Info("ws subscribe: served overtake tool remote UI", "slot", slot, "tool", toolID)
+		return
+	}
 
 	// Give the synth priority: send its custom_ui (if any) AND its hierarchy +
 	// chain_params BEFORE the (potentially multi-second) sendSlotSettings retry
