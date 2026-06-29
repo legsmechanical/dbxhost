@@ -2017,7 +2017,12 @@
         popBtn.title = "Open this UI in its own window";
         popBtn.onclick = function () {
             var sep = url.indexOf("?") === -1 ? "?" : "&";
-            var popUrl = url + sep + "schwungStandalone=1&slot=" + slot;
+            // The Tool tab is not a numbered slot — standalone mode keys off
+            // tool=1 to use the overtake-tool channel (subscribe_tool / set on
+            // slot 0 / refetch_tool) instead of a per-slot subscribe.
+            var qs = (slot === "tool") ? "schwungStandalone=1&tool=1"
+                                       : "schwungStandalone=1&slot=" + slot;
+            var popUrl = url + sep + qs;
             window.open(popUrl, "schwungPopout_" + slot);
         };
         return popBtn;
@@ -2034,6 +2039,11 @@
                 : "No tool loaded. Open a tool (e.g. dAVEBOx) on the Move and it will appear here.";
             slotContentEl.appendChild(note);
             return;
+        }
+
+        // Pop-out button (own window), same as slots.
+        if (slotHeaderControlsEl) {
+            slotHeaderControlsEl.appendChild(makePopOutButton(tool.customUI.url, "tool"));
         }
 
         var container = document.createElement("div");
