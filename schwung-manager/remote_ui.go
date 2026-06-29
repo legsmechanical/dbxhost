@@ -47,6 +47,8 @@ type ruClient struct {
 	subs map[uint8]bool
 	// whether this client is subscribed to master FX
 	masterFxSub bool
+	// whether this client is subscribed to the active overtake tool's UI
+	toolSub bool
 }
 
 // per-slot cached state used by the poll loop.
@@ -102,6 +104,13 @@ type wsParamUpdate struct {
 	Type   string            `json:"type"`
 	Slot   uint8             `json:"slot"`
 	Params map[string]string `json:"params"`
+}
+
+// wsToolInfo reports the active overtake tool (e.g. davebox) to the Tool tab.
+// id == "" means no tool with a remote UI is currently loaded.
+type wsToolInfo struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
 }
 
 type wsCustomUI struct {
@@ -238,15 +247,6 @@ func (ru *RemoteUI) refreshLoop(ctx context.Context) {
 
 		activeSlots, _ := ru.activeSlotsAndMasterFx()
 		for _, slot := range activeSlots {
-			// Overtake-tool backstop: if an overtake tool (e.g. davebox) is the
-			// active module on this slot, re-read its "overtake_dsp:state" and
-			// fan out. (The web UI's own re-subscribe poll drives the fast live
-			// sync; this 30s loop just catches drift.) Skip the chain-slot scan
-			// for this slot — the tool owns it.
-			if toolID, ok, err := shm.TryGetParam(slot, overtakeParamPrefix+"module_id"); ok && err == nil && toolID != "" {
-				ru.broadcastInitialParamValues(ctx, slot, "overtake_dsp", ru.subscribedClients(slot))
-				continue
-			}
 			for _, comp := range componentPrefixes {
 				modID, _, err := shm.TryGetParam(slot, comp+"_module")
 				if err != nil || modID == "" {
@@ -254,6 +254,20 @@ func (ru *RemoteUI) refreshLoop(ctx context.Context) {
 				}
 				// Read shm once and fan out to all subscribers of this slot.
 				ru.broadcastInitialParamValues(ctx, slot, comp, ru.subscribedClients(slot))
+			}
+		}
+
+		// Overtake-tool backstop: if any client is viewing the Tool tab and an
+		// overtake tool (e.g. davebox) is active, re-read its "overtake_dsp:state"
+		// and fan out. (The web UI's own re-subscribe poll drives the fast live
+		// sync; this 30s loop just catches drift.)
+		if toolClients := ru.subscribedToolClients(); len(toolClients) > 0 {
+			if toolID, ok, err := shm.TryGetParam(0, overtakeParamPrefix+"module_id"); ok && err == nil && toolID != "" {
+				if params, hit := ru.fetchAllParams(0, "overtake_dsp"); hit {
+					for _, c := range toolClients {
+						ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
+					}
+				}
 			}
 		}
 	}
@@ -322,6 +336,12 @@ func (ru *RemoteUI) readLoop(ctx context.Context, c *ruClient) {
 			ru.handleSubscribeMasterFx(ctx, c)
 		case "unsubscribe_master_fx":
 			ru.handleUnsubscribeMasterFx(c)
+		case "subscribe_tool":
+			ru.handleSubscribeTool(ctx, c)
+		case "unsubscribe_tool":
+			ru.handleUnsubscribeTool(c)
+		case "refetch_tool":
+			ru.handleRefetchTool(ctx, c)
 		case "set_master_fx_param":
 			ru.handleSetMasterFxParam(ctx, c, msg)
 		default:
@@ -345,20 +365,6 @@ func (ru *RemoteUI) handleSubscribe(ctx context.Context, c *ruClient, msg wsMess
 
 	// Send slot info (which components are loaded).
 	ru.sendSlotInfo(ctx, c, slot)
-
-	// Overtake tool priority: an overtake tool (e.g. davebox) runs in place of
-	// the chain slot and exposes its params under the "overtake_dsp:" prefix.
-	// When one is active and opts into a remote UI, serve ITS web_ui.html as the
-	// slot's custom UI and seed values from "overtake_dsp:state" — then skip the
-	// chain-slot path entirely (the user is in the tool, not the chain).
-	if toolID := ru.activeOvertakeToolID(slot); toolID != "" {
-		if url := ru.findModuleWebUI(toolID); url != "" {
-			ru.sendCustomUI(ctx, c, slot, "synth", url)
-		}
-		ru.sendAllParamsAtOnce(ctx, c, slot, "overtake_dsp")
-		ru.logger.Info("ws subscribe: served overtake tool remote UI", "slot", slot, "tool", toolID)
-		return
-	}
 
 	// Give the synth priority: send its custom_ui (if any) AND its hierarchy +
 	// chain_params BEFORE the (potentially multi-second) sendSlotSettings retry
@@ -716,6 +722,58 @@ func (ru *RemoteUI) handleUnsubscribeMasterFx(c *ruClient) {
 	c.masterFxSub = false
 	c.mu.Unlock()
 	ru.logger.Info("ws unsubscribe master_fx")
+}
+
+// handleSubscribeTool serves the active overtake tool's remote UI. An overtake
+// tool (e.g. davebox) occupies no chain slot — its DSP is dlopen'd in the shim
+// as overtake_dsp_gen_inst and addressed via the "overtake_dsp:" prefix. We
+// discover it by probing overtake_dsp:module_id, serve its web_ui.html under
+// the "tool" component, and seed values from overtake_dsp:state. A tool_info
+// with id=="" tells the Tool tab that nothing is loaded.
+func (ru *RemoteUI) handleSubscribeTool(ctx context.Context, c *ruClient) {
+	c.mu.Lock()
+	c.toolSub = true
+	c.mu.Unlock()
+
+	ru.logger.Info("ws subscribe tool")
+
+	if !ru.requireShm(ctx, c) {
+		return
+	}
+
+	toolID := ru.activeOvertakeToolID(0)
+	ru.writeJSON(ctx, c, wsToolInfo{Type: "tool_info", ID: toolID})
+	if toolID == "" {
+		return
+	}
+	if url := ru.findModuleWebUI(toolID); url != "" {
+		ru.sendCustomUI(ctx, c, 0, "tool", url)
+	}
+	// Seed the tool's params from overtake_dsp:state (flat snapshot fields).
+	if params, ok := ru.fetchAllParams(0, "overtake_dsp"); ok {
+		ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
+	}
+	ru.logger.Info("ws subscribe: served overtake tool remote UI", "tool", toolID)
+}
+
+func (ru *RemoteUI) handleUnsubscribeTool(c *ruClient) {
+	c.mu.Lock()
+	c.toolSub = false
+	c.mu.Unlock()
+	ru.logger.Info("ws unsubscribe tool")
+}
+
+// handleRefetchTool re-reads the active tool's overtake_dsp:state and pushes the
+// flat snapshot fields as a param_update — params ONLY, no custom_ui/tool_info
+// (re-sending those would reload the iframe). The web UI calls this on a poll to
+// pick up device-side changes (playhead, external edits) that don't notify.
+func (ru *RemoteUI) handleRefetchTool(ctx context.Context, c *ruClient) {
+	if !ru.requireShm(ctx, c) {
+		return
+	}
+	if params, ok := ru.fetchAllParams(0, "overtake_dsp"); ok {
+		ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
+	}
 }
 
 func (ru *RemoteUI) handleSetMasterFxParam(ctx context.Context, c *ruClient, msg wsMessage) {
@@ -1288,6 +1346,21 @@ func (ru *RemoteUI) subscribedClients(slot uint8) []*ruClient {
 	for c := range ru.clients {
 		c.mu.Lock()
 		sub := c.subs[slot]
+		c.mu.Unlock()
+		if sub {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func (ru *RemoteUI) subscribedToolClients() []*ruClient {
+	ru.mu.Lock()
+	defer ru.mu.Unlock()
+	var out []*ruClient
+	for c := range ru.clients {
+		c.mu.Lock()
+		sub := c.toolSub
 		c.mu.Unlock()
 		if sub {
 			out = append(out, c)

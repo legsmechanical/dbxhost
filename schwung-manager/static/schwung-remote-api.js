@@ -113,6 +113,16 @@
                 return requestFromParent({ type: "getChainParams" }).then(function (resp) {
                     return resp.data;
                 });
+            },
+
+            /**
+             * Ask the parent to re-fetch the current view's params from the
+             * device and re-push them. Used by modules whose device-side state
+             * changes without a notify (e.g. overtake tools polling for the
+             * playhead / external edits). Params arrive via onParamChange.
+             */
+            resubscribe: function () {
+                window.parent.postMessage({ type: "resubscribe" }, "*");
             }
         };
         return;
@@ -244,6 +254,14 @@
         getChainParams: function () {
             if (chainParamsData !== null) return Promise.resolve(chainParamsData);
             return new Promise(function (resolve) { chainParamsWaiters.push(resolve); });
+        },
+
+        resubscribe: function () {
+            // Re-request a fresh push over our own socket. (Tool popout isn't a
+            // wired path; this is a best-effort no-crash fallback.)
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "subscribe", slot: slot }));
+            }
         }
     };
 })();
