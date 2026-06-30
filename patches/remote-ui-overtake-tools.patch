@@ -1,0 +1,888 @@
+From 30fc81317a0d68477f77977b6dfd7d377bea8dc0 Mon Sep 17 00:00:00 2001
+From: legsmechanical <joshgaine@gmail.com>
+Date: Mon, 29 Jun 2026 08:43:21 -0400
+Subject: [PATCH 1/4] feat(manager): serve remote UI for the active overtake
+ tool
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The remote UI was slot-only: discovery keyed on the per-slot synth_module
+shm key and params on the synth:/fxN: prefixes. An overtake tool (e.g.
+davebox) occupies no chain slot — its DSP is dlopen'd in the shim as
+overtake_dsp_gen_inst and addressed via the "overtake_dsp:<key>" prefix
+that shim_handle_param_special already serves on the shadow_param ring
+(the exact path shadow_ui.js uses). So no shim/C change is needed; the
+manager just has to use that prefix.
+
+- handleSubscribe: probe overtake_dsp:module_id; if a tool answers, serve
+  its web_ui.html as the slot's custom UI and seed from overtake_dsp:state,
+  then skip the chain-slot path (the user is in the tool).
+- setParam: route overtake_dsp:-prefixed writes through the reliable
+  shadow_param ring (request_type=1), which the shim routes to the overtake
+  DSP. The fast web_param_set ring has no overtake_dsp branch and would
+  mis-route to a chain slot. Also lifts the fast ring's 255B value cap.
+- refreshLoop: overtake-tool backstop so live sync survives with no synth.
+
+Manager-only, additive; degrades cleanly to the existing slot path when no
+overtake tool is active. Cross-compiles clean (ARM64). Pairs with davebox
+get_param("module_id")/web_ui prefix change.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01SccYnQe2WXaEwGhP1T7nuT
+---
+ schwung-manager/remote_ui.go | 58 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 58 insertions(+)
+
+diff --git a/schwung-manager/remote_ui.go b/schwung-manager/remote_ui.go
+index 6fdc324f..7cdc581c 100644
+--- a/schwung-manager/remote_ui.go
++++ b/schwung-manager/remote_ui.go
+@@ -133,9 +133,27 @@ func NewRemoteUI(shm *ShmParams, setRing *ShmWebParamSetRing, basePath string, l
+ 	}
+ }
+ 
++// overtakeParamPrefix is the param prefix for an active overtake tool's DSP
++// (e.g. davebox). The shim routes "overtake_dsp:<key>" GET/SET on the
++// shadow_param ring straight to the loaded overtake DSP instance via
++// shim_handle_param_special — the same path shadow_ui.js uses on-device.
++const overtakeParamPrefix = "overtake_dsp:"
++
+ // setParam writes a param using the fast ring buffer if available,
+ // falling back to the old shared memory path.
+ func (ru *RemoteUI) setParam(slot uint8, key, value string) error {
++	// Overtake-tool params MUST go through the reliable shadow_param ring
++	// (request_type=1), which the shim routes to the overtake DSP. The fast
++	// web_param_set ring's shadow_direct_set_param has no "overtake_dsp:"
++	// branch, so it would mis-route the key to a chain slot. The slow ring is
++	// fine here: overtake-tool edits are discrete ops, not knob-drag streams,
++	// and it lifts the fast ring's 255-byte value cap (64KB on the slow ring).
++	if strings.HasPrefix(key, overtakeParamPrefix) {
++		if shm := ru.ensureShm(); shm != nil {
++			return shm.SetParam(slot, key, value)
++		}
++		return fmt.Errorf("no shared memory available")
++	}
+ 	if ring := ru.ensureSetRing(); ring != nil {
+ 		return ring.SetParam(slot, key, value)
+ 	}
+@@ -145,6 +163,23 @@ func (ru *RemoteUI) setParam(slot uint8, key, value string) error {
+ 	return fmt.Errorf("no shared memory available")
+ }
+ 
++// activeOvertakeToolID returns the module id of the overtake tool currently
++// loaded (e.g. "davebox") that opts into a remote UI by answering the
++// "overtake_dsp:module_id" probe, or "" if no such tool is active. The shim
++// returns an error for this GET when no overtake DSP is loaded (or the loaded
++// one predates the probe), so this is backward-safe.
++func (ru *RemoteUI) activeOvertakeToolID(slot uint8) string {
++	shm := ru.ensureShm()
++	if shm == nil {
++		return ""
++	}
++	id, err := shm.GetParam(slot, overtakeParamPrefix+"module_id")
++	if err != nil {
++		return ""
++	}
++	return id
++}
++
+ // ensureSetRing attempts to open the web param set ring if not yet connected.
+ func (ru *RemoteUI) ensureSetRing() *ShmWebParamSetRing {
+ 	if ru.setRing != nil {
+@@ -203,6 +238,15 @@ func (ru *RemoteUI) refreshLoop(ctx context.Context) {
+ 
+ 		activeSlots, _ := ru.activeSlotsAndMasterFx()
+ 		for _, slot := range activeSlots {
++			// Overtake-tool backstop: if an overtake tool (e.g. davebox) is the
++			// active module on this slot, re-read its "overtake_dsp:state" and
++			// fan out. (The web UI's own re-subscribe poll drives the fast live
++			// sync; this 30s loop just catches drift.) Skip the chain-slot scan
++			// for this slot — the tool owns it.
++			if toolID, ok, err := shm.TryGetParam(slot, overtakeParamPrefix+"module_id"); ok && err == nil && toolID != "" {
++				ru.broadcastInitialParamValues(ctx, slot, "overtake_dsp", ru.subscribedClients(slot))
++				continue
++			}
+ 			for _, comp := range componentPrefixes {
+ 				modID, _, err := shm.TryGetParam(slot, comp+"_module")
+ 				if err != nil || modID == "" {
+@@ -302,6 +346,20 @@ func (ru *RemoteUI) handleSubscribe(ctx context.Context, c *ruClient, msg wsMess
+ 	// Send slot info (which components are loaded).
+ 	ru.sendSlotInfo(ctx, c, slot)
+ 
++	// Overtake tool priority: an overtake tool (e.g. davebox) runs in place of
++	// the chain slot and exposes its params under the "overtake_dsp:" prefix.
++	// When one is active and opts into a remote UI, serve ITS web_ui.html as the
++	// slot's custom UI and seed values from "overtake_dsp:state" — then skip the
++	// chain-slot path entirely (the user is in the tool, not the chain).
++	if toolID := ru.activeOvertakeToolID(slot); toolID != "" {
++		if url := ru.findModuleWebUI(toolID); url != "" {
++			ru.sendCustomUI(ctx, c, slot, "synth", url)
++		}
++		ru.sendAllParamsAtOnce(ctx, c, slot, "overtake_dsp")
++		ru.logger.Info("ws subscribe: served overtake tool remote UI", "slot", slot, "tool", toolID)
++		return
++	}
++
+ 	// Give the synth priority: send its custom_ui (if any) AND its hierarchy +
+ 	// chain_params BEFORE the (potentially multi-second) sendSlotSettings retry
+ 	// block. A data-driven custom UI (e.g. jv880 builds its controls from
+-- 
+2.53.0
+
+
+From 8fa018571bb1e0a83c8a918b15f3110eacdf7c58 Mon Sep 17 00:00:00 2001
+From: legsmechanical <joshgaine@gmail.com>
+Date: Mon, 29 Jun 2026 12:22:23 -0400
+Subject: [PATCH 2/4] feat(manager): dedicated Tool tab for overtake-tool
+ remote UI
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+An overtake tool (e.g. davebox) is not a chain slot, so it doesn't belong
+under a Slot tab — the shell gated custom UIs on a slot having a loaded
+module (hasAnyModule), so davebox's served UI never showed. Add a Tool tab
+alongside Master FX (also a non-slot view):
+
+- Manager: subscribe_tool/unsubscribe_tool (discover via overtake_dsp:module_id,
+  serve web_ui.html under component "tool", seed overtake_dsp:state) +
+  refetch_tool (params-only re-read for the web UI's live-sync poll, so it
+  doesn't re-send custom_ui and reload the iframe). refreshLoop backstop fans
+  overtake_dsp:state to tool subscribers. Reverts the earlier slot-path overtake
+  serving (slots stay slot-only).
+- Shell (remote-ui.js): tool state + view; subscribe/switchSlot/renderSlot
+  generalized for the "tool" pseudo-slot; tool_info / custom_ui("tool") /
+  overtake_dsp: param_update routing; iframe get/set/seed handlers tool-aware
+  (routes sets on slot 0 — manager dispatches by key prefix).
+- remote-api.js: add resubscribe() (was missing in iframe mode → davebox's poll
+  would have thrown); posts {type:"resubscribe"} → parent issues refetch_tool.
+- template: Tool tab button.
+
+Compiles ARM clean; JS syntax-checked; strings embedded in binary. NOT yet
+deployed (device busy). Pairs with davebox get_param("module_id")/web_ui prefix.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01SccYnQe2WXaEwGhP1T7nuT
+---
+ schwung-manager/remote_ui.go                 | 119 ++++++++++++---
+ schwung-manager/static/remote-ui.js          | 146 ++++++++++++++++++-
+ schwung-manager/static/schwung-remote-api.js |  18 +++
+ schwung-manager/templates/remote_ui.html     |   1 +
+ 4 files changed, 256 insertions(+), 28 deletions(-)
+
+diff --git a/schwung-manager/remote_ui.go b/schwung-manager/remote_ui.go
+index 7cdc581c..1ec6f674 100644
+--- a/schwung-manager/remote_ui.go
++++ b/schwung-manager/remote_ui.go
+@@ -47,6 +47,8 @@ type ruClient struct {
+ 	subs map[uint8]bool
+ 	// whether this client is subscribed to master FX
+ 	masterFxSub bool
++	// whether this client is subscribed to the active overtake tool's UI
++	toolSub bool
+ }
+ 
+ // per-slot cached state used by the poll loop.
+@@ -104,6 +106,13 @@ type wsParamUpdate struct {
+ 	Params map[string]string `json:"params"`
+ }
+ 
++// wsToolInfo reports the active overtake tool (e.g. davebox) to the Tool tab.
++// id == "" means no tool with a remote UI is currently loaded.
++type wsToolInfo struct {
++	Type string `json:"type"`
++	ID   string `json:"id"`
++}
++
+ type wsCustomUI struct {
+ 	Type      string `json:"type"`
+ 	Slot      uint8  `json:"slot"`
+@@ -238,15 +247,6 @@ func (ru *RemoteUI) refreshLoop(ctx context.Context) {
+ 
+ 		activeSlots, _ := ru.activeSlotsAndMasterFx()
+ 		for _, slot := range activeSlots {
+-			// Overtake-tool backstop: if an overtake tool (e.g. davebox) is the
+-			// active module on this slot, re-read its "overtake_dsp:state" and
+-			// fan out. (The web UI's own re-subscribe poll drives the fast live
+-			// sync; this 30s loop just catches drift.) Skip the chain-slot scan
+-			// for this slot — the tool owns it.
+-			if toolID, ok, err := shm.TryGetParam(slot, overtakeParamPrefix+"module_id"); ok && err == nil && toolID != "" {
+-				ru.broadcastInitialParamValues(ctx, slot, "overtake_dsp", ru.subscribedClients(slot))
+-				continue
+-			}
+ 			for _, comp := range componentPrefixes {
+ 				modID, _, err := shm.TryGetParam(slot, comp+"_module")
+ 				if err != nil || modID == "" {
+@@ -256,6 +256,20 @@ func (ru *RemoteUI) refreshLoop(ctx context.Context) {
+ 				ru.broadcastInitialParamValues(ctx, slot, comp, ru.subscribedClients(slot))
+ 			}
+ 		}
++
++		// Overtake-tool backstop: if any client is viewing the Tool tab and an
++		// overtake tool (e.g. davebox) is active, re-read its "overtake_dsp:state"
++		// and fan out. (The web UI's own re-subscribe poll drives the fast live
++		// sync; this 30s loop just catches drift.)
++		if toolClients := ru.subscribedToolClients(); len(toolClients) > 0 {
++			if toolID, ok, err := shm.TryGetParam(0, overtakeParamPrefix+"module_id"); ok && err == nil && toolID != "" {
++				if params, hit := ru.fetchAllParams(0, "overtake_dsp"); hit {
++					for _, c := range toolClients {
++						ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
++					}
++				}
++			}
++		}
+ 	}
+ }
+ 
+@@ -322,6 +336,12 @@ func (ru *RemoteUI) readLoop(ctx context.Context, c *ruClient) {
+ 			ru.handleSubscribeMasterFx(ctx, c)
+ 		case "unsubscribe_master_fx":
+ 			ru.handleUnsubscribeMasterFx(c)
++		case "subscribe_tool":
++			ru.handleSubscribeTool(ctx, c)
++		case "unsubscribe_tool":
++			ru.handleUnsubscribeTool(c)
++		case "refetch_tool":
++			ru.handleRefetchTool(ctx, c)
+ 		case "set_master_fx_param":
+ 			ru.handleSetMasterFxParam(ctx, c, msg)
+ 		default:
+@@ -346,20 +366,6 @@ func (ru *RemoteUI) handleSubscribe(ctx context.Context, c *ruClient, msg wsMess
+ 	// Send slot info (which components are loaded).
+ 	ru.sendSlotInfo(ctx, c, slot)
+ 
+-	// Overtake tool priority: an overtake tool (e.g. davebox) runs in place of
+-	// the chain slot and exposes its params under the "overtake_dsp:" prefix.
+-	// When one is active and opts into a remote UI, serve ITS web_ui.html as the
+-	// slot's custom UI and seed values from "overtake_dsp:state" — then skip the
+-	// chain-slot path entirely (the user is in the tool, not the chain).
+-	if toolID := ru.activeOvertakeToolID(slot); toolID != "" {
+-		if url := ru.findModuleWebUI(toolID); url != "" {
+-			ru.sendCustomUI(ctx, c, slot, "synth", url)
+-		}
+-		ru.sendAllParamsAtOnce(ctx, c, slot, "overtake_dsp")
+-		ru.logger.Info("ws subscribe: served overtake tool remote UI", "slot", slot, "tool", toolID)
+-		return
+-	}
+-
+ 	// Give the synth priority: send its custom_ui (if any) AND its hierarchy +
+ 	// chain_params BEFORE the (potentially multi-second) sendSlotSettings retry
+ 	// block. A data-driven custom UI (e.g. jv880 builds its controls from
+@@ -718,6 +724,58 @@ func (ru *RemoteUI) handleUnsubscribeMasterFx(c *ruClient) {
+ 	ru.logger.Info("ws unsubscribe master_fx")
+ }
+ 
++// handleSubscribeTool serves the active overtake tool's remote UI. An overtake
++// tool (e.g. davebox) occupies no chain slot — its DSP is dlopen'd in the shim
++// as overtake_dsp_gen_inst and addressed via the "overtake_dsp:" prefix. We
++// discover it by probing overtake_dsp:module_id, serve its web_ui.html under
++// the "tool" component, and seed values from overtake_dsp:state. A tool_info
++// with id=="" tells the Tool tab that nothing is loaded.
++func (ru *RemoteUI) handleSubscribeTool(ctx context.Context, c *ruClient) {
++	c.mu.Lock()
++	c.toolSub = true
++	c.mu.Unlock()
++
++	ru.logger.Info("ws subscribe tool")
++
++	if !ru.requireShm(ctx, c) {
++		return
++	}
++
++	toolID := ru.activeOvertakeToolID(0)
++	ru.writeJSON(ctx, c, wsToolInfo{Type: "tool_info", ID: toolID})
++	if toolID == "" {
++		return
++	}
++	if url := ru.findModuleWebUI(toolID); url != "" {
++		ru.sendCustomUI(ctx, c, 0, "tool", url)
++	}
++	// Seed the tool's params from overtake_dsp:state (flat snapshot fields).
++	if params, ok := ru.fetchAllParams(0, "overtake_dsp"); ok {
++		ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
++	}
++	ru.logger.Info("ws subscribe: served overtake tool remote UI", "tool", toolID)
++}
++
++func (ru *RemoteUI) handleUnsubscribeTool(c *ruClient) {
++	c.mu.Lock()
++	c.toolSub = false
++	c.mu.Unlock()
++	ru.logger.Info("ws unsubscribe tool")
++}
++
++// handleRefetchTool re-reads the active tool's overtake_dsp:state and pushes the
++// flat snapshot fields as a param_update — params ONLY, no custom_ui/tool_info
++// (re-sending those would reload the iframe). The web UI calls this on a poll to
++// pick up device-side changes (playhead, external edits) that don't notify.
++func (ru *RemoteUI) handleRefetchTool(ctx context.Context, c *ruClient) {
++	if !ru.requireShm(ctx, c) {
++		return
++	}
++	if params, ok := ru.fetchAllParams(0, "overtake_dsp"); ok {
++		ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
++	}
++}
++
+ func (ru *RemoteUI) handleSetMasterFxParam(ctx context.Context, c *ruClient, msg wsMessage) {
+ 	if !ru.requireShm(ctx, c) {
+ 		return
+@@ -1295,3 +1353,18 @@ func (ru *RemoteUI) subscribedClients(slot uint8) []*ruClient {
+ 	}
+ 	return out
+ }
++
++func (ru *RemoteUI) subscribedToolClients() []*ruClient {
++	ru.mu.Lock()
++	defer ru.mu.Unlock()
++	var out []*ruClient
++	for c := range ru.clients {
++		c.mu.Lock()
++		sub := c.toolSub
++		c.mu.Unlock()
++		if sub {
++			out = append(out, c)
++		}
++	}
++	return out
++}
+diff --git a/schwung-manager/static/remote-ui.js b/schwung-manager/static/remote-ui.js
+index 16cffe09..5e27763c 100644
+--- a/schwung-manager/static/remote-ui.js
++++ b/schwung-manager/static/remote-ui.js
+@@ -57,11 +57,17 @@
+         collapsed: { "master_fx:fx1": false, "master_fx:fx2": true, "master_fx:fx3": true, "master_fx:fx4": true }
+     };
+ 
+-    // Read initial slot from URL hash (#slot1, #slot2, #slot3, #slot4, #master-fx)
++    // Active overtake-tool (e.g. davebox) state. A tool is not a chain slot; its
++    // params live under the "overtake_dsp:" prefix and its UI shows in the Tool
++    // tab. id == "" means no tool with a remote UI is loaded.
++    var tool = { id: "", customUI: null, params: {} };
++
++    // Read initial slot from URL hash (#slot1, #slot2, #slot3, #slot4, #master-fx, #tool)
+     var initialSlot = 0;
+     (function() {
+         var h = location.hash.replace("#", "");
+         if (h === "master-fx") initialSlot = "master";
++        else if (h === "tool") initialSlot = "tool";
+         else if (/^slot[1-4]$/.test(h)) initialSlot = parseInt(h.charAt(4), 10) - 1;
+     })();
+     var activeSlot = initialSlot;
+@@ -158,6 +164,8 @@
+     function subscribe(slot) {
+         if (slot === "master") {
+             send({ type: "subscribe_master_fx" });
++        } else if (slot === "tool") {
++            send({ type: "subscribe_tool" });
+         } else {
+             send({ type: "subscribe", slot: slot });
+         }
+@@ -166,6 +174,8 @@
+     function unsubscribe(slot) {
+         if (slot === "master") {
+             send({ type: "unsubscribe_master_fx" });
++        } else if (slot === "tool") {
++            send({ type: "unsubscribe_tool" });
+         } else {
+             send({ type: "unsubscribe", slot: slot });
+         }
+@@ -180,14 +190,36 @@
+             case "master_fx_info":
+                 handleMasterFxInfo(msg);
+                 return;
++            case "tool_info":
++                handleToolInfo(msg);
++                return;
+             default:
+                 break;
+         }
+ 
+         var slot = msg.slot;
+ 
+-        // Check if this is a master FX message (slot 0 with master_fx: component prefix).
++        // Tool custom UI (overtake tool, e.g. davebox): not a chain slot.
+         var comp = msg.component || "";
++        if (comp === "tool") {
++            if (msg.type === "custom_ui") handleToolCustomUI(msg);
++            return;
++        }
++
++        // param_update carrying overtake_dsp: keys belongs to the Tool tab.
++        if (msg.type === "param_update" && msg.params) {
++            var hasOvertake = false, hasNonOvertake = false;
++            for (var ok in msg.params) {
++                if (ok.indexOf("overtake_dsp:") === 0) hasOvertake = true;
++                else hasNonOvertake = true;
++            }
++            if (hasOvertake) {
++                handleToolParamUpdate(msg);
++                if (!hasNonOvertake) return;
++            }
++        }
++
++        // Check if this is a master FX message (slot 0 with master_fx: component prefix).
+         if (comp.indexOf("master_fx:") === 0) {
+             switch (msg.type) {
+                 case "hierarchy":
+@@ -263,6 +295,37 @@
+         if (slot === activeSlot) renderSlot();
+     }
+ 
++    // ------------------------------------------------------------------
++    // Overtake tool (Tool tab)
++    // ------------------------------------------------------------------
++
++    function handleToolInfo(msg) {
++        tool.id = msg.id || "";
++        if (!tool.id) {
++            // Tool unloaded — drop its custom UI + cached params.
++            tool.customUI = null;
++            tool.params = {};
++        }
++        if (activeSlot === "tool") renderSlot();
++    }
++
++    function handleToolCustomUI(msg) {
++        tool.customUI = { url: msg.url || "" };
++        if (activeSlot === "tool") renderSlot();
++    }
++
++    function handleToolParamUpdate(msg) {
++        for (var k in msg.params) {
++            if (Object.prototype.hasOwnProperty.call(msg.params, k)) {
++                tool.params[k] = msg.params[k];
++            }
++        }
++        // Forward live updates to the tool iframe if it's the active view.
++        if (activeSlot === "tool" && customUISubscribed && customUIIframe) {
++            postToIframe({ type: "paramUpdate", params: msg.params });
++        }
++    }
++
+     /** Preserve the open submenu (navStack) across a hierarchy re-broadcast when
+      * the structure is unchanged. The poll loop re-sends ui_hierarchy whenever
+      * its JSON changes — and that JSON embeds live param values, so an edit
+@@ -453,11 +516,12 @@
+         activeSlot = n;
+         waitingForData = true;
+         // Persist tab in URL hash
+-        history.replaceState(null, "", "#" + (n === "master" ? "master-fx" : "slot" + (n + 1)));
++        var hash = (n === "master") ? "master-fx" : (n === "tool") ? "tool" : "slot" + (n + 1);
++        history.replaceState(null, "", "#" + hash);
+ 
+         tabButtons.forEach(function (btn) {
+             var slotAttr = btn.getAttribute("data-slot");
+-            var match = (slotAttr === "master") ? (n === "master") : (parseInt(slotAttr, 10) === n);
++            var match = (slotAttr === "master" || slotAttr === "tool") ? (slotAttr === n) : (parseInt(slotAttr, 10) === n);
+             if (match) {
+                 btn.classList.add("active");
+                 btn.setAttribute("aria-selected", "true");
+@@ -476,7 +540,7 @@
+     // Set initial tab button active state from URL hash
+     tabButtons.forEach(function (btn) {
+         var slotAttr = btn.getAttribute("data-slot");
+-        var match = (slotAttr === "master") ? (activeSlot === "master") : (parseInt(slotAttr, 10) === activeSlot);
++        var match = (slotAttr === "master" || slotAttr === "tool") ? (slotAttr === activeSlot) : (parseInt(slotAttr, 10) === activeSlot);
+         if (match) {
+             btn.classList.add("active");
+             btn.setAttribute("aria-selected", "true");
+@@ -1444,6 +1508,11 @@
+             return;
+         }
+ 
++        if (activeSlot === "tool") {
++            renderTool();
++            return;
++        }
++
+         var s = slots[activeSlot];
+         slotTitleEl.textContent = "Slot " + (activeSlot + 1);
+ 
+@@ -1954,6 +2023,42 @@
+         return popBtn;
+     }
+ 
++    function renderTool() {
++        slotTitleEl.textContent = tool.id || "Tool";
++
++        if (!tool.customUI || !tool.customUI.url) {
++            var note = document.createElement("p");
++            note.className = "text-muted";
++            note.textContent = tool.id
++                ? ("Loading " + tool.id + "…")
++                : "No tool loaded. Open a tool (e.g. dAVEBOx) on the Move and it will appear here.";
++            slotContentEl.appendChild(note);
++            return;
++        }
++
++        var container = document.createElement("div");
++        container.className = "custom-ui-container";
++
++        var iframe = document.createElement("iframe");
++        iframe.className = "custom-ui-iframe";
++        iframe.src = tool.customUI.url;
++        iframe.sandbox = "allow-scripts allow-same-origin";
++        iframe.setAttribute("title", "Tool UI");
++        container.appendChild(iframe);
++
++        var overlay = document.createElement("div");
++        overlay.className = "custom-ui-loading";
++        overlay.innerHTML = '<span class="loading-spinner"></span> Loading module…';
++        container.appendChild(overlay);
++        customUILoadingEl = overlay;
++        iframe.addEventListener("load", hideCustomUILoading);
++        customUILoadingTimer = setTimeout(hideCustomUILoading, 10000);
++
++        slotContentEl.appendChild(container);
++        customUIIframe = iframe;
++        customUISubscribed = false;
++    }
++
+     function renderCustomUI(s) {
+         var url = s.customUI.url;
+ 
+@@ -2034,12 +2139,28 @@
+             case "getChainParams":
+                 handleIframeGetChainParams(msg);
+                 break;
++            case "resubscribe":
++                // Iframe asked for a fresh device read (e.g. tool polling for the
++                // playhead). For the Tool tab, re-fetch params only — NOT a full
++                // subscribe (that would re-send custom_ui and reload the iframe).
++                if (activeSlot === "tool") {
++                    send({ type: "refetch_tool" });
++                } else if (typeof activeSlot === "number") {
++                    send({ type: "subscribe", slot: activeSlot });
++                }
++                break;
+         }
+     });
+ 
+     function handleIframeGetParam(msg) {
+         if (!msg.key || !msg.id) return;
+         var slot = activeSlot;
++
++        // Tool view: params come from the overtake tool's cache (overtake_dsp:*).
++        if (slot === "tool") {
++            postToIframe({ type: "paramResult", id: msg.id, value: tool.params[msg.key] || "" });
++            return;
++        }
+         if (typeof slot !== "number") return;
+ 
+         // The key is like "synth:cutoff" — send via WebSocket get_param
+@@ -2054,6 +2175,13 @@
+     function handleIframeSetParam(msg) {
+         if (!msg.key) return;
+         var slot = activeSlot;
++
++        // Tool view: route on slot 0; the manager dispatches by the
++        // "overtake_dsp:" key prefix, so the slot number is ignored.
++        if (slot === "tool") {
++            send({ type: "set_param", slot: 0, key: msg.key, value: String(msg.value) });
++            return;
++        }
+         if (typeof slot !== "number") return;
+ 
+         var parts = splitPrefix(msg.key);
+@@ -2107,6 +2235,14 @@
+     // subscribes so it can seed its controls without a round-trip per param.
+     function seedCustomUI() {
+         if (!customUIIframe) return;
++
++        // Tool view: seed from the overtake tool's cached params.
++        if (activeSlot === "tool") {
++            var keys = Object.keys(tool.params);
++            if (keys.length > 0) postToIframe({ type: "paramUpdate", params: tool.params });
++            return;
++        }
++
+         if (typeof activeSlot !== "number") return;
+         var comps = slots[activeSlot].components;
+         var params = {};
+diff --git a/schwung-manager/static/schwung-remote-api.js b/schwung-manager/static/schwung-remote-api.js
+index 03971a3a..58b1cdfd 100644
+--- a/schwung-manager/static/schwung-remote-api.js
++++ b/schwung-manager/static/schwung-remote-api.js
+@@ -113,6 +113,16 @@
+                 return requestFromParent({ type: "getChainParams" }).then(function (resp) {
+                     return resp.data;
+                 });
++            },
++
++            /**
++             * Ask the parent to re-fetch the current view's params from the
++             * device and re-push them. Used by modules whose device-side state
++             * changes without a notify (e.g. overtake tools polling for the
++             * playhead / external edits). Params arrive via onParamChange.
++             */
++            resubscribe: function () {
++                window.parent.postMessage({ type: "resubscribe" }, "*");
+             }
+         };
+         return;
+@@ -244,6 +254,14 @@
+         getChainParams: function () {
+             if (chainParamsData !== null) return Promise.resolve(chainParamsData);
+             return new Promise(function (resolve) { chainParamsWaiters.push(resolve); });
++        },
++
++        resubscribe: function () {
++            // Re-request a fresh push over our own socket. (Tool popout isn't a
++            // wired path; this is a best-effort no-crash fallback.)
++            if (ws && ws.readyState === WebSocket.OPEN) {
++                ws.send(JSON.stringify({ type: "subscribe", slot: slot }));
++            }
+         }
+     };
+ })();
+diff --git a/schwung-manager/templates/remote_ui.html b/schwung-manager/templates/remote_ui.html
+index 6546d95f..852ff832 100644
+--- a/schwung-manager/templates/remote_ui.html
++++ b/schwung-manager/templates/remote_ui.html
+@@ -15,6 +15,7 @@
+     <button class="remote-ui-tab" role="tab" aria-selected="false" data-slot="2" onclick="switchSlot(2)">Slot 3</button>
+     <button class="remote-ui-tab" role="tab" aria-selected="false" data-slot="3" onclick="switchSlot(3)">Slot 4</button>
+     <button class="remote-ui-tab" role="tab" aria-selected="false" data-slot="master" onclick="switchSlot('master')">Master FX</button>
++    <button class="remote-ui-tab" role="tab" aria-selected="false" data-slot="tool" onclick="switchSlot('tool')">Tool</button>
+ </div>
+ 
+ <div id="remote-ui-slot" class="remote-ui-slot" role="tabpanel">
+-- 
+2.53.0
+
+
+From a6aaa31be96e5dbce3bcf0e5a6d39fe6161751cc Mon Sep 17 00:00:00 2001
+From: legsmechanical <joshgaine@gmail.com>
+Date: Mon, 29 Jun 2026 13:17:26 -0400
+Subject: [PATCH 3/4] feat(manager): pop-out button for the Tool tab
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Mirror the slot custom-UI pop-out for the Tool tab. makePopOutButton emits
+?schwungStandalone=1&tool=1 for the tool; standalone mode keys off tool=1 to
+use the overtake-tool channel — subscribe_tool on connect, set_param on slot 0
+(manager dispatches by the overtake_dsp: key prefix), and refetch_tool for the
+live-sync poll (a full subscribe would re-send custom_ui).
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01SccYnQe2WXaEwGhP1T7nuT
+---
+ schwung-manager/static/remote-ui.js          | 12 +++++++++++-
+ schwung-manager/static/schwung-remote-api.js | 19 ++++++++++++++-----
+ 2 files changed, 25 insertions(+), 6 deletions(-)
+
+diff --git a/schwung-manager/static/remote-ui.js b/schwung-manager/static/remote-ui.js
+index 5e27763c..3bbb5ff3 100644
+--- a/schwung-manager/static/remote-ui.js
++++ b/schwung-manager/static/remote-ui.js
+@@ -2017,7 +2017,12 @@
+         popBtn.title = "Open this UI in its own window";
+         popBtn.onclick = function () {
+             var sep = url.indexOf("?") === -1 ? "?" : "&";
+-            var popUrl = url + sep + "schwungStandalone=1&slot=" + slot;
++            // The Tool tab is not a numbered slot — standalone mode keys off
++            // tool=1 to use the overtake-tool channel (subscribe_tool / set on
++            // slot 0 / refetch_tool) instead of a per-slot subscribe.
++            var qs = (slot === "tool") ? "schwungStandalone=1&tool=1"
++                                       : "schwungStandalone=1&slot=" + slot;
++            var popUrl = url + sep + qs;
+             window.open(popUrl, "schwungPopout_" + slot);
+         };
+         return popBtn;
+@@ -2036,6 +2041,11 @@
+             return;
+         }
+ 
++        // Pop-out button (own window), same as slots.
++        if (slotHeaderControlsEl) {
++            slotHeaderControlsEl.appendChild(makePopOutButton(tool.customUI.url, "tool"));
++        }
++
+         var container = document.createElement("div");
+         container.className = "custom-ui-container";
+ 
+diff --git a/schwung-manager/static/schwung-remote-api.js b/schwung-manager/static/schwung-remote-api.js
+index 58b1cdfd..5c15b49b 100644
+--- a/schwung-manager/static/schwung-remote-api.js
++++ b/schwung-manager/static/schwung-remote-api.js
+@@ -133,6 +133,10 @@
+     // --------------------------------------------------------------------
+     var slot = parseInt(query.get("slot"), 10);
+     if (isNaN(slot)) slot = 0;
++    // Overtake-tool pop-out: use the tool channel (subscribe_tool / refetch_tool)
++    // and route sets on slot 0 (the manager dispatches by the overtake_dsp: key
++    // prefix), rather than a per-slot subscribe.
++    var isTool = query.get("tool") === "1";
+ 
+     var wsUrl = (window.location.protocol === "https:" ? "wss://" : "ws://") +
+         window.location.host + "/ws/remote-ui";
+@@ -197,7 +201,11 @@
+ 
+         ws.onopen = function () {
+             reconnectDelay = 1000;
+-            ws.send(JSON.stringify({ type: "subscribe", slot: slot }));
++            if (isTool) {
++                ws.send(JSON.stringify({ type: "subscribe_tool" }));
++            } else {
++                ws.send(JSON.stringify({ type: "subscribe", slot: slot }));
++            }
+         };
+ 
+         ws.onmessage = function (e) {
+@@ -231,7 +239,7 @@
+             if (ws && ws.readyState === WebSocket.OPEN) {
+                 ws.send(JSON.stringify({
+                     type: "set_param",
+-                    slot: slot,
++                    slot: isTool ? 0 : slot,
+                     key: key,
+                     value: String(value)
+                 }));
+@@ -257,10 +265,11 @@
+         },
+ 
+         resubscribe: function () {
+-            // Re-request a fresh push over our own socket. (Tool popout isn't a
+-            // wired path; this is a best-effort no-crash fallback.)
++            // Re-request a fresh push over our own socket. Tool pop-out uses the
++            // params-only refetch (a full subscribe would re-send custom_ui).
+             if (ws && ws.readyState === WebSocket.OPEN) {
+-                ws.send(JSON.stringify({ type: "subscribe", slot: slot }));
++                ws.send(JSON.stringify(isTool ? { type: "refetch_tool" }
++                                              : { type: "subscribe", slot: slot }));
+             }
+         }
+     };
+-- 
+2.53.0
+
+
+From e29f830c907a9d04965e0d029e46b7a92a063ca6 Mon Sep 17 00:00:00 2001
+From: legsmechanical <joshgaine@gmail.com>
+Date: Mon, 29 Jun 2026 22:01:01 -0400
+Subject: [PATCH 4/4] perf(remote-ui): rev-gate the overtake-tool poll to skip
+ the heavy snapshot read
+
+handleRefetchTool was doing a full overtake_dsp:state read (which serializes all
+of davebox's notes/hits/steps) on every browser poll. Now it first reads the
+cheap overtake_dsp:rui_poll digest (rev:on:tick:bpm) and only does the full
+fetchAllParams when rev changes (a content edit). While playing with no edit it
+pushes just the moving playhead; when nothing changed it does no shm-heavy work.
+Falls back to a full fetch if the tool predates the rui_poll key. Also gates the
+handler on toolSub as a safety belt (an unsubscribed client triggers no read).
+Per-client rev/tick cache on ruClient, reset on (un)subscribe.
+---
+ schwung-manager/remote_ui.go | 71 +++++++++++++++++++++++++++++++++---
+ 1 file changed, 65 insertions(+), 6 deletions(-)
+
+diff --git a/schwung-manager/remote_ui.go b/schwung-manager/remote_ui.go
+index 1ec6f674..8e3f240a 100644
+--- a/schwung-manager/remote_ui.go
++++ b/schwung-manager/remote_ui.go
+@@ -49,6 +49,13 @@ type ruClient struct {
+ 	masterFxSub bool
+ 	// whether this client is subscribed to the active overtake tool's UI
+ 	toolSub bool
++	// rev-gated tool polling: skip the heavy "state" snapshot read unless the
++	// tool's cheap "rui_poll" digest (rev:on:tick:bpm) shows a content change.
++	// Touched only from this client's WS read goroutine. toolSynced=false until
++	// the first full fetch.
++	toolSynced   bool
++	toolLastRev  int64
++	toolLastTick int64
+ }
+ 
+ // per-slot cached state used by the poll loop.
+@@ -733,6 +740,7 @@ func (ru *RemoteUI) handleUnsubscribeMasterFx(c *ruClient) {
+ func (ru *RemoteUI) handleSubscribeTool(ctx context.Context, c *ruClient) {
+ 	c.mu.Lock()
+ 	c.toolSub = true
++	c.toolSynced = false // force the next poll to do a full fetch
+ 	c.mu.Unlock()
+ 
+ 	ru.logger.Info("ws subscribe tool")
+@@ -759,21 +767,72 @@ func (ru *RemoteUI) handleSubscribeTool(ctx context.Context, c *ruClient) {
+ func (ru *RemoteUI) handleUnsubscribeTool(c *ruClient) {
+ 	c.mu.Lock()
+ 	c.toolSub = false
++	c.toolSynced = false
+ 	c.mu.Unlock()
+ 	ru.logger.Info("ws unsubscribe tool")
+ }
+ 
+-// handleRefetchTool re-reads the active tool's overtake_dsp:state and pushes the
+-// flat snapshot fields as a param_update — params ONLY, no custom_ui/tool_info
+-// (re-sending those would reload the iframe). The web UI calls this on a poll to
+-// pick up device-side changes (playhead, external edits) that don't notify.
++// handleRefetchTool picks up device-side changes the web UI polls for (playhead,
++// external edits) that don't notify. Rev-gated: it first reads the tool's CHEAP
++// "rui_poll" digest (rev:on:tick:bpm, no note serialization) and only does the
++// heavy full "state" read (fetchAllParams) when rev changes (a content edit).
++// While playing with no edit it pushes only the moving playhead; when nothing
++// changed it does no work. Params ONLY — never custom_ui/tool_info (which would
++// reload the iframe).
+ func (ru *RemoteUI) handleRefetchTool(ctx context.Context, c *ruClient) {
++	// Safety belt: only poll the device for a client actually viewing the Tool tab.
++	if !c.toolSub {
++		return
++	}
+ 	if !ru.requireShm(ctx, c) {
+ 		return
+ 	}
+-	if params, ok := ru.fetchAllParams(0, "overtake_dsp"); ok {
+-		ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
++	digest, ok, err := ru.shm.TryGetParam(0, overtakeParamPrefix+"rui_poll")
++	if !ok || err != nil || digest == "" {
++		// Tool predates the cheap digest key — fall back to a full fetch.
++		if params, hit := ru.fetchAllParams(0, "overtake_dsp"); hit {
++			ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
++		}
++		return
++	}
++	rev, on, tick, bpm := parseRuiPoll(digest)
++	if !c.toolSynced || rev != c.toolLastRev {
++		// Content changed (or first sync) → full snapshot.
++		if params, hit := ru.fetchAllParams(0, "overtake_dsp"); hit {
++			ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
++			c.toolSynced = true
++			c.toolLastRev = rev
++			c.toolLastTick = tick
++		}
++		return
++	}
++	// No content change → push only the playhead while playing (cheap).
++	if on && tick != c.toolLastTick {
++		c.toolLastTick = tick
++		ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0,
++			Params: map[string]string{
++				overtakeParamPrefix + "rui_play": fmt.Sprintf("%d:%d:%d", boolToInt(on), tick, bpm),
++			}})
++	}
++}
++
++// parseRuiPoll parses davebox's cheap "rev:on:tick:bpm" poll digest.
++func parseRuiPoll(s string) (rev int64, on bool, tick int64, bpm int64) {
++	p := strings.Split(s, ":")
++	if len(p) > 0 {
++		rev, _ = strconv.ParseInt(p[0], 10, 64)
++	}
++	if len(p) > 1 {
++		v, _ := strconv.Atoi(p[1])
++		on = v != 0
++	}
++	if len(p) > 2 {
++		tick, _ = strconv.ParseInt(p[2], 10, 64)
++	}
++	if len(p) > 3 {
++		bpm, _ = strconv.ParseInt(p[3], 10, 64)
+ 	}
++	return
+ }
+ 
+ func (ru *RemoteUI) handleSetMasterFxParam(ctx context.Context, c *ruClient, msg wsMessage) {
+-- 
+2.53.0
+
