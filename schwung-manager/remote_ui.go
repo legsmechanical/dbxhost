@@ -49,6 +49,13 @@ type ruClient struct {
 	masterFxSub bool
 	// whether this client is subscribed to the active overtake tool's UI
 	toolSub bool
+	// rev-gated tool polling: skip the heavy "state" snapshot read unless the
+	// tool's cheap "rui_poll" digest (rev:on:tick:bpm) shows a content change.
+	// Touched only from this client's WS read goroutine. toolSynced=false until
+	// the first full fetch.
+	toolSynced   bool
+	toolLastRev  int64
+	toolLastTick int64
 }
 
 // per-slot cached state used by the poll loop.
@@ -733,6 +740,7 @@ func (ru *RemoteUI) handleUnsubscribeMasterFx(c *ruClient) {
 func (ru *RemoteUI) handleSubscribeTool(ctx context.Context, c *ruClient) {
 	c.mu.Lock()
 	c.toolSub = true
+	c.toolSynced = false // force the next poll to do a full fetch
 	c.mu.Unlock()
 
 	ru.logger.Info("ws subscribe tool")
@@ -759,21 +767,72 @@ func (ru *RemoteUI) handleSubscribeTool(ctx context.Context, c *ruClient) {
 func (ru *RemoteUI) handleUnsubscribeTool(c *ruClient) {
 	c.mu.Lock()
 	c.toolSub = false
+	c.toolSynced = false
 	c.mu.Unlock()
 	ru.logger.Info("ws unsubscribe tool")
 }
 
-// handleRefetchTool re-reads the active tool's overtake_dsp:state and pushes the
-// flat snapshot fields as a param_update — params ONLY, no custom_ui/tool_info
-// (re-sending those would reload the iframe). The web UI calls this on a poll to
-// pick up device-side changes (playhead, external edits) that don't notify.
+// handleRefetchTool picks up device-side changes the web UI polls for (playhead,
+// external edits) that don't notify. Rev-gated: it first reads the tool's CHEAP
+// "rui_poll" digest (rev:on:tick:bpm, no note serialization) and only does the
+// heavy full "state" read (fetchAllParams) when rev changes (a content edit).
+// While playing with no edit it pushes only the moving playhead; when nothing
+// changed it does no work. Params ONLY — never custom_ui/tool_info (which would
+// reload the iframe).
 func (ru *RemoteUI) handleRefetchTool(ctx context.Context, c *ruClient) {
+	// Safety belt: only poll the device for a client actually viewing the Tool tab.
+	if !c.toolSub {
+		return
+	}
 	if !ru.requireShm(ctx, c) {
 		return
 	}
-	if params, ok := ru.fetchAllParams(0, "overtake_dsp"); ok {
-		ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
+	digest, ok, err := ru.shm.TryGetParam(0, overtakeParamPrefix+"rui_poll")
+	if !ok || err != nil || digest == "" {
+		// Tool predates the cheap digest key — fall back to a full fetch.
+		if params, hit := ru.fetchAllParams(0, "overtake_dsp"); hit {
+			ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
+		}
+		return
 	}
+	rev, on, tick, bpm := parseRuiPoll(digest)
+	if !c.toolSynced || rev != c.toolLastRev {
+		// Content changed (or first sync) → full snapshot.
+		if params, hit := ru.fetchAllParams(0, "overtake_dsp"); hit {
+			ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
+			c.toolSynced = true
+			c.toolLastRev = rev
+			c.toolLastTick = tick
+		}
+		return
+	}
+	// No content change → push only the playhead while playing (cheap).
+	if on && tick != c.toolLastTick {
+		c.toolLastTick = tick
+		ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0,
+			Params: map[string]string{
+				overtakeParamPrefix + "rui_play": fmt.Sprintf("%d:%d:%d", boolToInt(on), tick, bpm),
+			}})
+	}
+}
+
+// parseRuiPoll parses davebox's cheap "rev:on:tick:bpm" poll digest.
+func parseRuiPoll(s string) (rev int64, on bool, tick int64, bpm int64) {
+	p := strings.Split(s, ":")
+	if len(p) > 0 {
+		rev, _ = strconv.ParseInt(p[0], 10, 64)
+	}
+	if len(p) > 1 {
+		v, _ := strconv.Atoi(p[1])
+		on = v != 0
+	}
+	if len(p) > 2 {
+		tick, _ = strconv.ParseInt(p[2], 10, 64)
+	}
+	if len(p) > 3 {
+		bpm, _ = strconv.ParseInt(p[3], 10, 64)
+	}
+	return
 }
 
 func (ru *RemoteUI) handleSetMasterFxParam(ctx context.Context, c *ruClient, msg wsMessage) {
