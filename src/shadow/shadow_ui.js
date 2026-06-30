@@ -14180,7 +14180,7 @@ function enterFxBusPicker() {
 function drawFxBusPicker() {
     clear_screen();
     /* Route-to-chain confirm overlay. Highlighted No/Yes buttons (filled =
-     * selected, outlined = not) in the davebox dialog style; no footer. */
+     * selected, outlined = not) in a compact dialog style; no footer. */
     if (pendingMoveFxRouteConfirm >= 0) {
         const n = pendingMoveFxRouteConfirm + 1;
         const lines = wrapText("Move track " + n + " routed to Schwung slot " + n + ".", 21)
