@@ -1,7 +1,7 @@
-From 30fc81317a0d68477f77977b6dfd7d377bea8dc0 Mon Sep 17 00:00:00 2001
+From 402d272db8ee2720d09e8d04f583e36ee9461dc7 Mon Sep 17 00:00:00 2001
 From: legsmechanical <joshgaine@gmail.com>
 Date: Mon, 29 Jun 2026 08:43:21 -0400
-Subject: [PATCH 1/4] feat(manager): serve remote UI for the active overtake
+Subject: [PATCH 1/5] feat(manager): serve remote UI for the active overtake
  tool
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -131,10 +131,10 @@ index 6fdc324f..7cdc581c 100644
 2.53.0
 
 
-From 8fa018571bb1e0a83c8a918b15f3110eacdf7c58 Mon Sep 17 00:00:00 2001
+From 73b606ccef5bda1bd6da36c5e713bca8f76c41a2 Mon Sep 17 00:00:00 2001
 From: legsmechanical <joshgaine@gmail.com>
 Date: Mon, 29 Jun 2026 12:22:23 -0400
-Subject: [PATCH 2/4] feat(manager): dedicated Tool tab for overtake-tool
+Subject: [PATCH 2/5] feat(manager): dedicated Tool tab for overtake-tool
  remote UI
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -653,10 +653,10 @@ index 6546d95f..852ff832 100644
 2.53.0
 
 
-From a6aaa31be96e5dbce3bcf0e5a6d39fe6161751cc Mon Sep 17 00:00:00 2001
+From 50cbc6b446944030393fd9e44c89bbef5c12203f Mon Sep 17 00:00:00 2001
 From: legsmechanical <joshgaine@gmail.com>
 Date: Mon, 29 Jun 2026 13:17:26 -0400
-Subject: [PATCH 3/4] feat(manager): pop-out button for the Tool tab
+Subject: [PATCH 3/5] feat(manager): pop-out button for the Tool tab
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -760,10 +760,10 @@ index 58b1cdfd..5c15b49b 100644
 2.53.0
 
 
-From e29f830c907a9d04965e0d029e46b7a92a063ca6 Mon Sep 17 00:00:00 2001
+From f66bab62edf05260457aff1be2a6a5dafa9776bc Mon Sep 17 00:00:00 2001
 From: legsmechanical <joshgaine@gmail.com>
 Date: Mon, 29 Jun 2026 22:01:01 -0400
-Subject: [PATCH 4/4] perf(remote-ui): rev-gate the overtake-tool poll to skip
+Subject: [PATCH 4/5] perf(remote-ui): rev-gate the overtake-tool poll to skip
  the heavy snapshot read
 
 handleRefetchTool was doing a full overtake_dsp:state read (which serializes all
@@ -883,6 +883,118 @@ index 1ec6f674..8e3f240a 100644
  }
  
  func (ru *RemoteUI) handleSetMasterFxParam(ctx context.Context, c *ruClient, msg wsMessage) {
+-- 
+2.53.0
+
+
+From a7c7843b1bf271ff7a913c1634cb9e90f331e09a Mon Sep 17 00:00:00 2001
+From: legsmechanical <joshgaine@gmail.com>
+Date: Tue, 30 Jun 2026 16:26:49 -0400
+Subject: [PATCH 5/5] =?UTF-8?q?chore(manager):=20generalize=20overtake-too?=
+ =?UTF-8?q?l=20remote=20UI=20=E2=80=94=20drop=20module-specific=20examples?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Remove module-specific (davebox) examples from comments and the 'no tool loaded'
+message so the overtake-tool remote-UI support reads as fully generic.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01SccYnQe2WXaEwGhP1T7nuT
+---
+ schwung-manager/remote_ui.go        | 12 ++++++------
+ schwung-manager/static/remote-ui.js |  6 +++---
+ 2 files changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/schwung-manager/remote_ui.go b/schwung-manager/remote_ui.go
+index 8e3f240a..27dca7ba 100644
+--- a/schwung-manager/remote_ui.go
++++ b/schwung-manager/remote_ui.go
+@@ -113,7 +113,7 @@ type wsParamUpdate struct {
+ 	Params map[string]string `json:"params"`
+ }
+ 
+-// wsToolInfo reports the active overtake tool (e.g. davebox) to the Tool tab.
++// wsToolInfo reports the active overtake tool to the Tool tab.
+ // id == "" means no tool with a remote UI is currently loaded.
+ type wsToolInfo struct {
+ 	Type string `json:"type"`
+@@ -150,7 +150,7 @@ func NewRemoteUI(shm *ShmParams, setRing *ShmWebParamSetRing, basePath string, l
+ }
+ 
+ // overtakeParamPrefix is the param prefix for an active overtake tool's DSP
+-// (e.g. davebox). The shim routes "overtake_dsp:<key>" GET/SET on the
++// The shim routes "overtake_dsp:<key>" GET/SET on the
+ // shadow_param ring straight to the loaded overtake DSP instance via
+ // shim_handle_param_special — the same path shadow_ui.js uses on-device.
+ const overtakeParamPrefix = "overtake_dsp:"
+@@ -180,7 +180,7 @@ func (ru *RemoteUI) setParam(slot uint8, key, value string) error {
+ }
+ 
+ // activeOvertakeToolID returns the module id of the overtake tool currently
+-// loaded (e.g. "davebox") that opts into a remote UI by answering the
++// loaded that opts into a remote UI by answering the
+ // "overtake_dsp:module_id" probe, or "" if no such tool is active. The shim
+ // returns an error for this GET when no overtake DSP is loaded (or the loaded
+ // one predates the probe), so this is backward-safe.
+@@ -265,7 +265,7 @@ func (ru *RemoteUI) refreshLoop(ctx context.Context) {
+ 		}
+ 
+ 		// Overtake-tool backstop: if any client is viewing the Tool tab and an
+-		// overtake tool (e.g. davebox) is active, re-read its "overtake_dsp:state"
++		// overtake tool is active, re-read its "overtake_dsp:state"
+ 		// and fan out. (The web UI's own re-subscribe poll drives the fast live
+ 		// sync; this 30s loop just catches drift.)
+ 		if toolClients := ru.subscribedToolClients(); len(toolClients) > 0 {
+@@ -732,7 +732,7 @@ func (ru *RemoteUI) handleUnsubscribeMasterFx(c *ruClient) {
+ }
+ 
+ // handleSubscribeTool serves the active overtake tool's remote UI. An overtake
+-// tool (e.g. davebox) occupies no chain slot — its DSP is dlopen'd in the shim
++// tool occupies no chain slot — its DSP is dlopen'd in the shim
+ // as overtake_dsp_gen_inst and addressed via the "overtake_dsp:" prefix. We
+ // discover it by probing overtake_dsp:module_id, serve its web_ui.html under
+ // the "tool" component, and seed values from overtake_dsp:state. A tool_info
+@@ -816,7 +816,7 @@ func (ru *RemoteUI) handleRefetchTool(ctx context.Context, c *ruClient) {
+ 	}
+ }
+ 
+-// parseRuiPoll parses davebox's cheap "rev:on:tick:bpm" poll digest.
++// parseRuiPoll parses the overtake tool's cheap "rev:on:tick:bpm" poll digest.
+ func parseRuiPoll(s string) (rev int64, on bool, tick int64, bpm int64) {
+ 	p := strings.Split(s, ":")
+ 	if len(p) > 0 {
+diff --git a/schwung-manager/static/remote-ui.js b/schwung-manager/static/remote-ui.js
+index 3bbb5ff3..4d625764 100644
+--- a/schwung-manager/static/remote-ui.js
++++ b/schwung-manager/static/remote-ui.js
+@@ -57,7 +57,7 @@
+         collapsed: { "master_fx:fx1": false, "master_fx:fx2": true, "master_fx:fx3": true, "master_fx:fx4": true }
+     };
+ 
+-    // Active overtake-tool (e.g. davebox) state. A tool is not a chain slot; its
++    // Active overtake-tool state. A tool is not a chain slot; its
+     // params live under the "overtake_dsp:" prefix and its UI shows in the Tool
+     // tab. id == "" means no tool with a remote UI is loaded.
+     var tool = { id: "", customUI: null, params: {} };
+@@ -199,7 +199,7 @@
+ 
+         var slot = msg.slot;
+ 
+-        // Tool custom UI (overtake tool, e.g. davebox): not a chain slot.
++        // Tool custom UI (overtake tool): not a chain slot.
+         var comp = msg.component || "";
+         if (comp === "tool") {
+             if (msg.type === "custom_ui") handleToolCustomUI(msg);
+@@ -2036,7 +2036,7 @@
+             note.className = "text-muted";
+             note.textContent = tool.id
+                 ? ("Loading " + tool.id + "…")
+-                : "No tool loaded. Open a tool (e.g. dAVEBOx) on the Move and it will appear here.";
++                : "No tool loaded. Open a tool on the Move and it will appear here.";
+             slotContentEl.appendChild(note);
+             return;
+         }
 -- 
 2.53.0
 
