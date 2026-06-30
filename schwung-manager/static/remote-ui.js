@@ -57,7 +57,7 @@
         collapsed: { "master_fx:fx1": false, "master_fx:fx2": true, "master_fx:fx3": true, "master_fx:fx4": true }
     };
 
-    // Active overtake-tool (e.g. davebox) state. A tool is not a chain slot; its
+    // Active overtake-tool state. A tool is not a chain slot; its
     // params live under the "overtake_dsp:" prefix and its UI shows in the Tool
     // tab. id == "" means no tool with a remote UI is loaded.
     var tool = { id: "", customUI: null, params: {} };
@@ -199,7 +199,7 @@
 
         var slot = msg.slot;
 
-        // Tool custom UI (overtake tool, e.g. davebox): not a chain slot.
+        // Tool custom UI (overtake tool): not a chain slot.
         var comp = msg.component || "";
         if (comp === "tool") {
             if (msg.type === "custom_ui") handleToolCustomUI(msg);
@@ -2036,7 +2036,7 @@
             note.className = "text-muted";
             note.textContent = tool.id
                 ? ("Loading " + tool.id + "…")
-                : "No tool loaded. Open a tool (e.g. dAVEBOx) on the Move and it will appear here.";
+                : "No tool loaded. Open a tool on the Move and it will appear here.";
             slotContentEl.appendChild(note);
             return;
         }

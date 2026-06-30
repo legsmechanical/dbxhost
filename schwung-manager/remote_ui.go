@@ -113,7 +113,7 @@ type wsParamUpdate struct {
 	Params map[string]string `json:"params"`
 }
 
-// wsToolInfo reports the active overtake tool (e.g. davebox) to the Tool tab.
+// wsToolInfo reports the active overtake tool to the Tool tab.
 // id == "" means no tool with a remote UI is currently loaded.
 type wsToolInfo struct {
 	Type string `json:"type"`
@@ -150,7 +150,7 @@ func NewRemoteUI(shm *ShmParams, setRing *ShmWebParamSetRing, basePath string, l
 }
 
 // overtakeParamPrefix is the param prefix for an active overtake tool's DSP
-// (e.g. davebox). The shim routes "overtake_dsp:<key>" GET/SET on the
+// The shim routes "overtake_dsp:<key>" GET/SET on the
 // shadow_param ring straight to the loaded overtake DSP instance via
 // shim_handle_param_special — the same path shadow_ui.js uses on-device.
 const overtakeParamPrefix = "overtake_dsp:"
@@ -180,7 +180,7 @@ func (ru *RemoteUI) setParam(slot uint8, key, value string) error {
 }
 
 // activeOvertakeToolID returns the module id of the overtake tool currently
-// loaded (e.g. "davebox") that opts into a remote UI by answering the
+// loaded that opts into a remote UI by answering the
 // "overtake_dsp:module_id" probe, or "" if no such tool is active. The shim
 // returns an error for this GET when no overtake DSP is loaded (or the loaded
 // one predates the probe), so this is backward-safe.
@@ -265,7 +265,7 @@ func (ru *RemoteUI) refreshLoop(ctx context.Context) {
 		}
 
 		// Overtake-tool backstop: if any client is viewing the Tool tab and an
-		// overtake tool (e.g. davebox) is active, re-read its "overtake_dsp:state"
+		// overtake tool is active, re-read its "overtake_dsp:state"
 		// and fan out. (The web UI's own re-subscribe poll drives the fast live
 		// sync; this 30s loop just catches drift.)
 		if toolClients := ru.subscribedToolClients(); len(toolClients) > 0 {
@@ -732,7 +732,7 @@ func (ru *RemoteUI) handleUnsubscribeMasterFx(c *ruClient) {
 }
 
 // handleSubscribeTool serves the active overtake tool's remote UI. An overtake
-// tool (e.g. davebox) occupies no chain slot — its DSP is dlopen'd in the shim
+// tool occupies no chain slot — its DSP is dlopen'd in the shim
 // as overtake_dsp_gen_inst and addressed via the "overtake_dsp:" prefix. We
 // discover it by probing overtake_dsp:module_id, serve its web_ui.html under
 // the "tool" component, and seed values from overtake_dsp:state. A tool_info
@@ -816,7 +816,7 @@ func (ru *RemoteUI) handleRefetchTool(ctx context.Context, c *ruClient) {
 	}
 }
 
-// parseRuiPoll parses davebox's cheap "rev:on:tick:bpm" poll digest.
+// parseRuiPoll parses the overtake tool's cheap "rev:on:tick:bpm" poll digest.
 func parseRuiPoll(s string) (rev int64, on bool, tick int64, bpm int64) {
 	p := strings.Split(s, ":")
 	if len(p) > 0 {
