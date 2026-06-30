@@ -44,19 +44,15 @@ git format-patch -1 <fx34-hash>    --stdout >> patches/fx-blocks-local.patch
 
 ## remote-ui-overtake-tools.patch
 
-Host-side bridge so the **schwung-manager** web UI serves a module's `web_ui.html`
-remote UI for the **active overtake tool** (e.g. dAVEBOx's piano-roll editor),
-reached via the shim's existing `overtake_dsp:` param prefix. A 4-commit
-`format-patch` series, **entirely in `schwung-manager/`** (no shim/host-C change):
+Host-side bridge so the **schwung-manager** web UI serves a tool module's
+`web_ui.html` remote UI for the **active overtake tool**, reached via the shim's
+existing `overtake_dsp:` param prefix. **Entirely in `schwung-manager/`** (no
+shim/host-C change); fully generic with no module-specific assumptions.
 
-- `30fc8131` **feat(manager): serve remote UI for the active overtake tool**
-- `8fa01857` **feat(manager): dedicated Tool tab for overtake-tool remote UI**
-- `a6aaa31b` **feat(manager): pop-out button for the Tool tab**
-- `e29f830c` **perf(remote-ui): rev-gate the overtake-tool poll** (skip the heavy snapshot read)
-
-Fork-only for now (not yet upstreamed). Pairs with the davebox module's
-`remote-ui-piano-roll` branch (module flips its web_ui prefix `synth:`→`overtake_dsp:`
-and answers `get_param("module_id")`).
+**Upstreamed as PR `charlesvestal/schwung#148`** (single squashed commit off
+`upstream/main`) — carried here as a patch only until that merges. A tool module
+pairs by flipping its `web_ui` prefix `synth:`→`overtake_dsp:` and answering
+`get_param("module_id")`.
 
 ### Re-apply on rebase
 
@@ -69,8 +65,8 @@ git am --3way patches/remote-ui-overtake-tools.patch
 #   git commit -m "Re-apply remote-ui-overtake-tools (patches/remote-ui-overtake-tools.patch)"
 ```
 
-Then **regenerate** so the patch tracks the new base (range = the 4 replayed commits):
+Then **regenerate** so the patch tracks the new base (single squashed commit):
 
 ```sh
-git format-patch <first>^..<last> --stdout > patches/remote-ui-overtake-tools.patch
+git format-patch -1 <replayed-commit> --stdout > patches/remote-ui-overtake-tools.patch
 ```
