@@ -10403,6 +10403,9 @@ function resetCanvasState() {
     canvasParamMeta = null;
     canvasRuntime = null;
     canvasTickCounter = 0;
+    /* Drop the shim's jog/master touch forwarding gate (every canvas close
+     * path funnels through here; openCanvasPreview re-raises it). */
+    if (typeof host_canvas_input === "function") host_canvas_input(0);
 }
 
 function moduleFileExists(path) {
@@ -10733,6 +10736,10 @@ function openCanvasPreview(paramKey, meta) {
 
     setView(VIEWS.CANVAS);
     hideOverlay();
+    /* Raise the shim's canvas-input gate: forward jog/master capacitive touch
+     * (notes 8-9) to us while a canvas is up, so overlays can react to jog
+     * touch. Cleared in resetCanvasState on every close path. */
+    if (typeof host_canvas_input === "function") host_canvas_input(1);
     const label = meta && (meta.label || meta.name) ? (meta.label || meta.name) : "Canvas";
     announce(`${label} canvas`);
     needsRedraw = true;

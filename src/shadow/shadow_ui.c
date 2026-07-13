@@ -1986,6 +1986,18 @@ static JSValue js_host_pad_block(JSContext *ctx, JSValueConst this_val,
     return JS_TRUE;
 }
 
+/* host_canvas_input(enable) - canvas overlay active: shim also forwards the
+ * master/jog capacitive touch notes (8-9) to the shadow UI while set */
+static JSValue js_host_canvas_input(JSContext *ctx, JSValueConst this_val,
+                                    int argc, JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1 || !shadow_control) return JS_FALSE;
+    int val = 0;
+    JS_ToInt32(ctx, &val, argv[0]);
+    shadow_control->canvas_input = val ? 1 : 0;
+    return JS_TRUE;
+}
+
 /* host_preview_play(path) - play WAV file for browser preview via shim IPC */
 static JSValue js_host_preview_play(JSContext *ctx, JSValueConst this_val,
                                      int argc, JSValueConst *argv) {
@@ -2449,6 +2461,9 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
 
     /* Register pad block function */
     JS_SetPropertyStr(ctx, global_obj, "host_pad_block", JS_NewCFunction(ctx, js_host_pad_block, "host_pad_block", 1));
+
+    /* Register canvas-input function (jog/master touch forwarding gate) */
+    JS_SetPropertyStr(ctx, global_obj, "host_canvas_input", JS_NewCFunction(ctx, js_host_canvas_input, "host_canvas_input", 1));
 
     /* Register preview player functions */
     JS_SetPropertyStr(ctx, global_obj, "host_preview_play", JS_NewCFunction(ctx, js_host_preview_play, "host_preview_play", 1));

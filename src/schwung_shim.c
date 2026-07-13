@@ -7080,6 +7080,15 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                     shadow_ui_midi_publish((type == 0x90) ? 0x09 : 0x08, status, d1, d2);
                 }
 
+                /* Forward master/jog capacitive touch (notes 8-9) ONLY while a
+                 * canvas overlay is active (shadow_ui sets canvas_input on
+                 * canvas open/close) — canvas UIs can react to jog-wheel touch
+                 * without changing what the shadow UI sees anywhere else. */
+                else if (d1 <= 9 && shadow_ui_midi_shm &&
+                         shadow_control && shadow_control->canvas_input) {
+                    shadow_ui_midi_publish((type == 0x90) ? 0x09 : 0x08, status, d1, d2);
+                }
+
                 /* Forward pad notes (68-99) to shadow UI when pad_block is active,
                  * and skip DSP routing so pads only reach the text entry handler */
                 if (shadow_control && shadow_control->pad_block &&

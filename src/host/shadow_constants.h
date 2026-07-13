@@ -191,6 +191,12 @@ typedef struct shadow_control_t {
      * because of corun.led_keep_mask above; CONTROL_BUFFER_SIZE was bumped to
      * match (shim creates the SHM and shadow_ui maps it via the same macro). */
     volatile uint8_t overtake_suppress_sysex;
+    /* 1 = a canvas overlay is the active view (set by shadow_ui on canvas
+     * open/close). While set, the shim ALSO forwards the master/jog capacitive
+     * touch notes (8-9) to the shadow UI so canvas overlays can react to jog
+     * touch (e.g. show a nav overlay while the wheel is touched). Knob touches
+     * (0-7) are forwarded unconditionally as before; nothing else changes. */
+    volatile uint8_t canvas_input;
 } shadow_control_t;
 
 /* Co-run control-surface groups. A co-running overtake tool declares which
