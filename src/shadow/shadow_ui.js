@@ -10421,7 +10421,19 @@ function moduleFileExists(path) {
 function getHierarchyActiveModuleId() {
     if (hierEditorSlot < 0 || !hierEditorComponent) return "";
     if (hierEditorIsMasterFx) {
-        return getSlotParam(0, `${hierEditorComponent}:module`) || "";
+        /* FX-bus components (master/send/move FX) serve `:module` as the FULL
+         * DSP PATH (master_fx_slot_t.module_path), not a module id — feeding
+         * that to getModuleBasePath() broke canvas-script resolution ("No
+         * canvas script found" when opening a type:"canvas" param from a
+         * Master FX slot). `:name` is the real module id; fall back to
+         * deriving the id from the DSP path's directory name for hosts/slots
+         * that predate the `:name` key. */
+        const id = getSlotParam(0, `${hierEditorComponent}:name`) || "";
+        if (id && !id.includes("/")) return id;
+        const dspPath = getSlotParam(0, `${hierEditorComponent}:module`) || "";
+        const parts = dspPath.split("/").filter(Boolean);
+        if (parts.length >= 2) return parts[parts.length - 2];
+        return dspPath;
     }
 
     const prefix = getComponentParamPrefix(hierEditorComponent);
