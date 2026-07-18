@@ -918,7 +918,7 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 	if ru.markToolPresent() {
 		ru.announceToolArrival(ctx, clients)
 	}
-	rev, on, tick, bpm := parseRuiPoll(digest)
+	rev, on, tick, bpm, devms := parseRuiPoll(digest)
 
 	// Does any client need the full snapshot (rev changed, or first sync)?
 	needFull := false
@@ -969,7 +969,12 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 	// EDGES are exempt (always pushed immediately).
 	const playheadMinInterval = 400 * time.Millisecond
 	now := time.Now()
+	// Forward devms (device-clock ms, playing only) as the 4th rui_play field so
+	// the browser can time-base corrections independent of delivery latency.
 	play := fmt.Sprintf("%d:%d:%d", boolToInt(on), tick, bpm)
+	if on && devms > 0 {
+		play = fmt.Sprintf("%d:%d:%d:%d", boolToInt(on), tick, bpm, devms)
+	}
 	for _, c := range clients {
 		c.mu.Lock()
 		edge := on != c.toolLastOn
@@ -1049,8 +1054,11 @@ func (ru *RemoteUI) signalToolGone(ctx context.Context, clients []*ruClient) {
 	ru.logger.Info("overtake tool unloaded — signaled Tool-tab clients")
 }
 
-// parseRuiPoll parses the overtake tool's cheap "rev:on:tick:bpm" poll digest.
-func parseRuiPoll(s string) (rev int64, on bool, tick int64, bpm int64) {
+// parseRuiPoll parses the overtake tool's cheap "rev:on:tick:bpm[:devms]" poll
+// digest. devms (present only while playing) is the module's free-running
+// device-clock ms for the tick — forwarded so the browser can time-base
+// playhead corrections independent of delivery latency.
+func parseRuiPoll(s string) (rev int64, on bool, tick int64, bpm int64, devms int64) {
 	p := strings.Split(s, ":")
 	if len(p) > 0 {
 		rev, _ = strconv.ParseInt(p[0], 10, 64)
@@ -1064,6 +1072,9 @@ func parseRuiPoll(s string) (rev int64, on bool, tick int64, bpm int64) {
 	}
 	if len(p) > 3 {
 		bpm, _ = strconv.ParseInt(p[3], 10, 64)
+	}
+	if len(p) > 4 {
+		devms, _ = strconv.ParseInt(p[4], 10, 64)
 	}
 	return
 }
