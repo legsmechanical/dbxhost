@@ -1,0 +1,286 @@
+From c29abdf7a4489ab2ee07639707afa69cb2b9ef94 Mon Sep 17 00:00:00 2001
+From: legsmechanical <joshgaine@gmail.com>
+Date: Sat, 18 Jul 2026 01:02:18 -0400
+Subject: [PATCH] =?UTF-8?q?perf(manager):=20server-driven=20overtake-tool?=
+ =?UTF-8?q?=20remote=20UI=20=E2=80=94=20coalesced,=20rev-gated=20poll?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The overtake-tool remote UI (Tool tab) was refreshed by each browser polling
+independently via "refetch_tool", which had three problems on the shared shm
+param channel that also serves the realtime audio/MIDI path:
+
+1. Busy-escalation: handleRefetchTool read the cheap "rui_poll" digest with
+   TryGetParam, but treated its mutex-busy return (ok=false) the same as an
+   unsupported key and fell back to the expensive full "state" read. So under
+   any contention (a concurrent SetParam, another tab, a preset resend) it did
+   the heaviest possible read — defeating the rev-gate exactly when the channel
+   was busiest, and self-amplifying under load.
+2. No coalescing: N Tool-tab clients (main tab + pop-out) each triggered their
+   own full "state" snapshot read on every rev change — N x the RT-adjacent cost.
+3. No unload signal: when the overtake tool was unloaded the Tool tab kept
+   polling a dead module forever and never cleared its iframe.
+
+Replace the per-client browser poll with a single server-side toolTickLoop:
+- reads "rui_poll" once per tick; on mutex-busy it SKIPS (never escalates);
+- on a rev change does ONE "state" read fanned out to every stale client;
+- otherwise pushes only the moving playhead;
+- signals tool_info(gone) once when the tool unloads;
+- adapts cadence (~100ms active / 400ms idle / 500ms no clients) so device->
+  browser sync is tighter than the old 150-500ms browser poll without raising
+  steady-state shm traffic.
+
+handleRefetchTool becomes a no-op (kept so older browsers' timer messages don't
+error). Per-client rev/tick cursors are now touched only by the ticker, guarded
+by c.mu. Also: fetchAllParams now logs when a component's "state" snapshot
+truncates at the 64KB param cap (invalid JSON is otherwise silently dropped and
+the remote UI mysteriously stops refreshing).
+
+Generic across all overtake tools — no module-specific assumptions; a tool that
+predates the rui_poll digest still works via the coalesced full-fetch path.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_015f8H1BbPTkWyhPv2zphzhR
+---
+ schwung-manager/remote_ui.go | 192 +++++++++++++++++++++++++++++------
+ 1 file changed, 161 insertions(+), 31 deletions(-)
+
+diff --git a/schwung-manager/remote_ui.go b/schwung-manager/remote_ui.go
+index 27dca7ba..f83ebf3a 100644
+--- a/schwung-manager/remote_ui.go
++++ b/schwung-manager/remote_ui.go
+@@ -36,6 +36,11 @@ type RemoteUI struct {
+ 
+ 	mu      sync.Mutex
+ 	clients map[*ruClient]struct{}
++
++	// toolPresent latches whether an overtake tool was active on the previous
++	// tool-tick, so a transition to "no tool" fires exactly one tool_info(gone)
++	// signal to Tool-tab clients. Guarded by mu.
++	toolPresent bool
+ }
+ 
+ // ruClient represents a single WebSocket connection.
+@@ -228,6 +233,7 @@ func (ru *RemoteUI) Start(ctx context.Context) {
+ 	go ru.pollLoop(ctx)
+ 	go ru.notifyLoop(ctx)
+ 	go ru.refreshLoop(ctx)
++	go ru.toolTickLoop(ctx)
+ }
+ 
+ // refreshLoop periodically re-reads all param values for subscribed slots.
+@@ -520,6 +526,15 @@ func (ru *RemoteUI) fetchAllParams(slot uint8, comp string) (map[string]string,
+ 	}
+ 	var values map[string]any
+ 	if json.Unmarshal([]byte(raw), &values) != nil {
++		// A "state" snapshot that filled the whole param buffer has almost
++		// certainly truncated mid-token → invalid JSON → we drop it here and the
++		// browser silently stops refreshing this component. Surface it so the
++		// failure is diagnosable instead of a mystery "frozen" remote UI; the
++		// module must gate its large snapshot fields below the 64KB cap.
++		if len(raw) >= paramValueLen {
++			ru.logger.Warn("remote UI: snapshot truncated at the param buffer cap → invalid JSON, dropping (component won't refresh)",
++				"comp", comp, "cap", paramValueLen)
++		}
+ 		return nil, false
+ 	}
+ 	params := make(map[string]string, len(values))
+@@ -772,48 +787,163 @@ func (ru *RemoteUI) handleUnsubscribeTool(c *ruClient) {
+ 	ru.logger.Info("ws unsubscribe tool")
+ }
+ 
+-// handleRefetchTool picks up device-side changes the web UI polls for (playhead,
+-// external edits) that don't notify. Rev-gated: it first reads the tool's CHEAP
+-// "rui_poll" digest (rev:on:tick:bpm, no note serialization) and only does the
+-// heavy full "state" read (fetchAllParams) when rev changes (a content edit).
+-// While playing with no edit it pushes only the moving playhead; when nothing
+-// changed it does no work. Params ONLY — never custom_ui/tool_info (which would
+-// reload the iframe).
+-func (ru *RemoteUI) handleRefetchTool(ctx context.Context, c *ruClient) {
+-	// Safety belt: only poll the device for a client actually viewing the Tool tab.
+-	if !c.toolSub {
+-		return
++// handleRefetchTool is retained only so browsers that still send "refetch_tool"
++// on a timer don't get an "unknown message type" error. It is now a NO-OP: the
++// server-side toolTickLoop drives all Tool-tab updates (coalesced across clients
++// + rev-gated). A per-client poll here would double-read the shm channel and
++// race the ticker on the per-client rev cursors. Updates still reach the browser
++// via pushed param_update messages, exactly as before.
++func (ru *RemoteUI) handleRefetchTool(_ context.Context, _ *ruClient) {}
++
++// toolTickLoop drives the overtake-tool remote UI from the SERVER, replacing the
++// per-client browser-driven "refetch_tool" poll. When >=1 client is viewing the
++// Tool tab it reads the tool's cheap "rui_poll" digest once per tick and does the
++// single expensive "state" read only on a rev change — fanned out to every stale
++// tool client at once (coalesced: N tabs = 1 read, not N). Between edits it
++// pushes only the moving playhead. With no tool clients it touches no shm at all.
++//
++// Cadence adapts: ~100ms while a tool is actively playing/editing (tighter than
++// the old browser 150–500ms poll → snappier device→browser sync), backing off
++// when a tool tab is open but idle so steady-state shm traffic stays low.
++func (ru *RemoteUI) toolTickLoop(ctx context.Context) {
++	const noClientsInterval = 500 * time.Millisecond
++	const idleInterval = 400 * time.Millisecond
++	const liveInterval = 100 * time.Millisecond
++	interval := noClientsInterval
++	for {
++		select {
++		case <-ctx.Done():
++			return
++		case <-time.After(interval):
++		}
++		clients := ru.subscribedToolClients()
++		if len(clients) == 0 {
++			interval = noClientsInterval
++			continue
++		}
++		shm := ru.ensureShm()
++		if shm == nil {
++			interval = idleInterval
++			continue
++		}
++		if ru.serviceToolClients(ctx, shm, clients) {
++			interval = liveInterval
++		} else {
++			interval = idleInterval
++		}
+ 	}
+-	if !ru.requireShm(ctx, c) {
+-		return
++}
++
++// serviceToolClients performs one rev-gated tool poll and fans the result out to
++// all Tool-tab clients. A single shm read per tick; the per-client rev/tick
++// cursors (guarded by c.mu) decide who receives the full snapshot vs. just the
++// playhead. Returns true when the tool is "active" (playing, content changed, or
++// the channel was busy mid-edit) so the caller keeps the tighter cadence.
++func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clients []*ruClient) (active bool) {
++	digest, ok, err := shm.TryGetParam(0, overtakeParamPrefix+"rui_poll")
++	if !ok {
++		// Mutex busy (a concurrent SetParam or another read). SKIP this tick
++		// rather than escalate to the heavy "state" read — escalating on
++		// contention defeats the rev-gate exactly when the channel is busiest
++		// (self-amplifying under load). Stay on the fast cadence: busy means a
++		// user is actively editing, so we want to catch up promptly.
++		return true
+ 	}
+-	digest, ok, err := ru.shm.TryGetParam(0, overtakeParamPrefix+"rui_poll")
+-	if !ok || err != nil || digest == "" {
+-		// Tool predates the cheap digest key — fall back to a full fetch.
++	if err != nil || digest == "" {
++		// No digest: either no active overtake tool, or a tool that predates the
++		// cheap rui_poll key. One module_id read (only on this cold path) tells
++		// them apart, so we can notify the Tool tab when its tool goes away.
++		if ru.activeOvertakeToolID(0) == "" {
++			ru.signalToolGone(ctx, clients)
++			return false
++		}
++		ru.markToolPresent()
++		// Legacy tool without rui_poll → one coalesced full fetch for all.
+ 		if params, hit := ru.fetchAllParams(0, "overtake_dsp"); hit {
+-			ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
++			for _, c := range clients {
++				ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
++			}
+ 		}
+-		return
++		return true
+ 	}
++	ru.markToolPresent()
+ 	rev, on, tick, bpm := parseRuiPoll(digest)
+-	if !c.toolSynced || rev != c.toolLastRev {
+-		// Content changed (or first sync) → full snapshot.
+-		if params, hit := ru.fetchAllParams(0, "overtake_dsp"); hit {
+-			ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
+-			c.toolSynced = true
+-			c.toolLastRev = rev
++
++	// Does any client need the full snapshot (rev changed, or first sync)?
++	needFull := false
++	for _, c := range clients {
++		c.mu.Lock()
++		stale := !c.toolSynced || rev != c.toolLastRev
++		c.mu.Unlock()
++		if stale {
++			needFull = true
++			break
++		}
++	}
++	if needFull {
++		params, hit := ru.fetchAllParams(0, "overtake_dsp") // ONE read, fanned out
++		if hit {
++			for _, c := range clients {
++				c.mu.Lock()
++				stale := !c.toolSynced || rev != c.toolLastRev
++				c.mu.Unlock()
++				if !stale {
++					continue
++				}
++				ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
++				c.mu.Lock()
++				c.toolSynced = true
++				c.toolLastRev = rev
++				c.toolLastTick = tick
++				c.mu.Unlock()
++			}
++		}
++		return true
++	}
++
++	// No content change → push only the moving playhead while playing (cheap).
++	if !on {
++		return false
++	}
++	play := fmt.Sprintf("%d:%d:%d", boolToInt(on), tick, bpm)
++	for _, c := range clients {
++		c.mu.Lock()
++		changed := tick != c.toolLastTick
++		if changed {
+ 			c.toolLastTick = tick
+ 		}
++		c.mu.Unlock()
++		if changed {
++			ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0,
++				Params: map[string]string{overtakeParamPrefix + "rui_play": play}})
++		}
++	}
++	return true
++}
++
++// markToolPresent latches that an overtake tool is currently active, so a later
++// transition to "no tool" fires exactly one tool-gone signal.
++func (ru *RemoteUI) markToolPresent() {
++	ru.mu.Lock()
++	ru.toolPresent = true
++	ru.mu.Unlock()
++}
++
++// signalToolGone tells Tool-tab clients (once) that their overtake tool has
++// unloaded, so the browser can clear its iframe instead of polling a dead tool
++// forever. No-op until an active tool has actually been seen.
++func (ru *RemoteUI) signalToolGone(ctx context.Context, clients []*ruClient) {
++	ru.mu.Lock()
++	was := ru.toolPresent
++	ru.toolPresent = false
++	ru.mu.Unlock()
++	if !was {
+ 		return
+ 	}
+-	// No content change → push only the playhead while playing (cheap).
+-	if on && tick != c.toolLastTick {
+-		c.toolLastTick = tick
+-		ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0,
+-			Params: map[string]string{
+-				overtakeParamPrefix + "rui_play": fmt.Sprintf("%d:%d:%d", boolToInt(on), tick, bpm),
+-			}})
++	for _, c := range clients {
++		ru.writeJSON(ctx, c, wsToolInfo{Type: "tool_info", ID: ""})
+ 	}
++	ru.logger.Info("overtake tool unloaded — signaled Tool-tab clients")
+ }
+ 
+ // parseRuiPoll parses the overtake tool's cheap "rev:on:tick:bpm" poll digest.
+-- 
+2.53.0
+

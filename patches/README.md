@@ -70,3 +70,47 @@ Then **regenerate** so the patch tracks the new base (single squashed commit):
 ```sh
 git format-patch -1 <replayed-commit> --stdout > patches/remote-ui-overtake-tools.patch
 ```
+
+## remote-ui-responsivity.patch
+
+A responsivity + hardware-load follow-up **on top of `remote-ui-overtake-tools`**
+(apply the bridge first). Replaces the per-client browser-driven `refetch_tool`
+poll with a single **server-side `toolTickLoop`** in `schwung-manager`:
+
+- **No busy-escalation** — reads the cheap `rui_poll` digest with `TryGetParam`
+  and, on mutex-busy, SKIPS the tick instead of falling back to the heavy full
+  `state` read (the old code did the most expensive read exactly under
+  contention, self-amplifying on the RT-shared shm channel).
+- **Coalesced** — one `state` read per rev change fanned out to every stale
+  Tool-tab client (N tabs = 1 read, not N).
+- **Unload signal** — emits `tool_info(gone)` once when the overtake tool
+  unloads, so the Tool tab clears its iframe instead of polling a dead module.
+- **Adaptive cadence** (~100 ms active / 400 ms idle / 500 ms no clients) →
+  tighter device→browser sync than the old 150–500 ms browser poll without
+  raising steady-state shm traffic.
+- `fetchAllParams` logs a warning when a `state` snapshot truncates at the 64 KB
+  param cap (otherwise a silent invalid-JSON drop that freezes the remote UI).
+
+**Manager-only and fully generic** (no module-specific assumptions; a tool that
+predates `rui_poll` still works via the coalesced full-fetch path). Intended as a
+follow-up on **PR `charlesvestal/schwung#148`** (fold in there, or land as its own
+commit once #148 merges). Depends on the bridge's `rui_poll`/`state`/`module_id`
+contract, so it does **not** apply on stock upstream alone.
+
+### Re-apply on rebase
+
+Manager-only, applies cleanly after the bridge patch:
+
+```sh
+git am --3way patches/remote-ui-overtake-tools.patch      # bridge first
+git am --3way patches/remote-ui-responsivity.patch        # then this
+# If git am balks, fall back to a squashed apply:
+#   git apply --3way patches/remote-ui-responsivity.patch && git add -A && \
+#   git commit -m "Re-apply remote-ui-responsivity (patches/remote-ui-responsivity.patch)"
+```
+
+Then **regenerate** so the patch tracks the new base:
+
+```sh
+git format-patch -1 <replayed-commit> --stdout > patches/remote-ui-responsivity.patch
+```
