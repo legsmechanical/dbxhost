@@ -3574,7 +3574,11 @@ void web_param_notify_push(uint8_t slot, const char *key, const char *value) {
  * RUI_PLAYHEAD_DIVIDER-th changed probe (~96ms) so playback doesn't spam the
  * 64-entry ring — the manager's own poll cadence covered playhead at ~100ms. */
 #define RUI_PROBE_FRAMES 4       /* probe every 4th SPI frame (~12ms) */
-#define RUI_PLAYHEAD_DIVIDER 8   /* playhead-only pushes every 8th probe */
+/* Playhead-only pushes every 24th changed probe (~280ms). The browser free-runs
+ * a local BPM clock and only needs occasional phase corrections; a ~100ms
+ * playhead stream measurably congested the Move's bursty WiFi and starved the
+ * big snapshot pushes behind it (clip selects took up to 1.7s while playing). */
+#define RUI_PLAYHEAD_DIVIDER 24
 static void shadow_overtake_rui_probe(void) {
     if (!overtake_dsp_gen || !overtake_dsp_gen_inst || !overtake_dsp_gen->get_param)
         return;

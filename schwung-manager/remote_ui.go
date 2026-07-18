@@ -77,7 +77,8 @@ type ruClient struct {
 	toolSynced   bool
 	toolLastRev  int64
 	toolLastTick int64
-	toolLastOn   bool // last pushed play-state; start/stop EDGES must be pushed
+	toolLastOn   bool      // last pushed play-state; start/stop EDGES must be pushed
+	toolPlayAt   time.Time // last playhead push — rate-limited (edges exempt)
 }
 
 // per-slot cached state used by the poll loop.
@@ -954,10 +955,19 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 	// tick; a play-STATE edge must also be pushed even when on=false — without
 	// the stop edge the browser's animated playhead free-runs long after
 	// transport stops (rui_play pushes are its only source of the on flag).
+	// Rate-limit moving-playhead pushes per client (~400ms): the browser
+	// free-runs its own BPM clock and only needs phase corrections, and the
+	// Move's WiFi delivers small frames in bursty clumps — a ~100ms stream
+	// congested the link and starved snapshot pushes behind it. Play-state
+	// EDGES are exempt (always pushed immediately).
+	const playheadMinInterval = 400 * time.Millisecond
+	now := time.Now()
 	play := fmt.Sprintf("%d:%d:%d", boolToInt(on), tick, bpm)
 	for _, c := range clients {
 		c.mu.Lock()
-		changed := on != c.toolLastOn || (on && tick != c.toolLastTick)
+		edge := on != c.toolLastOn
+		changed := edge || (on && tick != c.toolLastTick &&
+			now.Sub(c.toolPlayAt) >= playheadMinInterval)
 		c.mu.Unlock()
 		if !changed {
 			continue
@@ -969,6 +979,7 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 		c.mu.Lock()
 		c.toolLastOn = on
 		c.toolLastTick = tick
+		c.toolPlayAt = now
 		c.mu.Unlock()
 	}
 	return on
