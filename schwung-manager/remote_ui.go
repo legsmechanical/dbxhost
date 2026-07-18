@@ -51,6 +51,10 @@ type RemoteUI struct {
 	// recent, the tool ticker relaxes to a slow backstop — the notify ring is
 	// the primary update source. Guarded by mu.
 	lastToolNotify time.Time
+	// lastToolFull throttles full tool-state reads/fan-outs: rapid edit streams
+	// (FX knob drags) bump the rev per set_param, and servicing every kick with
+	// a 64KB read + full push melts the WiFi link. Guarded by mu.
+	lastToolFull time.Time
 }
 
 // ruClient represents a single WebSocket connection.
@@ -79,6 +83,12 @@ type ruClient struct {
 	toolLastTick int64
 	toolLastOn   bool      // last pushed play-state; start/stop EDGES must be pushed
 	toolPlayAt   time.Time // last playhead push — rate-limited (edges exempt)
+	// toolQuietUntil: this client sent an overtake set_param recently, so it is
+	// mid-edit. Skip snapshot pushes to it until the window passes — its UI is
+	// optimistic and REJECTS echoes of its own edits anyway, and during a knob
+	// drag those echoes (a 64KB read + ~150KB WS frame per rev bump) saturate
+	// the WiFi link and stall everything for tens of seconds.
+	toolQuietUntil time.Time
 }
 
 // per-slot cached state used by the poll loop.
@@ -684,6 +694,13 @@ func (ru *RemoteUI) handleSetParam(ctx context.Context, c *ruClient, msg wsMessa
 		ru.sendError(ctx, c, "set_param requires key")
 		return
 	}
+	// Overtake edits mark the sender mid-edit: snapshot echoes back to it are
+	// suppressed for a short window (see ruClient.toolQuietUntil).
+	if strings.HasPrefix(msg.Key, overtakeParamPrefix) {
+		c.mu.Lock()
+		c.toolQuietUntil = time.Now().Add(300 * time.Millisecond)
+		c.mu.Unlock()
+	}
 	if err := ru.setParam(slot, msg.Key, msg.Value); err != nil {
 		ru.logger.Error("set_param failed", "slot", slot, "key", msg.Key, "err", err)
 		ru.sendError(ctx, c, "set_param failed: "+err.Error())
@@ -836,6 +853,7 @@ func (ru *RemoteUI) toolTickLoop(ctx context.Context) {
 	// a slow backstop that only catches a stalled/overflowed ring.
 	const pushBackstopInterval = 2 * time.Second
 	const notifyFreshWindow = 15 * time.Second
+	const retryInterval = 150 * time.Millisecond
 	interval := noClientsInterval
 	for {
 		var kicked string
@@ -855,11 +873,15 @@ func (ru *RemoteUI) toolTickLoop(ctx context.Context) {
 			interval = idleInterval
 			continue
 		}
-		active := ru.serviceToolClients(ctx, shm, clients, kicked)
+		active, pending := ru.serviceToolClients(ctx, shm, clients, kicked)
 		ru.mu.Lock()
 		notifyFresh := !ru.lastToolNotify.IsZero() && time.Since(ru.lastToolNotify) < notifyFreshWindow
 		ru.mu.Unlock()
 		switch {
+		case pending:
+			// A stale client was deferred (edit-quiet window or full-read
+			// throttle) — retry soon so it syncs right after the window.
+			interval = retryInterval
 		case notifyFresh:
 			interval = pushBackstopInterval
 		case active:
@@ -875,7 +897,7 @@ func (ru *RemoteUI) toolTickLoop(ctx context.Context) {
 // cursors (guarded by c.mu) decide who receives the full snapshot vs. just the
 // playhead. Returns true when the tool is "active" (playing, content changed, or
 // the channel was busy mid-edit) so the caller keeps the tighter cadence.
-func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clients []*ruClient, kicked string) (active bool) {
+func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clients []*ruClient, kicked string) (active, pending bool) {
 	var digest string
 	if kicked != "" {
 		// Shim-pushed digest (notify ring) — no shm read needed at all.
@@ -890,7 +912,7 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 			// contention defeats the rev-gate exactly when the channel is busiest
 			// (self-amplifying under load). Stay on the fast cadence: busy means a
 			// user is actively editing, so we want to catch up promptly.
-			return true
+			return true, false
 		}
 		if err != nil || digest == "" {
 			digest = ""
@@ -902,7 +924,7 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 		// them apart, so we can notify the Tool tab when its tool goes away.
 		if ru.activeOvertakeToolID(0) == "" {
 			ru.signalToolGone(ctx, clients)
-			return false
+			return false, false
 		}
 		if ru.markToolPresent() {
 			ru.announceToolArrival(ctx, clients)
@@ -913,38 +935,63 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 				ru.writeJSONTry(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
 			}
 		}
-		return true
+		return true, false
 	}
 	if ru.markToolPresent() {
 		ru.announceToolArrival(ctx, clients)
 	}
 	rev, on, tick, bpm, devms := parseRuiPoll(digest)
 
-	// Does any client need the full snapshot (rev changed, or first sync)?
+	// Which clients need the full snapshot (rev changed, or first sync)?
+	// A client inside its edit-quiet window is deferred, not served: it is
+	// mid-edit, its optimistic UI rejects echoes of its own edits, and echoing
+	// a ~150KB snapshot per knob tick is what melted the WiFi link.
+	tnow := time.Now()
 	needFull := false
 	for _, c := range clients {
 		c.mu.Lock()
 		stale := !c.toolSynced || rev != c.toolLastRev
+		quiet := tnow.Before(c.toolQuietUntil)
 		c.mu.Unlock()
-		if stale {
+		if stale && quiet {
+			pending = true
+		}
+		if stale && !quiet {
 			needFull = true
-			break
 		}
 	}
 	if needFull {
+		// Global full-read throttle: a rapid edit stream bumps rev per
+		// set_param; without this the kick path does back-to-back 64KB reads
+		// + full pushes. Deferred work is picked up by the retry cadence.
+		ru.mu.Lock()
+		throttled := time.Since(ru.lastToolFull) < 300*time.Millisecond
+		if !throttled {
+			ru.lastToolFull = tnow
+		}
+		ru.mu.Unlock()
+		if throttled {
+			return true, true
+		}
 		params, hit := ru.fetchAllParams(0, "overtake_dsp") // ONE read, fanned out
 		if hit {
 			for _, c := range clients {
 				c.mu.Lock()
 				stale := !c.toolSynced || rev != c.toolLastRev
+				quiet := time.Now().Before(c.toolQuietUntil)
 				c.mu.Unlock()
 				if !stale {
+					continue
+				}
+				if quiet {
+					pending = true // sync right after the quiet window
 					continue
 				}
 				// Non-blocking dispatch: on drop (a write to this client is
 				// still in flight) the cursors stay stale, so the next tick
 				// retries — a wedged client can't stall the whole fan-out.
 				if !ru.writeJSONTry(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params}) {
+					pending = true
 					continue
 				}
 				c.mu.Lock()
@@ -955,7 +1002,7 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 				c.mu.Unlock()
 			}
 		}
-		return true
+		return true, pending
 	}
 
 	// No content change → push the playhead. While playing that's the moving
@@ -994,7 +1041,7 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 		c.toolPlayAt = now
 		c.mu.Unlock()
 	}
-	return on
+	return on, pending
 }
 
 // markToolPresent latches that an overtake tool is currently active, so a later
