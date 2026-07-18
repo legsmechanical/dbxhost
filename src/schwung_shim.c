@@ -419,6 +419,23 @@ static audio_fx_api_v2_t *overtake_dsp_fx = NULL;  /* V2 FX plugin */
 static void *overtake_dsp_fx_inst = NULL;           /* FX instance */
 static host_api_v1_t overtake_host_api;             /* Host API provided to plugin */
 
+/* Remote-UI push probe state (see shadow_overtake_rui_probe). Reset on every
+ * overtake DSP load/unload so a new tool re-probes rui_poll support. */
+static uint8_t  overtake_rui_unsupported = 0;   /* module answered <0 once */
+static char     overtake_rui_last[64] = {0};    /* last digest pushed */
+static unsigned long overtake_rui_last_rev = 0; /* rev field of last push */
+static uint8_t  overtake_rui_have_rev = 0;
+static uint32_t overtake_rui_frame = 0;         /* SPI frame divider */
+static uint32_t overtake_rui_ph_count = 0;      /* playhead-only change divider */
+
+static void shadow_overtake_rui_reset(void) {
+    overtake_rui_unsupported = 0;
+    overtake_rui_last[0] = '\0';
+    overtake_rui_last_rev = 0;
+    overtake_rui_have_rev = 0;
+    overtake_rui_ph_count = 0;
+}
+
 /* Per-CC passthrough bitmap. When an overtake module declares
  * capabilities.button_passthrough = [cc, ...], those CCs are routed through
  * overtake_mode=2's filter unchanged — both the press events reach Move
@@ -1420,6 +1437,7 @@ static void overtake_ext_drain_into_shadow(uint8_t *shadow) {
 }
 
 static void shadow_overtake_dsp_load(const char *path) {
+    shadow_overtake_rui_reset();
     /* Unload previous if any */
     if (overtake_dsp_handle) {
         shadow_log("Overtake DSP: unloading previous before loading new");
@@ -1535,6 +1553,7 @@ static void shadow_overtake_dsp_load(const char *path) {
 
 static void shadow_overtake_dsp_unload(void) {
     if (!overtake_dsp_handle) return;
+    shadow_overtake_rui_reset();
 
     if (overtake_dsp_gen && overtake_dsp_gen_inst) {
         if (overtake_dsp_gen->destroy_instance)
@@ -3539,6 +3558,53 @@ void web_param_notify_push(uint8_t slot, const char *key, const char *value) {
     web_param_notify_shm->ready++;
 }
 
+/* Remote-UI push (F4): probe the loaded overtake DSP's cheap "rui_poll" digest
+ * ("rev:on:tick:bpm") IN-PROCESS every RUI_PROBE_FRAMES SPI frames and push
+ * changes into the web param notify ring, so schwung-manager learns about tool
+ * edits on-change instead of polling the shared shadow_param channel (which
+ * contends with browser SetParams). Runs where param serves already run
+ * (post-transfer path); RT-safe: no alloc, no logging, no I/O — one in-process
+ * get_param + a strcmp per interval, nothing at all when no overtake DSP is
+ * loaded or the module doesn't implement rui_poll (latched after one <0
+ * answer until the next overtake load).
+ * Rate rule: a rev-field change (content edit) pushes immediately; a digest
+ * change with the same rev (playhead tick/bpm only) pushes every
+ * RUI_PLAYHEAD_DIVIDER-th changed probe (~96ms) so playback doesn't spam the
+ * 64-entry ring — the manager's own poll cadence covered playhead at ~100ms. */
+#define RUI_PROBE_FRAMES 4       /* probe every 4th SPI frame (~12ms) */
+#define RUI_PLAYHEAD_DIVIDER 8   /* playhead-only pushes every 8th probe */
+static void shadow_overtake_rui_probe(void) {
+    if (!overtake_dsp_gen || !overtake_dsp_gen_inst || !overtake_dsp_gen->get_param)
+        return;
+    if (overtake_rui_unsupported || !web_param_notify_shm)
+        return;
+    if (++overtake_rui_frame % RUI_PROBE_FRAMES)
+        return;
+    char digest[64];
+    int len = overtake_dsp_gen->get_param(overtake_dsp_gen_inst, "rui_poll",
+                                          digest, (int)sizeof(digest));
+    if (len < 0) { overtake_rui_unsupported = 1; return; }
+    if (len >= (int)sizeof(digest)) return;   /* not a rui_poll-shaped digest */
+    digest[len] = '\0';
+    if (strcmp(digest, overtake_rui_last) == 0)
+        return;
+    unsigned long rev = strtoul(digest, NULL, 10);
+    int push;
+    if (!overtake_rui_have_rev || rev != overtake_rui_last_rev) {
+        push = 1;
+        overtake_rui_ph_count = 0;
+    } else {
+        push = (++overtake_rui_ph_count % RUI_PLAYHEAD_DIVIDER) == 0;
+    }
+    if (!push)
+        return;
+    overtake_rui_last_rev = rev;
+    overtake_rui_have_rev = 1;
+    strncpy(overtake_rui_last, digest, sizeof(overtake_rui_last) - 1);
+    overtake_rui_last[sizeof(overtake_rui_last) - 1] = '\0';
+    web_param_notify_push(0, "overtake_dsp:rui_poll", digest);
+}
+
 /* Callback for chain_mgmt: handle shim-specific param prefixes.
  * Reads/writes shadow_param->key/value/error/result_len directly.
  * Returns 1 if handled, 0 if not. */
@@ -4706,6 +4772,7 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
      * param.get span via the SHM-propagated trace context (Phase 2b). */
     shadow_inprocess_handle_param_request();
     shadow_drain_web_param_set();  /* Web UI fire-and-forget param sets */
+    shadow_overtake_rui_probe();   /* Remote-UI push: overtake rui_poll → notify ring */
     TIME_SECTION_END(spi_param_req_sum, spi_param_req_max);
 
     /* Forward CC/pitch bend/aftertouch from external MIDI to MIDI_OUT so DSP
