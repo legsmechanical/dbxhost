@@ -114,3 +114,18 @@ Then **regenerate** so the patch tracks the new base:
 ```sh
 git format-patch -1 <replayed-commit> --stdout > patches/remote-ui-responsivity.patch
 ```
+
+### Status & follow-ups (2026-07-18)
+
+- **Off-host verified:** `go build` + `go vet` clean (go 1.26 Docker). Concurrency: the ticker is the sole
+  driver of the per-client `toolSynced/toolLastRev/toolLastTick` cursors (all under `c.mu`, never held across a
+  `writeJSON`); `handleRefetchTool` is a no-op.
+- **Deployed to a device 2026-07-18** (cross-built ARM64, scp temp + `mv -f`, `restart_move.sh`), md5-verified,
+  serving `:7700`. Running alongside the davebox module branch `remote-ui-audit-fixes` for a hands-on pass.
+  **NOT merged to fork `main`, NOT in a PR yet.**
+- **Follow-ups (not done):**
+  - **F4 — true push:** have the shim enqueue an overtake "dirty" notification on `rui_touch` so the manager's
+    5ms `notifyLoop` pushes on-change and the `rui_poll` tick disappears entirely. The remaining responsivity
+    headroom; needs shim + DSP plumbing (so out of scope for this manager-only patch).
+  - **Write backpressure:** the ticker fans out to clients sequentially; a wedged client can stall a tick up to
+    the 5s `writeJSON` timeout. Parallelize the fan-out (goroutine per client) only if it bites in practice.
