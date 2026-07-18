@@ -122,7 +122,8 @@ git format-patch -1 <replayed-commit> --stdout > patches/remote-ui-responsivity.
   `writeJSON`); `handleRefetchTool` is a no-op.
 - **Deployed to a device 2026-07-18** (cross-built ARM64, scp temp + `mv -f`, `restart_move.sh`), md5-verified,
   serving `:7700`. Running alongside the davebox module branch `remote-ui-audit-fixes` for a hands-on pass.
-  **NOT merged to fork `main`, NOT in a PR yet.**
+  **Merged to fork `main` (fast-forward) 2026-07-18; NOT pushed / not in a PR yet.** (Hands-on device verify
+  still owed — merged on Josh's call ahead of it.)
 - **Follow-ups (not done):**
   - **F4 — true push:** have the shim enqueue an overtake "dirty" notification on `rui_touch` so the manager's
     5ms `notifyLoop` pushes on-change and the `rui_poll` tick disappears entirely. The remaining responsivity
