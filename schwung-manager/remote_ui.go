@@ -694,9 +694,16 @@ func (ru *RemoteUI) handleSetParam(ctx context.Context, c *ruClient, msg wsMessa
 		ru.sendError(ctx, c, "set_param requires key")
 		return
 	}
-	// Overtake edits mark the sender mid-edit: snapshot echoes back to it are
-	// suppressed for a short window (see ruClient.toolQuietUntil).
-	if strings.HasPrefix(msg.Key, overtakeParamPrefix) {
+	// Overtake CONTENT edits mark the sender mid-edit: snapshot echoes back to
+	// it are suppressed for a short window (see ruClient.toolQuietUntil) — its
+	// optimistic UI rejects them anyway. Selection/transport/focus keys are
+	// EXEMPT: for those the snapshot IS the requested data (the newly selected
+	// clip's notes, the focused CC lane), not an echo — arming quiet for them
+	// just made the client's own request feel laggy.
+	if strings.HasPrefix(msg.Key, overtakeParamPrefix) &&
+		!strings.HasSuffix(msg.Key, "_ruisel") &&
+		!strings.HasSuffix(msg.Key, ":transport") &&
+		!strings.HasSuffix(msg.Key, "_cc_focus") {
 		c.mu.Lock()
 		c.toolQuietUntil = time.Now().Add(300 * time.Millisecond)
 		c.mu.Unlock()
@@ -801,13 +808,18 @@ func (ru *RemoteUI) handleSubscribeTool(ctx context.Context, c *ruClient) {
 	}
 
 	toolID := ru.activeOvertakeToolID(0)
+	if toolID != "" {
+		// Consume the arrival edge BEFORE any network write: this client is
+		// being seeded right here, and it became visible to the ticker's
+		// subscribedToolClients() the moment toolSub was set above — if the
+		// ticker won the edge race mid-seed it would announceToolArrival a
+		// second custom_ui and reload the just-built iframe.
+		ru.markToolPresent()
+	}
 	ru.writeJSON(ctx, c, wsToolInfo{Type: "tool_info", ID: toolID})
 	if toolID == "" {
 		return
 	}
-	// Consume the arrival edge: this client is being seeded right here, so the
-	// ticker must not re-announce (which would reload the iframe once).
-	ru.markToolPresent()
 	if url := ru.findModuleWebUI(toolID); url != "" {
 		ru.sendCustomUI(ctx, c, 0, "tool", url)
 	}
@@ -941,6 +953,16 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 		ru.announceToolArrival(ctx, clients)
 	}
 	rev, on, tick, bpm, devms := parseRuiPoll(digest)
+	// rui_play frame (used by BOTH the snapshot path — play-state edges must
+	// ride along, snapshots don't carry the on flag — and the playhead path).
+	// devms (device-clock ms, playing only) lets the browser time-base
+	// corrections independent of delivery latency.
+	play := fmt.Sprintf("%d:%d:%d", boolToInt(on), tick, bpm)
+	if on && devms > 0 {
+		play = fmt.Sprintf("%d:%d:%d:%d", boolToInt(on), tick, bpm, devms)
+	}
+	playUpdate := wsParamUpdate{Type: "param_update", Slot: 0,
+		Params: map[string]string{overtakeParamPrefix + "rui_play": play}}
 
 	// Which clients need the full snapshot (rev changed, or first sync)?
 	// A client inside its edit-quiet window is deferred, not served: it is
@@ -998,8 +1020,25 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 				c.toolSynced = true
 				c.toolLastRev = rev
 				c.toolLastTick = tick
-				c.toolLastOn = on
+				edge := on != c.toolLastOn
 				c.mu.Unlock()
+				// A play-STATE edge must ride along with the snapshot: the
+				// state blob does NOT carry the on flag (rui_play is the
+				// browser's only source of it), and this branch returns before
+				// the playhead section — advancing toolLastOn here without
+				// sending rui_play would swallow the edge FOREVER (a hardware
+				// stop coinciding with a rev bump left the browser playhead
+				// free-running indefinitely). Dispatch it; on drop leave the
+				// cursor so the playhead section retries within retryInterval.
+				if edge {
+					if ru.writeJSONTry(ctx, c, playUpdate) {
+						c.mu.Lock()
+						c.toolLastOn = on
+						c.mu.Unlock()
+					} else {
+						pending = true
+					}
+				}
 			}
 		}
 		return true, pending
@@ -1016,12 +1055,6 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 	// EDGES are exempt (always pushed immediately).
 	const playheadMinInterval = 400 * time.Millisecond
 	now := time.Now()
-	// Forward devms (device-clock ms, playing only) as the 4th rui_play field so
-	// the browser can time-base corrections independent of delivery latency.
-	play := fmt.Sprintf("%d:%d:%d", boolToInt(on), tick, bpm)
-	if on && devms > 0 {
-		play = fmt.Sprintf("%d:%d:%d:%d", boolToInt(on), tick, bpm, devms)
-	}
 	for _, c := range clients {
 		c.mu.Lock()
 		edge := on != c.toolLastOn
@@ -1031,8 +1064,7 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 		if !changed {
 			continue
 		}
-		if !ru.writeJSONTry(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0,
-			Params: map[string]string{overtakeParamPrefix + "rui_play": play}}) {
+		if !ru.writeJSONTry(ctx, c, playUpdate) {
 			continue // dropped — cursors untouched, next tick retries
 		}
 		c.mu.Lock()
