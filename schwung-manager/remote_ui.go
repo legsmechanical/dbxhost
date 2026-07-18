@@ -788,6 +788,9 @@ func (ru *RemoteUI) handleSubscribeTool(ctx context.Context, c *ruClient) {
 	if toolID == "" {
 		return
 	}
+	// Consume the arrival edge: this client is being seeded right here, so the
+	// ticker must not re-announce (which would reload the iframe once).
+	ru.markToolPresent()
 	if url := ru.findModuleWebUI(toolID); url != "" {
 		ru.sendCustomUI(ctx, c, 0, "tool", url)
 	}
@@ -901,7 +904,9 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 			ru.signalToolGone(ctx, clients)
 			return false
 		}
-		ru.markToolPresent()
+		if ru.markToolPresent() {
+			ru.announceToolArrival(ctx, clients)
+		}
 		// Legacy tool without rui_poll → one coalesced full fetch for all.
 		if params, hit := ru.fetchAllParams(0, "overtake_dsp"); hit {
 			for _, c := range clients {
@@ -910,7 +915,9 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 		}
 		return true
 	}
-	ru.markToolPresent()
+	if ru.markToolPresent() {
+		ru.announceToolArrival(ctx, clients)
+	}
 	rev, on, tick, bpm := parseRuiPoll(digest)
 
 	// Does any client need the full snapshot (rev changed, or first sync)?
@@ -986,11 +993,41 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 }
 
 // markToolPresent latches that an overtake tool is currently active, so a later
-// transition to "no tool" fires exactly one tool-gone signal.
-func (ru *RemoteUI) markToolPresent() {
+// transition to "no tool" fires exactly one tool-gone signal. Returns true when
+// this call is the not-present -> present EDGE (a fresh arrival).
+func (ru *RemoteUI) markToolPresent() bool {
 	ru.mu.Lock()
+	arrived := !ru.toolPresent
 	ru.toolPresent = true
 	ru.mu.Unlock()
+	return arrived
+}
+
+// announceToolArrival is the mirror of signalToolGone: tells subscribed
+// Tool-tab clients that an overtake tool has (re)appeared. Without it a Tool
+// tab opened BEFORE the tool loads (or across an on-device tool swap) sits on
+// "No tool loaded" indefinitely — the browser subscribes exactly once and
+// nothing re-announces. Sends tool_info + custom_ui per client (ordered within
+// a per-client goroutine) and marks every client unsynced so the ticker's
+// normal path fans out a fresh snapshot in the same pass.
+func (ru *RemoteUI) announceToolArrival(ctx context.Context, clients []*ruClient) {
+	toolID := ru.activeOvertakeToolID(0)
+	if toolID == "" {
+		return
+	}
+	url := ru.findModuleWebUI(toolID)
+	for _, c := range clients {
+		c.mu.Lock()
+		c.toolSynced = false
+		c.mu.Unlock()
+		go func(c *ruClient) {
+			ru.writeJSON(ctx, c, wsToolInfo{Type: "tool_info", ID: toolID})
+			if url != "" {
+				ru.sendCustomUI(ctx, c, 0, "tool", url)
+			}
+		}(c)
+	}
+	ru.logger.Info("overtake tool arrived — announced to Tool-tab clients", "tool", toolID)
 }
 
 // signalToolGone tells Tool-tab clients (once) that their overtake tool has
