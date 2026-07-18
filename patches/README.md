@@ -133,33 +133,63 @@ git format-patch -1 <replayed-commit> --stdout > patches/remote-ui-responsivity.
 
 ## remote-ui-push.patch
 
-**Remote-UI true push (F4) + non-blocking client fan-outs** — layers on
+**Remote-UI push pipeline (F4) + robustness series** — a 7-commit `git am` series layered on
 `remote-ui-responsivity.patch` (needs its `toolTickLoop`/`rui_poll` contract; does not apply on
-stock upstream alone). One commit, two halves:
+stock upstream alone). Fully generic: everything keys off the manager's existing overtake-tool
+remote-UI contract (`overtake_dsp:` prefix, `rui_poll`/`rui_rev`/`rui_play`/`state`); no
+module-specific code. Suitable to offer upstream as PRs on top of the overtake-tools bridge
+(PR #148) + the responsivity patch, in series order:
 
-- **Manager:** `ruClient` write/state mutex split (`writeMu` vs `mu`), `writeJSONTry`
-  (TryLock + goroutine, ≤1 in-flight write per client, drop-and-retry) at every periodic fan-out
-  (tool ticker, 5ms notify drain, 30s backstop), `writeJSONAsync` for tool_info(gone). Closes the
-  "wedged client stalls every loop for up to 5s" class flagged in the 07-18 audit.
-- **Shim + manager (F4):** shim probes the overtake DSP's `rui_poll` in-process every 4th SPI
-  frame and pushes digest changes into the web param notify ring (rev change = immediate;
-  playhead-only = every 8th probe ≈96ms; module without `rui_poll` latched off until next
-  overtake load). Manager routes those entries to a `toolKick` channel; the ticker services kicks
-  immediately (no shm read) and relaxes its own poll to a 2s backstop while pushes are fresh.
+1. **True push (F4) + write/state mutex split.** Shim probes the loaded overtake DSP's `rui_poll`
+   in-process every 4th SPI frame and pushes digest changes into the existing web-param notify
+   ring (module without `rui_poll` latched off until the next overtake load; zero cost with no
+   overtake DSP). Manager routes those entries to a `toolKick` channel; the ticker services kicks
+   immediately (no shm read) and relaxes its poll to a 2s backstop while pushes are fresh.
+   `ruClient` gains a dedicated `writeMu` (never hold the state mutex across a network write) and
+   `writeJSONTry` (≤1 in-flight write per client, drop-and-retry) at every periodic fan-out.
+2. **Transport-stop edge push.** Play-state EDGES always push (manager cursor `toolLastOn`; shim
+   classes the digest's `on` field as immediate alongside `rev` — after a stop the digest freezes,
+   so a divider-deferred push would never come).
+3. **Playhead rate-limit.** Shim playhead divider ~280ms + manager per-client 400ms floor (edges
+   exempt): browsers free-run a local BPM clock and only need phase corrections; a ~100ms stream
+   congests slow WiFi links and starves snapshot pushes behind it.
+4. **Tool ARRIVAL announce.** Mirror of the existing tool-gone signal: a Tool tab opened before
+   the tool loads (or across a tool swap) no longer sits on "No tool loaded" until a manual
+   re-subscribe. Frontend shows "checking…" until the first answer.
+5. **Device-clock forwarding.** `rui_poll` gains an optional 5th field (`devms`, playing only)
+   forwarded as `rui_play`'s 4th — tools may emit a free-running device-clock ms so browsers can
+   time-base playhead corrections independent of delivery latency. Fully optional per tool.
+6. **Edit-storm protection.** Per-client 300ms edit-quiet window (no snapshot echoes to the
+   client that is mid-edit — optimistic UIs reject them anyway) + global 300ms full-read throttle
+   + 150ms retry for deferred clients. Prevents a knob drag (one rev bump per set_param) from
+   flooding the link with 64KB-read/150KB-push per tick.
+7. **Review fixes.** Play-state edge rides along with snapshot fan-outs (snapshots don't carry
+   the on flag — an edge coinciding with a rev bump was swallowed); arrival edge consumed before
+   the subscribe seed's first write (double-`custom_ui` iframe reload race); the quiet window
+   exempts selection/transport/focus keys (`*_ruisel`, `transport`, `*_cc_focus` — contract
+   convention: for these the snapshot IS the requested data, not an echo).
 
 Re-apply after an upstream rebase:
 
 ```sh
-git am --3way patches/remote-ui-overtake-tools.patch
+git am --3way patches/remote-ui-overtake-tools.patch    # bridge (upstreamed as PR #148)
 git am --3way patches/remote-ui-responsivity.patch
-git am --3way patches/remote-ui-push.patch
+git am --3way patches/remote-ui-push.patch              # this 7-commit series
 ```
 
-Then regenerate: `git format-patch -1 <replayed-commit> --stdout > patches/remote-ui-push.patch`
+Then regenerate (code commits only — the series excludes patch bookkeeping):
+
+```sh
+: > patches/remote-ui-push.patch
+git log --reverse --format=%h <base>..HEAD -- src schwung-manager | \
+  while read c; do git format-patch -1 --stdout "$c" >> patches/remote-ui-push.patch; done
+```
 
 ### Status (2026-07-18)
 
-- Off-host verified: full host `build.sh` clean (shim) + `go vet`/`go build` clean (go 1.26
-  Docker, manager). **NOT deployed** (device unreachable at build time): manager binary deploy =
-  scp temp + `mv -f` + `restart_move.sh` (safe first — F4 stays dormant without the new shim);
-  shim needs `install.sh local` (reboot). NOT merged to fork main; branch `remote-ui-push`.
+- Verified: full host `build.sh` clean (shim), `go vet`/ARM64 build clean (manager); the series
+  `git am`s onto the responsivity tip reproducing an identical tree. Deployed to a device all
+  day alongside davebox `remote-ui-audit2-fixes` (hands-on iterated: playhead, clip select,
+  edit-storm, tool-arrival all verified live). Merged to fork `main` 2026-07-18.
+- Follow-up (non-blocking): table-driven unit test + light refactor of `serviceToolClients`
+  (three concerns interleaved: presence/arrival, snapshot fan-out gating, playhead push).
