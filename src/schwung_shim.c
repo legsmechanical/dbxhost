@@ -424,6 +424,7 @@ static host_api_v1_t overtake_host_api;             /* Host API provided to plug
 static uint8_t  overtake_rui_unsupported = 0;   /* module answered <0 once */
 static char     overtake_rui_last[64] = {0};    /* last digest pushed */
 static unsigned long overtake_rui_last_rev = 0; /* rev field of last push */
+static int      overtake_rui_last_on = -1;      /* on field of last push (-1 = none) */
 static uint8_t  overtake_rui_have_rev = 0;
 static uint32_t overtake_rui_frame = 0;         /* SPI frame divider */
 static uint32_t overtake_rui_ph_count = 0;      /* playhead-only change divider */
@@ -432,6 +433,7 @@ static void shadow_overtake_rui_reset(void) {
     overtake_rui_unsupported = 0;
     overtake_rui_last[0] = '\0';
     overtake_rui_last_rev = 0;
+    overtake_rui_last_on = -1;
     overtake_rui_have_rev = 0;
     overtake_rui_ph_count = 0;
 }
@@ -3588,9 +3590,16 @@ static void shadow_overtake_rui_probe(void) {
     digest[len] = '\0';
     if (strcmp(digest, overtake_rui_last) == 0)
         return;
+    /* digest = "rev:on:tick:bpm". rev and on changes push IMMEDIATELY — a
+     * missed/late on-edge leaves the browser's playhead animating after stop
+     * (once stopped the digest freezes, so a divider-deferred push would
+     * never come at all). Only tick/bpm-only changes take the divider. */
     unsigned long rev = strtoul(digest, NULL, 10);
+    const char *colon = strchr(digest, ':');
+    int on = (colon && colon[1] == '1') ? 1 : 0;
     int push;
-    if (!overtake_rui_have_rev || rev != overtake_rui_last_rev) {
+    if (!overtake_rui_have_rev || rev != overtake_rui_last_rev
+            || on != overtake_rui_last_on) {
         push = 1;
         overtake_rui_ph_count = 0;
     } else {
@@ -3599,6 +3608,7 @@ static void shadow_overtake_rui_probe(void) {
     if (!push)
         return;
     overtake_rui_last_rev = rev;
+    overtake_rui_last_on = on;
     overtake_rui_have_rev = 1;
     strncpy(overtake_rui_last, digest, sizeof(overtake_rui_last) - 1);
     overtake_rui_last[sizeof(overtake_rui_last) - 1] = '\0';

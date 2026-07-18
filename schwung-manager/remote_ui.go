@@ -77,6 +77,7 @@ type ruClient struct {
 	toolSynced   bool
 	toolLastRev  int64
 	toolLastTick int64
+	toolLastOn   bool // last pushed play-state; start/stop EDGES must be pushed
 }
 
 // per-slot cached state used by the poll loop.
@@ -942,33 +943,35 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 				c.toolSynced = true
 				c.toolLastRev = rev
 				c.toolLastTick = tick
+				c.toolLastOn = on
 				c.mu.Unlock()
 			}
 		}
 		return true
 	}
 
-	// No content change → push only the moving playhead while playing (cheap).
-	if !on {
-		return false
-	}
+	// No content change → push the playhead. While playing that's the moving
+	// tick; a play-STATE edge must also be pushed even when on=false — without
+	// the stop edge the browser's animated playhead free-runs long after
+	// transport stops (rui_play pushes are its only source of the on flag).
 	play := fmt.Sprintf("%d:%d:%d", boolToInt(on), tick, bpm)
 	for _, c := range clients {
 		c.mu.Lock()
-		changed := tick != c.toolLastTick
+		changed := on != c.toolLastOn || (on && tick != c.toolLastTick)
 		c.mu.Unlock()
 		if !changed {
 			continue
 		}
 		if !ru.writeJSONTry(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0,
 			Params: map[string]string{overtakeParamPrefix + "rui_play": play}}) {
-			continue // dropped — cursor untouched, next tick retries
+			continue // dropped — cursors untouched, next tick retries
 		}
 		c.mu.Lock()
+		c.toolLastOn = on
 		c.toolLastTick = tick
 		c.mu.Unlock()
 	}
-	return true
+	return on
 }
 
 // markToolPresent latches that an overtake tool is currently active, so a later
