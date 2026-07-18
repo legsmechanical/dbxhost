@@ -1,0 +1,446 @@
+From 9d4d509aad41536e37b0f4cf0caa2227631b576c Mon Sep 17 00:00:00 2001
+From: legsmechanical <joshgaine@gmail.com>
+Date: Sat, 18 Jul 2026 07:40:09 -0400
+Subject: [PATCH] perf(manager,shim): remote-UI true push (F4) + non-blocking
+ client fan-outs
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Two related responsivity changes for the overtake-tool remote UI:
+
+1. Write/state mutex split + non-blocking fan-outs (manager). writeJSON held
+   c.mu — the same mutex guarding subs and tool cursors — across the network
+   write, so one wedged client could stall the tool ticker, the 5ms notify
+   drain (overflowing the 64-entry shim ring), and the 30s backstop for up to
+   the 5s write timeout. ruClient now has a dedicated writeMu for conn writes;
+   periodic fan-outs dispatch via writeJSONTry (TryLock + goroutine, at most
+   one in-flight write per client, drop-and-retry-next-tick semantics — all
+   pushed values are absolute) and one-shot tool_info(gone) via writeJSONAsync.
+   Cursor updates now happen only when a dispatch is accepted, so a dropped
+   client stays stale and is retried next tick.
+
+2. F4 push: shim probes the overtake DSP's cheap rui_poll digest IN-PROCESS
+   every 4th SPI frame (post-transfer, where param serves already run; RT-safe:
+   no alloc/log/IO) and pushes changes into the existing web param notify ring.
+   Rev changes push immediately; playhead-only changes every 8th probe (~96ms).
+   Unsupported modules (get_param < 0) are latched off until the next overtake
+   load. The manager's notifyLoop routes these entries to a toolKick channel
+   (never forwards them raw); toolTickLoop services kicks immediately with the
+   pushed digest (zero shm reads on the push path) and, while pushes are fresh
+   (<15s), relaxes its own rui_poll poll to a 2s backstop. Edit latency drops
+   from the ~100ms poll cadence to ~12ms, and steady polling traffic on the
+   contended shadow_param channel disappears. Full poll behavior is retained
+   as fallback for an old shim or absent notify ring.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_015f8H1BbPTkWyhPv2zphzhR
+---
+ schwung-manager/remote_ui.go | 166 +++++++++++++++++++++++++++++------
+ src/schwung_shim.c           |  67 ++++++++++++++
+ 2 files changed, 205 insertions(+), 28 deletions(-)
+
+diff --git a/schwung-manager/remote_ui.go b/schwung-manager/remote_ui.go
+index f83ebf3a..7cfa0495 100644
+--- a/schwung-manager/remote_ui.go
++++ b/schwung-manager/remote_ui.go
+@@ -41,12 +41,28 @@ type RemoteUI struct {
+ 	// tool-tick, so a transition to "no tool" fires exactly one tool_info(gone)
+ 	// signal to Tool-tab clients. Guarded by mu.
+ 	toolPresent bool
++
++	// toolKick delivers a shim-pushed "rui_poll" digest (notify ring, F4 push
++	// path) to toolTickLoop so it services Tool-tab clients immediately instead
++	// of waiting for the next poll tick. Buffered(1); a pending kick is replaced
++	// by the newer digest.
++	toolKick chan string
++	// lastToolNotify is the UnixNano of the last shim rui_poll push. While
++	// recent, the tool ticker relaxes to a slow backstop — the notify ring is
++	// the primary update source. Guarded by mu.
++	lastToolNotify time.Time
+ }
+ 
+ // ruClient represents a single WebSocket connection.
+ type ruClient struct {
+ 	conn *websocket.Conn
+-	mu   sync.Mutex // serialises writes
++	// mu guards client STATE (subs, tool cursors). It must never be held
++	// across a network write — a wedged client would then stall every loop
++	// that touches this client's state for up to the write timeout.
++	mu sync.Mutex
++	// writeMu serialises conn writes (wsjson.Write allows one writer at a
++	// time). Kept separate from mu so a stalled write blocks only writers.
++	writeMu sync.Mutex
+ 
+ 	// slots this client is subscribed to (slot index -> true)
+ 	subs map[uint8]bool
+@@ -151,6 +167,7 @@ func NewRemoteUI(shm *ShmParams, setRing *ShmWebParamSetRing, basePath string, l
+ 		basePath: basePath,
+ 		logger:   logger,
+ 		clients:  make(map[*ruClient]struct{}),
++		toolKick: make(chan string, 1),
+ 	}
+ }
+ 
+@@ -278,7 +295,7 @@ func (ru *RemoteUI) refreshLoop(ctx context.Context) {
+ 			if toolID, ok, err := shm.TryGetParam(0, overtakeParamPrefix+"module_id"); ok && err == nil && toolID != "" {
+ 				if params, hit := ru.fetchAllParams(0, "overtake_dsp"); hit {
+ 					for _, c := range toolClients {
+-						ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
++						ru.writeJSONTry(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
+ 					}
+ 				}
+ 			}
+@@ -809,11 +826,18 @@ func (ru *RemoteUI) toolTickLoop(ctx context.Context) {
+ 	const noClientsInterval = 500 * time.Millisecond
+ 	const idleInterval = 400 * time.Millisecond
+ 	const liveInterval = 100 * time.Millisecond
++	// While the shim is pushing rui_poll digests through the notify ring (F4
++	// push path), kicks are the primary update source and the poll degrades to
++	// a slow backstop that only catches a stalled/overflowed ring.
++	const pushBackstopInterval = 2 * time.Second
++	const notifyFreshWindow = 15 * time.Second
+ 	interval := noClientsInterval
+ 	for {
++		var kicked string
+ 		select {
+ 		case <-ctx.Done():
+ 			return
++		case kicked = <-ru.toolKick:
+ 		case <-time.After(interval):
+ 		}
+ 		clients := ru.subscribedToolClients()
+@@ -826,9 +850,16 @@ func (ru *RemoteUI) toolTickLoop(ctx context.Context) {
+ 			interval = idleInterval
+ 			continue
+ 		}
+-		if ru.serviceToolClients(ctx, shm, clients) {
++		active := ru.serviceToolClients(ctx, shm, clients, kicked)
++		ru.mu.Lock()
++		notifyFresh := !ru.lastToolNotify.IsZero() && time.Since(ru.lastToolNotify) < notifyFreshWindow
++		ru.mu.Unlock()
++		switch {
++		case notifyFresh:
++			interval = pushBackstopInterval
++		case active:
+ 			interval = liveInterval
+-		} else {
++		default:
+ 			interval = idleInterval
+ 		}
+ 	}
+@@ -839,17 +870,28 @@ func (ru *RemoteUI) toolTickLoop(ctx context.Context) {
+ // cursors (guarded by c.mu) decide who receives the full snapshot vs. just the
+ // playhead. Returns true when the tool is "active" (playing, content changed, or
+ // the channel was busy mid-edit) so the caller keeps the tighter cadence.
+-func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clients []*ruClient) (active bool) {
+-	digest, ok, err := shm.TryGetParam(0, overtakeParamPrefix+"rui_poll")
+-	if !ok {
+-		// Mutex busy (a concurrent SetParam or another read). SKIP this tick
+-		// rather than escalate to the heavy "state" read — escalating on
+-		// contention defeats the rev-gate exactly when the channel is busiest
+-		// (self-amplifying under load). Stay on the fast cadence: busy means a
+-		// user is actively editing, so we want to catch up promptly.
+-		return true
+-	}
+-	if err != nil || digest == "" {
++func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clients []*ruClient, kicked string) (active bool) {
++	var digest string
++	if kicked != "" {
++		// Shim-pushed digest (notify ring) — no shm read needed at all.
++		digest = kicked
++	} else {
++		var ok bool
++		var err error
++		digest, ok, err = shm.TryGetParam(0, overtakeParamPrefix+"rui_poll")
++		if !ok {
++			// Mutex busy (a concurrent SetParam or another read). SKIP this tick
++			// rather than escalate to the heavy "state" read — escalating on
++			// contention defeats the rev-gate exactly when the channel is busiest
++			// (self-amplifying under load). Stay on the fast cadence: busy means a
++			// user is actively editing, so we want to catch up promptly.
++			return true
++		}
++		if err != nil || digest == "" {
++			digest = ""
++		}
++	}
++	if digest == "" {
+ 		// No digest: either no active overtake tool, or a tool that predates the
+ 		// cheap rui_poll key. One module_id read (only on this cold path) tells
+ 		// them apart, so we can notify the Tool tab when its tool goes away.
+@@ -861,7 +903,7 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
+ 		// Legacy tool without rui_poll → one coalesced full fetch for all.
+ 		if params, hit := ru.fetchAllParams(0, "overtake_dsp"); hit {
+ 			for _, c := range clients {
+-				ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
++				ru.writeJSONTry(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
+ 			}
+ 		}
+ 		return true
+@@ -890,7 +932,12 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
+ 				if !stale {
+ 					continue
+ 				}
+-				ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
++				// Non-blocking dispatch: on drop (a write to this client is
++				// still in flight) the cursors stay stale, so the next tick
++				// retries — a wedged client can't stall the whole fan-out.
++				if !ru.writeJSONTry(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params}) {
++					continue
++				}
+ 				c.mu.Lock()
+ 				c.toolSynced = true
+ 				c.toolLastRev = rev
+@@ -909,14 +956,17 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
+ 	for _, c := range clients {
+ 		c.mu.Lock()
+ 		changed := tick != c.toolLastTick
+-		if changed {
+-			c.toolLastTick = tick
+-		}
+ 		c.mu.Unlock()
+-		if changed {
+-			ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0,
+-				Params: map[string]string{overtakeParamPrefix + "rui_play": play}})
++		if !changed {
++			continue
+ 		}
++		if !ru.writeJSONTry(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0,
++			Params: map[string]string{overtakeParamPrefix + "rui_play": play}}) {
++			continue // dropped — cursor untouched, next tick retries
++		}
++		c.mu.Lock()
++		c.toolLastTick = tick
++		c.mu.Unlock()
+ 	}
+ 	return true
+ }
+@@ -941,7 +991,9 @@ func (ru *RemoteUI) signalToolGone(ctx context.Context, clients []*ruClient) {
+ 		return
+ 	}
+ 	for _, c := range clients {
+-		ru.writeJSON(ctx, c, wsToolInfo{Type: "tool_info", ID: ""})
++		// Async (must not be dropped, must not stall the ticker on a wedged
++		// client); per-client writeMu still serialises with in-flight writes.
++		ru.writeJSONAsync(ctx, c, wsToolInfo{Type: "tool_info", ID: ""})
+ 	}
+ 	ru.logger.Info("overtake tool unloaded — signaled Tool-tab clients")
+ }
+@@ -1102,8 +1154,8 @@ func (ru *RemoteUI) sendError(ctx context.Context, c *ruClient, message string)
+ }
+ 
+ func (ru *RemoteUI) writeJSON(ctx context.Context, c *ruClient, v any) {
+-	c.mu.Lock()
+-	defer c.mu.Unlock()
++	c.writeMu.Lock()
++	defer c.writeMu.Unlock()
+ 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+ 	defer cancel()
+ 	if err := wsjson.Write(ctx, c.conn, v); err != nil {
+@@ -1111,6 +1163,35 @@ func (ru *RemoteUI) writeJSON(ctx context.Context, c *ruClient, v any) {
+ 	}
+ }
+ 
++// writeJSONTry dispatches the write in its own goroutine if no write to this
++// client is already in flight, and reports false (dropped) otherwise. Used by
++// the periodic fan-out loops (tool ticker, notify drain, backstop): every
++// update they push is an ABSOLUTE value, so dropping one while the previous
++// write is still stuck is correct — the caller skips its cursor update and the
++// next tick re-pushes. A wedged client can neither stall the calling loop nor
++// accumulate blocked goroutines (at most one in flight per client).
++func (ru *RemoteUI) writeJSONTry(ctx context.Context, c *ruClient, v any) bool {
++	if !c.writeMu.TryLock() {
++		return false
++	}
++	go func() {
++		defer c.writeMu.Unlock()
++		wctx, cancel := context.WithTimeout(ctx, 5*time.Second)
++		defer cancel()
++		if err := wsjson.Write(wctx, c.conn, v); err != nil {
++			ru.logger.Debug("ws write failed", "err", err)
++		}
++	}()
++	return true
++}
++
++// writeJSONAsync queues the write in its own goroutine (serialised per client
++// by writeMu). For one-shot messages that must not be dropped (tool_info) but
++// must not stall the calling loop either.
++func (ru *RemoteUI) writeJSONAsync(ctx context.Context, c *ruClient, v any) {
++	go ru.writeJSON(ctx, c, v)
++}
++
+ // ---------------------------------------------------------------------------
+ // Poll loop — fetches params for subscribed slots and pushes diffs
+ // ---------------------------------------------------------------------------
+@@ -1170,6 +1251,29 @@ func (ru *RemoteUI) notifyLoop(ctx context.Context) {
+ 			slotChanges := make(map[uint8]map[string]string)
+ 			masterFxChanges := make(map[string]string)
+ 			for _, c := range changes {
++				if c.Slot == 0 && c.Key == overtakeParamPrefix+"rui_poll" {
++					// F4 push: the shim probes the overtake tool's rui_poll
++					// digest and pushes changes here. Don't forward raw —
++					// kick the tool ticker (sole driver of tool cursors)
++					// with the digest; replace any pending kick with the
++					// newer one.
++					ru.mu.Lock()
++					ru.lastToolNotify = time.Now()
++					ru.mu.Unlock()
++					select {
++					case ru.toolKick <- c.Value:
++					default:
++						select {
++						case <-ru.toolKick:
++						default:
++						}
++						select {
++						case ru.toolKick <- c.Value:
++						default:
++						}
++					}
++					continue
++				}
+ 				if c.Slot == 0 && strings.HasPrefix(c.Key, "master_fx:") {
+ 					masterFxChanges[c.Key] = c.Value
+ 					// A device-initiated master-FX preset load reshuffles every
+@@ -1206,6 +1310,12 @@ func (ru *RemoteUI) notifyLoop(ctx context.Context) {
+ 				}
+ 			}
+ 
++			// Non-blocking dispatch (writeJSONTry): these are absolute values
++			// re-pushed on every change, so dropping one for a client whose
++			// previous write is still in flight is safe — and one wedged
++			// client can no longer stall this 5ms drain loop for up to the
++			// write timeout (which overflowed the 64-entry shim ring and
++			// dropped everyone's live knob updates).
+ 			for slot, params := range slotChanges {
+ 				update := wsParamUpdate{Type: "param_update", Slot: slot, Params: params}
+ 				for _, c := range clients {
+@@ -1213,7 +1323,7 @@ func (ru *RemoteUI) notifyLoop(ctx context.Context) {
+ 					subscribed := c.subs[slot]
+ 					c.mu.Unlock()
+ 					if subscribed {
+-						ru.writeJSON(ctx, c, update)
++						ru.writeJSONTry(ctx, c, update)
+ 					}
+ 				}
+ 			}
+@@ -1225,7 +1335,7 @@ func (ru *RemoteUI) notifyLoop(ctx context.Context) {
+ 					subscribed := c.masterFxSub
+ 					c.mu.Unlock()
+ 					if subscribed {
+-						ru.writeJSON(ctx, c, update)
++						ru.writeJSONTry(ctx, c, update)
+ 					}
+ 				}
+ 			}
+diff --git a/src/schwung_shim.c b/src/schwung_shim.c
+index 00faec72..18147cf1 100644
+--- a/src/schwung_shim.c
++++ b/src/schwung_shim.c
+@@ -419,6 +419,23 @@ static audio_fx_api_v2_t *overtake_dsp_fx = NULL;  /* V2 FX plugin */
+ static void *overtake_dsp_fx_inst = NULL;           /* FX instance */
+ static host_api_v1_t overtake_host_api;             /* Host API provided to plugin */
+ 
++/* Remote-UI push probe state (see shadow_overtake_rui_probe). Reset on every
++ * overtake DSP load/unload so a new tool re-probes rui_poll support. */
++static uint8_t  overtake_rui_unsupported = 0;   /* module answered <0 once */
++static char     overtake_rui_last[64] = {0};    /* last digest pushed */
++static unsigned long overtake_rui_last_rev = 0; /* rev field of last push */
++static uint8_t  overtake_rui_have_rev = 0;
++static uint32_t overtake_rui_frame = 0;         /* SPI frame divider */
++static uint32_t overtake_rui_ph_count = 0;      /* playhead-only change divider */
++
++static void shadow_overtake_rui_reset(void) {
++    overtake_rui_unsupported = 0;
++    overtake_rui_last[0] = '\0';
++    overtake_rui_last_rev = 0;
++    overtake_rui_have_rev = 0;
++    overtake_rui_ph_count = 0;
++}
++
+ /* Per-CC passthrough bitmap. When an overtake module declares
+  * capabilities.button_passthrough = [cc, ...], those CCs are routed through
+  * overtake_mode=2's filter unchanged — both the press events reach Move
+@@ -1420,6 +1437,7 @@ static void overtake_ext_drain_into_shadow(uint8_t *shadow) {
+ }
+ 
+ static void shadow_overtake_dsp_load(const char *path) {
++    shadow_overtake_rui_reset();
+     /* Unload previous if any */
+     if (overtake_dsp_handle) {
+         shadow_log("Overtake DSP: unloading previous before loading new");
+@@ -1535,6 +1553,7 @@ static void shadow_overtake_dsp_load(const char *path) {
+ 
+ static void shadow_overtake_dsp_unload(void) {
+     if (!overtake_dsp_handle) return;
++    shadow_overtake_rui_reset();
+ 
+     if (overtake_dsp_gen && overtake_dsp_gen_inst) {
+         if (overtake_dsp_gen->destroy_instance)
+@@ -3539,6 +3558,53 @@ void web_param_notify_push(uint8_t slot, const char *key, const char *value) {
+     web_param_notify_shm->ready++;
+ }
+ 
++/* Remote-UI push (F4): probe the loaded overtake DSP's cheap "rui_poll" digest
++ * ("rev:on:tick:bpm") IN-PROCESS every RUI_PROBE_FRAMES SPI frames and push
++ * changes into the web param notify ring, so schwung-manager learns about tool
++ * edits on-change instead of polling the shared shadow_param channel (which
++ * contends with browser SetParams). Runs where param serves already run
++ * (post-transfer path); RT-safe: no alloc, no logging, no I/O — one in-process
++ * get_param + a strcmp per interval, nothing at all when no overtake DSP is
++ * loaded or the module doesn't implement rui_poll (latched after one <0
++ * answer until the next overtake load).
++ * Rate rule: a rev-field change (content edit) pushes immediately; a digest
++ * change with the same rev (playhead tick/bpm only) pushes every
++ * RUI_PLAYHEAD_DIVIDER-th changed probe (~96ms) so playback doesn't spam the
++ * 64-entry ring — the manager's own poll cadence covered playhead at ~100ms. */
++#define RUI_PROBE_FRAMES 4       /* probe every 4th SPI frame (~12ms) */
++#define RUI_PLAYHEAD_DIVIDER 8   /* playhead-only pushes every 8th probe */
++static void shadow_overtake_rui_probe(void) {
++    if (!overtake_dsp_gen || !overtake_dsp_gen_inst || !overtake_dsp_gen->get_param)
++        return;
++    if (overtake_rui_unsupported || !web_param_notify_shm)
++        return;
++    if (++overtake_rui_frame % RUI_PROBE_FRAMES)
++        return;
++    char digest[64];
++    int len = overtake_dsp_gen->get_param(overtake_dsp_gen_inst, "rui_poll",
++                                          digest, (int)sizeof(digest));
++    if (len < 0) { overtake_rui_unsupported = 1; return; }
++    if (len >= (int)sizeof(digest)) return;   /* not a rui_poll-shaped digest */
++    digest[len] = '\0';
++    if (strcmp(digest, overtake_rui_last) == 0)
++        return;
++    unsigned long rev = strtoul(digest, NULL, 10);
++    int push;
++    if (!overtake_rui_have_rev || rev != overtake_rui_last_rev) {
++        push = 1;
++        overtake_rui_ph_count = 0;
++    } else {
++        push = (++overtake_rui_ph_count % RUI_PLAYHEAD_DIVIDER) == 0;
++    }
++    if (!push)
++        return;
++    overtake_rui_last_rev = rev;
++    overtake_rui_have_rev = 1;
++    strncpy(overtake_rui_last, digest, sizeof(overtake_rui_last) - 1);
++    overtake_rui_last[sizeof(overtake_rui_last) - 1] = '\0';
++    web_param_notify_push(0, "overtake_dsp:rui_poll", digest);
++}
++
+ /* Callback for chain_mgmt: handle shim-specific param prefixes.
+  * Reads/writes shadow_param->key/value/error/result_len directly.
+  * Returns 1 if handled, 0 if not. */
+@@ -4706,6 +4772,7 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
+      * param.get span via the SHM-propagated trace context (Phase 2b). */
+     shadow_inprocess_handle_param_request();
+     shadow_drain_web_param_set();  /* Web UI fire-and-forget param sets */
++    shadow_overtake_rui_probe();   /* Remote-UI push: overtake rui_poll → notify ring */
+     TIME_SECTION_END(spi_param_req_sum, spi_param_req_max);
+ 
+     /* Forward CC/pitch bend/aftertouch from external MIDI to MIDI_OUT so DSP
+-- 
+2.53.0
+

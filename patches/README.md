@@ -130,3 +130,36 @@ git format-patch -1 <replayed-commit> --stdout > patches/remote-ui-responsivity.
     headroom; needs shim + DSP plumbing (so out of scope for this manager-only patch).
   - **Write backpressure:** the ticker fans out to clients sequentially; a wedged client can stall a tick up to
     the 5s `writeJSON` timeout. Parallelize the fan-out (goroutine per client) only if it bites in practice.
+
+## remote-ui-push.patch
+
+**Remote-UI true push (F4) + non-blocking client fan-outs** — layers on
+`remote-ui-responsivity.patch` (needs its `toolTickLoop`/`rui_poll` contract; does not apply on
+stock upstream alone). One commit, two halves:
+
+- **Manager:** `ruClient` write/state mutex split (`writeMu` vs `mu`), `writeJSONTry`
+  (TryLock + goroutine, ≤1 in-flight write per client, drop-and-retry) at every periodic fan-out
+  (tool ticker, 5ms notify drain, 30s backstop), `writeJSONAsync` for tool_info(gone). Closes the
+  "wedged client stalls every loop for up to 5s" class flagged in the 07-18 audit.
+- **Shim + manager (F4):** shim probes the overtake DSP's `rui_poll` in-process every 4th SPI
+  frame and pushes digest changes into the web param notify ring (rev change = immediate;
+  playhead-only = every 8th probe ≈96ms; module without `rui_poll` latched off until next
+  overtake load). Manager routes those entries to a `toolKick` channel; the ticker services kicks
+  immediately (no shm read) and relaxes its own poll to a 2s backstop while pushes are fresh.
+
+Re-apply after an upstream rebase:
+
+```sh
+git am --3way patches/remote-ui-overtake-tools.patch
+git am --3way patches/remote-ui-responsivity.patch
+git am --3way patches/remote-ui-push.patch
+```
+
+Then regenerate: `git format-patch -1 <replayed-commit> --stdout > patches/remote-ui-push.patch`
+
+### Status (2026-07-18)
+
+- Off-host verified: full host `build.sh` clean (shim) + `go vet`/`go build` clean (go 1.26
+  Docker, manager). **NOT deployed** (device unreachable at build time): manager binary deploy =
+  scp temp + `mv -f` + `restart_move.sh` (safe first — F4 stays dormant without the new shim);
+  shim needs `install.sh local` (reboot). NOT merged to fork main; branch `remote-ui-push`.
