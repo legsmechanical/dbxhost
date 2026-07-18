@@ -382,6 +382,38 @@ That means:
   Task 5). Bump `min_host_version` in your catalog entry if your
   module depends on it.
 
+### Remote UI for overtake tools (the Tool tab)
+
+Overtake tools (dsp.so loaded by the shim as `overtake_dsp`, not a chain slot)
+get their own browser view: schwung-manager serves the tool's `web_ui.html`
+under the **Tool tab**, addressed via the `overtake_dsp:<key>` param prefix.
+
+- **Opt in** by answering `get_param("module_id")` with your module id. The
+  manager probes it to discover the active tool, announces arrival/departure
+  to open Tool tabs, and serves `web_ui.html` from your module folder.
+- **Reads**: the manager seeds and refreshes the browser from
+  `get_param("state")` — return a **flat JSON object of delimited string
+  values** (nested arrays/objects are dropped by the param explosion).
+- **Writes**: browser `setParam` calls arrive as ordinary `set_param` on the
+  shadow_param ring — serialized synchronous round-trips, values up to 64 KB,
+  **no per-buffer coalescing** on this path (unlike the on-device JS channel).
+- **Live sync (optional but recommended)**: expose a monotonic edit counter
+  and a cheap digest, and the host pushes changes to the browser on-change:
+  - `get_param("rui_poll")` → `rev:on:tick:bpm[:devms]` — `rev` bumps on every
+    snapshot-visible edit; `on/tick/bpm` describe transport; `devms` (playing
+    only — the stopped digest must stay byte-stable) is a free-running
+    device-clock ms that lets the browser time-base its playhead independent
+    of delivery latency. The shim probes this in-process every few frames and
+    pushes changes through the notify ring; without it the manager falls back
+    to polling.
+  - Key-naming convention: keys suffixed `_ruisel` / `_cc_focus` and the key
+    `transport` are treated as selection/transport (the manager echoes
+    snapshots to their sender immediately instead of applying the editing
+    quiet-window).
+- Worked example (full contract, coordinate system, gotchas): dAVEBOx's
+  `docs/reference/REMOTE_UI.md`; pipeline internals: `patches/README.md`
+  (remote-ui-push series).
+
 ## Drop-In Modules
 
 Modules are discovered at runtime from `/data/UserData/schwung/modules`.
