@@ -1439,6 +1439,39 @@ static void overtake_ext_drain_into_shadow(uint8_t *shadow) {
     overtake_ext_ring.tail = tail;
 }
 
+/* ---- Off-RT remote-snapshot servicing (generic opt-in facility) ----------
+ * A connected browser editor pulls the overtake DSP's big read-only "state"
+ * snapshot (O(notes), up to SHADOW_PARAM_VALUE_LEN) on every rev-bump. Serialized
+ * inline on the SPI RT thread it overruns the ~900µs frame budget and hitches the
+ * sequencer clock + MIDI ("now and then", only with a browser attached). When the
+ * loaded overtake DSP DECLARES the snapshot safe to read off the audio thread
+ * (get_param "remote_snapshot_rt_safe" == "1"), the RT servicer hands that one
+ * request to a dedicated low-priority worker (snap_worker_main, cores 0-2) and
+ * returns "deferred" (2) so the caller doesn't publish; the worker fills the SHM
+ * buffer and publishes the response a few ms later. Anything else (SETs, small
+ * GETs) is still serviced inline exactly as before.
+ *
+ * Safety: the module's contract is that its render_block never frees/reallocs the
+ * snapshot's backing memory, so a read-only snapshot can run concurrently with
+ * render (worst case: a one-poll cosmetically-stale piano roll, self-corrected on
+ * the next pull — never a UAF). The RT paths that CAN free/realloc the instance
+ * (unload, load-over, and any set_param such as state_load/convert) first clear the
+ * opt-in and spin until the worker is idle. With no browser attached no snapshot GET
+ * ever arrives, so the worker sleeps on the semaphore forever → zero added cost. */
+static int              g_snap_rt_safe   = 0;   /* loaded module opted in */
+static sem_t            g_snap_sem;
+static int              g_snap_sem_ok    = 0;
+static volatile uint32_t g_snap_req_id   = 0;
+static volatile int     g_snap_inflight  = 0;   /* 1 while the worker owns the mailbox */
+
+/* Wait (bounded, ~one snapshot serialize) for the worker to release the mailbox
+ * before an RT path frees/reallocs the overtake instance. Cheap when idle (one
+ * relaxed load == 0). Callers should clear g_snap_rt_safe first so no NEW offload
+ * starts during teardown. */
+static inline void snap_wait_idle(void) {
+    while (__atomic_load_n(&g_snap_inflight, __ATOMIC_ACQUIRE)) { /* spin */ }
+}
+
 static void shadow_overtake_dsp_load(const char *path) {
     shadow_overtake_rui_reset();
     /* Unload previous if any */
@@ -3640,46 +3673,25 @@ static void shadow_overtake_rui_probe(void) {
     web_param_notify_push(0, "overtake_dsp:rui_poll", digest);
 }
 
-/* ---- Off-RT remote-snapshot servicing (generic opt-in facility) ----------
- * A connected browser editor pulls the overtake DSP's big read-only "state"
- * snapshot (O(notes), up to SHADOW_PARAM_VALUE_LEN) on every rev-bump. Serialized
- * inline on the SPI RT thread it overruns the ~900µs frame budget and hitches the
- * sequencer clock + MIDI ("now and then", only with a browser attached). When the
- * loaded overtake DSP DECLARES the snapshot safe to read off the audio thread
- * (get_param "remote_snapshot_rt_safe" == "1"), the RT servicer hands that one
- * request to this dedicated SCHED_OTHER worker and returns "deferred" (2) so the
- * caller doesn't publish; the worker fills the SHM buffer and publishes the
- * response a few ms later on cores 0-2. Anything else (SETs, small GETs) is still
- * serviced inline exactly as before.
- *
- * Safety: the module's contract is that its render_block never frees/reallocs the
- * snapshot's backing memory, so a read-only snapshot can run concurrently with
- * render (worst case: a one-poll cosmetically-stale piano roll, self-corrected on
- * the next pull — never a UAF). The RT paths that CAN free/realloc the instance
- * (unload, load-over, and any set_param such as state_load/convert) first clear the
- * opt-in and spin until the worker is idle. With no browser attached no snapshot GET
- * ever arrives, so the worker sleeps on the semaphore forever → zero added cost. */
-static int              g_snap_rt_safe   = 0;   /* loaded module opted in */
-static sem_t            g_snap_sem;
-static int              g_snap_sem_ok    = 0;
-static volatile uint32_t g_snap_req_id   = 0;
-static volatile int     g_snap_inflight  = 0;   /* 1 while the worker owns the mailbox */
-
-/* Wait (bounded, ~one snapshot serialize) for the worker to release the mailbox
- * before an RT path frees/reallocs the overtake instance. Cheap when idle (one
- * relaxed load == 0). Callers should clear g_snap_rt_safe first so no NEW offload
- * starts during teardown. */
-static inline void snap_wait_idle(void) {
-    while (__atomic_load_n(&g_snap_inflight, __ATOMIC_ACQUIRE)) { /* spin */ }
-}
-
+/* Worker thread for the off-RT remote-snapshot servicing declared above the
+ * overtake load path (see g_snap_* + snap_wait_idle). */
 static void *snap_worker_main(void *arg) {
     (void)arg;
-    struct sched_param sp = { .sched_priority = 0 };
-    pthread_setschedparam(pthread_self(), SCHED_OTHER, &sp);
+    /* Cores 0-2 only (keep core 3 free for the SPI SCHED_FIFO 90 audio callback).
+     * Use a LOW real-time priority (well below the audio thread's 90 and Move's
+     * FIFO 70 threads) so a browser state pull is serviced promptly instead of
+     * being starved behind the manager / shadow_ui SCHED_OTHER load — otherwise
+     * the piano roll lags seconds behind edits. The snapshot is a ~ms CPU burst,
+     * then the worker blocks on the semaphore, so it can't monopolise a core. */
     cpu_set_t mask; CPU_ZERO(&mask);
     CPU_SET(0, &mask); CPU_SET(1, &mask); CPU_SET(2, &mask);
     pthread_setaffinity_np(pthread_self(), sizeof(mask), &mask);
+    struct sched_param sp = { .sched_priority = 10 };
+    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) != 0) {
+        /* Fall back to SCHED_OTHER if RT priority isn't permitted. */
+        sp.sched_priority = 0;
+        pthread_setschedparam(pthread_self(), SCHED_OTHER, &sp);
+    }
     for (;;) {
         if (sem_wait(&g_snap_sem) != 0) { if (errno == EINTR) continue; break; }
         shadow_param_t *mb = shadow_param;
