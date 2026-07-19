@@ -83,6 +83,9 @@ type ruClient struct {
 	toolLastTick int64
 	toolLastOn   bool      // last pushed play-state; start/stop EDGES must be pushed
 	toolPlayAt   time.Time // last playhead push — rate-limited (edges exempt)
+	// toolLastEditAt: when this client last sent an overtake CONTENT edit —
+	// used to arm the quiet window only for edit STORMS (see handleSetParam).
+	toolLastEditAt time.Time
 	// toolQuietUntil: this client sent an overtake set_param recently, so it is
 	// mid-edit. Skip snapshot pushes to it until the window passes — its UI is
 	// optimistic and REJECTS echoes of its own edits anyway, and during a knob
@@ -192,13 +195,18 @@ const overtakeParamPrefix = "overtake_dsp:"
 // setParam writes a param using the fast ring buffer if available,
 // falling back to the old shared memory path.
 func (ru *RemoteUI) setParam(slot uint8, key, value string) error {
-	// Overtake-tool params MUST go through the reliable shadow_param ring
-	// (request_type=1), which the shim routes to the overtake DSP. The fast
-	// web_param_set ring's shadow_direct_set_param has no "overtake_dsp:"
-	// branch, so it would mis-route the key to a chain slot. The slow ring is
-	// fine here: overtake-tool edits are discrete ops, not knob-drag streams,
-	// and it lifts the fast ring's 255-byte value cap (64KB on the slow ring).
+	// Overtake-tool params: prefer the LOSSLESS web_param_set ring — drained by
+	// the shim every SPI frame and dispatched straight to the overtake DSP (the
+	// drain has an "overtake_dsp:" branch; requires the paired shim, deployed
+	// together). Unlike the mailbox, ring entries cannot be stomped by the
+	// device UI's fire-and-forget mailbox producer, which was killing overtake
+	// edits in 500ms response timeouts (dropped beat-stretch/legato/nudge ops).
+	// Oversized values (≥256B) still take the blocking mailbox (64KB cap).
 	if strings.HasPrefix(key, overtakeParamPrefix) {
+		if ring := ru.ensureSetRing(); ring != nil &&
+			len(key) < webKeyLen && len(value) < webValueLen {
+			return ring.SetParam(slot, key, value)
+		}
 		if shm := ru.ensureShm(); shm != nil {
 			return shm.SetParam(slot, key, value)
 		}
@@ -700,12 +708,21 @@ func (ru *RemoteUI) handleSetParam(ctx context.Context, c *ruClient, msg wsMessa
 	// EXEMPT: for those the snapshot IS the requested data (the newly selected
 	// clip's notes, the focused CC lane), not an echo — arming quiet for them
 	// just made the client's own request feel laggy.
+	// STORM-ONLY: a single discrete edit (beat stretch, legato, one note op)
+	// does NOT arm the window — the browser can't optimistically render
+	// destructive ops, so the snapshot echo IS the result and deferring it
+	// just reads as lag. Only a rapid successive stream (knob drag, note
+	// drag) arms it; the optimistic UI covers those.
 	if strings.HasPrefix(msg.Key, overtakeParamPrefix) &&
 		!strings.HasSuffix(msg.Key, "_ruisel") &&
 		!strings.HasSuffix(msg.Key, ":transport") &&
 		!strings.HasSuffix(msg.Key, "_cc_focus") {
+		now := time.Now()
 		c.mu.Lock()
-		c.toolQuietUntil = time.Now().Add(300 * time.Millisecond)
+		if now.Sub(c.toolLastEditAt) < 250*time.Millisecond {
+			c.toolQuietUntil = now.Add(300 * time.Millisecond)
+		}
+		c.toolLastEditAt = now
 		c.mu.Unlock()
 	}
 	if err := ru.setParam(slot, msg.Key, msg.Value); err != nil {
@@ -996,6 +1013,24 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 			return true, true
 		}
 		params, hit := ru.fetchAllParams(0, "overtake_dsp") // ONE read, fanned out
+		// The shim serves "state" from a worker-maintained cache that may be
+		// one rev behind the digest. The blob carries its own rui_rev — sync
+		// cursors to what we actually RECEIVED, and if it's older than the
+		// digest, keep pending so the retry cadence re-pulls (the shim kicks
+		// its cache refresh on the stale read).
+		blobRev := rev
+		if hit {
+			if s, ok := params[overtakeParamPrefix+"rui_rev"]; ok {
+				if v, perr := strconv.ParseInt(s, 10, 64); perr == nil {
+					blobRev = v
+				}
+			}
+			if blobRev != rev {
+				pending = true
+			}
+		} else {
+			pending = true // cold shim cache / busy channel — retry soon
+		}
 		if hit {
 			for _, c := range clients {
 				c.mu.Lock()
@@ -1018,7 +1053,7 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 				}
 				c.mu.Lock()
 				c.toolSynced = true
-				c.toolLastRev = rev
+				c.toolLastRev = blobRev
 				c.toolLastTick = tick
 				edge := on != c.toolLastOn
 				c.mu.Unlock()

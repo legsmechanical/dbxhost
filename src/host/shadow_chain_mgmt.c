@@ -3504,17 +3504,9 @@ void shadow_inprocess_handle_param_request(void) {
 
     /* Handle overtake DSP params - delegate to shim */
     if (strncmp(shadow_param->key, "overtake_dsp:", 13) == 0) {
-        if (host.handle_param_special) {
-            int r = host.handle_param_special(req_type, req_id);
-            /* r == 2: the handler deferred servicing to a worker thread — it
-             * will publish the response asynchronously, so do NOT publish here
-             * (leaving request_type set is fine; the handler re-defers on any
-             * re-entry until the worker publishes and clears it). */
-            if (r == 2) return;
-            if (r == 1) {
-                shadow_param_publish_response(req_id);
-                return;
-            }
+        if (host.handle_param_special && host.handle_param_special(req_type, req_id)) {
+            shadow_param_publish_response(req_id);
+            return;
         }
         /* Fallback if no handler */
         shadow_param->error = 13;

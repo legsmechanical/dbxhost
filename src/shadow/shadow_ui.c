@@ -714,6 +714,15 @@ static int shadow_set_param_common(int slot, const char *key, const char *value,
         if (!shadow_param_wait_idle(timeout_ms)) {
             return 0;
         }
+    } else {
+        /* Fire-and-forget must still not STOMP a pending request from the
+         * other mailbox producer (schwung-manager: a browser edit SET or a
+         * snapshot GET) — a blind overwrite kills that request and the
+         * manager burns its full 500ms response timeout (observed as dropped
+         * remote-UI edits). Mailbox holds are ≤1 SPI frame, so a short
+         * bounded wait clears nearly every collision; on timeout we still
+         * claim the slot so the device UI can never block indefinitely. */
+        shadow_param_wait_idle(8);
     }
 
     uint32_t req_id = shadow_param_next_request_id();
