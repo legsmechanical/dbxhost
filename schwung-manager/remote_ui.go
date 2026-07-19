@@ -41,6 +41,11 @@ type RemoteUI struct {
 	// tool-tick, so a transition to "no tool" fires exactly one tool_info(gone)
 	// signal to Tool-tab clients. Guarded by mu.
 	toolPresent bool
+	// toolGoneStreak counts consecutive confirmed-absent ticks; tool-gone is
+	// only signaled once it reaches the debounce threshold (a single absent
+	// answer can be a stomped-mailbox artifact, and a false gone dead-ends
+	// the client's tool UI).
+	toolGoneStreak int
 
 	// toolKick delivers a shim-pushed "rui_poll" digest (notify ring, F4 push
 	// path) to toolTickLoop so it services Tool-tab clients immediately instead
@@ -1002,12 +1007,24 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 			return true, false
 		}
 		if id == "" {
+			// DEBOUNCE: require several consecutive confirmed-absent ticks
+			// before telling clients the tool is gone. A single ambiguous
+			// answer (a fast shim error can also be produced by a stomped
+			// mailbox) put clients into a dead "no tool" state mid-session.
+			ru.mu.Lock()
+			ru.toolGoneStreak++
+			confirmed := ru.toolGoneStreak >= 3
+			ru.mu.Unlock()
+			if !confirmed {
+				return true, false
+			}
 			ru.signalToolGone(ctx, clients)
 			return false, false
 		}
-		if ru.markToolPresent() {
-			ru.announceToolArrival(ctx, clients)
-		}
+		ru.mu.Lock()
+		ru.toolGoneStreak = 0
+		ru.mu.Unlock()
+		ru.maybeAnnounceArrival(ctx, clients)
 		// Legacy tool without rui_poll → one coalesced full fetch for all.
 		if params, hit := ru.fetchAllParams(0, "overtake_dsp"); hit {
 			for _, c := range clients {
@@ -1016,9 +1033,10 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 		}
 		return true, false
 	}
-	if ru.markToolPresent() {
-		ru.announceToolArrival(ctx, clients)
-	}
+	ru.mu.Lock()
+	ru.toolGoneStreak = 0
+	ru.mu.Unlock()
+	ru.maybeAnnounceArrival(ctx, clients)
 	rev, on, tick, bpm, devms := parseRuiPoll(digest)
 	// rui_play frame (used by BOTH the snapshot path — play-state edges must
 	// ride along, snapshots don't carry the on flag — and the playhead path).
@@ -1179,10 +1197,28 @@ func (ru *RemoteUI) markToolPresent() bool {
 // nothing re-announces. Sends tool_info + custom_ui per client (ordered within
 // a per-client goroutine) and marks every client unsynced so the ticker's
 // normal path fans out a fresh snapshot in the same pass.
-func (ru *RemoteUI) announceToolArrival(ctx context.Context, clients []*ruClient) {
+// maybeAnnounceArrival consumes the not-present→present edge and announces the
+// arrival. If the announce cannot complete (module_id unreadable under
+// contention), the edge is UN-latched so the next tick retries — consuming the
+// edge and then silently failing left clients in a dead "no tool" state with
+// snapshots streaming past them (the "browser never updates" failure).
+func (ru *RemoteUI) maybeAnnounceArrival(ctx context.Context, clients []*ruClient) {
+	if !ru.markToolPresent() {
+		return
+	}
+	if !ru.announceToolArrival(ctx, clients) {
+		ru.mu.Lock()
+		ru.toolPresent = false
+		ru.mu.Unlock()
+	}
+}
+
+// announceToolArrival returns false when the announce could not be delivered
+// (tool id unreadable) so the caller can retry the arrival edge.
+func (ru *RemoteUI) announceToolArrival(ctx context.Context, clients []*ruClient) bool {
 	toolID, _ := ru.activeOvertakeToolID(0)
 	if toolID == "" {
-		return
+		return false
 	}
 	url := ru.findModuleWebUI(toolID)
 	for _, c := range clients {
@@ -1197,6 +1233,7 @@ func (ru *RemoteUI) announceToolArrival(ctx context.Context, clients []*ruClient
 		}(c)
 	}
 	ru.logger.Info("overtake tool arrived — announced to Tool-tab clients", "tool", toolID)
+	return true
 }
 
 // signalToolGone tells Tool-tab clients (once) that their overtake tool has
