@@ -271,6 +271,31 @@ func (ru *RemoteUI) Start(ctx context.Context) {
 	go ru.notifyLoop(ctx)
 	go ru.refreshLoop(ctx)
 	go ru.toolTickLoop(ctx)
+	go ru.setRingConnectLoop(ctx)
+}
+
+// setRingConnectLoop connects the web param set ring EAGERLY at startup,
+// retrying until the shim has created the segment. Lazy-on-first-use is not
+// enough on this platform: something unlinks every /dev/shm/schwung-* segment
+// shortly after stack start (early mmaps like the notify/params rings survive
+// via their open mappings, but any LATER open gets ENOENT forever). Without
+// this, the manager start races segment creation, the lazy open never
+// succeeds, and overtake edits silently fall back to the stompable mailbox —
+// re-introducing the 500ms-timeout dropped-edit failure the ring path exists
+// to fix. Retry for ~2 min (covers slow boots), then give up quietly (the
+// mailbox fallback still works, just degraded).
+func (ru *RemoteUI) setRingConnectLoop(ctx context.Context) {
+	for i := 0; i < 240; i++ {
+		if ru.ensureSetRing() != nil {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	ru.logger.Warn("web param set ring: gave up connecting — overtake edits will use the mailbox (degraded)")
 }
 
 // refreshLoop periodically re-reads all param values for subscribed slots.
