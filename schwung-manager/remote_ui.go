@@ -223,19 +223,31 @@ func (ru *RemoteUI) setParam(slot uint8, key, value string) error {
 
 // activeOvertakeToolID returns the module id of the overtake tool currently
 // loaded that opts into a remote UI by answering the
-// "overtake_dsp:module_id" probe, or "" if no such tool is active. The shim
-// returns an error for this GET when no overtake DSP is loaded (or the loaded
-// one predates the probe), so this is backward-safe.
-func (ru *RemoteUI) activeOvertakeToolID(slot uint8) string {
+// "overtake_dsp:module_id" probe. known=false means the answer could not be
+// determined this tick (no shm / mailbox contention timeout) — callers must
+// NOT treat that as "no tool": conflating read failure with absence is what
+// caused the gone→arrived flap loop. A genuine no-tool state is id=="" with
+// known==true (the shim errors this GET fast when no overtake DSP is loaded,
+// but a contention timeout produces the same Go error — so we only claim
+// "known" when the mailbox answered promptly, i.e. err came back well under
+// the response timeout).
+func (ru *RemoteUI) activeOvertakeToolID(slot uint8) (id string, known bool) {
 	shm := ru.ensureShm()
 	if shm == nil {
-		return ""
+		return "", false
 	}
+	start := time.Now()
 	id, err := shm.GetParam(slot, overtakeParamPrefix+"module_id")
 	if err != nil {
-		return ""
+		// Fast error (~1 SPI frame) = the shim answered "no overtake DSP" →
+		// genuinely absent. Slow error (idle/response timeout ≥200ms) =
+		// contention → unknown.
+		if time.Since(start) < 100*time.Millisecond {
+			return "", true
+		}
+		return "", false
 	}
-	return id
+	return id, true
 }
 
 // ensureSetRing attempts to open the web param set ring if not yet connected.
@@ -849,7 +861,7 @@ func (ru *RemoteUI) handleSubscribeTool(ctx context.Context, c *ruClient) {
 		return
 	}
 
-	toolID := ru.activeOvertakeToolID(0)
+	toolID, _ := ru.activeOvertakeToolID(0)
 	if toolID != "" {
 		// Consume the arrival edge BEFORE any network write: this client is
 		// being seeded right here, and it became visible to the ticker's
@@ -968,15 +980,28 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 			// user is actively editing, so we want to catch up promptly.
 			return true, false
 		}
-		if err != nil || digest == "" {
-			digest = ""
+		if err != nil {
+			// Mailbox READ FAILURE (idle/response timeout under contention) —
+			// NOT evidence the tool is gone. Treating it as absence made the
+			// manager flap gone→arrived every few seconds under device-side
+			// param load (worst while playing): each false arrival reset every
+			// client's cursors and re-pushed a full snapshot — the browser tore
+			// its tool UI down and back up in a loop. Skip the tick; the next
+			// poll/kick retries.
+			return true, false
 		}
 	}
 	if digest == "" {
 		// No digest: either no active overtake tool, or a tool that predates the
 		// cheap rui_poll key. One module_id read (only on this cold path) tells
 		// them apart, so we can notify the Tool tab when its tool goes away.
-		if ru.activeOvertakeToolID(0) == "" {
+		id, idKnown := ru.activeOvertakeToolID(0)
+		if !idKnown {
+			// Contention — can't tell if the tool is gone. Never signal gone
+			// on uncertainty (flap loop); skip and let the next tick decide.
+			return true, false
+		}
+		if id == "" {
 			ru.signalToolGone(ctx, clients)
 			return false, false
 		}
@@ -1155,7 +1180,7 @@ func (ru *RemoteUI) markToolPresent() bool {
 // a per-client goroutine) and marks every client unsynced so the ticker's
 // normal path fans out a fresh snapshot in the same pass.
 func (ru *RemoteUI) announceToolArrival(ctx context.Context, clients []*ruClient) {
-	toolID := ru.activeOvertakeToolID(0)
+	toolID, _ := ru.activeOvertakeToolID(0)
 	if toolID == "" {
 		return
 	}
