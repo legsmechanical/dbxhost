@@ -27,6 +27,7 @@
 #include <linux/spi/spidev.h>
 #include <pthread.h>
 #include <sched.h>
+#include <semaphore.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
@@ -1443,6 +1444,9 @@ static void shadow_overtake_dsp_load(const char *path) {
     /* Unload previous if any */
     if (overtake_dsp_handle) {
         shadow_log("Overtake DSP: unloading previous before loading new");
+        /* Stop new off-RT snapshot reads and drain any in flight before freeing. */
+        g_snap_rt_safe = 0;
+        snap_wait_idle();
         if (overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->destroy_instance)
             overtake_dsp_gen->destroy_instance(overtake_dsp_gen_inst);
         if (overtake_dsp_fx && overtake_dsp_fx_inst && overtake_dsp_fx->destroy_instance)
@@ -1519,8 +1523,21 @@ static void shadow_overtake_dsp_load(const char *path) {
             if (defaults) free(defaults);
 
             if (overtake_dsp_gen_inst) {
+                /* One-time capability query: may this module's read-only snapshot
+                 * be serviced off the audio thread? The module answers "1" only if
+                 * its render_block never frees/reallocs the snapshot's memory. Any
+                 * module that doesn't implement the key returns <=0 → stays inline
+                 * (today's behavior). */
+                g_snap_rt_safe = 0;
+                if (overtake_dsp_gen->get_param) {
+                    char cap[8] = {0};
+                    int cl = overtake_dsp_gen->get_param(overtake_dsp_gen_inst,
+                                 "remote_snapshot_rt_safe", cap, sizeof(cap));
+                    if (cl > 0 && cap[0] == '1') g_snap_rt_safe = 1;
+                }
                 char msg[256];
-                snprintf(msg, sizeof(msg), "Overtake DSP: loaded generator from %s", path);
+                snprintf(msg, sizeof(msg), "Overtake DSP: loaded generator from %s (snapshot_rt_safe=%d)",
+                         path, g_snap_rt_safe);
                 shadow_log(msg);
                 return;
             }
@@ -1556,6 +1573,10 @@ static void shadow_overtake_dsp_load(const char *path) {
 static void shadow_overtake_dsp_unload(void) {
     if (!overtake_dsp_handle) return;
     shadow_overtake_rui_reset();
+
+    /* Stop new off-RT snapshot reads and drain any in flight before freeing. */
+    g_snap_rt_safe = 0;
+    snap_wait_idle();
 
     if (overtake_dsp_gen && overtake_dsp_gen_inst) {
         if (overtake_dsp_gen->destroy_instance)
@@ -3619,9 +3640,80 @@ static void shadow_overtake_rui_probe(void) {
     web_param_notify_push(0, "overtake_dsp:rui_poll", digest);
 }
 
+/* ---- Off-RT remote-snapshot servicing (generic opt-in facility) ----------
+ * A connected browser editor pulls the overtake DSP's big read-only "state"
+ * snapshot (O(notes), up to SHADOW_PARAM_VALUE_LEN) on every rev-bump. Serialized
+ * inline on the SPI RT thread it overruns the ~900µs frame budget and hitches the
+ * sequencer clock + MIDI ("now and then", only with a browser attached). When the
+ * loaded overtake DSP DECLARES the snapshot safe to read off the audio thread
+ * (get_param "remote_snapshot_rt_safe" == "1"), the RT servicer hands that one
+ * request to this dedicated SCHED_OTHER worker and returns "deferred" (2) so the
+ * caller doesn't publish; the worker fills the SHM buffer and publishes the
+ * response a few ms later on cores 0-2. Anything else (SETs, small GETs) is still
+ * serviced inline exactly as before.
+ *
+ * Safety: the module's contract is that its render_block never frees/reallocs the
+ * snapshot's backing memory, so a read-only snapshot can run concurrently with
+ * render (worst case: a one-poll cosmetically-stale piano roll, self-corrected on
+ * the next pull — never a UAF). The RT paths that CAN free/realloc the instance
+ * (unload, load-over, and any set_param such as state_load/convert) first clear the
+ * opt-in and spin until the worker is idle. With no browser attached no snapshot GET
+ * ever arrives, so the worker sleeps on the semaphore forever → zero added cost. */
+static int              g_snap_rt_safe   = 0;   /* loaded module opted in */
+static sem_t            g_snap_sem;
+static int              g_snap_sem_ok    = 0;
+static volatile uint32_t g_snap_req_id   = 0;
+static volatile int     g_snap_inflight  = 0;   /* 1 while the worker owns the mailbox */
+
+/* Wait (bounded, ~one snapshot serialize) for the worker to release the mailbox
+ * before an RT path frees/reallocs the overtake instance. Cheap when idle (one
+ * relaxed load == 0). Callers should clear g_snap_rt_safe first so no NEW offload
+ * starts during teardown. */
+static inline void snap_wait_idle(void) {
+    while (__atomic_load_n(&g_snap_inflight, __ATOMIC_ACQUIRE)) { /* spin */ }
+}
+
+static void *snap_worker_main(void *arg) {
+    (void)arg;
+    struct sched_param sp = { .sched_priority = 0 };
+    pthread_setschedparam(pthread_self(), SCHED_OTHER, &sp);
+    cpu_set_t mask; CPU_ZERO(&mask);
+    CPU_SET(0, &mask); CPU_SET(1, &mask); CPU_SET(2, &mask);
+    pthread_setaffinity_np(pthread_self(), sizeof(mask), &mask);
+    for (;;) {
+        if (sem_wait(&g_snap_sem) != 0) { if (errno == EINTR) continue; break; }
+        shadow_param_t *mb = shadow_param;
+        if (mb && overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->get_param) {
+            int len = overtake_dsp_gen->get_param(overtake_dsp_gen_inst, "state",
+                                                  mb->value, SHADOW_PARAM_VALUE_LEN);
+            if (len >= 0) { mb->error = 0;  mb->result_len = len; }
+            else          { mb->error = 14; mb->result_len = -1; }
+        } else if (mb) {
+            mb->error = 14; mb->result_len = -1;
+        }
+        shadow_param_publish_response(g_snap_req_id);
+        __atomic_store_n(&g_snap_inflight, 0, __ATOMIC_RELEASE);
+    }
+    return NULL;
+}
+
+static void snap_worker_start(void) {
+    static volatile int started = 0;
+    if (__sync_lock_test_and_set(&started, 1)) return;
+    if (sem_init(&g_snap_sem, 0, 0) != 0) { started = 0; return; }
+    g_snap_sem_ok = 1;
+    pthread_t tid;
+    if (pthread_create(&tid, NULL, snap_worker_main, NULL) != 0) {
+        started = 0; g_snap_sem_ok = 0;
+        return;
+    }
+    pthread_detach(tid);
+}
+
 /* Callback for chain_mgmt: handle shim-specific param prefixes.
  * Reads/writes shadow_param->key/value/error/result_len directly.
- * Returns 1 if handled, 0 if not. */
+ * Returns 1 if handled, 2 if handled-but-deferred to a worker (caller must NOT
+ * publish — the worker will), 0 if not. */
 static int shim_handle_param_special(uint8_t req_type, uint32_t req_id) {
     (void)req_id;
     const char *key = shadow_param->key;
@@ -3639,6 +3731,10 @@ static int shim_handle_param_special(uint8_t req_type, uint32_t req_id) {
                 shadow_param->error = 0;
                 shadow_param->result_len = 0;
             } else if (overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->set_param) {
+                /* A set_param may free/realloc snapshot memory (state_load,
+                 * convert, …); wait for any off-RT snapshot read to finish first.
+                 * No-op cost when no snapshot is in flight. */
+                snap_wait_idle();
                 overtake_dsp_gen->set_param(overtake_dsp_gen_inst, param_key, shadow_param->value);
                 shadow_param->error = 0;
                 shadow_param->result_len = 0;
@@ -3651,6 +3747,22 @@ static int shim_handle_param_special(uint8_t req_type, uint32_t req_id) {
                 shadow_param->result_len = -1;
             }
         } else if (req_type == 2) {  /* GET */
+            /* Off-RT offload: hand the big read-only "state" snapshot to the
+             * worker thread when the module opted in, so it doesn't serialize on
+             * the audio thread. Return 2 = deferred; the worker publishes. */
+            if (g_snap_rt_safe && g_snap_sem_ok && strcmp(param_key, "state") == 0
+                    && overtake_dsp_gen && overtake_dsp_gen_inst) {
+                /* While the worker owns the mailbox, keep deferring — never touch
+                 * it inline (the single-slot producer holds this same req until
+                 * the worker publishes, so request_type stays set and we re-enter
+                 * here each frame until it clears). Otherwise hand it off. */
+                if (__atomic_load_n(&g_snap_inflight, __ATOMIC_ACQUIRE))
+                    return 2;
+                g_snap_req_id = req_id;
+                __atomic_store_n(&g_snap_inflight, 1, __ATOMIC_RELEASE);
+                sem_post(&g_snap_sem);
+                return 2;
+            }
             int len = -1;
             if (overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->get_param) {
                 len = overtake_dsp_gen->get_param(overtake_dsp_gen_inst, param_key,
@@ -7840,6 +7952,7 @@ static void shim_spi_init(void)
         shim_worker_set_hooks(&hooks);
     }
     shim_worker_start();
+    snap_worker_start();   /* off-RT remote-snapshot servicer (idle until a browser pulls) */
 
     /* Start LED capture logger thread (gated by flag file) */
     {
