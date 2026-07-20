@@ -36,9 +36,16 @@ Cross-compile via `${CROSS_PREFIX}gcc` for Move's ARM. See `BUILDING.md`.
 ## Testing
 
 Static/regression suite: `for t in tests/{host,shadow,store,build}/*.sh; do bash "$t"; done`
-(~95 shell tests: source-invariant pins, compiled C units, node-run .mjs units —
-not wired into CI; ~20 stale failures pin since-moved code, see the cleanup
-review doc). On-hardware behavior is verified manually. Enable the unified logger:
+(~95 shell tests: source-invariant pins, compiled C units, node-run .mjs units).
+**CI gates the `tests/host/` subset** — `.github/workflows/ci.yml` runs `host-tests`
+(`make -C tests/host test` + all `tests/host/*.sh`, all green), `go`
+(`schwung-manager`), and `cross-compile` (ARM64 Docker build) on every PR and push
+to `main`. `main` is branch-protected: **all three checks are required and direct
+pushes are blocked** — work on a branch and open a PR (see `CONTRIBUTING.md`;
+install the fast local checks with `./scripts/install-hooks.sh`). The broader
+`tests/{shadow,store,build}` suites are **not** run by CI — ~20 stale failures pin
+since-moved code (see the cleanup review doc). On-hardware behavior is verified
+manually. Enable the unified logger:
 
 ```bash
 ssh ableton@move.local "touch /data/UserData/schwung/debug_log_on"
@@ -453,6 +460,17 @@ Catalog: `https://raw.githubusercontent.com/charlesvestal/schwung/main/module-ca
 ```json
 {"version": "0.2.0",
  "download_url": "https://github.com/user/move-anything-mymodule/releases/download/v0.2.0/mymodule-module.tar.gz"}
+```
+
+Repositories that publish multiple catalog modules may key each release by
+catalog ID. Schwung Manager and the shared store utilities select the matching
+entry before downloading:
+
+```json
+{"modules": {
+  "module-a": {"version": "0.2.0", "download_url": "https://.../module-a-module.tar.gz"},
+  "module-b": {"version": "0.2.0", "download_url": "https://.../module-b-module.tar.gz"}
+}}
 ```
 
 Optional: `install_path`, `name`, `description`, `requires`, `post_install`, `repo_url`. Release workflow should auto-update this file on each tagged release.

@@ -578,6 +578,7 @@ let overtakeModuleId = "";         // ID of loaded overtake module (for per-modu
 let previousView = VIEWS.SLOTS;   // View to return to after overtake
 let overtakeModuleCallbacks = null; // {init, tick, onMidiMessageInternal} for loaded module
 let overtakeSuspendKeepsJs = false; // Current module opted in to JS-alive suspend
+let overtakeSuspendSelfManaged = false; // Module owns Back; suspends via host_suspend_overtake()
 let overtakePassthroughCCs = [];    // CCs declared in capabilities.button_passthrough — shim lets these
                                     // reach Move firmware directly, and we skip them during LED clear.
 /* Map of suspended overtake modules keyed by moduleId. Each entry:
@@ -2463,6 +2464,7 @@ function clearModuleParamShims() {
     }
     delete globalThis.host_module_set_param_blocking;
     delete globalThis.host_exit_module;
+    delete globalThis.host_suspend_overtake;
     delete globalThis.host_swap_module;
     delete globalThis.host_open_file_in_tool;
 }
@@ -2827,8 +2829,15 @@ function setSlotParamWithRetry(slot, key, value, timeoutMs, retryTimeoutMs, logL
 let feedbackOverride = {};       /* slot -> user enabled despite risk (until safe/reboot) */
 let feedbackEpisode = {};        /* slot -> currently guard-bypassing due to risk */
 let feedbackModalPending = {};   /* slot -> show the visual modal next time the UI is up */
+let feedbackSafeSince = {};      /* slot -> Date.now() when the safe reading began, 0 while at risk */
 let feedbackGuardModalRaised = false;  /* the active feedback modal is the guard's (auto-dismissable) */
 let lineInConsumerCache = {};    /* moduleId -> bool (consumesLineInput) */
+
+/* Safe must hold this long before the guard undoes a bypass / clears the user's
+ * override, so a brief jack-sense blip (e.g. USB-C audio renegotiating) can't
+ * wipe the override and storm the modal. The protective direction (risk -> bypass)
+ * is never debounced. */
+const FEEDBACK_SAFE_DEBOUNCE_MS = 2000;
 
 function bootFeedbackRisk() {
     if (typeof host_speaker_active !== "function") return false;
@@ -2857,6 +2866,7 @@ function reconcileFeedbackHolds() {
             feedbackEpisode[slot] = false;
             feedbackModalPending[slot] = false;
             feedbackOverride[slot] = false;
+            feedbackSafeSince[slot] = 0;
             continue;
         }
 
@@ -2873,38 +2883,50 @@ function reconcileFeedbackHolds() {
             continue;
         }
 
-        if (risk && !feedbackOverride[slot]) {
-            if (!bypassed) {
-                /* Entering risk (e.g. headphones unplugged) on a live Line In. */
-                setSlotParam(slot, "synth:bypassed", "1");
-                setSlotParam(slot, "slot:feedback_hold", "1");
-                debugLog(`feedback guard: slot ${slot} bypassed (feedback risk)`);
+        if (risk) {
+            /* Any risk reading resets the safe-stability timer, so a brief safe
+             * blip below can't undo the guard. */
+            feedbackSafeSince[slot] = 0;
+            if (!feedbackOverride[slot]) {
+                if (!bypassed) {
+                    /* Entering risk (e.g. headphones unplugged) on a live Line In.
+                     * Bypass immediately — the protective direction is never
+                     * debounced. */
+                    setSlotParam(slot, "synth:bypassed", "1");
+                    setSlotParam(slot, "slot:feedback_hold", "1");
+                    debugLog(`feedback guard: slot ${slot} bypassed (feedback risk)`);
+                }
+                if (!feedbackEpisode[slot]) {
+                    feedbackEpisode[slot] = true;
+                    feedbackModalPending[slot] = true;
+                    announce("Feedback risk. Audio monitoring disabled. Plug in headphones.");
+                    debugLog(`feedback guard: slot ${slot} alert raised`);
+                }
             }
-            if (!feedbackEpisode[slot]) {
-                feedbackEpisode[slot] = true;
-                feedbackModalPending[slot] = true;
-                announce("Feedback risk. Audio monitoring disabled. Plug in headphones.");
-                debugLog(`feedback guard: slot ${slot} alert raised`);
-            }
-        } else if (!risk) {
-            /* Safe: un-bypass the guard's bypass and reset the episode/override. */
-            feedbackOverride[slot] = false;
-            feedbackEpisode[slot] = false;
-            feedbackModalPending[slot] = false;
-            if (bypassed && hold) {
-                setSlotParam(slot, "synth:bypassed", "0");
-                setSlotParam(slot, "slot:feedback_hold", "0");
-                debugLog(`feedback guard: slot ${slot} un-bypassed (safe)`);
-            }
-            /* If the risk cleared while the modal was up (e.g. headphones plugged
-             * back in), dismiss it — the slot is already enabled. */
-            if (feedbackGuardModalRaised && feedbackGateActive() && feedbackGateCancel()) {
-                feedbackGuardModalRaised = false;
-                announce("Headphones connected. Line In enabled.");
-                debugLog(`feedback guard: modal dismissed (safe)`);
+            /* risk && override: the user chose to keep it live — leave it alone. */
+        } else {
+            /* Safe — but require it to hold for FEEDBACK_SAFE_DEBOUNCE_MS before
+             * undoing the guard, so a single jack-sense blip can't wipe the
+             * user's override and re-raise the modal every few seconds. */
+            if (!feedbackSafeSince[slot]) feedbackSafeSince[slot] = Date.now();
+            if (Date.now() - feedbackSafeSince[slot] >= FEEDBACK_SAFE_DEBOUNCE_MS) {
+                feedbackOverride[slot] = false;
+                feedbackEpisode[slot] = false;
+                feedbackModalPending[slot] = false;
+                if (bypassed && hold) {
+                    setSlotParam(slot, "synth:bypassed", "0");
+                    setSlotParam(slot, "slot:feedback_hold", "0");
+                    debugLog(`feedback guard: slot ${slot} un-bypassed (safe)`);
+                }
+                /* If the risk cleared while the modal was up (e.g. headphones
+                 * plugged back in), dismiss it — the slot is already enabled. */
+                if (feedbackGuardModalRaised && feedbackGateActive() && feedbackGateCancel()) {
+                    feedbackGuardModalRaised = false;
+                    announce("Headphones connected. Line In enabled.");
+                    debugLog(`feedback guard: modal dismissed (safe)`);
+                }
             }
         }
-        /* risk && override: the user chose to keep it live — leave it alone. */
     }
     pumpFeedbackAlertModal();
 }
@@ -2942,6 +2964,28 @@ function pumpFeedbackAlertModal() {
         });
         return;  /* one modal at a time */
     }
+}
+
+/* Tear down a raised feedback-guard modal before an overtake surface takes over.
+ * The gate's input handler only runs at display_mode==1, so under an overtake
+ * tool the modal can't be answered — Back leaks through and exits the tool
+ * (issue #158). Cancel the modal but keep the slot bypassed and re-arm it
+ * pending, so pumpFeedbackAlertModal re-raises it once the shadow UI is back on
+ * screen. */
+function deferFeedbackModalForOvertake() {
+    if (!feedbackGuardModalRaised) return;
+    if (!(feedbackGateActive() && feedbackGateCancel())) return;
+    feedbackGuardModalRaised = false;
+    /* Re-arm on every line-in slot still under the guard (bypassed + held), so
+     * the modal returns when the user is back in the shadow UI. */
+    for (let slot = 0; slot < SHADOW_UI_SLOTS; slot++) {
+        if (!isLineInConsumerModule(getSlotParam(slot, "synth_module"))) continue;
+        if (getSlotParam(slot, "synth:bypassed") === "1" &&
+            getSlotParam(slot, "slot:feedback_hold") === "1") {
+            feedbackModalPending[slot] = true;
+        }
+    }
+    debugLog("feedback guard: modal deferred for overtake entry");
 }
 
 /* Scan modules directory for audio_fx modules */
@@ -3126,6 +3170,9 @@ function invokeModuleOnResume(callbacks, moduleId) {
 
 /* Enter the overtake module selection menu */
 function enterOvertakeMenu() {
+    /* A raised feedback-guard modal can't be answered once we leave the shadow
+     * UI — defer it so Back doesn't leak into the menu/tool (issue #158). */
+    deferFeedbackModalForOvertake();
     /* Flush set state before entering overtake — periodic autosave is gated
      * on !isOvertakeActive, so without this a slot change made seconds before
      * Shift+Vol+Jog would be lost on reboot. */
@@ -3213,6 +3260,7 @@ function exitOvertakeMode() {
     overtakeModuleId = "";
     overtakeModuleCallbacks = null;
     overtakeSuspendKeepsJs = false;
+    overtakeSuspendSelfManaged = false;
     overtakePassthroughCCs = [];
     if (typeof shadow_set_param_timeout === "function") {
         shadow_set_param_timeout(0, "passthrough", "", 100);  /* clear list */
@@ -3276,6 +3324,7 @@ function suspendOvertakeMode() {
             ledNotes: ledNotesSnapshot,
             ledCCs: ledCCsSnapshot,
             dspPath: currentSlot0DspPath,
+            selfManaged: overtakeSuspendSelfManaged,
             shimGet: globalThis.host_module_get_param,
             shimSet: globalThis.host_module_set_param,
             shimSetBlocking: globalThis.host_module_set_param_blocking
@@ -3286,6 +3335,7 @@ function suspendOvertakeMode() {
         overtakeModuleLoaded = false;
         overtakeModuleCallbacks = null;
         overtakeSuspendKeepsJs = false;
+        overtakeSuspendSelfManaged = false;
 
         /* Tell shim to skip exit hook (module stays loaded). */
         if (typeof shadow_set_suspend_overtake === "function") {
@@ -3362,6 +3412,7 @@ function resumeOvertakeModule(moduleId) {
     overtakeModuleId = parked.id;
     overtakeModuleLoaded = true;
     overtakeSuspendKeepsJs = true;
+    overtakeSuspendSelfManaged = !!parked.selfManaged;
     overtakeInitPending = false;  /* Already ran */
     overtakeExitPending = false;
 
@@ -3454,6 +3505,7 @@ function exitToolOvertake() {
     delete globalThis.host_module_set_param_blocking;
     delete globalThis.host_module_get_param;
     delete globalThis.host_exit_module;
+    delete globalThis.host_suspend_overtake;
     delete globalThis.host_hide_module;
 
     /* Write exiting module ID so shim runs the correct per-module hook */
@@ -3580,6 +3632,9 @@ function loadOvertakeModule(moduleInfo, skipOvertake) {
         debugLog("loadOvertakeModule: no moduleInfo or uiPath");
         return false;
     }
+    /* A raised feedback-guard modal can't be answered under an overtake tool —
+     * defer it so Back doesn't leak into the tool (issue #158). */
+    deferFeedbackModalForOvertake();
 
     /* Flush set state before entering overtake — covers the Tools-menu path
      * (enterToolsMenu → pick tool) which bypasses enterOvertakeMenu, and the
@@ -3672,6 +3727,23 @@ function loadOvertakeModule(moduleInfo, skipOvertake) {
             }
             return null;
         };
+        /* Bulk get/set: ONE round-trip for many keys (the per-key wait is the
+         * cost, not the in-module get/set). `blob` is the module's
+         * length-prefixed payload; key is just the "overtake_dsp:" routing
+         * marker. Returns the response blob (get) / true (set), null if the
+         * host lacks the binding (module falls back to single calls). */
+        globalThis.host_module_get_params = function(blob) {
+            if (typeof shadow_get_params === "function") {
+                return shadow_get_params(0, "overtake_dsp:", blob);
+            }
+            return null;
+        };
+        globalThis.host_module_set_params = function(blob) {
+            if (typeof shadow_set_params === "function") {
+                return shadow_set_params(0, "overtake_dsp:", blob);
+            }
+            return false;
+        };
         globalThis.host_exit_module = function() {
             debugLog("host_exit_module called by overtake module");
             if (toolOvertakeActive) {
@@ -3679,6 +3751,10 @@ function loadOvertakeModule(moduleInfo, skipOvertake) {
             } else {
                 exitOvertakeMode();
             }
+        };
+        globalThis.host_suspend_overtake = function() {
+            debugLog("host_suspend_overtake called by overtake module");
+            suspendOvertakeMode();
         };
         globalThis.host_hide_module = function() {
             debugLog("host_hide_module called by overtake module");
@@ -3764,6 +3840,13 @@ function loadOvertakeModule(moduleInfo, skipOvertake) {
 
         overtakeModuleLoaded = true;
         overtakeSuspendKeepsJs = !!(moduleInfo.capabilities && moduleInfo.capabilities.suspend_keeps_js);
+        /* suspend_self_managed: the module uses Back for its own navigation and
+         * calls host_suspend_overtake() when it decides to park. It implies
+         * keeps-JS — the closure must stay alive to keep deciding + ticking. An
+         * older host that predates this capability simply ignores it, so the
+         * module degrades to a plain exit on Back. */
+        overtakeSuspendSelfManaged = !!(moduleInfo.capabilities && moduleInfo.capabilities.suspend_self_managed);
+        if (overtakeSuspendSelfManaged) overtakeSuspendKeepsJs = true;
 
         /* button_passthrough: array of CC numbers for buttons the module yields
          * to Move firmware (press events reach Move, LEDs stay Move-driven).
@@ -3816,6 +3899,7 @@ function loadOvertakeModule(moduleInfo, skipOvertake) {
         delete globalThis.host_module_set_param;
         delete globalThis.host_module_get_param;
         delete globalThis.host_exit_module;
+        delete globalThis.host_suspend_overtake;
         if (typeof shadow_set_overtake_mode === "function") {
             shadow_set_overtake_mode(0);
         }
@@ -5738,6 +5822,10 @@ function startInteractiveTool(toolModule, filePath) {
                 } else {
                     exitOvertakeMode();
                 }
+            };
+            globalThis.host_suspend_overtake = function() {
+                debugLog("host_suspend_overtake called by overtake module (reconnect)");
+                suspendOvertakeMode();
             };
             globalThis.host_hide_module = function() {
                 debugLog("host_hide_module called by overtake module (reconnect)");
@@ -12860,6 +12948,15 @@ function handleSelect() {
 }
 
 function handleBack() {
+    /* Pre-emption: in component-edit, let a module with a custom chain_ui
+     * handle Back for its own internal navigation. Truthy = consumed;
+     * falsy/absent falls through to the host unload logic below. */
+    if (view === VIEWS.COMPONENT_EDIT && loadedModuleUi &&
+        typeof loadedModuleUi.handleBack === "function" &&
+        loadedModuleUi.handleBack()) {
+        needsRedraw = true;
+        return;
+    }
     hideOverlay();
     switch (view) {
         case VIEWS.SLOTS:
@@ -14632,6 +14729,11 @@ globalThis.init = function() {
 
     /* Scan for audio FX modules so display names are available */
     MASTER_FX_OPTIONS = scanForAudioFxModules();
+    /* Also prime moduleAbbrevCache for synth/midi_fx modules so slots restored
+     * from a saved patch show their real abbrev instead of the substring(0,2)
+     * fallback in getModuleAbbrev() before their picker has ever been opened. */
+    scanModulesForType("synth");
+    scanModulesForType("midiFx");
 
     /* Load auto-update preference */
     loadAutoUpdateConfig();
@@ -14890,6 +14992,10 @@ globalThis.tick = function() {
     {
         const parkedIds = Object.keys(suspendedOvertakes);
         if (parkedIds.length > 0) {
+            /* Signal to each parked module's tick() that it is running blind in
+             * the background (draw calls below are no-ops). Modules read
+             * globalThis.overtakeParked to skip display/LED work while parked. */
+            globalThis.overtakeParked = true;
             const _noop = function() {};
             const _saved = {
                 clear_screen: globalThis.clear_screen,
@@ -14931,6 +15037,7 @@ globalThis.tick = function() {
                     }
                 }
             } finally {
+                globalThis.overtakeParked = false;
                 for (const k in _saved) globalThis[k] = _saved[k];
                 if (_savedShimGet === undefined) delete globalThis.host_module_get_param;
                 else globalThis.host_module_get_param = _savedShimGet;
@@ -16175,11 +16282,17 @@ globalThis.onMidiMessageInternal = function(data) {
                 debugLog("HOST: Shift+Back → full exit (suspend_keeps_js module)");
                 if (toolOvertakeActive) exitToolOvertake();
                 else exitOvertakeMode();
-            } else {
+                return;
+            }
+            if (!overtakeSuspendSelfManaged) {
                 debugLog("HOST: Back → suspend (module parks in background)");
                 suspendOvertakeMode();
+                return;
             }
-            return;
+            /* suspend_self_managed: the module owns plain Back for its own
+             * navigation and calls host_suspend_overtake() when it decides to
+             * park. Fall through to its onMidiMessageInternal (Shift+Back above
+             * is still the host's universal full-exit). */
         }
 
         /* CO-RUN: intercept chain-editor navigation CCs (jog turn, jog click,

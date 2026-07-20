@@ -506,6 +506,39 @@ globalThis.chain_ui = {
 };
 ```
 
+#### Back-button handling (`handleBack`)
+
+A chain module's `ui_chain.js` may export `handleBack()`. When the shadow UI is in
+COMPONENT_EDIT with your module's chain UI loaded, a Back press calls your
+`handleBack()` first:
+
+- return a **truthy** value to **consume** Back (you handled internal navigation
+  — e.g. popped your own sub-view);
+- return **falsy** / omit the method to let the host handle Back (unload the module
+  UI and return to the chain editor).
+
+Only consume Back while you actually have somewhere to go back *to*. If `handleBack()`
+always returns truthy the user can never leave your module via Back — it is the only
+host-processed exit in this screen, so the sole remaining way out is to exit shadow mode.
+
+#### Copy / Delete / Undo (`ui_chain.js`)
+
+While the shadow UI is on screen, CC 56 (Undo), CC 60 (Copy), and CC 119
+(Delete) are delivered exclusively to the loaded module's `ui_chain.js` via
+`onMidiMessageInternal` — they are blocked from reaching Move firmware for
+the duration, so a press can never double-fire into Move's own undo/copy/
+delete while you're editing a module (e.g. a Delete press won't also delete
+a Move clip in the background).
+
+This makes the three buttons safe to repurpose for module-specific gestures
+— e.g. hold Copy/Delete + tap a pad to target it, tap Undo to revert the
+last such operation. They join the existing forwarded set (jog wheel/click,
+Back, track buttons, knobs, Mute) that a chain module already receives in
+this screen.
+
+Outside shadow display (or outside COMPONENT_EDIT), these CCs behave as
+normal Move hardware buttons and are not intercepted.
+
 ### Menu Layout Helpers
 
 For list-based screens (title/list/footer), use the shared menu layout helpers:
@@ -1698,8 +1731,23 @@ typedef struct host_api_v1 {
 
     /* Clock status for sync-aware plugins */
     int (*get_clock_status)(void);
+
+    /* Transport beat position for phase-locked sync. Beats elapsed since the
+     * active transport's start, derived from 24-PPQN MIDI clock and
+     * interpolated per audio block, tracking whichever transport is playing —
+     * Move's native sequencer (cable-0 clock) or an internal overtake
+     * sequencer that emits clock (e.g. movy). Returns < 0 when no transport is
+     * running (callers should fall back, e.g. free-run an LFO). Use this
+     * instead of accumulating phase from get_bpm() to stay drift-free and
+     * bar-aligned. May be NULL on older hosts — always guard. Appended 2026-07. */
+    double (*get_beat_position)(void);
 } host_api_v1_t;
 ```
+
+**Tempo while stopped:** `get_bpm()` retains the last-playing transport's tempo
+after it stops (so a synced LFO that switches from phase-lock to free-run keeps
+the same rate). It updates from emitted clock, so changing an internal
+sequencer's tempo while it is *stopped* is not reflected until it plays again.
 
 ## Audio Specifications
 
@@ -2211,6 +2259,29 @@ Each module repo must have a `release.json` on its main branch. The Module Store
   "download_url": "https://github.com/username/move-anything-mymodule/releases/download/v0.2.0/mymodule-module.tar.gz"
 }
 ```
+
+For a repository that publishes more than one catalog module, use a `modules`
+object keyed by the exact catalog IDs. Each entry has the same fields as a
+single-module release:
+
+```json
+{
+  "modules": {
+    "module-a": {
+      "version": "0.2.0",
+      "download_url": "https://github.com/username/repo/releases/download/v0.2.0/module-a-module.tar.gz"
+    },
+    "module-b": {
+      "version": "0.2.0",
+      "download_url": "https://github.com/username/repo/releases/download/v0.2.0/module-b-module.tar.gz"
+    }
+  }
+}
+```
+
+Schwung Manager and the shared store utilities select the entry matching the
+catalog module ID. If it is missing, the manager falls back to the catalog's
+`asset_name` latest-release URL.
 
 Optional fields: `install_path`, `name`, `description`, `requires`, `post_install`, `repo_url`. Fields like `name`, `description`, and `requires` in `release.json` override their catalog equivalents.
 

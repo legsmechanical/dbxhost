@@ -18,6 +18,28 @@ DISABLE_SCREEN_READER=1 ./scripts/build.sh
 ```
 This disables D-Bus-driven accessibility/sync features (screen reader announcements, track-volume D-Bus sync, and set-tempo detection from D-Bus text).
 
+## Pre-commit Hook
+
+A local pre-commit hook runs the same fast, native checks that the CI
+`host-tests` and `go` jobs run (the device-free unit/contract tests and
+`schwung-manager` `go vet`/`build`/`test`). It runs in a few seconds and
+catches breakage before you push — no Docker or ARM64 toolchain required.
+The ARM64 cross-compile is intentionally **not** in the hook; CI runs it
+authoritatively on the pull request.
+
+Install (once per clone):
+
+```bash
+./scripts/install-hooks.sh
+# or manually: git config core.hooksPath scripts/hooks
+```
+
+Bypass once with `git commit --no-verify`, or skip via environment:
+
+```bash
+SCHWUNG_SKIP_HOOKS=1 git commit ...
+```
+
 ## Verify Disabled Screen Reader Build (Smoke Test)
 
 Use this when validating a fresh environment that does not have D-Bus/Flite dev headers installed.
@@ -520,6 +542,27 @@ External modules can specify where they should be installed via `release.json`.
   "download_url": "https://github.com/user/repo/releases/download/v0.2.1/module.tar.gz"
 }
 ```
+
+One repository may publish multiple catalog modules by nesting releases under
+their catalog IDs:
+
+```json
+{
+  "modules": {
+    "module-a": {
+      "version": "0.2.1",
+      "download_url": "https://github.com/user/repo/releases/download/v0.2.1/module-a-module.tar.gz"
+    },
+    "module-b": {
+      "version": "0.2.1",
+      "download_url": "https://github.com/user/repo/releases/download/v0.2.1/module-b-module.tar.gz"
+    }
+  }
+}
+```
+
+The catalog `id` selects the matching nested entry. Keep the original top-level
+shape for repositories that publish only one module.
 
 | Field | Required | Description |
 |-------|----------|-------------|

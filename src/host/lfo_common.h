@@ -5,6 +5,14 @@
 #define LFO_COMMON_H
 
 #include <math.h>
+#include <stdint.h>
+
+/* M_PI is hidden by glibc <math.h> under strict -std=c11 (exposed on macOS
+ * unconditionally). This header is compiled standalone by unit tests, so
+ * guarantee M_PI is always defined. */
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 /* ============================================================================
  * LFO Constants
@@ -204,6 +212,15 @@ static inline float lfo_sync_rate_hz(float bpm, int rate_div) {
     if (rate_div >= LFO_NUM_DIVISIONS) rate_div = LFO_NUM_DIVISIONS - 1;
     float beats = lfo_divisions[rate_div].beats;
     return (bpm / 60.0f) / beats;
+}
+
+/* Phase-locked LFO phase from a transport beat position (see
+ * host_api_v1.get_beat_position). Drift-free by construction: phase is a
+ * pure function of song position, so it stays bar-aligned forever. */
+static inline double lfo_synced_phase(double beat_position, int rate_div) {
+    if (rate_div < 0) rate_div = 0;
+    if (rate_div >= LFO_NUM_DIVISIONS) rate_div = LFO_NUM_DIVISIONS - 1;
+    return fmod(beat_position / (double)lfo_divisions[rate_div].beats, 1.0);
 }
 
 /* Advance LFO phase by one block, return new phase (wraps at 1.0) */
