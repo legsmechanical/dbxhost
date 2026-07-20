@@ -394,9 +394,28 @@ under the **Tool tab**, addressed via the `overtake_dsp:<key>` param prefix.
 - **Reads**: the manager seeds and refreshes the browser from
   `get_param("state")` — return a **flat JSON object of delimited string
   values** (nested arrays/objects are dropped by the param explosion).
-- **Writes**: browser `setParam` calls arrive as ordinary `set_param` on the
-  shadow_param ring — serialized synchronous round-trips, values up to 64 KB,
-  **no per-buffer coalescing** on this path (unlike the on-device JS channel).
+- **Writes**: browser `setParam` calls with values under 256 bytes arrive as
+  ordinary `set_param` dispatched from the shim's **web-set ring drain**
+  (lossless, ~one SPI frame, immune to param-mailbox contention); larger
+  values take the shadow_param mailbox (serialized round-trip, up to 64 KB).
+  **No per-buffer coalescing** on either path (unlike the on-device JS
+  channel). Ordering across the two paths is not guaranteed — keep any
+  op-sequencing within one size class.
+- **Off-audio-thread snapshots (optional)**: answer
+  `get_param("remote_snapshot_rt_safe")` with `"1"` and the host serializes
+  your `"state"` snapshot on a low-priority worker thread into a cached,
+  rev-stamped double buffer; the audio thread then serves browser pulls with
+  a single memcpy instead of running your serializer in the SPI frame budget.
+  **Contract:** every byte of instance memory reachable by your `"state"` /
+  `"rui_poll"` get_param must stay valid for the LIFETIME of the instance —
+  never freed or realloc'd by `render_block` OR `set_param` (frees only in
+  `destroy_instance`; use grow-only / clear-and-keep pools). Torn or
+  one-rev-stale snapshots are acceptable (the manager re-pulls until the
+  snapshot's own rev matches the digest); a use-after-free is not. Include
+  your current rev in the `"state"` JSON so the manager can tell what it
+  received. Note: a BULK_GET (request_type 3) of `"state"` bypasses this
+  cache and runs your serializer on the audio thread — don't put `"state"`
+  in bulk reads if you opt in.
 - **Live sync (optional but recommended)**: expose a monotonic edit counter
   and a cheap digest, and the host pushes changes to the browser on-change:
   - `get_param("rui_poll")` → `rev:on:tick:bpm[:devms]` — `rev` bumps on every
