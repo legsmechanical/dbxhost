@@ -1482,11 +1482,23 @@ static volatile uint32_t g_snap_rev[2];
 static volatile uint32_t g_snap_seq[2];
 static volatile int      g_snap_active = -1;    /* -1 = no valid snapshot yet */
 
-/* Wait (bounded, ~one snapshot serialize) for the worker to go idle before a
- * path frees the overtake instance (unload/load-over/destroy). Cheap when
- * idle. Callers must clear g_snap_rt_safe first so no new kick starts one. */
-static inline void snap_wait_idle(void) {
-    while (__atomic_load_n(&g_snap_busy, __ATOMIC_ACQUIRE)) { /* spin */ }
+/* Wait (BOUNDED) for the worker to go idle before a path frees the overtake
+ * instance (unload/load-over). Cheap when idle (one load). Callers must clear
+ * g_snap_rt_safe first so no new kick starts a serialize. Returns 1 when the
+ * worker is idle; 0 on timeout — the worker (FIFO 10, cores 0-2) can in
+ * principle be starved by Move's FIFO-70 threads, and an unbounded spin here
+ * runs on the SPI RT thread. On timeout the caller must NOT free instance
+ * memory or dlclose (leak instead — safe; pathological load only). */
+static inline int snap_wait_idle(void) {
+    if (!__atomic_load_n(&g_snap_busy, __ATOMIC_ACQUIRE)) return 1;
+    struct timespec t0, t;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    while (__atomic_load_n(&g_snap_busy, __ATOMIC_ACQUIRE)) {
+        clock_gettime(CLOCK_MONOTONIC, &t);
+        long ms = (t.tv_sec - t0.tv_sec) * 1000L + (t.tv_nsec - t0.tv_nsec) / 1000000L;
+        if (ms > 200) return 0;
+    }
+    return 1;
 }
 
 /* Ask the worker for a (re-)serialization. RT-safe: coalesces via g_snap_kick;
@@ -1498,9 +1510,15 @@ static inline void snap_kick(void) {
         sem_post(&g_snap_sem);
 }
 
+/* Epoch counter: bumped by snap_cache_reset so a worker that straddles a
+ * module unload/load (wedged mid-serialize during the bounded drain) can
+ * detect its result belongs to a dead epoch and must not publish it. */
+static volatile uint32_t g_snap_epoch = 0;
+
 /* Invalidate the cache across module load/unload boundaries. Caller must have
  * cleared g_snap_rt_safe and drained the worker (snap_wait_idle) first. */
 static inline void snap_cache_reset(void) {
+    __atomic_add_fetch(&g_snap_epoch, 1, __ATOMIC_ACQ_REL);
     g_snap_active  = -1;
     g_snap_len[0]  = g_snap_len[1] = -1;
     g_snap_cur_rev = 0;
@@ -1515,13 +1533,16 @@ static void shadow_overtake_dsp_load(const char *path) {
         shadow_log("Overtake DSP: unloading previous before loading new");
         /* Stop new off-RT snapshot reads and drain any in flight before freeing. */
         g_snap_rt_safe = 0;
-        snap_wait_idle();
+        int snap_idle = snap_wait_idle();
         snap_cache_reset();
-        if (overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->destroy_instance)
+        if (!snap_idle)
+            shadow_log("Overtake DSP: snapshot worker wedged — leaking previous instance + handle (safe)");
+        if (snap_idle && overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->destroy_instance)
             overtake_dsp_gen->destroy_instance(overtake_dsp_gen_inst);
         if (overtake_dsp_fx && overtake_dsp_fx_inst && overtake_dsp_fx->destroy_instance)
             overtake_dsp_fx->destroy_instance(overtake_dsp_fx_inst);
-        dlclose(overtake_dsp_handle);
+        if (snap_idle)
+            dlclose(overtake_dsp_handle);
         overtake_dsp_handle = NULL;
         overtake_dsp_gen = NULL;
         overtake_dsp_gen_inst = NULL;
@@ -1648,10 +1669,12 @@ static void shadow_overtake_dsp_unload(void) {
 
     /* Stop new off-RT snapshot reads and drain any in flight before freeing. */
     g_snap_rt_safe = 0;
-    snap_wait_idle();
+    int snap_idle = snap_wait_idle();
     snap_cache_reset();
+    if (!snap_idle)
+        shadow_log("Overtake DSP: snapshot worker wedged — leaking instance + handle (safe)");
 
-    if (overtake_dsp_gen && overtake_dsp_gen_inst) {
+    if (snap_idle && overtake_dsp_gen && overtake_dsp_gen_inst) {
         if (overtake_dsp_gen->destroy_instance)
             overtake_dsp_gen->destroy_instance(overtake_dsp_gen_inst);
         shadow_log("Overtake DSP: generator unloaded");
@@ -1662,7 +1685,8 @@ static void shadow_overtake_dsp_unload(void) {
         shadow_log("Overtake DSP: FX unloaded");
     }
 
-    dlclose(overtake_dsp_handle);
+    if (snap_idle)
+        dlclose(overtake_dsp_handle);
     overtake_dsp_handle = NULL;
     overtake_dsp_gen = NULL;
     overtake_dsp_gen_inst = NULL;
@@ -3608,42 +3632,60 @@ static float shim_get_bpm(void) {
  * ========================================================================= */
 static void shadow_drain_web_param_set(void) {
     if (!web_param_set_shm) return;
-    static uint8_t last_ready = 0;
-    if (web_param_set_shm->ready == last_ready) return;
-    last_ready = web_param_set_shm->ready;
-
-    int count = web_param_set_shm->write_idx;
-    if (count <= 0 || count > WEB_PARAM_SET_ENTRIES) {
-        web_param_set_shm->write_idx = 0;
+    /* SPSC protocol (2026-07-19 rework, paired with the manager): write_idx is
+     * the producer's MONOTONIC cursor (slot = idx % 32, clean uint8 wrap) and
+     * reserved[0] is our published consumer cursor. The old scheme (count =
+     * write_idx, then reset to 0) raced the producer's read-modify-write: an
+     * edit landing mid-drain was orphaned, or the previous batch re-applied
+     * (double-nudge). Now neither side writes the other's cursor. */
+    static uint8_t tail;
+    static int     tail_init = 0;
+    uint8_t head = __atomic_load_n(&web_param_set_shm->write_idx, __ATOMIC_ACQUIRE);
+    if (!tail_init) {
+        /* First drain after (re)start: skip any pre-attach history — a
+         * surviving SHM segment may hold a stale cursor from a prior run. */
+        tail = head;
+        tail_init = 1;
         return;
     }
-
-    /* Snapshot entries, then reset */
-    web_param_set_entry_t local[WEB_PARAM_SET_ENTRIES];
-    memcpy(local, (const void *)web_param_set_shm->entries, count * sizeof(web_param_set_entry_t));
-    __sync_synchronize();
-    web_param_set_shm->write_idx = 0;
+    uint8_t count = (uint8_t)(head - tail);
+    if (count == 0) return;
+    if (count > WEB_PARAM_SET_ENTRIES) {
+        /* Producer overran our ack (shouldn't happen — it checks fill) —
+         * resync to the newest window rather than replaying garbage. */
+        tail  = (uint8_t)(head - WEB_PARAM_SET_ENTRIES);
+        count = WEB_PARAM_SET_ENTRIES;
+    }
 
     /* Process each set request via direct dispatch — does NOT touch shadow_param,
-     * so it's safe to run while shadow_ui.js has a request in-flight. */
-    for (int i = 0; i < count; i++) {
-        web_param_set_entry_t *e = &local[i];
-        if (e->key[0] == '\0') continue;
+     * so it's safe to run while shadow_ui.js has a request in-flight. Copy each
+     * entry locally before dispatch (the producer may only reuse a slot after we
+     * publish tail, but the copy keeps dispatch immune to a buggy producer). */
+    for (uint8_t i = 0; i < count; i++) {
+        web_param_set_entry_t e;
+        memcpy(&e, (const void *)&web_param_set_shm->entries[(uint8_t)(tail + i) % WEB_PARAM_SET_ENTRIES],
+               sizeof(e));
+        if (e.key[0] == '\0') continue;
 
-        /* Overtake-tool params dispatch straight to the overtake DSP. This is
-         * the browser editor's lossless edit path: ring entries can't be
-         * stomped by the shadow_ui mailbox producer (which is fire-and-forget
-         * in overtake mode), unlike mailbox SETs, which died in 500ms manager
-         * timeouts under contention. Values >255B still take the mailbox
-         * (ring entry cap) — the manager routes by size. */
-        if (strncmp(e->key, "overtake_dsp:", 13) == 0) {
+        /* Overtake-tool params dispatch straight to the overtake DSP (gen,
+         * else fx — mirrors the mailbox SET dispatch). This is the browser
+         * editor's lossless edit path: ring entries can't be stomped by the
+         * shadow_ui mailbox producer (fire-and-forget in overtake mode),
+         * unlike mailbox SETs, which died in 500ms manager timeouts under
+         * contention. Values >255B still take the mailbox (ring entry cap) —
+         * the manager routes by size. */
+        if (strncmp(e.key, "overtake_dsp:", 13) == 0) {
             if (overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->set_param)
-                overtake_dsp_gen->set_param(overtake_dsp_gen_inst, e->key + 13, e->value);
+                overtake_dsp_gen->set_param(overtake_dsp_gen_inst, e.key + 13, e.value);
+            else if (overtake_dsp_fx && overtake_dsp_fx_inst && overtake_dsp_fx->set_param)
+                overtake_dsp_fx->set_param(overtake_dsp_fx_inst, e.key + 13, e.value);
             continue;
         }
 
-        shadow_direct_set_param(e->slot, e->key, e->value);
+        shadow_direct_set_param(e.slot, e.key, e.value);
     }
+    tail = head;
+    __atomic_store_n(&web_param_set_shm->reserved[0], tail, __ATOMIC_RELEASE);
 }
 
 /* =========================================================================
@@ -3761,6 +3803,7 @@ static void *snap_worker_main(void *arg) {
         if (sem_wait(&g_snap_sem) != 0) { if (errno == EINTR) continue; break; }
         for (;;) {
             __atomic_store_n(&g_snap_kick, 0, __ATOMIC_RELEASE);
+            uint32_t epoch = __atomic_load_n(&g_snap_epoch, __ATOMIC_ACQUIRE);
             if (g_snap_rt_safe && overtake_dsp_gen && overtake_dsp_gen_inst
                     && overtake_dsp_gen->get_param) {
                 /* Stamp the rev observed BEFORE serializing: content is at
@@ -3768,13 +3811,21 @@ static void *snap_worker_main(void *arg) {
                  * and triggers one more refresh rather than a missed one. */
                 uint32_t rev = __atomic_load_n(&g_snap_cur_rev, __ATOMIC_ACQUIRE);
                 int idx = (__atomic_load_n(&g_snap_active, __ATOMIC_RELAXED) == 0) ? 1 : 0;
-                __atomic_store_n(&g_snap_seq[idx], g_snap_seq[idx] + 1, __ATOMIC_RELEASE); /* odd */
+                /* Seqlock write side: the odd store must be globally visible
+                 * BEFORE any data store — a release store only orders PRIOR
+                 * writes, so an explicit fence is required after it (ARMv8
+                 * would otherwise let the buffer fill overtake the odd mark
+                 * and the reader could copy a torn buffer with matching seq). */
+                __atomic_store_n(&g_snap_seq[idx], g_snap_seq[idx] + 1, __ATOMIC_RELAXED); /* odd */
+                __atomic_thread_fence(__ATOMIC_SEQ_CST);
                 int len = overtake_dsp_gen->get_param(overtake_dsp_gen_inst, "state",
                                                       g_snap_buf[idx], SHADOW_PARAM_VALUE_LEN);
                 g_snap_len[idx] = len;
                 g_snap_rev[idx] = rev;
                 __atomic_store_n(&g_snap_seq[idx], g_snap_seq[idx] + 1, __ATOMIC_RELEASE); /* even */
-                if (len >= 0)
+                /* Publish only if no unload/load happened mid-serialize
+                 * (epoch check) — else this blob belongs to a dead module. */
+                if (len >= 0 && epoch == __atomic_load_n(&g_snap_epoch, __ATOMIC_ACQUIRE))
                     __atomic_store_n(&g_snap_active, idx, __ATOMIC_RELEASE);
             }
             if (__atomic_load_n(&g_snap_kick, __ATOMIC_ACQUIRE)) continue;
@@ -3855,7 +3906,11 @@ static int shim_handle_param_special(uint8_t req_type, uint32_t req_id) {
                     if (!(s1 & 1) && len >= 0 && len <= SHADOW_PARAM_VALUE_LEN - 1) {
                         memcpy(shadow_param->value, g_snap_buf[idx], (size_t)len);
                         shadow_param->value[len] = '\0';
-                        uint32_t s2 = __atomic_load_n(&g_snap_seq[idx], __ATOMIC_ACQUIRE);
+                        /* Seqlock read side: the copy's loads must complete
+                         * before the confirming seq load (an acquire load
+                         * doesn't stop prior loads sinking past it). */
+                        __atomic_thread_fence(__ATOMIC_ACQUIRE);
+                        uint32_t s2 = __atomic_load_n(&g_snap_seq[idx], __ATOMIC_RELAXED);
                         if (s1 == s2) {
                             shadow_param->error = 0;
                             shadow_param->result_len = len;
@@ -3870,7 +3925,14 @@ static int shim_handle_param_special(uint8_t req_type, uint32_t req_id) {
                     idx = __atomic_load_n(&g_snap_active, __ATOMIC_ACQUIRE);
                 }
                 if (!served) {
-                    snap_kick();   /* cold/torn — fill the cache for the retry */
+                    /* Kick only when the cache is COLD or STALE — a fresh
+                     * cache that is unservable (module state overflowed the
+                     * 64KB value buffer, len<0/oversize) would otherwise
+                     * re-serialize on every pull in a futile churn loop. */
+                    int a = __atomic_load_n(&g_snap_active, __ATOMIC_ACQUIRE);
+                    if (a < 0 || g_snap_rev[a] !=
+                            __atomic_load_n(&g_snap_cur_rev, __ATOMIC_RELAXED))
+                        snap_kick();
                     shadow_param->error = 14;
                     shadow_param->result_len = -1;
                 }
