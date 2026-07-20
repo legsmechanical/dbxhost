@@ -41,6 +41,15 @@ type RemoteUI struct {
 	// tool-tick, so a transition to "no tool" fires exactly one tool_info(gone)
 	// signal to Tool-tab clients. Guarded by mu.
 	toolPresent bool
+	// toolID caches the last successfully probed overtake tool id while
+	// toolPresent — so a subscribe that races mailbox contention can still
+	// seed the client instead of dead-ending it on "no tool".
+	toolID string
+	// toolGoneStreak counts consecutive confirmed-absent ticks; tool-gone is
+	// only signaled once it reaches the debounce threshold (a single absent
+	// answer can be a stomped-mailbox artifact, and a false gone dead-ends
+	// the client's tool UI).
+	toolGoneStreak int
 
 	// toolKick delivers a shim-pushed "rui_poll" digest (notify ring, F4 push
 	// path) to toolTickLoop so it services Tool-tab clients immediately instead
@@ -83,6 +92,9 @@ type ruClient struct {
 	toolLastTick int64
 	toolLastOn   bool      // last pushed play-state; start/stop EDGES must be pushed
 	toolPlayAt   time.Time // last playhead push — rate-limited (edges exempt)
+	// toolLastEditAt: when this client last sent an overtake CONTENT edit —
+	// used to arm the quiet window only for edit STORMS (see handleSetParam).
+	toolLastEditAt time.Time
 	// toolQuietUntil: this client sent an overtake set_param recently, so it is
 	// mid-edit. Skip snapshot pushes to it until the window passes — its UI is
 	// optimistic and REJECTS echoes of its own edits anyway, and during a knob
@@ -192,13 +204,22 @@ const overtakeParamPrefix = "overtake_dsp:"
 // setParam writes a param using the fast ring buffer if available,
 // falling back to the old shared memory path.
 func (ru *RemoteUI) setParam(slot uint8, key, value string) error {
-	// Overtake-tool params MUST go through the reliable shadow_param ring
-	// (request_type=1), which the shim routes to the overtake DSP. The fast
-	// web_param_set ring's shadow_direct_set_param has no "overtake_dsp:"
-	// branch, so it would mis-route the key to a chain slot. The slow ring is
-	// fine here: overtake-tool edits are discrete ops, not knob-drag streams,
-	// and it lifts the fast ring's 255-byte value cap (64KB on the slow ring).
+	// Overtake-tool params: prefer the LOSSLESS web_param_set ring — drained by
+	// the shim every SPI frame and dispatched straight to the overtake DSP (the
+	// drain has an "overtake_dsp:" branch; requires the paired shim, deployed
+	// together). Unlike the mailbox, ring entries cannot be stomped by the
+	// device UI's fire-and-forget mailbox producer, which was killing overtake
+	// edits in 500ms response timeouts (dropped beat-stretch/legato/nudge ops).
+	// Oversized values (≥256B) still take the blocking mailbox (64KB cap).
 	if strings.HasPrefix(key, overtakeParamPrefix) {
+		if ring := ru.ensureSetRing(); ring != nil &&
+			len(key) < webKeyLen && len(value) < webValueLen {
+			if err := ring.SetParam(slot, key, value); err == nil {
+				return nil
+			}
+			// Ring full/unwritable — fall through to the blocking mailbox
+			// rather than dropping the edit (the loss class this path fixes).
+		}
 		if shm := ru.ensureShm(); shm != nil {
 			return shm.SetParam(slot, key, value)
 		}
@@ -213,25 +234,42 @@ func (ru *RemoteUI) setParam(slot uint8, key, value string) error {
 	return fmt.Errorf("no shared memory available")
 }
 
+// paramAnswered reports whether err came from an ANSWERED request — the shim
+// published an error response (authoritative, e.g. "no overtake DSP is
+// loaded") — rather than a mailbox-contention timeout (idle/response), where
+// the truth is simply unknown this tick. Conflating the two is what caused
+// both the gone→arrived flap loop and, inverted, unreachable gone detection.
+func paramAnswered(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "param get error")
+}
+
 // activeOvertakeToolID returns the module id of the overtake tool currently
 // loaded that opts into a remote UI by answering the
-// "overtake_dsp:module_id" probe, or "" if no such tool is active. The shim
-// returns an error for this GET when no overtake DSP is loaded (or the loaded
-// one predates the probe), so this is backward-safe.
-func (ru *RemoteUI) activeOvertakeToolID(slot uint8) string {
+// "overtake_dsp:module_id" probe. known=false means the answer could not be
+// determined this tick (no shm / mailbox contention timeout) — callers must
+// NOT treat that as "no tool". A genuine no-tool state is id=="" with
+// known==true (the shim answers the GET with an error response when no
+// overtake DSP is loaded — distinguished from a timeout by the error text,
+// not wall-clock).
+func (ru *RemoteUI) activeOvertakeToolID(slot uint8) (id string, known bool) {
 	shm := ru.ensureShm()
 	if shm == nil {
-		return ""
+		return "", false
 	}
 	id, err := shm.GetParam(slot, overtakeParamPrefix+"module_id")
 	if err != nil {
-		return ""
+		return "", paramAnswered(err)
 	}
-	return id
+	return id, true
 }
 
 // ensureSetRing attempts to open the web param set ring if not yet connected.
+// mu-guarded: the eager connect loop races WS handlers here, and a double
+// OpenShmWebParamSetRing would yield two ring objects whose per-object mutex
+// no longer serializes writes to the one shared-memory ring.
 func (ru *RemoteUI) ensureSetRing() *ShmWebParamSetRing {
+	ru.mu.Lock()
+	defer ru.mu.Unlock()
 	if ru.setRing != nil {
 		return ru.setRing
 	}
@@ -244,8 +282,11 @@ func (ru *RemoteUI) ensureSetRing() *ShmWebParamSetRing {
 }
 
 // ensureShm attempts to open shared memory if not yet connected.
-// Returns the ShmParams (possibly nil if still unavailable).
+// Returns the ShmParams (possibly nil if still unavailable). mu-guarded for
+// the same double-open reason as ensureSetRing.
 func (ru *RemoteUI) ensureShm() *ShmParams {
+	ru.mu.Lock()
+	defer ru.mu.Unlock()
 	if ru.shm != nil {
 		return ru.shm
 	}
@@ -263,6 +304,31 @@ func (ru *RemoteUI) Start(ctx context.Context) {
 	go ru.notifyLoop(ctx)
 	go ru.refreshLoop(ctx)
 	go ru.toolTickLoop(ctx)
+	go ru.setRingConnectLoop(ctx)
+}
+
+// setRingConnectLoop connects the web param set ring EAGERLY at startup,
+// retrying until the shim has created the segment. Lazy-on-first-use is not
+// enough on this platform: something unlinks every /dev/shm/schwung-* segment
+// shortly after stack start (early mmaps like the notify/params rings survive
+// via their open mappings, but any LATER open gets ENOENT forever). Without
+// this, the manager start races segment creation, the lazy open never
+// succeeds, and overtake edits silently fall back to the stompable mailbox —
+// re-introducing the 500ms-timeout dropped-edit failure the ring path exists
+// to fix. Retry for ~2 min (covers slow boots), then give up quietly (the
+// mailbox fallback still works, just degraded).
+func (ru *RemoteUI) setRingConnectLoop(ctx context.Context) {
+	for i := 0; i < 240; i++ {
+		if ru.ensureSetRing() != nil {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	ru.logger.Warn("web param set ring: gave up connecting — overtake edits will use the mailbox (degraded)")
 }
 
 // refreshLoop periodically re-reads all param values for subscribed slots.
@@ -700,12 +766,21 @@ func (ru *RemoteUI) handleSetParam(ctx context.Context, c *ruClient, msg wsMessa
 	// EXEMPT: for those the snapshot IS the requested data (the newly selected
 	// clip's notes, the focused CC lane), not an echo — arming quiet for them
 	// just made the client's own request feel laggy.
+	// STORM-ONLY: a single discrete edit (beat stretch, legato, one note op)
+	// does NOT arm the window — the browser can't optimistically render
+	// destructive ops, so the snapshot echo IS the result and deferring it
+	// just reads as lag. Only a rapid successive stream (knob drag, note
+	// drag) arms it; the optimistic UI covers those.
 	if strings.HasPrefix(msg.Key, overtakeParamPrefix) &&
 		!strings.HasSuffix(msg.Key, "_ruisel") &&
 		!strings.HasSuffix(msg.Key, ":transport") &&
 		!strings.HasSuffix(msg.Key, "_cc_focus") {
+		now := time.Now()
 		c.mu.Lock()
-		c.toolQuietUntil = time.Now().Add(300 * time.Millisecond)
+		if now.Sub(c.toolLastEditAt) < 250*time.Millisecond {
+			c.toolQuietUntil = now.Add(300 * time.Millisecond)
+		}
+		c.toolLastEditAt = now
 		c.mu.Unlock()
 	}
 	if err := ru.setParam(slot, msg.Key, msg.Value); err != nil {
@@ -807,7 +882,17 @@ func (ru *RemoteUI) handleSubscribeTool(ctx context.Context, c *ruClient) {
 		return
 	}
 
-	toolID := ru.activeOvertakeToolID(0)
+	toolID, known := ru.activeOvertakeToolID(0)
+	if !known {
+		// Contention at subscribe time — do NOT seed "no tool" (the client
+		// subscribes exactly once; a false empty seed dead-ends the tab).
+		// Fall back to the cached id if a tool is latched present.
+		ru.mu.Lock()
+		if ru.toolPresent {
+			toolID = ru.toolID
+		}
+		ru.mu.Unlock()
+	}
 	if toolID != "" {
 		// Consume the arrival edge BEFORE any network write: this client is
 		// being seeded right here, and it became visible to the ticker's
@@ -926,21 +1011,53 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 			// user is actively editing, so we want to catch up promptly.
 			return true, false
 		}
-		if err != nil || digest == "" {
-			digest = ""
+		if err != nil {
+			if paramAnswered(err) {
+				// The shim ANSWERED with an error: no overtake DSP is serving
+				// rui_poll — either no tool is loaded (gone path below) or a
+				// legacy tool without the key (module_id disambiguates).
+				// Genuine unloads surface as exactly this, so it must flow
+				// into the no-digest path or tool-gone becomes unreachable.
+				digest = ""
+			} else {
+				// Contention timeout — NOT evidence the tool is gone. Treating
+				// it as absence made the manager flap gone→arrived every few
+				// seconds under device-side param load: each false arrival
+				// reset every client's cursors and re-pushed a full snapshot.
+				// Skip the tick; the next poll/kick retries.
+				return true, false
+			}
 		}
 	}
 	if digest == "" {
 		// No digest: either no active overtake tool, or a tool that predates the
 		// cheap rui_poll key. One module_id read (only on this cold path) tells
 		// them apart, so we can notify the Tool tab when its tool goes away.
-		if ru.activeOvertakeToolID(0) == "" {
+		id, idKnown := ru.activeOvertakeToolID(0)
+		if !idKnown {
+			// Contention — can't tell if the tool is gone. Never signal gone
+			// on uncertainty (flap loop); skip and let the next tick decide.
+			return true, false
+		}
+		if id == "" {
+			// DEBOUNCE: require several consecutive confirmed-absent ticks
+			// before telling clients the tool is gone. A single ambiguous
+			// answer (a stomped mailbox can also produce an answered error)
+			// put clients into a dead "no tool" state mid-session.
+			ru.mu.Lock()
+			ru.toolGoneStreak++
+			confirmed := ru.toolGoneStreak >= 3
+			ru.mu.Unlock()
+			if !confirmed {
+				return true, false
+			}
 			ru.signalToolGone(ctx, clients)
 			return false, false
 		}
-		if ru.markToolPresent() {
-			ru.announceToolArrival(ctx, clients)
-		}
+		ru.mu.Lock()
+		ru.toolID = id
+		ru.mu.Unlock()
+		ru.maybeAnnounceArrival(ctx, clients)
 		// Legacy tool without rui_poll → one coalesced full fetch for all.
 		if params, hit := ru.fetchAllParams(0, "overtake_dsp"); hit {
 			for _, c := range clients {
@@ -949,9 +1066,7 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 		}
 		return true, false
 	}
-	if ru.markToolPresent() {
-		ru.announceToolArrival(ctx, clients)
-	}
+	ru.maybeAnnounceArrival(ctx, clients)
 	rev, on, tick, bpm, devms := parseRuiPoll(digest)
 	// rui_play frame (used by BOTH the snapshot path — play-state edges must
 	// ride along, snapshots don't carry the on flag — and the playhead path).
@@ -996,6 +1111,26 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 			return true, true
 		}
 		params, hit := ru.fetchAllParams(0, "overtake_dsp") // ONE read, fanned out
+		// The shim serves "state" from a worker-maintained cache that may be
+		// one rev behind the digest. The blob carries its own rui_rev — sync
+		// cursors to what we actually RECEIVED, and if it's older than the
+		// digest, keep pending so the retry cadence re-pulls (the shim kicks
+		// its cache refresh on the stale read).
+		blobRev := rev
+		if hit {
+			if s, ok := params[overtakeParamPrefix+"rui_rev"]; ok {
+				if v, perr := strconv.ParseInt(s, 10, 64); perr == nil {
+					blobRev = v
+				}
+			}
+			if blobRev < rev {
+				// Stale cache served — re-pull soon. (blobRev > rev just means
+				// the blob was serialized after the digest read: fresher, fine.)
+				pending = true
+			}
+		} else {
+			pending = true // cold shim cache / busy channel — retry soon
+		}
 		if hit {
 			for _, c := range clients {
 				c.mu.Lock()
@@ -1018,7 +1153,7 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 				}
 				c.mu.Lock()
 				c.toolSynced = true
-				c.toolLastRev = rev
+				c.toolLastRev = blobRev
 				c.toolLastTick = tick
 				edge := on != c.toolLastOn
 				c.mu.Unlock()
@@ -1094,11 +1229,35 @@ func (ru *RemoteUI) markToolPresent() bool {
 // nothing re-announces. Sends tool_info + custom_ui per client (ordered within
 // a per-client goroutine) and marks every client unsynced so the ticker's
 // normal path fans out a fresh snapshot in the same pass.
-func (ru *RemoteUI) announceToolArrival(ctx context.Context, clients []*ruClient) {
-	toolID := ru.activeOvertakeToolID(0)
-	if toolID == "" {
+// maybeAnnounceArrival consumes the not-present→present edge and announces the
+// arrival. If the announce cannot complete (module_id unreadable under
+// contention), the edge is UN-latched so the next tick retries — consuming the
+// edge and then silently failing left clients in a dead "no tool" state with
+// snapshots streaming past them (the "browser never updates" failure).
+func (ru *RemoteUI) maybeAnnounceArrival(ctx context.Context, clients []*ruClient) {
+	ru.mu.Lock()
+	ru.toolGoneStreak = 0 // tool observed present — reset the gone debounce
+	ru.mu.Unlock()
+	if !ru.markToolPresent() {
 		return
 	}
+	if !ru.announceToolArrival(ctx, clients) {
+		ru.mu.Lock()
+		ru.toolPresent = false
+		ru.mu.Unlock()
+	}
+}
+
+// announceToolArrival returns false when the announce could not be delivered
+// (tool id unreadable) so the caller can retry the arrival edge.
+func (ru *RemoteUI) announceToolArrival(ctx context.Context, clients []*ruClient) bool {
+	toolID, _ := ru.activeOvertakeToolID(0)
+	if toolID == "" {
+		return false
+	}
+	ru.mu.Lock()
+	ru.toolID = toolID
+	ru.mu.Unlock()
 	url := ru.findModuleWebUI(toolID)
 	for _, c := range clients {
 		c.mu.Lock()
@@ -1112,6 +1271,7 @@ func (ru *RemoteUI) announceToolArrival(ctx context.Context, clients []*ruClient
 		}(c)
 	}
 	ru.logger.Info("overtake tool arrived — announced to Tool-tab clients", "tool", toolID)
+	return true
 }
 
 // signalToolGone tells Tool-tab clients (once) that their overtake tool has
@@ -1121,6 +1281,7 @@ func (ru *RemoteUI) signalToolGone(ctx context.Context, clients []*ruClient) {
 	ru.mu.Lock()
 	was := ru.toolPresent
 	ru.toolPresent = false
+	ru.toolID = ""
 	ru.mu.Unlock()
 	if !was {
 		return
