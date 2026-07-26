@@ -27,7 +27,8 @@ globalThis.shadow_get_ui_slot = () => 0;
 globalThis.host_read_file = () => null;
 globalThis.os = { readdir: () => [[], 0] };
 
-const { discover, shortLabel } = await import('../ui_discover.mjs');
+const { discover, shortLabel, deriveSections, activeSection } =
+    await import('../ui_discover.mjs');
 const { toRenderCell, parseValue, stepValue, commitString, formatValue } =
     await import('../ui_cells.mjs');
 
@@ -251,6 +252,40 @@ const cyc = walkFixture(16, {
     a:    { name: 'A', knobs: ['k1'], params: [{ level: 'root', label: 'back' }] },
 }, P(2));
 eq(cyc.paramCount, 2, 'a cyclic hierarchy terminates and renders each level once');
+
+/* ---- section derivation (SHIFT picker) ----------------------------------
+ * The whole point: a module with dozens of banks must be crossable in a few
+ * coarse jumps. Sections come from the walk's "<parent>/<level>" naming. */
+
+const minijvish = [
+    { name: 'Main' },
+    { name: 'Tone 1/Wave' }, { name: 'Tone 1/Pitch' }, { name: 'Tone 1/Filter' },
+    { name: 'Tone 2/Wave' }, { name: 'Tone 2/Pitch' },
+    { name: 'Performance' },
+];
+const secs = deriveSections(minijvish);
+eq(secs.map(s => s.name), ['Main', 'Tone 1', 'Tone 2', 'Performance'],
+   '7 banks collapse to 4 sections by parent prefix');
+eq(secs.map(s => s.bank), [0, 1, 4, 6], 'each section jumps to its FIRST bank');
+
+eq(activeSection(secs, 0), 0, 'bank 0 is in the first section');
+eq(activeSection(secs, 3), 1, 'a bank mid-section reports that section');
+eq(activeSection(secs, 4), 2, 'the boundary bank starts the next section');
+eq(activeSection(secs, 6), 3, 'the last bank maps to the last section');
+
+/* multi-page levels ("Filter 1".."Filter 3") are ONE section, not three */
+eq(deriveSections([{ name: 'Osc 1' }, { name: 'Osc 2' }, { name: 'Osc 3' }]).length, 1,
+   'a level split across pages stays a single section');
+
+/* a flat module gets one section per bank — picker still works, just 1:1 */
+eq(deriveSections([{ name: 'A' }, { name: 'B' }]).map(s => s.name), ['A', 'B'],
+   'unprefixed banks are their own sections');
+eq(deriveSections([]).length, 0, 'no banks yields no sections');
+
+/* real shapes from the device sweep */
+const dexSecs = deriveSections(discover(10, 'synth').banks);
+ok(dexSecs.length >= 1 && dexSecs.length <= discover(10, 'synth').banks.length,
+   'derived sections never outnumber banks');
 
 /* ---- empty module ---- */
 

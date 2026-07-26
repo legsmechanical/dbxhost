@@ -271,6 +271,39 @@ export function buildLevelPages(allLevels, rootKey) {
     return out;
 }
 
+/* ---- sections ----------------------------------------------------------
+ * Coarse jump targets for the SHIFT picker. canvaskit takes these from a
+ * hand-authored CONFIG.sections; here they fall out of the walk for free,
+ * because a nested page is already named "<parent>/<level>". Grouping
+ * consecutive banks by that parent prefix turns minijv's 49 banks into one row
+ * per tone, which is the difference between crossing the module in a few steps
+ * and 49. Banks with no prefix are their own section.
+ *
+ * Returns [{ name, bank }] where `bank` is the index to jump to. */
+export function deriveSections(banks) {
+    const out = [];
+    let last = null;
+    for (let i = 0; i < banks.length; i++) {
+        const name = String((banks[i] && banks[i].name) || '');
+        const slash = name.indexOf('/');
+        /* A trailing " 2"/" 3" from a multi-page level shares its base name, so
+         * strip it too — "Filter 1".."Filter 3" is one section, not three. */
+        let group = slash > 0 ? name.slice(0, slash) : name.replace(/ \d+$/, '');
+        if (!group) group = name;
+        if (group !== last) { out.push({ name: group, bank: i }); last = group; }
+    }
+    return out;
+}
+
+/* Index of the section owning a bank: the last section at or before it. */
+export function activeSection(sections, bankIdx) {
+    let idx = 0;
+    for (let i = 0; i < sections.length; i++) {
+        if (sections[i].bank <= bankIdx) idx = i; else break;
+    }
+    return idx;
+}
+
 /* Build the full bank list for a loaded module.
  * Returns { banks: [{name, cells}], paramCount, source } where `source` says
  * which discovery path produced the layout — useful when a module lays out

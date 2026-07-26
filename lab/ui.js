@@ -23,15 +23,15 @@ import {
     engineGet, engineSet, engineSlots, engineFocusedSlot,
 } from './ui_engine.mjs';
 
-import { discover } from './ui_discover.mjs';
+import { discover, deriveSections, activeSection } from './ui_discover.mjs';
 
 import {
     parseValue, stepValue, commitString, renderCellsForBank,
 } from './ui_cells.mjs';
 
 import {
-    drawKitBankPage, drawKitHeader, hdrPrint, mvPrint, mvWidth,
-    MV_HDR_H,
+    drawKitBankPage, drawKitHeader, drawKitSectionPicker,
+    hdrPrint, mvPrint, mvWidth, MV_HDR_H,
 } from '../ui/ui_movy.mjs';
 
 /* ---- constants ---- */
@@ -53,7 +53,9 @@ const S = {
     browseIdx: 0,
 
     banks: [],
+    sections: [],
     bankIdx: 0,
+    shiftHeld: false,
     source: '',
     moduleId: '',
     moduleName: '',
@@ -141,6 +143,7 @@ function runDiscovery() {
     }
     const res = discover(S.slot, COMPONENT);
     S.banks = res.banks;
+    S.sections = deriveSections(res.banks);
     S.source = res.source;
     S.bankIdx = 0;
     S.values = {};
@@ -259,6 +262,12 @@ function renderEditView() {
         pageCount: S.banks.length,
         touchedIdx: S.touchedIdx,
     });
+    /* Section picker rides ON TOP of the page while shift is held — it clears
+     * its own footprint, so the page underneath costs nothing to draw first
+     * and reappears the instant shift is released. */
+    if (S.shiftHeld && S.sections.length > 1) {
+        drawKitSectionPicker(S.sections, activeSection(S.sections, S.bankIdx));
+    }
 }
 
 function render() {
@@ -295,8 +304,17 @@ function onCC(d1, d2) {
             const n = S.browseList.length;
             if (n) S.browseIdx = Math.max(0, Math.min(n - 1, S.browseIdx + (delta > 0 ? 1 : -1)));
         } else if (S.banks.length) {
-            S.bankIdx = Math.max(0, Math.min(S.banks.length - 1,
-                                             S.bankIdx + (delta > 0 ? 1 : -1)));
+            if (S.shiftHeld && S.sections.length > 1) {
+                /* Shift+jog = coarse jump by SECTION. Landing bank is the
+                 * section's first, so releasing shift leaves you there. */
+                const cur = activeSection(S.sections, S.bankIdx);
+                const next = Math.max(0, Math.min(S.sections.length - 1,
+                                                  cur + (delta > 0 ? 1 : -1)));
+                S.bankIdx = S.sections[next].bank;
+            } else {
+                S.bankIdx = Math.max(0, Math.min(S.banks.length - 1,
+                                                 S.bankIdx + (delta > 0 ? 1 : -1)));
+            }
             S.touchedIdx = -1;
             pollValues(true);
         }
@@ -331,8 +349,13 @@ function onCC(d1, d2) {
         return;
     }
 
-    /* shift */
-    if (d1 === 49) { S.shiftHeld = d2 >= 64; return; }
+    /* shift — CC 49 on Move. The picker is a held-modifier overlay, so both
+     * edges must redraw: press shows it, release hides it. */
+    if (d1 === 49) {
+        const held = d2 >= 64;
+        if (held !== S.shiftHeld) { S.shiftHeld = held; S.dirty = true; }
+        return;
+    }
 }
 
 /* ---- lifecycle ---- */

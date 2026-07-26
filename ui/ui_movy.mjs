@@ -833,6 +833,53 @@ export function drawKitBankPage(cells, opts) {
     drawKitEnumOverlay(cells, t);
 }
 
+/* Section-picker overlay — drawn ONLY while SHIFT is held. One row per SECTION
+ * (coarse jumps; plain jog still browses every bank overlay-free), so a module
+ * with 49 banks is crossable in a few steps instead of 49. Shift+jog moves the
+ * highlight; releasing shift leaves you on that section's first bank.
+ *
+ * Kit v27 port of core/engine.js drawBankPicker. The kit takes its rows from a
+ * hand-authored CONFIG.sections + per-row icons; callers here pass sections
+ * derived at runtime and there are no icons to draw, so the icon column is
+ * omitted and the name gets the full row width.
+ *
+ * `sections`: [{ name }] — already ordered. `activeIdx`: highlighted row. */
+export function drawKitSectionPicker(sections, activeIdx) {
+    if (!sections || !sections.length) return;
+    const x = 4, y = 2, w = SCREEN_W - 8, h = 64 - 4;
+    fill_rect(x, y, w, h, 0);          /* clear the page underneath */
+    rectOutline(x, y, w, h, 1);        /* popup frame */
+
+    const rowH = 8, listY = y + 3, visible = 7;
+    const n = sections.length;
+    const active = Math.max(0, Math.min(n - 1, activeIdx | 0));
+    /* Scroll so the active row stays in view, centred where possible. */
+    let top = active - Math.floor(visible / 2);
+    top = Math.max(0, Math.min(Math.max(0, n - visible), top));
+
+    const hasScroll = n > visible;
+    const availW = w - 8 - (hasScroll ? 4 : 0);
+    for (let r = 0; r < visible; r++) {
+        const i = top + r;
+        if (i >= n) break;
+        const ry = listY + r * rowH;
+        const sel = (i === active);
+        if (sel) fill_rect(x + 2, ry - 1, w - 6, rowH, 1);
+        let label = String(sections[i].name || '');
+        while (label.length > 1 && hdrWidth(label) > availW) label = label.slice(0, -1);
+        hdrPrint(x + 4, ry, label, sel ? 0 : 1);
+    }
+
+    if (hasScroll) {
+        const trackY = listY - 1, trackH = visible * rowH;
+        const thumbH = Math.max(4, Math.round(trackH * visible / n));
+        const denom = Math.max(1, n - visible);
+        const thumbY = trackY + Math.round((trackH - thumbH) * top / denom);
+        fill_rect(x + w - 2, trackY, 1, trackH, 1);
+        fill_rect(x + w - 3, thumbY, 2, thumbH, 1);
+    }
+}
+
 /* Down-arrow affordance for banks with alt params, in the header's top-right.
  * `onFill` = header background is filled white (arrow draws black). */
 export function drawKitAltArrow(x, onFill, on, blinkHidden) {
