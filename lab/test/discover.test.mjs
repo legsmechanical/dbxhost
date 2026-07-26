@@ -168,6 +168,9 @@ FIXTURES[1] = {
 };
 const fb = discover(1, 'synth');
 eq(fb.source, 'chain_params', 'falls back to chain_params order');
+eq(fb.hierReason, 'none-published', 'a genuine no-hierarchy module says so');
+ok(fb.cpLen > 0, 'reports the chain_params blob size');
+eq(fb.hLen, 0, 'reports a zero-length hierarchy when none was published');
 ok(fb.banks.length >= 2, 'fallback chunks params into pages of 8');
 let hasUiPage = false;
 for (const b of fb.banks) for (const c of b.cells) if (c.key === 'ui_page') hasUiPage = true;

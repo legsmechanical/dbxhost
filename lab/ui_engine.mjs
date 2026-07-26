@@ -115,13 +115,35 @@ export function engineListModules(comp) {
 
 /* ---- self-description (feeds ui_discover) ---- */
 
+/* `diag` records WHY a module ended up on the path it did. A silent fall back to
+ * chain_params is indistinguishable from a module that genuinely publishes no
+ * hierarchy, and that ambiguity already cost one wrong diagnosis (Mini-JV, which
+ * does publish one). Never let a parse failure disappear into a bare catch. */
 export function engineDescribe(slot, comp) {
     let chainParams = null, hierarchy = null;
+    const diag = { cpLen: 0, hLen: 0, cpError: null, hError: null };
+
     const cpRaw = engineGet(slot, comp, 'chain_params');
-    if (cpRaw) { try { chainParams = JSON.parse(cpRaw); } catch (e) { chainParams = null; } }
+    diag.cpLen = cpRaw ? cpRaw.length : 0;
+    if (cpRaw) {
+        try { chainParams = JSON.parse(cpRaw); }
+        catch (e) { chainParams = null; diag.cpError = String(e); }
+    }
+
     const hRaw = engineGet(slot, comp, 'ui_hierarchy');
-    if (hRaw) { try { hierarchy = JSON.parse(hRaw); } catch (e) { hierarchy = null; } }
-    return { chainParams, hierarchy };
+    diag.hLen = hRaw ? hRaw.length : 0;
+    if (hRaw) {
+        try { hierarchy = JSON.parse(hRaw); }
+        catch (e) {
+            hierarchy = null;
+            diag.hError = String(e);
+            /* Truncation shows up as a parse error at the very end of the blob —
+             * record the tail so a transport limit is distinguishable from
+             * genuinely malformed JSON. */
+            diag.hTail = hRaw.slice(-40);
+        }
+    }
+    return { chainParams, hierarchy, diag };
 }
 
 /* ---- opaque state blob (module presets ride on this) ---- */

@@ -170,7 +170,7 @@ function addLevel(banks, label, cells) {
  * which discovery path produced the layout — useful when a module lays out
  * badly and you need to know whether to blame the hierarchy or the fallback. */
 export function discover(slot, comp) {
-    const { chainParams, hierarchy } = engineDescribe(slot, comp);
+    const { chainParams, hierarchy, diag } = engineDescribe(slot, comp);
 
     /* chain_params is the AUTHORITY for value metadata. ui_hierarchy only
      * decides layout (and supplies labels for params chain_params omits). */
@@ -248,5 +248,24 @@ export function discover(slot, comp) {
     let paramCount = 0;
     for (const b of banks) for (const c of b.cells) if (c.key) paramCount++;
 
-    return { banks, paramCount, source };
+    /* Why this module landed on this path. `hierReason` is the interesting field
+     * when source === 'chain_params': it separates "published no hierarchy" from
+     * "published one we failed to use", which look identical from the outside. */
+    let hierReason = 'used';
+    if (source === 'chain_params') {
+        if (diag && diag.hError) hierReason = 'parse-error: ' + diag.hError +
+                                              ' tail=' + JSON.stringify(diag.hTail || '');
+        else if (!diag || !diag.hLen) hierReason = 'none-published';
+        else if (!hierarchy) hierReason = 'parsed-null';
+        else if (!root) hierReason = 'no-root-level:' + JSON.stringify(Object.keys(levels).slice(0, 6));
+        else if (!Array.isArray(root.knobs) || !root.knobs.length)
+            hierReason = 'root-has-no-knobs:' + JSON.stringify(Object.keys(root));
+        else hierReason = 'root-knobs-yielded-nothing';
+    }
+
+    return {
+        banks, paramCount, source, hierReason,
+        hLen: diag ? diag.hLen : 0,
+        cpLen: diag ? diag.cpLen : 0,
+    };
 }

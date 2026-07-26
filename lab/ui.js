@@ -146,7 +146,9 @@ function runDiscovery() {
     S.values = {};
     S.rawValues = {};
     log('discover: ' + id + ' -> ' + res.banks.length + ' banks, ' +
-        res.paramCount + ' params, via ' + res.source);
+        res.paramCount + ' params, via ' + res.source +
+        ' [hier=' + res.hLen + 'B cp=' + res.cpLen + 'B' +
+        (res.source === 'chain_params' ? ' why=' + res.hierReason : '') + ']');
     if (!res.banks.length) setStatus('No params published');
     pollValues(true);
     S.dirty = true;
