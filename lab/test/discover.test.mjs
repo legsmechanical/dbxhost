@@ -176,6 +176,82 @@ let hasUiPage = false;
 for (const b of fb.banks) for (const c of b.cells) if (c.key === 'ui_page') hasUiPage = true;
 ok(!hasUiPage, 'ui_* keys are internal state and stay out of the pages');
 
+/* ---- level-graph walk ---------------------------------------------------
+ * Each case here is a real module shape that broke the earlier one-level walk.
+ * Provenance of the rules: schwung-movy src/model/hierarchy-walk.ts. */
+
+function walkFixture(slot, levels, params) {
+    FIXTURES[slot] = {
+        'synth_module': 'walktest',
+        'synth:chain_params': JSON.stringify(params || CHAIN_PARAMS),
+        'synth:ui_hierarchy': JSON.stringify({ levels }),
+    };
+    return discover(slot, 'synth');
+}
+
+const P = (n) => Array.from({ length: n }, (_, i) => ({
+    key: 'k' + i, name: 'Knob ' + i, type: 'float', min: 0, max: 1, step: 0.01,
+}));
+
+/* dexed: `children` edge, serialised as the literal string "None" when absent */
+const dx = walkFixture(10, {
+    root: { knobs: ['k0', 'k1'], children: 'ops', params: [] },
+    ops:  { name: 'Operators', knobs: ['k2', 'k3'], children: 'None',
+            params: [{ level: 'op1', label: 'Op 1' }] },
+    op1:  { knobs: ['k4', 'k5'], children: 'None' },
+}, P(6));
+eq(dx.source, 'hierarchy', 'a children-edge module uses the hierarchy path');
+eq(dx.paramCount, 6, 'children edges are followed — no knobs are lost');
+ok(dx.banks.length >= 3, 'root + children level + nested nav level all render');
+ok(!dx.banks.some(b => b.name === 'None'), 'the "None" sentinel is never treated as a level');
+
+/* nesting deeper than one level (dexed Operators -> Op N -> Envelope) */
+const deep = walkFixture(11, {
+    root: { knobs: ['k0'], params: [{ level: 'a', label: 'A' }] },
+    a:    { name: 'A', knobs: ['k1'], params: [{ level: 'b', label: 'B' }] },
+    b:    { name: 'B', knobs: ['k2'], params: [{ level: 'c', label: 'C' }] },
+    c:    { name: 'C', knobs: ['k3'] },
+}, P(4));
+eq(deep.paramCount, 4, 'the walk descends past one level');
+ok(deep.banks.some(b => b.name.indexOf('/') !== -1), 'nested pages carry a parent prefix');
+
+/* a `children` level that re-lists root's knobs must not render twice */
+const dup = walkFixture(12, {
+    root: { knobs: ['k0', 'k1'], children: 'mirror' },
+    mirror: { name: 'Mirror', knobs: ['k0', 'k1'] },
+}, P(2));
+eq(dup.banks.length, 1, 'a children level duplicating root knobs is deduped away');
+
+/* orphan levels — reached by no edge at all (minijv performance/part pages) */
+const orph = walkFixture(13, {
+    root:  { knobs: ['k0'] },
+    lost:  { name: 'Performance', knobs: ['k1', 'k2'] },
+}, P(3));
+eq(orph.paramCount, 3, 'levels no edge reaches are swept in, not dropped');
+ok(orph.banks.some(b => b.name === 'Performance'), 'the orphan page keeps its name');
+
+/* a module whose knobs live ONLY behind edges must not fall back */
+const noRootKnobs = walkFixture(14, {
+    root: { params: [{ level: 'sub', label: 'Sub' }] },
+    sub:  { name: 'Sub', knobs: ['k0', 'k1'] },
+}, P(2));
+eq(noRootKnobs.source, 'hierarchy', 'an empty root does NOT force the chain_params fallback');
+eq(noRootKnobs.paramCount, 2, 'knobs behind the edge are found');
+
+/* the nav entry pointing AT a level names it, beating the level's own label */
+const naming = walkFixture(15, {
+    root: { knobs: ['k0'], params: [{ level: 'x', label: 'Nav Name' }] },
+    x:    { label: 'Own Label', knobs: ['k1'] },
+}, P(2));
+ok(naming.banks.some(b => b.name === 'Nav Name'), 'nav-entry label wins over the level label');
+
+/* cycles must terminate */
+const cyc = walkFixture(16, {
+    root: { knobs: ['k0'], params: [{ level: 'a', label: 'A' }] },
+    a:    { name: 'A', knobs: ['k1'], params: [{ level: 'root', label: 'back' }] },
+}, P(2));
+eq(cyc.paramCount, 2, 'a cyclic hierarchy terminates and renders each level once');
+
 /* ---- empty module ---- */
 
 FIXTURES[2] = { 'synth_module': '' };

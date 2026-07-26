@@ -165,6 +165,112 @@ function addLevel(banks, label, cells) {
     }
 }
 
+/* ---- level-graph walk --------------------------------------------------
+ * Turns a module's ui_hierarchy levels into an ordered list of knob pages.
+ *
+ * Re-derived from schwung-movy's src/model/hierarchy-walk.ts (MIT, (c) 2026
+ * megadake). Every rule below is fleet knowledge paid for on real modules —
+ * an earlier one-level-deep version of this walk lost dexed's operators
+ * entirely and dropped minijv onto the chain_params fallback:
+ *
+ *   1. Follow BOTH edge kinds — `params[].level` nav entries AND `children` —
+ *      from every level, not just root.
+ *   2. `children` counts as absent when null, missing, OR the literal string
+ *      "None" (dexed serialises it that way).
+ *   3. Walk to arbitrary depth with a visited set, not a fixed depth limit.
+ *      A level that has knobs can still own sub-levels (dexed Operators).
+ *   4. Dedup pages by their exact knob key-list: modules routinely publish a
+ *      `children` level that re-lists root's knobs, which would otherwise
+ *      render as a duplicate page.
+ *   5. A level's display name usually lives on the nav entry POINTING at it,
+ *      not on the level itself — nav label wins.
+ *   6. Sweep up levels no edge reaches (minijv's performance/part pages), or
+ *      their knobs are permanently unreachable.
+ *
+ * `transparent` marks a level reached through a `children` edge: it stands in
+ * for its parent's menu rather than being a category, so it neither introduces
+ * nor consumes a name prefix. A `params` nav edge does introduce one, which is
+ * what keeps sibling pages apart ("Tone 1/Filter").
+ */
+
+function levelNameToPrefix(name) {
+    const words = String(name || '').split(/\s+/).filter(Boolean);
+    if (!words.length) return '';
+    if (words.length === 1) return words[0].slice(0, 6);
+    return (words[0].slice(0, 4) +
+            words.slice(1).map(w => w[0].toUpperCase()).join('')).slice(0, 6);
+}
+
+function childOf(lvl) {
+    const c = lvl && lvl.children;
+    return (c && c !== 'None') ? c : null;
+}
+
+function knobEntries(lvl) {
+    const out = [];
+    const knobs = (lvl && lvl.knobs) || [];
+    if (!Array.isArray(knobs)) return out;
+    for (const k of knobs) {
+        const key = (typeof k === 'string') ? k : (k && k.key);
+        if (key) out.push({ key, meta: (typeof k === 'object') ? k : null });
+    }
+    return out;
+}
+
+export function buildLevelPages(allLevels, rootKey) {
+    const out = [];
+    const rootLevel = allLevels[rootKey];
+    if (!rootLevel) return out;
+
+    /* Nav-entry labels, collected from EVERY level (rule 5). */
+    const navLabel = {};
+    for (const lvl of Object.values(allLevels)) {
+        for (const p of ((lvl && lvl.params) || [])) {
+            if (p && typeof p === 'object' && p.level && p.label) navLabel[p.level] = p.label;
+        }
+    }
+    const nameOf = (key, lvl) => (lvl && lvl.name) || navLabel[key] || (lvl && lvl.label) || key;
+
+    const sigOf = (entries) => entries.map(e => e.key).join(' ');
+    const rendered = new Set([sigOf(knobEntries(rootLevel))]);
+    const visited = new Set([rootKey]);
+
+    function visit(key, prefix, transparent) {
+        if (visited.has(key)) return;
+        visited.add(key);
+        const lvl = allLevels[key];
+        if (!lvl) return;
+
+        const name = nameOf(key, lvl);
+        const entries = knobEntries(lvl);
+        const sig = sigOf(entries);
+        if (entries.length && !rendered.has(sig)) {
+            rendered.add(sig);
+            out.push({ name: prefix ? prefix + '/' + name : name, entries });
+        }
+
+        /* Both edges, always — a level with knobs can still own sub-levels. */
+        const childPrefix = transparent ? prefix : levelNameToPrefix(name);
+        for (const p of (lvl.params || [])) {
+            if (p && typeof p === 'object' && p.level) visit(p.level, childPrefix, false);
+        }
+        const child = childOf(lvl);
+        if (child) visit(child, prefix, true);
+    }
+
+    for (const p of (rootLevel.params || [])) {
+        if (p && typeof p === 'object' && p.level) visit(p.level, null, false);
+    }
+    const rootChild = childOf(rootLevel);
+    if (rootChild) visit(rootChild, null, true);
+
+    /* Rule 6: orphan levels no edge reaches. */
+    for (const key of Object.keys(allLevels)) {
+        if (!visited.has(key) && knobEntries(allLevels[key]).length) visit(key, null, false);
+    }
+    return out;
+}
+
 /* Build the full bank list for a loaded module.
  * Returns { banks: [{name, cells}], paramCount, source } where `source` says
  * which discovery path produced the layout — useful when a module lays out
@@ -182,7 +288,10 @@ export function discover(slot, comp) {
     }
 
     const levels = (hierarchy && hierarchy.levels) || {};
-    const root = levels['root'] || null;
+    /* 'root' by convention, but fall back to the first declared level so a
+     * module that names its entry point differently still gets walked. */
+    const rootKey = levels['root'] ? 'root' : (Object.keys(levels)[0] || null);
+    const root = rootKey ? levels[rootKey] : null;
     const banks = [];
     const seen = {};
 
@@ -213,20 +322,15 @@ export function discover(slot, comp) {
 
     let source = 'hierarchy';
 
-    if (root && Array.isArray(root.knobs) && root.knobs.length) {
-        addLevel(banks, 'Main', keysOf(root.knobs).map(e => cellFor(e.key, e.meta)));
-    }
-
-    /* Sub-levels: any level reachable from root.params that carries its own
-     * knobs becomes its own bank (or run of banks). One level deep — deeper
-     * trees are navigation scaffolding, not knob pages. */
-    if (root && Array.isArray(root.params)) {
-        for (const entry of root.params) {
-            if (!entry || typeof entry !== 'object' || !entry.level) continue;
-            const lvl = levels[entry.level];
-            if (!lvl || !Array.isArray(lvl.knobs) || !lvl.knobs.length) continue;
-            const name = lvl.name || entry.label || entry.level;
-            addLevel(banks, name, keysOf(lvl.knobs).map(e => cellFor(e.key, e.meta)));
+    if (root) {
+        /* Root's own knobs are the "Main" page; every other reachable level
+         * comes from the walk (which already deduped against root's key list). */
+        const rootEntries = keysOf(root.knobs);
+        if (rootEntries.length) {
+            addLevel(banks, root.name || 'Main', rootEntries.map(e => cellFor(e.key, e.meta)));
+        }
+        for (const page of buildLevelPages(levels, rootKey)) {
+            addLevel(banks, page.name, page.entries.map(e => cellFor(e.key, e.meta)));
         }
     }
 
@@ -258,9 +362,7 @@ export function discover(slot, comp) {
         else if (!diag || !diag.hLen) hierReason = 'none-published';
         else if (!hierarchy) hierReason = 'parsed-null';
         else if (!root) hierReason = 'no-root-level:' + JSON.stringify(Object.keys(levels).slice(0, 6));
-        else if (!Array.isArray(root.knobs) || !root.knobs.length)
-            hierReason = 'root-has-no-knobs:' + JSON.stringify(Object.keys(root));
-        else hierReason = 'root-knobs-yielded-nothing';
+        else hierReason = 'walk-found-no-knobs-in-' + Object.keys(levels).length + '-levels';
     }
 
     return {
