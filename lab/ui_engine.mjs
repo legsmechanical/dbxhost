@@ -21,6 +21,13 @@
  *    path instead — not used here, noted so the asymmetry isn't rediscovered.)
  */
 
+/* `os` is a QuickJS MODULE, not a global — shadow_ui.js line 1 imports it the
+ * same way. Without this import the bare `os.readdir` below throws a
+ * ReferenceError that the scan's own try/catch swallows, and every category
+ * silently reports zero modules. The bundler must mark 'os' external so the
+ * import survives to the device (see scripts/bundle_lab.sh). */
+import * as os from 'os';
+
 const MODULES_BASE = '/data/UserData/schwung/modules';
 
 /* component -> where its modules live + the component_type they must declare */
@@ -81,7 +88,9 @@ export function engineListModules(comp) {
     if (!spec) return result;
     const dir = MODULES_BASE + '/' + spec.scanDir;
     try {
-        const [entries] = os.readdir(dir);
+        /* os.readdir returns [names, errno] — the array is element 0. */
+        const res = os.readdir(dir);
+        const entries = res && res[0];
         if (!entries || !entries.length) return result;
         for (const entry of entries) {
             if (entry === '.' || entry === '..') continue;

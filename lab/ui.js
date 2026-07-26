@@ -99,7 +99,12 @@ function refreshSlotNames() {
 /* ---- module load + discovery ---- */
 
 function openBrowse() {
-    S.browseList = [{ id: '', name: '[ none ]' }].concat(engineListModules(COMPONENT));
+    const found = engineListModules(COMPONENT);
+    /* [ none ] goes LAST, never first. It was at index 0 and the cursor defaults
+     * to 0, so any click on an empty/short list unloaded the slot's synth —
+     * which is exactly how slots 3 and 4 got wiped during the first device test.
+     * Clearing a slot should take deliberate travel, not be the default action. */
+    S.browseList = found.concat([{ id: '', name: '[ none ]' }]);
     const active = engineLoadedModule(S.slot, COMPONENT);
     S.browseIdx = 0;
     for (let i = 0; i < S.browseList.length; i++) {
@@ -107,7 +112,8 @@ function openBrowse() {
     }
     S.view = VIEW_BROWSE;
     S.dirty = true;
-    log('browse: ' + (S.browseList.length - 1) + ' modules for ' + COMPONENT);
+    log('browse: ' + found.length + ' modules for ' + COMPONENT);
+    if (!found.length) setStatus('No modules found');
 }
 
 function loadSelected() {

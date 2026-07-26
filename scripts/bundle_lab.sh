@@ -18,9 +18,12 @@ fi
 mkdir -p dist/davebox-lab
 
 echo "Bundling Lab UI..."
+# 'os' is a QuickJS built-in module resolved on the device — must stay external
+# or esbuild tries to bundle Node's os and the device import breaks.
 node_modules/.bin/esbuild lab/ui.js \
     --bundle \
     --external:'/data/UserData/schwung/*' \
+    --external:os \
     --format=esm \
     --outfile=dist/davebox-lab/ui.js \
     --log-level=warning
