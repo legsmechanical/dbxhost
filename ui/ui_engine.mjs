@@ -151,6 +151,64 @@ export function engineDescribe(slot, comp) {
 export function engineGetState(slot, comp) { return engineGet(slot, comp, 'state'); }
 export function engineSetState(slot, comp, blob) { return engineSet(slot, comp, 'state', blob); }
 
+/* ---- USER presets (the wrapped-JSON store) ----
+ *
+ * The host's own "Module Presets" browser (shadow_ui_presets.mjs) stores one
+ * component's state per file under presets/<module-id>/, so filtering to the
+ * loaded module is free — we only ever list that one folder. Format:
+ *
+ *   { "name": "Fat Brass", "module": "obxd", "version": 1, "state": <blob> }
+ *
+ * `state` is the PARSED object when the module's state is JSON, and the raw
+ * opaque string otherwise. Recall is the ordinary slot-load path
+ * (`<comp>:state`), which is why no per-module code is needed.
+ *
+ * Do NOT confuse these with a module's BAKED-IN presets: those aren't files at
+ * all, they're the list_param/count_param/name_param level (see ui_discover's
+ * findPresetSpec) — an index the module owns, not a store we can write. */
+const PRESET_ROOT = '/data/UserData/schwung/presets';
+
+export function engineListUserPresets(moduleId) {
+    const out = [];
+    if (!moduleId) return out;
+    const dir = PRESET_ROOT + '/' + moduleId;
+    try {
+        const res = os.readdir(dir);
+        const entries = res && res[0];
+        if (!entries || !entries.length) return out;
+        for (const entry of entries) {
+            if (entry === '.' || entry === '..') continue;
+            if (entry.length < 6 || entry.slice(-5) !== '.json') continue;
+            /* Prefer the in-file name (it survives filename sanitising), fall
+             * back to the basename — same precedence the host browser uses. */
+            let name = entry.slice(0, -5);
+            try {
+                const raw = host_read_file(dir + '/' + entry);
+                if (raw) {
+                    const j = JSON.parse(raw);
+                    if (j && typeof j.name === 'string' && j.name) name = j.name;
+                }
+            } catch (e) { /* unreadable/!json: keep the basename */ }
+            out.push({ name, path: dir + '/' + entry });
+        }
+    } catch (e) { /* no folder = this module has no user presets */ }
+    out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    return out;
+}
+
+/* Read a preset file and hand back the blob to feed engineSetState. Returns
+ * null when the file is missing/corrupt so the caller can say so rather than
+ * pushing `undefined` into the slot and silently zeroing the sound. */
+export function engineReadUserPreset(path) {
+    try {
+        const raw = host_read_file(path);
+        if (!raw) return null;
+        const j = JSON.parse(raw);
+        if (!j || j.state === undefined || j.state === null) return null;
+        return (typeof j.state === 'string') ? j.state : JSON.stringify(j.state);
+    } catch (e) { return null; }
+}
+
 /* ---- slots ---- */
 
 export function engineSlots() {

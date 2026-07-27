@@ -28,7 +28,7 @@ globalThis.host_read_file = () => null;
 globalThis.os = { readdir: () => [[], 0] };
 
 const { discover, shortLabel, deriveSections, activeSection, filterVizFor,
-        modeIdFor, findFilterModeCell } = await import('../../ui/ui_discover.mjs');
+        modeIdFor, findFilterModeCell, findPresetSpec } = await import('../../ui/ui_discover.mjs');
 const { toRenderCell, parseValue, stepValue, commitString, formatValue } =
     await import('../../ui/ui_cells.mjs');
 
@@ -455,6 +455,34 @@ const vizRoot = filterVizFor(rootBank, { cutoff: 0.5, resonance: 0.3, filter_typ
 eq(vizRoot.mode, 'hp', 'a page without the model enum still draws the real model');
 const vizRootBp = filterVizFor(rootBank, { cutoff: 0.5, resonance: 0.3, filter_type: 5 });
 eq(vizRootBp.mode, 'bp', 'and follows it when the model changes');
+
+/* ---- baked-preset spec (list_param/count_param/name_param levels) ----
+ * The keys are module-chosen, NOT fixed: obxd uses preset/preset_count, while
+ * po32-drum uses kit/kit_count/kit_name. Anything that hardcodes "preset"
+ * silently fails on the drum module, so pin the generic read. */
+
+eq(findPresetSpec(null), null, 'no hierarchy = no baked bank');
+eq(findPresetSpec({ root: { knobs: ['cutoff'] } }), null,
+   'a level without list_param/count_param is not a preset bank');
+eq(findPresetSpec({ root: { list_param: 'preset' } }), null,
+   'list_param ALONE is not enough — count_param is what makes it browsable');
+eq(findPresetSpec({
+       root: { list_param: 'preset', count_param: 'preset_count',
+               name_param: 'preset_name' } }),
+   { listKey: 'preset', countKey: 'preset_count', nameKey: 'preset_name' },
+   'obxd/noisemaker shape');
+eq(findPresetSpec({
+       root: { list_param: 'kit', count_param: 'kit_count', name_param: 'kit_name' } }),
+   { listKey: 'kit', countKey: 'kit_count', nameKey: 'kit_name' },
+   'po32-drum names its bank "kit" — keys must not be hardcoded');
+eq(findPresetSpec({ root: { list_param: 'preset', count_param: 'preset_count' } }),
+   { listKey: 'preset', countKey: 'preset_count', nameKey: 'preset_name' },
+   'name_param defaults to preset_name, matching shadow_ui.js');
+eq(findPresetSpec({
+       root: { knobs: ['cutoff'] },
+       banks: { list_param: 'preset', count_param: 'preset_count' } }),
+   { listKey: 'preset', countKey: 'preset_count', nameKey: 'preset_name' },
+   'the bank need not be on root — every level is scanned');
 
 /* ---- report ---- */
 

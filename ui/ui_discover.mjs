@@ -600,7 +600,37 @@ export function discover(slot, comp) {
 
     return {
         banks, paramCount, source, hierReason, envCount, filtCount, filtPairs,
+        presetSpec: findPresetSpec(levels),
         hLen: diag ? diag.hLen : 0,
         cpLen: diag ? diag.cpLen : 0,
     };
+}
+
+/* A module's BAKED-IN presets: any hierarchy level declaring both `list_param`
+ * (the current index, read/write) and `count_param` (how many). `name_param`
+ * names the current one and defaults to "preset_name" — the same default
+ * shadow_ui.js uses, so a module that omits it still browses.
+ *
+ * This is NOT a file list: the module owns the bank, and the ONLY way to read
+ * a name is to write the index and read back — i.e. browsing a baked bank
+ * changes the sound as you scroll. That's the mechanism, not a shortcoming;
+ * the host's own preset level behaves the same way.
+ *
+ * Most modules declare nothing here (4 of ~30 installed do), which is why the
+ * caller must treat null as "this module has no baked presets" rather than as
+ * a discovery failure. Scans every level, not just root — the declaration
+ * usually sits on root but nothing in the format requires it. */
+export function findPresetSpec(levels) {
+    if (!levels) return null;
+    for (const k of Object.keys(levels)) {
+        const lv = levels[k];
+        if (lv && lv.list_param && lv.count_param) {
+            return {
+                listKey:  lv.list_param,
+                countKey: lv.count_param,
+                nameKey:  lv.name_param || 'preset_name',
+            };
+        }
+    }
+    return null;
 }

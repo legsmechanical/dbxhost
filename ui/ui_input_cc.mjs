@@ -960,27 +960,18 @@ function _onCC_buttons(d1, d2) {
         /* Arp step editor: Shift flips the Pitch <-> Velocity page — redraw on
          * both edges so the flip is immediate. */
         if (S.stepIntervalMode && !S.sessionView) forceRedraw();
-        /* Deferred Shift+Note/Session dispatch: "edit this track's sound",
-         * routed by trackRoute. Fires on Shift RELEASE so the held Shift state
-         * doesn't leak into Move firmware (the shim forwards Shift once co-run
-         * begins). Schwung-routed tracks go to sound mode, which is not co-run
-         * — slot resolution still defers to tick(), because schSlotForTrack
-         * calls shadow_get_slots and that must not run from a MIDI handler. */
+        /* Deferred Shift+Note/Session dispatch — MOVE-ROUTED TRACKS ONLY.
+         * Waiting for the Shift RELEASE buys exactly one thing: the shim starts
+         * forwarding Shift to Move firmware the moment co-run begins, so a
+         * still-held Shift would leak. Sound mode is not co-run and has no such
+         * problem, so Schwung-routed tracks fire on the PRESS (see the
+         * MoveNoteSession block) and don't pay for a deferral they don't need. */
         if (!S.shiftHeld && S.pendingEditEntryTrack >= 0) {
             const _t = S.pendingEditEntryTrack;
             S.pendingEditEntryTrack = -1;
-            if (S.trackRoute[_t] === 1 &&
-                typeof shadow_corun_begin === 'function' &&
+            if (typeof shadow_corun_begin === 'function' &&
                 typeof move_midi_inject_to_move === 'function') {
                 enterMoveNativeCoRun(_t);
-            } else if (S.trackRoute[_t] === 0) {
-                S.globalMenuOpen = false;
-                S.lastSentMenuEditValue = null;
-                S.pendingSoundEnterTrack = _t;
-                S.screenDirty = true;
-            } else {
-                showActionPopup('NO SOUND TO EDIT', 'Track route is',
-                                'neither Schwung nor Move.');
             }
         }
         if (!S.sessionView) forceRedraw();
@@ -1166,11 +1157,14 @@ function _onCC_buttons(d1, d2) {
             }
             if (S.shiftHeld) {
                 /* Shift+Note/Session = "edit this track's sound". One gesture,
-                 * two destinations, chosen by the track's route (see the
-                 * Shift-release dispatch in _onCC_buttons). Deferred to Shift
-                 * RELEASE for the same reason Shift+Step3 was: a Move-routed
-                 * track enters co-run, and the shim starts forwarding Shift to
-                 * Move firmware the moment it does.
+                 * two destinations, chosen by the track's route.
+                 *
+                 * Only the MOVE branch waits for the Shift release — co-run
+                 * makes the shim forward Shift to Move firmware, so a held
+                 * Shift would leak into it. Sound mode isn't co-run, so the
+                 * Schwung branch fires now and just arms tick() to resolve the
+                 * slot (schSlotForTrack calls shadow_get_slots, which must not
+                 * run from a MIDI handler).
                  *
                  * The global menu is NOT opened here — it lives on Shift+Step2
                  * (_doShiftStepCommon idx 1). This was a duplicate opener; the
@@ -1178,7 +1172,17 @@ function _onCC_buttons(d1, d2) {
                  * menu stays, so Shift+Note/Session never traps you in it. */
                 if (soundActive()) { soundExit(); forceRedraw(); }
                 else if (S.globalMenuOpen) { S.globalMenuOpen = false; forceRedraw(); }
-                else { S.pendingEditEntryTrack = S.activeTrack; }
+                else if (S.trackRoute[S.activeTrack] === 1) {
+                    S.pendingEditEntryTrack = S.activeTrack;   /* fires on Shift release */
+                } else if (S.trackRoute[S.activeTrack] === 0) {
+                    S.globalMenuOpen = false;
+                    S.lastSentMenuEditValue = null;
+                    S.pendingSoundEnterTrack = S.activeTrack;
+                    S.screenDirty = true;
+                } else {
+                    showActionPopup('NO SOUND TO EDIT', 'Track route is',
+                                    'neither Schwung nor Move.');
+                }
             } else if (soundActive()) {
                 /* Sound mode owns the OLED — an unmodified tap must not flip
                  * Note/Session underneath it. Back steps out; Shift+this exits. */

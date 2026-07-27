@@ -21,7 +21,8 @@
 
 import {
     COMPONENTS, engineGet, engineSet, engineListModules,
-    engineLoadModule, engineLoadedModule,
+    engineLoadModule, engineLoadedModule, engineSetState,
+    engineListUserPresets, engineReadUserPreset,
 } from './ui_engine.mjs';
 import { discover, deriveSections, activeSection, filterVizFor } from './ui_discover.mjs';
 import { parseValue, stepValue, commitString, renderCellsForBank } from './ui_cells.mjs';
@@ -41,7 +42,17 @@ export const BLOCKS = [
     { comp: 'fx4',      label: 'FX 4'    },
 ];
 
-const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2;
+const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
+      VIEW_PRESET_SRC = 3, VIEW_PRESET_LIST = 4, VIEW_PRESET_BAKED = 5;
+
+/* The two preset sources, which are NOT the same kind of thing:
+ *  USER  — files under presets/<module-id>/, wrapped {name,module,version,state};
+ *          recalled through the ordinary <comp>:state slot-load path. A real list.
+ *  BAKED — the module's own list_param/count_param/name_param bank. There is no
+ *          file and no way to read a name without WRITING the index first, so it
+ *          browses as a scrubber that changes the sound as you move. That's the
+ *          mechanism (the host's preset level behaves identically), not a gap. */
+const SRC_USER = 0, SRC_BAKED = 1;
 
 /* Poll cadences, in ticks (~94Hz). Deliberately slower than the lab rig's flat
  * 8 — davebox's tick is already busy, so idle refresh is cheap and the
@@ -75,6 +86,17 @@ const S = {
     browseList: [],
     browseIdx: 0,
 
+    /* presets */
+    presetSpec: null,           /* baked bank {listKey,countKey,nameKey} or null */
+    presetSrcIdx: 0,
+    presetSrcSkipped: false,    /* jumped straight to USER (no baked bank) — Back must skip back too */
+    userPresets: [],
+    userIdx: 0,
+    bakedCount: 0,
+    bakedIdx: 0,
+    bakedName: '',
+    presetMsg: '',
+
     pendingWrites: [],
     pendingDiscover: 0,
     /* Single-slot navigation queue. Knob edits were always deferred, but the
@@ -97,6 +119,7 @@ function log(msg) {
 }
 
 export function soundActive() { return S.active; }
+export function soundTrack() { return S.track; }
 export function soundDirty() { const d = S.dirty; S.dirty = false; return d; }
 export function markSoundDirty() { S.dirty = true; }
 
@@ -142,12 +165,81 @@ function openBlock(idx) {
     runDiscovery();
 }
 
+/* ---- presets ---- */
+
+/* Jog-click inside a module lands here, NOT on the module picker: once you're
+ * editing a sound, "click" means "give me another sound for this thing", and
+ * swapping the module out from under yourself is the rarer, more destructive
+ * move. That one moved to Shift+click on the block picker. */
+function openPresets() {
+    S.presetMsg = '';
+    if (S.presetSpec) {
+        S.presetSrcSkipped = false;
+        S.presetSrcIdx = SRC_USER;
+        S.view = VIEW_PRESET_SRC;
+    } else {
+        /* No baked bank — a one-row source picker is just a dead click, so go
+         * straight to the user store and remember to skip it on the way back. */
+        S.presetSrcSkipped = true;
+        openUserPresets();
+    }
+}
+
+function openUserPresets() {
+    S.userPresets = engineListUserPresets(S.moduleId);
+    S.userIdx = 0;
+    S.view = VIEW_PRESET_LIST;
+    S.presetMsg = S.userPresets.length ? '' : 'NO USER PRESETS';
+    log('user presets: ' + S.userPresets.length + ' for ' + S.moduleId);
+}
+
+function loadUserPreset() {
+    const p = S.userPresets[S.userIdx];
+    if (!p) return;
+    const blob = engineReadUserPreset(p.path);
+    if (blob === null) { S.presetMsg = 'UNREADABLE'; return; }
+    engineSetState(S.slot, S.comp, blob);
+    S.presetMsg = 'LOADED';
+    /* The whole param set just changed underneath the cached values. */
+    S.pendingDiscover = 4;
+}
+
+/* Baked banks are an INDEX, not a list: the only way to learn a preset's name
+ * is to select it. So this browses by scrubbing — each step writes the index
+ * and the next poll reads the name back. Moving the cursor changes the sound,
+ * which is the module's own behaviour, not ours. */
+function openBaked() {
+    const sp = S.presetSpec;
+    if (!sp) return;
+    S.bakedCount = parseInt(engineGet(S.slot, S.comp, sp.countKey) || '0', 10) || 0;
+    S.bakedIdx = parseInt(engineGet(S.slot, S.comp, sp.listKey) || '0', 10) || 0;
+    S.bakedName = engineGet(S.slot, S.comp, sp.nameKey) || '';
+    S.view = VIEW_PRESET_BAKED;
+    S.presetMsg = S.bakedCount ? '' : 'NO PRESETS';
+    log('baked: ' + S.bakedCount + ' via ' + sp.listKey);
+}
+
+/* Deferred like every other engine call — the write is queued, and the name
+ * read happens on the drain so it reflects the index that actually landed. */
+function commitBaked() {
+    const sp = S.presetSpec;
+    if (!sp || !S.bakedCount) return;
+    engineSet(S.slot, S.comp, sp.listKey, String(S.bakedIdx));
+    S.bakedName = engineGet(S.slot, S.comp, sp.nameKey) || '';
+    S.pendingDiscover = 4;   /* preset change moves every param */
+}
+
 /* Every entry point below runs from soundTick(), never from a MIDI handler. */
 function runAction(a) {
-    if (a.t === 'names')       refreshBlockNames();
-    else if (a.t === 'open')   openBlock(a.idx);
-    else if (a.t === 'browse') openBrowse();
-    else if (a.t === 'load')   loadSelected();
+    if (a.t === 'names')        refreshBlockNames();
+    else if (a.t === 'open')    openBlock(a.idx);
+    else if (a.t === 'browse')  openBrowse(a.idx);
+    else if (a.t === 'load')    loadSelected();
+    else if (a.t === 'presets') openPresets();
+    else if (a.t === 'usrlist') openUserPresets();
+    else if (a.t === 'baked')   openBaked();
+    else if (a.t === 'usrload') loadUserPreset();
+    else if (a.t === 'bakedset') commitBaked();
     S.dirty = true;
 }
 
@@ -157,6 +249,7 @@ function runDiscovery() {
     if (!id) { S.banks = []; S.sections = []; S.dirty = true; return; }
     const res = discover(S.slot, S.comp);
     S.banks = res.banks;
+    S.presetSpec = res.presetSpec || null;
     S.sections = deriveSections(res.banks);
     S.bankIdx = 0;
     S.values = {};
@@ -170,7 +263,14 @@ function runDiscovery() {
 
 /* ---- module browser (per block) ---- */
 
-function openBrowse() {
+/* `idx` retargets the block first. Shift+click arrives from the block PICKER,
+ * where S.comp still names whichever block was last opened — browsing without
+ * this would offer modules for the wrong component and load into it. */
+function openBrowse(idx) {
+    if (idx != null) {
+        S.blockIdx = idx;
+        S.comp = BLOCKS[idx].comp;
+    }
     const spec = COMPONENTS[S.comp];
     const found = spec ? engineListModules(S.comp) : [];
     /* [ none ] LAST — as index 0 with the cursor defaulting there, a single
@@ -295,6 +395,18 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.blockIdx = listMove(BLOCKS.length, S.blockIdx, delta);
         } else if (S.view === VIEW_BROWSE) {
             S.browseIdx = listMove(S.browseList.length, S.browseIdx, delta);
+        } else if (S.view === VIEW_PRESET_SRC) {
+            S.presetSrcIdx = listMove(2, S.presetSrcIdx, delta);
+        } else if (S.view === VIEW_PRESET_LIST) {
+            S.userIdx = listMove(S.userPresets.length, S.userIdx, delta);
+        } else if (S.view === VIEW_PRESET_BAKED) {
+            const next = listMove(S.bakedCount, S.bakedIdx, delta);
+            if (next !== S.bakedIdx) {
+                S.bakedIdx = next;
+                /* Scrubbing IS selecting for a baked bank — queue the write so a
+                 * fast spin costs one drain per tick, not one per detent. */
+                S.pendingAction = { t: 'bakedset' };
+            }
         } else if (S.banks.length) {
             if (S.shiftHeld && S.sections.length > 1) {
                 const cur = activeSection(S.sections, S.bankIdx);
@@ -314,20 +426,40 @@ export function soundOnCC(d1, d2, decodeDelta) {
     }
 
     if (d1 === 3 && d2 >= 64) {                        /* jog click */
-        if (S.view === VIEW_BLOCKS) S.pendingAction = { t: 'open', idx: S.blockIdx };
-        else if (S.view === VIEW_BROWSE) S.pendingAction = { t: 'load' };
-        else S.pendingAction = { t: 'browse' };        /* swap this block's module */
+        if (S.view === VIEW_BLOCKS) {
+            /* Shift+click SWAPS the module; plain click opens it. Changing what
+             * a block IS is rarer and more destructive than editing it, so it
+             * costs the modifier and lives only here, at the chain overview
+             * where "what is in this block" is the question being asked. */
+            S.pendingAction = { t: S.shiftHeld ? 'browse' : 'open', idx: S.blockIdx };
+        }
+        else if (S.view === VIEW_BROWSE)      S.pendingAction = { t: 'load' };
+        /* An EMPTY block has no presets to offer, and its editor's whole job is
+         * "pick something" — so click there still means the module browser. */
+        else if (S.view === VIEW_EDIT)
+            S.pendingAction = S.moduleId ? { t: 'presets' } : { t: 'browse' };
+        else if (S.view === VIEW_PRESET_SRC)
+            S.pendingAction = (S.presetSrcIdx === SRC_BAKED) ? { t: 'baked' } : { t: 'usrlist' };
+        else if (S.view === VIEW_PRESET_LIST) S.pendingAction = { t: 'usrload' };
+        else if (S.view === VIEW_PRESET_BAKED) S.presetMsg = 'LOADED';  /* already applied on scrub */
         S.dirty = true;
         return true;
     }
 
     if (d1 === 51 && d2 >= 64) {                       /* back */
-        if (S.view === VIEW_EDIT || S.view === VIEW_BROWSE) {
+        if (S.view === VIEW_PRESET_LIST || S.view === VIEW_PRESET_BAKED) {
+            /* Straight back to the editor when the source picker was skipped,
+             * so Back always retraces the way you actually came in. */
+            S.view = S.presetSrcSkipped ? VIEW_EDIT : VIEW_PRESET_SRC;
+        } else if (S.view === VIEW_PRESET_SRC) {
+            S.view = VIEW_EDIT;
+        } else if (S.view === VIEW_EDIT || S.view === VIEW_BROWSE) {
             S.view = VIEW_BLOCKS;
             S.pendingAction = { t: 'names' };
         } else {
             soundExit();
         }
+        S.presetMsg = '';
         S.dirty = true;
         return true;
     }
@@ -448,7 +580,7 @@ function renderEdit() {
     if (!S.banks.length) {
         drawKitHeader(BLOCKS[S.blockIdx].label, false);
         centreText(28, S.moduleId ? 'NO PARAMS' : 'EMPTY');
-        centreText(40, 'CLICK TO PICK');
+        centreText(40, S.moduleId ? 'CLICK FOR PRESETS' : 'CLICK TO PICK');
         return;
     }
     const bank = S.banks[S.bankIdx];
@@ -469,10 +601,58 @@ function renderEdit() {
     }
 }
 
+function modLabel() {
+    return String(S.moduleId || BLOCKS[S.blockIdx].label).toUpperCase();
+}
+
+/* Shared list body for the two row-based preset screens. */
+function renderRows(rows, sel, emptyMsg) {
+    const ROW_H = 10, VISIBLE = 5;
+    if (!rows.length) { centreText(30, emptyMsg); return; }
+    const start = Math.max(0, Math.min(sel - 2, rows.length - VISIBLE));
+    for (let i = 0; i < VISIBLE; i++) {
+        const idx = start + i;
+        if (idx >= rows.length) break;
+        const y = 11 + i * ROW_H;
+        const on = (idx === sel);
+        if (on) fill_rect(0, y - 1, 128, ROW_H, 1);
+        let label = String(rows[idx]);
+        while (label.length > 1 && mvWidth(label) > 122) label = label.slice(0, -1);
+        mvPrint(3, y + 1, label, on ? 0 : 1);
+    }
+}
+
+function renderPresetSrc() {
+    clear_screen();
+    drawKitHeader(modLabel() + ' - PRESETS', false);
+    renderRows(['User Presets', modLabel() + ' Presets'], S.presetSrcIdx, '');
+}
+
+function renderPresetList() {
+    clear_screen();
+    drawKitHeader('USER PRESETS', false);
+    renderRows(S.userPresets.map(p => p.name), S.userIdx, S.presetMsg || 'NO USER PRESETS');
+    if (S.presetMsg && S.userPresets.length) centreText(58, S.presetMsg);
+}
+
+/* A baked bank has no list to draw — only the current index and its name, and
+ * the name only exists once the index has been written. Hence a scrubber. */
+function renderPresetBaked() {
+    clear_screen();
+    drawKitHeader(modLabel() + ' PRESETS', false);
+    if (!S.bakedCount) { centreText(30, S.presetMsg || 'NO PRESETS'); return; }
+    centreText(22, String(S.bakedName || '—').toUpperCase());
+    centreText(40, (S.bakedIdx + 1) + ' / ' + S.bakedCount);
+    if (S.presetMsg) centreText(56, S.presetMsg);
+}
+
 export function soundRender() {
     if (!S.active) return false;
     if (S.view === VIEW_BLOCKS) renderBlocks();
     else if (S.view === VIEW_BROWSE) renderBrowse();
+    else if (S.view === VIEW_PRESET_SRC) renderPresetSrc();
+    else if (S.view === VIEW_PRESET_LIST) renderPresetList();
+    else if (S.view === VIEW_PRESET_BAKED) renderPresetBaked();
     else renderEdit();
     return true;
 }

@@ -17,12 +17,22 @@ the section into a versioned heading at release time.
   and step buttons stay with the sequencer throughout, so you can keep playing
   while you dial. `Back` steps out a level at a time.
 
+- **Presets in the sound editor.** Click the jog inside a module to reach its
+  presets. Where a module has both, you pick the source first: **User Presets**
+  (the ones you've saved, shared with Schwung's own preset browser) or the
+  **module's own built-in presets**. Built-in banks audition as you scroll —
+  each step selects, so you hear it immediately.
+- **`Shift` + click on the block picker swaps a block's module.** Plain click
+  opens it for editing.
+
 ### Performance / UX
 - **The Settings menu is now `Shift + Step 2`.** It was on both that and
   `Shift + Note/Session`; the latter is the sound editor now. Everything in the
   menu is unchanged.
 - **`Shift + Step 3` no longer opens the instrument editor** — `Shift +
   Note/Session` is the one way in.
+- **Sound mode closes when you switch tracks**, so you're never editing one
+  track's sound while looking at another.
 
 ## [1.0-beta.8] — 2026-07-21
 ### Performance / UX
