@@ -340,8 +340,21 @@ function overlapsEnv(filt, env) {
  * curve whose bump never moves, and pairing is also what makes the inference
  * safe — "cutoff" alone appears on plenty of non-filter params (LFO cutoff mod
  * depth, envelope->cutoff amount) that would draw a meaningless curve. */
-const RE_CUTOFF = /\bcutoff\b|\bcutof\b|\bfreq(uency)?\b|\bctf\b/i;
-const RE_RESO = /\bresonance\b|\breso\b|\bres\b|\bq\b|\bemphasis\b/i;
+/* "cutoff" is unambiguous. Bare "freq" is NOT — every oscillator and LFO has
+ * one, and pairing those with a neighbouring "res"-ish knob invented filter
+ * curves on modules that have a single filter (noisemaker reported 4). So a
+ * frequency only counts as a cutoff when the SAME name also says filter. */
+const RE_CUTOFF_STRONG = /\bcutoff\b|\bcutof\b|\bctf\b/i;
+const RE_FREQ = /\bfreq(uency)?\b/i;
+const RE_FILTERISH = /\b(filter|vcf|flt|lpf|hpf|bpf)\b/i;
+/* Bare "q" is too short to be safe on its own — it appears as a suffix and an
+ * axis label all over the place. Require a real resonance word. */
+const RE_RESO = /\bresonance\b|\breso\b|\bres\b|\bemphasis\b/i;
+
+function looksLikeCutoff(name) {
+    if (RE_CUTOFF_STRONG.test(name)) return true;
+    return RE_FREQ.test(name) && RE_FILTERISH.test(name);
+}
 /* Mode enum option name -> kit curve id. Anything unmatched falls back to lp
  * rather than drawing a confidently wrong shape. */
 const FILT_MODE_WORDS = [
@@ -383,7 +396,7 @@ export function detectFilterViz(bank) {
             const an = String(a.label || '') + ' ' + String(a.key || '').replace(/_/g, ' ');
             const bn = String(b.label || '') + ' ' + String(b.key || '').replace(/_/g, ' ');
             /* Cutoff must lead — that's the column the corner sits on. */
-            if (RE_CUTOFF.test(an) && RE_RESO.test(bn) && !RE_CUTOFF.test(bn)) {
+            if (looksLikeCutoff(an) && RE_RESO.test(bn) && !looksLikeCutoff(bn)) {
                 return { start: i, cutoffKey: a.key, resoKey: b.key };
             }
         }
@@ -525,6 +538,7 @@ export function discover(slot, comp) {
     }
 
     let paramCount = 0, envCount = 0, filtCount = 0;
+    const filtPairs = [];
     for (const b of banks) {
         for (const c of b.cells) if (c.key) paramCount++;
         b.env = detectEnvelope(b);
@@ -532,7 +546,7 @@ export function discover(slot, comp) {
         /* Filter curve must not fight the envelope for the same cells. */
         const f = detectFilterViz(b);
         b.filt = (f && !overlapsEnv(f, b.env)) ? f : null;
-        if (b.filt) filtCount++;
+        if (b.filt) { filtCount++; filtPairs.push(b.filt.cutoffKey + '/' + b.filt.resoKey); }
     }
 
     /* Why this module landed on this path. `hierReason` is the interesting field
@@ -549,7 +563,7 @@ export function discover(slot, comp) {
     }
 
     return {
-        banks, paramCount, source, hierReason, envCount, filtCount,
+        banks, paramCount, source, hierReason, envCount, filtCount, filtPairs,
         hLen: diag ? diag.hLen : 0,
         cpLen: diag ? diag.cpLen : 0,
     };

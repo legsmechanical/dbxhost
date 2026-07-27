@@ -152,7 +152,7 @@ function runDiscovery() {
     log('discover: ' + id + ' -> ' + res.banks.length + ' banks, ' +
         res.paramCount + ' params, via ' + res.source +
         ' [hier=' + res.hLen + 'B cp=' + res.cpLen + 'B env=' + res.envCount +
-        ' filt=' + res.filtCount +
+        ' filt=' + res.filtCount + (res.filtPairs.length ? '[' + res.filtPairs.join(',') + ']' : '') +
         (res.source === 'chain_params' ? ' why=' + res.hierReason : '') + ']');
     if (!res.banks.length) setStatus('No params published');
     pollValues(true);
