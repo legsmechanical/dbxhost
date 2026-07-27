@@ -30,7 +30,7 @@ import {
 } from './ui_cells.mjs';
 
 import {
-    drawKitBankPage, drawKitHeader, drawKitSectionPicker,
+    drawKitBankPage, drawKitHeader, drawKitSectionPicker, drawKitValueOverlay,
     hdrPrint, mvPrint, mvWidth, MV_HDR_H,
 } from '../ui/ui_movy.mjs';
 
@@ -256,12 +256,19 @@ function renderEditView() {
     const bank = S.banks[S.bankIdx];
     const cells = renderCellsForBank(bank, S.values, S.rawValues);
     drawKitBankPage(cells, {
-        headerText: bank.name,
+        /* Uppercase for the header font's sake — see the `up()` note in
+         * ui_cells.mjs. Raw level names render as "EdIt" / "TONE2/WAVE" mixed. */
+        headerText: String(bank.name || '').toUpperCase(),
         headerInvert: false,
         pageIdx: S.bankIdx,
         pageCount: S.banks.length,
         touchedIdx: S.touchedIdx,
     });
+    /* Turn-to-reveal value zoom for the knob being turned. Shares the same box
+     * footprint as the enum picker (drawKitBankPage draws that one for discrete
+     * lists), so the two read as one control rather than two pop-ups. */
+    if (S.touchedIdx >= 0) drawKitValueOverlay(cells, S.touchedIdx);
+
     /* Section picker rides ON TOP of the page while shift is held — it clears
      * its own footprint, so the page underneath costs nothing to draw first
      * and reappears the instant shift is released. */

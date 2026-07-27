@@ -833,6 +833,59 @@ export function drawKitBankPage(cells, opts) {
     drawKitEnumOverlay(cells, t);
 }
 
+/* Turn-to-reveal value zoom — the non-picker counterpart to drawKitEnumOverlay.
+ * Same reveal lifecycle (via enumOverlayIdx): appears only once the physically-
+ * held knob is turned, stays until release. It's just a visual zoom of the cell
+ * that's already on screen — the same widget graphic scaled up with the value
+ * beneath it — shown in a box below the (unchanged) param-name header.
+ *
+ * Applies to sustained-value widgets (arc / bipolar arc / value-box). Skips
+ * pickers (their scrolling list overlay already does this), on/off toggles,
+ * one-shot actions, and blanks. */
+export function drawKitValueOverlay(cells, idx) {
+    if (idx < 0) return;
+    const cell = cells[idx];
+    if (!cell || !cell.name) return;
+    if (cell.options && cell.options.length > 2) return;   /* discrete lists → picker overlay */
+    /* bigText = a text-only value with no widget graphic (the step editor's
+     * merged Oct/Note box, whose value is the note name). */
+    const bigText = cell.bigText;
+    if (bigText == null && cell.kind !== 'arc' && cell.kind !== 'arcbip' && cell.kind !== 'valsq') return;
+
+    /* Floating overlay box below the header: only the box itself is cleared,
+     * so the surrounding params stay visible around its borders. */
+    const BX = MV_ZOOM_X, BW = MV_ZOOM_W, boxTop = MV_ZOOM_Y, boxH = MV_ZOOM_H;
+    fill_rect(BX, boxTop, BW, boxH, 0);
+    rectOutline(BX, boxTop, BW, boxH, 1);
+
+    /* Zoomed read-outs use the big font, dropping to the header font only when
+     * the text outgrows the box (long note labels, long formatted values). */
+    const zoomPrint = (text, y) => {
+        const t = String(text);
+        const fit = bigFit(t, BW - 6);
+        if (fit) bigPrint(Math.round(64 - fit.w / 2), y, t, 1, fit.cond);
+        else     hdrPrint(Math.round(64 - hdrWidth(t) / 2), y + 3, t, 1);
+    };
+
+    if (bigText != null) {
+        zoomPrint(bigText, boxTop + 17);
+        return;
+    }
+
+    const _vt = String(cell.text);
+    if (cell.kind === 'arc' || cell.kind === 'arcbip') {
+        /* Zoomed arc (same shape, larger), value in the header font beneath. */
+        const norm = cell.kind === 'arcbip'
+            ? 0.5 + (cell.signed || 0) / 2
+            : (cell.norm || 0);
+        drawArcKnobAt(64, boxTop + 18, 12, norm, cell.kind === 'arcbip');
+        hdrPrint(Math.round(64 - hdrWidth(_vt) / 2), boxTop + 35, _vt, 1);
+    } else {
+        /* valsq — no graphic; the value IS the widget, centered in the box. */
+        zoomPrint(_vt, boxTop + 17);
+    }
+}
+
 /* Section-picker overlay — drawn ONLY while SHIFT is held. One row per SECTION
  * (coarse jumps; plain jog still browses every bank overlay-free), so a module
  * with 49 banks is crossable in a few steps instead of 49. Shift+jog moves the
@@ -865,7 +918,12 @@ export function drawKitSectionPicker(sections, activeIdx) {
         const ry = listY + r * rowH;
         const sel = (i === active);
         if (sel) fill_rect(x + 2, ry - 1, w - 6, rowH, 1);
-        let label = String(sections[i].name || '');
+        /* UPPERCASE before printing. The header font carries TRUE lowercase
+         * glyphs for exactly 'd' and 't'; every other lowercase letter falls
+         * back to its capital. Module level names are mixed case, so printing
+         * them raw yields "FILtER" / "LFO DESt" / "PItch MOd" — the two odd
+         * letters out. Matches the ALL-CAPS chrome elsewhere either way. */
+        let label = String(sections[i].name || '').toUpperCase();
         while (label.length > 1 && hdrWidth(label) > availW) label = label.slice(0, -1);
         hdrPrint(x + 4, ry, label, sel ? 0 : 1);
     }

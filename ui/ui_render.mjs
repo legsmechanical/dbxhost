@@ -18,7 +18,7 @@ import {
 } from './ui_constants.mjs';
 import {
     drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitAltArrow,
-    drawKitCells, drawKitEnumOverlay, mvPrint, mvWidth, rectOutline,
+    drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, mvPrint, mvWidth, rectOutline,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H
 } from './ui_movy.mjs';
@@ -136,59 +136,6 @@ function drawThruBar(x, w, top, bot) {
  * index for drawKitEnumOverlay, or -1 to suppress. */
 function enumOverlayIdx(t) {
     return (t >= 0 && S.knobTurnedTick[t] >= 0) ? t : -1;
-}
-
-/* Turn-to-reveal value zoom — the non-picker counterpart to drawKitEnumOverlay.
- * Same reveal lifecycle (via enumOverlayIdx): appears only once the physically-
- * held knob is turned, stays until release. It's just a visual zoom of the cell
- * that's already on screen — the same widget graphic scaled up with the value
- * beneath it — shown in a box below the (unchanged) param-name header.
- *
- * Applies to sustained-value widgets (arc / bipolar arc / value-box). Skips
- * pickers (their scrolling list overlay already does this), on/off toggles,
- * one-shot actions, and blanks. */
-function drawKitValueOverlay(cells, idx) {
-    if (idx < 0) return;
-    const cell = cells[idx];
-    if (!cell || !cell.name) return;
-    if (cell.options && cell.options.length > 2) return;   /* discrete lists → picker overlay */
-    /* bigText = a text-only value with no widget graphic (the step editor's
-     * merged Oct/Note box, whose value is the note name). */
-    const bigText = cell.bigText;
-    if (bigText == null && cell.kind !== 'arc' && cell.kind !== 'arcbip' && cell.kind !== 'valsq') return;
-
-    /* Floating overlay box below the header: only the box itself is cleared,
-     * so the surrounding params stay visible around its borders. */
-    const BX = MV_ZOOM_X, BW = MV_ZOOM_W, boxTop = MV_ZOOM_Y, boxH = MV_ZOOM_H;
-    fill_rect(BX, boxTop, BW, boxH, 0);
-    rectOutline(BX, boxTop, BW, boxH, 1);
-
-    /* Zoomed read-outs use the big font, dropping to the header font only when
-     * the text outgrows the box (long note labels, long formatted values). */
-    const zoomPrint = (text, y) => {
-        const t = String(text);
-        const fit = bigFit(t, BW - 6);
-        if (fit) bigPrint(Math.round(64 - fit.w / 2), y, t, 1, fit.cond);
-        else     hdrPrint(Math.round(64 - hdrWidth(t) / 2), y + 3, t, 1);
-    };
-
-    if (bigText != null) {
-        zoomPrint(bigText, boxTop + 17);
-        return;
-    }
-
-    const _vt = String(cell.text);
-    if (cell.kind === 'arc' || cell.kind === 'arcbip') {
-        /* Zoomed arc (same shape, larger), value in the header font beneath. */
-        const norm = cell.kind === 'arcbip'
-            ? 0.5 + (cell.signed || 0) / 2
-            : (cell.norm || 0);
-        drawArcKnobAt(64, boxTop + 18, 12, norm, cell.kind === 'arcbip');
-        hdrPrint(Math.round(64 - hdrWidth(_vt) / 2), boxTop + 35, _vt, 1);
-    } else {
-        /* valsq — no graphic; the value IS the widget, centered in the box. */
-        zoomPrint(_vt, boxTop + 17);
-    }
 }
 
 /* The merged Note/Oct box spanning the K1+K2 widget span — shared by the

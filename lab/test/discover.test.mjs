@@ -126,7 +126,14 @@ eq(toRenderCell(byKey.divis, 1).kind,      'frac',   'len renders as frac');
 eq(toRenderCell(byKey.dir, 1).kind,        'dirsq',  'dir renders as dirsq');
 eq(toRenderCell(byKey.voices, 4).kind,     'valsq',  'count renders as valsq');
 
-eq(toRenderCell(byKey.wave, 2).text, 'Tri', 'enum shows its option NAME as the value');
+/* Render cells are UPPERCASE — the header font has true lowercase glyphs only
+ * for 'd'/'t', so mixed-case names would render as "EdIt"/"FILtER". */
+eq(toRenderCell(byKey.wave, 2).text, 'TRI', 'enum shows its option NAME as the value');
+eq(toRenderCell(byKey.wave, 2).options, ['SAW', 'SQUARE', 'TRI', 'SINE'],
+   'render-side options are uppercased for the picker overlay');
+eq(byKey.wave.options, ['Saw', 'Square', 'Tri', 'Sine'],
+   'the MODEL keeps original case — parseValue matches DSP-reported names against it');
+eq(parseValue(byKey.wave, 'Tri'), 2, 'name resolution still works after the render uppercase');
 eq(toRenderCell(byKey.wave, 2).sel, 2,      'enum reports the selected index for the picker');
 eq(toRenderCell(byKey.octave, 2).text, '+2', 'oct shows a signed read-out');
 eq(toRenderCell(byKey.cutoff, null).text, '--', 'an unread value shows as --');
@@ -136,8 +143,9 @@ eq(toRenderCell(byKey.pan, 0).signed, 0, 'bip centres on the range midpoint');
 eq(toRenderCell(byKey.pan, 1).signed, 1, 'bip reaches +1 at the top of the range');
 
 /* the touched header needs the FULL name, the strip needs the short one */
-eq(toRenderCell(byKey.cutoff, 100).name, 'Filter Cutoff', 'render cell carries the full name');
-eq(toRenderCell(byKey.cutoff, 100).label, 'Ctff', 'render cell carries the short label');
+eq(toRenderCell(byKey.cutoff, 100).name, 'FILTER CUTOFF', 'render cell carries the full name');
+eq(toRenderCell(byKey.cutoff, 100).label, 'CTFF', 'render cell carries the short label');
+eq(byKey.cutoff.label, 'Filter Cutoff', 'the model keeps the original-case name');
 
 /* count cells synthesize a browsable option list for the picker overlay */
 eq(toRenderCell(byKey.voices, 3).options, ['1','2','3','4','5','6','7','8'],

@@ -77,6 +77,18 @@ export function formatValue(cell, value) {
     return String(Math.round(value * 100) / 100);
 }
 
+/* Everything this file hands to the header font must be UPPERCASE.
+ *
+ * That font carries TRUE lowercase glyphs for exactly 'd' and 't' — davebox
+ * needs them for the triplet/dotted fraction suffixes ("1/4t", "1/4d"), so the
+ * fix cannot live in hdrPrint. Every other lowercase letter falls back to its
+ * capital, which is why raw module names render as "EdIt", "FILtER",
+ * "PItch MOd" — the two odd letters out.
+ *
+ * Applied to the RENDER cell only. The param model keeps its original strings,
+ * because parseValue matches DSP-reported enum names against them. */
+function up(s) { return String(s == null ? '' : s).toUpperCase(); }
+
 function basename(p) {
     const s = String(p || '');
     const i = s.lastIndexOf('/');
@@ -88,26 +100,28 @@ function basename(p) {
 export function toRenderCell(cell, value, rawValue) {
     if (!cell || cell.kind === 'blank' || !cell.key) return null;
 
-    const label = cell.short || cell.label || '';
-    const name = cell.label || cell.key;
+    const label = up(cell.short || cell.label || '');
+    const name = up(cell.label || cell.key);
     const span = cell.max - cell.min;
     const norm = (value == null || span <= 0) ? 0 : (value - cell.min) / span;
-    const text = formatValue(cell, value);
+    const text = up(formatValue(cell, value));
     const sel = (cell.options && value != null) ? Math.round(value) : -1;
+    /* Render-side option list for the picker overlay (hdrPrint). */
+    const opts = cell.options ? cell.options.map(up) : null;
 
     switch (cell.kind) {
         case 'tog':
             return { kind: 'hbar', label, name, text, norm: value ? 1 : 0,
-                     options: cell.options, sel };
+                     options: opts, sel };
 
         case 'enumc':
-            return { kind: 'enumsq', label, name, text, options: cell.options, sel };
+            return { kind: 'enumsq', label, name, text, options: opts, sel };
 
         case 'len':
-            return { kind: 'frac', label, name, text, options: cell.options, sel };
+            return { kind: 'frac', label, name, text, options: opts, sel };
 
         case 'dir':
-            return { kind: 'dirsq', label, name, text, options: cell.options, sel };
+            return { kind: 'dirsq', label, name, text, options: opts, sel };
 
         case 'count':
         case 'oct':
@@ -119,7 +133,7 @@ export function toRenderCell(cell, value, rawValue) {
 
         case 'file':
             return { kind: 'enumsq', label, name,
-                     text: rawValue ? basename(rawValue) : '--', options: null, sel: -1 };
+                     text: rawValue ? up(basename(rawValue)) : '--', options: null, sel: -1 };
 
         case 'bip': {
             const centre = (cell.min + cell.max) / 2;
