@@ -21,10 +21,11 @@ the section into a versioned heading at release time.
   presets. Where a module has both, you pick the source first: **User Presets**
   (the ones you've saved, shared with Schwung's own preset browser) or the
   **module's own built-in presets**. Both are numbered, scrollable lists.
-- **Module Menu.** The same jog-click picker now has a **Module Menu** row that
-  opens Schwung's own chain editor for the track's slot — the full module
-  hierarchy, so anything the sound pages don't show is still reachable. Back or
-  Menu returns you to the track view.
+- **Module Menu.** The same jog-click picker now has a **Module Menu** row: the
+  module's own parameter menu, opening straight on its top level. The knob
+  pages only show parameters a module maps to the eight knobs, so this is how
+  you reach everything else. Jog scrolls, click steps into a sub-menu or starts
+  editing the highlighted value, Back steps out.
 - **Presets audition as you scroll**, so you hear one before committing. Click
   to keep it; **Back** puts the sound you came in with back. Saving and
   deleting your own presets works the same as it does from a Schwung slot —

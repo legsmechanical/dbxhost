@@ -601,9 +601,81 @@ export function discover(slot, comp) {
     return {
         banks, paramCount, source, hierReason, envCount, filtCount, filtPairs,
         presetSpec: findPresetSpec(levels),
+        /* The RAW hierarchy, for the menu. The knob pages above are a lossy
+         * projection: buildLevelPages reads `knobs` only and uses `params`
+         * purely for navigation edges, so every param a module declares but
+         * doesn't map to one of the 8 knobs is invisible in them. The menu
+         * walks these levels directly, which is the whole point of having it. */
+        levels, rootKey, cpMap,
         hLen: diag ? diag.hLen : 0,
         cpLen: diag ? diag.cpLen : 0,
     };
+}
+
+/* Menu rows for one level: navigation links and editable params, in declared
+ * order. `cpMap` (chain_params) stays the authority for value metadata, exactly
+ * as it is for the knob pages — the hierarchy only supplies layout and labels.
+ *
+ * Preset levels are SKIPPED deliberately: sound mode has its own preset picker,
+ * and shadow_ui does the same thing ("Skip preset browser levels (those with
+ * list_param)", shadow_ui.js). Duplicating it here would be two doors again. */
+export function menuRows(levels, levelKey, cpMap) {
+    const lv = levels && levels[levelKey];
+    const rows = [];
+    if (!lv) return rows;
+    for (const p of (lv.params || [])) {
+        if (typeof p === 'string') {
+            rows.push({ kind: 'param', key: p, label: labelFor(p, null, cpMap) });
+        } else if (p && p.level) {
+            const child = levels[p.level];
+            if (child && child.list_param && child.count_param) continue;
+            rows.push({ kind: 'level', level: p.level,
+                        label: p.label || p.name || (child && (child.name || child.label)) || p.level });
+        } else if (p && p.key) {
+            rows.push({ kind: 'param', key: p.key, label: labelFor(p.key, p, cpMap) });
+        }
+    }
+    /* A level can own sub-levels via `children` as well as `params` nav entries
+     * — dexed's operators are reachable only that way (and it serialises the
+     * absent case as the literal string "None"). */
+    const kids = lv.children;
+    if (kids && kids !== 'None' && Array.isArray(kids)) {
+        for (const c of kids) {
+            const ck = (typeof c === 'string') ? c : (c && c.level);
+            if (!ck || !levels[ck]) continue;
+            const child = levels[ck];
+            if (child.list_param && child.count_param) continue;
+            rows.push({ kind: 'level', level: ck,
+                        label: child.name || child.label || ck });
+        }
+    }
+    return rows;
+}
+
+function labelFor(key, hierMeta, cpMap) {
+    const cp = (cpMap && cpMap[key]) || {};
+    return cp.name || (hierMeta && (hierMeta.name || hierMeta.label)) || key;
+}
+
+/* Value metadata for a menu param, in the same shape makeCell produces so the
+ * menu can reuse ui_cells' parse/step/commit rather than growing a second,
+ * subtly-different value engine. */
+export function menuCell(key, levels, levelKey, cpMap) {
+    const lv = (levels && levels[levelKey]) || {};
+    let hierMeta = null;
+    for (const p of (lv.params || [])) {
+        if (p && typeof p === 'object' && p.key === key) { hierMeta = p; break; }
+    }
+    const cp = (cpMap && cpMap[key]) || {};
+    return makeCell(key, {
+        name: cp.name || (hierMeta && (hierMeta.name || hierMeta.label)) || key,
+        type: cp.type || (hierMeta && hierMeta.type),
+        min:  cp.min  != null ? cp.min  : (hierMeta && hierMeta.min),
+        max:  cp.max  != null ? cp.max  : (hierMeta && hierMeta.max),
+        step: cp.step != null ? cp.step : (hierMeta && hierMeta.step),
+        options: cp.options || (hierMeta && hierMeta.options) || null,
+        root: cp.root, filter: cp.filter, start_path: cp.start_path,
+    });
 }
 
 /* A module's BAKED-IN presets: any hierarchy level declaring both `list_param`

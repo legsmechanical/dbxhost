@@ -28,7 +28,7 @@ globalThis.host_read_file = () => null;
 globalThis.os = { readdir: () => [[], 0] };
 
 const { discover, shortLabel, deriveSections, activeSection, filterVizFor,
-        modeIdFor, findFilterModeCell, findPresetSpec } = await import('../../ui/ui_discover.mjs');
+        modeIdFor, findFilterModeCell, findPresetSpec, menuRows } = await import('../../ui/ui_discover.mjs');
 const { toRenderCell, parseValue, stepValue, commitString, formatValue } =
     await import('../../ui/ui_cells.mjs');
 
@@ -483,6 +483,43 @@ eq(findPresetSpec({
        banks: { list_param: 'preset', count_param: 'preset_count' } }),
    { listKey: 'preset', countKey: 'preset_count', nameKey: 'preset_name' },
    'the bank need not be on root — every level is scanned');
+
+/* ---- module menu rows ----
+ * The menu exists because the knob pages are a lossy projection: they read
+ * knobs[] only, so a param declared but never knob-mapped is invisible there.
+ * These pin that the menu reads params[] instead, and that it skips the preset
+ * level (sound mode has its own picker; shadow_ui skips it too). */
+
+const MLV = {
+    root: {
+        name: 'Root',
+        knobs: ['cutoff'],
+        params: [
+            { key: 'cutoff', name: 'Cutoff' },
+            { key: 'hidden_thing', name: 'Hidden' },   /* NOT in knobs[] */
+            { level: 'adv', label: 'Advanced' },
+            { level: 'presets', label: 'Presets' },
+        ],
+    },
+    adv: { name: 'Advanced', params: [{ key: 'drive', name: 'Drive' }] },
+    presets: { name: 'Presets', list_param: 'preset', count_param: 'preset_count' },
+};
+
+const mr = menuRows(MLV, 'root', { cutoff: { name: 'Cutoff' } });
+eq(mr.map(r => r.kind), ['param', 'param', 'level'],
+   'preset level is skipped; params and nav links both appear');
+eq(mr.map(r => r.label), ['Cutoff', 'Hidden', 'Advanced'],
+   'a param absent from knobs[] IS in the menu — the whole point of having one');
+eq(menuRows(MLV, 'adv', {}).map(r => r.key), ['drive'], 'sub-level rows');
+eq(menuRows(MLV, 'nope', {}), [], 'unknown level = no rows, not a throw');
+eq(menuRows(null, 'root', {}), [], 'no hierarchy = no rows');
+
+/* dexed serialises an absent children list as the literal string "None" */
+eq(menuRows({ a: { params: [], children: 'None' } }, 'a', {}), [],
+   '"None" children is absent, not a level named None');
+eq(menuRows({ a: { params: [], children: ['b'] }, b: { name: 'B' } }, 'a', {})
+       .map(r => r.label),
+   ['B'], 'children edges become rows too (dexed operators are only reachable that way)');
 
 /* ---- report ---- */
 

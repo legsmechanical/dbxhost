@@ -28,8 +28,10 @@ import {
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
 } from '/data/UserData/schwung/shared/text_entry.mjs';
-import { discover, deriveSections, activeSection, filterVizFor } from './ui_discover.mjs';
-import { parseValue, stepValue, commitString, renderCellsForBank } from './ui_cells.mjs';
+import { discover, deriveSections, activeSection, filterVizFor,
+    menuRows, menuCell } from './ui_discover.mjs';
+import { parseValue, stepValue, commitString, renderCellsForBank,
+    formatValue } from './ui_cells.mjs';
 import {
     drawKitBankPage, drawKitHeader, drawKitSectionPicker, drawKitValueOverlay,
     hdrPrint, mvPrint, mvWidth,
@@ -47,7 +49,8 @@ export const BLOCKS = [
 ];
 
 const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
-      VIEW_PRESET_SRC = 3, VIEW_PRESET_LIST = 4, VIEW_PRESET_BAKED = 5;
+      VIEW_PRESET_SRC = 3, VIEW_PRESET_LIST = 4, VIEW_PRESET_BAKED = 5,
+      VIEW_MENU = 6;
 
 /* The jog-click picker offers three destinations, and they are NOT the same
  * kind of thing — rows are dispatched by `kind`, never by a fixed index, since
@@ -102,7 +105,17 @@ const S = {
     presetSpec: null,           /* baked bank {listKey,countKey,nameKey} or null */
     presetSrcIdx: 0,
     srcRows: [],                /* [{kind,label}] — user / baked (if any) / menu */
-    menuRequest: false,         /* "Module Menu" picked; davebox performs the co-run */
+    /* Module menu: the module's own parameter hierarchy, walked directly. The
+     * knob pages are a lossy projection of this (knobs[] only), so anything a
+     * module declares but doesn't knob-map is reachable ONLY here. */
+    levels: null,
+    rootKey: null,
+    cpMap: null,
+    menuStack: [],              /* [{levelKey, cursor}] — breadcrumb for Back */
+    menuKey: null,
+    menuIdx: 0,
+    menuRowsCache: [],
+    menuEditing: false,         /* jog edits the highlighted param instead of scrolling */
     userPresets: [],
     userIdx: 0,                 /* 0 = the [Save current...] row; presets start at 1 */
     bakedCount: 0,
@@ -374,24 +387,87 @@ function fileExists(path) {
     try { return !!host_read_file(path); } catch (e) { return false; }
 }
 
-/* "Module Menu" = hand the slot to Schwung's OWN chain editor, which is the
- * full module hierarchy — every level and param the module publishes, including
- * everything the canvas pages don't surface. Reusing it wholesale is the point:
- * davebox already enters it for the global menu's "Edit Slot...", and the
- * alternative is reimplementing a menu the host already ships.
+/* ---- module menu ----
  *
- * It is a full co-run, not an overlay: shadow_corun_open('chain_editor') layers
- * a screen over an EXISTING co-run, and sound mode isn't one. So the request is
- * handed to davebox (which owns co-run entry) and sound mode stands down —
- * ui_tick's co-run guard would exit it a tick later anyway. Back/Menu ends the
- * co-run and returns to davebox's track view, not to sound mode; the editor is
- * a destination, not a sub-page. */
-function requestModuleMenu() {
-    S.menuRequest = true;
+ * The module's own parameter hierarchy, walked in place. Nothing here is
+ * privileged: `ui_hierarchy` and every param come through the same
+ * (slot, comp, key) reads shadow_ui uses, so anything its menu can reach, this
+ * one can. What it buys over the canvas pages is coverage — those are built
+ * from `knobs[]` alone, so a param a module declares but never knob-maps is
+ * invisible in them and reachable ONLY here. What it buys over co-run is the
+ * landing point: we own navigation, so we open on the module's own root level
+ * instead of the slot's component list.
+ *
+ * 99.3% of params across the installed fleet are float/enum/int (738/234/176
+ * against 8 of everything else), so value editing reuses ui_cells rather than
+ * growing a second engine. The handful of exotic types render read-only for
+ * now and are one hop from the chain editor if they ever matter. */
+function openMenu() {
+    if (!S.levels || !S.rootKey) { S.presetMsg = 'NO MENU'; return; }
+    S.menuStack = [];
+    S.menuKey = S.rootKey;
+    S.menuIdx = 0;
+    S.menuEditing = false;
+    refreshMenuRows();
+    S.view = VIEW_MENU;
+    log('menu: ' + S.moduleId + ' root=' + S.rootKey + ' rows=' + S.menuRowsCache.length);
 }
 
-export function soundConsumeMenuRequest() {
-    const r = S.menuRequest; S.menuRequest = false; return r;
+function refreshMenuRows() {
+    S.menuRowsCache = menuRows(S.levels, S.menuKey, S.cpMap);
+    if (S.menuIdx >= S.menuRowsCache.length) S.menuIdx = 0;
+    /* Values for the params on this page only — a deep hierarchy is far more
+     * params than one screen, and reading them all would be the lab rig's
+     * mistake at a larger scale. */
+    for (const r of S.menuRowsCache) {
+        if (r.kind !== 'param') continue;
+        const cell = menuCell(r.key, S.levels, S.menuKey, S.cpMap);
+        r.cell = cell;
+        const raw = engineGet(S.slot, S.comp, r.key);
+        r.raw = raw;
+        r.val = parseValue(cell, raw);
+    }
+}
+
+function menuEnter() {
+    const row = S.menuRowsCache[S.menuIdx];
+    if (!row) return;
+    if (row.kind === 'level') {
+        S.menuStack.push({ levelKey: S.menuKey, cursor: S.menuIdx });
+        S.menuKey = row.level;
+        S.menuIdx = 0;
+        S.menuEditing = false;
+        refreshMenuRows();
+    } else {
+        /* Click toggles edit on the highlighted param: jog then changes the
+         * value instead of moving the cursor. One knob, two jobs, switched
+         * explicitly — the alternative is editing whatever you scroll past. */
+        S.menuEditing = !S.menuEditing;
+    }
+}
+
+/* Back pops one level; at the root it returns to the picker it came from. */
+function menuBack() {
+    if (S.menuEditing) { S.menuEditing = false; return true; }
+    const prev = S.menuStack.pop();
+    if (!prev) return false;
+    S.menuKey = prev.levelKey;
+    S.menuIdx = prev.cursor;
+    refreshMenuRows();
+    return true;
+}
+
+function menuStep(delta) {
+    const row = S.menuRowsCache[S.menuIdx];
+    if (!S.menuEditing || !row || row.kind !== 'param' || !row.cell) {
+        S.menuIdx = listMove(S.menuRowsCache.length, S.menuIdx, delta);
+        S.menuEditing = false;
+        return;
+    }
+    const next = stepValue(row.cell, row.val, delta > 0 ? 1 : -1);
+    if (next === row.val) return;
+    row.val = next;                       /* optimistic, drawn now */
+    queueWrite(row.key, commitString(row.cell, next));
 }
 
 /* ---- baked bank ----
@@ -471,7 +547,7 @@ function runAction(a) {
     else if (a.t === 'usrsave') startSaveFlow();
     else if (a.t === 'usrsavedo') saveUserPreset(a.name);
     else if (a.t === 'bakedset') commitBaked();
-    else if (a.t === 'menu')     requestModuleMenu();
+    else if (a.t === 'menu')     openMenu();
     S.dirty = true;
 }
 
@@ -482,6 +558,9 @@ function runDiscovery() {
     const res = discover(S.slot, S.comp);
     S.banks = res.banks;
     S.presetSpec = res.presetSpec || null;
+    S.levels = res.levels || null;
+    S.rootKey = res.rootKey || null;
+    S.cpMap = res.cpMap || null;
     S.sections = deriveSections(res.banks);
     S.bankIdx = 0;
     S.values = {};
@@ -646,6 +725,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
                     S.presetMsg = '';
                 }
             }
+        } else if (S.view === VIEW_MENU) {
+            menuStep(delta);
         } else if (S.view === VIEW_PRESET_BAKED) {
             if (S.bakedScan < 0) {
                 const next = listMove(S.bakedCount, S.bakedIdx, delta);
@@ -709,12 +790,15 @@ export function soundOnCC(d1, d2, decodeDelta) {
             }
         }
         else if (S.view === VIEW_PRESET_BAKED) S.pendingAction = { t: 'bakedset' };
+        else if (S.view === VIEW_MENU) menuEnter();
         S.dirty = true;
         return true;
     }
 
     if (d1 === 51 && d2 >= 64) {                       /* back */
-        if (S.view === VIEW_PRESET_LIST && S.confirmDel) {
+        if (S.view === VIEW_MENU) {
+            if (!menuBack()) S.view = VIEW_PRESET_SRC;
+        } else if (S.view === VIEW_PRESET_LIST && S.confirmDel) {
             S.confirmDel = false;
         } else if (S.view === VIEW_PRESET_LIST && S.detailOpen) {
             S.detailOpen = false;
@@ -961,6 +1045,36 @@ function renderPresetBaked() {
     if (S.presetMsg) centreText(58, S.presetMsg);
 }
 
+/* Two-column rows: label left, value right — levels show a chevron instead.
+ * The row being edited inverts so it is obvious the jog changed jobs. */
+function renderMenu() {
+    clear_screen();
+    const lv = (S.levels && S.levels[S.menuKey]) || {};
+    drawKitHeader(String(lv.name || lv.label || S.menuKey || 'MENU').toUpperCase(), false);
+    const rows = S.menuRowsCache;
+    if (!rows.length) { centreText(30, 'NO PARAMS'); return; }
+    const ROW_H = 10, VISIBLE = 5;
+    const start = Math.max(0, Math.min(S.menuIdx - 2, rows.length - VISIBLE));
+    for (let i = 0; i < VISIBLE; i++) {
+        const idx = start + i;
+        if (idx >= rows.length) break;
+        const r = rows[idx];
+        const y = 11 + i * ROW_H;
+        const on = (idx === S.menuIdx);
+        if (on) fill_rect(0, y - 1, 128, ROW_H, 1);
+        const ink = on ? 0 : 1;
+        const val = (r.kind === 'level') ? '>' :
+            (r.cell ? String(formatValue(r.cell, r.val)) : '');
+        let label = String(r.label || '');
+        const vw = mvWidth(val);
+        while (label.length > 1 && mvWidth(label) > 118 - vw) label = label.slice(0, -1);
+        mvPrint(3, y + 1, label, ink);
+        mvPrint(125 - vw, y + 1, val, ink);
+        /* Edit mode marker: a caret on the value side of the active row. */
+        if (on && S.menuEditing && r.kind === 'param') mvPrint(125 - vw - 6, y + 1, '*', ink);
+    }
+}
+
 export function soundRender() {
     if (!S.active) return false;
     if (isTextEntryActive()) { drawTextEntry(); return true; }
@@ -969,6 +1083,7 @@ export function soundRender() {
     else if (S.view === VIEW_PRESET_SRC) renderPresetSrc();
     else if (S.view === VIEW_PRESET_LIST) renderPresetList();
     else if (S.view === VIEW_PRESET_BAKED) renderPresetBaked();
+    else if (S.view === VIEW_MENU) renderMenu();
     else renderEdit();
     return true;
 }
