@@ -49,14 +49,15 @@ export const BLOCKS = [
 const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
       VIEW_PRESET_SRC = 3, VIEW_PRESET_LIST = 4, VIEW_PRESET_BAKED = 5;
 
-/* The two preset sources, which are NOT the same kind of thing:
- *  USER  — files under presets/<module-id>/, wrapped {name,module,version,state};
- *          recalled through the ordinary <comp>:state slot-load path. A real list.
- *  BAKED — the module's own list_param/count_param/name_param bank. There is no
- *          file and no way to read a name without WRITING the index first, so it
- *          browses as a scrubber that changes the sound as you move. That's the
- *          mechanism (the host's preset level behaves identically), not a gap. */
-const SRC_USER = 0, SRC_BAKED = 1;
+/* The jog-click picker offers three destinations, and they are NOT the same
+ * kind of thing — rows are dispatched by `kind`, never by a fixed index, since
+ * the baked row only exists for modules that publish a bank:
+ *  user  — files under presets/<module-id>/, wrapped {name,module,version,state};
+ *          recalled through the ordinary <comp>:state slot-load path.
+ *  baked — the module's own list_param/count_param/name_param bank. No files;
+ *          names have to be harvested by selecting each index (see openBaked).
+ *  menu  — hand the slot to Schwung's own chain editor: the full module
+ *          hierarchy, for everything the canvas pages don't surface. */
 
 /* ~160ms at davebox's ~94Hz tick. The host uses 7 ticks at ~44Hz for the same
  * feel; copying the NUMBER rather than the duration would make preview twice
@@ -100,7 +101,8 @@ const S = {
     /* presets */
     presetSpec: null,           /* baked bank {listKey,countKey,nameKey} or null */
     presetSrcIdx: 0,
-    presetSrcSkipped: false,    /* jumped straight to USER (no baked bank) — Back must skip back too */
+    srcRows: [],                /* [{kind,label}] — user / baked (if any) / menu */
+    menuRequest: false,         /* "Module Menu" picked; davebox performs the co-run */
     userPresets: [],
     userIdx: 0,                 /* 0 = the [Save current...] row; presets start at 1 */
     bakedCount: 0,
@@ -149,6 +151,7 @@ function log(msg) {
 
 export function soundActive() { return S.active; }
 export function soundTrack() { return S.track; }
+export function soundSlot()  { return S.slot; }
 
 /* The keyboard is fully modal and wants the RAW message (it reads pads, jog and
  * buttons itself), so it hooks in ahead of every other dispatch rather than
@@ -217,16 +220,15 @@ function openBlock(idx) {
  * move. That one moved to Shift+click on the block picker. */
 function openPresets() {
     S.presetMsg = '';
-    if (S.presetSpec) {
-        S.presetSrcSkipped = false;
-        S.presetSrcIdx = SRC_USER;
-        S.view = VIEW_PRESET_SRC;
-    } else {
-        /* No baked bank — a one-row source picker is just a dead click, so go
-         * straight to the user store and remember to skip it on the way back. */
-        S.presetSrcSkipped = true;
-        openUserPresets();
-    }
+    /* Built fresh each time: the baked row only exists for modules that publish
+     * a bank. "Module Menu" is always here, which is also why this picker is
+     * never a one-row dead click any more — the old skip-straight-to-user
+     * special case is gone, so Back always retraces through here. */
+    S.srcRows = [{ kind: 'user', label: 'User Presets' }];
+    if (S.presetSpec) S.srcRows.push({ kind: 'baked', label: modLabel() + ' Presets' });
+    S.srcRows.push({ kind: 'menu', label: 'Module Menu' });
+    if (S.presetSrcIdx >= S.srcRows.length) S.presetSrcIdx = 0;
+    S.view = VIEW_PRESET_SRC;
 }
 
 function openUserPresets() {
@@ -372,6 +374,26 @@ function fileExists(path) {
     try { return !!host_read_file(path); } catch (e) { return false; }
 }
 
+/* "Module Menu" = hand the slot to Schwung's OWN chain editor, which is the
+ * full module hierarchy — every level and param the module publishes, including
+ * everything the canvas pages don't surface. Reusing it wholesale is the point:
+ * davebox already enters it for the global menu's "Edit Slot...", and the
+ * alternative is reimplementing a menu the host already ships.
+ *
+ * It is a full co-run, not an overlay: shadow_corun_open('chain_editor') layers
+ * a screen over an EXISTING co-run, and sound mode isn't one. So the request is
+ * handed to davebox (which owns co-run entry) and sound mode stands down —
+ * ui_tick's co-run guard would exit it a tick later anyway. Back/Menu ends the
+ * co-run and returns to davebox's track view, not to sound mode; the editor is
+ * a destination, not a sub-page. */
+function requestModuleMenu() {
+    S.menuRequest = true;
+}
+
+export function soundConsumeMenuRequest() {
+    const r = S.menuRequest; S.menuRequest = false; return r;
+}
+
 /* ---- baked bank ----
  * A baked bank publishes a COUNT and the name of the CURRENT preset only —
  * there is no bulk name list (obxd's items_param is its FXB bank files, not
@@ -449,6 +471,7 @@ function runAction(a) {
     else if (a.t === 'usrsave') startSaveFlow();
     else if (a.t === 'usrsavedo') saveUserPreset(a.name);
     else if (a.t === 'bakedset') commitBaked();
+    else if (a.t === 'menu')     requestModuleMenu();
     S.dirty = true;
 }
 
@@ -605,7 +628,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
         } else if (S.view === VIEW_BROWSE) {
             S.browseIdx = listMove(S.browseList.length, S.browseIdx, delta);
         } else if (S.view === VIEW_PRESET_SRC) {
-            S.presetSrcIdx = listMove(2, S.presetSrcIdx, delta);
+            S.presetSrcIdx = listMove(S.srcRows.length, S.presetSrcIdx, delta);
         } else if (S.view === VIEW_PRESET_LIST) {
             if (S.confirmDel) {
                 S.confirmIdx = listMove(2, S.confirmIdx, delta);
@@ -664,8 +687,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * "pick something" — so click there still means the module browser. */
         else if (S.view === VIEW_EDIT)
             S.pendingAction = S.moduleId ? { t: 'presets' } : { t: 'browse' };
-        else if (S.view === VIEW_PRESET_SRC)
-            S.pendingAction = (S.presetSrcIdx === SRC_BAKED) ? { t: 'baked' } : { t: 'usrlist' };
+        else if (S.view === VIEW_PRESET_SRC) {
+            const row = S.srcRows[S.presetSrcIdx];
+            if (!row) { /* nothing */ }
+            else if (row.kind === 'baked') S.pendingAction = { t: 'baked' };
+            else if (row.kind === 'menu')  S.pendingAction = { t: 'menu' };
+            else                           S.pendingAction = { t: 'usrlist' };
+        }
         else if (S.view === VIEW_PRESET_LIST) {
             if (S.confirmDel) {
                 if (S.confirmIdx === 1) S.pendingAction = { t: 'usrdel' };
@@ -695,9 +723,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * with a sound and you leave with it. Load is what makes a preview
              * permanent (it drops origState). */
             revertOriginal();
-            /* Straight back to the editor when the source picker was skipped,
-             * so Back always retraces the way you actually came in. */
-            S.view = S.presetSrcSkipped ? VIEW_EDIT : VIEW_PRESET_SRC;
+            S.view = VIEW_PRESET_SRC;
         } else if (S.view === VIEW_PRESET_SRC) {
             S.view = VIEW_EDIT;
         } else if (S.view === VIEW_EDIT || S.view === VIEW_BROWSE) {
@@ -891,8 +917,8 @@ function renderRows(rows, sel, emptyMsg) {
 
 function renderPresetSrc() {
     clear_screen();
-    drawKitHeader(modLabel() + ' - PRESETS', false);
-    renderRows(['User Presets', modLabel() + ' Presets'], S.presetSrcIdx, '');
+    drawKitHeader(modLabel(), false);
+    renderRows(S.srcRows.map(r => r.label), S.presetSrcIdx, '');
 }
 
 function renderPresetList() {

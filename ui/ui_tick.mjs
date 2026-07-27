@@ -50,7 +50,7 @@ import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes } from './ui_r
 import { xposeCancelPreview } from './ui_xpose.mjs';
 import { checkBackHold, backTapWouldAct } from './ui_input_cc.mjs';
 import { soundActive, soundEnter, soundExit, soundTick, soundDirty,
-    soundTrack, soundConsumeLedDirty } from './ui_sound.mjs';
+    soundTrack, soundSlot, soundConsumeLedDirty, soundConsumeMenuRequest } from './ui_sound.mjs';
 
 const BANK_DISPLAY_TICKS = 94;  /* ~1000ms at 94Hz device tick rate (was 392 = ~4.2s; constant was miscalibrated for 196Hz) */
 const KNOB_TURN_HIGHLIGHT_TICKS = 56;             /* ~600ms at 94Hz — highlight after turn without touch (was 120 @196Hz) */
@@ -1076,6 +1076,16 @@ export function _tickImpl() {
             else soundTick();
             /* The name keyboard painted its own pad LEDs; put davebox's back. */
             if (soundConsumeLedDirty()) { invalidateLEDCache(); forceRedraw(); }
+            /* "Module Menu": hand this slot to Schwung's own chain editor — the
+             * full module hierarchy, including everything the canvas pages
+             * don't surface. Sound mode stands down first; co-run owns the OLED
+             * from here, and its Back/Menu returns to the track view. */
+            if (soundConsumeMenuRequest()) {
+                const _mslot = soundSlot();
+                soundExit();
+                if (_mslot >= 0 && typeof shadow_corun_begin === 'function')
+                    enterSchwungCoRun(S.activeTrack, _mslot);
+            }
             if (soundDirty()) S.screenDirty = true;
         }
 
