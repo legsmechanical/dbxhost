@@ -1,19 +1,29 @@
 import { S, CC_ASSIGN_DEFAULTS } from './ui_state.mjs';
 import { NUM_TRACKS, NUM_CLIPS, DRUM_LANES, BANKS, ACTION_POPUP_TICKS } from './ui_constants.mjs';
 
+/* Basename prefix for every file this module owns. Mirrors the C-side
+ * SEQ8_STATE_PREFIX (dsp/seq8.c) and MUST agree with it — the DSP writes the
+ * state file and JS writes the sidecar next to it. Injected by the bundler via
+ * esbuild --define:SEQ8_STATE_PREFIX='"..."' so a second davebox can be
+ * installed alongside the daily driver without sharing its sessions; these
+ * paths are keyed by set UUID alone and carry no module id. Undefined (the
+ * normal build) falls back to 'seq8' — `typeof` on an undeclared identifier is
+ * safe, so no define is needed for the stable build. */
+const STATE_PREFIX = (typeof SEQ8_STATE_PREFIX === 'string') ? SEQ8_STATE_PREFIX : 'seq8';
+
 export function uuidToStatePath(uuid) {
     return uuid
-        ? '/data/UserData/schwung/set_state/' + uuid + '/seq8-state.json'
-        : '/data/UserData/schwung/seq8-state.json';
+        ? '/data/UserData/schwung/set_state/' + uuid + '/' + STATE_PREFIX + '-state.json'
+        : '/data/UserData/schwung/' + STATE_PREFIX + '-state.json';
 }
 
 export function uuidToUiStatePath(uuid) {
     return uuid
-        ? '/data/UserData/schwung/set_state/' + uuid + '/seq8-ui-state.json'
-        : '/data/UserData/schwung/seq8-ui-state.json';
+        ? '/data/UserData/schwung/set_state/' + uuid + '/' + STATE_PREFIX + '-ui-state.json'
+        : '/data/UserData/schwung/' + STATE_PREFIX + '-ui-state.json';
 }
 
-const NAME_INDEX_PATH = '/data/UserData/schwung/seq8_name_index.json';
+const NAME_INDEX_PATH = '/data/UserData/schwung/' + STATE_PREFIX + '_name_index.json';
 const SET_STATE_DIR   = '/data/UserData/schwung/set_state';
 const ACTIVE_SET_PATH = '/data/UserData/schwung/active_set.txt';
 
@@ -212,9 +222,9 @@ const SNAP_MANIFEST_VER = 1;
 function snapBaseDir(uuid) {
     return uuid ? SET_STATE_DIR + '/' + uuid : '/data/UserData/schwung';
 }
-function snapManifestPath(uuid) { return snapBaseDir(uuid) + '/seq8-snap-index.json'; }
-function snapStatePath(uuid, id) { return snapBaseDir(uuid) + '/seq8-snap-' + id + '-state.json'; }
-function snapUiStatePath(uuid, id) { return snapBaseDir(uuid) + '/seq8-snap-' + id + '-ui-state.json'; }
+function snapManifestPath(uuid) { return snapBaseDir(uuid) + '/' + STATE_PREFIX + '-snap-index.json'; }
+function snapStatePath(uuid, id) { return snapBaseDir(uuid) + '/' + STATE_PREFIX + '-snap-' + id + '-state.json'; }
+function snapUiStatePath(uuid, id) { return snapBaseDir(uuid) + '/' + STATE_PREFIX + '-snap-' + id + '-ui-state.json'; }
 
 /* "MM-DD HH:MM" label from a Date (defaults to now). */
 export function snapshotLabel(d) {

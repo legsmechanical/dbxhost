@@ -33,7 +33,7 @@ import {
 
 import { S } from './ui_state.mjs';
 import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
-import { showActionPopup, readActiveSet, maybeShowInheritPicker } from './ui_persistence.mjs';
+import { showActionPopup, readActiveSet, maybeShowInheritPicker, uuidToStatePath } from './ui_persistence.mjs';
 import {
     closeClearAutoMenu
 } from './ui_dialogs.mjs';
@@ -219,7 +219,7 @@ globalThis.init = function () {
     } else if (S.currentSetUuid && dspUuid !== S.currentSetUuid) {
         S.pendingSetLoad = true;
     } else if (S.currentSetUuid && typeof host_file_exists === 'function') {
-        const sp = '/data/UserData/schwung/set_state/' + S.currentSetUuid + '/seq8-state.json';
+        const sp = uuidToStatePath(S.currentSetUuid);
         if (!host_file_exists(sp)) S.pendingSetLoad = true;
     }
     /* Schedule orphan prune for the next quiet tick (after state_load settles). */

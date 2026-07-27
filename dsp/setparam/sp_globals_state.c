@@ -52,9 +52,9 @@ static int sp_globals_state(sp_ctx_t *cx) {
             snprintf(buf, sizeof(buf), "/data/UserData/UserLibrary/Sets/%s", n);
             struct stat st;
             if (stat(buf, &st) == 0) continue;
-            snprintf(buf, sizeof(buf), "/data/UserData/schwung/set_state/%s/seq8-state.json", n);
+            snprintf(buf, sizeof(buf), SEQ8_SET_STATE_FMT, n);
             int u1 = unlink(buf);
-            snprintf(buf, sizeof(buf), "/data/UserData/schwung/set_state/%s/seq8-ui-state.json", n);
+            snprintf(buf, sizeof(buf), SEQ8_SET_UISTATE_FMT, n);
             int u2 = unlink(buf);
             /* Snapshot files (seq8-snap-index.json + seq8-snap-<id>-*.json) have
              * variable names — enumerate the orphaned set's folder and remove
@@ -66,7 +66,8 @@ static int sp_globals_state(sp_ctx_t *cx) {
                 struct dirent *sde;
                 char sbuf[512];
                 while ((sde = readdir(sd)) != NULL) {
-                    if (strncmp(sde->d_name, "seq8-snap-", 10) != 0) continue;
+                    if (strncmp(sde->d_name, SEQ8_SNAP_PREFIX,
+                                strlen(SEQ8_SNAP_PREFIX)) != 0) continue;
                     snprintf(sbuf, sizeof(sbuf),
                              "/data/UserData/schwung/set_state/%s/%s", n, sde->d_name);
                     unlink(sbuf);
@@ -97,7 +98,7 @@ static int sp_globals_state(sp_ctx_t *cx) {
         /* val is the UUID from JS (36 chars); construct path from it. Fallback if empty. */
         if (val && val[0])
             snprintf(inst->state_path, sizeof(inst->state_path),
-                     "/data/UserData/schwung/set_state/%s/seq8-state.json", val);
+                     SEQ8_SET_STATE_FMT, val);
         else
             strncpy(inst->state_path, SEQ8_STATE_PATH_FALLBACK,
                     sizeof(inst->state_path) - 1);

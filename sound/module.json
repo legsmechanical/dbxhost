@@ -1,0 +1,28 @@
+{
+    "id": "davebox-sound",
+    "name": "dAVEBOx SND",
+    "version": "0.0.1",
+    "abbrev": "dbSND",
+    "description": "Sound-mode test build of dAVEBOx. Isolated session state — does NOT share sessions with the stable davebox install.",
+    "author": "legsmechanical",
+    "api_version": 2,
+    "ui": "ui.js",
+    "dsp": "dsp.so",
+    "component_type": "tool",
+    "tool_config": {
+        "interactive": true,
+        "skip_file_browser": true,
+        "overtake": true
+    },
+    "capabilities": {
+        "midi_in": true,
+        "midi_out": true,
+        "aftertouch": true,
+        "button_passthrough": [
+            79
+        ],
+        "claims_master_knob": true,
+        "suspend_keeps_js": true,
+        "suspend_self_managed": true
+    }
+}

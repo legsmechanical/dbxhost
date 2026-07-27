@@ -33,8 +33,22 @@
 /* Build constants                                                      */
 /* ------------------------------------------------------------------ */
 
-#define SEQ8_LOG_PATH           "/data/UserData/schwung/seq8.log"
-#define SEQ8_STATE_PATH_FALLBACK "/data/UserData/schwung/seq8-state.json"
+/* Basename prefix for every file this module owns under set_state/. Overridable
+ * at build time (-DSEQ8_STATE_PREFIX=\"seq8sm\") so a SECOND davebox can be
+ * installed alongside the daily driver without sharing its session data. The
+ * state files are keyed by set UUID alone — nothing in the path carries the
+ * module id — so two installs would otherwise read and write the same
+ * seq8-state.json. JS mirrors this via esbuild --define (see bundle_ui.sh);
+ * the two MUST agree or the DSP and the sidecar land in different files. */
+#ifndef SEQ8_STATE_PREFIX
+#define SEQ8_STATE_PREFIX "seq8"
+#endif
+
+#define SEQ8_LOG_PATH           "/data/UserData/schwung/" SEQ8_STATE_PREFIX ".log"
+#define SEQ8_STATE_PATH_FALLBACK "/data/UserData/schwung/" SEQ8_STATE_PREFIX "-state.json"
+#define SEQ8_SET_STATE_FMT      "/data/UserData/schwung/set_state/%s/" SEQ8_STATE_PREFIX "-state.json"
+#define SEQ8_SET_UISTATE_FMT    "/data/UserData/schwung/set_state/%s/" SEQ8_STATE_PREFIX "-ui-state.json"
+#define SEQ8_SNAP_PREFIX        SEQ8_STATE_PREFIX "-snap-"
 
 #define NUM_TRACKS          8
 #define NUM_CLIPS           16
@@ -4226,7 +4240,7 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
         }
         if (uuid[0])
             snprintf(inst->state_path, sizeof(inst->state_path),
-                     "/data/UserData/schwung/set_state/%s/seq8-state.json", uuid);
+                     SEQ8_SET_STATE_FMT, uuid);
     }
 
     /* Unique nonce: JS polls this to detect DSP hot-reload */
