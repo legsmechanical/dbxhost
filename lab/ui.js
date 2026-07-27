@@ -65,6 +65,7 @@ const S = {
     knobAccum: [0, 0, 0, 0, 0, 0, 0, 0],
     touchedIdx: -1,
     touchedTick: 0,
+    touchHeld: false,   /* knob physically held (capacitive note) */
 
     tickCount: 0,
     dirty: true,
@@ -391,7 +392,11 @@ globalThis.tick = function () {
         pollValues(false);
     }
 
-    if (S.touchedIdx >= 0 && S.tickCount - S.touchedTick > TOUCH_HOLD_TICKS) {
+    /* The turn-driven highlight decays; a PHYSICALLY HELD knob does not — it
+     * clears on note-off. Without the touchHeld guard the label would flip back
+     * to its name while you are still holding the knob. */
+    if (S.touchedIdx >= 0 && !S.touchHeld &&
+        S.tickCount - S.touchedTick > TOUCH_HOLD_TICKS) {
         S.touchedIdx = -1;
         S.dirty = true;
     }
@@ -409,6 +414,26 @@ globalThis.onMidiMessageInternal = function (data) {
      * overlapping numbers, different message types. Getting this wrong swallows
      * every knob turn (movy's oldest gotcha). */
     if (status === 0xB0) { onCC(data[1], data[2]); return; }
+
+    /* Capacitive knob touch: notes 0-7 = knobs 1-8 (canvaskit core/engine.js
+     * does the same). This is what drives the name<->value label swap and the
+     * value zoom — deriving "touched" from TURNING instead, as davebox does,
+     * means the highlight never appears on a bare touch and lingers on a timer
+     * rather than clearing the moment you let go. */
+    if (status === 0x90 || status === 0x80) {
+        const note = data[1];
+        if (note <= 7) {
+            const on = (status === 0x90 && data[2] >= 64);
+            const next = on ? note : -1;
+            if (next !== S.touchedIdx) {
+                S.touchedIdx = next;
+                S.touchedTick = S.tickCount;
+                S.touchHeld = on;
+                S.dirty = true;
+            }
+        }
+        return;
+    }
 };
 
 globalThis.onMidiMessageExternal = function () { /* unused in the rig */ };

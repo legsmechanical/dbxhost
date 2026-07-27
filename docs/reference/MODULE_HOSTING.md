@@ -117,6 +117,65 @@ These cost real debugging time upstream in movy; they are encoded in
   Standalone makes these in-process calls, but the discipline is what keeps the
   UI off the audio path later.
 
+## canvaskit feature audit
+
+Found by scouring `schwung-canvaskit/core/engine.js` rather than one device
+session at a time. The point of the table is the **split**: porting a renderer
+is mechanical, but almost every kit feature is driven by a hand-authored
+`CONFIG` that a discovered module does not have. The inference is the real work.
+
+### Class A — pure drawing, ports mechanically
+
+| Feature | kit function | ui_movy |
+|---|---|---|
+| arc knob (uni + bipolar) | `drawArcKnob` | have |
+| horizontal bar | `drawHBar` | have |
+| **vertical bar** | `drawVBar` | **missing** |
+| enum square | `drawEnumSquare` | have |
+| **X box** (mod target = None) | `drawXBox` | **missing** |
+| stacked fraction | `drawFracStack` | have |
+| action square | `drawActionSquare` | have |
+| direction arrows | `drawDirSquare` | have |
+| big numeric read-out | `drawBigNum` | have |
+| **waveform box** | `drawWaveBox` | **missing** |
+| ADSR envelope | `drawEnvelopeRow` | ported |
+| **filter response curve** | `drawFilterCurve` | **missing** |
+| **LFO waveform** | `drawLfoWave` | **missing** |
+| **bank icons** | `drawBankIcon` / `ICON_W` | **missing** |
+| section picker | `drawBankPicker` | ported |
+| enum list overlay | `drawEnumOverlay` | have |
+| header / page bar | `drawChrome` | have |
+| **HUD card** | `hudCard` | **missing** |
+| value zoom | *(davebox's own)* | shared via `drawKitValueOverlay` |
+| step editor | `drawStepEditor` | n/a — sequencer-specific |
+
+### Class B — needs config the kit hand-authors, so we must INFER it
+
+| Kit config | How a discovered module supplies it |
+|---|---|
+| `banks[]` layout | level-graph walk (`buildLevelPages`) |
+| `sections[]` | grouped from the walk's `<parent>/<level>` prefixes |
+| cell `kind` | `chain_params` type + option-shape sniffing |
+| knob `sens` | falls out of the kind (3 classes) |
+| `env: true` / `{startCol,…}` | `detectEnvelope` — A/D/S/R name run in one row |
+| `filterViz: {cutoffKey, resoKey, mode}` | **infer from names**; unknown mode → `lp` |
+| LFO viz keys | **infer from names** |
+| `icons[]` | **no source** — would need a name→icon heuristic |
+| `defaults` | n/a — the engine already holds live values |
+
+**Read this before adding a widget:** if it lands in class B, the renderer is
+the easy half. Budget for the inference and for the per-module overlay that
+will eventually override a bad guess.
+
+### Touch highlighting
+
+The kit drives the touched state from **capacitive knob touch** — notes 0-7,
+note-on ≥ 64 sets the knob, note-off clears it (`core/engine.js:1007`). davebox
+instead derives it from *turning*, which is why an early version of the rig
+showed no highlight on a bare touch and let it linger on a timer. The rig now
+follows the kit: touch sets it, release clears it, and the turn-driven fallback
+still decays so a knob turned without touch contact still highlights.
+
 ## Known gaps (phase 1)
 
 - **SHIFT section picker** — canvaskit's icon overlay (`core/engine.js`,
