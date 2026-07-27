@@ -10793,6 +10793,22 @@ function dispatchCanvasMidi(data, source) {
      * keep/cede spec and the legacy carve-out are honored without duplicating
      * the logic here. (Jog-click / Back are the close gesture, stolen before
      * this. A full-screen canvas — not co-run — still owns the whole surface.) */
+    /* Pad presses are the one exception, and only because they are OBSERVED
+     * rather than consumed. The owner check above answers "who may act on
+     * this?" — for pads that is always the tool, which must keep them to play
+     * them. But a drum canvas needs to know which pad a finger just hit so it
+     * can focus it for editing, and that is not a claim on the event. Fire the
+     * hook and still fall through, so the tool's handling is byte-for-byte
+     * unchanged. Mirrors the shim's own pad forward (schwung_shim.c), which is
+     * additional and passive for exactly the same reason — and which overtake
+     * mode never reaches, since it returns before that block. A handler must
+     * never sound these; the tool is already playing them. */
+    const isPadNote = (midi[0] & 0xF0) === 0x90 && midi[1] >= 68 && midi[1] <= 99;
+    if (canvasCorun && isPadNote) {
+        invokeCanvasOverlayHook("onMidi", { source, data: midi });
+        return false;   /* observation only — the tool still owns the pad */
+    }
+
     if (canvasCorun && typeof shadow_corun_event_owner === "function") {
         if (shadow_corun_event_owner(midi[0] | 0, midi[1] | 0) !== CORUN_OWNER_PEER) return false;
     }

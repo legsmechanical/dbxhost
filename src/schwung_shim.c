@@ -7615,6 +7615,25 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                     continue;  /* Skip DSP routing for blocked pads */
                 }
 
+                /* Forward pad notes (68-99) to the shadow UI ONLY while a canvas
+                 * overlay is active — same rule as the jog/knob touch notes just
+                 * above, and for the same reason: a canvas UI can react to the
+                 * hardware without changing what the shadow UI sees anywhere else.
+                 *
+                 * This is ADDITIONAL and passive. Routing below is untouched, so
+                 * the pad still plays exactly as before; the canvas just also
+                 * learns that a finger hit it.
+                 *
+                 * That distinction is otherwise unavailable. Move converts a press
+                 * into an ordinary note, so by the time one reaches a module the
+                 * status, channel, note and source are identical to a sequenced
+                 * note (measured on device). Here it is still its raw pad number,
+                 * which the sequencer cannot produce. */
+                if (d1 >= 68 && d1 <= 99 && shadow_ui_midi_shm &&
+                    shadow_control && shadow_control->canvas_input) {
+                    shadow_ui_midi_publish((type == 0x90) ? 0x09 : 0x08, status, d1, d2);
+                }
+
                 /* Check capture rules for focused slot.
                  * Never route knob touch notes (0-9) to DSP even if in capture rules. */
                 {

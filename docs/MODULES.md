@@ -558,6 +558,46 @@ this screen.
 Outside shadow display (or outside COMPONENT_EDIT), these CCs behave as
 normal Move hardware buttons and are not intercepted.
 
+#### Pad presses in a canvas UI
+
+While a `type: "canvas"` overlay is open, the host also forwards Move's raw
+hardware pad notes — **68-99**, where `padIndex = note - 68` — to the canvas's
+MIDI handler. This mirrors the existing rule for the jog/knob capacitive touch
+notes (8-9): it applies only while a canvas is on screen, so nothing changes
+for any other module or screen.
+
+Delivery is **passive and additional**. Normal routing is untouched, so the pad
+still plays exactly as it did; the canvas merely also learns that a finger hit
+it. Never sound these — the ordinary note is already on its way to the synth,
+and playing them too would double-trigger every pad.
+
+This is the only way to know a pad was *physically pressed*. Move converts a
+press into an ordinary note before playing it, so by the time a note reaches a
+module the press and a sequenced note are identical — same status byte, channel,
+note number and `MOVE_MIDI_SOURCE_*` (measured on device). Nothing downstream
+can reconstruct the difference. A drum module that wants to focus the pad you
+just hit for editing, even while a pattern plays, needs this:
+
+```js
+onMidi: function (ctx, s, payload) {
+    const d = payload && payload.data;          /* [status, note, velocity] */
+    if (!d || (d[0] & 0xF0) !== 0x90 || d[2] === 0) return false;
+    const pad = d[1] - 68;
+    if (pad < 0 || pad > 31) return false;
+    focusPad(ctx, pad);
+    return true;                    /* observation only — never sound it */
+}
+```
+
+This holds during **co-run** too, where the canvas is an overlay over a still-
+running tool. Pads are normally tool-kept (`CORUN_GRP_PADS` is in the default
+keep mask — the tool must have them, it is what plays them), and the co-run
+dispatcher otherwise drops every tool-kept event before the canvas. Pads are
+the one exception, precisely because the canvas only *observes* them: the hook
+fires and the event still falls through to the tool untouched. So a drum canvas
+follows the pad whether the notes come from Move-native play or from a tool
+co-running above it.
+
 ### Menu Layout Helpers
 
 For list-based screens (title/list/footer), use the shared menu layout helpers:
