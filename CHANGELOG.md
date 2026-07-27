@@ -26,6 +26,10 @@ the section into a versioned heading at release time.
   pages only show parameters a module maps to the eight knobs, so this is how
   you reach everything else. Jog scrolls, click steps into a sub-menu or starts
   editing the highlighted value, Back steps out.
+- **File and text parameters work from the menu.** Modules that load a sample
+  or a kit (DR32, Breakbeat) open the standard file browser; text parameters
+  open the on-screen keyboard. Anything dAVEBOx has no editor for says so and
+  shows its value rather than hiding the row.
 - **Presets audition as you scroll**, so you hear one before committing. Click
   to keep it; **Back** puts the sound you came in with back. Saving and
   deleting your own presets works the same as it does from a Schwung slot —

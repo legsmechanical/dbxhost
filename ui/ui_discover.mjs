@@ -97,6 +97,26 @@ function makeCell(key, meta) {
         };
     }
 
+    /* Free text (clap's plugin_id) — the on-screen keyboard edits it. */
+    if (type === 'string') {
+        return {
+            key, label, short: shortLabel(label), kind: 'text', type: 'text',
+            min: 0, max: 0, step: 0, sens: SENS_DELIBERATE, options: null,
+        };
+    }
+
+    /* A type we have no editor for. Kept as a first-class cell so the menu can
+     * SAY so and still show the value, rather than dropping the row and
+     * quietly under-reporting what the module exposes. New upstream types land
+     * here by default instead of vanishing. */
+    if (type === 'canvas' || type === 'module_picker' ||
+        type === 'parameter_picker') {
+        return {
+            key, label, short: shortLabel(label), kind: 'opaque', type,
+            min: 0, max: 0, step: 0, sens: SENS_DELIBERATE, options: null,
+        };
+    }
+
     const options = meta.options || null;
 
     if (type === 'enum') {
@@ -674,7 +694,9 @@ export function menuCell(key, levels, levelKey, cpMap) {
         max:  cp.max  != null ? cp.max  : (hierMeta && hierMeta.max),
         step: cp.step != null ? cp.step : (hierMeta && hierMeta.step),
         options: cp.options || (hierMeta && hierMeta.options) || null,
-        root: cp.root, filter: cp.filter, start_path: cp.start_path,
+        root: cp.root  != null ? cp.root  : (hierMeta && hierMeta.root),
+        filter: cp.filter != null ? cp.filter : (hierMeta && hierMeta.filter),
+        start_path: cp.start_path != null ? cp.start_path : (hierMeta && hierMeta.start_path),
     });
 }
 

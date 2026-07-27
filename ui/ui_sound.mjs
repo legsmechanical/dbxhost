@@ -28,6 +28,10 @@ import {
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
 } from '/data/UserData/schwung/shared/text_entry.mjs';
+import {
+    buildFilepathBrowserState, refreshFilepathBrowser,
+    moveFilepathBrowserSelection, activateFilepathBrowserItem,
+} from '/data/UserData/schwung/shared/filepath_browser.mjs';
 import { discover, deriveSections, activeSection, filterVizFor,
     menuRows, menuCell } from './ui_discover.mjs';
 import { parseValue, stepValue, commitString, renderCellsForBank,
@@ -50,7 +54,7 @@ export const BLOCKS = [
 
 const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
       VIEW_PRESET_SRC = 3, VIEW_PRESET_LIST = 4, VIEW_PRESET_BAKED = 5,
-      VIEW_MENU = 6;
+      VIEW_MENU = 6, VIEW_FILE = 7;
 
 /* The jog-click picker offers three destinations, and they are NOT the same
  * kind of thing — rows are dispatched by `kind`, never by a fixed index, since
@@ -116,6 +120,8 @@ const S = {
     menuIdx: 0,
     menuRowsCache: [],
     menuEditing: false,         /* jog edits the highlighted param instead of scrolling */
+    fileState: null,            /* shared filepath_browser state, when browsing */
+    fileKey: '',                /* param the browse will write on select */
     userPresets: [],
     userIdx: 0,                 /* 0 = the [Save current...] row; presets start at 1 */
     bakedCount: 0,
@@ -429,6 +435,30 @@ function refreshMenuRows() {
     }
 }
 
+/* `os` is a QuickJS MODULE here, not a global. filepath_browser's default
+ * adapter reads `globalThis.os`, which is undefined in davebox — passing this
+ * explicitly is the difference between a working browser and an empty one. */
+const FS_ADAPTER = {
+    readdir(path) {
+        const out = os.readdir(path) || [];
+        if (Array.isArray(out[0])) return out[0];
+        if (Array.isArray(out)) return out;
+        return [];
+    },
+    stat(path) { return os.stat(path); },
+};
+
+function openFileBrowser(row) {
+    const c = row.cell;
+    S.fileKey = row.key;
+    S.fileState = buildFilepathBrowserState({
+        name: c.label, key: row.key,
+        root: c.fileRoot, filter: c.fileFilter, start_path: c.fileStartPath,
+    }, row.raw || '');
+    refreshFilepathBrowser(S.fileState, FS_ADAPTER);
+    S.view = VIEW_FILE;
+}
+
 function menuEnter() {
     const row = S.menuRowsCache[S.menuIdx];
     if (!row) return;
@@ -438,11 +468,46 @@ function menuEnter() {
         S.menuIdx = 0;
         S.menuEditing = false;
         refreshMenuRows();
-    } else {
-        /* Click toggles edit on the highlighted param: jog then changes the
-         * value instead of moving the cursor. One knob, two jobs, switched
-         * explicitly — the alternative is editing whatever you scroll past. */
-        S.menuEditing = !S.menuEditing;
+        return;
+    }
+    const c = row.cell;
+    /* Each param type opens the editor it needs. The shared components do the
+     * work — the browser and the keyboard are the host's, not reimplementations
+     * — so supporting a type is wiring, not writing an editor. */
+    if (c && c.kind === 'file') { S.pendingAction = { t: 'file', idx: S.menuIdx }; return; }
+    if (c && c.kind === 'text') { S.pendingAction = { t: 'textedit', idx: S.menuIdx }; return; }
+    if (c && c.kind === 'opaque') { S.presetMsg = 'EDIT IN ' + String(c.type).toUpperCase(); return; }
+    /* Click toggles edit on the highlighted param: jog then changes the
+     * value instead of moving the cursor. One knob, two jobs, switched
+     * explicitly — the alternative is editing whatever you scroll past. */
+    S.menuEditing = !S.menuEditing;
+}
+
+function startTextEdit(idx) {
+    const row = S.menuRowsCache[idx];
+    if (!row) return;
+    openTextEntry({
+        title: String(row.label || '').toUpperCase(),
+        initialText: String(row.raw || ''),
+        onConfirm: (txt) => {
+            queueWrite(row.key, String(txt));
+            row.raw = String(txt);
+            row.val = String(txt);
+            S.dirty = true;
+        },
+        onCancel: () => { S.dirty = true; },
+    });
+}
+
+function fileActivate() {
+    const res = activateFilepathBrowserItem(S.fileState);
+    if (res.action === 'open') { refreshFilepathBrowser(S.fileState, FS_ADAPTER); return; }
+    if (res.action === 'select') {
+        queueWrite(S.fileKey, res.value);
+        const row = S.menuRowsCache.find(r => r.key === S.fileKey);
+        if (row) { row.raw = res.value; row.val = res.value; }
+        S.view = VIEW_MENU;
+        S.presetMsg = '';
     }
 }
 
@@ -548,6 +613,8 @@ function runAction(a) {
     else if (a.t === 'usrsavedo') saveUserPreset(a.name);
     else if (a.t === 'bakedset') commitBaked();
     else if (a.t === 'menu')     openMenu();
+    else if (a.t === 'file')     openFileBrowser(S.menuRowsCache[a.idx]);
+    else if (a.t === 'textedit') startTextEdit(a.idx);
     S.dirty = true;
 }
 
@@ -727,6 +794,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
             }
         } else if (S.view === VIEW_MENU) {
             menuStep(delta);
+        } else if (S.view === VIEW_FILE) {
+            moveFilepathBrowserSelection(S.fileState, delta > 0 ? 1 : -1);
         } else if (S.view === VIEW_PRESET_BAKED) {
             if (S.bakedScan < 0) {
                 const next = listMove(S.bakedCount, S.bakedIdx, delta);
@@ -791,12 +860,15 @@ export function soundOnCC(d1, d2, decodeDelta) {
         }
         else if (S.view === VIEW_PRESET_BAKED) S.pendingAction = { t: 'bakedset' };
         else if (S.view === VIEW_MENU) menuEnter();
+        else if (S.view === VIEW_FILE) fileActivate();
         S.dirty = true;
         return true;
     }
 
     if (d1 === 51 && d2 >= 64) {                       /* back */
-        if (S.view === VIEW_MENU) {
+        if (S.view === VIEW_FILE) {
+            S.view = VIEW_MENU;
+        } else if (S.view === VIEW_MENU) {
             if (!menuBack()) S.view = VIEW_PRESET_SRC;
         } else if (S.view === VIEW_PRESET_LIST && S.confirmDel) {
             S.confirmDel = false;
@@ -1075,6 +1147,16 @@ function renderMenu() {
     }
 }
 
+function renderFile() {
+    clear_screen();
+    const st = S.fileState;
+    if (!st) { centreText(30, 'NO BROWSER'); return; }
+    drawKitHeader(String(st.title || 'FILE').toUpperCase(), false);
+    if (st.error) { centreText(30, String(st.error).toUpperCase()); return; }
+    renderRows(st.items.map(it => (it.kind === 'dir' ? it.label + '/' : it.label)),
+               st.selectedIndex, 'EMPTY');
+}
+
 export function soundRender() {
     if (!S.active) return false;
     if (isTextEntryActive()) { drawTextEntry(); return true; }
@@ -1084,6 +1166,7 @@ export function soundRender() {
     else if (S.view === VIEW_PRESET_LIST) renderPresetList();
     else if (S.view === VIEW_PRESET_BAKED) renderPresetBaked();
     else if (S.view === VIEW_MENU) renderMenu();
+    else if (S.view === VIEW_FILE) renderFile();
     else renderEdit();
     return true;
 }
