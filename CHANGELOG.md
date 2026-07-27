@@ -31,10 +31,10 @@ the section into a versioned heading at release time.
   open the on-screen keyboard. Anything dAVEBOx has no editor for says so and
   shows its value rather than hiding the row.
 - **Presets audition as you scroll**, so you hear one before committing. Click
-  to keep it; **Back** puts the sound you came in with back. Saving and
-  deleting your own presets works the same as it does from a Schwung slot —
-  **[Save current…]** names the patch on the on-screen keyboard, and a preset's
-  Delete asks first. Never overwrites: a repeated name gets a number.
+  loads it and takes you back to the sound pages; **Back** puts the sound you
+  came in with back instead. **[Save current…]** names a patch on the
+  on-screen keyboard and never overwrites — a repeated name gets a number.
+  **Shift + click** a preset to delete it, which asks first.
 - **`Shift` + click on the block picker swaps a block's module.** Plain click
   opens it for editing.
 

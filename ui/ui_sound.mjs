@@ -140,9 +140,7 @@ const S = {
     previewIdx: -1,
     previewDelay: 0,
 
-    /* detail screen for one user preset */
-    detailOpen: false,
-    detailIdx: 0,               /* 0 = Load, 1 = Delete */
+    /* Shift+click on a preset asks to delete it; plain click loads. */
     confirmDel: false,
     confirmIdx: 0,              /* 0 = No, 1 = Yes */
 
@@ -253,7 +251,6 @@ function openPresets() {
 function openUserPresets() {
     S.userPresets = engineListUserPresets(S.moduleId);
     S.userIdx = S.userPresets.length ? 1 : SAVE_ROW;
-    S.detailOpen = false;
     S.confirmDel = false;
     S.view = VIEW_PRESET_LIST;
     S.presetMsg = '';
@@ -290,15 +287,17 @@ function applyUserPreset(listIdx) {
 function loadUserPreset() {
     if (!applyUserPreset(S.userIdx)) return;
     S.origState = null;
-    S.detailOpen = false;
-    S.presetMsg = 'LOADED';
+    S.presetMsg = '';
     S.pendingDiscover = 4;      /* a preset moves every param */
+    /* Loading is the END of the errand — drop straight back to the canvas
+     * pages so you're looking at the sound you just chose. Staying in the list
+     * makes you Back out of somewhere you're already done with. */
+    S.view = VIEW_EDIT;
 }
 
 function deleteUserPreset() {
     const p = S.userPresets[S.userIdx - 1];
     S.confirmDel = false;
-    S.detailOpen = false;
     if (!p) return;
     let ok = false;
     try { ok = (os.remove(p.path) === 0); } catch (e) { ok = false; }
@@ -594,8 +593,9 @@ function applyBaked(idx) {
 function commitBaked() {
     applyBaked(S.bakedIdx);
     S.origState = null;
-    S.presetMsg = 'LOADED';
+    S.presetMsg = '';
     S.pendingDiscover = 4;
+    S.view = VIEW_EDIT;         /* same errand-is-over rule as the user list */
 }
 
 /* Every entry point below runs from soundTick(), never from a MIDI handler. */
@@ -778,8 +778,6 @@ export function soundOnCC(d1, d2, decodeDelta) {
         } else if (S.view === VIEW_PRESET_LIST) {
             if (S.confirmDel) {
                 S.confirmIdx = listMove(2, S.confirmIdx, delta);
-            } else if (S.detailOpen) {
-                S.detailIdx = listMove(2, S.detailIdx, delta);
             } else {
                 const next = listMove(S.userPresets.length + 1, S.userIdx, delta);
                 if (next !== S.userIdx) {
@@ -848,14 +846,18 @@ export function soundOnCC(d1, d2, decodeDelta) {
             if (S.confirmDel) {
                 if (S.confirmIdx === 1) S.pendingAction = { t: 'usrdel' };
                 else { S.confirmDel = false; }
-            } else if (S.detailOpen) {
-                if (S.detailIdx === 1) { S.confirmDel = true; S.confirmIdx = 0; }
-                else S.pendingAction = { t: 'usrload' };
             } else if (S.userIdx === SAVE_ROW) {
                 S.pendingAction = { t: 'usrsave' };
+            } else if (S.shiftHeld) {
+                /* Delete hides behind Shift. Loading is the common act and now
+                 * costs one click; putting a Load/Delete menu in front of it
+                 * made you choose "the obvious one" every single time, and put
+                 * the destructive option one careless click from the safe one.
+                 * The named confirm below is what actually guards it. */
+                S.confirmDel = true;
+                S.confirmIdx = 0;
             } else {
-                S.detailOpen = true;
-                S.detailIdx = 0;
+                S.pendingAction = { t: 'usrload' };
             }
         }
         else if (S.view === VIEW_PRESET_BAKED) S.pendingAction = { t: 'bakedset' };
@@ -872,8 +874,6 @@ export function soundOnCC(d1, d2, decodeDelta) {
             if (!menuBack()) S.view = VIEW_PRESET_SRC;
         } else if (S.view === VIEW_PRESET_LIST && S.confirmDel) {
             S.confirmDel = false;
-        } else if (S.view === VIEW_PRESET_LIST && S.detailOpen) {
-            S.detailOpen = false;
         } else if (S.view === VIEW_PRESET_LIST || S.view === VIEW_PRESET_BAKED) {
             /* Leaving the browser un-committed undoes the audition: you came in
              * with a sound and you leave with it. Load is what makes a preview
@@ -1084,12 +1084,6 @@ function renderPresetList() {
         drawKitHeader('DELETE?', false);
         centreText(20, String(p ? p.name : '').toUpperCase());
         renderRows(['No', 'Yes'], S.confirmIdx, '');
-        return;
-    }
-    if (S.detailOpen) {
-        const p = S.userPresets[S.userIdx - 1];
-        drawKitHeader(String(p ? p.name : 'PRESET').toUpperCase(), false);
-        renderRows(['Load', 'Delete'], S.detailIdx, '');
         return;
     }
     drawKitHeader('USER PRESETS', false);
