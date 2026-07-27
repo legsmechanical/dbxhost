@@ -117,6 +117,53 @@ These cost real debugging time upstream in movy; they are encoded in
   Standalone makes these in-process calls, but the discipline is what keeps the
   UI off the audio path later.
 
+## Standalone: what a port would and would not get
+
+Settled 2026-07-27. The plan is to finish this as a tool/overtake module, while
+keeping a later standalone port cheap. Recording the honest limits so this
+doesn't get re-argued.
+
+**Carries over unchanged** — the whole param/UI layer: discovery, the level
+walk, the cell mapper, `ui_movy`, section picker, envelope and filter graphics,
+knob-sensitivity classes, `ui_sound.mjs`, and any per-module overrides. Most of
+the *visible* work.
+
+**Rewritten, by design** — `ui_engine.mjs`. Ten functions. That is the entire
+port surface, and keeping it that way is the point.
+
+**Cannot be pre-built, however we proceed.** Standalone means davebox *is* the
+host: `chain_host.c` linked in, QuickJS embedded, its own SPI loop, audio mixer
+and display stack. Nothing in phase 1 or 2 builds any of that, and no amount of
+"keeping it in mind" substitutes. It is the bulk of the standalone effort.
+
+The real-time model is the same story. Today the UI runs in `shadow_ui` (its own
+process) while DSP runs in the shim on Move's FIFO thread. Standalone collapses
+both into one process that also owns the SPI ioctl loop — a genuinely different
+concurrency problem that phase 1/2 never exercises.
+
+**Knowingly disposable.** Co-run, `move_midi_inject_to_move`, Move routing,
+`schSlotForTrack`, sequencing Move's own tracks. All of it makes the overtake
+version good and none of it survives standalone, which also loses every
+Move-native instrument permanently. Build it anyway — a deliberately weakened
+phase 1 to protect a hypothetical phase 2 is the wrong trade — but know the bill.
+
+### The four disciplines that keep the port cheap
+
+Near-zero cost now; expensive to retrofit:
+
+1. **The `ui_engine.mjs` rule is absolute.** Nothing else calls `shadow_*` for
+   module work; nothing else builds a `<component>:<key>` string. One leaked
+   convenience call and the port surface stops being one file.
+2. **Address by `(slot, comp, key)`** — never a pre-joined string, never a
+   hardcoded slot index.
+3. **Never block on the engine from a MIDI handler.** Defer to `tick()`, budget
+   the polling. This one is free: phase-2 correctness needs it anyway, because
+   davebox is a sequencer. Sequencer timing and standalone-readiness point the
+   same way here.
+4. **Keep Move-specific code out of the hosting files** (`ui_engine`,
+   `ui_discover`, `ui_cells`, `ui_sound`). It belongs in davebox's existing
+   modules.
+
 ## canvaskit feature audit
 
 Found by scouring `schwung-canvaskit/core/engine.js` rather than one device
