@@ -981,7 +981,15 @@ export function soundTick() {
 
 /* ---- render ---- */
 
+/* TEMPORARY, 2026-07-27: the zoom overlay is switched off while Josh decides
+ * whether it earns its place. Flip to true to restore it — everything that
+ * feeds it (touch tracking, turnedSinceTouch, the overlay draw call) is left
+ * intact deliberately, so this is a one-word change either way rather than a
+ * re-implementation. Touch HIGHLIGHTING is unaffected; only the zoom is gated. */
+const VALUE_OVERLAY_ENABLED = false;
+
 function overlayIdx() {
+    if (!VALUE_OVERLAY_ENABLED) return -1;
     return (S.touchedIdx >= 0 && S.turnedSinceTouch) ? S.touchedIdx : -1;
 }
 
