@@ -1010,7 +1010,13 @@ export function drawKitBankPage(cells, opts) {
         if (opts.altArrowShow) drawKitAltArrow(SCREEN_W - 7, !opts.headerInvert, !!opts.altArrowOn, opts.altArrowHidden);
     }
     drawKitCells(cells, t, opts.env, opts.filt);
-    drawKitEnumOverlay(cells, t);
+    /* The option-list overlay covers the 3 cells away from the touched knob, so
+     * it must NOT appear on a bare orienting touch — only once that knob is
+     * actually TURNED (see enumOverlayIdx in ui_render.mjs). Callers pass the
+     * turn-gated index separately; omitting it keeps the old touch-gated
+     * behaviour for existing call sites. */
+    const ov = (opts.overlayIdx != null) ? opts.overlayIdx : t;
+    drawKitEnumOverlay(cells, ov);
 }
 
 /* Turn-to-reveal value zoom — the non-picker counterpart to drawKitEnumOverlay.

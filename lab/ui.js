@@ -66,6 +66,7 @@ const S = {
     touchedIdx: -1,
     touchedTick: 0,
     touchHeld: false,   /* knob physically held (capacitive note) */
+    turnedSinceTouch: false,  /* gates the zoom/picker — see overlayIdx() */
 
     tickCount: 0,
     dirty: true,
@@ -198,6 +199,7 @@ function onKnobTurn(knobIdx, delta) {
 
     S.touchedIdx = knobIdx;
     S.touchedTick = S.tickCount;
+    S.turnedSinceTouch = true;
     S.dirty = true;
     if (!steps) return;
 
@@ -208,6 +210,15 @@ function onKnobTurn(knobIdx, delta) {
 }
 
 /* ---- rendering ---- */
+
+/* Index for the zoom / option-picker overlays, or -1 to suppress them.
+ * The overlay covers the cells away from the touched knob, so a bare orienting
+ * touch must NOT raise it — only a turn within the current touch does, and it
+ * then stays up until the finger lifts. Mirrors enumOverlayIdx in
+ * ui_render.mjs, which is davebox's spec for the same gesture. */
+function overlayIdx() {
+    return (S.touchedIdx >= 0 && S.turnedSinceTouch) ? S.touchedIdx : -1;
+}
 
 function centreText(y, text) {
     mvPrint(Math.max(0, Math.round((128 - mvWidth(text)) / 2)), y, text, 1);
@@ -270,11 +281,13 @@ function renderEditView() {
          * response curve. Values are resolved per-frame so both animate. */
         env: bank.env || null,
         filt: filterVizFor(bank, S.values),
+        /* touchedIdx drives the label swap + header; overlayIdx gates the
+         * pop-ups. Touch highlights, TURN reveals. */
+        overlayIdx: overlayIdx(),
     });
-    /* Turn-to-reveal value zoom for the knob being turned. Shares the same box
-     * footprint as the enum picker (drawKitBankPage draws that one for discrete
-     * lists), so the two read as one control rather than two pop-ups. */
-    if (S.touchedIdx >= 0) drawKitValueOverlay(cells, S.touchedIdx);
+    /* Turn-to-reveal value zoom. Same gating as the picker: a bare touch only
+     * highlights, the pop-up is earned by turning. */
+    drawKitValueOverlay(cells, overlayIdx());
 
     /* Section picker rides ON TOP of the page while shift is held — it clears
      * its own footprint, so the page underneath costs nothing to draw first
@@ -433,6 +446,9 @@ globalThis.onMidiMessageInternal = function (data) {
                 S.touchedIdx = next;
                 S.touchedTick = S.tickCount;
                 S.touchHeld = on;
+                /* Reset on every touch-down: the overlay must be earned by a
+                 * turn within THIS touch, not inherited from the last one. */
+                S.turnedSinceTouch = false;
                 S.dirty = true;
             }
         }
