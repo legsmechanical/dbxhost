@@ -150,7 +150,7 @@ function runDiscovery() {
     S.rawValues = {};
     log('discover: ' + id + ' -> ' + res.banks.length + ' banks, ' +
         res.paramCount + ' params, via ' + res.source +
-        ' [hier=' + res.hLen + 'B cp=' + res.cpLen + 'B' +
+        ' [hier=' + res.hLen + 'B cp=' + res.cpLen + 'B env=' + res.envCount +
         (res.source === 'chain_params' ? ' why=' + res.hierReason : '') + ']');
     if (!res.banks.length) setStatus('No params published');
     pollValues(true);
@@ -263,6 +263,8 @@ function renderEditView() {
         pageIdx: S.bankIdx,
         pageCount: S.banks.length,
         touchedIdx: S.touchedIdx,
+        /* Detected A/D/S/R run surrenders its knobs to one envelope graphic. */
+        env: bank.env || null,
     });
     /* Turn-to-reveal value zoom for the knob being turned. Shares the same box
      * footprint as the enum picker (drawKitBankPage draws that one for discrete

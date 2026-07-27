@@ -271,6 +271,56 @@ export function buildLevelPages(allLevels, rootKey) {
     return out;
 }
 
+/* ---- envelope detection ------------------------------------------------
+ * canvaskit declares envelopes in a hand-written config (`env: true`, or
+ * { startCol, cellCount, roles }). Discovered banks have no such declaration,
+ * so infer it: a run of consecutive continuous cells whose names read as
+ * Attack / Decay / Sustain / Release in that order surrenders its individual
+ * knobs to one envelope graphic.
+ *
+ * Constrained to a single widget ROW (cells 0-3 or 4-7) because the graphic is
+ * drawn across one row's band — a run straddling the split would draw across a
+ * gap. Hera puts A/D/S/R in cells 4-7, which is exactly the row-1 case.
+ *
+ * Requires 'a' plus at least one more stage: a lone Attack is just a knob. */
+const ENV_ROLE_WORDS = [
+    ['a', /\battack\b|\batk\b/i],
+    ['d', /\bdecay\b|\bdcy\b/i],
+    ['s', /\bsustain\b|\bsus\b/i],
+    ['r', /\brelease\b|\brel\b/i],
+];
+
+function envRoleOf(cell) {
+    if (!cell || !cell.key) return null;
+    /* Continuous cells only — an enum named "Decay Mode" is not a stage. */
+    if (cell.kind !== 'uni' && cell.kind !== 'fader' && cell.kind !== 'bip') return null;
+    const hay = String(cell.label || '') + ' ' + String(cell.key || '').replace(/_/g, ' ');
+    for (const [role, re] of ENV_ROLE_WORDS) if (re.test(hay)) return role;
+    return null;
+}
+
+/* Valid stage orders — sustain is a LEVEL, so it never leads. */
+const ENV_SHAPES = ['adsr', 'ad', 'ar', 'asr', 'ads'];
+
+export function detectEnvelope(bank) {
+    if (!bank || !bank.cells) return null;
+    for (const rowStart of [0, 4]) {
+        let run = [], roles = '';
+        for (let i = rowStart; i < rowStart + 4; i++) {
+            const role = envRoleOf(bank.cells[i]);
+            if (role && roles.indexOf(role) === -1) {
+                run.push(i); roles += role;
+            } else if (run.length) {
+                break;      /* run must be CONSECUTIVE */
+            }
+        }
+        if (run.length >= 2 && roles[0] === 'a' && ENV_SHAPES.indexOf(roles) !== -1) {
+            return { start: run[0], count: run.length, roles };
+        }
+    }
+    return null;
+}
+
 /* ---- sections ----------------------------------------------------------
  * Coarse jump targets for the SHIFT picker. canvaskit takes these from a
  * hand-authored CONFIG.sections; here they fall out of the walk for free,
@@ -382,8 +432,12 @@ export function discover(slot, comp) {
         addLevel(banks, 'Files', orphanFiles.map(k => cellFor(k, null)));
     }
 
-    let paramCount = 0;
-    for (const b of banks) for (const c of b.cells) if (c.key) paramCount++;
+    let paramCount = 0, envCount = 0;
+    for (const b of banks) {
+        for (const c of b.cells) if (c.key) paramCount++;
+        b.env = detectEnvelope(b);
+        if (b.env) envCount++;
+    }
 
     /* Why this module landed on this path. `hierReason` is the interesting field
      * when source === 'chain_params': it separates "published no hierarchy" from
@@ -399,7 +453,7 @@ export function discover(slot, comp) {
     }
 
     return {
-        banks, paramCount, source, hierReason,
+        banks, paramCount, source, hierReason, envCount,
         hLen: diag ? diag.hLen : 0,
         cpLen: diag ? diag.cpLen : 0,
     };

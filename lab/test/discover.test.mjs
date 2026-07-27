@@ -301,6 +301,65 @@ FIXTURES[2] = { 'synth_module': '' };
 const empty = discover(2, 'synth');
 eq(empty.banks.length, 0, 'a module publishing nothing yields no banks');
 
+
+/* ---- envelope detection -------------------------------------------------
+ * Hera's root is preset/volume/cutoff/resonance/attack/decay/sustain/release,
+ * so its A/D/S/R lands in cells 4-7 — the whole second row. */
+
+const heraish = [
+    { key: 'preset', name: 'Preset', type: 'int', min: 0, max: 99 },
+    { key: 'volume', name: 'Volume', type: 'float', min: 0, max: 1, step: 0.02 },
+    { key: 'vcf_cutoff', name: 'Cutoff', type: 'float', min: 0, max: 1, step: 0.02 },
+    { key: 'vcf_resonance', name: 'Resonance', type: 'float', min: 0, max: 1, step: 0.02 },
+    { key: 'attack', name: 'Attack', type: 'float', min: 0, max: 1, step: 0.02 },
+    { key: 'decay', name: 'Decay', type: 'float', min: 0, max: 1, step: 0.02 },
+    { key: 'sustain', name: 'Sustain', type: 'float', min: 0, max: 1, step: 0.02 },
+    { key: 'release', name: 'Release', type: 'float', min: 0, max: 1, step: 0.02 },
+];
+const hera = walkFixture(20, {
+    root: { name: 'Hera', knobs: heraish.map(p => p.key) },
+}, heraish);
+
+eq(hera.envCount, 1, 'hera publishes one detectable envelope');
+eq(hera.banks[0].env, { start: 4, count: 4, roles: 'adsr' },
+   'A/D/S/R in cells 4-7 is a full ADSR on the second row');
+
+/* a lone Attack is just a knob, not an envelope */
+const lone = walkFixture(21, {
+    root: { knobs: ['attack', 'volume'] },
+}, [{ key: 'attack', name: 'Attack', type: 'float', min: 0, max: 1 },
+    { key: 'volume', name: 'Volume', type: 'float', min: 0, max: 1 }]);
+eq(lone.envCount, 0, 'a single stage is not an envelope');
+
+/* AD (two stages) is a valid partial envelope */
+const ad = walkFixture(22, {
+    root: { knobs: ['attack', 'decay', 'volume'] },
+}, [{ key: 'attack', name: 'Attack', type: 'float', min: 0, max: 1 },
+    { key: 'decay', name: 'Decay', type: 'float', min: 0, max: 1 },
+    { key: 'volume', name: 'Volume', type: 'float', min: 0, max: 1 }]);
+eq(ad.banks[0].env, { start: 0, count: 2, roles: 'ad' }, 'AD is a valid partial envelope');
+
+/* an ENUM named like a stage must not be swallowed into the graphic */
+const enumStage = walkFixture(23, {
+    root: { knobs: ['attack', 'decay_mode'] },
+}, [{ key: 'attack', name: 'Attack', type: 'float', min: 0, max: 1 },
+    { key: 'decay_mode', name: 'Decay Mode', type: 'enum', options: ['Exp', 'Lin'] }]);
+eq(enumStage.envCount, 0, 'a "Decay Mode" enum is not an envelope stage');
+
+/* a run straddling the row split is rejected — the graphic spans one row */
+const straddle = walkFixture(24, {
+    root: { knobs: ['a1', 'b1', 'c1', 'attack', 'decay', 'sustain', 'release', 'z1'] },
+}, [{ key: 'a1', name: 'A1', type: 'float', min: 0, max: 1 },
+    { key: 'b1', name: 'B1', type: 'float', min: 0, max: 1 },
+    { key: 'c1', name: 'C1', type: 'float', min: 0, max: 1 },
+    { key: 'attack', name: 'Attack', type: 'float', min: 0, max: 1 },
+    { key: 'decay', name: 'Decay', type: 'float', min: 0, max: 1 },
+    { key: 'sustain', name: 'Sustain', type: 'float', min: 0, max: 1 },
+    { key: 'release', name: 'Release', type: 'float', min: 0, max: 1 },
+    { key: 'z1', name: 'Z1', type: 'float', min: 0, max: 1 }]);
+ok(!straddle.banks[0].env || straddle.banks[0].env.start >= 4,
+   'a run crossing the row split is not drawn as one graphic');
+
 /* ---- report ---- */
 
 console.log(`\n${pass} passed, ${fail} failed`);

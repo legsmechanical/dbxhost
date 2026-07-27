@@ -719,6 +719,89 @@ export function drawKitPageBar(idx, count) {
     }
 }
 
+/* ---- envelope graphic --------------------------------------------------
+ * An ADSR drawn ACROSS a run of cells in place of their individual widgets —
+ * the shape is the control. Kit v27 port of core/engine.js drawEnvelopeRow.
+ *
+ * `env` = { start, count, roles } where `start` is a CELL index (0-7) and
+ * roles names the stages present in column order: "adsr" | "ad" | "ar" |
+ * "asr" | "ads". Sustain is always a LEVEL, never a time.
+ *
+ * Geometry derives from the span, never the screen, so the same code draws a
+ * 2-cell AD and a 4-cell ADSR. Stage fractions are movy's hand-tuned
+ * full-line values re-expressed as fractions of the span (A .21, D .194,
+ * gate-off .694, R .266 — at a 4-cell span these reproduce the original
+ * 26/24/88/33 pixel values). With fewer time stages each gets a roomier
+ * share, so a short envelope reads at its width instead of huddling left. */
+function dottedV(x, y0, y1) {
+    const a = Math.min(y0, y1), b = Math.max(y0, y1);
+    for (let y = a; y <= b; y += 2) set_pixel(x, y, 1);
+}
+
+function envNorm(cell) {
+    if (!cell) return 0;
+    if (cell.kind === 'arcbip') return 0.5 + (cell.signed || 0) / 2;
+    return cell.norm || 0;
+}
+
+export function drawKitEnvelopeRow(rowY, cells, env) {
+    const roles = env.roles || 'adsr';
+    const has = (r) => roles.indexOf(r) >= 0;
+    const col = env.start % 4;                 /* column within this row */
+
+    const leftX = col * MV_CELL_W + 2;
+    const rightX = (col + env.count) * MV_CELL_W - 2;
+    const span = rightX - leftX;
+    const baseY = rowY + MV_KH - 2, topY = rowY + 1;
+    const usableH = baseY - topY;
+
+    /* One value per stage, read from the cell at that stage's column. */
+    const val = {};
+    for (let k = 0; k < roles.length; k++) val[roles[k]] = envNorm(cells[env.start + k]);
+
+    const timeStages = (has('a') ? 1 : 0) + (has('d') ? 1 : 0) + (has('r') ? 1 : 0);
+    const k = timeStages >= 3 ? 1 : (timeStages === 2 ? 1.7 : 2.2);
+    const GAP = Math.max(2, Math.round(span * 0.032));
+    const A_F = 0.21 * k, D_F = 0.194 * k, R_F = 0.266 * k;
+    const gateX = leftX + Math.round(span * 0.694);
+
+    const susY = has('s') ? baseY - Math.round((val['s'] || 0) * usableH) : baseY;
+    const pts = [[leftX, baseY]];
+
+    const peakX = Math.min(rightX - 2, leftX + Math.round((val['a'] || 0) * span * A_F));
+    pts.push([peakX, topY]);
+    let cur = peakX;
+    if (has('d')) {
+        cur = Math.min(rightX - 2, cur + GAP + Math.round((val['d'] || 0) * span * D_F));
+        if (has('s') && has('r') && cur > gateX - 2) cur = gateX - 2;
+        pts.push([cur, susY]);
+    } else if (has('s')) {
+        pts.push([cur, susY]);
+    }
+    let plateauEnd = cur;
+    if (has('s')) {
+        plateauEnd = has('r') ? gateX : rightX;
+        if (plateauEnd > cur) { pts.push([plateauEnd, susY]); cur = plateauEnd; }
+    }
+    if (has('r')) {
+        const endX = Math.min(rightX, cur + GAP + Math.round((val['r'] || 0) * span * R_F));
+        pts.push([endX, baseY]);
+    }
+
+    for (let i = 0; i < pts.length - 1; i++)
+        plotLine(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], 1);
+    /* Dotted verticals highlight the plateau timing (the two middle corners). */
+    if (has('s')) {
+        if (has('d')) dottedV(pts[2][0], susY, baseY);
+        if (has('r')) dottedV(plateauEnd, susY, baseY);
+    }
+    /* Bold vertex dots, nudged so the 2x2 marker straddles the vertex. */
+    for (const p of pts) {
+        fill_rect(Math.min(SCREEN_W - 2, Math.max(0, p[0] - 1)),
+                  Math.max(rowY, p[1] - 1), 2, 2, 1);
+    }
+}
+
 /* ---- grid ---- */
 
 function drawCellWidget(col, rowY, cell, touched) {
@@ -753,16 +836,27 @@ function drawCellLabel(col, lblY, cell, touched) {
     }
 }
 
-/* The 8-cell grid: two 16px widget rows, each with its label strip beneath. */
-export function drawKitCells(cells, touchedIdx) {
+/* The 8-cell grid: two 16px widget rows, each with its label strip beneath.
+ *
+ * `env` (optional) = { start, count, roles }: those cells surrender their
+ * individual widgets to one envelope graphic drawn across the span. Their
+ * LABEL strips still render, so A/D/S/R stay named and touch-swap to their
+ * values as usual. Omitted by davebox, which has no env banks. */
+export function drawKitCells(cells, touchedIdx, env) {
+    const envFirst = env ? env.start : -1;
+    const envLast = env ? env.start + env.count - 1 : -2;
     for (let k = 0; k < 8; k++) {
         const cell = cells[k];
         if (!cell) continue;
         const col = k % 4;
         const rowY = k < 4 ? MV_ROW0_Y : MV_ROW1_Y;
         const lblY = k < 4 ? MV_LBL0_Y : MV_LBL1_Y;
-        drawCellWidget(col, rowY, cell, k === touchedIdx);
+        const inEnv = (k >= envFirst && k <= envLast);
+        if (!inEnv) drawCellWidget(col, rowY, cell, k === touchedIdx);
         drawCellLabel(col, lblY, cell, k === touchedIdx);
+    }
+    if (env) {
+        drawKitEnvelopeRow(env.start < 4 ? MV_ROW0_Y : MV_ROW1_Y, cells, env);
     }
 }
 
@@ -829,7 +923,7 @@ export function drawKitBankPage(cells, opts) {
         if (opts.pageCount > 0) drawKitPageBar(opts.pageIdx | 0, opts.pageCount);
         if (opts.altArrowShow) drawKitAltArrow(SCREEN_W - 7, !opts.headerInvert, !!opts.altArrowOn, opts.altArrowHidden);
     }
-    drawKitCells(cells, t);
+    drawKitCells(cells, t, opts.env);
     drawKitEnumOverlay(cells, t);
 }
 
