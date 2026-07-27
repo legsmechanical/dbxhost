@@ -21,13 +21,13 @@ import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
 import {
     COMPONENTS, engineListModules, engineLoadModule, engineLoadedModule,
     engineGet, engineSet, engineSlots, engineFocusedSlot,
-} from './ui_engine.mjs';
+} from '../ui/ui_engine.mjs';
 
-import { discover, deriveSections, activeSection, filterVizFor } from './ui_discover.mjs';
+import { discover, deriveSections, activeSection, filterVizFor } from '../ui/ui_discover.mjs';
 
 import {
     parseValue, stepValue, commitString, renderCellsForBank,
-} from './ui_cells.mjs';
+} from '../ui/ui_cells.mjs';
 
 import {
     drawKitBankPage, drawKitHeader, drawKitSectionPicker, drawKitValueOverlay,

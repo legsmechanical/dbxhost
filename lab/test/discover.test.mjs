@@ -28,9 +28,9 @@ globalThis.host_read_file = () => null;
 globalThis.os = { readdir: () => [[], 0] };
 
 const { discover, shortLabel, deriveSections, activeSection, filterVizFor,
-        modeIdFor, findFilterModeCell } = await import('../ui_discover.mjs');
+        modeIdFor, findFilterModeCell } = await import('../../ui/ui_discover.mjs');
 const { toRenderCell, parseValue, stepValue, commitString, formatValue } =
-    await import('../ui_cells.mjs');
+    await import('../../ui/ui_cells.mjs');
 
 /* ---- tiny assert harness ---- */
 
