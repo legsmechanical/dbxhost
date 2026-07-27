@@ -27,6 +27,7 @@ import {
 } from './ui_engine.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
+    closeTextEntry,
 } from '/data/UserData/schwung/shared/text_entry.mjs';
 import {
     buildFilepathBrowserState, refreshFilepathBrowser,
@@ -247,6 +248,10 @@ export function soundRetarget(track, slot) {
 }
 
 export function soundExit() {
+    /* The keyboard is modal and driven ONLY by soundOnMidiRaw, which gates on
+     * S.active — so leaving with it open would strand it: still "active", never
+     * fed another message, never drawn. Close it first. */
+    if (isTextEntryActive()) closeTextEntry();
     S.active = false;
     S.pendingWrites.length = 0;
     S.pendingAction = null;

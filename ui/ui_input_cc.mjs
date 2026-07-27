@@ -1184,8 +1184,14 @@ function _onCC_buttons(d1, d2) {
                                     'neither Schwung nor Move.');
                 }
             } else if (soundActive()) {
-                /* Sound mode owns the OLED — an unmodified tap must not flip
-                 * Note/Session underneath it. Back steps out; Shift+this exits. */
+                /* The way OUT, from any depth. Back walks the stack one level
+                 * at a time — fine when you're one step in, tedious from a
+                 * preset list inside a block — so the button that got you here
+                 * also gets you out in one press, wherever you are. It cannot
+                 * flip the view underneath either, which is what this branch
+                 * used to be for. */
+                soundExit();
+                forceRedraw();
             } else if (S.tapTempoOpen) {
                 closeTapTempo();
                 forceRedraw();

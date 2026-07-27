@@ -51,6 +51,9 @@ the section into a versioned heading at release time.
   menu is unchanged.
 - **`Shift + Step 3` no longer opens the instrument editor** — `Shift +
   Note/Session` is the one way in.
+- **Note/Session leaves sound mode from anywhere.** Back still steps out one
+  level at a time; Note/Session drops you straight back to the sequencer no
+  matter how deep you are — the same button that opened it.
 - **Sound mode follows the track you switch to**, keeping the block you were
   on — so switching tracks mid-edit compares two sounds instead of dropping you
   back to the sequencer. Tracks that aren't Schwung-routed close it, since
