@@ -204,6 +204,48 @@ export function soundEnter(track, slot) {
     log('enter: track ' + track + ' slot ' + slot);
 }
 
+/* Follow the track. Sound mode is bound to one track's slot, so a track change
+ * used to close it; now it re-points at the new track instead. Your PLACE in the
+ * chain is kept — if you were on SYNTH you stay on SYNTH — because the usual
+ * reason to switch mid-edit is comparing the same block across two tracks.
+ * An empty block on the new track falls back to the picker rather than the
+ * module browser, which would be a startling thing to land in unasked. */
+export function soundRetarget(track, slot) {
+    /* Flush against the OLD slot first: these edits were made to that track and
+     * must not follow you to the next one. */
+    for (const w of S.pendingWrites) engineSet(w.slot, w.comp, w.key, w.val);
+    S.pendingWrites.length = 0;
+
+    S.track = track;
+    S.slot = slot;
+    S.shiftHeld = false;
+    S.touchedIdx = -1;
+    S.turnedSinceTouch = false;
+    /* Everything below described the PREVIOUS module: an audition baseline, a
+     * name cache, a half-open dialog, a browser position. None of it transfers. */
+    S.origState = null;
+    S.previewIdx = -1;
+    S.previewDelay = 0;
+    S.confirmDel = false;
+    S.bakedCacheKey = '';
+    S.bakedScan = -1;
+    S.fileState = null;
+    S.menuStack = [];
+    S.menuKey = null;
+    S.menuRowsCache = [];
+    S.menuEditing = false;
+    S.banks = [];
+    S.sections = [];
+    S.bankIdx = 0;
+    S.moduleId = '';
+    S.blockNames = [];
+    S.presetMsg = '';
+    S.pendingDiscover = 0;
+    S.pendingAction = { t: 'retarget' };
+    S.dirty = true;
+    log('retarget: track ' + track + ' slot ' + slot + ' comp ' + S.comp);
+}
+
 export function soundExit() {
     S.active = false;
     S.pendingWrites.length = 0;
@@ -599,8 +641,21 @@ function commitBaked() {
 }
 
 /* Every entry point below runs from soundTick(), never from a MIDI handler. */
+/* Runs from soundTick. Keeps the block you were on when the new track has
+ * something loaded there; otherwise shows the chain so you can choose. */
+function retargetOpen() {
+    refreshBlockNames();
+    if (engineLoadedModule(S.slot, S.comp)) {
+        S.view = VIEW_EDIT;
+        runDiscovery();
+    } else {
+        S.view = VIEW_BLOCKS;
+    }
+}
+
 function runAction(a) {
     if (a.t === 'names')        refreshBlockNames();
+    else if (a.t === 'retarget') retargetOpen();
     else if (a.t === 'open')    openBlock(a.idx);
     else if (a.t === 'browse')  openBrowse(a.idx);
     else if (a.t === 'load')    loadSelected();
@@ -712,9 +767,12 @@ function pollValues(force) {
  * key per drain instead of one per detent. */
 function queueWrite(key, val) {
     for (const w of S.pendingWrites) {
-        if (w.key === key && w.comp === S.comp) { w.val = val; return; }
+        if (w.key === key && w.comp === S.comp && w.slot === S.slot) { w.val = val; return; }
     }
-    S.pendingWrites.push({ comp: S.comp, key, val });
+    /* The SLOT is captured here, not read at drain time. Sound mode can retarget
+     * to another track mid-queue, and a write raised against one slot must never
+     * land in the one that replaced it. */
+    S.pendingWrites.push({ slot: S.slot, comp: S.comp, key, val });
 }
 
 /* ---- input ---- */
@@ -945,7 +1003,7 @@ export function soundTick() {
     /* Drain a bounded number of queued writes. */
     for (let n = 0; n < WRITES_PER_TICK && S.pendingWrites.length; n++) {
         const w = S.pendingWrites.shift();
-        engineSet(S.slot, w.comp, w.key, w.val);
+        engineSet(w.slot, w.comp, w.key, w.val);
     }
 
     /* One heavy job per tick, and never on top of pending writes: a discovery

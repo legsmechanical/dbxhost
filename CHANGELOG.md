@@ -51,8 +51,10 @@ the section into a versioned heading at release time.
   menu is unchanged.
 - **`Shift + Step 3` no longer opens the instrument editor** — `Shift +
   Note/Session` is the one way in.
-- **Sound mode closes when you switch tracks**, so you're never editing one
-  track's sound while looking at another.
+- **Sound mode follows the track you switch to**, keeping the block you were
+  on — so switching tracks mid-edit compares two sounds instead of dropping you
+  back to the sequencer. Tracks that aren't Schwung-routed close it, since
+  there's no sound there to edit.
 
 ## [1.0-beta.8] — 2026-07-21
 ### Performance / UX

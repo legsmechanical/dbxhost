@@ -50,7 +50,7 @@ import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes } from './ui_r
 import { xposeCancelPreview } from './ui_xpose.mjs';
 import { checkBackHold, backTapWouldAct } from './ui_input_cc.mjs';
 import { soundActive, soundEnter, soundExit, soundTick, soundDirty,
-    soundTrack, soundConsumeLedDirty } from './ui_sound.mjs';
+    soundTrack, soundRetarget, soundConsumeLedDirty } from './ui_sound.mjs';
 
 const BANK_DISPLAY_TICKS = 94;  /* ~1000ms at 94Hz device tick rate (was 392 = ~4.2s; constant was miscalibrated for 196Hz) */
 const KNOB_TURN_HIGHLIGHT_TICKS = 56;             /* ~600ms at 94Hz — highlight after turn without touch (was 120 @196Hz) */
@@ -1066,13 +1066,31 @@ export function _tickImpl() {
             /* Co-run took the OLED out from under us (menu "Edit Slot...",
              * or a Move-native entry): sound mode has nothing to draw on. */
             if (S.schwungCoRunSlot >= 0 || S.moveCoRunTrack >= 0) soundExit();
-            /* The track moved out from under us. Sound mode is bound to ONE
-             * track's slot, so leaving its editor up over a different track
-             * shows the wrong sound and edits the wrong one. Checked here
-             * rather than at each switch site because there are several
-             * (Shift+pad, session launchers, remote UI) and pads deliberately
-             * stay with the sequencer, so sound mode never sees them. */
-            else if (S.activeTrack !== soundTrack()) soundExit();
+            /* The track moved out from under us. Sound mode FOLLOWS it rather
+             * than closing: re-point at the new track's slot, keeping the block
+             * you were on, so switching tracks mid-edit compares two sounds
+             * instead of dumping you back to the sequencer. Checked here rather
+             * than at each switch site because there are several (Shift+pad,
+             * session launchers, remote UI) and pads deliberately stay with the
+             * sequencer, so sound mode never sees them.
+             *
+             * Only a Schwung-routed track HAS a sound to edit — a Move- or
+             * Ext-routed one closes it, since there is nothing to point at. */
+            else if (S.activeTrack !== soundTrack()) {
+                const _nt = S.activeTrack;
+                if (S.trackRoute[_nt] !== 0) {
+                    soundExit();
+                } else {
+                    const _ns = schSlotForTrack(_nt);
+                    if (_ns >= 0) {
+                        soundRetarget(_nt, _ns);
+                    } else {
+                        soundExit();
+                        showActionPopup('NO SCHWUNG SLOT',
+                                        'for channel ' + (S.trackChannel[_nt] | 0));
+                    }
+                }
+            }
             else soundTick();
             /* The name keyboard painted its own pad LEDs; put davebox's back. */
             if (soundConsumeLedDirty()) { invalidateLEDCache(); forceRedraw(); }
