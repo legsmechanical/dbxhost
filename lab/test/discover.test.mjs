@@ -27,7 +27,7 @@ globalThis.shadow_get_ui_slot = () => 0;
 globalThis.host_read_file = () => null;
 globalThis.os = { readdir: () => [[], 0] };
 
-const { discover, shortLabel, deriveSections, activeSection } =
+const { discover, shortLabel, deriveSections, activeSection, filterVizFor } =
     await import('../ui_discover.mjs');
 const { toRenderCell, parseValue, stepValue, commitString, formatValue } =
     await import('../ui_cells.mjs');
@@ -359,6 +359,58 @@ const straddle = walkFixture(24, {
     { key: 'z1', name: 'Z1', type: 'float', min: 0, max: 1 }]);
 ok(!straddle.banks[0].env || straddle.banks[0].env.start >= 4,
    'a run crossing the row split is not drawn as one graphic');
+
+
+/* ---- filter-curve detection --------------------------------------------- */
+
+const FP = (arr) => arr.map(p => Object.assign(
+    { type: 'float', min: 0, max: 1, step: 0.02 }, p));
+
+/* Hera: vcf_cutoff + vcf_resonance adjacent in cells 2-3 */
+const filt = walkFixture(30, {
+    root: { knobs: ['volume', 'vcf_cutoff', 'vcf_resonance', 'env'] },
+}, FP([{ key: 'volume', name: 'Volume' }, { key: 'vcf_cutoff', name: 'Cutoff' },
+       { key: 'vcf_resonance', name: 'Resonance' }, { key: 'env', name: 'Env' }]));
+eq(filt.filtCount, 1, 'adjacent cutoff+resonance is detected as a filter');
+eq(filt.banks[0].filt.start, 1, 'the curve starts on the CUTOFF cell');
+eq(filt.banks[0].filt.cutoffKey, 'vcf_cutoff', 'cutoff key captured');
+eq(filt.banks[0].filt.resoKey, 'vcf_resonance', 'resonance key captured');
+
+/* cutoff must LEAD — reversed order is not a filter span */
+const rev = walkFixture(31, {
+    root: { knobs: ['vcf_resonance', 'vcf_cutoff'] },
+}, FP([{ key: 'vcf_resonance', name: 'Resonance' }, { key: 'vcf_cutoff', name: 'Cutoff' }]));
+eq(rev.filtCount, 0, 'resonance before cutoff is not drawn as a curve');
+
+/* a lone cutoff stays a knob — the bump would never move */
+const lonecut = walkFixture(32, {
+    root: { knobs: ['cutoff', 'volume'] },
+}, FP([{ key: 'cutoff', name: 'Cutoff' }, { key: 'volume', name: 'Volume' }]));
+eq(lonecut.filtCount, 0, 'cutoff without resonance is not a filter curve');
+
+/* mode enum resolves to a curve id from its CURRENT option */
+const modal = walkFixture(33, {
+    root: { knobs: ['cutoff', 'resonance', 'filter_mode'] },
+}, [ ...FP([{ key: 'cutoff', name: 'Cutoff' }, { key: 'resonance', name: 'Resonance' }]),
+     { key: 'filter_mode', name: 'Filter Mode', type: 'enum',
+       options: ['Low Pass', 'High Pass', 'Band Pass'] } ]);
+const vizHp = filterVizFor(modal.banks[0], { cutoff: 0.5, resonance: 0.2, filter_mode: 1 });
+eq(vizHp.mode, 'hp', 'the mode enum\'s current option picks the curve shape');
+const vizBp = filterVizFor(modal.banks[0], { cutoff: 0.5, resonance: 0.2, filter_mode: 2 });
+eq(vizBp.mode, 'bp', 'changing the mode enum changes the curve');
+eq(Math.round(vizHp.cutoffNorm * 100), 50, 'cutoff normalises for the renderer');
+
+/* no mode enum -> lp, never a wrong-but-confident shape */
+eq(filterVizFor(filt.banks[0], { vcf_cutoff: 1, vcf_resonance: 0 }).mode, 'lp',
+   'a module with no mode enum defaults to low-pass');
+
+/* filter and envelope must not claim the same cells */
+const clash = walkFixture(34, {
+    root: { knobs: ['attack', 'decay', 'sustain', 'release'] },
+}, FP([{ key: 'attack', name: 'Attack' }, { key: 'decay', name: 'Decay' },
+       { key: 'sustain', name: 'Sustain' }, { key: 'release', name: 'Release' }]));
+eq(clash.envCount, 1, 'the envelope still wins its cells');
+eq(clash.filtCount, 0, 'no filter is claimed over envelope cells');
 
 /* ---- report ---- */
 

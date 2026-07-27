@@ -321,6 +321,98 @@ export function detectEnvelope(bank) {
     return null;
 }
 
+/* A filter span and an envelope span must never claim the same cells — both
+ * would draw over each other and both would suppress the same widgets. */
+function overlapsEnv(filt, env) {
+    if (!filt || !env) return false;
+    const fa = filt.start, fb = filt.start + 1;
+    const ea = env.start, eb = env.start + env.count - 1;
+    return !(fb < ea || fa > eb);
+}
+
+/* ---- filter-curve detection --------------------------------------------
+ * canvaskit declares this as filterViz: { cell, cutoffKey, resoKey, mode }.
+ * Discovered banks declare nothing, so infer: an ADJACENT cutoff + resonance
+ * pair of continuous cells in the same row surrenders both knobs to one
+ * response curve. Hera's vcf_cutoff / vcf_resonance are exactly that.
+ *
+ * Resonance is REQUIRED. A lone cutoff knob is more useful as a knob than as a
+ * curve whose bump never moves, and pairing is also what makes the inference
+ * safe — "cutoff" alone appears on plenty of non-filter params (LFO cutoff mod
+ * depth, envelope->cutoff amount) that would draw a meaningless curve. */
+const RE_CUTOFF = /\bcutoff\b|\bcutof\b|\bfreq(uency)?\b|\bctf\b/i;
+const RE_RESO = /\bresonance\b|\breso\b|\bres\b|\bq\b|\bemphasis\b/i;
+/* Mode enum option name -> kit curve id. Anything unmatched falls back to lp
+ * rather than drawing a confidently wrong shape. */
+const FILT_MODE_WORDS = [
+    ['notch', /notch|\bbr\b|band\s*reject/i],
+    ['bp', /band\s*pass|\bbp\b/i],
+    ['hp', /high\s*pass|\bhp\b|hipass/i],
+    ['lp', /low\s*pass|\blp\b|lopass/i],
+    ['peak', /peak|bell/i],
+    ['ap', /all\s*pass|\bap\b/i],
+    ['off', /\boff\b|bypass/i],
+];
+
+function isContinuous(cell) {
+    return cell && (cell.kind === 'uni' || cell.kind === 'fader' || cell.kind === 'bip');
+}
+
+/* Resolve the bank's filter MODE, if it publishes one. Looks for an enum whose
+ * name mentions filter mode/type, then maps its CURRENT option to a curve id. */
+function detectFilterMode(bank, values) {
+    for (const cell of bank.cells) {
+        if (!cell || !cell.key || cell.kind !== 'enumc') continue;
+        const nm = String(cell.label || '') + ' ' + String(cell.key || '').replace(/_/g, ' ');
+        if (!/\b(filter|vcf|flt)\b/i.test(nm) || !/\b(mode|type|slope|shape)\b/i.test(nm)) continue;
+        const v = values ? values[cell.key] : null;
+        const opt = (cell.options && v != null) ? cell.options[Math.round(v)] : null;
+        if (!opt) continue;
+        for (const [id, re] of FILT_MODE_WORDS) if (re.test(String(opt))) return id;
+        return 'lp';        /* published a mode we don't recognise */
+    }
+    return null;            /* no mode enum — caller defaults to lp */
+}
+
+export function detectFilterViz(bank) {
+    if (!bank || !bank.cells) return null;
+    for (const rowStart of [0, 4]) {
+        for (let i = rowStart; i < rowStart + 3; i++) {
+            const a = bank.cells[i], b = bank.cells[i + 1];
+            if (!isContinuous(a) || !isContinuous(b)) continue;
+            const an = String(a.label || '') + ' ' + String(a.key || '').replace(/_/g, ' ');
+            const bn = String(b.label || '') + ' ' + String(b.key || '').replace(/_/g, ' ');
+            /* Cutoff must lead — that's the column the corner sits on. */
+            if (RE_CUTOFF.test(an) && RE_RESO.test(bn) && !RE_CUTOFF.test(bn)) {
+                return { start: i, cutoffKey: a.key, resoKey: b.key };
+            }
+        }
+    }
+    return null;
+}
+
+/* Fill in the live values + mode for a detected filter, ready to render. */
+export function filterVizFor(bank, values) {
+    if (!bank || !bank.filt) return null;
+    const f = bank.filt;
+    const normOf = (key) => {
+        for (const c of bank.cells) {
+            if (c && c.key === key) {
+                const v = values ? values[key] : null;
+                const span = c.max - c.min;
+                return (v == null || span <= 0) ? 0 : (v - c.min) / span;
+            }
+        }
+        return 0;
+    };
+    return {
+        start: f.start,
+        cutoffNorm: normOf(f.cutoffKey),
+        resoNorm: normOf(f.resoKey),
+        mode: detectFilterMode(bank, values) || 'lp',
+    };
+}
+
 /* ---- sections ----------------------------------------------------------
  * Coarse jump targets for the SHIFT picker. canvaskit takes these from a
  * hand-authored CONFIG.sections; here they fall out of the walk for free,
@@ -432,11 +524,15 @@ export function discover(slot, comp) {
         addLevel(banks, 'Files', orphanFiles.map(k => cellFor(k, null)));
     }
 
-    let paramCount = 0, envCount = 0;
+    let paramCount = 0, envCount = 0, filtCount = 0;
     for (const b of banks) {
         for (const c of b.cells) if (c.key) paramCount++;
         b.env = detectEnvelope(b);
         if (b.env) envCount++;
+        /* Filter curve must not fight the envelope for the same cells. */
+        const f = detectFilterViz(b);
+        b.filt = (f && !overlapsEnv(f, b.env)) ? f : null;
+        if (b.filt) filtCount++;
     }
 
     /* Why this module landed on this path. `hierReason` is the interesting field
@@ -453,7 +549,7 @@ export function discover(slot, comp) {
     }
 
     return {
-        banks, paramCount, source, hierReason, envCount,
+        banks, paramCount, source, hierReason, envCount, filtCount,
         hLen: diag ? diag.hLen : 0,
         cpLen: diag ? diag.cpLen : 0,
     };

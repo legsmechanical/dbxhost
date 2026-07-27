@@ -23,7 +23,7 @@ import {
     engineGet, engineSet, engineSlots, engineFocusedSlot,
 } from './ui_engine.mjs';
 
-import { discover, deriveSections, activeSection } from './ui_discover.mjs';
+import { discover, deriveSections, activeSection, filterVizFor } from './ui_discover.mjs';
 
 import {
     parseValue, stepValue, commitString, renderCellsForBank,
@@ -152,6 +152,7 @@ function runDiscovery() {
     log('discover: ' + id + ' -> ' + res.banks.length + ' banks, ' +
         res.paramCount + ' params, via ' + res.source +
         ' [hier=' + res.hLen + 'B cp=' + res.cpLen + 'B env=' + res.envCount +
+        ' filt=' + res.filtCount +
         (res.source === 'chain_params' ? ' why=' + res.hierReason : '') + ']');
     if (!res.banks.length) setStatus('No params published');
     pollValues(true);
@@ -264,8 +265,11 @@ function renderEditView() {
         pageIdx: S.bankIdx,
         pageCount: S.banks.length,
         touchedIdx: S.touchedIdx,
-        /* Detected A/D/S/R run surrenders its knobs to one envelope graphic. */
+        /* Detected A/D/S/R run surrenders its knobs to one envelope graphic;
+         * an adjacent cutoff+resonance pair surrenders its two to a filter
+         * response curve. Values are resolved per-frame so both animate. */
         env: bank.env || null,
+        filt: filterVizFor(bank, S.values),
     });
     /* Turn-to-reveal value zoom for the knob being turned. Shares the same box
      * footprint as the enum picker (drawKitBankPage draws that one for discrete

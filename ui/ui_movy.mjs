@@ -802,6 +802,86 @@ export function drawKitEnvelopeRow(rowY, cells, env) {
     }
 }
 
+/* ---- filter response curve ---------------------------------------------
+ * A filter curve drawn across TWO cells (cutoff + resonance) in place of their
+ * knobs — the response IS the control. Kit v27 port of core/engine.js
+ * drawFilterCurve (itself from movy filter-curve.ts v0.23.0). The corner sits
+ * at the cutoff's x-position; resonance sets the bump magnitude.
+ *
+ * `viz` = { start, cutoffNorm, resoNorm, mode, steep } where `start` is the
+ * left CELL index and mode is lp | hp | bp | notch | peak | ap | off.
+ *
+ * Unlike the kit this takes normalised values directly rather than reading
+ * params — the render cells already carry `norm`, and layer C owns all value
+ * access. */
+const FILT_PASS = 0.62;   /* nominal pass-band gain (0..1 of the cell height) */
+/* Keep the corner this far inside the span so the roll-off stays visible even
+ * fully open/closed — never a bare flat line. */
+const FILT_EDGE = 0.10;
+
+function filtBump(u, c, w) { return Math.exp(-Math.pow((u - c) * w, 2)); }
+
+function dottedH(x0, x1, y) {
+    for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x += 2) set_pixel(x, y, 1);
+}
+
+/* Gain 0..1 at horizontal position u (0..1 across the span). The lp/hp
+ * roll-off is a quarter-ellipse: rounded at the corner, near-vertical where it
+ * meets the floor, and 0 beyond — so the line ENDS at the bottom axis instead
+ * of running on along it as a false floor. */
+function filtGainAt(u, mode, c, r, steep) {
+    const cx = FILT_EDGE + c * (1 - 2 * FILT_EDGE);
+    const dropW = steep ? 0.07 : 0.11;
+    const pk = r * (1 - FILT_PASS);
+    const top = FILT_PASS + pk;
+    const ellipse = (dist) => {
+        const t = dist / dropW;
+        return t >= 1 ? 0 : top * Math.sqrt(1 - t * t);
+    };
+    const shoulder = (dist) => FILT_PASS + pk * filtBump(dist, 0, 8);
+    switch (mode) {
+        case 'lp': return u <= cx ? shoulder(cx - u) : ellipse(u - cx);
+        case 'hp': return u >= cx ? shoulder(u - cx) : ellipse(cx - u);
+        case 'bp': return Math.min(1, top * filtBump(u, cx, 5 + r * 4));
+        case 'notch':
+            return Math.max(0, FILT_PASS - FILT_PASS * (0.5 + 0.5 * r) * filtBump(u, cx, 7));
+        case 'peak':
+            return Math.min(1, FILT_PASS * 0.7 +
+                (0.3 + 0.6 * r) * (1 - FILT_PASS * 0.7) * filtBump(u, cx, 6));
+        default: return FILT_PASS;   /* ap / off — flat */
+    }
+}
+
+export function drawKitFilterCurve(rowY, viz) {
+    const col = viz.start % 4;
+    const x0 = col * MV_CELL_W + 1;
+    const spanW = 2 * MV_CELL_W - 2;
+    const topY = rowY + 1, botY = rowY + MV_KH - 2;
+    const h = botY - topY;
+
+    const mode = viz.mode || 'lp';
+    const cutoff = Math.max(0, Math.min(1, viz.cutoffNorm || 0));
+    const reso = Math.max(0, Math.min(1, viz.resoNorm || 0));
+
+    dottedH(x0, x0 + spanW, botY);            /* frequency axis */
+    if (mode === 'ap' || mode === 'off') {
+        dottedH(x0, x0 + spanW, Math.round(botY - FILT_PASS * h));
+        return;
+    }
+    const yAt = (px) => {
+        const g = filtGainAt((px - x0) / spanW, mode, cutoff, reso, !!viz.steep);
+        return Math.max(topY, Math.min(botY, Math.round(botY - g * h)));
+    };
+    /* Skip runs lying flat on the bottom axis so the curve ends where it
+     * reaches the floor rather than continuing along it. */
+    let prevX = x0, prevY = yAt(x0);
+    for (let px = x0 + 1; px <= x0 + spanW; px++) {
+        const y = yAt(px);
+        if (prevY < botY || y < botY) plotLine(prevX, prevY, px, y, 1);
+        prevX = px; prevY = y;
+    }
+}
+
 /* ---- grid ---- */
 
 function drawCellWidget(col, rowY, cell, touched) {
@@ -842,21 +922,27 @@ function drawCellLabel(col, lblY, cell, touched) {
  * individual widgets to one envelope graphic drawn across the span. Their
  * LABEL strips still render, so A/D/S/R stay named and touch-swap to their
  * values as usual. Omitted by davebox, which has no env banks. */
-export function drawKitCells(cells, touchedIdx, env) {
+export function drawKitCells(cells, touchedIdx, env, filt) {
     const envFirst = env ? env.start : -1;
     const envLast = env ? env.start + env.count - 1 : -2;
+    const filtFirst = filt ? filt.start : -1;
+    const filtLast = filt ? filt.start + 1 : -2;   /* always a 2-cell span */
     for (let k = 0; k < 8; k++) {
         const cell = cells[k];
         if (!cell) continue;
         const col = k % 4;
         const rowY = k < 4 ? MV_ROW0_Y : MV_ROW1_Y;
         const lblY = k < 4 ? MV_LBL0_Y : MV_LBL1_Y;
-        const inEnv = (k >= envFirst && k <= envLast);
-        if (!inEnv) drawCellWidget(col, rowY, cell, k === touchedIdx);
+        const covered = (k >= envFirst && k <= envLast) ||
+                        (k >= filtFirst && k <= filtLast);
+        if (!covered) drawCellWidget(col, rowY, cell, k === touchedIdx);
         drawCellLabel(col, lblY, cell, k === touchedIdx);
     }
     if (env) {
         drawKitEnvelopeRow(env.start < 4 ? MV_ROW0_Y : MV_ROW1_Y, cells, env);
+    }
+    if (filt) {
+        drawKitFilterCurve(filt.start < 4 ? MV_ROW0_Y : MV_ROW1_Y, filt);
     }
 }
 
@@ -923,7 +1009,7 @@ export function drawKitBankPage(cells, opts) {
         if (opts.pageCount > 0) drawKitPageBar(opts.pageIdx | 0, opts.pageCount);
         if (opts.altArrowShow) drawKitAltArrow(SCREEN_W - 7, !opts.headerInvert, !!opts.altArrowOn, opts.altArrowHidden);
     }
-    drawKitCells(cells, t, opts.env);
+    drawKitCells(cells, t, opts.env, opts.filt);
     drawKitEnumOverlay(cells, t);
 }
 
