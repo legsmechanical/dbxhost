@@ -49,7 +49,7 @@ import { recordNoteOn, recordNoteOff,
     extHeldNotes, extCountInCapture } from './ui_record.mjs';
 import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons } from './ui_input_pads.mjs';
 import { _onCCMsg } from './ui_input_cc.mjs';
-import { soundActive, soundExit, soundOnCC, soundOnNote } from './ui_sound.mjs';
+import { soundActive, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw } from './ui_sound.mjs';
 import { _tickImpl, applyExtMidiRemap } from './ui_tick.mjs';
 
 /* ------------------------------------------------------------------ */
@@ -362,6 +362,9 @@ function _onMidiInternalImpl(data) {
      * from anywhere — so it is never offered. (Hold-Back-to-suspend does not
      * reach _handleBack while sound mode is up; Back means step-out there,
      * and Shift+Back is the full exit.) */
+    /* The preset-name keyboard is fully modal and reads raw messages, so it
+     * comes before everything — including the noise filter's own decisions. */
+    if (soundActive() && soundOnMidiRaw(data)) return;
     if (soundActive() && soundOnNote(status, d1, d2)) return;
     if (status === 0xB0 && soundActive() && !(d1 === MoveBack && S.shiftHeld) &&
             soundOnCC(d1, d2, decodeDelta)) return;

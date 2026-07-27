@@ -166,7 +166,7 @@ export function engineSetState(slot, comp, blob) { return engineSet(slot, comp, 
  * Do NOT confuse these with a module's BAKED-IN presets: those aren't files at
  * all, they're the list_param/count_param/name_param level (see ui_discover's
  * findPresetSpec) — an index the module owns, not a store we can write. */
-const PRESET_ROOT = '/data/UserData/schwung/presets';
+export const PRESET_ROOT = '/data/UserData/schwung/presets';
 
 export function engineListUserPresets(moduleId) {
     const out = [];

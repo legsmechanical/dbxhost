@@ -19,11 +19,15 @@
  * shows up as sequencer jitter, not as a broken editor.
  */
 
+import * as os from 'os';
 import {
-    COMPONENTS, engineGet, engineSet, engineListModules,
-    engineLoadModule, engineLoadedModule, engineSetState,
+    COMPONENTS, PRESET_ROOT, engineGet, engineSet, engineListModules,
+    engineLoadModule, engineLoadedModule, engineGetState, engineSetState,
     engineListUserPresets, engineReadUserPreset,
 } from './ui_engine.mjs';
+import {
+    openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
+} from '/data/UserData/schwung/shared/text_entry.mjs';
 import { discover, deriveSections, activeSection, filterVizFor } from './ui_discover.mjs';
 import { parseValue, stepValue, commitString, renderCellsForBank } from './ui_cells.mjs';
 import {
@@ -53,6 +57,13 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
  *          browses as a scrubber that changes the sound as you move. That's the
  *          mechanism (the host's preset level behaves identically), not a gap. */
 const SRC_USER = 0, SRC_BAKED = 1;
+
+/* ~160ms at davebox's ~94Hz tick. The host uses 7 ticks at ~44Hz for the same
+ * feel; copying the NUMBER rather than the duration would make preview twice
+ * as twitchy here. */
+const PREVIEW_DELAY_TICKS = 15;
+const BAKED_SCAN_PER_TICK = 2;   /* same SHM budget as the write drain */
+const SAVE_ROW = 0;
 
 /* Poll cadences, in ticks (~94Hz). Deliberately slower than the lab rig's flat
  * 8 — davebox's tick is already busy, so idle refresh is cheap and the
@@ -91,11 +102,28 @@ const S = {
     presetSrcIdx: 0,
     presetSrcSkipped: false,    /* jumped straight to USER (no baked bank) — Back must skip back too */
     userPresets: [],
-    userIdx: 0,
+    userIdx: 0,                 /* 0 = the [Save current...] row; presets start at 1 */
     bakedCount: 0,
     bakedIdx: 0,
-    bakedName: '',
+    bakedNames: [],
+    bakedScan: -1,              /* prescan cursor; -1 = idle */
+    bakedScanRestore: 0,        /* index to put back when the scan finishes */
+    bakedCacheKey: '',          /* moduleId|comp|count the cached names belong to */
     presetMsg: '',
+
+    /* Audition. Scrolling applies the highlighted preset so you hear it before
+     * committing; Back puts the original sound back. Debounced through tick so
+     * a fast scroll doesn't reload state on every detent. Disabled when the
+     * original can't be captured — better no preview than no way back. */
+    origState: null,
+    previewIdx: -1,
+    previewDelay: 0,
+
+    /* detail screen for one user preset */
+    detailOpen: false,
+    detailIdx: 0,               /* 0 = Load, 1 = Delete */
+    confirmDel: false,
+    confirmIdx: 0,              /* 0 = No, 1 = Yes */
 
     pendingWrites: [],
     pendingDiscover: 0,
@@ -112,6 +140,7 @@ const S = {
     shiftHeld: false,
     tickCount: 0,
     dirty: true,
+    ledDirty: false,   /* text entry repainted the pads; davebox must re-assert */
 };
 
 function log(msg) {
@@ -120,6 +149,21 @@ function log(msg) {
 
 export function soundActive() { return S.active; }
 export function soundTrack() { return S.track; }
+
+/* The keyboard is fully modal and wants the RAW message (it reads pads, jog and
+ * buttons itself), so it hooks in ahead of every other dispatch rather than
+ * through soundOnCC/soundOnNote. It paints its own pad LEDs, so davebox's have
+ * to be re-asserted when it closes — see soundConsumeLedDirty. */
+export function soundOnMidiRaw(data) {
+    if (!S.active || !isTextEntryActive()) return false;
+    handleTextEntryMidi(data);
+    if (!isTextEntryActive()) { S.ledDirty = true; S.dirty = true; }
+    return true;
+}
+
+export function soundConsumeLedDirty() {
+    const d = S.ledDirty; S.ledDirty = false; return d;
+}
 export function soundDirty() { const d = S.dirty; S.dirty = false; return d; }
 export function markSoundDirty() { S.dirty = true; }
 
@@ -187,46 +231,208 @@ function openPresets() {
 
 function openUserPresets() {
     S.userPresets = engineListUserPresets(S.moduleId);
-    S.userIdx = 0;
+    S.userIdx = S.userPresets.length ? 1 : SAVE_ROW;
+    S.detailOpen = false;
+    S.confirmDel = false;
     S.view = VIEW_PRESET_LIST;
-    S.presetMsg = S.userPresets.length ? '' : 'NO USER PRESETS';
+    S.presetMsg = '';
+    captureOriginal();
     log('user presets: ' + S.userPresets.length + ' for ' + S.moduleId);
 }
 
-function loadUserPreset() {
-    const p = S.userPresets[S.userIdx];
-    if (!p) return;
-    const blob = engineReadUserPreset(p.path);
-    if (blob === null) { S.presetMsg = 'UNREADABLE'; return; }
-    engineSetState(S.slot, S.comp, blob);
-    S.presetMsg = 'LOADED';
-    /* The whole param set just changed underneath the cached values. */
-    S.pendingDiscover = 4;
+/* Audition needs somewhere to go back TO. If the module won't hand over its
+ * state there is no way to undo a preview, so preview is disabled rather than
+ * leaving the user stranded on a sound they only meant to hear. */
+function captureOriginal() {
+    S.origState = engineGetState(S.slot, S.comp) || null;
+    S.previewIdx = -1;
+    S.previewDelay = 0;
 }
 
-/* Baked banks are an INDEX, not a list: the only way to learn a preset's name
- * is to select it. So this browses by scrubbing — each step writes the index
- * and the next poll reads the name back. Moving the cursor changes the sound,
- * which is the module's own behaviour, not ours. */
+function revertOriginal() {
+    if (S.origState !== null) engineSetState(S.slot, S.comp, S.origState);
+    S.previewIdx = -1;
+    S.previewDelay = 0;
+}
+
+function applyUserPreset(listIdx) {
+    const p = S.userPresets[listIdx - 1];
+    if (!p) return false;
+    const blob = engineReadUserPreset(p.path);
+    if (blob === null) { S.presetMsg = 'UNREADABLE'; return false; }
+    engineSetState(S.slot, S.comp, blob);
+    return true;
+}
+
+/* Commit: the previewed sound becomes the sound. The captured original is
+ * dropped so a later Back can't resurrect it. */
+function loadUserPreset() {
+    if (!applyUserPreset(S.userIdx)) return;
+    S.origState = null;
+    S.detailOpen = false;
+    S.presetMsg = 'LOADED';
+    S.pendingDiscover = 4;      /* a preset moves every param */
+}
+
+function deleteUserPreset() {
+    const p = S.userPresets[S.userIdx - 1];
+    S.confirmDel = false;
+    S.detailOpen = false;
+    if (!p) return;
+    let ok = false;
+    try { ok = (os.remove(p.path) === 0); } catch (e) { ok = false; }
+    S.presetMsg = ok ? 'DELETED' : 'DELETE FAILED';
+    S.userPresets = engineListUserPresets(S.moduleId);
+    if (S.userIdx > S.userPresets.length) S.userIdx = S.userPresets.length;
+}
+
+/* Save NEVER overwrites — a name collision gets a number, matching the host so
+ * the two stores stay interchangeable. */
+function saveUserPreset(rawName) {
+    const name = uniqueName(String(rawName || '').trim() || 'Preset');
+    const dir = PRESET_ROOT + '/' + S.moduleId;
+    const stateJson = engineGetState(S.slot, S.comp);
+    if (!stateJson) { S.presetMsg = 'NO STATE'; return; }
+    if (typeof host_ensure_dir === 'function') host_ensure_dir(dir);
+    /* Parsed object when the state is JSON, raw string otherwise — the same
+     * opaque-state fallback the host's writer uses. */
+    let state;
+    try { state = JSON.parse(stateJson); } catch (e) { state = stateJson; }
+    const payload = JSON.stringify({
+        name, module: S.moduleId, version: 1, state,
+    });
+    const path = uniquePath(dir, safeStem(name));
+    const ok = (typeof host_write_file === 'function') && host_write_file(path, payload);
+    S.presetMsg = ok ? 'SAVED' : 'SAVE FAILED';
+    if (!ok) return;
+    S.userPresets = engineListUserPresets(S.moduleId);
+    const i = S.userPresets.findIndex(p => p.name === name);
+    S.userIdx = (i >= 0) ? i + 1 : SAVE_ROW;
+    /* What was just saved IS the live sound, so there is nothing to revert to. */
+    S.origState = null;
+}
+
+/* The on-screen keyboard is a shared host component with a host-agnostic
+ * contract (isTextEntryActive / handleTextEntryMidi / drawTextEntry), so it
+ * drops into davebox's own dispatch the same way it does into shadow_ui.
+ * It takes the pads while open — naming is a deliberate modal moment, and the
+ * sequencer keeps running underneath. */
+function startSaveFlow() {
+    if (!S.moduleId) { S.presetMsg = 'NO MODULE'; return; }
+    openTextEntry({
+        title: '',
+        initialText: defaultSaveName(),
+        onConfirm: (name) => { S.pendingAction = { t: 'usrsavedo', name }; S.dirty = true; },
+        onCancel:  () => { S.presetMsg = 'CANCELLED'; S.dirty = true; },
+    });
+}
+
+/* Seed the keyboard with the module's own idea of the current sound's name
+ * where it has one (a baked bank's name_param), else the module name. */
+function defaultSaveName() {
+    const sp = S.presetSpec;
+    if (sp) {
+        const n = engineGet(S.slot, S.comp, sp.nameKey);
+        if (n) return String(n);
+    }
+    return S.moduleId || 'Preset';
+}
+
+function safeStem(name) {
+    let out = '';
+    for (const ch of String(name)) {
+        out += /[A-Za-z0-9 _-]/.test(ch) ? ch : '_';
+    }
+    out = out.trim().replace(/\s+/g, ' ');
+    return out.slice(0, 40) || 'Preset';
+}
+
+function uniqueName(base) {
+    const taken = {};
+    for (const p of S.userPresets) taken[p.name] = true;
+    if (!taken[base]) return base;
+    for (let n = 2; n < 1000; n++) {
+        if (!taken[base + ' ' + n]) return base + ' ' + n;
+    }
+    return base + ' ' + Date.now();
+}
+
+function uniquePath(dir, stem) {
+    let path = dir + '/' + stem + '.json';
+    if (!fileExists(path)) return path;
+    for (let n = 2; n < 1000; n++) {
+        path = dir + '/' + stem + ' ' + n + '.json';
+        if (!fileExists(path)) return path;
+    }
+    return dir + '/' + stem + ' ' + Date.now() + '.json';
+}
+
+function fileExists(path) {
+    if (typeof host_file_exists === 'function') return !!host_file_exists(path);
+    try { return !!host_read_file(path); } catch (e) { return false; }
+}
+
+/* ---- baked bank ----
+ * A baked bank publishes a COUNT and the name of the CURRENT preset only —
+ * there is no bulk name list (obxd's items_param is its FXB bank files, not
+ * preset names). So a browsable list has to be built by selecting each index
+ * in turn and reading the name back. That is done ONCE per module+comp, cached,
+ * budgeted across ticks, and the original index is restored at the end.
+ *
+ * The unavoidable cost: the scan riffles the module through every preset, so
+ * with notes sounding you hear it sweep. Once per entry, not per scroll. */
 function openBaked() {
     const sp = S.presetSpec;
     if (!sp) return;
     S.bakedCount = parseInt(engineGet(S.slot, S.comp, sp.countKey) || '0', 10) || 0;
     S.bakedIdx = parseInt(engineGet(S.slot, S.comp, sp.listKey) || '0', 10) || 0;
-    S.bakedName = engineGet(S.slot, S.comp, sp.nameKey) || '';
     S.view = VIEW_PRESET_BAKED;
-    S.presetMsg = S.bakedCount ? '' : 'NO PRESETS';
-    log('baked: ' + S.bakedCount + ' via ' + sp.listKey);
+    S.presetMsg = '';
+    captureOriginal();
+
+    const key = S.moduleId + '|' + S.comp + '|' + S.bakedCount;
+    if (key === S.bakedCacheKey && S.bakedNames.length === S.bakedCount) {
+        S.bakedScan = -1;                 /* already scanned this bank */
+    } else {
+        S.bakedNames = new Array(S.bakedCount).fill('');
+        S.bakedCacheKey = key;
+        S.bakedScanRestore = S.bakedIdx;
+        S.bakedScan = S.bakedCount ? 0 : -1;
+    }
+    log('baked: ' + S.bakedCount + ' via ' + sp.listKey +
+        (S.bakedScan >= 0 ? ' (scanning)' : ' (cached)'));
 }
 
-/* Deferred like every other engine call — the write is queued, and the name
- * read happens on the drain so it reflects the index that actually landed. */
-function commitBaked() {
+/* One slice of the prescan. Runs from soundTick only. */
+function stepBakedScan() {
+    const sp = S.presetSpec;
+    if (!sp || S.bakedScan < 0) return;
+    for (let n = 0; n < BAKED_SCAN_PER_TICK && S.bakedScan < S.bakedCount; n++) {
+        const i = S.bakedScan++;
+        engineSet(S.slot, S.comp, sp.listKey, String(i));
+        S.bakedNames[i] = engineGet(S.slot, S.comp, sp.nameKey) || ('Preset ' + (i + 1));
+    }
+    if (S.bakedScan >= S.bakedCount) {
+        S.bakedScan = -1;
+        S.bakedIdx = S.bakedScanRestore;
+        engineSet(S.slot, S.comp, sp.listKey, String(S.bakedIdx));
+    }
+    S.dirty = true;
+}
+
+/* Selecting a baked preset IS writing the index — the same act as auditioning
+ * it, so scrolling previews for free and Load is just "stop reverting". */
+function applyBaked(idx) {
     const sp = S.presetSpec;
     if (!sp || !S.bakedCount) return;
-    engineSet(S.slot, S.comp, sp.listKey, String(S.bakedIdx));
-    S.bakedName = engineGet(S.slot, S.comp, sp.nameKey) || '';
-    S.pendingDiscover = 4;   /* preset change moves every param */
+    engineSet(S.slot, S.comp, sp.listKey, String(idx));
+}
+
+function commitBaked() {
+    applyBaked(S.bakedIdx);
+    S.origState = null;
+    S.presetMsg = 'LOADED';
+    S.pendingDiscover = 4;
 }
 
 /* Every entry point below runs from soundTick(), never from a MIDI handler. */
@@ -239,6 +445,9 @@ function runAction(a) {
     else if (a.t === 'usrlist') openUserPresets();
     else if (a.t === 'baked')   openBaked();
     else if (a.t === 'usrload') loadUserPreset();
+    else if (a.t === 'usrdel')  deleteUserPreset();
+    else if (a.t === 'usrsave') startSaveFlow();
+    else if (a.t === 'usrsavedo') saveUserPreset(a.name);
     else if (a.t === 'bakedset') commitBaked();
     S.dirty = true;
 }
@@ -398,14 +607,31 @@ export function soundOnCC(d1, d2, decodeDelta) {
         } else if (S.view === VIEW_PRESET_SRC) {
             S.presetSrcIdx = listMove(2, S.presetSrcIdx, delta);
         } else if (S.view === VIEW_PRESET_LIST) {
-            S.userIdx = listMove(S.userPresets.length, S.userIdx, delta);
+            if (S.confirmDel) {
+                S.confirmIdx = listMove(2, S.confirmIdx, delta);
+            } else if (S.detailOpen) {
+                S.detailIdx = listMove(2, S.detailIdx, delta);
+            } else {
+                const next = listMove(S.userPresets.length + 1, S.userIdx, delta);
+                if (next !== S.userIdx) {
+                    S.userIdx = next;
+                    /* Audition the highlighted row after a beat. The save row
+                     * has no sound of its own, so landing there puts the
+                     * original back rather than leaving the last preview up. */
+                    S.previewIdx = (next === SAVE_ROW) ? -1 : next;
+                    S.previewDelay = PREVIEW_DELAY_TICKS;
+                    S.presetMsg = '';
+                }
+            }
         } else if (S.view === VIEW_PRESET_BAKED) {
-            const next = listMove(S.bakedCount, S.bakedIdx, delta);
-            if (next !== S.bakedIdx) {
-                S.bakedIdx = next;
-                /* Scrubbing IS selecting for a baked bank — queue the write so a
-                 * fast spin costs one drain per tick, not one per detent. */
-                S.pendingAction = { t: 'bakedset' };
+            if (S.bakedScan < 0) {
+                const next = listMove(S.bakedCount, S.bakedIdx, delta);
+                if (next !== S.bakedIdx) {
+                    S.bakedIdx = next;
+                    S.previewIdx = next;
+                    S.previewDelay = PREVIEW_DELAY_TICKS;
+                    S.presetMsg = '';
+                }
             }
         } else if (S.banks.length) {
             if (S.shiftHeld && S.sections.length > 1) {
@@ -440,14 +666,35 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.pendingAction = S.moduleId ? { t: 'presets' } : { t: 'browse' };
         else if (S.view === VIEW_PRESET_SRC)
             S.pendingAction = (S.presetSrcIdx === SRC_BAKED) ? { t: 'baked' } : { t: 'usrlist' };
-        else if (S.view === VIEW_PRESET_LIST) S.pendingAction = { t: 'usrload' };
-        else if (S.view === VIEW_PRESET_BAKED) S.presetMsg = 'LOADED';  /* already applied on scrub */
+        else if (S.view === VIEW_PRESET_LIST) {
+            if (S.confirmDel) {
+                if (S.confirmIdx === 1) S.pendingAction = { t: 'usrdel' };
+                else { S.confirmDel = false; }
+            } else if (S.detailOpen) {
+                if (S.detailIdx === 1) { S.confirmDel = true; S.confirmIdx = 0; }
+                else S.pendingAction = { t: 'usrload' };
+            } else if (S.userIdx === SAVE_ROW) {
+                S.pendingAction = { t: 'usrsave' };
+            } else {
+                S.detailOpen = true;
+                S.detailIdx = 0;
+            }
+        }
+        else if (S.view === VIEW_PRESET_BAKED) S.pendingAction = { t: 'bakedset' };
         S.dirty = true;
         return true;
     }
 
     if (d1 === 51 && d2 >= 64) {                       /* back */
-        if (S.view === VIEW_PRESET_LIST || S.view === VIEW_PRESET_BAKED) {
+        if (S.view === VIEW_PRESET_LIST && S.confirmDel) {
+            S.confirmDel = false;
+        } else if (S.view === VIEW_PRESET_LIST && S.detailOpen) {
+            S.detailOpen = false;
+        } else if (S.view === VIEW_PRESET_LIST || S.view === VIEW_PRESET_BAKED) {
+            /* Leaving the browser un-committed undoes the audition: you came in
+             * with a sound and you leave with it. Load is what makes a preview
+             * permanent (it drops origState). */
+            revertOriginal();
             /* Straight back to the editor when the source picker was skipped,
              * so Back always retraces the way you actually came in. */
             S.view = S.presetSrcSkipped ? VIEW_EDIT : VIEW_PRESET_SRC;
@@ -489,7 +736,27 @@ export function soundTick() {
     if (!S.active) return;
     S.tickCount++;
 
+    if (isTextEntryActive()) { tickTextEntry(); return; }
+
     if (S.pendingDiscover > 0 && --S.pendingDiscover === 0) runDiscovery();
+
+    /* Prescan owns the tick while it runs: it is already at the SHM budget, and
+     * letting a preview interleave would fight it for the same index param. */
+    if (S.bakedScan >= 0) { stepBakedScan(); return; }
+
+    /* Debounced audition. */
+    if (S.previewDelay > 0 && --S.previewDelay === 0 && S.previewIdx >= 0) {
+        if (S.view === VIEW_PRESET_BAKED) applyBaked(S.previewIdx);
+        else if (S.view === VIEW_PRESET_LIST) applyUserPreset(S.previewIdx);
+        S.dirty = true;
+    } else if (S.previewDelay === 0 && S.previewIdx === -1 &&
+               S.view === VIEW_PRESET_LIST && S.userIdx === SAVE_ROW &&
+               S.origState !== null) {
+        /* Parked on the save row: make sure what you hear is the sound that
+         * will actually be saved, not the last thing auditioned. */
+        engineSetState(S.slot, S.comp, S.origState);
+        S.previewIdx = -2;   /* done; -1 would re-fire every tick */
+    }
 
     /* Drain a bounded number of queued writes. */
     for (let n = 0; n < WRITES_PER_TICK && S.pendingWrites.length; n++) {
@@ -630,24 +897,47 @@ function renderPresetSrc() {
 
 function renderPresetList() {
     clear_screen();
+    if (S.confirmDel) {
+        const p = S.userPresets[S.userIdx - 1];
+        drawKitHeader('DELETE?', false);
+        centreText(20, String(p ? p.name : '').toUpperCase());
+        renderRows(['No', 'Yes'], S.confirmIdx, '');
+        return;
+    }
+    if (S.detailOpen) {
+        const p = S.userPresets[S.userIdx - 1];
+        drawKitHeader(String(p ? p.name : 'PRESET').toUpperCase(), false);
+        renderRows(['Load', 'Delete'], S.detailIdx, '');
+        return;
+    }
     drawKitHeader('USER PRESETS', false);
-    renderRows(S.userPresets.map(p => p.name), S.userIdx, S.presetMsg || 'NO USER PRESETS');
-    if (S.presetMsg && S.userPresets.length) centreText(58, S.presetMsg);
+    const rows = ['[Save current…]'].concat(S.userPresets.map(p => p.name));
+    renderRows(rows, S.userIdx, '');
+    if (S.presetMsg) centreText(58, S.presetMsg);
 }
 
-/* A baked bank has no list to draw — only the current index and its name, and
- * the name only exists once the index has been written. Hence a scrubber. */
+/* Numbered scrollable list, same shape as the user list. The names behind it
+ * had to be harvested one index at a time (see openBaked) — while that is
+ * running there is nothing to list yet, so show the progress instead of an
+ * empty box. */
 function renderPresetBaked() {
     clear_screen();
     drawKitHeader(modLabel() + ' PRESETS', false);
+    if (S.bakedScan >= 0) {
+        centreText(26, 'READING NAMES');
+        centreText(40, S.bakedScan + ' / ' + S.bakedCount);
+        return;
+    }
     if (!S.bakedCount) { centreText(30, S.presetMsg || 'NO PRESETS'); return; }
-    centreText(22, String(S.bakedName || '—').toUpperCase());
-    centreText(40, (S.bakedIdx + 1) + ' / ' + S.bakedCount);
-    if (S.presetMsg) centreText(56, S.presetMsg);
+    const rows = S.bakedNames.map((n, i) =>
+        String(i + 1).padStart(3, ' ') + '  ' + (n || ('Preset ' + (i + 1))));
+    renderRows(rows, S.bakedIdx, '');
+    if (S.presetMsg) centreText(58, S.presetMsg);
 }
 
 export function soundRender() {
     if (!S.active) return false;
+    if (isTextEntryActive()) { drawTextEntry(); return true; }
     if (S.view === VIEW_BLOCKS) renderBlocks();
     else if (S.view === VIEW_BROWSE) renderBrowse();
     else if (S.view === VIEW_PRESET_SRC) renderPresetSrc();

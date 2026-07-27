@@ -20,8 +20,12 @@ the section into a versioned heading at release time.
 - **Presets in the sound editor.** Click the jog inside a module to reach its
   presets. Where a module has both, you pick the source first: **User Presets**
   (the ones you've saved, shared with Schwung's own preset browser) or the
-  **module's own built-in presets**. Built-in banks audition as you scroll —
-  each step selects, so you hear it immediately.
+  **module's own built-in presets**. Both are numbered, scrollable lists.
+- **Presets audition as you scroll**, so you hear one before committing. Click
+  to keep it; **Back** puts the sound you came in with back. Saving and
+  deleting your own presets works the same as it does from a Schwung slot —
+  **[Save current…]** names the patch on the on-screen keyboard, and a preset's
+  Delete asks first. Never overwrites: a repeated name gets a number.
 - **`Shift` + click on the block picker swaps a block's module.** Plain click
   opens it for editing.
 
