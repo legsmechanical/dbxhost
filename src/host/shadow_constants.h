@@ -116,7 +116,16 @@ typedef struct shadow_control_t {
     volatile uint8_t ui_slot;         /* UI-highlighted slot for knob routing */
     volatile uint8_t ui_flags;        /* UI flags (SHADOW_UI_FLAG_*) */
     volatile uint16_t ui_patch_index; /* Requested patch index */
-    volatile uint16_t reserved16;
+    /* Runtime master-knob claim. 1 = suppress the volume knob (CC 79) and its
+     * capacitive touch (note 8) from reaching Move firmware, so a tool can use
+     * the knob for its own purpose without Move also moving master volume and
+     * popping its overlay over the tool's screen. Exact twin of pad_block, and
+     * the runtime complement to the STATIC capabilities.claims_master_knob.
+     * Carved from the former reserved16 padding so the struct size and every
+     * existing field offset are unchanged — a mismatched shim/shadow_ui pair
+     * cannot arise from this field. */
+    volatile uint8_t vol_block;
+    volatile uint8_t reserved8;
     volatile uint32_t ui_request_id;  /* Incremented on patch request */
     volatile uint32_t shim_counter;   /* Debug: shim tick counter */
     volatile uint8_t selected_slot;   /* Track-selected slot (0-3) for playback/knobs */

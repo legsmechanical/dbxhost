@@ -2054,6 +2054,24 @@ static JSValue js_host_pad_block(JSContext *ctx, JSValueConst this_val,
     return JS_TRUE;
 }
 
+/* host_vol_block(enable) - claim the master volume knob at runtime.
+ * Suppresses CC 79 and its touch note (8) from reaching Move firmware, so a
+ * tool can repurpose the knob without Move also moving master volume and
+ * covering the tool's screen with its volume overlay. Twin of host_pad_block;
+ * the runtime complement to the static capabilities.claims_master_knob.
+ * Tools MUST clear it when they stop wanting the knob — it is not scoped to a
+ * co-run session and nothing clears it on their behalf. */
+static JSValue js_host_vol_block(JSContext *ctx, JSValueConst this_val,
+                                  int argc, JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1 || !shadow_control) return JS_FALSE;
+    int val = 0;
+    JS_ToInt32(ctx, &val, argv[0]);
+    shadow_control->vol_block = val ? 1 : 0;
+    shadow_ui_log_line(val ? "shadow_ui: vol_block ON" : "shadow_ui: vol_block OFF");
+    return JS_TRUE;
+}
+
 /* host_canvas_input(enable) - canvas overlay active: shim also forwards the
  * master/jog capacitive touch notes (8-9) to the shadow UI while set */
 static JSValue js_host_canvas_input(JSContext *ctx, JSValueConst this_val,
@@ -2531,6 +2549,7 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
 
     /* Register pad block function */
     JS_SetPropertyStr(ctx, global_obj, "host_pad_block", JS_NewCFunction(ctx, js_host_pad_block, "host_pad_block", 1));
+    JS_SetPropertyStr(ctx, global_obj, "host_vol_block", JS_NewCFunction(ctx, js_host_vol_block, "host_vol_block", 1));
 
     /* Register canvas-input function (jog/master touch forwarding gate) */
     JS_SetPropertyStr(ctx, global_obj, "host_canvas_input", JS_NewCFunction(ctx, js_host_canvas_input, "host_canvas_input", 1));

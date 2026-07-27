@@ -6243,6 +6243,14 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
              * down at overtake start so Move firmware doesn't think
              * buttons are still held. Each push is independent under
              * the MPSC helper — no cursor coordination required here. */
+            /* Drop any runtime master-knob claim with the session. A tool that
+             * exits without clearing it would otherwise leave the volume knob
+             * captured for whatever tool runs next — and unlike pad_block, a
+             * stuck volume claim is the one control a user always expects to
+             * work. Cleared here because this edge covers EVERY exit path,
+             * including a tool that crashed before its own cleanup ran. */
+            if (shadow_control) shadow_control->vol_block = 0;
+
             const uint8_t shift_off[4]    = {0x0B, 0xB0, CC_SHIFT,     0};
             const uint8_t vol_touch_off[4]= {0x08, 0x80, 8,            0};
             const uint8_t back_off[4]     = {0x0B, 0xB0, CC_BACK,      0};
@@ -6370,14 +6378,20 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                  * - mode 1 (menu): allow only volume touch/turn passthrough */
                 if (overtake_mode == 2) {
                     if (status >= 0x80) filter = 1;
-                    /* Let volume knob CC and touch through so Move shows volume overlay */
+                    /* Let volume knob CC and touch through so Move shows volume
+                     * overlay — UNLESS the tool has claimed the knob at runtime
+                     * (shadow_control->vol_block, set via host_vol_block). Both
+                     * the CC and the touch note are held back together: passing
+                     * the touch alone would still pop Move's volume overlay over
+                     * the tool's screen. */
+                    int vol_claimed = shadow_control && shadow_control->vol_block;
                     if (cin == 0x0B && type == 0xB0 && d1 == CC_MASTER_KNOB) {
-                        filter = 0;
+                        if (!vol_claimed) filter = 0;
                     }
                     if ((cin == 0x09 || cin == 0x08) &&
                         (type == 0x90 || type == 0x80) &&
                         d1 == 8) {
-                        filter = 0;
+                        if (!vol_claimed) filter = 0;
                     }
                     /* Per-CC passthrough list (from the module's
                      * capabilities.button_passthrough). Used to let Play,
