@@ -357,13 +357,24 @@ function looksLikeCutoff(name) {
 }
 /* Mode enum option name -> kit curve id. Anything unmatched falls back to lp
  * rather than drawing a confidently wrong shape. */
+/* The \d* is load-bearing. Real option lists carry the slope in the same token
+ * — noisemaker ships LP24 LP18 LP12 LP6 HP24 BP24 Notch SV-LP SV-HP SV-BP Moog
+ * Moog2 — and \bhp\b does NOT match "HP24", because there is no word boundary
+ * between letters and digits. Without it every sloped high-pass and band-pass
+ * fell through to the lp default and drew the wrong curve. (SV-HP matched only
+ * because the hyphen happens to create a boundary.)
+ *
+ * Order matters: notch/bp/hp are tested before lp, or "SV-LP" would shadow
+ * nothing but "SV-BP" would match lp on its trailing letters. Named ladder
+ * models (Moog) are low-pass, so they map to lp deliberately rather than by
+ * falling through. */
 const FILT_MODE_WORDS = [
-    ['notch', /notch|\bbr\b|band\s*reject/i],
-    ['bp', /band\s*pass|\bbp\b/i],
-    ['hp', /high\s*pass|\bhp\b|hipass/i],
-    ['lp', /low\s*pass|\blp\b|lopass/i],
+    ['notch', /notch|\bbr\d*\b|band\s*reject/i],
+    ['bp', /band\s*pass|\bbp\d*\b/i],
+    ['hp', /high\s*pass|\bhp\d*\b|hipass/i],
+    ['lp', /low\s*pass|\blp\d*\b|lopass|\bmoog\d*\b|ladder/i],
     ['peak', /peak|bell/i],
-    ['ap', /all\s*pass|\bap\b/i],
+    ['ap', /all\s*pass|\bap\d*\b/i],
     ['off', /\boff\b|bypass/i],
 ];
 
@@ -371,20 +382,30 @@ function isContinuous(cell) {
     return cell && (cell.kind === 'uni' || cell.kind === 'fader' || cell.kind === 'bip');
 }
 
-/* Resolve the bank's filter MODE, if it publishes one. Looks for an enum whose
- * name mentions filter mode/type, then maps its CURRENT option to a curve id. */
-function detectFilterMode(bank, values) {
-    for (const cell of bank.cells) {
-        if (!cell || !cell.key || cell.kind !== 'enumc') continue;
-        const nm = String(cell.label || '') + ' ' + String(cell.key || '').replace(/_/g, ' ');
-        if (!/\b(filter|vcf|flt)\b/i.test(nm) || !/\b(mode|type|slope|shape)\b/i.test(nm)) continue;
-        const v = values ? values[cell.key] : null;
-        const opt = (cell.options && v != null) ? cell.options[Math.round(v)] : null;
-        if (!opt) continue;
-        for (const [id, re] of FILT_MODE_WORDS) if (re.test(String(opt))) return id;
-        return 'lp';        /* published a mode we don't recognise */
+/* The module's filter-MODEL enum, searched MODULE-WIDE rather than per bank.
+ * A module typically publishes filter_type on its filter page only, while
+ * cutoff/resonance are re-listed as convenience knobs on several others
+ * (noisemaker does exactly this on root/fenv/env3). Resolving the mode only
+ * from the current bank meant those pages always drew lp no matter what model
+ * the filter was actually set to. */
+export function findFilterModeCell(banks) {
+    for (const b of banks) {
+        for (const cell of b.cells) {
+            if (!cell || !cell.key || cell.kind !== 'enumc' || !cell.options) continue;
+            const nm = String(cell.label || '') + ' ' + String(cell.key || '').replace(/_/g, ' ');
+            if (!/\b(filter|vcf|flt)\b/i.test(nm)) continue;
+            if (!/\b(mode|type|model|slope|shape)\b/i.test(nm)) continue;
+            return { key: cell.key, options: cell.options };
+        }
     }
-    return null;            /* no mode enum — caller defaults to lp */
+    return null;
+}
+
+/* Map a mode enum's CURRENT option string to a curve id. */
+export function modeIdFor(optionText) {
+    if (!optionText) return null;
+    for (const [id, re] of FILT_MODE_WORDS) if (re.test(String(optionText))) return id;
+    return 'lp';            /* published a model we don't recognise */
 }
 
 export function detectFilterViz(bank) {
@@ -418,11 +439,18 @@ export function filterVizFor(bank, values) {
         }
         return 0;
     };
+    /* Mode comes from the module-wide model enum, whose value the caller polls
+     * even when it lives on another page (see pollValues). */
+    let mode = 'lp';
+    if (f.modeKey && f.modeOptions && values) {
+        const v = values[f.modeKey];
+        if (v != null) mode = modeIdFor(f.modeOptions[Math.round(v)]) || 'lp';
+    }
     return {
         start: f.start,
         cutoffNorm: normOf(f.cutoffKey),
         resoNorm: normOf(f.resoKey),
-        mode: detectFilterMode(bank, values) || 'lp',
+        mode,
     };
 }
 
@@ -547,6 +575,14 @@ export function discover(slot, comp) {
         const f = detectFilterViz(b);
         b.filt = (f && !overlapsEnv(f, b.env)) ? f : null;
         if (b.filt) { filtCount++; filtPairs.push(b.filt.cutoffKey + '/' + b.filt.resoKey); }
+    }
+    /* One model enum for the whole module, shared by every page that draws a
+     * curve — including the pages that do not carry the enum themselves. */
+    const modeCell = findFilterModeCell(banks);
+    if (modeCell) {
+        for (const b of banks) {
+            if (b.filt) { b.filt.modeKey = modeCell.key; b.filt.modeOptions = modeCell.options; }
+        }
     }
 
     /* Why this module landed on this path. `hierReason` is the interesting field

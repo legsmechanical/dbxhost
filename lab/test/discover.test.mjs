@@ -27,8 +27,8 @@ globalThis.shadow_get_ui_slot = () => 0;
 globalThis.host_read_file = () => null;
 globalThis.os = { readdir: () => [[], 0] };
 
-const { discover, shortLabel, deriveSections, activeSection, filterVizFor } =
-    await import('../ui_discover.mjs');
+const { discover, shortLabel, deriveSections, activeSection, filterVizFor,
+        modeIdFor, findFilterModeCell } = await import('../ui_discover.mjs');
 const { toRenderCell, parseValue, stepValue, commitString, formatValue } =
     await import('../ui_cells.mjs');
 
@@ -411,6 +411,50 @@ const clash = walkFixture(34, {
        { key: 'sustain', name: 'Sustain' }, { key: 'release', name: 'Release' }]));
 eq(clash.envCount, 1, 'the envelope still wins its cells');
 eq(clash.filtCount, 0, 'no filter is claimed over envelope cells');
+
+
+/* ---- filter MODEL mapping ------------------------------------------------
+ * noisemaker's real option list. \b..\b alone does NOT match "HP24" — there
+ * is no word boundary between letters and digits — so every sloped high/band
+ * pass silently drew a low-pass until \d* was added. */
+
+eq(modeIdFor('LP24'), 'lp', 'LP24 -> low pass (slope in the same token)');
+eq(modeIdFor('LP6'), 'lp', 'LP6 -> low pass');
+eq(modeIdFor('HP24'), 'hp', 'HP24 -> HIGH pass, not the lp default');
+eq(modeIdFor('BP24'), 'bp', 'BP24 -> BAND pass, not the lp default');
+eq(modeIdFor('Notch'), 'notch', 'Notch -> notch');
+eq(modeIdFor('SV-LP'), 'lp', 'SV-LP -> low pass');
+eq(modeIdFor('SV-HP'), 'hp', 'SV-HP -> high pass');
+eq(modeIdFor('SV-BP'), 'bp', 'SV-BP -> band pass');
+eq(modeIdFor('Moog'), 'lp', 'a named ladder model is a low pass, not a fallback');
+eq(modeIdFor('Moog2'), 'lp', 'Moog2 -> low pass');
+eq(modeIdFor('Wobble'), 'lp', 'an unrecognised model falls back to lp');
+eq(modeIdFor('Low Pass'), 'lp', 'spelled-out names still work');
+eq(modeIdFor('High Pass'), 'hp', 'spelled-out high pass');
+
+/* the model enum is found MODULE-WIDE, not just on the bank drawing the curve */
+const NM_OPTS = ['LP24','LP18','LP12','LP6','HP24','BP24','Notch',
+                 'SV-LP','SV-HP','SV-BP','Moog','Moog2'];
+const nm = walkFixture(40, {
+    root:   { knobs: ['wave', 'tune2', 'cutoff', 'resonance'] },
+    filter: { name: 'Filter', knobs: ['filter_type', 'cutoff', 'resonance', 'keyfollow'] },
+}, [ { key: 'wave', name: 'Wave', type: 'float', min: 0, max: 1 },
+     { key: 'tune2', name: 'Tune 2', type: 'float', min: 0, max: 1 },
+     { key: 'cutoff', name: 'Cutoff', type: 'float', min: 0, max: 1 },
+     { key: 'resonance', name: 'Resonance', type: 'float', min: 0, max: 1 },
+     { key: 'keyfollow', name: 'Key Follow', type: 'float', min: 0, max: 1 },
+     { key: 'filter_type', name: 'Filter Type', type: 'enum', options: NM_OPTS } ]);
+
+eq(nm.filtCount, 2, 'cutoff/resonance on both pages each draw a curve');
+const modeCell = findFilterModeCell(nm.banks);
+eq(modeCell.key, 'filter_type', 'the model enum is found module-wide');
+
+/* the ROOT page has no filter_type of its own, yet must still draw HP24 */
+const rootBank = nm.banks.find(b => b.cells.some(c => c && c.key === 'wave'));
+const vizRoot = filterVizFor(rootBank, { cutoff: 0.5, resonance: 0.3, filter_type: 4 });
+eq(vizRoot.mode, 'hp', 'a page without the model enum still draws the real model');
+const vizRootBp = filterVizFor(rootBank, { cutoff: 0.5, resonance: 0.3, filter_type: 5 });
+eq(vizRootBp.mode, 'bp', 'and follows it when the model changes');
 
 /* ---- report ---- */
 

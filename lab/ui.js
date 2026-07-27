@@ -178,6 +178,17 @@ function pollValues(force) {
         S.rawValues[cell.key] = raw;
         S.values[cell.key] = parseValue(cell, raw);
     }
+    /* One extra read: the filter MODEL enum usually lives on the filter page
+     * only, while cutoff/resonance are re-listed on several others. Without
+     * this those pages would draw a low-pass whatever the filter is set to. */
+    const mk = bank.filt && bank.filt.modeKey;
+    if (mk && !bank.cells.some(c => c && c.key === mk)) {
+        const raw = engineGet(S.slot, COMPONENT, mk);
+        if (raw != null) {
+            const idx = bank.filt.modeOptions.indexOf(String(raw).trim());
+            S.values[mk] = (idx >= 0) ? idx : (parseFloat(raw) || 0);
+        }
+    }
     S.dirty = true;
 }
 
