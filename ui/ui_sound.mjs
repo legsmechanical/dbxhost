@@ -628,7 +628,9 @@ function runDiscovery() {
     S.levels = res.levels || null;
     S.rootKey = res.rootKey || null;
     S.cpMap = res.cpMap || null;
-    S.sections = deriveSections(res.banks);
+    /* Kit-described modules ship their own section rows; only derive when a
+     * module didn't tell us how it wants to be grouped. */
+    S.sections = res.kitSections || deriveSections(res.banks);
     S.bankIdx = 0;
     S.values = {};
     S.rawValues = {};

@@ -38,6 +38,13 @@ the section into a versioned heading at release time.
 - **`Shift` + click on the block picker swaps a block's module.** Plain click
   opens it for editing.
 
+- **Modules with their own canvas UI now lay out the sound pages.** OB-Xd,
+  Noisemaker, DR32, String Machine, Palette and others ship a designed layout —
+  which knobs belong together, what order the banks go in, the abbreviations
+  that fit. dAVEBOx now uses that layout where a module has one, instead of
+  inferring its own, so those modules look and navigate the way their author
+  intended. Everything else is unchanged.
+
 ### Performance / UX
 - **The Settings menu is now `Shift + Step 2`.** It was on both that and
   `Shift + Note/Session`; the latter is the sound editor now. Everything in the

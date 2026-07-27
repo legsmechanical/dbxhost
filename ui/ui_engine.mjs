@@ -113,6 +113,102 @@ export function engineListModules(comp) {
     return result;
 }
 
+/* ---- canvaskit bank structure ----
+ *
+ * Modules built on schwung-canvaskit ship a generated canvas.js whose config is
+ * a HAND-AUTHORED bank layout: bank order, which params group together, 4-char
+ * labels chosen to fit, and which banks are envelopes. That is strictly better
+ * information than our own walk can derive, because it is intent rather than
+ * inference — so where a module publishes it, we use it.
+ *
+ * The config lives inside the generated file's IIFE and is not exported, but
+ * the kit attaches its internals to the overlay it does export:
+ *   globalThis.bank_editor._test = { BANKS, JUMP_SECTIONS, CONFIG, ... }
+ * `_test` is the kit's own test surface, NOT a published contract — a kit
+ * version bump could rename it. Every read below is therefore defensive and
+ * returns null on anything unexpected, so a rename degrades to our derived
+ * layout instead of breaking the editor.
+ *
+ * ⚠ THE HAZARD: shadow_load_ui_module evaluates the script into the SHARED
+ * QuickJS globalThis — the one davebox's own init/tick/onMidiMessage* live on.
+ * A module UI script may assign those. shadow_ui saves and restores them around
+ * every load for exactly this reason; not doing so would stop davebox ticking.
+ * Restore has to honour whether the property EXISTED, not just its value. */
+function moduleDirFor(comp, moduleId) {
+    const spec = COMPONENTS[comp];
+    if (!spec || !moduleId) return '';
+    const base = MODULES_BASE + '/' + spec.scanDir;
+    /* Directory name usually IS the id, but module.json is the authority — a
+     * mismatch would otherwise silently find no canvas. */
+    const direct = base + '/' + moduleId;
+    try {
+        const raw = host_read_file(direct + '/module.json');
+        if (raw && JSON.parse(raw).id === moduleId) return direct;
+    } catch (e) { /* fall through to the scan */ }
+    try {
+        const res = os.readdir(base);
+        const entries = (res && res[0]) || [];
+        for (const entry of entries) {
+            if (entry === '.' || entry === '..') continue;
+            try {
+                const raw = host_read_file(base + '/' + entry + '/module.json');
+                if (raw && JSON.parse(raw).id === moduleId) return base + '/' + entry;
+            } catch (e) { /* skip */ }
+        }
+    } catch (e) { /* no category dir */ }
+    return '';
+}
+
+export function engineLoadKitStructure(comp, moduleId) {
+    if (typeof shadow_load_ui_module !== 'function') return null;
+    const dir = moduleDirFor(comp, moduleId);
+    if (!dir) return null;
+    const path = dir + '/canvas.js';
+    if (typeof host_file_exists === 'function' && !host_file_exists(path)) return null;
+
+    const G = globalThis;
+    const had = {
+        init: Object.prototype.hasOwnProperty.call(G, 'init'),
+        tick: Object.prototype.hasOwnProperty.call(G, 'tick'),
+        mi:   Object.prototype.hasOwnProperty.call(G, 'onMidiMessageInternal'),
+        me:   Object.prototype.hasOwnProperty.call(G, 'onMidiMessageExternal'),
+        be:   Object.prototype.hasOwnProperty.call(G, 'bank_editor'),
+        co:   Object.prototype.hasOwnProperty.call(G, 'canvas_overlay'),
+        cos:  Object.prototype.hasOwnProperty.call(G, 'canvas_overlays'),
+    };
+    const saved = {
+        init: G.init, tick: G.tick,
+        mi: G.onMidiMessageInternal, me: G.onMidiMessageExternal,
+        be: G.bank_editor, co: G.canvas_overlay, cos: G.canvas_overlays,
+    };
+
+    let out = null;
+    try {
+        if (shadow_load_ui_module(path)) {
+            const t = G.bank_editor && G.bank_editor._test;
+            if (t && Array.isArray(t.BANKS) && t.BANKS.length) {
+                out = {
+                    banks: t.BANKS,
+                    sections: Array.isArray(t.JUMP_SECTIONS) ? t.JUMP_SECTIONS : null,
+                };
+            }
+        }
+    } catch (e) {
+        out = null;
+    }
+
+    /* Restore unconditionally — including on the throw path above. */
+    if (had.init) G.init = saved.init; else delete G.init;
+    if (had.tick) G.tick = saved.tick; else delete G.tick;
+    if (had.mi) G.onMidiMessageInternal = saved.mi; else delete G.onMidiMessageInternal;
+    if (had.me) G.onMidiMessageExternal = saved.me; else delete G.onMidiMessageExternal;
+    if (had.be) G.bank_editor = saved.be; else delete G.bank_editor;
+    if (had.co) G.canvas_overlay = saved.co; else delete G.canvas_overlay;
+    if (had.cos) G.canvas_overlays = saved.cos; else delete G.canvas_overlays;
+
+    return out;
+}
+
 /* ---- self-description (feeds ui_discover) ---- */
 
 /* `diag` records WHY a module ended up on the path it did. A silent fall back to

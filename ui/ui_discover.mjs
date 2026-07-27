@@ -23,7 +23,7 @@
  * flags, LFO slots) this rig has no use for.
  */
 
-import { engineDescribe } from './ui_engine.mjs';
+import { engineDescribe, engineLoadKitStructure, engineLoadedModule } from './ui_engine.mjs';
 
 export const CELLS_PER_BANK = 8;
 
@@ -165,6 +165,91 @@ function makeCell(key, meta) {
 export function blankCell() {
     return { key: null, label: '', short: '', kind: 'blank', type: 'blank',
              min: 0, max: 0, step: 0, sens: SENS_DELIBERATE, options: null };
+}
+
+/* ---- canvaskit adoption ------------------------------------------------
+ *
+ * The kit's cell vocabulary and ours are the same language — both descend from
+ * movy's widget set — so this is adoption, not translation. What it buys is
+ * INTENT over inference: the author's bank order and grouping, labels already
+ * chosen to fit 4 glyphs (so no shortLabel guessing), and real section rows.
+ *
+ * Kit kinds map as: unipolar/fader -> uni, bipolar -> bip, octave -> oct,
+ * count -> count, len/dir keep their names, and `enum` splits on option count
+ * exactly as makeCell does (<=2 reads as a toggle). Sensitivity is re-derived
+ * from OUR constants rather than copied, so knob feel stays uniform across
+ * kit-described and derived modules. */
+const KIT_KIND = {
+    unipolar: 'uni', fader: 'uni', bipolar: 'bip',
+    octave: 'oct', count: 'count', len: 'len', dir: 'dir',
+};
+
+function adoptKitCell(kc) {
+    if (!kc || !kc.key) return blankCell();
+    const label = String(kc.label || kc.key);
+    const options = Array.isArray(kc.options) ? kc.options : null;
+
+    let kind = KIT_KIND[kc.kind] || null;
+    if (!kind) {
+        if (kc.kind === 'enum') {
+            kind = (options && options.length <= 2) ? 'tog'
+                 : (options && looksFractional(options)) ? 'len'
+                 : (options && looksDirectional(options)) ? 'dir'
+                 : 'enumc';
+        } else {
+            /* A kit kind we don't model (mod-slot boxes, HUD cells). Keep the
+             * row with its value rather than dropping a param the author
+             * deliberately placed. */
+            kind = 'uni';
+        }
+    }
+    const isEnum = (kind === 'tog' || kind === 'enumc' || kind === 'len' || kind === 'dir');
+    const sens = isEnum
+        ? (options && options.length <= 2 ? SENS_DELIBERATE : SENS_PICK)
+        : (kind === 'count' || kind === 'oct') ? SENS_PICK : SENS_CONTINUOUS;
+
+    return {
+        key: kc.key,
+        label,
+        /* Kit labels are already <=4 chars by construction — re-shortening
+         * them would only mangle deliberate abbreviations. */
+        short: label.length <= 4 ? label : shortLabel(label),
+        kind,
+        type: isEnum ? 'enum' : 'int',
+        min: kc.min != null ? Number(kc.min) : 0,
+        max: kc.max != null ? Number(kc.max) : 100,
+        step: kc.step != null ? Number(kc.step) : 1,
+        sens,
+        options,
+    };
+}
+
+/* Returns {banks, sections} in OUR shape, or null if the structure is unusable
+ * — every caller must be able to fall back to the derived walk. */
+export function adoptKitStructure(kit) {
+    if (!kit || !Array.isArray(kit.banks) || !kit.banks.length) return null;
+    const banks = [];
+    for (const kb of kit.banks) {
+        if (!kb) continue;
+        const cells = (Array.isArray(kb.knobs) ? kb.knobs : []).map(adoptKitCell);
+        if (!cells.some(c => c && c.key)) continue;     /* an all-blank bank is noise */
+        banks.push(padToBank(String(kb.label || kb.name || ''), cells));
+    }
+    if (!banks.length) return null;
+
+    /* Envelope banks are re-detected from the adopted cells rather than trusted
+     * from the kit's `env: true` flag, so the graphic's stage INDICES come from
+     * the same code path as every other module. */
+    for (const b of banks) b.env = detectEnvelope(b);
+
+    let sections = null;
+    if (Array.isArray(kit.sections) && kit.sections.length) {
+        sections = kit.sections
+            .filter(s => s && typeof s.bank === 'number' && s.bank >= 0 && s.bank < banks.length)
+            .map(s => ({ name: String(s.name || banks[s.bank].name), bank: s.bank }));
+        if (!sections.length) sections = null;
+    }
+    return { banks, sections };
 }
 
 /* ---- bank assembly ----------------------------------------------------- */
@@ -585,6 +670,24 @@ export function discover(slot, comp) {
         addLevel(banks, 'Files', orphanFiles.map(k => cellFor(k, null)));
     }
 
+    /* A canvaskit module publishes the layout its author actually designed —
+     * bank order, grouping, fitted labels. Prefer it over our own inference,
+     * but only AFTER the walk has run, so a kit that fails to load or exposes
+     * nothing usable falls back to a fully-built derived layout rather than an
+     * empty editor. Swapped in place so every check below (envelopes, filter
+     * curves, the module-wide model enum) runs over the adopted banks. */
+    let kitSections = null;
+    const kitModuleId = engineLoadedModule(slot, comp);
+    if (kitModuleId) {
+        const adopted = adoptKitStructure(engineLoadKitStructure(comp, kitModuleId));
+        if (adopted) {
+            banks.length = 0;
+            for (const b of adopted.banks) banks.push(b);
+            kitSections = adopted.sections;
+            source = 'canvaskit';
+        }
+    }
+
     let paramCount = 0, envCount = 0, filtCount = 0;
     const filtPairs = [];
     for (const b of banks) {
@@ -620,6 +723,9 @@ export function discover(slot, comp) {
 
     return {
         banks, paramCount, source, hierReason, envCount, filtCount, filtPairs,
+        /* Author-authored section rows when the kit supplied them; null
+         * means the caller should derive its own. */
+        kitSections,
         presetSpec: findPresetSpec(levels),
         /* The RAW hierarchy, for the menu. The knob pages above are a lossy
          * projection: buildLevelPages reads `knobs` only and uses `params`

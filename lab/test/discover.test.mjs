@@ -28,7 +28,8 @@ globalThis.host_read_file = () => null;
 globalThis.os = { readdir: () => [[], 0] };
 
 const { discover, shortLabel, deriveSections, activeSection, filterVizFor,
-        modeIdFor, findFilterModeCell, findPresetSpec, menuRows } = await import('../../ui/ui_discover.mjs');
+        modeIdFor, findFilterModeCell, findPresetSpec, menuRows,
+        adoptKitStructure } = await import('../../ui/ui_discover.mjs');
 const { toRenderCell, parseValue, stepValue, commitString, formatValue } =
     await import('../../ui/ui_cells.mjs');
 
@@ -520,6 +521,52 @@ eq(menuRows({ a: { params: [], children: 'None' } }, 'a', {}), [],
 eq(menuRows({ a: { params: [], children: ['b'] }, b: { name: 'B' } }, 'a', {})
        .map(r => r.label),
    ['B'], 'children edges become rows too (dexed operators are only reachable that way)');
+
+/* ---- canvaskit structure adoption ----
+ * A kit module publishes the layout its author designed. Adoption must keep
+ * their bank ORDER, their fitted labels, and their sections — and must return
+ * null (never a half-built layout) when the structure is unusable, because the
+ * caller's fallback is the derived walk. */
+
+const KIT = {
+    banks: [
+        { label: 'Osc 1', knobs: [
+            { key: 'osc1_saw', label: 'Saw', kind: 'enum', min: 0, max: 1, step: 1, options: ['Off', 'On'] },
+            { key: 'osc1_pitch', label: 'Ptch', kind: 'unipolar', min: 0, max: 100, step: 1 },
+        ] },
+        { label: 'Amp Env', env: true, knobs: [
+            { key: 'attack',  label: 'A', kind: 'fader', min: 0, max: 100, step: 1 },
+            { key: 'decay',   label: 'D', kind: 'fader', min: 0, max: 100, step: 1 },
+            { key: 'sustain', label: 'S', kind: 'fader', min: 0, max: 100, step: 1 },
+            { key: 'release', label: 'R', kind: 'fader', min: 0, max: 100, step: 1 },
+        ] },
+        { label: 'Global', knobs: [
+            { key: 'octave', label: 'Oct', kind: 'octave', min: -2, max: 2, step: 1 },
+            { key: 'voice_count', label: 'Vcs', kind: 'count', min: 1, max: 8, step: 1 },
+        ] },
+    ],
+    sections: [{ name: 'OSC', bank: 0 }, { name: 'ENV', bank: 1 }],
+};
+
+const kitAd = adoptKitStructure(KIT);
+eq(kitAd.banks.map(b => b.name), ['Osc 1', 'Amp Env', 'Global'], 'author bank ORDER is kept');
+eq(kitAd.banks[0].cells.length, 8, 'banks are padded to 8 cells like every other path');
+eq(kitAd.banks[0].cells[0].kind, 'tog', 'a 2-option kit enum reads as a toggle');
+eq(kitAd.banks[0].cells[1].kind, 'uni', 'unipolar -> uni');
+eq(kitAd.banks[2].cells[0].kind, 'oct', 'octave -> oct');
+eq(kitAd.banks[2].cells[1].kind, 'count', 'count -> count');
+eq(kitAd.banks[1].cells[0].kind, 'uni', 'fader -> uni (we have no separate fader widget)');
+eq(kitAd.banks[0].cells[1].short, 'Ptch',
+   'kit labels are already <=4 chars — re-shortening would mangle them');
+eq(!!kitAd.banks[1].env, true, 'an ADSR bank still gets its envelope graphic');
+eq(kitAd.sections, [{ name: 'OSC', bank: 0 }, { name: 'ENV', bank: 1 }], 'author sections kept');
+
+eq(adoptKitStructure(null), null, 'no structure = null, so the caller falls back');
+eq(adoptKitStructure({ banks: [] }), null, 'empty banks = null');
+eq(adoptKitStructure({ banks: [{ label: 'X', knobs: [] }] }), null,
+   'a bank with no real cells is not a layout');
+eq(adoptKitStructure({ banks: KIT.banks, sections: [{ name: 'Bad', bank: 99 }] }).sections, null,
+   'out-of-range sections are dropped rather than pointing at a missing bank');
 
 /* ---- report ---- */
 
