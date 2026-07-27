@@ -160,7 +160,7 @@ is mechanical, but almost every kit feature is driven by a hand-authored
 | `env: true` / `{startCol,…}` | `detectEnvelope` — A/D/S/R name run in one row |
 | `filterViz: {cutoffKey, resoKey, mode}` | **infer from names**; unknown mode → `lp` |
 | LFO viz keys | **infer from names** |
-| `icons[]` | **no source** — would need a name→icon heuristic |
+| `icons[]` | **out of scope** (Josh, 07-26) — no inferable source; skipped rather than guessed |
 | `defaults` | n/a — the engine already holds live values |
 
 **Read this before adding a widget:** if it lands in class B, the renderer is
