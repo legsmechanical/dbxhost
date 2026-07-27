@@ -543,6 +543,14 @@ export const S = {
      * { id, label } (id reused = overwrite). */
     pendingSnapshotCopy: null,
     pendingEditEntryTrack: -1,  /* Shift+Note/Session: deferred "edit this track's sound". -1 = none; track idx = fire on Shift release so Shift state doesn't leak into Move firmware (Move-routed tracks enter co-run, where the shim starts forwarding Shift) */
+    /* Session View: the 8 param knobs drive the LEVEL of the Schwung slot(s)
+     * each track plays through (knob N -> track N). Per-track because a track's
+     * channel can be received by SEVERAL slots (layering, or a slot set to
+     * "All"), and all of them move together. -1 = not yet resolved/read. */
+    sessVolSlots: new Array(8).fill(-1),   /* bitmask of matching slots */
+    sessVolLevel: new Array(8).fill(-1),   /* 0..4 gain, 1 = unity */
+    sessVolPending: new Array(8).fill(false),
+    sessVolSaveOwed: false,
     pendingSoundEnterTrack: -1, /* Sound mode entry queued from the Shift-release dispatch. Slot resolution needs shadow_get_slots, which must run in tick context — same deferral as pendingSchwungCoRunTrack. */
     pendingUndoSync: 0,
     pendingDefaultSetParams: [],

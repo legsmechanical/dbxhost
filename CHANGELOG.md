@@ -51,6 +51,12 @@ the section into a versioned heading at release time.
   menu is unchanged.
 - **`Shift + Step 3` no longer opens the instrument editor** — `Shift +
   Note/Session` is the one way in.
+- **In Session View the eight knobs set each track's Schwung level** — knob 1 is
+  track 1, and so on. A track layered across several chain slots moves all of
+  them together; a track that isn't Schwung-routed does nothing. Levels are
+  saved once you stop turning.
+- **Fixed: turning a knob in Session View used to edit the focused track's
+  parameters** — invisibly, since the session grid doesn't show them.
 - **The Volume knob sets the chain slot's level while you're in sound mode.**
   Plain Volume, no modifier — Move's master volume is left alone until you
   leave. A read-out shows the level over whatever page you're on, and it's

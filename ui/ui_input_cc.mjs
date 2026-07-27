@@ -2648,6 +2648,33 @@ function _onCC_stepedit(d1, d2) {
 
 }
 
+/* Adjust one track's slot level. Resolution and the engine writes both happen
+ * in tick(): schSlotsForTrack calls shadow_get_slots, and the writes are
+ * synchronous SHM round-trips — neither belongs in a MIDI handler. Here we only
+ * move a number and raise a flag. A track with no Schwung slot does nothing,
+ * which is the honest answer: there is no level to move. */
+const SESSVOL_STEP = 1 / 64;   /* matches sound mode: unity in ~64 detents */
+
+function _sessionKnobVolume(knobIdx, d2) {
+    if (knobIdx >= NUM_TRACKS) return;
+    if (S.trackRoute[knobIdx] !== 0) return;      /* not Schwung-routed */
+    if (S.sessVolSlots[knobIdx] === 0) return;    /* resolved, and no slot */
+    const lvl = S.sessVolLevel[knobIdx];
+    if (lvl < 0) return;                          /* not read yet; tick will */
+    const d = ccKnobDelta(d2, knobIdx);
+    if (!d) return;
+    let v = lvl + d * SESSVOL_STEP;
+    if (v < 0) v = 0;
+    if (v > 4) v = 4;
+    if (v === lvl) return;
+    S.sessVolLevel[knobIdx] = v;
+    S.sessVolPending[knobIdx] = true;
+    /* Flagged at change time, not on capacitive release: tick flushes once the
+     * writes settle, so it persists even if the knob was never touch-reported. */
+    S.sessVolSaveOwed = true;
+    showActionPopup('TRACK ' + (knobIdx + 1) + ' LEVEL', v.toFixed(2) + 'x');
+}
+
 function _onCC_knobs(d1, d2) {
     /* Knob CCs 71-78: apply delta to active bank parameter.
      * Relative encoder: d2 1-63 = CW (+1), d2 64-127 = CCW (-1).
@@ -2661,6 +2688,16 @@ function _onCC_knobs(d1, d2) {
         S.knobTouched          = knobIdx;
         S.knobTurnedTick[knobIdx] = S.tickCount;
         S.screenDirty = true;
+
+        /* SESSION VIEW: knob N is track N's Schwung slot level.
+         *
+         * This also closes a real hole. S.activeBank stays live across the view
+         * switch, so before this every knob turn in the session grid was
+         * editing the ACTIVE track's bank params — invisibly, since the grid
+         * doesn't draw them. Returning here means the session grid no longer
+         * reaches the bank editor at all. */
+        if (S.sessionView) { _sessionKnobVolume(knobIdx, d2); return; }
+
         const bank    = S.activeBank;
         /* Arp Steps interval-mode overlay: K1-K8 set per-step scale-degree
          * offset (±24) for SEQ ARP (bank 4, per-clip) or TARP (bank 5, per-track).
