@@ -309,8 +309,14 @@ function _onMidiInternalImpl(data) {
      * the full detent stream to us in overtake mode — processing every one
      * competes with sequencer/MIDI output and stutters playback. Drop them
      * immediately so volume adjustment stays entirely Move-native. */
-    if ((status & 0xF0) === 0xB0 && d1 === 79) return;
-    if (((status & 0xF0) === 0x90 || (status & 0xF0) === 0x80) && d1 === 8) return;
+    /* ...EXCEPT in sound mode, which claims the knob (host_vol_block) to drive
+     * the chain slot's level. The drop stays for every other view: processing
+     * every detent there competes with sequencer output for nothing, since
+     * dAVEBOx has no use for the knob. */
+    if (!soundActive()) {
+        if ((status & 0xF0) === 0xB0 && d1 === 79) return;
+        if (((status & 0xF0) === 0x90 || (status & 0xF0) === 0x80) && d1 === 8) return;
+    }
 
     /* AUTO-bank Delete-tap detection: any input other than the Delete button
      * itself while Delete is armed disqualifies the tap, so Delete+jog /

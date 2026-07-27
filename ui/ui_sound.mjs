@@ -24,6 +24,7 @@ import {
     COMPONENTS, PRESET_ROOT, engineGet, engineSet, engineListModules,
     engineLoadModule, engineLoadedModule, engineGetState, engineSetState,
     engineListUserPresets, engineReadUserPreset,
+    engineGetSlotParam, engineSetSlotParam, engineSaveState, engineVolBlock,
 } from './ui_engine.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
@@ -73,6 +74,12 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
 const PREVIEW_DELAY_TICKS = 15;
 const BAKED_SCAN_PER_TICK = 2;   /* same SHM budget as the write drain */
 const SAVE_ROW = 0;
+
+/* slot:volume is a 0..4 gain, host-clamped, 1.0 = unity. A detent of 1/64 gives
+ * unity in ~64 detents and the full range in ~256 — a sweep without being
+ * twitchy near unity, which is where it matters. */
+const VOL_MIN = 0, VOL_MAX = 4, VOL_STEP = 1 / 64;
+const VOL_SHOW_TICKS = 94;      /* ~1s readout after the last turn */
 
 /* Poll cadences, in ticks (~94Hz). Deliberately slower than the lab rig's flat
  * 8 — davebox's tick is already busy, so idle refresh is cheap and the
@@ -161,6 +168,15 @@ const S = {
     tickCount: 0,
     dirty: true,
     ledDirty: false,   /* text entry repainted the pads; davebox must re-assert */
+
+    /* Slot level on the master knob. Claimed for the whole of sound mode, so
+     * plain Volume means "this chain's level" and Move's master is untouched
+     * until you leave. */
+    volLevel: 1,
+    volShownUntil: -1,
+    volTouched: false,
+    volDirtySave: false,   /* level changed since the last persist */
+    volPending: false,     /* level write owed to the engine (drained in tick) */
 };
 
 function log(msg) {
@@ -201,6 +217,7 @@ export function soundEnter(track, slot) {
     S.pendingWrites.length = 0;
     S.blockNames = [];
     S.pendingAction = { t: 'names' };
+    claimVolume(slot);
     S.dirty = true;
     log('enter: track ' + track + ' slot ' + slot);
 }
@@ -243,6 +260,15 @@ export function soundRetarget(track, slot) {
     S.presetMsg = '';
     S.pendingDiscover = 0;
     S.pendingAction = { t: 'retarget' };
+    /* Persist the OLD slot's level before the reading moves — the claim itself
+     * stays up, we're still in sound mode. */
+    if (S.volPending) {                    /* land it on the OLD slot first */
+        S.volPending = false;
+        engineSetSlotParam(S.slot, 'volume', S.volLevel.toFixed(3));
+    }
+    flushVolumeSave();
+    S.volLevel = readSlotVolume(slot);
+    S.volShownUntil = -1;
     S.dirty = true;
     log('retarget: track ' + track + ' slot ' + slot + ' comp ' + S.comp);
 }
@@ -252,6 +278,7 @@ export function soundExit() {
      * S.active — so leaving with it open would strand it: still "active", never
      * fed another message, never drawn. Close it first. */
     if (isTextEntryActive()) closeTextEntry();
+    releaseVolume();
     S.active = false;
     S.pendingWrites.length = 0;
     S.pendingAction = null;
@@ -263,6 +290,63 @@ export function soundExit() {
 /* Which module each block holds — drives the picker and the empty-block flow. */
 function refreshBlockNames() {
     S.blockNames = BLOCKS.map(b => engineLoadedModule(S.slot, b.comp) || '');
+}
+
+/* ---- slot level on the master knob ----
+ *
+ * Plain Volume, for the whole of sound mode. Shift+Volume was the obvious
+ * gesture and is unavailable: the host reserves Shift+Vol as its shadow-UI
+ * entry prefix (Settings / Tools), and the shim eats it before a module sees
+ * it. Claiming the knob outright avoids the collision and needs no modifier.
+ *
+ * The claim is what stops Move ALSO moving its master level and covering the
+ * screen with its own volume overlay — CC 79 and touch note 8 are passed to
+ * Move unconditionally otherwise, ahead of and independent of the module's
+ * button_passthrough list, so there is no module.json way to opt out. */
+function readSlotVolume(slot) {
+    const raw = engineGetSlotParam(slot, 'volume');
+    const v = parseFloat(raw);
+    return (isFinite(v) && v >= 0) ? v : 1;
+}
+
+function claimVolume(slot) {
+    S.volLevel = readSlotVolume(slot);
+    S.volShownUntil = -1;
+    S.volTouched = false;
+    S.volDirtySave = false;
+    engineVolBlock(true);
+}
+
+function releaseVolume() {
+    flushVolumeSave();
+    S.volTouched = false;
+    S.volShownUntil = -1;
+    engineVolBlock(false);
+}
+
+/* The host's slot:volume setter updates runtime state but never persists, so
+ * the write and the SAVE are separate acts. Saving is a synchronous file write,
+ * so it happens once when the gesture ends — never per detent. */
+function flushVolumeSave() {
+    if (!S.volDirtySave) return;
+    S.volDirtySave = false;
+    engineSaveState();
+}
+
+function onVolumeTurn(delta) {
+    let v = S.volLevel + delta * VOL_STEP;
+    if (v < VOL_MIN) v = VOL_MIN;
+    if (v > VOL_MAX) v = VOL_MAX;
+    if (v === S.volLevel) return;
+    S.volLevel = v;
+    S.volDirtySave = true;
+    S.volShownUntil = S.tickCount + VOL_SHOW_TICKS;
+    /* Queued, NOT written here — this runs in the MIDI handler and
+     * engineSetSlotParam is a synchronous SHM round-trip. A single flag is
+     * enough: the level is one value, so a fast spin coalesces to one write per
+     * tick for free. Drained in soundTick with everything else. */
+    S.volPending = true;
+    S.dirty = true;
 }
 
 /* ---- discovery ---- */
@@ -824,6 +908,12 @@ export function soundOnCC(d1, d2, decodeDelta) {
         return false;                                  /* davebox also tracks it */
     }
 
+    if (d1 === 79) {                                   /* master knob = slot level */
+        const delta = decodeDelta(d2);
+        if (delta) onVolumeTurn(delta);
+        return true;
+    }
+
     if (d1 >= 71 && d1 <= 78) {                        /* knobs 1-8 */
         if (S.view !== VIEW_EDIT) return true;
         const delta = decodeDelta(d2);
@@ -963,8 +1053,21 @@ export function soundOnCC(d1, d2, decodeDelta) {
 /* Capacitive knob touch (notes 0-7). Touch HIGHLIGHTS; a turn within that touch
  * is what reveals the zoom/picker. */
 export function soundOnNote(status, d1, d2) {
-    if (!S.active || d1 > 7) return false;
+    if (!S.active) return false;
     if (status !== 0x90 && status !== 0x80) return false;
+
+    /* Note 8 = volume-knob touch. Its RELEASE is the end of the gesture, and
+     * the only moment worth persisting: the host's slot:volume setter doesn't
+     * save, and saving is a synchronous file write. */
+    if (d1 === 8) {
+        const on = (status === 0x90 && d2 >= 64);
+        if (S.volTouched && !on) flushVolumeSave();
+        S.volTouched = on;
+        S.volShownUntil = on ? (S.tickCount + VOL_SHOW_TICKS * 4) : S.tickCount + VOL_SHOW_TICKS;
+        S.dirty = true;
+        return true;
+    }
+    if (d1 > 7) return false;
     const on = (status === 0x90 && d2 >= 64);
     const next = on ? d1 : -1;
     if (next !== S.touchedIdx) {
@@ -1009,6 +1112,11 @@ export function soundTick() {
     for (let n = 0; n < WRITES_PER_TICK && S.pendingWrites.length; n++) {
         const w = S.pendingWrites.shift();
         engineSet(w.slot, w.comp, w.key, w.val);
+    }
+
+    if (S.volPending) {
+        S.volPending = false;
+        engineSetSlotParam(S.slot, 'volume', S.volLevel.toFixed(3));
     }
 
     /* One heavy job per tick, and never on top of pending writes: a discovery
@@ -1224,6 +1332,22 @@ function renderFile() {
                st.selectedIndex, 'EMPTY');
 }
 
+/* Level read-out. Drawn OVER whichever view is up rather than as its own
+ * screen: the knob is live everywhere in sound mode, so it has to be readable
+ * from everywhere, and it should not cost you your place. */
+function drawVolReadout() {
+    const pct = Math.round((S.volLevel / VOL_MAX) * 100);
+    const txt = 'LEVEL  ' + (S.volLevel).toFixed(2) + 'x';
+    const w = 100, h = 22, x = (128 - w) >> 1, y = 21;
+    fill_rect(x, y, w, h, 0);
+    draw_rect(x, y, w, h, 1);
+    mvPrint(x + 5, y + 4, txt, 1);
+    const bw = w - 10;
+    draw_rect(x + 5, y + 14, bw, 4, 1);
+    const fillw = Math.max(0, Math.min(bw, Math.round(bw * pct / 100)));
+    if (fillw > 0) fill_rect(x + 5, y + 14, fillw, 4, 1);
+}
+
 export function soundRender() {
     if (!S.active) return false;
     if (isTextEntryActive()) { drawTextEntry(); return true; }
@@ -1235,5 +1359,6 @@ export function soundRender() {
     else if (S.view === VIEW_MENU) renderMenu();
     else if (S.view === VIEW_FILE) renderFile();
     else renderEdit();
+    if (S.volShownUntil >= 0 && S.tickCount <= S.volShownUntil) drawVolReadout();
     return true;
 }

@@ -55,6 +55,41 @@ export function engineSet(slot, comp, key, val) {
     return shadow_set_param(slot, comp + ':' + key, String(val));
 }
 
+/* SLOT-level params (volume, muted, send_a...) live on the slot itself, not on
+ * a component — same shadow_get/set_param call, different key namespace
+ * ("slot:volume"). Kept here with every other key-building call per this file's
+ * port-surface rule. `slot:volume` is a 0..4 gain, host-clamped, 1.0 = unity.
+ *
+ * NOTE: the host's setter updates runtime state and the UI mirror but does NOT
+ * persist — call engineSaveState() once a gesture ends, not per detent. */
+export function engineGetSlotParam(slot, key) {
+    return shadow_get_param(slot, 'slot:' + key);
+}
+
+export function engineSetSlotParam(slot, key, val) {
+    return shadow_set_param(slot, 'slot:' + key, String(val));
+}
+
+/* Flush chain state to disk. shadow_ui.js defines this global and it already
+ * persists slot volumes/channels/mute/solo, so no host change was needed to
+ * make slot level survive a reboot. Synchronous file write — call it at the END
+ * of a gesture. */
+export function engineSaveState() {
+    if (typeof shadow_save_state_now === 'function') return !!shadow_save_state_now();
+    return false;
+}
+
+/* Runtime claim on the master volume knob: suppresses CC 79 + touch note 8 from
+ * reaching Move firmware, so the knob can mean something else without Move also
+ * moving its master level and covering the screen with its overlay. Requires
+ * the host's host_vol_block (fork). Gated on typeof so an unpatched host simply
+ * doesn't claim it — the editor still works, Move's volume just moves too. */
+export function engineVolBlock(on) {
+    if (typeof host_vol_block !== 'function') return false;
+    host_vol_block(on ? 1 : 0);
+    return true;
+}
+
 /* Batched reads. shadow_get_params(slot, key, value) exists but its wire format
  * is defined shim-side and undocumented in the JS contract, so this loops for
  * now. Callers already treat it as one call, so switching to the bulk path

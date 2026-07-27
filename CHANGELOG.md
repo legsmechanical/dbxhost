@@ -51,6 +51,11 @@ the section into a versioned heading at release time.
   menu is unchanged.
 - **`Shift + Step 3` no longer opens the instrument editor** — `Shift +
   Note/Session` is the one way in.
+- **The Volume knob sets the chain slot's level while you're in sound mode.**
+  Plain Volume, no modifier — Move's master volume is left alone until you
+  leave. A read-out shows the level over whatever page you're on, and it's
+  saved when you let go of the knob. *Requires the patched Schwung host; on an
+  unpatched one Move's master moves too.*
 - **Note/Session leaves sound mode from anywhere.** Back still steps out one
   level at a time; Note/Session drops you straight back to the sequencer no
   matter how deep you are — the same button that opened it.
