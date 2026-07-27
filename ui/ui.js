@@ -8,12 +8,14 @@
 import {
     MoveUp,
     MoveDown,
-    MoveDelete
+    MoveDelete,
+    MoveBack
 } from '/data/UserData/schwung/shared/constants.mjs';
 
 import {
     setButtonLED,
-    isNoiseMessage
+    isNoiseMessage,
+    decodeDelta
 } from '/data/UserData/schwung/shared/input_filter.mjs';
 
 import {
@@ -47,6 +49,7 @@ import { recordNoteOn, recordNoteOff,
     extHeldNotes, extCountInCapture } from './ui_record.mjs';
 import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons } from './ui_input_pads.mjs';
 import { _onCCMsg } from './ui_input_cc.mjs';
+import { soundActive, soundExit, soundOnCC, soundOnNote } from './ui_sound.mjs';
 import { _tickImpl, applyExtMidiRemap } from './ui_tick.mjs';
 
 /* ------------------------------------------------------------------ */
@@ -161,6 +164,10 @@ globalThis.init = function () {
      * relaunch does not reset shadow_control). */
     S.schwungCoRunSlot = -1;
     S.moveCoRunTrack = -1;
+    /* Same reasoning for sound mode: init() re-runs in the SAME runtime on
+     * resume, so ui_sound.mjs's module-scope state survives. Start closed. */
+    if (soundActive()) soundExit();
+    S.pendingSoundEnterTrack = -1;
     if (typeof shadow_corun_end === 'function') shadow_corun_end();
     assertOvertakeSysexSuppress();
     if (S.bankParams === null)
@@ -343,6 +350,21 @@ function _onMidiInternalImpl(data) {
         if (!isRelease && !isScroll) return;
     }
 
+
+    /* SOUND MODE owns the knobs (CC 71-78 + their capacitive touch notes 0-7),
+     * the jog, and Back — and nothing else. Everything it declines falls
+     * through untouched, so pads, step buttons and transport keep sequencing
+     * while a synth is being dialled. Both hooks sit ahead of dAVEBOx's own
+     * knob/CC handling because that is exactly what they replace.
+     *
+     * Back is the one shared button: sound mode takes a plain Back as "step
+     * out", but Shift+Back is dAVEBOx's save-and-exit and must keep working
+     * from anywhere — so it is never offered. (Hold-Back-to-suspend does not
+     * reach _handleBack while sound mode is up; Back means step-out there,
+     * and Shift+Back is the full exit.) */
+    if (soundActive() && soundOnNote(status, d1, d2)) return;
+    if (status === 0xB0 && soundActive() && !(d1 === MoveBack && S.shiftHeld) &&
+            soundOnCC(d1, d2, decodeDelta)) return;
 
     /* Knob touch (notes 0-7). MoveKnob1-8Touch = notes 0-7.
      * Hardware: d2=127 = touch on; d2 in 0-63 (via 0x90 or 0x80) = touch off.

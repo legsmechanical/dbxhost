@@ -542,7 +542,8 @@ export const S = {
      * file is on disk by then, so the copy-into-snapshot runs in tick().
      * { id, label } (id reused = overwrite). */
     pendingSnapshotCopy: null,
-    pendingEditEntryTrack: -1,  /* Shift+Step3: deferred co-run entry. -1 = none; track idx = fire on Shift release so Shift state doesn't leak into Move/Schwung */
+    pendingEditEntryTrack: -1,  /* Shift+Note/Session: deferred "edit this track's sound". -1 = none; track idx = fire on Shift release so Shift state doesn't leak into Move firmware (Move-routed tracks enter co-run, where the shim starts forwarding Shift) */
+    pendingSoundEnterTrack: -1, /* Sound mode entry queued from the Shift-release dispatch. Slot resolution needs shadow_get_slots, which must run in tick context — same deferral as pendingSchwungCoRunTrack. */
     pendingUndoSync: 0,
     pendingDefaultSetParams: [],
     clearDrainHold: 0,       /* clearClip sets this so the next pendingDefaultSetParams drain skips one tick — keeps the queued _clear out of the same buffer as the sync set_param fan-out from clearClip's call site */

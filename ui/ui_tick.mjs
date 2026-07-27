@@ -49,6 +49,7 @@ import { pollDSP,
 import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes } from './ui_record.mjs';
 import { xposeCancelPreview } from './ui_xpose.mjs';
 import { checkBackHold, backTapWouldAct } from './ui_input_cc.mjs';
+import { soundActive, soundEnter, soundExit, soundTick, soundDirty } from './ui_sound.mjs';
 
 const BANK_DISPLAY_TICKS = 94;  /* ~1000ms at 94Hz device tick rate (was 392 = ~4.2s; constant was miscalibrated for 196Hz) */
 const KNOB_TURN_HIGHLIGHT_TICKS = 56;             /* ~600ms at 94Hz — highlight after turn without touch (was 120 @196Hz) */
@@ -1030,6 +1031,42 @@ export function _tickImpl() {
                     enterSchwungCoRun(_t, _slot);
                 }
             }
+        }
+
+        /* SOUND MODE.
+         *
+         * Entry (queued by the Shift+Note/Session release dispatch) resolves
+         * the track's chain slot HERE because schSlotForTrack calls
+         * shadow_get_slots, which must not run from a MIDI handler — same
+         * reason pendingSchwungCoRunTrack defers. No matching slot means
+         * there is no sound to edit, so say so rather than opening an editor
+         * pointed at slot 1.
+         *
+         * soundTick() is where every shadow_get/set_param for sound mode
+         * happens: queued writes drain at most 2 per tick and polling is
+         * budgeted. This is the whole reason sound mode isn't the lab rig
+         * copied across — the rig calls the engine straight from its MIDI
+         * handler, and a sequencer cannot. Placed after pollDSP() and before
+         * the LED/draw block, so its dirty flag reaches this tick's draw. */
+        if (S.pendingSoundEnterTrack >= 0) {
+            const _st = S.pendingSoundEnterTrack;
+            S.pendingSoundEnterTrack = -1;
+            if (_st === S.activeTrack && !soundActive()) {
+                const _sslot = schSlotForTrack(_st);
+                if (_sslot < 0) {
+                    showActionPopup('NO SCHWUNG SLOT',
+                                    'for channel ' + (S.trackChannel[_st] | 0));
+                } else {
+                    soundEnter(_st, _sslot);
+                }
+            }
+        }
+        if (soundActive()) {
+            /* Co-run took the OLED out from under us (menu "Edit Slot...",
+             * or a Move-native entry): sound mode has nothing to draw on. */
+            if (S.schwungCoRunSlot >= 0 || S.moveCoRunTrack >= 0) soundExit();
+            else soundTick();
+            if (soundDirty()) S.screenDirty = true;
         }
 
         /* Metro beat detection: checked every tick via dedicated get_param for minimal jitter */

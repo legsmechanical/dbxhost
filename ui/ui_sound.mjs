@@ -77,6 +77,14 @@ const S = {
 
     pendingWrites: [],
     pendingDiscover: 0,
+    /* Single-slot navigation queue. Knob edits were always deferred, but the
+     * VIEW transitions are the expensive ones — a discovery pass is dozens of
+     * get_params and the browser is a filesystem scan. Doing either from the
+     * MIDI handler is the exact mistake this module's header warns about, so
+     * every one of them is queued here and run in soundTick(). Latest wins:
+     * you can only be navigating to one place at a time. */
+    pendingAction: null,
+    needsPoll: false,           /* forced re-read owed (bank change) */
     blockNames: [],             /* loaded module id per block, for the picker */
 
     shiftHeld: false,
@@ -103,7 +111,8 @@ export function soundEnter(track, slot) {
     S.touchedIdx = -1;
     S.turnedSinceTouch = false;
     S.pendingWrites.length = 0;
-    refreshBlockNames();
+    S.blockNames = [];
+    S.pendingAction = { t: 'names' };
     S.dirty = true;
     log('enter: track ' + track + ' slot ' + slot);
 }
@@ -111,6 +120,8 @@ export function soundEnter(track, slot) {
 export function soundExit() {
     S.active = false;
     S.pendingWrites.length = 0;
+    S.pendingAction = null;
+    S.pendingDiscover = 0;
     S.dirty = true;
     log('exit');
 }
@@ -129,6 +140,15 @@ function openBlock(idx) {
     if (!id) { openBrowse(); return; }     /* empty block -> add something */
     S.view = VIEW_EDIT;
     runDiscovery();
+}
+
+/* Every entry point below runs from soundTick(), never from a MIDI handler. */
+function runAction(a) {
+    if (a.t === 'names')       refreshBlockNames();
+    else if (a.t === 'open')   openBlock(a.idx);
+    else if (a.t === 'browse') openBrowse();
+    else if (a.t === 'load')   loadSelected();
+    S.dirty = true;
 }
 
 function runDiscovery() {
@@ -284,16 +304,19 @@ export function soundOnCC(d1, d2, decodeDelta) {
                 S.bankIdx = listMove(S.banks.length, S.bankIdx, delta);
             }
             S.touchedIdx = -1;
-            pollValues(true);
+            /* A bank change re-reads up to 8 params. Cheap next tick, not from
+             * here — a fast jog spin would otherwise fire a burst of blocking
+             * SHM round-trips straight through the sequencer's MIDI path. */
+            S.needsPoll = true;
         }
         S.dirty = true;
         return true;
     }
 
     if (d1 === 3 && d2 >= 64) {                        /* jog click */
-        if (S.view === VIEW_BLOCKS) openBlock(S.blockIdx);
-        else if (S.view === VIEW_BROWSE) loadSelected();
-        else openBrowse();                             /* swap this block's module */
+        if (S.view === VIEW_BLOCKS) S.pendingAction = { t: 'open', idx: S.blockIdx };
+        else if (S.view === VIEW_BROWSE) S.pendingAction = { t: 'load' };
+        else S.pendingAction = { t: 'browse' };        /* swap this block's module */
         S.dirty = true;
         return true;
     }
@@ -301,7 +324,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
     if (d1 === 51 && d2 >= 64) {                       /* back */
         if (S.view === VIEW_EDIT || S.view === VIEW_BROWSE) {
             S.view = VIEW_BLOCKS;
-            refreshBlockNames();
+            S.pendingAction = { t: 'names' };
         } else {
             soundExit();
         }
@@ -340,6 +363,23 @@ export function soundTick() {
     for (let n = 0; n < WRITES_PER_TICK && S.pendingWrites.length; n++) {
         const w = S.pendingWrites.shift();
         engineSet(S.slot, w.comp, w.key, w.val);
+    }
+
+    /* One heavy job per tick, and never on top of pending writes: a discovery
+     * pass or a browser scan is the most expensive thing this module does, and
+     * stacking it on a write drain doubles the tick's SHM cost at exactly the
+     * moment the sequencer is least able to absorb it. Waiting also means a
+     * discovery reads back values the edits ahead of it have already landed.
+     * The queue coalesces by key, so the wait is bounded by the eight knobs. */
+    if (S.pendingAction && !S.pendingWrites.length) {
+        const a = S.pendingAction;
+        S.pendingAction = null;
+        runAction(a);
+    }
+
+    if (S.needsPoll && !S.pendingWrites.length) {
+        S.needsPoll = false;
+        pollValues(true);
     }
 
     if (S.touchedIdx >= 0 && !S.touchHeld &&

@@ -7,6 +7,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Features
+- **Edit a track's sound without leaving dAVEBOx — `Shift + Note/Session`.** One
+  gesture, and where it lands follows the track's route: Schwung tracks open a
+  new sound editor over the track's whole chain (MIDI FX, synth, FX 1-4), Move
+  tracks hand off to Move's own editor as before. Jog picks a block and turns
+  the pages, the knobs edit, `Shift` + jog jumps between sections, and picking an
+  empty block opens the module list — which is how you add an effect. The pads
+  and step buttons stay with the sequencer throughout, so you can keep playing
+  while you dial. `Back` steps out a level at a time.
+
+### Performance / UX
+- **The Settings menu is now `Shift + Step 2`.** It was on both that and
+  `Shift + Note/Session`; the latter is the sound editor now. Everything in the
+  menu is unchanged.
+- **`Shift + Step 3` no longer opens the instrument editor** — `Shift +
+  Note/Session` is the one way in.
 
 ## [1.0-beta.8] — 2026-07-21
 ### Performance / UX

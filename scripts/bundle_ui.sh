@@ -20,9 +20,13 @@ fi
 mkdir -p dist/davebox
 
 echo "Bundling UI..."
+# 'os' is a QuickJS built-in MODULE resolved on the device (ui_engine.mjs scans
+# the module tree with os.readdir) — must stay external or esbuild pulls in
+# Node's os and the device import breaks. shadow_ui.js imports it the same way.
 node_modules/.bin/esbuild ui/ui.js \
     --bundle \
     --external:'/data/UserData/schwung/*' \
+    --external:os \
     --format=esm \
     --outfile=dist/davebox/ui.js \
     --log-level=warning

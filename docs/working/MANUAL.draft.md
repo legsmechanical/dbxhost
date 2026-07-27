@@ -123,7 +123,7 @@ Load a Move set, then launch dAVEBOx from Schwung's tool menu — **Shift + Step
 
 ## Set tempo, key, and scale
 
-These live in the **Settings menu** (**Shift + Note/Session**):
+These live in the **Settings menu** (**Shift + Step 2**):
 
 - **BPM** sets the tempo.
 - **Key** and **Scale** set the root and scale that melodic tracks snap to.
@@ -213,7 +213,7 @@ covered in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), a
 
 ## 3.6 The Settings menu
 
-**Shift + Note/Session** opens the Settings menu — the active track's settings
+**Shift + Step 2** opens the Settings menu — the active track's settings
 first, then the session-wide settings. The full list is in
 [Settings & Sets](#16-settings--sets), and many settings have a **Shift + Step**
 shortcut (see the [Quick Reference](#18-quick-reference)).
@@ -1035,17 +1035,25 @@ On an **External** track, everything goes out USB-A — the sequence, live pads,
 effects, and automation. Transport Stop sends note-offs; **Delete + Play** while
 stopped sends a MIDI panic on every channel.
 
-## 14.3 Editing an instrument in place
+## 14.3 Editing a track's sound
 
-You can edit a track's instrument — a Move instrument or a Schwung chain — without
-leaving dAVEBOx. The screen, jog, and knobs hand off to the editor while playback
-continues.
+**Shift + Note/Session** means "edit this track's sound" — one gesture, and where
+it lands follows the track's route. Playback carries on either way, and the pads
+and step buttons stay with the sequencer, so you can keep playing while you dial.
 
-Open it with **Shift + Step 3**, or from **Edit Synth… / Edit Slot…** in the
-Settings menu. Inside, the jog navigates, the knobs drive chain parameters, and a blinking
-**Step 3** exits. **Mute** changes hands: it mutes the Move instrument you're on,
-or bypasses a Schwung chain slot (Mute + jog-click). *Requires Schwung 0.9.18 or
-later.*
+**Schwung tracks** open dAVEBOx's own sound editor. It starts on the track's
+chain — MIDI FX, the synth, then FX 1-4 — and the jog picks a block. Inside a
+block the knobs edit its parameters and the jog turns the pages; hold **Shift**
+while turning to jump between sections. Picking an **empty** block opens the
+module list, which is how you add an effect. **Back** steps out one level at a
+time; **Shift + Note/Session** leaves outright.
+
+**Move tracks** hand the screen, jog, and knobs to Move's own editor. **Mute**
+changes hands there — it mutes the Move instrument you're on.
+
+The Schwung chain editor is still available from **Edit Synth… / Edit Slot…** in
+the Settings menu, where **Mute + jog-click** bypasses the focused slot.
+*Requires Schwung 0.9.18 or later.*
 
 ## 14.4 Clock Follow
 
@@ -1127,7 +1135,7 @@ export is one-way.
 
 # 16. Settings & Sets
 
-Open the Settings menu with **Shift + Note/Session**. It holds the active track's
+Open the Settings menu with **Shift + Step 2**. It holds the active track's
 settings and the session-wide settings.
 
 ## 16.1 Global settings
@@ -1250,7 +1258,8 @@ device both ways — edits on either side show up on the other.
 | Delete + Play | Deactivate clips (running) · panic (stopped) |
 | Undo / Shift + Undo | Undo / redo |
 | Note/Session (tap / hold) | Switch / peek view |
-| Shift + Note/Session | Settings menu |
+| Shift + Note/Session | Edit this track's sound |
+| Shift + Step 2 | Settings menu |
 
 ### Drum track (additions)
 
@@ -1267,7 +1276,6 @@ device both ways — edits on either side show up on the other.
 | Step | Action | Views |
 |---|---|---|
 | 2 | Settings menu (globals) | Both |
-| 3 | Edit the instrument in place | Track |
 | 5 | Tap Tempo | Both |
 | 6 | Metro (Cnt-In ↔ Always) | Both |
 | 7 | Swing | Both |

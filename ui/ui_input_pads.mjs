@@ -959,14 +959,9 @@ function _jumpToMenuLabel(label) {
 
 function _doShiftStepCommon(idx) {
     if      (idx === 1) _jumpToMenuLabel('Global');
-    else if (idx === 2 && !S.sessionView) {
-        /* Track View only — Session View Shift+Step3 is reserved for the
-         * existing menu-shortcut set. Defer co-run entry until Shift releases
-         * — otherwise the held Shift CC leaks into Move firmware / Schwung
-         * chain editor (the shim starts forwarding Shift on co-run entry).
-         * Dispatch happens in _onCC_buttons Shift-release branch. */
-        S.pendingEditEntryTrack = S.activeTrack;
-    }
+    /* Shift+Step3 (idx 2) was the second door into "edit this track's sound".
+     * RETIRED 2026-07-27 — the gesture is Shift+Note/Session now. Two doors to
+     * the same room is harder to hold in your head than one. */
     else if (idx === 4) {
         if (S.clockFollowOn) { S.bpmMoveInfo = true; forceRedraw(); }
         else openTapTempo();

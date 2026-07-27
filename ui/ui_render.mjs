@@ -35,6 +35,7 @@ import {
     bankHasAltParams, altIndicatorActive
 } from './ui_leds.mjs';
 import { SPLASH_FRAMES, SPLASH_COUNT, SPLASH_W, SPLASH_H, pickSplashIdx } from './ui_splash.mjs';
+import { soundRender } from './ui_sound.mjs';
 import { drawMenuHeader } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* ------------------------------------------------------------------ */
@@ -675,6 +676,10 @@ function drawTempoSelect() {
 }
 
 export function drawUI() {
+    /* SOUND MODE draws the whole screen itself (block picker / bank pages /
+     * module browser). It is mutually exclusive with both co-runs — entry
+     * routes on trackRoute — so it takes the first say. */
+    if (soundRender()) return;
     /* CO-RUN: shadow_ui's chain editor owns the OLED while this is active.
      * Skip every dAVEBOx draw path so it doesn't fight the chain editor's
      * frame. shadow_ui still calls clear_screen + redraw each tick. */
