@@ -402,6 +402,43 @@ globalThis.shadow_corun_close = function() {
 /* Special action key for swap module option */
 const SWAP_MODULE_ACTION = "__swap_module__";
 
+/* "Module Level" — the sound generator's own level, injected at the root of its
+ * menu. It is NOT the slot's Volume: that one lives in slot settings and is the
+ * output BUS fader, applied after the slot's FX, so it also scales a Move track
+ * routed into the slot. This scales the generator alone, before anything is
+ * summed in, which is the only point where the two can be balanced.
+ *
+ * The row carries its metadata inline and its key is already slot-namespaced —
+ * the same shape as CHAIN_SETTINGS_ITEMS. That is what keeps this cheap:
+ * getParamMetadata finds it by key in hierEditorAllParams, buildHierarchyParamKey
+ * passes `slot:` keys through unprefixed, and from there every generic path
+ * (render, announce, click-to-edit, jog-adjust) treats it as an ordinary
+ * editable float with no special-casing. Step matches the slot Volume row so the
+ * two faders move at the same rate. */
+const MODULE_LEVEL_KEY = "slot:synth_volume";
+const MODULE_LEVEL_PARAM = {
+    key: MODULE_LEVEL_KEY,
+    label: "Module Level",   /* announce path reads .label */
+    name: "Module Level",    /* render path reads meta.name */
+    type: "float", min: 0, max: 4, step: 0.05,
+    /* Shown as a percentage, like the slot's own Volume row — that is the value
+     * this one is meant to be compared against. `display_format` rather than
+     * `unit: "%"`: the unit path only scales by 100 when max <= 1, and this
+     * range is 0..4, so unity would have read as "1%". */
+    display_format: ".0%"
+};
+
+/* Sound generators only. The gain scales the synth alone, so the row would be a
+ * lie on an FX block, and giving every component its own gain is a much larger
+ * change. Master FX has no slot generator at all. */
+function moduleLevelRows() {
+    if (hierEditorIsMasterFx || hierEditorComponent !== "synth") return [];
+    /* A fresh copy per level load: this object is also what getParamMetadata
+     * hands back as the row's metadata, and meta objects are passed around
+     * freely enough that a shared singleton could be mutated for good. */
+    return [{ ...MODULE_LEVEL_PARAM }];
+}
+
 /* Chain component types for horizontal editor */
 const CHAIN_COMPONENTS = [
     { key: "midiFx", label: "MIDI FX", position: 0 },
@@ -2209,10 +2246,14 @@ function applyHierarchyVisibilityFilters(levelDef) {
     }
 
     if (Array.isArray(hierEditorAllKnobs) && hierEditorAllKnobs.length > 0) {
+        /* Injected rows are excluded, not just ignored: `visibleKeys.size === 0`
+         * below means "this level has only nav links, so keep every knob". An
+         * injected row is not one of the level's own params, so counting it
+         * would flip that test and silently strip the knobs. */
         const visibleKeys = new Set(
             hierEditorParams
                 .map(extractHierarchyParamKey)
-                .filter(k => k && k !== SWAP_MODULE_ACTION)
+                .filter(k => k && k !== SWAP_MODULE_ACTION && k !== MODULE_LEVEL_KEY)
         );
         if (visibleKeys.size === 0) {
             /* Root/page-select level: no editable params visible (only nav links)
@@ -8482,7 +8523,8 @@ function loadHierarchyLevel() {
 
     if (!levelDef) {
         /* At mode selection level - include swap module here */
-        hierEditorAllParams = [...(hierEditorHierarchy.modes || []), SWAP_MODULE_ACTION];
+        hierEditorAllParams = [...(hierEditorHierarchy.modes || []),
+                               ...moduleLevelRows(), SWAP_MODULE_ACTION];
         hierEditorAllKnobs = [];
         hierEditorParams = [...hierEditorAllParams];
         hierEditorKnobs = [];
@@ -8541,7 +8583,7 @@ function loadHierarchyLevel() {
 
         /* Also load params for preset edit mode (swap only at top level) */
         hierEditorAllParams = isTopLevel
-            ? [...(levelDef.params || []), SWAP_MODULE_ACTION]
+            ? [...(levelDef.params || []), ...moduleLevelRows(), SWAP_MODULE_ACTION]
             : (levelDef.params || []);
     } else if (levelDef.items_param) {
         /* Dynamic items level - fetch items from plugin */
@@ -8578,7 +8620,7 @@ function loadHierarchyLevel() {
         hierEditorPresetEditMode = false;
         /* Use hierarchy params for scrollable list, knobs for physical mapping */
         hierEditorAllParams = isTopLevel
-            ? [...(levelDef.params || []), SWAP_MODULE_ACTION]
+            ? [...(levelDef.params || []), ...moduleLevelRows(), SWAP_MODULE_ACTION]
             : (levelDef.params || []);
         hierEditorAllKnobs = levelDef.knobs || [];
     }
@@ -8879,7 +8921,17 @@ function getHierarchyLevelDef() {
     return hierEditorHierarchy.levels ? hierEditorHierarchy.levels[hierEditorLevel] : null;
 }
 
+/* A key that is already slot-namespaced addresses the SLOT, not the component,
+ * so it is passed through untouched — prefixing would produce `synth:slot:x`.
+ * This is what lets an injected row like Module Level ride the ordinary param
+ * machinery. (Same convention as wav_position's filepath_param, which treats an
+ * embedded colon as "already a full key".) */
+function isSlotScopedParamKey(key) {
+    return typeof key === "string" && key.startsWith("slot:");
+}
+
 function buildHierarchyParamKey(key) {
+    if (isSlotScopedParamKey(key)) return key;
     const prefix = getComponentParamPrefix(hierEditorComponent);
     const levelDef = getHierarchyLevelDef();
     if (levelDef && levelDef.child_prefix && hierEditorChildIndex >= 0) {
@@ -8907,6 +8959,7 @@ function isHierarchyParamModulated(slot, fullKey) {
 }
 
 function buildHierarchyParamKeyForLevel(levelDef, key, childIndex) {
+    if (isSlotScopedParamKey(key)) return key;
     const prefix = getComponentParamPrefix(hierEditorComponent);
     if (levelDef && levelDef.child_prefix && childIndex >= 0) {
         return `${prefix}:${levelDef.child_prefix}${childIndex}_${key}`;
@@ -12441,8 +12494,23 @@ function handleSelect() {
             if (!hierEditorLevel && hierEditorHierarchy.modes) {
                 /* Select mode and navigate into it */
                 const selectedMode = hierEditorParams[hierEditorSelectedIdx];
-                /* Check for swap module action first */
-                if (selectedMode === SWAP_MODULE_ACTION) {
+                /* An injected editable row can sit among the modes. For a
+                 * modes-based hierarchy the mode list IS the module's root, and
+                 * isTopLevel is false at every level below it, so this is the
+                 * only screen such a module could carry the row on — it has to
+                 * be editable here, not just drawn. Handle it as a param before
+                 * the mode branches, which only understand strings. */
+                if (selectedMode && typeof selectedMode === "object" &&
+                    isSlotScopedParamKey(selectedMode.key)) {
+                    if (!hierEditorEditMode) {
+                        if (beginHierarchyParamEdit(selectedMode.key)) hierEditorEditMode = true;
+                    } else {
+                        hierEditorEditMode = false;
+                        resetHierarchyEditState();
+                    }
+                    invalidateKnobContextCache();
+                    needsRedraw = true;
+                } else if (selectedMode === SWAP_MODULE_ACTION) {
                     const compIndex = CHAIN_COMPONENTS.findIndex(c => c.key === hierEditorComponent);
                     const slotToSwap = hierEditorSlot;
                     if (compIndex >= 0) {

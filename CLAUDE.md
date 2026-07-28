@@ -353,6 +353,11 @@ Each of the 4 slots has:
   routed Move track can be balanced against each other: post-FX they are one signal (a reverb
   tail doesn't remember its source). Unity by default; persisted as `slot_synth_volumes`, and
   absence of that key means unity so older configs load unchanged.
+  Surfaced as a **Module Level** row at the root of a *sound generator's* menu (never an FX
+  block — the gain scales the synth alone), beside `[Swap module...]`. It is injected as an
+  ordinary editable float carrying its metadata inline, with a `slot:`-prefixed key that
+  `buildHierarchyParamKey` passes through unprefixed; that is why it needs no special-casing
+  in the render / announce / edit paths. The slot's own **Volume** stays in slot settings.
 - **State persistence** (synth + FX + MIDI FX).
 
 **MPE controllers** (LinnStrument, Roli, Sensel): set Receive=All, Forward=THRU, enable MPE in the synth. Otherwise channel remap destroys per-note bend/pressure/slide.
