@@ -27,6 +27,11 @@ import {
     engineGetSlotParam, engineSetSlotParam, engineSaveState, engineVolBlock,
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
 } from './ui_engine.mjs';
+/* davebox's GLOBAL state. Sound mode keeps its own `S`, so this is imported
+ * under a different name deliberately — the two are easy to confuse, and
+ * confusing them is exactly what broke the bypass gesture. Used only for the
+ * Back long-press, which davebox owns module-wide. */
+import { S as GS } from './ui_state.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
     closeTextEntry,
@@ -80,9 +85,11 @@ const ONOFF   = (v) => (v ? 'Yes' : 'No');
 
 const SLOT_SETTINGS = [
     { key: 'volume',        label: 'Volume',      min: 0, max: 4, step: 0.05, fmt: PCT_FMT },
-    { key: SLOT_LEVEL_KEY,  label: 'Module Lvl',  min: 0, max: SLOT_LEVEL_MAX, step: 0.02, fmt: PCT_FMT },
-    { key: 'send_a',        label: 'Send A',      min: 0, max: 1, step: 0.05, fmt: PCT_FMT },
-    { key: 'send_b',        label: 'Send B',      min: 0, max: 1, step: 0.05, fmt: PCT_FMT },
+    /* Module Level is deliberately NOT here — it belongs to whatever module is
+     * loaded, not to the slot, and it already lives at the root of that
+     * module's own menu. Two homes would make it ambiguous which one wins. */
+    { key: 'send_a',        label: 'Send A',      min: 0, max: 1, step: 0.05, fmt: PCT_FMT, cap: 'sends' },
+    { key: 'send_b',        label: 'Send B',      min: 0, max: 1, step: 0.05, fmt: PCT_FMT, cap: 'sends' },
     { key: 'transpose',     label: 'Transpose',   min: -12, max: 12, step: 1, int: true, fmt: ST_FMT },
     { key: 'receive_channel', label: 'Recv Ch',   min: 0, max: 16, step: 1, int: true, fmt: CH_FMT },
     { key: 'forward_channel', label: 'Fwd Ch',    min: -2, max: 15, step: 1, int: true, fmt: FWD_FMT },
@@ -199,6 +206,12 @@ const S = {
     needsPoll: false,           /* forced re-read owed (bank change) */
     blockNames: [],             /* loaded module id per block, for the picker */
     blockBypass: [],            /* 1 = that block is bypassed (host `<comp>:bypassed`) */
+    muteHeld: false,            /* tracked HERE: the global one is a different S */
+    pickRow: 0,                 /* cursor in the block PICKER (rows, not blocks) */
+    blockRows: [],              /* block indices this host actually supports */
+    slotRows: [],               /* SLOT_SETTINGS entries this host supports */
+    capFx34: false,
+    capSends: false,
     slotCfgIdx: 0,
     slotCfgVals: [],            /* live values, index-aligned with SLOT_SETTINGS */
     slotCfgEditing: false,
@@ -347,6 +360,7 @@ export function soundExit() {
 
 /* Which module each block holds — drives the picker and the empty-block flow. */
 function refreshBlockNames() {
+    probeCaps();
     S.blockNames = BLOCKS.map(b => engineLoadedModule(S.slot, b.comp) || '');
     /* Bypass is read here rather than polled: it only changes when something
      * sets it, and this already runs on every entry to the picker. */
@@ -679,10 +693,38 @@ function openFileBrowser(row) {
     S.view = VIEW_FILE;
 }
 
+/* ---- host capabilities ----
+ *
+ * FX blocks 3-4 and the Send A/B buses are fork/daily-driver features, not
+ * upstream Schwung. Offering rows the host cannot answer would give you
+ * controls that silently do nothing, which is worse than not having them.
+ *
+ * Probed rather than assumed: a host without the feature returns nothing for
+ * the key, so we ask it once per entry instead of hardcoding a host version.
+ * Cheap — four reads on a screen you just opened. */
+function probeCaps() {
+    const has = (v) => v !== null && v !== undefined && v !== '';
+    S.capFx34  = has(engineGet(S.slot, 'fx3', 'bypassed')) ||
+                 has(engineGet(S.slot, 'fx4', 'bypassed'));
+    S.capSends = has(engineGetSlotParam(S.slot, 'send_a'));
+    S.blockRows = [];
+    for (let i = 0; i < BLOCKS.length; i++) {
+        const c = BLOCKS[i].comp;
+        if (!S.capFx34 && (c === 'fx3' || c === 'fx4')) continue;
+        S.blockRows.push(i);
+    }
+    S.slotRows = SLOT_SETTINGS.filter(s => !s.cap || (s.cap === 'sends' && S.capSends));
+    /* Keep the picker cursor on the block it was on; if that block just became
+     * unavailable, fall back rather than point past the end. */
+    const r = S.blockRows.indexOf(S.blockIdx);
+    S.pickRow = (r >= 0) ? r : Math.min(S.pickRow, S.blockRows.length);
+    log('caps: fx34=' + (S.capFx34 ? 1 : 0) + ' sends=' + (S.capSends ? 1 : 0));
+}
+
 /* ---- slot settings: read, edit, persist ---- */
 
 function openSlotCfg() {
-    S.slotCfgVals = SLOT_SETTINGS.map(s => {
+    S.slotCfgVals = S.slotRows.map(s => {
         const raw = parseFloat(engineGetSlotParam(S.slot, s.key));
         return isFinite(raw) ? raw : 0;
     });
@@ -694,9 +736,9 @@ function openSlotCfg() {
 }
 
 function slotCfgStep(delta) {
-    const s = SLOT_SETTINGS[S.slotCfgIdx];
+    const s = S.slotRows[S.slotCfgIdx];
     if (!S.slotCfgEditing || !s) {
-        S.slotCfgIdx = listMove(SLOT_SETTINGS.length, S.slotCfgIdx, delta);
+        S.slotCfgIdx = listMove(S.slotRows.length, S.slotCfgIdx, delta);
         S.slotCfgEditing = false;
         return;
     }
@@ -744,11 +786,11 @@ function renderSlotCfg() {
     clear_screen();
     drawKitHeader('SLOT ' + (S.slot + 1) + ' SETTINGS', false);
     const ROW_H = 10, VISIBLE = 5;
-    const start = Math.max(0, Math.min(S.slotCfgIdx - 2, SLOT_SETTINGS.length - VISIBLE));
+    const start = Math.max(0, Math.min(S.slotCfgIdx - 2, S.slotRows.length - VISIBLE));
     for (let i = 0; i < VISIBLE; i++) {
         const idx = start + i;
-        if (idx >= SLOT_SETTINGS.length) break;
-        const s = SLOT_SETTINGS[idx];
+        if (idx >= S.slotRows.length) break;
+        const s = S.slotRows[idx];
         const y = 11 + i * ROW_H;
         const on = (idx === S.slotCfgIdx);
         if (on) fill_rect(0, y - 1, 128, ROW_H, 1);
@@ -1223,6 +1265,15 @@ export function soundOnCC(d1, d2, decodeDelta) {
         return false;                                  /* davebox also tracks it */
     }
 
+    /* Mute, tracked HERE and not read off davebox's state: the `S` in this file
+     * is sound mode's own object, so `S.muteHeld` was silently undefined and
+     * the bypass gesture never fired. Passed through like shift, so davebox
+     * keeps its own copy for everything outside sound mode. */
+    if (d1 === 88) {
+        S.muteHeld = d2 >= 64;
+        return false;
+    }
+
     if (d1 === 79) {                                   /* master knob = slot level */
         const delta = decodeDelta(d2);
         if (delta) onVolumeTurn(delta);
@@ -1240,8 +1291,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
         const delta = decodeDelta(d2);
         if (!delta) return true;
         if (S.view === VIEW_BLOCKS) {
-            /* One row past the blocks is the slot's own settings. */
-            S.blockIdx = listMove(BLOCKS.length + 1, S.blockIdx, delta);
+            /* One row past the supported blocks is the slot's own settings. */
+            S.pickRow = listMove(S.blockRows.length + 1, S.pickRow, delta);
         } else if (S.view === VIEW_SLOTCFG) {
             slotCfgStep(delta);
         } else if (S.view === VIEW_BROWSE) {
@@ -1301,8 +1352,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * (the block under the cursor) and from inside a block's editor (the
          * one you're in). Toggled optimistically and queued, because this runs
          * in the MIDI handler. */
-        if (S.muteHeld && (S.view === VIEW_BLOCKS || S.view === VIEW_EDIT)) {
-            const idx = S.blockIdx;
+        if (S.muteHeld && S.view === VIEW_BLOCKS && S.pickRow < S.blockRows.length) {
+            const idx = S.blockRows[S.pickRow];
             const comp = BLOCKS[idx] && BLOCKS[idx].comp;
             if (comp && S.blockNames[idx]) {     /* nothing loaded = nothing to bypass */
                 const next = S.blockBypass[idx] ? 0 : 1;
@@ -1316,7 +1367,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
         if (S.view === VIEW_SLOTCFG) {
             S.slotCfgEditing = !S.slotCfgEditing;
         }
-        else if (S.view === VIEW_BLOCKS && S.blockIdx === BLOCKS.length) {
+        else if (S.view === VIEW_BLOCKS && S.pickRow === S.blockRows.length) {
             S.pendingAction = { t: 'slotcfg' };   /* reads the slot — tick only */
         }
         else if (S.view === VIEW_BLOCKS) {
@@ -1324,7 +1375,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * a block IS is rarer and more destructive than editing it, so it
              * costs the modifier and lives only here, at the chain overview
              * where "what is in this block" is the question being asked. */
-            S.pendingAction = { t: S.shiftHeld ? 'browse' : 'open', idx: S.blockIdx };
+            S.pendingAction = { t: S.shiftHeld ? 'browse' : 'open', idx: S.blockRows[S.pickRow] };
         }
         else if (S.view === VIEW_BROWSE)      S.pendingAction = { t: 'load' };
         /* An EMPTY block has no presets to offer, and its editor's whole job is
@@ -1363,7 +1414,23 @@ export function soundOnCC(d1, d2, decodeDelta) {
         return true;
     }
 
-    if (d1 === 51 && d2 >= 64) {                       /* back */
+    /* Back PRESS only starts the clock. Long-press = suspend the module is a
+     * davebox-wide gesture, and sound mode was swallowing the press so it was
+     * the one place you couldn't do it. Hand the press to davebox's global
+     * tracker — checkBackHold() runs in tick, fires past the threshold, and
+     * calls soundExit() itself — and move sound mode's own navigation to the
+     * RELEASE, which is where a tap is decided anyway. */
+    if (d1 === 51 && d2 >= 64) {
+        GS.backPressTick = GS.tickCount;
+        GS.backHoldFired = false;
+        return true;
+    }
+
+    if (d1 === 51 && d2 < 64) {                        /* back RELEASE = tap */
+        const wasHold = GS.backHoldFired;
+        GS.backPressTick = -1;
+        GS.backHoldFired = false;
+        if (wasHold) return true;                      /* the hold already suspended */
         if (S.view === VIEW_SLOTCFG) {
             if (S.slotCfgEditing) S.slotCfgEditing = false;   /* leave edit first */
             else closeSlotCfg();
@@ -1519,21 +1586,22 @@ function renderBlocks() {
     clear_screen();
     drawKitHeader('TRACK ' + (S.track + 1) + ' - SOUND', false);
     const ROW_H = 9, VISIBLE = 6;
-    const ROWS = BLOCKS.length + 1;          /* + the slot's own settings */
-    const start = Math.max(0, Math.min(S.blockIdx - 2, ROWS - VISIBLE));
+    const ROWS = S.blockRows.length + 1;      /* + the slot's own settings */
+    const start = Math.max(0, Math.min(S.pickRow - 2, ROWS - VISIBLE));
     for (let i = 0; i < VISIBLE; i++) {
-        const idx = start + i;
-        if (idx >= ROWS) break;
+        const row = start + i;
+        if (row >= ROWS) break;
         const y = 10 + i * ROW_H;
-        const sel = (idx === S.blockIdx);
+        const sel = (row === S.pickRow);
         if (sel) fill_rect(0, y - 1, 128, ROW_H, 1);
         /* The settings row is a destination, not a block — bracketed like the
-         * preset picker's other non-module rows so it doesn't read as a 7th
+         * preset picker's other non-module rows so it doesn't read as another
          * slot in the chain. */
-        if (idx === BLOCKS.length) {
+        if (row === S.blockRows.length) {
             hdrPrint(3, y, '[SLOT SETTINGS]', sel ? 0 : 1);
             continue;
         }
+        const idx = S.blockRows[row];
         hdrPrint(3, y, BLOCKS[idx].label, sel ? 0 : 1);
         const id = S.blockNames[idx] || '-';
         /* A bypassed block still says what it holds — you need to know WHAT is
