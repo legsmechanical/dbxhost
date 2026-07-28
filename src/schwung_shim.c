@@ -6398,7 +6398,14 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                      * Record etc. reach Move firmware so Move handles them
                      * natively — button press flows through, and Move's own
                      * LED writes back aren't blocked. */
-                    if (cin == 0x0B && type == 0xB0 && d1 < 128 && overtake_passthrough_ccs[d1]) {
+                    /* A RUNTIME claim beats this STATIC list. A tool declares
+                     * button_passthrough once in module.json, but vol_block is
+                     * raised and dropped as it changes mode — so honouring the
+                     * list here would silently undo the claim for any tool that
+                     * also passes CC 79 through (dAVEBOx does exactly that, and
+                     * this is why the first attempt had no effect on device). */
+                    if (cin == 0x0B && type == 0xB0 && d1 < 128 && overtake_passthrough_ccs[d1] &&
+                        !(vol_claimed && d1 == CC_MASTER_KNOB)) {
                         filter = 0;
                     }
                     /* Move-native co-run: let Move firmware see whichever
