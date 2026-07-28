@@ -676,10 +676,6 @@ function drawTempoSelect() {
 }
 
 export function drawUI() {
-    /* SOUND MODE draws the whole screen itself (block picker / bank pages /
-     * module browser). It is mutually exclusive with both co-runs — entry
-     * routes on trackRoute — so it takes the first say. */
-    if (soundRender()) return;
     /* CO-RUN: shadow_ui's chain editor owns the OLED while this is active.
      * Skip every dAVEBOx draw path so it doesn't fight the chain editor's
      * frame. shadow_ui still calls clear_screen + redraw each tick. */
@@ -777,6 +773,14 @@ export function drawUI() {
     if (S.globalMenuOpen || S.tapTempoOpen) { ensureGlobalMenuFresh(); drawGlobalMenu(); return; }
     /* Perf Mode OLED takeover (Session View + Loop held or locked) */
     if (S.sessionView && (S.loopHeld || S.perfViewLocked)) { drawPerfModeOled(); return; }
+
+    /* SOUND MODE draws the whole screen itself (block picker / bank pages /
+     * module browser). It sits HERE, below every overlay above, so anything
+     * that grabs the OLED — the global menu, tap tempo, perf mode, a confirm,
+     * a picker — wins over it. It used to be the first check and painted over
+     * all of them. Sound mode isn't dismissed by those; it just stops drawing
+     * and comes back when they close. */
+    if (soundRender()) return;
     if (S.stateLoading || S.bootSplashTicks > 0) {
         /* Reroll the splash on entry edge — picks one of SPLASH_FRAMES at
          * random per splash session (boot, set load, etc.). Stays stable

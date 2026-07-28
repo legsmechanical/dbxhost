@@ -2653,7 +2653,11 @@ function _onCC_stepedit(d1, d2) {
  * synchronous SHM round-trips — neither belongs in a MIDI handler. Here we only
  * move a number and raise a flag. A track with no Schwung slot does nothing,
  * which is the honest answer: there is no level to move. */
-const SESSVOL_STEP = 1 / 64;   /* matches sound mode: unity in ~64 detents */
+/* Sound mode uses 1/64 against the RAW decode; here ccKnobDelta halves the
+ * detent count first (BASE=2), so 1/64 needed ~128 detents to reach unity —
+ * measurably too slow on device. 1/24 lands near sound mode's feel, and
+ * ccKnobDelta's acceleration covers the big moves. */
+const SESSVOL_STEP = 1 / 24;
 
 function _sessionKnobVolume(knobIdx, d2) {
     if (knobIdx >= NUM_TRACKS) return;
