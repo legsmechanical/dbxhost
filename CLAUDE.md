@@ -346,7 +346,14 @@ SHM segments: `/schwung-audio` (mixed shadow output), `/schwung-control` (`shado
 Each of the 4 slots has:
 - **Receive channel**: 1–4 (default) or All (−1)
 - **Forward channel**: 1–16 or −1 (auto: remap to receive ch, or passthrough if receive=All) or −2 (THRU: preserve original ch). Modules can declare `default_forward_channel` in capabilities.
-- **Volume**, **state persistence** (synth + FX + MIDI FX).
+- **Volume** (`slot:volume`) — the slot's **output bus** fader, applied *after* the slot's FX.
+  It scales everything on the channel, including a Move track routed into this slot's synth.
+- **Module level** (`slot:synth_volume`) — the sound generator's own level, applied to the
+  synth *before* anything is summed into the slot. This is the only point where the synth and a
+  routed Move track can be balanced against each other: post-FX they are one signal (a reverb
+  tail doesn't remember its source). Unity by default; persisted as `slot_synth_volumes`, and
+  absence of that key means unity so older configs load unchanged.
+- **State persistence** (synth + FX + MIDI FX).
 
 **MPE controllers** (LinnStrument, Roli, Sensel): set Receive=All, Forward=THRU, enable MPE in the synth. Otherwise channel remap destroys per-note bend/pressure/slide.
 

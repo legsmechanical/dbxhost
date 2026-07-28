@@ -233,6 +233,13 @@ host_sampler_resume()         // Resume paused recording
 host_sampler_is_paused()      // -> bool
 host_sampler_get_samples_written() // -> int
 host_pad_block(bool)          // Suppress pad notes (68-99) from reaching Move
+host_vol_block(bool)          // Claim the master volume knob: suppress CC 79 + its
+                              // touch note (8) from reaching Move, so a tool can
+                              // repurpose the knob without Move also moving its
+                              // master level or raising its volume overlay.
+                              // Runtime complement to capabilities.claims_master_knob.
+                              // Auto-cleared when overtake ends; clear it yourself
+                              // when you stop wanting the knob.
 host_preview_play(path)       // Play a WAV preview through Move's speakers
 host_preview_stop()
 host_send_screenreader(text)  // Same as host_announce_screenreader
