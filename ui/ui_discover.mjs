@@ -311,6 +311,25 @@ function childOf(lvl) {
     return (c && c !== 'None') ? c : null;
 }
 
+/* `children` in the wild is THREE shapes, and reading only one of them loses a
+ * module's entire menu: a single level key as a STRING (nusaw — `"main"`), an
+ * ARRAY of keys or `{level}` objects (dexed's operators), or absent — which
+ * serialises as null, missing, or the literal string `"None"`.
+ *
+ * The page walk (childOf) always took the single-value form, so nusaw's canvas
+ * pages worked while its MENU came up empty. Both edges must agree. */
+export function childLevelKeys(lvl) {
+    const c = lvl && lvl.children;
+    if (!c || c === 'None') return [];
+    const list = Array.isArray(c) ? c : [c];
+    const out = [];
+    for (const e of list) {
+        const k = (typeof e === 'string') ? e : (e && e.level);
+        if (k) out.push(k);
+    }
+    return out;
+}
+
 function knobEntries(lvl) {
     const out = [];
     const knobs = (lvl && lvl.knobs) || [];
@@ -762,18 +781,15 @@ export function menuRows(levels, levelKey, cpMap) {
         }
     }
     /* A level can own sub-levels via `children` as well as `params` nav entries
-     * — dexed's operators are reachable only that way (and it serialises the
-     * absent case as the literal string "None"). */
-    const kids = lv.children;
-    if (kids && kids !== 'None' && Array.isArray(kids)) {
-        for (const c of kids) {
-            const ck = (typeof c === 'string') ? c : (c && c.level);
-            if (!ck || !levels[ck]) continue;
-            const child = levels[ck];
-            if (child.list_param && child.count_param) continue;
-            rows.push({ kind: 'level', level: ck,
-                        label: child.name || child.label || ck });
-        }
+     * — dexed's operators are reachable only that way, and nusaw's ENTIRE menu
+     * is one string child off a root whose `params` is empty. See
+     * childLevelKeys for the three shapes this field takes. */
+    for (const ck of childLevelKeys(lv)) {
+        const child = levels[ck];
+        if (!child) continue;
+        if (child.list_param && child.count_param) continue;
+        rows.push({ kind: 'level', level: ck,
+                    label: child.name || child.label || ck });
     }
     return rows;
 }

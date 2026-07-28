@@ -522,6 +522,18 @@ eq(menuRows({ a: { params: [], children: ['b'] }, b: { name: 'B' } }, 'a', {})
        .map(r => r.label),
    ['B'], 'children edges become rows too (dexed operators are only reachable that way)');
 
+/* nusaw ships `children` as a bare STRING and an EMPTY params[] — its whole
+ * menu hangs off that one edge. Reading only the array form reported
+ * "NO PARAMS" for a module with eight knobs' worth of them (device, 07-28). */
+eq(menuRows({ a: { params: [], children: 'main', knobs: ['cutoff'] },
+              main: { name: 'Main' } }, 'a', {}).map(r => r.label),
+   ['Main'], 'a string children edge is a level row, not nothing');
+eq(menuRows({ a: { params: [], children: [{ level: 'b' }] }, b: { name: 'B' } }, 'a', {})
+       .map(r => r.level),
+   ['b'], 'children entries may be {level} objects as well as strings');
+eq(menuRows({ a: { params: [], children: 'ghost' } }, 'a', {}), [],
+   'a children edge naming a level that does not exist is dropped, not a throw');
+
 /* ---- canvaskit structure adoption ----
  * A kit module publishes the layout its author designed. Adoption must keep
  * their bank ORDER, their fitted labels, and their sections — and must return

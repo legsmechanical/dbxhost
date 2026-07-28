@@ -550,7 +550,36 @@ function openMenu() {
     log('menu: ' + S.moduleId + ' root=' + S.rootKey + ' rows=' + S.menuRowsCache.length);
 }
 
+/* A DYNAMIC level lists items the module hands back when asked (obxd's FXB
+ * banks) rather than params declared in the hierarchy. menuRows cannot build
+ * these — they don't exist until we read them — so they're built here, where
+ * engine reads already happen and the tick budget is understood. */
+function itemRows(lv) {
+    const raw = engineGet(S.slot, S.comp, lv.items_param);
+    let items = [];
+    try { items = raw ? JSON.parse(raw) : []; }
+    catch (e) { log('items parse failed for ' + lv.items_param + ': ' + e); }
+    if (!Array.isArray(items)) items = [];
+    const selectKey = lv.select_param || '';
+    const cur = selectKey ? parseInt(engineGet(S.slot, S.comp, selectKey), 10) : NaN;
+    return items.map((it, i) => {
+        const index = (it && typeof it.index === 'number') ? it.index : i;
+        return {
+            kind: 'item', index, selectKey,
+            navigateTo: lv.navigate_to || '',
+            label: String((it && (it.label || it.name)) || ('Item ' + (index + 1))),
+            selected: index === cur,
+        };
+    });
+}
+
 function refreshMenuRows() {
+    const lv = (S.levels && S.levels[S.menuKey]) || null;
+    if (lv && lv.items_param) {
+        S.menuRowsCache = itemRows(lv);
+        if (S.menuIdx >= S.menuRowsCache.length) S.menuIdx = 0;
+        return;
+    }
     S.menuRowsCache = menuRows(S.levels, S.menuKey, S.cpMap);
     if (S.menuIdx >= S.menuRowsCache.length) S.menuIdx = 0;
     /* Values for the params on this page only — a deep hierarchy is far more
@@ -598,7 +627,34 @@ function menuEnter() {
         S.menuKey = row.level;
         S.menuIdx = 0;
         S.menuEditing = false;
-        refreshMenuRows();
+        /* Queued, not called: this runs in the MIDI handler and the refresh
+         * reads the engine — a dynamic level reads TWICE (list + selection).
+         * soundTick drains it after the pending writes, so a level entered
+         * right after an edit reads back the value that edit already landed. */
+        S.pendingAction = { t: 'menuload' };
+        return;
+    }
+    /* Selecting a dynamic item IS the errand: write the module's select_param,
+     * then go where it says (obxd sends you back to root, where the newly
+     * chosen bank's presets now live). Unwind to that level if it's already
+     * behind us rather than pushing a second copy onto the stack. */
+    if (row.kind === 'item') {
+        if (row.selectKey) queueWrite(row.selectKey, String(row.index));
+        const target = row.navigateTo;
+        if (target && S.levels && S.levels[target]) {
+            const at = S.menuStack.findIndex(e => e.levelKey === target);
+            if (at >= 0) {
+                const entry = S.menuStack[at];
+                S.menuStack.length = at;
+                S.menuIdx = entry.cursor;
+            } else {
+                S.menuStack.push({ levelKey: S.menuKey, cursor: S.menuIdx });
+                S.menuIdx = 0;
+            }
+            S.menuKey = target;
+        }
+        S.menuEditing = false;
+        S.pendingAction = { t: 'menuload' };
         return;
     }
     const c = row.cell;
@@ -649,7 +705,7 @@ function menuBack() {
     if (!prev) return false;
     S.menuKey = prev.levelKey;
     S.menuIdx = prev.cursor;
-    refreshMenuRows();
+    S.pendingAction = { t: 'menuload' };   /* engine reads belong in tick */
     return true;
 }
 
@@ -758,6 +814,7 @@ function runAction(a) {
     else if (a.t === 'usrsavedo') saveUserPreset(a.name);
     else if (a.t === 'bakedset') commitBaked();
     else if (a.t === 'menu')     openMenu();
+    else if (a.t === 'menuload') refreshMenuRows();
     else if (a.t === 'file')     openFileBrowser(S.menuRowsCache[a.idx]);
     else if (a.t === 'textedit') startTextEdit(a.idx);
     S.dirty = true;
@@ -1312,7 +1369,10 @@ function renderMenu() {
         const on = (idx === S.menuIdx);
         if (on) fill_rect(0, y - 1, 128, ROW_H, 1);
         const ink = on ? 0 : 1;
+        /* An item row's "value" is whether it is the one in force — without it
+         * a bank list is N identical rows and you cannot tell which you're on. */
         const val = (r.kind === 'level') ? '>' :
+            (r.kind === 'item') ? (r.selected ? '*' : '') :
             (r.cell ? String(formatValue(r.cell, r.val)) : '');
         let label = String(r.label || '');
         const vw = mvWidth(val);
