@@ -166,6 +166,7 @@ const S = {
     pendingAction: null,
     needsPoll: false,           /* forced re-read owed (bank change) */
     blockNames: [],             /* loaded module id per block, for the picker */
+    blockBypass: [],            /* 1 = that block is bypassed (host `<comp>:bypassed`) */
 
     shiftHeld: false,
     tickCount: 0,
@@ -293,6 +294,9 @@ export function soundExit() {
 /* Which module each block holds — drives the picker and the empty-block flow. */
 function refreshBlockNames() {
     S.blockNames = BLOCKS.map(b => engineLoadedModule(S.slot, b.comp) || '');
+    /* Bypass is read here rather than polled: it only changes when something
+     * sets it, and this already runs on every entry to the picker. */
+    S.blockBypass = BLOCKS.map(b => (engineGet(S.slot, b.comp, 'bypassed') === '1' ? 1 : 0));
 }
 
 /* ---- slot level on the master knob ----
@@ -1023,10 +1027,14 @@ function pollValues(force) {
 
 /* Queue rather than write. Coalesces by key so a fast sweep costs one write per
  * key per drain instead of one per detent. */
-function queueWrite(key, val) {
+/* `comp` defaults to the block being edited; the block PICKER passes one
+ * explicitly, since there the cursor and S.comp are different things. */
+function queueWrite(key, val, comp) {
+    const c = comp || S.comp;
     for (const w of S.pendingWrites) {
-        if (w.key === key && w.comp === S.comp && w.slot === S.slot) { w.val = val; return; }
+        if (w.key === key && w.comp === c && w.slot === S.slot) { w.val = val; return; }
     }
+    if (comp) { S.pendingWrites.push({ slot: S.slot, comp: c, key, val }); return; }
     /* The SLOT is captured here, not read at drain time. Sound mode can retarget
      * to another track mid-queue, and a write raised against one slot must never
      * land in the one that replaced it. */
@@ -1147,6 +1155,23 @@ export function soundOnCC(d1, d2, decodeDelta) {
     }
 
     if (d1 === 3 && d2 >= 64) {                        /* jog click */
+        /* Mute + click = bypass the focused block, the same gesture the host's
+         * chain editor uses, so the reflex carries over. Works from the picker
+         * (the block under the cursor) and from inside a block's editor (the
+         * one you're in). Toggled optimistically and queued, because this runs
+         * in the MIDI handler. */
+        if (S.muteHeld && (S.view === VIEW_BLOCKS || S.view === VIEW_EDIT)) {
+            const idx = (S.view === VIEW_BLOCKS) ? S.blockIdx : S.blockIdx;
+            const comp = BLOCKS[idx] && BLOCKS[idx].comp;
+            if (comp && S.blockNames[idx]) {     /* nothing loaded = nothing to bypass */
+                const next = S.blockBypass[idx] ? 0 : 1;
+                S.blockBypass[idx] = next;
+                queueWrite('bypassed', String(next), comp);
+                S.presetMsg = next ? 'BYPASSED' : 'ACTIVE';
+                S.dirty = true;
+            }
+            return true;
+        }
         if (S.view === VIEW_BLOCKS) {
             /* Shift+click SWAPS the module; plain click opens it. Changing what
              * a block IS is rarer and more destructive than editing it, so it
@@ -1352,7 +1377,11 @@ function renderBlocks() {
         if (sel) fill_rect(0, y - 1, 128, ROW_H, 1);
         hdrPrint(3, y, BLOCKS[idx].label, sel ? 0 : 1);
         const id = S.blockNames[idx] || '-';
-        let t = String(id).toUpperCase();
+        /* A bypassed block still says what it holds — you need to know WHAT is
+         * switched out — so the state rides as a prefix rather than replacing
+         * the name. Matches the host's 'B' marker on a bypassed component. */
+        const byp = S.blockBypass[idx] ? 'B ' : '';
+        let t = byp + String(id).toUpperCase();
         while (t.length > 1 && mvWidth(t) > 60) t = t.slice(0, -1);
         mvPrint(Math.max(62, 125 - mvWidth(t)), y + 2, t, sel ? 0 : 1);
     }

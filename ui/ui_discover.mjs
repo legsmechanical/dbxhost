@@ -119,6 +119,18 @@ function makeCell(key, meta) {
 
     const options = meta.options || null;
 
+    /* A declared boolean. Without this it fell through to the numeric branch and
+     * drew as a 0..1 arc knob — a continuous dial for something with two states,
+     * which also gave it continuous knob sensitivity. Treated as the two-option
+     * enum it is: bar widget, deliberate sensitivity so a brush can't flip it. */
+    if (type === 'toggle' || type === 'bool') {
+        return {
+            key, label, short: shortLabel(label), kind: 'tog', type: 'enum',
+            min: 0, max: 1, step: 1, sens: SENS_DELIBERATE,
+            options: options && options.length === 2 ? options : ['Off', 'On'],
+        };
+    }
+
     if (type === 'enum') {
         const n = options ? options.length : 128;
         let kind = 'enumc';
