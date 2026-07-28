@@ -2653,11 +2653,12 @@ function _onCC_stepedit(d1, d2) {
  * synchronous SHM round-trips — neither belongs in a MIDI handler. Here we only
  * move a number and raise a flag. A track with no Schwung slot does nothing,
  * which is the honest answer: there is no level to move. */
-/* Sound mode uses 1/64 against the RAW decode; here ccKnobDelta halves the
- * detent count first (BASE=2), so 1/64 needed ~128 detents to reach unity —
- * measurably too slow on device. 1/24 lands near sound mode's feel, and
- * ccKnobDelta's acceleration covers the big moves. */
-const SESSVOL_STEP = 1 / 24;
+/* Raw detents, NOT ccKnobDelta. That helper halves the count (BASE=2) and
+ * carries per-knob acceleration state shared with the bank-param path, which
+ * made this both slow and inconsistent on device. A level wants a predictable
+ * sweep: 1/16 per detent puts unity ~16 detents away and the full 0..4 range in
+ * ~64, which is a quarter-turn rather than a marathon. */
+const SESSVOL_STEP = 1 / 16;
 
 function _sessionKnobVolume(knobIdx, d2) {
     if (knobIdx >= NUM_TRACKS) return;
@@ -2665,7 +2666,7 @@ function _sessionKnobVolume(knobIdx, d2) {
     if (S.sessVolSlots[knobIdx] === 0) return;    /* resolved, and no slot */
     const lvl = S.sessVolLevel[knobIdx];
     if (lvl < 0) return;                          /* not read yet; tick will */
-    const d = ccKnobDelta(d2, knobIdx);
+    const d = (d2 >= 1 && d2 <= 63) ? d2 : (d2 >= 65) ? d2 - 128 : 0;
     if (!d) return;
     let v = lvl + d * SESSVOL_STEP;
     if (v < 0) v = 0;
