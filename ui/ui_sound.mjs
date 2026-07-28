@@ -73,7 +73,8 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
  * feel; copying the NUMBER rather than the duration would make preview twice
  * as twitchy here. */
 const PREVIEW_DELAY_TICKS = 15;
-const BAKED_SCAN_PER_TICK = 2;   /* same SHM budget as the write drain */
+const BAKED_SCAN_PER_TICK = 2;        /* while PLAYING: same SHM budget as the write drain */
+const BAKED_SCAN_PER_TICK_IDLE = 12;  /* stopped: nothing competes for the tick */
 const SAVE_ROW = 0;
 
 /* The slot level is a 0..4 gain, host-clamped, 1.0 = unity. The per-detent step
@@ -640,6 +641,13 @@ function menuEnter() {
      * behind us rather than pushing a second copy onto the stack. */
     if (row.kind === 'item') {
         if (row.selectKey) queueWrite(row.selectKey, String(row.index));
+        /* Choosing from a dynamic list usually REPLACES the preset set behind it
+         * — that is what obxd's and dexed's banks are for. The baked-name cache
+         * is keyed by module|comp|count, none of which a bank switch changes,
+         * so without this you keep browsing the previous bank's names against
+         * the new bank's sounds. Drop it and let the next open rescan. */
+        S.bakedCacheKey = '';
+        S.bakedNames = [];
         const target = row.navigateTo;
         if (target && S.levels && S.levels[target]) {
             const at = S.menuStack.findIndex(e => e.levelKey === target);
@@ -731,6 +739,63 @@ function menuStep(delta) {
  *
  * The unavoidable cost: the scan riffles the module through every preset, so
  * with notes sounding you hear it sweep. Once per entry, not per scroll. */
+/* ---- baked name cache, on disk ----
+ *
+ * The scan is the expensive thing in this module: one write + one read per
+ * preset, so minijv's 4096 cost ~22s of riffling before you can read a list.
+ * That cost is worth paying ONCE, not once per visit and never twice per boot.
+ * Nothing about a ROM's preset names changes between sessions.
+ *
+ * Identity has to include the BANK, not just the module: obxd and dexed swap
+ * the whole preset set underneath an unchanged module id, comp and count.
+ * bankSig() reads the select_param of every dynamic level the hierarchy
+ * declares, which is exactly the set of things that can do that.
+ *
+ * ⚠ Not covered: a user dropping a new .syx/.fxb into an existing bank without
+ * changing the preset count. Rare, and Back-then-reopen after a bank switch
+ * already rescans; a stale name is cosmetic, since selecting still writes the
+ * index the module itself resolves. */
+const BAKED_CACHE_DIR = '/data/UserData/schwung/cache/davebox-presetnames';
+const BAKED_CACHE_V = 1;
+
+function bankSig() {
+    const levels = S.levels;
+    if (!levels) return '';
+    const parts = [];
+    for (const k of Object.keys(levels)) {
+        const lv = levels[k];
+        if (!lv || !lv.items_param || !lv.select_param) continue;
+        parts.push(lv.select_param + '=' + (engineGet(S.slot, S.comp, lv.select_param) || ''));
+    }
+    return parts.sort().join(',');
+}
+
+function bakedCachePath(key) {
+    return BAKED_CACHE_DIR + '/' + key.replace(/[^A-Za-z0-9._=-]/g, '_') + '.json';
+}
+
+function loadBakedCache(key, count) {
+    if (typeof host_read_file !== 'function') return null;
+    let txt = null;
+    try { txt = host_read_file(bakedCachePath(key)); } catch (e) { return null; }
+    if (!txt) return null;
+    try {
+        const o = JSON.parse(txt);
+        if (!o || o.v !== BAKED_CACHE_V || o.key !== key) return null;
+        if (!Array.isArray(o.names) || o.names.length !== count) return null;
+        return o.names;
+    } catch (e) { log('baked cache parse failed: ' + e); return null; }
+}
+
+function saveBakedCache(key, names) {
+    if (typeof host_write_file !== 'function') return;
+    if (typeof host_ensure_dir === 'function') host_ensure_dir(BAKED_CACHE_DIR);
+    try {
+        host_write_file(bakedCachePath(key),
+                        JSON.stringify({ v: BAKED_CACHE_V, key, names }));
+    } catch (e) { log('baked cache write failed: ' + e); }
+}
+
 function openBaked() {
     const sp = S.presetSpec;
     if (!sp) return;
@@ -740,24 +805,43 @@ function openBaked() {
     S.presetMsg = '';
     captureOriginal();
 
-    const key = S.moduleId + '|' + S.comp + '|' + S.bakedCount;
+    const key = S.moduleId + '|' + S.comp + '|' + S.bakedCount + '|' + bankSig();
+    let via = 'scanning';
     if (key === S.bakedCacheKey && S.bakedNames.length === S.bakedCount) {
         S.bakedScan = -1;                 /* already scanned this bank */
+        via = 'memory';
     } else {
-        S.bakedNames = new Array(S.bakedCount).fill('');
-        S.bakedCacheKey = key;
-        S.bakedScanRestore = S.bakedIdx;
-        S.bakedScan = S.bakedCount ? 0 : -1;
+        const cached = loadBakedCache(key, S.bakedCount);
+        if (cached) {
+            S.bakedNames = cached;
+            S.bakedCacheKey = key;
+            S.bakedScan = -1;
+            via = 'disk';
+        } else {
+            S.bakedNames = new Array(S.bakedCount).fill('');
+            S.bakedCacheKey = key;
+            S.bakedScanRestore = S.bakedIdx;
+            S.bakedScan = S.bakedCount ? 0 : -1;
+        }
     }
-    log('baked: ' + S.bakedCount + ' via ' + sp.listKey +
-        (S.bakedScan >= 0 ? ' (scanning)' : ' (cached)'));
+    log('baked: ' + S.bakedCount + ' via ' + sp.listKey + ' (' + via + ')');
 }
 
-/* One slice of the prescan. Runs from soundTick only. */
+/* One slice of the prescan. Runs from soundTick only.
+ *
+ * Rate is transport-aware. Each step is a write plus a read — two synchronous
+ * SHM round-trips — and while the sequencer is PLAYING that budget belongs to
+ * note timing, which is the product. Stopped, nothing competes, so the scan can
+ * run an order of magnitude harder: minijv's 4096 presets go from ~22s to ~4s,
+ * and the audible riffle through every preset shortens with it. */
+function bakedScanRate() {
+    return S.playing ? BAKED_SCAN_PER_TICK : BAKED_SCAN_PER_TICK_IDLE;
+}
+
 function stepBakedScan() {
     const sp = S.presetSpec;
     if (!sp || S.bakedScan < 0) return;
-    for (let n = 0; n < BAKED_SCAN_PER_TICK && S.bakedScan < S.bakedCount; n++) {
+    for (let n = 0; n < bakedScanRate() && S.bakedScan < S.bakedCount; n++) {
         const i = S.bakedScan++;
         engineSet(S.slot, S.comp, sp.listKey, String(i));
         S.bakedNames[i] = engineGet(S.slot, S.comp, sp.nameKey) || ('Preset ' + (i + 1));
@@ -766,6 +850,9 @@ function stepBakedScan() {
         S.bakedScan = -1;
         S.bakedIdx = S.bakedScanRestore;
         engineSet(S.slot, S.comp, sp.listKey, String(S.bakedIdx));
+        /* Paid for it — keep it. The write lands here, at the end of the scan,
+         * so a scan abandoned half-way never persists a partial list. */
+        saveBakedCache(S.bakedCacheKey, S.bakedNames);
     }
     S.dirty = true;
 }
