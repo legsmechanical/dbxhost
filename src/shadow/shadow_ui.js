@@ -420,11 +420,19 @@ const MODULE_LEVEL_PARAM = {
     key: MODULE_LEVEL_KEY,
     label: "Module Level",   /* announce path reads .label */
     name: "Module Level",    /* render path reads meta.name */
-    type: "float", min: 0, max: 4, step: 0.05,
+    /* 0..2, NOT the slot Volume row's 0..4. The gain is applied at the mix point
+     * and clamps to int16 there, so boost above unity clips before the bus fader
+     * can do anything about it — past ~200% the range mostly sells a footgun.
+     * Some boost has to stay: attenuating is the only way to favour a routed
+     * Move track, and raising the synth is the only way to favour the synth.
+     * Halving the range also doubles the resolution around unity, which is where
+     * balancing actually happens. The host's own clamp stays at 4 — it is the
+     * wire bound, and narrowing it would reinterpret already-saved states. */
+    type: "float", min: 0, max: 2, step: 0.02,
     /* Shown as a percentage, like the slot's own Volume row — that is the value
      * this one is meant to be compared against. `display_format` rather than
      * `unit: "%"`: the unit path only scales by 100 when max <= 1, and this
-     * range is 0..4, so unity would have read as "1%". */
+     * range is 0..2, so unity would have read as "1%". */
     display_format: ".0%"
 };
 
