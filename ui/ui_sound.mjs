@@ -60,6 +60,29 @@ export const BLOCKS = [
     { comp: 'fx4',      label: 'FX 4'    },
 ];
 
+/* ---- global FX buses ----
+ *
+ * Master FX and the two Send FX chains are the same shape as a slot's audio-FX
+ * blocks — four components, each with params, a hierarchy and presets — but
+ * they belong to the whole set rather than a track, and they live at slot 0.
+ *
+ * Addressing comes straight from the host's FX_BUS table (`shadow_ui.js`):
+ * `master_fx:fxN:` and `send_fx:{a,b}:fxN:`. davebox's engine layer already
+ * copes, because `moduleReadKey` special-cases colon-namespaced components —
+ * groundwork the lab rig laid before there was anywhere to use it.
+ *
+ * ⚠ ONE real difference: a bus component's `:module` key takes a **DSP path**,
+ * not a module id. Loading by id silently does nothing there. */
+const FX_BUSES = [
+    { id: 'master', title: 'MASTER FX', prefix: 'master_fx:',
+      levelComp: 'master_fx',    levelKey: 'volume',       levelLabel: 'Master Vol' },
+    { id: 'sendA',  title: 'SEND FX A', prefix: 'send_fx:a:',
+      levelComp: 'send_fx:a',    levelKey: 'return_level',  levelLabel: 'Return Lvl' },
+    { id: 'sendB',  title: 'SEND FX B', prefix: 'send_fx:b:',
+      levelComp: 'send_fx:b',    levelKey: 'return_level',  levelLabel: 'Return Lvl' },
+];
+const BUS_BLOCKS = [1, 2, 3, 4];      /* fx1..fx4 on every bus */
+
 const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
       VIEW_PRESET_SRC = 3, VIEW_PRESET_LIST = 4, VIEW_PRESET_BAKED = 5,
       VIEW_MENU = 6, VIEW_FILE = 7, VIEW_SLOTCFG = 8;
@@ -207,6 +230,9 @@ const S = {
     blockNames: [],             /* loaded module id per block, for the picker */
     blockBypass: [],            /* 1 = that block is bypassed (host `<comp>:bypassed`) */
     muteHeld: false,            /* tracked HERE: the global one is a different S */
+    bus: null,                  /* null = editing a TRACK's slot; else an FX_BUSES entry */
+    pickRows: [],               /* picker rows: {kind:'bus'|'block'|'settings'} */
+    trackSlot: -1,              /* the slot to come back to when leaving a bus */
     pickRow: 0,                 /* cursor in the block PICKER (rows, not blocks) */
     blockRows: [],              /* block indices this host actually supports */
     slotRows: [],               /* SLOT_SETTINGS entries this host supports */
@@ -297,6 +323,9 @@ export function soundRetarget(track, slot) {
     if (S.slotCfgDirty) { S.slotCfgDirty = false; engineSaveState(); }
 
     S.track = track;
+    /* A BUS is global — following the active track must not drag its editing
+     * context off slot 0. Remember where to return and leave the view alone. */
+    if (S.bus) { S.trackSlot = slot; S.dirty = true; return; }
     S.slot = slot;
     S.shiftHeld = false;
     S.touchedIdx = -1;
@@ -360,11 +389,17 @@ export function soundExit() {
 
 /* Which module each block holds — drives the picker and the empty-block flow. */
 function refreshBlockNames() {
-    probeCaps();
-    S.blockNames = BLOCKS.map(b => engineLoadedModule(S.slot, b.comp) || '');
-    /* Bypass is read here rather than polled: it only changes when something
-     * sets it, and this already runs on every entry to the picker. */
-    S.blockBypass = BLOCKS.map(b => (engineGet(S.slot, b.comp, 'bypassed') === '1' ? 1 : 0));
+    if (!S.bus) probeCaps();
+    buildPickRows();
+    /* Names and bypass are read per ROW, so a bus context reads its own four
+     * components rather than the track's six. A bus reports a DSP PATH where a
+     * chain slot reports a module id — show the basename, which is the module
+     * directory and reads the same as the id would. */
+    for (const r of S.pickRows) {
+        if (r.kind !== 'block') continue;
+        r.name = moduleIdOf(engineLoadedModule(S.slot, r.comp));
+        r.bypassed = engineGet(S.slot, r.comp, 'bypassed') === '1' ? 1 : 0;
+    }
 }
 
 /* ---- slot level on the master knob ----
@@ -426,9 +461,10 @@ function onVolumeTurn(delta) {
 
 /* ---- discovery ---- */
 
-function openBlock(idx) {
-    S.blockIdx = idx;
-    S.comp = BLOCKS[idx].comp;
+function openBlock(comp) {
+    S.comp = comp;
+    const bi = BLOCKS.findIndex(b => b.comp === comp);
+    if (bi >= 0) S.blockIdx = bi;          /* meaningless on a bus, unused there */
     const id = engineLoadedModule(S.slot, S.comp);
     if (!id) { openBrowse(); return; }     /* empty block -> add something */
     S.view = VIEW_EDIT;
@@ -702,6 +738,71 @@ function openFileBrowser(row) {
  * Probed rather than assumed: a host without the feature returns nothing for
  * the key, so we ask it once per entry instead of hardcoding a host version.
  * Cheap — four reads on a screen you just opened. */
+/* Enter / leave a global bus. The bus IS a slot-0 context, so everything below
+ * (editor, menu, presets, bypass) keeps working on `(S.slot, S.comp, key)` with
+ * no idea it's addressing a bus rather than a track's chain. */
+function enterBus(bus) {
+    if (S.trackSlot < 0) S.trackSlot = S.slot;
+    S.bus = bus;
+    S.slot = 0;
+    S.blockIdx = 0;
+    S.pickRow = 0;
+    S.view = VIEW_BLOCKS;
+    refreshBlockNames();
+    log('bus: ' + bus.id);
+}
+
+function leaveBus() {
+    S.bus = null;
+    if (S.trackSlot >= 0) S.slot = S.trackSlot;
+    S.trackSlot = -1;
+    S.blockIdx = 1;             /* back on SYNTH, the common case */
+    S.view = VIEW_BLOCKS;
+    refreshBlockNames();
+}
+
+/* The picker's rows, dispatched by `kind` like every other list here.
+ *
+ * In a TRACK context the global buses sit ABOVE the blocks: scrolling up past
+ * MIDI FX takes you out of the track and into the set. In a BUS context there
+ * are only its four FX blocks — no slot settings, because a bus has no slot. */
+/* COMPONENTS is keyed by plain chain names; a bus component (`master_fx:fx2`)
+ * browses the same audio-FX catalogue, so it resolves to the fx spec. */
+/* A chain slot reports a module ID; a bus reports the DSP PATH it was loaded
+ * from. Everything above this line wants the id — it names the preset folder,
+ * the baked-cache key and the picker label — so normalise once, here. */
+function moduleIdOf(raw) {
+    if (!raw) return '';
+    if (raw.indexOf('/') < 0) return raw;
+    const parts = raw.split('/').filter(Boolean);
+    return parts.length >= 2 ? parts[parts.length - 2] : parts[parts.length - 1];
+}
+
+function specKeyFor(comp) {
+    return COMPONENTS[comp] ? comp : 'fx1';
+}
+
+function buildPickRows() {
+    const rows = [];
+    if (S.bus) {
+        for (const n of BUS_BLOCKS) {
+            rows.push({ kind: 'block', comp: S.bus.prefix + 'fx' + n, label: 'FX ' + n });
+        }
+    } else {
+        for (const b of FX_BUSES) rows.push({ kind: 'bus', bus: b, label: '[' + b.title + ']' });
+        for (const i of S.blockRows) {
+            rows.push({ kind: 'block', comp: BLOCKS[i].comp, label: BLOCKS[i].label, blockIdx: i });
+        }
+        rows.push({ kind: 'settings', label: '[SLOT SETTINGS]' });
+    }
+    S.pickRows = rows;
+    /* Keep the cursor on the component it was on — the row INDEX shifts when a
+     * host lacks fx3/4, and a bus context has different rows entirely. */
+    const at = rows.findIndex(r => r.kind === 'block' && r.comp === S.comp);
+    if (at >= 0) S.pickRow = at;
+    if (S.pickRow >= rows.length) S.pickRow = 0;
+}
+
 function probeCaps() {
     const has = (v) => v !== null && v !== undefined && v !== '';
     S.capFx34  = has(engineGet(S.slot, 'fx3', 'bypassed')) ||
@@ -714,10 +815,6 @@ function probeCaps() {
         S.blockRows.push(i);
     }
     S.slotRows = SLOT_SETTINGS.filter(s => !s.cap || (s.cap === 'sends' && S.capSends));
-    /* Keep the picker cursor on the block it was on; if that block just became
-     * unavailable, fall back rather than point past the end. */
-    const r = S.blockRows.indexOf(S.blockIdx);
-    S.pickRow = (r >= 0) ? r : Math.min(S.pickRow, S.blockRows.length);
     log('caps: fx34=' + (S.capFx34 ? 1 : 0) + ' sends=' + (S.capSends ? 1 : 0));
 }
 
@@ -1094,9 +1191,11 @@ function retargetOpen() {
 
 function runAction(a) {
     if (a.t === 'names')        refreshBlockNames();
+    else if (a.t === 'bus')     enterBus(a.bus);
+    else if (a.t === 'leavebus') leaveBus();
     else if (a.t === 'retarget') retargetOpen();
-    else if (a.t === 'open')    openBlock(a.idx);
-    else if (a.t === 'browse')  openBrowse(a.idx);
+    else if (a.t === 'open')    openBlock(a.comp);
+    else if (a.t === 'browse')  openBrowse(a.comp);
     else if (a.t === 'load')    loadSelected();
     else if (a.t === 'presets') openPresets();
     else if (a.t === 'usrlist') openUserPresets();
@@ -1116,7 +1215,7 @@ function runAction(a) {
 }
 
 function runDiscovery() {
-    const id = engineLoadedModule(S.slot, S.comp);
+    const id = moduleIdOf(engineLoadedModule(S.slot, S.comp));
     S.moduleId = id;
     if (!id) { S.banks = []; S.sections = []; S.dirty = true; return; }
     const res = discover(S.slot, S.comp);
@@ -1143,13 +1242,16 @@ function runDiscovery() {
 /* `idx` retargets the block first. Shift+click arrives from the block PICKER,
  * where S.comp still names whichever block was last opened — browsing without
  * this would offer modules for the wrong component and load into it. */
-function openBrowse(idx) {
-    if (idx != null) {
-        S.blockIdx = idx;
-        S.comp = BLOCKS[idx].comp;
+function openBrowse(comp) {
+    if (comp) {
+        S.comp = comp;
+        const bi = BLOCKS.findIndex(b => b.comp === comp);
+        if (bi >= 0) S.blockIdx = bi;
     }
-    const spec = COMPONENTS[S.comp];
-    const found = spec ? engineListModules(S.comp) : [];
+    /* A bus component is `master_fx:fx2` etc; it browses the same audio-FX
+     * catalogue as a chain FX block, so map it onto that spec. */
+    const spec = COMPONENTS[S.comp] || (S.bus ? COMPONENTS.fx1 : null);
+    const found = spec ? engineListModules(specKeyFor(S.comp)) : [];
     /* [ none ] LAST — as index 0 with the cursor defaulting there, a single
      * click unloaded the block. That wiped two slots during phase-1 testing. */
     S.browseList = found.concat([{ id: '', name: '[ none ]' }]);
@@ -1166,7 +1268,10 @@ function openBrowse(idx) {
 function loadSelected() {
     const mod = S.browseList[S.browseIdx];
     if (!mod) return;
-    engineLoadModule(S.slot, S.comp, mod.id);
+    /* ⚠ A BUS component's `:module` takes a DSP PATH; a chain slot's takes a
+     * module id. Same key, different currency — loading a bus by id silently
+     * does nothing, which is the kind of failure you debug for an hour. */
+    engineLoadModule(S.slot, S.comp, S.bus ? (mod.path || '') : mod.id);
     /* The chain host instantiates asynchronously — discovering immediately
      * returns null metadata and the module looks empty. */
     S.pendingDiscover = 6;
@@ -1291,8 +1396,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
         const delta = decodeDelta(d2);
         if (!delta) return true;
         if (S.view === VIEW_BLOCKS) {
-            /* One row past the supported blocks is the slot's own settings. */
-            S.pickRow = listMove(S.blockRows.length + 1, S.pickRow, delta);
+            S.pickRow = listMove(S.pickRows.length, S.pickRow, delta);
         } else if (S.view === VIEW_SLOTCFG) {
             slotCfgStep(delta);
         } else if (S.view === VIEW_BROWSE) {
@@ -1352,14 +1456,12 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * (the block under the cursor) and from inside a block's editor (the
          * one you're in). Toggled optimistically and queued, because this runs
          * in the MIDI handler. */
-        if (S.muteHeld && S.view === VIEW_BLOCKS && S.pickRow < S.blockRows.length) {
-            const idx = S.blockRows[S.pickRow];
-            const comp = BLOCKS[idx] && BLOCKS[idx].comp;
-            if (comp && S.blockNames[idx]) {     /* nothing loaded = nothing to bypass */
-                const next = S.blockBypass[idx] ? 0 : 1;
-                S.blockBypass[idx] = next;
-                queueWrite('bypassed', String(next), comp);
-                S.presetMsg = next ? 'BYPASSED' : 'ACTIVE';
+        if (S.muteHeld && S.view === VIEW_BLOCKS) {
+            const r = S.pickRows[S.pickRow];
+            if (r && r.kind === 'block' && r.name) {   /* empty = nothing to bypass */
+                r.bypassed = r.bypassed ? 0 : 1;
+                queueWrite('bypassed', String(r.bypassed), r.comp);
+                S.presetMsg = r.bypassed ? 'BYPASSED' : 'ACTIVE';
                 S.dirty = true;
             }
             return true;
@@ -1367,15 +1469,20 @@ export function soundOnCC(d1, d2, decodeDelta) {
         if (S.view === VIEW_SLOTCFG) {
             S.slotCfgEditing = !S.slotCfgEditing;
         }
-        else if (S.view === VIEW_BLOCKS && S.pickRow === S.blockRows.length) {
+        else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
+                 S.pickRows[S.pickRow].kind === 'settings') {
             S.pendingAction = { t: 'slotcfg' };   /* reads the slot — tick only */
+        }
+        else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
+                 S.pickRows[S.pickRow].kind === 'bus') {
+            S.pendingAction = { t: 'bus', bus: S.pickRows[S.pickRow].bus };
         }
         else if (S.view === VIEW_BLOCKS) {
             /* Shift+click SWAPS the module; plain click opens it. Changing what
              * a block IS is rarer and more destructive than editing it, so it
              * costs the modifier and lives only here, at the chain overview
              * where "what is in this block" is the question being asked. */
-            S.pendingAction = { t: S.shiftHeld ? 'browse' : 'open', idx: S.blockRows[S.pickRow] };
+            S.pendingAction = { t: S.shiftHeld ? 'browse' : 'open', comp: S.pickRows[S.pickRow].comp };
         }
         else if (S.view === VIEW_BROWSE)      S.pendingAction = { t: 'load' };
         /* An EMPTY block has no presets to offer, and its editor's whole job is
@@ -1451,6 +1558,10 @@ export function soundOnCC(d1, d2, decodeDelta) {
         } else if (S.view === VIEW_EDIT || S.view === VIEW_BROWSE) {
             S.view = VIEW_BLOCKS;
             S.pendingAction = { t: 'names' };
+        } else if (S.bus) {
+            /* One level up is the TRACK you came from, not the way out: a bus
+             * was entered from that picker, so Back retraces it. */
+            S.pendingAction = { t: 'leavebus' };
         } else {
             soundExit();
         }
@@ -1584,31 +1695,21 @@ function centreText(y, text) {
 
 function renderBlocks() {
     clear_screen();
-    drawKitHeader('TRACK ' + (S.track + 1) + ' - SOUND', false);
+    drawKitHeader(S.bus ? S.bus.title : ('TRACK ' + (S.track + 1) + ' - SOUND'), false);
     const ROW_H = 9, VISIBLE = 6;
-    const ROWS = S.blockRows.length + 1;      /* + the slot's own settings */
-    const start = Math.max(0, Math.min(S.pickRow - 2, ROWS - VISIBLE));
+    const rows = S.pickRows;
+    const start = Math.max(0, Math.min(S.pickRow - 2, rows.length - VISIBLE));
     for (let i = 0; i < VISIBLE; i++) {
-        const row = start + i;
-        if (row >= ROWS) break;
+        const r = rows[start + i];
+        if (!r) break;
         const y = 10 + i * ROW_H;
-        const sel = (row === S.pickRow);
+        const sel = ((start + i) === S.pickRow);
         if (sel) fill_rect(0, y - 1, 128, ROW_H, 1);
-        /* The settings row is a destination, not a block — bracketed like the
-         * preset picker's other non-module rows so it doesn't read as another
-         * slot in the chain. */
-        if (row === S.blockRows.length) {
-            hdrPrint(3, y, '[SLOT SETTINGS]', sel ? 0 : 1);
-            continue;
-        }
-        const idx = S.blockRows[row];
-        hdrPrint(3, y, BLOCKS[idx].label, sel ? 0 : 1);
-        const id = S.blockNames[idx] || '-';
+        hdrPrint(3, y, r.label, sel ? 0 : 1);
+        if (r.kind !== 'block') continue;
         /* A bypassed block still says what it holds — you need to know WHAT is
-         * switched out — so the state rides as a prefix rather than replacing
-         * the name. Matches the host's 'B' marker on a bypassed component. */
-        const byp = S.blockBypass[idx] ? 'B ' : '';
-        let t = byp + String(id).toUpperCase();
+         * switched out — so the state rides as a prefix. Matches the host's 'B'. */
+        let t = (r.bypassed ? 'B ' : '') + String(r.name || '-').toUpperCase();
         while (t.length > 1 && mvWidth(t) > 60) t = t.slice(0, -1);
         mvPrint(Math.max(62, 125 - mvWidth(t)), y + 2, t, sel ? 0 : 1);
     }
