@@ -438,6 +438,7 @@ void shadow_chain_defaults(void) {
         shadow_chain_slots[i].patch_index = -1;
         shadow_chain_slots[i].channel = shadow_chain_parse_channel(1 + i);
         shadow_chain_slots[i].volume = 1.0f;
+        shadow_chain_slots[i].synth_volume = 1.0f;
         shadow_chain_slots[i].send_a = 0.0f;
         shadow_chain_slots[i].send_b = 0.0f;
         shadow_chain_slots[i].muted = 0;
@@ -1917,6 +1918,13 @@ int shadow_handle_slot_param_set(int slot, const char *key, const char *value) {
         shadow_ui_state_update_slot(slot);
         return 1;
     }
+    if (strcmp(key, "slot:synth_volume") == 0) {
+        float vol = atof(value);
+        if (vol < 0.0f) vol = 0.0f;
+        if (vol > 4.0f) vol = 4.0f;
+        shadow_chain_slots[slot].synth_volume = vol;
+        return 1;
+    }
     if (strcmp(key, "slot:send_a") == 0) {
         float lvl = atof(value);
         if (lvl < 0.0f) lvl = 0.0f;
@@ -1994,6 +2002,9 @@ int shadow_handle_slot_param_set(int slot, const char *key, const char *value) {
 int shadow_handle_slot_param_get(int slot, const char *key, char *buf, int buf_len) {
     if (strcmp(key, "slot:volume") == 0) {
         return snprintf(buf, buf_len, "%.2f", shadow_chain_slots[slot].volume);
+    }
+    if (strcmp(key, "slot:synth_volume") == 0) {
+        return snprintf(buf, buf_len, "%.2f", shadow_chain_slots[slot].synth_volume);
     }
     if (strcmp(key, "slot:send_a") == 0) {
         return snprintf(buf, buf_len, "%.2f", shadow_chain_slots[slot].send_a);

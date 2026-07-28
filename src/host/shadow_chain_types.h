@@ -35,6 +35,14 @@ typedef struct shadow_chain_slot_t {
     int patch_index;
     int active;
     float volume;           /* 0.0 to 1.0, user-set level (never modified by mute/solo) */
+    /* Sound-generator level, distinct from `volume` above. `volume` is the
+     * slot's OUTPUT BUS fader, applied after the slot's FX — so it scales
+     * everything on the channel, including a Move track routed into this slot's
+     * synth, and cannot balance the two sources against each other. This one is
+     * applied to the synth signal alone, BEFORE anything is summed in, which is
+     * the only place that separation is possible (post-FX the two are one
+     * signal). Unity by default; nothing changes until a UI drives it. */
+    float synth_volume;
     float send_a;           /* 0.0 to 1.0, post-fader send level to Send A bus */
     float send_b;           /* 0.0 to 1.0, post-fader send level to Send B bus */
     int muted;              /* 1 = muted (Mute+Track or Move speakerOn sync) */

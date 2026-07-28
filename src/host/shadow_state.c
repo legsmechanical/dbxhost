@@ -207,6 +207,13 @@ void shadow_save_state(void)
             host_chain_slots[1].volume,
             host_chain_slots[2].volume,
             host_chain_slots[3].volume);
+    /* Sound-generator level, separate from the bus fader above. Written
+     * unconditionally; readers that predate this key default it to unity. */
+    fprintf(f, "  \"slot_synth_volumes\": [%.3f, %.3f, %.3f, %.3f],\n",
+            host_chain_slots[0].synth_volume,
+            host_chain_slots[1].synth_volume,
+            host_chain_slots[2].synth_volume,
+            host_chain_slots[3].synth_volume);
     fprintf(f, "  \"slot_send_a\": [%.3f, %.3f, %.3f, %.3f],\n",
             host_chain_slots[0].send_a,
             host_chain_slots[1].send_a,
@@ -321,6 +328,31 @@ void shadow_load_state(void)
                 snprintf(msg, sizeof(msg), "Loaded slot volumes: [%.2f, %.2f, %.2f, %.2f]",
                          v0, v1, v2, v3);
                 if (host_log) host_log(msg);
+            }
+        }
+    }
+
+    /* Parse slot_synth_volumes array. ABSENCE IS NORMAL — state files written
+     * before this key existed simply leave the initialised unity value, so an
+     * older config loads with the sound generator at full and only the bus
+     * fader restored, exactly as it behaved before. */
+    {
+        const char *skey = "\"slot_synth_volumes\":";
+        char *spos = strstr(json, skey);
+        if (spos) {
+            spos = strchr(spos, '[');
+            if (spos) {
+                float s0, s1, s2, s3;
+                if (sscanf(spos, "[%f, %f, %f, %f]", &s0, &s1, &s2, &s3) == 4) {
+                    if (s0 < 0.0f) s0 = 0.0f; if (s0 > 4.0f) s0 = 4.0f;
+                    if (s1 < 0.0f) s1 = 0.0f; if (s1 > 4.0f) s1 = 4.0f;
+                    if (s2 < 0.0f) s2 = 0.0f; if (s2 > 4.0f) s2 = 4.0f;
+                    if (s3 < 0.0f) s3 = 0.0f; if (s3 > 4.0f) s3 = 4.0f;
+                    host_chain_slots[0].synth_volume = s0;
+                    host_chain_slots[1].synth_volume = s1;
+                    host_chain_slots[2].synth_volume = s2;
+                    host_chain_slots[3].synth_volume = s3;
+                }
             }
         }
     }

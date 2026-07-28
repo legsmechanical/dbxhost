@@ -2373,8 +2373,18 @@ static void shadow_inprocess_mix_from_buffer(void) {
                  * here (route_to_synth); otherwise the synth is processed alone
                  * and the Move track goes through its Move FX slot below. */
                 int16_t fx_buf[FRAMES_PER_BLOCK * 2];
+                /* Sound-generator level, applied to the synth ALONE and BEFORE
+                 * anything is summed in. The slot's own volume is a bus fader
+                 * applied after the FX, so it scales a routed Move track too and
+                 * cannot balance the two sources against each other. Post-FX the
+                 * signals are inseparable (a reverb tail doesn't remember its
+                 * source), so pre-sum is the only place this can work. Unity by
+                 * default — nothing changes until a UI drives it. */
+                const float synth_vol = shadow_chain_slots[s].synth_volume;
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-                    int32_t combined = (int32_t)synth_src[i];
+                    int32_t combined = (synth_vol == 1.0f)
+                        ? (int32_t)synth_src[i]
+                        : (int32_t)lroundf((float)synth_src[i] * synth_vol);
                     if (have_move_track && route_to_synth)
                         combined += (int32_t)move_track[i];
                     if (combined > 32767) combined = 32767;
