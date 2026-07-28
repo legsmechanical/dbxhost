@@ -3570,7 +3570,12 @@ static void shadow_swap_display(void)
     if (!shadow_volume_knob_touched) {
         shadow_block_plain_volume_hide_until_release = 0;
     }
-    if (shadow_volume_knob_touched && !shadow_shift_held) {
+    /* A tool holding vol_block owns the knob, so a volume TOUCH must not hand
+     * the OLED to Move firmware. The shim still sees note 8 (the filter only
+     * stops it reaching Move, not our own tracking), so without this the shadow
+     * display is hidden and Move's screen shows through underneath the tool. */
+    if (shadow_volume_knob_touched && !shadow_shift_held &&
+        !(shadow_control && shadow_control->vol_block)) {
         if (shadow_block_plain_volume_hide_until_release) {
             /* Keep shadow UI visible until shortcut's volume touch is fully released. */
             if (display_hidden_for_volume) {
