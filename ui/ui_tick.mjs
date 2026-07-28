@@ -37,7 +37,7 @@ import { effectiveClip, updateStepLEDs, updateSessionLEDs, updateTrackLEDs, flas
     invalidateLEDCache, trackColor, setPaletteEntryRGB, reapplyPalette, forceRedraw,
     updatePerfModeLEDs, altIndicatorActive, clearAllLEDs, installFlagsWrap, removeFlagsWrap,
     buildLedInitQueue, drainLedInit } from './ui_leds.mjs';
-import { schSlotForTrack, schSlotsForTrack, enterSchwungCoRun,
+import { schSlotForTrack, schSlotsForTrack, schSlotMasksAllTracks, enterSchwungCoRun,
     assertOvertakeSysexSuppress } from './ui_corun.mjs';
 import { pollPendingExport } from './ui_export.mjs';
 import { drawUI } from './ui_render.mjs';
@@ -59,6 +59,14 @@ const KNOB_TURN_HIGHLIGHT_TICKS = 56;             /* ~600ms at 94Hz — highligh
 const STEP_HOLD_TICKS      = 19;   /* ~200ms at ~94Hz (device actual): below = tap, at/above = hold */
 const STEP_SAVE_HOLD_TICKS = 70;   /* ~750ms at 94Hz */
 const STEP_SAVE_FLASH_TICKS = 40;  /* ~200ms double-blink on step button LEDs after save */
+/* ~500ms at 94Hz. How long the session-view level must sit still before the
+ * chain state is written. Comfortably longer than the gaps inside one turn
+ * (encoder messages come in bursts), short enough that a save always lands well
+ * before a user could act on the result. */
+const SESSVOL_SAVE_IDLE_TICKS = 47;
+/* Reused across polls — this runs every POLL_INTERVAL ticks and a fresh array
+ * each time is garbage the tick doesn't need to make. */
+const _sessMaskScratch = new Array(8).fill(0);
 
 function playMetronomeClick() {
     /* DSP handles click audio via render_block; nothing to do here */
@@ -1050,9 +1058,13 @@ export function _tickImpl() {
          * the Schwung UI, so it can't arise from normal use. If that ever
          * changes, this is the site that needs an exact-channel match.) */
         if (S.sessionView && (S.tickCount % POLL_INTERVAL) === 0) {
+            /* ONE chain enumeration for all eight, not one per track — see
+             * schSlotMasksAllTracks. The per-track helper here cost eight of
+             * them per poll and hitched the display during a knob turn. */
+            schSlotMasksAllTracks(_sessMaskScratch);
             for (let _t = 0; _t < NUM_TRACKS; _t++) {
                 if (S.trackRoute[_t] !== 0) { S.sessVolSlots[_t] = 0; continue; }
-                const _m = schSlotsForTrack(_t);
+                const _m = _sessMaskScratch[_t];
                 S.sessVolSlots[_t] = _m;
                 /* Seed the level from the lowest matching slot the first time
                  * we see one, so the first turn moves from the real value. */
@@ -1077,8 +1089,19 @@ export function _tickImpl() {
                 _wrote++;
             }
             /* Persist once the gesture is over, never per detent — the host's
-             * slot-level setter doesn't save, and saving is a sync file write. */
-            if (S.sessVolSaveOwed && !_wrote && !S.sessVolPending.some(Boolean)) {
+             * slot-level setter doesn't save, and saving is a sync file write.
+             *
+             * ⚠ "No writes pending" is NOT the end of a gesture. Encoder messages
+             * arrive in bursts, so a continuous turn leaves quiet ticks all the
+             * way through it; keying the save off that fired a whole-chain file
+             * write mid-turn, over and over, and the knob visibly froze on each
+             * one. The gesture is over when the LEVEL STOPS MOVING, so wait for
+             * a real gap since the last turn — long enough to cover the pauses
+             * inside one gesture, short enough that letting go and pulling the
+             * battery still keeps the move. */
+            if (S.sessVolSaveOwed && !_wrote && !S.sessVolPending.some(Boolean) &&
+                ((S.tickCount - S.sessVolLastTurn) >= SESSVOL_SAVE_IDLE_TICKS ||
+                 S.pendingSuspendSave)) {
                 S.sessVolSaveOwed = false;
                 engineSaveState();
             }

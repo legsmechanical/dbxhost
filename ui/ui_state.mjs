@@ -551,6 +551,7 @@ export const S = {
     sessVolLevel: new Array(8).fill(-1),   /* 0..4 gain, 1 = unity */
     sessVolPending: new Array(8).fill(false),
     sessVolSaveOwed: false,
+    sessVolLastTurn: -1,                   /* tick of the last level change */
     pendingSoundEnterTrack: -1, /* Sound mode entry queued from the Shift-release dispatch. Slot resolution needs shadow_get_slots, which must run in tick context — same deferral as pendingSchwungCoRunTrack. */
     pendingUndoSync: 0,
     pendingDefaultSetParams: [],

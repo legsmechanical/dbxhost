@@ -2676,9 +2676,11 @@ function _sessionKnobVolume(knobIdx, d2) {
     if (v === lvl) return;
     S.sessVolLevel[knobIdx] = v;
     S.sessVolPending[knobIdx] = true;
-    /* Flagged at change time, not on capacitive release: tick flushes once the
-     * writes settle, so it persists even if the knob was never touch-reported. */
+    /* Flagged at change time, not on capacitive release, so it persists even if
+     * the knob was never touch-reported. The tick decides WHEN, and it waits for
+     * the turn to actually stop — see SESSVOL_SAVE_IDLE_TICKS. */
     S.sessVolSaveOwed = true;
+    S.sessVolLastTurn = S.tickCount;
     showActionPopup('TRACK ' + (knobIdx + 1) + ' LEVEL', v.toFixed(2) + 'x');
 }
 

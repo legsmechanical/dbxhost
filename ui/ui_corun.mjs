@@ -104,6 +104,29 @@ export function schSlotsForTrack(t) {
     return mask;
 }
 
+/* Every track's mask from ONE chain enumeration, written into `out`.
+ *
+ * shadow_get_slots() enumerates the whole chain per call, so asking the helper
+ * above about eight tracks in a loop paid for eight enumerations to answer one
+ * question — at POLL_INTERVAL that ran a few hundred times a second and was
+ * enough to hitch the display mid-knob-turn. The channels are read from the
+ * same snapshot, which is also more correct: eight separate reads could
+ * straddle a chain edit and disagree with each other. */
+export function schSlotMasksAllTracks(out) {
+    if (typeof shadow_get_slots !== 'function') { out.fill(0); return out; }
+    const slots = shadow_get_slots();
+    if (!slots) { out.fill(0); return out; }
+    for (let t = 0; t < out.length; t++) {
+        const ch = S.trackChannel[t];
+        let mask = 0;
+        for (let i = 0; i < slots.length && i < 4; i++) {
+            if (slots[i].channel === ch || slots[i].channel === 0) mask |= (1 << i);
+        }
+        out[t] = mask;
+    }
+    return out;
+}
+
 /* Open the Schwung-slot picker (first use) or enter co-run directly if the
  * track already has a slot assigned. Co-run keeps dAVEBOx loaded; the chain
  * editor for the picked slot takes over OLED + jog + track buttons, while
