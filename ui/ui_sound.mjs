@@ -25,6 +25,7 @@ import {
     engineLoadModule, engineLoadedModule, engineGetState, engineSetState,
     engineListUserPresets, engineReadUserPreset,
     engineGetSlotParam, engineSetSlotParam, engineSaveState, engineVolBlock,
+    SLOT_LEVEL_KEY,
 } from './ui_engine.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
@@ -75,7 +76,7 @@ const PREVIEW_DELAY_TICKS = 15;
 const BAKED_SCAN_PER_TICK = 2;   /* same SHM budget as the write drain */
 const SAVE_ROW = 0;
 
-/* slot:volume is a 0..4 gain, host-clamped, 1.0 = unity. A detent of 1/64 gives
+/* The slot level is a 0..4 gain, host-clamped, 1.0 = unity. A detent of 1/64 gives
  * unity in ~64 detents and the full range in ~256 — a sweep without being
  * twitchy near unity, which is where it matters. */
 const VOL_MIN = 0, VOL_MAX = 4, VOL_STEP = 1 / 64;
@@ -264,7 +265,7 @@ export function soundRetarget(track, slot) {
      * stays up, we're still in sound mode. */
     if (S.volPending) {                    /* land it on the OLD slot first */
         S.volPending = false;
-        engineSetSlotParam(S.slot, 'volume', S.volLevel.toFixed(3));
+        engineSetSlotParam(S.slot, SLOT_LEVEL_KEY, S.volLevel.toFixed(3));
     }
     flushVolumeSave();
     S.volLevel = readSlotVolume(slot);
@@ -304,7 +305,7 @@ function refreshBlockNames() {
  * Move unconditionally otherwise, ahead of and independent of the module's
  * button_passthrough list, so there is no module.json way to opt out. */
 function readSlotVolume(slot) {
-    const raw = engineGetSlotParam(slot, 'volume');
+    const raw = engineGetSlotParam(slot, SLOT_LEVEL_KEY);
     const v = parseFloat(raw);
     return (isFinite(v) && v >= 0) ? v : 1;
 }
@@ -324,7 +325,7 @@ function releaseVolume() {
     engineVolBlock(false);
 }
 
-/* The host's slot:volume setter updates runtime state but never persists, so
+/* The host's slot-level setter updates runtime state but never persists, so
  * the write and the SAVE are separate acts. Saving is a synchronous file write,
  * so it happens once when the gesture ends — never per detent. */
 function flushVolumeSave() {
@@ -1057,7 +1058,7 @@ export function soundOnNote(status, d1, d2) {
     if (status !== 0x90 && status !== 0x80) return false;
 
     /* Note 8 = volume-knob touch. Its RELEASE is the end of the gesture, and
-     * the only moment worth persisting: the host's slot:volume setter doesn't
+     * the only moment worth persisting: the host's slot-level setter doesn't
      * save, and saving is a synchronous file write. */
     if (d1 === 8) {
         const on = (status === 0x90 && d2 >= 64);
@@ -1116,7 +1117,7 @@ export function soundTick() {
 
     if (S.volPending) {
         S.volPending = false;
-        engineSetSlotParam(S.slot, 'volume', S.volLevel.toFixed(3));
+        engineSetSlotParam(S.slot, SLOT_LEVEL_KEY, S.volLevel.toFixed(3));
     }
 
     /* One heavy job per tick, and never on top of pending writes: a discovery

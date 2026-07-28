@@ -58,10 +58,25 @@ export function engineSet(slot, comp, key, val) {
 /* SLOT-level params (volume, muted, send_a...) live on the slot itself, not on
  * a component — same shadow_get/set_param call, different key namespace
  * ("slot:volume"). Kept here with every other key-building call per this file's
- * port-surface rule. `slot:volume` is a 0..4 gain, host-clamped, 1.0 = unity.
+ * port-surface rule. Slot gains are 0..4, host-clamped, 1.0 = unity.
  *
  * NOTE: the host's setter updates runtime state and the UI mirror but does NOT
  * persist — call engineSaveState() once a gesture ends, not per detent. */
+
+/* The key every "level" control in this module writes.
+ *
+ * `slot:volume` is the channel's BUS fader: it runs after the slot's FX, so it
+ * also scales a Move track routed into that slot and cannot balance the two
+ * against each other. `slot:synth_volume` scales the sound generator alone,
+ * before anything is summed in — which is what a davebox track's level means,
+ * since the routed Move audio belongs to some other track entirely.
+ *
+ * Requires the paired host (`slot:synth_volume` landed with the sound build). An
+ * older shim drops the set silently, so the knob would move and nothing would be
+ * heard. Not capability-probed: a get from a MIDI handler returns null on every
+ * host, so a probe cannot tell "old shim" from "wrong context" and would latch
+ * the wrong answer. Flip this one string to go back to the fader. */
+export const SLOT_LEVEL_KEY = 'synth_volume';
 export function engineGetSlotParam(slot, key) {
     return shadow_get_param(slot, 'slot:' + key);
 }

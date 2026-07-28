@@ -49,7 +49,8 @@ import { pollDSP,
 import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes } from './ui_record.mjs';
 import { xposeCancelPreview } from './ui_xpose.mjs';
 import { checkBackHold, backTapWouldAct } from './ui_input_cc.mjs';
-import { engineGetSlotParam, engineSetSlotParam, engineSaveState } from './ui_engine.mjs';
+import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
+         SLOT_LEVEL_KEY } from './ui_engine.mjs';
 import { soundActive, soundEnter, soundExit, soundTick, soundDirty,
     soundTrack, soundRetarget, soundConsumeLedDirty } from './ui_sound.mjs';
 
@@ -1036,6 +1037,9 @@ export function _tickImpl() {
         }
 
         /* SESSION VIEW slot levels: knob N drives track N's Schwung slot(s).
+         * The level is the slot's SOUND GENERATOR (SLOT_LEVEL_KEY), not its bus
+         * fader — the fader would also move Move-track audio routed into the
+         * same slot, which is not this track's sound.
          *
          * Resolution and writes both live here — schSlotsForTrack calls
          * shadow_get_slots, and each write is a synchronous SHM round-trip.
@@ -1055,7 +1059,7 @@ export function _tickImpl() {
                 if (_m !== 0 && S.sessVolLevel[_t] < 0) {
                     let _s0 = 0;
                     while (_s0 < 4 && !(_m & (1 << _s0))) _s0++;
-                    const _raw = parseFloat(engineGetSlotParam(_s0, 'volume'));
+                    const _raw = parseFloat(engineGetSlotParam(_s0, SLOT_LEVEL_KEY));
                     S.sessVolLevel[_t] = isFinite(_raw) && _raw >= 0 ? _raw : 1;
                 }
             }
@@ -1068,12 +1072,12 @@ export function _tickImpl() {
                 const _m = S.sessVolSlots[_t] | 0;
                 const _v = S.sessVolLevel[_t].toFixed(3);
                 for (let _s = 0; _s < 4; _s++) {
-                    if (_m & (1 << _s)) engineSetSlotParam(_s, 'volume', _v);
+                    if (_m & (1 << _s)) engineSetSlotParam(_s, SLOT_LEVEL_KEY, _v);
                 }
                 _wrote++;
             }
             /* Persist once the gesture is over, never per detent — the host's
-             * slot:volume setter doesn't save, and saving is a sync file write. */
+             * slot-level setter doesn't save, and saving is a sync file write. */
             if (S.sessVolSaveOwed && !_wrote && !S.sessVolPending.some(Boolean)) {
                 S.sessVolSaveOwed = false;
                 engineSaveState();
