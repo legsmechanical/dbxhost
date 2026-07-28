@@ -223,6 +223,37 @@ showed no highlight on a bare touch and let it linger on a timer. The rig now
 follows the kit: touch sets it, release clears it, and the turn-driven fallback
 still decays so a knob turned without touch contact still highlights.
 
+## Decided against: hosting a module's OWN canvas UI
+
+Settled 2026-07-28 (Josh). **Not building it.** Recorded here because the mechanism is fully
+mapped and tractable, so the temptation to "just try it" will recur.
+
+The idea: some modules ship an on-device canvas UI, which davebox's menu currently shows as an
+`opaque` row (named, valued, not openable). Hosting means running the module's own canvas code
+inside davebox. The mechanism holds up — `shadow_load_ui_module` is a C global
+(`shadow_ui.c:2444`); the module's script sets `globalThis.canvas_overlay` with
+`onOpen/onMidi/tick/draw/onClose/onExit`, called `fn(ctx, payload)`; `ctx` is plain (draw
+primitives + `getParam`/`setParam`) and davebox can supply all of it.
+
+Why it's not worth it:
+
+- **The valuable half already shipped.** Their canvas is ONE `canvas`-type param — a Bank
+  Editor — not a whole param UI. Adopting the authored bank *structure* (round 6, `b248d0a`)
+  gets davebox drawing those pages natively for 7 of 9 canvas modules. Hosting would add the
+  two hand-rolled ones (echidna, pushnpull) and whatever a canvas expresses that our pages
+  can't.
+- **It re-invites the failure class we spent 2026-07-28 removing.** Their `tick`/`draw` would
+  run inside davebox's tick with a synchronous SHM `getParam` **per frame**. The two stalls
+  fixed that day — a whole-chain save firing between encoder bursts, and 8 chain enumerations
+  per poll — were exactly this shape. Beyond routing their `getParam` through our cache and
+  `queueWrite`, we do not control what foreign draw code does per frame, and davebox is a
+  sequencer whose timing budget is the product.
+- The globals-clobber hazard is *not* the blocker — `engineLoadKitStructure` already
+  save/restores `globalThis.init`/`tick` around this exact call.
+
+**If it is ever revisited:** time-box a spike behind a gate, load one module's canvas, and
+measure real tick cost with its draw code running. Decide on numbers, not on prediction.
+
 ## Known gaps (phase 1)
 
 - **SHIFT section picker** — canvaskit's icon overlay (`core/engine.js`,
