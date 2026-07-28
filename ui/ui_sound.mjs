@@ -25,7 +25,7 @@ import {
     engineLoadModule, engineLoadedModule, engineGetState, engineSetState,
     engineListUserPresets, engineReadUserPreset,
     engineGetSlotParam, engineSetSlotParam, engineSaveState, engineVolBlock,
-    SLOT_LEVEL_KEY, SLOT_LEVEL_STEP,
+    SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
 } from './ui_engine.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
@@ -79,7 +79,7 @@ const SAVE_ROW = 0;
 /* The slot level is a 0..4 gain, host-clamped, 1.0 = unity. The per-detent step
  * is SLOT_LEVEL_STEP, shared with the session-view knobs so both feel the same;
  * its header explains why the step is as fine as it is. */
-const VOL_MIN = 0, VOL_MAX = 4, VOL_STEP = SLOT_LEVEL_STEP;
+const VOL_MIN = 0, VOL_MAX = SLOT_LEVEL_MAX, VOL_STEP = SLOT_LEVEL_STEP;
 const VOL_SHOW_TICKS = 94;      /* ~1s readout after the last turn */
 
 /* Poll cadences, in ticks (~94Hz). Deliberately slower than the lab rig's flat

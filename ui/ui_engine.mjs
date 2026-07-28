@@ -93,6 +93,18 @@ export const SLOT_LEVEL_KEY = 'synth_volume';
  * not accelerate either — it intercepts CC 79 only, and davebox claims it
  * (`claims_master_knob`), so both arrive as the same raw batched counts. */
 export const SLOT_LEVEL_STEP = 1 / 64;
+
+/* Ceiling for every level control, matching the host's Module Level row.
+ *
+ * NOT the slot Volume's 0..4. The gain is applied where the synth is summed into
+ * the slot and clamps to int16 right there, so boost above unity clips before
+ * the bus fader downstream can do anything about it. Some boost has to stay:
+ * turning the synth down is the only way to favour a routed Move track, and
+ * turning it up is the only way to favour the synth. Halving the range also
+ * doubles the resolution around unity, where balancing actually happens.
+ * (The host still CLAMPS at 4 — that is the wire bound, deliberately left
+ * permissive so already-saved states aren't reinterpreted.) */
+export const SLOT_LEVEL_MAX = 2;
 export function engineGetSlotParam(slot, key) {
     return shadow_get_param(slot, 'slot:' + key);
 }

@@ -28,7 +28,7 @@ import {
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool
 } from './ui_constants.mjs';
 import { S, conductorTrackIdx } from './ui_state.mjs';
-import { SLOT_LEVEL_STEP } from './ui_engine.mjs';
+import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity, BANK_CYCLE_DRUM, CONDUCT_BANK_CYCLE } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup } from './ui_persistence.mjs';
 import {
@@ -2672,7 +2672,7 @@ function _sessionKnobVolume(knobIdx, d2) {
     if (!d) return;
     let v = lvl + d * SLOT_LEVEL_STEP;
     if (v < 0) v = 0;
-    if (v > 4) v = 4;
+    if (v > SLOT_LEVEL_MAX) v = SLOT_LEVEL_MAX;
     if (v === lvl) return;
     S.sessVolLevel[knobIdx] = v;
     S.sessVolPending[knobIdx] = true;
