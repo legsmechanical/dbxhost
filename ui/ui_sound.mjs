@@ -57,7 +57,39 @@ export const BLOCKS = [
 
 const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
       VIEW_PRESET_SRC = 3, VIEW_PRESET_LIST = 4, VIEW_PRESET_BAKED = 5,
-      VIEW_MENU = 6, VIEW_FILE = 7;
+      VIEW_MENU = 6, VIEW_FILE = 7, VIEW_SLOTCFG = 8;
+
+/* ---- slot settings ----
+ *
+ * The SLOT's own params, as opposed to any module in it: where the track's
+ * audio goes and how its MIDI is routed. They were reachable only by leaving
+ * davebox for the host's chain editor, which is a long way to go for a send.
+ *
+ * Mirrors the host's CHAIN_SETTINGS_ITEMS — same keys, same ranges, so the two
+ * screens can't disagree — minus the rows that are actions rather than values
+ * (knob assignment, LFOs, patch save/delete) and minus MPE, which is a mode you
+ * set once at the host rather than reach for mid-track.
+ *
+ * `fmt` exists because a raw number is a lie for most of these: -1 on a forward
+ * channel means Auto, 0 on a receive channel means All. */
+const CH_FMT = (v) => (v === 0 ? 'All' : 'Ch ' + v);
+const FWD_FMT = (v) => (v === -2 ? 'Thru' : v === -1 ? 'Auto' : 'Ch ' + (v + 1));
+const PCT_FMT = (v) => Math.round(v * 100) + '%';
+const ST_FMT  = (v) => (v === 0 ? '0 st' : (v > 0 ? '+' : '') + v + ' st');
+const ONOFF   = (v) => (v ? 'Yes' : 'No');
+
+const SLOT_SETTINGS = [
+    { key: 'volume',        label: 'Volume',      min: 0, max: 4, step: 0.05, fmt: PCT_FMT },
+    { key: SLOT_LEVEL_KEY,  label: 'Module Lvl',  min: 0, max: SLOT_LEVEL_MAX, step: 0.02, fmt: PCT_FMT },
+    { key: 'send_a',        label: 'Send A',      min: 0, max: 1, step: 0.05, fmt: PCT_FMT },
+    { key: 'send_b',        label: 'Send B',      min: 0, max: 1, step: 0.05, fmt: PCT_FMT },
+    { key: 'transpose',     label: 'Transpose',   min: -12, max: 12, step: 1, int: true, fmt: ST_FMT },
+    { key: 'receive_channel', label: 'Recv Ch',   min: 0, max: 16, step: 1, int: true, fmt: CH_FMT },
+    { key: 'forward_channel', label: 'Fwd Ch',    min: -2, max: 15, step: 1, int: true, fmt: FWD_FMT },
+    { key: 'muted',         label: 'Muted',       min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
+    { key: 'soloed',        label: 'Soloed',      min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
+    { key: 'move_to_slot',  label: 'Move>Schw',   min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
+];
 
 /* The jog-click picker offers three destinations, and they are NOT the same
  * kind of thing — rows are dispatched by `kind`, never by a fixed index, since
@@ -167,6 +199,11 @@ const S = {
     needsPoll: false,           /* forced re-read owed (bank change) */
     blockNames: [],             /* loaded module id per block, for the picker */
     blockBypass: [],            /* 1 = that block is bypassed (host `<comp>:bypassed`) */
+    slotCfgIdx: 0,
+    slotCfgVals: [],            /* live values, index-aligned with SLOT_SETTINGS */
+    slotCfgEditing: false,
+    slotCfgDirty: false,        /* something changed; save on leaving the screen */
+    pendingSlotWrites: [],      /* slot-param writes, drained in tick */
 
     shiftHeld: false,
     tickCount: 0,
@@ -237,6 +274,14 @@ export function soundRetarget(track, slot) {
      * must not follow you to the next one. */
     for (const w of S.pendingWrites) engineSet(w.slot, w.comp, w.key, w.val);
     S.pendingWrites.length = 0;
+    /* Same for slot params — they carry their own slot, so landing them here is
+     * correct rather than merely tidy. */
+    for (const w of S.pendingSlotWrites) {
+        const s = SLOT_SETTINGS.find(x => x.key === w.key);
+        engineSetSlotParam(w.slot, w.key, s && s.int ? String(w.val) : w.val.toFixed(3));
+    }
+    S.pendingSlotWrites.length = 0;
+    if (S.slotCfgDirty) { S.slotCfgDirty = false; engineSaveState(); }
 
     S.track = track;
     S.slot = slot;
@@ -283,6 +328,15 @@ export function soundExit() {
      * fed another message, never drawn. Close it first. */
     if (isTextEntryActive()) closeTextEntry();
     releaseVolume();
+    /* Slot edits are FLUSHED on the way out, not dropped like in-flight module
+     * writes: a send you just dialled should survive leaving sound mode, and
+     * each carries its own slot so landing them late is still correct. */
+    for (const w of S.pendingSlotWrites) {
+        const s = SLOT_SETTINGS.find(x => x.key === w.key);
+        engineSetSlotParam(w.slot, w.key, s && s.int ? String(w.val) : w.val.toFixed(3));
+    }
+    S.pendingSlotWrites.length = 0;
+    if (S.slotCfgDirty) { S.slotCfgDirty = false; engineSaveState(); }
     S.active = false;
     S.pendingWrites.length = 0;
     S.pendingAction = null;
@@ -625,6 +679,88 @@ function openFileBrowser(row) {
     S.view = VIEW_FILE;
 }
 
+/* ---- slot settings: read, edit, persist ---- */
+
+function openSlotCfg() {
+    S.slotCfgVals = SLOT_SETTINGS.map(s => {
+        const raw = parseFloat(engineGetSlotParam(S.slot, s.key));
+        return isFinite(raw) ? raw : 0;
+    });
+    S.slotCfgIdx = 0;
+    S.slotCfgEditing = false;
+    S.slotCfgDirty = false;
+    S.view = VIEW_SLOTCFG;
+    S.dirty = true;
+}
+
+function slotCfgStep(delta) {
+    const s = SLOT_SETTINGS[S.slotCfgIdx];
+    if (!S.slotCfgEditing || !s) {
+        S.slotCfgIdx = listMove(SLOT_SETTINGS.length, S.slotCfgIdx, delta);
+        S.slotCfgEditing = false;
+        return;
+    }
+    let v = S.slotCfgVals[S.slotCfgIdx] + (delta > 0 ? s.step : -s.step);
+    if (s.int) v = Math.round(v);
+    else v = Math.round(v * 1000) / 1000;      /* keep 0.05 steps from drifting */
+    if (v < s.min) v = s.min;
+    if (v > s.max) v = s.max;
+    if (v === S.slotCfgVals[S.slotCfgIdx]) return;
+    S.slotCfgVals[S.slotCfgIdx] = v;
+    S.slotCfgDirty = true;
+    /* Queued like every other write here: this runs in the MIDI handler. */
+    /* Slot captured at QUEUE time, same reason queueWrite does it: sound mode
+     * can retarget to another track before the drain, and a send raised against
+     * one slot must not land in the one that replaced it. */
+    for (const w of S.pendingSlotWrites) {
+        if (w.key === s.key && w.slot === S.slot) { w.val = v; return; }
+    }
+    S.pendingSlotWrites.push({ slot: S.slot, key: s.key, val: v });
+}
+
+/* Saving is a synchronous whole-chain file write, so it happens on LEAVING the
+ * screen — one gesture boundary that can't be mistaken, unlike "no writes
+ * pending this tick", which fires in the gaps between jog detents. */
+function closeSlotCfg() {
+    if (S.slotCfgDirty) {
+        S.slotCfgDirty = false;
+        S.pendingAction = { t: 'slotsave' };
+    }
+    S.view = VIEW_BLOCKS;
+    S.dirty = true;
+}
+
+function drainSlotWrites() {
+    const q = S.pendingSlotWrites;
+    if (!q.length) return;
+    for (let n = 0; n < WRITES_PER_TICK && q.length; n++) {
+        const w = q.shift();
+        const s = SLOT_SETTINGS.find(x => x.key === w.key);
+        engineSetSlotParam(w.slot, w.key, s && s.int ? String(w.val) : w.val.toFixed(3));
+    }
+}
+
+function renderSlotCfg() {
+    clear_screen();
+    drawKitHeader('SLOT ' + (S.slot + 1) + ' SETTINGS', false);
+    const ROW_H = 10, VISIBLE = 5;
+    const start = Math.max(0, Math.min(S.slotCfgIdx - 2, SLOT_SETTINGS.length - VISIBLE));
+    for (let i = 0; i < VISIBLE; i++) {
+        const idx = start + i;
+        if (idx >= SLOT_SETTINGS.length) break;
+        const s = SLOT_SETTINGS[idx];
+        const y = 11 + i * ROW_H;
+        const on = (idx === S.slotCfgIdx);
+        if (on) fill_rect(0, y - 1, 128, ROW_H, 1);
+        const ink = on ? 0 : 1;
+        const val = s.fmt(S.slotCfgVals[idx]);
+        const vw = mvWidth(val);
+        mvPrint(3, y + 1, s.label, ink);
+        mvPrint(125 - vw, y + 1, val, ink);
+        if (on && S.slotCfgEditing) mvPrint(125 - vw - 6, y + 1, '*', ink);
+    }
+}
+
 function menuEnter() {
     const row = S.menuRowsCache[S.menuIdx];
     if (!row) return;
@@ -930,6 +1066,8 @@ function runAction(a) {
     else if (a.t === 'bakedset') commitBaked();
     else if (a.t === 'menu')     openMenu();
     else if (a.t === 'menuload') refreshMenuRows();
+    else if (a.t === 'slotcfg')  openSlotCfg();
+    else if (a.t === 'slotsave') engineSaveState();
     else if (a.t === 'file')     openFileBrowser(S.menuRowsCache[a.idx]);
     else if (a.t === 'textedit') startTextEdit(a.idx);
     S.dirty = true;
@@ -1102,7 +1240,10 @@ export function soundOnCC(d1, d2, decodeDelta) {
         const delta = decodeDelta(d2);
         if (!delta) return true;
         if (S.view === VIEW_BLOCKS) {
-            S.blockIdx = listMove(BLOCKS.length, S.blockIdx, delta);
+            /* One row past the blocks is the slot's own settings. */
+            S.blockIdx = listMove(BLOCKS.length + 1, S.blockIdx, delta);
+        } else if (S.view === VIEW_SLOTCFG) {
+            slotCfgStep(delta);
         } else if (S.view === VIEW_BROWSE) {
             S.browseIdx = listMove(S.browseList.length, S.browseIdx, delta);
         } else if (S.view === VIEW_PRESET_SRC) {
@@ -1161,7 +1302,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * one you're in). Toggled optimistically and queued, because this runs
          * in the MIDI handler. */
         if (S.muteHeld && (S.view === VIEW_BLOCKS || S.view === VIEW_EDIT)) {
-            const idx = (S.view === VIEW_BLOCKS) ? S.blockIdx : S.blockIdx;
+            const idx = S.blockIdx;
             const comp = BLOCKS[idx] && BLOCKS[idx].comp;
             if (comp && S.blockNames[idx]) {     /* nothing loaded = nothing to bypass */
                 const next = S.blockBypass[idx] ? 0 : 1;
@@ -1172,7 +1313,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
             }
             return true;
         }
-        if (S.view === VIEW_BLOCKS) {
+        if (S.view === VIEW_SLOTCFG) {
+            S.slotCfgEditing = !S.slotCfgEditing;
+        }
+        else if (S.view === VIEW_BLOCKS && S.blockIdx === BLOCKS.length) {
+            S.pendingAction = { t: 'slotcfg' };   /* reads the slot — tick only */
+        }
+        else if (S.view === VIEW_BLOCKS) {
             /* Shift+click SWAPS the module; plain click opens it. Changing what
              * a block IS is rarer and more destructive than editing it, so it
              * costs the modifier and lives only here, at the chain overview
@@ -1217,7 +1364,10 @@ export function soundOnCC(d1, d2, decodeDelta) {
     }
 
     if (d1 === 51 && d2 >= 64) {                       /* back */
-        if (S.view === VIEW_FILE) {
+        if (S.view === VIEW_SLOTCFG) {
+            if (S.slotCfgEditing) S.slotCfgEditing = false;   /* leave edit first */
+            else closeSlotCfg();
+        } else if (S.view === VIEW_FILE) {
             S.view = VIEW_MENU;
         } else if (S.view === VIEW_MENU) {
             if (!menuBack()) S.view = VIEW_PRESET_SRC;
@@ -1307,6 +1457,7 @@ export function soundTick() {
         const w = S.pendingWrites.shift();
         engineSet(w.slot, w.comp, w.key, w.val);
     }
+    drainSlotWrites();
 
     if (S.volPending) {
         S.volPending = false;
@@ -1368,13 +1519,21 @@ function renderBlocks() {
     clear_screen();
     drawKitHeader('TRACK ' + (S.track + 1) + ' - SOUND', false);
     const ROW_H = 9, VISIBLE = 6;
-    const start = Math.max(0, Math.min(S.blockIdx - 2, BLOCKS.length - VISIBLE));
+    const ROWS = BLOCKS.length + 1;          /* + the slot's own settings */
+    const start = Math.max(0, Math.min(S.blockIdx - 2, ROWS - VISIBLE));
     for (let i = 0; i < VISIBLE; i++) {
         const idx = start + i;
-        if (idx >= BLOCKS.length) break;
+        if (idx >= ROWS) break;
         const y = 10 + i * ROW_H;
         const sel = (idx === S.blockIdx);
         if (sel) fill_rect(0, y - 1, 128, ROW_H, 1);
+        /* The settings row is a destination, not a block — bracketed like the
+         * preset picker's other non-module rows so it doesn't read as a 7th
+         * slot in the chain. */
+        if (idx === BLOCKS.length) {
+            hdrPrint(3, y, '[SLOT SETTINGS]', sel ? 0 : 1);
+            continue;
+        }
         hdrPrint(3, y, BLOCKS[idx].label, sel ? 0 : 1);
         const id = S.blockNames[idx] || '-';
         /* A bypassed block still says what it holds — you need to know WHAT is
@@ -1560,6 +1719,7 @@ export function soundRender() {
     else if (S.view === VIEW_PRESET_BAKED) renderPresetBaked();
     else if (S.view === VIEW_MENU) renderMenu();
     else if (S.view === VIEW_FILE) renderFile();
+    else if (S.view === VIEW_SLOTCFG) renderSlotCfg();
     else renderEdit();
     if (S.volShownUntil >= 0 && S.tickCount <= S.volShownUntil) drawVolReadout();
     return true;
