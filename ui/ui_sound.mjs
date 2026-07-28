@@ -40,7 +40,7 @@ import { discover, deriveSections, activeSection, filterVizFor,
 import { parseValue, stepValue, commitString, renderCellsForBank,
     formatValue } from './ui_cells.mjs';
 import {
-    drawKitBankPage, drawKitHeader, drawKitSectionPicker, drawKitValueOverlay,
+    drawKitBankPage, drawKitHeader, drawKitSectionPicker,
     hdrPrint, mvPrint, mvWidth,
 } from './ui_movy.mjs';
 
@@ -1153,15 +1153,17 @@ export function soundTick() {
 
 /* ---- render ---- */
 
-/* TEMPORARY, 2026-07-27: the zoom overlay is switched off while Josh decides
- * whether it earns its place. Flip to true to restore it — everything that
- * feeds it (touch tracking, turnedSinceTouch, the overlay draw call) is left
- * intact deliberately, so this is a one-word change either way rather than a
- * re-implementation. Touch HIGHLIGHTING is unaffected; only the zoom is gated. */
-const VALUE_OVERLAY_ENABLED = false;
-
+/* Turn-to-reveal index: which knob has been physically touched AND then turned.
+ *
+ * It gates the option-list picker overlay — a bare orienting touch must not
+ * cover three neighbouring cells; only an actual turn should.
+ *
+ * The value ZOOM used to ride this too and is gone (Josh, 2026-07-28: the
+ * header already names the param and the cell already shows the value, so the
+ * zoom bought legibility by hiding half the page). Removed rather than left
+ * behind a disabled flag: while it was gated off, this function returned -1
+ * unconditionally, which silently took the option-list picker down with it. */
 function overlayIdx() {
-    if (!VALUE_OVERLAY_ENABLED) return -1;
     return (S.touchedIdx >= 0 && S.turnedSinceTouch) ? S.touchedIdx : -1;
 }
 
@@ -1226,7 +1228,6 @@ function renderEdit() {
         env: bank.env || null,
         filt: filterVizFor(bank, S.values),
     });
-    drawKitValueOverlay(cells, overlayIdx());
     if (S.shiftHeld && S.sections.length > 1) {
         drawKitSectionPicker(S.sections, activeSection(S.sections, S.bankIdx));
     }
