@@ -28,6 +28,7 @@ import {
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool
 } from './ui_constants.mjs';
 import { S, conductorTrackIdx } from './ui_state.mjs';
+import { SLOT_LEVEL_STEP } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity, BANK_CYCLE_DRUM, CONDUCT_BANK_CYCLE } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup } from './ui_persistence.mjs';
 import {
@@ -2655,10 +2656,11 @@ function _onCC_stepedit(d1, d2) {
  * which is the honest answer: there is no level to move. */
 /* Raw detents, NOT ccKnobDelta. That helper halves the count (BASE=2) and
  * carries per-knob acceleration state shared with the bank-param path, which
- * made this both slow and inconsistent on device. A level wants a predictable
- * sweep: 1/16 per detent puts unity ~16 detents away and the full 0..4 range in
- * ~64, which is a quarter-turn rather than a marathon. */
-const SESSVOL_STEP = 1 / 16;
+ * made this both slow and inconsistent on device.
+ *
+ * Step and decode are now IDENTICAL to sound mode's master-knob level
+ * (SLOT_LEVEL_STEP) — same law, same feel, one constant. 1/16 was 4x too fast
+ * and, against decodeDelta's batched counts, jerky with it. */
 
 function _sessionKnobVolume(knobIdx, d2) {
     if (knobIdx >= NUM_TRACKS) return;
@@ -2668,7 +2670,7 @@ function _sessionKnobVolume(knobIdx, d2) {
     if (lvl < 0) return;                          /* not read yet; tick will */
     const d = (d2 >= 1 && d2 <= 63) ? d2 : (d2 >= 65) ? d2 - 128 : 0;
     if (!d) return;
-    let v = lvl + d * SESSVOL_STEP;
+    let v = lvl + d * SLOT_LEVEL_STEP;
     if (v < 0) v = 0;
     if (v > 4) v = 4;
     if (v === lvl) return;

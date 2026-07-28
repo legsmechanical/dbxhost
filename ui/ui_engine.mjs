@@ -77,6 +77,22 @@ export function engineSet(slot, comp, key, val) {
  * host, so a probe cannot tell "old shim" from "wrong context" and would latch
  * the wrong answer. Flip this one string to go back to the fader. */
 export const SLOT_LEVEL_KEY = 'synth_volume';
+
+/* And the law for MOVING it, shared by every level control so they cannot drift
+ * apart in feel. Levels are 0..4; a detent of 1/64 puts unity ~64 detents away
+ * and the whole range in ~256.
+ *
+ * That is deliberately fine. `decodeDelta` returns a BATCHED count — the shadow
+ * UI framework accumulates encoder ticks in overtake mode and sends the total in
+ * one CC — so a quick turn arrives as a few large messages, not many small ones.
+ * A coarse step turns each of those into an audible jump: at 1/16 a batch of
+ * four moved a quarter of unity at once, which read as fast AND jerky. The step
+ * has to be small enough that a batch still lands as a slide.
+ *
+ * The 8 knobs and the master knob get identical treatment because the host does
+ * not accelerate either — it intercepts CC 79 only, and davebox claims it
+ * (`claims_master_knob`), so both arrive as the same raw batched counts. */
+export const SLOT_LEVEL_STEP = 1 / 64;
 export function engineGetSlotParam(slot, key) {
     return shadow_get_param(slot, 'slot:' + key);
 }
