@@ -140,6 +140,7 @@ const S = {
     bakedScan: -1,              /* prescan cursor; -1 = idle */
     bakedScanRestore: 0,        /* index to put back when the scan finishes */
     bakedCacheKey: '',          /* moduleId|comp|count the cached names belong to */
+    bakedFp: '',                /* fingerprint of the preset SET those names came from */
     presetMsg: '',
 
     /* Audition. Scrolling applies the highlighted preset so you hear it before
@@ -746,53 +747,70 @@ function menuStep(delta) {
  * That cost is worth paying ONCE, not once per visit and never twice per boot.
  * Nothing about a ROM's preset names changes between sessions.
  *
- * Identity has to include the BANK, not just the module: obxd and dexed swap
- * the whole preset set underneath an unchanged module id, comp and count.
- * bankSig() reads the select_param of every dynamic level the hierarchy
- * declares, which is exactly the set of things that can do that.
+ * Identity cannot come from the module id alone: obxd and dexed swap the whole
+ * preset set underneath an unchanged id, comp and count.
  *
- * ⚠ Not covered: a user dropping a new .syx/.fxb into an existing bank without
- * changing the preset count. Rare, and Back-then-reopen after a bank switch
- * already rescans; a stale name is cosmetic, since selecting still writes the
- * index the module itself resolves. */
+ * It also cannot be inferred from the hierarchy's dynamic levels, which was the
+ * first attempt. minijv declares THREE — `jump_to_expansion` and
+ * `load_expansion` genuinely change the patch set, but `do_save_to_slot` is a
+ * write-only save COMMAND, and folding that into identity would throw away 4096
+ * cached names every time you saved a patch. `navigate_to` doesn't separate
+ * them either: minijv's save slot and its expansion jump both point at `patch`.
+ *
+ * So don't guess from names — ASK THE SET WHAT IT IS. A fingerprint of the
+ * preset names at a few fixed indices identifies the set directly: it changes
+ * exactly when the thing we cached changes, whatever caused it. Three samples
+ * against 4096 is free, and it also catches the case a bank-identity key never
+ * could — new content dropped into a bank that kept the same count.
+ *
+ * Each distinct fingerprint gets its own file, so alternating between two banks
+ * reads both from disk rather than re-scanning on every switch. */
 const BAKED_CACHE_DIR = '/data/UserData/schwung/cache/davebox-presetnames';
-const BAKED_CACHE_V = 1;
+const BAKED_CACHE_V = 2;
 
-function bankSig() {
-    const levels = S.levels;
-    if (!levels) return '';
-    const parts = [];
-    for (const k of Object.keys(levels)) {
-        const lv = levels[k];
-        if (!lv || !lv.items_param || !lv.select_param) continue;
-        parts.push(lv.select_param + '=' + (engineGet(S.slot, S.comp, lv.select_param) || ''));
+/* Sampling MOVES the module's preset index — the caller restores it. Kept out
+ * of the memory-cache path so a warm list opens without perturbing the sound. */
+function bakedFingerprint(sp, count) {
+    if (!count) return '';
+    const idxs = (count <= 3) ? [0] : [0, count >> 1, count - 1];
+    const out = [];
+    for (const i of idxs) {
+        engineSet(S.slot, S.comp, sp.listKey, String(i));
+        out.push(engineGet(S.slot, S.comp, sp.nameKey) || '');
     }
-    return parts.sort().join(',');
+    return out.join('');
 }
 
-function bakedCachePath(key) {
-    return BAKED_CACHE_DIR + '/' + key.replace(/[^A-Za-z0-9._=-]/g, '_') + '.json';
+function hashStr(s) {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0;
+    return h.toString(16);
 }
 
-function loadBakedCache(key, count) {
+function bakedCachePath(key, fp) {
+    const stem = (key + '_' + hashStr(fp)).replace(/[^A-Za-z0-9._-]/g, '_');
+    return BAKED_CACHE_DIR + '/' + stem + '.json';
+}
+
+function loadBakedCache(key, fp, count) {
     if (typeof host_read_file !== 'function') return null;
     let txt = null;
-    try { txt = host_read_file(bakedCachePath(key)); } catch (e) { return null; }
+    try { txt = host_read_file(bakedCachePath(key, fp)); } catch (e) { return null; }
     if (!txt) return null;
     try {
         const o = JSON.parse(txt);
-        if (!o || o.v !== BAKED_CACHE_V || o.key !== key) return null;
+        if (!o || o.v !== BAKED_CACHE_V || o.key !== key || o.fp !== fp) return null;
         if (!Array.isArray(o.names) || o.names.length !== count) return null;
         return o.names;
     } catch (e) { log('baked cache parse failed: ' + e); return null; }
 }
 
-function saveBakedCache(key, names) {
+function saveBakedCache(key, fp, names) {
     if (typeof host_write_file !== 'function') return;
     if (typeof host_ensure_dir === 'function') host_ensure_dir(BAKED_CACHE_DIR);
     try {
-        host_write_file(bakedCachePath(key),
-                        JSON.stringify({ v: BAKED_CACHE_V, key, names }));
+        host_write_file(bakedCachePath(key, fp),
+                        JSON.stringify({ v: BAKED_CACHE_V, key, fp, names }));
     } catch (e) { log('baked cache write failed: ' + e); }
 }
 
@@ -805,21 +823,27 @@ function openBaked() {
     S.presetMsg = '';
     captureOriginal();
 
-    const key = S.moduleId + '|' + S.comp + '|' + S.bakedCount + '|' + bankSig();
+    const key = S.moduleId + '|' + S.comp + '|' + S.bakedCount;
     let via = 'scanning';
     if (key === S.bakedCacheKey && S.bakedNames.length === S.bakedCount) {
-        S.bakedScan = -1;                 /* already scanned this bank */
+        /* Warm in memory. Selecting any dynamic item drops this, so a bank
+         * switch cannot land here — which is what earns skipping the sampling. */
+        S.bakedScan = -1;
         via = 'memory';
     } else {
-        const cached = loadBakedCache(key, S.bakedCount);
+        const fp = bakedFingerprint(sp, S.bakedCount);
+        engineSet(S.slot, S.comp, sp.listKey, String(S.bakedIdx));   /* undo sampling */
+        const cached = loadBakedCache(key, fp, S.bakedCount);
         if (cached) {
             S.bakedNames = cached;
             S.bakedCacheKey = key;
+            S.bakedFp = fp;
             S.bakedScan = -1;
             via = 'disk';
         } else {
             S.bakedNames = new Array(S.bakedCount).fill('');
             S.bakedCacheKey = key;
+            S.bakedFp = fp;
             S.bakedScanRestore = S.bakedIdx;
             S.bakedScan = S.bakedCount ? 0 : -1;
         }
@@ -852,7 +876,7 @@ function stepBakedScan() {
         engineSet(S.slot, S.comp, sp.listKey, String(S.bakedIdx));
         /* Paid for it — keep it. The write lands here, at the end of the scan,
          * so a scan abandoned half-way never persists a partial list. */
-        saveBakedCache(S.bakedCacheKey, S.bakedNames);
+        saveBakedCache(S.bakedCacheKey, S.bakedFp, S.bakedNames);
     }
     S.dirty = true;
 }
