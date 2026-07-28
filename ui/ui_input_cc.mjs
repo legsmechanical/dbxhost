@@ -30,7 +30,8 @@ import {
 import { S, conductorTrackIdx } from './ui_state.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity, BANK_CYCLE_DRUM, CONDUCT_BANK_CYCLE } from './ui_pure.mjs';
-import { saveState, writeSidecar, doClearSession, showActionPopup } from './ui_persistence.mjs';
+import { saveState, writeSidecar, doClearSession, showActionPopup,
+         showActionPopupGauge } from './ui_persistence.mjs';
 import {
     openSaveSnapshot, closeSnapshotPicker,
     snapshotPickerRotate, snapshotPickerClick, openClearAutoMenu,
@@ -2681,7 +2682,8 @@ function _sessionKnobVolume(knobIdx, d2) {
      * the turn to actually stop — see SESSVOL_SAVE_IDLE_TICKS. */
     S.sessVolSaveOwed = true;
     S.sessVolLastTurn = S.tickCount;
-    showActionPopup('TRACK ' + (knobIdx + 1) + ' LEVEL', v.toFixed(2) + 'x');
+    showActionPopupGauge(v / SLOT_LEVEL_MAX, 1 / SLOT_LEVEL_MAX,
+                         'TRACK ' + (knobIdx + 1) + ' LEVEL', v.toFixed(2) + 'x');
 }
 
 function _onCC_knobs(d1, d2) {

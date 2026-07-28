@@ -170,9 +170,22 @@ export function maybeShowInheritPicker(uuid, name) {
 
 export function showActionPopup(...lines) {
     S.actionPopupHighlight = -1;
+    S.actionPopupGauge = -1;
+    S.actionPopupGaugeMark = -1;
     S.actionPopupLines   = lines;
     S.actionPopupEndTick = S.tickCount + ACTION_POPUP_TICKS;
     S.screenDirty = true;
+}
+
+/* Same popup, plus a bar. For values you are DIALLING rather than events you
+ * are being told about: a number alone makes you read where you are, a bar
+ * shows it. `mark` draws a reference tick — unity on a level, so "back to
+ * normal" is a place on screen rather than a number to hunt for. Both are
+ * fractions of full scale; -1 omits the tick. */
+export function showActionPopupGauge(frac, mark, ...lines) {
+    showActionPopup(...lines);
+    S.actionPopupGauge = Math.max(0, Math.min(1, frac));
+    S.actionPopupGaugeMark = (mark >= 0 && mark <= 1) ? mark : -1;
 }
 
 /* Write the sidecar synchronously. Split out of saveState so bank-change

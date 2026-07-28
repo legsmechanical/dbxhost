@@ -262,6 +262,10 @@ export const S = {
     actionPopupEndTick: -1,
     actionPopupLines: [],
     actionPopupHighlight: -1,
+    /* 0..1 fill for a popup that reads a LEVEL rather than an event; -1 = none.
+     * Kept separate from the lines so the bar needs no string sniffing. */
+    actionPopupGauge: -1,
+    actionPopupGaugeMark: -1,      /* 0..1 reference tick (unity), -1 = none */
     clockShiftTouchDelta: 0,
     screenDirty: true,
     lastBlinkOn: null,

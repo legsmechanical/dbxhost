@@ -818,7 +818,24 @@ export function drawUI() {
     if (S.sessionView) {
         if (S.actionPopupEndTick >= 0) {
             const _n = S.actionPopupLines.length;
-            if (_n >= 4) {
+            if (S.actionPopupGauge >= 0) {
+                /* Gauge popup: text sits high so the bar owns the lower half.
+                 * Same geometry as sound mode's level read-out, so the two
+                 * levels look like the same control seen from two places. */
+                print(4, 18, S.actionPopupLines[0], 1);
+                if (_n >= 2) print(4, 30, S.actionPopupLines[1], 1);
+                const _bx = 4, _bw = 120, _by = 46, _bh = 6;
+                draw_rect(_bx, _by, _bw, _bh, 1);
+                const _fw = Math.round((_bw - 2) * S.actionPopupGauge);
+                if (_fw > 0) fill_rect(_bx + 1, _by + 1, _fw, _bh - 2, 1);
+                /* Unity tick, drawn ABOVE the bar rather than inside it — a
+                 * mark inside would be swallowed by the fill exactly when you
+                 * are on it, which is the moment it has to be visible. */
+                if (S.actionPopupGaugeMark >= 0) {
+                    const _mx = _bx + 1 + Math.round((_bw - 2) * S.actionPopupGaugeMark);
+                    fill_rect(_mx, _by - 4, 1, 3, 1);
+                }
+            } else if (_n >= 4) {
                 print(4, 14, S.actionPopupLines[0], 1);
                 print(4, 25, S.actionPopupLines[1], 1);
                 print(4, 36, S.actionPopupLines[2], 1);
