@@ -773,9 +773,16 @@ export function menuRows(levels, levelKey, cpMap) {
             rows.push({ kind: 'param', key: p, label: labelFor(p, null, cpMap) });
         } else if (p && p.level) {
             const child = levels[p.level];
-            if (child && child.list_param && child.count_param) continue;
+            /* A nav entry can name a level the module never defines — surge
+             * advertises "Mod Slot 1".."6" (`mod_0`..`mod_5`) and ships none of
+             * them. Rendering the row anyway hands you six entries that open on
+             * "NO PARAMS", which reads as a broken menu rather than an absent
+             * feature. Drop them: a row that cannot go anywhere is worse than
+             * no row. (Same check the `children` walk below applies.) */
+            if (!child) continue;
+            if (child.list_param && child.count_param) continue;
             rows.push({ kind: 'level', level: p.level,
-                        label: p.label || p.name || (child && (child.name || child.label)) || p.level });
+                        label: p.label || p.name || child.name || child.label || p.level });
         } else if (p && p.key) {
             rows.push({ kind: 'param', key: p.key, label: labelFor(p.key, p, cpMap) });
         }

@@ -534,6 +534,13 @@ eq(menuRows({ a: { params: [], children: [{ level: 'b' }] }, b: { name: 'B' } },
 eq(menuRows({ a: { params: [], children: 'ghost' } }, 'a', {}), [],
    'a children edge naming a level that does not exist is dropped, not a throw');
 
+/* surge advertises `{"level":"mod_0","label":"Mod Slot 1"}` .. mod_5 and defines
+ * none of them. A row that opens on "NO PARAMS" reads as a broken menu, so an
+ * undefined target is dropped the same way a bad children edge is. */
+eq(menuRows({ a: { params: [{ level: 'mod_0', label: 'Mod Slot 1' },
+                            { key: 'cutoff' }] } }, 'a', {}).map(r => r.key || r.level),
+   ['cutoff'], 'a nav row pointing at an undefined level is dropped');
+
 /* ---- canvaskit structure adoption ----
  * A kit module publishes the layout its author designed. Adoption must keep
  * their bank ORDER, their fitted labels, and their sections — and must return
