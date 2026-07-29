@@ -300,6 +300,11 @@ export function markSoundDirty() { S.dirty = true; }
 
 export function soundEnter(track, slot) {
     S.active = true;
+    /* A TRACK context is not a bus one. Without this the previous session's bus
+     * survived — S.bus is what soundIsGlobal() and buildPickRows() read, so
+     * entering a track's sound landed you back on the bus's blocks. Third bug
+     * of this shape today: state that outlives the screen it belonged to. */
+    clearBusContext();
     S.track = track;
     S.slot = slot;
     S.view = VIEW_BLOCKS;
@@ -376,6 +381,15 @@ export function soundRetarget(track, slot) {
     log('retarget: track ' + track + ' slot ' + slot + ' comp ' + S.comp);
 }
 
+/* Everything that only means something inside a bus. Cleared on both edges —
+ * leaving sound mode and entering a track — so neither direction can inherit it. */
+function clearBusContext() {
+    S.bus = null;
+    S.busIdx = 0;
+    S.busLevelEditing = false;
+    S.busLevelDirty = false;
+}
+
 export function soundExit() {
     /* The keyboard is modal and driven ONLY by soundOnMidiRaw, which gates on
      * S.active — so leaving with it open would strand it: still "active", never
@@ -391,8 +405,16 @@ export function soundExit() {
     }
     S.pendingSlotWrites.length = 0;
     if (S.slotCfgDirty) { S.slotCfgDirty = false; engineSaveState(); }
-    S.active = false;
+    /* Component writes are flushed too, not dropped. They were dropped back when
+     * the only thing in this queue was a param edit mid-turn; a send's RETURN
+     * level rides the same queue now, and leaving the screen is exactly when you
+     * would expect the value you just dialled to stick. Each carries its own
+     * slot and comp, so landing them here is correct, not merely tidy. */
+    for (const w of S.pendingWrites) engineSet(w.slot, w.comp, w.key, w.val);
     S.pendingWrites.length = 0;
+    if (S.busLevelDirty) engineSaveState();
+    S.active = false;
+    clearBusContext();
     S.pendingAction = null;
     S.pendingDiscover = 0;
     S.dirty = true;
