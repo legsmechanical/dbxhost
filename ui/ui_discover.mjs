@@ -97,6 +97,45 @@ function fitWord(s, lim) {
     return out.slice(0, lim);
 }
 
+/* ---- module identity + the browser list --------------------------------
+ *
+ * A chain slot reports a module ID; a BUS reports the DSP PATH it was loaded
+ * from. Everything above wants the id — it names the preset folder, the
+ * baked-cache key and the picker label — so normalise once, here. */
+export function moduleIdOf(raw) {
+    if (!raw) return '';
+    if (raw.indexOf('/') < 0) return raw;
+    const parts = raw.split('/').filter(Boolean);
+    return parts.length >= 2 ? parts[parts.length - 2] : parts[parts.length - 1];
+}
+
+/* The module picker's rows, and where the cursor starts.
+ *
+ * `[ none ]` sits FIRST (Josh, 2026-07-29). It used to sit last for a real
+ * reason: at index 0 with the cursor defaulting there, a single click unloaded
+ * the block, and that wiped two slots during phase-1 testing. What makes the
+ * top safe is this function's second job — **the cursor never rests on [ none ]
+ * by default**. It opens on the loaded module, or on the first real module when
+ * the block is empty, so unloading always costs a deliberate move onto the row.
+ *
+ * ⚠ The identity compare must be NORMALISED on both sides. A bus reports a path
+ * while the rows carry ids, so a raw compare never matched on a bus and left
+ * the cursor at 0 — invisible while [ none ] was at the bottom, and precisely
+ * the slot-wipe above once it moved to the top. */
+export function buildBrowseList(found, activeRaw) {
+    const list = [{ id: '', name: '[ none ]' }].concat(found || []);
+    const active = moduleIdOf(activeRaw);
+    let idx = -1;
+    if (active) {
+        for (let i = 0; i < list.length; i++) {
+            const m = list[i];
+            if (m.id && moduleIdOf(m.path || m.id) === active) { idx = i; break; }
+        }
+    }
+    if (idx < 0) idx = list.length > 1 ? 1 : 0;
+    return { list, idx };
+}
+
 /* ---- label disambiguation ----------------------------------------------
  *
  * shortLabel keeps the LAST word, which is the identifying noun — right until

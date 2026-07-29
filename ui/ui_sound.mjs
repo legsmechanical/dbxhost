@@ -41,7 +41,8 @@ import {
     moveFilepathBrowserSelection, activateFilepathBrowserItem,
 } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 import { discover, deriveSections, activeSection, filterVizFor,
-    menuRows, menuCell, levelCommits, childSpec, modeRows } from './ui_discover.mjs';
+    menuRows, menuCell, levelCommits, childSpec, modeRows,
+    moduleIdOf, buildBrowseList } from './ui_discover.mjs';
 import { parseValue, stepValue, commitString, renderCellsForBank,
     formatValue } from './ui_cells.mjs';
 import {
@@ -865,15 +866,7 @@ function leaveBus() {
  * reached from the session view rather than from any track. */
 /* COMPONENTS is keyed by plain chain names; a bus component (`master_fx:fx2`)
  * browses the same audio-FX catalogue, so it resolves to the fx spec. */
-/* A chain slot reports a module ID; a bus reports the DSP PATH it was loaded
- * from. Everything above this line wants the id — it names the preset folder,
- * the baked-cache key and the picker label — so normalise once, here. */
-function moduleIdOf(raw) {
-    if (!raw) return '';
-    if (raw.indexOf('/') < 0) return raw;
-    const parts = raw.split('/').filter(Boolean);
-    return parts.length >= 2 ? parts[parts.length - 2] : parts[parts.length - 1];
-}
+/* moduleIdOf now lives in ui_discover.mjs — the browser list needs it too. */
 
 function specKeyFor(comp) {
     return COMPONENTS[comp] ? comp : 'fx1';
@@ -1406,14 +1399,11 @@ function openBrowse(comp) {
      * catalogue as a chain FX block, so map it onto that spec. */
     const spec = COMPONENTS[S.comp] || (S.bus ? COMPONENTS.fx1 : null);
     const found = spec ? engineListModules(specKeyFor(S.comp)) : [];
-    /* [ none ] LAST — as index 0 with the cursor defaulting there, a single
-     * click unloaded the block. That wiped two slots during phase-1 testing. */
-    S.browseList = found.concat([{ id: '', name: '[ none ]' }]);
-    const active = engineLoadedModule(S.slot, S.comp);
-    S.browseIdx = 0;
-    for (let i = 0; i < S.browseList.length; i++) {
-        if (S.browseList[i].id === active) { S.browseIdx = i; break; }
-    }
+    /* [ none ] first, and the cursor never resting on it, are one decision —
+     * see buildBrowseList, which owns both and is pinned by tests. */
+    const picked = buildBrowseList(found, engineLoadedModule(S.slot, S.comp));
+    S.browseList = picked.list;
+    S.browseIdx = picked.idx;
     S.view = VIEW_BROWSE;
     S.dirty = true;
     log('browse: ' + found.length + ' modules for ' + S.comp);

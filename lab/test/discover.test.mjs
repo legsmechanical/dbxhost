@@ -30,7 +30,7 @@ globalThis.os = { readdir: () => [[], 0] };
 const { discover, shortLabel, deriveSections, activeSection, filterVizFor,
         modeIdFor, findFilterModeCell, findPresetSpec, menuRows, levelCommits,
         adoptKitStructure, childSpec, childParamKey, buildLevelPages,
-        modeKeys, modeRows, disambiguateLabels } =
+        modeKeys, modeRows, disambiguateLabels, moduleIdOf, buildBrowseList } =
     await import('../../ui/ui_discover.mjs');
 const { toRenderCell, parseValue, stepValue, commitString, formatValue } =
     await import('../../ui/ui_cells.mjs');
@@ -773,6 +773,36 @@ eq(shorts(['Filter Cutoff', 'Resonance', 'Osc 2']), ['CTFF', 'RSNN', 'OSC2'],
 eq(shortLabel('Gain', 3), 'Gan', 'drops only as many vowels as it must');
 eq(shortLabel('Peak', 3), 'Pek', 'and always from the right');
 eq(shortLabel('Attack'), 'Attc', 'never drops the LEADING character');
+
+/* ---- module browser list ----
+ * [ none ] moved to the TOP on 2026-07-29 at Josh's request. It had been at the
+ * bottom for a real reason — at index 0 with the cursor defaulting there, one
+ * click unloaded the block and that wiped two slots in phase-1 testing. The top
+ * is only safe because the cursor never RESTS on it, so that is what these pin. */
+const MODS = [{ id: 'obxd', name: 'OB-Xd' }, { id: 'dexed', name: 'Dexed' }];
+
+eq(buildBrowseList(MODS, 'obxd').list.map(m => m.name),
+   ['[ none ]', 'OB-Xd', 'Dexed'], '[ none ] is the FIRST row');
+eq(buildBrowseList(MODS, 'obxd').idx, 1, 'opens on the loaded module');
+eq(buildBrowseList(MODS, 'dexed').idx, 2, 'even when it is further down');
+eq(buildBrowseList(MODS, '').idx, 1,
+   'EMPTY block rests on the first real module, NOT on [ none ]');
+eq(buildBrowseList(MODS, null).idx, 1, 'and the same for a null read');
+eq(buildBrowseList(MODS, 'uninstalled').idx, 1,
+   'a module no longer installed must not drop the cursor onto [ none ]');
+eq(buildBrowseList([], 'obxd').idx, 0,
+   'with no modules at all there is nowhere else to be');
+
+/* ⚠ A BUS reports the DSP PATH where a chain slot reports an id. Comparing raw
+ * never matched on a bus, leaving the cursor at 0 — invisible while [ none ]
+ * was last, and the slot-wipe above once it moved first. */
+const BUSMODS = [{ id: 'obxd', name: 'OB-Xd', path: '/data/UserData/schwung/modules/audio_fx/obxd/dsp.so' }];
+eq(buildBrowseList(BUSMODS, '/data/UserData/schwung/modules/audio_fx/obxd/dsp.so').idx, 1,
+   'a bus path still finds its row, so the cursor never starts on [ none ]');
+eq(moduleIdOf('/data/UserData/schwung/modules/audio_fx/obxd/dsp.so'), 'obxd',
+   'a DSP path normalises to the module directory');
+eq(moduleIdOf('obxd'), 'obxd', 'a plain id passes through');
+eq(moduleIdOf(''), '', 'nothing loaded stays nothing');
 
 /* ---- report ---- */
 
