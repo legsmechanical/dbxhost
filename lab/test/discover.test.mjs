@@ -29,7 +29,8 @@ globalThis.os = { readdir: () => [[], 0] };
 
 const { discover, shortLabel, deriveSections, activeSection, filterVizFor,
         modeIdFor, findFilterModeCell, findPresetSpec, menuRows, levelCommits,
-        adoptKitStructure } = await import('../../ui/ui_discover.mjs');
+        adoptKitStructure, childSpec, childParamKey, buildLevelPages } =
+    await import('../../ui/ui_discover.mjs');
 const { toRenderCell, parseValue, stepValue, commitString, formatValue } =
     await import('../../ui/ui_cells.mjs');
 
@@ -607,6 +608,62 @@ ok(!levelCommits({ label: 'Load Expansion', items_param: 'expansion_list',
 ok(levelCommits({ label: 'Slots', select_param: 'write_patch' }, 'x'),
    'the select_param counts too, not just the label');
 ok(!levelCommits(null, 'x'), 'a missing level is not a commit');
+
+/* ---- repeated elements (child_prefix) ----
+ * minijv's `part_selector`, copied verbatim from the device dump on 2026-07-29:
+ * one set of params standing for 8 multitimbral parts, where the REAL key for
+ * part i is `sram_part_<i>_<key>`. Reading these fields is the whole feature —
+ * without it every read and write here addresses `partlevel`, which minijv does
+ * not have, and the menu silently does nothing. */
+const PARTS = {
+    root: { name: 'Mini-JV', params: [{ level: 'part_selector', label: 'Edit Parts' }] },
+    part_selector: {
+        label: 'Parts', child_prefix: 'sram_part_', child_count: 8, child_label: 'Part',
+        knobs: ['partlevel', 'partpan'],
+        params: ['patchbank', 'partlevel'],
+    },
+};
+
+eq(childSpec(PARTS.part_selector), { prefix: 'sram_part_', count: 8, label: 'Part' },
+   'minijv part_selector is a repeated element');
+eq(childSpec(PARTS.root), null, 'a plain level has no children');
+eq(childSpec({ child_prefix: 'x_', child_count: 0 }), null,
+   'a zero count is not a repeated element');
+eq(childSpec({ child_count: 8 }), null, 'a count without a prefix is not one either');
+eq(childSpec({ child_prefix: 'x_', child_count: 2 }).label, 'Item',
+   'child_label defaults rather than printing "undefined 1"');
+
+eq(childParamKey(PARTS.part_selector, 3, 'partlevel'), 'sram_part_3_partlevel',
+   'the address carries the element index');
+eq(childParamKey(PARTS.part_selector, -1, 'partlevel'), 'partlevel',
+   'no element chosen = the bare key');
+eq(childParamKey(PARTS.root, 3, 'cutoff'), 'cutoff',
+   'a level without children ignores the index');
+
+/* No element chosen yet: the level asks WHICH, exactly as the host does. */
+eq(menuRows(PARTS, 'part_selector', {}, -1).map(r => r.kind + ':' + r.label),
+   ['child:Part 1', 'child:Part 2', 'child:Part 3', 'child:Part 4',
+    'child:Part 5', 'child:Part 6', 'child:Part 7', 'child:Part 8'],
+   'a repeated level opens on a selector, not on unqualified params');
+eq(menuRows(PARTS, 'part_selector', {}, undefined).length, 8,
+   'an absent child index reads as "none chosen", not as element 0');
+
+/* Element chosen: same rows as any level, but addressed. `key` stays bare
+ * because chain_params publishes it that way — only `pkey` takes the prefix. */
+const pr = menuRows(PARTS, 'part_selector', { partlevel: { name: 'Level' } }, 2);
+eq(pr.map(r => r.key), ['patchbank', 'partlevel'], 'metadata keys stay bare');
+eq(pr.map(r => r.pkey), ['sram_part_2_patchbank', 'sram_part_2_partlevel'],
+   'engine addresses carry the element');
+eq(pr[1].label, 'Level', 'chain_params still names the param by its BARE key');
+
+/* Knob pages are flat, so a repeated level becomes one page per element. */
+const pp = buildLevelPages(PARTS, 'root');
+eq(pp.length, 8, 'eight parts, eight pages');
+eq(pp[0].name, 'Part 1', 'pages are named by the element, not the level');
+eq(pp[7].entries.map(e => e.pkey), ['sram_part_7_partlevel', 'sram_part_7_partpan'],
+   'the last page addresses the last element');
+eq(pp[3].entries.map(e => e.key), ['partlevel', 'partpan'],
+   'page entries keep the bare metadata key too');
 
 /* ---- report ---- */
 

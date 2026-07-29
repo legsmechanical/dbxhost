@@ -34,7 +34,7 @@ globalThis.host_read_file = () => null;
 globalThis.os = { readdir: () => [[], 0] };
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const { menuRows } = await import(resolve(HERE, '../ui/ui_discover.mjs'));
+const { menuRows, childSpec } = await import(resolve(HERE, '../ui/ui_discover.mjs'));
 
 const input = process.argv[2];
 if (!input) { console.error('usage: node tools/audit_module_menus.mjs <hierarchies.txt>'); process.exit(2); }
@@ -63,10 +63,16 @@ for (const line of lines) {
     const rootKey = levels['root'] ? 'root' : (Object.keys(levels)[0] || null);
     if (!rootKey) { rows.push({ id, note: 'no levels' }); continue; }
 
-    const flags = [], dead = [], dyn = [], missing = new Set();
+    const flags = [], dead = [], dyn = [], kids = [], missing = new Set();
     if (h.modes) flags.push(`MODES(${Array.isArray(h.modes) ? h.modes.length : '?'})`);
 
     for (const [k, lv] of Object.entries(levels)) {
+        /* Repeated elements: the level's params are keyed <prefix><i>_<key>, so
+         * a reader that misses these fields addresses keys the module doesn't
+         * have — reads null, writes nowhere, and nothing is logged. Listed
+         * because it is the one shape whose breakage is completely silent. */
+        const cs = childSpec(lv);
+        if (cs) kids.push(`${k}(${cs.prefix}0-${cs.count - 1})`);
         if (lv && lv.items_param) { dyn.push(k); continue; }          /* dynamic list */
         if (lv && lv.list_param && lv.count_param) continue;          /* preset browser */
         const r = menuRows(levels, k, {});
@@ -78,6 +84,7 @@ for (const line of lines) {
     if (dead.length) flags.push(`DEAD:${dead.join(',')}`);
     if (missing.size) flags.push(`MISSING-LEVEL:${[...missing].join(',')}`);
     if (dyn.length) flags.push(`dyn:${dyn.join(',')}`);   /* supported — informational */
+    if (kids.length) flags.push(`child:${kids.join(',')}`);   /* supported — informational */
 
     rows.push({ id, rootKey, rootRows, levels: Object.keys(levels).length, flags });
 }

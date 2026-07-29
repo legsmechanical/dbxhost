@@ -41,7 +41,7 @@ import {
     moveFilepathBrowserSelection, activateFilepathBrowserItem,
 } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 import { discover, deriveSections, activeSection, filterVizFor,
-    menuRows, menuCell, levelCommits } from './ui_discover.mjs';
+    menuRows, menuCell, levelCommits, childSpec } from './ui_discover.mjs';
 import { parseValue, stepValue, commitString, renderCellsForBank,
     formatValue } from './ui_cells.mjs';
 import {
@@ -196,9 +196,10 @@ const S = {
     levels: null,
     rootKey: null,
     cpMap: null,
-    menuStack: [],              /* [{levelKey, cursor}] — breadcrumb for Back */
+    menuStack: [],              /* [{levelKey, cursor, child}] — breadcrumb for Back */
     menuKey: null,
     menuIdx: 0,
+    menuChild: -1,              /* chosen repeated element on a child_prefix level */
     menuRowsCache: [],
     menuEditing: false,         /* jog edits the highlighted param instead of scrolling */
     fileState: null,            /* shared filepath_browser state, when browsing */
@@ -358,6 +359,7 @@ export function soundRetarget(track, slot) {
     S.fileState = null;
     S.menuStack = [];
     S.menuKey = null;
+    S.menuChild = -1;
     S.menuRowsCache = [];
     S.menuEditing = false;
     S.banks = [];
@@ -693,6 +695,7 @@ function openMenu() {
     S.menuStack = [];
     S.menuKey = S.rootKey;
     S.menuIdx = 0;
+    S.menuChild = -1;
     S.menuEditing = false;
     refreshMenuRows();
     S.view = VIEW_MENU;
@@ -730,16 +733,18 @@ function refreshMenuRows() {
         if (S.menuIdx >= S.menuRowsCache.length) S.menuIdx = 0;
         return;
     }
-    S.menuRowsCache = menuRows(S.levels, S.menuKey, S.cpMap);
+    S.menuRowsCache = menuRows(S.levels, S.menuKey, S.cpMap, S.menuChild);
     if (S.menuIdx >= S.menuRowsCache.length) S.menuIdx = 0;
     /* Values for the params on this page only — a deep hierarchy is far more
      * params than one screen, and reading them all would be the lab rig's
      * mistake at a larger scale. */
     for (const r of S.menuRowsCache) {
         if (r.kind !== 'param') continue;
+        /* Metadata by the declared key, value by the resolved address — inside
+         * a repeated element those differ (see childSpec in ui_discover). */
         const cell = menuCell(r.key, S.levels, S.menuKey, S.cpMap);
         r.cell = cell;
-        const raw = engineGet(S.slot, S.comp, r.key);
+        const raw = engineGet(S.slot, S.comp, r.pkey || r.key);
         r.raw = raw;
         r.val = parseValue(cell, raw);
     }
@@ -760,9 +765,9 @@ const FS_ADAPTER = {
 
 function openFileBrowser(row) {
     const c = row.cell;
-    S.fileKey = row.key;
+    S.fileKey = row.pkey || row.key;
     S.fileState = buildFilepathBrowserState({
-        name: c.label, key: row.key,
+        name: c.label, key: S.fileKey,
         root: c.fileRoot, filter: c.fileFilter, start_path: c.fileStartPath,
     }, row.raw || '');
     refreshFilepathBrowser(S.fileState, FS_ADAPTER);
@@ -982,9 +987,22 @@ function menuEnter() {
     }
     const row = S.menuRowsCache[S.menuIdx];
     if (!row) return;
+    /* Choosing a repeated element stays on the SAME level and only qualifies
+     * its keys, so it pushes the breadcrumb like any other descent — Back then
+     * pops back to the selector with no special case, because every stack entry
+     * carries the child index it was pushed with. */
+    if (row.kind === 'child') {
+        S.menuStack.push({ levelKey: S.menuKey, cursor: S.menuIdx, child: S.menuChild });
+        S.menuChild = row.childIndex;
+        S.menuIdx = 0;
+        S.menuEditing = false;
+        S.pendingAction = { t: 'menuload' };
+        return;
+    }
     if (row.kind === 'level') {
-        S.menuStack.push({ levelKey: S.menuKey, cursor: S.menuIdx });
+        S.menuStack.push({ levelKey: S.menuKey, cursor: S.menuIdx, child: S.menuChild });
         S.menuKey = row.level;
+        S.menuChild = -1;
         S.menuIdx = 0;
         S.menuEditing = false;
         /* Queued, not called: this runs in the MIDI handler and the refresh
@@ -1024,9 +1042,13 @@ function commitItem(row) {
                 const entry = S.menuStack[at];
                 S.menuStack.length = at;
                 S.menuIdx = entry.cursor;
+                /* Unwinding lands on the level as it was ENTERED, so restore
+                 * the element that was chosen there rather than resetting. */
+                S.menuChild = (entry.child != null) ? entry.child : -1;
             } else {
-                S.menuStack.push({ levelKey: S.menuKey, cursor: S.menuIdx });
+                S.menuStack.push({ levelKey: S.menuKey, cursor: S.menuIdx, child: S.menuChild });
                 S.menuIdx = 0;
+                S.menuChild = -1;
             }
             S.menuKey = target;
         }
@@ -1055,7 +1077,7 @@ function startTextEdit(idx) {
         title: String(row.label || '').toUpperCase(),
         initialText: String(row.raw || ''),
         onConfirm: (txt) => {
-            queueWrite(row.key, String(txt));
+            queueWrite(row.pkey || row.key, String(txt));
             row.raw = String(txt);
             row.val = String(txt);
             S.dirty = true;
@@ -1069,7 +1091,7 @@ function fileActivate() {
     if (res.action === 'open') { refreshFilepathBrowser(S.fileState, FS_ADAPTER); return; }
     if (res.action === 'select') {
         queueWrite(S.fileKey, res.value);
-        const row = S.menuRowsCache.find(r => r.key === S.fileKey);
+        const row = S.menuRowsCache.find(r => (r.pkey || r.key) === S.fileKey);
         if (row) { row.raw = res.value; row.val = res.value; }
         S.view = VIEW_MENU;
         S.presetMsg = '';
@@ -1083,6 +1105,7 @@ function menuBack() {
     if (!prev) return false;
     S.menuKey = prev.levelKey;
     S.menuIdx = prev.cursor;
+    S.menuChild = (prev.child != null) ? prev.child : -1;
     S.pendingAction = { t: 'menuload' };   /* engine reads belong in tick */
     return true;
 }
@@ -1098,7 +1121,7 @@ function menuStep(delta) {
     const next = stepValue(row.cell, row.val, delta > 0 ? 1 : -1);
     if (next === row.val) return;
     row.val = next;                       /* optimistic, drawn now */
-    queueWrite(row.key, commitString(row.cell, next));
+    queueWrite(row.pkey || row.key, commitString(row.cell, next));
 }
 
 /* ---- baked bank ----
@@ -1989,7 +2012,13 @@ function renderMenu() {
         return;
     }
     const lv = (S.levels && S.levels[S.menuKey]) || {};
-    drawKitHeader(String(lv.name || lv.label || S.menuKey || 'MENU').toUpperCase(), false);
+    /* Inside a repeated element the level name alone is a lie — eight identical
+     * "PARTS" screens with no way to tell which part you are editing. */
+    const cspec = childSpec(lv);
+    const title = (cspec && S.menuChild >= 0)
+        ? (cspec.label + ' ' + (S.menuChild + 1))
+        : (lv.name || lv.label || S.menuKey || 'MENU');
+    drawKitHeader(String(title).toUpperCase(), false);
     const rows = S.menuRowsCache;
     if (!rows.length) { centreText(30, 'NO PARAMS'); return; }
     const ROW_H = 10, VISIBLE = 5;
@@ -2004,7 +2033,7 @@ function renderMenu() {
         const ink = on ? 0 : 1;
         /* An item row's "value" is whether it is the one in force — without it
          * a bank list is N identical rows and you cannot tell which you're on. */
-        const val = (r.kind === 'level') ? '>' :
+        const val = (r.kind === 'level' || r.kind === 'child') ? '>' :
             (r.kind === 'item') ? (r.selected ? '*' : '') :
             (r.cell ? String(formatValue(r.cell, r.val)) : '');
         let label = String(r.label || '');

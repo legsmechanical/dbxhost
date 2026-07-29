@@ -353,6 +353,52 @@ function knobEntries(lvl) {
     return out;
 }
 
+/* ---- repeated elements (child_prefix) ----------------------------------
+ *
+ * A level declaring `child_prefix` / `child_count` / `child_label` describes
+ * ONE element repeated N times — minijv's 8 multitimbral parts. It publishes a
+ * single set of params and the real key for element i is
+ * `<child_prefix><i>_<key>`. Nothing else in the hierarchy says so, so a
+ * reader that ignores these fields addresses `partlevel` — a key the module
+ * does not have. Reads come back null and writes land nowhere, with no error:
+ * the page renders, the knobs move, and the sound never changes.
+ *
+ * Two things the key shape does NOT change:
+ *
+ *   - `chain_params` publishes the BARE key (`partlevel`, not
+ *     `sram_part_0_partlevel`), so value metadata is still looked up unprefixed.
+ *     Only engine I/O takes the prefix — hence `key` (metadata) and `pkey`
+ *     (address) being separate below.
+ *   - The prefix does NOT reach a level navigated to FROM here. The host
+ *     doesn't carry the child context across a level hop either, and minijv's
+ *     own module.json says so explicitly, which is why its per-tone pages are
+ *     spelled out as fully-qualified levels instead. Match the host.
+ *
+ * minijv is the ONLY user in the 72-module device dump — dexed's operators are
+ * a `children` ARRAY, not this. That is why the audit sweep now prints a
+ * `child:` flag: one module today, and no other way to notice the next one. */
+export function childSpec(lvl) {
+    const prefix = lvl && lvl.child_prefix;
+    if (typeof prefix !== 'string' || !prefix) return null;
+    const count = parseInt(lvl.child_count, 10);
+    if (!(count > 0)) return null;
+    return {
+        prefix,
+        count,
+        label: (typeof lvl.child_label === 'string' && lvl.child_label)
+            ? lvl.child_label : 'Item',
+    };
+}
+
+/* The address for `key` on element `childIndex` of `lvl`. Returns `key`
+ * unchanged when the level has no children or none is selected, so callers can
+ * route every read and write through it unconditionally. */
+export function childParamKey(lvl, childIndex, key) {
+    const spec = childSpec(lvl);
+    if (!spec || !(childIndex >= 0)) return key;
+    return spec.prefix + childIndex + '_' + key;
+}
+
 export function buildLevelPages(allLevels, rootKey) {
     const out = [];
     const rootLevel = allLevels[rootKey];
@@ -367,7 +413,7 @@ export function buildLevelPages(allLevels, rootKey) {
     }
     const nameOf = (key, lvl) => (lvl && lvl.name) || navLabel[key] || (lvl && lvl.label) || key;
 
-    const sigOf = (entries) => entries.map(e => e.key).join(' ');
+    const sigOf = (entries) => entries.map(e => e.pkey || e.key).join(' ');
     const rendered = new Set([sigOf(knobEntries(rootLevel))]);
     const visited = new Set([rootKey]);
 
@@ -379,10 +425,29 @@ export function buildLevelPages(allLevels, rootKey) {
 
         const name = nameOf(key, lvl);
         const entries = knobEntries(lvl);
-        const sig = sigOf(entries);
-        if (entries.length && !rendered.has(sig)) {
-            rendered.add(sig);
-            out.push({ name: prefix ? prefix + '/' + name : name, entries });
+        /* Repeated elements become one page per element. The host shows a
+         * selector list instead, but these pages are FLAT — a selector has
+         * nowhere to live here, and eight "Part n" pages is the only shape in
+         * which minijv's parts are reachable at all. */
+        const spec = childSpec(lvl);
+        if (spec && entries.length) {
+            for (let i = 0; i < spec.count; i++) {
+                const kids = entries.map(e => ({
+                    key: e.key, meta: e.meta,
+                    pkey: childParamKey(lvl, i, e.key),
+                }));
+                const sig = sigOf(kids);
+                if (rendered.has(sig)) continue;
+                rendered.add(sig);
+                const label = spec.label + ' ' + (i + 1);
+                out.push({ name: prefix ? prefix + '/' + label : label, entries: kids });
+            }
+        } else {
+            const sig = sigOf(entries);
+            if (entries.length && !rendered.has(sig)) {
+                rendered.add(sig);
+                out.push({ name: prefix ? prefix + '/' + name : name, entries });
+            }
         }
 
         /* Both edges, always — a level with knobs can still own sub-levels. */
@@ -647,7 +712,11 @@ export function discover(slot, comp) {
     const banks = [];
     const seen = {};
 
-    function cellFor(key, hierMeta) {
+    /* `key` is the metadata key (what chain_params publishes); `pkey` is the
+     * address to read and write. They differ only inside a repeated element —
+     * see childSpec. Everything downstream addresses the engine by `cell.key`,
+     * so the resolved address is what the cell carries. */
+    function cellFor(key, hierMeta, pkey) {
         const cp = cpMap[key] || {};
         const meta = {
             name: cp.name || (hierMeta && hierMeta.label) || key,
@@ -659,7 +728,9 @@ export function discover(slot, comp) {
             root: cp.root, filter: cp.filter, start_path: cp.start_path,
         };
         seen[key] = true;
-        return makeCell(key, meta);
+        const cell = makeCell(key, meta);
+        if (pkey && pkey !== key) cell.key = pkey;
+        return cell;
     }
 
     function keysOf(knobs) {
@@ -682,7 +753,8 @@ export function discover(slot, comp) {
             addLevel(banks, root.name || 'Main', rootEntries.map(e => cellFor(e.key, e.meta)));
         }
         for (const page of buildLevelPages(levels, rootKey)) {
-            addLevel(banks, page.name, page.entries.map(e => cellFor(e.key, e.meta)));
+            addLevel(banks, page.name,
+                     page.entries.map(e => cellFor(e.key, e.meta, e.pkey)));
         }
     }
 
@@ -798,13 +870,25 @@ export function levelCommits(lv, levelKey) {
            COMMIT_WORDS.test(String(lv.select_param || ''));
 }
 
-export function menuRows(levels, levelKey, cpMap) {
+export function menuRows(levels, levelKey, cpMap, childIndex) {
     const lv = levels && levels[levelKey];
     const rows = [];
     if (!lv) return rows;
+    /* A level of repeated elements asks WHICH one first, exactly as the host
+     * does — its params are meaningless until an element is chosen, and
+     * rendering them unqualified is what addresses keys the module lacks. */
+    const spec = childSpec(lv);
+    if (spec && !(childIndex >= 0)) {
+        for (let i = 0; i < spec.count; i++) {
+            rows.push({ kind: 'child', childIndex: i, label: spec.label + ' ' + (i + 1) });
+        }
+        return rows;
+    }
+    const addr = (k) => childParamKey(lv, childIndex, k);
     for (const p of (lv.params || [])) {
         if (typeof p === 'string') {
-            rows.push({ kind: 'param', key: p, label: labelFor(p, null, cpMap) });
+            rows.push({ kind: 'param', key: p, pkey: addr(p),
+                        label: labelFor(p, null, cpMap) });
         } else if (p && p.level) {
             const child = levels[p.level];
             /* A nav entry can name a level the module never defines — surge
@@ -818,7 +902,8 @@ export function menuRows(levels, levelKey, cpMap) {
             rows.push({ kind: 'level', level: p.level,
                         label: p.label || p.name || child.name || child.label || p.level });
         } else if (p && p.key) {
-            rows.push({ kind: 'param', key: p.key, label: labelFor(p.key, p, cpMap) });
+            rows.push({ kind: 'param', key: p.key, pkey: addr(p.key),
+                        label: labelFor(p.key, p, cpMap) });
         }
     }
     /* A level can own sub-levels via `children` as well as `params` nav entries
