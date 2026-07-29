@@ -776,6 +776,28 @@ export function discover(slot, comp) {
  * Preset levels are SKIPPED deliberately: sound mode has its own preset picker,
  * and shadow_ui does the same thing ("Skip preset browser levels (those with
  * list_param)", shadow_ui.js). Duplicating it here would be two doors again. */
+/* Some dynamic lists CHOOSE (obxd's banks: pick one, hear it, pick another) and
+ * some COMMIT (minijv's "Save to Slot": pick one and your patch is written over
+ * whatever was there). In the data they are identical — `items_param` +
+ * `select_param` — so the difference is only ever stated in the label. Nothing
+ * declares intent, and until a host convention exists, the wording is the only
+ * signal there is.
+ *
+ * So: match the wording, and confirm those. A heuristic, deliberately — a module
+ * saying "Commit" slips through, which is why the words are listed here in one
+ * place to extend rather than scattered at the call site. Getting it wrong the
+ * safe way costs one extra click on a list that reads like a save; getting it
+ * wrong the other way costs somebody's patch. */
+export const COMMIT_WORDS = /save|writ|stor|overwrit|commit|export/i;
+
+export function levelCommits(lv, levelKey) {
+    if (!lv) return false;
+    return COMMIT_WORDS.test(String(lv.label || '')) ||
+           COMMIT_WORDS.test(String(lv.name || '')) ||
+           COMMIT_WORDS.test(String(levelKey || '')) ||
+           COMMIT_WORDS.test(String(lv.select_param || ''));
+}
+
 export function menuRows(levels, levelKey, cpMap) {
     const lv = levels && levels[levelKey];
     const rows = [];

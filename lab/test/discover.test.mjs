@@ -28,7 +28,7 @@ globalThis.host_read_file = () => null;
 globalThis.os = { readdir: () => [[], 0] };
 
 const { discover, shortLabel, deriveSections, activeSection, filterVizFor,
-        modeIdFor, findFilterModeCell, findPresetSpec, menuRows,
+        modeIdFor, findFilterModeCell, findPresetSpec, menuRows, levelCommits,
         adoptKitStructure } = await import('../../ui/ui_discover.mjs');
 const { toRenderCell, parseValue, stepValue, commitString, formatValue } =
     await import('../../ui/ui_cells.mjs');
@@ -586,6 +586,27 @@ eq(adoptKitStructure({ banks: [{ label: 'X', knobs: [] }] }), null,
    'a bank with no real cells is not a layout');
 eq(adoptKitStructure({ banks: KIT.banks, sections: [{ name: 'Bad', bank: 99 }] }).sections, null,
    'out-of-range sections are dropped rather than pointing at a missing bank');
+
+/* ---- committing dynamic lists ----
+ * obxd's banks and minijv's "Save to Slot" are the SAME shape in the data
+ * (items_param + select_param). Only the wording says one of them overwrites a
+ * user patch, so that wording is what gates the confirm. Real shapes, verified
+ * against the modules' own hierarchies on 2026-07-29. */
+ok(levelCommits({ label: 'Save to Slot', items_param: 'save_patch_slot_list',
+                  select_param: 'do_save_to_slot' }, 'save_slot'),
+   'minijv save-to-slot is a COMMIT');
+ok(!levelCommits({ name: 'Banks', label: 'Select Bank', items_param: 'fxb_bank_list',
+                   select_param: 'bank_index' }, 'banks'),
+   'obxd bank pick is NOT a commit — it must stay one click');
+ok(!levelCommits({ label: 'Jump to Expansion', items_param: 'expansion_list',
+                   select_param: 'jump_to_expansion' }, 'expansions'),
+   'minijv expansion JUMP is not a commit');
+ok(!levelCommits({ label: 'Load Expansion', items_param: 'expansion_list',
+                   select_param: 'load_expansion' }, 'load_expansion'),
+   'loading is not overwriting');
+ok(levelCommits({ label: 'Slots', select_param: 'write_patch' }, 'x'),
+   'the select_param counts too, not just the label');
+ok(!levelCommits(null, 'x'), 'a missing level is not a commit');
 
 /* ---- report ---- */
 

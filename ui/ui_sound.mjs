@@ -41,7 +41,7 @@ import {
     moveFilepathBrowserSelection, activateFilepathBrowserItem,
 } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 import { discover, deriveSections, activeSection, filterVizFor,
-    menuRows, menuCell } from './ui_discover.mjs';
+    menuRows, menuCell, levelCommits } from './ui_discover.mjs';
 import { parseValue, stepValue, commitString, renderCellsForBank,
     formatValue } from './ui_cells.mjs';
 import {
@@ -215,6 +215,7 @@ const S = {
 
     /* Shift+click on a preset asks to delete it; plain click loads. */
     confirmDel: false,
+    confirmItem: null,          /* dynamic-list row awaiting "are you sure" */
     confirmIdx: 0,              /* 0 = No, 1 = Yes */
 
     pendingWrites: [],
@@ -664,18 +665,19 @@ function openMenu() {
  * banks) rather than params declared in the hierarchy. menuRows cannot build
  * these — they don't exist until we read them — so they're built here, where
  * engine reads already happen and the tick budget is understood. */
-function itemRows(lv) {
+function itemRows(lv, levelKey) {
     const raw = engineGet(S.slot, S.comp, lv.items_param);
     let items = [];
     try { items = raw ? JSON.parse(raw) : []; }
     catch (e) { log('items parse failed for ' + lv.items_param + ': ' + e); }
     if (!Array.isArray(items)) items = [];
     const selectKey = lv.select_param || '';
+    const commits = levelCommits(lv, levelKey);
     const cur = selectKey ? parseInt(engineGet(S.slot, S.comp, selectKey), 10) : NaN;
     return items.map((it, i) => {
         const index = (it && typeof it.index === 'number') ? it.index : i;
         return {
-            kind: 'item', index, selectKey,
+            kind: 'item', index, selectKey, commits,
             navigateTo: lv.navigate_to || '',
             label: String((it && (it.label || it.name)) || ('Item ' + (index + 1))),
             selected: index === cur,
@@ -686,7 +688,7 @@ function itemRows(lv) {
 function refreshMenuRows() {
     const lv = (S.levels && S.levels[S.menuKey]) || null;
     if (lv && lv.items_param) {
-        S.menuRowsCache = itemRows(lv);
+        S.menuRowsCache = itemRows(lv, S.menuKey);
         if (S.menuIdx >= S.menuRowsCache.length) S.menuIdx = 0;
         return;
     }
@@ -924,6 +926,13 @@ function renderSlotCfg() {
 }
 
 function menuEnter() {
+    if (S.confirmItem) {
+        const row = S.confirmItem;
+        S.confirmItem = null;
+        if (S.confirmIdx === 1) commitItem(row);
+        S.dirty = true;
+        return;
+    }
     const row = S.menuRowsCache[S.menuIdx];
     if (!row) return;
     if (row.kind === 'level') {
@@ -943,7 +952,17 @@ function menuEnter() {
      * chosen bank's presets now live). Unwind to that level if it's already
      * behind us rather than pushing a second copy onto the stack. */
     if (row.kind === 'item') {
-        if (row.selectKey) queueWrite(row.selectKey, String(row.index));
+        /* A committing list asks first. One click is not enough to overwrite
+         * something you cannot get back. */
+        if (row.commits) { S.confirmItem = row; S.confirmIdx = 0; S.dirty = true; return; }
+        commitItem(row);
+        return;
+    }
+    menuEnterRow(row);
+}
+
+function commitItem(row) {
+    if (row.selectKey) queueWrite(row.selectKey, String(row.index));
         /* Choosing from a dynamic list usually REPLACES the preset set behind it
          * — that is what obxd's and dexed's banks are for. The baked-name cache
          * is keyed by module|comp|count, none of which a bank switch changes,
@@ -964,10 +983,11 @@ function menuEnter() {
             }
             S.menuKey = target;
         }
-        S.menuEditing = false;
-        S.pendingAction = { t: 'menuload' };
-        return;
-    }
+    S.menuEditing = false;
+    S.pendingAction = { t: 'menuload' };
+}
+
+function menuEnterRow(row) {
     const c = row.cell;
     /* Each param type opens the editor it needs. The shared components do the
      * work — the browser and the keyboard are the host's, not reimplementations
@@ -1021,6 +1041,7 @@ function menuBack() {
 }
 
 function menuStep(delta) {
+    if (S.confirmItem) { S.confirmIdx = S.confirmIdx ? 0 : 1; return; }
     const row = S.menuRowsCache[S.menuIdx];
     if (!S.menuEditing || !row || row.kind !== 'param' || !row.cell) {
         S.menuIdx = listMove(S.menuRowsCache.length, S.menuIdx, delta);
@@ -1571,6 +1592,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
             else closeSlotCfg();
         } else if (S.view === VIEW_FILE) {
             S.view = VIEW_MENU;
+        } else if (S.view === VIEW_MENU && S.confirmItem) {
+            S.confirmItem = null;
         } else if (S.view === VIEW_MENU) {
             if (!menuBack()) S.view = VIEW_PRESET_SRC;
         } else if (S.view === VIEW_PRESET_LIST && S.confirmDel) {
@@ -1865,6 +1888,15 @@ function renderPresetBaked() {
  * The row being edited inverts so it is obvious the jog changed jobs. */
 function renderMenu() {
     clear_screen();
+    if (S.confirmItem) {
+        /* Name the SLOT being written, not the action — "Save to Slot" is the
+         * screen you are already on; which slot is about to be overwritten is
+         * the thing you need to check before saying yes. */
+        drawKitHeader('OVERWRITE?', false);
+        centreText(20, String(S.confirmItem.label || '').toUpperCase());
+        renderRows(['No', 'Yes'], S.confirmIdx, '');
+        return;
+    }
     const lv = (S.levels && S.levels[S.menuKey]) || {};
     drawKitHeader(String(lv.name || lv.label || S.menuKey || 'MENU').toUpperCase(), false);
     const rows = S.menuRowsCache;
