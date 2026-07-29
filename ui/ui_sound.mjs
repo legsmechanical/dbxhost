@@ -73,14 +73,23 @@ export const BLOCKS = [
  *
  * ⚠ ONE real difference: a bus component's `:module` key takes a **DSP path**,
  * not a module id. Loading by id silently does nothing there. */
+/* ⚠ MASTER HAS NO LEVEL PARAM. `master_fx:volume` appears in the host's own
+ * FX_BUS table but nothing implements it — `master_fx:` keys are parsed for
+ * `fxN:` only, and a bare `volume` hits the "unrecognized, leave it" branch in
+ * shadow_chain_mgmt.c. The host's own Master FX volume row therefore reads a key
+ * nothing answers (so it always shows 100%) and writes into the void. Not worth
+ * adding: the device already has a master output level (Josh, 07-29).
+ *
+ * The SEND return levels are real — `shadow_send_return_level[2]`, set + get,
+ * persisted as `send_return_level`. Range matches the host's own row: 0..1. */
 const FX_BUSES = [
-    { id: 'master', title: 'MASTER FX', prefix: 'master_fx:',
-      levelComp: 'master_fx',    levelKey: 'volume',       levelLabel: 'Master Vol' },
+    { id: 'master', title: 'MASTER FX', prefix: 'master_fx:' },
     { id: 'sendA',  title: 'SEND FX A', prefix: 'send_fx:a:',
-      levelComp: 'send_fx:a',    levelKey: 'return_level',  levelLabel: 'Return Lvl' },
+      levelComp: 'send_fx:a', levelKey: 'return_level', levelLabel: 'Return' },
     { id: 'sendB',  title: 'SEND FX B', prefix: 'send_fx:b:',
-      levelComp: 'send_fx:b',    levelKey: 'return_level',  levelLabel: 'Return Lvl' },
+      levelComp: 'send_fx:b', levelKey: 'return_level', levelLabel: 'Return' },
 ];
+const BUS_LEVEL_MIN = 0, BUS_LEVEL_MAX = 1, BUS_LEVEL_STEP = 0.05;
 const BUS_BLOCKS = [1, 2, 3, 4];      /* fx1..fx4 on every bus */
 
 const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
@@ -233,6 +242,8 @@ const S = {
     muteHeld: false,            /* tracked HERE: the global one is a different S */
     bus: null,                  /* null = editing a TRACK's slot; else an FX_BUSES entry */
     busIdx: 0,                  /* cursor on the bus LIST */
+    busLevelEditing: false,     /* jog is editing the return level, not scrolling */
+    busLevelDirty: false,       /* changed → save chain state when leaving the bus */
     pickRows: [],               /* picker rows: {kind:'bus'|'block'|'settings'} */
     pickRow: 0,                 /* cursor in the block PICKER (rows, not blocks) */
     blockRows: [],              /* block indices this host actually supports */
@@ -397,6 +408,11 @@ function refreshBlockNames() {
      * chain slot reports a module id — show the basename, which is the module
      * directory and reads the same as the id would. */
     for (const r of S.pickRows) {
+        if (r.kind === 'buslevel') {
+            const raw = parseFloat(engineGet(S.slot, S.bus.levelComp, S.bus.levelKey));
+            r.val = isFinite(raw) ? raw : 1;
+            continue;
+        }
         if (r.kind !== 'block') continue;
         r.name = moduleIdOf(engineLoadedModule(S.slot, r.comp));
         r.bypassed = engineGet(S.slot, r.comp, 'bypassed') === '1' ? 1 : 0;
@@ -755,6 +771,9 @@ export function soundIsGlobal() {
 }
 
 export function soundEnterBuses() {
+    /* Hand the volume knob back to Move before the screen opens. releaseVolume
+     * also flushes any pending level save for the track we came from. */
+    releaseVolume();
     S.active = true;
     S.bus = null;
     S.track = -1;
@@ -782,6 +801,8 @@ function enterBus(bus) {
  * the session list recorded slot 0 as "the track I came from", and 0 is a valid
  * slot. A single door needs no bookkeeping. */
 function leaveBus() {
+    S.busLevelEditing = false;
+    if (S.busLevelDirty) { S.busLevelDirty = false; S.pendingAction = { t: 'slotsave' }; }
     S.bus = null;
     S.view = VIEW_BUSES;
     S.dirty = true;
@@ -814,6 +835,10 @@ function buildPickRows() {
         for (const n of BUS_BLOCKS) {
             rows.push({ kind: 'block', comp: S.bus.prefix + 'fx' + n, label: 'FX ' + n });
         }
+        /* How much of this send comes BACK into the mix — for a send that is the
+         * control you reach for most, so it sits with the effects rather than
+         * behind another screen. Master has none; see the note on FX_BUSES. */
+        if (S.bus.levelKey) rows.push({ kind: 'buslevel', label: S.bus.levelLabel });
     } else {
         for (const i of S.blockRows) {
             rows.push({ kind: 'block', comp: BLOCKS[i].comp, label: BLOCKS[i].label, blockIdx: i });
@@ -1423,7 +1448,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
         return false;
     }
 
-    if (d1 === 79) {                                   /* master knob = slot level */
+    if (d1 === 79) {                                   /* master knob */
+        /* SESSION-wide context: the knob stays Move's NATIVE master volume.
+         * Nothing here owns a level worth stealing it for — the device already
+         * has a master output — and the claim is the only reason Move stops
+         * seeing CC 79 at all, so declining to consume it is the whole fix.
+         * (soundEnterBuses drops the claim; see releaseVolume there.) */
+        if (soundIsGlobal()) return false;
         const delta = decodeDelta(d2);
         if (delta) onVolumeTurn(delta);
         return true;
@@ -1441,6 +1472,20 @@ export function soundOnCC(d1, d2, decodeDelta) {
         if (!delta) return true;
         if (S.view === VIEW_BUSES) {
             S.busIdx = listMove(FX_BUSES.length, S.busIdx, delta);
+        } else if (S.view === VIEW_BLOCKS && S.busLevelEditing) {
+            const r = S.pickRows[S.pickRow];
+            if (r && r.kind === 'buslevel') {
+                let v = r.val + (delta > 0 ? BUS_LEVEL_STEP : -BUS_LEVEL_STEP);
+                v = Math.round(v * 1000) / 1000;
+                if (v < BUS_LEVEL_MIN) v = BUS_LEVEL_MIN;
+                if (v > BUS_LEVEL_MAX) v = BUS_LEVEL_MAX;
+                if (v !== r.val) {
+                    r.val = v;
+                    S.busLevelDirty = true;
+                    /* Queued like every write here — this is the MIDI handler. */
+                    queueWrite(S.bus.levelKey, v.toFixed(3), S.bus.levelComp);
+                }
+            }
         } else if (S.view === VIEW_BLOCKS) {
             S.pickRow = listMove(S.pickRows.length, S.pickRow, delta);
         } else if (S.view === VIEW_SLOTCFG) {
@@ -1517,6 +1562,10 @@ export function soundOnCC(d1, d2, decodeDelta) {
         }
         else if (S.view === VIEW_BUSES) {
             S.pendingAction = { t: 'bus', bus: FX_BUSES[S.busIdx] };
+        }
+        else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
+                 S.pickRows[S.pickRow].kind === 'buslevel') {
+            S.busLevelEditing = !S.busLevelEditing;
         }
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'settings') {
@@ -1609,6 +1658,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
         } else if (S.view === VIEW_EDIT || S.view === VIEW_BROWSE) {
             S.view = VIEW_BLOCKS;
             S.pendingAction = { t: 'names' };
+        } else if (S.busLevelEditing) {
+            S.busLevelEditing = false;
         } else if (S.bus) {
             /* One level up is wherever the bus was entered FROM — the track's
              * picker, or the session-wide bus list. leaveBus knows which. */
@@ -1635,6 +1686,7 @@ export function soundOnNote(status, d1, d2) {
      * the only moment worth persisting: the host's slot-level setter doesn't
      * save, and saving is a synchronous file write. */
     if (d1 === 8) {
+        if (soundIsGlobal()) return false;   /* the knob is Move's here */
         const on = (status === 0x90 && d2 >= 64);
         if (S.volTouched && !on) flushVolumeSave();
         S.volTouched = on;
@@ -1759,6 +1811,13 @@ function renderBlocks() {
         const sel = ((start + i) === S.pickRow);
         if (sel) fill_rect(0, y - 1, 128, ROW_H, 1);
         hdrPrint(3, y, r.label, sel ? 0 : 1);
+        if (r.kind === 'buslevel') {
+            const t = Math.round((r.val || 0) * 100) + '%';
+            const w = mvWidth(t);
+            mvPrint(125 - w, y + 2, t, sel ? 0 : 1);
+            if (sel && S.busLevelEditing) mvPrint(125 - w - 6, y + 2, '*', sel ? 0 : 1);
+            continue;
+        }
         if (r.kind !== 'block') continue;
         /* A bypassed block still says what it holds — you need to know WHAT is
          * switched out — so the state rides as a prefix. Matches the host's 'B'. */
