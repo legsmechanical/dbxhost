@@ -30,7 +30,7 @@ globalThis.os = { readdir: () => [[], 0] };
 const { discover, shortLabel, deriveSections, activeSection, filterVizFor,
         modeIdFor, findFilterModeCell, findPresetSpec, menuRows, levelCommits,
         adoptKitStructure, childSpec, childParamKey, buildLevelPages,
-        modeKeys, modeRows } =
+        modeKeys, modeRows, disambiguateLabels } =
     await import('../../ui/ui_discover.mjs');
 const { toRenderCell, parseValue, stepValue, commitString, formatValue } =
     await import('../../ui/ui_cells.mjs');
@@ -714,6 +714,65 @@ eq(menuRows(MODED.levels, 'perf_main', {}).map(r => r.label),
    ['Edit Parts', 'Octave'], 'the performance screen the mode row now opens');
 eq(menuRows(MODED.levels, 'part_selector', {}, -1).length, 8,
    'and Edit Parts still lands on the 8-part selector');
+
+/* ---- label disambiguation ----
+ * Real names from the device dump. shortLabel keeps the last word, which is the
+ * identifying noun until two params on a level share it — then the word it drops
+ * is the one that told them apart. 28% of rendered pages fleet-wide had a
+ * duplicate label before this (Josh reported it as "gain" in ott-x).
+ *
+ * Shape chosen 2026-07-29: digits trail, single characters trail, multi-character
+ * qualifiers lead. Scope is one LEVEL across its pages. */
+function shorts(names, keys) {
+    const cells = names.map((n, i) => ({ key: (keys && keys[i]) || ('k' + i),
+                                         label: n, short: shortLabel(n) }));
+    disambiguateLabels(cells);
+    return cells.map(c => c.short.toUpperCase());
+}
+
+eq(shorts(['In Gain', 'Out Gain']), ['IGAN', 'OGAN'],
+   'ott-x: a multi-character qualifier LEADS');
+eq(shorts(['Low Gain', 'Mid Gain', 'Hi Gain']), ['LGAN', 'MGAN', 'HGAN'],
+   'ott-x advanced: three-way, still one character each');
+eq(shorts(['HPF Cut', 'HPF Peak', 'HPF MG', 'HPF EG',
+           'LPF Cut', 'LPF Peak', 'LPF MG', 'LPF EG']),
+   ['HCUT', 'HPEK', 'HMG', 'HEG', 'LCUT', 'LPEK', 'LMG', 'LEG'],
+   'aphex filter page: eight cells, four collisions, all resolved');
+eq(shorts(['E1 Atk', 'E1 Rel', 'E2 Atk', 'E2 Dcy', 'E2 Sus', 'E2 Rel']),
+   ['ATK1', 'REL1', 'ATK2', 'DCY', 'SUS', 'REL2'],
+   'digits TRAIL (keeps the Osc 2 -> OSC2 convention); non-colliding names untouched');
+eq(shorts(['A Sample', 'A Length', 'B Sample', 'B Length']),
+   ['SMPA', 'LNGA', 'SMPB', 'LNGB'], 'a SINGLE-character qualifier trails');
+eq(shorts(['Lvl Morph LFO Rate', 'Pan Morph LFO Rate']), ['LRAT', 'PRAT'],
+   'the shared run can be several words long');
+
+/* The distinction is not always in the name. */
+eq(shorts(['On', 'On', 'On', 'On'],
+          ['lane1_enabled', 'lane2_enabled', 'lane3_enabled', 'lane4_enabled']),
+   ['ON1', 'ON2', 'ON3', 'ON4'],
+   'eucalypso ships four params literally named "On" — fall back to the KEY');
+eq(shorts(['Osc1 Freq', 'Osc2 Freq']), ['FRQ1', 'FRQ2'],
+   'a digit in the qualifier trails, and the noun keeps its budget');
+eq(shorts(['Env->Pitch1', 'Env->Pitch2']), ['PTC1', 'PTC2'],
+   'denis: the digit sits INSIDE the noun and is stripped before it is appended');
+
+/* Cases the linguistic rules cannot reach, so the backstop must. */
+eq(shorts(['Min Velocity', 'Max Velocity']), ['MIVL', 'MAVL'],
+   'both start M, so the qualifier WIDENS rather than giving up');
+eq(shorts(['Asgn1 Amt', 'LFO1 Asgn Amt']), ['AAMT', 'LAMT'],
+   'osirus: both qualifiers reduce to digit 1, so the digit shape is skipped');
+const rnd = shorts(['Patch', 'Rnd Patch', 'Rnd Pitch']);
+eq(rnd.length, new Set(rnd).size,
+   'signal: Patch/Pitch differ only in a devowelled vowel — the backstop guarantees it');
+
+/* Non-colliding labels must be left completely alone. */
+eq(shorts(['Filter Cutoff', 'Resonance', 'Osc 2']), ['CTFF', 'RSNN', 'OSC2'],
+   'no collision, no change');
+
+/* fitWord spends the whole budget instead of stripping every vowel. */
+eq(shortLabel('Gain', 3), 'Gan', 'drops only as many vowels as it must');
+eq(shortLabel('Peak', 3), 'Pek', 'and always from the right');
+eq(shortLabel('Attack'), 'Attc', 'never drops the LEADING character');
 
 /* ---- report ---- */
 

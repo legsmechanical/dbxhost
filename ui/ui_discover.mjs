@@ -76,9 +76,158 @@ export function shortLabel(name, maxLen) {
         }
         s = last;
     }
+    return fitWord(s, lim);
+}
+
+/* Shorten to `lim` by dropping vowels from the RIGHT, only as many as needed.
+ * Stripping every vowel at once spends less than the budget and costs
+ * legibility: "Gain" -> GN when GAN fits, "Peak" -> PK when PEK fits. The
+ * leading character is never dropped — it carries most of the recognition. */
+function fitWord(s, lim) {
     if (s.length <= lim) return s;
-    const devowelled = s[0] + s.slice(1).replace(/[aeiou]/gi, '');
-    return (devowelled.length >= 2 ? devowelled : s).slice(0, lim);
+    let out = s;
+    while (out.length > lim) {
+        let cut = -1;
+        for (let i = out.length - 1; i >= 1; i--) {
+            if (/[aeiou]/i.test(out[i])) { cut = i; break; }
+        }
+        if (cut < 0) break;
+        out = out.slice(0, cut) + out.slice(cut + 1);
+    }
+    return out.slice(0, lim);
+}
+
+/* ---- label disambiguation ----------------------------------------------
+ *
+ * shortLabel keeps the LAST word, which is the identifying noun — right until
+ * two params on the same level share it. Then the word it throws away is
+ * exactly the one that told them apart, and you get a page reading
+ * GAIN GAIN, or aphex's filter page reading CUT PEAK MG EG CUT PEAK MG EG.
+ * Measured across the 72-module device dump: 28% of rendered pages had a
+ * duplicate label. (Josh reported it as "gain" in ott-x — In/Out Gain, plus
+ * Low/Mid/Hi Gain one level down.)
+ *
+ * In every real case the distinguishing token is a PREFIX and the shared one
+ * trails: HPF/LPF Cut, E1/E2 Atk, A/B Sample, Lvl/Pan Morph, In/Out Gain. So
+ * the fix is to spend characters on the prefix, and the only question is where
+ * they go. Josh chose (2026-07-29), and each branch is what reads best for the
+ * shape of qualifier it handles:
+ *
+ *   digits             -> TRAIL   E1 Atk / E2 Atk   -> ATK1 ATK2
+ *   single character   -> TRAIL   A Sample/B Sample -> SMPA SMPB
+ *   multi-character    -> LEAD    HPF Cut / LPF Cut -> HCUT LCUT
+ *                                 In Gain / Out Gain-> IGAN OGAN
+ *
+ * Trailing digits keep the convention shortLabel already had for "Osc 2" ->
+ * OSC2. A leading initial keeps the reading order of the full name, which is
+ * how the gear itself labels these ("HPF Cut" -> HCUT).
+ *
+ * Scope is ONE LEVEL, across all its pages — a level should read consistently
+ * as you scroll it, and a name only gets uglier when there is a real conflict.
+ * Applied to DERIVED cells only: a canvaskit module's labels are hand-authored
+ * to fit 4 glyphs and are none of our business. */
+function wordsOf(name) {
+    return String(name || '').replace(/[^A-Za-z0-9 ]/g, ' ').trim().split(/\s+/).filter(Boolean);
+}
+
+/* The tokens that make this name different from the others it collides with.
+ * Set intersection rather than a common-suffix walk: "Morph" vs "Pan Morph"
+ * share a word without sharing a position, and chordism has exactly that. */
+function distinctTokens(words, shared) {
+    return words.filter(w => !shared.has(w.toUpperCase()));
+}
+
+/* Per member, the tokens no other member of the group has. */
+function distinguish(wordLists) {
+    const shared = new Set(wordLists[0].map(w => w.toUpperCase()));
+    for (const ws of wordLists.slice(1)) {
+        const have = new Set(ws.map(w => w.toUpperCase()));
+        for (const w of [...shared]) if (!have.has(w)) shared.delete(w);
+    }
+    return wordLists.map(ws => distinctTokens(ws, shared));
+}
+
+/* `qFull` decides the SHAPE (lead vs trail); `take` only decides how many of
+ * its characters we spend. Deciding from the truncated form instead turns
+ * In/Out Gain — a multi-character qualifier, so leading — into GANI/GANO. */
+function qualified(noun, qFull, take, lim, useDigits) {
+    const digits = useDigits ? qFull.replace(/[^0-9]/g, '') : '';
+    if (digits) {
+        /* "Osc1 Freq" / "Env->Pitch1": the digit can sit in the qualifier OR
+         * inside the noun itself. Either way it is the whole distinction, so
+         * strip it from the noun before appending it — Ptc1/Ptc2, not Ptc11. */
+        const bare = String(noun).replace(/[0-9]/g, '') || noun;
+        return shortLabel(bare, Math.max(1, lim - digits.length)) + digits;
+    }
+    if (qFull.length === 1) return shortLabel(noun, Math.max(1, lim - 1)) + qFull;
+    const pre = qFull.slice(0, take);
+    return pre + shortLabel(noun, Math.max(1, lim - pre.length));
+}
+
+export function disambiguateLabels(cells, maxLen) {
+    const lim = maxLen || 4;
+    const groups = {};
+    for (let i = 0; i < cells.length; i++) {
+        const c = cells[i];
+        if (!c || !c.key || !c.short) continue;
+        const k = String(c.short).toUpperCase();
+        (groups[k] = groups[k] || []).push(i);
+    }
+    for (const k of Object.keys(groups)) {
+        const idx = groups[k];
+        if (idx.length < 2) continue;
+        let words = idx.map(i => wordsOf(cells[i].label));
+        let dists = distinguish(words);
+        /* Names that carry NO distinction at all — eucalypso ships four params
+         * all called "On", and chordism's "C" and "C#" both lose the sharp to
+         * shortLabel's punctuation strip. The KEY is then the only thing that
+         * differs (lane1_enabled..lane4_enabled), so fall back to it and get
+         * On1..On4 instead of four identical cells. */
+        if (dists.every(d => !d.length)) {
+            const kwords = idx.map(i => wordsOf(String(cells[i].key).replace(/_/g, ' ')));
+            const kdists = distinguish(kwords);
+            if (kdists.some(d => d.length)) dists = kdists;
+        }
+        /* Digits are only the distinction if they actually DIFFER. osirus has
+         * "Asgn1 Amt" and "LFO1 Asgn Amt" in one group: both reduce to digit 1,
+         * so the digit shape can never separate them and the letters must. */
+        const digitSets = dists.map(d => d.join('').replace(/\D/g, ''));
+        const useDigits = new Set(digitSets).size === digitSets.length &&
+                          digitSets.every(d => d.length > 0);
+        /* Widen the qualifier until the group is distinct, rather than assuming
+         * one character is enough: "Min Velocity" and "Max Velocity" both M. */
+        for (let take = 1; take <= 3; take++) {
+            const out = idx.map((i, n) => {
+                const dist = dists[n];
+                if (!dist.length) return cells[i].short;     /* nothing to say */
+                const noun = words[n][words[n].length - 1] || cells[i].label;
+                return qualified(noun, dist.join(''), take, lim, useDigits);
+            });
+            const uniq = new Set(out.map(s => s.toUpperCase()));
+            if (uniq.size === out.length || take === 3) {
+                for (let n = 0; n < idx.length; n++) cells[idx[n]].short = out[n];
+                break;
+            }
+        }
+    }
+    /* Backstop. Rewriting one group can land on another group's label, and some
+     * pairs simply have no 4-char distinction left: signal's "Rnd Patch" and
+     * "Rnd Pitch" differ only in a vowel, which devowelling deletes. A numeric
+     * suffix is not pretty, but two cells you cannot tell apart is worse, and
+     * the full name is always one touch away in the header. Rare by design —
+     * this fires on 2 of 389 pages across the fleet. */
+    const used = {};
+    for (const c of cells) {
+        if (!c || !c.key || !c.short) continue;
+        let s = c.short, u = s.toUpperCase();
+        for (let n = 2; used[u]; n++) {
+            s = s.slice(0, Math.max(1, lim - String(n).length)) + n;
+            u = s.toUpperCase();
+        }
+        used[u] = 1;
+        c.short = s;
+    }
+    return cells;
 }
 
 /* ---- param -> cell descriptor ------------------------------------------ */
@@ -273,6 +422,9 @@ function padToBank(name, cells) {
 }
 
 function addLevel(banks, label, cells) {
+    /* Before the level is chunked into pages of 8 — the chosen scope is the
+     * whole level, so a param keeps the same label on page 2 as on page 1. */
+    disambiguateLabels(cells);
     const pages = Math.max(1, Math.ceil(cells.length / CELLS_PER_BANK));
     for (let i = 0; i < pages; i++) {
         banks.push(padToBank(
