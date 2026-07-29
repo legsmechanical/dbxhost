@@ -746,6 +746,13 @@ function openFileBrowser(row) {
  * Master and the two Sends belong to the set, not to whichever track happens to
  * be selected. Sound mode hosts the screen because everything below it — block
  * picker, editor, menu, presets, bypass — already works on any (slot, comp). */
+/* True while sound mode is showing SESSION-wide FX — either the bus list or a
+ * bus's blocks. Nothing here belongs to a track, so the caller's
+ * "follow the active track" logic must sit this out. */
+export function soundIsGlobal() {
+    return S.view === VIEW_BUSES || !!S.bus;
+}
+
 export function soundEnterBuses() {
     S.active = true;
     S.bus = null;

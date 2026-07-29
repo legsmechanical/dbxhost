@@ -52,7 +52,7 @@ import { checkBackHold, backTapWouldAct } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          SLOT_LEVEL_KEY } from './ui_engine.mjs';
 import { soundActive, soundEnter, soundEnterBuses, soundExit, soundTick, soundDirty,
-    soundTrack, soundRetarget, soundConsumeLedDirty } from './ui_sound.mjs';
+    soundTrack, soundRetarget, soundIsGlobal, soundConsumeLedDirty } from './ui_sound.mjs';
 
 const BANK_DISPLAY_TICKS = 94;  /* ~1000ms at 94Hz device tick rate (was 392 = ~4.2s; constant was miscalibrated for 196Hz) */
 const KNOB_TURN_HIGHLIGHT_TICKS = 56;             /* ~600ms at 94Hz — highlight after turn without touch (was 120 @196Hz) */
@@ -1153,7 +1153,11 @@ export function _tickImpl() {
              *
              * Only a Schwung-routed track HAS a sound to edit — a Move- or
              * Ext-routed one closes it, since there is nothing to point at. */
-            else if (S.activeTrack !== soundTrack()) {
+            /* ...but SESSION FX is not a track's sound. It reports track -1,
+             * which never equals activeTrack, so without this the follow fired
+             * on the very next tick and replaced the bus screen with the last
+             * track module's editor — the screen appeared for one frame. */
+            else if (!soundIsGlobal() && S.activeTrack !== soundTrack()) {
                 const _nt = S.activeTrack;
                 if (S.trackRoute[_nt] !== 0) {
                     soundExit();
