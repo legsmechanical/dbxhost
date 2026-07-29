@@ -243,6 +243,7 @@ const S = {
     blockNames: [],             /* loaded module id per block, for the picker */
     blockBypass: [],            /* 1 = that block is bypassed (host `<comp>:bypassed`) */
     muteHeld: false,            /* tracked HERE: the global one is a different S */
+    enterSession: false,        /* the VIEW this screen was called from; leaving it ends us */
     bus: null,                  /* null = editing a TRACK's slot; else an FX_BUSES entry */
     busIdx: 0,                  /* cursor on the bus LIST */
     busLevelEditing: false,     /* jog is editing the return level, not scrolling */
@@ -303,6 +304,7 @@ export function markSoundDirty() { S.dirty = true; }
 
 export function soundEnter(track, slot) {
     S.active = true;
+    S.enterSession = false;     /* called from TRACK view */
     /* A TRACK context is not a bus one. Without this the previous session's bus
      * survived — S.bus is what soundIsGlobal() and buildPickRows() read, so
      * entering a track's sound landed you back on the bus's blocks. Third bug
@@ -808,41 +810,21 @@ export function soundIsGlobal() {
     return S.view === VIEW_BUSES || !!S.bus;
 }
 
-/* Drop any session-wide context while KEEPING sound mode open.
- *
- * The session FX screen has exactly one door — Shift+Note/Session, gated on
- * `S.sessionView` — but nothing re-checked that condition afterwards, so
- * leaving the session view for a track (Shift+clip pad) left a session-wide
- * screen live on top of a track view. The track-follow could not rescue it
- * either: it sits out whenever soundIsGlobal(), by design. **An entry
- * condition has to be maintained as an INVARIANT, not just tested at the
- * door** — that is the same mistake as the two dead-path bugs in this file's
- * history, one level up.
- *
- * Edits are FLUSHED, not dropped. A return level you just dialled is work you
- * can see on screen; losing it because the CONTEXT changed underneath would be
- * indistinguishable from a bug. Same reasoning as soundExit's flush. */
-export function soundLeaveGlobal() {
-    if (!soundIsGlobal()) return;
-    for (const w of S.pendingWrites) engineSet(w.slot, w.comp, w.key, w.val);
-    S.pendingWrites.length = 0;
-    if (S.busLevelDirty) engineSaveState();
-    clearBusContext();
-    /* -1 is "no track", which is what the bus reported all along. Left as-is so
-     * the caller's track-follow fires on this very tick and re-points us at the
-     * track you just asked for — one landing rule, already tested, rather than
-     * a second one invented here. */
-    S.track = -1;
-    S.view = VIEW_BLOCKS;
-    S.dirty = true;
-    log('leave global: session view closed');
-}
+/* Which view this screen was opened FROM. Sound mode and the bus screen are not
+ * two modes of davebox — they are things you call from INSIDE a view, and the
+ * view is what owns them (Josh, 2026-07-29). Both doors are the same gesture
+ * split on exactly this flag: Shift+Note/Session in session view opens the
+ * buses, in track view it opens that track's sound. So leaving the view you
+ * called it from ends it, in BOTH directions — one rule, no special cases, and
+ * you land back on the view you actually navigated to. */
+export function soundEnteredInSession() { return S.enterSession; }
 
 export function soundEnterBuses() {
     /* Hand the volume knob back to Move before the screen opens. releaseVolume
      * also flushes any pending level save for the track we came from. */
     releaseVolume();
     S.active = true;
+    S.enterSession = true;      /* called from SESSION view */
     S.bus = null;
     S.track = -1;
     S.slot = 0;
