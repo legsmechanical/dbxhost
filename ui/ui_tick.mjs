@@ -51,7 +51,7 @@ import { xposeCancelPreview } from './ui_xpose.mjs';
 import { checkBackHold, backTapWouldAct } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          SLOT_LEVEL_KEY } from './ui_engine.mjs';
-import { soundActive, soundEnter, soundExit, soundTick, soundDirty,
+import { soundActive, soundEnter, soundEnterBuses, soundExit, soundTick, soundDirty,
     soundTrack, soundRetarget, soundConsumeLedDirty } from './ui_sound.mjs';
 
 const BANK_DISPLAY_TICKS = 94;  /* ~1000ms at 94Hz device tick rate (was 392 = ~4.2s; constant was miscalibrated for 196Hz) */
@@ -1122,6 +1122,10 @@ export function _tickImpl() {
          * copied across — the rig calls the engine straight from its MIDI
          * handler, and a sequencer cannot. Placed after pollDSP() and before
          * the LED/draw block, so its dirty flag reaches this tick's draw. */
+        if (S.pendingBusMenu) {
+            S.pendingBusMenu = false;
+            if (!soundActive()) soundEnterBuses();
+        }
         if (S.pendingSoundEnterTrack >= 0) {
             const _st = S.pendingSoundEnterTrack;
             S.pendingSoundEnterTrack = -1;

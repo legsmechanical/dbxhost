@@ -85,7 +85,7 @@ const BUS_BLOCKS = [1, 2, 3, 4];      /* fx1..fx4 on every bus */
 
 const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
       VIEW_PRESET_SRC = 3, VIEW_PRESET_LIST = 4, VIEW_PRESET_BAKED = 5,
-      VIEW_MENU = 6, VIEW_FILE = 7, VIEW_SLOTCFG = 8;
+      VIEW_MENU = 6, VIEW_FILE = 7, VIEW_SLOTCFG = 8, VIEW_BUSES = 9;
 
 /* ---- slot settings ----
  *
@@ -231,6 +231,7 @@ const S = {
     blockBypass: [],            /* 1 = that block is bypassed (host `<comp>:bypassed`) */
     muteHeld: false,            /* tracked HERE: the global one is a different S */
     bus: null,                  /* null = editing a TRACK's slot; else an FX_BUSES entry */
+    busIdx: 0,                  /* cursor on the bus LIST */
     pickRows: [],               /* picker rows: {kind:'bus'|'block'|'settings'} */
     trackSlot: -1,              /* the slot to come back to when leaving a bus */
     pickRow: 0,                 /* cursor in the block PICKER (rows, not blocks) */
@@ -741,6 +742,23 @@ function openFileBrowser(row) {
 /* Enter / leave a global bus. The bus IS a slot-0 context, so everything below
  * (editor, menu, presets, bypass) keeps working on `(S.slot, S.comp, key)` with
  * no idea it's addressing a bus rather than a track's chain. */
+/* Session-wide FX, entered from the SESSION view rather than from a track:
+ * Master and the two Sends belong to the set, not to whichever track happens to
+ * be selected. Sound mode hosts the screen because everything below it — block
+ * picker, editor, menu, presets, bypass — already works on any (slot, comp). */
+export function soundEnterBuses() {
+    S.active = true;
+    S.bus = null;
+    S.track = -1;
+    S.trackSlot = -1;
+    S.slot = 0;
+    S.busIdx = 0;
+    S.view = VIEW_BUSES;
+    S.presetMsg = '';
+    S.dirty = true;
+    log('buses: open');
+}
+
 function enterBus(bus) {
     if (S.trackSlot < 0) S.trackSlot = S.slot;
     S.bus = bus;
@@ -753,19 +771,25 @@ function enterBus(bus) {
 }
 
 function leaveBus() {
+    const cameFromTrack = S.trackSlot >= 0;
     S.bus = null;
-    if (S.trackSlot >= 0) S.slot = S.trackSlot;
-    S.trackSlot = -1;
-    S.blockIdx = 1;             /* back on SYNTH, the common case */
-    S.view = VIEW_BLOCKS;
-    refreshBlockNames();
+    if (cameFromTrack) {
+        S.slot = S.trackSlot;
+        S.trackSlot = -1;
+        S.blockIdx = 1;         /* back on SYNTH, the common case */
+        S.view = VIEW_BLOCKS;
+        refreshBlockNames();
+        return;
+    }
+    S.view = VIEW_BUSES;        /* entered from the session view — go back there */
+    S.dirty = true;
 }
 
 /* The picker's rows, dispatched by `kind` like every other list here.
  *
- * In a TRACK context the global buses sit ABOVE the blocks: scrolling up past
- * MIDI FX takes you out of the track and into the set. In a BUS context there
- * are only its four FX blocks — no slot settings, because a bus has no slot. */
+ * A TRACK context lists its blocks plus the slot's settings. A BUS context
+ * lists only its four FX blocks — a bus has no slot to configure, and it is
+ * reached from the session view rather than from any track. */
 /* COMPONENTS is keyed by plain chain names; a bus component (`master_fx:fx2`)
  * browses the same audio-FX catalogue, so it resolves to the fx spec. */
 /* A chain slot reports a module ID; a bus reports the DSP PATH it was loaded
@@ -789,7 +813,6 @@ function buildPickRows() {
             rows.push({ kind: 'block', comp: S.bus.prefix + 'fx' + n, label: 'FX ' + n });
         }
     } else {
-        for (const b of FX_BUSES) rows.push({ kind: 'bus', bus: b, label: '[' + b.title + ']' });
         for (const i of S.blockRows) {
             rows.push({ kind: 'block', comp: BLOCKS[i].comp, label: BLOCKS[i].label, blockIdx: i });
         }
@@ -1395,7 +1418,9 @@ export function soundOnCC(d1, d2, decodeDelta) {
     if (d1 === 14) {                                   /* jog turn */
         const delta = decodeDelta(d2);
         if (!delta) return true;
-        if (S.view === VIEW_BLOCKS) {
+        if (S.view === VIEW_BUSES) {
+            S.busIdx = listMove(FX_BUSES.length, S.busIdx, delta);
+        } else if (S.view === VIEW_BLOCKS) {
             S.pickRow = listMove(S.pickRows.length, S.pickRow, delta);
         } else if (S.view === VIEW_SLOTCFG) {
             slotCfgStep(delta);
@@ -1468,6 +1493,9 @@ export function soundOnCC(d1, d2, decodeDelta) {
         }
         if (S.view === VIEW_SLOTCFG) {
             S.slotCfgEditing = !S.slotCfgEditing;
+        }
+        else if (S.view === VIEW_BUSES) {
+            S.pendingAction = { t: 'bus', bus: FX_BUSES[S.busIdx] };
         }
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'settings') {
@@ -1559,9 +1587,11 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.view = VIEW_BLOCKS;
             S.pendingAction = { t: 'names' };
         } else if (S.bus) {
-            /* One level up is the TRACK you came from, not the way out: a bus
-             * was entered from that picker, so Back retraces it. */
+            /* One level up is wherever the bus was entered FROM — the track's
+             * picker, or the session-wide bus list. leaveBus knows which. */
             S.pendingAction = { t: 'leavebus' };
+        } else if (S.view === VIEW_BUSES) {
+            soundExit();
         } else {
             soundExit();
         }
@@ -1712,6 +1742,18 @@ function renderBlocks() {
         let t = (r.bypassed ? 'B ' : '') + String(r.name || '-').toUpperCase();
         while (t.length > 1 && mvWidth(t) > 60) t = t.slice(0, -1);
         mvPrint(Math.max(62, 125 - mvWidth(t)), y + 2, t, sel ? 0 : 1);
+    }
+}
+
+function renderBuses() {
+    clear_screen();
+    drawKitHeader('SESSION FX', false);
+    const ROW_H = 11;
+    for (let i = 0; i < FX_BUSES.length; i++) {
+        const y = 16 + i * ROW_H;
+        const sel = (i === S.busIdx);
+        if (sel) fill_rect(0, y - 1, 128, ROW_H, 1);
+        hdrPrint(4, y, FX_BUSES[i].title, sel ? 0 : 1);
     }
 }
 
@@ -1889,6 +1931,7 @@ export function soundRender() {
     else if (S.view === VIEW_MENU) renderMenu();
     else if (S.view === VIEW_FILE) renderFile();
     else if (S.view === VIEW_SLOTCFG) renderSlotCfg();
+    else if (S.view === VIEW_BUSES) renderBuses();
     else renderEdit();
     if (S.volShownUntil >= 0 && S.tickCount <= S.volShownUntil) drawVolReadout();
     return true;

@@ -1174,6 +1174,16 @@ function _onCC_buttons(d1, d2) {
                  * menu stays, so Shift+Note/Session never traps you in it. */
                 if (soundActive()) { soundExit(); forceRedraw(); }
                 else if (S.globalMenuOpen) { S.globalMenuOpen = false; forceRedraw(); }
+                else if (S.sessionView) {
+                    /* In SESSION view the same gesture opens the session-wide FX
+                     * — Master and the two Sends. They belong to the set, not to
+                     * whichever track is selected, so they are reached from the
+                     * screen that is already about the whole set rather than
+                     * from inside one track's sound. Deferred like every other
+                     * entry here: opening reads the chain. */
+                    S.pendingBusMenu = true;
+                    S.screenDirty = true;
+                }
                 else if (S.trackRoute[S.activeTrack] === 1) {
                     S.pendingEditEntryTrack = S.activeTrack;   /* fires on Shift release */
                 } else if (S.trackRoute[S.activeTrack] === 0) {
