@@ -1379,8 +1379,18 @@ function pollValues(force) {
     if (!bank) return;
     for (const cell of bank.cells) {
         if (!cell || !cell.key) continue;
-        /* Never clobber the knob being turned — the local value leads the
-         * engine until the queued write lands. */
+        /* Never clobber a value whose write hasn't landed yet. The engine is
+         * STALE for that key until the queue drains, so reading it back snaps
+         * the knob to the old value — which is what "the knob resets after I
+         * turn it" looks like.
+         *
+         * Keyed on the pending WRITE, not on which knob is held: writes drain
+         * 2/tick, so turning a second knob leaves the first one's write queued
+         * and unprotected the moment your finger moves on. Touch is still
+         * honoured for the knob in hand, since its write may not be queued yet
+         * when the poll runs. */
+        if (!force && S.pendingWrites.some(w => w.key === cell.key &&
+                                                w.comp === S.comp && w.slot === S.slot)) continue;
         if (!force && S.touchedIdx >= 0 && bank.cells[S.touchedIdx] &&
             bank.cells[S.touchedIdx].key === cell.key) continue;
         const raw = engineGet(S.slot, S.comp, cell.key);
