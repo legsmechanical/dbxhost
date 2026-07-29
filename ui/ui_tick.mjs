@@ -52,7 +52,8 @@ import { checkBackHold, backTapWouldAct } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          SLOT_LEVEL_KEY } from './ui_engine.mjs';
 import { soundActive, soundEnter, soundEnterBuses, soundExit, soundTick, soundDirty,
-    soundTrack, soundRetarget, soundIsGlobal, soundConsumeLedDirty } from './ui_sound.mjs';
+    soundTrack, soundRetarget, soundIsGlobal, soundLeaveGlobal,
+    soundConsumeLedDirty } from './ui_sound.mjs';
 
 const BANK_DISPLAY_TICKS = 94;  /* ~1000ms at 94Hz device tick rate (was 392 = ~4.2s; constant was miscalibrated for 196Hz) */
 const KNOB_TURN_HIGHLIGHT_TICKS = 56;             /* ~600ms at 94Hz — highlight after turn without touch (was 120 @196Hz) */
@@ -1139,7 +1140,38 @@ export function _tickImpl() {
                 }
             }
         }
+        /* ---- sound mode: reconcile with the world it does not own ----
+         *
+         * Every screen here was opened under a CONDITION, and a condition that
+         * is only tested at the door becomes a lie the moment the world moves.
+         * All of them are re-checked in this block, deliberately together, so
+         * the list can be read in one place instead of being inferred from the
+         * write sites of five different flags:
+         *
+         *   opened when          | re-checked by
+         *   ---------------------|--------------------------------------------
+         *   OLED is ours         | co-run check below -> soundExit
+         *   S.sessionView (bus)  | the global check below -> soundLeaveGlobal
+         *   track is active      | the follow below -> soundRetarget
+         *   track routes Schwung | the follow below -> soundExit
+         *   track HAS a slot     | the follow below -> soundExit
+         *
+         * Track ROUTE cannot change while sound mode is up (route is set only
+         * from the global menu, and the two are mutually exclusive), so it
+         * needs no check of its own beyond the follow's — verified, not
+         * assumed, 2026-07-29. */
         if (soundActive()) {
+            /* SESSION FX belongs to the SESSION view — that is its only door
+             * (Shift+Note/Session, gated on S.sessionView). Leaving the session
+             * view for a track must therefore leave the bus, or a session-wide
+             * screen stays live on top of a track view; the track-follow below
+             * cannot rescue it because it deliberately sits out while global.
+             * Checked here, next to the other reconciliations, rather than at
+             * each sessionView write site — there are several, and bookkeeping
+             * spread across them is what produced the last two bugs of this
+             * shape. Dropping the context here lets the follow run on this same
+             * tick and land on the track you actually asked for. */
+            if (soundIsGlobal() && !S.sessionView) soundLeaveGlobal();
             /* Co-run took the OLED out from under us (menu "Edit Slot...",
              * or a Move-native entry): sound mode has nothing to draw on. */
             if (S.schwungCoRunSlot >= 0 || S.moveCoRunTrack >= 0) soundExit();

@@ -808,6 +808,36 @@ export function soundIsGlobal() {
     return S.view === VIEW_BUSES || !!S.bus;
 }
 
+/* Drop any session-wide context while KEEPING sound mode open.
+ *
+ * The session FX screen has exactly one door — Shift+Note/Session, gated on
+ * `S.sessionView` — but nothing re-checked that condition afterwards, so
+ * leaving the session view for a track (Shift+clip pad) left a session-wide
+ * screen live on top of a track view. The track-follow could not rescue it
+ * either: it sits out whenever soundIsGlobal(), by design. **An entry
+ * condition has to be maintained as an INVARIANT, not just tested at the
+ * door** — that is the same mistake as the two dead-path bugs in this file's
+ * history, one level up.
+ *
+ * Edits are FLUSHED, not dropped. A return level you just dialled is work you
+ * can see on screen; losing it because the CONTEXT changed underneath would be
+ * indistinguishable from a bug. Same reasoning as soundExit's flush. */
+export function soundLeaveGlobal() {
+    if (!soundIsGlobal()) return;
+    for (const w of S.pendingWrites) engineSet(w.slot, w.comp, w.key, w.val);
+    S.pendingWrites.length = 0;
+    if (S.busLevelDirty) engineSaveState();
+    clearBusContext();
+    /* -1 is "no track", which is what the bus reported all along. Left as-is so
+     * the caller's track-follow fires on this very tick and re-points us at the
+     * track you just asked for — one landing rule, already tested, rather than
+     * a second one invented here. */
+    S.track = -1;
+    S.view = VIEW_BLOCKS;
+    S.dirty = true;
+    log('leave global: session view closed');
+}
+
 export function soundEnterBuses() {
     /* Hand the volume knob back to Move before the screen opens. releaseVolume
      * also flushes any pending level save for the track we came from. */
