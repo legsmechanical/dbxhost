@@ -41,7 +41,7 @@ import {
     moveFilepathBrowserSelection, activateFilepathBrowserItem,
 } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 import { discover, deriveSections, activeSection, filterVizFor,
-    menuRows, menuCell, levelCommits, childSpec } from './ui_discover.mjs';
+    menuRows, menuCell, levelCommits, childSpec, modeRows } from './ui_discover.mjs';
 import { parseValue, stepValue, commitString, renderCellsForBank,
     formatValue } from './ui_cells.mjs';
 import {
@@ -195,6 +195,8 @@ const S = {
      * module declares but doesn't knob-map is reachable ONLY here. */
     levels: null,
     rootKey: null,
+    modes: null,                /* level keys when the module's top screen is a mode CHOICE */
+    modeParam: '',              /* the engine key that mode choice also writes */
     cpMap: null,
     menuStack: [],              /* [{levelKey, cursor, child}] — breadcrumb for Back */
     menuKey: null,
@@ -360,6 +362,8 @@ export function soundRetarget(track, slot) {
     S.menuStack = [];
     S.menuKey = null;
     S.menuChild = -1;
+    S.modes = null;
+    S.modeParam = '';
     S.menuRowsCache = [];
     S.menuEditing = false;
     S.banks = [];
@@ -691,9 +695,11 @@ function fileExists(path) {
  * growing a second engine. The handful of exotic types render read-only for
  * now and are one hop from the chain editor if they ever matter. */
 function openMenu() {
-    if (!S.levels || !S.rootKey) { S.presetMsg = 'NO MENU'; return; }
+    if (!S.levels || !(S.rootKey || S.modes)) { S.presetMsg = 'NO MENU'; return; }
     S.menuStack = [];
-    S.menuKey = S.rootKey;
+    /* A modes hierarchy has no root — its top screen is the mode list, so the
+     * menu opens with no level at all. Anything else opens on root. */
+    S.menuKey = S.modes ? null : S.rootKey;
     S.menuIdx = 0;
     S.menuChild = -1;
     S.menuEditing = false;
@@ -727,6 +733,11 @@ function itemRows(lv, levelKey) {
 }
 
 function refreshMenuRows() {
+    if (!S.menuKey && S.modes) {
+        S.menuRowsCache = modeRows(S.modes, S.levels);
+        if (S.menuIdx >= S.menuRowsCache.length) S.menuIdx = 0;
+        return;
+    }
     const lv = (S.levels && S.levels[S.menuKey]) || null;
     if (lv && lv.items_param) {
         S.menuRowsCache = itemRows(lv, S.menuKey);
@@ -991,6 +1002,21 @@ function menuEnter() {
      * its keys, so it pushes the breadcrumb like any other descent — Back then
      * pops back to the selector with no special case, because every stack entry
      * carries the child index it was pushed with. */
+    /* Picking a mode is BOTH navigation and an engine write — minijv's `mode`
+     * switches the JV-880 between single-patch and 8-part multitimbral, so
+     * walking into the performance tree without setting it would show you
+     * controls the engine isn't running. The index is the DECLARED position,
+     * which is what the module's param takes. */
+    if (row.kind === 'mode') {
+        if (S.modeParam) queueWrite(S.modeParam, String(row.index));
+        S.menuStack.push({ levelKey: S.menuKey, cursor: S.menuIdx, child: S.menuChild });
+        S.menuKey = row.level;
+        S.menuChild = -1;
+        S.menuIdx = 0;
+        S.menuEditing = false;
+        S.pendingAction = { t: 'menuload' };
+        return;
+    }
     if (row.kind === 'child') {
         S.menuStack.push({ levelKey: S.menuKey, cursor: S.menuIdx, child: S.menuChild });
         S.menuChild = row.childIndex;
@@ -1337,6 +1363,8 @@ function runDiscovery() {
     S.presetSpec = res.presetSpec || null;
     S.levels = res.levels || null;
     S.rootKey = res.rootKey || null;
+    S.modes = res.modes || null;
+    S.modeParam = res.modeParam || '';
     S.cpMap = res.cpMap || null;
     /* Kit-described modules ship their own section rows; only derive when a
      * module didn't tell us how it wants to be grouped. */
@@ -2015,8 +2043,8 @@ function renderMenu() {
     /* Inside a repeated element the level name alone is a lie — eight identical
      * "PARTS" screens with no way to tell which part you are editing. */
     const cspec = childSpec(lv);
-    const title = (cspec && S.menuChild >= 0)
-        ? (cspec.label + ' ' + (S.menuChild + 1))
+    const title = (!S.menuKey && S.modes) ? (S.moduleId || 'MENU')
+        : (cspec && S.menuChild >= 0) ? (cspec.label + ' ' + (S.menuChild + 1))
         : (lv.name || lv.label || S.menuKey || 'MENU');
     drawKitHeader(String(title).toUpperCase(), false);
     const rows = S.menuRowsCache;
@@ -2033,7 +2061,7 @@ function renderMenu() {
         const ink = on ? 0 : 1;
         /* An item row's "value" is whether it is the one in force — without it
          * a bank list is N identical rows and you cannot tell which you're on. */
-        const val = (r.kind === 'level' || r.kind === 'child') ? '>' :
+        const val = (r.kind === 'level' || r.kind === 'child' || r.kind === 'mode') ? '>' :
             (r.kind === 'item') ? (r.selected ? '*' : '') :
             (r.cell ? String(formatValue(r.cell, r.val)) : '');
         let label = String(r.label || '');

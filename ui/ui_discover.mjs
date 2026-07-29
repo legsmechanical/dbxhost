@@ -399,6 +399,61 @@ export function childParamKey(lvl, childIndex, key) {
     return spec.prefix + childIndex + '_' + key;
 }
 
+/* ---- modes ------------------------------------------------------------
+ *
+ * A hierarchy can declare `modes` — a list of level keys — plus `mode_param`.
+ * There is then NO `root` level: the module's top screen is a choice between
+ * whole trees, and choosing one is also an engine setting (minijv's `mode`
+ * switches the JV-880 between single-patch and 8-part multitimbral).
+ *
+ * Missing this costs a whole tree. davebox fell back to "first declared level"
+ * and landed on `patch`, so minijv's ENTIRE performance side — the 8 parts, the
+ * expansion loader, the octave transpose — had no door in the menu at all. It
+ * showed up in the knob pages only because the page walk sweeps orphan levels
+ * (rule 6) and swept it up by accident.
+ *
+ * minijv is the ONLY module in the 72-module device dump that declares modes,
+ * so the shape is rare — and rare is exactly why it went unnoticed. The audit
+ * sweep did print `MODES(2)` all along; nothing acted on it. It now reports
+ * such a module as `root=modes` and counts the mode list as the root screen,
+ * so the number it prints is the one you'd actually see. */
+export function modeKeys(hierarchy, levels) {
+    const m = hierarchy && hierarchy.modes;
+    if (!Array.isArray(m)) return null;
+    const out = m.filter(k => typeof k === 'string' && levels && levels[k]);
+    return out.length ? out : null;
+}
+
+/* The mode list as menu rows. `index` is the position in the DECLARED list,
+ * because that is what `mode_param` takes — not the row's position after
+ * undefined levels are dropped.
+ *
+ * A mode level is typically a preset browser (`list_param`+`count_param`) with
+ * no params of its own and ONE `children` edge — sound mode has its own preset
+ * picker and skips browser levels, so entering it would land you on a screen
+ * with exactly one row to click through. Resolve past it. The mode INDEX still
+ * comes from the declared list, so the engine write is unaffected. */
+export function modeRows(modes, levels) {
+    const rows = [];
+    if (!Array.isArray(modes)) return rows;
+    for (let i = 0; i < modes.length; i++) {
+        const key = modes[i];
+        const lv = (levels && levels[key]) || {};
+        const kids = childLevelKeys(lv).filter(k => levels && levels[k]);
+        const ownRows = ((lv.params || []).length > 0);
+        const passThrough = (!ownRows && kids.length === 1) ? kids[0] : null;
+        const target = passThrough || key;
+        const tLv = (levels && levels[target]) || {};
+        /* The host lists the raw key. A mode level rarely names itself, but the
+         * level it stands in front of does ("Patch", "Performance"), and
+         * failing that the key capitalised beats printing `perf_main`. */
+        const label = lv.name || lv.label || tLv.label || tLv.name ||
+                      (key.charAt(0).toUpperCase() + key.slice(1));
+        rows.push({ kind: 'mode', level: target, index: i, label: String(label) });
+    }
+    return rows;
+}
+
 export function buildLevelPages(allLevels, rootKey) {
     const out = [];
     const rootLevel = allLevels[rootKey];
@@ -836,6 +891,11 @@ export function discover(slot, comp) {
          * doesn't map to one of the 8 knobs is invisible in them. The menu
          * walks these levels directly, which is the whole point of having it. */
         levels, rootKey, cpMap,
+        /* A modes hierarchy has no `root` at all: its top level is a CHOICE of
+         * level, and the mode you pick is also an engine setting. See modeRows. */
+        modes: modeKeys(hierarchy, levels),
+        modeParam: (hierarchy && typeof hierarchy.mode_param === 'string')
+            ? hierarchy.mode_param : '',
         hLen: diag ? diag.hLen : 0,
         cpLen: diag ? diag.cpLen : 0,
     };

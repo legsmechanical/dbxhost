@@ -34,7 +34,8 @@ globalThis.host_read_file = () => null;
 globalThis.os = { readdir: () => [[], 0] };
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const { menuRows, childSpec } = await import(resolve(HERE, '../ui/ui_discover.mjs'));
+const { menuRows, childSpec, modeKeys, modeRows } =
+    await import(resolve(HERE, '../ui/ui_discover.mjs'));
 
 const input = process.argv[2];
 if (!input) { console.error('usage: node tools/audit_module_menus.mjs <hierarchies.txt>'); process.exit(2); }
@@ -63,8 +64,13 @@ for (const line of lines) {
     const rootKey = levels['root'] ? 'root' : (Object.keys(levels)[0] || null);
     if (!rootKey) { rows.push({ id, note: 'no levels' }); continue; }
 
+    /* A modes hierarchy has NO root — its top screen is a choice of tree, so
+     * "first declared level" is not its entry point and reporting rows for it
+     * measures the wrong screen. This is how minijv's whole performance side
+     * looked reachable in the audit while having no door on the device. */
+    const modes = modeKeys(h, levels);
+
     const flags = [], dead = [], dyn = [], kids = [], missing = new Set();
-    if (h.modes) flags.push(`MODES(${Array.isArray(h.modes) ? h.modes.length : '?'})`);
 
     for (const [k, lv] of Object.entries(levels)) {
         /* Repeated elements: the level's params are keyed <prefix><i>_<key>, so
@@ -79,14 +85,17 @@ for (const line of lines) {
         if (!r.length) dead.push(k);
         for (const row of r) if (row.kind === 'level' && !levels[row.level]) missing.add(row.level);
     }
-    const rootRows = menuRows(levels, rootKey, {}).length;
+    const rootRows = modes ? modeRows(modes, levels).length
+                           : menuRows(levels, rootKey, {}).length;
     if (!rootRows && !(levels[rootKey] || {}).items_param) flags.push('ROOT-EMPTY');
     if (dead.length) flags.push(`DEAD:${dead.join(',')}`);
     if (missing.size) flags.push(`MISSING-LEVEL:${[...missing].join(',')}`);
     if (dyn.length) flags.push(`dyn:${dyn.join(',')}`);   /* supported — informational */
     if (kids.length) flags.push(`child:${kids.join(',')}`);   /* supported — informational */
+    if (modes) flags.push(`modes:${modes.join(',')}`);   /* supported — informational */
 
-    rows.push({ id, rootKey, rootRows, levels: Object.keys(levels).length, flags });
+    rows.push({ id, rootKey: modes ? 'modes' : rootKey, rootRows,
+                levels: Object.keys(levels).length, flags });
 }
 
 const problems = rows.filter(r => r.flags && r.flags.some(f => f === f.toUpperCase()));

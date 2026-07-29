@@ -29,7 +29,8 @@ globalThis.os = { readdir: () => [[], 0] };
 
 const { discover, shortLabel, deriveSections, activeSection, filterVizFor,
         modeIdFor, findFilterModeCell, findPresetSpec, menuRows, levelCommits,
-        adoptKitStructure, childSpec, childParamKey, buildLevelPages } =
+        adoptKitStructure, childSpec, childParamKey, buildLevelPages,
+        modeKeys, modeRows } =
     await import('../../ui/ui_discover.mjs');
 const { toRenderCell, parseValue, stepValue, commitString, formatValue } =
     await import('../../ui/ui_cells.mjs');
@@ -664,6 +665,55 @@ eq(pp[7].entries.map(e => e.pkey), ['sram_part_7_partlevel', 'sram_part_7_partpa
    'the last page addresses the last element');
 eq(pp[3].entries.map(e => e.key), ['partlevel', 'partpan'],
    'page entries keep the bare metadata key too');
+
+/* ---- modes ----
+ * minijv's real top level, from the device dump: `modes:['patch','performance']`
+ * + `mode_param:'mode'` and NO `root`. Falling back to "first declared level"
+ * landed the menu on `patch` and left the ENTIRE performance tree — 8 parts,
+ * expansion loader, octave transpose — with no door (Josh, on device, 07-29). */
+const MODED = {
+    modes: ['patch', 'performance'],
+    mode_param: 'mode',
+    levels: {
+        patch: { list_param: 'preset', count_param: 'preset_count',
+                 children: 'patch_main', params: [] },
+        patch_main: { label: 'Patch', params: [{ key: 'macro_cutoff', label: 'Cutoff' }] },
+        performance: { list_param: 'performance', count_param: 'num_performances',
+                       children: 'perf_main', params: [] },
+        perf_main: { label: 'Performance',
+                     params: [{ level: 'part_selector', label: 'Edit Parts' },
+                              { key: 'octave_transpose', label: 'Octave' }] },
+        part_selector: { label: 'Parts', child_prefix: 'sram_part_', child_count: 8,
+                         child_label: 'Part', params: ['partlevel'] },
+    },
+};
+
+eq(modeKeys(MODED, MODED.levels), ['patch', 'performance'], 'both modes are real levels');
+eq(modeKeys({ modes: ['patch', 'ghost'] }, MODED.levels), ['patch'],
+   'a mode naming a level that does not exist is dropped');
+eq(modeKeys({}, MODED.levels), null, 'no modes = null, so the caller uses root');
+eq(modeKeys({ modes: [] }, MODED.levels), null, 'an empty modes list is not a mode hierarchy');
+
+const mr2 = modeRows(MODED.modes, MODED.levels);
+eq(mr2.map(r => r.label), ['Patch', 'Performance'],
+   'modes are named by the level they front, not by the raw key');
+eq(mr2.map(r => r.index), [0, 1],
+   'the index is the DECLARED position — that is what mode_param takes');
+eq(mr2.map(r => r.level), ['patch_main', 'perf_main'],
+   'a browser-only mode level is resolved past — no dead one-row screen');
+eq(mr2.every(r => r.kind === 'mode'), true, 'every row is a mode row');
+
+/* A mode level with params of its own must NOT be skipped. */
+eq(modeRows(['m'], { m: { params: [{ key: 'x' }], children: 'sub' }, sub: {} })[0].level, 'm',
+   'a mode level that owns params keeps its own screen');
+eq(modeRows(['m'], { m: { params: [], children: ['a', 'b'] }, a: {}, b: {} })[0].level, 'm',
+   'two children is a real choice — do not resolve past it');
+
+/* The performance tree is reachable end to end once the mode row exists. */
+eq(menuRows(MODED.levels, 'perf_main', {}).map(r => r.label),
+   ['Edit Parts', 'Octave'], 'the performance screen the mode row now opens');
+eq(menuRows(MODED.levels, 'part_selector', {}, -1).length, 8,
+   'and Edit Parts still lands on the 8-part selector');
 
 /* ---- report ---- */
 
