@@ -233,7 +233,6 @@ const S = {
     bus: null,                  /* null = editing a TRACK's slot; else an FX_BUSES entry */
     busIdx: 0,                  /* cursor on the bus LIST */
     pickRows: [],               /* picker rows: {kind:'bus'|'block'|'settings'} */
-    trackSlot: -1,              /* the slot to come back to when leaving a bus */
     pickRow: 0,                 /* cursor in the block PICKER (rows, not blocks) */
     blockRows: [],              /* block indices this host actually supports */
     slotRows: [],               /* SLOT_SETTINGS entries this host supports */
@@ -326,7 +325,7 @@ export function soundRetarget(track, slot) {
     S.track = track;
     /* A BUS is global — following the active track must not drag its editing
      * context off slot 0. Remember where to return and leave the view alone. */
-    if (S.bus) { S.trackSlot = slot; S.dirty = true; return; }
+    if (S.bus) { S.dirty = true; return; }
     S.slot = slot;
     S.shiftHeld = false;
     S.touchedIdx = -1;
@@ -757,7 +756,6 @@ export function soundEnterBuses() {
     S.active = true;
     S.bus = null;
     S.track = -1;
-    S.trackSlot = -1;
     S.slot = 0;
     S.busIdx = 0;
     S.view = VIEW_BUSES;
@@ -767,7 +765,6 @@ export function soundEnterBuses() {
 }
 
 function enterBus(bus) {
-    if (S.trackSlot < 0) S.trackSlot = S.slot;
     S.bus = bus;
     S.slot = 0;
     S.blockIdx = 0;
@@ -777,18 +774,14 @@ function enterBus(bus) {
     log('bus: ' + bus.id);
 }
 
+/* A bus has exactly ONE door now — the session FX list — so leaving always goes
+ * back there. It briefly had two, and the leftover "which door?" bookkeeping is
+ * what sent Back from a Master FX effect to a TRACK's sound page: entering from
+ * the session list recorded slot 0 as "the track I came from", and 0 is a valid
+ * slot. A single door needs no bookkeeping. */
 function leaveBus() {
-    const cameFromTrack = S.trackSlot >= 0;
     S.bus = null;
-    if (cameFromTrack) {
-        S.slot = S.trackSlot;
-        S.trackSlot = -1;
-        S.blockIdx = 1;         /* back on SYNTH, the common case */
-        S.view = VIEW_BLOCKS;
-        refreshBlockNames();
-        return;
-    }
-    S.view = VIEW_BUSES;        /* entered from the session view — go back there */
+    S.view = VIEW_BUSES;
     S.dirty = true;
 }
 
