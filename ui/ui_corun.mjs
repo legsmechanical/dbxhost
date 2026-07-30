@@ -7,6 +7,8 @@
  */
 
 import { S } from './ui_state.mjs';
+/* One-way edge — ui_sound.mjs does not import this file, so no cycle. */
+import { soundLearnNoteParam } from './ui_sound.mjs';
 import { invalidateLEDCache, reapplyPalette, forceRedraw } from './ui_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -152,6 +154,11 @@ export function openSchwungSlotEditor(t) {
  * is written), and tells Schwung's shadow_ui to also tick the chain editor. */
 export function enterSchwungCoRun(t, slot) {
     S.schwungCoRunSlot = slot;
+    /* Read this module's live-note advertisement now, while we are in tick
+     * context and can afford it. Out here no discovery has run, so this is the
+     * only chance to learn the key that lets a pad press name its own pad —
+     * see soundLearnNoteParam. */
+    soundLearnNoteParam(slot);
     if (typeof shadow_corun_begin === 'function')
         shadow_corun_begin(CORUN_TARGET_CHAIN_EDIT, slot, DAVEBOX_CHAIN_KEEP_MASK);
     /* Own the side-clip-button LEDs (CC 40-43) without grabbing their input.

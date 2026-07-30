@@ -384,8 +384,100 @@ const KIT_KIND = {
     octave: 'oct', count: 'count', len: 'len', dir: 'dir',
 };
 
-function adoptKitCell(kc) {
+/* ---- authoritative value metadata for an adopted kit cell ----------------
+ *
+ * ⚠⚠ A canvaskit cell's `min`/`max`/`step` are NOT engineering units. `uni()`,
+ * `bip()` and `fader()` all declare `min: 0, max: KIT_PARAM_MAX (=255)` — the
+ * kit's WIRE domain — and fold the real range into a `parse`/`format` codec
+ * that the generated `canvas.js` keeps to itself. Adopting those numbers as if
+ * they were engineering units is how a -48..48 semitone transpose came out as
+ * 0..255: the value shown was wrong, and a knob turn stepped from that wrong
+ * base and WROTE it back. Wrong per-param in a way that looks random, because
+ * only cells built by plin/plog carry a codec — pint/penum have none and were
+ * always correct.
+ *
+ * So the numbers come from the module's own declaration, which is what every
+ * other reader in this file already treats as the authority, and what the kit's
+ * own design rule says a config expresses ("SEMANTICS, not appearance").
+ * The kit keeps what it is actually good at: grouping, order, labels, and which
+ * WIDGET to draw.
+ *
+ * Three key shapes resolve, in order:
+ *   `cutoff`          — published in chain_params, or a plain level param
+ *   `pad12_transpose` — a CONCRETE repeated-element key
+ *   `pad_transpose`   — the ALIAS: no index, meaning "the focused element"
+ * The last two resolve through whichever level declares `child_prefix`. DR32
+ * already publishes that, so this needs no new declaration from any module.
+ *
+ * Modelled on schwung-movy's KnobParam (MIT, DimaDake), which keeps value
+ * metadata and `renderStyle` as separate fields for exactly this reason. */
+export function authoritativeMeta(key, cpMap, levels) {
+    if (!key) return null;
+    if (cpMap && cpMap[key]) return cpMap[key];
+
+    const paramsOf = (lvl) => (lvl && Array.isArray(lvl.params)) ? lvl.params : [];
+    const findIn = (lvl, k) => paramsOf(lvl).find(
+        p => p && typeof p === 'object' && !p.level && p.key === k) || null;
+
+    for (const lvl of Object.values(levels || {})) {
+        const direct = findIn(lvl, key);
+        if (direct) return direct;
+    }
+    /* Repeated elements: strip `<prefix>` plus either an index or nothing. */
+    for (const lvl of Object.values(levels || {})) {
+        const spec = childSpec(lvl);
+        if (!spec || key.indexOf(spec.prefix) !== 0) continue;
+        let rest = key.slice(spec.prefix.length);
+        while (rest.length && rest[0] >= '0' && rest[0] <= '9') rest = rest.slice(1);
+        if (rest[0] !== '_') continue;
+        const sub = findIn(lvl, rest.slice(1));
+        if (sub) return sub;
+    }
+    return null;
+}
+
+/* Port of schwung-movy's inferGuessedMeta (MIT, DimaDake).
+ *
+ * Only for cells nothing published metadata for — see `metaGuessed`. The first
+ * real value read tells us more than the guess did: an integer whose magnitude
+ * exceeds the guessed range is plainly an int control, so widen to contain it.
+ * Negatives are almost always symmetric bipolar (transpose, detune), so mirror
+ * the magnitude and keep 0 centred; positives take the smallest power of two
+ * that fits, rather than over-claiming a 0..127 range we cannot confirm. */
+export function inferGuessedMeta(cell, raw) {
+    if (!cell || !cell.metaGuessed) return false;
+    const s = String(raw == null ? '' : raw).trim();
+    const v = Number(s);
+    if (!s || !isFinite(v)) return false;
+    if (!(Number.isInteger(v) && Math.abs(v) > 1)) return false;
+    cell.type = 'int';
+    cell.min = v < 0 ? v : 0;
+    cell.max = v < 0 ? -v : (() => { let p = 1; while (p < v) p *= 2; return p; })();
+    cell.step = 1;
+    cell.metaGuessed = false;
+    return true;
+}
+
+function adoptKitCell(kc, meta) {
     if (!kc || !kc.key) return blankCell();
+    /* The module declared this param: build the cell the same way every other
+     * path does, then put the KIT's presentation back on top. */
+    if (meta) {
+        const cell = makeCell(kc.key, meta);
+        const kitLabel = kc.label ? String(kc.label) : '';
+        if (kitLabel) {
+            cell.label = kitLabel;
+            cell.short = kitLabel.length <= 4 ? kitLabel : shortLabel(kitLabel);
+        }
+        /* Widget choice is the kit's to make — but only for continuous cells.
+         * An enum/file/text cell's kind is decided by its TYPE, and letting a
+         * kit override that draws a picker with nothing to pick. */
+        const kitKind = KIT_KIND[kc.kind];
+        if (kitKind && cell.kind !== 'file' && cell.kind !== 'text' && cell.type !== 'enum') {
+            cell.kind = kitKind;
+        }
+        return cell;
+    }
     const label = String(kc.label || kc.key);
     const options = Array.isArray(kc.options) ? kc.options : null;
 
@@ -421,17 +513,23 @@ function adoptKitCell(kc) {
         step: kc.step != null ? Number(kc.step) : 1,
         sens,
         options,
+        /* Nothing published this param's range, so the numbers above are the
+         * KIT's wire domain and are probably wrong. Say so, rather than
+         * presenting a guess as fact — the first real value read corrects it
+         * (inferGuessedMeta). Enums are exempt: their options ARE the range. */
+        metaGuessed: !isEnum,
     };
 }
 
 /* Returns {banks, sections} in OUR shape, or null if the structure is unusable
  * — every caller must be able to fall back to the derived walk. */
-export function adoptKitStructure(kit) {
+export function adoptKitStructure(kit, resolveMeta) {
     if (!kit || !Array.isArray(kit.banks) || !kit.banks.length) return null;
     const banks = [];
     for (const kb of kit.banks) {
         if (!kb) continue;
-        const cells = (Array.isArray(kb.knobs) ? kb.knobs : []).map(adoptKitCell);
+        const cells = (Array.isArray(kb.knobs) ? kb.knobs : [])
+            .map(kc => adoptKitCell(kc, resolveMeta && kc && kc.key ? resolveMeta(kc.key) : null));
         if (!cells.some(c => c && c.key)) continue;     /* an all-blank bank is noise */
         banks.push(padToBank(String(kb.label || kb.name || ''), cells));
     }
@@ -568,17 +666,57 @@ function knobEntries(lvl) {
  * minijv is the ONLY user in the 72-module device dump — dexed's operators are
  * a `children` ARRAY, not this. That is why the audit sweep now prints a
  * `child:` flag: one module today, and no other way to notice the next one. */
+/* Two optional companions describe a level whose selection the MODULE owns
+ * rather than the UI:
+ *
+ *   child_select_param — a param carrying the selected index. Read it and the
+ *                        menu's cursor follows whatever moved the module's own
+ *                        focus.
+ *   child_press_param  — write "1" to vouch that a PHYSICAL pad press just
+ *                        happened. It deliberately does not say which pad: the
+ *                        note does, and only the module owns the note->element
+ *                        map. See soundVouchLivePress in ui_sound.mjs.
+ *
+ * Why a module can't do this alone: the host forwards raw hardware pad notes
+ * (68-99) only to an OPEN canvas overlay (MODULES.md, "Pad presses in a canvas
+ * UI"), and that is the sole signal separating a finger from the sequencer —
+ * by the time a note reaches a DSP the two are byte-identical. Under a tool
+ * module the tool holds the pads and the module's canvas never runs, so the
+ * tool has to vouch in its place or the feature silently does nothing. */
 export function childSpec(lvl) {
     const prefix = lvl && lvl.child_prefix;
     if (typeof prefix !== 'string' || !prefix) return null;
     const count = parseInt(lvl.child_count, 10);
     if (!(count > 0)) return null;
+    const str = (v) => (typeof v === 'string' && v) ? v : '';
     return {
         prefix,
         count,
         label: (typeof lvl.child_label === 'string' && lvl.child_label)
             ? lvl.child_label : 'Item',
+        selectParam: str(lvl.child_select_param),
+        pressParam: str(lvl.child_press_param),
+        /* A host that EMITS the note can name the element outright — no vouch,
+         * no correlation window, no race. Sequencers can; a canvas cannot. */
+        noteParam: str(lvl.child_press_note_param),
     };
+}
+
+/* The press/select declaration anywhere in a hierarchy. A module declares it on
+ * the repeated level, but the vouch is a MODULE-WIDE signal — sound mode fires
+ * it from a pad press without knowing or caring which screen is open, so it
+ * must be findable without a level in hand. First declaration wins; nothing
+ * sensible could come of two. */
+export function livePressSpec(levels) {
+    for (const key of Object.keys(levels || {})) {
+        const spec = childSpec(levels[key]);
+        if (spec && (spec.pressParam || spec.noteParam)) {
+            return { levelKey: key, pressParam: spec.pressParam,
+                     noteParam: spec.noteParam,
+                     selectParam: spec.selectParam, count: spec.count };
+        }
+    }
+    return null;
 }
 
 /* The address for `key` on element `childIndex` of `lvl`. Returns `key`
@@ -1028,7 +1166,8 @@ export function discover(slot, comp) {
     let kitSections = null;
     const kitModuleId = engineLoadedModule(slot, comp);
     if (kitModuleId) {
-        const adopted = adoptKitStructure(engineLoadKitStructure(comp, kitModuleId));
+        const adopted = adoptKitStructure(engineLoadKitStructure(comp, kitModuleId),
+                                          (k) => authoritativeMeta(k, cpMap, levels));
         if (adopted) {
             banks.length = 0;
             for (const b of adopted.banks) banks.push(b);

@@ -17,6 +17,12 @@ the section into a versioned heading at release time.
   and step buttons stay with the sequencer throughout, so you can keep playing
   while you dial. `Back` steps out a level at a time.
 
+- **The sound editor follows the drum pad you hit.** With a drum module in the
+  chain (DR32), playing a pad brings that drum's parameters up on screen — no
+  jogging through 32 pages to find the one you just heard. Only a pad you
+  physically press counts: a running pattern, or drums arriving over MIDI, never
+  drag the editor around. Modules that don't offer per-drum editing are
+  unaffected.
 - **Presets in the sound editor.** Click the jog inside a module to reach its
   presets. Where a module has both, you pick the source first: **User Presets**
   (the ones you've saved, shared with Schwung's own preset browser) or the

@@ -28,6 +28,9 @@ import { applyBankParam, applyTrackConfig, readBankParams,
     refreshPerClipBankParams, refreshDrumLaneBankParams, refreshSeqNotesIfCurrent,
     resyncDrumTrack, liveSendNote,
     pendingDrumNoteOffs, _drumRecNoteOns, _drumRecNoteOffs } from './ui_dsp_bridge.mjs';
+/* One-way edge (ui_sound never imports this file), so no cycle to document.
+ * Sound mode needs to know a pad press was LIVE — see soundVouchLivePress. */
+import { soundVouchLivePress } from './ui_sound.mjs';
 import { handoffRecordingToTrack, recordNoteOn, recordNoteOff,
     openTapTempo, registerTapTempo, extNoteOffAll } from './ui_record.mjs';
 import { setTrackMute, setTrackSolo, clearClip, hardResetClip, copyClip, cutClip,
@@ -318,6 +321,7 @@ function _onPadPressTrackView(status, d1, d2) {
                 const lane_vp  = S.activeDrumLane[t];
                 const laneNote = S.drumLaneNote[t][lane_vp];
                 liveSendNote(t, 0x90, laneNote, zoneVel, true);
+                soundVouchLivePress(t, laneNote);
                 padPitch[padIdx] = laneNote;
                 padPressTick[padIdx] = S.tickCount;
                 S.liveActiveNotes.add(laneNote);
@@ -438,6 +442,7 @@ function _onPadPressTrackView(status, d1, d2) {
                     const vel = effectiveVelocity(d2);
                     const laneNote = S.drumLaneNote[t][lane];
                     liveSendNote(t, 0x90, laneNote, vel);
+                    soundVouchLivePress(t, laneNote);
                     padPitch[padIdx] = laneNote;
                     padPressTick[padIdx] = S.tickCount;
                     S.liveActiveNotes.add(laneNote);
@@ -572,6 +577,12 @@ function _onPadPressTrackView(status, d1, d2) {
             S.lastPadVelocity = effectiveVelocity(d2);
             S.liveActiveNotes.add(pitch);
             liveSendNote(S.activeTrack, 0x90, pitch, effectiveVelocity(d2));
+            /* A melodic pad is still a physical pad, and a drum module in a
+             * melodic track maps the note the same way it maps any other. The
+             * STEP-HELD preview above deliberately does not vouch: that finger
+             * is aiming at a step, not at a sound, and moving the editor under
+             * it would be a surprise rather than a shortcut. */
+            soundVouchLivePress(S.activeTrack, pitch);
             /* Record capture: queue into _recNoteOns regardless of count-in
              * state. Flush is gated on !S.recordCountingIn so events accumulate
              * during count-in and drain at the count-in→recording transition.

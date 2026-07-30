@@ -1051,6 +1051,13 @@ time; **Shift + Note/Session** leaves outright.
 **Move tracks** hand the screen, jog, and knobs to Move's own editor. **Mute**
 changes hands there — it mutes the Move instrument you're on.
 
+**Drum modules follow the pad you hit.** With a drum module in the chain (DR32),
+playing a pad brings that drum's parameters up on screen, so you can audition and
+edit in one gesture instead of jogging to find it. Only a pad you physically press
+counts — a playing pattern, or drums arriving over MIDI, never move the editor. The
+module decides which drum a pad means, so this follows its own kit mapping. Modules
+that don't offer per-drum editing are unaffected.
+
 The Schwung chain editor is still available from **Edit Synth… / Edit Slot…** in
 the Settings menu, where **Mute + jog-click** bypasses the focused slot.
 *Requires Schwung 0.9.18 or later.*

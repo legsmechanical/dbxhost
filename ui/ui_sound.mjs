@@ -21,7 +21,7 @@
 
 import * as os from 'os';
 import {
-    COMPONENTS, PRESET_ROOT, engineGet, engineSet, engineListModules,
+    COMPONENTS, PRESET_ROOT, engineGet, engineSet, engineListModules, engineDescribe,
     engineLoadModule, engineLoadedModule, engineGetState, engineSetState,
     engineListUserPresets, engineReadUserPreset,
     engineGetSlotParam, engineSetSlotParam, engineSaveState, engineVolBlock,
@@ -41,8 +41,8 @@ import {
     moveFilepathBrowserSelection, activateFilepathBrowserItem,
 } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 import { discover, deriveSections, activeSection, filterVizFor,
-    menuRows, menuCell, levelCommits, childSpec, modeRows,
-    moduleIdOf, buildBrowseList } from './ui_discover.mjs';
+    menuRows, menuCell, levelCommits, childSpec, modeRows, livePressSpec,
+    inferGuessedMeta, moduleIdOf, buildBrowseList } from './ui_discover.mjs';
 import { parseValue, stepValue, commitString, renderCellsForBank,
     formatValue } from './ui_cells.mjs';
 import {
@@ -159,6 +159,21 @@ const VOL_SHOW_TICKS = 94;      /* ~1s readout after the last turn */
  * 8 — davebox's tick is already busy, so idle refresh is cheap and the
  * responsive cases (entry, bank change, touch) are handled by explicit repolls. */
 const POLL_IDLE_TICKS = 24;
+/* How long to watch for a vouched pad press to move the module's focus (~300ms
+ * at 94Hz). Generous on purpose: the cost is one get_param every other tick and
+ * it stops the moment focus moves, whereas giving up early is the failure that
+ * reads as "the tap did nothing". */
+const PAD_WATCH_TICKS = 28;
+/* ⚠ `shadow_set_param` returns FALSE when the mailbox never goes idle — the
+ * write is dropped, silently. Everything else here is a knob edit that the next
+ * detent or the idle poll repairs; the vouch is a one-shot with a deadline, so
+ * it is the one write that must be retried. */
+const VOUCH_MAX_TRIES = 4;
+/* A forced bank re-read is SPREAD over ticks. Eight synchronous get_params is
+ * ~21ms against a ~10.6ms tick budget, so doing them together stalls the
+ * sequencer AND the UI — once per pad press, which is exactly the moment it is
+ * most visible. Measured cost per get_param on device: ~2.6ms. */
+const POLL_PER_TICK = 3;
 const WRITES_PER_TICK = 2;      /* bound the per-tick SHM cost */
 const TOUCH_HOLD_TICKS = 45;
 
@@ -203,6 +218,24 @@ const S = {
     menuKey: null,
     menuIdx: 0,
     menuChild: -1,              /* chosen repeated element on a child_prefix level */
+    /* Live pad focus. `livePress` is the module's declaration (see
+     * livePressSpec); `padVouch` is a press waiting to be sent. The vouch is
+     * LATENCY-CRITICAL — the module correlates it against a note it has already
+     * seen, inside a window measured in render blocks — so it jumps the write
+     * queue rather than joining the back of it. */
+    livePress: null,
+    padVouch: false,
+    /* After a vouch we WATCH for the module's focus to move rather than reading
+     * once at a fixed delay — see the tick. `padWatchFrom` is where focus sat
+     * before the vouch, so "not there yet" is distinguishable from "it moved". */
+    padWatchLeft: 0,
+    padWatchFrom: -1,
+    padLastSeen: -1,            /* last selection we READ; the vouch's baseline */
+    /* The note-naming key last DISCOVERED. Outside sound mode no discovery has
+     * run, so this is how the co-run path knows what to write. */
+    lastNoteParam: '',
+    pollCursor: -1,             /* spread bank re-read; <0 = idle */
+    padVouchTries: 0,           /* the vouch write can be DROPPED; retry it */
     menuRowsCache: [],
     menuEditing: false,         /* jog edits the highlighted param instead of scrolling */
     fileState: null,            /* shared filepath_browser state, when browsing */
@@ -373,6 +406,15 @@ export function soundRetarget(track, slot) {
     S.sections = [];
     S.bankIdx = 0;
     S.moduleId = '';
+    /* The declaration belongs to the module we are leaving. Re-derived by the
+     * discovery this retarget queues; until then there is nothing to vouch to,
+     * and a stale spec would aim a write at the NEW slot using the OLD module's
+     * key — the silent kind of wrong. */
+    S.livePress = null;
+    S.padVouch = false;
+    S.padWatchLeft = 0;
+    S.padVouchTries = 0;
+    S.pollCursor = -1;
     S.blockNames = [];
     S.presetMsg = '';
     S.pendingDiscover = 0;
@@ -426,6 +468,12 @@ export function soundExit() {
     clearBusContext();
     S.pendingAction = null;
     S.pendingDiscover = 0;
+    /* An in-flight vouch is DROPPED, not flushed. Its whole meaning is "focus
+     * the pad I am looking at right now", and we are no longer looking. */
+    S.padVouch = false;
+    S.padWatchLeft = 0;
+    S.padVouchTries = 0;
+    S.pollCursor = -1;
     S.dirty = true;
     log('exit');
 }
@@ -1371,6 +1419,16 @@ function runDiscovery() {
     S.modes = res.modes || null;
     S.modeParam = res.modeParam || '';
     S.cpMap = res.cpMap || null;
+    S.livePress = livePressSpec(res.levels);
+    if (S.livePress && S.livePress.noteParam) S.lastNoteParam = S.livePress.noteParam;
+    S.padVouch = false;
+    S.padWatchLeft = 0;
+    S.padVouchTries = 0;
+    S.pollCursor = -1;
+    /* Seed the baseline here, where a get_param is legal — the first press
+     * raises its vouch from the MIDI handler, where one is not. */
+    S.padLastSeen = -1;
+    if (S.livePress) readLiveSelection();
     /* Kit-described modules ship their own section rows; only derive when a
      * module didn't tell us how it wants to be grouped. */
     S.sections = res.kitSections || deriveSections(res.banks);
@@ -1420,6 +1478,8 @@ function loadSelected() {
      * returns null metadata and the module looks empty. */
     S.pendingDiscover = 6;
     S.banks = [];
+    S.livePress = null;                /* the outgoing module's, not the incoming one's */
+    S.padVouch = false;
     S.view = mod.id ? VIEW_EDIT : VIEW_BLOCKS;
     refreshBlockNames();
     S.dirty = true;
@@ -1447,6 +1507,7 @@ function pollValues(force) {
         if (!force && S.touchedIdx >= 0 && bank.cells[S.touchedIdx] &&
             bank.cells[S.touchedIdx].key === cell.key) continue;
         const raw = engineGet(S.slot, S.comp, cell.key);
+        inferGuessedMeta(cell, raw);       /* a guessed range learns from the value */
         S.rawValues[cell.key] = raw;
         S.values[cell.key] = parseValue(cell, raw);
     }
@@ -1478,6 +1539,169 @@ function queueWrite(key, val, comp) {
      * to another track mid-queue, and a write raised against one slot must never
      * land in the one that replaced it. */
     S.pendingWrites.push({ slot: S.slot, comp: S.comp, key, val });
+}
+
+/* Learn the note-naming key for a slot's sound generator, ONCE.
+ *
+ * Why this exists: a module ADVERTISES the key rather than everyone agreeing a
+ * name (`child_press_note_param` on its repeated-element level). Sound mode
+ * reads that advertisement during discovery — but CO-RUN never opens sound
+ * mode, so out there davebox knows a note was played and not what to call the
+ * param that names it.
+ *
+ * Without this, the co-run fix only worked if you had happened to open sound
+ * mode on that module earlier in the session, and stopped working again after
+ * a reboot. A fix that depends on having visited an unrelated screen is
+ * indistinguishable from a random bug six months later, so it is bought out
+ * here with one lookup instead.
+ *
+ * Called from enterSchwungCoRun (ui_corun.mjs), which runs in TICK context —
+ * engineDescribe is an SHM round-trip plus a JSON parse, far too expensive for
+ * the MIDI handler, but fine once at co-run entry. Sound mode makes the same
+ * call routinely during discovery.
+ *
+ * Failure is silent and safe: no advertisement (or a module that publishes
+ * nothing) leaves the key empty, the co-run write is skipped, and the module's
+ * own canvas vouch still runs — i.e. it degrades to the previous behaviour,
+ * never to writing something wrong. */
+export function soundLearnNoteParam(slot) {
+    if (!(slot >= 0)) return;
+    let key = '';
+    try {
+        const d = engineDescribe(slot, 'synth');
+        const spec = livePressSpec(d && d.hierarchy && d.hierarchy.levels);
+        if (spec && spec.noteParam) key = spec.noteParam;
+    } catch (e) { key = ''; }
+    S.lastNoteParam = key;
+    log('corun note key: ' + (key || '(none)') + ' slot ' + slot);
+}
+
+/* ---- live pad focus ----
+ *
+ * A drum module wants the pad you HIT to become the pad you EDIT, without a
+ * running pattern dragging the editor around. It cannot do that alone: the one
+ * signal separating a finger from the sequencer is the host forwarding raw
+ * hardware pad notes to an open CANVAS (MODULES.md, "Pad presses in a canvas
+ * UI"), and in sound mode the module's canvas is not the thing on screen — we
+ * harvested its bank structure and put its globals back. davebox holds the
+ * pads, so davebox is the only party that still knows.
+ *
+ * We contribute exactly one bit: "a finger did that." Deliberately NOT which
+ * pad — the note says which, and only the module owns the note->pad map. A
+ * grid position is not a pad (davebox transposes the same grid note up 16 to
+ * reach pads 17-32), so any attempt to derive one here is wrong twice over.
+ *
+ * Called from the LIVE pad press sites in ui_input_pads.mjs and nowhere else.
+ * That is the whole guarantee: sequencer playback never passes through them, so
+ * a playing pattern cannot move focus. External MIDI is excluded too — it
+ * reaches liveSendNote by a different path, and an incoming drum loop should no
+ * more steal focus than a sequenced one. */
+export function soundVouchLivePress(track, note) {
+    /* `livePress` comes from the hierarchy of the block CURRENTLY open, so it
+     * is null unless the module being looked at is one that asked for this.
+     * That self-gates the whole feature — no module-id test needed. */
+    if (!S.active || !S.livePress || S.bus) {
+        /* CO-RUN: sound mode is closed but the module's OWN canvas may be on
+         * screen, and davebox is still the sequencer driving the notes — so the
+         * same deterministic answer applies out here.
+         *
+         * Both things this needs are already in hand, so the press itself stays
+         * cheap: the slot was resolved when co-run began (`schwungCoRunSlot`,
+         * no chain enumeration), and the key was read from the module's
+         * advertisement at the same moment (soundLearnNoteParam, tick context).
+         * Nothing here does a lookup — this runs in the MIDI handler.
+         *
+         * `lastNoteParam` empty means that module advertises no note key. Then
+         * nothing is written and its canvas vouch still runs, i.e. it degrades
+         * to the previous behaviour rather than to something wrong. */
+        if (note >= 0 && S.lastNoteParam && GS.schwungCoRunSlot >= 0) {
+            engineSet(GS.schwungCoRunSlot, 'synth', S.lastNoteParam, String(note));
+        }
+        return;
+    }
+    if (track !== S.track) return;         /* editing some other track's chain */
+
+    S.padWatchFrom = S.padLastSeen;        /* NOT a get_param: null from here */
+    S.padWatchLeft = PAD_WATCH_TICKS;
+    S.padVouchTries = 0;
+
+    /* ⭑ NAME the pad when the module lets us. We EMIT this note, so unlike the
+     * module's own canvas we know exactly which element it is — and saying so
+     * is deterministic where vouching is a race. MEASURED (2026-07-30): the
+     * vouch路 missed 2 of 16 presses, a hit->change latency of 55ms against a
+     * 58ms correlation window. Naming the note has no window to miss.
+     * The module maps note -> element; we never send an index. */
+    if (S.livePress.noteParam && note >= 0) {
+        engineSet(S.slot, S.comp, S.livePress.noteParam, String(note));
+        return;
+    }
+
+    /* ⚠⚠ Fallback: the VOUCH, sent synchronously, breaking this file's "every
+     * write is queued and drained in tick()" rule. That rule keeps STREAMS of
+     * knob writes off the MIDI handler; this is one bounded write per press,
+     * and deferring it is not merely slower but WRONG — queued for the tick it
+     * landed at 27/32/41ms (matched) and 59ms (MISSED) against a 58ms window.
+     * NOT the coalescing footgun in CLAUDE.md: that is host_module_set_param
+     * sharing a channel with shadow_send_midi_to_dsp; this is shadow_set_param,
+     * the chain-param SHM mailbox. The tick retry covers a dropped write. */
+    if (!S.livePress.pressParam) return;
+    S.padVouch = !engineSet(S.slot, S.comp, S.livePress.pressParam, '1');
+}
+
+/* Drain a spread bank re-read. `pollCursor` < 0 means idle. Deliberately does
+ * NOT skip cells with pending writes the way pollValues does: this runs because
+ * every alias cell now addresses a DIFFERENT element, so the local value is not
+ * "optimistic and ahead of the engine", it belongs to another pad entirely. */
+function drainForcedPoll() {
+    if (S.pollCursor < 0) return;
+    const bank = S.banks[S.bankIdx];
+    if (!bank) { S.pollCursor = -1; return; }
+    let done = 0;
+    while (S.pollCursor < bank.cells.length && done < POLL_PER_TICK) {
+        const cell = bank.cells[S.pollCursor++];
+        if (!cell || !cell.key) continue;
+        const raw = engineGet(S.slot, S.comp, cell.key);
+        inferGuessedMeta(cell, raw);       /* a guessed range learns from the value */
+        S.rawValues[cell.key] = raw;
+        S.values[cell.key] = parseValue(cell, raw);
+        done++;
+    }
+    if (S.pollCursor >= bank.cells.length) S.pollCursor = -1;
+    if (done) S.dirty = true;
+}
+
+/* Where the module currently has its focus, or -1 if it won't say. ONE
+ * get_param — cheap enough to poll with, unlike a whole bank re-read. */
+function readLiveSelection() {
+    const spec = S.livePress;
+    if (!spec || !spec.selectParam) return -1;
+    const idx = parseInt(engineGet(S.slot, S.comp, spec.selectParam), 10);
+    const ok = (idx >= 0 && idx < spec.count) ? idx : -1;
+    /* Remembered because the vouch is raised from the MIDI handler, where a
+     * get_param silently returns null — so the baseline for "did focus move?"
+     * has to be something we already know rather than a fresh read. */
+    if (ok >= 0) S.padLastSeen = ok;
+    return ok;
+}
+
+/* Follow the module to `idx`.
+ *
+ * The EDIT pages usually need nothing structural — a drum module binds its
+ * cells to an ALIAS key the DSP redirects at the focused element (DR32's
+ * "pad_") so the page re-points itself — but their VALUES now describe a
+ * different pad, so the bank must be re-read. The MENU is the case that
+ * genuinely needs the index: it walks the hierarchy with real `<prefix><n>_`
+ * keys and has no alias to ride on, so without this the two screens disagree
+ * about which pad is current. */
+function followLiveSelection(idx) {
+    const spec = S.livePress;
+    if (!spec) return;
+    S.pollCursor = 0;                       /* alias cells now mean another pad */
+    if (idx >= 0 && S.menuChild !== idx && S.menuKey === spec.levelKey) {
+        S.menuChild = idx;
+        refreshMenuRows();
+    }
+    S.dirty = true;
 }
 
 /* ---- input ---- */
@@ -1820,12 +2044,59 @@ export function soundTick() {
         S.previewIdx = -2;   /* done; -1 would re-fire every tick */
     }
 
+    /* The pad vouch goes FIRST and unbudgeted. The module matches it against a
+     * note it has already seen, inside a window of a few render blocks, so a
+     * vouch that waits its turn behind a knob sweep arrives after the window has
+     * closed and the press is simply lost. It is one write, it coalesces to at
+     * most one per tick, and it only exists at all while a module that asked for
+     * it is open. */
+    /* RETRY only — the vouch itself is sent from soundVouchLivePress, whose
+     * header explains why it cannot wait for this tick. We arrive here solely
+     * when that write was DROPPED (mailbox busy: a pad press is also when
+     * davebox is busiest on the param channel, with lane select + step sync +
+     * bank refresh all firing from the same handler). A retry is already late
+     * against the module's window, so it is a long shot rather than the
+     * mechanism — but it costs one write and beats losing the press outright. */
+    if (S.padVouch && S.livePress) {
+        if (engineSet(S.slot, S.comp, S.livePress.pressParam, '1') ||
+                ++S.padVouchTries >= VOUCH_MAX_TRIES) {
+            S.padVouch = false;
+            S.padVouchTries = 0;
+        }
+    } else if (S.padWatchLeft > 0) {
+        /* WATCH for the change; never read once at a fixed delay. The note and
+         * the vouch reach the module by different paths with different
+         * latencies, so there is no tick at which the answer is reliably ready
+         * — a single early read gets the OLD index and there is no second
+         * chance, leaving the screen stale until the ~250ms idle poll. That is
+         * exactly the "a tap does nothing, holding works" report: holding just
+         * kept you looking long enough for the idle poll to land.
+         *
+         * Every OTHER tick: ~21ms of granularity is imperceptible and halves
+         * the cost of a drum roll, which re-arms this on every hit. */
+        S.padWatchLeft--;
+        /* A module may vouch without publishing a selection (press declared,
+         * select not). There is then nothing to watch, so fall back to one
+         * refresh late enough for the module to have acted — the pages ride the
+         * alias, so re-reading their values is all they need. */
+        if (!S.livePress.selectParam) {
+            if (S.padWatchLeft === 0) followLiveSelection(-1);
+        } else if ((S.padWatchLeft & 1) === 0) {
+            const now = readLiveSelection();
+            if (now >= 0 && now !== S.padWatchFrom) {
+                S.padWatchLeft = 0;
+                followLiveSelection(now);
+            }
+        }
+    }
+
     /* Drain a bounded number of queued writes. */
     for (let n = 0; n < WRITES_PER_TICK && S.pendingWrites.length; n++) {
         const w = S.pendingWrites.shift();
         engineSet(w.slot, w.comp, w.key, w.val);
     }
     drainSlotWrites();
+    drainForcedPoll();
 
     if (S.volPending) {
         S.volPending = false;
