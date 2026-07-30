@@ -193,3 +193,38 @@ git log --reverse --format=%h <base>..HEAD -- src schwung-manager | \
   edit-storm, tool-arrival all verified live). Merged to fork `main` 2026-07-18.
 - Follow-up (non-blocking): table-driven unit test + light refactor of `serviceToolClients`
   (three concerns interleaved: presence/arrival, snapshot fan-out gating, playhead push).
+
+## canvas-takes-click.patch
+
+`0bea22ad` **feat(shadow): let a canvas claim the jog click (`canvas_takes_click`)**
+
+⬆ **Upstream-INTENDED, not a fork divergence** — same status as the Send FX half above.
+Retire this file once it merges upstream. Written deliberately generic (no module named,
+no consumer assumptions) so it can be sent as-is.
+
+**What it fixes:** a canvas receives the jog wheel, knobs, knob-touch and pad notes, but never
+the jog CLICK — the click is the close gesture, taken before the canvas's `onMidi` runs. So a
+canvas has no "enter" action, and nothing hierarchical (a directory browser, a drill-down list,
+a confirm step) can be built as a canvas UI.
+
+`canvas_takes_click: true` on a canvas param forwards the click instead of stealing it. **Back
+is never claimable and always closes**, so a module cannot trap the user by taking the only exit.
+Applies to the fullscreen canvas and the co-run overlay alike.
+
+### Re-apply on rebase
+
+```sh
+git am patches/canvas-takes-click.patch      # or: git apply --3way
+```
+
+Touches `src/shadow/shadow_ui.js` (one guard in the canvas close-gesture block) and
+`docs/MODULES.md` (the contract). Low conflict surface — the only likely collision is upstream
+moving the close-gesture block itself.
+
+⚠ **Known companion gap, NOT fixed here:** Copy (CC 60) / Delete (119) / Undo (56) DO reach a
+canvas already, but are **not** withheld from Move firmware while a canvas is open — the existing
+carve-out is scoped to COMPONENT_EDIT. Device-confirmed 2026-07-30: holding Copy in a canvas and
+tapping two pads copied a NATIVE Move drum pad. A `canvas_takes_modifiers` opt-in is the intended
+companion (opt-in, because using Move's native pads while a canvas is open is a legitimate
+workflow that an unconditional block would break). Not written — needs the shim-side mailbox
+filter located first, and that is RT-thread code.
