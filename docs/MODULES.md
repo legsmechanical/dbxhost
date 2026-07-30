@@ -1233,12 +1233,46 @@ Use `type: "canvas"` to open a module-defined fullscreen canvas UI from the hier
 - `canvas_overlay` (optional): Named overlay object selector (aliases: `canvas_target`, `overlay`).
 - `show_footer` (optional): Show/hide footer in canvas view (default `true`; alias `showfooter`).
 - `show_value` (optional): Show/hide parameter value in hierarchy and canvas footer (default `true`; alias `showvalue`).
+- `canvas_takes_click` (optional): Forward jog-click to the canvas instead of closing it (default `false`; alias `canvastakesclick`). See "Jog-click in a canvas UI" below.
 
 Behavior notes:
 
 - Clicking the parameter enters a dedicated fullscreen canvas view.
 - Set `show_value: false` for button-style canvas entries that should not show a value.
 - The loaded script should expose `globalThis.canvas_overlay` (or `globalThis.canvas_overlays`) with hooks such as `onOpen`, `onMidi`, `tick`, `draw`, `onClose`, `onExit`.
+
+#### Jog-click in a canvas UI
+
+By default a canvas receives the jog **wheel**, knobs, knob-touch and pad notes,
+but never the jog **click** — the click is the close gesture, taken before the
+canvas's `onMidi` runs. That leaves a canvas with no "enter" action, so anything
+hierarchical (a directory browser, a drill-down list) cannot be expressed as a
+canvas UI.
+
+Set `canvas_takes_click: true` on the canvas param to receive it:
+
+```json
+{
+  "key": "browser",
+  "name": "Sample Browser",
+  "type": "canvas",
+  "canvas_script": "canvas.js#browser",
+  "canvas_takes_click": true
+}
+```
+
+The click then arrives in `onMidi` as an ordinary CC (`MoveMainButton`, CC 3)
+with `d2 > 0`, and the module decides what it means — enter a folder, confirm a
+selection, drill into a page.
+
+**Back always closes the canvas and cannot be claimed.** That is what makes this
+safe to opt into: however a module's own navigation behaves, there is always one
+guaranteed way out. A module that takes the click should still handle Back
+sensibly in its own model (e.g. "up one level"), but it will never be the only
+thing standing between the user and the exit.
+
+Applies to both the fullscreen canvas and the co-run canvas overlay, so a
+module's navigation behaves the same in either context.
 
 #### Dynamic Target Pickers
 

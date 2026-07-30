@@ -16273,9 +16273,23 @@ globalThis.onMidiMessageInternal = function(data) {
      * co-run overlay when coRunView === CANVAS. Steal jog-click/Back to close it
      * (wrapped so coRunView returns to the hierarchy editor), mirroring the
      * non-co-run steal below. */
+    /* ...unless the canvas asked for the click. A canvas gets the jog WHEEL but
+     * never the click, because the click is the close gesture — which leaves a
+     * canvas with no "enter" at all, so anything hierarchical (a directory
+     * browser, a drill-down list) cannot be built as a canvas UI.
+     *
+     * `canvas_takes_click: true` on the canvas param hands the click to the
+     * module's onMidi instead. Declining to steal is all that is needed: the
+     * event falls through to dispatchCanvasMidi below like every other CC.
+     *
+     * BACK IS NEVER CLAIMABLE — it always closes. That is what makes this safe
+     * to opt into: a module cannot trap the user by taking the only way out,
+     * however its own navigation behaves. */
+    var canvasTakesClick = !!(canvasParamMeta && getMetaOption(canvasParamMeta,
+        "canvas_takes_click", getMetaOption(canvasParamMeta, "canvastakesclick", false)));
     var canvasInCorun = coRunUiActive() && coRunView === VIEWS.CANVAS;
     if ((view === VIEWS.CANVAS || canvasInCorun) && (status & 0xF0) === 0xB0) {
-        if (d1 === MoveMainButton && d2 > 0) {
+        if (d1 === MoveMainButton && d2 > 0 && !canvasTakesClick) {
             if (canvasInCorun) runCoRunChainEdit(function() { closeCanvasPreview(false); });
             else closeCanvasPreview(false);
             announce("Hierarchy Editor");
