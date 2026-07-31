@@ -697,14 +697,25 @@ function drawSpecialButtons(charCount) {
     /* Fixed position: row 4 (bottom), right-aligned */
     const specialY = GRID_START_Y + 3 * ROW_HEIGHT;
 
-    /* Button definitions: label, width */
-    const buttons = [
-        { label: '...', width: 18 },      /* Page switch */
-        { label: '___', width: 24 },      /* Space */
-        { label: 'x', width: 14 },        /* Backspace */
-        { label: 'CLR', width: 22 },      /* Clear all */
-        { label: 'OK', width: 18 }        /* Confirm */
-    ];
+    /* Labels only — each button is sized from its MEASURED label, so a longer
+     * one (CLR) cannot overflow a hardcoded width and a short one (x) is not
+     * left-stranded in an oversized box. */
+    const labels = ['...', '___', 'x', 'CLR', 'OK'];
+    const LABEL_PAD = 3;      /* each side */
+    const MIN_BTN_W = 12;
+
+    function labelWidth(label) {
+        if (typeof text_width === 'function') {
+            const w = text_width(label);
+            if (w > 0) return w;
+        }
+        return label.length * 6;   /* fallback: the font's nominal advance */
+    }
+
+    const buttons = labels.map((label) => {
+        const lw = labelWidth(label);
+        return { label, lw, width: Math.max(MIN_BTN_W, lw + LABEL_PAD * 2) };
+    });
 
     /* Calculate total width for right-alignment */
     const totalWidth = buttons.reduce((sum, btn) => sum + btn.width + 2, 0) - 2;
@@ -715,14 +726,20 @@ function drawSpecialButtons(charCount) {
         const btn = buttons[i];
         const isSelected = state.selectedIndex === charCount + i;
         const btnHeight = ROW_HEIGHT + 1;
+        const boxY = specialY + 2;
+        /* Centre the label in its box. The text used to be drawn a pixel ABOVE
+         * the box top (specialY + 1 against a box at specialY + 2), which is
+         * what made the labels sit askew in their outlines. */
+        const tx = x + Math.max(1, Math.round((btn.width - btn.lw) / 2));
+        const ty = boxY + 1;
 
         if (isSelected) {
-            fill_rect(x, specialY + 2, btn.width, btnHeight, 1);
-            print(x + 2, specialY + 1, btn.label, 0);
+            fill_rect(x, boxY, btn.width, btnHeight, 1);
+            print(tx, ty, btn.label, 0);
         } else {
             /* Draw button outline */
-            drawRect(x, specialY + 2, btn.width, btnHeight, 1);
-            print(x + 2, specialY + 1, btn.label, 1);
+            drawRect(x, boxY, btn.width, btnHeight, 1);
+            print(tx, ty, btn.label, 1);
         }
 
         x += btn.width + 2;

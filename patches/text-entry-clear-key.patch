@@ -1,107 +1,91 @@
-From 706a4a770de1a7dfb6f8aa4dd499601dafe0f431 Mon Sep 17 00:00:00 2001
+From 8fe1adbd7a8292baffbdef85aea21158b2c86b74 Mon Sep 17 00:00:00 2001
 From: legsmechanical <joshgaine@gmail.com>
-Date: Fri, 31 Jul 2026 10:19:41 -0400
-Subject: [PATCH] feat(text-entry): add a CLR key to the on-screen keyboard
+Date: Fri, 31 Jul 2026 13:30:44 -0400
+Subject: [PATCH] fix(text-entry): centre the function-key labels in their
+ boxes
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-Clearing a field meant holding delete through every character. CLR empties the
-buffer in one press.
+Josh, on device: the labels sit askew in their outlines.
 
-Sits beside DELETE — both destructive — and OK stays LAST, so the deliberate
-'slam the jog right to reach OK' gesture is unchanged. On the pad grid it takes
-its own column: space drops from two columns to one, and the specials still
-occupy exactly cols 3-7 of the bottom row, so nothing else moves.
+Two causes. The text was printed at specialY + 1 while its box top is
+specialY + 2 — a pixel ABOVE its own outline. And labels were left-aligned at a
+fixed +2 inside hardcoded widths, so a short one ('x' in a 14px box) sat
+stranded while a longer one risked overflowing.
 
-Announced as 'clear' for the screen reader.
+Now each button is sized from its MEASURED label (text_width, with the nominal
+6px advance as a fallback) and the label is centred in the resulting box.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01XX8gDJhHpYErLEwJsV5jPm
 ---
- src/shared/text_entry.mjs | 27 ++++++++++++++++++++-------
- 1 file changed, 20 insertions(+), 7 deletions(-)
+ src/shared/text_entry.mjs | 41 +++++++++++++++++++++++++++------------
+ 1 file changed, 29 insertions(+), 12 deletions(-)
 
 diff --git a/src/shared/text_entry.mjs b/src/shared/text_entry.mjs
-index f292758e..ac24162c 100644
+index ac24162c..50dbe5f5 100644
 --- a/src/shared/text_entry.mjs
 +++ b/src/shared/text_entry.mjs
-@@ -77,7 +77,7 @@ function snapshotPadLEDs() {
- }
+@@ -697,14 +697,25 @@ function drawSpecialButtons(charCount) {
+     /* Fixed position: row 4 (bottom), right-aligned */
+     const specialY = GRID_START_Y + 3 * ROW_HEIGHT;
  
- /* Special keys always occupy cols 3-7 of the BOTTOM pad row (row 3).
-- * Layout: [chars...] [blank] [page/purple] [space/blue] [space/blue] [del/red] [ok/green]
-+ * Layout: [chars...] [blank] [page/purple] [space/blue] [del/red] [clr/red] [ok/green]
-  * They never move regardless of how many characters the current page has. */
- const SPECIAL_COL_START = 3;  /* First special at col 3 (after gap at col 2) */
- const SPECIAL_ROW = 3;       /* Always bottom pad row */
-@@ -96,8 +96,11 @@ function getPadDefaultColor(padNote) {
-         if (padCol >= SPECIAL_COL_START) {
-             const sk = padCol - SPECIAL_COL_START;
-             if (sk === 0) return PAD_COLOR_PURPLE;  /* page cycle */
--            if (sk === 1 || sk === 2) return PAD_COLOR_BLUE;  /* space */
--            if (sk === 3) return PAD_COLOR_RED;     /* delete */
-+            if (sk === 1) return PAD_COLOR_BLUE;    /* space */
-+            if (sk === 2) return PAD_COLOR_RED;     /* delete */
-+            if (sk === 3) return PAD_COLOR_RED;     /* clear (same family — both
-+                                                       destructive; the on-screen
-+                                                       label distinguishes them) */
-             if (sk === 4) return PAD_COLOR_GREEN;   /* ok */
+-    /* Button definitions: label, width */
+-    const buttons = [
+-        { label: '...', width: 18 },      /* Page switch */
+-        { label: '___', width: 24 },      /* Space */
+-        { label: 'x', width: 14 },        /* Backspace */
+-        { label: 'CLR', width: 22 },      /* Clear all */
+-        { label: 'OK', width: 18 }        /* Confirm */
+-    ];
++    /* Labels only — each button is sized from its MEASURED label, so a longer
++     * one (CLR) cannot overflow a hardcoded width and a short one (x) is not
++     * left-stranded in an oversized box. */
++    const labels = ['...', '___', 'x', 'CLR', 'OK'];
++    const LABEL_PAD = 3;      /* each side */
++    const MIN_BTN_W = 12;
++
++    function labelWidth(label) {
++        if (typeof text_width === 'function') {
++            const w = text_width(label);
++            if (w > 0) return w;
++        }
++        return label.length * 6;   /* fallback: the font's nominal advance */
++    }
++
++    const buttons = labels.map((label) => {
++        const lw = labelWidth(label);
++        return { label, lw, width: Math.max(MIN_BTN_W, lw + LABEL_PAD * 2) };
++    });
+ 
+     /* Calculate total width for right-alignment */
+     const totalWidth = buttons.reduce((sum, btn) => sum + btn.width + 2, 0) - 2;
+@@ -715,14 +726,20 @@ function drawSpecialButtons(charCount) {
+         const btn = buttons[i];
+         const isSelected = state.selectedIndex === charCount + i;
+         const btnHeight = ROW_HEIGHT + 1;
++        const boxY = specialY + 2;
++        /* Centre the label in its box. The text used to be drawn a pixel ABOVE
++         * the box top (specialY + 1 against a box at specialY + 2), which is
++         * what made the labels sit askew in their outlines. */
++        const tx = x + Math.max(1, Math.round((btn.width - btn.lw) / 2));
++        const ty = boxY + 1;
+ 
+         if (isSelected) {
+-            fill_rect(x, specialY + 2, btn.width, btnHeight, 1);
+-            print(x + 2, specialY + 1, btn.label, 0);
++            fill_rect(x, boxY, btn.width, btnHeight, 1);
++            print(tx, ty, btn.label, 0);
+         } else {
+             /* Draw button outline */
+-            drawRect(x, specialY + 2, btn.width, btnHeight, 1);
+-            print(x + 2, specialY + 1, btn.label, 1);
++            drawRect(x, boxY, btn.width, btnHeight, 1);
++            print(tx, ty, btn.label, 1);
          }
-         /* Chars that fall on the bottom row */
-@@ -115,8 +118,9 @@ function getPadDefaultColor(padNote) {
- function padColToSpecial(padCol) {
-     const sk = padCol - SPECIAL_COL_START;
-     if (sk === 0) return SPECIAL_PAGE;
--    if (sk === 1 || sk === 2) return SPECIAL_SPACE;
--    if (sk === 3) return SPECIAL_BACKSPACE;
-+    if (sk === 1) return SPECIAL_SPACE;
-+    if (sk === 2) return SPECIAL_BACKSPACE;
-+    if (sk === 3) return SPECIAL_CLEAR;
-     if (sk === 4) return SPECIAL_CONFIRM;
-     return -1;
- }
-@@ -210,8 +214,9 @@ const PAGES = [
- const SPECIAL_PAGE = 0;
- const SPECIAL_SPACE = 1;
- const SPECIAL_BACKSPACE = 2;
--const SPECIAL_CONFIRM = 3;
--const NUM_SPECIALS = 4;
-+const SPECIAL_CLEAR = 3;
-+const SPECIAL_CONFIRM = 4;
-+const NUM_SPECIALS = 5;
  
- /* State */
- let state = {
-@@ -481,6 +486,12 @@ function handleSelection(fromPad) {
-                 announceTextEntry(`Deleted, text ${getAnnounceBuffer()}`);
-                 showPreview(fromPad);
-                 break;
-+            case SPECIAL_CLEAR:
-+                state.buffer = '';
-+                state.lastAction = 'clear';
-+                announceTextEntry(`Cleared`);
-+                showPreview(fromPad);
-+                break;
-             case SPECIAL_CONFIRM:
-                 announceTextEntry(`Text entry confirmed, text ${getAnnounceBuffer()}`);
-                 if (state.onConfirm) {
-@@ -577,6 +588,7 @@ function getSelectedLabel() {
-         case SPECIAL_PAGE: return "page";
-         case SPECIAL_SPACE: return "space";
-         case SPECIAL_BACKSPACE: return "delete";
-+        case SPECIAL_CLEAR: return "clear";
-         case SPECIAL_CONFIRM: return "OK";
-         default: return "item";
-     }
-@@ -690,6 +702,7 @@ function drawSpecialButtons(charCount) {
-         { label: '...', width: 18 },      /* Page switch */
-         { label: '___', width: 24 },      /* Space */
-         { label: 'x', width: 14 },        /* Backspace */
-+        { label: 'CLR', width: 22 },      /* Clear all */
-         { label: 'OK', width: 18 }        /* Confirm */
-     ];
- 
+         x += btn.width + 2;
 -- 
 2.53.0
 
