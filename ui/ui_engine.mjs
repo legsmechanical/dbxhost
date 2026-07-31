@@ -317,17 +317,42 @@ export function engineLoadKitStructure(comp, moduleId) {
  * synthesised/adopted path stays the fallback, so a module that does not
  * declare simply looks the way it looks today rather than blanking.
  */
-export function engineHostsOwnUi(comp, moduleId) {
+/* A module's declared capabilities, cached per module id. Read straight from
+ * module.json rather than through the engine, because these are STATIC facts
+ * about the module, not live parameters. */
+const capsCache = {};
+export function engineModuleCaps(comp, moduleId) {
+    if (!moduleId) return null;
+    if (moduleId in capsCache) return capsCache[moduleId];
+    let caps = null;
     const dir = moduleDirFor(comp, moduleId);
-    if (!dir) return false;
-    try {
-        const raw = host_read_file(dir + '/module.json');
-        if (!raw) return false;
-        const caps = JSON.parse(raw).capabilities;
-        return !!(caps && caps.host_canvas_ui === true);
-    } catch (e) {
-        return false;   /* unreadable/unparseable -> adopt, never guess */
+    if (dir) {
+        try {
+            const raw = host_read_file(dir + '/module.json');
+            if (raw) caps = JSON.parse(raw).capabilities || null;
+        } catch (e) { caps = null; }
     }
+    capsCache[moduleId] = caps;
+    return caps;
+}
+
+export function engineHostsOwnUi(comp, moduleId) {
+    const caps = engineModuleCaps(comp, moduleId);
+    return !!(caps && caps.host_canvas_ui === true);
+}
+
+/* Does this module want Undo (56) / Copy (60) / Delete (119)?
+ *
+ * ⚠ The HOST raises this claim for its own screens (shadow_ui's
+ * reconcileEditCcClaim), but its entry-condition table lists VIEWS —
+ * CANVAS / HIERARCHY_EDITOR / COMPONENT_EDIT / COMPONENT_PARAMS — and when
+ * davebox HOSTS a module canvas the view is davebox's own overtake view. The
+ * host cannot know a tool is showing a module's UI, so it never raises the
+ * claim and those three buttons stay with Move firmware. davebox has to claim
+ * them itself while it is the one on screen. */
+export function engineClaimsEditCcs(comp, moduleId) {
+    const caps = engineModuleCaps(comp, moduleId);
+    return !!(caps && caps.claims_edit_ccs === true);
 }
 
 /* ---- self-description (feeds ui_discover) ---- */

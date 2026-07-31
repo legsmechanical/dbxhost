@@ -22,6 +22,7 @@
 import * as os from 'os';
 import {
     COMPONENTS, PRESET_ROOT, engineGet, engineSet, engineListModules, engineDescribe,
+    engineClaimsEditCcs,
     engineLoadModule, engineLoadedModule, engineGetState, engineSetState,
     engineListUserPresets, engineReadUserPreset,
     engineGetSlotParam, engineSetSlotParam, engineSaveState, engineVolBlock,
@@ -197,6 +198,9 @@ const S = {
     hosted: null,
     hostedCtx: null,
     hostedValue: '0',
+    /* Whether WE currently hold the host's edit-CC claim. Mirrors what we last
+     * told host_edit_cc_block, so reconcile only calls on a real change. */
+    editCcClaimed: false,
 
     values: {},
     rawValues: {},
@@ -449,6 +453,9 @@ function clearBusContext() {
 }
 
 export function soundExit() {
+    /* Give the edit CCs back to Move FIRST. Everything below can throw or take a
+     * slow path, and a stranded claim silently steals the user's native Undo. */
+    reconcileEditCcClaim(true);
     /* The keyboard is modal and driven ONLY by soundOnMidiRaw, which gates on
      * S.active — so leaving with it open would strand it: still "active", never
      * fed another message, never drawn. Close it first. */
@@ -2098,7 +2105,45 @@ export function soundOnNote(status, d1, d2) {
 
 /* ---- tick: this is where every engine call happens ---- */
 
+/* ── the edit-CC claim, while WE are the one showing a module's canvas ──────
+ *
+ * Undo (56) / Copy (60) / Delete (119) reach a module only while something
+ * claims them; otherwise Move firmware keeps them. shadow_ui raises the claim
+ * for its OWN screens, but its entry-condition table is keyed on VIEW — CANVAS,
+ * HIERARCHY_EDITOR, COMPONENT_EDIT, COMPONENT_PARAMS — and while davebox hosts a
+ * module canvas the view is davebox's overtake view. The host cannot know a tool
+ * is showing a module's UI, so nobody claims them and a hold-Copy + tap-pad
+ * gesture silently does nothing (measured exactly that on device: the gesture
+ * fired correctly from an INJECTED CC 60, which bypasses the shim, and never
+ * from the physical button, which does not).
+ *
+ * ⭑⭑ Re-DERIVED from what is on screen right now, in ONE place, never bookkept
+ * at the sites that change the flags — the same rule the host's own version
+ * follows, and the lesson rounds 24-26 paid for. A new screen wanting these
+ * buttons changes the condition HERE.
+ *
+ * ⚠⚠ Releasing matters more than claiming. While the claim is up Move does NOT
+ * see these three buttons, so a claim left stranded steals the user's native
+ * Undo — which is exactly why the host's first unconditional attempt (PR #154)
+ * was reverted (PR #175). Hence: re-checked every tick, and forced OFF in
+ * soundExit, which is the one path the tick cannot cover because it stops. */
+function editCcClaimWanted() {
+    return !!(S.active && S.view === VIEW_EDIT && S.hosted &&
+              engineClaimsEditCcs(S.comp, S.moduleId));
+}
+
+function reconcileEditCcClaim(force) {
+    if (typeof host_edit_cc_block !== 'function') return;   /* older host */
+    const want = force ? false : editCcClaimWanted();
+    if (want === S.editCcClaimed) return;
+    S.editCcClaimed = want;
+    host_edit_cc_block(want ? 1 : 0);
+}
+
 export function soundTick() {
+    /* Ahead of the S.active gate: leaving sound mode with the claim up would
+     * strand it, and this is the cheap belt to soundExit's braces. */
+    reconcileEditCcClaim(!S.active);
     if (!S.active) return;
     S.tickCount++;
 
