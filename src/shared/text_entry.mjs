@@ -699,9 +699,11 @@ function drawSpecialButtons(charCount) {
 
     /* Labels only — each button is sized from its MEASURED label, so a longer
      * one (CLR) cannot overflow a hardcoded width and a short one (x) is not
-     * left-stranded in an oversized box. */
-    const labels = ['...', '___', 'x', 'CLR', 'OK'];
-    const LABEL_PAD = 3;      /* each side */
+     * left-stranded in an oversized box.
+     * Space is '__' rather than '___': the row has to share the bottom line with
+     * whatever characters spill onto it, and the extra glyph was the difference
+     * between clearing them and not. */
+    const labels = ['...', '__', 'x', 'CLR', 'OK'];
     const MIN_BTN_W = 12;
 
     function labelWidth(label) {
@@ -711,15 +713,29 @@ function drawSpecialButtons(charCount) {
         }
         return label.length * 6;   /* fallback: the font's nominal advance */
     }
+    const widths = labels.map(labelWidth);
 
-    const buttons = labels.map((label) => {
-        const lw = labelWidth(label);
-        return { label, lw, width: Math.max(MIN_BTN_W, lw + LABEL_PAD * 2) };
-    });
+    /* The bottom row carries the LAST characters of the page as well as these
+     * buttons, so the buttons must not reach back into them. Work out where the
+     * characters end, then pick the widest padding that still clears — rather
+     * than hardcoding a padding that happens to fit one font and one page, which
+     * is how 'z' ended up under the '...' button. */
+    const charsOnBottomRow = Math.max(0, charCount - 3 * CHARS_PER_ROW);
+    const charsRightEdge = charsOnBottomRow > 0
+        ? GRID_START_X + (charsOnBottomRow - 1) * CHAR_WIDTH + (CHAR_WIDTH - 2)
+        : 0;
 
-    /* Calculate total width for right-alignment */
-    const totalWidth = buttons.reduce((sum, btn) => sum + btn.width + 2, 0) - 2;
-    const buttonsStartX = SCREEN_WIDTH - totalWidth - 2;
+    let buttons, buttonsStartX;
+    /* 0 is a last resort — a label touching its own outline still reads, a label
+     * sitting under a character does not. */
+    for (const pad of [3, 2, 1, 0]) {
+        buttons = labels.map((label, i) => ({
+            label, lw: widths[i], width: Math.max(MIN_BTN_W, widths[i] + pad * 2)
+        }));
+        const totalWidth = buttons.reduce((sum, btn) => sum + btn.width + 2, 0) - 2;
+        buttonsStartX = SCREEN_WIDTH - totalWidth - 2;
+        if (buttonsStartX >= charsRightEdge + 2) break;   /* clears the characters */
+    }
 
     let x = buttonsStartX;
     for (let i = 0; i < buttons.length; i++) {

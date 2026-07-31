@@ -1,91 +1,90 @@
-From 8fe1adbd7a8292baffbdef85aea21158b2c86b74 Mon Sep 17 00:00:00 2001
+From 19907f6b0954e85d6a19f299bca2d56a9a5fca17 Mon Sep 17 00:00:00 2001
 From: legsmechanical <joshgaine@gmail.com>
-Date: Fri, 31 Jul 2026 13:30:44 -0400
-Subject: [PATCH] fix(text-entry): centre the function-key labels in their
- boxes
+Date: Fri, 31 Jul 2026 13:59:52 -0400
+Subject: [PATCH] fix(text-entry): stop the function keys overlapping the last
+ characters
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-Josh, on device: the labels sit askew in their outlines.
+Josh, on device: 'z' overlapped the '...' button. The bottom line carries both
+the last characters of a 26-glyph page AND the special buttons, and adding CLR
+pushed the right-aligned buttons back into the characters.
 
-Two causes. The text was printed at specialY + 1 while its box top is
-specialY + 2 — a pixel ABOVE its own outline. And labels were left-aligned at a
-fixed +2 inside hardcoded widths, so a short one ('x' in a 14px box) sat
-stranded while a longer one risked overflowing.
+Two changes. Space is now '__' rather than '___' (Josh's suggestion) — one glyph
+was most of the difference. And the padding ADAPTS: the row works out where the
+characters end and picks the widest padding from 3/2/1/0 that still clears them,
+instead of a constant that happens to fit one font and one page. Simulated
+across 5-8px advances: clears at every plausible width, where a fixed padding of
+3 overlapped at 6px and above.
 
-Now each button is sized from its MEASURED label (text_width, with the nominal
-6px advance as a fallback) and the label is centred in the resulting box.
+0 is a deliberate last resort — a label touching its own outline still reads, a
+label sitting under a character does not.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01XX8gDJhHpYErLEwJsV5jPm
 ---
- src/shared/text_entry.mjs | 41 +++++++++++++++++++++++++++------------
- 1 file changed, 29 insertions(+), 12 deletions(-)
+ src/shared/text_entry.mjs | 40 +++++++++++++++++++++++++++------------
+ 1 file changed, 28 insertions(+), 12 deletions(-)
 
 diff --git a/src/shared/text_entry.mjs b/src/shared/text_entry.mjs
-index ac24162c..50dbe5f5 100644
+index 50dbe5f5..bec17d7b 100644
 --- a/src/shared/text_entry.mjs
 +++ b/src/shared/text_entry.mjs
-@@ -697,14 +697,25 @@ function drawSpecialButtons(charCount) {
-     /* Fixed position: row 4 (bottom), right-aligned */
-     const specialY = GRID_START_Y + 3 * ROW_HEIGHT;
+@@ -699,9 +699,11 @@ function drawSpecialButtons(charCount) {
  
--    /* Button definitions: label, width */
--    const buttons = [
--        { label: '...', width: 18 },      /* Page switch */
--        { label: '___', width: 24 },      /* Space */
--        { label: 'x', width: 14 },        /* Backspace */
--        { label: 'CLR', width: 22 },      /* Clear all */
--        { label: 'OK', width: 18 }        /* Confirm */
--    ];
-+    /* Labels only — each button is sized from its MEASURED label, so a longer
-+     * one (CLR) cannot overflow a hardcoded width and a short one (x) is not
-+     * left-stranded in an oversized box. */
-+    const labels = ['...', '___', 'x', 'CLR', 'OK'];
-+    const LABEL_PAD = 3;      /* each side */
-+    const MIN_BTN_W = 12;
-+
-+    function labelWidth(label) {
-+        if (typeof text_width === 'function') {
-+            const w = text_width(label);
-+            if (w > 0) return w;
-+        }
-+        return label.length * 6;   /* fallback: the font's nominal advance */
-+    }
-+
-+    const buttons = labels.map((label) => {
-+        const lw = labelWidth(label);
-+        return { label, lw, width: Math.max(MIN_BTN_W, lw + LABEL_PAD * 2) };
-+    });
+     /* Labels only — each button is sized from its MEASURED label, so a longer
+      * one (CLR) cannot overflow a hardcoded width and a short one (x) is not
+-     * left-stranded in an oversized box. */
+-    const labels = ['...', '___', 'x', 'CLR', 'OK'];
+-    const LABEL_PAD = 3;      /* each side */
++     * left-stranded in an oversized box.
++     * Space is '__' rather than '___': the row has to share the bottom line with
++     * whatever characters spill onto it, and the extra glyph was the difference
++     * between clearing them and not. */
++    const labels = ['...', '__', 'x', 'CLR', 'OK'];
+     const MIN_BTN_W = 12;
  
-     /* Calculate total width for right-alignment */
-     const totalWidth = buttons.reduce((sum, btn) => sum + btn.width + 2, 0) - 2;
-@@ -715,14 +726,20 @@ function drawSpecialButtons(charCount) {
-         const btn = buttons[i];
-         const isSelected = state.selectedIndex === charCount + i;
-         const btnHeight = ROW_HEIGHT + 1;
-+        const boxY = specialY + 2;
-+        /* Centre the label in its box. The text used to be drawn a pixel ABOVE
-+         * the box top (specialY + 1 against a box at specialY + 2), which is
-+         * what made the labels sit askew in their outlines. */
-+        const tx = x + Math.max(1, Math.round((btn.width - btn.lw) / 2));
-+        const ty = boxY + 1;
- 
-         if (isSelected) {
--            fill_rect(x, specialY + 2, btn.width, btnHeight, 1);
--            print(x + 2, specialY + 1, btn.label, 0);
-+            fill_rect(x, boxY, btn.width, btnHeight, 1);
-+            print(tx, ty, btn.label, 0);
-         } else {
-             /* Draw button outline */
--            drawRect(x, specialY + 2, btn.width, btnHeight, 1);
--            print(x + 2, specialY + 1, btn.label, 1);
-+            drawRect(x, boxY, btn.width, btnHeight, 1);
-+            print(tx, ty, btn.label, 1);
+     function labelWidth(label) {
+@@ -711,15 +713,29 @@ function drawSpecialButtons(charCount) {
          }
+         return label.length * 6;   /* fallback: the font's nominal advance */
+     }
+-
+-    const buttons = labels.map((label) => {
+-        const lw = labelWidth(label);
+-        return { label, lw, width: Math.max(MIN_BTN_W, lw + LABEL_PAD * 2) };
+-    });
+-
+-    /* Calculate total width for right-alignment */
+-    const totalWidth = buttons.reduce((sum, btn) => sum + btn.width + 2, 0) - 2;
+-    const buttonsStartX = SCREEN_WIDTH - totalWidth - 2;
++    const widths = labels.map(labelWidth);
++
++    /* The bottom row carries the LAST characters of the page as well as these
++     * buttons, so the buttons must not reach back into them. Work out where the
++     * characters end, then pick the widest padding that still clears — rather
++     * than hardcoding a padding that happens to fit one font and one page, which
++     * is how 'z' ended up under the '...' button. */
++    const charsOnBottomRow = Math.max(0, charCount - 3 * CHARS_PER_ROW);
++    const charsRightEdge = charsOnBottomRow > 0
++        ? GRID_START_X + (charsOnBottomRow - 1) * CHAR_WIDTH + (CHAR_WIDTH - 2)
++        : 0;
++
++    let buttons, buttonsStartX;
++    /* 0 is a last resort — a label touching its own outline still reads, a label
++     * sitting under a character does not. */
++    for (const pad of [3, 2, 1, 0]) {
++        buttons = labels.map((label, i) => ({
++            label, lw: widths[i], width: Math.max(MIN_BTN_W, widths[i] + pad * 2)
++        }));
++        const totalWidth = buttons.reduce((sum, btn) => sum + btn.width + 2, 0) - 2;
++        buttonsStartX = SCREEN_WIDTH - totalWidth - 2;
++        if (buttonsStartX >= charsRightEdge + 2) break;   /* clears the characters */
++    }
  
-         x += btn.width + 2;
+     let x = buttonsStartX;
+     for (let i = 0; i < buttons.length; i++) {
 -- 
 2.53.0
 
