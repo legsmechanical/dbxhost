@@ -77,7 +77,7 @@ function snapshotPadLEDs() {
 }
 
 /* Special keys always occupy cols 3-7 of the BOTTOM pad row (row 3).
- * Layout: [chars...] [blank] [page/purple] [space/blue] [space/blue] [del/red] [ok/green]
+ * Layout: [chars...] [blank] [page/purple] [space/blue] [del/red] [clr/red] [ok/green]
  * They never move regardless of how many characters the current page has. */
 const SPECIAL_COL_START = 3;  /* First special at col 3 (after gap at col 2) */
 const SPECIAL_ROW = 3;       /* Always bottom pad row */
@@ -96,8 +96,11 @@ function getPadDefaultColor(padNote) {
         if (padCol >= SPECIAL_COL_START) {
             const sk = padCol - SPECIAL_COL_START;
             if (sk === 0) return PAD_COLOR_PURPLE;  /* page cycle */
-            if (sk === 1 || sk === 2) return PAD_COLOR_BLUE;  /* space */
-            if (sk === 3) return PAD_COLOR_RED;     /* delete */
+            if (sk === 1) return PAD_COLOR_BLUE;    /* space */
+            if (sk === 2) return PAD_COLOR_RED;     /* delete */
+            if (sk === 3) return PAD_COLOR_RED;     /* clear (same family — both
+                                                       destructive; the on-screen
+                                                       label distinguishes them) */
             if (sk === 4) return PAD_COLOR_GREEN;   /* ok */
         }
         /* Chars that fall on the bottom row */
@@ -115,8 +118,9 @@ function getPadDefaultColor(padNote) {
 function padColToSpecial(padCol) {
     const sk = padCol - SPECIAL_COL_START;
     if (sk === 0) return SPECIAL_PAGE;
-    if (sk === 1 || sk === 2) return SPECIAL_SPACE;
-    if (sk === 3) return SPECIAL_BACKSPACE;
+    if (sk === 1) return SPECIAL_SPACE;
+    if (sk === 2) return SPECIAL_BACKSPACE;
+    if (sk === 3) return SPECIAL_CLEAR;
     if (sk === 4) return SPECIAL_CONFIRM;
     return -1;
 }
@@ -210,8 +214,9 @@ const PAGES = [
 const SPECIAL_PAGE = 0;
 const SPECIAL_SPACE = 1;
 const SPECIAL_BACKSPACE = 2;
-const SPECIAL_CONFIRM = 3;
-const NUM_SPECIALS = 4;
+const SPECIAL_CLEAR = 3;
+const SPECIAL_CONFIRM = 4;
+const NUM_SPECIALS = 5;
 
 /* State */
 let state = {
@@ -481,6 +486,12 @@ function handleSelection(fromPad) {
                 announceTextEntry(`Deleted, text ${getAnnounceBuffer()}`);
                 showPreview(fromPad);
                 break;
+            case SPECIAL_CLEAR:
+                state.buffer = '';
+                state.lastAction = 'clear';
+                announceTextEntry(`Cleared`);
+                showPreview(fromPad);
+                break;
             case SPECIAL_CONFIRM:
                 announceTextEntry(`Text entry confirmed, text ${getAnnounceBuffer()}`);
                 if (state.onConfirm) {
@@ -577,6 +588,7 @@ function getSelectedLabel() {
         case SPECIAL_PAGE: return "page";
         case SPECIAL_SPACE: return "space";
         case SPECIAL_BACKSPACE: return "delete";
+        case SPECIAL_CLEAR: return "clear";
         case SPECIAL_CONFIRM: return "OK";
         default: return "item";
     }
@@ -690,6 +702,7 @@ function drawSpecialButtons(charCount) {
         { label: '...', width: 18 },      /* Page switch */
         { label: '___', width: 24 },      /* Space */
         { label: 'x', width: 14 },        /* Backspace */
+        { label: 'CLR', width: 22 },      /* Clear all */
         { label: 'OK', width: 18 }        /* Confirm */
     ];
 
