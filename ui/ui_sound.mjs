@@ -1729,14 +1729,24 @@ function followLiveSelection(idx) {
  * needs to know its cache is stale.
  *
  * Scoped to the prefix on purpose: `master`, `send*_` and `kit` are still
- * perfectly good, and each needless re-read is a ~2.6 ms blocking round-trip. */
+ * perfectly good, and each needless re-read is a ~2.6 ms blocking round-trip.
+ *
+ * ⚠⚠ THE SELECT PARAM IS NOT IN THE PREFIX FAMILY — it is the key that DECIDES
+ * the family, and it is named on its own terms (`ui_current_pad`, not
+ * `pad_something`). Invalidating only `<prefix>_*` therefore refreshes every
+ * cell and the sample name while the canvas keeps drawing the OLD INDEX from
+ * cache: "settings and pad name update immediately, but the pad number lags"
+ * (Josh, on device). The kit's own padFocusSettle force-drops this key before
+ * re-reading it; doing the job from outside means doing that part too. */
 function hostedFocusMoved(spec) {
     if (!S.hosted || !S.hostedCtx) return;
     const inv = S.hostedCtx.invalidate;     /* installed by the kit on first draw */
     if (typeof inv !== 'function') return;
     try {
-        if (spec && spec.prefix) inv(spec.prefix + '_*');
-        else inv(true);                     /* no prefix declared: correct, just costlier */
+        if (!spec || !spec.prefix) { inv(true); return; }  /* correct, just costlier */
+        const drop = [spec.prefix + '_*'];
+        if (spec.selectParam) drop.push(spec.selectParam);
+        inv(drop);
     } catch (e) { /* a hosted cache that won't flush is not worth a crash */ }
 }
 
