@@ -191,6 +191,13 @@ const S = {
     bankIdx: 0,
     moduleId: '',
 
+    /* Hosting: a module that DECLARES `capabilities.host_canvas_ui` draws
+     * itself through its own bank_editor, and `banks` stays as the fallback.
+     * See hostedCtx(). Null for every module that does not declare it. */
+    hosted: null,
+    hostedCtx: null,
+    hostedValue: '0',
+
     values: {},
     rawValues: {},
     knobAccum: [0, 0, 0, 0, 0, 0, 0, 0],
@@ -1413,6 +1420,8 @@ function runDiscovery() {
     if (!id) { S.banks = []; S.sections = []; S.dirty = true; return; }
     const res = discover(S.slot, S.comp);
     S.banks = res.banks;
+    S.hosted = res.hostedOverlay || null;
+    hostedReset();
     S.presetSpec = res.presetSpec || null;
     S.levels = res.levels || null;
     S.rootKey = res.rootKey || null;
@@ -1739,8 +1748,42 @@ function listMove(len, idx, delta) {
 
 /* Returns TRUE when the event was consumed. davebox keeps everything we don't
  * take — pads, steps and transport stay with the sequencer throughout. */
+/* Offer an event to a hosted module's own canvas FIRST, and let it DECLINE.
+ *
+ * The kit consumes only what means something to it (an open picker, a
+ * drill-down) and declines at rest — the same consume-only-when-meaningful rule
+ * as the host's contextual Back. So davebox keeps every shell gesture it had:
+ * jog click still opens presets / the module menu, because the kit hands the
+ * click back when it has no use for it.
+ *
+ * ⚠ Getting this backwards is the failure Josh flagged: `canvas_takes_click` in
+ * the HOST is unconditional, so a module declaring it would eat every click and
+ * the shell menu would never open. Here the RETURN VALUE decides, not the
+ * declaration.
+ * ⚠ A module's own CONFIG.onMidi can still swallow the click before the kit
+ * sees it. That is the module author's call to get right, and another reason
+ * hosting is opt-in.
+ *
+ * Shift (49) and Mute (88) are deliberately NOT offered: davebox tracks them
+ * for its own gestures and they must keep flowing regardless. */
+function hostedTakes(d1, d2) {
+    if (!S.hosted || S.view !== VIEW_EDIT) return false;
+    if (d1 === 49 || d1 === 88) return false;
+    if (typeof S.hosted.onMidi !== 'function') return false;
+    try {
+        return S.hosted.onMidi(hostedCtx(), { data: [0xB0, d1, d2] }) === true;
+    } catch (e) {
+        S.hosted = null;                 /* same one-strike rule as renderHosted */
+        try { console.log('davebox: hosted canvas onMidi failed, adopting instead: ' + e); }
+        catch (e2) { /* best-effort */ }
+        return false;
+    }
+}
+
 export function soundOnCC(d1, d2, decodeDelta) {
     if (!S.active) return false;
+
+    if (hostedTakes(d1, d2)) { S.dirty = true; return true; }
 
     if (d1 === 49) {                                   /* shift */
         const held = d2 >= 64;
@@ -2127,8 +2170,13 @@ export function soundTick() {
     }
 
     /* Idle refresh, and only while nothing is queued — a poll mid-sweep would
-     * read back stale values and fight the optimistic local ones. */
-    if (S.view === VIEW_EDIT && S.banks.length && !S.pendingWrites.length &&
+     * read back stale values and fight the optimistic local ones.
+     *
+     * ⭑ Skipped entirely while HOSTING: the module's own kit engine reads what
+     * it draws, through its own cache, so polling into S.values here would be a
+     * second set of ~2.6 ms round-trips for numbers nothing renders. Param
+     * reads — not draw CPU — are the expensive half of a hosted frame. */
+    if (S.view === VIEW_EDIT && !S.hosted && S.banks.length && !S.pendingWrites.length &&
         S.tickCount % POLL_IDLE_TICKS === 0) {
         pollValues(false);
     }
@@ -2213,8 +2261,84 @@ function renderBrowse() {
     }
 }
 
+/* ── hosting a module's OWN canvas UI ──────────────────────────────────────
+ *
+ * For a module that DECLARES `capabilities.host_canvas_ui`, davebox runs its
+ * real `bank_editor(ctx)` instead of re-drawing our adoption of it. One
+ * renderer, so a module looks the same inside davebox as it does in the host.
+ *
+ * ⭑ Why this exists at all: `adoptKitStructure` can only carry DATA. A module's
+ * header FUNCTION, its cellViz, browse picker and icons are CODE and die at
+ * that boundary — which is why a hosted DR32 page could not say which pad it
+ * was editing, however much we widened the adoption.
+ *
+ * The ctx is small (measured against canvaskit v38): fillRect, setPixel,
+ * drawRect, print, measureText, getParam, setParam, getValue/setValue, plus
+ * width/height/state. The kit REPLACES print/measureText with its own pixel
+ * font on first draw, so ours only have to exist.
+ *
+ * ⚠ We track a contract we do not own. That is exactly why hosting is opt-in:
+ * a module reaching past this surface must fail on its author's terms, not
+ * silently inside our shell.
+ *
+ * Cost, MEASURED on device (2026-07-31, on-screen HUD — the log path would have
+ * inflated the very frames under test): the whole render is **under the 1 ms
+ * clock resolution**, ~20 µs/frame, with no frame in a 48-sample window
+ * reaching 1 ms. The real cost is param reads at ~2.6 ms each, and the kit's
+ * own cache keeps those to the 24-frame flush (0.38/frame on DR32's page) —
+ * traffic davebox largely pays already. This was mispriced twice by inference
+ * before anyone measured it; do not re-guess it. */
+function hostedCtx() {
+    if (S.hostedCtx) return S.hostedCtx;
+    const ctx = {
+        width: 128, height: 64,
+        /* The kit persists its own bank index through getValue/setValue and
+         * re-seeds from it in onOpen. Keep it on OUR state so a block reopen
+         * lands where the user left it. */
+        state: {},
+        setPixel: (x, y, v) => set_pixel(x | 0, y | 0, v ? 1 : 0),
+        fillRect: (x, y, w, h, v) => fill_rect(x | 0, y | 0, w | 0, h | 0, v ? 1 : 0),
+        drawRect: (x, y, w, h, v) => draw_rect(x | 0, y | 0, w | 0, h | 0, v ? 1 : 0),
+        print: (x, y, t, c) => print(x | 0, y | 0, String(t), c ? 1 : 0),
+        measureText: (s) => (typeof text_width === 'function'
+            ? text_width(String(s)) : String(s).length * 6),
+        getParam: (k) => engineGet(S.slot, S.comp, k),
+        setParam: (k, v) => engineSet(S.slot, S.comp, k, String(v)),
+        getValue: () => String(S.hostedValue || '0'),
+        setValue: (v) => { S.hostedValue = String(v); },
+    };
+    S.hostedCtx = ctx;
+    return ctx;
+}
+
+/* Drop the hosted ctx when the block changes — its param cache, its bank index
+ * and the kit's own per-ctx install all belong to the module we were editing.
+ * Carrying them into the next one is the classic display-desync. */
+function hostedReset() {
+    S.hostedCtx = null;
+    S.hostedValue = '0';
+}
+
+function renderHosted() {
+    const ov = S.hosted;
+    try {
+        ov.draw(hostedCtx());
+        return true;
+    } catch (e) {
+        /* A throwing overlay must not take the whole editor down. Fall back to
+         * the adopted banks for the rest of this block, and say so — silently
+         * degrading would leave the author with no signal at all. */
+        S.hosted = null;
+        try { console.log('davebox: hosted canvas draw failed, adopting instead: ' + e); }
+        catch (e2) { /* logging is best-effort */ }
+        return false;
+    }
+}
+
 function renderEdit() {
     clear_screen();
+    /* Hosted modules draw themselves, INCLUDING their own header and picker. */
+    if (S.hosted && renderHosted()) return;
     if (!S.banks.length) {
         drawKitHeader(BLOCKS[S.blockIdx].label, false);
         centreText(28, S.moduleId ? 'NO PARAMS' : 'EMPTY');

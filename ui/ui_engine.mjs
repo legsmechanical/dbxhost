@@ -268,6 +268,24 @@ export function engineLoadKitStructure(comp, moduleId) {
                 out = {
                     banks: t.BANKS,
                     sections: Array.isArray(t.JUMP_SECTIONS) ? t.JUMP_SECTIONS : null,
+                    /* ⭑ The LIVE overlay, kept for modules that opt into hosting.
+                     *
+                     * Adoption can only ever carry DATA. Everything a module
+                     * expresses as CODE — its header function, cellViz, the
+                     * browse picker, icons — dies at this boundary, which is why
+                     * a hosted DR32 page could never say which pad it was
+                     * editing. Keeping the object lets us run its real
+                     * bank_editor(ctx) instead of re-implementing it.
+                     *
+                     * Safe to retain after the globals are restored below: the
+                     * overlay closes over its own IIFE scope, so it does not
+                     * depend on globalThis.bank_editor still pointing at it.
+                     *
+                     * Only used when the module DECLARES hosting (see
+                     * engineHostsOwnUi) — davebox tracks a ctx contract it does
+                     * not own, so a module reaching past it must fail on the
+                     * author's terms, not silently inside our shell. */
+                    overlay: G.bank_editor,
                 };
             }
         }
@@ -285,6 +303,31 @@ export function engineLoadKitStructure(comp, moduleId) {
     if (had.cos) G.canvas_overlays = saved.cos; else delete G.canvas_overlays;
 
     return out;
+}
+
+/* Does this module ask davebox to run its OWN canvas UI?
+ *
+ * OPT-IN, and deliberately so. davebox supplies a ctx it does not own the
+ * contract for (~8 functions), so under automatic hosting a module reaching
+ * beyond that surface would break *inside davebox*, silently, and the bug
+ * report would land on the module author for someone else's shell. A
+ * declaration means somebody verified it works hosted.
+ *
+ * Declared, not sniffed — the same rule as the host's own input claims. The
+ * synthesised/adopted path stays the fallback, so a module that does not
+ * declare simply looks the way it looks today rather than blanking.
+ */
+export function engineHostsOwnUi(comp, moduleId) {
+    const dir = moduleDirFor(comp, moduleId);
+    if (!dir) return false;
+    try {
+        const raw = host_read_file(dir + '/module.json');
+        if (!raw) return false;
+        const caps = JSON.parse(raw).capabilities;
+        return !!(caps && caps.host_canvas_ui === true);
+    } catch (e) {
+        return false;   /* unreadable/unparseable -> adopt, never guess */
+    }
 }
 
 /* ---- self-description (feeds ui_discover) ---- */

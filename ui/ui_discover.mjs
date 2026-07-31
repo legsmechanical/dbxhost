@@ -23,7 +23,8 @@
  * flags, LFO slots) this rig has no use for.
  */
 
-import { engineDescribe, engineLoadKitStructure, engineLoadedModule } from './ui_engine.mjs';
+import { engineDescribe, engineLoadKitStructure, engineLoadedModule,
+         engineHostsOwnUi } from './ui_engine.mjs';
 
 export const CELLS_PER_BANK = 8;
 
@@ -1164,15 +1165,24 @@ export function discover(slot, comp) {
      * empty editor. Swapped in place so every check below (envelopes, filter
      * curves, the module-wide model enum) runs over the adopted banks. */
     let kitSections = null;
+    let hostedOverlay = null;
     const kitModuleId = engineLoadedModule(slot, comp);
     if (kitModuleId) {
-        const adopted = adoptKitStructure(engineLoadKitStructure(comp, kitModuleId),
-                                          (k) => authoritativeMeta(k, cpMap, levels));
+        const kit = engineLoadKitStructure(comp, kitModuleId);
+        const adopted = adoptKitStructure(kit, (k) => authoritativeMeta(k, cpMap, levels));
         if (adopted) {
             banks.length = 0;
             for (const b of adopted.banks) banks.push(b);
             kitSections = adopted.sections;
             source = 'canvaskit';
+        }
+        /* Hosting runs the module's OWN bank_editor instead of our adoption of
+         * it. Adopt REGARDLESS, and keep both: the adopted banks stay the
+         * fallback if the overlay turns out unusable, and the menu/derived
+         * paths downstream still want them. */
+        if (kit && kit.overlay && engineHostsOwnUi(comp, kitModuleId)) {
+            hostedOverlay = kit.overlay;
+            source = 'canvaskit-hosted';
         }
     }
 
@@ -1214,6 +1224,8 @@ export function discover(slot, comp) {
         /* Author-authored section rows when the kit supplied them; null
          * means the caller should derive its own. */
         kitSections,
+        /* The module.s live bank_editor when it DECLARES hosting, else null. */
+        hostedOverlay,
         presetSpec: findPresetSpec(levels),
         /* The RAW hierarchy, for the menu. The knob pages above are a lossy
          * projection: buildLevelPages reads `knobs` only and uses `params`
