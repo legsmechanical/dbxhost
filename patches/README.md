@@ -221,6 +221,10 @@ Touches `src/shadow/shadow_ui.js` (one guard in the canvas close-gesture block) 
 `docs/MODULES.md` (the contract). Low conflict surface — the only likely collision is upstream
 moving the close-gesture block itself.
 
+⚠ **Superseded detail:** this patch's docs said *"Back always closes the canvas and cannot be
+claimed."* That rule was replaced 2026-07-31 by `canvas-handle-back.patch` below — the guarantee it
+protected is now carried by **Shift+Back**. Apply that patch AFTER this one.
+
 ✅ **The companion gap this used to flag is now fixed** — see `claims-edit-ccs.patch` below.
 (That note claimed the Copy/Delete/Undo carve-out was "scoped to COMPONENT_EDIT". It was not:
 the carve-out had been **reverted upstream** and no longer existed in any view. Corrected
@@ -263,3 +267,40 @@ appended). Our fork already spent one of those bytes on the fork-only `vol_block
 field that tree actually has, and keep the total size unchanged. `schwung_shim.c`,
 `shadow_ui.c`, `shadow_ui.js` and `docs/MODULES.md` apply cleanly onto `upstream/main`
 (verified against `4519d26d`).
+
+## canvas-handle-back.patch
+
+`2bad2ea5` **feat(shadow): make Back contextual in a canvas UI (`handleBack` + Shift+Back failsafe)**
+
+⬆ **Upstream-INTENDED.** ⚠ **Apply AFTER `canvas-takes-click.patch`** — its docs hunk lands inside
+that patch's MODULES.md section. Applied in that order, both go on cleanly (verified against
+`upstream/main` `4519d26d`); alone, this one conflicts in `docs/MODULES.md` only, never in code.
+
+**What it fixes:** Back closed a canvas unconditionally, so a canvas could not have an inner level —
+a text field, a drill-down, a confirm step had no way to be dismissed short of leaving the module.
+The canvaskit keyboard had grown an on-screen `ESC` key purely to work around it.
+
+Back is now **contextual**, reusing the SAME consume/fall-through contract chain modules already
+have (`ui_chain.js` `handleBack`): the canvas overlay may export `handleBack(ctx)` and return truthy
+to consume; no hook, a falsy return, or a hook that throws all fall through and close the canvas as
+before. One press steps out of the sub-view, the next leaves the canvas.
+
+⭑ **Shift+Back is the failsafe** and is never offered to the module. That is what keeps this *and*
+`canvas_takes_click` safe to opt into: a module can take the click, and can consume Back wrongly or
+forever, and still cannot trap the user. Mirrors `capabilities.suspend_keeps_js` (Back suspends,
+Shift+Back is the guaranteed full exit).
+
+⚠ This **replaces** the "Back always closes and cannot be claimed" rule from
+`canvas-takes-click.patch`. That was the conservative choice while nothing needed Back; the
+guarantee it protected is now carried by Shift+Back, which is strictly more capable and no less safe.
+
+⚠ Adds `canvasOverlayHookResult()` beside `invokeCanvasOverlayHook()` rather than changing it —
+existing callers read that one's return as *"did a hook run"*, and consume/fall-through needs *"what
+did it say"*, where "no hook" and "hook declined" must behave identically.
+
+### Re-apply on rebase
+
+```sh
+git apply --3way patches/canvas-takes-click.patch     # first
+git apply --3way patches/canvas-handle-back.patch     # then this
+```
