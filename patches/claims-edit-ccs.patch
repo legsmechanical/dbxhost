@@ -1,0 +1,410 @@
+From 883b5f1e923b8becbbbb5b0393ccea11c65baa7f Mon Sep 17 00:00:00 2001
+From: legsmechanical <joshgaine@gmail.com>
+Date: Thu, 30 Jul 2026 22:11:41 -0400
+Subject: [PATCH] feat(shadow): let a module claim Undo/Copy/Delete
+ (claims_edit_ccs)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Undo (CC 56), Copy (CC 60) and Delete (CC 119) reach Move firmware and are not
+forwarded to modules. A module that wants them for its own gestures — hold Copy
++ tap a pad to target it, tap Undo to revert — cannot have them: the press also
+fires Move's own clip copy/undo/delete behind the screen.
+
+PR #154 addressed this by blocking all three whenever the shadow display was up,
+and was reverted in PR #175 because the block was unconditional: it stole Move's
+native Undo during ordinary chain use, so a note edit could not be undone while
+any module was on screen. That revert names the right shape — capability-gated
+capture, where the module declares it claims the buttons. This implements it.
+
+  "capabilities": { "claims_edit_ccs": true }
+
+While that module's UI is on screen (hierarchy editor, component edit/params, or
+a type:"canvas" UI, fullscreen or co-run overlay) the three CCs are withheld from
+Move firmware and forwarded to the module. Every other module, and every other
+screen, is unaffected — Move keeps its own buttons. Mute (CC 88) stays
+unclaimable; Move-native Mute+Pad depends on it reaching firmware.
+
+The claim is re-derived in ONE place — a tick-time reconcile against whatever is
+on screen — rather than bookkept at the flag's write sites, so it cannot be left
+set by a path that forgot to clear it. shadow_ui consults the module metadata
+only when the on-screen identity actually changes (the lookup is a file read),
+and the shim independently drops the claim when the shadow display closes, so a
+shadow_ui that exits or crashes cannot strand it.
+
+Press/release is latched per button, so whoever received the press also receives
+the release even if the claim changes mid-hold. Without that, a claim engaging
+between press and release leaves Move believing the button is still held, and a
+claim dropping mid-hold hands Move an orphan release.
+
+shadow_control_t.edit_cc_block is carved from the existing reserved8 padding, so
+the struct size and every field offset are unchanged and a mismatched
+shim/shadow_ui pair cannot arise from it.
+
+Also corrects docs/MODULES.md, which still described PR #154's behaviour as
+current: the code was reverted in July 2026 but the documentation was not, and it
+claimed a firmware block that no longer existed.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01XX8gDJhHpYErLEwJsV5jPm
+---
+ docs/MODULES.md             | 49 +++++++++++++++++-------
+ src/host/shadow_constants.h | 19 +++++++++-
+ src/schwung_shim.c          | 74 +++++++++++++++++++++++++++++++++++-
+ src/shadow/shadow_ui.c      | 29 ++++++++++++++
+ src/shadow/shadow_ui.js     | 76 +++++++++++++++++++++++++++++++++++++
+ 5 files changed, 230 insertions(+), 17 deletions(-)
+
+diff --git a/docs/MODULES.md b/docs/MODULES.md
+index d69f3ca2..9f168138 100644
+--- a/docs/MODULES.md
++++ b/docs/MODULES.md
+@@ -73,6 +73,7 @@ for keys anywhere in `module.json`).
+ | `midi_out` | Module sends MIDI output (chain MIDI FX, generator tools) |
+ | `aftertouch` | Module uses aftertouch |
+ | `claims_master_knob` | Module handles volume knob (CC 79) instead of host |
++| `claims_edit_ccs` | Module handles Undo (CC 56), Copy (CC 60) and Delete (CC 119) while its UI is on screen; they are withheld from Move firmware for that window. Default off — see "Copy / Delete / Undo" below. |
+ | `raw_midi` | Skip host MIDI transforms (velocity curve, aftertouch filter); module may also bypass internal MIDI filters when set |
+ | `raw_ui` | Module owns UI input handling; host won't intercept Back to return to menu (use `host_return_to_menu()` to exit) |
+ | `chainable` | Marks a module as usable inside Signal Chain patches (metadata) |
+@@ -540,23 +541,43 @@ Only consume Back while you actually have somewhere to go back *to*. If `handleB
+ always returns truthy the user can never leave your module via Back — it is the only
+ host-processed exit in this screen, so the sole remaining way out is to exit shadow mode.
+ 
+-#### Copy / Delete / Undo (`ui_chain.js`)
++#### Copy / Delete / Undo (`capabilities.claims_edit_ccs`)
+ 
+-While the shadow UI is on screen, CC 56 (Undo), CC 60 (Copy), and CC 119
+-(Delete) are delivered exclusively to the loaded module's `ui_chain.js` via
+-`onMidiMessageInternal` — they are blocked from reaching Move firmware for
+-the duration, so a press can never double-fire into Move's own undo/copy/
+-delete while you're editing a module (e.g. a Delete press won't also delete
+-a Move clip in the background).
++CC 56 (Undo), CC 60 (Copy) and CC 119 (Delete) reach Move firmware by default
++and are **not** forwarded to modules. A module that wants them for its own
++gestures opts in:
+ 
+-This makes the three buttons safe to repurpose for module-specific gestures
+-— e.g. hold Copy/Delete + tap a pad to target it, tap Undo to revert the
+-last such operation. They join the existing forwarded set (jog wheel/click,
+-Back, track buttons, knobs, Mute) that a chain module already receives in
+-this screen.
++```json
++{
++  "capabilities": {
++    "claims_edit_ccs": true
++  }
++}
++```
++
++While that module's UI is on screen, the three CCs are delivered to it via
++`onMidiMessageInternal` **and withheld from Move firmware**, so a press cannot
++double-fire into Move's own undo / copy / delete — e.g. hold Copy + tap a pad
++to target it, without also copying the Move drum pad behind the screen. They
++join the set a module already receives there (jog wheel/click, Back, track
++buttons, knobs, Mute).
++
++The claim applies in the hierarchy editor, component edit/params screens, and a
++`type: "canvas"` UI (fullscreen or co-run overlay). Leave any of those and the
++buttons return to Move immediately.
++
++> **Opt-in is the whole point.** An earlier version blocked these three
++> unconditionally whenever the shadow display was up, and was reverted: it stole
++> Move's native Undo during ordinary chain use, so you could not undo a note edit
++> while any Schwung module was on screen. Modules that do not declare the
++> capability are unaffected, and Move keeps its own buttons everywhere else.
++
++**Mute (CC 88) is not claimable** — Move-native Mute+Pad depends on it reaching
++firmware.
+ 
+-Outside shadow display (or outside COMPONENT_EDIT), these CCs behave as
+-normal Move hardware buttons and are not intercepted.
++Press/release pairing is latched per button: whoever receives the press also
++receives the release, even if the claim changes mid-hold. Neither Move nor the
++module can be left believing a button is still held.
+ 
+ #### Pad presses in a canvas UI
+ 
+diff --git a/src/host/shadow_constants.h b/src/host/shadow_constants.h
+index 435f57fc..38040d2a 100644
+--- a/src/host/shadow_constants.h
++++ b/src/host/shadow_constants.h
+@@ -125,7 +125,24 @@ typedef struct shadow_control_t {
+      * existing field offset are unchanged — a mismatched shim/shadow_ui pair
+      * cannot arise from this field. */
+     volatile uint8_t vol_block;
+-    volatile uint8_t reserved8;
++    /* Runtime edit-CC claim. 1 = suppress Undo (CC 56), Copy (CC 60) and Delete
++     * (CC 119) from reaching Move firmware and forward them to the shadow UI
++     * instead, so a module can use them for its own gestures without a press
++     * ALSO firing Move's clip undo / copy / delete in the background.
++     *
++     * Opt-in on purpose. An earlier attempt (PR #154) blocked these three
++     * unconditionally whenever the shadow display was up and was reverted
++     * (PR #175) because it stole Move's native Undo during ordinary chain use —
++     * you could not undo a note edit while any Schwung module was on screen.
++     * This flag is the runtime complement to the STATIC
++     * capabilities.claims_edit_ccs, and shadow_ui reconciles it from whichever
++     * module's UI is actually on screen, so Move keeps its own buttons
++     * everywhere else. Same shape as pad_block.
++     *
++     * Carved from the former reserved8 padding so the struct size and every
++     * existing field offset are unchanged — a mismatched shim/shadow_ui pair
++     * cannot arise from this field. */
++    volatile uint8_t edit_cc_block;
+     volatile uint32_t ui_request_id;  /* Incremented on patch request */
+     volatile uint32_t shim_counter;   /* Debug: shim tick counter */
+     volatile uint8_t selected_slot;   /* Track-selected slot (0-3) for playback/knobs */
+diff --git a/src/schwung_shim.c b/src/schwung_shim.c
+index 0b1df124..345eecfe 100644
+--- a/src/schwung_shim.c
++++ b/src/schwung_shim.c
+@@ -6159,6 +6159,16 @@ static void shim_block_cable2_in_sh_midi(uint8_t *sh_midi) {
+  *   - MIDI_IN filtering
+  *   - All post-ioctl domain logic (track detection, shortcuts, DSP rendering)
+  * ============================================================================ */
++/* Edit-CC (Undo/Copy/Delete) press latch — see the filter site in
++ * shim_post_transfer. Records who received each button's PRESS so the same
++ * consumer receives its RELEASE even if capabilities.claims_edit_ccs is claimed
++ * or released mid-hold. Read by both the Move-firmware filter and the
++ * forward-to-shadow_ui site; the filter runs first in the frame, so the forward
++ * site sees this frame's decision. Index: 0=Undo, 1=Copy, 2=Delete.
++ * Touched only from the SPI callback (single thread) — no locking needed. */
++static uint8_t edit_cc_press_blocked[3] = { 0, 0, 0 };
++#define EDIT_CC_INDEX(cc) ((cc) == CC_UNDO ? 0 : (cc) == CC_COPY ? 1 : 2)
++
+ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, int size)
+ {
+     (void)ctx;
+@@ -6339,6 +6349,26 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
+         prev_overtake_mode = overtake_mode;
+     }
+ 
++    /* Drop any edit-CC claim when the shadow display goes away. The claim only
++     * means anything while a module's UI is on screen, and a shadow_ui that
++     * exited (or crashed) before reconciling it to 0 would otherwise leave
++     * Move's Undo / Copy / Delete captured with nothing left to deliver them
++     * to. Same reasoning as the runtime-claim drops on overtake exit above:
++     * this edge covers EVERY exit path. Also disarms the press latch so a release arriving after the
++     * display closed is routed to Move, matching where its press went.
++     * Runs unconditionally — the filter itself is inside the shadow_display_mode
++     * branch below, so this must not be. */
++    {
++        static int prev_display_mode = 0;
++        if (prev_display_mode && !shadow_display_mode) {
++            if (shadow_control) shadow_control->edit_cc_block = 0;
++            edit_cc_press_blocked[0] = 0;
++            edit_cc_press_blocked[1] = 0;
++            edit_cc_press_blocked[2] = 0;
++        }
++        prev_display_mode = shadow_display_mode;
++    }
++
+     /* Boot jack-state re-assert: worker arms shim_inject_boot_jack ~5 s after
+      * start (Move firmware is up by then). Inject a CC 115 into Move's MIDI_IN
+      * via the safe MPSC inject ring so Move's speaker enhancer corrects when
+@@ -6466,6 +6496,38 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
+                         if (d1 == CC_JOG_WHEEL || d1 == CC_JOG_CLICK || d1 == CC_BACK) {
+                             filter = 1;
+                         }
++                        /* Undo/Copy/Delete: blocked from Move firmware ONLY while
++                         * the module on screen has claimed them
++                         * (shadow_control->edit_cc_block, reconciled by shadow_ui
++                         * from capabilities.claims_edit_ccs). Without the claim
++                         * they pass through untouched, so Move keeps its native
++                         * Undo during ordinary chain use — that is precisely what
++                         * the unconditional version (PR #154) broke and why it was
++                         * reverted (PR #175). Forwarded to the shadow UI under the
++                         * same flag by the post-ioctl loop.
++                         * (Mute/CC 88 is deliberately NOT claimable — Move-native
++                         * Mute+Pad depends on it reaching firmware.) */
++                        if (d1 == CC_UNDO || d1 == CC_COPY || d1 == CC_DELETE) {
++                            /* Latch per button so a claim that changes MID-HOLD
++                             * cannot desync Move's view of the button: whoever
++                             * received the PRESS also receives the RELEASE.
++                             * Without this, a claim engaging between press and
++                             * release leaves Move believing the button is still
++                             * held (no release ever arrives), and a claim
++                             * dropping mid-hold delivers Move an orphan release.
++                             * Index: 0=Undo, 1=Copy, 2=Delete. */
++                            int idx = EDIT_CC_INDEX(d1);
++                            if (d2 > 0) {
++                                edit_cc_press_blocked[idx] =
++                                    shadow_control->edit_cc_block ? 1 : 0;
++                            }
++                            if (edit_cc_press_blocked[idx]) filter = 1;
++                            /* Deliberately NOT cleared on release: the latch is
++                             * re-armed by the next press, which keeps it valid
++                             * for the forward-to-shadow_ui site that runs LATER
++                             * in this same frame and must route the release the
++                             * same way it routed the press. */
++                        }
+                         /* Filter Menu unless long-press mode dismisses shadow on tap */
+                         if (d1 == CC_MENU && !LONG_PRESS_ACTIVE()) {
+                             filter = 1;
+@@ -7585,10 +7647,18 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
+                  * - CC 14 (jog wheel), CC 3 (jog click), CC 51 (back)
+                  * - CC 40-43 (track buttons)
+                  * - CC 71-78 (knobs)
+-                 * - CC 88 (mute) — used as a modifier for Mute+JogClick module bypass */
++                 * - CC 88 (mute) — used as a modifier for Mute+JogClick module bypass
++                 * - CC 56/60/119 (undo/copy/delete) — ONLY while the module on
++                 *   screen has claimed them via capabilities.claims_edit_ccs.
++                 *   Blocked from Move firmware under the same flag in the filter
++                 *   above, so a claimed press drives the module and nothing else.
++                 *   Unclaimed, they are not forwarded and reach Move unchanged. */
++                int is_edit_cc = (d1 == CC_UNDO || d1 == CC_COPY || d1 == CC_DELETE);
+                 int forward_to_shadow = (d1 == 14 || d1 == 3 || d1 == 51 ||
+                                          (d1 >= 40 && d1 <= 43) || (d1 >= 71 && d1 <= 78) ||
+-                                         d1 == 88);
++                                         d1 == 88 ||
++                                         (is_edit_cc &&
++                                          edit_cc_press_blocked[EDIT_CC_INDEX(d1)]));
+ 
+                 if (forward_to_shadow && shadow_ui_midi_shm) {
+                     shadow_ui_midi_publish(0x0B, status, d1, d2);
+diff --git a/src/shadow/shadow_ui.c b/src/shadow/shadow_ui.c
+index 4b2bc657..a1949cb9 100644
+--- a/src/shadow/shadow_ui.c
++++ b/src/shadow/shadow_ui.c
+@@ -2042,6 +2042,33 @@ static JSValue js_shadow_set_display_overlay(JSContext *ctx, JSValueConst this_v
+ 
+ #define PREVIEW_CMD_PATH "/data/UserData/schwung/preview_cmd_path.txt"
+ 
++/* host_edit_cc_block(enable) - claim Undo (CC 56), Copy (CC 60) and Delete
++ * (CC 119) at runtime. Suppresses them from Move firmware and forwards them to
++ * the shadow UI, so a module can use them for its own gestures without a press
++ * ALSO firing Move's clip undo / copy / delete behind the screen. Twin of
++ * host_pad_block; the runtime complement to the static
++ * capabilities.claims_edit_ccs.
++ *
++ * Safe to call every tick: it is idempotent and only logs on a TRANSITION, so
++ * the caller can reconcile it from whatever is on screen rather than tracking
++ * the claim at each write site. Callers MUST drive it to 0 when they stop
++ * wanting the buttons — nothing clears it on their behalf, and while it is set
++ * Move's own Undo is unavailable. */
++static JSValue js_host_edit_cc_block(JSContext *ctx, JSValueConst this_val,
++                                     int argc, JSValueConst *argv) {
++    (void)this_val;
++    if (argc < 1 || !shadow_control) return JS_FALSE;
++    int val = 0;
++    JS_ToInt32(ctx, &val, argv[0]);
++    uint8_t next = val ? 1 : 0;
++    if (shadow_control->edit_cc_block != next) {
++        shadow_control->edit_cc_block = next;
++        shadow_ui_log_line(next ? "shadow_ui: edit_cc_block ON"
++                                : "shadow_ui: edit_cc_block OFF");
++    }
++    return JS_TRUE;
++}
++
+ /* host_pad_block(enable) - suppress pad notes from reaching Move firmware */
+ static JSValue js_host_pad_block(JSContext *ctx, JSValueConst this_val,
+                                   int argc, JSValueConst *argv) {
+@@ -2547,6 +2574,8 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
+     JS_SetPropertyStr(ctx, global_obj, "shadow_get_overlay_state", JS_NewCFunction(ctx, js_shadow_get_overlay_state, "shadow_get_overlay_state", 0));
+     JS_SetPropertyStr(ctx, global_obj, "shadow_set_display_overlay", JS_NewCFunction(ctx, js_shadow_set_display_overlay, "shadow_set_display_overlay", 5));
+ 
++    JS_SetPropertyStr(ctx, global_obj, "host_edit_cc_block", JS_NewCFunction(ctx, js_host_edit_cc_block, "host_edit_cc_block", 1));
++
+     /* Register pad block function */
+     JS_SetPropertyStr(ctx, global_obj, "host_pad_block", JS_NewCFunction(ctx, js_host_pad_block, "host_pad_block", 1));
+     JS_SetPropertyStr(ctx, global_obj, "host_vol_block", JS_NewCFunction(ctx, js_host_vol_block, "host_vol_block", 1));
+diff --git a/src/shadow/shadow_ui.js b/src/shadow/shadow_ui.js
+index 72ca7d24..5f167dd6 100644
+--- a/src/shadow/shadow_ui.js
++++ b/src/shadow/shadow_ui.js
+@@ -10590,6 +10590,77 @@ function getHierarchyActiveModuleId() {
+     return getSlotParam(hierEditorSlot, `${prefix}_module`) || "";
+ }
+ 
++/* ── Edit-CC claim: Undo (CC 56) / Copy (CC 60) / Delete (CC 119) ────────────
++ *
++ * A module declaring `capabilities.claims_edit_ccs` gets these three buttons
++ * delivered to it while its UI is on screen, and Move firmware does not see
++ * them for that window — so a hold-Copy + tap-pad style gesture cannot also
++ * copy a Move clip behind the screen.
++ *
++ * ⚠ ENTRY-CONDITION TABLE. Every screen that may hold the claim, what opens it,
++ * and where that condition is re-checked. A new screen wanting these buttons
++ * declares itself HERE:
++ *
++ *   screen                       opened by                    re-checked in
++ *   ──────────────────────────   ──────────────────────────   ─────────────────
++ *   CANVAS (fullscreen)          a canvas param opened on a   reconcileEditCcClaim()
++ *   CANVAS (co-run overlay)      component whose module        — and ONLY there
++ *   HIERARCHY_EDITOR             declares claims_edit_ccs
++ *   COMPONENT_EDIT
++ *   COMPONENT_PARAMS
++ *
++ * The claim is re-derived in ONE place from what is on screen right now, never
++ * bookkept at the flag's write sites. That is the whole design: the host's
++ * earlier attempt (PR #154) blocked these three unconditionally whenever the
++ * shadow display was up, and was reverted (PR #175) because it stole Move's
++ * native Undo during ordinary chain use.
++ *
++ * The shim independently drops the claim when the shadow display closes, so a
++ * shadow_ui that exits or crashes without reconciling cannot strand it. */
++const EDIT_CC_CLAIM_VIEWS = {};
++EDIT_CC_CLAIM_VIEWS[VIEWS.CANVAS] = true;
++EDIT_CC_CLAIM_VIEWS[VIEWS.HIERARCHY_EDITOR] = true;
++EDIT_CC_CLAIM_VIEWS[VIEWS.COMPONENT_EDIT] = true;
++EDIT_CC_CLAIM_VIEWS[VIEWS.COMPONENT_PARAMS] = true;
++
++let editCcClaimCache = {};
++let editCcClaimKey = null;
++let editCcClaimed = false;
++
++function moduleClaimsEditCcs(moduleId) {
++    if (!moduleId) return false;
++    if (moduleId in editCcClaimCache) return editCcClaimCache[moduleId];
++    let meta = null;
++    try {
++        if (typeof host_get_module_metadata === "function") {
++            meta = host_get_module_metadata(moduleId);
++        }
++    } catch (e) { meta = null; }
++    const v = !!(meta && meta.capabilities && meta.capabilities.claims_edit_ccs);
++    editCcClaimCache[moduleId] = v;
++    return v;
++}
++
++function reconcileEditCcClaim() {
++    if (typeof host_edit_cc_block !== "function") return;
++    const onScreen = !!EDIT_CC_CLAIM_VIEWS[view] ||
++        (coRunUiActive() && coRunView === VIEWS.CANVAS);
++    /* Cheap identity of "whose UI is on screen". getHierarchyActiveModuleId()
++     * costs a blocking get_param round-trip (~2.6 ms), so it is consulted only
++     * when this tuple changes — not on every one of the ~44 ticks/sec. A module
++     * SWAP always transits COMPONENT_SELECT, which moves `view`, so the tuple
++     * catches swaps too. */
++    const key = onScreen
++        ? (view + "|" + coRunView + "|" + hierEditorSlot + "|" + hierEditorComponent)
++        : "";
++    if (key === editCcClaimKey) return;
++    editCcClaimKey = key;
++    const claim = onScreen && moduleClaimsEditCcs(getHierarchyActiveModuleId());
++    if (claim === editCcClaimed) return;
++    editCcClaimed = claim;
++    host_edit_cc_block(claim ? 1 : 0);
++}
++
+ function getModuleBasePath(moduleId) {
+     if (!moduleId) return "";
+     const searchDirs = [
+@@ -15077,6 +15148,11 @@ function dispatchCoRunDraw() {
+ 
+ let lastDrawError = null;  /* one-shot log guard for the tick draw catch */
+ globalThis.tick = function() {
++    /* Undo/Copy/Delete claim, re-derived from whatever is on screen. Kept at the
++     * top of the tick as the SINGLE re-check point for that entry condition —
++     * see the table above reconcileEditCcClaim(). */
++    reconcileEditCcClaim();
++
+     /* Background tick for JS-suspended overtake modules.
+      * Each parked module's tick() keeps firing so it can emit MIDI or advance
+      * internal state. Display and LED bindings are swapped for no-ops so the
+-- 
+2.53.0
+

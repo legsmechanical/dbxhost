@@ -221,10 +221,45 @@ Touches `src/shadow/shadow_ui.js` (one guard in the canvas close-gesture block) 
 `docs/MODULES.md` (the contract). Low conflict surface — the only likely collision is upstream
 moving the close-gesture block itself.
 
-⚠ **Known companion gap, NOT fixed here:** Copy (CC 60) / Delete (119) / Undo (56) DO reach a
-canvas already, but are **not** withheld from Move firmware while a canvas is open — the existing
-carve-out is scoped to COMPONENT_EDIT. Device-confirmed 2026-07-30: holding Copy in a canvas and
-tapping two pads copied a NATIVE Move drum pad. A `canvas_takes_modifiers` opt-in is the intended
-companion (opt-in, because using Move's native pads while a canvas is open is a legitimate
-workflow that an unconditional block would break). Not written — needs the shim-side mailbox
-filter located first, and that is RT-thread code.
+✅ **The companion gap this used to flag is now fixed** — see `claims-edit-ccs.patch` below.
+(That note claimed the Copy/Delete/Undo carve-out was "scoped to COMPONENT_EDIT". It was not:
+the carve-out had been **reverted upstream** and no longer existed in any view. Corrected
+2026-07-31.)
+
+## claims-edit-ccs.patch
+
+`1b8290ef` **feat(shadow): let a module claim Undo/Copy/Delete (`claims_edit_ccs`)**
+
+⬆ **Upstream-INTENDED, not a fork divergence.** Retire this file once it merges upstream.
+Written generic — no module named, no consumer assumptions.
+
+**What it fixes:** Undo (CC 56) / Copy (CC 60) / Delete (CC 119) reach Move firmware and are not
+forwarded to modules, so a module gesture on those buttons also fires Move's own clip
+copy/undo/delete behind the screen. Device-confirmed 2026-07-30: holding Copy inside a fullscreen
+canvas and tapping two pads copied a **native Move drum pad**.
+
+**Why it is opt-in.** Upstream PR #154 blocked all three whenever the shadow display was up, and
+Charles reverted it in **PR #175** because the block was unconditional — it stole Move's native
+Undo during ordinary chain use. His revert message names the fix shape: *"capability-gated capture
+(module declares it claims the edit CCs)"*. This is that. `capabilities.claims_edit_ccs: true`,
+default off, effective only while the declaring module's UI is on screen.
+
+⚠ **`docs/MODULES.md` was stale and this patch corrects it.** The doc commit for PR #154
+(`3dd8f055`) was never reverted alongside the code, so the guide described a firmware block that
+had not existed since 2026-07-19. That stale section cost a session of searching for an
+implementation that was not there.
+
+### Re-apply on rebase
+
+```sh
+git apply --3way patches/claims-edit-ccs.patch
+```
+
+**Expect exactly ONE conflict, in `src/host/shadow_constants.h`** — inherent, not fixable by
+re-anchoring. The new `edit_cc_block` is carved from `shadow_control_t`'s trailing padding (the
+struct has a hard `sizeof == CONTROL_BUFFER_SIZE` static assert, so a field cannot simply be
+appended). Our fork already spent one of those bytes on the fork-only `vol_block`, leaving
+`reserved8`; upstream still has the full `reserved16`. Resolve by carving from whichever padding
+field that tree actually has, and keep the total size unchanged. `schwung_shim.c`,
+`shadow_ui.c`, `shadow_ui.js` and `docs/MODULES.md` apply cleanly onto `upstream/main`
+(verified against `4519d26d`).
