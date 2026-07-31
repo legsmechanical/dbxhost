@@ -10908,6 +10908,25 @@ function invokeCanvasOverlayHook(hookName, payload) {
     return true;
 }
 
+/* Like invokeCanvasOverlayHook, but returns what the HOOK returned rather than
+ * whether a hook existed. Needed for consume/fall-through hooks such as
+ * handleBack, where the two answers are different: "no hook" and "hook declined"
+ * must both fall through, and only an explicit truthy return consumes. Kept
+ * separate so the existing hook callers, which read the return as "did a hook
+ * run", keep their current meaning. */
+function canvasOverlayHookResult(hookName, payload) {
+    if (!canvasRuntime || !canvasRuntime.overlay) return undefined;
+    const fn = canvasRuntime.overlay[hookName];
+    if (typeof fn !== "function") return undefined;
+    try {
+        return fn(canvasRuntime.ctx, payload || {});
+    } catch (e) {
+        canvasRuntime.error = `${hookName} error: ${e}`;
+        debugLog(`canvas ${hookName} hook error: ${e}`);
+        return undefined;   /* a throwing hook must not consume the press */
+    }
+}
+
 function dispatchCanvasMidi(data, source) {
     /* Also fire when the canvas is the active co-run overlay (outer view is
      * OVERTAKE_MODULE then). Runs before the co-run input block, so jog-turn /
@@ -16373,6 +16392,27 @@ globalThis.onMidiMessageInternal = function(data) {
             return;
         }
         if (d1 === MoveBack && d2 > 0) {
+            /* Back is CONTEXTUAL, mirroring the ui_chain.js handleBack() contract:
+             * the canvas gets first refusal and returns truthy only when it has
+             * somewhere to go back TO (a text field, a drill-down, a confirm).
+             * Anything else — no hook, a falsy return, or a hook that threw —
+             * falls through and closes the canvas exactly as before.
+             *
+             * So one press steps out of the module's own sub-view and the next
+             * leaves the canvas, which is what the button already means everywhere
+             * else in the UI.
+             *
+             * SHIFT+BACK IS THE FAILSAFE and is never offered to the module: it
+             * always closes. That is what keeps this safe to opt into now that a
+             * canvas can also claim the jog click — a module whose navigation is
+             * buggy, or which wrongly consumes Back forever, can take every other
+             * exit and still not trap the user. Same shape as the existing
+             * capabilities.suspend_keeps_js contract, where Back suspends and
+             * Shift+Back is the guaranteed full exit. */
+            if (!isShiftHeld() && canvasOverlayHookResult("handleBack") === true) {
+                needsRedraw = true;
+                return;
+            }
             if (canvasInCorun) runCoRunChainEdit(function() { closeCanvasPreview(true); });
             else closeCanvasPreview(true);
             announce("Hierarchy Editor");

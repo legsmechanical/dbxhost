@@ -1286,14 +1286,42 @@ The click then arrives in `onMidi` as an ordinary CC (`MoveMainButton`, CC 3)
 with `d2 > 0`, and the module decides what it means — enter a folder, confirm a
 selection, drill into a page.
 
-**Back always closes the canvas and cannot be claimed.** That is what makes this
-safe to opt into: however a module's own navigation behaves, there is always one
-guaranteed way out. A module that takes the click should still handle Back
-sensibly in its own model (e.g. "up one level"), but it will never be the only
-thing standing between the user and the exit.
-
 Applies to both the fullscreen canvas and the co-run canvas overlay, so a
 module's navigation behaves the same in either context.
+
+#### Back in a canvas UI (`handleBack`)
+
+Back is **contextual**, using the same consume/fall-through contract as
+`ui_chain.js`'s `handleBack()`. A canvas overlay may export it:
+
+```js
+globalThis.my_canvas = {
+  draw(ctx) { ... },
+  onMidi(ctx, payload) { ... },
+  handleBack(ctx) {
+    if (myFieldIsOpen) { closeMyField(); return true; }   // consumed
+    return false;                                          // let the host close
+  }
+};
+```
+
+- return **truthy** to consume Back — you had somewhere to go back *to* (a text
+  field, a drill-down, a confirm step);
+- return **falsy**, omit the hook, or throw, and the host closes the canvas
+  exactly as before.
+
+So one press steps out of your sub-view and the next leaves the canvas, which is
+what Back already means everywhere else in the UI.
+
+> **Only consume Back while you actually have somewhere to go back to.** Same
+> warning as the `ui_chain.js` contract: a `handleBack` that always returns
+> truthy takes an exit away from the user.
+
+**Shift+Back always closes the canvas and can never be claimed.** It is the
+failsafe, and it is what keeps both this and `canvas_takes_click` safe to opt
+into: a module can take the click, and can consume Back wrongly or forever, and
+still cannot trap the user. This mirrors `capabilities.suspend_keeps_js`, where
+Back suspends and Shift+Back is the guaranteed full exit.
 
 #### Dynamic Target Pickers
 
