@@ -1,0 +1,259 @@
+From 4efedc8abdf4a39a20c7cbd911f092d245cbe68e Mon Sep 17 00:00:00 2001
+From: legsmechanical <joshgaine@gmail.com>
+Date: Thu, 30 Jul 2026 23:22:44 -0400
+Subject: [PATCH] test(shadow): pin edit-CC press/release routing; extract
+ shadow_edit_cc_route
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The subtle part of claims_edit_ccs is not "a claimed button reaches the module" —
+it is that press and release always reach the SAME consumer even when the claim
+flips while the button is physically held. Both failure directions are silent:
+a claim engaging mid-hold leaves Move believing the button is still down (it saw
+the press, never the release); a claim dropping mid-hold hands Move an orphan
+release it never saw pressed.
+
+That case is awkward to produce on the device — it needs the on-screen module to
+change mid-press — so pin it off-device instead. Extract the latch decision from
+the shim into shadow_edit_cc_route() in shadow_constants.h, following the
+corun_event_owner() precedent: routing predicates live in the header as one
+source of truth that both the Move-firmware filter and the forward-to-shadow_ui
+site call, so the two cannot drift.
+
+Covers: unclaimed and claimed steady state, both mid-hold transitions, latch
+re-arming on the next press (which is why it is never cleared on release), the
+read-only query used by the later forward site, and per-button independence.
+Verified the test fails when the helper is mutated to route on the live claim
+instead of the latch — 4 checks trip, all the ones that should.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01XX8gDJhHpYErLEwJsV5jPm
+---
+ src/host/shadow_constants.h      |  25 ++++++++
+ src/schwung_shim.c               |  29 +++------
+ tests/host/test_edit_cc_route.c  | 107 +++++++++++++++++++++++++++++++
+ tests/host/test_edit_cc_route.sh |  13 ++++
+ 4 files changed, 155 insertions(+), 19 deletions(-)
+ create mode 100644 tests/host/test_edit_cc_route.c
+ create mode 100755 tests/host/test_edit_cc_route.sh
+
+diff --git a/src/host/shadow_constants.h b/src/host/shadow_constants.h
+index 38040d2a..6ac3bf14 100644
+--- a/src/host/shadow_constants.h
++++ b/src/host/shadow_constants.h
+@@ -402,6 +402,31 @@ static inline uint32_t corun_keep_mask(const volatile shadow_control_t *ctrl) {
+     return ctrl ? ctrl->corun.keep_mask : 0;
+ }
+ 
++/* ── Edit-CC (Undo/Copy/Delete) routing ──────────────────────────────────────
++ * Single source of truth for "does this edit-CC event belong to the module or to
++ * Move?", called by BOTH the sh_midi let-through filter and the
++ * forward-to-shadow_ui site so the two can never disagree about one press.
++ *
++ * The routing is LATCHED at the press. A module's claim
++ * (capabilities.claims_edit_ccs -> shadow_control->edit_cc_block) can change
++ * while a button is physically held — the user navigates, a screen closes,
++ * shadow_ui reconciles — and if press and release were routed independently,
++ * a claim engaging mid-hold would leave Move believing the button is still down
++ * (it saw the press, never the release), while a claim dropping mid-hold would
++ * hand Move an orphan release it never saw pressed. So: whoever receives the
++ * PRESS receives the RELEASE.
++ *
++ * `latched` is the caller's per-button state (index with EDIT_CC_INDEX). It is
++ * deliberately NOT cleared on release — the next press re-arms it, which keeps
++ * the value valid for the forward site that runs later in the same SPI frame.
++ *
++ * Returns 1 = the module owns this event (withhold from Move, forward to
++ * shadow_ui); 0 = Move owns it. */
++static inline int shadow_edit_cc_route(int is_press, int claimed, uint8_t *latched) {
++    if (is_press) *latched = claimed ? 1 : 0;
++    return *latched ? 1 : 0;
++}
++
+ /* Single source of truth for "who owns this event right now?". Both the sh_midi
+  * let-through filter and the forward-to-shadow_ui suppress filter call this and
+  * switch on the result. Adding a new corun target = extend this function; no
+diff --git a/src/schwung_shim.c b/src/schwung_shim.c
+index 345eecfe..328591e5 100644
+--- a/src/schwung_shim.c
++++ b/src/schwung_shim.c
+@@ -6508,25 +6508,15 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
+                          * (Mute/CC 88 is deliberately NOT claimable — Move-native
+                          * Mute+Pad depends on it reaching firmware.) */
+                         if (d1 == CC_UNDO || d1 == CC_COPY || d1 == CC_DELETE) {
+-                            /* Latch per button so a claim that changes MID-HOLD
+-                             * cannot desync Move's view of the button: whoever
+-                             * received the PRESS also receives the RELEASE.
+-                             * Without this, a claim engaging between press and
+-                             * release leaves Move believing the button is still
+-                             * held (no release ever arrives), and a claim
+-                             * dropping mid-hold delivers Move an orphan release.
+-                             * Index: 0=Undo, 1=Copy, 2=Delete. */
+-                            int idx = EDIT_CC_INDEX(d1);
+-                            if (d2 > 0) {
+-                                edit_cc_press_blocked[idx] =
+-                                    shadow_control->edit_cc_block ? 1 : 0;
++                            /* Latched at the press so a claim changing MID-HOLD
++                             * cannot desync Move's view of the button — see
++                             * shadow_edit_cc_route() in shadow_constants.h, which
++                             * the forward-to-shadow_ui site below also calls. */
++                            if (shadow_edit_cc_route(d2 > 0,
++                                                     shadow_control->edit_cc_block,
++                                                     &edit_cc_press_blocked[EDIT_CC_INDEX(d1)])) {
++                                filter = 1;
+                             }
+-                            if (edit_cc_press_blocked[idx]) filter = 1;
+-                            /* Deliberately NOT cleared on release: the latch is
+-                             * re-armed by the next press, which keeps it valid
+-                             * for the forward-to-shadow_ui site that runs LATER
+-                             * in this same frame and must route the release the
+-                             * same way it routed the press. */
+                         }
+                         /* Filter Menu unless long-press mode dismisses shadow on tap */
+                         if (d1 == CC_MENU && !LONG_PRESS_ACTIVE()) {
+@@ -7658,7 +7648,8 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
+                                          (d1 >= 40 && d1 <= 43) || (d1 >= 71 && d1 <= 78) ||
+                                          d1 == 88 ||
+                                          (is_edit_cc &&
+-                                          edit_cc_press_blocked[EDIT_CC_INDEX(d1)]));
++                                          shadow_edit_cc_route(0, 0,
++                                              &edit_cc_press_blocked[EDIT_CC_INDEX(d1)])));
+ 
+                 if (forward_to_shadow && shadow_ui_midi_shm) {
+                     shadow_ui_midi_publish(0x0B, status, d1, d2);
+diff --git a/tests/host/test_edit_cc_route.c b/tests/host/test_edit_cc_route.c
+new file mode 100644
+index 00000000..2ce23093
+--- /dev/null
++++ b/tests/host/test_edit_cc_route.c
+@@ -0,0 +1,107 @@
++/* Unit test for edit-CC (Undo/Copy/Delete) press/release routing —
++ * shadow_edit_cc_route() in shadow_constants.h.
++ *
++ * The property under test is NOT "a claimed button goes to the module". It is
++ * that press and release ALWAYS go to the SAME consumer, even when the claim
++ * (capabilities.claims_edit_ccs) flips while the button is physically held.
++ *
++ * That case is the reason the helper exists and is awkward to produce by hand on
++ * the device — you would have to change what is on screen mid-press. Getting it
++ * wrong is silent and nasty in both directions:
++ *   - claim engages mid-hold  -> Move saw the press, never the release
++ *                                => Move believes the button is still down.
++ *   - claim drops mid-hold    -> Move never saw the press, then gets a release
++ *                                => Move acts on an orphan release.
++ *
++ * Build/run: bash tests/host/test_edit_cc_route.sh
++ */
++#include <stdio.h>
++#include <string.h>
++#include <stdint.h>
++#include "shadow_constants.h"
++
++static int fails = 0;
++#define CHECK(cond, msg) do { if (!(cond)) { fprintf(stderr, "FAIL: %s\n", msg); fails++; } } while (0)
++
++#define PRESS   1
++#define RELEASE 0
++#define MODULE  1   /* routed to the module: withheld from Move, forwarded to shadow_ui */
++#define MOVE    0   /* routed to Move firmware */
++
++int main(void) {
++    /* ── Steady state: unclaimed ── Move owns both edges. This is the default for
++     * every module that does not declare the capability, and the regression that
++     * got upstream PR #154 reverted (it stole Move's native Undo). */
++    {
++        uint8_t latch = 0;
++        CHECK(shadow_edit_cc_route(PRESS,   0, &latch) == MOVE, "unclaimed: press -> Move");
++        CHECK(shadow_edit_cc_route(RELEASE, 0, &latch) == MOVE, "unclaimed: release -> Move");
++    }
++
++    /* ── Steady state: claimed ── the module owns both edges. */
++    {
++        uint8_t latch = 0;
++        CHECK(shadow_edit_cc_route(PRESS,   1, &latch) == MODULE, "claimed: press -> module");
++        CHECK(shadow_edit_cc_route(RELEASE, 1, &latch) == MODULE, "claimed: release -> module");
++    }
++
++    /* ── Claim ENGAGES mid-hold ── pressed while unclaimed, so Move already saw
++     * the press. The release MUST still go to Move, or Move is left believing the
++     * button is held down. */
++    {
++        uint8_t latch = 0;
++        CHECK(shadow_edit_cc_route(PRESS,   0, &latch) == MOVE, "engage mid-hold: press -> Move");
++        CHECK(shadow_edit_cc_route(RELEASE, 1, &latch) == MOVE,
++              "engage mid-hold: release MUST follow the press to Move");
++    }
++
++    /* ── Claim DROPS mid-hold ── pressed while claimed, so Move never saw the
++     * press. The release MUST NOT leak to Move as an orphan. */
++    {
++        uint8_t latch = 0;
++        CHECK(shadow_edit_cc_route(PRESS,   1, &latch) == MODULE, "drop mid-hold: press -> module");
++        CHECK(shadow_edit_cc_route(RELEASE, 0, &latch) == MODULE,
++              "drop mid-hold: release MUST follow the press to the module");
++    }
++
++    /* ── The next press RE-ARMS ── a latch left set by a claimed hold must not
++     * capture the following press once the claim is gone. This is what makes it
++     * safe never to clear the latch on release. */
++    {
++        uint8_t latch = 0;
++        shadow_edit_cc_route(PRESS,   1, &latch);           /* claimed hold */
++        shadow_edit_cc_route(RELEASE, 1, &latch);
++        CHECK(shadow_edit_cc_route(PRESS, 0, &latch) == MOVE,
++              "re-arm: next press after claim released goes to Move");
++        CHECK(shadow_edit_cc_route(RELEASE, 0, &latch) == MOVE, "re-arm: its release too");
++    }
++
++    /* ── Read-only query ── the forward-to-shadow_ui site runs LATER in the same
++     * SPI frame and must observe the decision the filter already made, without
++     * changing it. is_press=0 is that query, and it must never mutate the latch
++     * regardless of the `claimed` argument passed. */
++    {
++        uint8_t latch = 0;
++        shadow_edit_cc_route(PRESS, 1, &latch);             /* module owns this press */
++        CHECK(shadow_edit_cc_route(0, 0, &latch) == MODULE, "query: sees the latched press");
++        CHECK(latch == 1, "query with claimed=0 must NOT clear the latch");
++        CHECK(shadow_edit_cc_route(0, 1, &latch) == MODULE, "query is repeatable");
++        CHECK(latch == 1, "query with claimed=1 must NOT set the latch either");
++    }
++
++    /* ── Per-button independence ── Undo/Copy/Delete each carry their own latch
++     * (the shim indexes them 0/1/2 via EDIT_CC_INDEX), so holding one across a
++     * claim change cannot reroute another. */
++    {
++        uint8_t latch[3] = { 0, 0, 0 };
++        shadow_edit_cc_route(PRESS, 1, &latch[1]);          /* Copy held, claimed */
++        CHECK(shadow_edit_cc_route(PRESS, 0, &latch[2]) == MOVE,
++              "independence: Delete pressed unclaimed while Copy is held -> Move");
++        CHECK(shadow_edit_cc_route(RELEASE, 0, &latch[1]) == MODULE,
++              "independence: Copy's release still follows Copy's own latch");
++    }
++
++    if (fails) { fprintf(stderr, "%d check(s) FAILED\n", fails); return 1; }
++    printf("test_edit_cc_route: ALL PASS\n");
++    return 0;
++}
+diff --git a/tests/host/test_edit_cc_route.sh b/tests/host/test_edit_cc_route.sh
+new file mode 100755
+index 00000000..43ed1adc
+--- /dev/null
++++ b/tests/host/test_edit_cc_route.sh
+@@ -0,0 +1,13 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++cd "$(dirname "$0")/../.."
++
++bin="build/tests/test_edit_cc_route"
++mkdir -p "$(dirname "$bin")"
++
++cc -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Isrc/host \
++  tests/host/test_edit_cc_route.c \
++  -o "$bin"
++
++"$bin"
+-- 
+2.53.0
+

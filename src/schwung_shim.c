@@ -6508,25 +6508,15 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                          * (Mute/CC 88 is deliberately NOT claimable — Move-native
                          * Mute+Pad depends on it reaching firmware.) */
                         if (d1 == CC_UNDO || d1 == CC_COPY || d1 == CC_DELETE) {
-                            /* Latch per button so a claim that changes MID-HOLD
-                             * cannot desync Move's view of the button: whoever
-                             * received the PRESS also receives the RELEASE.
-                             * Without this, a claim engaging between press and
-                             * release leaves Move believing the button is still
-                             * held (no release ever arrives), and a claim
-                             * dropping mid-hold delivers Move an orphan release.
-                             * Index: 0=Undo, 1=Copy, 2=Delete. */
-                            int idx = EDIT_CC_INDEX(d1);
-                            if (d2 > 0) {
-                                edit_cc_press_blocked[idx] =
-                                    shadow_control->edit_cc_block ? 1 : 0;
+                            /* Latched at the press so a claim changing MID-HOLD
+                             * cannot desync Move's view of the button — see
+                             * shadow_edit_cc_route() in shadow_constants.h, which
+                             * the forward-to-shadow_ui site below also calls. */
+                            if (shadow_edit_cc_route(d2 > 0,
+                                                     shadow_control->edit_cc_block,
+                                                     &edit_cc_press_blocked[EDIT_CC_INDEX(d1)])) {
+                                filter = 1;
                             }
-                            if (edit_cc_press_blocked[idx]) filter = 1;
-                            /* Deliberately NOT cleared on release: the latch is
-                             * re-armed by the next press, which keeps it valid
-                             * for the forward-to-shadow_ui site that runs LATER
-                             * in this same frame and must route the release the
-                             * same way it routed the press. */
                         }
                         /* Filter Menu unless long-press mode dismisses shadow on tap */
                         if (d1 == CC_MENU && !LONG_PRESS_ACTIVE()) {
@@ -7658,7 +7648,8 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                                          (d1 >= 40 && d1 <= 43) || (d1 >= 71 && d1 <= 78) ||
                                          d1 == 88 ||
                                          (is_edit_cc &&
-                                          edit_cc_press_blocked[EDIT_CC_INDEX(d1)]));
+                                          shadow_edit_cc_route(0, 0,
+                                              &edit_cc_press_blocked[EDIT_CC_INDEX(d1)])));
 
                 if (forward_to_shadow && shadow_ui_midi_shm) {
                     shadow_ui_midi_publish(0x0B, status, d1, d2);
