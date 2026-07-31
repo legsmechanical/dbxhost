@@ -73,6 +73,7 @@ for keys anywhere in `module.json`).
 | `midi_out` | Module sends MIDI output (chain MIDI FX, generator tools) |
 | `aftertouch` | Module uses aftertouch |
 | `claims_master_knob` | Module handles volume knob (CC 79) instead of host |
+| `claims_edit_ccs` | Module handles Undo (CC 56), Copy (CC 60) and Delete (CC 119) while its UI is on screen; they are withheld from Move firmware for that window. Default off — see "Copy / Delete / Undo" below. |
 | `raw_midi` | Skip host MIDI transforms (velocity curve, aftertouch filter); module may also bypass internal MIDI filters when set |
 | `raw_ui` | Module owns UI input handling; host won't intercept Back to return to menu (use `host_return_to_menu()` to exit) |
 | `chainable` | Marks a module as usable inside Signal Chain patches (metadata) |
@@ -540,23 +541,43 @@ Only consume Back while you actually have somewhere to go back *to*. If `handleB
 always returns truthy the user can never leave your module via Back — it is the only
 host-processed exit in this screen, so the sole remaining way out is to exit shadow mode.
 
-#### Copy / Delete / Undo (`ui_chain.js`)
+#### Copy / Delete / Undo (`capabilities.claims_edit_ccs`)
 
-While the shadow UI is on screen, CC 56 (Undo), CC 60 (Copy), and CC 119
-(Delete) are delivered exclusively to the loaded module's `ui_chain.js` via
-`onMidiMessageInternal` — they are blocked from reaching Move firmware for
-the duration, so a press can never double-fire into Move's own undo/copy/
-delete while you're editing a module (e.g. a Delete press won't also delete
-a Move clip in the background).
+CC 56 (Undo), CC 60 (Copy) and CC 119 (Delete) reach Move firmware by default
+and are **not** forwarded to modules. A module that wants them for its own
+gestures opts in:
 
-This makes the three buttons safe to repurpose for module-specific gestures
-— e.g. hold Copy/Delete + tap a pad to target it, tap Undo to revert the
-last such operation. They join the existing forwarded set (jog wheel/click,
-Back, track buttons, knobs, Mute) that a chain module already receives in
-this screen.
+```json
+{
+  "capabilities": {
+    "claims_edit_ccs": true
+  }
+}
+```
 
-Outside shadow display (or outside COMPONENT_EDIT), these CCs behave as
-normal Move hardware buttons and are not intercepted.
+While that module's UI is on screen, the three CCs are delivered to it via
+`onMidiMessageInternal` **and withheld from Move firmware**, so a press cannot
+double-fire into Move's own undo / copy / delete — e.g. hold Copy + tap a pad
+to target it, without also copying the Move drum pad behind the screen. They
+join the set a module already receives there (jog wheel/click, Back, track
+buttons, knobs, Mute).
+
+The claim applies in the hierarchy editor, component edit/params screens, and a
+`type: "canvas"` UI (fullscreen or co-run overlay). Leave any of those and the
+buttons return to Move immediately.
+
+> **Opt-in is the whole point.** An earlier version blocked these three
+> unconditionally whenever the shadow display was up, and was reverted: it stole
+> Move's native Undo during ordinary chain use, so you could not undo a note edit
+> while any Schwung module was on screen. Modules that do not declare the
+> capability are unaffected, and Move keeps its own buttons everywhere else.
+
+**Mute (CC 88) is not claimable** — Move-native Mute+Pad depends on it reaching
+firmware.
+
+Press/release pairing is latched per button: whoever receives the press also
+receives the release, even if the claim changes mid-hold. Neither Move nor the
+module can be left believing a button is still held.
 
 #### Pad presses in a canvas UI
 

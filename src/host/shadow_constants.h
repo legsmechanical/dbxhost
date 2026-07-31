@@ -125,7 +125,24 @@ typedef struct shadow_control_t {
      * existing field offset are unchanged — a mismatched shim/shadow_ui pair
      * cannot arise from this field. */
     volatile uint8_t vol_block;
-    volatile uint8_t reserved8;
+    /* Runtime edit-CC claim. 1 = suppress Undo (CC 56), Copy (CC 60) and Delete
+     * (CC 119) from reaching Move firmware and forward them to the shadow UI
+     * instead, so a module can use them for its own gestures without a press
+     * ALSO firing Move's clip undo / copy / delete in the background.
+     *
+     * Opt-in on purpose. An earlier attempt (PR #154) blocked these three
+     * unconditionally whenever the shadow display was up and was reverted
+     * (PR #175) because it stole Move's native Undo during ordinary chain use —
+     * you could not undo a note edit while any Schwung module was on screen.
+     * This flag is the runtime complement to the STATIC
+     * capabilities.claims_edit_ccs, and shadow_ui reconciles it from whichever
+     * module's UI is actually on screen, so Move keeps its own buttons
+     * everywhere else. Same shape as pad_block.
+     *
+     * Carved from the former reserved8 padding so the struct size and every
+     * existing field offset are unchanged — a mismatched shim/shadow_ui pair
+     * cannot arise from this field. */
+    volatile uint8_t edit_cc_block;
     volatile uint32_t ui_request_id;  /* Incremented on patch request */
     volatile uint32_t shim_counter;   /* Debug: shim tick counter */
     volatile uint8_t selected_slot;   /* Track-selected slot (0-3) for playback/knobs */

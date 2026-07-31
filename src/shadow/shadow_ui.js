@@ -10590,6 +10590,77 @@ function getHierarchyActiveModuleId() {
     return getSlotParam(hierEditorSlot, `${prefix}_module`) || "";
 }
 
+/* ── Edit-CC claim: Undo (CC 56) / Copy (CC 60) / Delete (CC 119) ────────────
+ *
+ * A module declaring `capabilities.claims_edit_ccs` gets these three buttons
+ * delivered to it while its UI is on screen, and Move firmware does not see
+ * them for that window — so a hold-Copy + tap-pad style gesture cannot also
+ * copy a Move clip behind the screen.
+ *
+ * ⚠ ENTRY-CONDITION TABLE. Every screen that may hold the claim, what opens it,
+ * and where that condition is re-checked. A new screen wanting these buttons
+ * declares itself HERE:
+ *
+ *   screen                       opened by                    re-checked in
+ *   ──────────────────────────   ──────────────────────────   ─────────────────
+ *   CANVAS (fullscreen)          a canvas param opened on a   reconcileEditCcClaim()
+ *   CANVAS (co-run overlay)      component whose module        — and ONLY there
+ *   HIERARCHY_EDITOR             declares claims_edit_ccs
+ *   COMPONENT_EDIT
+ *   COMPONENT_PARAMS
+ *
+ * The claim is re-derived in ONE place from what is on screen right now, never
+ * bookkept at the flag's write sites. That is the whole design: the host's
+ * earlier attempt (PR #154) blocked these three unconditionally whenever the
+ * shadow display was up, and was reverted (PR #175) because it stole Move's
+ * native Undo during ordinary chain use.
+ *
+ * The shim independently drops the claim when the shadow display closes, so a
+ * shadow_ui that exits or crashes without reconciling cannot strand it. */
+const EDIT_CC_CLAIM_VIEWS = {};
+EDIT_CC_CLAIM_VIEWS[VIEWS.CANVAS] = true;
+EDIT_CC_CLAIM_VIEWS[VIEWS.HIERARCHY_EDITOR] = true;
+EDIT_CC_CLAIM_VIEWS[VIEWS.COMPONENT_EDIT] = true;
+EDIT_CC_CLAIM_VIEWS[VIEWS.COMPONENT_PARAMS] = true;
+
+let editCcClaimCache = {};
+let editCcClaimKey = null;
+let editCcClaimed = false;
+
+function moduleClaimsEditCcs(moduleId) {
+    if (!moduleId) return false;
+    if (moduleId in editCcClaimCache) return editCcClaimCache[moduleId];
+    let meta = null;
+    try {
+        if (typeof host_get_module_metadata === "function") {
+            meta = host_get_module_metadata(moduleId);
+        }
+    } catch (e) { meta = null; }
+    const v = !!(meta && meta.capabilities && meta.capabilities.claims_edit_ccs);
+    editCcClaimCache[moduleId] = v;
+    return v;
+}
+
+function reconcileEditCcClaim() {
+    if (typeof host_edit_cc_block !== "function") return;
+    const onScreen = !!EDIT_CC_CLAIM_VIEWS[view] ||
+        (coRunUiActive() && coRunView === VIEWS.CANVAS);
+    /* Cheap identity of "whose UI is on screen". getHierarchyActiveModuleId()
+     * costs a blocking get_param round-trip (~2.6 ms), so it is consulted only
+     * when this tuple changes — not on every one of the ~44 ticks/sec. A module
+     * SWAP always transits COMPONENT_SELECT, which moves `view`, so the tuple
+     * catches swaps too. */
+    const key = onScreen
+        ? (view + "|" + coRunView + "|" + hierEditorSlot + "|" + hierEditorComponent)
+        : "";
+    if (key === editCcClaimKey) return;
+    editCcClaimKey = key;
+    const claim = onScreen && moduleClaimsEditCcs(getHierarchyActiveModuleId());
+    if (claim === editCcClaimed) return;
+    editCcClaimed = claim;
+    host_edit_cc_block(claim ? 1 : 0);
+}
+
 function getModuleBasePath(moduleId) {
     if (!moduleId) return "";
     const searchDirs = [
@@ -15077,6 +15148,11 @@ function dispatchCoRunDraw() {
 
 let lastDrawError = null;  /* one-shot log guard for the tick draw catch */
 globalThis.tick = function() {
+    /* Undo/Copy/Delete claim, re-derived from whatever is on screen. Kept at the
+     * top of the tick as the SINGLE re-check point for that entry condition —
+     * see the table above reconcileEditCcClaim(). */
+    reconcileEditCcClaim();
+
     /* Background tick for JS-suspended overtake modules.
      * Each parked module's tick() keeps firing so it can emit MIDI or advance
      * internal state. Display and LED bindings are swapped for no-ops so the
