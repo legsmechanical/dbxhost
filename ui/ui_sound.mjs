@@ -1810,6 +1810,22 @@ function listMove(len, idx, delta) {
  *
  * Shift (49) and Mute (88) are deliberately NOT offered: davebox tracks them
  * for its own gestures and they must keep flowing regardless. */
+/* Hand a knob-touch NOTE to a hosted canvas. Deliberately fire-and-forget: the
+ * return value is ignored, because davebox still wants its own touch state and
+ * a hosted canvas cannot meaningfully decline a touch. */
+function hostedNote(status, d1, d2) {
+    if (!S.hosted || S.view !== VIEW_EDIT) return;
+    if (typeof S.hosted.onMidi !== 'function') return;
+    try {
+        S.hosted.onMidi(hostedCtx(), { data: [status, d1, d2] });
+        S.dirty = true;
+    } catch (e) {
+        S.hosted = null;                 /* same one-strike rule as renderHosted */
+        try { console.log('davebox: hosted canvas onMidi failed, adopting instead: ' + e); }
+        catch (e2) { /* best-effort */ }
+    }
+}
+
 function hostedTakes(d1, d2) {
     if (!S.hosted || S.view !== VIEW_EDIT) return false;
     if (d1 === 49 || d1 === 88) return false;
@@ -2091,6 +2107,22 @@ export function soundOnNote(status, d1, d2) {
         return true;
     }
     if (d1 > 7) return false;
+
+    /* Knob touch is a NOTE, and hostedTakes() only forwards CCs — so a hosted
+     * canvas never saw touch at all. Two symptoms on device, one cause: touching
+     * a knob did not highlight it (the press note never arrived), and the
+     * highlight STUCK after a turn (the release note never arrived either, so
+     * nothing ever cleared what the turn had set).
+     *
+     * Forwarded but NOT consumed: davebox keeps its own touch bookkeeping below
+     * — it drives the write-flush on release — and only the kit renders while
+     * hosting, so the two cannot disagree on screen.
+     *
+     * ⚠ Notes 0-7 ONLY. Pad notes are deliberately never replayed into a hosted
+     * canvas: the kit would write the vouch a second time on top of davebox's
+     * own, re-arming a press the note already resolved. */
+    hostedNote(status, d1, d2);
+
     const on = (status === 0x90 && d2 >= 64);
     const next = on ? d1 : -1;
     if (next !== S.touchedIdx) {
