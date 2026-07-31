@@ -1706,11 +1706,38 @@ function followLiveSelection(idx) {
     const spec = S.livePress;
     if (!spec) return;
     S.pollCursor = 0;                       /* alias cells now mean another pad */
+    hostedFocusMoved(spec);
     if (idx >= 0 && S.menuChild !== idx && S.menuKey === spec.levelKey) {
         S.menuChild = idx;
         refreshMenuRows();
     }
     S.dirty = true;
+}
+
+/* A hosted canvas caches its own param reads, so when focus moves it must be
+ * told — otherwise every `<prefix>_*` cell keeps drawing the PREVIOUS element's
+ * values until the kit's periodic full flush comes round, which reads on device
+ * as "the screen takes ages to catch up after tapping a pad". (It did. That was
+ * this function not existing.)
+ *
+ * ⭑ We invalidate rather than REPLAY the pad note into the overlay, and the
+ * difference matters. Forwarding the note would make the kit write the vouch /
+ * note key a SECOND time, on top of davebox's own authoritative write — and a
+ * vouch arriving after the note already resolved focus re-arms the module for a
+ * press that is over, which a later SEQUENCED note can then claim and yank
+ * focus with. davebox emits the note, so it owns that signal; the kit only
+ * needs to know its cache is stale.
+ *
+ * Scoped to the prefix on purpose: `master`, `send*_` and `kit` are still
+ * perfectly good, and each needless re-read is a ~2.6 ms blocking round-trip. */
+function hostedFocusMoved(spec) {
+    if (!S.hosted || !S.hostedCtx) return;
+    const inv = S.hostedCtx.invalidate;     /* installed by the kit on first draw */
+    if (typeof inv !== 'function') return;
+    try {
+        if (spec && spec.prefix) inv(spec.prefix + '_*');
+        else inv(true);                     /* no prefix declared: correct, just costlier */
+    } catch (e) { /* a hosted cache that won't flush is not worth a crash */ }
 }
 
 /* ---- input ---- */

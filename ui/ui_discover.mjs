@@ -714,6 +714,12 @@ export function livePressSpec(levels) {
         if (spec && (spec.pressParam || spec.noteParam)) {
             return { levelKey: key, pressParam: spec.pressParam,
                      noteParam: spec.noteParam,
+                     /* Carried for the HOSTED path: when focus moves, every
+                      * `<prefix>_*` key a hosted canvas cached now addresses a
+                      * different element, and only the prefix can scope that
+                      * invalidation. Dropping it here made the first hosted
+                      * build wait for the kit's periodic flush instead. */
+                     prefix: spec.prefix,
                      selectParam: spec.selectParam, count: spec.count };
         }
     }
