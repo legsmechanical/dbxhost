@@ -197,7 +197,7 @@ const S = {
      * See hostedCtx(). Null for every module that does not declare it. */
     hosted: null,
     hostedCtx: null,
-    hostedValue: '0',
+    hostedPage: {},             /* "slot:comp:module" -> persisted bank index */
     hostedOpened: false,        /* onOpen fired for THIS block yet? */
     /* Whether WE currently hold the host's edit-CC claim. Mirrors what we last
      * told host_edit_cc_block, so reconcile only calls on a real change. */
@@ -2426,8 +2426,13 @@ function hostedCtx() {
             ? text_width(String(s)) : String(s).length * 6),
         getParam: (k) => engineGet(S.slot, S.comp, k),
         setParam: (k, v) => engineSet(S.slot, S.comp, k, String(v)),
-        getValue: () => String(S.hostedValue || '0'),
-        setValue: (v) => { S.hostedValue = String(v); },
+        /* The canvas persists its own bank index through these. Keyed per
+         * MODULE so reopening a block returns to the page you left it on —
+         * S.hostedValue used to be a single slot wiped by hostedReset(), so
+         * onOpen re-seeded from a value that had just been cleared and every
+         * open landed on bank 0. */
+        getValue: () => String(S.hostedPage[hostedPageKey()] || '0'),
+        setValue: (v) => { S.hostedPage[hostedPageKey()] = String(v); },
     };
     S.hostedCtx = ctx;
     return ctx;
@@ -2436,10 +2441,17 @@ function hostedCtx() {
 /* Drop the hosted ctx when the block changes — its param cache, its bank index
  * and the kit's own per-ctx install all belong to the module we were editing.
  * Carrying them into the next one is the classic display-desync. */
+/* Identity of "which module's page am I remembering?" — the block AND the
+ * module in it, so swapping a module does not inherit the old one's page. */
+function hostedPageKey() {
+    return S.slot + ':' + S.comp + ':' + (S.moduleId || '');
+}
+
 function hostedReset() {
     S.hostedCtx = null;
-    S.hostedValue = '0';
     S.hostedOpened = false;
+    /* NOT S.hostedPage — that is the whole point: it must OUTLIVE a reset, or
+     * the canvas forgets its page every time discovery runs. */
 }
 
 /* Tell a hosted canvas it has been opened, once per block.
