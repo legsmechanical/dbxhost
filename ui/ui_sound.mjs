@@ -1642,6 +1642,20 @@ export function soundVouchLivePress(track, note) {
     S.padWatchLeft = PAD_WATCH_TICKS;
     S.padVouchTries = 0;
 
+    /* ⭑ Tell a hosted canvas a pad was TAPPED.
+     *
+     * Its copy/paste gesture triggers on the tap, not on focus moving — so that
+     * the source can be the pad already on screen, whose tap moves nothing. We
+     * own the pad notes here and deliberately never forward them (replaying one
+     * would make the kit vouch a SECOND time on top of the note we just wrote,
+     * re-arming a press it had already resolved), so the tap has to be said out
+     * loud instead. Ignored by the canvas unless a modifier is held, so this is
+     * safe to call on every live press. */
+    if (S.hosted && typeof S.hosted.padTap === 'function') {
+        try { S.hosted.padTap(hostedCtx()); S.dirty = true; }
+        catch (e) { /* a bad hook must not cost the user their pad press */ }
+    }
+
     /* ⭑ NAME the pad when the module lets us. We EMIT this note, so unlike the
      * module's own canvas we know exactly which element it is — and saying so
      * is deterministic where vouching is a race. MEASURED (2026-07-30): the
