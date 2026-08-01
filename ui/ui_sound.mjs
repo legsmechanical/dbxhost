@@ -198,6 +198,7 @@ const S = {
     hosted: null,
     hostedCtx: null,
     hostedValue: '0',
+    hostedOpened: false,        /* onOpen fired for THIS block yet? */
     /* Whether WE currently hold the host's edit-CC claim. Mirrors what we last
      * told host_edit_cc_block, so reconcile only calls on a real change. */
     editCcClaimed: false,
@@ -2048,6 +2049,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
         GS.backPressTick = -1;
         GS.backHoldFired = false;
         if (wasHold) return true;                      /* the hold already suspended */
+        /* A hosted canvas gets first refusal on a Back TAP, so its own modal can
+         * cancel instead of Back closing the screen out from under an open
+         * field. It consumes only when something is open and declines at rest,
+         * so davebox's navigation below is untouched the rest of the time.
+         * ⚠ Deliberately the tap only — the long-press suspend above stays
+         * unclaimable, the same failsafe shape as the host's Shift+Back. */
+        if (hostedBack()) return true;
         if (S.view === VIEW_SLOTCFG) {
             if (S.slotCfgEditing) S.slotCfgEditing = false;   /* leave edit first */
             else closeSlotCfg();
@@ -2431,11 +2439,43 @@ function hostedCtx() {
 function hostedReset() {
     S.hostedCtx = null;
     S.hostedValue = '0';
+    S.hostedOpened = false;
+}
+
+/* Tell a hosted canvas it has been opened, once per block.
+ *
+ * The kit's onOpen re-seeds its state from the persisted value, so without this
+ * the canvas always opens on bank 0 instead of where you left it — and a module
+ * that does other setup there would simply never get it. Fired lazily on the
+ * first draw rather than at discovery, because the ctx does not exist until
+ * then. */
+function hostedOpen(ctx) {
+    if (S.hostedOpened || typeof S.hosted.onOpen !== 'function') return;
+    S.hostedOpened = true;
+    try { S.hosted.onOpen(ctx); } catch (e) { /* a bad onOpen must not kill the page */ }
+}
+
+/* Offer Back to a hosted canvas before davebox acts on it.
+ *
+ * The kit consumes Back ONLY while one of its own modals is open (its text
+ * field, a picker) and declines at rest — the same consume-only-when-meaningful
+ * rule as the jog click. Without this a module's popup has no cancel path: Back
+ * would close davebox's screen out from under an open field.
+ *
+ * Returns true when the module took it. */
+function hostedBack() {
+    if (!S.hosted || S.view !== VIEW_EDIT) return false;
+    if (typeof S.hosted.handleBack !== 'function') return false;
+    try {
+        if (S.hosted.handleBack(hostedCtx()) === true) { S.dirty = true; return true; }
+    } catch (e) { /* declining is the safe default — never trap the user */ }
+    return false;
 }
 
 function renderHosted() {
     const ov = S.hosted;
     try {
+        hostedOpen(hostedCtx());
         ov.draw(hostedCtx());
         return true;
     } catch (e) {

@@ -380,6 +380,12 @@ export function blankCell() {
  * exactly as makeCell does (<=2 reads as a toggle). Sensitivity is re-derived
  * from OUR constants rather than copied, so knob feel stays uniform across
  * kit-described and derived modules. */
+/* Minimum canvaskit version davebox will HOST. v39 is the first that stamps
+ * bank_editor.kitVersion at runtime; anything older cannot be identified as
+ * kit-generated at all, so it adopts. Raise this if the ctx contract changes —
+ * refusing an old canvas beats rendering it wrong. */
+const HOST_MIN_KIT_VERSION = 39;
+
 const KIT_KIND = {
     unipolar: 'uni', fader: 'uni', bipolar: 'bip',
     octave: 'oct', count: 'count', len: 'len', dir: 'dir',
@@ -1186,9 +1192,40 @@ export function discover(slot, comp) {
          * it. Adopt REGARDLESS, and keep both: the adopted banks stay the
          * fallback if the overlay turns out unusable, and the menu/derived
          * paths downstream still want them. */
+        /* ⭑⭑ TWO conditions, and they are deliberately different things.
+         *
+         * `host_canvas_ui` is the MODULE's generic declaration — "any host may
+         * run my canvas through the standard ctx". It says nothing about
+         * davebox.
+         *
+         * `kitVersion` is DAVEBOX'S OWN POLICY on top: it hosts kit-generated
+         * canvases only, because what it is selling is one consistent UI across
+         * modules — a bespoke canvas would render fine and look like a different
+         * product. Another host is free to accept the declaration alone.
+         *
+         * ⚠ This restriction already existed, by ACCIDENT: hosting rode on the
+         * `_test.BANKS` harvest, so a non-kit canvas silently got nothing.
+         * `_test` is the kit's internal test surface — renaming it at any
+         * version would have switched hosting off with no one told. Now the
+         * signal is a stamped version (kit >= v39), which also gives us a floor
+         * if the ctx contract ever changes: refusing an old canvas beats
+         * rendering it wrong. */
         if (kit && kit.overlay && engineHostsOwnUi(comp, kitModuleId)) {
-            hostedOverlay = kit.overlay;
-            source = 'canvaskit-hosted';
+            const kv = parseInt(kit.overlay.kitVersion, 10);
+            if (kv >= HOST_MIN_KIT_VERSION) {
+                hostedOverlay = kit.overlay;
+                source = 'canvaskit-hosted';
+            } else {
+                /* Say why. A module that declares hosting and silently gets
+                 * adoption anyway is the failure this whole arc keeps paying
+                 * for. */
+                try {
+                    console.log('davebox: ' + kitModuleId + ' declares host_canvas_ui but ' +
+                        (kv > 0 ? 'canvaskit v' + kv + ' < v' + HOST_MIN_KIT_VERSION
+                                : 'is not kit-generated (no kitVersion)') +
+                        ' — adopting instead');
+                } catch (e) { /* logging is best-effort */ }
+            }
         }
     }
 
