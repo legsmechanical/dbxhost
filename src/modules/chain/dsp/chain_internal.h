@@ -46,8 +46,8 @@
 #define MAX_NAME_LEN 64
 
 /* Optional file-based debug tracing for chain parsing/preset save diagnostics. */
-#define CHAIN_DEBUG_FLAG_PATH "/data/UserData/schwung/chain_debug_on"
-#define CHAIN_DEBUG_LOG_PATH "/data/UserData/schwung/chain_debug.log"
+#define CHAIN_DEBUG_FLAG_PATH SCHWUNG_INSTALL_DIR "/chain_debug_on"
+#define CHAIN_DEBUG_LOG_PATH SCHWUNG_INSTALL_DIR "/chain_debug.log"
 #define MOVE_SETTINGS_JSON_PATH "/data/UserData/settings/Settings.json"
 #define CLOCK_SETTINGS_MAX_BYTES (256 * 1024)
 #define CLOCK_SETTINGS_REFRESH_MS 1000

@@ -492,7 +492,7 @@ static inline void shadow_apply_synth_level(int slot, int16_t *buf) {
 }
 
 /* ---- Preview player: lightweight WAV playback for file browser ---- */
-#define PREVIEW_CMD_PATH "/data/UserData/schwung/preview_cmd_path.txt"
+#define PREVIEW_CMD_PATH SCHWUNG_INSTALL_DIR "/preview_cmd_path.txt"
 #define PREVIEW_WAV_FORMAT_PCM   1
 #define PREVIEW_WAV_FORMAT_FLOAT 3
 static int preview_fd = -1;
@@ -928,7 +928,7 @@ static int shim_run_command(const char *const argv[]) {
 /* Load feature configuration from config/features.json */
 static void load_feature_config(void)
 {
-    const char *config_path = "/data/UserData/schwung/config/features.json";
+    const char *config_path = SCHWUNG_INSTALL_DIR "/config/features.json";
     FILE *f = fopen(config_path, "r");
     if (!f) {
         /* No config file - use defaults (all enabled) */
@@ -2370,9 +2370,9 @@ static void shadow_inprocess_mix_from_buffer(void) {
                         shim_debug_flag_consume(SHIM_FLAG_ALIGN_DUMP)) {
                         /* Worker already unlinked the trigger file. */
                         align_move_f = fopen(
-                            "/data/UserData/schwung/slot0_move_track.pcm", "wb");
+                            SCHWUNG_INSTALL_DIR "/slot0_move_track.pcm", "wb");
                         align_synth_f = fopen(
-                            "/data/UserData/schwung/slot0_synth_src.pcm", "wb");
+                            SCHWUNG_INSTALL_DIR "/slot0_synth_src.pcm", "wb");
                         align_dump_frames = 1000;  /* ~2.9 s */
                     }
                     if (align_dump_frames > 0) {
@@ -2440,10 +2440,10 @@ static void shadow_inprocess_mix_from_buffer(void) {
                         for (int t = 0; t < SHADOW_CHAIN_INSTANCES; t++) {
                             char p[96];
                             snprintf(p, sizeof(p),
-                                "/data/UserData/schwung/slot%d_main_pre_fx.pcm", t);
+                                SCHWUNG_INSTALL_DIR "/slot%d_main_pre_fx.pcm", t);
                             mpre_f[t] = fopen(p, "wb");
                             snprintf(p, sizeof(p),
-                                "/data/UserData/schwung/slot%d_main_post_fx.pcm", t);
+                                SCHWUNG_INSTALL_DIR "/slot%d_main_post_fx.pcm", t);
                             mpost_f[t] = fopen(p, "wb");
                         }
                         main_dump_frames = 100;
@@ -3068,7 +3068,7 @@ static void crash_signal_handler(int sig, siginfo_t *si, void *uctx_v)
     {
         void *bt[48];
         int n = backtrace(bt, 48);
-        int fd = open("/data/UserData/schwung/shim_crash_bt.txt",
+        int fd = open(SCHWUNG_INSTALL_DIR "/shim_crash_bt.txt",
                       O_WRONLY | O_CREAT | O_APPEND, 0644);
         if (fd >= 0) {
             write(fd, msg, (size_t)pos);
@@ -3089,7 +3089,7 @@ static void crash_signal_handler(int sig, siginfo_t *si, void *uctx_v)
 static void migrate_from_old_layout(void)
 {
     struct stat st;
-    const char *new_dir = "/data/UserData/schwung";
+    const char *new_dir = SCHWUNG_INSTALL_DIR;
     const char *old_dir = "/data/UserData/move-anything";
 
     /* Already migrated or fresh install — nothing to do */
@@ -3126,7 +3126,7 @@ static void migrate_from_old_layout(void)
 
     /* Update /usr/lib/ shim symlink to new path */
     unlink("/usr/lib/schwung-shim.so");
-    symlink("/data/UserData/schwung/schwung-shim.so", "/usr/lib/schwung-shim.so");
+    symlink(SCHWUNG_INSTALL_DIR "/schwung-shim.so", "/usr/lib/schwung-shim.so");
     unlink("/usr/lib/move-anything-shim.so");
 
     /* Update /opt/move/Move entrypoint if it still references the old name */
@@ -3141,7 +3141,7 @@ static void migrate_from_old_layout(void)
 
         if (found_old) {
             /* Copy the new entrypoint over */
-            FILE *src = fopen("/data/UserData/schwung/shim-entrypoint.sh", "r");
+            FILE *src = fopen(SCHWUNG_INSTALL_DIR "/shim-entrypoint.sh", "r");
             if (src) {
                 FILE *dst = fopen("/opt/move/Move", "w");
                 if (dst) {
@@ -4962,7 +4962,7 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
             static int snap_seq = 0;
             char path[128];
             snprintf(path, sizeof(path),
-                     "/data/UserData/schwung/spi_snap_%04d.bin", snap_seq++);
+                     SCHWUNG_INSTALL_DIR "/spi_snap_%04d.bin", snap_seq++);
             int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if (fd >= 0) {
                 write(fd, shadow, 4096);
@@ -4970,7 +4970,7 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
             }
             /* Also dump hardware buffer */
             snprintf(path, sizeof(path),
-                     "/data/UserData/schwung/spi_snap_%04d_hw.bin", snap_seq - 1);
+                     SCHWUNG_INSTALL_DIR "/spi_snap_%04d_hw.bin", snap_seq - 1);
             unsigned char *hw_buf = schwung_spi_get_hw(g_spi_handle);
             if (hw_buf) {
                 fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -5029,7 +5029,7 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
         if (xmos_log_checked++ % 44 == 0) {  /* check every ~1s */
             int want = (shim_debug_flags & SHIM_FLAG_XMOS_LOG) != 0;
             if (want && xmos_log_fd < 0) {
-                xmos_log_fd = open("/data/UserData/schwung/xmos_sysex.txt",
+                xmos_log_fd = open(SCHWUNG_INSTALL_DIR "/xmos_sysex.txt",
                                    O_WRONLY | O_CREAT | O_APPEND, 0644);
                 xmos_log_bytes = 0;
             } else if (!want && xmos_log_fd >= 0) {
@@ -5111,7 +5111,7 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
         if (midi_log_checked++ % 4400 == 0) {  /* check every ~10s */
             int want = (shim_debug_flags & SHIM_FLAG_SPI_MIDI_LOG) != 0;
             if (want && midi_log_fd < 0) {
-                midi_log_fd = open("/data/UserData/schwung/spi_midi_log.txt",
+                midi_log_fd = open(SCHWUNG_INSTALL_DIR "/spi_midi_log.txt",
                                    O_WRONLY | O_CREAT | O_APPEND, 0644);
             } else if (!want && midi_log_fd >= 0) {
                 close(midi_log_fd);
@@ -5163,7 +5163,7 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
         spi_baseline_mode = (env && env[0] == '1') ? 1 : 0;
 #if SHADOW_TIMING_LOG
         if (spi_baseline_mode) {
-            FILE *f = fopen("/data/UserData/schwung/ioctl_timing.log", "a");
+            FILE *f = fopen(SCHWUNG_INSTALL_DIR "/ioctl_timing.log", "a");
             if (f) { fprintf(f, "=== BASELINE MODE: All processing disabled ===\n"); fclose(f); }
         }
 #endif
@@ -5211,7 +5211,7 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
 #if SHADOW_TIMING_LOG
             static int skip_log_count = 0;
             if (skip_log_count++ < 10 || skip_log_count % 100 == 0) {
-                FILE *f = fopen("/data/UserData/schwung/ioctl_timing.log", "a");
+                FILE *f = fopen(SCHWUNG_INSTALL_DIR "/ioctl_timing.log", "a");
                 if (f) {
                     fprintf(f, "SKIP_DSP: spi_consecutive_overruns=%d, last_frame=%llu us\n",
                             spi_consecutive_overruns, (unsigned long long)spi_last_frame_total_us);
@@ -5452,7 +5452,7 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
     if (mix_time_count >= 1000) {
 #if SHADOW_TIMING_LOG
         uint64_t avg = mix_time_sum / mix_time_count;
-        FILE *f = fopen("/data/UserData/schwung/dsp_timing.log", "a");
+        FILE *f = fopen(SCHWUNG_INSTALL_DIR "/dsp_timing.log", "a");
         if (f) {
             fprintf(f, "Pre-ioctl mix (from buffer): avg=%llu us, max=%llu us\n",
                     (unsigned long long)avg, (unsigned long long)mix_time_max);
@@ -7895,10 +7895,10 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                 for (int s = 0; s < SHADOW_CHAIN_INSTANCES; s++) {
                     char p[96];
                     snprintf(p, sizeof(p),
-                             "/data/UserData/schwung/slot%d_pre_fx.pcm", s);
+                             SCHWUNG_INSTALL_DIR "/slot%d_pre_fx.pcm", s);
                     slot_pre_f[s] = fopen(p, "wb");
                     snprintf(p, sizeof(p),
-                             "/data/UserData/schwung/slot%d_post_fx.pcm", s);
+                             SCHWUNG_INSTALL_DIR "/slot%d_post_fx.pcm", s);
                     slot_post_f[s] = fopen(p, "wb");
                 }
                 slot_dump_frames = 100;  /* ~290ms */
@@ -7916,7 +7916,7 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
         if (render_time_count >= 1000) {
 #if SHADOW_TIMING_LOG
             uint64_t avg = render_time_sum / render_time_count;
-            FILE *f = fopen("/data/UserData/schwung/dsp_timing.log", "a");
+            FILE *f = fopen(SCHWUNG_INSTALL_DIR "/dsp_timing.log", "a");
             if (f) {
                 fprintf(f, "Post-ioctl DSP render: avg=%llu us, max=%llu us\n",
                         (unsigned long long)avg, (unsigned long long)render_time_max);
@@ -8129,8 +8129,8 @@ static void *link_in_attach_retry_thread(void *arg)
  * Drains the spi_snap structure and writes to unified_log every ~5 seconds.
  * All file I/O happens here, never in the SPI callback path.
  * ============================================================================ */
-#define LED_CAPTURE_FLAG_PATH "/data/UserData/schwung/led_capture_on"
-#define LED_CAPTURE_LOG_PATH  "/data/UserData/schwung/led_capture.log"
+#define LED_CAPTURE_FLAG_PATH SCHWUNG_INSTALL_DIR "/led_capture_on"
+#define LED_CAPTURE_LOG_PATH  SCHWUNG_INSTALL_DIR "/led_capture.log"
 
 static void *led_capture_logger_thread(void *arg)
 {
@@ -8349,7 +8349,7 @@ static void *spi_timing_logger_thread(void *arg)
          * latency. Use to characterize variance before committing to a
          * static vs dynamic Schwung-side compensation delay. */
         if (shadow_in_audio_shm &&
-            access("/data/UserData/schwung/link_audio_avail_log_on",
+            access(SCHWUNG_INSTALL_DIR "/link_audio_avail_log_on",
                    F_OK) == 0) {
             for (int s = 0; s < LINK_AUDIO_IN_SLOT_COUNT; s++) {
                 if (!shadow_in_audio_shm->slots[s].active) continue;

@@ -1,6 +1,8 @@
 #ifndef LINK_AUDIO_H
 #define LINK_AUDIO_H
 
+
+#include "schwung_paths.h"
 #include <stdint.h>
 #include <pthread.h>
 #include <netinet/in.h>
@@ -45,7 +47,7 @@
 #define LINK_AUDIO_PUB_RING_MASK    (LINK_AUDIO_PUB_RING_SAMPLES - 1)
 
 /* Shared memory for publisher (shim → link_subscriber) */
-#define SHM_LINK_AUDIO_PUB  "/schwung-pub-audio"
+#define SHM_LINK_AUDIO_PUB SCHWUNG_SHM_PREFIX "pub-audio"
 #define LINK_AUDIO_PUB_BLOCK_FRAMES  128   /* matches FRAMES_PER_BLOCK */
 #define LINK_AUDIO_PUB_BLOCK_SAMPLES (LINK_AUDIO_PUB_BLOCK_FRAMES * 2) /* stereo */
 
@@ -150,7 +152,7 @@ typedef struct {
  * read by shim). Replaces the sendto()-hook + in-process channel rings.
  * ============================================================================ */
 
-#define SHM_LINK_AUDIO_IN  "/schwung-link-in"
+#define SHM_LINK_AUDIO_IN SCHWUNG_SHM_PREFIX "link-in"
 
 /* Use the same block size as the pub side for symmetry. */
 #define LINK_AUDIO_IN_BLOCK_FRAMES   LINK_AUDIO_PUB_BLOCK_FRAMES

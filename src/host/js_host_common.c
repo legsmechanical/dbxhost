@@ -25,9 +25,10 @@
 #include "js_host_common.h"
 #include "unified_log.h"
 
+#include "host/schwung_paths.h"
 #define BASE_DIR "/data/UserData"
-#define MODULES_DIR "/data/UserData/schwung/modules"
-#define CURL_PATH "/data/UserData/schwung/bin/curl"
+#define MODULES_DIR SCHWUNG_INSTALL_DIR "/modules"
+#define CURL_PATH SCHWUNG_INSTALL_DIR "/bin/curl"
 
 /* ============================================================================
  * QuickJS scaffolding

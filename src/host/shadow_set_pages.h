@@ -12,17 +12,17 @@
  * Constants
  * ============================================================================ */
 
-#define SET_PAGES_DIR "/data/UserData/schwung/set_pages"
+#define SET_PAGES_DIR SCHWUNG_INSTALL_DIR "/set_pages"
 #define SET_PAGES_CURRENT_PATH SET_PAGES_DIR "/current_page.txt"
 #define SET_PAGES_TOTAL 8
 #define SET_PAGE_OVERLAY_FRAMES 120  /* ~2 seconds at 60fps */
 
 /* Path constants used by set/config management */
 #define SHADOW_CHAIN_CONFIG_FILENAME "shadow_chain_config.json"
-#define SHADOW_CHAIN_CONFIG_PATH "/data/UserData/schwung/" SHADOW_CHAIN_CONFIG_FILENAME
-#define SET_STATE_DIR  "/data/UserData/schwung/set_state"
-#define SLOT_STATE_DIR "/data/UserData/schwung/slot_state"
-#define ACTIVE_SET_PATH "/data/UserData/schwung/active_set.txt"
+#define SHADOW_CHAIN_CONFIG_PATH SCHWUNG_INSTALL_DIR "/" SHADOW_CHAIN_CONFIG_FILENAME
+#define SET_STATE_DIR  SCHWUNG_INSTALL_DIR "/set_state"
+#define SLOT_STATE_DIR SCHWUNG_INSTALL_DIR "/slot_state"
+#define ACTIVE_SET_PATH SCHWUNG_INSTALL_DIR "/active_set.txt"
 
 /* ============================================================================
  * Callback struct - shim functions set pages needs

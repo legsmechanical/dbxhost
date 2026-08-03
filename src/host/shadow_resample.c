@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <math.h>
 #include "shadow_resample.h"
+#include "host/schwung_paths.h"
 #include "shadow_chain_mgmt.h"  /* for shadow_master_fx_chain_active() */
 
 /* ============================================================================
@@ -133,7 +134,7 @@ native_resample_bridge_mode_t native_resample_bridge_mode_from_text(const char *
 
 void native_resample_bridge_load_mode_from_shadow_config(void)
 {
-    const char *config_path = "/data/UserData/schwung/shadow_config.json";
+    const char *config_path = SCHWUNG_INSTALL_DIR "/shadow_config.json";
     FILE *f = fopen(config_path, "r");
     if (!f) return;
 
@@ -292,7 +293,7 @@ static int native_resample_diag_is_enabled(void)
     static int last_logged = -1;
 
     if (check_counter++ % 200 == 0) {
-        cached = (access("/data/UserData/schwung/native_resample_diag_on", F_OK) == 0);
+        cached = (access(SCHWUNG_INSTALL_DIR "/native_resample_diag_on", F_OK) == 0);
         if (cached != last_logged) {
             if (host.log) {
                 char msg[128];

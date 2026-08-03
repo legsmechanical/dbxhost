@@ -65,7 +65,7 @@ char g_menu_script_path[256] = "";
 int g_silence_blocks = 0;
 
 /* Default modules directory */
-#define DEFAULT_MODULES_DIR "/data/UserData/schwung/modules"
+#define DEFAULT_MODULES_DIR SCHWUNG_INSTALL_DIR "/modules"
 
 /* Path validation (validate_path) and the bundled-curl bindings live in
  * host/js_host_common.c. */
@@ -1557,7 +1557,7 @@ static JSValue js_host_launch_standalone(JSContext *ctx, JSValueConst this_val,
     if (!path) return JS_FALSE;
 
     /* Safety: only allow paths under schwung modules dir */
-    if (strncmp(path, "/data/UserData/schwung/modules/", 30) != 0) {
+    if (strncmp(path, SCHWUNG_INSTALL_DIR "/modules/", 30) != 0) {
         fprintf(stderr, "host_launch_standalone: path not allowed: %s\n", path);
         JS_FreeCString(ctx, path);
         return JS_FALSE;
@@ -1571,7 +1571,7 @@ static JSValue js_host_launch_standalone(JSContext *ctx, JSValueConst this_val,
         /* Child: drop RT scheduling before exec */
         struct sched_param sp = { .sched_priority = 0 };
         sched_setscheduler(0, SCHED_OTHER, &sp);
-        execl("/bin/sh", "sh", "/data/UserData/schwung/launch-standalone.sh", path, (char *)NULL);
+        execl("/bin/sh", "sh", SCHWUNG_INSTALL_DIR "/launch-standalone.sh", path, (char *)NULL);
         _exit(127);
     }
 
@@ -2173,7 +2173,7 @@ int main(int argc, char *argv[])
     /* Initialize analytics */
     {
         char version[32] = "unknown";
-        FILE *vf = fopen("/data/UserData/schwung/host/version.txt", "r");
+        FILE *vf = fopen(SCHWUNG_INSTALL_DIR "/host/version.txt", "r");
         if (vf) {
             if (fgets(version, sizeof(version), vf)) {
                 char *nl = strchr(version, '\n');

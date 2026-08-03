@@ -24,6 +24,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "../schwung_paths.h"
 #define TESTD_VERSION  "0.1.0"
 
 /* WAIT_FRAME guards: hard cap on N (avoid runaway tests) and on wall
@@ -331,7 +332,7 @@ static int cmd_restart_move(int fd, const char *args) {
  *
  * Caller should poll state() until overtake_mode reaches 2 (or
  * timeout) — load can take ~500 ms-2 s depending on module size. */
-#define OPEN_TOOL_CMD_PATH "/data/UserData/schwung/open_tool_cmd.json"
+#define OPEN_TOOL_CMD_PATH SCHWUNG_INSTALL_DIR "/open_tool_cmd.json"
 #define MAX_MODULE_ID_LEN 64
 
 static int cmd_set_open_tool(int fd, const char *args) {

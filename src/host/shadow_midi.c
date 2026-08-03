@@ -8,6 +8,7 @@
 #include "shadow_midi_inject_writer.h"
 #include "shadow_chain_mgmt.h"
 #include "shadow_led_queue.h"
+#include "host/schwung_paths.h"
 #include "shadow_overlay.h"  /* MIDI channel indicator globals */
 
 static void shadow_chain_transpose_reset(void);
@@ -998,14 +999,14 @@ void shadow_forward_midi(void)
     /* Only check on first call and then every 200 calls */
     if (!cache_initialized || (cache_counter++ % 200 == 0)) {
         cache_initialized = 1;
-        cached_ch3_only = (access("/data/UserData/schwung/shadow_midi_ch3_only", F_OK) == 0);
-        cached_block_ch1 = (access("/data/UserData/schwung/shadow_midi_block_ch1", F_OK) == 0);
-        cached_allow_ch5_8 = (access("/data/UserData/schwung/shadow_midi_allow_ch5_8", F_OK) == 0);
-        cached_notes_only = (access("/data/UserData/schwung/shadow_midi_notes_only", F_OK) == 0);
-        cached_allow_cable0 = (access("/data/UserData/schwung/shadow_midi_allow_cable0", F_OK) == 0);
-        cached_drop_cable_f = (access("/data/UserData/schwung/shadow_midi_drop_cable_f", F_OK) == 0);
-        cached_log_on = (access("/data/UserData/schwung/shadow_midi_log_on", F_OK) == 0);
-        cached_drop_ui = (access("/data/UserData/schwung/shadow_midi_drop_ui", F_OK) == 0);
+        cached_ch3_only = (access(SCHWUNG_INSTALL_DIR "/shadow_midi_ch3_only", F_OK) == 0);
+        cached_block_ch1 = (access(SCHWUNG_INSTALL_DIR "/shadow_midi_block_ch1", F_OK) == 0);
+        cached_allow_ch5_8 = (access(SCHWUNG_INSTALL_DIR "/shadow_midi_allow_ch5_8", F_OK) == 0);
+        cached_notes_only = (access(SCHWUNG_INSTALL_DIR "/shadow_midi_notes_only", F_OK) == 0);
+        cached_allow_cable0 = (access(SCHWUNG_INSTALL_DIR "/shadow_midi_allow_cable0", F_OK) == 0);
+        cached_drop_cable_f = (access(SCHWUNG_INSTALL_DIR "/shadow_midi_drop_cable_f", F_OK) == 0);
+        cached_log_on = (access(SCHWUNG_INSTALL_DIR "/shadow_midi_log_on", F_OK) == 0);
+        cached_drop_ui = (access(SCHWUNG_INSTALL_DIR "/shadow_midi_drop_ui", F_OK) == 0);
     }
 
     uint8_t *src = global_mmap_addr + MIDI_IN_OFFSET;
@@ -1094,7 +1095,7 @@ void shadow_forward_midi(void)
         filtered[i + 3] = src[i + 3];
         if (log_on) {
             if (!log) {
-                log = fopen("/data/UserData/schwung/shadow_midi_forward.log", "a");
+                log = fopen(SCHWUNG_INSTALL_DIR "/shadow_midi_forward.log", "a");
             }
             if (log) {
                 fprintf(log, "fwd: idx=%d cable=%u cin=%u status=%02x d1=%02x d2=%02x\n",

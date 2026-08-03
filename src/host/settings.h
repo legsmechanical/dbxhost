@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include "host/schwung_paths.h"
 /* Velocity curve options */
 typedef enum {
     VELOCITY_CURVE_LINEAR = 0,
@@ -42,7 +43,7 @@ typedef struct {
 } host_settings_t;
 
 /* Default settings path */
-#define SETTINGS_PATH "/data/UserData/schwung/settings.txt"
+#define SETTINGS_PATH SCHWUNG_INSTALL_DIR "/settings.txt"
 
 /* Initialize settings to defaults */
 void settings_init(host_settings_t *s);

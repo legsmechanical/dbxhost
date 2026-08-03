@@ -34,7 +34,7 @@
 #include "../host/analytics.h"
 #include "host/schwung_trace.h"   /* Phase 2: JS-side OTLP spans (js.tick, param.get) */
 
-#define SAMPLER_CMD_PATH "/data/UserData/schwung/sampler_cmd_path.txt"
+#define SAMPLER_CMD_PATH SCHWUNG_INSTALL_DIR "/sampler_cmd_path.txt"
 
 static uint8_t *shadow_ui_midi_shm = NULL;
 static uint8_t *shadow_display_shm = NULL;
@@ -50,7 +50,7 @@ static shadow_overlay_state_t *shadow_overlay = NULL;
 
 static int global_exit_flag = 0;
 static uint8_t last_midi_ready = 0;
-static const char *shadow_ui_pid_path = "/data/UserData/schwung/shadow_ui.pid";
+static const char *shadow_ui_pid_path = SCHWUNG_INSTALL_DIR "/shadow_ui.pid";
 
 /* Checksum helper for debug logging - unused in production */
 static uint32_t shadow_ui_checksum(const unsigned char *buf, size_t len) {
@@ -1191,7 +1191,7 @@ static JSValue js_unified_log_enabled(JSContext *ctx, JSValueConst this_val,
 
 /* === Host functions for store operations === */
 
-#define MODULES_DIR "/data/UserData/schwung/modules"
+#define MODULES_DIR SCHWUNG_INSTALL_DIR "/modules"
 
 /* run_command / validate_path and the shared file/store/http bindings
  * (host_file_exists, host_read_file(_base64), host_write_file,
@@ -1536,7 +1536,7 @@ static JSValue js_tts_get_enabled(JSContext *ctx, JSValueConst this_val,
  * is raw JSON ("true", "30", "\"both\""). Creates a minimal config if the
  * file is missing or empty. */
 static void features_json_set(const char *key, const char *value_json) {
-    const char *config_path = "/data/UserData/schwung/config/features.json";
+    const char *config_path = SCHWUNG_INSTALL_DIR "/config/features.json";
     char *buf = NULL;
     size_t len = 0;
     FILE *f = fopen(config_path, "r");
@@ -2040,7 +2040,7 @@ static JSValue js_shadow_set_display_overlay(JSContext *ctx, JSValueConst this_v
     return JS_UNDEFINED;
 }
 
-#define PREVIEW_CMD_PATH "/data/UserData/schwung/preview_cmd_path.txt"
+#define PREVIEW_CMD_PATH SCHWUNG_INSTALL_DIR "/preview_cmd_path.txt"
 
 /* host_edit_cc_block(enable) - claim Undo (CC 56), Copy (CC 60) and Delete
  * (CC 119) at runtime. Suppresses them from Move firmware and forwards them to
@@ -2242,11 +2242,11 @@ static JSValue js_host_get_module_metadata(JSContext *ctx, JSValueConst this_val
      * for JS-side inspection, so the read path is duplicated here. */
     /* Try each category dir until module.json found. */
     static const char *bases[] = {
-        "/data/UserData/schwung/modules",
-        "/data/UserData/schwung/modules/sound_generators",
-        "/data/UserData/schwung/modules/audio_fx",
-        "/data/UserData/schwung/modules/midi_fx",
-        "/data/UserData/schwung/modules/tools",
+        SCHWUNG_INSTALL_DIR "/modules",
+        SCHWUNG_INSTALL_DIR "/modules/sound_generators",
+        SCHWUNG_INSTALL_DIR "/modules/audio_fx",
+        SCHWUNG_INSTALL_DIR "/modules/midi_fx",
+        SCHWUNG_INSTALL_DIR "/modules/tools",
     };
     char path[512];
     FILE *f = NULL;
@@ -2393,19 +2393,20 @@ static JSValue js_host_trace_end(JSContext *ctx, JSValueConst this_val, int argc
     return JS_UNDEFINED;
 }
 
-/* Where THIS build keeps its own copy of shared/. Overridable at compile time
- * (-DSCHWUNG_INSTALL_DIR=...) so a second install can live beside the stock one
- * and still serve its own library code. Defaults to the stock location, which
- * makes the rewrite below a no-op for every ordinary build. */
-#ifndef SCHWUNG_INSTALL_DIR
-#define SCHWUNG_INSTALL_DIR "/data/UserData/schwung"
-#endif
-
-/* The import prefix every shipped module hardcodes, e.g.
+/* SCHWUNG_INSTALL_DIR — where THIS build keeps its own copy of shared/ — comes
+ * from host/schwung_paths.h (via shadow_constants.h). Defaults to the stock
+ * location, which makes the rewrite below a no-op for every ordinary build.
+ *
+ * The import prefix every shipped module hardcodes, e.g.
  *   import { PADS } from '/data/UserData/schwung/shared/constants.mjs';
  * It is part of the module contract: the same string in every module,
  * regardless of which install is running. Deliberately a literal and NOT
  * derived from SCHWUNG_INSTALL_DIR — it names the contract, not this build. */
+/* ⚠ MUST stay a literal — do NOT rewrite it to SCHWUNG_INSTALL_DIR, however
+ * much it looks like every other path in this file. It names the MODULE
+ * CONTRACT (the string modules actually hardcode), not where this build is
+ * installed. Derive it and the two become equal under an override build, the
+ * rewrite below never fires, and shared modules break silently. */
 #define SHARED_IMPORT_CANONICAL "/data/UserData/schwung/shared/"
 #define SHARED_IMPORT_LOCAL     SCHWUNG_INSTALL_DIR "/shared/"
 
@@ -2695,7 +2696,7 @@ static int process_shadow_midi(JSContext *ctx, JSValue *onInternal, JSValue *onE
 }
 
 int main(int argc, char *argv[]) {
-    const char *script = "/data/UserData/schwung/shadow/shadow_ui.js";
+    const char *script = SCHWUNG_INSTALL_DIR "/shadow/shadow_ui.js";
     if (argc > 1) {
         script = argv[1];
     }
@@ -2717,7 +2718,7 @@ int main(int argc, char *argv[]) {
     /* Initialize analytics */
     {
         char version[32] = "unknown";
-        FILE *vf = fopen("/data/UserData/schwung/host/version.txt", "r");
+        FILE *vf = fopen(SCHWUNG_INSTALL_DIR "/host/version.txt", "r");
         if (vf) {
             if (fgets(version, sizeof(version), vf)) {
                 char *nl = strchr(version, '\n');

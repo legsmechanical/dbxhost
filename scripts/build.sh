@@ -13,6 +13,19 @@ REBUILD_DOCKER_IMAGE="${REBUILD_DOCKER_IMAGE:-0}"
 REQUIRE_SCREEN_READER="${REQUIRE_SCREEN_READER:-0}"
 BOOTSTRAP_SCRIPT="./scripts/bootstrap-build-deps.sh"
 
+# Extra compile flags applied to every C/C++ target. Used to build a SECOND
+# install that can sit beside the stock one on the same device — it needs its
+# own directory AND its own shared-memory namespace, or the two will collide
+# (stale rings from an abandoned host hang the next one that reattaches):
+#
+#   SCHWUNG_CFLAGS='-DSCHWUNG_INSTALL_DIR=\"/data/UserData/dbx-host\" -DSCHWUNG_SHM_PREFIX=\"/dbxhost-\"' \
+#     ./scripts/build.sh
+#
+# Empty by default, so an ordinary build is byte-identical to one that never
+# heard of this. Deliberately unquoted at each use site so it word-splits into
+# separate flags. See src/host/schwung_paths.h.
+SCHWUNG_CFLAGS="${SCHWUNG_CFLAGS:-}"
+
 # Check if we need Docker
 if [ -z "$CROSS_PREFIX" ] && [ ! -f "/.dockerenv" ]; then
     echo "=== Schwung Build (via Docker) ==="
@@ -82,6 +95,7 @@ if [ -z "$CROSS_PREFIX" ] && [ ! -f "/.dockerenv" ]; then
         -u "$(id -u):$(id -g)" \
         -e DISABLE_SCREEN_READER="$DISABLE_SCREEN_READER" \
         -e REQUIRE_SCREEN_READER="$REQUIRE_SCREEN_READER" \
+        -e SCHWUNG_CFLAGS="$SCHWUNG_CFLAGS" \
         "$IMAGE_NAME"
 
     echo ""
@@ -149,7 +163,7 @@ fi
 if [ ! -f "./libs/quickjs/quickjs-2025-04-26/libquickjs.a" ]; then
     echo "QuickJS static library not found, building it..."
     make -C ./libs/quickjs/quickjs-2025-04-26 clean >/dev/null 2>&1 || true
-    CC="${CROSS_PREFIX}gcc" AR="${CROSS_PREFIX}ar" make -C ./libs/quickjs/quickjs-2025-04-26 libquickjs.a
+    CC="${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} AR="${CROSS_PREFIX}ar" make -C ./libs/quickjs/quickjs-2025-04-26 libquickjs.a
 fi
 
 # Prepare build directories (incremental: no clean unless explicitly requested)
@@ -214,7 +228,7 @@ if needs_rebuild build/schwung \
     src/host/analytics.c src/host/js_host_common.c \
     src/host/*.h; then
     echo "Building host..."
-    "${CROSS_PREFIX}gcc" -g -O3 \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 \
         src/schwung_host.c \
         src/host/module_manager.c \
         src/host/settings.c \
@@ -252,7 +266,7 @@ if needs_rebuild build/schwung-shim.so \
     src/host/schwung_trace.h \
     src/host/link_audio.h src/host/shadow_shm_util.h; then
     echo "Building shim..."
-    "${CROSS_PREFIX}gcc" -g3 -shared -fPIC \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g3 -shared -fPIC \
         -o build/schwung-shim.so \
         src/schwung_shim.c \
         src/lib/schwung_spi_lib.c \
@@ -288,7 +302,7 @@ fi
 if needs_rebuild build/unified-log \
     src/host/unified_log_cli.c src/host/unified_log.c src/host/unified_log.h; then
     echo "Building unified log CLI..."
-    "${CROSS_PREFIX}gcc" -g -O3 \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 \
         src/host/unified_log_cli.c \
         src/host/unified_log.c \
         -o build/unified-log \
@@ -302,7 +316,7 @@ fi
 if needs_rebuild build/shadow/shadow_poc \
     examples/shadow_poc.c src/host/shadow_constants.h; then
     echo "Building Shadow POC..."
-    "${CROSS_PREFIX}gcc" -g -O3 \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 \
         examples/shadow_poc.c \
         -o build/shadow/shadow_poc \
         -Isrc -Isrc/host \
@@ -319,7 +333,7 @@ if needs_rebuild build/shadow/shadow_ui \
     src/host/js_display.h src/host/shadow_constants.h src/host/unified_log.h \
     src/host/js_host_common.h src/host/shadow_shm_util.h src/host/schwung_trace.h; then
     echo "Building Shadow UI..."
-    "${CROSS_PREFIX}gcc" -g -O3 \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 \
         src/shadow/shadow_ui.c \
         src/host/js_display.c \
         src/host/unified_log.c \
@@ -343,14 +357,14 @@ if [ -d "./libs/link/include/ableton" ]; then
         src/host/link_audio.h src/host/unified_log.h src/host/shadow_constants.h; then
         echo "Building Link Audio subscriber..."
         # Build arc4random compat shim (Move's glibc 2.34 lacks arc4random from 2.36)
-        "${CROSS_PREFIX}gcc" -c -g -O0 \
+        "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -c -g -O0 \
             src/host/arc4random_compat.c \
             -o build/arc4random_compat.o
-        "${CROSS_PREFIX}gcc" -c -g -O3 \
+        "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -c -g -O3 \
             src/host/unified_log.c \
             -o build/unified_log.o \
             -Isrc -Isrc/host
-        "${CROSS_PREFIX}g++" -std=c++17 -O3 -DNDEBUG \
+        "${CROSS_PREFIX}g++" ${SCHWUNG_CFLAGS} -std=c++17 -O3 -DNDEBUG \
             -DLINK_PLATFORM_UNIX=1 \
             -DLINK_PLATFORM_LINUX=1 \
             -Wno-multichar \
@@ -376,7 +390,7 @@ fi
 if needs_rebuild build/bin/midi_inject_test \
     tests/shadow/midi_inject_test.c src/host/shadow_constants.h; then
     echo "Building MIDI inject test tool..."
-    "${CROSS_PREFIX}gcc" -g -O3 \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 \
         tests/shadow/midi_inject_test.c \
         -o build/bin/midi_inject_test \
         -Isrc \
@@ -397,7 +411,7 @@ if needs_rebuild build/bin/schwung-testd \
     src/host/shadow_constants.h \
     src/host/shadow_midi_inject_writer.h; then
     echo "Building schwung-testd..."
-    "${CROSS_PREFIX}gcc" -g -O2 \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O2 \
         src/host/test_daemon/schwung_testd.c \
         src/host/test_daemon/commands.c \
         src/host/test_daemon/protocol.c \
@@ -466,7 +480,7 @@ fi
 # the full libpcaudio->libpulse->libX11 dependency chain)
 if needs_rebuild build/lib/libpcaudio.so.0 src/host/pcaudio_stub.c; then
     echo "Building pcaudio stub library..."
-    "${CROSS_PREFIX}gcc" -shared -fPIC -o ./build/lib/libpcaudio.so.0 src/host/pcaudio_stub.c
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -shared -fPIC -o ./build/lib/libpcaudio.so.0 src/host/pcaudio_stub.c
 else
     echo "Skipping pcaudio stub (up to date)"
 fi
@@ -482,7 +496,7 @@ if needs_rebuild build/modules/chain/dsp.so \
     src/host/unified_log.h src/host/plugin_api_v1.h src/host/audio_fx_api_v1.h \
     src/host/audio_fx_api_v2.h src/host/midi_fx_api_v1.h src/host/lfo_common.h; then
     echo "Building chain DSP..."
-    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
         src/modules/chain/dsp/chain_host.c \
         src/modules/chain/dsp/chain_json.c \
         src/modules/chain/dsp/chain_params.c \
@@ -505,7 +519,7 @@ echo "Building Audio FX plugins..."
 if needs_rebuild build/modules/audio_fx/freeverb/freeverb.so \
     src/modules/audio_fx/freeverb/freeverb.c src/host/audio_fx_api_v1.h; then
     echo "Building freeverb..."
-    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
         src/modules/audio_fx/freeverb/freeverb.c \
         -o build/modules/audio_fx/freeverb/freeverb.so \
         -Isrc \
@@ -520,7 +534,7 @@ echo "Building MIDI FX plugins..."
 if needs_rebuild build/modules/midi_fx/chord/dsp.so \
     src/modules/midi_fx/chord/dsp/chord.c src/host/midi_fx_api_v1.h; then
     echo "Building chord MIDI FX..."
-    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
         src/modules/midi_fx/chord/dsp/chord.c \
         -o build/modules/midi_fx/chord/dsp.so \
         -Isrc
@@ -532,7 +546,7 @@ fi
 if needs_rebuild build/modules/midi_fx/arp/dsp.so \
     src/modules/midi_fx/arp/dsp/arp.c src/host/midi_fx_api_v1.h; then
     echo "Building arp MIDI FX..."
-    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
         src/modules/midi_fx/arp/dsp/arp.c \
         -o build/modules/midi_fx/arp/dsp.so \
         -Isrc
@@ -544,7 +558,7 @@ fi
 if needs_rebuild build/modules/midi_fx/velocity_scale/dsp.so \
     src/modules/midi_fx/velocity_scale/dsp/velocity_scale.c src/host/midi_fx_api_v1.h; then
     echo "Building velocity scale MIDI FX..."
-    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
         src/modules/midi_fx/velocity_scale/dsp/velocity_scale.c \
         -o build/modules/midi_fx/velocity_scale/dsp.so \
         -Isrc -lm
@@ -558,7 +572,7 @@ echo "Building Sound Generator plugins..."
 if needs_rebuild build/modules/sound_generators/linein/dsp.so \
     src/modules/sound_generators/linein/linein.c src/host/plugin_api_v1.h; then
     echo "Building line-in generator..."
-    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
         src/modules/sound_generators/linein/linein.c \
         -o build/modules/sound_generators/linein/dsp.so \
         -Isrc \
@@ -571,7 +585,7 @@ fi
 if needs_rebuild build/modules/tools/wav-player/dsp.so \
     src/modules/tools/wav-player/wav_player.c src/host/plugin_api_v1.h; then
     echo "Building WAV Player tool DSP..."
-    "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
         src/modules/tools/wav-player/wav_player.c \
         -o build/modules/tools/wav-player/dsp.so \
         -Isrc
@@ -621,7 +635,7 @@ fi
 if needs_rebuild build/display-server \
     src/host/display_server.c src/host/unified_log.c src/host/unified_log.h; then
     echo "Building display server..."
-    "${CROSS_PREFIX}gcc" -g -O3 \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 \
         src/host/display_server.c \
         src/host/unified_log.c \
         -o build/display-server \
@@ -637,14 +651,14 @@ if needs_rebuild build/lib/jack/jack_shadow.so \
     src/lib/jack2/shadow/JackShadowDriver.h \
     src/lib/schwung_jack_shm.h; then
     echo "Building JACK shadow driver..."
-    "${CROSS_PREFIX}g++" -g -O2 -fPIC -std=c++17 \
+    "${CROSS_PREFIX}g++" ${SCHWUNG_CFLAGS} -g -O2 -fPIC -std=c++17 \
         -DSERVER_SIDE \
         -Isrc/lib/jack2 -Isrc/lib/jack2/common -Isrc/lib/jack2/common/jack \
         -Isrc/lib/jack2/linux -Isrc/lib/jack2/shadow -Isrc/lib/jack2/posix \
         -Isrc/lib \
         -c src/lib/jack2/shadow/JackShadowDriver.cpp \
         -o build/jack_shadow_driver.o
-    "${CROSS_PREFIX}g++" -shared \
+    "${CROSS_PREFIX}g++" ${SCHWUNG_CFLAGS} -shared \
         build/jack_shadow_driver.o \
         -o build/lib/jack/jack_shadow.so \
         -lrt -lpthread
@@ -657,7 +671,7 @@ fi
 if needs_rebuild build/bin/display_ctl \
     src/tools/display_ctl.c src/lib/schwung_jack_shm.h; then
     echo "Building display_ctl..."
-    "${CROSS_PREFIX}gcc" -g -O2 \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O2 \
         src/tools/display_ctl.c \
         -o build/bin/display_ctl \
         -Isrc \
@@ -670,7 +684,7 @@ fi
 if needs_rebuild build/bin/jack_midi_connect \
     src/tools/jack_midi_connect.c; then
     echo "Building jack_midi_connect..."
-    "${CROSS_PREFIX}gcc" -g -O2 \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O2 \
         src/tools/jack_midi_connect.c \
         -o build/bin/jack_midi_connect \
         -ldl
@@ -684,7 +698,7 @@ fi
 # code (entrypoint, schwung-manager) can refresh the live shim.
 if needs_rebuild build/bin/schwung-heal src/schwung-heal.c; then
     echo "Building schwung-heal..."
-    "${CROSS_PREFIX}gcc" -g -O2 -static \
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O2 -static \
         src/schwung-heal.c \
         -o build/bin/schwung-heal
 else

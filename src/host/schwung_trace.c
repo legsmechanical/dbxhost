@@ -28,6 +28,7 @@
 
 #if defined(__linux__)
 #include <sys/syscall.h>
+#include "host/schwung_paths.h"
 static inline uint32_t os_tid(void) { return (uint32_t)syscall(SYS_gettid); }
 #else
 static inline uint32_t os_tid(void) { return (uint32_t)(uintptr_t)pthread_self(); }
@@ -41,8 +42,8 @@ static inline uint32_t os_tid(void) { return (uint32_t)(uintptr_t)pthread_self()
 #define TRACE_MAX_NAMES    256
 #define TRACE_NAME_LIT     1               /* names are static literals */
 
-#define TRACE_TOUCH_FILE   "/data/UserData/schwung/otlp_trace_on"
-#define TRACE_DIR          "/data/UserData/schwung/traces"
+#define TRACE_TOUCH_FILE   SCHWUNG_INSTALL_DIR "/otlp_trace_on"
+#define TRACE_DIR          SCHWUNG_INSTALL_DIR "/traces"
 /* output file: <TRACE_DIR>/<service>-YYYYMMDD-HHMMSS.otlp.jsonl (see open_outfile) */
 #define TRACE_ROTATE_BYTES (8 * 1024 * 1024)
 #define TRACE_MAX_FILES    16              /* keep at most this many trace files */

@@ -15,6 +15,7 @@
 #include <pwd.h>
 #include "unified_log.h"
 
+#include "host/schwung_paths.h"
 /* Engine backend declarations */
 #if ENABLE_SCREEN_READER
 
@@ -65,7 +66,7 @@ static void chown_to_ableton(const char *path) {
 
 /* Read engine choice from tts.json config */
 static void load_engine_choice(void) {
-    const char *config_path = "/data/UserData/schwung/config/tts.json";
+    const char *config_path = SCHWUNG_INSTALL_DIR "/config/tts.json";
     FILE *f = fopen(config_path, "r");
     if (!f) return;
 
@@ -90,7 +91,7 @@ static void load_engine_choice(void) {
 /* Save engine choice to tts.json (merge into existing config) */
 static void save_engine_choice(void) {
     /* Read existing config */
-    const char *config_path = "/data/UserData/schwung/config/tts.json";
+    const char *config_path = SCHWUNG_INSTALL_DIR "/config/tts.json";
 
     float speed = 1.0f;
     float pitch = 110.0f;

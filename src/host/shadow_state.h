@@ -6,11 +6,12 @@
 
 #include "shadow_chain_types.h"
 
+#include "host/schwung_paths.h"
 /* ============================================================================
  * Constants
  * ============================================================================ */
 
-#define SHADOW_CONFIG_PATH "/data/UserData/schwung/shadow_chain_config.json"
+#define SHADOW_CONFIG_PATH SCHWUNG_INSTALL_DIR "/shadow_chain_config.json"
 
 /* ============================================================================
  * Callback struct

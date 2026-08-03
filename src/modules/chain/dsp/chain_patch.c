@@ -6,6 +6,7 @@
 
 #include "chain_internal.h"
 
+#include "host/schwung_paths.h"
 /* Fix file ownership after writing as root */
 static void chown_to_ableton(const char *path) {
     struct passwd *pw = getpwnam("ableton");
@@ -343,7 +344,7 @@ int v2_delete_patch(chain_instance_t *inst, int index) {
 
 /* ========== Master Preset Functions ========== */
 
-#define PRESETS_MASTER_DIR "/data/UserData/schwung/presets_master"
+#define PRESETS_MASTER_DIR SCHWUNG_INSTALL_DIR "/presets_master"
 
 /* Master preset info storage (simpler than chain patches) */
 char master_preset_names[MAX_MASTER_PRESETS][MAX_NAME_LEN];
@@ -623,7 +624,7 @@ int load_master_preset_json(int index, char *buf, int buf_len) {
  * list/dir. Wraps the bus's SEND_FX_SLOTS FX slots under a "send_fx" root.
  * Mirrors the master preset store (heap-built JSON, atomic write). */
 
-#define PRESETS_SEND_DIR "/data/UserData/schwung/presets_send"
+#define PRESETS_SEND_DIR SCHWUNG_INSTALL_DIR "/presets_send"
 
 char send_preset_names[MAX_SEND_PRESETS][MAX_NAME_LEN];
 char send_preset_paths[MAX_SEND_PRESETS][MAX_PATH_LEN];
@@ -831,7 +832,7 @@ int load_send_preset_json(int index, char *buf, int buf_len) {
  * list/dir (presets are interchangeable between buses). Wraps the bus's
  * MOVE_FX_BLOCKS FX slots under a "move_fx" root. Mirrors the send preset store. */
 
-#define PRESETS_MOVE_DIR "/data/UserData/schwung/presets_move"
+#define PRESETS_MOVE_DIR SCHWUNG_INSTALL_DIR "/presets_move"
 
 char move_preset_names[MAX_MOVE_PRESETS][MAX_NAME_LEN];
 char move_preset_paths[MAX_MOVE_PRESETS][MAX_PATH_LEN];

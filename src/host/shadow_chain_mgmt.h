@@ -23,8 +23,8 @@
 #define SEND_FX_SLOTS  4
 #define MOVE_FX_SLOTS  4   /* one Move FX mini-bus per Move track / channel */
 #define MOVE_FX_BLOCKS 4   /* up to 4 insert FX per Move FX slot (fork daily-driver build) */
-#define SHADOW_CHAIN_MODULE_DIR "/data/UserData/schwung/modules/chain"
-#define SHADOW_CHAIN_DSP_PATH "/data/UserData/schwung/modules/chain/dsp.so"
+#define SHADOW_CHAIN_MODULE_DIR SCHWUNG_INSTALL_DIR "/modules/chain"
+#define SHADOW_CHAIN_DSP_PATH SCHWUNG_INSTALL_DIR "/modules/chain/dsp.so"
 
 /* Capture group alias definitions */
 #define CAPTURE_PADS_NOTE_MIN     68

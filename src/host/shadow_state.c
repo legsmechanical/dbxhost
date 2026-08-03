@@ -8,6 +8,7 @@
 #include <pwd.h>
 #include "shadow_state.h"
 
+#include "host/schwung_paths.h"
 /* ============================================================================
  * Host callbacks (set by state_init)
  * ============================================================================ */
@@ -561,7 +562,7 @@ void shadow_load_state(void)
      * while deliberate mute/solo set on later boots is not wiped. */
     {
         static const char reset_flag[] =
-            "/data/UserData/schwung/mute_solo_reset_v1_done";
+            SCHWUNG_INSTALL_DIR "/mute_solo_reset_v1_done";
         if (access(reset_flag, F_OK) != 0) {
             int had_state = 0;
             for (int i = 0; i < 4; i++) {

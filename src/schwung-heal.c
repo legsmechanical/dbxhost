@@ -47,6 +47,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "host/schwung_paths.h"
 static int copy_atomic(const char *src, const char *dst, mode_t perms) {
     int sfd = open(src, O_RDONLY);
     if (sfd < 0) {
@@ -193,10 +194,10 @@ int main(int argc, char **argv) {
      * (the running process keeps the old inode). See the file header. */
     {
         struct stat nst;
-        if (stat("/data/UserData/schwung/bin/schwung-heal.new", &nst) == 0) {
-            if (copy_atomic("/data/UserData/schwung/bin/schwung-heal.new",
-                            "/data/UserData/schwung/bin/schwung-heal", 04755) == 0) {
-                unlink("/data/UserData/schwung/bin/schwung-heal.new");
+        if (stat(SCHWUNG_INSTALL_DIR "/bin/schwung-heal.new", &nst) == 0) {
+            if (copy_atomic(SCHWUNG_INSTALL_DIR "/bin/schwung-heal.new",
+                            SCHWUNG_INSTALL_DIR "/bin/schwung-heal", 04755) == 0) {
+                unlink(SCHWUNG_INSTALL_DIR "/bin/schwung-heal.new");
                 fprintf(stderr, "schwung-heal: self-updated from staged binary\n");
                 /* Re-exec the freshly-installed binary. Verified on-device:
                  * continuing to execute after rename()-ing a new file over our
@@ -206,7 +207,7 @@ int main(int argc, char **argv) {
                  * new process skips this block and proceeds to mirror + reboot
                  * normally. execv only returns on failure. */
                 fflush(NULL);
-                execv("/data/UserData/schwung/bin/schwung-heal", argv);
+                execv(SCHWUNG_INSTALL_DIR "/bin/schwung-heal", argv);
                 fprintf(stderr, "schwung-heal: re-exec failed: %s\n", strerror(errno));
             } else {
                 rc = 2;
@@ -218,9 +219,9 @@ int main(int argc, char **argv) {
      * required for glibc 2.35+ AT_SECURE on devices where MoveOriginal
      * carries file capabilities; without it the loader silently refuses
      * the LD_PRELOAD. */
-    if (needs_copy("/data/UserData/schwung/schwung-shim.so",
+    if (needs_copy(SCHWUNG_INSTALL_DIR "/schwung-shim.so",
                    "/usr/lib/schwung-shim.so")) {
-        if (copy_atomic("/data/UserData/schwung/schwung-shim.so",
+        if (copy_atomic(SCHWUNG_INSTALL_DIR "/schwung-shim.so",
                         "/usr/lib/schwung-shim.so", 04755) == 0) {
             fprintf(stderr, "schwung-heal: shim mirrored\n");
         } else {
@@ -230,9 +231,9 @@ int main(int argc, char **argv) {
 
     /* Entrypoint — perms 0755. Wedging this with a half-written file
      * could brick boot, hence atomic-rename. */
-    if (needs_copy("/data/UserData/schwung/shim-entrypoint.sh",
+    if (needs_copy(SCHWUNG_INSTALL_DIR "/shim-entrypoint.sh",
                    "/opt/move/Move")) {
-        if (copy_atomic("/data/UserData/schwung/shim-entrypoint.sh",
+        if (copy_atomic(SCHWUNG_INSTALL_DIR "/shim-entrypoint.sh",
                         "/opt/move/Move", 0755) == 0) {
             fprintf(stderr, "schwung-heal: entrypoint mirrored\n");
         } else {

@@ -17,6 +17,7 @@
 #include <time.h>
 
 #include "shadow_set_pages.h"
+#include "host/schwung_paths.h"
 #include "shadow_sampler.h"  /* for SAMPLER_SETS_DIR, sampler_read_set_tempo */
 
 /* ============================================================================
@@ -923,7 +924,7 @@ static void *set_page_change_thread(void *arg)
 
     /* 9. Trigger restart via the existing mechanism */
     host.log("SetPage: triggering restart");
-    system("/data/UserData/schwung/restart-move.sh");
+    system(SCHWUNG_INSTALL_DIR "/restart-move.sh");
 
     return NULL;
 }

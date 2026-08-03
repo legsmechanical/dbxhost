@@ -18,6 +18,7 @@
 #include "shadow_link_audio.h"
 #include "unified_log.h"
 
+#include "host/schwung_paths.h"
 /* ============================================================================
  * Static host callbacks
  * ============================================================================ */
@@ -41,13 +42,13 @@ volatile int link_sub_restart_count = 0;
 /* Shadow UI */
 static int shadow_ui_started = 0;
 static pid_t shadow_ui_pid = -1;
-static const char *shadow_ui_pid_path = "/data/UserData/schwung/shadow_ui.pid";
+static const char *shadow_ui_pid_path = SCHWUNG_INSTALL_DIR "/shadow_ui.pid";
 
 /* Link subscriber monitor */
 static volatile int link_sub_monitor_started = 0;
 static volatile int link_sub_monitor_running = 0;
 static pthread_t link_sub_monitor_thread;
-static const char *link_sub_pid_path = "/data/UserData/schwung/link_sub.pid";
+static const char *link_sub_pid_path = SCHWUNG_INSTALL_DIR "/link_sub.pid";
 
 /* Recovery constants */
 #define LINK_SUB_STALE_THRESHOLD_MS 5000
@@ -139,7 +140,7 @@ void launch_shadow_ui(void) {
     shadow_ui_reap();
     shadow_ui_refresh_pid();
     if (shadow_ui_started && shadow_ui_pid > 0) return;
-    if (access("/data/UserData/schwung/shadow/shadow_ui", X_OK) != 0) {
+    if (access(SCHWUNG_INSTALL_DIR "/shadow/shadow_ui", X_OK) != 0) {
         return;
     }
 
@@ -158,7 +159,7 @@ void launch_shadow_ui(void) {
         for (int i = STDERR_FILENO + 1; i < fdlimit; i++) {
             close(i);
         }
-        execl("/data/UserData/schwung/shadow/shadow_ui", "shadow_ui", (char *)0);
+        execl(SCHWUNG_INSTALL_DIR "/shadow/shadow_ui", "shadow_ui", (char *)0);
         _exit(1);
     }
     shadow_ui_started = 1;
@@ -289,7 +290,7 @@ void launch_link_subscriber(void) {
 
     link_sub_kill_orphans();
 
-    const char *sub_path = "/data/UserData/schwung/link-subscriber";
+    const char *sub_path = SCHWUNG_INSTALL_DIR "/link-subscriber";
     if (access(sub_path, X_OK) != 0) return;
 
     /* (A /tmp/link-tempo write used to live here — nothing reads it; the

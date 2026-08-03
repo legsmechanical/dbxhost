@@ -21,7 +21,8 @@
 #include <time.h>
 #include <unistd.h>
 
-#define SCHWUNG_LOG_PATH "/data/UserData/schwung/schwung.log"
+#include "host/schwung_paths.h"
+#define SCHWUNG_LOG_PATH SCHWUNG_INSTALL_DIR "/schwung.log"
 
 // ============================================================================
 // Singleton state

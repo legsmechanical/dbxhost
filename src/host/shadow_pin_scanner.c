@@ -9,6 +9,7 @@
 #include <time.h>
 #include "shadow_pin_scanner.h"
 
+#include "host/schwung_paths.h"
 /* ============================================================================
  * Static host callbacks
  * ============================================================================ */
@@ -322,8 +323,8 @@ void pin_check_and_speak(void)
                     if (host.tts_speak) host.tts_speak(pin_text);
                     /* Write raw PIN digits to file for automated auth flows */
                     {
-                        FILE *pf = fopen("/data/UserData/schwung/last_pin.txt", "w");
-                        if (pf) { fprintf(pf, "%s\n", raw_digits); fclose(pf); chown_to_ableton("/data/UserData/schwung/last_pin.txt"); }
+                        FILE *pf = fopen(SCHWUNG_INSTALL_DIR "/last_pin.txt", "w");
+                        if (pf) { fprintf(pf, "%s\n", raw_digits); fclose(pf); chown_to_ableton(SCHWUNG_INSTALL_DIR "/last_pin.txt"); }
                     }
                     strncpy(pin_last_spoken, raw_digits, sizeof(pin_last_spoken) - 1);
                     pin_state = PIN_STATE_COOLDOWN;
@@ -347,11 +348,11 @@ void pin_check_and_speak(void)
         if (challenge == 0 || challenge == 2) {
             pin_state = PIN_STATE_IDLE;
             pin_last_spoken[0] = '\0';  /* Clear dedup so new session can repeat */
-            unlink("/data/UserData/schwung/last_pin.txt");
+            unlink(SCHWUNG_INSTALL_DIR "/last_pin.txt");
             if (host.log) host.log("PIN: challenge cleared, returning to idle");
         } else if (now_ms - pin_state_entered_ms > 5000) {
             pin_state = PIN_STATE_IDLE;
-            unlink("/data/UserData/schwung/last_pin.txt");
+            unlink(SCHWUNG_INSTALL_DIR "/last_pin.txt");
             if (host.log) host.log("PIN: cooldown timeout, returning to idle");
         }
         break;

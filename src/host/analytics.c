@@ -15,13 +15,14 @@
 #include <sched.h>
 #include "analytics.h"
 
+#include "host/schwung_paths.h"
 #define POSTHOG_API_KEY "phc_xkBkpTgLbY9JrNEMCThDLwjnasG9EKGznY3B8myFNQj5"
 #define POSTHOG_ENDPOINT "https://us.i.posthog.com/capture/"
-#define ANONYMOUS_ID_PATH "/data/UserData/schwung/anonymous-id"
-#define OPT_IN_PATH "/data/UserData/schwung/analytics-opt-in"
-#define OPT_OUT_PATH "/data/UserData/schwung/analytics-opt-out"
-#define SNAPSHOT_PATH "/data/UserData/schwung/module-snapshot.txt"
-#define CURL_PATH "/data/UserData/schwung/bin/curl"
+#define ANONYMOUS_ID_PATH SCHWUNG_INSTALL_DIR "/anonymous-id"
+#define OPT_IN_PATH SCHWUNG_INSTALL_DIR "/analytics-opt-in"
+#define OPT_OUT_PATH SCHWUNG_INSTALL_DIR "/analytics-opt-out"
+#define SNAPSHOT_PATH SCHWUNG_INSTALL_DIR "/module-snapshot.txt"
+#define CURL_PATH SCHWUNG_INSTALL_DIR "/bin/curl"
 
 static char g_anonymous_id[64] = "";
 static char g_version[32] = "";
@@ -98,7 +99,7 @@ int analytics_enabled(void) {
     if (has_opt_out && has_opt_in) {
         unlink(OPT_OUT_PATH);
         unlink(OPT_IN_PATH);
-        unlink("/data/UserData/schwung/analytics-prompted");
+        unlink(SCHWUNG_INSTALL_DIR "/analytics-prompted");
         return 0;  /* Disabled until re-prompted */
     }
 
@@ -106,7 +107,7 @@ int analytics_enabled(void) {
 
     /* Not yet prompted: don't send anything until user decides */
     struct stat prompted_st;
-    if (stat("/data/UserData/schwung/analytics-prompted", &prompted_st) != 0) return 0;
+    if (stat(SCHWUNG_INSTALL_DIR "/analytics-prompted", &prompted_st) != 0) return 0;
 
     return 1;
 }

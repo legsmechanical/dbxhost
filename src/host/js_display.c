@@ -21,6 +21,7 @@
 
 #include "js_display.h"
 
+#include "host/schwung_paths.h"
 /* Screen buffer - shared across all display functions */
 unsigned char js_display_screen_buffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
 
@@ -399,7 +400,7 @@ void js_display_print(int x, int y, const char *string, int color) {
 
     /* Lazy load bitmap font on first use — single source of truth from generate_font.py */
     if (!g_font) {
-        g_font = js_display_load_font("/data/UserData/schwung/host/font.png", 1);
+        g_font = js_display_load_font(SCHWUNG_INSTALL_DIR "/host/font.png", 1);
     }
     if (!g_font) return;
 
@@ -417,7 +418,7 @@ int js_display_text_width(const char *string) {
     if (!string) return 0;
 
     if (!g_font) {
-        g_font = js_display_load_font("/data/UserData/schwung/host/font.png", 1);
+        g_font = js_display_load_font(SCHWUNG_INSTALL_DIR "/host/font.png", 1);
     }
     if (!g_font) return 0;
 
@@ -487,7 +488,7 @@ int js_display_set_font(const char *path) {
 
 int js_display_get_font_height(void) {
     if (!g_font) {
-        g_font = js_display_load_font("/data/UserData/schwung/host/font.png", 1);
+        g_font = js_display_load_font(SCHWUNG_INSTALL_DIR "/host/font.png", 1);
     }
     if (!g_font) return 0;
     if (g_font->is_ttf) return g_font->ttf_height;

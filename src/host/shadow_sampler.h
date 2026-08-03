@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <pthread.h>
 
+#include "host/schwung_paths.h"
 /* ============================================================================
  * Audio constants (must match shim mailbox layout)
  * ============================================================================ */
@@ -74,7 +75,7 @@ typedef struct {
 
 #define SAMPLER_DURATION_COUNT 6
 #define SAMPLER_CLOCK_STALE_THRESHOLD 200
-#define SAMPLER_SETTINGS_PATH "/data/UserData/schwung/settings.txt"
+#define SAMPLER_SETTINGS_PATH SCHWUNG_INSTALL_DIR "/settings.txt"
 #define SAMPLER_SETS_DIR "/data/UserData/UserLibrary/Sets"
 #define SAMPLER_OVERLAY_DONE_FRAMES 90
 #define SAMPLER_VU_HOLD_DURATION 8

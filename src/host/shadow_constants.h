@@ -13,28 +13,30 @@
 
 #include <stdint.h>
 
+#include "schwung_paths.h"
+
 /* ============================================================================
  * Shared Memory Segment Names
  * ============================================================================ */
 
-#define SHM_SHADOW_AUDIO    "/schwung-audio"    /* Shadow's mixed output */
-#define SHM_SHADOW_MIDI     "/schwung-midi"     /* MIDI to shadow DSP */
-#define SHM_SHADOW_UI_MIDI  "/schwung-ui-midi"  /* MIDI to shadow UI */
-#define SHM_SHADOW_DISPLAY  "/schwung-display"  /* Shadow display buffer */
-#define SHM_SHADOW_CONTROL  "/schwung-control"  /* Control flags/state */
-#define SHM_SHADOW_MOVEIN   "/schwung-movein"   /* Move's audio for shadow */
-#define SHM_SHADOW_UI       "/schwung-ui"       /* Shadow UI state */
-#define SHM_SHADOW_PARAM      "/schwung-param"        /* Shadow param requests */
-#define SHM_SHADOW_MIDI_OUT   "/schwung-midi-out"   /* MIDI output from shadow UI */
-#define SHM_SHADOW_MIDI_DSP   "/schwung-midi-dsp"   /* MIDI from shadow UI to DSP slots */
-#define SHM_SHADOW_MIDI_INJECT "/schwung-midi-inject" /* MIDI inject into Move's MIDI_IN */
-#define SHM_SHADOW_EXT_MIDI_REMAP "/schwung-ext-midi-remap" /* Cable-2 channel remap table */
-#define SHM_SHADOW_SCREENREADER "/schwung-screenreader" /* Screen reader announcements */
-#define SHM_SHADOW_OVERLAY  "/schwung-overlay"  /* Overlay state (sampler/skipback) */
-#define SHM_TEST_STREAM_MIDI_OUT "/schwung-test-stream-midi-out" /* Shim → schwung-testd MIDI_OUT events (E2E test bus, dev-only) */
-#define SHM_DISPLAY_LIVE    "/schwung-display-live"    /* Live display for remote viewer */
-#define SHM_WEB_PARAM_SET   "/schwung-web-param-set"   /* Web UI → shim param set ring */
-#define SHM_WEB_PARAM_NOTIFY "/schwung-web-param-notify" /* Shim → web UI param change ring */
+#define SHM_SHADOW_AUDIO SCHWUNG_SHM_PREFIX "audio"    /* Shadow's mixed output */
+#define SHM_SHADOW_MIDI SCHWUNG_SHM_PREFIX "midi"     /* MIDI to shadow DSP */
+#define SHM_SHADOW_UI_MIDI SCHWUNG_SHM_PREFIX "ui-midi"  /* MIDI to shadow UI */
+#define SHM_SHADOW_DISPLAY SCHWUNG_SHM_PREFIX "display"  /* Shadow display buffer */
+#define SHM_SHADOW_CONTROL SCHWUNG_SHM_PREFIX "control"  /* Control flags/state */
+#define SHM_SHADOW_MOVEIN SCHWUNG_SHM_PREFIX "movein"   /* Move's audio for shadow */
+#define SHM_SHADOW_UI SCHWUNG_SHM_PREFIX "ui"       /* Shadow UI state */
+#define SHM_SHADOW_PARAM SCHWUNG_SHM_PREFIX "param"        /* Shadow param requests */
+#define SHM_SHADOW_MIDI_OUT SCHWUNG_SHM_PREFIX "midi-out"   /* MIDI output from shadow UI */
+#define SHM_SHADOW_MIDI_DSP SCHWUNG_SHM_PREFIX "midi-dsp"   /* MIDI from shadow UI to DSP slots */
+#define SHM_SHADOW_MIDI_INJECT SCHWUNG_SHM_PREFIX "midi-inject" /* MIDI inject into Move's MIDI_IN */
+#define SHM_SHADOW_EXT_MIDI_REMAP SCHWUNG_SHM_PREFIX "ext-midi-remap" /* Cable-2 channel remap table */
+#define SHM_SHADOW_SCREENREADER SCHWUNG_SHM_PREFIX "screenreader" /* Screen reader announcements */
+#define SHM_SHADOW_OVERLAY SCHWUNG_SHM_PREFIX "overlay"  /* Overlay state (sampler/skipback) */
+#define SHM_TEST_STREAM_MIDI_OUT SCHWUNG_SHM_PREFIX "test-stream-midi-out" /* Shim → schwung-testd MIDI_OUT events (E2E test bus, dev-only) */
+#define SHM_DISPLAY_LIVE SCHWUNG_SHM_PREFIX "display-live"    /* Live display for remote viewer */
+#define SHM_WEB_PARAM_SET SCHWUNG_SHM_PREFIX "web-param-set"   /* Web UI → shim param set ring */
+#define SHM_WEB_PARAM_NOTIFY SCHWUNG_SHM_PREFIX "web-param-notify" /* Shim → web UI param change ring */
 
 /* ============================================================================
  * Audio Constants

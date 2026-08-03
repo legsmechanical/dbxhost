@@ -20,6 +20,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
+#include "host/schwung_paths.h"
 /* ============================================================================
  * Host callbacks (set during sampler_init)
  * ============================================================================ */
@@ -122,7 +123,7 @@ static volatile int sampler_io_busy = 0;
 static volatile int sampler_pending_preroll = 0;
 static volatile int sampler_pending_custom = 0;  /* 1 = path in pending buf, 2 = read cmd file */
 static char sampler_pending_path[256] = "";
-#define SAMPLER_CMD_PATH_FILE "/data/UserData/schwung/sampler_cmd_path.txt"
+#define SAMPLER_CMD_PATH_FILE SCHWUNG_INSTALL_DIR "/sampler_cmd_path.txt"
 
 /* Skipback state */
 static int16_t *skipback_buffer = NULL;

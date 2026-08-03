@@ -15,6 +15,7 @@
 #include "shadow_set_pages.h"
 #include "unified_log.h"
 
+#include "host/schwung_paths.h"
 volatile uint32_t shim_debug_flags = 0;
 volatile int shim_pending_sysex_inject = -1;
 volatile int shim_inject_boot_jack = -1;
@@ -24,7 +25,7 @@ volatile int shim_jack_persist = -1;
  * re-assert it to Move at boot — XMOS doesn't report jack-in at boot, so an
  * already-plugged headphone otherwise leaves Move's enhancer on "speaker"
  * (hollow audio). */
-#define JACK_STATE_PATH "/data/UserData/schwung/jack_state"
+#define JACK_STATE_PATH SCHWUNG_INSTALL_DIR "/jack_state"
 
 static int jack_state_read(void) {
     FILE *f = fopen(JACK_STATE_PATH, "r");
@@ -66,12 +67,12 @@ typedef struct {
 } flag_spec_t;
 
 static const flag_spec_t FLAGS[] = {
-    { "/data/UserData/schwung/spi_snap_trigger",     SHIM_FLAG_SPI_SNAP,     0 },
-    { "/data/UserData/schwung/log_xmos_sysex_on",    SHIM_FLAG_XMOS_LOG,     0 },
-    { "/data/UserData/schwung/spi_midi_log_on",      SHIM_FLAG_SPI_MIDI_LOG, 0 },
-    { "/data/UserData/schwung/slot_fx_dump_trigger", SHIM_FLAG_SLOT_FX_DUMP, 1 },
-    { "/data/UserData/schwung/align_dump_trigger",   SHIM_FLAG_ALIGN_DUMP,   1 },
-    { "/data/UserData/schwung/main_fx_dump_trigger", SHIM_FLAG_MAIN_FX_DUMP, 1 },
+    { SCHWUNG_INSTALL_DIR "/spi_snap_trigger",     SHIM_FLAG_SPI_SNAP,     0 },
+    { SCHWUNG_INSTALL_DIR "/log_xmos_sysex_on",    SHIM_FLAG_XMOS_LOG,     0 },
+    { SCHWUNG_INSTALL_DIR "/spi_midi_log_on",      SHIM_FLAG_SPI_MIDI_LOG, 0 },
+    { SCHWUNG_INSTALL_DIR "/slot_fx_dump_trigger", SHIM_FLAG_SLOT_FX_DUMP, 1 },
+    { SCHWUNG_INSTALL_DIR "/align_dump_trigger",   SHIM_FLAG_ALIGN_DUMP,   1 },
+    { SCHWUNG_INSTALL_DIR "/main_fx_dump_trigger", SHIM_FLAG_MAIN_FX_DUMP, 1 },
 };
 
 static void poll_flags(void) {
@@ -90,7 +91,7 @@ static void poll_flags(void) {
 
     /* SysEx inject trigger: file content is the value byte. Publish once;
      * the RT consumer swaps shim_pending_sysex_inject back to -1. */
-    static const char inject_path[] = "/data/UserData/schwung/spi_sysex_inject";
+    static const char inject_path[] = SCHWUNG_INSTALL_DIR "/spi_sysex_inject";
     if (shim_pending_sysex_inject < 0 && access(inject_path, F_OK) == 0) {
         int fd = open(inject_path, O_RDONLY);
         int val = 0;
@@ -112,21 +113,21 @@ static void poll_flags(void) {
  * shim_post_transfer. */
 static void run_overtake_exit_hook(void) {
     char module_id[64] = {0};
-    FILE *f = fopen("/data/UserData/schwung/hooks/.exiting-module-id", "r");
+    FILE *f = fopen(SCHWUNG_INSTALL_DIR "/hooks/.exiting-module-id", "r");
     if (f) {
         if (fgets(module_id, sizeof(module_id), f)) {
             char *nl = strchr(module_id, '\n');
             if (nl) *nl = '\0';
         }
         fclose(f);
-        unlink("/data/UserData/schwung/hooks/.exiting-module-id");
+        unlink(SCHWUNG_INSTALL_DIR "/hooks/.exiting-module-id");
     }
 
     char hook_path[256];
     int have_per_module = 0;
     if (module_id[0]) {
         snprintf(hook_path, sizeof(hook_path),
-                 "/data/UserData/schwung/hooks/overtake-exit-%s.sh", module_id);
+                 SCHWUNG_INSTALL_DIR "/hooks/overtake-exit-%s.sh", module_id);
         have_per_module = (access(hook_path, X_OK) == 0);
     }
 
@@ -137,7 +138,7 @@ static void run_overtake_exit_hook(void) {
     } else if (!module_id[0]) {
         /* No module ID file — old-style exit, run global hook for backward compat */
         system("sh -c 'test -x /data/UserData/schwung/hooks/overtake-exit.sh && "
-               "/data/UserData/schwung/hooks/overtake-exit.sh' &");
+               SCHWUNG_INSTALL_DIR "/hooks/overtake-exit.sh' &");
     }
     /* If module ID was set but no per-module hook exists, skip cleanup —
      * don't run the global hook which may belong to another module */
@@ -162,7 +163,7 @@ static void drain_events(void) {
             /* Clean restart (kill as root, start fresh). Fork+exec won't
              * work because MoveOriginal has file capabilities that trigger
              * AT_SECURE, blocking LD_PRELOAD from a non-root process. */
-            system("/data/UserData/schwung/restart-move.sh");
+            system(SCHWUNG_INSTALL_DIR "/restart-move.sh");
             break;
         case SHIM_EVT_SAMPLER_PREP:
             if (worker_hooks.sampler_prepare) worker_hooks.sampler_prepare();

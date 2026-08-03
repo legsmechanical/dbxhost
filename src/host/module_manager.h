@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include "plugin_api_v1.h"
 
+#include "host/schwung_paths.h"
 #define MAX_MODULES 64
 #define MAX_MODULE_ID_LEN 64
 #define MAX_MODULE_NAME_LEN 128
@@ -75,7 +76,7 @@ void mm_init(module_manager_t *mm, uint8_t *mapped_memory,
              int (*midi_send_internal)(const uint8_t*, int),
              int (*midi_send_external)(const uint8_t*, int));
 
-/* Scan a directory for modules (e.g., "/data/UserData/schwung/modules") */
+/* Scan a directory for modules (e.g., SCHWUNG_INSTALL_DIR "/modules") */
 int mm_scan_modules(module_manager_t *mm, const char *modules_dir);
 
 /* Get module count */
