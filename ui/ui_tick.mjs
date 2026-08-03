@@ -50,6 +50,7 @@ import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes } from './ui_r
 import { xposeCancelPreview } from './ui_xpose.mjs';
 import { checkBackHold, backTapWouldAct } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
+         engineUnderDaveboxHost,
          SLOT_LEVEL_KEY } from './ui_engine.mjs';
 import { soundActive, soundEnter, soundEnterBuses, soundExit, soundTick, soundDirty,
     soundTrack, soundRetarget, soundIsGlobal, soundEnteredInSession,
@@ -272,14 +273,24 @@ var _lastSessionView = false;
  *   step-op drain, treat its ordering against the blocks above as a fresh
  *   design question, not a copy-paste restore.
  */
-/* True only while the standalone launcher owns the device. It writes the marker
- * when it takes over and removes it when it hands back, so this is the one
- * runtime signal telling us which host we are running under — the module
- * directory is shared between both, so nothing at build time can. */
+/* True only when we are running under the dAVEBOx host build, in which case
+ * dAVEBOx IS the session and quitting should hand the device back to stock.
+ *
+ * ⚠⚠ This used to test for a marker FILE under /data, written by the launcher on
+ * take-over and removed on hand-back. That is wrong in a way that bites on stock:
+ * the file survives an unclean exit, and the documented recovery path — "a reboot
+ * always returns to stock" — is exactly the path that skips the launcher's
+ * cleanup. A leftover marker then convinced davebox running on STOCK that it
+ * owned a standalone session, so Quit killed MoveOriginal and the watchdog
+ * respawned it: every Quit became a surprise device restart until somebody
+ * deleted the file by hand.
+ *
+ * The host's own install directory cannot go stale like that. See
+ * engineUnderDaveboxHost() for why it compares the path instead of testing for a
+ * binding's absence. */
 function standaloneSessionActive() {
     try {
-        return typeof host_file_exists === 'function' &&
-               !!host_file_exists('/data/UserData/dbx-host/standalone_active');
+        return engineUnderDaveboxHost();
     } catch (e) {
         return false;
     }

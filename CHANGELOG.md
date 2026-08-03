@@ -8,6 +8,10 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **dAVEBOx now shows only the effects the host it's running on actually has.**
+  On the dAVEBOx host you get four insert FX per chain plus both Send buses; on
+  official Schwung, which has two inserts and no sends, those extra rows are
+  hidden instead of appearing and quietly doing nothing when you turn a knob.
 - **In a standalone session, Quit hands the device back to stock Schwung.** When
   dAVEBOx has been launched as its own session — it *is* the session, rather than a
   tool you opened from the menu — Quit saves your work and returns the device to the

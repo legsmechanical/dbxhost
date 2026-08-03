@@ -122,6 +122,68 @@ export function engineSaveState() {
     return false;
 }
 
+/* ---- which host build are we on? ----
+ *
+ * ⚠ `typeof host_x === 'function'` is the right probe for a fork-only FUNCTION,
+ * and is useless for a fork-only PARAM NAMESPACE. Nothing about a binding tells
+ * us whether the host routes `fx3:` or `send_fx:a:`. Guessing wrong does not
+ * degrade — it renders rows whose reads return nothing and whose writes are
+ * silently dropped, which is worse than the feature being absent, and it is the
+ * exact bug an audit of gated function calls reported as clean.
+ *
+ * host_build_info() (fork-only) states the namespaces. Absence = the UPSTREAM
+ * defaults, which is what a stock Schwung install is.
+ *
+ * Deliberately NOT cached. The obvious optimisation buys nothing — the answer is
+ * only read by the module-scope initialisers of BLOCKS/FX_BUSES — and a cache
+ * makes the host build unmockable, so the stock-host path could not be pinned by
+ * a test. Being able to test the degraded path is worth more than one JSON.parse,
+ * especially since the degraded path is the one that was silently broken. */
+const UPSTREAM_DEFAULTS = {
+    install_dir: '/data/UserData/schwung',
+    slot_fx_blocks: 2,      /* upstream slot chain is fx1..fx2 */
+    send_fx: false,         /* upstream has no Send FX at all */
+};
+export function engineBuildInfo() {
+    try {
+        if (typeof host_build_info === 'function') {
+            const parsed = JSON.parse(host_build_info());
+            if (parsed && typeof parsed === 'object') {
+                return Object.assign({}, UPSTREAM_DEFAULTS, parsed);
+            }
+        }
+    } catch (e) { /* keep the upstream defaults — never let this throw at import */ }
+    return UPSTREAM_DEFAULTS;
+}
+
+/* Audio-FX blocks the running host actually routes in a slot chain (2 or 4). */
+export function engineSlotFxBlocks() {
+    const n = engineBuildInfo().slot_fx_blocks;
+    return (typeof n === 'number' && n > 0) ? n : UPSTREAM_DEFAULTS.slot_fx_blocks;
+}
+
+/* Does this host route send_fx:a: / send_fx:b: at all? */
+export function engineHasSendFx() {
+    return engineBuildInfo().send_fx === true;
+}
+
+/* Are we running under the dAVEBOx host build (as opposed to stock Schwung)?
+ *
+ * ⚠ Deliberately compares install_dir rather than testing for host_build_info's
+ * absence: if that binding ever lands upstream, absence stops meaning "stock" but
+ * the directory comparison stays correct. Identity questions must not be answered
+ * by absence-as-probe, even though feature questions can be.
+ *
+ * ⚠ This replaced a marker FILE under /data. That file is removed only on a clean
+ * exit, so a hard reboot — the documented "always returns to stock" recovery
+ * path — left it behind, after which davebox running on STOCK believed it owned a
+ * standalone session and tore the host down on Quit, turning every Quit into a
+ * surprise device restart. A build fact cannot go stale that way. */
+export const DAVEBOX_HOST_DIR = '/data/UserData/dbx-host';
+export function engineUnderDaveboxHost() {
+    return engineBuildInfo().install_dir === DAVEBOX_HOST_DIR;
+}
+
 /* Runtime claim on the master volume knob: suppresses CC 79 + touch note 8 from
  * reaching Move firmware, so the knob can mean something else without Move also
  * moving its master level and covering the screen with its overlay. Requires

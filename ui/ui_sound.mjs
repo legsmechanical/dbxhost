@@ -22,7 +22,7 @@
 import * as os from 'os';
 import {
     COMPONENTS, PRESET_ROOT, engineGet, engineSet, engineListModules, engineDescribe,
-    engineClaimsEditCcs,
+    engineClaimsEditCcs, engineSlotFxBlocks, engineHasSendFx,
     engineLoadModule, engineLoadedModule, engineGetState, engineSetState,
     engineListUserPresets, engineReadUserPreset,
     engineGetSlotParam, engineSetSlotParam, engineSaveState, engineVolBlock,
@@ -51,15 +51,21 @@ import {
     hdrPrint, mvPrint, mvWidth,
 } from './ui_movy.mjs';
 
-/* Chain blocks in signal order. This fork runs FOUR audio-FX blocks where
- * upstream has two — any block logic must cover fx3/fx4. */
+/* Chain blocks in signal order, trimmed to the audio-FX blocks the RUNNING host
+ * routes — four on the dAVEBOx host, two on stock Schwung.
+ *
+ * ⚠ Do not hardcode fx3/fx4 back in. `fx3:`/`fx4:` are a fork-only param
+ * namespace, and a stock host routes neither: the rows would render, every read
+ * would come back empty and every write would vanish. That is silent
+ * misbehaviour, not a missing feature, and no `typeof` check can detect it
+ * because the divergence is a key prefix rather than a function. The block count
+ * comes from host_build_info(), which exists to answer exactly this. */
 export const BLOCKS = [
     { comp: 'midi_fx1', label: 'MIDI FX' },
     { comp: 'synth',    label: 'SYNTH'   },
-    { comp: 'fx1',      label: 'FX 1'    },
-    { comp: 'fx2',      label: 'FX 2'    },
-    { comp: 'fx3',      label: 'FX 3'    },
-    { comp: 'fx4',      label: 'FX 4'    },
+    ...Array.from({ length: engineSlotFxBlocks() }, (_, i) => ({
+        comp: `fx${i + 1}`, label: `FX ${i + 1}`,
+    })),
 ];
 
 /* ---- global FX buses ----
@@ -84,12 +90,17 @@ export const BLOCKS = [
  *
  * The SEND return levels are real — `shadow_send_return_level[2]`, set + get,
  * persisted as `send_return_level`. Range matches the host's own row: 0..1. */
+/* Master FX is upstream. The two SEND buses are fork-only (`send_fx:` does not
+ * exist upstream at all), so they are only listed when the running host says it
+ * routes them — otherwise both buses would be browsable rows backed by nothing. */
 const FX_BUSES = [
     { id: 'master', title: 'MASTER FX', prefix: 'master_fx:' },
-    { id: 'sendA',  title: 'SEND FX A', prefix: 'send_fx:a:',
-      levelComp: 'send_fx:a', levelKey: 'return_level', levelLabel: 'Return' },
-    { id: 'sendB',  title: 'SEND FX B', prefix: 'send_fx:b:',
-      levelComp: 'send_fx:b', levelKey: 'return_level', levelLabel: 'Return' },
+    ...(engineHasSendFx() ? [
+        { id: 'sendA',  title: 'SEND FX A', prefix: 'send_fx:a:',
+          levelComp: 'send_fx:a', levelKey: 'return_level', levelLabel: 'Return' },
+        { id: 'sendB',  title: 'SEND FX B', prefix: 'send_fx:b:',
+          levelComp: 'send_fx:b', levelKey: 'return_level', levelLabel: 'Return' },
+    ] : []),
 ];
 const BUS_LEVEL_MIN = 0, BUS_LEVEL_MAX = 1, BUS_LEVEL_STEP = 0.05;
 const BUS_BLOCKS = [1, 2, 3, 4];      /* fx1..fx4 on every bus */
