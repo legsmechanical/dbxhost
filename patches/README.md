@@ -304,3 +304,56 @@ did it say"*, where "no hook" and "hook declined" must behave identically.
 git apply --3way patches/canvas-takes-click.patch     # first
 git apply --3way patches/canvas-handle-back.patch     # then this
 ```
+
+## shadow-empty-param-readback-is-absent.patch
+
+Single commit `16368a97` — **upstream-INTENDED** (retire on merge).
+
+**Verified against `upstream/main` (2026-08-02):** applies **cleanly**, both files
+(`src/shadow/shadow_ui.js`, `docs/MODULES.md`). No expected conflicts. Independent of every
+other patch here — it touches only the optional-readback helpers.
+
+**What it fixes:** `<key>:base` / `<key>:modulated` are optional readbacks that only a target with a
+modulation system implements. An unimplemented key arrives as `null` *or* as `""`, depending purely
+on whether the loaded DSP's `get_param` returns negative or `0` for a key it does not know — the
+host turns `0` into "success, zero-length value". Every consumer tested `!== null`, so on a module
+that returns `0` the empty string was accepted as a real value, breaking a row three ways at once:
+blank value column, a spurious `~` (modulated) marker because live `!=` base, and silently refused
+edits because the edit seeded from `""` and `parseFloat` gave NaN.
+
+⭑ Because the trigger is the *generator's* return convention, the same row worked on one module and
+broke on another, and changed as modules were swapped — which reads as flaky or module-specific when
+it is neither. Measured on device: with DR32 loaded `slot:synth_volume:base` returns `err=0 len=0`,
+with Noisemaker loaded it returns `err=4 len=-1`.
+
+Normalizes both spellings of absence in one helper (`getOptionalSlotParam`) used at all four
+optional-readback sites. Plain (non-suffixed) reads still go through `getSlotParam`, so a genuinely
+empty value elsewhere keeps its meaning. `docs/MODULES.md` documents the `get_param` contract.
+
+## shim-module-level-all-render-paths.patch
+
+Single commit `c88d6976` — **fork-only for now**; upstreamable only as part of the Module Level
+series, never alone.
+
+⚠ **Verified against `upstream/main` (2026-08-02): CONFLICTS in `src/schwung_shim.c`, by
+construction — do not try to resolve it hunk-by-hunk.** Upstream has no `synth_volume` at all
+(`git grep synth_volume upstream/main -- src/` → nothing). The whole Module Level feature is
+fork-only, carried by `611b4b98` (per-slot generator level), `9d82ad8b` (the menu row) and
+`cbe21a49` (docs), which live only on `davebox-sound-mode`. This patch fixes that feature, so it
+cannot apply where the feature does not exist.
+
+**To upstream it:** send the series — `611b4b98`, `9d82ad8b`, `cbe21a49`, then this — as one PR, and
+squash this fix into `611b4b98` rather than shipping the bug plus its fix.
+**To re-apply on a fork rebase:** apply the three feature commits first, then this cleanly.
+
+**What it fixes:** the gain was applied at exactly one mix site, and that site sits inside the
+`rebuild_from_la` branch — so the level only reached the audio while Link Audio was actively
+delivering track audio. The ordinary render paths (deferred FX, and the legacy inline fallback)
+never applied it. The value still stored, persisted and read back correctly, so the UI stayed honest
+while the level did nothing. ⭑ `rebuild_from_la` is not a setting anyone toggles — it is a per-frame
+runtime condition including `la_receiving`, which is why this looked intermittent across restarts.
+
+Extracts `shadow_apply_synth_level()` and calls it pre-FX / pre-sum on the two missing paths. The
+rebuild path keeps its inline application (it scales while copying and summing the routed track in
+one pass); ⚠ all three sites must stay in sync or the level works on some paths and silently does
+nothing on the rest.

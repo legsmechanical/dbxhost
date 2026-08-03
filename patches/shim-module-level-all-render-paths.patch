@@ -1,0 +1,107 @@
+From c88d69764d2d0c8e695e3c83e6c6bfffd224350c Mon Sep 17 00:00:00 2001
+From: legsmechanical <joshgaine@gmail.com>
+Date: Sun, 2 Aug 2026 22:13:34 -0400
+Subject: [PATCH] fix(shim): apply the module level on every slot render path
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+`slot:synth_volume` scales a slot's sound generator alone, before the slot's FX
+and before anything else is summed in. It was applied at exactly one mix site,
+chosen because that is where a routed Move track is summed and therefore the
+only place the generator and that track can be balanced against each other.
+
+But that site sits inside the `rebuild_from_la` branch, so the gain only ever
+reached the audio while Link Audio was actively delivering track audio. On the
+ordinary render paths — deferred FX, and the legacy inline fallback — nothing
+applied it. The value still stored, persisted and read back correctly, so the
+UI was honest while the level did nothing, and whether it worked depended on a
+per-frame runtime condition (`la_receiving`) that nobody sets deliberately.
+That made it look intermittent and module-dependent when it was neither.
+
+Scaling the bus fader instead is not equivalent and was rightly avoided: it
+runs after the FX, where the generator and anything routed alongside it are one
+signal — a reverb tail does not remember its source.
+
+Extract the gain into shadow_apply_synth_level() and call it on the two render
+paths that were missing it, at the point where the dry generator block is
+copied for FX, which is pre-FX and pre-sum as the design requires. The rebuild
+path keeps its inline application because it scales while copying and summing
+the routed track in one pass; a comment now marks all three as a set that has
+to stay in sync. Unity short-circuits, so an untouched slot costs one float
+compare per block.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01XX8gDJhHpYErLEwJsV5jPm
+---
+ src/schwung_shim.c | 33 ++++++++++++++++++++++++++++++++-
+ 1 file changed, 32 insertions(+), 1 deletion(-)
+
+diff --git a/src/schwung_shim.c b/src/schwung_shim.c
+index 328591e5..f2bb098f 100644
+--- a/src/schwung_shim.c
++++ b/src/schwung_shim.c
+@@ -468,6 +468,29 @@ static int shadow_slot_deferred_valid[SHADOW_CHAIN_INSTANCES];
+ static int16_t shadow_slot_fx_deferred[SHADOW_CHAIN_INSTANCES][FRAMES_PER_BLOCK * 2];
+ static int shadow_slot_fx_deferred_valid[SHADOW_CHAIN_INSTANCES];
+ 
++/* Apply a slot's sound-generator level to its dry synth block, in place.
++ *
++ * This is the module level (`slot:synth_volume`), NOT the slot's bus fader
++ * (`slot:volume`). It scales the generator alone and must run BEFORE the
++ * slot's FX and before anything else is summed into the slot: post-FX the
++ * generator and any audio routed alongside it are one signal, so a fader there
++ * cannot balance the two against each other.
++ *
++ * Every path that renders a slot has to call this, or the level silently does
++ * nothing on that path while still reading back correctly in the UI. Unity is
++ * the default and is skipped outright, so a slot nobody has touched costs one
++ * float compare per block. */
++static inline void shadow_apply_synth_level(int slot, int16_t *buf) {
++    const float lvl = shadow_chain_slots[slot].synth_volume;
++    if (lvl == 1.0f) return;
++    for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
++        int32_t v = (int32_t)lroundf((float)buf[i] * lvl);
++        if (v > 32767) v = 32767;
++        if (v < -32768) v = -32768;
++        buf[i] = (int16_t)v;
++    }
++}
++
+ /* ---- Preview player: lightweight WAV playback for file browser ---- */
+ #define PREVIEW_CMD_PATH "/data/UserData/schwung/preview_cmd_path.txt"
+ #define PREVIEW_WAV_FORMAT_PCM   1
+@@ -1903,6 +1926,7 @@ static void shadow_inprocess_render_to_buffer(void) {
+                 } else {
+                     int16_t fx_buf[FRAMES_PER_BLOCK * 2];
+                     memcpy(fx_buf, shadow_slot_deferred[s], sizeof(fx_buf));
++                    shadow_apply_synth_level(s, fx_buf);
+                     struct timespec fx_t0, fx_t1;
+                     clock_gettime(CLOCK_MONOTONIC, &fx_t0);
+                     shadow_chain_process_fx(shadow_chain_slots[s].instance,
+@@ -2379,7 +2403,13 @@ static void shadow_inprocess_mix_from_buffer(void) {
+                  * cannot balance the two sources against each other. Post-FX the
+                  * signals are inseparable (a reverb tail doesn't remember its
+                  * source), so pre-sum is the only place this can work. Unity by
+-                 * default — nothing changes until a UI drives it. */
++                 * default — nothing changes until a UI drives it.
++                 *
++                 * Applied inline here rather than via shadow_apply_synth_level()
++                 * because this path scales while copying and summing the routed
++                 * track in one pass. The other two render paths call the helper;
++                 * ⚠ all three must stay in sync, or the level works on some
++                 * paths and silently does nothing on the rest. */
+                 const float synth_vol = shadow_chain_slots[s].synth_volume;
+                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
+                     int32_t combined = (synth_vol == 1.0f)
+@@ -2559,6 +2589,7 @@ skip_la_rebuild:
+ 
+                 int16_t fx_buf[FRAMES_PER_BLOCK * 2];
+                 memcpy(fx_buf, shadow_slot_deferred[s], sizeof(fx_buf));
++                shadow_apply_synth_level(s, fx_buf);
+                 shadow_chain_process_fx(shadow_chain_slots[s].instance,
+                                         fx_buf, MOVE_FRAMES_PER_BLOCK);
+ 
+-- 
+2.53.0
+
