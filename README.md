@@ -1,3 +1,35 @@
+# davebox host — a Schwung fork
+
+> **This is a fork of [Schwung](https://github.com/charlesvestal/schwung) (MIT, Charles Vestal),
+> carrying the host changes davebox depends on.** Everything below is Schwung's own README and still
+> describes the framework accurately; this repo diverges only where davebox needs it to.
+>
+> **Why it exists.** davebox regularly needs host changes. Sending each one upstream means its
+> features ship on someone else's review timeline, and shipping a modified Schwung as the *only* way
+> to run davebox would force users to choose between official Schwung and a davebox build. This fork
+> is the third option: davebox ships as an ordinary Schwung tool module that declares
+> `"standalone": true`, and launching it tears down the stock stack and brings Move back up under
+> **this** build instead. The official install is never modified, keeps updating normally, and a
+> reboot always returns to it — so a broken davebox build cannot brick the device.
+>
+> The launcher that makes this possible (`src/launch-standalone.sh`) is already upstream, so nothing
+> here needs merging by anyone.
+>
+> **Base.** Forked from the `davebox-sound-mode` branch of `legsmechanical/schwung` — the build
+> verified running on-device — plus the `SCHWUNG_INSTALL_DIR` module-loader change, which is a no-op
+> for default builds. Deliberately **not** carried over: `pad_events` / `MOVE_MIDI_SOURCE_PAD`
+> (superseded by canvas pad-forwarding, `1bab8a25`) and the unmerged remote-ui-v2 branch — neither
+> is device-verified, and "what runs on the device" is the base.
+>
+> **Upstream.** `upstream` is set to Charles's repo, fetch-only. Pulling improvements is encouraged;
+> pushing there is disabled. Changes that are generic still belong upstream as PRs — every one that
+> merges shrinks this fork's delta.
+>
+> The davebox side (launcher, `davebox-heal`, privileged installer) lives in
+> `schwung-davebox`, branch `standalone`, under `standalone/`.
+
+---
+
 # Schwung (Formerly Move Everything)
 
 [![Schwung Video](https://img.youtube.com/vi/AQ-5RZlg6gw/0.jpg)](https://www.youtube.com/watch?v=AQ-5RZlg6gw)
