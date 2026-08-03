@@ -10,8 +10,17 @@ the fork remote.
 
 Our extra FX-block work — a 2-commit `format-patch` series:
 
-- `87a997d3` **feat(fx): Send FX + Move FX buses + generic FX-bus picker**
-- `72f8f641` **fix(chain): route fx3/fx4 get_param** (slot synth-chain blocks 3–4)
+- `0d6402b6` **feat(fx): Send FX + Move FX buses + generic FX-bus picker** (2026-06-14)
+- `7ba06ccc` **fix(chain): route fx3/fx4 get_param** (slot synth-chain blocks 3–4, 2026-06-17)
+
+⚠ **Identify these by SUBJECT, not by hash.** The hashes above were `87a997d3` / `72f8f641`
+until a rebase over upstream's rewritten history renumbered them, and the stale pair reads as
+"the FX work is missing" when it is present and running. Upstream rewrites history on every
+release ([[schwung-upstream-rebases-history]]), so expect these to drift again — re-find with
+`git log --grep` on the subject, or `git log -S "MOVE_FX_BLOCKS 4"`.
+
+⚠ `0d6402b6` also **absorbed the standalone 2→4 block bump** (once `ab5ec6da`), so the isolation
+that commit existed to provide no longer exists — see `CLAUDE.md` → Fork-only divergences.
 
 Split of what's permanent vs temporary:
 

@@ -93,7 +93,7 @@ Generally portable co-run improvements, but **coordinate with upstream**:
 
 ## FX buses — 🟡 (draft upstream PR #121) · carried as a LOCAL PATCH on fork main
 
-- `87a997d3` **feat(fx): Send FX + Move FX buses + generic FX-bus picker** (folds #115 + #117)
+- `0d6402b6` **feat(fx): Send FX + Move FX buses + generic FX-bus picker** (folds #115 + #117)
   — **Send FX** (2 post-fader buses A/B + generic FX-bus picker) is ✅ upstreamable.
   — **Move FX** (4 per-Move-track insert buses) and the **fx3/fx4** chain-insert
   routing it carries are part of the ⛔ **fork-only 4-block divergence** (`MOVE_FX_BLOCKS=4`,
@@ -108,9 +108,9 @@ All our extra FX-block work is carried as a re-appliable patch committed to this
 (backed up on the fork remote): **`patches/fx-blocks-local.patch`** — a 2-commit
 `format-patch` series. See **`patches/README.md`** for the full procedure.
 
-- `87a997d3` **Send FX + Move FX buses** — Send FX is upstreamable (draft PR #121,
+- `0d6402b6` **Send FX + Move FX buses** — Send FX is upstreamable (draft PR #121,
   parked); Move FX (`MOVE_FX_BLOCKS=4`) is permanent fork-only.
-- `72f8f641` **slot synth-chain fx3/fx4 get_param routing** — permanent fork-only
+- `7ba06ccc` **slot synth-chain fx3/fx4 get_param routing** — permanent fork-only
   (part of the 4-block divergence).
 
 **Why a patch:** these commits edit `shadow_ui.js` / `shadow_chain_mgmt.c` in regions
@@ -118,7 +118,7 @@ upstream's merged corun/preset work also touched, so they conflict *inline* duri
 rebase. Carrying them as a patch makes the re-apply an explicit, documented step.
 
 **Rebase procedure (short — full version in `patches/README.md`):**
-1. `git rebase upstream/main` — merged dups auto-drop; **drop** `87a997d3` + `72f8f641`
+1. `git rebase upstream/main` — merged dups auto-drop; **drop** `0d6402b6` + `7ba06ccc`
    if they conflict (`git rebase --skip`).
 2. `git apply --3way patches/fx-blocks-local.patch` — expect a **one-time** `shadow_ui.js`
    conflict (Send FX + fx3/fx4 both edit it, vs upstream's moved version — inherent, not a
