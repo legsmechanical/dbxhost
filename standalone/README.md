@@ -44,15 +44,30 @@ The launcher mechanism is already upstream. There is nothing to get merged.
 
 | path | what |
 |---|---|
+| `config.sh` | **the one place** the install dir, SHM prefix and shim soname are declared |
 | `src/davebox-heal.c` | setuid-root helper; mirrors our shim into `/usr/lib` |
-| `scripts/install-privileged.sh` | the one-time root step |
+| `scripts/install-privileged.sh` | the one-time root step (deployed as `$DBX_DIR/bless.sh`) |
 | `scripts/launch.sh` | tears down the stock stack, brings up our host |
 | `module/module.json` | the `dAVEBOx SA` launcher manifest |
 | `scripts/install-module.sh` | installs the launcher into stock's tools dir (no root) |
+| `scripts/build-host.sh` | builds this host with `config.sh`'s dir + SHM namespace |
+| `scripts/build-heal.sh` | cross-compiles `davebox-heal` with `-DDBX_DIR` from `config.sh` |
+| `scripts/check-config.sh` | fails if a literal copy drifted from `config.sh` |
 
-The davebox host build itself lives in its own repo,
-[`legsmechanical/schwungbox-host`](https://github.com/legsmechanical/schwungbox-host)
-(private), and installs to `/data/UserData/dbx-host/`.
+This directory lives **in the host repo** — the launcher's only job is to start
+this host, so shipping them together makes host + launcher + heal + installer one
+deliverable with one version. It installs to `/data/UserData/dbx-host/`.
+
+⚠ Three files must carry a literal copy of the install dir rather than sourcing
+`config.sh`: `launch.sh` (installed as one self-contained file), `install-privileged.sh`
+(deployed to the root of the install tree, so a relative source escapes the payload)
+and `davebox-heal.c` (setuid-root — the value must stay compile-time). `check-config.sh`
+pins all three, and `tests/host/test_standalone_config_contract.sh` runs it in CI.
+
+⚠ The davebox module hardcodes this path too, in `ui/ui_tick.mjs`, and lives in a
+**different repo**. It cannot source `config.sh` either: the same `ui.js` runs under
+stock Schwung, where this directory does not exist, so the marker path has to be a
+well-known constant. Changing `DBX_DIR` means changing it there as well.
 
 ## Why root is needed exactly once
 

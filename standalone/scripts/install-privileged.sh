@@ -13,17 +13,28 @@
 # launcher all run as.
 #
 # What this grants: nothing the device owner did not already have. They have
-# ableton SSH and can write /data freely. davebox-heal takes NO arguments and
-# has both its source and destination hardcoded, so it can only ever do one
-# thing. The library it installs is setuid *ableton*, not root, and is loaded
+# ableton SSH and can write /data freely. davebox-heal has its source and
+# destination compiled in — never taken from argv, environment or cwd — so it
+# can only ever act on the one install it was built for. It accepts exactly two
+# flags (--pause-launcher / --resume-launcher, for the systemd unit named in the
+# same compile-time constants); neither can be pointed anywhere else. The
+# library it installs is setuid *ableton*, not root, and is loaded
 # into a process already running as ableton — so it confers no privilege; the
 # setuid bit exists purely to satisfy glibc's check.
 
 set -e
 
+# ⚠ Literal, NOT sourced from ../config.sh: this script is deployed to the device
+# as $DBX_DIR/bless.sh — at the root of the install tree, not under scripts/ — so
+# a relative source would resolve outside the payload and the one privileged step
+# would fail. config.sh is still authoritative; scripts/check-config.sh pins this
+# line against it so the two cannot drift.
 DBX_DIR=/data/UserData/dbx-host
-HEAL_SRC=$DBX_DIR/bin/davebox-heal
-HEAL_DST=$DBX_DIR/bin/davebox-heal
+DBX_HEAL_NAME=davebox-heal
+DBX_SHIM_SONAME=davebox-shim.so
+
+HEAL_SRC=$DBX_DIR/bin/$DBX_HEAL_NAME
+HEAL_DST=$DBX_DIR/bin/$DBX_HEAL_NAME
 
 [ "$(id -u)" = "0" ] || { echo "must run as root" >&2; exit 1; }
 [ -f "$HEAL_SRC" ]   || { echo "no davebox-heal at $HEAL_SRC" >&2; exit 1; }
@@ -36,4 +47,4 @@ ls -la "$HEAL_DST"
 # Prime it once so the shim is in place immediately.
 echo "priming:"
 "$HEAL_DST"
-ls -la /usr/lib/davebox-shim.so
+ls -la "/usr/lib/$DBX_SHIM_SONAME"

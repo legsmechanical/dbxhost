@@ -52,8 +52,17 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-/* Hardcoded, never taken from input. */
+/* Hardcoded, never taken from input.
+ *
+ * DBX_DIR may be overridden with -DDBX_DIR at COMPILE time (build-heal.sh feeds
+ * it from ../config.sh, the one place the install dir is declared). That keeps
+ * the security property this helper depends on: the value is still baked into
+ * the binary, so it can never be steered by argv, environment or cwd. Do NOT
+ * make it runtime-settable. The fallback below is pinned to config.sh by
+ * scripts/check-config.sh. */
+#ifndef DBX_DIR
 #define DBX_DIR      "/data/UserData/dbx-host"
+#endif
 #define SRC_SHIM     DBX_DIR "/schwung-shim.so"
 #define DST_SHIM     "/usr/lib/davebox-shim.so"
 #define SELF_PATH    DBX_DIR "/bin/davebox-heal"
