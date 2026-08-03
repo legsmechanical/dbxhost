@@ -724,6 +724,27 @@ mkdir -p ./build/scripts
 cp ./scripts/post-update.sh ./build/scripts/
 chmod +x ./build/scripts/post-update.sh
 
+# Standalone-session payload. These are RUNTIME dependencies of a standalone
+# install, resolved by absolute path inside the install tree:
+#
+#   scripts/quiesce-stock.sh   standalone/scripts/launch.sh:67
+#   scripts/exit-to-stock.sh   src/shadow/shadow_ui.js (Shift+Back) and the
+#                              hosted module's own Quit, both via host_system_cmd
+#   bless.sh                   the one-time root step, documented in
+#                              standalone/README.md as $INSTALL_DIR/bless.sh
+#
+# They were previously placed on the device by hand, so a fresh install came up
+# with a launcher that could not quiesce stock and two exit paths that called a
+# script which was not there. Guarded on the directory existing so an ordinary
+# build in a tree without standalone/ is unaffected.
+if [ -d ./standalone ]; then
+    cp ./standalone/scripts/quiesce-stock.sh ./build/scripts/
+    cp ./standalone/scripts/exit-to-stock.sh ./build/scripts/
+    chmod +x ./build/scripts/quiesce-stock.sh ./build/scripts/exit-to-stock.sh
+    cp ./standalone/scripts/install-privileged.sh ./build/bless.sh
+    chmod +x ./build/bless.sh
+fi
+
 # Backwards-compat symlinks for 0.7.x → 0.8.x upgrades (Module Store + Shadow UI updater).
 # The old /usr/lib/move-anything-shim.so symlink needs a target to resolve,
 # and the 0.7.x shadow UI updater checks for 'move-anything' binary by name.
