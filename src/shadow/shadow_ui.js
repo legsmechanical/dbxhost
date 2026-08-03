@@ -8522,6 +8522,26 @@ function enterMoveFxHierarchyEditor(moveSlot, fxSlot) {
     }
 }
 
+/* Root of the standalone-session tree, and whether one is running now.
+ *
+ * The launcher writes the marker when it takes the device and removes it when
+ * it gives it back, so this is true only for the span where "exit" should mean
+ * "hand the device back to stock Schwung" rather than "unload this module".
+ *
+ * Re-read rather than cached: a session can start or end without this process
+ * restarting, and a stale answer would send Shift+Back down the wrong path. The
+ * read is one stat on a gesture, not a hot path. */
+const STANDALONE_DIR = "/data/UserData/dbx-host";
+
+function standaloneSessionActive() {
+    try {
+        return typeof host_file_exists === "function" &&
+               !!host_file_exists(STANDALONE_DIR + "/standalone_active");
+    } catch (e) {
+        return false;
+    }
+}
+
 /* Load params and knobs for current hierarchy level */
 function loadHierarchyLevel() {
     if (!hierEditorHierarchy) return;
@@ -15762,8 +15782,16 @@ globalThis.tick = function() {
             if (cmdJson) {
                 try {
                     const cmd = JSON.parse(cmdJson);
-                    if (cmd.file_path && cmd.tool_id) {
-                        debugLog("open_tool_cmd: opening " + cmd.file_path + " in " + cmd.tool_id);
+                    /* file_path is optional. This path was written for "open
+                     * this FILE in that tool", but a tool that takes no file is
+                     * just as valid a target — the Tools menu itself launches
+                     * exactly those with an empty path
+                     * (startInteractiveTool(tool, "")). Requiring a non-empty
+                     * file_path silently ignored every such request, which is
+                     * how a standalone session ended up on the menu instead of
+                     * in its module. */
+                    if (cmd.tool_id) {
+                        debugLog("open_tool_cmd: opening " + (cmd.file_path || "(no file)") + " in " + cmd.tool_id);
                         /* host_open_file_in_tool is only defined inside setupModuleParamShims,
                          * so we replicate its logic here using the global functions directly. */
                         if (!toolModules || !toolModules.length) {
@@ -15772,7 +15800,7 @@ globalThis.tick = function() {
                         const tool = toolModules.find(t => t.id === cmd.tool_id);
                         if (tool) {
                             unloadModuleUi();
-                            startInteractiveTool(tool, cmd.file_path);
+                            startInteractiveTool(tool, cmd.file_path || "");
                         } else {
                             debugLog("open_tool_cmd: tool not found: " + cmd.tool_id);
                         }
@@ -16523,6 +16551,29 @@ globalThis.onMidiMessageInternal = function(data) {
          * Skip while co-run is active: the chain editor claims Back. */
         if ((status & 0xF0) === 0xB0 && d1 === MoveBack && d2 > 0 && overtakeSuspendKeepsJs && !coRunUiActive()) {
             if (hostShiftHeld) {
+                /* In a standalone session this host IS the session: there is no
+                 * shadow UI worth returning to, because the user launched
+                 * straight into a module and everything happens through it. So
+                 * Shift+Back leaves the whole host and hands the device back to
+                 * stock Schwung, rather than unloading the module and stranding
+                 * them on an empty menu.
+                 *
+                 * Gated on a marker the launcher writes, not on this being the
+                 * davebox build: modules and this UI live in directories SHARED
+                 * with the stock install, so the same code runs under both and
+                 * only a runtime signal can tell them apart. Absent the marker
+                 * this is exactly the stock behaviour.
+                 *
+                 * The script only stops this host; the launcher is waiting on it
+                 * and owns the restore. */
+                if (standaloneSessionActive()) {
+                    debugLog("HOST: Shift+Back → leaving the standalone host");
+                    if (typeof host_system_cmd === "function") {
+                        host_system_cmd("sh " + STANDALONE_DIR + "/scripts/exit-to-stock.sh");
+                        return;
+                    }
+                    debugLog("HOST: no host_system_cmd — falling back to module exit");
+                }
                 debugLog("HOST: Shift+Back → full exit (suspend_keeps_js module)");
                 if (toolOvertakeActive) exitToolOvertake();
                 else exitOvertakeMode();

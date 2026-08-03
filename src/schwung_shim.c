@@ -3230,6 +3230,24 @@ static void init_shadow_shm(void)
         shadow_control->read_idx = 0;
         shadow_control->ui_slot = 0;
         shadow_control->ui_flags = 0;
+        /* Standalone session: raise the open-tool command so this host boots
+         * straight into one module instead of its menu.
+         *
+         * Reuses the existing open_tool_cmd path rather than adding a parallel
+         * one, because that path already does BOTH halves — the check further
+         * down turns the shadow display on, and the shadow UI opens the tool
+         * named in open_tool_cmd.json. JS can read display_mode but cannot set
+         * it, so a JS-only "open this at boot" cannot claim the screen and the
+         * module renders invisibly behind Move's UI.
+         *
+         * The launcher writes both files; absent boot_tool.json this is inert,
+         * which is every ordinary boot. */
+        {
+            struct stat _bt;
+            if (stat(SCHWUNG_INSTALL_DIR "/boot_tool.json", &_bt) == 0) {
+                shadow_control->open_tool_cmd = 1;
+            }
+        }
         shadow_control->ui_patch_index = 0;
         shadow_control->ui_request_id = 0;
         /* Reset overtake state on every shim init.
