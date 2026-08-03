@@ -2393,6 +2393,55 @@ static JSValue js_host_trace_end(JSContext *ctx, JSValueConst this_val, int argc
     return JS_UNDEFINED;
 }
 
+/* Where THIS build keeps its own copy of shared/. Overridable at compile time
+ * (-DSCHWUNG_INSTALL_DIR=...) so a second install can live beside the stock one
+ * and still serve its own library code. Defaults to the stock location, which
+ * makes the rewrite below a no-op for every ordinary build. */
+#ifndef SCHWUNG_INSTALL_DIR
+#define SCHWUNG_INSTALL_DIR "/data/UserData/schwung"
+#endif
+
+/* The import prefix every shipped module hardcodes, e.g.
+ *   import { PADS } from '/data/UserData/schwung/shared/constants.mjs';
+ * It is part of the module contract: the same string in every module,
+ * regardless of which install is running. Deliberately a literal and NOT
+ * derived from SCHWUNG_INSTALL_DIR — it names the contract, not this build. */
+#define SHARED_IMPORT_CANONICAL "/data/UserData/schwung/shared/"
+#define SHARED_IMPORT_LOCAL     SCHWUNG_INSTALL_DIR "/shared/"
+
+/* Resolve a shared-library import to THIS install's shared/ directory.
+ *
+ * Modules import shared utilities by absolute canonical path, which hardcodes
+ * one install location. That is fine while only one install exists, but a
+ * second install running the SAME modules directory would load the other
+ * install's shared/ — silently mixing two builds' library code, with whatever
+ * contract skew that implies.
+ *
+ * Rewriting the prefix here keeps the module contract stable — no module edits,
+ * no fleet sweep — while letting each install serve its own shared/.
+ *
+ * Done by wrapping the LOADER rather than installing a normalizer: the loader
+ * receives names that are already normalized, so relative imports keep
+ * QuickJS's default resolution. Supplying a normalizer would mean
+ * reimplementing that resolution, and the default one is not exported.
+ *
+ * No-op on a stock build, where the two prefixes are the same string. */
+static JSModuleDef *schwung_module_loader(JSContext *ctx, const char *module_name,
+                                          void *opaque) {
+    const size_t canon_len = strlen(SHARED_IMPORT_CANONICAL);
+
+    if (strncmp(module_name, SHARED_IMPORT_CANONICAL, canon_len) == 0) {
+        char local[512];
+        int n = snprintf(local, sizeof(local), "%s%s",
+                         SHARED_IMPORT_LOCAL, module_name + canon_len);
+        /* Truncation would silently resolve to the wrong file; fall through to
+         * the canonical path instead, which at worst loads the stock copy. */
+        if (n > 0 && (size_t)n < sizeof(local))
+            return js_module_loader(ctx, local, opaque);
+    }
+    return js_module_loader(ctx, module_name, opaque);
+}
+
 static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     JSRuntime *rt = JS_NewRuntime();
     if (!rt) exit(2);
@@ -2403,7 +2452,7 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     js_std_add_helpers(ctx, -1, 0);
 
     /* Enable ES module imports (e.g., import { ... } from '../shared/constants.mjs') */
-    JS_SetModuleLoaderFunc(rt, NULL, js_module_loader, NULL);
+    JS_SetModuleLoaderFunc(rt, NULL, schwung_module_loader, NULL);
 
     JSValue global_obj = JS_GetGlobalObject(ctx);
 
