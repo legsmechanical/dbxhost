@@ -468,6 +468,29 @@ static int shadow_slot_deferred_valid[SHADOW_CHAIN_INSTANCES];
 static int16_t shadow_slot_fx_deferred[SHADOW_CHAIN_INSTANCES][FRAMES_PER_BLOCK * 2];
 static int shadow_slot_fx_deferred_valid[SHADOW_CHAIN_INSTANCES];
 
+/* Apply a slot's sound-generator level to its dry synth block, in place.
+ *
+ * This is the module level (`slot:synth_volume`), NOT the slot's bus fader
+ * (`slot:volume`). It scales the generator alone and must run BEFORE the
+ * slot's FX and before anything else is summed into the slot: post-FX the
+ * generator and any audio routed alongside it are one signal, so a fader there
+ * cannot balance the two against each other.
+ *
+ * Every path that renders a slot has to call this, or the level silently does
+ * nothing on that path while still reading back correctly in the UI. Unity is
+ * the default and is skipped outright, so a slot nobody has touched costs one
+ * float compare per block. */
+static inline void shadow_apply_synth_level(int slot, int16_t *buf) {
+    const float lvl = shadow_chain_slots[slot].synth_volume;
+    if (lvl == 1.0f) return;
+    for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
+        int32_t v = (int32_t)lroundf((float)buf[i] * lvl);
+        if (v > 32767) v = 32767;
+        if (v < -32768) v = -32768;
+        buf[i] = (int16_t)v;
+    }
+}
+
 /* ---- Preview player: lightweight WAV playback for file browser ---- */
 #define PREVIEW_CMD_PATH "/data/UserData/schwung/preview_cmd_path.txt"
 #define PREVIEW_WAV_FORMAT_PCM   1
@@ -1903,6 +1926,7 @@ static void shadow_inprocess_render_to_buffer(void) {
                 } else {
                     int16_t fx_buf[FRAMES_PER_BLOCK * 2];
                     memcpy(fx_buf, shadow_slot_deferred[s], sizeof(fx_buf));
+                    shadow_apply_synth_level(s, fx_buf);
                     struct timespec fx_t0, fx_t1;
                     clock_gettime(CLOCK_MONOTONIC, &fx_t0);
                     shadow_chain_process_fx(shadow_chain_slots[s].instance,
@@ -2379,7 +2403,13 @@ static void shadow_inprocess_mix_from_buffer(void) {
                  * cannot balance the two sources against each other. Post-FX the
                  * signals are inseparable (a reverb tail doesn't remember its
                  * source), so pre-sum is the only place this can work. Unity by
-                 * default — nothing changes until a UI drives it. */
+                 * default — nothing changes until a UI drives it.
+                 *
+                 * Applied inline here rather than via shadow_apply_synth_level()
+                 * because this path scales while copying and summing the routed
+                 * track in one pass. The other two render paths call the helper;
+                 * ⚠ all three must stay in sync, or the level works on some
+                 * paths and silently does nothing on the rest. */
                 const float synth_vol = shadow_chain_slots[s].synth_volume;
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                     int32_t combined = (synth_vol == 1.0f)
@@ -2559,6 +2589,7 @@ skip_la_rebuild:
 
                 int16_t fx_buf[FRAMES_PER_BLOCK * 2];
                 memcpy(fx_buf, shadow_slot_deferred[s], sizeof(fx_buf));
+                shadow_apply_synth_level(s, fx_buf);
                 shadow_chain_process_fx(shadow_chain_slots[s].instance,
                                         fx_buf, MOVE_FRAMES_PER_BLOCK);
 
