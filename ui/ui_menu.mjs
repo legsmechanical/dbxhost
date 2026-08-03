@@ -302,6 +302,18 @@ function buildGlobalMenuItems() {
         }),
         createAction('Quit', function() {
             saveState();                       /* sets pendingSuspendSave */
+            /* In a standalone session dAVEBOx IS the session — the user launched
+             * straight into it and there is no shadow UI worth returning to. So
+             * Quit leaves the whole host and hands the device back to stock
+             * Schwung, matching what Shift+Back does there.
+             *
+             * Runtime check, not build-time: the same module directory serves
+             * both the stock and the dAVEBOx host, so this exact code also runs
+             * under stock — where Quit must keep meaning "unload dAVEBOx". The
+             * marker is written and removed by the standalone launcher.
+             *
+             * Either way we save first, and either way the exit happens a tick
+             * later so the save actually lands. */
             S.pendingExitAfterSave = true;     /* drained one tick after save fires */
             S.globalMenuOpen = false;
         }),

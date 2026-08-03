@@ -272,6 +272,19 @@ var _lastSessionView = false;
  *   step-op drain, treat its ordering against the blocks above as a fresh
  *   design question, not a copy-paste restore.
  */
+/* True only while the standalone launcher owns the device. It writes the marker
+ * when it takes over and removes it when it hands back, so this is the one
+ * runtime signal telling us which host we are running under — the module
+ * directory is shared between both, so nothing at build time can. */
+function standaloneSessionActive() {
+    try {
+        return typeof host_file_exists === 'function' &&
+               !!host_file_exists('/data/UserData/dbx-host/standalone_active');
+    } catch (e) {
+        return false;
+    }
+}
+
 export function _tickImpl() {
     S.tickCount++;
     if (S.bootSplashTicks > 0) S.bootSplashTicks--;
@@ -1765,6 +1778,21 @@ export function _tickImpl() {
         invalidateLEDCache();
         clearAllLEDs();
         for (let _i = 0; _i < 4; _i++) setButtonLED(40 + _i, LED_OFF);
+        /* Standalone session: dAVEBOx IS the session, so quitting hands the
+         * device back to stock Schwung instead of unloading us onto an empty
+         * shadow UI. The script only stops the dAVEBOx host — its launcher is
+         * waiting on that and owns the restore, so we must NOT also try to
+         * bring anything back.
+         *
+         * Runtime check because this same module directory serves both hosts;
+         * under stock the marker is absent and this stays an ordinary module
+         * exit. LEDs are already cleared above either way. */
+        if (standaloneSessionActive()) {
+            if (typeof host_system_cmd === 'function') {
+                host_system_cmd('sh /data/UserData/dbx-host/scripts/exit-to-stock.sh');
+                return;
+            }
+        }
         if (typeof host_exit_module === 'function') host_exit_module();
     } else if (S.pendingHideAfterSave) {
         S.pendingHideAfterSave = false;

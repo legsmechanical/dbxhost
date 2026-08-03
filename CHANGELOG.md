@@ -8,6 +8,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **In a standalone session, Quit hands the device back to stock Schwung.** When
+  dAVEBOx has been launched as its own session — it *is* the session, rather than a
+  tool you opened from the menu — Quit saves your work and returns the device to the
+  official Schwung install, which is what Back already does there. Opening dAVEBOx the
+  ordinary way is unchanged: Quit still simply unloads it.
 - **Edit a track's sound without leaving dAVEBOx — `Shift + Note/Session`.** One
   gesture, and where it lands follows the track's route: Schwung tracks open a
   new sound editor over the track's whole chain (MIDI FX, synth, FX 1-4), Move
