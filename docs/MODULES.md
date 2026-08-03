@@ -864,6 +864,7 @@ static void set_param(void *instance, const char *key, const char *val) {
 static int get_param(void *instance, const char *key, char *buf, int buf_len) {
     my_instance_t *inst = (my_instance_t*)instance;
     // Return parameter value, ui_hierarchy, chain_params, etc.
+    // For a key you do not recognize, return a NEGATIVE value — see below.
     return -1;
 }
 
@@ -888,6 +889,32 @@ plugin_api_v2_t* move_plugin_init_v2(const host_api_v1_t* host) {
     return &api;
 }
 ```
+
+### `get_param` return value: unknown keys must be NEGATIVE
+
+The return value is a length, and the host treats the two "no value" cases
+differently:
+
+| return | host behaviour | reaches JS as |
+|---|---|---|
+| `< 0` | request is flagged as an error | `null` |
+| `0`   | request **succeeds** with a zero-length value | `""` (empty string) |
+
+**Return a negative value for any key you do not recognize.** Returning `0`
+says you answered and the value genuinely is empty, which is a different
+statement. Reserve `0` for keys you own that can legitimately be empty (an
+unset name, say).
+
+This matters because the Shadow UI probes **optional** readbacks on the params
+it displays — `<key>:base` and `<key>:modulated`, which only a target with a
+modulation system implements. A module that returns `0` for those unknown keys
+is reporting "the base value is the empty string", and a consumer that tests
+only for `null` will believe it: the row renders blank, shows a spurious `~`
+(modulated) marker because live `!=` base, and silently refuses edits because
+the edit seeds from `""`. The Shadow UI now normalizes `""` to absent for these
+optional readbacks, so a module getting this wrong no longer breaks the row —
+but the convention above is still the contract, and other consumers may be less
+forgiving.
 
 ### Runtime Modulation Callbacks (Chain Host)
 

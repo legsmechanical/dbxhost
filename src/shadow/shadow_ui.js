@@ -8948,20 +8948,42 @@ function buildHierarchyParamKey(key) {
     return `${prefix}:${key}`;
 }
 
+/* Read a param that a target is allowed NOT to implement.
+ *
+ * `:base` and `:modulated` are OPTIONAL readbacks — only a target that actually
+ * has a modulation system answers them. An unimplemented key comes back one of
+ * two ways depending on what the loaded DSP's get_param returns for a key it
+ * does not know:
+ *
+ *   negative  -> the host flags an error, shadow_get_param yields null
+ *   0         -> the host reports success with a zero-length value, and
+ *                shadow_get_param yields an EMPTY STRING
+ *
+ * Both mean "no such key", but a bare `!== null` test only catches the first,
+ * so on a module whose DSP returns 0 the caller would treat "" as a real value.
+ * That is never correct here: these readbacks are numeric, and "" is not a
+ * value any of them can legitimately have. Normalize both to null so callers
+ * have one absence to test. */
+function getOptionalSlotParam(slot, key) {
+    const val = getSlotParam(slot, key);
+    if (val === null || val === undefined || val === "") return null;
+    return val;
+}
+
 function getHierarchyDisplayRawValue(slot, fullKey) {
-    const baseVal = getSlotParam(slot, `${fullKey}:base`);
-    if (baseVal !== null && baseVal !== undefined) return baseVal;
+    const baseVal = getOptionalSlotParam(slot, `${fullKey}:base`);
+    if (baseVal !== null) return baseVal;
     return getSlotParam(slot, fullKey);
 }
 
 function isHierarchyParamModulated(slot, fullKey) {
-    const modulated = getSlotParam(slot, `${fullKey}:modulated`);
+    const modulated = getOptionalSlotParam(slot, `${fullKey}:modulated`);
     if (modulated === "1") return true;
     if (modulated === "0") return false;
 
     /* Fallback for targets that don't implement :modulated. */
-    const baseVal = getSlotParam(slot, `${fullKey}:base`);
-    if (baseVal === null || baseVal === undefined) return false;
+    const baseVal = getOptionalSlotParam(slot, `${fullKey}:base`);
+    if (baseVal === null) return false;
     const liveVal = getSlotParam(slot, fullKey);
     return liveVal !== null && liveVal !== undefined && liveVal !== baseVal;
 }
@@ -8987,7 +9009,7 @@ function beginHierarchyParamEdit(key) {
     }
 
     const fullKey = buildHierarchyParamKey(key);
-    const baseVal = getSlotParam(hierEditorSlot, `${fullKey}:base`);
+    const baseVal = getOptionalSlotParam(hierEditorSlot, `${fullKey}:base`);
     const liveVal = getSlotParam(hierEditorSlot, fullKey);
     if (baseVal === null && liveVal === null) return false;
 
@@ -9528,7 +9550,7 @@ function getKnobCachedValue(knobIndex, ctx) {
     }
 
     /* First access: do a blocking read (one-time cost) */
-    const baseVal = getSlotParam(ctx.slot, `${ctx.fullKey}:base`);
+    const baseVal = getOptionalSlotParam(ctx.slot, `${ctx.fullKey}:base`);
     const raw = (baseVal !== null) ? baseVal : getSlotParam(ctx.slot, ctx.fullKey);
     if (raw === null) return null;
 
