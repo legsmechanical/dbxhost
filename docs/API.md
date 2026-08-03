@@ -3,8 +3,14 @@
 This document describes the JavaScript API available for developing Schwung modules.
 
 > **`[FORK-ONLY]`** marks a binding that exists **only in this fork**, not in
-> upstream Schwung. There are exactly two: `host_vol_block` and
-> `host_edit_cc_block`. A module that calls either must gate on
+> upstream Schwung. There are three: `host_vol_block`, `host_edit_cc_block` and
+> `host_canvas_input`. Derive that list from the `JS_SetPropertyStr` registrations
+> diffed against `upstream/main`, never from this document — it has been
+> incomplete before. **And note the binding list is not the whole fork surface:**
+> fork-only *param-key namespaces* (`fx3:`/`fx4:`, `send_fx:a:`/`send_fx:b:`)
+> are invisible to any `typeof` probe, so a module using them misbehaves silently
+> on stock rather than degrading. Those need an explicit capability probe.
+> A module that calls a fork-only binding must gate on
 > `typeof host_x === 'function'` and carry a working degraded path, because on
 > a stock install the function is simply absent — that absence *is* the
 > capability probe, and needs nothing from upstream to work. Never gate such a

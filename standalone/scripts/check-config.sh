@@ -39,6 +39,17 @@ check "bless.sh carries DBX_DIR"       "$HERE/scripts/install-privileged.sh" "DB
 check "bless.sh heal name"             "$HERE/scripts/install-privileged.sh" "DBX_HEAL_NAME=$DBX_HEAL_NAME"
 check "bless.sh soname"                "$HERE/scripts/install-privileged.sh" "DBX_SHIM_SONAME=$DBX_SHIM_SONAME"
 
+# The HOST's own copy. shadow_ui.js owns the Shift+Back exit and reads the same
+# marker, so a DBX_DIR change that misses this line breaks exit-to-stock from the
+# host side with nothing failing. This one is in-repo and was simply overlooked.
+check "shadow_ui.js STANDALONE_DIR"    "$HERE/../src/shadow/shadow_ui.js" "STANDALONE_DIR = \"$DBX_DIR\""
+
+# The SHM namespace, not just the install dir. launch.sh clears the namespace on
+# both edges; if DBX_SHM_PREFIX changes and these do not, the host builds with a
+# new namespace that launch.sh then never cleans -- reproducing exactly the stale
+# -ring hang the prefix exists to prevent.
+check "launch.sh clears SHM namespace" "$HERE/scripts/launch.sh" "/dev/shm/${DBX_SHM_PREFIX#/}*"
+
 if [ "$fail" != "0" ]; then
     echo "config drift — fix the file above, or config.sh if the new value is intended" >&2
     exit 1
