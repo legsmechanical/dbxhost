@@ -2,6 +2,16 @@
 
 This document describes the JavaScript API available for developing Schwung modules.
 
+> **`[FORK-ONLY]`** marks a binding that exists **only in this fork**, not in
+> upstream Schwung. There are exactly two: `host_vol_block` and
+> `host_edit_cc_block`. A module that calls either must gate on
+> `typeof host_x === 'function'` and carry a working degraded path, because on
+> a stock install the function is simply absent — that absence *is* the
+> capability probe, and needs nothing from upstream to work. Never gate such a
+> feature on "am I in a standalone session" instead: the two are equivalent
+> today but diverge the moment a fork change merges upstream, at which point a
+> session gate wrongly hides a feature stock supports.
+
 > **Note on contexts.** Two QuickJS hosts register JS bindings:
 > `src/schwung_host.c` (the standalone `schwung` host binary) and
 > `src/shadow/shadow_ui.c` (the shadow-UI process the shim launches).
@@ -233,13 +243,27 @@ host_sampler_resume()         // Resume paused recording
 host_sampler_is_paused()      // -> bool
 host_sampler_get_samples_written() // -> int
 host_pad_block(bool)          // Suppress pad notes (68-99) from reaching Move
-host_vol_block(bool)          // Claim the master volume knob: suppress CC 79 + its
-                              // touch note (8) from reaching Move, so a tool can
-                              // repurpose the knob without Move also moving its
-                              // master level or raising its volume overlay.
+host_vol_block(bool)          // [FORK-ONLY] Claim the master volume knob: suppress
+                              // CC 79 + its touch note (8) from reaching Move, so a
+                              // tool can repurpose the knob without Move also moving
+                              // its master level or raising its volume overlay.
                               // Runtime complement to capabilities.claims_master_knob.
                               // Auto-cleared when overtake ends; clear it yourself
                               // when you stop wanting the knob.
+host_edit_cc_block(bool)      // [FORK-ONLY] Claim Undo (56) / Copy (60) / Delete (119)
+                              // so they reach the module instead of Move firmware.
+                              // Runtime complement to capabilities.claims_edit_ccs,
+                              // which the host raises for its OWN screens (CANVAS /
+                              // HIERARCHY_EDITOR / COMPONENT_EDIT / COMPONENT_PARAMS).
+                              // A tool showing another module's UI is not in that
+                              // table -- the view is the tool's own overtake view and
+                              // the host cannot know a module's UI is on screen -- so
+                              // the tool must raise the claim itself while it owns the
+                              // display, and drop it when it stops.
+                              // Reconcile on CHANGE only: the host is not told the
+                              // current state, so calling it every tick spams the
+                              // shim. Release still reaches the consumer that got the
+                              // press even if the claim is dropped in between.
 host_preview_play(path)       // Play a WAV preview through Move's speakers
 host_preview_stop()
 host_send_screenreader(text)  // Same as host_announce_screenreader
