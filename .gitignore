@@ -25,3 +25,6 @@ libs/memfault-firmware-sdk/
 
 # Code-graph tooling output (graphify) — never commit
 graphify-out/
+
+# standalone build output (cross-compiled davebox-heal)
+standalone/build/

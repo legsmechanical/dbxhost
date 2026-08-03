@@ -31,7 +31,13 @@ echo "=== davebox-heal ($CC, DBX_DIR=$DBX_DIR) ==="
 
 # -static so a setuid binary carries no dependency on a library path we do not
 # control. Warnings are errors: this thing runs as root.
-"$CC" -O2 -std=c11 -Wall -Wextra -Werror -static \
+#
+# _POSIX_C_SOURCE is required with -std=c11: strict ISO C hides fchown/fchmod,
+# and -Werror then turns the implicit declarations into build failures. Declaring
+# the POSIX surface explicitly is better than relaxing to -std=gnu11 — the
+# implicit declaration of a function taking uid_t/gid_t is exactly the kind of
+# thing that must not be papered over in a setuid-root binary.
+"$CC" -O2 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -static \
       -DDBX_DIR="\"$DBX_DIR\"" \
       -o "$OUT/$DBX_HEAL_NAME" "$HERE/src/davebox-heal.c"
 
