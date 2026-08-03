@@ -3,8 +3,8 @@
 This document describes the JavaScript API available for developing Schwung modules.
 
 > **`[FORK-ONLY]`** marks a binding that exists **only in this fork**, not in
-> upstream Schwung. There are three: `host_vol_block`, `host_edit_cc_block` and
-> `host_canvas_input`. Derive that list from the `JS_SetPropertyStr` registrations
+> upstream Schwung. There are four: `host_vol_block`, `host_edit_cc_block`,
+> `host_canvas_input` and `host_build_info`. Derive that list from the `JS_SetPropertyStr` registrations
 > diffed against `upstream/main`, never from this document — it has been
 > incomplete before. **And note the binding list is not the whole fork surface:**
 > fork-only *param-key namespaces* (`fx3:`/`fx4:`, `send_fx:a:`/`send_fx:b:`)
@@ -256,6 +256,26 @@ host_vol_block(bool)          // [FORK-ONLY] Claim the master volume knob: suppr
                               // Runtime complement to capabilities.claims_master_knob.
                               // Auto-cleared when overtake ends; clear it yourself
                               // when you stop wanting the knob.
+host_build_info()             // [FORK-ONLY] -> JSON string of facts about THIS host
+                              // build. Exists because a module cannot probe a
+                              // param-key NAMESPACE the way it probes a binding:
+                              // typeof proves a function exists, but nothing says
+                              // whether `fx3:` or `send_fx:a:` will be ROUTED. A
+                              // module that assumes wrongly renders rows whose
+                              // reads return nothing and whose writes are silently
+                              // discarded -- misbehaviour, not degradation.
+                              // {"install_dir": "...",   this build's tree
+                              //  "shm_prefix":  "...",   its SHM namespace
+                              //  "slot_fx_blocks": 4,    fx1..fxN per slot chain
+                              //  "send_fx": true}        send_fx:a:/b: routed?
+                              // ⚠ Treat ABSENCE as the upstream defaults:
+                              // slot_fx_blocks 2, send_fx false, stock install dir.
+                              // ⚠ To ask "which install am I under?", COMPARE
+                              // install_dir to a known path -- do not test for the
+                              // function. That stays correct if this lands
+                              // upstream, where a stock build would answer with the
+                              // stock directory rather than not answer at all.
+                              // Read-only, side-effect free.
 host_edit_cc_block(bool)      // [FORK-ONLY] Claim Undo (56) / Copy (60) / Delete (119)
                               // so they reach the module instead of Move firmware.
                               // Runtime complement to capabilities.claims_edit_ccs,
