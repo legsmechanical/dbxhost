@@ -48,8 +48,19 @@ eq(fmtGateMod(0), 'Off', 'fmtGateMod 0');
 eq(fmtGateMod(10), '1bar', 'fmtGateMod 10');
 eq(fmtGateMod(99), 'Off', 'fmtGateMod out-of-range falls to Off');
 
-/* fmtDiq: fixed label array, index-or-fallback (ui_constants.mjs:112) */
-eq(fmtDiq(8), '1/4T', 'fmtDiq 8');
+/* fmtDiq: fixed label array, index-or-fallback (ui_constants.mjs:112).
+ *
+ * Triplet suffixes are LOWERCASE `t`, deliberately — 2add2e1 (2026-07-21) "real
+ * lowercase d/t for triplet and dotted suffixes". This pin was written before that
+ * and kept asserting '1/4T', so it failed from that day on. Fixed 2026-08-03.
+ *
+ * All three triplet labels are checked, not just one: a pin on a single index is
+ * what let the convention change out from under this test in the first place, and
+ * a half-applied casing change would still pass. */
+eq(fmtDiq(4), '1/16t', 'fmtDiq 4 — lowercase triplet');
+eq(fmtDiq(6), '1/8t',  'fmtDiq 6 — lowercase triplet');
+eq(fmtDiq(8), '1/4t',  'fmtDiq 8 — lowercase triplet');
+eq(fmtDiq(0), 'Off', 'fmtDiq 0');
 eq(fmtDiq(99), 'Off', 'fmtDiq out-of-range falls to Off');
 
 /* fmtStretch: 0 -> '1x'; >0 -> 'x'+2^exp; <0 -> '/'+2^-exp (ui_constants.mjs:82-86) */
