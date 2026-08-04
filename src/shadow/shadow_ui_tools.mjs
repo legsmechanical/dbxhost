@@ -44,7 +44,11 @@ function getToolProcessingRatio() {
 
 /* ---- Scan --------------------------------------------------------------- */
 
-export function scanForToolModules() {
+/* includeHidden: `hidden` suppresses a tool from the BROWSABLE menu; it does not
+ * make the tool unlaunchable. A caller that already knows the exact id it wants
+ * (open_tool_cmd, boot-into-a-tool) passes true so a hidden tool can still be
+ * opened by explicit request. Default false keeps the menu unchanged. */
+export function scanForToolModules(includeHidden) {
     const TOOLS_DIR = "/data/UserData/schwung/modules/tools";
     const result = [];
     const { debugLog } = ctx;
@@ -67,7 +71,7 @@ export function scanForToolModules() {
                 const content = std.loadFile(modulePath);
                 if (!content) continue;
                 const json = JSON.parse(content);
-                if (json.component_type === "tool" && (json.tool_config || json.standalone) && !json.hidden) {
+                if (json.component_type === "tool" && (json.tool_config || json.standalone) && (includeHidden || !json.hidden)) {
                     debugLog("FOUND tool: " + json.name);
                     result.push({
                         id: json.id || entry,

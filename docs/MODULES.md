@@ -115,6 +115,28 @@ Tool modules (`"component_type": "tool"`) appear in the Tools menu and support a
 
 Interactive tools use `host_exit_module()` to return to the tools menu when the user presses Back.
 
+#### Hiding a tool from the menu
+
+A top-level `"hidden": true` in `module.json` keeps a tool out of the Tools menu:
+
+```json
+{
+    "id": "my-tool",
+    "component_type": "tool",
+    "hidden": true
+}
+```
+
+`hidden` controls **browsability only — it does not make the tool unlaunchable.**
+Anything that names an exact `id` still opens it: `host_open_file_in_tool(path, id)`
+and the `open_tool_cmd.json` request path both resolve against a hidden-inclusive
+scan. That is the point of the flag — a tool that is always reached by an explicit
+request (opened by another module, or booted into on startup) can stay off a menu
+where picking it would be meaningless or wrong, without becoming unreachable.
+
+The Tools menu itself is the only browsable surface, so a hidden tool is invisible
+to the user but fully functional when something asks for it by name.
+
 ### Defaults
 
 Use `defaults` to pass initial parameters to DSP plugins at load time:

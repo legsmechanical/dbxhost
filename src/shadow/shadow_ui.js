@@ -2483,10 +2483,9 @@ function setupModuleParamShims(slot, componentKey) {
 
     globalThis.host_open_file_in_tool = function(filePath, toolId) {
         if (!filePath || !toolId) return false;
-        if (!toolModules || !toolModules.length) {
-            toolModules = scanForToolModules();
-        }
-        const tool = toolModules.find(t => t.id === toolId);
+        /* Hidden-inclusive, uncached — same reasoning as the open_tool_cmd
+         * handler: an explicit tool_id is a direct request, not browsing. */
+        const tool = scanForToolModules(true).find(t => t.id === toolId);
         if (!tool) {
             debugLog("host_open_file_in_tool: tool not found: " + toolId);
             return false;
@@ -14570,7 +14569,7 @@ function drawFxBusPicker() {
     });
     drawFooter("Back: exit");
 }
-function scanForToolModules() { return _scanForToolModules(); }
+function scanForToolModules(includeHidden) { return _scanForToolModules(includeHidden); }
 function enterToolsMenu() {
     _enterToolsMenu();
     try {
@@ -15794,10 +15793,14 @@ globalThis.tick = function() {
                         debugLog("open_tool_cmd: opening " + (cmd.file_path || "(no file)") + " in " + cmd.tool_id);
                         /* host_open_file_in_tool is only defined inside setupModuleParamShims,
                          * so we replicate its logic here using the global functions directly. */
-                        if (!toolModules || !toolModules.length) {
-                            toolModules = scanForToolModules();
-                        }
-                        const tool = toolModules.find(t => t.id === cmd.tool_id);
+                        /* Resolve against a hidden-INCLUSIVE scan, and do not
+                         * cache it into toolModules (that is the browsable
+                         * list). An explicit tool_id is a direct request, not
+                         * browsing, so `hidden` must not block it — otherwise a
+                         * tool deliberately kept off the menu and opened only by
+                         * id becomes unreachable, failing silently with nothing
+                         * but a debug line. */
+                        const tool = scanForToolModules(true).find(t => t.id === cmd.tool_id);
                         if (tool) {
                             unloadModuleUi();
                             startInteractiveTool(tool, cmd.file_path || "");
