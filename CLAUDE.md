@@ -43,9 +43,16 @@ Static/regression suite: `for t in tests/{host,shadow,store,build}/*.sh; do bash
 **CI gates the `tests/host/` subset** — `.github/workflows/ci.yml` runs `host-tests`
 (`make -C tests/host test` + all `tests/host/*.sh`, all green), `go`
 (`schwung-manager`), and `cross-compile` (ARM64 Docker build) on every PR and push
-to `main`. `main` is branch-protected: **all three checks are required and direct
-pushes are blocked** — work on a branch and open a PR (see `CONTRIBUTING.md`;
-install the fast local checks with `./scripts/install-hooks.sh`). The broader
+to `main`. ⚠ **`main` is NOT branch-protected in THIS fork — commit to it directly.**
+This paragraph used to claim protection was enforced and PRs were required; that was
+inherited verbatim from upstream's PUBLIC repo, where it is true. This fork is
+**private on a free plan**, where GitHub offers neither branch protection nor
+rulesets — the API returns 403 on read *and* write. The stale claim caused real
+wasted work (a worktree and branch created for a change that could have landed
+directly, plus a "this needs a PR" hand-off that was not true).
+CI still runs on every push, so the signal is intact without the gate; run
+`tests/host/` locally before pushing rather than relying on a merge check. Install
+the fast local checks with `./scripts/install-hooks.sh`. The broader
 `tests/{shadow,store,build}` suites are **not** run by CI — ~20 stale failures pin
 since-moved code (see the cleanup review doc). On-hardware behavior is verified
 manually. Enable the unified logger:

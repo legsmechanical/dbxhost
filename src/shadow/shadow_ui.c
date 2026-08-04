@@ -2111,8 +2111,9 @@ static JSValue js_host_build_info(JSContext *ctx, JSValueConst this_val,
     (void)this_val; (void)argc; (void)argv;
     char buf[512];
     snprintf(buf, sizeof(buf),
-             "{\"install_dir\":\"%s\",\"shm_prefix\":\"%s\","
+             "{\"contract\":%d,\"install_dir\":\"%s\",\"shm_prefix\":\"%s\","
              "\"slot_fx_blocks\":%d,\"send_fx\":%s}",
+             SCHWUNG_BUILD_INFO_CONTRACT,
              SCHWUNG_INSTALL_DIR, SCHWUNG_SHM_PREFIX,
              SLOT_FX_BLOCKS,
 #if defined(SCHWUNG_HAS_SEND_FX) && SCHWUNG_HAS_SEND_FX

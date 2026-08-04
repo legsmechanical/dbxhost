@@ -264,10 +264,19 @@ host_build_info()             // [FORK-ONLY] -> JSON string of facts about THIS 
                               // module that assumes wrongly renders rows whose
                               // reads return nothing and whose writes are silently
                               // discarded -- misbehaviour, not degradation.
-                              // {"install_dir": "...",   this build's tree
+                              // {"contract": 1,          payload contract version
+                              //  "install_dir": "...",   this build's tree
                               //  "shm_prefix":  "...",   its SHM namespace
                               //  "slot_fx_blocks": 4,    fx1..fxN per slot chain
                               //  "send_fx": true}        send_fx:a:/b: routed?
+                              // `contract` exists because a module and this host
+                              // are separate repos, so a new module can land on an
+                              // old host. Require a minimum and say so loudly:
+                              // without it, "this host has no Send FX" and "this
+                              // host is too old to say" look identical, so a module
+                              // silently hides working features. Bump it when the
+                              // payload gains a field consumers may depend on, or a
+                              // field changes meaning — NOT when a value changes.
                               // ⚠ Treat ABSENCE as the upstream defaults:
                               // slot_fx_blocks 2, send_fx false, stock install dir.
                               // ⚠ To ask "which install am I under?", COMPARE
