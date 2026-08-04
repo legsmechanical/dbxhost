@@ -31,11 +31,24 @@ import (
 	"syscall"
 )
 
-// chownToAbleton flips a file's owner to ableton:users. schwung-manager
-// runs as root on the device, so anything it creates inside a module
-// directory is root-owned by default — but the module's ui.js runs as
-// ableton and needs to read its own config and secrets. Failures are
-// non-fatal in dev environments where ableton:users may not exist.
+// chownToAbleton flips a file's owner to ableton:users so a module's ui.js can
+// read its own config and secrets.
+//
+// ⚠ This comment used to claim "schwung-manager runs as root on the device".
+// That is FALSE and it misled a reader into believing the manager could perform
+// privileged installs. Measured on device: the manager is uid 1000 (ableton) in
+// all four uid fields, and not setuid. It cannot be otherwise — the launch chain
+// is MoveLauncher → MoveOriginal → shim-entrypoint.sh → schwung-manager, and
+// MoveOriginal runs as ableton, so the manager inherits it. schwung-heal.c's own
+// header says the same ("an on-device upgrade (schwung-manager runs as ableton)").
+//
+// The chown is therefore normally a no-op (ableton → ableton) and is kept only
+// because it is correct in the rare case a file arrives owned by someone else.
+// Failures stay non-fatal: dev environments may have no ableton:users at all.
+//
+// ⚠ Do not build an install feature on an assumption of privilege here. Anything
+// needing root — /usr/lib, a setuid bit — must go through the one-time
+// bless step and a setuid helper with compile-time-fixed paths.
 func chownToAbleton(path string) {
 	u, err := user.Lookup("ableton")
 	if err != nil {
