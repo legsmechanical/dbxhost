@@ -4,13 +4,19 @@ A hands-on walkthrough that takes you from a blank set to a looping pattern with
 effects, scenes, and a taste of Performance Mode — in about fifteen minutes.
 
 Work through the lessons in order. Each one builds on the last. When you want the
-full detail on anything you meet here, the [**dAVEBOx Manual**](MANUAL.md) is the
-complete reference — this guide links into it as you go.
+full detail on anything you meet here, the [**dAVEBOx SA Manual**](MANUAL-SA.md) is
+the complete reference — this guide links into it as you go.
 
-> **What is dAVEBOx?** An 8-track MIDI sequencer that runs as a tool module
-> inside [Schwung](https://github.com/charlesvestal/schwung) on the Ableton Move.
-> It makes no sound of its own — every note it plays is sent to Move's built-in
-> instruments, to Schwung's effect chains, or out to an external synth over USB.
+> **What is dAVEBOx?** An 8-track MIDI sequencer for the Ableton Move, running on
+> [Schwung](https://github.com/charlesvestal/schwung). It makes no sound of its own
+> — every note it plays is sent to Move's built-in instruments, to Schwung's effect
+> chains, or out to an external synth over USB.
+
+> **Running dAVEBOx Legacy?** If you open dAVEBOx as an ordinary tool from inside
+> official Schwung rather than launching **dAVEBOx SA**, follow
+> [`MANUAL.md`](MANUAL.md) instead. Everything in *this* guide still applies —
+> the sequencer is the same — except for how you start and leave it, in the
+> one-time setup below.
 
 ---
 
@@ -41,10 +47,22 @@ Forward Channel set to **Auto** (not Thru):
 
 With that done, dAVEBOx tracks 1–4 play Move's instruments and tracks 5–8 play
 Schwung's chains. (You can change any track's channel and routing later — see the
-manual's [Routing & Sync](MANUAL.md#14-routing--sync) chapter.)
+manual's [Routing & Sync](MANUAL-SA.md#14-routing--sync) chapter.)
 
-Now load a Move set and open dAVEBOx from Schwung's tool menu
-(**Shift + Step button 13** — the star).
+Now **load a Move set** — do this first, because dAVEBOx picks up the set you are
+in as it starts. Then open Schwung's tool menu (**Shift + Step button 13** — the
+star) and choose **dAVEBOx SA**.
+
+The screen goes dark for a few seconds while Move restarts, and comes back with you
+already in the sequencer. That pause is the startup; nothing has gone wrong.
+
+To leave at any point: **Shift + Back**, or **Quit** in the Settings menu. Either
+one saves your work and returns you to official Schwung — and so does a reboot, if
+you ever need it.
+
+*(On dAVEBOx Legacy the same menu entry is just **dAVEBOx**, it opens immediately
+with no restart, and leaving returns you to Schwung's menu rather than restarting
+Move.)*
 
 ---
 
@@ -95,7 +113,7 @@ each. The right 4×4 is a function area (velocity, repeats) you can ignore for n
 
 Each lane is its own little sequencer, so you can even give them different
 lengths later for polyrhythms. Full detail lives in the manual's
-[Drum Clips](MANUAL.md#7-drum-clips) chapter.
+[Drum Clips](MANUAL-SA.md#7-drum-clips) chapter.
 
 ---
 
@@ -116,7 +134,7 @@ Now let's play some notes on another track.
 Want a different key or scale for everything? Open the Settings menu
 (**Shift + Note/Session**) and edit **Key** or **Scale** — as you turn the knob
 you'll *hear* a live preview, and a confirm asks before it commits. See
-[Key & Scale](MANUAL.md#162-key--scale) in the manual.
+[Key & Scale](MANUAL-SA.md#162-key--scale) in the manual.
 
 ---
 
@@ -134,7 +152,7 @@ These settings belong to *this clip only*. Effects are non-destructive: they
 transform playback without changing your written notes, so returning a knob to its
 default undoes it cleanly. Explore the other banks (NOTE FX, HARMONY, SEQ ARP) the
 same way — turn the jog, turn the knobs. The
-[Effects](MANUAL.md#10-effects) chapter covers every one.
+[Effects](MANUAL-SA.md#10-effects) chapter covers every one.
 
 ---
 
@@ -158,7 +176,7 @@ a row of clips across all tracks is a **scene**.
 Launching a *single* clip (step 4) changes only its track, so the drums keep
 running while you swap the melody. Launching a *scene* switches every track at
 once — an empty cell in that row switches its track to an empty clip and silences
-it. More in [Arranging](MANUAL.md#12-arranging) and [Scenes](MANUAL.md#122-scenes).
+it. More in [Arranging](MANUAL-SA.md#12-arranging) and [Scenes](MANUAL-SA.md#122-scenes).
 
 ---
 
@@ -179,7 +197,7 @@ live with a grid of effects.
    ready-made combination (try slot 1, "Float").
 
 Performance Mode is deep — capture lengths, latching, and 16 preset slots are all
-covered in [Performance Mode](MANUAL.md#13-performance-mode).
+covered in [Performance Mode](MANUAL-SA.md#13-performance-mode).
 
 ---
 
@@ -194,7 +212,7 @@ dAVEBOx saves automatically, so you rarely have to think about it:
 
 For named backups you can return to, use **Save state** in the Settings menu — it
 keeps up to 16 timestamped snapshots per set. See
-[Snapshots](MANUAL.md#163-snapshots).
+[Snapshots](MANUAL-SA.md#163-snapshots).
 
 ---
 
@@ -203,19 +221,19 @@ keeps up to 16 timestamped snapshots per set. See
 You now know enough to make complete patterns. When you're ready for more:
 
 - **Editing notes precisely** — hold any step to open the step editor (length,
-  velocity, nudge, probability, ratchets): [Editing notes](MANUAL.md#63-editing-notes).
+  velocity, nudge, probability, ratchets): [Editing notes](MANUAL-SA.md#63-editing-notes).
 - **Longer clips and loops** — clips can run up to 256 steps; hold **Loop** in
-  Track View to set the loop window: [Clip length & the loop](MANUAL.md#66-clip-length--the-loop).
+  Track View to set the loop window: [Clip length & the loop](MANUAL-SA.md#66-clip-length--the-loop).
 - **Recording live** — press **Record** to capture pad playing into a clip:
-  [Recording](MANUAL.md#64-recording).
+  [Recording](MANUAL-SA.md#64-recording).
 - **Automation** — record knob moves that play back with the clip:
-  [Automation](MANUAL.md#11-automation).
+  [Automation](MANUAL-SA.md#11-automation).
 - **The Conductor** — a track that transposes all the others in real time:
-  [The Conductor](MANUAL.md#8-the-conductor).
+  [The Conductor](MANUAL-SA.md#8-the-conductor).
 - **Exporting to Ableton Live** — render your whole set to an `.ablbundle`:
-  [Export to Live](MANUAL.md#153-export-to-live).
+  [Export to Live](MANUAL-SA.md#153-export-to-live).
 
 And whenever you need a quick reminder of a control, the manual's
-[Quick Reference](MANUAL.md#18-quick-reference) lists every gesture on one screen.
+[Quick Reference](MANUAL-SA.md#18-quick-reference) lists every gesture on one screen.
 
 Have fun.

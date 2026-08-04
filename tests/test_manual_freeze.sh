@@ -53,6 +53,19 @@ for m in DRAFT-BANNER-START DRAFT-BANNER-END; do
         note "SA draft is missing $m — the banner would be published verbatim"
 done
 
+# 5. QUICKSTART's deep links must target the LIVING manual. Onboarding pointing
+#    into a frozen document is the quiet version of this bug: every link resolves,
+#    so nothing looks broken, and new users are simply reading about the wrong
+#    build. A single top-level pointer to MANUAL.md is intentional (the "running
+#    Legacy?" note), so only deep links are checked.
+if [ -f QUICKSTART.md ]; then
+    if grep -q '(MANUAL\.md#' QUICKSTART.md; then
+        note "QUICKSTART.md deep-links into the FROZEN manual — point them at MANUAL-SA.md"
+    fi
+    grep -q 'MANUAL-SA\.md' QUICKSTART.md || \
+        note "QUICKSTART.md never references MANUAL-SA.md — onboarding points at the frozen manual"
+fi
+
 if [ "$fail" != "0" ]; then
     echo "manual freeze: FAILED" >&2
     exit 1
