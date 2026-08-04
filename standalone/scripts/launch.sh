@@ -27,6 +27,26 @@ setsid bash -c '
     i=$((i+1))
   done
 
+  # Refuse to start on top of a live session. There was no guard here at all,
+  # and a second launch is not a harmless no-op: it tears the stack down under
+  # the session that is already running. It also becomes a corruption path once
+  # this script rewrites set routing — the second launch would record the FIRST
+  # already-patched values from launch one as the "originals" to restore.
+  #
+  # Staleness is decided by boot id, exactly as the readers do (see the marker
+  # write below), so a marker stranded by a hard reboot does NOT lock the user
+  # out of launching — which would turn one bug into a worse one.
+  if [ -s "$DBX_DIR/standalone_active" ]; then
+    _prev=$(cat "$DBX_DIR/standalone_active" 2>/dev/null)
+    _now=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
+    if [ -n "$_now" ] && [ "$_prev" = "$_now" ]; then
+      echo "a standalone session is already active this boot — refusing to launch"
+      exit 1
+    fi
+    echo "clearing standalone marker from a previous boot ($_prev)"
+    rm -f "$DBX_DIR/standalone_active"
+  fi
+
   # Stand the watchdog down FIRST. move-launcher.service is systemd-supervised
   # with Restart=on-failure, so killing MoveLauncher makes systemd revive the
   # whole stock stack a few seconds later — and it would then be running
@@ -42,7 +62,20 @@ setsid bash -c '
   # under at build time — this is the runtime signal, and we own both of its
   # edges. Without it, Shift+Back under stock Schwung would try to tear down
   # stock.
-  : > "$DBX_DIR/standalone_active"
+  #
+  # STAMPED WITH THE CURRENT BOOT ID, because we own the edges only when we are
+  # allowed to run them. The marker lives in /data (persistent) and is removed
+  # only on the clean-exit path below — so a hard reboot, which is precisely the
+  # documented "always returns you to stock" recovery action, used to leave it
+  # behind. Stock Schwung then believed a standalone session was live and every
+  # davebox Quit became a surprise device restart, until someone deleted the
+  # file by hand. Readers compare the stamp to the live kernel boot id, so
+  # a marker from a previous boot is self-evidently dead.
+  #
+  # (An empty marker is treated as live by readers, so a payload from an older
+  # launcher keeps the previous semantics rather than breaking mid-session.)
+  cat /proc/sys/kernel/random/boot_id > "$DBX_DIR/standalone_active" 2>/dev/null \
+    || : > "$DBX_DIR/standalone_active"
 
   # Boot straight into dAVEBOx rather than the host menu. Two files because the
   # mechanism is split: the shim raises open_tool_cmd when boot_tool.json exists

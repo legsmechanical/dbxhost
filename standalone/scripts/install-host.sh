@@ -60,7 +60,13 @@ $SSH "test -x '$DBX_DIR/schwung' && test -d '$DBX_DIR/shadow'" 2>/dev/null || {
 # ⚠ Never swap a running host's binaries by default. The live process keeps its old
 # inode (so it survives), but the on-disk tree ends up half-new while the session
 # continues on the old code — and the next launch runs a combination nobody built.
-if $SSH "test -e '$DBX_DIR/standalone_active'" 2>/dev/null; then
+# Boot-id comparison, not mere existence: the marker is removed only on a clean
+# exit, so one left behind by a hard reboot used to make this refuse forever —
+# a deploy blocked by a session that ended days ago. Empty/legacy markers still
+# count as live (permissive, matching the host's own reader).
+if $SSH "m=\$(cat '$DBX_DIR/standalone_active' 2>/dev/null) || exit 1; \
+         b=\$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); \
+         [ -z \"\$m\" ] || [ -z \"\$b\" ] || [ \"\$m\" = \"\$b\" ]" 2>/dev/null; then
     if [ "$FORCE" != "1" ]; then
         echo "" >&2
         echo "REFUSING: a standalone session is running right now." >&2
