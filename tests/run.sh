@@ -34,4 +34,12 @@ else
     echo "JS: SKIPPED (node not found)"
 fi
 
-[ "$fail" -eq 0 ] && [ "$js_fail" -eq 0 ]
+# Repo-invariant shell checks (no compilation, no device). These pin conventions
+# whose breakage is silent — e.g. a release overwriting the frozen legacy manual.
+sh_fail=0
+for t in tests/test_*.sh; do
+    [ -f "$t" ] || continue
+    if bash "$t"; then :; else echo "FAIL: $(basename "$t")"; sh_fail=1; fi
+done
+
+[ "$fail" -eq 0 ] && [ "$js_fail" -eq 0 ] && [ "$sh_fail" -eq 0 ]

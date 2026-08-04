@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # Cut a release: finalize CHANGELOG [Unreleased] → versioned section,
 # finalize notes/tech-changelog.md [Unreleased] the same way (untracked,
-# best-effort), promote MANUAL.draft.md → MANUAL.md (banner stripped), bump
+# best-effort), promote MANUAL-SA.draft.md → MANUAL-SA.md (banner stripped), bump
 # release.json, build fresh tarball, commit, tag, and push.
 #
-# Manual model: edit MANUAL.draft.md (tracked working copy) for user-facing
-# changes as they land; the public MANUAL.md is only updated here at release
-# time, so it stays pinned to releases and never documents unreleased features.
+# Manual model (two manuals since 2026-08-03): edit docs/working/MANUAL-SA.draft.md
+# (tracked working copy) for user-facing changes as they land; the public
+# MANUAL-SA.md is only updated here at release time, so it stays pinned to releases
+# and never documents unreleased features.
+#
+# ⚠ MANUAL.md is the FROZEN legacy manual (dAVEBOx as an ordinary tool on official
+# Schwung). This script must never write or stage it — see the comment at the
+# promotion step, and tests/test_manual_freeze.sh.
 #
 # Usage:  ./scripts/cut_release.sh <version>     (e.g. 0.2.0)
 #
@@ -112,14 +117,23 @@ mdata["version"] = version
 mj.write_text(json.dumps(mdata, indent=4) + "\n")
 print(f"  module.json: version → {version}")
 
-# MANUAL: promote the tracked working draft (MANUAL.draft.md) into the public
-# MANUAL.md, stripping the WORKING-DRAFT banner. We edit MANUAL.draft.md as
-# user-facing changes land so the public manual stays pinned to releases (it
-# doesn't document unreleased features). Best-effort: if the draft is missing,
-# leave the public manual untouched and warn.
-md = pathlib.Path("docs/working/MANUAL.draft.md")
+# MANUAL: promote the tracked working draft into the public manual, stripping the
+# WORKING-DRAFT banner. We edit the draft as user-facing changes land so the public
+# manual stays pinned to releases (it doesn't document unreleased features).
+#
+# ⚠ The target is MANUAL-SA.md, NOT MANUAL.md. There are two manuals now:
+#   MANUAL.md      dAVEBOx as an ordinary tool on official Schwung — FROZEN at its
+#                  final release under that model. Never written by this script.
+#   MANUAL-SA.md   dAVEBOx SA, the actively developed path. Promoted from
+#                  docs/working/MANUAL-SA.draft.md, below.
+# Legacy stays where it is; all development targets SA. Overwriting MANUAL.md from
+# the SA draft would silently replace the frozen legacy manual with a document
+# describing features that path does not have (four insert FX, two send buses,
+# booting straight in) — so it is left alone deliberately, not by omission.
+# tests/js/../test_manual_freeze.sh pins this.
+md = pathlib.Path("docs/working/MANUAL-SA.draft.md")
 if not md.exists():
-    print("  docs/working/MANUAL.draft.md: not found — skipping (public MANUAL.md left as-is)")
+    print("  docs/working/MANUAL-SA.draft.md: not found — skipping (MANUAL-SA.md left as-is)")
 else:
     promoted = re.sub(r"<!-- DRAFT-BANNER-START -->.*?<!-- DRAFT-BANNER-END -->\n*",
                       "", md.read_text(), flags=re.DOTALL)
@@ -130,8 +144,8 @@ else:
     # GitHub and in a local checkout viewed from the repo root.
     nimg = promoted.count('src="img/')
     promoted = promoted.replace('src="img/', 'src="docs/working/img/')
-    pathlib.Path("MANUAL.md").write_text(promoted)
-    print(f"  MANUAL.md: promoted from MANUAL.draft.md (banner stripped, {nimg} image path(s) rebased)")
+    pathlib.Path("MANUAL-SA.md").write_text(promoted)
+    print(f"  MANUAL-SA.md: promoted from MANUAL-SA.draft.md (banner stripped, {nimg} image path(s) rebased)")
 PYEOF
 
 # --- build fresh tarball ----------------------------------------------------
@@ -140,7 +154,9 @@ echo "Building release tarball..."
 ./scripts/build.sh
 
 # --- commit, tag, push ------------------------------------------------------
-git add CHANGELOG.md release.json module.json MANUAL.md docs/working/MANUAL.draft.md
+# MANUAL.md is deliberately absent: it is the frozen legacy manual and nothing in a
+# release should touch it. MANUAL-SA.md is the one this release regenerated.
+git add CHANGELOG.md release.json module.json MANUAL-SA.md docs/working/MANUAL-SA.draft.md
 git commit -m "release: $TAG"
 git tag -a "$TAG" -m "Release $TAG"
 

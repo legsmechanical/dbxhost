@@ -1,8 +1,10 @@
 <!-- DRAFT-BANNER-START -->
-> ⚠️ **WORKING DRAFT — for the next release.** Edit *this* file (`MANUAL.draft.md`) for every user-facing change as it lands. The **released** manual is `MANUAL.md` — do **not** edit it directly; `scripts/cut_release.sh` promotes this draft into `MANUAL.md` (banner stripped) at release time. Tracked for history/backup, but it is not the published manual until a release.
+> ⚠️ **WORKING DRAFT — for the next release.** Edit *this* file (`MANUAL-SA.draft.md`) for every user-facing change as it lands. The **released** manual is `MANUAL-SA.md` — do **not** edit it directly; `scripts/cut_release.sh` promotes this draft into `MANUAL-SA.md` (banner stripped) at release time.
+>
+> **This is the only manual under active development.** `MANUAL.md` documents dAVEBOx running as an ordinary tool on official Schwung and is **frozen** at its final release — do not edit it, and do not port changes into it.
 <!-- DRAFT-BANNER-END -->
 
-# The dAVEBOx Manual
+# The dAVEBOx SA Manual
 
 dAVEBOx is a **MIDI sequencer for the Ableton Move**. It records, arranges, and
 plays back MIDI — notes and automation — and sends it to an instrument. It makes
@@ -18,6 +20,30 @@ it does on Move.
 > 🚀 **New here?** The [**Quick Start guide**](QUICKSTART.md) walks you from a
 > blank set to a running arrangement in about fifteen minutes. This manual is the
 > full reference.
+
+## Which manual is this?
+
+This manual describes **dAVEBOx SA** — dAVEBOx running as its own session, on its
+own build of the Schwung host. You start it from official Schwung's Tools menu and
+it restarts Move underneath, booting straight into the sequencer. Everything
+described here assumes that. **This is where dAVEBOx is developed.**
+
+If you run dAVEBOx the other way — as an ordinary tool you open from inside
+official Schwung — read [`MANUAL.md`](MANUAL.md) instead. That version still works
+and is unchanged, but it is **no longer being developed**, and a few things in this
+manual do not exist there:
+
+| | as an ordinary tool | dAVEBOx SA |
+|---|---|---|
+| Insert effects per chain | 2 | **4** |
+| Send effect buses | none | **2 (A and B)** |
+| Starting it | open it from the Tools menu | **boots straight in** |
+| Leaving it | unloads back to Schwung | **hands the device back to stock** |
+
+Nothing about your Move is modified permanently. Your official Schwung install is
+untouched, and **a reboot always returns you to it** — so a bad dAVEBOx build can
+never leave you without a working instrument. Sets, samples, presets, patches and
+modules are shared between the two, not duplicated.
 
 ---
 
@@ -118,8 +144,35 @@ later — see [Routing & Sync](#141-instruments--routing).
 
 ## Open dAVEBOx
 
-Load a Move set, then launch dAVEBOx from Schwung's tool menu — **Shift + Step 13**
-(the star).
+Load a Move set first, then open Schwung's tool menu — **Shift + Step 13** (the
+star) — and choose **dAVEBOx SA**.
+
+The screen goes dark for a few seconds. Move is restarting under the dAVEBOx build
+of the host, and when it comes back you are **already in the sequencer** — there is
+no menu to step through. That pause is the whole startup; nothing has gone wrong.
+
+> **Load the set before launching, not after.** dAVEBOx reads which set you are in
+> as it starts, so it picks up that set's sequencer data. There is no harm in
+> launching first, but you will be working on a different set's data than you
+> expected.
+
+### Getting back to official Schwung
+
+Any of these hands the device back, saving your work first:
+
+| Action | Result |
+|---|---|
+| **Settings menu → Quit** | Saves, then returns to official Schwung |
+| **Shift + Back** | Same, from anywhere |
+| **Reboot** | Always returns to official Schwung |
+
+The last one is the safety net: whatever state dAVEBOx SA gets into, powering the
+Move off and on brings back your normal install. Your official Schwung is never
+modified, so there is nothing to repair.
+
+> **Your Move sets are safe.** dAVEBOx SA shares the same sets, samples, presets,
+> patches and modules as official Schwung rather than keeping its own copies — so
+> work you do in one is there in the other, and nothing is duplicated or migrated.
 
 ## Set tempo, key, and scale
 
@@ -225,11 +278,16 @@ dAVEBOx saves your set automatically whenever you leave it:
 | Action | Result |
 |---|---|
 | **Hold Back** (~½ s) | Suspend — dAVEBOx keeps playing in the background |
-| **Shift + Back** | Exit to Schwung |
-| **Settings menu → Quit** | Exit to Schwung |
+| **Shift + Back** | Save and hand the device back to official Schwung |
+| **Settings menu → Quit** | Save and hand the device back to official Schwung |
 
 There is no manual "save." For named backups you can return to, use
 [Save state](#163-snapshots).
+
+Because dAVEBOx **is** the session here, Quit and Shift + Back do not drop you into
+a Schwung menu — they restart Move on your official install. Suspend (**Hold Back**)
+is the one that keeps dAVEBOx alive in the background, and it is what you want when
+you are stepping out to Move's own screens and coming straight back.
 
 ---
 
@@ -1042,11 +1100,30 @@ it lands follows the track's route. Playback carries on either way, and the pads
 and step buttons stay with the sequencer, so you can keep playing while you dial.
 
 **Schwung tracks** open dAVEBOx's own sound editor. It starts on the track's
-chain — MIDI FX, the synth, then FX 1-4 — and the jog picks a block. Inside a
+chain — MIDI FX, the synth, then **FX 1-4** — and the jog picks a block. Inside a
 block the knobs edit its parameters and the jog turns the pages; hold **Shift**
 while turning to jump between sections. Picking an **empty** block opens the
 module list, which is how you add an effect. **Back** steps out one level at a
 time; **Shift + Note/Session** leaves outright.
+
+> **Four insert effects is a dAVEBOx SA feature.** Official Schwung routes two, so
+> running dAVEBOx as an ordinary tool shows **FX 1-2** only. The editor asks the
+> host how many it has and shows exactly that many — it will not offer you a block
+> that goes nowhere.
+
+### The global effect buses
+
+Alongside the per-track chain, the editor reaches three buses that sit across
+everything: **MASTER FX**, and the two sends **SEND FX A** and **SEND FX B**. Each
+carries its own four effect blocks, edited exactly like a track's.
+
+The difference is how sound gets in. Master FX processes everything on its way out.
+A **send** is fed from the tracks you choose, so several tracks can share one
+reverb or delay instead of each carrying a copy — and each send has a **Return**
+level setting how much of it comes back into the mix.
+
+> **The two sends are a dAVEBOx SA feature.** Official Schwung has no send buses at
+> all, so running dAVEBOx as an ordinary tool shows **MASTER FX** alone.
 
 **Move tracks** hand the screen, jog, and knobs to Move's own editor. **Mute**
 changes hands there — it mutes the Move instrument you're on.
@@ -1203,7 +1280,7 @@ type or route are hidden.
 | VelIn | Live, 1–127 | Fixed value overrides input velocity |
 | Looper | On, Off | Feeds [Performance Mode](#13-performance-mode) |
 | AftTch | Off, Poly, Channel | Pad-pressure aftertouch (melodic) |
-| Edit Synth… / Edit Slot… | action | [Edit the instrument in place](#143-editing-an-instrument-in-place) |
+| Edit Synth… / Edit Slot… | action | [Edit the instrument in place](#143-editing-a-tracks-sound) |
 
 ## 16.5 Sets & compatibility
 
