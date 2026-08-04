@@ -38,5 +38,5 @@ scp -q "$tmp/$MODULE_ID/standalone"  "$HOST:$STOCK_TOOLS/$MODULE_ID/standalone"
 # scp does not preserve the executable bit reliably across these paths.
 ssh "${HOST%%:*}" "chmod +x '$STOCK_TOOLS/$MODULE_ID/standalone'"
 
-echo "Installed. It appears in stock Schwung's Tools menu as 'dAVEBOx SA'."
+echo "Installed. It appears in stock Schwung's Tools menu as 'dAVEBOx'."
 echo "A host restart is required before a newly added module is discovered."
