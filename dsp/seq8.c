@@ -5692,16 +5692,32 @@ static int seq8_remote_snapshot(seq8_instance_t *inst, char *out, int out_len) {
     }
     APP("\"");
 
-    /* per-clip FX (melodic only): 29 values in a fixed order the browser mirrors —
+    /* per-clip FX, MELODIC ONLY: 29 values in a fixed order the browser mirrors —
      * NOTE FX (8) | HARMZ (4) | MIDI DLY (10) | SEQ ARP (7). Edited via
-     * tN_cC_pfx_set "key value". Drum lanes carry their own (smaller) pfx — later. */
-    /* rui_pfx = 29 FX values. Melodic: the selected clip's pfx. Drum: the
-     * SELECTED LANE's pfx (each drum lane has its own pfx chain), so the browser
-     * can edit per-lane drum FX via tN_lL_pfx_set; empty if no lane selected. */
+     * tN_cC_pfx_set "key value".
+     *
+     * ⚠⚠ Drum lanes are NOT emitted here, and must not be. A drum lane's pfx is a
+     * DIFFERENT, SMALLER struct: drum_pfx_params_t is 44 bytes and starts
+     * gate_time/velocity_offset/quantize, while clip_pfx_params_t is 132 bytes and
+     * starts octave_shift/note_offset/gate_time — and carries harmonize_1..3, the
+     * seq_arp_* block and two 8-element arrays that the drum struct simply does not
+     * have. This branch used to do
+     *
+     *     pf = &dclip->lanes[inst->rui_sel_lane].pfx_params;   // drum_pfx_params_t*
+     *
+     * through a clip_pfx_params_t*, which the compiler warned about (incompatible
+     * pointer types) and which read 88 bytes PAST the end of the 44-byte struct
+     * while mislabelling every field it did reach — pf->octave_shift was really the
+     * lane's gate_time. The browser then displayed those values against melodic
+     * descriptors and could write them back via tN_lL_pfx_set, so the corruption
+     * was round-trippable.
+     *
+     * An empty rui_pfx is already an expected state on the browser side (it also
+     * happens for a melodic clip with nothing selected), so drum tracks simply get
+     * "". A real per-lane drum FX panel needs its OWN key with the drum field order
+     * — it cannot borrow this one. */
     clip_pfx_params_t *pf = NULL;
     if (!drum) pf = &gcl->pfx_params;
-    else if (dclip && inst->rui_sel_lane >= 0 && inst->rui_sel_lane < DRUM_LANES)
-        pf = &dclip->lanes[inst->rui_sel_lane].pfx_params;
     if (pf) {
         APP(",\"rui_pfx\":\"%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d\"",
             pf->octave_shift, pf->note_offset, pf->gate_time, pf->velocity_offset, pf->quantize,

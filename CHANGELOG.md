@@ -102,6 +102,11 @@ the section into a versioned heading at release time.
 - **Widget cues and bank renames.** Action knobs show "turn-either-way" chevrons, Playback Direction shows real arrows, stepped ranges show a position dot-strip; ARP IN → LIVE ARP and AUTO → AUTOMATION, with consistent headers.
 
 ### Fixes
+- **The browser editor no longer shows bogus effect values on a drum track.** The
+  FX panel was displaying numbers read from the wrong place — they weren't the
+  lane's settings, and editing them wrote the wrong values back. It now shows
+  nothing there rather than something incorrect. Melodic tracks are unaffected.
+  Per-lane drum FX in the browser is a separate feature, still to come.
 Lots of stability and correctness work, including: crash fixes around drum-clip copy/cut/undo, perf-mods over an empty loop, and placing a Live Merge onto an empty drum clip; stuck-note fixes (track switch, count-in, transport restart, two-pad co-run); external-MIDI recording restored on Move/Schwung/External routes plus count-in capture; Ableton (.ablbundle) export repaired; a bake-vs-live-playback parity audit; a consistency pass over every dialog and pop-up (button order, casing, "Back cancels"); NOTE FX pitch-random mode now persists; live-recording into an empty clip no longer freezes; saved performance presets survive reloads; and many smaller refinements. Full detail in the repo changelog and the technical changelog.
 
 ## [1.0-beta.6] — 2026-06-25

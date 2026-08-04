@@ -1037,8 +1037,16 @@ function laneEmit(suffix,val,allKey){
  * refresh(true) forces THIS reconcile to run past the window; applyParams still
  * rejects any snapshot whose rev hasn't caught up, so stale polls can't win. */
 function pullSoon(){ setTimeout(()=>refresh(true), 130); }
-/* per-clip / per-drum-lane FX. Melodic → tN_cC_pfx_set; drum (lane selected) →
- * tN_lL_pfx_set. The snapshot's rui_pfx already targets the selected lane. */
+/* per-clip FX, MELODIC ONLY → tN_cC_pfx_set.
+ *
+ * ⚠ rui_pfx is EMPTY on a drum track, deliberately. It used to claim to carry the
+ * selected drum lane's FX, but a drum lane's pfx is a different, smaller struct
+ * (44 bytes vs 132) with a different field order and no harmonize/seq_arp fields at
+ * all — so the DSP was reading past the end of it and every value shown here was
+ * mislabelled. Editing them wrote the garbage back. The DSP no longer emits it.
+ *
+ * The PFX descriptors below are the MELODIC order. A per-lane drum FX panel needs
+ * its own snapshot key in the drum field order; it cannot reuse these. */
 /* compact one-line summaries shown on a collapsed FX sub-group */
 function fxGroupSummary(g){ const gp=key=>{ const i=PFX.findIndex(d=>d.key===key); return i>=0?(M.pfx[i]|0):0; };
   if(g==="NOTE FX") return `Oct ${gp("noteFX_octave")} · Gate ${gp("noteFX_gate")}%`;
