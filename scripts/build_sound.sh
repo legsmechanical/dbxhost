@@ -67,7 +67,7 @@ if ! command -v "${CROSS_PREFIX}gcc" >/dev/null 2>&1; then
     exit $?
 fi
 
-echo "=== Building dAVEBOx SND (state prefix: ${STATE_PREFIX}) ==="
+echo "=== Building dAVEBOx SA (state prefix: ${STATE_PREFIX}) ==="
 echo "Compiling DSP..."
 "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC \
     -DSEQ8_STATE_PREFIX="\"${STATE_PREFIX}\"" \
