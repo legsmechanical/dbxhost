@@ -291,6 +291,11 @@ const PATCH_DIR = "/data/UserData/schwung/patches";
 const SLOT_STATE_DIR_DEFAULT = "/data/UserData/schwung/slot_state";
 let activeSlotStateDir = SLOT_STATE_DIR_DEFAULT;
 const AUTOSAVE_INTERVAL = 300;  /* ~10 seconds at 30fps */
+/* Overtake autosave: ticks of quiet before a dirty slot is written. Long enough
+ * that a continuous knob sweep collapses into one save (flash write
+ * amplification is the risk here, not CPU), short enough that a user who edits
+ * and then walks away loses nothing. */
+const OVERTAKE_DIRTY_QUIET_TICKS = 90;  /* ~3 s */
 const DEFAULT_SLOTS = [
     { channel: 1, name: "" },
     { channel: 2, name: "" },
@@ -491,6 +496,11 @@ let needsRedraw = true;
 let refreshCounter = 0;
 let autosaveCounter = 0;
 let autosaveSuppressUntil = 0;  /* suppress autosave after set change */
+/* Overtake-mode autosave (see tick()). Pending slot bitmask + a quiet-period
+ * countdown, so a knob sweep coalesces into ONE save instead of hundreds. */
+let overtakeDirtySlots = 0;
+let overtakeDirtyQuiet = 0;
+let overtakeDirtyAge = 0;   /* ticks a slot has waited — caps the deferral */
 let slotDirtyCache = [false, false, false, false];
 /* Module signature ("synth|midiFx|fx1|fx2") from the last successful autosave.
  * Used to relax the "empty state → bail" guard when the user swaps to a module
@@ -4684,7 +4694,11 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
 }
 
 /* Autosave all slot states to slot_state/slot_N.json */
-function autosaveAllSlots() {
+/* onlySlot (optional): persist just that slot instead of all of them. Used by
+ * the overtake autosave to spread a multi-slot flush across ticks — each slot
+ * costs several get_param round-trips, so writing four at once inside one tick
+ * would stall the overtake tool's frame. */
+function autosaveAllSlots(onlySlot) {
     /* Never persist an uncommitted preset audition. While the user scrolls
      * User Presets, the live <prefix>:state is the previewed sound, not a
      * committed choice — saving it would let a slot silently adopt a preview
@@ -4693,6 +4707,7 @@ function autosaveAllSlots() {
      * after which autosave resumes normally. */
     if (isPresetPreviewActive()) return;
     for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+        if (onlySlot !== undefined && i !== onlySlot) continue;
         /* Sync chainConfigs from DSP before checking - prevents clobbering
          * valid autosave files for slots we haven't navigated to yet */
         refreshSlotModuleSignature(i);
@@ -8532,10 +8547,32 @@ function enterMoveFxHierarchyEditor(moveSlot, fxSlot) {
  * read is one stat on a gesture, not a hot path. */
 const STANDALONE_DIR = "/data/UserData/dbx-host";
 
+/* The marker carries the boot id of the session that wrote it. It lives in
+ * /data and is removed only on the launcher's clean-exit path, so a hard reboot
+ * — the documented recovery action — left it behind, and stock Schwung then
+ * believed a standalone session was live: every davebox Quit became a surprise
+ * device restart until the file was deleted by hand. Comparing the stamp to the
+ * running kernel's boot id makes a marker from an earlier boot self-evidently
+ * dead, which restores "turn it off and on again" as a real recovery.
+ *
+ * Fallbacks are deliberately permissive, because a false NEGATIVE here sends
+ * Shift+Back down the teardown path during a real session: an empty/legacy
+ * marker, or an unreadable boot id, both mean "assume live" (the old
+ * behaviour). Only a stamp that demonstrably belongs to a previous boot is
+ * treated as stale. */
 function standaloneSessionActive() {
     try {
-        return typeof host_file_exists === "function" &&
-               !!host_file_exists(STANDALONE_DIR + "/standalone_active");
+        if (typeof host_read_file !== "function") {
+            return typeof host_file_exists === "function" &&
+                   !!host_file_exists(STANDALONE_DIR + "/standalone_active");
+        }
+        const stamp = host_read_file(STANDALONE_DIR + "/standalone_active");
+        if (stamp === null || stamp === undefined || stamp === false) return false;
+        const stampTrim = String(stamp).trim();
+        if (!stampTrim) return true;          /* legacy empty marker */
+        const boot = host_read_file("/proc/sys/kernel/random/boot_id");
+        if (!boot) return true;               /* can't compare — assume live */
+        return stampTrim === String(boot).trim();
     } catch (e) {
         return false;
     }
@@ -15846,6 +15883,52 @@ globalThis.tick = function() {
             autosaveCounter = 0;
             autosaveAllSlots();
             saveMasterFxChainConfig();
+        }
+        /* Overtake autosave. The periodic save above is deliberately gated off
+         * while an overtake module owns the device (polling each slot's dirty
+         * flag costs a get_param round-trip), which is fine for a tool visited
+         * briefly — but a tool that owns the WHOLE session then has its
+         * host-side state written only at entry and teardown, so a crash or a
+         * hard reboot loses every edit made since launch.
+         *
+         * Detection is free instead of polled: the C layer sets a bit on each
+         * slot param write (shadow_take_dirty_slots), so the save cost is paid
+         * only when something actually changed — and one slot per tick, so a
+         * multi-slot flush never lands inside a single frame. */
+        if (isOvertakeActive && typeof shadow_take_dirty_slots === "function") {
+            const justDirtied = shadow_take_dirty_slots();
+            if (justDirtied) {
+                overtakeDirtySlots |= justDirtied;
+                /* Restart the quiet period: a knob sweep is one edit, not 200. */
+                overtakeDirtyQuiet = OVERTAKE_DIRTY_QUIET_TICKS;
+            }
+            if (overtakeDirtySlots) {
+                if (overtakeDirtyQuiet > 0) overtakeDirtyQuiet--;
+                overtakeDirtyAge++;
+                /* A tool that writes every tick would hold the quiet period
+                 * open forever, so cap the deferral at the same cadence the
+                 * ungated autosave uses. Starvation here would silently
+                 * reintroduce the very bug this block fixes. */
+                const ready = (overtakeDirtyQuiet === 0) ||
+                              (overtakeDirtyAge >= AUTOSAVE_INTERVAL);
+                /* Leave the bits set through a preset audition — autosaveAllSlots
+                 * refuses to persist an uncommitted preview, so clearing them
+                 * here would drop the edit instead of deferring it. */
+                if (ready && !isPresetPreviewActive()) {
+                    let slot = 0;
+                    while (slot < SHADOW_UI_SLOTS &&
+                           !(overtakeDirtySlots & (1 << slot))) slot++;
+                    if (slot < SHADOW_UI_SLOTS) {
+                        overtakeDirtySlots &= ~(1 << slot);
+                        autosaveAllSlots(slot);
+                        debugLog("overtake autosave: wrote slot " + slot);
+                    } else {
+                        /* Bits above the slot range — nothing to write. */
+                        overtakeDirtySlots = 0;
+                    }
+                    overtakeDirtyAge = 0;
+                }
+            }
         }
     }
     /* Refresh dirty cache frequently for responsive UI */

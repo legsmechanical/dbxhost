@@ -707,7 +707,24 @@ static int shadow_param_wait_response(uint32_t req_id, int timeout_ms) {
     return 0;
 }
 
+/* Bitmask of slots whose parameters have been written since JS last collected
+ * it. Detection here is FREE — every param SET already funnels through
+ * shadow_set_param_common — which is the whole point: asking the DSP whether a
+ * slot is dirty costs a get_param round-trip (~2.6 ms) per slot, and that cost
+ * is precisely why the shadow UI's periodic autosave is gated off while an
+ * overtake module owns the device. A tool that runs as a long-lived overtake
+ * therefore had no way to get its host-side state persisted mid-session.
+ *
+ * Deliberately marks on EVERY slot-targeted set, including keys that are not
+ * persistent state. Over-marking costs one redundant save; under-marking loses
+ * a user's edit, so the asymmetry decides it. */
+static uint32_t g_slot_param_dirty_mask = 0;
+
 static int shadow_set_param_common(int slot, const char *key, const char *value, int timeout_ms, int force_blocking) {
+    if (slot >= 0 && slot < 32) {
+        g_slot_param_dirty_mask |= (1u << slot);
+    }
+
     const int overtake_fire_and_forget = !force_blocking && (shadow_control && shadow_control->overtake_mode >= 2);
 
     if (!overtake_fire_and_forget) {
@@ -842,6 +859,12 @@ static JSValue shadow_param_bulk_js(JSContext *ctx, int argc, JSValueConst *argv
     JS_FreeCString(ctx, key);
     JS_FreeCString(ctx, value);
 
+    /* Bulk SET writes the mailbox directly rather than going through
+     * shadow_set_param_common, so it must mark the slot dirty itself — missing
+     * this would silently drop whole-blob writes (a `<prefix>:state` restore is
+     * a bulk SET) from the autosave signal. req_type 4 = SET, 3 = GET. */
+    if (req_type == 4 && slot < 32) g_slot_param_dirty_mask |= (1u << slot);
+
     shadow_param->slot = (uint8_t)slot;
     shadow_param->response_ready = 0;
     shadow_param->error = 0;
@@ -869,6 +892,27 @@ static JSValue js_shadow_get_params(JSContext *ctx, JSValueConst this_val,
 static JSValue js_shadow_set_params(JSContext *ctx, JSValueConst this_val,
                                     int argc, JSValueConst *argv) {
     (void)this_val; return shadow_param_bulk_js(ctx, argc, argv, 4);
+}
+
+/* shadow_take_dirty_slots() -> int
+ * Bitmask of slots written since the last call; auto-clears (take semantics).
+ *
+ * Exists so a caller can persist slot state WITHOUT polling: asking each slot
+ * whether it is dirty costs a get_param round-trip, so a poll-based autosave is
+ * too expensive to run while an overtake module owns the device — which is why
+ * the shadow UI gates its periodic autosave off in that case, leaving a
+ * long-lived overtake tool's host state unsaved for the whole session.
+ *
+ * Take-semantics deliberately: the caller owns the bits once read, so a write
+ * landing during the save is not lost — it simply re-marks and is picked up by
+ * the next pass. Callers must therefore act on the returned mask (or re-set it),
+ * never discard it.
+ */
+static JSValue js_shadow_take_dirty_slots(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    (void)ctx; (void)this_val; (void)argc; (void)argv;
+    uint32_t mask = g_slot_param_dirty_mask;
+    g_slot_param_dirty_mask = 0;
+    return JS_NewInt32(ctx, (int32_t)mask);
 }
 
 /* shadow_get_param(slot, key) -> string or null
@@ -2579,6 +2623,7 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     JS_SetPropertyStr(ctx, global_obj, "shadow_get_param", JS_NewCFunction(ctx, js_shadow_get_param, "shadow_get_param", 2));
     JS_SetPropertyStr(ctx, global_obj, "shadow_get_params", JS_NewCFunction(ctx, js_shadow_get_params, "shadow_get_params", 3));
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_params", JS_NewCFunction(ctx, js_shadow_set_params, "shadow_set_params", 3));
+    JS_SetPropertyStr(ctx, global_obj, "shadow_take_dirty_slots", JS_NewCFunction(ctx, js_shadow_take_dirty_slots, "shadow_take_dirty_slots", 0));
 
     /* OTLP tracing (Phase 2) */
     JS_SetPropertyStr(ctx, global_obj, "host_trace_begin", JS_NewCFunction(ctx, js_host_trace_begin, "host_trace_begin", 1));
