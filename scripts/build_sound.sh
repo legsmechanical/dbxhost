@@ -1,16 +1,29 @@
 #!/bin/bash
-# Build the sound-mode TEST build of dAVEBOx — a second, complete davebox that
-# installs alongside the stable one under module id `davebox-sound`.
+# Build the dAVEBOx SA build — the one that runs under the dAVEBOx host, and the
+# one active development targets. Module id `davebox-sound`.
 #
-# The only difference from a normal build is SEQ8_STATE_PREFIX. dAVEBOx's state
-# files are keyed by set UUID alone and carry no module id, so two installs
-# would otherwise read and write the same seq8-state.json — a bug in the test
-# build could corrupt the daily driver's sessions. Both halves of the prefix
-# must agree: the DSP gets -DSEQ8_STATE_PREFIX, the JS bundle gets the matching
-# esbuild --define. They are set together here and nowhere else.
+# This began life as a throwaway "sound-mode test build" installed beside the
+# stable davebox. It is not that any more: SA is the successor, and the plain
+# module is becoming a frozen legacy install for people with old sessions.
 #
-# Consequence worth knowing before you test: this build starts with EMPTY
-# sessions. It cannot see the stable install's sets.
+# ⚠ SA sessions and legacy sessions are DELIBERATELY NOT COMPATIBLE (Josh,
+# 2026-08-03). They are separate namespaces on purpose, and no migration between
+# them is planned or owed — legacy exists so old sessions stay openable, not so
+# they travel. Do not "fix" this by pointing SA at the legacy prefix.
+#
+# ⚠ Legacy keeps the UNSUFFIXED `seq8` prefix even though SA is the successor,
+# for the same reason legacy keeps the `davebox` catalog id: it is already on
+# users' devices, and the whole job of legacy is reading state that is already
+# there. SA is the one that takes a new name.
+#
+# The prefix is the ONLY difference from a normal build. State files are keyed by
+# set UUID alone and carry no module id, so two installs would otherwise read and
+# write the same seq8-state.json. Both halves must agree: the DSP gets
+# -DSEQ8_STATE_PREFIX, the JS bundle gets the matching esbuild --define. Set
+# together here and nowhere else. It keys FIVE things — the per-set state and
+# ui-state, the no-set fallback state file, snapshots (`<prefix>-snap-*`), the log,
+# and `<prefix>_name_index.json` (underscore, not hyphen — easy to miss when
+# renaming).
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -18,7 +31,11 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
 
 MODULE_ID="davebox-sound"
-STATE_PREFIX="seq8sm"
+# `seq8sa`, not the old `seq8sm`: "sm" meant sound-mode TEST build, and leaving a
+# throwaway name on the successor's permanent state namespace is how it gets
+# mistaken for scratch data later. Renamed 2026-08-03; existing seq8sm files on a
+# device are migrated by scripts/migrate_sa_state.sh.
+STATE_PREFIX="seq8sa"
 CROSS_PREFIX="${CROSS_PREFIX:-aarch64-linux-gnu-}"
 
 mkdir -p "dist/${MODULE_ID}"
