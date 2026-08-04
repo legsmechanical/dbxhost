@@ -11,7 +11,8 @@
  * running host cannot do.
  */
 import { engineBuildInfo, engineSlotFxBlocks, engineHasSendFx,
-         engineUnderDaveboxHost, DAVEBOX_HOST_DIR } from '../../ui/ui_engine.mjs';
+         engineUnderDaveboxHost, engineHostContract, engineHostTooOld,
+         HOST_CONTRACT_MIN, DAVEBOX_HOST_DIR } from '../../ui/ui_engine.mjs';
 
 let failed = 0;
 function eq(got, want, label) {
@@ -71,10 +72,47 @@ for (const n of [0, -1, 'four', null]) {
     eq(engineSlotFxBlocks(), 2, `slot_fx_blocks=${JSON.stringify(n)}: falls back to 2`);
 }
 
+/* ---- host contract handshake ----
+ *
+ * The point of this is to turn "features silently vanished" into a legible message.
+ * The case that must NOT fire is stock Schwung: absence of the binding is a valid
+ * configuration, not a mismatch, and warning there would cry wolf on every boot. */
+underHost(null);
+eq(engineHostContract(), 0, 'stock: reports no contract');
+eq(engineHostTooOld(), false, 'stock: NOT a mismatch — absence is legitimate');
+
+underHost(JSON.stringify({ install_dir: DAVEBOX_HOST_DIR, contract: HOST_CONTRACT_MIN }));
+eq(engineHostTooOld(), false, 'dbx host at the required contract: fine');
+
+underHost(JSON.stringify({ install_dir: DAVEBOX_HOST_DIR, contract: HOST_CONTRACT_MIN + 5 }));
+eq(engineHostTooOld(), false, 'dbx host NEWER than required: fine, not a mismatch');
+
+underHost(JSON.stringify({ install_dir: DAVEBOX_HOST_DIR, contract: HOST_CONTRACT_MIN - 1 }));
+eq(engineHostTooOld(), true, 'dbx host below the required contract: MISMATCH');
+
+/* A dbx host that reports no contract at all is also too old. */
+underHost(JSON.stringify({ install_dir: DAVEBOX_HOST_DIR, slot_fx_blocks: 4 }));
+eq(engineHostContract(), 0, 'dbx host with no contract field reports 0');
+eq(engineHostTooOld(), true, 'dbx host with no contract field is too old');
+
+/* A non-dbx install must never be called too old, whatever it reports — otherwise
+ * stock users of the legacy module would get a warning aimed at a build they are
+ * not running. */
+underHost(JSON.stringify({ install_dir: '/data/UserData/schwung', contract: 0 }));
+eq(engineHostTooOld(), false, 'stock-dir host is never "too old"');
+
+/* Garbage contract values must not read as satisfying the minimum. */
+for (const c of ['one', null, -3, undefined]) {
+    underHost(JSON.stringify({ install_dir: DAVEBOX_HOST_DIR, contract: c }));
+    eq(engineHostContract(), 0, `contract=${JSON.stringify(c)} reads as 0`);
+    eq(engineHostTooOld(), true, `contract=${JSON.stringify(c)} counts as too old`);
+}
+
 /* A binding that throws must not take the module down. */
 globalThis.host_build_info = () => { throw new Error('boom'); };
 eq(engineSlotFxBlocks(), 2, 'throwing binding: upstream blocks');
 eq(engineUnderDaveboxHost(), false, 'throwing binding: not the davebox host');
+eq(engineHostTooOld(), false, 'throwing binding: not a mismatch (looks like stock)');
 
 delete globalThis.host_build_info;
 

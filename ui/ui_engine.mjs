@@ -167,6 +167,39 @@ export function engineHasSendFx() {
     return engineBuildInfo().send_fx === true;
 }
 
+/* ---- host contract handshake ----
+ *
+ * davebox and the host are separate repos, so a change spanning both is two
+ * commits with nothing tying them together: a new davebox can always end up on an
+ * old host. Nothing makes that atomic short of merging the repos.
+ *
+ * ⚠ The failure it causes is the confusing kind. Without a version, "this host has
+ * no Send FX" and "this host is too old to tell me" are indistinguishable, so
+ * davebox takes the conservative answer and quietly hides features that the host
+ * actually has. Nothing errors; FX 3/4 and the send buses are simply missing, and
+ * you go looking for the bug in the wrong repo.
+ *
+ * So the host reports the contract it speaks and we require a minimum. Bump
+ * HOST_CONTRACT_MIN only when davebox actually depends on something newer —
+ * raising it strands every host older than the bump.
+ *
+ * ⚠ Absence is NOT a failure: on stock Schwung there is no host_build_info at all
+ * and the upstream defaults are correct. Only a host that IS the dAVEBOx build but
+ * speaks an older contract is a mismatch worth reporting. A host predating
+ * host_build_info entirely cannot be detected here — it reports no install_dir, so
+ * it is indistinguishable from stock. That window closed once the binding shipped. */
+export const HOST_CONTRACT_MIN = 1;
+
+export function engineHostContract() {
+    const c = engineBuildInfo().contract;
+    return (typeof c === 'number' && c > 0) ? c : 0;
+}
+
+/* True only for a real mismatch: the dAVEBOx host, speaking too old a contract. */
+export function engineHostTooOld() {
+    return engineUnderDaveboxHost() && engineHostContract() < HOST_CONTRACT_MIN;
+}
+
 /* Are we running under the dAVEBOx host build (as opposed to stock Schwung)?
  *
  * ⚠ Deliberately compares install_dir rather than testing for host_build_info's

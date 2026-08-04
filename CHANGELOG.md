@@ -102,6 +102,9 @@ the section into a versioned heading at release time.
 - **Widget cues and bank renames.** Action knobs show "turn-either-way" chevrons, Playback Direction shows real arrows, stepped ranges show a position dot-strip; ARP IN → LIVE ARP and AUTO → AUTOMATION, with consistent headers.
 
 ### Fixes
+- **dAVEBOx tells you when it needs a newer host.** If you run a dAVEBOx build
+  that expects host features an older dAVEBOx host doesn't have, the splash now
+  says so instead of quietly dropping the extra effect slots and send buses.
 - **The browser editor no longer shows bogus effect values on a drum track.** The
   FX panel was displaying numbers read from the wrong place — they weren't the
   lane's settings, and editing them wrote the wrong values back. It now shows
