@@ -139,26 +139,58 @@ for entry in "$REPO_ROOT"/build/*; do
         echo "ERROR: failed to stage $name" >&2; exit 1; }
 done
 
-# heal is root-owned and setuid, so ableton cannot overwrite it. Stage it as
-# <name>.new and let the CURRENT heal install its own replacement — that is heal's
-# self-update path, and it needs no root.
-scp -q "$HERE/build/$DBX_HEAL_NAME" \
-    "${MOVE_USER}@${MOVE_HOST}:$DBX_DIR/bin/${DBX_HEAL_NAME}.new"
-
+# ⚠⚠ Directories must be MERGED, not replaced. This originally mv'd each top-level
+# entry wholesale, which destroyed `bin/`: the build's bin/ has curl, filebrowser,
+# schwung-heal and friends but NOT davebox-heal, because heal is built separately.
+# Replacing the directory therefore deleted the setuid-root davebox-heal — and
+# restoring THAT needs root, which is the one thing this script cannot do. The
+# launcher would have refused to start at the next launch, long after the deploy
+# "succeeded". (It also ate the bin/<heal>.new staged just above.)
+#
+# So: copy file-by-file into existing directories, replacing files atomically and
+# leaving anything the build does not ship untouched.
 $SSH "set -eu
   cd '$STAGE'
-  for n in *; do
-    [ -e \"\$n\" ] || continue
-    rm -rf '$DBX_DIR/'\"\$n\"'.old'
-    if [ -e '$DBX_DIR/'\"\$n\" ]; then mv -f '$DBX_DIR/'\"\$n\" '$DBX_DIR/'\"\$n\"'.old'; fi
-    mv -f \"\$n\" '$DBX_DIR/'\"\$n\"
-    rm -rf '$DBX_DIR/'\"\$n\"'.old'
+  # Directories first: merge their CONTENTS recursively.
+  find . -type d -mindepth 1 | while read -r d; do mkdir -p '$DBX_DIR/'\"\${d#./}\"; done
+  find . -type f | while read -r f; do
+    rel=\"\${f#./}\"
+    dst='$DBX_DIR/'\"\$rel\"
+    # Atomic per file: land beside the target, then rename over it. A plain copy
+    # onto a mapped binary hits ETXTBSY or truncates it.
+    cp -f \"\$f\" \"\$dst.deploying\"
+    chmod --reference=\"\$f\" \"\$dst.deploying\" 2>/dev/null || chmod 755 \"\$dst.deploying\"
+    mv -f \"\$dst.deploying\" \"\$dst\"
   done
   cd '$DBX_DIR' && rm -rf '$STAGE'
   chmod +x '$DBX_DIR/schwung' '$DBX_DIR/shadow/shadow_ui' 2>/dev/null || true
   chmod +x '$DBX_DIR'/scripts/*.sh '$DBX_DIR/bless.sh' 2>/dev/null || true
 "
 say "      payload in place"
+
+# ⚠ Prove the payload did not eat the setuid helper before relying on it. An
+# earlier version of this script replaced bin/ wholesale and deleted
+# davebox-heal; the failure then surfaced as a confusing "No such file" from the
+# line below, AFTER the deploy had reported progress, and recovering needed root.
+# Fail here with something actionable instead.
+if ! $SSH "test -u '$DBX_DIR/bin/$DBX_HEAL_NAME'" 2>/dev/null; then
+    echo "" >&2
+    echo "ERROR: $DBX_HEAL_NAME is missing or no longer setuid AFTER the payload deploy." >&2
+    echo "       The payload must never replace bin/ wholesale — the build's bin/ does" >&2
+    echo "       not contain $DBX_HEAL_NAME (it is built separately)." >&2
+    echo "  Recover:  scp standalone/build/$DBX_HEAL_NAME ableton@<host>:$DBX_DIR/bin/" >&2
+    echo "            ssh root@<host> 'sh $DBX_DIR/bless.sh'" >&2
+    exit 1
+fi
+
+# heal is root-owned and setuid, so ableton cannot overwrite it directly. Stage it
+# as <name>.new and let the CURRENT heal install its own replacement — heal's own
+# self-update path, which needs no root.
+#
+# ⚠ Staged AFTER the payload deploy, on purpose. Staging it before meant the
+# payload swap deleted the .new file along with the rest of bin/.
+scp -q "$HERE/build/$DBX_HEAL_NAME" \
+    "${MOVE_USER}@${MOVE_HOST}:$DBX_DIR/bin/${DBX_HEAL_NAME}.new"
 
 # --- heal: self-update, then mirror the shim into /usr/lib -----------------
 say ""; say "--- heal self-update + shim mirror (no root needed)"
