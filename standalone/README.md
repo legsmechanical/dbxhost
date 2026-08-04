@@ -52,6 +52,7 @@ The launcher mechanism is already upstream. There is nothing to get merged.
 | `scripts/install-module.sh` | installs the launcher into stock's tools dir (no root) |
 | `scripts/build-host.sh` | builds this host with `config.sh`'s dir + SHM namespace |
 | `scripts/build-heal.sh` | cross-compiles `davebox-heal` with `-DDBX_DIR` from `config.sh` |
+| `scripts/install-host.sh` | **build + deploy the host in one command** (the dev loop) |
 | `scripts/check-config.sh` | fails if a literal copy drifted from `config.sh` |
 
 This directory lives **in the host repo** — the launcher's only job is to start
