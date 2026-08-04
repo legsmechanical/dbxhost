@@ -6,6 +6,32 @@ Schwung is a framework for custom JavaScript and native DSP modules on Ableton M
 
 Keep this file, `docs/API.md`, `docs/MODULES.md`, and the user manual in `../schwung-catalog-site/manual.html` in sync with code changes (see Release Checklist).
 
+## 🤝 This host and dAVEBOx are ONE project (standing rule, 2026-08-04)
+
+This fork exists to serve **dAVEBOx**. Josh, 2026-08-04: *"I want to continue working on davebox and
+the custom host simultaneously so there's no conceptual separation between what davebox needs and
+what the host can provide. What we need the host to do, we change."*
+
+So a davebox need is a valid reason to change this host. Do not treat it as an outside request.
+
+- **The module lives in `../schwung-davebox`** (its `main` is the dAVEBOx SA line). Read it freely;
+  a change here that davebox depends on should land alongside the davebox change.
+- **Commit to `main` here directly** — see Testing below; it is not protected.
+- **`standalone/`** in this repo is the SA launcher + `davebox-heal` + `config.sh` + build/install
+  scripts, so host + launcher + heal + installer ship as one thing. `standalone/scripts/install-host.sh`
+  builds and deploys the whole host half in one command.
+- **The channel for "davebox needs a fact from the host" is `host_build_info()`**
+  (`src/shadow/shadow_ui.c`). Add the field there and **bump `SCHWUNG_BUILD_INFO_CONTRACT`**
+  (`src/host/shadow_constants.h`) whenever a consumer may depend on it — davebox requires a minimum
+  and shows "HOST TOO OLD" rather than silently degrading.
+- ⚠ **A capability expressed as a param-key NAMESPACE cannot be probed by a module with `typeof`.**
+  `fx3:`/`fx4:` and `send_fx:a:` are fork-only namespaces; a module that assumes them renders rows
+  whose reads return nothing and whose writes vanish. Anything of that shape MUST be reported through
+  `host_build_info()` — see the divergence note below.
+- **Keep changes generic anyway** (no module named, docs in the same commit). Not to satisfy
+  upstream — because this fork carries a rebase delta forever, and a generic change can eventually
+  retire from it. Upstream PRs are optional; generic authorship is not.
+
 ## ⚠️ Fork-only divergences (never push upstream)
 
 Some changes live in this fork's daily-driver build only and must **never** be carried into upstream PRs/syncs. Keep each one isolated in its own commit so it's easy to exclude when cherry-picking features upstream.
