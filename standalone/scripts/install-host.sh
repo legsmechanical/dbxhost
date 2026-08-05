@@ -103,6 +103,34 @@ done
 [ -f "$HERE/build/$DBX_HEAL_NAME" ] || {
     echo "ERROR: missing standalone/build/$DBX_HEAL_NAME — run without --no-build" >&2; exit 1; }
 
+# ⚠ Existence is not enough: the payload must be built for THIS host's shared
+# memory namespace. SCHWUNG_CFLAGS bakes the prefix into every binary, and a
+# binary carrying the stock prefix looks entirely healthy — right size, right
+# symbols, deploys without complaint — then cannot find its shared memory at
+# runtime and exits before writing a single log line. The symptom is a dead UI
+# with no error anywhere, which is about the most expensive way to learn this.
+#
+# build.sh now wipes build/ when the flags change, so this should never fire.
+# It stays because it is the check that actually looks at what is about to be
+# SHIPPED, and it costs one `strings` call. Verify the artifact, not the recipe.
+say ""; say "--- verifying the payload targets $DBX_SHM_PREFIX"
+for a in build/schwung build/schwung-shim.so build/shadow/shadow_ui; do
+    bin="$REPO_ROOT/$a"
+    if ! strings "$bin" 2>/dev/null | grep -qxF -- "$DBX_SHM_PREFIX"; then
+        echo "" >&2
+        echo "ERROR: $a was NOT built for this host." >&2
+        echo "       Expected the SHM prefix '$DBX_SHM_PREFIX' to be compiled in; it is absent." >&2
+        found="$(strings "$bin" 2>/dev/null | grep -E '^/[a-z]+-$' | sort -u | tr '\n' ' ')"
+        [ -n "$found" ] && echo "       Found instead: $found" >&2
+        echo "" >&2
+        echo "       This happens when build/ still holds objects from a different" >&2
+        echo "       flavour (e.g. a plain ./scripts/build.sh run in between)." >&2
+        echo "       Fix:  rm -rf build && standalone/scripts/install-host.sh" >&2
+        exit 1
+    fi
+done
+say "      ok — all three binaries carry $DBX_SHM_PREFIX"
+
 # --- work out what NOT to touch --------------------------------------------
 # ⚠ $DBX_DIR shares user content with the stock install through symlinks —
 # modules, presets, patches, slot_state, plus two back-compat links. Copying

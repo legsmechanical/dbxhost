@@ -26,6 +26,47 @@ BOOTSTRAP_SCRIPT="./scripts/bootstrap-build-deps.sh"
 # separate flags. See src/host/schwung_paths.h.
 SCHWUNG_CFLAGS="${SCHWUNG_CFLAGS:-}"
 
+# ---------------------------------------------------------------------------
+# Flavour stamp: build/ records the flags that produced it, and is WIPED when
+# they change.
+#
+# SCHWUNG_CFLAGS bakes the install dir and the SHM namespace into every binary,
+# but nothing else in the build depends on the flag *value* — so switching
+# flavours reuses the previous flavour's object files and silently emits a
+# payload for the wrong namespace. The binary looks correct, deploys cleanly,
+# and then cannot find its shared memory at runtime: it exits before its first
+# log line, so there is no error to read, just a dead UI.
+#
+# That cost a long debugging session on 2026-08-05. The tell was that the
+# shipped shadow_ui contained "/schwung-" while the session it was launched
+# into was "/dbxhost-". Alternating `./scripts/build.sh` (stock flavour, e.g.
+# to verify a change) with `standalone/scripts/install-host.sh` (davebox
+# flavour) is enough to trigger it, which is an ordinary thing to do.
+#
+# Wiping is the right response rather than warning: a mixed tree has no correct
+# interpretation, and a full rebuild is minutes while the failure it prevents
+# is silent and hard to attribute.
+# ⚠ A MISSING stamp means "unknown flavour", NOT "stock". Treating absence as
+# stock is wrong and was caught in testing: a build/ produced before stamping
+# existed compared equal to a stock build (both "no flags"), so nothing was
+# wiped and the stale objects survived — reproducing the exact bug this guards.
+# Absence must therefore force the wipe, so any tree of unknown provenance is
+# rebuilt once rather than trusted.
+BUILD_STAMP="$REPO_ROOT/build/.build-flags"
+if [ -d "$REPO_ROOT/build" ] && [ -n "$(ls -A "$REPO_ROOT/build" 2>/dev/null)" ]; then
+    if [ ! -f "$BUILD_STAMP" ]; then
+        echo "=== build/ has no flavour stamp — wiping (provenance unknown) ==="
+        rm -rf "$REPO_ROOT/build"
+    elif [ "$(cat "$BUILD_STAMP" 2>/dev/null || true)" != "$SCHWUNG_CFLAGS" ]; then
+        echo "=== build flavour changed — wiping build/ ==="
+        echo "    was: $(cat "$BUILD_STAMP" 2>/dev/null || true)"
+        echo "    now: ${SCHWUNG_CFLAGS:-<stock defaults>}"
+        rm -rf "$REPO_ROOT/build"
+    fi
+fi
+mkdir -p "$REPO_ROOT/build"
+printf '%s' "$SCHWUNG_CFLAGS" > "$BUILD_STAMP"
+
 # Check if we need Docker
 if [ -z "$CROSS_PREFIX" ] && [ ! -f "/.dockerenv" ]; then
     echo "=== Schwung Build (via Docker) ==="
