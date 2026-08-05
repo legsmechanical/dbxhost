@@ -720,10 +720,44 @@ static int shadow_param_wait_response(uint32_t req_id, int timeout_ms) {
  * a user's edit, so the asymmetry decides it. */
 static uint32_t g_slot_param_dirty_mask = 0;
 
+/* The FX buses cannot be told apart by slot: master, both sends and every Move
+ * bus are all addressed at slot 0 and distinguished only by their key
+ * namespace. So they need their own mask, keyed off the prefix.
+ *
+ * Granularity is per-bus rather than one "some bus changed" bit because saving
+ * a bus costs a get_param per block (and a Move save walks 16 blocks) — far too
+ * much to spend in one frame. One bus per pass keeps it bounded.
+ *
+ *   bit 0      master        bit 1  send A       bit 2  send B
+ *   bit 8 + n  Move bus n (0-based)                                          */
+#define FXBUS_DIRTY_MASTER   (1u << 0)
+#define FXBUS_DIRTY_SEND_A   (1u << 1)
+#define FXBUS_DIRTY_SEND_B   (1u << 2)
+#define FXBUS_DIRTY_MOVE_SHIFT 8
+static uint32_t g_fx_bus_dirty_mask = 0;
+
+static void shadow_mark_fx_bus_dirty(const char *key) {
+    if (!key) return;
+    if (strncmp(key, "master_fx:", 10) == 0) {
+        g_fx_bus_dirty_mask |= FXBUS_DIRTY_MASTER;
+    } else if (strncmp(key, "send_fx:", 8) == 0) {
+        /* send_fx:<a|b>:... */
+        if (key[8] == 'a') g_fx_bus_dirty_mask |= FXBUS_DIRTY_SEND_A;
+        else if (key[8] == 'b') g_fx_bus_dirty_mask |= FXBUS_DIRTY_SEND_B;
+    } else if (strncmp(key, "move_fx:", 8) == 0) {
+        /* move_fx:<1-based slot>:... — mark only the bus actually written. */
+        int n = key[8] - '0';
+        if (n >= 1 && n <= 16) {
+            g_fx_bus_dirty_mask |= (1u << (FXBUS_DIRTY_MOVE_SHIFT + (n - 1)));
+        }
+    }
+}
+
 static int shadow_set_param_common(int slot, const char *key, const char *value, int timeout_ms, int force_blocking) {
     if (slot >= 0 && slot < 32) {
         g_slot_param_dirty_mask |= (1u << slot);
     }
+    shadow_mark_fx_bus_dirty(key);
 
     const int overtake_fire_and_forget = !force_blocking && (shadow_control && shadow_control->overtake_mode >= 2);
 
@@ -860,10 +894,16 @@ static JSValue shadow_param_bulk_js(JSContext *ctx, int argc, JSValueConst *argv
     JS_FreeCString(ctx, value);
 
     /* Bulk SET writes the mailbox directly rather than going through
-     * shadow_set_param_common, so it must mark the slot dirty itself — missing
-     * this would silently drop whole-blob writes (a `<prefix>:state` restore is
-     * a bulk SET) from the autosave signal. req_type 4 = SET, 3 = GET. */
-    if (req_type == 4 && slot < 32) g_slot_param_dirty_mask |= (1u << slot);
+     * shadow_set_param_common, so it must mark dirty itself — missing this
+     * would silently drop whole-blob writes (a `<prefix>:state` restore is a
+     * bulk SET) from the autosave signal. req_type 4 = SET, 3 = GET.
+     *
+     * Reads the key back out of shared memory, NOT the JS string: `key` was
+     * released above and using it here would be a use-after-free. */
+    if (req_type == 4) {
+        if (slot < 32) g_slot_param_dirty_mask |= (1u << slot);
+        shadow_mark_fx_bus_dirty(shadow_param->key);
+    }
 
     shadow_param->slot = (uint8_t)slot;
     shadow_param->response_ready = 0;
@@ -912,6 +952,19 @@ static JSValue js_shadow_take_dirty_slots(JSContext *ctx, JSValueConst this_val,
     (void)ctx; (void)this_val; (void)argc; (void)argv;
     uint32_t mask = g_slot_param_dirty_mask;
     g_slot_param_dirty_mask = 0;
+    return JS_NewInt32(ctx, (int32_t)mask);
+}
+
+/* shadow_take_dirty_fx_buses() -> int
+ * Companion to shadow_take_dirty_slots for the FX buses, which share slot 0 and
+ * are identified only by key namespace. Same take semantics.
+ *   bit 0      master        bit 1  send A       bit 2  send B
+ *   bit 8 + n  Move bus n (0-based)
+ */
+static JSValue js_shadow_take_dirty_fx_buses(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    (void)ctx; (void)this_val; (void)argc; (void)argv;
+    uint32_t mask = g_fx_bus_dirty_mask;
+    g_fx_bus_dirty_mask = 0;
     return JS_NewInt32(ctx, (int32_t)mask);
 }
 
@@ -2624,6 +2677,7 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     JS_SetPropertyStr(ctx, global_obj, "shadow_get_params", JS_NewCFunction(ctx, js_shadow_get_params, "shadow_get_params", 3));
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_params", JS_NewCFunction(ctx, js_shadow_set_params, "shadow_set_params", 3));
     JS_SetPropertyStr(ctx, global_obj, "shadow_take_dirty_slots", JS_NewCFunction(ctx, js_shadow_take_dirty_slots, "shadow_take_dirty_slots", 0));
+    JS_SetPropertyStr(ctx, global_obj, "shadow_take_dirty_fx_buses", JS_NewCFunction(ctx, js_shadow_take_dirty_fx_buses, "shadow_take_dirty_fx_buses", 0));
 
     /* OTLP tracing (Phase 2) */
     JS_SetPropertyStr(ctx, global_obj, "host_trace_begin", JS_NewCFunction(ctx, js_host_trace_begin, "host_trace_begin", 1));

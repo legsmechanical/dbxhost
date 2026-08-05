@@ -499,8 +499,16 @@ let autosaveSuppressUntil = 0;  /* suppress autosave after set change */
 /* Overtake-mode autosave (see tick()). Pending slot bitmask + a quiet-period
  * countdown, so a knob sweep coalesces into ONE save instead of hundreds. */
 let overtakeDirtySlots = 0;
+let overtakeDirtyBuses = 0;
 let overtakeDirtyQuiet = 0;
-let overtakeDirtyAge = 0;   /* ticks a slot has waited — caps the deferral */
+let overtakeDirtyAge = 0;   /* ticks a unit has waited — caps the deferral */
+/* Mirrors the bus bit layout in shadow_ui.c (shadow_mark_fx_bus_dirty). The FX
+ * buses all live at slot 0 and differ only by key namespace, so they need their
+ * own mask rather than riding the slot one. */
+const FXBUS_DIRTY_MASTER = 1 << 0;
+const FXBUS_DIRTY_SEND_A = 1 << 1;
+const FXBUS_DIRTY_SEND_B = 1 << 2;
+const FXBUS_DIRTY_MOVE_SHIFT = 8;
 let slotDirtyCache = [false, false, false, false];
 /* Module signature ("synth|midiFx|fx1|fx2") from the last successful autosave.
  * Used to relax the "empty state → bail" guard when the user swaps to a module
@@ -4799,6 +4807,59 @@ function autosaveAllSlots(onlySlot) {
     }
 }
 
+/* One unit of overtake autosave work: a single slot, or a single FX bus.
+ *
+ * Strictly one per tick. Every unit costs get_param round-trips — a Move bus
+ * walks MOVE_FX_BLOCKS_JS blocks plus the shared strip meta — and doing a whole
+ * flush inside one frame is exactly what the overtake gate exists to prevent.
+ * Slots go first only because they are the common case; the order carries no
+ * other meaning, and anything not written this tick keeps its bit for the next.
+ *
+ * Each bus is persisted through its OWN saver rather than the editor's
+ * dispatcher: activeFxBus reflects whichever bus was last opened on screen,
+ * which during overtake is unrelated to the bus that actually changed. */
+function saveOneDirtyOvertakeUnit() {
+    for (let slot = 0; slot < SHADOW_UI_SLOTS; slot++) {
+        if (overtakeDirtySlots & (1 << slot)) {
+            overtakeDirtySlots &= ~(1 << slot);
+            autosaveAllSlots(slot);
+            debugLog("overtake autosave: slot " + slot);
+            return;
+        }
+    }
+    /* Any residue is bits outside the slot range — nothing to write. */
+    overtakeDirtySlots = 0;
+
+    if (overtakeDirtyBuses & FXBUS_DIRTY_MASTER) {
+        overtakeDirtyBuses &= ~FXBUS_DIRTY_MASTER;
+        saveMasterFxChainConfig(true);
+        debugLog("overtake autosave: master fx");
+        return;
+    }
+    if (overtakeDirtyBuses & FXBUS_DIRTY_SEND_A) {
+        overtakeDirtyBuses &= ~FXBUS_DIRTY_SEND_A;
+        saveSendFxChainConfig("a");
+        debugLog("overtake autosave: send fx a");
+        return;
+    }
+    if (overtakeDirtyBuses & FXBUS_DIRTY_SEND_B) {
+        overtakeDirtyBuses &= ~FXBUS_DIRTY_SEND_B;
+        saveSendFxChainConfig("b");
+        debugLog("overtake autosave: send fx b");
+        return;
+    }
+    for (let m = 0; m < MOVE_FX_SLOTS_JS; m++) {
+        const bit = 1 << (FXBUS_DIRTY_MOVE_SHIFT + m);
+        if (overtakeDirtyBuses & bit) {
+            overtakeDirtyBuses &= ~bit;
+            saveMoveFxChainConfig(m);
+            debugLog("overtake autosave: move fx bus " + m);
+            return;
+        }
+    }
+    overtakeDirtyBuses = 0;
+}
+
 /* Actually save the preset */
 function doSavePreset(slotIndex, name) {
     const json = buildSlotPatchJson(slotIndex, name);
@@ -6289,10 +6350,15 @@ function applyMasterFxModuleSelection() {
 }
 
 /* Save master FX chain configuration */
-function saveMasterFxChainConfig() {
+/* forceMasterBus: persist the MASTER bus regardless of which bus the editor is
+ * currently showing. The dispatch below reads activeFxBus, which is the right
+ * behaviour for an in-editor save but wrong for any caller that already knows
+ * which bus changed — notably the overtake autosave, where the editor is not
+ * even on screen and activeFxBus is whatever was last visited. */
+function saveMasterFxChainConfig(forceMasterBus) {
     /* Master-bus-only below. Send/Move buses persist via their own per-set files
      * instead — dispatch so in-editor edits are saved. */
-    if (!activeFxBus.persistConfig) {
+    if (!forceMasterBus && !activeFxBus.persistConfig) {
         if (activeFxBus.isMoveFx) saveMoveFxChainConfig();
         else saveSendFxChainConfig();
         return;
@@ -6732,11 +6798,15 @@ function loadMasterFxChainFromConfig() {
 const SEND_FX_BUSES = ["a", "b"];
 const SEND_FX_SLOTS_JS = 4;
 
-function saveSendFxChainConfig() {
+/* onlyBusId (optional): persist just that send bus ("a"/"b"). Each block costs
+ * get_param round-trips, so the overtake autosave narrows to the bus that
+ * actually changed rather than walking both. */
+function saveSendFxChainConfig(onlyBusId) {
     if (typeof shadow_get_param !== "function") return;
     try {
         for (let bi = 0; bi < SEND_FX_BUSES.length; bi++) {
             const busId = SEND_FX_BUSES[bi];
+            if (onlyBusId !== undefined && busId !== onlyBusId) continue;
             for (let s = 0; s < SEND_FX_SLOTS_JS; s++) {
                 const key = "send_fx:" + busId + ":fx" + (s + 1);
                 const filePath = activeSlotStateDir + "/send_fx_" + busId + "_" + s + ".json";
@@ -6864,10 +6934,14 @@ function restoreSendFxFromFiles() {
  * slot's blocks persist to move_fx_<slot>_<block>.json; per-slot strip levels
  * (volume + Send A/B) go in move_fx_meta.json. MOVE_FX_SLOTS_JS /
  * MOVE_FX_BLOCKS_JS are defined near the FX bus descriptors above. */
-function saveMoveFxChainConfig() {
+/* onlySlot (optional, 0-based): persist just that Move bus. A full walk is
+ * MOVE_FX_SLOTS_JS x MOVE_FX_BLOCKS_JS blocks — 16 today, each costing
+ * get_param round-trips — which is far too much to spend inside one frame. */
+function saveMoveFxChainConfig(onlySlot) {
     if (typeof shadow_get_param !== "function") return;
     try {
         for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++) {
+            if (onlySlot !== undefined && sl !== onlySlot) continue;
             for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) {
                 const key = "move_fx:" + (sl + 1) + ":fx" + (b + 1);
                 const filePath = activeSlotStateDir + "/move_fx_" + sl + "_" + b + ".json";
@@ -15897,12 +15971,15 @@ globalThis.tick = function() {
          * multi-slot flush never lands inside a single frame. */
         if (isOvertakeActive && typeof shadow_take_dirty_slots === "function") {
             const justDirtied = shadow_take_dirty_slots();
-            if (justDirtied) {
+            const busDirtied = (typeof shadow_take_dirty_fx_buses === "function")
+                ? shadow_take_dirty_fx_buses() : 0;
+            if (justDirtied || busDirtied) {
                 overtakeDirtySlots |= justDirtied;
+                overtakeDirtyBuses |= busDirtied;
                 /* Restart the quiet period: a knob sweep is one edit, not 200. */
                 overtakeDirtyQuiet = OVERTAKE_DIRTY_QUIET_TICKS;
             }
-            if (overtakeDirtySlots) {
+            if (overtakeDirtySlots || overtakeDirtyBuses) {
                 if (overtakeDirtyQuiet > 0) overtakeDirtyQuiet--;
                 overtakeDirtyAge++;
                 /* A tool that writes every tick would hold the quiet period
@@ -15915,17 +15992,7 @@ globalThis.tick = function() {
                  * refuses to persist an uncommitted preview, so clearing them
                  * here would drop the edit instead of deferring it. */
                 if (ready && !isPresetPreviewActive()) {
-                    let slot = 0;
-                    while (slot < SHADOW_UI_SLOTS &&
-                           !(overtakeDirtySlots & (1 << slot))) slot++;
-                    if (slot < SHADOW_UI_SLOTS) {
-                        overtakeDirtySlots &= ~(1 << slot);
-                        autosaveAllSlots(slot);
-                        debugLog("overtake autosave: wrote slot " + slot);
-                    } else {
-                        /* Bits above the slot range — nothing to write. */
-                        overtakeDirtySlots = 0;
-                    }
+                    saveOneDirtyOvertakeUnit();
                     overtakeDirtyAge = 0;
                 }
             }

@@ -57,5 +57,38 @@ rg -q 'autosaveAllSlots\(slot\)' "$js" \
 rg -q '!isPresetPreviewActive\(\)' "$js" \
   || fail "$js can persist an uncommitted preset audition during overtake"
 
-echo "PASS: overtake autosave is dirty-driven, covers bulk sets, staggered and non-starvable"
+# --- FX buses -------------------------------------------------------------
+# Master / Send / Move buses all live at slot 0 and differ only by key
+# namespace, so the slot mask cannot see them. They need prefix-based marking
+# and their own saver per bus.
+
+# 7. Prefix-based bus detection exists and distinguishes the buses.
+rg -q 'shadow_mark_fx_bus_dirty' "$c" \
+  || fail "$c does not mark FX buses dirty; master/send/move edits would never autosave"
+for prefix in 'master_fx:' 'send_fx:' 'move_fx:'; do
+  rg -q "\"$prefix\"" "$c" \
+    || fail "$c does not recognise the $prefix namespace when marking dirty buses"
+done
+rg -q 'shadow_take_dirty_fx_buses' "$c" \
+  || fail "$c no longer exposes shadow_take_dirty_fx_buses to JS"
+
+# 8. Bulk sets must mark buses too — a bus :state restore is a bulk SET.
+rg -q 'shadow_mark_fx_bus_dirty\(shadow_param->key\)' "$c" \
+  || fail "$c bulk path does not mark FX buses (and must read the key from shared memory, not the freed JS string)"
+
+# 9. Each bus must be saved by its own saver, NOT via the editor's dispatcher —
+#    activeFxBus reflects the last bus opened on screen, which during overtake
+#    has nothing to do with the bus that changed.
+rg -q 'saveMasterFxChainConfig\(true\)' "$js" \
+  || fail "$js does not force the master-bus save, so it would follow activeFxBus and persist the wrong bus"
+rg -q 'saveSendFxChainConfig\("a"\)' "$js" \
+  || fail "$js does not narrow the send-bus save to the bus that changed"
+rg -q 'saveMoveFxChainConfig\(m\)' "$js" \
+  || fail "$js does not narrow the Move-bus save; a full walk is 16 blocks in one frame"
+
+# 10. Still exactly one unit of work per tick.
+rg -q 'function saveOneDirtyOvertakeUnit' "$js" \
+  || fail "$js lost the one-unit-per-tick worker"
+
+echo "PASS: overtake autosave covers slots AND fx buses, dirty-driven, staggered, non-starvable"
 exit 0
