@@ -3243,7 +3243,7 @@ function enterOvertakeMenu() {
      * on !isOvertakeActive, so without this a slot change made seconds before
      * Shift+Vol+Jog would be lost on reboot. */
     autosaveAllSlots();
-    saveMasterFxChainConfig();
+    saveAllFxBusConfigs();
     saveChainConfigToDir(activeSlotStateDir);
     debugLog("enterOvertakeMenu: flushed set state before overtake");
 
@@ -3290,7 +3290,7 @@ function exitOvertakeMode() {
      * edited during overtake, but keeps the invariant "all transitions
      * persist state" honest. */
     autosaveAllSlots();
-    saveMasterFxChainConfig();
+    saveAllFxBusConfigs();
     saveChainConfigToDir(activeSlotStateDir);
     debugLog("exitOvertakeMode: flushed set state on exit");
 
@@ -3708,7 +3708,7 @@ function loadOvertakeModule(moduleInfo, skipOvertake) {
      * once view == OVERTAKE_MODULE, so recent slot edits would otherwise be
      * lost on reboot. */
     autosaveAllSlots();
-    saveMasterFxChainConfig();
+    saveAllFxBusConfigs();
     saveChainConfigToDir(activeSlotStateDir);
     debugLog("loadOvertakeModule: flushed set state before overtake");
 
@@ -4805,6 +4805,24 @@ function autosaveAllSlots(onlySlot) {
                      "keeping stale signature so the next autosave retries");
         }
     }
+}
+
+/* Persist EVERY FX bus family, for the transition points whose contract is "all
+ * state is now on disk" — set change, shutdown, and overtake entry/exit.
+ *
+ * Those points used to call saveMasterFxChainConfig() bare, which dispatches on
+ * activeFxBus and therefore saved exactly ONE family: whichever bus the editor
+ * happened to show last. With the editor on a send bus, a set change persisted
+ * the sends and silently dropped master and Move — and the same on shutdown.
+ * The bus files are per-set, so the loss landed on the outgoing set and was
+ * invisible until that set was next loaded.
+ *
+ * Cost is irrelevant at these call sites: they are one-off transitions, not the
+ * per-tick path, and the alternative is losing the user's work. */
+function saveAllFxBusConfigs() {
+    saveMasterFxChainConfig(true);
+    saveSendFxChainConfig();
+    saveMoveFxChainConfig();
 }
 
 /* One unit of overtake autosave work: a single slot, or a single FX bus.
@@ -15234,9 +15252,7 @@ globalThis.init = function() {
  * to guarantee one final persistence flush before process termination. */
 globalThis.shadow_save_state_now = function() {
     autosaveAllSlots();
-    saveMasterFxChainConfig();
-    saveSendFxChainConfig();  /* persist send FX chains + return levels per set */
-    saveMoveFxChainConfig();  /* persist Move FX chains + strip levels per set */
+    saveAllFxBusConfigs();
     /* Also persist volumes/channels/mute/solo — otherwise the set's
      * shadow_chain_config.json drifts from slot_N.json across reboots,
      * e.g. toggling MPE (recv=All) before shutdown would revert on boot. */
@@ -15582,7 +15598,7 @@ globalThis.tick = function() {
         if (flags & SHADOW_UI_FLAG_SAVE_STATE) {
             debugLog("SAVE_STATE flag detected — shutdown imminent, saving all state");
             autosaveAllSlots();
-            saveMasterFxChainConfig();
+            saveAllFxBusConfigs();
             saveChainConfigToDir(activeSlotStateDir);
             if (typeof shadow_clear_ui_flags === "function") {
                 shadow_clear_ui_flags(SHADOW_UI_FLAG_SAVE_STATE);
@@ -15593,7 +15609,7 @@ globalThis.tick = function() {
 
             /* 1. Save current state to outgoing directory */
             autosaveAllSlots();
-            saveMasterFxChainConfig();
+            saveAllFxBusConfigs();
             /* Save chain config (volumes, channels, mute/solo) to outgoing set dir */
             saveChainConfigToDir(activeSlotStateDir);
             /* Save current RNBO graph (if RNBO is running) */
@@ -15968,7 +15984,15 @@ globalThis.tick = function() {
          * Detection is free instead of polled: the C layer sets a bit on each
          * slot param write (shadow_take_dirty_slots), so the save cost is paid
          * only when something actually changed — and one slot per tick, so a
-         * multi-slot flush never lands inside a single frame. */
+         * multi-slot flush never lands inside a single frame.
+         *
+         * Set changes stay in step for free. This block sits inside the
+         * autosaveSuppressUntil branch, and SET_CHANGED flushes the OUTGOING
+         * set, switches activeSlotStateDir, then suppresses for ~5 s — so no
+         * write here can land against the wrong set's directory. Dirty bits
+         * that survive the switch are deliberately NOT cleared: the save
+         * re-reads live state, so the worst case is one redundant but correct
+         * write into the new set, whereas clearing could drop a real edit. */
         if (isOvertakeActive && typeof shadow_take_dirty_slots === "function") {
             const justDirtied = shadow_take_dirty_slots();
             const busDirtied = (typeof shadow_take_dirty_fx_buses === "function")

@@ -90,5 +90,30 @@ rg -q 'saveMoveFxChainConfig\(m\)' "$js" \
 rg -q 'function saveOneDirtyOvertakeUnit' "$js" \
   || fail "$js lost the one-unit-per-tick worker"
 
+# --- staying in step with the underlying Move set -------------------------
+# The bus files are PER-SET. Transition points whose contract is "all state is
+# now on disk" (set change, shutdown, overtake entry/exit) must persist every
+# bus family — a bare saveMasterFxChainConfig() dispatches on activeFxBus and
+# saves only whichever bus the editor last showed, so with the editor on a send
+# bus a set change dropped master and Move onto the floor. The loss lands on the
+# OUTGOING set and stays invisible until that set is next loaded.
+
+# 11. The all-bus helper exists and covers all three families.
+rg -q 'function saveAllFxBusConfigs' "$js" \
+  || fail "$js lost saveAllFxBusConfigs — transition flushes would persist only one bus family"
+for fn in 'saveMasterFxChainConfig\(true\)' 'saveSendFxChainConfig\(\)' 'saveMoveFxChainConfig\(\)'; do
+  rg -q "$fn" "$js" || fail "$js: saveAllFxBusConfigs no longer covers $fn"
+done
+
+# 12. Every transition flush (paired with autosaveAllSlots) must use it. The
+#     periodic autosave is deliberately excluded — it is the steady-state cost
+#     path, and transitions provide the completeness guarantee.
+bare=$(rg -U -c 'autosaveAllSlots\(\);\n\s*saveMasterFxChainConfig\(\);' "$js" || echo 0)
+if [ "${bare:-0}" -gt 1 ]; then
+  echo "FAIL: $js has ${bare} transition flushes still calling bare saveMasterFxChainConfig()." >&2
+  echo "      Only the periodic autosave may do that; the rest must use saveAllFxBusConfigs()." >&2
+  exit 1
+fi
+
 echo "PASS: overtake autosave covers slots AND fx buses, dirty-driven, staggered, non-starvable"
 exit 0
