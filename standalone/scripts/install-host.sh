@@ -116,7 +116,24 @@ done
 say ""; say "--- verifying the payload targets $DBX_SHM_PREFIX"
 for a in build/schwung build/schwung-shim.so build/shadow/shadow_ui; do
     bin="$REPO_ROOT/$a"
-    if ! strings "$bin" 2>/dev/null | grep -qxF -- "$DBX_SHM_PREFIX"; then
+    # SUBSTRING, not whole-line: only shadow_ui keeps the bare prefix as its own
+    # string. The others embed it already concatenated with the segment name
+    # ("/dbxhost-control"), because the compiler folds the macro at compile time.
+    # An exact-line match therefore rejected two correctly-built binaries.
+    #
+    # The positive test alone is sufficient: a stock-built binary contains no
+    # "dbxhost" string at all. A negative test for "/schwung-" would be wrong —
+    # the shim legitimately names stock paths (/schwung-link-in is the shared
+    # Link Audio sidecar, /usr/lib/schwung-shim.so is the stock shim).
+    # ⚠ Count into a variable rather than `| grep -q`. This script runs under
+    # `set -euo pipefail`, and grep -q exits at the FIRST match, closing the
+    # pipe — `strings` then dies of SIGPIPE and pipefail turns that into a
+    # failed pipeline. The guard therefore rejected correctly-built binaries,
+    # and did so most reliably when the match came early with lots of output
+    # still to write. grep -c consumes the whole stream, so nothing is killed;
+    # `|| true` absorbs grep's exit 1 on zero matches, which -e would abort on.
+    hits="$(strings "$bin" 2>/dev/null | grep -cF -- "$DBX_SHM_PREFIX" || true)"
+    if [ "${hits:-0}" -eq 0 ]; then
         echo "" >&2
         echo "ERROR: $a was NOT built for this host." >&2
         echo "       Expected the SHM prefix '$DBX_SHM_PREFIX' to be compiled in; it is absent." >&2

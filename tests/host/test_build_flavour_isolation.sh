@@ -51,8 +51,23 @@ rg -q 'printf .* > "\$BUILD_STAMP"' "$build" \
 rg -q 'verifying the payload targets' "$inst" \
   || fail "$inst no longer verifies the payload's compiled SHM prefix before deploying"
 
-rg -q 'strings "\$bin" .*grep -qxF -- "\$DBX_SHM_PREFIX"' "$inst" \
-  || fail "$inst no longer greps the built binaries for DBX_SHM_PREFIX"
+# Substring, NOT whole-line: only shadow_ui keeps the bare prefix as its own
+# string; the others embed it already joined to the segment name. A -qxF match
+# here rejected two correctly-built binaries and blocked a legitimate deploy.
+rg -q 'grep -cF -- "\$DBX_SHM_PREFIX"' "$inst" \
+  || fail "$inst no longer counts DBX_SHM_PREFIX occurrences in the built binaries"
+
+# Two shapes that each broke this guard in practice, both of which REJECT
+# correctly-built binaries (fail-closed, so they block every deploy):
+#   -x  whole-line match — only shadow_ui keeps the bare prefix as its own
+#       string; the others embed it joined to the segment name.
+#   -q  early-exit match — the script runs `set -euo pipefail`, and grep -q
+#       closes the pipe on first match, so `strings` dies of SIGPIPE and
+#       pipefail marks the whole pipeline failed.
+rg -q 'grep -qxF -- "\$DBX_SHM_PREFIX"' "$inst" \
+  && fail "$inst uses a whole-line match — that rejects correctly-built binaries"
+rg -q 'grep -qF -- "\$DBX_SHM_PREFIX"' "$inst" \
+  && fail "$inst uses grep -q in a pipeline under pipefail — SIGPIPE makes it reject valid binaries"
 
 # The guard must cover all three shipped binaries. Checking only one would pass
 # while a mixed tree shipped the other two.
