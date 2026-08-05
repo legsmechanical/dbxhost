@@ -8,6 +8,58 @@
  * state_path, state_load. Each is a top-level `strcmp(key,...)` branch.
  * Returns 1 when it handled the key (caller returns from set_param), 0 to
  * fall through to the remaining globals segments / the tN_ block. */
+/* Is this Move set still alive anywhere?
+ *
+ * ⚠ "Alive" is NOT the same as "present in Sets/". Schwung's **set pages**
+ * feature physically rename()s whole set folders out of Sets/ and into a stash
+ * (set_pages/page_N/<uuid>) while another page is active. A set sitting on an
+ * inactive page is therefore absent from Sets/ while being entirely intact and
+ * one button-press from returning.
+ *
+ * Treating absent-from-Sets as deleted is why this helper exists: the prune
+ * below erases seq8 state, UI state and EVERY snapshot for the sets it judges
+ * orphaned. Opening dAVEBOx while on page 1 would permanently destroy the
+ * user's patterns for every set on pages 2-8 — real musical work, gone, with no
+ * error and nothing to restore from.
+ *
+ * Both stash roots are checked because the stash lives under whichever host
+ * created it, and dAVEBOx runs under both. Subdirectories are enumerated rather
+ * than assuming page_0..N, so a future re-layout of the stash cannot silently
+ * reintroduce the bug.
+ *
+ * ⭑ The asymmetry that decides every unclear case: keeping a stale state file
+ * costs a few KB, deleting a live one destroys work. So anything we cannot
+ * verify counts as ALIVE. */
+static int seq8_set_uuid_alive(const char *uuid) {
+    static const char *const stash_roots[] = {
+        SEQ8_SET_PAGES_DIR_A,
+        SEQ8_SET_PAGES_DIR_B,
+        NULL
+    };
+    char buf[512];
+    struct stat st;
+
+    snprintf(buf, sizeof(buf), SEQ8_SETS_DIR "/%s", uuid);
+    if (stat(buf, &st) == 0) return 1;
+
+    for (int r = 0; stash_roots[r]; r++) {
+        struct stat rst;
+        if (stat(stash_roots[r], &rst) != 0) continue;  /* no stash here at all */
+        DIR *d = opendir(stash_roots[r]);
+        if (!d) return 1;   /* exists but unreadable — refuse to judge it dead */
+        struct dirent *pe;
+        int found = 0;
+        while (!found && (pe = readdir(d)) != NULL) {
+            if (pe->d_name[0] == '.') continue;
+            snprintf(buf, sizeof(buf), "%s/%s/%s", stash_roots[r], pe->d_name, uuid);
+            if (stat(buf, &st) == 0) found = 1;
+        }
+        closedir(d);
+        if (found) return 1;
+    }
+    return 0;
+}
+
 static int sp_globals_state(sp_ctx_t *cx) {
     seq8_instance_t *inst = cx->inst;
     const char *key = cx->key;
@@ -30,7 +82,7 @@ static int sp_globals_state(sp_ctx_t *cx) {
      * set folder no longer exists. Leaves Schwung core's master_fx_*.json,
      * shadow_chain_config.json, slot_*.json untouched. */
     if (!strcmp(key, "prune_orphan_states")) {
-        DIR *d = opendir("/data/UserData/schwung/set_state");
+        DIR *d = opendir(SEQ8_SET_STATE_DIR);
         if (!d) { seq8_ilog(inst, "SEQ8 prune: opendir failed"); return 1; }
         struct dirent *de;
         char buf[256];
@@ -49,9 +101,9 @@ static int sp_globals_state(sp_ctx_t *cx) {
             }
             if (!hex_ok) continue;
             scanned++;
-            snprintf(buf, sizeof(buf), "/data/UserData/UserLibrary/Sets/%s", n);
-            struct stat st;
-            if (stat(buf, &st) == 0) continue;
+            /* Alive in Sets/ OR stashed on an inactive set page — see the
+             * helper. Never reduce this back to a bare stat() of Sets/. */
+            if (seq8_set_uuid_alive(n)) continue;
             snprintf(buf, sizeof(buf), SEQ8_SET_STATE_FMT, n);
             int u1 = unlink(buf);
             snprintf(buf, sizeof(buf), SEQ8_SET_UISTATE_FMT, n);
@@ -60,7 +112,7 @@ static int sp_globals_state(sp_ctx_t *cx) {
              * variable names — enumerate the orphaned set's folder and remove
              * any. Without this the rmdir below always fails for sets that had
              * snapshots, leaving the folder + snap files behind. */
-            snprintf(buf, sizeof(buf), "/data/UserData/schwung/set_state/%s", n);
+            snprintf(buf, sizeof(buf), SEQ8_SET_STATE_DIR "/%s", n);
             DIR *sd = opendir(buf);
             if (sd) {
                 struct dirent *sde;
@@ -69,12 +121,12 @@ static int sp_globals_state(sp_ctx_t *cx) {
                     if (strncmp(sde->d_name, SEQ8_SNAP_PREFIX,
                                 strlen(SEQ8_SNAP_PREFIX)) != 0) continue;
                     snprintf(sbuf, sizeof(sbuf),
-                             "/data/UserData/schwung/set_state/%s/%s", n, sde->d_name);
+                             SEQ8_SET_STATE_DIR "/%s/%s", n, sde->d_name);
                     unlink(sbuf);
                 }
                 closedir(sd);
             }
-            snprintf(buf, sizeof(buf), "/data/UserData/schwung/set_state/%s", n);
+            snprintf(buf, sizeof(buf), SEQ8_SET_STATE_DIR "/%s", n);
             rmdir(buf);  /* silently fails if other module's files remain */
             if (u1 == 0 || u2 == 0) removed++;
         }

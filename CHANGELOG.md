@@ -102,6 +102,11 @@ the section into a versioned heading at release time.
 - **Widget cues and bank renames.** Action knobs show "turn-either-way" chevrons, Playback Direction shows real arrows, stepped ranges show a position dot-strip; ARP IN → LIVE ARP and AUTO → AUTOMATION, with consistent headers.
 
 ### Fixes
+- **Your patterns on other Set Pages are safe now.** If you use Schwung's Set
+  Pages, sets on the pages you aren't currently on were treated as deleted, and
+  opening dAVEBOx erased their patterns, clip settings and snapshots for good.
+  dAVEBOx now recognises a set parked on another page as still there. If you use
+  Set Pages, update before opening dAVEBOx again.
 - **dAVEBOx tells you when it needs a newer host.** If you run a dAVEBOx build
   that expects host features an older dAVEBOx host doesn't have, the splash now
   says so instead of quietly dropping the extra effect slots and send buses.

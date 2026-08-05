@@ -44,10 +44,35 @@
 #define SEQ8_STATE_PREFIX "seq8"
 #endif
 
+/* Base directories, overridable at compile time.
+ *
+ * These exist as macros so the native test harness can point them at a temp
+ * tree. That matters for exactly one caller: the orphan prune DELETES a set's
+ * patterns, UI state and snapshots, and a guard that cannot actually exercise
+ * the deletion is not much of a guard. Defaults are the real device paths, so
+ * nothing changes on device.
+ *
+ * SEQ8_SET_PAGES_DIR_* are the set-pages stashes — a set parked on an inactive
+ * page lives there and is ABSENT from Sets/ while being perfectly alive. Two of
+ * them because the stash belongs to whichever host wrote it, and dAVEBOx runs
+ * under both. */
+#ifndef SEQ8_SETS_DIR
+#define SEQ8_SETS_DIR           "/data/UserData/UserLibrary/Sets"
+#endif
+#ifndef SEQ8_SET_STATE_DIR
+#define SEQ8_SET_STATE_DIR      "/data/UserData/schwung/set_state"
+#endif
+#ifndef SEQ8_SET_PAGES_DIR_A
+#define SEQ8_SET_PAGES_DIR_A    "/data/UserData/schwung/set_pages"
+#endif
+#ifndef SEQ8_SET_PAGES_DIR_B
+#define SEQ8_SET_PAGES_DIR_B    "/data/UserData/dbx-host/set_pages"
+#endif
+
 #define SEQ8_LOG_PATH           "/data/UserData/schwung/" SEQ8_STATE_PREFIX ".log"
 #define SEQ8_STATE_PATH_FALLBACK "/data/UserData/schwung/" SEQ8_STATE_PREFIX "-state.json"
-#define SEQ8_SET_STATE_FMT      "/data/UserData/schwung/set_state/%s/" SEQ8_STATE_PREFIX "-state.json"
-#define SEQ8_SET_UISTATE_FMT    "/data/UserData/schwung/set_state/%s/" SEQ8_STATE_PREFIX "-ui-state.json"
+#define SEQ8_SET_STATE_FMT      SEQ8_SET_STATE_DIR "/%s/" SEQ8_STATE_PREFIX "-state.json"
+#define SEQ8_SET_UISTATE_FMT    SEQ8_SET_STATE_DIR "/%s/" SEQ8_STATE_PREFIX "-ui-state.json"
 #define SEQ8_SNAP_PREFIX        SEQ8_STATE_PREFIX "-snap-"
 
 #define NUM_TRACKS          8
