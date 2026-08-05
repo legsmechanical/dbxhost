@@ -76,17 +76,25 @@ rg -q 'shadow_take_dirty_fx_buses' "$c" \
 rg -q 'shadow_mark_fx_bus_dirty\(shadow_param->key\)' "$c" \
   || fail "$c bulk path does not mark FX buses (and must read the key from shared memory, not the freed JS string)"
 
-# 9. Each bus must be saved by its own saver, NOT via the editor's dispatcher —
-#    activeFxBus reflects the last bus opened on screen, which during overtake
-#    has nothing to do with the bus that changed.
-rg -q 'saveMasterFxChainConfig\(true\)' "$js" \
-  || fail "$js does not force the master-bus save, so it would follow activeFxBus and persist the wrong bus"
-rg -q 'saveSendFxChainConfig\("a"\)' "$js" \
-  || fail "$js does not narrow the send-bus save to the bus that changed"
-rg -q 'saveMoveFxChainConfig\(m\)' "$js" \
-  || fail "$js does not narrow the Move-bus save; a full walk is 16 blocks in one frame"
+# 9. ⚠ A save that could not read the DSP must NOT clear the dirty bit.
+#    Reading a synth's state needs the param mailbox, which a tool owning the
+#    device keeps busy; the read times out and buildSlotPatchJson bails rather
+#    than clobber a good file. Clearing the bit in front of that bail discards
+#    the user's edit permanently — observed on hardware 2026-08-05, where a
+#    transpose change logged a save and never reached disk.
+rg -q 'if \(autosaveAllSlots\(slot\)\) \{' "$js" \
+  || fail "$js clears the dirty bit without checking whether the slot was actually written — a timed-out read silently loses the edit"
+rg -q 'return wrote;' "$js" \
+  || fail "$js: autosaveAllSlots no longer reports whether it persisted anything"
 
-# 10. Still exactly one unit of work per tick.
+# 10. The FX buses are deliberately NOT written from the overtake path: their
+#     savers treat an unreadable module name as "empty" and write {}, which
+#     would blank a good bus config when a read times out. Transition flushes
+#     still cover them. If this return is removed, that clobber is live again.
+rg -q 'Buses are collected but NOT written from here' "$js" \
+  || fail "$js re-enabled FX bus writes from the overtake path; a timed-out read there blanks a good bus config"
+
+# 11. Still exactly one unit of work per tick.
 rg -q 'function saveOneDirtyOvertakeUnit' "$js" \
   || fail "$js lost the one-unit-per-tick worker"
 
@@ -98,14 +106,14 @@ rg -q 'function saveOneDirtyOvertakeUnit' "$js" \
 # bus a set change dropped master and Move onto the floor. The loss lands on the
 # OUTGOING set and stays invisible until that set is next loaded.
 
-# 11. The all-bus helper exists and covers all three families.
+# 12. The all-bus helper exists and covers all three families.
 rg -q 'function saveAllFxBusConfigs' "$js" \
   || fail "$js lost saveAllFxBusConfigs — transition flushes would persist only one bus family"
 for fn in 'saveMasterFxChainConfig\(true\)' 'saveSendFxChainConfig\(\)' 'saveMoveFxChainConfig\(\)'; do
   rg -q "$fn" "$js" || fail "$js: saveAllFxBusConfigs no longer covers $fn"
 done
 
-# 12. Every transition flush (paired with autosaveAllSlots) must use it. The
+# 13. Every transition flush (paired with autosaveAllSlots) must use it. The
 #     periodic autosave is deliberately excluded — it is the steady-state cost
 #     path, and transitions provide the completeness guarantee.
 bare=$(rg -U -c 'autosaveAllSlots\(\);\n\s*saveMasterFxChainConfig\(\);' "$js" || echo 0)
@@ -115,5 +123,5 @@ if [ "${bare:-0}" -gt 1 ]; then
   exit 1
 fi
 
-echo "PASS: overtake autosave covers slots AND fx buses, dirty-driven, staggered, non-starvable"
+echo "PASS: overtake autosave persists slots only-on-success; buses deferred to transitions"
 exit 0

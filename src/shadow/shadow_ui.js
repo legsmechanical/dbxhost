@@ -296,6 +296,10 @@ const AUTOSAVE_INTERVAL = 300;  /* ~10 seconds at 30fps */
  * amplification is the risk here, not CPU), short enough that a user who edits
  * and then walks away loses nothing. */
 const OVERTAKE_DIRTY_QUIET_TICKS = 90;  /* ~3 s */
+/* Wait before re-attempting a save that could not read the DSP's state because
+ * the param mailbox was busy. Short enough to catch the next lull, long enough
+ * that a continuously-busy tool is not queried every single tick. */
+const OVERTAKE_DIRTY_RETRY_TICKS = 30;  /* ~1 s */
 const DEFAULT_SLOTS = [
     { channel: 1, name: "" },
     { channel: 2, name: "" },
@@ -4707,13 +4711,20 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
  * costs several get_param round-trips, so writing four at once inside one tick
  * would stall the overtake tool's frame. */
 function autosaveAllSlots(onlySlot) {
+    /* Tracks whether the requested slot was actually written. Several paths
+     * below `continue` deliberately (preset audition, a shim-reported-empty
+     * slot, a state read that timed out) — all of them correct, all of them
+     * silent. A caller that clears a dirty flag on the assumption a save
+     * happened loses the user's edit permanently, which is exactly what the
+     * overtake autosave did until this was threaded back. */
+    let wrote = false;
     /* Never persist an uncommitted preset audition. While the user scrolls
      * User Presets, the live <prefix>:state is the previewed sound, not a
      * committed choice — saving it would let a slot silently adopt a preview
      * (e.g. if a periodic autosave or overtake-suspend teardown lands
      * mid-audition). previewActive clears on Load (commit) or Back (revert),
      * after which autosave resumes normally. */
-    if (isPresetPreviewActive()) return;
+    if (isPresetPreviewActive()) return false;
     for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
         if (onlySlot !== undefined && i !== onlySlot) continue;
         /* Sync chainConfigs from DSP before checking - prevents clobbering
@@ -4772,6 +4783,7 @@ function autosaveAllSlots(onlySlot) {
             )) {
                 slotDirtyCache[i] = false;
                 slotUserCleared[i] = false;
+                if (onlySlot !== undefined) wrote = true;
             } else {
                 debugLog("autosave: failed to write empty marker for slot " + i +
                          " — will retry next autosave");
@@ -4800,11 +4812,13 @@ function autosaveAllSlots(onlySlot) {
             JSON.stringify(wrapper, null, 2) + "\n"
         )) {
             lastSavedSlotSignature[i] = currentSig;
+            if (onlySlot !== undefined) wrote = true;
         } else {
             debugLog("autosave: failed to write slot_" + i + ".json — " +
                      "keeping stale signature so the next autosave retries");
         }
     }
+    return wrote;
 }
 
 /* Persist EVERY FX bus family, for the transition points whose contract is "all
@@ -4839,14 +4853,52 @@ function saveAllFxBusConfigs() {
 function saveOneDirtyOvertakeUnit() {
     for (let slot = 0; slot < SHADOW_UI_SLOTS; slot++) {
         if (overtakeDirtySlots & (1 << slot)) {
-            overtakeDirtySlots &= ~(1 << slot);
-            autosaveAllSlots(slot);
-            debugLog("overtake autosave: slot " + slot);
+            /* Clear the bit ONLY if the slot was really written.
+             *
+             * Reading a synth's state needs a round trip through the param
+             * mailbox, and while an overtake tool owns the device that mailbox
+             * is busy — the read times out and buildSlotPatchJson bails rather
+             * than clobber a good file with defaults. That bail is correct, but
+             * clearing the dirty bit in front of it threw the user's edit away:
+             * observed on hardware 2026-08-05, where a transpose change logged
+             * a save and never reached disk.
+             *
+             * Keeping the bit means we simply try again on a later tick, and
+             * the tool is not busy forever — the retry lands as soon as the
+             * mailbox goes quiet, which is also when the read was always going
+             * to succeed. */
+            if (autosaveAllSlots(slot)) {
+                overtakeDirtySlots &= ~(1 << slot);
+                debugLog("overtake autosave: slot " + slot + " written");
+            } else {
+                /* Back off briefly so a busy mailbox is not hammered every
+                 * tick; the bit stays set, so nothing is lost. */
+                overtakeDirtyQuiet = OVERTAKE_DIRTY_RETRY_TICKS;
+                debugLog("overtake autosave: slot " + slot +
+                         " not persisted (mailbox busy) — retrying");
+            }
             return;
         }
     }
     /* Any residue is bits outside the slot range — nothing to write. */
     overtakeDirtySlots = 0;
+
+    /* ⚠ FX buses are NOT persisted from here yet, deliberately.
+     *
+     * Their savers treat an unreadable module name as "this bus is empty" and
+     * write "{}" — fine when the mailbox is quiet, actively destructive while a
+     * tool owns it, because a timed-out read would blank a good bus config.
+     * That is worse than not saving at all, and the slot path proved (hardware,
+     * 2026-08-05) that reads really do time out under overtake.
+     *
+     * The bits are still collected, and the transition flushes (set change,
+     * shutdown, overtake entry/exit) still persist every bus — those run when
+     * the mailbox is quiet. Re-enable here once the bus savers distinguish
+     * "empty" from "could not read", the same way buildSlotPatchJson does. */
+    /* Buses are collected but NOT written from here — see above. One return
+     * rather than a condition on each branch, so no bus can be reached by
+     * accident. */
+    return;
 
     if (overtakeDirtyBuses & FXBUS_DIRTY_MASTER) {
         overtakeDirtyBuses &= ~FXBUS_DIRTY_MASTER;
