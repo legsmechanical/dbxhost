@@ -82,8 +82,10 @@ rg -q 'shadow_mark_fx_bus_dirty\(shadow_param->key\)' "$c" \
 #    than clobber a good file. Clearing the bit in front of that bail discards
 #    the user's edit permanently — observed on hardware 2026-08-05, where a
 #    transpose change logged a save and never reached disk.
-rg -q 'if \(autosaveAllSlots\(slot\)\) \{' "$js" \
-  || fail "$js clears the dirty bit without checking whether the slot was actually written — a timed-out read silently loses the edit"
+rg -q 'const wroteChain  = autosaveAllSlots\(slot\);' "$js" \
+  || fail "$js no longer captures whether the chain was actually written"
+rg -q 'if \(wroteChain \|\| wroteConfig\) \{' "$js" \
+  || fail "$js clears the dirty bit without checking whether anything was actually written — a failed save silently loses the edit"
 rg -q 'return wrote;' "$js" \
   || fail "$js: autosaveAllSlots no longer reports whether it persisted anything"
 
@@ -93,6 +95,29 @@ rg -q 'return wrote;' "$js" \
 #     still cover them. If this return is removed, that clobber is live again.
 rg -q 'Buses are collected but NOT written from here' "$js" \
   || fail "$js re-enabled FX bus writes from the overtake path; a timed-out read there blanks a good bus config"
+
+# 10b. A slot edit must write BOTH files. slot_N.json holds the chain (synth/FX
+#      state); shadow_chain_config.json holds the slot's OWN settings (volume,
+#      channel, mute/solo, sends, transpose). Writing only the chain is why a
+#      slot:transpose change survived nothing on hardware 2026-08-05.
+rg -q 'saveChainConfigToDir\(activeSlotStateDir\);' "$js" \
+  || fail "$js overtake autosave no longer writes shadow_chain_config.json — slot settings (transpose, sends, mute) would not persist mid-session"
+rg -q 'wroteChain \|\| wroteConfig' "$js" \
+  || fail "$js does not treat a config-only write as success — a synth without get_param(\"state\") would retry forever and never persist readable settings"
+
+# 10c. slot:transpose must actually be serialised. It was wired end to end in
+#      the shim and shown in the UI, but nothing wrote it, so it reset to 0 on
+#      every host start.
+rg -q 'transpose: transpose' "$js" \
+  || fail "$js no longer saves slot:transpose into the per-set chain config"
+rg -q 'setSlotParamWithTimeout\(i, "slot:transpose"' "$js" \
+  || fail "$js no longer restores slot:transpose when loading a set"
+
+# 10d. The config save must refuse to run on unreadable params: every field
+#      falls back to a default, so a failed read round would overwrite the
+#      user's settings with defaults rather than error.
+rg -q 'refusing to overwrite with defaults' "$js" \
+  || fail "$js saveChainConfigToDir lost its unreadable-params guard; it would clobber settings with defaults"
 
 # 11. Still exactly one unit of work per tick.
 rg -q 'function saveOneDirtyOvertakeUnit' "$js" \

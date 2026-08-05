@@ -4173,9 +4173,21 @@ function saveSlotsToConfig(nextSlots) {
  * Mirrors what shadow_save_config_to_dir() did on the C side, but runs
  * on the UI thread to avoid blocking the audio thread. */
 function saveChainConfigToDir(dir) {
-    if (!dir) return;
+    if (!dir) return false;
     const path = dir + "/shadow_chain_config.json";
     try {
+        /* Every field below falls back to a DEFAULT when its read returns
+         * nothing, so a round of failed reads would not error — it would
+         * quietly write a file full of defaults over the user's settings.
+         * Harmless at the transition flushes (the mailbox is quiet there), but
+         * this is now also called mid-session, so prove the reads work before
+         * trusting any of them. slot:volume is served by the chain manager for
+         * every slot, so a null here means "cannot read", never "unset". */
+        if (getSlotParam(0, "slot:volume") === null) {
+            debugLog("saveChainConfigToDir: slot params unreadable — skipping " +
+                     "(refusing to overwrite with defaults)");
+            return false;
+        }
         const cfgSlots = [];
         for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
             const vol = parseFloat(getSlotParam(i, "slot:volume") || "1");
@@ -4186,11 +4198,17 @@ function saveChainConfigToDir(dir) {
             const sendA = parseFloat(getSlotParam(i, "slot:send_a") || "0");
             const sendB = parseFloat(getSlotParam(i, "slot:send_b") || "0");
             const moveToSlot = parseInt(getSlotParam(i, "slot:move_to_slot") || "1");
-            cfgSlots.push({ name: slots[i] ? slots[i].name : "", channel: ch, volume: vol, forward_channel: fwd, muted: muted, soloed: soloed, send_a: sendA, send_b: sendB, move_to_slot: moveToSlot });
+            /* Transpose was exposed as a slot setting and wired through the
+             * shim (set + get, reset to 0 on start) but never serialised by
+             * anything — so it silently reverted to 0 on every host start.
+             * Reported on hardware 2026-08-05 as "the change didn't stick". */
+            const transpose = parseInt(getSlotParam(i, "slot:transpose") || "0", 10) || 0;
+            cfgSlots.push({ name: slots[i] ? slots[i].name : "", channel: ch, volume: vol, forward_channel: fwd, muted: muted, soloed: soloed, send_a: sendA, send_b: sendB, move_to_slot: moveToSlot, transpose: transpose });
         }
-        host_write_file(path, JSON.stringify({ slots: cfgSlots }, null, 2) + "\n");
+        return !!host_write_file(path, JSON.stringify({ slots: cfgSlots }, null, 2) + "\n");
     } catch (e) {
         debugLog("saveChainConfigToDir error: " + e);
+        return false;
     }
 }
 
@@ -4367,6 +4385,9 @@ function loadChainConfigFromDir(dir) {
             if (typeof s.forward_channel === "number") setSlotParamWithTimeout(i, "slot:forward_channel", String(s.forward_channel), 500);
             if (typeof s.muted === "number") setSlotParamWithTimeout(i, "slot:muted", String(s.muted), 500);
             if (typeof s.soloed === "number") setSlotParamWithTimeout(i, "slot:soloed", String(s.soloed), 500);
+            /* Absent in configs written before transpose was persisted; leave
+             * the shim's own 0 default alone rather than forcing it. */
+            if (typeof s.transpose === "number") setSlotParamWithTimeout(i, "slot:transpose", String(s.transpose), 500);
             /* Per-slot send levels: ALWAYS write — saved value if present, else
              * default 0 (no send). The shim's slot sends are global and NOT reset
              * per set, so skipping a missing field (configs written before sends
@@ -4867,9 +4888,24 @@ function saveOneDirtyOvertakeUnit() {
              * the tool is not busy forever — the retry lands as soon as the
              * mailbox goes quiet, which is also when the read was always going
              * to succeed. */
-            if (autosaveAllSlots(slot)) {
+            /* Two different files, and a slot edit can touch either.
+             *   slot_N.json           — the CHAIN (synth/FX state blobs)
+             *   shadow_chain_config.json — the SLOT's own settings: volume,
+             *                              channel, mute/solo, sends, transpose
+             * Writing only the first is why a slot:transpose change survived
+             * nothing on 2026-08-05: the chain file was the only thing this
+             * path ever wrote, and transpose does not live there.
+             *
+             * The config write is counted as success on its own. A slot whose
+             * synth cannot report state (a module with no get_param("state"),
+             * which is legal) would otherwise retry forever and never persist
+             * the settings that ARE readable. */
+            const wroteChain  = autosaveAllSlots(slot);
+            const wroteConfig = saveChainConfigToDir(activeSlotStateDir);
+            if (wroteChain || wroteConfig) {
                 overtakeDirtySlots &= ~(1 << slot);
-                debugLog("overtake autosave: slot " + slot + " written");
+                debugLog("overtake autosave: slot " + slot +
+                         " written (chain=" + wroteChain + " config=" + wroteConfig + ")");
             } else {
                 /* Back off briefly so a busy mailbox is not hammered every
                  * tick; the bit stays set, so nothing is lost. */
