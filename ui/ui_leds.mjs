@@ -526,6 +526,7 @@ export function updateTrackLEDs() {
                 let on = false;
                 if (S.shiftHeld && !_knobShiftMode && !_compoundHeld) {
                     if (i === 1 || (i >= 4 && i <= 6) || i === 8) on = true; /* shared shortcuts */
+                    if (i === 0 && _underDbxHost())               on = true; /* Step1 = project picker */
                     if (!S.sessionView) {
                         if (i === 2)                            on = true; /* Step3 = Edit Slot/Synth — Track View only */
                         else if (i === 7)                       on = true;
