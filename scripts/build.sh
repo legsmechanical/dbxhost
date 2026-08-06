@@ -785,8 +785,11 @@ if [ -d ./standalone ]; then
     # dependency of launch.sh (session entry/exit) and of the blessed
     # davebox-restore boot recovery.
     cp ./standalone/scripts/set-swap.sh ./build/scripts/
+    # project-cmd.sh: in-session project management (list/new/switch), driven
+    # by the hosted module via host_system_cmd.
+    cp ./standalone/scripts/project-cmd.sh ./build/scripts/
     chmod +x ./build/scripts/quiesce-stock.sh ./build/scripts/exit-to-stock.sh \
-             ./build/scripts/set-swap.sh
+             ./build/scripts/set-swap.sh ./build/scripts/project-cmd.sh
     # The template project every standalone workspace seeds from (correctly
     # wired at birth — see the generator's header). Generated, not checked in,
     # so the pristine fixture stays the single source.
