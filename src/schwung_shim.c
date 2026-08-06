@@ -6292,29 +6292,35 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
      * a timeout claims the screen anyway rather than wedging the phase. */
     if (!select_boot_armed && select_entry_state < 6 && !select_launched) {
         switch (select_entry_state) {
+        /* Timings measured on hardware (2026-08-06): the first cut used a
+         * 150 ms settle + 60-80 ms gesture spacing and Move IGNORED the
+         * combo — it was still mid-transition (announcing "Note Mode") when
+         * Step1 landed, and the shift lead was too short for its combo
+         * latch. 500 ms settle + 250/120 ms spacing opens the overview
+         * reliably; the whole entry is still under a second. */
         case 0:
             select_entry_state = 1;
-            select_entry_next_ms = now + 150;  /* let the overtake exit settle */
+            select_entry_next_ms = now + 500;  /* let Move finish the overtake-exit mode change */
             break;
         case 1:
             if (now >= select_entry_next_ms) {
                 shim_select_inject(0x0B, 0xB0, CC_SHIFT, 127);
                 select_entry_state = 2;
-                select_entry_next_ms = now + 60;
+                select_entry_next_ms = now + 250;
             }
             break;
         case 2:
             if (now >= select_entry_next_ms) {
                 shim_select_inject(0x09, 0x90, 16, 100);   /* Step1 down */
                 select_entry_state = 3;
-                select_entry_next_ms = now + 80;
+                select_entry_next_ms = now + 120;
             }
             break;
         case 3:
             if (now >= select_entry_next_ms) {
                 shim_select_inject(0x08, 0x80, 16, 0x40);  /* Step1 up */
                 select_entry_state = 4;
-                select_entry_next_ms = now + 60;
+                select_entry_next_ms = now + 100;
             }
             break;
         case 4:
