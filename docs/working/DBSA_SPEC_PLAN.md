@@ -6,9 +6,9 @@
 > Bullet numbers B1–B15 follow the skeleton's order.
 >
 > ⚠ Claims are cited `file:line` against `schwung-davebox` `c34c07e` /
-> `schwungbox-host` `56829e03`. Re-verify line numbers before acting on them.
+> `dbxhost` `56829e03`. Re-verify line numbers before acting on them.
 
-`host` = `schwungbox-host`, `davebox` = `schwung-davebox`.
+`host` = `dbxhost`, `davebox` = `schwung-davebox`.
 
 ---
 

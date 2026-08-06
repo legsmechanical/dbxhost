@@ -8,7 +8,7 @@
 > findings still stand). Set-routing decision lives in [`DBSA_SET_MODEL.md`](DBSA_SET_MODEL.md).
 > **Planning only — nothing implemented.**
 
-`host` = `schwungbox-host`, `davebox` = `schwung-davebox`.
+`host` = `dbxhost`, `davebox` = `schwung-davebox`.
 
 ---
 
@@ -166,7 +166,7 @@ twice. `MANUAL.md` stays frozen — `test_manual_freeze.sh` pins it.
 
 **Josh's separation ruling ended this gap:** dAVEBOx SA is an entirely separate workspace; host
 state (`set_state`, `slot_state`, `active_set.txt`, both config files) is now PRIVATE per install
-(`schwungbox-host` `6e9ac1f4`, enforced by installer + `tests/host/test_workspace_separation.sh`).
+(`dbxhost` `6e9ac1f4`, enforced by installer + `tests/host/test_workspace_separation.sh`).
 The two hosts no longer read or write each other's per-set files, so **B2's format-contract hazard
 is gone**: the dbx host can move to 8 slots without any stock host ever rewriting (and truncating)
 its config. The intra-workspace rule below still applies to davebox's own files, and the fx3/fx4
@@ -181,7 +181,7 @@ same files**.
 
 ✅ **No concurrent hazard:** the hosts cannot run simultaneously (SPI exclusivity, `launch.sh` kills
 the stock stack, and the new double-launch guard enforces it).
-✅ **No format hazard today:** `schwungbox-host` and the `schwung/` daily driver both carry
+✅ **No format hazard today:** `dbxhost` and the `schwung/` daily driver both carry
 `MOVE_FX_BLOCKS 4` and `send_fx` — the fork was taken from the daily driver, so they currently write
 identical formats.
 

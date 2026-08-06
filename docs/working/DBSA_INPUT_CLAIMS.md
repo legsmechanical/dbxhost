@@ -1,7 +1,7 @@
 # dAVEBOx SA — host-claimed inputs survey (B15) → the G2 triage table
 
 > Produced 2026-08-06 (P0.2 of the plan). Evidence gathered from
-> `schwungbox-host` `8966831a` — gestures verified in code, not from docs alone.
+> `dbxhost` `8966831a` — gestures verified in code, not from docs alone.
 > **The Decision column is Josh's** (G2: "the decisions are what actually make
 > 'davebox controls everything' true"). Recommendations are pre-filled from
 > `DBSA_STRATEGY.md` where it already took a position.

@@ -2,7 +2,7 @@
 
 > 2026-08-04. Investigation only — nothing implemented. Follows the workspace direction in
 > [`DBSA_SET_MODEL.md`](DBSA_SET_MODEL.md) §0b.
-> Citations are `file:line` against `schwungbox-host` `4673d445` / `schwung-davebox` `c34c07e`.
+> Citations are `file:line` against `dbxhost` `4673d445` / `schwung-davebox` `c34c07e`.
 
 **Verdict: yes — do H1 + H2 as one change, applied in the shim entrypoint while Move is dead.**
 

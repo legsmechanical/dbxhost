@@ -3,7 +3,7 @@
 > Design doc, 2026-08-06. Implements the recorded Design-B decision
 > ([`DBSA_SET_MODEL.md`](DBSA_SET_MODEL.md) superseding banner): **SA keeps its
 > own live-set library, entirely separate from Move native's; native sets are
-> never touched.** Grounded in code as of `schwungbox-host` `85bea767` —
+> never touched.** Grounded in code as of `dbxhost` `85bea767` —
 > the set-pages machinery (`src/host/shadow_set_pages.c:780-990`) is the shipped
 > precedent for every primitive this needs.
 >
@@ -219,3 +219,84 @@ this design replaces it wholesale).
   "New Project", the manual speaks of projects. On disk they remain Move set
   dirs (`Song.abl` + UUID); "set" stays correct in code comments about Move's
   own format.
+
+---
+
+## 12. REVISED SELECTION MODEL (Josh, 2026-08-06): the native picker IS the project picker
+
+> Supersedes §5's jog-menu as the *primary* selection surface. Investigated on
+> hardware the same day — every mechanism below is an observed fact, not a
+> guess. The jog Projects menu survives only as the later archive-management
+> surface (§13).
+
+**The idea:** Move's boot surface under a standalone session is its native set
+picker ("Choose a Set", pads = sets), already interactive, already showing the
+project library (the swap put it there). So: don't auto-launch davebox at
+boot. Hold a **project-select phase** — Move owns pads and set management,
+dbxhost owns the OLED with a "Select dAVEBOx project" screen — and launch
+davebox when a project is chosen. Selecting a project loads the davebox
+session tied to it (UUID-keyed state, already works) AND the Move instruments
+it uses (the set itself).
+
+### Observed facts the design rests on (hardware, 2026-08-06)
+
+- Move boots the picker with the **last project auto-loaded**; a pad tap
+  **immediately loads** that set (no confirm).
+- **Pad note 68+k ↔ user.song-index k.** (Template seeding should use
+  index 0.)
+- **Tapping the already-loaded pad is silent** on every observable channel —
+  the raw pad press (which the shim sees) must be the launch trigger, not any
+  downstream signal.
+- **Empty pad → native "Empty Set"**, materialized lazily (no dir until
+  save). This is the native "new project" path; template wiring is applied by
+  our post-selection hook (rewiring OUR OWN set is risk-free under Design B).
+- **The screenreader `text` D-Bus signal narrates everything with TTS off** —
+  "Choose a Set", set names, "Copy...", "<name> copied", "<name> Copy
+  pasted", "Delete...", "Press pad again to delete <name>", "<name> deleted",
+  the Shift menu items. The shim already listens on D-Bus; this is the event
+  bus for the OLED-cede state machine.
+- **Copy and Delete need NO jog** (paste = tap destination; delete confirm =
+  tap again). **Only Shift+pad does** (Color submenu + per-set Cloud toggle).
+- **Jog-click is inert in the picker natively** — free to claim.
+
+### The phase, concretely
+
+1. Session entry unchanged (swap, seed) — but no `boot_tool` auto-open.
+   Splash → **"Select dAVEBOx project"** screen (shadow display on; we can
+   show the touched pad's project name — we have `projects.json`).
+2. Pads + Copy + Delete pass through to Move untouched. **Shift+pad is
+   suppressed** during the phase (Josh's call: recoloring/cloud not worth a
+   conditional jog; both remain available on vanilla Move).
+3. **OLED cede:** on Copy/Delete button-down (raw CC) → `display_mode=0` so
+   Move's confirm text shows; reclaim on button-up + settle delay.
+   Announcements are the belt-and-braces (and tell us flow completion).
+4. **Launch triggers:** any pad tap that is not part of a Copy/Delete flow →
+   that project (after Move's load settles); **jog-click → resume the
+   already-loaded project** (swallowed from Move — natively inert anyway).
+5. Post-selection hook: if the chosen set is missing template wiring (native
+   Empty Set, or a pad-copy), rewrite OUR set file and reload before davebox
+   opens.
+6. In-session project switch: suspend davebox → the same native picker →
+   selection re-triggers davebox (the existing UUID-mismatch reload path) —
+   the supervisor relaunch loop remains as plumbing for flows that need a
+   true Move restart.
+
+### What this obsoletes / keeps
+
+- Obsoletes: the jog Projects picker as the selection UI (built 08-06,
+  branch `feat/sa-projects`) — davebox-side picker code retires; the
+  underlying `project-cmd.sh` verbs stay (list feeds the OLED name display;
+  new/switch stay for programmatic use).
+- Keeps: the whole swap/recovery machinery unchanged; native Copy/Delete
+  replace the deferred "management pass" (D3) almost entirely.
+- New davebox/host work: the select-phase state machine (shim + shadow_ui,
+  fork-only, generic: "standalone boot-time set-select gate"), the
+  post-selection wiring hook, Shift+pad suppression, jog-click claim.
+
+## 13. Archive / backup (the 32-pad cap) — direction agreed 2026-08-06
+
+Library stays ≤32 (the picker's addressable space). An `archive/` joins
+`library/`/`native-stash/` with the same rename mechanics; the jog Projects
+menu repurposes to "Archive project… / Restore from archive…", and a
+`project-cmd backup` verb tars the library into `davebox-exports/` for
+off-device backup via the manager's file browser. Not yet designed in detail.
