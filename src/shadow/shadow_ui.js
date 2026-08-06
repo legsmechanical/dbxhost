@@ -15555,6 +15555,21 @@ globalThis.tick = function() {
                 storeReturnView = null;
                 view = VIEWS.STORE_PICKER_RESULT;
                 announce(storePickerMessage);
+            } else if (typeof host_file_exists === "function" &&
+                       host_file_exists(HOST_STATE_ROOT + "/boot_tool.json")) {
+                /* Boot-tool launch pending (a standalone session): do NOT hand
+                 * the display back to Move. The open-tool command is consumed
+                 * later in THIS SAME tick and the tool takes the screen.
+                 *
+                 * Without this guard the handoff was a per-boot RACE: the
+                 * dismiss below lowered display_mode, and the shim could only
+                 * re-raise it if one of its frames landed in the sub-ms window
+                 * before shadow_get_open_tool_cmd() auto-cleared the flag —
+                 * lose the race and the tool loads HEADLESS: LEDs alive,
+                 * OLED and inputs on Move (observed on hardware 2026-08-06).
+                 * An ordinary install never has boot_tool.json, so stock
+                 * behaviour is untouched. */
+                debugLog("splash end: boot tool pending — keeping shadow display");
             } else {
                 /* Dismiss shadow display mode — return to Move's native UI */
                 if (typeof shadow_request_exit === "function") {
