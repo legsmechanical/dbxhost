@@ -122,23 +122,50 @@ move_by_manifest() { # src dst manifest in|out
 }
 
 # xattr save/restore: user.song-index drives Move's on-screen ordering.
-# getfattr/setfattr may be absent (dev machines) — degrade to no-op; ordering
-# is cosmetic, set CONTENT is what must never be lost.
+# ⚠ The device ships NO getfattr/setfattr binaries — the attr must be handled
+# through python3 (os.getxattr/os.setxattr, verified on hardware 2026-08-06).
+# Degrades to no-op where python3 is missing too; ordering is cosmetic, set
+# CONTENT is what must never be lost.
 save_xattrs() { # dir outfile
     : > "$2"
-    command -v getfattr >/dev/null 2>&1 || return 0
-    for _n in $(list_uuid_dirs "$1"); do
-        _v="$(getfattr --only-values -n user.song-index "$1/$_n" 2>/dev/null || true)"
-        [ -n "$_v" ] && printf '%s\t%s\n' "$_n" "$_v" >> "$2"
-    done
+    command -v python3 >/dev/null 2>&1 || return 0
+    python3 - "$1" "$2" <<'PYEOF' || true
+import os, sys
+d, out = sys.argv[1], sys.argv[2]
+lines = []
+if hasattr(os, "getxattr") and os.path.isdir(d):
+    for n in sorted(os.listdir(d)):
+        p = os.path.join(d, n)
+        if not os.path.isdir(p):
+            continue
+        try:
+            v = os.getxattr(p, "user.song-index").decode()
+            lines.append("%s\t%s\n" % (n, v))
+        except OSError:
+            pass
+open(out, "w").write("".join(lines))
+PYEOF
 }
 
 restore_xattrs() { # dir infile
-    command -v setfattr >/dev/null 2>&1 || return 0
     [ -f "$2" ] || return 0
-    while IFS="$(printf '\t')" read -r _n _v; do
-        [ -d "$1/$_n" ] && setfattr -n user.song-index -v "$_v" "$1/$_n" 2>/dev/null || true
-    done < "$2"
+    command -v python3 >/dev/null 2>&1 || return 0
+    python3 - "$1" "$2" <<'PYEOF' || true
+import os, sys
+d, inf = sys.argv[1], sys.argv[2]
+if not hasattr(os, "setxattr"):
+    sys.exit(0)
+for line in open(inf):
+    if "\t" not in line:
+        continue
+    n, v = line.rstrip("\n").split("\t", 1)
+    p = os.path.join(d, n)
+    if os.path.isdir(p):
+        try:
+            os.setxattr(p, "user.song-index", v.encode())
+        except OSError:
+            pass
+PYEOF
 }
 
 # currentSongIndex read/write in Settings.json (same in-place edit the host's
