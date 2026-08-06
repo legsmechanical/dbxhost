@@ -711,7 +711,7 @@ export function resolveInheritPicker(action) {
 
 const PROJECT_CMD = DAVEBOX_HOST_DIR + '/scripts/project-cmd.sh';
 
-export function openProjectPicker() {
+function _openProjectPicker_impl() {
     if (typeof host_system_cmd !== 'function' || typeof host_read_file !== 'function') return;
     /* Synchronous: list is a quick directory scan writing projects.json. */
     host_system_cmd('sh ' + PROJECT_CMD + ' list');
@@ -730,12 +730,12 @@ export function openProjectPicker() {
     S.screenDirty = true;
 }
 
-export function closeProjectPicker() {
+function _closeProjectPicker_impl() {
     S.projectPicker = null;
     S.screenDirty = true;
 }
 
-export function projectPickerRotate(delta) {
+function _projectPickerRotate_impl(delta) {
     const p = S.projectPicker;
     if (!p || delta === 0) return;
     if (p.confirm) {
@@ -747,7 +747,7 @@ export function projectPickerRotate(delta) {
     S.screenDirty = true;
 }
 
-export function projectPickerClick() {
+function _projectPickerClick_impl() {
     const p = S.projectPicker;
     if (!p) return;
     if (p.confirm) {
@@ -785,7 +785,7 @@ export function projectPickerClick() {
     S.screenDirty = true;
 }
 
-export function drawProjectPicker() {
+function _drawProjectPicker_impl() {
     clear_screen();
     const p = S.projectPicker;
     if (!p) return;
@@ -823,3 +823,21 @@ export function drawProjectPicker() {
         }
     }
 }
+
+
+/* ---- temporary instrumentation (2026-08-06): the first device run of the
+ * picker froze davebox with no logged error anywhere — every entry point is
+ * wrapped so the NEXT failure names itself. Remove once the fault is fixed. */
+function _ppGuard(name, impl, args) {
+    try { return impl.apply(null, args); }
+    catch (e) {
+        try { console.log('projectPicker FAULT in ' + name + ': ' + e + ' :: ' + (e && e.stack ? e.stack : 'no stack')); } catch (e2) {}
+        /* fail SAFE: drop the picker so the UI keeps running */
+        try { S.projectPicker = null; } catch (e3) {}
+    }
+}
+export function openProjectPicker()      { return _ppGuard('open',   _openProjectPicker_impl, []); }
+export function closeProjectPicker()     { return _ppGuard('close',  _closeProjectPicker_impl, []); }
+export function projectPickerRotate(d)   { return _ppGuard('rotate', _projectPickerRotate_impl, [d]); }
+export function projectPickerClick()     { return _ppGuard('click',  _projectPickerClick_impl, []); }
+export function drawProjectPicker()      { return _ppGuard('draw',   _drawProjectPicker_impl, []); }
