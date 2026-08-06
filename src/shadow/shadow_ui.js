@@ -14246,6 +14246,15 @@ function selectOpenBootTool() {
         view = VIEWS.SLOTS;
         return;
     }
+    /* Mid-session arming: the tool suspended itself before asking for the
+     * picker (suspend_keeps_js park). Resume it rather than starting fresh —
+     * its own resume edge detects a set-UUID change and reloads state, which
+     * is exactly the project switch. */
+    if (typeof suspendedOvertakes === "object" && suspendedOvertakes[cmd.tool_id]) {
+        debugLog("select phase: resuming suspended tool " + cmd.tool_id);
+        resumeOvertakeModule(cmd.tool_id);
+        return;
+    }
     const tool = scanForToolModules(true).find(t => t.id === cmd.tool_id);
     if (!tool) {
         debugLog("select phase: boot tool not found: " + cmd.tool_id);
@@ -15812,6 +15821,18 @@ globalThis.tick = function() {
     if (view === VIEWS.ANALYTICS_PROMPT) {
         drawAnalyticsPrompt();
         return;
+    }
+
+    /* Set-select gate armed MID-SESSION (a suspended tool asked for the
+     * picker back via shadow_select_arm): enter the select view on the
+     * rising edge. The overtake guards matter — the arming tool calls arm
+     * before its own suspend lands, and this must not steal the view while
+     * a module still owns the surface. */
+    if (!selectPhase.active &&
+        view !== VIEWS.OVERTAKE_MODULE && view !== VIEWS.OVERTAKE_MENU &&
+        typeof shadow_select_phase_active === "function" &&
+        shadow_select_phase_active()) {
+        enterSelectPhaseView();
     }
 
     /* Boot set-select gate: poll the shim's launch trigger + async results

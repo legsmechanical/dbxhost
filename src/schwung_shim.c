@@ -862,6 +862,13 @@ static volatile int shadow_pads_held = 0;
 static volatile int shadow_jog_touched = 0;
 /* Is shift button currently held? (CC 49) - global for cross-function access */
 static volatile int shadow_shift_held = 0;
+
+/* Boot set-select gate: 1 = the CURRENT arming came from the launcher's
+ * marker at shim init (Move itself boots into its picker — no entry gestures
+ * needed). 0 = armed mid-session via shadow_select_arm(), where the gate must
+ * open Move's native Set Overview itself (inject Shift+Step1) and back out of
+ * it (inject Back) around the selection. Cleared with the phase. */
+static int select_boot_armed = 0;
 /* Suppress plain volume-touch hide until touch is fully released after
  * Shift+Vol shortcut launches, avoiding a brief native volume flash. */
 static volatile int shadow_block_plain_volume_hide_until_release = 0;
@@ -3259,6 +3266,7 @@ static void init_shadow_shm(void)
             struct stat _sp;
             if (stat(SCHWUNG_INSTALL_DIR "/select_phase", &_sp) == 0) {
                 shadow_control->select_phase = 1;
+                select_boot_armed = 1;
             }
         }
         shadow_control->ui_patch_index = 0;
@@ -6229,12 +6237,118 @@ static uint64_t select_reclaim_deadline_ms = 0;
 static int select_ceded = 0;                        /* we lowered display_mode for a flow */
 static int select_launched = 0;                     /* trigger fired; picker frozen */
 
+/* Mid-session (non-boot) arming only: gesture-injection state machines.
+ * Entry walks Move into its Set Overview (Shift held + Step1, Move's own
+ * gesture per its manual) and then claims the OLED; back-out taps Back once
+ * the launch trigger fires so Move leaves the overview before the tool
+ * resumes. All events go through the MPSC inject ring — Move sees them as
+ * real cable-0 input, while the gate itself (which scans the HARDWARE
+ * buffer) never sees its own injections. */
+static int select_entry_state = 0;       /* 0 idle, 1..5 injecting, 6 entered */
+static uint64_t select_entry_next_ms = 0;
+static int select_back_state = 0;        /* 0 idle, 1 down sent, 2 done */
+static uint64_t select_back_next_ms = 0;
+
+static void shim_select_inject(uint8_t cin, uint8_t status, uint8_t d1, uint8_t d2)
+{
+    if (!shadow_midi_inject_shm) return;
+    const uint8_t pkt[4] = { cin, status, d1, d2 };
+    if (shadow_midi_inject_push(shadow_midi_inject_shm, pkt) != 0)
+        shadow_log("select gate: inject ring full — gesture event dropped");
+}
+
 static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
 {
-    if (!shadow_control || !shadow_control->select_phase) return;
+    if (!shadow_control) return;
+    if (!shadow_control->select_phase) {
+        /* Falling edge (selection made, or phase never armed): reset ALL of
+         * the gate's per-arming state. The shim process outlives the phase —
+         * a mid-session re-arm in the same process would otherwise inherit
+         * select_launched=1 from the boot arming and be dead on arrival. */
+        if (select_launched || select_entry_state || select_back_state ||
+            select_ceded || select_candidate_pad >= 0 || select_pad_suppress_mask) {
+            select_pad_suppress_mask = 0;
+            select_copy_held = 0;
+            select_delete_held = 0;
+            select_candidate_pad = -1;
+            select_ceded = 0;
+            select_launched = 0;
+            select_entry_state = 0;
+            select_back_state = 0;
+            select_reclaim_deadline_ms = 0;
+            select_boot_armed = 0;   /* any later arming is mid-session */
+        }
+        return;
+    }
     if (shadow_control->overtake_mode) return;   /* a tool owns the surface */
 
     uint64_t now = now_mono_ms();
+
+    /* Mid-session entry: open Move's Set Overview, then claim the OLED. The
+     * arming module suspended itself before arming, so by the time overtake
+     * is off, Move owns input again and the injected gesture lands natively.
+     * D-Bus "Set Overview" (in_set_overview, shadow_dbus.c) confirms arrival;
+     * a timeout claims the screen anyway rather than wedging the phase. */
+    if (!select_boot_armed && select_entry_state < 6 && !select_launched) {
+        switch (select_entry_state) {
+        case 0:
+            select_entry_state = 1;
+            select_entry_next_ms = now + 150;  /* let the overtake exit settle */
+            break;
+        case 1:
+            if (now >= select_entry_next_ms) {
+                shim_select_inject(0x0B, 0xB0, CC_SHIFT, 127);
+                select_entry_state = 2;
+                select_entry_next_ms = now + 60;
+            }
+            break;
+        case 2:
+            if (now >= select_entry_next_ms) {
+                shim_select_inject(0x09, 0x90, 16, 100);   /* Step1 down */
+                select_entry_state = 3;
+                select_entry_next_ms = now + 80;
+            }
+            break;
+        case 3:
+            if (now >= select_entry_next_ms) {
+                shim_select_inject(0x08, 0x80, 16, 0x40);  /* Step1 up */
+                select_entry_state = 4;
+                select_entry_next_ms = now + 60;
+            }
+            break;
+        case 4:
+            if (now >= select_entry_next_ms) {
+                shim_select_inject(0x0B, 0xB0, CC_SHIFT, 0);
+                select_entry_state = 5;
+                select_entry_next_ms = now + 1500;         /* overview deadline */
+            }
+            break;
+        case 5:
+            if (in_set_overview || now >= select_entry_next_ms) {
+                shadow_log(in_set_overview
+                           ? "select gate: Set Overview open — claiming OLED"
+                           : "select gate: overview timeout — claiming OLED anyway");
+                select_entry_state = 6;
+                shadow_display_mode = 1;
+                shadow_control->display_mode = 1;
+            }
+            break;
+        }
+    }
+
+    /* Mid-session back-out: once the launch trigger fired, tap Back so Move
+     * returns from the overview to a normal mode before the tool resumes
+     * over it (per the manual, Back reopens the previously-active mode). */
+    if (!select_boot_armed && select_launched && select_back_state < 2) {
+        if (select_back_state == 0) {
+            shim_select_inject(0x0B, 0xB0, CC_BACK, 127);
+            select_back_state = 1;
+            select_back_next_ms = now + 60;
+        } else if (now >= select_back_next_ms) {
+            shim_select_inject(0x0B, 0xB0, CC_BACK, 0);
+            select_back_state = 2;
+        }
+    }
 
     for (int j = 0; j < MIDI_BUFFER_SIZE; j += 8) {
         uint8_t cin = hw_midi[j] & 0x0F;

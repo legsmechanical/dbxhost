@@ -224,9 +224,21 @@ launcher-side files):
   would clobber the write) and restarts Move through the supervisor loop,
   which then direct-boots the tool with the fixed set.
 
+**Mid-session re-entry (no restart).** A suspended tool can ask for the picker
+back: it parks itself (`suspend_keeps_js`) and calls `shadow_select_arm()`.
+The shim then walks Move into its native **Set Overview** — Move's own
+Shift+Step1 gesture, injected through the MPSC ring once overtake drops —
+waits for the D-Bus "Set Overview" confirmation (1.5 s timeout), and claims
+the OLED. Selection runs the ordinary gate flow, taps Back so Move leaves the
+overview, and **resumes** the parked tool, whose resume-edge set-UUID check
+is the project switch. Only a set that needs the wiring hook's rewrite still
+takes the one relaunch (Move must reload the rewritten file). The
+`project-cmd.sh select` relaunch flavour remains as the fallback for a
+gate-less host.
+
 Session-scoped files (all under `$DBX_DIR`, cleared on session exit):
 `select_phase`, `select_list.json`, `select_hook_result.json`,
-`boot_tool.json`, `relaunch_patch.sh`.
+`boot_tool.json`, `relaunch_patch.sh`, `relaunch_select`.
 
 ## Gotchas
 

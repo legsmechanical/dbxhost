@@ -334,6 +334,8 @@ shadow_overtake_send_external_async_active()  // -> bool: overtake DSP's midi_se
 shadow_select_phase_active()   // -> 1 while the gate holds the session at the native set picker
 shadow_select_get_launch()     // -> -1 none | 0-31 chosen set index | 127 resume current (auto-clears)
 shadow_select_phase_end()      // ends the phase: clears the SHM flag + the launcher's marker file
+shadow_select_arm()            // arm the gate MID-SESSION (tool parks itself first; shim opens
+                               //   Move's Set Overview and the selection resumes the tool)
 
 // Global setting bindings (shadow_ui only)
 display_mirror_get() / display_mirror_set(v) / display_mirror_set_shm(v)

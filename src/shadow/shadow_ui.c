@@ -2285,6 +2285,23 @@ static JSValue js_shadow_select_phase_end(JSContext *ctx, JSValueConst this_val,
     return JS_UNDEFINED;
 }
 
+/* shadow_select_arm() — arm the gate MID-SESSION (no marker file: this arming
+ * is session-scoped by construction). Intended call order for a tool that
+ * wants the picker back: arm, then suspend itself — the shim's entry machine
+ * waits for overtake to drop, walks Move into its Set Overview (injected
+ * Shift+Step1, Move's own gesture), and claims the OLED. Selection then
+ * resumes the suspended tool through the ordinary select flow. */
+static JSValue js_shadow_select_arm(JSContext *ctx, JSValueConst this_val,
+                                    int argc, JSValueConst *argv) {
+    (void)ctx; (void)this_val; (void)argc; (void)argv;
+    if (shadow_control) {
+        shadow_control->select_launch = SELECT_LAUNCH_NONE;
+        shadow_control->select_phase = 1;
+    }
+    shadow_ui_log_line("shadow_ui: select phase armed mid-session");
+    return JS_UNDEFINED;
+}
+
 /* host_preview_play(path) - play WAV file for browser preview via shim IPC */
 static JSValue js_host_preview_play(JSContext *ctx, JSValueConst this_val,
                                      int argc, JSValueConst *argv) {
@@ -2818,6 +2835,8 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
         JS_NewCFunction(ctx, js_shadow_select_get_launch, "shadow_select_get_launch", 0));
     JS_SetPropertyStr(ctx, global_obj, "shadow_select_phase_end",
         JS_NewCFunction(ctx, js_shadow_select_phase_end, "shadow_select_phase_end", 0));
+    JS_SetPropertyStr(ctx, global_obj, "shadow_select_arm",
+        JS_NewCFunction(ctx, js_shadow_select_arm, "shadow_select_arm", 0));
 
     /* Register preview player functions */
     JS_SetPropertyStr(ctx, global_obj, "host_preview_play", JS_NewCFunction(ctx, js_host_preview_play, "host_preview_play", 1));
