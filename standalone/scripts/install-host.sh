@@ -219,48 +219,6 @@ $SSH "set -eu
 "
 say "      payload in place"
 
-# --- shared user-state links ------------------------------------------------
-# The shadow UI's JS addresses user state by hardcoded literal under the stock
-# tree, while the C side composes SCHWUNG_INSTALL_DIR "/..." — see the
-# DBX_SHARED_STATE_* comment in config.sh. Each listed name must be a symlink
-# into the stock tree or the two halves of this host silently read different
-# files (the C boot loader then falls back to stale per-install state, which is
-# exactly how "slot settings don't stick" presented on 2026-08-06).
-#
-# Idempotent: an existing correct link is left alone; a real file/dir in the
-# way is moved aside as <name>.pre-share-<date>, never merged or deleted.
-say ""; say "--- ensuring shared user-state links (one copy, in the stock tree)"
-$SSH "set -eu
-  cd '$DBX_DIR'
-  STOCK=/data/UserData/schwung
-  TS=\$(date +%Y%m%d)
-  ensure_link() {
-    name=\"\$1\"
-    target=\"\$STOCK/\$name\"
-    if [ -L \"\$name\" ]; then
-      cur=\$(readlink \"\$name\")
-      [ \"\$cur\" = \"\$target\" ] && { echo \"      ok (link): \$name\"; return; }
-      rm \"\$name\"
-    elif [ -e \"\$name\" ]; then
-      mv \"\$name\" \"\$name.pre-share-\$TS\"
-      echo \"      moved aside: \$name -> \$name.pre-share-\$TS\"
-    fi
-    ln -s \"\$target\" \"\$name\"
-    echo \"      linked: \$name -> \$target\"
-  }
-  for d in $DBX_SHARED_STATE_DIRS; do
-    mkdir -p \"\$STOCK/\$d\"   # a dir link must never dangle: mkdir through a
-                               # dangling link fails EEXIST and the C side's
-                               # ensure_dir would silently do nothing
-    ensure_link \"\$d\"
-  done
-  for f in $DBX_SHARED_STATE_FILES; do
-    ensure_link \"\$f\"        # file links may dangle until first write —
-                               # open(O_CREAT) follows the link and creates
-                               # the shared target
-  done
-"
-
 # ⚠ Prove the payload did not eat the setuid helper before relying on it. An
 # earlier version of this script replaced bin/ wholesale and deleted
 # davebox-heal; the failure then surfaced as a confusing "No such file" from the

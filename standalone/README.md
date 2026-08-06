@@ -117,30 +117,6 @@ without this a second install would silently load the *other* install's library
 code. See the `SCHWUNG_INSTALL_DIR` module-loader change on the `davebox-host`
 branch — it is a no-op for ordinary builds.
 
-## Sharing the user's state (sets, slot settings, presets)
-
-Modules are not the only shared content. **User state lives once, in the stock
-tree**, and every name on the `DBX_SHARED_STATE_DIRS` / `DBX_SHARED_STATE_FILES`
-lists in `config.sh` must be a symlink from the install dir to the stock tree.
-`install-host.sh` creates and repairs these links on every deploy; a real
-file/dir found in the way is moved aside as `<name>.pre-share-<date>`.
-
-Why this is a hard requirement rather than tidiness: the shadow UI's **JS
-addresses these paths by hardcoded literal** under `/data/UserData/schwung`,
-while the **C side composes `SCHWUNG_INSTALL_DIR "/..."`** — which is the
-install dir in this build. With a real directory in the way, the two halves of
-the *same host* read different files: the JS saves per-set state the C boot
-loader never sees, and nothing errors — the setting just "doesn't stick"
-(diagnosed on hardware 2026-08-06, `set_state`). File links are safe for the
-C writers involved (direct `fopen("w")` follows a symlink; none rename over
-these paths), and dir links are safe for rename-inside-dir atomic writers.
-
-Per-install by design (NOT shared): `settings.txt` (host settings), logs,
-`features.json`, the session marker, and everything the payload deploys.
-
-Pinned by `tests/host/test_shared_state_links.sh` — extend the lists there and
-in `config.sh` together.
-
 ## Install
 
 ```sh
