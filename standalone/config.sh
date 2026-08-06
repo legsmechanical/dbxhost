@@ -40,3 +40,22 @@ DBX_SHIM_SONAME=davebox-shim.so
 
 # The setuid-root helper that mirrors the shim into /usr/lib.
 DBX_HEAL_NAME=davebox-heal
+
+# User state shared with the stock install — ONE copy, in the stock tree.
+# The shadow UI's JS addresses all of these by hardcoded literal under
+# /data/UserData/schwung, while the C side composes SCHWUNG_INSTALL_DIR "/..."
+# (which is $DBX_DIR in this build). The ONLY thing that keeps both halves of
+# THIS host reading the same files is that each of these names, inside
+# $DBX_DIR, is a symlink to the stock tree. A real directory or file in the
+# way means the C side reads/writes a private copy the JS never sees: state
+# saved by one half is invisible to the other, and nothing errors.
+# (Diagnosed 2026-08-06: $DBX_DIR/set_state was a real directory, so per-set
+# slot settings saved by the JS were never seen by the C boot loader, which
+# fell back to a stale per-install global file.)
+#
+# install-host.sh creates/repairs these links on every deploy; anything real
+# found in the way is moved aside as <name>.pre-share-<date>, never merged.
+# Two lists because directories need their shared target ensured first, while
+# files may dangle until first write (O_CREAT follows the link).
+DBX_SHARED_STATE_DIRS="modules presets patches slot_state set_state set_pages"
+DBX_SHARED_STATE_FILES="active_set.txt shadow_chain_config.json shadow_config.json"
