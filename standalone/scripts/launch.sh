@@ -176,6 +176,23 @@ setsid bash -c '
     if [ -f "$DBX_DIR/relaunch_requested" ]; then
       rm -f "$DBX_DIR/relaunch_requested"
       rm -f /dev/shm/dbxhost-*
+      # Apply the requested project index NOW — after Move exited. Writing it
+      # earlier loses: the dying Move saves Settings.json on SIGTERM and
+      # overwrites the value with its own stale in-memory index, so the fresh
+      # boot lands in an unmatched set. Same ordering the host set-page change
+      # uses (kill, rewrite, start).
+      if [ -f "$DBX_DIR/relaunch_song_index" ]; then
+        _rsi=$(cat "$DBX_DIR/relaunch_song_index")
+        rm -f "$DBX_DIR/relaunch_song_index"
+        case "$_rsi" in
+          [0-9]*)
+            sed "s/\(\"currentSongIndex\":[[:space:]]*\)-\{0,1\}[0-9][0-9]*/\1$_rsi/" \
+              /data/UserData/settings/Settings.json > /data/UserData/settings/Settings.json.dbxtmp \
+              && mv -f /data/UserData/settings/Settings.json.dbxtmp /data/UserData/settings/Settings.json
+            echo "applied project index $_rsi"
+            ;;
+        esac
+      fi
       echo "relaunch requested — restarting Move within the session"
       echo "$BOOT_JSON" > /data/UserData/schwung/open_tool_cmd.json
       continue

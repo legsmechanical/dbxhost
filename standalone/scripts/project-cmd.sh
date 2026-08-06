@@ -127,7 +127,13 @@ PYEOF
 do_switch() { # index
     case "${1:-}" in *[!0-9]*|"") die "switch needs a numeric index" ;; esac
     save_song
-    write_song_index "$1"
+    # ⚠ Do NOT write currentSongIndex here: Move is still alive, and its
+    # SIGTERM teardown saves Settings.json — overwriting the value with its
+    # own stale in-memory index (observed on hardware 2026-08-06: the fresh
+    # session then booted into an unmatched set, `__pending-*`). The launcher
+    # applies this file to Settings.json AFTER Move has exited, which is the
+    # same ordering the host's own set-page change uses.
+    printf '%s\n' "$1" > "$DBX_DIR/relaunch_song_index"
     : > "$DBX_DIR/relaunch_requested"
     # Detached, exactly like exit-to-stock.sh: our caller is a child of the
     # process we are about to signal. SIGTERM so shutdown saves run; the
