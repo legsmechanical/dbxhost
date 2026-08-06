@@ -42,8 +42,17 @@ common_marks=$(rg -c 'g_slot_param_dirty_mask \|=' "$c" || echo 0)
   || fail "$c marks the dirty bit in fewer than 2 places; the bulk SET path (a :state restore) is almost certainly uncovered"
 
 # 3. The JS side consumes it while overtake is active — the whole point.
+#    ⚠ Currently gated OFF by OVERTAKE_AUTOSAVE_ENABLED pending a diagnosis: a
+#    slot edit was not reaching the shim, and this path then rewrote the stale
+#    value every few seconds, overwriting good saved state within seconds of a
+#    failed restore and destroying the evidence on every test. The machinery is
+#    kept and still pinned below so it can be switched back on unchanged.
 rg -q 'isOvertakeActive && typeof shadow_take_dirty_slots' "$js" \
   || fail "$js does not run the dirty-driven autosave during overtake"
+rg -q 'const OVERTAKE_AUTOSAVE_ENABLED' "$js" \
+  || fail "$js lost the OVERTAKE_AUTOSAVE_ENABLED switch"
+rg -q 'OVERTAKE_AUTOSAVE_ENABLED &&' "$js" \
+  || fail "$js no longer gates the overtake autosave on the switch"
 
 # 4. Starvation guard: a continuous writer must still get saved.
 rg -q 'overtakeDirtyAge >= AUTOSAVE_INTERVAL' "$js" \

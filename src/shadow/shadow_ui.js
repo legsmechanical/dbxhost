@@ -295,6 +295,25 @@ const AUTOSAVE_INTERVAL = 300;  /* ~10 seconds at 30fps */
  * that a continuous knob sweep collapses into one save (flash write
  * amplification is the risk here, not CPU), short enough that a user who edits
  * and then walks away loses nothing. */
+/* ⚠ MID-SESSION AUTOSAVE IS OFF pending a diagnosis (2026-08-05).
+ *
+ * Turned off, not deleted, because the mechanism is sound and only its
+ * interaction with live editing is in question. What forced this: a slot value
+ * the user changed did not reach the shim, and this autosave then wrote the
+ * STALE value back to disk every few seconds — faithfully persisting the wrong
+ * thing and, worse, overwriting the good saved state within seconds of a failed
+ * restore. Every test cycle destroyed its own before-state, which is a large
+ * part of why the underlying bug has been so hard to read.
+ *
+ * With this off the host is back to its long-standing behaviour: state is
+ * flushed at TRANSITIONS (set change, shutdown, overtake entry/exit), which is
+ * the code path that has always run and is not implicated.
+ *
+ * Note this does NOT revert slot:transpose persistence (it had never been
+ * serialised by anything, an independent bug) nor the boot-scoped session
+ * marker. Re-enable by flipping this to true once the write-loss question is
+ * answered — the machinery below is unchanged and tested. */
+const OVERTAKE_AUTOSAVE_ENABLED = false;
 const OVERTAKE_DIRTY_QUIET_TICKS = 90;  /* ~3 s */
 /* Wait before re-attempting a save that could not read the DSP's state because
  * the param mailbox was busy. Short enough to catch the next lull, long enough
@@ -16081,7 +16100,8 @@ globalThis.tick = function() {
          * that survive the switch are deliberately NOT cleared: the save
          * re-reads live state, so the worst case is one redundant but correct
          * write into the new set, whereas clearing could drop a real edit. */
-        if (isOvertakeActive && typeof shadow_take_dirty_slots === "function") {
+        if (OVERTAKE_AUTOSAVE_ENABLED &&
+            isOvertakeActive && typeof shadow_take_dirty_slots === "function") {
             const justDirtied = shadow_take_dirty_slots();
             const busDirtied = (typeof shadow_take_dirty_fx_buses === "function")
                 ? shadow_take_dirty_fx_buses() : 0;
