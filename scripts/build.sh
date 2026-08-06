@@ -781,7 +781,12 @@ chmod +x ./build/scripts/post-update.sh
 if [ -d ./standalone ]; then
     cp ./standalone/scripts/quiesce-stock.sh ./build/scripts/
     cp ./standalone/scripts/exit-to-stock.sh ./build/scripts/
-    chmod +x ./build/scripts/quiesce-stock.sh ./build/scripts/exit-to-stock.sh
+    # set-swap.sh: the Design-B project-library swap engine — a runtime
+    # dependency of launch.sh (session entry/exit) and of the blessed
+    # davebox-restore boot recovery.
+    cp ./standalone/scripts/set-swap.sh ./build/scripts/
+    chmod +x ./build/scripts/quiesce-stock.sh ./build/scripts/exit-to-stock.sh \
+             ./build/scripts/set-swap.sh
     cp ./standalone/scripts/install-privileged.sh ./build/bless.sh
     chmod +x ./build/bless.sh
 fi

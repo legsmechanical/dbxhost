@@ -26,6 +26,22 @@
 
 CONTROL=/dev/shm/schwung-control
 
+# Ask Move to save a dirty song first — the Design-B library swap moves the
+# native set directories, so unsaved musical edits must reach disk before the
+# stack dies. Best-effort like everything here: in the ordinary Tools-menu
+# launch Move is already gone by now (launch-standalone.sh killed it) and this
+# no-ops; it matters on the direct/dev launch path where the stack is alive.
+# Whether Move's own clean teardown also saves is device experiment DE-1
+# (docs/working/DBSA_SET_WORKSPACE.md in the davebox repo).
+if pgrep -x MoveOriginal >/dev/null 2>&1; then
+    dbus-send --system --print-reply --reply-timeout=4000 \
+        --dest=com.ableton.move \
+        /com/ableton/move/browser \
+        com.ableton.move.Browser.saveSongIfDirty string: \
+        >/dev/null 2>&1 && echo "quiesce: saveSongIfDirty done" \
+                        || echo "quiesce: saveSongIfDirty unavailable"
+fi
+
 if [ ! -e "$CONTROL" ]; then
     echo "quiesce: no stock control SHM — nothing to save"
     exit 0

@@ -119,6 +119,28 @@ setsid bash -c '
   # slots on reattach — a partial teardown leaves pointers that outlive it.
   rm -f /dev/shm/schwung-* /dev/shm/dbxhost-*
 
+  # Design-B project workspace: this session sees ITS OWN set library, never
+  # the users native sets. Recover first (a hard reboot mid-session leaves the
+  # swap in a non-none phase; the blessed boot unit normally heals it, this is
+  # the backstop), then swap in. A failed swap refuses the launch — starting a
+  # session over a half-swapped library would mix the two worlds.
+  if [ -x "$DBX_DIR/scripts/set-swap.sh" ]; then
+    sh "$DBX_DIR/scripts/set-swap.sh" recover || {
+      echo "set-swap recover failed — refusing to launch"; exit 1; }
+    # First run: seed the library with the wired-correctly template project.
+    if [ -d "$DBX_DIR/sets/template" ] && [ -z "$(ls "$DBX_DIR/sets/library" 2>/dev/null)" ]; then
+      _tuuid=$(cat /proc/sys/kernel/random/uuid)
+      mkdir -p "$DBX_DIR/sets/library/$_tuuid"
+      cp -r "$DBX_DIR/sets/template/." "$DBX_DIR/sets/library/$_tuuid/"
+      echo "seeded first project $_tuuid from template"
+    fi
+    sh "$DBX_DIR/scripts/set-swap.sh" enter || {
+      echo "set-swap enter failed — restoring and refusing to launch"
+      sh "$DBX_DIR/scripts/set-swap.sh" recover || true
+      exit 1
+    }
+  fi
+
   # Mirror the shim for THIS build into /usr/lib (setuid) first. We run as
   # ableton and cannot write /usr/lib; davebox-heal is setuid-root and hardcodes
   # both paths. Refusing to launch on failure is deliberate: without a valid
@@ -126,6 +148,7 @@ setsid bash -c '
   # confusing failure than not launching at all.
   if ! $DBX_DIR/bin/davebox-heal; then
     echo "davebox-heal failed — refusing to launch"
+    sh "$DBX_DIR/scripts/set-swap.sh" exit 2>/dev/null || true
     exit 1
   fi
 
@@ -138,9 +161,35 @@ setsid bash -c '
   # NOT exec: we need to regain control when the davebox host exits so the
   # watchdog can be put back. Leaving it stopped would mean stock Move is
   # unsupervised until the next reboot.
-  echo "run LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal"
-  env LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal
+  # Supervisor loop: MoveOriginal exiting normally ends the session, BUT an
+  # in-session project switch needs Move restarted IN PLACE (new
+  # currentSongIndex). The host requests that by writing relaunch_requested
+  # before letting Move exit; we consume the marker and go again. Everything a
+  # fresh entry needs (boot_tool.json, the open-tool command, the splash
+  # guard, heal) is still in place, and standalone_active stays valid — same
+  # boot. The SHM wipe between iterations is the same stale-ring hygiene the
+  # session entry does.
+  rm -f "$DBX_DIR/relaunch_requested"
+  while :; do
+    echo "run LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal"
+    env LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal
+    if [ -f "$DBX_DIR/relaunch_requested" ]; then
+      rm -f "$DBX_DIR/relaunch_requested"
+      rm -f /dev/shm/dbxhost-*
+      echo "relaunch requested — restarting Move within the session"
+      echo "$BOOT_JSON" > /data/UserData/schwung/open_tool_cmd.json
+      continue
+    fi
+    break
+  done
   echo "davebox host exited ($?) — restoring the watchdog"
+
+  # Swap the project library out and the users native sets back BEFORE stock
+  # returns — stock must boot seeing exactly what it saw before the session.
+  if [ -x "$DBX_DIR/scripts/set-swap.sh" ]; then
+    sh "$DBX_DIR/scripts/set-swap.sh" exit || \
+      echo "WARNING: set-swap exit failed — boot recovery will heal it"
+  fi
 
   # Resuming the unit is what brings stock Move back, so this is the restore
   # path, not just cleanup. Our caller (launch-standalone.sh) also starts Move
