@@ -289,10 +289,21 @@ function buildGlobalMenuItems() {
         createAction('Load state', function() {
             openLoadSnapshot();
         }),
-        /* Projects: no menu entry — the native Move set picker IS the project
-         * picker, held open at session boot by the host's set-select gate
-         * (dbxhost standalone/README.md). Programmatic switch/new still runs
-         * through S.pendingProjectCmd -> project-cmd.sh in tick(). */
+        /* Projects: reopen the boot set-select gate — Move restarts in place
+         * (a few dark seconds) and the session holds at the native picker, so
+         * sets can be created/copied/deleted/loaded without leaving dAVEBOx
+         * SA. Same save-then-drain sequencing as Quit: the command tears this
+         * module down with Move, so it fires one tick AFTER the deferred save
+         * lands (S.pendingProjectCmd in _tickImpl). Shift+Step1 is the
+         * shortcut twin. Only meaningful under the davebox host — the gate
+         * and project-cmd.sh exist only there; buildGlobalMenuItems re-runs
+         * each open, so the gate is live. */
+        engineUnderDaveboxHost() ? createAction('Projects...', function() {
+            saveState();
+            S.pendingProjectCmd = 'select';
+            S.globalMenuOpen = false;
+            showActionPopup('OPENING', 'PROJECTS');
+        }) : null,
         createAction('Clear Sess', function() {
             S.confirmClearSession = true;
             S.confirmClearSel     = 1;

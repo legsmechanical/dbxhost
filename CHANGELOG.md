@@ -21,6 +21,9 @@ the section into a versioned heading at release time.
   tap an empty pad for a new one (wired for dAVEBOx automatically), click the
   jog wheel to resume the last one, and copy or delete projects with Move's
   own Copy and Delete flows. The jog-menu Projects list this replaces is gone.
+  Get back to the picker any time with **Settings menu → Projects...** or
+  **Shift + Step 1** — work is saved first, Move restarts briefly, and no
+  relaunch of dAVEBOx is needed.
 - **dAVEBOx now shows only the effects the host it's running on actually has.**
   On the dAVEBOx host you get four insert FX per chain plus both Send buses; on
   official Schwung, which has two inserts and no sends, those extra rows are
