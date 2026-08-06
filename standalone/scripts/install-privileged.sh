@@ -48,3 +48,34 @@ ls -la "$HEAL_DST"
 echo "priming:"
 "$HEAL_DST"
 ls -la "/usr/lib/$DBX_SHIM_SONAME"
+
+# --- boot recovery for the project-library swap ------------------------------
+# A standalone session swaps Move's set library for its own project library
+# (Design B — the session never touches native sets, only relocates them).
+# If the device hard-reboots mid-session, Sets/ still holds the projects and
+# the native sets sit in the stash. Nothing is lost, but stock would boot
+# showing the wrong library. This oneshot runs the swap engine's `recover`
+# verb before move-launcher starts, so a power cycle ALWAYS yields stock Move
+# with the user's own sets — no expert knowledge, no residue.
+#
+# Runs as ableton (every file involved lives under /data and is
+# ableton-owned); root is only needed here, once, to install the unit.
+# The engine is a no-op when the swap state is "none" — every ordinary boot.
+cat > /etc/systemd/system/davebox-restore.service <<UNIT
+[Unit]
+Description=davebox: restore native set library after an interrupted session
+Before=move-launcher.service
+ConditionPathExists=$DBX_DIR/scripts/set-swap.sh
+
+[Service]
+Type=oneshot
+User=ableton
+ExecStart=/bin/sh $DBX_DIR/scripts/set-swap.sh recover
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable davebox-restore.service
+echo "installed davebox-restore.service (boot recovery for the library swap)"
