@@ -6199,10 +6199,13 @@ static void shim_remap_cable2_channels(uint8_t *shadow) {
  *   - while a copy/delete flow runs, the OLED is CEDED to Move so its own
  *     confirm text shows, and reclaimed after the flow settles
  *
- * Flow tracking is belt-and-braces: the raw Copy/Delete CCs open it, and the
- * screenreader D-Bus texts Move emits during those flows keep it open (paste
- * and delete-confirm are pad taps with the button possibly released, so raw
- * button state alone cannot tell a flow tap from a launch tap).
+ * Flow tracking: DELETE is purely button state — Move CANCELS a pending
+ * "press pad again to delete" the moment Delete is released (confirmed on
+ * hardware 2026-08-06), so releasing Delete falls straight back to normal
+ * picking and a D-Bus window would only wrongly eat the next launch tap.
+ * COPY keeps the D-Bus belt-and-braces: the paste tap may arrive with the
+ * button already released (unconfirmed either way), so the screenreader
+ * texts Move emits during a copy flow hold the window open.
  *
  * Runs post-ioctl on the SPI thread AFTER sh_midi is finalized, for BOTH
  * display states (during a cede the display-mode filter doesn't run at all).
@@ -6214,7 +6217,7 @@ static void shim_remap_cable2_channels(uint8_t *shadow) {
 #define SELECT_FLOW_SHORT_MS    600   /* flow tail after a completion text     */
 #define SELECT_RECLAIM_MS       400   /* OLED reclaim settle after a flow ends */
 
-static volatile uint64_t select_flow_until_ms = 0;  /* dbus thread writes, SPI thread reads */
+static volatile uint64_t select_flow_copy_until_ms = 0;  /* dbus thread writes, SPI thread reads */
 static uint32_t select_pad_suppress_mask = 0;       /* Shift+pad latched suppressions */
 static int select_copy_held = 0;
 static int select_delete_held = 0;
@@ -6225,30 +6228,27 @@ static int select_ceded = 0;                        /* we lowered display_mode f
 static int select_launched = 0;                     /* trigger fired; picker frozen */
 
 /* Called from the D-Bus thread (shadow_dbus_handle_text) with every
- * screenreader text. Only texts shaped like Move's copy/delete flows touch
- * the window; a set NAME announced on load must not. */
+ * screenreader text. Only texts shaped like Move's COPY flow touch the
+ * window; a set NAME announced on load must not — and DELETE texts are
+ * deliberately ignored: Move cancels a pending delete on Delete release
+ * (hardware-confirmed 2026-08-06), so the delete flow is exactly the raw
+ * button state and any text-driven window would outlive the real flow,
+ * eating the next launch tap for up to its whole duration. */
 void shim_select_dbus_text(const char *text)
 {
     if (!shadow_control || !shadow_control->select_phase) return;
     if (!text || !text[0]) return;
     uint64_t now = now_mono_ms();
     size_t len = strlen(text);
-    /* Completion texts close the flow down to a short tail. Checked FIRST:
-     * "<name> Copy pasted" would otherwise never match an opener anyway, but
-     * "<name> deleted" vs "Delete..." ordering matters for names that start
-     * with "Delete". */
-    if ((len > 7 && strcasecmp(text + len - 7, " pasted") == 0) ||
-        (len > 8 && strcasecmp(text + len - 8, " deleted") == 0)) {
-        select_flow_until_ms = now + SELECT_FLOW_SHORT_MS;
+    /* Completion closes the window down to a short tail. */
+    if (len > 7 && strcasecmp(text + len - 7, " pasted") == 0) {
+        select_flow_copy_until_ms = now + SELECT_FLOW_SHORT_MS;
         return;
     }
-    /* Openers / sustainers: "Copy...", "<name> copied", "Delete...",
-     * "Press pad again to delete <name>". */
+    /* Openers / sustainers: "Copy...", "<name> copied". */
     if (strncasecmp(text, "Copy", 4) == 0 ||
-        strncasecmp(text, "Delete", 6) == 0 ||
-        strncasecmp(text, "Press pad again to delete", 25) == 0 ||
         (len > 7 && strcasecmp(text + len - 7, " copied") == 0)) {
-        select_flow_until_ms = now + SELECT_FLOW_LONG_MS;
+        select_flow_copy_until_ms = now + SELECT_FLOW_LONG_MS;
     }
 }
 
@@ -6278,7 +6278,7 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
                  * the resume trigger. */
                 zero_it = 1;
                 int flow = select_copy_held || select_delete_held ||
-                           now < select_flow_until_ms;
+                           now < select_flow_copy_until_ms;
                 if (d2 > 0 && !flow && !select_launched) {
                     select_launched = 1;
                     select_candidate_pad = -1;
@@ -6304,7 +6304,7 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
                     zero_it = 1;
                 } else {
                     int flow = select_copy_held || select_delete_held ||
-                               now < select_flow_until_ms;
+                               now < select_flow_copy_until_ms;
                     if (flow) {
                         /* Flow tap (paste target / delete confirm): Move's
                          * business. It also voids any pending launch. */
@@ -6343,7 +6343,7 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
     /* Launch-settle expiry: the candidate survives a full quiet window ->
      * that set is loaded and chosen. shadow_ui consumes select_launch. */
     int flow_active = select_copy_held || select_delete_held ||
-                      now < select_flow_until_ms;
+                      now < select_flow_copy_until_ms;
     if (!select_launched && select_candidate_pad >= 0 &&
         now >= select_settle_deadline_ms) {
         if (flow_active) {

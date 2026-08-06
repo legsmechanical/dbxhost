@@ -206,9 +206,11 @@ launcher-side files):
   tap *means*. A tap outside a copy/delete flow, once Move's load settles, is
   the launch trigger; jog click means "resume the already-loaded set";
   Shift+pad is suppressed; during copy/delete flows the OLED is ceded to Move
-  so its confirm text shows (flow tracked from the raw CCs *and* the
-  screenreader D-Bus texts — paste/delete-confirm taps can arrive with the
-  button already released).
+  so its confirm text shows. Delete's flow is exactly the raw button state —
+  Move cancels a pending delete on Delete release (hardware-confirmed), so
+  releasing falls straight back to normal picking. Copy keeps a screenreader
+  D-Bus-text window as belt-and-braces, since the paste tap may arrive with
+  the button already released.
 - **shadow UI** (`src/shadow/shadow_ui.js`): the select screen. Runs
   `scripts/select-list.sh` for names (at entry and after every flow) and, on
   the shim's trigger, ends the phase, stages `boot_tool.json` (so every LATER
