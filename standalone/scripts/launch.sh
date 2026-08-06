@@ -175,6 +175,23 @@ setsid bash -c '
     env LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal
     if [ -f "$DBX_DIR/relaunch_requested" ]; then
       rm -f "$DBX_DIR/relaunch_requested"
+      # Kill the session sidecars BEFORE wiping SHM. They survive MoveOriginal
+      # (separate processes), and rm on a mapped file does not invalidate
+      # mappings — an un-killed shadow_ui keeps running the module against the
+      # DELETED segments, invisible to the fresh stack, while the new shim
+      # sees its stale pid file and never respawns it (observed on hardware
+      # 2026-08-06: session alive, module apparently loaded, controls dead).
+      # Same name list as the session entry above.
+      for name in MoveMessageDisplay Move schwung shadow_ui; do
+        pids=$(pidof $name 2>/dev/null || true)
+        [ -n "$pids" ] && kill $pids 2>/dev/null || true
+      done
+      sleep 1
+      for name in MoveMessageDisplay Move schwung shadow_ui; do
+        pids=$(pidof $name 2>/dev/null || true)
+        [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
+      done
+      rm -f "$DBX_DIR/shadow_ui.pid"
       rm -f /dev/shm/dbxhost-*
       # Apply the requested project index NOW — after Move exited. Writing it
       # earlier loses: the dying Move saves Settings.json on SIGTERM and
