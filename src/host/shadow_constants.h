@@ -54,7 +54,7 @@
  * MIDI_OUT must be bounded by this to avoid corrupting the display. */
 #define HW_MIDI_OUT_SIZE    80
 #define DISPLAY_BUFFER_SIZE 1024  /* 128x64 @ 1bpp = 1024 bytes */
-#define CONTROL_BUFFER_SIZE 84  /* corun masks widened to uint32 + flags byte (cede-default model); static-asserted below */
+#define CONTROL_BUFFER_SIZE 88  /* +select_phase/select_launch (boot set-select gate); static-asserted below */
 #define SHADOW_UI_BUFFER_SIZE     512
 #define SHADOW_PARAM_BUFFER_SIZE  65664  /* Large buffer for complex ui_hierarchy */
 #define SHADOW_MIDI_OUT_BUFFER_SIZE 512  /* MIDI out buffer from shadow UI (128 packets) */
@@ -225,7 +225,28 @@ typedef struct shadow_control_t {
      * touch (e.g. show a nav overlay while the wheel is touched). Knob touches
      * (0-7) are forwarded unconditionally as before; nothing else changes. */
     volatile uint8_t canvas_input;
+    /* Boot set-select gate (standalone sessions). When a standalone launcher
+     * arms the gate (a select_phase marker file in the install dir at shim
+     * init), the session holds at Move's native set picker instead of
+     * auto-opening its boot tool: Move owns pads and set management, the
+     * shadow UI owns the OLED with a "select a project" screen, and the shim
+     * decides when a pad tap means "launch". 1 = phase active. Cleared by the
+     * shadow UI (shadow_select_phase_end) when a selection launches; the shim
+     * treats 0 as "gate fully inert", so an ordinary install — which never has
+     * the marker — never enters any of these code paths. */
+    volatile uint8_t select_phase;
+    /* Launch trigger chosen during the select phase. Written by the shim,
+     * consumed (auto-clear) by the shadow UI via shadow_select_get_launch():
+     *   -1  none pending
+     *   0-31  pad index (== the set's user.song-index; pad note 68+k ↔ index k)
+     *   127 resume the already-loaded set (jog click — natively inert in the
+     *       picker, so claiming it costs nothing) */
+    volatile int8_t select_launch;
 } shadow_control_t;
+
+/* select_launch sentinel: resume the already-loaded set. */
+#define SELECT_LAUNCH_NONE   (-1)
+#define SELECT_LAUNCH_RESUME 127
 
 /* Co-run control-surface groups. A co-running overtake tool declares which
  * groups it KEEPS (corun_keep_mask); every other group's input cedes to the

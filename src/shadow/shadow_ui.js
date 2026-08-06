@@ -368,7 +368,8 @@ const VIEWS = {
     ANALYTICS_PROMPT: "analyticsprompt",       // First-run analytics opt-out prompt
     LFO_TARGET_COMPONENT: "lfotargetcomp",    // LFO target picker step 1: component
     LFO_TARGET_PARAM: "lfotargetparam",       // LFO target picker step 2: parameter
-    FX_BUS_PICKER: "fxbuspicker"              // Pick Master FX / Send A / Send B
+    FX_BUS_PICKER: "fxbuspicker",             // Pick Master FX / Send A / Send B
+    SELECT_PHASE: "selectphase"               // Boot set-select gate (standalone sessions)
 };
 
 /* ==== CO-RUN VIEW ADDRESSING (begin) ==== */
@@ -553,6 +554,50 @@ let slotUserCleared = [false, false, false, false];
 /* Splash screen state */
 let splashActive = true;
 let splashTick = 0;
+
+/* ============================================================================
+ * Boot set-select gate (standalone sessions)
+ *
+ * The shim holds the session at Move's NATIVE set picker while
+ * shadow_control->select_phase is armed (a standalone launcher's marker file;
+ * see schwung_shim.c "Boot set-select gate"). Move owns the pads and set
+ * management (copy, delete, load) exactly as stock; this side owns the OLED
+ * with a select screen, names the tapped set, and — when the shim reports a
+ * launch trigger — runs the launcher's optional post-selection hook and opens
+ * the staged boot tool.
+ *
+ * Launcher-provided files, all under HOST_STATE_ROOT, all optional except the
+ * marker:
+ *   select_phase              marker; armed by the launcher, cleared here
+ *   scripts/select-list.sh    refresh names: writes select_list.json
+ *                             {"title": "...", "current": N,
+ *                              "names": {"0": "...", ...}} (index = the set's
+ *                             user.song-index == pad position in the picker)
+ *   scripts/select-hook.sh    post-selection hook, argv[1] = chosen index or
+ *                             "current". Writes select_hook_result.json
+ *                             {"status": "open"|"relaunch"}. "relaunch" means
+ *                             the hook is restarting Move itself (e.g. after
+ *                             rewriting the chosen set) and the session's
+ *                             next iteration direct-boots the tool.
+ * ============================================================================ */
+const SELECT_LIST_SH    = HOST_STATE_ROOT + "/scripts/select-list.sh";
+const SELECT_LIST_JSON  = HOST_STATE_ROOT + "/select_list.json";
+const SELECT_HOOK_SH    = HOST_STATE_ROOT + "/scripts/select-hook.sh";
+const SELECT_HOOK_JSON  = HOST_STATE_ROOT + "/select_hook_result.json";
+const SELECT_HOOK_TIMEOUT_TICKS = 240;  /* ~8s @30fps — hook may dbus-save + patch */
+
+let selectPhase = {
+    active: false,
+    title: "Choose a set",
+    names: {},          /* index (string) -> set name */
+    current: -1,        /* currentSongIndex at last list refresh */
+    lastPad: -1,        /* last tapped pad index (== song index) */
+    listPending: false, /* select-list.sh spawned, json not parsed yet */
+    launching: false,   /* trigger consumed, hook running / tool opening */
+    hookWaitTicks: 0,
+    statusLine: "",     /* "preparing" feedback while launching */
+    prevDisplayMode: 1  /* reclaim detection: 0->1 = a copy/delete flow ended */
+};
 
 const SPLASH_BALL_Y = 26;
 const SPLASH_RAISED_Y = 17;
@@ -14145,6 +14190,182 @@ function drawComponentSelect() {
 /* drawStorePickerResult() -> shadow_ui_store.mjs */
 
 /* Draw analytics opt-out prompt (shown on first run) */
+/* === Boot set-select gate: view + launch flow (state near the splash vars) === */
+
+function enterSelectPhaseView() {
+    selectPhase.active = true;
+    selectPhase.launching = false;
+    selectPhase.lastPad = -1;
+    selectPhase.statusLine = "";
+    selectPhase.prevDisplayMode = 1;
+    view = VIEWS.SELECT_PHASE;
+    selectRefreshList();
+    announce(selectPhase.title + ". Tap a pad to open a set, click to resume.");
+}
+
+/* Spawn the launcher's list script (names may have changed after a native
+ * copy/delete flow); the JSON is picked up asynchronously in tickSelectPhase. */
+function selectRefreshList() {
+    if (typeof host_system_cmd !== "function" || !host_file_exists(SELECT_LIST_SH)) return;
+    selectPhase.listPending = true;
+    host_system_cmd('sh -c "rm -f ' + SELECT_LIST_JSON + '; sh ' + SELECT_LIST_SH + '"');
+}
+
+function selectParseList() {
+    const raw = host_read_file(SELECT_LIST_JSON);
+    if (!raw) return false;
+    try {
+        const j = JSON.parse(raw);
+        if (j && typeof j === "object") {
+            if (typeof j.title === "string" && j.title) selectPhase.title = j.title;
+            if (j.names && typeof j.names === "object") selectPhase.names = j.names;
+            if (typeof j.current === "number") selectPhase.current = j.current;
+            return true;
+        }
+    } catch (e) {
+        debugLog("select phase: list parse error: " + e);
+    }
+    return false;
+}
+
+function selectNameForIndex(idx) {
+    if (idx < 0) return "";
+    const n = selectPhase.names && selectPhase.names[String(idx)];
+    return (typeof n === "string" && n) ? n : "New set";
+}
+
+/* Open the staged boot tool — the same resolution the open_tool_cmd handler
+ * uses (hidden-INCLUSIVE scan: an explicit tool_id is a direct request). */
+function selectOpenBootTool() {
+    selectPhase.active = false;
+    const cmdJson = host_read_file("/data/UserData/schwung/open_tool_cmd.json");
+    let cmd = null;
+    try { cmd = cmdJson ? JSON.parse(cmdJson) : null; } catch (e) { cmd = null; }
+    if (!cmd || !cmd.tool_id) {
+        debugLog("select phase: no staged open_tool_cmd — falling back to menu");
+        view = VIEWS.SLOTS;
+        return;
+    }
+    const tool = scanForToolModules(true).find(t => t.id === cmd.tool_id);
+    if (!tool) {
+        debugLog("select phase: boot tool not found: " + cmd.tool_id);
+        view = VIEWS.SLOTS;
+        return;
+    }
+    debugLog("select phase: opening boot tool " + cmd.tool_id);
+    unloadModuleUi();
+    startInteractiveTool(tool, cmd.file_path || "");
+}
+
+/* The shim reported a launch trigger (pad index, or 127 = resume current). */
+function selectBeginLaunch(k) {
+    selectPhase.launching = true;
+    selectPhase.statusLine = "Preparing...";
+    const isResume = (k === 127);
+    const chosen = isResume ? "current" : String(k);
+    if (!isResume) selectPhase.lastPad = k;
+
+    /* End the phase FIRST: clear the SHM flag and the launcher's marker, so a
+     * hook-triggered relaunch (or a crash recovery) direct-boots instead of
+     * re-asking. From here on the selection is committed. */
+    if (typeof shadow_select_phase_end === "function") shadow_select_phase_end();
+
+    /* Future in-session relaunches (project switch, hook rewire) must boot
+     * straight into the tool: stage boot_tool.json from the same command the
+     * launcher staged for us. */
+    const cmdJson = host_read_file("/data/UserData/schwung/open_tool_cmd.json");
+    if (cmdJson) host_write_file(HOST_STATE_ROOT + "/boot_tool.json", cmdJson);
+
+    if (typeof host_system_cmd === "function" && host_file_exists(SELECT_HOOK_SH)) {
+        selectPhase.hookWaitTicks = SELECT_HOOK_TIMEOUT_TICKS;
+        host_system_cmd('sh -c "rm -f ' + SELECT_HOOK_JSON + '; sh ' +
+                        SELECT_HOOK_SH + ' ' + chosen + '"');
+    } else {
+        selectOpenBootTool();
+    }
+}
+
+/* Per-tick work while the phase is active. Called from tick() before the view
+ * dispatch; the SELECT_PHASE view draws every frame like the splash does. */
+function tickSelectPhase() {
+    /* Async list refresh landed? */
+    if (selectPhase.listPending && selectParseList()) {
+        selectPhase.listPending = false;
+    }
+
+    /* A copy/delete flow ended (shim reclaimed the OLED): names may have
+     * changed — refresh. display_mode 0->1 is the reclaim edge. */
+    if (typeof shadow_get_display_mode === "function") {
+        const dm = shadow_get_display_mode();
+        if (dm === 1 && selectPhase.prevDisplayMode === 0 && !selectPhase.launching) {
+            selectRefreshList();
+        }
+        selectPhase.prevDisplayMode = dm;
+    }
+
+    /* Launch trigger from the shim? */
+    if (!selectPhase.launching && typeof shadow_select_get_launch === "function") {
+        const k = shadow_select_get_launch();
+        if (k !== -1) selectBeginLaunch(k);
+    }
+
+    /* Waiting on the post-selection hook */
+    if (selectPhase.launching && selectPhase.hookWaitTicks > 0) {
+        selectPhase.hookWaitTicks--;
+        const raw = host_file_exists(SELECT_HOOK_JSON) ? host_read_file(SELECT_HOOK_JSON) : null;
+        if (raw) {
+            selectPhase.hookWaitTicks = 0;
+            let status = "open";
+            try {
+                const j = JSON.parse(raw);
+                if (j && typeof j.status === "string") status = j.status;
+            } catch (e) { /* malformed = fail-open */ }
+            if (status === "relaunch") {
+                /* The hook is restarting Move (set rewritten); this process
+                 * dies with the session iteration and the next boot goes
+                 * straight into the tool. Just keep the status screen up. */
+                selectPhase.statusLine = "Restarting...";
+                debugLog("select phase: hook requested relaunch");
+            } else {
+                selectOpenBootTool();
+            }
+        } else if (selectPhase.hookWaitTicks === 0) {
+            /* Hook never answered — fail OPEN (the tool is more useful than a
+             * frozen select screen; the set may just lack the hook's rewiring). */
+            debugLog("select phase: hook timeout — opening tool anyway");
+            selectOpenBootTool();
+        }
+    }
+}
+
+function drawSelectPhase() {
+    clear_screen();
+    drawHeader(truncateText(selectPhase.title, 24));
+
+    if (selectPhase.launching) {
+        const name = selectNameForIndex(selectPhase.lastPad >= 0 ? selectPhase.lastPad
+                                                                 : selectPhase.current);
+        if (name) {
+            const t = truncateText(name, 24);
+            print(Math.floor((SCREEN_WIDTH - t.length * 5) / 2), 24, t, 1);
+        }
+        const s = selectPhase.statusLine || "Preparing...";
+        print(Math.floor((SCREEN_WIDTH - s.length * 5) / 2), 38, s, 1);
+        return;
+    }
+
+    /* Tapped set name (Move just loaded it), else the resume target */
+    const shownIdx = selectPhase.lastPad >= 0 ? selectPhase.lastPad : selectPhase.current;
+    const name = selectNameForIndex(shownIdx);
+    if (name) {
+        const t = truncateText(name, 24);
+        print(Math.floor((SCREEN_WIDTH - t.length * 5) / 2), 22, t, 1);
+    }
+    print(2, 36, "Pad: open set", 1);
+    print(2, 46, "Click: resume this one", 1);
+    drawFooter("Copy/Delete work natively");
+}
+
 function drawAnalyticsPrompt() {
     clear_screen();
     drawHeader('Usage Statistics');
@@ -15555,6 +15776,11 @@ globalThis.tick = function() {
                 storeReturnView = null;
                 view = VIEWS.STORE_PICKER_RESULT;
                 announce(storePickerMessage);
+            } else if (typeof shadow_select_phase_active === "function" &&
+                       shadow_select_phase_active()) {
+                /* Boot set-select gate armed: hold the display and show the
+                 * select screen — Move's native picker is live underneath. */
+                enterSelectPhaseView();
             } else if (typeof host_file_exists === "function" &&
                        host_file_exists(HOST_STATE_ROOT + "/boot_tool.json")) {
                 /* Boot-tool launch pending (a standalone session): do NOT hand
@@ -15586,6 +15812,17 @@ globalThis.tick = function() {
     if (view === VIEWS.ANALYTICS_PROMPT) {
         drawAnalyticsPrompt();
         return;
+    }
+
+    /* Boot set-select gate: poll the shim's launch trigger + async results
+     * every frame while the phase runs, and draw the select screen. Once the
+     * tool opens (selectPhase.active drops), this block is inert. */
+    if (selectPhase.active) {
+        tickSelectPhase();
+        if (view === VIEWS.SELECT_PHASE) {
+            drawSelectPhase();
+            return;
+        }
     }
 
     /* Periodic config sync for JS-only variables from web UI.
@@ -16663,6 +16900,12 @@ globalThis.onMidiMessageInternal = function(data) {
             view = VIEWS.ANALYTICS_PROMPT;
             analyticsPromptSelection = 0;
             announce("Usage Statistics, Send anonymous data? Yes");
+        } else if (typeof shadow_select_phase_active === "function" &&
+                   shadow_select_phase_active()) {
+            /* Boot set-select gate: an early press (often the very pad tap
+             * that will choose a set) must land on the select screen, not
+             * dismiss the display to Move. */
+            enterSelectPhaseView();
         } else {
             if (typeof shadow_request_exit === "function") {
                 shadow_request_exit();
@@ -16695,6 +16938,20 @@ globalThis.onMidiMessageInternal = function(data) {
                 needsRedraw = true;
                 announce(enabled ? "Analytics enabled" : "Analytics disabled");
             }
+        }
+        return;
+    }
+
+    /* Boot set-select gate: the shim passively forwards pad taps (Move is
+     * handling them natively) so the screen can name the set being loaded.
+     * Everything else is either the shim's business (jog click = resume,
+     * decided there) or Move's — consume and ignore. */
+    if (view === VIEWS.SELECT_PHASE) {
+        if ((status & 0xF0) === 0x90 && d1 >= 68 && d1 <= 99 && d2 > 0 &&
+            !selectPhase.launching) {
+            selectPhase.lastPad = d1 - 68;
+            const name = selectNameForIndex(selectPhase.lastPad);
+            if (name) announce(name);
         }
         return;
     }

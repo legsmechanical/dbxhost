@@ -2245,6 +2245,46 @@ static JSValue js_host_canvas_input(JSContext *ctx, JSValueConst this_val,
     return JS_TRUE;
 }
 
+/* === Boot set-select gate (standalone sessions) ===
+ * The shim holds the session at Move's native set picker while
+ * shadow_control->select_phase is set (see schwung_shim.c, "Boot set-select
+ * gate"). The shadow UI's side of the contract:
+ *   - shadow_select_phase_active(): render the select screen instead of
+ *     dismissing the display at splash end
+ *   - shadow_select_get_launch(): poll the shim's chosen launch trigger
+ *     (-1 none, 0-31 pad/set index, 127 resume current). Auto-clears.
+ *   - shadow_select_phase_end(): selection is being acted on — clear the
+ *     phase flag AND the launcher's marker file, so neither a mid-launch
+ *     relaunch nor the next shim frame re-enters the gate. */
+
+static JSValue js_shadow_select_phase_active(JSContext *ctx, JSValueConst this_val,
+                                             int argc, JSValueConst *argv) {
+    (void)this_val; (void)argc; (void)argv;
+    if (!shadow_control) return JS_NewInt32(ctx, 0);
+    return JS_NewInt32(ctx, shadow_control->select_phase);
+}
+
+static JSValue js_shadow_select_get_launch(JSContext *ctx, JSValueConst this_val,
+                                           int argc, JSValueConst *argv) {
+    (void)this_val; (void)argc; (void)argv;
+    if (!shadow_control) return JS_NewInt32(ctx, SELECT_LAUNCH_NONE);
+    int8_t v = shadow_control->select_launch;
+    if (v != SELECT_LAUNCH_NONE) shadow_control->select_launch = SELECT_LAUNCH_NONE;
+    return JS_NewInt32(ctx, v);
+}
+
+static JSValue js_shadow_select_phase_end(JSContext *ctx, JSValueConst this_val,
+                                          int argc, JSValueConst *argv) {
+    (void)ctx; (void)this_val; (void)argc; (void)argv;
+    if (shadow_control) {
+        shadow_control->select_phase = 0;
+        shadow_control->select_launch = SELECT_LAUNCH_NONE;
+    }
+    unlink(SCHWUNG_INSTALL_DIR "/select_phase");
+    shadow_ui_log_line("shadow_ui: select phase ended");
+    return JS_UNDEFINED;
+}
+
 /* host_preview_play(path) - play WAV file for browser preview via shim IPC */
 static JSValue js_host_preview_play(JSContext *ctx, JSValueConst this_val,
                                      int argc, JSValueConst *argv) {
@@ -2772,6 +2812,12 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
 
     /* Register canvas-input function (jog/master touch forwarding gate) */
     JS_SetPropertyStr(ctx, global_obj, "host_canvas_input", JS_NewCFunction(ctx, js_host_canvas_input, "host_canvas_input", 1));
+    JS_SetPropertyStr(ctx, global_obj, "shadow_select_phase_active",
+        JS_NewCFunction(ctx, js_shadow_select_phase_active, "shadow_select_phase_active", 0));
+    JS_SetPropertyStr(ctx, global_obj, "shadow_select_get_launch",
+        JS_NewCFunction(ctx, js_shadow_select_get_launch, "shadow_select_get_launch", 0));
+    JS_SetPropertyStr(ctx, global_obj, "shadow_select_phase_end",
+        JS_NewCFunction(ctx, js_shadow_select_phase_end, "shadow_select_phase_end", 0));
 
     /* Register preview player functions */
     JS_SetPropertyStr(ctx, global_obj, "host_preview_play", JS_NewCFunction(ctx, js_host_preview_play, "host_preview_play", 1));

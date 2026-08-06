@@ -329,6 +329,12 @@ shadow_control_restart()
 shadow_inbound_pad_midi_active()              // -> bool: host delivers Move's internal pad MIDI to the overtake DSP's on_midi hook
 shadow_overtake_send_external_async_active()  // -> bool: overtake DSP's midi_send_external uses the audio-thread-safe async ring
 
+// Boot set-select gate (shadow_ui only; standalone sessions — see
+// standalone/README.md "The boot set-select gate")
+shadow_select_phase_active()   // -> 1 while the gate holds the session at the native set picker
+shadow_select_get_launch()     // -> -1 none | 0-31 chosen set index | 127 resume current (auto-clears)
+shadow_select_phase_end()      // ends the phase: clears the SHM flag + the launcher's marker file
+
 // Global setting bindings (shadow_ui only)
 display_mirror_get() / display_mirror_set(v) / display_mirror_set_shm(v)
 set_pages_get() / set_pages_set(v) / set_pages_set_shm(v)

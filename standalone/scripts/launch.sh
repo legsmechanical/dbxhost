@@ -77,11 +77,13 @@ setsid bash -c '
   cat /proc/sys/kernel/random/boot_id > "$DBX_DIR/standalone_active" 2>/dev/null \
     || : > "$DBX_DIR/standalone_active"
 
-  # Boot straight into dAVEBOx rather than the host menu. Two files because the
-  # mechanism is split: the shim raises open_tool_cmd when boot_tool.json exists
-  # (which is also what turns the shadow display ON — JS can read display_mode
-  # but not set it), and the shadow UI reads the tool to open from
-  # open_tool_cmd.json. Writing the latter under the STOCK tree is deliberate:
+  # Session entry holds at the SET-SELECT PHASE rather than direct-booting the
+  # tool: the shim sees the select_phase marker (and NO boot_tool.json), keeps
+  # the session at the native set picker, and the shadow UI shows the select
+  # screen. The tool to open on selection is STAGED in open_tool_cmd.json now
+  # (the shadow UI reads it when the phase ends, and copies it to
+  # boot_tool.json so every LATER in-session relaunch direct-boots without
+  # re-asking). Writing open_tool_cmd.json under the STOCK tree is deliberate:
   # that path is a hardcoded literal in the shared UI code, and the file is a
   # transient command, which is exactly what stock uses it for.
   # WARNING: double quotes only, and no apostrophes anywhere in this block --
@@ -91,8 +93,10 @@ setsid bash -c '
   # launcher is detached. This exact comment used to contain quotes and broke
   # the boot files it was documenting.
   BOOT_JSON="{\"tool_id\": \"davebox-sound\", \"file_path\": \"\"}"
-  echo "$BOOT_JSON" > "$DBX_DIR/boot_tool.json"
+  rm -f "$DBX_DIR/boot_tool.json"
+  rm -f "$DBX_DIR/select_list.json" "$DBX_DIR/select_hook_result.json"
   echo "$BOOT_JSON" > /data/UserData/schwung/open_tool_cmd.json
+  : > "$DBX_DIR/select_phase"
 
   # Ask stock Schwung to save and exit first. Killing shadow_ui loses host state:
   # its main loop saves only when it sees should_exit, and nothing else flushes
@@ -132,6 +136,11 @@ setsid bash -c '
       _tuuid=$(cat /proc/sys/kernel/random/uuid)
       mkdir -p "$DBX_DIR/sets/library/$_tuuid"
       cp -r "$DBX_DIR/sets/template/." "$DBX_DIR/sets/library/$_tuuid/"
+      # Pad position in the native picker IS user.song-index; pin the seed to
+      # index 0 so the first project sits on the first pad (and the select
+      # phases pad<->index mapping holds from the very first boot).
+      python3 -c "import os,sys; os.setxattr(sys.argv[1], \"user.song-index\", b\"0\")" \
+        "$DBX_DIR/sets/library/$_tuuid" 2>/dev/null || true
       echo "seeded first project $_tuuid from template"
     fi
     sh "$DBX_DIR/scripts/set-swap.sh" enter || {
@@ -198,6 +207,13 @@ setsid bash -c '
       # overwrites the value with its own stale in-memory index, so the fresh
       # boot lands in an unmatched set. Same ordering the host set-page change
       # uses (kill, rewrite, start).
+      # Deferred set patch (select-hook wiring rewrite): applied ONLY after
+      # Move exited, for the same reason as the song index below — the dying
+      # process saves on SIGTERM and would clobber an earlier disk write.
+      if [ -f "$DBX_DIR/relaunch_patch.sh" ]; then
+        sh "$DBX_DIR/relaunch_patch.sh" || echo "WARNING: relaunch patch failed"
+        rm -f "$DBX_DIR/relaunch_patch.sh"
+      fi
       if [ -f "$DBX_DIR/relaunch_song_index" ]; then
         _rsi=$(cat "$DBX_DIR/relaunch_song_index")
         rm -f "$DBX_DIR/relaunch_song_index"
@@ -211,6 +227,13 @@ setsid bash -c '
         esac
       fi
       echo "relaunch requested — restarting Move within the session"
+      # A relaunch is by definition post-selection (project switch, or the
+      # select hook rewiring a set): DIRECT-BOOT the tool, never re-ask. The
+      # shadow UI already staged boot_tool.json when the selection was made;
+      # re-assert both files here so a programmatic switch can never land on
+      # the select screen again.
+      echo "$BOOT_JSON" > "$DBX_DIR/boot_tool.json"
+      rm -f "$DBX_DIR/select_phase"
       echo "$BOOT_JSON" > /data/UserData/schwung/open_tool_cmd.json
       continue
     fi
@@ -245,6 +268,10 @@ setsid bash -c '
   # when we exit; leave the SHM namespaces clean either way.
   rm -f /dev/shm/dbxhost-*
   rm -f "$DBX_DIR/standalone_active"
+  # Session-scoped select/boot state: all of it dies with the session, so the
+  # NEXT entry re-arms a fresh select phase (and stock never sees any of it).
+  rm -f "$DBX_DIR/select_phase" "$DBX_DIR/boot_tool.json"
+  rm -f "$DBX_DIR/select_list.json" "$DBX_DIR/select_hook_result.json"
   # Leave no standing open-tool command behind for the stock host to act on.
   rm -f /data/UserData/schwung/open_tool_cmd.json
   $DBX_DIR/bin/davebox-heal --resume-launcher

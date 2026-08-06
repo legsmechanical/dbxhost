@@ -54,6 +54,8 @@ The launcher mechanism is already upstream. There is nothing to get merged.
 | `scripts/build-heal.sh` | cross-compiles `davebox-heal` with `-DDBX_DIR` from `config.sh` |
 | `scripts/install-host.sh` | **build + deploy the host in one command** (the dev loop) |
 | `scripts/check-config.sh` | fails if a literal copy drifted from `config.sh` |
+| `scripts/select-list.sh` | set-select gate: writes `select_list.json` (pad index → set name) |
+| `scripts/select-hook.sh` | set-select gate: post-selection wiring check/rewrite (deferred apply) |
 
 This directory lives **in the host repo** — the launcher's only job is to start
 this host, so shipping them together makes host + launcher + heal + installer one
@@ -186,6 +188,42 @@ opened.
 `schwung/set_state/<set-uuid>/`, **not** `schwung/slot_state/`. The latter is the
 default/legacy directory and stays untouched — checking it will tell you the save
 did not happen when it did.
+
+## The boot set-select gate (project selection)
+
+A standalone session does not boot straight into its tool: `launch.sh` arms a
+`select_phase` marker (and removes `boot_tool.json`), and the shim + shadow UI
+hold the session at **Move's native set picker**, which — thanks to the
+Design-B library swap — is showing exactly the session's own project library.
+Move keeps everything that makes the picker good (pad tap loads a set, Copy
+and Delete manage them, all native); the OLED shows the select screen and
+names the tapped set.
+
+Split of responsibilities (all generic host code; this directory provides the
+launcher-side files):
+
+- **shim** (`src/schwung_shim.c`, "Boot set-select gate"): decides what a pad
+  tap *means*. A tap outside a copy/delete flow, once Move's load settles, is
+  the launch trigger; jog click means "resume the already-loaded set";
+  Shift+pad is suppressed; during copy/delete flows the OLED is ceded to Move
+  so its confirm text shows (flow tracked from the raw CCs *and* the
+  screenreader D-Bus texts — paste/delete-confirm taps can arrive with the
+  button already released).
+- **shadow UI** (`src/shadow/shadow_ui.js`): the select screen. Runs
+  `scripts/select-list.sh` for names (at entry and after every flow) and, on
+  the shim's trigger, ends the phase, stages `boot_tool.json` (so every LATER
+  relaunch direct-boots — a programmatic switch never re-asks), runs
+  `scripts/select-hook.sh <index|current>`, and opens the tool.
+- **select-hook.sh**: guarantees the chosen set has the template wiring
+  (tracks 1-4 on channels 1-4, MIDI out off). A native "Empty Set" or pad-copy
+  lacks it; the hook stages a **deferred** rewrite (`relaunch_patch.sh`,
+  applied by `launch.sh` only after Move exits — a live Move's SIGTERM save
+  would clobber the write) and restarts Move through the supervisor loop,
+  which then direct-boots the tool with the fixed set.
+
+Session-scoped files (all under `$DBX_DIR`, cleared on session exit):
+`select_phase`, `select_list.json`, `select_hook_result.json`,
+`boot_tool.json`, `relaunch_patch.sh`.
 
 ## Gotchas
 

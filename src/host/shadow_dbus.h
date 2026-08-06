@@ -76,6 +76,10 @@ void send_screenreader_announcement(const char *text);
 /* Inject pending announcements via D-Bus FD write */
 void shadow_inject_pending_announcements(void);
 
+/* Boot set-select gate (schwung_shim.c): fed every screenreader text so the
+ * gate can track Move's copy/delete flows. No-op unless the phase is active. */
+void shim_select_dbus_text(const char *text);
+
 /* Hook callbacks - called from shim's LD_PRELOAD hooks */
 
 /* Called from connect() hook after successful AF_UNIX connection */
