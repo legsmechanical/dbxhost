@@ -5,7 +5,16 @@
 > own live-set library, entirely separate from Move native's; native sets are
 > never touched.** Grounded in code as of `schwungbox-host` `85bea767` —
 > the set-pages machinery (`src/host/shadow_set_pages.c:780-990`) is the shipped
-> precedent for every primitive this needs. **Design only — nothing implemented.**
+> precedent for every primitive this needs.
+>
+> ✅ **IMPLEMENTED + DEVICE-VERIFIED 2026-08-06** (same day): host `3dcdc618`,
+> davebox branch `feat/sa-projects`. Entry/exit swaps, first-run template seed
+> (DE-2: Move loads it), in-session new/switch via the supervisor loop, and
+> hard-reboot recovery all verified on hardware. Two traps caught live and
+> fixed: the song index must be applied AFTER Move exits (its SIGTERM teardown
+> saves Settings.json over an early write), and the relaunch loop must kill
+> the session sidecars before the SHM wipe (a surviving shadow_ui runs on
+> deleted segments). Owed: Josh's hands-on of the Projects menu; DE-1.
 
 ## 1. The model
 
