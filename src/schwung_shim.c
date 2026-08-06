@@ -6261,23 +6261,24 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
 {
     if (!shadow_control) return;
     if (!shadow_control->select_phase) {
-        /* Falling edge (selection made, or phase never armed): reset ALL of
-         * the gate's per-arming state. The shim process outlives the phase —
-         * a mid-session re-arm in the same process would otherwise inherit
-         * select_launched=1 from the boot arming and be dead on arrival. */
-        if (select_launched || select_entry_state || select_back_state ||
-            select_ceded || select_candidate_pad >= 0 || select_pad_suppress_mask) {
-            select_pad_suppress_mask = 0;
-            select_copy_held = 0;
-            select_delete_held = 0;
-            select_candidate_pad = -1;
-            select_ceded = 0;
-            select_launched = 0;
-            select_entry_state = 0;
-            select_back_state = 0;
-            select_reclaim_deadline_ms = 0;
-            select_boot_armed = 0;   /* any later arming is mid-session */
-        }
+        /* Phase inactive: hold ALL per-arming state at its reset values,
+         * UNCONDITIONALLY. The shim process outlives an arming, and a
+         * mid-session re-arm must start clean — in particular
+         * select_boot_armed must drop, or the entry machine never runs.
+         * An earlier version reset only when shim-side state was set, which
+         * missed exactly the boot selections the shim never saw (the launch
+         * consumed via SHM/JS with no pad/jog trigger recorded here). A few
+         * stores per idle frame is free. */
+        select_pad_suppress_mask = 0;
+        select_copy_held = 0;
+        select_delete_held = 0;
+        select_candidate_pad = -1;
+        select_ceded = 0;
+        select_launched = 0;
+        select_entry_state = 0;
+        select_back_state = 0;
+        select_reclaim_deadline_ms = 0;
+        select_boot_armed = 0;   /* any later arming is mid-session */
         return;
     }
     if (shadow_control->overtake_mode) return;   /* a tool owns the surface */
