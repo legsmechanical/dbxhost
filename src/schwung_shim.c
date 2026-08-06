@@ -6246,6 +6246,7 @@ static int select_launched = 0;                     /* trigger fired; picker fro
  * buffer) never sees its own injections. */
 static int select_entry_state = 0;       /* 0 idle, 1..5 injecting, 6 entered */
 static uint64_t select_entry_next_ms = 0;
+static int select_entry_attempts = 0;    /* gesture retries (Move settles late) */
 static int select_back_state = 0;        /* 0 idle, 1 down sent, 2 done */
 static uint64_t select_back_next_ms = 0;
 
@@ -6276,6 +6277,7 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
         select_ceded = 0;
         select_launched = 0;
         select_entry_state = 0;
+        select_entry_attempts = 0;
         select_back_state = 0;
         select_reclaim_deadline_ms = 0;
         select_boot_armed = 0;   /* any later arming is mid-session */
@@ -6331,13 +6333,29 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
             }
             break;
         case 5:
-            if (in_set_overview || now >= select_entry_next_ms) {
-                shadow_log(in_set_overview
-                           ? "select gate: Set Overview open — claiming OLED"
-                           : "select gate: overview timeout — claiming OLED anyway");
+            if (in_set_overview) {
+                shadow_log("select gate: Set Overview open — claiming OLED");
                 select_entry_state = 6;
                 shadow_display_mode = 1;
                 shadow_control->display_mode = 1;
+            } else if (now >= select_entry_next_ms) {
+                /* Move can keep transitioning for SECONDS after a suspend
+                 * (observed: mode/preset announcements 3 s in) and silently
+                 * eats the combo while it does — so re-send the gesture with
+                 * growing gaps instead of trusting one fixed settle. Only
+                 * after the retries are spent do we claim the screen anyway
+                 * (a wedged phase would be worse than an unpicker-ed one). */
+                if (select_entry_attempts < 3) {
+                    select_entry_attempts++;
+                    shadow_log("select gate: no overview yet — re-sending gesture");
+                    select_entry_state = 1;
+                    select_entry_next_ms = now + 700u * (uint32_t)select_entry_attempts;
+                } else {
+                    shadow_log("select gate: overview timeout — claiming OLED anyway");
+                    select_entry_state = 6;
+                    shadow_display_mode = 1;
+                    shadow_control->display_mode = 1;
+                }
             }
             break;
         }
