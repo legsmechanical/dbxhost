@@ -27,7 +27,7 @@ import {
 
 import { S } from './ui_state.mjs';
 import { saveState, writeSidecar, showActionPopup, loadSnapshotManifest } from './ui_persistence.mjs';
-import { openLoadSnapshot, openProjectPicker } from './ui_dialogs.mjs';
+import { openLoadSnapshot } from './ui_dialogs.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw } from './ui_leds.mjs';
 import { openSchwungSlotEditor, exitSchwungCoRun, enterMoveNativeCoRun, exitMoveNativeCoRun } from './ui_corun.mjs';
@@ -289,13 +289,10 @@ function buildGlobalMenuItems() {
         createAction('Load state', function() {
             openLoadSnapshot();
         }),
-        /* Projects — the standalone workspace's own set library. Only under
-         * the davebox host: the script it drives and the launcher's relaunch
-         * loop exist only there; under stock the native set flow applies.
-         * buildGlobalMenuItems re-runs each open, so the gate is live. */
-        engineUnderDaveboxHost() ? createAction('Projects...', function() {
-            openProjectPicker();
-        }) : null,
+        /* Projects: no menu entry — the native Move set picker IS the project
+         * picker, held open at session boot by the host's set-select gate
+         * (dbxhost standalone/README.md). Programmatic switch/new still runs
+         * through S.pendingProjectCmd -> project-cmd.sh in tick(). */
         createAction('Clear Sess', function() {
             S.confirmClearSession = true;
             S.confirmClearSel     = 1;

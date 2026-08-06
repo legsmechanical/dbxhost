@@ -9,7 +9,6 @@ import {
     dropSnapshots, applySnapshotToLive, copyStateFiles
 } from './ui_persistence.mjs';
 import { effectiveClip, invalidateLEDCache } from './ui_leds.mjs';
-import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 
 export function pixelPrintMcu(x, y, text, scale, color) {
     const charW = 5 * scale + scale;
@@ -696,148 +695,12 @@ export function resolveInheritPicker(action) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Projects — the standalone workspace's own set library (Design B).  */
-/* Self-contained modal (S.projectPicker), modeled on the snapshot     */
-/* picker above: integration points are draw, jog-rotate, jog-click    */
-/* and Back-close. Only meaningful under the davebox host — the host   */
-/* script it drives (project-cmd.sh) and the launcher's supervisor     */
-/* loop exist only there — so the menu entry is gated on it.           */
-/*                                                                     */
-/* Switch/New sequencing mirrors Quit: saveState() arms the deferred   */
-/* DSP save, and S.pendingProjectCmd is drained in tick() one tick     */
-/* AFTER the save fires (else-if chain), because the command restarts  */
-/* Move in place and tears this module down with it.                   */
+/* Projects: the jog picker that lived here (built + retired the same  */
+/* day, 2026-08-06) is GONE — the native Move set picker is the        */
+/* project picker now, held open at session boot by the host's         */
+/* set-select gate (dbxhost standalone/README.md). The programmatic    */
+/* switch/new path survives as S.pendingProjectCmd -> project-cmd.sh   */
+/* in tick(). Lesson kept from the picker's one device freeze: module  */
+/* input dead + host input alive = a repeated JS exception in an input */
+/* handler, and NOTHING logs it — wrap new modal entry points.         */
 /* ------------------------------------------------------------------ */
-
-const PROJECT_CMD = DAVEBOX_HOST_DIR + '/scripts/project-cmd.sh';
-
-function _openProjectPicker_impl() {
-    if (typeof host_system_cmd !== 'function' || typeof host_read_file !== 'function') return;
-    /* Synchronous: list is a quick directory scan writing projects.json. */
-    host_system_cmd('sh ' + PROJECT_CMD + ' list');
-    let data = null;
-    try { data = JSON.parse(host_read_file(DAVEBOX_HOST_DIR + '/projects.json') || ''); }
-    catch (e) { data = null; }
-    if (!data || !Array.isArray(data.projects)) {
-        showActionPopup('NO PROJECT', 'LIST');
-        return;
-    }
-    let sel = 0;
-    for (let i = 0; i < data.projects.length; i++)
-        if (data.projects[i].index === data.current) { sel = i; break; }
-    S.projectPicker = { projects: data.projects, current: data.current, sel: sel, confirm: null };
-    S.globalMenuOpen = false;
-    S.screenDirty = true;
-}
-
-function _closeProjectPicker_impl() {
-    S.projectPicker = null;
-    S.screenDirty = true;
-}
-
-function _projectPickerRotate_impl(delta) {
-    const p = S.projectPicker;
-    if (!p || delta === 0) return;
-    if (p.confirm) {
-        p.confirm.sel = p.confirm.sel === 0 ? 1 : 0;
-    } else {
-        const n = p.projects.length + 1;   /* + the New Project row */
-        p.sel = (p.sel + (delta > 0 ? 1 : n - 1)) % n;
-    }
-    S.screenDirty = true;
-}
-
-function _projectPickerClick_impl() {
-    const p = S.projectPicker;
-    if (!p) return;
-    if (p.confirm) {
-        const yes = p.confirm.sel === 0;
-        const c = p.confirm;
-        closeProjectPicker();
-        if (!yes) return;
-        /* Save first; the command fires one tick after the save lands. */
-        saveState();
-        if (c.kind === 'new') {
-            S.pendingProjectCmd = 'new "' + c.name + '"';
-            showActionPopup('CREATING', 'PROJECT');
-        } else {
-            S.pendingProjectCmd = 'switch ' + c.index;
-            showActionPopup('OPENING', 'PROJECT');
-        }
-        return;
-    }
-    if (p.sel === p.projects.length) {
-        p.confirm = { kind: 'new', sel: 0,
-                      name: 'Project ' + (p.projects.length + 1) };
-        S.screenDirty = true;
-        return;
-    }
-    const proj = p.projects[p.sel];
-    if (!proj) return;
-    if (proj.index === p.current) { closeProjectPicker(); return; }
-    if (proj.index === null || proj.index === undefined) {
-        /* No song-index xattr — Move cannot address it by currentSongIndex.
-         * Rare (hand-copied dir); surface rather than guessing. */
-        showActionPopup('PROJECT HAS', 'NO INDEX');
-        return;
-    }
-    p.confirm = { kind: 'switch', sel: 0, index: proj.index, name: proj.name };
-    S.screenDirty = true;
-}
-
-function _drawProjectPicker_impl() {
-    clear_screen();
-    const p = S.projectPicker;
-    if (!p) return;
-
-    if (p.confirm) {
-        const c = p.confirm;
-        drawMenuHeader(c.kind === 'new' ? 'NEW PROJECT' : 'OPEN PROJECT');
-        print(4, 18, (c.kind === 'new' ? 'Create ' : 'Open ') + truncLabel(c.name, 13) + '?', 1);
-        print(4, 27, 'Move restarts', 1);
-        print(4, 36, 'briefly.', 1);
-        drawSnapYesNo(c.sel);
-        return;
-    }
-
-    drawMenuHeader('PROJECTS');
-    const total = p.projects.length + 1;
-    const visible = 4;
-    let top = Math.max(0, Math.min(p.sel - 1, total - visible));
-    if (total <= visible) top = 0;
-    const lineH = 9;
-    const listTopY = 20;
-    for (let row = 0; row < visible; row++) {
-        const i = top + row;
-        if (i >= total) break;
-        const y = listTopY + row * lineH;
-        const isSel = i === p.sel;
-        if (isSel) fill_rect(0, y - 1, 128, lineH, 1);
-        const ink = isSel ? 0 : 1;
-        if (i === p.projects.length) {
-            print(4, y, '+ New Project', ink);
-        } else {
-            const proj = p.projects[i];
-            const mark = proj.index === p.current ? '* ' : '  ';
-            print(4, y, mark + truncLabel(proj.name, 17), ink);
-        }
-    }
-}
-
-
-/* ---- temporary instrumentation (2026-08-06): the first device run of the
- * picker froze davebox with no logged error anywhere — every entry point is
- * wrapped so the NEXT failure names itself. Remove once the fault is fixed. */
-function _ppGuard(name, impl, args) {
-    try { return impl.apply(null, args); }
-    catch (e) {
-        try { console.log('projectPicker FAULT in ' + name + ': ' + e + ' :: ' + (e && e.stack ? e.stack : 'no stack')); } catch (e2) {}
-        /* fail SAFE: drop the picker so the UI keeps running */
-        try { S.projectPicker = null; } catch (e3) {}
-    }
-}
-export function openProjectPicker()      { return _ppGuard('open',   _openProjectPicker_impl, []); }
-export function closeProjectPicker()     { return _ppGuard('close',  _closeProjectPicker_impl, []); }
-export function projectPickerRotate(d)   { return _ppGuard('rotate', _projectPickerRotate_impl, [d]); }
-export function projectPickerClick()     { return _ppGuard('click',  _projectPickerClick_impl, []); }
-export function drawProjectPicker()      { return _ppGuard('draw',   _drawProjectPicker_impl, []); }

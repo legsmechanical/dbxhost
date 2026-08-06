@@ -12,11 +12,15 @@ the section into a versioned heading at release time.
   touched.** Launching a session sets your Move sets aside untouched and brings
   dAVEBOx's own projects in; leaving (or simply rebooting, even after a power
   cut) puts everything back exactly as it was. The first launch creates
-  Project 1 for you, already wired the way dAVEBOx needs, and **Settings menu →
-  Projects...** lists your projects, opens one, or creates a new one — every
+  Project 1 for you, already wired the way dAVEBOx needs — every
   project is born from the same correctly-wired template, so channel setup is
   nothing you ever think about. Samples, presets, patches and modules stay
   shared with official Schwung; only the sets/projects are separate worlds.
+- **Pick your project on Move's own pads.** A session now starts on the native
+  set picker showing your dAVEBOx projects: tap a pad to open that project,
+  tap an empty pad for a new one (wired for dAVEBOx automatically), click the
+  jog wheel to resume the last one, and copy or delete projects with Move's
+  own Copy and Delete flows. The jog-menu Projects list this replaces is gone.
 - **dAVEBOx now shows only the effects the host it's running on actually has.**
   On the dAVEBOx host you get four insert FX per chain plus both Send buses; on
   official Schwung, which has two inserts and no sends, those extra rows are

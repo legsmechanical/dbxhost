@@ -148,8 +148,9 @@ Open Schwung's tool menu — **Shift + Step 13** (the star) — and choose
 **dAVEBOx SA**.
 
 The screen goes dark for a few seconds. Move is restarting under the dAVEBOx build
-of the host, and when it comes back you are **already in the sequencer** — there is
-no menu to step through. That pause is the whole startup; nothing has gone wrong.
+of the host, and when it comes back you land on the **project picker** — Move's
+own set-picker pads, showing your dAVEBOx projects. That pause is the whole
+startup; nothing has gone wrong.
 
 ### Projects — dAVEBOx has its own workspace
 
@@ -159,13 +160,21 @@ untouched, and brings the projects in; leaving puts everything back exactly as
 it was. Move native and official Schwung never see the projects, and dAVEBOx
 never sees — or changes — your Move sets.
 
+**Picking a project** happens right at launch, on Move's own set picker — the
+pads you already know:
+
+- **Tap a pad** to open that project in dAVEBOx.
+- **Tap an empty pad** for a new project — it is wired up for dAVEBOx
+  automatically before the sequencer opens (Move restarts once more, briefly).
+- **Click the jog wheel** to jump back into the project you had open last.
+- **Copy and Delete work exactly as on Move**: hold Copy and tap a project to
+  copy it (tap a destination pad to paste), hold Delete and tap twice to
+  delete. The dAVEBOx screen steps aside while Move shows its own prompts.
 - The first launch creates **Project 1** for you, already wired the way
   dAVEBOx needs (instrument tracks listening on channels 1–4, MIDI out off) —
-  wiring you never have to set up or think about.
-- **Settings menu → Projects...** lists your projects. Click one to open it
-  (Move restarts briefly — a few dark seconds, same as launching), or pick
-  **+ New Project**. The current project is marked with `*`.
-- Every new project starts from the same correctly-wired template.
+  wiring you never have to set up or think about. Every project starts from
+  that same correctly-wired template, including ones born from an empty pad
+  or a Copy.
 
 > **Coming from an earlier dAVEBOx?** Work you made back when dAVEBOx used the
 > shared Move sets stays in those Move sets, visible from Move native and

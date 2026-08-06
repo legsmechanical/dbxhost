@@ -35,7 +35,6 @@ import { saveState, writeSidecar, doClearSession, showActionPopup,
 import {
     openSaveSnapshot, closeSnapshotPicker,
     snapshotPickerRotate, snapshotPickerClick, openClearAutoMenu,
-    projectPickerRotate, projectPickerClick, closeProjectPicker,
     clearAutoMenuRotate, clearAutoMenuClick, showMenuInfo, closeConvertConfirm, resolveInheritPicker
 } from './ui_dialogs.mjs';
 import { trackClipHasContent, sessionHasAnyContent } from './ui_scene.mjs';
@@ -94,11 +93,6 @@ function _onCC_jog(d1, d2) {
     /* Snapshot picker: jog click resolves a confirm or arms one. */
     if (d1 === 3 && d2 === 127 && S.snapshotPicker) {
         snapshotPickerClick();
-        return;
-    }
-    /* Project picker: jog click resolves a confirm or arms one. */
-    if (d1 === 3 && d2 === 127 && S.projectPicker) {
-        projectPickerClick();
         return;
     }
     /* CLEAR AUTOMATION modal: jog click toggles a row / executes CLEAR. */
@@ -684,10 +678,6 @@ function _onCC_jog(d1, d2) {
             snapshotPickerRotate(decodeDelta(d2));
             return;
         }
-        if (S.projectPicker) {
-            projectPickerRotate(decodeDelta(d2));
-            return;
-        }
         if (S.clearAutoMenu) {
             clearAutoMenuRotate(decodeDelta(d2));
             return;
@@ -1167,12 +1157,6 @@ function _onCC_buttons(d1, d2) {
                 forceRedraw();
                 return;
             }
-            if (S.projectPicker) {
-                if (S.projectPicker.confirm) S.projectPicker.confirm = null;
-                else closeProjectPicker();
-                forceRedraw();
-                return;
-            }
             if (S.shiftHeld) {
                 /* Shift+Note/Session = "edit this track's sound". One gesture,
                  * two destinations, chosen by the track's route.
@@ -1577,11 +1561,6 @@ function _backTap() {
     if (S.snapshotPicker) {
         if (S.snapshotPicker.confirm) S.snapshotPicker.confirm = null;
         else closeSnapshotPicker();
-        forceRedraw(); return;
-    }
-    if (S.projectPicker) {
-        if (S.projectPicker.confirm) S.projectPicker.confirm = null;
-        else closeProjectPicker();
         forceRedraw(); return;
     }
     if (S.clearAutoMenu)  { S.clearAutoMenu = null; S.deleteTapArmed = false; forceRedraw(); return; }
