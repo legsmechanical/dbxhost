@@ -218,6 +218,21 @@ setsid bash -c '
   done
   echo "davebox host exited ($?) — restoring the watchdog"
 
+  # Kill surviving sidecars on EXIT too — same reason as the relaunch branch:
+  # they outlive MoveOriginal, and a stray shadow_ui keeps running against
+  # deleted SHM while stock respawns its own (observed: two shadow_ui
+  # processes after a session ended via Shift+Back).
+  for name in MoveMessageDisplay Move schwung shadow_ui; do
+    pids=$(pidof $name 2>/dev/null || true)
+    [ -n "$pids" ] && kill $pids 2>/dev/null || true
+  done
+  sleep 1
+  for name in MoveMessageDisplay Move schwung shadow_ui; do
+    pids=$(pidof $name 2>/dev/null || true)
+    [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
+  done
+  rm -f "$DBX_DIR/shadow_ui.pid"
+
   # Swap the project library out and the users native sets back BEFORE stock
   # returns — stock must boot seeing exactly what it saw before the session.
   if [ -x "$DBX_DIR/scripts/set-swap.sh" ]; then
