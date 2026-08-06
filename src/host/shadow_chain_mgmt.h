@@ -115,6 +115,8 @@ extern void (*shadow_chain_process_fx)(void *instance, int16_t *buf, int frames)
 extern int (*shadow_chain_fx_requires_continuous)(void *instance);
 extern host_api_v1_t shadow_host_api;
 extern int shadow_inprocess_ready;
+/* 1 when the booted set had its own slot config; see shadow_chain_mgmt.c. */
+extern int shadow_per_set_config_loaded;
 
 /* Master FX slots */
 extern master_fx_slot_t shadow_master_fx_slots[MASTER_FX_SLOTS];

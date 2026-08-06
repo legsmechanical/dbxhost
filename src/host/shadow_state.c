@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <pwd.h>
 #include "shadow_state.h"
+#include "shadow_chain_mgmt.h"  /* shadow_per_set_config_loaded */
 
 #include "host/schwung_paths.h"
 /* ============================================================================
@@ -308,6 +309,16 @@ void shadow_load_state(void)
     json[nread] = '\0';
     fclose(f);
 
+    /* ---- PER-SLOT SETTINGS: fallback only -----------------------------
+     * Slot settings belong to the SET, not the install. This global file is
+     * written on a different trigger entirely (mute/solo toggles, dbus, clean
+     * shutdown), and it used to be applied here AFTER the per-set config had
+     * already been restored — so an install-wide value from some earlier
+     * session silently replaced the one the current set had just loaded, and a
+     * per-set edit appeared not to stick. It is now consulted only when the set
+     * brought no config of its own (a brand-new set, or one saved before a
+     * field existed), where it is a sensible default rather than an override. */
+    if (!shadow_per_set_config_loaded) {
     /* Parse slot_volumes array */
     const char *key = "\"slot_volumes\":";
     char *pos = strstr(json, key);
@@ -550,6 +561,8 @@ void shadow_load_state(void)
             }
         }
     }
+
+    }  /* end per-slot fallback */
 
     free(json);
 

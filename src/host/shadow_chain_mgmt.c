@@ -58,6 +58,11 @@ static int shadow_chain_slot_recv_channel(void *instance) {
     return -2;
 }
 int shadow_inprocess_ready = 0;
+/* Set at boot when the current set supplied its own slot settings. Read by
+ * shadow_load_state(), which must NOT put install-wide values back over them —
+ * slot settings are per-set, and the global file is only the fallback for a set
+ * that has none. */
+int shadow_per_set_config_loaded = 0;
 
 /* Master FX slots */
 master_fx_slot_t shadow_master_fx_slots[MASTER_FX_SLOTS];
@@ -1393,8 +1398,14 @@ int shadow_inprocess_load_chain(void) {
     }
 
     shadow_chain_load_config();
+    /* Record whether this set brought its own slot settings. Slot settings are
+     * PER-SET; the global file is only a fallback for a set that has none yet.
+     * Without this flag shadow_load_state() — which runs later at boot — puts
+     * install-wide values back over the ones this set just restored, so a
+     * per-set edit appears not to stick. */
+    shadow_per_set_config_loaded = 0;
     if (strcmp(boot_state_dir, SLOT_STATE_DIR) != 0) {
-        shadow_load_config_from_dir(boot_state_dir);
+        shadow_per_set_config_loaded = shadow_load_config_from_dir(boot_state_dir);
     }
 
     for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++) {

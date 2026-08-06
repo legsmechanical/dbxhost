@@ -4222,7 +4222,11 @@ function saveChainConfigToDir(dir) {
              * anything — so it silently reverted to 0 on every host start.
              * Reported on hardware 2026-08-05 as "the change didn't stick". */
             const transpose = parseInt(getSlotParam(i, "slot:transpose") || "0", 10) || 0;
-            cfgSlots.push({ name: slots[i] ? slots[i].name : "", channel: ch, volume: vol, forward_channel: fwd, muted: muted, soloed: soloed, send_a: sendA, send_b: sendB, move_to_slot: moveToSlot, transpose: transpose });
+            /* Keep in step with the C writer in shadow_set_pages.c — both write
+             * this file and the last one to run wins it whole, so a field
+             * missing from either is silently dropped. */
+            const synthVol = parseFloat(getSlotParam(i, "slot:synth_volume") || "1");
+            cfgSlots.push({ name: slots[i] ? slots[i].name : "", channel: ch, volume: vol, forward_channel: fwd, muted: muted, soloed: soloed, send_a: sendA, send_b: sendB, move_to_slot: moveToSlot, transpose: transpose, synth_volume: isNaN(synthVol) ? 1 : synthVol });
         }
         return !!host_write_file(path, JSON.stringify({ slots: cfgSlots }, null, 2) + "\n");
     } catch (e) {

@@ -218,10 +218,19 @@ void shadow_save_config_to_dir(const char *dir) {
         int display_fwd = host.chain_slots[i].forward_channel >= 0
             ? host.chain_slots[i].forward_channel + 1
             : host.chain_slots[i].forward_channel;
-        fprintf(f, "    {\"name\": \"%s\", \"channel\": %d, \"volume\": %.3f, \"forward_channel\": %d, \"muted\": %d, \"soloed\": %d}%s\n",
+        /* ⚠ Must write EVERY per-set slot field. This file has two writers —
+         * this one and the shadow UI's saveChainConfigToDir — and whichever
+         * runs last wins the whole file. Emitting a subset here silently
+         * STRIPS the fields it omits, so a setting saved by the other writer
+         * disappears the next time this one runs. That is how transpose and the
+         * sends could vanish without anything failing. */
+        fprintf(f, "    {\"name\": \"%s\", \"channel\": %d, \"volume\": %.3f, \"forward_channel\": %d, \"muted\": %d, \"soloed\": %d, \"send_a\": %.3f, \"send_b\": %.3f, \"move_to_slot\": %d, \"transpose\": %d, \"synth_volume\": %.3f}%s\n",
                 host.chain_slots[i].patch_name, display_ch,
                 host.chain_slots[i].volume, display_fwd,
                 host.chain_slots[i].muted, host.chain_slots[i].soloed,
+                host.chain_slots[i].send_a, host.chain_slots[i].send_b,
+                host.chain_slots[i].move_to_slot, host.chain_slots[i].transpose,
+                host.chain_slots[i].synth_volume,
                 i < SHADOW_CHAIN_INSTANCES - 1 ? "," : "");
     }
     fprintf(f, "  ]\n}\n");
@@ -311,6 +320,51 @@ int shadow_load_config_from_dir(const char *dir) {
             if (soloed_colon) {
                 host.chain_slots[i].soloed = atoi(soloed_colon + 1);
                 if (host.chain_slots[i].soloed) (*host.solo_count)++;
+            }
+        }
+        /* Everything below was written by the per-set saver but never read
+         * back here, so these settings could only ever be restored from the
+         * GLOBAL file — which is install-wide, not per-set, and is written on a
+         * different trigger entirely (mute/solo, dbus, clean shutdown). The
+         * visible effect was a setting that "would not stick": edited, saved
+         * into this file, then overwritten at boot by a global value from some
+         * earlier session. Every slot setting is per-set; anything missing here
+         * silently is not. */
+        char *tr_pos = strstr(name_pos, "\"transpose\"");
+        if (tr_pos) {
+            char *tr_colon = strchr(tr_pos, ':');
+            if (tr_colon) {
+                int t = atoi(tr_colon + 1);
+                if (t >= -12 && t <= 12) host.chain_slots[i].transpose = t;
+            }
+        }
+        char *sa_pos = strstr(name_pos, "\"send_a\"");
+        if (sa_pos) {
+            char *sa_colon = strchr(sa_pos, ':');
+            if (sa_colon) {
+                float v = (float)atof(sa_colon + 1);
+                if (v >= 0.0f && v <= 2.0f) host.chain_slots[i].send_a = v;
+            }
+        }
+        char *sb_pos = strstr(name_pos, "\"send_b\"");
+        if (sb_pos) {
+            char *sb_colon = strchr(sb_pos, ':');
+            if (sb_colon) {
+                float v = (float)atof(sb_colon + 1);
+                if (v >= 0.0f && v <= 2.0f) host.chain_slots[i].send_b = v;
+            }
+        }
+        char *mts_pos = strstr(name_pos, "\"move_to_slot\"");
+        if (mts_pos) {
+            char *mts_colon = strchr(mts_pos, ':');
+            if (mts_colon) host.chain_slots[i].move_to_slot = atoi(mts_colon + 1) ? 1 : 0;
+        }
+        char *sv_pos = strstr(name_pos, "\"synth_volume\"");
+        if (sv_pos) {
+            char *sv_colon = strchr(sv_pos, ':');
+            if (sv_colon) {
+                float v = (float)atof(sv_colon + 1);
+                if (v >= 0.0f && v <= 4.0f) host.chain_slots[i].synth_volume = v;
             }
         }
     }
