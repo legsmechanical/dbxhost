@@ -162,9 +162,18 @@ twice. `MANUAL.md` stays frozen — `test_manual_freeze.sh` pins it.
   experiments. Budget explicit device sessions; these are the only parts that can't be pre-verified.
 - **Uncovered, deferrable:** davebox's UI tier.
 
-### G10 — Per-set state is a SHARED contract between two hosts — **BLOCKER** for B2
-*(found 2026-08-04 while building Stage 0, from Josh's question "will these saves conflict with the
-regular non-dbx host saves?")*
+### G10 — Per-set state is a SHARED contract between two hosts — **✅ DISSOLVED 2026-08-06**
+
+**Josh's separation ruling ended this gap:** dAVEBOx SA is an entirely separate workspace; host
+state (`set_state`, `slot_state`, `active_set.txt`, both config files) is now PRIVATE per install
+(`schwungbox-host` `6e9ac1f4`, enforced by installer + `tests/host/test_workspace_separation.sh`).
+The two hosts no longer read or write each other's per-set files, so **B2's format-contract hazard
+is gone**: the dbx host can move to 8 slots without any stock host ever rewriting (and truncating)
+its config. The intra-workspace rule below still applies to davebox's own files, and the fx3/fx4
+paragraph still matters for sets a user exports/shares across installs by hand.
+
+*Original analysis kept for the record (found 2026-08-04 while building Stage 0, from Josh's
+question "will these saves conflict with the regular non-dbx host saves?"):*
 
 Per-set state paths are **hardcoded to the stock tree** — `/data/UserData/schwung/set_state/<uuid>`
 (`host/src/shadow/shadow_ui.js:15630`), not install-dir relative — so **both hosts read and write the
@@ -249,6 +258,10 @@ proven.
 2. ⭑ **The B15 survey → the G2 triage table.** Pure documentation, zero risk, and it converts the
    vaguest part of the spec into a decision sheet Josh can answer in one sitting — which unblocks all
    of Stage 2 and dissolves Q2.
+   ✅ **DONE 2026-08-06 → [`DBSA_INPUT_CLAIMS.md`](DBSA_INPUT_CLAIMS.md).** Central finding: every
+   host jump gesture stays LIVE during an SA session and suspends davebox into a host screen —
+   verified in code. Decision column awaits Josh. *(Item 1, the Stage-0 bundle, shipped 08-05/06;
+   B6 autosave is ON and device-verified as of `8966831a`.)*
 
 Third, given a device evening: the **G9 soak-listen** (forced Move→Schwung under real playing). Under
 an hour, and it converts a Stage-1 unknown into a fact.
