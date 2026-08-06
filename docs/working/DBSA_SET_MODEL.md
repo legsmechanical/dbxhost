@@ -20,7 +20,20 @@ Josh's spec described **two conflicting designs** without noticing they conflict
 
 ---
 
-## ✅ DECIDED (Josh, 2026-08-04): **C1**, plus a confirmation
+## ⚠⚠ SUPERSEDED (Josh, 2026-08-06): the decision is **DESIGN B** — SA has its OWN set library
+
+> Josh, 2026-08-06: *"we agreed on design b in a later session but that decision apparently
+> wasn't recorded."* So **design B stands** — dAVEBOx SA keeps its own live sets, entirely
+> separate from Move native's; native sets are never rewritten. This aligns with the same-day
+> workspace-separation ruling ("SA is an entirely separate workspace from both Move native and
+> stock Schwung") and with the skeleton's L14 ("essentially having db-sa have its own set of
+> live sets"). The C1 analysis below is kept for the record; its data-loss machinery
+> (confirmation prompt, archive-on-rewrite, restore markers) is **no longer needed** — design B
+> dissolves it. What design B *does* need is the set-selection UX inside davebox (old Q/B9: the
+> "pick your set before launching SA" affordance dies, since native sets aren't SA sets), and
+> the set-pages-style stash/swap mechanics at SA entry/exit.
+
+## ~~✅ DECIDED (Josh, 2026-08-04): **C1**, plus a confirmation~~ — superseded above
 
 > *"c1 seems like the right path. and maybe we can add a confirmation before an existing set is
 > overwritten with new routing?"*

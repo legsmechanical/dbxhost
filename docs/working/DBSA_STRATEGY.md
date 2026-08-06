@@ -62,7 +62,7 @@ Boot-to-exit experience — and the big unspec'd half: triage of **every** host 
 still reach (gap G2).
 
 ### WS-4 — "Sets wire themselves"
-*B8/B9/B10 — design C1, decided*
+*B8/B9/B10 — ⚠ design B (08-06, superseding the recorded C1): SA-owned set library; native sets untouched*
 
 Deliberately last, per Josh's own call. Nothing else depends on it; SA works today with
 manually-compliant sets. Gated by the five device experiments.
@@ -142,7 +142,7 @@ manual should be one sentence: **"turn it off and on again; you get stock Move."
 Also document what the user sees when `davebox-heal` fails (launch.sh correctly refuses to launch).
 
 ### G5 — Exit / return-to-stock guarantees — **COMPANION** to B14
-What is *guaranteed* after Suspend, Quit, reboot? Under C1 set routing stays davebox-shaped (decided,
+What is *guaranteed* after Suspend, Quit, reboot? Under design B native sets are untouched by construction (08-06,
 archived). Baked settings must live only in the dbx tree's `features.json` so stock is untouched —
 make that a **tested invariant, not an accident**. Uninstall needs a documented script eventually;
 write the guarantee down now so nothing violates it.
