@@ -15,6 +15,10 @@ set -euo pipefail
 # stick", while the file on disk looked correct.
 #
 # Three properties must hold together; any one alone leaves the bug alive.
+#
+# Send return levels are the same shape and are handled the same way: stored
+# per-set in send_fx_meta.json (restored at boot by restoreSendFxFromFiles) with
+# the global array as fallback only.
 
 cd "$(dirname "$0")/../.."
 

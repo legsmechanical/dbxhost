@@ -409,6 +409,12 @@ void shadow_load_state(void)
         }
     }
 
+    /* Send return levels are ALSO stored per-set, in the active set's
+     * send_fx_meta.json, and restoreSendFxFromFiles() applies those at boot
+     * (shadow_ui.js:15250). This copy is therefore a FALLBACK for a set with no
+     * config of its own, which is why it sits inside the guard above. Two
+     * stores for one value is the shape that caused the slot-settings bug, so
+     * keep the precedence explicit: per-set wins, this is only the default. */
     /* Parse send_return_level array (missing key → leaves the 1.0 default) */
     const char *srl_key = "\"send_return_level\":";
     char *srl_pos = strstr(json, srl_key);

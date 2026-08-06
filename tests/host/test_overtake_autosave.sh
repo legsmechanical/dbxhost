@@ -108,7 +108,10 @@ rg -q 'Buses are collected but NOT written from here' "$js" \
 # 10b. A slot edit must write BOTH files. slot_N.json holds the chain (synth/FX
 #      state); shadow_chain_config.json holds the slot's OWN settings (volume,
 #      channel, mute/solo, sends, transpose). Writing only the chain is why a
-#      slot:transpose change survived nothing on hardware 2026-08-05.
+#      slot:transpose change appeared not to stick on hardware 2026-08-05.
+#      (⚠ transpose WAS always serialised — in the GLOBAL file, shadow_state.c.
+#      The real defect was that the per-set copy had no reader and the global
+#      one was applied last at boot. See test_slot_settings_are_per_set.sh.)
 rg -q 'saveChainConfigToDir\(activeSlotStateDir\);' "$js" \
   || fail "$js overtake autosave no longer writes shadow_chain_config.json — slot settings (transpose, sends, mute) would not persist mid-session"
 rg -q 'wroteChain \|\| wroteConfig' "$js" \
@@ -116,7 +119,7 @@ rg -q 'wroteChain \|\| wroteConfig' "$js" \
 
 # 10c. slot:transpose must actually be serialised. It was wired end to end in
 #      the shim and shown in the UI, but nothing wrote it, so it reset to 0 on
-#      every host start.
+#      every host start via the per-set file, whose loader ignored it.
 rg -q 'transpose: transpose' "$js" \
   || fail "$js no longer saves slot:transpose into the per-set chain config"
 rg -q 'setSlotParamWithTimeout\(i, "slot:transpose"' "$js" \
