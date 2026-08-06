@@ -26,7 +26,7 @@ import {
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
-    drawLgtoConfirm, drawBakeConfirm, drawInheritPicker, drawSnapshotPicker,
+    drawLgtoConfirm, drawBakeConfirm, drawInheritPicker, drawSnapshotPicker, drawProjectPicker,
     drawClearAutoMenu, drawBakeSceneConfirm, drawXposeConfirm, drawBpmLine
 } from './ui_dialogs.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
@@ -712,6 +712,7 @@ export function drawUI() {
     if (S.sessionOverlayHeld) { drawSessionOverview(); return; }
     if (S.pendingInheritPicker) { drawInheritPicker(); return; }
     if (S.snapshotPicker) { drawSnapshotPicker(); return; }
+    if (S.projectPicker) { drawProjectPicker(); return; }
     if (S.clearAutoMenu) { drawClearAutoMenu(); return; }
     if (S.pendingSceneBakePicker) {
         clear_screen();

@@ -8,6 +8,15 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **dAVEBOx SA now has its own project workspace — your Move sets are never
+  touched.** Launching a session sets your Move sets aside untouched and brings
+  dAVEBOx's own projects in; leaving (or simply rebooting, even after a power
+  cut) puts everything back exactly as it was. The first launch creates
+  Project 1 for you, already wired the way dAVEBOx needs, and **Settings menu →
+  Projects...** lists your projects, opens one, or creates a new one — every
+  project is born from the same correctly-wired template, so channel setup is
+  nothing you ever think about. Samples, presets, patches and modules stay
+  shared with official Schwung; only the sets/projects are separate worlds.
 - **dAVEBOx now shows only the effects the host it's running on actually has.**
   On the dAVEBOx host you get four insert FX per chain plus both Send buses; on
   official Schwung, which has two inserts and no sends, those extra rows are

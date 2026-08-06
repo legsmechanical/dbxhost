@@ -144,17 +144,32 @@ later — see [Routing & Sync](#141-instruments--routing).
 
 ## Open dAVEBOx
 
-Load a Move set first, then open Schwung's tool menu — **Shift + Step 13** (the
-star) — and choose **dAVEBOx SA**.
+Open Schwung's tool menu — **Shift + Step 13** (the star) — and choose
+**dAVEBOx SA**.
 
 The screen goes dark for a few seconds. Move is restarting under the dAVEBOx build
 of the host, and when it comes back you are **already in the sequencer** — there is
 no menu to step through. That pause is the whole startup; nothing has gone wrong.
 
-> **Load the set before launching, not after.** dAVEBOx reads which set you are in
-> as it starts, so it picks up that set's sequencer data. There is no harm in
-> launching first, but you will be working on a different set's data than you
-> expected.
+### Projects — dAVEBOx has its own workspace
+
+dAVEBOx SA does not open your Move sets. It keeps its **own projects**, an
+entirely separate workspace: launching dAVEBOx sets your Move sets aside,
+untouched, and brings the projects in; leaving puts everything back exactly as
+it was. Move native and official Schwung never see the projects, and dAVEBOx
+never sees — or changes — your Move sets.
+
+- The first launch creates **Project 1** for you, already wired the way
+  dAVEBOx needs (instrument tracks listening on channels 1–4, MIDI out off) —
+  wiring you never have to set up or think about.
+- **Settings menu → Projects...** lists your projects. Click one to open it
+  (Move restarts briefly — a few dark seconds, same as launching), or pick
+  **+ New Project**. The current project is marked with `*`.
+- Every new project starts from the same correctly-wired template.
+
+> **Coming from an earlier dAVEBOx?** Work you made back when dAVEBOx used the
+> shared Move sets stays in those Move sets, visible from Move native and
+> official Schwung. dAVEBOx projects start fresh.
 
 ### Getting back to official Schwung
 
@@ -167,12 +182,14 @@ Any of these hands the device back, saving your work first:
 | **Reboot** | Always returns to official Schwung |
 
 The last one is the safety net: whatever state dAVEBOx SA gets into, powering the
-Move off and on brings back your normal install. Your official Schwung is never
-modified, so there is nothing to repair.
+Move off and on brings back your normal install — **your own Move sets
+included**: a small recovery step runs at every boot, so even a power cut in
+the middle of a session leaves nothing out of place. Your official Schwung is
+never modified, so there is nothing to repair.
 
-> **Your Move sets are safe.** dAVEBOx SA shares the same sets, samples, presets,
-> patches and modules as official Schwung rather than keeping its own copies — so
-> work you do in one is there in the other, and nothing is duplicated or migrated.
+> **Samples, presets, patches and modules are still shared** with official
+> Schwung — sounds you install or save are available everywhere. Only the
+> sets/projects are separate workspaces.
 
 ## Set tempo, key, and scale
 

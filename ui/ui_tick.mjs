@@ -1805,6 +1805,23 @@ export function _tickImpl() {
             }
         }
         if (typeof host_exit_module === 'function') host_exit_module();
+    } else if (S.pendingProjectCmd) {
+        /* Project switch/create: Move restarts IN PLACE (the launcher's
+         * supervisor loop) and this module dies with it — same shape as the
+         * Quit branch above, but the session survives. Runs a tick after the
+         * save so the deferred DSP write has landed. LEDs cleared so the
+         * relaunch does not inherit stale paint. */
+        const _pcmd = S.pendingProjectCmd;
+        S.pendingProjectCmd = null;
+        removeFlagsWrap();
+        S.ledInitComplete = false;
+        invalidateLEDCache();
+        clearAllLEDs();
+        for (let _i = 0; _i < 4; _i++) setButtonLED(40 + _i, LED_OFF);
+        if (standaloneSessionActive() && typeof host_system_cmd === 'function') {
+            host_system_cmd('sh /data/UserData/dbx-host/scripts/project-cmd.sh ' + _pcmd);
+            return;
+        }
     } else if (S.pendingHideAfterSave) {
         S.pendingHideAfterSave = false;
         removeFlagsWrap();

@@ -197,13 +197,16 @@ this design replaces it wholesale).
 - **DE-4** — swap timing with a realistic library (~50 sets): renames are
   metadata-only, expect ms — confirm, since it sits in the launch path.
 
-## 11. Decisions for Josh
+## 11. Decisions — ✅ ALL ANSWERED (Josh, 2026-08-06)
 
-- **D1** — crash recovery: R1 (blessed oneshot unit, self-healing boots) or
-  R2 only (healed at next SA launch; stock shows SA sets until then)?
-- **D2** — import existing native sets: Sets-menu "Import from Move…" /
-  one-time offer at first launch / none?
-- **D3** — v1 management scope: list+switch+new only, or also
-  rename/delete/duplicate?
-- **D4** — naming in the UI: "Sets" (Move's word) or something davebox-own
-  ("Sessions"?) — affects manual + menu labels.
+- **D1 = R1** — blessed oneshot unit (`davebox-restore.service`), installed by
+  `bless.sh`, ordered before `move-launcher.service`. Boots always clean; R2's
+  launch-time healing is still implemented as the required backstop.
+- **D2 = start fresh** — no import path. The SA library begins with the
+  template set. (§8's import machinery is NOT built; if it's ever wanted, the
+  design there stands.)
+- **D3 = list + switch + new** — v1 scope. Rename/delete/duplicate later.
+- **D4 = "Project"** — the UI word for an SA set. Menu: **Projects**; entries
+  "New Project", the manual speaks of projects. On disk they remain Move set
+  dirs (`Song.abl` + UUID); "set" stays correct in code comments about Move's
+  own format.
