@@ -6199,13 +6199,13 @@ static void shim_remap_cable2_channels(uint8_t *shadow) {
  *   - while a copy/delete flow runs, the OLED is CEDED to Move so its own
  *     confirm text shows, and reclaimed after the flow settles
  *
- * Flow tracking: DELETE is purely button state — Move CANCELS a pending
- * "press pad again to delete" the moment Delete is released (confirmed on
- * hardware 2026-08-06), so releasing Delete falls straight back to normal
- * picking and a D-Bus window would only wrongly eat the next launch tap.
- * COPY keeps the D-Bus belt-and-braces: the paste tap may arrive with the
- * button already released (unconfirmed either way), so the screenreader
- * texts Move emits during a copy flow hold the window open.
+ * Flow tracking is PURELY button state, for both buttons: Move treats Copy
+ * and Delete as hold-modifiers and CANCELS the pending step the moment the
+ * button is released (hardware-confirmed 2026-08-06 — delete's "press pad
+ * again", copy with no source yet, and copy awaiting its destination all
+ * die on release). So releasing falls straight back to normal picking, and
+ * the earlier D-Bus text window — built for a confirm/paste tap arriving
+ * after release, which cannot happen — only wrongly ate the next launch tap.
  *
  * Runs post-ioctl on the SPI thread AFTER sh_midi is finalized, for BOTH
  * display states (during a cede the display-mode filter doesn't run at all).
@@ -6213,17 +6213,13 @@ static void shim_remap_cable2_channels(uint8_t *shadow) {
  * ============================================================================ */
 
 #define SELECT_SETTLE_MS        700   /* pad tap -> launch trigger, if quiet   */
-#define SELECT_FLOW_LONG_MS    8000   /* flow window from an opening dbus text */
-#define SELECT_FLOW_SHORT_MS    600   /* flow tail after a completion text     */
 /* OLED reclaim is IMMEDIATE when a flow ends. A settle here (originally
- * 400 ms) let Move's completion toast linger — but the flow windows already
- * provide that (copy holds a 600 ms tail after "pasted", and delete's toast
- * shows while the button is still held), so the only thing the settle
- * actually displayed was Move's DEFAULT screen flashing through between an
- * aborted delete and our reclaim (reported on hardware 2026-08-06). */
+ * 400 ms) let Move's completion toast linger — but the toasts show while the
+ * button is still held, so the only thing the settle actually displayed was
+ * Move's DEFAULT screen flashing through between an aborted flow and our
+ * reclaim (reported on hardware 2026-08-06). */
 #define SELECT_RECLAIM_MS       0
 
-static volatile uint64_t select_flow_copy_until_ms = 0;  /* dbus thread writes, SPI thread reads */
 static uint32_t select_pad_suppress_mask = 0;       /* Shift+pad latched suppressions */
 static int select_copy_held = 0;
 static int select_delete_held = 0;
@@ -6232,31 +6228,6 @@ static uint64_t select_settle_deadline_ms = 0;
 static uint64_t select_reclaim_deadline_ms = 0;
 static int select_ceded = 0;                        /* we lowered display_mode for a flow */
 static int select_launched = 0;                     /* trigger fired; picker frozen */
-
-/* Called from the D-Bus thread (shadow_dbus_handle_text) with every
- * screenreader text. Only texts shaped like Move's COPY flow touch the
- * window; a set NAME announced on load must not — and DELETE texts are
- * deliberately ignored: Move cancels a pending delete on Delete release
- * (hardware-confirmed 2026-08-06), so the delete flow is exactly the raw
- * button state and any text-driven window would outlive the real flow,
- * eating the next launch tap for up to its whole duration. */
-void shim_select_dbus_text(const char *text)
-{
-    if (!shadow_control || !shadow_control->select_phase) return;
-    if (!text || !text[0]) return;
-    uint64_t now = now_mono_ms();
-    size_t len = strlen(text);
-    /* Completion closes the window down to a short tail. */
-    if (len > 7 && strcasecmp(text + len - 7, " pasted") == 0) {
-        select_flow_copy_until_ms = now + SELECT_FLOW_SHORT_MS;
-        return;
-    }
-    /* Openers / sustainers: "Copy...", "<name> copied". */
-    if (strncasecmp(text, "Copy", 4) == 0 ||
-        (len > 7 && strcasecmp(text + len - 7, " copied") == 0)) {
-        select_flow_copy_until_ms = now + SELECT_FLOW_LONG_MS;
-    }
-}
 
 static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
 {
@@ -6283,8 +6254,7 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
                  * but claimed is claimed) and treat a press outside a flow as
                  * the resume trigger. */
                 zero_it = 1;
-                int flow = select_copy_held || select_delete_held ||
-                           now < select_flow_copy_until_ms;
+                int flow = select_copy_held || select_delete_held;
                 if (d2 > 0 && !flow && !select_launched) {
                     select_launched = 1;
                     select_candidate_pad = -1;
@@ -6309,8 +6279,7 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
                     select_pad_suppress_mask |= bit;
                     zero_it = 1;
                 } else {
-                    int flow = select_copy_held || select_delete_held ||
-                               now < select_flow_copy_until_ms;
+                    int flow = select_copy_held || select_delete_held;
                     if (flow) {
                         /* Flow tap (paste target / delete confirm): Move's
                          * business. It also voids any pending launch. */
@@ -6348,8 +6317,7 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
 
     /* Launch-settle expiry: the candidate survives a full quiet window ->
      * that set is loaded and chosen. shadow_ui consumes select_launch. */
-    int flow_active = select_copy_held || select_delete_held ||
-                      now < select_flow_copy_until_ms;
+    int flow_active = select_copy_held || select_delete_held;
     if (!select_launched && select_candidate_pad >= 0 &&
         now >= select_settle_deadline_ms) {
         if (flow_active) {

@@ -205,12 +205,13 @@ launcher-side files):
 - **shim** (`src/schwung_shim.c`, "Boot set-select gate"): decides what a pad
   tap *means*. A tap outside a copy/delete flow, once Move's load settles, is
   the launch trigger; jog click means "resume the already-loaded set";
-  Shift+pad is suppressed; during copy/delete flows the OLED is ceded to Move
-  so its confirm text shows. Delete's flow is exactly the raw button state —
-  Move cancels a pending delete on Delete release (hardware-confirmed), so
-  releasing falls straight back to normal picking. Copy keeps a screenreader
-  D-Bus-text window as belt-and-braces, since the paste tap may arrive with
-  the button already released.
+  Shift+pad is suppressed; while Copy or Delete is HELD the OLED is ceded to
+  Move so its confirm text shows, and reclaimed the instant the button is
+  released. Both flows are exactly the raw button state: Move treats Copy and
+  Delete as hold-modifiers and cancels the pending step on release
+  (hardware-confirmed — delete's confirm, copy-with-no-source, and
+  copy-awaiting-destination all die with the button), so releasing falls
+  straight back to normal picking.
 - **shadow UI** (`src/shadow/shadow_ui.js`): the select screen. Runs
   `scripts/select-list.sh` for names (at entry and after every flow) and, on
   the shim's trigger, ends the phase, stages `boot_tool.json` (so every LATER

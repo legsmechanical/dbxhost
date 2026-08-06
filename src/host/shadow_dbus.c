@@ -213,9 +213,6 @@ static void shadow_dbus_handle_text(const char *text)
     /* Track native Move sampler source from stock announcements. */
     host.native_sampler_update(text);
 
-    /* Boot set-select gate: copy/delete flow tracking (no-op unless active) */
-    shim_select_dbus_text(text);
-
     /* Set page: detect Set Overview screen for Shift+Vol+Left/Right interception */
     if (strcasecmp(text, "Set Overview") == 0 || strcasecmp(text, "Sets") == 0) {
         in_set_overview = 1;
