@@ -869,6 +869,7 @@ static volatile int shadow_shift_held = 0;
  * open Move's native Set Overview itself (inject Shift+Step1) and back out of
  * it (inject Back) around the selection. Cleared with the phase. */
 static int select_boot_armed = 0;
+static void shim_select_blank_move_leds(void);   /* defined with the gate below */
 /* Suppress plain volume-touch hide until touch is fully released after
  * Shift+Vol shortcut launches, avoiding a brief native volume flash. */
 static volatile int shadow_block_plain_volume_hide_until_release = 0;
@@ -5873,6 +5874,7 @@ pre_done:
      * In overtake mode, also clears Move's cable 0 packets when shadow has new data. */
     TIME_SECTION_START();
     shadow_clear_move_leds_if_overtake();  /* Free buffer space before inject */
+    shim_select_blank_move_leds();         /* Mid-session picker entry: no instrument-UI flash */
     TIME_SECTION_END(spi_clear_leds_sum, spi_clear_leds_max);
 
     /* Phase 2: drain ROUTE_EXTERNAL ring (overtake DSPs pushed into it via
@@ -6244,7 +6246,7 @@ static int select_launched = 0;                     /* trigger fired; picker fro
  * resumes. All events go through the MPSC inject ring — Move sees them as
  * real cable-0 input, while the gate itself (which scans the HARDWARE
  * buffer) never sees its own injections. */
-static int select_entry_state = 0;       /* 0 idle, 1..5 injecting, 6 entered */
+static int select_entry_state = 0;       /* 0 idle, 1..5 gesture, 6..7 repaint nudge, 8 entered */
 static uint64_t select_entry_next_ms = 0;
 static int select_entry_attempts = 0;    /* gesture retries (Move settles late) */
 static int select_back_state = 0;        /* 0 idle, 1 down sent, 2 done */
@@ -6256,6 +6258,38 @@ static void shim_select_inject(uint8_t cin, uint8_t status, uint8_t d1, uint8_t 
     const uint8_t pkt[4] = { cin, status, d1, d2 };
     if (shadow_midi_inject_push(shadow_midi_inject_shm, pkt) != 0)
         shadow_log("select gate: inject ring full — gesture event dropped");
+}
+
+/* PRE-IOCTL: blank Move's LED writes during the mid-session entry window.
+ * Between the tool's suspend and the picker, Move sits in its previous mode
+ * and repaints the pads with its instrument UI — a visible flash the user
+ * never asked to see (reported on hardware 2026-08-06). While the entry
+ * machine is walking Move into the Set Overview, strip every cable-0 LED
+ * write (note LEDs, button CCs, RGB sysex) from the outgoing mailbox; the
+ * pads simply stay dark (the suspending tool cleared them). The strip ends
+ * the moment the machine leaves the gesture states, and the nudge that
+ * follows makes Move repaint — so an overview paint eaten by the strip can
+ * never leave a working-but-dark picker. */
+static void shim_select_blank_move_leds(void)
+{
+    if (!shadow_control || !shadow_control->select_phase) return;
+    if (select_boot_armed || shadow_control->overtake_mode) return;
+    if (select_launched) return;
+    if (select_entry_state == 0 || select_entry_state >= 6) return;
+    uint8_t *shadow = schwung_spi_get_shadow(g_spi_handle);
+    if (!shadow) return;
+    uint8_t *midi_out = shadow + MIDI_OUT_OFFSET;
+    for (int i = 0; i < HW_MIDI_OUT_SIZE; i += 4) {
+        uint8_t cable = (midi_out[i] >> 4) & 0x0F;
+        uint8_t cin = midi_out[i] & 0x0F;
+        uint8_t type = midi_out[i + 1] & 0xF0;
+        if (cable != 0) continue;
+        if (type == 0x90 || type == 0x80 || type == 0xB0 ||
+            (cin >= 0x04 && cin <= 0x07)) {
+            midi_out[i] = 0; midi_out[i + 1] = 0;
+            midi_out[i + 2] = 0; midi_out[i + 3] = 0;
+        }
+    }
 }
 
 static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
@@ -6292,7 +6326,7 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
      * is off, Move owns input again and the injected gesture lands natively.
      * D-Bus "Set Overview" (in_set_overview, shadow_dbus.c) confirms arrival;
      * a timeout claims the screen anyway rather than wedging the phase. */
-    if (!select_boot_armed && select_entry_state < 6 && !select_launched) {
+    if (!select_boot_armed && select_entry_state < 8 && !select_launched) {
         switch (select_entry_state) {
         /* Timings measured on hardware (2026-08-06): the first cut used a
          * 150 ms settle + 60-80 ms gesture spacing and Move IGNORED the
@@ -6301,6 +6335,11 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
          * latch. 500 ms settle + 250/120 ms spacing opens the overview
          * reliably; the whole entry is still under a second. */
         case 0:
+            /* Claim the OLED IMMEDIATELY: the select screen covers the whole
+             * transition, so Move's instrument UI never flashes on the
+             * display (the LED blanking above handles the pads). */
+            shadow_display_mode = 1;
+            shadow_control->display_mode = 1;
             select_entry_state = 1;
             select_entry_next_ms = now + 500;  /* let Move finish the overtake-exit mode change */
             break;
@@ -6334,16 +6373,15 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
             break;
         case 5:
             if (in_set_overview) {
-                shadow_log("select gate: Set Overview open — claiming OLED");
+                shadow_log("select gate: Set Overview open");
                 select_entry_state = 6;
-                shadow_display_mode = 1;
-                shadow_control->display_mode = 1;
+                select_entry_next_ms = now + 150;
             } else if (now >= select_entry_next_ms) {
                 /* Move can keep transitioning for SECONDS after a suspend
                  * (observed: mode/preset announcements 3 s in) and silently
                  * eats the combo while it does — so re-send the gesture with
                  * growing gaps instead of trusting one fixed settle. Only
-                 * after the retries are spent do we claim the screen anyway
+                 * after the retries are spent do we give up and move on
                  * (a wedged phase would be worse than an unpicker-ed one). */
                 if (select_entry_attempts < 3) {
                     select_entry_attempts++;
@@ -6351,11 +6389,28 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
                     select_entry_state = 1;
                     select_entry_next_ms = now + 700u * (uint32_t)select_entry_attempts;
                 } else {
-                    shadow_log("select gate: overview timeout — claiming OLED anyway");
+                    shadow_log("select gate: overview timeout — proceeding anyway");
                     select_entry_state = 6;
-                    shadow_display_mode = 1;
-                    shadow_control->display_mode = 1;
+                    select_entry_next_ms = now + 150;
                 }
+            }
+            break;
+        /* Repaint nudge: LED blanking may have eaten the overview's own
+         * initial pad paint (it races the D-Bus confirmation), so tap Shift
+         * once — Move repaints the current screen's pads on the release.
+         * Harmless in the overview (bare Shift is just an overlay). */
+        case 6:
+            if (now >= select_entry_next_ms) {
+                shim_select_inject(0x0B, 0xB0, CC_SHIFT, 127);
+                select_entry_state = 7;
+                select_entry_next_ms = now + 120;
+            }
+            break;
+        case 7:
+            if (now >= select_entry_next_ms) {
+                shim_select_inject(0x0B, 0xB0, CC_SHIFT, 0);
+                select_entry_state = 8;
+                shadow_log("select gate: entry complete");
             }
             break;
         }
