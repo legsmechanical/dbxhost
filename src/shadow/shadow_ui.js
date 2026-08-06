@@ -286,9 +286,21 @@ let originalHostGetParam = null;
 let originalHostSetParam = null;
 let paramShimsInstalled = false;
 
-const CONFIG_PATH = "/data/UserData/schwung/shadow_chain_config.json";
+/* Root for HOST STATE (set state, slot state, config files). Composed from
+ * the build's install dir — registered by js_host_register_common — NOT a
+ * literal: a secondary install (different SCHWUNG_INSTALL_DIR) is otherwise
+ * split-brained, its C side reading install-dir paths while this file writes
+ * the default install's tree, with no error either way (found on hardware
+ * 2026-08-06 as "slot settings don't stick"). Each install is a SEPARATE
+ * workspace: state never crosses installs. Deliberately shared across
+ * installs and therefore NOT under this root: modules, patches, presets
+ * (user content), and transient cross-host command files (open_tool_cmd). */
+const HOST_STATE_ROOT = (typeof HOST_INSTALL_DIR === "string" && HOST_INSTALL_DIR)
+    ? HOST_INSTALL_DIR : "/data/UserData/schwung";
+
+const CONFIG_PATH = HOST_STATE_ROOT + "/shadow_chain_config.json";
 const PATCH_DIR = "/data/UserData/schwung/patches";
-const SLOT_STATE_DIR_DEFAULT = "/data/UserData/schwung/slot_state";
+const SLOT_STATE_DIR_DEFAULT = HOST_STATE_ROOT + "/slot_state";
 let activeSlotStateDir = SLOT_STATE_DIR_DEFAULT;
 const AUTOSAVE_INTERVAL = 300;  /* ~10 seconds at 30fps */
 /* Overtake autosave: ticks of quiet before a dirty slot is written. Long enough
@@ -4243,7 +4255,7 @@ function saveChainConfigToDir(dir) {
  * existing set_state directories. Returns source dir path or null. */
 function detectCopySource(newUuid) {
     const SETS_DIR = "/data/UserData/UserLibrary/Sets";
-    const STATE_DIR = "/data/UserData/schwung/set_state";
+    const STATE_DIR = HOST_STATE_ROOT + "/set_state";
 
     /* Get new set's Song.abl size */
     function getSongAblSize(uuid) {
@@ -6494,7 +6506,7 @@ function saveMasterFxChainConfig(forceMasterBus) {
     }
     /* The shim persists the state, but we also save to shadow config */
     try {
-        const configPath = "/data/UserData/schwung/shadow_config.json";
+        const configPath = HOST_STATE_ROOT + "/shadow_config.json";
         let config = {};
         try {
             const content = host_read_file(configPath);
@@ -6658,7 +6670,7 @@ function saveMasterFxChainConfig(forceMasterBus) {
 /* Save auto-update setting to shadow config */
 function saveAutoUpdateConfig() {
     try {
-        const configPath = "/data/UserData/schwung/shadow_config.json";
+        const configPath = HOST_STATE_ROOT + "/shadow_config.json";
         let config = {};
         try {
             const content = host_read_file(configPath);
@@ -6674,7 +6686,7 @@ function saveAutoUpdateConfig() {
 /* Load auto-update setting from config */
 function loadAutoUpdateConfig() {
     try {
-        const configPath = "/data/UserData/schwung/shadow_config.json";
+        const configPath = HOST_STATE_ROOT + "/shadow_config.json";
         const content = host_read_file(configPath);
         if (!content) return;
         const config = JSON.parse(content);
@@ -6688,7 +6700,7 @@ function loadAutoUpdateConfig() {
 
 function saveBrowserPreviewConfig() {
     try {
-        const configPath = "/data/UserData/schwung/shadow_config.json";
+        const configPath = HOST_STATE_ROOT + "/shadow_config.json";
         let config = {};
         try {
             const content = host_read_file(configPath);
@@ -6701,7 +6713,7 @@ function saveBrowserPreviewConfig() {
 
 function loadBrowserPreviewConfig() {
     try {
-        const configPath = "/data/UserData/schwung/shadow_config.json";
+        const configPath = HOST_STATE_ROOT + "/shadow_config.json";
         const content = host_read_file(configPath);
         if (!content) return;
         const config = JSON.parse(content);
@@ -6713,7 +6725,7 @@ function loadBrowserPreviewConfig() {
 
 function saveFilebrowserConfig() {
     try {
-        const configPath = "/data/UserData/schwung/shadow_config.json";
+        const configPath = HOST_STATE_ROOT + "/shadow_config.json";
         let config = {};
         try {
             const content = host_read_file(configPath);
@@ -6726,7 +6738,7 @@ function saveFilebrowserConfig() {
 
 function loadFilebrowserConfig() {
     try {
-        const configPath = "/data/UserData/schwung/shadow_config.json";
+        const configPath = HOST_STATE_ROOT + "/shadow_config.json";
         const content = host_read_file(configPath);
         if (!content) return;
         const config = JSON.parse(content);
@@ -6745,7 +6757,7 @@ function loadFilebrowserConfig() {
 
 function savePadTypingConfig() {
     try {
-        const configPath = "/data/UserData/schwung/shadow_config.json";
+        const configPath = HOST_STATE_ROOT + "/shadow_config.json";
         let config = {};
         try {
             const content = host_read_file(configPath);
@@ -6758,7 +6770,7 @@ function savePadTypingConfig() {
 
 function loadPadTypingConfig() {
     try {
-        const configPath = "/data/UserData/schwung/shadow_config.json";
+        const configPath = HOST_STATE_ROOT + "/shadow_config.json";
         const content = host_read_file(configPath);
         if (!content) return;
         const config = JSON.parse(content);
@@ -6770,7 +6782,7 @@ function loadPadTypingConfig() {
 
 function saveTextPreviewConfig() {
     try {
-        const configPath = "/data/UserData/schwung/shadow_config.json";
+        const configPath = HOST_STATE_ROOT + "/shadow_config.json";
         let config = {};
         try {
             const content = host_read_file(configPath);
@@ -6800,7 +6812,7 @@ let _upgradeOverlayText = null; /* Web-initiated upgrade status for OLED display
  * Shared-memory settings are handled by the Go web server via mmap. */
 function syncJsOnlySettings() {
     try {
-        const configPath = "/data/UserData/schwung/shadow_config.json";
+        const configPath = HOST_STATE_ROOT + "/shadow_config.json";
         const content = host_read_file(configPath);
         if (!content) return;
         const c = JSON.parse(content);
@@ -6827,7 +6839,7 @@ function syncJsOnlySettings() {
 
 function loadTextPreviewConfig() {
     try {
-        const configPath = "/data/UserData/schwung/shadow_config.json";
+        const configPath = HOST_STATE_ROOT + "/shadow_config.json";
         const content = host_read_file(configPath);
         if (!content) return;
         const config = JSON.parse(content);
@@ -6843,7 +6855,7 @@ function loadTextPreviewConfig() {
  * syncs the JS-side masterFxConfig to reflect what the shim loaded. */
 function loadMasterFxChainFromConfig() {
     try {
-        const configPath = "/data/UserData/schwung/shadow_config.json";
+        const configPath = HOST_STATE_ROOT + "/shadow_config.json";
         const content = host_read_file(configPath);
         const config = content ? JSON.parse(content) : {};
 
@@ -15231,12 +15243,12 @@ globalThis.init = function() {
     /* Read active set UUID to point autosave at the correct per-set directory.
      * File format: line 1 = UUID, line 2 = set name */
     {
-        const raw = host_read_file("/data/UserData/schwung/active_set.txt");
+        const raw = host_read_file(HOST_STATE_ROOT + "/active_set.txt");
         if (raw) {
             const lines = raw.split("\n");
             const uuid = lines[0] ? lines[0].trim() : "";
             if (uuid) {
-                const setDir = "/data/UserData/schwung/set_state/" + uuid;
+                const setDir = HOST_STATE_ROOT + "/set_state/" + uuid;
                 if (host_file_exists(setDir + "/slot_0.json") || host_file_exists(setDir + "/shadow_chain_config.json")) {
                     activeSlotStateDir = setDir;
                     debugLog("Init: using per-set state dir " + setDir);
@@ -15733,16 +15745,16 @@ globalThis.tick = function() {
             const setName = activeSetLines[1] ? activeSetLines[1].trim() : "";
             /* Write active_set.txt for boot persistence (UI thread, not audio thread) */
             if (uuid) {
-                host_write_file("/data/UserData/schwung/active_set.txt", uuid + "\n" + setName);
+                host_write_file(HOST_STATE_ROOT + "/active_set.txt", uuid + "\n" + setName);
             }
 
             /* 3. Determine new directory */
             const newDir = uuid
-                ? "/data/UserData/schwung/set_state/" + uuid
+                ? HOST_STATE_ROOT + "/set_state/" + uuid
                 : SLOT_STATE_DIR_DEFAULT;
 
             if (uuid && typeof host_ensure_dir === "function") {
-                host_ensure_dir("/data/UserData/schwung/set_state");
+                host_ensure_dir(HOST_STATE_ROOT + "/set_state");
                 host_ensure_dir(newDir);
             }
 
@@ -15754,7 +15766,7 @@ globalThis.tick = function() {
                 /* Check for pre-existing copy_source.txt (from older shim) */
                 const copySourceUuid = host_read_file(newDir + "/copy_source.txt");
                 if (copySourceUuid && copySourceUuid.trim()) {
-                    const srcDir = "/data/UserData/schwung/set_state/" + copySourceUuid.trim();
+                    const srcDir = HOST_STATE_ROOT + "/set_state/" + copySourceUuid.trim();
                     if (host_file_exists(srcDir + "/slot_0.json")) {
                         copySourceDir = srcDir;
                     }

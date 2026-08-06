@@ -40,3 +40,26 @@ DBX_SHIM_SONAME=davebox-shim.so
 
 # The setuid-root helper that mirrors the shim into /usr/lib.
 DBX_HEAL_NAME=davebox-heal
+
+# ── Workspace separation (Josh's ruling, 2026-08-06) ────────────────────────
+# dAVEBOx SA is an ENTIRELY SEPARATE WORKSPACE from stock Schwung (and from
+# Move native). Host STATE never crosses installs. Concretely, inside $DBX_DIR:
+#
+#   DBX_SHARED_LINKS   must each be a symlink to the stock tree — CONTENT the
+#                      user installs or authors once and expects everywhere:
+#                      modules (code, ~354 MB saved), presets (module presets),
+#                      patches (chain patch library).
+#
+#   DBX_PRIVATE_STATE  must each be REAL (never a symlink) — this install's own
+#                      state: per-set state, the no-set slot workspace, the
+#                      active-set pointer and the two config files. The JS half
+#                      composes these from HOST_INSTALL_DIR (js_host_common.c)
+#                      and the C half from SCHWUNG_INSTALL_DIR, so both halves
+#                      agree; a symlink here would silently fuse the two
+#                      hosts' workspaces again.
+#
+# install-host.sh enforces both on every deploy (creates missing links,
+# converts a leftover link in the private list to a real dir/file). Pinned by
+# tests/host/test_workspace_separation.sh.
+DBX_SHARED_LINKS="modules presets patches"
+DBX_PRIVATE_STATE="set_state slot_state active_set.txt shadow_chain_config.json shadow_config.json"

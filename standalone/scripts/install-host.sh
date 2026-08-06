@@ -219,6 +219,47 @@ $SSH "set -eu
 "
 say "      payload in place"
 
+# --- workspace separation ---------------------------------------------------
+# dAVEBOx SA is a SEPARATE WORKSPACE from stock Schwung: host state never
+# crosses installs, while installed content (modules/presets/patches) is shared.
+# See the DBX_SHARED_LINKS / DBX_PRIVATE_STATE comment in config.sh. This step
+# enforces both shapes on every deploy — a name in the private list that is a
+# symlink would silently fuse the two hosts' workspaces again (the JS and C
+# halves both resolve it into the stock tree), and a shared name that became a
+# real directory silently un-shares the user's content.
+say ""; say "--- enforcing workspace separation (state private, content shared)"
+$SSH "set -eu
+  cd '$DBX_DIR'
+  STOCK=/data/UserData/schwung
+  TS=\$(date +%Y%m%d)
+  # Shared content: must be a link into the stock tree.
+  for name in $DBX_SHARED_LINKS; do
+    target=\"\$STOCK/\$name\"
+    if [ -L \"\$name\" ]; then
+      [ \"\$(readlink \"\$name\")\" = \"\$target\" ] && { echo \"      ok (shared): \$name\"; continue; }
+      rm \"\$name\"
+    elif [ -e \"\$name\" ]; then
+      mv \"\$name\" \"\$name.unshared-\$TS\"
+      echo \"      moved aside: \$name -> \$name.unshared-\$TS (was a real copy)\"
+    fi
+    ln -s \"\$target\" \"\$name\"
+    echo \"      linked (shared): \$name\"
+  done
+  # Private state: must be REAL. A leftover symlink is removed; if it resolved
+  # somewhere, that content is left untouched where it lives — this install
+  # starts its own copy rather than adopting the other workspace's state.
+  for name in $DBX_PRIVATE_STATE; do
+    if [ -L \"\$name\" ]; then
+      rm \"\$name\"
+      echo \"      un-linked (private): \$name\"
+    fi
+    case \"\$name\" in
+      *.*) : ;;                    # files appear on first write
+      *)   mkdir -p \"\$name\" ;;  # dirs must exist for the C side's loaders
+    esac
+  done
+"
+
 # ⚠ Prove the payload did not eat the setuid helper before relying on it. An
 # earlier version of this script replaced bin/ wholesale and deleted
 # davebox-heal; the failure then surfaced as a confusing "No such file" from the

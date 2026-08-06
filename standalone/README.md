@@ -117,6 +117,28 @@ without this a second install would silently load the *other* install's library
 code. See the `SCHWUNG_INSTALL_DIR` module-loader change on the `davebox-host`
 branch — it is a no-op for ordinary builds.
 
+## Workspace separation: state is PRIVATE, content is shared
+
+**This install is an entirely separate workspace from stock Schwung** (Josh,
+2026-08-06). Host state — per-set state, the no-set slot workspace, the
+active-set pointer, the config files — never crosses installs. What IS shared
+is installed/authored content: `modules` (code), `presets` and `patches`
+(user libraries). `config.sh` declares both lists (`DBX_PRIVATE_STATE`,
+`DBX_SHARED_LINKS`) and `install-host.sh` enforces the shapes on every deploy.
+
+The mechanism that makes separation actually work: the JS half of the host
+used to hardcode state paths under `/data/UserData/schwung`, while the C half
+composes `SCHWUNG_INSTALL_DIR "/..."` — so in this build the two halves of the
+*same host* read different files and nothing errored ("slot settings don't
+stick", diagnosed on hardware 2026-08-06). Now `js_host_common.c` registers
+the build's install dir as the JS global `HOST_INSTALL_DIR`, and
+`shadow_ui.js` composes every state path from it (`HOST_STATE_ROOT`). For the
+stock build that resolves to the historic literal — behaviour unchanged,
+upstream no-op.
+
+Pinned by `tests/host/test_workspace_separation.sh` — it also tripwires any
+new hardcoded stock-tree literal for a private state family in `shadow_ui.js`.
+
 ## Install
 
 ```sh

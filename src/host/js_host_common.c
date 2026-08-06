@@ -1050,6 +1050,15 @@ fail:
 void js_host_register_common(JSContext *ctx) {
     JSValue global_obj = JS_GetGlobalObject(ctx);
 
+    /* The build's install directory, as a plain string constant. JS that
+     * persists HOST STATE (set state, slot state, config) must compose paths
+     * from this rather than hardcoding the default install dir — a secondary
+     * install (a different SCHWUNG_INSTALL_DIR) is otherwise split-brained:
+     * its C side reads install-dir paths while its JS writes the default
+     * install's tree, and neither errors. For the default build this is
+     * exactly the historic literal, so behaviour is unchanged. */
+    JS_SetPropertyStr(ctx, global_obj, "HOST_INSTALL_DIR", JS_NewString(ctx, SCHWUNG_INSTALL_DIR));
+
     JS_SetPropertyStr(ctx, global_obj, "host_file_exists", JS_NewCFunction(ctx, js_host_file_exists, "host_file_exists", 1));
     JS_SetPropertyStr(ctx, global_obj, "host_read_file", JS_NewCFunction(ctx, js_host_read_file, "host_read_file", 1));
     JS_SetPropertyStr(ctx, global_obj, "host_read_file_base64", JS_NewCFunction(ctx, js_host_read_file_base64, "host_read_file_base64", 1));

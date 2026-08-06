@@ -263,7 +263,13 @@ export function openTextEntry({ title = '', initialText = '', onConfirm, onCance
     let effectivePadSelect = padSelectGlobal;
     if (!effectivePadSelect && padSelect === undefined) {
         try {
+            /* HOST_INSTALL_DIR first: shadow_config lives in THIS install's
+             * state tree (installs are separate workspaces). The historic
+             * literals stay as fallbacks for contexts without the global. */
             const cfgPaths = [
+                (typeof HOST_INSTALL_DIR === 'string' && HOST_INSTALL_DIR)
+                    ? HOST_INSTALL_DIR + '/shadow_config.json'
+                    : '/data/UserData/schwung/shadow_config.json',
                 '/data/UserData/schwung/shadow_config.json',
                 '/data/UserData/move-anything/shadow_config.json'
             ];
