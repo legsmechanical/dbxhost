@@ -307,25 +307,19 @@ const AUTOSAVE_INTERVAL = 300;  /* ~10 seconds at 30fps */
  * that a continuous knob sweep collapses into one save (flash write
  * amplification is the risk here, not CPU), short enough that a user who edits
  * and then walks away loses nothing. */
-/* ⚠ MID-SESSION AUTOSAVE IS OFF pending a diagnosis (2026-08-05).
+/* Mid-session autosave during overtake — RE-ENABLED 2026-08-06.
  *
- * Turned off, not deleted, because the mechanism is sound and only its
- * interaction with live editing is in question. What forced this: a slot value
- * the user changed did not reach the shim, and this autosave then wrote the
- * STALE value back to disk every few seconds — faithfully persisting the wrong
- * thing and, worse, overwriting the good saved state within seconds of a failed
- * restore. Every test cycle destroyed its own before-state, which is a large
- * part of why the underlying bug has been so hard to read.
- *
- * With this off the host is back to its long-standing behaviour: state is
- * flushed at TRANSITIONS (set change, shutdown, overtake entry/exit), which is
- * the code path that has always run and is not implicated.
- *
- * Note this does NOT revert slot:transpose persistence (it had never been
- * serialised by anything, an independent bug) nor the boot-scoped session
- * marker. Re-enable by flipping this to true once the write-loss question is
- * answered — the machinery below is unchanged and tested. */
-const OVERTAKE_AUTOSAVE_ENABLED = false;
+ * It was off pending a diagnosis (2026-08-05): a user's slot edit appeared not
+ * to reach the shim, and this autosave then re-persisted the STALE value every
+ * few seconds, destroying each test's before-state. The diagnosis is done and
+ * the autosave was never the defect — it was faithfully persisting what a
+ * SPLIT-BRAINED host handed it: state paths hardcoded to the default install
+ * tree in this file, install-dir-composed on the C side, so restores read one
+ * tree while saves wrote the other. Fixed by HOST_STATE_ROOT (composed from
+ * HOST_INSTALL_DIR); both halves now address the same files, verified on
+ * hardware 2026-08-06 (slot settings and a synth's delta state both survived
+ * a hard reboot and restored through the per-set loader). */
+const OVERTAKE_AUTOSAVE_ENABLED = true;
 const OVERTAKE_DIRTY_QUIET_TICKS = 90;  /* ~3 s */
 /* Wait before re-attempting a save that could not read the DSP's state because
  * the param mailbox was busy. Short enough to catch the next lull, long enough
