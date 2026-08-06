@@ -176,9 +176,11 @@ pads you already know:
   that same correctly-wired template, including ones born from an empty pad
   or a Copy.
 - **Back to the picker any time:** **Settings menu → Projects...** or
-  **Shift + Step 1**. Your work is saved first, Move restarts briefly, and
-  you are back on the pads — create, copy, delete, or open another project
-  without leaving dAVEBOx SA.
+  **Shift + Step 1** (the same gesture Move itself uses for its Set
+  Overview). Your work is saved first and you are back on the pads right
+  away — create, copy, delete, or open another project without leaving
+  dAVEBOx SA. Only a project that needs its wiring set up (a brand-new one
+  from an empty pad, or a copy made before dAVEBOx) adds a brief restart.
 
 > **Coming from an earlier dAVEBOx?** Work you made back when dAVEBOx used the
 > shared Move sets stays in those Move sets, visible from Move native and

@@ -1818,6 +1818,22 @@ export function _tickImpl() {
         invalidateLEDCache();
         clearAllLEDs();
         for (let _i = 0; _i < 4; _i++) setButtonLED(40 + _i, LED_OFF);
+        /* 'select' (back to the project picker): prefer the NO-RESTART path —
+         * arm the host's set-select gate and park ourselves (suspend_keeps_js).
+         * The shim walks Move into its native Set Overview (Move's own
+         * Shift+Step1 gesture, injected) and the selection RESUMES us; our
+         * resume edge sees the set-UUID change and reloads. Fork capability
+         * probe: shadow_select_arm exists only on a gate-aware davebox host —
+         * absence falls through to the project-cmd relaunch flavour below
+         * (which still fully works, just with ~6 dark seconds). */
+        if (_pcmd === 'select' &&
+                typeof shadow_select_arm === 'function' &&
+                typeof host_suspend_overtake === 'function' &&
+                standaloneSessionActive()) {
+            shadow_select_arm();
+            host_suspend_overtake();
+            return;
+        }
         if (standaloneSessionActive() && typeof host_system_cmd === 'function') {
             host_system_cmd('sh /data/UserData/dbx-host/scripts/project-cmd.sh ' + _pcmd);
             return;
