@@ -554,7 +554,8 @@ export function updateTrackLEDs() {
     if (S.sessionView && S.shiftHeld &&
         !(S.muteHeld || S.deleteHeld || S.copyHeld || S.loopHeld)) {
         for (let i = 0; i < 16; i++) {
-            const on = i === 1 || (i >= 4 && i <= 6) || i === 8; /* shared shortcuts only — Step3 (Edit Slot/Synth) is Track View only */
+            let on = i === 1 || (i >= 4 && i <= 6) || i === 8; /* shared shortcuts only — Step3 (Edit Slot/Synth) is Track View only */
+            if (i === 0 && _underDbxHost()) on = true; /* Step1 = project picker */
             setLED(16 + i, on ? LightGrey : LED_OFF);
         }
     }
