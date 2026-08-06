@@ -737,16 +737,19 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
         }
     }
     else if (strcmp(key, "load_file") == 0) {
-        /* Load patch from arbitrary file path (used for autosave restore) */
-        patch_info_t temp_patch;
-        memset(&temp_patch, 0, sizeof(temp_patch));
-        if (v2_parse_patch_file(inst, val, &temp_patch) == 0) {
-            v2_load_from_patch_info(inst, &temp_patch);
+        /* Load patch from arbitrary file path (used for autosave restore).
+         * Heap, not stack: patch_info_t carries the state-blob buffers
+         * (~180 KB since the caps were raised — see chain_internal.h), and
+         * this path can run on a caller-provided thread whose stack size we
+         * don't control. File I/O follows anyway, so one calloc is noise. */
+        patch_info_t *temp_patch = calloc(1, sizeof(*temp_patch));
+        if (temp_patch && v2_parse_patch_file(inst, val, temp_patch) == 0) {
+            v2_load_from_patch_info(inst, temp_patch);
             inst->current_patch = -1;  /* Not from library */
             /* Preserve channel settings for getter fallback (current_patch == -1) */
-            inst->loaded_receive_channel = temp_patch.receive_channel;
-            inst->loaded_forward_channel = temp_patch.forward_channel;
-            inst->midi_fx_pre_mode = temp_patch.midi_fx_pre_mode ? 1 : 0;
+            inst->loaded_receive_channel = temp_patch->receive_channel;
+            inst->loaded_forward_channel = temp_patch->forward_channel;
+            inst->midi_fx_pre_mode = temp_patch->midi_fx_pre_mode ? 1 : 0;
             /* Check for "modified" field to restore dirty state */
             FILE *mf = fopen(val, "r");
             if (mf) {
@@ -761,6 +764,7 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
                 fclose(mf);
             }
         }
+        free(temp_patch);
     }
     else if (strcmp(key, "clear") == 0) {
         /* Clear all DSP (synth + FX) without loading anything new.

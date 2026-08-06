@@ -1035,6 +1035,24 @@ int load_move_preset_json(int index, char *buf, int buf_len) {
 /* ========== End Move FX Preset Functions ========== */
 
 /* V2 parse patch file - simplified version */
+/* Cap check for a state blob about to be copied. Returns 1 when it fits.
+ * A blob over the cap is dropped WHOLE — truncated JSON would restore half a
+ * config — but never silently: a silent drop presents as "the module forgot
+ * its settings", and the next autosave then overwrites the good file with
+ * defaults, destroying the evidence (hardware, 2026-08-06 — a pretty-printed
+ * synth state measured 18.7 KB against the old 16 KB cap). Logged through
+ * v2_chain_log, NOT the flag-gated parse_debug_log: data loss must be visible
+ * without a debug flag armed. */
+static int state_fits(chain_instance_t *inst, const char *kind, int len, int cap) {
+    if (len < cap) return 1;
+    char msg[160];
+    snprintf(msg, sizeof(msg),
+             "chain: %s state DROPPED — %d bytes as written >= cap %d; "
+             "module will restore at defaults", kind, len, cap);
+    v2_chain_log(inst, msg);
+    return 0;
+}
+
 int v2_parse_patch_file(chain_instance_t *inst, const char *path, patch_info_t *patch) {
     (void)inst;
 
@@ -1106,7 +1124,7 @@ int v2_parse_patch_file(chain_instance_t *inst, const char *path, patch_info_t *
                         }
                         if (*end && depth == 0) {
                             int len = end - sv + 1;
-                            if (len > 0 && len < MAX_SYNTH_STATE_LEN) {
+                            if (len > 0 && state_fits(inst, "synth", len, MAX_SYNTH_STATE_LEN)) {
                                 strncpy(patch->synth_state, sv, len);
                                 patch->synth_state[len] = '\0';
                             }
@@ -1121,7 +1139,7 @@ int v2_parse_patch_file(chain_instance_t *inst, const char *path, patch_info_t *
                         }
                         if (*str_end == '"') {
                             int len = str_end - str_start;
-                            if (len > 0 && len < MAX_SYNTH_STATE_LEN) {
+                            if (len > 0 && state_fits(inst, "synth", len, MAX_SYNTH_STATE_LEN)) {
                                 strncpy(patch->synth_state, str_start, len);
                                 patch->synth_state[len] = '\0';
                             }
@@ -1239,7 +1257,7 @@ int v2_parse_patch_file(chain_instance_t *inst, const char *path, patch_info_t *
                                     }
                                     if (sdepth == 0) {
                                         int slen = se - state_start + 1;
-                                        if (slen > 0 && slen < MAX_FX_STATE_LEN) {
+                                        if (slen > 0 && state_fits(inst, "audio_fx", slen, MAX_FX_STATE_LEN)) {
                                             strncpy(cfg->state, state_start, slen);
                                             cfg->state[slen] = '\0';
                                             parse_debug_log("[parse] Extracted audio_fx state object");
@@ -1255,7 +1273,7 @@ int v2_parse_patch_file(chain_instance_t *inst, const char *path, patch_info_t *
                                     }
                                     if (*str_end == '"') {
                                         int slen = str_end - str_start;
-                                        if (slen > 0 && slen < MAX_FX_STATE_LEN) {
+                                        if (slen > 0 && state_fits(inst, "audio_fx", slen, MAX_FX_STATE_LEN)) {
                                             strncpy(cfg->state, str_start, slen);
                                             cfg->state[slen] = '\0';
                                             parse_debug_log("[parse] Extracted audio_fx state string");
@@ -1470,7 +1488,7 @@ int v2_parse_patch_file(chain_instance_t *inst, const char *path, patch_info_t *
                                         }
                                         if (sdepth == 0) {
                                             int slen = se - state_start + 1;
-                                            if (slen > 0 && slen < MAX_FX_STATE_LEN) {
+                                            if (slen > 0 && state_fits(inst, "midi_fx", slen, MAX_FX_STATE_LEN)) {
                                                 strncpy(cfg->state, state_start, slen);
                                                 cfg->state[slen] = '\0';
                                                 parse_debug_log("[parse] Extracted midi_fx state object");

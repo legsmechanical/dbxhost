@@ -38,6 +38,13 @@
 #include "../../../host/shadow_constants.h"
 
 /* Limits */
+/* ⚠ patches[MAX_PATCHES] embeds a full patch_info_t per library patch, and
+ * patch_info_t carries the state-blob buffers (MAX_SYNTH_STATE_LEN +
+ * (MAX_AUDIO_FX+MAX_MIDI_FX)*MAX_FX_STATE_LEN ≈ 160 KB) — so this array is
+ * ~5 MB per chain instance, ~20 MB across four slots. Accepted deliberately:
+ * the alternative (per-blob heap indirection) touches every copy/reset site,
+ * and the platform has RAM to spare. Revisit the layout before raising
+ * MAX_PATCHES or the state caps further. */
 #define MAX_PATCHES 32      /* Max patches to list in browser */
 #define MAX_AUDIO_FX 4      /* Max FX loaded per active chain */
 #define MAX_MIDI_FX 2       /* Max native MIDI FX modules per chain */
@@ -155,7 +162,22 @@ typedef struct {
 } midi_fx_param_t;
 
 /* State storage size for FX plugins */
-#define MAX_FX_STATE_LEN 8192
+/* State-blob capacity. ⚠ The parser DROPS a state object wholesale when it
+ * exceeds the cap — it never truncates (a truncated JSON blob would be worse:
+ * the module would parse a prefix and restore half a config). So the cap must
+ * comfortably exceed the largest state a module actually emits AS WRITTEN in
+ * the file: the host's autosave pretty-prints, which inflates a state object
+ * by ~1.6x over its compact form. A 32-voice module's ~11.5 KB compact state
+ * arrived here as 18.7 KB on disk and was silently dropped by the old 16 KB
+ * synth cap — the module then booted at defaults and the next autosave
+ * overwrote the good file, destroying the evidence (hardware, 2026-08-06).
+ *
+ * The synth cap matches the 64 KB param-value transport (shadow_param_t
+ * value[65536]) — nothing larger can round-trip through get_param("state")
+ * anyway. Memory cost is bounded by patches[MAX_PATCHES] per instance and was
+ * accepted deliberately; see the comment at MAX_PATCHES. Every drop is logged
+ * unconditionally — see chain_patch.c. */
+#define MAX_FX_STATE_LEN 16384
 
 
 /* MIDI FX configuration (module + params + state) */
@@ -175,7 +197,7 @@ typedef struct {
 } audio_fx_config_t;
 
 /* Synth state storage size - Surge XT needs ~8KB+ when pretty-printed with indent */
-#define MAX_SYNTH_STATE_LEN 16384
+#define MAX_SYNTH_STATE_LEN 65536
 
 /* LFO types, shapes, divisions, and waveform computation from lfo_common.h */
 
