@@ -6215,7 +6215,13 @@ static void shim_remap_cable2_channels(uint8_t *shadow) {
 #define SELECT_SETTLE_MS        700   /* pad tap -> launch trigger, if quiet   */
 #define SELECT_FLOW_LONG_MS    8000   /* flow window from an opening dbus text */
 #define SELECT_FLOW_SHORT_MS    600   /* flow tail after a completion text     */
-#define SELECT_RECLAIM_MS       400   /* OLED reclaim settle after a flow ends */
+/* OLED reclaim is IMMEDIATE when a flow ends. A settle here (originally
+ * 400 ms) let Move's completion toast linger — but the flow windows already
+ * provide that (copy holds a 600 ms tail after "pasted", and delete's toast
+ * shows while the button is still held), so the only thing the settle
+ * actually displayed was Move's DEFAULT screen flashing through between an
+ * aborted delete and our reclaim (reported on hardware 2026-08-06). */
+#define SELECT_RECLAIM_MS       0
 
 static volatile uint64_t select_flow_copy_until_ms = 0;  /* dbus thread writes, SPI thread reads */
 static uint32_t select_pad_suppress_mask = 0;       /* Shift+pad latched suppressions */
