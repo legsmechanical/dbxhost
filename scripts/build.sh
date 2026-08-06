@@ -787,6 +787,10 @@ if [ -d ./standalone ]; then
     cp ./standalone/scripts/set-swap.sh ./build/scripts/
     chmod +x ./build/scripts/quiesce-stock.sh ./build/scripts/exit-to-stock.sh \
              ./build/scripts/set-swap.sh
+    # The template project every standalone workspace seeds from (correctly
+    # wired at birth — see the generator's header). Generated, not checked in,
+    # so the pristine fixture stays the single source.
+    python3 ./standalone/scripts/make-template.py
     cp ./standalone/scripts/install-privileged.sh ./build/bless.sh
     chmod +x ./build/bless.sh
 fi
