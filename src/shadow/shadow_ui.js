@@ -14589,8 +14589,10 @@ function enterSelectPhaseView() {
     selectPhase.setChangeSeen = false;
     selectPhase.setWaitTicks = 0;
     selectPhase.hookWaitTicks = 0;
-    selectPhase.headless = (typeof shadow_select_headless === "function") &&
-                           !!shadow_select_headless();
+    const _hpad = (typeof shadow_select_headless === "function")
+        ? shadow_select_headless() : -1;
+    selectPhase.headless = _hpad >= 0;
+    if (_hpad >= 0) selectPhase.lastPad = _hpad;   /* name the TARGET from frame one */
     view = VIEWS.SELECT_PHASE;
     selectRefreshList();
     if (!selectPhase.headless) {

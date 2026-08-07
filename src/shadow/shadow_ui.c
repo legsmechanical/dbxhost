@@ -2274,9 +2274,10 @@ static JSValue js_shadow_select_get_launch(JSContext *ctx, JSValueConst this_val
 }
 
 /* Process-local headless marker: the JS side (same process) needs to know an
- * arming is an ACTUATOR run (no picker screen, just "Loading...") without
- * racing the shim's consumption of ctrl->select_queue. */
-static int select_armed_headless = 0;
+ * arming is an ACTUATOR run (no picker screen, just "Loading...") — and
+ * WHICH pad — without racing the shim's consumption of ctrl->select_queue.
+ * -1 = not a headless arming. */
+static int select_armed_headless = -1;
 
 static JSValue js_shadow_select_phase_end(JSContext *ctx, JSValueConst this_val,
                                           int argc, JSValueConst *argv) {
@@ -2286,7 +2287,7 @@ static JSValue js_shadow_select_phase_end(JSContext *ctx, JSValueConst this_val,
         shadow_control->select_launch = SELECT_LAUNCH_NONE;
         shadow_control->select_queue = -1;
     }
-    select_armed_headless = 0;
+    select_armed_headless = -1;
     unlink(SCHWUNG_INSTALL_DIR "/select_phase");
     shadow_ui_log_line("shadow_ui: select phase ended");
     return JS_UNDEFINED;
@@ -2317,16 +2318,18 @@ static JSValue js_shadow_select_arm(JSContext *ctx, JSValueConst this_val,
         shadow_control->select_launch = SELECT_LAUNCH_NONE;
         shadow_control->select_ready = 0;   /* entry machine raises it */
         shadow_control->select_queue = (pad >= 0 && pad <= 31) ? (int8_t)pad : -1;
-        select_armed_headless = (pad >= 0 && pad <= 31);
+        select_armed_headless = (pad >= 0 && pad <= 31) ? pad : -1;
         shadow_control->select_phase = 1;
     }
-    shadow_ui_log_line(select_armed_headless
+    shadow_ui_log_line(select_armed_headless >= 0
                        ? "shadow_ui: select phase armed HEADLESS"
                        : "shadow_ui: select phase armed mid-session");
     return JS_UNDEFINED;
 }
 
-/* shadow_select_headless() -> 1 while the current arming is an actuator run */
+/* shadow_select_headless() -> the armed pad (0-31) while the current arming
+ * is an actuator run, else -1. The pad lets the loading screen name the
+ * TARGET project from the first frame. */
 static JSValue js_shadow_select_headless(JSContext *ctx, JSValueConst this_val,
                                          int argc, JSValueConst *argv) {
     (void)this_val; (void)argc; (void)argv;
