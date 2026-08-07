@@ -8,6 +8,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **The whole session reads as dAVEBOx now.** Launching dAVEBOx SA opens on
+  the dAVEBOx artwork (with a small "Schwung base: x.x.x" note so you can
+  always see which Schwung it's built on), the sequencer no longer plays a
+  second splash of its own, and the loading screen names what's coming —
+  "Loading Project 2" instead of a bare "Loading...".
 - **dAVEBOx SA now has its own project workspace — your Move sets are never
   touched.** Launching a session sets your Move sets aside untouched and brings
   dAVEBOx's own projects in; leaving (or simply rebooting, even after a power

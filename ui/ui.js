@@ -32,6 +32,7 @@ import {
 } from './ui_constants.mjs';
 
 import { S } from './ui_state.mjs';
+import { engineUnderDaveboxHost } from './ui_engine.mjs';
 import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
 import { showActionPopup, readActiveSet, maybeShowInheritPicker, uuidToStatePath } from './ui_persistence.mjs';
 import {
@@ -180,6 +181,13 @@ globalThis.init = function () {
     const dspSurvived = (p !== null && p !== undefined);
 
     console.log('SEQ8 init: ' + (p === '1' ? 'RESUMED playing' : 'FRESH/stopped'));
+
+    /* No second splash under the davebox host: the SESSION already opened
+     * with the dAVEBOx-branded launcher splash (dbxhost splash.hex contract)
+     * and the host's "Loading <project>" screen — playing our own boot splash
+     * again reads as two products. Under stock Schwung (legacy tool) the boot
+     * splash stays. State loads (S.stateLoading) still show the artwork. */
+    if (engineUnderDaveboxHost()) S.bootSplashTicks = 0;
 
     /* Detect set mismatch: compare active_set.txt UUID with what the DSP currently has loaded.
      * Works regardless of JS context lifetime — no cross-init state needed.
