@@ -544,6 +544,9 @@ export const S = {
      * touchedIdx, copySrcIdx, deleteIdx }. Copy/Delete are hold-modifier
      * two-step flows under OUR semantics (release cancels). */
     projectPadPicker: null,
+    /* Fresh-session boot: open the picker over the boot project once loading
+     * settles (armed in init() from the launcher fresh_session marker). */
+    pendingOpenProjectPicker: false,
     /* Armed by the pad picker; drained in tick() one tick AFTER the deferred
      * save fires. Preferred path: shadow_select_arm(k) + suspend (the host
      * gate as a headless actuator, ~2 s, resume + set reload). Fallback on a

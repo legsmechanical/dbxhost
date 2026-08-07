@@ -182,6 +182,21 @@ globalThis.init = function () {
 
     console.log('SEQ8 init: ' + (p === '1' ? 'RESUMED playing' : 'FRESH/stopped'));
 
+    /* Fresh session (launched from stock, not an in-session relaunch): open
+     * the project picker over the boot project so the user CHOOSES before
+     * playing — the launcher arms fresh_session at entry and its relaunch
+     * branch removes it, so switches and rewires never re-ask. Consumed by
+     * blanking the file; deferred to tick() until loading settles. */
+    if (engineUnderDaveboxHost() &&
+            typeof host_read_file === 'function' &&
+            typeof host_write_file === 'function') {
+        const _fs = host_read_file('/data/UserData/dbx-host/fresh_session');
+        if (_fs && _fs.length) {
+            host_write_file('/data/UserData/dbx-host/fresh_session', '');
+            S.pendingOpenProjectPicker = true;
+        }
+    }
+
     /* No second splash under the davebox host: the SESSION already opened
      * with the dAVEBOx-branded launcher splash (dbxhost splash.hex contract)
      * and the host's "Loading <project>" screen — playing our own boot splash
