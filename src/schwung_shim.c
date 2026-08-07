@@ -6351,7 +6351,11 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
         select_queued_pad = -1;
         select_replay_state = 0;
         select_headless = 0;
-        shadow_control->select_queue = -1;
+        /* NOT cleared here: ctrl->select_queue. It is an input MAILBOX the
+         * armer writes BEFORE raising select_phase — clearing it on every
+         * phase-down frame wiped the queue in the gap between the two writes
+         * (observed: headless arm degraded to an interactive phase). It is
+         * consumed at arm (case 0) and cleared by shadow_select_phase_end. */
         select_reclaim_deadline_ms = 0;
         select_boot_armed = 0;   /* any later arming is mid-session */
         return;
