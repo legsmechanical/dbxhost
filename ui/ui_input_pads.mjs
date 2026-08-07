@@ -24,6 +24,7 @@ import { effectiveClip, invalidateLEDCache, forceRedraw, sendPerfMods,
     PERF_MOD_PAD_MAP } from './ui_leds.mjs';
 import { exitSchwungCoRun, exitMoveNativeCoRun } from './ui_corun.mjs';
 import { openGlobalMenu } from './ui_menu.mjs';
+import { openProjectPadPicker, projectPadPickerTap } from './ui_dialogs.mjs';
 import { engineUnderDaveboxHost } from './ui_engine.mjs';
 import { applyBankParam, applyTrackConfig, readBankParams,
     refreshPerClipBankParams, refreshDrumLaneBankParams, refreshSeqNotesIfCurrent,
@@ -598,6 +599,11 @@ function _onPadPressTrackView(status, d1, d2) {
 
 export function _onPadPress(status, d1, d2) {
         if (S.mergeNoticePending) return;   /* Live Merge notice is modal (Rec/Back only) */
+        /* PROJECTS pad picker is modal: pads are project slots. */
+        if (S.projectPadPicker && d1 >= 68 && d1 <= 99) {
+            if ((status & 0xF0) === 0x90 && d2 > 0) projectPadPickerTap(d1 - 68);
+            return;
+        }
         /* Move-native co-run + drum-mode active track: inject a PLAIN pad-on
          * (cable-0, no Shift) so Move firmware both plays the drum AND focuses
          * that cell for editing — a plain tap selects on Move. dAVEBOx then
@@ -976,11 +982,7 @@ function _doShiftStepCommon(idx) {
          * save-then-drain sequencing as the menu's Projects... entry. Only
          * meaningful under the davebox host; elsewhere it is inert (and the
          * shift-overlay LED hint stays dark). */
-        if (engineUnderDaveboxHost()) {
-            saveState();
-            S.pendingProjectCmd = 'select';
-            showActionPopup('OPENING', 'PROJECTS');
-        }
+        if (engineUnderDaveboxHost()) openProjectPadPicker();
     }
     else if (idx === 1) _jumpToMenuLabel('Global');
     /* Shift+Step3 (idx 2) was the second door into "edit this track's sound".
@@ -1560,6 +1562,7 @@ export function _onStepButtons(d1, d2) {
 }
 
 export function _onPadRelease(status, d1, d2) {
+    if (S.projectPadPicker && d1 >= 68 && d1 <= 99) return;
     if (S.mergeNoticePending) return;   /* Live Merge notice is modal (Rec/Back only) */
     if (S.tapTempoOpen && d1 >= 68 && d1 <= 99) return;
     /* Co-run drum hold release: if the hold-threshold inject fired, send note-off

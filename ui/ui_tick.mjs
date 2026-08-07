@@ -29,7 +29,7 @@ import { S } from './ui_state.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
 import { saveState, showActionPopup, uuidToStatePath, readActiveSet, loadNameIndex, saveNameIndex,
     commitSnapshot, updateNameIndex, maybeShowInheritPicker } from './ui_persistence.mjs';
-import { showMenuInfo } from './ui_dialogs.mjs';
+import { showMenuInfo , projectPadPickerModifiers } from './ui_dialogs.mjs';
 import { sceneAllQueued, updateSceneMapLEDs } from './ui_scene.mjs';
 import { _padDispatchMutedNow, computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
     syncDrumClipContent } from './ui_drummodel.mjs';
@@ -530,6 +530,9 @@ export function _tickImpl() {
             }
         }
     }
+
+    /* PROJECTS pad picker: modifier releases cancel its two-step flows. */
+    if (S.projectPadPicker) projectPadPickerModifiers();
 
     /* Metro note-off */
     if (S.metroNoteOffTick >= 0 && S.tickCount >= S.metroNoteOffTick) {
@@ -1833,6 +1836,30 @@ export function _tickImpl() {
             }
         }
         if (typeof host_exit_module === 'function') host_exit_module();
+    } else if (S.pendingProjectSwitch !== null) {
+        /* Pad-picker project switch, one tick after the deferred save. The
+         * host gate runs as a HEADLESS ACTUATOR: arm with the pad pre-queued,
+         * park ourselves; the shim walks Move through its overview behind
+         * the "Loading" screen and the selection RESUMES us (set-UUID reload
+         * = the switch). Gate-less host: relaunch flavour via project-cmd. */
+        const _psw = S.pendingProjectSwitch;
+        S.pendingProjectSwitch = null;
+        removeFlagsWrap();
+        S.ledInitComplete = false;
+        invalidateLEDCache();
+        clearAllLEDs();
+        for (let _i = 0; _i < 4; _i++) setButtonLED(40 + _i, LED_OFF);
+        if (typeof shadow_select_arm === 'function' &&
+                typeof host_suspend_overtake === 'function' &&
+                standaloneSessionActive()) {
+            shadow_select_arm(_psw);
+            host_suspend_overtake();
+            return;
+        }
+        if (standaloneSessionActive() && typeof host_system_cmd === 'function') {
+            host_system_cmd('sh /data/UserData/dbx-host/scripts/project-cmd.sh switch ' + _psw);
+            return;
+        }
     } else if (S.pendingProjectCmd) {
         /* Project switch/create: Move restarts IN PLACE (the launcher's
          * supervisor loop) and this module dies with it — same shape as the

@@ -35,7 +35,8 @@ import { saveState, writeSidecar, doClearSession, showActionPopup,
 import {
     openSaveSnapshot, closeSnapshotPicker,
     snapshotPickerRotate, snapshotPickerClick, openClearAutoMenu,
-    clearAutoMenuRotate, clearAutoMenuClick, showMenuInfo, closeConvertConfirm, resolveInheritPicker
+    clearAutoMenuRotate, clearAutoMenuClick, showMenuInfo, closeConvertConfirm, resolveInheritPicker,
+    closeProjectPadPicker, projectPadPickerModifiers
 } from './ui_dialogs.mjs';
 import { trackClipHasContent, sessionHasAnyContent } from './ui_scene.mjs';
 import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
@@ -1558,6 +1559,7 @@ function _backTap() {
     if (S.confirmStateWipe || S.pendingInheritPicker) return;
 
     /* 1. Transient dialogs / pickers / modes (one open at a time). */
+    if (S.projectPadPicker) { closeProjectPadPicker(); return; }
     if (S.snapshotPicker) {
         if (S.snapshotPicker.confirm) S.snapshotPicker.confirm = null;
         else closeSnapshotPicker();

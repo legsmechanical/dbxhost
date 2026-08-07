@@ -540,12 +540,21 @@ export const S = {
      * confirm } where confirm is null or { kind:'load'|'overwrite'|'wipe',
      * sel:1(=No default), targetId, wipeIds }. */
     snapshotPicker: null,
-    /* Programmatic project switch/create (the jog picker that used to arm
-     * this is retired — the native set picker is the project picker now, via
-     * the host's boot set-select gate). Drained in tick() one tick AFTER the
-     * deferred save fires (else-if chain) — the command restarts Move in
-     * place, tearing this module down with it. Holds the project-cmd.sh verb
-     * string ('switch N' / 'new "Name"'). */
+    /* PROJECTS pad picker (v3): dAVEBOx draws the picker itself — 32 pads =
+     * 32 project slots (pad k ↔ user.song-index k, same mapping the host
+     * actuator replays). null = closed; else { projects, byIndex, current,
+     * touchedIdx, copySrcIdx, deleteIdx }. Copy/Delete are hold-modifier
+     * two-step flows under OUR semantics (release cancels). */
+    projectPadPicker: null,
+    /* Armed by the pad picker; drained in tick() one tick AFTER the deferred
+     * save fires. Preferred path: shadow_select_arm(k) + suspend (the host
+     * gate as a headless actuator, ~2 s, resume + set reload). Fallback on a
+     * gate-less host: project-cmd.sh switch (relaunch flavour). */
+    pendingProjectSwitch: null,
+    /* Programmatic project verb (legacy/fallback path). Drained in tick()
+     * one tick AFTER the deferred save fires (else-if chain) — the command
+     * restarts Move in place, tearing this module down with it. Holds the
+     * project-cmd.sh verb string ('switch N' / 'new "Name"'). */
     pendingProjectCmd: null,
     /* CLEAR AUTOMATION modal (Delete-tap on the AUTO bank). null = closed; else
      * { sel, at, cc } — sel 0..3 (AT/PB/CC/CLEAR), at/cc = checked-to-clear. */

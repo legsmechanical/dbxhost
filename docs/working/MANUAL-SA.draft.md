@@ -148,9 +148,8 @@ Open Schwung's tool menu — **Shift + Step 13** (the star) — and choose
 **dAVEBOx SA**.
 
 The screen goes dark for a few seconds. Move is restarting under the dAVEBOx build
-of the host, and when it comes back you land on the **project picker** — Move's
-own set-picker pads, showing your dAVEBOx projects. That pause is the whole
-startup; nothing has gone wrong.
+of the host, and when it comes back you are **already in the sequencer**, on the
+project you last had open. That pause is the whole startup; nothing has gone wrong.
 
 ### Projects — dAVEBOx has its own workspace
 
@@ -160,32 +159,23 @@ untouched, and brings the projects in; leaving puts everything back exactly as
 it was. Move native and official Schwung never see the projects, and dAVEBOx
 never sees — or changes — your Move sets.
 
-**Picking a project** happens right at launch, on Move's own set picker — the
-pads you already know:
+**The project picker** opens with **Settings menu → Projects...** or
+**Shift + Step 1**, from anywhere. The pads become your project shelf — one
+pad per project, 32 slots:
 
-- **Tap a pad** to open that project in dAVEBOx.
-- **Tap an empty pad** for a new project — it is wired up for dAVEBOx
-  automatically before the sequencer opens (Move restarts once more, briefly).
-- **Click the jog wheel** to jump back into the project you had open last.
-- **Copy and Delete work exactly as on Move**: hold Copy and tap a project to
-  copy it (tap a destination pad to paste), hold Delete and tap twice to
-  delete. The dAVEBOx screen steps aside while Move shows its own prompts.
-- The first launch creates **Project 1** for you, already wired the way
-  dAVEBOx needs (instrument tracks listening on channels 1–4, MIDI out off) —
-  wiring you never have to set up or think about. Every project starts from
-  that same correctly-wired template, including ones born from an empty pad
-  or a Copy.
-- **Back to the picker any time:** **Settings menu → Projects...** or
-  **Shift + Step 1** (the same gesture Move itself uses for its Set
-  Overview). Your work is saved first and you are back on the pads right
-  away — create, copy, delete, or open another project without leaving
-  dAVEBOx SA. Only a project that needs its wiring set up (a brand-new one
-  from an empty pad, or a copy made before dAVEBOx) adds a brief restart.
-- **On the picker, only the picker works** — pads, the jog wheel, Copy,
-  Delete, and the volume knob. Everything else is switched off (and its
-  lights stay dark) so nothing can wander the device off the project list.
-  **Shift + Back** from the picker leaves dAVEBOx SA and returns to official
-  Schwung, same as from inside the sequencer.
+- **Blue pads** are projects; the **pulsing pad** is the one that's open.
+  Touch a pad and its name shows on the screen.
+- **Tap a project** to open it (a moment of "Loading...", then you're in).
+- **Tap an empty pad** for a new project — born already wired the way dAVEBOx
+  needs (instrument tracks on channels 1–4, MIDI out off), from the same
+  template as Project 1 on first launch.
+- **Copy:** hold Copy, tap the project, then tap an empty pad. Release
+  cancels.
+- **Delete:** hold Delete, tap the project, tap it again to confirm (it
+  blinks red in between). Release cancels. The open project can't be
+  deleted — switch away first.
+- **Back** closes the picker; **Shift + Back** leaves dAVEBOx SA entirely,
+  as always.
 
 > **Coming from an earlier dAVEBOx?** Work you made back when dAVEBOx used the
 > shared Move sets stays in those Move sets, visible from Move native and

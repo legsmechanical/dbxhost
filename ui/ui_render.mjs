@@ -27,7 +27,8 @@ import {
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
     drawLgtoConfirm, drawBakeConfirm, drawInheritPicker, drawSnapshotPicker,
-    drawClearAutoMenu, drawBakeSceneConfirm, drawXposeConfirm, drawBpmLine
+    drawClearAutoMenu, drawBakeSceneConfirm, drawXposeConfirm, drawBpmLine,
+    drawProjectPadPicker
 } from './ui_dialogs.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
 import { bankCyclePos } from './ui_pure.mjs';
@@ -712,6 +713,7 @@ export function drawUI() {
     if (S.sessionOverlayHeld) { drawSessionOverview(); return; }
     if (S.pendingInheritPicker) { drawInheritPicker(); return; }
     if (S.snapshotPicker) { drawSnapshotPicker(); return; }
+    if (S.projectPadPicker) { drawProjectPadPicker(); return; }
     if (S.clearAutoMenu) { drawClearAutoMenu(); return; }
     if (S.pendingSceneBakePicker) {
         clear_screen();

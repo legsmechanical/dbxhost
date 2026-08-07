@@ -27,7 +27,7 @@ import {
 
 import { S } from './ui_state.mjs';
 import { saveState, writeSidecar, showActionPopup, loadSnapshotManifest } from './ui_persistence.mjs';
-import { openLoadSnapshot } from './ui_dialogs.mjs';
+import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw } from './ui_leds.mjs';
 import { openSchwungSlotEditor, exitSchwungCoRun, enterMoveNativeCoRun, exitMoveNativeCoRun } from './ui_corun.mjs';
@@ -299,10 +299,8 @@ function buildGlobalMenuItems() {
          * and project-cmd.sh exist only there; buildGlobalMenuItems re-runs
          * each open, so the gate is live. */
         engineUnderDaveboxHost() ? createAction('Projects...', function() {
-            saveState();
-            S.pendingProjectCmd = 'select';
-            S.globalMenuOpen = false;
-            showActionPopup('OPENING', 'PROJECTS');
+            /* Opens dAVEBOx own pad picker (v3) — closes the menu itself. */
+            openProjectPadPicker();
         }) : null,
         createAction('Clear Sess', function() {
             S.confirmClearSession = true;

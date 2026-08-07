@@ -695,12 +695,169 @@ export function resolveInheritPicker(action) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Projects: the jog picker that lived here (built + retired the same  */
-/* day, 2026-08-06) is GONE — the native Move set picker is the        */
-/* project picker now, held open at session boot by the host's         */
-/* set-select gate (dbxhost standalone/README.md). The programmatic    */
-/* switch/new path survives as S.pendingProjectCmd -> project-cmd.sh   */
-/* in tick(). Lesson kept from the picker's one device freeze: module  */
-/* input dead + host input alive = a repeated JS exception in an input */
-/* handler, and NOTHING logs it — wrap new modal entry points.         */
+/* PROJECTS pad picker (v3, 2026-08-07). History: a jog picker lived   */
+/* here (built + retired 08-06 for the native-picker model), then the  */
+/* native Move picker turned out to be an unownable USER surface (the  */
+/* seams: gesture injection, mode fighting, invisible scroll state) — */
+/* so the picker came home: dAVEBOx draws it, on the pads, and the     */
+/* host gate survives only as a headless switch actuator. Lesson kept  */
+/* from the jog picker's one device freeze: module input dead + host   */
+/* input alive = a repeated JS exception in an input handler, and      */
+/* NOTHING logs it — every entry point here is wrapped (_pppGuard).    */
 /* ------------------------------------------------------------------ */
+
+const PROJECT_CMD = '/data/UserData/dbx-host/scripts/project-cmd.sh';
+const PROJECTS_JSON = '/data/UserData/dbx-host/projects.json';
+
+function _pppRunList() {
+    /* host_system_cmd blocks (system()), so the refreshed list is readable
+     * immediately — same contract the retired jog picker relied on. */
+    host_system_cmd('sh ' + PROJECT_CMD + ' list');
+    let data = null;
+    try { data = JSON.parse(host_read_file(PROJECTS_JSON) || ''); }
+    catch (e) { data = null; }
+    return (data && Array.isArray(data.projects)) ? data : null;
+}
+
+function _pppApplyList(p, data) {
+    p.projects = data.projects;
+    p.current = data.current;
+    p.byIndex = {};
+    for (let i = 0; i < data.projects.length; i++) {
+        const pr = data.projects[i];
+        if (pr.index !== null && pr.index !== undefined) p.byIndex[pr.index] = pr;
+    }
+}
+
+function _openProjectPadPicker_impl() {
+    if (typeof host_system_cmd !== 'function' || typeof host_read_file !== 'function') return;
+    if (S.projectPadPicker) { closeProjectPadPicker(); return; }   /* toggle */
+    const data = _pppRunList();
+    if (!data) { showActionPopup('NO PROJECT', 'LIST'); return; }
+    const p = { projects: [], byIndex: {}, current: -1,
+                touchedIdx: -1, copySrcIdx: -1, deleteIdx: -1 };
+    _pppApplyList(p, data);
+    S.projectPadPicker = p;
+    S.globalMenuOpen = false;
+    invalidateLEDCache();
+    S.screenDirty = true;
+}
+
+function _closeProjectPadPicker_impl() {
+    S.projectPadPicker = null;
+    S.ledInitComplete = false;      /* repaint the sequencer surface */
+    invalidateLEDCache();
+    S.screenDirty = true;
+}
+
+/* Pad tap inside the picker. k = pad index 0-31 == user.song-index. */
+function _projectPadPickerTap_impl(k) {
+    const p = S.projectPadPicker;
+    if (!p) return;
+    p.touchedIdx = k;
+    const proj = p.byIndex[k];
+
+    if (S.deleteHeld) {
+        if (!proj) { p.deleteIdx = -1; showActionPopup('EMPTY', 'PAD'); return; }
+        if (k === p.current) { p.deleteIdx = -1; showActionPopup('CANT DELETE', 'OPEN PROJ'); return; }
+        if (p.deleteIdx === k) {
+            host_system_cmd('sh ' + PROJECT_CMD + ' delete ' + k);
+            const d = _pppRunList();
+            if (d) _pppApplyList(p, d);
+            p.deleteIdx = -1;
+            invalidateLEDCache();
+            showActionPopup('PROJECT', 'DELETED');
+        } else {
+            p.deleteIdx = k;    /* OLED asks for the confirming tap */
+        }
+        S.screenDirty = true;
+        return;
+    }
+
+    if (S.copyHeld) {
+        if (p.copySrcIdx < 0) {
+            if (!proj) { showActionPopup('EMPTY', 'PAD'); return; }
+            p.copySrcIdx = k;
+        } else if (k === p.copySrcIdx) {
+            p.copySrcIdx = -1;                       /* tap source again = cancel */
+        } else if (proj) {
+            showActionPopup('PAD', 'OCCUPIED');
+        } else {
+            host_system_cmd('sh ' + PROJECT_CMD + ' copy ' + p.copySrcIdx + ' ' + k);
+            const d = _pppRunList();
+            if (d) _pppApplyList(p, d);
+            p.copySrcIdx = -1;
+            invalidateLEDCache();
+            showActionPopup('PROJECT', 'COPIED');
+        }
+        S.screenDirty = true;
+        return;
+    }
+
+    /* Plain tap: open (or create-and-open on an empty pad). */
+    if (!proj) {
+        host_system_cmd('sh ' + PROJECT_CMD + ' new-at ' + k);
+        const d = _pppRunList();
+        if (d) _pppApplyList(p, d);
+        if (!p.byIndex[k]) { showActionPopup('CREATE', 'FAILED'); return; }
+        invalidateLEDCache();
+    }
+    if (k === p.current) { closeProjectPadPicker(); return; }
+    /* Switch: save first; the command fires one tick after the save lands
+     * (the switch suspends/tears this module down — same shape as Quit). */
+    closeProjectPadPicker();
+    showActionPopup('OPENING', 'PROJECT');
+    saveState();
+    S.pendingProjectSwitch = k;
+}
+
+/* Modifier releases cancel the two-step flows (OUR semantics — matches how
+ * Move treats its own hold-modifiers, and what the user asked for). */
+function _projectPadPickerModifiers_impl() {
+    const p = S.projectPadPicker;
+    if (!p) return;
+    let dirty = false;
+    if (!S.copyHeld && p.copySrcIdx >= 0)  { p.copySrcIdx = -1; dirty = true; }
+    if (!S.deleteHeld && p.deleteIdx >= 0) { p.deleteIdx = -1; dirty = true; }
+    if (dirty) S.screenDirty = true;
+}
+
+function _drawProjectPadPicker_impl() {
+    clear_screen();
+    const p = S.projectPadPicker;
+    if (!p) return;
+    drawMenuHeader('PROJECTS');
+    const cur = p.byIndex[p.current];
+    print(4, 16, 'Now: ' + truncLabel(cur ? cur.name : '-', 16), 1);
+    if (p.deleteIdx >= 0) {
+        const dp = p.byIndex[p.deleteIdx];
+        print(4, 28, 'Delete ' + truncLabel(dp ? dp.name : '?', 12) + '?', 1);
+        print(4, 38, 'Tap the pad again.', 1);
+    } else if (p.copySrcIdx >= 0) {
+        const sp = p.byIndex[p.copySrcIdx];
+        print(4, 28, 'Copy ' + truncLabel(sp ? sp.name : '?', 13), 1);
+        print(4, 38, 'Tap an empty pad.', 1);
+    } else if (p.touchedIdx >= 0) {
+        const tp = p.byIndex[p.touchedIdx];
+        print(4, 28, truncLabel(tp ? tp.name : 'Empty pad', 20), 1);
+        print(4, 38, tp ? 'Tap: open' : 'Tap: new project', 1);
+    } else {
+        print(4, 28, 'Tap a pad to open.', 1);
+        print(4, 38, 'Empty pad = new.', 1);
+    }
+    print(4, 50, 'Copy/Del: hold+tap  Back: close', 1);
+}
+
+/* Fail-SAFE wrappers: see the banner above. */
+function _pppGuard(name, impl, args) {
+    try { return impl.apply(null, args); }
+    catch (e) {
+        try { console.log('projectPadPicker FAULT in ' + name + ': ' + e + ' :: ' + (e && e.stack ? e.stack : 'no stack')); } catch (e2) {}
+        try { S.projectPadPicker = null; } catch (e3) {}
+    }
+}
+export function openProjectPadPicker()      { return _pppGuard('open',  _openProjectPadPicker_impl, []); }
+export function closeProjectPadPicker()     { return _pppGuard('close', _closeProjectPadPicker_impl, []); }
+export function projectPadPickerTap(k)      { return _pppGuard('tap',   _projectPadPickerTap_impl, [k]); }
+export function projectPadPickerModifiers() { return _pppGuard('mods',  _projectPadPickerModifiers_impl, []); }
+export function drawProjectPadPicker()      { return _pppGuard('draw',  _drawProjectPadPicker_impl, []); }

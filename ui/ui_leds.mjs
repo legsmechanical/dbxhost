@@ -408,8 +408,36 @@ export function updateStepLEDs() {
 
 }
 
+/* PROJECTS pad picker surface: pads are project slots (pad k = song-index k,
+ * the same bottom-left-up mapping the host actuator replays). Current
+ * project pulses white; projects blue; a pending delete-confirm blinks red;
+ * a copy source blinks cyan; empty pads dark; steps + icons off — the
+ * picker owns the whole surface. Returns true when it painted (callers
+ * return early). Shared by both view painters. */
+function paintProjectPickerLEDs() {
+    const p = S.projectPadPicker;
+    if (!p) return false;
+    const blink = (S.tickCount % 30) < 15;
+    for (let i = 0; i < 32; i++) {
+        let color = LED_OFF;
+        if (p.byIndex[i]) {
+            if (p.deleteIdx === i)       color = blink ? Red : DeepRed;
+            else if (p.copySrcIdx === i) color = blink ? Cyan : DarkGrey;
+            else if (p.current === i)    color = blink ? White : LightGrey;
+            else                         color = Blue;
+        }
+        cachedSetLED(TRACK_PAD_BASE + i, color);
+    }
+    for (let i = 0; i < 16; i++) {
+        cachedSetLED(16 + i, LED_OFF);
+        cachedSetButtonLED(16 + i, LED_OFF);
+    }
+    return true;
+}
+
 export function updateSessionLEDs() {
     if (!S.ledInitComplete) return;
+    if (paintProjectPickerLEDs()) return;
     if (S.tapTempoOpen) {
         for (let i = 0; i < 32; i++) {
             const note  = TRACK_PAD_BASE + i;
@@ -559,6 +587,8 @@ export function updateTrackLEDs() {
             setLED(16 + i, on ? LightGrey : LED_OFF);
         }
     }
+
+    if (paintProjectPickerLEDs()) return;
 
     if (S.tapTempoOpen) {
         for (let i = 0; i < 32; i++) {
