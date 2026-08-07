@@ -248,6 +248,13 @@ typedef struct shadow_control_t {
      * that window are queued by the shim and replayed on readiness, but the
      * user deserves to see WHY nothing fires instantly. */
     volatile uint8_t select_ready;
+    /* Headless selection: a pad index (0-31) pre-queued by
+     * shadow_select_arm(pad). The gate consumes it at arm time — the whole
+     * phase then runs as an invisible ACTUATOR (physical pads ignored, no
+     * user surface): entry machine → replay the queued pad → launch. -1 =
+     * interactive phase (the queued-tap replay still covers taps that land
+     * during entry). */
+    volatile int8_t select_queue;
 } shadow_control_t;
 
 /* select_launch sentinel: resume the already-loaded set. */

@@ -3264,6 +3264,7 @@ static void init_shadow_shm(void)
         shadow_control->select_phase = 0;
         shadow_control->select_launch = SELECT_LAUNCH_NONE;
         shadow_control->select_ready = 0;
+        shadow_control->select_queue = -1;
         if (!shadow_control->open_tool_cmd) {
             struct stat _sp;
             if (stat(SCHWUNG_INSTALL_DIR "/select_phase", &_sp) == 0) {
@@ -6260,6 +6261,10 @@ static uint64_t select_back_next_ms = 0;
 static int select_queued_pad = -1;
 static int select_replay_state = 0;      /* 0 idle, 1 down sent */
 static uint64_t select_replay_next_ms = 0;
+/* Headless actuator mode: the arming tool pre-chose the pad (ctrl->
+ * select_queue) — the phase is pure plumbing, no user surface. Physical
+ * pads and jog are ignored entirely; the replay drives the selection. */
+static int select_headless = 0;
 
 static void shim_select_inject(uint8_t cin, uint8_t status, uint8_t d1, uint8_t d2)
 {
@@ -6345,6 +6350,8 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
         select_back_state = 0;
         select_queued_pad = -1;
         select_replay_state = 0;
+        select_headless = 0;
+        shadow_control->select_queue = -1;
         select_reclaim_deadline_ms = 0;
         select_boot_armed = 0;   /* any later arming is mid-session */
         return;
@@ -6372,6 +6379,14 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
              * display (the LED blanking above handles the pads). */
             shadow_display_mode = 1;
             shadow_control->display_mode = 1;
+            /* Headless arming: the tool pre-chose the pad — consume it into
+             * the replay queue and run the phase as a silent actuator. */
+            if (shadow_control->select_queue >= 0) {
+                select_queued_pad = shadow_control->select_queue;
+                shadow_control->select_queue = -1;
+                select_headless = 1;
+                shadow_log("select gate: headless arm — actuator mode");
+            }
             select_entry_state = 1;
             select_entry_next_ms = now + 500;  /* let Move finish the overtake-exit mode change */
             break;
@@ -6549,7 +6564,9 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
                  * a launch mid-gesture would strand an injected Shift-down
                  * (the machine halts on select_launched). */
                 int entry_ready = select_boot_armed || select_entry_state >= 8;
-                if (d2 > 0 && !flow && !select_launched && entry_ready) {
+                if (select_headless) {
+                    /* actuator mode: jog is not a user surface either */
+                } else if (d2 > 0 && !flow && !select_launched && entry_ready) {
                     select_launched = 1;
                     select_candidate_pad = -1;
                     shadow_control->select_launch = SELECT_LAUNCH_RESUME;
@@ -6574,7 +6591,11 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
                    (type == 0x90 || type == 0x80) &&
                    d1 >= 68 && d1 <= 99) {
             uint32_t bit = 1u << (d1 - 68);
-            if (type == 0x90 && d2 > 0) {
+            if (select_headless) {
+                /* Actuator mode: no user surface — a physical tap must not
+                 * hijack the pre-chosen selection or leak into Move. */
+                zero_it = 1;
+            } else if (type == 0x90 && d2 > 0) {
                 if (select_launched) {
                     /* Trigger already fired — freeze the picker so a stray tap
                      * cannot load a DIFFERENT set under the launching tool. */

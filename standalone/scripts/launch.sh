@@ -77,26 +77,27 @@ setsid bash -c '
   cat /proc/sys/kernel/random/boot_id > "$DBX_DIR/standalone_active" 2>/dev/null \
     || : > "$DBX_DIR/standalone_active"
 
-  # Session entry holds at the SET-SELECT PHASE rather than direct-booting the
-  # tool: the shim sees the select_phase marker (and NO boot_tool.json), keeps
-  # the session at the native set picker, and the shadow UI shows the select
-  # screen. The tool to open on selection is STAGED in open_tool_cmd.json now
-  # (the shadow UI reads it when the phase ends, and copies it to
-  # boot_tool.json so every LATER in-session relaunch direct-boots without
-  # re-asking). Writing open_tool_cmd.json under the STOCK tree is deliberate:
+  # DIRECT BOOT into the tool (v3 model): the session opens in the module on
+  # the last project, and project selection is the modules OWN pad picker —
+  # the set-select gate survives only as a headless actuator the module arms
+  # for switches (shadow_select_arm(pad)). No boot-time picker: the earlier
+  # boot select phase made the half-controlled native Move UI a user surface
+  # and the seams showed. Two files because the mechanism is split: the shim
+  # raises open_tool_cmd when boot_tool.json exists (which also turns the
+  # shadow display ON), and the shadow UI reads the tool from
+  # open_tool_cmd.json. Writing the latter under the STOCK tree is deliberate:
   # that path is a hardcoded literal in the shared UI code, and the file is a
   # transient command, which is exactly what stock uses it for.
   # WARNING: double quotes only, and no apostrophes anywhere in this block --
   # not even in a comment. The whole body is wrapped in a single-quoted
   # setsid bash -c argument, so one stray single quote closes it early and
   # everything after is reparsed as garbage. It fails silently, because the
-  # launcher is detached. This exact comment used to contain quotes and broke
-  # the boot files it was documenting.
+  # launcher is detached. This exact comment has broken the block before.
   BOOT_JSON="{\"tool_id\": \"davebox-sound\", \"file_path\": \"\"}"
-  rm -f "$DBX_DIR/boot_tool.json"
+  rm -f "$DBX_DIR/select_phase"
   rm -f "$DBX_DIR/select_list.json" "$DBX_DIR/select_hook_result.json"
+  echo "$BOOT_JSON" > "$DBX_DIR/boot_tool.json"
   echo "$BOOT_JSON" > /data/UserData/schwung/open_tool_cmd.json
-  : > "$DBX_DIR/select_phase"
 
   # Ask stock Schwung to save and exit first. Killing shadow_ui loses host state:
   # its main loop saves only when it sees should_exit, and nothing else flushes

@@ -189,6 +189,17 @@ opened.
 default/legacy directory and stays untouched — checking it will tell you the save
 did not happen when it did.
 
+## The set-select gate (v3: a headless actuator)
+
+> **v3 (2026-08-07):** the gate is no longer a USER surface. Sessions boot
+> DIRECTLY into the tool; project selection is the module's own pad picker,
+> and the gate exists to serve `shadow_select_arm(pad)` — an invisible
+> actuator run (OLED shows only "Loading...", physical pads/jog ignored)
+> that walks Move through its overview, replays the pre-queued pad, and
+> resumes the parked tool. Everything below describes the machinery, which
+> is unchanged; the interactive boot-picker mode it also supports is simply
+> no longer armed by `launch.sh`.
+
 ## The boot set-select gate (project selection)
 
 A standalone session does not boot straight into its tool: `launch.sh` arms a

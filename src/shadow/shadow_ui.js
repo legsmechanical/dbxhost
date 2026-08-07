@@ -668,7 +668,8 @@ let selectPhase = {
     awaitSetChange: false,
     setChangeSeen: false,
     setWaitTicks: 0,
-    setWaitHardTicks: 0
+    setWaitHardTicks: 0,
+    headless: false      /* actuator run: no picker UI, just "Loading..." */
 };
 
 const SPLASH_BALL_Y = 26;
@@ -14588,9 +14589,13 @@ function enterSelectPhaseView() {
     selectPhase.setChangeSeen = false;
     selectPhase.setWaitTicks = 0;
     selectPhase.hookWaitTicks = 0;
+    selectPhase.headless = (typeof shadow_select_headless === "function") &&
+                           !!shadow_select_headless();
     view = VIEWS.SELECT_PHASE;
     selectRefreshList();
-    announce(selectPhase.title + ". Tap a pad to open a set, click to resume.");
+    if (!selectPhase.headless) {
+        announce(selectPhase.title + ". Tap a pad to open a set, click to resume.");
+    }
 }
 
 /* Spawn the launcher's list script (names may have changed after a native
@@ -14832,6 +14837,20 @@ function drawSelectPhase() {
         }
         const s = selectPhase.statusLine || "Preparing...";
         print(Math.floor((SCREEN_WIDTH - s.length * 5) / 2), 38, s, 1);
+        return;
+    }
+
+    /* Headless actuator run (the hosting tool chose the pad itself): the
+     * only user-facing state is "your project is loading". */
+    if (selectPhase.headless) {
+        const hn = selectNameForIndex(selectPhase.lastPad >= 0 ? selectPhase.lastPad
+                                                               : selectPhase.current);
+        if (hn) {
+            const ht = truncateText(hn, 24);
+            print(Math.floor((SCREEN_WIDTH - ht.length * 5) / 2), 24, ht, 1);
+        }
+        const hs = selectPhase.statusLine || "Loading set...";
+        print(Math.max(0, Math.floor((SCREEN_WIDTH - hs.length * 6) / 2)), 38, hs, 1);
         return;
     }
 

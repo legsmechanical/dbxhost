@@ -2273,13 +2273,20 @@ static JSValue js_shadow_select_get_launch(JSContext *ctx, JSValueConst this_val
     return JS_NewInt32(ctx, v);
 }
 
+/* Process-local headless marker: the JS side (same process) needs to know an
+ * arming is an ACTUATOR run (no picker screen, just "Loading...") without
+ * racing the shim's consumption of ctrl->select_queue. */
+static int select_armed_headless = 0;
+
 static JSValue js_shadow_select_phase_end(JSContext *ctx, JSValueConst this_val,
                                           int argc, JSValueConst *argv) {
     (void)ctx; (void)this_val; (void)argc; (void)argv;
     if (shadow_control) {
         shadow_control->select_phase = 0;
         shadow_control->select_launch = SELECT_LAUNCH_NONE;
+        shadow_control->select_queue = -1;
     }
+    select_armed_headless = 0;
     unlink(SCHWUNG_INSTALL_DIR "/select_phase");
     shadow_ui_log_line("shadow_ui: select phase ended");
     return JS_UNDEFINED;
@@ -2303,14 +2310,27 @@ static JSValue js_shadow_select_ready(JSContext *ctx, JSValueConst this_val,
 
 static JSValue js_shadow_select_arm(JSContext *ctx, JSValueConst this_val,
                                     int argc, JSValueConst *argv) {
-    (void)ctx; (void)this_val; (void)argc; (void)argv;
+    (void)this_val;
+    int pad = -1;
+    if (argc >= 1) JS_ToInt32(ctx, &pad, argv[0]);
     if (shadow_control) {
         shadow_control->select_launch = SELECT_LAUNCH_NONE;
         shadow_control->select_ready = 0;   /* entry machine raises it */
+        shadow_control->select_queue = (pad >= 0 && pad <= 31) ? (int8_t)pad : -1;
+        select_armed_headless = (pad >= 0 && pad <= 31);
         shadow_control->select_phase = 1;
     }
-    shadow_ui_log_line("shadow_ui: select phase armed mid-session");
+    shadow_ui_log_line(select_armed_headless
+                       ? "shadow_ui: select phase armed HEADLESS"
+                       : "shadow_ui: select phase armed mid-session");
     return JS_UNDEFINED;
+}
+
+/* shadow_select_headless() -> 1 while the current arming is an actuator run */
+static JSValue js_shadow_select_headless(JSContext *ctx, JSValueConst this_val,
+                                         int argc, JSValueConst *argv) {
+    (void)this_val; (void)argc; (void)argv;
+    return JS_NewInt32(ctx, select_armed_headless);
 }
 
 /* host_preview_play(path) - play WAV file for browser preview via shim IPC */
@@ -2850,6 +2870,8 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
         JS_NewCFunction(ctx, js_shadow_select_arm, "shadow_select_arm", 0));
     JS_SetPropertyStr(ctx, global_obj, "shadow_select_ready",
         JS_NewCFunction(ctx, js_shadow_select_ready, "shadow_select_ready", 0));
+    JS_SetPropertyStr(ctx, global_obj, "shadow_select_headless",
+        JS_NewCFunction(ctx, js_shadow_select_headless, "shadow_select_headless", 0));
 
     /* Register preview player functions */
     JS_SetPropertyStr(ctx, global_obj, "host_preview_play", JS_NewCFunction(ctx, js_host_preview_play, "host_preview_play", 1));

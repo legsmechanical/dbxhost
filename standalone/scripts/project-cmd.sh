@@ -150,6 +150,94 @@ do_switch() { # index
     printf 'project-cmd: switching to index %s (Move restarting in place)\n' "$1"
 }
 
+# Template birth at a SPECIFIC index (the pad the user tapped in the picker).
+# Unlike do_new (next-free index + auto-switch), this only creates — the
+# caller orchestrates the switch itself.
+do_new_at() { # index [name]
+    case "${1:-}" in *[!0-9]*|"") die "new-at needs a numeric index" ;; esac
+    [ -d "$TEMPLATE_DIR" ] || die "no template at $TEMPLATE_DIR"
+    _src="$(find "$TEMPLATE_DIR" -name Song.abl | head -n 1)"
+    [ -n "$_src" ] || die "template has no Song.abl"
+    _uuid="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())')"
+    _name="${2:-Project $(($1 + 1))}"
+    mkdir -p "$SETS_DIR/$_uuid/$_name"
+    cp "$_src" "$SETS_DIR/$_uuid/$_name/Song.abl"
+    python3 -c "import os,sys; os.setxattr(sys.argv[1], 'user.song-index', sys.argv[2].encode())" \
+        "$SETS_DIR/$_uuid" "$1" 2>/dev/null || true
+    do_list
+    printf 'project-cmd: created "%s" (%s) at index %s\n' "$_name" "$_uuid" "$1"
+}
+
+# Duplicate a project onto another pad. Inner name gets Move's own " Copy"
+# suffix so the hosted module's copy-inheritance machinery (family lookup on
+# first open) treats it exactly like a native pad-copy.
+do_copy() { # src-index dst-index
+    case "${1:-}" in *[!0-9]*|"") die "copy needs a numeric source index" ;; esac
+    case "${2:-}" in *[!0-9]*|"") die "copy needs a numeric destination index" ;; esac
+    python3 - "$SETS_DIR" "$1" "$2" <<'PYEOF'
+import os, re, shutil, sys, uuid as uuidlib
+sets_dir, src, dst = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
+def find(idx):
+    for u in os.listdir(sets_dir):
+        p = os.path.join(sets_dir, u)
+        if not os.path.isdir(p) or not uuid_re.match(u):
+            continue
+        try:
+            if int(os.getxattr(p, "user.song-index").decode()) == idx:
+                return u, p
+        except (OSError, ValueError):
+            pass
+    return None, None
+su, sp = find(src)
+if not su:
+    sys.exit("project-cmd: ERROR: no project at index %d" % src)
+du, _ = find(dst)
+if du:
+    sys.exit("project-cmd: ERROR: index %d already occupied" % dst)
+inner = [n for n in os.listdir(sp)
+         if os.path.isdir(os.path.join(sp, n)) and not n.startswith(".")]
+if not inner:
+    sys.exit("project-cmd: ERROR: source has no inner set dir")
+nu = str(uuidlib.uuid4())
+np = os.path.join(sets_dir, nu)
+shutil.copytree(os.path.join(sp, inner[0]), os.path.join(np, inner[0] + " Copy"))
+os.setxattr(np, "user.song-index", str(dst).encode())
+print("project-cmd: copied index %d -> %d (%s)" % (src, dst, nu))
+PYEOF
+    do_list
+}
+
+do_delete() { # index
+    case "${1:-}" in *[!0-9]*|"") die "delete needs a numeric index" ;; esac
+    python3 - "$SETS_DIR" "$SETTINGS_JSON" "$1" <<'PYEOF'
+import os, re, shutil, sys
+sets_dir, settings, idx = sys.argv[1], sys.argv[2], int(sys.argv[3])
+cur = -1
+try:
+    m = re.search(r'"currentSongIndex":\s*(-?\d+)', open(settings).read())
+    if m: cur = int(m.group(1))
+except OSError:
+    pass
+if idx == cur:
+    sys.exit("project-cmd: ERROR: refusing to delete the OPEN project")
+uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
+for u in os.listdir(sets_dir):
+    p = os.path.join(sets_dir, u)
+    if not os.path.isdir(p) or not uuid_re.match(u):
+        continue
+    try:
+        if int(os.getxattr(p, "user.song-index").decode()) == idx:
+            shutil.rmtree(p)
+            print("project-cmd: deleted index %d (%s)" % (idx, u))
+            sys.exit(0)
+    except (OSError, ValueError):
+        pass
+sys.exit("project-cmd: ERROR: no project at index %d" % idx)
+PYEOF
+    do_list
+}
+
 do_select() {
     save_song
     # The launcher's relaunch branch consumes relaunch_select and re-arms the
@@ -168,7 +256,10 @@ do_select() {
 case "${1:-}" in
     list)   do_list ;;
     new)    shift; do_new "${1:-}" ;;
+    new-at) shift; do_new_at "${1:-}" "${2:-}" ;;
+    copy)   shift; do_copy "${1:-}" "${2:-}" ;;
+    delete) shift; do_delete "${1:-}" ;;
     switch) shift; do_switch "${1:-}" ;;
     select) do_select ;;
-    *) die "usage: project-cmd.sh list|new <name>|switch <index>|select" ;;
+    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|select" ;;
 esac
