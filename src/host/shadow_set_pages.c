@@ -525,9 +525,29 @@ void shadow_set_pages_consume(void)
     shadow_handle_set_loaded(name, uuid);
 }
 
+/* Forced-index fast path. Settings.json is written LAZILY by Move — after an
+ * in-place set switch (the select gate's picker) the index on disk can trail
+ * the actual load by seconds, and that lag was the dominant chunk of a
+ * project switch. A caller that KNOWS the new index (the gate: pad k ↔
+ * user.song-index k) stores it here; the poll uses it instead of the stale
+ * file until the file catches up. Plain volatile store — safe from any
+ * thread, consumed on the worker. */
+static volatile int set_tracking_forced_index = -1;
+
+void shadow_set_tracking_force_index(int idx)
+{
+    set_tracking_forced_index = idx;
+}
+
+int shadow_set_tracking_forced_pending(void)
+{
+    return set_tracking_forced_index >= 0;
+}
+
 /* Poll Settings.json for currentSongIndex changes, then match via xattr.
- * Runs on the shim worker thread (~every 1.4 s); publishes results via the
- * snapshot above instead of calling shadow_handle_set_loaded directly. */
+ * Runs on the shim worker thread (~every 1.4 s; every ~200 ms while a forced
+ * index is pending); publishes results via the snapshot above instead of
+ * calling shadow_handle_set_loaded directly. */
 void shadow_poll_current_set(void)
 {
     static const char settings_path[] = "/data/UserData/settings/Settings.json";
@@ -548,6 +568,16 @@ void shadow_poll_current_set(void)
         }
     }
     fclose(f);
+
+    /* Forced index overrides the (possibly stale) file; retire the override
+     * once the file agrees so ordinary tracking resumes. */
+    {
+        int forced = set_tracking_forced_index;
+        if (forced >= 0) {
+            if (song_index == forced) set_tracking_forced_index = -1;
+            else song_index = forced;
+        }
+    }
 
     if (song_index < 0) return;
 

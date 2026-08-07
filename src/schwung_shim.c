@@ -6537,6 +6537,12 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
         } else {
             select_launched = 1;
             shadow_control->select_launch = (int8_t)select_candidate_pad;
+            /* Fast set-tracking: pad k ↔ user.song-index k, and Move has
+             * already loaded the set — hand the index to the tracker so the
+             * SET_CHANGED reload starts NOW instead of after Move lazily
+             * writes Settings.json (which trailed by up to ~5 s and was the
+             * dominant chunk of a project switch). */
+            shadow_set_tracking_force_index(select_candidate_pad);
             {
                 char msg[64];
                 snprintf(msg, sizeof(msg), "select gate: pad %d -> launch",

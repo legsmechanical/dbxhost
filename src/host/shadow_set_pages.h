@@ -92,6 +92,12 @@ void shadow_handle_set_loaded(const char *set_name, const char *uuid);
 /* Poll Settings.json for set changes */
 void shadow_poll_current_set(void);
 
+/* Forced-index fast path: a caller that KNOWS the new currentSongIndex (the
+ * select gate — Settings.json trails an in-place switch by seconds) stores
+ * it here; the poll uses it until the file catches up. Any thread. */
+void shadow_set_tracking_force_index(int idx);
+int shadow_set_tracking_forced_pending(void);
+
 /* Consume the worker-published current-set snapshot on the SPI thread
  * (cheap; calls shadow_handle_set_loaded, which dedupes). The filesystem
  * scan itself (shadow_poll_current_set) runs on the shim worker. */

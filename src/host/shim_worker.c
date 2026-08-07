@@ -245,7 +245,10 @@ static void *worker_main(void *arg) {
         }
 
         if (tick % 5 == 0) poll_flags();          /* ~1 Hz */
-        if (tick % 7 == 0) shadow_poll_current_set(); /* ~1.4 s FS scan */
+        /* ~1.4 s FS scan normally; every worker tick (~200 ms) while a
+         * forced index is pending so a picker selection propagates fast. */
+        if (tick % 7 == 0 || shadow_set_tracking_forced_pending())
+            shadow_poll_current_set();
         tick++;
     }
     return NULL;
