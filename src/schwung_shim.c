@@ -3263,10 +3263,12 @@ static void init_shadow_shm(void)
          * the direct boot wins — a programmatic relaunch must never re-ask. */
         shadow_control->select_phase = 0;
         shadow_control->select_launch = SELECT_LAUNCH_NONE;
+        shadow_control->select_ready = 0;
         if (!shadow_control->open_tool_cmd) {
             struct stat _sp;
             if (stat(SCHWUNG_INSTALL_DIR "/select_phase", &_sp) == 0) {
                 shadow_control->select_phase = 1;
+                shadow_control->select_ready = 1;   /* Move boots INTO its picker */
                 select_boot_armed = 1;
             }
         }
@@ -6251,6 +6253,13 @@ static uint64_t select_entry_next_ms = 0;
 static int select_entry_attempts = 0;    /* gesture retries (Move settles late) */
 static int select_back_state = 0;        /* 0 idle, 1 down sent, 2 done */
 static uint64_t select_back_next_ms = 0;
+/* A pad tapped while the entry machine was still opening the overview: the
+ * tap landed on whatever screen Move was leaving, so it selected nothing —
+ * but the USER selected something. Remember the last such pad and replay it
+ * (injected, so Move loads it for real) the moment the picker is up. */
+static int select_queued_pad = -1;
+static int select_replay_state = 0;      /* 0 idle, 1 down sent */
+static uint64_t select_replay_next_ms = 0;
 
 static void shim_select_inject(uint8_t cin, uint8_t status, uint8_t d1, uint8_t d2)
 {
@@ -6334,6 +6343,8 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
         select_entry_state = 0;
         select_entry_attempts = 0;
         select_back_state = 0;
+        select_queued_pad = -1;
+        select_replay_state = 0;
         select_reclaim_deadline_ms = 0;
         select_boot_armed = 0;   /* any later arming is mid-session */
         return;
@@ -6431,9 +6442,35 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
             if (now >= select_entry_next_ms) {
                 shim_select_inject(0x0B, 0xB0, CC_SHIFT, 0);
                 select_entry_state = 8;
+                shadow_control->select_ready = 1;
                 shadow_log("select gate: entry complete");
             }
             break;
+        }
+    }
+
+    /* Replay a tap queued during entry: inject the pad into Move (it never
+     * saw the original — the tap predates the overview) and arm the same
+     * launch candidate a live tap would have. The user tapped once; it works
+     * once the picker exists. */
+    if (!select_boot_armed && select_entry_state >= 8 &&
+        select_queued_pad >= 0 && !select_launched) {
+        if (select_replay_state == 0) {
+            shim_select_inject(0x09, 0x90, (uint8_t)(68 + select_queued_pad), 100);
+            select_replay_state = 1;
+            select_replay_next_ms = now + 60;
+        } else if (now >= select_replay_next_ms) {
+            shim_select_inject(0x08, 0x80, (uint8_t)(68 + select_queued_pad), 0x40);
+            select_candidate_pad = select_queued_pad;
+            select_settle_deadline_ms = now + SELECT_SETTLE_MS;
+            {
+                char _m[56];
+                snprintf(_m, sizeof(_m), "select gate: queued pad %d replayed",
+                         select_queued_pad);
+                shadow_log(_m);
+            }
+            select_queued_pad = -1;
+            select_replay_state = 0;
         }
     }
 
@@ -6563,7 +6600,8 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
                          * after arming fired the launch before the overview
                          * even opened). Not a candidate; it still passes to
                          * Move like any other pad. */
-                        shadow_log("select gate: pad IGNORED (entry in progress)");
+                        select_queued_pad = d1 - 68;
+                        shadow_log("select gate: pad queued (entry in progress)");
                     } else {
                         /* Launch candidate: Move loads the set now; the
                          * trigger fires when the load has settled. A second

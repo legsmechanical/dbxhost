@@ -2291,11 +2291,22 @@ static JSValue js_shadow_select_phase_end(JSContext *ctx, JSValueConst this_val,
  * waits for overtake to drop, walks Move into its Set Overview (injected
  * Shift+Step1, Move's own gesture), and claims the OLED. Selection then
  * resumes the suspended tool through the ordinary select flow. */
+/* shadow_select_ready() -> 1 once the picker is actually up (boot, or the
+ * mid-session entry machine finished). The select screen shows an "opening
+ * picker" state while 0. */
+static JSValue js_shadow_select_ready(JSContext *ctx, JSValueConst this_val,
+                                      int argc, JSValueConst *argv) {
+    (void)this_val; (void)argc; (void)argv;
+    if (!shadow_control) return JS_NewInt32(ctx, 0);
+    return JS_NewInt32(ctx, shadow_control->select_ready);
+}
+
 static JSValue js_shadow_select_arm(JSContext *ctx, JSValueConst this_val,
                                     int argc, JSValueConst *argv) {
     (void)ctx; (void)this_val; (void)argc; (void)argv;
     if (shadow_control) {
         shadow_control->select_launch = SELECT_LAUNCH_NONE;
+        shadow_control->select_ready = 0;   /* entry machine raises it */
         shadow_control->select_phase = 1;
     }
     shadow_ui_log_line("shadow_ui: select phase armed mid-session");
@@ -2837,6 +2848,8 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
         JS_NewCFunction(ctx, js_shadow_select_phase_end, "shadow_select_phase_end", 0));
     JS_SetPropertyStr(ctx, global_obj, "shadow_select_arm",
         JS_NewCFunction(ctx, js_shadow_select_arm, "shadow_select_arm", 0));
+    JS_SetPropertyStr(ctx, global_obj, "shadow_select_ready",
+        JS_NewCFunction(ctx, js_shadow_select_ready, "shadow_select_ready", 0));
 
     /* Register preview player functions */
     JS_SetPropertyStr(ctx, global_obj, "host_preview_play", JS_NewCFunction(ctx, js_host_preview_play, "host_preview_play", 1));

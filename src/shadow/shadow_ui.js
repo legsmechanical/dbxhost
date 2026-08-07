@@ -14842,6 +14842,14 @@ function drawSelectPhase() {
         const t = truncateText(name, 24);
         print(Math.floor((SCREEN_WIDTH - t.length * 5) / 2), 22, t, 1);
     }
+    /* Mid-session the picker takes a moment to open (the shim is walking
+     * Move into its Set Overview); taps in that window are queued, but say
+     * so — an unexplained quiet second reads as a dead session. */
+    if (typeof shadow_select_ready === "function" && !shadow_select_ready()) {
+        print(2, 40, "Opening picker...", 1);
+        drawFooter("One moment");
+        return;
+    }
     print(2, 36, "Pad: open set", 1);
     print(2, 46, "Click: resume this one", 1);
     drawFooter("Copy/Delete work natively");

@@ -242,6 +242,12 @@ typedef struct shadow_control_t {
      *   127 resume the already-loaded set (jog click — natively inert in the
      *       picker, so claiming it costs nothing) */
     volatile int8_t select_launch;
+    /* 1 = the gate is ready for selections (boot picker up, or the
+     * mid-session entry machine finished walking Move into its overview).
+     * The select screen shows an "opening picker" state while 0 — taps in
+     * that window are queued by the shim and replayed on readiness, but the
+     * user deserves to see WHY nothing fires instantly. */
+    volatile uint8_t select_ready;
 } shadow_control_t;
 
 /* select_launch sentinel: resume the already-loaded set. */
