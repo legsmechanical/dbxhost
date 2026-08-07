@@ -181,6 +181,11 @@ pads you already know:
   away — create, copy, delete, or open another project without leaving
   dAVEBOx SA. Only a project that needs its wiring set up (a brand-new one
   from an empty pad, or a copy made before dAVEBOx) adds a brief restart.
+- **On the picker, only the picker works** — pads, the jog wheel, Copy,
+  Delete, and the volume knob. Everything else is switched off (and its
+  lights stay dark) so nothing can wander the device off the project list.
+  **Shift + Back** from the picker leaves dAVEBOx SA and returns to official
+  Schwung, same as from inside the sequencer.
 
 > **Coming from an earlier dAVEBOx?** Work you made back when dAVEBOx used the
 > shared Move sets stays in those Move sets, visible from Move native and
