@@ -389,6 +389,10 @@ export const S = {
     snapshots: new Array(16).fill(null),
     _origClearScreen: null,
     _wasSuspended: false,
+    /* Post-resume self-heal window: ticks left of active_set.txt re-checking
+     * after an overtake resume, so a set switch the host detected LATE still
+     * triggers the reload (see the resume-edge block in _tickImpl). */
+    resumeSetRecheckTicks: 0,
     globalMenuOpen: false,
     globalMenuItems: null,
     globalMenuState: null,

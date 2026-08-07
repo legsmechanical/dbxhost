@@ -495,6 +495,13 @@ export function _tickImpl() {
             const _r = maybeShowInheritPicker(_as.uuid, _as.name);
             if (_r !== 'picker') S.pendingSetLoad = true;
         }
+        /* Self-heal window: the host's set reload can land seconds AFTER we
+         * resume (Move writes Settings.json lazily, so the host's detection
+         * lags the actual load — observed racing the resume on hardware,
+         * 2026-08-06). Keep re-checking active_set.txt for a while so a late
+         * flip still triggers the reload instead of silently keeping the
+         * previous project's data. */
+        S.resumeSetRecheckTicks = 1200;   /* ~13 s @94 Hz, checked every 16 ticks */
         S.ledInitComplete = false;
         invalidateLEDCache();
         S.ledInitQueue = buildLedInitQueue();
@@ -502,6 +509,27 @@ export function _tickImpl() {
         forceRedraw();
     }
     S._wasSuspended = isSuspended;
+
+    /* Post-resume self-heal: a set switch the host detected LATE flips
+     * active_set.txt after our resume-edge check already passed. Poll it for
+     * a window (cheap: one small file read every 16 ticks) and arm the same
+     * reload path the resume edge uses. Inert once the window expires. */
+    if (S.resumeSetRecheckTicks > 0 && !isSuspended) {
+        S.resumeSetRecheckTicks--;
+        if ((S.resumeSetRecheckTicks & 15) === 0 && !S.pendingSetLoad &&
+                !S.pendingInheritPicker) {
+            const _las = readActiveSet();
+            if (_las.uuid && _las.uuid !== S.currentSetUuid) {
+                console.log('post-resume set flip: ' + S.currentSetUuid +
+                            ' -> ' + _las.uuid + ' — reloading');
+                S.currentSetUuid = _las.uuid;
+                S.currentSetName = _las.name;
+                const _lr = maybeShowInheritPicker(_las.uuid, _las.name);
+                if (_lr !== 'picker') S.pendingSetLoad = true;
+                S.resumeSetRecheckTicks = 0;   /* one heal per resume */
+            }
+        }
+    }
 
     /* Metro note-off */
     if (S.metroNoteOffTick >= 0 && S.tickCount >= S.metroNoteOffTick) {
