@@ -98,6 +98,10 @@ setsid bash -c '
   rm -f "$DBX_DIR/select_list.json" "$DBX_DIR/select_hook_result.json"
   echo "$BOOT_JSON" > "$DBX_DIR/boot_tool.json"
   echo "$BOOT_JSON" > /data/UserData/schwung/open_tool_cmd.json
+  # Fresh-session marker: the module opens its project picker over the boot
+  # project when this is present (and consumes it). The relaunch branch
+  # removes it so an in-session switch or rewire never re-asks.
+  printf 1 > "$DBX_DIR/fresh_session"
 
   # Ask stock Schwung to save and exit first. Killing shadow_ui loses host state:
   # its main loop saves only when it sees should_exit, and nothing else flushes
@@ -228,11 +232,12 @@ setsid bash -c '
         esac
       fi
       echo "relaunch requested — restarting Move within the session"
+      rm -f "$DBX_DIR/fresh_session"
       if [ -f "$DBX_DIR/relaunch_select" ]; then
         # In-session return to the set-select gate (project-cmd.sh select):
         # the user asked for the picker, so RE-ARM the phase — marker on,
         # boot_tool.json off — and the fresh Move holds at the picker again.
-        rm -f "$DBX_DIR/relaunch_select" "$DBX_DIR/boot_tool.json"
+        rm -f "$DBX_DIR/relaunch_select" "$DBX_DIR/fresh_session" "$DBX_DIR/boot_tool.json"
         rm -f "$DBX_DIR/select_list.json" "$DBX_DIR/select_hook_result.json"
         : > "$DBX_DIR/select_phase"
         echo "set-select gate re-armed for this relaunch"
@@ -283,7 +288,7 @@ setsid bash -c '
   # NEXT entry re-arms a fresh select phase (and stock never sees any of it).
   rm -f "$DBX_DIR/select_phase" "$DBX_DIR/boot_tool.json"
   rm -f "$DBX_DIR/select_list.json" "$DBX_DIR/select_hook_result.json"
-  rm -f "$DBX_DIR/relaunch_select"
+  rm -f "$DBX_DIR/relaunch_select" "$DBX_DIR/fresh_session"
   # Leave no standing open-tool command behind for the stock host to act on.
   rm -f /data/UserData/schwung/open_tool_cmd.json
   $DBX_DIR/bin/davebox-heal --resume-launcher
