@@ -6273,9 +6273,14 @@ static void shim_select_inject(uint8_t cin, uint8_t status, uint8_t d1, uint8_t 
 static void shim_select_blank_move_leds(void)
 {
     if (!shadow_control || !shadow_control->select_phase) return;
-    if (select_boot_armed || shadow_control->overtake_mode) return;
+    if (select_boot_armed) return;
     if (select_launched) return;
-    if (select_entry_state == 0 || select_entry_state >= 6) return;
+    if (select_entry_state >= 6) return;
+    /* Active from the ARM instant — including the frames while the arming
+     * tool is still suspending (overtake up) and the state-0 frame before
+     * the machine's first step. The flash lives exactly in those edges: the
+     * overtake-exit LED cache replay repaints Move's UI before the entry
+     * machine has taken its first step (observed on hardware 2026-08-06). */
     uint8_t *shadow = schwung_spi_get_shadow(g_spi_handle);
     if (!shadow) return;
     uint8_t *midi_out = shadow + MIDI_OUT_OFFSET;
@@ -6449,7 +6454,11 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
                  * the resume trigger. */
                 zero_it = 1;
                 int flow = select_copy_held || select_delete_held;
-                if (d2 > 0 && !flow && !select_launched) {
+                /* Mid-session: no trigger until the entry machine is DONE —
+                 * a launch mid-gesture would strand an injected Shift-down
+                 * (the machine halts on select_launched). */
+                int entry_ready = select_boot_armed || select_entry_state >= 8;
+                if (d2 > 0 && !flow && !select_launched && entry_ready) {
                     select_launched = 1;
                     select_candidate_pad = -1;
                     shadow_control->select_launch = SELECT_LAUNCH_RESUME;
@@ -6478,6 +6487,15 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
                         /* Flow tap (paste target / delete confirm): Move's
                          * business. It also voids any pending launch. */
                         select_candidate_pad = -1;
+                    } else if (!select_boot_armed && select_entry_state < 8) {
+                        /* Mid-session entry still in progress: Move is NOT
+                         * showing the picker yet, so this tap is landing on
+                         * whatever screen Move is still on — treating it as
+                         * a selection launched "pad N" against a set that
+                         * was never loaded (observed on hardware: a tap 1 s
+                         * after arming fired the launch before the overview
+                         * even opened). Not a candidate; it still passes to
+                         * Move like any other pad. */
                     } else {
                         /* Launch candidate: Move loads the set now; the
                          * trigger fires when the load has settled. A second

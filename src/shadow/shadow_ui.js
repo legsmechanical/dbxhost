@@ -596,7 +596,15 @@ let selectPhase = {
     launching: false,   /* trigger consumed, hook running / tool opening */
     hookWaitTicks: 0,
     statusLine: "",     /* "preparing" feedback while launching */
-    prevDisplayMode: 1  /* reclaim detection: 0->1 = a copy/delete flow ended */
+    prevDisplayMode: 1, /* reclaim detection: 0->1 = a copy/delete flow ended */
+    /* Set-switch ordering (mid-session): when the selection targets a set
+     * OTHER than the one loaded at phase entry, the resume must wait for the
+     * host's SET_CHANGED reload (which also rewrites active_set.txt) —
+     * otherwise the tool resumes against the OLD set view and keeps its
+     * suspended data. setChangeSeen is raised by the SET_CHANGED handler. */
+    awaitSetChange: false,
+    setChangeSeen: false,
+    setWaitTicks: 0
 };
 
 const SPLASH_BALL_Y = 26;
@@ -14198,6 +14206,10 @@ function enterSelectPhaseView() {
     selectPhase.lastPad = -1;
     selectPhase.statusLine = "";
     selectPhase.prevDisplayMode = 1;
+    selectPhase.awaitSetChange = false;
+    selectPhase.setChangeSeen = false;
+    selectPhase.setWaitTicks = 0;
+    selectPhase.hookWaitTicks = 0;
     view = VIEWS.SELECT_PHASE;
     selectRefreshList();
     announce(selectPhase.title + ". Tap a pad to open a set, click to resume.");
@@ -14273,6 +14285,12 @@ function selectBeginLaunch(k) {
     const isResume = (k === 127);
     const chosen = isResume ? "current" : String(k);
     if (!isResume) selectPhase.lastPad = k;
+    /* A selection that CHANGES the set must not resume the tool until the
+     * host's SET_CHANGED reload has run (active_set.txt and slot state are
+     * rewritten there). Resume-current and same-index taps skip the wait. */
+    selectPhase.awaitSetChange = (!isResume && k !== selectPhase.current);
+    selectPhase.setChangeSeen = false;
+    selectPhase.setWaitTicks = 0;
 
     /* End the phase FIRST: clear the SHM flag and the launcher's marker, so a
      * hook-triggered relaunch (or a crash recovery) direct-boots instead of
@@ -14286,12 +14304,33 @@ function selectBeginLaunch(k) {
     if (cmdJson) host_write_file(HOST_STATE_ROOT + "/boot_tool.json", cmdJson);
 
     if (typeof host_system_cmd === "function" && host_file_exists(SELECT_HOOK_SH)) {
+        /* Overwrite any PREVIOUS selection's result with a pending marker
+         * SYNCHRONOUSLY before spawning the hook. The old form deleted the
+         * stale file inside the async command — and the tick poll could read
+         * the previous result before that rm ever ran, skipping the hook
+         * entirely (observed on hardware: resume 100 ms after the trigger,
+         * no dbus-save, no wiring check). */
+        host_write_file(SELECT_HOOK_JSON, '{"status": "pending"}');
         selectPhase.hookWaitTicks = SELECT_HOOK_TIMEOUT_TICKS;
-        host_system_cmd('sh -c "rm -f ' + SELECT_HOOK_JSON + '; sh ' +
-                        SELECT_HOOK_SH + ' ' + chosen + '"');
+        host_system_cmd('sh ' + SELECT_HOOK_SH + ' ' + chosen);
     } else {
-        selectOpenBootTool();
+        selectFinishLaunch();
     }
+}
+
+/* Hook said "open" (or there is no hook): resume/open the tool — but if the
+ * selection switched sets, hold until the host's SET_CHANGED reload has run
+ * (or a timeout passes: fail open rather than wedge). */
+function selectFinishLaunch() {
+    if (selectPhase.awaitSetChange && !selectPhase.setChangeSeen) {
+        if (selectPhase.setWaitTicks === 0) {
+            selectPhase.setWaitTicks = 150;   /* ~5 s @30fps */
+            selectPhase.statusLine = "Loading set...";
+            debugLog("select phase: waiting for SET_CHANGED before resume");
+        }
+        return;   /* tickSelectPhase keeps calling until seen or timeout */
+    }
+    selectOpenBootTool();
 }
 
 /* Per-tick work while the phase is active. Called from tick() before the view
@@ -14318,17 +14357,23 @@ function tickSelectPhase() {
         if (k !== -1) selectBeginLaunch(k);
     }
 
-    /* Waiting on the post-selection hook */
+    /* Waiting on the post-selection hook. The result file starts as a
+     * synchronously-written {"status": "pending"} marker so a PREVIOUS
+     * selection's result can never be mistaken for this one's. */
     if (selectPhase.launching && selectPhase.hookWaitTicks > 0) {
         selectPhase.hookWaitTicks--;
         const raw = host_file_exists(SELECT_HOOK_JSON) ? host_read_file(SELECT_HOOK_JSON) : null;
+        let status = null;
         if (raw) {
-            selectPhase.hookWaitTicks = 0;
-            let status = "open";
+            status = "open";   /* malformed = fail-open */
             try {
                 const j = JSON.parse(raw);
                 if (j && typeof j.status === "string") status = j.status;
-            } catch (e) { /* malformed = fail-open */ }
+            } catch (e) { /* keep fail-open */ }
+            if (status === "pending") status = null;   /* hook still running */
+        }
+        if (status) {
+            selectPhase.hookWaitTicks = 0;
             if (status === "relaunch") {
                 /* The hook is restarting Move (set rewritten); this process
                  * dies with the session iteration and the next boot goes
@@ -14336,13 +14381,25 @@ function tickSelectPhase() {
                 selectPhase.statusLine = "Restarting...";
                 debugLog("select phase: hook requested relaunch");
             } else {
-                selectOpenBootTool();
+                selectFinishLaunch();
             }
         } else if (selectPhase.hookWaitTicks === 0) {
             /* Hook never answered — fail OPEN (the tool is more useful than a
              * frozen select screen; the set may just lack the hook's rewiring). */
             debugLog("select phase: hook timeout — opening tool anyway");
-            selectOpenBootTool();
+            selectFinishLaunch();
+        }
+    }
+
+    /* Set-change hold: the hook said "open" but the selection switched sets —
+     * resume only after the host's SET_CHANGED reload ran (or time out). */
+    if (selectPhase.launching && selectPhase.setWaitTicks > 0) {
+        if (selectPhase.setChangeSeen) {
+            selectFinishLaunch();
+        } else if (--selectPhase.setWaitTicks === 0) {
+            debugLog("select phase: SET_CHANGED wait timed out — resuming anyway");
+            selectPhase.awaitSetChange = false;
+            selectFinishLaunch();
         }
     }
 }
@@ -16286,6 +16343,11 @@ globalThis.tick = function() {
                 shadow_clear_ui_flags(SHADOW_UI_FLAG_SET_CHANGED);
             }
             debugLog("SET_CHANGED: reload complete");
+            /* Select gate: a launch that switched sets WAITS for this reload
+             * before resuming the tool (see tickSelectPhase) — resuming
+             * earlier hands the tool a stale active-set view and its
+             * set-mismatch reload never fires (hardware, 2026-08-06). */
+            selectPhase.setChangeSeen = true;
         }
         /* SETTINGS and SCREENREADER flags are handled earlier with SLOT/MFX/OVERTAKE */
     }
