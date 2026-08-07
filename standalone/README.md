@@ -203,7 +203,12 @@ Split of responsibilities (all generic host code; this directory provides the
 launcher-side files):
 
 - **shim** (`src/schwung_shim.c`, "Boot set-select gate"): decides what a pad
-  tap *means*. A tap outside a copy/delete flow, once Move's load settles, is
+  tap *means*. During the phase the surface is locked down to the picker:
+  every input except pads, jog wheel/click, Copy, Delete and the volume knob
+  is a no-op (Shift is tracked but blocked; **Shift+Back leaves the session
+  to stock**), and Move's LED writes pass only for the picker's own lights
+  (pad RGB sysex + the Copy/Delete buttons) — track/step/transport LEDs stay
+  dark. A tap outside a copy/delete flow, once Move's load settles, is
   the launch trigger; jog click means "resume the already-loaded set";
   Shift+pad is suppressed; while Copy or Delete is HELD the OLED is ceded to
   Move so its confirm text shows, and reclaimed the instant the button is

@@ -6273,14 +6273,20 @@ static void shim_select_inject(uint8_t cin, uint8_t status, uint8_t d1, uint8_t 
 static void shim_select_blank_move_leds(void)
 {
     if (!shadow_control || !shadow_control->select_phase) return;
-    if (select_boot_armed) return;
-    if (select_launched) return;
-    if (select_entry_state >= 6) return;
-    /* Active from the ARM instant — including the frames while the arming
-     * tool is still suspending (overtake up) and the state-0 frame before
-     * the machine's first step. The flash lives exactly in those edges: the
-     * overtake-exit LED cache replay repaints Move's UI before the entry
-     * machine has taken its first step (observed on hardware 2026-08-06). */
+    if (shadow_control->overtake_mode) return;   /* a tool owns LEDs */
+
+    /* Two modes:
+     * FULL  — mid-session ENTRY only (arm → overview): strip every Move LED
+     *         write, including RGB sysex; the pads stay dark so Move's
+     *         previous-mode instrument UI never flashes (the overtake-exit
+     *         LED cache replay repaints it in exactly this window).
+     * PICKER — the phase proper (boot or entered): only the picker's own
+     *         lights show. Pad RGB rides cable-0 sysex → sysex passes; note
+     *         LEDs pass only for pads (68-99); button-CC LEDs pass only for
+     *         Copy and Delete. Track/step/transport LEDs: dark, matching the
+     *         input no-ops. */
+    int entering = !select_boot_armed && !select_launched && select_entry_state < 6;
+
     uint8_t *shadow = schwung_spi_get_shadow(g_spi_handle);
     if (!shadow) return;
     uint8_t *midi_out = shadow + MIDI_OUT_OFFSET;
@@ -6288,9 +6294,19 @@ static void shim_select_blank_move_leds(void)
         uint8_t cable = (midi_out[i] >> 4) & 0x0F;
         uint8_t cin = midi_out[i] & 0x0F;
         uint8_t type = midi_out[i + 1] & 0xF0;
+        uint8_t d1 = midi_out[i + 2];
         if (cable != 0) continue;
-        if (type == 0x90 || type == 0x80 || type == 0xB0 ||
-            (cin >= 0x04 && cin <= 0x07)) {
+        int strip = 0;
+        if (entering) {
+            strip = (type == 0x90 || type == 0x80 || type == 0xB0 ||
+                     (cin >= 0x04 && cin <= 0x07));
+        } else {
+            if (type == 0x90 || type == 0x80)
+                strip = !(d1 >= 68 && d1 <= 99);
+            else if (type == 0xB0)
+                strip = !(d1 == CC_COPY || d1 == CC_DELETE);
+        }
+        if (strip) {
             midi_out[i] = 0; midi_out[i + 1] = 0;
             midi_out[i + 2] = 0; midi_out[i + 3] = 0;
         }
@@ -6446,6 +6462,34 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
         int zero_it = 0;
 
         if (cin == 0x0B && type == 0xB0) {
+            /* Default-deny: the picker uses pads, jog, Copy, Delete — every
+             * other control is a no-op during the phase (Josh's call: no way
+             * to wander Move off the picker, no accidental transport/track
+             * side effects). Kept: jog wheel/click, Copy, Delete, and the
+             * master volume knob (output level, not UI). Shift is TRACKED
+             * (from the hardware buffer, for Shift+pad suppression and
+             * Shift+Back) but blocked from Move; Back is claimed for
+             * Shift+Back = leave the session. */
+            switch (d1) {
+            case CC_JOG_WHEEL: case CC_JOG_CLICK:
+            case CC_COPY: case CC_DELETE:
+            case CC_MASTER_KNOB:
+                break;                      /* allowed (jog click zeroed below) */
+            case CC_BACK:
+                zero_it = 1;
+                if (d2 > 0 && shadow_shift_held && !select_launched) {
+                    static uint64_t select_exit_last_ms = 0;
+                    if (now - select_exit_last_ms > 2000) {
+                        select_exit_last_ms = now;
+                        shadow_log("select gate: Shift+Back -> exit to stock");
+                        shim_worker_post(SHIM_EVT_SELECT_EXIT_STOCK);
+                    }
+                }
+                break;
+            default:
+                zero_it = 1;                /* Shift (49) included: tracked from hw only */
+                break;
+            }
             if (d1 == CC_COPY)   select_copy_held   = (d2 > 0);
             if (d1 == CC_DELETE) select_delete_held = (d2 > 0);
             if (d1 == CC_JOG_CLICK) {
@@ -6468,6 +6512,13 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
             /* Picker frozen after the trigger: no more set management. */
             if (select_launched && (d1 == CC_COPY || d1 == CC_DELETE))
                 zero_it = 1;
+        } else if ((cin == 0x09 || cin == 0x08) &&
+                   (type == 0x90 || type == 0x80) &&
+                   !(d1 >= 68 && d1 <= 99)) {
+            /* Non-pad notes: block everything except the volume-knob touch
+             * (note 8 — pairs with the allowed CC 79). Track buttons, step
+             * buttons, knob touches: all no-ops during the phase. */
+            if (d1 != 8) zero_it = 1;
         } else if ((cin == 0x09 || cin == 0x08) &&
                    (type == 0x90 || type == 0x80) &&
                    d1 >= 68 && d1 <= 99) {
@@ -6517,6 +6568,11 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
             /* pad aftertouch follows its note's fate */
             if ((select_pad_suppress_mask & (1u << (d1 - 68))) || select_launched)
                 zero_it = 1;
+        } else if (cin >= 0x08 && cin <= 0x0E && status >= 0x80) {
+            /* Any other cable-0 channel message (non-pad aftertouch, pitch
+             * bend, ...): no-op during the phase. ASIC metadata (status 0)
+             * and sysex are untouched. */
+            zero_it = 1;
         }
 
         if (zero_it) {

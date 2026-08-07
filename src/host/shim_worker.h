@@ -61,6 +61,7 @@ extern volatile int shim_jack_persist;
 #define SHIM_EVT_SKIPBACK_SAVE      6  /* spawn the detached skipback writer */
 #define SHIM_EVT_SKIPBACK_RESIZE    7  /* realloc the skipback ring */
 #define SHIM_EVT_PREVIEW_PLAY       8  /* read preview cmd path, open + mmap */
+#define SHIM_EVT_SELECT_EXIT_STOCK  9  /* Shift+Back in the set-select gate: leave the standalone session */
 
 void shim_worker_post(uint8_t evt);
 

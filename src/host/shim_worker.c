@@ -183,6 +183,14 @@ static void drain_events(void) {
         case SHIM_EVT_PREVIEW_PLAY:
             if (worker_hooks.preview_play_pending) worker_hooks.preview_play_pending();
             break;
+        case SHIM_EVT_SELECT_EXIT_STOCK:
+            /* Shift+Back in the set-select gate: leave the standalone session
+             * entirely. exit-to-stock.sh SIGTERMs the stack; the launcher's
+             * exit path restores the native library and resumes the watchdog.
+             * A no-op on an install without the script (ordinary Schwung
+             * never arms the gate, so this event never fires there). */
+            system("sh " SCHWUNG_INSTALL_DIR "/scripts/exit-to-stock.sh");
+            break;
         default:
             break;
         }
