@@ -800,6 +800,15 @@ if [ -d ./standalone ]; then
     # wired at birth — see the generator's header). Generated, not checked in,
     # so the pristine fixture stays the single source.
     python3 ./standalone/scripts/make-template.py
+    # Launcher splash branding (see the custom-splash block in shadow_ui.js):
+    # the session boots with the module's own artwork plus a caption naming
+    # the Schwung base it runs on. Harmless if this payload ever reaches a
+    # stock install — the host honours the files only alongside a standalone
+    # session-boot signal (select_phase / boot_tool.json).
+    if [ -f ./standalone/assets/splash.hex ]; then
+        cp ./standalone/assets/splash.hex ./build/splash.hex
+        printf 'Schwung base: %s\n' "$(cat ./src/host/version.txt)" > ./build/splash_caption.txt
+    fi
     cp ./standalone/scripts/install-privileged.sh ./build/bless.sh
     chmod +x ./build/bless.sh
 fi

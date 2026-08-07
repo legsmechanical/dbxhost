@@ -555,6 +555,69 @@ let slotUserCleared = [false, false, false, false];
 let splashActive = true;
 let splashTick = 0;
 
+/* Launcher-provided boot splash (standalone sessions). A standalone install
+ * may stage two files under HOST_STATE_ROOT so the whole session reads as
+ * ITS product rather than Schwung's:
+ *   splash.hex          128x64 1-bpp bitmap, 2048 hex chars (MSB-first,
+ *                       row-major, 16 bytes/row)
+ *   splash_caption.txt  one line drawn in a band at the bottom (e.g. the
+ *                       Schwung base version, so provenance stays visible)
+ * Honoured ONLY when a standalone session-boot signal is also present
+ * (select_phase marker or boot_tool.json) — a stray splash.hex on an
+ * ordinary install can never rebrand stock Schwung's splash. */
+let customSplash = undefined;   /* undefined = not probed; null = none */
+let customSplashCaption = "";
+function ensureCustomSplash() {
+    if (customSplash !== undefined) return;
+    customSplash = null;
+    try {
+        if (typeof host_file_exists !== "function") return;
+        const sessionBoot =
+            host_file_exists(HOST_STATE_ROOT + "/select_phase") ||
+            host_file_exists(HOST_STATE_ROOT + "/boot_tool.json");
+        if (!sessionBoot || !host_file_exists(HOST_STATE_ROOT + "/splash.hex")) return;
+        const hex = (host_read_file(HOST_STATE_ROOT + "/splash.hex") || "").trim();
+        if (hex.length < 2048) return;
+        const bits = new Uint8Array(1024);
+        for (let i = 0; i < 1024; i++) {
+            const b = parseInt(hex.substr(i * 2, 2), 16);
+            if (isNaN(b)) return;
+            bits[i] = b;
+        }
+        customSplash = bits;
+        customSplashCaption =
+            ((host_read_file(HOST_STATE_ROOT + "/splash_caption.txt") || "")
+                .split("\n")[0] || "").trim();
+    } catch (e) { customSplash = null; }
+}
+
+/* Draw the launcher splash: run-length fill_rect blit (same approach as the
+ * hosted module's own splash renderer — far fewer host calls than per-pixel
+ * set_pixel) + the caption in a cleared band along the bottom. */
+function drawCustomSplash() {
+    clear_screen();
+    const bits = customSplash;
+    for (let y = 0; y < 64; y++) {
+        let runStart = -1;
+        const rowOff = y * 16;
+        for (let x = 0; x < 128; x++) {
+            const bit = (bits[rowOff + (x >> 3)] >> (7 - (x & 7))) & 1;
+            if (bit) {
+                if (runStart < 0) runStart = x;
+            } else if (runStart >= 0) {
+                fill_rect(runStart, y, x - runStart, 1, 1);
+                runStart = -1;
+            }
+        }
+        if (runStart >= 0) fill_rect(runStart, y, 128 - runStart, 1, 1);
+    }
+    if (customSplashCaption) {
+        fill_rect(0, 55, 128, 9, 0);
+        const t = truncateText(customSplashCaption, 21);
+        print(Math.max(0, Math.floor((128 - t.length * 6) / 2)), 56, t, 1);
+    }
+}
+
 /* ============================================================================
  * Boot set-select gate (standalone sessions)
  *
@@ -765,6 +828,10 @@ let hostMuteHeld = false;   /* Mute (CC 88) held — used as a modifier for Mute
 let overtakeInitPending = false;
 let overtakeInitTicks = 0;
 const OVERTAKE_INIT_DELAY_TICKS = 30; // ~500ms at 16ms tick
+/* Text on the tool-load screen. "Loading..." by default; a flow that knows
+ * WHAT is loading (the select gate) sets a richer label, and init completion
+ * resets it so the next plain tool load never inherits a stale project name. */
+let overtakeLoadingLabel = "Loading...";
 
 /* Progressive LED clearing - buffer only holds ~60 packets, so clear in batches */
 const LEDS_PER_BATCH = 20;
@@ -14578,6 +14645,14 @@ function selectOpenBootTool() {
         view = VIEWS.SLOTS;
         return;
     }
+    /* Name the load: the select gate knows WHICH project is opening, so the
+     * tool-load screen says so instead of a bare "Loading...". */
+    {
+        const _n = selectNameForIndex(selectPhase.lastPad >= 0 ? selectPhase.lastPad
+                                                               : selectPhase.current);
+        if (_n) overtakeLoadingLabel = "Loading " + _n;
+    }
+
     /* Mid-session arming: the tool suspended itself before asking for the
      * picker (suspend_keeps_js park). Resume it rather than starting fresh —
      * its own resume edge detects a set-UUID change and reloads state, which
@@ -16209,7 +16284,9 @@ globalThis.tick = function() {
                 }
             }
         } else {
-            drawSplashScreen();
+            ensureCustomSplash();
+            if (customSplash) drawCustomSplash();
+            else drawSplashScreen();
             return;
         }
     }
@@ -16870,9 +16947,14 @@ globalThis.tick = function() {
                     overtakeInitTicks++;
                     /* Log every tick during init phase for debugging */
                     debugLog("OVERTAKE init phase: tick=" + overtakeInitTicks + " ledIdx=" + ledClearIndex);
-                    /* Show loading screen while clearing LEDs */
+                    /* Show loading screen while clearing LEDs. The label is
+                     * "Loading..." unless a flow that KNOWS what is loading
+                     * set a richer one (the select gate: "Loading <project>"). */
                     clear_screen();
-                    print(40, 28, "Loading...", 1);
+                    {
+                        const _ll = truncateText(overtakeLoadingLabel, 21);
+                        print(Math.max(0, Math.floor((128 - _ll.length * 6) / 2)), 28, _ll, 1);
+                    }
 
                     /* Clear LEDs in batches (buffer is small) */
                     const ledsCleared = clearLedBatch();
@@ -16882,6 +16964,7 @@ globalThis.tick = function() {
                     /* After LEDs cleared and delay passed, call init */
                     if (ledsCleared && overtakeInitTicks >= OVERTAKE_INIT_DELAY_TICKS) {
                         overtakeInitPending = false;
+                        overtakeLoadingLabel = "Loading...";  /* consume any select-gate label */
                         ledClearIndex = 0;  /* Reset for next time */
                         debugLog("loadOvertakeModule: init delay complete, calling init()");
                         if (overtakeModuleCallbacks && overtakeModuleCallbacks.init) {

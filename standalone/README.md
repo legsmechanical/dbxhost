@@ -236,6 +236,16 @@ takes the one relaunch (Move must reload the rewritten file). The
 `project-cmd.sh select` relaunch flavour remains as the fallback for a
 gate-less host.
 
+**Session branding.** The build ships `splash.hex` (128×64 1-bpp artwork,
+2048 hex chars) + `splash_caption.txt` ("Schwung base: <version>", generated
+from `src/host/version.txt` at build time) into the install root; the host's
+boot splash draws them instead of the Schwung animation — but ONLY alongside
+a standalone session-boot signal (`select_phase` / `boot_tool.json`), so the
+same payload on a stock install can never rebrand stock Schwung. The
+tool-load screen likewise says "Loading <project>" when the select gate knows
+which project is opening, and the hosted module skips its own boot splash
+under this host — one product, one splash.
+
 Session-scoped files (all under `$DBX_DIR`, cleared on session exit):
 `select_phase`, `select_list.json`, `select_hook_result.json`,
 `boot_tool.json`, `relaunch_patch.sh`, `relaunch_select`.
