@@ -14535,8 +14535,12 @@ function processSetChangedFlag() {
             saveSlotsToConfig(slots);
             needsRedraw = true;
 
-            /* 9. Show overlay notification (~2 seconds) */
-            if (setName) {
+            /* 9. Overlay notification (~2 seconds) — but NOT in a standalone
+             * session: there the set change is a project switch whose
+             * LOADING screen already names the set, and this overlay popped
+             * over the hosted tool right after resume (Josh, 2026-08-07).
+             * The daily-driver install keeps it (set pages etc.). */
+            if (setName && !standaloneSessionActive()) {
                 showOverlay("Set Loaded", setName, 60);
             }
 

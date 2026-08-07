@@ -6299,7 +6299,12 @@ static void shim_select_blank_move_leds(void)
      *         LEDs pass only for pads (68-99); button-CC LEDs pass only for
      *         Copy and Delete. Track/step/transport LEDs: dark, matching the
      *         input no-ops. */
-    int entering = !select_boot_armed && !select_launched && select_entry_state < 6;
+    /* Headless actuator: FULL strip for the whole run — there is no user
+     * surface, and the picker-mode pass-through let the native overview pads
+     * light up behind "Loading" (Josh, 2026-08-07: "falls back briefly to
+     * the native ui" during a switch). */
+    int entering = select_headless ||
+                   (!select_boot_armed && !select_launched && select_entry_state < 6);
 
     uint8_t *shadow = schwung_spi_get_shadow(g_spi_handle);
     if (!shadow) return;
