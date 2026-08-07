@@ -14199,6 +14199,316 @@ function drawComponentSelect() {
 /* drawStorePickerResult() -> shadow_ui_store.mjs */
 
 /* Draw analytics opt-out prompt (shown on first run) */
+/* SET_CHANGED processing, extracted from tick()'s flag block so the select
+ * gate can run it too. ⚠ The select phase EARLY-RETURNS the tick while its
+ * screen is up — with the handler inline below that return, a set switch
+ * made from the picker could never be processed until the phase ended, so
+ * the gate's own "wait for the reload before resuming" hold deadlocked
+ * against it (observed on hardware 2026-08-06: 28 s hang, reload firing the
+ * instant the phase died, tool resumed into the mid-reload host). Reads and
+ * clears the flag itself; a no-op when the flag is down. */
+function processSetChangedFlag() {
+    if (typeof shadow_get_ui_flags !== "function") return;
+    const flags = shadow_get_ui_flags();
+    if (!(flags & SHADOW_UI_FLAG_SET_CHANGED)) return;
+            debugLog("SET_CHANGED flag detected — switching slot state directory");
+
+            /* 1. Save current state to outgoing directory */
+            autosaveAllSlots();
+            saveAllFxBusConfigs();
+            /* Save chain config (volumes, channels, mute/solo) to outgoing set dir */
+            saveChainConfigToDir(activeSlotStateDir);
+            /* Save current RNBO graph (if RNBO is running) */
+            saveRnboGraphToDir(activeSlotStateDir);
+
+            /* 2. Get UUID and set name from shim (in-memory, no file I/O on audio thread) */
+            const activeSetRaw = getSlotParam(0, "active_set");
+            const activeSetLines = activeSetRaw ? activeSetRaw.split("\n") : [];
+            const uuid = activeSetLines[0] ? activeSetLines[0].trim() : "";
+            const setName = activeSetLines[1] ? activeSetLines[1].trim() : "";
+            /* Write active_set.txt for boot persistence (UI thread, not audio thread) */
+            if (uuid) {
+                host_write_file(HOST_STATE_ROOT + "/active_set.txt", uuid + "\n" + setName);
+            }
+
+            /* 3. Determine new directory */
+            const newDir = uuid
+                ? HOST_STATE_ROOT + "/set_state/" + uuid
+                : SLOT_STATE_DIR_DEFAULT;
+
+            if (uuid && typeof host_ensure_dir === "function") {
+                host_ensure_dir(HOST_STATE_ROOT + "/set_state");
+                host_ensure_dir(newDir);
+            }
+
+            /* 4. First visit to this set: seed its state directory.
+             *    Detect if this is a duplicated set by comparing Song.abl sizes,
+             *    then copy state from the source. Otherwise start with empty slots. */
+            if (uuid && !host_file_exists(newDir + "/slot_0.json")) {
+                let copySourceDir = null;
+                /* Check for pre-existing copy_source.txt (from older shim) */
+                const copySourceUuid = host_read_file(newDir + "/copy_source.txt");
+                if (copySourceUuid && copySourceUuid.trim()) {
+                    const srcDir = HOST_STATE_ROOT + "/set_state/" + copySourceUuid.trim();
+                    if (host_file_exists(srcDir + "/slot_0.json")) {
+                        copySourceDir = srcDir;
+                    }
+                }
+                /* Detect copy by comparing Song.abl sizes (if name suggests a copy) */
+                if (!copySourceDir && setName &&
+                    (setName.toLowerCase().indexOf("copy") >= 0 ||
+                     setName.toLowerCase().indexOf("duplicate") >= 0)) {
+                    copySourceDir = detectCopySource(uuid);
+                }
+                if (copySourceDir) {
+                    debugLog("SET_CHANGED: duplicated set, copying from " + copySourceDir);
+                    for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+                        const src = host_read_file(copySourceDir + "/slot_" + i + ".json");
+                        if (src) host_write_file(newDir + "/slot_" + i + ".json", src);
+                        const mfx = host_read_file(copySourceDir + "/master_fx_" + i + ".json");
+                        if (mfx) host_write_file(newDir + "/master_fx_" + i + ".json", mfx);
+                    }
+                    /* Copy send FX per-set files (2 buses × 4 slots) + return-level meta */
+                    for (let bi = 0; bi < SEND_FX_BUSES.length; bi++) {
+                        for (let s = 0; s < SEND_FX_SLOTS_JS; s++) {
+                            const sfxName = "/send_fx_" + SEND_FX_BUSES[bi] + "_" + s + ".json";
+                            const sfx = host_read_file(copySourceDir + sfxName);
+                            if (sfx) host_write_file(newDir + sfxName, sfx);
+                        }
+                    }
+                    const sfxMeta = host_read_file(copySourceDir + "/send_fx_meta.json");
+                    if (sfxMeta) host_write_file(newDir + "/send_fx_meta.json", sfxMeta);
+                    /* Copy Move FX per-set files (4 slots × blocks) + strip meta */
+                    for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++) {
+                        for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) {
+                            const mvName = "/move_fx_" + sl + "_" + b + ".json";
+                            const mv = host_read_file(copySourceDir + mvName);
+                            if (mv) host_write_file(newDir + mvName, mv);
+                        }
+                    }
+                    const mvMeta = host_read_file(copySourceDir + "/move_fx_meta.json");
+                    if (mvMeta) host_write_file(newDir + "/move_fx_meta.json", mvMeta);
+                    /* Also copy chain config */
+                    const chainCfg = host_read_file(copySourceDir + "/shadow_chain_config.json");
+                    if (chainCfg) host_write_file(newDir + "/shadow_chain_config.json", chainCfg);
+                } else {
+                    /* New set — start with empty slots */
+                    debugLog("SET_CHANGED: new set, starting with empty slots");
+                    for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+                        host_write_file(newDir + "/slot_" + i + ".json", "{}\n");
+                        host_write_file(newDir + "/master_fx_" + i + ".json", "{}\n");
+                    }
+                    /* Empty send FX files so a new set starts with no send chains. */
+                    for (let bi = 0; bi < SEND_FX_BUSES.length; bi++) {
+                        for (let s = 0; s < SEND_FX_SLOTS_JS; s++) {
+                            host_write_file(newDir + "/send_fx_" + SEND_FX_BUSES[bi] + "_" + s + ".json", "{}\n");
+                        }
+                    }
+                    /* Empty Move FX files so a new set starts with no Move FX chains. */
+                    for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++) {
+                        for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) {
+                            host_write_file(newDir + "/move_fx_" + sl + "_" + b + ".json", "{}\n");
+                        }
+                    }
+                    /* Seed a default chain config so receive channels reset to
+                     * per-track defaults (Ch 1-4). Without this, the upcoming
+                     * loadChainConfigFromDir silently bails and the shim's
+                     * slot.channel keeps stale values from the prior set —
+                     * symptom: no audio on new sets until user toggles Recv Ch. */
+                    const defaultCfg = { slots: [] };
+                    for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+                        defaultCfg.slots.push({
+                            name: "",
+                            channel: i + 1,
+                            volume: 1.0,
+                            forward_channel: -1,
+                            muted: 0,
+                            soloed: 0
+                        });
+                    }
+                    host_write_file(newDir + "/shadow_chain_config.json",
+                        JSON.stringify(defaultCfg, null, 2) + "\n");
+                }
+            }
+
+            /* 5. Switch directory and load chain config (volumes/channels/mute/solo) */
+            const oldDir = activeSlotStateDir;
+            activeSlotStateDir = newDir;
+            debugLog("SET_CHANGED: " + oldDir + " -> " + newDir);
+            loadChainConfigFromDir(newDir);
+
+            /* 6. Two-pass reload: clear ALL old slots first (freeing memory),
+             *    then load new slots. This reduces peak memory when switching
+             *    between sets with heavy synths. */
+
+            /* Pass 1: Clear all slots to free memory before loading anything new */
+            debugLog("SET_CHANGED: pass 1 — clearing all slots");
+            for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+                setSlotParamWithTimeout(i, "clear", "", 1500);
+            }
+
+            /* Pass 2: Load new state for non-empty slots */
+            debugLog("SET_CHANGED: pass 2 — loading new slot states");
+            for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+                const path = activeSlotStateDir + "/slot_" + i + ".json";
+                if (host_file_exists(path)) {
+                    const raw = host_read_file(path);
+                    /* Non-empty state: try load_file with extended timeout + retry. */
+                    if (raw && raw.length > 10) {
+                        let loadOk = setSlotParamWithTimeout(i, "load_file", path, 1500);
+                        if (!loadOk) {
+                            debugLog("SET_CHANGED: load_file timeout slot " + (i + 1) + " path " + path + " (retry)");
+                            loadOk = setSlotParamWithTimeout(i, "load_file", path, 3000);
+                        }
+                        if (loadOk) {
+                            debugLog("SET_CHANGED: slot " + (i + 1) + " loaded");
+                        } else {
+                            debugLog("SET_CHANGED: slot " + (i + 1) + " not restored (load timeout)");
+                        }
+                    } else {
+                        debugLog("SET_CHANGED: slot " + (i + 1) + " empty state (already cleared)");
+                    }
+                } else {
+                    debugLog("SET_CHANGED: slot " + (i + 1) + " no state file (already cleared)");
+                }
+            }
+            /* Refresh UI state immediately so display reflects new slot contents */
+            for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+                lastSlotModuleSignatures[i] = "";  /* force refresh */
+                refreshSlotModuleSignature(i);
+                /* Drop any pending user-cleared flag from the outgoing set;
+                 * the new set's emptiness/non-emptiness is determined by its
+                 * own files, not by what the user did before the switch. */
+                slotUserCleared[i] = false;
+            }
+
+            /* Suppress autosave briefly so async DSP settling doesn't
+             * overwrite the freshly-written slot files */
+            autosaveSuppressUntil = 150; /* ~5 seconds at 30fps */
+
+            /* 7. Reload master FX modules from per-set state files.
+             * This restore is always about the MASTER bus. Two things must be
+             * reset first, because a Send FX editor (3 slots) may have been the
+             * last-active bus when the set changed:
+             *   - activeFxBus: setMasterFxSlotModule() is activeFxBus-relative, so
+             *     a stale send bus would misdirect the master chain's modules to
+             *     send_fx:* keys (loading heavy modules into send slots + firing the
+             *     out-of-range fx4) and flood the blocking set_param channel.
+             *   - masterFxConfig: it is rebuilt to activeFxBus.slotCount on editor
+             *     entry, so after a 3-slot send editor it only has fx1..fx3. The
+             *     loop below writes masterFxConfig["fx4"], which would be undefined
+             *     → TypeError → the handler throws BEFORE clearing SHADOW_UI_FLAG_SET_CHANGED
+             *     (step 11) → SET_CHANGED re-runs every tick → persistent global lag.
+             * Rebuilding it for the 4 master slots makes the restore self-contained. */
+            activeFxBus = FX_BUS.master;
+            masterFxConfig = { fx1: { module: "" }, fx2: { module: "" },
+                               fx3: { module: "" }, fx4: { module: "" } };
+            for (let mfxi = 0; mfxi < 4; mfxi++) {
+                const mfxPath = activeSlotStateDir + "/master_fx_" + mfxi + ".json";
+                let mfxDspPath = "";
+                let mfxModuleId = "";
+                let mfxData = null;
+                if (host_file_exists(mfxPath)) {
+                    try {
+                        const mfxRaw = host_read_file(mfxPath);
+                        if (mfxRaw && mfxRaw.length > 10) {
+                            mfxData = JSON.parse(mfxRaw);
+                            mfxDspPath = mfxData.module_path || "";
+                            mfxModuleId = mfxData.module_id || "";
+                        }
+                    } catch (e) {}
+                }
+                /* Load or unload the module */
+                setMasterFxSlotModule(mfxi, mfxDspPath);
+                const key = `fx${mfxi + 1}`;
+                masterFxConfig[key].module = mfxModuleId;
+
+                /* Restore plugin state/params if available */
+                if (mfxData) {
+                    try {
+                        if (mfxDspPath && mfxData.state) {
+                            const stateStr = (typeof mfxData.state === "string")
+                                ? mfxData.state
+                                : JSON.stringify(mfxData.state);
+                            shadow_set_param(0, `master_fx:fx${mfxi + 1}:state`, stateStr);
+                        }
+                        if (mfxDspPath && mfxData.params) {
+                            for (const [pk, pv] of Object.entries(mfxData.params)) {
+                                shadow_set_param(0, `master_fx:fx${mfxi + 1}:${pk}`, String(pv));
+                            }
+                        }
+                        if (mfxi === 0 && mfxData.lfos && typeof shadow_set_param === "function") {
+                            for (let li = 1; li <= 2; li++) {
+                                const lfoConfig = mfxData.lfos["lfo" + li];
+                                if (!lfoConfig) continue;
+                                restoreMasterFxLfo(li, lfoConfig);
+                            }
+                        }
+                    } catch (e) {}
+                }
+                debugLog("SET_CHANGED: MFX " + mfxi + " -> " + (mfxModuleId || "(none)"));
+            }
+
+            /* 7b. Reload send FX chains + return levels for the new set. Uses
+             * explicit send_fx:* keys, so it's independent of activeFxBus. */
+            restoreSendFxFromFiles();
+            /* 7c. Reload Move FX chains + strip levels for the new set. */
+            restoreMoveFxFromFiles();
+
+            /* 8. Refresh slot names from new autosave files */
+            for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+                slots[i].name = "";
+                const raw = host_read_file(activeSlotStateDir + "/slot_" + i + ".json");
+                if (raw) {
+                    const m = raw.match(/"name"\s*:\s*"([^"]+)"/);
+                    if (m && m[1]) slots[i].name = m[1];
+                }
+            }
+            saveSlotsToConfig(slots);
+            needsRedraw = true;
+
+            /* 9. Show overlay notification (~2 seconds) */
+            if (setName) {
+                showOverlay("Set Loaded", setName, 60);
+            }
+
+            /* 10. Load RNBO graph for this set (if RNBO is running) */
+            loadRnboGraphFromDir(activeSlotStateDir);
+
+            /* 10b. Request Link tempo override to match the new set's tempo.
+             * link-subscriber picks this up and only applies when numPeers==1
+             * (Move alone), so we don't clobber collaboration with Live. */
+            if (uuid && setName) {
+                try {
+                    const songPath = "/data/UserData/UserLibrary/Sets/" + uuid + "/" + setName + "/Song.abl";
+                    const songJson = host_read_file(songPath);
+                    if (songJson) {
+                        const m = songJson.match(/"tempo"\s*:\s*([0-9.]+)/);
+                        if (m && m[1]) {
+                            const bpm = parseFloat(m[1]);
+                            if (bpm >= 20 && bpm <= 999) {
+                                host_write_file("/data/UserData/schwung/desired-tempo", bpm.toFixed(4) + "\n");
+                                debugLog("SET_CHANGED: requested Link tempo override " + bpm.toFixed(2) + " BPM");
+                            }
+                        }
+                    }
+                } catch (e) {
+                    debugLog("SET_CHANGED: tempo-override write failed: " + e);
+                }
+            }
+
+            /* 11. Clear flag */
+            if (typeof shadow_clear_ui_flags === "function") {
+                shadow_clear_ui_flags(SHADOW_UI_FLAG_SET_CHANGED);
+            }
+            debugLog("SET_CHANGED: reload complete");
+            /* Select gate: a launch that switched sets WAITS for this reload
+             * before resuming the tool (see tickSelectPhase) — resuming
+             * earlier hands the tool a stale active-set view and its
+             * set-mismatch reload never fires (hardware, 2026-08-06). */
+            selectPhase.setChangeSeen = true;
+}
+
 /* === Boot set-select gate: view + launch flow (state near the splash vars) === */
 
 function enterSelectPhaseView() {
@@ -14251,6 +14561,15 @@ function selectNameForIndex(idx) {
  * uses (hidden-INCLUSIVE scan: an explicit tool_id is a direct request). */
 function selectOpenBootTool() {
     selectPhase.active = false;
+    /* Drop any queued jump flags before the tool takes the surface. During a
+     * long hold the user may have mashed escape gestures (Shift+Step13 →
+     * JUMP_TO_TOOLS etc.); left pending, the first one fires right after the
+     * resume and re-suspends the tool into the Tools menu — observed on
+     * hardware as "dumped into Move native". SET_CHANGED (0x20) and
+     * SAVE_STATE (0x08) are deliberately kept. */
+    if (typeof shadow_clear_ui_flags === "function") {
+        shadow_clear_ui_flags(0x01 | 0x02 | 0x04 | 0x10 | 0x40 | 0x80);
+    }
     const cmdJson = host_read_file("/data/UserData/schwung/open_tool_cmd.json");
     let cmd = null;
     try { cmd = cmdJson ? JSON.parse(cmdJson) : null; } catch (e) { cmd = null; }
@@ -14338,6 +14657,11 @@ function selectFinishLaunch() {
 /* Per-tick work while the phase is active. Called from tick() before the view
  * dispatch; the SELECT_PHASE view draws every frame like the splash does. */
 function tickSelectPhase() {
+    /* The select screen's tick block early-returns before the main flag
+     * handlers, so a set switch made from the picker must be processed HERE
+     * or it deadlocks the launch hold (see processSetChangedFlag's banner). */
+    processSetChangedFlag();
+
     /* Async list refresh landed? */
     if (selectPhase.listPending && selectParseList()) {
         selectPhase.listPending = false;
@@ -16068,302 +16392,7 @@ globalThis.tick = function() {
             }
         }
         if (flags & SHADOW_UI_FLAG_SET_CHANGED) {
-            debugLog("SET_CHANGED flag detected — switching slot state directory");
-
-            /* 1. Save current state to outgoing directory */
-            autosaveAllSlots();
-            saveAllFxBusConfigs();
-            /* Save chain config (volumes, channels, mute/solo) to outgoing set dir */
-            saveChainConfigToDir(activeSlotStateDir);
-            /* Save current RNBO graph (if RNBO is running) */
-            saveRnboGraphToDir(activeSlotStateDir);
-
-            /* 2. Get UUID and set name from shim (in-memory, no file I/O on audio thread) */
-            const activeSetRaw = getSlotParam(0, "active_set");
-            const activeSetLines = activeSetRaw ? activeSetRaw.split("\n") : [];
-            const uuid = activeSetLines[0] ? activeSetLines[0].trim() : "";
-            const setName = activeSetLines[1] ? activeSetLines[1].trim() : "";
-            /* Write active_set.txt for boot persistence (UI thread, not audio thread) */
-            if (uuid) {
-                host_write_file(HOST_STATE_ROOT + "/active_set.txt", uuid + "\n" + setName);
-            }
-
-            /* 3. Determine new directory */
-            const newDir = uuid
-                ? HOST_STATE_ROOT + "/set_state/" + uuid
-                : SLOT_STATE_DIR_DEFAULT;
-
-            if (uuid && typeof host_ensure_dir === "function") {
-                host_ensure_dir(HOST_STATE_ROOT + "/set_state");
-                host_ensure_dir(newDir);
-            }
-
-            /* 4. First visit to this set: seed its state directory.
-             *    Detect if this is a duplicated set by comparing Song.abl sizes,
-             *    then copy state from the source. Otherwise start with empty slots. */
-            if (uuid && !host_file_exists(newDir + "/slot_0.json")) {
-                let copySourceDir = null;
-                /* Check for pre-existing copy_source.txt (from older shim) */
-                const copySourceUuid = host_read_file(newDir + "/copy_source.txt");
-                if (copySourceUuid && copySourceUuid.trim()) {
-                    const srcDir = HOST_STATE_ROOT + "/set_state/" + copySourceUuid.trim();
-                    if (host_file_exists(srcDir + "/slot_0.json")) {
-                        copySourceDir = srcDir;
-                    }
-                }
-                /* Detect copy by comparing Song.abl sizes (if name suggests a copy) */
-                if (!copySourceDir && setName &&
-                    (setName.toLowerCase().indexOf("copy") >= 0 ||
-                     setName.toLowerCase().indexOf("duplicate") >= 0)) {
-                    copySourceDir = detectCopySource(uuid);
-                }
-                if (copySourceDir) {
-                    debugLog("SET_CHANGED: duplicated set, copying from " + copySourceDir);
-                    for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
-                        const src = host_read_file(copySourceDir + "/slot_" + i + ".json");
-                        if (src) host_write_file(newDir + "/slot_" + i + ".json", src);
-                        const mfx = host_read_file(copySourceDir + "/master_fx_" + i + ".json");
-                        if (mfx) host_write_file(newDir + "/master_fx_" + i + ".json", mfx);
-                    }
-                    /* Copy send FX per-set files (2 buses × 4 slots) + return-level meta */
-                    for (let bi = 0; bi < SEND_FX_BUSES.length; bi++) {
-                        for (let s = 0; s < SEND_FX_SLOTS_JS; s++) {
-                            const sfxName = "/send_fx_" + SEND_FX_BUSES[bi] + "_" + s + ".json";
-                            const sfx = host_read_file(copySourceDir + sfxName);
-                            if (sfx) host_write_file(newDir + sfxName, sfx);
-                        }
-                    }
-                    const sfxMeta = host_read_file(copySourceDir + "/send_fx_meta.json");
-                    if (sfxMeta) host_write_file(newDir + "/send_fx_meta.json", sfxMeta);
-                    /* Copy Move FX per-set files (4 slots × blocks) + strip meta */
-                    for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++) {
-                        for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) {
-                            const mvName = "/move_fx_" + sl + "_" + b + ".json";
-                            const mv = host_read_file(copySourceDir + mvName);
-                            if (mv) host_write_file(newDir + mvName, mv);
-                        }
-                    }
-                    const mvMeta = host_read_file(copySourceDir + "/move_fx_meta.json");
-                    if (mvMeta) host_write_file(newDir + "/move_fx_meta.json", mvMeta);
-                    /* Also copy chain config */
-                    const chainCfg = host_read_file(copySourceDir + "/shadow_chain_config.json");
-                    if (chainCfg) host_write_file(newDir + "/shadow_chain_config.json", chainCfg);
-                } else {
-                    /* New set — start with empty slots */
-                    debugLog("SET_CHANGED: new set, starting with empty slots");
-                    for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
-                        host_write_file(newDir + "/slot_" + i + ".json", "{}\n");
-                        host_write_file(newDir + "/master_fx_" + i + ".json", "{}\n");
-                    }
-                    /* Empty send FX files so a new set starts with no send chains. */
-                    for (let bi = 0; bi < SEND_FX_BUSES.length; bi++) {
-                        for (let s = 0; s < SEND_FX_SLOTS_JS; s++) {
-                            host_write_file(newDir + "/send_fx_" + SEND_FX_BUSES[bi] + "_" + s + ".json", "{}\n");
-                        }
-                    }
-                    /* Empty Move FX files so a new set starts with no Move FX chains. */
-                    for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++) {
-                        for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) {
-                            host_write_file(newDir + "/move_fx_" + sl + "_" + b + ".json", "{}\n");
-                        }
-                    }
-                    /* Seed a default chain config so receive channels reset to
-                     * per-track defaults (Ch 1-4). Without this, the upcoming
-                     * loadChainConfigFromDir silently bails and the shim's
-                     * slot.channel keeps stale values from the prior set —
-                     * symptom: no audio on new sets until user toggles Recv Ch. */
-                    const defaultCfg = { slots: [] };
-                    for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
-                        defaultCfg.slots.push({
-                            name: "",
-                            channel: i + 1,
-                            volume: 1.0,
-                            forward_channel: -1,
-                            muted: 0,
-                            soloed: 0
-                        });
-                    }
-                    host_write_file(newDir + "/shadow_chain_config.json",
-                        JSON.stringify(defaultCfg, null, 2) + "\n");
-                }
-            }
-
-            /* 5. Switch directory and load chain config (volumes/channels/mute/solo) */
-            const oldDir = activeSlotStateDir;
-            activeSlotStateDir = newDir;
-            debugLog("SET_CHANGED: " + oldDir + " -> " + newDir);
-            loadChainConfigFromDir(newDir);
-
-            /* 6. Two-pass reload: clear ALL old slots first (freeing memory),
-             *    then load new slots. This reduces peak memory when switching
-             *    between sets with heavy synths. */
-
-            /* Pass 1: Clear all slots to free memory before loading anything new */
-            debugLog("SET_CHANGED: pass 1 — clearing all slots");
-            for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
-                setSlotParamWithTimeout(i, "clear", "", 1500);
-            }
-
-            /* Pass 2: Load new state for non-empty slots */
-            debugLog("SET_CHANGED: pass 2 — loading new slot states");
-            for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
-                const path = activeSlotStateDir + "/slot_" + i + ".json";
-                if (host_file_exists(path)) {
-                    const raw = host_read_file(path);
-                    /* Non-empty state: try load_file with extended timeout + retry. */
-                    if (raw && raw.length > 10) {
-                        let loadOk = setSlotParamWithTimeout(i, "load_file", path, 1500);
-                        if (!loadOk) {
-                            debugLog("SET_CHANGED: load_file timeout slot " + (i + 1) + " path " + path + " (retry)");
-                            loadOk = setSlotParamWithTimeout(i, "load_file", path, 3000);
-                        }
-                        if (loadOk) {
-                            debugLog("SET_CHANGED: slot " + (i + 1) + " loaded");
-                        } else {
-                            debugLog("SET_CHANGED: slot " + (i + 1) + " not restored (load timeout)");
-                        }
-                    } else {
-                        debugLog("SET_CHANGED: slot " + (i + 1) + " empty state (already cleared)");
-                    }
-                } else {
-                    debugLog("SET_CHANGED: slot " + (i + 1) + " no state file (already cleared)");
-                }
-            }
-            /* Refresh UI state immediately so display reflects new slot contents */
-            for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
-                lastSlotModuleSignatures[i] = "";  /* force refresh */
-                refreshSlotModuleSignature(i);
-                /* Drop any pending user-cleared flag from the outgoing set;
-                 * the new set's emptiness/non-emptiness is determined by its
-                 * own files, not by what the user did before the switch. */
-                slotUserCleared[i] = false;
-            }
-
-            /* Suppress autosave briefly so async DSP settling doesn't
-             * overwrite the freshly-written slot files */
-            autosaveSuppressUntil = 150; /* ~5 seconds at 30fps */
-
-            /* 7. Reload master FX modules from per-set state files.
-             * This restore is always about the MASTER bus. Two things must be
-             * reset first, because a Send FX editor (3 slots) may have been the
-             * last-active bus when the set changed:
-             *   - activeFxBus: setMasterFxSlotModule() is activeFxBus-relative, so
-             *     a stale send bus would misdirect the master chain's modules to
-             *     send_fx:* keys (loading heavy modules into send slots + firing the
-             *     out-of-range fx4) and flood the blocking set_param channel.
-             *   - masterFxConfig: it is rebuilt to activeFxBus.slotCount on editor
-             *     entry, so after a 3-slot send editor it only has fx1..fx3. The
-             *     loop below writes masterFxConfig["fx4"], which would be undefined
-             *     → TypeError → the handler throws BEFORE clearing SHADOW_UI_FLAG_SET_CHANGED
-             *     (step 11) → SET_CHANGED re-runs every tick → persistent global lag.
-             * Rebuilding it for the 4 master slots makes the restore self-contained. */
-            activeFxBus = FX_BUS.master;
-            masterFxConfig = { fx1: { module: "" }, fx2: { module: "" },
-                               fx3: { module: "" }, fx4: { module: "" } };
-            for (let mfxi = 0; mfxi < 4; mfxi++) {
-                const mfxPath = activeSlotStateDir + "/master_fx_" + mfxi + ".json";
-                let mfxDspPath = "";
-                let mfxModuleId = "";
-                let mfxData = null;
-                if (host_file_exists(mfxPath)) {
-                    try {
-                        const mfxRaw = host_read_file(mfxPath);
-                        if (mfxRaw && mfxRaw.length > 10) {
-                            mfxData = JSON.parse(mfxRaw);
-                            mfxDspPath = mfxData.module_path || "";
-                            mfxModuleId = mfxData.module_id || "";
-                        }
-                    } catch (e) {}
-                }
-                /* Load or unload the module */
-                setMasterFxSlotModule(mfxi, mfxDspPath);
-                const key = `fx${mfxi + 1}`;
-                masterFxConfig[key].module = mfxModuleId;
-
-                /* Restore plugin state/params if available */
-                if (mfxData) {
-                    try {
-                        if (mfxDspPath && mfxData.state) {
-                            const stateStr = (typeof mfxData.state === "string")
-                                ? mfxData.state
-                                : JSON.stringify(mfxData.state);
-                            shadow_set_param(0, `master_fx:fx${mfxi + 1}:state`, stateStr);
-                        }
-                        if (mfxDspPath && mfxData.params) {
-                            for (const [pk, pv] of Object.entries(mfxData.params)) {
-                                shadow_set_param(0, `master_fx:fx${mfxi + 1}:${pk}`, String(pv));
-                            }
-                        }
-                        if (mfxi === 0 && mfxData.lfos && typeof shadow_set_param === "function") {
-                            for (let li = 1; li <= 2; li++) {
-                                const lfoConfig = mfxData.lfos["lfo" + li];
-                                if (!lfoConfig) continue;
-                                restoreMasterFxLfo(li, lfoConfig);
-                            }
-                        }
-                    } catch (e) {}
-                }
-                debugLog("SET_CHANGED: MFX " + mfxi + " -> " + (mfxModuleId || "(none)"));
-            }
-
-            /* 7b. Reload send FX chains + return levels for the new set. Uses
-             * explicit send_fx:* keys, so it's independent of activeFxBus. */
-            restoreSendFxFromFiles();
-            /* 7c. Reload Move FX chains + strip levels for the new set. */
-            restoreMoveFxFromFiles();
-
-            /* 8. Refresh slot names from new autosave files */
-            for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
-                slots[i].name = "";
-                const raw = host_read_file(activeSlotStateDir + "/slot_" + i + ".json");
-                if (raw) {
-                    const m = raw.match(/"name"\s*:\s*"([^"]+)"/);
-                    if (m && m[1]) slots[i].name = m[1];
-                }
-            }
-            saveSlotsToConfig(slots);
-            needsRedraw = true;
-
-            /* 9. Show overlay notification (~2 seconds) */
-            if (setName) {
-                showOverlay("Set Loaded", setName, 60);
-            }
-
-            /* 10. Load RNBO graph for this set (if RNBO is running) */
-            loadRnboGraphFromDir(activeSlotStateDir);
-
-            /* 10b. Request Link tempo override to match the new set's tempo.
-             * link-subscriber picks this up and only applies when numPeers==1
-             * (Move alone), so we don't clobber collaboration with Live. */
-            if (uuid && setName) {
-                try {
-                    const songPath = "/data/UserData/UserLibrary/Sets/" + uuid + "/" + setName + "/Song.abl";
-                    const songJson = host_read_file(songPath);
-                    if (songJson) {
-                        const m = songJson.match(/"tempo"\s*:\s*([0-9.]+)/);
-                        if (m && m[1]) {
-                            const bpm = parseFloat(m[1]);
-                            if (bpm >= 20 && bpm <= 999) {
-                                host_write_file("/data/UserData/schwung/desired-tempo", bpm.toFixed(4) + "\n");
-                                debugLog("SET_CHANGED: requested Link tempo override " + bpm.toFixed(2) + " BPM");
-                            }
-                        }
-                    }
-                } catch (e) {
-                    debugLog("SET_CHANGED: tempo-override write failed: " + e);
-                }
-            }
-
-            /* 11. Clear flag */
-            if (typeof shadow_clear_ui_flags === "function") {
-                shadow_clear_ui_flags(SHADOW_UI_FLAG_SET_CHANGED);
-            }
-            debugLog("SET_CHANGED: reload complete");
-            /* Select gate: a launch that switched sets WAITS for this reload
-             * before resuming the tool (see tickSelectPhase) — resuming
-             * earlier hands the tool a stale active-set view and its
-             * set-mismatch reload never fires (hardware, 2026-08-06). */
-            selectPhase.setChangeSeen = true;
+            processSetChangedFlag();
         }
         /* SETTINGS and SCREENREADER flags are handled earlier with SLOT/MFX/OVERTAKE */
     }
