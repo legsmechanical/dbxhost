@@ -148,8 +148,9 @@ Open Schwung's tool menu — **Shift + Step 13** (the star) — and choose
 **dAVEBOx SA**.
 
 The screen goes dark for a few seconds. Move is restarting under the dAVEBOx build
-of the host, and when it comes back you are **already in the sequencer**, on the
-project you last had open. That pause is the whole startup; nothing has gone wrong.
+of the host, and when it comes back you land on the **project picker**, with the
+project you last had open on the pulsing pad — tap it to keep playing it, or pick
+another. That pause is the whole startup; nothing has gone wrong.
 
 ### Projects — dAVEBOx has its own workspace
 

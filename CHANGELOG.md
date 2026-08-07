@@ -26,9 +26,9 @@ the section into a versioned heading at release time.
   with **Settings menu → Projects...** or **Shift + Step 1**: one pad per
   project (blue; the open one pulses), tap to open (~2 seconds), tap an
   empty pad for a new correctly-wired project, hold Copy to duplicate onto
-  an empty pad, hold Delete and tap twice to remove. Launching dAVEBOx SA
-  now boots straight into your last project — no picker screen to pass
-  through, and Move's own set screens never appear.
+  an empty pad, hold Delete and tap twice to remove. A fresh launch opens
+  ON the picker (over your last project — tap the pulsing pad to just play
+  it), and Move's own set screens never appear anywhere.
 - **dAVEBOx now shows only the effects the host it's running on actually has.**
   On the dAVEBOx host you get four insert FX per chain plus both Send buses; on
   official Schwung, which has two inserts and no sends, those extra rows are
