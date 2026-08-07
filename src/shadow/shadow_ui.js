@@ -3571,9 +3571,15 @@ function suspendOvertakeMode() {
             shadow_set_overtake_suppress_sysex(0);
         }
 
-        /* Dismiss shadow UI entirely so Move's native UI returns. */
+        /* Dismiss shadow UI entirely so Move's native UI returns — UNLESS
+         * the set-select gate is armed: the suspend is then the first step
+         * of a picker/actuator run and the gate owns the display; dropping
+         * it here let one native frame latch onto the OLED before the gate
+         * reclaimed (hardware 2026-08-07). */
         setView(VIEWS.SLOTS);
-        if (typeof shadow_request_exit === "function") {
+        const gateArmed = (typeof shadow_select_phase_active === "function") &&
+                          shadow_select_phase_active();
+        if (!gateArmed && typeof shadow_request_exit === "function") {
             shadow_request_exit();
         }
         needsRedraw = true;

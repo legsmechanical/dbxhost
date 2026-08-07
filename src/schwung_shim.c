@@ -5983,6 +5983,14 @@ pre_done:
 
     TIME_SECTION_START();
     shadow_flush_pending_leds();  /* Rate-limited LED output */
+    /* Second blanking pass: the overtake-exit LED CACHE REPLAY (and any
+     * other queued writer above) lands in the mailbox AFTER the first pass —
+     * on a headless switch that replay is Move's cached NATIVE pad state,
+     * repainted progressively right as the tool suspends ("shows native UI
+     * right after hitting a pad", hardware 2026-08-07). Strip once more
+     * after every writer so nothing native reaches the hardware while the
+     * gate owns the surface. No-op when the phase is down. */
+    shim_select_blank_move_leds();
     TIME_SECTION_END(spi_flush_leds_sum, spi_flush_leds_max);
 
     /* === SCREEN READER ANNOUNCEMENTS ===
