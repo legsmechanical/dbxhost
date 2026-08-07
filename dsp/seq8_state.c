@@ -521,6 +521,12 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
 }
 
 static void seq8_save_state(seq8_instance_t *inst) {
+    /* SELECT-BEFORE-LOAD: nothing is loaded, so this instance holds defaults —
+     * serializing them would overwrite a real project's state file with an
+     * empty one. Every save path funnels through here; refuse them all until a
+     * load has happened. (The JS deferred-save path is gated separately, on the
+     * same flag read back via get_param, so it never even fetches state_full.) */
+    if (inst->awaiting_select) return;
     ensure_parent_dir(inst->state_path);
     FILE *fp = fopen(inst->state_path, "w");
     if (!fp) return;
@@ -529,6 +535,11 @@ static void seq8_save_state(seq8_instance_t *inst) {
 }
 
 static void seq8_load_state(seq8_instance_t *inst) {
+    /* A load is the selection: from here on a project IS live and saving is
+     * allowed again. Cleared up front, not on success — a missing/empty state
+     * file is a legitimate brand-new project, and leaving the flag set would
+     * silently discard everything the user then recorded into it. */
+    inst->awaiting_select = 0;
     FILE *fp = fopen(inst->state_path, "r");
     if (!fp) return;
     fseek(fp, 0, SEEK_END);

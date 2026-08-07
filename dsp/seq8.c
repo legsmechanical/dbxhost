@@ -75,6 +75,16 @@
 #define SEQ8_SET_UISTATE_FMT    SEQ8_SET_STATE_DIR "/%s/" SEQ8_STATE_PREFIX "-ui-state.json"
 #define SEQ8_SNAP_PREFIX        SEQ8_STATE_PREFIX "-snap-"
 
+/* SELECT-BEFORE-LOAD marker, written by the SA launcher at session entry and
+ * removed on its relaunch branch (so a project switch never re-asks). Its
+ * presence at create_instance means "the user has not chosen a project yet":
+ * skip the state load entirely and come up empty. The JS side consumes the
+ * marker in init() — DSP reads it first, since create_instance runs before
+ * init(). Absent (stock host, or any relaunch) = load normally, as always. */
+#ifndef SEQ8_SELECT_MARKER
+#define SEQ8_SELECT_MARKER      "/data/UserData/dbx-host/fresh_session"
+#endif
+
 #define NUM_TRACKS          8
 #define NUM_CLIPS           16
 
@@ -1029,6 +1039,15 @@ typedef struct {
      * JS reads via get_param, shows confirm dialog. On "Yes" JS sends state_load which
      * re-enters seq8_load_state — flag being set means "delete and start clean". */
     uint8_t state_version_mismatch;
+
+    /* SELECT-BEFORE-LOAD: 1 = create_instance deliberately did NOT load state, so
+     * this instance holds defaults and NO project is live. Armed when the session
+     * marker (SEQ8_SELECT_MARKER) is present at create_instance; cleared by the
+     * first seq8_load_state. While set, saving is suppressed EVERYWHERE — an empty
+     * instance must never serialize over a real project's state file. JS reads it
+     * via get_param("awaiting_select") and keeps its own surfaces in step; the DSP
+     * is the single source of truth for "is anything loaded". */
+    uint8_t awaiting_select;
 
     /* Mute/solo per track: 0=off, 1=on */
     uint8_t mute[NUM_TRACKS];
@@ -4321,7 +4340,21 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
         inst->tick_delta = (uint32_t)((double)MOVE_FRAMES_PER_BLOCK * init_bpm * (double)PPQN);
     }
 
-    seq8_load_state(inst);
+    /* SELECT-BEFORE-LOAD: with the session marker present the user has not yet
+     * chosen a project, so nothing is loaded — the instance stays at defaults
+     * and every save path is suppressed until a real state_load arrives (which
+     * is what clears the flag). Without the marker this is the ordinary boot. */
+    {
+        FILE *mf = fopen(SEQ8_SELECT_MARKER, "r");
+        if (mf) {
+            int c = fgetc(mf);      /* the launcher writes a non-empty marker;
+                                     * JS blanks it to consume, so empty = spent */
+            fclose(mf);
+            if (c != EOF) inst->awaiting_select = 1;
+        }
+    }
+    if (!inst->awaiting_select)
+        seq8_load_state(inst);
 
     /* Default track 0 to drum mode if no tracks loaded as drum.
      * Matches the JS first-run default (restoreUiSidecar else branch).
@@ -6030,7 +6063,11 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
          * state_buf when clean made JS pollDSP unconditionally overwrite the
          * on-disk file with stale state — defeating Clear Session and the
          * deferred clear path. */
-        if (!inst->state_dirty || inst->state_version_mismatch) {
+        /* awaiting_select: nothing is loaded, so a payload here would be an
+         * empty instance that JS then writes over the boot project's file.
+         * JS gates its own fetch on the same flag; this is the second belt. */
+        if (!inst->state_dirty || inst->state_version_mismatch ||
+                inst->awaiting_select) {
             out[0] = '\0';
             return 0;
         }
@@ -6125,6 +6162,12 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         return snprintf(out, out_len, "%u", inst ? inst->instance_nonce : 0);
     if (!strcmp(key, "state_version_mismatch"))
         return snprintf(out, out_len, "%d", inst ? (int)inst->state_version_mismatch : 0);
+
+    /* SELECT-BEFORE-LOAD: 1 = no project is loaded, the user has yet to choose.
+     * The DSP is the authority here (it decided at create_instance), so JS asks
+     * rather than re-deriving from the marker file and risking a split brain. */
+    if (!strcmp(key, "awaiting_select"))
+        return snprintf(out, out_len, "%d", inst ? (int)inst->awaiting_select : 0);
     if (!strcmp(key, "state_uuid")) {
         /* Extract UUID from state_path: .../set_state/<UUID>/seq8-state.json */
         if (!inst) return snprintf(out, out_len, "");

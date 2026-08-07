@@ -604,6 +604,13 @@ export function _onPadPress(status, d1, d2) {
             if ((status & 0xF0) === 0x90 && d2 > 0) projectPadPickerTap(d1 - 68);
             return;
         }
+        /* SELECT-BEFORE-LOAD, picker not up yet (LED init still settling, or it
+         * is being re-armed). The screen says LOADING, but without this the
+         * normal sequencer path would run against the unloaded default
+         * instance — set_params pushed into a DSP whose contents the pending
+         * selection is about to discard. To the user the presses simply do
+         * nothing, which is the right outcome; this makes it true. */
+        if (S.awaitingProjectSelect) return;
         /* Move-native co-run + drum-mode active track: inject a PLAIN pad-on
          * (cable-0, no Shift) so Move firmware both plays the drum AND focuses
          * that cell for editing — a plain tap selects on Move. dAVEBOx then
@@ -1137,6 +1144,11 @@ export function _resolveLoopGesture(fireFallback) {
 
 export function _onStepButtons(d1, d2) {
     if (S.mergeNoticePending) return;   /* Live Merge notice is modal (Rec/Back only) */
+    /* SELECT-BEFORE-LOAD: the step grid edits a clip, and there is no project
+     * to edit yet. Shift+Step 1 (open Projects) is swallowed too — the picker
+     * is already the session, and openProjectPadPicker TOGGLES, so letting it
+     * through would CLOSE the picker the user is standing in. */
+    if (S.awaitingProjectSelect) return;
     /* Co-run (Schwung chain-edit or Move-native): the step grid is blanked down
      * to a single exit affordance (the blinking Step 3 button + lit icon).
      * Step 3 (idx 2) exits co-run; every other step press is swallowed so it

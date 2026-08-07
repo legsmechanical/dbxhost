@@ -36,7 +36,7 @@ import {
     openSaveSnapshot, closeSnapshotPicker,
     snapshotPickerRotate, snapshotPickerClick, openClearAutoMenu,
     clearAutoMenuRotate, clearAutoMenuClick, showMenuInfo, closeConvertConfirm, resolveInheritPicker,
-    closeProjectPadPicker, projectPadPickerModifiers
+    closeProjectPadPicker, projectPadPickerModifiers, projectPadPickerTap
 } from './ui_dialogs.mjs';
 import { trackClipHasContent, sessionHasAnyContent } from './ui_scene.mjs';
 import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
@@ -89,6 +89,16 @@ function _onCC_jog(d1, d2) {
         const p = S.pendingInheritPicker;
         const action = (p.selectedIndex === p.candidates.length) ? -1 : p.selectedIndex;
         resolveInheritPicker(action);
+        return;
+    }
+    /* PROJECTS pad picker: jog click opens the pulsing (current) project — the
+     * keyboard-free way to confirm the default under SELECT-BEFORE-LOAD, where
+     * the session starts here and the wheel would otherwise be dead. Routed
+     * through the ordinary pad-tap path so copy/delete flows behave identically
+     * to tapping that pad. */
+    if (d1 === 3 && d2 === 127 && S.projectPadPicker) {
+        const _cur = S.projectPadPicker.current;
+        if (_cur >= 0 && _cur < 32) projectPadPickerTap(_cur);
         return;
     }
     /* Snapshot picker: jog click resolves a confirm or arms one. */
@@ -1559,7 +1569,15 @@ function _backTap() {
     if (S.confirmStateWipe || S.pendingInheritPicker) return;
 
     /* 1. Transient dialogs / pickers / modes (one open at a time). */
-    if (S.projectPadPicker) { closeProjectPadPicker(); return; }
+    if (S.projectPadPicker) {
+        /* SELECT-BEFORE-LOAD: nothing is loaded, so Back has nowhere to go —
+         * closing would leave an empty session with no picker and no project.
+         * The picker is the session until a choice is made. (Shift+Back still
+         * exits to stock; that path never reaches here.) */
+        if (S.awaitingProjectSelect) return;
+        closeProjectPadPicker();
+        return;
+    }
     if (S.snapshotPicker) {
         if (S.snapshotPicker.confirm) S.snapshotPicker.confirm = null;
         else closeSnapshotPicker();
@@ -1691,6 +1709,12 @@ export function checkBackHold() {
 }
 
 function _onCC_transport(d1, d2) {
+    /* SELECT-BEFORE-LOAD: transport is locked until a project is chosen. The
+     * instance holds defaults, so Play would start an empty sequencer under the
+     * picker — running, recording and undo all imply a project that isn't there
+     * yet. One gate for the whole family rather than six at the set_param
+     * sites, so a transport verb added later is locked by default. */
+    if (S.awaitingProjectSelect) return;
     /* Undo button: press = undo; Shift+Undo = redo */
     if (d1 === MoveUndo && d2 === 127) {
         if (S.shiftHeld) {

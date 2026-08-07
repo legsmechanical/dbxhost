@@ -32,9 +32,9 @@ import {
 } from './ui_constants.mjs';
 
 import { S } from './ui_state.mjs';
-import { engineUnderDaveboxHost } from './ui_engine.mjs';
+import { engineUnderDaveboxHost, DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
-import { showActionPopup, readActiveSet, maybeShowInheritPicker, uuidToStatePath } from './ui_persistence.mjs';
+import { showActionPopup, readActiveSet, resolveSetLoadDecision } from './ui_persistence.mjs';
 import {
     closeClearAutoMenu
 } from './ui_dialogs.mjs';
@@ -182,19 +182,59 @@ globalThis.init = function () {
 
     console.log('SEQ8 init: ' + (p === '1' ? 'RESUMED playing' : 'FRESH/stopped'));
 
-    /* Fresh session (launched from stock, not an in-session relaunch): open
-     * the project picker over the boot project so the user CHOOSES before
-     * playing — the launcher arms fresh_session at entry and its relaunch
-     * branch removes it, so switches and rewires never re-ask. Consumed by
-     * blanking the file; deferred to tick() until loading settles. */
-    if (engineUnderDaveboxHost() &&
-            typeof host_read_file === 'function' &&
-            typeof host_write_file === 'function') {
-        const _fs = host_read_file('/data/UserData/dbx-host/fresh_session');
-        if (_fs && _fs.length) {
-            host_write_file('/data/UserData/dbx-host/fresh_session', '');
-            S.pendingOpenProjectPicker = true;
+    /* SELECT-BEFORE-LOAD. A fresh session (launched from stock, not an
+     * in-session relaunch) comes up with NOTHING loaded: the launcher arms
+     * fresh_session at entry, create_instance sees it and skips its state
+     * load, and the picker opens over an empty instance so the user chooses
+     * before anything plays. The launcher's relaunch branch removes the
+     * marker, so a project switch or rewire never re-asks.
+     *
+     * The DSP is asked, not the marker file — it made the decision, and
+     * re-deriving it here could disagree with it (the marker is consumed by
+     * blanking below, and init() re-runs on resume in the same runtime, where
+     * the marker is long gone but the DSP may still be awaiting). */
+    const _markerPath = DAVEBOX_HOST_DIR + '/fresh_session';
+    let _markerArmed = false;
+    if (typeof host_read_file === 'function' && typeof host_write_file === 'function') {
+        const _fs = host_read_file(_markerPath);
+        _markerArmed = !!(_fs && _fs.length);
+        if (_markerArmed) host_write_file(_markerPath, '');
+    }
+    /* The DSP is asked, NOT gated on engineUnderDaveboxHost(). It arms the flag
+     * from the marker with no host check of its own, so gating the mirror here
+     * would let the two disagree — and a disagreement is the worst state
+     * available: the DSP refuses every save while JS, believing a project is
+     * live, keeps overwriting the sidecar. Whatever the DSP decided, honour it.
+     * (A stock-host session that somehow lands here still recovers: the picker
+     * cannot list projects there, so _pppFailOpen loads the boot project.) */
+    if (typeof host_module_get_param === 'function') {
+        const _aw = host_module_get_param('awaiting_select');
+        if (_aw === null || _aw === undefined || _aw === '') {
+            /* Key unimplemented => the dsp.so predates select-before-load. That
+             * is a REAL deploy shape: bundle_ui.sh + install.sh ships JS alone
+             * over an existing dsp.so. Fall back to the marker and the old
+             * behaviour (picker over an already-loaded boot project) rather
+             * than silently losing the picker with nothing logged. */
+            S.awaitingProjectSelect = false;
+            if (_markerArmed) {
+                console.log('SEQ8 init: dsp.so has no awaiting_select — ' +
+                            'select-before-load unavailable, picker over boot project');
+                S.pendingOpenProjectPicker = true;
+            }
+        } else {
+            S.awaitingProjectSelect = (parseInt(_aw, 10) === 1);
         }
+    } else {
+        S.awaitingProjectSelect = false;
+    }
+    if (S.awaitingProjectSelect) {
+        /* Drop any picker left over from before a suspend BEFORE arming the
+         * reopen: openProjectPadPicker TOGGLES, so re-arming over a still-open
+         * picker would close it — leaving an unloaded session with no picker
+         * and no way back (Back is deliberately inert while awaiting). Reopening
+         * fresh also re-lists the projects, which is what a resume wants anyway. */
+        S.projectPadPicker = null;
+        S.pendingOpenProjectPicker = true;
     }
 
     /* No second splash under the davebox host: the SESSION already opened
@@ -212,41 +252,22 @@ globalThis.init = function () {
         S.currentSetUuid = _as.uuid;
         S.currentSetName = _as.name;
     }
-    /* Inherit-picker decision tree for a freshly-pasted Move duplicate.
-     * 'auto'   — single family candidate, silently inherited; force pendingSetLoad.
-     * 'picker' — multiple candidates; dialog open, state_load is deferred.
-     * 'blank'  — no candidates; fall through to normal mismatch/exists checks.
-     * Force pendingSetLoad on success: create_instance already called
-     * seq8_load_state with the (then-empty) duplicate path; DSP needs to
-     * reload from the now-seeded file. */
-    const inheritResult = maybeShowInheritPicker(S.currentSetUuid, S.currentSetName);
     const currentDspNonce = (typeof host_module_get_param === 'function')
         ? host_module_get_param('instance_id') : null;
-    const dspUuid = (typeof host_module_get_param === 'function')
-        ? (host_module_get_param('state_uuid') || '') : '';
     if (currentDspNonce) S.lastDspInstanceId = currentDspNonce;
-    /* Check if DSP flagged a state version mismatch during create_instance.
-     * If so, show the confirm dialog and suppress any pendingSetLoad — the
-     * dialog's "Yes" handler will trigger state_load after the user confirms. */
-    const _svMismatch = (typeof host_module_get_param === 'function')
-        ? host_module_get_param('state_version_mismatch') : null;
-    if (_svMismatch && parseInt(_svMismatch, 10) === 1) {
-        S.confirmStateWipe = true;
-        S.confirmStateWipeSel = 1;
-        S.pendingSetLoad = false;
-        S.screenDirty = true;
-    } else if (inheritResult === 'auto') {
-        S.pendingSetLoad = true;
-    } else if (inheritResult === 'picker') {
-        /* state_load deferred until resolveInheritPicker fires */
-    } else if (S.currentSetUuid && dspUuid !== S.currentSetUuid) {
-        S.pendingSetLoad = true;
-    } else if (S.currentSetUuid && typeof host_file_exists === 'function') {
-        const sp = uuidToStatePath(S.currentSetUuid);
-        if (!host_file_exists(sp)) S.pendingSetLoad = true;
+
+    /* Load decision. Skipped entirely while awaiting a selection: nothing may
+     * load yet, and the checks would all fire wrongly anyway — the DSP holds
+     * no set, so state_uuid is empty and the mismatch branch would force the
+     * very load we are deferring. The picker re-runs this chain (via
+     * loadSelectedCurrentProject) the moment the user chooses, so a duplicate
+     * set still inherits and a version mismatch still asks. Orphan pruning
+     * waits too: the picker can create and delete projects before a selection
+     * lands, and the prune walks that same list. */
+    if (!S.awaitingProjectSelect) {
+        resolveSetLoadDecision();
+        S.pendingPruneOrphans = true;
     }
-    /* Schedule orphan prune for the next quiet tick (after state_load settles). */
-    S.pendingPruneOrphans = true;
 
     if (typeof host_module_get_param === 'function') {
         S.playing = dspSurvived;
@@ -272,8 +293,12 @@ globalThis.init = function () {
 
     /* Restore UI state (active track, clip focus, view) from sidecar.
      * Deferred if pendingSetLoad: DSP hasn't loaded the new set yet, restoreUiSidecar
-     * will be called again from the pendingDspSync completion path after the full resync. */
-    restoreUiSidecar(!S.pendingSetLoad);
+     * will be called again from the pendingDspSync completion path after the full resync.
+     * Skipped outright while awaiting a selection — restoring a project's view
+     * state before its data exists shows a session that isn't loaded. The
+     * selection's state_load runs the same pendingDspSync completion path,
+     * which calls restoreUiSidecar(true) then. */
+    if (!S.awaitingProjectSelect) restoreUiSidecar(!S.pendingSetLoad);
 
     /* PHASE-1: capability gate for DSP-owned input. On patched Schwung the
      * shim delivers pad MIDI to overtake DSP's on_midi on the audio thread,

@@ -182,6 +182,59 @@ export function maybeShowInheritPicker(uuid, name) {
     return 'picker';
 }
 
+/* Decide whether the DSP needs a state_load for the currently-active set, and
+ * arm it. Runs the inherit-picker tree first (a freshly-pasted Move duplicate
+ * has to be seeded before anything is loaded), then the version-mismatch gate,
+ * then the plain "DSP holds a different set / has no state file" checks.
+ *
+ * TWO callers, and they must stay identical — that is the whole reason this is
+ * a function. init() runs it on an ordinary boot; the project picker runs it
+ * when the user selects under SELECT-BEFORE-LOAD, where create_instance
+ * deliberately loaded nothing and the selection IS the load. Inlining it at
+ * either site would let a duplicate-set inherit silently work on one path and
+ * not the other. */
+export function resolveSetLoadDecision() {
+    const inheritResult = maybeShowInheritPicker(S.currentSetUuid, S.currentSetName);
+    const _svMismatch = (typeof host_module_get_param === 'function')
+        ? host_module_get_param('state_version_mismatch') : null;
+    const dspUuid = (typeof host_module_get_param === 'function')
+        ? (host_module_get_param('state_uuid') || '') : '';
+
+    if (_svMismatch && parseInt(_svMismatch, 10) === 1) {
+        /* Confirm dialog owns it; its "Yes" handler triggers the state_load. */
+        S.confirmStateWipe = true;
+        S.confirmStateWipeSel = 1;
+        S.pendingSetLoad = false;
+        S.screenDirty = true;
+    } else if (inheritResult === 'auto') {
+        S.pendingSetLoad = true;
+    } else if (inheritResult === 'picker') {
+        /* state_load deferred until resolveInheritPicker fires */
+    } else if (S.currentSetUuid && dspUuid !== S.currentSetUuid) {
+        S.pendingSetLoad = true;
+    } else if (S.currentSetUuid && typeof host_file_exists === 'function') {
+        if (!host_file_exists(uuidToStatePath(S.currentSetUuid)))
+            S.pendingSetLoad = true;
+    }
+    return inheritResult;
+}
+
+/* SELECT-BEFORE-LOAD: the user picked the already-current (boot) project, so
+ * there is no set switch to make — the state simply has to be loaded for the
+ * first time. Runs the same decision chain an ordinary boot would, then forces
+ * the load: create_instance skipped it, so the DSP holds defaults and the
+ * "DSP already has this set" branch above would otherwise conclude, wrongly,
+ * that there is nothing to do. */
+export function loadSelectedCurrentProject() {
+    if (!S.awaitingProjectSelect) return;
+    const inheritResult = resolveSetLoadDecision();
+    if (inheritResult !== 'picker' && !S.confirmStateWipe)
+        S.pendingSetLoad = true;
+    S.pendingPruneOrphans = true;
+    S.stateLoading = true;      /* "LOADING <project>" from the tap, not the reload */
+    S.screenDirty = true;
+}
+
 export function showActionPopup(...lines) {
     S.actionPopupHighlight = -1;
     S.actionPopupGauge = -1;
@@ -205,6 +258,13 @@ export function showActionPopupGauge(frac, mark, ...lines) {
 /* Write the sidecar synchronously. Split out of saveState so bank-change
  * sites can persist immediately without scheduling a DSP save. */
 export function writeSidecar() {
+    /* SELECT-BEFORE-LOAD: no project is loaded, so S holds startup defaults —
+     * writing them out replaces the boot project's sidecar with a blank one.
+     * Guarded HERE rather than at the call sites: several of them (bank change,
+     * AT mode, perf) are only unreachable while the picker owns input because
+     * of how input routing happens to be arranged today, and that is too thin a
+     * thread to hang a data-loss bug on. */
+    if (S.awaitingProjectSelect) return;
     /* Always sync the live activeBank into per-track storage before serializing. */
     S.trackActiveBank[S.activeTrack] = S.activeBank;
     if (typeof host_write_file === 'function')
@@ -224,6 +284,12 @@ export function writeSidecar() {
 }
 
 export function saveState() {
+    /* SELECT-BEFORE-LOAD: nothing is loaded, so there is nothing to save and
+     * everything to lose — both halves below would write an empty instance's
+     * state over the boot project (DSP blob AND the UI sidecar). Callers are
+     * Quit, Shift+Back, suspend, the Save menu and the picker's switch path;
+     * all of them can be reached before a selection. */
+    if (S.awaitingProjectSelect) return;
     S.altMode = false;   /* transient; never persisted across suspend/resume */
     /* Route the DSP save through the end-of-tick pendingSuspendSave drain so it
      * cannot be coalesced by other set_params fired in the same audio buffer
@@ -338,6 +404,9 @@ export function applySnapshotToLive(uuid, id) {
  * we best-effort stub the orphaned files to reclaim space. Returns the
  * surviving snapshot list. */
 export function dropSnapshots(uuid, ids) {
+    /* Same shape as doClearSession: a direct destructive writer, reachable
+     * before a project has been selected. See the guard note there. */
+    if (S.awaitingProjectSelect) return loadSnapshotManifest(uuid);
     const idset = {};
     for (let i = 0; i < ids.length; i++) idset[ids[i]] = true;
     if (typeof host_write_file === 'function') {
@@ -352,6 +421,13 @@ export function dropSnapshots(uuid, ids) {
 }
 
 export function doClearSession() {
+    /* SELECT-BEFORE-LOAD: this would wipe a project the user has not selected,
+     * has never seen the contents of, and may not have meant to touch. Guarded
+     * here because it writes the two project files DIRECTLY rather than through
+     * saveState()/writeSidecar() — the audit that produced those guards called
+     * them "every save path" and was wrong; a destructive writer that bypasses
+     * them is exactly the shape that gets missed. */
+    if (S.awaitingProjectSelect) return;
     const sp = uuidToStatePath(S.currentSetUuid);
     if (typeof host_write_file === 'function') host_write_file(sp, '{"v":0}');
     if (typeof host_write_file === 'function') host_write_file(uuidToUiStatePath(S.currentSetUuid), '{"v":0}');

@@ -6,9 +6,10 @@ import {
 import { formatItemValue } from '/data/UserData/schwung/shared/menu_items.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
-    dropSnapshots, applySnapshotToLive, copyStateFiles
+    dropSnapshots, applySnapshotToLive, copyStateFiles, loadSelectedCurrentProject
 } from './ui_persistence.mjs';
 import { effectiveClip, invalidateLEDCache } from './ui_leds.mjs';
+import { engineUnderDaveboxHost } from './ui_engine.mjs';
 
 export function pixelPrintMcu(x, y, text, scale, color) {
     const charW = 5 * scale + scale;
@@ -729,11 +730,39 @@ function _pppApplyList(p, data) {
     }
 }
 
+/* SELECT-BEFORE-LOAD safety valve. If the picker cannot open at session start
+ * — no host_system_cmd, or project-cmd gave us no list — the user would be
+ * stranded on an empty instance with no way to choose and nothing loaded. Fail
+ * OPEN: load the boot project, exactly as a pre-select-before-load session did.
+ * A degraded session that works beats a correct one that is unusable. */
+function _pppFailOpen() {
+    if (!S.awaitingProjectSelect) return;
+    console.log('projectPadPicker: cannot open at boot — loading boot project');
+    loadSelectedCurrentProject();
+}
+
 function _openProjectPadPicker_impl() {
-    if (typeof host_system_cmd !== 'function' || typeof host_read_file !== 'function') return;
-    if (S.projectPadPicker) { closeProjectPadPicker(); return; }   /* toggle */
+    /* Projects are a davebox-host concept (project-cmd.sh, projects.json live
+     * in the SA install). The DSP is authoritative for "is anything loaded" and
+     * arms awaiting_select from the marker file with no host check of its own,
+     * so a marker left behind by a crashed SA session can put us here under
+     * stock Schwung — where opening a project picker, and worse acting on it,
+     * would be wrong. The DATA question stays the DSP's; the UI question is
+     * host-gated, and failing open loads the boot project as stock expects. */
+    if (!engineUnderDaveboxHost()) { _pppFailOpen(); return; }
+    if (typeof host_system_cmd !== 'function' || typeof host_read_file !== 'function') {
+        _pppFailOpen();
+        return;
+    }
+    /* Toggle — EXCEPT while awaiting a selection, where closing the picker
+     * leaves nothing loaded, nothing on screen but LOADING, and no way out.
+     * Belt to the step-button gate: this is reachable from the menu too. */
+    if (S.projectPadPicker) {
+        if (!S.awaitingProjectSelect) closeProjectPadPicker();
+        return;
+    }
     const data = _pppRunList();
-    if (!data) { showActionPopup('NO PROJECT', 'LIST'); return; }
+    if (!data) { showActionPopup('NO PROJECT', 'LIST'); _pppFailOpen(); return; }
     const p = { projects: [], byIndex: {}, current: -1,
                 touchedIdx: -1, copySrcIdx: -1, deleteIdx: -1 };
     _pppApplyList(p, data);
@@ -802,9 +831,19 @@ function _projectPadPickerTap_impl(k) {
         if (!p.byIndex[k]) { showActionPopup('CREATE', 'FAILED'); return; }
         invalidateLEDCache();
     }
-    if (k === p.current) { closeProjectPadPicker(); return; }
+    if (k === p.current) {
+        /* The already-current project. Under SELECT-BEFORE-LOAD this tap IS
+         * the selection: create_instance loaded nothing, so the state has to
+         * be loaded now (no set switch, no relaunch — just the load). Once a
+         * project is live the same tap means "close the picker", as before. */
+        closeProjectPadPicker();
+        if (S.awaitingProjectSelect) loadSelectedCurrentProject();
+        return;
+    }
     /* Switch: save first; the command fires one tick after the save lands
-     * (the switch suspends/tears this module down — same shape as Quit). */
+     * (the switch suspends/tears this module down — same shape as Quit).
+     * saveState() is a no-op while awaiting a selection — there is nothing
+     * loaded to save, and writing would clobber the project we are leaving. */
     closeProjectPadPicker();
     showActionPopup('OPENING', 'PROJECT');
     saveState();
@@ -854,6 +893,18 @@ function _pppGuard(name, impl, args) {
     catch (e) {
         try { console.log('projectPadPicker FAULT in ' + name + ': ' + e + ' :: ' + (e && e.stack ? e.stack : 'no stack')); } catch (e2) {}
         try { S.projectPadPicker = null; } catch (e3) {}
+        /* Nulling the picker is survivable once a project is loaded — the user
+         * lands back on the sequencer. While AWAITING it is a dead end: no
+         * project, no picker, LOADING pinned, transport locked. The tick
+         * watchdog re-arms the open, but if the fault is in the open itself
+         * that would loop, so count the attempts and fail open to the boot
+         * project instead. */
+        try {
+            if (S.awaitingProjectSelect) {
+                S._pppFaultCount = (S._pppFaultCount | 0) + 1;
+                if (S._pppFaultCount >= 3) _pppFailOpen();
+            }
+        } catch (e4) {}
     }
 }
 export function openProjectPadPicker()      { return _pppGuard('open',  _openProjectPadPicker_impl, []); }

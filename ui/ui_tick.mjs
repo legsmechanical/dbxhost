@@ -541,6 +541,30 @@ export function _tickImpl() {
         openProjectPadPicker();
     }
 
+    /* SELECT-BEFORE-LOAD watchdog. "Awaiting, but no picker on screen" is a
+     * DEAD END by construction: the LOADING screen is pinned, the transport is
+     * locked, Back is inert, and there is no project to fall back to — the
+     * device reads as hung and only a restart recovers it. So it is treated as
+     * a state to repair rather than one to trust we never reach.
+     *
+     * Three known ways in, all real: backing out of the host set-select gate
+     * (resumes with the picker closed and no set change, so no reload is
+     * armed); an exception inside openProjectPadPicker, which _pppGuard
+     * swallows after the arm was already consumed; and a resume that lands
+     * with the arm spent. Rather than patch each, re-arm whenever the
+     * condition holds and nothing else is in flight — the arm is idempotent
+     * and the open re-lists projects, so a spurious re-arm costs nothing.
+     * _pppFailOpen still backstops the case where the picker cannot open at
+     * all, so this cannot spin forever. */
+    if (S.awaitingProjectSelect && !S.projectPadPicker &&
+            !S.pendingOpenProjectPicker && !S.pendingSetLoad &&
+            S.pendingProjectSwitch === null && !S.pendingProjectCmd &&
+            !S.confirmStateWipe && !S.pendingInheritPicker &&
+            S.pendingDspSync === 0 && S.ledInitComplete) {
+        console.log('SELECT-BEFORE-LOAD: awaiting with no picker — re-arming');
+        S.pendingOpenProjectPicker = true;
+    }
+
     /* Metro note-off */
     if (S.metroNoteOffTick >= 0 && S.tickCount >= S.metroNoteOffTick) {
         S.metroNoteOffTick = -1;
@@ -657,6 +681,10 @@ export function _tickImpl() {
         S.seqActiveNotes.clear(); S.seqLastStep = -1; S.seqLastClip = -1;
         S.pendingDspSync = 5;
         host_module_set_param('state_load', S.currentSetUuid || '');
+        /* NOTE: awaitingProjectSelect is deliberately NOT cleared here. Sending
+         * the load is not evidence the load happened — see the pendingDspSync
+         * completion path below, which clears it against the DSP's own
+         * readback once the resync (and restoreUiSidecar) has landed. */
     }
 
     /* Drain first-run default set_params one per tick, after state is fully settled.
@@ -756,6 +784,36 @@ export function _tickImpl() {
             S.stateLoading = false;
             invalidateLEDCache();
             forceRedraw();
+            /* SELECT-BEFORE-LOAD ends HERE, not when state_load was sent.
+             *
+             * Two reasons it cannot be the send site. (1) The DSP may have
+             * REFUSED the load — a version mismatch returns early, and a
+             * set_param can be coalesced away entirely — so only its own
+             * awaiting_select readback proves a project is live. (2) Even on a
+             * clean load, S still held startup defaults until restoreUiSidecar
+             * ran just above; unlocking writeSidecar any earlier let a suspend
+             * inside this multi-second window overwrite the project's sidecar
+             * with defaults.
+             *
+             * The version-mismatch dialog is also raised here, and it has to
+             * be: the mismatch is PRODUCED by the load, so nothing before the
+             * load can see it. init() used to read it after create_instance
+             * loaded; now that the load happens on selection, this is the only
+             * point where the answer exists. Without it a v≠36 project opens
+             * blank and silently refuses every save for the session. */
+            if (typeof host_module_get_param === 'function') {
+                const _aw = host_module_get_param('awaiting_select');
+                const _awUnknown = (_aw === null || _aw === undefined || _aw === '');
+                S.awaitingProjectSelect = _awUnknown ? false : (parseInt(_aw, 10) === 1);
+                const _svm = host_module_get_param('state_version_mismatch');
+                if (_svm && parseInt(_svm, 10) === 1 && !S.confirmStateWipe) {
+                    S.confirmStateWipe = true;
+                    S.confirmStateWipeSel = 1;
+                    S.screenDirty = true;
+                }
+            } else {
+                S.awaitingProjectSelect = false;
+            }
         }
     }
 

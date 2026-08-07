@@ -27,8 +27,14 @@ the section into a versioned heading at release time.
   project (blue; the open one pulses), tap to open (~2 seconds), tap an
   empty pad for a new correctly-wired project, hold Copy to duplicate onto
   an empty pad, hold Delete and tap twice to remove. A fresh launch opens
-  ON the picker (over your last project — tap the pulsing pad to just play
-  it), and Move's own set screens never appear anywhere.
+  ON the picker, and Move's own set screens never appear anywhere.
+- **A fresh session waits for you to choose — nothing loads until you pick.**
+  dAVEBOx used to open your last project and put the picker on top of it; now
+  it comes up with the picker and an empty, silent sequencer, and the project
+  only loads once you select it. Tap the pulsing pad (or **click the jog
+  wheel**) to carry on with the one you had open, or tap any other to open
+  that instead. Back does nothing while you're choosing — there's nothing
+  behind the picker — and Shift + Back still leaves dAVEBOx.
 - **dAVEBOx now shows only the effects the host it's running on actually has.**
   On the dAVEBOx host you get four insert FX per chain plus both Send buses; on
   official Schwung, which has two inserts and no sends, those extra rows are

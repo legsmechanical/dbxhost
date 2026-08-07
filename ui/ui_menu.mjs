@@ -335,6 +335,11 @@ function buildGlobalMenuItems() {
 }
 
 export function openGlobalMenu() {
+    /* SELECT-BEFORE-LOAD: the menu operates on a project — Save, Clear Session,
+     * Snapshots, Quit, per-track config — and none of that is meaningful before
+     * one is chosen. Clear Session in particular would wipe a project the user
+     * has never opened. The picker is the whole session until a selection. */
+    if (S.awaitingProjectSelect) return;
     /* Co-run owns the OLED — exit it before opening the menu so dAVEBOx
      * can draw again. */
     if (S.schwungCoRunSlot >= 0) exitSchwungCoRun();

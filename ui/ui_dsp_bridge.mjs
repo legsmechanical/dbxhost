@@ -818,8 +818,12 @@ export function pollDSP() {
         }
     }
 
-    /* Deferred DSP state save: fetch state_full (DSP serializes only when dirty) */
-    if (typeof host_write_file === 'function' && S.currentSetUuid) {
+    /* Deferred DSP state save: fetch state_full (DSP serializes only when dirty).
+     * NEVER while awaiting a selection — the DSP holds defaults, so this would
+     * write an empty state over the boot project's file and destroy it. The DSP
+     * also refuses to serve state_full in that condition; both belts stay. */
+    if (typeof host_write_file === 'function' && S.currentSetUuid &&
+            !S.awaitingProjectSelect) {
         const _st = host_module_get_param('state_full');
         if (_st && _st.length > 2) {
             host_write_file(uuidToStatePath(S.currentSetUuid), _st);

@@ -544,9 +544,22 @@ export const S = {
      * touchedIdx, copySrcIdx, deleteIdx }. Copy/Delete are hold-modifier
      * two-step flows under OUR semantics (release cancels). */
     projectPadPicker: null,
-    /* Fresh-session boot: open the picker over the boot project once loading
-     * settles (armed in init() from the launcher fresh_session marker). */
+    /* Fresh-session boot: open the picker once LED init settles (armed in
+     * init() from the DSP's awaiting_select readback). */
     pendingOpenProjectPicker: false,
+    /* SELECT-BEFORE-LOAD: true = NO project is loaded and the user has yet to
+     * choose one. Mirrors the DSP's awaiting_select, which is the authority
+     * (it decided at create_instance); init() reads it back rather than
+     * re-deriving from the marker file, so the two can never disagree.
+     * While true: no sidecar restore, no state_load, no saving of ANY kind
+     * (the instance holds defaults and would overwrite a real project), and
+     * the transport is locked. Cleared the moment a selection triggers a
+     * genuine load. */
+    awaitingProjectSelect: false,
+    /* Consecutive _pppGuard faults while awaiting a selection. Three and the
+     * picker is presumed unopenable, so we fail open to the boot project rather
+     * than let the tick watchdog re-arm a throwing open forever. */
+    _pppFaultCount: 0,
     /* Armed by the pad picker; drained in tick() one tick AFTER the deferred
      * save fires. Preferred path: shadow_select_arm(k) + suspend (the host
      * gate as a headless actuator, ~2 s, resume + set reload). Fallback on a

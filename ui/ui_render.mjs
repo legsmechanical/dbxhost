@@ -784,7 +784,16 @@ export function drawUI() {
      * all of them. Sound mode isn't dismissed by those; it just stops drawing
      * and comes back when they close. */
     if (soundRender()) return;
-    if (S.stateLoading || S.bootSplashTicks > 0) {
+    /* awaitingProjectSelect keeps the loading screen up for the gap between
+     * init and the picker opening (LED init has to finish first). Without it
+     * that window renders the ordinary session view of an EMPTY instance — a
+     * fake, playable-looking project flashing up in the one flow whose whole
+     * point is that nothing is loaded yet. The picker's own draw is checked
+     * earlier and still wins the moment it opens.
+     * NOT done by setting stateLoading: the picker's open condition in tick()
+     * requires !stateLoading, so that would deadlock it closed. */
+    if (S.stateLoading || S.bootSplashTicks > 0 ||
+            (S.awaitingProjectSelect && !S.projectPadPicker)) {
         /* Loading screen (v3): plain text, no artwork. The dAVEBOx splash
          * bitmap moved UP a level — it is the HOST session splash now
          * (dbxhost splash.hex contract) — so the module showing it again
