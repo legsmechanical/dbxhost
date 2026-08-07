@@ -604,7 +604,8 @@ let selectPhase = {
      * suspended data. setChangeSeen is raised by the SET_CHANGED handler. */
     awaitSetChange: false,
     setChangeSeen: false,
-    setWaitTicks: 0
+    setWaitTicks: 0,
+    setWaitHardTicks: 0
 };
 
 const SPLASH_BALL_Y = 26;
@@ -14324,7 +14325,8 @@ function selectBeginLaunch(k) {
 function selectFinishLaunch() {
     if (selectPhase.awaitSetChange && !selectPhase.setChangeSeen) {
         if (selectPhase.setWaitTicks === 0) {
-            selectPhase.setWaitTicks = 150;   /* ~5 s @30fps */
+            selectPhase.setWaitTicks = 300;      /* ~10 s of QUIET (no flag) */
+            selectPhase.setWaitHardTicks = 900;  /* ~30 s absolute cap */
             selectPhase.statusLine = "Loading set...";
             debugLog("select phase: waiting for SET_CHANGED before resume");
         }
@@ -14392,12 +14394,26 @@ function tickSelectPhase() {
     }
 
     /* Set-change hold: the hook said "open" but the selection switched sets —
-     * resume only after the host's SET_CHANGED reload ran (or time out). */
+     * resume only after the host's SET_CHANGED reload ran. Move writes
+     * Settings.json LAZILY, so detection can lag past any fixed timeout
+     * (observed: the reload arrived the same millisecond a 5 s fail-open
+     * resumed the tool, and the two trampled each other). While the shim's
+     * SET_CHANGED flag is RAISED the reload is detected-but-unprocessed —
+     * never resume under it; the countdown only runs while nothing is
+     * visibly pending, with a hard cap so a phantom flag cannot wedge us. */
     if (selectPhase.launching && selectPhase.setWaitTicks > 0) {
+        const setChangePending =
+            (typeof shadow_get_ui_flags === "function") &&
+            (shadow_get_ui_flags() & 0x20) !== 0;   /* SHADOW_UI_FLAG_SET_CHANGED */
+        selectPhase.setWaitHardTicks--;
         if (selectPhase.setChangeSeen) {
             selectFinishLaunch();
-        } else if (--selectPhase.setWaitTicks === 0) {
-            debugLog("select phase: SET_CHANGED wait timed out — resuming anyway");
+        } else if (selectPhase.setWaitHardTicks <= 0) {
+            debugLog("select phase: SET_CHANGED hard timeout — resuming anyway");
+            selectPhase.awaitSetChange = false;
+            selectFinishLaunch();
+        } else if (!setChangePending && --selectPhase.setWaitTicks === 0) {
+            debugLog("select phase: no set change materialized — resuming anyway");
             selectPhase.awaitSetChange = false;
             selectFinishLaunch();
         }
