@@ -517,8 +517,6 @@ export const S = {
      * existing module process and JS state, so the counter stays at 0 and
      * the splash does NOT re-show on resume. Decremented in tick(). */
     bootSplashTicks: 188,
-    currentSplashIdx: 0,    /* index into SPLASH_FRAMES — rerolled on each splash entry edge */
-    splashWasVisible: false,/* previous-tick flag for splash entry-edge detection */
     pendingSuspendSave: false,
     pendingExitAfterSave: false,   /* drained one tick after pendingSuspendSave fires; calls host_exit_module */
     pendingHideAfterSave: false,   /* drained one tick after pendingSuspendSave fires; calls host_hide_module */

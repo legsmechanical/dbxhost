@@ -1,4 +1,10 @@
-/* Auto-generated 128x64 splash bitmaps for the SESSION LOADING screen.
+/* ⚠ NO LONGER RENDERED BY THE MODULE (v3, 2026-08-07): the loading screen is
+ * plain text now, and the dAVEBOx artwork moved up a level — frame 0 is
+ * vendored as the HOST session splash (dbxhost standalone/assets/splash.hex).
+ * This file stays as the artwork source of record (10 frames; regenerate the
+ * host asset from here if the art ever changes).
+ *
+ * Auto-generated 128x64 splash bitmaps for the SESSION LOADING screen.
  * 1 bit per pixel, MSB-first, row-major. 16 bytes per row × 64 rows = 1024 bytes.
  * Each splash is independently encoded as a hex string and decoded once at
  * module load into a Uint8Array. The renderer picks one at random per splash

@@ -37,7 +37,6 @@ import {
     effectiveClip, drawPositionBar, paintCoRunSideButtons,
     bankHasAltParams, altIndicatorActive
 } from './ui_leds.mjs';
-import { SPLASH_FRAMES, SPLASH_COUNT, SPLASH_W, SPLASH_H, pickSplashIdx } from './ui_splash.mjs';
 import { soundRender } from './ui_sound.mjs';
 import { drawMenuHeader } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
@@ -786,34 +785,20 @@ export function drawUI() {
      * and comes back when they close. */
     if (soundRender()) return;
     if (S.stateLoading || S.bootSplashTicks > 0) {
-        /* Reroll the splash on entry edge — picks one of SPLASH_FRAMES at
-         * random per splash session (boot, set load, etc.). Stays stable
-         * across the splash duration thanks to splashWasVisible. */
-        if (!S.splashWasVisible) {
-            S.currentSplashIdx = pickSplashIdx();
-            S.splashWasVisible = true;
-        }
+        /* Loading screen (v3): plain text, no artwork. The dAVEBOx splash
+         * bitmap moved UP a level — it is the HOST session splash now
+         * (dbxhost splash.hex contract) — so the module showing it again
+         * mid-switch read as a second product. From the moment a project is
+         * picked to the moment the sequencer is ready, everything on screen
+         * says one thing: which set is loading. (The host actuator shows
+         * "Loading <name>" during its half; this is the davebox half.) */
         clear_screen();
-        /* 128x64 splash bitmap, MSB-first packed bytes (1024 bytes total).
-         * Render via fill_rect runs of lit pixels per row — fewer host calls
-         * than per-pixel set_pixel and the screen is only redrawn briefly. */
-        const _frame  = SPLASH_FRAMES[S.currentSplashIdx % SPLASH_COUNT];
-        const rowBytes = SPLASH_W >> 3;
-        for (let y = 0; y < SPLASH_H; y++) {
-            let runStart = -1;
-            const rowOff = y * rowBytes;
-            for (let x = 0; x < SPLASH_W; x++) {
-                const bit = (_frame[rowOff + (x >> 3)] >> (7 - (x & 7))) & 1;
-                if (bit) {
-                    if (runStart < 0) runStart = x;
-                } else if (runStart >= 0) {
-                    fill_rect(runStart, y, x - runStart, 1, 1);
-                    runStart = -1;
-                }
-            }
-            if (runStart >= 0) fill_rect(runStart, y, SPLASH_W - runStart, 1, 1);
-        }
-        /* Host contract mismatch: say so on the splash, over the artwork.
+        const _ln = 'LOADING';
+        print(Math.max(0, Math.floor((128 - _ln.length * 6) / 2)), 20, _ln, 1);
+        const _sn = (S.currentSetName || '').length ? S.currentSetName : '...';
+        const _snT = _sn.length > 20 ? _sn.substring(0, 19) + '…' : _sn;
+        print(Math.max(0, Math.floor((128 - _snT.length * 6) / 2)), 34, _snT, 1);
+        /* Host contract mismatch: say so HERE, over the loading screen.
          *
          * This is the one failure that is otherwise invisible — an old host makes
          * davebox fall back to the upstream defaults, so FX 3/4 and the send buses
@@ -823,14 +808,12 @@ export function drawUI() {
          * engineHostTooOld() is false on stock Schwung by design: absence of the
          * host binding is a legitimate configuration, not a mismatch. */
         if (engineHostTooOld()) {
-            fill_rect(0, 20, 128, 25, 0);
-            print(6, 23, 'HOST TOO OLD', 1);
-            print(6, 33, 'UPDATE DBX HOST', 1);
+            fill_rect(0, 44, 128, 20, 0);
+            print(6, 46, 'HOST TOO OLD', 1);
+            print(6, 55, 'UPDATE DBX HOST', 1);
         }
         return;
     }
-    /* Not in splash mode — clear the entry-edge flag so the next splash rerolls. */
-    if (S.splashWasVisible) S.splashWasVisible = false;
 
     clear_screen();
     if (S.sessionView) {
