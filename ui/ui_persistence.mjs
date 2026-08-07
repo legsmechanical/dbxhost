@@ -1,5 +1,6 @@
 import { S, CC_ASSIGN_DEFAULTS } from './ui_state.mjs';
 import { NUM_TRACKS, NUM_CLIPS, DRUM_LANES, BANKS, ACTION_POPUP_TICKS } from './ui_constants.mjs';
+import { engineUnderDaveboxHost, DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 
 /* Basename prefix for every file this module owns. Mirrors the C-side
  * SEQ8_STATE_PREFIX (dsp/seq8.c) and MUST agree with it — the DSP writes the
@@ -25,13 +26,26 @@ export function uuidToUiStatePath(uuid) {
 
 const NAME_INDEX_PATH = '/data/UserData/schwung/' + STATE_PREFIX + '_name_index.json';
 const SET_STATE_DIR   = '/data/UserData/schwung/set_state';
-const ACTIVE_SET_PATH = '/data/UserData/schwung/active_set.txt';
 
-/* Read /data/UserData/schwung/active_set.txt: line 1 = UUID, line 2 = name. */
+/* ⚠ active_set.txt is written by EACH host under ITS OWN install dir
+ * (shadow_ui.js writes HOST_STATE_ROOT + "/active_set.txt" on SET_CHANGED).
+ * Reading the stock literal under the davebox host returned a STALE stock
+ * file, so the resume-edge set-mismatch check never fired and a project
+ * switch resumed with the previous project's data (found on hardware
+ * 2026-08-06, v2 no-restart picker). Resolve the path per-install, lazily —
+ * engineUnderDaveboxHost() needs host_build_info, not guaranteed at import. */
+function activeSetPath() {
+    try {
+        if (engineUnderDaveboxHost()) return DAVEBOX_HOST_DIR + '/active_set.txt';
+    } catch (e) { /* fall through to stock */ }
+    return '/data/UserData/schwung/active_set.txt';
+}
+
+/* Read active_set.txt (per-install): line 1 = UUID, line 2 = name. */
 export function readActiveSet() {
     if (typeof host_read_file !== 'function') return { uuid: '', name: '' };
     try {
-        const raw = host_read_file(ACTIVE_SET_PATH);
+        const raw = host_read_file(activeSetPath());
         if (!raw) return { uuid: '', name: '' };
         const lines = raw.split('\n');
         return {
