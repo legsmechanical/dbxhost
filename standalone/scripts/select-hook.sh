@@ -100,9 +100,36 @@ PYEOF
 )"
 
 if [ -z "$SONG" ]; then
-    # Nothing on disk even after the save — nothing to wire. Fail open.
-    echo "select-hook: no Song.abl for index $IDX — opening unwired" >&2
-    result open
+    # Nothing on disk even after the save. Move materializes a new set ONLY
+    # when it saves, and an untouched "Empty Set" is never dirty — so a
+    # project born from an empty pad used to live purely in Move's memory
+    # and evaporate with the session ("sets showing up as never existing",
+    # hardware 2026-08-07). Do not depend on Move's lazy save at all: BIRTH
+    # the project ourselves from the template (Design B's own new-project
+    # path — correctly wired by construction, indexed to the tapped pad) and
+    # relaunch into it. Move's unsaved in-memory Empty Set is discarded by
+    # the relaunch, which is exactly what it was: nothing.
+    TEMPLATE_DIR="${TEMPLATE_DIR:-$DBX_DIR/sets/template}"
+    _tsrc="$(find "$TEMPLATE_DIR" -name Song.abl 2>/dev/null | head -n 1)"
+    if [ -z "$_tsrc" ]; then
+        echo "select-hook: no Song.abl for index $IDX and no template — opening unwired" >&2
+        result open
+        exit 0
+    fi
+    _uuid="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())')"
+    _name="Project $((IDX + 1))"
+    mkdir -p "$SETS_DIR/$_uuid/$_name"
+    cp "$_tsrc" "$SETS_DIR/$_uuid/$_name/Song.abl"
+    python3 -c "import os,sys; os.setxattr(sys.argv[1], \"user.song-index\", sys.argv[2].encode())" \
+        "$SETS_DIR/$_uuid" "$IDX" 2>/dev/null || true
+    echo "select-hook: birthed \"$_name\" ($_uuid) at index $IDX from template — relaunching"
+    printf '%s\n' "$IDX" > "$DBX_DIR/relaunch_song_index"
+    : > "$DBX_DIR/relaunch_requested"
+    result relaunch
+    setsid sh -c '
+      sleep 1
+      pkill -x MoveOriginal
+    ' >/dev/null 2>&1 &
     exit 0
 fi
 

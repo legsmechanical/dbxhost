@@ -6471,10 +6471,20 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
              * Shift+Back) but blocked from Move; Back is claimed for
              * Shift+Back = leave the session. */
             switch (d1) {
-            case CC_JOG_WHEEL: case CC_JOG_CLICK:
+            case CC_JOG_CLICK:
             case CC_COPY: case CC_DELETE:
             case CC_MASTER_KNOB:
                 break;                      /* allowed (jog click zeroed below) */
+            case CC_JOG_WHEEL:
+                /* Blocked: in the mid-session overview the wheel scrolls
+                 * Move's set highlight — INVISIBLE under our screen (and
+                 * silent with TTS off), and our jog click means "resume
+                 * current", not "open the highlighted": the combination
+                 * wedged a live session into do-nothing land (hardware,
+                 * 2026-08-07 morning — "Empty Set" announced with no tap).
+                 * Selection is pads-only; click is resume. */
+                zero_it = 1;
+                break;
             case CC_BACK:
                 zero_it = 1;
                 if (d2 > 0 && shadow_shift_held && !select_launched) {
@@ -6507,6 +6517,10 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
                     select_candidate_pad = -1;
                     shadow_control->select_launch = SELECT_LAUNCH_RESUME;
                     shadow_log("select gate: jog click -> resume current set");
+                } else if (d2 > 0) {
+                    shadow_log(!entry_ready
+                               ? "select gate: jog click IGNORED (entry in progress)"
+                               : "select gate: jog click IGNORED (flow/launched)");
                 }
             }
             /* Picker frozen after the trigger: no more set management. */
@@ -6532,12 +6546,14 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
                     /* Shift+pad suppressed; latch so the release is eaten too */
                     select_pad_suppress_mask |= bit;
                     zero_it = 1;
+                    shadow_log("select gate: pad SUPPRESSED (shift held)");
                 } else {
                     int flow = select_copy_held || select_delete_held;
                     if (flow) {
                         /* Flow tap (paste target / delete confirm): Move's
                          * business. It also voids any pending launch. */
                         select_candidate_pad = -1;
+                        shadow_log("select gate: pad = flow tap (copy/delete)");
                     } else if (!select_boot_armed && select_entry_state < 8) {
                         /* Mid-session entry still in progress: Move is NOT
                          * showing the picker yet, so this tap is landing on
@@ -6547,12 +6563,19 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
                          * after arming fired the launch before the overview
                          * even opened). Not a candidate; it still passes to
                          * Move like any other pad. */
+                        shadow_log("select gate: pad IGNORED (entry in progress)");
                     } else {
                         /* Launch candidate: Move loads the set now; the
                          * trigger fires when the load has settled. A second
                          * tap inside the window just moves the candidate. */
                         select_candidate_pad = d1 - 68;
                         select_settle_deadline_ms = now + SELECT_SETTLE_MS;
+                        {
+                            char _m[48];
+                            snprintf(_m, sizeof(_m), "select gate: pad %d candidate armed",
+                                     select_candidate_pad);
+                            shadow_log(_m);
+                        }
                     }
                 }
             } else {
