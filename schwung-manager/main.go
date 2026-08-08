@@ -2112,7 +2112,6 @@ var settingsToShadowConfig = map[string]string{
 // settingsToFeatures maps schema keys to features.json keys.
 var settingsToFeatures = map[string]string{
 	"display_mirror":         "display_mirror_enabled",
-	"set_pages_enabled":      "set_pages_enabled",
 	"link_audio_routing":     "link_audio_enabled",
 	"skipback_shortcut":      "skipback_require_volume",
 	"skipback_seconds":       "skipback_seconds",
@@ -2218,7 +2217,6 @@ func (app *App) handleConfigValues(w http.ResponseWriter, r *http.Request) {
 		values["screen_reader_pitch"] = float64(app.shm.TTSPitch())
 		values["screen_reader_volume"] = float64(app.shm.TTSVolume())
 		values["screen_reader_debounce"] = float64(app.shm.TTSDebounce())
-		values["set_pages_enabled"] = app.shm.SetPagesEnabled()
 		values["skipback_shortcut"] = float64(boolToInt(app.shm.SkipbackRequireVolume()))
 		if s := app.shm.SkipbackSeconds(); s > 0 {
 			values["skipback_seconds"] = float64(s)
@@ -2403,8 +2401,6 @@ func (app *App) applyShmSetting(key, value string) {
 		if v, err := strconv.Atoi(value); err == nil {
 			app.shm.SetTTSDebounce(uint16(v))
 		}
-	case "set_pages_enabled":
-		app.shm.SetSetPagesEnabled(value == "true")
 	case "skipback_shortcut":
 		app.shm.SetSkipbackRequireVolume(value != "0" && value != "false")
 	case "skipback_seconds":

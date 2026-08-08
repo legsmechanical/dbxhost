@@ -142,8 +142,6 @@ func (s *ShmConfig) SetTTSVolume(v uint8)      { s.setU8(offTTSVolume, v) }
 func (s *ShmConfig) TTSDebounce() uint16       { return s.getU16(offTTSDebounce) }
 func (s *ShmConfig) SetTTSDebounce(v uint16)   { s.setU16(offTTSDebounce, v) }
 
-func (s *ShmConfig) SetPagesEnabled() bool     { return s.getU8(offSetPages) != 0 }
-func (s *ShmConfig) SetSetPagesEnabled(v bool) { s.setU8(offSetPages, boolU8(v)) }
 
 func (s *ShmConfig) SkipbackRequireVolume() bool     { return s.getU8(offSkipbackReqVol) != 0 }
 func (s *ShmConfig) SetSkipbackRequireVolume(v bool)  { s.setU8(offSkipbackReqVol, boolU8(v)) }

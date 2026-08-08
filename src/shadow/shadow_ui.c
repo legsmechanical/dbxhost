@@ -1698,41 +1698,6 @@ static JSValue js_display_mirror_get(JSContext *ctx, JSValueConst this_val,
     return JS_NewBool(ctx, shadow_control->display_mirror != 0);
 }
 
-/* set_pages_set(enabled) - Write to shared memory + persist to features.json */
-static JSValue js_set_pages_set(JSContext *ctx, JSValueConst this_val,
-                                int argc, JSValueConst *argv) {
-    (void)this_val;
-    if (argc < 1 || !shadow_control) return JS_UNDEFINED;
-
-    int enabled = 0;
-    JS_ToInt32(ctx, &enabled, argv[0]);
-    shadow_control->set_pages_enabled = enabled ? 1 : 0;
-
-    features_json_set("set_pages_enabled", enabled ? "true" : "false");
-
-    return JS_UNDEFINED;
-}
-
-/* set_pages_set_shm(enabled) - Write to shared memory ONLY (no file I/O).
- * Safe to call from tick() for web→device config sync. */
-static JSValue js_set_pages_set_shm(JSContext *ctx, JSValueConst this_val,
-                                     int argc, JSValueConst *argv) {
-    (void)this_val;
-    if (argc < 1 || !shadow_control) return JS_UNDEFINED;
-    int enabled = 0;
-    JS_ToInt32(ctx, &enabled, argv[0]);
-    shadow_control->set_pages_enabled = enabled ? 1 : 0;
-    return JS_UNDEFINED;
-}
-
-/* set_pages_get() -> bool - Read from shared memory */
-static JSValue js_set_pages_get(JSContext *ctx, JSValueConst this_val,
-                                int argc, JSValueConst *argv) {
-    (void)this_val; (void)argc; (void)argv;
-    if (!shadow_control) return JS_NewBool(ctx, 1);
-    return JS_NewBool(ctx, shadow_control->set_pages_enabled != 0);
-}
-
 /* midi_indicator_set(enabled) - Write to shared memory + persist to features.json.
  * The shim reads the SHM byte from the SPI callback path, so updates take effect
  * on the next frame without any file I/O on the realtime path. */
@@ -2065,11 +2030,6 @@ static JSValue js_shadow_get_overlay_state(JSContext *ctx, JSValueConst this_val
     JS_SetPropertyStr(ctx, obj, "shiftKnobValue", JS_NewString(ctx, (const char *)shadow_overlay->shift_knob_value));
 
     /* Set page overlay */
-    JS_SetPropertyStr(ctx, obj, "setPageActive", JS_NewInt32(ctx, shadow_overlay->set_page_active));
-    JS_SetPropertyStr(ctx, obj, "setPageCurrent", JS_NewInt32(ctx, shadow_overlay->set_page_current));
-    JS_SetPropertyStr(ctx, obj, "setPageTotal", JS_NewInt32(ctx, shadow_overlay->set_page_total));
-    JS_SetPropertyStr(ctx, obj, "setPageTimeout", JS_NewInt32(ctx, shadow_overlay->set_page_timeout));
-    JS_SetPropertyStr(ctx, obj, "setPageLoading", JS_NewInt32(ctx, shadow_overlay->set_page_loading));
 
     /* Preroll state */
     JS_SetPropertyStr(ctx, obj, "samplerPrerollEnabled", JS_NewInt32(ctx, shadow_overlay->sampler_preroll_enabled));
@@ -2752,9 +2712,6 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     JS_SetPropertyStr(ctx, global_obj, "display_mirror_set_shm", JS_NewCFunction(ctx, js_display_mirror_set_shm, "display_mirror_set_shm", 1));
 
     /* Register set pages functions */
-    JS_SetPropertyStr(ctx, global_obj, "set_pages_set", JS_NewCFunction(ctx, js_set_pages_set, "set_pages_set", 1));
-    JS_SetPropertyStr(ctx, global_obj, "set_pages_get", JS_NewCFunction(ctx, js_set_pages_get, "set_pages_get", 0));
-    JS_SetPropertyStr(ctx, global_obj, "set_pages_set_shm", JS_NewCFunction(ctx, js_set_pages_set_shm, "set_pages_set_shm", 1));
 
     /* Register MIDI channel indicator functions */
     JS_SetPropertyStr(ctx, global_obj, "midi_indicator_set", JS_NewCFunction(ctx, js_midi_indicator_set, "midi_indicator_set", 1));

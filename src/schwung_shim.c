@@ -159,7 +159,6 @@ static volatile float shadow_master_volume;  /* Defined later */
 /* Feature flags from config/features.json */
 static bool shadow_ui_enabled = true;      /* Shadow UI enabled by default */
 static bool display_mirror_enabled = false; /* Display mirror off by default */
-static bool set_pages_enabled = true;      /* Set pages enabled by default */
 static bool ext_midi_remap_feature_enabled = true; /* Cable-2 channel remap on by default */
 static bool skipback_require_volume = false; /* false=Shift+Capture, true=Shift+Vol+Capture */
 static bool midi_indicator_enabled_setting = false; /* Off by default; persisted in features.json */
@@ -891,8 +890,7 @@ static volatile int shadow_block_plain_volume_hide_until_release = 0;
 /* Shift+Knob overlay state and constants — moved to shadow_overlay.c */
 
 /* ==========================================================================
- * Set Pages - now in shadow_set_pages.c/.h
- * Constants, globals, and xattr names moved to shadow_set_pages.c.
+ * Set tracking - now in shadow_set_pages.c/.h
  * ========================================================================== */
 /* in_set_overview now in shadow_dbus.c (extern via shadow_dbus.h) */
 
@@ -935,13 +933,6 @@ static int shim_run_command(const char *const argv[]) {
 }
 
 /* Overlay font, drawing, overlay_sync — moved to shadow_overlay.c */
-
-/* ==========================================================================
- * Set Pages helpers - moved to shadow_set_pages.c
- * (set_page_save_xattrs, set_page_restore_xattrs, set_page_move_dirs,
- *  set_page_persist, set_page_read_persisted, set_page_dbus_fire_and_forget,
- *  set_page_update_song_index, set_page_change_thread, shadow_change_set_page)
- * ========================================================================== */
 
 /* Load feature configuration from config/features.json */
 static void load_feature_config(void)
@@ -1034,19 +1025,6 @@ static void load_feature_config(void)
         }
     }
 
-    /* Parse set_pages_enabled (defaults to true) */
-    const char *set_pages_key = strstr(config_buf, "\"set_pages_enabled\"");
-    if (set_pages_key) {
-        const char *colon = strchr(set_pages_key, ':');
-        if (colon) {
-            colon++;
-            while (*colon == ' ' || *colon == '\t') colon++;
-            if (strncmp(colon, "false", 5) == 0) {
-                set_pages_enabled = false;
-            }
-        }
-    }
-
     /* Parse skipback_require_volume (defaults to false) */
     const char *skipback_key = strstr(config_buf, "\"skipback_require_volume\"");
     if (skipback_key) {
@@ -1121,11 +1099,10 @@ static void load_feature_config(void)
     const char *trigger_name = trigger_names[shadow_ui_trigger_setting < 3 ? shadow_ui_trigger_setting : 2];
     char log_msg[256];
     snprintf(log_msg, sizeof(log_msg),
-             "Features: shadow_ui=%s, link_audio=%s, display_mirror=%s, set_pages=%s, skipback=%s, skipback_buf=%ds, ui_trigger=%s",
+             "Features: shadow_ui=%s, link_audio=%s, display_mirror=%s, skipback=%s, skipback_buf=%ds, ui_trigger=%s",
              shadow_ui_enabled ? "enabled" : "disabled",
              link_audio.enabled ? "enabled" : "disabled",
              display_mirror_enabled ? "enabled" : "disabled",
-             set_pages_enabled ? "enabled" : "disabled",
              skipback_require_volume ? "Shift+Vol+Capture" : "Shift+Capture",
              skipback_seconds_setting,
              trigger_name);
@@ -4538,7 +4515,6 @@ static void shim_init_subsystems(void)
     }
     if (shadow_control) {
         shadow_control->display_mirror = display_mirror_enabled ? 1 : 0;
-        shadow_control->set_pages_enabled = set_pages_enabled ? 1 : 0;
         shadow_control->skipback_require_volume = skipback_require_volume ? 1 : 0;
         shadow_control->skipback_seconds = (uint16_t)skipback_seconds_setting;
         shadow_control->shadow_ui_trigger = shadow_ui_trigger_setting;
@@ -5678,7 +5654,6 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
         int sampler_fullscreen_on = (sampler_fullscreen_active &&
                                      (sampler_state != SAMPLER_IDLE || sampler_overlay_timeout > 0));
         int skipback_overlay_on = (skipback_overlay_timeout > 0);
-        int set_page_overlay_on = (set_page_overlay_active && set_page_overlay_timeout > 0);
         int recording_dot_on = (sampler_state == SAMPLER_RECORDING);
 
         /* Read JS display_overlay request */
@@ -5686,7 +5661,7 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
 
         int any_overlay = shift_knob_overlay_on || sampler_overlay_on ||
                           sampler_fullscreen_on || skipback_overlay_on ||
-                          set_page_overlay_on || disp_overlay || recording_dot_on;
+                          disp_overlay || recording_dot_on;
         if (any_overlay && slice_num >= 1 && slice_num <= 6) {
             static uint8_t overlay_display[1024];
             static int overlay_frame_ready = 0;
@@ -5780,14 +5755,6 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
                     if (skipback_overlay_timeout <= 0)
                         shadow_overlay_sync();
                 }
-                if (set_page_overlay_on) {
-                    set_page_overlay_timeout--;
-                    if (set_page_overlay_timeout <= 0) {
-                        set_page_overlay_active = 0;
-                        shadow_overlay_sync();
-                    }
-                }
-
                 if (!any_overlay)
                     overlay_frame_ready = 0;
             }
@@ -7563,18 +7530,6 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                     if (require_vol && !SHIFT_VOL_ACTIVE()) require_vol = 0;
                     if (!require_vol || shadow_volume_knob_touched) {
                         skipback_trigger_save();
-                        src[j] = 0; src[j+1] = 0; src[j+2] = 0; src[j+3] = 0;
-                    }
-                }
-
-                /* Shift+Vol+Left/Right: set page navigation (when enabled) */
-                if (SHIFT_VOL_ACTIVE() && shadow_control && shadow_control->set_pages_enabled &&
-                    shadow_shift_held && shadow_volume_knob_touched && d2 > 0) {
-                    if (d1 == CC_LEFT && set_page_current > 0) {
-                        shadow_change_set_page(set_page_current - 1);
-                        src[j] = 0; src[j+1] = 0; src[j+2] = 0; src[j+3] = 0;
-                    } else if (d1 == CC_RIGHT && set_page_current < SET_PAGES_TOTAL - 1) {
-                        shadow_change_set_page(set_page_current + 1);
                         src[j] = 0; src[j+1] = 0; src[j+2] = 0; src[j+3] = 0;
                     }
                 }

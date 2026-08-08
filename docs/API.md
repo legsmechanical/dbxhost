@@ -25,7 +25,7 @@ This document describes the JavaScript API available for developing Schwung modu
 > `src/shadow/shadow_ui.c` (the shadow-UI process the shim launches).
 > In production, only **shadow_ui** runs — `schwung_host.c main()` is
 > not invoked on device. Modules executed inside the Shadow UI see the
-> `shadow_*`, `tts_*`, `display_mirror_*`, `set_pages_*`,
+> `shadow_*`, `tts_*`, `display_mirror_*`,
 > `overlay_knobs_*`, `host_sampler_*`, `move_midi_inject_to_move`,
 > `unified_log`, and `shadow_ui_trigger_*` bindings in addition to the
 > generic `host_*` set. Bindings registered only in `schwung_host.c`
@@ -316,7 +316,6 @@ shadow_select_phase_end()      // ends the run: clears the SHM flags
 
 // Global setting bindings (shadow_ui only)
 display_mirror_get() / display_mirror_set(v) / display_mirror_set_shm(v)
-set_pages_get() / set_pages_set(v) / set_pages_set_shm(v)
 overlay_knobs_get_mode() / overlay_knobs_set_mode(v)
 skipback_seconds_get() / skipback_seconds_set(v)
 skipback_shortcut_get() / skipback_shortcut_set(v)

@@ -38,12 +38,6 @@
     ]
   },
   {
-    "id": "set_pages", "label": "Set Pages",
-    "items": [
-      { "key": "set_pages_enabled", "label": "Set Pages", "type": "bool" }
-    ]
-  },
-  {
     "id": "shortcuts", "label": "Shortcuts",
     "items": [
       { "key": "shadow_ui_trigger", "label": "Shadow UI Trigger", "type": "enum",

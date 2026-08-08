@@ -1341,18 +1341,6 @@ int shadow_inprocess_load_chain(void) {
             (shadow_chain_set_external_fx_mode && shadow_chain_process_fx) ? 1 : 0,
             (void*)shadow_chain_fx_requires_continuous);
 
-    /* Set pages: read persisted page on boot */
-    set_page_current = set_page_read_persisted();
-    {
-        char msg[128];
-        snprintf(msg, sizeof(msg), "SetPage: boot page = %d", set_page_current + 1);
-        shadow_log(msg);
-    }
-
-    /* Don't show page toast on boot — it only makes sense when user
-     * switches pages.  Showing it on boot caused ghost overlays on soft
-     * reboot because shadow_ui hasn't started rendering yet. */
-
     /* Run batch migration for per-set state support */
     shadow_batch_migrate_sets();
 

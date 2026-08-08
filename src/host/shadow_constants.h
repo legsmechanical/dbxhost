@@ -165,7 +165,7 @@ typedef struct shadow_control_t {
     volatile uint8_t overlay_rect_w;      /* Overlay rect width (pixels) */
     volatile uint8_t overlay_rect_h;      /* Overlay rect height (pixels) */
     volatile uint16_t tts_debounce_ms;   /* Screen reader debounce in ms (0-1000, default 300) */
-    volatile uint8_t set_pages_enabled;  /* 0=off, 1=on (Shift+Vol+Left/Right page switching) */
+    volatile uint8_t set_pages_enabled;  /* RESERVED (set pages died in P3) — keep for SHM layout */
     volatile uint8_t skip_led_clear;     /* 1=don't clear LEDs on overtake entry, restore snapshot instead */
     volatile uint8_t move_ui_mode;       /* Move's UI mode: 0=unknown, 1=session, 2=note, 3=set_overview */
     volatile uint8_t sampler_cmd;        /* 0=none, 1=start (path in file), 2=stop */
@@ -740,12 +740,12 @@ typedef struct shadow_overlay_state_t {
     char shift_knob_param[64];                  /* Parameter name */
     char shift_knob_value[32];                  /* Parameter value */
 
-    /* Set page overlay */
-    volatile uint8_t  set_page_active;            /* 1 = showing set page toast */
-    volatile uint8_t  set_page_current;           /* Current page (0-7) */
-    volatile uint8_t  set_page_total;             /* Total pages (8) */
-    volatile uint8_t  set_page_loading;           /* 1 = loading (pre-restart), 0 = loaded */
-    volatile uint16_t set_page_timeout;           /* Frames remaining for toast */
+    /* RESERVED (set-page overlay died in P3) — keep for SHM layout */
+    volatile uint8_t  set_page_active;
+    volatile uint8_t  set_page_current;
+    volatile uint8_t  set_page_total;
+    volatile uint8_t  set_page_loading;
+    volatile uint16_t set_page_timeout;
 
     /* Preroll state */
     volatile uint8_t  sampler_preroll_enabled;    /* 0=off, 1=on */

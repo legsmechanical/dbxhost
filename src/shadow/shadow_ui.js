@@ -102,19 +102,13 @@ import {
     OVERLAY_SAMPLER,
     OVERLAY_SKIPBACK,
     OVERLAY_SHIFT_KNOB,
-    OVERLAY_SET_PAGE,
     drawSamplerOverlay,
     drawSkipbackToast,
     drawShiftKnobOverlay,
-    drawSetPageToast,
     SHIFT_KNOB_BOX_X,
     SHIFT_KNOB_BOX_Y,
     SHIFT_KNOB_BOX_W,
-    SHIFT_KNOB_BOX_H,
-    SET_PAGE_BOX_X,
-    SET_PAGE_BOX_Y,
-    SET_PAGE_BOX_W,
-    SET_PAGE_BOX_H
+    SHIFT_KNOB_BOX_H
 } from '/data/UserData/schwung/shared/sampler_overlay.mjs';
 
 import {
@@ -1262,12 +1256,6 @@ const GLOBAL_SETTINGS_SECTIONS = [
             { key: "screen_reader_pitch", label: "Voice Pitch", type: "float", min: 80, max: 180, step: 5 },
             { key: "screen_reader_volume", label: "Voice Vol", type: "int", min: 0, max: 100, step: 5 },
             { key: "screen_reader_debounce", label: "Debounce", type: "int", min: 0, max: 1000, step: 50 }
-        ]
-    },
-    {
-        id: "set_pages", label: "Set Pages",
-        items: [
-            { key: "set_pages_enabled", label: "Set Pages", type: "bool" }
         ]
     },
     {
@@ -6582,7 +6570,7 @@ function saveTextPreviewConfig() {
  * cached state to avoid unnecessary writes to shared memory.
  *
  * Note: host_read_file() does fopen/fread on the UI thread, which is safe.
- * The SIGABRT was from display_mirror_set/set_pages_set which did fopen+fwrite
+ * The SIGABRT was from display_mirror_set (and the late set-pages toggle) which did fopen+fwrite
  * to features.json — we now use _shm variants that only write shared memory. */
 let _configSyncTickCounter = 0;
 const CONFIG_SYNC_INTERVAL = 88; /* ~2 seconds at 44 ticks/sec */
@@ -11441,9 +11429,6 @@ function getMasterFxSettingValue(setting) {
         }
         return "300ms";
     }
-    if (setting.key === "set_pages_enabled") {
-        return (typeof set_pages_get === "function" && set_pages_get()) ? "On" : "Off";
-    }
     if (setting.key === "shadow_ui_trigger") {
         const val = typeof shadow_ui_trigger_get === "function" ? shadow_ui_trigger_get() : 2;
         const labels = (setting && Array.isArray(setting.options)) ? setting.options : ["Long Press", "Shift+Vol", "Both"];
@@ -11603,12 +11588,6 @@ function adjustMasterFxSetting(setting, delta) {
         val += delta * setting.step;
         val = Math.max(setting.min, Math.min(setting.max, val));
         tts_set_debounce(Math.round(val));
-        return;
-    }
-
-    if (setting.key === "set_pages_enabled" && typeof set_pages_set === "function") {
-        const current = typeof set_pages_get === "function" ? set_pages_get() : true;
-        set_pages_set(!current ? 1 : 0);
         return;
     }
 
@@ -16145,19 +16124,6 @@ globalThis.tick = function() {
         drawSkipbackToast();
         if (typeof shadow_set_display_overlay === "function") {
             shadow_set_display_overlay(1, 9, 22, 110, 20);
-        }
-        return;
-    }
-
-    /* Set page toast - render to shadow display, request rect overlay on native */
-    if (overlayState && overlayState.type === OVERLAY_SET_PAGE &&
-        overlayState.setPageActive && overlayState.setPageTimeout > 0) {
-        clear_screen();
-        drawSetPageToast(overlayState);
-        if (typeof shadow_set_display_overlay === "function") {
-            shadow_set_display_overlay(1,
-                SET_PAGE_BOX_X, SET_PAGE_BOX_Y,
-                SET_PAGE_BOX_W, SET_PAGE_BOX_H);
         }
         return;
     }

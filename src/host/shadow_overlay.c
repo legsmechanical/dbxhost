@@ -495,8 +495,6 @@ void shadow_overlay_sync(void) {
         ov->overlay_type = SHADOW_OVERLAY_SAMPLER;
     } else if (skipback_overlay_timeout > 0) {
         ov->overlay_type = SHADOW_OVERLAY_SKIPBACK;
-    } else if (set_page_overlay_active && set_page_overlay_timeout > 0) {
-        ov->overlay_type = SHADOW_OVERLAY_SET_PAGE;
     } else if (shift_knob_overlay_active && shift_knob_overlay_timeout > 0) {
         ov->overlay_type = SHADOW_OVERLAY_SHIFT_KNOB;
     } else {
@@ -545,13 +543,6 @@ void shadow_overlay_sync(void) {
     memcpy((char *)ov->shift_knob_patch, shift_knob_overlay_patch, 64);
     memcpy((char *)ov->shift_knob_param, shift_knob_overlay_param, 64);
     memcpy((char *)ov->shift_knob_value, shift_knob_overlay_value, 32);
-
-    /* Set page state */
-    ov->set_page_active = (set_page_overlay_active && set_page_overlay_timeout > 0) ? 1 : 0;
-    ov->set_page_current = (uint8_t)set_page_current;
-    ov->set_page_total = SET_PAGES_TOTAL;
-    ov->set_page_timeout = (uint16_t)set_page_overlay_timeout;
-    ov->set_page_loading = (uint8_t)set_page_loading;
 
     /* Increment sequence to notify JS of state change */
     ov->sequence++;

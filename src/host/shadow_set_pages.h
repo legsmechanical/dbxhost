@@ -1,4 +1,4 @@
-/* shadow_set_pages.h - Set page switching and per-set state management
+/* shadow_set_pages.h - Set tracking and per-set state management
  * Extracted from schwung_shim.c for maintainability. */
 
 #ifndef SHADOW_SET_PAGES_H
@@ -11,11 +11,6 @@
 /* ============================================================================
  * Constants
  * ============================================================================ */
-
-#define SET_PAGES_DIR SCHWUNG_INSTALL_DIR "/set_pages"
-#define SET_PAGES_CURRENT_PATH SET_PAGES_DIR "/current_page.txt"
-#define SET_PAGES_TOTAL 8
-#define SET_PAGE_OVERLAY_FRAMES 120  /* ~2 seconds at 60fps */
 
 /* Path constants used by set/config management */
 #define SHADOW_CHAIN_CONFIG_FILENAME "shadow_chain_config.json"
@@ -48,12 +43,6 @@ typedef struct {
 /* ============================================================================
  * Extern globals - set page state readable/writable by the shim
  * ============================================================================ */
-
-extern int set_page_current;
-extern int set_page_overlay_active;
-extern int set_page_overlay_timeout;
-extern int set_page_loading;
-extern volatile int set_page_change_in_flight;
 
 /* Set tracking globals (shared with sampler for tempo) */
 extern float sampler_set_tempo;
@@ -102,12 +91,5 @@ int shadow_set_tracking_forced_pending(void);
  * (cheap; calls shadow_handle_set_loaded, which dedupes). The filesystem
  * scan itself (shadow_poll_current_set) runs on the shim worker. */
 void shadow_set_pages_consume(void);
-
-
-/* Read current page from disk (returns 0 if not found) */
-int set_page_read_persisted(void);
-
-/* Change to a new set page (non-blocking: spawns background thread) */
-void shadow_change_set_page(int new_page);
 
 #endif /* SHADOW_SET_PAGES_H */
