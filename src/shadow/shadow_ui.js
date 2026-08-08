@@ -353,7 +353,6 @@ const VIEWS = {
     KNOB_PARAM_PICKER: "knobpick", // Pick parameter for a knob assignment
     DYNAMIC_PARAM_PICKER: "dynamicpick", // Dedicated picker UI for module_picker/parameter_picker
     STORE_PICKER_RESULT: "storepickerresult",  // Store: success/error message
-    OVERTAKE_MENU: "overtakemenu",   // Overtake module selection menu
     OVERTAKE_MODULE: "overtakemodule", // Running an overtake module
     GLOBAL_SETTINGS: "globalsettings",  // Global settings menu (display, audio, etc.)
     TOOLS: "tools",                     // Tools menu (Stem Separation, Timestretch)
@@ -776,8 +775,6 @@ let redrawCounter = 0;
 const REDRAW_INTERVAL = 2; // ~30fps at 16ms tick
 
 /* Overtake module state */
-let overtakeModules = [];        // List of available overtake modules
-let selectedOvertakeModule = 0;  // Currently selected module in menu
 let overtakeModuleLoaded = false; // True if an overtake module is running
 let overtakeModulePath = "";      // Path to loaded overtake module
 let overtakeModuleId = "";         // ID of loaded overtake module (for per-module exit hooks)
@@ -1552,7 +1549,6 @@ let storePickerCurrentModule = null;   // Module being viewed in detail
 let storePickerActionIndex = 0;        // Selected action in detail view (0=Install/Update, 1=Remove)
 let storePickerMessage = '';           // Result/error message
 let storePickerResultTitle = '';       // Result screen header (empty = 'Module Store')
-let storePickerFromOvertake = false;   // True if entered from overtake menu
 let storePickerFromMasterFx = false;  // True if entered from master FX module select
 let storePickerFromSettings = false;  // True if entered from MFX settings (full store)
 
@@ -3381,52 +3377,6 @@ function invokeModuleOnResume(callbacks, moduleId) {
     }
 }
 
-/* Enter the overtake module selection menu */
-function enterOvertakeMenu() {
-    /* A raised feedback-guard modal can't be answered once we leave the shadow
-     * UI — defer it so Back doesn't leak into the menu/tool (issue #158). */
-    deferFeedbackModalForOvertake();
-    /* Flush set state before entering overtake — periodic autosave is gated
-     * on !isOvertakeActive, so without this a slot change made seconds before
-     * Shift+Vol+Jog would be lost on reboot. */
-    autosaveAllSlots();
-    saveAllFxBusConfigs();
-    saveChainConfigToDir(activeSlotStateDir);
-    debugLog("enterOvertakeMenu: flushed set state before overtake");
-
-    /* Reset overtake state — but preserve it if a tool has a hidden session
-     * (DSP still running, waiting for reconnect). */
-    if (!toolHiddenFile) {
-        overtakeModuleLoaded = false;
-        overtakeModulePath = "";
-        overtakeModuleId = "";
-    }
-    overtakeModuleCallbacks = null;
-    overtakeExitPending = false;
-    overtakeInitPending = false;
-    overtakeInitTicks = 0;
-    ledClearIndex = 0;
-
-    /* Enable overtake mode 1 (menu) - only UI events forwarded, not all MIDI */
-    if (typeof shadow_set_overtake_mode === "function") {
-        shadow_set_overtake_mode(1);  /* 1 = menu mode (UI events only) */
-        debugLog("enterOvertakeMenu: overtake_mode=1 (menu)");
-    }
-
-    overtakeModules = scanForOvertakeModules();
-    /* Add [Get more...] option at the end */
-    overtakeModules.push({ id: "__get_more__", name: "[Get more...]", path: null, uiPath: null });
-    overtakeModules.push({ id: "__back_to_move__", name: "[Back to Move]", path: null, uiPath: null });
-    selectedOvertakeModule = 0;
-    previousView = view;
-    setView(VIEWS.OVERTAKE_MENU);
-    needsRedraw = true;
-
-    /* Announce menu title + initial selection */
-    const moduleName = overtakeModules[0]?.name || "None";
-    announce(`Overtake Menu, ${moduleName}`);
-}
-
 /* Overtake exit state - clear LEDs before returning to Move */
 let overtakeExitPending = false;
 
@@ -4124,36 +4074,6 @@ function loadOvertakeModule(moduleInfo, skipOvertake) {
         }
         return false;
     }
-}
-
-/* Draw the overtake module selection menu */
-function drawOvertakeMenu() {
-    clear_screen();
-
-    drawHeader("Overtake Modules");
-
-    if (overtakeModules.length === 0) {
-        print(4, LIST_TOP_Y + 10, "No overtake modules found", 1);
-        print(4, LIST_TOP_Y + 26, "Install modules with", 1);
-        print(4, LIST_TOP_Y + 42, "component_type: \"overtake\"", 1);
-    } else {
-        const items = overtakeModules.map(m => ({
-            label: m.name,
-            value: ""
-        }));
-        drawMenuList({
-            items,
-            selectedIndex: selectedOvertakeModule,
-            listArea: {
-                topY: menuLayoutDefaults.listTopY,
-                bottomY: menuLayoutDefaults.listBottomWithFooter
-            },
-            getLabel: (item) => item.label,
-            getValue: (item) => item.value
-        });
-    }
-
-    drawFooter({left: "Back: exit", right: "Jog: select"});
 }
 
 /* Fetch chain_params metadata from a component */
@@ -7480,8 +7400,8 @@ function componentKeyToCategoryId(componentKey) {
  * without root, so we redirect every "Get more" tap straight at the web
  * manager pointer screen — same destination as Settings → Module Store.
  *
- * Preserves the entry-context flags (storePickerFromOvertake /
- * storePickerFromMasterFx / storePickerCategory) so the result-screen
+ * Preserves the entry-context flags (storePickerFromMasterFx /
+ * storePickerCategory) so the result-screen
  * jog-click can return to wherever the user came from instead of dumping
  * them on Global Settings. */
 function enterStorePicker(componentKey) {
@@ -7490,7 +7410,6 @@ function enterStorePicker(componentKey) {
 
     storePickerCategory = categoryId;
     storePickerCurrentModule = null;
-    storePickerFromOvertake = (componentKey === 'overtake');
     storePickerFromMasterFx = (componentKey === 'master_fx');
     storePickerFromSettings = false;
 
@@ -7516,15 +7435,6 @@ function handleStorePickerResultSelect() {
     if (storeReturnView === VIEWS.GLOBAL_SETTINGS) {
         storeReturnView = null;
         enterGlobalSettings();
-        return;
-    }
-    if (storePickerFromOvertake) {
-        overtakeModules = scanForOvertakeModules();
-        setView(VIEWS.OVERTAKE_MENU);
-        storePickerFromOvertake = false;
-        storeCatalog = null;
-        storePickerCategory = null;
-        storePickerModules = [];
         return;
     }
     if (storePickerFromMasterFx) {
@@ -12430,17 +12340,6 @@ function handleJog(delta) {
                 }
             }
             break;
-        case VIEWS.OVERTAKE_MENU:
-            selectedOvertakeModule += delta;
-            if (selectedOvertakeModule < 0) selectedOvertakeModule = 0;
-            if (selectedOvertakeModule >= overtakeModules.length) {
-                selectedOvertakeModule = Math.max(0, overtakeModules.length - 1);
-            }
-            if (overtakeModules.length > 0) {
-                const om = overtakeModules[selectedOvertakeModule];
-                announceMenuItem("Module", om.name || om.id || "Unknown");
-            }
-            break;
         case VIEWS.TOOLS: {
             /* Skip divider rows when moving the cursor. */
             const step = delta > 0 ? 1 : -1;
@@ -13323,20 +13222,6 @@ function handleSelect() {
         case VIEWS.DYNAMIC_PARAM_PICKER:
             handleDynamicParamPickerSelect();
             break;
-        case VIEWS.OVERTAKE_MENU:
-            /* Select and load the overtake module */
-            if (overtakeModules.length > 0 && selectedOvertakeModule < overtakeModules.length) {
-                const selected = overtakeModules[selectedOvertakeModule];
-                if (selected.id === "__get_more__") {
-                    /* Open store picker for overtake modules */
-                    /* Stay in overtake menu mode (1) so store picker receives input */
-                    enterStorePicker('overtake');
-                } else {
-                    announce(`Loading ${selected.name || selected.id}`);
-                    loadOvertakeModule(selected);
-                }
-            }
-            break;
         case VIEWS.TOOLS:
             debugLog("TOOLS SELECT: idx=" + toolsMenuIndex + " count=" + toolModules.length);
             if (toolsMenuIndex >= 0 && toolsMenuIndex < toolModules.length) {
@@ -13834,18 +13719,6 @@ function handleBack() {
             } else {
                 closeDynamicParamPicker("Hierarchy Editor");
             }
-            break;
-        case VIEWS.OVERTAKE_MENU:
-            /* Exit overtake menu and return to Move */
-            debugLog("OVERTAKE_MENU back: exiting to Move");
-            if (typeof shadow_set_overtake_mode === "function") {
-                shadow_set_overtake_mode(0);
-            }
-            setView(VIEWS.SLOTS);
-            if (typeof shadow_request_exit === "function") {
-                shadow_request_exit();
-            }
-            needsRedraw = true;
             break;
         case VIEWS.TOOLS:
             /* Exit Tools menu → exit shadow mode */
@@ -16301,7 +16174,7 @@ globalThis.tick = function() {
      * before its own suspend lands, and this must not steal the view while
      * a module still owns the surface. */
     if (!selectPhase.active &&
-        view !== VIEWS.OVERTAKE_MODULE && view !== VIEWS.OVERTAKE_MENU &&
+        view !== VIEWS.OVERTAKE_MODULE &&
         typeof shadow_select_phase_active === "function" &&
         shadow_select_phase_active()) {
         enterSelectPhaseView();
@@ -16529,7 +16402,7 @@ globalThis.tick = function() {
     refreshCounter++;
 
     /* Skip all IPC polling and file I/O while an overtake module is running. */
-    const isOvertakeActive = (view === VIEWS.OVERTAKE_MODULE || view === VIEWS.OVERTAKE_MENU);
+    const isOvertakeActive = (view === VIEWS.OVERTAKE_MODULE);
 
     if (!isOvertakeActive && refreshCounter % 120 === 0) {
         refreshSlots();
@@ -16889,9 +16762,6 @@ globalThis.tick = function() {
         case VIEWS.STORE_PICKER_RESULT:
             drawStorePickerResult();
             break;
-        case VIEWS.OVERTAKE_MENU:
-            drawOvertakeMenu();
-            break;
         case VIEWS.GLOBAL_SETTINGS:
             drawGlobalSettings();
             break;
@@ -17166,7 +17036,7 @@ globalThis.onMidiMessageInternal = function(data) {
     }
 
     /* Debug: log all MIDI when in overtake mode to diagnose escape issues */
-    if (view === VIEWS.OVERTAKE_MODULE || view === VIEWS.OVERTAKE_MENU) {
+    if (view === VIEWS.OVERTAKE_MODULE) {
         debugLog(`MIDI_IN: view=${view} status=${status} d1=${d1} d2=${d2} loaded=${overtakeModuleLoaded} callbacks=${!!overtakeModuleCallbacks}`);
     }
 
