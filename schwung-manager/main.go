@@ -2101,7 +2101,6 @@ var settingsToShadowConfig = map[string]string{
 	"pad_typing":             "pad_typing",
 	"text_preview":           "text_preview",
 	"browser_preview":        "browser_preview",
-	"auto_update_check":      "auto_update_check",
 	"filebrowser_enabled":    "filebrowser_enabled",
 	"screen_reader_enabled":  "screen_reader_enabled",
 	"screen_reader_engine":   "screen_reader_engine",

@@ -12,7 +12,7 @@ fi
 # for the schwung-manager web UI. Keep both in sync when adding settings."
 # This test enforces that: every editable (non-action) key in the on-device
 # GLOBAL_SETTINGS_SECTIONS must exist in settings-schema.json, or the web UI
-# silently cannot show/edit it. Device-only action sections (updates, help)
+# silently cannot show/edit it. Device-only action sections (help)
 # are exempt.
 
 node -e '
@@ -26,7 +26,7 @@ const schema = JSON.parse(fs.readFileSync("src/shared/settings-schema.json", "ut
 const schemaKeys = new Set();
 for (const s of schema) for (const it of (s.items || [])) schemaKeys.add(it.key);
 
-const deviceOnlySections = new Set(["updates", "help"]);
+const deviceOnlySections = new Set(["help"]);
 const deviceOnlyKeys = new Set([]);
 const missing = [];
 for (const s of sections) {

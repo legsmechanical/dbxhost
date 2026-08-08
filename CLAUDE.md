@@ -124,7 +124,6 @@ Modules (src/modules/<id>/):
 Key sources: `src/schwung_host.c` (host runtime), `src/schwung_shim.c` (LD_PRELOAD shim), `src/host/module_manager.c`, `src/host/menu_ui.js`, `src/host/plugin_api_v1.h`.
 
 Built-in modules: `chain`, `file-browser`, `song-mode`, `wav-player`.
-Source-only (not shipped): `store` (on-device store retired — see Module Install/Update below).
 Source-only (not in release tarball): `controller` (superseded by catalog `control`), `tools/{ui,seq,config,splash}-test`, `text-test`.
 
 ### JS Module Lifecycle
@@ -476,11 +475,13 @@ Reference: `src/modules/controller/ui.js`.
 ## Module Install / Update
 
 **schwung-manager (web UI at `http://move.local:7700`) is the single
-install/update path** for the host and all modules. On-device, the shadow UI
-keeps exactly two store surfaces: update *detection* (Settings → Updates →
-Check Updates shows what's outdated and points at the web manager) and
-pointer screens ([Get more...] / [Module Store]). The old on-device store
-module is retired (source kept for the standalone/sim host; not shipped).
+install/update path** for the host and all modules. The shadow UI has **no
+on-device store surfaces left** — P3 of the re-architecture (2026-08-08)
+deleted update detection (Settings → Updates), the [Get more...] /
+[Module Store] pointer rows, and the `src/modules/store` source. The
+STORE_PICKER_RESULT view survives only as the generic informational screen
+(shim-repair prompt). `shared/store_utils.mjs` remains for `getHostVersion`
+and the manager-side catalog conventions documented below.
 
 Catalog: `https://raw.githubusercontent.com/charlesvestal/schwung/main/module-catalog.json`.
 

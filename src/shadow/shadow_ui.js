@@ -70,11 +70,7 @@ import {
 } from '/data/UserData/schwung/shared/scrollable_text.mjs';
 
 import {
-    fetchCatalog, getModuleStatus,
-    removeModule as sharedRemoveModule,
-    scanInstalledModules, getHostVersion, isNewerVersion,
-    fetchReleaseJsonQuick,
-    CATEGORIES
+    getHostVersion
 } from '/data/UserData/schwung/shared/store_utils.mjs';
 
 import {
@@ -796,8 +792,6 @@ const TOOLS_DOUBLE_TAP_MS = 500;
 
 
 /* Auto-update state */
-let autoUpdateCheckEnabled = true;   // Default: enabled (opt-out)
-let pendingUpdates = [];              // Updates found on startup
 
 /* Bootstrap-needed banner state. The self-heal mechanism (schwung-heal
  * setuid + entrypoint that invokes it at boot) requires one-time root
@@ -807,7 +801,25 @@ let pendingUpdates = [];              // Updates found on startup
  * banner that points the user at the web manager / GUI installer. */
 let shimBootstrapNeeded = false;
 let shimBootstrapPromptShown = false;
-let pendingUpdateIndex = 0;           // Selected update in prompt
+
+/* Detect whether the live entrypoint at /opt/move/Move includes the
+ * boot-time `schwung-heal` invocation. If not, the self-heal mechanism
+ * isn't running on this device, /usr/lib/schwung-shim.so will silently
+ * drift out of sync with /data after web-manager updates, and the user
+ * needs the one-time bootstrap (web manager, GUI installer, or SSH).
+ *
+ * Reads the entrypoint via std.loadFile (it's a ~4KB shell script).
+ * Returns true when the bootstrap is missing, false when it's present
+ * or the file can't be read (in which case we don't want to nag). */
+function detectShimBootstrapNeeded() {
+    try {
+        const entry = std.loadFile('/opt/move/Move');
+        if (!entry) return false;
+        return entry.indexOf('schwung-heal') < 0;
+    } catch (_e) {
+        return false;
+    }
+}
 
 /* Host-side tracking for Shift+Vol+Jog escape (redundant with shim, but ensures escape always works) */
 let hostVolumeKnobTouched = false;
@@ -1268,21 +1280,7 @@ const GLOBAL_SETTINGS_SECTIONS = [
     {
         id: "services", label: "Services",
         items: [
-            { key: "filebrowser_enabled", label: "File Browser", type: "bool" },
-            { key: "auto_update_check", label: "Auto Update Check", type: "bool" }
-        ]
-    },
-    {
-        id: "updates", label: "Updates",
-        items: [
-            /* Detection runs on-device (catalog scan + version compare) so
-             * users can see what's outdated without opening a browser. The
-             * actual install always happens via the web manager (or the
-             * GUI installer as fallback) — the on-device install paths
-             * silently failed for users without a current shim, so we
-             * removed them. */
-            { key: "check_updates", label: "[Check Updates]", type: "action" },
-            { key: "module_store",  label: "[Module Store]",  type: "action" }
+            { key: "filebrowser_enabled", label: "File Browser", type: "bool" }
         ]
     },
     {
@@ -1535,193 +1533,9 @@ let availableModules = [];     // Modules available for selected component type
 let selectedModuleIndex = 0;   // Index in availableModules
 
 /* Store picker state */
-let storeCatalog = null;               // Cached catalog from store_utils
-let storeInstalledModules = {};        // {moduleId: version} map
-let storeHostVersion = '1.0.0';        // Current host version
-let storePickerCategory = null;        // Category ID being browsed (sound_generator, audio_fx, midi_fx)
-let storePickerModules = [];           // Modules available for download in current category
-let storePickerCurrentModule = null;   // Module being viewed in detail
-let storePickerActionIndex = 0;        // Selected action in detail view (0=Install/Update, 1=Remove)
 let storePickerMessage = '';           // Result/error message
 let storePickerResultTitle = '';       // Result screen header (empty = 'Module Store')
-let storePickerFromMasterFx = false;  // True if entered from master FX module select
-let storePickerFromSettings = false;  // True if entered from MFX settings (full store)
 
-/* Run detection + show a result screen listing what's outdated, with the
- * web-manager pointer. No install actions — those only happen via the
- * web manager. checkForUpdatesInBackground populates pendingUpdates as
- * a side effect; we read length, then never touch the install flow. */
-function showUpdatesAvailableScreen() {
-    announce("Checking for updates");
-    checkForUpdatesInBackground();
-
-    /* Distinguish host pointer from module updates so the user knows
-     * what's actually outdated. checkForUpdatesInBackground pushes a
-     * single _hostPointer entry to the queue when the catalog has a
-     * newer host; everything else is a module update. */
-    let hostNewer = '';
-    let moduleCount = 0;
-    for (let i = 0; i < pendingUpdates.length; i++) {
-        const upd = pendingUpdates[i];
-        if (upd._hostPointer) {
-            hostNewer = upd.to || '';
-        } else {
-            moduleCount++;
-        }
-    }
-
-    /* Reset detection state so a second visit starts clean.
-     * here a second time without clearing state. */
-    pendingUpdates = [];
-    pendingUpdateIndex = 0;
-    /* Route the result-screen click back to GLOBAL_SETTINGS (not the
-     * old store browser fallback). */
-    storePickerFromSettings = false;
-    storeReturnView = VIEWS.GLOBAL_SETTINGS;
-
-    storePickerResultTitle = 'Updates';
-    if (!hostNewer && moduleCount === 0) {
-        storePickerMessage = buildNoUpdatesMessage();
-    } else {
-        const lines = [];
-        if (hostNewer) {
-            lines.push('Schwung ' + hostNewer + ' available');
-        }
-        if (moduleCount > 0) {
-            lines.push(moduleCount + ' module update' + (moduleCount === 1 ? '' : 's'));
-        }
-        lines.push('Update at');
-        lines.push('http://move.local:7700');
-        storePickerMessage = lines.join('\n');
-    }
-    view = VIEWS.STORE_PICKER_RESULT;
-    needsRedraw = true;
-    announce(storePickerMessage);
-}
-
-/* Detect whether the live entrypoint at /opt/move/Move includes the
- * boot-time `schwung-heal` invocation. If not, the self-heal mechanism
- * isn't running on this device, /usr/lib/schwung-shim.so will silently
- * drift out of sync with /data after web-manager updates, and the user
- * needs the one-time bootstrap (web manager, GUI installer, or SSH).
- *
- * Reads the entrypoint via std.loadFile (it's a ~4KB shell script).
- * Returns true when the bootstrap is missing, false when it's present
- * or the file can't be read (in which case we don't want to nag). */
-function detectShimBootstrapNeeded() {
-    try {
-        const entry = std.loadFile('/opt/move/Move');
-        if (!entry) return false;
-        return entry.indexOf('schwung-heal') < 0;
-    } catch (_e) {
-        return false;
-    }
-}
-
-/* Pointer to the web manager — same routing semantics as the updates
- * screen: result-click returns to GLOBAL_SETTINGS via storeReturnView. */
-function showModuleStorePointer() {
-    storePickerFromSettings = false;
-    storeReturnView = VIEWS.GLOBAL_SETTINGS;
-    storePickerResultTitle = 'Module Store';
-    storePickerMessage = 'Module store available at\nhttp://move.local:7700';
-    view = VIEWS.STORE_PICKER_RESULT;
-    needsRedraw = true;
-    announce(storePickerMessage);
-}
-
-/* Return a no-updates message that surfaces "host updates live in the
- * web manager" when the catalog says a newer host is available. Hiding
- * the on-device action without telling users where to update otherwise
- * leaves them silently stuck on old versions. */
-function buildNoUpdatesMessage() {
-    try {
-        if (storeCatalog && storeCatalog.host && storeCatalog.host.latest_version) {
-            const cur = storeHostVersion || getHostVersion();
-            if (isNewerVersion(storeCatalog.host.latest_version, cur)) {
-                return 'Schwung ' + storeCatalog.host.latest_version + ' available\n' +
-                       'Update Schwung at\n' +
-                       'http://move.local:7700';
-            }
-        }
-    } catch (_e) { /* fall through */ }
-    return 'No updates available';
-}
-
-/* Check for core and module updates (manual, called from Settings → Check Updates) */
-function checkForUpdatesInBackground() {
-    debugLog("checkForUpdatesInBackground: starting");
-    const updates = [];
-
-    clear_screen();
-    drawStatusOverlay('Updates', 'Checking...');
-    host_flush_display();
-
-    /* Refresh host version (still needed for module compatibility checks).
-     * Core updates are no longer offered on-device — users update via the
-     * web manager (move.local:7700). The check is suppressed so the
-     * "Update All" flow doesn't try to perform a core upgrade that the
-     * JS layer can't complete with the right privileges. */
-    storeHostVersion = getHostVersion();
-    debugLog("checkForUpdatesInBackground: hostVersion=" + storeHostVersion);
-
-    /* Check module updates */
-    clear_screen();
-    drawStatusOverlay('Updates', 'Checking modules...');
-    host_flush_display();
-
-    debugLog("checkForUpdatesInBackground: checking modules");
-    const installed = scanInstalledModules();
-    const catalogResult = fetchCatalog((title, name, idx, total) => {
-        drawStatusOverlay('Checking', idx + '/' + total + ': ' + name);
-        host_flush_display();
-    });
-    debugLog("checkForUpdatesInBackground: catalog success=" + catalogResult.success);
-    if (catalogResult.success) {
-        /* Cache catalog so buildNoUpdatesMessage can read host.latest_version
-         * when there are no module updates — otherwise users hitting Check
-         * for Updates have no signal that a host upgrade is available. */
-        storeCatalog = catalogResult.catalog;
-        /* Surface a non-actionable "Schwung X.Y.Z available" pointer at the
-         * top of the update prompt when the catalog has a newer host. We
-         * can't perform host upgrades on-device (privileged paths blocked
-         * for ableton), so this is informational — selecting it shows the
-         * web manager pointer message and Update All skips it entirely. */
-        const cat = catalogResult.catalog;
-        if (cat && cat.host && cat.host.latest_version &&
-            isNewerVersion(cat.host.latest_version, storeHostVersion)) {
-            updates.push({
-                id: '__host_pointer__',
-                name: 'Schwung ' + cat.host.latest_version,
-                from: storeHostVersion,
-                to: cat.host.latest_version,
-                _hostPointer: true
-            });
-        }
-        for (const mod of catalogResult.catalog.modules || []) {
-            const status = getModuleStatus(mod, installed);
-            if (status.installed && status.hasUpdate) {
-                updates.push({
-                    name: mod.name,
-                    from: status.installedVersion,
-                    to: mod.latest_version,
-                    ...mod
-                });
-            }
-        }
-    }
-
-    debugLog("checkForUpdatesInBackground: found " + updates.length + " updates");
-    if (updates.length > 0) {
-        /* Detection only — the caller summarizes; installs happen in the
-         * web manager (the single install/update path). */
-        pendingUpdates = updates;
-        pendingUpdateIndex = 0;
-        needsRedraw = true;
-    } else {
-        needsRedraw = true;
-    }
-}
 
 /* Chain settings (shown when Settings component is selected) */
 const CHAIN_SETTINGS_ITEMS = [
@@ -3242,8 +3056,7 @@ function scanForAudioFxModules() {
     const noneItem = result[0];
     const modules = result.slice(1);
     modules.sort((a, b) => a.name.localeCompare(b.name));
-    /* Add option to get more modules from store at the end */
-    return [noneItem, ...modules, { id: "__get_more__", name: "[Get more...]" }];
+    return [noneItem, ...modules];
 }
 
 /* Scan modules directory for overtake modules */
@@ -5531,12 +5344,6 @@ function handleMasterFxSettingsAction(key) {
         masterOverwriteTargetIndex = -1;  /* Force create new */
         announceSavePreview(masterPendingSaveName, masterNamePreviewIndex);
         needsRedraw = true;
-    } else if (key === "check_updates") {
-        /* Detection only — no install actions on-device. */
-        showUpdatesAvailableScreen();
-    } else if (key === "module_store") {
-        /* Browsing on-device is disabled — point at the web manager. */
-        showModuleStorePointer();
     } else if (key === "delete") {
         /* Delete - confirm */
         masterConfirmingDelete = true;
@@ -6405,15 +6212,6 @@ function handleGlobalSettingsAction(key) {
         handleMasterFxSettingsAction("help");
         return;
     }
-    if (key === "check_updates") {
-        storeReturnView = VIEWS.GLOBAL_SETTINGS;
-        showUpdatesAvailableScreen();
-        return;
-    }
-    if (key === "module_store") {
-        showModuleStorePointer();
-        return;
-    }
 }
 
 /* ========== End Global Settings Functions ========== */
@@ -6495,12 +6293,6 @@ function applyMasterFxModuleSelection() {
 
     const selected = MASTER_FX_OPTIONS[selectedMasterFxModuleIndex];
     if (selected) {
-        if (selected.id === "__get_more__") {
-            /* Open store picker for audio FX modules */
-            selectingMasterFxModule = false;
-            enterStorePicker('master_fx');
-            return;
-        }
         /* Load the module into the slot */
         setMasterFxSlotModule(selectedMasterFxComponent, selected.dspPath || "");
         masterFxConfig[comp.key].module = selected.id;
@@ -6690,37 +6482,6 @@ function saveMasterFxChainConfig(forceMasterBus) {
     }
 }
 
-/* Save auto-update setting to shadow config */
-function saveAutoUpdateConfig() {
-    try {
-        const configPath = HOST_STATE_ROOT + "/shadow_config.json";
-        let config = {};
-        try {
-            const content = host_read_file(configPath);
-            if (content) config = JSON.parse(content);
-        } catch (e) {}
-        config.auto_update_check = autoUpdateCheckEnabled;
-        host_write_file(configPath, JSON.stringify(config, null, 2));
-    } catch (e) {
-        /* Ignore errors */
-    }
-}
-
-/* Load auto-update setting from config */
-function loadAutoUpdateConfig() {
-    try {
-        const configPath = HOST_STATE_ROOT + "/shadow_config.json";
-        const content = host_read_file(configPath);
-        if (!content) return;
-        const config = JSON.parse(content);
-        if (config.auto_update_check !== undefined) {
-            autoUpdateCheckEnabled = config.auto_update_check;
-        }
-    } catch (e) {
-        /* Ignore errors - default to enabled */
-    }
-}
-
 function saveBrowserPreviewConfig() {
     try {
         const configPath = HOST_STATE_ROOT + "/shadow_config.json";
@@ -6848,9 +6609,6 @@ function syncJsOnlySettings() {
         }
         if (c.browser_preview !== undefined && c.browser_preview !== previewEnabled) {
             previewEnabled = c.browser_preview;
-        }
-        if (c.auto_update_check !== undefined) {
-            autoUpdateCheckEnabled = c.auto_update_check;
         }
         if (c.filebrowser_enabled !== undefined && c.filebrowser_enabled !== filebrowserEnabled) {
             filebrowserEnabled = c.filebrowser_enabled;
@@ -7360,88 +7118,18 @@ function scanModulesForType(componentType) {
     const modules = result.slice(1);
     modules.sort((a, b) => a.name.localeCompare(b.name));
 
-    /* Add option to get more modules from store at the end */
-    return [noneItem, ...modules, { id: "__get_more__", name: "[Get more...]" }];
-}
-
-/* Map component key to catalog category ID */
-function componentKeyToCategoryId(componentKey) {
-    switch (componentKey) {
-        case 'synth': return 'sound_generator';
-        case 'fx1':
-        case 'fx2':
-        case 'master_fx': return 'audio_fx';
-        case 'midiFx': return 'midi_fx';
-        case 'overtake': return 'overtake';
-        default: return null;
-    }
-}
-
-/* Enter the store picker for a specific component type — disabled.
- *
- * Was the gateway from "[Get more...]" entries in the overtake / master FX
- * / chain component module pickers into the on-device store browser. The
- * browser flow ended in installs/updates that silently failed for users
- * without root, so we redirect every "Get more" tap straight at the web
- * manager pointer screen — same destination as Settings → Module Store.
- *
- * Preserves the entry-context flags (storePickerFromMasterFx /
- * storePickerCategory) so the result-screen
- * jog-click can return to wherever the user came from instead of dumping
- * them on Global Settings. */
-function enterStorePicker(componentKey) {
-    const categoryId = componentKeyToCategoryId(componentKey);
-    if (!categoryId) return;
-
-    storePickerCategory = categoryId;
-    storePickerCurrentModule = null;
-    storePickerFromMasterFx = (componentKey === 'master_fx');
-    storePickerFromSettings = false;
-
-    storePickerResultTitle = 'Module Store';
-    storePickerMessage = 'Module store available at\nhttp://move.local:7700';
-    setView(VIEWS.STORE_PICKER_RESULT);
-    needsRedraw = true;
-    announce(storePickerMessage);
+    return [noneItem, ...modules];
 }
 
 /* Handle selection in store picker result */
 function handleStorePickerResultSelect() {
-    /* Honor the entry-context flags so dismissing the pointer screen
-     * sends the user back to wherever they came from. These mirror
-     * handleStorePickerBack — the only
-     * reason the back-button and click-dismiss diverged historically
-     * is that the result screen used to terminate install flows that
-     * could only sensibly return to the module list. With the install
-     * paths gone, every result screen is informational, and dismiss
-     * should round-trip to the entry context. */
-    storePickerCurrentModule = null;
-
+    /* Every result screen is informational; dismiss returns to the entry
+     * context (storeReturnView) or falls back to the slots view. */
     if (storeReturnView === VIEWS.GLOBAL_SETTINGS) {
         storeReturnView = null;
         enterGlobalSettings();
         return;
     }
-    if (storePickerFromMasterFx) {
-        MASTER_FX_OPTIONS = scanForAudioFxModules();
-        enterMasterFxModuleSelect(selectedMasterFxComponent);
-        setView(VIEWS.MASTER_FX);
-        storePickerFromMasterFx = false;
-        storeCatalog = null;
-        storePickerCategory = null;
-        storePickerModules = [];
-        return;
-    }
-    if (storePickerCategory) {
-        /* Came from the chain component picker. */
-        availableModules = scanModulesForType(CHAIN_COMPONENTS[selectedChainComponent].key);
-        setView(VIEWS.COMPONENT_SELECT);
-        storeCatalog = null;
-        storePickerCategory = null;
-        storePickerModules = [];
-        return;
-    }
-    /* Last-resort fallback (legacy callers): back to the slots view. */
     setView(VIEWS.SLOTS);
     needsRedraw = true;
 }
@@ -7528,12 +7216,6 @@ function applyComponentSelection() {
         const loaded = chainConfigs[selectedSlot] && chainConfigs[selectedSlot][comp.key];
         enterPresetBrowser(selectedSlot, comp.key, loaded && loaded.module,
                            getComponentParamPrefix(comp.key));
-        return;
-    }
-
-    /* Check if user selected "[Get more...]" - enter store picker */
-    if (selected && selected.id === "__get_more__") {
-        enterStorePicker(comp.key);
         return;
     }
 
@@ -11776,9 +11458,6 @@ function getMasterFxSettingValue(setting) {
         if (sec >= 60) return (sec / 60) + "m";
         return sec + "s";
     }
-    if (setting.key === "auto_update_check") {
-        return autoUpdateCheckEnabled ? "On" : "Off";
-    }
     if (setting.key === "browser_preview") {
         return previewEnabled ? "On" : "Off";
     }
@@ -11965,12 +11644,6 @@ function adjustMasterFxSetting(setting, delta) {
         if (idx < 0) idx = 0;
         const nextIdx = (idx + (delta > 0 ? 1 : values.length - 1)) % values.length;
         skipback_seconds_set(values[nextIdx]);
-        return;
-    }
-
-    if (setting.key === "auto_update_check") {
-        autoUpdateCheckEnabled = !autoUpdateCheckEnabled;
-        saveAutoUpdateConfig();
         return;
     }
 
@@ -15143,28 +14816,12 @@ function drawHelpDetail() {
     _ctx.debugLog = debugLog;
 
     /* Store state */
-    Object.defineProperty(_ctx, 'storePickerCategory', {
-        get() { return storePickerCategory; }, enumerable: true
-    });
-    Object.defineProperty(_ctx, 'storePickerModules', {
-        get() { return storePickerModules; }, enumerable: true
-    });
-    Object.defineProperty(_ctx, 'storePickerCurrentModule', {
-        get() { return storePickerCurrentModule; }, enumerable: true
-    });
-    Object.defineProperty(_ctx, 'storeInstalledModules', {
-        get() { return storeInstalledModules; }, enumerable: true
-    });
-    Object.defineProperty(_ctx, 'storeHostVersion', {
-        get() { return storeHostVersion; }, enumerable: true
-    });
     Object.defineProperty(_ctx, 'storePickerResultTitle', {
         get() { return storePickerResultTitle; }, enumerable: true
     });
     Object.defineProperty(_ctx, 'storePickerMessage', {
         get() { return storePickerMessage; }, enumerable: true
     });
-    _ctx.getModuleStatus = (...args) => getModuleStatus(...args);
     _ctx.CATEGORIES = CATEGORIES;
     _ctx.drawStatusOverlay = (...args) => drawStatusOverlay(...args);
     _ctx.createScrollableText = (...args) => createScrollableText(...args);
@@ -15729,7 +15386,6 @@ globalThis.init = function() {
     scanModulesForType("midiFx");
 
     /* Load auto-update preference */
-    loadAutoUpdateConfig();
     loadBrowserPreviewConfig();
     loadPadTypingConfig();
     loadTextPreviewConfig();
@@ -16009,7 +15665,6 @@ globalThis.tick = function() {
                 storePickerMessage = 'Repair needed. visit\n' +
                                      'http://move.local:7700\n' +
                                      'or rerun GUI installer';
-                storePickerFromSettings = false;
                 storeReturnView = null;
                 view = VIEWS.STORE_PICKER_RESULT;
                 announce(storePickerMessage);

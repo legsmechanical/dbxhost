@@ -1,5 +1,9 @@
 /*
- * Shadow UI - Module Store views (categories, list, detail, loading, result).
+ * Shadow UI - result/message screen (STORE_PICKER_RESULT).
+ *
+ * The browsable store views died with the on-device store; this screen
+ * survives as the host's generic informational surface (updates pointer,
+ * shim-repair prompt).
  *
  * Extracted from shadow_ui.js to allow forks to modify store
  * presentation without touching core.
