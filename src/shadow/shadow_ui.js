@@ -16488,9 +16488,6 @@ globalThis.onMidiMessageInternal = function(data) {
         return;
     }
 
-        return;
-    }
-
     /* Set-select actuator: no user surface — the shim strips every physical
      * control for the duration, and the target was chosen before arming.
      * Consume and ignore. */
