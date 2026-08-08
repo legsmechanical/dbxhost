@@ -289,17 +289,13 @@ function buildGlobalMenuItems() {
         createAction('Load state', function() {
             openLoadSnapshot();
         }),
-        /* Projects: reopen the boot set-select gate — Move restarts in place
-         * (a few dark seconds) and the session holds at the native picker, so
-         * sets can be created/copied/deleted/loaded without leaving dAVEBOx
-         * SA. Same save-then-drain sequencing as Quit: the command tears this
-         * module down with Move, so it fires one tick AFTER the deferred save
-         * lands (S.pendingProjectCmd in _tickImpl). Shift+Step1 is the
-         * shortcut twin. Only meaningful under the davebox host — the gate
-         * and project-cmd.sh exist only there; buildGlobalMenuItems re-runs
-         * each open, so the gate is live. */
+        /* Projects: open dAVEBOx's own pad picker (v3) — 32 pads = project
+         * slots, drawn by us, no restart and no native surface involved. It
+         * closes the menu itself. Shift+Step 1 is the shortcut twin.
+         * Host-gated: projects (project-cmd.sh, projects.json) exist only
+         * under the davebox host, and buildGlobalMenuItems re-runs on every
+         * open so the entry appears exactly when it is usable. */
         engineUnderDaveboxHost() ? createAction('Projects...', function() {
-            /* Opens dAVEBOx own pad picker (v3) — closes the menu itself. */
             openProjectPadPicker();
         }) : null,
         createAction('Clear Sess', function() {

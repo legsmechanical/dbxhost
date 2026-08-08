@@ -558,7 +558,7 @@ export function _tickImpl() {
      * all, so this cannot spin forever. */
     if (S.awaitingProjectSelect && !S.projectPadPicker &&
             !S.pendingOpenProjectPicker && !S.pendingSetLoad &&
-            S.pendingProjectSwitch === null && !S.pendingProjectCmd &&
+            S.pendingProjectSwitch === null &&
             !S.confirmStateWipe && !S.pendingInheritPicker &&
             S.pendingDspSync === 0 && S.ledInitComplete) {
         console.log('SELECT-BEFORE-LOAD: awaiting with no picker — re-arming');
@@ -1923,39 +1923,6 @@ export function _tickImpl() {
         }
         if (standaloneSessionActive() && typeof host_system_cmd === 'function') {
             host_system_cmd('sh /data/UserData/dbx-host/scripts/project-cmd.sh switch ' + _psw);
-            return;
-        }
-    } else if (S.pendingProjectCmd) {
-        /* Project switch/create: Move restarts IN PLACE (the launcher's
-         * supervisor loop) and this module dies with it — same shape as the
-         * Quit branch above, but the session survives. Runs a tick after the
-         * save so the deferred DSP write has landed. LEDs cleared so the
-         * relaunch does not inherit stale paint. */
-        const _pcmd = S.pendingProjectCmd;
-        S.pendingProjectCmd = null;
-        removeFlagsWrap();
-        S.ledInitComplete = false;
-        invalidateLEDCache();
-        clearAllLEDs();
-        for (let _i = 0; _i < 4; _i++) setButtonLED(40 + _i, LED_OFF);
-        /* 'select' (back to the project picker): prefer the NO-RESTART path —
-         * arm the host's set-select gate and park ourselves (suspend_keeps_js).
-         * The shim walks Move into its native Set Overview (Move's own
-         * Shift+Step1 gesture, injected) and the selection RESUMES us; our
-         * resume edge sees the set-UUID change and reloads. Fork capability
-         * probe: shadow_select_arm exists only on a gate-aware davebox host —
-         * absence falls through to the project-cmd relaunch flavour below
-         * (which still fully works, just with ~6 dark seconds). */
-        if (_pcmd === 'select' &&
-                typeof shadow_select_arm === 'function' &&
-                typeof host_suspend_overtake === 'function' &&
-                standaloneSessionActive()) {
-            shadow_select_arm();
-            host_suspend_overtake();
-            return;
-        }
-        if (standaloneSessionActive() && typeof host_system_cmd === 'function') {
-            host_system_cmd('sh /data/UserData/dbx-host/scripts/project-cmd.sh ' + _pcmd);
             return;
         }
     } else if (S.pendingHideAfterSave) {

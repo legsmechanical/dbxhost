@@ -565,11 +565,6 @@ export const S = {
      * gate as a headless actuator, ~2 s, resume + set reload). Fallback on a
      * gate-less host: project-cmd.sh switch (relaunch flavour). */
     pendingProjectSwitch: null,
-    /* Programmatic project verb (legacy/fallback path). Drained in tick()
-     * one tick AFTER the deferred save fires (else-if chain) — the command
-     * restarts Move in place, tearing this module down with it. Holds the
-     * project-cmd.sh verb string ('switch N' / 'new "Name"'). */
-    pendingProjectCmd: null,
     /* CLEAR AUTOMATION modal (Delete-tap on the AUTO bank). null = closed; else
      * { sel, at, cc } — sel 0..3 (AT/PB/CC/CLEAR), at/cc = checked-to-clear. */
     clearAutoMenu: null,
