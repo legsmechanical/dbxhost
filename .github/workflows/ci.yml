@@ -43,6 +43,29 @@ jobs:
             bash "$t"
           done
 
+  # ------------------------------------------------------------ davebox-tests
+  # The davebox half of the deliverable (davebox/ subtree). Same shape as
+  # host-tests — device-free C units, JS units, and shell invariants — but
+  # rooted at davebox/ and run through its own runner, which already reports a
+  # correct exit status for all three groups.
+  #
+  # This job is NEW as of the merge. While davebox was a separate repo it had
+  # no CI at all, so a suite that was green locally could sit broken on main
+  # indefinitely. One repo, one signal: a host change that breaks davebox now
+  # fails the same run that a davebox change does.
+  davebox-tests:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: davebox } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: npm, cache-dependency-path: davebox/package-lock.json }
+      # esbuild only — the JS units bundle the UI before running it, and
+      # tests/run.sh degrades to "JS: SKIPPED" without node, which would pass
+      # a job that tested nothing.
+      - run: npm ci
+      - run: bash tests/run.sh
+
   # ----------------------------------------------------------------------- go
   # schwung-manager (on-device module store / updater service).
   # NOTE: go.mod declares `go 1.26`. Keep this pin >= 1.26 or the build breaks.

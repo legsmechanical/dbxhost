@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Build and deploy the dAVEBOx host — the other half of the dev loop.
 #
-# `install_sound.sh` in the module repo does the davebox half in one command; this
-# does the host half. Before it existed, a host change meant hand-assembling the
-# deploy: scp the binaries, work around ETXTBSY on the mapped ones, remember to
-# prime the shim, remember the launcher. That is a tax on every iteration and it
-# fails quietly — a partial copy leaves a truncated .so that only breaks at the
-# next launch.
+# This does the HOST half only. For the whole deliverable in one command, use
+# `install-sa.sh`, which runs this and then `davebox/scripts/install_sound.sh`
+# with the restart semantics reconciled — prefer that unless you are iterating
+# on the host alone.
+#
+# Before this script existed, a host change meant hand-assembling the deploy:
+# scp the binaries, work around ETXTBSY on the mapped ones, remember to prime
+# the shim, remember the launcher. That is a tax on every iteration and it fails
+# quietly — a partial copy leaves a truncated .so that only breaks at the next
+# launch.
 #
 # ⚠ This is a DEVELOPER UPDATE script, not a first-time installer. It refuses if
 # $DBX_DIR does not already look like an install, because a fresh install needs the

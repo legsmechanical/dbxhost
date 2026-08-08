@@ -1,9 +1,9 @@
 #!/bin/sh
 # Single source of truth for where this host installs and what namespace it owns.
 #
-# These four values are a CONTRACT spanning three languages and two repos: the
-# host's C build, the launcher's shell, the setuid heal helper, and the davebox
-# module's JS (which probes the marker path to tell which host it is running
+# These four values are a CONTRACT spanning three languages: the host's C build,
+# the launcher's shell, the setuid heal helper, and the davebox module's JS and
+# DSP (which name the marker and script paths to tell which host they are running
 # under). Every one of them used to carry its own copy, so changing the install
 # directory meant editing four files and hoping. Source this instead.
 #
@@ -11,19 +11,23 @@
 #   scripts/build-host.sh        -> SCHWUNG_CFLAGS for the C build
 #   scripts/build-heal.sh        -> -DDBX_DIR for davebox-heal
 #   scripts/install-privileged.sh
-#   scripts/check-config.sh      -> pins launch.sh's literal against DBX_DIR
+#   scripts/check-config.sh      -> pins every literal copy against DBX_DIR
 #
 # ⚠ scripts/launch.sh CANNOT source this. It is installed as a single
 # self-contained file (the module dir gets only module.json + `standalone`), so
 # it must carry the literal. check-config.sh fails if the two ever disagree —
 # that is what keeps this file authoritative rather than merely aspirational.
 #
-# ⚠ The davebox module hardcodes DBX_DIR too, in ui/ui_tick.mjs, and lives in a
-# DIFFERENT repo. It cannot source this either: the same ui.js runs under stock
-# Schwung, where this directory does not exist, so the path has to be a
-# well-known constant rather than something discovered from the host. If you
-# change DBX_DIR you must change it there as well — grep the module repo for
-# `dbx-host` before you assume you are done.
+# ⚠ The davebox module hardcodes DBX_DIR too, in davebox/ui/*.mjs and
+# davebox/dsp/seq8.c. It cannot source this either: the same ui.js runs under
+# stock Schwung, where this directory does not exist, so the path has to be a
+# well-known constant rather than something discovered from the host.
+#
+# It used to live in a different repo, which is why that half went unpinned for
+# so long — check-config.sh could only see this one. Now that davebox is a
+# subtree here, those copies are pinned too, so `grep the other repo and hope`
+# is no longer the procedure. Change DBX_DIR and check-config.sh names every
+# file that disagrees.
 
 # Where this host's payload lands. Must NOT be the stock install dir
 # (/data/UserData/schwung) — the whole point is sitting beside it untouched.

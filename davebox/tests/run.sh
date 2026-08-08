@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Compile and run every tests/test_*.c natively. No Docker.
 set -u
-cd "$(dirname "$0")/.." || exit 2   # repo root (schwung-davebox/)
+cd "$(dirname "$0")/.." || exit 2   # the davebox tree (a subtree of dbxhost)
 
 CC="${CC:-clang}"
 FLAGS="-std=c11 -Idsp -Itests/harness -Wall -Wno-unused-function -g"
