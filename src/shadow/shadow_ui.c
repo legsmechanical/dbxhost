@@ -2185,43 +2185,6 @@ static JSValue js_host_pad_block(JSContext *ctx, JSValueConst this_val,
  * the runtime complement to the static capabilities.claims_master_knob.
  * Tools MUST clear it when they stop wanting the knob — it is not scoped to a
  * co-run session and nothing clears it on their behalf. */
-/* host_build_info() -> JSON string describing THIS host build.
- *
- * Exists because a module cannot otherwise discover the facts it needs to run
- * correctly on more than one build. `typeof host_x === 'function'` probes a
- * BINDING, which says nothing about whether the host routes a given param-key
- * NAMESPACE — so a module hardcoding fx3:/fx4: or send_fx:a: on a host that
- * routes neither renders rows whose reads hit nothing and whose writes are
- * discarded. That is silent misbehaviour, and no function-shaped probe can see
- * it. This reports the namespaces instead.
- *
- * install_dir is included deliberately: it is how a module distinguishes WHICH
- * install it is running under, without depending on this binding being absent
- * elsewhere. Compare it to a known path rather than testing for the function, so
- * the check stays correct if this ever lands upstream (a stock build would then
- * report the stock directory instead of not answering at all).
- *
- * Read-only and side-effect free. A module must treat absence as "the upstream
- * defaults": 2 slot FX blocks, no Send FX, stock install dir. */
-static JSValue js_host_build_info(JSContext *ctx, JSValueConst this_val,
-                                  int argc, JSValueConst *argv) {
-    (void)this_val; (void)argc; (void)argv;
-    char buf[512];
-    snprintf(buf, sizeof(buf),
-             "{\"contract\":%d,\"install_dir\":\"%s\",\"shm_prefix\":\"%s\","
-             "\"slot_fx_blocks\":%d,\"send_fx\":%s}",
-             SCHWUNG_BUILD_INFO_CONTRACT,
-             SCHWUNG_INSTALL_DIR, SCHWUNG_SHM_PREFIX,
-             SLOT_FX_BLOCKS,
-#if defined(SCHWUNG_HAS_SEND_FX) && SCHWUNG_HAS_SEND_FX
-             "true"
-#else
-             "false"
-#endif
-    );
-    return JS_NewString(ctx, buf);
-}
-
 static JSValue js_host_vol_block(JSContext *ctx, JSValueConst this_val,
                                   int argc, JSValueConst *argv) {
     (void)this_val;
@@ -2864,7 +2827,6 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
 
     /* Build facts a module needs to run on more than one host (param namespaces
      * a typeof probe cannot see, plus which install this is) */
-    JS_SetPropertyStr(ctx, global_obj, "host_build_info", JS_NewCFunction(ctx, js_host_build_info, "host_build_info", 0));
 
     /* Register canvas-input function (jog/master touch forwarding gate) */
     JS_SetPropertyStr(ctx, global_obj, "host_canvas_input", JS_NewCFunction(ctx, js_host_canvas_input, "host_canvas_input", 1));

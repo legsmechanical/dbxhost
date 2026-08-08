@@ -91,8 +91,8 @@ export const BLOCKS = [
 /* Master FX is upstream; the two SEND buses are fork-only — `send_fx:` exists in
  * no other build. Listed unconditionally because this host routes them; if that
  * ever stops being true they become browsable rows backed by nothing, which is
- * why HAS_SEND_FX tracks the host's own SCHWUNG_HAS_SEND_FX rather than being
- * assumed here. */
+ * why HAS_SEND_FX declares the routing in one place rather than being assumed
+ * at each use site. */
 const FX_BUSES = [
     { id: 'master', title: 'MASTER FX', prefix: 'master_fx:' },
     ...(HAS_SEND_FX ? [

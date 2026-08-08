@@ -141,11 +141,12 @@ export function engineSaveState() {
  * silently. The reason that cannot happen now is not a better probe; it is that
  * the host routing those prefixes is the only host there is. */
 
-/* Audio-FX blocks routed in a slot chain. Mirrors SLOT_FX_BLOCKS in
- * src/host/shadow_constants.h — change both together. */
+/* Audio-FX blocks routed in a slot chain. Pinned against the host's
+ * CHAIN_COMPONENTS fxN list by tests/host/test_slot_fx_blocks_matches_js.sh —
+ * change both together. */
 export const SLOT_FX_BLOCKS = 4;
 
-/* Send FX buses (send_fx:a: / send_fx:b:) — SCHWUNG_HAS_SEND_FX in the host. */
+/* Send FX buses (send_fx:a: / send_fx:b:) — routed by this host. */
 export const HAS_SEND_FX = true;
 
 /* The install this host owns. Still a literal rather than something discovered:

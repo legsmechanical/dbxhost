@@ -25,11 +25,12 @@ So a davebox need is a valid reason to change this host. Do not treat it as an o
   usable when iterating on one side.
 - **📌 No capability probing. If the code is in the tree, the feature exists.**
   One host, one module, shipped together and versioned together, so a `typeof host_*` gate can only
-  ever be true. The skew machinery — `host_build_info()` contract bumps,
-  `SCHWUNG_BUILD_INFO_CONTRACT`, davebox's `HOST_CONTRACT_MIN` and its "HOST TOO OLD" screen, the
-  `typeof` gates and their dual-path branches — is **being deleted in P2**, not extended.
-  Do not add a gate; do not bump the contract. ⚠ ~332 gates still exist until P2 lands: leave them
-  alone rather than half-removing them, and never write a new one.
+  ever be true. The skew machinery is **gone**: P2 (2026-08-08) deleted davebox's probes
+  (`HOST_CONTRACT_MIN`, the "HOST TOO OLD" screen, 102 dead `typeof` gates) and P3 deleted the
+  host-side producer (`host_build_info()`, `SCHWUNG_BUILD_INFO_CONTRACT`). Never write a new gate
+  or a new contract. ⚠ 277 `typeof` gates on 5 symbols remain **deliberately** — they guard
+  bindings the overtake lifecycle installs and deletes at runtime, not version skew; P4b owns
+  them. Leave them alone.
 - **Keep changes generic anyway** (no module named, docs in the same commit). Not because upstream
   demands it — because a generic change *can* be offered upstream, and each one that merges shrinks
   what this fork carries. See `docs/UPSTREAM.md`.

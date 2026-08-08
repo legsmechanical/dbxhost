@@ -3,13 +3,15 @@
 This document describes the JavaScript API available for developing Schwung modules.
 
 > **`[FORK-ONLY]`** marks a binding that exists **only in this fork**, not in
-> upstream Schwung. There are four: `host_vol_block`, `host_edit_cc_block`,
-> `host_canvas_input` and `host_build_info`. Derive that list from the `JS_SetPropertyStr` registrations
-> diffed against `upstream/main`, never from this document — it has been
-> incomplete before. **And note the binding list is not the whole fork surface:**
-> fork-only *param-key namespaces* (`fx3:`/`fx4:`, `send_fx:a:`/`send_fx:b:`)
-> are invisible to any `typeof` probe, so a module using them misbehaves silently
-> on stock rather than degrading. Those need an explicit capability probe.
+> upstream Schwung. There are three: `host_vol_block`, `host_edit_cc_block` and
+> `host_canvas_input`. (`host_build_info` was deleted in P3 of the
+> re-architecture — one repo ships host and module together, so there is no
+> version skew left to report.) Derive that list from the `JS_SetPropertyStr`
+> registrations diffed against `upstream/main`, never from this document — it
+> has been incomplete before. **And note the binding list is not the whole fork
+> surface:** fork-only *param-key namespaces* (`fx3:`/`fx4:`,
+> `send_fx:a:`/`send_fx:b:`) are invisible to any `typeof` probe — the reason
+> only this repo's own module may use them.
 > A module that calls a fork-only binding must gate on
 > `typeof host_x === 'function'` and carry a working degraded path, because on
 > a stock install the function is simply absent — that absence *is* the
@@ -256,35 +258,6 @@ host_vol_block(bool)          // [FORK-ONLY] Claim the master volume knob: suppr
                               // Runtime complement to capabilities.claims_master_knob.
                               // Auto-cleared when overtake ends; clear it yourself
                               // when you stop wanting the knob.
-host_build_info()             // [FORK-ONLY] -> JSON string of facts about THIS host
-                              // build. Exists because a module cannot probe a
-                              // param-key NAMESPACE the way it probes a binding:
-                              // typeof proves a function exists, but nothing says
-                              // whether `fx3:` or `send_fx:a:` will be ROUTED. A
-                              // module that assumes wrongly renders rows whose
-                              // reads return nothing and whose writes are silently
-                              // discarded -- misbehaviour, not degradation.
-                              // {"contract": 1,          payload contract version
-                              //  "install_dir": "...",   this build's tree
-                              //  "shm_prefix":  "...",   its SHM namespace
-                              //  "slot_fx_blocks": 4,    fx1..fxN per slot chain
-                              //  "send_fx": true}        send_fx:a:/b: routed?
-                              // `contract` exists because a module and this host
-                              // are separate repos, so a new module can land on an
-                              // old host. Require a minimum and say so loudly:
-                              // without it, "this host has no Send FX" and "this
-                              // host is too old to say" look identical, so a module
-                              // silently hides working features. Bump it when the
-                              // payload gains a field consumers may depend on, or a
-                              // field changes meaning — NOT when a value changes.
-                              // ⚠ Treat ABSENCE as the upstream defaults:
-                              // slot_fx_blocks 2, send_fx false, stock install dir.
-                              // ⚠ To ask "which install am I under?", COMPARE
-                              // install_dir to a known path -- do not test for the
-                              // function. That stays correct if this lands
-                              // upstream, where a stock build would answer with the
-                              // stock directory rather than not answer at all.
-                              // Read-only, side-effect free.
 host_edit_cc_block(bool)      // [FORK-ONLY] Claim Undo (56) / Copy (60) / Delete (119)
                               // so they reach the module instead of Move firmware.
                               // Runtime complement to capabilities.claims_edit_ccs,

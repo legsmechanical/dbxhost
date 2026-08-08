@@ -805,47 +805,4 @@ typedef char shadow_screenreader_size_check[(sizeof(shadow_screenreader_t) <= SH
 typedef char shadow_overlay_size_check[(sizeof(shadow_overlay_state_t) == SHADOW_OVERLAY_BUFFER_SIZE) ? 1 : -1];
 typedef char schwung_ext_midi_remap_size_check[(sizeof(schwung_ext_midi_remap_t) == 64) ? 1 : -1];
 
-/* ---- Build facts reported to modules by host_build_info() ----
- *
- * These describe param-key NAMESPACES this build routes. A module cannot probe a
- * namespace the way it probes a binding: `typeof host_x === 'function'` tells it
- * a function exists, but nothing tells it whether `fx3:` or `send_fx:a:` will be
- * routed. A module that assumes wrongly renders rows whose reads return nothing
- * and whose writes are silently discarded — misbehaviour rather than degradation.
- * So the host states them, and a module treats their absence as the upstream
- * defaults (2 slot FX blocks, no Send FX).
- *
- * They live here rather than beside MOVE_FX_BLOCKS in shadow_chain_mgmt.h only
- * because shadow_ui.c includes this header and not that one; MOVE_FX_BLOCKS is a
- * different quantity anyway (blocks per Move FX bus, not per slot chain). */
-
-/* Contract version for host_build_info()'s payload.
- *
- * A module and this host live in DIFFERENT repos, so a change spanning both is two
- * commits with nothing tying them together — a new module can always end up on an
- * old host. Without a version the module cannot tell "this host has no Send FX"
- * from "this host is too old to say", so it silently assumes the conservative
- * answer and quietly hides working features. That reads as a bug and sends someone
- * hunting in the wrong place.
- *
- * So the host states which contract it speaks and a module can require a minimum.
- *
- * ⚠ BUMP THIS when the payload gains a field a consumer may depend on, or when an
- * existing field changes meaning. Do NOT bump for a value change (a build with
- * slot_fx_blocks 2 vs 4 is the same contract). Bumping is cheap; failing to bump
- * puts a module back to guessing, which is the failure this exists to remove.
- *
- * 1 — install_dir, shm_prefix, slot_fx_blocks, send_fx. */
-#define SCHWUNG_BUILD_INFO_CONTRACT 1
-
-/* Audio-FX blocks in a SLOT's synth chain (fx1..fxN): 4 in this fork, 2 upstream.
- * ⚠ Must equal the number of fxN entries in CHAIN_COMPONENTS (shadow_ui.js) —
- * tests/host/test_slot_fx_blocks_matches_js.sh pins them together, because a
- * mismatch makes host_build_info() lie in the damaging direction. */
-#define SLOT_FX_BLOCKS 4
-
-/* Whether this build routes the send_fx:a:/send_fx:b: namespace at all.
- * Fork-only — upstream has no Send FX (drafted as PR #121). */
-#define SCHWUNG_HAS_SEND_FX 1
-
 #endif /* SHADOW_CONSTANTS_H */
