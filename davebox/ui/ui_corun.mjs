@@ -109,6 +109,12 @@ export function initPrimarySurface() {
         claims: DAVEBOX_PRIMARY_CLAIMS,
         onServiceReturn: onServiceReturn,
     });
+    /* One line per session stating which ownership model is live — the two
+     * paths are deliberately indistinguishable at idle, so without this the
+     * mode is invisible in every log. */
+    console.log(primaryMode
+        ? "PRIMARY: registered as primary surface (derived claims live)"
+        : "PRIMARY: toggle off — classic overtake path");
     return primaryMode;
 }
 
