@@ -1,16 +1,21 @@
 #!/bin/sh
-# select-list.sh — name source for the boot set-select gate.
+# select-list.sh — name source for the set-select actuator.
 #
-# The shadow UI's select screen (src/shadow/shadow_ui.js, "Boot set-select
-# gate") runs this at phase entry and after every native copy/delete flow so
-# the tapped pad can be named. Writes $DBX_DIR/select_list.json:
+# The shadow UI runs this when an actuator run starts, so its "Loading <name>"
+# screen can name the TARGET project from the first frame. Writes
+# $DBX_DIR/select_list.json:
 #
 #   {"title": "...", "current": N, "names": {"<song-index>": "<set name>", ...}}
 #
-# Index space is user.song-index — pad note 68+k in the native picker maps to
+# Index space is user.song-index — the actuator replays pad note 68+k for
 # index k, so the JSON is keyed exactly the way the screen looks names up.
 # During a standalone session Sets/ IS the project library (set-swap.sh), so
 # this reads the live Sets tree, same as project-cmd.sh list.
+#
+# (Historical: this also fed an interactive select SCREEN, listing sets for the
+# user to tap. That surface was retired 2026-08-07 — selection is the module's
+# own pad picker now, and the gate is a headless actuator. Naming the loading
+# screen is the only remaining consumer.)
 
 set -eu
 

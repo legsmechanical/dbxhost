@@ -54,7 +54,7 @@
  * MIDI_OUT must be bounded by this to avoid corrupting the display. */
 #define HW_MIDI_OUT_SIZE    80
 #define DISPLAY_BUFFER_SIZE 1024  /* 128x64 @ 1bpp = 1024 bytes */
-#define CONTROL_BUFFER_SIZE 88  /* +select_phase/select_launch (boot set-select gate); static-asserted below */
+#define CONTROL_BUFFER_SIZE 88  /* +select_phase/select_launch (set-select actuator); static-asserted below */
 #define SHADOW_UI_BUFFER_SIZE     512
 #define SHADOW_PARAM_BUFFER_SIZE  65664  /* Large buffer for complex ui_hierarchy */
 #define SHADOW_MIDI_OUT_BUFFER_SIZE 512  /* MIDI out buffer from shadow UI (128 packets) */
@@ -225,39 +225,38 @@ typedef struct shadow_control_t {
      * touch (e.g. show a nav overlay while the wheel is touched). Knob touches
      * (0-7) are forwarded unconditionally as before; nothing else changes. */
     volatile uint8_t canvas_input;
-    /* Boot set-select gate (standalone sessions). When a standalone launcher
-     * arms the gate (a select_phase marker file in the install dir at shim
-     * init), the session holds at Move's native set picker instead of
-     * auto-opening its boot tool: Move owns pads and set management, the
-     * shadow UI owns the OLED with a "select a project" screen, and the shim
-     * decides when a pad tap means "launch". 1 = phase active. Cleared by the
-     * shadow UI (shadow_select_phase_end) when a selection launches; the shim
-     * treats 0 as "gate fully inert", so an ordinary install — which never has
-     * the marker — never enters any of these code paths. */
+    /* Set-select ACTUATOR (standalone sessions). Armed mid-session only, by a
+     * tool calling shadow_select_arm(pad): the shim walks Move into its native
+     * Set Overview, replays the pre-queued pad so Move loads that set, and the
+     * selection resumes the parked tool. There is NO user surface — the shadow
+     * UI owns the OLED with a "Loading <project>" screen and every physical
+     * control is a no-op behind it. 1 = a run is in progress. Cleared by the
+     * shadow UI (shadow_select_phase_end) when the selection lands; the shim
+     * treats 0 as "fully inert", so an ordinary install never enters any of
+     * these code paths.
+     * (Historical: this was once a BOOT gate that held the session at Move's
+     * native picker as a user surface, armed by a select_phase marker file.
+     * Retired 2026-08-07 — selection is the module's own pad picker now.) */
     volatile uint8_t select_phase;
-    /* Launch trigger chosen during the select phase. Written by the shim,
-     * consumed (auto-clear) by the shadow UI via shadow_select_get_launch():
-     *   -1  none pending
-     *   0-31  pad index (== the set's user.song-index; pad note 68+k ↔ index k)
-     *   127 resume the already-loaded set (jog click — natively inert in the
-     *       picker, so claiming it costs nothing) */
+    /* Launch trigger. Written by the shim once the replayed pad's load has
+     * settled, consumed (auto-clear) by the shadow UI via
+     * shadow_select_get_launch():
+     *   -1    none pending
+     *   0-31  pad index (== the set's user.song-index; pad note 68+k ↔ index k) */
     volatile int8_t select_launch;
-    /* 1 = the gate is ready for selections (boot picker up, or the
-     * mid-session entry machine finished walking Move into its overview).
-     * The select screen shows an "opening picker" state while 0 — taps in
-     * that window are queued by the shim and replayed on readiness, but the
-     * user deserves to see WHY nothing fires instantly. */
+    /* 1 = the entry machine has finished walking Move into its overview, so
+     * the queued pad can be replayed. The loading screen shows an "opening"
+     * state while 0. */
     volatile uint8_t select_ready;
-    /* Headless selection: a pad index (0-31) pre-queued by
-     * shadow_select_arm(pad). The gate consumes it at arm time — the whole
-     * phase then runs as an invisible ACTUATOR (physical pads ignored, no
-     * user surface): entry machine → replay the queued pad → launch. -1 =
-     * interactive phase (the queued-tap replay still covers taps that land
-     * during entry). */
+    /* The pad index (0-31) to select, written by shadow_select_arm(pad) BEFORE
+     * it raises select_phase. A MAILBOX: the shim consumes it at arm time and
+     * must not clear it on phase-down frames, or the gap between the armer's
+     * two writes loses the pad and the run hangs (observed). shadow_select_arm
+     * refuses a pad outside 0-31, so a run always has one. */
     volatile int8_t select_queue;
 } shadow_control_t;
 
-/* select_launch sentinel: resume the already-loaded set. */
+/* select_launch sentinel: no trigger pending. */
 #define SELECT_LAUNCH_NONE   (-1)
 
 /* Co-run control-surface groups. A co-running overtake tool declares which

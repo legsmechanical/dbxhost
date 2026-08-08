@@ -1,13 +1,12 @@
 #!/bin/sh
-# select-hook.sh — post-selection hook for the boot set-select gate.
+# select-hook.sh — post-selection hook for the set-select actuator.
 #
-# The shadow UI runs `select-hook.sh <index|current>` after the user picks a
-# set in the native picker and before the boot tool opens. Job: guarantee the
-# chosen set carries the template wiring the standalone session depends on
-# (tracks 1-4 listening on MIDI channels 1-4, MIDI out off — the same fields
-# make-template.py bakes into template-born projects). A set can lack it two
-# ways, both native-picker features we deliberately kept: an empty pad's
-# "Empty Set", and a pad-copy of a pre-template set.
+# The shadow UI runs `select-hook.sh <index>` once the actuator's selection has
+# landed and before the tool resumes. Job: guarantee the chosen set carries the
+# template wiring the standalone session depends on (tracks 1-4 listening on
+# MIDI channels 1-4, MIDI out off — the same fields make-template.py bakes into
+# template-born projects). A set can lack it when it predates the template, or
+# when it was born some way other than the module's own pad picker.
 #
 # Contract with the shadow UI (select_hook_result.json):
 #   {"status": "open"}      wiring fine (or unfixable) — open the tool now
