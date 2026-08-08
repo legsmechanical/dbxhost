@@ -44,7 +44,7 @@ import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
 import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
 import { exitSchwungCoRun,
-    enterMoveNativeCoRun, DAVEBOX_PICKER_KEEP_MASK } from './ui_corun.mjs';
+    enterMoveNativeCoRun, DAVEBOX_PICKER_KEEP_MASK, primaryMode } from './ui_corun.mjs';
 import { soundActive, soundExit } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
@@ -1148,7 +1148,13 @@ function _onCC_buttons(d1, d2) {
              * stays MOVE_NATIVE, so pollDSP does NOT tear down — Back returns to the
              * synth. No addressable screen: swallow as before. */
             if (d2 === 127 && S.coRunOverlayScreen) {
-                shadow_corun_open(S.coRunOverlayScreen, DAVEBOX_PICKER_KEEP_MASK);
+                if (primaryMode) {
+                    /* PRIMARY: overlay rides the service stack; close (Menu/
+                     * Back) pops it and the underlay's claims re-derive. */
+                    host_open_service(S.coRunOverlayScreen, { keep_mask: DAVEBOX_PICKER_KEEP_MASK });
+                } else {
+                    shadow_corun_open(S.coRunOverlayScreen, DAVEBOX_PICKER_KEEP_MASK);
+                }
             }
             return;
         }

@@ -38,7 +38,7 @@ import { effectiveClip, updateStepLEDs, updateSessionLEDs, updateTrackLEDs, flas
     updatePerfModeLEDs, altIndicatorActive, clearAllLEDs, installFlagsWrap, removeFlagsWrap,
     buildLedInitQueue, drainLedInit } from './ui_leds.mjs';
 import { schSlotForTrack, schSlotsForTrack, schSlotMasksAllTracks, enterSchwungCoRun,
-    assertOvertakeSysexSuppress } from './ui_corun.mjs';
+    assertOvertakeSysexSuppress, primaryMode } from './ui_corun.mjs';
 import { pollPendingExport } from './ui_export.mjs';
 import { drawUI } from './ui_render.mjs';
 import { pollDSP,
@@ -464,8 +464,10 @@ export function _tickImpl() {
         S.stepWasEmpty = false; S.stepWasHeld = false;
         /* Resuming to full overtake: re-assert sysex suppression (the host clears
          * it in suspendOvertakeMode while we're parked) so Move's clip/grid LEDs
-         * don't leak back over ours. */
-        assertOvertakeSysexSuppress();
+         * don't leak back over ours. PRIMARY path: the host reset its applied-
+         * claims snapshot on suspend, so the first reconcile after resume
+         * re-derives the full declared set — no assert needed here. */
+        if (!primaryMode) assertOvertakeSysexSuppress();
         /* Check if the active set changed while we were parked. */
         const _as = readActiveSet();
         const _dspUuid = (typeof host_module_get_param === 'function')

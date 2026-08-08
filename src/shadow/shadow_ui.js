@@ -525,6 +525,11 @@ const PRIMARY_EFFECTORS = {
  * primary is registered, and directly from push/pop for immediacy. */
 function reconcilePrimaryClaims() {
     if (!primaryActive || !primarySurface) return;
+    /* Only reconcile while the primary actually owns the surface. Parked
+     * (suspended) or exited, the host's classic machinery owns the claims;
+     * re-asserting the module's set from here would fight it. Services keep
+     * view at OVERTAKE_MODULE, so this gate holds throughout the stack. */
+    if (view !== VIEWS.OVERTAKE_MODULE) return;
     const next = primaryDeriveClaims(primarySurface.claims, primaryStack);
     const ops = primaryComputeOps(primaryPrevClaims, next);
     if (ops.length === 0) return;
@@ -3393,6 +3398,11 @@ let overtakeExitPending = false;
 
 /* Exit overtake mode back to Move */
 function exitOvertakeMode() {
+    /* PRIMARY (P4a): the surface is unloading — registration and stack die
+     * with it; claims fall back to the classic teardown below. */
+    primarySurface = null;
+    primaryStack = [];
+    primaryPrevClaims = { ...PRIMARY_NEUTRAL_CLAIMS };
     corunTeardown();
     /* Flush set state on the way out — defensive, since chain state is not
      * edited during overtake, but keeps the invariant "all transitions
@@ -3459,6 +3469,14 @@ function exitOvertakeMode() {
 /* Suspend overtake mode — leave background processes running */
 function suspendOvertakeMode() {
     corunTeardown();
+    /* PRIMARY (P4a): the registration survives the park (suspend_keeps_js —
+     * init() will NOT re-run on resume), but its services are gone and the
+     * host is about to clear the module's claims imperatively below. Reset
+     * the engine's notion of "applied" so the first reconcile after resume
+     * re-derives and re-applies the full declared set — the derived-claims
+     * answer to the old resume-time re-assertion sites. */
+    primaryStack = [];
+    primaryPrevClaims = { ...PRIMARY_NEUTRAL_CLAIMS };
     if (overtakeSuspendKeepsJs && overtakeModuleCallbacks && overtakeModuleId) {
         debugLog("suspendOvertakeMode: suspend_keeps_js — parking " + overtakeModuleId + " in background");
 

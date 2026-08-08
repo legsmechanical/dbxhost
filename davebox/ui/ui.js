@@ -40,7 +40,7 @@ import {
 } from './ui_dialogs.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { effectiveClip, invalidateLEDCache, trackColor, forceRedraw, installFlagsWrap, buildLedInitQueue } from './ui_leds.mjs';
-import { assertOvertakeSysexSuppress } from './ui_corun.mjs';
+import { assertOvertakeSysexSuppress, initPrimarySurface, primaryMode } from './ui_corun.mjs';
 import { applyTrackConfig,
     refreshSeqNotesIfCurrent,
     syncClipsFromDsp, syncMuteSoloFromDsp, restoreUiSidecar,
@@ -169,7 +169,12 @@ globalThis.init = function () {
     if (soundActive()) soundExit();
     S.pendingSoundEnterTrack = -1;
     shadow_corun_end();
-    assertOvertakeSysexSuppress();
+    /* PRIMARY SURFACE (P4a): register when the host's primary path is live
+     * (primary.json toggle). On that path ownership claims — including the
+     * sysex suppression below — are DERIVED by the host from our declared
+     * claims + the service stack; the imperative assert is classic-only. */
+    initPrimarySurface();
+    if (!primaryMode) assertOvertakeSysexSuppress();
     if (S.bankParams === null)
         S.bankParams = Array.from({length: NUM_TRACKS}, function() {
             return BANKS.map(function(bank) { return bank.knobs.map(function(k) { return k.def; }); });
