@@ -10,6 +10,11 @@ Legend: ✅ ready to PR · 🟡 portable but needs care · ⛔ fork-only, never 
 
 Most recent first. Hashes are fork-main commits.
 
+> **Which file do I want?** This one looks *outward* — a per-commit log of what the fork has
+> that upstream might want. **`docs/UPSTREAM.md`** looks *inward* — the watermark of how far
+> upstream has been reviewed and what was taken from it. It also carries the shortlist of
+> what is still worth offering upstream, which is the summary of this log.
+
 ---
 
 ## ⛔ Fork-maintained docs — keep OURS, never adopt upstream's (on every rebase)
@@ -102,32 +107,26 @@ Generally portable co-run improvements, but **coordinate with upstream**:
 - **Upstream status:** draft PR `charlesvestal/schwung#121` (`fx-buses-pr`). Parked as
   **draft** 2026-06-24 — Charles needs time before he can review and it'll take work on his end.
 
-### ⚠️ LOCAL PATCH — re-apply on EVERY upstream rebase
+### The local patch is retired — this fork no longer rebases
 
-All our extra FX-block work is carried as a re-appliable patch committed to this repo
-(backed up on the fork remote): **`patches/fx-blocks-local.patch`** — a 2-commit
-`format-patch` series. See **`patches/README.md`** for the full procedure.
+This work used to be carried as `patches/fx-blocks-local.patch` and re-applied by hand after
+every rebase onto upstream's rewritten history. **That series was dissolved on 2026-08-08**
+(P1 of the davebox re-architecture): the fork stopped rebasing, so there is nothing to
+re-apply, and the patch was a second copy of code already in `main`.
 
-- `0d6402b6` **Send FX + Move FX buses** — Send FX is upstreamable (draft PR #121,
-  parked); Move FX (`MOVE_FX_BLOCKS=4`) is permanent fork-only.
+The commits are just code now. Upstream awareness lives in **`docs/UPSTREAM.md`** — a
+watermark plus an applied/skipped table — and the Send FX half stays listed there as
+still worth offering upstream (PR #121, open).
+
+- `0d6402b6` **Send FX + Move FX buses** — Send FX is upstreamable (PR #121, parked);
+  Move FX (`MOVE_FX_BLOCKS=4`) is permanent fork-only.
 - `7ba06ccc` **slot synth-chain fx3/fx4 get_param routing** — permanent fork-only
   (part of the 4-block divergence).
 
-**Why a patch:** these commits edit `shadow_ui.js` / `shadow_chain_mgmt.c` in regions
-upstream's merged corun/preset work also touched, so they conflict *inline* during a
-rebase. Carrying them as a patch makes the re-apply an explicit, documented step.
-
-**Rebase procedure (short — full version in `patches/README.md`):**
-1. `git rebase upstream/main` — merged dups auto-drop; **drop** `0d6402b6` + `7ba06ccc`
-   if they conflict (`git rebase --skip`).
-2. `git apply --3way patches/fx-blocks-local.patch` — expect a **one-time** `shadow_ui.js`
-   conflict (Send FX + fx3/fx4 both edit it, vs upstream's moved version — inherent, not a
-   defect). Resolve, `git add -A && git commit`.
-3. **Regenerate** the patch against the new base (`git format-patch -1 <hash>` ×2 → overwrite
-   the file), davebox `chore: regenerate … against <base>` style.
-4. **Retire the Send FX half once #121 merges** (keep Move FX + fx3/fx4).
-
-> `patches/` is ⛔ fork-only — never include it in an upstream PR.
+⚠ These commits edit `shadow_ui.js` / `shadow_chain_mgmt.c` in regions upstream's merged
+corun/preset work also touched. That inline collision is why they needed a patch under the
+old rebase model, and it is exactly what makes **splitting Send FX out for #121 a manual
+job** — it cannot be cherry-picked whole onto the 2-block upstream.
 
 ---
 

@@ -453,8 +453,9 @@ under the **Tool tab**, addressed via the `overtake_dsp:<key>` param prefix.
     snapshots to their sender immediately instead of applying the editing
     quiet-window).
 - Worked example (full contract, coordinate system, gotchas): dAVEBOx's
-  `docs/reference/REMOTE_UI.md`; pipeline internals: `patches/README.md`
-  (remote-ui-push series).
+  `davebox/docs/reference/REMOTE_UI.md`; pipeline internals: the remote-UI push
+  series in `schwung-manager/remote_ui.go` and `src/schwung_shim.c`, summarized in
+  `docs/UPSTREAM.md` (upstream PR #180).
 
 ## Drop-In Modules
 
