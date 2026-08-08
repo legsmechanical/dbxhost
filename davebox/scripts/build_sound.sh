@@ -83,7 +83,7 @@ cp web_ui.html       "dist/${MODULE_ID}/"
 # export time). Cheap to ship and their absence is a confusing runtime failure.
 cp export/pack.py                         "dist/${MODULE_ID}/pack.py"
 cp export/ableton-master.json             "dist/${MODULE_ID}/ableton-master.json"
-cp notes/ableton-export-drift-dummy.json  "dist/${MODULE_ID}/drift-dummy.json"
+cp export/ableton-export-drift-dummy.json "dist/${MODULE_ID}/drift-dummy.json"
 
 # Metronome click: the stable build generates this from source at build time.
 # Reuse it if present rather than duplicating the conversion.

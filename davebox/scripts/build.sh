@@ -44,7 +44,7 @@ cp web_ui.html           "dist/${MODULE_ID}/"
 # files in the module dir, so install.sh's `scp dist/davebox/*` carries them too.
 cp export/pack.py                          "dist/${MODULE_ID}/pack.py"
 cp export/ableton-master.json             "dist/${MODULE_ID}/ableton-master.json"
-cp notes/ableton-export-drift-dummy.json  "dist/${MODULE_ID}/drift-dummy.json"
+cp export/ableton-export-drift-dummy.json "dist/${MODULE_ID}/drift-dummy.json"
 # Convert source (24-bit stereo 44100Hz) → normalized 16-bit mono 48000Hz for DSP render_block
 python3 - <<'PYEOF'
 import wave, struct, audioop, warnings
