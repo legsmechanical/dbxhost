@@ -28,7 +28,6 @@
 #include "host/module_manager.h"
 #include "host/settings.h"
 #include "host/shadow_constants.h"
-#include "host/analytics.h"
 
 int global_fd = -1;
 int global_exit_flag = 0;
@@ -1354,15 +1353,6 @@ static JSValue js_host_load_module(JSContext *ctx, JSValueConst this_val,
         fflush(stdout);
     }
 
-    if (result == 0) {
-        const module_info_t *loaded = mm_get_current_module(&g_module_manager);
-        if (loaded) {
-            char props[256];
-            snprintf(props, sizeof(props), "\"module_id\":\"%s\"", loaded->id);
-            analytics_track("module_loaded", props);
-        }
-    }
-
     return result == 0 ? JS_TRUE : JS_FALSE;
 }
 
@@ -1643,8 +1633,6 @@ static JSValue js_host_get_setting(JSContext *ctx, JSValueConst this_val,
         result = JS_NewString(ctx, mode_names[mode_idx]);
     } else if (strcmp(key, "tempo_bpm") == 0) {
         result = JS_NewInt32(ctx, g_settings.tempo_bpm);
-    } else if (strcmp(key, "analytics_enabled") == 0) {
-        result = JS_NewInt32(ctx, analytics_enabled());
     }
 
     JS_FreeCString(ctx, key);
@@ -1705,11 +1693,6 @@ static JSValue js_host_set_setting(JSContext *ctx, JSValueConst this_val,
             if (val > 300) val = 300;
             g_settings.tempo_bpm = val;
         }
-    } else if (strcmp(key, "analytics_enabled") == 0) {
-        int val;
-        if (!JS_ToInt32(ctx, &val, argv[1])) {
-            analytics_set_enabled(val ? 1 : 0);
-        }
     }
 
     JS_FreeCString(ctx, key);
@@ -1727,26 +1710,6 @@ static JSValue js_host_save_settings(JSContext *ctx, JSValueConst this_val,
 static JSValue js_host_reload_settings(JSContext *ctx, JSValueConst this_val,
                                        int argc, JSValueConst *argv) {
     settings_load(&g_settings, SETTINGS_PATH);
-    return JS_UNDEFINED;
-}
-
-/* host_track_event(event_name, properties_json) -> void */
-static JSValue js_host_track_event(JSContext *ctx, JSValueConst this_val,
-                                   int argc, JSValueConst *argv) {
-    if (argc < 1) return JS_UNDEFINED;
-
-    const char *event = JS_ToCString(ctx, argv[0]);
-    if (!event) return JS_UNDEFINED;
-
-    const char *props = NULL;
-    if (argc >= 2) {
-        props = JS_ToCString(ctx, argv[1]);
-    }
-
-    analytics_track(event, props);
-
-    if (props) JS_FreeCString(ctx, props);
-    JS_FreeCString(ctx, event);
     return JS_UNDEFINED;
 }
 
@@ -1978,8 +1941,6 @@ void init_javascript(JSRuntime **prt, JSContext **pctx)
     JSValue host_reload_settings_func = JS_NewCFunction(ctx, js_host_reload_settings, "host_reload_settings", 0);
     JS_SetPropertyStr(ctx, global_obj, "host_reload_settings", host_reload_settings_func);
 
-    JSValue host_track_event_func = JS_NewCFunction(ctx, js_host_track_event, "host_track_event", 2);
-    JS_SetPropertyStr(ctx, global_obj, "host_track_event", host_track_event_func);
 
     JSValue host_set_refresh_rate_func = JS_NewCFunction(ctx, js_host_set_refresh_rate, "host_set_refresh_rate", 1);
     JS_SetPropertyStr(ctx, global_obj, "host_set_refresh_rate", host_set_refresh_rate_func);
@@ -2169,63 +2130,6 @@ int main(int argc, char *argv[])
     /* Load host settings */
     printf("Loading host settings\n");
     settings_load(&g_settings, SETTINGS_PATH);
-
-    /* Initialize analytics */
-    {
-        char version[32] = "unknown";
-        FILE *vf = fopen(SCHWUNG_INSTALL_DIR "/host/version.txt", "r");
-        if (vf) {
-            if (fgets(version, sizeof(version), vf)) {
-                char *nl = strchr(version, '\n');
-                if (nl) *nl = '\0';
-            }
-            fclose(vf);
-        }
-        analytics_init(version);
-        analytics_track("app_launched", NULL);
-
-        /* Send census of installed modules and diff against previous snapshot */
-        if (analytics_enabled() && g_module_manager.module_count > 0) {
-            int mc = g_module_manager.module_count;
-
-            /* Dev/test harness ids that ship with the host but aren't
-             * meaningful user choices — keep them out of the census. */
-            static const char *INTERNAL_IDS[] = {"ui-test", "text-test", "splash-test", "seq-test"};
-            const int N_INTERNAL = (int)(sizeof(INTERNAL_IDS) / sizeof(INTERNAL_IDS[0]));
-
-            char modules_list[768] = "";
-            int pos = 0;
-            int reported = 0;
-            for (int i = 0; i < mc && pos < (int)sizeof(modules_list) - 68; i++) {
-                const char *id = g_module_manager.modules[i].id;
-                int skip = 0;
-                for (int k = 0; k < N_INTERNAL; k++) {
-                    if (strcmp(id, INTERNAL_IDS[k]) == 0) { skip = 1; break; }
-                }
-                if (skip) continue;
-                if (reported > 0) modules_list[pos++] = ',';
-                pos += snprintf(modules_list + pos, sizeof(modules_list) - pos,
-                    "\"%s\"", id);
-                reported++;
-            }
-            char props[1024];
-            snprintf(props, sizeof(props),
-                "\"module_count\":%d,\"modules\":[%s]",
-                reported, modules_list);
-            analytics_track("module_census", props);
-
-            /* Diff against previous snapshot — fires module_added/module_upgraded */
-            char ids[MAX_MODULES][64];
-            char versions[MAX_MODULES][32];
-            for (int i = 0; i < mc && i < MAX_MODULES; i++) {
-                strncpy(ids[i], g_module_manager.modules[i].id, 63);
-                ids[i][63] = '\0';
-                strncpy(versions[i], g_module_manager.modules[i].version, 31);
-                versions[i][31] = '\0';
-            }
-            analytics_diff_modules(ids, versions, mc < MAX_MODULES ? mc : MAX_MODULES);
-        }
-    }
 
     int padIndex = 0;
 

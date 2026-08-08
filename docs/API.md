@@ -275,9 +275,6 @@ host_edit_cc_block(bool)      // [FORK-ONLY] Claim Undo (56) / Copy (60) / Delet
 host_preview_play(path)       // Play a WAV preview through Move's speakers
 host_preview_stop()
 host_send_screenreader(text)  // Same as host_announce_screenreader
-host_get_analytics_enabled()  // -> 0/1
-host_set_analytics_enabled(v) // 0/1
-host_track_event(name, props) // Send analytics event (if enabled)
 
 // Shadow control / state queries (shadow_ui only)
 shadow_get_param(slot, key) / shadow_set_param(slot, key, val)

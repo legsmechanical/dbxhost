@@ -364,7 +364,6 @@ const VIEWS = {
     TOOL_STEM_REVIEW: "toolstemreview",       // Review produced stems before saving
     TOOL_SET_PICKER: "toolsetpicker",         // Browse sets for render tool
     LFO_EDIT: "lfoedit",                      // LFO sub-menu editor
-    ANALYTICS_PROMPT: "analyticsprompt",       // First-run analytics opt-out prompt
     LFO_TARGET_COMPONENT: "lfotargetcomp",    // LFO target picker step 1: component
     LFO_TARGET_PARAM: "lfotargetparam",       // LFO target picker step 2: parameter
     FX_BUS_PICKER: "fxbuspicker",             // Pick Master FX / Send A / Send B
@@ -795,9 +794,6 @@ let lastSuspendedToolId = "";
 let lastToolsShortcutMs = 0;
 const TOOLS_DOUBLE_TAP_MS = 500;
 
-/* Analytics prompt state */
-const ANALYTICS_PROMPTED_PATH = "/data/UserData/schwung/analytics-prompted";
-let analyticsPromptSelection = 0;  // 0 = Yes (default), 1 = No
 
 /* Auto-update state */
 let autoUpdateCheckEnabled = true;   // Default: enabled (opt-out)
@@ -1273,8 +1269,7 @@ const GLOBAL_SETTINGS_SECTIONS = [
         id: "services", label: "Services",
         items: [
             { key: "filebrowser_enabled", label: "File Browser", type: "bool" },
-            { key: "auto_update_check", label: "Auto Update Check", type: "bool" },
-            { key: "analytics_enabled", label: "Analytics", type: "bool" }
+            { key: "auto_update_check", label: "Auto Update Check", type: "bool" }
         ]
     },
     {
@@ -4034,11 +4029,6 @@ function loadOvertakeModule(moduleInfo, skipOvertake) {
             shadow_set_param(0, "passthrough", overtakePassthroughCCs.join(","));
         }
 
-        /* Track module load for analytics */
-        if (typeof host_track_event === "function" && moduleInfo.id) {
-            host_track_event('module_loaded', '"module_id":"' + moduleInfo.id + '","source":"overtake"');
-        }
-
         /* Step 6: Defer init() call - LEDs will be cleared progressively during loading screen.
          * Non-overtake tools don't own LEDs, so call init() immediately.
          * Modules with skip_led_clear capability skip LED clearing and init immediately
@@ -5632,11 +5622,6 @@ function generateNewFilePath(dir) {
  * skip_file_browser+interactive / file browser / standalone / fallback)
  * must be preserved here. */
 function launchToolConfirmed(tool) {
-    /* Track tool selection. Overtake tools are tracked inside
-     * loadOvertakeModule → skip here to avoid a double event. */
-    if (tool.kind !== 'overtake' && typeof host_track_event === "function" && tool.id) {
-        host_track_event('module_loaded', '"module_id":"' + tool.id + '","source":"tools"');
-    }
     if (tool.kind === 'overtake') {
         debugLog("TOOLS SELECT overtake: " + tool.id);
         announce(`Loading ${tool.name || tool.id}`);
@@ -7633,11 +7618,6 @@ function applyComponentSelectionConfirmed(slotIndex, paramKey, moduleId, comp) {
         if (typeof host_log === "function") host_log(`applyComponentSelection: setSlotParam returned ${success}`);
         if (!success) {
             print(2, 50, "Failed to apply", 1);
-        }
-
-        /* Track component selection for analytics */
-        if (moduleId && typeof host_track_event === "function") {
-            host_track_event('module_loaded', '"module_id":"' + moduleId + '","source":"picker","component":"' + comp.key + '"');
         }
 
     }
@@ -11814,9 +11794,6 @@ function getMasterFxSettingValue(setting) {
     if (setting.key === "midi_indicator_enabled") {
         return midiIndicatorEnabled ? "On" : "Off";
     }
-    if (setting.key === "analytics_enabled") {
-        return (typeof host_get_analytics_enabled === "function" && host_get_analytics_enabled()) ? "On" : "Off";
-    }
     return "-";
 }
 
@@ -12038,14 +12015,6 @@ function adjustMasterFxSetting(setting, delta) {
             ? wrapText("On. Access at http://move.local:404", 18)
             : ["Off."];
         warningActive = true;
-        return;
-    }
-
-    if (setting.key === "analytics_enabled") {
-        if (typeof host_set_analytics_enabled === "function") {
-            const current = typeof host_get_analytics_enabled === "function" && host_get_analytics_enabled();
-            host_set_analytics_enabled(current ? 0 : 1);
-        }
         return;
     }
 
@@ -14141,7 +14110,6 @@ function drawComponentSelect() {
 
 /* drawStorePickerResult() -> shadow_ui_store.mjs */
 
-/* Draw analytics opt-out prompt (shown on first run) */
 /* SET_CHANGED processing, extracted from tick()'s flag block so the select
  * gate can run it too. ⚠ The select phase EARLY-RETURNS the tick while its
  * screen is up — with the handler inline below that return, a set switch
@@ -14716,23 +14684,6 @@ function drawSelectPhase() {
     }
     const hs = selectPhase.statusLine || "Loading set...";
     print(Math.max(0, Math.floor((SCREEN_WIDTH - hs.length * 6) / 2)), 38, hs, 1);
-}
-
-function drawAnalyticsPrompt() {
-    clear_screen();
-    drawHeader('Usage Statistics');
-
-    print(2, 14, 'Send anonymous usage', 1);
-    print(2, 24, 'data to help improve', 1);
-    print(2, 34, 'Schwung?', 1);
-
-    /* Yes / No selection */
-    const yesPrefix = analyticsPromptSelection === 0 ? '> ' : '  ';
-    const noPrefix = analyticsPromptSelection === 1 ? '> ' : '  ';
-    print(30, 48, yesPrefix + 'Yes', 1);
-    print(75, 48, noPrefix + 'No', 1);
-
-    drawFooter('Click to confirm');
 }
 
 /* Draw component edit view (presets, params) */
@@ -15873,66 +15824,6 @@ globalThis.init = function() {
     }
     saveSlotsToConfig(slots);
 
-    /* Analytics: emit app_launched + census + diff against previous snapshot.
-     * app_launched must emit here (not in shadow_ui.c main()) because
-     * analytics_enabled() returns false until the opt-in prompt resolves,
-     * which is JS-side — firing from C would drop the first-boot event. */
-    if (typeof host_track_event === "function" && typeof host_get_analytics_enabled === "function" && host_get_analytics_enabled()) {
-        try {
-            host_track_event('app_launched', '');
-
-            const modules = host_list_modules();
-            if (modules && modules.length > 0) {
-                /* Send census, excluding dev/test harness modules that ship
-                 * with the host but aren't meaningful user choices. */
-                const INTERNAL_IDS = new Set(['ui-test', 'text-test', 'splash-test', 'seq-test']);
-                const reportable = modules.filter(m => !INTERNAL_IDS.has(m.id));
-                const ids = reportable.map(m => `"${m.id}"`).join(',');
-                host_track_event('module_census',
-                    `"module_count":${reportable.length},"modules":[${ids}]`);
-
-                /* Diff against previous snapshot (skip on first run) */
-                const snapshotPath = "/data/UserData/schwung/module-snapshot.txt";
-                const oldContent = host_read_file(snapshotPath);
-                if (oldContent) {
-                    const oldSnap = {};
-                    for (const line of oldContent.split("\n")) {
-                        const eq = line.indexOf("=");
-                        if (eq > 0) oldSnap[line.substring(0, eq)] = line.substring(eq + 1);
-                    }
-
-                    /* Only emit upgrades. module_added was removed as
-                     * noisy — see analytics.c for details. */
-                    for (const mod of modules) {
-                        if (oldSnap[mod.id] && oldSnap[mod.id] !== mod.version) {
-                            host_track_event('module_upgraded',
-                                `"module_id":"${mod.id}","old_version":"${oldSnap[mod.id]}","new_version":"${mod.version || 'unknown'}"`);
-                        }
-                    }
-                }
-
-                /* Save snapshot for next boot */
-                const snapshot = modules.map(m => `${m.id}=${m.version || 'unknown'}`).join("\n");
-                host_write_file(snapshotPath, snapshot);
-            }
-
-            /* Track modules loaded in each slot at startup.
-             * Filter out non-module-id responses (we've seen the shim
-             * occasionally return a stale float like "0.005000" when the
-             * slot instance isn't fully initialized yet — reject anything
-             * that doesn't look like a module id). */
-            const MODULE_ID_RE = /^[a-z][a-z0-9_-]*$/;
-            for (let i = 0; i < 4; i++) {
-                const synthModule = getSlotParam(i, "synth_module");
-                if (synthModule && MODULE_ID_RE.test(synthModule)) {
-                    host_track_event('module_loaded', '"module_id":"' + synthModule + '","source":"startup","slot":' + i);
-                }
-            }
-        } catch (e) {
-            debugLog("analytics census error: " + e);
-        }
-    }
-
     /* Announce initial view + selection */
     const slotName = slots[selectedSlot]?.name || "Unknown";
     announce(`Slots Menu, S${selectedSlot + 1} ${slotName}`);
@@ -16105,13 +15996,7 @@ globalThis.tick = function() {
         splashTick++;
         if (splashTick >= SPLASH_TOTAL_TICKS) {
             splashActive = false;
-            /* Check if we need to show analytics prompt (first run only) */
-            if (!host_file_exists(ANALYTICS_PROMPTED_PATH)) {
-                view = VIEWS.ANALYTICS_PROMPT;
-                analyticsPromptSelection = 0;
-                announce("Usage Statistics, Send anonymous data? Yes");
-                /* Don't dismiss display — keep showing prompt */
-            } else if (shimBootstrapNeeded && !shimBootstrapPromptShown) {
+            if (shimBootstrapNeeded && !shimBootstrapPromptShown) {
                 /* One-shot repair prompt: the live entrypoint at /opt/move/Move
                  * doesn't include the schwung-heal call, so the self-heal
                  * mechanism isn't running. Updates via web manager will
@@ -16160,12 +16045,6 @@ globalThis.tick = function() {
             else drawSplashScreen();
             return;
         }
-    }
-
-    /* Analytics prompt (first run) */
-    if (view === VIEWS.ANALYTICS_PROMPT) {
-        drawAnalyticsPrompt();
-        return;
     }
 
     /* Set-select gate armed MID-SESSION (a suspended tool asked for the
@@ -16974,12 +16853,7 @@ globalThis.onMidiMessageInternal = function(data) {
     /* Skip splash on any button press */
     if (splashActive && d2 > 0) {
         splashActive = false;
-        /* Check if we need to show analytics prompt (first run only) */
-        if (!host_file_exists(ANALYTICS_PROMPTED_PATH)) {
-            view = VIEWS.ANALYTICS_PROMPT;
-            analyticsPromptSelection = 0;
-            announce("Usage Statistics, Send anonymous data? Yes");
-        } else if (typeof shadow_select_phase_active === "function" &&
+        if (typeof shadow_select_phase_active === "function" &&
                    shadow_select_phase_active()) {
             /* Boot set-select gate: an early press (often the very pad tap
              * that will choose a set) must land on the select screen, not
@@ -16993,31 +16867,6 @@ globalThis.onMidiMessageInternal = function(data) {
         return;
     }
 
-    /* Analytics prompt input handling */
-    if (view === VIEWS.ANALYTICS_PROMPT) {
-        if ((status & 0xF0) === 0xB0 && d2 > 0) {
-            if (d1 === 14) {
-                /* Jog turn — toggle selection */
-                analyticsPromptSelection = analyticsPromptSelection === 0 ? 1 : 0;
-                announce(analyticsPromptSelection === 0 ? "Yes" : "No");
-                needsRedraw = true;
-            } else if (d1 === 3) {
-                /* Jog click — confirm */
-                const enabled = (analyticsPromptSelection === 0);
-                if (typeof host_set_analytics_enabled === "function") {
-                    host_set_analytics_enabled(enabled);
-                }
-                /* Mark as prompted so we never show again */
-                host_write_file(ANALYTICS_PROMPTED_PATH, "1");
-                /* Dismiss display */
-                if (typeof shadow_request_exit === "function") {
-                    shadow_request_exit();
-                }
-                view = VIEWS.SLOTS;
-                needsRedraw = true;
-                announce(enabled ? "Analytics enabled" : "Analytics disabled");
-            }
-        }
         return;
     }
 

@@ -27,11 +27,7 @@ const schemaKeys = new Set();
 for (const s of schema) for (const it of (s.items || [])) schemaKeys.add(it.key);
 
 const deviceOnlySections = new Set(["updates", "help"]);
-/* analytics_enabled persists via opt-in/opt-out flag files
- * (src/host/analytics.c), not features.json/shadow_config.json — the
- * schema-driven manager config cannot write it, so a schema entry would be
- * a silently broken web toggle. Device-only by design. */
-const deviceOnlyKeys = new Set(["analytics_enabled"]);
+const deviceOnlyKeys = new Set([]);
 const missing = [];
 for (const s of sections) {
   if (deviceOnlySections.has(s.id)) continue;
