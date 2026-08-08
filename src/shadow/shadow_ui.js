@@ -14801,7 +14801,6 @@ function drawHelpDetail() {
     Object.defineProperty(_ctx, 'storePickerMessage', {
         get() { return storePickerMessage; }, enumerable: true
     });
-    _ctx.CATEGORIES = CATEGORIES;
     _ctx.drawStatusOverlay = (...args) => drawStatusOverlay(...args);
     _ctx.createScrollableText = (...args) => createScrollableText(...args);
     _ctx.drawScrollableText = (...args) => drawScrollableText(...args);
