@@ -677,7 +677,7 @@ function saveUserPreset(rawName) {
     const dir = PRESET_ROOT + '/' + S.moduleId;
     const stateJson = engineGetState(S.slot, S.comp);
     if (!stateJson) { S.presetMsg = 'NO STATE'; return; }
-    if (typeof host_ensure_dir === 'function') host_ensure_dir(dir);
+    host_ensure_dir(dir);
     /* Parsed object when the state is JSON, raw string otherwise — the same
      * opaque-state fallback the host's writer uses. */
     let state;
@@ -686,7 +686,7 @@ function saveUserPreset(rawName) {
         name, module: S.moduleId, version: 1, state,
     });
     const path = uniquePath(dir, safeStem(name));
-    const ok = (typeof host_write_file === 'function') && host_write_file(path, payload);
+    const ok = host_write_file(path, payload);
     S.presetMsg = ok ? 'SAVED' : 'SAVE FAILED';
     if (!ok) return;
     S.userPresets = engineListUserPresets(S.moduleId);
@@ -752,8 +752,7 @@ function uniquePath(dir, stem) {
 }
 
 function fileExists(path) {
-    if (typeof host_file_exists === 'function') return !!host_file_exists(path);
-    try { return !!host_read_file(path); } catch (e) { return false; }
+    return !!host_file_exists(path);
 }
 
 /* ---- module menu ----
@@ -1291,7 +1290,6 @@ function bakedCachePath(key, fp) {
 }
 
 function loadBakedCache(key, fp, count) {
-    if (typeof host_read_file !== 'function') return null;
     let txt = null;
     try { txt = host_read_file(bakedCachePath(key, fp)); } catch (e) { return null; }
     if (!txt) return null;
@@ -1304,8 +1302,7 @@ function loadBakedCache(key, fp, count) {
 }
 
 function saveBakedCache(key, fp, names) {
-    if (typeof host_write_file !== 'function') return;
-    if (typeof host_ensure_dir === 'function') host_ensure_dir(BAKED_CACHE_DIR);
+    host_ensure_dir(BAKED_CACHE_DIR);
     try {
         host_write_file(bakedCachePath(key, fp),
                         JSON.stringify({ v: BAKED_CACHE_V, key, fp, names }));
@@ -2198,7 +2195,6 @@ function editCcClaimWanted() {
 }
 
 function reconcileEditCcClaim(force) {
-    if (typeof host_edit_cc_block !== 'function') return;   /* older host */
     const want = force ? false : editCcClaimWanted();
     if (want === S.editCcClaimed) return;
     S.editCcClaimed = want;

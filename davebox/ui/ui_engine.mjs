@@ -118,8 +118,7 @@ export function engineSetSlotParam(slot, key, val) {
  * make slot level survive a reboot. Synchronous file write — call it at the END
  * of a gesture. */
 export function engineSaveState() {
-    if (typeof shadow_save_state_now === 'function') return !!shadow_save_state_now();
-    return false;
+    return !!shadow_save_state_now();
 }
 
 /* ---- which host build are we on? ----
@@ -161,7 +160,6 @@ export const DAVEBOX_HOST_DIR = '/data/UserData/dbx-host';
  * the host's host_vol_block (fork). Gated on typeof so an unpatched host simply
  * doesn't claim it — the editor still works, Move's volume just moves too. */
 export function engineVolBlock(on) {
-    if (typeof host_vol_block !== 'function') return false;
     host_vol_block(on ? 1 : 0);
     return true;
 }
@@ -271,11 +269,10 @@ function moduleDirFor(comp, moduleId) {
 }
 
 export function engineLoadKitStructure(comp, moduleId) {
-    if (typeof shadow_load_ui_module !== 'function') return null;
     const dir = moduleDirFor(comp, moduleId);
     if (!dir) return null;
     const path = dir + '/canvas.js';
-    if (typeof host_file_exists === 'function' && !host_file_exists(path)) return null;
+    if (!host_file_exists(path)) return null;
 
     const G = globalThis;
     const had = {
@@ -487,7 +484,7 @@ export function engineReadUserPreset(path) {
 /* ---- slots ---- */
 
 export function engineSlots() {
-    const raw = (typeof shadow_get_slots === 'function') ? shadow_get_slots() : null;
+    const raw = shadow_get_slots();
     if (!raw) return [];
     const out = [];
     for (let i = 0; i < raw.length; i++) {
@@ -497,5 +494,5 @@ export function engineSlots() {
 }
 
 export function engineFocusedSlot() {
-    return (typeof shadow_get_ui_slot === 'function') ? (shadow_get_ui_slot() | 0) : 0;
+    return shadow_get_ui_slot() | 0;
 }

@@ -626,8 +626,7 @@ export function _onPadPress(status, d1, d2) {
         if (S.moveCoRunTrack >= 0 &&
                 S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM &&
                 d1 >= 68 && d1 <= 99 && ((d1 - 68) % 8) < 4 &&
-                (status & 0xF0) === 0x90 && d2 > 0 &&
-                typeof move_midi_inject_to_move === 'function') {
+                (status & 0xF0) === 0x90 && d2 > 0) {
             move_midi_inject_to_move([0x09, 0x90, d1, d2 & 0x7F]);  /* plain pad on at hit velocity — held until release */
             S.moveCoRunDrumHeld.add(d1);
         }
@@ -1579,8 +1578,7 @@ export function _onPadRelease(status, d1, d2) {
      * release of the tracked pad, even if the threshold hadn't fired yet.
      * Per-pad Set (not a scalar) so releasing one held drum pad doesn't clobber
      * or drop the note-off for a second, still-held pad (js-input-1). */
-    if (S.moveCoRunTrack >= 0 && S.moveCoRunDrumHeld.has(d1) &&
-            typeof move_midi_inject_to_move === 'function') {
+    if (S.moveCoRunTrack >= 0 && S.moveCoRunDrumHeld.has(d1)) {
         move_midi_inject_to_move([0x08, 0x80, d1, 0]);    /* plain pad off (no Shift was sent) */
         S.moveCoRunDrumHeld.delete(d1);
     }

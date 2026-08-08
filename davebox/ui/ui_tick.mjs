@@ -141,8 +141,6 @@ function convertTrackToConduct(t) {
 export function applyExtMidiRemap() {
     const t = S.activeTrack;
     const isMove = S.trackRoute[t] === 1;
-    const hasRemap = typeof host_ext_midi_remap_enable === 'function';
-    if (!hasRemap) return;
     if (!isMove) {
         host_ext_midi_remap_clear();
         for (var _i = 0; _i < 16; _i++) {
@@ -436,9 +434,8 @@ export function _tickImpl() {
                 host_module_set_param('t' + _t + '_tarp_latch', '0');
         }
     }
-    /* PHASE-1: session-view edge re-pushes padmap so DSP on_midi gates pad
-     * dispatch (session pads launch clips, not notes). Remove with the rest
-     * of the PHASE-1 gates when patches upstreamed. */
+    /* Session-view edge re-pushes the padmap so DSP on_midi gates pad
+     * dispatch (session pads launch clips, not notes). */
     if (S.sessionView !== _lastSessionView) {
         computePadNoteMap();
     }
@@ -453,7 +450,7 @@ export function _tickImpl() {
          * Keeps schema unified with the explicit save paths. */
         saveState();
         removeFlagsWrap();
-        if (typeof host_ext_midi_remap_enable === 'function') host_ext_midi_remap_enable(0);
+        host_ext_midi_remap_enable(0);
     }
     if (!isSuspended && S._wasSuspended) {
         installFlagsWrap();
@@ -555,8 +552,7 @@ export function _tickImpl() {
     /* Metro note-off */
     if (S.metroNoteOffTick >= 0 && S.tickCount >= S.metroNoteOffTick) {
         S.metroNoteOffTick = -1;
-        if (typeof move_midi_inject_to_move === 'function')
-            move_midi_inject_to_move([0x09, 0x80, 108, 0]);
+        move_midi_inject_to_move([0x09, 0x80, 108, 0]);
     }
 
     /* Drain deferred drum tap note-offs */
@@ -606,8 +602,7 @@ export function _tickImpl() {
      * shadow_set_param. Runs regardless of active bank. */
     /* Sch label fetch: one shadow_get_param per tick to avoid blocking.
      * Triggered on bank-6 entry; fetches param name for each Sch lane. */
-    if (S.schLabelFetchLane >= 0 && S.schLabelFetchLane < 8 &&
-            typeof shadow_get_param === 'function') {
+    if (S.schLabelFetchLane >= 0 && S.schLabelFetchLane < 8) {
         const _ft = S.activeTrack;
         const _fk = S.schLabelFetchLane;
         S.schLabelFetchLane++;
@@ -832,8 +827,7 @@ export function _tickImpl() {
      * (the physical Shift release was zeroed shim-side in non-co-run mode, so
      * Move never saw it), and a plain track-button press with Shift "held"
      * lands on Move's track-routing menu instead of the preset editor. */
-    if (S.moveCoRunPressQueue && S.moveCoRunPressQueue.length > 0 &&
-            typeof move_midi_inject_to_move === 'function') {
+    if (S.moveCoRunPressQueue && S.moveCoRunPressQueue.length > 0) {
         if (S.moveCoRunPressGap > 0) {
             S.moveCoRunPressGap--;
         } else {
@@ -1945,8 +1939,7 @@ export function _tickImpl() {
         let _dropped = false;
         for (const _nm in S.nameIndexCache) {
             const _u = S.nameIndexCache[_nm];
-            if (_u && typeof host_file_exists === 'function'
-                    && !host_file_exists(uuidToStatePath(_u))) {
+            if (_u && !host_file_exists(uuidToStatePath(_u))) {
                 delete S.nameIndexCache[_nm];
                 _dropped = true;
             }

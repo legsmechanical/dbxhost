@@ -37,7 +37,6 @@ const ACTIVE_SET_PATH = DAVEBOX_HOST_DIR + '/active_set.txt';
 
 /* Read active_set.txt (per-install): line 1 = UUID, line 2 = name. */
 export function readActiveSet() {
-    if (typeof host_read_file !== 'function') return { uuid: '', name: '' };
     try {
         const raw = host_read_file(ACTIVE_SET_PATH);
         if (!raw) return { uuid: '', name: '' };
@@ -60,8 +59,7 @@ export function stripCopySuffix(name) {
 
 /* Lazy-loaded name -> uuid map; survives across saves via S.nameIndexCache. */
 export function loadNameIndex() {
-    if (typeof host_read_file !== 'function') return {};
-    if (typeof host_file_exists === 'function' && !host_file_exists(NAME_INDEX_PATH))
+    if (!host_file_exists(NAME_INDEX_PATH))
         return {};
     try {
         const raw = host_read_file(NAME_INDEX_PATH);
@@ -74,7 +72,6 @@ export function loadNameIndex() {
 }
 
 export function saveNameIndex(idx) {
-    if (typeof host_write_file !== 'function') return false;
     return host_write_file(NAME_INDEX_PATH, JSON.stringify(idx));
 }
 
@@ -94,13 +91,9 @@ export function updateNameIndex() {
  * the source's SEQ8 state. Returns true if the state file was copied. */
 export function copyStateFiles(srcUuid, dstUuid) {
     if (!srcUuid || !dstUuid) return false;
-    if (typeof host_read_file !== 'function' || typeof host_write_file !== 'function')
-        return false;
-    if (typeof host_file_exists !== 'function') return false;
     const srcSt = uuidToStatePath(srcUuid);
     if (!host_file_exists(srcSt)) return false;
-    if (typeof host_ensure_dir === 'function')
-        host_ensure_dir(SET_STATE_DIR + '/' + dstUuid);
+    host_ensure_dir(SET_STATE_DIR + '/' + dstUuid);
     const stContents = host_read_file(srcSt);
     if (!stContents) return false;
     host_write_file(uuidToStatePath(dstUuid), stContents);
@@ -127,7 +120,6 @@ const SETS_BASE_DIR = '/data/UserData/UserLibrary/Sets';
 export function findInheritCandidates(currentName, idx) {
     const base = stripCopySuffix(currentName);
     if (!base) return [];
-    if (typeof host_file_exists !== 'function') return [];
     const famRe = new RegExp('^' + escapeForRegex(base) + '(?:\\s+Copy(?:\\s+\\d+)?)?$');
     const out = [];
     for (const name in idx) {
@@ -157,7 +149,6 @@ export function findInheritCandidates(currentName, idx) {
  *   'blank'  — nothing to inherit; let normal flow proceed */
 export function maybeShowInheritPicker(uuid, name) {
     if (!uuid || !name) return 'blank';
-    if (typeof host_file_exists !== 'function') return 'blank';
     if (host_file_exists(uuidToStatePath(uuid))) return 'blank';
     const idx = S.nameIndexCache || (S.nameIndexCache = loadNameIndex());
     const candidates = findInheritCandidates(name, idx);
@@ -206,7 +197,7 @@ export function resolveSetLoadDecision() {
         /* state_load deferred until resolveInheritPicker fires */
     } else if (S.currentSetUuid && dspUuid !== S.currentSetUuid) {
         S.pendingSetLoad = true;
-    } else if (S.currentSetUuid && typeof host_file_exists === 'function') {
+    } else if (S.currentSetUuid) {
         if (!host_file_exists(uuidToStatePath(S.currentSetUuid)))
             S.pendingSetLoad = true;
     }
@@ -261,19 +252,18 @@ export function writeSidecar() {
     if (S.awaitingProjectSelect) return;
     /* Always sync the live activeBank into per-track storage before serializing. */
     S.trackActiveBank[S.activeTrack] = S.activeBank;
-    if (typeof host_write_file === 'function')
-        host_write_file(uuidToUiStatePath(S.currentSetUuid), JSON.stringify({
-            v: 9, at: S.activeTrack, ac: S.trackActiveClip.slice(), sv: S.sessionView ? 1 : 0,
-            dl: S.activeDrumLane.slice(),
-            pm: S.perfModsToggled, lm: S.perfLatchMode ? 1 : 0,
-            rs: S.perfRecalledSlot, us: S.perfSnapshots.slice(8),
-            bm: S.beatMarkersEnabled ? 1 : 0,
-            dva: S.drumVelZoneArmed.slice(),
-            dleu: S.drumLaneEuclidN.map(function(lane) { return lane.slice(); }),
-            to: S.trackOctave.slice(),
-            tab: S.trackActiveBank.slice(),
-            am: S.trackAtMode.slice(),
-            pchr: S.padLayoutChromatic.map(function(b) { return b ? 1 : 0; })
+    host_write_file(uuidToUiStatePath(S.currentSetUuid), JSON.stringify({
+        v: 9, at: S.activeTrack, ac: S.trackActiveClip.slice(), sv: S.sessionView ? 1 : 0,
+        dl: S.activeDrumLane.slice(),
+        pm: S.perfModsToggled, lm: S.perfLatchMode ? 1 : 0,
+        rs: S.perfRecalledSlot, us: S.perfSnapshots.slice(8),
+        bm: S.beatMarkersEnabled ? 1 : 0,
+        dva: S.drumVelZoneArmed.slice(),
+        dleu: S.drumLaneEuclidN.map(function(lane) { return lane.slice(); }),
+        to: S.trackOctave.slice(),
+        tab: S.trackActiveBank.slice(),
+        am: S.trackAtMode.slice(),
+        pchr: S.padLayoutChromatic.map(function(b) { return b ? 1 : 0; })
         }));
 }
 
@@ -329,9 +319,8 @@ function parseStateVersion(raw) {
 
 /* Returns the snapshot list (newest-first) for a set, or []. */
 export function loadSnapshotManifest(uuid) {
-    if (typeof host_read_file !== 'function') return [];
     const p = snapManifestPath(uuid);
-    if (typeof host_file_exists === 'function' && !host_file_exists(p)) return [];
+    if (!host_file_exists(p)) return [];
     try {
         const obj = JSON.parse(host_read_file(p) || '');
         const arr = (obj && Array.isArray(obj.snaps)) ? obj.snaps : [];
@@ -341,7 +330,6 @@ export function loadSnapshotManifest(uuid) {
 }
 
 function writeSnapshotManifest(uuid, snaps) {
-    if (typeof host_write_file !== 'function') return false;
     return host_write_file(snapManifestPath(uuid),
         JSON.stringify({ v: SNAP_MANIFEST_VER, snaps: snaps }));
 }
@@ -350,15 +338,13 @@ function writeSnapshotManifest(uuid, snaps) {
  * and update the manifest. Reusing an existing id overwrites in place.
  * Call AFTER the DSP 'save' has flushed live state to disk. */
 export function commitSnapshot(uuid, id, label) {
-    if (typeof host_read_file !== 'function' || typeof host_write_file !== 'function')
-        return false;
     const srcSt = uuidToStatePath(uuid);
-    if (typeof host_file_exists === 'function' && !host_file_exists(srcSt)) return false;
+    if (!host_file_exists(srcSt)) return false;
     const stContents = host_read_file(srcSt);
     if (!stContents) return false;
     host_write_file(snapStatePath(uuid, id), stContents);
     const srcUi = uuidToUiStatePath(uuid);
-    if (typeof host_file_exists === 'function' && host_file_exists(srcUi)) {
+    if (host_file_exists(srcUi)) {
         const uiContents = host_read_file(srcUi);
         if (uiContents) host_write_file(snapUiStatePath(uuid, id), uiContents);
     }
@@ -378,15 +364,13 @@ export function commitSnapshot(uuid, id, label) {
 /* Copy a snapshot's files over the live state files, so the normal
  * state_load reload path (pendingSetLoad) restores them. */
 export function applySnapshotToLive(uuid, id) {
-    if (typeof host_read_file !== 'function' || typeof host_write_file !== 'function')
-        return false;
     const snSt = snapStatePath(uuid, id);
-    if (typeof host_file_exists === 'function' && !host_file_exists(snSt)) return false;
+    if (!host_file_exists(snSt)) return false;
     const stContents = host_read_file(snSt);
     if (!stContents) return false;
     host_write_file(uuidToStatePath(uuid), stContents);
     const snUi = snapUiStatePath(uuid, id);
-    if (typeof host_file_exists === 'function' && host_file_exists(snUi)) {
+    if (host_file_exists(snUi)) {
         const uiContents = host_read_file(snUi);
         if (uiContents) host_write_file(uuidToUiStatePath(uuid), uiContents);
     }
@@ -403,11 +387,9 @@ export function dropSnapshots(uuid, ids) {
     if (S.awaitingProjectSelect) return loadSnapshotManifest(uuid);
     const idset = {};
     for (let i = 0; i < ids.length; i++) idset[ids[i]] = true;
-    if (typeof host_write_file === 'function') {
-        for (let i = 0; i < ids.length; i++) {
-            host_write_file(snapStatePath(uuid, ids[i]), '{}');
-            host_write_file(snapUiStatePath(uuid, ids[i]), '{}');
-        }
+    for (let i = 0; i < ids.length; i++) {
+        host_write_file(snapStatePath(uuid, ids[i]), '{}');
+        host_write_file(snapUiStatePath(uuid, ids[i]), '{}');
     }
     const snaps = loadSnapshotManifest(uuid).filter(function(s) { return !idset[s.id]; });
     writeSnapshotManifest(uuid, snaps);
@@ -423,8 +405,8 @@ export function doClearSession() {
      * them is exactly the shape that gets missed. */
     if (S.awaitingProjectSelect) return;
     const sp = uuidToStatePath(S.currentSetUuid);
-    if (typeof host_write_file === 'function') host_write_file(sp, '{"v":0}');
-    if (typeof host_write_file === 'function') host_write_file(uuidToUiStatePath(S.currentSetUuid), '{"v":0}');
+    host_write_file(sp, '{"v":0}');
+    host_write_file(uuidToUiStatePath(S.currentSetUuid), '{"v":0}');
     /* Reset JS-only state not covered by S.pendingSetLoad */
     S.activeBank = 0;
     for (let _t = 0; _t < NUM_TRACKS; _t++) S.trackActiveBank[_t] = 0;

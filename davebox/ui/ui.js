@@ -153,8 +153,7 @@ function captureError(where, e) {
                    + ' lock=' + (S.perfViewLocked ? 1 : 0)
                    + ' susp=' + (S.pendingSuspendSave ? 1 : 0)
                    + '] ' + where + ': ' + msg + stack + '\n\n';
-        if (typeof host_write_file === 'function')
-            host_write_file('/data/UserData/schwung/seq8-jserr.log', _jsErrBuf);
+        host_write_file('/data/UserData/schwung/seq8-jserr.log', _jsErrBuf);
     } catch (_e) { /* the logger must never throw */ }
 }
 
@@ -169,7 +168,7 @@ globalThis.init = function () {
      * resume, so ui_sound.mjs's module-scope state survives. Start closed. */
     if (soundActive()) soundExit();
     S.pendingSoundEnterTrack = -1;
-    if (typeof shadow_corun_end === 'function') shadow_corun_end();
+    shadow_corun_end();
     assertOvertakeSysexSuppress();
     if (S.bankParams === null)
         S.bankParams = Array.from({length: NUM_TRACKS}, function() {
@@ -195,11 +194,9 @@ globalThis.init = function () {
      * the marker is long gone but the DSP may still be awaiting). */
     const _markerPath = DAVEBOX_HOST_DIR + '/fresh_session';
     let _markerArmed = false;
-    if (typeof host_read_file === 'function' && typeof host_write_file === 'function') {
-        const _fs = host_read_file(_markerPath);
-        _markerArmed = !!(_fs && _fs.length);
-        if (_markerArmed) host_write_file(_markerPath, '');
-    }
+    const _fs = host_read_file(_markerPath);
+    _markerArmed = !!(_fs && _fs.length);
+    if (_markerArmed) host_write_file(_markerPath, '');
     /* The DSP is the authority here, and JS only mirrors it. The DSP arms the
      * flag from the marker on its own, so deciding independently in JS would let
      * the two disagree — and a disagreement is the worst state available: the DSP
@@ -305,9 +302,8 @@ globalThis.init = function () {
      * doubles as the DSP-side capability signal (its padmap handler sets
      * inst->dsp_inbound_enabled). The push happens on every computePadNoteMap
      * recompute, so it survives DSP instance recreate (state_load path).
-     * Stock Schwung: function undefined, flag stays false, padmap never pushed,
-     * existing JS path keeps working. Remove the gate when patches upstreamed. */
-    S.dspInboundEnabled = (typeof shadow_inbound_pad_midi_active === 'function');
+     * routed to the DSP rather than reconstructed in JS. */
+    S.dspInboundEnabled = true;
 
     computePadNoteMap();
 

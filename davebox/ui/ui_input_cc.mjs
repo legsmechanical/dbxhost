@@ -982,10 +982,7 @@ function _onCC_buttons(d1, d2) {
         if (!S.shiftHeld && S.pendingEditEntryTrack >= 0) {
             const _t = S.pendingEditEntryTrack;
             S.pendingEditEntryTrack = -1;
-            if (typeof shadow_corun_begin === 'function' &&
-                typeof move_midi_inject_to_move === 'function') {
-                enterMoveNativeCoRun(_t);
-            }
+            enterMoveNativeCoRun(_t);
         }
         if (!S.sessionView) forceRedraw();
     }
@@ -1149,8 +1146,8 @@ function _onCC_buttons(d1, d2) {
              * Move synth — this fork's fx_picker where available, else the stock
              * master_fx (see the coRunOverlayScreen probe in pollDSP). corun target
              * stays MOVE_NATIVE, so pollDSP does NOT tear down — Back returns to the
-             * synth. No addressable screen (older Schwung): swallow as before. */
-            if (d2 === 127 && S.coRunOverlayScreen && typeof shadow_corun_open === 'function') {
+             * synth. No addressable screen: swallow as before. */
+            if (d2 === 127 && S.coRunOverlayScreen) {
                 shadow_corun_open(S.coRunOverlayScreen, DAVEBOX_PICKER_KEEP_MASK);
             }
             return;
@@ -3296,11 +3293,10 @@ function _onCC_knobs(d1, d2) {
             if (S.altMode) {
                 if (S.knobAccum[knobIdx] >= KNOB_PICK) {
                     S.knobAccum[knobIdx] = 0;
-                    const hasSch = typeof shadow_set_param === 'function';
                     const cur = (S.trackCCType[t][knobIdx] === 2) ? -(S.trackCCAssign[t][knobIdx] + 1)
                               : (S.trackCCType[t][knobIdx] === 1) ? -1
                               : S.trackCCAssign[t][knobIdx];
-                    const minVal = hasSch ? -9 : -1;
+                    const minVal = -9;
                     const nx  = Math.max(minVal, Math.min(127, cur + dir));
                     if (nx <= -2) {
                         const schKnob = -(nx + 1);

@@ -95,7 +95,6 @@ export function schSlotForTrack(t) {
  * them get a bit. 0 = no slot receives this track. Lowest set bit = the slot the
  * co-run editor opens to; the whole mask is blinked on the side buttons. */
 export function schSlotsForTrack(t) {
-    if (typeof shadow_get_slots !== 'function') return 0;
     const ch = S.trackChannel[t];
     const slots = shadow_get_slots();
     if (!slots) return 0;
@@ -115,7 +114,6 @@ export function schSlotsForTrack(t) {
  * same snapshot, which is also more correct: eight separate reads could
  * straddle a chain edit and disagree with each other. */
 export function schSlotMasksAllTracks(out) {
-    if (typeof shadow_get_slots !== 'function') { out.fill(0); return out; }
     const slots = shadow_get_slots();
     if (!slots) { out.fill(0); return out; }
     for (let t = 0; t < out.length; t++) {
@@ -159,12 +157,10 @@ export function enterSchwungCoRun(t, slot) {
      * only chance to learn the key that lets a pad press name its own pad —
      * see soundLearnNoteParam. */
     soundLearnNoteParam(slot);
-    if (typeof shadow_corun_begin === 'function')
-        shadow_corun_begin(CORUN_TARGET_CHAIN_EDIT, slot, DAVEBOX_CHAIN_KEEP_MASK);
+    shadow_corun_begin(CORUN_TARGET_CHAIN_EDIT, slot, DAVEBOX_CHAIN_KEEP_MASK);
     /* Own the side-clip-button LEDs (CC 40-43) without grabbing their input.
      * Chain-edit keeps Mute (input + LED) — see the #8 note by the mask defs. */
-    if (typeof shadow_corun_set_led_keep_mask === 'function')
-        shadow_corun_set_led_keep_mask(DAVEBOX_CHAIN_LED_KEEP_MASK);
+    shadow_corun_set_led_keep_mask(DAVEBOX_CHAIN_LED_KEEP_MASK);
     S.screenDirty = true;
 }
 
@@ -176,8 +172,7 @@ export function exitSchwungCoRun() {
     if (S.schwungCoRunSlot < 0) return;
     S.schwungCoRunSlot = -1;
     S._coRunChanSlots = 0;
-    if (typeof shadow_corun_end === 'function')
-        shadow_corun_end();
+    shadow_corun_end();
     /* Modifier-key release CCs the user pressed inside the co-run may have
      * been routed to Schwung and never reached us — clear defensively so a
      * stuck Shift/Mute/etc. can't silence pad dispatch on return. Mirrors
@@ -212,8 +207,6 @@ export function exitSchwungCoRun() {
  * 4 tracks — if trackChannel is outside 1-4 we just enter co-run without
  * an auto-tap and let the user pick the Move track manually. */
 export function enterMoveNativeCoRun(t) {
-    if (typeof shadow_corun_begin !== 'function') return;
-    if (typeof move_midi_inject_to_move !== 'function') return;
     S.moveCoRunTrack = t;
     /* Re-push the padmap so the left-column lane pads become 0xFF (DSP on_midi
      * skips sounding them; Move handles sound+select via the injected pad).
@@ -224,15 +217,14 @@ export function enterMoveNativeCoRun(t) {
     /* Own the side-clip-button LEDs (CC 40-43) without grabbing their input — so
      * Move's playback repaints stop fighting our paired-track indicator while
      * track-button presses still switch Move's track. */
-    if (typeof shadow_corun_set_led_keep_mask === 'function')
-        shadow_corun_set_led_keep_mask(DAVEBOX_CORUN_LED_KEEP_MASK);
+    shadow_corun_set_led_keep_mask(DAVEBOX_CORUN_LED_KEEP_MASK);
     /* Let Move firmware's own LED writes (track buttons, knob rings, transport)
      * reach hardware while it drives the device-edit UI. skip_led_clear makes the
      * shim's overtake LED-strip loop early-return, so Move's LEDs pass through live.
      * Toggled back off in exitMoveNativeCoRun(). This is a mid-overtake toggle — it
      * does NOT hit the entry/exit snapshot path, so the suspend/exit native LED
      * restore is unaffected. */
-    if (typeof shadow_set_skip_led_clear === 'function') shadow_set_skip_led_clear(1);
+    shadow_set_skip_led_clear(1);
     /* Defer the track-button "press" that lands Move on the device-edit page and
      * makes it repaint its track + knob LEDs. Injecting it immediately fails: Move's
      * repaint lands before the shim's co-run LED passthrough + OLED bypass go live
@@ -260,16 +252,15 @@ export function exitMoveNativeCoRun() {
      * also queue a tick recompute in case this set_param push coalesces away. */
     computePadNoteMap();
     S.pendingPadNoteMapRecompute = true;
-    if (typeof shadow_corun_end === 'function')
-        shadow_corun_end();
+    shadow_corun_end();
     /* Resume the shim's overtake LED-strip loop so dAVEBOx owns the LEDs again
      * (mirror of the skip_led_clear(1) in enterMoveNativeCoRun). */
-    if (typeof shadow_set_skip_led_clear === 'function') shadow_set_skip_led_clear(0);
+    shadow_set_skip_led_clear(0);
     /* If any drum pad hold injects were in flight, send a note-off for EACH
      * before the co-run session ends so Move doesn't get a stuck note — a
      * scalar here used to leak a note-off for every held pad but the first
      * (js-input-1); a Set lets us drain them all. */
-    if (S.moveCoRunDrumHeld.size > 0 && typeof move_midi_inject_to_move === 'function') {
+    if (S.moveCoRunDrumHeld.size > 0) {
         for (const _heldPad of S.moveCoRunDrumHeld)
             move_midi_inject_to_move([0x08, 0x80, _heldPad, 0]);  /* plain pad off (no Shift was sent) */
     }
@@ -302,12 +293,11 @@ export function exitMoveNativeCoRun() {
 /* Own all LEDs in our full-overtake views. Clock Follow keeps Move's sequencer
  * running underneath, whose RGB pad/clip/grid LEDs ride cable-0 sysex that the
  * shim otherwise passes through — they'd fight our LEDs. Opt into sysex
- * suppression (patched Schwung only; no-op on older hosts). The host CLEARS this
+ * suppression. The host CLEARS this
  * flag whenever our module is parked (suspendOvertakeMode → suspend/resume, and
  * on overtake exit / co-run), so init() alone isn't enough — we must re-assert it
  * every time we return to full overtake (resume, co-run end), or Move's clip-side
- * LEDs leak back. Idempotent + typeof-guarded, so it's safe to call repeatedly. */
+ * LEDs leak back. Idempotent, so it's safe to call repeatedly. */
 export function assertOvertakeSysexSuppress() {
-    if (typeof shadow_set_overtake_suppress_sysex === 'function')
-        shadow_set_overtake_suppress_sysex(1);
+    shadow_set_overtake_suppress_sysex(1);
 }

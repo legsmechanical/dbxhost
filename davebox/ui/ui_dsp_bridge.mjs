@@ -297,33 +297,27 @@ export function pollDSP() {
      * here without having driven the exit itself. Use the existing exit
      * helpers for cleanup — they're idempotent on the second SHM write and
      * carry the palette/LED-cache/modifier-clear work we need either way. */
-    if (typeof shadow_corun_state === 'function') {
-        const _st = shadow_corun_state();
-        const _slot  = (_st && _st.target === CORUN_TARGET_CHAIN_EDIT)  ? _st.id : -1;
-        const _track = (_st && _st.target === CORUN_TARGET_MOVE_NATIVE) ? _st.id : -1;
-        if (_slot < 0 && S.schwungCoRunSlot >= 0) {
-            exitSchwungCoRun();
-            /* Framework exit also closes any global menu we opened to launch it. */
-            S.globalMenuOpen = false;
-            S.lastSentMenuEditValue = null;
-        }
-        if (_track < 0 && S.moveCoRunTrack >= 0) {
-            exitMoveNativeCoRun();
-        }
-        if (S.coRunOverlayScreen === undefined) {
-            /* Which Schwung screen Note/Session opens as an overlay in Move co-run.
-             * Prefer this fork's FX-bus picker; fall back to an upstream-registered
-             * FX screen (master_fx) so the overlay also works on STOCK Schwung that
-             * has the co-run view-addressing API (shadow_corun_*) but not the fork's
-             * fork-only fx_picker entry. null = no addressable screen available. */
-            let _scr = null;
-            if (typeof shadow_corun_entries === 'function') {
-                const _ents = shadow_corun_entries();
-                if (_ents.indexOf('fx_picker') >= 0) _scr = 'fx_picker';
-                else if (_ents.indexOf('master_fx') >= 0) _scr = 'master_fx';
-            }
-            S.coRunOverlayScreen = _scr;
-        }
+    const _st = shadow_corun_state();
+    const _slot  = (_st && _st.target === CORUN_TARGET_CHAIN_EDIT)  ? _st.id : -1;
+    const _track = (_st && _st.target === CORUN_TARGET_MOVE_NATIVE) ? _st.id : -1;
+    if (_slot < 0 && S.schwungCoRunSlot >= 0) {
+        exitSchwungCoRun();
+        /* Framework exit also closes any global menu we opened to launch it. */
+        S.globalMenuOpen = false;
+        S.lastSentMenuEditValue = null;
+    }
+    if (_track < 0 && S.moveCoRunTrack >= 0) {
+        exitMoveNativeCoRun();
+    }
+    if (S.coRunOverlayScreen === undefined) {
+        /* Which Schwung screen Note/Session opens as an overlay in Move co-run.
+         * Prefer the FX-bus picker; fall back to master_fx. null = no
+          * addressable screen registered. */
+        let _scr = null;
+        const _ents = shadow_corun_entries();
+        if (_ents.indexOf('fx_picker') >= 0) _scr = 'fx_picker';
+        else if (_ents.indexOf('master_fx') >= 0) _scr = 'master_fx';
+        S.coRunOverlayScreen = _scr;
     }
     if (typeof host_module_get_param !== 'function') return;
     /* Remote-UI edit sync: the browser piano-roll edits notes[]/clips directly in
@@ -822,8 +816,7 @@ export function pollDSP() {
      * NEVER while awaiting a selection — the DSP holds defaults, so this would
      * write an empty state over the boot project's file and destroy it. The DSP
      * also refuses to serve state_full in that condition; both belts stay. */
-    if (typeof host_write_file === 'function' && S.currentSetUuid &&
-            !S.awaitingProjectSelect) {
+    if (S.currentSetUuid && !S.awaitingProjectSelect) {
         const _st = host_module_get_param('state_full');
         if (_st && _st.length > 2) {
             host_write_file(uuidToStatePath(S.currentSetUuid), _st);
@@ -872,7 +865,7 @@ export function readBankParams(t, bankIdx) {
         }
         /* Default Schwung-routed tracks to Sch1-8 when all lanes are at factory CC defaults.
          * Deferred one-per-tick via pendingDefaultSetParams to avoid coalescing. */
-        if (S.trackRoute[t] === 0 && typeof shadow_set_param === 'function' &&
+        if (S.trackRoute[t] === 0 &&
                 S.trackCCType[t].every(function(tp) { return tp === 0; })) {
             for (let k = 0; k < 8; k++) {
                 S.trackCCType[t][k] = 2;
@@ -1156,8 +1149,7 @@ export function liveSendNote(t, type, pitch, vel, rawVel, ext) {
             }
         } else {
             const cin = (status >> 4) & 0x0F;
-            if (typeof move_midi_external_send === 'function')
-                move_midi_external_send([cin, status, pitch, vel]);
+            move_midi_external_send([cin, status, pitch, vel]);
         }
     } else if (route === 1) {
         /* ROUTE_MOVE. Queue note events for microtask-batched drain into one
@@ -1197,7 +1189,7 @@ export function liveSendNote(t, type, pitch, vel, rawVel, ext) {
                 queueLiveNoteOn(t, pitch, vel, ext);
             }
         } else {
-            if (typeof shadow_send_midi_to_dsp === 'function') shadow_send_midi_to_dsp([status, pitch, vel]);
+            shadow_send_midi_to_dsp([status, pitch, vel]);
         }
     }
 }
@@ -1209,8 +1201,7 @@ export function liveSendNote(t, type, pitch, vel, rawVel, ext) {
 export function restoreUiSidecar(applyDefaultsNow) {
     const uiSp = uuidToUiStatePath(S.currentSetUuid);
     let us = null;
-    if (typeof host_read_file === 'function' && typeof host_file_exists === 'function'
-            && host_file_exists(uiSp)) {
+    if (host_file_exists(uiSp)) {
         try { us = JSON.parse(host_read_file(uiSp)); } catch (e) {}
     }
     if (us && us.v >= 1) {

@@ -213,8 +213,7 @@ export function flushHeldMoveExtNotes() {
     for (const [pitch, info] of extHeldNotes) {
         if (S.trackRoute[info.track] !== 1) continue;   /* Move-native voices only */
         const ch = (S.trackChannel[info.track] - 1) & 0x0F;
-        if (typeof move_midi_inject_to_move === 'function')
-            move_midi_inject_to_move([0x28, 0x80 | ch, pitch, 0]);
+        move_midi_inject_to_move([0x28, 0x80 | ch, pitch, 0]);
         /* Close an open recording gate at the cut point (fallback tick --
          * the release slot won't exist; matches the audible cut). */
         if (info.recording) recordNoteOff(pitch, true);

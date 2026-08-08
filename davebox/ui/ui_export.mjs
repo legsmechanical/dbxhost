@@ -49,7 +49,6 @@ const DB_TRACK_COLORS = [1, 17, 7, 10, 25, 15, 6, 12];
 /* ---- asset loading ------------------------------------------------------- */
 
 function readJsonAsset(name) {
-    if (typeof host_read_file !== 'function') return null;
     const raw = host_read_file(EXPORT_MODULE_DIR + '/' + name);
     if (!raw) return null;
     try { return JSON.parse(raw); } catch (e) { return null; }
@@ -62,8 +61,7 @@ function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
  * davebox-exports/. host_system_cmd's `rm ` prefix is allowlisted; the path is a
  * fixed constant (no spaces / no user input). rm -rf is a no-op if absent. */
 function removeStagingDir() {
-    if (typeof host_system_cmd === 'function')
-        host_system_cmd("rm -rf '" + EXPORT_STAGING + "'");
+    host_system_cmd("rm -rf '" + EXPORT_STAGING + "'");
 }
 
 /* ---- source-side reads (loaded Move set + Schwung chain config) ----------- */
@@ -73,18 +71,16 @@ function removeStagingDir() {
  * the parsed object, or null if absent/unreadable/too large (4MB host cap;
  * largest real Song.abl observed ~217KB, so plain host_read_file is safe). */
 function loadMoveSong() {
-    if (typeof host_read_file !== 'function' || !S.currentSetUuid || !S.currentSetName)
-        return null;
+    if (!S.currentSetUuid || !S.currentSetName) return null;
     const path = EXPORT_SETS_BASE_DIR + '/' + S.currentSetUuid + '/' + S.currentSetName + '/Song.abl';
-    if (typeof host_file_exists === 'function' && !host_file_exists(path)) return null;
+    if (!host_file_exists(path)) return null;
     const raw = host_read_file(path);
     if (!raw) return null;
     try { return JSON.parse(raw); } catch (e) { return null; }
 }
 
 function loadChainConfig() {
-    if (typeof host_read_file !== 'function') return null;
-    if (typeof host_file_exists === 'function' && !host_file_exists(CHAIN_CONFIG_PATH)) return null;
+    if (!host_file_exists(CHAIN_CONFIG_PATH)) return null;
     const raw = host_read_file(CHAIN_CONFIG_PATH);
     if (!raw) return null;
     try { return JSON.parse(raw); } catch (e) { return null; }
@@ -290,7 +286,7 @@ function legalizeNotes(notes) {
  * — Phase 4b bakes several cycles (random/delay) and parks the brace on cycle 1
  * so the extra content is revealed by dragging the brace open in Live. */
 function buildClip(t, c, isDrum) {
-    if (typeof host_module_get_param !== 'function' || typeof host_read_file !== 'function')
+    if (typeof host_module_get_param !== 'function')
         return null;
     /* Apply-Conductor variant: for melodic responder tracks (not drum, not the
      * Conductor track itself) when the user opted in. DSP folds per-scene only
@@ -422,7 +418,7 @@ function sanitizeName(name) {
 /* <set>-YYYYMMDD.ablbundle, appending -2/-3/... on same-day collisions. */
 function uniqueOutPath(base) {
     let p = EXPORT_OUT_DIR + '/' + base + '.ablbundle';
-    if (typeof host_file_exists !== 'function' || !host_file_exists(p)) return p;
+    if (!host_file_exists(p)) return p;
     for (let i = 2; i < 1000; i++) {
         p = EXPORT_OUT_DIR + '/' + base + '-' + i + '.ablbundle';
         if (!host_file_exists(p)) return p;
@@ -509,14 +505,7 @@ function pollPendingExport() {
     if (!S.pendingExportRun) return;
     S.pendingExportRun = false;
     /* Push the EXPORTING frame to the screen before we block on the packager. */
-    if (typeof host_flush_display === 'function') host_flush_display();
-
-    if (typeof host_write_file !== 'function' ||
-        typeof host_system_cmd !== 'function' ||
-        typeof host_ensure_dir !== 'function') {
-        showActionPopup('EXPORT FAIL', 'NO HOST API');
-        return;
-    }
+    host_flush_display();
 
     /* Tempo: get_param is valid here (tick context). */
     let bpm = 120.0;

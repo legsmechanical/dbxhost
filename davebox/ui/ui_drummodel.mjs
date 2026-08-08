@@ -99,12 +99,8 @@ export function computePadNoteMap() {
      * pushing the one active track's map on every recompute is sufficient.
      * Dormant until the capability gate flips dsp_inbound_enabled in
      * piece 3. */
-    /* PHASE-1: only push on patched Schwung. The DSP padmap handler doubles
-     * as the capability signal — its presence sets inst->dsp_inbound_enabled,
-     * gating on_midi dispatch. On stock Schwung S.dspInboundEnabled stays
-     * false, the push is skipped, on_midi (which isn't called on stock anyway)
-     * stays dormant, and the JS pendingLiveNotes path keeps working unchanged.
-     * Remove this gate when patches upstreamed. */
+    /* The DSP padmap handler sets inst->dsp_inbound_enabled, which gates its
+     * on_midi dispatch. */
     if (S.dspInboundEnabled && typeof host_module_set_param === 'function') {
         /* JS dispatch today adds S.trackOctave * 12 at the pad-press site
          * (lines ~6838, ~6909). Phase 1's on_midi reads pad_note_map as-is,
@@ -119,9 +115,8 @@ export function computePadNoteMap() {
          * suppresses note dispatch without changing on_midi code. State
          * sources: button-held modifiers (covered by explicit hooks in
          * _onCC_buttons for zero-latency), dialogs (covered by the
-         * tick()-time muted-edge detector below). Remove the modal-flag
-         * checks when patches upstreamed. See [[project-modal-pad-
-         * interception-regression]]. */
+         * tick()-time muted-edge detector below). See
+         * [[project-modal-pad-interception-regression]]. */
         const padDispatchMuted = _padDispatchMutedNow();
         const isDrum = S.trackPadMode[t] === PAD_MODE_DRUM;
         const octShift = isDrum ? 0 : ((S.trackOctave[t] | 0) * 12);

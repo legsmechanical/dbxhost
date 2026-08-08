@@ -127,19 +127,15 @@ function buildGlobalMenuItems() {
          * undefined and the menu entry isn't built, so the feature is invisible.
          * All other co-run code is dormant unless this entry triggers it. Also
          * hidden on non-Schwung-routed tracks (symmetric with Edit Synth below). */
-        ...((S.trackRoute[S.activeTrack] === 0 &&
-             typeof shadow_corun_begin === 'function') ? [
+        ...((S.trackRoute[S.activeTrack] === 0) ? [
             createAction('Edit Slot...', function() {
                 openSchwungSlotEditor(S.activeTrack);
             })
         ] : []),
         /* Move-native co-run entry — visible only when (a) active track is
          * ROUTE_MOVE, (b) the co-run API (shadow_corun_begin, Schwung >= 0.9.18)
-         * is present, and (c) the cable-0 MIDI inject API is present (Schwung
-         * >= v0.7.0). On older Schwung or non-Move-routed tracks the entry isn't built. */
-        ...((S.trackRoute[S.activeTrack] === 1 &&
-             typeof shadow_corun_begin === 'function' &&
-             typeof move_midi_inject_to_move === 'function') ? [
+         * On non-Move-routed tracks the entry isn't built. */
+        ...((S.trackRoute[S.activeTrack] === 1) ? [
             createAction('Edit Synth...', function() {
                 enterMoveNativeCoRun(S.activeTrack);
             })

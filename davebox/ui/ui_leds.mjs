@@ -1149,7 +1149,6 @@ export function clearAllLEDs() {
 }
 
 export function installFlagsWrap() {
-    if (typeof shadow_get_ui_flags !== 'function') return;
     if (globalThis.shadow_get_ui_flags._seq8) {
         globalThis.shadow_get_ui_flags._active = true;
         return;
@@ -1162,7 +1161,7 @@ export function installFlagsWrap() {
             S.ledInitComplete = false;
             invalidateLEDCache();
             clearAllLEDs();
-            if (typeof shadow_clear_ui_flags === 'function') shadow_clear_ui_flags(hit);
+            shadow_clear_ui_flags(hit);
             return f & ~SEQ8_NAV_FLAGS;
         }
         return f;
