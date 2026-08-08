@@ -94,7 +94,6 @@ setsid bash -c '
   # everything after is reparsed as garbage. It fails silently, because the
   # launcher is detached. This exact comment has broken the block before.
   BOOT_JSON="{\"tool_id\": \"davebox-sound\", \"file_path\": \"\"}"
-  rm -f "$DBX_DIR/select_phase"
   rm -f "$DBX_DIR/select_list.json" "$DBX_DIR/select_hook_result.json"
   echo "$BOOT_JSON" > "$DBX_DIR/boot_tool.json"
   echo "$BOOT_JSON" > /data/UserData/schwung/open_tool_cmd.json
@@ -183,7 +182,7 @@ setsid bash -c '
   # guard, heal) is still in place, and standalone_active stays valid — same
   # boot. The SHM wipe between iterations is the same stale-ring hygiene the
   # session entry does.
-  rm -f "$DBX_DIR/relaunch_requested" "$DBX_DIR/relaunch_select"
+  rm -f "$DBX_DIR/relaunch_requested"
   while :; do
     echo "run LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal"
     env LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal
@@ -232,24 +231,12 @@ setsid bash -c '
         esac
       fi
       echo "relaunch requested — restarting Move within the session"
+      # Every relaunch is post-selection (a project switch, or the select hook
+      # rewiring a set), so DIRECT-BOOT the tool. The shadow UI already staged
+      # boot_tool.json when the selection was made; re-assert it here so a
+      # programmatic switch always lands straight in the module.
       rm -f "$DBX_DIR/fresh_session"
-      if [ -f "$DBX_DIR/relaunch_select" ]; then
-        # In-session return to the set-select gate (project-cmd.sh select):
-        # the user asked for the picker, so RE-ARM the phase — marker on,
-        # boot_tool.json off — and the fresh Move holds at the picker again.
-        rm -f "$DBX_DIR/relaunch_select" "$DBX_DIR/fresh_session" "$DBX_DIR/boot_tool.json"
-        rm -f "$DBX_DIR/select_list.json" "$DBX_DIR/select_hook_result.json"
-        : > "$DBX_DIR/select_phase"
-        echo "set-select gate re-armed for this relaunch"
-      else
-        # Every other relaunch is post-selection (project switch, or the
-        # select hook rewiring a set): DIRECT-BOOT the tool, never re-ask.
-        # The shadow UI already staged boot_tool.json when the selection was
-        # made; re-assert both files here so a programmatic switch can never
-        # land on the select screen again.
-        echo "$BOOT_JSON" > "$DBX_DIR/boot_tool.json"
-        rm -f "$DBX_DIR/select_phase"
-      fi
+      echo "$BOOT_JSON" > "$DBX_DIR/boot_tool.json"
       echo "$BOOT_JSON" > /data/UserData/schwung/open_tool_cmd.json
       continue
     fi
@@ -286,9 +273,9 @@ setsid bash -c '
   rm -f "$DBX_DIR/standalone_active"
   # Session-scoped select/boot state: all of it dies with the session, so the
   # NEXT entry re-arms a fresh select phase (and stock never sees any of it).
-  rm -f "$DBX_DIR/select_phase" "$DBX_DIR/boot_tool.json"
+  rm -f "$DBX_DIR/boot_tool.json"
   rm -f "$DBX_DIR/select_list.json" "$DBX_DIR/select_hook_result.json"
-  rm -f "$DBX_DIR/relaunch_select" "$DBX_DIR/fresh_session"
+  rm -f "$DBX_DIR/fresh_session"
   # Leave no standing open-tool command behind for the stock host to act on.
   rm -f /data/UserData/schwung/open_tool_cmd.json
   $DBX_DIR/bin/davebox-heal --resume-launcher

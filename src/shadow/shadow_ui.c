@@ -2288,20 +2288,23 @@ static JSValue js_shadow_select_phase_end(JSContext *ctx, JSValueConst this_val,
         shadow_control->select_queue = -1;
     }
     select_armed_headless = -1;
-    unlink(SCHWUNG_INSTALL_DIR "/select_phase");
     shadow_ui_log_line("shadow_ui: select phase ended");
     return JS_UNDEFINED;
 }
 
-/* shadow_select_arm() — arm the gate MID-SESSION (no marker file: this arming
- * is session-scoped by construction). Intended call order for a tool that
- * wants the picker back: arm, then suspend itself — the shim's entry machine
- * waits for overtake to drop, walks Move into its Set Overview (injected
- * Shift+Step1, Move's own gesture), and claims the OLED. Selection then
- * resumes the suspended tool through the ordinary select flow. */
-/* shadow_select_ready() -> 1 once the picker is actually up (boot, or the
- * mid-session entry machine finished). The select screen shows an "opening
- * picker" state while 0. */
+/* shadow_select_arm(pad) — run the set-select ACTUATOR for `pad` (0-31).
+ * Session-scoped by construction. Intended call order for a tool that wants
+ * to switch sets: arm with the chosen pad, then suspend itself — the shim's
+ * entry machine waits for overtake to drop, walks Move into its Set Overview
+ * (injected Shift+Step1, Move's own gesture), claims the OLED, replays the
+ * pad, and the selection resumes the suspended tool.
+ *
+ * `pad` is REQUIRED. There is no interactive flavour: the phase presents no
+ * user surface at all (every physical control is a no-op behind our screen),
+ * so arming without a pad would walk Move into the overview and then wait
+ * forever for a selection nobody can make. Rejected with a log instead. */
+/* shadow_select_ready() -> 1 once the overview is actually up (the entry
+ * machine finished). The loading screen shows an "opening" state while 0. */
 static JSValue js_shadow_select_ready(JSContext *ctx, JSValueConst this_val,
                                       int argc, JSValueConst *argv) {
     (void)this_val; (void)argc; (void)argv;
@@ -2314,16 +2317,18 @@ static JSValue js_shadow_select_arm(JSContext *ctx, JSValueConst this_val,
     (void)this_val;
     int pad = -1;
     if (argc >= 1) JS_ToInt32(ctx, &pad, argv[0]);
+    if (pad < 0 || pad > 31) {
+        shadow_ui_log_line("shadow_ui: select arm REFUSED (pad out of range 0-31)");
+        return JS_UNDEFINED;
+    }
     if (shadow_control) {
         shadow_control->select_launch = SELECT_LAUNCH_NONE;
         shadow_control->select_ready = 0;   /* entry machine raises it */
-        shadow_control->select_queue = (pad >= 0 && pad <= 31) ? (int8_t)pad : -1;
-        select_armed_headless = (pad >= 0 && pad <= 31) ? pad : -1;
+        shadow_control->select_queue = (int8_t)pad;
+        select_armed_headless = pad;
         shadow_control->select_phase = 1;
     }
-    shadow_ui_log_line(select_armed_headless >= 0
-                       ? "shadow_ui: select phase armed HEADLESS"
-                       : "shadow_ui: select phase armed mid-session");
+    shadow_ui_log_line("shadow_ui: select actuator armed");
     return JS_UNDEFINED;
 }
 

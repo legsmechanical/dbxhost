@@ -54,8 +54,8 @@ The launcher mechanism is already upstream. There is nothing to get merged.
 | `scripts/build-heal.sh` | cross-compiles `davebox-heal` with `-DDBX_DIR` from `config.sh` |
 | `scripts/install-host.sh` | **build + deploy the host in one command** (the dev loop) |
 | `scripts/check-config.sh` | fails if a literal copy drifted from `config.sh` |
-| `scripts/select-list.sh` | set-select gate: writes `select_list.json` (pad index → set name) |
-| `scripts/select-hook.sh` | set-select gate: post-selection wiring check/rewrite (deferred apply) |
+| `scripts/select-list.sh` | set-select actuator: writes `select_list.json` (pad index → set name) |
+| `scripts/select-hook.sh` | set-select actuator: post-selection wiring check/rewrite (deferred apply) |
 
 This directory lives **in the host repo** — the launcher's only job is to start
 this host, so shipping them together makes host + launcher + heal + installer one
@@ -189,50 +189,42 @@ opened.
 default/legacy directory and stays untouched — checking it will tell you the save
 did not happen when it did.
 
-## The set-select gate (v3: a headless actuator)
+## The set-select actuator (project switching)
 
-> **v3 (2026-08-07):** the gate is no longer a USER surface. Sessions boot
-> DIRECTLY into the tool; project selection is the module's own pad picker,
-> and the gate exists to serve `shadow_select_arm(pad)` — an invisible
-> actuator run (OLED shows only "Loading...", physical pads/jog ignored)
-> that walks Move through its overview, replays the pre-queued pad, and
-> resumes the parked tool. Everything below describes the machinery, which
-> is unchanged; the interactive boot-picker mode it also supports is simply
-> no longer armed by `launch.sh`.
+A standalone session boots **straight into its tool**. Project selection is
+the module's own pad picker — the gate is not a user surface and never was a
+good one: as Move's native picker it kept leaking seams (gesture injection,
+invisible jog scroll, mode fighting). What survives is the useful half: an
+invisible actuator that switches the loaded set without a restart.
 
-## The boot set-select gate (project selection)
-
-A standalone session does not boot straight into its tool: `launch.sh` arms a
-`select_phase` marker (and removes `boot_tool.json`), and the shim + shadow UI
-hold the session at **Move's native set picker**, which — thanks to the
-Design-B library swap — is showing exactly the session's own project library.
-Move keeps everything that makes the picker good (pad tap loads a set, Copy
-and Delete manage them, all native); the OLED shows the select screen and
-names the tapped set.
+`shadow_select_arm(pad)` starts a run. `pad` (0-31) is **required** — there is
+no interactive flavour, so arming without one would walk Move into the
+overview and wait forever for a selection nobody can make; it is refused with
+a log instead. Intended call order for a tool: arm, then park itself
+(`suspend_keeps_js`).
 
 Split of responsibilities (all generic host code; this directory provides the
 launcher-side files):
 
-- **shim** (`src/schwung_shim.c`, "Boot set-select gate"): decides what a pad
-  tap *means*. During the phase the surface is locked down to the picker:
-  every input except pads, jog wheel/click, Copy, Delete and the volume knob
-  is a no-op (Shift is tracked but blocked; **Shift+Back leaves the session
-  to stock**), and Move's LED writes pass only for the picker's own lights
-  (pad RGB sysex + the Copy/Delete buttons) — track/step/transport LEDs stay
-  dark. A tap outside a copy/delete flow, once Move's load settles, is
-  the launch trigger; jog click means "resume the already-loaded set";
-  Shift+pad is suppressed; while Copy or Delete is HELD the OLED is ceded to
-  Move so its confirm text shows, and reclaimed the instant the button is
-  released. Both flows are exactly the raw button state: Move treats Copy and
-  Delete as hold-modifiers and cancels the pending step on release
-  (hardware-confirmed — delete's confirm, copy-with-no-source, and
-  copy-awaiting-destination all die with the button), so releasing falls
-  straight back to normal picking.
-- **shadow UI** (`src/shadow/shadow_ui.js`): the select screen. Runs
-  `scripts/select-list.sh` for names (at entry and after every flow) and, on
-  the shim's trigger, ends the phase, stages `boot_tool.json` (so every LATER
-  relaunch direct-boots — a programmatic switch never re-asks), runs
-  `scripts/select-hook.sh <index|current>`, and opens the tool.
+- **shim** (`src/schwung_shim.c`, "set-select gate"): drives Move. Once
+  overtake drops it injects Move's own **Shift+Step1** gesture through the
+  MPSC ring to open the **Set Overview**, waits for the D-Bus confirmation
+  (1.5 s timeout), claims the OLED, then **replays the pre-queued pad** as an
+  injected tap so Move loads that set for real. When the load settles, the
+  launch trigger fires and `shadow_set_tracking_force_index` starts the
+  SET_CHANGED reload immediately rather than waiting for Move to write
+  `Settings.json` (which trailed by up to ~5 s). Back is then tapped so Move
+  leaves the overview before the tool resumes over it.
+  Throughout, the surface is fully locked: **every** physical control is a
+  no-op (only the volume knob passes; Shift is tracked but blocked so
+  **Shift+Back can leave the session to stock**), and **every** Move LED
+  write is stripped — an earlier version passed the picker's own lights
+  through, which let the native overview pads glow behind "Loading".
+- **shadow UI** (`src/shadow/shadow_ui.js`): shows "Loading <project>" for
+  the whole run, named from frame one via `shadow_select_headless()`. On the
+  shim's trigger it ends the phase, stages `boot_tool.json` (so every LATER
+  relaunch direct-boots), runs `scripts/select-hook.sh <index>`, waits for
+  the SET_CHANGED reload, and resumes the tool.
 - **select-hook.sh**: guarantees the chosen set has the template wiring
   (tracks 1-4 on channels 1-4, MIDI out off). A native "Empty Set" or pad-copy
   lacks it; the hook stages a **deferred** rewrite (`relaunch_patch.sh`,
@@ -240,31 +232,23 @@ launcher-side files):
   would clobber the write) and restarts Move through the supervisor loop,
   which then direct-boots the tool with the fixed set.
 
-**Mid-session re-entry (no restart).** A suspended tool can ask for the picker
-back: it parks itself (`suspend_keeps_js`) and calls `shadow_select_arm()`.
-The shim then walks Move into its native **Set Overview** — Move's own
-Shift+Step1 gesture, injected through the MPSC ring once overtake drops —
-waits for the D-Bus "Set Overview" confirmation (1.5 s timeout), and claims
-the OLED. Selection runs the ordinary gate flow, taps Back so Move leaves the
-overview, and **resumes** the parked tool, whose resume-edge set-UUID check
-is the project switch. Only a set that needs the wiring hook's rewrite still
-takes the one relaunch (Move must reload the rewritten file). The
-`project-cmd.sh select` relaunch flavour remains as the fallback for a
-gate-less host.
+Only a set needing that rewrite takes a relaunch; every other switch is
+suspend → actuate → resume, and the tool's resume-edge set-UUID check is the
+project switch.
 
 **Session branding.** The build ships `splash.hex` (128×64 1-bpp artwork,
 2048 hex chars) + `splash_caption.txt` ("Schwung base: <version>", generated
 from `src/host/version.txt` at build time) into the install root; the host's
 boot splash draws them instead of the Schwung animation — but ONLY alongside
-a standalone session-boot signal (`select_phase` / `boot_tool.json`), so the
+a standalone session-boot signal (`boot_tool.json`), so the
 same payload on a stock install can never rebrand stock Schwung. The
-tool-load screen likewise says "Loading <project>" when the select gate knows
+tool-load screen likewise says "Loading <project>" when the actuator knows
 which project is opening, and the hosted module skips its own boot splash
 under this host — one product, one splash.
 
 Session-scoped files (all under `$DBX_DIR`, cleared on session exit):
-`select_phase`, `select_list.json`, `select_hook_result.json`,
-`boot_tool.json`, `relaunch_patch.sh`, `relaunch_select`.
+`select_list.json`, `select_hook_result.json`, `boot_tool.json`,
+`relaunch_patch.sh`, `fresh_session`.
 
 ## Gotchas
 

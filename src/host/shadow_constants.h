@@ -259,7 +259,6 @@ typedef struct shadow_control_t {
 
 /* select_launch sentinel: resume the already-loaded set. */
 #define SELECT_LAUNCH_NONE   (-1)
-#define SELECT_LAUNCH_RESUME 127
 
 /* Co-run control-surface groups. A co-running overtake tool declares which
  * groups it KEEPS (corun_keep_mask); every other group's input cedes to the

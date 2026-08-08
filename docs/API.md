@@ -329,13 +329,20 @@ shadow_control_restart()
 shadow_inbound_pad_midi_active()              // -> bool: host delivers Move's internal pad MIDI to the overtake DSP's on_midi hook
 shadow_overtake_send_external_async_active()  // -> bool: overtake DSP's midi_send_external uses the audio-thread-safe async ring
 
-// Boot set-select gate (shadow_ui only; standalone sessions — see
-// standalone/README.md "The boot set-select gate")
-shadow_select_phase_active()   // -> 1 while the gate holds the session at the native set picker
-shadow_select_get_launch()     // -> -1 none | 0-31 chosen set index | 127 resume current (auto-clears)
-shadow_select_phase_end()      // ends the phase: clears the SHM flag + the launcher's marker file
-shadow_select_arm()            // arm the gate MID-SESSION (tool parks itself first; shim opens
-                               //   Move's Set Overview and the selection resumes the tool)
+// Set-select actuator (shadow_ui only; standalone sessions — see
+// standalone/README.md "The set-select actuator"). Switches the loaded set
+// without a restart, presenting NO user surface: the shim drives Move's own
+// Set Overview behind a "Loading" screen and every physical control is a no-op.
+shadow_select_arm(pad)         // start a run for pad 0-31. Tool parks itself first
+                               //   (suspend_keeps_js); the selection resumes it.
+                               //   pad is REQUIRED — out of range is refused with a log,
+                               //   since there is no interactive flavour to fall back to.
+shadow_select_headless()       // -> the armed pad (0-31), or -1 when no run is active.
+                               //   Lets the loading screen name the TARGET from frame one.
+shadow_select_phase_active()   // -> 1 while a run is in progress
+shadow_select_ready()          // -> 1 once the overview is open (entry machine finished)
+shadow_select_get_launch()     // -> -1 none | 0-31 chosen set index (auto-clears)
+shadow_select_phase_end()      // ends the run: clears the SHM flags
 
 // Global setting bindings (shadow_ui only)
 display_mirror_get() / display_mirror_set(v) / display_mirror_set_shm(v)

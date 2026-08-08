@@ -16,11 +16,6 @@
 #   switch <index>  save the current song, point currentSongIndex at <index>,
 #                     and restart Move IN PLACE via the launcher's supervisor
 #                     loop (relaunch_requested)
-#   select          save the current song and restart Move IN PLACE with the
-#                     set-select gate RE-ARMED (relaunch_select), so the
-#                     session comes back up on the project picker instead of
-#                     direct-booting the tool — create/copy/delete/load
-#                     without leaving the session
 #
 # The switch path mirrors exit-to-stock.sh's shape: SIGTERM so the host runs
 # its normal shutdown saves, detached because our caller dies with the process
@@ -238,21 +233,6 @@ PYEOF
     do_list
 }
 
-do_select() {
-    save_song
-    # The launcher's relaunch branch consumes relaunch_select and re-arms the
-    # gate (marker on, boot_tool.json off) instead of asserting direct-boot.
-    : > "$DBX_DIR/relaunch_select"
-    : > "$DBX_DIR/relaunch_requested"
-    # Detached, exactly like do_switch: our caller is a child of the process
-    # we are about to signal.
-    setsid sh -c '
-      sleep 1
-      pkill -x MoveOriginal
-    ' >/dev/null 2>&1 &
-    printf 'project-cmd: reopening the set-select gate (Move restarting in place)\n'
-}
-
 case "${1:-}" in
     list)   do_list ;;
     new)    shift; do_new "${1:-}" ;;
@@ -260,6 +240,5 @@ case "${1:-}" in
     copy)   shift; do_copy "${1:-}" "${2:-}" ;;
     delete) shift; do_delete "${1:-}" ;;
     switch) shift; do_switch "${1:-}" ;;
-    select) do_select ;;
-    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|select" ;;
+    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>" ;;
 esac

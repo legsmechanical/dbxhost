@@ -659,7 +659,6 @@ let selectPhase = {
     launching: false,   /* trigger consumed, hook running / tool opening */
     hookWaitTicks: 0,
     statusLine: "",     /* "preparing" feedback while launching */
-    prevDisplayMode: 1, /* reclaim detection: 0->1 = a copy/delete flow ended */
     /* Set-switch ordering (mid-session): when the selection targets a set
      * OTHER than the one loaded at phase entry, the resume must wait for the
      * host's SET_CHANGED reload (which also rewrites active_set.txt) —
@@ -668,8 +667,7 @@ let selectPhase = {
     awaitSetChange: false,
     setChangeSeen: false,
     setWaitTicks: 0,
-    setWaitHardTicks: 0,
-    headless: false      /* actuator run: no picker UI, just "Loading..." */
+    setWaitHardTicks: 0
 };
 
 const SPLASH_BALL_Y = 26;
@@ -14594,20 +14592,15 @@ function enterSelectPhaseView() {
     selectPhase.launching = false;
     selectPhase.lastPad = -1;
     selectPhase.statusLine = "";
-    selectPhase.prevDisplayMode = 1;
     selectPhase.awaitSetChange = false;
     selectPhase.setChangeSeen = false;
     selectPhase.setWaitTicks = 0;
     selectPhase.hookWaitTicks = 0;
     const _hpad = (typeof shadow_select_headless === "function")
         ? shadow_select_headless() : -1;
-    selectPhase.headless = _hpad >= 0;
     if (_hpad >= 0) selectPhase.lastPad = _hpad;   /* name the TARGET from frame one */
     view = VIEWS.SELECT_PHASE;
     selectRefreshList();
-    if (!selectPhase.headless) {
-        announce(selectPhase.title + ". Tap a pad to open a set, click to resume.");
-    }
 }
 
 /* Spawn the launcher's list script (names may have changed after a native
@@ -14694,13 +14687,12 @@ function selectOpenBootTool() {
 function selectBeginLaunch(k) {
     selectPhase.launching = true;
     selectPhase.statusLine = "Preparing...";
-    const isResume = (k === 127);
-    const chosen = isResume ? "current" : String(k);
-    if (!isResume) selectPhase.lastPad = k;
+    const chosen = String(k);
+    selectPhase.lastPad = k;
     /* A selection that CHANGES the set must not resume the tool until the
      * host's SET_CHANGED reload has run (active_set.txt and slot state are
-     * rewritten there). Resume-current and same-index taps skip the wait. */
-    selectPhase.awaitSetChange = (!isResume && k !== selectPhase.current);
+     * rewritten there). A same-index selection skips the wait. */
+    selectPhase.awaitSetChange = (k !== selectPhase.current);
     selectPhase.setChangeSeen = false;
     selectPhase.setWaitTicks = 0;
 
@@ -14757,16 +14749,6 @@ function tickSelectPhase() {
     /* Async list refresh landed? */
     if (selectPhase.listPending && selectParseList()) {
         selectPhase.listPending = false;
-    }
-
-    /* A copy/delete flow ended (shim reclaimed the OLED): names may have
-     * changed — refresh. display_mode 0->1 is the reclaim edge. */
-    if (typeof shadow_get_display_mode === "function") {
-        const dm = shadow_get_display_mode();
-        if (dm === 1 && selectPhase.prevDisplayMode === 0 && !selectPhase.launching) {
-            selectRefreshList();
-        }
-        selectPhase.prevDisplayMode = dm;
     }
 
     /* Launch trigger from the shim? */
@@ -14852,38 +14834,17 @@ function drawSelectPhase() {
         return;
     }
 
-    /* Headless actuator run (the hosting tool chose the pad itself): the
-     * only user-facing state is "your project is loading". */
-    if (selectPhase.headless) {
-        const hn = selectNameForIndex(selectPhase.lastPad >= 0 ? selectPhase.lastPad
-                                                               : selectPhase.current);
-        if (hn) {
-            const ht = truncateText(hn, 24);
-            print(Math.floor((SCREEN_WIDTH - ht.length * 5) / 2), 24, ht, 1);
-        }
-        const hs = selectPhase.statusLine || "Loading set...";
-        print(Math.max(0, Math.floor((SCREEN_WIDTH - hs.length * 6) / 2)), 38, hs, 1);
-        return;
+    /* The actuator run: the target was chosen before arming, so the only
+     * user-facing state is "your project is loading". Named from frame one
+     * (shadow_select_headless returns the armed pad). */
+    const hn = selectNameForIndex(selectPhase.lastPad >= 0 ? selectPhase.lastPad
+                                                           : selectPhase.current);
+    if (hn) {
+        const ht = truncateText(hn, 24);
+        print(Math.floor((SCREEN_WIDTH - ht.length * 5) / 2), 24, ht, 1);
     }
-
-    /* Tapped set name (Move just loaded it), else the resume target */
-    const shownIdx = selectPhase.lastPad >= 0 ? selectPhase.lastPad : selectPhase.current;
-    const name = selectNameForIndex(shownIdx);
-    if (name) {
-        const t = truncateText(name, 24);
-        print(Math.floor((SCREEN_WIDTH - t.length * 5) / 2), 22, t, 1);
-    }
-    /* Mid-session the picker takes a moment to open (the shim is walking
-     * Move into its Set Overview); taps in that window are queued, but say
-     * so — an unexplained quiet second reads as a dead session. */
-    if (typeof shadow_select_ready === "function" && !shadow_select_ready()) {
-        print(2, 40, "Opening picker...", 1);
-        drawFooter("One moment");
-        return;
-    }
-    print(2, 36, "Pad: open set", 1);
-    print(2, 46, "Click: resume this one", 1);
-    drawFooter("Copy/Delete work natively");
+    const hs = selectPhase.statusLine || "Loading set...";
+    print(Math.max(0, Math.floor((SCREEN_WIDTH - hs.length * 6) / 2)), 38, hs, 1);
 }
 
 function drawAnalyticsPrompt() {
@@ -17192,19 +17153,10 @@ globalThis.onMidiMessageInternal = function(data) {
         return;
     }
 
-    /* Boot set-select gate: the shim passively forwards pad taps (Move is
-     * handling them natively) so the screen can name the set being loaded.
-     * Everything else is either the shim's business (jog click = resume,
-     * decided there) or Move's — consume and ignore. */
-    if (view === VIEWS.SELECT_PHASE) {
-        if ((status & 0xF0) === 0x90 && d1 >= 68 && d1 <= 99 && d2 > 0 &&
-            !selectPhase.launching) {
-            selectPhase.lastPad = d1 - 68;
-            const name = selectNameForIndex(selectPhase.lastPad);
-            if (name) announce(name);
-        }
-        return;
-    }
+    /* Set-select actuator: no user surface — the shim strips every physical
+     * control for the duration, and the target was chosen before arming.
+     * Consume and ignore. */
+    if (view === VIEWS.SELECT_PHASE) return;
 
     /* Always track shift state (CC 49), even when canvas or other views consume MIDI */
     if ((status & 0xF0) === 0xB0 && d1 === 49) {

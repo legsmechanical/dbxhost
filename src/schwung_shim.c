@@ -868,7 +868,6 @@ static volatile int shadow_shift_held = 0;
  * needed). 0 = armed mid-session via shadow_select_arm(), where the gate must
  * open Move's native Set Overview itself (inject Shift+Step1) and back out of
  * it (inject Back) around the selection. Cleared with the phase. */
-static int select_boot_armed = 0;
 static void shim_select_blank_move_leds(void);   /* defined with the gate below */
 /* Suppress plain volume-touch hide until touch is fully released after
  * Shift+Vol shortcut launches, avoiding a brief native volume flash. */
@@ -3256,23 +3255,12 @@ static void init_shadow_shm(void)
                 shadow_control->open_tool_cmd = 1;
             }
         }
-        /* Boot set-select gate: a standalone launcher that wants the user to
-         * pick a set BEFORE the boot tool opens arms a marker file instead of
-         * boot_tool.json. The two are mutually exclusive by construction
-         * (the launcher writes one or the other); if both are somehow present
-         * the direct boot wins — a programmatic relaunch must never re-ask. */
+        /* Set-select actuator: armed only mid-session, by a tool calling
+         * shadow_select_arm(pad). Starts clean on every shim init. */
         shadow_control->select_phase = 0;
         shadow_control->select_launch = SELECT_LAUNCH_NONE;
         shadow_control->select_ready = 0;
         shadow_control->select_queue = -1;
-        if (!shadow_control->open_tool_cmd) {
-            struct stat _sp;
-            if (stat(SCHWUNG_INSTALL_DIR "/select_phase", &_sp) == 0) {
-                shadow_control->select_phase = 1;
-                shadow_control->select_ready = 1;   /* Move boots INTO its picker */
-                select_boot_armed = 1;
-            }
-        }
         shadow_control->ui_patch_index = 0;
         shadow_control->ui_request_id = 0;
         /* Reset overtake state on every shim init.
@@ -6234,21 +6222,9 @@ static void shim_remap_cable2_channels(uint8_t *shadow) {
  * ============================================================================ */
 
 #define SELECT_SETTLE_MS        700   /* pad tap -> launch trigger, if quiet   */
-/* OLED reclaim is IMMEDIATE when a flow ends. A settle here (originally
- * 400 ms) let Move's completion toast linger — but the toasts show while the
- * button is still held, so the only thing the settle actually displayed was
- * Move's DEFAULT screen flashing through between an aborted flow and our
- * reclaim (reported on hardware 2026-08-06). */
-#define SELECT_RECLAIM_MS       0
-
-static uint32_t select_pad_suppress_mask = 0;       /* Shift+pad latched suppressions */
-static int select_copy_held = 0;
-static int select_delete_held = 0;
 static int select_candidate_pad = -1;               /* pad awaiting launch settle */
 static uint64_t select_settle_deadline_ms = 0;
-static uint64_t select_reclaim_deadline_ms = 0;
-static int select_ceded = 0;                        /* we lowered display_mode for a flow */
-static int select_launched = 0;                     /* trigger fired; picker frozen */
+static int select_launched = 0;                     /* trigger fired; phase frozen */
 
 /* Mid-session (non-boot) arming only: gesture-injection state machines.
  * Entry walks Move into its Set Overview (Shift held + Step1, Move's own
@@ -6262,17 +6238,12 @@ static uint64_t select_entry_next_ms = 0;
 static int select_entry_attempts = 0;    /* gesture retries (Move settles late) */
 static int select_back_state = 0;        /* 0 idle, 1 down sent, 2 done */
 static uint64_t select_back_next_ms = 0;
-/* A pad tapped while the entry machine was still opening the overview: the
- * tap landed on whatever screen Move was leaving, so it selected nothing —
- * but the USER selected something. Remember the last such pad and replay it
- * (injected, so Move loads it for real) the moment the picker is up. */
+/* The pad to select, taken from ctrl->select_queue at arm time. It cannot be
+ * delivered until Move's overview is actually open, so it waits here and is
+ * replayed (injected, so Move loads it for real) once entry completes. */
 static int select_queued_pad = -1;
 static int select_replay_state = 0;      /* 0 idle, 1 down sent */
 static uint64_t select_replay_next_ms = 0;
-/* Headless actuator mode: the arming tool pre-chose the pad (ctrl->
- * select_queue) — the phase is pure plumbing, no user surface. Physical
- * pads and jog are ignored entirely; the replay drives the selection. */
-static int select_headless = 0;
 
 static void shim_select_inject(uint8_t cin, uint8_t status, uint8_t d1, uint8_t d2)
 {
@@ -6297,23 +6268,15 @@ static void shim_select_blank_move_leds(void)
     if (!shadow_control || !shadow_control->select_phase) return;
     if (shadow_control->overtake_mode) return;   /* a tool owns LEDs */
 
-    /* Two modes:
-     * FULL  — mid-session ENTRY only (arm → overview): strip every Move LED
-     *         write, including RGB sysex; the pads stay dark so Move's
-     *         previous-mode instrument UI never flashes (the overtake-exit
-     *         LED cache replay repaints it in exactly this window).
-     * PICKER — the phase proper (boot or entered): only the picker's own
-     *         lights show. Pad RGB rides cable-0 sysex → sysex passes; note
-     *         LEDs pass only for pads (68-99); button-CC LEDs pass only for
-     *         Copy and Delete. Track/step/transport LEDs: dark, matching the
-     *         input no-ops. */
-    /* Headless actuator: FULL strip for the whole run — there is no user
-     * surface, and the picker-mode pass-through let the native overview pads
-     * light up behind "Loading" (Josh, 2026-08-07: "falls back briefly to
-     * the native ui" during a switch). */
-    int entering = select_headless ||
-                   (!select_boot_armed && !select_launched && select_entry_state < 6);
-
+    /* Strip EVERY Move LED write for the whole run — note LEDs, button CCs,
+     * RGB sysex. There is no user surface to light: the actuator drives the
+     * overview itself, behind our screen. An earlier version passed the
+     * picker's own lights through once entry completed, which let the native
+     * overview pads light up behind "Loading" (Josh, 2026-08-07: "falls back
+     * briefly to the native ui" during a switch).
+     *
+     * Safe against leaving a working-but-dark surface: the strip lasts only
+     * as long as the phase, and the tool that resumes repaints from scratch. */
     uint8_t *shadow = schwung_spi_get_shadow(g_spi_handle);
     if (!shadow) return;
     uint8_t *midi_out = shadow + MIDI_OUT_OFFSET;
@@ -6321,19 +6284,9 @@ static void shim_select_blank_move_leds(void)
         uint8_t cable = (midi_out[i] >> 4) & 0x0F;
         uint8_t cin = midi_out[i] & 0x0F;
         uint8_t type = midi_out[i + 1] & 0xF0;
-        uint8_t d1 = midi_out[i + 2];
         if (cable != 0) continue;
-        int strip = 0;
-        if (entering) {
-            strip = (type == 0x90 || type == 0x80 || type == 0xB0 ||
-                     (cin >= 0x04 && cin <= 0x07));
-        } else {
-            if (type == 0x90 || type == 0x80)
-                strip = !(d1 >= 68 && d1 <= 99);
-            else if (type == 0xB0)
-                strip = !(d1 == CC_COPY || d1 == CC_DELETE);
-        }
-        if (strip) {
+        if (type == 0x90 || type == 0x80 || type == 0xB0 ||
+            (cin >= 0x04 && cin <= 0x07)) {
             midi_out[i] = 0; midi_out[i + 1] = 0;
             midi_out[i + 2] = 0; midi_out[i + 3] = 0;
         }
@@ -6346,31 +6299,23 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
     if (!shadow_control->select_phase) {
         /* Phase inactive: hold ALL per-arming state at its reset values,
          * UNCONDITIONALLY. The shim process outlives an arming, and a
-         * mid-session re-arm must start clean — in particular
-         * select_boot_armed must drop, or the entry machine never runs.
+         * mid-session re-arm must start clean.
          * An earlier version reset only when shim-side state was set, which
-         * missed exactly the boot selections the shim never saw (the launch
-         * consumed via SHM/JS with no pad/jog trigger recorded here). A few
+         * missed exactly the selections the shim never saw (the launch
+         * consumed via SHM/JS with no trigger recorded here). A few
          * stores per idle frame is free. */
-        select_pad_suppress_mask = 0;
-        select_copy_held = 0;
-        select_delete_held = 0;
         select_candidate_pad = -1;
-        select_ceded = 0;
         select_launched = 0;
         select_entry_state = 0;
         select_entry_attempts = 0;
         select_back_state = 0;
         select_queued_pad = -1;
         select_replay_state = 0;
-        select_headless = 0;
         /* NOT cleared here: ctrl->select_queue. It is an input MAILBOX the
          * armer writes BEFORE raising select_phase — clearing it on every
          * phase-down frame wiped the queue in the gap between the two writes
-         * (observed: headless arm degraded to an interactive phase). It is
-         * consumed at arm (case 0) and cleared by shadow_select_phase_end. */
-        select_reclaim_deadline_ms = 0;
-        select_boot_armed = 0;   /* any later arming is mid-session */
+         * (observed: the arm lost its pad and the run hung). It is consumed
+         * at arm (case 0) and cleared by shadow_select_phase_end. */
         return;
     }
     if (shadow_control->overtake_mode) return;   /* a tool owns the surface */
@@ -6382,7 +6327,7 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
      * is off, Move owns input again and the injected gesture lands natively.
      * D-Bus "Set Overview" (in_set_overview, shadow_dbus.c) confirms arrival;
      * a timeout claims the screen anyway rather than wedging the phase. */
-    if (!select_boot_armed && select_entry_state < 8 && !select_launched) {
+    if (select_entry_state < 8 && !select_launched) {
         switch (select_entry_state) {
         /* Timings measured on hardware (2026-08-06): the first cut used a
          * 150 ms settle + 60-80 ms gesture spacing and Move IGNORED the
@@ -6396,13 +6341,12 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
              * display (the LED blanking above handles the pads). */
             shadow_display_mode = 1;
             shadow_control->display_mode = 1;
-            /* Headless arming: the tool pre-chose the pad — consume it into
-             * the replay queue and run the phase as a silent actuator. */
+            /* The arming tool pre-chose the pad (shadow_select_arm refuses
+             * without one) — consume it into the replay queue. */
             if (shadow_control->select_queue >= 0) {
                 select_queued_pad = shadow_control->select_queue;
                 shadow_control->select_queue = -1;
-                select_headless = 1;
-                shadow_log("select gate: headless arm — actuator mode");
+                shadow_log("select gate: actuator armed");
             }
             select_entry_state = 1;
             select_entry_next_ms = now + 500;  /* let Move finish the overtake-exit mode change */
@@ -6481,11 +6425,10 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
         }
     }
 
-    /* Replay a tap queued during entry: inject the pad into Move (it never
-     * saw the original — the tap predates the overview) and arm the same
-     * launch candidate a live tap would have. The user tapped once; it works
-     * once the picker exists. */
-    if (!select_boot_armed && select_entry_state >= 8 &&
+    /* The overview is open: inject the chosen pad as a real tap so Move loads
+     * that set, and arm the launch candidate. The settle window below turns
+     * the candidate into the trigger once Move's load goes quiet. */
+    if (select_entry_state >= 8 &&
         select_queued_pad >= 0 && !select_launched) {
         if (select_replay_state == 0) {
             shim_select_inject(0x09, 0x90, (uint8_t)(68 + select_queued_pad), 100);
@@ -6509,7 +6452,7 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
     /* Mid-session back-out: once the launch trigger fired, tap Back so Move
      * returns from the overview to a normal mode before the tool resumes
      * over it (per the manual, Back reopens the previously-active mode). */
-    if (!select_boot_armed && select_launched && select_back_state < 2) {
+    if (select_launched && select_back_state < 2) {
         if (select_back_state == 0) {
             shim_select_inject(0x0B, 0xB0, CC_BACK, 127);
             select_back_state = 1;
@@ -6531,29 +6474,16 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
         int zero_it = 0;
 
         if (cin == 0x0B && type == 0xB0) {
-            /* Default-deny: the picker uses pads, jog, Copy, Delete — every
-             * other control is a no-op during the phase (Josh's call: no way
-             * to wander Move off the picker, no accidental transport/track
-             * side effects). Kept: jog wheel/click, Copy, Delete, and the
-             * master volume knob (output level, not UI). Shift is TRACKED
-             * (from the hardware buffer, for Shift+pad suppression and
-             * Shift+Back) but blocked from Move; Back is claimed for
-             * Shift+Back = leave the session. */
+            /* Default-deny. The phase has NO user surface — the actuator
+             * drives Move itself, behind our screen — so every control is a
+             * no-op, and letting one through would move Move off the overview
+             * the actuator is walking. The two exceptions: the master volume
+             * knob (output level, not UI) and Back, which is claimed so
+             * Shift+Back can leave the session. Shift itself is TRACKED from
+             * the hardware buffer for that combo, but blocked from Move. */
             switch (d1) {
-            case CC_JOG_CLICK:
-            case CC_COPY: case CC_DELETE:
             case CC_MASTER_KNOB:
-                break;                      /* allowed (jog click zeroed below) */
-            case CC_JOG_WHEEL:
-                /* Blocked: in the mid-session overview the wheel scrolls
-                 * Move's set highlight — INVISIBLE under our screen (and
-                 * silent with TTS off), and our jog click means "resume
-                 * current", not "open the highlighted": the combination
-                 * wedged a live session into do-nothing land (hardware,
-                 * 2026-08-07 morning — "Empty Set" announced with no tap).
-                 * Selection is pads-only; click is resume. */
-                zero_it = 1;
-                break;
+                break;                      /* allowed: output level, not UI */
             case CC_BACK:
                 zero_it = 1;
                 if (d2 > 0 && shadow_shift_held && !select_launched) {
@@ -6569,104 +6499,14 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
                 zero_it = 1;                /* Shift (49) included: tracked from hw only */
                 break;
             }
-            if (d1 == CC_COPY)   select_copy_held   = (d2 > 0);
-            if (d1 == CC_DELETE) select_delete_held = (d2 > 0);
-            if (d1 == CC_JOG_CLICK) {
-                /* Swallow from Move in both display states (inert natively,
-                 * but claimed is claimed) and treat a press outside a flow as
-                 * the resume trigger. */
-                zero_it = 1;
-                int flow = select_copy_held || select_delete_held;
-                /* Mid-session: no trigger until the entry machine is DONE —
-                 * a launch mid-gesture would strand an injected Shift-down
-                 * (the machine halts on select_launched). */
-                int entry_ready = select_boot_armed || select_entry_state >= 8;
-                if (select_headless) {
-                    /* actuator mode: jog is not a user surface either */
-                } else if (d2 > 0 && !flow && !select_launched && entry_ready) {
-                    select_launched = 1;
-                    select_candidate_pad = -1;
-                    shadow_control->select_launch = SELECT_LAUNCH_RESUME;
-                    shadow_log("select gate: jog click -> resume current set");
-                } else if (d2 > 0) {
-                    shadow_log(!entry_ready
-                               ? "select gate: jog click IGNORED (entry in progress)"
-                               : "select gate: jog click IGNORED (flow/launched)");
-                }
-            }
-            /* Picker frozen after the trigger: no more set management. */
-            if (select_launched && (d1 == CC_COPY || d1 == CC_DELETE))
-                zero_it = 1;
         } else if ((cin == 0x09 || cin == 0x08) &&
-                   (type == 0x90 || type == 0x80) &&
-                   !(d1 >= 68 && d1 <= 99)) {
-            /* Non-pad notes: block everything except the volume-knob touch
-             * (note 8 — pairs with the allowed CC 79). Track buttons, step
-             * buttons, knob touches: all no-ops during the phase. */
+                   (type == 0x90 || type == 0x80)) {
+            /* Notes, pads included: all no-ops during the phase. A physical
+             * pad tap must not reach Move — the actuator has already chosen,
+             * and a stray tap would load a DIFFERENT set under the tool that
+             * is about to resume. Only the volume-knob touch (note 8) passes,
+             * pairing with the allowed CC 79. */
             if (d1 != 8) zero_it = 1;
-        } else if ((cin == 0x09 || cin == 0x08) &&
-                   (type == 0x90 || type == 0x80) &&
-                   d1 >= 68 && d1 <= 99) {
-            uint32_t bit = 1u << (d1 - 68);
-            if (select_headless) {
-                /* Actuator mode: no user surface — a physical tap must not
-                 * hijack the pre-chosen selection or leak into Move. */
-                zero_it = 1;
-            } else if (type == 0x90 && d2 > 0) {
-                if (select_launched) {
-                    /* Trigger already fired — freeze the picker so a stray tap
-                     * cannot load a DIFFERENT set under the launching tool. */
-                    zero_it = 1;
-                } else if (shadow_shift_held) {
-                    /* Shift+pad suppressed; latch so the release is eaten too */
-                    select_pad_suppress_mask |= bit;
-                    zero_it = 1;
-                    shadow_log("select gate: pad SUPPRESSED (shift held)");
-                } else {
-                    int flow = select_copy_held || select_delete_held;
-                    if (flow) {
-                        /* Flow tap (paste target / delete confirm): Move's
-                         * business. It also voids any pending launch. */
-                        select_candidate_pad = -1;
-                        shadow_log("select gate: pad = flow tap (copy/delete)");
-                    } else if (!select_boot_armed && select_entry_state < 8) {
-                        /* Mid-session entry still in progress: Move is NOT
-                         * showing the picker yet, so this tap is landing on
-                         * whatever screen Move is still on — treating it as
-                         * a selection launched "pad N" against a set that
-                         * was never loaded (observed on hardware: a tap 1 s
-                         * after arming fired the launch before the overview
-                         * even opened). Not a candidate; it still passes to
-                         * Move like any other pad. */
-                        select_queued_pad = d1 - 68;
-                        shadow_log("select gate: pad queued (entry in progress)");
-                    } else {
-                        /* Launch candidate: Move loads the set now; the
-                         * trigger fires when the load has settled. A second
-                         * tap inside the window just moves the candidate. */
-                        select_candidate_pad = d1 - 68;
-                        select_settle_deadline_ms = now + SELECT_SETTLE_MS;
-                        {
-                            char _m[48];
-                            snprintf(_m, sizeof(_m), "select gate: pad %d candidate armed",
-                                     select_candidate_pad);
-                            shadow_log(_m);
-                        }
-                    }
-                }
-            } else {
-                /* note-off (or vel 0): eat it iff its press was eaten */
-                if (select_pad_suppress_mask & bit) {
-                    select_pad_suppress_mask &= ~bit;
-                    zero_it = 1;
-                } else if (select_launched) {
-                    zero_it = 1;
-                }
-            }
-        } else if (cin == 0x0A && type == 0xA0 && d1 >= 68 && d1 <= 99) {
-            /* pad aftertouch follows its note's fate */
-            if ((select_pad_suppress_mask & (1u << (d1 - 68))) || select_launched)
-                zero_it = 1;
         } else if (cin >= 0x08 && cin <= 0x0E && status >= 0x80) {
             /* Any other cable-0 channel message (non-pad aftertouch, pitch
              * bend, ...): no-op during the phase. ASIC metadata (status 0)
@@ -6682,62 +6522,25 @@ static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
         }
     }
 
-    /* Launch-settle expiry: the candidate survives a full quiet window ->
+    /* Launch-settle expiry: the replayed pad survives a full quiet window ->
      * that set is loaded and chosen. shadow_ui consumes select_launch. */
-    int flow_active = select_copy_held || select_delete_held;
     if (!select_launched && select_candidate_pad >= 0 &&
         now >= select_settle_deadline_ms) {
-        if (flow_active) {
-            select_candidate_pad = -1;   /* a flow opened mid-settle: void it */
-        } else {
-            select_launched = 1;
-            shadow_control->select_launch = (int8_t)select_candidate_pad;
-            /* Fast set-tracking: pad k ↔ user.song-index k, and Move has
-             * already loaded the set — hand the index to the tracker so the
-             * SET_CHANGED reload starts NOW instead of after Move lazily
-             * writes Settings.json (which trailed by up to ~5 s and was the
-             * dominant chunk of a project switch). */
-            shadow_set_tracking_force_index(select_candidate_pad);
-            {
-                char msg[64];
-                snprintf(msg, sizeof(msg), "select gate: pad %d -> launch",
-                         select_candidate_pad);
-                shadow_log(msg);
-            }
-            select_candidate_pad = -1;
+        select_launched = 1;
+        shadow_control->select_launch = (int8_t)select_candidate_pad;
+        /* Fast set-tracking: pad k ↔ user.song-index k, and Move has
+         * already loaded the set — hand the index to the tracker so the
+         * SET_CHANGED reload starts NOW instead of after Move lazily
+         * writes Settings.json (which trailed by up to ~5 s and was the
+         * dominant chunk of a project switch). */
+        shadow_set_tracking_force_index(select_candidate_pad);
+        {
+            char msg[64];
+            snprintf(msg, sizeof(msg), "select gate: pad %d -> launch",
+                     select_candidate_pad);
+            shadow_log(msg);
         }
-    }
-
-    /* OLED cede/reclaim around copy/delete flows: Move's confirm text lives
-     * on the native display, so hand the screen over for the flow's duration
-     * and take it back after a settle. Skipped once launched — the shadow UI
-     * is showing its "preparing" screen by then. */
-    if (!select_launched) {
-        if (flow_active) {
-            select_reclaim_deadline_ms = 0;
-            if (!select_ceded && shadow_display_mode) {
-                select_ceded = 1;
-                shadow_display_mode = 0;
-                shadow_control->display_mode = 0;
-                shadow_inject_knob_release = 1;
-                shadow_log("select gate: flow start -> OLED to Move");
-            }
-        } else if (select_ceded) {
-            if (select_reclaim_deadline_ms == 0) {
-                select_reclaim_deadline_ms = now + SELECT_RECLAIM_MS;
-            } else if (now >= select_reclaim_deadline_ms) {
-                select_ceded = 0;
-                select_reclaim_deadline_ms = 0;
-                shadow_display_mode = 1;
-                shadow_control->display_mode = 1;
-                shadow_log("select gate: flow settled -> OLED reclaimed");
-            }
-        }
-    } else if (select_ceded) {
-        /* Launched mid-cede (jog during tail): take the screen back now. */
-        select_ceded = 0;
-        shadow_display_mode = 1;
-        shadow_control->display_mode = 1;
+        select_candidate_pad = -1;
     }
 }
 
