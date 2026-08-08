@@ -5667,6 +5667,22 @@ function launchToolConfirmed(tool) {
         debugLog("TOOLS SELECT: entering file browser");
         enterToolFileBrowser(tool);
     } else if (tool.standalone) {
+        /* Refuse BEFORE anything is killed. launch-standalone.sh tears the
+         * running stack down first and the launcher's own same-boot guard
+         * only fires afterwards — mid-session that ordering strands two
+         * restart paths (supervisor watchdog-restore + launch-standalone's
+         * Move restart) fighting over the SPI device: observed twice on
+         * hardware 2026-08-08 as a hard-frozen UI needing a manual restart. */
+        if (standaloneSessionActive()) {
+            debugLog("TOOLS SELECT: standalone refused — a session is live this boot");
+            storePickerResultTitle = 'Session Running';
+            storePickerMessage = 'A standalone session is\nalready running.\nExit it first (Shift+Back).';
+            storeReturnView = null;
+            setView(VIEWS.STORE_PICKER_RESULT);
+            announce("A standalone session is already running");
+            needsRedraw = true;
+            return;
+        }
         debugLog("TOOLS SELECT: launching standalone binary");
         announce(`Launching ${tool.name}`);
         const binaryPath = tool.path + "/standalone";
@@ -15212,8 +15228,28 @@ function enterToolsMenu() {
     _enterToolsMenu();
     try {
         const overtakes = scanForOvertakeModules();
-        if (!Array.isArray(overtakes) || overtakes.length === 0) return;
         const tools = Array.isArray(toolModules) ? toolModules : [];
+        /* A SUSPENDED tool must be resumable from this menu even when its
+         * module is `hidden`. `hidden` suppresses BROWSING, not resuming —
+         * without this, a parked hidden module has no visible way back, and
+         * the only same-named entry the user finds may be its LAUNCHER,
+         * whose in-session launch tears the live session down (the exact
+         * trap hit in the P4a hands-on test). */
+        const listedIds = {};
+        for (const t of tools) { if (t.id) listedIds[t.id] = true; }
+        for (const sid of Object.keys(suspendedOvertakes)) {
+            if (listedIds[sid]) continue;
+            const all = scanForToolModules(true);
+            for (const h of all) {
+                if (h.id === sid) { tools.push(h); listedIds[sid] = true; break; }
+            }
+        }
+        if (!Array.isArray(overtakes) || overtakes.length === 0) {
+            toolModules = tools.map(function(t) {
+                return Object.assign({}, t, { kind: 'tool', suspended: !!(t.id && suspendedOvertakes[t.id]) });
+            });
+            return;
+        }
         const merged = [];
         for (const t of tools) {
             const isSuspended = !!(t.id && suspendedOvertakes[t.id]);
