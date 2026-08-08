@@ -342,6 +342,7 @@ void shadow_chain_dispatch_midi_to_slots(const uint8_t *pkt, int log_on, int *mi
                 host_chain_slots[i].instance) {
                 static const char *probe_keys[] = {
                     "synth_module", "fx1_module", "fx2_module",
+                    "fx3_module", "fx4_module",
                     "midi_fx1_module", "midi_fx2_module"
                 };
                 for (size_t k = 0; k < sizeof(probe_keys)/sizeof(probe_keys[0]); k++) {

@@ -42,7 +42,7 @@ const CC_SHIFT = MoveShift;
 
 /* Component UI state */
 let componentUiActive = false;       /* true when showing a component's native UI */
-let componentUiMode = "none";        /* "synth", "fx1", "fx2" */
+let componentUiMode = "none";        /* "synth", "fx1".."fx4" */
 let componentUi = null;              /* loaded component UI module */
 let componentUiReady = false;        /* has init() been called? */
 let componentSelectorActive = false; /* true when showing the component selector */
@@ -123,6 +123,8 @@ function componentKey(key) {
     if (componentUiMode === "synth") return `synth:${key}`;
     if (componentUiMode === "fx1") return `fx1:${key}`;
     if (componentUiMode === "fx2") return `fx2:${key}`;
+    if (componentUiMode === "fx3") return `fx3:${key}`;
+    if (componentUiMode === "fx4") return `fx4:${key}`;
     return key;
 }
 
@@ -1752,6 +1754,12 @@ function getComponentModuleId(mode) {
     if (mode === "fx2") {
         return host_module_get_param("fx2_module") || "";
     }
+    if (mode === "fx3") {
+        return host_module_get_param("fx3_module") || "";
+    }
+    if (mode === "fx4") {
+        return host_module_get_param("fx4_module") || "";
+    }
     return "";
 }
 
@@ -1814,6 +1822,8 @@ function getComponentSelectorItems() {
     const synth = hostFns.getParam("synth_module") || "";
     const fx1 = hostFns.getParam("fx1_module") || "";
     const fx2 = hostFns.getParam("fx2_module") || "";
+    const fx3 = hostFns.getParam("fx3_module") || "";
+    const fx4 = hostFns.getParam("fx4_module") || "";
 
     if (synth) {
         items.push({ mode: "synth", label: "Synth", value: synth });
@@ -1823,6 +1833,12 @@ function getComponentSelectorItems() {
     }
     if (fx2) {
         items.push({ mode: "fx2", label: "FX 2", value: fx2 });
+    }
+    if (fx3) {
+        items.push({ mode: "fx3", label: "FX 3", value: fx3 });
+    }
+    if (fx4) {
+        items.push({ mode: "fx4", label: "FX 4", value: fx4 });
     }
     /* Add edit and save options */
     items.push({ mode: "edit", label: "[Edit]", value: "" });
@@ -2307,6 +2323,8 @@ function getKnobMappingDisplayName(mapping) {
         "synth": synthModule || "Synth",
         "fx1": "FX1",
         "fx2": "FX2",
+        "fx3": "FX3",
+        "fx4": "FX4",
         "midi_fx": "MIDI FX"
     };
     const slotName = slotNames[mapping.target] || mapping.target;

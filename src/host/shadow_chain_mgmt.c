@@ -3626,41 +3626,22 @@ void shadow_inprocess_handle_param_request(void) {
                  * instance and activate eagerly to mirror the other load
                  * paths. */
                 if (shadow_plugin_v2->get_param) {
+                    /* Same key list as the lazy-activation probe in
+                     * shadow_midi.c — keep the two in step. fx3/fx4 are
+                     * fork-only slot-chain blocks; a state whose only
+                     * loaded component sits there must still activate. */
+                    static const char *probe_keys[] = {
+                        "synth_module", "fx1_module", "fx2_module",
+                        "fx3_module", "fx4_module",
+                        "midi_fx1_module", "midi_fx2_module"
+                    };
                     char buf[64];
                     int loaded = 0;
-                    int len = shadow_plugin_v2->get_param(shadow_chain_slots[slot].instance,
-                        "synth_module", buf, sizeof(buf));
-                    if (len > 0) {
-                        buf[len < (int)sizeof(buf) ? len : (int)sizeof(buf) - 1] = '\0';
-                        if (buf[0] != '\0') loaded = 1;
-                    }
-                    if (!loaded) {
-                        len = shadow_plugin_v2->get_param(shadow_chain_slots[slot].instance,
-                            "fx1_module", buf, sizeof(buf));
-                        if (len > 0) {
-                            buf[len < (int)sizeof(buf) ? len : (int)sizeof(buf) - 1] = '\0';
-                            if (buf[0] != '\0') loaded = 1;
-                        }
-                    }
-                    if (!loaded) {
-                        len = shadow_plugin_v2->get_param(shadow_chain_slots[slot].instance,
-                            "fx2_module", buf, sizeof(buf));
-                        if (len > 0) {
-                            buf[len < (int)sizeof(buf) ? len : (int)sizeof(buf) - 1] = '\0';
-                            if (buf[0] != '\0') loaded = 1;
-                        }
-                    }
-                    if (!loaded) {
-                        len = shadow_plugin_v2->get_param(shadow_chain_slots[slot].instance,
-                            "midi_fx1_module", buf, sizeof(buf));
-                        if (len > 0) {
-                            buf[len < (int)sizeof(buf) ? len : (int)sizeof(buf) - 1] = '\0';
-                            if (buf[0] != '\0') loaded = 1;
-                        }
-                    }
-                    if (!loaded) {
-                        len = shadow_plugin_v2->get_param(shadow_chain_slots[slot].instance,
-                            "midi_fx2_module", buf, sizeof(buf));
+                    for (size_t k = 0; !loaded &&
+                         k < sizeof(probe_keys)/sizeof(probe_keys[0]); k++) {
+                        int len = shadow_plugin_v2->get_param(
+                            shadow_chain_slots[slot].instance,
+                            probe_keys[k], buf, sizeof(buf));
                         if (len > 0) {
                             buf[len < (int)sizeof(buf) ? len : (int)sizeof(buf) - 1] = '\0';
                             if (buf[0] != '\0') loaded = 1;
