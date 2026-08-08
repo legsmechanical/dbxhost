@@ -553,6 +553,8 @@ Release: bump `src/module.json` version → commit → `git tag v0.2.0 && git pu
 
 - `docs/UPSTREAM.md` — **Upstream watermark**: how far `upstream/main` has been reviewed, what was applied/skipped, the keep-list of paths this fork owns, and what is still worth offering upstream. Replaced the dissolved patch series.
 - `docs/UI_LANGUAGE.md` — **Normative OLED UI spec**: the 128×64 cell grid, fonts, header/list/picker/dialog shapes, selection grammar, LED vocabulary, input grammar. Read before building or rebuilding any screen.
+- `docs/PRIMARY_SURFACE.md` — **Primary surface + service stack** (P4a): the toggle-gated
+  ownership inversion — derived claims, `host_register_primary`, `host_open_service`.
 - `docs/API.md` — JS API reference (display, MIDI, host fns, LED colors)
 - `docs/MODULES.md` — Module development guide (module.json, capabilities, tool_config, DSP API, Signal Chain integration, Remote UI `web_ui.html` + `schwungRemote` postMessage)
 - `docs/LOGGING.md` — Unified logging

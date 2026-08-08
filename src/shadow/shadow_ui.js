@@ -190,6 +190,13 @@ import {
     drawGlobalSettings as _drawGlobalSettings
 } from './shadow_ui_settings.mjs';
 
+import {
+    NEUTRAL_CLAIMS as PRIMARY_NEUTRAL_CLAIMS,
+    deriveClaims as primaryDeriveClaims,
+    computeOps as primaryComputeOps,
+    applyOps as primaryApplyOps
+} from './shadow_ui_primary.mjs';
+
 /* Track buttons - derive from imported constants */
 const TRACK_CC_START = MoveRow4;  // CC 40
 const TRACK_CC_END = MoveRow1;    // CC 43
@@ -410,6 +417,10 @@ globalThis.shadow_corun_open = function(id, keep_mask, args) {
 };
 
 globalThis.shadow_corun_close = function() {
+    /* An overlay opened through the primary service stack must close through
+     * it, so the pop recomputes derived claims. All existing close sites
+     * (Menu on the picker, framework Back) funnel through here. */
+    if (primaryStackTopIsOverlay()) { host_close_service_impl(null); return; }
     if (corunOverlayId == null) return;
     corunOverlayId = null;
     corunOverlayRootView = -1;
@@ -420,6 +431,210 @@ globalThis.shadow_corun_close = function() {
     needsRedraw = true;
 };
 /* ==== CO-RUN VIEW ADDRESSING (end) ==== */
+
+/* ==== PRIMARY SURFACE + SERVICE STACK (P4a, begin) ====================== *
+ *
+ * The additive half of the ownership inversion. When the toggle file
+ * primary.json exists under HOST_STATE_ROOT, a module may register itself as
+ * the session's PRIMARY SURFACE; host screens are then reached only through
+ * a SERVICE STACK, and every hardware-ownership claim (input routing, co-run
+ * split, LED ownership, sysex suppression, vol/edit-CC/pad blocks) is
+ * DERIVED from the stack each tick and diff-applied — never asserted at
+ * enter/exit sites, never re-asserted on return. Ownership desync retires
+ * on this path because there is no handoff to forget.
+ *
+ * Without primary.json every call below is inert and the classic overtake /
+ * co-run lifecycle runs untouched: a bad device session is one file-deletion
+ * from recovery. P4b deletes the old path only after this one is proven.
+ *
+ * The pure engine (derive/diff/apply) lives in shadow_ui_primary.mjs and is
+ * unit-tested off-device (tests/host/test_primary_claims.sh). This section
+ * is only the stateful rim: the stack, the effector table over the existing
+ * host bindings, and the per-tick reconcile. */
+
+const PRIMARY_TOGGLE_PATH = HOST_STATE_ROOT + "/primary.json";
+const primaryActive = (typeof host_file_exists === "function") &&
+    host_file_exists(PRIMARY_TOGGLE_PATH);
+
+let primarySurface = null;   /* {id, claims, onServiceReturn} or null */
+let primaryStack = [];       /* [{id, opts, claims, kind}] bottom→top */
+let primaryPrevClaims = { ...PRIMARY_NEUTRAL_CLAIMS };
+
+/* Service registry — the generalization of CORUN_ENTRIES. `kind` decides the
+ * non-claim bookkeeping a push/pop performs:
+ *   session — a co-run session (chain editor / Move-native). The existing
+ *             SHM-state poll primes and tears down the editor UI, exactly as
+ *             it does when a tool calls shadow_corun_begin directly.
+ *   overlay — an addressable host screen drawn over the surface (the
+ *             CORUN_ENTRIES set). Needs the coRunView capture dance.
+ * Claims are a function of the open opts so callers can pass masks/ids. */
+const PRIMARY_SERVICES = {
+    chain_editor: {
+        kind: "session",
+        claims: (o) => ({
+            corun_target: 1, corun_id: (o && o.slot) | 0,
+            keep_mask: (o && o.keep_mask) | 0,
+            led_keep_mask: (o && o.led_keep_mask) | 0,
+            suppress_sysex: 0,
+        }),
+    },
+    move_native: {
+        kind: "session",
+        claims: (o) => ({
+            corun_target: 2, corun_id: (o && o.track) | 0,
+            keep_mask: (o && o.keep_mask) | 0,
+            led_keep_mask: (o && o.led_keep_mask) | 0,
+            skip_led_clear: 1,
+            suppress_sysex: 0,
+        }),
+    },
+    slots:           { kind: "overlay", enter: function() { view = VIEWS.SLOTS; } },
+    chain_editor_view: { kind: "overlay", enter: function(o) { enterChainEdit((o && o.slot) | 0); } },
+    master_fx:       { kind: "overlay", enter: function() { enterMasterFxSettings(); } },
+    global_settings: { kind: "overlay", enter: function() { enterGlobalSettings(); } },
+    fx_picker:       { kind: "overlay", enter: function() { enterFxBusPicker(); } },
+};
+
+function primaryStackTopIsOverlay() {
+    if (!primaryActive || primaryStack.length === 0) return false;
+    return primaryStack[primaryStack.length - 1].kind === "overlay";
+}
+
+/* The effector table: each op maps onto the host binding that already owns
+ * the SHM write-ordering for that transition. */
+const PRIMARY_EFFECTORS = {
+    overtake_mode: (o) => { if (typeof shadow_set_overtake_mode === "function") shadow_set_overtake_mode(o.mode); },
+    corun_begin:   (o) => { if (typeof shadow_corun_begin === "function") shadow_corun_begin(o.target, o.id, o.keep_mask); },
+    corun_end:     ()  => { if (typeof shadow_corun_end === "function") shadow_corun_end(); },
+    corun_overlay: (o) => { if (typeof shadow_corun_overlay === "function") shadow_corun_overlay(o.active, o.keep_mask | 0); },
+    led_keep:      (o) => { if (typeof shadow_corun_set_led_keep_mask === "function") shadow_corun_set_led_keep_mask(o.mask); },
+    skip_led_clear:(o) => { if (typeof shadow_set_skip_led_clear === "function") shadow_set_skip_led_clear(o.on); },
+    suppress_sysex:(o) => { if (typeof shadow_set_overtake_suppress_sysex === "function") shadow_set_overtake_suppress_sysex(o.on); },
+    vol_block:     (o) => { if (typeof host_vol_block === "function") host_vol_block(o.on); },
+    edit_cc_block: (o) => { if (typeof host_edit_cc_block === "function") host_edit_cc_block(o.on); },
+    pad_block:     (o) => { if (typeof host_pad_block === "function") host_pad_block(o.on); },
+    canvas_input:  (o) => { if (typeof host_canvas_input === "function") host_canvas_input(o.on); },
+    passthrough:   (o) => {
+        if (typeof shadow_set_param_timeout === "function") shadow_set_param_timeout(0, "passthrough", o.csv, 100);
+        else if (typeof shadow_set_param === "function") shadow_set_param(0, "passthrough", o.csv);
+    },
+};
+
+/* Recompute effective claims and apply the difference. Cheap when nothing
+ * changed (both pure calls return early shapes); called every tick while a
+ * primary is registered, and directly from push/pop for immediacy. */
+function reconcilePrimaryClaims() {
+    if (!primaryActive || !primarySurface) return;
+    const next = primaryDeriveClaims(primarySurface.claims, primaryStack);
+    const ops = primaryComputeOps(primaryPrevClaims, next);
+    if (ops.length === 0) return;
+    primaryApplyOps(ops, PRIMARY_EFFECTORS);
+    primaryPrevClaims = next;
+}
+
+/* Framework-initiated closes: the shim's Back handler may end a co-run
+ * session on its own (SHM target drops to NONE while our top-of-stack still
+ * claims it). Detect and unwind so the stack, the derived claims, and the
+ * module's onServiceReturn stay truthful. Runs from tick after the SHM poll. */
+function reconcilePrimaryFrameworkClose() {
+    if (!primaryActive || !primarySurface || primaryStack.length === 0) return;
+    const top = primaryStack[primaryStack.length - 1];
+    if (top.kind !== "session") return;
+    const st = (typeof shadow_corun_state === "function") ? shadow_corun_state() : null;
+    if (st && st.target !== 0) return;    /* session still live */
+    /* Pop WITHOUT emitting corun_end (the framework already did); resync
+     * prevClaims to reality first so the diff doesn't re-end a dead session. */
+    primaryStack.pop();
+    primaryPrevClaims = { ...primaryPrevClaims, corun_target: 0, corun_id: 0, keep_mask: 0, led_keep_mask: 0 };
+    reconcilePrimaryClaims();
+    notifyServiceReturn(top.id, null);
+}
+
+function notifyServiceReturn(id, result) {
+    if (primarySurface && typeof primarySurface.onServiceReturn === "function") {
+        try { primarySurface.onServiceReturn(id, result); }
+        catch (e) { debugLog("onServiceReturn(" + id + ") threw: " + e); }
+    }
+}
+
+/* ---- module-facing API (plain globals; tool + shadow_ui share one context) */
+
+/* Is the primary-surface path live this session? A RUNTIME MODE check (the
+ * toggle file), deliberately not a capability probe — the bindings exist
+ * unconditionally, they are inert without the toggle. */
+globalThis.host_primary_active = function() {
+    return !!primaryActive;
+};
+
+/* Register the session's primary surface. Returns true when the primary
+ * path is live and the registration took; false → caller uses the classic
+ * overtake lifecycle. `surface` = {id, claims, onServiceReturn}. init/tick/
+ * onMidi/draw stay with the existing module-callback machinery in P4a — the
+ * additive phase inverts OWNERSHIP, not the dispatcher. */
+globalThis.host_register_primary = function(surface) {
+    if (!primaryActive || !surface) return false;
+    primarySurface = {
+        id: String(surface.id || overtakeModuleId || "primary"),
+        claims: surface.claims || {},
+        onServiceReturn: surface.onServiceReturn || null,
+    };
+    primaryStack = [];
+    /* First reconcile re-derives everything from the declaration — including
+     * whatever the classic load path already asserted imperatively. The ops
+     * are idempotent SHM writes, so re-application is self-healing, not a
+     * glitch. */
+    reconcilePrimaryClaims();
+    debugLog("host_register_primary: " + primarySurface.id + " (stack live)");
+    return true;
+};
+
+/* Push a service. Returns true if the id is known and the push happened. */
+globalThis.host_open_service = function(id, opts) {
+    if (!primaryActive || !primarySurface) return false;
+    const entry = PRIMARY_SERVICES[id];
+    if (!entry) return false;
+    const claims = (typeof entry.claims === "function") ? entry.claims(opts) : {};
+    if (entry.kind === "overlay") {
+        /* Overlay claims: OLED to shadow_ui over the surface, with the
+         * caller's keep mask. Uniform for every overlay service. */
+        claims.overlay = 1;
+        claims.overlay_keep_mask = (opts && opts.keep_mask) | 0;
+    }
+    primaryStack.push({ id: id, opts: opts || null, claims: claims, kind: entry.kind });
+    reconcilePrimaryClaims();
+    if (entry.kind === "overlay") {
+        /* Same view-capture dance as shadow_corun_open, minus the SHM write
+         * (the reconcile above owns that). corunOverlayId keeps the existing
+         * draw/back machinery working unchanged. */
+        corunOverlayPrevMask = primaryPrevClaims.keep_mask | 0;
+        corunOverlayId = id;
+        coRunView = VIEWS.OVERTAKE_MODULE;
+        runCoRunChainEdit(function() { if (entry.enter) entry.enter(opts); });
+        corunOverlayRootView = coRunView;
+    }
+    needsRedraw = true;
+    return true;
+};
+
+function host_close_service_impl(result) {
+    if (!primaryActive || primaryStack.length === 0) return false;
+    const top = primaryStack.pop();
+    if (top.kind === "overlay") {
+        corunOverlayId = null;
+        corunOverlayRootView = -1;
+        coRunView = VIEWS.OVERTAKE_MODULE;
+    }
+    reconcilePrimaryClaims();
+    notifyServiceReturn(top.id, result);
+    needsRedraw = true;
+    return true;
+}
+
+globalThis.host_close_service = function(result) {
+    return host_close_service_impl(result === undefined ? null : result);
+};
+
+/* ==== PRIMARY SURFACE + SERVICE STACK (P4a, end) ======================== */
 
 
 /* Special action key for swap module option */
@@ -16187,6 +16402,13 @@ globalThis.tick = function() {
             }
         }
     }
+
+    /* PRIMARY SURFACE (P4a): derive + apply ownership claims from the service
+     * stack, and unwind stack entries whose co-run session the framework
+     * already ended (runs right after the SHM poll above so both observers
+     * agree within one tick). Inert without primary.json + a registration. */
+    reconcilePrimaryFrameworkClose();
+    reconcilePrimaryClaims();
 
     /* Guarded: a throw in any draw function would otherwise repeat every
      * frame — frozen screen with no recovery, since the C loop keeps
