@@ -236,6 +236,24 @@ Only a set needing that rewrite takes a relaunch; every other switch is
 suspend → actuate → resume, and the tool's resume-edge set-UUID check is the
 project switch.
 
+**Nothing native shows during entry.** The shim claims the OLED in
+`init_shadow_shm`, which runs on the first SPI mailbox detection — before Move
+can push a display frame — so the panel shows only the shadow buffer from the
+first frame onward, and the splash-end handoff is explicitly guarded against
+dropping back to Move while a boot tool is pending.
+
+The LEDs needed the same treatment and did not have it. Move boots *underneath*
+the session: it loads its set and paints pads and buttons at full brightness,
+and for the whole ~3.4 s boot splash that native surface was lit under the
+launcher's artwork. `boot_tool_led_blank` (armed beside `open_tool_cmd` when
+`boot_tool.json` is present) strips every Move LED write until the boot tool
+takes overtake — the same stripping the select actuator uses, in the same
+function. It releases two ways, and needs both: on `overtake_mode` (the tool
+took the surface — which also *clears* the latch, so it cannot come back when
+that tool later drops to the menu), and on a 20 s deadline, because a boot tool
+that never arrives never raises overtake and would otherwise leave the device
+dark and dead-looking with no way back. Pinned by `tests/host/test_boot_led_blank.sh`.
+
 **Session branding.** The build ships `splash.hex` (128×64 1-bpp artwork,
 2048 hex chars) + `splash_caption.txt` ("Schwung base: <version>", generated
 from `src/host/version.txt` at build time) into the install root; the host's

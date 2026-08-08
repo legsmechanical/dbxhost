@@ -869,6 +869,17 @@ static volatile int shadow_shift_held = 0;
  * open Move's native Set Overview itself (inject Shift+Step1) and back out of
  * it (inject Back) around the selection. Cleared with the phase. */
 static void shim_select_blank_move_leds(void);   /* defined with the gate below */
+/* Boot-tool LED blank: 1 from shim init until the boot tool takes overtake.
+ * A latch, not a live condition — it must not re-arm when that tool later
+ * exits to the menu, where Move's LEDs are legitimately the user's surface.
+ * Bounded by a deadline: if the boot tool never arrives (missing module, a
+ * throwing init, a stale boot_tool.json), holding the blank forever would
+ * leave a dark, dead-looking surface with no way back. Expiring hands the
+ * LEDs to Move, which is the honest fallback — the session is stock-ish at
+ * that point anyway. */
+#define BOOT_LED_BLANK_MAX_MS 20000
+static int boot_tool_led_blank = 0;
+static uint64_t boot_tool_led_blank_deadline_ms = 0;
 /* Suppress plain volume-touch hide until touch is fully released after
  * Shift+Vol shortcut launches, avoiding a brief native volume flash. */
 static volatile int shadow_block_plain_volume_hide_until_release = 0;
@@ -3253,6 +3264,14 @@ static void init_shadow_shm(void)
             struct stat _bt;
             if (stat(SCHWUNG_INSTALL_DIR "/boot_tool.json", &_bt) == 0) {
                 shadow_control->open_tool_cmd = 1;
+                /* ...and hide Move's LEDs until that tool owns the surface.
+                 * The shadow display is claimed from this point on, so the
+                 * screen is ours for the whole boot — but Move still boots
+                 * underneath, loads its set and paints the pads and buttons,
+                 * which stayed fully lit under the boot splash for the ~3.4 s
+                 * it runs. Nothing else strips them: the only other blanking
+                 * is the select actuator's, and that never runs at boot. */
+                boot_tool_led_blank = 1;
             }
         }
         /* Set-select actuator: armed only mid-session, by a tool calling
@@ -6253,7 +6272,14 @@ static void shim_select_inject(uint8_t cin, uint8_t status, uint8_t d1, uint8_t 
         shadow_log("select gate: inject ring full — gesture event dropped");
 }
 
-/* PRE-IOCTL: blank Move's LED writes during the mid-session entry window.
+/* PRE-IOCTL: blank Move's LED writes while Schwung owns the surface but no
+ * tool has taken it yet. Two windows, same problem and same fix:
+ *   - BOOT, while a boot tool is pending (boot_tool_led_blank),
+ *   - a set-select actuator run (select_phase).
+ * In both the shadow display is claimed, so the user sees our screen — while
+ * Move, running underneath, paints its pads and buttons at full brightness.
+ *
+ * Below: the mid-session entry window.
  * Between the tool's suspend and the picker, Move sits in its previous mode
  * and repaints the pads with its instrument UI — a visible flash the user
  * never asked to see (reported on hardware 2026-08-06). While the entry
@@ -6265,8 +6291,27 @@ static void shim_select_inject(uint8_t cin, uint8_t status, uint8_t d1, uint8_t 
  * never leave a working-but-dark picker. */
 static void shim_select_blank_move_leds(void)
 {
-    if (!shadow_control || !shadow_control->select_phase) return;
-    if (shadow_control->overtake_mode) return;   /* a tool owns LEDs */
+    if (!shadow_control) return;
+    /* A tool owns LEDs — and if this is the boot tool, drop the latch for
+     * good: once it has taken the surface, any LATER moment with overtake
+     * off is the menu, where Move's own LEDs are what the user should see. */
+    if (shadow_control->overtake_mode) {
+        boot_tool_led_blank = 0;
+        return;
+    }
+    if (!shadow_control->select_phase && !boot_tool_led_blank) return;
+    if (boot_tool_led_blank) {
+        /* Deadline starts on the first blanked frame, not at init: the clock
+         * matters from when the user can actually see the surface. */
+        uint64_t _now = now_mono_ms();
+        if (boot_tool_led_blank_deadline_ms == 0) {
+            boot_tool_led_blank_deadline_ms = _now + BOOT_LED_BLANK_MAX_MS;
+        } else if (_now >= boot_tool_led_blank_deadline_ms) {
+            boot_tool_led_blank = 0;
+            shadow_log("boot LED blank: timed out — releasing LEDs to Move");
+            if (!shadow_control->select_phase) return;
+        }
+    }
 
     /* Strip EVERY Move LED write for the whole run — note LEDs, button CCs,
      * RGB sysex. There is no user surface to light: the actuator drives the

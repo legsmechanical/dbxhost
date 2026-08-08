@@ -563,8 +563,8 @@ let splashTick = 0;
  *   splash_caption.txt  one line drawn in a band at the bottom (e.g. the
  *                       Schwung base version, so provenance stays visible)
  * Honoured ONLY when a standalone session-boot signal is also present
- * (select_phase marker or boot_tool.json) — a stray splash.hex on an
- * ordinary install can never rebrand stock Schwung's splash. */
+ * (boot_tool.json) — a stray splash.hex on an ordinary install can never
+ * rebrand stock Schwung's splash. */
 let customSplash = undefined;   /* undefined = not probed; null = none */
 let customSplashCaption = "";
 function ensureCustomSplash() {
@@ -572,9 +572,7 @@ function ensureCustomSplash() {
     customSplash = null;
     try {
         if (typeof host_file_exists !== "function") return;
-        const sessionBoot =
-            host_file_exists(HOST_STATE_ROOT + "/select_phase") ||
-            host_file_exists(HOST_STATE_ROOT + "/boot_tool.json");
+        const sessionBoot = host_file_exists(HOST_STATE_ROOT + "/boot_tool.json");
         if (!sessionBoot || !host_file_exists(HOST_STATE_ROOT + "/splash.hex")) return;
         const hex = (host_read_file(HOST_STATE_ROOT + "/splash.hex") || "").trim();
         if (hex.length < 2048) return;
