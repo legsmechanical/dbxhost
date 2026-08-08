@@ -6,7 +6,7 @@ Schwung is a framework for custom JavaScript and native DSP modules on Ableton M
 
 Keep this file, `docs/API.md`, `docs/MODULES.md`, and the user manual in `../schwung-catalog-site/manual.html` in sync with code changes (see Release Checklist).
 
-## 🤝 This host and dAVEBOx are ONE project (standing rule, 2026-08-04)
+## 🤝 This host and dAVEBOx are ONE repo (standing rule; merged 2026-08-08)
 
 This fork exists to serve **dAVEBOx**. Josh, 2026-08-04: *"I want to continue working on davebox and
 the custom host simultaneously so there's no conceptual separation between what davebox needs and
@@ -14,23 +14,25 @@ what the host can provide. What we need the host to do, we change."*
 
 So a davebox need is a valid reason to change this host. Do not treat it as an outside request.
 
-- **The module lives in `../schwung-davebox`** (its `main` is the dAVEBOx SA line). Read it freely;
-  a change here that davebox depends on should land alongside the davebox change.
-- **Commit to `main` here directly** — see Testing below; it is not protected.
-- **`standalone/`** in this repo is the SA launcher + `davebox-heal` + `config.sh` + build/install
-  scripts, so host + launcher + heal + installer ship as one thing. `standalone/scripts/install-host.sh`
-  builds and deploys the whole host half in one command.
-- **The channel for "davebox needs a fact from the host" is `host_build_info()`**
-  (`src/shadow/shadow_ui.c`). Add the field there and **bump `SCHWUNG_BUILD_INFO_CONTRACT`**
-  (`src/host/shadow_constants.h`) whenever a consumer may depend on it — davebox requires a minimum
-  and shows "HOST TOO OLD" rather than silently degrading.
-- ⚠ **A capability expressed as a param-key NAMESPACE cannot be probed by a module with `typeof`.**
-  `fx3:`/`fx4:` and `send_fx:a:` are fork-only namespaces; a module that assumes them renders rows
-  whose reads return nothing and whose writes vanish. Anything of that shape MUST be reported through
-  `host_build_info()` — see the divergence note below.
-- **Keep changes generic anyway** (no module named, docs in the same commit). Not to satisfy
-  upstream — because this fork carries a rebase delta forever, and a generic change can eventually
-  retire from it. Upstream PRs are optional; generic authorship is not.
+- **The module lives in `davebox/`** — subtree-merged with its full history on 2026-08-08 (P1 of
+  the re-architecture), host files staying at their upstream paths. It is the **sole living SA
+  source**. `../schwung-davebox` still exists but is frozen **dAVEBOx Legacy** (stock-hosted);
+  SA changes never backport there.
+- **Commit to `main` here directly** — see Testing below; it is not protected. A cross-seam change
+  (host + module) is now **one commit**.
+- **One command deploys the whole deliverable:** `standalone/scripts/install-sa.sh`. The two
+  half-installers (`standalone/scripts/install-host.sh`, `davebox/scripts/install_sound.sh`) stay
+  usable when iterating on one side.
+- **📌 No capability probing. If the code is in the tree, the feature exists.**
+  One host, one module, shipped together and versioned together, so a `typeof host_*` gate can only
+  ever be true. The skew machinery — `host_build_info()` contract bumps,
+  `SCHWUNG_BUILD_INFO_CONTRACT`, davebox's `HOST_CONTRACT_MIN` and its "HOST TOO OLD" screen, the
+  `typeof` gates and their dual-path branches — is **being deleted in P2**, not extended.
+  Do not add a gate; do not bump the contract. ⚠ ~332 gates still exist until P2 lands: leave them
+  alone rather than half-removing them, and never write a new one.
+- **Keep changes generic anyway** (no module named, docs in the same commit). Not because upstream
+  demands it — because a generic change *can* be offered upstream, and each one that merges shrinks
+  what this fork carries. See `docs/UPSTREAM.md`.
 
 ## ⚠️ Fork-only divergences (never push upstream)
 
@@ -39,7 +41,9 @@ Some changes live in this fork's daily-driver build only and must **never** be c
 - **Move FX = 4 insert blocks per slot** (upstream stays at 2). `MOVE_FX_BLOCKS = 4` in `src/host/shadow_chain_mgmt.h:25` and `MOVE_FX_BLOCKS_JS = 4` in `src/shadow/shadow_ui.js:909` — both bumped from 2→4, adding 2 extra effect blocks across the four shadow slots. Both `#define`/`const` carry a `fork daily-driver build` comment. The upstream Move FX feature is `08172e31` (2026-06-09), which is present here and stays at 2 blocks.
   ⚠ **The isolation this originally had is GONE.** It was once a standalone commit (`ab5ec6da`) kept separate precisely so the upstream feature could be cherry-picked unchanged — but a rebase folded it together with Send FX, and both now live in **`0d6402b6`** (2026-06-14, *"feat(fx): Send FX + Move FX buses + generic FX-bus picker"*). So there is no longer a commit that isolates the 2→4 bump; separating it again means splitting `0d6402b6` by hand. Re-isolate it if an upstream FX sync is ever attempted.
 - **Three fork-only JS bindings: `host_vol_block`, `host_edit_cc_block`, `host_canvas_input`.** Derive this list from the `JS_SetPropertyStr(ctx, global_obj, ...)` registrations, diffed against `upstream/main` — **not** from `docs/API.md`, which has been incomplete before and produced an undercount of exactly this list. `host_vol_block` and `host_edit_cc_block` are called by the davebox module (`ui/ui_engine.mjs:131`, `ui/ui_sound.mjs:2190`), both `typeof`-gated; `host_canvas_input` (`src/shadow/shadow_ui.c:2634`) currently has no external caller — only this fork's own `shadow_ui.js`. All three are marked `[FORK-ONLY]` in `docs/API.md`. **If a rebase removes one that a module calls, the module loses a feature with no error** — `typeof` gating makes absence indistinguishable from a stock install.
-- **⚠ The JS-binding list is NOT the whole fork surface, and this is the dangerous part.** The fork also adds **param-key namespaces** that no `typeof` check can probe, and davebox's sound mode hardcodes them: `fx3:`/`fx4:` (upstream has only two audio-FX blocks — `ui/ui_sound.mjs:56`) and `send_fx:a:`/`send_fx:b:` (Send FX is fork-only; zero `send_fx` hits in `upstream/main` — `ui/ui_sound.mjs:89`). Sound mode's entry gate is `typeof shadow_corun_begin`, which **is** upstream, so sound mode is fully reachable on a stock host — where those rows render but read unrouted prefixes and their writes vanish. That is *silent misbehaviour*, not graceful degradation. **A `typeof`-only gating audit will report this surface as clean when it is not.** Any fork feature exposed as a param prefix rather than a function needs an explicit capability probe (a fork get_param key whose absence hides the rows), or the consuming module must be declared fork-host-only in writing.
+- **⚠ The JS-binding list is NOT the whole fork surface, and this is the dangerous part.** The fork also adds **param-key namespaces** that no `typeof` check can probe, and davebox's sound mode hardcodes them: `fx3:`/`fx4:` (upstream has only two audio-FX blocks — `ui/ui_sound.mjs:56`) and `send_fx:a:`/`send_fx:b:` (Send FX is fork-only; zero `send_fx` hits in `upstream/main` — `ui/ui_sound.mjs:89`). Sound mode's entry gate is `typeof shadow_corun_begin`, which **is** upstream, so sound mode was fully reachable on a stock host — where those rows rendered but read unrouted prefixes and their writes vanished. That is *silent misbehaviour*, not graceful degradation, and **a `typeof`-only gating audit reports this surface as clean when it is not**.
+
+**As of the 2026-08-08 merge this class of bug is closed by construction, not by better probing.** dAVEBOx SA is declared fork-host-only in the strongest available sense: it ships in this repo, in this deliverable, and only ever runs under this host. There is no stock-host configuration left to misbehave in. The remaining relevance of the paragraph above is historical — keep it as the reason the P2 de-gate is safe, and as the standing warning for any *other* module that might reach for these prefixes.
 - **Slot synth-chain = 4 audio-FX blocks** (`fx1`..`fx4`, upstream had 2). The 3rd/4th insert FX inside a loaded synth's signal chain are fork-only. Because this divergence touches MANY sites (`CHAIN_COMPONENTS`/`createEmptyChainConfig` in `shadow_ui.js`; set+get_param prefix routing, `fxN:bypassed`, knob-mapping, and chain_params/ui_hierarchy fallbacks in `src/modules/chain/dsp/chain_host.c`; patch/preset parse in `chain_patch.c`; slot activation in `shadow_midi.c` + `shadow_chain_mgmt.c`), **any change to FX-block handling must be checked at fx3/fx4 too — they are easy to miss.** Known asymmetries that were NOT extended to fx3/fx4 (TODO if blocks 3-4 misbehave): slot lazy-activation probe (`shadow_midi.c:341`) and set-restore activation (`shadow_chain_mgmt.c:3504`) only check fx1/fx2; `chain/ui.js` component selector only handles fx1/fx2. The `fxN:` get_param routing (`chain_host.c`, ~line 1791) was missing fx3/fx4 — fixed so block 3-4 param pages open instead of dead-ending on "No presets".
 
 ## Code Style
@@ -67,9 +71,11 @@ Cross-compile via `${CROSS_PREFIX}gcc` for Move's ARM. See `BUILDING.md`.
 Static/regression suite: `for t in tests/{host,shadow,store,build}/*.sh; do bash "$t"; done`
 (~95 shell tests: source-invariant pins, compiled C units, node-run .mjs units).
 **CI gates the `tests/host/` subset** — `.github/workflows/ci.yml` runs `host-tests`
-(`make -C tests/host test` + all `tests/host/*.sh`, all green), `go`
+(`make -C tests/host test` + all `tests/host/*.sh`, all green), `davebox-tests`
+(`npm ci` + `davebox/tests/run.sh`: 27 C units, 5 JS units, shell invariants), `go`
 (`schwung-manager`), and `cross-compile` (ARM64 Docker build) on every PR and push
-to `main`. ⚠ **`main` is NOT branch-protected in THIS fork — commit to it directly.**
+to `main`. The davebox job is new as of the merge — that suite had no CI at all
+while it lived in a separate repo. ⚠ **`main` is NOT branch-protected in THIS fork — commit to it directly.**
 This paragraph used to claim protection was enforced and PRs were required; that was
 inherited verbatim from upstream's PUBLIC repo, where it is true. This fork is
 **private on a free plan**, where GitHub offers neither branch protection nor
@@ -543,6 +549,8 @@ Release: bump `src/module.json` version → commit → `git tag v0.2.0 && git pu
 
 ## Documentation Index
 
+- `docs/UPSTREAM.md` — **Upstream watermark**: how far `upstream/main` has been reviewed, what was applied/skipped, the keep-list of paths this fork owns, and what is still worth offering upstream. Replaced the dissolved patch series.
+- `docs/UI_LANGUAGE.md` — **Normative OLED UI spec**: the 128×64 cell grid, fonts, header/list/picker/dialog shapes, selection grammar, LED vocabulary, input grammar. Read before building or rebuilding any screen.
 - `docs/API.md` — JS API reference (display, MIDI, host fns, LED colors)
 - `docs/MODULES.md` — Module development guide (module.json, capabilities, tool_config, DSP API, Signal Chain integration, Remote UI `web_ui.html` + `schwungRemote` postMessage)
 - `docs/LOGGING.md` — Unified logging
