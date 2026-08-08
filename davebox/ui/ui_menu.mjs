@@ -33,7 +33,6 @@ import { forceRedraw } from './ui_leds.mjs';
 import { openSchwungSlotEditor, exitSchwungCoRun, enterMoveNativeCoRun, exitMoveNativeCoRun } from './ui_corun.mjs';
 import { requestExport } from './ui_export.mjs';
 import { applyTrackConfig } from './ui_dsp_bridge.mjs';
-import { engineUnderDaveboxHost } from './ui_engine.mjs';
 import { openTapTempo } from './ui_record.mjs';
 import { xposePreviewSet } from './ui_xpose.mjs';
 
@@ -292,12 +291,11 @@ function buildGlobalMenuItems() {
         /* Projects: open dAVEBOx's own pad picker (v3) — 32 pads = project
          * slots, drawn by us, no restart and no native surface involved. It
          * closes the menu itself. Shift+Step 1 is the shortcut twin.
-         * Host-gated: projects (project-cmd.sh, projects.json) exist only
-         * under the davebox host, and buildGlobalMenuItems re-runs on every
-         * open so the entry appears exactly when it is usable. */
-        engineUnderDaveboxHost() ? createAction('Projects...', function() {
+         * Projects (project-cmd.sh, projects.json) are part of this host, so
+         * the entry is always present. */
+        createAction('Projects...', function() {
             openProjectPadPicker();
-        }) : null,
+        }),
         createAction('Clear Sess', function() {
             S.confirmClearSession = true;
             S.confirmClearSel     = 1;

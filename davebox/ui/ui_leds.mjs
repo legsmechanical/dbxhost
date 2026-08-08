@@ -13,19 +13,6 @@ import {
     DeepRed, DeepGreen, DeepMagenta, Mustard
 } from '/data/UserData/schwung/shared/constants.mjs';
 import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
-import { engineUnderDaveboxHost } from './ui_engine.mjs';
-
-/* Shift+Step1 (project picker) exists only under the davebox host; cache the
- * answer so the shift-overlay LED loop is not re-parsing host_build_info JSON
- * every frame. A build fact cannot change mid-run. */
-let _dbxHostCached = null;
-function _underDbxHost() {
-    if (_dbxHostCached === null) {
-        try { _dbxHostCached = engineUnderDaveboxHost(); }
-        catch (e) { _dbxHostCached = false; }
-    }
-    return _dbxHostCached;
-}
 
 const lastSentNoteLED   = new Array(128).fill(-1);
 const lastSentButtonLED = new Array(128).fill(-1);
@@ -202,7 +189,7 @@ export function updateStepLEDs() {
             for (let i = 0; i < 16; i++) {
                 let on = i === 1 || i === 2 || (i >= 4 && i <= 6) || i === 8;
                 /* Step1 = project picker (set-select gate) — davebox host only */
-                if (i === 0 && _underDbxHost()) on = true;
+                if (i === 0) on = true;
                 if (i === 7 || i === 9 || (i === 10 && !isDrum) || i === 14
                     || (i === 15 && S.activeBank !== 6)) on = true;
                 /* ALL LANES unconfirmed: gated double-fill (15) / quantize (16)
@@ -554,7 +541,7 @@ export function updateTrackLEDs() {
                 let on = false;
                 if (S.shiftHeld && !_knobShiftMode && !_compoundHeld) {
                     if (i === 1 || (i >= 4 && i <= 6) || i === 8) on = true; /* shared shortcuts */
-                    if (i === 0 && _underDbxHost())               on = true; /* Step1 = project picker */
+                    if (i === 0)                                 on = true; /* Step1 = project picker */
                     if (!S.sessionView) {
                         if (i === 2)                            on = true; /* Step3 = Edit Slot/Synth — Track View only */
                         else if (i === 7)                       on = true;
@@ -583,7 +570,7 @@ export function updateTrackLEDs() {
         !(S.muteHeld || S.deleteHeld || S.copyHeld || S.loopHeld)) {
         for (let i = 0; i < 16; i++) {
             let on = i === 1 || (i >= 4 && i <= 6) || i === 8; /* shared shortcuts only — Step3 (Edit Slot/Synth) is Track View only */
-            if (i === 0 && _underDbxHost()) on = true; /* Step1 = project picker */
+            if (i === 0) on = true; /* Step1 = project picker */
             setLED(16 + i, on ? LightGrey : LED_OFF);
         }
     }

@@ -32,7 +32,7 @@ import {
 } from './ui_constants.mjs';
 
 import { S } from './ui_state.mjs';
-import { engineUnderDaveboxHost, DAVEBOX_HOST_DIR } from './ui_engine.mjs';
+import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
 import { showActionPopup, readActiveSet, resolveSetLoadDecision } from './ui_persistence.mjs';
 import {
@@ -200,13 +200,11 @@ globalThis.init = function () {
         _markerArmed = !!(_fs && _fs.length);
         if (_markerArmed) host_write_file(_markerPath, '');
     }
-    /* The DSP is asked, NOT gated on engineUnderDaveboxHost(). It arms the flag
-     * from the marker with no host check of its own, so gating the mirror here
-     * would let the two disagree — and a disagreement is the worst state
-     * available: the DSP refuses every save while JS, believing a project is
-     * live, keeps overwriting the sidecar. Whatever the DSP decided, honour it.
-     * (A stock-host session that somehow lands here still recovers: the picker
-     * cannot list projects there, so _pppFailOpen loads the boot project.) */
+    /* The DSP is the authority here, and JS only mirrors it. The DSP arms the
+     * flag from the marker on its own, so deciding independently in JS would let
+     * the two disagree — and a disagreement is the worst state available: the DSP
+     * refuses every save while JS, believing a project is live, keeps overwriting
+     * the sidecar. Whatever the DSP decided, honour it. */
     if (typeof host_module_get_param === 'function') {
         const _aw = host_module_get_param('awaiting_select');
         if (_aw === null || _aw === undefined || _aw === '') {
@@ -237,12 +235,11 @@ globalThis.init = function () {
         S.pendingOpenProjectPicker = true;
     }
 
-    /* No second splash under the davebox host: the SESSION already opened
-     * with the dAVEBOx-branded launcher splash (dbxhost splash.hex contract)
-     * and the host's "Loading <project>" screen — playing our own boot splash
-     * again reads as two products. Under stock Schwung (legacy tool) the boot
-     * splash stays. State loads (S.stateLoading) still show the artwork. */
-    if (engineUnderDaveboxHost()) S.bootSplashTicks = 0;
+    /* No boot splash: the SESSION already opened with the dAVEBOx-branded
+     * launcher splash (dbxhost splash.hex contract) and the host's
+     * "Loading <project>" screen — playing our own on top reads as two
+     * products. State loads (S.stateLoading) still show the artwork. */
+    S.bootSplashTicks = 0;
 
     /* Detect set mismatch: compare active_set.txt UUID with what the DSP currently has loaded.
      * Works regardless of JS context lifetime — no cross-init state needed.

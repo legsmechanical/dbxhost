@@ -124,98 +124,36 @@ export function engineSaveState() {
 
 /* ---- which host build are we on? ----
  *
- * ⚠ `typeof host_x === 'function'` is the right probe for a fork-only FUNCTION,
- * and is useless for a fork-only PARAM NAMESPACE. Nothing about a binding tells
- * us whether the host routes `fx3:` or `send_fx:a:`. Guessing wrong does not
- * degrade — it renders rows whose reads return nothing and whose writes are
- * silently dropped, which is worse than the feature being absent, and it is the
- * exact bug an audit of gated function calls reported as clean.
+ * There is only one. davebox ships inside dbxhost, in the same deliverable, built
+ * and deployed together — so "which host" has no second answer to distinguish and
+ * the question is gone rather than answered.
  *
- * host_build_info() (fork-only) states the namespaces. Absence = the UPSTREAM
- * defaults, which is what a stock Schwung install is.
+ * What used to be here: a host_build_info() probe returning UPSTREAM_DEFAULTS when
+ * absent, a HOST_CONTRACT_MIN handshake, and engineUnderDaveboxHost(). All of it
+ * existed because davebox and the host were separate repos, so a change spanning
+ * both was two commits with nothing tying them together and a new davebox could
+ * land on an old host. Merging the repos is what made that unrepresentable; see
+ * docs/UPSTREAM.md and the CLAUDE.md invariant: if the code is in the tree, the
+ * feature exists.
  *
- * Deliberately NOT cached. The obvious optimisation buys nothing — the answer is
- * only read by the module-scope initialisers of BLOCKS/FX_BUSES — and a cache
- * makes the host build unmockable, so the stock-host path could not be pinned by
- * a test. Being able to test the degraded path is worth more than one JSON.parse,
- * especially since the degraded path is the one that was silently broken. */
-const UPSTREAM_DEFAULTS = {
-    install_dir: '/data/UserData/schwung',
-    slot_fx_blocks: 2,      /* upstream slot chain is fx1..fx2 */
-    send_fx: false,         /* upstream has no Send FX at all */
-};
-export function engineBuildInfo() {
-    try {
-        if (typeof host_build_info === 'function') {
-            const parsed = JSON.parse(host_build_info());
-            if (parsed && typeof parsed === 'object') {
-                return Object.assign({}, UPSTREAM_DEFAULTS, parsed);
-            }
-        }
-    } catch (e) { /* keep the upstream defaults — never let this throw at import */ }
-    return UPSTREAM_DEFAULTS;
-}
+ * ⚠ Do NOT reintroduce a probe here for a param-key NAMESPACE. `fx3:` and
+ * `send_fx:a:` are routed prefixes, not bindings, so no typeof can see them — the
+ * historical bug was rows whose reads returned nothing and whose writes vanished,
+ * silently. The reason that cannot happen now is not a better probe; it is that
+ * the host routing those prefixes is the only host there is. */
 
-/* Audio-FX blocks the running host actually routes in a slot chain (2 or 4). */
-export function engineSlotFxBlocks() {
-    const n = engineBuildInfo().slot_fx_blocks;
-    return (typeof n === 'number' && n > 0) ? n : UPSTREAM_DEFAULTS.slot_fx_blocks;
-}
+/* Audio-FX blocks routed in a slot chain. Mirrors SLOT_FX_BLOCKS in
+ * src/host/shadow_constants.h — change both together. */
+export const SLOT_FX_BLOCKS = 4;
 
-/* Does this host route send_fx:a: / send_fx:b: at all? */
-export function engineHasSendFx() {
-    return engineBuildInfo().send_fx === true;
-}
+/* Send FX buses (send_fx:a: / send_fx:b:) — SCHWUNG_HAS_SEND_FX in the host. */
+export const HAS_SEND_FX = true;
 
-/* ---- host contract handshake ----
- *
- * davebox and the host are separate repos, so a change spanning both is two
- * commits with nothing tying them together: a new davebox can always end up on an
- * old host. Nothing makes that atomic short of merging the repos.
- *
- * ⚠ The failure it causes is the confusing kind. Without a version, "this host has
- * no Send FX" and "this host is too old to tell me" are indistinguishable, so
- * davebox takes the conservative answer and quietly hides features that the host
- * actually has. Nothing errors; FX 3/4 and the send buses are simply missing, and
- * you go looking for the bug in the wrong repo.
- *
- * So the host reports the contract it speaks and we require a minimum. Bump
- * HOST_CONTRACT_MIN only when davebox actually depends on something newer —
- * raising it strands every host older than the bump.
- *
- * ⚠ Absence is NOT a failure: on stock Schwung there is no host_build_info at all
- * and the upstream defaults are correct. Only a host that IS the dAVEBOx build but
- * speaks an older contract is a mismatch worth reporting. A host predating
- * host_build_info entirely cannot be detected here — it reports no install_dir, so
- * it is indistinguishable from stock. That window closed once the binding shipped. */
-export const HOST_CONTRACT_MIN = 1;
-
-export function engineHostContract() {
-    const c = engineBuildInfo().contract;
-    return (typeof c === 'number' && c > 0) ? c : 0;
-}
-
-/* True only for a real mismatch: the dAVEBOx host, speaking too old a contract. */
-export function engineHostTooOld() {
-    return engineUnderDaveboxHost() && engineHostContract() < HOST_CONTRACT_MIN;
-}
-
-/* Are we running under the dAVEBOx host build (as opposed to stock Schwung)?
- *
- * ⚠ Deliberately compares install_dir rather than testing for host_build_info's
- * absence: if that binding ever lands upstream, absence stops meaning "stock" but
- * the directory comparison stays correct. Identity questions must not be answered
- * by absence-as-probe, even though feature questions can be.
- *
- * ⚠ This replaced a marker FILE under /data. That file is removed only on a clean
- * exit, so a hard reboot — the documented "always returns to stock" recovery
- * path — left it behind, after which davebox running on STOCK believed it owned a
- * standalone session and tore the host down on Quit, turning every Quit into a
- * surprise device restart. A build fact cannot go stale that way. */
+/* The install this host owns. Still a literal rather than something discovered:
+ * it names a path the module composes for the DSP and the exit/project scripts.
+ * ⚠ Pinned by standalone/scripts/check-config.sh against config.sh's DBX_DIR —
+ * change one and the CI gate names the other. */
 export const DAVEBOX_HOST_DIR = '/data/UserData/dbx-host';
-export function engineUnderDaveboxHost() {
-    return engineBuildInfo().install_dir === DAVEBOX_HOST_DIR;
-}
 
 /* Runtime claim on the master volume knob: suppresses CC 79 + touch note 8 from
  * reaching Move firmware, so the knob can mean something else without Move also

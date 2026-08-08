@@ -50,7 +50,6 @@ import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes } from './ui_r
 import { xposeCancelPreview } from './ui_xpose.mjs';
 import { checkBackHold, backTapWouldAct } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
-         engineUnderDaveboxHost,
          SLOT_LEVEL_KEY } from './ui_engine.mjs';
 import { soundActive, soundEnter, soundEnterBuses, soundExit, soundTick, soundDirty,
     soundTrack, soundRetarget, soundIsGlobal, soundEnteredInSession,
@@ -273,28 +272,16 @@ var _lastSessionView = false;
  *   step-op drain, treat its ordering against the blocks above as a fresh
  *   design question, not a copy-paste restore.
  */
-/* True only when we are running under the dAVEBOx host build, in which case
- * dAVEBOx IS the session and quitting should hand the device back to stock.
+/* dAVEBOx IS the session, so quitting hands the device back to stock.
  *
- * ⚠⚠ This used to test for a marker FILE under /data, written by the launcher on
- * take-over and removed on hand-back. That is wrong in a way that bites on stock:
- * the file survives an unclean exit, and the documented recovery path — "a reboot
- * always returns to stock" — is exactly the path that skips the launcher's
- * cleanup. A leftover marker then convinced davebox running on STOCK that it
- * owned a standalone session, so Quit killed MoveOriginal and the watchdog
- * respawned it: every Quit became a surprise device restart until somebody
- * deleted the file by hand.
- *
- * The host's own install directory cannot go stale like that. See
- * engineUnderDaveboxHost() for why it compares the path instead of testing for a
- * binding's absence. */
-function standaloneSessionActive() {
-    try {
-        return engineUnderDaveboxHost();
-    } catch (e) {
-        return false;
-    }
-}
+ * ⚠⚠ Historical note worth keeping, because the shape recurs: this used to test
+ * for a marker FILE under /data, written by the launcher on take-over and removed
+ * on hand-back. A file survives an unclean exit, and the documented recovery path
+ * -- "a reboot always returns to stock" -- is exactly the path that skips the
+ * launcher's cleanup, so a leftover marker convinced davebox it owned a session
+ * it did not. Quit then killed MoveOriginal and the watchdog respawned it: every
+ * Quit became a surprise device restart until somebody deleted the file by hand.
+ * Never answer a liveness question with a file that only a clean exit removes. */
 
 export function _tickImpl() {
     S.tickCount++;
@@ -1894,13 +1881,8 @@ export function _tickImpl() {
          * Runtime check because this same module directory serves both hosts;
          * under stock the marker is absent and this stays an ordinary module
          * exit. LEDs are already cleared above either way. */
-        if (standaloneSessionActive()) {
-            if (typeof host_system_cmd === 'function') {
-                host_system_cmd('sh /data/UserData/dbx-host/scripts/exit-to-stock.sh');
-                return;
-            }
-        }
-        if (typeof host_exit_module === 'function') host_exit_module();
+        host_system_cmd('sh /data/UserData/dbx-host/scripts/exit-to-stock.sh');
+        return;
     } else if (S.pendingProjectSwitch !== null) {
         /* Pad-picker project switch, one tick after the deferred save. The
          * host gate runs as a HEADLESS ACTUATOR: arm with the pad pre-queued,
@@ -1914,17 +1896,13 @@ export function _tickImpl() {
         invalidateLEDCache();
         clearAllLEDs();
         for (let _i = 0; _i < 4; _i++) setButtonLED(40 + _i, LED_OFF);
-        if (typeof shadow_select_arm === 'function' &&
-                typeof host_suspend_overtake === 'function' &&
-                standaloneSessionActive()) {
+        if (typeof host_suspend_overtake === 'function') {
             shadow_select_arm(_psw);
             host_suspend_overtake();
             return;
         }
-        if (standaloneSessionActive() && typeof host_system_cmd === 'function') {
-            host_system_cmd('sh /data/UserData/dbx-host/scripts/project-cmd.sh switch ' + _psw);
-            return;
-        }
+        host_system_cmd('sh /data/UserData/dbx-host/scripts/project-cmd.sh switch ' + _psw);
+        return;
     } else if (S.pendingHideAfterSave) {
         S.pendingHideAfterSave = false;
         removeFlagsWrap();

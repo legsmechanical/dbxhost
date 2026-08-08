@@ -9,7 +9,6 @@ import {
     dropSnapshots, applySnapshotToLive, copyStateFiles, loadSelectedCurrentProject
 } from './ui_persistence.mjs';
 import { effectiveClip, invalidateLEDCache } from './ui_leds.mjs';
-import { engineUnderDaveboxHost } from './ui_engine.mjs';
 
 export function pixelPrintMcu(x, y, text, scale, color) {
     const charW = 5 * scale + scale;
@@ -742,18 +741,10 @@ function _pppFailOpen() {
 }
 
 function _openProjectPadPicker_impl() {
-    /* Projects are a davebox-host concept (project-cmd.sh, projects.json live
-     * in the SA install). The DSP is authoritative for "is anything loaded" and
-     * arms awaiting_select from the marker file with no host check of its own,
-     * so a marker left behind by a crashed SA session can put us here under
-     * stock Schwung — where opening a project picker, and worse acting on it,
-     * would be wrong. The DATA question stays the DSP's; the UI question is
-     * host-gated, and failing open loads the boot project as stock expects. */
-    if (!engineUnderDaveboxHost()) { _pppFailOpen(); return; }
-    if (typeof host_system_cmd !== 'function' || typeof host_read_file !== 'function') {
-        _pppFailOpen();
-        return;
-    }
+    /* Projects are a davebox-host concept (project-cmd.sh, projects.json live in
+     * the SA install), and this is that host — the picker is always legitimate
+     * here. _pppFailOpen() remains the answer for a genuine data failure below;
+     * it just no longer answers "which host is this". */
     /* Toggle — EXCEPT while awaiting a selection, where closing the picker
      * leaves nothing loaded, nothing on screen but LOADING, and no way out.
      * Belt to the step-button gate: this is reachable from the menu too. */

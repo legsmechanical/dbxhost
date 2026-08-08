@@ -8,7 +8,6 @@
 
 import { S, PERF_FACTORY_PRESETS } from './ui_state.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
-import { engineHostTooOld } from './ui_engine.mjs';
 import {
     BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN,
     NOTE_KEYS, NUM_CLIPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
@@ -807,20 +806,6 @@ export function drawUI() {
         const _sn = (S.currentSetName || '').length ? S.currentSetName : '...';
         const _snT = _sn.length > 20 ? _sn.substring(0, 19) + '…' : _sn;
         print(Math.max(0, Math.floor((128 - _snT.length * 6) / 2)), 34, _snT, 1);
-        /* Host contract mismatch: say so HERE, over the loading screen.
-         *
-         * This is the one failure that is otherwise invisible — an old host makes
-         * davebox fall back to the upstream defaults, so FX 3/4 and the send buses
-         * just quietly vanish and the bug looks like it is in davebox. Boot is
-         * exactly when it is worth interrupting, and it costs nothing when fine.
-         *
-         * engineHostTooOld() is false on stock Schwung by design: absence of the
-         * host binding is a legitimate configuration, not a mismatch. */
-        if (engineHostTooOld()) {
-            fill_rect(0, 44, 128, 20, 0);
-            print(6, 46, 'HOST TOO OLD', 1);
-            print(6, 55, 'UPDATE DBX HOST', 1);
-        }
         return;
     }
 

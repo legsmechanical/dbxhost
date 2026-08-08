@@ -22,7 +22,7 @@
 import * as os from 'os';
 import {
     COMPONENTS, PRESET_ROOT, engineGet, engineSet, engineListModules, engineDescribe,
-    engineClaimsEditCcs, engineSlotFxBlocks, engineHasSendFx,
+    engineClaimsEditCcs, SLOT_FX_BLOCKS, HAS_SEND_FX,
     engineLoadModule, engineLoadedModule, engineGetState, engineSetState,
     engineListUserPresets, engineReadUserPreset,
     engineGetSlotParam, engineSetSlotParam, engineSaveState, engineVolBlock,
@@ -51,19 +51,17 @@ import {
     hdrPrint, mvPrint, mvWidth,
 } from './ui_movy.mjs';
 
-/* Chain blocks in signal order, trimmed to the audio-FX blocks the RUNNING host
- * routes — four on the dAVEBOx host, two on stock Schwung.
+/* Chain blocks in signal order, across the audio-FX blocks the host routes.
  *
- * ⚠ Do not hardcode fx3/fx4 back in. `fx3:`/`fx4:` are a fork-only param
- * namespace, and a stock host routes neither: the rows would render, every read
- * would come back empty and every write would vanish. That is silent
- * misbehaviour, not a missing feature, and no `typeof` check can detect it
- * because the divergence is a key prefix rather than a function. The block count
- * comes from host_build_info(), which exists to answer exactly this. */
+ * ⚠ SLOT_FX_BLOCKS mirrors the host's own constant — do not write a literal here.
+ * `fx1:`..`fx4:` are routed param NAMESPACES, so a count that overshoots what the
+ * host routes does not fail: the extra rows render, every read comes back empty
+ * and every write vanishes. Silent misbehaviour, invisible to any typeof check,
+ * because the divergence is a key prefix rather than a binding. */
 export const BLOCKS = [
     { comp: 'midi_fx1', label: 'MIDI FX' },
     { comp: 'synth',    label: 'SYNTH'   },
-    ...Array.from({ length: engineSlotFxBlocks() }, (_, i) => ({
+    ...Array.from({ length: SLOT_FX_BLOCKS }, (_, i) => ({
         comp: `fx${i + 1}`, label: `FX ${i + 1}`,
     })),
 ];
@@ -90,12 +88,14 @@ export const BLOCKS = [
  *
  * The SEND return levels are real — `shadow_send_return_level[2]`, set + get,
  * persisted as `send_return_level`. Range matches the host's own row: 0..1. */
-/* Master FX is upstream. The two SEND buses are fork-only (`send_fx:` does not
- * exist upstream at all), so they are only listed when the running host says it
- * routes them — otherwise both buses would be browsable rows backed by nothing. */
+/* Master FX is upstream; the two SEND buses are fork-only — `send_fx:` exists in
+ * no other build. Listed unconditionally because this host routes them; if that
+ * ever stops being true they become browsable rows backed by nothing, which is
+ * why HAS_SEND_FX tracks the host's own SCHWUNG_HAS_SEND_FX rather than being
+ * assumed here. */
 const FX_BUSES = [
     { id: 'master', title: 'MASTER FX', prefix: 'master_fx:' },
-    ...(engineHasSendFx() ? [
+    ...(HAS_SEND_FX ? [
         { id: 'sendA',  title: 'SEND FX A', prefix: 'send_fx:a:',
           levelComp: 'send_fx:a', levelKey: 'return_level', levelLabel: 'Return' },
         { id: 'sendB',  title: 'SEND FX B', prefix: 'send_fx:b:',

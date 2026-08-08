@@ -25,7 +25,6 @@ import { effectiveClip, invalidateLEDCache, forceRedraw, sendPerfMods,
 import { exitSchwungCoRun, exitMoveNativeCoRun } from './ui_corun.mjs';
 import { openGlobalMenu } from './ui_menu.mjs';
 import { openProjectPadPicker, projectPadPickerTap } from './ui_dialogs.mjs';
-import { engineUnderDaveboxHost } from './ui_engine.mjs';
 import { applyBankParam, applyTrackConfig, readBankParams,
     refreshPerClipBankParams, refreshDrumLaneBankParams, refreshSeqNotesIfCurrent,
     resyncDrumTrack, liveSendNote,
@@ -986,10 +985,8 @@ function _doShiftStepCommon(idx) {
     if (idx === 0) {
         /* Shift+Step1: back to the project picker (the host's boot set-select
          * gate) — same visibility as the Shift+Step2 menu shortcut, same
-         * save-then-drain sequencing as the menu's Projects... entry. Only
-         * meaningful under the davebox host; elsewhere it is inert (and the
-         * shift-overlay LED hint stays dark). */
-        if (engineUnderDaveboxHost()) openProjectPadPicker();
+         * save-then-drain sequencing as the menu's Projects... entry. */
+        openProjectPadPicker();
     }
     else if (idx === 1) _jumpToMenuLabel('Global');
     /* Shift+Step3 (idx 2) was the second door into "edit this track's sound".
