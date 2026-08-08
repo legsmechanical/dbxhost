@@ -1,0 +1,239 @@
+# dAVEBOx Quick Start
+
+A hands-on walkthrough that takes you from a blank set to a looping pattern with
+effects, scenes, and a taste of Performance Mode — in about fifteen minutes.
+
+Work through the lessons in order. Each one builds on the last. When you want the
+full detail on anything you meet here, the [**dAVEBOx SA Manual**](MANUAL-SA.md) is
+the complete reference — this guide links into it as you go.
+
+> **What is dAVEBOx?** An 8-track MIDI sequencer for the Ableton Move, running on
+> [Schwung](https://github.com/charlesvestal/schwung). It makes no sound of its own
+> — every note it plays is sent to Move's built-in instruments, to Schwung's effect
+> chains, or out to an external synth over USB.
+
+> **Running dAVEBOx Legacy?** If you open dAVEBOx as an ordinary tool from inside
+> official Schwung rather than launching **dAVEBOx SA**, follow
+> [`MANUAL.md`](MANUAL.md) instead. Everything in *this* guide still applies —
+> the sequencer is the same — except for how you start and leave it, in the
+> one-time setup below.
+
+---
+
+## Before you start: one-time setup
+
+dAVEBOx talks to Move and Schwung over MIDI channels, so they each need to be
+listening on the right channel. You only have to do this once.
+
+**On Move** — set tracks 1–4 to receive on channels 1–4, and turn each track's
+MIDI **Out** off (this prevents echo loops):
+
+| Move track | MIDI In | MIDI Out |
+|---|---|---|
+| 1 | Ch 1 | Off |
+| 2 | Ch 2 | Off |
+| 3 | Ch 3 | Off |
+| 4 | Ch 4 | Off |
+
+**In Schwung** — set slots 1–4 to receive on channels 5–8, with each slot's
+Forward Channel set to **Auto** (not Thru):
+
+| Schwung slot | Receive channel |
+|---|---|
+| 1 | Ch 5 |
+| 2 | Ch 6 |
+| 3 | Ch 7 |
+| 4 | Ch 8 |
+
+With that done, dAVEBOx tracks 1–4 play Move's instruments and tracks 5–8 play
+Schwung's chains. (You can change any track's channel and routing later — see the
+manual's [Routing & Sync](MANUAL-SA.md#14-routing--sync) chapter.)
+
+Now **load a Move set** — do this first, because dAVEBOx picks up the set you are
+in as it starts. Then open Schwung's tool menu (**Shift + Step button 13** — the
+star) and choose **dAVEBOx SA**.
+
+The screen goes dark for a few seconds while Move restarts, and comes back with you
+already in the sequencer. That pause is the startup; nothing has gone wrong.
+
+To leave at any point: **Shift + Back**, or **Quit** in the Settings menu. Either
+one saves your work and returns you to official Schwung — and so does a reboot, if
+you ever need it.
+
+*(On dAVEBOx Legacy the same menu entry is just **dAVEBOx**, it opens immediately
+with no restart, and leaving returns you to Schwung's menu rather than restarting
+Move.)*
+
+---
+
+## A two-minute tour
+
+dAVEBOx has **two views**, and you switch between them with the **Note/Session**
+button:
+
+- **Session View** (where you start) — a grid of clips. Each column is a track,
+  each row is a *scene*. This is where you launch and arrange clips.
+- **Track View** — the detailed editor for one clip at a time: pads play notes,
+  the 16 step buttons hold its pattern.
+
+A few things worth knowing before the first lesson:
+
+- **There are no track buttons.** To change the active track, hold **Shift** and
+  tap a pad in the **bottom row** (pads 1–8 = tracks 1–8), or hold **Shift** and
+  turn the **jog wheel**.
+- **The jog wheel** (the clickable encoder on the left) cycles through *parameter
+  banks* in Track View — this is how you reach the effects and clip settings.
+- **The Settings menu** opens with **Shift + Note/Session**. It holds the active
+  track's settings and the session-wide settings (tempo, key, scale, and more).
+
+That's enough to begin.
+
+---
+
+## Lesson 1 — Your first drum beat
+
+Tracks start out melodic, so first we'll turn track 1 into a drum track.
+
+1. Open the Settings menu: **Shift + Note/Session**.
+2. Turn the jog wheel to highlight **Mode**, click the jog to edit, turn to
+   **Drums**, then click to confirm (an empty track converts instantly).
+3. Close the menu by tapping **Note/Session**, then tap **Note/Session** again to
+   switch into **Track View**.
+
+The pad grid is now split. The **left 4×4 pads are drum lanes** — one drum sound
+each. The right 4×4 is a function area (velocity, repeats) you can ignore for now.
+
+4. Tap a few of the left pads. You'll hear each lane's sound, and the last one you
+   tap becomes the *selected* lane.
+5. With a lane selected, tap **step buttons 1–16** (the row below the pads) to
+   place hits. Try steps 1, 5, 9, and 13 for a steady pulse.
+6. Select a different lane pad and place a different rhythm — a snare on 5 and 13,
+   a hat on every step.
+7. Press **Play**. Your beat loops.
+
+Each lane is its own little sequencer, so you can even give them different
+lengths later for polyrhythms. Full detail lives in the manual's
+[Drum Clips](MANUAL-SA.md#7-drum-clips) chapter.
+
+---
+
+## Lesson 2 — Add a melodic part
+
+Now let's play some notes on another track.
+
+1. Hold **Shift** and tap the **5th pad in the bottom row** — you're now on track
+   5 (which routes to Schwung slot 1).
+2. The pads now play **pitched notes**, snapped to the current scale. Tap around
+   to hear them. **+ / −** shifts the octave.
+3. To sequence a note, **hold a pad and tap a step button** — that step gets the
+   held note.
+4. For a chord, **hold two or three pads and tap a step** (up to eight notes per
+   step).
+5. Press **Play** if it isn't already running. Track 5 plays alongside your drums.
+
+Want a different key or scale for everything? Open the Settings menu
+(**Shift + Note/Session**) and edit **Key** or **Scale** — as you turn the knob
+you'll *hear* a live preview, and a confirm asks before it commits. See
+[Key & Scale](MANUAL-SA.md#162-key--scale) in the manual.
+
+---
+
+## Lesson 3 — Shape the sound with effects
+
+Every clip carries its own effects, reached through the parameter banks.
+
+1. Make sure you're on your melodic track (track 5) in Track View.
+2. **Turn the jog wheel** to cycle the banks. Watch the screen header and stop on
+   **DELAY**.
+3. Turn **K3** (labelled *Rep*) up to **3** — each note now echoes three times.
+4. Turn **K5** (*Pfb*) to **+5** — the echoes climb in pitch as they repeat.
+
+These settings belong to *this clip only*. Effects are non-destructive: they
+transform playback without changing your written notes, so returning a knob to its
+default undoes it cleanly. Explore the other banks (NOTE FX, HARMONY, SEQ ARP) the
+same way — turn the jog, turn the knobs. The
+[Effects](MANUAL-SA.md#10-effects) chapter covers every one.
+
+---
+
+## Lesson 4 — Launch clips and build a scene
+
+So far you've been editing one clip per track. Each track holds **16 clips**, and
+a row of clips across all tracks is a **scene**.
+
+1. Tap **Note/Session** to return to **Session View**.
+2. You'll see your two tracks lit in the leftmost columns. The clips you've been
+   playing are in row 1.
+3. **Tap an empty clip pad** in track 5's column, row 2 — it becomes focused for
+   editing. Switch to Track View (**Note/Session**), make a different melodic
+   pattern, then come back.
+4. Back in Session View, **tap that row-2 clip** to launch it — track 5 swaps to
+   the new pattern while the drums keep going. Launching one clip only replaces
+   what was playing *on that track*.
+5. To switch a whole row at once, tap a **scene launcher** (the buttons left of
+   the grid) or **step buttons 1–16**. Every track jumps to that scene together.
+
+Launching a *single* clip (step 4) changes only its track, so the drums keep
+running while you swap the melody. Launching a *scene* switches every track at
+once — an empty cell in that row switches its track to an empty clip and silences
+it. More in [Arranging](MANUAL-SA.md#12-arranging) and [Scenes](MANUAL-SA.md#122-scenes).
+
+---
+
+## Lesson 5 — A taste of Performance Mode
+
+Performance Mode grabs a short loop of whatever's playing and lets you mangle it
+live with a grid of effects.
+
+1. In **Session View**, with your pattern playing, **hold the Loop button**.
+   The pad grid turns into a mod grid (release Loop to exit, or *tap* Loop to lock
+   it hands-free).
+2. The bottom row sets the capture length — tap one of pads 1–5 (1/32 up to 1/2
+   bar) to choose how much it loops.
+3. The three rows above are effects: **magenta** = pitch tricks, **yellow** =
+   volume/gate, **blue** = wild. Hold a pad to hear its effect; release to drop
+   it.
+4. The **step buttons are presets** — tap one of slots 1–8 to recall a
+   ready-made combination (try slot 1, "Float").
+
+Performance Mode is deep — capture lengths, latching, and 16 preset slots are all
+covered in [Performance Mode](MANUAL-SA.md#13-performance-mode).
+
+---
+
+## Lesson 6 — Save your work
+
+dAVEBOx saves automatically, so you rarely have to think about it:
+
+- Pressing **Back** suspends the module (it keeps playing in the background) and
+  saves.
+- **Shift + Back** fully exits and saves.
+- In the Settings menu, **Quit** saves and exits.
+
+For named backups you can return to, use **Save state** in the Settings menu — it
+keeps up to 16 timestamped snapshots per set. See
+[Snapshots](MANUAL-SA.md#163-snapshots).
+
+---
+
+## Where to go next
+
+You now know enough to make complete patterns. When you're ready for more:
+
+- **Editing notes precisely** — hold any step to open the step editor (length,
+  velocity, nudge, probability, ratchets): [Editing notes](MANUAL-SA.md#63-editing-notes).
+- **Longer clips and loops** — clips can run up to 256 steps; hold **Loop** in
+  Track View to set the loop window: [Clip length & the loop](MANUAL-SA.md#66-clip-length--the-loop).
+- **Recording live** — press **Record** to capture pad playing into a clip:
+  [Recording](MANUAL-SA.md#64-recording).
+- **Automation** — record knob moves that play back with the clip:
+  [Automation](MANUAL-SA.md#11-automation).
+- **The Conductor** — a track that transposes all the others in real time:
+  [The Conductor](MANUAL-SA.md#8-the-conductor).
+- **Exporting to Ableton Live** — render your whole set to an `.ablbundle`:
+  [Export to Live](MANUAL-SA.md#153-export-to-live).
+
+And whenever you need a quick reminder of a control, the manual's
+[Quick Reference](MANUAL-SA.md#18-quick-reference) lists every gesture on one screen.
+
+Have fun.

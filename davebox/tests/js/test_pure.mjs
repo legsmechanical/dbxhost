@@ -1,0 +1,164 @@
+/* tests/js/test_pure.mjs — behavior pins for the pure(-read) helpers moved into
+ * ui/ui_pure.mjs in Phase 1. Expected values were hand-derived by tracing the
+ * pre-move ui.js source (line refs in each block's comment); a transcription
+ * error during the move fails a pin.
+ *
+ * S-reading helpers: the real imported `S` (from ui_state.mjs) is mutated
+ * before each call to set up the read surface. ui_state.mjs imports only
+ * ui_constants.mjs, so it loads cleanly under node via the tests/js harness.
+ *
+ * DISCIPLINE: S persists across blocks in this file (no teardown). Every new
+ * block MUST set ALL S fields its helper reads — inheriting a field another
+ * block happened to set is a silent false pass waiting to happen. */
+import { S } from '../../ui/ui_state.mjs';
+import { drumPadToLane, drumPadToVelZone, drumVelZoneToVelocity,
+         _clipIsEmpty, clipHasContent,
+         bankCyclePos, scaleNudgeNote } from '../../ui/ui_pure.mjs';
+import { PAD_MODE_DRUM, PAD_MODE_CONDUCT,
+         BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN } from '../../ui/ui_constants.mjs';
+
+let failed = 0;
+function eq(got, want, label) {
+    if (got !== want) { console.error(`FAIL: ${label}: got ${JSON.stringify(got)} want ${JSON.stringify(want)}`); failed = 1; }
+}
+function eqObj(got, want, label) {
+    if (JSON.stringify(got) !== JSON.stringify(want)) {
+        console.error(`FAIL: ${label}: got ${JSON.stringify(got)} want ${JSON.stringify(want)}`); failed = 1;
+    }
+}
+
+/* -- drumVelZoneToVelocity(zone) = Math.round((zone+1)*127/16) (ui.js:2309-2311) --
+ *   zone 0  -> round(1*127/16=7.9375) = 8   (bottom zone, min vel)
+ *   zone 3  -> round(4*127/16=31.75)  = 32
+ *   zone 7  -> round(8*127/16=63.5)   = 64  (round-half-up edge)
+ *   zone 15 -> round(16*127/16=127)   = 127 (top zone, full vel) */
+eq(drumVelZoneToVelocity(0), 8, 'drumVelZoneToVelocity 0');
+eq(drumVelZoneToVelocity(3), 32, 'drumVelZoneToVelocity 3');
+eq(drumVelZoneToVelocity(7), 64, 'drumVelZoneToVelocity 7 half-up');
+eq(drumVelZoneToVelocity(15), 127, 'drumVelZoneToVelocity 15');
+
+/* -- drumPadToVelZone(padIdx): col=pad%8; col<4 -> -1; else row*4+(col-4) (ui.js:2301-2306) --
+ *   pad 0  -> col 0 (<4)          = -1 (left half, no vel zone)
+ *   pad 4  -> col 4,row 0 -> 0*4+0 = 0
+ *   pad 7  -> col 7,row 0 -> 0*4+3 = 3
+ *   pad 12 -> col 4,row 1 -> 1*4+0 = 4
+ *   pad 31 -> col 7,row 3 -> 3*4+3 = 15 */
+eq(drumPadToVelZone(0), -1, 'drumPadToVelZone 0 left');
+eq(drumPadToVelZone(4), 0, 'drumPadToVelZone 4');
+eq(drumPadToVelZone(7), 3, 'drumPadToVelZone 7');
+eq(drumPadToVelZone(12), 4, 'drumPadToVelZone 12');
+eq(drumPadToVelZone(31), 15, 'drumPadToVelZone 31');
+
+/* -- drumPadToLane(padIdx): col=pad%8; col>=4 -> -1; else
+ *    S.drumLanePage[S.activeTrack]*16 + row*4 + col (ui.js:2249-2254) --
+ * Set the S read surface first. */
+S.activeTrack = 0;
+S.drumLanePage[0] = 0;
+/*   pad 4  -> col 4 (>=4)               = -1 (right half, vel zone not lane)
+ *   pad 0  -> col 0,row 0 -> 0+0+0       = 0
+ *   pad 3  -> col 3,row 0 -> 0+0+3       = 3
+ *   pad 8  -> col 0,row 1 -> 0+4+0       = 4
+ *   pad 10 -> col 2,row 1 -> 0+4+2       = 6 */
+eq(drumPadToLane(4), -1, 'drumPadToLane 4 right');
+eq(drumPadToLane(0), 0, 'drumPadToLane 0 page0');
+eq(drumPadToLane(3), 3, 'drumPadToLane 3 page0');
+eq(drumPadToLane(8), 4, 'drumPadToLane 8 page0 row1');
+eq(drumPadToLane(10), 6, 'drumPadToLane 10 page0');
+/*   page 1: pad 0 -> 1*16 + 0 + 0 = 16 ; pad 8 -> 16 + 4 = 20 */
+S.drumLanePage[0] = 1;
+eq(drumPadToLane(0), 16, 'drumPadToLane 0 page1');
+eq(drumPadToLane(8), 20, 'drumPadToLane 8 page1 row1');
+/*   activeTrack routes the page lookup: track 1 page 0 -> back to base */
+S.activeTrack = 1;
+S.drumLanePage[1] = 0;
+eq(drumPadToLane(0), 0, 'drumPadToLane 0 track1 page0');
+
+/* -- clipHasContent(t,c): true iff any of S.clipSteps[t][c][0..NUM_STEPS-1] is
+ *    truthy (ui.js:1998-2002). NUM_STEPS=256, arrays init all-0 -> false. --
+ *   all-zero clip           -> false
+ *   step 5 set to 1         -> true (found before end)
+ *   step 255 (last) set     -> true (loop reaches the final index) */
+eq(clipHasContent(0, 0), false, 'clipHasContent all-zero');
+S.clipSteps[0][0][5] = 1;
+eq(clipHasContent(0, 0), true, 'clipHasContent mid step');
+S.clipSteps[2][3][255] = 1;
+eq(clipHasContent(2, 3), true, 'clipHasContent last step');
+
+/* -- _clipIsEmpty(t,c) (ui.js:1453-1457): melodic track -> !S.clipNonEmpty[t][c];
+ *    drum track (trackPadMode==PAD_MODE_DRUM) -> !S.drumClipNonEmpty[t][c]. --
+ * Melodic branch (trackPadMode default 0): */
+S.trackPadMode[0] = 0;
+S.clipNonEmpty[0][0] = false;
+eq(_clipIsEmpty(0, 0), true, '_clipIsEmpty melodic empty');
+S.clipNonEmpty[0][0] = true;
+eq(_clipIsEmpty(0, 0), false, '_clipIsEmpty melodic non-empty');
+/* Drum branch selects the OTHER array (drumClipNonEmpty), ignoring clipNonEmpty: */
+S.trackPadMode[1] = PAD_MODE_DRUM;
+S.drumClipNonEmpty[1][2] = false;
+S.clipNonEmpty[1][2] = true;               /* proves the drum branch ignores this */
+eq(_clipIsEmpty(1, 2), true, '_clipIsEmpty drum empty (ignores clipNonEmpty)');
+S.drumClipNonEmpty[1][2] = true;
+eq(_clipIsEmpty(1, 2), false, '_clipIsEmpty drum non-empty');
+
+/* -- bankCyclePos() (ui.js:104-110): melodic track -> {idx: clamp(activeBank,0,6),
+ *    count:7}; drum track -> i=BANK_CYCLE_DRUM.indexOf(activeBank) with
+ *    BANK_CYCLE_DRUM=[7,0,1,3,5,6], {idx: i<0?0:i, count:6}. Reads
+ *    S.trackPadMode[S.activeTrack] + S.activeBank. --
+ * Melodic branch (trackPadMode 0): */
+S.activeTrack = 0;
+S.trackPadMode[0] = 0;
+S.activeBank = 3;
+eqObj(bankCyclePos(), { idx: 3, count: 7 }, 'bankCyclePos melodic mid');
+S.activeBank = 9;                          /* clamp high -> 6 */
+eqObj(bankCyclePos(), { idx: 6, count: 7 }, 'bankCyclePos melodic clamp-high');
+S.activeBank = -2;                         /* clamp low -> 0 */
+eqObj(bankCyclePos(), { idx: 0, count: 7 }, 'bankCyclePos melodic clamp-low');
+/* Drum branch: indexOf into [7,0,1,3,5,6] */
+S.trackPadMode[0] = PAD_MODE_DRUM;
+S.activeBank = 7;                          /* indexOf(7) = 0 */
+eqObj(bankCyclePos(), { idx: 0, count: 6 }, 'bankCyclePos drum bank7');
+S.activeBank = 6;                          /* indexOf(6) = 5 */
+eqObj(bankCyclePos(), { idx: 5, count: 6 }, 'bankCyclePos drum bank6');
+S.activeBank = 2;                          /* indexOf(2) = -1 -> idx 0 */
+eqObj(bankCyclePos(), { idx: 0, count: 6 }, 'bankCyclePos drum not-in-cycle');
+
+/* -- bankCyclePos() conductor branch (fix: bankCyclePos drift, phase 5b) --
+ * A Conductor track jog-cycles 5 banks (see _onCC_jog / CONDUCT_BANK_CYCLE in
+ * ui_pure.mjs): [0, 1, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN]. Before this
+ * fix a conductor track fell into the melodic 0..6/count:7 path, so the
+ * header strip mis-rendered 7 positions instead of the real 5. */
+S.trackPadMode[0] = PAD_MODE_CONDUCT;
+S.activeBank = 0;                          /* indexOf(0) = 0 */
+eqObj(bankCyclePos(), { idx: 0, count: 5 }, 'bankCyclePos conduct bank0 (CLIP)');
+S.activeBank = 1;                          /* indexOf(1) = 1 */
+eqObj(bankCyclePos(), { idx: 1, count: 5 }, 'bankCyclePos conduct bank1 (NOTE FX)');
+S.activeBank = BANK_RESPONDER;             /* indexOf = 2 */
+eqObj(bankCyclePos(), { idx: 2, count: 5 }, 'bankCyclePos conduct Responder');
+S.activeBank = BANK_OCTAVE;                /* indexOf = 3 */
+eqObj(bankCyclePos(), { idx: 3, count: 5 }, 'bankCyclePos conduct Octave');
+S.activeBank = BANK_WHEN;                  /* indexOf = 4 */
+eqObj(bankCyclePos(), { idx: 4, count: 5 }, 'bankCyclePos conduct When');
+S.activeBank = 3;                          /* not in CONDUCT_BANK_CYCLE -> idx 0 */
+eqObj(bankCyclePos(), { idx: 0, count: 5 }, 'bankCyclePos conduct not-in-cycle');
+
+/* -- scaleNudgeNote(note,dir,key,scale) (ui.js:651-661) --
+ * scaleAware OFF: clamp(note+dir,0,127), exactly 1 semitone per dir. */
+S.scaleAware = 0;
+eq(scaleNudgeNote(60, 1, 0, 0), 61, 'scaleNudge off up');
+eq(scaleNudgeNote(127, 1, 0, 0), 127, 'scaleNudge off clamp-high');
+eq(scaleNudgeNote(0, -1, 0, 0), 0, 'scaleNudge off clamp-low');
+/* scaleAware ON: walk in `dir` until candidate pc is in SCALE_INTERVALS[scale].
+ * scale 0 = Major [0,2,4,5,7,9,11], key 0:
+ *   60(C) up   -> 61 pc1 miss -> 62 pc2 hit          = 62 (D)
+ *   60(C) down -> 59 pc11 hit                         = 59 (B)
+ * key 2 (D major), 62(D) up: 63 pc(63-2=61%12=1) miss -> 64 pc2 hit = 64 (E)
+ * scale-aware but no in-scale before bounds -> clamp(note+dir):
+ *   127 up -> candidate 128 > 127, loop skipped -> clamp(128) = 127 */
+S.scaleAware = 1;
+eq(scaleNudgeNote(60, 1, 0, 0), 62, 'scaleNudge on up C->D');
+eq(scaleNudgeNote(60, -1, 0, 0), 59, 'scaleNudge on down C->B');
+eq(scaleNudgeNote(62, 1, 2, 0), 64, 'scaleNudge on key2 D->E');
+eq(scaleNudgeNote(127, 1, 0, 0), 127, 'scaleNudge on top clamp');
+
+if (failed) process.exit(1);
+console.log('PASS: ui_pure drum + clip + bank/scale helpers');

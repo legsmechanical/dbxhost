@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+# Cut a release: finalize CHANGELOG [Unreleased] → versioned section,
+# finalize notes/tech-changelog.md [Unreleased] the same way (untracked,
+# best-effort), promote MANUAL-SA.draft.md → MANUAL-SA.md (banner stripped), bump
+# release.json, build fresh tarball, commit, tag, and push.
+#
+# Manual model (two manuals since 2026-08-03): edit docs/working/MANUAL-SA.draft.md
+# (tracked working copy) for user-facing changes as they land; the public
+# MANUAL-SA.md is only updated here at release time, so it stays pinned to releases
+# and never documents unreleased features.
+#
+# ⚠ MANUAL.md is the FROZEN legacy manual (dAVEBOx as an ordinary tool on official
+# Schwung). This script must never write or stage it — see the comment at the
+# promotion step, and tests/test_manual_freeze.sh.
+#
+# Usage:  ./scripts/cut_release.sh <version>     (e.g. 0.2.0)
+#
+# Changelog model: write user-facing entries into CHANGELOG.md [Unreleased]
+# and the matching full-technical detail into notes/tech-changelog.md
+# [Unreleased] as work lands. This script finalizes both. CHANGELOG.md is
+# committed; tech-changelog.md is local-only (gitignored) and never blocks a
+# release if missing/empty.
+#
+# Preconditions:
+#   - clean working tree
+#   - CHANGELOG.md [Unreleased] section has at least one entry
+#   - tag v<version> does not already exist
+#
+# After this finishes you still need to upload dist/davebox-module.tar.gz
+# to the v<version> GitHub release (the script doesn't touch GitHub).
+
+set -euo pipefail
+
+if [ $# -ne 1 ]; then
+    echo "usage: $0 <version>   (e.g. 0.2.0)" >&2
+    exit 1
+fi
+
+VERSION="${1#v}"
+TAG="v${VERSION}"
+DATE=$(date +%Y-%m-%d)
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# --- preflight ---------------------------------------------------------------
+if ! git diff-index --quiet HEAD --; then
+    echo "error: working tree is dirty. Commit or stash first." >&2
+    exit 1
+fi
+if [ -n "$(git ls-files --others --exclude-standard)" ]; then
+    echo "error: untracked files present. Clean up or commit first." >&2
+    exit 1
+fi
+if git rev-parse "$TAG" >/dev/null 2>&1; then
+    echo "error: tag $TAG already exists." >&2
+    exit 1
+fi
+
+# --- update CHANGELOG.md + tech-changelog + release.json + module.json (atomic via Python) ---
+python3 - "$VERSION" "$DATE" <<'PYEOF'
+import sys, re, json, pathlib
+
+version, date = sys.argv[1], sys.argv[2]
+
+new_blocks = f"## [Unreleased]\n\n## [{version}] — {date}\n"
+
+def finalize_unreleased(path, text):
+    """Rename [Unreleased] → [<version>] and insert a fresh empty [Unreleased]
+    above it. Returns the rewritten text. Raises if no [Unreleased] section."""
+    m = re.search(r"^## \[Unreleased\]\s*\n(.*?)(?=^## \[)", text, re.MULTILINE | re.DOTALL)
+    if not m:
+        raise ValueError(f"{path}: could not locate [Unreleased] section before the next versioned heading")
+    if not m.group(1).strip():
+        raise ValueError(f"{path}: [Unreleased] is empty")
+    return re.sub(r"^## \[Unreleased\]\s*\n", new_blocks, text, count=1, flags=re.MULTILINE)
+
+# CHANGELOG (tracked, user-facing): empty/missing [Unreleased] is fatal — a
+# release must have public notes.
+cl = pathlib.Path("CHANGELOG.md")
+try:
+    cl.write_text(finalize_unreleased("CHANGELOG.md", cl.read_text()))
+    print(f"  CHANGELOG.md: [Unreleased] → [{version}] — {date}")
+except ValueError as e:
+    sys.exit(f"{e} — add entries before cutting a release")
+
+# tech-changelog (untracked, technical): finalize the same way, but NEVER block
+# a release on it. It's a local-only file (gitignored via notes/) that may be
+# absent on a fresh clone or in CI — warn and skip rather than abort.
+tc = pathlib.Path("notes/tech-changelog.md")
+if not tc.exists():
+    print("  notes/tech-changelog.md: not found — skipping (technical log not finalized)")
+else:
+    try:
+        tc.write_text(finalize_unreleased("notes/tech-changelog.md", tc.read_text()))
+        print(f"  notes/tech-changelog.md: [Unreleased] → [{version}] — {date}")
+    except ValueError as e:
+        print(f"  WARNING: {e} — technical log NOT finalized for this release")
+
+# release.json: bump version + rewrite download URL
+rj = pathlib.Path("release.json")
+data = json.loads(rj.read_text())
+data["version"] = version
+data["download_url"] = (
+    f"https://github.com/legsmechanical/schwung-davebox/releases/"
+    f"download/v{version}/davebox-module.tar.gz"
+)
+rj.write_text(json.dumps(data, indent=2) + "\n")
+print(f"  release.json: version → {version}")
+
+# module.json: bump version so the tarball that build.sh produces reports
+# the correct version. Without this the Module Store advertises v$VERSION
+# (from release.json), downloads the tarball, finds the bundled module.json
+# still pinned at the previous version, and re-offers the update forever.
+mj = pathlib.Path("module.json")
+mdata = json.loads(mj.read_text())
+mdata["version"] = version
+mj.write_text(json.dumps(mdata, indent=4) + "\n")
+print(f"  module.json: version → {version}")
+
+# MANUAL: promote the tracked working draft into the public manual, stripping the
+# WORKING-DRAFT banner. We edit the draft as user-facing changes land so the public
+# manual stays pinned to releases (it doesn't document unreleased features).
+#
+# ⚠ The target is MANUAL-SA.md, NOT MANUAL.md. There are two manuals now:
+#   MANUAL.md      dAVEBOx as an ordinary tool on official Schwung — FROZEN at its
+#                  final release under that model. Never written by this script.
+#   MANUAL-SA.md   dAVEBOx SA, the actively developed path. Promoted from
+#                  docs/working/MANUAL-SA.draft.md, below.
+# Legacy stays where it is; all development targets SA. Overwriting MANUAL.md from
+# the SA draft would silently replace the frozen legacy manual with a document
+# describing features that path does not have (four insert FX, two send buses,
+# booting straight in) — so it is left alone deliberately, not by omission.
+# tests/js/../test_manual_freeze.sh pins this.
+md = pathlib.Path("docs/working/MANUAL-SA.draft.md")
+if not md.exists():
+    print("  docs/working/MANUAL-SA.draft.md: not found — skipping (MANUAL-SA.md left as-is)")
+else:
+    promoted = re.sub(r"<!-- DRAFT-BANNER-START -->.*?<!-- DRAFT-BANNER-END -->\n*",
+                      "", md.read_text(), flags=re.DOTALL)
+    # Manual screenshots are committed under docs/working/img/ and referenced
+    # from the draft as img/*.png (relative to docs/working/). The promoted
+    # MANUAL.md lives at the repo root, so rewrite that prefix to the real
+    # location — single image source, no duplicated binaries. Resolves both on
+    # GitHub and in a local checkout viewed from the repo root.
+    nimg = promoted.count('src="img/')
+    promoted = promoted.replace('src="img/', 'src="docs/working/img/')
+    pathlib.Path("MANUAL-SA.md").write_text(promoted)
+    print(f"  MANUAL-SA.md: promoted from MANUAL-SA.draft.md (banner stripped, {nimg} image path(s) rebased)")
+PYEOF
+
+# --- build fresh tarball ----------------------------------------------------
+echo
+echo "Building release tarball..."
+./scripts/build.sh
+
+# --- commit, tag, push ------------------------------------------------------
+# MANUAL.md is deliberately absent: it is the frozen legacy manual and nothing in a
+# release should touch it. MANUAL-SA.md is the one this release regenerated.
+git add CHANGELOG.md release.json module.json MANUAL-SA.md docs/working/MANUAL-SA.draft.md
+git commit -m "release: $TAG"
+git tag -a "$TAG" -m "Release $TAG"
+
+echo
+echo "Pushing main + $TAG to origin..."
+git push origin main
+git push origin "$TAG"
+
+# --- summary ----------------------------------------------------------------
+echo
+echo "✓ Released $TAG"
+echo "  Tarball: dist/davebox-module.tar.gz"
+echo
+echo "Next steps (manual):"
+echo "  1. Create v$VERSION release on GitHub"
+echo "  2. Upload dist/davebox-module.tar.gz as the release asset"
+echo "  3. Paste the [$VERSION] section from CHANGELOG.md as the release notes"

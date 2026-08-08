@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>dAVEBOx MIDI Jitter Analyzer</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 960px; margin: 24px auto; padding: 0 16px; color: #222; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: #666; font-size: 13px; margin-bottom: 20px; }
+  fieldset { border: 1px solid #ddd; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  legend { font-weight: 600; padding: 0 6px; font-size: 13px; color: #444; }
+  label { display: inline-block; margin-right: 14px; font-size: 13px; }
+  select, input[type=number] { padding: 4px 6px; font-size: 13px; }
+  button { padding: 6px 14px; font-size: 13px; cursor: pointer; margin-right: 6px; }
+  button.primary { background: #0066ff; color: white; border: 1px solid #0055dd; border-radius: 4px; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .status { font-family: ui-monospace, monospace; font-size: 12px; color: #444; }
+  .row { display: flex; gap: 16px; margin-top: 12px; }
+  .col { flex: 1; }
+  .slot { border: 1px solid #ccc; border-radius: 6px; padding: 12px; min-height: 200px; background: #fafafa; }
+  .slot.empty { color: #aaa; text-align: center; padding: 80px 12px; font-style: italic; background: white; }
+  .slot h3 { margin: 0 0 8px; font-size: 14px; }
+  .stat { font-family: ui-monospace, monospace; font-size: 12px; display: flex; justify-content: space-between; padding: 2px 0; }
+  .stat span:first-child { color: #666; }
+  .hist { display: flex; align-items: flex-end; height: 80px; gap: 1px; margin: 10px 0 4px; background: #f0f0f0; padding: 2px; border-radius: 3px; }
+  .bar { flex: 1; background: #0066ff; min-height: 1px; }
+  .bar.b { background: #ff6633; }
+  .axis { display: flex; justify-content: space-between; font-size: 10px; color: #999; font-family: ui-monospace, monospace; padding: 0 2px; }
+  .legend { display: flex; gap: 16px; font-size: 12px; margin-top: 6px; align-items: center; }
+  .legend-swatch { display: inline-block; width: 10px; height: 10px; margin-right: 4px; vertical-align: middle; }
+  .conclusion { margin-top: 12px; font-size: 13px; padding: 10px; background: #f5f8ff; border-left: 3px solid #0066ff; border-radius: 3px; }
+  .help { font-size: 12px; color: #666; line-height: 1.5; margin-top: 6px; }
+  code { background: #f4f4f4; padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+</style>
+</head>
+<body>
+<h1>dAVEBOx MIDI Jitter Analyzer</h1>
+<div class="sub">Captures MIDI note-on arrival timestamps via Web MIDI and compares inter-arrival jitter between two runs (A vs B). For verifying Phase 2 ROUTE_EXTERNAL latency improvement.</div>
+
+<fieldset>
+  <legend>Setup</legend>
+  <label>MIDI input: <select id="input"></select></label>
+  <label>Target events: <input type="number" id="target" value="200" min="20" max="5000" step="20"></label>
+  <label><input type="checkbox" id="noteonly" checked> Note-on only (skip CC, clock, note-off)</label>
+  <div class="help">Open in Chrome/Edge over <code>http://localhost</code> (Web MIDI needs a secure context). Run <code>python3 -m http.server 8080</code> in this folder, then open <code>http://localhost:8080</code>.</div>
+</fieldset>
+
+<fieldset>
+  <legend>Capture</legend>
+  <button id="start" class="primary">Start capture</button>
+  <button id="stop" disabled>Stop</button>
+  <button id="saveA">Save current as A</button>
+  <button id="saveB">Save current as B</button>
+  <button id="clear">Clear current</button>
+  <span class="status" id="status" style="margin-left: 12px;">Idle.</span>
+</fieldset>
+
+<div class="row">
+  <div class="col"><div id="slotA" class="slot empty">A — empty</div></div>
+  <div class="col"><div id="slotB" class="slot empty">B — empty</div></div>
+</div>
+
+<fieldset id="compareBlock" style="display:none">
+  <legend>A vs B overlay</legend>
+  <div id="compare"></div>
+</fieldset>
+
+<fieldset>
+  <legend>Export</legend>
+  <button id="export">Download JSON</button>
+  <button id="reset">Reset all</button>
+</fieldset>
+
+<script>
+let midi = null;
+let currentEvents = [];
+let captureA = null;
+let captureB = null;
+let capturing = false;
+let target = 200;
+let noteOnly = true;
+let attachedInput = null;
+
+const $ = (id) => document.getElementById(id);
+const setStatus = (s) => { $('status').textContent = s; };
+
+async function initMidi() {
+  if (!navigator.requestMIDIAccess) {
+    setStatus('Web MIDI API not available. Use Chrome or Edge over http(s)://, not file://.');
+    return;
+  }
+  try {
+    midi = await navigator.requestMIDIAccess({ sysex: false });
+    populateInputs();
+    midi.onstatechange = populateInputs;
+  } catch (e) {
+    setStatus('MIDI access denied: ' + e.message);
+  }
+}
+
+function populateInputs() {
+  const sel = $('input');
+  const prev = sel.value;
+  sel.innerHTML = '';
+  for (const input of midi.inputs.values()) {
+    const opt = document.createElement('option');
+    opt.value = input.id;
+    opt.textContent = input.name + (input.manufacturer ? ' (' + input.manufacturer + ')' : '');
+    sel.appendChild(opt);
+  }
+  if (prev) sel.value = prev;
+}
+
+function getInput() {
+  const id = $('input').value;
+  return midi ? midi.inputs.get(id) : null;
+}
+
+function onMidi(e) {
+  if (!capturing) return;
+  const status = e.data[0] & 0xf0;
+  if (noteOnly) {
+    if (status !== 0x90) return;
+    if (e.data[2] === 0) return; // running-status note-off
+  }
+  currentEvents.push({ t: e.timeStamp, status: e.data[0], d1: e.data[1], d2: e.data[2] });
+  setStatus('Capturing: ' + currentEvents.length + ' / ' + target);
+  if (currentEvents.length >= target) stopCapture();
+}
+
+function startCapture() {
+  const inp = getInput();
+  if (!inp) { setStatus('No MIDI input selected.'); return; }
+  if (attachedInput) attachedInput.onmidimessage = null;
+  attachedInput = inp;
+  inp.onmidimessage = onMidi;
+  currentEvents = [];
+  target = parseInt($('target').value, 10) || 200;
+  noteOnly = $('noteonly').checked;
+  capturing = true;
+  $('start').disabled = true;
+  $('stop').disabled = false;
+  setStatus('Capturing: 0 / ' + target + ' from "' + inp.name + '"');
+}
+
+function stopCapture() {
+  capturing = false;
+  $('start').disabled = false;
+  $('stop').disabled = true;
+  setStatus('Done. ' + currentEvents.length + ' events captured. Save as A or B.');
+}
+
+function clearCurrent() {
+  currentEvents = [];
+  setStatus('Current capture cleared.');
+}
+
+function computeStats(events) {
+  if (events.length < 2) return null;
+  const deltas = [];
+  for (let i = 1; i < events.length; i++) deltas.push(events[i].t - events[i-1].t);
+  const sorted = deltas.slice().sort((a, b) => a - b);
+  const n = sorted.length;
+  const mean = sorted.reduce((a, b) => a + b, 0) / n;
+  const variance = sorted.reduce((a, b) => a + (b - mean) * (b - mean), 0) / n;
+  const stddev = Math.sqrt(variance);
+  const pct = (p) => sorted[Math.min(n - 1, Math.floor(n * p))];
+  return {
+    n, mean, stddev,
+    median: pct(0.5),
+    min: sorted[0],
+    max: sorted[n - 1],
+    p05: pct(0.05),
+    p95: pct(0.95),
+    deltas: sorted
+  };
+}
+
+function statRow(k, v) {
+  return '<div class="stat"><span>' + k + '</span><span>' + v + '</span></div>';
+}
+
+function histogramHTML(deltas, klass) {
+  if (deltas.length < 2) return '';
+  const min = deltas[0];
+  const max = deltas[deltas.length - 1];
+  if (max === min) return '<div class="hist"><div class="bar ' + klass + '" style="height:100%"></div></div>';
+  const bins = 40;
+  const range = max - min;
+  const counts = new Array(bins).fill(0);
+  for (const d of deltas) {
+    const b = Math.min(bins - 1, Math.floor((d - min) / range * bins));
+    counts[b]++;
+  }
+  const maxC = Math.max.apply(null, counts);
+  const bars = counts.map(c => '<div class="bar ' + klass + '" style="height:' + (c / maxC * 100).toFixed(0) + '%"></div>').join('');
+  return '<div class="hist">' + bars + '</div>' +
+    '<div class="axis"><span>' + min.toFixed(2) + ' ms</span><span>' + ((min + max) / 2).toFixed(2) + ' ms</span><span>' + max.toFixed(2) + ' ms</span></div>';
+}
+
+function renderSlot(slotId, label, capture) {
+  const el = $(slotId);
+  if (!capture) {
+    el.className = 'slot empty';
+    el.textContent = label + ' — empty';
+    return;
+  }
+  const s = capture.stats;
+  const klass = slotId === 'slotB' ? 'b' : '';
+  el.className = 'slot';
+  el.innerHTML =
+    '<h3>' + label + ' — ' + capture.events.length + ' events over ' +
+    ((capture.events[capture.events.length - 1].t - capture.events[0].t) / 1000).toFixed(1) + ' s</h3>' +
+    statRow('Mean Δt', s.mean.toFixed(2) + ' ms') +
+    statRow('Median Δt', s.median.toFixed(2) + ' ms') +
+    statRow('Stddev (jitter)', s.stddev.toFixed(2) + ' ms') +
+    statRow('Min Δt', s.min.toFixed(2) + ' ms') +
+    statRow('Max Δt', s.max.toFixed(2) + ' ms') +
+    statRow('P5–P95 spread', (s.p95 - s.p05).toFixed(2) + ' ms') +
+    histogramHTML(s.deltas, klass);
+}
+
+function saveAs(slot) {
+  if (currentEvents.length < 2) { setStatus('Need at least 2 events to save.'); return; }
+  const cap = { events: currentEvents.slice(), stats: computeStats(currentEvents) };
+  if (slot === 'A') { captureA = cap; renderSlot('slotA', 'A', captureA); }
+  else { captureB = cap; renderSlot('slotB', 'B', captureB); }
+  renderCompare();
+  setStatus('Saved as ' + slot + '.');
+}
+
+function renderCompare() {
+  if (!captureA || !captureB) { $('compareBlock').style.display = 'none'; return; }
+  $('compareBlock').style.display = 'block';
+  const A = captureA.stats, B = captureB.stats;
+  const all = A.deltas.concat(B.deltas);
+  const min = Math.min.apply(null, all);
+  const max = Math.max.apply(null, all);
+  const bins = 50;
+  const range = (max - min) || 1;
+  const ca = new Array(bins).fill(0);
+  const cb = new Array(bins).fill(0);
+  for (const d of A.deltas) ca[Math.min(bins - 1, Math.floor((d - min) / range * bins))]++;
+  for (const d of B.deltas) cb[Math.min(bins - 1, Math.floor((d - min) / range * bins))]++;
+  const maxC = Math.max(Math.max.apply(null, ca), Math.max.apply(null, cb));
+
+  let bars = '';
+  for (let i = 0; i < bins; i++) {
+    bars += '<div style="flex:1;position:relative;height:100%">' +
+      '<div class="bar" style="height:' + (ca[i] / maxC * 100).toFixed(0) + '%;position:absolute;bottom:0;width:100%;opacity:0.55"></div>' +
+      '<div class="bar b" style="height:' + (cb[i] / maxC * 100).toFixed(0) + '%;position:absolute;bottom:0;width:100%;opacity:0.55"></div>' +
+      '</div>';
+  }
+
+  let html = '<div class="legend">' +
+    '<span><span class="legend-swatch" style="background:#0066ff"></span>A — n=' + A.n + ', stddev ' + A.stddev.toFixed(2) + ' ms, P5-P95 ' + (A.p95 - A.p05).toFixed(2) + ' ms</span>' +
+    '<span><span class="legend-swatch" style="background:#ff6633"></span>B — n=' + B.n + ', stddev ' + B.stddev.toFixed(2) + ' ms, P5-P95 ' + (B.p95 - B.p05).toFixed(2) + ' ms</span>' +
+    '</div>';
+  html += '<div class="hist" style="height:120px">' + bars + '</div>';
+  html += '<div class="axis"><span>' + min.toFixed(2) + ' ms</span><span>' + ((min + max) / 2).toFixed(2) + ' ms</span><span>' + max.toFixed(2) + ' ms</span></div>';
+
+  const ratio = A.stddev / B.stddev;
+  let verdict;
+  if (Math.abs(ratio - 1) < 0.05) verdict = 'A and B have effectively equal jitter (within 5%).';
+  else if (ratio > 1) verdict = '<b>B is tighter</b> — A stddev / B stddev = ' + ratio.toFixed(2) + '× (' + ((1 - 1 / ratio) * 100).toFixed(0) + '% jitter reduction from A→B).';
+  else verdict = '<b>A is tighter</b> — B stddev / A stddev = ' + (1 / ratio).toFixed(2) + '× (' + ((1 - ratio) * 100).toFixed(0) + '% jitter reduction from B→A).';
+  html += '<div class="conclusion">' + verdict + '</div>';
+
+  $('compare').innerHTML = html;
+}
+
+function exportJSON() {
+  const data = {
+    capturedAt: new Date().toISOString(),
+    A: captureA,
+    B: captureB
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'davebox-jitter-' + Date.now() + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function resetAll() {
+  captureA = null;
+  captureB = null;
+  currentEvents = [];
+  renderSlot('slotA', 'A', null);
+  renderSlot('slotB', 'B', null);
+  $('compareBlock').style.display = 'none';
+  setStatus('Reset. All captures cleared.');
+}
+
+$('start').onclick = startCapture;
+$('stop').onclick = stopCapture;
+$('saveA').onclick = () => saveAs('A');
+$('saveB').onclick = () => saveAs('B');
+$('clear').onclick = clearCurrent;
+$('export').onclick = exportJSON;
+$('reset').onclick = resetAll;
+
+renderSlot('slotA', 'A', null);
+renderSlot('slotB', 'B', null);
+initMidi();
+</script>
+</body>
+</html>

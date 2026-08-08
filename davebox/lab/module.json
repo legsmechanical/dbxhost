@@ -1,0 +1,22 @@
+{
+    "id": "davebox-lab",
+    "name": "dAVEBOx Lab",
+    "version": "0.1.0",
+    "abbrev": "LAB",
+    "description": "Dev rig for davebox module hosting: load a Schwung sound generator into a chain slot and edit it in the canvaskit UI.",
+    "author": "legsmechanical",
+    "api_version": 2,
+    "ui": "ui.js",
+    "component_type": "tool",
+    "tool_config": {
+        "interactive": true,
+        "skip_file_browser": true,
+        "overtake": true
+    },
+    "capabilities": {
+        "midi_in": true,
+        "midi_out": true,
+        "claims_master_knob": true,
+        "suspend_self_managed": true
+    }
+}

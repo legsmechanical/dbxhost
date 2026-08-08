@@ -1,0 +1,258 @@
+# Schwung Patches
+
+Local patches applied to `~/schwung/` that must be re-applied after any Schwung upgrade.
+
+> ## ⚠ CURRENT STATE (2026-07-20) — read this first; everything below is largely historical
+>
+> Verified against live git (`upstream/main` = `a46f32b2` "bump host to 0.11.6"; the `legsmechanical/schwung`
+> fork's `origin/main` has fast-forwarded past it cleanly). The body of this doc (base `v0.9.16`, "co-run is a
+> local patch") is **stale** — kept for history. The current reality:
+>
+> - **Co-run is no longer a fork patch — it was upstreamed** (PRs #94 / #112 / #113 / #114). The fork's older
+>   "granular" co-run commits were dropped in the rebase. **All 15 host symbols davebox capability-gates on are
+>   now in upstream `charlesvestal/schwung`**: `shadow_corun_begin/end/open/entries/state/set_led_keep_mask`,
+>   `shadow_get_slots`, `shadow_set_skip_led_clear`, `shadow_set_overtake_suppress_sysex`,
+>   `shadow_inbound_pad_midi_active`, `shadow_get_ui_flags` / `shadow_clear_ui_flags`,
+>   `shadow_set_param` / `shadow_get_param`, `shadow_send_midi_to_dsp`, `host_suspend_overtake`,
+>   `host_hide_module`, `host_ext_midi_remap_enable`. So on a stock upstream host, co-run / "Edit Slot…" /
+>   Move-native co-run / Back-navigate-suspend all work.
+>
+> - **The one remaining fork-ONLY host dependency for davebox is the FX-bus picker** (Send FX + Move insert FX):
+>   host commits `0d6402b6` (Send FX + Move FX buses + generic FX-bus picker) + `7ba06ccc` (fx3/fx4 chain-slot
+>   `get_param` routing) + overlay-canvas commits `6e178e7e` / `af773341` / `ca13c950`. davebox's `fx_picker`
+>   overlay gates on `shadow_corun_entries()` returning an `fx_picker` entry, which exists **only** with this
+>   patch. The co-run *mechanism* it rides on is upstream; the FX-bus *target* is not. On a host without it, the
+>   Note/Session FX-picker just doesn't surface (gated off, not broken). NOTE: `0d6402b6` also carries fork-only
+>   FX3/FX4 chain-slot expansion that is explicitly NOT for upstream.
+>
+> - **Remote UI** host support is being upstreamed as **PR #180** ("Remote UI v2 for overtake tools" — off-thread
+>   snapshot cache, lossless push ring, server-driven poll, `RemoveIPC=no` logind fix; files:
+>   `schwung-manager/{remote_ui.go,shmwebring.go,static/remote-ui.js}`, `src/schwung_shim.c`, `scripts/install.sh`,
+>   `docs/MODULES.md`). It touches **none** of the co-run/capability symbols above. **Base remote-UI support is
+>   already in the current release** — davebox's browser editor rides `schwung-manager`'s Tool tab + rev-gated poll
+>   from **upstream PR #148** (`abdcdac9`, in `v0.11.5`/`v0.11.6`, released 2026-07-02), so it **loads and works on
+>   stock `v0.11.6`**. #180 is the **v2 robustness layer** — it fixes the RT-thread state-snapshot serialization
+>   that hitches the sequencer clock + MIDI during heavy browser editing (`547e6e3a`), adds true push + a lossless
+>   write ring, and hardens `/dev/shm` at install. So the remote UI is **functional-but-degraded** without #180,
+>   not broken. (Current published upstream release: **`v0.11.6`**, 2026-07-19.)
+>
+> The gate pattern itself is unchanged and still correct — see "Why this is split into two repos" below.
+
+Current base: **`v0.9.16`** (`2e15e357`, upstream `charlesvestal/schwung`; 2026-05-29), branch `main` on the `legsmechanical/schwung` fork. The fork is `v0.9.16` + 3 post-release upstream fixes + 8 co-run commits. The local patch is **co-run-only** — chain-edit + Move-native co-run, incl. the selective LED filter + track-button strip + co-run LED handoff + chain-edit knob exposure (knob turn+touch) + teardown fix. As of 2026-05-22 the co-run input split is **generalized** — a tool-declared manifest (`corun_keep_mask` + the shared `corun_group_for_event` map + `shadow_corun_begin/end` API) replaces the old hard-coded nav-CC lists; dAVEBOx's split is the zero-config default (`keep_mask==0`). This form is the basis for upstream PR #94 (`notes/corun-upstream-pr-draft.md`). PR #92 + #93 shipped in v0.9.16 and are no longer carried locally. `shadow_control_t` reserved bytes carry `midi_indicator_enabled` (upstream) + `corun_chain_edit_slot` + `corun_move_native_track`, `reserved[3]`.
+
+**2026-06-03 — two non-co-run general fixes also added to fork/main** (`fc8db9bb`, `b090edf0`, docs `673f166c`; pushed). Both are **pre-existing bugs in upstream `v0.9.16`** (not dAVEBOx-specific) and are good upstream-PR candidates: (1) **master-FX preset buffers** — `save_master_preset`/`update_master_preset` extracted each FX slot into `char fxN[512]`, so large modules (e.g. spectra) truncated → malformed preset JSON → empty chain on load; enlarged to 8192 (`final_json`→40960, under the 64KB round-trip). (2) **build hygiene** — the host target's `needs_rebuild` list omitted `shadow_constants.h`, so an SHM-layout change rebuilt the shim/modules but **not the host**, leaving mismatched binaries (silent param corruption that mimics feature bugs); host now depends on all `src/host/*.h`, and deploys should use a clean build (`clean.sh && build.sh`). Standalone patch files: `~/schwung-master-fx-patches/` (`git am`-applyable). NB: `scripts/build.sh` is **not** under `src/`, so the build fix is *not* captured by the `git diff <base>..main -- src/` regen of `davebox-local.patch` — it lives only as a fork/main commit.
+
+**2026-06-04 — two general mixer features added to fork/main** (`ee0acc86`…`88b74e61`, plus docs `66d8a470`; pushed). Both are **general Schwung features**, not dAVEBOx co-run dependencies, and are upstream-PR candidates: (1) **instrument-slot FX3/FX4** — each chain slot's audio-FX chain expands from 2 → 4 slots. (2) **Send FX** — two post-fader send buses (A/B), each up to 4 FX, with an FX bus picker (Master FX / Send A / Send B), one **shared** preset store, per-bus return level, per-set persistence (chains recall across set switches), and a genericized bus-descriptor FX editor shared by Master + sends. Device-verified. Also folds in two latent-bug fixes worth upstreaming on their own: a `json_get_section_bounds` gap-corruption fix (an empty FX slot grabbed the next slot's object → corrupted presets with gaps; also fixed **master** presets) and a send `ui_hierarchy` → `module.json` fallback (modules like *dissolver* declare their hierarchy in module.json, not via live `get_param`, so without it they couldn't open their param editor on a send). Standalone patch artifacts + a per-file **FEATURE-MAP** (per-file feature ownership, how to split the two hunk-interwoven files `chain_host.c`/`shadow_ui.js`, commit→feature mapping, upstream-adaptation caveats) are **tracked in the fork at `upstream-patches/`** (consolidated diff + the 8-patch series). Like the master-FX fixes, these are fork-relative — official's versions of the touched files differ, so the map documents the adaptation path rather than a clean apply.
+
+**2026-06-04 — co-run preset-less param-menu fix added to fork/main** (`d5711f4f`; pushed). **Co-run-specific.** In co-run, opening a chain-slot sound generator with **no `ui_hierarchy`** fell through to the bare preset browser (`loadModuleUi` is refused in co-run to avoid overwriting `globalThis.tick` and starving the active tool); with **no presets** that browser dead-ended on "No presets" with no way to reach params. Fix synthesizes a one-level hierarchy from the module's `chain_params` (`buildSynthHierarchyFromChainParams` + `enterHierarchyEditorWith` in `shadow_ui.js`) and enters the co-run-dispatched hierarchy editor instead; **gated to co-run + the no-preset case** (preset-having modules keep the preset browser; modules with a real `ui_hierarchy` and all non-co-run paths are untouched). Device-verified on **airplay** (`chain_params=[gain]` → editable gain+swap menu). **A follow-up upstream PR is queued for after co-run PR #94 (`corun-framework`) lands** — it's a generic co-run improvement, deliberately kept out of #94 to keep that PR minimal; cherry-pick `d5711f4f` then. Limitation: surfaces only the module's declared `chain_params`, **not** a module's bespoke imperative UI actions (e.g. airplay's "Restart AirPlay" / "Name" live only in its own `ui.js`, unreachable in co-run) — the clean path for a module to expose actions in co-run is to declare a `ui_hierarchy` in its `module.json` (the fix prefers a real hierarchy over the synthesized fallback).
+
+**2026-06-10 — co-run view-addressing mechanism added to fork (`corun-view-addressing`).** **Co-run-specific, but view-agnostic + upstreamable.** Generalizes co-run beyond the two hardcoded targets (`CORUN_TARGET_CHAIN_EDIT` / `CORUN_TARGET_MOVE_NATIVE`) so a co-running tool can open any *registered* Schwung screen as a temporary **overlay** over its current co-run target and return — without changing `corun.target`, so the consumer tool never tears down. Three **addressing verbs** are defined on the shared QuickJS `globalThis` by `shadow_ui.js`: `shadow_corun_entries()` (discovery — returns the openable screen ids so a tool can capability-gate per-entry), `shadow_corun_open(id, keep_mask, args)`, and `shadow_corun_close()`. They are backed by a curated **`CORUN_ENTRIES` registry** (id → `{ enter, keepDefault, overlay }`) that reuses existing screen enter-functions and is **never** auto-derived from the `VIEWS` enum. The only C addition is one SHM helper, **`shadow_corun_overlay(active, keep_mask)`**, which flips `shadow_display_owner` (→ `SCHWUNG_UI`) and applies the keep_mask **without touching `corun.target`** (JS can't write those `shadow_control` fields); overlay nav **reuses the chain-edit co-run dispatch** — the overlay keeps `view = OVERTAKE_MODULE` and drives `coRunView` via `runCoRunChainEdit`, with `coRunUiActive()`/`coRunWants()` generalizing the existing intercept, so the tool stays addressable underneath: Step 3 exits co-run from any overlay depth and the tool keeps painting its LEDs, exactly as in chain-edit co-run. The per-frame `shadow_corun_state()` reconcile clears the overlay when the tool ends co-run, handing the screen back. **Catalog split:** upstream registers `slots` / `chain_editor` / `master_fx` / `global_settings`; the fork adds **`fx_picker`** in a fork-guarded block. First consumer is dAVEBOx's **Note/Session button in Move co-run**, which opens `fx_picker` (Master FX · Send A · Send B · Move-track insert FX 1–4) over the Move synth, keeps the jog + Back groups (`DAVEBOX_PICKER_KEEP_MASK` = normal mask + `CORUN_GRP_JOG` + `CORUN_GRP_BACK`) while open, and capability-gates on `shadow_corun_entries()` including `fx_picker`. Mechanism docs in `docs/CORUN.md` (fork). **Device-verified 2026-06-10**, including FX **knob editing** in the overlay: `DAVEBOX_PICKER_KEEP_MASK` also keeps `CORUN_GRP_KNOBS` + `CORUN_GRP_TOUCH`, and `coRunWants()` became the **uniform** rule (an overlay handles exactly the groups the tool KEEPS), so no per-element special-casing. A separate fork-FX fix (`51f994aa`) generalized the FX-overview home-screen knobs from **master-only** to **all** buses + added a bus-keyed knob-context cache (knobs were leaking params across buses).
+
+**2026-06-10 — `upstream-patches/` reorganized into per-feature bundles** (fork `e916292a`). Replaces the old flat send-fx artifacts with three **self-contained** bundles under the fork's `upstream-patches/`, each = a `src/`-scoped per-commit `series/` + `.series.mbox` + `FEATURE-MAP.md` (re-implementation guide): **`corun/`** (19 commits — framework + addressable-view overlay; for ONE unified co-run PR **superseding the stalled PR-94**), **`send-fx/`** (10 — Send FX + picker; **upstream PR #1**), **`move-fx/`** (7 — Move insert FX; **upstream PR #2**). Both FX bundles carry the **shared FX-bus picker** (`ab82fc58` picker hunks + `d2107419` + all-bus knob fix `51f994aa`) so either is upstreamable on its own. **FX3/FX4 chain-slot expansion is fork-only / NOT for upstream** — entangled in `ab82fc58` (series `0001` of both FX bundles); each FEATURE-MAP lists the symbols to drop. Still fork-relative guides (official's files differ → re-implement via the map, not `git am`).
+
+> The fork is based on tagged release `v0.9.16` plus 3 post-release upstream commits (`55a2468f` HEAD). Co-run commits live on `fork/main` and were merged to local `main` on 2026-05-29. Pre-rebase safety branch on the fork: `backup/pre-origin-rebase-20260522` (= `5dda2d7f`).
+
+## Why this is split into two repos
+
+dAVEBOx ships from `legsmechanical/schwung-davebox` `main` to anyone running stock Schwung — public releases need to install cleanly on `charlesvestal/schwung` without expecting patches. But some dAVEBOx features (currently: chain-edit co-run via `Edit Slot...`) require Schwung-side surgery that isn't a candidate for upstream as-is.
+
+**Pattern:** keep all dAVEBOx code on `main`, capability-gate any feature that needs patched-Schwung APIs at the entry point (typically the menu item that triggers it). On stock Schwung the gate resolves false → entry doesn't render → the feature is invisible and all downstream code stays dormant. On a Move running the patched `legsmechanical/schwung` shim, the gate resolves true and the feature lights up automatically.
+
+Concrete example (from `buildGlobalMenuItems()` in `ui/ui.js`):
+
+```js
+...(typeof shadow_set_corun_chain_edit === 'function' ? [
+    createAction('Edit Slot...', function() {
+        openSchwungSlotEditor(S.activeTrack);
+    })
+] : []),
+```
+
+All downstream calls (`shadow_set_corun_chain_edit`, `shadow_get_corun_chain_edit`) are defensively guarded with `typeof ... === 'function'` checks, and runtime state like `S.schwungCoRunSlot` defaults to `-1` so the LED-suppression / drawUI-early-return / Back-exit hooks all stay false-y on stock Schwung.
+
+**Result:** one repo, one main branch, one release flow. Co-run lives in the codebase as a feature that simply doesn't surface unless the host supports it.
+
+## Maintenance workflow
+
+Day-to-day dAVEBOx development is normal — work on `main`, commit, release via `scripts/cut_release.sh`. The patched-Schwung side has its own cadence:
+
+1. **When upstream Schwung tags a new release** (e.g. `v0.9.14`):
+   - Fetch and check out the new tag in `~/schwung`.
+   - Cherry-pick the local commits from the previous fork-`main` onto the new tag (or rebase). Resolve any conflicts.
+   - Regenerate the patch:
+     ```sh
+     cd ~/schwung
+     git diff <new-tag>..main -- src/ > patches/davebox-local.patch
+     git add patches/davebox-local.patch && git commit -m "chore: regenerate patch against <new-tag>"
+     git push fork main
+     ```
+   - Update the "Current base" line in this file and `patches/README.md` in the fork.
+   - Build the new shim (`./scripts/build.sh`), deploy to Move, smoke-test.
+
+2. **When a new local Schwung change is needed** (e.g. extending co-run, adding another capability-gated API):
+   - Work on a feature branch in `~/schwung` off `main`.
+   - When ready, fast-forward `main` and regenerate the patch (`git diff v<base>..main -- src/ > patches/davebox-local.patch`).
+   - Push fork.
+   - In `~/schwung-davebox`, add the corresponding feature gated on `typeof shadow_xxx === 'function'`.
+
+3. **When cutting a dAVEBOx release**:
+   - Normal `scripts/cut_release.sh <version>` flow. No special handling — capability-gated features go along for the ride, invisible to stock-Schwung users.
+
+## Re-applying after a Schwung upgrade
+
+```sh
+cd ~/schwung && git apply patches/davebox-local.patch
+```
+
+Regenerate the patch after cherry-picking onto a new base:
+```sh
+git diff <new-base>..HEAD -- src/ > patches/davebox-local.patch
+```
+
+Verify each commit is present before deploying:
+```sh
+cd ~/schwung && git log --oneline | grep <sha>
+```
+
+Build and deploy:
+```sh
+cd ~/schwung && ./scripts/build.sh
+
+# shim — required for any change to schwung_shim.c or shadow_constants.h:
+scp ~/schwung/build/schwung-shim.so root@move.local:/data/UserData/schwung/schwung-shim.so
+
+# shadow_ui binary + shadow_ui.js — REQUIRED for any change to shadow_ui.c or shadow_ui.js
+# (e.g. co-run features add JS bindings that are compiled into the shadow_ui binary).
+# Must kill the running shadow_ui first; binary mmap holds the inode otherwise.
+ssh root@move.local "killall -9 shadow_ui 2>/dev/null; true"
+scp ~/schwung/build/shadow/shadow_ui ~/schwung/build/shadow/shadow_ui.js root@move.local:/tmp/
+ssh root@move.local "mv /tmp/shadow_ui /data/UserData/schwung/shadow/shadow_ui \
+                  && mv /tmp/shadow_ui.js /data/UserData/schwung/shadow/shadow_ui.js \
+                  && chmod +x /data/UserData/schwung/shadow/shadow_ui"
+```
+Then restart Move. All deploy paths are under `/data/UserData/schwung/` (data partition); NEVER touch `/usr/lib/schwung-shim.so` or `/usr/lib/schwung/shadow/*` (symlinks recreated on every boot by `schwung-heal`).
+
+**Common gotcha:** deploying only the shim after a co-run change makes the menu items silently disappear — the capability-gate checks `typeof shadow_set_corun_chain_edit === 'function'` look at the running `shadow_ui` binary, not the shim. If `Edit Slot...` / `Edit Synth...` are missing after a rebase deploy, you forgot the shadow_ui step.
+
+## Patch table
+
+| Commit (on fork/main) | Files | Description |
+|---|---|---|
+| `97e05e7e` → `b5d83ec4` (5 commits) | `src/host/shadow_constants.h`, `src/schwung_shim.c`, `src/shadow/shadow_ui.c`, `src/shadow/shadow_ui.js` | **Chain-edit co-run mode.** Lets shadow_ui's chain editor (slot settings, hierarchy editor, preset browser) render and accept input while an overtake tool module (dAVEBOx) is still loaded and ticking. See [Co-run architecture](#co-run-architecture) below. |
+| `add063c3` + `f0f4cd6c` (2 commits) | `src/host/shadow_constants.h`, `src/schwung_shim.c`, `src/shadow/shadow_ui.c` | **Move-native co-run mode.** Lets Move firmware's preset browser + device-edit pages render to the OLED and accept jog/track-button/knob/Shift/Back input while an overtake tool (dAVEBOx) keeps pads, step buttons, transport, and Menu. Pure shim-level split — no `shadow_ui.js` change because Move firmware is a separate process reading the shadow_mailbox MIDI_IN region directly. See [Move-native co-run architecture](#move-native-co-run-architecture) below. |
+| `fc8db9bb` + `b090edf0` + `673f166c` (2026-06-03) | `src/modules/chain/dsp/chain_host.c`, `scripts/build.sh`, `BUILDING.md`, `docs/release-notes-next.md` | **General bugfixes (NOT co-run; upstream-PR candidates).** (1) Master-FX preset buffers 512→8192 — large modules (spectra) were truncated → empty chain on load. (2) Build host target depends on all `src/host/*.h` — an SHM-layout (`shadow_constants.h`) change otherwise rebuilt shim/modules but not the host → mismatched binaries. Both pre-existing in upstream `v0.9.16`. Patches: `~/schwung-master-fx-patches/`. |
+
+Local commits add the chain-edit + Move-native co-run features for dAVEBOx; all previous inject-race, `EXT_MIDI_REMAP_BLOCK`, and cable-2 routing patches were upstreamed into Schwung v0.9.13 and are no longer carried locally.
+
+### Historical patches now upstream in v0.9.13
+
+The following local commits were retired when their upstream equivalents shipped:
+
+- Inject-race deferrals (4 commits) → PR #77 (`99f4e6c2`) + maintainer follow-up `62a04135`
+- `EXT_MIDI_REMAP_BLOCK` (2 commits) → PR #76 (`a08398db`)
+- Cable-2 passthrough to Move + chain slots (1 commit) → PR #78 (`f3b27227`) + `62a04135`
+- THRU-slot gate removal from cable-2 remap (1 commit) → also covered upstream
+- Earlier inject-drain defer variants (4 commits) → superseded by PR #77
+
+PRs #71 / #72 (earlier defer/hold variants) were closed unmerged in favor of PR #77.
+
+## Co-run architecture
+
+Lets the user navigate Schwung's chain editor for a slot (add/remove modules, change presets, edit params via hierarchy editor) **without leaving dAVEBOx**. While co-run is active, OLED + jog + jog-click + track buttons + Shift drive the chain editor; pads, step buttons, knobs, transport, and Back stay with dAVEBOx. Entry: track menu → `Edit Slot...`. Exit: Menu button.
+
+> **Note (2026-05-26):** the chain-edit + Move-native co-run paths have been
+> rebuilt as a generalized framework in upstream Schwung — see
+> `schwung/docs/CORUN.md`. The dAVEBOx side now uses a single API
+> (`shadow_corun_begin(target, id, keep_mask)` / `shadow_corun_end()` /
+> `shadow_corun_state()`) with a `CORUN_TARGET_*` enum, and the exit gesture is
+> **Back** (framework-reserved), not Menu. The sections below describe the
+> earlier per-target setter design and remain accurate as historical context;
+> the live code on `corun-api-rename` uses the new API.
+
+### What changed in Schwung
+
+**`src/host/shadow_constants.h`** — `shadow_control_t` gains `int8_t corun_chain_edit_slot` (−1 = off, 0–3 = slot whose chain editor is co-running). Steals 1 byte from `reserved[6]` → `reserved[5]`. Layout-stable.
+
+**`src/schwung_shim.c`** — initializes `corun_chain_edit_slot = -1` on boot.
+
+**`src/shadow/shadow_ui.c`** — two new JS bindings:
+- `shadow_set_corun_chain_edit(slot)` — enable co-run for `slot` (or `-1` to disable). Tool side calls this on Edit-Slot entry; chain editor's Menu intercept calls it with `-1` to exit.
+- `shadow_get_corun_chain_edit()` — read current state. Tool side polls this to detect external clears (Menu).
+
+**`src/shadow/shadow_ui.js`** — the load-bearing change. Five pieces:
+
+1. **Top of `tick()`**: poll SHM for the co-run slot. On `-1 → N` transition, initialize chain-editor state for that slot (selectedSlot, selectedChainComponent, loadChainConfigFromSlot) without changing the outer `view` (which must stay `VIEWS.OVERTAKE_MODULE` so the tool keeps ticking).
+2. **`runCoRunChainEdit(fn)` helper**: temporarily swap the outer `view` to `coRunView` so dispatch functions (`handleJog`, `handleSelect`, `handleBack`, draw fns) land on the chain-edit branch. Captures any view-changes back into `coRunView` so deeper navigation (PATCHES → COMPONENT_EDIT → KNOB_EDITOR etc.) sticks across frames.
+3. **`dispatchCoRunDraw()` helper**: mirrors the main draw switch's chain-edit subtree (CHAIN_EDIT → drawChainEdit, PATCHES → drawPatches, COMPONENT_PARAMS, COMPONENT_SELECT, CHAIN_SETTINGS, COMPONENT_EDIT, HIERARCHY_EDITOR, KNOB_*, LFO_*, STORE_PICKER_*, FILEPATH_BROWSER). Called from the OVERTAKE_MODULE tick branch after the tool tick.
+4. **Per-CC input split** in `onMidiMessageInternal`'s OVERTAKE_MODULE branch: CCs 3 (jog click), 14 (jog turn), 40–43 (track buttons), 49 (Shift), 50 (Menu), and 51 (Back) are intercepted before the tool sees them. Jog/click route to `handleJog`/`handleSelect` (with Shift+Click → `handleShiftSelect` mirrored from the non-overtake handler). Track buttons switch the editing slot. Shift updates `hostShiftHeld` and is swallowed. Menu clears the co-run flag. Back navigates up within the editor or is eaten at the CHAIN_EDIT top level.
+5. **Param-shim swap (`runToolCallback`)**: when chain-editor entry calls `setupModuleParamShims` (either via `enterHierarchyEditor` or `loadModuleUi`), `globalThis.host_module_get_param` / `host_module_set_param` get overwritten to route at the slot DSP. This *would* silently misroute every active-tool IPC. Fix: cache the real host APIs on first shim install, and wrap every tool callback (tick, onMidiMessageInternal, knob/jog delta flushes) with a swap-and-restore so the tool always talks to its own DSP. The chain editor's own draws keep the shimmed APIs.
+
+Two gates also short-circuit problematic native paths during co-run:
+- **`loadModuleUi`** refuses (returns `false`) when `coRunChainEditSlot >= 0`. The fallback path in `enterComponentEditFallback` then takes the simple preset-browser branch instead of loading the module's UI JS (which would overwrite `globalThis.tick`/`onMidiMessageInternal` and silence the tool entirely).
+- **The `suspend_keeps_js` Back handler** (line ~15316) gates on `coRunChainEditSlot < 0` so the co-run Back intercept runs first; otherwise Back would suspend the tool instead of navigating up within the chain editor.
+
+### Tool-side contract (the dAVEBOx half)
+
+A tool that opts into co-run is expected to:
+- Call `shadow_set_corun_chain_edit(slot)` on entry, `shadow_set_corun_chain_edit(-1)` on exit.
+- Skip its own OLED drawing while co-run is active (early-return in its draw path). Drawing primitives are shared with the chain editor; the chain editor calls `clear_screen()` at the start of each draw so anything the tool drew gets wiped, but skipping saves the wasted work and prevents visible flicker.
+- Re-render normally when co-run clears (the tool polls `shadow_get_corun_chain_edit()` and reacts to external clears, e.g. from Menu).
+- Accept that Shift, track buttons (CC 40–43), jog, jog-click, and Back are unavailable to the tool while co-run is active.
+
+dAVEBOx implements this contract via `S.schwungCoRunSlot`, the `Edit Slot...` track-menu action, and a `pollDSP` reconciliation step.
+
+### Why this isn't suitable for upstream
+
+The feature is narrowly designed for the dAVEBOx use case. Two open questions for a generalized upstream version:
+- The tool-side "skip my draw" contract is implicit; upstream might want a manifest flag or host-side gate.
+- `dispatchCoRunDraw` mirrors the main draw switch; upstream additions to chain-edit-reachable views would need to be mirrored here too. A shared dispatch helper would be cleaner.
+
+See `~/.claude/projects/-Users-josh-schwung-davebox/memory/project_schwung_chain_ui_access.md` for the original heavy design and the design conversation.
+
+## Move-native co-run architecture
+
+Lets the user open Move firmware's native preset browser and device-edit pages for a track's synth **without leaving dAVEBOx**. While co-run is active, OLED + jog + jog-click + track buttons + Shift + Back + device-edit knobs (CC 71–78) + master knob (CC 79) + capacitive touch notes 0–9 drive Move firmware. dAVEBOx keeps pads, step buttons, transport, and Menu — pads still fire the sequencer audibly so the user can audition presets against the playing pattern. Entry: track menu → `Edit Synth...` (visible only on ROUTE_MOVE tracks). Exit: Menu button.
+
+Architecturally a sibling of [chain-edit co-run](#co-run-architecture) with the receiving side swapped from `shadow_ui`'s chain editor (JS, same process) to Move firmware (separate process, reachable via the shadow_mailbox MIDI_IN buffer + display_mode-bypass framebuffer copy). The split is **entirely shim-side** because Move firmware reads `sh_midi` (the shim-filtered shadow_mailbox region) directly, not `shadow_ui_midi_shm` (the JS dispatch buffer). No `shadow_ui.js` change is needed; no `runToolCallback` host-API swap is needed (Move firmware can't clobber the tool's `globalThis` shims because it's a separate process).
+
+### What changed in Schwung
+
+**`src/host/shadow_constants.h`** — `shadow_control_t` gains `int8_t corun_move_native_track` (−1 = off, 0–7 = active dAVEBOx track). Steals 1 byte from `reserved[5]` → `reserved[4]`. Layout-stable. Bound is 0–7 (not 0–3) because dAVEBOx has 8 sequencer tracks; the shim only uses the value as a gate (`>= 0` = co-run active), so the actual identity is for the tool side to interpret.
+
+**`src/schwung_shim.c`** — three additions:
+
+1. **`shadow_swap_display()` early-return** when `corun_move_native_track >= 0`. Bypasses the shadow framebuffer copy without dropping `shadow_display_mode`, so Move firmware's framebuffer reaches the OLED while the MIDI filter at the `sh_midi` sync site (which is gated on `shadow_display_mode`) stays active. Without this bypass the only way to yield the OLED would be `display_mode = 0`, which would also disable the filter and leak pads + transport to Move firmware.
+2. **`sh_midi` filter override** at the overtake-mode-2 branch (~line 5519). The existing filter zeros all cable-0 `status >= 0x80` events from what Move firmware reads. The override sets `filter = 0` for the navigation surface: CCs 3, 14, 40–43, 49, 51, 71–78, 79 and touch notes 0–9. Move firmware now sees the events it needs to drive its preset browser / device-edit pages.
+3. **`shadow_ui_midi_shm` forward filter** at the overtake-2 forward (~line 6515). The existing forward sends every cable-0 event to the tool. The override `continue`s on the same nav-CC + touch-note set so dAVEBOx stops seeing them while co-run is on. Pads, step buttons, transport, and Menu (the tool's exit gesture) still flow.
+
+The two filter lists are mirrors of each other — keep them in sync.
+
+**`src/shadow/shadow_ui.c`** — two new JS bindings:
+- `shadow_set_corun_move_native(track)` — enable co-run for `track` (or `-1` to disable). The dAVEBOx side calls this on `Edit Synth...` entry and on Menu exit.
+- `shadow_get_corun_move_native()` — read current state. Tool polls this for external clears (currently dead code in Phase A — the dAVEBOx side handles its own Menu intercept — but kept for parity with chain-edit and so any future shim-side exit propagates).
+
+### Tool-side contract (the dAVEBOx half)
+
+A tool that opts into Move-native co-run is expected to:
+- Call `shadow_set_corun_move_native(track)` on entry, `shadow_set_corun_move_native(-1)` on exit.
+- Skip its own OLED drawing while co-run is active (Move firmware draws to the OLED; the tool's pixels would be invisible anyway because of the shim's `shadow_swap_display` bypass, but skipping saves the wasted work).
+- Optionally fire a single synthesized track-button tap on entry via `move_midi_inject_to_move` (cable-0 CC 43–`(channel-1)` press + release) so Move firmware lands on the preset browser for the right track without the user needing to touch the front panel.
+- Accept that jog, jog-click, track buttons (CC 40–43), Shift, Back, device-edit knobs (CC 71–78), master knob (CC 79), and capacitive touch notes 0–9 are unavailable to the tool while co-run is active.
+
+dAVEBOx implements this contract via `S.moveCoRunTrack`, the `Edit Synth...` track-menu action (capability-gated on `S.trackRoute[t] === 1` + the two binding probes), the `drawUI` early-return, a `pollDSP` reconciliation step, and a Menu (CC 50) short-circuit in `_onCC_buttons`.
+
+### Phasing — frozen LEDs in practice
+
+The Phase A `drawUI` early-return freezes pad and step-button LEDs at their entry-time state during co-run. Static state (active-track color, clip color, drum-lane assignments, armed-step state) is preserved; animated state (playhead pulses, mute/solo flashes, beat-marker pulses) stops animating. The sequencer continues firing audibly.
+
+The originally-planned "Phase B" refactor — splitting `drawUI` into "render OLED" vs "render pad/step-button LEDs" branches so LEDs stay live during co-run — was deferred after real-use testing on 2026-05-12 confirmed the freeze isn't a problem in practice. Nothing the user actually does during co-run depends on live LED feedback (drum cell-select is gesture-driven, preset audition is OLED+audio-driven). The refactor remains an option if a future Move firmware change or new co-run consumer makes the freeze visibly annoying, but isn't worth pursuing speculatively.
+
+### LED-write filtering (Phase 1.5, deferred)
+
+While dAVEBOx's `drawUI` skips, Move firmware may still issue LED writes for its own UI elements (e.g. pad-area display while in the device-edit grid). For Phase A those writes reach hardware and can clobber dAVEBOx's frozen pad LEDs. A shim-side filter that blocks Move firmware's pad / step-button / Menu / transport LED writes during co-run — while passing through knob-ring / master / track-button / Shift / Back writes — is the right cleanup. It's deferred until the on-device behavior is observed; the LED protocol per physical-element needs to be identified before a clean filter can be written.
+
+### Why this isn't suitable for upstream
+
+Same shape as chain-edit co-run's why-not-upstream: the tool-side "skip my draw" contract is implicit, and the nav-surface list is hand-curated for the dAVEBOx UX. A generalized version would want a manifest-driven let-through set.
+
+See `/Users/josh/.claude/plans/6-spicy-waterfall.md` for the design conversation (approved 2026-05-12).

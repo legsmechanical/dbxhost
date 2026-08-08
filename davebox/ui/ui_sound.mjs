@@ -1,0 +1,2706 @@
+/* ui_sound.mjs — SOUND MODE: edit a track's instrument and effects in place.
+ *
+ * Spec: docs/reference/SOUND_MODE.md. Pipeline: docs/reference/MODULE_HOSTING.md.
+ *
+ *   block picker  -> the track's chain: MIDI FX / SYNTH / FX1..FX4
+ *   editor        -> canvaskit bank pages built from the module's own metadata
+ *   browser       -> pick a module for a block (an EMPTY block is how an
+ *                    effect gets added at all)
+ *
+ * Deliberately self-contained: it takes the track's slot as an argument rather
+ * than importing davebox state, so it stays testable off-device and so the
+ * standalone port has one less coupling to unpick. The only engine access is
+ * through ui_engine.mjs — that rule is the whole reason the port is cheap.
+ *
+ * TIMING — the constraint that bites. shadow_get/set_param are synchronous SHM
+ * round-trips. The lab rig calls them straight from its MIDI handler because it
+ * has no timing obligations; davebox is a SEQUENCER and must not. Every write
+ * is queued and drained in tick(), and polling is budgeted. Getting this wrong
+ * shows up as sequencer jitter, not as a broken editor.
+ */
+
+import * as os from 'os';
+import {
+    COMPONENTS, PRESET_ROOT, engineGet, engineSet, engineListModules, engineDescribe,
+    engineClaimsEditCcs, engineSlotFxBlocks, engineHasSendFx,
+    engineLoadModule, engineLoadedModule, engineGetState, engineSetState,
+    engineListUserPresets, engineReadUserPreset,
+    engineGetSlotParam, engineSetSlotParam, engineSaveState, engineVolBlock,
+    SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
+} from './ui_engine.mjs';
+/* davebox's GLOBAL state. Sound mode keeps its own `S`, so this is imported
+ * under a different name deliberately — the two are easy to confuse, and
+ * confusing them is exactly what broke the bypass gesture. Used only for the
+ * Back long-press, which davebox owns module-wide. */
+import { S as GS } from './ui_state.mjs';
+import {
+    openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
+    closeTextEntry,
+} from '/data/UserData/schwung/shared/text_entry.mjs';
+import {
+    buildFilepathBrowserState, refreshFilepathBrowser,
+    moveFilepathBrowserSelection, activateFilepathBrowserItem,
+} from '/data/UserData/schwung/shared/filepath_browser.mjs';
+import { discover, deriveSections, activeSection, filterVizFor,
+    menuRows, menuCell, levelCommits, childSpec, modeRows, livePressSpec,
+    inferGuessedMeta, moduleIdOf, buildBrowseList } from './ui_discover.mjs';
+import { parseValue, stepValue, commitString, renderCellsForBank,
+    formatValue } from './ui_cells.mjs';
+import {
+    drawKitBankPage, drawKitHeader, drawKitSectionPicker,
+    hdrPrint, mvPrint, mvWidth,
+} from './ui_movy.mjs';
+
+/* Chain blocks in signal order, trimmed to the audio-FX blocks the RUNNING host
+ * routes — four on the dAVEBOx host, two on stock Schwung.
+ *
+ * ⚠ Do not hardcode fx3/fx4 back in. `fx3:`/`fx4:` are a fork-only param
+ * namespace, and a stock host routes neither: the rows would render, every read
+ * would come back empty and every write would vanish. That is silent
+ * misbehaviour, not a missing feature, and no `typeof` check can detect it
+ * because the divergence is a key prefix rather than a function. The block count
+ * comes from host_build_info(), which exists to answer exactly this. */
+export const BLOCKS = [
+    { comp: 'midi_fx1', label: 'MIDI FX' },
+    { comp: 'synth',    label: 'SYNTH'   },
+    ...Array.from({ length: engineSlotFxBlocks() }, (_, i) => ({
+        comp: `fx${i + 1}`, label: `FX ${i + 1}`,
+    })),
+];
+
+/* ---- global FX buses ----
+ *
+ * Master FX and the two Send FX chains are the same shape as a slot's audio-FX
+ * blocks — four components, each with params, a hierarchy and presets — but
+ * they belong to the whole set rather than a track, and they live at slot 0.
+ *
+ * Addressing comes straight from the host's FX_BUS table (`shadow_ui.js`):
+ * `master_fx:fxN:` and `send_fx:{a,b}:fxN:`. davebox's engine layer already
+ * copes, because `moduleReadKey` special-cases colon-namespaced components —
+ * groundwork the lab rig laid before there was anywhere to use it.
+ *
+ * ⚠ ONE real difference: a bus component's `:module` key takes a **DSP path**,
+ * not a module id. Loading by id silently does nothing there. */
+/* ⚠ MASTER HAS NO LEVEL PARAM. `master_fx:volume` appears in the host's own
+ * FX_BUS table but nothing implements it — `master_fx:` keys are parsed for
+ * `fxN:` only, and a bare `volume` hits the "unrecognized, leave it" branch in
+ * shadow_chain_mgmt.c. The host's own Master FX volume row therefore reads a key
+ * nothing answers (so it always shows 100%) and writes into the void. Not worth
+ * adding: the device already has a master output level (Josh, 07-29).
+ *
+ * The SEND return levels are real — `shadow_send_return_level[2]`, set + get,
+ * persisted as `send_return_level`. Range matches the host's own row: 0..1. */
+/* Master FX is upstream. The two SEND buses are fork-only (`send_fx:` does not
+ * exist upstream at all), so they are only listed when the running host says it
+ * routes them — otherwise both buses would be browsable rows backed by nothing. */
+const FX_BUSES = [
+    { id: 'master', title: 'MASTER FX', prefix: 'master_fx:' },
+    ...(engineHasSendFx() ? [
+        { id: 'sendA',  title: 'SEND FX A', prefix: 'send_fx:a:',
+          levelComp: 'send_fx:a', levelKey: 'return_level', levelLabel: 'Return' },
+        { id: 'sendB',  title: 'SEND FX B', prefix: 'send_fx:b:',
+          levelComp: 'send_fx:b', levelKey: 'return_level', levelLabel: 'Return' },
+    ] : []),
+];
+const BUS_LEVEL_MIN = 0, BUS_LEVEL_MAX = 1, BUS_LEVEL_STEP = 0.05;
+const BUS_BLOCKS = [1, 2, 3, 4];      /* fx1..fx4 on every bus */
+
+const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
+      VIEW_PRESET_SRC = 3, VIEW_PRESET_LIST = 4, VIEW_PRESET_BAKED = 5,
+      VIEW_MENU = 6, VIEW_FILE = 7, VIEW_SLOTCFG = 8, VIEW_BUSES = 9;
+
+/* ---- slot settings ----
+ *
+ * The SLOT's own params, as opposed to any module in it: where the track's
+ * audio goes and how its MIDI is routed. They were reachable only by leaving
+ * davebox for the host's chain editor, which is a long way to go for a send.
+ *
+ * Mirrors the host's CHAIN_SETTINGS_ITEMS — same keys, same ranges, so the two
+ * screens can't disagree — minus the rows that are actions rather than values
+ * (knob assignment, LFOs, patch save/delete) and minus MPE, which is a mode you
+ * set once at the host rather than reach for mid-track.
+ *
+ * `fmt` exists because a raw number is a lie for most of these: -1 on a forward
+ * channel means Auto, 0 on a receive channel means All. */
+const CH_FMT = (v) => (v === 0 ? 'All' : 'Ch ' + v);
+const FWD_FMT = (v) => (v === -2 ? 'Thru' : v === -1 ? 'Auto' : 'Ch ' + (v + 1));
+const PCT_FMT = (v) => Math.round(v * 100) + '%';
+const ST_FMT  = (v) => (v === 0 ? '0 st' : (v > 0 ? '+' : '') + v + ' st');
+const ONOFF   = (v) => (v ? 'Yes' : 'No');
+
+const SLOT_SETTINGS = [
+    { key: 'volume',        label: 'Volume',      min: 0, max: 4, step: 0.05, fmt: PCT_FMT },
+    /* Module Level is deliberately NOT here — it belongs to whatever module is
+     * loaded, not to the slot, and it already lives at the root of that
+     * module's own menu. Two homes would make it ambiguous which one wins. */
+    { key: 'send_a',        label: 'Send A',      min: 0, max: 1, step: 0.05, fmt: PCT_FMT, cap: 'sends' },
+    { key: 'send_b',        label: 'Send B',      min: 0, max: 1, step: 0.05, fmt: PCT_FMT, cap: 'sends' },
+    { key: 'transpose',     label: 'Transpose',   min: -12, max: 12, step: 1, int: true, fmt: ST_FMT },
+    { key: 'receive_channel', label: 'Recv Ch',   min: 0, max: 16, step: 1, int: true, fmt: CH_FMT },
+    { key: 'forward_channel', label: 'Fwd Ch',    min: -2, max: 15, step: 1, int: true, fmt: FWD_FMT },
+    { key: 'muted',         label: 'Muted',       min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
+    { key: 'soloed',        label: 'Soloed',      min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
+    { key: 'move_to_slot',  label: 'Move>Schw',   min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
+];
+
+/* The jog-click picker offers three destinations, and they are NOT the same
+ * kind of thing — rows are dispatched by `kind`, never by a fixed index, since
+ * the baked row only exists for modules that publish a bank:
+ *  user  — files under presets/<module-id>/, wrapped {name,module,version,state};
+ *          recalled through the ordinary <comp>:state slot-load path.
+ *  baked — the module's own list_param/count_param/name_param bank. No files;
+ *          names have to be harvested by selecting each index (see openBaked).
+ *  menu  — hand the slot to Schwung's own chain editor: the full module
+ *          hierarchy, for everything the canvas pages don't surface. */
+
+/* ~160ms at davebox's ~94Hz tick. The host uses 7 ticks at ~44Hz for the same
+ * feel; copying the NUMBER rather than the duration would make preview twice
+ * as twitchy here. */
+const PREVIEW_DELAY_TICKS = 15;
+const BAKED_SCAN_PER_TICK = 2;        /* while PLAYING: same SHM budget as the write drain */
+const BAKED_SCAN_PER_TICK_IDLE = 12;  /* stopped: nothing competes for the tick */
+const SAVE_ROW = 0;
+
+/* The slot level is a 0..4 gain, host-clamped, 1.0 = unity. The per-detent step
+ * is SLOT_LEVEL_STEP, shared with the session-view knobs so both feel the same;
+ * its header explains why the step is as fine as it is. */
+const VOL_MIN = 0, VOL_MAX = SLOT_LEVEL_MAX, VOL_STEP = SLOT_LEVEL_STEP;
+const VOL_SHOW_TICKS = 94;      /* ~1s readout after the last turn */
+
+/* Poll cadences, in ticks (~94Hz). Deliberately slower than the lab rig's flat
+ * 8 — davebox's tick is already busy, so idle refresh is cheap and the
+ * responsive cases (entry, bank change, touch) are handled by explicit repolls. */
+const POLL_IDLE_TICKS = 24;
+/* How long to watch for a vouched pad press to move the module's focus (~300ms
+ * at 94Hz). Generous on purpose: the cost is one get_param every other tick and
+ * it stops the moment focus moves, whereas giving up early is the failure that
+ * reads as "the tap did nothing". */
+const PAD_WATCH_TICKS = 28;
+/* ⚠ `shadow_set_param` returns FALSE when the mailbox never goes idle — the
+ * write is dropped, silently. Everything else here is a knob edit that the next
+ * detent or the idle poll repairs; the vouch is a one-shot with a deadline, so
+ * it is the one write that must be retried. */
+const VOUCH_MAX_TRIES = 4;
+/* A forced bank re-read is SPREAD over ticks. Eight synchronous get_params is
+ * ~21ms against a ~10.6ms tick budget, so doing them together stalls the
+ * sequencer AND the UI — once per pad press, which is exactly the moment it is
+ * most visible. Measured cost per get_param on device: ~2.6ms. */
+const POLL_PER_TICK = 3;
+const WRITES_PER_TICK = 2;      /* bound the per-tick SHM cost */
+const TOUCH_HOLD_TICKS = 45;
+
+const S = {
+    active: false,
+    track: -1,
+    slot: -1,
+    view: VIEW_BLOCKS,
+
+    blockIdx: 1,                /* default to SYNTH, the common case */
+    comp: 'synth',
+
+    banks: [],
+    sections: [],
+    bankIdx: 0,
+    moduleId: '',
+
+    /* Hosting: a module that DECLARES `capabilities.host_canvas_ui` draws
+     * itself through its own bank_editor, and `banks` stays as the fallback.
+     * See hostedCtx(). Null for every module that does not declare it. */
+    hosted: null,
+    hostedCtx: null,
+    hostedPage: {},             /* "slot:comp:module" -> persisted bank index */
+    hostedOpened: false,        /* onOpen fired for THIS block yet? */
+    /* Whether WE currently hold the host's edit-CC claim. Mirrors what we last
+     * told host_edit_cc_block, so reconcile only calls on a real change. */
+    editCcClaimed: false,
+
+    values: {},
+    rawValues: {},
+    knobAccum: [0, 0, 0, 0, 0, 0, 0, 0],
+    touchedIdx: -1,
+    touchedTick: 0,
+    touchHeld: false,
+    turnedSinceTouch: false,
+
+    browseList: [],
+    browseIdx: 0,
+
+    /* presets */
+    presetSpec: null,           /* baked bank {listKey,countKey,nameKey} or null */
+    presetSrcIdx: 0,
+    srcRows: [],                /* [{kind,label}] — user / baked (if any) / menu */
+    /* Module menu: the module's own parameter hierarchy, walked directly. The
+     * knob pages are a lossy projection of this (knobs[] only), so anything a
+     * module declares but doesn't knob-map is reachable ONLY here. */
+    levels: null,
+    rootKey: null,
+    modes: null,                /* level keys when the module's top screen is a mode CHOICE */
+    modeParam: '',              /* the engine key that mode choice also writes */
+    cpMap: null,
+    menuStack: [],              /* [{levelKey, cursor, child}] — breadcrumb for Back */
+    menuKey: null,
+    menuIdx: 0,
+    menuChild: -1,              /* chosen repeated element on a child_prefix level */
+    /* Live pad focus. `livePress` is the module's declaration (see
+     * livePressSpec); `padVouch` is a press waiting to be sent. The vouch is
+     * LATENCY-CRITICAL — the module correlates it against a note it has already
+     * seen, inside a window measured in render blocks — so it jumps the write
+     * queue rather than joining the back of it. */
+    livePress: null,
+    padVouch: false,
+    /* After a vouch we WATCH for the module's focus to move rather than reading
+     * once at a fixed delay — see the tick. `padWatchFrom` is where focus sat
+     * before the vouch, so "not there yet" is distinguishable from "it moved". */
+    padWatchLeft: 0,
+    padWatchFrom: -1,
+    padLastSeen: -1,            /* last selection we READ; the vouch's baseline */
+    /* The note-naming key last DISCOVERED. Outside sound mode no discovery has
+     * run, so this is how the co-run path knows what to write. */
+    lastNoteParam: '',
+    pollCursor: -1,             /* spread bank re-read; <0 = idle */
+    padVouchTries: 0,           /* the vouch write can be DROPPED; retry it */
+    menuRowsCache: [],
+    menuEditing: false,         /* jog edits the highlighted param instead of scrolling */
+    fileState: null,            /* shared filepath_browser state, when browsing */
+    fileKey: '',                /* param the browse will write on select */
+    userPresets: [],
+    userIdx: 0,                 /* 0 = the [Save current...] row; presets start at 1 */
+    bakedCount: 0,
+    bakedIdx: 0,
+    bakedNames: [],
+    bakedScan: -1,              /* prescan cursor; -1 = idle */
+    bakedScanRestore: 0,        /* index to put back when the scan finishes */
+    bakedCacheKey: '',          /* moduleId|comp|count the cached names belong to */
+    bakedFp: '',                /* fingerprint of the preset SET those names came from */
+    presetMsg: '',
+
+    /* Audition. Scrolling applies the highlighted preset so you hear it before
+     * committing; Back puts the original sound back. Debounced through tick so
+     * a fast scroll doesn't reload state on every detent. Disabled when the
+     * original can't be captured — better no preview than no way back. */
+    origState: null,
+    previewIdx: -1,
+    previewDelay: 0,
+
+    /* Shift+click on a preset asks to delete it; plain click loads. */
+    confirmDel: false,
+    confirmItem: null,          /* dynamic-list row awaiting "are you sure" */
+    confirmIdx: 0,              /* 0 = No, 1 = Yes */
+
+    pendingWrites: [],
+    pendingDiscover: 0,
+    /* Single-slot navigation queue. Knob edits were always deferred, but the
+     * VIEW transitions are the expensive ones — a discovery pass is dozens of
+     * get_params and the browser is a filesystem scan. Doing either from the
+     * MIDI handler is the exact mistake this module's header warns about, so
+     * every one of them is queued here and run in soundTick(). Latest wins:
+     * you can only be navigating to one place at a time. */
+    pendingAction: null,
+    needsPoll: false,           /* forced re-read owed (bank change) */
+    blockNames: [],             /* loaded module id per block, for the picker */
+    blockBypass: [],            /* 1 = that block is bypassed (host `<comp>:bypassed`) */
+    muteHeld: false,            /* tracked HERE: the global one is a different S */
+    enterSession: false,        /* the VIEW this screen was called from; leaving it ends us */
+    bus: null,                  /* null = editing a TRACK's slot; else an FX_BUSES entry */
+    busIdx: 0,                  /* cursor on the bus LIST */
+    busLevelEditing: false,     /* jog is editing the return level, not scrolling */
+    busLevelDirty: false,       /* changed → save chain state when leaving the bus */
+    pickRows: [],               /* picker rows: {kind:'bus'|'block'|'settings'} */
+    pickRow: 0,                 /* cursor in the block PICKER (rows, not blocks) */
+    blockRows: [],              /* block indices this host actually supports */
+    slotRows: [],               /* SLOT_SETTINGS entries this host supports */
+    capFx34: false,
+    capSends: false,
+    slotCfgIdx: 0,
+    slotCfgVals: [],            /* live values, index-aligned with SLOT_SETTINGS */
+    slotCfgEditing: false,
+    slotCfgDirty: false,        /* something changed; save on leaving the screen */
+    pendingSlotWrites: [],      /* slot-param writes, drained in tick */
+
+    shiftHeld: false,
+    tickCount: 0,
+    dirty: true,
+    ledDirty: false,   /* text entry repainted the pads; davebox must re-assert */
+
+    /* Slot level on the master knob. Claimed for the whole of sound mode, so
+     * plain Volume means "this chain's level" and Move's master is untouched
+     * until you leave. */
+    volLevel: 1,
+    volShownUntil: -1,
+    volTouched: false,
+    volDirtySave: false,   /* level changed since the last persist */
+    volPending: false,     /* level write owed to the engine (drained in tick) */
+};
+
+function log(msg) {
+    if (typeof console !== 'undefined' && console.log) console.log('[sound] ' + msg);
+}
+
+export function soundActive() { return S.active; }
+export function soundTrack() { return S.track; }
+export function soundSlot()  { return S.slot; }
+
+/* The keyboard is fully modal and wants the RAW message (it reads pads, jog and
+ * buttons itself), so it hooks in ahead of every other dispatch rather than
+ * through soundOnCC/soundOnNote. It paints its own pad LEDs, so davebox's have
+ * to be re-asserted when it closes — see soundConsumeLedDirty. */
+export function soundOnMidiRaw(data) {
+    if (!S.active || !isTextEntryActive()) return false;
+    handleTextEntryMidi(data);
+    if (!isTextEntryActive()) { S.ledDirty = true; S.dirty = true; }
+    return true;
+}
+
+export function soundConsumeLedDirty() {
+    const d = S.ledDirty; S.ledDirty = false; return d;
+}
+export function soundDirty() { const d = S.dirty; S.dirty = false; return d; }
+export function markSoundDirty() { S.dirty = true; }
+
+/* ---- lifecycle ---- */
+
+export function soundEnter(track, slot) {
+    S.active = true;
+    S.enterSession = false;     /* called from TRACK view */
+    /* A TRACK context is not a bus one. Without this the previous session's bus
+     * survived — S.bus is what soundIsGlobal() and buildPickRows() read, so
+     * entering a track's sound landed you back on the bus's blocks. Third bug
+     * of this shape today: state that outlives the screen it belonged to. */
+    clearBusContext();
+    S.track = track;
+    S.slot = slot;
+    S.view = VIEW_BLOCKS;
+    S.shiftHeld = false;
+    S.touchedIdx = -1;
+    S.turnedSinceTouch = false;
+    S.pendingWrites.length = 0;
+    S.blockNames = [];
+    S.pendingAction = { t: 'names' };
+    claimVolume(slot);
+    S.dirty = true;
+    log('enter: track ' + track + ' slot ' + slot);
+}
+
+/* Follow the track. Sound mode is bound to one track's slot, so a track change
+ * used to close it; now it re-points at the new track instead. Your PLACE in the
+ * chain is kept — if you were on SYNTH you stay on SYNTH — because the usual
+ * reason to switch mid-edit is comparing the same block across two tracks.
+ * An empty block on the new track falls back to the picker rather than the
+ * module browser, which would be a startling thing to land in unasked. */
+export function soundRetarget(track, slot) {
+    /* Flush against the OLD slot first: these edits were made to that track and
+     * must not follow you to the next one. */
+    for (const w of S.pendingWrites) engineSet(w.slot, w.comp, w.key, w.val);
+    S.pendingWrites.length = 0;
+    /* Same for slot params — they carry their own slot, so landing them here is
+     * correct rather than merely tidy. */
+    for (const w of S.pendingSlotWrites) {
+        const s = SLOT_SETTINGS.find(x => x.key === w.key);
+        engineSetSlotParam(w.slot, w.key, s && s.int ? String(w.val) : w.val.toFixed(3));
+    }
+    S.pendingSlotWrites.length = 0;
+    if (S.slotCfgDirty) { S.slotCfgDirty = false; engineSaveState(); }
+
+    S.track = track;
+    /* A BUS is global — following the active track must not drag its editing
+     * context off slot 0. Remember where to return and leave the view alone. */
+    if (S.bus) { S.dirty = true; return; }
+    S.slot = slot;
+    S.shiftHeld = false;
+    S.touchedIdx = -1;
+    S.turnedSinceTouch = false;
+    /* Everything below described the PREVIOUS module: an audition baseline, a
+     * name cache, a half-open dialog, a browser position. None of it transfers. */
+    S.origState = null;
+    S.previewIdx = -1;
+    S.previewDelay = 0;
+    S.confirmDel = false;
+    S.bakedCacheKey = '';
+    S.bakedScan = -1;
+    S.fileState = null;
+    S.menuStack = [];
+    S.menuKey = null;
+    S.menuChild = -1;
+    S.modes = null;
+    S.modeParam = '';
+    S.menuRowsCache = [];
+    S.menuEditing = false;
+    S.banks = [];
+    S.sections = [];
+    S.bankIdx = 0;
+    S.moduleId = '';
+    /* The declaration belongs to the module we are leaving. Re-derived by the
+     * discovery this retarget queues; until then there is nothing to vouch to,
+     * and a stale spec would aim a write at the NEW slot using the OLD module's
+     * key — the silent kind of wrong. */
+    S.livePress = null;
+    S.padVouch = false;
+    S.padWatchLeft = 0;
+    S.padVouchTries = 0;
+    S.pollCursor = -1;
+    S.blockNames = [];
+    S.presetMsg = '';
+    S.pendingDiscover = 0;
+    S.pendingAction = { t: 'retarget' };
+    /* Persist the OLD slot's level before the reading moves — the claim itself
+     * stays up, we're still in sound mode. */
+    if (S.volPending) {                    /* land it on the OLD slot first */
+        S.volPending = false;
+        engineSetSlotParam(S.slot, SLOT_LEVEL_KEY, S.volLevel.toFixed(3));
+    }
+    flushVolumeSave();
+    S.volLevel = readSlotVolume(slot);
+    S.volShownUntil = -1;
+    S.dirty = true;
+    log('retarget: track ' + track + ' slot ' + slot + ' comp ' + S.comp);
+}
+
+/* Everything that only means something inside a bus. Cleared on both edges —
+ * leaving sound mode and entering a track — so neither direction can inherit it. */
+function clearBusContext() {
+    S.bus = null;
+    S.busIdx = 0;
+    S.busLevelEditing = false;
+    S.busLevelDirty = false;
+}
+
+export function soundExit() {
+    /* Give the edit CCs back to Move FIRST. Everything below can throw or take a
+     * slow path, and a stranded claim silently steals the user's native Undo. */
+    reconcileEditCcClaim(true);
+    /* The keyboard is modal and driven ONLY by soundOnMidiRaw, which gates on
+     * S.active — so leaving with it open would strand it: still "active", never
+     * fed another message, never drawn. Close it first. */
+    if (isTextEntryActive()) closeTextEntry();
+    releaseVolume();
+    /* Slot edits are FLUSHED on the way out, not dropped like in-flight module
+     * writes: a send you just dialled should survive leaving sound mode, and
+     * each carries its own slot so landing them late is still correct. */
+    for (const w of S.pendingSlotWrites) {
+        const s = SLOT_SETTINGS.find(x => x.key === w.key);
+        engineSetSlotParam(w.slot, w.key, s && s.int ? String(w.val) : w.val.toFixed(3));
+    }
+    S.pendingSlotWrites.length = 0;
+    if (S.slotCfgDirty) { S.slotCfgDirty = false; engineSaveState(); }
+    /* Component writes are flushed too, not dropped. They were dropped back when
+     * the only thing in this queue was a param edit mid-turn; a send's RETURN
+     * level rides the same queue now, and leaving the screen is exactly when you
+     * would expect the value you just dialled to stick. Each carries its own
+     * slot and comp, so landing them here is correct, not merely tidy. */
+    for (const w of S.pendingWrites) engineSet(w.slot, w.comp, w.key, w.val);
+    S.pendingWrites.length = 0;
+    if (S.busLevelDirty) engineSaveState();
+    S.active = false;
+    clearBusContext();
+    S.pendingAction = null;
+    S.pendingDiscover = 0;
+    /* An in-flight vouch is DROPPED, not flushed. Its whole meaning is "focus
+     * the pad I am looking at right now", and we are no longer looking. */
+    S.padVouch = false;
+    S.padWatchLeft = 0;
+    S.padVouchTries = 0;
+    S.pollCursor = -1;
+    S.dirty = true;
+    log('exit');
+}
+
+/* Which module each block holds — drives the picker and the empty-block flow. */
+function refreshBlockNames() {
+    if (!S.bus) probeCaps();
+    buildPickRows();
+    /* Names and bypass are read per ROW, so a bus context reads its own four
+     * components rather than the track's six. A bus reports a DSP PATH where a
+     * chain slot reports a module id — show the basename, which is the module
+     * directory and reads the same as the id would. */
+    for (const r of S.pickRows) {
+        if (r.kind === 'buslevel') {
+            const raw = parseFloat(engineGet(S.slot, S.bus.levelComp, S.bus.levelKey));
+            r.val = isFinite(raw) ? raw : 1;
+            continue;
+        }
+        if (r.kind !== 'block') continue;
+        r.name = moduleIdOf(engineLoadedModule(S.slot, r.comp));
+        r.bypassed = engineGet(S.slot, r.comp, 'bypassed') === '1' ? 1 : 0;
+    }
+}
+
+/* ---- slot level on the master knob ----
+ *
+ * Plain Volume, for the whole of sound mode. Shift+Volume was the obvious
+ * gesture and is unavailable: the host reserves Shift+Vol as its shadow-UI
+ * entry prefix (Settings / Tools), and the shim eats it before a module sees
+ * it. Claiming the knob outright avoids the collision and needs no modifier.
+ *
+ * The claim is what stops Move ALSO moving its master level and covering the
+ * screen with its own volume overlay — CC 79 and touch note 8 are passed to
+ * Move unconditionally otherwise, ahead of and independent of the module's
+ * button_passthrough list, so there is no module.json way to opt out. */
+function readSlotVolume(slot) {
+    const raw = engineGetSlotParam(slot, SLOT_LEVEL_KEY);
+    const v = parseFloat(raw);
+    return (isFinite(v) && v >= 0) ? v : 1;
+}
+
+function claimVolume(slot) {
+    S.volLevel = readSlotVolume(slot);
+    S.volShownUntil = -1;
+    S.volTouched = false;
+    S.volDirtySave = false;
+    engineVolBlock(true);
+}
+
+function releaseVolume() {
+    flushVolumeSave();
+    S.volTouched = false;
+    S.volShownUntil = -1;
+    engineVolBlock(false);
+}
+
+/* The host's slot-level setter updates runtime state but never persists, so
+ * the write and the SAVE are separate acts. Saving is a synchronous file write,
+ * so it happens once when the gesture ends — never per detent. */
+function flushVolumeSave() {
+    if (!S.volDirtySave) return;
+    S.volDirtySave = false;
+    engineSaveState();
+}
+
+function onVolumeTurn(delta) {
+    let v = S.volLevel + delta * VOL_STEP;
+    if (v < VOL_MIN) v = VOL_MIN;
+    if (v > VOL_MAX) v = VOL_MAX;
+    if (v === S.volLevel) return;
+    S.volLevel = v;
+    S.volDirtySave = true;
+    S.volShownUntil = S.tickCount + VOL_SHOW_TICKS;
+    /* Queued, NOT written here — this runs in the MIDI handler and
+     * engineSetSlotParam is a synchronous SHM round-trip. A single flag is
+     * enough: the level is one value, so a fast spin coalesces to one write per
+     * tick for free. Drained in soundTick with everything else. */
+    S.volPending = true;
+    S.dirty = true;
+}
+
+/* ---- discovery ---- */
+
+function openBlock(comp) {
+    S.comp = comp;
+    const bi = BLOCKS.findIndex(b => b.comp === comp);
+    if (bi >= 0) S.blockIdx = bi;          /* meaningless on a bus, unused there */
+    const id = engineLoadedModule(S.slot, S.comp);
+    if (!id) { openBrowse(); return; }     /* empty block -> add something */
+    S.view = VIEW_EDIT;
+    runDiscovery();
+}
+
+/* ---- presets ---- */
+
+/* Jog-click inside a module lands here, NOT on the module picker: once you're
+ * editing a sound, "click" means "give me another sound for this thing", and
+ * swapping the module out from under yourself is the rarer, more destructive
+ * move. That one moved to Shift+click on the block picker. */
+function openPresets() {
+    S.presetMsg = '';
+    /* Built fresh each time: the baked row only exists for modules that publish
+     * a bank. "Module Menu" is always here, which is also why this picker is
+     * never a one-row dead click any more — the old skip-straight-to-user
+     * special case is gone, so Back always retraces through here. */
+    S.srcRows = [{ kind: 'user', label: 'User Presets' }];
+    if (S.presetSpec) S.srcRows.push({ kind: 'baked', label: modLabel() + ' Presets' });
+    S.srcRows.push({ kind: 'menu', label: 'Module Menu' });
+    if (S.presetSrcIdx >= S.srcRows.length) S.presetSrcIdx = 0;
+    S.view = VIEW_PRESET_SRC;
+}
+
+function openUserPresets() {
+    S.userPresets = engineListUserPresets(S.moduleId);
+    S.userIdx = S.userPresets.length ? 1 : SAVE_ROW;
+    S.confirmDel = false;
+    S.view = VIEW_PRESET_LIST;
+    S.presetMsg = '';
+    captureOriginal();
+    log('user presets: ' + S.userPresets.length + ' for ' + S.moduleId);
+}
+
+/* Audition needs somewhere to go back TO. If the module won't hand over its
+ * state there is no way to undo a preview, so preview is disabled rather than
+ * leaving the user stranded on a sound they only meant to hear. */
+function captureOriginal() {
+    S.origState = engineGetState(S.slot, S.comp) || null;
+    S.previewIdx = -1;
+    S.previewDelay = 0;
+}
+
+function revertOriginal() {
+    if (S.origState !== null) engineSetState(S.slot, S.comp, S.origState);
+    S.previewIdx = -1;
+    S.previewDelay = 0;
+}
+
+function applyUserPreset(listIdx) {
+    const p = S.userPresets[listIdx - 1];
+    if (!p) return false;
+    const blob = engineReadUserPreset(p.path);
+    if (blob === null) { S.presetMsg = 'UNREADABLE'; return false; }
+    engineSetState(S.slot, S.comp, blob);
+    return true;
+}
+
+/* Commit: the previewed sound becomes the sound. The captured original is
+ * dropped so a later Back can't resurrect it. */
+function loadUserPreset() {
+    if (!applyUserPreset(S.userIdx)) return;
+    S.origState = null;
+    S.presetMsg = '';
+    S.pendingDiscover = 4;      /* a preset moves every param */
+    /* Loading is the END of the errand — drop straight back to the canvas
+     * pages so you're looking at the sound you just chose. Staying in the list
+     * makes you Back out of somewhere you're already done with. */
+    S.view = VIEW_EDIT;
+}
+
+function deleteUserPreset() {
+    const p = S.userPresets[S.userIdx - 1];
+    S.confirmDel = false;
+    if (!p) return;
+    let ok = false;
+    try { ok = (os.remove(p.path) === 0); } catch (e) { ok = false; }
+    S.presetMsg = ok ? 'DELETED' : 'DELETE FAILED';
+    S.userPresets = engineListUserPresets(S.moduleId);
+    if (S.userIdx > S.userPresets.length) S.userIdx = S.userPresets.length;
+}
+
+/* Save NEVER overwrites — a name collision gets a number, matching the host so
+ * the two stores stay interchangeable. */
+function saveUserPreset(rawName) {
+    const name = uniqueName(String(rawName || '').trim() || 'Preset');
+    const dir = PRESET_ROOT + '/' + S.moduleId;
+    const stateJson = engineGetState(S.slot, S.comp);
+    if (!stateJson) { S.presetMsg = 'NO STATE'; return; }
+    if (typeof host_ensure_dir === 'function') host_ensure_dir(dir);
+    /* Parsed object when the state is JSON, raw string otherwise — the same
+     * opaque-state fallback the host's writer uses. */
+    let state;
+    try { state = JSON.parse(stateJson); } catch (e) { state = stateJson; }
+    const payload = JSON.stringify({
+        name, module: S.moduleId, version: 1, state,
+    });
+    const path = uniquePath(dir, safeStem(name));
+    const ok = (typeof host_write_file === 'function') && host_write_file(path, payload);
+    S.presetMsg = ok ? 'SAVED' : 'SAVE FAILED';
+    if (!ok) return;
+    S.userPresets = engineListUserPresets(S.moduleId);
+    const i = S.userPresets.findIndex(p => p.name === name);
+    S.userIdx = (i >= 0) ? i + 1 : SAVE_ROW;
+    /* What was just saved IS the live sound, so there is nothing to revert to. */
+    S.origState = null;
+}
+
+/* The on-screen keyboard is a shared host component with a host-agnostic
+ * contract (isTextEntryActive / handleTextEntryMidi / drawTextEntry), so it
+ * drops into davebox's own dispatch the same way it does into shadow_ui.
+ * It takes the pads while open — naming is a deliberate modal moment, and the
+ * sequencer keeps running underneath. */
+function startSaveFlow() {
+    if (!S.moduleId) { S.presetMsg = 'NO MODULE'; return; }
+    openTextEntry({
+        title: '',
+        initialText: defaultSaveName(),
+        onConfirm: (name) => { S.pendingAction = { t: 'usrsavedo', name }; S.dirty = true; },
+        onCancel:  () => { S.presetMsg = 'CANCELLED'; S.dirty = true; },
+    });
+}
+
+/* Seed the keyboard with the module's own idea of the current sound's name
+ * where it has one (a baked bank's name_param), else the module name. */
+function defaultSaveName() {
+    const sp = S.presetSpec;
+    if (sp) {
+        const n = engineGet(S.slot, S.comp, sp.nameKey);
+        if (n) return String(n);
+    }
+    return S.moduleId || 'Preset';
+}
+
+function safeStem(name) {
+    let out = '';
+    for (const ch of String(name)) {
+        out += /[A-Za-z0-9 _-]/.test(ch) ? ch : '_';
+    }
+    out = out.trim().replace(/\s+/g, ' ');
+    return out.slice(0, 40) || 'Preset';
+}
+
+function uniqueName(base) {
+    const taken = {};
+    for (const p of S.userPresets) taken[p.name] = true;
+    if (!taken[base]) return base;
+    for (let n = 2; n < 1000; n++) {
+        if (!taken[base + ' ' + n]) return base + ' ' + n;
+    }
+    return base + ' ' + Date.now();
+}
+
+function uniquePath(dir, stem) {
+    let path = dir + '/' + stem + '.json';
+    if (!fileExists(path)) return path;
+    for (let n = 2; n < 1000; n++) {
+        path = dir + '/' + stem + ' ' + n + '.json';
+        if (!fileExists(path)) return path;
+    }
+    return dir + '/' + stem + ' ' + Date.now() + '.json';
+}
+
+function fileExists(path) {
+    if (typeof host_file_exists === 'function') return !!host_file_exists(path);
+    try { return !!host_read_file(path); } catch (e) { return false; }
+}
+
+/* ---- module menu ----
+ *
+ * The module's own parameter hierarchy, walked in place. Nothing here is
+ * privileged: `ui_hierarchy` and every param come through the same
+ * (slot, comp, key) reads shadow_ui uses, so anything its menu can reach, this
+ * one can. What it buys over the canvas pages is coverage — those are built
+ * from `knobs[]` alone, so a param a module declares but never knob-maps is
+ * invisible in them and reachable ONLY here. What it buys over co-run is the
+ * landing point: we own navigation, so we open on the module's own root level
+ * instead of the slot's component list.
+ *
+ * 99.3% of params across the installed fleet are float/enum/int (738/234/176
+ * against 8 of everything else), so value editing reuses ui_cells rather than
+ * growing a second engine. The handful of exotic types render read-only for
+ * now and are one hop from the chain editor if they ever matter. */
+function openMenu() {
+    if (!S.levels || !(S.rootKey || S.modes)) { S.presetMsg = 'NO MENU'; return; }
+    S.menuStack = [];
+    /* A modes hierarchy has no root — its top screen is the mode list, so the
+     * menu opens with no level at all. Anything else opens on root. */
+    S.menuKey = S.modes ? null : S.rootKey;
+    S.menuIdx = 0;
+    S.menuChild = -1;
+    S.menuEditing = false;
+    refreshMenuRows();
+    S.view = VIEW_MENU;
+    log('menu: ' + S.moduleId + ' root=' + S.rootKey + ' rows=' + S.menuRowsCache.length);
+}
+
+/* A DYNAMIC level lists items the module hands back when asked (obxd's FXB
+ * banks) rather than params declared in the hierarchy. menuRows cannot build
+ * these — they don't exist until we read them — so they're built here, where
+ * engine reads already happen and the tick budget is understood. */
+function itemRows(lv, levelKey) {
+    const raw = engineGet(S.slot, S.comp, lv.items_param);
+    let items = [];
+    try { items = raw ? JSON.parse(raw) : []; }
+    catch (e) { log('items parse failed for ' + lv.items_param + ': ' + e); }
+    if (!Array.isArray(items)) items = [];
+    const selectKey = lv.select_param || '';
+    const commits = levelCommits(lv, levelKey);
+    const cur = selectKey ? parseInt(engineGet(S.slot, S.comp, selectKey), 10) : NaN;
+    return items.map((it, i) => {
+        const index = (it && typeof it.index === 'number') ? it.index : i;
+        return {
+            kind: 'item', index, selectKey, commits,
+            navigateTo: lv.navigate_to || '',
+            label: String((it && (it.label || it.name)) || ('Item ' + (index + 1))),
+            selected: index === cur,
+        };
+    });
+}
+
+function refreshMenuRows() {
+    if (!S.menuKey && S.modes) {
+        S.menuRowsCache = modeRows(S.modes, S.levels);
+        if (S.menuIdx >= S.menuRowsCache.length) S.menuIdx = 0;
+        return;
+    }
+    const lv = (S.levels && S.levels[S.menuKey]) || null;
+    if (lv && lv.items_param) {
+        S.menuRowsCache = itemRows(lv, S.menuKey);
+        if (S.menuIdx >= S.menuRowsCache.length) S.menuIdx = 0;
+        return;
+    }
+    S.menuRowsCache = menuRows(S.levels, S.menuKey, S.cpMap, S.menuChild);
+    if (S.menuIdx >= S.menuRowsCache.length) S.menuIdx = 0;
+    /* Values for the params on this page only — a deep hierarchy is far more
+     * params than one screen, and reading them all would be the lab rig's
+     * mistake at a larger scale. */
+    for (const r of S.menuRowsCache) {
+        if (r.kind !== 'param') continue;
+        /* Metadata by the declared key, value by the resolved address — inside
+         * a repeated element those differ (see childSpec in ui_discover). */
+        const cell = menuCell(r.key, S.levels, S.menuKey, S.cpMap);
+        r.cell = cell;
+        const raw = engineGet(S.slot, S.comp, r.pkey || r.key);
+        r.raw = raw;
+        r.val = parseValue(cell, raw);
+    }
+}
+
+/* `os` is a QuickJS MODULE here, not a global. filepath_browser's default
+ * adapter reads `globalThis.os`, which is undefined in davebox — passing this
+ * explicitly is the difference between a working browser and an empty one. */
+const FS_ADAPTER = {
+    readdir(path) {
+        const out = os.readdir(path) || [];
+        if (Array.isArray(out[0])) return out[0];
+        if (Array.isArray(out)) return out;
+        return [];
+    },
+    stat(path) { return os.stat(path); },
+};
+
+function openFileBrowser(row) {
+    const c = row.cell;
+    S.fileKey = row.pkey || row.key;
+    S.fileState = buildFilepathBrowserState({
+        name: c.label, key: S.fileKey,
+        root: c.fileRoot, filter: c.fileFilter, start_path: c.fileStartPath,
+    }, row.raw || '');
+    refreshFilepathBrowser(S.fileState, FS_ADAPTER);
+    S.view = VIEW_FILE;
+}
+
+/* ---- host capabilities ----
+ *
+ * FX blocks 3-4 and the Send A/B buses are fork/daily-driver features, not
+ * upstream Schwung. Offering rows the host cannot answer would give you
+ * controls that silently do nothing, which is worse than not having them.
+ *
+ * Probed rather than assumed: a host without the feature returns nothing for
+ * the key, so we ask it once per entry instead of hardcoding a host version.
+ * Cheap — four reads on a screen you just opened. */
+/* Enter / leave a global bus. The bus IS a slot-0 context, so everything below
+ * (editor, menu, presets, bypass) keeps working on `(S.slot, S.comp, key)` with
+ * no idea it's addressing a bus rather than a track's chain. */
+/* Session-wide FX, entered from the SESSION view rather than from a track:
+ * Master and the two Sends belong to the set, not to whichever track happens to
+ * be selected. Sound mode hosts the screen because everything below it — block
+ * picker, editor, menu, presets, bypass — already works on any (slot, comp). */
+/* True while sound mode is showing SESSION-wide FX — either the bus list or a
+ * bus's blocks. Nothing here belongs to a track, so the caller's
+ * "follow the active track" logic must sit this out. */
+export function soundIsGlobal() {
+    return S.view === VIEW_BUSES || !!S.bus;
+}
+
+/* Which view this screen was opened FROM. Sound mode and the bus screen are not
+ * two modes of davebox — they are things you call from INSIDE a view, and the
+ * view is what owns them (Josh, 2026-07-29). Both doors are the same gesture
+ * split on exactly this flag: Shift+Note/Session in session view opens the
+ * buses, in track view it opens that track's sound. So leaving the view you
+ * called it from ends it, in BOTH directions — one rule, no special cases, and
+ * you land back on the view you actually navigated to. */
+export function soundEnteredInSession() { return S.enterSession; }
+
+export function soundEnterBuses() {
+    /* Hand the volume knob back to Move before the screen opens. releaseVolume
+     * also flushes any pending level save for the track we came from. */
+    releaseVolume();
+    S.active = true;
+    S.enterSession = true;      /* called from SESSION view */
+    S.bus = null;
+    S.track = -1;
+    S.slot = 0;
+    S.busIdx = 0;
+    S.view = VIEW_BUSES;
+    S.presetMsg = '';
+    S.dirty = true;
+    log('buses: open');
+}
+
+function enterBus(bus) {
+    S.bus = bus;
+    S.slot = 0;
+    S.blockIdx = 0;
+    S.pickRow = 0;
+    S.view = VIEW_BLOCKS;
+    refreshBlockNames();
+    log('bus: ' + bus.id);
+}
+
+/* A bus has exactly ONE door now — the session FX list — so leaving always goes
+ * back there. It briefly had two, and the leftover "which door?" bookkeeping is
+ * what sent Back from a Master FX effect to a TRACK's sound page: entering from
+ * the session list recorded slot 0 as "the track I came from", and 0 is a valid
+ * slot. A single door needs no bookkeeping. */
+function leaveBus() {
+    S.busLevelEditing = false;
+    if (S.busLevelDirty) { S.busLevelDirty = false; S.pendingAction = { t: 'slotsave' }; }
+    S.bus = null;
+    S.view = VIEW_BUSES;
+    S.dirty = true;
+}
+
+/* The picker's rows, dispatched by `kind` like every other list here.
+ *
+ * A TRACK context lists its blocks plus the slot's settings. A BUS context
+ * lists only its four FX blocks — a bus has no slot to configure, and it is
+ * reached from the session view rather than from any track. */
+/* COMPONENTS is keyed by plain chain names; a bus component (`master_fx:fx2`)
+ * browses the same audio-FX catalogue, so it resolves to the fx spec. */
+/* moduleIdOf now lives in ui_discover.mjs — the browser list needs it too. */
+
+function specKeyFor(comp) {
+    return COMPONENTS[comp] ? comp : 'fx1';
+}
+
+function buildPickRows() {
+    const rows = [];
+    if (S.bus) {
+        for (const n of BUS_BLOCKS) {
+            rows.push({ kind: 'block', comp: S.bus.prefix + 'fx' + n, label: 'FX ' + n });
+        }
+        /* How much of this send comes BACK into the mix — for a send that is the
+         * control you reach for most, so it sits with the effects rather than
+         * behind another screen. Master has none; see the note on FX_BUSES. */
+        if (S.bus.levelKey) rows.push({ kind: 'buslevel', label: S.bus.levelLabel });
+    } else {
+        for (const i of S.blockRows) {
+            rows.push({ kind: 'block', comp: BLOCKS[i].comp, label: BLOCKS[i].label, blockIdx: i });
+        }
+        rows.push({ kind: 'settings', label: '[SLOT SETTINGS]' });
+    }
+    S.pickRows = rows;
+    /* Keep the cursor on the component it was on — the row INDEX shifts when a
+     * host lacks fx3/4, and a bus context has different rows entirely. */
+    const at = rows.findIndex(r => r.kind === 'block' && r.comp === S.comp);
+    if (at >= 0) S.pickRow = at;
+    if (S.pickRow >= rows.length) S.pickRow = 0;
+}
+
+function probeCaps() {
+    const has = (v) => v !== null && v !== undefined && v !== '';
+    S.capFx34  = has(engineGet(S.slot, 'fx3', 'bypassed')) ||
+                 has(engineGet(S.slot, 'fx4', 'bypassed'));
+    S.capSends = has(engineGetSlotParam(S.slot, 'send_a'));
+    S.blockRows = [];
+    for (let i = 0; i < BLOCKS.length; i++) {
+        const c = BLOCKS[i].comp;
+        if (!S.capFx34 && (c === 'fx3' || c === 'fx4')) continue;
+        S.blockRows.push(i);
+    }
+    S.slotRows = SLOT_SETTINGS.filter(s => !s.cap || (s.cap === 'sends' && S.capSends));
+    log('caps: fx34=' + (S.capFx34 ? 1 : 0) + ' sends=' + (S.capSends ? 1 : 0));
+}
+
+/* ---- slot settings: read, edit, persist ---- */
+
+function openSlotCfg() {
+    S.slotCfgVals = S.slotRows.map(s => {
+        const raw = parseFloat(engineGetSlotParam(S.slot, s.key));
+        return isFinite(raw) ? raw : 0;
+    });
+    S.slotCfgIdx = 0;
+    S.slotCfgEditing = false;
+    S.slotCfgDirty = false;
+    S.view = VIEW_SLOTCFG;
+    S.dirty = true;
+}
+
+function slotCfgStep(delta) {
+    const s = S.slotRows[S.slotCfgIdx];
+    if (!S.slotCfgEditing || !s) {
+        S.slotCfgIdx = listMove(S.slotRows.length, S.slotCfgIdx, delta);
+        S.slotCfgEditing = false;
+        return;
+    }
+    let v = S.slotCfgVals[S.slotCfgIdx] + (delta > 0 ? s.step : -s.step);
+    if (s.int) v = Math.round(v);
+    else v = Math.round(v * 1000) / 1000;      /* keep 0.05 steps from drifting */
+    if (v < s.min) v = s.min;
+    if (v > s.max) v = s.max;
+    if (v === S.slotCfgVals[S.slotCfgIdx]) return;
+    S.slotCfgVals[S.slotCfgIdx] = v;
+    S.slotCfgDirty = true;
+    /* Queued like every other write here: this runs in the MIDI handler. */
+    /* Slot captured at QUEUE time, same reason queueWrite does it: sound mode
+     * can retarget to another track before the drain, and a send raised against
+     * one slot must not land in the one that replaced it. */
+    for (const w of S.pendingSlotWrites) {
+        if (w.key === s.key && w.slot === S.slot) { w.val = v; return; }
+    }
+    S.pendingSlotWrites.push({ slot: S.slot, key: s.key, val: v });
+}
+
+/* Saving is a synchronous whole-chain file write, so it happens on LEAVING the
+ * screen — one gesture boundary that can't be mistaken, unlike "no writes
+ * pending this tick", which fires in the gaps between jog detents. */
+function closeSlotCfg() {
+    if (S.slotCfgDirty) {
+        S.slotCfgDirty = false;
+        S.pendingAction = { t: 'slotsave' };
+    }
+    S.view = VIEW_BLOCKS;
+    S.dirty = true;
+}
+
+function drainSlotWrites() {
+    const q = S.pendingSlotWrites;
+    if (!q.length) return;
+    for (let n = 0; n < WRITES_PER_TICK && q.length; n++) {
+        const w = q.shift();
+        const s = SLOT_SETTINGS.find(x => x.key === w.key);
+        engineSetSlotParam(w.slot, w.key, s && s.int ? String(w.val) : w.val.toFixed(3));
+    }
+}
+
+function renderSlotCfg() {
+    clear_screen();
+    drawKitHeader('SLOT ' + (S.slot + 1) + ' SETTINGS', false);
+    const ROW_H = 10, VISIBLE = 5;
+    const start = Math.max(0, Math.min(S.slotCfgIdx - 2, S.slotRows.length - VISIBLE));
+    for (let i = 0; i < VISIBLE; i++) {
+        const idx = start + i;
+        if (idx >= S.slotRows.length) break;
+        const s = S.slotRows[idx];
+        const y = 11 + i * ROW_H;
+        const on = (idx === S.slotCfgIdx);
+        if (on) fill_rect(0, y - 1, 128, ROW_H, 1);
+        const ink = on ? 0 : 1;
+        const val = s.fmt(S.slotCfgVals[idx]);
+        const vw = mvWidth(val);
+        mvPrint(3, y + 1, s.label, ink);
+        mvPrint(125 - vw, y + 1, val, ink);
+        if (on && S.slotCfgEditing) mvPrint(125 - vw - 6, y + 1, '*', ink);
+    }
+}
+
+function menuEnter() {
+    if (S.confirmItem) {
+        const row = S.confirmItem;
+        S.confirmItem = null;
+        if (S.confirmIdx === 1) commitItem(row);
+        S.dirty = true;
+        return;
+    }
+    const row = S.menuRowsCache[S.menuIdx];
+    if (!row) return;
+    /* Choosing a repeated element stays on the SAME level and only qualifies
+     * its keys, so it pushes the breadcrumb like any other descent — Back then
+     * pops back to the selector with no special case, because every stack entry
+     * carries the child index it was pushed with. */
+    /* Picking a mode is BOTH navigation and an engine write — minijv's `mode`
+     * switches the JV-880 between single-patch and 8-part multitimbral, so
+     * walking into the performance tree without setting it would show you
+     * controls the engine isn't running. The index is the DECLARED position,
+     * which is what the module's param takes. */
+    if (row.kind === 'mode') {
+        if (S.modeParam) queueWrite(S.modeParam, String(row.index));
+        S.menuStack.push({ levelKey: S.menuKey, cursor: S.menuIdx, child: S.menuChild });
+        S.menuKey = row.level;
+        S.menuChild = -1;
+        S.menuIdx = 0;
+        S.menuEditing = false;
+        S.pendingAction = { t: 'menuload' };
+        return;
+    }
+    if (row.kind === 'child') {
+        S.menuStack.push({ levelKey: S.menuKey, cursor: S.menuIdx, child: S.menuChild });
+        S.menuChild = row.childIndex;
+        S.menuIdx = 0;
+        S.menuEditing = false;
+        S.pendingAction = { t: 'menuload' };
+        return;
+    }
+    if (row.kind === 'level') {
+        S.menuStack.push({ levelKey: S.menuKey, cursor: S.menuIdx, child: S.menuChild });
+        S.menuKey = row.level;
+        S.menuChild = -1;
+        S.menuIdx = 0;
+        S.menuEditing = false;
+        /* Queued, not called: this runs in the MIDI handler and the refresh
+         * reads the engine — a dynamic level reads TWICE (list + selection).
+         * soundTick drains it after the pending writes, so a level entered
+         * right after an edit reads back the value that edit already landed. */
+        S.pendingAction = { t: 'menuload' };
+        return;
+    }
+    /* Selecting a dynamic item IS the errand: write the module's select_param,
+     * then go where it says (obxd sends you back to root, where the newly
+     * chosen bank's presets now live). Unwind to that level if it's already
+     * behind us rather than pushing a second copy onto the stack. */
+    if (row.kind === 'item') {
+        /* A committing list asks first. One click is not enough to overwrite
+         * something you cannot get back. */
+        if (row.commits) { S.confirmItem = row; S.confirmIdx = 0; S.dirty = true; return; }
+        commitItem(row);
+        return;
+    }
+    menuEnterRow(row);
+}
+
+function commitItem(row) {
+    if (row.selectKey) queueWrite(row.selectKey, String(row.index));
+        /* Choosing from a dynamic list usually REPLACES the preset set behind it
+         * — that is what obxd's and dexed's banks are for. The baked-name cache
+         * is keyed by module|comp|count, none of which a bank switch changes,
+         * so without this you keep browsing the previous bank's names against
+         * the new bank's sounds. Drop it and let the next open rescan. */
+        S.bakedCacheKey = '';
+        S.bakedNames = [];
+        const target = row.navigateTo;
+        if (target && S.levels && S.levels[target]) {
+            const at = S.menuStack.findIndex(e => e.levelKey === target);
+            if (at >= 0) {
+                const entry = S.menuStack[at];
+                S.menuStack.length = at;
+                S.menuIdx = entry.cursor;
+                /* Unwinding lands on the level as it was ENTERED, so restore
+                 * the element that was chosen there rather than resetting. */
+                S.menuChild = (entry.child != null) ? entry.child : -1;
+            } else {
+                S.menuStack.push({ levelKey: S.menuKey, cursor: S.menuIdx, child: S.menuChild });
+                S.menuIdx = 0;
+                S.menuChild = -1;
+            }
+            S.menuKey = target;
+        }
+    S.menuEditing = false;
+    S.pendingAction = { t: 'menuload' };
+}
+
+function menuEnterRow(row) {
+    const c = row.cell;
+    /* Each param type opens the editor it needs. The shared components do the
+     * work — the browser and the keyboard are the host's, not reimplementations
+     * — so supporting a type is wiring, not writing an editor. */
+    if (c && c.kind === 'file') { S.pendingAction = { t: 'file', idx: S.menuIdx }; return; }
+    if (c && c.kind === 'text') { S.pendingAction = { t: 'textedit', idx: S.menuIdx }; return; }
+    if (c && c.kind === 'opaque') { S.presetMsg = 'EDIT IN ' + String(c.type).toUpperCase(); return; }
+    /* Click toggles edit on the highlighted param: jog then changes the
+     * value instead of moving the cursor. One knob, two jobs, switched
+     * explicitly — the alternative is editing whatever you scroll past. */
+    S.menuEditing = !S.menuEditing;
+}
+
+function startTextEdit(idx) {
+    const row = S.menuRowsCache[idx];
+    if (!row) return;
+    openTextEntry({
+        title: String(row.label || '').toUpperCase(),
+        initialText: String(row.raw || ''),
+        onConfirm: (txt) => {
+            queueWrite(row.pkey || row.key, String(txt));
+            row.raw = String(txt);
+            row.val = String(txt);
+            S.dirty = true;
+        },
+        onCancel: () => { S.dirty = true; },
+    });
+}
+
+function fileActivate() {
+    const res = activateFilepathBrowserItem(S.fileState);
+    if (res.action === 'open') { refreshFilepathBrowser(S.fileState, FS_ADAPTER); return; }
+    if (res.action === 'select') {
+        queueWrite(S.fileKey, res.value);
+        const row = S.menuRowsCache.find(r => (r.pkey || r.key) === S.fileKey);
+        if (row) { row.raw = res.value; row.val = res.value; }
+        S.view = VIEW_MENU;
+        S.presetMsg = '';
+    }
+}
+
+/* Back pops one level; at the root it returns to the picker it came from. */
+function menuBack() {
+    if (S.menuEditing) { S.menuEditing = false; return true; }
+    const prev = S.menuStack.pop();
+    if (!prev) return false;
+    S.menuKey = prev.levelKey;
+    S.menuIdx = prev.cursor;
+    S.menuChild = (prev.child != null) ? prev.child : -1;
+    S.pendingAction = { t: 'menuload' };   /* engine reads belong in tick */
+    return true;
+}
+
+function menuStep(delta) {
+    if (S.confirmItem) { S.confirmIdx = S.confirmIdx ? 0 : 1; return; }
+    const row = S.menuRowsCache[S.menuIdx];
+    if (!S.menuEditing || !row || row.kind !== 'param' || !row.cell) {
+        S.menuIdx = listMove(S.menuRowsCache.length, S.menuIdx, delta);
+        S.menuEditing = false;
+        return;
+    }
+    const next = stepValue(row.cell, row.val, delta > 0 ? 1 : -1);
+    if (next === row.val) return;
+    row.val = next;                       /* optimistic, drawn now */
+    queueWrite(row.pkey || row.key, commitString(row.cell, next));
+}
+
+/* ---- baked bank ----
+ * A baked bank publishes a COUNT and the name of the CURRENT preset only —
+ * there is no bulk name list (obxd's items_param is its FXB bank files, not
+ * preset names). So a browsable list has to be built by selecting each index
+ * in turn and reading the name back. That is done ONCE per module+comp, cached,
+ * budgeted across ticks, and the original index is restored at the end.
+ *
+ * The unavoidable cost: the scan riffles the module through every preset, so
+ * with notes sounding you hear it sweep. Once per entry, not per scroll. */
+/* ---- baked name cache, on disk ----
+ *
+ * The scan is the expensive thing in this module: one write + one read per
+ * preset, so minijv's 4096 cost ~22s of riffling before you can read a list.
+ * That cost is worth paying ONCE, not once per visit and never twice per boot.
+ * Nothing about a ROM's preset names changes between sessions.
+ *
+ * Identity cannot come from the module id alone: obxd and dexed swap the whole
+ * preset set underneath an unchanged id, comp and count.
+ *
+ * It also cannot be inferred from the hierarchy's dynamic levels, which was the
+ * first attempt. minijv declares THREE — `jump_to_expansion` and
+ * `load_expansion` genuinely change the patch set, but `do_save_to_slot` is a
+ * write-only save COMMAND, and folding that into identity would throw away 4096
+ * cached names every time you saved a patch. `navigate_to` doesn't separate
+ * them either: minijv's save slot and its expansion jump both point at `patch`.
+ *
+ * So don't guess from names — ASK THE SET WHAT IT IS. A fingerprint of the
+ * preset names at a few fixed indices identifies the set directly: it changes
+ * exactly when the thing we cached changes, whatever caused it. Three samples
+ * against 4096 is free, and it also catches the case a bank-identity key never
+ * could — new content dropped into a bank that kept the same count.
+ *
+ * Each distinct fingerprint gets its own file, so alternating between two banks
+ * reads both from disk rather than re-scanning on every switch. */
+const BAKED_CACHE_DIR = '/data/UserData/schwung/cache/davebox-presetnames';
+const BAKED_CACHE_V = 2;
+
+/* Sampling MOVES the module's preset index — the caller restores it. Kept out
+ * of the memory-cache path so a warm list opens without perturbing the sound. */
+function bakedFingerprint(sp, count) {
+    if (!count) return '';
+    const idxs = (count <= 3) ? [0] : [0, count >> 1, count - 1];
+    const out = [];
+    for (const i of idxs) {
+        engineSet(S.slot, S.comp, sp.listKey, String(i));
+        out.push(engineGet(S.slot, S.comp, sp.nameKey) || '');
+    }
+    return out.join('');
+}
+
+function hashStr(s) {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0;
+    return h.toString(16);
+}
+
+function bakedCachePath(key, fp) {
+    const stem = (key + '_' + hashStr(fp)).replace(/[^A-Za-z0-9._-]/g, '_');
+    return BAKED_CACHE_DIR + '/' + stem + '.json';
+}
+
+function loadBakedCache(key, fp, count) {
+    if (typeof host_read_file !== 'function') return null;
+    let txt = null;
+    try { txt = host_read_file(bakedCachePath(key, fp)); } catch (e) { return null; }
+    if (!txt) return null;
+    try {
+        const o = JSON.parse(txt);
+        if (!o || o.v !== BAKED_CACHE_V || o.key !== key || o.fp !== fp) return null;
+        if (!Array.isArray(o.names) || o.names.length !== count) return null;
+        return o.names;
+    } catch (e) { log('baked cache parse failed: ' + e); return null; }
+}
+
+function saveBakedCache(key, fp, names) {
+    if (typeof host_write_file !== 'function') return;
+    if (typeof host_ensure_dir === 'function') host_ensure_dir(BAKED_CACHE_DIR);
+    try {
+        host_write_file(bakedCachePath(key, fp),
+                        JSON.stringify({ v: BAKED_CACHE_V, key, fp, names }));
+    } catch (e) { log('baked cache write failed: ' + e); }
+}
+
+function openBaked() {
+    const sp = S.presetSpec;
+    if (!sp) return;
+    S.bakedCount = parseInt(engineGet(S.slot, S.comp, sp.countKey) || '0', 10) || 0;
+    S.bakedIdx = parseInt(engineGet(S.slot, S.comp, sp.listKey) || '0', 10) || 0;
+    S.view = VIEW_PRESET_BAKED;
+    S.presetMsg = '';
+    captureOriginal();
+
+    const key = S.moduleId + '|' + S.comp + '|' + S.bakedCount;
+    let via = 'scanning';
+    if (key === S.bakedCacheKey && S.bakedNames.length === S.bakedCount) {
+        /* Warm in memory. Selecting any dynamic item drops this, so a bank
+         * switch cannot land here — which is what earns skipping the sampling. */
+        S.bakedScan = -1;
+        via = 'memory';
+    } else {
+        const fp = bakedFingerprint(sp, S.bakedCount);
+        engineSet(S.slot, S.comp, sp.listKey, String(S.bakedIdx));   /* undo sampling */
+        const cached = loadBakedCache(key, fp, S.bakedCount);
+        if (cached) {
+            S.bakedNames = cached;
+            S.bakedCacheKey = key;
+            S.bakedFp = fp;
+            S.bakedScan = -1;
+            via = 'disk';
+        } else {
+            S.bakedNames = new Array(S.bakedCount).fill('');
+            S.bakedCacheKey = key;
+            S.bakedFp = fp;
+            S.bakedScanRestore = S.bakedIdx;
+            S.bakedScan = S.bakedCount ? 0 : -1;
+        }
+    }
+    log('baked: ' + S.bakedCount + ' via ' + sp.listKey + ' (' + via + ')');
+}
+
+/* One slice of the prescan. Runs from soundTick only.
+ *
+ * Rate is transport-aware. Each step is a write plus a read — two synchronous
+ * SHM round-trips — and while the sequencer is PLAYING that budget belongs to
+ * note timing, which is the product. Stopped, nothing competes, so the scan can
+ * run an order of magnitude harder: minijv's 4096 presets go from ~22s to ~4s,
+ * and the audible riffle through every preset shortens with it. */
+function bakedScanRate() {
+    return S.playing ? BAKED_SCAN_PER_TICK : BAKED_SCAN_PER_TICK_IDLE;
+}
+
+function stepBakedScan() {
+    const sp = S.presetSpec;
+    if (!sp || S.bakedScan < 0) return;
+    for (let n = 0; n < bakedScanRate() && S.bakedScan < S.bakedCount; n++) {
+        const i = S.bakedScan++;
+        engineSet(S.slot, S.comp, sp.listKey, String(i));
+        S.bakedNames[i] = engineGet(S.slot, S.comp, sp.nameKey) || ('Preset ' + (i + 1));
+    }
+    if (S.bakedScan >= S.bakedCount) {
+        S.bakedScan = -1;
+        S.bakedIdx = S.bakedScanRestore;
+        engineSet(S.slot, S.comp, sp.listKey, String(S.bakedIdx));
+        /* Paid for it — keep it. The write lands here, at the end of the scan,
+         * so a scan abandoned half-way never persists a partial list. */
+        saveBakedCache(S.bakedCacheKey, S.bakedFp, S.bakedNames);
+    }
+    S.dirty = true;
+}
+
+/* Selecting a baked preset IS writing the index — the same act as auditioning
+ * it, so scrolling previews for free and Load is just "stop reverting". */
+function applyBaked(idx) {
+    const sp = S.presetSpec;
+    if (!sp || !S.bakedCount) return;
+    engineSet(S.slot, S.comp, sp.listKey, String(idx));
+}
+
+function commitBaked() {
+    applyBaked(S.bakedIdx);
+    S.origState = null;
+    S.presetMsg = '';
+    S.pendingDiscover = 4;
+    S.view = VIEW_EDIT;         /* same errand-is-over rule as the user list */
+}
+
+/* Every entry point below runs from soundTick(), never from a MIDI handler. */
+/* Runs from soundTick. Keeps the block you were on when the new track has
+ * something loaded there; otherwise shows the chain so you can choose. */
+function retargetOpen() {
+    refreshBlockNames();
+    if (engineLoadedModule(S.slot, S.comp)) {
+        S.view = VIEW_EDIT;
+        runDiscovery();
+    } else {
+        S.view = VIEW_BLOCKS;
+    }
+}
+
+function runAction(a) {
+    if (a.t === 'names')        refreshBlockNames();
+    else if (a.t === 'bus')     enterBus(a.bus);
+    else if (a.t === 'leavebus') leaveBus();
+    else if (a.t === 'retarget') retargetOpen();
+    else if (a.t === 'open')    openBlock(a.comp);
+    else if (a.t === 'browse')  openBrowse(a.comp);
+    else if (a.t === 'load')    loadSelected();
+    else if (a.t === 'presets') openPresets();
+    else if (a.t === 'usrlist') openUserPresets();
+    else if (a.t === 'baked')   openBaked();
+    else if (a.t === 'usrload') loadUserPreset();
+    else if (a.t === 'usrdel')  deleteUserPreset();
+    else if (a.t === 'usrsave') startSaveFlow();
+    else if (a.t === 'usrsavedo') saveUserPreset(a.name);
+    else if (a.t === 'bakedset') commitBaked();
+    else if (a.t === 'menu')     openMenu();
+    else if (a.t === 'menuload') refreshMenuRows();
+    else if (a.t === 'slotcfg')  openSlotCfg();
+    else if (a.t === 'slotsave') engineSaveState();
+    else if (a.t === 'file')     openFileBrowser(S.menuRowsCache[a.idx]);
+    else if (a.t === 'textedit') startTextEdit(a.idx);
+    S.dirty = true;
+}
+
+function runDiscovery() {
+    const id = moduleIdOf(engineLoadedModule(S.slot, S.comp));
+    S.moduleId = id;
+    if (!id) { S.banks = []; S.sections = []; S.dirty = true; return; }
+    const res = discover(S.slot, S.comp);
+    S.banks = res.banks;
+    S.hosted = res.hostedOverlay || null;
+    hostedReset();
+    S.presetSpec = res.presetSpec || null;
+    S.levels = res.levels || null;
+    S.rootKey = res.rootKey || null;
+    S.modes = res.modes || null;
+    S.modeParam = res.modeParam || '';
+    S.cpMap = res.cpMap || null;
+    S.livePress = livePressSpec(res.levels);
+    if (S.livePress && S.livePress.noteParam) S.lastNoteParam = S.livePress.noteParam;
+    S.padVouch = false;
+    S.padWatchLeft = 0;
+    S.padVouchTries = 0;
+    S.pollCursor = -1;
+    /* Seed the baseline here, where a get_param is legal — the first press
+     * raises its vouch from the MIDI handler, where one is not. */
+    S.padLastSeen = -1;
+    if (S.livePress) readLiveSelection();
+    /* Kit-described modules ship their own section rows; only derive when a
+     * module didn't tell us how it wants to be grouped. */
+    S.sections = res.kitSections || deriveSections(res.banks);
+    S.bankIdx = 0;
+    S.values = {};
+    S.rawValues = {};
+    log('discover: ' + id + ' (' + S.comp + ') -> ' + res.banks.length +
+        ' banks, ' + res.paramCount + ' params, via ' + res.source +
+        ' env=' + res.envCount + ' filt=' + res.filtCount);
+    pollValues(true);
+    S.dirty = true;
+}
+
+/* ---- module browser (per block) ---- */
+
+/* `idx` retargets the block first. Shift+click arrives from the block PICKER,
+ * where S.comp still names whichever block was last opened — browsing without
+ * this would offer modules for the wrong component and load into it. */
+function openBrowse(comp) {
+    if (comp) {
+        S.comp = comp;
+        const bi = BLOCKS.findIndex(b => b.comp === comp);
+        if (bi >= 0) S.blockIdx = bi;
+    }
+    /* A bus component is `master_fx:fx2` etc; it browses the same audio-FX
+     * catalogue as a chain FX block, so map it onto that spec. */
+    const spec = COMPONENTS[S.comp] || (S.bus ? COMPONENTS.fx1 : null);
+    const found = spec ? engineListModules(specKeyFor(S.comp)) : [];
+    /* [ none ] first, and the cursor never resting on it, are one decision —
+     * see buildBrowseList, which owns both and is pinned by tests. */
+    const picked = buildBrowseList(found, engineLoadedModule(S.slot, S.comp));
+    S.browseList = picked.list;
+    S.browseIdx = picked.idx;
+    S.view = VIEW_BROWSE;
+    S.dirty = true;
+    log('browse: ' + found.length + ' modules for ' + S.comp);
+}
+
+function loadSelected() {
+    const mod = S.browseList[S.browseIdx];
+    if (!mod) return;
+    /* ⚠ A BUS component's `:module` takes a DSP PATH; a chain slot's takes a
+     * module id. Same key, different currency — loading a bus by id silently
+     * does nothing, which is the kind of failure you debug for an hour. */
+    engineLoadModule(S.slot, S.comp, S.bus ? (mod.path || '') : mod.id);
+    /* The chain host instantiates asynchronously — discovering immediately
+     * returns null metadata and the module looks empty. */
+    S.pendingDiscover = 6;
+    S.banks = [];
+    S.livePress = null;                /* the outgoing module's, not the incoming one's */
+    S.padVouch = false;
+    S.view = mod.id ? VIEW_EDIT : VIEW_BLOCKS;
+    refreshBlockNames();
+    S.dirty = true;
+}
+
+/* ---- values ---- */
+
+function pollValues(force) {
+    const bank = S.banks[S.bankIdx];
+    if (!bank) return;
+    for (const cell of bank.cells) {
+        if (!cell || !cell.key) continue;
+        /* Never clobber a value whose write hasn't landed yet. The engine is
+         * STALE for that key until the queue drains, so reading it back snaps
+         * the knob to the old value — which is what "the knob resets after I
+         * turn it" looks like.
+         *
+         * Keyed on the pending WRITE, not on which knob is held: writes drain
+         * 2/tick, so turning a second knob leaves the first one's write queued
+         * and unprotected the moment your finger moves on. Touch is still
+         * honoured for the knob in hand, since its write may not be queued yet
+         * when the poll runs. */
+        if (!force && S.pendingWrites.some(w => w.key === cell.key &&
+                                                w.comp === S.comp && w.slot === S.slot)) continue;
+        if (!force && S.touchedIdx >= 0 && bank.cells[S.touchedIdx] &&
+            bank.cells[S.touchedIdx].key === cell.key) continue;
+        const raw = engineGet(S.slot, S.comp, cell.key);
+        inferGuessedMeta(cell, raw);       /* a guessed range learns from the value */
+        S.rawValues[cell.key] = raw;
+        S.values[cell.key] = parseValue(cell, raw);
+    }
+    /* The filter MODEL enum usually lives on the filter page only while
+     * cutoff/resonance are re-listed elsewhere; without this those pages draw a
+     * low-pass whatever the filter is set to. */
+    const mk = bank.filt && bank.filt.modeKey;
+    if (mk && !bank.cells.some(c => c && c.key === mk)) {
+        const raw = engineGet(S.slot, S.comp, mk);
+        if (raw != null) {
+            const i = bank.filt.modeOptions.indexOf(String(raw).trim());
+            S.values[mk] = (i >= 0) ? i : (parseFloat(raw) || 0);
+        }
+    }
+    S.dirty = true;
+}
+
+/* Queue rather than write. Coalesces by key so a fast sweep costs one write per
+ * key per drain instead of one per detent. */
+/* `comp` defaults to the block being edited; the block PICKER passes one
+ * explicitly, since there the cursor and S.comp are different things. */
+function queueWrite(key, val, comp) {
+    const c = comp || S.comp;
+    for (const w of S.pendingWrites) {
+        if (w.key === key && w.comp === c && w.slot === S.slot) { w.val = val; return; }
+    }
+    if (comp) { S.pendingWrites.push({ slot: S.slot, comp: c, key, val }); return; }
+    /* The SLOT is captured here, not read at drain time. Sound mode can retarget
+     * to another track mid-queue, and a write raised against one slot must never
+     * land in the one that replaced it. */
+    S.pendingWrites.push({ slot: S.slot, comp: S.comp, key, val });
+}
+
+/* Learn the note-naming key for a slot's sound generator, ONCE.
+ *
+ * Why this exists: a module ADVERTISES the key rather than everyone agreeing a
+ * name (`child_press_note_param` on its repeated-element level). Sound mode
+ * reads that advertisement during discovery — but CO-RUN never opens sound
+ * mode, so out there davebox knows a note was played and not what to call the
+ * param that names it.
+ *
+ * Without this, the co-run fix only worked if you had happened to open sound
+ * mode on that module earlier in the session, and stopped working again after
+ * a reboot. A fix that depends on having visited an unrelated screen is
+ * indistinguishable from a random bug six months later, so it is bought out
+ * here with one lookup instead.
+ *
+ * Called from enterSchwungCoRun (ui_corun.mjs), which runs in TICK context —
+ * engineDescribe is an SHM round-trip plus a JSON parse, far too expensive for
+ * the MIDI handler, but fine once at co-run entry. Sound mode makes the same
+ * call routinely during discovery.
+ *
+ * Failure is silent and safe: no advertisement (or a module that publishes
+ * nothing) leaves the key empty, the co-run write is skipped, and the module's
+ * own canvas vouch still runs — i.e. it degrades to the previous behaviour,
+ * never to writing something wrong. */
+export function soundLearnNoteParam(slot) {
+    if (!(slot >= 0)) return;
+    let key = '';
+    try {
+        const d = engineDescribe(slot, 'synth');
+        const spec = livePressSpec(d && d.hierarchy && d.hierarchy.levels);
+        if (spec && spec.noteParam) key = spec.noteParam;
+    } catch (e) { key = ''; }
+    S.lastNoteParam = key;
+    log('corun note key: ' + (key || '(none)') + ' slot ' + slot);
+}
+
+/* ---- live pad focus ----
+ *
+ * A drum module wants the pad you HIT to become the pad you EDIT, without a
+ * running pattern dragging the editor around. It cannot do that alone: the one
+ * signal separating a finger from the sequencer is the host forwarding raw
+ * hardware pad notes to an open CANVAS (MODULES.md, "Pad presses in a canvas
+ * UI"), and in sound mode the module's canvas is not the thing on screen — we
+ * harvested its bank structure and put its globals back. davebox holds the
+ * pads, so davebox is the only party that still knows.
+ *
+ * We contribute exactly one bit: "a finger did that." Deliberately NOT which
+ * pad — the note says which, and only the module owns the note->pad map. A
+ * grid position is not a pad (davebox transposes the same grid note up 16 to
+ * reach pads 17-32), so any attempt to derive one here is wrong twice over.
+ *
+ * Called from the LIVE pad press sites in ui_input_pads.mjs and nowhere else.
+ * That is the whole guarantee: sequencer playback never passes through them, so
+ * a playing pattern cannot move focus. External MIDI is excluded too — it
+ * reaches liveSendNote by a different path, and an incoming drum loop should no
+ * more steal focus than a sequenced one. */
+export function soundVouchLivePress(track, note) {
+    /* `livePress` comes from the hierarchy of the block CURRENTLY open, so it
+     * is null unless the module being looked at is one that asked for this.
+     * That self-gates the whole feature — no module-id test needed. */
+    if (!S.active || !S.livePress || S.bus) {
+        /* CO-RUN: sound mode is closed but the module's OWN canvas may be on
+         * screen, and davebox is still the sequencer driving the notes — so the
+         * same deterministic answer applies out here.
+         *
+         * Both things this needs are already in hand, so the press itself stays
+         * cheap: the slot was resolved when co-run began (`schwungCoRunSlot`,
+         * no chain enumeration), and the key was read from the module's
+         * advertisement at the same moment (soundLearnNoteParam, tick context).
+         * Nothing here does a lookup — this runs in the MIDI handler.
+         *
+         * `lastNoteParam` empty means that module advertises no note key. Then
+         * nothing is written and its canvas vouch still runs, i.e. it degrades
+         * to the previous behaviour rather than to something wrong. */
+        if (note >= 0 && S.lastNoteParam && GS.schwungCoRunSlot >= 0) {
+            engineSet(GS.schwungCoRunSlot, 'synth', S.lastNoteParam, String(note));
+        }
+        return;
+    }
+    if (track !== S.track) return;         /* editing some other track's chain */
+
+    S.padWatchFrom = S.padLastSeen;        /* NOT a get_param: null from here */
+    S.padWatchLeft = PAD_WATCH_TICKS;
+    S.padVouchTries = 0;
+
+    /* ⭑ Tell a hosted canvas a pad was TAPPED.
+     *
+     * Its copy/paste gesture triggers on the tap, not on focus moving — so that
+     * the source can be the pad already on screen, whose tap moves nothing. We
+     * own the pad notes here and deliberately never forward them (replaying one
+     * would make the kit vouch a SECOND time on top of the note we just wrote,
+     * re-arming a press it had already resolved), so the tap has to be said out
+     * loud instead. Ignored by the canvas unless a modifier is held, so this is
+     * safe to call on every live press. */
+    if (S.hosted && typeof S.hosted.padTap === 'function') {
+        try { S.hosted.padTap(hostedCtx()); S.dirty = true; }
+        catch (e) { /* a bad hook must not cost the user their pad press */ }
+    }
+
+    /* ⭑ NAME the pad when the module lets us. We EMIT this note, so unlike the
+     * module's own canvas we know exactly which element it is — and saying so
+     * is deterministic where vouching is a race. MEASURED (2026-07-30): the
+     * vouch路 missed 2 of 16 presses, a hit->change latency of 55ms against a
+     * 58ms correlation window. Naming the note has no window to miss.
+     * The module maps note -> element; we never send an index. */
+    if (S.livePress.noteParam && note >= 0) {
+        engineSet(S.slot, S.comp, S.livePress.noteParam, String(note));
+        return;
+    }
+
+    /* ⚠⚠ Fallback: the VOUCH, sent synchronously, breaking this file's "every
+     * write is queued and drained in tick()" rule. That rule keeps STREAMS of
+     * knob writes off the MIDI handler; this is one bounded write per press,
+     * and deferring it is not merely slower but WRONG — queued for the tick it
+     * landed at 27/32/41ms (matched) and 59ms (MISSED) against a 58ms window.
+     * NOT the coalescing footgun in CLAUDE.md: that is host_module_set_param
+     * sharing a channel with shadow_send_midi_to_dsp; this is shadow_set_param,
+     * the chain-param SHM mailbox. The tick retry covers a dropped write. */
+    if (!S.livePress.pressParam) return;
+    S.padVouch = !engineSet(S.slot, S.comp, S.livePress.pressParam, '1');
+}
+
+/* Drain a spread bank re-read. `pollCursor` < 0 means idle. Deliberately does
+ * NOT skip cells with pending writes the way pollValues does: this runs because
+ * every alias cell now addresses a DIFFERENT element, so the local value is not
+ * "optimistic and ahead of the engine", it belongs to another pad entirely. */
+function drainForcedPoll() {
+    if (S.pollCursor < 0) return;
+    const bank = S.banks[S.bankIdx];
+    if (!bank) { S.pollCursor = -1; return; }
+    let done = 0;
+    while (S.pollCursor < bank.cells.length && done < POLL_PER_TICK) {
+        const cell = bank.cells[S.pollCursor++];
+        if (!cell || !cell.key) continue;
+        const raw = engineGet(S.slot, S.comp, cell.key);
+        inferGuessedMeta(cell, raw);       /* a guessed range learns from the value */
+        S.rawValues[cell.key] = raw;
+        S.values[cell.key] = parseValue(cell, raw);
+        done++;
+    }
+    if (S.pollCursor >= bank.cells.length) S.pollCursor = -1;
+    if (done) S.dirty = true;
+}
+
+/* Where the module currently has its focus, or -1 if it won't say. ONE
+ * get_param — cheap enough to poll with, unlike a whole bank re-read. */
+function readLiveSelection() {
+    const spec = S.livePress;
+    if (!spec || !spec.selectParam) return -1;
+    const idx = parseInt(engineGet(S.slot, S.comp, spec.selectParam), 10);
+    const ok = (idx >= 0 && idx < spec.count) ? idx : -1;
+    /* Remembered because the vouch is raised from the MIDI handler, where a
+     * get_param silently returns null — so the baseline for "did focus move?"
+     * has to be something we already know rather than a fresh read. */
+    if (ok >= 0) S.padLastSeen = ok;
+    return ok;
+}
+
+/* Follow the module to `idx`.
+ *
+ * The EDIT pages usually need nothing structural — a drum module binds its
+ * cells to an ALIAS key the DSP redirects at the focused element (DR32's
+ * "pad_") so the page re-points itself — but their VALUES now describe a
+ * different pad, so the bank must be re-read. The MENU is the case that
+ * genuinely needs the index: it walks the hierarchy with real `<prefix><n>_`
+ * keys and has no alias to ride on, so without this the two screens disagree
+ * about which pad is current. */
+function followLiveSelection(idx) {
+    const spec = S.livePress;
+    if (!spec) return;
+    S.pollCursor = 0;                       /* alias cells now mean another pad */
+    hostedFocusMoved(spec);
+    if (idx >= 0 && S.menuChild !== idx && S.menuKey === spec.levelKey) {
+        S.menuChild = idx;
+        refreshMenuRows();
+    }
+    S.dirty = true;
+}
+
+/* A hosted canvas caches its own param reads, so when focus moves it must be
+ * told — otherwise every `<prefix>_*` cell keeps drawing the PREVIOUS element's
+ * values until the kit's periodic full flush comes round, which reads on device
+ * as "the screen takes ages to catch up after tapping a pad". (It did. That was
+ * this function not existing.)
+ *
+ * ⭑ We invalidate rather than REPLAY the pad note into the overlay, and the
+ * difference matters. Forwarding the note would make the kit write the vouch /
+ * note key a SECOND time, on top of davebox's own authoritative write — and a
+ * vouch arriving after the note already resolved focus re-arms the module for a
+ * press that is over, which a later SEQUENCED note can then claim and yank
+ * focus with. davebox emits the note, so it owns that signal; the kit only
+ * needs to know its cache is stale.
+ *
+ * Scoped to the prefix on purpose: `master`, `send*_` and `kit` are still
+ * perfectly good, and each needless re-read is a ~2.6 ms blocking round-trip.
+ *
+ * ⚠⚠ THE SELECT PARAM IS NOT IN THE PREFIX FAMILY — it is the key that DECIDES
+ * the family, and it is named on its own terms (`ui_current_pad`, not
+ * `pad_something`). Invalidating only `<prefix>_*` therefore refreshes every
+ * cell and the sample name while the canvas keeps drawing the OLD INDEX from
+ * cache: "settings and pad name update immediately, but the pad number lags"
+ * (Josh, on device). The kit's own padFocusSettle force-drops this key before
+ * re-reading it; doing the job from outside means doing that part too. */
+function hostedFocusMoved(spec) {
+    if (!S.hosted || !S.hostedCtx) return;
+    const inv = S.hostedCtx.invalidate;     /* installed by the kit on first draw */
+    if (typeof inv !== 'function') return;
+    try {
+        if (!spec || !spec.prefix) { inv(true); return; }  /* correct, just costlier */
+        const drop = [spec.prefix + '_*'];
+        if (spec.selectParam) drop.push(spec.selectParam);
+        inv(drop);
+    } catch (e) { /* a hosted cache that won't flush is not worth a crash */ }
+}
+
+/* ---- input ---- */
+
+function onKnobTurn(knobIdx, delta) {
+    const bank = S.banks[S.bankIdx];
+    if (!bank) return;
+    const cell = bank.cells[knobIdx];
+    if (!cell || !cell.key) return;
+
+    /* Sensitivity CLASS, not davebox's run-length acceleration: a sweep moves
+     * fast, a dropdown costs travel, a toggle resists a brush. */
+    S.knobAccum[knobIdx] += delta;
+    const sens = cell.sens || 2;
+    let steps = 0;
+    while (S.knobAccum[knobIdx] >= sens) { steps++; S.knobAccum[knobIdx] -= sens; }
+    while (S.knobAccum[knobIdx] <= -sens) { steps--; S.knobAccum[knobIdx] += sens; }
+
+    S.touchedIdx = knobIdx;
+    S.touchedTick = S.tickCount;
+    S.turnedSinceTouch = true;
+    S.dirty = true;
+    if (!steps) return;
+
+    const next = stepValue(cell, S.values[cell.key], steps);
+    if (next === S.values[cell.key]) return;
+    S.values[cell.key] = next;                   /* optimistic, drawn now */
+    queueWrite(cell.key, commitString(cell, next));
+}
+
+function listMove(len, idx, delta) {
+    if (!len) return 0;
+    return Math.max(0, Math.min(len - 1, idx + (delta > 0 ? 1 : -1)));
+}
+
+/* Returns TRUE when the event was consumed. davebox keeps everything we don't
+ * take — pads, steps and transport stay with the sequencer throughout. */
+/* Offer an event to a hosted module's own canvas FIRST, and let it DECLINE.
+ *
+ * The kit consumes only what means something to it (an open picker, a
+ * drill-down) and declines at rest — the same consume-only-when-meaningful rule
+ * as the host's contextual Back. So davebox keeps every shell gesture it had:
+ * jog click still opens presets / the module menu, because the kit hands the
+ * click back when it has no use for it.
+ *
+ * ⚠ Getting this backwards is the failure Josh flagged: `canvas_takes_click` in
+ * the HOST is unconditional, so a module declaring it would eat every click and
+ * the shell menu would never open. Here the RETURN VALUE decides, not the
+ * declaration.
+ * ⚠ A module's own CONFIG.onMidi can still swallow the click before the kit
+ * sees it. That is the module author's call to get right, and another reason
+ * hosting is opt-in.
+ *
+ * Shift (49) and Mute (88) are deliberately NOT offered: davebox tracks them
+ * for its own gestures and they must keep flowing regardless. */
+/* Hand a knob-touch NOTE to a hosted canvas. Deliberately fire-and-forget: the
+ * return value is ignored, because davebox still wants its own touch state and
+ * a hosted canvas cannot meaningfully decline a touch. */
+function hostedNote(status, d1, d2) {
+    if (!S.hosted || S.view !== VIEW_EDIT) return;
+    if (typeof S.hosted.onMidi !== 'function') return;
+    try {
+        S.hosted.onMidi(hostedCtx(), { data: [status, d1, d2] });
+        S.dirty = true;
+    } catch (e) {
+        S.hosted = null;                 /* same one-strike rule as renderHosted */
+        try { console.log('davebox: hosted canvas onMidi failed, adopting instead: ' + e); }
+        catch (e2) { /* best-effort */ }
+    }
+}
+
+function hostedTakes(d1, d2) {
+    if (!S.hosted || S.view !== VIEW_EDIT) return false;
+    if (d1 === 49 || d1 === 88) return false;
+    if (typeof S.hosted.onMidi !== 'function') return false;
+    try {
+        return S.hosted.onMidi(hostedCtx(), { data: [0xB0, d1, d2] }) === true;
+    } catch (e) {
+        S.hosted = null;                 /* same one-strike rule as renderHosted */
+        try { console.log('davebox: hosted canvas onMidi failed, adopting instead: ' + e); }
+        catch (e2) { /* best-effort */ }
+        return false;
+    }
+}
+
+export function soundOnCC(d1, d2, decodeDelta) {
+    if (!S.active) return false;
+
+    if (hostedTakes(d1, d2)) { S.dirty = true; return true; }
+
+    if (d1 === 49) {                                   /* shift */
+        const held = d2 >= 64;
+        if (held !== S.shiftHeld) { S.shiftHeld = held; S.dirty = true; }
+        return false;                                  /* davebox also tracks it */
+    }
+
+    /* Mute, tracked HERE and not read off davebox's state: the `S` in this file
+     * is sound mode's own object, so `S.muteHeld` was silently undefined and
+     * the bypass gesture never fired. Passed through like shift, so davebox
+     * keeps its own copy for everything outside sound mode. */
+    if (d1 === 88) {
+        S.muteHeld = d2 >= 64;
+        return false;
+    }
+
+    if (d1 === 79) {                                   /* master knob */
+        /* SESSION-wide context: the knob stays Move's NATIVE master volume.
+         * Nothing here owns a level worth stealing it for — the device already
+         * has a master output — and the claim is the only reason Move stops
+         * seeing CC 79 at all, so declining to consume it is the whole fix.
+         * (soundEnterBuses drops the claim; see releaseVolume there.) */
+        if (soundIsGlobal()) return false;
+        const delta = decodeDelta(d2);
+        if (delta) onVolumeTurn(delta);
+        return true;
+    }
+
+    if (d1 >= 71 && d1 <= 78) {                        /* knobs 1-8 */
+        if (S.view !== VIEW_EDIT) return true;
+        const delta = decodeDelta(d2);
+        if (delta) onKnobTurn(d1 - 71, delta);
+        return true;
+    }
+
+    if (d1 === 14) {                                   /* jog turn */
+        const delta = decodeDelta(d2);
+        if (!delta) return true;
+        if (S.view === VIEW_BUSES) {
+            S.busIdx = listMove(FX_BUSES.length, S.busIdx, delta);
+        } else if (S.view === VIEW_BLOCKS && S.busLevelEditing) {
+            const r = S.pickRows[S.pickRow];
+            if (r && r.kind === 'buslevel') {
+                let v = r.val + (delta > 0 ? BUS_LEVEL_STEP : -BUS_LEVEL_STEP);
+                v = Math.round(v * 1000) / 1000;
+                if (v < BUS_LEVEL_MIN) v = BUS_LEVEL_MIN;
+                if (v > BUS_LEVEL_MAX) v = BUS_LEVEL_MAX;
+                if (v !== r.val) {
+                    r.val = v;
+                    S.busLevelDirty = true;
+                    /* Queued like every write here — this is the MIDI handler. */
+                    queueWrite(S.bus.levelKey, v.toFixed(3), S.bus.levelComp);
+                }
+            }
+        } else if (S.view === VIEW_BLOCKS) {
+            S.pickRow = listMove(S.pickRows.length, S.pickRow, delta);
+        } else if (S.view === VIEW_SLOTCFG) {
+            slotCfgStep(delta);
+        } else if (S.view === VIEW_BROWSE) {
+            S.browseIdx = listMove(S.browseList.length, S.browseIdx, delta);
+        } else if (S.view === VIEW_PRESET_SRC) {
+            S.presetSrcIdx = listMove(S.srcRows.length, S.presetSrcIdx, delta);
+        } else if (S.view === VIEW_PRESET_LIST) {
+            if (S.confirmDel) {
+                S.confirmIdx = listMove(2, S.confirmIdx, delta);
+            } else {
+                const next = listMove(S.userPresets.length + 1, S.userIdx, delta);
+                if (next !== S.userIdx) {
+                    S.userIdx = next;
+                    /* Audition the highlighted row after a beat. The save row
+                     * has no sound of its own, so landing there puts the
+                     * original back rather than leaving the last preview up. */
+                    S.previewIdx = (next === SAVE_ROW) ? -1 : next;
+                    S.previewDelay = PREVIEW_DELAY_TICKS;
+                    S.presetMsg = '';
+                }
+            }
+        } else if (S.view === VIEW_MENU) {
+            menuStep(delta);
+        } else if (S.view === VIEW_FILE) {
+            moveFilepathBrowserSelection(S.fileState, delta > 0 ? 1 : -1);
+        } else if (S.view === VIEW_PRESET_BAKED) {
+            if (S.bakedScan < 0) {
+                const next = listMove(S.bakedCount, S.bakedIdx, delta);
+                if (next !== S.bakedIdx) {
+                    S.bakedIdx = next;
+                    S.previewIdx = next;
+                    S.previewDelay = PREVIEW_DELAY_TICKS;
+                    S.presetMsg = '';
+                }
+            }
+        } else if (S.banks.length) {
+            if (S.shiftHeld && S.sections.length > 1) {
+                const cur = activeSection(S.sections, S.bankIdx);
+                const next = listMove(S.sections.length, cur, delta);
+                S.bankIdx = S.sections[next].bank;
+            } else {
+                S.bankIdx = listMove(S.banks.length, S.bankIdx, delta);
+            }
+            S.touchedIdx = -1;
+            /* A bank change re-reads up to 8 params. Cheap next tick, not from
+             * here — a fast jog spin would otherwise fire a burst of blocking
+             * SHM round-trips straight through the sequencer's MIDI path. */
+            S.needsPoll = true;
+        }
+        S.dirty = true;
+        return true;
+    }
+
+    if (d1 === 3 && d2 >= 64) {                        /* jog click */
+        /* Mute + click = bypass the focused block, the same gesture the host's
+         * chain editor uses, so the reflex carries over. Works from the picker
+         * (the block under the cursor) and from inside a block's editor (the
+         * one you're in). Toggled optimistically and queued, because this runs
+         * in the MIDI handler. */
+        if (S.muteHeld && S.view === VIEW_BLOCKS) {
+            const r = S.pickRows[S.pickRow];
+            if (r && r.kind === 'block' && r.name) {   /* empty = nothing to bypass */
+                r.bypassed = r.bypassed ? 0 : 1;
+                queueWrite('bypassed', String(r.bypassed), r.comp);
+                S.presetMsg = r.bypassed ? 'BYPASSED' : 'ACTIVE';
+                S.dirty = true;
+            }
+            return true;
+        }
+        if (S.view === VIEW_SLOTCFG) {
+            S.slotCfgEditing = !S.slotCfgEditing;
+        }
+        else if (S.view === VIEW_BUSES) {
+            S.pendingAction = { t: 'bus', bus: FX_BUSES[S.busIdx] };
+        }
+        else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
+                 S.pickRows[S.pickRow].kind === 'buslevel') {
+            S.busLevelEditing = !S.busLevelEditing;
+        }
+        else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
+                 S.pickRows[S.pickRow].kind === 'settings') {
+            S.pendingAction = { t: 'slotcfg' };   /* reads the slot — tick only */
+        }
+        else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
+                 S.pickRows[S.pickRow].kind === 'bus') {
+            S.pendingAction = { t: 'bus', bus: S.pickRows[S.pickRow].bus };
+        }
+        else if (S.view === VIEW_BLOCKS) {
+            /* Shift+click SWAPS the module; plain click opens it. Changing what
+             * a block IS is rarer and more destructive than editing it, so it
+             * costs the modifier and lives only here, at the chain overview
+             * where "what is in this block" is the question being asked. */
+            S.pendingAction = { t: S.shiftHeld ? 'browse' : 'open', comp: S.pickRows[S.pickRow].comp };
+        }
+        else if (S.view === VIEW_BROWSE)      S.pendingAction = { t: 'load' };
+        /* An EMPTY block has no presets to offer, and its editor's whole job is
+         * "pick something" — so click there still means the module browser. */
+        else if (S.view === VIEW_EDIT)
+            S.pendingAction = S.moduleId ? { t: 'presets' } : { t: 'browse' };
+        else if (S.view === VIEW_PRESET_SRC) {
+            const row = S.srcRows[S.presetSrcIdx];
+            if (!row) { /* nothing */ }
+            else if (row.kind === 'baked') S.pendingAction = { t: 'baked' };
+            else if (row.kind === 'menu')  S.pendingAction = { t: 'menu' };
+            else                           S.pendingAction = { t: 'usrlist' };
+        }
+        else if (S.view === VIEW_PRESET_LIST) {
+            if (S.confirmDel) {
+                if (S.confirmIdx === 1) S.pendingAction = { t: 'usrdel' };
+                else { S.confirmDel = false; }
+            } else if (S.userIdx === SAVE_ROW) {
+                S.pendingAction = { t: 'usrsave' };
+            } else if (S.shiftHeld) {
+                /* Delete hides behind Shift. Loading is the common act and now
+                 * costs one click; putting a Load/Delete menu in front of it
+                 * made you choose "the obvious one" every single time, and put
+                 * the destructive option one careless click from the safe one.
+                 * The named confirm below is what actually guards it. */
+                S.confirmDel = true;
+                S.confirmIdx = 0;
+            } else {
+                S.pendingAction = { t: 'usrload' };
+            }
+        }
+        else if (S.view === VIEW_PRESET_BAKED) S.pendingAction = { t: 'bakedset' };
+        else if (S.view === VIEW_MENU) menuEnter();
+        else if (S.view === VIEW_FILE) fileActivate();
+        S.dirty = true;
+        return true;
+    }
+
+    /* Back PRESS only starts the clock. Long-press = suspend the module is a
+     * davebox-wide gesture, and sound mode was swallowing the press so it was
+     * the one place you couldn't do it. Hand the press to davebox's global
+     * tracker — checkBackHold() runs in tick, fires past the threshold, and
+     * calls soundExit() itself — and move sound mode's own navigation to the
+     * RELEASE, which is where a tap is decided anyway. */
+    if (d1 === 51 && d2 >= 64) {
+        GS.backPressTick = GS.tickCount;
+        GS.backHoldFired = false;
+        return true;
+    }
+
+    if (d1 === 51 && d2 < 64) {                        /* back RELEASE = tap */
+        const wasHold = GS.backHoldFired;
+        GS.backPressTick = -1;
+        GS.backHoldFired = false;
+        if (wasHold) return true;                      /* the hold already suspended */
+        /* A hosted canvas gets first refusal on a Back TAP, so its own modal can
+         * cancel instead of Back closing the screen out from under an open
+         * field. It consumes only when something is open and declines at rest,
+         * so davebox's navigation below is untouched the rest of the time.
+         * ⚠ Deliberately the tap only — the long-press suspend above stays
+         * unclaimable, the same failsafe shape as the host's Shift+Back. */
+        if (hostedBack()) return true;
+        if (S.view === VIEW_SLOTCFG) {
+            if (S.slotCfgEditing) S.slotCfgEditing = false;   /* leave edit first */
+            else closeSlotCfg();
+        } else if (S.view === VIEW_FILE) {
+            S.view = VIEW_MENU;
+        } else if (S.view === VIEW_MENU && S.confirmItem) {
+            S.confirmItem = null;
+        } else if (S.view === VIEW_MENU) {
+            if (!menuBack()) S.view = VIEW_PRESET_SRC;
+        } else if (S.view === VIEW_PRESET_LIST && S.confirmDel) {
+            S.confirmDel = false;
+        } else if (S.view === VIEW_PRESET_LIST || S.view === VIEW_PRESET_BAKED) {
+            /* Leaving the browser un-committed undoes the audition: you came in
+             * with a sound and you leave with it. Load is what makes a preview
+             * permanent (it drops origState). */
+            revertOriginal();
+            S.view = VIEW_PRESET_SRC;
+        } else if (S.view === VIEW_PRESET_SRC) {
+            S.view = VIEW_EDIT;
+        } else if (S.view === VIEW_EDIT || S.view === VIEW_BROWSE) {
+            S.view = VIEW_BLOCKS;
+            S.pendingAction = { t: 'names' };
+        } else if (S.busLevelEditing) {
+            S.busLevelEditing = false;
+        } else if (S.bus) {
+            /* One level up is wherever the bus was entered FROM — the track's
+             * picker, or the session-wide bus list. leaveBus knows which. */
+            S.pendingAction = { t: 'leavebus' };
+        } else if (S.view === VIEW_BUSES) {
+            soundExit();
+        } else {
+            soundExit();
+        }
+        S.presetMsg = '';
+        S.dirty = true;
+        return true;
+    }
+    return false;
+}
+
+/* Capacitive knob touch (notes 0-7). Touch HIGHLIGHTS; a turn within that touch
+ * is what reveals the zoom/picker. */
+export function soundOnNote(status, d1, d2) {
+    if (!S.active) return false;
+    if (status !== 0x90 && status !== 0x80) return false;
+
+    /* Note 8 = volume-knob touch. Its RELEASE is the end of the gesture, and
+     * the only moment worth persisting: the host's slot-level setter doesn't
+     * save, and saving is a synchronous file write. */
+    if (d1 === 8) {
+        if (soundIsGlobal()) return false;   /* the knob is Move's here */
+        const on = (status === 0x90 && d2 >= 64);
+        if (S.volTouched && !on) flushVolumeSave();
+        S.volTouched = on;
+        S.volShownUntil = on ? (S.tickCount + VOL_SHOW_TICKS * 4) : S.tickCount + VOL_SHOW_TICKS;
+        S.dirty = true;
+        return true;
+    }
+    if (d1 > 7) return false;
+
+    /* Knob touch is a NOTE, and hostedTakes() only forwards CCs — so a hosted
+     * canvas never saw touch at all. Two symptoms on device, one cause: touching
+     * a knob did not highlight it (the press note never arrived), and the
+     * highlight STUCK after a turn (the release note never arrived either, so
+     * nothing ever cleared what the turn had set).
+     *
+     * Forwarded but NOT consumed: davebox keeps its own touch bookkeeping below
+     * — it drives the write-flush on release — and only the kit renders while
+     * hosting, so the two cannot disagree on screen.
+     *
+     * ⚠ Notes 0-7 ONLY. Pad notes are deliberately never replayed into a hosted
+     * canvas: the kit would write the vouch a second time on top of davebox's
+     * own, re-arming a press the note already resolved. */
+    hostedNote(status, d1, d2);
+
+    const on = (status === 0x90 && d2 >= 64);
+    const next = on ? d1 : -1;
+    if (next !== S.touchedIdx) {
+        S.touchedIdx = next;
+        S.touchedTick = S.tickCount;
+        S.touchHeld = on;
+        S.turnedSinceTouch = false;
+        S.dirty = true;
+    }
+    return true;
+}
+
+/* ---- tick: this is where every engine call happens ---- */
+
+/* ── the edit-CC claim, while WE are the one showing a module's canvas ──────
+ *
+ * Undo (56) / Copy (60) / Delete (119) reach a module only while something
+ * claims them; otherwise Move firmware keeps them. shadow_ui raises the claim
+ * for its OWN screens, but its entry-condition table is keyed on VIEW — CANVAS,
+ * HIERARCHY_EDITOR, COMPONENT_EDIT, COMPONENT_PARAMS — and while davebox hosts a
+ * module canvas the view is davebox's overtake view. The host cannot know a tool
+ * is showing a module's UI, so nobody claims them and a hold-Copy + tap-pad
+ * gesture silently does nothing (measured exactly that on device: the gesture
+ * fired correctly from an INJECTED CC 60, which bypasses the shim, and never
+ * from the physical button, which does not).
+ *
+ * ⭑⭑ Re-DERIVED from what is on screen right now, in ONE place, never bookkept
+ * at the sites that change the flags — the same rule the host's own version
+ * follows, and the lesson rounds 24-26 paid for. A new screen wanting these
+ * buttons changes the condition HERE.
+ *
+ * ⚠⚠ Releasing matters more than claiming. While the claim is up Move does NOT
+ * see these three buttons, so a claim left stranded steals the user's native
+ * Undo — which is exactly why the host's first unconditional attempt (PR #154)
+ * was reverted (PR #175). Hence: re-checked every tick, and forced OFF in
+ * soundExit, which is the one path the tick cannot cover because it stops. */
+function editCcClaimWanted() {
+    return !!(S.active && S.view === VIEW_EDIT && S.hosted &&
+              engineClaimsEditCcs(S.comp, S.moduleId));
+}
+
+function reconcileEditCcClaim(force) {
+    if (typeof host_edit_cc_block !== 'function') return;   /* older host */
+    const want = force ? false : editCcClaimWanted();
+    if (want === S.editCcClaimed) return;
+    S.editCcClaimed = want;
+    host_edit_cc_block(want ? 1 : 0);
+}
+
+export function soundTick() {
+    /* Ahead of the S.active gate: leaving sound mode with the claim up would
+     * strand it, and this is the cheap belt to soundExit's braces. */
+    reconcileEditCcClaim(!S.active);
+    if (!S.active) return;
+    S.tickCount++;
+
+    if (isTextEntryActive()) { tickTextEntry(); return; }
+
+    if (S.pendingDiscover > 0 && --S.pendingDiscover === 0) runDiscovery();
+
+    /* Prescan owns the tick while it runs: it is already at the SHM budget, and
+     * letting a preview interleave would fight it for the same index param. */
+    if (S.bakedScan >= 0) { stepBakedScan(); return; }
+
+    /* Debounced audition. */
+    if (S.previewDelay > 0 && --S.previewDelay === 0 && S.previewIdx >= 0) {
+        if (S.view === VIEW_PRESET_BAKED) applyBaked(S.previewIdx);
+        else if (S.view === VIEW_PRESET_LIST) applyUserPreset(S.previewIdx);
+        S.dirty = true;
+    } else if (S.previewDelay === 0 && S.previewIdx === -1 &&
+               S.view === VIEW_PRESET_LIST && S.userIdx === SAVE_ROW &&
+               S.origState !== null) {
+        /* Parked on the save row: make sure what you hear is the sound that
+         * will actually be saved, not the last thing auditioned. */
+        engineSetState(S.slot, S.comp, S.origState);
+        S.previewIdx = -2;   /* done; -1 would re-fire every tick */
+    }
+
+    /* The pad vouch goes FIRST and unbudgeted. The module matches it against a
+     * note it has already seen, inside a window of a few render blocks, so a
+     * vouch that waits its turn behind a knob sweep arrives after the window has
+     * closed and the press is simply lost. It is one write, it coalesces to at
+     * most one per tick, and it only exists at all while a module that asked for
+     * it is open. */
+    /* RETRY only — the vouch itself is sent from soundVouchLivePress, whose
+     * header explains why it cannot wait for this tick. We arrive here solely
+     * when that write was DROPPED (mailbox busy: a pad press is also when
+     * davebox is busiest on the param channel, with lane select + step sync +
+     * bank refresh all firing from the same handler). A retry is already late
+     * against the module's window, so it is a long shot rather than the
+     * mechanism — but it costs one write and beats losing the press outright. */
+    if (S.padVouch && S.livePress) {
+        if (engineSet(S.slot, S.comp, S.livePress.pressParam, '1') ||
+                ++S.padVouchTries >= VOUCH_MAX_TRIES) {
+            S.padVouch = false;
+            S.padVouchTries = 0;
+        }
+    } else if (S.padWatchLeft > 0) {
+        /* WATCH for the change; never read once at a fixed delay. The note and
+         * the vouch reach the module by different paths with different
+         * latencies, so there is no tick at which the answer is reliably ready
+         * — a single early read gets the OLD index and there is no second
+         * chance, leaving the screen stale until the ~250ms idle poll. That is
+         * exactly the "a tap does nothing, holding works" report: holding just
+         * kept you looking long enough for the idle poll to land.
+         *
+         * Every OTHER tick: ~21ms of granularity is imperceptible and halves
+         * the cost of a drum roll, which re-arms this on every hit. */
+        S.padWatchLeft--;
+        /* A module may vouch without publishing a selection (press declared,
+         * select not). There is then nothing to watch, so fall back to one
+         * refresh late enough for the module to have acted — the pages ride the
+         * alias, so re-reading their values is all they need. */
+        if (!S.livePress.selectParam) {
+            if (S.padWatchLeft === 0) followLiveSelection(-1);
+        } else if ((S.padWatchLeft & 1) === 0) {
+            const now = readLiveSelection();
+            if (now >= 0 && now !== S.padWatchFrom) {
+                S.padWatchLeft = 0;
+                followLiveSelection(now);
+            }
+        }
+    }
+
+    /* Drain a bounded number of queued writes. */
+    for (let n = 0; n < WRITES_PER_TICK && S.pendingWrites.length; n++) {
+        const w = S.pendingWrites.shift();
+        engineSet(w.slot, w.comp, w.key, w.val);
+    }
+    drainSlotWrites();
+    drainForcedPoll();
+
+    if (S.volPending) {
+        S.volPending = false;
+        engineSetSlotParam(S.slot, SLOT_LEVEL_KEY, S.volLevel.toFixed(3));
+    }
+
+    /* One heavy job per tick, and never on top of pending writes: a discovery
+     * pass or a browser scan is the most expensive thing this module does, and
+     * stacking it on a write drain doubles the tick's SHM cost at exactly the
+     * moment the sequencer is least able to absorb it. Waiting also means a
+     * discovery reads back values the edits ahead of it have already landed.
+     * The queue coalesces by key, so the wait is bounded by the eight knobs. */
+    if (S.pendingAction && !S.pendingWrites.length) {
+        const a = S.pendingAction;
+        S.pendingAction = null;
+        runAction(a);
+    }
+
+    if (S.needsPoll && !S.pendingWrites.length) {
+        S.needsPoll = false;
+        pollValues(true);
+    }
+
+    if (S.touchedIdx >= 0 && !S.touchHeld &&
+        S.tickCount - S.touchedTick > TOUCH_HOLD_TICKS) {
+        S.touchedIdx = -1;
+        S.dirty = true;
+    }
+
+    /* Idle refresh, and only while nothing is queued — a poll mid-sweep would
+     * read back stale values and fight the optimistic local ones.
+     *
+     * ⭑ Skipped entirely while HOSTING: the module's own kit engine reads what
+     * it draws, through its own cache, so polling into S.values here would be a
+     * second set of ~2.6 ms round-trips for numbers nothing renders. Param
+     * reads — not draw CPU — are the expensive half of a hosted frame. */
+    if (S.view === VIEW_EDIT && !S.hosted && S.banks.length && !S.pendingWrites.length &&
+        S.tickCount % POLL_IDLE_TICKS === 0) {
+        pollValues(false);
+    }
+}
+
+/* ---- render ---- */
+
+/* Turn-to-reveal index: which knob has been physically touched AND then turned.
+ *
+ * It gates the option-list picker overlay — a bare orienting touch must not
+ * cover three neighbouring cells; only an actual turn should.
+ *
+ * The value ZOOM used to ride this too and is gone (Josh, 2026-07-28: the
+ * header already names the param and the cell already shows the value, so the
+ * zoom bought legibility by hiding half the page). Removed rather than left
+ * behind a disabled flag: while it was gated off, this function returned -1
+ * unconditionally, which silently took the option-list picker down with it. */
+function overlayIdx() {
+    return (S.touchedIdx >= 0 && S.turnedSinceTouch) ? S.touchedIdx : -1;
+}
+
+function centreText(y, text) {
+    mvPrint(Math.max(0, Math.round((128 - mvWidth(text)) / 2)), y, text, 1);
+}
+
+function renderBlocks() {
+    clear_screen();
+    drawKitHeader(S.bus ? S.bus.title : ('TRACK ' + (S.track + 1) + ' - SOUND'), false);
+    const ROW_H = 9, VISIBLE = 6;
+    const rows = S.pickRows;
+    const start = Math.max(0, Math.min(S.pickRow - 2, rows.length - VISIBLE));
+    for (let i = 0; i < VISIBLE; i++) {
+        const r = rows[start + i];
+        if (!r) break;
+        const y = 10 + i * ROW_H;
+        const sel = ((start + i) === S.pickRow);
+        if (sel) fill_rect(0, y - 1, 128, ROW_H, 1);
+        hdrPrint(3, y, r.label, sel ? 0 : 1);
+        if (r.kind === 'buslevel') {
+            const t = Math.round((r.val || 0) * 100) + '%';
+            const w = mvWidth(t);
+            mvPrint(125 - w, y + 2, t, sel ? 0 : 1);
+            if (sel && S.busLevelEditing) mvPrint(125 - w - 6, y + 2, '*', sel ? 0 : 1);
+            continue;
+        }
+        if (r.kind !== 'block') continue;
+        /* A bypassed block still says what it holds — you need to know WHAT is
+         * switched out — so the state rides as a prefix. Matches the host's 'B'. */
+        let t = (r.bypassed ? 'B ' : '') + String(r.name || '-').toUpperCase();
+        while (t.length > 1 && mvWidth(t) > 60) t = t.slice(0, -1);
+        mvPrint(Math.max(62, 125 - mvWidth(t)), y + 2, t, sel ? 0 : 1);
+    }
+}
+
+function renderBuses() {
+    clear_screen();
+    drawKitHeader('SESSION FX', false);
+    const ROW_H = 11;
+    for (let i = 0; i < FX_BUSES.length; i++) {
+        const y = 16 + i * ROW_H;
+        const sel = (i === S.busIdx);
+        if (sel) fill_rect(0, y - 1, 128, ROW_H, 1);
+        hdrPrint(4, y, FX_BUSES[i].title, sel ? 0 : 1);
+    }
+}
+
+function renderBrowse() {
+    clear_screen();
+    drawKitHeader(BLOCKS[S.blockIdx].label + ' - PICK', false);
+    const ROW_H = 10, VISIBLE = 5;
+    const n = S.browseList.length;
+    const start = Math.max(0, Math.min(S.browseIdx - 2, n - VISIBLE));
+    for (let i = 0; i < VISIBLE; i++) {
+        const idx = start + i;
+        if (idx >= n) break;
+        const y = 11 + i * ROW_H;
+        const sel = (idx === S.browseIdx);
+        if (sel) fill_rect(0, y - 1, 128, ROW_H, 1);
+        let label = String(S.browseList[idx].name);
+        while (label.length > 1 && mvWidth(label) > 122) label = label.slice(0, -1);
+        mvPrint(3, y + 1, label, sel ? 0 : 1);
+    }
+}
+
+/* ── hosting a module's OWN canvas UI ──────────────────────────────────────
+ *
+ * For a module that DECLARES `capabilities.host_canvas_ui`, davebox runs its
+ * real `bank_editor(ctx)` instead of re-drawing our adoption of it. One
+ * renderer, so a module looks the same inside davebox as it does in the host.
+ *
+ * ⭑ Why this exists at all: `adoptKitStructure` can only carry DATA. A module's
+ * header FUNCTION, its cellViz, browse picker and icons are CODE and die at
+ * that boundary — which is why a hosted DR32 page could not say which pad it
+ * was editing, however much we widened the adoption.
+ *
+ * The ctx is small (measured against canvaskit v38): fillRect, setPixel,
+ * drawRect, print, measureText, getParam, setParam, getValue/setValue, plus
+ * width/height/state. The kit REPLACES print/measureText with its own pixel
+ * font on first draw, so ours only have to exist.
+ *
+ * ⚠ We track a contract we do not own. That is exactly why hosting is opt-in:
+ * a module reaching past this surface must fail on its author's terms, not
+ * silently inside our shell.
+ *
+ * Cost, MEASURED on device (2026-07-31, on-screen HUD — the log path would have
+ * inflated the very frames under test): the whole render is **under the 1 ms
+ * clock resolution**, ~20 µs/frame, with no frame in a 48-sample window
+ * reaching 1 ms. The real cost is param reads at ~2.6 ms each, and the kit's
+ * own cache keeps those to the 24-frame flush (0.38/frame on DR32's page) —
+ * traffic davebox largely pays already. This was mispriced twice by inference
+ * before anyone measured it; do not re-guess it. */
+function hostedCtx() {
+    if (S.hostedCtx) return S.hostedCtx;
+    const ctx = {
+        width: 128, height: 64,
+        /* The kit persists its own bank index through getValue/setValue and
+         * re-seeds from it in onOpen. Keep it on OUR state so a block reopen
+         * lands where the user left it. */
+        state: {},
+        setPixel: (x, y, v) => set_pixel(x | 0, y | 0, v ? 1 : 0),
+        fillRect: (x, y, w, h, v) => fill_rect(x | 0, y | 0, w | 0, h | 0, v ? 1 : 0),
+        drawRect: (x, y, w, h, v) => draw_rect(x | 0, y | 0, w | 0, h | 0, v ? 1 : 0),
+        print: (x, y, t, c) => print(x | 0, y | 0, String(t), c ? 1 : 0),
+        measureText: (s) => (typeof text_width === 'function'
+            ? text_width(String(s)) : String(s).length * 6),
+        getParam: (k) => engineGet(S.slot, S.comp, k),
+        setParam: (k, v) => engineSet(S.slot, S.comp, k, String(v)),
+        /* The canvas persists its own bank index through these. Keyed per
+         * MODULE so reopening a block returns to the page you left it on —
+         * S.hostedValue used to be a single slot wiped by hostedReset(), so
+         * onOpen re-seeded from a value that had just been cleared and every
+         * open landed on bank 0. */
+        getValue: () => String(S.hostedPage[hostedPageKey()] || '0'),
+        setValue: (v) => { S.hostedPage[hostedPageKey()] = String(v); },
+    };
+    S.hostedCtx = ctx;
+    return ctx;
+}
+
+/* Drop the hosted ctx when the block changes — its param cache, its bank index
+ * and the kit's own per-ctx install all belong to the module we were editing.
+ * Carrying them into the next one is the classic display-desync. */
+/* Identity of "which module's page am I remembering?" — the block AND the
+ * module in it, so swapping a module does not inherit the old one's page. */
+function hostedPageKey() {
+    return S.slot + ':' + S.comp + ':' + (S.moduleId || '');
+}
+
+function hostedReset() {
+    S.hostedCtx = null;
+    S.hostedOpened = false;
+    /* NOT S.hostedPage — that is the whole point: it must OUTLIVE a reset, or
+     * the canvas forgets its page every time discovery runs. */
+}
+
+/* Tell a hosted canvas it has been opened, once per block.
+ *
+ * The kit's onOpen re-seeds its state from the persisted value, so without this
+ * the canvas always opens on bank 0 instead of where you left it — and a module
+ * that does other setup there would simply never get it. Fired lazily on the
+ * first draw rather than at discovery, because the ctx does not exist until
+ * then. */
+function hostedOpen(ctx) {
+    if (S.hostedOpened || typeof S.hosted.onOpen !== 'function') return;
+    S.hostedOpened = true;
+    try { S.hosted.onOpen(ctx); } catch (e) { /* a bad onOpen must not kill the page */ }
+}
+
+/* Offer Back to a hosted canvas before davebox acts on it.
+ *
+ * The kit consumes Back ONLY while one of its own modals is open (its text
+ * field, a picker) and declines at rest — the same consume-only-when-meaningful
+ * rule as the jog click. Without this a module's popup has no cancel path: Back
+ * would close davebox's screen out from under an open field.
+ *
+ * Returns true when the module took it. */
+function hostedBack() {
+    if (!S.hosted || S.view !== VIEW_EDIT) return false;
+    if (typeof S.hosted.handleBack !== 'function') return false;
+    try {
+        if (S.hosted.handleBack(hostedCtx()) === true) { S.dirty = true; return true; }
+    } catch (e) { /* declining is the safe default — never trap the user */ }
+    return false;
+}
+
+function renderHosted() {
+    const ov = S.hosted;
+    try {
+        hostedOpen(hostedCtx());
+        ov.draw(hostedCtx());
+        return true;
+    } catch (e) {
+        /* A throwing overlay must not take the whole editor down. Fall back to
+         * the adopted banks for the rest of this block, and say so — silently
+         * degrading would leave the author with no signal at all. */
+        S.hosted = null;
+        try { console.log('davebox: hosted canvas draw failed, adopting instead: ' + e); }
+        catch (e2) { /* logging is best-effort */ }
+        return false;
+    }
+}
+
+function renderEdit() {
+    clear_screen();
+    /* Hosted modules draw themselves, INCLUDING their own header and picker. */
+    if (S.hosted && renderHosted()) return;
+    if (!S.banks.length) {
+        drawKitHeader(BLOCKS[S.blockIdx].label, false);
+        centreText(28, S.moduleId ? 'NO PARAMS' : 'EMPTY');
+        centreText(40, S.moduleId ? 'CLICK FOR PRESETS' : 'CLICK TO PICK');
+        return;
+    }
+    const bank = S.banks[S.bankIdx];
+    const cells = renderCellsForBank(bank, S.values, S.rawValues);
+    drawKitBankPage(cells, {
+        headerText: String(bank.name || '').toUpperCase(),
+        headerInvert: false,
+        pageIdx: S.bankIdx,
+        pageCount: S.banks.length,
+        touchedIdx: S.touchedIdx,
+        overlayIdx: overlayIdx(),
+        env: bank.env || null,
+        filt: filterVizFor(bank, S.values),
+    });
+    if (S.shiftHeld && S.sections.length > 1) {
+        drawKitSectionPicker(S.sections, activeSection(S.sections, S.bankIdx));
+    }
+}
+
+function modLabel() {
+    return String(S.moduleId || BLOCKS[S.blockIdx].label).toUpperCase();
+}
+
+/* Shared list body for the two row-based preset screens. */
+function renderRows(rows, sel, emptyMsg) {
+    const ROW_H = 10, VISIBLE = 5;
+    if (!rows.length) { centreText(30, emptyMsg); return; }
+    const start = Math.max(0, Math.min(sel - 2, rows.length - VISIBLE));
+    for (let i = 0; i < VISIBLE; i++) {
+        const idx = start + i;
+        if (idx >= rows.length) break;
+        const y = 11 + i * ROW_H;
+        const on = (idx === sel);
+        if (on) fill_rect(0, y - 1, 128, ROW_H, 1);
+        let label = String(rows[idx]);
+        while (label.length > 1 && mvWidth(label) > 122) label = label.slice(0, -1);
+        mvPrint(3, y + 1, label, on ? 0 : 1);
+    }
+}
+
+function renderPresetSrc() {
+    clear_screen();
+    drawKitHeader(modLabel(), false);
+    renderRows(S.srcRows.map(r => r.label), S.presetSrcIdx, '');
+}
+
+function renderPresetList() {
+    clear_screen();
+    if (S.confirmDel) {
+        const p = S.userPresets[S.userIdx - 1];
+        drawKitHeader('DELETE?', false);
+        centreText(20, String(p ? p.name : '').toUpperCase());
+        renderRows(['No', 'Yes'], S.confirmIdx, '');
+        return;
+    }
+    drawKitHeader('USER PRESETS', false);
+    const rows = ['[Save current…]'].concat(S.userPresets.map(p => p.name));
+    renderRows(rows, S.userIdx, '');
+    if (S.presetMsg) centreText(58, S.presetMsg);
+}
+
+/* Numbered scrollable list, same shape as the user list. The names behind it
+ * had to be harvested one index at a time (see openBaked) — while that is
+ * running there is nothing to list yet, so show the progress instead of an
+ * empty box. */
+function renderPresetBaked() {
+    clear_screen();
+    drawKitHeader(modLabel() + ' PRESETS', false);
+    if (S.bakedScan >= 0) {
+        centreText(26, 'READING NAMES');
+        centreText(40, S.bakedScan + ' / ' + S.bakedCount);
+        return;
+    }
+    if (!S.bakedCount) { centreText(30, S.presetMsg || 'NO PRESETS'); return; }
+    const rows = S.bakedNames.map((n, i) =>
+        String(i + 1).padStart(3, ' ') + '  ' + (n || ('Preset ' + (i + 1))));
+    renderRows(rows, S.bakedIdx, '');
+    if (S.presetMsg) centreText(58, S.presetMsg);
+}
+
+/* Two-column rows: label left, value right — levels show a chevron instead.
+ * The row being edited inverts so it is obvious the jog changed jobs. */
+function renderMenu() {
+    clear_screen();
+    if (S.confirmItem) {
+        /* Name the SLOT being written, not the action — "Save to Slot" is the
+         * screen you are already on; which slot is about to be overwritten is
+         * the thing you need to check before saying yes. */
+        drawKitHeader('OVERWRITE?', false);
+        centreText(20, String(S.confirmItem.label || '').toUpperCase());
+        renderRows(['No', 'Yes'], S.confirmIdx, '');
+        return;
+    }
+    const lv = (S.levels && S.levels[S.menuKey]) || {};
+    /* Inside a repeated element the level name alone is a lie — eight identical
+     * "PARTS" screens with no way to tell which part you are editing. */
+    const cspec = childSpec(lv);
+    const title = (!S.menuKey && S.modes) ? (S.moduleId || 'MENU')
+        : (cspec && S.menuChild >= 0) ? (cspec.label + ' ' + (S.menuChild + 1))
+        : (lv.name || lv.label || S.menuKey || 'MENU');
+    drawKitHeader(String(title).toUpperCase(), false);
+    const rows = S.menuRowsCache;
+    if (!rows.length) { centreText(30, 'NO PARAMS'); return; }
+    const ROW_H = 10, VISIBLE = 5;
+    const start = Math.max(0, Math.min(S.menuIdx - 2, rows.length - VISIBLE));
+    for (let i = 0; i < VISIBLE; i++) {
+        const idx = start + i;
+        if (idx >= rows.length) break;
+        const r = rows[idx];
+        const y = 11 + i * ROW_H;
+        const on = (idx === S.menuIdx);
+        if (on) fill_rect(0, y - 1, 128, ROW_H, 1);
+        const ink = on ? 0 : 1;
+        /* An item row's "value" is whether it is the one in force — without it
+         * a bank list is N identical rows and you cannot tell which you're on. */
+        const val = (r.kind === 'level' || r.kind === 'child' || r.kind === 'mode') ? '>' :
+            (r.kind === 'item') ? (r.selected ? '*' : '') :
+            (r.cell ? String(formatValue(r.cell, r.val)) : '');
+        let label = String(r.label || '');
+        const vw = mvWidth(val);
+        while (label.length > 1 && mvWidth(label) > 118 - vw) label = label.slice(0, -1);
+        mvPrint(3, y + 1, label, ink);
+        mvPrint(125 - vw, y + 1, val, ink);
+        /* Edit mode marker: a caret on the value side of the active row. */
+        if (on && S.menuEditing && r.kind === 'param') mvPrint(125 - vw - 6, y + 1, '*', ink);
+    }
+}
+
+function renderFile() {
+    clear_screen();
+    const st = S.fileState;
+    if (!st) { centreText(30, 'NO BROWSER'); return; }
+    drawKitHeader(String(st.title || 'FILE').toUpperCase(), false);
+    if (st.error) { centreText(30, String(st.error).toUpperCase()); return; }
+    renderRows(st.items.map(it => (it.kind === 'dir' ? it.label + '/' : it.label)),
+               st.selectedIndex, 'EMPTY');
+}
+
+/* Level read-out. Drawn OVER whichever view is up rather than as its own
+ * screen: the knob is live everywhere in sound mode, so it has to be readable
+ * from everywhere, and it should not cost you your place. */
+function drawVolReadout() {
+    const pct = Math.round((S.volLevel / VOL_MAX) * 100);
+    const txt = 'LEVEL  ' + (S.volLevel).toFixed(2) + 'x';
+    const w = 100, h = 22, x = (128 - w) >> 1, y = 21;
+    fill_rect(x, y, w, h, 0);
+    draw_rect(x, y, w, h, 1);
+    mvPrint(x + 5, y + 4, txt, 1);
+    const bw = w - 10;
+    draw_rect(x + 5, y + 14, bw, 4, 1);
+    const fillw = Math.max(0, Math.min(bw, Math.round(bw * pct / 100)));
+    if (fillw > 0) fill_rect(x + 5, y + 14, fillw, 4, 1);
+}
+
+export function soundRender() {
+    if (!S.active) return false;
+    if (isTextEntryActive()) { drawTextEntry(); return true; }
+    if (S.view === VIEW_BLOCKS) renderBlocks();
+    else if (S.view === VIEW_BROWSE) renderBrowse();
+    else if (S.view === VIEW_PRESET_SRC) renderPresetSrc();
+    else if (S.view === VIEW_PRESET_LIST) renderPresetList();
+    else if (S.view === VIEW_PRESET_BAKED) renderPresetBaked();
+    else if (S.view === VIEW_MENU) renderMenu();
+    else if (S.view === VIEW_FILE) renderFile();
+    else if (S.view === VIEW_SLOTCFG) renderSlotCfg();
+    else if (S.view === VIEW_BUSES) renderBuses();
+    else renderEdit();
+    if (S.volShownUntil >= 0 && S.tickCount <= S.volShownUntil) drawVolReadout();
+    return true;
+}
