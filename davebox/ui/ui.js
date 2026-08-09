@@ -163,7 +163,6 @@ globalThis.init = function () {
      * may still hold target/id if we were warm-restarted (Shift+Back +
      * relaunch does not reset shadow_control). The host neutralizes the
      * SHM side of that as part of registration below. */
-    S.schwungCoRunSlot = -1;
     S.moveCoRunTrack = -1;
     /* Same reasoning for sound mode: init() re-runs in the SAME runtime on
      * resume, so ui_sound.mjs's module-scope state survives. Start closed. */

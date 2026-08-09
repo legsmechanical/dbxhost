@@ -197,10 +197,6 @@ export const S = {
     trackQueuedClip: new Array(8).fill(-1),
     trackChannel: new Array(8).fill(1),
     trackRoute: new Array(8).fill(0),
-    schwungCoRunSlot: -1,                     /* -1 = off; 0-3 = Schwung chain editor is co-running on this slot (dAVEBOx skips OLED + suppresses track-button LEDs) */
-    _coRunChanSlots: 0,                       /* Schwung co-run: bitmask (bits 0-3) of slots whose receive channel matches the active track; blinked on the side buttons. 0 = none. Refreshed on poll cadence. */
-    pendingSchwungCoRunTrack: -1,             /* -1 = none; t = track queued to enter Schwung co-run; slot resolved in tick (schSlotsForTrack) so shadow_get_slots runs in tick context */
-    pendingSchwungCoRunDelay: 0,             /* >0 = ticks remaining before entering co-run after a no-match "NO SLOT" popup (lets the message show before the editor takes the OLED) */
     moveCoRunTrack: -1,                       /* -1 = off; 0-3 = Move firmware is co-running on this track (dAVEBOx skips OLED; shim filters nav CCs + touch 0-9 from tool, lets them reach Move) */
     moveCoRunDrumHeld: new Set(),             /* d1 notes of drum lane pads currently held in co-run — per-pad Set so a 2nd simultaneous hold doesn't clobber the 1st's tracking (js-input-1). Plain pad note-off (no Shift injection) sent per held pad on physical release / co-run exit */
     trackPadMode: new Array(8).fill(0),
@@ -242,7 +238,7 @@ export const S = {
     trackActiveBank: new Array(8).fill(0),
     /* Latches: track-button LED reclaim after Move-native co-run exit (Move
      * firmware writes CC 40-43 colors during co-run; dAVEBOx must blank them
-     * once on exit). Schwung co-run has a parallel _coRunTrackLedsLit latch. */
+     * once on exit). */
     _moveCoRunTrackLedsActive: false,
     knobTouched: -1,
     /* Physically-held knob index (-1 none). Unlike knobTouched, this is set ONLY
@@ -585,7 +581,7 @@ export const S = {
     sessVolPending: new Array(8).fill(false),
     sessVolSaveOwed: false,
     sessVolLastTurn: -1,                   /* tick of the last level change */
-    pendingSoundEnterTrack: -1, /* Sound mode entry queued from the Shift-release dispatch. Slot resolution needs shadow_get_slots, which must run in tick context — same deferral as pendingSchwungCoRunTrack. */
+    pendingSoundEnterTrack: -1, /* Sound mode entry queued from the Shift-release dispatch or the track menu. Slot resolution needs shadow_get_slots, which must run in tick context — hence the deferral. */
     pendingUndoSync: 0,
     pendingDefaultSetParams: [],
     clearDrainHold: 0,       /* clearClip sets this so the next pendingDefaultSetParams drain skips one tick — keeps the queued _clear out of the same buffer as the sync set_param fan-out from clearClip's call site */

@@ -22,7 +22,7 @@ import { computePadNoteMap, syncDrumLaneSteps, setActiveDrumLane,
     setDrumPerformMode } from './ui_drummodel.mjs';
 import { effectiveClip, invalidateLEDCache, forceRedraw, sendPerfMods,
     PERF_MOD_PAD_MAP } from './ui_leds.mjs';
-import { exitSchwungCoRun, exitMoveNativeCoRun } from './ui_corun.mjs';
+import { exitMoveNativeCoRun } from './ui_corun.mjs';
 import { openGlobalMenu } from './ui_menu.mjs';
 import { openProjectPadPicker, projectPadPickerTap } from './ui_dialogs.mjs';
 import { applyBankParam, applyTrackConfig, readBankParams,
@@ -1107,11 +1107,8 @@ export function _onStepButtons(d1, d2) {
      * to a single exit affordance (the blinking Step 3 button + lit icon).
      * Step 3 (idx 2) exits co-run; every other step press is swallowed so it
      * can't edit the clip hidden underneath. Mirrors the Menu (CC 50) exit. */
-    if (S.schwungCoRunSlot >= 0 || S.moveCoRunTrack >= 0) {
-        if (d1 - 16 === 2) {
-            if (S.moveCoRunTrack >= 0) exitMoveNativeCoRun();
-            else { exitSchwungCoRun(); forceRedraw(); }
-        }
+    if (S.moveCoRunTrack >= 0) {
+        if (d1 - 16 === 2) exitMoveNativeCoRun();
         return;
     }
     if (S.tapTempoOpen) return;

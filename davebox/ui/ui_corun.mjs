@@ -9,8 +9,6 @@
  */
 
 import { S } from './ui_state.mjs';
-/* One-way edge — ui_sound.mjs does not import this file, so no cycle. */
-import { soundLearnNoteParam } from './ui_sound.mjs';
 import { invalidateLEDCache, reapplyPalette, forceRedraw } from './ui_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -45,18 +43,10 @@ const CORUN_GRP_MUTE  = 1 << 12;  /* CC 88 — the Mute button */
  * so the presses still cede to the peer. Without this, Move's playback repaints
  * fight our indicator. */
 const DAVEBOX_CORUN_LED_KEEP_MASK = DAVEBOX_CORUN_KEEP_MASK | CORUN_GRP_TRACK;
-/* Mute (CC 88) split for co-run (schwung-davebox #8): during MOVE_NATIVE co-run
- * dAVEBOx CEDES Mute to Move so the user can mute Move's instruments and drum pads
- * — the base masks above already omit CORUN_GRP_MUTE, so the move-native begin
- * (which uses them) cedes Mute automatically. The FX picker ALSO cedes Mute to Move
- * (its mask omits CORUN_GRP_MUTE), so the user can mute Move while the picker overlay
- * is up. Only chain-edit KEEPS Mute (dAVEBOx's own track mute/solo + Delete+Mute
- * clear), matching pre-#8 behavior where Mute always stayed with the tool. Requires a
- * host that classifies CC 88 as CORUN_GRP_MUTE (schwung feat/corun-mute-cede-group);
- * on an older host CC 88 is unclassified and stays with the tool in every mode, so
- * this is a no-op there (graceful). */
-const DAVEBOX_CHAIN_KEEP_MASK     = DAVEBOX_CORUN_KEEP_MASK | CORUN_GRP_MUTE;
-const DAVEBOX_CHAIN_LED_KEEP_MASK = DAVEBOX_CORUN_LED_KEEP_MASK | CORUN_GRP_MUTE;
+/* Mute (CC 88) split (schwung-davebox #8): during MOVE_NATIVE co-run dAVEBOx
+ * CEDES Mute to Move so the user can mute Move's instruments and drum pads —
+ * the base masks above omit CORUN_GRP_MUTE, so the move-native begin cedes
+ * Mute automatically, and the FX picker's mask omits it too. */
 
 /* Mask while the FX-picker overlay is open: the normal Move-co-run mask PLUS the
  * UI elements the overlay should own — jog (turn/click), the Back *routing* group,
@@ -117,16 +107,10 @@ export function initPrimarySurface() {
  * This replaces the pollDSP target=NONE reconcile on the primary path: ONE
  * return path, with the module-side cleanup the exit helpers used to carry. */
 function onServiceReturn(id, _result) {
-    if (id === "chain_editor") {
-        cleanupAfterSchwungCoRun();
-        /* Framework exit also closes any global menu we opened to launch it. */
-        S.globalMenuOpen = false;
-        S.lastSentMenuEditValue = null;
-    } else if (id === "move_native") {
+    if (id === "move_native") {
         cleanupAfterMoveNativeCoRun();
     }
-    /* Overlay services (fx_picker / master_fx) need no module-side cleanup —
-     * the classic overlay close never did any either. */
+    /* Overlay services (fx_picker) need no module-side cleanup. */
     S.screenDirty = true;
 }
 
@@ -146,8 +130,8 @@ export function schSlotForTrack(t) {
 /* Bitmask (bits 0-3) of ALL Schwung slots that receive a track's MIDI channel —
  * i.e. every slot whose receive channel matches trackChannel[t] or is "All" (0).
  * Multiple slots on the same channel are layered (all play the track), so all of
- * them get a bit. 0 = no slot receives this track. Lowest set bit = the slot the
- * co-run editor opens to; the whole mask is blinked on the side buttons. */
+ * them get a bit. 0 = no slot receives this track. Lowest set bit = the slot
+ * sound mode edits. */
 export function schSlotsForTrack(t) {
     const ch = S.trackChannel[t];
     const slots = shadow_get_slots();
@@ -179,88 +163,6 @@ export function schSlotMasksAllTracks(out) {
         out[t] = mask;
     }
     return out;
-}
-
-/* Open the Schwung-slot picker (first use) or enter co-run directly if the
- * track already has a slot assigned. Co-run keeps dAVEBOx loaded; the chain
- * editor for the picked slot takes over OLED + jog + track buttons, while
- * pads / step buttons / knobs / transport stay with dAVEBOx. */
-export function openSchwungSlotEditor(t) {
-    /* Track view only (Josh, 2026-08-08). Session view repurposes the
-     * gestures a co-run needs to navigate and exit, so entering from there
-     * strands the session — observed on hardware as a stuck Move-native
-     * OLED. Guard the MECHANISM, not the menu entry: every door funnels
-     * through here. */
-    if (S.sessionView) {
-        showActionPopup('TRACK VIEW ONLY', 'Switch out of session', 'view to edit slots.');
-        return;
-    }
-    if (S.trackRoute[t] !== 0) {  /* 0 = ROUTE_SCHWUNG; fmtRoute('Swng') */
-        showActionPopup('NOT SCHWUNG-ROUTED', 'Set track route to', 'Schwung first.');
-        return;
-    }
-    /* Close the global menu so Menu (exit co-run) doesn't land back on a
-     * half-open menu. */
-    S.globalMenuOpen = false;
-    S.lastSentMenuEditValue = null;
-    /* Auto-open the slot the track plays through (channel-matched) — no picker.
-     * Resolution is deferred to tick() so shadow_get_slots runs in a safe
-     * context; see the pendingSchwungCoRunTrack handler. */
-    S.pendingSchwungCoRunTrack = t;
-    S.screenDirty = true;
-}
-
-/* Enter co-run for slot N on track t. Persists the track's slot choice,
- * suppresses dAVEBOx's OLED drawing + track-button LEDs (handled where each
- * is written), and tells Schwung's shadow_ui to also tick the chain editor. */
-export function enterSchwungCoRun(t, slot) {
-    S.schwungCoRunSlot = slot;
-    /* Read this module's live-note advertisement now, while we are in tick
-     * context and can afford it. Out here no discovery has run, so this is the
-     * only chance to learn the key that lets a pad press name its own pad —
-     * see soundLearnNoteParam. */
-    soundLearnNoteParam(slot);
-    /* One push; the host derives the co-run split + LED keep from the
-     * service's claims. */
-    host_open_service("chain_editor", {
-        slot: slot,
-        keep_mask: DAVEBOX_CHAIN_KEEP_MASK,
-        led_keep_mask: DAVEBOX_CHAIN_LED_KEEP_MASK,
-    });
-    S.screenDirty = true;
-}
-
-/* Exit co-run. Called on programmatic dAVEBOx state changes (track switch,
- * global-menu open, etc.). Pops the service; onServiceReturn carries the
- * module-side cleanup and the host restores every claim by derivation. */
-export function exitSchwungCoRun() {
-    if (S.schwungCoRunSlot < 0) return;
-    host_close_service(null);
-}
-
-/* Module-side cleanup, run from onServiceReturn. No ownership calls in
- * here — state, modifiers, palette, LED cache only. */
-function cleanupAfterSchwungCoRun() {
-    S.schwungCoRunSlot = -1;
-    S._coRunChanSlots = 0;
-    /* Modifier-key release CCs the user pressed inside the co-run may have
-     * been routed to Schwung and never reached us — clear defensively so a
-     * stuck Shift/Mute/etc. can't silence pad dispatch on return. Mirrors
-     * the resume-from-suspend clear. */
-    S.shiftHeld = false; S.deleteHeld = false; S.muteHeld = false;
-    S.copyHeld  = false; S.loopHeld  = false; S.loopJogActive = false;
-    S.captureHeld = false; S.shiftTrackLEDActive = false;
-    /* Schwung's chain editor may have rewritten palette scratch entries while
-     * we were ceded. Reapply our palette before invalidating the LED cache
-     * so forceRedraw below repaints with the right colors. */
-    reapplyPalette();
-    invalidateLEDCache();
-    /* Knob-ring LEDs (CC 71-78) need a forced re-emit: the chain editor drove
-     * them, and post-reapplyPalette the buttonCache is stale, so non-forced
-     * writes are dropped and they'd keep the editor's colors until a knob
-     * moves. Matches exitMoveNativeCoRun + CC-bank resume (audit js-display-1). */
-    S._forceKnobReemit = true;
-    forceRedraw();
 }
 
 /* Enter Move-native co-run for dAVEBOx track t. Asks the shim to (a) yield

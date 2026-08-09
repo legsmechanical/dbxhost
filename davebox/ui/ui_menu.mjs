@@ -30,7 +30,7 @@ import { saveState, writeSidecar, showActionPopup, loadSnapshotManifest } from '
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw } from './ui_leds.mjs';
-import { openSchwungSlotEditor, exitSchwungCoRun, enterMoveNativeCoRun, exitMoveNativeCoRun } from './ui_corun.mjs';
+import { enterMoveNativeCoRun, exitMoveNativeCoRun } from './ui_corun.mjs';
 import { requestExport } from './ui_export.mjs';
 import { applyTrackConfig } from './ui_dsp_bridge.mjs';
 import { openTapTempo } from './ui_record.mjs';
@@ -121,11 +121,16 @@ function buildGlobalMenuItems() {
                 format: function(v) { return v === 2 ? 'Chan' : v === 1 ? 'Poly' : 'Off'; }
             })
         ] : []),
-        /* Chain-editor co-run entry — hidden on non-Schwung-routed tracks
-         * (symmetric with Edit Synth below). */
+        /* Edit the track's sound IN sound mode — chain-edit co-run is gone
+         * (P4b follow-up, Josh 2026-08-09): sound mode already carries the
+         * block picker, module browser, editor, presets and slot settings.
+         * Hidden on non-Schwung-routed tracks (symmetric with Edit Synth). */
         ...((S.trackRoute[S.activeTrack] === 0) ? [
             createAction('Edit Slot...', function() {
-                openSchwungSlotEditor(S.activeTrack);
+                S.globalMenuOpen = false;
+                S.lastSentMenuEditValue = null;
+                S.pendingSoundEnterTrack = S.activeTrack;
+                forceRedraw();
             })
         ] : []),
         /* Move-native co-run entry — visible only on ROUTE_MOVE tracks. */
@@ -319,7 +324,6 @@ export function openGlobalMenu() {
     if (S.awaitingProjectSelect) return;
     /* Co-run owns the OLED — exit it before opening the menu so dAVEBOx
      * can draw again. */
-    if (S.schwungCoRunSlot >= 0) exitSchwungCoRun();
     if (S.moveCoRunTrack >= 0) exitMoveNativeCoRun();
     S.globalMenuItems         = buildGlobalMenuItems();
     S.globalMenuState         = createMenuState();

@@ -37,8 +37,7 @@ import { effectiveClip, updateStepLEDs, updateSessionLEDs, updateTrackLEDs, flas
     invalidateLEDCache, trackColor, setPaletteEntryRGB, reapplyPalette, forceRedraw,
     updatePerfModeLEDs, altIndicatorActive, clearAllLEDs, installFlagsWrap, removeFlagsWrap,
     buildLedInitQueue, drainLedInit } from './ui_leds.mjs';
-import { schSlotForTrack, schSlotsForTrack, schSlotMasksAllTracks,
-    enterSchwungCoRun } from './ui_corun.mjs';
+import { schSlotForTrack, schSlotsForTrack, schSlotMasksAllTracks } from './ui_corun.mjs';
 import { pollPendingExport } from './ui_export.mjs';
 import { drawUI } from './ui_render.mjs';
 import { pollDSP,
@@ -623,7 +622,7 @@ export function _tickImpl() {
                                  : S.dspMergeState === 1 ? Red : LED_OFF, true);
         setButtonLED(MoveSample, DarkGrey, true);
         setButtonLED(MoveBack,
-            (S.schwungCoRunSlot < 0 && S.moveCoRunTrack < 0 && backTapWouldAct())
+            (S.moveCoRunTrack < 0 && backTapWouldAct())
                 ? White : LED_OFF, true);
         /* reapplyPalette reset the buttonCache — force-resend the 8 knob LEDs
          * next render (their stopped-state named colors would otherwise be
@@ -1080,48 +1079,6 @@ export function _tickImpl() {
 
         if ((S.tickCount % POLL_INTERVAL) === 0) { pollDSP(); S.screenDirty = true; }
 
-        /* Schwung co-run: refresh the channel-matched slot bitmask for the
-         * side-button blink (shadow_get_slots is a cheap shared-memory read;
-         * gate to the poll cadence to match the LED force cadence). */
-        if (S.schwungCoRunSlot >= 0 && (S.tickCount % POLL_INTERVAL) === 0) {
-            S._coRunChanSlots = schSlotsForTrack(S.activeTrack);
-        }
-
-        /* Deferred Schwung co-run entry (queued by openSchwungSlotEditor). Resolve
-         * the slot(s) the track plays through and open the first (lowest-index)
-         * match. No match → show a "NO SLOT" popup, wait ~1s so it's readable
-         * before the chain editor takes the OLED, then fall back to slot 1. */
-        if (S.pendingSchwungCoRunTrack >= 0) {
-            const _t = S.pendingSchwungCoRunTrack;
-            if (S.schwungCoRunSlot >= 0 || _t !== S.activeTrack) {
-                /* Already in co-run, or the user navigated to another track while a
-                 * no-match entry was waiting out its popup — drop the queued entry
-                 * rather than hijacking the OLED for a track they left. (Both entry
-                 * paths queue S.activeTrack, so _t != activeTrack means a switch.) */
-                S.pendingSchwungCoRunTrack = -1;
-                S.pendingSchwungCoRunDelay = 0;
-            } else if (S.pendingSchwungCoRunDelay > 0) {
-                if (--S.pendingSchwungCoRunDelay === 0) {
-                    S.pendingSchwungCoRunTrack = -1;
-                    enterSchwungCoRun(_t, 0);  /* slot 1 fallback after the NO SLOT popup */
-                }
-            } else {
-                const _msk = schSlotsForTrack(_t);
-                if (_msk === 0) {
-                    showActionPopup('NO SCHWUNG SLOT', 'for channel ' + (S.trackChannel[_t] | 0));
-                    /* Enter right as the popup expires so there's no gap where the
-                     * normal UI flashes before the editor takes the OLED. */
-                    S.pendingSchwungCoRunDelay = ACTION_POPUP_TICKS;
-                } else {
-                    S.pendingSchwungCoRunTrack = -1;
-                    S._coRunChanSlots = _msk;  /* seed the blink mask so it's right on frame 1 */
-                    let _slot = 0;
-                    while (_slot < 4 && !(_msk & (1 << _slot))) _slot++;
-                    enterSchwungCoRun(_t, _slot);
-                }
-            }
-        }
-
         /* SESSION VIEW slot levels: knob N drives track N's Schwung slot(s).
          * The level is the slot's SOUND GENERATOR (SLOT_LEVEL_KEY), not its bus
          * fader — the fader would also move Move-track audio routed into the
@@ -1190,7 +1147,7 @@ export function _tickImpl() {
          * Entry (queued by the Shift+Note/Session release dispatch) resolves
          * the track's chain slot HERE because schSlotForTrack calls
          * shadow_get_slots, which must not run from a MIDI handler — same
-         * reason pendingSchwungCoRunTrack defers. No matching slot means
+         * reason the entry defers to tick at all. No matching slot means
          * there is no sound to edit, so say so rather than opening an editor
          * pointed at slot 1.
          *
@@ -1254,9 +1211,9 @@ export function _tickImpl() {
                 invalidateLEDCache();
                 forceRedraw();
             }
-            /* Co-run took the OLED out from under us (menu "Edit Slot...",
-             * or a Move-native entry): sound mode has nothing to draw on. */
-            else if (S.schwungCoRunSlot >= 0 || S.moveCoRunTrack >= 0) soundExit();
+            /* Move-native co-run took the OLED out from under us: sound mode
+             * has nothing to draw on. */
+            else if (S.moveCoRunTrack >= 0) soundExit();
             /* The track moved out from under us. Sound mode FOLLOWS it rather
              * than closing: re-point at the new track's slot, keeping the block
              * you were on, so switching tracks mid-edit compares two sounds
@@ -1462,7 +1419,7 @@ export function _tickImpl() {
 
         /* Transport LEDs */
         setButtonLED(MovePlay, S.playing ? Green : LED_OFF);
-        if (S.schwungCoRunSlot >= 0 || S.moveCoRunTrack >= 0) {
+        if (S.moveCoRunTrack >= 0) {
             /* Co-run: keep Rec dark — you can't record while a co-run target owns
              * input, and in Move co-run Move firmware lights its own Record button
              * (passes through under skip_led_clear). Force OFF every POLL_INTERVAL
@@ -1493,7 +1450,7 @@ export function _tickImpl() {
          * screens where a tap is a no-op. Hold-to-suspend works regardless. Dark
          * during co-run — Back is ceded to the peer there and never reaches us. */
         setButtonLED(MoveBack,
-            (S.schwungCoRunSlot < 0 && S.moveCoRunTrack < 0 && backTapWouldAct())
+            (S.moveCoRunTrack < 0 && backTapWouldAct())
                 ? White : LED_OFF);
         /* Loop LED: flash White at 1/8 rate while Perf Mode view is locked (Session
          * View only) or drum repeat latched; VividYellow for latch mode; dim available
@@ -1558,9 +1515,7 @@ export function _tickImpl() {
          * frame), so just paint White to agree rather than fight. In Move co-run
          * the button is disabled + dark; force OFF to override Move firmware.
          * Global Menu / Tap Tempo keep the blink (no competing LED layer). */
-        if (S.schwungCoRunSlot >= 0) {
-            setButtonLED(MoveNoteSession, White, (S.tickCount % POLL_INTERVAL) === 0);
-        } else if (S.moveCoRunTrack >= 0) {
+        if (S.moveCoRunTrack >= 0) {
             /* Move co-run: the Menu button is disabled (Step 3 / Back are the
              * exits), so keep its LED dark. Force OFF every POLL_INTERVAL to
              * override Move firmware's pass-through writes. */

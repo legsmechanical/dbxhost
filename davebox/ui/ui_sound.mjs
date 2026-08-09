@@ -1570,41 +1570,6 @@ function queueWrite(key, val, comp) {
     S.pendingWrites.push({ slot: S.slot, comp: S.comp, key, val });
 }
 
-/* Learn the note-naming key for a slot's sound generator, ONCE.
- *
- * Why this exists: a module ADVERTISES the key rather than everyone agreeing a
- * name (`child_press_note_param` on its repeated-element level). Sound mode
- * reads that advertisement during discovery — but CO-RUN never opens sound
- * mode, so out there davebox knows a note was played and not what to call the
- * param that names it.
- *
- * Without this, the co-run fix only worked if you had happened to open sound
- * mode on that module earlier in the session, and stopped working again after
- * a reboot. A fix that depends on having visited an unrelated screen is
- * indistinguishable from a random bug six months later, so it is bought out
- * here with one lookup instead.
- *
- * Called from enterSchwungCoRun (ui_corun.mjs), which runs in TICK context —
- * engineDescribe is an SHM round-trip plus a JSON parse, far too expensive for
- * the MIDI handler, but fine once at co-run entry. Sound mode makes the same
- * call routinely during discovery.
- *
- * Failure is silent and safe: no advertisement (or a module that publishes
- * nothing) leaves the key empty, the co-run write is skipped, and the module's
- * own canvas vouch still runs — i.e. it degrades to the previous behaviour,
- * never to writing something wrong. */
-export function soundLearnNoteParam(slot) {
-    if (!(slot >= 0)) return;
-    let key = '';
-    try {
-        const d = engineDescribe(slot, 'synth');
-        const spec = livePressSpec(d && d.hierarchy && d.hierarchy.levels);
-        if (spec && spec.noteParam) key = spec.noteParam;
-    } catch (e) { key = ''; }
-    S.lastNoteParam = key;
-    log('corun note key: ' + (key || '(none)') + ' slot ' + slot);
-}
-
 /* ---- live pad focus ----
  *
  * A drum module wants the pad you HIT to become the pad you EDIT, without a
@@ -1629,25 +1594,7 @@ export function soundVouchLivePress(track, note) {
     /* `livePress` comes from the hierarchy of the block CURRENTLY open, so it
      * is null unless the module being looked at is one that asked for this.
      * That self-gates the whole feature — no module-id test needed. */
-    if (!S.active || !S.livePress || S.bus) {
-        /* CO-RUN: sound mode is closed but the module's OWN canvas may be on
-         * screen, and davebox is still the sequencer driving the notes — so the
-         * same deterministic answer applies out here.
-         *
-         * Both things this needs are already in hand, so the press itself stays
-         * cheap: the slot was resolved when co-run began (`schwungCoRunSlot`,
-         * no chain enumeration), and the key was read from the module's
-         * advertisement at the same moment (soundLearnNoteParam, tick context).
-         * Nothing here does a lookup — this runs in the MIDI handler.
-         *
-         * `lastNoteParam` empty means that module advertises no note key. Then
-         * nothing is written and its canvas vouch still runs, i.e. it degrades
-         * to the previous behaviour rather than to something wrong. */
-        if (note >= 0 && S.lastNoteParam && GS.schwungCoRunSlot >= 0) {
-            engineSet(GS.schwungCoRunSlot, 'synth', S.lastNoteParam, String(note));
-        }
-        return;
-    }
+    if (!S.active || !S.livePress || S.bus) return;
     if (track !== S.track) return;         /* editing some other track's chain */
 
     S.padWatchFrom = S.padLastSeen;        /* NOT a get_param: null from here */

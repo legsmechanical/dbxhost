@@ -45,7 +45,6 @@ Registration also neutralizes any co-run state a warm restart left in SHM.
 
 | id                | kind    | opts                                   |
 |-------------------|---------|----------------------------------------|
-| `chain_editor`    | session | `{slot, keep_mask, led_keep_mask}`     |
 | `move_native`     | session | `{track, keep_mask, led_keep_mask}`    |
 | `fx_picker`       | overlay | `{keep_mask}`                          |
 | `master_fx`       | overlay | `{keep_mask}`                          |
@@ -83,6 +82,6 @@ onto the host bindings that already own SHM write-ordering
 - **Re-registration and the first reconcile are self-healing**: ops are
   idempotent SHM writes, so deriving over whatever the load path already
   asserted converges rather than glitching.
-- **Session retargeting**: a slot switch inside chain-edit co-run updates the
-  open service's opts in place (no pop, no `onServiceReturn`); the engine
-  emits the end/begin pair itself.
+- **`chain_editor` (session) was removed 2026-08-09** — in-session chain
+  editing is the module's own sound mode; `move_native` is the only session
+  service. `chain_editor_view` remains as an ordinary overlay.

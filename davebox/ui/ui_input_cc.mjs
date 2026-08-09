@@ -43,8 +43,7 @@ import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
     setDrumLanePage } from './ui_drummodel.mjs';
 import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
-import { exitSchwungCoRun,
-    enterMoveNativeCoRun, DAVEBOX_PICKER_KEEP_MASK } from './ui_corun.mjs';
+import { enterMoveNativeCoRun, DAVEBOX_PICKER_KEEP_MASK } from './ui_corun.mjs';
 import { soundActive, soundExit } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
@@ -1034,9 +1033,7 @@ function _onCC_buttons(d1, d2) {
          * shadow_ui). Cede it entirely — dAVEBOx ignores Mute as its own
          * track-mute modifier while chain-edit co-running, so it never holds a
          * muteHeld state that would re-fire its own mute gestures. */
-        if (S.schwungCoRunSlot >= 0) {
-            S.muteHeld = false;
-        } else {
+        {
             S.muteHeld = d2 === 127;
             if (d2 === 127) S.muteUsedAsModifier = false;
             if (S.sessionView) invalidateLEDCache();
@@ -1120,16 +1117,6 @@ function _onCC_buttons(d1, d2) {
      * canonical exit, but Menu-as-second-exit is a dAVEBOx convenience for
      * existing muscle memory — outside co-run dAVEBOx ignores Menu (no other
      * handler exists), so this branch is dormant unless a session is active. */
-    if (d1 === 50 && d2 === 127) {
-        /* Schwung co-run exits on Menu. Move co-run disables Menu entirely —
-         * swallowed by the guard in the MoveNoteSession block below. */
-        if (S.schwungCoRunSlot >= 0) {
-            exitSchwungCoRun();
-            forceRedraw();
-            return;
-        }
-    }
-
     /* Note/Session view toggle: Shift+press = open global menu (Track View only);
      * tap = switch view; hold = session overview */
     if (d1 === MoveNoteSession) {
@@ -1152,7 +1139,7 @@ function _onCC_buttons(d1, d2) {
             /* Co-run exit is the framework's job now — the shim catches Back
              * during corun_active() and calls shadow_corun_end() itself, and
              * pollDSP picks up target=NONE on the next frame and runs
-             * exitMoveNativeCoRun()/exitSchwungCoRun() for the JS cleanup.
+             * exitMoveNativeCoRun() for the JS cleanup.
              * No Menu intercept needed here. */
             if (S.snapshotPicker) {
                 /* Back out of a confirm to the list, else close the picker. */
@@ -1662,7 +1649,6 @@ function _handleBack(d2) {
     if (d2 === 127) {
         if (S.shiftHeld) {
             if (soundActive()) soundExit();
-            if (S.schwungCoRunSlot >= 0) exitSchwungCoRun();
             saveState();
             S.pendingHideAfterSave = true;
             return;
@@ -1682,7 +1668,7 @@ export function checkBackHold() {
     if (S.backPressTick < 0) return;
     /* Co-run started while Back was held: abandon the pending hold (co-run owns
      * Back) rather than fire a suspend on/after its exit. */
-    if (S.schwungCoRunSlot >= 0 || S.moveCoRunTrack >= 0) {
+    if (S.moveCoRunTrack >= 0) {
         S.backPressTick = -1; S.backHoldFired = false; return;
     }
     if ((S.tickCount - S.backPressTick) >= BACK_HOLD_TICKS) {
@@ -2010,7 +1996,7 @@ function _onCC_transport(d1, d2) {
      * a modifier key (e.g. Mute+Play = metro toggle).
      * Skipped entirely during Schwung chain-edit co-run — Mute is ceded to the host as the slot-bypass
      * modifier there (see the MoveMute press tracker above). */
-    if (d1 === MoveMute && d2 === 127 && S.schwungCoRunSlot < 0) {
+    if (d1 === MoveMute && d2 === 127) {
         if (S.deleteHeld) {
             if (!S.sessionView && S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
                 /* Delete+Mute in drum track view: clear all drum lane mute/solo */
@@ -2024,7 +2010,7 @@ function _onCC_transport(d1, d2) {
             }
         }
     }
-    if (d1 === MoveMute && d2 === 0 && S.schwungCoRunSlot < 0) {
+    if (d1 === MoveMute && d2 === 0) {
         if (!S.muteUsedAsModifier && !S.deleteHeld && !S.sessionView) {
             if (S.shiftHeld) setTrackSolo(S.activeTrack, !S.trackSoloed[S.activeTrack]);
             else           setTrackMute(S.activeTrack, !S.trackMuted[S.activeTrack]);
@@ -3606,7 +3592,7 @@ export function _onCCMsg(d1, d2) {
      * never arrives; only Shift+Back reaches us — _handleBack handles that too.)
      * Co-run is excluded: Back there is host/peer-owned (deferred to a later
      * pass), so we don't claim it and never run our back-stack over co-run. */
-    if (d1 === MoveBack && S.schwungCoRunSlot < 0 && S.moveCoRunTrack < 0) {
+    if (d1 === MoveBack && S.moveCoRunTrack < 0) {
         _handleBack(d2); return;
     }
     /* Live Merge NOTICE up (Shift+Rec pressed, count-in not started): modal —

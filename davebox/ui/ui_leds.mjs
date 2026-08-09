@@ -80,12 +80,9 @@ export function updateStepLEDs() {
      * which blinks dark-grey/bright-white at a steady rate as the "Edit Slot/Synth"
      * affordance. Return early so the normal step grid neither paints nor burns
      * LED budget (see SCHWUNG_DAVEBOX_LIMITATIONS.md §14). */
-    if (S.schwungCoRunSlot >= 0 || S.moveCoRunTrack >= 0) {
-        /* Blink off wall-clock, NOT tickCount: dAVEBOx's tick() runs at a slower
-         * wall-clock rate in Schwung co-run (the host also services Schwung's
-         * chain editor) than in Move co-run, so a tickCount-based blink looks
-         * slower in Schwung. ~250ms half-period ≈ the Move-co-run feel of the
-         * old tickCount/24 at ~94Hz. Date.now() works on-device (see ui.js). */
+    if (S.moveCoRunTrack >= 0) {
+        /* Blink off wall-clock, NOT tickCount (rate stays steady if tick()
+         * slows). ~250ms half-period. Date.now() works on-device (see ui.js). */
         const _blinkOn = (Math.floor(Date.now() / 250) % 2) === 1;
         /* Force-resend every POLL_INTERVAL so the blanking re-asserts over the
          * other layer's writes — Move firmware paints these step buttons (its
@@ -483,25 +480,6 @@ export function updateSessionLEDs() {
 export function updateTrackLEDs() {
     if (!S.ledInitComplete) return;
 
-    /* Side clip buttons in Schwung co-run: all dark grey, with EVERY slot that
-     * receives the active track's channel (_coRunChanSlots bitmask; layered slots
-     * all blink) blinking dark-grey/light-grey. Slot order is TOP-to-bottom:
-     * slot 1 (bit 0) = top button = CC 43, slot 4 (bit 3) = bottom = CC 40.
-     * Blink runs off wall-clock so the rate matches Move co-run; force every
-     * POLL_INTERVAL so it re-asserts over the Schwung shim's overtake LED loop.
-     * On exit, restore to OFF exactly once. */
-    {
-        const inCoRun = S.schwungCoRunSlot >= 0;
-        if (inCoRun) {
-            /* _coRunChanSlots bit i = slot (i+1), already top-to-bottom (bit 0 = top). */
-            paintCoRunSideButtons(S._coRunChanSlots, S.tickCount % POLL_INTERVAL === 0);
-            S._coRunTrackLedsLit = true;
-        } else if (S._coRunTrackLedsLit) {
-            for (let _i = 0; _i < 4; _i++) setButtonLED(40 + _i, LED_OFF, true);
-            S._coRunTrackLedsLit = false;
-        }
-    }
-
     /* Move-native co-run: drawUI() returns early in co-run and handles the
      * track-button blink directly there (setButtonLED in the early-return block).
      * This path only fires on co-run EXIT to reclaim the four CCs from Move
@@ -528,7 +506,7 @@ export function updateTrackLEDs() {
             (S.activeBank === 0 && (_kt === 1 || _kt === 2)) ||
             (S.activeBank === 7 && _kt === 1);
         const _compoundHeld = S.muteHeld || S.deleteHeld || S.copyHeld || S.loopHeld;
-        const _inCoRun = S.schwungCoRunSlot >= 0 || S.moveCoRunTrack >= 0;
+        const _inCoRun = S.moveCoRunTrack >= 0;
         for (let i = 0; i < 16; i++) {
             let color;
             if (_inCoRun) {
@@ -634,7 +612,7 @@ export function updateTrackLEDs() {
     }
 
     if (!S.sessionView) {
-        const _inCoRunPad = S.schwungCoRunSlot >= 0 || S.moveCoRunTrack >= 0;
+        const _inCoRunPad = S.moveCoRunTrack >= 0;
         const isDrum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
         if (isDrum) {
             /* Left 4 cols (col 0-3): lane selectors; Right 4 cols (col 4-7): velocity zones */
@@ -809,7 +787,7 @@ export function updateTrackLEDs() {
      * Move-native co-run blinks them dark-grey from drawUI. Either way, the
      * per-frame clip-playback paint here must stand down. Knob LEDs below still
      * update normally so dAVEBOx's sequencer-side controls stay legible. */
-  if (S.schwungCoRunSlot < 0 && (S.moveCoRunTrack | 0) < 0) {
+  if ((S.moveCoRunTrack | 0) < 0) {
     for (let idx = 0; idx < 4; idx++) {
         const row      = 3 - idx;
         const sceneIdx = S.sceneRow + row;

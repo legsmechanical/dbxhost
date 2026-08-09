@@ -678,9 +678,6 @@ function drawTempoSelect() {
 
 export function drawUI() {
     /* CO-RUN: shadow_ui's chain editor owns the OLED while this is active.
-     * Skip every dAVEBOx draw path so it doesn't fight the chain editor's
-     * frame. shadow_ui still calls clear_screen + redraw each tick. */
-    if (S.schwungCoRunSlot >= 0) return;
     /* Move-native co-run: Move firmware owns the OLED (preset browser /
      * device-edit pages). The shim's display_mode bypass keeps Move's
      * framebuffer visible while the MIDI filter stays active; we just
