@@ -963,10 +963,9 @@ function _doShiftStepCommon(idx) {
     }
     else if (idx === 6) _jumpToMenuLabel('Swing Amt');
     else if (idx === 8) _jumpToMenuLabel('Scale');
-    /* NOTE: Shift+Step 15 is NOT a dAVEBOx shortcut — the Schwung host reserves it
+    /* NOTE: Shift+Step 13 is NOT a dAVEBOx shortcut — the Schwung host reserves it
      * (opens the Tools menu; the shim consumes it before the module sees it). Suspend
-     * is via hold-Back or the "Suspend session" menu item. (Was Shift+Step 13 until
-     * 2026-08-09, when the host's jump-gesture families were consolidated.) */
+     * is via hold-Back or the "Suspend session" menu item. */
 }
 
 /* Loop+step gesture fire helpers — both the deferred fallback (length-only,

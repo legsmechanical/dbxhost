@@ -17,7 +17,7 @@
             "+Capture: Skipback",
             " (last 30s)",
             "",
-            "Shift+Step 15:",
+            "Shift+Step 13:",
             " Tools menu",
             "Shift+Sample:",
             " quantized sampler",
@@ -282,7 +282,7 @@
             "display & controls.",
             "",
             "Open Tools menu:",
-            " Shift+Step 15",
+            " Shift+Step 13",
             "",
             "Overtake modules",
             "appear below the",
@@ -362,7 +362,7 @@
         {
           "title": "Tools Menu",
           "lines": [
-            "Open: Shift+Step 15",
+            "Open: Shift+Step 13",
             "",
             "Tools that run",
             "outside the slot",

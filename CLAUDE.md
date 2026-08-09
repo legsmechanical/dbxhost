@@ -344,8 +344,8 @@ long-press entries for slot settings, Master FX, and Global Settings are gone: s
 and the FX buses live in the module's sound mode; Global Settings is opened from the module's
 menu (`Host Settings...` → the `global_settings` overlay service). What remains hardware-side:
 
-- **Shift+Step15** — Tools menu (the one host menu with no module home; also the resume path
-  for a suspended tool). Step 15's icon lights while Shift is held.
+- **Shift+Step13** — Tools menu (the one host menu with no module home; also the resume path
+  for a suspended tool; the Shift+Vol and long-press variants are gone). Step 13's icon lights while Shift is held.
 - **Shift+Sample** — Quantized Sampler (arms during an overtake session too — the old
   `!shadow_display_mode` gate that killed it under SA is fixed).
 - **Shift+Vol+Capture** — Skipback. ⚠ Volume touch REQUIRED: bare Shift+Capture belongs to

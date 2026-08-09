@@ -815,7 +815,7 @@ static void shadow_update_held_track(uint8_t cc, int pressed)
  * Global Settings, Tools) were DELETED 2026-08-09: every destination is owned
  * by (or spec'd as a service opened from) the primary module's own UI, so a
  * second gesture door was pure conflict surface. What remains hardware-side:
- *   Shift+Step15        -> Tools menu (the one host menu with no module home)
+ *   Shift+Step13        -> Tools menu (the one host menu with no module home)
  *   Shift+Vol+Capture   -> Skipback (bare Shift+Capture belongs to the module)
  *   Shift+Sample        -> Quantized Sampler
  *   Shift+Vol+Back      -> suspend overtake;  Shift+Vol+JogClick -> exit
@@ -5921,7 +5921,7 @@ pre_done:
     TIME_SECTION_END(spi_screenreader_sum, spi_screenreader_max);
 
     /* === SHORTCUT INDICATOR LED ===
-     * Step 15 icon (CC 30) = Tools, lit while Shift is held. The Settings
+     * Step 13 icon (CC 28) = Tools, lit while Shift is held. The Settings
      * icon died with the Global Settings gesture (its menu is opened from
      * the primary module's own menu as a service).
      * NOT while an overtake module runs — it owns the step LEDs (and delta-
@@ -5931,10 +5931,10 @@ pre_done:
         int want_step15 = shadow_shift_held &&
                           (!shadow_control || shadow_control->overtake_mode == 0);
         if (want_step15 && !step15_lit) {
-            shadow_queue_led(0x0B, 0xB0, 30, 118);  /* Step 15 icon = LightGrey (Tools) */
+            shadow_queue_led(0x0B, 0xB0, 28, 118);  /* Step 13 icon = LightGrey (Tools) */
             step15_lit = 1;
         } else if (!want_step15 && step15_lit) {
-            shadow_queue_led(0x0B, 0xB0, 30, 0);
+            shadow_queue_led(0x0B, 0xB0, 28, 0);
             step15_lit = 0;
         }
     }
@@ -7493,13 +7493,13 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                     shadow_jog_touched = touched;
                 }
 
-                /* Shift + Step 15 (note 30) = Tools menu — the ONE surviving
+                /* Shift + Step 13 (note 28) = Tools menu — the ONE surviving
                  * jump gesture (2026-08-09): the Tools menu is the only host
                  * menu with no home in the primary module, and it is the
                  * resume path for a suspended tool. The Global Settings /
                  * slot-settings / Master FX gestures are gone — those menus
                  * are the module's own (or opened by it as services). */
-                if (d1 == 30 && type == 0x90 && d2 > 0 &&
+                if (d1 == 28 && type == 0x90 && d2 > 0 &&
                     shadow_shift_held && shadow_control && shadow_ui_enabled) {
                     shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_TOOLS;
                     shadow_display_mode = 1;
@@ -7509,15 +7509,15 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                     uint8_t *sh = shadow + MIDI_IN_OFFSET;
                     sh[j] = 0; sh[j+1] = 0; sh[j+2] = 0; sh[j+3] = 0;
                     src[j] = 0; src[j+1] = 0; src[j+2] = 0; src[j+3] = 0;
-                    shadow_log("Shift+Step15: opening tools");
+                    shadow_log("Shift+Step13: opening tools");
                 }
 
                 /* Shift + Step button while shadow UI is displayed = dismiss shadow UI
                  * (user is loading a native Move component to edit).
                  * Skip in overtake mode — the overtake module owns step buttons.
-                 * Skip Step 15 (30) — the Tools shortcut. */
+                 * Skip Step 13 (28) — the Tools shortcut. */
                 if (shadow_display_mode && shadow_shift_held && !shadow_volume_knob_touched &&
-                    type == 0x90 && d2 > 0 && d1 != 30 &&
+                    type == 0x90 && d2 > 0 && d1 != 28 &&
                     d1 >= CC_STEP_UI_FIRST && d1 <= CC_STEP_UI_LAST &&
                     shadow_control && shadow_control->overtake_mode == 0) {
                     shadow_display_mode = 0;
