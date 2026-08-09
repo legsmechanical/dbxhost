@@ -60,7 +60,6 @@ check "davebox ui_engine host dir"     "$DBX/ui/ui_engine.mjs"   "'$DBX_DIR'"
 check "davebox ui_dialogs project cmd" "$DBX/ui/ui_dialogs.mjs"  "'$DBX_DIR/scripts/project-cmd.sh'"
 check "davebox ui_dialogs projects"    "$DBX/ui/ui_dialogs.mjs"  "'$DBX_DIR/projects.json'"
 check "davebox ui_tick exit-to-stock"  "$DBX/ui/ui_tick.mjs"     "sh $DBX_DIR/scripts/exit-to-stock.sh"
-check "davebox ui_tick project switch" "$DBX/ui/ui_tick.mjs"     "sh $DBX_DIR/scripts/project-cmd.sh switch"
 check "davebox seq8.c set_pages dir"   "$DBX/dsp/seq8.c"         "\"$DBX_DIR/set_pages\""
 check "davebox seq8.c select marker"   "$DBX/dsp/seq8.c"         "\"$DBX_DIR/fresh_session\""
 

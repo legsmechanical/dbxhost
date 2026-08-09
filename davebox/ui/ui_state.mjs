@@ -561,9 +561,8 @@ export const S = {
      * than let the tick watchdog re-arm a throwing open forever. */
     _pppFaultCount: 0,
     /* Armed by the pad picker; drained in tick() one tick AFTER the deferred
-     * save fires. Preferred path: shadow_select_arm(k) + suspend (the host
-     * gate as a headless actuator, ~2 s, resume + set reload). Fallback on a
-     * gate-less host: project-cmd.sh switch (relaunch flavour). */
+     * save fires: shadow_select_arm(k) + suspend (the host gate as a headless
+     * actuator, ~2 s, resume + set reload). */
     pendingProjectSwitch: null,
     /* CLEAR AUTOMATION modal (Delete-tap on the AUTO bank). null = closed; else
      * { sel, at, cc } — sel 0..3 (AT/PB/CC/CLEAR), at/cc = checked-to-clear. */
