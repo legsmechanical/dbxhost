@@ -105,6 +105,20 @@ if [ "$DO_DAVEBOX" = "1" ]; then
         bash "$DAVEBOX/scripts/install_sound.sh" "${dbx_args[@]}"
 fi
 
+# STOCK's launch-standalone.sh is the script that actually launches SA, and it
+# lives in the stock install tree — which neither half above touches. Ship this
+# repo's copy over it so launch-arc fixes (the refuse-before-kill probe that
+# closes the relaunch-during-teardown SPI wedge) actually reach the device;
+# a stock reinstall may revert it, and this re-applies it on the next deploy.
+if [ "$DO_HOST" = "1" ]; then
+    say "--- stock launch script (launch-standalone.sh)"
+    scp -q "$HERE/../src/launch-standalone.sh" \
+        "${MOVE_USER}@${MOVE_HOST}:/data/UserData/schwung/launch-standalone.sh" \
+        && ssh -o ConnectTimeout=10 "${MOVE_USER}@${MOVE_HOST}" \
+            "chmod +x /data/UserData/schwung/launch-standalone.sh" \
+        || say "WARNING: could not update stock launch-standalone.sh"
+fi
+
 # Record what this pair actually is, on the device. Until now "which build is on
 # there" could only be answered by comparing timestamps of two independently
 # deployed trees.
