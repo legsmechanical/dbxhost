@@ -35,8 +35,6 @@ import { computePadNoteMap, setActiveDrumLane, syncDrumClipContent,
     syncDrumLaneSteps, syncDrumLanesMeta, syncDrumRepeatState } from './ui_drummodel.mjs';
 import { effectiveClip, forceRedraw, invalidateLEDCache } from './ui_leds.mjs';
 import { sessionHasAnyContent } from './ui_scene.mjs';
-import { exitSchwungCoRun, exitMoveNativeCoRun,
-    CORUN_TARGET_CHAIN_EDIT, CORUN_TARGET_MOVE_NATIVE, primaryMode } from './ui_corun.mjs';
 /* Intentional ES-module cycle with ui_record.mjs (it imports liveSendNote +
  * the drum-rec arrays from here) — safe because both sides reference the
  * cycled bindings only inside function bodies, never at module-init time.
@@ -292,38 +290,14 @@ export function pollDSP() {
         const _bv = parseFloat(host_module_get_param('bpm'));
         if (_bv > 0 && isFinite(_bv)) S.bpmMirror = _bv;
     }
-    /* Reconcile co-run state with SHM. The shim auto-clears co-run on user
-     * Back press (framework exit gesture), so dAVEBOx may discover target=NONE
-     * here without having driven the exit itself. Use the existing exit
-     * helpers for cleanup — they're idempotent on the second SHM write and
-     * carry the palette/LED-cache/modifier-clear work we need either way. */
-    const _st = shadow_corun_state();
-    /* PRIMARY path: the HOST reconciles framework closes from this same SHM
-     * state and reports through onServiceReturn — one return path. Running
-     * this poll too would double-clean (and host_close_service a service the
-     * host already popped). */
-    if (!primaryMode) {
-        const _slot  = (_st && _st.target === CORUN_TARGET_CHAIN_EDIT)  ? _st.id : -1;
-        const _track = (_st && _st.target === CORUN_TARGET_MOVE_NATIVE) ? _st.id : -1;
-        if (_slot < 0 && S.schwungCoRunSlot >= 0) {
-            exitSchwungCoRun();
-            /* Framework exit also closes any global menu we opened to launch it. */
-            S.globalMenuOpen = false;
-            S.lastSentMenuEditValue = null;
-        }
-        if (_track < 0 && S.moveCoRunTrack >= 0) {
-            exitMoveNativeCoRun();
-        }
-    }
+    /* Framework co-run closes (the shim's Back handler) are reconciled by
+     * the HOST from SHM and reported through onServiceReturn — one return
+     * path (the old classic-path reconcile here would double-clean and
+     * host_close_service a service the host already popped). */
     if (S.coRunOverlayScreen === undefined) {
-        /* Which Schwung screen Note/Session opens as an overlay in Move co-run.
-         * Prefer the FX-bus picker; fall back to master_fx. null = no
-          * addressable screen registered. */
-        let _scr = null;
-        const _ents = shadow_corun_entries();
-        if (_ents.indexOf('fx_picker') >= 0) _scr = 'fx_picker';
-        else if (_ents.indexOf('master_fx') >= 0) _scr = 'master_fx';
-        S.coRunOverlayScreen = _scr;
+        /* Which host screen Note/Session opens as an overlay in Move co-run.
+         * One host, one module: the fx_picker service always exists. */
+        S.coRunOverlayScreen = 'fx_picker';
     }
     if (typeof host_module_get_param !== 'function') return;
     /* Remote-UI edit sync: the browser piano-roll edits notes[]/clips directly in

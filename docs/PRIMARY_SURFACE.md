@@ -1,4 +1,4 @@
-# Primary surface + service stack (P4a — additive, toggle-gated)
+# Primary surface + service stack
 
 The inversion of the overtake model: instead of a tool being a *guest* that
 takes the surface over and hands pieces back imperatively, one module can
@@ -10,22 +10,15 @@ never asserted at enter/exit sites. There is no handoff to forget and no
 re-assertion to miss, which retires the ownership-desync bug class on this
 path.
 
-## The toggle
-
-The path is live only when `primary.json` exists under the host state root
-(`$HOST_INSTALL_DIR/primary.json`). Without it every binding below is inert
-and the classic overtake / co-run lifecycle runs untouched — recovery from a
-bad session is deleting one file. The file's content is reserved (write `{}`).
-
-This is a **runtime mode**, not a capability: the bindings exist
-unconditionally in this tree (no `typeof` probing — see CLAUDE.md).
+This is the ONLY ownership model: the classic imperative overtake / co-run
+path (and the `primary.json` toggle that used to select between them in
+P4a) was deleted in P4b (2026-08-08). The bindings exist unconditionally in
+this tree (no `typeof` probing — see CLAUDE.md).
 
 ## Module-facing bindings (plain globals; one QuickJS context)
 
 ```javascript
-host_primary_active()          // -> bool: is the toggle live this session?
-
-host_register_primary({        // -> bool: false = use the classic lifecycle
+host_register_primary({        // -> bool: false only on a malformed call
   id: "my-module",             //   surface identity (defaults to module id)
   claims: {                    //   the surface's DECLARED baseline claims
     overtake_mode: 2,          //   own all events (0 = pass to Move)
@@ -43,9 +36,10 @@ host_close_service(result)     // -> bool: pop the top service; the primary's
                                //   onServiceReturn(id, result) fires
 ```
 
-In P4a the module still loads through the existing boot machinery
+The module still loads through the existing boot machinery
 (`boot_tool.json` → overtake load); registration inverts *ownership*, not the
 dispatcher. `init`/`tick`/`onMidi`/`draw` keep their existing contracts.
+Registration also neutralizes any co-run state a warm restart left in SHM.
 
 ## Services
 
@@ -61,8 +55,7 @@ dispatcher. `init`/`tick`/`onMidi`/`draw` keep their existing contracts.
 
 *Session* services open a co-run session (the SHM-state poll primes the
 editor exactly as with `shadow_corun_begin`); *overlay* services draw an
-addressable host screen over the surface (the `CORUN_ENTRIES` set,
-generalized). Overlays may be pushed on top of sessions (e.g. `fx_picker`
+addressable host screen over the surface. Overlays may be pushed on top of sessions (e.g. `fx_picker`
 over `move_native`); the stack unwinds in order.
 
 A service the host hasn't absorbed yet is exactly what this exists for: push
@@ -88,7 +81,8 @@ onto the host bindings that already own SHM write-ordering
   re-derives claims, and fires `onServiceReturn(id, null)`. The module never
   needs its own poll-reconcile on this path.
 - **Re-registration and the first reconcile are self-healing**: ops are
-  idempotent SHM writes, so deriving over whatever the classic load path
-  already asserted converges rather than glitching.
-- **P4b** (destructive) deletes the classic overtake lifecycle only after
-  this path is device-proven. Until then both coexist behind the toggle.
+  idempotent SHM writes, so deriving over whatever the load path already
+  asserted converges rather than glitching.
+- **Session retargeting**: a slot switch inside chain-edit co-run updates the
+  open service's opts in place (no pop, no `onServiceReturn`); the engine
+  emits the end/begin pair itself.

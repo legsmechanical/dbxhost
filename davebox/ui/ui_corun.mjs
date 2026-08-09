@@ -1,9 +1,11 @@
 /* ui_corun.mjs
- * Co-run / Schwung-slot lifecycle: resolving which Schwung slot a track's
- * MIDI channel maps to, entering/exiting Schwung chain-edit co-run and
- * Move-native co-run, and re-asserting overtake sysex suppression on
- * return from co-run. S stays shared via ui_state.mjs.
- * Extracted from ui.js (Phase 5 of the modularity refactor, module 3).
+ * Primary-surface cede declaration: which Schwung slot a track's MIDI
+ * channel maps to, the keep-masks dAVEBOx declares when it opens host
+ * services (chain-edit / Move-native co-run, overlays), and the
+ * module-side cleanup run when a service returns. Ownership itself is
+ * DERIVED by the host from the declared claims + the service stack
+ * (docs/PRIMARY_SURFACE.md) — this file performs no ownership calls.
+ * S stays shared via ui_state.mjs.
  */
 
 import { S } from './ui_state.mjs';
@@ -13,13 +15,8 @@ import { invalidateLEDCache, reapplyPalette, forceRedraw } from './ui_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 
-/* Co-run target enum + keep-mask flags — mirrors corun_target_t and the
- * CORUN_GRP_* / CORUN_KEEP_* bits in Schwung's shadow_constants.h. The shim
- * registers these as globals on shadow_ui's JS context; redeclaring them
- * here makes the dAVEBOx tool context self-contained on platforms that scope
- * globals differently. Keep in sync with docs/CORUN.md. */
-export const CORUN_TARGET_CHAIN_EDIT  = 1;
-export const CORUN_TARGET_MOVE_NATIVE = 2;
+/* Keep-mask flags — mirrors the CORUN_GRP_* / CORUN_KEEP_* bits in
+ * Schwung's shadow_constants.h. Keep in sync with docs/CORUN.md. */
 const CORUN_GRP_PADS           = 1 << 1;
 const CORUN_GRP_STEPS          = 1 << 2;
 const CORUN_GRP_TRANSPORT      = 1 << 3;
@@ -76,24 +73,20 @@ const DAVEBOX_CHAIN_LED_KEEP_MASK = DAVEBOX_CORUN_LED_KEEP_MASK | CORUN_GRP_MUTE
 export const DAVEBOX_PICKER_KEEP_MASK =
     DAVEBOX_CORUN_KEEP_MASK | CORUN_GRP_JOG | CORUN_GRP_BACK | CORUN_GRP_KNOBS | CORUN_GRP_TOUCH | CORUN_GRP_SHIFT;
 
-/* ==== PRIMARY SURFACE (P4a) ============================================= *
- * When the host's primary path is live (primary.json toggle), dAVEBOx
- * registers as the session's primary surface and reaches host screens
- * through the service stack instead of driving shadow_corun_* itself.
- * Ownership (co-run split, LED keep, sysex suppression, ...) is then
- * DERIVED by the host from the stack — none of the enter/exit assertion
- * calls in this file run on that path, and none of the re-assertion sites
- * are needed: closing a service restores every claim by derivation.
- * Toggle off → primaryMode stays false and the classic path below is
- * byte-for-byte what always ran. See docs/PRIMARY_SURFACE.md. */
+/* ==== PRIMARY SURFACE ==================================================== *
+ * dAVEBOx registers as the session's primary surface and reaches host
+ * screens only through the service stack. Ownership (co-run split, LED
+ * keep, sysex suppression, ...) is DERIVED by the host from the declared
+ * claims + the stack — closing a service restores every claim by
+ * derivation, so this file contains no assertion or re-assertion sites.
+ * The classic overtake path was deleted in P4b (2026-08-08); the
+ * primary.json toggle is gone with it. See docs/PRIMARY_SURFACE.md. */
 
-export let primaryMode = false;
-
-/* The surface's declared baseline — the truthful equivalent of what the
- * classic load path asserts imperatively (overtake mode 2, sysex suppression
- * from assertOvertakeSysexSuppress, CC 79 passthrough from module.json).
- * Declaring the real baseline matters: services override these keys and the
- * pop must restore them BY DERIVATION, not by luck. */
+/* The surface's declared baseline (overtake mode 2, sysex suppression so
+ * Move's clip/grid LED sysex doesn't fight ours under Clock Follow, CC 79
+ * passthrough from module.json). Declaring the real baseline matters:
+ * services override these keys and the pop must restore them BY
+ * DERIVATION, not by luck. */
 const DAVEBOX_PRIMARY_CLAIMS = {
     overtake_mode: 2,
     suppress_sysex: 1,
@@ -102,20 +95,21 @@ const DAVEBOX_PRIMARY_CLAIMS = {
 
 /* Called once from init(). Registration survives suspend/resume (the JS is
  * parked, not reloaded), so init re-running on a warm relaunch simply
- * re-registers — idempotent on the host side. */
+ * re-registers — idempotent on the host side, which also neutralizes any
+ * co-run state a warm restart left in SHM. */
 export function initPrimarySurface() {
-    primaryMode = host_primary_active() && host_register_primary({
+    const ok = host_register_primary({
         id: "davebox-sound",
         claims: DAVEBOX_PRIMARY_CLAIMS,
         onServiceReturn: onServiceReturn,
     });
-    /* One line per session stating which ownership model is live — the two
-     * paths are deliberately indistinguishable at idle, so without this the
-     * mode is invisible in every log. */
-    console.log(primaryMode
+    /* One line per session confirming the ownership model came up — without
+     * it the live model is invisible in every log. A false return is a host
+     * defect (there is no fallback path left); say so loudly. */
+    console.log(ok
         ? "PRIMARY: registered as primary surface (derived claims live)"
-        : "PRIMARY: toggle off — classic overtake path");
-    return primaryMode;
+        : "PRIMARY: registration FAILED — host defect, ownership claims not live");
+    return ok;
 }
 
 /* Service-close notifications — including framework-initiated closes (the
@@ -226,49 +220,29 @@ export function enterSchwungCoRun(t, slot) {
      * only chance to learn the key that lets a pad press name its own pad —
      * see soundLearnNoteParam. */
     soundLearnNoteParam(slot);
-    if (primaryMode) {
-        /* PRIMARY: one push; the host derives the co-run split + LED keep
-         * from the service's claims. */
-        host_open_service("chain_editor", {
-            slot: slot,
-            keep_mask: DAVEBOX_CHAIN_KEEP_MASK,
-            led_keep_mask: DAVEBOX_CHAIN_LED_KEEP_MASK,
-        });
-        S.screenDirty = true;
-        return;
-    }
-    shadow_corun_begin(CORUN_TARGET_CHAIN_EDIT, slot, DAVEBOX_CHAIN_KEEP_MASK);
-    /* Own the side-clip-button LEDs (CC 40-43) without grabbing their input.
-     * Chain-edit keeps Mute (input + LED) — see the #8 note by the mask defs. */
-    shadow_corun_set_led_keep_mask(DAVEBOX_CHAIN_LED_KEEP_MASK);
+    /* One push; the host derives the co-run split + LED keep from the
+     * service's claims. */
+    host_open_service("chain_editor", {
+        slot: slot,
+        keep_mask: DAVEBOX_CHAIN_KEEP_MASK,
+        led_keep_mask: DAVEBOX_CHAIN_LED_KEEP_MASK,
+    });
     S.screenDirty = true;
 }
 
 /* Exit co-run. Called on programmatic dAVEBOx state changes (track switch,
- * global-menu open, etc.) or by the pollDSP reconcile when the shim's
- * framework Back-handler has ended the session. Calling shadow_corun_end()
- * after the shim already ended is a no-op. */
+ * global-menu open, etc.). Pops the service; onServiceReturn carries the
+ * module-side cleanup and the host restores every claim by derivation. */
 export function exitSchwungCoRun() {
     if (S.schwungCoRunSlot < 0) return;
-    if (primaryMode) {
-        /* PRIMARY: pop; onServiceReturn carries the module-side cleanup and
-         * the host restores every claim by derivation. */
-        host_close_service(null);
-        return;
-    }
-    cleanupAfterSchwungCoRun();
-    /* Returning to full overtake: re-assert sysex suppression (the host cleared
-     * it when we ceded to co-run) so Move's clip/grid LEDs don't leak back. */
-    assertOvertakeSysexSuppress();
+    host_close_service(null);
 }
 
-/* Module-side cleanup shared by BOTH paths (classic exit above; primary via
- * onServiceReturn). No ownership calls in here — state, modifiers, palette,
- * LED cache only. */
+/* Module-side cleanup, run from onServiceReturn. No ownership calls in
+ * here — state, modifiers, palette, LED cache only. */
 function cleanupAfterSchwungCoRun() {
     S.schwungCoRunSlot = -1;
     S._coRunChanSlots = 0;
-    if (!primaryMode) shadow_corun_end();
     /* Modifier-key release CCs the user pressed inside the co-run may have
      * been routed to Schwung and never reached us — clear defensively so a
      * stuck Shift/Mute/etc. can't silence pad dispatch on return. Mirrors
@@ -311,29 +285,14 @@ export function enterMoveNativeCoRun(t) {
      * Also queue a tick recompute in case this set_param push coalesces away. */
     computePadNoteMap();
     S.pendingPadNoteMapRecompute = true;
-    if (primaryMode) {
-        /* PRIMARY: the move_native service's claims carry the whole split,
-         * including skip_led_clear (Move's LED passthrough) — derived, and
-         * restored by derivation on close. */
-        host_open_service("move_native", {
-            track: t,
-            keep_mask: DAVEBOX_CORUN_KEEP_MASK,
-            led_keep_mask: DAVEBOX_CORUN_LED_KEEP_MASK,
-        });
-    } else {
-        shadow_corun_begin(CORUN_TARGET_MOVE_NATIVE, t, DAVEBOX_CORUN_KEEP_MASK);
-        /* Own the side-clip-button LEDs (CC 40-43) without grabbing their input — so
-         * Move's playback repaints stop fighting our paired-track indicator while
-         * track-button presses still switch Move's track. */
-        shadow_corun_set_led_keep_mask(DAVEBOX_CORUN_LED_KEEP_MASK);
-        /* Let Move firmware's own LED writes (track buttons, knob rings, transport)
-         * reach hardware while it drives the device-edit UI. skip_led_clear makes the
-         * shim's overtake LED-strip loop early-return, so Move's LEDs pass through live.
-         * Toggled back off in exitMoveNativeCoRun(). This is a mid-overtake toggle — it
-         * does NOT hit the entry/exit snapshot path, so the suspend/exit native LED
-         * restore is unaffected. */
-        shadow_set_skip_led_clear(1);
-    }
+    /* The move_native service's claims carry the whole split, including
+     * skip_led_clear (Move's LED passthrough) — derived, and restored by
+     * derivation on close. */
+    host_open_service("move_native", {
+        track: t,
+        keep_mask: DAVEBOX_CORUN_KEEP_MASK,
+        led_keep_mask: DAVEBOX_CORUN_LED_KEEP_MASK,
+    });
     /* Defer the track-button "press" that lands Move on the device-edit page and
      * makes it repaint its track + knob LEDs. Injecting it immediately fails: Move's
      * repaint lands before the shim's co-run LED passthrough + OLED bypass go live
@@ -346,29 +305,17 @@ export function enterMoveNativeCoRun(t) {
     S.screenDirty = true;
 }
 
-/* Exit Move-native co-run. The shim drops its input split + display
- * bypass the next time it reads corun_move_native_track from SHM, so
- * Move firmware's framebuffer stops reaching the OLED and the nav CCs
- * start flowing to dAVEBOx again. We force a full redraw so any LEDs
- * Move firmware was driving (knob rings, track buttons, Shift, Back)
- * get repainted from dAVEBOx state right away. */
+/* Exit Move-native co-run. Pops the service; onServiceReturn carries the
+ * module-side cleanup and the host derives skip_led_clear + sysex back —
+ * no toggles here. */
 export function exitMoveNativeCoRun() {
     if (S.moveCoRunTrack < 0) return;
-    if (primaryMode) {
-        /* PRIMARY: pop; onServiceReturn carries the module-side cleanup and
-         * the host derives skip_led_clear + sysex back — no toggles here. */
-        host_close_service(null);
-        return;
-    }
-    cleanupAfterMoveNativeCoRun();
-    /* Returning to full overtake: re-assert sysex suppression (the host cleared
-     * it when we ceded to co-run) so Move's clip/grid LEDs don't leak back. */
-    assertOvertakeSysexSuppress();
+    host_close_service(null);
 }
 
-/* Module-side cleanup shared by BOTH paths (classic exit above; primary via
- * onServiceReturn). No ownership calls except the classic-only corun_end /
- * skip_led_clear, which the primary path derives instead. */
+/* Module-side cleanup, run from onServiceReturn. No ownership calls —
+ * the host derives the split teardown; this is state, modifiers, palette,
+ * LED cache only. */
 function cleanupAfterMoveNativeCoRun() {
     S.moveCoRunTrack = -1;
     S.pendingMoveCoRunInject = 0;  /* cancel any pending entry inject */
@@ -377,12 +324,6 @@ function cleanupAfterMoveNativeCoRun() {
      * also queue a tick recompute in case this set_param push coalesces away. */
     computePadNoteMap();
     S.pendingPadNoteMapRecompute = true;
-    if (!primaryMode) {
-        shadow_corun_end();
-        /* Resume the shim's overtake LED-strip loop so dAVEBOx owns the LEDs
-         * again (mirror of the skip_led_clear(1) in enterMoveNativeCoRun). */
-        shadow_set_skip_led_clear(0);
-    }
     /* If any drum pad hold injects were in flight, send a note-off for EACH
      * before the co-run session ends so Move doesn't get a stuck note — a
      * scalar here used to leak a note-off for every held pad but the first
@@ -414,14 +355,3 @@ function cleanupAfterMoveNativeCoRun() {
     forceRedraw();
 }
 
-/* Own all LEDs in our full-overtake views. Clock Follow keeps Move's sequencer
- * running underneath, whose RGB pad/clip/grid LEDs ride cable-0 sysex that the
- * shim otherwise passes through — they'd fight our LEDs. Opt into sysex
- * suppression. The host CLEARS this
- * flag whenever our module is parked (suspendOvertakeMode → suspend/resume, and
- * on overtake exit / co-run), so init() alone isn't enough — we must re-assert it
- * every time we return to full overtake (resume, co-run end), or Move's clip-side
- * LEDs leak back. Idempotent, so it's safe to call repeatedly. */
-export function assertOvertakeSysexSuppress() {
-    shadow_set_overtake_suppress_sysex(1);
-}

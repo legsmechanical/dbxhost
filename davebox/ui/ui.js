@@ -40,7 +40,7 @@ import {
 } from './ui_dialogs.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { effectiveClip, invalidateLEDCache, trackColor, forceRedraw, installFlagsWrap, buildLedInitQueue } from './ui_leds.mjs';
-import { assertOvertakeSysexSuppress, initPrimarySurface, primaryMode } from './ui_corun.mjs';
+import { initPrimarySurface } from './ui_corun.mjs';
 import { applyTrackConfig,
     refreshSeqNotesIfCurrent,
     syncClipsFromDsp, syncMuteSoloFromDsp, restoreUiSidecar,
@@ -161,20 +161,18 @@ globalThis.init = function () {
     installConsoleOverride('SEQ8');
     /* Clear any lingering co-run flag from a prior session — shim's SHM
      * may still hold target/id if we were warm-restarted (Shift+Back +
-     * relaunch does not reset shadow_control). */
+     * relaunch does not reset shadow_control). The host neutralizes the
+     * SHM side of that as part of registration below. */
     S.schwungCoRunSlot = -1;
     S.moveCoRunTrack = -1;
     /* Same reasoning for sound mode: init() re-runs in the SAME runtime on
      * resume, so ui_sound.mjs's module-scope state survives. Start closed. */
     if (soundActive()) soundExit();
     S.pendingSoundEnterTrack = -1;
-    shadow_corun_end();
-    /* PRIMARY SURFACE (P4a): register when the host's primary path is live
-     * (primary.json toggle). On that path ownership claims — including the
-     * sysex suppression below — are DERIVED by the host from our declared
-     * claims + the service stack; the imperative assert is classic-only. */
+    /* Register as the session's primary surface. Every ownership claim —
+     * including sysex suppression — is DERIVED by the host from our
+     * declared claims + the service stack from here on. */
     initPrimarySurface();
-    if (!primaryMode) assertOvertakeSysexSuppress();
     if (S.bankParams === null)
         S.bankParams = Array.from({length: NUM_TRACKS}, function() {
             return BANKS.map(function(bank) { return bank.knobs.map(function(k) { return k.def; }); });

@@ -276,9 +276,8 @@ host_preview_play(path)       // Play a WAV preview through Move's speakers
 host_preview_stop()
 host_send_screenreader(text)  // Same as host_announce_screenreader
 
-// Primary surface + service stack (P4a, toggle-gated by primary.json —
-// see docs/PRIMARY_SURFACE.md for the full contract)
-host_primary_active()          // -> bool (runtime MODE check, not a capability)
+// Primary surface + service stack — the ownership model
+// (see docs/PRIMARY_SURFACE.md for the full contract)
 host_register_primary(surface) // -> bool; {id, claims, onServiceReturn}
 host_open_service(id, opts)    // -> bool; push a host service (chain_editor,
                                //    move_native, fx_picker, master_fx, ...)

@@ -11,8 +11,7 @@
  * This file is deliberately dependency-free and side-effect-free so the
  * derivation and diffing logic can be unit-tested off-device with node
  * (tests/host/test_primary_claims.sh). The stateful wrapper that owns the
- * stack and calls the host bindings lives in shadow_ui.js, behind the
- * primary.json toggle.
+ * stack and calls the host bindings lives in shadow_ui.js.
  *
  * Model:
  *   primaryClaims — the claim set the registered primary surface declared.

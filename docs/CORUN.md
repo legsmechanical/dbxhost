@@ -132,15 +132,6 @@ Enum constants are registered as JS globals: `CORUN_TARGET_*`, every
 `shadow_constants.h`) — so modules reference them directly instead of hand-copying
 bit values.
 
-### Capability gate
-
-Tools that want to ship from a single branch against both stock and patched
-Schwung should gate the user-facing entry on the API's presence:
-
-```js
-const corunAvailable = typeof shadow_corun_begin === "function";
-```
-
 ## View addressing — overlays over a co-run target
 
 The two co-run targets above hand the surface to a *fixed* destination for the
@@ -149,20 +140,15 @@ active, a tool can open any **registered** Schwung screen as a temporary
 **overlay** over its current target, and return — without changing `corun.target`,
 so the tool never tears down.
 
-```js
-shadow_corun_entries()            // -> array of openable screen ids (discovery)
-shadow_corun_open(id, keep_mask, args)  // -> true if opened, false on unknown id
-shadow_corun_close()              // -> dismiss; return to the underlay
-```
-
-These three are plain globals defined by shadow_ui (tool and shadow_ui share one
-QuickJS `globalThis`). They are backed by a curated registry, `CORUN_ENTRIES`,
-mapping a stable id to an existing screen's enter-function — `slots`,
-`chain_editor`, `master_fx`, `global_settings`. The registry is curated and added
-to deliberately; it is **never** auto-derived from the `VIEWS` enum (most views
-are context-dependent sub-views that need preloaded state). A tool discovers what
-this build offers via `shadow_corun_entries()` and gates per-id, so it degrades
-gracefully across builds that register different screens.
+Overlays are opened through the primary-surface service stack
+(`host_open_service(id, {keep_mask})` / `host_close_service(result)` — see
+`docs/PRIMARY_SURFACE.md`; the P4a-era `shadow_corun_open/close/entries`
+globals and their `CORUN_ENTRIES` registry were deleted in P4b). The service
+registry (`PRIMARY_SERVICES` in shadow_ui.js) maps a stable id to an existing
+screen's enter-function — `slots`, `chain_editor_view`, `master_fx`,
+`global_settings`, `fx_picker`. It is curated and added to deliberately; it is
+**never** auto-derived from the `VIEWS` enum (most views are context-dependent
+sub-views that need preloaded state).
 
 The only C addition is one SHM helper, **`shadow_corun_overlay(active, keep_mask)`**,
 which flips `shadow_display_owner` and applies the keep_mask **without touching
@@ -187,8 +173,8 @@ router. While one is open:
   keeping `CORUN_GRP_KNOBS` — no view-specific code in the dispatcher.
 - `corun.target` is **untouched** → `shadow_corun_state()` still reports the
   original target, and the tool does not run its teardown.
-- **Back** pops within the addressed view; at the overlay's root it calls
-  `shadow_corun_close()` (return to the underlay). **Menu** (and the tool's own
+- **Back** pops within the addressed view; at the overlay's root it pops the
+  service (return to the underlay; claims re-derive). **Menu** (and the tool's own
   exit gesture) still ends co-run; the per-frame `shadow_corun_state()` reconcile
   clears the overlay state when co-run ends, handing the screen back to the tool
   rather than stranding the view.

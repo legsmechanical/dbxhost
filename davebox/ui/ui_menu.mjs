@@ -121,20 +121,14 @@ function buildGlobalMenuItems() {
                 format: function(v) { return v === 2 ? 'Chan' : v === 1 ? 'Poly' : 'Off'; }
             })
         ] : []),
-        /* Co-run capability gate. The chain-editor co-run feature gates on
-         * shadow_corun_begin — the co-run framework merged upstream as #94,
-         * shipped in Schwung 0.9.18. On Schwung older than 0.9.18 the API is
-         * undefined and the menu entry isn't built, so the feature is invisible.
-         * All other co-run code is dormant unless this entry triggers it. Also
-         * hidden on non-Schwung-routed tracks (symmetric with Edit Synth below). */
+        /* Chain-editor co-run entry — hidden on non-Schwung-routed tracks
+         * (symmetric with Edit Synth below). */
         ...((S.trackRoute[S.activeTrack] === 0) ? [
             createAction('Edit Slot...', function() {
                 openSchwungSlotEditor(S.activeTrack);
             })
         ] : []),
-        /* Move-native co-run entry — visible only when (a) active track is
-         * ROUTE_MOVE, (b) the co-run API (shadow_corun_begin, Schwung >= 0.9.18)
-         * On non-Move-routed tracks the entry isn't built. */
+        /* Move-native co-run entry — visible only on ROUTE_MOVE tracks. */
         ...((S.trackRoute[S.activeTrack] === 1) ? [
             createAction('Edit Synth...', function() {
                 enterMoveNativeCoRun(S.activeTrack);
