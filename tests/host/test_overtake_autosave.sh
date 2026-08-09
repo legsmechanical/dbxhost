@@ -41,22 +41,18 @@ common_marks=$(rg -c 'g_slot_param_dirty_mask \|=' "$c" || echo 0)
 [ "${common_marks:-0}" -ge 2 ] \
   || fail "$c marks the dirty bit in fewer than 2 places; the bulk SET path (a :state restore) is almost certainly uncovered"
 
-# 3. The JS side consumes it while overtake is active — the whole point.
-#    ⚠ Currently gated OFF by OVERTAKE_AUTOSAVE_ENABLED pending a diagnosis: a
-#    slot edit was not reaching the shim, and this path then rewrote the stale
-#    value every few seconds, overwriting good saved state within seconds of a
-#    failed restore and destroying the evidence on every test. The machinery is
-#    kept and still pinned below so it can be switched back on unchanged.
+# 3. The JS side consumes it UNCONDITIONALLY (P4b): the dirty-driven path is
+#    the only mid-session autosave and must not be gated on what's on screen.
+rg -q 'typeof shadow_take_dirty_slots === "function"' "$js" \
+  || fail "$js does not run the dirty-driven autosave"
 rg -q 'isOvertakeActive && typeof shadow_take_dirty_slots' "$js" \
-  || fail "$js does not run the dirty-driven autosave during overtake"
-rg -q 'const OVERTAKE_AUTOSAVE_ENABLED' "$js" \
-  || fail "$js lost the OVERTAKE_AUTOSAVE_ENABLED switch"
-rg -q 'OVERTAKE_AUTOSAVE_ENABLED &&' "$js" \
-  || fail "$js no longer gates the overtake autosave on the switch"
+  && fail "$js re-gated the dirty-driven autosave on the overtake view — host state stops saving outside overtake"
+rg -q 'autosaveCounter' "$js" \
+  && fail "$js resurrected the interval autosave — the dirty-driven path is the only mid-session save (flash write amplification otherwise)"
 
 # 4. Starvation guard: a continuous writer must still get saved.
-rg -q 'overtakeDirtyAge >= AUTOSAVE_INTERVAL' "$js" \
-  || fail "$js lost the deferral cap — a tool writing every tick would never be saved, silently restoring the original bug"
+rg -q 'autosaveDirtyAge >= AUTOSAVE_INTERVAL' "$js" \
+  || fail "$js lost the deferral cap — a writer firing every tick would never be saved, silently restoring the original bug"
 
 # 5. The save must be staggered (one slot per tick), not a whole flush in-frame.
 rg -q 'autosaveAllSlots\(slot\)' "$js" \
@@ -98,12 +94,22 @@ rg -q 'if \(wroteChain \|\| wroteConfig\) \{' "$js" \
 rg -q 'return wrote;' "$js" \
   || fail "$js: autosaveAllSlots no longer reports whether it persisted anything"
 
-# 10. The FX buses are deliberately NOT written from the overtake path: their
-#     savers treat an unreadable module name as "empty" and write {}, which
-#     would blank a good bus config when a read times out. Transition flushes
-#     still cover them. If this return is removed, that clobber is live again.
-rg -q 'Buses are collected but NOT written from here' "$js" \
-  || fail "$js re-enabled FX bus writes from the overtake path; a timed-out read there blanks a good bus config"
+# 10. FX buses ARE written from the dirty path (P4b) — legal only because the
+#     savers now distinguish "empty" (null-vs-"" on the :name read) from
+#     "could not read", preserve files on timeout, and report failure so the
+#     bit stays set. If the null checks go, a timed-out read blanks a good
+#     bus config again.
+for saver_pin in 'const _name = shadow_get_param' 'if (_name === null || _name === undefined)'; do
+  n=$(rg -cF "$saver_pin" "$js" || echo 0)
+  [ "${n:-0}" -ge 2 ] \
+    || fail "$js FX bus savers lost the null-vs-empty guard on the :name read ('$saver_pin' found $n times, need 2) — a timed-out read would blank a good bus config"
+done
+rg -qF 'if (saveMasterFxChainConfig(true)) {' "$js" \
+  || fail "$js dirty path no longer checks the master saver's result — a failed save would clear the bit and drop the edit"
+rg -qF 'if (saveSendFxChainConfig("a")) {' "$js" \
+  || fail "$js dirty path no longer checks the send saver's result"
+rg -qF 'if (saveMoveFxChainConfig(m)) {' "$js" \
+  || fail "$js dirty path no longer checks the move saver's result"
 
 # 10b. A slot edit must write BOTH files. slot_N.json holds the chain (synth/FX
 #      state); shadow_chain_config.json holds the slot's OWN settings (volume,
@@ -132,7 +138,7 @@ rg -q 'refusing to overwrite with defaults' "$js" \
   || fail "$js saveChainConfigToDir lost its unreadable-params guard; it would clobber settings with defaults"
 
 # 11. Still exactly one unit of work per tick.
-rg -q 'function saveOneDirtyOvertakeUnit' "$js" \
+rg -q 'function saveOneDirtyUnit' "$js" \
   || fail "$js lost the one-unit-per-tick worker"
 
 # --- staying in step with the underlying Move set -------------------------
@@ -160,5 +166,5 @@ if [ "${bare:-0}" -gt 1 ]; then
   exit 1
 fi
 
-echo "PASS: overtake autosave persists slots only-on-success; buses deferred to transitions"
+echo "PASS: dirty-driven autosave: ungated, only-on-success, buses write with null-vs-empty guards"
 exit 0

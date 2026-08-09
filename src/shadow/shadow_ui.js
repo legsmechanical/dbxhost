@@ -304,24 +304,18 @@ const AUTOSAVE_INTERVAL = 300;  /* ~10 seconds at 30fps */
  * that a continuous knob sweep collapses into one save (flash write
  * amplification is the risk here, not CPU), short enough that a user who edits
  * and then walks away loses nothing. */
-/* Mid-session autosave during overtake — RE-ENABLED 2026-08-06.
- *
- * It was off pending a diagnosis (2026-08-05): a user's slot edit appeared not
- * to reach the shim, and this autosave then re-persisted the STALE value every
- * few seconds, destroying each test's before-state. The diagnosis is done and
- * the autosave was never the defect — it was faithfully persisting what a
- * SPLIT-BRAINED host handed it: state paths hardcoded to the default install
- * tree in this file, install-dir-composed on the C side, so restores read one
- * tree while saves wrote the other. Fixed by HOST_STATE_ROOT (composed from
- * HOST_INSTALL_DIR); both halves now address the same files, verified on
- * hardware 2026-08-06 (slot settings and a synth's delta state both survived
- * a hard reboot and restored through the per-set loader). */
-const OVERTAKE_AUTOSAVE_ENABLED = true;
-const OVERTAKE_DIRTY_QUIET_TICKS = 90;  /* ~3 s */
+/* Mid-session autosave is DIRTY-DRIVEN and unconditional (P4b, 2026-08-08):
+ * the C layer sets a take-mask bit on every slot/bus param write, a quiet
+ * period coalesces a knob sweep into one save, and one unit (slot or FX bus)
+ * is written per tick. The old interval save (every ~10 s, every slot,
+ * regardless of change) is gone — it was flash write amplification with no
+ * added safety once the savers preserve files on a timed-out read and the
+ * transition flushes (set change, suspend, exit) still walk everything. */
+const AUTOSAVE_DIRTY_QUIET_TICKS = 90;  /* ~3 s */
 /* Wait before re-attempting a save that could not read the DSP's state because
  * the param mailbox was busy. Short enough to catch the next lull, long enough
  * that a continuously-busy tool is not queried every single tick. */
-const OVERTAKE_DIRTY_RETRY_TICKS = 30;  /* ~1 s */
+const AUTOSAVE_DIRTY_RETRY_TICKS = 30;  /* ~1 s */
 const DEFAULT_SLOTS = [
     { channel: 1, name: "" },
     { channel: 2, name: "" },
@@ -687,14 +681,14 @@ let selectedPatch = 0;
 let view = VIEWS.SLOTS;
 let needsRedraw = true;
 let refreshCounter = 0;
-let autosaveCounter = 0;
 let autosaveSuppressUntil = 0;  /* suppress autosave after set change */
-/* Overtake-mode autosave (see tick()). Pending slot bitmask + a quiet-period
- * countdown, so a knob sweep coalesces into ONE save instead of hundreds. */
-let overtakeDirtySlots = 0;
-let overtakeDirtyBuses = 0;
-let overtakeDirtyQuiet = 0;
-let overtakeDirtyAge = 0;   /* ticks a unit has waited — caps the deferral */
+/* Dirty-driven autosave (see tick()). Pending slot/bus bitmasks + a
+ * quiet-period countdown, so a knob sweep coalesces into ONE save instead of
+ * hundreds. */
+let autosaveDirtySlots = 0;
+let autosaveDirtyBuses = 0;
+let autosaveDirtyQuiet = 0;
+let autosaveDirtyAge = 0;   /* ticks a unit has waited — caps the deferral */
 /* Mirrors the bus bit layout in shadow_ui.c (shadow_mark_fx_bus_dirty). The FX
  * buses all live at slot 0 and differ only by key namespace, so they need their
  * own mask rather than riding the slot one. */
@@ -942,7 +936,6 @@ const REDRAW_INTERVAL = 2; // ~30fps at 16ms tick
 let overtakeModuleLoaded = false; // True if an overtake module is running
 let overtakeModulePath = "";      // Path to loaded overtake module
 let overtakeModuleId = "";         // ID of loaded overtake module (for per-module exit hooks)
-let previousView = VIEWS.SLOTS;   // View to return to after overtake
 let overtakeModuleCallbacks = null; // {init, tick, onMidiMessageInternal} for loaded module
 let overtakeSuspendKeepsJs = false; // Current module opted in to JS-alive suspend
 let overtakeSuspendSelfManaged = false; // Module owns Back; suspends via host_suspend_overtake()
@@ -4912,20 +4905,20 @@ function saveAllFxBusConfigs() {
     saveMoveFxChainConfig();
 }
 
-/* One unit of overtake autosave work: a single slot, or a single FX bus.
+/* One unit of dirty-driven autosave work: a single slot, or a single FX bus.
  *
  * Strictly one per tick. Every unit costs get_param round-trips — a Move bus
- * walks MOVE_FX_BLOCKS_JS blocks plus the shared strip meta — and doing a whole
- * flush inside one frame is exactly what the overtake gate exists to prevent.
- * Slots go first only because they are the common case; the order carries no
- * other meaning, and anything not written this tick keeps its bit for the next.
+ * walks MOVE_FX_BLOCKS_JS blocks plus the shared strip meta — and a whole
+ * flush inside one frame would stall the tick. Slots go first only because
+ * they are the common case; the order carries no other meaning, and anything
+ * not written this tick keeps its bit for the next.
  *
  * Each bus is persisted through its OWN saver rather than the editor's
  * dispatcher: activeFxBus reflects whichever bus was last opened on screen,
- * which during overtake is unrelated to the bus that actually changed. */
-function saveOneDirtyOvertakeUnit() {
+ * which is unrelated to the bus that actually changed. */
+function saveOneDirtyUnit() {
     for (let slot = 0; slot < SHADOW_UI_SLOTS; slot++) {
-        if (overtakeDirtySlots & (1 << slot)) {
+        if (autosaveDirtySlots & (1 << slot)) {
             /* Clear the bit ONLY if the slot was really written.
              *
              * Reading a synth's state needs a round trip through the param
@@ -4955,67 +4948,67 @@ function saveOneDirtyOvertakeUnit() {
             const wroteChain  = autosaveAllSlots(slot);
             const wroteConfig = saveChainConfigToDir(activeSlotStateDir);
             if (wroteChain || wroteConfig) {
-                overtakeDirtySlots &= ~(1 << slot);
-                debugLog("overtake autosave: slot " + slot +
+                autosaveDirtySlots &= ~(1 << slot);
+                debugLog("autosave: slot " + slot +
                          " written (chain=" + wroteChain + " config=" + wroteConfig + ")");
             } else {
                 /* Back off briefly so a busy mailbox is not hammered every
                  * tick; the bit stays set, so nothing is lost. */
-                overtakeDirtyQuiet = OVERTAKE_DIRTY_RETRY_TICKS;
-                debugLog("overtake autosave: slot " + slot +
+                autosaveDirtyQuiet = AUTOSAVE_DIRTY_RETRY_TICKS;
+                debugLog("autosave: slot " + slot +
                          " not persisted (mailbox busy) — retrying");
             }
             return;
         }
     }
     /* Any residue is bits outside the slot range — nothing to write. */
-    overtakeDirtySlots = 0;
+    autosaveDirtySlots = 0;
 
-    /* ⚠ FX buses are NOT persisted from here yet, deliberately.
-     *
-     * Their savers treat an unreadable module name as "this bus is empty" and
-     * write "{}" — fine when the mailbox is quiet, actively destructive while a
-     * tool owns it, because a timed-out read would blank a good bus config.
-     * That is worse than not saving at all, and the slot path proved (hardware,
-     * 2026-08-05) that reads really do time out under overtake.
-     *
-     * The bits are still collected, and the transition flushes (set change,
-     * shutdown, overtake entry/exit) still persist every bus — those run when
-     * the mailbox is quiet. Re-enable here once the bus savers distinguish
-     * "empty" from "could not read", the same way buildSlotPatchJson does. */
-    /* Buses are collected but NOT written from here — see above. One return
-     * rather than a condition on each branch, so no bus can be reached by
-     * accident. */
-    return;
-
-    if (overtakeDirtyBuses & FXBUS_DIRTY_MASTER) {
-        overtakeDirtyBuses &= ~FXBUS_DIRTY_MASTER;
-        saveMasterFxChainConfig(true);
-        debugLog("overtake autosave: master fx");
+    /* FX buses. Live since P4b: the savers distinguish "empty" (persist the
+     * removal) from "could not read" (preserve the file, return false), so a
+     * busy mailbox can no longer blank a good bus config — the bit stays set
+     * and the pass backs off, exactly like the slot path above. */
+    if (autosaveDirtyBuses & FXBUS_DIRTY_MASTER) {
+        if (saveMasterFxChainConfig(true)) {
+            autosaveDirtyBuses &= ~FXBUS_DIRTY_MASTER;
+            debugLog("autosave: master fx written");
+        } else {
+            autosaveDirtyQuiet = AUTOSAVE_DIRTY_RETRY_TICKS;
+            debugLog("autosave: master fx not persisted (mailbox busy) — retrying");
+        }
         return;
     }
-    if (overtakeDirtyBuses & FXBUS_DIRTY_SEND_A) {
-        overtakeDirtyBuses &= ~FXBUS_DIRTY_SEND_A;
-        saveSendFxChainConfig("a");
-        debugLog("overtake autosave: send fx a");
+    if (autosaveDirtyBuses & FXBUS_DIRTY_SEND_A) {
+        if (saveSendFxChainConfig("a")) {
+            autosaveDirtyBuses &= ~FXBUS_DIRTY_SEND_A;
+            debugLog("autosave: send fx a written");
+        } else {
+            autosaveDirtyQuiet = AUTOSAVE_DIRTY_RETRY_TICKS;
+        }
         return;
     }
-    if (overtakeDirtyBuses & FXBUS_DIRTY_SEND_B) {
-        overtakeDirtyBuses &= ~FXBUS_DIRTY_SEND_B;
-        saveSendFxChainConfig("b");
-        debugLog("overtake autosave: send fx b");
+    if (autosaveDirtyBuses & FXBUS_DIRTY_SEND_B) {
+        if (saveSendFxChainConfig("b")) {
+            autosaveDirtyBuses &= ~FXBUS_DIRTY_SEND_B;
+            debugLog("autosave: send fx b written");
+        } else {
+            autosaveDirtyQuiet = AUTOSAVE_DIRTY_RETRY_TICKS;
+        }
         return;
     }
     for (let m = 0; m < MOVE_FX_SLOTS_JS; m++) {
         const bit = 1 << (FXBUS_DIRTY_MOVE_SHIFT + m);
-        if (overtakeDirtyBuses & bit) {
-            overtakeDirtyBuses &= ~bit;
-            saveMoveFxChainConfig(m);
-            debugLog("overtake autosave: move fx bus " + m);
+        if (autosaveDirtyBuses & bit) {
+            if (saveMoveFxChainConfig(m)) {
+                autosaveDirtyBuses &= ~bit;
+                debugLog("autosave: move fx bus " + m + " written");
+            } else {
+                autosaveDirtyQuiet = AUTOSAVE_DIRTY_RETRY_TICKS;
+            }
             return;
         }
     }
-    overtakeDirtyBuses = 0;
+    autosaveDirtyBuses = 0;
 }
 
 /* Actually save the preset */
@@ -6505,12 +6498,14 @@ function applyMasterFxModuleSelection() {
  * even on screen and activeFxBus is whatever was last visited. */
 function saveMasterFxChainConfig(forceMasterBus) {
     /* Master-bus-only below. Send/Move buses persist via their own per-set files
-     * instead — dispatch so in-editor edits are saved. */
+     * instead — dispatch so in-editor edits are saved. Returns the saver
+     * contract shared with the send/move savers: true = every due write
+     * landed, false = a mailbox read timed out and a write was skipped. */
     if (!forceMasterBus && !activeFxBus.persistConfig) {
-        if (activeFxBus.isMoveFx) saveMoveFxChainConfig();
-        else saveSendFxChainConfig();
-        return;
+        if (activeFxBus.isMoveFx) return saveMoveFxChainConfig();
+        return saveSendFxChainConfig();
     }
+    let ok = true;
     /* The shim persists the state, but we also save to shadow config */
     try {
         const configPath = HOST_STATE_ROOT + "/shadow_config.json";
@@ -6624,6 +6619,7 @@ function saveMasterFxChainConfig(forceMasterBus) {
 
             if (!snapshotOk) {
                 debugLog(`MFX save: skipping ${key} write — no state/params from shim (preserving existing file)`);
+                ok = false;
                 continue;
             }
 
@@ -6670,8 +6666,9 @@ function saveMasterFxChainConfig(forceMasterBus) {
 
         host_write_file(configPath, JSON.stringify(config, null, 2));
     } catch (e) {
-        /* Ignore errors */
+        return false;
     }
+    return ok;
 }
 
 function saveBrowserPreviewConfig() {
@@ -6916,7 +6913,11 @@ const SEND_FX_SLOTS_JS = 4;
  * get_param round-trips, so the overtake autosave narrows to the bus that
  * actually changed rather than walking both. */
 function saveSendFxChainConfig(onlyBusId) {
-    if (typeof shadow_get_param !== "function") return;
+    if (typeof shadow_get_param !== "function") return false;
+    /* Returns true when every due write landed; false when a mailbox read
+     * timed out and a write was skipped (file preserved) — the dirty-driven
+     * autosave keeps the bus bit set and retries on false. */
+    let ok = true;
     try {
         for (let bi = 0; bi < SEND_FX_BUSES.length; bi++) {
             const busId = SEND_FX_BUSES[bi];
@@ -6924,7 +6925,13 @@ function saveSendFxChainConfig(onlyBusId) {
             for (let s = 0; s < SEND_FX_SLOTS_JS; s++) {
                 const key = "send_fx:" + busId + ":fx" + (s + 1);
                 const filePath = activeSlotStateDir + "/send_fx_" + busId + "_" + s + ".json";
-                const moduleId = shadow_get_param(0, key + ":name") || "";
+                /* null = mailbox timeout (preserve the file and report it);
+                 * "" = genuinely empty slot (persist the removal). The old
+                 * `|| ""` collapsed the two, so a stalled shim emptied the
+                 * bus on disk. */
+                const _name = shadow_get_param(0, key + ":name");
+                if (_name === null || _name === undefined) { ok = false; continue; }
+                const moduleId = _name;
                 if (!moduleId) { host_write_file(filePath, "{}\n"); continue; }
 
                 const opt = (MASTER_FX_OPTIONS || []).find(o => o.id === moduleId);
@@ -6971,21 +6978,32 @@ function saveSendFxChainConfig(onlyBusId) {
                 const realParamKeys = paramsObj ? Object.keys(paramsObj).filter(k => k !== "plugin_id") : [];
                 if (!stateObj && realParamKeys.length === 0) {
                     /* Got a module id but no usable state — keep any existing file. */
+                    ok = false;
                     continue;
                 }
                 host_write_file(filePath, JSON.stringify(slotConfig, null, 2) + "\n");
             }
         }
-        /* Per-set send return levels + Send A->B routing level. */
-        const rlA = parseFloat(shadow_get_param(0, "send_fx:a:return_level") || "1.0");
-        const rlB = parseFloat(shadow_get_param(0, "send_fx:b:return_level") || "1.0");
-        const atob = parseFloat(shadow_get_param(0, "send_fx:a:to_b") || "0");
-        host_write_file(activeSlotStateDir + "/send_fx_meta.json",
-            JSON.stringify({ return_level: { a: isNaN(rlA) ? 1.0 : rlA, b: isNaN(rlB) ? 1.0 : rlB },
-                             send_a_to_b: isNaN(atob) ? 0 : atob }, null, 2) + "\n");
+        /* Per-set send return levels + Send A->B routing level. A timed-out
+         * read must skip the write, not stamp defaults over real levels. */
+        const _rlA = shadow_get_param(0, "send_fx:a:return_level");
+        const _rlB = shadow_get_param(0, "send_fx:b:return_level");
+        const _atob = shadow_get_param(0, "send_fx:a:to_b");
+        if (_rlA === null || _rlB === null || _atob === null) {
+            ok = false;
+        } else {
+            const rlA = parseFloat(_rlA || "1.0");
+            const rlB = parseFloat(_rlB || "1.0");
+            const atob = parseFloat(_atob || "0");
+            host_write_file(activeSlotStateDir + "/send_fx_meta.json",
+                JSON.stringify({ return_level: { a: isNaN(rlA) ? 1.0 : rlA, b: isNaN(rlB) ? 1.0 : rlB },
+                                 send_a_to_b: isNaN(atob) ? 0 : atob }, null, 2) + "\n");
+        }
     } catch (e) {
         debugLog("saveSendFxChainConfig error: " + e);
+        return false;
     }
+    return ok;
 }
 
 function restoreSendFxFromFiles() {
@@ -7052,14 +7070,20 @@ function restoreSendFxFromFiles() {
  * MOVE_FX_SLOTS_JS x MOVE_FX_BLOCKS_JS blocks — 16 today, each costing
  * get_param round-trips — which is far too much to spend inside one frame. */
 function saveMoveFxChainConfig(onlySlot) {
-    if (typeof shadow_get_param !== "function") return;
+    if (typeof shadow_get_param !== "function") return false;
+    /* Same contract as saveSendFxChainConfig: true = every due write landed;
+     * false = a read timed out, file(s) preserved, caller should retry. */
+    let ok = true;
     try {
         for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++) {
             if (onlySlot !== undefined && sl !== onlySlot) continue;
             for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) {
                 const key = "move_fx:" + (sl + 1) + ":fx" + (b + 1);
                 const filePath = activeSlotStateDir + "/move_fx_" + sl + "_" + b + ".json";
-                const moduleId = shadow_get_param(0, key + ":name") || "";
+                /* null = timeout (preserve + report), "" = genuinely empty. */
+                const _name = shadow_get_param(0, key + ":name");
+                if (_name === null || _name === undefined) { ok = false; continue; }
+                const moduleId = _name;
                 if (!moduleId) { host_write_file(filePath, "{}\n"); continue; }
 
                 const opt = (MASTER_FX_OPTIONS || []).find(o => o.id === moduleId);
@@ -7101,23 +7125,33 @@ function saveMoveFxChainConfig(onlySlot) {
                 }
 
                 const realParamKeys = paramsObj ? Object.keys(paramsObj).filter(k => k !== "plugin_id") : [];
-                if (!stateObj && realParamKeys.length === 0) continue;
+                if (!stateObj && realParamKeys.length === 0) { ok = false; continue; }
                 host_write_file(filePath, JSON.stringify(slotConfig, null, 2) + "\n");
             }
         }
-        /* Per-slot strip levels (volume + sends). */
+        /* Per-slot strip levels (volume + sends). A timed-out read must skip
+         * the write, not stamp defaults over real levels. */
         const strips = [];
+        let stripsOk = true;
         for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++) {
-            const v  = parseFloat(shadow_get_param(0, "move_fx:" + (sl + 1) + ":volume") || "1.0");
-            const sa = parseFloat(shadow_get_param(0, "move_fx:" + (sl + 1) + ":send_a") || "0.0");
-            const sb = parseFloat(shadow_get_param(0, "move_fx:" + (sl + 1) + ":send_b") || "0.0");
+            const _v  = shadow_get_param(0, "move_fx:" + (sl + 1) + ":volume");
+            const _sa = shadow_get_param(0, "move_fx:" + (sl + 1) + ":send_a");
+            const _sb = shadow_get_param(0, "move_fx:" + (sl + 1) + ":send_b");
+            if (_v === null || _sa === null || _sb === null) { stripsOk = false; break; }
+            const v = parseFloat(_v || "1.0"), sa = parseFloat(_sa || "0.0"), sb = parseFloat(_sb || "0.0");
             strips.push({ volume: isNaN(v) ? 1.0 : v, send_a: isNaN(sa) ? 0.0 : sa, send_b: isNaN(sb) ? 0.0 : sb });
         }
-        host_write_file(activeSlotStateDir + "/move_fx_meta.json",
-            JSON.stringify({ strips: strips }, null, 2) + "\n");
+        if (stripsOk) {
+            host_write_file(activeSlotStateDir + "/move_fx_meta.json",
+                JSON.stringify({ strips: strips }, null, 2) + "\n");
+        } else {
+            ok = false;
+        }
     } catch (e) {
         debugLog("saveMoveFxChainConfig error: " + e);
+        return false;
     }
+    return ok;
 }
 
 function restoreMoveFxFromFiles() {
@@ -16144,62 +16178,46 @@ globalThis.tick = function() {
         refreshSlots();
     }
 
-    /* Periodic autosave (suppressed briefly after set change) */
+    /* Dirty-driven autosave — the one mid-session persistence path (P4b),
+     * NOT gated on what's on screen. Detection is free instead of polled:
+     * the C layer sets a take-mask bit on each slot/bus param write, so the
+     * save cost is paid only when something actually changed — and one unit
+     * per tick, so a multi-slot flush never lands inside a single frame.
+     * (The old interval save wrote every slot every ~10 s regardless.)
+     *
+     * Set changes stay in step for free: SET_CHANGED flushes the OUTGOING
+     * set, switches activeSlotStateDir, then suppresses for ~5 s — so no
+     * write here can land against the wrong set's directory. Dirty bits
+     * that survive the switch are deliberately NOT cleared: the save
+     * re-reads live state, so the worst case is one redundant but correct
+     * write into the new set, whereas clearing could drop a real edit. */
     if (autosaveSuppressUntil > 0) {
         autosaveSuppressUntil--;
-        autosaveCounter = 0;
     } else {
-        autosaveCounter++;
-        if (!isOvertakeActive && autosaveCounter >= AUTOSAVE_INTERVAL) {
-            autosaveCounter = 0;
-            autosaveAllSlots();
-            saveMasterFxChainConfig();
-        }
-        /* Overtake autosave. The periodic save above is deliberately gated off
-         * while an overtake module owns the device (polling each slot's dirty
-         * flag costs a get_param round-trip), which is fine for a tool visited
-         * briefly — but a tool that owns the WHOLE session then has its
-         * host-side state written only at entry and teardown, so a crash or a
-         * hard reboot loses every edit made since launch.
-         *
-         * Detection is free instead of polled: the C layer sets a bit on each
-         * slot param write (shadow_take_dirty_slots), so the save cost is paid
-         * only when something actually changed — and one slot per tick, so a
-         * multi-slot flush never lands inside a single frame.
-         *
-         * Set changes stay in step for free. This block sits inside the
-         * autosaveSuppressUntil branch, and SET_CHANGED flushes the OUTGOING
-         * set, switches activeSlotStateDir, then suppresses for ~5 s — so no
-         * write here can land against the wrong set's directory. Dirty bits
-         * that survive the switch are deliberately NOT cleared: the save
-         * re-reads live state, so the worst case is one redundant but correct
-         * write into the new set, whereas clearing could drop a real edit. */
-        if (OVERTAKE_AUTOSAVE_ENABLED &&
-            isOvertakeActive && typeof shadow_take_dirty_slots === "function") {
+        if (typeof shadow_take_dirty_slots === "function") {
             const justDirtied = shadow_take_dirty_slots();
             const busDirtied = (typeof shadow_take_dirty_fx_buses === "function")
                 ? shadow_take_dirty_fx_buses() : 0;
             if (justDirtied || busDirtied) {
-                overtakeDirtySlots |= justDirtied;
-                overtakeDirtyBuses |= busDirtied;
+                autosaveDirtySlots |= justDirtied;
+                autosaveDirtyBuses |= busDirtied;
                 /* Restart the quiet period: a knob sweep is one edit, not 200. */
-                overtakeDirtyQuiet = OVERTAKE_DIRTY_QUIET_TICKS;
+                autosaveDirtyQuiet = AUTOSAVE_DIRTY_QUIET_TICKS;
             }
-            if (overtakeDirtySlots || overtakeDirtyBuses) {
-                if (overtakeDirtyQuiet > 0) overtakeDirtyQuiet--;
-                overtakeDirtyAge++;
-                /* A tool that writes every tick would hold the quiet period
-                 * open forever, so cap the deferral at the same cadence the
-                 * ungated autosave uses. Starvation here would silently
-                 * reintroduce the very bug this block fixes. */
-                const ready = (overtakeDirtyQuiet === 0) ||
-                              (overtakeDirtyAge >= AUTOSAVE_INTERVAL);
+            if (autosaveDirtySlots || autosaveDirtyBuses) {
+                if (autosaveDirtyQuiet > 0) autosaveDirtyQuiet--;
+                autosaveDirtyAge++;
+                /* A writer that fires every tick would hold the quiet period
+                 * open forever, so cap the deferral (timeout-skip guard).
+                 * Starvation here would silently lose the edit on a crash. */
+                const ready = (autosaveDirtyQuiet === 0) ||
+                              (autosaveDirtyAge >= AUTOSAVE_INTERVAL);
                 /* Leave the bits set through a preset audition — autosaveAllSlots
                  * refuses to persist an uncommitted preview, so clearing them
                  * here would drop the edit instead of deferring it. */
                 if (ready && !isPresetPreviewActive()) {
-                    saveOneDirtyOvertakeUnit();
-                    overtakeDirtyAge = 0;
+                    saveOneDirtyUnit();
+                    autosaveDirtyAge = 0;
                 }
             }
         }
