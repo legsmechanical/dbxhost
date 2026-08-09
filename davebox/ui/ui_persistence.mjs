@@ -180,10 +180,8 @@ export function maybeShowInheritPicker(uuid, name) {
  * not the other. */
 export function resolveSetLoadDecision() {
     const inheritResult = maybeShowInheritPicker(S.currentSetUuid, S.currentSetName);
-    const _svMismatch = (typeof host_module_get_param === 'function')
-        ? host_module_get_param('state_version_mismatch') : null;
-    const dspUuid = (typeof host_module_get_param === 'function')
-        ? (host_module_get_param('state_uuid') || '') : '';
+    const _svMismatch = host_module_get_param('state_version_mismatch');
+    const dspUuid = (host_module_get_param('state_uuid') || '');
 
     if (_svMismatch && parseInt(_svMismatch, 10) === 1) {
         /* Confirm dialog owns it; its "Yes" handler triggers the state_load. */

@@ -286,8 +286,6 @@ function legalizeNotes(notes) {
  * — Phase 4b bakes several cycles (random/delay) and parks the brace on cycle 1
  * so the extra content is revealed by dragging the brace open in Live. */
 function buildClip(t, c, isDrum) {
-    if (typeof host_module_get_param !== 'function')
-        return null;
     /* Apply-Conductor variant: for melodic responder tracks (not drum, not the
      * Conductor track itself) when the user opted in. DSP folds per-scene only
      * where the conductor clip has notes + the responder is on; otherwise it
@@ -509,10 +507,8 @@ function pollPendingExport() {
 
     /* Tempo: get_param is valid here (tick context). */
     let bpm = 120.0;
-    if (typeof host_module_get_param === 'function') {
-        const v = parseFloat(host_module_get_param('bpm'));
-        if (v > 0 && isFinite(v)) bpm = v;
-    }
+    const v = parseFloat(host_module_get_param('bpm'));
+    if (v > 0 && isFinite(v)) bpm = v;
 
     const drift  = readJsonAsset('drift-dummy.json');
     const master = readJsonAsset('ableton-master.json');

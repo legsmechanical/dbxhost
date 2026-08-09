@@ -142,8 +142,7 @@ function buildGlobalMenuItems() {
             get: function() { return S.clockFollowOn === true; },
             set: function(v) {
                 S.clockFollowOn = v ? true : false;
-                if (typeof host_module_set_param === 'function')
-                    host_module_set_param('clock_follow_on', S.clockFollowOn ? '1' : '0');
+                host_module_set_param('clock_follow_on', S.clockFollowOn ? '1' : '0');
             },
             onLabel: 'Move', offLabel: 'Off'
         }),
@@ -157,8 +156,7 @@ function buildGlobalMenuItems() {
             get: function() { return S.clockSendOn ? 1 : 0; },
             set: function(v) {
                 S.clockSendOn = v ? true : false;
-                if (typeof host_module_set_param === 'function')
-                    host_module_set_param('clock_send_on', S.clockSendOn ? '1' : '0');
+                host_module_set_param('clock_send_on', S.clockSendOn ? '1' : '0');
             },
             options: [0, 1],
             format: function(v) { return S.clockFollowOn ? '—' : (v ? 'On' : 'Off'); }
@@ -201,8 +199,7 @@ function buildGlobalMenuItems() {
             get: function() { return S.scaleAware !== 0; },
             set: function(v) {
                 S.scaleAware = v ? 1 : 0;
-                if (typeof host_module_set_param === 'function')
-                    host_module_set_param('scale_aware', S.scaleAware ? '1' : '0');
+                host_module_set_param('scale_aware', S.scaleAware ? '1' : '0');
             },
             onLabel: 'On', offLabel: 'Off'
         }),
@@ -210,8 +207,7 @@ function buildGlobalMenuItems() {
             get: function() { return S.launchQuant; },
             set: function(v) {
                 S.launchQuant = v;
-                if (typeof host_module_set_param === 'function')
-                    host_module_set_param('launch_quant', String(v));
+                host_module_set_param('launch_quant', String(v));
             },
             options: [0, 1, 2, 3, 4, 5],
             format: function(v) {
@@ -234,8 +230,7 @@ function buildGlobalMenuItems() {
             get: function() { return S.midiInChannel; },
             set: function(v) {
                 S.midiInChannel = v;
-                if (typeof host_module_set_param === 'function')
-                    host_module_set_param('midi_in_channel', String(v));
+                host_module_set_param('midi_in_channel', String(v));
             },
             options: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16],
             format: function(v) { return v === 0 ? 'All' : String(v); }
@@ -244,8 +239,7 @@ function buildGlobalMenuItems() {
             get: function() { return S.metronomeOn; },
             set: function(v) {
                 S.metronomeOn = v | 0;
-                if (typeof host_module_set_param === 'function')
-                    host_module_set_param('metro_on', String(S.metronomeOn));
+                host_module_set_param('metro_on', String(S.metronomeOn));
             },
             options: [0, 1, 2, 3],
             format: function(v) {
@@ -256,8 +250,7 @@ function buildGlobalMenuItems() {
             get: function() { return S.metronomeVol; },
             set: function(v) {
                 S.metronomeVol = v | 0;
-                if (typeof host_module_set_param === 'function')
-                    host_module_set_param('metro_vol', String(S.metronomeVol));
+                host_module_set_param('metro_vol', String(S.metronomeVol));
             },
             min: 0, max: 150, step: 1,
             format: function(v) { return String(v | 0) + '%'; }

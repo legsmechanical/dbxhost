@@ -81,9 +81,8 @@ export function xposePreviewSet(candK, candS) {
     if (candK === S.padKey && candS === S.padScale) { xposeCancelPreview(); return; }
     S.xposePrevKey = candK; S.xposePrevScale = candS;
     computePadNoteMap();   /* relayout pads to candidate (also pushes padmap) */
-    if (typeof host_module_set_param === 'function')
-        host_module_set_param('t0_xpose_prev',
-            S.padKey + ' ' + S.padScale + ' ' + candK + ' ' + candS);
+    host_module_set_param('t0_xpose_prev',
+        S.padKey + ' ' + S.padScale + ' ' + candK + ' ' + candS);
     S.screenDirty = true;
 }
 

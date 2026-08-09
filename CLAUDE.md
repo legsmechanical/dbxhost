@@ -26,11 +26,14 @@ So a davebox need is a valid reason to change this host. Do not treat it as an o
 - **📌 No capability probing. If the code is in the tree, the feature exists.**
   One host, one module, shipped together and versioned together, so a `typeof host_*` gate can only
   ever be true. The skew machinery is **gone**: P2 (2026-08-08) deleted davebox's probes
-  (`HOST_CONTRACT_MIN`, the "HOST TOO OLD" screen, 102 dead `typeof` gates) and P3 deleted the
-  host-side producer (`host_build_info()`, `SCHWUNG_BUILD_INFO_CONTRACT`). Never write a new gate
-  or a new contract. ⚠ 277 `typeof` gates on 5 symbols remain **deliberately** — they guard
-  bindings the overtake lifecycle installs and deletes at runtime, not version skew; P4b owns
-  them. Leave them alone.
+  (`HOST_CONTRACT_MIN`, the "HOST TOO OLD" screen, 102 dead `typeof` gates), P3 deleted the
+  host-side producer (`host_build_info()`, `SCHWUNG_BUILD_INFO_CONTRACT`), and P4b deleted the
+  remaining 276 gates on the module-param/lifecycle symbols (`host_module_set_param`/`get_param`,
+  `host_suspend_overtake`/`host_hide_module`/`host_exit_module`). Those bindings are still
+  installed/removed at runtime by the host's tool lifecycle, but the host guarantees them present
+  during every davebox execution context (module eval, init, tick, onMidi*, onResume, onUnload,
+  the parked-tick loop) via the shim-swap-around-callback machinery in `src/shadow/shadow_ui.js` —
+  that invariant is what makes the gates deletable. Never write a new gate or a new contract.
 - **Keep changes generic anyway** (no module named, docs in the same commit). Not because upstream
   demands it — because a generic change *can* be offered upstream, and each one that merges shrinks
   what this fork carries. See `docs/UPSTREAM.md`.

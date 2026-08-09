@@ -55,20 +55,18 @@ export function disarmRecord() {
     S.recordScheduledStop       = false;
     S.recordScheduledStopTarget = -1;
     S.pendingScheduledDisarm    = false;
-    if (typeof host_module_set_param === 'function') {
-        if (_wasCountingIn) {
-            /* Count-in active: only cancel is needed; sending _recording 0 would coalesce it away */
-            host_module_set_param('record_count_in_cancel', '1');
-        } else {
-            if (t >= 0) {
-                host_module_set_param('t' + t + '_recording', '0');
-                /* Re-send the disarm across the next few ticks (drained in tick()):
-                 * a single set_param can be coalesced away by another set_param
-                 * sharing the same audio buffer (e.g. a knob-release on the AUTO
-                 * bank), which would strand recording=1 and flood the lane. */
-                S.recOffTrack = t;
-                S.recOffTicks = 5;
-            }
+    if (_wasCountingIn) {
+        /* Count-in active: only cancel is needed; sending _recording 0 would coalesce it away */
+        host_module_set_param('record_count_in_cancel', '1');
+    } else {
+        if (t >= 0) {
+            host_module_set_param('t' + t + '_recording', '0');
+            /* Re-send the disarm across the next few ticks (drained in tick()):
+             * a single set_param can be coalesced away by another set_param
+             * sharing the same audio buffer (e.g. a knob-release on the AUTO
+             * bank), which would strand recording=1 and flood the lane. */
+            S.recOffTrack = t;
+            S.recOffTicks = 5;
         }
     }
     setButtonLED(MoveRec, LED_OFF);
@@ -80,10 +78,8 @@ export function handoffRecordingToTrack(newTrack) {
     const old = S.recordArmedTrack;
     _recordingNoteTrack.clear();
     S.recordArmedTrack      = newTrack;
-    if (typeof host_module_set_param === 'function') {
-        if (old >= 0) host_module_set_param('t' + old + '_recording', '0');
-        host_module_set_param('t' + newTrack + '_recording', '1');
-    }
+    if (old >= 0) host_module_set_param('t' + old + '_recording', '0');
+    host_module_set_param('t' + newTrack + '_recording', '1');
 }
 
 /* ext (4th param): true when the note came from external cable-2 MIDI
@@ -136,8 +132,7 @@ export function openTapTempo() {
 
 export function closeTapTempo() {
     S.tapTempoOpen = false;
-    if (typeof host_module_set_param === 'function')
-        host_module_set_param('bpm', String(S.tapTempoBpm));
+    host_module_set_param('bpm', String(S.tapTempoBpm));
     computePadNoteMap();
     invalidateLEDCache();
     S.screenDirty = true;

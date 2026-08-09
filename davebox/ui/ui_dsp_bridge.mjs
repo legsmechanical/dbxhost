@@ -60,7 +60,7 @@ export function refreshSeqNotesIfCurrent(t, ac, absIdx) {
     S.seqActiveNotes.clear();
     S.seqLastStep = -1;
     S.seqNoteOnClipTick = -1;
-    if (S.clipSteps[t][ac][absIdx] && typeof host_module_get_param === 'function') {
+    if (S.clipSteps[t][ac][absIdx]) {
         const r = host_module_get_param('t' + t + '_c' + ac + '_step_' + absIdx + '_notes');
         if (r && r.trim().length > 0)
             r.trim().split(' ').forEach(function(sn) {
@@ -73,7 +73,6 @@ export function refreshSeqNotesIfCurrent(t, ac, absIdx) {
 /* Read per-clip bank params from DSP into S.bankParams for track t.
  * Reads from clip[active_clip].pfx_params directly — immune to pfx_sync timing. */
 export function refreshDrumLaneBankParams(t, lane) {
-    if (typeof host_module_get_param !== 'function') return;
     const snap = host_module_get_param('t' + t + '_l' + lane + '_pfx_snapshot');
     if (snap) {
         const v = snap.split(' ');
@@ -126,7 +125,6 @@ export function resyncDrumTrack(t) {
 }
 
 export function refreshPerClipBankParams(t) {
-    if (typeof host_module_get_param !== 'function') return;
     if (S.trackPadMode[t] === PAD_MODE_DRUM) {
         refreshDrumLaneBankParams(t, S.activeDrumLane[t]);
         return;
@@ -192,7 +190,6 @@ export function refreshPerClipBankParams(t) {
 
 /* Read TRACK ARP step_vel[8] from DSP for track t. Called on init and track switch. */
 function readTarpStepVel(t) {
-    if (typeof host_module_get_param !== 'function') return;
     const raw = host_module_get_param('t' + t + '_tarp_sv');
     if (!raw) return;
     const v = raw.split(' ');
@@ -217,7 +214,6 @@ function readTarpStepVel(t) {
  * load so the rate-pad LED highlight matches the persisted DSP state.
  * (Rpt1's per-track last-rate lives only in DSP — JS has no mirror for it.) */
 function readDrumRepeatRates(t) {
-    if (typeof host_module_get_param !== 'function') return;
     const r2 = host_module_get_param('t' + t + '_drum_r2rt');
     if (r2) {
         const v = r2.split(' ');
@@ -257,23 +253,21 @@ export function resetPerClipBankParamsToDefault(t) {
 function localAutomationResync() {
     const touched = S.localEditTouched;
     if (!touched || touched.length === 0) return;
-    if (typeof host_module_get_param === 'function') {
-        for (let i = 0; i < touched.length; i++) {
-            const t = touched[i].t, c = touched[i].c;
-            if (t < 0 || t >= NUM_TRACKS || c < 0 || c >= NUM_CLIPS) continue;
-            const _abits = host_module_get_param('t' + t + '_c' + c + '_cc_auto_bits');
-            S.trackCCAutoBits[t][c] = _abits !== null ? (parseInt(_abits, 10) || 0) : 0;
-            const _arest = host_module_get_param('t' + t + '_c' + c + '_cc_rest');
-            if (_arest) {
-                const _arp = _arest.split(' ');
-                for (let k = 0; k < 8; k++) {
-                    const rv = parseInt(_arp[k], 10);
-                    S.clipCCVal[t][c][k] = (rv >= 0 && rv <= 127) ? rv : -1;
-                }
+    for (let i = 0; i < touched.length; i++) {
+        const t = touched[i].t, c = touched[i].c;
+        if (t < 0 || t >= NUM_TRACKS || c < 0 || c >= NUM_CLIPS) continue;
+        const _abits = host_module_get_param('t' + t + '_c' + c + '_cc_auto_bits');
+        S.trackCCAutoBits[t][c] = _abits !== null ? (parseInt(_abits, 10) || 0) : 0;
+        const _arest = host_module_get_param('t' + t + '_c' + c + '_cc_rest');
+        if (_arest) {
+            const _arp = _arest.split(' ');
+            for (let k = 0; k < 8; k++) {
+                const rv = parseInt(_arp[k], 10);
+                S.clipCCVal[t][c][k] = (rv >= 0 && rv <= 127) ? rv : -1;
             }
-            const _ath = host_module_get_param('t' + t + '_c' + c + '_at_has');
-            S.clipAtHas[t][c] = (_ath !== null && parseInt(_ath, 10) === 1);
         }
+        const _ath = host_module_get_param('t' + t + '_c' + c + '_at_has');
+        S.clipAtHas[t][c] = (_ath !== null && parseInt(_ath, 10) === 1);
     }
     S.localEditTouched = [];
 }
@@ -286,10 +280,8 @@ export function pollDSP() {
     /* bpm mirror — MIDI handlers can't get_param (silently null there), so
      * anything transport-side that needs tempo reads S.bpmMirror instead
      * (audit js-input-3: count-in cadence fell back to 120 BPM). */
-    if (typeof host_module_get_param === 'function') {
-        const _bv = parseFloat(host_module_get_param('bpm'));
-        if (_bv > 0 && isFinite(_bv)) S.bpmMirror = _bv;
-    }
+    const _bv = parseFloat(host_module_get_param('bpm'));
+    if (_bv > 0 && isFinite(_bv)) S.bpmMirror = _bv;
     /* Framework co-run closes (the shim's Back handler) are reconciled by
      * the HOST from SHM and reported through onServiceReturn — one return
      * path (the old classic-path reconcile here would double-clean and
@@ -299,7 +291,6 @@ export function pollDSP() {
          * One host, one module: the fx_picker service always exists. */
         S.coRunOverlayScreen = 'fx_picker';
     }
-    if (typeof host_module_get_param !== 'function') return;
     /* Remote-UI edit sync: the browser piano-roll edits notes[]/clips directly in
      * the DSP (they play immediately) but the on-device JS keeps its own clip
      * grid + step mirror, which would otherwise only refresh on a local action.
@@ -641,7 +632,7 @@ export function pollDSP() {
 
     /* Record-arm pending page boundary: DSP defers recording=1 to next bar.
      * Clear S.recordPendingPage once DSP has fired (recording_pending_page=0). */
-    if (S.recordPendingPage && S.recordArmedTrack >= 0 && typeof host_module_get_param === 'function') {
+    if (S.recordPendingPage && S.recordArmedTrack >= 0) {
         const _rpp = host_module_get_param('t' + S.recordArmedTrack + '_recording_pending_page');
         if (_rpp === '0') S.recordPendingPage = false;
     }
@@ -689,8 +680,7 @@ export function pollDSP() {
                     !S.trackClipPlaying[_rT] &&
                     !S.trackWillRelaunch[_rT] &&
                     S.trackQueuedClip[_rT] !== _rAc) {
-                if (typeof host_module_set_param === 'function')
-                    host_module_set_param('t' + _rT + '_launch_clip', String(_rAc));
+                host_module_set_param('t' + _rT + '_launch_clip', String(_rAc));
                 S.trackQueuedClip[_rT] = _rAc;
             }
             /* Adaptive mode for count-in path: enter if clip was empty with no manual length */
@@ -812,7 +802,6 @@ export function pollDSP() {
 
 /* Read all wired params for bankIdx on track t from DSP into S.bankParams. */
 export function readBankParams(t, bankIdx) {
-    if (typeof host_module_get_param !== 'function') return;
     /* Drum pfx banks (0, 1, 3): read via per-lane snapshot, not melodic keys */
     if (S.trackPadMode[t] === PAD_MODE_DRUM && (bankIdx === 0 || bankIdx === 1 || bankIdx === 3)) {
         refreshDrumLaneBankParams(t, S.activeDrumLane[t]);
@@ -935,7 +924,6 @@ export function readBankParams(t, bankIdx) {
 }
 
 function readTrackConfig(t) {
-    if (typeof host_module_get_param !== 'function') return;
     const ch = host_module_get_param('t' + t + '_channel');
     if (ch !== null && ch !== undefined) S.trackChannel[t] = parseInt(ch, 10) || 1;
     const rt = host_module_get_param('t' + t + '_route');
@@ -954,7 +942,6 @@ function readTrackConfig(t) {
 }
 
 export function applyTrackConfig(t, key, val) {
-    if (typeof host_module_set_param !== 'function') return;
     let strVal;
     if (key === 'route') strVal = val === 2 ? 'external' : val === 1 ? 'move' : 'schwung';
     else strVal = String(val);
@@ -1006,7 +993,6 @@ export function applyBankParam(t, bankIdx, knobIdx, val) {
         return;
     }
     if (!pm.dspKey) return;
-    if (typeof host_module_set_param !== 'function') return;
 
     if (pm.scope === 'global') {
         host_module_set_param(pm.dspKey, String(val));
@@ -1070,7 +1056,6 @@ export function applyBankParam(t, bankIdx, knobIdx, val) {
  * buffer into one set_param per track. Cost: up to ~10 ms (one tick) of
  * live-monitor latency. Benefit: chord-press survives intact. */
 export function _drainLiveNotes() {
-    if (typeof host_module_set_param !== 'function') return;
     for (let _t = 0; _t < NUM_TRACKS; _t++) {
         if (pendingLiveNotes[_t].length === 0) continue;
         const evts = pendingLiveNotes[_t];
@@ -1208,10 +1193,8 @@ export function restoreUiSidecar(applyDefaultsNow) {
          * that triggered this restore. Unconditional push (the setter
          * would early-return on matching values, missing the post-reset
          * DSP=0 case). */
-        if (typeof host_module_set_param === 'function') {
-            for (let _t = 0; _t < NUM_TRACKS; _t++)
-                host_module_set_param('t' + _t + '_drum_lane_page', String(S.drumLanePage[_t]));
-        }
+        for (let _t = 0; _t < NUM_TRACKS; _t++)
+            host_module_set_param('t' + _t + '_drum_lane_page', String(S.drumLanePage[_t]));
         if (typeof us.bm === 'number') S.beatMarkersEnabled = us.bm !== 0;
         if (us.v >= 2) {
             if (typeof us.pm === 'number') S.perfModsToggled = us.pm & 0xFFFFFF;
@@ -1290,7 +1273,7 @@ export function restoreUiSidecar(applyDefaultsNow) {
          * which was MELODIC at the time (doClearSession reset it). Without
          * this catch-up, S.drumClipNonEmpty[0] + drum lane meta retain pre-
          * Clear values and t1's session/drum pad LEDs render stale. */
-        if (applyDefaultsNow && typeof host_module_get_param === 'function') {
+        if (applyDefaultsNow) {
             syncDrumClipContent(0);
             syncDrumLanesMeta(0);
             syncDrumLaneSteps(0, S.activeDrumLane[0] | 0);
@@ -1321,7 +1304,6 @@ export function restoreUiSidecar(applyDefaultsNow) {
 /* ------------------------------------------------------------------ */
 
 export function syncClipsFromDsp() {
-    if (typeof host_module_get_param !== 'function') return;
     for (let t = 0; t < NUM_TRACKS; t++) {
         for (let c = 0; c < NUM_CLIPS; c++) {
             const bulk = host_module_get_param('t' + t + '_c' + c + '_steps');
@@ -1416,7 +1398,7 @@ export function syncClipsFromDsp() {
  * infoStr format: "d t c" (drum) or "m t0 c0 t1 c1 ..." (melodic, 1-16 pairs).
  * Falls back to full syncClipsFromDsp() if infoStr is missing or unparseable. */
 export function syncClipsTargeted(infoStr) {
-    if (!infoStr || typeof host_module_get_param !== 'function') { syncClipsFromDsp(); return; }
+    if (!infoStr) { syncClipsFromDsp(); return; }
     const parts = infoStr.split(' ');
     if (parts.length < 3) { syncClipsFromDsp(); return; }
     const isDrum = parts[0] === 'd';
@@ -1480,7 +1462,6 @@ export function syncClipsTargeted(infoStr) {
 }
 
 export function syncMuteSoloFromDsp() {
-    if (typeof host_module_get_param !== 'function') return;
     const muteStr = host_module_get_param('mute_state');
     const soloStr = host_module_get_param('solo_state');
     if (muteStr) for (let _t = 0; _t < NUM_TRACKS; _t++) S.trackMuted[_t]  = muteStr[_t]  === '1';

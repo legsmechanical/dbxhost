@@ -33,11 +33,9 @@ export function setTrackMute(t, on) {
     S.trackMuted[t] = on;
     if (on && S.trackSoloed[t]) {
         S.trackSoloed[t] = false;
-        if (typeof host_module_set_param === 'function')
-            host_module_set_param('t' + t + '_solo', '0');
+        host_module_set_param('t' + t + '_solo', '0');
     }
-    if (typeof host_module_set_param === 'function')
-        host_module_set_param('t' + t + '_mute', on ? '1' : '0');
+    host_module_set_param('t' + t + '_mute', on ? '1' : '0');
     S.screenDirty = true;
 }
 
@@ -49,11 +47,9 @@ export function setTrackSolo(t, on) {
     S.trackSoloed[t] = on;
     if (on && S.trackMuted[t]) {
         S.trackMuted[t] = false;
-        if (typeof host_module_set_param === 'function')
-            host_module_set_param('t' + t + '_mute', '0');
+        host_module_set_param('t' + t + '_mute', '0');
     }
-    if (typeof host_module_set_param === 'function')
-        host_module_set_param('t' + t + '_solo', on ? '1' : '0');
+    host_module_set_param('t' + t + '_solo', on ? '1' : '0');
     S.screenDirty = true;
 }
 
@@ -62,14 +58,12 @@ export function clearAllMuteSolo() {
         S.trackMuted[_t]  = false;
         S.trackSoloed[_t] = false;
     }
-    if (typeof host_module_set_param === 'function')
-        host_module_set_param('mute_all_clear', '1');
+    host_module_set_param('mute_all_clear', '1');
     S.screenDirty = true;
 }
 
 /* Clear all notes from a step and deactivate it (atomic DSP write). */
 export function clearStep(t, ac, absIdx) {
-    if (typeof host_module_set_param !== 'function') return;
     S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 't' + t + '_c' + ac + '_step_' + absIdx + '_clear', val: '1', _local: true });
     S.clipSteps[t][ac][absIdx] = 0;
@@ -91,7 +85,6 @@ export function showModePopup(title, items, activeIdx) {
  * down to a single survivor, eating the queued _clear. clearDrainHold defers
  * the drain by one tick so _clear lands in a clean buffer. */
 export function clearClip(t, ac, keepPlaying) {
-    if (typeof host_module_set_param !== 'function') return;
     S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
     /* Clip CLEAR semantics: wipe step note data AND reset length + loop window
      * to the fresh-clip default so the emptied clip returns to ADAPTIVE mode for
@@ -163,7 +156,6 @@ export function clearClip(t, ac, keepPlaying) {
 
 /* Full factory reset: clip_init on DSP + JS mirror cleared. Track View only. */
 export function hardResetClip(t, ac) {
-    if (typeof host_module_set_param !== 'function') return;
     S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
     if (S.trackPadMode[t] === PAD_MODE_DRUM) {
         /* Drum clip reset: clip_init all 32 lanes; midi_note preserved */
@@ -211,7 +203,6 @@ export function hardResetClip(t, ac) {
 /* Copy clip src→dst (single atomic DSP write, JS mirror update). */
 export function copyClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
-    if (typeof host_module_set_param !== 'function') return;
     S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'clip_copy', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
     _markLocalTouch(dstT, dstC);   /* dst automation copied DSP-side; re-read to mirror */
@@ -234,7 +225,6 @@ export function copyClip(srcT, srcC, dstT, dstC) {
 /* Cut clip: copy src→dst then hard-reset src (single atomic DSP write, JS mirror update). */
 export function cutClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
-    if (typeof host_module_set_param !== 'function') return;
     S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'clip_cut', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
     _markLocalTouch(dstT, dstC);   /* dst gets src's automation, src cleared — re-read both */
@@ -272,7 +262,6 @@ export function cutClip(srcT, srcC, dstT, dstC) {
 /* Copy all 8 tracks for a scene row (single atomic DSP write, JS mirror update). */
 export function copyRow(srcRow, dstRow) {
     if (srcRow === dstRow) return;
-    if (typeof host_module_set_param !== 'function') return;
     S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'row_copy', val: `${srcRow} ${dstRow}`, _local: true });
     for (let t = 0; t < NUM_TRACKS; t++) {
@@ -301,7 +290,6 @@ export function copyRow(srcRow, dstRow) {
 /* Cut row: copy all tracks src→dst then hard-reset src (single atomic DSP write, JS mirror update). */
 export function cutRow(srcRow, dstRow) {
     if (srcRow === dstRow) return;
-    if (typeof host_module_set_param !== 'function') return;
     S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'row_cut', val: `${srcRow} ${dstRow}`, _local: true });
     for (let t = 0; t < NUM_TRACKS; t++) {
@@ -348,7 +336,6 @@ export function cutRow(srcRow, dstRow) {
 
 /* Copy step src→dst within same clip (single atomic DSP write, JS mirror update). */
 export function copyStep(t, ac, srcAbs, dstAbs) {
-    if (typeof host_module_set_param !== 'function') return;
     S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
     if (S.trackPadMode[t] === PAD_MODE_DRUM) {
         const lane = S.activeDrumLane[t];
@@ -373,7 +360,6 @@ export function copyStep(t, ac, srcAbs, dstAbs) {
  * step_clear — no new DSP key. The copy_to drains before the clear (both queued),
  * so dst holds the content and src is wiped. Mirrors cutRow/cutClip. */
 export function cutStep(t, ac, srcAbs, dstAbs) {
-    if (typeof host_module_set_param !== 'function') return;
     copyStep(t, ac, srcAbs, dstAbs);
     if (S.trackPadMode[t] === PAD_MODE_DRUM) {
         const lane = S.activeDrumLane[t];
@@ -392,7 +378,6 @@ export function cutStep(t, ac, srcAbs, dstAbs) {
 /* Copy active clip's lane srcLane to dstLane (same track, preserves dst midi_note). */
 export function copyDrumLane(t, srcLane, dstLane) {
     if (srcLane === dstLane) return;
-    if (typeof host_module_set_param !== 'function') return;
     S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 't' + t + '_l' + srcLane + '_copy_to', val: String(dstLane), _local: true });
     const steps = S.drumLaneSteps[t];
@@ -412,7 +397,6 @@ export function copyDrumLane(t, srcLane, dstLane) {
 /* Cut active clip's lane srcLane into dstLane (copy then clear src). */
 export function cutDrumLane(t, srcLane, dstLane) {
     if (srcLane === dstLane) return;
-    if (typeof host_module_set_param !== 'function') return;
     S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 't' + t + '_l' + srcLane + '_cut_to', val: String(dstLane), _local: true });
     const steps = S.drumLaneSteps[t];
@@ -438,7 +422,6 @@ export function cutDrumLane(t, srcLane, dstLane) {
 /* Copy all 32 lanes of drum_clips[srcC] on srcT to drum_clips[dstC] on dstT; preserve dst midi_notes. */
 export function copyDrumClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
-    if (typeof host_module_set_param !== 'function') return;
     S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'drum_clip_copy', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
     S.drumClipNonEmpty[dstT][dstC] = S.drumClipNonEmpty[srcT][srcC];
@@ -448,7 +431,6 @@ export function copyDrumClip(srcT, srcC, dstT, dstC) {
 /* Cut all 32 lanes of drum_clips[srcC] on srcT into drum_clips[dstC] on dstT; undo dst only. */
 export function cutDrumClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
-    if (typeof host_module_set_param !== 'function') return;
     S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'drum_clip_cut', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
     S.drumClipNonEmpty[dstT][dstC] = S.drumClipNonEmpty[srcT][srcC];
@@ -466,7 +448,6 @@ export function cutDrumClip(srcT, srcC, dstT, dstC) {
 
 /* Clear all 8 tracks for a scene row (single atomic DSP write, JS mirror update). */
 export function clearRow(rowIdx) {
-    if (typeof host_module_set_param !== 'function') return;
     S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'row_clear', val: String(rowIdx), _local: true });
     for (let t = 0; t < NUM_TRACKS; t++) {
@@ -509,8 +490,7 @@ export function _switchActiveTrack(newT) {
             && S.trackQueuedClip[S.activeTrack] === -1
             && _focusedClipIsEmpty(S.activeTrack)) {
         const _ac = S.trackActiveClip[S.activeTrack];
-        if (typeof host_module_set_param === 'function')
-            host_module_set_param('t' + S.activeTrack + '_launch_clip', String(_ac));
+        host_module_set_param('t' + S.activeTrack + '_launch_clip', String(_ac));
         S.trackQueuedClip[S.activeTrack] = _ac;
     }
 }
@@ -558,8 +538,7 @@ export function doDoubleFill() {
             showActionPopup('CLIP FULL');
         } else {
             S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
-            if (typeof host_module_set_param === 'function')
-                host_module_set_param('t' + _t + '_loop_double_fill', '1');
+            host_module_set_param('t' + _t + '_loop_double_fill', '1');
             S.clipLength[_t][_ac] = _len * 2;
             S.pendingStepsReread      = 2;
             S.pendingStepsRereadTrack = _t;
@@ -594,7 +573,6 @@ export function doLaneDoubleFill() {
  * override is queued after the reset so it lands on a later tick (DSP zeros
  * delay_level during the reset). */
 export function resetFxBanks(t) {
-    if (typeof host_module_set_param !== 'function') return;
     S.undoAvailable = true; S.redoAvailable = false;
     if (S.trackPadMode[t] === PAD_MODE_DRUM) {
         const lane = S.activeDrumLane[t];
@@ -636,7 +614,6 @@ export function resetFxBanks(t) {
  * arp_init_defaults + held-buffer clear + silence. JS mirrors are
  * zeroed in parallel so the bank overview reflects defaults immediately. */
 export function resetTarp(t) {
-    if (typeof host_module_set_param !== 'function') return;
     S.undoAvailable = true; S.redoAvailable = false;
     S.pendingDefaultSetParams.push({ key: 't' + t + '_tarp_reset', val: '1' });
     for (let k = 0; k < 8; k++) {
@@ -653,7 +630,6 @@ export function resetTarp(t) {
 }
 
 export function resetSingleFxBank(t, bankIdx) {
-    if (typeof host_module_set_param !== 'function') return;
     const dspCmd = { 1: 'pfx_noteFx_reset', 2: 'pfx_harm_reset', 3: 'pfx_delay_reset' }[bankIdx];
     if (!dspCmd) return;
     S.undoAvailable = true; S.redoAvailable = false;
@@ -706,17 +682,14 @@ export function applyConductGridKnob(bank, k, delta) {
     if (S.trackPadMode[k] === PAD_MODE_DRUM) return;
     if (bank === BANK_RESPONDER) {
         S.condResp[c][k] = S.condResp[c][k] ? 0 : 1;     /* single-fire toggle */
-        if (typeof host_module_set_param === 'function')
-            host_module_set_param('t' + N + '_c' + c + '_cond_resp', k + ' ' + S.condResp[c][k]);
+        host_module_set_param('t' + N + '_c' + c + '_cond_resp', k + ' ' + S.condResp[c][k]);
     } else if (bank === BANK_OCTAVE) {
         const nv = Math.max(-4, Math.min(4, (S.condOct[c][k] | 0) + (delta > 0 ? 1 : -1)));
         S.condOct[c][k] = nv;
-        if (typeof host_module_set_param === 'function')
-            host_module_set_param('t' + N + '_c' + c + '_cond_oct', k + ' ' + nv);
+        host_module_set_param('t' + N + '_c' + c + '_cond_oct', k + ' ' + nv);
     } else if (bank === BANK_WHEN) {
         S.condWhen[c][k] = S.condWhen[c][k] ? 0 : 1;     /* single-fire toggle */
-        if (typeof host_module_set_param === 'function')
-            host_module_set_param('t' + N + '_c' + c + '_cond_when', k + ' ' + S.condWhen[c][k]);
+        host_module_set_param('t' + N + '_c' + c + '_cond_when', k + ' ' + S.condWhen[c][k]);
     }
     S.screenDirty = true;
     forceRedraw();

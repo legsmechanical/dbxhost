@@ -953,8 +953,7 @@ export function drawUI() {
             if (_sgKey !== S.ccGraphOvKey || (S.tickCount % POLL_INTERVAL) === 0) {
                 S.ccGraphOvData = [];
                 for (var _sgp = 0; _sgp < _sgPages; _sgp++) {
-                    var _sgRaw = (typeof host_module_get_param === 'function')
-                        ? host_module_get_param('t' + _t6s + '_c' + _ac6s + '_ccsv_' + _gLane6 + '_' + _sgp) : null;
+                    var _sgRaw = host_module_get_param('t' + _t6s + '_c' + _ac6s + '_ccsv_' + _gLane6 + '_' + _sgp);
                     if (_sgRaw) {
                         var _sgParts = _sgRaw.split(' ');
                         for (var _sgs = 0; _sgs < 16 && _sgp * 16 + _sgs < _gEffLen6; _sgs++)
@@ -1316,8 +1315,7 @@ export function drawUI() {
         if (_gKey !== S.ccGraphOvKey || (S.tickCount % POLL_INTERVAL) === 0) {
             S.ccGraphOvData = [];
             for (var _gp = 0; _gp < _gPages; _gp++) {
-                var _gRaw = (typeof host_module_get_param === 'function')
-                    ? host_module_get_param('t' + _gt + '_c' + _gac + '_ccsv_' + _gLane + '_' + _gp) : null;
+                var _gRaw = host_module_get_param('t' + _gt + '_c' + _gac + '_ccsv_' + _gLane + '_' + _gp);
                 if (_gRaw) {
                     var _gParts = _gRaw.split(' ');
                     for (var _gs = 0; _gs < 16 && _gp * 16 + _gs < _gTotalSteps; _gs++)
@@ -1652,8 +1650,7 @@ export function drawUI() {
             if (_gKey !== S.ccGraphOvKey || (S.tickCount % POLL_INTERVAL) === 0) {
                 S.ccGraphOvData = [];
                 for (let _gp = 0; _gp < _gPages; _gp++) {
-                    const _gRaw = (typeof host_module_get_param === 'function')
-                        ? host_module_get_param('t' + t + '_c' + ac + '_ccsv_' + _ovLane + '_' + _gp) : null;
+                    const _gRaw = host_module_get_param('t' + t + '_c' + ac + '_ccsv_' + _ovLane + '_' + _gp);
                     if (_gRaw) {
                         const _gParts = _gRaw.split(' ');
                         for (let _gs = 0; _gs < 16 && _gp * 16 + _gs < _gEffLen; _gs++)

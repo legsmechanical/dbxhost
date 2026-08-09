@@ -85,7 +85,6 @@ function trackHasAnyData(t) {
 }
 
 function convertTrackType(t, toDrum) {
-    if (typeof host_module_set_param !== 'function') return;
     host_module_set_param('t' + t + (toDrum ? '_convert_to_drum' : '_convert_to_melodic'), '1');
     S.trackPadMode[t] = toDrum ? PAD_MODE_DRUM : PAD_MODE_MELODIC_SCALE;
     /* Resync inline (this runs in tick(), so get_param works): the first get
@@ -115,7 +114,6 @@ function convertTrackType(t, toDrum) {
  * We optimistically flip the local mode, then verify the role next tick via
  * pendingConductReadback to detect (and revert) a refusal. */
 function convertTrackToConduct(t) {
-    if (typeof host_module_set_param !== 'function') return;
     const prevMode = S.trackPadMode[t];
     host_module_set_param('t' + t + '_convert_to_conduct', '1');
     S.trackPadMode[t] = PAD_MODE_CONDUCT;
@@ -235,8 +233,7 @@ var _lastSessionView = false;
  *   painters that follow later in the same tick. Must stay drain-before-draw.
  *
  * - SUSPEND-SAVE FIRES LAST: the pendingSuspendSave drain (anchor:
- *   "if (S.pendingSuspendSave && typeof host_module_set_param ===
- *   'function')") is placed deliberately near the end of the function so
+ *   "if (S.pendingSuspendSave)") is placed deliberately near the end of the function so
  *   no subsequent set_param in the same tick can overwrite the save (see
  *   the block's own inline comment). Its else-if siblings
  *   (pendingExitAfterSave/pendingHideAfterSave/pendingSnapshotCopy) each
@@ -286,14 +283,6 @@ export function _tickImpl() {
     if (S.bootSplashTicks > 0) S.bootSplashTicks--;
     checkBackHold();   /* self-managed Back: fire suspend once a held Back crosses the long-press threshold */
 
-    /* Lifecycle edge: at suspend/teardown (and transient co-run slot switches)
-     * the host can momentarily unbind its param API while an already-queued tick
-     * still fires. Every meaningful tick action reads or writes DSP, so there is
-     * nothing useful to do without the API — bail rather than throw
-     * 'host_module_get_param is not defined' into seq8-jserr.log. */
-    if (typeof host_module_get_param !== 'function' ||
-        typeof host_module_set_param !== 'function') return;
-
     /* Ableton .ablbundle export runs here (tick context) so get_param('bpm')
      * resolves — it returns null on the on_midi path where the menu action
      * fires. host_system_cmd blocks for the python packager; transport is
@@ -324,7 +313,7 @@ export function _tickImpl() {
 
     /* Verify the Conductor role landed (or detect a one-Conductor refusal).
      * Runs in tick() so get_param is valid. */
-    if (S.pendingConductReadback !== null && typeof host_module_get_param === 'function') {
+    if (S.pendingConductReadback !== null) {
         const _rb  = S.pendingConductReadback;
         S.pendingConductReadback = null;
         const _raw = host_module_get_param('conductor_track');
@@ -379,7 +368,7 @@ export function _tickImpl() {
          * all pads silent until the user happens to gesture a modifier
          * (which retriggers computePadNoteMap). Worst-case stuck pad
          * duration is now ~50ms instead of indefinite. */
-        if ((S.tickCount % 5) === 0 && typeof host_module_get_param === 'function') {
+        if ((S.tickCount % 5) === 0) {
             const _dspM = host_module_get_param('pad_dispatch_muted');
             if (_dspM !== null && _dspM !== undefined) {
                 const _dspMi = parseInt(_dspM, 10);
@@ -430,8 +419,7 @@ export function _tickImpl() {
         const _t = S.activeTrack;
         if (S.bankParams[_t][5][7] | 0) {
             S.bankParams[_t][5][7] = 0;
-            if (typeof host_module_set_param === 'function')
-                host_module_set_param('t' + _t + '_tarp_latch', '0');
+            host_module_set_param('t' + _t + '_tarp_latch', '0');
         }
     }
     /* Session-view edge re-pushes the padmap so DSP on_midi gates pad
@@ -467,8 +455,7 @@ export function _tickImpl() {
          * resume re-derives the full declared set. */
         /* Check if the active set changed while we were parked. */
         const _as = readActiveSet();
-        const _dspUuid = (typeof host_module_get_param === 'function')
-            ? (host_module_get_param('state_uuid') || '') : '';
+        const _dspUuid = (host_module_get_param('state_uuid') || '');
         if (_as.uuid && _dspUuid !== _as.uuid) {
             S.currentSetUuid = _as.uuid;
             S.currentSetName = _as.name;
@@ -567,7 +554,7 @@ export function _tickImpl() {
 
     /* Deferred CC auto-bits/rest re-read (set from MIDI handlers where get_param
      * is null, e.g. Delete+step whole-step clear). */
-    if (S.pendingCCBitsRefresh >= 0 && typeof host_module_get_param === 'function') {
+    if (S.pendingCCBitsRefresh >= 0) {
         const _rt = S.activeTrack, _rc = S.pendingCCBitsRefresh;
         S.pendingCCBitsRefresh = -1;
         const _bits = host_module_get_param('t' + _rt + '_c' + _rc + '_cc_auto_bits');
@@ -654,7 +641,7 @@ export function _tickImpl() {
     /* Set change detected in init(): send UUID so DSP constructs path and loads.
      * Suppressed while the inherit picker is open — state_load fires only
      * after the user picks a source (or "Start blank"). */
-    if (S.pendingSetLoad && !S.pendingInheritPicker && typeof host_module_set_param === 'function') {
+    if (S.pendingSetLoad && !S.pendingInheritPicker) {
         S.pendingSetLoad = false;
         S.stateLoading = true;
         disarmRecord();
@@ -672,8 +659,7 @@ export function _tickImpl() {
      * clearDrainHold defers the drain past the on_midi-context buffer where
      * a clearClip caller fired synchronous set_params (see clearClip comment). */
     if (S.clearDrainHold > 0) S.clearDrainHold--;
-    else if (S.pendingDefaultSetParams.length > 0 && !S.pendingSetLoad && S.pendingDspSync === 0
-            && typeof host_module_set_param === 'function') {
+    else if (S.pendingDefaultSetParams.length > 0 && !S.pendingSetLoad && S.pendingDspSync === 0) {
         const _dp = S.pendingDefaultSetParams.shift();
         host_module_set_param(_dp.key, _dp.val);
         /* Device-originated clip edit (copy/cut/clear/row): the DSP will bump
@@ -686,8 +672,7 @@ export function _tickImpl() {
     }
 
     /* Poll every 100 ticks (~0.5s): detect DSP hot-reload via instance nonce. */
-    if ((S.tickCount % 100) === 0 && typeof host_module_get_param === 'function' &&
-            typeof host_module_set_param === 'function') {
+    if ((S.tickCount % 100) === 0) {
         const newInstanceId = host_module_get_param('instance_id');
         if (newInstanceId && S.lastDspInstanceId !== '' && newInstanceId !== S.lastDspInstanceId) {
             pollDSP();
@@ -717,48 +702,46 @@ export function _tickImpl() {
              * any per-track read — pull it from the conductor_track get_param so
              * a reloaded set isn't desynced (white color, inert Channel/Route).
              * Runs here (tick context) where get_param is valid. */
-            if (typeof host_module_get_param === 'function') {
-                const _ct = parseInt(host_module_get_param('conductor_track'), 10);
-                if (!isNaN(_ct) && _ct >= 0 && _ct < NUM_TRACKS) {
-                    S.conductorTrack = _ct;
-                    S.trackPadMode[_ct] = PAD_MODE_CONDUCT;
-                    /* Pull the Conductor's per-clip bank values back from DSP.
-                     * get_param is valid here (tick/sync context) but NOT in
-                     * onMidiMessage. Read all 16 clips once on load/resume so the
-                     * full per-clip mirror (condResp/condWhen/condOct) is hot —
-                     * later clip switches just re-point S.condActiveClip and need
-                     * no DSP reads at all. Mirror the active clip into
-                     * S.condActiveClip (the clip whose values the OLED grid
-                     * renders). GET shapes (Task 2.1): _cond_resp / _cond_when =
-                     * 8-char '0'/'1' strings; _cond_oct = 8 space-separated
-                     * signed ints. */
-                    S.condActiveClip = S.trackActiveClip[_ct] | 0;
-                    for (let _c = 0; _c < NUM_CLIPS; _c++) {
-                        const _resp = host_module_get_param('t' + _ct + '_c' + _c + '_cond_resp');
-                        const _when = host_module_get_param('t' + _ct + '_c' + _c + '_cond_when');
-                        const _oct  = host_module_get_param('t' + _ct + '_c' + _c + '_cond_oct');
-                        if (typeof _resp === 'string' && _resp.length >= NUM_TRACKS) {
-                            for (let _k = 0; _k < NUM_TRACKS; _k++)
-                                S.condResp[_c][_k] = (_resp.charAt(_k) === '1') ? 1 : 0;
-                        }
-                        if (typeof _when === 'string' && _when.length >= NUM_TRACKS) {
-                            for (let _k = 0; _k < NUM_TRACKS; _k++)
-                                S.condWhen[_c][_k] = (_when.charAt(_k) === '1') ? 1 : 0;
-                        }
-                        if (typeof _oct === 'string' && _oct.length > 0) {
-                            const _op = _oct.split(' ');
-                            for (let _k = 0; _k < NUM_TRACKS && _k < _op.length; _k++) {
-                                const _ov = parseInt(_op[_k], 10);
-                                if (!isNaN(_ov)) S.condOct[_c][_k] = _ov;
-                            }
-                        }
-                        /* CdLk: single 0/1 per clip. */
-                        const _clk = host_module_get_param('t' + _ct + '_c' + _c + '_cond_lock');
-                        S.condLock[_c] = (_clk === '1' || _clk === 1) ? 1 : 0;
+            const _ct = parseInt(host_module_get_param('conductor_track'), 10);
+            if (!isNaN(_ct) && _ct >= 0 && _ct < NUM_TRACKS) {
+                S.conductorTrack = _ct;
+                S.trackPadMode[_ct] = PAD_MODE_CONDUCT;
+                /* Pull the Conductor's per-clip bank values back from DSP.
+                 * get_param is valid here (tick/sync context) but NOT in
+                 * onMidiMessage. Read all 16 clips once on load/resume so the
+                 * full per-clip mirror (condResp/condWhen/condOct) is hot —
+                 * later clip switches just re-point S.condActiveClip and need
+                 * no DSP reads at all. Mirror the active clip into
+                 * S.condActiveClip (the clip whose values the OLED grid
+                 * renders). GET shapes (Task 2.1): _cond_resp / _cond_when =
+                 * 8-char '0'/'1' strings; _cond_oct = 8 space-separated
+                 * signed ints. */
+                S.condActiveClip = S.trackActiveClip[_ct] | 0;
+                for (let _c = 0; _c < NUM_CLIPS; _c++) {
+                    const _resp = host_module_get_param('t' + _ct + '_c' + _c + '_cond_resp');
+                    const _when = host_module_get_param('t' + _ct + '_c' + _c + '_cond_when');
+                    const _oct  = host_module_get_param('t' + _ct + '_c' + _c + '_cond_oct');
+                    if (typeof _resp === 'string' && _resp.length >= NUM_TRACKS) {
+                        for (let _k = 0; _k < NUM_TRACKS; _k++)
+                            S.condResp[_c][_k] = (_resp.charAt(_k) === '1') ? 1 : 0;
                     }
-                } else {
-                    S.conductorTrack = -1;
+                    if (typeof _when === 'string' && _when.length >= NUM_TRACKS) {
+                        for (let _k = 0; _k < NUM_TRACKS; _k++)
+                            S.condWhen[_c][_k] = (_when.charAt(_k) === '1') ? 1 : 0;
+                    }
+                    if (typeof _oct === 'string' && _oct.length > 0) {
+                        const _op = _oct.split(' ');
+                        for (let _k = 0; _k < NUM_TRACKS && _k < _op.length; _k++) {
+                            const _ov = parseInt(_op[_k], 10);
+                            if (!isNaN(_ov)) S.condOct[_c][_k] = _ov;
+                        }
+                    }
+                    /* CdLk: single 0/1 per clip. */
+                    const _clk = host_module_get_param('t' + _ct + '_c' + _c + '_cond_lock');
+                    S.condLock[_c] = (_clk === '1' || _clk === 1) ? 1 : 0;
                 }
+            } else {
+                S.conductorTrack = -1;
             }
             restoreUiSidecar(true);
             computePadNoteMap();
@@ -782,18 +765,14 @@ export function _tickImpl() {
              * loaded; now that the load happens on selection, this is the only
              * point where the answer exists. Without it a v≠36 project opens
              * blank and silently refuses every save for the session. */
-            if (typeof host_module_get_param === 'function') {
-                const _aw = host_module_get_param('awaiting_select');
-                const _awUnknown = (_aw === null || _aw === undefined || _aw === '');
-                S.awaitingProjectSelect = _awUnknown ? false : (parseInt(_aw, 10) === 1);
-                const _svm = host_module_get_param('state_version_mismatch');
-                if (_svm && parseInt(_svm, 10) === 1 && !S.confirmStateWipe) {
-                    S.confirmStateWipe = true;
-                    S.confirmStateWipeSel = 1;
-                    S.screenDirty = true;
-                }
-            } else {
-                S.awaitingProjectSelect = false;
+            const _aw = host_module_get_param('awaiting_select');
+            const _awUnknown = (_aw === null || _aw === undefined || _aw === '');
+            S.awaitingProjectSelect = _awUnknown ? false : (parseInt(_aw, 10) === 1);
+            const _svm = host_module_get_param('state_version_mismatch');
+            if (_svm && parseInt(_svm, 10) === 1 && !S.confirmStateWipe) {
+                S.confirmStateWipe = true;
+                S.confirmStateWipeSel = 1;
+                S.screenDirty = true;
             }
         }
     }
@@ -905,8 +884,7 @@ export function _tickImpl() {
             S.recOffTicks = 0; S.recOffTrack = -1;
         } else {
             S.recOffTicks--;
-            if (typeof host_module_set_param === 'function')
-                host_module_set_param('t' + S.recOffTrack + '_recording', '0');
+            host_module_set_param('t' + S.recOffTrack + '_recording', '0');
             if (S.recOffTicks <= 0) S.recOffTrack = -1;
         }
     }
@@ -1091,8 +1069,7 @@ export function _tickImpl() {
                     const mStr = S.trackMuted.map(function(m) { return m ? '1' : '0'; }).join(' ');
                     const sStr = S.trackSoloed.map(function(s) { return s ? '1' : '0'; }).join(' ');
                     const dStr = drumEffMutes.join(' ');
-                    if (typeof host_module_set_param === 'function')
-                        host_module_set_param('snap_save', _ssh + ' ' + mStr + ' ' + sStr + ' ' + dStr);
+                    host_module_set_param('snap_save', _ssh + ' ' + mStr + ' ' + sStr + ' ' + dStr);
                     showActionPopup('MUTE STATE', 'SAVED');
                 }
                 S.stepSaveFlashStartTick = S.tickCount;
@@ -1342,8 +1319,7 @@ export function _tickImpl() {
                  * there), so inserting a new breakpoint continues the existing curve
                  * instead of jumping to 0. Falls back to clip resting value, else 0. */
                 const _t6 = S.activeTrack, _c6 = effectiveClip(_t6);
-                const _info = (typeof host_module_get_param === 'function')
-                    ? host_module_get_param('t' + _t6 + '_c' + _c6 + '_ccstepinfo_' + S.heldStep) : null;
+                const _info = host_module_get_param('t' + _t6 + '_c' + _c6 + '_ccstepinfo_' + S.heldStep);
                 const _ip = _info ? _info.split(' ') : [];
                 for (let _ck = 0; _ck < 8; _ck++) {
                     const _pv = _ip.length > _ck     ? parseInt(_ip[_ck], 10)     : -1;
@@ -1358,28 +1334,26 @@ export function _tickImpl() {
                 S.screenDirty = true;
             } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
                 /* Drum: auto-assign empty step so knobs work immediately */
-                if (S.stepWasEmpty && S.heldStepNotes.length === 0 && typeof host_module_set_param === 'function') {
+                if (S.stepWasEmpty && S.heldStepNotes.length === 0) {
                     const t    = S.activeTrack;
                     const lane = S.activeDrumLane[t];
                     host_module_set_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_toggle', String(S.stepEditVel));
                     S.drumLaneSteps[t][lane][S.heldStep] = '1';
                     S.drumLaneHasNotes[t][lane] = true;
                     S.heldStepNotes = [S.drumLaneNote[t][lane]];
-                    if (typeof host_module_get_param === 'function') {
-                        const rv = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_vel');
-                        const rg = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_gate');
-                        const rn = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_nudge');
-                        const ri = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_iter');
-                        const rr = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_rand');
-                        const rx = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_ratch');
-                        S.stepEditVel   = rv !== null ? parseInt(rv, 10) : S.stepEditVel;
-                        S.stepEditGate  = rg !== null ? parseInt(rg, 10) : (S.drumLaneTPS[t] || 24);
-                        S.stepEditNudge = rn !== null ? parseInt(rn, 10) : 0;
-                        S.stepEditIter  = ri !== null ? parseInt(ri, 10) : 0;
-                        S.stepEditRand  = rr !== null ? parseInt(rr, 10) : 0;
-                        S.stepEditRatch = rx !== null ? parseInt(rx, 10) : 0;
-                    }
-                } else if (S.drumHeldReadPending && typeof host_module_get_param === 'function') {
+                    const rv = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_vel');
+                    const rg = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_gate');
+                    const rn = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_nudge');
+                    const ri = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_iter');
+                    const rr = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_rand');
+                    const rx = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_ratch');
+                    S.stepEditVel   = rv !== null ? parseInt(rv, 10) : S.stepEditVel;
+                    S.stepEditGate  = rg !== null ? parseInt(rg, 10) : (S.drumLaneTPS[t] || 24);
+                    S.stepEditNudge = rn !== null ? parseInt(rn, 10) : 0;
+                    S.stepEditIter  = ri !== null ? parseInt(ri, 10) : 0;
+                    S.stepEditRand  = rr !== null ? parseInt(rr, 10) : 0;
+                    S.stepEditRatch = rx !== null ? parseInt(rx, 10) : 0;
+                } else if (S.drumHeldReadPending) {
                     /* Occupied drum step: the press handler couldn't read the
                      * step's real vel/gate/nudge/iter/rand/ratch (get_param
                      * null in MIDI context) — read them now from tick context
@@ -1406,23 +1380,16 @@ export function _tickImpl() {
                 /* Non-empty step — notes not yet read (get_param null at press time).
                  * Read now from tick context where get_param works. */
                 const ac_h2 = effectiveClip(S.activeTrack);
-                const raw_h2 = typeof host_module_get_param === 'function'
-                    ? host_module_get_param('t' + S.activeTrack + '_c' + ac_h2 + '_step_' + S.heldStep + '_notes') : null;
+                const raw_h2 = host_module_get_param('t' + S.activeTrack + '_c' + ac_h2 + '_step_' + S.heldStep + '_notes');
                 S.heldStepNotes = (raw_h2 && raw_h2.trim().length > 0)
                     ? raw_h2.trim().split(' ').map(Number).filter(function(n) { return n >= 0 && n <= 127; })
                     : [];
-                const rv2 = typeof host_module_get_param === 'function'
-                    ? host_module_get_param('t' + S.activeTrack + '_c' + ac_h2 + '_step_' + S.heldStep + '_vel') : null;
-                const rg2 = typeof host_module_get_param === 'function'
-                    ? host_module_get_param('t' + S.activeTrack + '_c' + ac_h2 + '_step_' + S.heldStep + '_gate') : null;
-                const rn2 = typeof host_module_get_param === 'function'
-                    ? host_module_get_param('t' + S.activeTrack + '_c' + ac_h2 + '_step_' + S.heldStep + '_nudge') : null;
-                const ri2 = typeof host_module_get_param === 'function'
-                    ? host_module_get_param('t' + S.activeTrack + '_c' + ac_h2 + '_step_' + S.heldStep + '_iter') : null;
-                const rr2 = typeof host_module_get_param === 'function'
-                    ? host_module_get_param('t' + S.activeTrack + '_c' + ac_h2 + '_step_' + S.heldStep + '_rand') : null;
-                const rx2 = typeof host_module_get_param === 'function'
-                    ? host_module_get_param('t' + S.activeTrack + '_c' + ac_h2 + '_step_' + S.heldStep + '_ratch') : null;
+                const rv2 = host_module_get_param('t' + S.activeTrack + '_c' + ac_h2 + '_step_' + S.heldStep + '_vel');
+                const rg2 = host_module_get_param('t' + S.activeTrack + '_c' + ac_h2 + '_step_' + S.heldStep + '_gate');
+                const rn2 = host_module_get_param('t' + S.activeTrack + '_c' + ac_h2 + '_step_' + S.heldStep + '_nudge');
+                const ri2 = host_module_get_param('t' + S.activeTrack + '_c' + ac_h2 + '_step_' + S.heldStep + '_iter');
+                const rr2 = host_module_get_param('t' + S.activeTrack + '_c' + ac_h2 + '_step_' + S.heldStep + '_rand');
+                const rx2 = host_module_get_param('t' + S.activeTrack + '_c' + ac_h2 + '_step_' + S.heldStep + '_ratch');
                 S.stepEditVel   = rv2 !== null ? parseInt(rv2, 10) : 100;
                 S.stepEditGate  = rg2 !== null ? parseInt(rg2, 10) : 12;
                 S.stepEditNudge = rn2 !== null ? parseInt(rn2, 10) : 0;
@@ -1437,7 +1404,7 @@ export function _tickImpl() {
                  * ~L8589). If no lastPlayedNote, fall back to no-note flash. */
                 if (S.activeBank === 6) {
                     /* CC bank: no note auto-assign */
-                } else if (S.lastPlayedNote >= 0 && typeof host_module_set_param === 'function') {
+                } else if (S.lastPlayedNote >= 0) {
                     const ac_he       = effectiveClip(S.activeTrack);
                     const assignNote  = S.lastPlayedNote;
                     const assignVel   = stepEntryVelocity(S.activeTrack, -1, false);
@@ -1460,7 +1427,7 @@ export function _tickImpl() {
          * Must come before phase 1 so both can't fire in the same tick and coalesce. */
         if (S.pendingChordPhase2 !== null) {
             const _cp2 = S.pendingChordPhase2;
-            if (_cp2.pitches.length > 1 && typeof host_module_set_param === 'function') {
+            if (_cp2.pitches.length > 1) {
                 host_module_set_param('t' + _cp2.t + '_c' + _cp2.ac + '_step_' + _cp2.step + '_set_notes',
                     _cp2.pitches.join(' '));
             }
@@ -1477,9 +1444,8 @@ export function _tickImpl() {
         if (S.pendingChordToStep !== null && S.activeBank !== 6) {
             const _cp1 = S.pendingChordToStep;
             if (_cp1.wasEmpty) {
-                if (typeof host_module_set_param === 'function')
-                    host_module_set_param('t' + _cp1.t + '_c' + _cp1.ac + '_step_' + _cp1.step + '_toggle',
-                        _cp1.pitches[0] + ' ' + _cp1.vel);
+                host_module_set_param('t' + _cp1.t + '_c' + _cp1.ac + '_step_' + _cp1.step + '_toggle',
+                    _cp1.pitches[0] + ' ' + _cp1.vel);
                 S.clipSteps[_cp1.t][_cp1.ac][_cp1.step] = 1;
                 S.clipNonEmpty[_cp1.t][_cp1.ac] = true;
             }
@@ -1691,7 +1657,7 @@ export function _tickImpl() {
      * payload ("e64 100"): the DSP handlers use slot-if-active-else-fallback for
      * ext notes (non-Move ext never reaches on_midi, so no press slot exists) while
      * plain pad notes keep the slot requirement. A batch can mix pad + ext. */
-    if (S.recordArmed && !S.recordCountingIn && typeof host_module_set_param === 'function') {
+    if (S.recordArmed && !S.recordCountingIn) {
         if (S._recNoteOns.length > 0) {
             const rt   = S._recNoteOns[0].rt;
             const pairs = S._recNoteOns.map(function(n) { return (n.ext ? 'e' : '') + n.pitch + ' ' + n.vel; }).join(' ');
@@ -1854,7 +1820,7 @@ export function _tickImpl() {
      * Quit/Shift+Back use the else-if branches below so the exit/hide call
      * only runs on a tick AFTER the save set_param has reached DSP — same-tick
      * exit would tear the module down before the buffer processes the save. */
-    if (S.pendingSuspendSave && typeof host_module_set_param === 'function') {
+    if (S.pendingSuspendSave) {
         S.pendingSuspendSave = false;
         updateNameIndex();
         host_module_set_param('save', '1');
@@ -1881,7 +1847,7 @@ export function _tickImpl() {
          * host gate runs as a HEADLESS ACTUATOR: arm with the pad pre-queued,
          * park ourselves; the shim walks Move through its overview behind
          * the "Loading" screen and the selection RESUMES us (set-UUID reload
-         * = the switch). Gate-less host: relaunch flavour via project-cmd. */
+         * = the switch). */
         const _psw = S.pendingProjectSwitch;
         S.pendingProjectSwitch = null;
         removeFlagsWrap();
@@ -1889,12 +1855,8 @@ export function _tickImpl() {
         invalidateLEDCache();
         clearAllLEDs();
         for (let _i = 0; _i < 4; _i++) setButtonLED(40 + _i, LED_OFF);
-        if (typeof host_suspend_overtake === 'function') {
-            shadow_select_arm(_psw);
-            host_suspend_overtake();
-            return;
-        }
-        host_system_cmd('sh /data/UserData/dbx-host/scripts/project-cmd.sh switch ' + _psw);
+        shadow_select_arm(_psw);
+        host_suspend_overtake();
         return;
     } else if (S.pendingHideAfterSave) {
         S.pendingHideAfterSave = false;
@@ -1903,20 +1865,18 @@ export function _tickImpl() {
         invalidateLEDCache();
         clearAllLEDs();
         for (let _i = 0; _i < 4; _i++) setButtonLED(40 + _i, LED_OFF);
-        if (typeof host_hide_module === 'function') host_hide_module();
+        host_hide_module();
     } else if (S.pendingSuspendManaged) {
         /* Self-managed Back suspend (tap-at-home / hold-anywhere). Same teardown
-         * as the hide path, but calls the new host_suspend_overtake() so the host
-         * parks us keeping JS in memory. Falls back to host_hide_module on a host
-         * that predates the API (defensive — plain Back wouldn't reach us there). */
+         * as the hide path, but calls host_suspend_overtake() so the host
+         * parks us keeping JS in memory. */
         S.pendingSuspendManaged = false;
         removeFlagsWrap();
         S.ledInitComplete = false;
         invalidateLEDCache();
         clearAllLEDs();
         for (let _i = 0; _i < 4; _i++) setButtonLED(40 + _i, LED_OFF);
-        if (typeof host_suspend_overtake === 'function') host_suspend_overtake();
-        else if (typeof host_hide_module === 'function') host_hide_module();
+        host_suspend_overtake();
     } else if (S.pendingSnapshotCopy) {
         /* One tick after the 'save' above flushed live state to disk
          * synchronously — copy it into the snapshot + update manifest. */
@@ -1928,8 +1888,7 @@ export function _tickImpl() {
     /* Orphan prune: clean up set_state/<uuid>/seq8-*.json for sets that no
      * longer exist on disk. Defer until any state_load + initial sync settles
      * so the prune set_param doesn't collide with state_load coalescing. */
-    if (S.pendingPruneOrphans && !S.pendingSetLoad && S.pendingDspSync === 0 &&
-            typeof host_module_set_param === 'function') {
+    if (S.pendingPruneOrphans && !S.pendingSetLoad && S.pendingDspSync === 0) {
         S.pendingPruneOrphans = false;
         host_module_set_param('prune_orphan_states', '1');
         /* Drop stale entries from the in-memory index so subsequent inheritance

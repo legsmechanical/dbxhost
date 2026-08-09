@@ -101,7 +101,7 @@ export function computePadNoteMap() {
      * piece 3. */
     /* The DSP padmap handler sets inst->dsp_inbound_enabled, which gates its
      * on_midi dispatch. */
-    if (S.dspInboundEnabled && typeof host_module_set_param === 'function') {
+    if (S.dspInboundEnabled) {
         /* JS dispatch today adds S.trackOctave * 12 at the pad-press site
          * (lines ~6838, ~6909). Phase 1's on_midi reads pad_note_map as-is,
          * so we bake the runtime octave offset into the pushed payload while
@@ -160,7 +160,6 @@ export function computePadNoteMap() {
 
 /** Sync one drum lane's step data and length from DSP. */
 export function syncDrumLaneSteps(t, l) {
-    if (typeof host_module_get_param !== 'function') return;
     const raw = host_module_get_param('t' + t + '_l' + l + '_steps');
     if (raw) {
         for (let s = 0; s < 256; s++) S.drumLaneSteps[t][l][s] = raw[s] || '0';
@@ -187,7 +186,6 @@ export function syncDrumLaneSteps(t, l) {
  * it reads all 32 lanes regardless of content). Format:
  * "note0 nc0 note1 nc1 ... note31 nc31 mute solo". */
 export function syncDrumLanesMeta(t) {
-    if (typeof host_module_get_param !== 'function') return;
     const raw = host_module_get_param('t' + t + '_drum_meta');
     if (!raw) return;
     const v = raw.split(' ');
@@ -216,8 +214,7 @@ export function setActiveDrumLane(t, lane) {
      * happened on the first 2A deploy — stack overflow on init). */
     const arr = S.activeDrumLane;
     arr[t] = lane;
-    if (typeof host_module_set_param === 'function')
-        host_module_set_param('t' + t + '_active_drum_lane', String(lane));
+    host_module_set_param('t' + t + '_active_drum_lane', String(lane));
 }
 
 /* Bundle 2A: single setter for S.drumPerformMode that also pushes the
@@ -229,8 +226,7 @@ export function setDrumPerformMode(t, mode) {
     if (S.drumPerformMode[t] === mode) return;
     const arrPm = S.drumPerformMode;
     arrPm[t] = mode;
-    if (typeof host_module_set_param === 'function')
-        host_module_set_param('t' + t + '_drum_perform_mode', String(mode));
+    host_module_set_param('t' + t + '_drum_perform_mode', String(mode));
 }
 
 /* Bundle 2C-Rpt2: single setter for S.drumLanePage that also pushes the
@@ -242,13 +238,11 @@ export function setDrumLanePage(t, page) {
     if (S.drumLanePage[t] === page) return;
     const arrLp = S.drumLanePage;
     arrLp[t] = page;
-    if (typeof host_module_set_param === 'function')
-        host_module_set_param('t' + t + '_drum_lane_page', String(page));
+    host_module_set_param('t' + t + '_drum_lane_page', String(page));
 }
 
 /** Sync S.drumClipNonEmpty[t] for all clips — called on track switch and state load. */
 export function syncDrumClipContent(t) {
-    if (typeof host_module_get_param !== 'function') return;
     for (let c = 0; c < NUM_CLIPS; c++) {
         const raw = host_module_get_param('t' + t + '_c' + c + '_drum_has_content');
         S.drumClipNonEmpty[t][c] = raw === '1';
@@ -256,7 +250,6 @@ export function syncDrumClipContent(t) {
 }
 
 export function syncDrumRepeatState(t, lane) {
-    if (typeof host_module_get_param !== 'function') return;
     const raw = host_module_get_param('t' + t + '_l' + lane + '_repeat_state');
     if (!raw) return;
     const v = raw.split(' ');

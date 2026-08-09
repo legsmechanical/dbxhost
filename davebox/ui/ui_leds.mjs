@@ -289,8 +289,7 @@ export function updateStepLEDs() {
         }
         const key = t + '_' + c + '_' + lane + '_' + pg;
         if (key !== S.ccGradKey || (S.tickCount % POLL_INTERVAL) === 0) {
-            var raw = (typeof host_module_get_param === 'function')
-                ? host_module_get_param('t' + t + '_c' + c + '_ccsv_' + lane + '_' + pg) : null;
+            var raw = host_module_get_param('t' + t + '_c' + c + '_ccsv_' + lane + '_' + pg);
             if (raw) {
                 var parts = raw.split(' ');
                 for (let s = 0; s < 16; s++) {
@@ -298,8 +297,7 @@ export function updateStepLEDs() {
                     S.ccGradVals[s] = (v >= 0 && v <= 127) ? v : 255;
                 }
             }
-            var bpRaw = (typeof host_module_get_param === 'function')
-                ? host_module_get_param('t' + t + '_c' + c + '_ccbp_' + lane + '_' + pg) : null;
+            var bpRaw = host_module_get_param('t' + t + '_c' + c + '_ccbp_' + lane + '_' + pg);
             if (bpRaw) {
                 var bpParts = bpRaw.split(' ');
                 for (let s = 0; s < 16; s++)
@@ -1182,6 +1180,5 @@ export function removeFlagsWrap() {
 
 /* Send current combined modifier bitmask to DSP. */
 export function sendPerfMods() {
-    if (typeof host_module_set_param === 'function')
-        host_module_set_param('perf_mods', String(S.perfModsToggled | S.perfModsHeld));
+    host_module_set_param('perf_mods', String(S.perfModsToggled | S.perfModsHeld));
 }

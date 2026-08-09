@@ -178,8 +178,7 @@ globalThis.init = function () {
             return BANKS.map(function(bank) { return bank.knobs.map(function(k) { return k.def; }); });
         });
 
-    const p = (typeof host_module_get_param === 'function')
-        ? host_module_get_param('playing') : null;
+    const p = host_module_get_param('playing');
     const dspSurvived = (p !== null && p !== undefined);
 
     console.log('SEQ8 init: ' + (p === '1' ? 'RESUMED playing' : 'FRESH/stopped'));
@@ -205,25 +204,21 @@ globalThis.init = function () {
      * the two disagree — and a disagreement is the worst state available: the DSP
      * refuses every save while JS, believing a project is live, keeps overwriting
      * the sidecar. Whatever the DSP decided, honour it. */
-    if (typeof host_module_get_param === 'function') {
-        const _aw = host_module_get_param('awaiting_select');
-        if (_aw === null || _aw === undefined || _aw === '') {
-            /* Key unimplemented => the dsp.so predates select-before-load. That
-             * is a REAL deploy shape: bundle_ui.sh + install.sh ships JS alone
-             * over an existing dsp.so. Fall back to the marker and the old
-             * behaviour (picker over an already-loaded boot project) rather
-             * than silently losing the picker with nothing logged. */
-            S.awaitingProjectSelect = false;
-            if (_markerArmed) {
-                console.log('SEQ8 init: dsp.so has no awaiting_select — ' +
-                            'select-before-load unavailable, picker over boot project');
-                S.pendingOpenProjectPicker = true;
-            }
-        } else {
-            S.awaitingProjectSelect = (parseInt(_aw, 10) === 1);
+    const _aw = host_module_get_param('awaiting_select');
+    if (_aw === null || _aw === undefined || _aw === '') {
+        /* Key unimplemented => the dsp.so predates select-before-load. That
+         * is a REAL deploy shape: bundle_ui.sh + install.sh ships JS alone
+         * over an existing dsp.so. Fall back to the marker and the old
+         * behaviour (picker over an already-loaded boot project) rather
+         * than silently losing the picker with nothing logged. */
+        S.awaitingProjectSelect = false;
+        if (_markerArmed) {
+            console.log('SEQ8 init: dsp.so has no awaiting_select — ' +
+                        'select-before-load unavailable, picker over boot project');
+            S.pendingOpenProjectPicker = true;
         }
     } else {
-        S.awaitingProjectSelect = false;
+        S.awaitingProjectSelect = (parseInt(_aw, 10) === 1);
     }
     if (S.awaitingProjectSelect) {
         /* Drop any picker left over from before a suspend BEFORE arming the
@@ -249,8 +244,7 @@ globalThis.init = function () {
         S.currentSetUuid = _as.uuid;
         S.currentSetName = _as.name;
     }
-    const currentDspNonce = (typeof host_module_get_param === 'function')
-        ? host_module_get_param('instance_id') : null;
+    const currentDspNonce = host_module_get_param('instance_id');
     if (currentDspNonce) S.lastDspInstanceId = currentDspNonce;
 
     /* Load decision. Skipped entirely while awaiting a selection: nothing may
@@ -266,23 +260,21 @@ globalThis.init = function () {
         S.pendingPruneOrphans = true;
     }
 
-    if (typeof host_module_get_param === 'function') {
-        S.playing = dspSurvived;
+    S.playing = dspSurvived;
 
-        for (let t = 0; t < NUM_TRACKS; t++) {
-            const ac = host_module_get_param('t' + t + '_active_clip');
-            if (ac !== null && ac !== undefined) S.trackActiveClip[t] = parseInt(ac, 10) | 0;
-            const cs = host_module_get_param('t' + t + '_current_step');
-            const csVal = (cs !== null && cs !== undefined) ? (parseInt(cs, 10) | 0) : -1;
-            S.trackCurrentStep[t] = csVal;
-            S.trackCurrentPage[t] = csVal >= 0 ? Math.floor(csVal / 16) : 0;
-            const qc = host_module_get_param('t' + t + '_queued_clip');
-            S.trackQueuedClip[t] = (qc !== null && qc !== undefined) ? (parseInt(qc, 10) | 0) : -1;
-        }
-
-        syncClipsFromDsp();
-        syncMuteSoloFromDsp();
+    for (let t = 0; t < NUM_TRACKS; t++) {
+        const ac = host_module_get_param('t' + t + '_active_clip');
+        if (ac !== null && ac !== undefined) S.trackActiveClip[t] = parseInt(ac, 10) | 0;
+        const cs = host_module_get_param('t' + t + '_current_step');
+        const csVal = (cs !== null && cs !== undefined) ? (parseInt(cs, 10) | 0) : -1;
+        S.trackCurrentStep[t] = csVal;
+        S.trackCurrentPage[t] = csVal >= 0 ? Math.floor(csVal / 16) : 0;
+        const qc = host_module_get_param('t' + t + '_queued_clip');
+        S.trackQueuedClip[t] = (qc !== null && qc !== undefined) ? (parseInt(qc, 10) | 0) : -1;
     }
+
+    syncClipsFromDsp();
+    syncMuteSoloFromDsp();
 
     extHeldNotes.clear();
 
@@ -448,8 +440,7 @@ function _onMidiInternalImpl(data) {
                         S.trackCCAutoBits[_dt][_dac] &= ~(1 << d1);
                         S.trackCCLiveVal[_dt][d1] = -1;
                         S.clipCCVal[_dt][_dac][d1] = -1;
-                        if (typeof host_module_set_param === 'function')
-                            host_module_set_param('t' + _dt + '_cc_auto_clear_k', _dac + ' ' + d1);
+                        host_module_set_param('t' + _dt + '_cc_auto_clear_k', _dac + ' ' + d1);
                         showActionPopup('CC', 'CLEAR');
                         invalidateLEDCache();
                     }
@@ -463,23 +454,20 @@ function _onMidiInternalImpl(data) {
                         const relPm = BANKS[S.activeBank].knobs[d1];
                         if (relPm.dspKey === 'nudge') {
                             S.bankParams[S.activeTrack][S.activeBank][d1] = 0;
-                            if (typeof host_module_set_param === 'function') {
-                                const _isAllLanesNdg = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7;
-                                const _isDrumNdg = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 0;
-                                if (_isAllLanesNdg)
-                                    host_module_set_param('t' + S.activeTrack + '_all_lanes_nudge', '0');
-                                else if (_isDrumNdg)
-                                    host_module_set_param('t' + S.activeTrack + '_l' + S.activeDrumLane[S.activeTrack] + '_nudge', '0');
-                                else
-                                    host_module_set_param('t' + S.activeTrack + '_nudge', '0');
-                            }
+                            const _isAllLanesNdg = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7;
+                            const _isDrumNdg = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 0;
+                            if (_isAllLanesNdg)
+                                host_module_set_param('t' + S.activeTrack + '_all_lanes_nudge', '0');
+                            else if (_isDrumNdg)
+                                host_module_set_param('t' + S.activeTrack + '_l' + S.activeDrumLane[S.activeTrack] + '_nudge', '0');
+                            else
+                                host_module_set_param('t' + S.activeTrack + '_nudge', '0');
                         } else if (relPm.dspKey === 'clock_shift' || relPm.dspKey === 'beat_stretch') {
                             S.clockShiftTouchDelta = 0;
                             S.bankParams[S.activeTrack][S.activeBank][d1] = 0;
                             /* Shft knob doubles as Nudge under Shift held — reset DSP nudge
                              * accumulator on release in case the user finished a Shift+turn. */
-                            if (relPm.dspKey === 'clock_shift' &&
-                                    typeof host_module_set_param === 'function') {
+                            if (relPm.dspKey === 'clock_shift') {
                                 const _isAllLanes = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7;
                                 const _isDrum     = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 0;
                                 if (_isAllLanes)
@@ -515,16 +503,14 @@ function _onMidiInternalImpl(data) {
                     const relPm = BANKS[S.activeBank].knobs[d1];
                     if (relPm.dspKey === 'nudge') {
                         S.bankParams[S.activeTrack][S.activeBank][d1] = 0;
-                        if (typeof host_module_set_param === 'function') {
-                            const _isAllLanesNdg = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7;
-                            const _isDrumNdg = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 0;
-                            if (_isAllLanesNdg)
-                                host_module_set_param('t' + S.activeTrack + '_all_lanes_nudge', '0');
-                            else if (_isDrumNdg)
-                                host_module_set_param('t' + S.activeTrack + '_l' + S.activeDrumLane[S.activeTrack] + '_nudge', '0');
-                            else
-                                host_module_set_param('t' + S.activeTrack + '_nudge', '0');
-                        }
+                        const _isAllLanesNdg = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7;
+                        const _isDrumNdg = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 0;
+                        if (_isAllLanesNdg)
+                            host_module_set_param('t' + S.activeTrack + '_all_lanes_nudge', '0');
+                        else if (_isDrumNdg)
+                            host_module_set_param('t' + S.activeTrack + '_l' + S.activeDrumLane[S.activeTrack] + '_nudge', '0');
+                        else
+                            host_module_set_param('t' + S.activeTrack + '_nudge', '0');
                     } else if (relPm.dspKey === 'clock_shift' || relPm.dspKey === 'beat_stretch') {
                         S.clockShiftTouchDelta = 0;
                         S.bankParams[S.activeTrack][S.activeBank][d1] = 0;
@@ -648,14 +634,12 @@ function _onMidiExternalImpl(data) {
         }
         if (S.heldStep >= 0 && !S.shiftHeld && !S.sessionView) {
             const ac = effectiveClip(t);
-            if (typeof host_module_set_param === 'function')
-                /* Replace auto-assigned note if step was empty on hold; otherwise additive */
-                if (S.stepWasEmpty && S.heldStepNotes.length > 0)
-                    host_module_set_param('t' + t + '_c' + ac + '_step_' + S.heldStep + '_set_notes', String(d1));
+            /* Replace auto-assigned note if step was empty on hold; otherwise additive */
+            if (S.stepWasEmpty && S.heldStepNotes.length > 0)
+                host_module_set_param('t' + t + '_c' + ac + '_step_' + S.heldStep + '_set_notes', String(d1));
                 else
                     host_module_set_param('t' + t + '_c' + ac + '_step_' + S.heldStep + '_toggle', d1 + ' ' + vel);
-            const raw = typeof host_module_get_param === 'function'
-                ? host_module_get_param('t' + t + '_c' + ac + '_step_' + S.heldStep + '_notes') : null;
+            const raw = host_module_get_param('t' + t + '_c' + ac + '_step_' + S.heldStep + '_notes');
             S.heldStepNotes = (raw && raw.trim().length > 0)
                 ? raw.trim().split(' ').map(Number).filter(function(n) { return n >= 0 && n <= 127; })
                 : [];
