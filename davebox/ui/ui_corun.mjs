@@ -192,6 +192,15 @@ export function schSlotMasksAllTracks(out) {
  * editor for the picked slot takes over OLED + jog + track buttons, while
  * pads / step buttons / knobs / transport stay with dAVEBOx. */
 export function openSchwungSlotEditor(t) {
+    /* Track view only (Josh, 2026-08-08). Session view repurposes the
+     * gestures a co-run needs to navigate and exit, so entering from there
+     * strands the session — observed on hardware as a stuck Move-native
+     * OLED. Guard the MECHANISM, not the menu entry: every door funnels
+     * through here. */
+    if (S.sessionView) {
+        showActionPopup('TRACK VIEW ONLY', 'Switch out of session', 'view to edit slots.');
+        return;
+    }
     if (S.trackRoute[t] !== 0) {  /* 0 = ROUTE_SCHWUNG; fmtRoute('Swng') */
         showActionPopup('NOT SCHWUNG-ROUTED', 'Set track route to', 'Schwung first.');
         return;
@@ -291,6 +300,11 @@ function cleanupAfterSchwungCoRun() {
  * 4 tracks — if trackChannel is outside 1-4 we just enter co-run without
  * an auto-tap and let the user pick the Move track manually. */
 export function enterMoveNativeCoRun(t) {
+    /* Track view only (Josh, 2026-08-08) — see openSchwungSlotEditor. */
+    if (S.sessionView) {
+        showActionPopup('TRACK VIEW ONLY', 'Switch out of session', 'view to edit synths.');
+        return;
+    }
     S.moveCoRunTrack = t;
     /* Re-push the padmap so the left-column lane pads become 0xFF (DSP on_midi
      * skips sounding them; Move handles sound+select via the injected pad).

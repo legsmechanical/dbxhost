@@ -360,6 +360,10 @@ export function markSoundDirty() { S.dirty = true; }
 /* ---- lifecycle ---- */
 
 export function soundEnter(track, slot) {
+    /* Track view only (Josh, 2026-08-08): the track flavour belongs to track
+     * view; session view has its own entry (soundEnterBuses). Guard the
+     * mechanism so every door is covered. */
+    if (GS.sessionView) return;
     S.active = true;
     S.enterSession = false;     /* called from TRACK view */
     /* A TRACK context is not a bus one. Without this the previous session's bus
