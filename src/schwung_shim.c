@@ -816,11 +816,27 @@ static void shadow_update_held_track(uint8_t cc, int pressed)
  * by (or spec'd as a service opened from) the primary module's own UI, so a
  * second gesture door was pure conflict surface. What remains hardware-side:
  *   Shift+Step13        -> Tools menu (the one host menu with no module home)
+ *   Shift+Step13 HELD   -> resume the most-recently-suspended tool (restored
+ *                          2026-08-09 evening per Josh — the one long-press
+ *                          that survives)
  *   Shift+Vol+Capture   -> Skipback (bare Shift+Capture belongs to the module)
  *   Shift+Sample        -> Quantized Sampler
  *   Shift+Vol+Back      -> suspend overtake;  Shift+Vol+JogClick -> exit
- *   Shift+Menu          -> screen reader (single = settings, double = toggle)
+ *   Shift+Menu          -> screen reader toggle (double press; single = no-op)
  * The old shadow_ui_trigger mode setting died with the gesture families. */
+#define LONG_PRESS_MS 500
+
+static struct timespec step13_press_time;
+static uint8_t step13_longpress_pending;
+static uint8_t step13_longpress_fired;
+
+static inline int long_press_elapsed(const struct timespec *start) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    int ms = (int)((now.tv_sec - start->tv_sec) * 1000 +
+                    (now.tv_nsec - start->tv_nsec) / 1000000);
+    return ms >= LONG_PRESS_MS;
+}
 
 /* ==========================================================================
  * Master Volume Sync - Read from display buffer when volume overlay shown
@@ -5927,16 +5943,32 @@ pre_done:
      * NOT while an overtake module runs — it owns the step LEDs (and delta-
      * caches them, so a shim write would desync its cache from the LED). */
     {
-        static int step15_lit = 0;
-        int want_step15 = shadow_shift_held &&
+        static int step13_lit = 0;
+        int want_step13 = shadow_shift_held &&
                           (!shadow_control || shadow_control->overtake_mode == 0);
-        if (want_step15 && !step15_lit) {
+        if (want_step13 && !step13_lit) {
             shadow_queue_led(0x0B, 0xB0, 28, 118);  /* Step 13 icon = LightGrey (Tools) */
-            step15_lit = 1;
-        } else if (!want_step15 && step15_lit) {
+            step13_lit = 1;
+        } else if (!want_step13 && step13_lit) {
             shadow_queue_led(0x0B, 0xB0, 28, 0);
-            step15_lit = 0;
+            step13_lit = 0;
         }
+    }
+
+    /* Shift+Step13 long-press threshold: held past 500ms with Shift still
+     * down -> resume the most-recently-suspended tool (the tap already
+     * opened the Tools menu; the hold skips it). */
+    if (step13_longpress_pending && !step13_longpress_fired &&
+        shadow_shift_held && shadow_control && shadow_ui_enabled &&
+        long_press_elapsed(&step13_press_time)) {
+        step13_longpress_fired = 1;
+        step13_longpress_pending = 0;
+        shadow_control->resume_last_tool = 1;
+        shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_TOOLS;
+        shadow_display_mode = 1;
+        shadow_control->display_mode = 1;
+        launch_shadow_ui();
+        shadow_log("Shift+Step13 long-press: resuming last tool");
     }
 
     /* Capture the SPI fd for use by overtake_midi_send_external */
@@ -7000,25 +7032,19 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
     }
     skip_shift_menu:
 
-    /* Deferred Shift+Menu single-press action (fires 400ms after first press if no double-click) */
+    /* Shift+Menu single press is a NO-OP (2026-08-09): its old destinations —
+     * Master FX, then screen-reader settings — both live in menus the primary
+     * module owns (sound mode FX buses; Host Settings -> Screen Reader). Only
+     * the double-press screen-reader TOGGLE survives, as the accessibility
+     * gesture that must work without navigating any menu. The pending flag
+     * still times out here so a lone press doesn't satisfy a later
+     * double-press window. */
     if (shift_menu_pending && shadow_control) {
         struct timespec sm_ts2;
         clock_gettime(CLOCK_MONOTONIC, &sm_ts2);
         uint64_t sm_now2 = (uint64_t)(sm_ts2.tv_sec * 1000) + (sm_ts2.tv_nsec / 1000000);
         if (sm_now2 - shift_menu_pending_ms >= 300) {
             shift_menu_pending = 0;
-            char log_msg[128];
-            snprintf(log_msg, sizeof(log_msg), "Shift+Menu single-press (deferred), shadow_ui_enabled=%s",
-                     shadow_ui_enabled ? "true" : "false");
-            shadow_log(log_msg);
-
-            /* Single press = screen reader settings. (The Master FX jump this
-             * used to perform when shadow UI was enabled DELETED 2026-08-09 —
-             * the FX buses live in the primary module's sound mode.) */
-            shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_SCREENREADER;
-            shadow_display_mode = 1;
-            shadow_control->display_mode = 1;
-            launch_shadow_ui();
         }
     }
 
@@ -7505,11 +7531,19 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                     shadow_display_mode = 1;
                     shadow_control->display_mode = 1;
                     launch_shadow_ui();  /* No-op if already running */
+                    /* Arm the long-press timer: held past 500ms resumes the
+                     * most-recently-suspended tool (periodic check above). */
+                    clock_gettime(CLOCK_MONOTONIC, &step13_press_time);
+                    step13_longpress_pending = 1;
+                    step13_longpress_fired = 0;
                     /* Block Step note from reaching Move */
                     uint8_t *sh = shadow + MIDI_IN_OFFSET;
                     sh[j] = 0; sh[j+1] = 0; sh[j+2] = 0; sh[j+3] = 0;
                     src[j] = 0; src[j+1] = 0; src[j+2] = 0; src[j+3] = 0;
                     shadow_log("Shift+Step13: opening tools");
+                }
+                if (d1 == 28 && (type == 0x80 || (type == 0x90 && d2 == 0))) {
+                    step13_longpress_pending = 0;
                 }
 
                 /* Shift + Step button while shadow UI is displayed = dismiss shadow UI

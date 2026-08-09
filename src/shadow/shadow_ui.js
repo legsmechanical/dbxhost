@@ -15149,7 +15149,14 @@ function enterToolsMenu() {
     _enterToolsMenu();
     try {
         const overtakes = scanForOvertakeModules();
-        const tools = Array.isArray(toolModules) ? toolModules : [];
+        let tools = Array.isArray(toolModules) ? toolModules : [];
+        /* Inside a live standalone session, hide standalone LAUNCHER entries:
+         * the session they launch is THIS one, selecting them is refused
+         * anyway, and listing one next to the session module's suspended
+         * entry showed the same product twice (P5 hands-on finding). */
+        if (standaloneSessionActive()) {
+            tools = tools.filter(function(t) { return !t.standalone; });
+        }
         /* A SUSPENDED tool must be resumable from this menu even when its
          * module is `hidden`. `hidden` suppresses BROWSING, not resuming —
          * without this, a parked hidden module has no visible way back, and

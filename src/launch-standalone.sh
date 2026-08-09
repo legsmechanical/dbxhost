@@ -35,6 +35,23 @@ setsid bash -c '
     exec >/dev/null 2>&1
     log "=== launch-standalone.sh started at $(date) ==="
     log "Binary: $BINARY"
+
+    # REFUSE BEFORE TOUCHING THE STACK. If a standalone session lock names a
+    # live process, a session is live -- or still mid-teardown, which is how
+    # this bit for real: a relaunch a few seconds after a session exit killed
+    # the stock stack, THEN the binary refused (lock still held by the
+    # tearing-down supervisor), and the recovery restart below raced the
+    # launcher-service respawn -> two MoveOriginals wedging SPI. The binary
+    # refusal is side-effect-free; this script must be too.
+    # Convention: /dev/shm/.<name>-session.lock, first bytes = holder PID.
+    for lk in /dev/shm/.*-session.lock; do
+        [ -f "$lk" ] || continue
+        pid=$(head -c 16 "$lk" | tr -cd "0-9")
+        if [ -n "$pid" ] && [ -d "/proc/$pid" ]; then
+            log "refusing: session lock $lk held by live pid $pid -- stack untouched"
+            exit 0
+        fi
+    done
     sleep 1
 
     # Two-phase kill
@@ -70,13 +87,18 @@ setsid bash -c '
     EXIT_CODE=$?
     log "Standalone exited with code $EXIT_CODE"
 
-    # Restart Move
+    # Restart Move -- unless something (the launcher-service respawn, or the
+    # session supervisor restore path) already brought it back. Starting a
+    # second instance wedges SPI.
     log "Restarting Move..."
     sleep 0.5
-    if [ -x "$LOG_HELPER" ]; then
+    if pidof MoveOriginal >/dev/null 2>&1; then
+        log "Move already running -- skipping restart"
+    elif [ -x "$LOG_HELPER" ]; then
         nohup sh -c "/opt/move/Move 2>&1 | /data/UserData/schwung/unified-log move-shim" >/dev/null 2>&1 &
+        log "Move restarted with PID $!"
     else
         nohup /opt/move/Move >/dev/null 2>&1 &
+        log "Move restarted with PID $!"
     fi
-    log "Move restarted with PID $!"
 ' _ "$BINARY" &
