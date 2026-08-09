@@ -2113,7 +2113,6 @@ var settingsToShadowConfig = map[string]string{
 var settingsToFeatures = map[string]string{
 	"display_mirror":         "display_mirror_enabled",
 	"link_audio_routing":     "link_audio_enabled",
-	"skipback_shortcut":      "skipback_require_volume",
 	"skipback_seconds":       "skipback_seconds",
 	"midi_indicator_enabled": "midi_indicator_enabled",
 }
@@ -2137,14 +2136,7 @@ func (app *App) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Map features.json into schema keys.
 	for schemaKey, featKey := range settingsToFeatures {
-		if schemaKey == "skipback_shortcut" {
-			// skipback_require_volume (bool) -> skipback_shortcut (0 or 1)
-			if jsonBool(ft, featKey, false) {
-				values[schemaKey] = float64(1)
-			} else {
-				values[schemaKey] = float64(0)
-			}
-		} else if schemaKey == "skipback_seconds" {
+		if schemaKey == "skipback_seconds" {
 			// skipback_seconds (number) — fall back to 30 if missing/invalid
 			if v, ok := ft[featKey]; ok {
 				if n, ok2 := v.(float64); ok2 {
@@ -2217,7 +2209,6 @@ func (app *App) handleConfigValues(w http.ResponseWriter, r *http.Request) {
 		values["screen_reader_pitch"] = float64(app.shm.TTSPitch())
 		values["screen_reader_volume"] = float64(app.shm.TTSVolume())
 		values["screen_reader_debounce"] = float64(app.shm.TTSDebounce())
-		values["skipback_shortcut"] = float64(boolToInt(app.shm.SkipbackRequireVolume()))
 		if s := app.shm.SkipbackSeconds(); s > 0 {
 			values["skipback_seconds"] = float64(s)
 		}
@@ -2274,9 +2265,6 @@ func (app *App) handleConfigSetSetting(w http.ResponseWriter, r *http.Request) {
 		// Feature flag — read, update, write features.json.
 		ft := readJSONFile(featuresPath)
 		switch key {
-		case "skipback_shortcut":
-			val, _ := strconv.Atoi(value)
-			ft[featKey] = val != 0
 		case "skipback_seconds":
 			val, err := strconv.Atoi(value)
 			if err != nil || val < 30 {
@@ -2401,8 +2389,6 @@ func (app *App) applyShmSetting(key, value string) {
 		if v, err := strconv.Atoi(value); err == nil {
 			app.shm.SetTTSDebounce(uint16(v))
 		}
-	case "skipback_shortcut":
-		app.shm.SetSkipbackRequireVolume(value != "0" && value != "false")
 	case "skipback_seconds":
 		if v, err := strconv.Atoi(value); err == nil {
 			if v < 30 {

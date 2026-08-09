@@ -26,19 +26,19 @@ generic, config-driven, nothing module-named.)*
 
 | # | Surface | Gesture(s) | Under SA today | Recommendation | Decision |
 |---|---------|-----------|----------------|----------------|----------|
-| 1 | Slot settings / editor | Shift+Vol+Track 1-4 · Track hold (500 ms) | Suspends davebox → host slot editor | **Absorb** — davebox has `Edit Slot...` (sound mode); hide both gestures | |
-| 2 | Master FX | Shift+Vol+Menu · Menu hold | Suspends davebox → host Master FX | **Absorb** — davebox `FX_BUSES` exposes master (+ sends) | |
-| 3 | Global Settings | Shift+Vol+Step2 · Shift+hold Step2 | Suspends davebox → host settings | **Keep, pruned** — velocity curve, aftertouch, latency comp have no davebox home; B13 pins/hides the baked rows | |
-| 4 | Tools menu / resume-tool | Shift+Vol+Step13 · Shift+Step13 (tap) · long-press = resume last tool · Shift+Vol+JogClick | Suspends davebox → a menu whose only entry IS davebox (post-B5) | **Hide under SA** — pointless once B5 lands; davebox has Quit + (B14) Suspend | |
+| 1 | Slot settings / editor | Shift+Vol+Track 1-4 · Track hold (500 ms) | Suspends davebox → host slot editor | **Absorb** — davebox has `Edit Slot...` (sound mode); hide both gestures | ✅ **DELETED 2026-08-09** (gestures gone host-wide) |
+| 2 | Master FX | Shift+Vol+Menu · Menu hold | Suspends davebox → host Master FX | **Absorb** — davebox `FX_BUSES` exposes master (+ sends) | ✅ **DELETED 2026-08-09** (incl. Shift+Menu single-press Master FX jump — that press is screen-reader settings now) |
+| 3 | Global Settings | Shift+Vol+Step2 · Shift+hold Step2 | Suspends davebox → host settings | **Keep, pruned** — velocity curve, aftertouch, latency comp have no davebox home; B13 pins/hides the baked rows | ✅ **Gestures DELETED 2026-08-09**; the menu survives as the `global_settings` overlay SERVICE opened from davebox's menu (`Host Settings...`) |
+| 4 | Tools menu / resume-tool | Shift+Vol+Step13 · Shift+Step13 (tap) · long-press = resume last tool · Shift+Vol+JogClick | Suspends davebox → a menu whose only entry IS davebox (post-B5) | **Hide under SA** — pointless once B5 lands; davebox has Quit + (B14) Suspend | ✅ **Consolidated to Shift+Step15 (tap) 2026-08-09** (Josh); Shift+Vol+JogClick stays as overtake EXIT; long-press resume dropped (resume via the menu) |
 | 5 | SA teardown | Shift+Back | Ends the SA session → stock Move (`exit-to-stock.sh`) | **Keep** — the documented failsafe; pairs with the hard-reboot guarantee (G4) | |
-| 6 | Quantized Sampler | Shift+Sample | Host sampler overlay over davebox | **Keep** — no davebox equivalent; document | |
-| 7 | Skipback | Shift+Capture | Host skipback capture | **Keep** — same | |
+| 6 | Quantized Sampler | Shift+Sample | Host sampler overlay over davebox | **Keep** — no davebox equivalent; document | ✅ **Keep + FIXED 2026-08-09**: arm was gated `!shadow_display_mode` (dead under SA); now arms during overtake, and its controls pass the overtake shortcut-skip |
+| 7 | Skipback | Shift+Capture | Host skipback capture | **Keep** — same | ✅ **MOVED to Shift+Vol+Capture 2026-08-09** — bare Shift+Capture conflicted with davebox discard-captured-input; require-volume is now the only mode |
 | 8 | Set pages | Shift+Vol+Left/Right | Stash/swap whole set libraries, restarts Move | **Hide under SA** — collides with the C1 set story; settle in WS-4 | |
 | 9 | Slot mute/solo/bypass | Mute+Track 1-4 · Shift+Mute+Track · Mute+JogClick (bypass) | Host slot mute/solo; Mute (CC 88) also passes to Move | **Decide with the co-run input family** — davebox has its own mute model; double-meaning risk | |
 | 10 | Master volume | CC 79 (+ knob touch note 8) | Passes to Move natively; davebox declares `claims_master_knob`; runtime `vol_block` claim exists for tools that want the knob | **Already davebox-consistent** — document only | |
 | 11 | Edit CCs | Undo 56 / Copy 60 / Delete 119 | davebox raises `edit_cc_block` while hosting a canvas; otherwise pass to Move | **Already davebox-consistent** — document only | |
 | 12 | Co-run groups | `CORUN_GRP_*` cession masks | davebox chooses per-group; side (clip) buttons currently ceded | **Decided 08-04**: davebox KEEPS the side buttons' input (clip select + modifier gestures); implementation is davebox-side (`DAVEBOX_CORUN_KEEP_MASK`) | ✅ |
-| 13 | Shadow-UI trigger setting | `shadow_ui_trigger` (Both / Long Press / Shift+Vol) | Selects which of the above gesture families is armed | **Follows the rulings** — moot for absorbed/hidden rows; prune the setting if nothing configurable remains | |
+| 13 | Shadow-UI trigger setting | `shadow_ui_trigger` (Both / Long Press / Shift+Vol) | Selects which of the above gesture families is armed | **Follows the rulings** — moot for absorbed/hidden rows; prune the setting if nothing configurable remains | ✅ **DELETED 2026-08-09** (setting, bindings, features.json key, Shortcuts page; SHM byte reserved) |
 
 ## Notes per row
 

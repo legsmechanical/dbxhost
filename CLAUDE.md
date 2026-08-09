@@ -337,21 +337,21 @@ Shim intercepts hardware I/O to mix shadow audio with Move's output.
 
 ### Shortcuts
 
-Shadow UI access gated by **Global Settings → Shortcuts → Shadow UI Trigger** (`shadow_ui_trigger` in `features.json`): `Both` (default) / `Long Press` / `Shift+Vol`.
+**The jump-gesture families were DELETED 2026-08-09** (Josh's ruling: no gesture may open a
+menu that already exists — or is spec'd to exist — in the primary module's own UI). The old
+`shadow_ui_trigger` mode setting, its Global Settings "Shortcuts" page, and the Shift+Vol /
+long-press entries for slot settings, Master FX, and Global Settings are gone: slot settings
+and the FX buses live in the module's sound mode; Global Settings is opened from the module's
+menu (`Host Settings...` → the `global_settings` overlay service). What remains hardware-side:
 
-**Shift+Vol combos** (modes Both / Shift+Vol):
-- **Shift+Vol+Track 1–4** — open shadow / jump to slot settings
-- **Shift+Vol+Menu** — Master FX
-- **Shift+Vol+Step2** — Global Settings
-- **Shift+Vol+Step13** / **Shift+Vol+Jog Click** — Tools menu (overtake modules below the divider). Jog-click also exits an active overtake module.
-- **Shift+Sample** — Quantized Sampler
-- **Shift+Capture** — Skipback (last 30 s)
-
-**Long-press** (modes Both / Long Press):
-- Hold Track 1–4 (500ms) → slot editor
-- Hold Menu (500ms) → Master FX
-- Shift + hold Step 2 (500ms) → Global Settings
-- Shift + Step 13 (immediate) → Tools menu
+- **Shift+Step15** — Tools menu (the one host menu with no module home; also the resume path
+  for a suspended tool). Step 15's icon lights while Shift is held.
+- **Shift+Sample** — Quantized Sampler (arms during an overtake session too — the old
+  `!shadow_display_mode` gate that killed it under SA is fixed).
+- **Shift+Vol+Capture** — Skipback. ⚠ Volume touch REQUIRED: bare Shift+Capture belongs to
+  the primary module (davebox uses it for discard-captured-input, Move parity).
+- **Shift+Vol+Jog Click** — exit overtake · **Shift+Vol+Back** — suspend overtake.
+- **Shift+Menu** — screen reader (single press = settings, double press = toggle).
 - Tap Track / Menu while shadow UI shown → dismiss
 
 Long-press is suppressed once the volume knob is touched during a track press (so Track-hold + knob adjusts track volume without opening shadow UI). See `track_vol_touched_during_press[]` in `schwung_shim.c`.

@@ -1738,79 +1738,9 @@ static JSValue js_midi_indicator_get(JSContext *ctx, JSValueConst this_val,
     return JS_NewBool(ctx, shadow_control->midi_indicator_enabled != 0);
 }
 
-/* shadow_ui_trigger value names. Index matches the uint8 stored in shadow_control. */
-static const char *SHADOW_UI_TRIGGER_NAMES[3] = {"long_press", "shift_vol", "both"};
-
-static int clamp_shadow_ui_trigger(int v) {
-    if (v < 0) return 0;
-    if (v > 2) return 2;
-    return v;
-}
-
-/* shadow_ui_trigger_set(mode) - Write to shared memory + persist to features.json.
- * mode: 0=long_press, 1=shift_vol, 2=both. */
-static JSValue js_shadow_ui_trigger_set(JSContext *ctx, JSValueConst this_val,
-                                        int argc, JSValueConst *argv) {
-    (void)this_val;
-    if (argc < 1 || !shadow_control) return JS_UNDEFINED;
-
-    int mode = 0;
-    JS_ToInt32(ctx, &mode, argv[0]);
-    mode = clamp_shadow_ui_trigger(mode);
-    shadow_control->shadow_ui_trigger = (uint8_t)mode;
-
-    /* Persist to features.json. Any legacy "long_press_shadow" key lingers
-     * harmlessly — load_feature_config prefers shadow_ui_trigger, and
-     * install.sh rewrites features.json on next install. */
-    char quoted_val[32];
-    snprintf(quoted_val, sizeof(quoted_val), "\"%s\"", SHADOW_UI_TRIGGER_NAMES[mode]);
-    features_json_set("shadow_ui_trigger", quoted_val);
-
-    return JS_UNDEFINED;
-}
-
-/* shadow_ui_trigger_set_shm(mode) - Write to shared memory ONLY (no file I/O).
- * Safe to call from tick() for web→device config sync. */
-static JSValue js_shadow_ui_trigger_set_shm(JSContext *ctx, JSValueConst this_val,
-                                            int argc, JSValueConst *argv) {
-    (void)this_val;
-    if (argc < 1 || !shadow_control) return JS_UNDEFINED;
-    int mode = 0;
-    JS_ToInt32(ctx, &mode, argv[0]);
-    shadow_control->shadow_ui_trigger = (uint8_t)clamp_shadow_ui_trigger(mode);
-    return JS_UNDEFINED;
-}
-
-/* shadow_ui_trigger_get() -> int (0=long_press, 1=shift_vol, 2=both) */
-static JSValue js_shadow_ui_trigger_get(JSContext *ctx, JSValueConst this_val,
-                                        int argc, JSValueConst *argv) {
-    (void)this_val; (void)argc; (void)argv;
-    if (!shadow_control) return JS_NewInt32(ctx, 2);
-    return JS_NewInt32(ctx, clamp_shadow_ui_trigger(shadow_control->shadow_ui_trigger));
-}
-
-/* skipback_shortcut_set(require_volume) - Write to shared memory + persist to features.json */
-static JSValue js_skipback_shortcut_set(JSContext *ctx, JSValueConst this_val,
-                                        int argc, JSValueConst *argv) {
-    (void)this_val;
-    if (argc < 1 || !shadow_control) return JS_UNDEFINED;
-
-    int require_volume = 0;
-    JS_ToInt32(ctx, &require_volume, argv[0]);
-    shadow_control->skipback_require_volume = require_volume ? 1 : 0;
-
-    features_json_set("skipback_require_volume", require_volume ? "true" : "false");
-
-    return JS_UNDEFINED;
-}
-
-/* skipback_shortcut_get() -> bool - Read from shared memory */
-static JSValue js_skipback_shortcut_get(JSContext *ctx, JSValueConst this_val,
-                                        int argc, JSValueConst *argv) {
-    (void)this_val; (void)argc; (void)argv;
-    if (!shadow_control) return JS_NewBool(ctx, 0);
-    return JS_NewBool(ctx, shadow_control->skipback_require_volume != 0);
-}
+/* (shadow_ui_trigger_* and skipback_shortcut_* bindings RETIRED 2026-08-09:
+ * the jump-gesture families the trigger mode selected are deleted, and
+ * skipback is fixed on Shift+Vol+Capture.) */
 
 /* skipback_seconds_set(seconds) - Persist to features.json + write SHM.
  * Valid values: 30, 60, 120, 180, 240, 300. The shim watches SHM and
@@ -2732,13 +2662,8 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     JS_SetPropertyStr(ctx, global_obj, "midi_indicator_get", JS_NewCFunction(ctx, js_midi_indicator_get, "midi_indicator_get", 0));
 
     /* Register long-press shadow shortcut functions */
-    JS_SetPropertyStr(ctx, global_obj, "shadow_ui_trigger_set", JS_NewCFunction(ctx, js_shadow_ui_trigger_set, "shadow_ui_trigger_set", 1));
-    JS_SetPropertyStr(ctx, global_obj, "shadow_ui_trigger_get", JS_NewCFunction(ctx, js_shadow_ui_trigger_get, "shadow_ui_trigger_get", 0));
-    JS_SetPropertyStr(ctx, global_obj, "shadow_ui_trigger_set_shm", JS_NewCFunction(ctx, js_shadow_ui_trigger_set_shm, "shadow_ui_trigger_set_shm", 1));
 
     /* Register skipback shortcut functions */
-    JS_SetPropertyStr(ctx, global_obj, "skipback_shortcut_set", JS_NewCFunction(ctx, js_skipback_shortcut_set, "skipback_shortcut_set", 1));
-    JS_SetPropertyStr(ctx, global_obj, "skipback_shortcut_get", JS_NewCFunction(ctx, js_skipback_shortcut_get, "skipback_shortcut_get", 0));
     JS_SetPropertyStr(ctx, global_obj, "skipback_seconds_set", JS_NewCFunction(ctx, js_skipback_seconds_set, "skipback_seconds_set", 1));
     JS_SetPropertyStr(ctx, global_obj, "skipback_seconds_get", JS_NewCFunction(ctx, js_skipback_seconds_get, "skipback_seconds_get", 0));
 

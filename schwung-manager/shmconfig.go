@@ -143,8 +143,6 @@ func (s *ShmConfig) TTSDebounce() uint16       { return s.getU16(offTTSDebounce)
 func (s *ShmConfig) SetTTSDebounce(v uint16)   { s.setU16(offTTSDebounce, v) }
 
 
-func (s *ShmConfig) SkipbackRequireVolume() bool     { return s.getU8(offSkipbackReqVol) != 0 }
-func (s *ShmConfig) SetSkipbackRequireVolume(v bool)  { s.setU8(offSkipbackReqVol, boolU8(v)) }
 
 func (s *ShmConfig) SkipbackSeconds() uint16          { return s.getU16(offSkipbackSeconds) }
 func (s *ShmConfig) SetSkipbackSeconds(v uint16)      { s.setU16(offSkipbackSeconds, v) }

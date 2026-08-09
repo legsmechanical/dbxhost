@@ -160,11 +160,11 @@ static volatile float shadow_master_volume;  /* Defined later */
 static bool shadow_ui_enabled = true;      /* Shadow UI enabled by default */
 static bool display_mirror_enabled = false; /* Display mirror off by default */
 static bool ext_midi_remap_feature_enabled = true; /* Cable-2 channel remap on by default */
-static bool skipback_require_volume = false; /* false=Shift+Capture, true=Shift+Vol+Capture */
 static bool midi_indicator_enabled_setting = false; /* Off by default; persisted in features.json */
 static int skipback_seconds_setting = SKIPBACK_DEFAULT_SECONDS; /* Skipback rolling buffer length */
-/* Shadow UI trigger mode: 0=long-press only, 1=Shift+Vol only, 2=both. Default=both. */
-static uint8_t shadow_ui_trigger_setting = 2;
+/* (skipback_require_volume and shadow_ui_trigger settings RETIRED 2026-08-09:
+ * skipback is fixed on Shift+Vol+Capture and the jump-gesture families whose
+ * trigger mode the setting selected are deleted.) */
 
 /* Skipback resize hook — runs on the shim worker (off the audio path). */
 static void shim_hook_skipback_resize(void) {
@@ -809,42 +809,18 @@ static void shadow_update_held_track(uint8_t cc, int pressed)
     }
 }
 
-/* Shadow-UI trigger gating.
- * Read live from shadow_control->shadow_ui_trigger so JS toggles take effect immediately.
- * Falls back to the boot-time setting if shadow_control isn't mapped yet. */
-#define SHADOW_UI_TRIGGER_MODE() \
-    (shadow_control ? shadow_control->shadow_ui_trigger : shadow_ui_trigger_setting)
-#define LONG_PRESS_ACTIVE() (SHADOW_UI_TRIGGER_MODE() == 0 || SHADOW_UI_TRIGGER_MODE() == 2)
-#define SHIFT_VOL_ACTIVE()  (SHADOW_UI_TRIGGER_MODE() == 1 || SHADOW_UI_TRIGGER_MODE() == 2)
-#define LONG_PRESS_MS 500
-
-static struct timespec track_press_time[4];
-static uint8_t track_longpress_pending[4];
-static uint8_t track_longpress_fired[4];
-/* Set if the volume knob is touched at any point while a Track button is held.
- * Once set, that track's long-press is suppressed for the remainder of the press,
- * so adjusting a track's volume never opens the shadow UI. Cleared on press/release. */
-static uint8_t track_vol_touched_during_press[4];
-
-static struct timespec menu_press_time;
-static uint8_t menu_longpress_pending;
-static uint8_t menu_longpress_fired;
-
-static struct timespec step2_press_time;
-static uint8_t step2_longpress_pending;
-static uint8_t step2_longpress_fired;
-
-static struct timespec step13_press_time;
-static uint8_t step13_longpress_pending;
-static uint8_t step13_longpress_fired;
-
-static inline int long_press_elapsed(const struct timespec *start) {
-    struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    int ms = (int)((now.tv_sec - start->tv_sec) * 1000 +
-                    (now.tv_nsec - start->tv_nsec) / 1000000);
-    return ms >= LONG_PRESS_MS;
-}
+/* Shadow-UI shortcut gating.
+ *
+ * The Shift+Vol / long-press jump-gesture families (slot settings, Master FX,
+ * Global Settings, Tools) were DELETED 2026-08-09: every destination is owned
+ * by (or spec'd as a service opened from) the primary module's own UI, so a
+ * second gesture door was pure conflict surface. What remains hardware-side:
+ *   Shift+Step15        -> Tools menu (the one host menu with no module home)
+ *   Shift+Vol+Capture   -> Skipback (bare Shift+Capture belongs to the module)
+ *   Shift+Sample        -> Quantized Sampler
+ *   Shift+Vol+Back      -> suspend overtake;  Shift+Vol+JogClick -> exit
+ *   Shift+Menu          -> screen reader (single = settings, double = toggle)
+ * The old shadow_ui_trigger mode setting died with the gesture families. */
 
 /* ==========================================================================
  * Master Volume Sync - Read from display buffer when volume overlay shown
@@ -1025,19 +1001,6 @@ static void load_feature_config(void)
         }
     }
 
-    /* Parse skipback_require_volume (defaults to false) */
-    const char *skipback_key = strstr(config_buf, "\"skipback_require_volume\"");
-    if (skipback_key) {
-        const char *colon = strchr(skipback_key, ':');
-        if (colon) {
-            colon++;
-            while (*colon == ' ' || *colon == '\t') colon++;
-            if (strncmp(colon, "true", 4) == 0) {
-                skipback_require_volume = true;
-            }
-        }
-    }
-
     /* Parse midi_indicator_enabled (defaults to false) */
     const char *midi_ind_key = strstr(config_buf, "\"midi_indicator_enabled\"");
     if (midi_ind_key) {
@@ -1047,35 +1010,6 @@ static void load_feature_config(void)
             while (*colon == ' ' || *colon == '\t') colon++;
             if (strncmp(colon, "true", 4) == 0) {
                 midi_indicator_enabled_setting = true;
-            }
-        }
-    }
-
-    /* Parse shadow_ui_trigger ("long_press" | "shift_vol" | "both"; default "both").
-     * Legacy: if the string key is missing, fall back to bool "long_press_shadow"
-     * (true → both, false → shift_vol). */
-    const char *trigger_key = strstr(config_buf, "\"shadow_ui_trigger\"");
-    if (trigger_key) {
-        const char *colon = strchr(trigger_key, ':');
-        if (colon) {
-            colon++;
-            while (*colon == ' ' || *colon == '\t' || *colon == '"') colon++;
-            if (strncmp(colon, "long_press", 10) == 0) {
-                shadow_ui_trigger_setting = 0;
-            } else if (strncmp(colon, "shift_vol", 9) == 0) {
-                shadow_ui_trigger_setting = 1;
-            } else {
-                shadow_ui_trigger_setting = 2;
-            }
-        }
-    } else {
-        const char *legacy_key = strstr(config_buf, "\"long_press_shadow\"");
-        if (legacy_key) {
-            const char *colon = strchr(legacy_key, ':');
-            if (colon) {
-                colon++;
-                while (*colon == ' ' || *colon == '\t') colon++;
-                shadow_ui_trigger_setting = (strncmp(colon, "false", 5) == 0) ? 1 : 2;
             }
         }
     }
@@ -1095,17 +1029,13 @@ static void load_feature_config(void)
         }
     }
 
-    static const char *trigger_names[] = {"long_press", "shift_vol", "both"};
-    const char *trigger_name = trigger_names[shadow_ui_trigger_setting < 3 ? shadow_ui_trigger_setting : 2];
     char log_msg[256];
     snprintf(log_msg, sizeof(log_msg),
-             "Features: shadow_ui=%s, link_audio=%s, display_mirror=%s, skipback=%s, skipback_buf=%ds, ui_trigger=%s",
+             "Features: shadow_ui=%s, link_audio=%s, display_mirror=%s, skipback_buf=%ds",
              shadow_ui_enabled ? "enabled" : "disabled",
              link_audio.enabled ? "enabled" : "disabled",
              display_mirror_enabled ? "enabled" : "disabled",
-             skipback_require_volume ? "Shift+Vol+Capture" : "Shift+Capture",
-             skipback_seconds_setting,
-             trigger_name);
+             skipback_seconds_setting);
     shadow_log(log_msg);
     free(config_buf);
 }
@@ -4534,9 +4464,7 @@ static void shim_init_subsystems(void)
     }
     if (shadow_control) {
         shadow_control->display_mirror = display_mirror_enabled ? 1 : 0;
-        shadow_control->skipback_require_volume = skipback_require_volume ? 1 : 0;
         shadow_control->skipback_seconds = (uint16_t)skipback_seconds_setting;
-        shadow_control->shadow_ui_trigger = shadow_ui_trigger_setting;
         shadow_control->midi_indicator_enabled = midi_indicator_enabled_setting ? 1 : 0;
         shadow_control->speaker_active = 1; /* assume speaker at boot; CC 115 will correct */
         /* Speaker-EQ auto stability clock starts now; EQ stays off until a
@@ -5992,103 +5920,22 @@ pre_done:
     shadow_check_screenreader_announcements();
     TIME_SECTION_END(spi_screenreader_sum, spi_screenreader_max);
 
-    /* === SHORTCUT INDICATOR LEDS ===
-     * Step 2 icon (CC 17) = Settings; Step 13 icon (CC 28) = Tools. Both
-     * targets are reachable in either trigger mode (Shift+Vol+Step{2,13}
-     * and long-press Shift+Step{2,13}), so light both whenever Shift is
-     * held — regardless of whether the volume knob is also touched. */
+    /* === SHORTCUT INDICATOR LED ===
+     * Step 15 icon (CC 30) = Tools, lit while Shift is held. The Settings
+     * icon died with the Global Settings gesture (its menu is opened from
+     * the primary module's own menu as a service).
+     * NOT while an overtake module runs — it owns the step LEDs (and delta-
+     * caches them, so a shim write would desync its cache from the LED). */
     {
-        static int step2_lit = 0;
-        static int step13_lit = 0;
-
-        int want_shiftvol = SHIFT_VOL_ACTIVE() && shadow_shift_held && shadow_volume_knob_touched;
-        int want_longpress = LONG_PRESS_ACTIVE() && shadow_shift_held && !shadow_volume_knob_touched;
-        int want_step2 = want_shiftvol || want_longpress;
-        int want_step13 = want_shiftvol || want_longpress;
-
-        if (want_step2 && !step2_lit) {
-            shadow_queue_led(0x0B, 0xB0, 17, 118);  /* Step 2 icon = LightGrey (Settings) */
-            step2_lit = 1;
-        } else if (!want_step2 && step2_lit) {
-            shadow_queue_led(0x0B, 0xB0, 17, 0);
-            step2_lit = 0;
-        }
-
-        if (want_step13 && !step13_lit) {
-            shadow_queue_led(0x0B, 0xB0, 28, 118);  /* Step 13 icon = LightGrey (Tools) */
-            step13_lit = 1;
-        } else if (!want_step13 && step13_lit) {
-            shadow_queue_led(0x0B, 0xB0, 28, 0);
-            step13_lit = 0;
-        }
-    }
-
-    /* Long-press threshold checks */
-    if (LONG_PRESS_ACTIVE() && shadow_ui_enabled && shadow_control) {
-        /* Sticky suppression: if the volume knob is touched during a track hold,
-         * that track's long-press is killed for the rest of the press so that
-         * adjusting a track's volume never opens the shadow UI. */
-        if (shadow_volume_knob_touched) {
-            for (int i = 0; i < 4; i++) {
-                if (track_longpress_pending[i]) track_vol_touched_during_press[i] = 1;
-            }
-        }
-        /* Track buttons */
-        for (int i = 0; i < 4; i++) {
-            if (track_longpress_pending[i] && !track_longpress_fired[i] &&
-                !shadow_shift_held && !shadow_volume_knob_touched &&
-                !track_vol_touched_during_press[i] &&
-                long_press_elapsed(&track_press_time[i])) {
-                track_longpress_fired[i] = 1;
-                track_longpress_pending[i] = 0;
-                shadow_control->ui_slot = (uint8_t)i;
-                shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_SLOT;
-                if (!shadow_display_mode) {
-                    shadow_display_mode = 1;
-                    shadow_control->display_mode = 1;
-                    launch_shadow_ui();
-                }
-                shadow_log("Track long-press: opening slot settings");
-            }
-        }
-        /* Menu button */
-        if (menu_longpress_pending && !menu_longpress_fired &&
-            !shadow_shift_held && !shadow_volume_knob_touched &&
-            long_press_elapsed(&menu_press_time)) {
-            menu_longpress_fired = 1;
-            menu_longpress_pending = 0;
-            shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_MASTER_FX;
-            if (!shadow_display_mode) {
-                shadow_display_mode = 1;
-                shadow_control->display_mode = 1;
-                launch_shadow_ui();
-            }
-            shadow_log("Menu long-press: opening master FX");
-        }
-        /* Shift + Step 2 */
-        if (step2_longpress_pending && !step2_longpress_fired &&
-            shadow_shift_held && !shadow_volume_knob_touched &&
-            long_press_elapsed(&step2_press_time)) {
-            step2_longpress_fired = 1;
-            step2_longpress_pending = 0;
-            shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_SETTINGS;
-            shadow_display_mode = 1;
-            shadow_control->display_mode = 1;
-            launch_shadow_ui();
-            shadow_log("Shift+Step2 long-press: opening global settings");
-        }
-        /* Shift + Step 13 long-press: resume most-recently-suspended tool */
-        if (step13_longpress_pending && !step13_longpress_fired &&
-            shadow_shift_held && !shadow_volume_knob_touched &&
-            long_press_elapsed(&step13_press_time)) {
-            step13_longpress_fired = 1;
-            step13_longpress_pending = 0;
-            shadow_control->resume_last_tool = 1;
-            shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_TOOLS;
-            shadow_display_mode = 1;
-            shadow_control->display_mode = 1;
-            launch_shadow_ui();
-            shadow_log("Shift+Step13 long-press: resuming last tool");
+        static int step15_lit = 0;
+        int want_step15 = shadow_shift_held &&
+                          (!shadow_control || shadow_control->overtake_mode == 0);
+        if (want_step15 && !step15_lit) {
+            shadow_queue_led(0x0B, 0xB0, 30, 118);  /* Step 15 icon = LightGrey (Tools) */
+            step15_lit = 1;
+        } else if (!want_step15 && step15_lit) {
+            shadow_queue_led(0x0B, 0xB0, 30, 0);
+            step15_lit = 0;
         }
     }
 
@@ -6974,17 +6821,18 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                                 filter = 1;
                             }
                         }
-                        /* Filter Menu unless long-press mode dismisses shadow on tap */
-                        if (d1 == CC_MENU && !LONG_PRESS_ACTIVE()) {
+                        /* Filter Menu while shadow UI is shown */
+                        if (d1 == CC_MENU) {
                             filter = 1;
                         }
                         /* Filter knob CCs when shift held */
                         if (d1 >= CC_KNOB1 && d1 <= CC_KNOB8) {
                             filter = 1;
                         }
-                        /* Filter Menu and Jog Click CCs when Shift+Volume shortcut is active */
-                        if ((d1 == CC_MENU || d1 == CC_JOG_CLICK) &&
-                            SHIFT_VOL_ACTIVE() && shadow_shift_held && shadow_volume_knob_touched) {
+                        /* Filter Jog Click while the Shift+Vol chord is held
+                         * (exit combo must not leak a click to Move) */
+                        if (d1 == CC_JOG_CLICK &&
+                            shadow_shift_held && shadow_volume_knob_touched) {
                             filter = 1;
                         }
                     }
@@ -7164,21 +7012,13 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                      shadow_ui_enabled ? "true" : "false");
             shadow_log(log_msg);
 
-            if (shadow_ui_enabled) {
-                if (!shadow_display_mode) {
-                    shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_MASTER_FX;
-                    shadow_display_mode = 1;
-                    shadow_control->display_mode = 1;
-                    launch_shadow_ui();
-                } else {
-                    shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_MASTER_FX;
-                }
-            } else {
-                shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_SCREENREADER;
-                shadow_display_mode = 1;
-                shadow_control->display_mode = 1;
-                launch_shadow_ui();
-            }
+            /* Single press = screen reader settings. (The Master FX jump this
+             * used to perform when shadow UI was enabled DELETED 2026-08-09 —
+             * the FX buses live in the primary module's sound mode.) */
+            shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_SCREENREADER;
+            shadow_display_mode = 1;
+            shadow_control->display_mode = 1;
+            launch_shadow_ui();
         }
     }
 
@@ -7200,12 +7040,12 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                 if (s_d1 == CC_RECORD && (shadow_shift_held || sampler_state != SAMPLER_IDLE)) {
                     sh_midi[j] = 0; sh_midi[j+1] = 0; sh_midi[j+2] = 0; sh_midi[j+3] = 0;
                 }
-                /* Block Shift+Capture from reaching Move (only when skipback would trigger) */
-                if (s_d1 == CC_CAPTURE && shadow_shift_held) {
-                    int require_vol = shadow_control ? shadow_control->skipback_require_volume : 0;
-                    if (!require_vol || shadow_volume_knob_touched) {
-                        sh_midi[j] = 0; sh_midi[j+1] = 0; sh_midi[j+2] = 0; sh_midi[j+3] = 0;
-                    }
+                /* Block Shift+Vol+Capture from reaching Move (only when
+                 * skipback would trigger; bare Shift+Capture passes — it
+                 * belongs to the primary module). */
+                if (s_d1 == CC_CAPTURE && shadow_shift_held &&
+                    shadow_volume_knob_touched) {
+                    sh_midi[j] = 0; sh_midi[j+1] = 0; sh_midi[j+2] = 0; sh_midi[j+3] = 0;
                 }
                 /* Block jog/back while sampler UI is fullscreen and active */
                 if (sampler_state != SAMPLER_IDLE && sampler_fullscreen_active) {
@@ -7376,13 +7216,24 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                     }
                 }
 
-                /* In overtake mode, skip all shortcuts except Shift+Vol+Jog Click (exit)
-                 * and Shift+Vol+Back (suspend) */
-                if (overtake_active &&
-                    !(d1 == CC_JOG_CLICK && shadow_shift_held && shadow_volume_knob_touched) &&
-                    !(d1 == CC_BACK && shadow_shift_held && shadow_volume_knob_touched) &&
-                    !(d1 == CC_CAPTURE && shadow_shift_held)) {
-                    continue;
+                /* In overtake mode, skip all shortcuts except:
+                 *   Shift+Vol+Jog Click (exit) / Shift+Vol+Back (suspend)
+                 *   Shift+Vol+Capture (skipback — bare Shift+Capture belongs
+                 *   to the overtake module)
+                 *   the Quantized Sampler's controls: Shift+Sample (arm/
+                 *   resume/cancel), Sample while engaged (stop), and jog/
+                 *   jog-click/Back while its fullscreen menu is up. */
+                {
+                    int sampler_engaged = (sampler_state != SAMPLER_IDLE);
+                    if (overtake_active &&
+                        !(d1 == CC_RECORD && (shadow_shift_held || sampler_engaged)) &&
+                        !((d1 == CC_JOG_WHEEL || d1 == CC_JOG_CLICK || d1 == CC_BACK) &&
+                          sampler_engaged && sampler_fullscreen_active) &&
+                        !(d1 == CC_JOG_CLICK && shadow_shift_held && shadow_volume_knob_touched) &&
+                        !(d1 == CC_BACK && shadow_shift_held && shadow_volume_knob_touched) &&
+                        !(d1 == CC_CAPTURE && shadow_shift_held && shadow_volume_knob_touched)) {
+                        continue;
+                    }
                 }
                 /* DEBUG: log CCs while shift held */
                 if (shadow_shift_held && d2 > 0) {
@@ -7421,23 +7272,8 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                             }
                         }
 
-                        /* Shift + Volume + Track = jump to that slot's edit screen (if shadow UI enabled) */
-                        if (SHIFT_VOL_ACTIVE() && shadow_shift_held && shadow_volume_knob_touched && shadow_control && shadow_ui_enabled) {
-                            shadow_block_plain_volume_hide_until_release = 1;
-                            shadow_control->ui_slot = new_slot;
-                            shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_SLOT;
-                            if (!shadow_display_mode) {
-                                /* From Move mode: launch shadow UI */
-                                shadow_display_mode = 1;
-                                shadow_control->display_mode = 1;
-                                launch_shadow_ui();
-                            }
-                            /* If already in shadow mode, flag will be picked up by tick() */
-                            /* Block Track CC from reaching Move */
-                            uint8_t *sh = shadow + MIDI_IN_OFFSET;
-                            sh[j] = 0; sh[j+1] = 0; sh[j+2] = 0; sh[j+3] = 0;
-                            src[j] = 0; src[j+1] = 0; src[j+2] = 0; src[j+3] = 0;
-                        }
+                        /* (Shift+Vol+Track slot-settings jump DELETED 2026-08-09 —
+                         * slot settings live in the primary module's sound mode.) */
 
                         /* Shift + Track (without Volume / Mute) while shadow UI is displayed = dismiss shadow UI
                          * and let the Track CC pass through to Move for native track settings.
@@ -7452,38 +7288,20 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                         }
                     }
 
-                    /* Long-press detection for Track buttons */
-                    if (LONG_PRESS_ACTIVE() && shadow_ui_enabled) {
-                        int lp_slot = 43 - d1;
-                        if (pressed) {
-                            /* Start long-press timer */
-                            clock_gettime(CLOCK_MONOTONIC, &track_press_time[lp_slot]);
-                            track_longpress_pending[lp_slot] = 1;
-                            track_longpress_fired[lp_slot] = 0;
-                            track_vol_touched_during_press[lp_slot] =
-                                shadow_volume_knob_touched ? 1 : 0;
-                        } else {
-                            /* Released before threshold — if shadow UI displayed, dismiss it.
-                             * Skip if Shift+Vol is held (Shift+Vol+Track opens shadow;
-                             * releasing Track shouldn't immediately dismiss it).
-                             * Skip if vol was touched during the press (volume tweak gesture
-                             * shouldn't side-effect into dismissing shadow UI).
-                             * Skip if Mute is held — Mute+Track (slot mute) and
-                             * Shift+Mute+Track (solo) are modifier combos; releasing
-                             * Track must not dismiss the shadow UI, or the trailing
-                             * Mute release leaks to Move firmware and latches Mute. */
-                            if (track_longpress_pending[lp_slot] && !track_longpress_fired[lp_slot] &&
-                                shadow_display_mode && shadow_control &&
-                                !track_vol_touched_during_press[lp_slot] &&
-                                !shadow_mute_held &&
-                                !(shadow_shift_held && shadow_volume_knob_touched)) {
-                                shadow_display_mode = 0;
-                                shadow_control->display_mode = 0;
-                                shadow_log("Track tap: dismissing shadow UI");
-                            }
-                            track_longpress_pending[lp_slot] = 0;
-                            track_vol_touched_during_press[lp_slot] = 0;
-                        }
+                    /* Track release while shadow UI is displayed = dismiss it.
+                     * (Long-press slot-settings entry DELETED 2026-08-09.)
+                     * Skip if the volume knob is/was involved (volume tweak
+                     * gesture) or Mute is held — Mute+Track (slot mute) and
+                     * Shift+Mute+Track (solo) are modifier combos; releasing
+                     * Track must not dismiss the shadow UI, or the trailing
+                     * Mute release leaks to Move firmware and latches Mute. */
+                    if (shadow_ui_enabled && !pressed &&
+                        shadow_display_mode && shadow_control &&
+                        !shadow_volume_knob_touched &&
+                        !shadow_mute_held && !shadow_shift_held) {
+                        shadow_display_mode = 0;
+                        shadow_control->display_mode = 0;
+                        shadow_log("Track tap: dismissing shadow UI");
                     }
                 }
 
@@ -7492,29 +7310,20 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                     shadow_mute_held = (d2 > 0) ? 1 : 0;
                 }
 
-                /* Menu button long-press detection */
-                if (d1 == CC_MENU && LONG_PRESS_ACTIVE() && shadow_ui_enabled) {
-                    if (d2 > 0) {
-                        clock_gettime(CLOCK_MONOTONIC, &menu_press_time);
-                        menu_longpress_pending = 1;
-                        menu_longpress_fired = 0;
-                    } else {
-                        /* Released before threshold — if shadow UI displayed, dismiss it.
-                         * Skip if Shift+Vol is held (Shift+Vol+Menu opens Master FX). */
-                        if (menu_longpress_pending && !menu_longpress_fired &&
-                            shadow_display_mode && shadow_control &&
-                            !(shadow_shift_held && shadow_volume_knob_touched)) {
-                            shadow_display_mode = 0;
-                            shadow_control->display_mode = 0;
-                            shadow_log("Menu tap: dismissing shadow UI");
-                        }
-                        menu_longpress_pending = 0;
-                    }
+                /* Menu release while shadow UI is displayed = dismiss it.
+                 * (Long-press Master FX entry DELETED 2026-08-09 — the FX
+                 * buses live in the primary module's sound mode.) */
+                if (d1 == CC_MENU && shadow_ui_enabled && d2 == 0 &&
+                    shadow_display_mode && shadow_control &&
+                    !(shadow_shift_held && shadow_volume_knob_touched)) {
+                    shadow_display_mode = 0;
+                    shadow_control->display_mode = 0;
+                    shadow_log("Menu tap: dismissing shadow UI");
                 }
 
                 /* Shift + Volume + Back = suspend overtake (JACK keeps running) */
                 if (d1 == CC_BACK && d2 > 0) {
-                    if (SHIFT_VOL_ACTIVE() && shadow_shift_held && shadow_volume_knob_touched && shadow_control &&
+                    if (shadow_shift_held && shadow_volume_knob_touched && shadow_control &&
                         shadow_ui_enabled && shadow_control->overtake_mode >= 2) {
                         shadow_control->suspend_overtake = 1;
                         shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_OVERTAKE;
@@ -7525,7 +7334,7 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
 
                 /* Shift + Volume + Jog Click = toggle overtake module menu (if shadow UI enabled) */
                 if (d1 == CC_JOG_CLICK && d2 > 0) {
-                    if (SHIFT_VOL_ACTIVE() && shadow_shift_held && shadow_volume_knob_touched && shadow_control && shadow_ui_enabled) {
+                    if (shadow_shift_held && shadow_volume_knob_touched && shadow_control && shadow_ui_enabled) {
                         if (!shadow_display_mode) {
                             /* From Move mode: launch shadow UI and show overtake menu */
                             shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_OVERTAKE;
@@ -7541,23 +7350,28 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                     }
                 }
 
-                /* Skipback: Shift+Capture or Shift+Vol+Capture (configurable). When Shift+Vol
-                 * shortcuts are gated off, the require-volume mode is unreachable, so fall
-                 * back to bare Shift+Capture in that case. */
-                if (d1 == CC_CAPTURE && d2 > 0 && shadow_shift_held) {
-                    int require_vol = shadow_control ? shadow_control->skipback_require_volume : 0;
-                    if (require_vol && !SHIFT_VOL_ACTIVE()) require_vol = 0;
-                    if (!require_vol || shadow_volume_knob_touched) {
-                        skipback_trigger_save();
-                        src[j] = 0; src[j+1] = 0; src[j+2] = 0; src[j+3] = 0;
-                    }
+                /* Skipback: Shift+Vol+Capture. Bare Shift+Capture belongs to
+                 * the primary module (2026-08-09 — it uses Shift+Capture for
+                 * discard-captured-input, Move parity), so the volume-knob
+                 * touch is REQUIRED and the old configurable mode is gone. */
+                if (d1 == CC_CAPTURE && d2 > 0 && shadow_shift_held &&
+                    shadow_volume_knob_touched) {
+                    skipback_trigger_save();
+                    src[j] = 0; src[j+1] = 0; src[j+2] = 0; src[j+3] = 0;
                 }
 
                 /* Sample/Record button (CC 118) - sampler intercept */
                 if (d1 == CC_RECORD && d2 > 0) {
                     if (shadow_shift_held) {
-                        /* Shift+Sample: arm/resume/cancel/force-stop */
-                        if (sampler_state == SAMPLER_IDLE && !shadow_display_mode) {
+                        /* Shift+Sample: arm/resume/cancel/force-stop.
+                         * Arm is allowed while an overtake module owns the
+                         * display (the sampler draws over it) — the old
+                         * !shadow_display_mode gate silently killed the
+                         * gesture for the whole life of an overtake session.
+                         * Still refused while the shadow MENU UI is up
+                         * without an overtake (its own input owns the jog). */
+                        if (sampler_state == SAMPLER_IDLE &&
+                            (!shadow_display_mode || overtake_active)) {
                             sampler_state = SAMPLER_ARMED;
                             sampler_overlay_active = 1;
                             sampler_overlay_timeout = 0;
@@ -7679,84 +7493,36 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                     shadow_jog_touched = touched;
                 }
 
-                /* Step 2 (note 17) long-press detection (Shift held, without Vol) */
-                if (d1 == 17 && type == 0x90 && LONG_PRESS_ACTIVE() && shadow_ui_enabled) {
-                    if (d2 > 0 && shadow_shift_held && !shadow_volume_knob_touched) {
-                        clock_gettime(CLOCK_MONOTONIC, &step2_press_time);
-                        step2_longpress_pending = 1;
-                        step2_longpress_fired = 0;
-                    }
-                }
-                if (d1 == 17 && (type == 0x80 || (type == 0x90 && d2 == 0))) {
-                    step2_longpress_pending = 0;
-                }
-
-                /* Shift + Volume + Step 2 (note 17) = jump to Global Settings */
-                if (d1 == 17 && type == 0x90 && d2 > 0) {
-                    if (SHIFT_VOL_ACTIVE() && shadow_shift_held && shadow_volume_knob_touched && shadow_control && shadow_ui_enabled) {
-                        shadow_block_plain_volume_hide_until_release = 1;
-                        shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_SETTINGS;
-                        /* Always ensure display shows shadow UI */
-                        shadow_display_mode = 1;
-                        shadow_control->display_mode = 1;
-                        launch_shadow_ui();  /* No-op if already running */
-                        /* Block Step note from reaching Move */
-                        uint8_t *sh = shadow + MIDI_IN_OFFSET;
-                        sh[j] = 0; sh[j+1] = 0; sh[j+2] = 0; sh[j+3] = 0;
-                        src[j] = 0; src[j+1] = 0; src[j+2] = 0; src[j+3] = 0;
-                    }
-                }
-
-                /* Shift + Volume + Step 13 (note 28) = jump to Tools menu */
-                if (d1 == 28 && type == 0x90 && d2 > 0) {
-                    if (SHIFT_VOL_ACTIVE() && shadow_shift_held && shadow_volume_knob_touched && shadow_control && shadow_ui_enabled) {
-                        shadow_block_plain_volume_hide_until_release = 1;
-                        shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_TOOLS;
-                        /* Always ensure display shows shadow UI */
-                        shadow_display_mode = 1;
-                        shadow_control->display_mode = 1;
-                        launch_shadow_ui();  /* No-op if already running */
-                        /* Block Step note from reaching Move */
-                        uint8_t *sh = shadow + MIDI_IN_OFFSET;
-                        sh[j] = 0; sh[j+1] = 0; sh[j+2] = 0; sh[j+3] = 0;
-                        src[j] = 0; src[j+1] = 0; src[j+2] = 0; src[j+3] = 0;
-                    } else if (LONG_PRESS_ACTIVE() && shadow_shift_held &&
-                               !shadow_volume_knob_touched && shadow_control && shadow_ui_enabled) {
-                        /* Shift+Step13 without Vol — immediate tools shortcut.
-                         * Also start a long-press timer; if held past 500ms we
-                         * fire the resume-last-tool path. */
-                        shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_TOOLS;
-                        shadow_display_mode = 1;
-                        shadow_control->display_mode = 1;
-                        launch_shadow_ui();
-                        clock_gettime(CLOCK_MONOTONIC, &step13_press_time);
-                        step13_longpress_pending = 1;
-                        step13_longpress_fired = 0;
-                        uint8_t *sh = shadow + MIDI_IN_OFFSET;
-                        sh[j] = 0; sh[j+1] = 0; sh[j+2] = 0; sh[j+3] = 0;
-                        src[j] = 0; src[j+1] = 0; src[j+2] = 0; src[j+3] = 0;
-                        shadow_log("Shift+Step13: opening tools");
-                    }
-                }
-                if (d1 == 28 && (type == 0x80 || (type == 0x90 && d2 == 0))) {
-                    step13_longpress_pending = 0;
+                /* Shift + Step 15 (note 30) = Tools menu — the ONE surviving
+                 * jump gesture (2026-08-09): the Tools menu is the only host
+                 * menu with no home in the primary module, and it is the
+                 * resume path for a suspended tool. The Global Settings /
+                 * slot-settings / Master FX gestures are gone — those menus
+                 * are the module's own (or opened by it as services). */
+                if (d1 == 30 && type == 0x90 && d2 > 0 &&
+                    shadow_shift_held && shadow_control && shadow_ui_enabled) {
+                    shadow_control->ui_flags |= SHADOW_UI_FLAG_JUMP_TO_TOOLS;
+                    shadow_display_mode = 1;
+                    shadow_control->display_mode = 1;
+                    launch_shadow_ui();  /* No-op if already running */
+                    /* Block Step note from reaching Move */
+                    uint8_t *sh = shadow + MIDI_IN_OFFSET;
+                    sh[j] = 0; sh[j+1] = 0; sh[j+2] = 0; sh[j+3] = 0;
+                    src[j] = 0; src[j+1] = 0; src[j+2] = 0; src[j+3] = 0;
+                    shadow_log("Shift+Step15: opening tools");
                 }
 
                 /* Shift + Step button while shadow UI is displayed = dismiss shadow UI
                  * (user is loading a native Move component to edit).
                  * Skip in overtake mode — the overtake module owns step buttons.
-                 * Skip Step 2 (17) and Step 13 (28) when long-press mode is active
-                 * — those are used for settings/tools shortcuts. */
+                 * Skip Step 15 (30) — the Tools shortcut. */
                 if (shadow_display_mode && shadow_shift_held && !shadow_volume_knob_touched &&
-                    type == 0x90 && d2 > 0 &&
+                    type == 0x90 && d2 > 0 && d1 != 30 &&
                     d1 >= CC_STEP_UI_FIRST && d1 <= CC_STEP_UI_LAST &&
                     shadow_control && shadow_control->overtake_mode == 0) {
-                    int skip_dismiss = LONG_PRESS_ACTIVE() && (d1 == 17 || d1 == 28);
-                    if (!skip_dismiss) {
-                        shadow_display_mode = 0;
-                        shadow_control->display_mode = 0;
-                        shadow_log("Shift+Step: dismissing shadow UI");
-                    }
+                    shadow_display_mode = 0;
+                    shadow_control->display_mode = 0;
+                    shadow_log("Shift+Step: dismissing shadow UI");
                 }
 
                 /* Pad note-on while sampler armed = trigger recording (or preroll) */

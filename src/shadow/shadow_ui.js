@@ -1375,8 +1375,6 @@ const GLOBAL_SETTINGS_SECTIONS = [
             { key: "latency_comp_enabled", label: "Latency Comp", type: "bool" },
             { key: "resample_bridge", label: "Sample Src", type: "enum",
               options: ["Native", "Schwung Mix"], values: [0, 2] },
-            { key: "skipback_shortcut", label: "Skipback", type: "enum",
-              options: ["Sh+Cap", "Sh+Vol+Cap"], values: [0, 1] },
             { key: "skipback_seconds", label: "Skipback Len", type: "enum",
               options: ["30s", "1m", "2m", "3m", "4m", "5m"], values: [30, 60, 120, 180, 240, 300] },
             { key: "browser_preview", label: "Browser Preview", type: "bool" }
@@ -1394,13 +1392,8 @@ const GLOBAL_SETTINGS_SECTIONS = [
             { key: "screen_reader_debounce", label: "Debounce", type: "int", min: 0, max: 1000, step: 50 }
         ]
     },
-    {
-        id: "shortcuts", label: "Shortcuts",
-        items: [
-            { key: "shadow_ui_trigger", label: "Shadow UI Trigger", type: "enum",
-              options: ["Long Press", "Shift+Vol", "Both"], values: [0, 1, 2] }
-        ]
-    },
+    /* ("Shortcuts" page RETIRED 2026-08-09: the shadow_ui_trigger mode died
+     * with the jump-gesture families; skipback is fixed on Shift+Vol+Capture.) */
     {
         id: "services", label: "Services",
         items: [
@@ -11643,15 +11636,6 @@ function getMasterFxSettingValue(setting) {
         }
         return "300ms";
     }
-    if (setting.key === "shadow_ui_trigger") {
-        const val = typeof shadow_ui_trigger_get === "function" ? shadow_ui_trigger_get() : 2;
-        const labels = (setting && Array.isArray(setting.options)) ? setting.options : ["Long Press", "Shift+Vol", "Both"];
-        return labels[val] || labels[2] || "Both";
-    }
-    if (setting.key === "skipback_shortcut") {
-        const val = typeof skipback_shortcut_get === "function" ? (skipback_shortcut_get() ? 1 : 0) : 0;
-        return ["Sh+Cap", "Sh+Vol+Cap"][val] || "Sh+Cap";
-    }
     if (setting.key === "skipback_seconds") {
         const sec = typeof skipback_seconds_get === "function" ? skipback_seconds_get() : 30;
         if (sec >= 60) return (sec / 60) + "m";
@@ -11802,30 +11786,6 @@ function adjustMasterFxSetting(setting, delta) {
         val += delta * setting.step;
         val = Math.max(setting.min, Math.min(setting.max, val));
         tts_set_debounce(Math.round(val));
-        return;
-    }
-
-    if (setting.key === "shadow_ui_trigger") {
-        if (typeof shadow_ui_trigger_set !== "function") return;
-        const current = typeof shadow_ui_trigger_get === "function" ? shadow_ui_trigger_get() : 2;
-        const values = (setting && Array.isArray(setting.values) && setting.values.length > 0)
-            ? setting.values
-            : [0, 1, 2];
-        let idx = values.indexOf(current);
-        if (idx < 0) idx = values.length - 1;
-        const nextIdx = (idx + (delta > 0 ? 1 : values.length - 1)) % values.length;
-        shadow_ui_trigger_set(values[nextIdx]);
-        return;
-    }
-
-    if (setting.key === "skipback_shortcut") {
-        if (typeof skipback_shortcut_set !== "function") return;
-        const current = typeof skipback_shortcut_get === "function" ? (skipback_shortcut_get() ? 1 : 0) : 0;
-        const values = setting.values;
-        let idx = values.indexOf(current);
-        if (idx < 0) idx = 0;
-        const nextIdx = (idx + (delta > 0 ? 1 : values.length - 1)) % values.length;
-        skipback_shortcut_set(values[nextIdx]);
         return;
     }
 
@@ -16008,37 +15968,21 @@ globalThis.tick = function() {
                 if (typeof shadow_clear_ui_flags === "function") {
                     shadow_clear_ui_flags(SHADOW_UI_FLAG_JUMP_TO_TOOLS | SHADOW_UI_FLAG_JUMP_TO_SLOT);
                 }
-            } else if (flags & SHADOW_UI_FLAG_JUMP_TO_SETTINGS) {
-                debugLog("SETTINGS flag detected, entering Global Settings");
-                enterGlobalSettings();
-                if (typeof shadow_clear_ui_flags === "function") {
-                    shadow_clear_ui_flags(SHADOW_UI_FLAG_JUMP_TO_SETTINGS | SHADOW_UI_FLAG_JUMP_TO_SLOT);
-                }
             } else if (flags & SHADOW_UI_FLAG_JUMP_TO_SCREENREADER) {
                 debugLog("SCREENREADER flag detected, entering Global Settings -> Screen Reader");
                 enterGlobalSettingsScreenReader();
                 if (typeof shadow_clear_ui_flags === "function") {
                     shadow_clear_ui_flags(SHADOW_UI_FLAG_JUMP_TO_SCREENREADER | SHADOW_UI_FLAG_JUMP_TO_SLOT);
                 }
-            } else if (flags & SHADOW_UI_FLAG_JUMP_TO_SLOT) {
-                /* Get the slot to jump to (from ui_slot, set by shim) */
-                if (typeof shadow_get_ui_slot === "function") {
-                    const jumpSlot = shadow_get_ui_slot();
-                    if (jumpSlot >= 0 && jumpSlot < SHADOW_UI_SLOTS) {
-                        selectedSlot = jumpSlot;
-                        enterChainEdit(jumpSlot);
-                    }
-                }
-                /* Clear the flag */
-                if (typeof shadow_clear_ui_flags === "function") {
-                    shadow_clear_ui_flags(SHADOW_UI_FLAG_JUMP_TO_SLOT);
-                }
             }
-            if (flags & SHADOW_UI_FLAG_JUMP_TO_MASTER_FX) {
-                enterFxBusPicker();
-                if (typeof shadow_clear_ui_flags === "function") {
-                    shadow_clear_ui_flags(SHADOW_UI_FLAG_JUMP_TO_MASTER_FX);
-                }
+            /* (JUMP_TO_SETTINGS / JUMP_TO_SLOT / JUMP_TO_MASTER_FX handlers
+             * DELETED 2026-08-09 with their shim gestures — those screens are
+             * the primary module's own, or opened by it as services. The flag
+             * bits stay reserved in shadow_constants.h; drain any stale bit a
+             * warm relaunch may have left so it can't sit latched forever. */
+            if (flags & (SHADOW_UI_FLAG_JUMP_TO_SETTINGS | SHADOW_UI_FLAG_JUMP_TO_SLOT | SHADOW_UI_FLAG_JUMP_TO_MASTER_FX)) {
+                if (typeof shadow_clear_ui_flags === "function")
+                    shadow_clear_ui_flags(SHADOW_UI_FLAG_JUMP_TO_SETTINGS | SHADOW_UI_FLAG_JUMP_TO_SLOT | SHADOW_UI_FLAG_JUMP_TO_MASTER_FX);
             }
             if (flags & SHADOW_UI_FLAG_JUMP_TO_OVERTAKE) {
                 const suspendedCount = Object.keys(suspendedOvertakes).length;

@@ -7,8 +7,7 @@ dAVEBOx now supports background operation — you can leave dAVEBOx while it kee
 | Action | What Happens |
 |--------|-------------|
 | **Back** | Suspends dAVEBOx. Sequencer keeps playing in the background. Move's native UI returns. |
-| **Shift + Step 13** (single tap) | Opens the Tools menu. Select dAVEBOx to resume. |
-| **Shift + Step 13** (double tap or long press) | Resumes dAVEBOx directly — no menu. |
+| **Shift + Step 15** | Opens the Tools menu. Select dAVEBOx to resume. (Was Shift+Step 13 — consolidated 2026-08-09; the direct-resume long-press variant was dropped with it.) |
 | **Shift + Back** | Fully exits dAVEBOx (stops playback, unloads module). |
 
 ## What Happens During Suspend

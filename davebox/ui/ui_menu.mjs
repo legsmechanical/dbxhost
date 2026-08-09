@@ -30,7 +30,7 @@ import { saveState, writeSidecar, showActionPopup, loadSnapshotManifest } from '
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw } from './ui_leds.mjs';
-import { enterMoveNativeCoRun, exitMoveNativeCoRun } from './ui_corun.mjs';
+import { enterMoveNativeCoRun, exitMoveNativeCoRun, DAVEBOX_PICKER_KEEP_MASK } from './ui_corun.mjs';
 import { requestExport } from './ui_export.mjs';
 import { applyTrackConfig } from './ui_dsp_bridge.mjs';
 import { openTapTempo } from './ui_record.mjs';
@@ -305,6 +305,14 @@ function buildGlobalMenuItems() {
             S.confirmClearSession = true;
             S.confirmClearSel     = 1;
             S.screenDirty         = true;
+        }),
+        /* Host Settings: the host's Global Settings screen, opened as an
+         * overlay SERVICE on top of the running session (claims re-derive on
+         * close). This replaced the deleted Shift+Vol+Step2 / Shift+Step2-hold
+         * host gestures (2026-08-09) — the menu entry is now the only door. */
+        createAction('Host Settings...', function() {
+            host_open_service('global_settings', { keep_mask: DAVEBOX_PICKER_KEEP_MASK });
+            S.globalMenuOpen = false;
         }),
         createAction('Suspend session', function() {
             /* Park dAVEBOx in the background (same as hold-Back):

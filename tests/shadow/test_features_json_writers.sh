@@ -22,8 +22,11 @@ if ! grep -Eq 'ftell|fstat' <<<"$helper"; then
   exit 1
 fi
 
-for fn in js_display_mirror_set js_set_pages_set js_midi_indicator_set \
-          js_shadow_ui_trigger_set js_skipback_shortcut_set js_skipback_seconds_set; do
+# (js_shadow_ui_trigger_set / js_skipback_shortcut_set RETIRED 2026-08-09
+#  with the jump-gesture families and the fixed skipback chord;
+#  js_set_pages_set died earlier, in P3's set-pages deletion.)
+for fn in js_display_mirror_set js_midi_indicator_set \
+          js_skipback_seconds_set; do
   body=$(awk "/^static JSValue ${fn}\(/,/^}/" "$file")
   if [ -z "$body" ]; then
     echo "FAIL: ${fn} missing" >&2

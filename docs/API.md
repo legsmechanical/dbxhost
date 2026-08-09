@@ -27,7 +27,7 @@ This document describes the JavaScript API available for developing Schwung modu
 > not invoked on device. Modules executed inside the Shadow UI see the
 > `shadow_*`, `tts_*`, `display_mirror_*`,
 > `overlay_knobs_*`, `host_sampler_*`, `move_midi_inject_to_move`,
-> `unified_log`, and `shadow_ui_trigger_*` bindings in addition to the
+> `unified_log` bindings in addition to the
 > generic `host_*` set. Bindings registered only in `schwung_host.c`
 > are listed below for completeness but won't be reachable on hardware
 > until/unless the standalone host runtime ships.
@@ -327,8 +327,8 @@ shadow_select_phase_end()      // ends the run: clears the SHM flags
 display_mirror_get() / display_mirror_set(v) / display_mirror_set_shm(v)
 overlay_knobs_get_mode() / overlay_knobs_set_mode(v)
 skipback_seconds_get() / skipback_seconds_set(v)
-skipback_shortcut_get() / skipback_shortcut_set(v)
-shadow_ui_trigger_get() / shadow_ui_trigger_set(v) / shadow_ui_trigger_set_shm(v)
+// (skipback_shortcut_* and shadow_ui_trigger_* RETIRED 2026-08-09 — skipback is
+//  fixed on Shift+Vol+Capture; the jump-gesture trigger modes are deleted)
 
 // TTS / screen reader bindings (shadow_ui only)
 tts_get_enabled() / tts_set_enabled(v)

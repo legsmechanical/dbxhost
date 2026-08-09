@@ -18,8 +18,6 @@
       { "key": "latency_comp_enabled", "label": "Latency Comp", "type": "bool" },
       { "key": "resample_bridge", "label": "Sample Source", "type": "enum",
         "options": ["Native", "Schwung Mix"], "values": [0, 2] },
-      { "key": "skipback_shortcut", "label": "Skipback", "type": "enum",
-        "options": ["Shift+Capture", "Shift+Vol+Capture"], "values": [0, 1] },
       { "key": "skipback_seconds", "label": "Skipback Length", "type": "enum",
         "options": ["30s", "1m", "2m", "3m", "4m", "5m"], "values": [30, 60, 120, 180, 240, 300] },
       { "key": "browser_preview", "label": "Browser Preview", "type": "bool" }
@@ -35,13 +33,6 @@
       { "key": "screen_reader_pitch", "label": "Voice Pitch", "type": "float", "min": 80, "max": 180, "step": 5 },
       { "key": "screen_reader_volume", "label": "Voice Volume", "type": "int", "min": 0, "max": 100, "step": 5 },
       { "key": "screen_reader_debounce", "label": "Debounce", "type": "int", "min": 0, "max": 1000, "step": 50 }
-    ]
-  },
-  {
-    "id": "shortcuts", "label": "Shortcuts",
-    "items": [
-      { "key": "shadow_ui_trigger", "label": "Shadow UI Trigger", "type": "enum",
-        "options": ["Long Press", "Shift+Vol", "Both"], "values": [0, 1, 2] }
     ]
   },
   {
