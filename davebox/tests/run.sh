@@ -4,7 +4,10 @@ set -u
 cd "$(dirname "$0")/.." || exit 2   # the davebox tree (a subtree of dbxhost)
 
 CC="${CC:-clang}"
-FLAGS="-std=c11 -Idsp -Itests/harness -Wall -Wno-unused-function -g"
+# _GNU_SOURCE: seq8.c uses fmemopen (state_full serialization), which glibc
+# hides under strict -std=c11 without a feature macro — macOS clang exposes it
+# regardless, so this only ever failed in Linux CI, not locally.
+FLAGS="-std=c11 -D_GNU_SOURCE -Idsp -Itests/harness -Wall -Wno-unused-function -g"
 OUT="/tmp/davebox-tests"
 mkdir -p "$OUT"
 
