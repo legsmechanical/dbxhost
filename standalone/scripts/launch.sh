@@ -27,25 +27,32 @@ setsid bash -c '
     i=$((i+1))
   done
 
-  # Refuse to start on top of a live session. There was no guard here at all,
-  # and a second launch is not a harmless no-op: it tears the stack down under
-  # the session that is already running. It also becomes a corruption path once
-  # this script rewrites set routing — the second launch would record the FIRST
-  # already-patched values from launch one as the "originals" to restore.
+  # Refuse to start on top of a live session — by LIVENESS, not a marker.
+  # A second launch is not a harmless no-op: it tears the stack down under
+  # the session that is already running, and it becomes a corruption path
+  # where this script rewrites set routing (the second launch would record
+  # launch one, already-patched values as the "originals" to restore).
   #
-  # Staleness is decided by boot id, exactly as the readers do (see the marker
-  # write below), so a marker stranded by a hard reboot does NOT lock the user
-  # out of launching — which would turn one bug into a worse one.
-  if [ -s "$DBX_DIR/standalone_active" ]; then
-    _prev=$(cat "$DBX_DIR/standalone_active" 2>/dev/null)
-    _now=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
-    if [ -n "$_now" ] && [ "$_prev" = "$_now" ]; then
-      echo "a standalone session is already active this boot — refusing to launch"
-      exit 1
-    fi
-    echo "clearing standalone marker from a previous boot ($_prev)"
-    rm -f "$DBX_DIR/standalone_active"
+  # The guard is an exclusive flock on a /dev/shm dotfile, held on fd 9 for
+  # the life of this supervisor (children inherit it, so the lock outlives
+  # us only while session processes do). A crash releases it automatically
+  # and a reboot clears /dev/shm by construction — no staleness protocol,
+  # nothing to remember to delete. The PID payload is for observers (the
+  # shadow UI and the installer check /proc/<pid>) and for humans.
+  # ⚠ The path is a DOTFILE so the /dev/shm/dbxhost-* wipes below can never
+  # delete the locked inode (a second launcher would then lock a fresh file
+  # at the same path and the guard is gone). Must match DBX_SESSION_LOCK in
+  # config.sh — pinned by check-config.sh.
+  # NOTE: taken AFTER the FD-close loop above, which would close fd 9.
+  # Open O_APPEND, not O_TRUNC: a REFUSED launch must not empty the live
+  # session PID payload as a side effect of merely opening the file.
+  exec 9>>/dev/shm/.dbxhost-session.lock
+  if ! flock -n 9; then
+    echo "a standalone session is already live (lock held) — refusing to launch"
+    exit 1
   fi
+  : > /dev/shm/.dbxhost-session.lock
+  printf "%s\n" "$$" >&9
 
   # Stand the watchdog down FIRST. move-launcher.service is systemd-supervised
   # with Restart=on-failure, so killing MoveLauncher makes systemd revive the
@@ -57,25 +64,11 @@ setsid bash -c '
     exit 1
   fi
 
-  # Marker for "a standalone session is running". davebox and the host UI both
-  # live in directories SHARED with stock, so neither can tell which host it is
-  # under at build time — this is the runtime signal, and we own both of its
-  # edges. Without it, Shift+Back under stock Schwung would try to tear down
-  # stock.
-  #
-  # STAMPED WITH THE CURRENT BOOT ID, because we own the edges only when we are
-  # allowed to run them. The marker lives in /data (persistent) and is removed
-  # only on the clean-exit path below — so a hard reboot, which is precisely the
-  # documented "always returns you to stock" recovery action, used to leave it
-  # behind. Stock Schwung then believed a standalone session was live and every
-  # davebox Quit became a surprise device restart, until someone deleted the
-  # file by hand. Readers compare the stamp to the live kernel boot id, so
-  # a marker from a previous boot is self-evidently dead.
-  #
-  # (An empty marker is treated as live by readers, so a payload from an older
-  # launcher keeps the previous semantics rather than breaking mid-session.)
-  cat /proc/sys/kernel/random/boot_id > "$DBX_DIR/standalone_active" 2>/dev/null \
-    || : > "$DBX_DIR/standalone_active"
+  # (The old /data marker standalone_active is retired — the lock above IS
+  # the "session running" signal now, and readers probe its PID for
+  # liveness. Clear any marker an older launcher left so no stale copy can
+  # confuse a build that predates the retirement.)
+  rm -f "$DBX_DIR/standalone_active"
 
   # DIRECT BOOT into the tool (v3 model): the session opens in the module on
   # the last project, and project selection is the modules OWN pad picker —
@@ -179,8 +172,8 @@ setsid bash -c '
   # currentSongIndex). The host requests that by writing relaunch_requested
   # before letting Move exit; we consume the marker and go again. Everything a
   # fresh entry needs (boot_tool.json, the open-tool command, the splash
-  # guard, heal) is still in place, and standalone_active stays valid — same
-  # boot. The SHM wipe between iterations is the same stale-ring hygiene the
+  # guard, heal) is still in place, and the session lock stays held — same
+  # supervisor. The SHM wipe between iterations is the same stale-ring hygiene the
   # session entry does.
   rm -f "$DBX_DIR/relaunch_requested"
   while :; do
@@ -270,7 +263,9 @@ setsid bash -c '
   # path, not just cleanup. Our caller (launch-standalone.sh) also starts Move
   # when we exit; leave the SHM namespaces clean either way.
   rm -f /dev/shm/dbxhost-*
-  rm -f "$DBX_DIR/standalone_active"
+  # The flock on fd 9 dies with this process; remove the payload file too so
+  # nothing lingers between sessions (a reboot would clear it anyway).
+  rm -f /dev/shm/.dbxhost-session.lock
   # Session-scoped select/boot state: all of it dies with the session, so the
   # NEXT entry re-arms a fresh select phase (and stock never sees any of it).
   rm -f "$DBX_DIR/boot_tool.json"

@@ -45,6 +45,16 @@ DBX_SHIM_SONAME=davebox-shim.so
 # The setuid-root helper that mirrors the shim into /usr/lib.
 DBX_HEAL_NAME=davebox-heal
 
+# Session liveness lock. The launcher takes an exclusive flock on this file
+# and holds it for the life of the session, with the supervisor PID as the
+# payload — so "is a session live" is answered by the kernel (lock held /
+# PID alive), never by a marker someone must remember to delete. Lives in
+# /dev/shm so a reboot clears it BY CONSTRUCTION. ⚠ DOTFILE deliberately:
+# the session teardown wipes /dev/shm/dbxhost-*, and the glob must never
+# delete the locked inode out from under the flock (a second launcher would
+# then lock a fresh file at the same path and the guard is gone).
+DBX_SESSION_LOCK=/dev/shm/.dbxhost-session.lock
+
 # ── Workspace separation (Josh's ruling, 2026-08-06) ────────────────────────
 # dAVEBOx SA is an ENTIRELY SEPARATE WORKSPACE from stock Schwung (and from
 # Move native). Host STATE never crosses installs. Concretely, inside $DBX_DIR:

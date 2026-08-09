@@ -8667,43 +8667,44 @@ function enterMoveFxHierarchyEditor(moveSlot, fxSlot) {
     }
 }
 
-/* Root of the standalone-session tree, and whether one is running now.
- *
- * The launcher writes the marker when it takes the device and removes it when
- * it gives it back, so this is true only for the span where "exit" should mean
- * "hand the device back to stock Schwung" rather than "unload this module".
- *
- * Re-read rather than cached: a session can start or end without this process
- * restarting, and a stale answer would send Shift+Back down the wrong path. The
- * read is one stat on a gesture, not a hot path. */
+/* Root of the standalone-session tree. */
 const STANDALONE_DIR = "/data/UserData/dbx-host";
 
-/* The marker carries the boot id of the session that wrote it. It lives in
- * /data and is removed only on the launcher's clean-exit path, so a hard reboot
- * — the documented recovery action — left it behind, and stock Schwung then
- * believed a standalone session was live: every davebox Quit became a surprise
- * device restart until the file was deleted by hand. Comparing the stamp to the
- * running kernel's boot id makes a marker from an earlier boot self-evidently
- * dead, which restores "turn it off and on again" as a real recovery.
+/* Whether a standalone session is running now — true only for the span where
+ * "exit" should mean "hand the device back to stock Schwung" rather than
+ * "unload this module". Re-read rather than cached: a session can start or
+ * end without this process restarting, and a stale answer would send
+ * Shift+Back down the wrong path. The probe is two stats + one small read on
+ * a gesture, not a hot path.
+ *
+ * HISTORY: this used to be a /data marker (standalone_active) removed only on
+ * the launcher's clean-exit path, so a hard reboot
+ * — the documented recovery action — left it behind (fixed by boot-id
+ * stamping), and a session that CRASHED mid-boot left a same-boot marker that
+ * refused every launch until reboot. P4b replaced the marker with LIVENESS:
+ * the launcher holds an exclusive flock on a /dev/shm dotfile for the life of
+ * the session, with the supervisor PID as payload. /dev/shm clears on reboot
+ * by construction, the flock dies with the session's processes, and this
+ * reader answers "is a session live" by probing the PID — no staleness
+ * protocol left to get wrong. Path must match DBX_SESSION_LOCK in
+ * standalone/config.sh (pinned by check-config.sh).
  *
  * Fallbacks are deliberately permissive, because a false NEGATIVE here sends
- * Shift+Back down the teardown path during a real session: an empty/legacy
- * marker, or an unreadable boot id, both mean "assume live" (the old
- * behaviour). Only a stamp that demonstrably belongs to a previous boot is
- * treated as stale. */
+ * Shift+Back down the teardown path during a real session: a lock file whose
+ * payload is unreadable or garbled means "assume live". Only a demonstrably
+ * dead PID (readable payload, no /proc entry) is treated as no-session. */
 function standaloneSessionActive() {
     try {
-        if (typeof host_read_file !== "function") {
-            return typeof host_file_exists === "function" &&
-                   !!host_file_exists(STANDALONE_DIR + "/standalone_active");
+        if (typeof host_file_exists !== "function") return false;
+        if (!host_file_exists("/dev/shm/.dbxhost-session.lock")) return false;
+        if (typeof host_read_file !== "function") return true;  /* assume live */
+        const payload = host_read_file("/dev/shm/.dbxhost-session.lock");
+        if (payload === null || payload === undefined || payload === false) {
+            return true;                      /* unreadable — assume live */
         }
-        const stamp = host_read_file(STANDALONE_DIR + "/standalone_active");
-        if (stamp === null || stamp === undefined || stamp === false) return false;
-        const stampTrim = String(stamp).trim();
-        if (!stampTrim) return true;          /* legacy empty marker */
-        const boot = host_read_file("/proc/sys/kernel/random/boot_id");
-        if (!boot) return true;               /* can't compare — assume live */
-        return stampTrim === String(boot).trim();
+        const pid = parseInt(String(payload).trim(), 10);
+        if (!isFinite(pid) || pid <= 0) return true;  /* garbled — assume live */
+        return !!host_file_exists("/proc/" + pid + "/cmdline");
     } catch (e) {
         return false;
     }

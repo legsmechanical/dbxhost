@@ -39,10 +39,18 @@ check "bless.sh carries DBX_DIR"       "$HERE/scripts/install-privileged.sh" "DB
 check "bless.sh heal name"             "$HERE/scripts/install-privileged.sh" "DBX_HEAL_NAME=$DBX_HEAL_NAME"
 check "bless.sh soname"                "$HERE/scripts/install-privileged.sh" "DBX_SHIM_SONAME=$DBX_SHIM_SONAME"
 
-# The HOST's own copy. shadow_ui.js owns the Shift+Back exit and reads the same
-# marker, so a DBX_DIR change that misses this line breaks exit-to-stock from the
-# host side with nothing failing. This one is in-repo and was simply overlooked.
+# The HOST's own copy. shadow_ui.js owns the Shift+Back exit, so a DBX_DIR
+# change that misses this line breaks exit-to-stock from the host side with
+# nothing failing. This one is in-repo and was simply overlooked.
 check "shadow_ui.js STANDALONE_DIR"    "$HERE/../src/shadow/shadow_ui.js" "STANDALONE_DIR = \"$DBX_DIR\""
+
+# The session-liveness lock (P4b). Three consumers carry the literal: the
+# launcher takes the flock, the host's shadow_ui.js probes the PID payload,
+# and install-host.sh's deploy guard does the same over ssh. A path drift
+# here silently splits "is a session live" into two different answers.
+check "launch.sh session lock"         "$HERE/scripts/launch.sh"   "9>>$DBX_SESSION_LOCK"
+check "shadow_ui.js session lock"      "$HERE/../src/shadow/shadow_ui.js" "\"$DBX_SESSION_LOCK\""
+check "install-host.sh session lock"   "$HERE/scripts/install-host.sh" "cat $DBX_SESSION_LOCK"
 
 # The DAVEBOX half. These carry the literal for a real reason — the same ui.js
 # also runs under stock Schwung, where $DBX_DIR does not exist, so the path must

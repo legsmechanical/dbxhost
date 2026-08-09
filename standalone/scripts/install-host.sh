@@ -64,13 +64,14 @@ $SSH "test -x '$DBX_DIR/schwung' && test -d '$DBX_DIR/shadow'" 2>/dev/null || {
 # ⚠ Never swap a running host's binaries by default. The live process keeps its old
 # inode (so it survives), but the on-disk tree ends up half-new while the session
 # continues on the old code — and the next launch runs a combination nobody built.
-# Boot-id comparison, not mere existence: the marker is removed only on a clean
-# exit, so one left behind by a hard reboot used to make this refuse forever —
-# a deploy blocked by a session that ended days ago. Empty/legacy markers still
-# count as live (permissive, matching the host's own reader).
-if $SSH "m=\$(cat '$DBX_DIR/standalone_active' 2>/dev/null) || exit 1; \
-         b=\$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); \
-         [ -z \"\$m\" ] || [ -z \"\$b\" ] || [ \"\$m\" = \"\$b\" ]" 2>/dev/null; then
+# Liveness, not a marker (P4b): the launcher holds a flock on the /dev/shm lock
+# file with the supervisor PID as payload; a session is live iff that PID is
+# alive. A reboot or crash clears/releases it by construction, so a deploy can
+# never be blocked by a session that already ended. Unreadable/garbled payload
+# counts as live (permissive, matching the host's own reader).
+if $SSH "p=\$(cat /dev/shm/.dbxhost-session.lock 2>/dev/null) || exit 1; \
+         case \"\$p\" in (*[!0-9]*|'') exit 0;; esac; \
+         [ -d \"/proc/\$p\" ]" 2>/dev/null; then
     if [ "$FORCE" != "1" ]; then
         echo "" >&2
         echo "REFUSING: a standalone session is running right now." >&2
