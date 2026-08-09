@@ -2604,9 +2604,16 @@ function clearModuleParamShims() {
         delete globalThis.host_module_get_param;
         delete globalThis.host_module_set_param;
     }
-    delete globalThis.host_module_set_param_blocking;
-    delete globalThis.host_exit_module;
-    delete globalThis.host_suspend_overtake;
+    /* ONLY what setupModuleParamShims installed. This used to also delete
+     * host_module_set_param_blocking, host_exit_module and
+     * host_suspend_overtake — bindings the TOOL lifecycle owns
+     * (loadOvertakeModule installs them; the exit paths delete them) — so
+     * closing a chain-component editor mid-session killed the live tool's
+     * suspend/exit API. Behind the old typeof gates that was a SILENT no-op
+     * (Back-hold suspend "just flashed the LEDs", hardware 2026-08-09);
+     * after the P4b de-gate it surfaced as the ReferenceError that led
+     * here. A lifecycle binding must only ever be deleted by the lifecycle
+     * that installed it. */
     delete globalThis.host_swap_module;
     delete globalThis.host_open_file_in_tool;
 }
