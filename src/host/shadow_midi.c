@@ -301,16 +301,111 @@ static int shadow_chain_apply_transpose(int slot, uint8_t *msg)
  * MIDI dispatch to chain slots
  * ============================================================================ */
 
+/* Dispatch one USB-MIDI packet to slot i: lazy activation, idle wake,
+ * channel remap, transpose, delivery. Channel/skip filtering is the
+ * caller's job. Returns 1 if the slot received the message. */
+static int shadow_chain_dispatch_to_one_slot(int i, const uint8_t *pkt,
+                                             const plugin_api_v2_t *pv2)
+{
+    /* Lazy activation check — any loaded component (synth, audio FX,
+     * or MIDI FX) is enough to activate. MIDI-FX-only slots in Pre
+     * mode have no synth or audio FX but still need to dispatch
+     * incoming MIDI to drive the FX and inject to Move. */
+    if (!host_chain_slots[i].active) {
+        if (pv2 && pv2->get_param &&
+            host_chain_slots[i].instance) {
+            static const char *probe_keys[] = {
+                "synth_module", "fx1_module", "fx2_module",
+                "fx3_module", "fx4_module",
+                "midi_fx1_module", "midi_fx2_module"
+            };
+            for (size_t k = 0; k < sizeof(probe_keys)/sizeof(probe_keys[0]); k++) {
+                char buf[64];
+                int len = pv2->get_param(host_chain_slots[i].instance,
+                                          probe_keys[k], buf, sizeof(buf));
+                if (len <= 0) continue;
+                if (len < (int)sizeof(buf)) buf[len] = '\0';
+                else buf[sizeof(buf) - 1] = '\0';
+                if (buf[0] != '\0') {
+                    host_chain_slots[i].active = 1;
+                    if (host_ui_state_update_slot)
+                        host_ui_state_update_slot(i);
+                    break;
+                }
+            }
+        }
+        if (!host_chain_slots[i].active) return 0;
+    }
+
+    /* Wake slot from idle on any MIDI dispatch */
+    if (host_slot_idle[i] || host_slot_fx_idle[i]) {
+        host_slot_idle[i] = 0;
+        host_slot_silence_frames[i] = 0;
+        host_slot_fx_idle[i] = 0;
+        host_slot_fx_silence_frames[i] = 0;
+    }
+
+    /* Send MIDI to this slot */
+    if (pv2 && pv2->on_midi) {
+        uint8_t msg[3] = { shadow_chain_remap_channel(i, pkt[1]), pkt[2], pkt[3] };
+        if (shadow_chain_apply_transpose(i, msg)) {
+            pv2->on_midi(host_chain_slots[i].instance, msg, 3,
+                         MOVE_MIDI_SOURCE_EXTERNAL);
+        }
+    }
+    return 1;
+}
+
+/* FX broadcast + master-FX forward: the unconditional companions of every
+ * internal MIDI dispatch, independent of slot routing.
+ * FX_BROADCAST only forwards to audio FX, not synth/MIDI FX, so this
+ * is safe even for slots that already received normal MIDI dispatch. */
+static void shadow_chain_dispatch_fanout(const uint8_t *pkt,
+                                         const plugin_api_v2_t *pv2)
+{
+    /* Broadcast MIDI to ALL active slots for audio FX (e.g. ducker). */
+    if (pv2 && pv2->on_midi) {
+        for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++) {
+            if (!host_chain_slots[i].active || !host_chain_slots[i].instance)
+                continue;
+            uint8_t msg[3] = { pkt[1], pkt[2], pkt[3] };
+            pv2->on_midi(host_chain_slots[i].instance, msg, 3,
+                         MOVE_MIDI_SOURCE_FX_BROADCAST);
+        }
+    }
+
+    /* Forward MIDI to master FX (e.g. ducker) regardless of slot routing */
+    {
+        uint8_t msg[3] = { pkt[1], pkt[2], pkt[3] };
+        if (host_master_fx_forward_midi)
+            host_master_fx_forward_midi(msg, 3, MOVE_MIDI_SOURCE_EXTERNAL);
+    }
+}
+
+static void shadow_chain_dispatch_log(const uint8_t *pkt, int dispatched,
+                                      int log_on, int *midi_log_count)
+{
+    uint8_t type = pkt[1] & 0xF0;
+    if (log_on && type == 0x90 && pkt[3] > 0 && *midi_log_count < 100) {
+        char dbg[256];
+        snprintf(dbg, sizeof(dbg),
+            "midi_out: note=%u vel=%u ch=%u dispatched=%d",
+            pkt[2], pkt[3], pkt[1] & 0x0F, dispatched);
+        if (host_log) host_log(dbg);
+        if (host_midi_out_logf)
+            host_midi_out_logf("midi_out: note=%u vel=%u ch=%u dispatched=%d",
+                pkt[2], pkt[3], pkt[1] & 0x0F, dispatched);
+        (*midi_log_count)++;
+    }
+}
+
 /* Dispatch MIDI to all matching slots (supports recv=All broadcasting).
  * When skip_direct is 1, slots with receive=All and forward=THRU are skipped
  * because they receive MIDI via the direct MIDI_IN path instead. */
 void shadow_chain_dispatch_midi_to_slots(const uint8_t *pkt, int log_on, int *midi_log_count, int skip_direct)
 {
     const plugin_api_v2_t *pv2 = *host_plugin_v2;
-    uint8_t status_usb = pkt[1];
-    uint8_t type = status_usb & 0xF0;
-    uint8_t midi_ch = status_usb & 0x0F;
-    uint8_t note = pkt[2];
+    uint8_t midi_ch = pkt[1] & 0x0F;
     int dispatched = 0;
 
     /* NOTE: the MIDI channel indicator is no longer driven from here. This
@@ -333,86 +428,28 @@ void shadow_chain_dispatch_midi_to_slots(const uint8_t *pkt, int log_on, int *mi
         if (host_chain_slots[i].channel != (int)midi_ch && host_chain_slots[i].channel != -1)
             continue;
 
-        /* Lazy activation check — any loaded component (synth, audio FX,
-         * or MIDI FX) is enough to activate. MIDI-FX-only slots in Pre
-         * mode have no synth or audio FX but still need to dispatch
-         * incoming MIDI to drive the FX and inject to Move. */
-        if (!host_chain_slots[i].active) {
-            if (pv2 && pv2->get_param &&
-                host_chain_slots[i].instance) {
-                static const char *probe_keys[] = {
-                    "synth_module", "fx1_module", "fx2_module",
-                    "fx3_module", "fx4_module",
-                    "midi_fx1_module", "midi_fx2_module"
-                };
-                for (size_t k = 0; k < sizeof(probe_keys)/sizeof(probe_keys[0]); k++) {
-                    char buf[64];
-                    int len = pv2->get_param(host_chain_slots[i].instance,
-                                              probe_keys[k], buf, sizeof(buf));
-                    if (len <= 0) continue;
-                    if (len < (int)sizeof(buf)) buf[len] = '\0';
-                    else buf[sizeof(buf) - 1] = '\0';
-                    if (buf[0] != '\0') {
-                        host_chain_slots[i].active = 1;
-                        if (host_ui_state_update_slot)
-                            host_ui_state_update_slot(i);
-                        break;
-                    }
-                }
-            }
-            if (!host_chain_slots[i].active) continue;
-        }
-
-        /* Wake slot from idle on any MIDI dispatch */
-        if (host_slot_idle[i] || host_slot_fx_idle[i]) {
-            host_slot_idle[i] = 0;
-            host_slot_silence_frames[i] = 0;
-            host_slot_fx_idle[i] = 0;
-            host_slot_fx_silence_frames[i] = 0;
-        }
-
-        /* Send MIDI to this slot */
-        if (pv2 && pv2->on_midi) {
-            uint8_t msg[3] = { shadow_chain_remap_channel(i, pkt[1]), pkt[2], pkt[3] };
-            if (shadow_chain_apply_transpose(i, msg)) {
-                pv2->on_midi(host_chain_slots[i].instance, msg, 3,
-                             MOVE_MIDI_SOURCE_EXTERNAL);
-            }
-        }
-        dispatched++;
+        dispatched += shadow_chain_dispatch_to_one_slot(i, pkt, pv2);
     }
 
-    /* Broadcast MIDI to ALL active slots for audio FX (e.g. ducker).
-     * FX_BROADCAST only forwards to audio FX, not synth/MIDI FX, so this
-     * is safe even for slots that already received normal MIDI dispatch. */
-    if (pv2 && pv2->on_midi) {
-        for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++) {
-            if (!host_chain_slots[i].active || !host_chain_slots[i].instance)
-                continue;
-            uint8_t msg[3] = { pkt[1], pkt[2], pkt[3] };
-            pv2->on_midi(host_chain_slots[i].instance, msg, 3,
-                         MOVE_MIDI_SOURCE_FX_BROADCAST);
-        }
-    }
+    shadow_chain_dispatch_fanout(pkt, pv2);
+    shadow_chain_dispatch_log(pkt, dispatched, log_on, midi_log_count);
+}
 
-    /* Forward MIDI to master FX (e.g. ducker) regardless of slot routing */
-    {
-        uint8_t msg[3] = { pkt[1], pkt[2], pkt[3] };
-        if (host_master_fx_forward_midi)
-            host_master_fx_forward_midi(msg, 3, MOVE_MIDI_SOURCE_EXTERNAL);
-    }
+/* Dispatch MIDI to exactly one slot by index, bypassing channel matching.
+ * The slot-addressed twin of shadow_chain_dispatch_midi_to_slots: same lazy
+ * activation, idle wake, channel remap, transpose, and the same unconditional
+ * FX-broadcast / master-FX fanout. Out-of-range slot delivers nothing to a
+ * slot but still runs the fanout (an FX ducker keys off the event either way). */
+void shadow_chain_dispatch_midi_to_slot(int slot, const uint8_t *pkt, int log_on, int *midi_log_count)
+{
+    const plugin_api_v2_t *pv2 = *host_plugin_v2;
+    int dispatched = 0;
 
-    if (log_on && type == 0x90 && pkt[3] > 0 && *midi_log_count < 100) {
-        char dbg[256];
-        snprintf(dbg, sizeof(dbg),
-            "midi_out: note=%u vel=%u ch=%u dispatched=%d",
-            note, pkt[3], midi_ch, dispatched);
-        if (host_log) host_log(dbg);
-        if (host_midi_out_logf)
-            host_midi_out_logf("midi_out: note=%u vel=%u ch=%u dispatched=%d",
-                note, pkt[3], midi_ch, dispatched);
-        (*midi_log_count)++;
-    }
+    if (slot >= 0 && slot < SHADOW_CHAIN_INSTANCES)
+        dispatched = shadow_chain_dispatch_to_one_slot(slot, pkt, pv2);
+
+    shadow_chain_dispatch_fanout(pkt, pv2);
+    shadow_chain_dispatch_log(pkt, dispatched, log_on, midi_log_count);
 }
 
 /* Broadcast a 1-byte system-realtime message to every active chain slot.
@@ -739,6 +776,7 @@ void shadow_drain_ui_midi_dsp(void)
         uint8_t status = local_buf[i];
         uint8_t d1 = local_buf[i + 1];
         uint8_t d2 = local_buf[i + 2];
+        uint8_t slot_tag = local_buf[i + 3];
 
         /* Validate status byte has high bit set */
         if (!(status & 0x80)) continue;
@@ -747,7 +785,14 @@ void shadow_drain_ui_midi_dsp(void)
         uint8_t cin = (status >> 4) & 0x0F;
         uint8_t pkt[4] = { cin, status, d1, d2 };
 
-        shadow_chain_dispatch_midi_to_slots(pkt, log_on, &midi_log_count, 0);
+        /* Byte 3 of the frame is the slot tag: 0 = dispatch by channel
+         * match (the historical frames were zero-padded, so old writers
+         * get the old behaviour), 1..N = deliver to slot tag-1 directly. */
+        if (slot_tag > 0 && slot_tag <= SHADOW_CHAIN_INSTANCES)
+            shadow_chain_dispatch_midi_to_slot((int)slot_tag - 1, pkt,
+                                               log_on, &midi_log_count);
+        else
+            shadow_chain_dispatch_midi_to_slots(pkt, log_on, &midi_log_count, 0);
     }
 }
 

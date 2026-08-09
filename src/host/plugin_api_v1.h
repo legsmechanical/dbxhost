@@ -117,6 +117,16 @@ typedef struct host_api_v1 {
      * Appended in 2026-07; may be NULL on older hosts, always guard. */
     double (*get_beat_position)(void);
 
+    /* Send an internal MIDI message directly to one chain slot (0-based),
+     * bypassing receive-channel matching. Same 4-byte message form as
+     * midi_send_internal ([type-nibble, status, d1, d2]); system realtime
+     * (Clock/Start/Continue/Stop) is broadcast to every slot exactly as
+     * midi_send_internal does — transport has no slot. The slot's forward
+     * channel remap and transpose still apply on delivery.
+     * Returns len on success, 0 on failure. NULL if the host doesn't
+     * support slot-addressed dispatch. */
+    int (*midi_send_internal_slot)(int slot, const uint8_t *msg, int len);
+
 } host_api_v1_t;
 
 /*

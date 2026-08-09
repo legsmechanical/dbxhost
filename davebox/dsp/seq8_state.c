@@ -149,9 +149,10 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
         fprintf(fp, ",\"t%d_wr\":%d", t,
                 (inst->tracks[t].will_relaunch || inst->tracks[t].clip_playing) ? 1 : 0);
     for (t = 0; t < NUM_TRACKS; t++)
-        fprintf(fp, ",\"t%d_ch\":%d,\"t%d_rt\":%d",
+        fprintf(fp, ",\"t%d_ch\":%d,\"t%d_rt\":%d,\"t%d_sl\":%d",
                 t, (int)inst->tracks[t].channel,
-                t, (int)inst->tracks[t].pfx.route);
+                t, (int)inst->tracks[t].pfx.route,
+                t, (int)inst->tracks[t].pfx.slot);
     for (t = 0; t < NUM_TRACKS; t++)
         if (inst->tracks[t].pfx.looper_on != 1)
             fprintf(fp, ",\"t%d_lp\":%d", t, (int)inst->tracks[t].pfx.looper_on);
@@ -601,6 +602,17 @@ static void seq8_load_state(seq8_instance_t *inst) {
         snprintf(key, sizeof(key), "t%d_rt", t);
         inst->tracks[t].pfx.route = (uint8_t)clamp_i(
             json_get_int(buf, key, ROUTE_SCHWUNG), ROUTE_SCHWUNG, ROUTE_EXTERNAL);
+
+        /* Slot for ROUTE_SCHWUNG. Absent key (pre-slot-addressing sets):
+         * derive from the stored channel — ch 0-3 matched slots A-D under
+         * the old default recv channels, ch 4-7 mirrors to A-D likewise. */
+        snprintf(key, sizeof(key), "t%d_sl", t);
+        {
+            uint8_t sl = (uint8_t)clamp_i(
+                json_get_int(buf, key, inst->tracks[t].channel & 3), 0, 3);
+            inst->tracks[t].pfx.slot = sl;
+            { int _sl; for (_sl = 0; _sl < DRUM_LANES; _sl++) inst->tracks[t].drum_lane_pfx[_sl].slot = sl; }
+        }
 
         snprintf(key, sizeof(key), "t%d_lp", t);
         inst->tracks[t].pfx.looper_on = (uint8_t)(json_get_int(buf, key, 1) ? 1 : 0);

@@ -11,11 +11,12 @@ static char          g_log[HX_LOG_MAX];
 static size_t        g_log_len;
 static float         g_bpm = 120.0f;
 
-static void push_event(hx_midi_kind kind, const uint8_t *msg, int len) {
+static void push_event(hx_midi_kind kind, const uint8_t *msg, int len, int slot) {
     if (g_event_count >= HX_CAP_MAX) return;
     hx_midi_event *e = &g_events[g_event_count++];
     e->kind = kind;
     e->len = (len > 4) ? 4 : len;
+    e->slot = slot;
     memset(e->bytes, 0, sizeof(e->bytes));
     memcpy(e->bytes, msg, (size_t)e->len);
 }
@@ -29,9 +30,10 @@ static void  stub_log(const char *m) {
     g_log[g_log_len++] = '\n';
     g_log[g_log_len] = '\0';
 }
-static int   stub_internal(const uint8_t *m, int n) { push_event(HX_MIDI_INTERNAL, m, n); return n; }
-static int   stub_external(const uint8_t *m, int n) { push_event(HX_MIDI_EXTERNAL, m, n); return n; }
-static int   stub_inject(const uint8_t *m, int n)   { push_event(HX_MIDI_INJECT,   m, n); return n; }
+static int   stub_internal(const uint8_t *m, int n) { push_event(HX_MIDI_INTERNAL, m, n, -1); return n; }
+static int   stub_internal_slot(int slot, const uint8_t *m, int n) { push_event(HX_MIDI_INTERNAL, m, n, slot); return n; }
+static int   stub_external(const uint8_t *m, int n) { push_event(HX_MIDI_EXTERNAL, m, n, -1); return n; }
+static int   stub_inject(const uint8_t *m, int n)   { push_event(HX_MIDI_INJECT,   m, n, -1); return n; }
 static float stub_get_bpm(void) { return g_bpm; }
 
 host_api_v1_t *hx_stub_host(void) {
@@ -42,6 +44,7 @@ host_api_v1_t *hx_stub_host(void) {
     host.frames_per_block   = MOVE_FRAMES_PER_BLOCK;
     host.log                = stub_log;
     host.midi_send_internal = stub_internal;
+    host.midi_send_internal_slot = stub_internal_slot;
     host.midi_send_external = stub_external;
     host.midi_inject_to_move = stub_inject;
     host.get_bpm            = stub_get_bpm;

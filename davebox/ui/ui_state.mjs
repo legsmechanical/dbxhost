@@ -196,6 +196,7 @@ export const S = {
     lastDspActiveClip: new Array(8).fill(0),
     trackQueuedClip: new Array(8).fill(-1),
     trackChannel: new Array(8).fill(1),
+    trackSlot: [0, 1, 2, 3, 0, 1, 2, 3],      /* 0-based chain slot addressed on ROUTE_SCHWUNG; mirrors DSP tN_slot defaults (t & 3) */
     trackRoute: new Array(8).fill(0),
     moveCoRunTrack: -1,                       /* -1 = off; 0-3 = Move firmware is co-running on this track (dAVEBOx skips OLED; shim filters nav CCs + touch 0-9 from tool, lets them reach Move) */
     moveCoRunDrumHeld: new Set(),             /* d1 notes of drum lane pads currently held in co-run — per-pad Set so a 2nd simultaneous hold doesn't clobber the 1st's tracking (js-input-1). Plain pad note-off (no Shift injection) sent per held pad on physical release / co-run exit */
@@ -581,7 +582,7 @@ export const S = {
     sessVolPending: new Array(8).fill(false),
     sessVolSaveOwed: false,
     sessVolLastTurn: -1,                   /* tick of the last level change */
-    pendingSoundEnterTrack: -1, /* Sound mode entry queued from the Shift-release dispatch or the track menu. Slot resolution needs shadow_get_slots, which must run in tick context — hence the deferral. */
+    pendingSoundEnterTrack: -1, /* Sound mode entry queued from the Shift-release dispatch or the track menu. Entry's shadow_get/set_param traffic must run on the tick budget — hence the deferral. */
     pendingUndoSync: 0,
     pendingDefaultSetParams: [],
     clearDrainHold: 0,       /* clearClip sets this so the next pendingDefaultSetParams drain skips one tick — keeps the queued _clear out of the same buffer as the sync set_param fan-out from clearClip's call site */

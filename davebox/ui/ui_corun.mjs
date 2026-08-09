@@ -114,54 +114,25 @@ function onServiceReturn(id, _result) {
     S.screenDirty = true;
 }
 
-/* Resolve the Schwung chain slot index for a dAVEBOx track's MIDI channel.
- * shadow_get_slots() returns {channel, name} per slot where channel is 1-16
- * (matching trackChannel) or 0 for "All". Returns -1 if no match. */
-/* First (lowest-index) Schwung slot that receives a track's MIDI channel, or -1.
- * Thin wrapper over schSlotsForTrack so the match logic lives in one place. */
+/* The Schwung chain slot a dAVEBOx track addresses. Direct: each track
+ * carries an explicit slot (S.trackSlot, DSP tN_slot) and the host dispatches
+ * to it by index — the old receive-channel matching (and its "All"-channel
+ * layering, its per-tick shadow_get_slots() enumeration, and its "NO SCHWUNG
+ * SLOT for channel N" failure mode) is gone. */
 export function schSlotForTrack(t) {
-    const m = schSlotsForTrack(t);
-    if (m === 0) return -1;
-    let i = 0;
-    while (!(m & (1 << i))) i++;
-    return i;
+    return S.trackSlot[t] & 3;
 }
 
-/* Bitmask (bits 0-3) of ALL Schwung slots that receive a track's MIDI channel —
- * i.e. every slot whose receive channel matches trackChannel[t] or is "All" (0).
- * Multiple slots on the same channel are layered (all play the track), so all of
- * them get a bit. 0 = no slot receives this track. Lowest set bit = the slot
- * sound mode edits. */
+/* Bitmask form kept for the session-view per-track level loop: exactly one
+ * bit now — the track's addressed slot. */
 export function schSlotsForTrack(t) {
-    const ch = S.trackChannel[t];
-    const slots = shadow_get_slots();
-    if (!slots) return 0;
-    let mask = 0;
-    for (let i = 0; i < slots.length && i < 4; i++) {
-        if (slots[i].channel === ch || slots[i].channel === 0) mask |= (1 << i);
-    }
-    return mask;
+    return 1 << (S.trackSlot[t] & 3);
 }
 
-/* Every track's mask from ONE chain enumeration, written into `out`.
- *
- * shadow_get_slots() enumerates the whole chain per call, so asking the helper
- * above about eight tracks in a loop paid for eight enumerations to answer one
- * question — at POLL_INTERVAL that ran a few hundred times a second and was
- * enough to hitch the display mid-knob-turn. The channels are read from the
- * same snapshot, which is also more correct: eight separate reads could
- * straddle a chain edit and disagree with each other. */
+/* Every track's mask written into `out` (same one-call shape the tick loop
+ * already uses; no chain enumeration needed anymore). */
 export function schSlotMasksAllTracks(out) {
-    const slots = shadow_get_slots();
-    if (!slots) { out.fill(0); return out; }
-    for (let t = 0; t < out.length; t++) {
-        const ch = S.trackChannel[t];
-        let mask = 0;
-        for (let i = 0; i < slots.length && i < 4; i++) {
-            if (slots[i].channel === ch || slots[i].channel === 0) mask |= (1 << i);
-        }
-        out[t] = mask;
-    }
+    for (let t = 0; t < out.length; t++) out[t] = 1 << (S.trackSlot[t] & 3);
     return out;
 }
 

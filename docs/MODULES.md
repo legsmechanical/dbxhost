@@ -1921,6 +1921,15 @@ typedef struct host_api_v1 {
     int (*midi_send_internal)(const uint8_t *msg, int len);
     int (*midi_send_external)(const uint8_t *msg, int len);
 
+    /* Slot-addressed internal send: deliver to one chain slot (0-based),
+     * bypassing receive-channel matching. Same message form as
+     * midi_send_internal; system realtime broadcasts identically (transport
+     * has no slot). Forward-channel remap and transpose still apply on
+     * delivery. NULL if the host doesn't support slot-addressed dispatch.
+     * (Declared after get_beat_position in plugin_api_v1.h — struct order
+     * is append-only.) */
+    int (*midi_send_internal_slot)(int slot, const uint8_t *msg, int len);
+
     /* Clock status for sync-aware plugins */
     int (*get_clock_status)(void);
 

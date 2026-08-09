@@ -89,7 +89,7 @@
 #define NUM_CLIPS           16
 
 /* MIDI routing: where track output is delivered */
-#define ROUTE_SCHWUNG  0   /* host->midi_send_internal → Schwung active chain */
+#define ROUTE_SCHWUNG  0   /* host->midi_send_internal_slot → addressed chain slot */
 #define ROUTE_MOVE     1   /* host->midi_inject_to_move → Move native tracks */
 #define ROUTE_EXTERNAL 2   /* USB-A out: host->midi_send_external → shim audio-thread SPSC ring */
 
@@ -387,6 +387,7 @@ typedef struct {
     pfx_active_t active_notes[128];
     /* Routing */
     uint8_t      route;     /* ROUTE_SCHWUNG or ROUTE_MOVE */
+    uint8_t      slot;      /* 0-based chain slot for ROUTE_SCHWUNG (slot-addressed dispatch) */
     /* Global MIDI Looper: 1 = this track's post-fx output is captured by the
      * looper and silenced during playback; 0 = bypass entirely. Default 1. */
     uint8_t      looper_on;
@@ -505,6 +506,7 @@ typedef struct {
     int          event_count;
     pfx_active_t active_note;  /* single active note — monophonic per lane */
     uint8_t      route;
+    uint8_t      slot;      /* 0-based chain slot for ROUTE_SCHWUNG; mirrored from track pfx */
     uint8_t      looper_on;
     uint8_t      track_idx;
     uint8_t      lane_idx;
@@ -1452,7 +1454,7 @@ static void seq8_ilog(seq8_instance_t *inst, const char *msg) {
 /* ------------------------------------------------------------------ */
 
 /* Send 3-byte MIDI message. Routes on fx->route:
- *   ROUTE_SCHWUNG  → midi_send_internal (Schwung chain, immediate)
+ *   ROUTE_SCHWUNG  → midi_send_internal_slot (addressed chain slot, immediate)
  *   ROUTE_MOVE     → midi_inject_to_move (cable 2, CIN from status; NULL-safe)
  *   ROUTE_EXTERNAL → host->midi_send_external (shim audio-thread SPSC ring) */
 /* Forward decls — arp engine and scale_transpose defined further down. */
@@ -1845,7 +1847,8 @@ static void pfx_emit(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
         return;
     }
     const uint8_t msg[4] = { (uint8_t)(status >> 4), status, d1, d2 };
-    if (g_host->midi_send_internal) g_host->midi_send_internal(msg, 4);
+    if (g_host->midi_send_internal_slot)
+        g_host->midi_send_internal_slot((int)fx->slot, msg, 4);
 }
 
 /* LOAD-BEARING SPACING: the blank lines flanking this cold-path include are
@@ -4323,6 +4326,10 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
         inst->tracks[t].at_last_clip = 0xFF;
         inst->tracks[t].pfx.looper_on = 1;
         inst->tracks[t].pfx.track_idx = (uint8_t)t;
+        /* Default slot (ROUTE_SCHWUNG): tracks 1-4 → slots A-D, tracks 5-8 →
+         * slots A-D. Mirrors the old channel↔slot default correspondence. */
+        inst->tracks[t].pfx.slot = (uint8_t)(t & 3);
+        { int _sl; for (_sl = 0; _sl < DRUM_LANES; _sl++) inst->tracks[t].drum_lane_pfx[_sl].slot = (uint8_t)(t & 3); }
         /* Default routing: tracks 1-4 → Move (ch 1-4), tracks 5-8 → Schwung (ch 1-4) */
         if (t < 4) {
             inst->tracks[t].pfx.route = ROUTE_MOVE;
@@ -5521,6 +5528,9 @@ static int pfx_get(seq8_track_t *tr, const char *key, char *out, int out_len) {
     if (!strcmp(key, "channel"))
         return snprintf(out, out_len, "%d", (int)tr->channel + 1);
 
+    if (!strcmp(key, "slot"))
+        return snprintf(out, out_len, "%d", (int)fx->slot);
+
     if (!strcmp(key, "route"))
         return snprintf(out, out_len, "%s",
                         fx->route == ROUTE_EXTERNAL ? "external" :
@@ -5853,8 +5863,8 @@ static int seq8_remote_snapshot(seq8_instance_t *inst, char *out, int out_len) {
             }
             APP("%d", has);
         }
-        APP(":%d:%d:%d:%d", (int)trk->pfx.route, (int)trk->channel + 1,
-            (int)inst->mute[ti], (int)inst->solo[ti]);
+        APP(":%d:%d:%d:%d:%d", (int)trk->pfx.route, (int)trk->channel + 1,
+            (int)inst->mute[ti], (int)inst->solo[ti], (int)trk->pfx.slot);
     }
     APP("\"");
 

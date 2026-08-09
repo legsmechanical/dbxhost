@@ -112,6 +112,12 @@ uint8_t shadow_chain_remap_channel(int slot, uint8_t status);
  * (they receive MIDI via the direct MIDI_IN path instead). */
 void shadow_chain_dispatch_midi_to_slots(const uint8_t *pkt, int log_on, int *midi_log_count, int skip_direct);
 
+/* Dispatch a USB-MIDI packet to exactly one slot by index, bypassing channel
+ * matching. Same lazy activation / idle wake / remap / transpose as the
+ * channel-matched dispatch, and the same unconditional FX-broadcast +
+ * master-FX fanout (which still runs for an out-of-range slot). */
+void shadow_chain_dispatch_midi_to_slot(int slot, const uint8_t *pkt, int log_on, int *midi_log_count);
+
 /* Broadcast a 1-byte system-realtime message (0xF8/0xFA/0xFB/0xFC) to every
  * active chain slot, bypassing per-slot channel remap (which would corrupt the
  * status byte). For internally generated transport clock. */

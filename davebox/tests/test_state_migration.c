@@ -25,6 +25,11 @@ static void load_fixture(seq8_instance_t *inst, const char *path) {
     strncpy(inst->state_path, path, sizeof(inst->state_path) - 1);
     inst->state_path[sizeof(inst->state_path) - 1] = '\0';
     seq8_load_state(inst);
+    /* Repoint state_path AFTER the load: destroy_instance saves state to it,
+     * and leaving it on the fixture silently rewrites the fixture with the
+     * CURRENT serializer — un-legacying a legacy-format pin. */
+    strncpy(inst->state_path, "/tmp/hx_fixture_scratch.json", sizeof(inst->state_path) - 1);
+    inst->state_path[sizeof(inst->state_path) - 1] = '\0';
 }
 
 int main(void) {

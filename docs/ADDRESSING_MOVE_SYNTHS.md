@@ -20,6 +20,14 @@ channel. Channels 1–4 reach Move's four tracks in the default config;
 channels 5–16 have no native Move track in the default mapping but can
 still reach a Schwung slot whose `recv` is set to match.
 
+**Exception — slot-addressed dispatch (chain slots only).** A module that
+already knows *which slot* it is driving can skip the channel rule entirely
+and address the slot by index: `shadow_send_midi_to_dsp(slot, msg)` from
+overtake JS, or `host->midi_send_internal_slot(slot, msg, len)` from an
+overtake DSP. Delivery bypasses receive-channel matching (the slot's
+forward-channel remap and transpose still apply). Move's native tracks have
+no slot index — addressing *them* always follows the channel rule above.
+
 ## Two paths exist
 
 | Path | Use when | Limitation |

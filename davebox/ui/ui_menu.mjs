@@ -58,6 +58,23 @@ function buildGlobalMenuItems() {
                 return S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT ? fmtNA() : String(v);
             }
         }),
+        createEnum('Slot', {
+            /* Chain slot this track addresses on the Schwung route (direct
+             * slot dispatch — no channel matching). Inert unless the route
+             * is Schwung; Conductor emits nothing. */
+            get: function() { return S.trackSlot[S.activeTrack]; },
+            set: function(v) {
+                if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT) return;
+                if (S.trackRoute[S.activeTrack] !== 0) return;
+                applyTrackConfig(S.activeTrack, 'slot', v);
+            },
+            options: [0, 1, 2, 3],
+            format: function(v) {
+                if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT) return fmtNA();
+                if (S.trackRoute[S.activeTrack] !== 0) return fmtNA();
+                return 'ABCD'[v & 3];
+            }
+        }),
         createEnum('Route', {
             get: function() { return S.trackRoute[S.activeTrack]; },
             /* Conductor routes nowhere (drives transposition) — inert + shows '-'. */

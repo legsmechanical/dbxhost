@@ -15,6 +15,8 @@ typedef struct {
     hx_midi_kind kind;
     uint8_t bytes[4];   /* USB-MIDI packet [cable|CIN, status, d1, d2] */
     int len;
+    int slot;           /* HX_MIDI_INTERNAL: addressed chain slot (slot-addressed
+                           send), or -1 for the legacy channel-matched send */
 } hx_midi_event;
 
 /* Returns a configured, process-global host (sample_rate, log, all MIDI

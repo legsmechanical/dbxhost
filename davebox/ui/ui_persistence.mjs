@@ -412,7 +412,7 @@ export function doClearSession() {
     S.redoSeqArpSnapshot = null;
     for (let _t = 0; _t < NUM_TRACKS; _t++) {
         for (let _c = 0; _c < NUM_CLIPS; _c++) S.clipSeqFollow[_t][_c] = true;
-        S.trackChannel[_t] = 1; S.trackRoute[_t] = 0; S.trackPadMode[_t] = 0;
+        S.trackChannel[_t] = 1; S.trackSlot[_t] = _t & 3; S.trackRoute[_t] = 0; S.trackPadMode[_t] = 0;
         S.trackVelOverride[_t] = 0; S.trackLooper[_t] = 1;
         S.trackOctave[_t] = 0;
         S.drumVelZoneArmed[_t] = false;

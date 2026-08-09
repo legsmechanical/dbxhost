@@ -593,10 +593,8 @@ export function _tickImpl() {
         S.schLabelFetchLane++;
         if (S.trackCCType[_ft][_fk] === 2) {
             const _slot = schSlotForTrack(_ft);
-            if (_slot >= 0) {
-                const _name = shadow_get_param(_slot, 'knob_' + S.trackCCAssign[_ft][_fk] + '_param');
-                S.schLabel[_ft][_fk] = _name || null;
-            }
+            const _name = shadow_get_param(_slot, 'knob_' + S.trackCCAssign[_ft][_fk] + '_param');
+            S.schLabel[_ft][_fk] = _name || null;
         }
         if (S.schLabelFetchLane >= 8) S.schLabelFetchLane = -1;
         S.screenDirty = true;
@@ -1084,18 +1082,11 @@ export function _tickImpl() {
          * fader — the fader would also move Move-track audio routed into the
          * same slot, which is not this track's sound.
          *
-         * Resolution and writes both live here — schSlotsForTrack calls
-         * shadow_get_slots, and each write is a synchronous SHM round-trip.
-         * The mask can hold SEVERAL slots when a track is layered across them,
-         * and every one moves together, which is what "the slots this track
-         * plays through" means. (The mask also matches channel-0 "All" slots,
-         * which would land in all 8 tracks' masks — but All isn't settable in
-         * the Schwung UI, so it can't arise from normal use. If that ever
-         * changes, this is the site that needs an exact-channel match.) */
+         * Slots are addressed directly per track (S.trackSlot), so each mask
+         * holds exactly the track's one addressed slot — the old channel-match
+         * layering (and its "All"-channel hazard) is gone. Writes are
+         * synchronous SHM round-trips, so they stay budgeted here in tick. */
         if (S.sessionView && (S.tickCount % POLL_INTERVAL) === 0) {
-            /* ONE chain enumeration for all eight, not one per track — see
-             * schSlotMasksAllTracks. The per-track helper here cost eight of
-             * them per poll and hitched the display during a knob turn. */
             schSlotMasksAllTracks(_sessMaskScratch);
             for (let _t = 0; _t < NUM_TRACKS; _t++) {
                 if (S.trackRoute[_t] !== 0) { S.sessVolSlots[_t] = 0; continue; }
@@ -1144,12 +1135,10 @@ export function _tickImpl() {
 
         /* SOUND MODE.
          *
-         * Entry (queued by the Shift+Note/Session release dispatch) resolves
-         * the track's chain slot HERE because schSlotForTrack calls
-         * shadow_get_slots, which must not run from a MIDI handler — same
-         * reason the entry defers to tick at all. No matching slot means
-         * there is no sound to edit, so say so rather than opening an editor
-         * pointed at slot 1.
+         * Entry (queued by the Shift+Note/Session release dispatch) still
+         * resolves in tick: the slot itself is now a direct per-track state
+         * read (S.trackSlot), but entry drives shadow_get/set_param traffic
+         * that must stay on the tick budget, not in a MIDI handler.
          *
          * soundTick() is where every shadow_get/set_param for sound mode
          * happens: queued writes drain at most 2 per tick and polling is
@@ -1165,13 +1154,8 @@ export function _tickImpl() {
             const _st = S.pendingSoundEnterTrack;
             S.pendingSoundEnterTrack = -1;
             if (_st === S.activeTrack && !soundActive()) {
-                const _sslot = schSlotForTrack(_st);
-                if (_sslot < 0) {
-                    showActionPopup('NO SCHWUNG SLOT',
-                                    'for channel ' + (S.trackChannel[_st] | 0));
-                } else {
-                    soundEnter(_st, _sslot);
-                }
+                /* Slot is addressed directly per track — always resolvable. */
+                soundEnter(_st, schSlotForTrack(_st));
             }
         }
         /* ---- sound mode: reconcile with the world it does not own ----
@@ -1233,14 +1217,8 @@ export function _tickImpl() {
                 if (S.trackRoute[_nt] !== 0) {
                     soundExit();
                 } else {
-                    const _ns = schSlotForTrack(_nt);
-                    if (_ns >= 0) {
-                        soundRetarget(_nt, _ns);
-                    } else {
-                        soundExit();
-                        showActionPopup('NO SCHWUNG SLOT',
-                                        'for channel ' + (S.trackChannel[_nt] | 0));
-                    }
+                    /* Slot is addressed directly per track — always resolvable. */
+                    soundRetarget(_nt, schSlotForTrack(_nt));
                 }
             }
             else soundTick();

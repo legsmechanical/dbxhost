@@ -34,7 +34,8 @@ static void drum_pfx_emit(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2
         return;
     }
     const uint8_t msg[4] = { (uint8_t)(status >> 4), status, d1, d2 };
-    if (g_host->midi_send_internal) g_host->midi_send_internal(msg, 4);
+    if (g_host->midi_send_internal_slot)
+        g_host->midi_send_internal_slot((int)px->slot, msg, 4);
 }
 
 static void drum_pfx_q_insert(drum_pfx_t *px, uint64_t fire_at,

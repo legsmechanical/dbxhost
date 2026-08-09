@@ -10,6 +10,11 @@ static void load_fixture(seq8_instance_t *inst, const char *path) {
     strncpy(inst->state_path, path, sizeof(inst->state_path) - 1);
     inst->state_path[sizeof(inst->state_path) - 1] = '\0';
     seq8_load_state(inst);
+    /* Repoint state_path AFTER the load: destroy_instance saves state to it,
+     * and leaving it on the fixture silently rewrites the fixture with the
+     * CURRENT serializer — un-legacying a legacy-format pin. */
+    strncpy(inst->state_path, "/tmp/hx_fixture_scratch.json", sizeof(inst->state_path) - 1);
+    inst->state_path[sizeof(inst->state_path) - 1] = '\0';
 }
 
 int main(void) {
@@ -71,6 +76,11 @@ int main(void) {
     HX_ASSERT(h2, "create 2 failed");
     seq8_instance_t *inst2 = (seq8_instance_t *)h2->inst;
     load_fixture(inst2, "tests/fixtures/state_v36_legacy_arp_vel.json");
+    /* Slot migration: fixture predates t%d_sl — slot derives from the stored
+     * channel (ch & 3): t1_ch=1 → slot 1, t4_ch=4 → slot 0. */
+    HX_ASSERT(inst2->tracks[1].pfx.slot == 1, "legacy slot derive t1 != 1");
+    HX_ASSERT(inst2->tracks[4].pfx.slot == 0, "legacy slot derive t4 != 0");
+    HX_ASSERT(inst2->tracks[4].drum_lane_pfx[0].slot == 0, "legacy slot derive lane mirror");
     HX_ASSERT(inst2->tracks[0].tarp.step_vel[0] == 64,  "legacy tasv 2 != 64");
     HX_ASSERT(inst2->tracks[0].tarp.step_vel[1] == 0,   "legacy tasv 0 != 0");
     HX_ASSERT(inst2->tracks[0].tarp.step_vel[2] == 255, "absent tasv != Thru");

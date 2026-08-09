@@ -926,6 +926,8 @@ export function readBankParams(t, bankIdx) {
 function readTrackConfig(t) {
     const ch = host_module_get_param('t' + t + '_channel');
     if (ch !== null && ch !== undefined) S.trackChannel[t] = parseInt(ch, 10) || 1;
+    const sl = host_module_get_param('t' + t + '_slot');
+    if (sl !== null && sl !== undefined) S.trackSlot[t] = (parseInt(sl, 10) | 0) & 3;
     const rt = host_module_get_param('t' + t + '_route');
     if (rt !== null && rt !== undefined) S.trackRoute[t] = rt === 'external' ? 2 : rt === 'move' ? 1 : 0;
     const pm = host_module_get_param('t' + t + '_pad_mode');
@@ -947,6 +949,7 @@ export function applyTrackConfig(t, key, val) {
     else strVal = String(val);
     host_module_set_param('t' + t + '_' + key, strVal);
     if (key === 'channel')              S.trackChannel[t] = val;
+    else if (key === 'slot')            S.trackSlot[t] = val & 3;
     else if (key === 'route') {
         S.trackRoute[t] = val;
         /* Move route offers only Off/Poly aftertouch — normalize a lingering
@@ -1154,7 +1157,8 @@ export function liveSendNote(t, type, pitch, vel, rawVel, ext) {
                 queueLiveNoteOn(t, pitch, vel, ext);
             }
         } else {
-            shadow_send_midi_to_dsp([status, pitch, vel]);
+            /* Slot-addressed: deliver to the track's chain slot directly. */
+            shadow_send_midi_to_dsp(S.trackSlot[t] & 3, [status, pitch, vel]);
         }
     }
 }

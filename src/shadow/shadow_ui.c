@@ -1090,8 +1090,12 @@ static JSValue js_move_midi_internal_send(JSContext *ctx, JSValueConst this_val,
 }
 
 /* shadow_send_midi_to_dsp([status, d1, d2]) -> bool
+ * shadow_send_midi_to_dsp(slot, [status, d1, d2]) -> bool
  * Routes raw 3-byte MIDI to shadow chain DSP slots via shared memory.
- * Channel in status byte determines which slot(s) receive the message.
+ * Array-only form: the channel in the status byte determines which slot(s)
+ * receive the message (recv-channel match, All included).
+ * (slot, array) form: delivers directly to that slot (0-based), bypassing
+ * channel matching; pass slot -1 for the channel-matched behaviour.
  */
 static JSValue js_shadow_send_midi_to_dsp(JSContext *ctx, JSValueConst this_val,
                                           int argc, JSValueConst *argv) {
@@ -1099,7 +1103,13 @@ static JSValue js_shadow_send_midi_to_dsp(JSContext *ctx, JSValueConst this_val,
     if (!shadow_midi_dsp) return JS_FALSE;
     if (argc < 1) return JS_FALSE;
 
+    int32_t slot = -1;
     JSValueConst arr = argv[0];
+    if (argc >= 2 && !JS_IsArray(ctx, arr)) {
+        /* (slot, msg) form */
+        if (JS_ToInt32(ctx, &slot, argv[0])) return JS_FALSE;
+        arr = argv[1];
+    }
     if (!JS_IsArray(ctx, arr)) return JS_FALSE;
 
     JSValue len_val = JS_GetPropertyStr(ctx, arr, "length");
@@ -1118,13 +1128,17 @@ static JSValue js_shadow_send_midi_to_dsp(JSContext *ctx, JSValueConst this_val,
         msg[j] = (uint8_t)(val & 0xFF);
     }
 
-    /* Write 4-byte aligned: [status, d1, d2, 0] */
+    /* Write 4-byte aligned: [status, d1, d2, slot tag].
+     * Tag 0 = channel-matched dispatch (legacy), 1..N = slot tag-1 direct. */
+    uint8_t slot_tag = 0;
+    if (slot >= 0 && slot < SHADOW_CHAIN_INSTANCES)
+        slot_tag = (uint8_t)(slot + 1);
     int write_offset = shadow_midi_dsp->write_idx;
     if (write_offset + 4 <= SHADOW_MIDI_DSP_BUFFER_SIZE) {
         shadow_midi_dsp->buffer[write_offset] = msg[0];
         shadow_midi_dsp->buffer[write_offset + 1] = msg[1];
         shadow_midi_dsp->buffer[write_offset + 2] = msg[2];
-        shadow_midi_dsp->buffer[write_offset + 3] = 0;
+        shadow_midi_dsp->buffer[write_offset + 3] = slot_tag;
         shadow_midi_dsp->write_idx = write_offset + 4;
     }
 

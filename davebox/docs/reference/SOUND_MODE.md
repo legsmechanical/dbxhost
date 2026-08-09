@@ -58,10 +58,12 @@ must cover fx3/fx4 — the fork has known sites that only handle fx1/fx2.
 
 ## Slot resolution
 
-`schSlotForTrack(t)` — the lowest matching slot. **No slot selector**: davebox
-already knows the routing, and multi-slot tracks are not a case we support.
-The "All" (channel 0) branch stays in the code as a safety net but is not
-exposed.
+`schSlotForTrack(t)` — a direct read of the track's addressed slot
+(`S.trackSlot[t]`, DSP `tN_slot`; P5 slot-addressed dispatch). The old
+receive-channel matching — its "All"-channel layering and its "no matching
+slot" failure mode — is gone; every Schwung-routed track always resolves.
+The slot is set per track in the track menu (Slot A–D) or the remote UI's
+track gear.
 
 ## Knob feel
 

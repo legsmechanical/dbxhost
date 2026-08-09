@@ -170,7 +170,8 @@ function collectSamples(node, ctx) {
 /* ---- per-track instrument + name + color resolution ---------------------- */
 
 /* Resolve a dAVEBOx track to an export instrument subtree, display name, color,
- * and mixer, by its route + channel. Falls back to the Dummy Drift (name
+ * and mixer, by its route (+ channel for Move/Ext, + slot for Schwung).
+ * Falls back to the Dummy Drift (name
  * "dB N") whenever no concrete source is found. trackChannel is 1-based; Move
  * tracks listen on the 0-based channel (channel-1). */
 function resolveTrack(t, ctx) {
@@ -214,11 +215,12 @@ function resolveTrack(t, ctx) {
     }
 
     if (route === ROUTE_SCHWUNG) {
+        /* patches[] is index-ordered per slot; the track addresses its slot
+         * directly (no channel matching). */
         let name = dbName;
         if (ctx.chainCfg && Array.isArray(ctx.chainCfg.patches)) {
-            for (const p of ctx.chainCfg.patches) {
-                if (p && p.channel === ch) { name = 'SCH-' + (p.name || ''); break; }
-            }
+            const p = ctx.chainCfg.patches[(S.trackSlot && S.trackSlot[t] != null ? S.trackSlot[t] : t) & 3];
+            if (p) name = 'SCH-' + (p.name || '');
         }
         return dummy(name, defaultColor);
     }

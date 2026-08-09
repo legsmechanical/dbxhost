@@ -211,21 +211,23 @@ static void test_snapshot_index_mute_solo(void) {
     t1++; /* start of track 1 record */
     const char *t1_end = strchr(t1, ';');
     HX_ASSERT(t1_end != NULL, "rui_index missing track 2 separator");
-    /* tail must be :1:0 (mute=1, solo=0) */
-    HX_ASSERT(t1_end - t1 > 4 &&
-              t1_end[-1] == '0' && t1_end[-2] == ':' &&
-              t1_end[-3] == '1' && t1_end[-4] == ':',
-              "track 1 mute=1 solo=0: rui_index tail must be :1:0");
+    /* tail must be :1:0:1 (mute=1, solo=0, slot=B — default t&3) */
+    HX_ASSERT(t1_end - t1 > 6 &&
+              t1_end[-1] == '1' && t1_end[-2] == ':' &&
+              t1_end[-3] == '0' && t1_end[-4] == ':' &&
+              t1_end[-5] == '1' && t1_end[-6] == ':',
+              "track 1 mute=1 solo=0: rui_index tail must be :1:0:1");
 
     /* advance to track 2 record */
     const char *t2 = t1_end + 1;
     const char *t2_end = strchr(t2, ';');
     HX_ASSERT(t2_end != NULL, "rui_index missing track 3 separator");
-    /* tail must be :0:1 (mute=0, solo=1) */
-    HX_ASSERT(t2_end - t2 > 4 &&
-              t2_end[-1] == '1' && t2_end[-2] == ':' &&
-              t2_end[-3] == '0' && t2_end[-4] == ':',
-              "track 2 mute=0 solo=1: rui_index tail must be :0:1");
+    /* tail must be :0:1:2 (mute=0, solo=1, slot=C — default t&3) */
+    HX_ASSERT(t2_end - t2 > 6 &&
+              t2_end[-1] == '2' && t2_end[-2] == ':' &&
+              t2_end[-3] == '1' && t2_end[-4] == ':' &&
+              t2_end[-5] == '0' && t2_end[-6] == ':',
+              "track 2 mute=0 solo=1: rui_index tail must be :0:1:2");
 
     hx_destroy(h);
 }

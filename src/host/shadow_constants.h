@@ -539,12 +539,14 @@ typedef struct shadow_midi_out_t {
  * MIDI-to-DSP structure for shadow UI to send MIDI to chain DSP slots.
  * Used by overtake modules to route MIDI to sound generators/effects.
  * Messages are raw 3-byte MIDI (status, data1, data2), stored 4-byte aligned.
+ * Byte 3 of each frame is the slot tag: 0 = dispatch by channel match
+ * (legacy zero-pad), 1..N = deliver directly to slot tag-1.
  */
 typedef struct shadow_midi_dsp_t {
     volatile uint8_t write_idx;      /* Shadow UI increments after writing */
     volatile uint8_t ready;          /* Toggle to signal new data */
     volatile uint8_t reserved[2];
-    uint8_t buffer[SHADOW_MIDI_DSP_BUFFER_SIZE];  /* Raw MIDI (4 bytes each: status, d1, d2, pad) */
+    uint8_t buffer[SHADOW_MIDI_DSP_BUFFER_SIZE];  /* MIDI frames (4 bytes each: status, d1, d2, slot tag) */
 } shadow_midi_dsp_t;
 
 /*

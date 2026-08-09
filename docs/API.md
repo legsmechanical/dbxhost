@@ -299,7 +299,9 @@ shadow_get_suspend_overtake() / shadow_set_suspend_overtake(v)
 shadow_set_overtake_mode(mode)
 shadow_set_skip_led_clear(v)
 shadow_request_patch(slot, name) / shadow_request_exit()
-shadow_send_midi_to_dsp(slot, msg)
+shadow_send_midi_to_dsp(slot, msg)  // deliver [status,d1,d2] to that slot directly
+                                    // (slot -1, or the legacy 1-arg array form,
+                                    //  dispatches by receive-channel match)
 shadow_load_ui_module(path)
 shadow_log(msg)
 shadow_control_restart()

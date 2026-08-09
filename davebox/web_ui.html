@@ -344,7 +344,7 @@ if (!window.schwungRemote) {
       const has=Array.from({length:16},(_,c)=> (c===0 && ((t===0&&drum.some(l=>l.hits.length))||(t===1&&mel.length)))?1:0).join("");
       /* mock seeds route/chan on the track (0-3 Move, 4-7 Schwung; ch=track#) and
        * carries mute/solo so the header state + gear dropdown preview in a browser */
-      return tk.pm+":"+tk.ac+":-1:0:"+has+":"+tk.route+":"+tk.chan+":"+(tk.mute?1:0)+":"+(tk.solo?1:0);
+      return tk.pm+":"+tk.ac+":-1:0:"+has+":"+tk.route+":"+tk.chan+":"+(tk.mute?1:0)+":"+(tk.solo?1:0)+":"+(tk.slot||0);
     }).join(";");
     if(isDrum){
       KV["overtake_dsp:rui_clip"]="16:24:0:0";
@@ -401,6 +401,7 @@ if (!window.schwungRemote) {
       if((m=k.match(/t(\d+)_route$/))){ const r={schwung:0,move:1,external:2}[v];
         if(r!=null) tracks[+m[1]].route=r; rev++; rebuild(); return; }
       if((m=k.match(/t(\d+)_channel$/))){ tracks[+m[1]].chan=Math.max(1,Math.min(16,+v|0)); rev++; rebuild(); return; }
+      if((m=k.match(/t(\d+)_slot$/))){ tracks[+m[1]].slot=Math.max(0,Math.min(3,+v|0)); rev++; rebuild(); return; }
       if((m=k.match(/t(\d+)_c(\d+)_ruisel$/))){ sel.t=+m[1]; sel.c=+m[2];
         sel.lane=(v&&v[0]&&v[0]!=='-')?+v:-1; rev++; rebuild(); return; }
       if((m=k.match(/t(\d+)_l(\d+)_(note_\w+)$/))){      // drum lane op
@@ -494,16 +495,17 @@ function parseModel(){
   const [st,sc,sl]       = (get("rui_sel")||"0:0:-1").split(":").map(Number);
   const [cl,ct,cls,cd]   = (get("rui_clip")||"16:24:0:0").split(":").map(Number);
   const tracks = (get("rui_index")||"").split(";").map(seg=>{
-    /* pm:ac:qc:pl:<16 bits>[:route:chan:mute:solo]; tolerate old pm:ac:<bits> and
-     * the pre-routing pm:ac:qc:pl:<bits> form (route/chan/mute/solo all optional). */
+    /* pm:ac:qc:pl:<16 bits>[:route:chan:mute:solo[:slot]]; tolerate old pm:ac:<bits> and
+     * the pre-routing pm:ac:qc:pl:<bits> form (route/chan/mute/solo/slot all optional). */
     const p=seg.split(":");
-    let pm,ac,qc,pl,bits,route,chan,mute,solo;
+    let pm,ac,qc,pl,bits,route,chan,mute,solo,slot;
     if(p.length>=5){ pm=+p[0]||0; ac=+p[1]||0; qc=(p[2]===""||p[2]===undefined)?-1:+p[2]; pl=+p[3]?1:0; bits=p[4]||"";
       route=p.length>5?+p[5]:undefined; chan=p.length>6?+p[6]:undefined;
-      mute=p.length>7?(+p[7]?1:0):0; solo=p.length>8?(+p[8]?1:0):0; }
+      mute=p.length>7?(+p[7]?1:0):0; solo=p.length>8?(+p[8]?1:0):0;
+      slot=p.length>9?+p[9]:undefined; }
     else { pm=+p[0]||0; ac=+p[1]||0; qc=-1; pl=0; bits=p[2]||""; mute=0; solo=0; }
     const has=[]; for(let i=0;i<16;i++) has.push(bits[i]==="1");
-    return {pm,ac,qc,pl,has,route,chan,mute,solo};
+    return {pm,ac,qc,pl,has,route,chan,mute,solo,slot};
   });
   const notes = (get("rui_notes")||"").split(";").filter(Boolean).map(tok=>{
     const [tick,pitch,vel,gate]=tok.split(":").map(Number); return {tick,pitch,vel,gate};
@@ -1221,8 +1223,11 @@ function renderSession(){
     /* header shows ROUTING: "1 - Mv Ch.3" (Move) / "5 - Schw Ch.5" (Schwung) /
      * "3 - Ext Ch.3"; falls back to mode+index on an older DSP w/o route data. */
     const rl=trk.route===1?"Mv":trk.route===2?"Ext":trk.route===0?"Schw":null;
-    const lbl=(rl!=null&&trk.chan!=null)?`${t+1} - ${rl} Ch.${trk.chan}`:(trk.pm===1?"D":trk.pm===2?"C":"M")+(t+1);
-    const ttl=(rl!=null&&trk.chan!=null)?`Track ${t+1} → ${rl==="Mv"?"Move":rl==="Schw"?"Schwung":"External"}, MIDI Ch ${trk.chan}`:`track ${t+1}`;
+    /* Schwung tracks address a chain SLOT directly (A-D); channel only matters
+     * for Move/External routes. */
+    const schwSlot=(trk.route===0&&trk.slot!=null)?"ABCD"[trk.slot&3]:null;
+    const lbl=(rl!=null&&trk.chan!=null)?`${t+1} - ${rl} ${schwSlot!=null?`Slot ${schwSlot}`:`Ch.${trk.chan}`}`:(trk.pm===1?"D":trk.pm===2?"C":"M")+(t+1);
+    const ttl=(rl!=null&&trk.chan!=null)?`Track ${t+1} → ${rl==="Mv"?"Move":rl==="Schw"?"Schwung":"External"}, ${schwSlot!=null?`Slot ${schwSlot}`:`MIDI Ch ${trk.chan}`}`:`track ${t+1}`;
     /* conductor / responder indicator (rui_cond): "C" on the conductor track,
      * a dot on every non-drum responder track */
     let cind="";
@@ -1369,12 +1374,16 @@ function openTrackGear(t,anchor){
     `<div class="tgrow"><span>Route</span><select id="tgRoute" class="full">`+
       `<option value="schwung">Schwung</option><option value="move">Move</option><option value="external">External</option>`+
       `</select></div>`+
+    `<div class="tgrow"><span>Slot</span><select id="tgSlot" class="full">`+
+      Array.from({length:4},(_,i)=>`<option value="${i}">${"ABCD"[i]}</option>`).join("")+`</select></div>`+
     `<div class="tgrow"><span>MIDI Channel</span><select id="tgChan" class="full">`+
       Array.from({length:16},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join("")+`</select></div>`;
   document.body.appendChild(el);
   el.querySelector("#tgRoute").value=routeVal;
+  el.querySelector("#tgSlot").value=String(tr.slot||0);
   el.querySelector("#tgChan").value=String(tr.chan||1);
   el.querySelector("#tgRoute").onchange=e=>{ R.setParam(P+`t${t}_route`, e.target.value); afterEdit(); pullSoon(); };
+  el.querySelector("#tgSlot").onchange=e=>{ R.setParam(P+`t${t}_slot`, String(e.target.value)); afterEdit(); pullSoon(); };
   el.querySelector("#tgChan").onchange=e=>{ R.setParam(P+`t${t}_channel`, String(e.target.value)); afterEdit(); pullSoon(); };
   const r=anchor.getBoundingClientRect();
   el.style.left=Math.max(6,Math.min(window.innerWidth-194, r.left))+"px";
