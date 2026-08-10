@@ -4796,6 +4796,19 @@ static struct timespec spi_ioctl_start, spi_pre_end, spi_post_start, spi_ioctl_e
 static uint64_t spi_total_sum = 0, spi_pre_sum = 0, spi_ioctl_sum = 0, spi_post_sum = 0;
 static uint64_t spi_total_max = 0, spi_pre_max = 0, spi_ioctl_max = 0, spi_post_max = 0;
 static int spi_timing_count = 0;
+
+/* === COMPUTE, the load signal ===
+ * pre + post: the work this process actually does per frame. Deliberately
+ * excludes the ioctl span, which BLOCKS until the next frame boundary and so
+ * always measures ~one block period no matter how idle we are. Comparing a
+ * budget against the frame total is therefore not a load measure at all — it
+ * reads ~2850 µs on a completely idle device, which is why the old overrun
+ * counter ran into the tens of thousands with nothing loaded.
+ *
+ * This is the number to watch when deciding whether more DSP fits. */
+static uint64_t spi_compute_sum = 0, spi_compute_max = 0;
+static uint32_t spi_compute_over_budget = 0;   /* frames where compute > budget */
+static uint64_t spi_last_frame_compute_us = 0;
 static int spi_baseline_mode = -1;  /* -1 = unknown, 0 = full mode, 1 = baseline only */
 
 /* === SPI Timing Snapshot (written from SPI path, read by background logger) ===
@@ -4808,6 +4821,10 @@ typedef struct {
     uint64_t frame_pre_avg, frame_pre_max;
     uint64_t frame_ioctl_avg, frame_ioctl_max;
     uint64_t frame_post_avg, frame_post_max;
+    /* Compute = pre + post: the actual per-frame work, and the only one of
+     * these that responds to load (see the definition above). */
+    uint64_t compute_avg, compute_max;
+    uint32_t compute_over_budget;
     /* Granular pre-ioctl sections (avg/max) */
     uint64_t midi_mon_avg, midi_mon_max;
     uint64_t fwd_midi_avg, fwd_midi_max;
@@ -4916,9 +4933,16 @@ static uint64_t xmos_log_bytes = 0;
 /* Overrun detection */
 static int spi_consecutive_overruns = 0;
 static int spi_skip_dsp_this_frame = 0;
-static uint64_t spi_last_frame_total_us = 0;
-#define OVERRUN_THRESHOLD_US 2850  /* Start worrying at 2850µs (98% of budget) */
-#define SKIP_DSP_THRESHOLD 3       /* Skip DSP after 3 consecutive overruns */
+/* (The old OVERRUN_THRESHOLD_US of 2850 µs was removed: it was compared against
+ * the frame TOTAL, which includes the blocking ioctl, so it fired on an idle
+ * device and measured nothing about load. Use SPI_COMPUTE_BUDGET_US below.) */
+#define SKIP_DSP_THRESHOLD 3       /* Skip DSP after 3 consecutive over-budget frames */
+
+/* The work window: a 128-frame block at 44.1 kHz is ~2900 µs, of which the SPI
+ * transfer takes ~2 ms, leaving ~900 µs for everything this process does. This
+ * is the figure that per-frame COMPUTE (pre + post) must stay under — not the
+ * frame total, which includes the blocking wait. */
+#define SPI_COMPUTE_BUDGET_US 900
 
 /* ============================================================================
  * SPI PRE-TRANSFER CALLBACK
@@ -5207,8 +5231,21 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
     }
 
 
-    /* Check if previous frame overran - if so, consider skipping expensive work */
-    if (spi_last_frame_total_us > OVERRUN_THRESHOLD_US) {
+    /* Check if the previous frame overran its WORK budget — if so, consider
+     * skipping expensive work.
+     *
+     * ⚠⚠ `spi_skip_dsp_this_frame` is currently WRITTEN AND NEVER READ: this is
+     * the only site that sets it, the else-branch is the only site that clears
+     * it, and nothing consumes it. So there is NO automatic DSP-skip backstop
+     * today, despite this block reading like one. Do not cite it as protection.
+     * Wiring it up is a deliberate RT behaviour change and needs its own
+     * measurement; it is tracked on the board rather than done in passing.
+     *
+     * The condition itself was also wrong until now: it tested the frame TOTAL,
+     * which includes the blocking ioctl and therefore sat at ~one block period
+     * on an idle device, making the test a coin flip unrelated to load. It now
+     * tests compute against the work budget. */
+    if (spi_last_frame_compute_us > SPI_COMPUTE_BUDGET_US) {
         spi_consecutive_overruns++;
         if (spi_consecutive_overruns >= SKIP_DSP_THRESHOLD) {
             spi_skip_dsp_this_frame = 1;
@@ -5217,8 +5254,8 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
             if (skip_log_count++ < 10 || skip_log_count % 100 == 0) {
                 FILE *f = fopen(SCHWUNG_INSTALL_DIR "/ioctl_timing.log", "a");
                 if (f) {
-                    fprintf(f, "SKIP_DSP: spi_consecutive_overruns=%d, last_frame=%llu us\n",
-                            spi_consecutive_overruns, (unsigned long long)spi_last_frame_total_us);
+                    fprintf(f, "SKIP_DSP: spi_consecutive_overruns=%d, last_compute=%llu us\n",
+                            spi_consecutive_overruns, (unsigned long long)spi_last_frame_compute_us);
                     fclose(f);
                 }
             }
@@ -8198,10 +8235,16 @@ post_timing:
     uint64_t total_us = (spi_ioctl_end.tv_sec - spi_ioctl_start.tv_sec) * 1000000 +
                         (spi_ioctl_end.tv_nsec - spi_ioctl_start.tv_nsec) / 1000;
 
+    uint64_t compute_us = pre_us + post_us;
+
     spi_total_sum += total_us;
     spi_pre_sum += pre_us;
     spi_ioctl_sum += ioctl_us;
     spi_post_sum += post_us;
+    spi_compute_sum += compute_us;
+    if (compute_us > spi_compute_max) spi_compute_max = compute_us;
+    if (compute_us > SPI_COMPUTE_BUDGET_US) spi_compute_over_budget++;
+    spi_last_frame_compute_us = compute_us;
     spi_timing_count++;
 
     if (total_us > spi_total_max) spi_total_max = total_us;
@@ -8209,8 +8252,13 @@ post_timing:
     if (ioctl_us > spi_ioctl_max) spi_ioctl_max = ioctl_us;
     if (post_us > spi_post_max) spi_post_max = post_us;
 
-    /* Track overruns (no I/O — just update snapshot) */
-    if (total_us > 2000) {
+    /* Track overruns (no I/O — just update snapshot).
+     * Gated on COMPUTE, not the frame total: the total includes the blocking
+     * ioctl and so exceeds any work-shaped threshold on every frame, idle or
+     * not. The old `total_us > 2000` test counted essentially every frame,
+     * which is why this counter read in the tens of thousands on an idle
+     * device and carried no information. */
+    if (compute_us > SPI_COMPUTE_BUDGET_US) {
         static uint32_t hook_overrun_count = 0;
         hook_overrun_count++;
         spi_snap.overrun_count = hook_overrun_count;
@@ -8224,6 +8272,9 @@ post_timing:
     if (spi_timing_count >= 1000) {
         spi_snap.frame_total_avg = spi_total_sum / spi_timing_count;
         spi_snap.frame_total_max = spi_total_max;
+        spi_snap.compute_avg = spi_compute_sum / spi_timing_count;
+        spi_snap.compute_max = spi_compute_max;
+        spi_snap.compute_over_budget = spi_compute_over_budget;
         spi_snap.frame_pre_avg = spi_pre_sum / spi_timing_count;
         spi_snap.frame_pre_max = spi_pre_max;
         spi_snap.frame_ioctl_avg = spi_ioctl_sum / spi_timing_count;
@@ -8233,6 +8284,8 @@ post_timing:
         spi_snap.frame_ready = 1;
         spi_total_sum = spi_pre_sum = spi_ioctl_sum = spi_post_sum = 0;
         spi_total_max = spi_pre_max = spi_ioctl_max = spi_post_max = 0;
+        spi_compute_sum = spi_compute_max = 0;
+        spi_compute_over_budget = 0;
         spi_timing_count = 0;
     }
 
@@ -8302,8 +8355,8 @@ post_timing:
         spi_granular_count = 0;
     }
 
-    /* Record frame time for overrun detection in next iteration */
-    spi_last_frame_total_us = total_us;
+    /* (spi_last_frame_compute_us is latched with the other compute stats
+     * above — it is what the next frame's over-budget check reads.) */
 }
 
 /* ============================================================================
@@ -8456,6 +8509,16 @@ static void *spi_timing_logger_thread(void *arg)
                 (unsigned long long)spi_snap.frame_ioctl_avg, (unsigned long long)spi_snap.frame_ioctl_max,
                 (unsigned long long)spi_snap.frame_post_avg, (unsigned long long)spi_snap.frame_post_max,
                 spi_snap.overrun_count);
+            /* THE load line. `total` above is dominated by the blocking ioctl
+             * and barely moves with load; this one is the work we actually do
+             * and the only one worth judging headroom from. */
+            unified_log("spi_timing", LOG_LEVEL_DEBUG,
+                "Compute(us): avg=%llu max=%llu budget=%d | headroom avg=%lld%% max=%lld%% | over_budget=%u/1000",
+                (unsigned long long)spi_snap.compute_avg, (unsigned long long)spi_snap.compute_max,
+                SPI_COMPUTE_BUDGET_US,
+                (long long)(100 - (long long)spi_snap.compute_avg * 100 / SPI_COMPUTE_BUDGET_US),
+                (long long)(100 - (long long)spi_snap.compute_max * 100 / SPI_COMPUTE_BUDGET_US),
+                spi_snap.compute_over_budget);
         }
 
         if (spi_snap.granular_ready) {
