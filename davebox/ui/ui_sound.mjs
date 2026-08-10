@@ -33,6 +33,10 @@ import {
  * confusing them is exactly what broke the bypass gesture. Used only for the
  * Back long-press, which davebox owns module-wide. */
 import { S as GS } from './ui_state.mjs';
+/* Keep mask for host overlay services opened from sound mode (knob/LFO
+ * editors) — same mask the fx_picker overlay uses, for the same reason: the
+ * overlay owns jog/Back/knobs/touch/Shift while it is up. */
+import { DAVEBOX_PICKER_KEEP_MASK } from './ui_corun.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
     closeTextEntry,
@@ -116,9 +120,9 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
  * davebox for the host's chain editor, which is a long way to go for a send.
  *
  * Mirrors the host's CHAIN_SETTINGS_ITEMS — same keys, same ranges, so the two
- * screens can't disagree — minus the rows that are actions rather than values
- * (knob assignment, LFOs, patch save/delete) and minus MPE, which is a mode you
- * set once at the host rather than reach for mid-track.
+ * screens can't disagree. Knob and LFO assignment are `svc` rows: the host's
+ * editors opened as overlay services on top of sound mode (P5 ruling — the
+ * screens stay host-owned for now; absorbing them natively is P7 work).
  *
  * `fmt` exists because a raw number is a lie for most of these: -1 on a forward
  * channel means Auto, 0 on a receive channel means All. */
@@ -141,6 +145,11 @@ const SLOT_SETTINGS = [
     { key: 'muted',         label: 'Muted',       min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
     { key: 'soloed',        label: 'Soloed',      min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
     { key: 'move_to_slot',  label: 'Move>Schw',   min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
+    /* Overlay-service rows: jog-click opens the host's editor over sound mode;
+     * Back at the editor's root returns here. No value to read or edit. */
+    { key: 'knobs', label: 'Knobs...',  svc: 'knob_editor' },
+    { key: 'lfo1',  label: 'LFO 1...',  svc: 'lfo_editor', lfo: 0 },
+    { key: 'lfo2',  label: 'LFO 2...',  svc: 'lfo_editor', lfo: 1 },
 ];
 
 /* The jog-click picker offers three destinations, and they are NOT the same
@@ -992,6 +1001,7 @@ function probeCaps() {
 
 function openSlotCfg() {
     S.slotCfgVals = S.slotRows.map(s => {
+        if (s.svc) return 0;   /* service rows carry no value */
         const raw = parseFloat(engineGetSlotParam(S.slot, s.key));
         return isFinite(raw) ? raw : 0;
     });
@@ -1004,7 +1014,7 @@ function openSlotCfg() {
 
 function slotCfgStep(delta) {
     const s = S.slotRows[S.slotCfgIdx];
-    if (!S.slotCfgEditing || !s) {
+    if (!S.slotCfgEditing || !s || s.svc) {
         S.slotCfgIdx = listMove(S.slotRows.length, S.slotCfgIdx, delta);
         S.slotCfgEditing = false;
         return;
@@ -1062,11 +1072,11 @@ function renderSlotCfg() {
         const on = (idx === S.slotCfgIdx);
         if (on) fill_rect(0, y - 1, 128, ROW_H, 1);
         const ink = on ? 0 : 1;
-        const val = s.fmt(S.slotCfgVals[idx]);
+        const val = s.svc ? '>' : s.fmt(S.slotCfgVals[idx]);
         const vw = mvWidth(val);
         mvPrint(3, y + 1, s.label, ink);
         mvPrint(125 - vw, y + 1, val, ink);
-        if (on && S.slotCfgEditing) mvPrint(125 - vw - 6, y + 1, '*', ink);
+        if (on && S.slotCfgEditing && !s.svc) mvPrint(125 - vw - 6, y + 1, '*', ink);
     }
 }
 
@@ -1944,7 +1954,18 @@ export function soundOnCC(d1, d2, decodeDelta) {
             return true;
         }
         if (S.view === VIEW_SLOTCFG) {
-            S.slotCfgEditing = !S.slotCfgEditing;
+            const row = S.slotRows[S.slotCfgIdx];
+            if (row && row.svc) {
+                /* Host editor as an overlay service on top of sound mode.
+                 * host_open_service is safe from the MIDI handler — it is a
+                 * stack push + view capture, not an SHM round-trip. */
+                host_open_service(row.svc, {
+                    slot: S.slot, lfo: row.lfo | 0,
+                    keep_mask: DAVEBOX_PICKER_KEEP_MASK,
+                });
+            } else {
+                S.slotCfgEditing = !S.slotCfgEditing;
+            }
         }
         else if (S.view === VIEW_BUSES) {
             S.pendingAction = { t: 'bus', bus: FX_BUSES[S.busIdx] };

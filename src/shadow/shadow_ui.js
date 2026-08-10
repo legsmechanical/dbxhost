@@ -408,6 +408,18 @@ const PRIMARY_SERVICES = {
     master_fx:       { kind: "overlay", enter: function() { enterMasterFxSettings(); } },
     global_settings: { kind: "overlay", enter: function() { enterGlobalSettings(); } },
     fx_picker:       { kind: "overlay", enter: function() { enterFxBusPicker(); } },
+    /* Direct-entry editors: the same screens reachable through
+     * chain_editor_view, addressable without walking Chain Settings. The
+     * knob editor's target list reads chainConfigs, which only the chain-edit
+     * entry primes — prime it here so direct entry sees the loaded chain. */
+    knob_editor: { kind: "overlay", enter: function(o) {
+        const slot = (o && o.slot) | 0;
+        loadChainConfigFromSlot(slot);
+        enterKnobEditor(slot);
+    } },
+    lfo_editor: { kind: "overlay", enter: function(o) {
+        enterSlotLfoEditor((o && o.slot) | 0, (o && o.lfo) | 0);
+    } },
 };
 
 function primaryStackTopIsOverlay() {
@@ -12665,22 +12677,7 @@ function handleSelect() {
                         needsRedraw = true;
                     } else if (setting.key === "lfo1" || setting.key === "lfo2") {
                         const lfoIdx = (setting.key === "lfo1") ? 0 : 1;
-                        lfoCtx = makeSlotLfoCtx(selectedSlot, lfoIdx);
-                        selectedLfoItem = 0;
-                        editingLfoValue = false;
-                        setView(VIEWS.LFO_EDIT);
-                        const enabled = lfoCtx.getParam("enabled");
-                        if (enabled === "1") {
-                            const target = lfoCtx.getParam("target") || "";
-                            const param = lfoCtx.getParam("target_param") || "";
-                            if (target && param) {
-                                announce(lfoCtx.title + ", " + target + ":" + param);
-                            } else {
-                                announce(lfoCtx.title + ", no target");
-                            }
-                        } else {
-                            announce(lfoCtx.title + ", Off");
-                        }
+                        enterSlotLfoEditor(selectedSlot, lfoIdx);
                     } else if (setting.key === "delete") {
                         if (isExistingPreset(selectedSlot)) {
                             confirmingDelete = true;
@@ -15260,7 +15257,10 @@ function makeSlotLfoCtx(slot, lfoIdx) {
                 }
                 comps.push({ key: "synth", label: "Synth: " + name });
             }
-            for (let i = 1; i <= 2; i++) {
+            /* All routed FX blocks — matches getKnobTargets and the DSP's
+             * generic fxN target parse (chain_mod.c atoi), which already
+             * accepts fx3/fx4. The old 1..2 bound predated the 4-block fork. */
+            for (let i = 1; i <= 4; i++) {
                 const fxModule = getSlotParam(slot, "fx" + i + "_module");
                 if (fxModule) {
                     const name = getSlotParam(slot, "fx" + i + ":name") || fxModule;
@@ -15308,6 +15308,29 @@ function makeSlotLfoCtx(slot, lfoIdx) {
         returnAnnounce: "Chain Settings",
         supportsRetrigger: true,
     };
+}
+
+/* Enter a slot's LFO editor. Shared by the Chain Settings LFO rows and the
+ * lfo_editor overlay service — one entry, one announce, so the two paths
+ * cannot drift. */
+function enterSlotLfoEditor(slot, lfoIdx) {
+    lfoCtx = makeSlotLfoCtx(slot, lfoIdx);
+    selectedLfoItem = 0;
+    editingLfoValue = false;
+    setView(VIEWS.LFO_EDIT);
+    const enabled = lfoCtx.getParam("enabled");
+    if (enabled === "1") {
+        const target = lfoCtx.getParam("target") || "";
+        const param = lfoCtx.getParam("target_param") || "";
+        if (target && param) {
+            announce(lfoCtx.title + ", " + target + ":" + param);
+        } else {
+            announce(lfoCtx.title + ", no target");
+        }
+    } else {
+        announce(lfoCtx.title + ", Off");
+    }
+    needsRedraw = true;
 }
 
 /* Hardcoded LFO param list for LFO-to-LFO modulation */
