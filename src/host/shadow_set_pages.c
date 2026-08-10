@@ -227,12 +227,12 @@ void shadow_save_config_to_dir(const char *dir) {
          * STRIPS the fields it omits, so a setting saved by the other writer
          * disappears the next time this one runs. That is how transpose and the
          * sends could vanish without anything failing. */
-        fprintf(f, "    {\"name\": \"%s\", \"channel\": %d, \"volume\": %.3f, \"forward_channel\": %d, \"muted\": %d, \"soloed\": %d, \"send_a\": %.3f, \"send_b\": %.3f, \"move_to_slot\": %d, \"transpose\": %d, \"synth_volume\": %.3f}%s\n",
+        fprintf(f, "    {\"name\": \"%s\", \"channel\": %d, \"volume\": %.3f, \"forward_channel\": %d, \"muted\": %d, \"soloed\": %d, \"send_a\": %.3f, \"send_b\": %.3f, \"transpose\": %d, \"synth_volume\": %.3f}%s\n",
                 host.chain_slots[i].patch_name, display_ch,
                 host.chain_slots[i].volume, display_fwd,
                 host.chain_slots[i].muted, host.chain_slots[i].soloed,
                 host.chain_slots[i].send_a, host.chain_slots[i].send_b,
-                host.chain_slots[i].move_to_slot, host.chain_slots[i].transpose,
+                host.chain_slots[i].transpose,
                 host.chain_slots[i].synth_volume,
                 i < SHADOW_CHAIN_INSTANCES - 1 ? "," : "");
     }
@@ -356,11 +356,6 @@ int shadow_load_config_from_dir(const char *dir) {
                 float v = (float)atof(sb_colon + 1);
                 if (v >= 0.0f && v <= 2.0f) host.chain_slots[i].send_b = v;
             }
-        }
-        char *mts_pos = strstr(name_pos, "\"move_to_slot\"");
-        if (mts_pos) {
-            char *mts_colon = strchr(mts_pos, ':');
-            if (mts_colon) host.chain_slots[i].move_to_slot = atoi(mts_colon + 1) ? 1 : 0;
         }
         char *sv_pos = strstr(name_pos, "\"synth_volume\"");
         if (sv_pos) {

@@ -131,7 +131,8 @@ extern float shadow_send_a_to_b_level;
 
 /* Move FX slots — one mini FX bus per Move track (channel), each with up to
  * MOVE_FX_BLOCKS insert FX in series. Fed by the channel's Move track when the
- * synth slot's move_to_slot == 0. Output mixes to the master at the strip's
+ * channel unconditionally (the per-slot Move>Slot switch is retired — a slot
+ * is a Move bus or a Schwung chain, never both). Output mixes at the strip's
  * volume; Send A/B tap the same global send buses as the synth slots. */
 extern master_fx_slot_t shadow_move_fx_slots[MOVE_FX_SLOTS][MOVE_FX_BLOCKS];
 

@@ -1753,7 +1753,6 @@ const CHAIN_SETTINGS_ITEMS = [
     { key: "slot:volume", label: "Volume", type: "float", min: 0, max: 4, step: 0.05 },
     { key: "slot:send_a", label: "Send A", type: "float", min: 0, max: 1, step: 0.05 },
     { key: "slot:send_b", label: "Send B", type: "float", min: 0, max: 1, step: 0.05 },
-    { key: "slot:move_to_slot", label: "Move>SchwFX", type: "int", min: 0, max: 1, step: 1 },  // On = Move track rides this synth slot (shares its SchwFX chain + sends); Off = peel to Move FX slot
     { key: "slot:muted", label: "Muted", type: "int", min: 0, max: 1, step: 1 },
     { key: "slot:soloed", label: "Soloed", type: "int", min: 0, max: 1, step: 1 },
     { key: "slot:receive_channel", label: "Recv Ch", type: "int", min: 0, max: 16, step: 1 },
@@ -4299,7 +4298,6 @@ function saveChainConfigToDir(dir) {
             const soloed = parseInt(getSlotParam(i, "slot:soloed") || "0");
             const sendA = parseFloat(getSlotParam(i, "slot:send_a") || "0");
             const sendB = parseFloat(getSlotParam(i, "slot:send_b") || "0");
-            const moveToSlot = parseInt(getSlotParam(i, "slot:move_to_slot") || "1");
             /* Transpose was exposed as a slot setting and wired through the
              * shim (set + get, reset to 0 on start) but never serialised by
              * anything — so it silently reverted to 0 on every host start.
@@ -4309,7 +4307,7 @@ function saveChainConfigToDir(dir) {
              * this file and the last one to run wins it whole, so a field
              * missing from either is silently dropped. */
             const synthVol = parseFloat(getSlotParam(i, "slot:synth_volume") || "1");
-            cfgSlots.push({ name: slots[i] ? slots[i].name : "", channel: ch, volume: vol, forward_channel: fwd, muted: muted, soloed: soloed, send_a: sendA, send_b: sendB, move_to_slot: moveToSlot, transpose: transpose, synth_volume: isNaN(synthVol) ? 1 : synthVol });
+            cfgSlots.push({ name: slots[i] ? slots[i].name : "", channel: ch, volume: vol, forward_channel: fwd, muted: muted, soloed: soloed, send_a: sendA, send_b: sendB, transpose: transpose, synth_volume: isNaN(synthVol) ? 1 : synthVol });
         }
         return !!host_write_file(path, JSON.stringify({ slots: cfgSlots }, null, 2) + "\n");
     } catch (e) {
@@ -4502,13 +4500,6 @@ function loadChainConfigFromDir(dir) {
             setSlotParamWithTimeout(i, "slot:send_a", String(sa), 500);
             const sb = (typeof s.send_b === "number") ? s.send_b : 0;
             setSlotParamWithTimeout(i, "slot:send_b", String(sb), 500);
-            /* Move>Slot routing (Move>SchwFX): ALWAYS write — saved value if
-             * present, else default 1 (Move track rides the synth slot, the
-             * preexisting behavior). The shim's move_to_slot is global and NOT
-             * reset per set, so skipping a missing field leaves it stale from the
-             * prior set (e.g. a peeled 0), exactly like receive_channel above. */
-            const mts = (typeof s.move_to_slot === "number") ? s.move_to_slot : 1;
-            setSlotParamWithTimeout(i, "slot:move_to_slot", String(mts), 500);
         }
         debugLog("SET_CHANGED: loaded chain config from " + path);
     } catch (e) {
@@ -7664,11 +7655,6 @@ function getChainSettingValue(slot, setting) {
     }
     if (setting.key === "midi_fx_pre_mode") {
         return parseInt(val) ? "Schw+Move" : "Schw";
-    }
-    if (setting.key === "slot:move_to_slot") {
-        /* On = Move track rides this synth slot (shares FX + sends);
-         * Off = Move track is peeled to its own Move FX slot. */
-        return parseInt(val) ? "On" : "Off";
     }
     return String(val);
 }
@@ -12047,13 +12033,7 @@ function handleJog(delta) {
             }
             break;
         case VIEWS.FX_BUS_PICKER:
-            if (pendingMoveFxRouteConfirm >= 0) {
-                moveFxRouteConfirmSel = moveFxRouteConfirmSel === 0 ? 1 : 0;
-                announce(moveFxRouteConfirmSel === 0 ? "No" : "Yes");
-                needsRedraw = true;
-            } else {
-                fxBusPickerIndex = Math.max(0, Math.min(2 + MOVE_FX_SLOTS_JS, fxBusPickerIndex + delta));
-            }
+            fxBusPickerIndex = Math.max(0, Math.min(2 + MOVE_FX_SLOTS_JS, fxBusPickerIndex + delta));
             break;
         case VIEWS.PATCHES:
             handlePatchesJog(delta);
@@ -12537,32 +12517,16 @@ function handleSelect() {
             }
             break;
         case VIEWS.FX_BUS_PICKER:
-            if (pendingMoveFxRouteConfirm >= 0) {
-                /* Commit the route confirm. */
-                const cs = pendingMoveFxRouteConfirm;
-                pendingMoveFxRouteConfirm = -1;
-                if (moveFxRouteConfirmSel === 1) {
-                    /* Yes: peel the track to its own Move FX bus (persists per-set),
-                     * then open it. Single write → co-run-safe. */
-                    setSlotParam(cs, "slot:move_to_slot", "0");
-                    enterFxBusEditor("moveFx" + (cs + 1));
-                } else {
-                    needsRedraw = true;  /* No: dismiss, stay in picker. */
-                }
-            } else if (fxBusPickerIndex === 0) {
+            if (fxBusPickerIndex === 0) {
                 enterFxBusEditor("master");
             } else if (fxBusPickerIndex === 1 || fxBusPickerIndex === 2) {
                 enterFxBusEditor(fxBusPickerIndex === 1 ? "sendA" : "sendB");
             } else {
                 /* 3..(2+MOVE_FX_SLOTS_JS) → Move FX 1..N */
+                /* Always opens directly: a Move track is unconditionally its
+                 * own bus now, so there is nothing to confirm peeling from. */
                 const ms = fxBusPickerIndex - 3;   /* 0-based Move slot/track */
-                if (moveFxRouted[ms]) {
-                    pendingMoveFxRouteConfirm = ms;   /* routed → confirm before peel */
-                    moveFxRouteConfirmSel = 0;
-                    needsRedraw = true;
-                } else {
-                    enterFxBusEditor("moveFx" + (ms + 1));   /* peeled → open directly */
-                }
+                enterFxBusEditor("moveFx" + (ms + 1));
             }
             break;
         case VIEWS.PATCHES:
@@ -13315,11 +13279,6 @@ function handleBack() {
             handlePresetDetailBack();
             break;
         case VIEWS.FX_BUS_PICKER:
-            if (pendingMoveFxRouteConfirm >= 0) {
-                pendingMoveFxRouteConfirm = -1;   /* cancel confirm, stay in picker */
-                needsRedraw = true;
-                break;
-            }
             {
                 /* Back exits the shadow UI back to Move native. (The previous
                  * exitShadowUI() was undefined and threw, so Back did nothing.) */
@@ -15129,62 +15088,14 @@ function enterFxBusEditor(busId) {
 }
 
 let fxBusPickerIndex = 0;
-/* Per Move slot: true if its track is routed to the Schwung synth slot
- * (slot:move_to_slot != "0" — the default). Refreshed in the render path and
- * read by the picker's select handler to decide direct-open vs route confirm. */
-let moveFxRouted = [];
-function refreshMoveFxRouted() {
-    moveFxRouted = [];
-    for (let s = 0; s < MOVE_FX_SLOTS_JS; s++) {
-        moveFxRouted.push(getSlotParam(s, "slot:move_to_slot") !== "0");
-    }
-}
-/* Route-to-chain confirm: -1 = none pending; else the 0-based slot/track index
- * whose Move FX the user is trying to open while still routed. */
-let pendingMoveFxRouteConfirm = -1;
-let moveFxRouteConfirmSel = 0;   /* 0 = No (default), 1 = Yes */
 function enterFxBusPicker() {
     fxBusPickerIndex = 0;
-    pendingMoveFxRouteConfirm = -1;
-    refreshMoveFxRouted();
     view = VIEWS.FX_BUS_PICKER;
     needsRedraw = true;
 }
 function drawFxBusPicker() {
     clear_screen();
-    /* Route-to-chain confirm overlay. Highlighted No/Yes buttons (filled =
-     * selected, outlined = not) in a compact dialog style; no footer. */
-    if (pendingMoveFxRouteConfirm >= 0) {
-        const n = pendingMoveFxRouteConfirm + 1;
-        const lines = wrapText("Move track " + n + " routed to Schwung slot " + n + ".", 21)
-            .concat(wrapText("Route to this chain instead?", 21));
-        let y = 4;
-        for (let i = 0; i < lines.length && y <= 40; i++) { print(2, y, lines[i], 1); y += 9; }
-        const noX = 6, yesX = 74, btnY = 44, btnW = 46, btnH = 13;
-        if (moveFxRouteConfirmSel === 0) {
-            fill_rect(noX, btnY, btnW, btnH, 1);
-            print(noX + 17, btnY + 3, "No", 0);
-        } else {
-            fill_rect(noX, btnY, btnW, 1, 1);
-            fill_rect(noX, btnY + btnH - 1, btnW, 1, 1);
-            fill_rect(noX, btnY, 1, btnH, 1);
-            fill_rect(noX + btnW - 1, btnY, 1, btnH, 1);
-            print(noX + 17, btnY + 3, "No", 1);
-        }
-        if (moveFxRouteConfirmSel === 1) {
-            fill_rect(yesX, btnY, btnW, btnH, 1);
-            print(yesX + 14, btnY + 3, "Yes", 0);
-        } else {
-            fill_rect(yesX, btnY, btnW, 1, 1);
-            fill_rect(yesX, btnY + btnH - 1, btnW, 1, 1);
-            fill_rect(yesX, btnY, 1, btnH, 1);
-            fill_rect(yesX + btnW - 1, btnY, 1, btnH, 1);
-            print(yesX + 14, btnY + 3, "Yes", 1);
-        }
-        return;
-    }
     drawHeader("FX Buses");
-    refreshMoveFxRouted();
     const items = [
         { label: "Master FX", value: getMasterFxDisplayName() },
         { label: "Send FX A", value: "" },

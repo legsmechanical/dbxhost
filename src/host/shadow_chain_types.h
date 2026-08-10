@@ -50,8 +50,6 @@ typedef struct shadow_chain_slot_t {
     int feedback_hold;      /* 1 = booted muted as a line-input feedback guard; JS clears once jack state is safe */
     int forward_channel;    /* -2 = passthrough, -1 = auto, 0-15 = forward MIDI to this channel */
     int transpose;          /* semitone offset applied to incoming note-on/off/poly-AT, range -12..+12 */
-    int move_to_slot;       /* Move>Slot: 1 = sum same-channel Move track into this synth slot (default,
-                             * shares FX + sends); 0 = peel Move track off to its dedicated Move FX slot */
     char patch_name[64];
     shadow_capture_rules_t capture;  /* MIDI controls this slot captures when focused */
     slot_fade_t fade;                /* fade envelope for seamless transitions */

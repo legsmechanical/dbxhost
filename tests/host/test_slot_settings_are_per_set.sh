@@ -10,9 +10,14 @@ set -euo pipefail
 #   global   <install>/shadow_chain_config.json          (flat arrays)
 # and the global one was applied LAST at boot, so an install-wide value from an
 # earlier session silently replaced what the current set had just restored. The
-# per-set loader also never parsed transpose / sends / move_to_slot at all, so
+# per-set loader also never parsed transpose / sends at all, so
 # those were written to a file nothing read. Symptom: a setting that "would not
 # stick", while the file on disk looked correct.
+#
+# ⚠ move_to_slot was in these lists until 2026-08-10. It is RETIRED, not merely
+# unpinned: a Move track is now unconditionally its own bus, so there is no
+# per-slot routing flag left to persist. Do not re-add it here — a pin on a
+# deleted field fails for the right reason but the wrong cause.
 #
 # Three properties must hold together; any one alone leaves the bug alive.
 #
@@ -31,7 +36,7 @@ js="src/shadow/shadow_ui.js"
 fail() { echo "FAIL: $1" >&2; exit 1; }
 
 # 1. The per-set loader must read every slot field, or it is written for nothing.
-for f in transpose send_a send_b move_to_slot synth_volume muted soloed; do
+for f in transpose send_a send_b synth_volume muted soloed; do
   rg -q "\"\\\\\"$f\\\\\"\"" "$loader" \
     || fail "$loader does not parse \"$f\" — it would be saved per-set and then never restored"
 done
@@ -45,7 +50,7 @@ rg -q 'shadow_per_set_config_loaded = shadow_load_config_from_dir' "$chain" \
 # 3. BOTH writers of the per-set file must emit every field. The file is
 #    rewritten whole, so whichever writer runs last silently strips what it
 #    omits — that is how a setting saved by one writer vanishes via the other.
-for f in transpose send_a send_b move_to_slot synth_volume; do
+for f in transpose send_a send_b synth_volume; do
   rg -q "$f" "$loader" || fail "$loader C writer omits $f"
   rg -q "$f:" "$js"     || fail "$js writer omits $f"
 done

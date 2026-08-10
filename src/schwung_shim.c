@@ -2260,22 +2260,27 @@ static void shadow_inprocess_mix_from_buffer(void) {
             int16_t *move_track = la_cache[s];
             int have_move_track = la_cache_valid[s];
 
-            /* Move>Slot: 1 = sum Move track into this synth slot (shares FX +
-             * sends); 0 = peel it off to the dedicated Move FX slot below. */
-            int route_to_synth = shadow_chain_slots[s].move_to_slot;
+            /* A Move track ALWAYS goes to its own Move FX bus now. The old
+             * per-slot "Move>Slot" switch — sum the track into this slot's
+             * synth chain instead — is retired: a slot is one thing or the
+             * other, a Move instrument bus or a Schwung chain, never both.
+             * ⚠ This is an audible change for a slot that had BOTH a synth and
+             * a Move track: the Move audio no longer passes through the synth's
+             * FX chain, it runs its own inserts. That is the point of the
+             * model, and Move>Slot's own 4 inserts cover the effects case. */
 
             int slot_active = (shadow_chain_slots[s].active &&
                                shadow_chain_slots[s].instance &&
                                shadow_slot_deferred_valid[s]);
 
-            /* Move FX slot: when Move>Slot is off, the channel's Move track is
-             * routed through its own ≤MOVE_FX_BLOCKS insert FX chain (independent
-             * of the synth on this channel), then mixed to the master at the
-             * strip's volume and tapped into the global Send A/B buses. Runs
-             * regardless of whether a synth is loaded on the slot, and BEFORE the
-             * synth block so the synth's idle-continue below can't skip it.
-             * Mixing is additive, so order doesn't change the sum. */
-            if (!route_to_synth && have_move_track && s < MOVE_FX_SLOTS) {
+            /* Move FX bus: the channel's Move track runs through its own
+             * ≤MOVE_FX_BLOCKS insert FX chain (independent of any synth on this
+             * channel), then mixes to the master at the strip's volume and taps
+             * the global Send A/B buses. Runs regardless of whether a synth is
+             * loaded on the slot, and BEFORE the synth block so the synth's
+             * idle-continue below can't skip it. Mixing is additive, so order
+             * doesn't change the sum. */
+            if (have_move_track && s < MOVE_FX_SLOTS) {
                 /* Skip the copy + FX loop entirely when no FX is loaded — the
                  * track then mixes straight from la_cache (read-only). */
                 const int16_t *msrc = move_track;
@@ -2294,6 +2299,20 @@ static void shadow_inprocess_mix_from_buffer(void) {
                  * this channel — its own volume only, deliberately NOT gated by
                  * the synth slot's mute/solo (that independence is the feature). */
                 float mvol = shadow_move_fx_strip[s].volume;
+                /* Publish this bus as the slot's ME channel when no synth owns
+                 * the slot's ring. The retired "inactive slot, Move>Slot on"
+                 * branch below used to do this and would otherwise take the
+                 * publish with it; an active slot still publishes its own
+                 * post-FX output further down, and two writers on one ring
+                 * would interleave garbage. Content is post-insert and
+                 * post-strip-volume, matching what a synth slot publishes
+                 * (fx_buf × effective volume) rather than the raw track the old
+                 * branch wrote. */
+                int publish_bus = (!slot_active && s < LINK_AUDIO_SHADOW_CHANNELS &&
+                                   shadow_pub_audio_shm);
+                link_audio_pub_slot_t *bus_ps = publish_bus
+                    ? &shadow_pub_audio_shm->slots[s] : NULL;
+                uint32_t bus_wp = bus_ps ? bus_ps->write_pos : 0;
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                     int32_t scaled = (int32_t)lroundf((float)msrc[i] * mvol);
                     int32_t mixed = (int32_t)mailbox_audio[i] + scaled;
@@ -2302,17 +2321,28 @@ static void shadow_inprocess_mix_from_buffer(void) {
                     mailbox_audio[i] = (int16_t)mixed;
                     me_full[i]  += scaled;
                     me_unity[i] += scaled;
+                    if (bus_ps) {
+                        int32_t c = scaled;
+                        if (c > 32767) c = 32767;
+                        if (c < -32768) c = -32768;
+                        bus_ps->ring[bus_wp & LINK_AUDIO_PUB_SHM_RING_MASK] = (int16_t)c;
+                        bus_wp++;
+                    }
+                }
+                if (bus_ps) {
+                    __sync_synchronize();
+                    bus_ps->write_pos = bus_wp;
                 }
                 accumulate_sends_ex(msrc, mvol, shadow_move_fx_strip[s].send_a,
                                     shadow_move_fx_strip[s].send_b, send_accum);
             }
 
             if (slot_active) {
-                /* Phase 2 idle gate: skip FX when synth AND FX output are silent
-                 * AND either no Link Audio track is flowing OR it's been peeled to
-                 * the Move FX slot (handled above), so the synth has nothing to do. */
-                if (shadow_slot_fx_idle[s] && shadow_slot_idle[s] &&
-                    (!have_move_track || !route_to_synth)) continue;
+                /* Phase 2 idle gate: skip FX when synth AND FX output are silent.
+                 * The Link Audio term that used to qualify this is gone with
+                 * Move>Slot — a Move track is always peeled to its own bus
+                 * (handled above), so it never gives the synth chain work. */
+                if (shadow_slot_fx_idle[s] && shadow_slot_idle[s]) continue;
 
                 /* Latency comp: delay the local synth output to match the
                  * Link Audio path before combining. The nudge in
@@ -2367,10 +2397,9 @@ static void shadow_inprocess_mix_from_buffer(void) {
                     }
                 }
 
-                /* Active slot: combine synth + Link Audio, run through FX.
-                 * The Move track is summed in only when Move>Slot routes it
-                 * here (route_to_synth); otherwise the synth is processed alone
-                 * and the Move track goes through its Move FX slot below. */
+                /* Active slot: run the synth through its FX. The Move track is
+                 * NOT summed in — it goes through its own Move FX bus above.
+                 * (Move>Slot, which used to sum it here, is retired.) */
                 int16_t fx_buf[FRAMES_PER_BLOCK * 2];
                 /* Sound-generator level, applied to the synth ALONE and BEFORE
                  * anything is summed in. The slot's own volume is a bus fader
@@ -2390,8 +2419,6 @@ static void shadow_inprocess_mix_from_buffer(void) {
                     int32_t combined = (synth_vol == 1.0f)
                         ? (int32_t)synth_src[i]
                         : (int32_t)lroundf((float)synth_src[i] * synth_vol);
-                    if (have_move_track && route_to_synth)
-                        combined += (int32_t)move_track[i];
                     if (combined > 32767) combined = 32767;
                     if (combined < -32768) combined = -32768;
                     fx_buf[i] = (int16_t)combined;
@@ -2498,29 +2525,12 @@ static void shadow_inprocess_mix_from_buffer(void) {
                     if (i & 1) shadow_fade_advance(s);
                 }
                 accumulate_sends(s, fx_buf, send_accum);
-            } else if (have_move_track && route_to_synth) {
-                /* Inactive slot, Move>Slot on: pass Link Audio through at unity
-                 * level. Master volume is applied after capture at the end.
-                 * (When Move>Slot is off the track is handled by the Move FX
-                 * block below instead.) */
-                for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-                    int32_t mixed = (int32_t)mailbox_audio[i] + (int32_t)move_track[i];
-                    if (mixed > 32767) mixed = 32767;
-                    if (mixed < -32768) mixed = -32768;
-                    mailbox_audio[i] = (int16_t)mixed;
-                }
-                /* Publish Move track audio to ME channel even without a synth loaded */
-                if (s < LINK_AUDIO_SHADOW_CHANNELS && shadow_pub_audio_shm) {
-                    link_audio_pub_slot_t *ps = &shadow_pub_audio_shm->slots[s];
-                    uint32_t wp = ps->write_pos;
-                    for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-                        ps->ring[wp & LINK_AUDIO_PUB_SHM_RING_MASK] = move_track[i];
-                        wp++;
-                    }
-                    __sync_synchronize();
-                    ps->write_pos = wp;
-                }
             }
+            /* (The old "inactive slot, Move>Slot on: pass Link Audio through at
+             * unity" branch lived here. With Move>Slot retired the Move FX bus
+             * above owns that audio unconditionally — and at the strip's volume
+             * rather than forced unity, so the bus fader finally applies. Its ME
+             * publish moved up there too; see the note at the bus mix loop.) */
         }
 
     }

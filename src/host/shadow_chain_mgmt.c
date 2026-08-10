@@ -455,7 +455,6 @@ void shadow_chain_defaults(void) {
         shadow_chain_slots[i].soloed = 0;
         shadow_chain_slots[i].forward_channel = -1;
         shadow_chain_slots[i].transpose = 0;
-        shadow_chain_slots[i].move_to_slot = 1;  /* default: Move track rides the synth slot */
         capture_clear(&shadow_chain_slots[i].capture);
         shadow_chain_slots[i].fade.gain = 0.0f;
         shadow_chain_slots[i].fade.target = 0.0f;
@@ -1996,10 +1995,6 @@ int shadow_handle_slot_param_set(int slot, const char *key, const char *value) {
         shadow_ui_state_update_slot(slot);
         return 1;
     }
-    if (strcmp(key, "slot:move_to_slot") == 0) {
-        shadow_chain_slots[slot].move_to_slot = atoi(value) ? 1 : 0;
-        return 1;
-    }
     return 0;
 }
 
@@ -2034,9 +2029,6 @@ int shadow_handle_slot_param_get(int slot, const char *key, char *buf, int buf_l
     }
     if (strcmp(key, "slot:transpose") == 0) {
         return snprintf(buf, buf_len, "%d", shadow_chain_slots[slot].transpose);
-    }
-    if (strcmp(key, "slot:move_to_slot") == 0) {
-        return snprintf(buf, buf_len, "%d", shadow_chain_slots[slot].move_to_slot);
     }
     if (strcmp(key, "active_set") == 0) {
         /* Return "uuid\nname" for UI thread to write active_set.txt */
