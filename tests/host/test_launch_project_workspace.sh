@@ -32,7 +32,10 @@ run=$(body_line 'env LD_PRELOAD=.* /opt/move/MoveOriginal')
 relaunch=$(body_line 'relaunch_requested')
 # LAST occurrence: an early one exists on the heal-failure abort path.
 swexit=$(body_line_last 'set-swap.sh" exit')
-resume=$(body_line 'resume-launcher')
+# LAST occurrence: the refuse() helper (added 2026-08-10 — a refusal after the
+# watchdog pause must resume it or the device freezes) mentions resume-launcher
+# early in the body; the invariant pins the NORMAL teardown path at the end.
+resume=$(body_line_last 'resume-launcher')
 
 [ -n "$recover" ] || fail "no set-swap recover in launch.sh"
 [ -n "$enter" ]   || fail "no set-swap enter in launch.sh"

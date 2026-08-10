@@ -64,6 +64,18 @@ setsid bash -c '
     exit 1
   fi
 
+  # A refusal AFTER this point leaves the watchdog paused — and once the kill
+  # loop below has run, the stock stack is dead too, so a bare exit strands
+  # the device frozen on its last drawn frame with nothing supervising it.
+  # Every later refuse path resumes the watchdog on the way out so systemd
+  # revives stock Move. (Observed on hardware 2026-08-10: set-swap enter
+  # failed and the bare-exit refusal froze the device until an SSH rescue.)
+  refuse() {
+    echo "$1 — refusing to launch"
+    $DBX_DIR/bin/davebox-heal --resume-launcher || true
+    exit 1
+  }
+
   # (The old /data marker standalone_active is retired — the lock above IS
   # the "session running" signal now, and readers probe its PID for
   # liveness. Clear any marker an older launcher left so no stale copy can
@@ -126,8 +138,7 @@ setsid bash -c '
   # the backstop), then swap in. A failed swap refuses the launch — starting a
   # session over a half-swapped library would mix the two worlds.
   if [ -x "$DBX_DIR/scripts/set-swap.sh" ]; then
-    sh "$DBX_DIR/scripts/set-swap.sh" recover || {
-      echo "set-swap recover failed — refusing to launch"; exit 1; }
+    sh "$DBX_DIR/scripts/set-swap.sh" recover || refuse "set-swap recover failed"
     # First run: seed the library with the wired-correctly template project.
     if [ -d "$DBX_DIR/sets/template" ] && [ -z "$(ls "$DBX_DIR/sets/library" 2>/dev/null)" ]; then
       _tuuid=$(cat /proc/sys/kernel/random/uuid)
@@ -141,9 +152,9 @@ setsid bash -c '
       echo "seeded first project $_tuuid from template"
     fi
     sh "$DBX_DIR/scripts/set-swap.sh" enter || {
-      echo "set-swap enter failed — restoring and refusing to launch"
+      echo "set-swap enter failed — restoring"
       sh "$DBX_DIR/scripts/set-swap.sh" recover || true
-      exit 1
+      refuse "set-swap enter failed"
     }
   fi
 
@@ -153,9 +164,8 @@ setsid bash -c '
   # preload MoveOriginal comes up silently WITHOUT Schwung, which is a far more
   # confusing failure than not launching at all.
   if ! $DBX_DIR/bin/davebox-heal; then
-    echo "davebox-heal failed — refusing to launch"
     sh "$DBX_DIR/scripts/set-swap.sh" exit 2>/dev/null || true
-    exit 1
+    refuse "davebox-heal failed"
   fi
 
   export LD_LIBRARY_PATH=$DBX_DIR/lib:$LD_LIBRARY_PATH
