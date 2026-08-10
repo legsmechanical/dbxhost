@@ -33,10 +33,6 @@ import {
  * confusing them is exactly what broke the bypass gesture. Used only for the
  * Back long-press, which davebox owns module-wide. */
 import { S as GS } from './ui_state.mjs';
-/* Keep mask for host overlay services opened from sound mode (knob/LFO
- * editors) — same mask the fx_picker overlay uses, for the same reason: the
- * overlay owns jog/Back/knobs/touch/Shift while it is up. */
-import { DAVEBOX_PICKER_KEEP_MASK } from './ui_corun.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
     closeTextEntry,
@@ -52,7 +48,7 @@ import { parseValue, stepValue, commitString, renderCellsForBank,
     formatValue } from './ui_cells.mjs';
 import {
     drawKitBankPage, drawKitHeader, drawKitSectionPicker, drawKitList,
-    hdrPrint, mvPrint, mvWidth,
+    hdrPrint, mvPrint, mvWidth, shapeSample, plotLine,
 } from './ui_movy.mjs';
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
@@ -113,7 +109,11 @@ const BUS_BLOCKS = [1, 2, 3, 4];      /* fx1..fx4 on every bus */
 const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
       VIEW_PRESET_SRC = 3, VIEW_PRESET_LIST = 4, VIEW_PRESET_BAKED = 5,
       VIEW_MENU = 6, VIEW_FILE = 7, VIEW_SLOTCFG = 8, VIEW_BUSES = 9,
-      VIEW_PATCHES = 10;
+      VIEW_PATCHES = 10,
+      /* P7: the knob and LFO editors, absorbed from the host (they were
+       * overlay services in P5). Sub-screens of slot settings. */
+      VIEW_KNOBS = 11, VIEW_KNOB_TARGET = 12, VIEW_KNOB_PARAM = 13,
+      VIEW_LFO = 14, VIEW_LFO_TARGET = 15, VIEW_LFO_PARAM = 16;
 
 /* Chain-patch file ops (save_patch / delete_patch) are DSP-side and async —
  * the file appears/vanishes a beat after the request. Re-read the list once
@@ -128,9 +128,10 @@ const PATCH_RELIST_TICKS = 30;
  * davebox for the host's chain editor, which is a long way to go for a send.
  *
  * Mirrors the host's CHAIN_SETTINGS_ITEMS — same keys, same ranges, so the two
- * screens can't disagree. Knob and LFO assignment are `svc` rows: the host's
- * editors opened as overlay services on top of sound mode (P5 ruling — the
- * screens stay host-owned for now; absorbing them natively is P7 work).
+ * screens can't disagree. Knob and LFO assignment are `sub` rows: davebox's
+ * OWN editors (absorbed in P7 — they were host overlay services in P5),
+ * reading and writing the same chain-host slot params the host's editors did
+ * (knob_N_target/param via knob_N_set/clear; lfoN:* keys).
  *
  * `fmt` exists because a raw number is a lie for most of these: -1 on a forward
  * channel means Auto, 0 on a receive channel means All. */
@@ -161,12 +162,33 @@ const SLOT_SETTINGS = [
     { key: 'muted',         label: 'Muted',       min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
     { key: 'soloed',        label: 'Soloed',      min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
     { key: 'move_to_slot',  label: 'Move>Schw',   min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
-    /* Overlay-service rows: jog-click opens the host's editor over sound mode;
-     * Back at the editor's root returns here. No value to read or edit. */
-    { key: 'knobs', label: 'Knobs...',  svc: 'knob_editor' },
-    { key: 'lfo1',  label: 'LFO 1...',  svc: 'lfo_editor', lfo: 0 },
-    { key: 'lfo2',  label: 'LFO 2...',  svc: 'lfo_editor', lfo: 1 },
+    /* Sub-screen rows: jog-click opens davebox's own editor; Back returns
+     * here. No value to read or edit on the row itself. */
+    { key: 'knobs', label: 'Knobs...',  sub: 'knobs' },
+    { key: 'lfo1',  label: 'LFO 1...',  sub: 'lfo', lfo: 0 },
+    { key: 'lfo2',  label: 'LFO 2...',  sub: 'lfo', lfo: 1 },
 ];
+
+/* ---- knob / LFO editor vocabulary (ported from the host's editors — same
+ * constants, same param model, so existing assignments read back exactly) ---- */
+const LFO_SHAPES = ['Sine', 'Tri', 'Saw', 'Square', 'S&H', 'Swishy'];
+/* shapeSample ids, by the same index as LFO_SHAPES. */
+const LFO_SHAPE_IDS = ['sine', 'tri', 'saw', 'square', 'sh', 'swishy'];
+/* ⚠ Index IS the wire value the DSP stores — copied verbatim from the host's
+ * 27-entry table, never reordered. */
+const LFO_DIVISIONS = [
+    '16bar', '15bar', '14bar', '13bar', '12bar', '11bar', '10bar', '9bar',
+    '8bar', '7bar', '6bar', '5bar', '4bar', '3bar', '2bar',
+    '1/1', '1/1T', '1/2', '1/2T', '1/4', '1/4T', '1/8', '1/8T',
+    '1/16', '1/16T', '1/32', '1/32T'
+];
+/* Hardcoded LFO param list for LFO-to-LFO modulation. */
+const LFO_TARGET_PARAMS = [
+    { key: 'depth', label: 'Depth' },
+    { key: 'rate_hz', label: 'Rate Hz' },
+    { key: 'phase_offset', label: 'Phase Offset' },
+];
+const NUM_KNOBS = 8;
 
 /* The jog-click picker offers three destinations, and they are NOT the same
  * kind of thing — rows are dispatched by `kind`, never by a fixed index, since
@@ -341,6 +363,26 @@ const S = {
     slotCfgEditing: false,
     slotCfgDirty: false,        /* something changed; save on leaving the screen */
     pendingSlotWrites: [],      /* slot-param writes, drained in tick */
+
+    /* Knob editor (P7 absorb): per-slot knob->target:param assignment. */
+    knobIdx: 0,                 /* cursor, 0-7 */
+    knobAsn: [],                /* 8 x {target, param}, read at open */
+    knobTargets: [],            /* [{id, name}] — components with modules */
+    knobTargetIdx: 0,
+    knobParams: [],             /* [{key, label}] for the chosen target */
+    knobParamIdx: 0,
+    knobTarget: '',             /* target chosen in the picker */
+
+    /* LFO editor (P7 absorb): lfoN:* slot params, values cached at open and
+     * kept current optimistically on edit (reads are SHM round-trips). */
+    lfoNum: 0,                  /* which LFO, 0/1 */
+    lfoIdx: 0,                  /* cursor in the items list */
+    lfoEditing: false,          /* jog edits the highlighted value */
+    lfoVals: {},                /* key -> raw string value */
+    lfoComps: [],               /* target picker: [{key, label}] */
+    lfoCompIdx: 0,
+    lfoParams: [],              /* target param picker: [{key, label}] */
+    lfoParamIdx: 0,
 
     /* Whole-chain patches (P5 absorb — same patches/ store as the host,
      * through the host_patch_* API so the index space and serializer stay
@@ -1130,14 +1172,15 @@ function probeCaps() {
 
 /* ---- slot settings: read, edit, persist ---- */
 
-function openSlotCfg() {
+function openSlotCfg(keepCursor) {
     S.slotCfgVals = S.slotRows.map(s => {
-        if (s.svc || s.mpe) return 0;   /* no stored param behind these rows */
+        if (s.sub || s.mpe) return 0;   /* no stored param behind these rows */
         const raw = parseFloat(engineGetSlotParam(S.slot, s.key));
         return isFinite(raw) ? raw : 0;
     });
     recomputeMpeRow();
-    S.slotCfgIdx = 0;
+    /* Returning from a sub-editor keeps the cursor on the row that opened it. */
+    if (!keepCursor) S.slotCfgIdx = 0;
     S.slotCfgEditing = false;
     S.slotCfgDirty = false;
     S.view = VIEW_SLOTCFG;
@@ -1146,7 +1189,7 @@ function openSlotCfg() {
 
 function slotCfgStep(delta) {
     const s = S.slotRows[S.slotCfgIdx];
-    if (!S.slotCfgEditing || !s || s.svc) {
+    if (!S.slotCfgEditing || !s || s.sub) {
         S.slotCfgIdx = listMove(S.slotRows.length, S.slotCfgIdx, delta);
         S.slotCfgEditing = false;
         return;
@@ -1247,6 +1290,9 @@ function drainSlotWrites() {
     for (let n = 0; n < WRITES_PER_TICK && q.length; n++) {
         const w = q.shift();
         if (w.comp) { engineSet(w.slot, w.comp, w.key, String(w.val)); continue; }
+        /* String values (knob_N_set "target:param", lfoN:* enum indices) pass
+         * through verbatim; numbers keep the SLOT_SETTINGS int/float shaping. */
+        if (typeof w.val === 'string') { engineSetSlotParam(w.slot, w.key, w.val); continue; }
         const s = SLOT_SETTINGS.find(x => x.key === w.key);
         engineSetSlotParam(w.slot, w.key, s && s.int ? String(w.val) : w.val.toFixed(3));
     }
@@ -1255,11 +1301,336 @@ function drainSlotWrites() {
 function renderSlotCfg() {
     clear_screen();
     drawKitHeader('SLOT ' + (S.slot + 1) + ' SETTINGS', false);
-    drawKitList(S.slotRows.map((s, idx) => (s.svc
+    drawKitList(S.slotRows.map((s, idx) => (s.sub
         ? { label: s.label, chevron: true }
         : { label: s.label, value: s.fmt(S.slotCfgVals[idx]),
             editing: idx === S.slotCfgIdx && S.slotCfgEditing })),
         S.slotCfgIdx, {});
+}
+
+/* ---- knob editor (P7 absorb) --------------------------------------------
+ * Same param model as the host's editor: read knob_{N}_target/_param, write
+ * knob_{N}_set ("target:param") / knob_{N}_clear. All engine reads run from
+ * tick via pendingAction; edits go through the slot-write queue. */
+
+function openKnobEditor() {
+    S.knobAsn = [];
+    for (let i = 0; i < NUM_KNOBS; i++) {
+        S.knobAsn.push({
+            target: engineGetSlotParam(S.slot, 'knob_' + (i + 1) + '_target') || '',
+            param:  engineGetSlotParam(S.slot, 'knob_' + (i + 1) + '_param') || '',
+        });
+    }
+    S.knobIdx = 0;
+    S.view = VIEW_KNOBS;
+}
+
+/* Components with a module loaded — the assignable targets. Ported from the
+ * host's getKnobTargets: probe each component's *_module key. */
+function knobTargetList() {
+    const targets = [{ id: '', name: '(None)' }];
+    const probe = (id, label) => {
+        const mod = engineGetSlotParam(S.slot, id + '_module');
+        if (!mod) return;
+        const name = engineGet(S.slot, id, 'name') || mod;
+        targets.push({ id, name: label + ': ' + name });
+    };
+    probe('midi_fx1', 'MIDI FX');
+    probe('synth', 'Synth');
+    for (let i = 1; i <= 4; i++) probe('fx' + i, 'FX' + i);
+    return targets;
+}
+
+function openKnobTargets() {
+    S.knobTargets = knobTargetList();
+    /* Seed the cursor on the current assignment's target. */
+    const cur = S.knobAsn[S.knobIdx];
+    const at = cur ? S.knobTargets.findIndex(t => t.id === cur.target) : -1;
+    S.knobTargetIdx = at >= 0 ? at : 0;
+    S.view = VIEW_KNOB_TARGET;
+}
+
+/* Knob-mappable params for a target — the host's getKnobParamsForTarget:
+ * every knobs[]/params[] entry across the ui_hierarchy levels, then
+ * chain_params, then the legacy hardcoded fallback. */
+function knobParamList(target) {
+    const params = [];
+    const push = (key, label) => {
+        if (key && !params.find(p => p.key === key)) params.push({ key, label: label || key });
+    };
+    const hier = engineGet(S.slot, target, 'ui_hierarchy');
+    if (hier) {
+        try {
+            const h = JSON.parse(hier);
+            if (h && h.levels) {
+                for (const ln in h.levels) {
+                    const level = h.levels[ln];
+                    for (const k of (Array.isArray(level.knobs) ? level.knobs : [])) {
+                        if (typeof k === 'string') push(k, k);
+                        else if (k && k.key) push(k.key, k.label);
+                    }
+                    for (const p of (Array.isArray(level.params) ? level.params : [])) {
+                        if (typeof p === 'string') push(p, p);
+                        else if (p && p.key) push(p.key, p.label);
+                    }
+                }
+            }
+        } catch (e) { /* fall through to chain_params */ }
+    }
+    if (!params.length) {
+        const cp = engineGet(S.slot, target, 'chain_params');
+        if (cp) {
+            try {
+                for (const p of (JSON.parse(cp) || [])) {
+                    if (p && p.key) push(p.key, p.name || p.label);
+                }
+            } catch (e) { /* fall through */ }
+        }
+    }
+    if (!params.length) {
+        if (target === 'synth') { push('preset', 'Preset'); push('volume', 'Volume'); }
+        else { push('wet', 'Wet'); push('dry', 'Dry'); push('room_size', 'Room Size'); push('damping', 'Damping'); }
+    }
+    return params;
+}
+
+function openKnobParams(target) {
+    S.knobTarget = target;
+    S.knobParams = knobParamList(target);
+    const cur = S.knobAsn[S.knobIdx];
+    const at = (cur && cur.target === target)
+        ? S.knobParams.findIndex(p => p.key === cur.param) : -1;
+    S.knobParamIdx = at >= 0 ? at : 0;
+    S.view = VIEW_KNOB_PARAM;
+}
+
+function knobAsnLabel(a) {
+    return (a && a.target && a.param) ? a.target + ': ' + a.param : '(None)';
+}
+
+function commitKnobAssignment(target, param) {
+    const n = S.knobIdx + 1;
+    S.knobAsn[S.knobIdx] = { target: target || '', param: param || '' };
+    if (target && param) queueSlotCfgWrite('knob_' + n + '_set', target + ':' + param);
+    else queueSlotCfgWrite('knob_' + n + '_clear', '1');
+    S.view = VIEW_KNOBS;
+}
+
+function renderKnobs() {
+    clear_screen();
+    drawKitHeader('SLOT ' + (S.slot + 1) + ' KNOBS', false);
+    drawKitList(S.knobAsn.map((a, i) =>
+        ({ label: 'Knob ' + (i + 1), value: knobAsnLabel(a) })),
+        S.knobIdx, {});
+}
+
+function renderKnobTarget() {
+    clear_screen();
+    drawKitHeader('KNOB ' + (S.knobIdx + 1) + ' TARGET', false);
+    drawKitList(S.knobTargets.map(t => t.name), S.knobTargetIdx, {});
+}
+
+function renderKnobParam() {
+    clear_screen();
+    drawKitHeader('KNOB ' + (S.knobIdx + 1) + ' PARAM', false);
+    drawKitList(S.knobParams.map(p => p.label), S.knobParamIdx,
+        { emptyMsg: 'NO PARAMS' });
+}
+
+/* ---- LFO editor (P7 absorb) ---------------------------------------------
+ * lfoN:* slot params, the host editor's exact item list and display rules.
+ * Values cached in S.lfoVals at open (11 reads, one-time) and updated
+ * optimistically on edit; writes ride the slot-write queue. The one new
+ * visual: a live waveform strip (shapeSample) under the list. */
+
+const LFO_KEYS = ['enabled', 'shape', 'polarity', 'sync', 'rate_div', 'rate_hz',
+    'depth', 'phase_offset', 'retrigger', 'target', 'target_param'];
+
+function lfoKey(key) { return 'lfo' + (S.lfoNum + 1) + ':' + key; }
+
+function openLfoEditor(lfoNum) {
+    S.lfoNum = lfoNum;
+    S.lfoVals = {};
+    for (const k of LFO_KEYS) S.lfoVals[k] = engineGetSlotParam(S.slot, lfoKey(k)) || '';
+    S.lfoIdx = 0;
+    S.lfoEditing = false;
+    S.view = VIEW_LFO;
+}
+
+function lfoItems() {
+    const sync = S.lfoVals.sync === '1';
+    const items = [
+        { key: 'target', label: 'Target', type: 'action' },
+        { key: 'enabled', label: 'Enabled', type: 'enum', options: ['Off', 'On'] },
+        { key: 'shape', label: 'Shape', type: 'enum', options: LFO_SHAPES },
+        { key: 'polarity', label: 'Mode', type: 'enum', options: ['Unipolar', 'Bipolar'] },
+        { key: 'sync', label: 'Sync', type: 'enum', options: ['Free', 'Sync'] },
+    ];
+    if (sync) items.push({ key: 'rate_div', label: 'Rate', type: 'enum', options: LFO_DIVISIONS });
+    else items.push({ key: 'rate_hz', label: 'Rate', type: 'float', min: 0.1, max: 20.0, step: 0.1 });
+    items.push({ key: 'depth', label: 'Depth', type: 'float', min: -1, max: 1, step: 0.01 });
+    items.push({ key: 'phase_offset', label: 'Phase', type: 'float', min: 0, max: 1, step: 0.0417 });
+    items.push({ key: 'retrigger', label: 'Retrigger', type: 'enum', options: ['Off', 'On'] });
+    return items;
+}
+
+function lfoDisplayValue(item) {
+    const raw = S.lfoVals[item.key];
+    if (raw === null || raw === undefined || raw === '') {
+        if (item.key === 'target') return 'None';
+        return '';
+    }
+    switch (item.key) {
+        case 'enabled':   return raw === '1' ? 'On' : 'Off';
+        case 'shape': {
+            const i = parseInt(raw);
+            return (i >= 0 && i < LFO_SHAPES.length) ? LFO_SHAPES[i] : raw;
+        }
+        case 'polarity':  return raw === '1' ? 'Bipolar' : 'Unipolar';
+        case 'sync':      return raw === '1' ? 'Sync' : 'Free';
+        case 'rate_div': {
+            const i = parseInt(raw);
+            return (i >= 0 && i < LFO_DIVISIONS.length) ? LFO_DIVISIONS[i] : raw;
+        }
+        case 'rate_hz':   return parseFloat(raw).toFixed(1) + ' Hz';
+        case 'depth':     return Math.round(parseFloat(raw) * 100) + '%';
+        case 'phase_offset': return Math.round(parseFloat(raw) * 360) + 'deg';
+        case 'retrigger': return raw === '1' ? 'On' : 'Off';
+        case 'target': {
+            const t = S.lfoVals.target, p = S.lfoVals.target_param;
+            return (t && p) ? t + ':' + p : 'None';
+        }
+        default: return raw;
+    }
+}
+
+function lfoAdjust(item, delta) {
+    if (item.type === 'enum') {
+        let v = parseInt(S.lfoVals[item.key] || '0') + delta;
+        if (v < 0) v = 0;
+        if (v >= item.options.length) v = item.options.length - 1;
+        if (String(v) === S.lfoVals[item.key]) return;
+        S.lfoVals[item.key] = String(v);
+        queueSlotCfgWrite(lfoKey(item.key), String(v));
+    } else if (item.type === 'float') {
+        let v = parseFloat(S.lfoVals[item.key] || '0') + item.step * delta;
+        if (v < item.min) v = item.min;
+        if (v > item.max) v = item.max;
+        const s = v.toFixed(4);
+        if (s === S.lfoVals[item.key]) return;
+        S.lfoVals[item.key] = s;
+        queueSlotCfgWrite(lfoKey(item.key), s);
+    }
+}
+
+/* Target picker: components (ported from the host's makeSlotLfoCtx). */
+function lfoCompList() {
+    const comps = [];
+    const synthMod = engineGetSlotParam(S.slot, 'synth_module');
+    if (synthMod) {
+        let name = engineGet(S.slot, 'synth', 'name') || synthMod;
+        comps.push({ key: 'synth', label: 'Synth: ' + name });
+    }
+    for (let i = 1; i <= 4; i++) {
+        const m = engineGetSlotParam(S.slot, 'fx' + i + '_module');
+        if (m) comps.push({ key: 'fx' + i, label: 'FX ' + i + ': ' + (engineGet(S.slot, 'fx' + i, 'name') || m) });
+    }
+    const mfxCount = parseInt(engineGetSlotParam(S.slot, 'midi_fx_count') || '0');
+    for (let i = 1; i <= mfxCount && i <= 2; i++) {
+        const m = engineGetSlotParam(S.slot, 'midi_fx' + i + '_module');
+        if (m) comps.push({ key: 'midi_fx' + i, label: 'MIDI FX ' + i + ': ' + (engineGet(S.slot, 'midi_fx' + i, 'name') || m) });
+    }
+    comps.push({ key: 'lfo' + (S.lfoNum === 0 ? 2 : 1), label: 'LFO ' + (S.lfoNum === 0 ? 2 : 1) });
+    comps.push({ key: '__clear__', label: '[Clear Target]' });
+    return comps;
+}
+
+function openLfoTargets() {
+    S.lfoComps = lfoCompList();
+    S.lfoCompIdx = 0;
+    S.view = VIEW_LFO_TARGET;
+}
+
+function lfoParamList(compKey) {
+    if (compKey === 'lfo1' || compKey === 'lfo2') return LFO_TARGET_PARAMS.slice();
+    const out = [];
+    const cp = engineGet(S.slot, compKey, 'chain_params');
+    if (cp) {
+        try {
+            for (const p of (JSON.parse(cp) || [])) {
+                if (p && p.key && (p.type === 'float' || p.type === 'int' || p.type === 'enum')) {
+                    out.push({ key: p.key, label: p.name || p.label || p.key });
+                }
+            }
+        } catch (e) { /* empty list renders NO PARAMS */ }
+    }
+    return out;
+}
+
+function openLfoParams(compKey) {
+    S.lfoParams = lfoParamList(compKey);
+    S.lfoParamIdx = 0;
+    S.view = VIEW_LFO_PARAM;
+}
+
+function commitLfoTarget(compKey, paramKey) {
+    S.lfoVals.target = compKey || '';
+    S.lfoVals.target_param = paramKey || '';
+    queueSlotCfgWrite(lfoKey('target'), S.lfoVals.target);
+    queueSlotCfgWrite(lfoKey('target_param'), S.lfoVals.target_param);
+    S.view = VIEW_LFO;
+}
+
+function renderLfo() {
+    clear_screen();
+    const t = S.lfoVals.target, p = S.lfoVals.target_param;
+    const on = S.lfoVals.enabled === '1';
+    let title = 'LFO ' + (S.lfoNum + 1);
+    if (on && t && p) title += ': ' + t + ':' + p;
+    else if (!on) title += ': OFF';
+    drawKitHeader(title, false);
+    drawKitList(lfoItems().map((item, idx) =>
+        ({ label: item.label, value: lfoDisplayValue(item),
+           editing: idx === S.lfoIdx && S.lfoEditing })),
+        S.lfoIdx, { rowH: 9, visible: 4 });
+    /* Live waveform strip under the list — the shape as the DSP will run it:
+     * two cycles, phase offset applied, dotted baseline (center when bipolar,
+     * floor when unipolar), bold dot at the start when retrigger is on. */
+    const shape = LFO_SHAPE_IDS[parseInt(S.lfoVals.shape) | 0] || 'sine';
+    const bipolar = S.lfoVals.polarity === '1';
+    const phase = parseFloat(S.lfoVals.phase_offset) || 0;
+    const topY = 49, botY = 62, x0 = 1, spanW = 125;
+    const baseY = bipolar ? Math.round((topY + botY) / 2) : botY;
+    const amp = bipolar ? (botY - topY) / 2 : (botY - topY);
+    for (let x = x0; x <= x0 + spanW; x += 2) set_pixel(x, baseY, 1);
+    const yAt = (i) => {
+        const v = shapeSample(shape, (i / spanW) * 2 + phase);
+        return bipolar ? Math.round(baseY - v * amp)
+                       : Math.round(botY - ((v + 1) / 2) * amp);
+    };
+    let px = x0, py = yAt(0);
+    for (let i = 1; i <= spanW; i++) {
+        const y = yAt(i);
+        plotLine(px, py, x0 + i, y, 1);
+        px = x0 + i; py = y;
+    }
+    if (S.lfoVals.retrigger === '1') {
+        fill_rect(x0, Math.max(topY, Math.min(botY - 2, yAt(0) - 1)), 3, 3, 1);
+    }
+}
+
+function renderLfoTarget() {
+    clear_screen();
+    drawKitHeader('LFO ' + (S.lfoNum + 1) + ' TARGET', false);
+    drawKitList(S.lfoComps.map(c => c.label), S.lfoCompIdx, {});
+}
+
+function renderLfoParam() {
+    clear_screen();
+    const comp = S.lfoComps[S.lfoCompIdx];
+    drawKitHeader('LFO ' + (S.lfoNum + 1) + ' > ' + String(comp ? comp.key : '').toUpperCase(), false);
+    drawKitList(S.lfoParams.map(p => p.label), S.lfoParamIdx,
+        { emptyMsg: 'NO PARAMS' });
 }
 
 function menuEnter() {
@@ -1619,7 +1990,13 @@ function runAction(a) {
     else if (a.t === 'bakedset') commitBaked();
     else if (a.t === 'menu')     openMenu();
     else if (a.t === 'menuload') refreshMenuRows();
-    else if (a.t === 'slotcfg')  openSlotCfg();
+    else if (a.t === 'slotcfg')  openSlotCfg(a.keep);
+    else if (a.t === 'knobs')    openKnobEditor();
+    else if (a.t === 'knobtarget') openKnobTargets();
+    else if (a.t === 'knobparam')  openKnobParams(a.target);
+    else if (a.t === 'lfo')      openLfoEditor(a.lfo | 0);
+    else if (a.t === 'lfotarget') openLfoTargets();
+    else if (a.t === 'lfoparam')  openLfoParams(a.comp);
     else if (a.t === 'slotsave') engineSaveState();
     else if (a.t === 'patchlist')   openChainPatches();
     else if (a.t === 'patchload')   doChainPatchLoad(a.index);
@@ -2074,6 +2451,20 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.pickRow = listMove(S.pickRows.length, S.pickRow, delta);
         } else if (S.view === VIEW_SLOTCFG) {
             slotCfgStep(delta);
+        } else if (S.view === VIEW_KNOBS) {
+            S.knobIdx = listMove(NUM_KNOBS, S.knobIdx, delta);
+        } else if (S.view === VIEW_KNOB_TARGET) {
+            S.knobTargetIdx = listMove(S.knobTargets.length, S.knobTargetIdx, delta);
+        } else if (S.view === VIEW_KNOB_PARAM) {
+            S.knobParamIdx = listMove(S.knobParams.length, S.knobParamIdx, delta);
+        } else if (S.view === VIEW_LFO) {
+            const items = lfoItems();
+            if (S.lfoEditing) lfoAdjust(items[S.lfoIdx], delta);
+            else S.lfoIdx = listMove(items.length, S.lfoIdx, delta);
+        } else if (S.view === VIEW_LFO_TARGET) {
+            S.lfoCompIdx = listMove(S.lfoComps.length, S.lfoCompIdx, delta);
+        } else if (S.view === VIEW_LFO_PARAM) {
+            S.lfoParamIdx = listMove(S.lfoParams.length, S.lfoParamIdx, delta);
         } else if (S.view === VIEW_PATCHES) {
             if (S.patchConfirm) {
                 S.patchConfirmIdx = listMove(2, S.patchConfirmIdx, delta);
@@ -2150,17 +2541,40 @@ export function soundOnCC(d1, d2, decodeDelta) {
         }
         if (S.view === VIEW_SLOTCFG) {
             const row = S.slotRows[S.slotCfgIdx];
-            if (row && row.svc) {
-                /* Host editor as an overlay service on top of sound mode.
-                 * host_open_service is safe from the MIDI handler — it is a
-                 * stack push + view capture, not an SHM round-trip. */
-                host_open_service(row.svc, {
-                    slot: S.slot, lfo: row.lfo | 0,
-                    keep_mask: DAVEBOX_PICKER_KEEP_MASK,
-                });
+            if (row && row.sub) {
+                /* Native sub-editor. Opening reads params — tick only. */
+                S.pendingAction = { t: row.sub, lfo: row.lfo | 0 };
             } else {
                 S.slotCfgEditing = !S.slotCfgEditing;
             }
+        }
+        else if (S.view === VIEW_KNOBS) {
+            S.pendingAction = { t: 'knobtarget' };   /* probes components — tick only */
+        }
+        else if (S.view === VIEW_KNOB_TARGET) {
+            const t = S.knobTargets[S.knobTargetIdx];
+            if (t && !t.id) commitKnobAssignment('', '');      /* (None) = clear */
+            else if (t) S.pendingAction = { t: 'knobparam', target: t.id };
+        }
+        else if (S.view === VIEW_KNOB_PARAM) {
+            const p = S.knobParams[S.knobParamIdx];
+            if (p) commitKnobAssignment(S.knobTarget, p.key);
+        }
+        else if (S.view === VIEW_LFO) {
+            const item = lfoItems()[S.lfoIdx];
+            if (item && item.type === 'action') S.pendingAction = { t: 'lfotarget' };
+            else S.lfoEditing = !S.lfoEditing;
+        }
+        else if (S.view === VIEW_LFO_TARGET) {
+            const c = S.lfoComps[S.lfoCompIdx];
+            if (c && c.key === '__clear__') commitLfoTarget('', '');
+            else if (c && (c.key === 'lfo1' || c.key === 'lfo2')) openLfoParams(c.key);
+            else if (c) S.pendingAction = { t: 'lfoparam', comp: c.key };
+        }
+        else if (S.view === VIEW_LFO_PARAM) {
+            const c = S.lfoComps[S.lfoCompIdx];
+            const p = S.lfoParams[S.lfoParamIdx];
+            if (c && p) commitLfoTarget(c.key, p.key);
         }
         else if (S.view === VIEW_BUSES) {
             S.pendingAction = { t: 'bus', bus: FX_BUSES[S.busIdx] };
@@ -2279,6 +2693,21 @@ export function soundOnCC(d1, d2, decodeDelta) {
         if (S.view === VIEW_SLOTCFG) {
             if (S.slotCfgEditing) S.slotCfgEditing = false;   /* leave edit first */
             else closeSlotCfg();
+        } else if (S.view === VIEW_KNOBS) {
+            /* Assignments were queued as they were made; nothing to flush.
+             * The host autosave persists them (set_param marks the slot dirty). */
+            S.pendingAction = { t: 'slotcfg', keep: true };
+        } else if (S.view === VIEW_KNOB_TARGET) {
+            S.view = VIEW_KNOBS;
+        } else if (S.view === VIEW_KNOB_PARAM) {
+            S.view = VIEW_KNOB_TARGET;
+        } else if (S.view === VIEW_LFO) {
+            if (S.lfoEditing) S.lfoEditing = false;
+            else S.pendingAction = { t: 'slotcfg', keep: true };
+        } else if (S.view === VIEW_LFO_TARGET) {
+            S.view = VIEW_LFO;
+        } else if (S.view === VIEW_LFO_PARAM) {
+            S.view = VIEW_LFO_TARGET;
         } else if (S.view === VIEW_PATCHES) {
             if (S.patchConfirm) S.patchConfirm = null;
             else { S.view = VIEW_BLOCKS; S.patchMsg = ''; }
@@ -2859,6 +3288,12 @@ export function soundRender() {
     else if (S.view === VIEW_MENU) renderMenu();
     else if (S.view === VIEW_FILE) renderFile();
     else if (S.view === VIEW_SLOTCFG) renderSlotCfg();
+    else if (S.view === VIEW_KNOBS) renderKnobs();
+    else if (S.view === VIEW_KNOB_TARGET) renderKnobTarget();
+    else if (S.view === VIEW_KNOB_PARAM) renderKnobParam();
+    else if (S.view === VIEW_LFO) renderLfo();
+    else if (S.view === VIEW_LFO_TARGET) renderLfoTarget();
+    else if (S.view === VIEW_LFO_PARAM) renderLfoParam();
     else if (S.view === VIEW_PATCHES) renderChainPatches();
     else if (S.view === VIEW_BUSES) renderBuses();
     else renderEdit();

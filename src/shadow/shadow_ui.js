@@ -407,18 +407,10 @@ const PRIMARY_SERVICES = {
     master_fx:       { kind: "overlay", enter: function() { enterMasterFxSettings(); } },
     global_settings: { kind: "overlay", enter: function() { enterGlobalSettings(); } },
     fx_picker:       { kind: "overlay", enter: function() { enterFxBusPicker(); } },
-    /* Direct-entry editors: the same screens reachable through
-     * chain_editor_view, addressable without walking Chain Settings. The
-     * knob editor's target list reads chainConfigs, which only the chain-edit
-     * entry primes — prime it here so direct entry sees the loaded chain. */
-    knob_editor: { kind: "overlay", enter: function(o) {
-        const slot = (o && o.slot) | 0;
-        loadChainConfigFromSlot(slot);
-        enterKnobEditor(slot);
-    } },
-    lfo_editor: { kind: "overlay", enter: function(o) {
-        enterSlotLfoEditor((o && o.slot) | 0, (o && o.lfo) | 0);
-    } },
+    /* (knob_editor / lfo_editor direct-entry services DELETED in P7: the
+     * primary module absorbed both editors natively — it reads/writes the
+     * same knob_N_* / lfoN:* chain params directly. The host's own editors
+     * remain reachable through chain_editor_view's Chain Settings rows.) */
 };
 
 function primaryStackTopIsOverlay() {
