@@ -1164,23 +1164,11 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
                 }
 
                 if (target[0] && param[0]) {
-                    /* Look up param info from the target's chain_params */
-                    chain_param_info_t *pinfo = NULL;
-                    if (strcmp(target, "synth") == 0) {
-                        pinfo = find_param_info(inst->synth_params, inst->synth_param_count, param);
-                    } else if (strcmp(target, "fx1") == 0 && inst->fx_count > 0) {
-                        pinfo = find_param_info(inst->fx_params[0], inst->fx_param_counts[0], param);
-                    } else if (strcmp(target, "fx2") == 0 && inst->fx_count > 1) {
-                        pinfo = find_param_info(inst->fx_params[1], inst->fx_param_counts[1], param);
-                    } else if (strcmp(target, "fx3") == 0 && inst->fx_count > 2) {
-                        pinfo = find_param_info(inst->fx_params[2], inst->fx_param_counts[2], param);
-                    } else if (strcmp(target, "fx4") == 0 && inst->fx_count > 3) {
-                        pinfo = find_param_info(inst->fx_params[3], inst->fx_param_counts[3], param);
-                    } else if (strcmp(target, "midi_fx1") == 0 && inst->midi_fx_count > 0) {
-                        pinfo = find_param_info(inst->midi_fx_params[0], inst->midi_fx_param_counts[0], param);
-                    } else if (strcmp(target, "midi_fx2") == 0 && inst->midi_fx_count > 1) {
-                        pinfo = find_param_info(inst->midi_fx_params[1], inst->midi_fx_param_counts[1], param);
-                    }
+                    /* Look up param info from the target's chain_params —
+                     * through knob_find_param, which refreshes the cache from
+                     * the live plugin when the module.json parse was empty
+                     * (runtime-published chain_params). */
+                    chain_param_info_t *pinfo = knob_find_param(inst, target, param);
 
                     /* Set mapping */
                     if (found >= 0) {

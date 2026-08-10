@@ -160,6 +160,7 @@ static int sp_track_config(sp_ctx_t *cx) {
     if (!strcmp(sub, "channel")) {
         tr->channel = (uint8_t)clamp_i(my_atoi(val) - 1, 0, 15);
         rui_mark(inst, tidx, tr->active_clip);   /* rui_index chan */
+        inst->state_dirty = 1;
         return 1;
     }
 
@@ -170,6 +171,7 @@ static int sp_track_config(sp_ctx_t *cx) {
         tr->pfx.slot = sl;
         { int _sl; for (_sl = 0; _sl < DRUM_LANES; _sl++) tr->drum_lane_pfx[_sl].slot = sl; }
         rui_mark(inst, tidx, tr->active_clip);   /* rui_index slot */
+        inst->state_dirty = 1;
         return 1;
     }
 
@@ -183,6 +185,11 @@ static int sp_track_config(sp_ctx_t *cx) {
         tr->pfx.route = rt;
         { int _rl; for (_rl = 0; _rl < DRUM_LANES; _rl++) tr->drum_lane_pfx[_rl].route = rt; }
         rui_mark(inst, tidx, tr->active_clip);   /* rui_index route */
+        /* Route/slot/channel are saved state (seq8_state) but never marked
+         * dirty here, so a config-only change silently missed autosave —
+         * observed on hardware 2026-08-10: a route change alone reverted on
+         * the next session. */
+        inst->state_dirty = 1;
         return 1;
     }
 

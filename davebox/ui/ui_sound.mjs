@@ -2427,9 +2427,22 @@ export function soundOnCC(d1, d2, decodeDelta) {
     }
 
     if (d1 >= 71 && d1 <= 78) {                        /* knobs 1-8 */
-        if (S.view !== VIEW_EDIT) return true;
-        const delta = decodeDelta(d2);
-        if (delta) onKnobTurn(d1 - 71, delta);
+        if (S.view === VIEW_EDIT) {
+            const delta = decodeDelta(d2);
+            if (delta) onKnobTurn(d1 - 71, delta);
+            return true;
+        }
+        /* Outside the module editor, the physical knobs drive the slot's
+         * knob-mapping ASSIGNMENTS (Knobs... in slot settings): forward the
+         * turn as the relative CC the chain DSP consumes (chain_midi.c).
+         * One message per event, value 1/127 only — the DSP applies its own
+         * time-based acceleration, so the hardware delta magnitude is
+         * deliberately dropped rather than double-accelerating. Slot-addressed
+         * (no channel gate); bus contexts have no slot to address. */
+        if (!S.bus && S.slot >= 0) {
+            const delta = decodeDelta(d2);
+            if (delta) shadow_send_midi_to_dsp(S.slot & 3, [0xB0, d1, delta > 0 ? 1 : 127]);
+        }
         return true;
     }
 

@@ -866,8 +866,8 @@ chain_param_info_t *find_param_info(chain_param_info_t *params, int count, const
     return NULL;
 }
 
-/* Look up param metadata from a knob mapping's target string (synth/fx1-3/midi_fx1-2). */
-chain_param_info_t *knob_find_param(chain_instance_t *inst, const char *target, const char *param) {
+/* Look up param metadata from a knob mapping's target string (synth/fx1-4/midi_fx1-2). */
+static chain_param_info_t *knob_find_param_cached(chain_instance_t *inst, const char *target, const char *param) {
     if (strcmp(target, "synth") == 0)
         return find_param_info(inst->synth_params, inst->synth_param_count, param);
     if (strcmp(target, "fx1") == 0 && inst->fx_count > 0)
@@ -883,6 +883,20 @@ chain_param_info_t *knob_find_param(chain_instance_t *inst, const char *target, 
     if (strcmp(target, "midi_fx2") == 0 && inst->midi_fx_count > 1)
         return find_param_info(inst->midi_fx_params[1], inst->midi_fx_param_counts[1], param);
     return NULL;
+}
+
+chain_param_info_t *knob_find_param(chain_instance_t *inst, const char *target, const char *param) {
+    chain_param_info_t *p = knob_find_param_cached(inst, target, param);
+    if (p) return p;
+    /* Miss: the load-time parse reads chain_params from module.json, and a
+     * module that publishes its params at RUNTIME (via the chain_params
+     * get_param) leaves that cache EMPTY — which silently disabled knob
+     * mappings for exactly those modules. Refresh the cache from the live
+     * plugin once and retry — the same mechanism the mod engine already
+     * uses for LFO targets. One JSON fetch+parse per miss, after which the
+     * cache serves every subsequent lookup. */
+    if (chain_mod_refresh_target_param_cache(inst, target) <= 0) return NULL;
+    return knob_find_param_cached(inst, target, param);
 }
 
 /* Forward a formatted value string to the plugin identified by target. */
