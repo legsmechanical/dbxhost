@@ -51,9 +51,17 @@ resume=$(body_line_last 'resume-launcher')
 
 grep -q 'while :; do' "$ls" || fail "supervisor loop missing"
 
-# enter failure must refuse the launch (exit 1 within a few lines of enter)
-sed -n "${enter},$((enter+6))p" "$ls" | grep -q 'exit 1' ||
+# enter failure must refuse the launch — either a bare exit 1 or the refuse()
+# helper (which exits 1 after resuming the watchdog) within a few lines
+sed -n "${enter},$((enter+6))p" "$ls" | grep -qE 'exit 1|refuse ' ||
   fail "a failed set-swap enter no longer refuses the launch"
+
+# refuse() must resume the watchdog before exiting — a refusal past the
+# watchdog pause otherwise strands the device frozen (observed 2026-08-10)
+refuse_def=$(body_line 'refuse() {')
+[ -n "$refuse_def" ] || fail "refuse() helper missing from launch.sh"
+sed -n "${refuse_def},$((refuse_def+4))p" "$ls" | grep -q 'resume-launcher' ||
+  fail "refuse() does not resume the watchdog"
 
 # Single-quote ban: only the setsid open/close (and pre-block comments) may
 # carry one. Count quotes INSIDE the block body.
