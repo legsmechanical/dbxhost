@@ -1,26 +1,14 @@
 /*
- * Shadow UI - SLOT_SETTINGS view (per-slot settings screen).
+ * Shadow UI - per-slot settings DATA layer (items + value formatting).
  *
- * Extracted from shadow_ui.js to allow forks to modify slot
- * presentation without touching core. The SLOTS root list view that used
- * to live here was deleted in P5 (2026-08-09) — the primary module's sound
- * mode plus the chain_editor_view overlay service cover everything it did.
+ * The SLOT_SETTINGS *view* that lived here was deleted in P7 (2026-08-10,
+ * Josh's ruling): it had zero live entry points since the P5 gesture walk —
+ * the primary module's sound mode owns per-slot settings, and the host's
+ * Chain Settings covers the host-native path. The SLOTS root list died in
+ * P5 the same way. What remains is the item table and value formatter,
+ * which Chain Settings' announce still reads.
  */
 import { ctx } from './shadow_ui_ctx.mjs';
-import {
-    SCREEN_WIDTH,
-    LIST_TOP_Y, LIST_LINE_HEIGHT, LIST_HIGHLIGHT_HEIGHT,
-    LIST_LABEL_X, LIST_VALUE_X,
-    FOOTER_RULE_Y,
-    truncateText
-} from '/data/UserData/schwung/shared/chain_ui_views.mjs';
-import {
-    drawMenuHeader as drawHeader,
-    drawMenuFooter as drawFooter
-} from '/data/UserData/schwung/shared/menu_layout.mjs';
-import {
-    announce, announceMenuItem, announceParameter
-} from '/data/UserData/schwung/shared/screen_reader.mjs';
 
 /* ---- Slot settings definition ------------------------------------------- */
 
@@ -38,11 +26,6 @@ export const SLOT_SETTINGS = [
     { key: "midi_fx_pre_mode", label: "MIDI FX", type: "int", min: 0, max: 1, step: 1 },
     { key: "mpe_mode", label: "MPE Mode", type: "int", min: 0, max: 1, step: 1 },
 ];
-
-/* ---- Module-local state ------------------------------------------------- */
-
-let selectedSetting = 0;
-let editingSettingValue = false;
 
 /* ---- Helpers ------------------------------------------------------------ */
 
@@ -100,166 +83,4 @@ export function getSlotSettingValue(slot, setting) {
         return parseInt(val) ? "Schw+Move" : "Schw";
     }
     return val;
-}
-
-/* State to restore when MPE mode is turned off */
-const preMpeState = [null, null, null, null];
-
-function adjustSlotSetting(slot, setting, delta) {
-    if (setting.type === "action") return;
-
-    const { getSlotParam, setSlotParam } = ctx;
-
-    /* MPE Mode toggle: sets recv/fwd/synth MPE in one action */
-    if (setting.key === "mpe_mode") {
-        const mpeOn = isSlotMpe(slot);
-        if (delta > 0 && !mpeOn) {
-            /* Save current recv/fwd for restore */
-            preMpeState[slot] = {
-                recv: getSlotParam(slot, "slot:receive_channel"),
-                fwd: getSlotParam(slot, "slot:forward_channel"),
-            };
-            setSlotParam(slot, "slot:receive_channel", "0");    /* All */
-            setSlotParam(slot, "slot:forward_channel", "-2");   /* THRU */
-            setSlotParam(slot, "synth:mpe_enabled", "1");
-        } else if (delta < 0 && mpeOn) {
-            /* Restore previous settings or defaults */
-            const prev = preMpeState[slot];
-            setSlotParam(slot, "slot:receive_channel", prev?.recv || String(slot + 1));
-            setSlotParam(slot, "slot:forward_channel", prev?.fwd || "-1");
-            setSlotParam(slot, "synth:mpe_enabled", "0");
-            preMpeState[slot] = null;
-        }
-        return;
-    }
-
-    const current = getSlotParam(slot, setting.key);
-    let val;
-
-    if (setting.type === "float") {
-        val = parseFloat(current) || 0;
-        val += delta * setting.step;
-    } else {
-        val = parseInt(current) || 0;
-        val += delta * setting.step;
-    }
-
-    val = Math.max(setting.min, Math.min(setting.max, val));
-    const newVal = setting.type === "float" ? val.toFixed(2) : String(Math.round(val));
-    setSlotParam(slot, setting.key, newVal);
-}
-
-/* ---- Enter -------------------------------------------------------------- */
-
-export function enterSlotSettings(slotIndex) {
-    const { setView, updateFocusedSlot, VIEWS } = ctx;
-    ctx.selectedSlot = slotIndex;
-    updateFocusedSlot(slotIndex);
-    selectedSetting = 0;
-    editingSettingValue = false;
-    setView(VIEWS.SLOT_SETTINGS);
-    ctx.needsRedraw = true;
-
-    const setting = SLOT_SETTINGS[0];
-    const val = getSlotSettingValue(slotIndex, setting);
-    announceMenuItem(`Slot Settings, ${setting.label}`, val);
-}
-
-/* ---- Draw --------------------------------------------------------------- */
-
-export function drawSlotSettings() {
-    const { slots, selectedSlot, getSlotParam } = ctx;
-
-    clear_screen();
-    drawHeader(`Slot ${selectedSlot + 1}`);
-
-    const listY = LIST_TOP_Y;
-    const lineHeight = LIST_LINE_HEIGHT;
-    const maxVisible = Math.max(1, Math.floor((FOOTER_RULE_Y - LIST_TOP_Y) / lineHeight));
-    let startIdx = 0;
-    const maxSelectedRow = maxVisible - 1;
-    if (selectedSetting > maxSelectedRow) {
-        startIdx = selectedSetting - maxSelectedRow;
-    }
-    const endIdx = Math.min(startIdx + maxVisible, SLOT_SETTINGS.length);
-
-    for (let i = startIdx; i < endIdx; i++) {
-        const y = listY + (i - startIdx) * lineHeight;
-        const setting = SLOT_SETTINGS[i];
-        const isSelected = i === selectedSetting;
-
-        if (isSelected) {
-            fill_rect(0, y - 1, SCREEN_WIDTH, LIST_HIGHLIGHT_HEIGHT, 1);
-        }
-
-        const color = isSelected ? 0 : 1;
-        let prefix = "  ";
-        if (isSelected) {
-            prefix = editingSettingValue ? "* " : "> ";
-        }
-
-        const value = getSlotSettingValue(selectedSlot, setting);
-        let valueStr = truncateText(value, 10);
-        if (isSelected && editingSettingValue && setting.type !== "action") {
-            valueStr = `[${valueStr}]`;
-        }
-
-        print(LIST_LABEL_X, y, `${prefix}${setting.label}:`, color);
-        print(LIST_VALUE_X - 8, y, valueStr, color);
-    }
-
-    if (editingSettingValue) {
-        drawFooter({left: "Click: done", right: "Jog: adjust"});
-    } else {
-        drawFooter({left: "Back: chain", right: "Click: edit"});
-    }
-}
-
-/* ---- Jog ---------------------------------------------------------------- */
-
-export function handleSlotSettingsJog(delta) {
-    const { selectedSlot } = ctx;
-    if (editingSettingValue) {
-        const setting = SLOT_SETTINGS[selectedSetting];
-        adjustSlotSetting(selectedSlot, setting, delta);
-        const newVal = getSlotSettingValue(selectedSlot, setting);
-        announceParameter(setting.label, newVal);
-    } else {
-        selectedSetting = Math.max(0, Math.min(SLOT_SETTINGS.length - 1, selectedSetting + delta));
-        const setting = SLOT_SETTINGS[selectedSetting];
-        const val = getSlotSettingValue(selectedSlot, setting);
-        announceMenuItem(setting.label, val);
-    }
-}
-
-/* ---- Select ------------------------------------------------------------- */
-
-export function handleSlotSettingsSelect() {
-    const { selectedSlot, enterPatchBrowser, enterChainEdit } = ctx;
-    const setting = SLOT_SETTINGS[selectedSetting];
-    if (setting.type === "action") {
-        if (setting.key === "patch") {
-            enterPatchBrowser(selectedSlot);
-        } else if (setting.key === "chain") {
-            enterChainEdit(selectedSlot);
-        }
-    } else {
-        editingSettingValue = !editingSettingValue;
-    }
-}
-
-/* ---- Back --------------------------------------------------------------- */
-
-export function handleSlotSettingsBack() {
-    const { selectedSlot, enterChainEdit } = ctx;
-    if (editingSettingValue) {
-        editingSettingValue = false;
-        ctx.needsRedraw = true;
-        announce("Slot Settings");
-    } else {
-        /* Up from slot settings is the slot's chain editor (the SLOTS root
-         * list this returned to died in P5). */
-        enterChainEdit(selectedSlot);
-        ctx.needsRedraw = true;
-    }
 }

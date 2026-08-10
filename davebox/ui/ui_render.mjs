@@ -10,7 +10,7 @@ import { S, PERF_FACTORY_PRESETS } from './ui_state.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
 import {
     BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN,
-    NOTE_KEYS, NUM_CLIPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
+    NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
     POLL_INTERVAL, SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
     col4, col5, pixelPrint, pixelPrintC,
     fmtSign, fmtStretch, fmtLen, fmtRes, fmtPct, fmtBool, fmtGateMod,
@@ -33,7 +33,7 @@ import { ensureGlobalMenuFresh } from './ui_menu.mjs';
 import { bankCyclePos } from './ui_pure.mjs';
 import { syncDrumRepeatState } from './ui_drummodel.mjs';
 import {
-    effectiveClip, drawPositionBar, paintCoRunSideButtons,
+    effectiveClip, paintCoRunSideButtons,
     bankHasAltParams, altIndicatorActive
 } from './ui_leds.mjs';
 import { soundRender } from './ui_sound.mjs';
@@ -676,7 +676,56 @@ function drawTempoSelect() {
     pixelPrintC(64, 56, 'Click to set', 1);
 }
 
-export function drawUI() {
+export /* Drum-view position bar (bottom strip): loop-window pages, view page solid,
+ * playing page outlined, playhead dot, off-window extent ticks. Moved here
+ * from ui_leds.mjs in P7 — it is OLED drawing, not LED writing. */
+function drawPositionBar(t) {
+    const ac     = effectiveClip(t);
+    const lsBase = S.clipLoopStart[t][ac] | 0;
+    const len    = S.clipLength[t][ac];
+    const startPage = lsBase >> 4;
+    const winPages  = Math.max(1, Math.ceil(len / 16));
+    /* View/play pages are translated into window-relative space so the bar
+     * always anchors at the window's first page on the left edge. */
+    const viewPage = Math.max(0, Math.min(S.trackCurrentPage[t] - startPage, winPages - 1));
+    const cs = S.trackCurrentStep[t];
+    const playPage = (S.playing && S.trackClipPlaying[t] && cs >= lsBase && cs < lsBase + len)
+                   ? Math.floor((cs - lsBase) / 16) : -1;
+    const barY = 57, barH = 5, segGap = 1;
+    const segW   = Math.max(2, Math.floor((120 - (winPages - 1) * segGap) / winPages));
+    const startX = 4;
+    for (let pg = 0; pg < winPages; pg++) {
+        const x = startX + pg * (segW + segGap);
+        if (pg === viewPage) {
+            fill_rect(x, barY, segW, barH, 1);
+        } else if (pg === playPage) {
+            rectOutline(x, barY, segW, barH, 1);
+        } else {
+            fill_rect(x, barY + barH - 1, segW, 1, 1);
+        }
+    }
+    /* Playhead dot mapped across the window's pixel span (not full 128px). */
+    if (S.playing && S.trackClipPlaying[t] && cs >= lsBase && cs < lsBase + len) {
+        const winPxW = winPages * (segW + segGap) - segGap;
+        const dotX = startX + Math.floor((cs - lsBase) * winPxW / Math.max(1, len));
+        const viewSegStart = startX + viewPage * (segW + segGap);
+        const onSolid = dotX >= viewSegStart && dotX < viewSegStart + segW;
+        fill_rect(dotX, barY, 1, barH, onSolid ? 0 : 1);
+    }
+    /* Extent markers: small vertical ticks just outside the bar edges to
+     * hint that clip content exists before / after the visible window. */
+    const steps = S.clipSteps[t][ac];
+    let hasLeft = false, hasRight = false;
+    for (let s = 0; s < lsBase; s++) if (steps[s] !== 0) { hasLeft = true; break; }
+    for (let s = lsBase + len; s < NUM_STEPS; s++) if (steps[s] !== 0) { hasRight = true; break; }
+    if (hasLeft)  fill_rect(startX - 2, barY + 1, 1, barH - 2, 1);
+    if (hasRight) {
+        const xRight = startX + winPages * (segW + segGap) - segGap + 1;
+        fill_rect(xRight, barY + 1, 1, barH - 2, 1);
+    }
+}
+
+function drawUI() {
     /* CO-RUN: shadow_ui's chain editor owns the OLED while this is active.
     /* Move-native co-run: Move firmware owns the OLED (preset browser /
      * device-edit pages). The shim's display_mode bypass keeps Move's

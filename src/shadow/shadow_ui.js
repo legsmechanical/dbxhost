@@ -135,11 +135,6 @@ import { ctx as _ctx } from './shadow_ui_ctx.mjs';
 import {
     SLOT_SETTINGS,
     getSlotSettingValue,
-    drawSlotSettings as _drawSlotSettings,
-    enterSlotSettings as _enterSlotSettings,
-    handleSlotSettingsJog,
-    handleSlotSettingsSelect,
-    handleSlotSettingsBack
 } from './shadow_ui_slots.mjs';
 import {
     PATCH_INDEX_NONE,
@@ -321,7 +316,6 @@ const DEFAULT_SLOTS = [
 const VIEWS = {
     /* (SLOTS root view DELETED in P5 — sound mode + chain_editor_view cover
      * it; the parking/fallback view is now TOOLS.) */
-    SLOT_SETTINGS: "settings", // Per-slot settings (volume, channels) - legacy
     CHAIN_EDIT: "chainedit",  // Horizontal chain component editor
     CHAIN_SETTINGS: "chainsettings", // Chain settings (volume, channels, knob mapping)
     PATCHES: "patches",       // Patch list for selected slot
@@ -730,7 +724,6 @@ let patches = [];
 let selectedSlot = 0;
 let selectedPatch = 0;
 /* selectedDetailItem moved to shadow_ui_patches.mjs */
-/* selectedSetting, editingSettingValue moved to shadow_ui_slots.mjs */
 let view = VIEWS.TOOLS;   /* parked; the SLOTS root view died in P5 */
 let needsRedraw = true;
 let refreshCounter = 0;
@@ -5141,7 +5134,6 @@ function announceSavePreview(name, selectedIndex, full = true) {
     announce(`Save As, current text: ${getSavePreviewText(name)}. ${selected} selected`);
 }
 
-/* enterSlotSettings() -> shadow_ui_slots.mjs */
 
 /* ========== Master Preset Picker Functions ========== */
 
@@ -11649,7 +11641,6 @@ function changeComponentPreset(delta) {
     announce(`${presetName}, Preset ${editComponentPreset + 1} of ${editComponentPresetCount}`);
 }
 
-/* getSlotSettingValue(), adjustSlotSetting() -> shadow_ui_slots.mjs */
 
 /* Get Master FX setting current value for display */
 function getMasterFxSettingValue(setting) {
@@ -12039,9 +12030,6 @@ function handleJog(delta) {
                     announceMenuItem(comp.label, moduleName);
                 }
             }
-            break;
-        case VIEWS.SLOT_SETTINGS:
-            handleSlotSettingsJog(delta);
             break;
         case VIEWS.FX_BUS_PICKER:
             if (pendingMoveFxRouteConfirm >= 0) {
@@ -12532,9 +12520,6 @@ function handleSelect() {
                     }
                 }
             }
-            break;
-        case VIEWS.SLOT_SETTINGS:
-            handleSlotSettingsSelect();
             break;
         case VIEWS.FX_BUS_PICKER:
             if (pendingMoveFxRouteConfirm >= 0) {
@@ -13299,9 +13284,6 @@ function handleBack() {
     }
     hideOverlay();
     switch (view) {
-        case VIEWS.SLOT_SETTINGS:
-            handleSlotSettingsBack();
-            break;
         case VIEWS.PATCHES:
             handlePatchesBack();
             break;
@@ -13770,7 +13752,6 @@ function refreshPendingKnobOverlay() {
 
 /* getMasterFxDisplayName() -> shadow_ui_master_fx.mjs */
 
-/* drawSlotSettings() -> shadow_ui_slots.mjs */
 
 /* drawPatches(), drawPatchDetail(), drawComponentParams() -> shadow_ui_patches.mjs */
 
@@ -15097,12 +15078,9 @@ function drawHelpDetail() {
     _ctx.enterFxBusEditor = (...args) => enterFxBusEditor(...args);
     _ctx.enterFxBusPicker = () => enterFxBusPicker();
     _ctx.enterSendFxHierarchyEditor = (...args) => enterSendFxHierarchyEditor(...args);
-    _ctx.enterSlotSettings = (...args) => _enterSlotSettings(...args);
 })();
 
 /* Delegate draw/enter functions to extracted modules */
-function drawSlotSettings() { _drawSlotSettings(); }
-function enterSlotSettings(slotIndex) { _enterSlotSettings(slotIndex); }
 function drawPatches() { _drawPatches(); }
 function drawPatchDetail() { _drawPatchDetail(); }
 function drawComponentParams() { _drawComponentParams(); }
@@ -15813,7 +15791,6 @@ function dispatchCoRunDraw() {
         case VIEWS.PRESET_DETAIL:        drawPresetDetail(); break;
         case VIEWS.COMPONENT_SELECT:     drawComponentSelect(); break;
         case VIEWS.CHAIN_SETTINGS:       drawChainSettings(); break;
-        case VIEWS.SLOT_SETTINGS:        drawSlotSettings(); break;
         case VIEWS.COMPONENT_EDIT:
             /* In co-run, never invoke loadedModuleUi.tick(): the chain module's
              * own UI module takes over shadow_ui's drawing/MIDI/IPC and starves
@@ -16461,9 +16438,6 @@ globalThis.tick = function() {
     try {
 
     switch (view) {
-        case VIEWS.SLOT_SETTINGS:
-            drawSlotSettings();
-            break;
         case VIEWS.PATCHES:
             drawPatches();
             break;
