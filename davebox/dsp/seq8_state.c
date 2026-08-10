@@ -608,8 +608,13 @@ static void seq8_load_state(seq8_instance_t *inst) {
          * the old default recv channels, ch 4-7 mirrors to A-D likewise. */
         snprintf(key, sizeof(key), "t%d_sl", t);
         {
+            /* WARNING: the fallback derivation is a MIGRATION decision, not
+             * arithmetic — it defines what an existing set's implicit slot
+             * becomes. Widening the slot count must not silently re-map sets
+             * that were saved before the wider count existed. */
             uint8_t sl = (uint8_t)clamp_i(
-                json_get_int(buf, key, inst->tracks[t].channel & 3), 0, 3);
+                json_get_int(buf, key, inst->tracks[t].channel % SEQ8_CHAIN_SLOTS),
+                0, SEQ8_CHAIN_SLOTS - 1);
             inst->tracks[t].pfx.slot = sl;
             { int _sl; for (_sl = 0; _sl < DRUM_LANES; _sl++) inst->tracks[t].drum_lane_pfx[_sl].slot = sl; }
         }

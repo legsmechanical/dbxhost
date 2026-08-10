@@ -160,6 +160,33 @@ export function engineSaveState() {
  * change both together. */
 export const SLOT_FX_BLOCKS = 4;
 
+/* Chain slots the host renders — NOT the same axis as SLOT_FX_BLOCKS above
+ * (that is FX blocks WITHIN one slot). Pinned against the host's four
+ * declarations by tests/host/test_slot_count_is_single_sourced.sh.
+ *
+ * ⚠ Everything that addresses a slot must derive from this. The old idiom was
+ * `& 3`, which is not a bounds check — it ALIASES, so a track addressed to a
+ * slot outside the range plays into the wrong chain with no error anywhere.
+ * Use slotIndex() to sanitise a value that arrives from state, the wire, or a
+ * user edit. */
+export const CHAIN_SLOTS = 4;
+
+/* Sanitise a slot index: clamp into range rather than wrap. A clamp is wrong
+ * in a visible, bounded way; a wrap is wrong in an invisible way (slot 4
+ * silently becoming slot 0 is indistinguishable from a correct slot 0). */
+export function slotIndex(v) {
+    const n = v | 0;
+    if (n < 0) return 0;
+    return n >= CHAIN_SLOTS ? CHAIN_SLOTS - 1 : n;
+}
+
+/* Display letter for a slot (A, B, C, ...). Derived, because the literal
+ * 'ABCD' table appeared in three places that had to agree and silently
+ * rendered out-of-range slots as A-D. */
+export function slotLetter(v) {
+    return String.fromCharCode(65 + slotIndex(v));
+}
+
 /* Send FX buses (send_fx:a: / send_fx:b:) — routed by this host. */
 export const HAS_SEND_FX = true;
 

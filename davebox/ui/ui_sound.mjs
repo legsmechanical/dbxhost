@@ -28,6 +28,7 @@ import {
     engineGetSlotParam, engineSetSlotParam, engineSaveState, engineVolBlock,
     engineGetChainParam, engineSetChainParam,
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
+    CHAIN_SLOTS, slotIndex,
 } from './ui_engine.mjs';
 /* davebox's GLOBAL state. Sound mode keeps its own `S`, so this is imported
  * under a different name deliberately — the two are easy to confuse, and
@@ -1251,10 +1252,15 @@ function recomputeMpeRow() {
  * the routing you had. In-memory only — the host's Chain Settings row keeps
  * its pre-state the same way. Fallbacks mirror the host's: recv = the slot's
  * own channel, fwd = Auto. */
-const mpePreState = [null, null, null, null];
+/* Per-slot snapshot of the pre-MPE receive/forward channels, so turning MPE
+ * off restores what was there. Sized from the slot count: this array and the
+ * slotIndex() sanitising of `slot` below are a COUPLED pair — a literal length
+ * here with a sanitised index reads back undefined into a truthy-checked
+ * branch, which is a wrong restore rather than an error. */
+const mpePreState = new Array(CHAIN_SLOTS).fill(null);
 
 function setSlotMpe(on) {
-    const slot = S.slot & 3;
+    const slot = slotIndex(S.slot);
     const iRecv = S.slotRows.findIndex(r => r.key === 'receive_channel');
     const iFwd = S.slotRows.findIndex(r => r.key === 'forward_channel');
     let recv, fwd;
@@ -2441,7 +2447,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * (no channel gate); bus contexts have no slot to address. */
         if (!S.bus && S.slot >= 0) {
             const delta = decodeDelta(d2);
-            if (delta) shadow_send_midi_to_dsp(S.slot & 3, [0xB0, d1, delta > 0 ? 1 : 127]);
+            if (delta) shadow_send_midi_to_dsp(slotIndex(S.slot), [0xB0, d1, delta > 0 ? 1 : 127]);
         }
         return true;
     }

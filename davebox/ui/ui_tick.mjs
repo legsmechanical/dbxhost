@@ -49,7 +49,7 @@ import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes } from './ui_r
 import { xposeCancelPreview } from './ui_xpose.mjs';
 import { checkBackHold, backTapWouldAct } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
-         SLOT_LEVEL_KEY } from './ui_engine.mjs';
+         SLOT_LEVEL_KEY, CHAIN_SLOTS } from './ui_engine.mjs';
 import { soundActive, soundEnter, soundEnterBuses, soundExit, soundTick, soundDirty,
     soundTrack, soundRetarget, soundIsGlobal, soundEnteredInSession,
     soundConsumeLedDirty } from './ui_sound.mjs';
@@ -1096,7 +1096,7 @@ export function _tickImpl() {
                  * we see one, so the first turn moves from the real value. */
                 if (_m !== 0 && S.sessVolLevel[_t] < 0) {
                     let _s0 = 0;
-                    while (_s0 < 4 && !(_m & (1 << _s0))) _s0++;
+                    while (_s0 < CHAIN_SLOTS && !(_m & (1 << _s0))) _s0++;
                     const _raw = parseFloat(engineGetSlotParam(_s0, SLOT_LEVEL_KEY));
                     S.sessVolLevel[_t] = isFinite(_raw) && _raw >= 0 ? _raw : 1;
                 }
@@ -1109,7 +1109,7 @@ export function _tickImpl() {
                 S.sessVolPending[_t] = false;
                 const _m = S.sessVolSlots[_t] | 0;
                 const _v = S.sessVolLevel[_t].toFixed(3);
-                for (let _s = 0; _s < 4; _s++) {
+                for (let _s = 0; _s < CHAIN_SLOTS; _s++) {
                     if (_m & (1 << _s)) engineSetSlotParam(_s, SLOT_LEVEL_KEY, _v);
                 }
                 _wrote++;

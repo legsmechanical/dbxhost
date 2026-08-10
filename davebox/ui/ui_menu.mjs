@@ -26,6 +26,7 @@ import {
 } from './ui_constants.mjs';
 
 import { S } from './ui_state.mjs';
+import { CHAIN_SLOTS, slotLetter } from './ui_engine.mjs';
 import { saveState, writeSidecar, showActionPopup, loadSnapshotManifest } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -68,11 +69,11 @@ function buildGlobalMenuItems() {
                 if (S.trackRoute[S.activeTrack] !== 0) return;
                 applyTrackConfig(S.activeTrack, 'slot', v);
             },
-            options: [0, 1, 2, 3],
+            options: Array.from({ length: CHAIN_SLOTS }, (_, i) => i),
             format: function(v) {
                 if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT) return fmtNA();
                 if (S.trackRoute[S.activeTrack] !== 0) return fmtNA();
-                return 'ABCD'[v & 3];
+                return slotLetter(v);
             }
         }),
         createEnum('Route', {

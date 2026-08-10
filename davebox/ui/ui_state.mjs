@@ -4,7 +4,9 @@
  * Read: S.varName   Write: S.varName = v  or  S.arr[i] = v
  */
 
-import { PAD_MODE_CONDUCT } from './ui_constants.mjs';
+import { PAD_MODE_CONDUCT, NUM_TRACKS } from './ui_constants.mjs';
+/* ui_engine.mjs imports nothing local, so this cannot cycle. */
+import { CHAIN_SLOTS } from './ui_engine.mjs';
 
 /* Conductor track index derived from pad_mode — the reliable source. The
  * S.conductorTrack mirror can be stale/-1 (flaky single-tick load readback), so
@@ -196,7 +198,13 @@ export const S = {
     lastDspActiveClip: new Array(8).fill(0),
     trackQueuedClip: new Array(8).fill(-1),
     trackChannel: new Array(8).fill(1),
-    trackSlot: [0, 1, 2, 3, 0, 1, 2, 3],      /* 0-based chain slot addressed on ROUTE_SCHWUNG; mirrors DSP tN_slot defaults (t & 3) */
+    /* 0-based chain slot addressed on ROUTE_SCHWUNG; mirrors the DSP's tN_slot
+     * defaults. Round-robin over the available slots.
+     * ⚠ This DEFAULT MAPPING is a product decision, not arithmetic: if the slot
+     * count ever equals the track count, 1:1 is the obvious default and this
+     * round-robin becomes the wrong answer. Keep it derived so the shape is
+     * visible, but do not assume widening it is purely mechanical. */
+    trackSlot: Array.from({ length: NUM_TRACKS }, (_, t) => t % CHAIN_SLOTS),
     trackRoute: new Array(8).fill(0),
     moveCoRunTrack: -1,                       /* -1 = off; 0-3 = Move firmware is co-running on this track (dAVEBOx skips OLED; shim filters nav CCs + touch 0-9 from tool, lets them reach Move) */
     moveCoRunDrumHeld: new Set(),             /* d1 notes of drum lane pads currently held in co-run — per-pad Set so a 2nd simultaneous hold doesn't clobber the 1st's tracking (js-input-1). Plain pad note-off (no Shift injection) sent per held pad on physical release / co-run exit */

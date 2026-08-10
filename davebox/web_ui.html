@@ -297,6 +297,14 @@
 
 <script src="/static/schwung-remote-api.js"></script>
 <script>
+/* Chain slots the host renders. Must match SEQ8_CHAIN_SLOTS (dsp/seq8.c) and
+   CHAIN_SLOTS (ui/ui_engine.mjs) — pinned by
+   tests/host/test_slot_count_is_single_sourced.sh. Declared here so BOTH script
+   blocks below see one value; the slot selector, the display letters and the
+   incoming-value clamp all used to hardcode 4 independently. */
+window.CHAIN_SLOTS = 4;
+window.slotLetter = (i) => String.fromCharCode(65 + Math.max(0, Math.min(window.CHAIN_SLOTS - 1, i | 0)));
+
 /* ---- fallback shim: standalone local preview without a device. Speaks the same
        "overtake_dsp:"-prefixed flat fields the manager seeds, and APPLIES note ops to its
        mock store so the preview is a faithful edit loop. ---- */
@@ -401,7 +409,7 @@ if (!window.schwungRemote) {
       if((m=k.match(/t(\d+)_route$/))){ const r={schwung:0,move:1,external:2}[v];
         if(r!=null) tracks[+m[1]].route=r; rev++; rebuild(); return; }
       if((m=k.match(/t(\d+)_channel$/))){ tracks[+m[1]].chan=Math.max(1,Math.min(16,+v|0)); rev++; rebuild(); return; }
-      if((m=k.match(/t(\d+)_slot$/))){ tracks[+m[1]].slot=Math.max(0,Math.min(3,+v|0)); rev++; rebuild(); return; }
+      if((m=k.match(/t(\d+)_slot$/))){ tracks[+m[1]].slot=Math.max(0,Math.min(window.CHAIN_SLOTS-1,+v|0)); rev++; rebuild(); return; }
       if((m=k.match(/t(\d+)_c(\d+)_ruisel$/))){ sel.t=+m[1]; sel.c=+m[2];
         sel.lane=(v&&v[0]&&v[0]!=='-')?+v:-1; rev++; rebuild(); return; }
       if((m=k.match(/t(\d+)_l(\d+)_(note_\w+)$/))){      // drum lane op
@@ -1225,7 +1233,7 @@ function renderSession(){
     const rl=trk.route===1?"Mv":trk.route===2?"Ext":trk.route===0?"Schw":null;
     /* Schwung tracks address a chain SLOT directly (A-D); channel only matters
      * for Move/External routes. */
-    const schwSlot=(trk.route===0&&trk.slot!=null)?"ABCD"[trk.slot&3]:null;
+    const schwSlot=(trk.route===0&&trk.slot!=null)?window.slotLetter(trk.slot):null;
     const lbl=(rl!=null&&trk.chan!=null)?`${t+1} - ${rl} ${schwSlot!=null?`Slot ${schwSlot}`:`Ch.${trk.chan}`}`:(trk.pm===1?"D":trk.pm===2?"C":"M")+(t+1);
     const ttl=(rl!=null&&trk.chan!=null)?`Track ${t+1} → ${rl==="Mv"?"Move":rl==="Schw"?"Schwung":"External"}, ${schwSlot!=null?`Slot ${schwSlot}`:`MIDI Ch ${trk.chan}`}`:`track ${t+1}`;
     /* conductor / responder indicator (rui_cond): "C" on the conductor track,
@@ -1375,7 +1383,7 @@ function openTrackGear(t,anchor){
       `<option value="schwung">Schwung</option><option value="move">Move</option><option value="external">External</option>`+
       `</select></div>`+
     `<div class="tgrow"><span>Slot</span><select id="tgSlot" class="full">`+
-      Array.from({length:4},(_,i)=>`<option value="${i}">${"ABCD"[i]}</option>`).join("")+`</select></div>`+
+      Array.from({length:window.CHAIN_SLOTS},(_,i)=>`<option value="${i}">${window.slotLetter(i)}</option>`).join("")+`</select></div>`+
     `<div class="tgrow"><span>MIDI Channel</span><select id="tgChan" class="full">`+
       Array.from({length:16},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join("")+`</select></div>`;
   document.body.appendChild(el);

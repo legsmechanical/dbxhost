@@ -9,6 +9,7 @@
  */
 
 import { S } from './ui_state.mjs';
+import { slotIndex } from './ui_engine.mjs';
 import { invalidateLEDCache, reapplyPalette, forceRedraw } from './ui_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -120,19 +121,19 @@ function onServiceReturn(id, _result) {
  * layering, its per-tick shadow_get_slots() enumeration, and its "NO SCHWUNG
  * SLOT for channel N" failure mode) is gone. */
 export function schSlotForTrack(t) {
-    return S.trackSlot[t] & 3;
+    return slotIndex(S.trackSlot[t]);
 }
 
 /* Bitmask form kept for the session-view per-track level loop: exactly one
  * bit now — the track's addressed slot. */
 export function schSlotsForTrack(t) {
-    return 1 << (S.trackSlot[t] & 3);
+    return 1 << slotIndex(S.trackSlot[t]);
 }
 
 /* Every track's mask written into `out` (same one-call shape the tick loop
  * already uses; no chain enumeration needed anymore). */
 export function schSlotMasksAllTracks(out) {
-    for (let t = 0; t < out.length; t++) out[t] = 1 << (S.trackSlot[t] & 3);
+    for (let t = 0; t < out.length; t++) out[t] = 1 << slotIndex(S.trackSlot[t]);
     return out;
 }
 

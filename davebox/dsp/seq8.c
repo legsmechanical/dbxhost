@@ -98,6 +98,14 @@
 #define PAD_MODE_DRUM           1   /* 32-lane drum sequencer */
 #define PAD_MODE_CONDUCT        2   /* Conductor: drives transposition, emits no MIDI */
 
+/* Chain slots the host renders, which a ROUTE_SCHWUNG track addresses by index
+ * (tN_slot). Must match the host's SHADOW_CHAIN_INSTANCES and the module's
+ * CHAIN_SLOTS in ui/ui_engine.mjs — pinned by
+ * tests/host/test_slot_count_is_single_sourced.sh.
+ * ⚠ Not to be confused with Move's four native tracks: `t < 4` in the route
+ * defaults below is that other four, and must NOT move with this one. */
+#define SEQ8_CHAIN_SLOTS    4
+
 /* Drum mode */
 #define DRUM_LANES          32
 /* Baseline MIDI note for lane 0 — standard Ableton Drum Rack layout.
@@ -4326,10 +4334,16 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
         inst->tracks[t].at_last_clip = 0xFF;
         inst->tracks[t].pfx.looper_on = 1;
         inst->tracks[t].pfx.track_idx = (uint8_t)t;
-        /* Default slot (ROUTE_SCHWUNG): tracks 1-4 → slots A-D, tracks 5-8 →
-         * slots A-D. Mirrors the old channel↔slot default correspondence. */
-        inst->tracks[t].pfx.slot = (uint8_t)(t & 3);
-        { int _sl; for (_sl = 0; _sl < DRUM_LANES; _sl++) inst->tracks[t].drum_lane_pfx[_sl].slot = (uint8_t)(t & 3); }
+        /* Default slot (ROUTE_SCHWUNG): tracks round-robin over the chain
+         * slots. Mirrors the old channel<->slot default correspondence.
+         * WARNING: this DEFAULT MAPPING is a product decision, not arithmetic.
+         * If the slot count ever equals the track count, 1:1 is the obvious
+         * default and this round-robin becomes the wrong answer. */
+        {
+            uint8_t _dsl = (uint8_t)(t % SEQ8_CHAIN_SLOTS);
+            inst->tracks[t].pfx.slot = _dsl;
+            { int _sl; for (_sl = 0; _sl < DRUM_LANES; _sl++) inst->tracks[t].drum_lane_pfx[_sl].slot = _dsl; }
+        }
         /* Default routing: tracks 1-4 → Move (ch 1-4), tracks 5-8 → Schwung (ch 1-4) */
         if (t < 4) {
             inst->tracks[t].pfx.route = ROUTE_MOVE;

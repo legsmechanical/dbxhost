@@ -167,7 +167,7 @@ static int sp_track_config(sp_ctx_t *cx) {
     /* tN_slot: chain slot this track addresses on ROUTE_SCHWUNG (0-indexed
      * in and stored). Mirrored into every drum lane pfx like route. */
     if (!strcmp(sub, "slot")) {
-        uint8_t sl = (uint8_t)clamp_i(my_atoi(val), 0, 3);
+        uint8_t sl = (uint8_t)clamp_i(my_atoi(val), 0, SEQ8_CHAIN_SLOTS - 1);
         tr->pfx.slot = sl;
         { int _sl; for (_sl = 0; _sl < DRUM_LANES; _sl++) tr->drum_lane_pfx[_sl].slot = sl; }
         rui_mark(inst, tidx, tr->active_clip);   /* rui_index slot */

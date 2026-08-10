@@ -79,5 +79,46 @@ if ! grep -q 'SLOT_PROBE_STRIDE_FRAMES (SLOT_PROBE_WINDOW_FRAMES / SHADOW_CHAIN_
   exit 1
 fi
 
-echo "PASS: slot count single-sourced at $chain_instances across C/JS/link-audio; no shim redefine; probe stride derived"
+# The module declares the same count three more times — its UI, its DSP, and
+# its remote UI. A module/host disagreement is the worst case of all: the host
+# renders N slots, the module addresses M, and the tracks pointing at the
+# difference play into the wrong chain silently.
+db_ui="davebox/ui/ui_engine.mjs"
+db_dsp="davebox/dsp/seq8.c"
+db_web="davebox/web_ui.html"
+
+db_ui_count="$(grep -oE 'export const CHAIN_SLOTS = [0-9]+' "$db_ui" | grep -oE '[0-9]+$' || true)"
+db_dsp_count="$(grep -oE '^#define SEQ8_CHAIN_SLOTS +[0-9]+' "$db_dsp" | grep -oE '[0-9]+$' || true)"
+db_web_count="$(grep -oE 'window\.CHAIN_SLOTS = [0-9]+' "$db_web" | grep -oE '[0-9]+$' || true)"
+
+for pair in "CHAIN_SLOTS(ui_engine):$db_ui_count" \
+            "SEQ8_CHAIN_SLOTS(dsp):$db_dsp_count" \
+            "CHAIN_SLOTS(web_ui):$db_web_count"; do
+  name="${pair%%:*}"; val="${pair##*:}"
+  if [ -z "$val" ]; then
+    echo "FAIL: could not read davebox $name — the declaration moved or changed shape" >&2
+    exit 1
+  fi
+done
+
+if [ "$db_ui_count" != "$chain_instances" ] || \
+   [ "$db_dsp_count" != "$chain_instances" ] || \
+   [ "$db_web_count" != "$chain_instances" ]; then
+  echo "FAIL: davebox's slot count disagrees with the host's:" >&2
+  echo "      host SHADOW_CHAIN_INSTANCES = $chain_instances" >&2
+  echo "      $db_ui  CHAIN_SLOTS      = $db_ui_count" >&2
+  echo "      $db_dsp SEQ8_CHAIN_SLOTS = $db_dsp_count" >&2
+  echo "      $db_web CHAIN_SLOTS      = $db_web_count" >&2
+  echo "      Tracks addressing the difference would play into the wrong chain." >&2
+  exit 1
+fi
+
+# `& 3` is not a bounds check — it aliases. Nothing in the slot paths may use
+# it: slot 4 silently becoming slot 0 is indistinguishable from a correct 0.
+if grep -rnE '(slot|Slot)[A-Za-z]*[^&|]*& *3\b' davebox/ui/*.mjs 2>/dev/null | grep -v '^\S*: *\*' | grep -v 'not a bounds check'; then
+  echo "FAIL: a slot path still masks with & 3 — use slotIndex() (ui_engine.mjs)" >&2
+  exit 1
+fi
+
+echo "PASS: slot count single-sourced at $chain_instances across host C/JS/link-audio + davebox ui/dsp/web; no shim redefine; probe stride derived; no & 3 slot masks"
 exit 0
