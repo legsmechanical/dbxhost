@@ -664,6 +664,18 @@ static int shadow_slot_idle[SHADOW_CHAIN_INSTANCES];
 static int shadow_slot_fx_silence_frames[SHADOW_CHAIN_INSTANCES];
 static int shadow_slot_fx_idle[SHADOW_CHAIN_INSTANCES];
 
+/* Move FX bus idle detection. The buses run UNCONDITIONALLY now (Move>Slot is
+ * retired) and they run PRE-ioctl, in the tighter window — so a loaded but
+ * silent bus was paying its full insert-chain cost on every block, up to
+ * MOVE_FX_SLOTS × MOVE_FX_BLOCKS instances of nothing.
+ *
+ * ⚠ Unlike a chain slot, a Move bus's input is AUDIO, not MIDI. A slot can nap
+ * and be woken by a MIDI dispatch; a bus has no such event, so it must test its
+ * input every block. A periodic probe would swallow up to the probe window
+ * (~0.5 s) of a Move track starting to play — far worse than the cost saved. */
+static int shadow_move_fx_silence_frames[MOVE_FX_SLOTS];
+static int shadow_move_fx_idle[MOVE_FX_SLOTS];
+
 
 
 
@@ -2280,7 +2292,19 @@ static void shadow_inprocess_mix_from_buffer(void) {
              * loaded on the slot, and BEFORE the synth block so the synth's
              * idle-continue below can't skip it. Mixing is additive, so order
              * doesn't change the sum. */
+            /* Idle gate: the input is checked EVERY block (cheap — one scan, no
+             * plugin calls) so the bus wakes the instant Move audio returns. It
+             * sleeps only once the input has been silent AND the inserts have
+             * decayed to silence, so a reverb/delay tail still rings out. */
+            int move_in_silent = 1;
             if (have_move_track && s < MOVE_FX_SLOTS) {
+                for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
+                    if (move_track[i] > DSP_SILENCE_LEVEL ||
+                        move_track[i] < -DSP_SILENCE_LEVEL) { move_in_silent = 0; break; }
+                }
+            }
+            if (have_move_track && s < MOVE_FX_SLOTS &&
+                !(move_in_silent && shadow_move_fx_idle[s])) {
                 /* Skip the copy + FX loop entirely when no FX is loaded — the
                  * track then mixes straight from la_cache (read-only). */
                 const int16_t *msrc = move_track;
@@ -2335,6 +2359,22 @@ static void shadow_inprocess_mix_from_buffer(void) {
                 }
                 accumulate_sends_ex(msrc, mvol, shadow_move_fx_strip[s].send_a,
                                     shadow_move_fx_strip[s].send_b, send_accum);
+
+                /* Sleep only when the POST-insert signal is silent too, so a
+                 * tail is never cut. With no FX loaded msrc aliases the input,
+                 * so this collapses to "input silent" — which is what we want. */
+                int move_out_silent = 1;
+                for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
+                    if (msrc[i] > DSP_SILENCE_LEVEL ||
+                        msrc[i] < -DSP_SILENCE_LEVEL) { move_out_silent = 0; break; }
+                }
+                if (move_in_silent && move_out_silent) {
+                    if (++shadow_move_fx_silence_frames[s] >= DSP_IDLE_THRESHOLD)
+                        shadow_move_fx_idle[s] = 1;
+                } else {
+                    shadow_move_fx_silence_frames[s] = 0;
+                    shadow_move_fx_idle[s] = 0;
+                }
             }
 
             if (slot_active) {
