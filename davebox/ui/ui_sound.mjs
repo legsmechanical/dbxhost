@@ -26,6 +26,7 @@ import {
     engineLoadModule, engineLoadedModule, engineGetState, engineSetState,
     engineListUserPresets, engineReadUserPreset,
     engineGetSlotParam, engineSetSlotParam, engineSaveState, engineVolBlock,
+    engineGetChainParam, engineSetChainParam,
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
 } from './ui_engine.mjs';
 /* davebox's GLOBAL state. Sound mode keeps its own `S`, so this is imported
@@ -1219,6 +1220,14 @@ function slotCfgStep(delta) {
  * can retarget to another track before the drain, and a send raised against
  * one slot must not land in the one that replaced it. `comp` addresses a
  * component namespace (synth:mpe_enabled) instead of slot:. */
+/* Chain-level twin of queueSlotCfgWrite: same queue, bare-key namespace. */
+function queueChainWrite(key, val) {
+    for (const w of S.pendingSlotWrites) {
+        if (w.chain && w.key === key && w.slot === S.slot) { w.val = val; return; }
+    }
+    S.pendingSlotWrites.push({ slot: S.slot, key: key, val: val, chain: true });
+}
+
 function queueSlotCfgWrite(key, val, comp) {
     for (const w of S.pendingSlotWrites) {
         if (w.key === key && w.slot === S.slot && w.comp === comp) { w.val = val; return; }
@@ -1290,9 +1299,9 @@ function drainSlotWrites() {
     for (let n = 0; n < WRITES_PER_TICK && q.length; n++) {
         const w = q.shift();
         if (w.comp) { engineSet(w.slot, w.comp, w.key, String(w.val)); continue; }
-        /* String values (knob_N_set "target:param", lfoN:* enum indices) pass
-         * through verbatim; numbers keep the SLOT_SETTINGS int/float shaping. */
-        if (typeof w.val === 'string') { engineSetSlotParam(w.slot, w.key, w.val); continue; }
+        /* Chain-level keys (knob_N_*, lfoN:*) go through BARE — they are not
+         * in the slot: namespace (see engineSetChainParam). */
+        if (w.chain) { engineSetChainParam(w.slot, w.key, String(w.val)); continue; }
         const s = SLOT_SETTINGS.find(x => x.key === w.key);
         engineSetSlotParam(w.slot, w.key, s && s.int ? String(w.val) : w.val.toFixed(3));
     }
@@ -1317,8 +1326,8 @@ function openKnobEditor() {
     S.knobAsn = [];
     for (let i = 0; i < NUM_KNOBS; i++) {
         S.knobAsn.push({
-            target: engineGetSlotParam(S.slot, 'knob_' + (i + 1) + '_target') || '',
-            param:  engineGetSlotParam(S.slot, 'knob_' + (i + 1) + '_param') || '',
+            target: engineGetChainParam(S.slot, 'knob_' + (i + 1) + '_target') || '',
+            param:  engineGetChainParam(S.slot, 'knob_' + (i + 1) + '_param') || '',
         });
     }
     S.knobIdx = 0;
@@ -1326,11 +1335,13 @@ function openKnobEditor() {
 }
 
 /* Components with a module loaded — the assignable targets. Ported from the
- * host's getKnobTargets: probe each component's *_module key. */
+ * host's getKnobTargets, but probed the davebox way: engineLoadedModule
+ * (the P6 symmetric `<comp>:module` readback), NOT the host-side
+ * `<comp>_module` slot-param shape, which this engine seam doesn't serve. */
 function knobTargetList() {
     const targets = [{ id: '', name: '(None)' }];
     const probe = (id, label) => {
-        const mod = engineGetSlotParam(S.slot, id + '_module');
+        const mod = engineLoadedModule(S.slot, id);
         if (!mod) return;
         const name = engineGet(S.slot, id, 'name') || mod;
         targets.push({ id, name: label + ': ' + name });
@@ -1411,8 +1422,8 @@ function knobAsnLabel(a) {
 function commitKnobAssignment(target, param) {
     const n = S.knobIdx + 1;
     S.knobAsn[S.knobIdx] = { target: target || '', param: param || '' };
-    if (target && param) queueSlotCfgWrite('knob_' + n + '_set', target + ':' + param);
-    else queueSlotCfgWrite('knob_' + n + '_clear', '1');
+    if (target && param) queueChainWrite('knob_' + n + '_set', target + ':' + param);
+    else queueChainWrite('knob_' + n + '_clear', '1');
     S.view = VIEW_KNOBS;
 }
 
@@ -1451,7 +1462,7 @@ function lfoKey(key) { return 'lfo' + (S.lfoNum + 1) + ':' + key; }
 function openLfoEditor(lfoNum) {
     S.lfoNum = lfoNum;
     S.lfoVals = {};
-    for (const k of LFO_KEYS) S.lfoVals[k] = engineGetSlotParam(S.slot, lfoKey(k)) || '';
+    for (const k of LFO_KEYS) S.lfoVals[k] = engineGetChainParam(S.slot, lfoKey(k)) || '';
     S.lfoIdx = 0;
     S.lfoEditing = false;
     S.view = VIEW_LFO;
@@ -1511,7 +1522,7 @@ function lfoAdjust(item, delta) {
         if (v >= item.options.length) v = item.options.length - 1;
         if (String(v) === S.lfoVals[item.key]) return;
         S.lfoVals[item.key] = String(v);
-        queueSlotCfgWrite(lfoKey(item.key), String(v));
+        queueChainWrite(lfoKey(item.key), String(v));
     } else if (item.type === 'float') {
         let v = parseFloat(S.lfoVals[item.key] || '0') + item.step * delta;
         if (v < item.min) v = item.min;
@@ -1519,27 +1530,21 @@ function lfoAdjust(item, delta) {
         const s = v.toFixed(4);
         if (s === S.lfoVals[item.key]) return;
         S.lfoVals[item.key] = s;
-        queueSlotCfgWrite(lfoKey(item.key), s);
+        queueChainWrite(lfoKey(item.key), s);
     }
 }
 
-/* Target picker: components (ported from the host's makeSlotLfoCtx). */
+/* Target picker: components (ported from the host's makeSlotLfoCtx). Probed
+ * the davebox way — engineLoadedModule, not the host's *_module key shape. */
 function lfoCompList() {
     const comps = [];
-    const synthMod = engineGetSlotParam(S.slot, 'synth_module');
-    if (synthMod) {
-        let name = engineGet(S.slot, 'synth', 'name') || synthMod;
-        comps.push({ key: 'synth', label: 'Synth: ' + name });
-    }
-    for (let i = 1; i <= 4; i++) {
-        const m = engineGetSlotParam(S.slot, 'fx' + i + '_module');
-        if (m) comps.push({ key: 'fx' + i, label: 'FX ' + i + ': ' + (engineGet(S.slot, 'fx' + i, 'name') || m) });
-    }
-    const mfxCount = parseInt(engineGetSlotParam(S.slot, 'midi_fx_count') || '0');
-    for (let i = 1; i <= mfxCount && i <= 2; i++) {
-        const m = engineGetSlotParam(S.slot, 'midi_fx' + i + '_module');
-        if (m) comps.push({ key: 'midi_fx' + i, label: 'MIDI FX ' + i + ': ' + (engineGet(S.slot, 'midi_fx' + i, 'name') || m) });
-    }
+    const probe = (key, label) => {
+        const m = engineLoadedModule(S.slot, key);
+        if (m) comps.push({ key, label: label + ': ' + (engineGet(S.slot, key, 'name') || m) });
+    };
+    probe('synth', 'Synth');
+    for (let i = 1; i <= 4; i++) probe('fx' + i, 'FX ' + i);
+    for (let i = 1; i <= 2; i++) probe('midi_fx' + i, 'MIDI FX ' + i);
     comps.push({ key: 'lfo' + (S.lfoNum === 0 ? 2 : 1), label: 'LFO ' + (S.lfoNum === 0 ? 2 : 1) });
     comps.push({ key: '__clear__', label: '[Clear Target]' });
     return comps;
@@ -1576,8 +1581,8 @@ function openLfoParams(compKey) {
 function commitLfoTarget(compKey, paramKey) {
     S.lfoVals.target = compKey || '';
     S.lfoVals.target_param = paramKey || '';
-    queueSlotCfgWrite(lfoKey('target'), S.lfoVals.target);
-    queueSlotCfgWrite(lfoKey('target_param'), S.lfoVals.target_param);
+    queueChainWrite(lfoKey('target'), S.lfoVals.target);
+    queueChainWrite(lfoKey('target_param'), S.lfoVals.target_param);
     S.view = VIEW_LFO;
 }
 

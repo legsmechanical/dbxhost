@@ -115,6 +115,18 @@ export function engineSetSlotParam(slot, key, val) {
     return shadow_set_param(slot, 'slot:' + key, String(val));
 }
 
+/* CHAIN-level params whose key carries its own namespace (knob_N_*, lfoN:*):
+ * passed through BARE — the chain host owns these keys directly, they are not
+ * in the slot: namespace. The knob/LFO editors (P7 absorb) read and write the
+ * exact keys the host's editors did. */
+export function engineGetChainParam(slot, key) {
+    return shadow_get_param(slot, key);
+}
+
+export function engineSetChainParam(slot, key, val) {
+    return shadow_set_param(slot, key, String(val));
+}
+
 /* Flush chain state to disk. shadow_ui.js defines this global and it already
  * persists slot volumes/channels/mute/solo, so no host change was needed to
  * make slot level survive a reboot. Synchronous file write — call it at the END
