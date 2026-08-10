@@ -18,8 +18,12 @@ static int sp_track_config(sp_ctx_t *cx) {
     const char *sub = cx->sub;
 
     /* --- Transpose all melodic clips on Key/Scale change ---
-     * Global op (clips on all tracks); carried on a per-track key (t0_)
-     * because Schwung drops new global set_param keys. tr is ignored. */
+     * Global op (clips on all tracks); carried on a per-track key (t0_).
+     * tr is ignored. (P6 audit 2026-08-09: the host does NOT drop global
+     * keys — the overtake_dsp: path forwards any key verbatim; the old
+     * claim here was a misdiagnosis of the single-slot mailbox race. The
+     * carrier key is kept because it works and changing the wire shape
+     * buys nothing.) */
     if (!strcmp(sub, "xpose_prev")) {
         /* "<oldK> <oldS> <newK> <newS>" — arm/refresh the live preview */
         int ok = 9, os = 1, nk = 9, ns = 1;

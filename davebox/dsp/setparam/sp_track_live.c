@@ -167,17 +167,20 @@ static int sp_track_live(sp_ctx_t *cx) {
          *
          * JS only ever pushes tN_padmap for the *currently active* track
          * (computePadNoteMap uses S.activeTrack), so the act of pushing
-         * signals "this is now the active track." We piggyback active-
-         * track sync here because the Schwung host drops module-defined
-         * global set_param keys (only per-track-prefixed keys reach DSP
-         * reliably).
+         * signals "this is now the active track." Active-track sync rides
+         * here so it lands ATOMICALLY with the pad payload — a standalone
+         * global key would arrive on its own mailbox write and could
+         * interleave (or lose the single-slot last-write-wins race to the
+         * frequent tN_ traffic). ⚠ P6 audit (2026-08-09): the old claim
+         * here that "the host drops module-defined global set_param keys"
+         * was a MISDIAGNOSIS — the overtake_dsp: path forwards any key
+         * verbatim; the mailbox race is the real mechanism. The
+         * shadow_inbound_pad_midi_active capability this comment once
+         * referenced never existed in any tree.
          *
-         * The push also serves as the capability signal for Phase 1:
-         * JS only pushes tN_padmap when shadow_inbound_pad_midi_active
-         * is present (patched Schwung). Pushing it survives DSP instance
-         * recreate (state_load destroy/recreate path) because JS pushes
-         * on every computePadNoteMap recompute, not just at init.
-         * PHASE-1: remove the enable line when patches upstreamed. */
+         * Pushing on every computePadNoteMap recompute (not just init)
+         * means the enable below survives DSP instance recreate
+         * (state_load destroy/recreate path). */
         inst->active_track = (uint8_t)tidx;
         /* This is the flag the live_notes branch above early-returns on:
          * once padmap enables inbound, on_midi owns live dispatch and a

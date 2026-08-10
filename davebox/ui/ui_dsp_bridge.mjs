@@ -9,8 +9,14 @@
  *   2. Only the LAST host_module_set_param per audio buffer survives —
  *      writes that can share a buffer must be deferred via the pending
  *      queues (pendingLiveNotes here, S.pendingDefaultSetParams in tick).
- *   3. New global param keys are silently dropped by the host — new state
- *      must piggyback on existing tN_-prefixed per-track keys.
+ *   3. Global (un-prefixed) param keys are NOT dropped by the host — the
+ *      overtake_dsp: path forwards any key verbatim (P6 audit, 2026-08-09;
+ *      the old "host drops global keys" doctrine here was a misdiagnosis).
+ *      What is real is rule 2: the single-slot mailbox means a rare global
+ *      key sharing a buffer with the frequent tN_ traffic is the one that
+ *      loses the overwrite race. State that must land ATOMICALLY with the
+ *      pad payload (active track, delete_held, ...) therefore rides inside
+ *      tN_padmap by design, not as a workaround.
  * The queued targeted-sync/param-batching follow-up (full-sync freeze board
  * item) slots here once designed — syncClipsFromDsp is its surface.
  * Extracted from ui.js (Phase 6a of the modularity refactor, increment 1).

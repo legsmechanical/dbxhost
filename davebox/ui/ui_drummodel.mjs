@@ -136,8 +136,10 @@ export function computePadNoteMap() {
         }
         /* The tN_padmap key encodes the active track index — DSP's
          * tN_padmap handler updates inst->active_track + dsp_inbound_enabled
-         * from it. (Schwung host silently drops module-defined global keys,
-         * so we piggyback signals onto the per-track padmap push.)
+         * from it. (Riding the padmap keeps these ATOMIC with the pad
+         * payload; P6 audit 2026-08-09 — the host does NOT drop global
+         * keys, the old claim was a misdiagnosis of the single-slot
+         * mailbox last-write-wins race.)
          *
         /* 33rd token = pad-dispatch-muted flag. While set, DSP on_midi skips
          * drum_pad_event (Rpt1/Rpt2 rate-pad + vel-zone handling) on top of
