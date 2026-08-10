@@ -142,6 +142,14 @@ const SLOT_SETTINGS = [
     { key: 'transpose',     label: 'Transpose',   min: -12, max: 12, step: 1, int: true, fmt: ST_FMT },
     { key: 'receive_channel', label: 'Recv Ch',   min: 0, max: 16, step: 1, int: true, fmt: CH_FMT },
     { key: 'forward_channel', label: 'Fwd Ch',    min: -2, max: 15, step: 1, int: true, fmt: FWD_FMT },
+    /* MPE is a DERIVED row, not a stored param: On means recv=All + fwd=Thru
+     * (the host's isSlotMpeMode test), and toggling it performs the same
+     * atomic three-write set the host's Chain Settings row does — recv, fwd,
+     * synth:mpe_enabled together, with the pre-MPE recv/fwd restored on Off.
+     * Anything less (a bare synth flag) leaves channel remap destroying
+     * per-note bend/pressure/slide, which reads as "MPE is broken". */
+    { key: 'mpe_mode', label: 'MPE', min: 0, max: 1, step: 1, int: true,
+      fmt: (v) => (v ? 'On' : 'Off'), mpe: true },
     { key: 'muted',         label: 'Muted',       min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
     { key: 'soloed',        label: 'Soloed',      min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
     { key: 'move_to_slot',  label: 'Move>Schw',   min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
@@ -1001,10 +1009,11 @@ function probeCaps() {
 
 function openSlotCfg() {
     S.slotCfgVals = S.slotRows.map(s => {
-        if (s.svc) return 0;   /* service rows carry no value */
+        if (s.svc || s.mpe) return 0;   /* no stored param behind these rows */
         const raw = parseFloat(engineGetSlotParam(S.slot, s.key));
         return isFinite(raw) ? raw : 0;
     });
+    recomputeMpeRow();
     S.slotCfgIdx = 0;
     S.slotCfgEditing = false;
     S.slotCfgDirty = false;
@@ -1019,6 +1028,12 @@ function slotCfgStep(delta) {
         S.slotCfgEditing = false;
         return;
     }
+    if (s.mpe) {
+        const on = S.slotCfgVals[S.slotCfgIdx] >= 1;
+        if (delta > 0 && !on) setSlotMpe(true);
+        else if (delta < 0 && on) setSlotMpe(false);
+        return;
+    }
     let v = S.slotCfgVals[S.slotCfgIdx] + (delta > 0 ? s.step : -s.step);
     if (s.int) v = Math.round(v);
     else v = Math.round(v * 1000) / 1000;      /* keep 0.05 steps from drifting */
@@ -1027,14 +1042,68 @@ function slotCfgStep(delta) {
     if (v === S.slotCfgVals[S.slotCfgIdx]) return;
     S.slotCfgVals[S.slotCfgIdx] = v;
     S.slotCfgDirty = true;
-    /* Queued like every other write here: this runs in the MIDI handler. */
-    /* Slot captured at QUEUE time, same reason queueWrite does it: sound mode
-     * can retarget to another track before the drain, and a send raised against
-     * one slot must not land in the one that replaced it. */
+    queueSlotCfgWrite(s.key, v);
+    /* Hand-editing recv/fwd can make or unmake the MPE condition — keep the
+     * derived row telling the truth without a screen reopen. */
+    if (s.key === 'receive_channel' || s.key === 'forward_channel') recomputeMpeRow();
+}
+
+/* Queued like every other write here: this runs in the MIDI handler.
+ * Slot captured at QUEUE time, same reason queueWrite does it: sound mode
+ * can retarget to another track before the drain, and a send raised against
+ * one slot must not land in the one that replaced it. `comp` addresses a
+ * component namespace (synth:mpe_enabled) instead of slot:. */
+function queueSlotCfgWrite(key, val, comp) {
     for (const w of S.pendingSlotWrites) {
-        if (w.key === s.key && w.slot === S.slot) { w.val = v; return; }
+        if (w.key === key && w.slot === S.slot && w.comp === comp) { w.val = val; return; }
     }
-    S.pendingSlotWrites.push({ slot: S.slot, key: s.key, val: v });
+    S.pendingSlotWrites.push({ slot: S.slot, key: key, val: val, comp: comp });
+}
+
+/* The MPE row's value is derived from the on-screen recv/fwd rows (they were
+ * read at open, and every edit path updates them), never from an SHM read. */
+function recomputeMpeRow() {
+    const iMpe = S.slotRows.findIndex(r => r.mpe);
+    if (iMpe < 0) return;
+    const iRecv = S.slotRows.findIndex(r => r.key === 'receive_channel');
+    const iFwd = S.slotRows.findIndex(r => r.key === 'forward_channel');
+    const recv = iRecv >= 0 ? S.slotCfgVals[iRecv] : -1;
+    const fwd = iFwd >= 0 ? S.slotCfgVals[iFwd] : 0;
+    S.slotCfgVals[iMpe] = (recv === 0 && fwd === -2) ? 1 : 0;
+}
+
+/* What recv/fwd were before MPE forced them, per chain slot, so Off restores
+ * the routing you had. In-memory only — the host's Chain Settings row keeps
+ * its pre-state the same way. Fallbacks mirror the host's: recv = the slot's
+ * own channel, fwd = Auto. */
+const mpePreState = [null, null, null, null];
+
+function setSlotMpe(on) {
+    const slot = S.slot & 3;
+    const iRecv = S.slotRows.findIndex(r => r.key === 'receive_channel');
+    const iFwd = S.slotRows.findIndex(r => r.key === 'forward_channel');
+    let recv, fwd;
+    if (on) {
+        mpePreState[slot] = {
+            recv: iRecv >= 0 ? S.slotCfgVals[iRecv] : slot + 1,
+            fwd: iFwd >= 0 ? S.slotCfgVals[iFwd] : -1,
+        };
+        recv = 0;    /* All  */
+        fwd = -2;    /* Thru */
+    } else {
+        const prev = mpePreState[slot];
+        recv = prev ? prev.recv : slot + 1;
+        fwd = prev ? prev.fwd : -1;
+        mpePreState[slot] = null;
+    }
+    queueSlotCfgWrite('receive_channel', recv);
+    queueSlotCfgWrite('forward_channel', fwd);
+    queueSlotCfgWrite('mpe_enabled', on ? 1 : 0, 'synth');
+    if (iRecv >= 0) S.slotCfgVals[iRecv] = recv;
+    if (iFwd >= 0) S.slotCfgVals[iFwd] = fwd;
+    recomputeMpeRow();
+    S.slotCfgDirty = true;
+    S.dirty = true;
 }
 
 /* Saving is a synchronous whole-chain file write, so it happens on LEAVING the
@@ -1054,6 +1123,7 @@ function drainSlotWrites() {
     if (!q.length) return;
     for (let n = 0; n < WRITES_PER_TICK && q.length; n++) {
         const w = q.shift();
+        if (w.comp) { engineSet(w.slot, w.comp, w.key, String(w.val)); continue; }
         const s = SLOT_SETTINGS.find(x => x.key === w.key);
         engineSetSlotParam(w.slot, w.key, s && s.int ? String(w.val) : w.val.toFixed(3));
     }
