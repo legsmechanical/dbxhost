@@ -1,8 +1,10 @@
 /*
- * Shadow UI - Slot views (SLOTS list + SLOT_SETTINGS).
+ * Shadow UI - SLOT_SETTINGS view (per-slot settings screen).
  *
  * Extracted from shadow_ui.js to allow forks to modify slot
- * presentation without touching core.
+ * presentation without touching core. The SLOTS root list view that used
+ * to live here was deleted in P5 (2026-08-09) — the primary module's sound
+ * mode plus the chain_editor_view overlay service cover everything it did.
  */
 import { ctx } from './shadow_ui_ctx.mjs';
 import {
@@ -14,8 +16,7 @@ import {
 } from '/data/UserData/schwung/shared/chain_ui_views.mjs';
 import {
     drawMenuHeader as drawHeader,
-    drawMenuFooter as drawFooter,
-    drawMenuList
+    drawMenuFooter as drawFooter
 } from '/data/UserData/schwung/shared/menu_layout.mjs';
 import {
     announce, announceMenuItem, announceParameter
@@ -42,33 +43,6 @@ export const SLOT_SETTINGS = [
 
 let selectedSetting = 0;
 let editingSettingValue = false;
-
-function getSendFxDisplayName(bus) {
-    const { getSlotParam } = ctx;
-    const busKey = bus === 0 ? "a" : "b";
-    const parts = [];
-    for (let i = 1; i <= 3; i++) {
-        const name = getSlotParam(0, `send_fx:${busKey}:fx${i}:name`);
-        if (name) parts.push(name);
-    }
-    return parts.length > 0 ? parts.join("+") : "None";
-}
-
-/* One Move FX mini-bus per Move track (channel). Show loaded block names.
- * Probes up to 4 blocks so it works regardless of MOVE_FX_BLOCKS. */
-function getMoveFxDisplayName(slot) {
-    const { getSlotParam } = ctx;
-    const parts = [];
-    for (let i = 1; i <= 4; i++) {
-        const name = getSlotParam(0, `move_fx:${slot + 1}:fx${i}:name`);
-        if (name) parts.push(name);
-    }
-    return parts.length > 0 ? parts.join("+") : "None";
-}
-
-/* Number of Move FX slots (one per Move track). Matches MOVE_FX_SLOTS in C and
- * MOVE_FX_SLOTS_JS in shadow_ui.js; fixed at 4 (Move has 4 tracks). */
-const MOVE_FX_SLOT_ROWS = 4;
 
 /* ---- Helpers ------------------------------------------------------------ */
 
@@ -193,56 +167,6 @@ export function enterSlotSettings(slotIndex) {
 
 /* ---- Draw --------------------------------------------------------------- */
 
-export function drawSlots() {
-    const { slots, selectedSlot, slotDirtyCache,
-            getSlotParam, getMasterFxDisplayName } = ctx;
-
-    clear_screen();
-    drawHeader("Shadow Chains");
-
-    let trackSelectedSlot = 0;
-    if (typeof shadow_get_selected_slot === "function") {
-        trackSelectedSlot = shadow_get_selected_slot();
-    }
-
-    const items = [
-        ...slots.map((s, i) => {
-            const muted = getSlotParam(i, "slot:muted") === "1";
-            const soloed = getSlotParam(i, "slot:soloed") === "1";
-            const flags = (muted ? "M" : "") + (soloed ? "S" : "");
-            const prefix = (i === trackSelectedSlot ? "*" : " ") + (slotDirtyCache[i] ? "*" : "");
-            return {
-                label: prefix + (s.name || "Unknown Patch"),
-                value: flags || (s.channel === 0 ? "All" : `Ch${s.channel}`),
-                isSlot: true
-            };
-        }),
-        { label: " Master FX", value: getMasterFxDisplayName(), isSlot: false },
-        { label: " Send FX A", value: getSendFxDisplayName(0), isSlot: false },
-        { label: " Send FX B", value: getSendFxDisplayName(1), isSlot: false },
-        ...Array.from({ length: MOVE_FX_SLOT_ROWS }, (_, i) => ({
-            label: " Move " + (i + 1) + " FX", value: getMoveFxDisplayName(i), isSlot: false
-        }))
-    ];
-
-    drawMenuList({
-        items,
-        selectedIndex: selectedSlot,
-        listArea: { topY: LIST_TOP_Y, bottomY: FOOTER_RULE_Y },
-        getLabel: (item) => item.label,
-        getValue: (item) => item.value,
-        valueAlignRight: true
-    });
-
-    const debugInfo = typeof globalThis._debugFlags !== "undefined"
-        ? `F:${globalThis._debugFlags}` : "";
-    let stateInfo = "";
-    if (typeof shadow_get_debug_state === "function") {
-        stateInfo = shadow_get_debug_state();
-    }
-    drawFooter(`${debugInfo} ${stateInfo}`);
-}
-
 export function drawSlotSettings() {
     const { slots, selectedSlot, getSlotParam } = ctx;
 
@@ -287,17 +211,11 @@ export function drawSlotSettings() {
     if (editingSettingValue) {
         drawFooter({left: "Click: done", right: "Jog: adjust"});
     } else {
-        drawFooter({left: "Back: slots", right: "Click: edit"});
+        drawFooter({left: "Back: chain", right: "Click: edit"});
     }
 }
 
 /* ---- Jog ---------------------------------------------------------------- */
-
-export function handleSlotsJog(delta) {
-    const { slots, updateFocusedSlot } = ctx;
-    ctx.selectedSlot = Math.max(0, Math.min(slots.length + 2 + MOVE_FX_SLOT_ROWS, ctx.selectedSlot + delta));
-    updateFocusedSlot(ctx.selectedSlot);
-}
 
 export function handleSlotSettingsJog(delta) {
     const { selectedSlot } = ctx;
@@ -316,22 +234,6 @@ export function handleSlotSettingsJog(delta) {
 
 /* ---- Select ------------------------------------------------------------- */
 
-export function handleSlotsSelect() {
-    const { selectedSlot, slots, enterChainEdit, enterFxBusEditor } = ctx;
-    if (selectedSlot < slots.length) {
-        enterChainEdit(selectedSlot);
-    } else if (selectedSlot === slots.length) {
-        enterFxBusEditor("master");
-    } else if (selectedSlot === slots.length + 1) {
-        enterFxBusEditor("sendA");
-    } else if (selectedSlot === slots.length + 2) {
-        enterFxBusEditor("sendB");
-    } else if (selectedSlot >= slots.length + 3 &&
-               selectedSlot < slots.length + 3 + MOVE_FX_SLOT_ROWS) {
-        enterFxBusEditor("moveFx" + (selectedSlot - (slots.length + 2)));
-    }
-}
-
 export function handleSlotSettingsSelect() {
     const { selectedSlot, enterPatchBrowser, enterChainEdit } = ctx;
     const setting = SLOT_SETTINGS[selectedSetting];
@@ -348,21 +250,16 @@ export function handleSlotSettingsSelect() {
 
 /* ---- Back --------------------------------------------------------------- */
 
-export function handleSlotsBack() {
-    if (typeof shadow_request_exit === "function") {
-        shadow_request_exit();
-    }
-}
-
 export function handleSlotSettingsBack() {
-    const { setView, VIEWS } = ctx;
+    const { selectedSlot, enterChainEdit } = ctx;
     if (editingSettingValue) {
         editingSettingValue = false;
         ctx.needsRedraw = true;
         announce("Slot Settings");
     } else {
-        setView(VIEWS.SLOTS);
-        announce("Slots");
+        /* Up from slot settings is the slot's chain editor (the SLOTS root
+         * list this returned to died in P5). */
+        enterChainEdit(selectedSlot);
         ctx.needsRedraw = true;
     }
 }

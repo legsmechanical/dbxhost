@@ -135,12 +135,11 @@ import { ctx as _ctx } from './shadow_ui_ctx.mjs';
 import {
     SLOT_SETTINGS,
     getSlotSettingValue,
-    drawSlots as _drawSlots,
     drawSlotSettings as _drawSlotSettings,
     enterSlotSettings as _enterSlotSettings,
-    handleSlotsJog, handleSlotSettingsJog,
-    handleSlotsSelect, handleSlotSettingsSelect,
-    handleSlotsBack, handleSlotSettingsBack
+    handleSlotSettingsJog,
+    handleSlotSettingsSelect,
+    handleSlotSettingsBack
 } from './shadow_ui_slots.mjs';
 import {
     PATCH_INDEX_NONE,
@@ -320,7 +319,8 @@ const DEFAULT_SLOTS = [
 
 /* View constants */
 const VIEWS = {
-    SLOTS: "slots",           // List of 4 chain slots + Master FX
+    /* (SLOTS root view DELETED in P5 — sound mode + chain_editor_view cover
+     * it; the parking/fallback view is now TOOLS.) */
     SLOT_SETTINGS: "settings", // Per-slot settings (volume, channels) - legacy
     CHAIN_EDIT: "chainedit",  // Horizontal chain component editor
     CHAIN_SETTINGS: "chainsettings", // Chain settings (volume, channels, knob mapping)
@@ -403,7 +403,6 @@ const PRIMARY_SERVICES = {
             suppress_sysex: 0,
         }),
     },
-    slots:           { kind: "overlay", enter: function() { view = VIEWS.SLOTS; } },
     chain_editor_view: { kind: "overlay", enter: function(o) { enterChainEdit((o && o.slot) | 0); } },
     master_fx:       { kind: "overlay", enter: function() { enterMasterFxSettings(); } },
     global_settings: { kind: "overlay", enter: function() { enterGlobalSettings(); } },
@@ -658,7 +657,7 @@ let selectedSlot = 0;
 let selectedPatch = 0;
 /* selectedDetailItem moved to shadow_ui_patches.mjs */
 /* selectedSetting, editingSettingValue moved to shadow_ui_slots.mjs */
-let view = VIEWS.SLOTS;
+let view = VIEWS.TOOLS;   /* parked; the SLOTS root view died in P5 */
 let needsRedraw = true;
 let refreshCounter = 0;
 let autosaveSuppressUntil = 0;  /* suppress autosave after set change */
@@ -3479,7 +3478,7 @@ function suspendOvertakeMode() {
          * of a picker/actuator run and the gate owns the display; dropping
          * it here let one native frame latch onto the OLED before the gate
          * reclaimed (hardware 2026-08-07). */
-        setView(VIEWS.SLOTS);
+        parkOnToolsMenu();
         const gateArmed = (typeof shadow_select_phase_active === "function") &&
                           shadow_select_phase_active();
         if (!gateArmed && typeof shadow_request_exit === "function") {
@@ -3742,8 +3741,8 @@ function completeOvertakeExit() {
         return;
     }
 
-    /* Return to slots view */
-    setView(VIEWS.SLOTS);
+    /* Park on the Tools menu (the SLOTS root view died in P5) */
+    parkOnToolsMenu();
     needsRedraw = true;
     /* Request exit from shadow UI to return to Move */
     if (typeof shadow_request_exit === "function") {
@@ -7330,13 +7329,13 @@ function scanModulesForType(componentType) {
 /* Handle selection in store picker result */
 function handleStorePickerResultSelect() {
     /* Every result screen is informational; dismiss returns to the entry
-     * context (storeReturnView) or falls back to the slots view. */
+     * context (storeReturnView) or falls back to the Tools menu. */
     if (storeReturnView === VIEWS.GLOBAL_SETTINGS) {
         storeReturnView = null;
         enterGlobalSettings();
         return;
     }
-    setView(VIEWS.SLOTS);
+    enterToolsMenu();
     needsRedraw = true;
 }
 
@@ -11908,9 +11907,6 @@ function updateFocusedSlot(slot) {
 function handleJog(delta) {
     hideOverlay();
     switch (view) {
-        case VIEWS.SLOTS:
-            handleSlotsJog(delta);
-            break;
         case VIEWS.MASTER_FX:
             if (masterShowingNamePreview) {
                 /* Navigate Edit/OK */
@@ -12264,9 +12260,6 @@ function handleSelect() {
     debugLog("handleSelect called, view=" + view);
     hideOverlay();
     switch (view) {
-        case VIEWS.SLOTS:
-            handleSlotsSelect();
-            break;
         case VIEWS.MASTER_FX:
             if (masterShowingNamePreview) {
                 /* Name preview: Edit or OK */
@@ -13232,9 +13225,6 @@ function handleBack() {
     }
     hideOverlay();
     switch (view) {
-        case VIEWS.SLOTS:
-            handleSlotsBack();
-            break;
         case VIEWS.SLOT_SETTINGS:
             handleSlotSettingsBack();
             break;
@@ -13703,8 +13693,6 @@ function refreshPendingKnobOverlay() {
     pendingKnobRefresh = false;
     pendingKnobIndex = -1;
 }
-
-/* drawSlots() -> shadow_ui_slots.mjs */
 
 /* getMasterFxDisplayName() -> shadow_ui_master_fx.mjs */
 
@@ -14314,7 +14302,7 @@ function selectOpenBootTool() {
     try { cmd = cmdJson ? JSON.parse(cmdJson) : null; } catch (e) { cmd = null; }
     if (!cmd || !cmd.tool_id) {
         debugLog("select phase: no staged open_tool_cmd — falling back to menu");
-        view = VIEWS.SLOTS;
+        parkOnToolsMenu();
         return;
     }
     /* Name the load: the select gate knows WHICH project is opening, so the
@@ -14337,7 +14325,7 @@ function selectOpenBootTool() {
     const tool = scanForToolModules(true).find(t => t.id === cmd.tool_id);
     if (!tool) {
         debugLog("select phase: boot tool not found: " + cmd.tool_id);
-        view = VIEWS.SLOTS;
+        parkOnToolsMenu();
         return;
     }
     debugLog("select phase: opening boot tool " + cmd.tool_id);
@@ -15039,7 +15027,6 @@ function drawHelpDetail() {
 })();
 
 /* Delegate draw/enter functions to extracted modules */
-function drawSlots() { _drawSlots(); }
 function drawSlotSettings() { _drawSlotSettings(); }
 function enterSlotSettings(slotIndex) { _enterSlotSettings(slotIndex); }
 function drawPatches() { _drawPatches(); }
@@ -15145,6 +15132,17 @@ function drawFxBusPicker() {
     drawFooter("Back: exit");
 }
 function scanForToolModules(includeHidden) { return _scanForToolModules(includeHidden); }
+/* Park the UI on the Tools menu without announcing — for the paths where the
+ * display is leaving for Move native (suspend/exit) or recovering from an
+ * error, i.e. every place that used to park on the deleted SLOTS root view
+ * (P5). The list is scanned so the menu draws correctly if the parked view
+ * does become visible (select gate, error recovery). */
+function parkOnToolsMenu() {
+    toolModules = scanForToolModules();
+    toolsMenuIndex = 0;
+    setView(VIEWS.TOOLS);
+}
+
 function enterToolsMenu() {
     _enterToolsMenu();
     try {
@@ -15726,13 +15724,11 @@ function runCoRunChainEdit(fn) {
  * switch (~line 14874). Called from co-run with view already set to coRunView
  * by runCoRunChainEdit. The chain editor's navigation lands on many views
  * (PATCHES, COMPONENT_PARAMS, COMPONENT_SELECT, etc.), each with its own
- * draw function. drawSlots() only renders the top-level slot LIST — we must
- * dispatch every reachable view explicitly. */
+ * draw function — we must dispatch every reachable view explicitly. */
 function dispatchCoRunDraw() {
     switch (view) {
-        /* Addressable-view overlay roots (CORUN_ENTRIES) — the co-run draw path
+        /* Addressable-view overlay roots — the co-run draw path
          * must render these too, not just the chain-editor subtree. */
-        case VIEWS.SLOTS:                drawSlots(); break;
         case VIEWS.MASTER_FX:            drawMasterFx(); break;
         case VIEWS.GLOBAL_SETTINGS:      drawGlobalSettings(); break;
         case VIEWS.CHAIN_EDIT:           drawChainEdit(); break;
@@ -15764,9 +15760,11 @@ function dispatchCoRunDraw() {
         case VIEWS.FILEPATH_BROWSER:     drawFilepathBrowser(); break;
         case VIEWS.FX_BUS_PICKER:        drawFxBusPicker(); break;
         default:
-            /* Unknown view in co-run — render slot list as a recoverable
-             * fallback so user can navigate back. */
-            drawSlots();
+            /* Unknown view in co-run — draw a recoverable frame; Menu or
+             * Back at the overlay root closes the service. (The old slot-
+             * list fallback died with the SLOTS view, P5.) */
+            clear_screen();
+            print(10, 28, "Unknown view", 1);
     }
 }
 
@@ -16366,9 +16364,6 @@ globalThis.tick = function() {
     try {
 
     switch (view) {
-        case VIEWS.SLOTS:
-            drawSlots();
-            break;
         case VIEWS.SLOT_SETTINGS:
             drawSlotSettings();
             break;
@@ -16577,9 +16572,9 @@ globalThis.tick = function() {
 
                     /* CO-RUN: render chain editor over the tool's frame. By
                      * contract, a tool that enables co-run agrees not to draw
-                     * to OLED while an overlay is up — but even if it
-                     * does, drawSlots() (and the overlay subtree draws) start
-                     * with clear_screen() so the editor's pixels win. */
+                     * to OLED while an overlay is up — but even if it does,
+                     * every overlay subtree draw starts with clear_screen()
+                     * so the editor's pixels win. */
                     if (coRunUiActive()) {
                         runCoRunChainEdit(dispatchCoRunDraw);
                     }
@@ -16591,7 +16586,9 @@ globalThis.tick = function() {
             }
             break;
         default:
-            drawSlots();
+            /* Unknown view — draw the Tools menu as the recoverable screen
+             * (the SLOTS fallback died with the SLOTS view, P5). */
+            drawToolsMenu();
     }
 
     if (view !== VIEWS.CANVAS) {
@@ -16628,9 +16625,9 @@ globalThis.tick = function() {
             print(10, 22, "UI error, recovering", 1);
             print(10, 34, String(e).substring(0, 21), 1);
         } catch (e2) { /* display unavailable — nothing more to do */ }
-        if (view !== VIEWS.SLOTS) {
-            view = VIEWS.SLOTS;
-            announce("UI error, returning to slots");
+        if (view !== VIEWS.TOOLS) {
+            parkOnToolsMenu();
+            announce("UI error, returning to Tools");
         }
         needsRedraw = true;
     }

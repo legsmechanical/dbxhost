@@ -23,11 +23,12 @@ if ! grep -q 'tick draw EXCEPTION' <<<"$body"; then
 fi
 
 # The recovery path must leave the broken view, or the same draw throws
-# again next frame.
+# again next frame. (Fallback view is the Tools menu since P5 deleted the
+# SLOTS root view.)
 recovery=$(sed -n '/tick draw EXCEPTION/,/needsRedraw = true/p' <<<"$body")
-if ! grep -q 'VIEWS.SLOTS' <<<"$recovery"; then
-  echo "FAIL: tick() draw guard does not fall back to the slots view" >&2
+if ! grep -q 'parkOnToolsMenu' <<<"$recovery"; then
+  echo "FAIL: tick() draw guard does not fall back to the Tools menu" >&2
   exit 1
 fi
 
-echo "PASS: tick() draw path is guarded with slots-view fallback"
+echo "PASS: tick() draw path is guarded with Tools-menu fallback"

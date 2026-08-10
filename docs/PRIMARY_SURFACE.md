@@ -49,7 +49,6 @@ Registration also neutralizes any co-run state a warm restart left in SHM.
 | `fx_picker`       | overlay | `{keep_mask}`                          |
 | `master_fx`       | overlay | `{keep_mask}`                          |
 | `global_settings` | overlay | `{keep_mask}`                          |
-| `slots`           | overlay | `{keep_mask}`                          |
 | `chain_editor_view` | overlay | `{slot, keep_mask}`                  |
 | `knob_editor`     | overlay | `{slot, keep_mask}`                    |
 | `lfo_editor`      | overlay | `{slot, lfo, keep_mask}`               |

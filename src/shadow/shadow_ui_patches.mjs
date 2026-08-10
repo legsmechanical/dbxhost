@@ -219,7 +219,10 @@ export function applyPatchSelection() {
     fetchKnobMappings(selectedSlot);
     invalidateKnobContextCache();
 
-    setView(VIEWS.SLOTS);
+    /* Land on the slot's chain editor — the SLOTS root list this used to
+     * return to died in P5, and the chain editor is the context the patch
+     * browser is reached from. */
+    ctx.enterChainEdit(selectedSlot);
     ctx.needsRedraw = true;
 }
 
