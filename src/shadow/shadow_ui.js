@@ -8662,17 +8662,20 @@ const STANDALONE_DIR = "/data/UserData/dbx-host";
  * payload is unreadable or garbled means "assume live". Only a demonstrably
  * dead PID (readable payload, no /proc entry) is treated as no-session. */
 function standaloneSessionActive() {
+    /* std.loadFile, NOT host_file_exists/host_read_file: those run
+     * validate_path(), which rejects everything outside /data/UserData — so
+     * this probe silently returned false for /dev/shm and /proc since the
+     * P4b marker retirement. The visible failure was Shift+Back falling
+     * through to a plain module exit instead of the session teardown, which
+     * stranded the session (lock held, every relaunch refused). std has no
+     * path allowlist and already reads /opt/move/Move elsewhere in this
+     * file. */
     try {
-        if (typeof host_file_exists !== "function") return false;
-        if (!host_file_exists("/dev/shm/.dbxhost-session.lock")) return false;
-        if (typeof host_read_file !== "function") return true;  /* assume live */
-        const payload = host_read_file("/dev/shm/.dbxhost-session.lock");
-        if (payload === null || payload === undefined || payload === false) {
-            return true;                      /* unreadable — assume live */
-        }
+        const payload = std.loadFile("/dev/shm/.dbxhost-session.lock");
+        if (payload === null || payload === undefined) return false;  /* no lock */
         const pid = parseInt(String(payload).trim(), 10);
         if (!isFinite(pid) || pid <= 0) return true;  /* garbled — assume live */
-        return !!host_file_exists("/proc/" + pid + "/cmdline");
+        return std.loadFile("/proc/" + pid + "/cmdline") !== null;
     } catch (e) {
         return false;
     }
