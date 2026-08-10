@@ -568,9 +568,21 @@ globalThis.host_patch_list = function() {
     return patches.slice(1).map(function(p) { return p.name; });
 };
 
+/* Validate a caller-supplied slot index, returning -1 when out of range.
+ * These are public host bindings, so the index comes from module code. The
+ * old guard was `slot & 3`, which ALIASES rather than rejects: a module
+ * asking for slot 4 silently addressed slot 0 — and for host_patch_save that
+ * means overwriting another slot's patch. Refusing is the only safe answer,
+ * and the mask was only ever correct while the count was a power of two
+ * equal to 4. */
+function validPatchSlot(slot) {
+    const s = slot | 0;
+    return (s >= 0 && s < SHADOW_UI_SLOTS) ? s : -1;
+}
+
 /* The slot's current patch name, "" when untitled. */
 globalThis.host_patch_current = function(slot) {
-    const s = slots[slot & 3];
+    const s = slots[validPatchSlot(slot)];
     const n = s && s.name;
     return (n && n !== "Untitled") ? String(n) : "";
 };
@@ -579,7 +591,8 @@ globalThis.host_patch_current = function(slot) {
  * bookkeeping as the host browser's apply: slot name registry, knob-mapping
  * refresh, knob-context invalidation. */
 globalThis.host_patch_load = function(slot, index) {
-    slot = slot & 3;
+    slot = validPatchSlot(slot);
+    if (slot < 0) return false;
     loadPatchList();
     const clearing = (index | 0) < 0;
     const entry = clearing ? null : patches[(index | 0) + 1];
@@ -602,7 +615,8 @@ globalThis.host_patch_load = function(slot, index) {
  * Returns false when the chain state cannot be read — nothing is written,
  * matching the host save flow's refusal to blank a patch on a bad read. */
 globalThis.host_patch_save = function(slot, name, overwriteIndex) {
-    slot = slot & 3;
+    slot = validPatchSlot(slot);
+    if (slot < 0) return false;
     name = String(name || "").trim();
     if (!name) return false;
     const json = buildSlotPatchJson(slot, name);
@@ -623,7 +637,8 @@ globalThis.host_patch_save = function(slot, name, overwriteIndex) {
  * Delete, which also cleared the slot; a browser gesture should not be able
  * to silence the set.) */
 globalThis.host_patch_delete = function(slot, index) {
-    slot = slot & 3;
+    slot = validPatchSlot(slot);
+    if (slot < 0) return false;
     loadPatchList();
     const entry = patches[(index | 0) + 1];
     if (!entry) return false;
@@ -13780,14 +13795,19 @@ function drawChainEdit() {
     const START_X = 6 + Math.floor((SCREEN_WIDTH - 6 - TOTAL_W) / 2);
     const BOX_Y = 20;  // Below header
 
-    /* Draw slot indicators - 4 marks in left margin, spanning from below header to footer */
+    /* Draw slot indicators - one mark per slot in the left margin, spanning
+     * from below header to footer. The height divides the available run by the
+     * slot count, so the column stays correct if the count changes (⚠ it does
+     * not stay LEGIBLE indefinitely — on a 64px screen the marks get thin fast,
+     * which is a UI design question, not an arithmetic one). */
     const INDICATOR_X = 0;
     const INDICATOR_W = 4;
     const INDICATOR_GAP = 1;
     const INDICATOR_START_Y = BOX_Y;  // same margin below title rule as boxes
     const INDICATOR_END_Y = FOOTER_RULE_Y;  // same margin above footer
-    const INDICATOR_H = Math.floor((INDICATOR_END_Y - INDICATOR_START_Y - 3 * INDICATOR_GAP) / 4);
-    for (let s = 0; s < 4; s++) {
+    const INDICATOR_H = Math.floor((INDICATOR_END_Y - INDICATOR_START_Y -
+                                    (SHADOW_UI_SLOTS - 1) * INDICATOR_GAP) / SHADOW_UI_SLOTS);
+    for (let s = 0; s < SHADOW_UI_SLOTS; s++) {
         const iy = INDICATOR_START_Y + s * (INDICATOR_H + INDICATOR_GAP);
         if (s === selectedSlot) {
             fill_rect(INDICATOR_X, iy, INDICATOR_W, INDICATOR_H, 1);

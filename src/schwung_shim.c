@@ -1705,9 +1705,17 @@ static void shadow_overtake_dsp_unload(void) {
 /* Per-slot render breakdown counters (added 2026-05-15 for render spike hunt).
  * Forward-declared here so shadow_inprocess_render_to_buffer can update them;
  * snapshot/reset live with the other spi_timing statics further below. */
-#ifndef SHADOW_CHAIN_INSTANCES
-#define SHADOW_CHAIN_INSTANCES 4
-#endif
+/* Idle-probe scheduling for the slot render loop (see the stagger comment at
+ * the probe site). The window is how often a silent slot is re-rendered to
+ * detect self-generating audio (~0.5 s); the stride is the per-slot phase
+ * offset that keeps at most one slot probing on any given frame. Deriving the
+ * stride from the slot count is what makes the stagger hold at any count. */
+#define SLOT_PROBE_WINDOW_FRAMES 172
+#define SLOT_PROBE_STRIDE_FRAMES (SLOT_PROBE_WINDOW_FRAMES / SHADOW_CHAIN_INSTANCES)
+
+/* No local fallback #define for SHADOW_CHAIN_INSTANCES: shadow_constants.h is
+ * the single declaration. A fallback would let an include-order change size
+ * these arrays differently from the rest of the build, silently. */
 static uint64_t spi_slot_render_max[SHADOW_CHAIN_INSTANCES];
 static uint64_t spi_slot_synth_max[SHADOW_CHAIN_INSTANCES];  /* render_block only */
 static uint64_t spi_slot_fx_max[SHADOW_CHAIN_INSTANCES];     /* chain_process_fx only */
@@ -1767,11 +1775,18 @@ static void shadow_inprocess_render_to_buffer(void) {
              * Stagger: slots that go idle on the same frame (common at boot)
              * have aligned silence_frames counters and would all probe the
              * same frame, stacking render+FX cost into one ~1ms spike. The
-             * per-slot offset (s * 43) spreads probes evenly across the
-             * 172-frame window so at most one slot probes per frame. */
+             * per-slot offset spreads probes evenly across the probe window
+             * so at most one slot probes per frame.
+             *
+             * ⚠ The offset MUST be derived from the slot count. It was once a
+             * literal 43 (= 172/4), which silently collides the moment the
+             * count is not 4: at 8 slots s=4..7 wrap modulo the window back
+             * onto s=0..3's probe frames, so four pairs probe together — the
+             * exact spike this stagger exists to prevent. */
             if (shadow_slot_idle[s]) {
                 shadow_slot_silence_frames[s]++;
-                if ((shadow_slot_silence_frames[s] + s * 43) % 172 != 0) {
+                if ((shadow_slot_silence_frames[s] + s * SLOT_PROBE_STRIDE_FRAMES)
+                        % SLOT_PROBE_WINDOW_FRAMES != 0) {
                     /* Not a probe frame — skip synth render.
                      * Buffer is zeros; FX below still runs for tail decay. */
                     shadow_slot_deferred_valid[s] = 1;
@@ -4820,9 +4835,9 @@ typedef struct {
     uint64_t post_drain_dsp_avg, post_drain_dsp_max;  /* shadow_drain_ui_midi_dsp */
     uint64_t post_render_avg, post_render_max;        /* shadow_inprocess_render_to_buffer + slot dump */
     /* Per-slot render breakdown (added 2026-05-15 for render spike hunt) */
-    uint64_t slot_render_max[4];
-    uint64_t slot_synth_max[4];
-    uint64_t slot_fx_max[4];
+    uint64_t slot_render_max[SHADOW_CHAIN_INSTANCES];
+    uint64_t slot_synth_max[SHADOW_CHAIN_INSTANCES];
+    uint64_t slot_fx_max[SHADOW_CHAIN_INSTANCES];
     uint32_t slot_probe_burst_max;
     /* JACK audio double-buffer stats */
     uint32_t jack_audio_hits;
@@ -8252,7 +8267,7 @@ post_timing:
         spi_snap.post_drain_dsp_max = spi_post_drain_dsp_max;
         spi_snap.post_render_avg = spi_post_render_sum / n;
         spi_snap.post_render_max = spi_post_render_max;
-        for (int s = 0; s < SHADOW_CHAIN_INSTANCES && s < 4; s++) {
+        for (int s = 0; s < SHADOW_CHAIN_INSTANCES; s++) {
             spi_snap.slot_render_max[s] = spi_slot_render_max[s];
             spi_snap.slot_synth_max[s] = spi_slot_synth_max[s];
             spi_snap.slot_fx_max[s] = spi_slot_fx_max[s];
@@ -8478,24 +8493,29 @@ static void *spi_timing_logger_thread(void *arg)
                 (unsigned long long)spi_snap.post_midi_scan_avg, (unsigned long long)spi_snap.post_midi_scan_max,
                 (unsigned long long)spi_snap.post_drain_dsp_avg, (unsigned long long)spi_snap.post_drain_dsp_max,
                 (unsigned long long)spi_snap.post_render_avg, (unsigned long long)spi_snap.post_render_max);
-            unified_log("spi_timing", LOG_LEVEL_DEBUG,
-                "Slot render max(us): s0=%llu s1=%llu s2=%llu s3=%llu probe_burst_max=%u",
-                (unsigned long long)spi_snap.slot_render_max[0],
-                (unsigned long long)spi_snap.slot_render_max[1],
-                (unsigned long long)spi_snap.slot_render_max[2],
-                (unsigned long long)spi_snap.slot_render_max[3],
-                spi_snap.slot_probe_burst_max);
-            unified_log("spi_timing", LOG_LEVEL_DEBUG,
-                "Slot synth max(us): s0=%llu s1=%llu s2=%llu s3=%llu | "
-                "Slot fx max(us): s0=%llu s1=%llu s2=%llu s3=%llu",
-                (unsigned long long)spi_snap.slot_synth_max[0],
-                (unsigned long long)spi_snap.slot_synth_max[1],
-                (unsigned long long)spi_snap.slot_synth_max[2],
-                (unsigned long long)spi_snap.slot_synth_max[3],
-                (unsigned long long)spi_snap.slot_fx_max[0],
-                (unsigned long long)spi_snap.slot_fx_max[1],
-                (unsigned long long)spi_snap.slot_fx_max[2],
-                (unsigned long long)spi_snap.slot_fx_max[3]);
+            /* Built per-slot rather than unrolled: these lines are the only
+             * view into where render time goes, so they must not go blind on
+             * the slots above 4 exactly when the count grows. */
+            {
+                char render_buf[SHADOW_CHAIN_INSTANCES * 20 + 1];
+                char synth_buf[SHADOW_CHAIN_INSTANCES * 20 + 1];
+                char fx_buf[SHADOW_CHAIN_INSTANCES * 20 + 1];
+                int rn = 0, sn = 0, fn = 0;
+                for (int s = 0; s < SHADOW_CHAIN_INSTANCES; s++) {
+                    rn += snprintf(render_buf + rn, sizeof(render_buf) - rn, " s%d=%llu",
+                                   s, (unsigned long long)spi_snap.slot_render_max[s]);
+                    sn += snprintf(synth_buf + sn, sizeof(synth_buf) - sn, " s%d=%llu",
+                                   s, (unsigned long long)spi_snap.slot_synth_max[s]);
+                    fn += snprintf(fx_buf + fn, sizeof(fx_buf) - fn, " s%d=%llu",
+                                   s, (unsigned long long)spi_snap.slot_fx_max[s]);
+                }
+                unified_log("spi_timing", LOG_LEVEL_DEBUG,
+                    "Slot render max(us):%s probe_burst_max=%u",
+                    render_buf, spi_snap.slot_probe_burst_max);
+                unified_log("spi_timing", LOG_LEVEL_DEBUG,
+                    "Slot synth max(us):%s | Slot fx max(us):%s",
+                    synth_buf, fx_buf);
+            }
             if (spi_snap.jack_audio_hits > 0 || spi_snap.jack_audio_misses > 0) {
                 unified_log("spi_timing", LOG_LEVEL_DEBUG,
                     "JACK audio: hits=%u misses=%u (%.3f%% miss)",

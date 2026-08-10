@@ -29,8 +29,12 @@
 /* Chain slot state */
 shadow_chain_slot_t shadow_chain_slots[SHADOW_CHAIN_INSTANCES];
 volatile int shadow_solo_count = 0;
+/* No default patch — the user must select one. Entries beyond the initializer
+ * list zero-fill to NULL rather than "", so the read site below must stay
+ * NULL-tolerant; growing SHADOW_CHAIN_INSTANCES without extending this list is
+ * otherwise a null deref at slot-reset time. */
 const char *shadow_chain_default_patches[SHADOW_CHAIN_INSTANCES] = {
-    "",  /* No default patch - user must select */
+    "",
     "",
     "",
     ""
@@ -459,7 +463,7 @@ void shadow_chain_defaults(void) {
         shadow_chain_slots[i].fade.pending_patch = -1;
         shadow_chain_slots[i].fade.pending_clear = 0;
         strncpy(shadow_chain_slots[i].patch_name,
-                shadow_chain_default_patches[i],
+                shadow_chain_default_patches[i] ? shadow_chain_default_patches[i] : "",
                 sizeof(shadow_chain_slots[i].patch_name) - 1);
         shadow_chain_slots[i].patch_name[sizeof(shadow_chain_slots[i].patch_name) - 1] = '\0';
     }
