@@ -16423,13 +16423,36 @@ globalThis.tick = function() {
      * to the tool. */
     if (typeof shadow_corun_state === "function") {
         const _st = shadow_corun_state();
-        if (corunOverlayId != null && !_st) {
+        /* An overlay is STRANDED only when the co-run SESSION beneath it
+         * ended. Over a bare primary surface there is no session at all —
+         * shadow_corun_state() is null because corun.target was never set,
+         * which is the NORMAL condition for a menu-opened overlay
+         * (global_settings, knob/LFO editors). Tearing down on bare null
+         * was the P5 "click does nothing" bug: the push flipped display
+         * ownership and this poll cancelled it one tick later. */
+        const overlayOverSession = primarySurface
+            ? primaryStack.some(function(e) { return e.kind === "session"; })
+            : true;   /* classic tool co-run: an overlay implies a session */
+        if (corunOverlayId != null && !_st && overlayOverSession) {
             corunOverlayId = null;
             corunOverlayRootView = -1;
             coRunView = VIEWS.OVERTAKE_MODULE;
             needsRedraw = true;
         }
-        coRunKeepMask = (_st && typeof _st.keep_mask === "number") ? (_st.keep_mask | 0) : 0;
+        /* The overlay intercept's wants/cedes reads this mirror. With a
+         * session live it is the SHM truth; over a bare primary the SHM
+         * report is null, so read the overlay's own keep mask from the
+         * stack top — the same value its push wrote into corun.keep_mask.
+         * Without this the mirror stays 0 and the default split cedes
+         * jog/click/Back, leaving the overlay drawn but deaf. */
+        if (_st && typeof _st.keep_mask === "number") {
+            coRunKeepMask = _st.keep_mask | 0;
+        } else if (corunOverlayId != null && primaryStackTopIsOverlay()) {
+            const _top = primaryStack[primaryStack.length - 1];
+            coRunKeepMask = ((_top.claims && _top.claims.overlay_keep_mask) | 0);
+        } else {
+            coRunKeepMask = 0;
+        }
     }
 
     /* PRIMARY SURFACE: derive + apply ownership claims from the service

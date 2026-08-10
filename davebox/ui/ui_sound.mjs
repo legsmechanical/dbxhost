@@ -1099,8 +1099,10 @@ function buildPickRows() {
         for (const i of S.blockRows) {
             rows.push({ kind: 'block', comp: BLOCKS[i].comp, label: BLOCKS[i].label, blockIdx: i });
         }
-        rows.push({ kind: 'patches', label: '[CHAIN PATCHES]' });
         rows.push({ kind: 'settings', label: '[SLOT SETTINGS]' });
+        /* Last row by Josh's ruling; "presets" not "patches" in user-facing
+         * text — the store is still the host's patches/ dir. */
+        rows.push({ kind: 'patches', label: '[SLOT PRESETS]' });
     }
     S.pickRows = rows;
     /* Keep the cursor on the component it was on — the row INDEX shifts when a
@@ -2795,7 +2797,7 @@ function renderChainPatches() {
         renderRows(['No', 'Yes'], S.patchConfirmIdx, '');
         return;
     }
-    drawKitHeader('CHAIN PATCHES', false);
+    drawKitHeader('SLOT PRESETS', false);
     /* '*' marks the slot's current patch — the one [Save] would overwrite. */
     const rows = ['[Save]', '[Save as…]'].concat(
         S.patchNames.map(n => (n === S.patchCur ? '*' : ' ') + n));
