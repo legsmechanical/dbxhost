@@ -567,6 +567,88 @@ globalThis.host_close_service = function(result) {
     return host_close_service_impl(result === undefined ? null : result);
 };
 
+/* ==== CHAIN PATCH API (P5 absorb) =======================================
+ * Thin wrappers over the host's own whole-chain patch machinery so a module
+ * UI can offer Save / Save As / Delete / browse without duplicating the
+ * serializer (buildSlotPatchJson) or the index ordering the DSP's
+ * save/update/delete verbs consume. Index space everywhere below: position
+ * in the case-insensitive name-sorted list of patches/ files — exactly what
+ * shadow_request_patch / update_patch / delete_patch expect. The
+ * "[New Slot Preset]" pseudo-row of the host browser is NOT part of this
+ * API; pass index -1 to host_patch_load to clear the slot. */
+
+globalThis.host_patch_list = function() {
+    loadPatchList();
+    return patches.slice(1).map(function(p) { return p.name; });
+};
+
+/* The slot's current patch name, "" when untitled. */
+globalThis.host_patch_current = function(slot) {
+    const s = slots[slot & 3];
+    const n = s && s.name;
+    return (n && n !== "Untitled") ? String(n) : "";
+};
+
+/* Load patch `index` into `slot`; -1 clears the slot. Carries the same
+ * bookkeeping as the host browser's apply: slot name registry, knob-mapping
+ * refresh, knob-context invalidation. */
+globalThis.host_patch_load = function(slot, index) {
+    slot = slot & 3;
+    loadPatchList();
+    const clearing = (index | 0) < 0;
+    const entry = clearing ? null : patches[(index | 0) + 1];
+    if (!clearing && !entry) return false;
+    if (slots[slot]) {
+        slots[slot].name = clearing ? "Untitled" : entry.name;
+        saveSlotsToConfig(slots);
+    }
+    if (typeof shadow_request_patch === "function") {
+        try { shadow_request_patch(slot, clearing ? PATCH_INDEX_NONE : (index | 0)); }
+        catch (e) { return false; }
+    }
+    fetchKnobMappings(slot);
+    invalidateKnobContextCache();
+    return true;
+};
+
+/* Save the slot's live chain as a patch. overwriteIndex >= 0 replaces that
+ * patch's file (update_patch); otherwise a new file is written (save_patch).
+ * Returns false when the chain state cannot be read — nothing is written,
+ * matching the host save flow's refusal to blank a patch on a bad read. */
+globalThis.host_patch_save = function(slot, name, overwriteIndex) {
+    slot = slot & 3;
+    name = String(name || "").trim();
+    if (!name) return false;
+    const json = buildSlotPatchJson(slot, name);
+    if (!json) return false;
+    const oi = (overwriteIndex === undefined || overwriteIndex === null) ? -1 : (overwriteIndex | 0);
+    if (oi >= 0) setSlotParam(slot, "update_patch", oi + ":" + json);
+    else setSlotParam(slot, "save_patch", json);
+    if (slots[slot]) {
+        slots[slot].name = name;
+        saveSlotsToConfig(slots);
+    }
+    return true;
+};
+
+/* Delete patch `index`. If the slot currently carries that patch, its name
+ * reverts to Untitled but the live chain keeps playing — deletion removes
+ * the FILE, not the sound. (Deliberately gentler than the host browser's
+ * Delete, which also cleared the slot; a browser gesture should not be able
+ * to silence the set.) */
+globalThis.host_patch_delete = function(slot, index) {
+    slot = slot & 3;
+    loadPatchList();
+    const entry = patches[(index | 0) + 1];
+    if (!entry) return false;
+    setSlotParam(slot, "delete_patch", String(index | 0));
+    if (slots[slot] && slots[slot].name === entry.name) {
+        slots[slot].name = "Untitled";
+        saveSlotsToConfig(slots);
+    }
+    return true;
+};
+
 /* ==== PRIMARY SURFACE + SERVICE STACK (P4a, end) ======================== */
 
 

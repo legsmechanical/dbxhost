@@ -362,6 +362,20 @@ get_int16(buf, off) / set_int16(buf, off, v)
 
 `host_get_module_metadata(id)` — returns the parsed `module.json` for the given module id, or `null` if the module isn't installed. Used by the feedback-protection gate to inspect `capabilities.audio_in` and `component_type`.
 
+### Chain patches (shadow_ui context)
+
+Thin wrappers over the host's whole-chain patch machinery (`/data/UserData/schwung/patches/*.json`) so a module UI can offer Save / Save As / Delete / browse without duplicating the serializer or the index ordering the DSP's patch verbs consume. **Index space:** position in the case-insensitive name-sorted list of patch files — the same space `shadow_request_patch` / `update_patch` / `delete_patch` use. All are synchronous host JS doing SHM/file work — call from `tick()`, not a MIDI handler.
+
+`host_patch_list()` — array of patch names, index-aligned with the DSP's list.
+
+`host_patch_current(slot)` — the slot's current patch name, `""` when untitled.
+
+`host_patch_load(slot, index)` — load patch `index` into `slot`; `-1` clears the slot. Carries the host browser's bookkeeping (slot name registry, knob-mapping refresh). Returns `false` on a bad index or load failure.
+
+`host_patch_save(slot, name, overwriteIndex)` — save the slot's live chain. `overwriteIndex >= 0` replaces that patch; otherwise a new file is written. Returns `false` (writing nothing) when the chain state cannot be read. The file write is DSP-side and asynchronous — re-list after a beat rather than immediately.
+
+`host_patch_delete(slot, index)` — delete the patch file. If the slot currently carries it, the slot's name reverts to Untitled but the live chain keeps playing.
+
 ## Utility Functions
 
 ```javascript

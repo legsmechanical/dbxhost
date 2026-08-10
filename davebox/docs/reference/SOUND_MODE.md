@@ -46,6 +46,19 @@ An **empty block is the add-an-effect flow**: selecting it opens the module
 browser so you can load a reverb into FX 2. This is how effects get added at
 all, so it is not optional polish.
 
+Below the blocks (track context only) sit two rows (P5):
+
+- **[CHAIN PATCHES]** — whole-chain patches over the host's global
+  `patches/` store, through the `host_patch_*` API (see host `docs/API.md`)
+  so the serializer and index space stay the host's own. `[Save]`
+  overwrites the slot's current patch (confirmed), `[Save as…]` names via
+  the shared keyboard, click loads, Shift+click deletes (confirmed —
+  deleting the file never silences the live chain).
+- **[SLOT SETTINGS]** — the slot's own params (volume, sends, routing), the
+  derived **MPE** toggle (atomic recv=All + fwd=Thru + `synth:mpe_enabled`
+  with restore-on-off), and the **Knobs… / LFO 1… / LFO 2…** rows that open
+  the host editors as overlay services on top of sound mode.
+
 ⚠ This fork runs **4** audio-FX blocks where upstream has 2. Any block logic
 must cover fx3/fx4 — the fork has known sites that only handle fx1/fx2.
 

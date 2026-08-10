@@ -111,7 +111,14 @@ const BUS_BLOCKS = [1, 2, 3, 4];      /* fx1..fx4 on every bus */
 
 const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
       VIEW_PRESET_SRC = 3, VIEW_PRESET_LIST = 4, VIEW_PRESET_BAKED = 5,
-      VIEW_MENU = 6, VIEW_FILE = 7, VIEW_SLOTCFG = 8, VIEW_BUSES = 9;
+      VIEW_MENU = 6, VIEW_FILE = 7, VIEW_SLOTCFG = 8, VIEW_BUSES = 9,
+      VIEW_PATCHES = 10;
+
+/* Chain-patch file ops (save_patch / delete_patch) are DSP-side and async —
+ * the file appears/vanishes a beat after the request. Re-read the list once
+ * this many ticks after a mutation so it shows the store's truth, not the
+ * optimistic edit. (~320ms at ~94Hz.) */
+const PATCH_RELIST_TICKS = 30;
 
 /* ---- slot settings ----
  *
@@ -333,6 +340,17 @@ const S = {
     slotCfgEditing: false,
     slotCfgDirty: false,        /* something changed; save on leaving the screen */
     pendingSlotWrites: [],      /* slot-param writes, drained in tick */
+
+    /* Whole-chain patches (P5 absorb — same patches/ store as the host,
+     * through the host_patch_* API so the index space and serializer stay
+     * the host's own). */
+    patchNames: [],             /* store listing, index-aligned with the DSP */
+    patchIdx: 0,                /* cursor: 0=[Save], 1=[Save as], 2+=patches */
+    patchCur: '',               /* the slot's current patch name, '' untitled */
+    patchMsg: '',
+    patchConfirm: null,         /* {t:'overwrite'|'delete', index, name} */
+    patchConfirmIdx: 0,
+    patchRelist: 0,             /* ticks until a post-mutation re-list */
 
     shiftHeld: false,
     tickCount: 0,
@@ -743,6 +761,107 @@ function defaultSaveName() {
     return S.moduleId || 'Preset';
 }
 
+/* ---- whole-chain patches (P5 absorb) ----
+ *
+ * The store, the serializer, and the index space are the HOST's, reached
+ * through host_patch_list/current/load/save/delete — davebox owns only this
+ * screen. That split is the point: two UIs over one store cannot disagree
+ * about what a patch is. All host_patch_* calls are synchronous host JS
+ * doing SHM/file work, so every entry runs from tick via pendingAction,
+ * never from the MIDI handler. */
+
+function openChainPatches() {
+    S.patchNames = host_patch_list();
+    S.patchCur = host_patch_current(S.slot);
+    const cur = S.patchNames.indexOf(S.patchCur);
+    S.patchIdx = (cur >= 0) ? cur + 2 : (S.patchNames.length ? 2 : 0);
+    S.patchMsg = '';
+    S.patchConfirm = null;
+    S.patchRelist = 0;
+    S.view = VIEW_PATCHES;
+    log('chain patches: ' + S.patchNames.length + ' in store');
+}
+
+function doChainPatchLoad(index) {
+    if (!host_patch_load(S.slot, index)) { S.patchMsg = 'LOAD FAILED'; return; }
+    S.patchCur = S.patchNames[index] || '';
+    S.patchMsg = '';
+    /* A patch swaps every module in the chain — land back on the overview
+     * with the block names re-read, looking at what just loaded. */
+    S.view = VIEW_BLOCKS;
+    S.pendingAction = { t: 'names' };
+}
+
+/* [Save]: overwrite the slot's current patch (confirmed) when it still
+ * exists in the store; otherwise behave as Save As. */
+function startPatchSave() {
+    const existing = S.patchCur ? S.patchNames.indexOf(S.patchCur) : -1;
+    if (existing >= 0) {
+        S.patchConfirm = { t: 'overwrite', index: existing, name: S.patchCur };
+        S.patchConfirmIdx = 0;
+    } else {
+        startPatchSaveAs(S.patchCur || 'Chain');
+    }
+}
+
+function startPatchSaveAs(prefill) {
+    openTextEntry({
+        title: '',
+        initialText: String(prefill || 'Chain'),
+        onConfirm: (name) => {
+            const trimmed = String(name || '').trim() || 'Chain';
+            const existing = S.patchNames.indexOf(trimmed);
+            if (existing >= 0) {
+                /* An existing name is an overwrite, and overwrites confirm —
+                 * unlike module presets, patches have no auto-number rule
+                 * because replacing "the" patch by name is the common intent. */
+                S.patchConfirm = { t: 'overwrite', index: existing, name: trimmed };
+                S.patchConfirmIdx = 0;
+            } else {
+                S.pendingAction = { t: 'patchsavedo', name: trimmed, overwrite: -1 };
+            }
+            S.dirty = true;
+        },
+        onCancel: () => { S.patchMsg = 'CANCELLED'; S.dirty = true; },
+    });
+}
+
+function doChainPatchSave(rawName, overwriteIndex) {
+    const name = String(rawName || '').trim() || 'Chain';
+    const ok = host_patch_save(S.slot, name, overwriteIndex);
+    S.patchMsg = ok ? 'SAVED' : 'SAVE FAILED';
+    if (!ok) return;
+    S.patchCur = name;
+    if (overwriteIndex < 0 && S.patchNames.indexOf(name) < 0) {
+        /* Optimistic insert keeps the cursor meaningful until the store's
+         * truth arrives on the delayed re-list. */
+        S.patchNames.push(name);
+    }
+    S.patchRelist = PATCH_RELIST_TICKS;
+}
+
+function doChainPatchDelete(index) {
+    const name = S.patchNames[index];
+    const ok = host_patch_delete(S.slot, index);
+    S.patchMsg = ok ? 'DELETED' : 'DELETE FAILED';
+    if (!ok) return;
+    if (name === S.patchCur) S.patchCur = '';
+    S.patchNames.splice(index, 1);
+    if (S.patchIdx > S.patchNames.length + 1) S.patchIdx = S.patchNames.length + 1;
+    S.patchRelist = PATCH_RELIST_TICKS;
+}
+
+/* Post-mutation re-list once the DSP has had time to touch the files. */
+function tickChainPatches() {
+    if (S.patchRelist <= 0) return;
+    if (--S.patchRelist > 0) return;
+    if (S.view !== VIEW_PATCHES) return;
+    S.patchNames = host_patch_list();
+    S.patchCur = host_patch_current(S.slot);
+    if (S.patchIdx > S.patchNames.length + 1) S.patchIdx = S.patchNames.length + 1;
+    S.dirty = true;
+}
+
 function safeStem(name) {
     let out = '';
     for (const ch of String(name)) {
@@ -980,6 +1099,7 @@ function buildPickRows() {
         for (const i of S.blockRows) {
             rows.push({ kind: 'block', comp: BLOCKS[i].comp, label: BLOCKS[i].label, blockIdx: i });
         }
+        rows.push({ kind: 'patches', label: '[CHAIN PATCHES]' });
         rows.push({ kind: 'settings', label: '[SLOT SETTINGS]' });
     }
     S.pickRows = rows;
@@ -1509,6 +1629,12 @@ function runAction(a) {
     else if (a.t === 'menuload') refreshMenuRows();
     else if (a.t === 'slotcfg')  openSlotCfg();
     else if (a.t === 'slotsave') engineSaveState();
+    else if (a.t === 'patchlist')   openChainPatches();
+    else if (a.t === 'patchload')   doChainPatchLoad(a.index);
+    else if (a.t === 'patchsave')   startPatchSave();
+    else if (a.t === 'patchsaveas') startPatchSaveAs(S.patchCur || 'Chain');
+    else if (a.t === 'patchsavedo') doChainPatchSave(a.name, a.overwrite);
+    else if (a.t === 'patchdel')    doChainPatchDelete(a.index);
     else if (a.t === 'file')     openFileBrowser(S.menuRowsCache[a.idx]);
     else if (a.t === 'textedit') startTextEdit(a.idx);
     S.dirty = true;
@@ -1956,6 +2082,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.pickRow = listMove(S.pickRows.length, S.pickRow, delta);
         } else if (S.view === VIEW_SLOTCFG) {
             slotCfgStep(delta);
+        } else if (S.view === VIEW_PATCHES) {
+            if (S.patchConfirm) {
+                S.patchConfirmIdx = listMove(2, S.patchConfirmIdx, delta);
+            } else {
+                S.patchIdx = listMove(S.patchNames.length + 2, S.patchIdx, delta);
+                S.patchMsg = '';
+            }
         } else if (S.view === VIEW_BROWSE) {
             S.browseIdx = listMove(S.browseList.length, S.browseIdx, delta);
         } else if (S.view === VIEW_PRESET_SRC) {
@@ -2049,6 +2182,37 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.pendingAction = { t: 'slotcfg' };   /* reads the slot — tick only */
         }
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
+                 S.pickRows[S.pickRow].kind === 'patches') {
+            S.pendingAction = { t: 'patchlist' };   /* store listing — tick only */
+        }
+        else if (S.view === VIEW_PATCHES) {
+            if (S.patchConfirm) {
+                const c = S.patchConfirm;
+                S.patchConfirm = null;
+                if (S.patchConfirmIdx === 1) {
+                    S.pendingAction = (c.t === 'delete')
+                        ? { t: 'patchdel', index: c.index }
+                        : { t: 'patchsavedo', name: c.name, overwrite: c.index };
+                }
+            } else if (S.patchIdx === 0) {
+                S.pendingAction = { t: 'patchsave' };
+            } else if (S.patchIdx === 1) {
+                S.pendingAction = { t: 'patchsaveas' };
+            } else {
+                const index = S.patchIdx - 2;
+                if (S.patchNames[index] !== undefined) {
+                    if (S.shiftHeld) {
+                        /* Shift+click deletes — same modifier grammar as the
+                         * user-preset list. */
+                        S.patchConfirm = { t: 'delete', index, name: S.patchNames[index] };
+                        S.patchConfirmIdx = 0;
+                    } else {
+                        S.pendingAction = { t: 'patchload', index };
+                    }
+                }
+            }
+        }
+        else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'bus') {
             S.pendingAction = { t: 'bus', bus: S.pickRows[S.pickRow].bus };
         }
@@ -2123,6 +2287,9 @@ export function soundOnCC(d1, d2, decodeDelta) {
         if (S.view === VIEW_SLOTCFG) {
             if (S.slotCfgEditing) S.slotCfgEditing = false;   /* leave edit first */
             else closeSlotCfg();
+        } else if (S.view === VIEW_PATCHES) {
+            if (S.patchConfirm) S.patchConfirm = null;
+            else { S.view = VIEW_BLOCKS; S.patchMsg = ''; }
         } else if (S.view === VIEW_FILE) {
             S.view = VIEW_MENU;
         } else if (S.view === VIEW_MENU && S.confirmItem) {
@@ -2342,6 +2509,8 @@ export function soundTick() {
         S.pendingAction = null;
         runAction(a);
     }
+
+    tickChainPatches();
 
     if (S.needsPoll && !S.pendingWrites.length) {
         S.needsPoll = false;
@@ -2618,6 +2787,22 @@ function renderPresetSrc() {
     renderRows(S.srcRows.map(r => r.label), S.presetSrcIdx, '');
 }
 
+function renderChainPatches() {
+    clear_screen();
+    if (S.patchConfirm) {
+        drawKitHeader(S.patchConfirm.t === 'delete' ? 'DELETE?' : 'OVERWRITE?', false);
+        centreText(20, String(S.patchConfirm.name || '').toUpperCase());
+        renderRows(['No', 'Yes'], S.patchConfirmIdx, '');
+        return;
+    }
+    drawKitHeader('CHAIN PATCHES', false);
+    /* '*' marks the slot's current patch — the one [Save] would overwrite. */
+    const rows = ['[Save]', '[Save as…]'].concat(
+        S.patchNames.map(n => (n === S.patchCur ? '*' : ' ') + n));
+    renderRows(rows, S.patchIdx, '');
+    if (S.patchMsg) centreText(58, S.patchMsg);
+}
+
 function renderPresetList() {
     clear_screen();
     if (S.confirmDel) {
@@ -2737,6 +2922,7 @@ export function soundRender() {
     else if (S.view === VIEW_MENU) renderMenu();
     else if (S.view === VIEW_FILE) renderFile();
     else if (S.view === VIEW_SLOTCFG) renderSlotCfg();
+    else if (S.view === VIEW_PATCHES) renderChainPatches();
     else if (S.view === VIEW_BUSES) renderBuses();
     else renderEdit();
     if (S.volShownUntil >= 0 && S.tickCount <= S.volShownUntil) drawVolReadout();
