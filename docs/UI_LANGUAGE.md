@@ -130,9 +130,15 @@ response across two cells).
 - **Status glyph**: a down-chevron top-right (`drawKitAltArrow`) means "this bank has alt params".
   It may itself blink. This is the whole glyph vocabulary — resist adding more.
 
-**HUD card is a parity gap.** canvaskit has a reusable `hudCard(ctx, title, value)`; davebox has
-only the bespoke `drawKitValueOverlay` (the turn-to-reveal zoom). New value-HUD work should
-introduce the reusable primitive rather than a second bespoke box.
+**HUD card** (P7): `hudCard(title, value)` in `ui_movy.mjs` is the reusable value-HUD frame —
+near-full-width card, header-font title left / value right over a rule, returns the body rect for
+the caller to fill (waveform, meter, custom read-out). New value-HUD work composes on it.
+`drawKitValueOverlay` (the turn-to-reveal zoom) keeps its own zoom-box lifecycle; it predates the
+card and stays.
+
+**Host header matches (P7).** The host's `drawMenuHeader` draws the same filled-bar/black-text
+treatment, so host-native screens (Tools, Global Settings, Master FX, pickers) read as the same
+app. Its bar's bottom edge replaced the old separate rule line.
 
 ## 5. Lists, pickers, dialogs
 
@@ -152,16 +158,17 @@ introduce the reusable primitive rather than a second bespoke box.
 - **Text entry** — the kit does not draw a keyboard and neither should we. Open the host's
   (`src/shared/text_entry.mjs`).
 
-⚠ **Deviation to retire: there are three dialog implementations.** `ui_dialogs.mjs`'s
-`drawYesNoRow`/`drawDlgBtn`/`drawOkButton`, `menu_layout.mjs`'s
-`drawConfirmModal`/`drawConfirmOverlay`/`drawMessageOverlay`, and assorted one-offs — doing the
-same job with different geometry and footer conventions. `ui_dialogs.mjs` has already been through
-one internal consolidation (its own comment records that button order, label casing and geometry
-had drifted apart across ~8 copies); the remaining step is merging with the `menu_layout` family.
-The convention above is normative; converging on one implementation is P7 work.
+✅ **One dialog implementation (P7).** The normative button primitive lives in
+`src/shared/menu_layout.mjs` (`drawDialogButton` / `drawDialogYesNoRow` / `drawDialogOkButton`);
+`ui_dialogs.mjs` delegates to it, `drawConfirmModal` renders the side-by-side row, and the
+message/confirm overlays use the shared button. New dialogs route through these — never hand-draw
+a button.
 
-⚠ **Deviation to retire: six hand-rolled list renderers in `ui_sound.mjs`** (`ROW_H` variously 9,
-10, 11), none calling `drawMenuList`. Any rebuild of those screens uses the shared list.
+- **Shared movy list** — `drawKitList` (`ui_movy.mjs`, P7). The one full-screen list body for
+  movy-chassis screens: label font, one row height (10px default), windowed scroll with the
+  right-edge scrollbar, inverse-video selection, optional right-aligned value / `>` chevron /
+  header-font rows, and the same `[brackets]` edit grammar as `drawMenuList`. All of sound
+  mode's lists and the knob/LFO editors render through it.
 
 ## 6. Selection, focus, editing, disabled
 
@@ -255,19 +262,20 @@ Honest status, so nobody mistakes the spec for the state of the tree.
 | Surface | Shape |
 |---|---|
 | `ui_movy.mjs` + `ui_cells.mjs` | ✅ The reference. Pure, centralized, previewable off-device |
-| `src/shared/menu_layout*.mjs` | ✅ Centralized, but a second font system and its own dialog family |
-| `ui_dialogs.mjs` | 🟡 Reuses the shared list; hand-rolls its own header and buttons |
-| `ui_render.mjs` | ❌ ~1.9k lines drawing directly; its own header functions |
-| `ui_sound.mjs` | ❌ Six duplicated list renderers |
+| `src/shared/menu_layout*.mjs` | ✅ Centralized; owns the one dialog-button family (P7) |
+| `ui_dialogs.mjs` | ✅ Delegates buttons to `menu_layout`; shared header + list |
+| `ui_render.mjs` | ✅ Grid/header chrome all movy-composed; the remaining direct drawing is the signature sequencer visuals (session overview, track rows, position bars, perf mode) — deliberately bespoke, ruled out of the polish pass |
+| `ui_sound.mjs` | ✅ All lists on `drawKitList`; confirms on the shared button row (P7) |
 | `ui_leds.mjs` / `ui_scene.mjs` | 🟡 Direct LED writes; shared constants but no shared helpers |
 
 **Two font systems are in simultaneous use** — the movy fonts and the host's built-in `print()` —
-because the movy grid and the shared menu list are genuinely different chassis. That is tolerable.
-What is not tolerable long-term is the *third* and *fourth* idioms in the ❌ rows.
+because the movy grid and the shared menu list are genuinely different chassis. That is tolerable
+and now visually reconciled: both chassis share the filled-bar header and the dialog buttons.
 
-Known parity gaps against canvaskit, to close in the polish pass rather than piecemeal: **vBar**
-(a `fader` cell currently falls through to `arc` — there is no vertical-bar widget at all),
-**HUD card**, and the ADSR/LFO graphics beyond the two span widgets that exist.
+**Canvaskit parity (P7):** `drawVBar` (a `fader` cell renders as the vertical bar, no longer
+falling through to `arc`), `hudCard`, and live waveform rendering (`shapeSample`, `drawWaveBox`,
+`drawLfoWave` — the LFO editor's preview strip) are all ported. The ADSR span widgets were
+already present.
 
 ## Related
 
