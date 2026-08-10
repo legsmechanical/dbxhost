@@ -118,6 +118,58 @@ frame('REPEAT GROOVE (step 3 touched)', [
     { kind: 'blank', label: '' },
 ], { headerText: 'REPEAT GROOVE', headerInvert: true, pageIdx: 4, pageCount: 6, touchedIdx: 2 });
 
+/* 8 — P7 primitives: vbar cells + the two-cell LFO waveform span */
+frame('LFO (vbar depth, wave span)', (() => {
+    const cells = [
+        enumCell('Shpe', 'LFO Shape', ['Sine','Tri','Saw','Sqr','S&H','Swshy'], 1),
+        { kind: 'vbar', label: 'Depth', name: 'LFO Depth', text: '64', norm: 0.5 },
+        { kind: 'blank', label: '' },
+        { kind: 'blank', label: '' },
+        { kind: 'frac', label: 'Rate', name: 'LFO Rate', text: '1/16' },
+        { kind: 'vbar', label: 'Phase', name: 'Phase Offset', text: '25%', norm: 0.25 },
+        { kind: 'hbar', label: 'Retrg', name: 'Retrigger', text: 'ON', norm: 1 },
+        { kind: 'xbox', label: 'Dest', name: 'Mod Target' },
+    ];
+    return cells;
+})(), { headerText: 'LFO 1', pageIdx: 0, pageCount: 2, touchedIdx: -1 });
+kit.drawLfoWave({ cell: 2, shape: 'tri', bipolar: true, retrig: true });
+frames[frames.length - 1].fb = fb;
+
+/* 9 — shared list: values, chevron, editing brackets, scrollbar */
+{
+    fb = new Uint8Array(W * H);
+    kit.drawKitHeader('SLOT 1 SETTINGS', false);
+    kit.drawKitList([
+        { label: 'Volume', value: '0.80' },
+        { label: 'Receive Ch', value: '2', editing: true },
+        { label: 'Forward Ch', value: 'Auto' },
+        { label: 'Transpose', value: '+12' },
+        { label: 'MPE', value: 'Off' },
+        { label: 'Knobs...', chevron: true },
+        { label: 'LFO 1...', chevron: true },
+        { label: 'LFO 2...', chevron: true },
+    ], 1, {});
+    frames.push({ name: 'SHARED LIST (editing row, scrollbar)', fb });
+}
+
+/* 10 — HUD card with a waveform body */
+{
+    fb = new Uint8Array(W * H);
+    kit.drawKitHeader('SYNTH', false);
+    const body = kit.hudCard('LFO WAVE', 'TRI');
+    /* fill the body with a shape preview to show the composition pattern */
+    const baseY = body.y + Math.floor(body.h / 2);
+    for (let x = body.x; x < body.x + body.w; x += 2) globalThis.set_pixel(x, baseY, 1);
+    let px = body.x, py = baseY;
+    for (let i = 1; i <= body.w; i++) {
+        const v = kit.shapeSample('tri', (i / body.w) * 2);
+        const y = Math.round(baseY - v * (body.h / 2 - 2));
+        kit.plotLine(px, py, body.x + i, y, 1);
+        px = body.x + i; py = y;
+    }
+    frames.push({ name: 'HUD CARD (waveform body)', fb });
+}
+
 /* ---- stacked PNG ---- */
 const SCALE = 3, GAP = 6;
 const rows = frames.length;

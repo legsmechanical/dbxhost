@@ -13,7 +13,7 @@
  * by asciimario (fontstruct.com/fontstructions/show/821131, CC BY-NC 3.0).
  *
  * Cell descriptor (everything precomputed by the caller — no param reads):
- *   { kind:  'blank' | 'arc' | 'arcbip' | 'hbar' | 'enumsq' | 'valsq' | 'frac',
+ *   { kind:  'blank' | 'arc' | 'arcbip' | 'hbar' | 'vbar' | 'enumsq' | 'valsq' | 'frac',
  *            ('valsq' = numeric / note read-out: big font, frameless — see
  *             drawBigNum; 'enumsq' = the framed micro-font square for NAMED
  *             enums, whose words don't fit the big font),
@@ -563,6 +563,27 @@ export function drawHBar(kx, ky, norm) {
     if (fillW > 0) fill_rect(kx + 2, ky + 5, fillW, 5, 1);
 }
 
+/* Vertical bar filling bottom->up — mix/level feel. The `fader` cell's widget
+ * (canvaskit drawVBar): same 20x16 box as the arc, bar centred inside it. */
+export function drawVBar(kx, ky, norm) {
+    fill_rect(kx + 6, ky + 1, 8, 1, 1);
+    fill_rect(kx + 6, ky + 14, 8, 1, 1);
+    fill_rect(kx + 6, ky + 1, 1, 14, 1);
+    fill_rect(kx + 13, ky + 1, 1, 14, 1);
+    const fillH = Math.round(norm * 12);
+    if (fillH > 0) fill_rect(kx + 7, ky + 2 + (12 - fillH), 6, fillH, 1);
+}
+
+/* Framed box with a big diagonal cross — DRAWN, not a font glyph (movy
+ * drawXBox). "This modulation target is None": an empty-slot affordance that
+ * reads as "nothing routed here" at a glance. */
+export function drawXBox(kx, ky) {
+    rectOutline(kx, ky, MV_KW, MV_KH, 1);
+    const a = 3, b = MV_KW - 1 - 3;          /* inset the cross from the frame */
+    plotLine(kx + a, ky + a, kx + b, ky + MV_KH - 1 - a, 1);
+    plotLine(kx + b, ky + a, kx + a, ky + MV_KH - 1 - a, 1);
+}
+
 /* Two <=3-char 5x3 lines for the enum square. Single line when it fits;
  * musical rates split after the "n/m" group ("1/16T" -> "1/16" + "T"). */
 function sqLines(text) {
@@ -882,6 +903,83 @@ export function drawKitFilterCurve(rowY, viz) {
     }
 }
 
+/* ---- waveform previews (movy lfo-wave.ts via canvaskit, MIT megadake) ----
+ * Bipolar (-1..1) sample of an LFO shape at phase t (one cycle = 1). s&h and
+ * swishy use fixed deterministic patterns so frames are stable. */
+export function shapeSample(shape, t) {
+    const ph = t - Math.floor(t);
+    switch (shape) {
+        case 'tri':
+            if (ph < 0.25) return ph * 4;
+            if (ph < 0.75) return 1 - (ph - 0.25) * 4;
+            return -1 + (ph - 0.75) * 4;
+        case 'saw': return ph * 2 - 1;
+        case 'square': return ph < 0.5 ? 1 : -1;
+        case 'sh': {
+            const steps = [0.3, -0.7, 0.85, -0.35];
+            return steps[Math.floor(ph * steps.length) % steps.length];
+        }
+        case 'swishy': {
+            const pts = [0, 0.7, -0.4, 0.55, -0.8, 0.2, 0];
+            const x = ph * (pts.length - 1);
+            const i = Math.floor(x), f = x - i;
+            return pts[i] + (pts[Math.min(i + 1, pts.length - 1)] - pts[i]) * f;
+        }
+        default: return Math.sin(ph * 2 * Math.PI); /* sine */
+    }
+}
+
+/* Single-cell waveform box (wave-select cells): one cycle of the live shape
+ * with a dotted center baseline, in place of an enum square. */
+export function drawWaveBox(kx, ky, shape) {
+    const x0 = kx + 1, spanW = MV_KW - 2;
+    const topY = ky + 2, botY = ky + MV_KH - 3;
+    const baseY = Math.round((topY + botY) / 2);
+    const amp = (botY - topY) / 2;
+    for (let x = x0; x <= x0 + spanW; x += 2) set_pixel(x, baseY, 1);
+    let px = x0, py = Math.round(baseY - shapeSample(shape, 0) * amp);
+    for (let i = 1; i <= spanW; i++) {
+        const y = Math.round(baseY - shapeSample(shape, i / spanW) * amp);
+        plotLine(px, py, x0 + i, y, 1);
+        px = x0 + i; py = y;
+    }
+}
+
+/* Two-cell LFO waveform span: replaces the widgets of cells viz.cell and
+ * viz.cell+1 (same row) with two cycles of the live shape. Pure — the caller
+ * resolves every value first (this file reads no params):
+ *   viz = { cell (0-7), shape ('sine'|'tri'|'saw'|'square'|'sh'|'swishy'),
+ *           phase (0..1, default 0), bipolar (default true), retrig (bool) }
+ * Baseline: dotted center line when bipolar, bottom line when unipolar;
+ * retrigger on -> bold 3x3 dot at the start of the line. */
+export function drawLfoWave(viz) {
+    const col = viz.cell % 4;
+    const rowY = viz.cell < 4 ? MV_ROW0_Y : MV_ROW1_Y;
+    const x0 = col * MV_CELL_W + 1;
+    const spanW = 2 * MV_CELL_W - 2;
+    const topY = rowY + 1, botY = rowY + MV_KH - 2;
+    const bipolar = viz.bipolar !== false;
+    const baseY = bipolar ? Math.round((topY + botY) / 2) : botY;
+    const amp = bipolar ? (botY - topY) / 2 : (botY - topY);
+    const shape = viz.shape || 'sine';
+    const phase = viz.phase || 0;
+    for (let x = x0; x <= x0 + spanW; x += 2) set_pixel(x, baseY, 1);
+    const yAt = (i) => {
+        const v = shapeSample(shape, (i / spanW) * 2 + phase);
+        return bipolar ? Math.round(baseY - v * amp)
+                       : Math.round(botY - ((v + 1) / 2) * amp);
+    };
+    let px = x0, py = yAt(0);
+    for (let i = 1; i <= spanW; i++) {
+        const y = yAt(i);
+        plotLine(px, py, x0 + i, y, 1);
+        px = x0 + i; py = y;
+    }
+    if (viz.retrig) {
+        fill_rect(x0, Math.max(topY, Math.min(botY - 2, yAt(0) - 1)), 3, 3, 1);
+    }
+}
+
 /* ---- grid ---- */
 
 function drawCellWidget(col, rowY, cell, touched) {
@@ -896,6 +994,9 @@ function drawCellWidget(col, rowY, cell, touched) {
                                          cell.sq != null ? cell.sq : cell.text);
         case 'action': return drawActionSquare(kx, rowY, cell.text, cell.oneWay, touched);
         case 'dirsq':  return drawDirSquare(kx, rowY, cell.sel | 0);
+        case 'vbar':   return drawVBar(kx, rowY, cell.norm || 0);
+        case 'wavesq': return drawWaveBox(kx, rowY, cell.shape);
+        case 'xbox':   return drawXBox(kx, rowY);
         default:       return; /* blank */
     }
 }
@@ -1122,6 +1223,89 @@ export function drawKitSectionPicker(sections, activeIdx) {
         fill_rect(x + w - 2, trackY, 1, trackH, 1);
         fill_rect(x + w - 3, thumbY, 2, thumbH, 1);
     }
+}
+
+/* Framed HUD popup card (canvaskit hudCard): clears + frames a near-full-width
+ * card, prints title left + value right in the header font over a 1px rule,
+ * and returns the body rect for the caller to fill with arbitrary content
+ * (waveform preview, meter, custom read-out). The reusable value-HUD frame —
+ * new HUD work composes on this instead of hand-drawing a third bespoke box.
+ * (drawKitValueOverlay keeps its own zoom-box lifecycle; it predates this.) */
+export function hudCard(title, valueText) {
+    const x = 6, y = 11, w = SCREEN_W - 12, h = 42;
+    fill_rect(x, y, w, h, 0);
+    rectOutline(x, y, w, h, 1);
+    hdrPrint(x + 3, y + 2, fitHdr(String(title || ''), w - 40), 1);
+    if (valueText != null) {
+        const vtxt = String(valueText);
+        hdrPrint(x + w - 3 - hdrWidth(vtxt), y + 2, vtxt, 1);
+    }
+    fill_rect(x + 1, y + 9, w - 2, 1, 1);
+    return { x: x + 2, y: y + 11, w: w - 4, h: h - 13 };
+}
+
+/* ---- shared full-screen list ----
+ * The one list body for every row-based screen under a drawKitHeader (slot
+ * settings, block lists, pickers, preset browsers, menus). Label font, full-
+ * width inverse-video selection, windowed scroll with a right-edge scrollbar
+ * on overflow, and the normative edit grammar: an editing row's value renders
+ * in [brackets] (UI_LANGUAGE §6) — not a '*' marker.
+ *
+ * rows: strings, or { label, value?, chevron? ('>'), editing?, hdr? }.
+ *   `hdr` prints the label in the header font (caps chrome rows).
+ * sel: selected index. opts: { topY=11, rowH=10, visible (derived), emptyMsg }.
+ * Pure: no state reads; returns the first visible index (for callers that
+ * align auxiliary drawing with the window). */
+export function drawKitList(rows, sel, opts) {
+    const o = opts || {};
+    const topY = o.topY != null ? o.topY : 11;
+    const rowH = o.rowH != null ? o.rowH : 10;
+    const n = rows.length;
+    if (!n) {
+        if (o.emptyMsg) {
+            const t = String(o.emptyMsg);
+            mvPrint(Math.max(0, Math.round((SCREEN_W - mvWidth(t)) / 2)), 30, t, 1);
+        }
+        return 0;
+    }
+    const visible = o.visible != null ? o.visible
+                                      : Math.max(1, Math.floor((64 - topY - 1) / rowH));
+    const s = Math.max(0, Math.min(n - 1, sel | 0));
+    const start = Math.max(0, Math.min(s - Math.floor(visible / 2), n - visible));
+    const hasScroll = n > visible;
+    const rightEdge = hasScroll ? SCREEN_W - 5 : SCREEN_W - 3;   /* value right-align x */
+    const fillW = hasScroll ? SCREEN_W - 4 : SCREEN_W;
+    for (let i = 0; i < visible; i++) {
+        const idx = start + i;
+        if (idx >= n) break;
+        const r = rows[idx];
+        const row = (typeof r === 'string') ? { label: r } : r;
+        const y = topY + i * rowH;
+        const on = (idx === s);
+        if (on) fill_rect(0, y - 1, fillW, rowH, 1);
+        const ink = on ? 0 : 1;
+        let val = row.chevron ? '>' : (row.value != null ? String(row.value) : '');
+        if (row.editing && val) val = '[' + val + ']';
+        const vw = val ? mvWidth(val) : 0;
+        let label = String(row.label || '');
+        const availW = rightEdge - 3 - (vw ? vw + 4 : 0);
+        if (row.hdr) {
+            while (label.length > 1 && hdrWidth(label) > availW) label = label.slice(0, -1);
+            hdrPrint(3, y, label, ink);
+        } else {
+            while (label.length > 1 && mvWidth(label) > availW) label = label.slice(0, -1);
+            mvPrint(3, y + 1, label, ink);
+        }
+        if (val) mvPrint(rightEdge - vw, y + 1, val, ink);
+    }
+    if (hasScroll) {
+        const trackH = visible * rowH;
+        const thumbH = Math.max(3, Math.round(trackH * visible / n));
+        const thumbY = topY - 1 + Math.round((trackH - thumbH) * start / Math.max(1, n - visible));
+        fill_rect(SCREEN_W - 2, topY - 1, 1, trackH, 1);
+        fill_rect(SCREEN_W - 3, thumbY, 2, thumbH, 1);
+    }
+    return start;
 }
 
 /* Down-arrow affordance for banks with alt params, in the header's top-right.

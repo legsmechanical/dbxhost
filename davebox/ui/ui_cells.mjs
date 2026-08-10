@@ -6,7 +6,7 @@
  * and makes it survive the standalone port untouched.
  *
  * Render-cell shape expected by drawKitBankPage (see ui/ui_movy.mjs header):
- *   { kind: 'blank'|'arc'|'arcbip'|'hbar'|'enumsq'|'valsq'|'frac'|'dirsq',
+ *   { kind: 'blank'|'arc'|'arcbip'|'hbar'|'vbar'|'enumsq'|'valsq'|'frac'|'dirsq',
  *     label, name, text, norm, signed, sq, options, sel }
  */
 
@@ -142,8 +142,11 @@ export function toRenderCell(cell, value, rawValue) {
             return { kind: 'arcbip', label, name, text, signed };
         }
 
-        case 'uni':
         case 'fader':
+            /* Vertical bar, bottom-up — mix/level feel (canvaskit drawVBar). */
+            return { kind: 'vbar', label, name, text, norm };
+
+        case 'uni':
         default:
             return { kind: 'arc', label, name, text, norm };
     }

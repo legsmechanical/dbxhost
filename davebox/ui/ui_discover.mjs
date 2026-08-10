@@ -375,8 +375,8 @@ export function blankCell() {
  * INTENT over inference: the author's bank order and grouping, labels already
  * chosen to fit 4 glyphs (so no shortLabel guessing), and real section rows.
  *
- * Kit kinds map as: unipolar/fader -> uni, bipolar -> bip, octave -> oct,
- * count -> count, len/dir keep their names, and `enum` splits on option count
+ * Kit kinds map as: unipolar -> uni, bipolar -> bip, octave -> oct,
+ * fader/count/len/dir keep their names, and `enum` splits on option count
  * exactly as makeCell does (<=2 reads as a toggle). Sensitivity is re-derived
  * from OUR constants rather than copied, so knob feel stays uniform across
  * kit-described and derived modules. */
@@ -387,7 +387,7 @@ export function blankCell() {
 const HOST_MIN_KIT_VERSION = 39;
 
 const KIT_KIND = {
-    unipolar: 'uni', fader: 'uni', bipolar: 'bip',
+    unipolar: 'uni', fader: 'fader', bipolar: 'bip',
     octave: 'oct', count: 'count', len: 'len', dir: 'dir',
 };
 
