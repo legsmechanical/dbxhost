@@ -57,16 +57,19 @@ export function footerHint(verb, action) {
 let lastAnnouncedIndex = -1;
 let lastAnnouncedLabel = "";
 
+/* Filled-bar header (P7 restyle): white bar, BLACK text — the davebox
+ * drawKitHeader treatment (UI_LANGUAGE §4), so host-native screens read as
+ * the same app as the module's own chrome. The bar's bottom edge replaces
+ * the old separate rule line (which sat at TITLE_RULE_Y = 12). */
 export function drawMenuHeader(title, titleRight = "") {
-    print(2, TITLE_Y, title, 1);
+    fill_rect(0, 0, SCREEN_WIDTH, TITLE_RULE_Y - 1, 1);
+    print(2, TITLE_Y, title, 0);
 
     if (titleRight) {
         const rightW = (typeof text_width === 'function') ? text_width(titleRight) : (titleRight.length * DEFAULT_CHAR_WIDTH);
         const rightX = SCREEN_WIDTH - rightW - 2;
-        print(Math.max(2, rightX), TITLE_Y, titleRight, 1);
+        print(Math.max(2, rightX), TITLE_Y, titleRight, 0);
     }
-
-    fill_rect(0, TITLE_RULE_Y, SCREEN_WIDTH, 1, 1);
 }
 
 export function drawMenuFooter(text, y = FOOTER_TEXT_Y) {
