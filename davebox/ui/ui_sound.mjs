@@ -51,9 +51,10 @@ import { discover, deriveSections, activeSection, filterVizFor,
 import { parseValue, stepValue, commitString, renderCellsForBank,
     formatValue } from './ui_cells.mjs';
 import {
-    drawKitBankPage, drawKitHeader, drawKitSectionPicker,
+    drawKitBankPage, drawKitHeader, drawKitSectionPicker, drawKitList,
     hdrPrint, mvPrint, mvWidth,
 } from './ui_movy.mjs';
+import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* Chain blocks in signal order, across the audio-FX blocks the host routes.
  *
@@ -1254,22 +1255,11 @@ function drainSlotWrites() {
 function renderSlotCfg() {
     clear_screen();
     drawKitHeader('SLOT ' + (S.slot + 1) + ' SETTINGS', false);
-    const ROW_H = 10, VISIBLE = 5;
-    const start = Math.max(0, Math.min(S.slotCfgIdx - 2, S.slotRows.length - VISIBLE));
-    for (let i = 0; i < VISIBLE; i++) {
-        const idx = start + i;
-        if (idx >= S.slotRows.length) break;
-        const s = S.slotRows[idx];
-        const y = 11 + i * ROW_H;
-        const on = (idx === S.slotCfgIdx);
-        if (on) fill_rect(0, y - 1, 128, ROW_H, 1);
-        const ink = on ? 0 : 1;
-        const val = s.svc ? '>' : s.fmt(S.slotCfgVals[idx]);
-        const vw = mvWidth(val);
-        mvPrint(3, y + 1, s.label, ink);
-        mvPrint(125 - vw, y + 1, val, ink);
-        if (on && S.slotCfgEditing && !s.svc) mvPrint(125 - vw - 6, y + 1, '*', ink);
-    }
+    drawKitList(S.slotRows.map((s, idx) => (s.svc
+        ? { label: s.label, chevron: true }
+        : { label: s.label, value: s.fmt(S.slotCfgVals[idx]),
+            editing: idx === S.slotCfgIdx && S.slotCfgEditing })),
+        S.slotCfgIdx, {});
 }
 
 function menuEnter() {
@@ -2561,60 +2551,31 @@ function centreText(y, text) {
 function renderBlocks() {
     clear_screen();
     drawKitHeader(S.bus ? S.bus.title : ('TRACK ' + (S.track + 1) + ' - SOUND'), false);
-    const ROW_H = 9, VISIBLE = 6;
-    const rows = S.pickRows;
-    const start = Math.max(0, Math.min(S.pickRow - 2, rows.length - VISIBLE));
-    for (let i = 0; i < VISIBLE; i++) {
-        const r = rows[start + i];
-        if (!r) break;
-        const y = 10 + i * ROW_H;
-        const sel = ((start + i) === S.pickRow);
-        if (sel) fill_rect(0, y - 1, 128, ROW_H, 1);
-        hdrPrint(3, y, r.label, sel ? 0 : 1);
+    drawKitList(S.pickRows.map((r, idx) => {
         if (r.kind === 'buslevel') {
-            const t = Math.round((r.val || 0) * 100) + '%';
-            const w = mvWidth(t);
-            mvPrint(125 - w, y + 2, t, sel ? 0 : 1);
-            if (sel && S.busLevelEditing) mvPrint(125 - w - 6, y + 2, '*', sel ? 0 : 1);
-            continue;
+            return { label: r.label, hdr: true,
+                     value: Math.round((r.val || 0) * 100) + '%',
+                     editing: idx === S.pickRow && S.busLevelEditing };
         }
-        if (r.kind !== 'block') continue;
+        if (r.kind !== 'block') return { label: r.label, hdr: true };
         /* A bypassed block still says what it holds — you need to know WHAT is
          * switched out — so the state rides as a prefix. Matches the host's 'B'. */
-        let t = (r.bypassed ? 'B ' : '') + String(r.name || '-').toUpperCase();
-        while (t.length > 1 && mvWidth(t) > 60) t = t.slice(0, -1);
-        mvPrint(Math.max(62, 125 - mvWidth(t)), y + 2, t, sel ? 0 : 1);
-    }
+        return { label: r.label, hdr: true,
+                 value: (r.bypassed ? 'B ' : '') + String(r.name || '-').toUpperCase() };
+    }), S.pickRow, {});
 }
 
 function renderBuses() {
     clear_screen();
     drawKitHeader('SESSION FX', false);
-    const ROW_H = 11;
-    for (let i = 0; i < FX_BUSES.length; i++) {
-        const y = 16 + i * ROW_H;
-        const sel = (i === S.busIdx);
-        if (sel) fill_rect(0, y - 1, 128, ROW_H, 1);
-        hdrPrint(4, y, FX_BUSES[i].title, sel ? 0 : 1);
-    }
+    drawKitList(FX_BUSES.map(b => ({ label: b.title, hdr: true })),
+        S.busIdx, { topY: 16 });
 }
 
 function renderBrowse() {
     clear_screen();
     drawKitHeader(BLOCKS[S.blockIdx].label + ' - PICK', false);
-    const ROW_H = 10, VISIBLE = 5;
-    const n = S.browseList.length;
-    const start = Math.max(0, Math.min(S.browseIdx - 2, n - VISIBLE));
-    for (let i = 0; i < VISIBLE; i++) {
-        const idx = start + i;
-        if (idx >= n) break;
-        const y = 11 + i * ROW_H;
-        const sel = (idx === S.browseIdx);
-        if (sel) fill_rect(0, y - 1, 128, ROW_H, 1);
-        let label = String(S.browseList[idx].name);
-        while (label.length > 1 && mvWidth(label) > 122) label = label.slice(0, -1);
-        mvPrint(3, y + 1, label, sel ? 0 : 1);
-    }
+    drawKitList(S.browseList.map(m => String(m.name)), S.browseIdx, {});
 }
 
 /* ── hosting a module's OWN canvas UI ──────────────────────────────────────
@@ -2766,21 +2727,9 @@ function modLabel() {
     return String(S.moduleId || BLOCKS[S.blockIdx].label).toUpperCase();
 }
 
-/* Shared list body for the two row-based preset screens. */
+/* Shared list body for the row-based preset screens (thin drawKitList shim). */
 function renderRows(rows, sel, emptyMsg) {
-    const ROW_H = 10, VISIBLE = 5;
-    if (!rows.length) { centreText(30, emptyMsg); return; }
-    const start = Math.max(0, Math.min(sel - 2, rows.length - VISIBLE));
-    for (let i = 0; i < VISIBLE; i++) {
-        const idx = start + i;
-        if (idx >= rows.length) break;
-        const y = 11 + i * ROW_H;
-        const on = (idx === sel);
-        if (on) fill_rect(0, y - 1, 128, ROW_H, 1);
-        let label = String(rows[idx]);
-        while (label.length > 1 && mvWidth(label) > 122) label = label.slice(0, -1);
-        mvPrint(3, y + 1, label, on ? 0 : 1);
-    }
+    drawKitList(rows.map(String), sel, { emptyMsg });
 }
 
 function renderPresetSrc() {
@@ -2793,8 +2742,8 @@ function renderChainPatches() {
     clear_screen();
     if (S.patchConfirm) {
         drawKitHeader(S.patchConfirm.t === 'delete' ? 'DELETE?' : 'OVERWRITE?', false);
-        centreText(20, String(S.patchConfirm.name || '').toUpperCase());
-        renderRows(['No', 'Yes'], S.patchConfirmIdx, '');
+        centreText(24, String(S.patchConfirm.name || '').toUpperCase());
+        drawDialogYesNoRow(S.patchConfirmIdx === 1);
         return;
     }
     drawKitHeader('SLOT PRESETS', false);
@@ -2810,8 +2759,8 @@ function renderPresetList() {
     if (S.confirmDel) {
         const p = S.userPresets[S.userIdx - 1];
         drawKitHeader('DELETE?', false);
-        centreText(20, String(p ? p.name : '').toUpperCase());
-        renderRows(['No', 'Yes'], S.confirmIdx, '');
+        centreText(24, String(p ? p.name : '').toUpperCase());
+        drawDialogYesNoRow(S.confirmIdx === 1);
         return;
     }
     drawKitHeader('USER PRESETS', false);
@@ -2848,8 +2797,8 @@ function renderMenu() {
          * screen you are already on; which slot is about to be overwritten is
          * the thing you need to check before saying yes. */
         drawKitHeader('OVERWRITE?', false);
-        centreText(20, String(S.confirmItem.label || '').toUpperCase());
-        renderRows(['No', 'Yes'], S.confirmIdx, '');
+        centreText(24, String(S.confirmItem.label || '').toUpperCase());
+        drawDialogYesNoRow(S.confirmIdx === 1);
         return;
     }
     const lv = (S.levels && S.levels[S.menuKey]) || {};
@@ -2860,31 +2809,17 @@ function renderMenu() {
         : (cspec && S.menuChild >= 0) ? (cspec.label + ' ' + (S.menuChild + 1))
         : (lv.name || lv.label || S.menuKey || 'MENU');
     drawKitHeader(String(title).toUpperCase(), false);
-    const rows = S.menuRowsCache;
-    if (!rows.length) { centreText(30, 'NO PARAMS'); return; }
-    const ROW_H = 10, VISIBLE = 5;
-    const start = Math.max(0, Math.min(S.menuIdx - 2, rows.length - VISIBLE));
-    for (let i = 0; i < VISIBLE; i++) {
-        const idx = start + i;
-        if (idx >= rows.length) break;
-        const r = rows[idx];
-        const y = 11 + i * ROW_H;
-        const on = (idx === S.menuIdx);
-        if (on) fill_rect(0, y - 1, 128, ROW_H, 1);
-        const ink = on ? 0 : 1;
+    drawKitList(S.menuRowsCache.map((r, idx) => {
         /* An item row's "value" is whether it is the one in force — without it
          * a bank list is N identical rows and you cannot tell which you're on. */
-        const val = (r.kind === 'level' || r.kind === 'child' || r.kind === 'mode') ? '>' :
-            (r.kind === 'item') ? (r.selected ? '*' : '') :
-            (r.cell ? String(formatValue(r.cell, r.val)) : '');
-        let label = String(r.label || '');
-        const vw = mvWidth(val);
-        while (label.length > 1 && mvWidth(label) > 118 - vw) label = label.slice(0, -1);
-        mvPrint(3, y + 1, label, ink);
-        mvPrint(125 - vw, y + 1, val, ink);
-        /* Edit mode marker: a caret on the value side of the active row. */
-        if (on && S.menuEditing && r.kind === 'param') mvPrint(125 - vw - 6, y + 1, '*', ink);
-    }
+        if (r.kind === 'level' || r.kind === 'child' || r.kind === 'mode')
+            return { label: r.label, chevron: true };
+        if (r.kind === 'item')
+            return { label: r.label, value: r.selected ? '*' : '' };
+        return { label: r.label,
+                 value: r.cell ? String(formatValue(r.cell, r.val)) : '',
+                 editing: idx === S.menuIdx && S.menuEditing && r.kind === 'param' };
+    }), S.menuIdx, { emptyMsg: 'NO PARAMS' });
 }
 
 function renderFile() {
