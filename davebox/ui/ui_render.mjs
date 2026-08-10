@@ -676,7 +676,7 @@ function drawTempoSelect() {
     pixelPrintC(64, 56, 'Click to set', 1);
 }
 
-export /* Drum-view position bar (bottom strip): loop-window pages, view page solid,
+/* Drum-view position bar (bottom strip): loop-window pages, view page solid,
  * playing page outlined, playhead dot, off-window extent ticks. Moved here
  * from ui_leds.mjs in P7 — it is OLED drawing, not LED writing. */
 function drawPositionBar(t) {
@@ -725,7 +725,7 @@ function drawPositionBar(t) {
     }
 }
 
-function drawUI() {
+export function drawUI() {
     /* CO-RUN: shadow_ui's chain editor owns the OLED while this is active.
     /* Move-native co-run: Move firmware owns the OLED (preset browser /
      * device-edit pages). The shim's display_mode bypass keeps Move's
