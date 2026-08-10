@@ -290,8 +290,26 @@ void launch_link_subscriber(void) {
 
     link_sub_kill_orphans();
 
+    /* ⚠ A missing binary here used to `return` in silence, which is the worst
+     * possible failure: the caller's monitor loop retries forever and logs
+     * "launching subscriber (started=0 pid=-1)" ~10x/second, so it reads like a
+     * subscriber that keeps crashing rather than one that was never installed.
+     * Link Audio — and everything built on it, including the Move FX buses —
+     * then cannot work, with no diagnosis anywhere. Say so, once. */
     const char *sub_path = SCHWUNG_INSTALL_DIR "/link-subscriber";
-    if (access(sub_path, X_OK) != 0) return;
+    if (access(sub_path, X_OK) != 0) {
+        static int missing_logged = 0;
+        if (!missing_logged) {
+            missing_logged = 1;
+            unified_log("shim", LOG_LEVEL_ERROR,
+                        "Link Audio DISABLED: no executable at %s (errno=%d). "
+                        "Link Audio routing, the Move FX buses and Move-track "
+                        "processing cannot run until it is installed. It is built "
+                        "only when the Link SDK submodule (libs/link) is present.",
+                        sub_path, errno);
+        }
+        return;
+    }
 
     /* (A /tmp/link-tempo write used to live here — nothing reads it; the
      * subscriber persists tempo itself via /data/UserData/schwung/last-tempo.) */

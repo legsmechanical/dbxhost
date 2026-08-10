@@ -153,6 +153,26 @@ for a in build/schwung build/schwung-shim.so build/shadow/shadow_ui; do
 done
 say "      ok — all three binaries carry $DBX_SHM_PREFIX"
 
+# --- Link Audio sidecar present? -------------------------------------------
+# The shim resolves the subscriber at SCHWUNG_INSTALL_DIR/link-subscriber, i.e.
+# $DBX_DIR/link-subscriber for this build. It is only compiled when the Link SDK
+# submodule is checked out, so an uninitialised libs/link produces a payload that
+# looks complete and silently has no Link Audio at all — no routing, no Move FX
+# buses, no Move-track processing. That exact chain shipped once: quiet build
+# warning -> nothing to copy -> a runtime retry loop that never named the cause.
+# Warn rather than fail: a host-only iteration on unrelated code is still valid.
+if [ ! -x "$REPO_ROOT/build/link-subscriber" ]; then
+    echo "" >&2
+    echo "WARNING: build/link-subscriber is missing — Link Audio will NOT work." >&2
+    echo "         The Move FX buses and all Move-track processing depend on it." >&2
+    echo "         Cause: the Link SDK submodule is not checked out." >&2
+    echo "         Fix:   git submodule update --init --recursive libs/link" >&2
+    echo "                then re-run this script." >&2
+    echo "" >&2
+else
+    say "      ok — link-subscriber present (Link Audio can start)"
+fi
+
 # --- work out what NOT to touch --------------------------------------------
 # ⚠ $DBX_DIR shares user content with the stock install through symlinks —
 # modules, presets, patches, slot_state, plus two back-compat links. Copying

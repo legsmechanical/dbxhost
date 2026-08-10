@@ -422,7 +422,24 @@ if [ -d "./libs/link/include/ableton" ]; then
         echo "Skipping Link Audio subscriber (up to date)"
     fi
 else
-    echo "Warning: Link SDK not found at libs/link/, skipping link-subscriber"
+    # ⚠ Not a cosmetic skip. Without this binary the shim's Link Audio
+    # subscriber can never start, so Link Audio routing, the Move FX buses and
+    # all Move-track processing are dead at runtime — and the runtime symptom is
+    # a retry loop that never says why. This was shipped to a device exactly
+    # that way: the submodule was uninitialised, the build printed one quiet
+    # warning, the installer had nothing to copy, and the feature was simply
+    # absent. Make the warning impossible to scroll past.
+    echo ""
+    echo "########################################################################"
+    echo "## WARNING: Link SDK not found at libs/link/ — SKIPPING link-subscriber"
+    echo "##"
+    echo "## Link Audio routing, the Move FX buses and Move-track processing"
+    echo "## will NOT WORK in this build. The shim will retry the subscriber"
+    echo "## forever and log 'Link Audio DISABLED: no executable at ...'."
+    echo "##"
+    echo "## Fix:  git submodule update --init --recursive libs/link"
+    echo "########################################################################"
+    echo ""
 fi
 
 # Build MIDI inject test tool
