@@ -1647,6 +1647,15 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
     /* Route synth: prefixed params to synth (strip prefix) */
     if (strncmp(key, "synth:", 6) == 0) {
         const char *subkey = key + 6;
+        /* Symmetric readback (P6): "synth:module" answers with the loaded
+         * module id — same value the legacy "synth_module" key returns, and
+         * the mirror of the set_param intercept. Handled before the
+         * plugin forward: the host owns "which module is loaded", and a
+         * plugin-forwarded "module" subkey on an empty component read as
+         * an error rather than as empty. */
+        if (strcmp(subkey, "module") == 0) {
+            return snprintf(buf, buf_len, "%s", inst->current_synth_module);
+        }
         int base_result = chain_mod_get_base_for_subkey(inst, "synth", subkey, buf, buf_len);
         if (base_result >= 0) return base_result;
         int mod_result = chain_mod_get_modulated_for_subkey(inst, "synth", subkey, buf, buf_len);
@@ -1717,6 +1726,15 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
     /* Route fx1: prefixed params to FX1 (strip prefix) */
     if (strncmp(key, "fx1:", 4) == 0) {
         const char *subkey = key + 4;
+        /* Symmetric readback (P6): "fx1:module" answers with the loaded
+         * module id — same value the legacy "fx1_module" key returns, and
+         * the mirror of the set_param intercept. Handled before the
+         * plugin forward: the host owns "which module is loaded", and a
+         * plugin-forwarded "module" subkey on an empty component read as
+         * an error rather than as empty. */
+        if (strcmp(subkey, "module") == 0) {
+            return snprintf(buf, buf_len, "%s", inst->current_fx_modules[0]);
+        }
         int base_result = chain_mod_get_base_for_subkey(inst, "fx1", subkey, buf, buf_len);
         if (base_result >= 0) return base_result;
         int mod_result = chain_mod_get_modulated_for_subkey(inst, "fx1", subkey, buf, buf_len);
@@ -1790,6 +1808,15 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
     /* Route fx2: prefixed params to FX2 (strip prefix) */
     if (strncmp(key, "fx2:", 4) == 0) {
         const char *subkey = key + 4;
+        /* Symmetric readback (P6): "fx2:module" answers with the loaded
+         * module id — same value the legacy "fx2_module" key returns, and
+         * the mirror of the set_param intercept. Handled before the
+         * plugin forward: the host owns "which module is loaded", and a
+         * plugin-forwarded "module" subkey on an empty component read as
+         * an error rather than as empty. */
+        if (strcmp(subkey, "module") == 0) {
+            return snprintf(buf, buf_len, "%s", inst->current_fx_modules[1]);
+        }
         int base_result = chain_mod_get_base_for_subkey(inst, "fx2", subkey, buf, buf_len);
         if (base_result >= 0) return base_result;
         int mod_result = chain_mod_get_modulated_for_subkey(inst, "fx2", subkey, buf, buf_len);
@@ -1863,6 +1890,15 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
     /* Route fx3: prefixed params to FX3 (strip prefix) [fork: blocks 3-4] */
     if (strncmp(key, "fx3:", 4) == 0) {
         const char *subkey = key + 4;
+        /* Symmetric readback (P6): "fx3:module" answers with the loaded
+         * module id — same value the legacy "fx3_module" key returns, and
+         * the mirror of the set_param intercept. Handled before the
+         * plugin forward: the host owns "which module is loaded", and a
+         * plugin-forwarded "module" subkey on an empty component read as
+         * an error rather than as empty. */
+        if (strcmp(subkey, "module") == 0) {
+            return snprintf(buf, buf_len, "%s", inst->current_fx_modules[2]);
+        }
         int base_result = chain_mod_get_base_for_subkey(inst, "fx3", subkey, buf, buf_len);
         if (base_result >= 0) return base_result;
         int mod_result = chain_mod_get_modulated_for_subkey(inst, "fx3", subkey, buf, buf_len);
@@ -1936,6 +1972,15 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
     /* Route fx4: prefixed params to FX4 (strip prefix) [fork: blocks 3-4] */
     if (strncmp(key, "fx4:", 4) == 0) {
         const char *subkey = key + 4;
+        /* Symmetric readback (P6): "fx4:module" answers with the loaded
+         * module id — same value the legacy "fx4_module" key returns, and
+         * the mirror of the set_param intercept. Handled before the
+         * plugin forward: the host owns "which module is loaded", and a
+         * plugin-forwarded "module" subkey on an empty component read as
+         * an error rather than as empty. */
+        if (strcmp(subkey, "module") == 0) {
+            return snprintf(buf, buf_len, "%s", inst->current_fx_modules[3]);
+        }
         int base_result = chain_mod_get_base_for_subkey(inst, "fx4", subkey, buf, buf_len);
         if (base_result >= 0) return base_result;
         int mod_result = chain_mod_get_modulated_for_subkey(inst, "fx4", subkey, buf, buf_len);
@@ -2009,6 +2054,15 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
     /* Route midi_fx1: prefixed params to MIDI FX1 (strip prefix) */
     if (strncmp(key, "midi_fx1:", 9) == 0) {
         const char *subkey = key + 9;
+        /* Symmetric readback (P6): "midi_fx1:module" answers with the loaded
+         * module id — same value the legacy "midi_fx1_module" key returns, and
+         * the mirror of the set_param intercept. Handled before the
+         * plugin forward: the host owns "which module is loaded", and a
+         * plugin-forwarded "module" subkey on an empty component read as
+         * an error rather than as empty. */
+        if (strcmp(subkey, "module") == 0) {
+            return snprintf(buf, buf_len, "%s", inst->current_midi_fx_modules[0]);
+        }
         int base_result = chain_mod_get_base_for_subkey(inst, "midi_fx1", subkey, buf, buf_len);
         if (base_result >= 0) return base_result;
         int mod_result = chain_mod_get_modulated_for_subkey(inst, "midi_fx1", subkey, buf, buf_len);
@@ -2077,6 +2131,15 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
     /* Route midi_fx2: prefixed params to MIDI FX2 (strip prefix) */
     if (strncmp(key, "midi_fx2:", 9) == 0) {
         const char *subkey = key + 9;
+        /* Symmetric readback (P6): "midi_fx2:module" answers with the loaded
+         * module id — same value the legacy "midi_fx2_module" key returns, and
+         * the mirror of the set_param intercept. Handled before the
+         * plugin forward: the host owns "which module is loaded", and a
+         * plugin-forwarded "module" subkey on an empty component read as
+         * an error rather than as empty. */
+        if (strcmp(subkey, "module") == 0) {
+            return snprintf(buf, buf_len, "%s", inst->current_midi_fx_modules[1]);
+        }
         int base_result = chain_mod_get_base_for_subkey(inst, "midi_fx2", subkey, buf, buf_len);
         if (base_result >= 0) return base_result;
         int mod_result = chain_mod_get_modulated_for_subkey(inst, "midi_fx2", subkey, buf, buf_len);

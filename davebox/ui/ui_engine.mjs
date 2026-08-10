@@ -14,9 +14,9 @@
  *   key  — the module's own param key
  *
  * Host contract notes that cost real debugging time upstream (movy):
- *  - A module is LOADED by writing `<comp>:module`, but READ BACK from
- *    `<comp>_module` — the underscore alias. Reading the colon key returns
- *    empty and the UI concludes the slot is still empty.
+ *  - `<comp>:module` reads AND writes the loaded module id — symmetric since
+ *    P6 (the chain host intercepts the colon read; the old `<comp>_module`
+ *    underscore alias still works and is what older code reads).
  *  - Track components load by module ID. (master_fx:* components load by DSP
  *    path instead — not used here, noted so the asymmetry isn't rediscovered.)
  */
@@ -40,9 +40,11 @@ export const COMPONENTS = {
     midi_fx1: { label: 'MIDI',  scanDir: 'midi_fx',          type: 'midi_fx' },
 };
 
-/* Read-back key for "which module is loaded" — see header note. */
+/* Read-back key for "which module is loaded". One shape for read and write
+ * since P6 made the colon readback symmetric — this helper stays only so the
+ * key is built in one place. */
 function moduleReadKey(comp) {
-    return comp.indexOf(':') !== -1 ? comp + ':module' : comp + '_module';
+    return comp + ':module';
 }
 
 /* ---- core param access ---- */
