@@ -848,8 +848,12 @@ loop. The bank works the same on melodic and drum clips.
 
 **Click the jog** to enter assign mode, then turn a knob to pick its target:
 aftertouch (`AT`), a CC number (`CC0`–`CC127`), or — on a Schwung-routed track — a
-Schwung chain knob (`Sch1`–`Sch8`). The target applies to the whole track. A lane
-starts at `—` (sends nothing); turn up from there to reach 0.
+Schwung chain knob (`Sch1`–`Sch8`). The target applies to the whole track.
+
+On a **Schwung-routed track** the eight lanes come pre-assigned to `Sch1`–`Sch8`,
+so automation drives the chain's knob assignments out of the box — set those up
+under **Knobs…** in the slot's settings. On other tracks a lane starts at `—`
+(sends nothing); turn up from there to reach 0.
 
 ## 11.2 Resting values and recording
 
@@ -1128,6 +1132,13 @@ edit in one gesture instead of jogging to find it. Only a pad you physically pre
 counts — a playing pattern, or drums arriving over MIDI, never move the editor. The
 module decides which drum a pad means, so this follows its own kit mapping. Modules
 that don't offer per-drum editing are unaffected.
+
+**Knob assignments.** The slot's settings screen (**[SLOT SETTINGS]** in the chain
+overview) carries **Knobs…** — map each of the eight knobs to any parameter on any
+component in the chain — and **LFO 1/2…**, two per-slot LFOs with a live waveform
+preview. Outside a module's own editor pages, turning a physical knob drives its
+assignment directly; the same assignments are what `Sch` automation lanes play
+(see [Automation](#11-automation)).
 
 The Schwung chain editor is still available from **Edit Synth… / Edit Slot…** in
 the Settings menu, where **Mute + jog-click** bypasses the focused slot.

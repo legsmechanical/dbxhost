@@ -50,14 +50,12 @@ Registration also neutralizes any co-run state a warm restart left in SHM.
 | `master_fx`       | overlay | `{keep_mask}`                          |
 | `global_settings` | overlay | `{keep_mask}`                          |
 | `chain_editor_view` | overlay | `{slot, keep_mask}`                  |
-| `knob_editor`     | overlay | `{slot, keep_mask}`                    |
-| `lfo_editor`      | overlay | `{slot, lfo, keep_mask}`               |
 
-`knob_editor` and `lfo_editor` are direct entries into the per-slot knob
-assignment and LFO editors — the same screens reachable by walking
-`chain_editor_view` → Chain Settings, addressable without the walk. `lfo`
-selects LFO 1 (`0`) or LFO 2 (`1`). Back at the editor's root closes the
-service; deeper navigation (target/param pickers) pops within the overlay.
+(`knob_editor` and `lfo_editor` were direct-entry services until P7, when the
+primary module absorbed both editors natively — it reads and writes the same
+chain params directly (`knob_N_target`/`knob_N_set`/`knob_N_clear`, `lfoN:*`).
+The host's own editors remain reachable through `chain_editor_view` → Chain
+Settings.)
 
 *Session* services open a co-run session (the SHM-state poll primes the
 editor exactly as with `shadow_corun_begin`); *overlay* services draw an
