@@ -84,33 +84,57 @@ export function drawMenuFooter(text, y = FOOTER_TEXT_Y) {
     }
 }
 
-/* Shared two-option confirmation modal (cleanup step 9, U-4): header +
- * optional quoted name + a vertical two-row selector + footer. Replaces the
- * four hand-rendered copies in the slot-preset (settings) and master-preset
- * (master_fx) overwrite/delete flows so the Yes/No widget is identical
- * everywhere. selectedIndex picks the highlighted row; labels default to
- * No/Yes (index 0 = No, the safe default the callers seed). */
+/* ---- Normative dialog buttons (UI_LANGUAGE §5) ----
+ * ONE button implementation for every confirm dialog, host and module alike:
+ * No left / Yes right; selected = filled box with black label; unselected =
+ * outlined box with white label; Back = No, Jog = Yes. Geometry lifted from
+ * the davebox dialog family (which had already been through one
+ * consolidation) — its ui_dialogs.mjs now delegates here. */
+
+/* A single button: filled when selected (black label), else outlined (white
+ * label). The label is auto-centered at the 6px print font. */
+export function drawDialogButton(x, y, w, h, sel, label) {
+    const lx = x + Math.round((w - label.length * DEFAULT_CHAR_WIDTH) / 2);
+    if (sel) {
+        fill_rect(x, y, w, h, 1);
+        print(lx, y + 3, label, 0);
+    } else {
+        drawRect(x, y, w, h, 1);
+        print(lx, y + 3, label, 1);
+    }
+}
+
+/* Canonical full-screen two-button row: No left, Yes right, bottom of screen.
+ * `selYes` = the Yes button is the highlighted one. */
+export function drawDialogYesNoRow(selYes, labels) {
+    const l = labels || ["No", "Yes"];
+    drawDialogButton(6, 46, 46, 13, !selYes, l[0]);
+    drawDialogButton(74, 46, 46, 13, !!selYes, l[1]);
+}
+
+/* Single filled OK button (info dialogs), centered at a caller-set y. */
+export function drawDialogOkButton(y) {
+    drawDialogButton(49, y, 30, 12, true, "OK");
+}
+
+/* Shared two-option confirmation modal: header + optional quoted name + the
+ * normative side-by-side button row. Used by the slot-preset (settings) and
+ * master-preset (master_fx) overwrite/delete flows. selectedIndex indexes
+ * `labels` ([No, Yes] — index 0 = No, the safe default the callers seed).
+ * The button row expresses Back-cancels itself, so no footer is drawn; the
+ * parameter is kept for call-site compatibility. */
 export function drawConfirmModal({
     title,
     name,
     selectedIndex,
     labels = ["No", "Yes"],
-    footer = "Back: cancel"
+    footer = "Back: cancel"   /* eslint-disable-line no-unused-vars */
 }) {
     drawMenuHeader(title);
     if (name !== undefined && name !== null && name !== "") {
-        print(LIST_LABEL_X, LIST_TOP_Y, '"' + truncateText(String(name), 20) + '"', 1);
+        print(LIST_LABEL_X, LIST_TOP_Y + 4, '"' + truncateText(String(name), 20) + '"', 1);
     }
-    const listY = LIST_TOP_Y + 16;
-    for (let i = 0; i < labels.length; i++) {
-        const rowY = listY + i * LIST_LINE_HEIGHT;
-        const isSelected = i === selectedIndex;
-        if (isSelected) {
-            fill_rect(0, rowY - 1, SCREEN_WIDTH, LIST_HIGHLIGHT_HEIGHT, 1);
-        }
-        print(LIST_LABEL_X, rowY, labels[i], isSelected ? 0 : 1);
-    }
-    drawMenuFooter(footer);
+    drawDialogYesNoRow(selectedIndex === 1, labels);
 }
 
 export function drawArrowUp(x, y) {
@@ -492,20 +516,16 @@ export function drawMessageOverlay(title, messageLines, showOk = true) {
         }
     }
 
-    /* OK button - highlighted to show it's the action */
+    /* OK button — the shared dialog button, always the highlighted action */
     if (showOk) {
-        const okText = '[OK]';
-        const okW = okText.length * 6;
-        const okX = Math.floor((SCREEN_WIDTH - okW) / 2);
-        const okY = boxY + boxHeight - 14;
-        fill_rect(okX - 4, okY - 2, okW + 8, 12, 1);
-        print(okX, okY, okText, 0);
+        drawDialogOkButton(boxY + boxHeight - 16);
     }
 }
 
 /**
- * Draw a Yes/No confirm overlay. Caller manages the active state and reads input.
- * Footer is fixed: "Back:No  Jog:Yes".
+ * Draw a Yes/No confirm overlay. Caller manages the active state and reads
+ * input (Back = No, Jog = Yes — there is no browsable selection here, so the
+ * Yes button renders highlighted as the jog-commit default action).
  * @param {string} title - Title (e.g., "Speaker Feedback Risk")
  * @param {string[]} messageLines - Pre-wrapped message lines. Caller should
  *   wrap to ≤ 20 chars per line; lines beyond the first 5 are dropped.
@@ -533,9 +553,16 @@ export function drawConfirmOverlay(title, messageLines, footer) {
         }
     }
 
-    const footerText = footer || 'Back:No  Jog:Yes';
-    const footerW = footerText.length * 6;
-    print(Math.floor((SCREEN_WIDTH - footerW) / 2), boxY + boxHeight - 12, footerText, 1);
+    /* Normative button row inside the box (replaces the old text footer). A
+     * caller-supplied footer string still wins for bespoke key mappings. */
+    if (footer) {
+        const footerW = footer.length * 6;
+        print(Math.floor((SCREEN_WIDTH - footerW) / 2), boxY + boxHeight - 12, footer, 1);
+    } else {
+        const by = boxY + boxHeight - 15;
+        drawDialogButton(boxX + 10, by, 44, 12, false, 'No');
+        drawDialogButton(boxX + STATUS_OVERLAY_WIDTH - 10 - 44, by, 44, 12, true, 'Yes');
+    }
 }
 
 /* Note: Label scroller is auto-ticked inside drawMenuList() */

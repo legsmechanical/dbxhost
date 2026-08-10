@@ -1,7 +1,8 @@
 import { S } from './ui_state.mjs';
 import { MCUFONT, STATE_VERSION, NOTE_KEYS, SCALE_DISPLAY, pixelPrintC } from './ui_constants.mjs';
 import {
-    drawMenuHeader, drawMenuList, menuLayoutDefaults
+    drawMenuHeader, drawMenuList, menuLayoutDefaults,
+    drawDialogButton, drawDialogYesNoRow, drawDialogOkButton
 } from '/data/UserData/schwung/shared/menu_layout.mjs';
 import { formatItemValue } from '/data/UserData/schwung/shared/menu_items.mjs';
 import {
@@ -80,41 +81,22 @@ export function drawBpmLine(cx, topY, value, unit) {
 }
 
 /* ---- Shared confirm-dialog chrome ----
- * One button primitive + one Yes/No layout so every dialog reads the same:
- * CAPS header (drawMenuHeader), Title-Case buttons, No-left / Yes-right. Before
- * this, the button renderer was copy-pasted into ~8 functions (and several
- * dialogs inlined it fully unrolled), which is how button order, label casing,
- * and geometry drifted apart. Route every dialog through these. */
+ * The button primitive + Yes/No layout are the NORMATIVE dialog convention
+ * (UI_LANGUAGE §5) and were consolidated here first (from ~8 copy-pasted
+ * renderers), then hoisted into the host's shared menu_layout.mjs in P7 so
+ * host screens draw the identical widget. These are thin delegates. */
 
-/* A single button: filled when selected (black label), else outlined (white
- * label). The label is auto-centered at the 6px print font, so call sites never
- * hand-tune an x offset again. */
-function drawDlgBtn(x, y, w, h, sel, label) {
-    const lx = x + Math.round((w - label.length * 6) / 2);
-    if (sel) {
-        fill_rect(x, y, w, h, 1);
-        print(lx, y + 3, label, 0);
-    } else {
-        fill_rect(x, y, w, 1, 1);
-        fill_rect(x, y + h - 1, w, 1, 1);
-        fill_rect(x, y, 1, h, 1);
-        fill_rect(x + w - 1, y, 1, h, 1);
-        print(lx, y + 3, label, 1);
-    }
-}
+const drawDlgBtn = drawDialogButton;
 
 /* Canonical two-button Yes/No row: No left, Yes right, bottom of screen.
  * `sel` follows the universal davebox convention (0 = Yes, 1 = No). */
 function drawYesNoRow(sel) {
-    drawDlgBtn(6,  46, 46, 13, sel === 1, 'No');
-    drawDlgBtn(74, 46, 46, 13, sel === 0, 'Yes');
+    drawDialogYesNoRow(sel === 0);
 }
 
 /* Single filled OK button (info dialogs), centered horizontally at a caller-set
  * baseline y. Consistent 30×12 geometry everywhere. */
-function drawOkButton(y) {
-    drawDlgBtn(49, y, 30, 12, true, 'OK');
-}
+const drawOkButton = drawDialogOkButton;
 
 /* Clamp a variable-length label to fit one OLED line at the 6px print font. */
 function truncLabel(label, maxChars) {
