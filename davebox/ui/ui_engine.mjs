@@ -127,6 +127,39 @@ export function engineSetChainParam(slot, key, val) {
     return shadow_set_param(slot, key, String(val));
 }
 
+/* Link Audio rebuild is DERIVED from track routing, never a user setting.
+ *
+ * A track routed to Move plays a Move instrument, and dAVEBOx owns that
+ * instrument's audio: it comes back through the corresponding Move FX bus so it
+ * can be levelled, effected and sent like anything else. That return path only
+ * exists under the Link Audio rebuild, so the rebuild must be on exactly when
+ * at least one track is routed to Move — which is a fact we already have, not a
+ * question to ask the user. This replaces the "Move->Schwung" Global Settings
+ * row, which was a technical toggle for something the routing already implies.
+ *
+ * Idempotent and cheap (one param write only when the answer changes), so it is
+ * safe to call from every path that can alter routing, which is the point: the
+ * flag must never disagree with the routes.
+ */
+let lastLinkAudioRouting = null;
+export function syncLinkAudioRoutingFromRoutes(routes) {
+    let wanted = 0;
+    for (let t = 0; t < routes.length; t++) {
+        if (routes[t] === 1 /* ROUTE_MOVE */) { wanted = 1; break; }
+    }
+    if (wanted === lastLinkAudioRouting) return wanted;
+    lastLinkAudioRouting = wanted;
+    shadow_set_param(0, 'master_fx:link_audio_routing', String(wanted));
+    return wanted;
+}
+
+/* Force the next sync to write even if the value looks unchanged — used after a
+ * project load, where the host's flag belongs to the PREVIOUS project and our
+ * cached copy would otherwise suppress the correcting write. */
+export function invalidateLinkAudioRoutingCache() {
+    lastLinkAudioRouting = null;
+}
+
 /* Flush chain state to disk. shadow_ui.js defines this global and it already
  * persists slot volumes/channels/mute/solo, so no host change was needed to
  * make slot level survive a reboot. Synchronous file write — call it at the END

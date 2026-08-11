@@ -34,7 +34,8 @@ import {
 import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 
 import { S, CC_ASSIGN_DEFAULTS } from './ui_state.mjs';
-import { slotIndex } from './ui_engine.mjs';
+import { slotIndex, syncLinkAudioRoutingFromRoutes,
+         invalidateLinkAudioRoutingCache } from './ui_engine.mjs';
 import { clipHasContent, _clipIsEmpty } from './ui_pure.mjs';
 import { showActionPopup, writeSidecar, uuidToStatePath, uuidToUiStatePath,
     updateNameIndex } from './ui_persistence.mjs';
@@ -937,6 +938,7 @@ function readTrackConfig(t) {
     if (sl !== null && sl !== undefined) S.trackSlot[t] = slotIndex(parseInt(sl, 10));
     const rt = host_module_get_param('t' + t + '_route');
     if (rt !== null && rt !== undefined) S.trackRoute[t] = rt === 'external' ? 2 : rt === 'move' ? 1 : 0;
+    /* Bulk read (project load): re-derive after the last track, below. */
     const pm = host_module_get_param('t' + t + '_pad_mode');
     if (pm !== null && pm !== undefined) S.trackPadMode[t] = parseInt(pm, 10) | 0;
     const tvo = host_module_get_param('t' + t + '_track_vel_override');
@@ -959,6 +961,9 @@ export function applyTrackConfig(t, key, val) {
     else if (key === 'slot')            S.trackSlot[t] = slotIndex(val);
     else if (key === 'route') {
         S.trackRoute[t] = val;
+        /* Link Audio rebuild is derived from routing, not a setting — a track
+         * routed to Move needs its audio back through that Move bus. */
+        syncLinkAudioRoutingFromRoutes(S.trackRoute);
         /* Move route offers only Off/Poly aftertouch — normalize a lingering
          * Channel selection so the AftTch menu + send stay in sync. */
         if (val === 1 && S.trackAtMode[t] === 2) { S.trackAtMode[t] = 1; writeSidecar(); }
@@ -1382,6 +1387,12 @@ export function syncClipsFromDsp() {
             }
         }
     }
+    /* Every track's route is now known: re-derive the Link Audio rebuild flag.
+     * The host's flag belongs to the PREVIOUS project, so invalidate the cache
+     * first or an unchanged-looking value would suppress the correcting write. */
+    invalidateLinkAudioRoutingCache();
+    syncLinkAudioRoutingFromRoutes(S.trackRoute);
+
     const kp = host_module_get_param('key');
     if (kp !== null && kp !== undefined) S.padKey   = parseInt(kp, 10) | 0;
     const sp = host_module_get_param('scale');

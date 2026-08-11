@@ -1463,7 +1463,11 @@ const GLOBAL_SETTINGS_SECTIONS = [
     {
         id: "audio", label: "Audio",
         items: [
-            { key: "link_audio_routing", label: "Move->Schwung", type: "bool" },
+            /* "Move->Schwung" retired: the Link Audio rebuild is DERIVED from
+             * track routing by the primary module (a track routed to Move needs
+             * its audio back through that Move FX bus), so it is a consequence,
+             * not a question for the user. The internal flag survives and is
+             * still driven via the master_fx:link_audio_routing param. */
             { key: "link_audio_publish", label: "Schwung->Link", type: "bool" },
             { key: "latency_comp_enabled", label: "Latency Comp", type: "bool" },
             { key: "resample_bridge", label: "Sample Src", type: "enum",

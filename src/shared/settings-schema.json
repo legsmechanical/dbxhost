@@ -13,7 +13,6 @@
   {
     "id": "audio", "label": "Audio",
     "items": [
-      { "key": "link_audio_routing", "label": "Move->Schwung", "type": "bool" },
       { "key": "link_audio_publish", "label": "Schwung->Link", "type": "bool" },
       { "key": "latency_comp_enabled", "label": "Latency Comp", "type": "bool" },
       { "key": "resample_bridge", "label": "Sample Source", "type": "enum",
