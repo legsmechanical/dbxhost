@@ -612,8 +612,16 @@ static void seq8_load_state(seq8_instance_t *inst) {
              * arithmetic — it defines what an existing set's implicit slot
              * becomes. Widening the slot count must not silently re-map sets
              * that were saved before the wider count existed. */
+            /* ⭑ The fallback folds by SEQ8_LEGACY_CHAIN_SLOTS (frozen at 4),
+             * NOT by the current count. A set saved before slot addressing
+             * existed played through the slot that `channel % 4` picked, and
+             * that is what it must keep playing through — following the wider
+             * count would move its tracks onto slots that are empty in that
+             * set, silencing them. The CLAMP still uses the live count, since
+             * an explicitly stored slot may legitimately be any of them. */
             uint8_t sl = (uint8_t)clamp_i(
-                json_get_int(buf, key, inst->tracks[t].channel % SEQ8_CHAIN_SLOTS),
+                json_get_int(buf, key,
+                             inst->tracks[t].channel % SEQ8_LEGACY_CHAIN_SLOTS),
                 0, SEQ8_CHAIN_SLOTS - 1);
             inst->tracks[t].pfx.slot = sl;
             { int _sl; for (_sl = 0; _sl < DRUM_LANES; _sl++) inst->tracks[t].drum_lane_pfx[_sl].slot = sl; }

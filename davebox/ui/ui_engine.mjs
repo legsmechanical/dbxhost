@@ -202,7 +202,7 @@ export const SLOT_FX_BLOCKS = 4;
  * slot outside the range plays into the wrong chain with no error anywhere.
  * Use slotIndex() to sanitise a value that arrives from state, the wire, or a
  * user edit. */
-export const CHAIN_SLOTS = 4;
+export const CHAIN_SLOTS = 8;
 
 /* Sanitise a slot index: clamp into range rather than wrap. A clamp is wrong
  * in a visible, bounded way; a wrap is wrong in an invisible way (slot 4

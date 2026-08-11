@@ -2250,7 +2250,22 @@ static void shadow_inprocess_mix_from_buffer(void) {
          * the mailbox from Move's own write) survives. */
         int la_channel_count = shim_move_channel_count();
         int any_la_valid = 0;
-        for (int s = 0; s < SHADOW_CHAIN_INSTANCES && s < la_channel_count; s++) {
+        /* ⚠ Bounded by MOVE_TRACK_CHANNELS, not by the chain-slot count.
+         *
+         * These two were the same number while both were 4, and the identity
+         * was a coincidence: `s` here is a CHAIN SLOT, but the index handed to
+         * the reader addresses a MOVE TRACK in the sidecar's `in` segment. That
+         * segment has five slots and **index 4 is Move's MAIN MIX**, so once the
+         * chain count passes 4, chain slot 4 would read the entire Move main mix
+         * and treat it as its own per-track return — the whole mix re-entering
+         * the rebuild through one slot. Slots 5+ are merely rejected by the
+         * reader's bounds check; slot 4 is the one that silently sounds wrong.
+         *
+         * Move has four instrument tracks and that is a hardware fact, so the
+         * bound belongs to Move's side of the seam and stays 4 while the chain
+         * count grows. */
+        for (int s = 0; s < SHADOW_CHAIN_INSTANCES && s < MOVE_TRACK_CHANNELS &&
+                        s < la_channel_count; s++) {
             la_cache_valid[s] = shim_read_move_channel(s, la_cache[s], FRAMES_PER_BLOCK);
             if (la_cache_valid[s]) any_la_valid = 1;
         }

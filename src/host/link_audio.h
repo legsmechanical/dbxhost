@@ -31,7 +31,7 @@
 
 /* Channel limits: 5 Move (tracks 1-4 + Main) + 4 shadow slots */
 #define LINK_AUDIO_MOVE_CHANNELS    5
-#define LINK_AUDIO_SHADOW_CHANNELS  4
+#define LINK_AUDIO_SHADOW_CHANNELS  8
 #define LINK_AUDIO_MAX_CHANNELS     (LINK_AUDIO_MOVE_CHANNELS + LINK_AUDIO_SHADOW_CHANNELS)
 
 /* Lock-free SPSC ring buffer per channel.
@@ -167,6 +167,13 @@ typedef struct {
  * per-track slots under rebuild_from_la. */
 #define LINK_AUDIO_IN_SLOT_COUNT   LINK_AUDIO_MOVE_CHANNELS
 #define LINK_AUDIO_IN_MAIN_IDX     (LINK_AUDIO_MOVE_CHANNELS - 1)
+
+/* Move's INSTRUMENT track count — the per-track channels, excluding the Main
+ * mix that shares the segment. A hardware fact about Move, deliberately NOT the
+ * Schwung chain-slot count: those two were equal at 4 and are not the same
+ * thing, and code that indexed one with the other is how Main (index 4) would
+ * have been read as a per-track return once the chain count grew. */
+#define MOVE_TRACK_CHANNELS        (LINK_AUDIO_MOVE_CHANNELS - 1)
 
 typedef struct {
     int16_t  ring[LINK_AUDIO_IN_RING_SAMPLES];  /* stereo interleaved */

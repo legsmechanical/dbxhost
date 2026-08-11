@@ -104,7 +104,12 @@
  * tests/host/test_slot_count_is_single_sourced.sh.
  * ⚠ Not to be confused with Move's four native tracks: `t < 4` in the route
  * defaults below is that other four, and must NOT move with this one. */
-#define SEQ8_CHAIN_SLOTS    4
+#define SEQ8_CHAIN_SLOTS    8
+/* The slot count sets SAVED BEFORE slot addressing existed were written under.
+ * Frozen forever: it is not a capacity, it is the divisor those files' implicit
+ * slot was computed with, and re-deriving them against a wider count would move
+ * their tracks onto slots that are empty in those sets. See seq8_state.c. */
+#define SEQ8_LEGACY_CHAIN_SLOTS 4
 
 /* Drum mode */
 #define DRUM_LANES          32

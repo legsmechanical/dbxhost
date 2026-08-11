@@ -99,13 +99,46 @@ static link_audio_pub_shm_t *open_pub_shm()
     int fd = shm_open(SHM_LINK_AUDIO_PUB, O_RDWR, 0666);
     if (fd < 0) return nullptr;
 
+    /* ⚠ SIZE FIRST, before the mmap is ever dereferenced.
+     *
+     * The version field below cannot catch the failure that actually threatens
+     * us here: a stale segment from a build with FEWER slots carries the same
+     * version number, because the version stamps the struct's semantics and not
+     * its length. Mapping sizeof(new) over a shorter file succeeds — mmap does
+     * not fail — and the first read past the file's end is SIGBUS, or worse,
+     * garbage interpreted as audio. Comparing the file's real length to what we
+     * are about to map is the check that scales with the slot count for free. */
+    struct stat st;
+    if (fstat(fd, &st) != 0 || (size_t)st.st_size < sizeof(link_audio_pub_shm_t)) {
+        fprintf(stderr, "link-subscriber: pub SHM too small "
+                        "(%lld bytes, need %zu) — stale segment from a different "
+                        "slot count?\n",
+                (long long)(st.st_size), sizeof(link_audio_pub_shm_t));
+        close(fd);
+        return nullptr;
+    }
+
     auto *shm = (link_audio_pub_shm_t *)mmap(nullptr,
         sizeof(link_audio_pub_shm_t),
         PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     close(fd);
 
     if (shm == MAP_FAILED) return nullptr;
-    if (shm->magic != LINK_AUDIO_PUB_SHM_MAGIC) {
+    /* Magic AND version, matching the `in` segment below.
+     *
+     * ⚠ The pub segment's SIZE derives from LINK_AUDIO_SHADOW_CHANNELS, so it
+     * grows whenever the slot count does. Checking only `magic` meant a stale
+     * segment left in /dev/shm by an earlier build — a routine occurrence on
+     * this device, which is why there is a clean-restart script that rm's them —
+     * would be mapped at the NEW size over an OLD, smaller file, and read past
+     * its end as audio. This is a READER: it cannot re-initialise the segment
+     * (the shim owns creation), so a mismatch must refuse rather than repair. */
+    if (shm->magic != LINK_AUDIO_PUB_SHM_MAGIC ||
+        shm->version != LINK_AUDIO_PUB_SHM_VERSION) {
+        fprintf(stderr, "link-subscriber: pub SHM rejected "
+                        "(magic=0x%08x version=%u, want 0x%08x/%u) — stale segment?\n",
+                (unsigned)shm->magic, (unsigned)shm->version,
+                (unsigned)LINK_AUDIO_PUB_SHM_MAGIC, (unsigned)LINK_AUDIO_PUB_SHM_VERSION);
         munmap(shm, sizeof(link_audio_pub_shm_t));
         return nullptr;
     }

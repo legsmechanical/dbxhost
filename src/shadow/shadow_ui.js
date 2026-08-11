@@ -194,7 +194,7 @@ import {
 /* Track buttons - derive from imported constants */
 const TRACK_CC_START = MoveRow4;  // CC 40
 const TRACK_CC_END = MoveRow1;    // CC 43
-const SHADOW_UI_SLOTS = 4;
+const SHADOW_UI_SLOTS = 8;
 
 /* UI flags from shim (must match SHADOW_UI_FLAG_* in shim) */
 const SHADOW_UI_FLAG_JUMP_TO_SLOT = 0x01;
