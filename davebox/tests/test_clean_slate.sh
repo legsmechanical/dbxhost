@@ -63,12 +63,22 @@ done
 #    itself (host_remove_dir is disallowed under set_state), so the shell verb
 #    owns it; otherwise the state lingers until the orphan pruner runs at the
 #    NEXT BOOT.
-grep -q 'SET_STATE_DIR' ../standalone/scripts/project-cmd.sh \
-    && ok "project-cmd knows where the module state lives" \
-    || bad "project-cmd lost SET_STATE_DIR — delete leaves davebox's state on disk"
-awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q 'shutil.rmtree(sp)' \
-    && ok "delete removes the project's module state" \
-    || bad "do_delete no longer removes set_state/<uuid> — a deleted project is not a clean slate"
+#    ⚠ There are TWO roots and delete must take BOTH: the MODULE's
+#    (schwung/set_state — clips, sequencer) and the HOST's ($DBX_DIR/set_state —
+#    shadow_chain_config, slot_N, master_fx/move_fx/send_fx, i.e. the ROUTING
+#    and PARAMS). Missing the host root left a deleted project's entire chain
+#    and FX configuration on disk (found on hardware 2026-08-11).
+for v in SET_STATE_DIR HOST_STATE_DIR; do
+    grep -q "^$v=" ../standalone/scripts/project-cmd.sh \
+        && ok "project-cmd declares $v" \
+        || bad "project-cmd lost $v — delete leaves that state root on disk"
+done
+awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q 'for sd in state_dirs' \
+    && ok "delete walks BOTH state roots" \
+    || bad "do_delete no longer walks every state root — a deleted project is not a clean slate"
+awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q '"\$HOST_STATE_DIR"' \
+    && ok "the host state root is passed to the delete" \
+    || bad "HOST_STATE_DIR is declared but never passed — the routing/params half survives delete"
 
 [ "$fail" -eq 0 ] && echo "PASS: a project switch cannot inherit its predecessor's state" \
                   || echo "FAIL: clean-slate invariants broken"
