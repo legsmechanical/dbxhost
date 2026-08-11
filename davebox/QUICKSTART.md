@@ -22,11 +22,14 @@ the complete reference — this guide links into it as you go.
 
 ## Before you start: one-time setup
 
-dAVEBOx talks to Move and Schwung over MIDI channels, so they each need to be
-listening on the right channel. You only have to do this once.
+**A track owns its instrument.** Each dAVEBOx track's **Instr** setting says what
+it plays, and that is the whole of it — nothing to pair up, nothing that can
+half-match. By default tracks 1–4 play Move's four instruments and tracks 5–8
+play Schwung chains of their own.
 
-**On Move** — set tracks 1–4 to receive on channels 1–4, and turn each track's
-MIDI **Out** off (this prevents echo loops):
+**One-time setup on Move** — dAVEBOx reaches Move's instruments over MIDI, so set
+Move's tracks 1–4 to receive on channels 1–4 and turn each track's MIDI **Out**
+off (this prevents echo loops):
 
 | Move track | MIDI In | MIDI Out |
 |---|---|---|
@@ -35,18 +38,8 @@ MIDI **Out** off (this prevents echo loops):
 | 3 | Ch 3 | Off |
 | 4 | Ch 4 | Off |
 
-**In Schwung** — set slots 1–4 to receive on channels 5–8, with each slot's
-Forward Channel set to **Auto** (not Thru):
-
-| Schwung slot | Receive channel |
-|---|---|
-| 1 | Ch 5 |
-| 2 | Ch 6 |
-| 3 | Ch 7 |
-| 4 | Ch 8 |
-
-With that done, dAVEBOx tracks 1–4 play Move's instruments and tracks 5–8 play
-Schwung's chains. (You can change any track's channel and routing later — see the
+Schwung needs no setup at all: a Schwung track is addressed directly, not by
+channel. (You can point any track somewhere else later with **Instr** — see the
 manual's [Routing & Sync](MANUAL-SA.md#14-routing--sync) chapter.)
 
 Now **load a Move set** — do this first, because dAVEBOx picks up the set you are

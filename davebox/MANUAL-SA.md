@@ -1148,9 +1148,10 @@ preview. Outside a module's own editor pages, turning a physical knob drives its
 assignment directly; the same assignments are what `Sch` automation lanes play
 (see [Automation](#11-automation)).
 
-The Schwung chain editor is still available from **Edit Synth… / Edit Slot…** in
-the Settings menu, where **Mute + jog-click** bypasses the focused slot.
-*Requires Schwung 0.9.18 or later.*
+**Edit Slot…** in the Settings menu opens the same sound mode; **Edit Synth…**
+on a Move track hands over to Move's own editor. (The separate Schwung chain
+editor this line used to describe was retired — sound mode carries the whole
+surface.)
 
 ## 14.4 Clock Follow
 

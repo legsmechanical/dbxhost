@@ -36,7 +36,13 @@ instrument's audio come back through the matching **Move FX bus** unconditionall
 — so the track has a sound to edit; it just isn't a Schwung chain. Sound mode
 renders it with the same bus machinery the session FX use (`S.bus`, kind
 `move`), addressed by the `move_fx:<1-based bus>:` key namespace, where **bus
-number = track number** with no setting anywhere.
+number = the track's Move INSTRUMENT** — its channel, which is what the `Instr`
+row (`Move 1`-`Move 4`) sets.
+⚠ It is NOT the track index. 1a made it so while a track's Move instrument was
+an unsurfaced channel setting; `TRACK_OWNS_ITS_INSTRUMENT.md` surfaced it, so
+track 6 can play `Move 2` and must then edit BUS 2. Reading the track index here
+opened a different instrument's inserts with no error anywhere — pinned now by
+`tests/test_move_bus_flavour.sh`.
 
 ```
 SYNTH (MOVE N)  →  FX 1  →  FX 2  →  FX 3  →  FX 4  →  Volume / Send A / Send B
@@ -64,8 +70,9 @@ SYNTH (MOVE N)  →  FX 1  →  FX 2  →  FX 3  →  FX 4  →  Volume / Send A
 - **Volume / Send A / Send B** are the host's real strip levels
   (`shadow_move_fx_strip[]`) — volume is a 0..4 gain, the sends are 0..1. They
   sit in the block list rather than behind a `[SLOT SETTINGS]` screen because
-  they are the only slot-ish settings a Move bus has: receive/forward channel,
-  transpose and MPE are chain concepts and are omitted. **Mute/solo are absent**
+  they are the only slot-ish settings a Move bus has: transpose is a chain
+  concept and is omitted (receive/forward channel and MPE were chain concepts
+  too, and no longer exist anywhere — see the slot-settings note below). **Mute/solo are absent**
   — the strip does not participate in either yet (open Stage 1a remainder), and a
   row that reads nothing is worse than no row.
 - The master **volume knob is CLAIMED**, as it is for a chain, and moves the bus
@@ -141,12 +148,20 @@ must cover fx3/fx4 — the fork has known sites that only handle fx1/fx2.
 
 ## Slot resolution
 
-`schSlotForTrack(t)` — a direct read of the track's addressed slot
-(`S.trackSlot[t]`, DSP `tN_slot`; P5 slot-addressed dispatch). The old
-receive-channel matching — its "All"-channel layering and its "no matching
-slot" failure mode — is gone; every Schwung-routed track always resolves.
-The slot is set per track in the track menu (Slot A–D) or the remote UI's
-track gear.
+`schSlotForTrack(t)` returns **`slotIndex(t)`** — a track owns its instrument,
+so the chain it plays IS its own index. There is nothing to resolve, nothing
+stored that could disagree, and no way to express an ambiguous assignment.
+`slotIndex` survives only as a BOUND (it clamps if a build's slot count is ever
+below its track count), never as a resolution step.
+
+History, because both retired mechanisms left traces in older comments:
+- **Receive-channel matching** — its "All"-channel layering and its "no matching
+  slot" failure mode — died with P5's slot-addressed dispatch.
+- **`tN_slot` / `S.trackSlot`** — a per-track CHOICE, set in the track menu as
+  `Slot A–D` — was retired on 2026-08-11 with `552a11d9`
+  (`docs/working/TRACK_OWNS_ITS_INSTRUMENT.md`). It is no longer settable,
+  persisted, or mirrored in JS. A stored `t%d_sl` in an old project is ignored,
+  which IS that spec's migration.
 
 ## Knob feel
 
