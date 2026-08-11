@@ -3172,9 +3172,25 @@ function renderBuses() {
         S.busIdx, { topY: 16 });
 }
 
+/* What to CALL the block being edited.
+ *
+ * ⚠ Not `BLOCKS[S.blockIdx].label`. On a bus, S.comp is a prefixed component
+ * (`move_fx:2:fx3`, `master_fx:fx1`) that appears nowhere in BLOCKS, so
+ * blockIdx keeps whatever a TRACK context left in it — which is how a Move
+ * bus's FX 3 picker came up headed "SYNTH - PICK" on hardware. Derive the label
+ * from the component actually open. */
+function blockLabel() {
+    if (S.bus) {
+        const tail = String(S.comp || '').split(':').pop();
+        const n = /^fx(\d+)$/.exec(tail);
+        return n ? ('FX ' + n[1]) : tail.toUpperCase();
+    }
+    return BLOCKS[S.blockIdx].label;
+}
+
 function renderBrowse() {
     clear_screen();
-    drawKitHeader(BLOCKS[S.blockIdx].label + ' - PICK', false);
+    drawKitHeader(blockLabel() + ' - PICK', false);
     drawKitList(S.browseList.map(m => String(m.name)), S.browseIdx, {});
 }
 
@@ -3301,7 +3317,7 @@ function renderEdit() {
     /* Hosted modules draw themselves, INCLUDING their own header and picker. */
     if (S.hosted && renderHosted()) return;
     if (!S.banks.length) {
-        drawKitHeader(BLOCKS[S.blockIdx].label, false);
+        drawKitHeader(blockLabel(), false);
         centreText(28, S.moduleId ? 'NO PARAMS' : 'EMPTY');
         centreText(40, S.moduleId ? 'CLICK FOR PRESETS' : 'CLICK TO PICK');
         return;
@@ -3324,7 +3340,7 @@ function renderEdit() {
 }
 
 function modLabel() {
-    return String(S.moduleId || BLOCKS[S.blockIdx].label).toUpperCase();
+    return String(S.moduleId || blockLabel()).toUpperCase();
 }
 
 /* Shared list body for the row-based preset screens (thin drawKitList shim). */

@@ -1167,7 +1167,11 @@ export function _tickImpl() {
          * Co-run entry lives out here so ui_sound need not import ui_corun. */
         {
             const _cr = soundConsumeCoRunRequest();
-            if (_cr >= 0) { soundExit(); enterMoveNativeCoRun(_cr); }
+            if (_cr >= 0) {
+                console.log('[sound] move synth row -> co-run track ' + _cr);
+                soundExit();
+                enterMoveNativeCoRun(_cr);
+            }
         }
         /* ---- sound mode: reconcile with the world it does not own ----
          *
