@@ -36,6 +36,66 @@ void state_init(const state_host_t *host)
     host_solo_count = host->solo_count;
 }
 
+
+/* ============================================================================
+ * JSON array parsing — count-agnostic
+ * ============================================================================ */
+
+/* Parse "[a, b, c, ...]" starting at `pos` (which must point at the '['), into
+ * out[], at most `max` entries. Returns how many were parsed.
+ *
+ * ⚠ These replace a family of `sscanf(pos, "[%f, %f, %f, %f]", ...) == 4` reads
+ * whose failure mode was invisible. At more than four slots the writer emits N
+ * values and that format consumes the first four **and still matches**, so every
+ * slot past the fourth silently reverted to its default on every load — no
+ * error, no version mismatch, no file that fails to parse. There is no count at
+ * which it breaks loudly, which is why `tests/host/test_slot_state_roundtrip.sh`
+ * exists and was written before the count moved.
+ *
+ * A PARTIAL array is deliberately APPLIED rather than rejected: a config written
+ * by an older build with fewer slots restores the slots it has and leaves the
+ * rest at their defaults, which is exactly the migration behaviour we want. */
+static int parse_float_array(const char *pos, float *out, int max)
+{
+    if (!pos || *pos != '[') return 0;
+    const char *p = pos + 1;
+    int n = 0;
+    while (n < max) {
+        char *end = NULL;
+        float v = strtof(p, &end);
+        if (end == p) break;              /* no number here — done */
+        out[n++] = v;
+        p = end;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p != ',') break;
+        p++;
+    }
+    return n;
+}
+
+static int parse_int_array(const char *pos, int *out, int max)
+{
+    if (!pos || *pos != '[') return 0;
+    const char *p = pos + 1;
+    int n = 0;
+    while (n < max) {
+        char *end = NULL;
+        long v = strtol(p, &end, 10);
+        if (end == p) break;
+        out[n++] = (int)v;
+        p = end;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p != ',') break;
+        p++;
+    }
+    return n;
+}
+
+static float clampf(float v, float lo, float hi)
+{
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
 /* ============================================================================
  * shadow_save_state - Write slot state to shadow_chain_config.json
  * ============================================================================ */
@@ -203,54 +263,29 @@ void shadow_save_state(void)
     if (link_audio_routing_saved >= 0) {
         fprintf(f, "  \"link_audio_routing\": %s,\n", link_audio_routing_saved ? "true" : "false");
     }
+    /* Every per-slot array is emitted by this one shape, over the slot count,
+     * rather than unrolled with an explicit deref per slot. The unrolled form
+     * was correct only while the count was 4 and silently dropped the rest the
+     * moment it moved — and its reader could not tell the difference. */
+#define EMIT_SLOT_ARRAY(key, fmt, member) do {                              \
+        fprintf(f, "  \"" key "\": [");                                      \
+        for (int _i = 0; _i < SHADOW_CHAIN_INSTANCES; _i++)                 \
+            fprintf(f, "%s" fmt, _i ? ", " : "", host_chain_slots[_i].member); \
+        fprintf(f, "],\n");                                                 \
+    } while (0)
+
     /* Volume is always the real user-set level; mute/solo are separate flags */
-    fprintf(f, "  \"slot_volumes\": [%.3f, %.3f, %.3f, %.3f],\n",
-            host_chain_slots[0].volume,
-            host_chain_slots[1].volume,
-            host_chain_slots[2].volume,
-            host_chain_slots[3].volume);
+    EMIT_SLOT_ARRAY("slot_volumes", "%.3f", volume);
     /* Sound-generator level, separate from the bus fader above. Written
      * unconditionally; readers that predate this key default it to unity. */
-    fprintf(f, "  \"slot_synth_volumes\": [%.3f, %.3f, %.3f, %.3f],\n",
-            host_chain_slots[0].synth_volume,
-            host_chain_slots[1].synth_volume,
-            host_chain_slots[2].synth_volume,
-            host_chain_slots[3].synth_volume);
-    fprintf(f, "  \"slot_send_a\": [%.3f, %.3f, %.3f, %.3f],\n",
-            host_chain_slots[0].send_a,
-            host_chain_slots[1].send_a,
-            host_chain_slots[2].send_a,
-            host_chain_slots[3].send_a);
-    fprintf(f, "  \"slot_send_b\": [%.3f, %.3f, %.3f, %.3f],\n",
-            host_chain_slots[0].send_b,
-            host_chain_slots[1].send_b,
-            host_chain_slots[2].send_b,
-            host_chain_slots[3].send_b);
-    fprintf(f, "  \"slot_channels\": [%d, %d, %d, %d],\n",
-            host_chain_slots[0].channel,
-            host_chain_slots[1].channel,
-            host_chain_slots[2].channel,
-            host_chain_slots[3].channel);
-    fprintf(f, "  \"slot_forward_channels\": [%d, %d, %d, %d],\n",
-            host_chain_slots[0].forward_channel,
-            host_chain_slots[1].forward_channel,
-            host_chain_slots[2].forward_channel,
-            host_chain_slots[3].forward_channel);
-    fprintf(f, "  \"slot_transpose\": [%d, %d, %d, %d],\n",
-            host_chain_slots[0].transpose,
-            host_chain_slots[1].transpose,
-            host_chain_slots[2].transpose,
-            host_chain_slots[3].transpose);
-    fprintf(f, "  \"slot_muted\": [%d, %d, %d, %d],\n",
-            host_chain_slots[0].muted,
-            host_chain_slots[1].muted,
-            host_chain_slots[2].muted,
-            host_chain_slots[3].muted);
-    fprintf(f, "  \"slot_soloed\": [%d, %d, %d, %d],\n",
-            host_chain_slots[0].soloed,
-            host_chain_slots[1].soloed,
-            host_chain_slots[2].soloed,
-            host_chain_slots[3].soloed);
+    EMIT_SLOT_ARRAY("slot_synth_volumes", "%.3f", synth_volume);
+    EMIT_SLOT_ARRAY("slot_send_a", "%.3f", send_a);
+    EMIT_SLOT_ARRAY("slot_send_b", "%.3f", send_b);
+    EMIT_SLOT_ARRAY("slot_channels", "%d", channel);
+    EMIT_SLOT_ARRAY("slot_forward_channels", "%d", forward_channel);
+    EMIT_SLOT_ARRAY("slot_transpose", "%d", transpose);
+    EMIT_SLOT_ARRAY("slot_muted", "%d", muted);
+    EMIT_SLOT_ARRAY("slot_soloed", "%d", soloed);
     fprintf(f, "  \"send_return_level\": [%.3f, %.3f],\n",
             shadow_send_return_level[0],
             shadow_send_return_level[1]);
@@ -260,18 +295,13 @@ void shadow_save_state(void)
     chown_to_ableton(SHADOW_CONFIG_PATH);
 
     char msg[320];
-    snprintf(msg, sizeof(msg), "Saved slots: ch=[%d,%d,%d,%d] fwd=[%d,%d,%d,%d] vol=[%.2f,%.2f,%.2f,%.2f] muted=[%d,%d,%d,%d] soloed=[%d,%d,%d,%d]",
-             host_chain_slots[0].channel, host_chain_slots[1].channel,
-             host_chain_slots[2].channel, host_chain_slots[3].channel,
-             host_chain_slots[0].forward_channel, host_chain_slots[1].forward_channel,
-             host_chain_slots[2].forward_channel, host_chain_slots[3].forward_channel,
-             host_chain_slots[0].volume, host_chain_slots[1].volume,
-             host_chain_slots[2].volume, host_chain_slots[3].volume,
-             host_chain_slots[0].muted, host_chain_slots[1].muted,
-             host_chain_slots[2].muted, host_chain_slots[3].muted,
-             host_chain_slots[0].soloed, host_chain_slots[1].soloed,
-             host_chain_slots[2].soloed, host_chain_slots[3].soloed);
+    /* One summary line, not a per-slot dump: the log is read to confirm a save
+     * happened, and an 8-slot unrolled format string is a maintenance trap of
+     * exactly the kind this commit is removing. */
+    snprintf(msg, sizeof(msg), "Saved %d slots (vol/sends/channels/mute/solo)",
+             SHADOW_CHAIN_INSTANCES);
     if (host_log) host_log(msg);
+#undef EMIT_SLOT_ARRAY
 }
 
 /* ============================================================================
@@ -320,20 +350,13 @@ void shadow_load_state(void)
     if (pos) {
         pos = strchr(pos, '[');
         if (pos) {
-            float v0, v1, v2, v3;
-            if (sscanf(pos, "[%f, %f, %f, %f]", &v0, &v1, &v2, &v3) == 4) {
-                if (v0 < 0.0f) v0 = 0.0f; if (v0 > 4.0f) v0 = 4.0f;
-                if (v1 < 0.0f) v1 = 0.0f; if (v1 > 4.0f) v1 = 4.0f;
-                if (v2 < 0.0f) v2 = 0.0f; if (v2 > 4.0f) v2 = 4.0f;
-                if (v3 < 0.0f) v3 = 0.0f; if (v3 > 4.0f) v3 = 4.0f;
-                host_chain_slots[0].volume = v0;
-                host_chain_slots[1].volume = v1;
-                host_chain_slots[2].volume = v2;
-                host_chain_slots[3].volume = v3;
-
+            float v[SHADOW_CHAIN_INSTANCES];
+            int n = parse_float_array(pos, v, SHADOW_CHAIN_INSTANCES);
+            for (int i = 0; i < n; i++)
+                host_chain_slots[i].volume = clampf(v[i], 0.0f, 4.0f);
+            if (n) {
                 char msg[128];
-                snprintf(msg, sizeof(msg), "Loaded slot volumes: [%.2f, %.2f, %.2f, %.2f]",
-                         v0, v1, v2, v3);
+                snprintf(msg, sizeof(msg), "Loaded %d slot volumes", n);
                 if (host_log) host_log(msg);
             }
         }
@@ -349,17 +372,10 @@ void shadow_load_state(void)
         if (spos) {
             spos = strchr(spos, '[');
             if (spos) {
-                float s0, s1, s2, s3;
-                if (sscanf(spos, "[%f, %f, %f, %f]", &s0, &s1, &s2, &s3) == 4) {
-                    if (s0 < 0.0f) s0 = 0.0f; if (s0 > 4.0f) s0 = 4.0f;
-                    if (s1 < 0.0f) s1 = 0.0f; if (s1 > 4.0f) s1 = 4.0f;
-                    if (s2 < 0.0f) s2 = 0.0f; if (s2 > 4.0f) s2 = 4.0f;
-                    if (s3 < 0.0f) s3 = 0.0f; if (s3 > 4.0f) s3 = 4.0f;
-                    host_chain_slots[0].synth_volume = s0;
-                    host_chain_slots[1].synth_volume = s1;
-                    host_chain_slots[2].synth_volume = s2;
-                    host_chain_slots[3].synth_volume = s3;
-                }
+                float sv[SHADOW_CHAIN_INSTANCES];
+                int n = parse_float_array(spos, sv, SHADOW_CHAIN_INSTANCES);
+                for (int i = 0; i < n; i++)
+                    host_chain_slots[i].synth_volume = clampf(sv[i], 0.0f, 4.0f);
             }
         }
     }
@@ -370,17 +386,10 @@ void shadow_load_state(void)
     if (sa_pos) {
         sa_pos = strchr(sa_pos, '[');
         if (sa_pos) {
-            float s0, s1, s2, s3;
-            if (sscanf(sa_pos, "[%f, %f, %f, %f]", &s0, &s1, &s2, &s3) == 4) {
-                if (s0 < 0.0f) s0 = 0.0f; if (s0 > 1.0f) s0 = 1.0f;
-                if (s1 < 0.0f) s1 = 0.0f; if (s1 > 1.0f) s1 = 1.0f;
-                if (s2 < 0.0f) s2 = 0.0f; if (s2 > 1.0f) s2 = 1.0f;
-                if (s3 < 0.0f) s3 = 0.0f; if (s3 > 1.0f) s3 = 1.0f;
-                host_chain_slots[0].send_a = s0;
-                host_chain_slots[1].send_a = s1;
-                host_chain_slots[2].send_a = s2;
-                host_chain_slots[3].send_a = s3;
-            }
+            float sv[SHADOW_CHAIN_INSTANCES];
+            int n = parse_float_array(sa_pos, sv, SHADOW_CHAIN_INSTANCES);
+            for (int i = 0; i < n; i++)
+                host_chain_slots[i].send_a = clampf(sv[i], 0.0f, 1.0f);
         }
     }
 
@@ -390,17 +399,10 @@ void shadow_load_state(void)
     if (sb_pos) {
         sb_pos = strchr(sb_pos, '[');
         if (sb_pos) {
-            float s0, s1, s2, s3;
-            if (sscanf(sb_pos, "[%f, %f, %f, %f]", &s0, &s1, &s2, &s3) == 4) {
-                if (s0 < 0.0f) s0 = 0.0f; if (s0 > 1.0f) s0 = 1.0f;
-                if (s1 < 0.0f) s1 = 0.0f; if (s1 > 1.0f) s1 = 1.0f;
-                if (s2 < 0.0f) s2 = 0.0f; if (s2 > 1.0f) s2 = 1.0f;
-                if (s3 < 0.0f) s3 = 0.0f; if (s3 > 1.0f) s3 = 1.0f;
-                host_chain_slots[0].send_b = s0;
-                host_chain_slots[1].send_b = s1;
-                host_chain_slots[2].send_b = s2;
-                host_chain_slots[3].send_b = s3;
-            }
+            float sv[SHADOW_CHAIN_INSTANCES];
+            int n = parse_float_array(sb_pos, sv, SHADOW_CHAIN_INSTANCES);
+            for (int i = 0; i < n; i++)
+                host_chain_slots[i].send_b = clampf(sv[i], 0.0f, 1.0f);
         }
     }
 
@@ -444,16 +446,12 @@ void shadow_load_state(void)
     if (ch_pos) {
         ch_pos = strchr(ch_pos, '[');
         if (ch_pos) {
-            int c0, c1, c2, c3;
-            if (sscanf(ch_pos, "[%d, %d, %d, %d]", &c0, &c1, &c2, &c3) == 4) {
-                host_chain_slots[0].channel = c0;
-                host_chain_slots[1].channel = c1;
-                host_chain_slots[2].channel = c2;
-                host_chain_slots[3].channel = c3;
-
+            int c[SHADOW_CHAIN_INSTANCES];
+            int n = parse_int_array(ch_pos, c, SHADOW_CHAIN_INSTANCES);
+            for (int i = 0; i < n; i++) host_chain_slots[i].channel = c[i];
+            if (n) {
                 char msg[128];
-                snprintf(msg, sizeof(msg), "Loaded slot channels: [%d, %d, %d, %d]",
-                         c0, c1, c2, c3);
+                snprintf(msg, sizeof(msg), "Loaded %d slot channels", n);
                 if (host_log) host_log(msg);
             }
         }
@@ -465,16 +463,12 @@ void shadow_load_state(void)
     if (fwd_pos) {
         fwd_pos = strchr(fwd_pos, '[');
         if (fwd_pos) {
-            int f0, f1, f2, f3;
-            if (sscanf(fwd_pos, "[%d, %d, %d, %d]", &f0, &f1, &f2, &f3) == 4) {
-                host_chain_slots[0].forward_channel = f0;
-                host_chain_slots[1].forward_channel = f1;
-                host_chain_slots[2].forward_channel = f2;
-                host_chain_slots[3].forward_channel = f3;
-
+            int fw[SHADOW_CHAIN_INSTANCES];
+            int n = parse_int_array(fwd_pos, fw, SHADOW_CHAIN_INSTANCES);
+            for (int i = 0; i < n; i++) host_chain_slots[i].forward_channel = fw[i];
+            if (n) {
                 char msg[128];
-                snprintf(msg, sizeof(msg), "Loaded slot fwd channels: [%d, %d, %d, %d]",
-                         f0, f1, f2, f3);
+                snprintf(msg, sizeof(msg), "Loaded %d slot fwd channels", n);
                 if (host_log) host_log(msg);
             }
         }
@@ -486,21 +480,17 @@ void shadow_load_state(void)
     if (tr_pos) {
         tr_pos = strchr(tr_pos, '[');
         if (tr_pos) {
-            int t0, t1, t2, t3;
-            if (sscanf(tr_pos, "[%d, %d, %d, %d]", &t0, &t1, &t2, &t3) == 4) {
-                int *vals[4] = {&t0, &t1, &t2, &t3};
-                for (int i = 0; i < 4; i++) {
-                    if (*vals[i] < -12) *vals[i] = -12;
-                    if (*vals[i] > 12) *vals[i] = 12;
-                }
-                host_chain_slots[0].transpose = t0;
-                host_chain_slots[1].transpose = t1;
-                host_chain_slots[2].transpose = t2;
-                host_chain_slots[3].transpose = t3;
-
+            int tr[SHADOW_CHAIN_INSTANCES];
+            int n = parse_int_array(tr_pos, tr, SHADOW_CHAIN_INSTANCES);
+            for (int i = 0; i < n; i++) {
+                int v = tr[i];
+                if (v < -12) v = -12;
+                if (v > 12) v = 12;
+                host_chain_slots[i].transpose = v;
+            }
+            if (n) {
                 char msg[128];
-                snprintf(msg, sizeof(msg), "Loaded slot transpose: [%d, %d, %d, %d]",
-                         t0, t1, t2, t3);
+                snprintf(msg, sizeof(msg), "Loaded %d slot transpose", n);
                 if (host_log) host_log(msg);
             }
         }
@@ -512,15 +502,12 @@ void shadow_load_state(void)
     if (muted_pos) {
         muted_pos = strchr(muted_pos, '[');
         if (muted_pos) {
-            int m0, m1, m2, m3;
-            if (sscanf(muted_pos, "[%d, %d, %d, %d]", &m0, &m1, &m2, &m3) == 4) {
-                host_chain_slots[0].muted = m0;
-                host_chain_slots[1].muted = m1;
-                host_chain_slots[2].muted = m2;
-                host_chain_slots[3].muted = m3;
+            int m[SHADOW_CHAIN_INSTANCES];
+            int n = parse_int_array(muted_pos, m, SHADOW_CHAIN_INSTANCES);
+            for (int i = 0; i < n; i++) host_chain_slots[i].muted = m[i];
+            if (n) {
                 char msg[128];
-                snprintf(msg, sizeof(msg), "Loaded slot muted: [%d, %d, %d, %d]",
-                         m0, m1, m2, m3);
+                snprintf(msg, sizeof(msg), "Loaded %d slot muted", n);
                 if (host_log) host_log(msg);
             }
         }
@@ -533,16 +520,15 @@ void shadow_load_state(void)
     if (soloed_pos) {
         soloed_pos = strchr(soloed_pos, '[');
         if (soloed_pos) {
-            int s0, s1, s2, s3;
-            if (sscanf(soloed_pos, "[%d, %d, %d, %d]", &s0, &s1, &s2, &s3) == 4) {
-                int sol[4] = {s0, s1, s2, s3};
-                for (int i = 0; i < 4; i++) {
-                    host_chain_slots[i].soloed = sol[i];
-                    if (sol[i]) (*host_solo_count)++;
-                }
+            int sol[SHADOW_CHAIN_INSTANCES];
+            int n = parse_int_array(soloed_pos, sol, SHADOW_CHAIN_INSTANCES);
+            for (int i = 0; i < n; i++) {
+                host_chain_slots[i].soloed = sol[i];
+                if (sol[i]) (*host_solo_count)++;
+            }
+            if (n) {
                 char msg[128];
-                snprintf(msg, sizeof(msg), "Loaded slot soloed: [%d, %d, %d, %d]",
-                         s0, s1, s2, s3);
+                snprintf(msg, sizeof(msg), "Loaded %d slot soloed", n);
                 if (host_log) host_log(msg);
             }
         }
@@ -564,7 +550,7 @@ void shadow_load_state(void)
             SCHWUNG_INSTALL_DIR "/mute_solo_reset_v1_done";
         if (access(reset_flag, F_OK) != 0) {
             int had_state = 0;
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++) {
                 if (host_chain_slots[i].muted || host_chain_slots[i].soloed)
                     had_state = 1;
                 host_chain_slots[i].muted = 0;

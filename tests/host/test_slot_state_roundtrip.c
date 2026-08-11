@@ -180,6 +180,46 @@ int main(void)
     CHECK(solo_count_test == want_solo,
           "solo_count: got %d want %d", solo_count_test, want_solo);
 
+    /* MIGRATION: a config written by a build with FEWER slots. The short array
+     * must restore the slots it has and leave the rest at their defaults —
+     * never alias, never abandon the whole array. This is what makes an
+     * already-saved 4-slot set load correctly into an 8-slot build, and it is
+     * the behaviour the old `sscanf(...) == 4` reader could not express (it was
+     * all-or-nothing at exactly four). Written with two values so the case is
+     * exercised at any slot count >= 3. */
+    {
+        FILE *cf = fopen(SCHWUNG_INSTALL_DIR "/shadow_chain_config.json", "w");
+        CHECK(cf != NULL, "migration: could not write a short config");
+        if (cf) {
+            fprintf(cf, "{\n  \"master_fx\": \"\",\n"
+                        "  \"slot_volumes\": [0.250, 0.750],\n"
+                        "  \"slot_channels\": [5, 6]\n}\n");
+            fclose(cf);
+        }
+        wipe_slots();
+        for (int s = 0; s < SHADOW_CHAIN_INSTANCES; s++) {
+            shadow_chain_slots_test[s].volume  = 1.0f;    /* the real default */
+            shadow_chain_slots_test[s].channel = s;
+        }
+        shadow_load_state();
+        CHECK(near(shadow_chain_slots_test[0].volume, 0.25f),
+              "migration: slot 0 volume got %.3f want 0.250",
+              shadow_chain_slots_test[0].volume);
+        CHECK(near(shadow_chain_slots_test[1].volume, 0.75f),
+              "migration: slot 1 volume got %.3f want 0.750",
+              shadow_chain_slots_test[1].volume);
+        CHECK(shadow_chain_slots_test[0].channel == 5, "migration: slot 0 channel");
+        CHECK(shadow_chain_slots_test[1].channel == 6, "migration: slot 1 channel");
+        for (int s = 2; s < SHADOW_CHAIN_INSTANCES; s++) {
+            CHECK(near(shadow_chain_slots_test[s].volume, 1.0f),
+                  "migration: slot %d volume should keep its default, got %.3f",
+                  s, shadow_chain_slots_test[s].volume);
+            CHECK(shadow_chain_slots_test[s].channel == s,
+                  "migration: slot %d channel should keep its default, got %d",
+                  s, shadow_chain_slots_test[s].channel);
+        }
+    }
+
     if (failures == 0) {
         printf("  ok   — all %d slots survive save/load, every array\n",
                SHADOW_CHAIN_INSTANCES);
