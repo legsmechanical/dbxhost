@@ -63,4 +63,12 @@ grep -q "claimVolume(S.slot);" ui/ui_sound.mjs \
     && ok "the Move flavour CLAIMS the volume knob" \
     || bad "soundEnterMove no longer claims the knob — Move's master will move too"
 
+# 7. Retarget keeps your place ONLY when you were inside a block's editor. Any
+#    other origin (picker, slot settings, a preset list) must land on the block
+#    list — otherwise switching tracks drops you a level deeper than you were,
+#    and the two flavours disagree about it.
+grep -q "const keepPlace = !leftMoveBus && S.view === VIEW_EDIT;" ui/ui_sound.mjs \
+    && ok "retarget keeps your place only from inside a block editor" \
+    || bad "the retarget landing rule changed — picker vs editor asymmetry is back"
+
 exit $fail

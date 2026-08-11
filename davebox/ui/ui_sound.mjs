@@ -557,6 +557,20 @@ export function soundRetarget(track, slot) {
      * old track's Move header. */
     if (S.bus && S.bus.kind === 'global') { S.dirty = true; return; }
     const leftMoveBus = !!S.bus;
+    /* WHERE you were, read before anything below moves it.
+     *
+     * "Keep your place" only ever meant something for one case: you were INSIDE
+     * a block's editor, and the reason to switch tracks mid-edit is to compare
+     * the same block across two of them. From anywhere else — the picker, slot
+     * settings, a preset list — there is no place inside a block to keep, and
+     * reopening one drops you a level DEEPER than you were.
+     *
+     * That distinction was missing: chain -> chain reopened the block whenever
+     * the new track had one loaded, so switching from the picker landed on the
+     * synth canvas while the same switch off a Move bus landed on the picker.
+     * Josh caught the asymmetry on hardware, 2026-08-11. Cross-flavour is
+     * always the picker anyway — the rows are not the same rows. */
+    const keepPlace = !leftMoveBus && S.view === VIEW_EDIT;
     if (leftMoveBus) {
         /* Leaving a Move bus: nothing about WHERE you were transfers, because
          * the rows aren't the same rows. Land on the new track's picker, on its
@@ -603,7 +617,7 @@ export function soundRetarget(track, slot) {
     S.blockNames = [];
     S.presetMsg = '';
     S.pendingDiscover = 0;
-    S.pendingAction = { t: 'retarget', picker: leftMoveBus };
+    S.pendingAction = { t: 'retarget', picker: !keepPlace };
     /* The pending level already landed in flushForRetarget, against the context
      * it was turned in. The claim itself stays up — we're still in sound mode. */
     flushVolumeSave();
@@ -2151,11 +2165,9 @@ function commitBaked() {
  * something loaded there; otherwise shows the chain so you can choose. */
 /* `picker` forces the block LIST instead of reopening the block you were on.
  *
- * Keeping your place is right for chain -> chain (you were inside a block, and
- * comparing the same block across two tracks is the usual reason to switch).
- * Coming off a MOVE bus you were on the picker — there is no "place" inside a
- * block to keep — so reopening the new track's synth canvas drops you a level
- * deeper than you were. Josh, hardware, 2026-08-11. */
+ * Set unless you were genuinely INSIDE a block's editor on a chain slot — see
+ * `keepPlace` in soundRetarget for why that is the only case where reopening
+ * one is what you asked for. */
 function retargetOpen(picker) {
     refreshBlockNames();
     if (!picker && engineLoadedModule(S.slot, S.comp)) {
