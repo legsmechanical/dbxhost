@@ -18,11 +18,19 @@
  */
 
 import { S, conductorTrackIdx } from './ui_state.mjs';
-import { slotIndex } from './ui_engine.mjs';
+import { slotIndex, DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_TICKS, PAD_MODE_CONDUCT } from './ui_constants.mjs';
 
-const EXPORT_MODULE_DIR = '/data/UserData/schwung/modules/tools/davebox';
+/* Our own module directory — where build.sh/build_sound.sh put pack.py and the
+ * JSON templates. It MUST follow the build's module id: SA ships as
+ * `davebox-sound`, Legacy as `davebox`, and a test build gets its own id again.
+ * Hardcoding `davebox` made every asset read and the pack.py invocation below
+ * point at a directory that does not exist under SA. Injected by esbuild the
+ * same way SEQ8_STATE_PREFIX is; the fallback is Legacy's id, which is the one
+ * build path that does not inject it. */
+const MODULE_ID = (typeof DAVEBOX_MODULE_ID === 'string') ? DAVEBOX_MODULE_ID : 'davebox';
+const EXPORT_MODULE_DIR = '/data/UserData/schwung/modules/tools/' + MODULE_ID;
 const EXPORT_OUT_DIR    = '/data/UserData/schwung/davebox-exports';
 /* Scratch workspace nested under the exports dir (keeps the schwung folder
  * uncluttered); created per export and removed afterward. */
@@ -35,7 +43,12 @@ const EXPORT_RENDER_PATH = EXPORT_STAGING + '/render.txt';
 
 /* Source-side reads for route-aware instrument mapping (Phase 2). */
 const EXPORT_SETS_BASE_DIR    = '/data/UserData/UserLibrary/Sets';
-const CHAIN_CONFIG_PATH = '/data/UserData/schwung/shadow_chain_config.json';
+/* ⚠ The RUNNING host's chain config, not the stock install's. shadow_chain_config.json
+ * is per-install private state (standalone/config.sh DBX_PRIVATE_STATE), so the
+ * stock copy belongs to native Schwung sessions and drifts independently — on
+ * hardware the two differed by 500 bytes and half an hour. Reading the stock one
+ * mapped instruments from a chain configuration this session never had. */
+const CHAIN_CONFIG_PATH = DAVEBOX_HOST_DIR + '/shadow_chain_config.json';
 
 /* Track route values (see fmtRoute in ui_constants). */
 const ROUTE_SCHWUNG = 0;

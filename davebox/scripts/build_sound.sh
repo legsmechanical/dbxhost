@@ -52,6 +52,7 @@ if [ -z "$SKIP_BUNDLE" ]; then
         --external:'/data/UserData/schwung/*' \
         --external:os \
         --define:SEQ8_STATE_PREFIX="\"${STATE_PREFIX}\"" \
+        --define:DAVEBOX_MODULE_ID="\"${MODULE_ID}\"" \
         --format=esm \
         --outfile="dist/${MODULE_ID}/ui.js" \
         --log-level=warning
