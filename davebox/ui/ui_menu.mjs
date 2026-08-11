@@ -21,8 +21,8 @@ import {
 
 import {
     PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-    fmtNA, fmtVelOverride, fmtInstr, fmtMidiTo, midiToOptions,
-    INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI, INSTR_OPTIONS,
+    fmtNA, fmtVelOverride, fmtInstr, instrOptions,
+    INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK,
     NOTE_KEYS, SCALE_NAMES
 } from './ui_constants.mjs';
 
@@ -47,78 +47,71 @@ import { xposePreviewSet } from './ui_xpose.mjs';
 
 function buildGlobalMenuItems() {
     return [
-        /* ---- Instrument: the one place a track's destination is expressed ----
+        /* ---- Instrument: the ONE place a track's destination is expressed ----
          *
-         * Replaces `Channel`, `Slot` and `Route` (TRACK_OWNS_ITS_INSTRUMENT.md).
-         * A track OWNS its instrument, so there is nothing to pair up: picking
-         * `Move 3` sets the route AND the channel that addresses Move's third
-         * instrument, and picking `Schwung` plays this track's own chain. The
-         * slot is no longer a user-facing concept — the DSP still carries
-         * `tN_slot`, and it is the track's own index.
+         * Replaces `Channel`, `Slot` and `Route`, and absorbs `MIDI to`
+         * (TRACK_OWNS_ITS_INSTRUMENT.md). A track OWNS its instrument, so there
+         * is nothing to pair up and nothing that can half-match: `Move 3` sets
+         * the route AND the channel that addresses Move's third instrument;
+         * `MIDI Ch 5` sends out USB-A on channel 5; `Track 2` plays track 2's
+         * instrument.
+         *
+         * ⚠ ONE row on purpose. `MIDI to` was briefly a second row shown only on
+         * MIDI tracks, and it did not appear when you switched to MIDI — the
+         * menu list is built on OPEN, so a row that becomes applicable while the
+         * menu is up cannot show until it is reopened. Do not reintroduce a
+         * conditional row here for the same reason.
          *
          * Conductor drives transposition and emits nothing, so the row is inert
          * and shows '-' there, exactly as `Route` did. */
         createEnum('Instr', {
             get: function() {
                 const t = S.activeTrack;
-                if (S.trackRoute[t] === 2) return INSTR_MIDI;
+                if (S.trackRoute[t] === 2) {
+                    const mt = S.trackMidiTo[t] | 0;
+                    if (mt > 0) return INSTR_TRACK + (mt - 1);
+                    return INSTR_MIDI_CH + (((S.trackChannel[t] | 0) - 1) & 0x0F);
+                }
                 if (S.trackRoute[t] !== 1) return INSTR_SCHWUNG;
-                /* Move: the channel IS the instrument. Clamp rather than
-                 * invent a value the row cannot show — a Move-routed track on
-                 * channel 5+ addresses an instrument Move does not have. */
+                /* Move: the channel IS the instrument. Clamp rather than invent
+                 * a value the row cannot show — a Move-routed track on channel
+                 * 5+ addresses an instrument Move does not have. */
                 const ch = (S.trackChannel[t] | 0) - 1;
                 return ch < 0 ? 0 : (ch > INSTR_MOVE_MAX ? INSTR_MOVE_MAX : ch);
             },
             set: function(v) {
                 const t = S.activeTrack;
                 if (S.trackPadMode[t] === PAD_MODE_CONDUCT) return;
-                if (v === INSTR_SCHWUNG)   { applyTrackConfig(t, 'route', 0); return; }
-                if (v === INSTR_MIDI)      { applyTrackConfig(t, 'route', 2); return; }
-                /* Channel FIRST: applyTrackConfig('route') normalises aftertouch
-                 * and re-derives Link Audio routing off the new route, so the
-                 * channel it will be read against must already be the new one. */
-                applyTrackConfig(t, 'channel', (v | 0) + 1);
+                v = v | 0;
+                if (v === INSTR_SCHWUNG) { applyTrackConfig(t, 'route', 0); return; }
+                if (v >= INSTR_TRACK) {
+                    /* Play another track's instrument. Both halves are written:
+                     * leaving the other behind is what lets a stale target
+                     * outlive the choice that set it and keep stealing notes. */
+                    applyTrackConfig(t, 'midi_to', v - INSTR_TRACK + 1);
+                    applyTrackConfig(t, 'route', 2);
+                    return;
+                }
+                if (v >= INSTR_MIDI_CH) {
+                    applyTrackConfig(t, 'midi_to', 0);
+                    applyTrackConfig(t, 'channel', v - INSTR_MIDI_CH + 1);
+                    applyTrackConfig(t, 'route', 2);
+                    return;
+                }
+                /* Move N. Channel FIRST: applyTrackConfig('route') re-derives
+                 * Link Audio routing and normalises aftertouch against the
+                 * channel it finds, so that must already be the new one. */
+                applyTrackConfig(t, 'midi_to', 0);
+                applyTrackConfig(t, 'channel', v + 1);
                 applyTrackConfig(t, 'route', 1);
             },
-            options: INSTR_OPTIONS,
+            /* Recomputed each menu open, like AftTch: which tracks are eligible
+             * targets depends on THEIR instrument, which can have changed. */
+            options: instrOptions(S.trackRoute, S.activeTrack),
             format: function(v) {
                 return S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT ? fmtNA() : fmtInstr(v);
             }
         }),
-        /* Where a MIDI track's notes go: out to gear on a channel (`Ext 1-16`),
-         * or into another track's instrument (`Track 1-8`) -- which is how one
-         * instrument is played by several tracks now that a track owns its
-         * chain, expressed directionally instead of by two tracks coincidentally
-         * naming one slot.
-         *
-         * The two halves are stored separately (`channel` and `midi_to`) and
-         * joined only for this row, negative = a track target. Writing BOTH on
-         * every edit is deliberate: leaving the other half behind is what makes
-         * a stale `midi_to` outlive the choice that set it and silently keep
-         * stealing the notes. */
-        ...((S.trackRoute[S.activeTrack] === 2) ? [
-            createEnum('MIDI to', {
-                get: function() {
-                    const t = S.activeTrack;
-                    const mt = S.trackMidiTo[t] | 0;
-                    return mt > 0 ? -mt : (S.trackChannel[t] | 0);
-                },
-                set: function(v) {
-                    const t = S.activeTrack;
-                    if (S.trackPadMode[t] === PAD_MODE_CONDUCT) return;
-                    if ((v | 0) < 0) { applyTrackConfig(t, 'midi_to', -(v | 0)); return; }
-                    applyTrackConfig(t, 'midi_to', 0);
-                    applyTrackConfig(t, 'channel', v | 0);
-                },
-                /* Recomputed each menu open, like AftTch: which tracks are
-                 * eligible targets depends on THEIR instrument, which can have
-                 * changed since this menu was last built. */
-                options: midiToOptions(S.trackRoute, S.activeTrack),
-                format: function(v) {
-                    return S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT ? fmtNA() : fmtMidiTo(v);
-                }
-            })
-        ] : []),
         createEnum('Mode', {
             get: function() { return S.trackPadMode[S.activeTrack]; },
             /* DEFERRED COMMIT: scrolling only previews the selected type — set()

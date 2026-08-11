@@ -28,35 +28,38 @@ done
 #    instruments by MIDI channel, so `Move 3` must write channel 3 — and write
 #    it BEFORE the route, because applyTrackConfig('route') re-derives Link
 #    Audio routing and normalises aftertouch against the channel it finds.
-grep -q "applyTrackConfig(t, 'channel', (v | 0) + 1);" ui/ui_menu.mjs \
+grep -q "applyTrackConfig(t, 'channel', v + 1);" ui/ui_menu.mjs \
     && ok "picking Move N writes channel N (1-based)" \
     || bad "the Instrument row no longer writes the channel — Move N addresses nothing"
-if [ "$(grep -n "applyTrackConfig(t, 'channel', (v | 0) + 1);" ui/ui_menu.mjs | cut -d: -f1)" \
+if [ "$(grep -n "applyTrackConfig(t, 'channel', v + 1);" ui/ui_menu.mjs | cut -d: -f1)" \
      -lt "$(grep -n "applyTrackConfig(t, 'route', 1);" ui/ui_menu.mjs | cut -d: -f1)" ]; then
     ok "channel is written BEFORE route"
 else
     bad "route is written before channel — the derived state reads the OLD instrument"
 fi
 
-# 3. `MIDI to` is a MIDI-track row only. On any other route it would be a second
-#    channel control sitting next to the selector that owns it.
-grep -q "S.trackRoute\[S.activeTrack\] === 2) ? \[" ui/ui_menu.mjs \
-    && ok "the MIDI to row is conditional on the MIDI route" \
-    || bad "MIDI to is unconditional — a Move/Schwung track shows a routing row again"
+# 3. ONE row, never a conditional second one. `MIDI to` was briefly its own row
+#    shown only on MIDI tracks — and it did NOT appear when you switched to
+#    MIDI, because the menu list is built on OPEN, so a row that becomes
+#    applicable while the menu is up cannot show until it is reopened.
+#    (Josh, on hardware, 2026-08-11.)
+grep -q "createEnum('MIDI to'" ui/ui_menu.mjs \
+    && bad "MIDI to is a separate row again — it cannot appear when you switch to MIDI" \
+    || ok "every destination lives in the one Instr row"
+grep -q "options: instrOptions(S.trackRoute, S.activeTrack)," ui/ui_menu.mjs \
+    && ok "destinations are recomputed against live routes" \
+    || bad "the Instr option list is stale or hardcoded"
 
 # 4. `MIDI to` writes BOTH halves. The DSP stores the channel and the follow
 #    target separately; leaving the other half behind is how a stale target
 #    outlives the choice that set it and silently keeps stealing the notes.
-grep -q "applyTrackConfig(t, 'midi_to', 0);" ui/ui_menu.mjs \
-    && ok "picking an Ext channel clears the follow target" \
-    || bad "Ext no longer clears midi_to — a stale target keeps stealing the notes"
+grep -c "applyTrackConfig(t, 'midi_to', 0);" ui/ui_menu.mjs | grep -q '^2$' \
+    && ok "both non-follow destinations clear the follow target" \
+    || bad "a destination no longer clears midi_to — a stale target keeps stealing the notes"
 
 # 5. The eligible-target list is rebuilt per menu open, not captured once:
 #    whether a track is a legal target depends on ITS instrument, which can
 #    have changed since.
-grep -q "options: midiToOptions(S.trackRoute, S.activeTrack)," ui/ui_menu.mjs \
-    && ok "target list is recomputed against live routes" \
-    || bad "the MIDI to target list is stale or hardcoded"
 
 # 6. The follower's RAW path (CC / pitch bend) follows too. Notes go through
 #    the DSP and resolve there; this path does not, so without it a follower's

@@ -104,52 +104,65 @@ export function fmtGateMod(v) { return GATE_LABELS[v] || 'Off'; }
 export function fmtRoute(v)  { return v === 2 ? 'Ext' : v === 1 ? 'Move' : 'Swng'; }
 /* ---- Instrument selector (a track owns its instrument) ----
  *
- * ONE row where a track's route and its Move-instrument/MIDI-channel choice
- * used to be three (`Channel`, `Slot`, `Route`). The value is a display-level
- * enum: nothing new is stored, it is the route and the channel read together.
+ * ONE row for a track's whole destination. It replaced `Channel`, `Slot` and
+ * `Route`; as of 2026-08-11 it also absorbs `MIDI to`, which was briefly a
+ * second conditional row. Josh: "can we just put all midi routes in the main
+ * instrument param". Yes — and it removes a class of bug with it, because a
+ * conditional row only appears when the menu list is REBUILT (on open), so
+ * switching to MIDI did not reveal its channel row until you reopened the menu.
+ * A row that cannot appear late cannot be missed.
  *
- *   0-3  Move 1-4  = ROUTE_MOVE, channel 1-4 (Move addresses its four tracks
- *                    by MIDI channel, so the channel IS which instrument)
- *   4    Schwung   = ROUTE_SCHWUNG, playing this track's own chain
- *   5    MIDI      = ROUTE_EXTERNAL, sent somewhere (see the `MIDI to` row)
+ *   0-3    Move 1-4     ROUTE_MOVE, channel 1-4 (Move addresses its four
+ *                       instruments BY CHANNEL, so the channel IS the choice)
+ *   4      Schwung      ROUTE_SCHWUNG, this track's own chain
+ *   10-25  MIDI Ch 1-16 ROUTE_EXTERNAL out USB-A on that channel
+ *   30-37  Track 1-8    ROUTE_EXTERNAL playing that track's instrument
  *
- * ⚠ `S.trackChannel` is 1-BASED (the DSP stores it 0-based); Move 1 is
- * channel 1. Getting that wrong addresses the wrong Move instrument. */
-export const INSTR_MOVE_MAX = 3;      /* values 0..3 are Move 1..4 */
-export const INSTR_SCHWUNG  = 4;
-export const INSTR_MIDI     = 5;
-export const INSTR_OPTIONS  = [0, 1, 2, 3, INSTR_SCHWUNG, INSTR_MIDI];
+ * The gaps between the bands are deliberate: they leave room to extend one
+ * without renumbering the others, and a stray value lands in a gap (and formats
+ * as unknown) rather than silently meaning something else.
+ *
+ * ⚠ `S.trackChannel` is 1-BASED (the DSP stores it 0-based). */
+export const INSTR_MOVE_MAX   = 3;      /* 0..3 = Move 1..4 */
+export const INSTR_SCHWUNG    = 4;
+export const INSTR_MIDI_CH    = 10;     /* +0..15 = MIDI Ch 1..16 */
+export const INSTR_TRACK      = 30;     /* +0..7  = Track 1..8   */
+
 export function fmtInstr(v) {
+    v = v | 0;
     if (v === INSTR_SCHWUNG) return 'Schwung';
-    if (v === INSTR_MIDI)    return 'MIDI';
-    return 'Move ' + ((v | 0) + 1);
+    /* Each band is bounded at BOTH ends. An open-ended `>=` would format a
+     * stray value as a plausible destination that does not exist ("MIDI Ch 17"),
+     * which is worse than showing it is wrong. */
+    if (v >= INSTR_TRACK)   return v <= INSTR_TRACK + 7
+                                   ? 'Track ' + (v - INSTR_TRACK + 1) : '?';
+    if (v >= INSTR_MIDI_CH) return v <= INSTR_MIDI_CH + 15
+                                   ? 'MIDI Ch ' + (v - INSTR_MIDI_CH + 1) : '?';
+    if (v >= 0 && v <= INSTR_MOVE_MAX) return 'Move ' + (v + 1);
+    return '?';
 }
-/* `MIDI to` on a MIDI track. ONE row, two kinds of destination, so the value
- * space is signed: POSITIVE 1-16 = external channel, NEGATIVE -1..-8 = play
- * track 1-8's instrument. Encoding both in one value is what keeps this a
- * single scroll from `Ext 16` to `Track 1` rather than two settings to
- * reconcile. The DSP stores the two halves separately (`tN_channel` and
- * `tN_midi_to`); this sign is a UI encoding and nothing else. */
-export function fmtMidiTo(v) {
-    return (v | 0) < 0 ? 'Track ' + (-(v | 0)) : 'Ext ' + (v | 0);
-}
-/* Which destinations a given track may pick. A MIDI track may only target a
- * Move or Schwung track: pointing at another MIDI track is REJECTED, not
- * followed, which makes routing cycles unrepresentable rather than something to
- * detect (spec decision 2). Itself is excluded for the same reason - "play my
- * own instrument" is what the Instrument row says, not this one.
+
+/* The values THIS track may pick. Move 1-4 and Schwung always; every MIDI
+ * channel; and every OTHER track that has an instrument to play.
+ *
+ * A MIDI track may only target a Move or Schwung track — pointing at another
+ * MIDI track is rejected, not followed, which makes routing cycles
+ * unrepresentable rather than something to detect (spec decision 2). Itself is
+ * excluded for the same reason: "play my own instrument" is what the Move and
+ * Schwung entries say.
  *
  * `routes` is S.trackRoute; `self` is the 0-based track being edited. */
-export function midiToOptions(routes, self) {
-    const out = [];
-    for (let ch = 1; ch <= 16; ch++) out.push(ch);
+export function instrOptions(routes, self) {
+    const out = [0, 1, 2, 3, INSTR_SCHWUNG];
+    for (let ch = 0; ch < 16; ch++) out.push(INSTR_MIDI_CH + ch);
     for (let t = 0; t < routes.length; t++) {
         if (t === self) continue;
         if (routes[t] !== 0 && routes[t] !== 1) continue;   /* Schwung or Move only */
-        out.push(-(t + 1));
+        out.push(INSTR_TRACK + t);
     }
     return out;
 }
+
 export function fmtPlain(v)  { return String(v); }
 export function fmtNA()      { return '-'; }
 export function fmtArpStyle(v) { return ['Off','Up','Dn','U/D','D/U','Cnv','Div','Ord','Rnd','RnO'][v] || 'Off'; }

@@ -1062,15 +1062,19 @@ Dust, Robot, Dissolve, Chaos, Lift); 9–16 are yours.
 
 One setting decides what a track plays ([Track settings](#164-track-settings)):
 
-- **Instr** — `Move 1`–`Move 4` (that Move instrument, through its Move FX bus),
-  `Schwung` (this track's own chain), or `MIDI` (out to gear).
-- **MIDI to** — on a `MIDI` track only: `Ext 1`–`Ext 16` to send out USB-A on that
-  channel, or `Track 1`–`Track 8` to play that track's instrument.
+- **Instr** — one setting, every destination:
 
-**`MIDI to Track` is how two tracks play one instrument** — a bass line and its
-own arpeggio on the same synth, say, each with its own clips and effects. It only
-offers tracks that have an instrument to play: a `MIDI` track can't target another
-`MIDI` track, so a routing loop can't be built.
+| Instr | Plays |
+|---|---|
+| `Move 1`–`Move 4` | that Move instrument, through its Move FX bus |
+| `Schwung` | this track's own chain |
+| `MIDI Ch 1`–`MIDI Ch 16` | out to gear on the USB-A port, on that channel |
+| `Track 1`–`Track 8` | that track's instrument |
+
+**`Track N` is how two tracks play one instrument** — a bass line and its own
+arpeggio on the same synth, say, each with its own clips and effects. Only tracks
+that have an instrument are offered: a track already set to `MIDI Ch` or `Track`
+can't be a target, so a routing loop can't be built.
 
 The default is tracks 1–4 on `Move 1`–`Move 4` and tracks 5–8 on `Schwung`, from
 [Connect & Configure](#2-connect--configure). Several tracks can be `MIDI` at once
@@ -1088,10 +1092,10 @@ effects chain shapes live input depends on the route:
 | Instr | Effects on external input |
 |---|---|
 | Schwung | Full chain |
-| MIDI | Full chain, out USB-A |
+| MIDI Ch | Full chain, out USB-A |
 | Move 1–4 | Bypassed (it would loop back) |
 
-On a **MIDI** track, everything goes out USB-A — the sequence, live pads,
+On a **MIDI Ch** track, everything goes out USB-A — the sequence, live pads,
 effects, and automation. Transport Stop sends note-offs; **Delete + Play** while
 stopped sends a MIDI panic on every channel.
 
@@ -1282,8 +1286,7 @@ type or route are hidden.
 
 | Setting | Values | Notes |
 |---|---|---|
-| Instr | Move 1–4, Schwung, MIDI | What the track plays |
-| MIDI to | Ext 1–16, Track 1–8 | Out USB-A, or into another track's instrument |
+| Instr | Move 1–4, Schwung, MIDI Ch 1–16, Track 1–8 | What the track plays |
 | Mode | Keys, Drums, Conduct | [Track type](#41-track-type) |
 | Layout | Scale, Chrom | Melodic pad layout |
 | VelIn | Live, 1–127 | Fixed value overrides input velocity |
