@@ -154,6 +154,14 @@ MPE row's `synth:mpe_enabled` write) are gone. Host params untouched, as ruled. 
   representative bucketing — a follower bucketed by its own `ROUTE_EXTERNAL` would have fired
   the CC 120/123 sweep into a Move instrument, which the Move branch refuses to do because it
   corrupts Move's voice allocator.
+- **`tN_slot` RETIRED (2026-08-11)** — the promise at the top of this spec, which steps 1-2b had
+  NOT delivered: the `Slot` row was gone but `tN_slot` still decided, so `Schwung` meant "whatever
+  slot the project stored". Josh found it on hardware — his track 6 landed on slot 1 (a chain
+  **shared with track 2**) while its own slot 5 sat empty. The slot is now the track index:
+  derived, never stored, no setter, not persisted, and no JS copy. Migration is the ignoring of a
+  stored `t%d_sl` — old projects' tracks 5-8 move to their own (empty) chains, as signed off.
+  ⚠ One unexplained observation remains from that report: the shared chain produced NO SOUND,
+  which sharing a live slot does not explain. Not reproduced yet.
 - **Step 3 — chain parking: NOT STARTED.** Deliberately last; it is the only part carrying
   real data-loss risk.
 

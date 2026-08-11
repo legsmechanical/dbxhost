@@ -1,6 +1,6 @@
 import { S, CC_ASSIGN_DEFAULTS } from './ui_state.mjs';
 import { NUM_TRACKS, NUM_CLIPS, DRUM_LANES, BANKS, ACTION_POPUP_TICKS } from './ui_constants.mjs';
-import { DAVEBOX_HOST_DIR, CHAIN_SLOTS } from './ui_engine.mjs';
+import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 
 /* Basename prefix for every file this module owns. Mirrors the C-side
  * SEQ8_STATE_PREFIX (dsp/seq8.c) and MUST agree with it — the DSP writes the
@@ -412,7 +412,7 @@ export function doClearSession() {
     S.redoSeqArpSnapshot = null;
     for (let _t = 0; _t < NUM_TRACKS; _t++) {
         for (let _c = 0; _c < NUM_CLIPS; _c++) S.clipSeqFollow[_t][_c] = true;
-        S.trackChannel[_t] = 1; S.trackSlot[_t] = _t % CHAIN_SLOTS; S.trackRoute[_t] = 0; S.trackPadMode[_t] = 0;
+        S.trackChannel[_t] = 1; S.trackRoute[_t] = 0; S.trackPadMode[_t] = 0;
         S.trackMidiTo[_t] = 0;   /* plays its own instrument */
         S.trackVelOverride[_t] = 0; S.trackLooper[_t] = 1;
         S.trackOctave[_t] = 0;

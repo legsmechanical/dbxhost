@@ -204,7 +204,10 @@ export const S = {
      * count ever equals the track count, 1:1 is the obvious default and this
      * round-robin becomes the wrong answer. Keep it derived so the shape is
      * visible, but do not assume widening it is purely mechanical. */
-    trackSlot: Array.from({ length: NUM_TRACKS }, (_, t) => t % CHAIN_SLOTS),
+    /* `trackSlot` lived here until a track owned its instrument. The chain a
+     * track plays is now its own index — derived, never stored, so there is no
+     * second copy to keep in step and no way to express an ambiguous
+     * assignment. Read it through schSlotForTrack(t). */
     /* `MIDI to Track N`: 0 = this track plays its own instrument, 1..8 = it
      * plays that track's instead. Mirrors the DSP's tN_midi_to. */
     trackMidiTo: Array.from({ length: NUM_TRACKS }, () => 0),

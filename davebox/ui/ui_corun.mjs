@@ -116,24 +116,28 @@ function onServiceReturn(id, _result) {
 }
 
 /* The Schwung chain slot a dAVEBOx track addresses. Direct: each track
- * carries an explicit slot (S.trackSlot, DSP tN_slot) and the host dispatches
+ * IS the track index — a track owns its instrument, so there is no mapping to
+ * resolve and nothing stored that could disagree. `slotIndex` stays as the
+ * bound: it clamps if the slot count is ever less than the track count, which
+ * would be a build mistake rather than a routing choice.
+ * (Historical: this read S.trackSlot / DSP tN_slot, a per-track CHOICE, and the host dispatches
  * to it by index — the old receive-channel matching (and its "All"-channel
  * layering, its per-tick shadow_get_slots() enumeration, and its "NO SCHWUNG
  * SLOT for channel N" failure mode) is gone. */
 export function schSlotForTrack(t) {
-    return slotIndex(S.trackSlot[t]);
+    return slotIndex(t);
 }
 
 /* Bitmask form kept for the session-view per-track level loop: exactly one
  * bit now — the track's addressed slot. */
 export function schSlotsForTrack(t) {
-    return 1 << slotIndex(S.trackSlot[t]);
+    return 1 << slotIndex(t);
 }
 
 /* Every track's mask written into `out` (same one-call shape the tick loop
  * already uses; no chain enumeration needed anymore). */
 export function schSlotMasksAllTracks(out) {
-    for (let t = 0; t < out.length; t++) out[t] = 1 << slotIndex(S.trackSlot[t]);
+    for (let t = 0; t < out.length; t++) out[t] = 1 << slotIndex(t);
     return out;
 }
 

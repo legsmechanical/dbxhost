@@ -1118,7 +1118,7 @@ export function _tickImpl() {
          * fader — the fader would also move Move-track audio routed into the
          * same slot, which is not this track's sound.
          *
-         * Slots are addressed directly per track (S.trackSlot), so each mask
+         * The slot IS the track index (a track owns its instrument), so each mask
          * holds exactly the track's one addressed slot — the old channel-match
          * layering (and its "All"-channel hazard) is gone. Writes are
          * synchronous SHM round-trips, so they stay budgeted here in tick. */
@@ -1173,7 +1173,7 @@ export function _tickImpl() {
          *
          * Entry (queued by the Shift+Note/Session release dispatch) still
          * resolves in tick: the slot itself is now a direct per-track state
-         * read (S.trackSlot), but entry drives shadow_get/set_param traffic
+         * read (derived from the track index), but entry drives shadow_get/set_param traffic
          * that must stay on the tick budget, not in a MIDI handler.
          *
          * soundTick() is where every shadow_get/set_param for sound mode

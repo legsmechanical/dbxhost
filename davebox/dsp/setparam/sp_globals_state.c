@@ -210,7 +210,7 @@ static int sp_globals_state(sp_ctx_t *cx) {
                  * `MIDI to Track N` existed, its follow target too — so Clear
                  * Session could leave a track playing another track's
                  * instrument with nothing on screen having asked for it. */
-                tr2->pfx.slot            = (uint8_t)(t2 % SEQ8_CHAIN_SLOTS);
+                tr2->pfx.slot            = (uint8_t)(t2 % SEQ8_CHAIN_SLOTS);  /* own chain; modulo is a bound */
                 tr2->pfx.midi_to         = 0;
                 { int _rl; for (_rl = 0; _rl < DRUM_LANES; _rl++) {
                     tr2->drum_lane_pfx[_rl].route   = tr2->pfx.route;

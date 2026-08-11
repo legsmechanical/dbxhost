@@ -4420,14 +4420,13 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
          * only true by accident of memory is one refactor from being wrong. */
         inst->tracks[t].pfx.midi_to = 0;
         { int _ml; for (_ml = 0; _ml < DRUM_LANES; _ml++) inst->tracks[t].drum_lane_pfx[_ml].midi_to = 0; }
-        /* Slot (ROUTE_SCHWUNG): the track's OWN, 1:1 — a track owns its
-         * instrument, so there is nothing to choose and no sharing to arrange.
-         * The condition the old comment here anticipated has arrived: the slot
-         * count equals the track count, so this round-robin IS 1:1 and the
-         * modulo survives only as a bound, not as a mapping.
-         * WARNING: still a product decision, not arithmetic. If the counts ever
-         * diverge again, two tracks would silently fold onto one instrument —
-         * which is precisely the ambiguity the model exists to make
+        /* The track's OWN chain. Not a default, not a choice: a track owns its
+         * instrument, so the slot IS the track index and `tN_slot` no longer
+         * exists to say otherwise.
+         * WARNING: still a product decision, not arithmetic. The modulo is a
+         * BOUND, kept only so a build whose slot count is below its track count
+         * cannot index out of range — if that ever happens two tracks fold onto
+         * one instrument, which is the exact ambiguity this model makes
          * unrepresentable. Fix the counts, not this line. */
         {
             uint8_t _dsl = (uint8_t)(t % SEQ8_CHAIN_SLOTS);

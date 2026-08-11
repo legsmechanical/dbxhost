@@ -933,8 +933,8 @@ export function readBankParams(t, bankIdx) {
 function readTrackConfig(t) {
     const ch = host_module_get_param('t' + t + '_channel');
     if (ch !== null && ch !== undefined) S.trackChannel[t] = parseInt(ch, 10) || 1;
-    const sl = host_module_get_param('t' + t + '_slot');
-    if (sl !== null && sl !== undefined) S.trackSlot[t] = slotIndex(parseInt(sl, 10));
+    /* No tN_slot read: the slot IS the track index now. It was a stored
+     * per-track choice until a track owned its instrument. */
     const rt = host_module_get_param('t' + t + '_route');
     if (rt !== null && rt !== undefined) S.trackRoute[t] = rt === 'external' ? 2 : rt === 'move' ? 1 : 0;
     /* 0 = plays its own instrument; 1..8 = plays that track's (`MIDI to Track N`). */
@@ -960,7 +960,6 @@ export function applyTrackConfig(t, key, val) {
     else strVal = String(val);
     host_module_set_param('t' + t + '_' + key, strVal);
     if (key === 'channel')              S.trackChannel[t] = val;
-    else if (key === 'slot')            S.trackSlot[t] = slotIndex(val);
     else if (key === 'midi_to')         S.trackMidiTo[t] = val | 0;
     else if (key === 'route') {
         S.trackRoute[t] = val;
@@ -1142,7 +1141,7 @@ export function liveSendNote(t, type, pitch, vel, rawVel, ext) {
             const tgt = (S.trackMidiTo[t] | 0) - 1;
             if (S.trackRoute[tgt] === 0) {
                 const tch = (S.trackChannel[tgt] - 1) & 0x0F;
-                shadow_send_midi_to_dsp(slotIndex(S.trackSlot[tgt]),
+                shadow_send_midi_to_dsp(slotIndex(tgt),
                                         [(status & 0xF0) | tch, pitch, vel]);
             }
         } else {
@@ -1188,7 +1187,7 @@ export function liveSendNote(t, type, pitch, vel, rawVel, ext) {
             }
         } else {
             /* Slot-addressed: deliver to the track's chain slot directly. */
-            shadow_send_midi_to_dsp(slotIndex(S.trackSlot[t]), [status, pitch, vel]);
+            shadow_send_midi_to_dsp(slotIndex(t), [status, pitch, vel]);
         }
     }
 }

@@ -1155,7 +1155,7 @@ function _onCC_buttons(d1, d2) {
                  * Schwung branch fires now and just arms tick() to enter
                  * (entry's shadow_get/set_param traffic belongs on the tick
                  * budget, not in a MIDI handler; the slot itself is a direct
-                 * S.trackSlot read now).
+                 * slot derived from the track index now).
                  *
                  * The global menu is NOT opened here — it lives on Shift+Step2
                  * (_doShiftStepCommon idx 1). This was a duplicate opener; the
@@ -2629,7 +2629,7 @@ function _onCC_stepedit(d1, d2) {
 /* Adjust one track's slot level. The engine writes happen in tick(): they are
  * synchronous SHM round-trips, which don't belong in a MIDI handler. Here we
  * only move a number and raise a flag. (The slot itself is a direct
- * S.trackSlot read now — no resolution step.) */
+ * slot derived from the track index now — no resolution step.) */
 /* Raw detents, NOT ccKnobDelta. That helper halves the count (BASE=2) and
  * carries per-knob acceleration state shared with the bank-param path, which
  * made this both slow and inconsistent on device.

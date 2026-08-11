@@ -164,16 +164,12 @@ static int sp_track_config(sp_ctx_t *cx) {
         return 1;
     }
 
-    /* tN_slot: chain slot this track addresses on ROUTE_SCHWUNG (0-indexed
-     * in and stored). Mirrored into every drum lane pfx like route. */
-    if (!strcmp(sub, "slot")) {
-        uint8_t sl = (uint8_t)clamp_i(my_atoi(val), 0, SEQ8_CHAIN_SLOTS - 1);
-        tr->pfx.slot = sl;
-        { int _sl; for (_sl = 0; _sl < DRUM_LANES; _sl++) tr->drum_lane_pfx[_sl].slot = sl; }
-        rui_mark(inst, tidx, tr->active_clip);   /* rui_index slot */
-        inst->state_dirty = 1;
-        return 1;
-    }
+    /* `tN_slot` was here. It is GONE, not deprecated: a track owns its
+     * instrument, so the chain it plays is its own index — derived, never
+     * stored, and with nothing to set there is no way to express an ambiguous
+     * assignment. An unknown sub-key falls through and is ignored, so an old
+     * caller writing tN_slot silently does nothing, which is the correct
+     * outcome: the value it wants to express no longer exists. */
 
     /* tN_midi_to: 0 = this track plays its OWN instrument; 1..NUM_TRACKS = it
      * plays that track's instrument instead (`MIDI to Track N`). Mirrored into

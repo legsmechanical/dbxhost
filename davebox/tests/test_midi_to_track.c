@@ -38,8 +38,9 @@ int main(void) {
     /* Track 5 (index 4) is Schwung by default; give it a distinctive slot and
      * channel so a wrong destination cannot coincide with the right one. */
     hx_set_param(h, "t4_route", "schwung");
-    hx_set_param(h, "t4_slot", "6");
     hx_set_param(h, "t4_channel", "9");        /* stored 0-based as 8 */
+    /* No t4_slot to set: track 5 owns chain slot 4. That the follower reaches
+     * slot 4 and not its own is the whole point of the assertion below. */
     /* Track 8 (index 7) becomes a MIDI track following track 5. */
     hx_set_param(h, "t7_route", "external");
     hx_set_param(h, "t7_channel", "12");
@@ -53,7 +54,8 @@ int main(void) {
         HX_ASSERT(e, "follower emitted nothing");
         HX_ASSERT(e->kind == HX_MIDI_INTERNAL,
                   "follower went out USB instead of into the target's chain");
-        HX_ASSERT(e->slot == 6, "follower addressed the wrong chain slot");
+        HX_ASSERT(e->slot == 4, "follower addressed the wrong chain slot — "
+                                "it must reach the TARGET's own chain (track 5 -> slot 4)");
         HX_ASSERT((e->bytes[1] & 0x0F) == 8,
                   "follower kept its OWN channel instead of the target's");
     }

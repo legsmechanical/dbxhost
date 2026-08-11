@@ -18,7 +18,7 @@
  */
 
 import { S, conductorTrackIdx } from './ui_state.mjs';
-import { slotIndex, CHAIN_SLOTS } from './ui_engine.mjs';
+import { slotIndex } from './ui_engine.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_TICKS, PAD_MODE_CONDUCT } from './ui_constants.mjs';
 
@@ -220,12 +220,10 @@ function resolveTrack(t, ctx) {
          * directly (no channel matching). */
         let name = dbName;
         if (ctx.chainCfg && Array.isArray(ctx.chainCfg.patches)) {
-            /* Fallback when the track carries no explicit slot: the same
-             * round-robin the defaults use (t % CHAIN_SLOTS), not a clamp —
-             * this arm is a DEFAULT mapping, so it must wrap, while a value
-             * that came from state is sanitised by slotIndex. */
-            const ts = (S.trackSlot && S.trackSlot[t] != null)
-                ? slotIndex(S.trackSlot[t]) : (t % CHAIN_SLOTS);
+            /* The slot IS the track index — a track owns its instrument, so
+             * there is no stored value to fall back from and no mapping to
+             * wrap. slotIndex stays as the bound, not as a resolution step. */
+            const ts = slotIndex(t);
             const p = ctx.chainCfg.patches[ts];
             if (p) name = 'SCH-' + (p.name || '');
         }

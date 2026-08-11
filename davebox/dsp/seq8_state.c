@@ -148,11 +148,12 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
     for (t = 0; t < NUM_TRACKS; t++)
         fprintf(fp, ",\"t%d_wr\":%d", t,
                 (inst->tracks[t].will_relaunch || inst->tracks[t].clip_playing) ? 1 : 0);
+    /* No `t%d_sl`: the slot is the track index, so storing it would be storing
+     * an array index alongside the array. */
     for (t = 0; t < NUM_TRACKS; t++)
-        fprintf(fp, ",\"t%d_ch\":%d,\"t%d_rt\":%d,\"t%d_sl\":%d",
+        fprintf(fp, ",\"t%d_ch\":%d,\"t%d_rt\":%d",
                 t, (int)inst->tracks[t].channel,
-                t, (int)inst->tracks[t].pfx.route,
-                t, (int)inst->tracks[t].pfx.slot);
+                t, (int)inst->tracks[t].pfx.route);
     /* `MIDI to Track N`, sparse: 0 (plays its own instrument) is the default and
      * by far the common case, so absence means 0 rather than costing 8 keys. */
     for (t = 0; t < NUM_TRACKS; t++)
@@ -608,29 +609,15 @@ static void seq8_load_state(seq8_instance_t *inst) {
         inst->tracks[t].pfx.route = (uint8_t)clamp_i(
             json_get_int(buf, key, ROUTE_SCHWUNG), ROUTE_SCHWUNG, ROUTE_EXTERNAL);
 
-        /* Slot for ROUTE_SCHWUNG. Absent key (pre-slot-addressing sets):
-         * derive from the stored channel — ch 0-3 matched slots A-D under
-         * the old default recv channels, ch 4-7 mirrors to A-D likewise. */
-        snprintf(key, sizeof(key), "t%d_sl", t);
-        {
-            /* WARNING: the fallback derivation is a MIGRATION decision, not
-             * arithmetic — it defines what an existing set's implicit slot
-             * becomes. Widening the slot count must not silently re-map sets
-             * that were saved before the wider count existed. */
-            /* ⭑ The fallback folds by SEQ8_LEGACY_CHAIN_SLOTS (frozen at 4),
-             * NOT by the current count. A set saved before slot addressing
-             * existed played through the slot that `channel % 4` picked, and
-             * that is what it must keep playing through — following the wider
-             * count would move its tracks onto slots that are empty in that
-             * set, silencing them. The CLAMP still uses the live count, since
-             * an explicitly stored slot may legitimately be any of them. */
-            uint8_t sl = (uint8_t)clamp_i(
-                json_get_int(buf, key,
-                             inst->tracks[t].channel % SEQ8_LEGACY_CHAIN_SLOTS),
-                0, SEQ8_CHAIN_SLOTS - 1);
-            inst->tracks[t].pfx.slot = sl;
-            { int _sl; for (_sl = 0; _sl < DRUM_LANES; _sl++) inst->tracks[t].drum_lane_pfx[_sl].slot = sl; }
-        }
+        /* The slot is NOT loaded. It is the track index, set at init and never
+         * varied, so a stored `t%d_sl` can only disagree with the model — and
+         * projects written before this carry exactly such a value (tracks 5-8
+         * pointing at slots A-D, from when the count was 4). Ignoring it is the
+         * migration: those tracks move to their own chains, which are empty in
+         * those projects. Deliberate, and signed off — the alternative is
+         * honouring a mapping the UI can no longer show or edit.
+         * ⚠ SEQ8_LEGACY_CHAIN_SLOTS is now unused by this file. It is left
+         * defined on purpose: one behaviour move at a time. */
 
         /* `MIDI to Track N` (0 = own instrument). Absent = 0, which is what
          * every set written before this existed means. */

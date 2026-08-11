@@ -68,7 +68,24 @@ grep -q "S.trackMidiTo\[t\] > 0" ui/ui_dsp_bridge.mjs \
     && ok "raw CC/PB follows the target too" \
     || bad "a follower's CC/PB still goes out USB-A while its notes go elsewhere"
 
-# 7. The slot has no user-facing spelling left. `slotLetter` existed only to
+# 7. `tN_slot` is RETIRED, not deprecated. The slot is the track index —
+#    derived, never stored — so there must be nothing that sets it, nothing
+#    that persists it, and nothing that reads a stored one back. Any survivor
+#    is a second opinion about which chain a track plays.
+grep -q "strcmp(sub, \"slot\")" dsp/setparam/sp_track_config.c \
+    && bad "the tN_slot setter is back — a track's chain is settable again" \
+    || ok "no tN_slot setter"
+grep -q '"t%d_sl' dsp/seq8_state.c \
+    && bad "the slot is persisted again — a stored value can disagree with the model" \
+    || ok "the slot is neither saved nor loaded"
+grep -rq "S\.trackSlot\[" ui/*.mjs \
+    && bad "S.trackSlot is back — the JS side keeps its own copy again" \
+    || ok "no JS copy of the slot"
+grep -q "return slotIndex(t);" ui/ui_corun.mjs \
+    && ok "schSlotForTrack derives the slot from the track index" \
+    || bad "schSlotForTrack no longer derives the slot from the track index"
+
+# 8. The slot has no user-facing spelling left. `slotLetter` existed only to
 #    print one, so its return means the concept came back.
 grep -rq "slotLetter(" ui/ \
     && bad "slotLetter is back — the slot is user-facing again" \

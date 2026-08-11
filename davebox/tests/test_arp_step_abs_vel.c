@@ -76,11 +76,15 @@ int main(void) {
     HX_ASSERT(h2, "create 2 failed");
     seq8_instance_t *inst2 = (seq8_instance_t *)h2->inst;
     load_fixture(inst2, "tests/fixtures/state_v36_legacy_arp_vel.json");
-    /* Slot migration: fixture predates t%d_sl — slot derives from the stored
-     * channel (ch & 3): t1_ch=1 → slot 1, t4_ch=4 → slot 0. */
-    HX_ASSERT(inst2->tracks[1].pfx.slot == 1, "legacy slot derive t1 != 1");
-    HX_ASSERT(inst2->tracks[4].pfx.slot == 0, "legacy slot derive t4 != 0");
-    HX_ASSERT(inst2->tracks[4].drum_lane_pfx[0].slot == 0, "legacy slot derive lane mirror");
+    /* A track OWNS its instrument: the slot is the track index, whatever the
+     * fixture says. This fixture is the interesting case — it predates
+     * `t%d_sl` entirely, and the retired loader derived a slot from the stored
+     * channel (ch & 3), which put track 5 on slot 0. Nothing derives now, so
+     * that mapping is gone and the tracks land on their own chains. THIS is
+     * the migration for every old project, asserted rather than assumed. */
+    HX_ASSERT(inst2->tracks[1].pfx.slot == 1, "track 2 must own slot 1");
+    HX_ASSERT(inst2->tracks[4].pfx.slot == 4, "track 5 must own slot 4, not the legacy ch&3");
+    HX_ASSERT(inst2->tracks[4].drum_lane_pfx[0].slot == 4, "drum lanes must mirror the owned slot");
     HX_ASSERT(inst2->tracks[0].tarp.step_vel[0] == 64,  "legacy tasv 2 != 64");
     HX_ASSERT(inst2->tracks[0].tarp.step_vel[1] == 0,   "legacy tasv 0 != 0");
     HX_ASSERT(inst2->tracks[0].tarp.step_vel[2] == 255, "absent tasv != Thru");
