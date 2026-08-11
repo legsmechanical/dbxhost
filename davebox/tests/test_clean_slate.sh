@@ -68,17 +68,33 @@ done
 #    shadow_chain_config, slot_N, master_fx/move_fx/send_fx, i.e. the ROUTING
 #    and PARAMS). Missing the host root left a deleted project's entire chain
 #    and FX configuration on disk (found on hardware 2026-08-11).
-for v in SET_STATE_DIR HOST_STATE_DIR; do
+for v in SET_STATE_DIR HOST_STATE_DIR STATE_PREFIX; do
     grep -q "^$v=" ../standalone/scripts/project-cmd.sh \
         && ok "project-cmd declares $v" \
         || bad "project-cmd lost $v — delete leaves that state root on disk"
 done
-awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q 'for sd in state_dirs' \
-    && ok "delete walks BOTH state roots" \
-    || bad "do_delete no longer walks every state root — a deleted project is not a clean slate"
 awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q '"\$HOST_STATE_DIR"' \
     && ok "the host state root is passed to the delete" \
     || bad "HOST_STATE_DIR is declared but never passed — the routing/params half survives delete"
+awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q 'shutil.rmtree(os.path.join(host_state_dir, u))' \
+    && ok "the HOST root (ours alone) is removed wholesale" \
+    || bad "the host state dir is no longer removed — routing/params survive delete"
+
+#    ⚠⚠ THE ASYMMETRY IS THE POINT. The module root is the STOCK HOST'S own
+#    state dir and the per-uuid folder is SHARED — measured on hardware, 4 of 18
+#    held stock's slot_*/move_fx_*/send_fx_* alongside our seq8sa-*. Removing the
+#    DIRECTORY there destroys the stock host's state for that set. Delete our
+#    files by prefix; drop the folder only if we left it empty.
+awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh \
+    | grep -q 'shutil.rmtree(os.path.join(module_state_dir' \
+    && bad "do_delete rmtree's the SHARED module root — that destroys the stock host's state for the set" \
+    || ok "the shared module root is never rmtree'd"
+awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q 'f.startswith(prefix + "-")' \
+    && ok "module-root deletion is scoped to our own filename prefix" \
+    || bad "module-root deletion is no longer prefix-scoped — it can take the stock host's files"
+grep -q 'STATE_PREFIX:-seq8sa' ../standalone/scripts/project-cmd.sh \
+    && ok "the prefix is seq8sa (not bare seq8, which would sweep Legacy's state too)" \
+    || bad "STATE_PREFIX changed — 'seq8' would also delete dAVEBOx Legacy's state for the set"
 
 [ "$fail" -eq 0 ] && echo "PASS: a project switch cannot inherit its predecessor's state" \
                   || echo "FAIL: clean-slate invariants broken"

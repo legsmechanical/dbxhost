@@ -30,18 +30,29 @@ SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
 # Per-project state, keyed by the same set uuid, in TWO roots — deleting a
 # project has to take BOTH, or it is not the clean slate the user expects:
 #
-#   MODULE  /data/UserData/schwung/set_state/<uuid>/  seq8-state.json, the UI
-#           sidecar, snapshots. Lives under the STOCK install because modules
-#           are shared between installs. The module cannot delete this itself
-#           (host_remove_dir is disallowed under set_state).
+#   MODULE  /data/UserData/schwung/set_state/<uuid>/  our seq8sa-* files.
+#           ⚠⚠ This is the STOCK HOST'S OWN state root (SET_STATE_DIR resolves
+#           from SCHWUNG_INSTALL_DIR = /data/UserData/schwung), and the folder is
+#           SHARED: the same <uuid>/ can hold stock's slot_N.json /
+#           shadow_chain_config.json / master_fx_* / move_fx_* / send_fx_*
+#           alongside ours (measured on hardware: 4 of 18 dirs were mixed).
+#           So we delete our FILES BY PREFIX here and never the directory —
+#           rmtree would destroy the stock host's state for that set. The
+#           module cannot do even this itself (host_remove_dir is disallowed
+#           under set_state).
 #   HOST    $DBX_DIR/set_state/<uuid>/                shadow_chain_config.json,
-#           slot_0..N.json, master_fx_*, move_fx_*, send_fx_* — i.e. the
-#           ROUTING and PARAMS half. SET_STATE_DIR in shadow_set_pages.h.
+#           slot_0..N.json, master_fx_*, move_fx_*, send_fx_* — the ROUTING and
+#           PARAMS half. This root belongs to THIS install alone, so the whole
+#           directory goes.
 #
-# ⚠ Missing the host root was a real bug: a deleted project left its whole
-# chain/slot/FX configuration on disk (found on hardware 2026-08-11).
+# ⚠ Missing the host root entirely was a real bug: a deleted project left its
+# whole chain/slot/FX configuration on disk (found on hardware 2026-08-11).
 SET_STATE_DIR="${SET_STATE_DIR:-/data/UserData/schwung/set_state}"
 HOST_STATE_DIR="${HOST_STATE_DIR:-$DBX_DIR/set_state}"
+# Our filename prefix inside the SHARED module root. Must match SEQ8_STATE_PREFIX
+# (dsp/seq8.c) for this build — `seq8sa` for SA. Deliberately NOT `seq8`, which
+# would also sweep away dAVEBOx Legacy's state for the same set.
+STATE_PREFIX="${STATE_PREFIX:-seq8sa}"
 OUT_JSON="$DBX_DIR/projects.json"
 TEMPLATE_DIR="$DBX_DIR/sets/template"
 
@@ -220,10 +231,10 @@ PYEOF
 
 do_delete() { # index
     case "${1:-}" in *[!0-9]*|"") die "delete needs a numeric index" ;; esac
-    python3 - "$SETS_DIR" "$SETTINGS_JSON" "$1" "$SET_STATE_DIR" "$HOST_STATE_DIR" <<'PYEOF'
+    python3 - "$SETS_DIR" "$SETTINGS_JSON" "$1" "$SET_STATE_DIR" "$HOST_STATE_DIR" "$STATE_PREFIX" <<'PYEOF'
 import os, re, shutil, sys
 sets_dir, settings, idx = sys.argv[1], sys.argv[2], int(sys.argv[3])
-state_dirs = [d for d in sys.argv[4:] if d]
+module_state_dir, host_state_dir, prefix = sys.argv[4], sys.argv[5], sys.argv[6]
 cur = -1
 try:
     m = re.search(r'"currentSongIndex":\s*(-?\d+)', open(settings).read())
@@ -245,12 +256,28 @@ for u in os.listdir(sets_dir):
             # Best-effort and AFTER the set itself: a leftover set with no
             # state reads as an empty project, while leftover state with no
             # set is what the orphan pruner is for.
-            for sd in state_dirs:
-                try:
-                    shutil.rmtree(os.path.join(sd, u))
-                    print("project-cmd: deleted state %s/%s" % (sd, u))
-                except OSError:
-                    pass
+            #
+            # MODULE root: OUR FILES ONLY. The folder is shared with the stock
+            # host, so remove by prefix and drop the directory only if we left
+            # it empty — never rmtree it.
+            mp = os.path.join(module_state_dir, u)
+            n = 0
+            try:
+                for f in os.listdir(mp):
+                    if f.startswith(prefix + "-"):
+                        os.remove(os.path.join(mp, f)); n += 1
+                if not os.listdir(mp):
+                    os.rmdir(mp)
+            except OSError:
+                pass
+            if n:
+                print("project-cmd: deleted %d %s-* file(s) in %s" % (n, prefix, mp))
+            # HOST root: ours alone, so the whole directory goes.
+            try:
+                shutil.rmtree(os.path.join(host_state_dir, u))
+                print("project-cmd: deleted host state %s/%s" % (host_state_dir, u))
+            except OSError:
+                pass
             print("project-cmd: deleted index %d (%s)" % (idx, u))
             sys.exit(0)
     except (OSError, ValueError):
