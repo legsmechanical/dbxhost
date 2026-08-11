@@ -1064,8 +1064,13 @@ One setting decides what a track plays ([Track settings](#164-track-settings)):
 
 - **Instr** — `Move 1`–`Move 4` (that Move instrument, through its Move FX bus),
   `Schwung` (this track's own chain), or `MIDI` (out to gear).
-- **MIDI to** — on a `MIDI` track only: `Ext 1`–`Ext 16`, the channel it goes out
-  on.
+- **MIDI to** — on a `MIDI` track only: `Ext 1`–`Ext 16` to send out USB-A on that
+  channel, or `Track 1`–`Track 8` to play that track's instrument.
+
+**`MIDI to Track` is how two tracks play one instrument** — a bass line and its
+own arpeggio on the same synth, say, each with its own clips and effects. It only
+offers tracks that have an instrument to play: a `MIDI` track can't target another
+`MIDI` track, so a routing loop can't be built.
 
 The default is tracks 1–4 on `Move 1`–`Move 4` and tracks 5–8 on `Schwung`, from
 [Connect & Configure](#2-connect--configure). Several tracks can be `MIDI` at once
@@ -1278,7 +1283,7 @@ type or route are hidden.
 | Setting | Values | Notes |
 |---|---|---|
 | Instr | Move 1–4, Schwung, MIDI | What the track plays |
-| MIDI to | Ext 1–16 | Where a MIDI track's notes go |
+| MIDI to | Ext 1–16, Track 1–8 | Out USB-A, or into another track's instrument |
 | Mode | Keys, Drums, Conduct | [Track type](#41-track-type) |
 | Layout | Scale, Chrom | Melodic pad layout |
 | VelIn | Live, 1–127 | Fixed value overrides input velocity |

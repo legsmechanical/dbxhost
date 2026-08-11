@@ -204,7 +204,19 @@ static int sp_globals_state(sp_ctx_t *cx) {
                 tr2->pad_octave          = 3;
                 tr2->pfx.looper_on       = 1;
                 tr2->pfx.route           = (t2 < 4) ? ROUTE_MOVE : ROUTE_SCHWUNG;
-                { int _rl; for (_rl = 0; _rl < DRUM_LANES; _rl++) tr2->drum_lane_pfx[_rl].route = tr2->pfx.route; }
+                /* The track's OWN instrument, 1:1 — the same default a fresh
+                 * instance gets. Neither was reset here before: a cleared
+                 * session inherited the previous set's slot and, once
+                 * `MIDI to Track N` existed, its follow target too — so Clear
+                 * Session could leave a track playing another track's
+                 * instrument with nothing on screen having asked for it. */
+                tr2->pfx.slot            = (uint8_t)(t2 % SEQ8_CHAIN_SLOTS);
+                tr2->pfx.midi_to         = 0;
+                { int _rl; for (_rl = 0; _rl < DRUM_LANES; _rl++) {
+                    tr2->drum_lane_pfx[_rl].route   = tr2->pfx.route;
+                    tr2->drum_lane_pfx[_rl].slot    = tr2->pfx.slot;
+                    tr2->drum_lane_pfx[_rl].midi_to = 0;
+                } }
                 for (c2 = 0; c2 < NUM_CLIPS; c2++)
                     clip_init(&tr2->clips[c2]);
                 /* CC automation isn't part of clip_t — reset it explicitly so
@@ -220,7 +232,11 @@ static int sp_globals_state(sp_ctx_t *cx) {
                 memset(tr2->at_last_sent, 0xFF, AT_MAX_LANES);
                 drum_clips_reset(tr2);  /* clear-and-keep: snapshot may read concurrently */
                 drum_track_init(tr2, t2);
-                { int _rl; for (_rl = 0; _rl < DRUM_LANES; _rl++) tr2->drum_lane_pfx[_rl].route = tr2->pfx.route; }
+                { int _rl; for (_rl = 0; _rl < DRUM_LANES; _rl++) {
+                    tr2->drum_lane_pfx[_rl].route   = tr2->pfx.route;
+                    tr2->drum_lane_pfx[_rl].slot    = tr2->pfx.slot;
+                    tr2->drum_lane_pfx[_rl].midi_to = 0;
+                } }
                 drum_repeat_init_defaults(tr2);
                 /* TRACK ARP (TARP) per-track state — wasn't reset, so latched
                  * TARP, held chord, and style/rate would carry across Clear

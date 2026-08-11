@@ -21,7 +21,7 @@ import {
 
 import {
     PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-    fmtNA, fmtVelOverride, fmtInstr, fmtMidiTo,
+    fmtNA, fmtVelOverride, fmtInstr, fmtMidiTo, midiToOptions,
     INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI, INSTR_OPTIONS,
     NOTE_KEYS, SCALE_NAMES
 } from './ui_constants.mjs';
@@ -85,17 +85,35 @@ function buildGlobalMenuItems() {
                 return S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT ? fmtNA() : fmtInstr(v);
             }
         }),
-        /* Where a MIDI track's notes go. Only Ext 1-16 for now; `Track 1-8`
-         * (one instrument played by several tracks) is the other half of this
-         * row and needs dispatch the DSP does not have yet. */
+        /* Where a MIDI track's notes go: out to gear on a channel (`Ext 1-16`),
+         * or into another track's instrument (`Track 1-8`) -- which is how one
+         * instrument is played by several tracks now that a track owns its
+         * chain, expressed directionally instead of by two tracks coincidentally
+         * naming one slot.
+         *
+         * The two halves are stored separately (`channel` and `midi_to`) and
+         * joined only for this row, negative = a track target. Writing BOTH on
+         * every edit is deliberate: leaving the other half behind is what makes
+         * a stale `midi_to` outlive the choice that set it and silently keep
+         * stealing the notes. */
         ...((S.trackRoute[S.activeTrack] === 2) ? [
             createEnum('MIDI to', {
-                get: function() { return S.trackChannel[S.activeTrack] | 0; },
-                set: function(v) {
-                    if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT) return;
-                    applyTrackConfig(S.activeTrack, 'channel', v | 0);
+                get: function() {
+                    const t = S.activeTrack;
+                    const mt = S.trackMidiTo[t] | 0;
+                    return mt > 0 ? -mt : (S.trackChannel[t] | 0);
                 },
-                options: Array.from({ length: 16 }, (_, i) => i + 1),
+                set: function(v) {
+                    const t = S.activeTrack;
+                    if (S.trackPadMode[t] === PAD_MODE_CONDUCT) return;
+                    if ((v | 0) < 0) { applyTrackConfig(t, 'midi_to', -(v | 0)); return; }
+                    applyTrackConfig(t, 'midi_to', 0);
+                    applyTrackConfig(t, 'channel', v | 0);
+                },
+                /* Recomputed each menu open, like AftTch: which tracks are
+                 * eligible targets depends on THEIR instrument, which can have
+                 * changed since this menu was last built. */
+                options: midiToOptions(S.trackRoute, S.activeTrack),
                 format: function(v) {
                     return S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT ? fmtNA() : fmtMidiTo(v);
                 }

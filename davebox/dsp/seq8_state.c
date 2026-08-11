@@ -153,6 +153,11 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
                 t, (int)inst->tracks[t].channel,
                 t, (int)inst->tracks[t].pfx.route,
                 t, (int)inst->tracks[t].pfx.slot);
+    /* `MIDI to Track N`, sparse: 0 (plays its own instrument) is the default and
+     * by far the common case, so absence means 0 rather than costing 8 keys. */
+    for (t = 0; t < NUM_TRACKS; t++)
+        if (inst->tracks[t].pfx.midi_to)
+            fprintf(fp, ",\"t%d_mt\":%d", t, (int)inst->tracks[t].pfx.midi_to);
     for (t = 0; t < NUM_TRACKS; t++)
         if (inst->tracks[t].pfx.looper_on != 1)
             fprintf(fp, ",\"t%d_lp\":%d", t, (int)inst->tracks[t].pfx.looper_on);
@@ -625,6 +630,19 @@ static void seq8_load_state(seq8_instance_t *inst) {
                 0, SEQ8_CHAIN_SLOTS - 1);
             inst->tracks[t].pfx.slot = sl;
             { int _sl; for (_sl = 0; _sl < DRUM_LANES; _sl++) inst->tracks[t].drum_lane_pfx[_sl].slot = sl; }
+        }
+
+        /* `MIDI to Track N` (0 = own instrument). Absent = 0, which is what
+         * every set written before this existed means. */
+        snprintf(key, sizeof(key), "t%d_mt", t);
+        {
+            uint8_t mt = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, NUM_TRACKS);
+            /* A track cannot play its OWN instrument through the follow path —
+             * that is what midi_to=0 already means, and allowing it would make
+             * the same destination expressible two ways. */
+            if (mt == (uint8_t)(t + 1)) mt = 0;
+            inst->tracks[t].pfx.midi_to = mt;
+            { int _sl; for (_sl = 0; _sl < DRUM_LANES; _sl++) inst->tracks[t].drum_lane_pfx[_sl].midi_to = mt; }
         }
 
         snprintf(key, sizeof(key), "t%d_lp", t);

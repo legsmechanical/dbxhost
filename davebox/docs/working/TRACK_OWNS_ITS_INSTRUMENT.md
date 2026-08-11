@@ -130,12 +130,50 @@ the open/edit paths, `setSlotMpe`, `recomputeMpeRow`, `mpePreState`, the `CH_FMT
 formatters, and `queueSlotCfgWrite`'s now-unreachable `comp` argument (its only caller was the
 MPE row's `synth:mpe_enabled` write) are gone. Host params untouched, as ruled. Suite green.
 
+## Build status (2026-08-11)
+
+- **Step 1 — the three dead slot-settings rows: BUILT** (`7b452476`). See decision 3.
+- **Step 2a — the Instrument selector: BUILT** (`3c01c024`). `Instr` replaces `Channel`,
+  `Slot` and `Route`. ⚠ It exposed a silent seam worth remembering: the **Move FX bus was
+  derived from the TRACK INDEX**, which was only ever true while a track's Move instrument
+  was an unsurfaced channel setting. It now follows the instrument.
+- **Step 2b — `MIDI to Track N`: BUILT.** The destination is resolved **at emit**
+  (`midi_dest_resolve` in `dsp/seq8.c`), never copied into the follower when it is assigned:
+  one source of truth, so the target's own instrument change is followed with nothing to keep
+  in sync. Three consequences that are each a silent failure if got wrong, and are pinned by
+  `tests/test_midi_to_track.c`:
+  - the **channel is part of the destination** — Move addresses its four instruments by MIDI
+    channel, so following a Move track rewrites the channel nibble;
+  - `midi_to` is read **only on a MIDI track**, so a leftover target cannot hijack a track
+    that has since been pointed at Move;
+  - a target that is not an instrument is **rejected, not followed** — and because a
+    follower's own route is `ROUTE_EXTERNAL`, that single rule is what makes chains of
+    followers, and therefore cycles, unresolvable rather than something to detect.
+
+  Effective-route sites updated with it: the Move note-off deferral (twice) and the panic
+  representative bucketing — a follower bucketed by its own `ROUTE_EXTERNAL` would have fired
+  the CC 120/123 sweep into a Move instrument, which the Move branch refuses to do because it
+  corrupts Move's voice allocator.
+- **Step 3 — chain parking: NOT STARTED.** Deliberately last; it is the only part carrying
+  real data-loss risk.
+
 ## Migration
 
-Projects whose tracks point at a non-1:1 slot collapse to track-owns-slot-N. Permitted by
-the standing no-back-compat-until-shipped rule, and after the 4→8 flip most projects are
-1:1 already — but **Josh's own SA projects are the ones that would move**, so audit them
-before rather than after.
+⭑ **Decided 2026-08-11: there is no migration.** Josh — *"no need to migrate if I don't care
+about preserving those projects"* / *"I don't care about preserving preexisting projects."*
+
+The audit ran first anyway, and its findings are kept because they are the record of what was
+given up: **12 of 12 existing projects have tracks 5-8 pointing at slots A-D** (the pre-8-chain
+layout), of which **21 of 23 mappings would have been free renames** — the slot's 1:1 owner
+track is Move-routed in almost every case, so nothing else was playing that chain — and only
+**2** were genuine duplications.
+
+Consequence, accepted: those projects keep sounding today, because the DSP still dispatches by
+the stored `tN_slot`. Their tracks 5-8 go silent **when `tN_slot` retires**, and they are
+abandoned at that point. No runtime migration code exists or will.
+
+⚠ Audit trap worth keeping: **`tN_ch` is stored 0-BASED** while the UI's `S.trackChannel` is
+1-based. Reading it 1-based makes every project look like it has an out-of-range Move channel.
 
 The frozen legacy divisor (`SEQ8_LEGACY_CHAIN_SLOTS`, added with the 4→8 flip) becomes
 irrelevant once `tN_slot` retires, but should not be deleted in the same change — one

@@ -9,7 +9,12 @@
 static void silence_track_from_set_param(seq8_instance_t *inst, seq8_track_t *tr) {
     play_fx_t *fx = &tr->pfx;
     silence_track_notes_v2(inst, tr);
-    if (fx->route == ROUTE_MOVE) {
+    /* EFFECTIVE route: a `MIDI to Track N` follower whose target is Move needs
+     * the Move workaround too. Its own route reads ROUTE_EXTERNAL, so testing
+     * that directly would take the else-branch and drop the note-offs on the
+     * floor — voices held on a Move instrument, with nothing on screen to
+     * explain it. */
+    if (midi_dest_resolve(fx->route, fx->slot, fx->midi_to).route == ROUTE_MOVE) {
         int ei;
         for (ei = 0; ei < fx->event_count; ei++)
             fx->events[ei].fire_at = fx->sample_counter;
@@ -341,7 +346,8 @@ static void ext_transport_stop(seq8_instance_t *inst) {
     for (t = 0; t < NUM_TRACKS; t++) {
         play_fx_t *fx = &inst->tracks[t].pfx;
         silence_track_notes_v2(inst, &inst->tracks[t]);
-        if (fx->route == ROUTE_MOVE) {
+        /* Effective route — see silence_track_from_set_param. */
+        if (midi_dest_resolve(fx->route, fx->slot, fx->midi_to).route == ROUTE_MOVE) {
             int ei;
             for (ei = 0; ei < fx->event_count; ei++)
                 fx->events[ei].fire_at = fx->sample_counter;

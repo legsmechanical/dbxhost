@@ -401,6 +401,13 @@ typedef struct {
     /* Routing */
     uint8_t      route;     /* ROUTE_SCHWUNG or ROUTE_MOVE */
     uint8_t      slot;      /* 0-based chain slot for ROUTE_SCHWUNG (slot-addressed dispatch) */
+    /* 0 = this track plays its OWN instrument (route/slot above).
+     * 1..NUM_TRACKS = it plays track (midi_to-1)'s instrument instead — the
+     * `MIDI to Track N` selection, which is how one instrument is played by
+     * several tracks now that a track owns its chain. Resolved at EMIT
+     * (midi_dest_resolve), never copied here: one source of truth, so the
+     * target's own instrument change is followed with nothing to keep in sync. */
+    uint8_t      midi_to;
     /* Global MIDI Looper: 1 = this track's post-fx output is captured by the
      * looper and silenced during playback; 0 = bypass entirely. Default 1. */
     uint8_t      looper_on;
@@ -520,6 +527,7 @@ typedef struct {
     pfx_active_t active_note;  /* single active note — monophonic per lane */
     uint8_t      route;
     uint8_t      slot;      /* 0-based chain slot for ROUTE_SCHWUNG; mirrored from track pfx */
+    uint8_t      midi_to;   /* see play_fx_t.midi_to; mirrored from track pfx */
     uint8_t      looper_on;
     uint8_t      track_idx;
     uint8_t      lane_idx;
@@ -1470,6 +1478,57 @@ static void seq8_ilog(seq8_instance_t *inst, const char *msg) {
  *   ROUTE_SCHWUNG  → midi_send_internal_slot (addressed chain slot, immediate)
  *   ROUTE_MOVE     → midi_inject_to_move (cable 2, CIN from status; NULL-safe)
  *   ROUTE_EXTERNAL → host->midi_send_external (shim audio-thread SPSC ring) */
+/* ---- where a track's MIDI actually goes ----------------------------------
+ *
+ * A track owns its instrument, so normally the destination IS the track's own
+ * route/slot. The one exception is `MIDI to Track N`: that track plays ANOTHER
+ * track's instrument, and the two must not drift, so the target is resolved
+ * here at emit rather than copied into the follower when it is assigned.
+ *
+ * ⚠ The CHANNEL is part of the destination, not decoration. Move addresses its
+ * four instruments BY MIDI CHANNEL, so following a Move track means rewriting
+ * the channel nibble to the target's — emitting the follower's own channel
+ * would play a different Move instrument than the one on screen.
+ *
+ * ⭑ A target that is not itself an instrument (a MIDI track, whether plain
+ * external or another follower) is REJECTED, not followed. That is what makes
+ * routing cycles unrepresentable instead of something to detect: a follower's
+ * own route is ROUTE_EXTERNAL, so a chain of followers can never resolve.
+ *
+ * Realtime: two array reads and no allocation — safe from the emit path. */
+#define MIDI_DEST_KEEP_CH 0xFF
+
+typedef struct {
+    uint8_t route;
+    uint8_t slot;
+    uint8_t channel;   /* 0-15, or MIDI_DEST_KEEP_CH to keep the caller's */
+    uint8_t emit;      /* 0 = drop: a follower pointing at a non-instrument */
+} midi_dest_t;
+
+static midi_dest_t midi_dest_resolve(uint8_t route, uint8_t slot, uint8_t midi_to) {
+    midi_dest_t d;
+    d.route = route; d.slot = slot; d.channel = MIDI_DEST_KEEP_CH; d.emit = 1;
+    /* `midi_to` means something only on a MIDI track — exactly where the row
+     * that sets it is shown. Gating HERE rather than clearing it on every route
+     * change is what makes a leftover target harmless: picking `Move 2` on a
+     * track that was following track 3 plays Move 2, and coming back to MIDI
+     * finds the old target still there. Reading it unconditionally would have
+     * made a Move-routed track silently keep following. */
+    if (!midi_to || route != ROUTE_EXTERNAL) return d;
+    if (!g_inst || midi_to > NUM_TRACKS) { d.emit = 0; return d; }
+    {
+        const seq8_track_t *tgt = &g_inst->tracks[midi_to - 1];
+        if (tgt->pfx.route != ROUTE_SCHWUNG && tgt->pfx.route != ROUTE_MOVE) {
+            d.emit = 0;
+            return d;
+        }
+        d.route   = tgt->pfx.route;
+        d.slot    = tgt->pfx.slot;
+        d.channel = (uint8_t)(tgt->channel & 0x0F);
+    }
+    return d;
+}
+
 /* Forward decls — arp engine and scale_transpose defined further down. */
 static void arp_add_note     (arp_engine_t *a, uint8_t pitch, uint8_t vel);
 static void arp_remove_note  (arp_engine_t *a, uint8_t pitch);
@@ -1841,13 +1900,20 @@ static void pfx_emit(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
             }
         }
     }
-    if (fx->route == ROUTE_MOVE) {
+    {
+    /* Resolve AFTER the refcount gate above: the gate is about this track's own
+     * output pitches, which is true wherever the notes end up. */
+    midi_dest_t dst = midi_dest_resolve(fx->route, fx->slot, fx->midi_to);
+    if (!dst.emit) return;
+    if (dst.channel != MIDI_DEST_KEEP_CH)
+        status = (uint8_t)((status & 0xF0) | dst.channel);
+    if (dst.route == ROUTE_MOVE) {
         if (!g_host->midi_inject_to_move) return;
         uint8_t pkt[4] = { (uint8_t)(0x20 | (status >> 4)), status, d1, d2 };
         g_host->midi_inject_to_move(pkt, 4);
         return;
     }
-    if (fx->route == ROUTE_EXTERNAL) {
+    if (dst.route == ROUTE_EXTERNAL) {
         /* Push directly to the host's audio-thread-safe SPSC ring (the shim
          * drains it into the MIDI_OUT mailbox on its own per-block SPI
          * cadence). Packet byte 0 is the USB-MIDI header: cable<<4 | CIN.
@@ -1859,9 +1925,12 @@ static void pfx_emit(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
         }
         return;
     }
-    const uint8_t msg[4] = { (uint8_t)(status >> 4), status, d1, d2 };
-    if (g_host->midi_send_internal_slot)
-        g_host->midi_send_internal_slot((int)fx->slot, msg, 4);
+    {
+        const uint8_t msg[4] = { (uint8_t)(status >> 4), status, d1, d2 };
+        if (g_host->midi_send_internal_slot)
+            g_host->midi_send_internal_slot((int)dst.slot, msg, 4);
+    }
+    }
 }
 
 /* LOAD-BEARING SPACING: the blank lines flanking this cold-path include are
@@ -1892,8 +1961,15 @@ static void send_panic(seq8_instance_t *inst) {
     inst->conductor_sounding_prev = 0;
     for (t = 0; t < NUM_TRACKS; t++) {
         play_fx_t *fx = &inst->tracks[t].pfx;
-        if (fx->route >= 0 && fx->route < 3 && !route_pfx[fx->route])
-            route_pfx[fx->route] = fx;
+        /* By EFFECTIVE route. A `MIDI to Track N` follower emits into its
+         * TARGET's instrument, so bucketing it by its own ROUTE_EXTERNAL would
+         * let it stand as the external representative and fire the CC 120/123
+         * sweep below straight into a Move instrument — which is exactly what
+         * the ROUTE_MOVE branch refuses to do, because it corrupts Move's voice
+         * allocator. A follower with no valid target represents nothing. */
+        midi_dest_t d = midi_dest_resolve(fx->route, fx->slot, fx->midi_to);
+        if (d.emit && d.route < 3 && !route_pfx[d.route])
+            route_pfx[d.route] = fx;
     }
     if (route_pfx[ROUTE_SCHWUNG]) {
         play_fx_t *fx = route_pfx[ROUTE_SCHWUNG];
@@ -4339,6 +4415,11 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
         inst->tracks[t].at_last_clip = 0xFF;
         inst->tracks[t].pfx.looper_on = 1;
         inst->tracks[t].pfx.track_idx = (uint8_t)t;
+        /* Plays its OWN instrument. Explicit rather than left to the zeroed
+         * allocation: this is a routing default, and a routing default that is
+         * only true by accident of memory is one refactor from being wrong. */
+        inst->tracks[t].pfx.midi_to = 0;
+        { int _ml; for (_ml = 0; _ml < DRUM_LANES; _ml++) inst->tracks[t].drum_lane_pfx[_ml].midi_to = 0; }
         /* Slot (ROUTE_SCHWUNG): the track's OWN, 1:1 — a track owns its
          * instrument, so there is nothing to choose and no sharing to arrange.
          * The condition the old comment here anticipated has arrived: the slot
@@ -5558,6 +5639,10 @@ static int pfx_get(seq8_track_t *tr, const char *key, char *out, int out_len) {
         return snprintf(out, out_len, "%s",
                         fx->route == ROUTE_EXTERNAL ? "external" :
                         fx->route == ROUTE_MOVE     ? "move"     : "schwung");
+
+    /* 0 = plays its own instrument; 1..NUM_TRACKS = plays that track's. */
+    if (!strcmp(key, "midi_to"))
+        return snprintf(out, out_len, "%d", (int)fx->midi_to);
 
     if (!strcmp(key, "track_looper"))
         return snprintf(out, out_len, "%d", (int)fx->looper_on);

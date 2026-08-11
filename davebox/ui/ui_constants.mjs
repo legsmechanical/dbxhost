@@ -124,9 +124,32 @@ export function fmtInstr(v) {
     if (v === INSTR_MIDI)    return 'MIDI';
     return 'Move ' + ((v | 0) + 1);
 }
-/* `MIDI to` on a MIDI track: 1-16 = external channel. (Track 1-8 targets are
- * the other half of this row and are not built yet.) */
-export function fmtMidiTo(v)  { return 'Ext ' + (v | 0); }
+/* `MIDI to` on a MIDI track. ONE row, two kinds of destination, so the value
+ * space is signed: POSITIVE 1-16 = external channel, NEGATIVE -1..-8 = play
+ * track 1-8's instrument. Encoding both in one value is what keeps this a
+ * single scroll from `Ext 16` to `Track 1` rather than two settings to
+ * reconcile. The DSP stores the two halves separately (`tN_channel` and
+ * `tN_midi_to`); this sign is a UI encoding and nothing else. */
+export function fmtMidiTo(v) {
+    return (v | 0) < 0 ? 'Track ' + (-(v | 0)) : 'Ext ' + (v | 0);
+}
+/* Which destinations a given track may pick. A MIDI track may only target a
+ * Move or Schwung track: pointing at another MIDI track is REJECTED, not
+ * followed, which makes routing cycles unrepresentable rather than something to
+ * detect (spec decision 2). Itself is excluded for the same reason - "play my
+ * own instrument" is what the Instrument row says, not this one.
+ *
+ * `routes` is S.trackRoute; `self` is the 0-based track being edited. */
+export function midiToOptions(routes, self) {
+    const out = [];
+    for (let ch = 1; ch <= 16; ch++) out.push(ch);
+    for (let t = 0; t < routes.length; t++) {
+        if (t === self) continue;
+        if (routes[t] !== 0 && routes[t] !== 1) continue;   /* Schwung or Move only */
+        out.push(-(t + 1));
+    }
+    return out;
+}
 export function fmtPlain(v)  { return String(v); }
 export function fmtNA()      { return '-'; }
 export function fmtArpStyle(v) { return ['Off','Up','Dn','U/D','D/U','Cnv','Div','Ord','Rnd','RnO'][v] || 'Off'; }

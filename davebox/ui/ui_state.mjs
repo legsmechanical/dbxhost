@@ -205,6 +205,9 @@ export const S = {
      * round-robin becomes the wrong answer. Keep it derived so the shape is
      * visible, but do not assume widening it is purely mechanical. */
     trackSlot: Array.from({ length: NUM_TRACKS }, (_, t) => t % CHAIN_SLOTS),
+    /* `MIDI to Track N`: 0 = this track plays its own instrument, 1..8 = it
+     * plays that track's instead. Mirrors the DSP's tN_midi_to. */
+    trackMidiTo: Array.from({ length: NUM_TRACKS }, () => 0),
     trackRoute: new Array(8).fill(0),
     moveCoRunTrack: -1,                       /* -1 = off; 0-3 = Move firmware is co-running on this track (dAVEBOx skips OLED; shim filters nav CCs + touch 0-9 from tool, lets them reach Move) */
     moveCoRunDrumHeld: new Set(),             /* d1 notes of drum lane pads currently held in co-run — per-pad Set so a 2nd simultaneous hold doesn't clobber the 1st's tracking (js-input-1). Plain pad note-off (no Shift injection) sent per held pad on physical release / co-run exit */

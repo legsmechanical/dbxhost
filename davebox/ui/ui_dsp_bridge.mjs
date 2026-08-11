@@ -937,6 +937,9 @@ function readTrackConfig(t) {
     if (sl !== null && sl !== undefined) S.trackSlot[t] = slotIndex(parseInt(sl, 10));
     const rt = host_module_get_param('t' + t + '_route');
     if (rt !== null && rt !== undefined) S.trackRoute[t] = rt === 'external' ? 2 : rt === 'move' ? 1 : 0;
+    /* 0 = plays its own instrument; 1..8 = plays that track's (`MIDI to Track N`). */
+    const mt = host_module_get_param('t' + t + '_midi_to');
+    if (mt !== null && mt !== undefined) S.trackMidiTo[t] = parseInt(mt, 10) | 0;
     /* Bulk read (project load): re-derive after the last track, below. */
     const pm = host_module_get_param('t' + t + '_pad_mode');
     if (pm !== null && pm !== undefined) S.trackPadMode[t] = parseInt(pm, 10) | 0;
@@ -958,6 +961,7 @@ export function applyTrackConfig(t, key, val) {
     host_module_set_param('t' + t + '_' + key, strVal);
     if (key === 'channel')              S.trackChannel[t] = val;
     else if (key === 'slot')            S.trackSlot[t] = slotIndex(val);
+    else if (key === 'midi_to')         S.trackMidiTo[t] = val | 0;
     else if (key === 'route') {
         S.trackRoute[t] = val;
         /* Link Audio rebuild is derived from routing, not a setting — a track
@@ -1125,6 +1129,21 @@ export function liveSendNote(t, type, pitch, vel, rawVel, ext) {
                 queueLiveNoteOff(t, pitch, ext);
             } else {
                 queueLiveNoteOn(t, pitch, vel, ext);
+            }
+        } else if (S.trackMidiTo[t] > 0) {
+            /* A `MIDI to Track N` follower. Notes above already reach the
+             * target -- they go through the DSP, which resolves the
+             * destination in midi_dest_resolve -- but this raw path does not,
+             * so without this a follower's mod wheel and pitch bend would go
+             * out the USB port while its notes played a Move or Schwung
+             * instrument. Same rule as the DSP's: a Schwung target takes it on
+             * its own slot and channel; a Move target drops it, exactly as a
+             * Move-routed track does two branches down. */
+            const tgt = (S.trackMidiTo[t] | 0) - 1;
+            if (S.trackRoute[tgt] === 0) {
+                const tch = (S.trackChannel[tgt] - 1) & 0x0F;
+                shadow_send_midi_to_dsp(slotIndex(S.trackSlot[tgt]),
+                                        [(status & 0xF0) | tch, pitch, vel]);
             }
         } else {
             const cin = (status >> 4) & 0x0F;

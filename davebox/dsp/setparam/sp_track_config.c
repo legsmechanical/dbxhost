@@ -175,6 +175,26 @@ static int sp_track_config(sp_ctx_t *cx) {
         return 1;
     }
 
+    /* tN_midi_to: 0 = this track plays its OWN instrument; 1..NUM_TRACKS = it
+     * plays that track's instrument instead (`MIDI to Track N`). Mirrored into
+     * every drum lane pfx like route and slot.
+     *
+     * ⭑ Self-reference collapses to 0: "play my own instrument" already has a
+     * spelling, and two spellings for one destination is the ambiguity the
+     * track-owns-its-instrument model exists to remove. A target that is not an
+     * instrument is rejected at EMIT (midi_dest_resolve), not here — the target
+     * can change route after this is set, so the check has to live where the
+     * answer is read. */
+    if (!strcmp(sub, "midi_to")) {
+        uint8_t mt = (uint8_t)clamp_i(my_atoi(val), 0, NUM_TRACKS);
+        if (mt == (uint8_t)(tidx + 1)) mt = 0;
+        tr->pfx.midi_to = mt;
+        { int _ml; for (_ml = 0; _ml < DRUM_LANES; _ml++) tr->drum_lane_pfx[_ml].midi_to = mt; }
+        rui_mark(inst, tidx, tr->active_clip);
+        inst->state_dirty = 1;
+        return 1;
+    }
+
     /* tN_route: set MIDI routing for this track */
     if (!strcmp(sub, "route")) {
         uint8_t rt;

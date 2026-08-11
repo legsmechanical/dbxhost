@@ -2,7 +2,7 @@
  * ui_constants.mjs, ahead of the Phase 1 ui_pure.mjs move. */
 import { parseActionRaw, col4, col5, fmtNote, fmtArpOct, fmtRoute,
          fmtRes, fmtPct, fmtBool, fmtGateMod, fmtDiq, fmtStretch, fmtLen,
-         fmtInstr, fmtMidiTo, INSTR_OPTIONS, INSTR_SCHWUNG, INSTR_MIDI,
+         fmtInstr, fmtMidiTo, midiToOptions, INSTR_OPTIONS, INSTR_SCHWUNG, INSTR_MIDI,
          NOTE_KEYS } from '../../ui/ui_constants.mjs';
 
 let failed = 0;
@@ -44,6 +44,24 @@ eq(INSTR_OPTIONS.join(','), '0,1,2,3,4,5', 'instrument options are contiguous');
 /* `MIDI to` shows the channel as the user numbers it (1-16), not 0-based. */
 eq(fmtMidiTo(1), 'Ext 1', 'fmtMidiTo first channel');
 eq(fmtMidiTo(16), 'Ext 16', 'fmtMidiTo last channel');
+/* Negative = a TRACK target, sharing one value space with the Ext channels so
+ * the row is a single scroll. -3 is Track 3, not channel -3. */
+eq(fmtMidiTo(-1), 'Track 1', 'fmtMidiTo track target');
+eq(fmtMidiTo(-8), 'Track 8', 'fmtMidiTo last track target');
+/* Eligible targets: Move (1) or Schwung (0) tracks, never a MIDI track (2) and
+ * never itself — that is what makes routing cycles unrepresentable. */
+{
+    const routes = [1, 0, 2, 0, 2, 1, 0, 2];   /* tracks 3,5,8 are MIDI */
+    const opts = midiToOptions(routes, 0);
+    eq(opts.slice(0, 16).join(','), '1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16',
+       'midiToOptions keeps all 16 external channels');
+    eq(opts.slice(16).join(','), '-2,-4,-6,-7',
+       'midiToOptions offers only Move/Schwung tracks, and never itself');
+    eq(midiToOptions(routes, 1).slice(16).join(','), '-1,-4,-6,-7',
+       'midiToOptions excludes the track being edited, and only it');
+    eq(midiToOptions([2, 2, 2], 0).length, 16,
+       'a set of MIDI tracks offers no track targets at all');
+}
 
 /* fmtRes: ['1/32','1/16','1/8','1/4','1/2','1bar'][v] || '1/16' (ui_constants.mjs:95) */
 eq(fmtRes(0), '1/32', 'fmtRes 0');

@@ -19,13 +19,20 @@ static void drum_pfx_emit(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2
     if (g_inst && px->track_idx < NUM_TRACKS &&
             g_inst->tracks[px->track_idx].pad_mode == PAD_MODE_CONDUCT)
         return;
-    if (px->route == ROUTE_MOVE) {
+    /* Same destination resolution as pfx_emit — a drum lane follows
+     * `MIDI to Track N` exactly as a melodic track does. */
+    {
+    midi_dest_t dst = midi_dest_resolve(px->route, px->slot, px->midi_to);
+    if (!dst.emit) return;
+    if (dst.channel != MIDI_DEST_KEEP_CH)
+        status = (uint8_t)((status & 0xF0) | dst.channel);
+    if (dst.route == ROUTE_MOVE) {
         if (!g_host->midi_inject_to_move) return;
         uint8_t pkt[4] = { (uint8_t)(0x20 | (status >> 4)), status, d1, d2 };
         g_host->midi_inject_to_move(pkt, 4);
         return;
     }
-    if (px->route == ROUTE_EXTERNAL) {
+    if (dst.route == ROUTE_EXTERNAL) {
         /* See pfx_emit ROUTE_EXTERNAL branch. Cable-2 nibble for USB-A out. */
         if (g_host->midi_send_external) {
             const uint8_t pkt[4] = { (uint8_t)(0x20 | ((status >> 4) & 0x0F)), status, d1, d2 };
@@ -33,9 +40,12 @@ static void drum_pfx_emit(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2
         }
         return;
     }
-    const uint8_t msg[4] = { (uint8_t)(status >> 4), status, d1, d2 };
-    if (g_host->midi_send_internal_slot)
-        g_host->midi_send_internal_slot((int)px->slot, msg, 4);
+    {
+        const uint8_t msg[4] = { (uint8_t)(status >> 4), status, d1, d2 };
+        if (g_host->midi_send_internal_slot)
+            g_host->midi_send_internal_slot((int)dst.slot, msg, 4);
+    }
+    }
 }
 
 static void drum_pfx_q_insert(drum_pfx_t *px, uint64_t fire_at,

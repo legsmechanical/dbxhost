@@ -44,7 +44,28 @@ grep -q "S.trackRoute\[S.activeTrack\] === 2) ? \[" ui/ui_menu.mjs \
     && ok "the MIDI to row is conditional on the MIDI route" \
     || bad "MIDI to is unconditional — a Move/Schwung track shows a routing row again"
 
-# 4. The slot has no user-facing spelling left. `slotLetter` existed only to
+# 4. `MIDI to` writes BOTH halves. The DSP stores the channel and the follow
+#    target separately; leaving the other half behind is how a stale target
+#    outlives the choice that set it and silently keeps stealing the notes.
+grep -q "applyTrackConfig(t, 'midi_to', 0);" ui/ui_menu.mjs \
+    && ok "picking an Ext channel clears the follow target" \
+    || bad "Ext no longer clears midi_to — a stale target keeps stealing the notes"
+
+# 5. The eligible-target list is rebuilt per menu open, not captured once:
+#    whether a track is a legal target depends on ITS instrument, which can
+#    have changed since.
+grep -q "options: midiToOptions(S.trackRoute, S.activeTrack)," ui/ui_menu.mjs \
+    && ok "target list is recomputed against live routes" \
+    || bad "the MIDI to target list is stale or hardcoded"
+
+# 6. The follower's RAW path (CC / pitch bend) follows too. Notes go through
+#    the DSP and resolve there; this path does not, so without it a follower's
+#    mod wheel goes out the USB port while its notes play a Move instrument.
+grep -q "S.trackMidiTo\[t\] > 0" ui/ui_dsp_bridge.mjs \
+    && ok "raw CC/PB follows the target too" \
+    || bad "a follower's CC/PB still goes out USB-A while its notes go elsewhere"
+
+# 7. The slot has no user-facing spelling left. `slotLetter` existed only to
 #    print one, so its return means the concept came back.
 grep -rq "slotLetter(" ui/ \
     && bad "slotLetter is back — the slot is user-facing again" \
