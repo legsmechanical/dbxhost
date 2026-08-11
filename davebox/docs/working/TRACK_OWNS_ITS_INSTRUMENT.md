@@ -117,9 +117,18 @@ Code that goes with the rows: the derived MPE row and its whole apparatus — `s
 atomic three-write set, `recomputeMpeRow`, the `mpePreState` array, and the `mpe:` special
 cases in the edit and render paths.
 
-⚠ Leftover to fix in the same pass: the screen is called **[SLOT SETTINGS]**. With the slot
-no longer a user-facing concept, that name outlives the thing it names — the same shape as
-the dead `Move>Schw` row deleted on 2026-08-11.
+⚠ The screen is called **[SLOT SETTINGS]**, and with the slot no longer a user-facing concept
+that name outlives the thing it names. **Not renamed — Josh, 2026-08-11, asked for the name to
+be left alone** because the screen itself is going away: the direction is to expose *all* track
+settings on the sound-mode menu directly, grouped by **section dividers**, rather than behind a
+sub-screen with a name to get right. Renaming it now would be polish on something scheduled for
+deletion. Same for the sub-screens one level down (`SLOT N KNOBS`) and the sibling
+`[SLOT PRESETS]` row.
+
+**Status: the row deletion above is BUILT** (2026-08-11) — the three rows, the `mpe:` cases in
+the open/edit paths, `setSlotMpe`, `recomputeMpeRow`, `mpePreState`, the `CH_FMT`/`FWD_FMT`
+formatters, and `queueSlotCfgWrite`'s now-unreachable `comp` argument (its only caller was the
+MPE row's `synth:mpe_enabled` write) are gone. Host params untouched, as ruled. Suite green.
 
 ## Migration
 

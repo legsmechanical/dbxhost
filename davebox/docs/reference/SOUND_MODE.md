@@ -111,10 +111,16 @@ all, so it is not optional polish.
 
 Below the blocks (track context only) sit two rows (P5):
 
-- **[SLOT SETTINGS]** — the slot's own params (volume, sends, routing), the
-  derived **MPE** toggle (atomic recv=All + fwd=Thru + `synth:mpe_enabled`
-  with restore-on-off), and the **Knobs… / LFO 1… / LFO 2…** rows that open
-  the host editors as overlay services on top of sound mode.
+- **[SLOT SETTINGS]** — the slot's own params (volume, sends, transpose,
+  mute/solo) and the **Knobs… / LFO 1… / LFO 2…** rows that open the host
+  editors as overlay services on top of sound mode.
+  ⚠ **Routing is not here.** `Recv Ch`, `Fwd Ch` and the derived **MPE**
+  toggle were deleted with `TRACK_OWNS_ITS_INSTRUMENT.md` — where a track's
+  notes go is answered by its Instrument selector, and davebox dispatches by
+  addressed slot rather than by channel match, so those rows never affected
+  anything it did. (The screen's NAME still says "slot"; Josh's direction is
+  to fold all track settings into the sound-mode menu behind section
+  dividers rather than rename it in place.)
 - **[SLOT PRESETS]** (last row) — whole-chain patches over the host's global
   `patches/` store, through the `host_patch_*` API (see host `docs/API.md`)
   so the serializer and index space stay the host's own. `[Save]`

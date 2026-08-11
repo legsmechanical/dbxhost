@@ -28,7 +28,7 @@ import {
     engineGetSlotParam, engineSetSlotParam, engineSaveState, engineVolBlock,
     engineGetChainParam, engineSetChainParam,
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
-    CHAIN_SLOTS, slotIndex,
+    slotIndex,
 } from './ui_engine.mjs';
 /* davebox's GLOBAL state. Sound mode keeps its own `S`, so this is imported
  * under a different name deliberately — the two are easy to confuse, and
@@ -121,8 +121,8 @@ const BUS_BLOCKS = [1, 2, 3, 4];      /* fx1..fx4 on every bus */
  * HAS a sound to edit, it just isn't a Schwung chain. Same shape as the session
  * buses above (four inserts addressed by a key prefix, loaded by DSP PATH), so
  * it rides the same machinery; the differences are all in what a Move bus does
- * NOT have. There is no MIDI FX and no receive/forward/transpose/MPE — those are
- * chain concepts — and the "synth" is Move's own editor, reached through co-run.
+ * NOT have. There is no MIDI FX and no transpose — those are chain concepts —
+ * and the "synth" is Move's own editor, reached through co-run.
  *
  * ⚠ `move_fx:` keys are 1-BASED and ignore the slot argument entirely. The bus
  * number is the track number, which is also what 1a made unconditional: track N
@@ -177,10 +177,8 @@ const PATCH_RELIST_TICKS = 30;
  * reading and writing the same chain-host slot params the host's editors did
  * (knob_N_target/param via knob_N_set/clear; lfoN:* keys).
  *
- * `fmt` exists because a raw number is a lie for most of these: -1 on a forward
- * channel means Auto, 0 on a receive channel means All. */
-const CH_FMT = (v) => (v === 0 ? 'All' : 'Ch ' + v);
-const FWD_FMT = (v) => (v === -2 ? 'Thru' : v === -1 ? 'Auto' : 'Ch ' + (v + 1));
+ * `fmt` exists because a raw number is a lie for most of these: a transpose of
+ * 0 is "0 st", a mute is Yes/No. */
 const PCT_FMT = (v) => Math.round(v * 100) + '%';
 const ST_FMT  = (v) => (v === 0 ? '0 st' : (v > 0 ? '+' : '') + v + ' st');
 const ONOFF   = (v) => (v ? 'Yes' : 'No');
@@ -193,16 +191,19 @@ const SLOT_SETTINGS = [
     { key: 'send_a',        label: 'Send A',      min: 0, max: 1, step: 0.05, fmt: PCT_FMT, cap: 'sends' },
     { key: 'send_b',        label: 'Send B',      min: 0, max: 1, step: 0.05, fmt: PCT_FMT, cap: 'sends' },
     { key: 'transpose',     label: 'Transpose',   min: -12, max: 12, step: 1, int: true, fmt: ST_FMT },
-    { key: 'receive_channel', label: 'Recv Ch',   min: 0, max: 16, step: 1, int: true, fmt: CH_FMT },
-    { key: 'forward_channel', label: 'Fwd Ch',    min: -2, max: 15, step: 1, int: true, fmt: FWD_FMT },
-    /* MPE is a DERIVED row, not a stored param: On means recv=All + fwd=Thru
-     * (the host's isSlotMpeMode test), and toggling it performs the same
-     * atomic three-write set the host's Chain Settings row does — recv, fwd,
-     * synth:mpe_enabled together, with the pre-MPE recv/fwd restored on Off.
-     * Anything less (a bare synth flag) leaves channel remap destroying
-     * per-note bend/pressure/slide, which reads as "MPE is broken". */
-    { key: 'mpe_mode', label: 'MPE', min: 0, max: 1, step: 1, int: true,
-      fmt: (v) => (v ? 'On' : 'Off'), mpe: true },
+    /* `Recv Ch`, `Fwd Ch` and the derived `MPE` row were here until the track
+     * gained ownership of its instrument (TRACK_OWNS_ITS_INSTRUMENT.md, Josh
+     * signed off all three). Where a track's notes go is answered entirely by
+     * the Instrument selector — a second place to express routing is the
+     * ambiguity that spec exists to remove, and this was the stale one:
+     * davebox dispatches by ADDRESSED SLOT, never by channel match
+     * (`ROUTE_SCHWUNG` in seq8.c), so a slot's receive channel never affected
+     * anything davebox did. MPE was defined as recv=All + fwd=Thru, built out
+     * of the very two rows above, and davebox does not support MPE anyway.
+     * All three were absorbed from the host's chain editor in P7 because that
+     * screen had them, not because this module used them.
+     * ⚠ The host PARAMS stay — host code still reads them; removing state is a
+     * separate, larger change. The consequence is noted in the spec. */
     { key: 'muted',         label: 'Muted',       min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
     { key: 'soloed',        label: 'Soloed',      min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
     /* `move_to_slot` was here until P8a 1a retired Move>Slot in the host: a slot
@@ -1366,11 +1367,10 @@ function probeCaps() {
 
 function openSlotCfg(keepCursor) {
     S.slotCfgVals = S.slotRows.map(s => {
-        if (s.sub || s.mpe) return 0;   /* no stored param behind these rows */
+        if (s.sub) return 0;            /* no stored param behind these rows */
         const raw = parseFloat(engineGetSlotParam(S.slot, s.key));
         return isFinite(raw) ? raw : 0;
     });
-    recomputeMpeRow();
     /* Returning from a sub-editor keeps the cursor on the row that opened it. */
     if (!keepCursor) S.slotCfgIdx = 0;
     S.slotCfgEditing = false;
@@ -1386,12 +1386,6 @@ function slotCfgStep(delta) {
         S.slotCfgEditing = false;
         return;
     }
-    if (s.mpe) {
-        const on = S.slotCfgVals[S.slotCfgIdx] >= 1;
-        if (delta > 0 && !on) setSlotMpe(true);
-        else if (delta < 0 && on) setSlotMpe(false);
-        return;
-    }
     let v = S.slotCfgVals[S.slotCfgIdx] + (delta > 0 ? s.step : -s.step);
     if (s.int) v = Math.round(v);
     else v = Math.round(v * 1000) / 1000;      /* keep 0.05 steps from drifting */
@@ -1401,16 +1395,12 @@ function slotCfgStep(delta) {
     S.slotCfgVals[S.slotCfgIdx] = v;
     S.slotCfgDirty = true;
     queueSlotCfgWrite(s.key, v);
-    /* Hand-editing recv/fwd can make or unmake the MPE condition — keep the
-     * derived row telling the truth without a screen reopen. */
-    if (s.key === 'receive_channel' || s.key === 'forward_channel') recomputeMpeRow();
 }
 
 /* Queued like every other write here: this runs in the MIDI handler.
  * Slot captured at QUEUE time, same reason queueWrite does it: sound mode
  * can retarget to another track before the drain, and a send raised against
- * one slot must not land in the one that replaced it. `comp` addresses a
- * component namespace (synth:mpe_enabled) instead of slot:. */
+ * one slot must not land in the one that replaced it. */
 /* Chain-level twin of queueSlotCfgWrite: same queue, bare-key namespace. */
 function queueChainWrite(key, val) {
     for (const w of S.pendingSlotWrites) {
@@ -1419,62 +1409,13 @@ function queueChainWrite(key, val) {
     S.pendingSlotWrites.push({ slot: S.slot, key: key, val: val, chain: true });
 }
 
-function queueSlotCfgWrite(key, val, comp) {
+/* No `comp` argument: the only writer that addressed a component namespace
+ * from this queue was the MPE row's `synth:mpe_enabled`, which went with it. */
+function queueSlotCfgWrite(key, val) {
     for (const w of S.pendingSlotWrites) {
-        if (w.key === key && w.slot === S.slot && w.comp === comp) { w.val = val; return; }
+        if (w.key === key && w.slot === S.slot && !w.chain) { w.val = val; return; }
     }
-    S.pendingSlotWrites.push({ slot: S.slot, key: key, val: val, comp: comp });
-}
-
-/* The MPE row's value is derived from the on-screen recv/fwd rows (they were
- * read at open, and every edit path updates them), never from an SHM read. */
-function recomputeMpeRow() {
-    const iMpe = S.slotRows.findIndex(r => r.mpe);
-    if (iMpe < 0) return;
-    const iRecv = S.slotRows.findIndex(r => r.key === 'receive_channel');
-    const iFwd = S.slotRows.findIndex(r => r.key === 'forward_channel');
-    const recv = iRecv >= 0 ? S.slotCfgVals[iRecv] : -1;
-    const fwd = iFwd >= 0 ? S.slotCfgVals[iFwd] : 0;
-    S.slotCfgVals[iMpe] = (recv === 0 && fwd === -2) ? 1 : 0;
-}
-
-/* What recv/fwd were before MPE forced them, per chain slot, so Off restores
- * the routing you had. In-memory only — the host's Chain Settings row keeps
- * its pre-state the same way. Fallbacks mirror the host's: recv = the slot's
- * own channel, fwd = Auto. */
-/* Per-slot snapshot of the pre-MPE receive/forward channels, so turning MPE
- * off restores what was there. Sized from the slot count: this array and the
- * slotIndex() sanitising of `slot` below are a COUPLED pair — a literal length
- * here with a sanitised index reads back undefined into a truthy-checked
- * branch, which is a wrong restore rather than an error. */
-const mpePreState = new Array(CHAIN_SLOTS).fill(null);
-
-function setSlotMpe(on) {
-    const slot = slotIndex(S.slot);
-    const iRecv = S.slotRows.findIndex(r => r.key === 'receive_channel');
-    const iFwd = S.slotRows.findIndex(r => r.key === 'forward_channel');
-    let recv, fwd;
-    if (on) {
-        mpePreState[slot] = {
-            recv: iRecv >= 0 ? S.slotCfgVals[iRecv] : slot + 1,
-            fwd: iFwd >= 0 ? S.slotCfgVals[iFwd] : -1,
-        };
-        recv = 0;    /* All  */
-        fwd = -2;    /* Thru */
-    } else {
-        const prev = mpePreState[slot];
-        recv = prev ? prev.recv : slot + 1;
-        fwd = prev ? prev.fwd : -1;
-        mpePreState[slot] = null;
-    }
-    queueSlotCfgWrite('receive_channel', recv);
-    queueSlotCfgWrite('forward_channel', fwd);
-    queueSlotCfgWrite('mpe_enabled', on ? 1 : 0, 'synth');
-    if (iRecv >= 0) S.slotCfgVals[iRecv] = recv;
-    if (iFwd >= 0) S.slotCfgVals[iFwd] = fwd;
-    recomputeMpeRow();
-    S.slotCfgDirty = true;
-    S.dirty = true;
+    S.pendingSlotWrites.push({ slot: S.slot, key: key, val: val });
 }
 
 /* Saving is a synchronous whole-chain file write, so it happens on LEAVING the
@@ -1494,7 +1435,6 @@ function drainSlotWrites() {
     if (!q.length) return;
     for (let n = 0; n < WRITES_PER_TICK && q.length; n++) {
         const w = q.shift();
-        if (w.comp) { engineSet(w.slot, w.comp, w.key, String(w.val)); continue; }
         /* Chain-level keys (knob_N_*, lfoN:*) go through BARE — they are not
          * in the slot: namespace (see engineSetChainParam). */
         if (w.chain) { engineSetChainParam(w.slot, w.key, String(w.val)); continue; }
