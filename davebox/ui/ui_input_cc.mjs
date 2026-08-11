@@ -43,7 +43,7 @@ import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
     setDrumLanePage } from './ui_drummodel.mjs';
 import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
-import { DAVEBOX_PICKER_KEEP_MASK } from './ui_corun.mjs';
+import { exitMoveNativeCoRun } from './ui_corun.mjs';
 import { soundActive, soundExit } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
@@ -1108,26 +1108,28 @@ function _onCC_buttons(d1, d2) {
     }
 
     /* Move's Menu button (CC 50) is in CORUN_KEEP_DEFAULT so the shim routes
-     * it to us during co-run. Charles's framework reserves Back as the
-     * canonical exit, but Menu-as-second-exit is a dAVEBOx convenience for
-     * existing muscle memory — outside co-run dAVEBOx ignores Menu (no other
-     * handler exists), so this branch is dormant unless a session is active. */
+     * it to us during co-run — which makes it the ONLY button dAVEBOx can put an
+     * exit on that Move firmware does not need for itself. */
     /* Note/Session view toggle: Shift+press = open global menu (Track View only);
      * tap = switch view; hold = session overview */
     if (d1 === MoveNoteSession) {
-        /* Move co-run: Menu button is disabled — swallow press and release so it
-         * neither exits co-run nor toggles the view. Step 3 / Back are the exits. */
+        /* ⭑ MOVE CO-RUN: Menu is THE WAY OUT, and it returns you where you came
+         * in from (P8a 1d).
+         *
+         * Back cannot do this. **Move owns Back**, because it needs it to walk
+         * its own menus, and there is no way to tell when it is at the top of
+         * its structure (Josh, hardware, 2026-08-11) — so a Back intercept would
+         * either steal Move's navigation or never fire. Menu is free.
+         *
+         * This REPLACES Menu-opens-the-FX-bus-picker. That was the buses' only
+         * entry point, which is exactly why 1d had to wait for 1b: the Move
+         * buses now live in their track's sound mode, which is also where this
+         * exit returns you. Nothing is orphaned.
+         *
+         * Step 3 keeps working as the second exit (ui_input_pads.mjs) — it lands
+         * on track view, since it is a step-grid affordance, not a return. */
         if (S.moveCoRunTrack >= 0) {
-            /* Move co-run: Note/Session opens an FX screen as an overlay over the
-             * Move synth — this fork's fx_picker where available, else the stock
-             * master_fx (see the coRunOverlayScreen probe in pollDSP). corun target
-             * stays MOVE_NATIVE, so pollDSP does NOT tear down — Back returns to the
-             * synth. No addressable screen: swallow as before. */
-            if (d2 === 127 && S.coRunOverlayScreen) {
-                /* Overlay rides the service stack; close (Menu/Back) pops it
-                 * and the underlay's claims re-derive. */
-                host_open_service(S.coRunOverlayScreen, { keep_mask: DAVEBOX_PICKER_KEEP_MASK });
-            }
+            if (d2 === 127) exitMoveNativeCoRun();
             return;
         }
         if (d2 === 127) {

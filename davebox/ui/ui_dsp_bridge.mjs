@@ -294,11 +294,10 @@ export function pollDSP() {
      * the HOST from SHM and reported through onServiceReturn — one return
      * path (the old classic-path reconcile here would double-clean and
      * host_close_service a service the host already popped). */
-    if (S.coRunOverlayScreen === undefined) {
-        /* Which host screen Note/Session opens as an overlay in Move co-run.
-         * One host, one module: the fx_picker service always exists. */
-        S.coRunOverlayScreen = 'fx_picker';
-    }
+    /* `coRunOverlayScreen` was set here — which host screen Note/Session opened
+     * as an overlay in Move co-run (the fx_picker). Deleted in P8a 1d: Menu is
+     * the co-run EXIT now, and the FX buses it used to reach live in their
+     * track's sound mode, which is where that exit returns you. */
     /* Remote-UI edit sync: the browser piano-roll edits notes[]/clips directly in
      * the DSP (they play immediately) but the on-device JS keeps its own clip
      * grid + step mirror, which would otherwise only refresh on a local action.

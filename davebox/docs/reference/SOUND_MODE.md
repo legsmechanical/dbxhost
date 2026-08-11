@@ -46,6 +46,18 @@ SYNTH (MOVE N)  →  FX 1  →  FX 2  →  FX 3  →  FX 4  →  Volume / Send A
   browse. Jog-click hands over to Move's editor (co-run). Sound mode raises a
   request flag the tick consumes; importing `ui_corun` from `ui_sound` would
   close an import cycle.
+  **Menu brings you back here** (P8a 1d): the entry origin is recorded at entry
+  (`S.moveCoRunOrigin`) because sound mode is exited on the way in, so nothing on
+  the return path could infer it. Entering instead from the track menu's
+  `Edit Synth…` records a `track` origin and closing lands on track view, which
+  is where it came from.
+  ⚠ **Back cannot be the exit — Move owns it**, because it needs Back to walk its
+  own menus, and the peer UI's depth is not observable from the framework (the
+  host says as much in `docs/CORUN.md`: for `CORUN_TARGET_MOVE_NATIVE` the tool
+  owns its exit gesture, "typically Menu"). Step 3 remains the second exit and
+  lands on track view — it is a step-grid affordance, not a return.
+  Menu **blinks** during co-run so it reads as the way out; it used to be held
+  dark, from when it did nothing.
 - **FX 1–4** are the bus's four inserts. ⚠ A bus insert's `:module` takes a **DSP
   path**; a chain component's takes a **module id**. Loading a bus by id answers
   error 7 and the row stays empty.
@@ -56,9 +68,14 @@ SYNTH (MOVE N)  →  FX 1  →  FX 2  →  FX 3  →  FX 4  →  Volume / Send A
   transpose and MPE are chain concepts and are omitted. **Mute/solo are absent**
   — the strip does not participate in either yet (open Stage 1a remainder), and a
   row that reads nothing is worse than no row.
-- The master **volume-knob claim is dropped** in this flavour: there is no slot
-  level for it to mean, so Move's own master stays under the knob. Retargeting
-  back onto a Schwung track re-claims it.
+- The master **volume knob is CLAIMED**, as it is for a chain, and moves the bus
+  strip's Volume — in sound mode plain Volume always means "the level of the
+  thing on this screen". ⚠ Releasing it instead (the first cut) was wrong twice:
+  Move took the knob back and covered the screen with its native master overlay,
+  AND sound mode still consumed the CC, writing the turn into chain slot 0's
+  module level — a different track's sound. **Releasing the host claim is not the
+  same as declining to consume the CC**; they are two independent gates, and the
+  CC 79 branch bails on `soundIsGlobal()`, which excludes Move buses.
 - Back leaves sound mode outright — a Move bus's one door is the track it belongs
   to, not the session FX list.
 

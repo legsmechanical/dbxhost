@@ -147,13 +147,20 @@ export function schSlotMasksAllTracks(out) {
  * ROUTE_MOVE rely on the user's trackChannel to address one of Move's
  * 4 tracks — if trackChannel is outside 1-4 we just enter co-run without
  * an auto-tap and let the user pick the Move track manually. */
-export function enterMoveNativeCoRun(t) {
+export function enterMoveNativeCoRun(t, origin) {
     /* Track view only (Josh, 2026-08-08) — see openSchwungSlotEditor. */
     if (S.sessionView) {
         showActionPopup('TRACK VIEW ONLY', 'Switch out of session', 'view to edit synths.');
         return;
     }
     S.moveCoRunTrack = t;
+    /* WHERE you came in from, so Menu can put you back there (P8a 1d).
+     * 'sound' = the SYNTH row of the track's Move sound mode; anything else
+     * (the track menu's `Edit Synth...`) means track view, which is where a
+     * plain co-run close lands you anyway. Recorded at ENTRY because by the
+     * time the service returns there is nothing left to infer it from —
+     * sound mode was exited on the way in. */
+    S.moveCoRunOrigin = (origin === 'sound') ? 'sound' : 'track';
     /* Re-push the padmap so the left-column lane pads become 0xFF (DSP on_midi
      * skips sounding them; Move handles sound+select via the injected pad).
      * Also queue a tick recompute in case this set_param push coalesces away. */
@@ -191,6 +198,11 @@ export function exitMoveNativeCoRun() {
  * the host derives the split teardown; this is state, modifiers, palette,
  * LED cache only. */
 function cleanupAfterMoveNativeCoRun() {
+    /* Return to origin (P8a 1d). Read + cleared BEFORE the track index is, and
+     * acted on at the END of this function — see the tail. */
+    const _origin = S.moveCoRunOrigin;
+    const _originTrack = S.moveCoRunTrack;
+    S.moveCoRunOrigin = null;
     S.moveCoRunTrack = -1;
     S.pendingMoveCoRunInject = 0;  /* cancel any pending entry inject */
     S.moveCoRunPressQueue = null;  /* cancel any in-flight track-row press sequence */
@@ -227,5 +239,19 @@ function cleanupAfterMoveNativeCoRun() {
      * (mirrors the force=true the track-button reclaim already uses). */
     S._forceKnobReemit = true;
     forceRedraw();
+    /* LAST: back to where you came in from.
+     *
+     * Deliberately after every restore above — soundEnterMove claims the volume
+     * knob and reads the bus, and doing that before the palette/LED/modifier
+     * teardown would have it undone underneath. A 'track' origin needs nothing:
+     * closing the service already lands on track view.
+     *
+     * Guarded on the route still being Move: the only way it changed is the
+     * global menu, which is unreachable during co-run, but re-entering a Move
+     * screen for a track that is no longer Move-routed would be a screen with
+     * nothing behind it. */
+    if (_origin === 'sound' && _originTrack >= 0 && S.trackRoute[_originTrack] === 1) {
+        S.pendingSoundEnterTrack = _originTrack;
+    }
 }
 

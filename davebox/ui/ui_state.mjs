@@ -589,6 +589,7 @@ export const S = {
     sessVolPending: new Array(8).fill(false),
     sessVolSaveOwed: false,
     sessVolLastTurn: -1,                   /* tick of the last level change */
+    moveCoRunOrigin: null,      /* P8a 1d: where Move co-run was entered FROM ('sound' = the SYNTH row of that track's Move sound mode, so Menu returns there; 'track' = the track menu's Edit Synth..., where a plain close already lands). Recorded at ENTRY — sound mode is exited on the way in, so nothing is left to infer it from on return. */
     pendingSoundEnterTrack: -1, /* Sound mode entry queued from the Shift-release dispatch or the track menu. Entry's shadow_get/set_param traffic must run on the tick budget — hence the deferral. */
     pendingUndoSync: 0,
     pendingDefaultSetParams: [],

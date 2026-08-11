@@ -1168,9 +1168,9 @@ export function _tickImpl() {
         {
             const _cr = soundConsumeCoRunRequest();
             if (_cr >= 0) {
-                console.log('[sound] move synth row -> co-run track ' + _cr);
+                /* 'sound' so Menu returns here rather than to track view. */
                 soundExit();
-                enterMoveNativeCoRun(_cr);
+                enterMoveNativeCoRun(_cr, 'sound');
             }
         }
         /* ---- sound mode: reconcile with the world it does not own ----
@@ -1516,10 +1516,14 @@ export function _tickImpl() {
          * the button is disabled + dark; force OFF to override Move firmware.
          * Global Menu / Tap Tempo keep the blink (no competing LED layer). */
         if (S.moveCoRunTrack >= 0) {
-            /* Move co-run: the Menu button is disabled (Step 3 / Back are the
-             * exits), so keep its LED dark. Force OFF every POLL_INTERVAL to
-             * override Move firmware's pass-through writes. */
-            setButtonLED(MoveNoteSession, LED_OFF, (S.tickCount % POLL_INTERVAL) === 0);
+            /* Move co-run: Menu is the way OUT (P8a 1d), so it has to LOOK like
+             * one — it was held dark back when it did nothing. Blink, the same
+             * vocabulary Tap Tempo uses for "this button leaves". Forced every
+             * POLL_INTERVAL to override Move firmware's pass-through writes,
+             * which is why it is a force rather than a plain set. */
+            setButtonLED(MoveNoteSession,
+                         (Math.floor(S.tickCount / 24) % 2) ? White : LED_OFF,
+                         (S.tickCount % POLL_INTERVAL) === 0);
         } else if (S.globalMenuOpen) {
             /* Menu open: steady-lit (no blink) — Back exits the menu now, so the
              * button doesn't need to flash to advertise itself as the exit. */

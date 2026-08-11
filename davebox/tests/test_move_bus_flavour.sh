@@ -71,4 +71,23 @@ grep -q "const keepPlace = !leftMoveBus && S.view === VIEW_EDIT;" ui/ui_sound.mj
     && ok "retarget keeps your place only from inside a block editor" \
     || bad "the retarget landing rule changed — picker vs editor asymmetry is back"
 
+echo "co-run return-to-origin (1d):"
+# 8. Menu is the co-run EXIT. Back cannot be: Move owns it for its own menus.
+grep -q "if (d2 === 127) exitMoveNativeCoRun();" ui/ui_input_cc.mjs \
+    && ok "Menu exits Move co-run" \
+    || bad "Menu no longer exits Move co-run — with Back owned by Move there is no way out"
+# 9. The origin is recorded at ENTRY. Nothing on the return path can infer it:
+#    sound mode is exited on the way in.
+grep -q "enterMoveNativeCoRun(_cr, 'sound')" ui/ui_tick.mjs \
+    && ok "the SYNTH row records a 'sound' origin" \
+    || bad "co-run entry from sound mode no longer passes its origin"
+grep -q "S.moveCoRunOrigin = (origin === 'sound')" ui/ui_corun.mjs \
+    && ok "enterMoveNativeCoRun stores the origin" \
+    || bad "the origin is not stored — Menu will always land on track view"
+# 10. The FX-bus picker's old entry point is gone, and must NOT come back as a
+#     second Menu meaning: the buses live in sound mode now.
+grep -rqE "S\.coRunOverlayScreen" ui/*.mjs \
+    && bad "coRunOverlayScreen is back — Menu has two meanings in co-run again" \
+    || ok "the co-run FX-picker overlay entry is gone"
+
 exit $fail
