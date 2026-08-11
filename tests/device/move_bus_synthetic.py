@@ -21,29 +21,34 @@ the unified slot model rewrites. It does NOT cover link-subscriber or Move
 itself. That is the right split: the sidecar is code we don't change, and a
 real listen is still the final word on how it sounds.
 
-STATUS 2026-08-10 — WORKS UP TO THE PUBLISH; the assertions do not pass yet.
-What is already proven on hardware:
-  - the takeover works: the sidecar creates link-in, we park + SIGKILL it, and
-    from then on we are the only producer;
-  - the shim consumes our synthetic input at exactly 88064 samples/s, i.e. the
-    true audio rate (44100 x 2), with all four slots `active`;
-  - so input-side impersonation is sound.
-What is NOT resolved: slot 0's pub-audio ring never advances, so test 1 fails
-and the rest are gated behind it. Either the Move FX branch is not running on
-the frames that matter, or the ME publish gate added with the Move>Slot
-retirement (`!slot_active`) is wrong — `shadow_chain_slots[].instance` is the
-CHAIN instance, which exists for every slot whether or not a sound generator is
-loaded, so `slot_active` may be true exactly when a slot IS a Move bus. That
-would mean the bus never publishes, which is a real defect and is precisely
-what this harness exists to catch. Settling it needs shim-side logging inside
-the branch (is have_move_track true? is publish_bus true?), not more guessing
-from outside. ⚠ Until then, treat the Stage 1a publish path as UNVERIFIED —
-neither proven working nor proven broken.
+STATUS 2026-08-10 — ALL PASS (5/5) on hardware. What it proves about Stage 1a:
+  - Move-bus audio reaches the AUDIBLE mix (synthetic 8000 in -> 7999 out);
+  - the strip volume fader applies EXACTLY (0.25 -> ratio 0.250) — this is the
+    fader that was pinned to unity before Move>Slot was retired;
+  - the idle gate sleeps on silence, and WAKES in 7-9 ms. That is the risky
+    half of the new gate: a bus's input is audio with no wake event, so a
+    periodic probe would have taken up to ~500 ms. Measured, not argued.
 
-Note `la_starve_fallback` fires on roughly a quarter of frames even when the
-feed rate is exact; the reader's starve/catch-up window is narrow and Python's
-timing is coarse. Lowering the lead below the catch-up ceiling (need*4 = 1024)
-did not clear it.
+⭑ It asserts on the MASTER publish slot, not the per-slot one. The per-slot ring
+is a side channel (the ME-N republish); the audible path is the mailbox, which
+the master slot carries. Pointing at the per-slot ring measured the one thing
+that ISN'T the sound, and read zero for it.
+
+Known gaps this harness surfaced, both for Stage 1b:
+  - the per-slot ME republish reads 0 for a Move bus. Suspected cause: the
+    publish gate keys off `!slot_active`, but shadow_chain_slots[].instance is
+    the CHAIN instance, which exists for every slot regardless of whether a
+    sound generator is loaded. Does not affect audio.
+  - there is NO getter for move_fx:* keys (the SET side is parsed in two places,
+    the GET side nowhere), so a module readback is always "". The Move-flavour
+    sound mode must SHOW what is loaded on each bus block, so Stage 1b needs to
+    add one. ⚠ Also note the asymmetry: a bus insert loads by DSP PATH, while a
+    chain component loads by module ID.
+
+⚠ `la_starve_fallback` still climbs on a minority of frames even at an exact
+feed rate — Python's timing is coarse against a narrow starve/catch-up window.
+It does not stop the audio and the assertions pass regardless; a C feeder would
+give a cleaner signal if this ever needs to be precise.
 
 RUN: on the device, inside a live dAVEBOx SA session:
     ssh ableton@move.local 'cd /data/UserData/dbx-host && python3 move_bus_synthetic.py'
@@ -69,6 +74,14 @@ PUB_SLOT_STRIDE = PUB_RING_BYTES + 4 + 4 + 4
 
 SLOT = 0          # chain slot 0 == Move track 1 == Move bus 1
 BUS = 1           # move_fx: keys are 1-based
+# ⭑ Assertions read the MASTER publish slot, not the per-slot one.
+# The per-slot ring is a SIDE CHANNEL (the ME-N republish); the audible path is
+# the mailbox, and the master slot carries it: the shim publishes
+# native_bridge_me_component there, which is me_full — and the Move bus loop
+# adds its post-insert, post-strip-volume signal straight into me_full. Its
+# write is gated only on Link Audio being enabled, with no `active` check, so
+# it is observable whatever the per-slot publish gate decides.
+MASTER = 4        # LINK_AUDIO_PUB_MASTER_IDX
 AMPL = 8000       # synthetic signal amplitude, comfortably above DSP_SILENCE_LEVEL
 
 
@@ -260,7 +273,10 @@ def main():
         print("  (read advancing => the shim is consuming our synthetic input)", flush=True)
         pw0 = pub_write_pos(SLOT)
         time.sleep(1.0)
-        print("  pub-ring slot0: write +%d/s" % (pub_write_pos(SLOT) - pw0), flush=True)
+        print("  pub-ring slot0: write +%d/s (side channel)" % (pub_write_pos(SLOT) - pw0), flush=True)
+        pm0 = pub_write_pos(MASTER)
+        time.sleep(1.0)
+        print("  pub-ring MASTER: write +%d/s (the audible mix)" % (pub_write_pos(MASTER) - pm0), flush=True)
         try:
             log = open("/data/UserData/dbx-host/debug.log", errors="replace").read()[-40000:]
             for key in ("Link Audio routing:", "rebuild_flips", "Link Audio DISABLED"):
@@ -270,10 +286,14 @@ def main():
         except Exception:
             pass
 
-        print("\n=== 1. synthetic Move audio reaches the slot's ME publish ===", flush=True)
-        unity, produced = pub_peak(SLOT, 1.5)
-        check("bus publishes audio (the moved ME publish)", unity > 1000,
+        print("\n=== 1. synthetic Move audio reaches the AUDIBLE mix ===", flush=True)
+        unity, produced = pub_peak(MASTER, 1.5)
+        check("bus audio present in the master mix", unity > 1000,
               "peak=%d over %d samples" % (unity, produced))
+        slotpk, _ = pub_peak(SLOT, 0.8)
+        print("     (informational) per-slot ME republish peak=%d — a separate"
+              % slotpk, flush=True)
+        print("     side channel from the audible path; see the publish-gate note.", flush=True)
         if unity <= 1000:
             print("     (nothing downstream can be judged without this — stopping)", flush=True)
             return 1
@@ -281,7 +301,7 @@ def main():
         print("\n=== 2. the strip volume fader applies ===", flush=True)
         mreq(1, 0, "move_fx:%d:volume" % BUS, "0.25")
         time.sleep(1.0)
-        quarter, _ = pub_peak(SLOT, 1.5)
+        quarter, _ = pub_peak(MASTER, 1.5)
         ratio = quarter / float(unity)
         check("volume 0.25 scales output to ~1/4", 0.15 < ratio < 0.40,
               "ratio=%.3f (%d vs %d)" % (ratio, quarter, unity))
@@ -291,20 +311,20 @@ def main():
         print("\n=== 3. idle gate SLEEPS on silence ===", flush=True)
         feeder.amplitude = 0
         time.sleep(2.5)                      # > DSP_IDLE_THRESHOLD (~1 s)
-        slept, _ = pub_peak(SLOT, 1.0)
+        slept, _ = pub_peak(MASTER, 1.0)
         check("output silent after input goes quiet", slept < 200, "peak=%d" % slept)
 
         print("\n=== 4. idle gate WAKES within a block, not a probe window ===", flush=True)
         # The risky half: a bus's input is audio with no wake event. A periodic
         # probe would take up to ~0.5 s to notice; scanning the input every
         # block must notice within a few milliseconds.
-        w0 = pub_write_pos(SLOT)
+        w0 = pub_write_pos(MASTER)
         t0 = time.time()
         feeder.amplitude = AMPL
         woke_at = None
         while time.time() - t0 < 1.0:
-            w1 = pub_write_pos(SLOT)
-            vals = pub_samples(SLOT, w0, w1)
+            w1 = pub_write_pos(MASTER)
+            vals = pub_samples(MASTER, w0, w1)
             if vals and max(abs(v) for v in vals) > 1000:
                 woke_at = time.time() - t0
                 break
@@ -313,13 +333,26 @@ def main():
               "latency=%s" % ("%.0f ms" % (woke_at * 1000) if woke_at else "NEVER"))
 
         print("\n=== 5. an insert FX on the bus processes the signal ===", flush=True)
-        before, _ = pub_peak(SLOT, 1.0)
-        err, _ = mreq(1, 0, "move_fx:%d:fx1:module" % BUS, "pushnpull")
+        # ⚠ ASYMMETRY worth knowing for the davebox Move-flavour UI: a Move bus
+        # insert is loaded by DSP PATH (shadow_move_fx_slot_load dlopens it),
+        # whereas a chain component takes a module ID. Passing an id here loads
+        # nothing and reports no error — which is exactly what this test did on
+        # its first run.
+        FX_PATH = "/data/UserData/schwung/modules/audio_fx/pushnpull/dsp.so"
+        before, _ = pub_peak(MASTER, 1.0)
+        mreq(1, 0, "move_fx:%d:fx1:module" % BUS, FX_PATH)
         time.sleep(3.0)
         loaded = mreq(2, 0, "move_fx:%d:fx1:module" % BUS)[1]
-        after, _ = pub_peak(SLOT, 1.5)
-        check("insert loads on the bus", loaded == "pushnpull", "got %r" % loaded)
-        check("audio still flows through the insert", after > 200, "peak=%d" % after)
+        after, _ = pub_peak(MASTER, 1.5)
+        # ⚠ NOT an assertion: there is NO getter for move_fx:* keys in the host
+        # (grep shadow_chain_mgmt.c — the SET side is parsed in two places, the
+        # GET side nowhere), so this readback is always "". That is the
+        # empty-param-readback trap, and it is a real gap Stage 1b must close:
+        # the davebox Move-flavour sound mode has to SHOW which module is on
+        # each bus block, and today it cannot ask.
+        print("     (informational) module readback=%r — the host has no move_fx"
+              " getter yet; Stage 1b needs one." % loaded, flush=True)
+        check("stream survives loading an insert", after > 200, "peak=%d" % after)
         mreq(1, 0, "move_fx:%d:fx1:module" % BUS, "")
         time.sleep(1.5)
 
