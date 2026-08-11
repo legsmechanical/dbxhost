@@ -85,10 +85,18 @@ awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q 'shut
 #    held stock's slot_*/move_fx_*/send_fx_* alongside our seq8sa-*. Removing the
 #    DIRECTORY there destroys the stock host's state for that set. Delete our
 #    files by prefix; drop the folder only if we left it empty.
-awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh \
-    | grep -q 'shutil.rmtree(os.path.join(module_state_dir' \
-    && bad "do_delete rmtree's the SHARED module root — that destroys the stock host's state for the set" \
-    || ok "the shared module root is never rmtree'd"
+#    Counted, not pattern-matched: ANY second rmtree in do_delete is the bug,
+#    whatever it is spelled against (a bare variable slipped past an earlier
+#    literal-matching version of this pin). Exactly two are legitimate — the
+#    set dir and the host state dir.
+#    Comments stripped first — the prose here legitimately says "rmtree".
+_rm=$(awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh \
+        | sed 's/[[:space:]]*#.*$//' | grep -c 'rmtree')
+if [ "$_rm" -eq 2 ]; then
+    ok "do_delete contains exactly the 2 legitimate rmtree calls (set dir + host root)"
+else
+    bad "do_delete has $_rm rmtree calls, expected 2 — an extra one almost certainly rmtree's the SHARED module root and destroys the stock host's state"
+fi
 awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q 'f.startswith(prefix + "-")' \
     && ok "module-root deletion is scoped to our own filename prefix" \
     || bad "module-root deletion is no longer prefix-scoped — it can take the stock host's files"
