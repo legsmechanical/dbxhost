@@ -50,9 +50,11 @@ import { xposeCancelPreview } from './ui_xpose.mjs';
 import { checkBackHold, backTapWouldAct } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          SLOT_LEVEL_KEY, CHAIN_SLOTS } from './ui_engine.mjs';
-import { soundActive, soundEnter, soundEnterBuses, soundExit, soundTick, soundDirty,
-    soundTrack, soundRetarget, soundIsGlobal, soundEnteredInSession,
-    soundConsumeLedDirty } from './ui_sound.mjs';
+import { soundActive, soundEnter, soundEnterMove, soundEnterBuses, soundExit,
+    soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
+    soundEnteredInSession, soundConsumeLedDirty,
+    soundConsumeCoRunRequest } from './ui_sound.mjs';
+import { enterMoveNativeCoRun } from './ui_corun.mjs';
 
 const BANK_DISPLAY_TICKS = 94;  /* ~1000ms at 94Hz device tick rate (was 392 = ~4.2s; constant was miscalibrated for 196Hz) */
 const KNOB_TURN_HIGHLIGHT_TICKS = 56;             /* ~600ms at 94Hz — highlight after turn without touch (was 120 @196Hz) */
@@ -1154,9 +1156,18 @@ export function _tickImpl() {
             const _st = S.pendingSoundEnterTrack;
             S.pendingSoundEnterTrack = -1;
             if (_st === S.activeTrack && !soundActive()) {
-                /* Slot is addressed directly per track — always resolvable. */
-                soundEnter(_st, schSlotForTrack(_st));
+                /* The ROUTE picks the flavour: a Move-routed track's sound is
+                 * its Move instrument bus, a Schwung-routed one's is its chain.
+                 * Slot is addressed directly per track — always resolvable. */
+                if (S.trackRoute[_st] === 1) soundEnterMove(_st);
+                else soundEnter(_st, schSlotForTrack(_st));
             }
+        }
+        /* Sound mode asking for Move's own editor (the SYNTH row of a Move bus).
+         * Co-run entry lives out here so ui_sound need not import ui_corun. */
+        {
+            const _cr = soundConsumeCoRunRequest();
+            if (_cr >= 0) { soundExit(); enterMoveNativeCoRun(_cr); }
         }
         /* ---- sound mode: reconcile with the world it does not own ----
          *
@@ -1172,8 +1183,8 @@ export function _tickImpl() {
          *     called from        |
          *   OLED is ours         | co-run check below -> soundExit
          *   track is active      | the follow below -> soundRetarget
-         *   track routes Schwung | the follow below -> soundExit
-         *   track HAS a slot     | the follow below -> soundExit
+         *   route picks FLAVOUR  | the follow below -> soundEnterMove / retarget
+         *   track HAS a sound    | the follow below -> soundExit (Ext only)
          *
          * Track ROUTE cannot change while sound mode is up (route is set only
          * from the global menu, and the two are mutually exclusive), so it
@@ -1206,15 +1217,22 @@ export function _tickImpl() {
              * session launchers, remote UI) and pads deliberately stay with the
              * sequencer, so sound mode never sees them.
              *
-             * Only a Schwung-routed track HAS a sound to edit — a Move- or
-             * Ext-routed one closes it, since there is nothing to point at. */
+             * Only an EXT-routed track has no sound to edit and closes it: a
+             * Schwung-routed track has its chain, a Move-routed one its Move
+             * instrument bus (P8a 1b — before that, Move closed too). */
             /* ...but SESSION FX is not a track's sound. It reports track -1,
              * which never equals activeTrack, so without this the follow fired
              * on the very next tick and replaced the bus screen with the last
              * track module's editor — the screen appeared for one frame. */
             else if (!soundIsGlobal() && S.activeTrack !== soundTrack()) {
                 const _nt = S.activeTrack;
-                if (S.trackRoute[_nt] !== 0) {
+                /* Follow the track ACROSS flavours: a Move-routed track has a
+                 * sound too (its instrument bus), so switching onto one
+                 * retargets into the Move flavour instead of closing. Only an
+                 * EXT-routed track has nothing to point at. */
+                if (S.trackRoute[_nt] === 1) {
+                    soundEnterMove(_nt);
+                } else if (S.trackRoute[_nt] !== 0) {
                     soundExit();
                 } else {
                     /* Slot is addressed directly per track — always resolvable. */

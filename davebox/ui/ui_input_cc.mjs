@@ -43,7 +43,7 @@ import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
     setDrumLanePage } from './ui_drummodel.mjs';
 import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
-import { enterMoveNativeCoRun, DAVEBOX_PICKER_KEEP_MASK } from './ui_corun.mjs';
+import { DAVEBOX_PICKER_KEEP_MASK } from './ui_corun.mjs';
 import { soundActive, soundExit } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
@@ -966,17 +966,12 @@ function _onCC_buttons(d1, d2) {
         /* Arp step editor: Shift flips the Pitch <-> Velocity page — redraw on
          * both edges so the flip is immediate. */
         if (S.stepIntervalMode && !S.sessionView) forceRedraw();
-        /* Deferred Shift+Note/Session dispatch — MOVE-ROUTED TRACKS ONLY.
-         * Waiting for the Shift RELEASE buys exactly one thing: the shim starts
-         * forwarding Shift to Move firmware the moment co-run begins, so a
-         * still-held Shift would leak. Sound mode is not co-run and has no such
-         * problem, so Schwung-routed tracks fire on the PRESS (see the
-         * MoveNoteSession block) and don't pay for a deferral they don't need. */
-        if (!S.shiftHeld && S.pendingEditEntryTrack >= 0) {
-            const _t = S.pendingEditEntryTrack;
-            S.pendingEditEntryTrack = -1;
-            enterMoveNativeCoRun(_t);
-        }
+        /* The Shift-RELEASE deferral that used to live here is gone (P8a 1b).
+         * It existed because Shift+Note/Session on a Move-routed track went
+         * straight into co-run, where the shim starts forwarding Shift to Move
+         * firmware — so a still-held Shift leaked. That gesture now opens the
+         * Move flavour of SOUND MODE, which forwards nothing, and both routes
+         * fire on the PRESS like every other entry. */
         if (!S.sessionView) forceRedraw();
     }
 
@@ -1176,9 +1171,15 @@ function _onCC_buttons(d1, d2) {
                     S.pendingBusMenu = true;
                     S.screenDirty = true;
                 }
-                else if (S.trackRoute[S.activeTrack] === 1) {
-                    S.pendingEditEntryTrack = S.activeTrack;   /* fires on Shift release */
-                } else if (S.trackRoute[S.activeTrack] === 0) {
+                /* Move- and Schwung-routed tracks take the SAME door now (P8a
+                 * 1b): a Move-routed track's sound is its Move instrument bus,
+                 * which sound mode renders as its own flavour. Move's own editor
+                 * is one jog-click further in, on the SYNTH row, and stays
+                 * directly reachable as `Edit Synth...` in the track menu.
+                 * ⭑ This also drops the Shift-RELEASE deferral that co-run
+                 * needed: sound mode never hands Shift to Move firmware. */
+                else if (S.trackRoute[S.activeTrack] === 1 ||
+                         S.trackRoute[S.activeTrack] === 0) {
                     S.globalMenuOpen = false;
                     S.lastSentMenuEditValue = null;
                     S.pendingSoundEnterTrack = S.activeTrack;

@@ -4,7 +4,10 @@ Editing a track's sound from inside davebox's track view: instruments, effects,
 and their parameters, using the canvaskit UI. Phase 2 of the module-hosting work
 (phase 1 = the `davebox-lab` rig, see [MODULE_HOSTING.md](MODULE_HOSTING.md)).
 
-Status: **specced, not built.** Decisions below are settled unless marked open.
+Status: **built and shipping** (`ui/ui_sound.mjs`), including the session FX
+buses and, since P8a 1b, the Move flavour. The "specced, not built" banner this
+line replaced had been stale for months. Decisions below are settled unless
+marked open.
 
 ## The gesture
 
@@ -14,10 +17,53 @@ goes depends on the track's route:
 | Track route | Destination |
 |---|---|
 | Schwung (`trackRoute[t] === 0`) | sound mode — block picker, then bank pages |
-| Move | `enterMoveNativeCoRun(t)` — Move's own editor, already implemented |
+| Move (`=== 1`) | sound mode, **Move flavour** — the track's Move instrument bus |
+| Ext | nothing to edit; the `NO SOUND TO EDIT` popup |
 
-One gesture, one meaning, two destinations. Both co-run entry points already
-exist (`enterSchwungCoRun` / `enterMoveNativeCoRun`); only sound mode is new.
+One gesture, one meaning, one destination — sound mode — with the **route
+picking the flavour** (P8a 1b). Move's own editor is one jog-click further in
+(the SYNTH row) and stays directly reachable as `Edit Synth…` in the track menu.
+
+⭑ Until 1b, the Move route jumped straight into `enterMoveNativeCoRun(t)`, and it
+did so on the Shift **release** — co-run makes the shim forward Shift to Move
+firmware, so a still-held Shift leaked. Sound mode forwards nothing, so both
+routes now fire on the press and that deferral is gone.
+
+### The Move flavour
+
+A track routed to Move plays one of Move's own instruments, and 1a made that
+instrument's audio come back through the matching **Move FX bus** unconditionally
+— so the track has a sound to edit; it just isn't a Schwung chain. Sound mode
+renders it with the same bus machinery the session FX use (`S.bus`, kind
+`move`), addressed by the `move_fx:<1-based bus>:` key namespace, where **bus
+number = track number** with no setting anywhere.
+
+```
+SYNTH (MOVE N)  →  FX 1  →  FX 2  →  FX 3  →  FX 4  →  Volume / Send A / Send B
+```
+
+- **SYNTH** is not a module row — Move owns that voice, so there is nothing to
+  browse. Jog-click hands over to Move's editor (co-run). Sound mode raises a
+  request flag the tick consumes; importing `ui_corun` from `ui_sound` would
+  close an import cycle.
+- **FX 1–4** are the bus's four inserts. ⚠ A bus insert's `:module` takes a **DSP
+  path**; a chain component's takes a **module id**. Loading a bus by id answers
+  error 7 and the row stays empty.
+- **Volume / Send A / Send B** are the host's real strip levels
+  (`shadow_move_fx_strip[]`) — volume is a 0..4 gain, the sends are 0..1. They
+  sit in the block list rather than behind a `[SLOT SETTINGS]` screen because
+  they are the only slot-ish settings a Move bus has: receive/forward channel,
+  transpose and MPE are chain concepts and are omitted. **Mute/solo are absent**
+  — the strip does not participate in either yet (open Stage 1a remainder), and a
+  row that reads nothing is worse than no row.
+- The master **volume-knob claim is dropped** in this flavour: there is no slot
+  level for it to mean, so Move's own master stays under the knob. Retargeting
+  back onto a Schwung track re-claims it.
+- Back leaves sound mode outright — a Move bus's one door is the track it belongs
+  to, not the session FX list.
+
+Switching the active track **follows across flavours**: Schwung ⇄ Move retargets,
+only an Ext-routed track closes the screen.
 
 **This retires co-run entry on Shift+Step3.** Two doors to the same room is
 harder to hold in your head than one.

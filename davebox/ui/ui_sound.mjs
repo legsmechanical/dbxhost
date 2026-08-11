@@ -96,17 +96,59 @@ export const BLOCKS = [
  * ever stops being true they become browsable rows backed by nothing, which is
  * why HAS_SEND_FX declares the routing in one place rather than being assumed
  * at each use site. */
+const BUS_LEVEL_STEP = 0.05;
+/* A bus's own level rows, in the same shape a slot setting uses. Every bus
+ * declares its own list because they genuinely differ: master has none, a send
+ * has one 0..1 return, a Move bus has a strip (volume + both sends). */
+const RETURN_LEVEL = (comp) => [
+    { comp: comp, key: 'return_level', label: 'Return', min: 0, max: 1, step: BUS_LEVEL_STEP },
+];
 const FX_BUSES = [
-    { id: 'master', title: 'MASTER FX', prefix: 'master_fx:' },
+    { id: 'master', kind: 'global', title: 'MASTER FX', prefix: 'master_fx:' },
     ...(HAS_SEND_FX ? [
-        { id: 'sendA',  title: 'SEND FX A', prefix: 'send_fx:a:',
-          levelComp: 'send_fx:a', levelKey: 'return_level', levelLabel: 'Return' },
-        { id: 'sendB',  title: 'SEND FX B', prefix: 'send_fx:b:',
-          levelComp: 'send_fx:b', levelKey: 'return_level', levelLabel: 'Return' },
+        { id: 'sendA',  kind: 'global', title: 'SEND FX A', prefix: 'send_fx:a:',
+          levels: RETURN_LEVEL('send_fx:a') },
+        { id: 'sendB',  kind: 'global', title: 'SEND FX B', prefix: 'send_fx:b:',
+          levels: RETURN_LEVEL('send_fx:b') },
     ] : []),
 ];
-const BUS_LEVEL_MIN = 0, BUS_LEVEL_MAX = 1, BUS_LEVEL_STEP = 0.05;
 const BUS_BLOCKS = [1, 2, 3, 4];      /* fx1..fx4 on every bus */
+
+/* ---- Move instrument buses (P8a 1b) ----
+ *
+ * A track routed to Move plays one of Move's own instruments, and that
+ * instrument's audio comes back through the matching Move FX bus — so the track
+ * HAS a sound to edit, it just isn't a Schwung chain. Same shape as the session
+ * buses above (four inserts addressed by a key prefix, loaded by DSP PATH), so
+ * it rides the same machinery; the differences are all in what a Move bus does
+ * NOT have. There is no MIDI FX and no receive/forward/transpose/MPE — those are
+ * chain concepts — and the "synth" is Move's own editor, reached through co-run.
+ *
+ * ⚠ `move_fx:` keys are 1-BASED and ignore the slot argument entirely. The bus
+ * number is the track number, which is also what 1a made unconditional: track N
+ * is always bus N, with no setting anywhere.
+ *
+ * The strip levels are real host state (`shadow_move_fx_strip[]`): volume is a
+ * 0..4 gain like a slot's, the sends are 0..1. Mute/solo are deliberately absent
+ * — the strip does not participate in either yet (open Stage 1a remainder), and
+ * a row that reads nothing is worse than no row. */
+const MOVE_BUS_TITLE = (bus) => 'MOVE ' + bus + ' - SOUND';
+function moveBusFor(track) {
+    const bus = track + 1;                     /* 0-based track -> 1-based bus */
+    const pfx = 'move_fx:' + bus + ':';
+    return {
+        id: 'move' + bus, kind: 'move', bus: bus, track: track,
+        title: MOVE_BUS_TITLE(bus), prefix: pfx,
+        levels: [
+            { comp: pfx.slice(0, -1), key: 'volume', label: 'Volume',
+              min: 0, max: SLOT_LEVEL_MAX, step: BUS_LEVEL_STEP },
+            { comp: pfx.slice(0, -1), key: 'send_a', label: 'Send A',
+              min: 0, max: 1, step: BUS_LEVEL_STEP },
+            { comp: pfx.slice(0, -1), key: 'send_b', label: 'Send B',
+              min: 0, max: 1, step: BUS_LEVEL_STEP },
+        ],
+    };
+}
 
 const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
       VIEW_PRESET_SRC = 3, VIEW_PRESET_LIST = 4, VIEW_PRESET_BAKED = 5,
@@ -163,7 +205,10 @@ const SLOT_SETTINGS = [
       fmt: (v) => (v ? 'On' : 'Off'), mpe: true },
     { key: 'muted',         label: 'Muted',       min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
     { key: 'soloed',        label: 'Soloed',      min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
-    { key: 'move_to_slot',  label: 'Move>Schw',   min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
+    /* `move_to_slot` was here until P8a 1a retired Move>Slot in the host: a slot
+     * is a Move bus or a Schwung chain, never both. The host has no such key any
+     * more, so the row read empty and wrote into the void — deleted rather than
+     * left as a control that does nothing. */
     /* Sub-screen rows: jog-click opens davebox's own editor; Back returns
      * here. No value to read or edit on the row itself. */
     { key: 'knobs', label: 'Knobs...',  sub: 'knobs' },
@@ -350,7 +395,9 @@ const S = {
     blockBypass: [],            /* 1 = that block is bypassed (host `<comp>:bypassed`) */
     muteHeld: false,            /* tracked HERE: the global one is a different S */
     enterSession: false,        /* the VIEW this screen was called from; leaving it ends us */
-    bus: null,                  /* null = editing a TRACK's slot; else an FX_BUSES entry */
+    bus: null,                  /* null = editing a TRACK's slot; else a bus descriptor
+                                 * (FX_BUSES entry, or a Move bus from moveBusFor) */
+    coRunRequest: -1,           /* track whose Move editor to open; -1 = none */
     busIdx: 0,                  /* cursor on the bus LIST */
     busLevelEditing: false,     /* jog is editing the return level, not scrolling */
     busLevelDirty: false,       /* changed → save chain state when leaving the bus */
@@ -471,24 +518,47 @@ export function soundEnter(track, slot) {
  * reason to switch mid-edit is comparing the same block across two tracks.
  * An empty block on the new track falls back to the picker rather than the
  * module browser, which would be a startling thing to land in unasked. */
-export function soundRetarget(track, slot) {
-    /* Flush against the OLD slot first: these edits were made to that track and
-     * must not follow you to the next one. */
+/* Land everything queued against the track we are LEAVING. Shared by both
+ * retarget paths (chain slot and Move bus): these edits were made to that track
+ * and must not follow you to the next one. */
+function flushForRetarget() {
     for (const w of S.pendingWrites) engineSet(w.slot, w.comp, w.key, w.val);
     S.pendingWrites.length = 0;
-    /* Same for slot params — they carry their own slot, so landing them here is
-     * correct rather than merely tidy. */
+    /* Slot params carry their own slot, so landing them here is correct rather
+     * than merely tidy. */
     for (const w of S.pendingSlotWrites) {
         const s = SLOT_SETTINGS.find(x => x.key === w.key);
         engineSetSlotParam(w.slot, w.key, s && s.int ? String(w.val) : w.val.toFixed(3));
     }
     S.pendingSlotWrites.length = 0;
-    if (S.slotCfgDirty) { S.slotCfgDirty = false; engineSaveState(); }
+    if (S.slotCfgDirty || S.busLevelDirty) {
+        S.slotCfgDirty = false;
+        S.busLevelDirty = false;
+        engineSaveState();
+    }
+}
+
+export function soundRetarget(track, slot) {
+    flushForRetarget();
 
     S.track = track;
-    /* A BUS is global — following the active track must not drag its editing
-     * context off slot 0. Remember where to return and leave the view alone. */
-    if (S.bus) { S.dirty = true; return; }
+    /* A SESSION bus is global — following the active track must not drag its
+     * editing context off slot 0. Remember where to return and leave the view
+     * alone. A MOVE bus is the opposite: it belongs to the track we are leaving,
+     * so it must be dropped or the new track's chain would render underneath the
+     * old track's Move header. */
+    if (S.bus && S.bus.kind === 'global') { S.dirty = true; return; }
+    const leftMoveBus = !!S.bus;
+    if (leftMoveBus) {
+        /* Leaving a Move bus: nothing about WHERE you were transfers, because
+         * the rows aren't the same rows. Land on the new track's picker, on its
+         * synth — not on an fx index that meant a bus insert a moment ago. */
+        clearBusContext();
+        S.view = VIEW_BLOCKS;
+        S.pickRow = 0;
+        S.comp = 'synth';
+        S.blockIdx = 1;
+    }
     S.slot = slot;
     S.shiftHeld = false;
     S.touchedIdx = -1;
@@ -533,8 +603,15 @@ export function soundRetarget(track, slot) {
         engineSetSlotParam(S.slot, SLOT_LEVEL_KEY, S.volLevel.toFixed(3));
     }
     flushVolumeSave();
-    S.volLevel = readSlotVolume(slot);
-    S.volShownUntil = -1;
+    /* Coming FROM a Move bus the claim is down — soundEnterMove released it,
+     * because a Move bus has no slot level for the knob to mean. Re-claim it
+     * here or the master knob would silently stop being this chain's level for
+     * the rest of the session. claimVolume also reads the new level. */
+    if (leftMoveBus) claimVolume(slot);
+    else {
+        S.volLevel = readSlotVolume(slot);
+        S.volShownUntil = -1;
+    }
     S.dirty = true;
     log('retarget: track ' + track + ' slot ' + slot + ' comp ' + S.comp);
 }
@@ -598,8 +675,12 @@ function refreshBlockNames() {
      * directory and reads the same as the id would. */
     for (const r of S.pickRows) {
         if (r.kind === 'buslevel') {
-            const raw = parseFloat(engineGet(S.slot, S.bus.levelComp, S.bus.levelKey));
-            r.val = isFinite(raw) ? raw : 1;
+            const raw = parseFloat(engineGet(S.slot, r.spec.comp, r.spec.key));
+            /* Unity is the right fallback for a level that passes signal
+             * through (a return, a strip volume) but NOT for a send: an
+             * unreadable send would come up fully open into a bus. */
+            const isSend = r.spec.key === 'send_a' || r.spec.key === 'send_b';
+            r.val = isFinite(raw) ? raw : (isSend ? 0 : 1);
             continue;
         }
         if (r.kind !== 'block') continue;
@@ -1066,7 +1147,51 @@ function openFileBrowser(row) {
  * bus's blocks. Nothing here belongs to a track, so the caller's
  * "follow the active track" logic must sit this out. */
 export function soundIsGlobal() {
-    return S.view === VIEW_BUSES || !!S.bus;
+    /* A MOVE bus is a track's sound, not the session's — it belongs to whichever
+     * track is routed to Move, so the follow-the-active-track logic must treat it
+     * exactly like a chain slot. Only the session buses sit this out. */
+    return S.view === VIEW_BUSES || !!(S.bus && S.bus.kind === 'global');
+}
+
+/* The Move flavour of sound mode: the track's Move instrument bus.
+ *
+ * Same door as soundEnter (Shift+Note/Session from track view) — the ROUTE picks
+ * the flavour, not a different gesture. The volume knob claim is dropped: the
+ * strip's own Volume row is the level here, and claiming CC 79 for a slot level
+ * that doesn't exist would only take Move's master away for nothing. */
+export function soundEnterMove(track) {
+    if (GS.sessionView) return;
+    /* Also the RETARGET path (the active track switched to a Move-routed one),
+     * so anything queued against the previous track has to land first. */
+    if (S.active) flushForRetarget();
+    releaseVolume();
+    S.active = true;
+    S.enterSession = false;
+    S.track = track;
+    S.slot = 0;                 /* move_fx: keys ignore the slot argument */
+    S.bus = moveBusFor(track);
+    S.busIdx = 0;
+    S.busLevelEditing = false;
+    S.busLevelDirty = false;
+    S.view = VIEW_BLOCKS;
+    S.pickRow = 0;
+    S.comp = '';                /* no chain component is in scope on a Move bus */
+    S.shiftHeld = false;
+    S.pendingWrites.length = 0;
+    S.blockNames = [];
+    S.pendingAction = { t: 'names' };
+    S.dirty = true;
+    log('enter move bus ' + S.bus.bus + ' (track ' + track + ')');
+}
+
+/* Sound mode asking to hand over to Move's own editor. Consumed by the tick,
+ * which owns the co-run entry — importing ui_corun here would close a cycle
+ * (co-run reads sound mode's state on the way back). Same take-semantics as
+ * soundConsumeLedDirty. */
+export function soundConsumeCoRunRequest() {
+    const t = S.coRunRequest;
+    S.coRunRequest = -1;
+    return t;
 }
 
 /* Which view this screen was opened FROM. Sound mode and the bus screen are not
@@ -1112,6 +1237,10 @@ function enterBus(bus) {
 function leaveBus() {
     S.busLevelEditing = false;
     if (S.busLevelDirty) { S.busLevelDirty = false; S.pendingAction = { t: 'slotsave' }; }
+    /* A MOVE bus was entered from a TRACK, not from the session FX list, so its
+     * one level up is out of sound mode entirely — sending it to VIEW_BUSES would
+     * drop you into the session's Master/Send list, which you never asked for. */
+    if (S.bus && S.bus.kind === 'move') { soundExit(); return; }
     S.bus = null;
     S.view = VIEW_BUSES;
     S.dirty = true;
@@ -1133,13 +1262,23 @@ function specKeyFor(comp) {
 function buildPickRows() {
     const rows = [];
     if (S.bus) {
+        /* A Move bus leads with its instrument: the thing you came to edit is
+         * Move's own synth, and the inserts hang off it exactly as a slot's FX
+         * hang off its sound generator. Jog-click hands over to Move's editor
+         * (co-run) — there is no module to browse, Move owns that voice. */
+        if (S.bus.kind === 'move') {
+            rows.push({ kind: 'movesynth', label: 'SYNTH', value: 'MOVE ' + S.bus.bus });
+        }
         for (const n of BUS_BLOCKS) {
             rows.push({ kind: 'block', comp: S.bus.prefix + 'fx' + n, label: 'FX ' + n });
         }
-        /* How much of this send comes BACK into the mix — for a send that is the
-         * control you reach for most, so it sits with the effects rather than
-         * behind another screen. Master has none; see the note on FX_BUSES. */
-        if (S.bus.levelKey) rows.push({ kind: 'buslevel', label: S.bus.levelLabel });
+        /* The bus's own levels sit WITH the effects rather than behind a
+         * settings screen: for a send the return is the control you reach for
+         * most, and a Move bus's three are the only slot-ish settings it has.
+         * Master declares none; see the note on FX_BUSES. */
+        for (const lv of (S.bus.levels || [])) {
+            rows.push({ kind: 'buslevel', label: lv.label, spec: lv });
+        }
     } else {
         for (const i of S.blockRows) {
             rows.push({ kind: 'block', comp: BLOCKS[i].comp, label: BLOCKS[i].label, blockIdx: i });
@@ -2460,15 +2599,16 @@ export function soundOnCC(d1, d2, decodeDelta) {
         } else if (S.view === VIEW_BLOCKS && S.busLevelEditing) {
             const r = S.pickRows[S.pickRow];
             if (r && r.kind === 'buslevel') {
-                let v = r.val + (delta > 0 ? BUS_LEVEL_STEP : -BUS_LEVEL_STEP);
+                const sp = r.spec;
+                let v = r.val + (delta > 0 ? sp.step : -sp.step);
                 v = Math.round(v * 1000) / 1000;
-                if (v < BUS_LEVEL_MIN) v = BUS_LEVEL_MIN;
-                if (v > BUS_LEVEL_MAX) v = BUS_LEVEL_MAX;
+                if (v < sp.min) v = sp.min;
+                if (v > sp.max) v = sp.max;
                 if (v !== r.val) {
                     r.val = v;
                     S.busLevelDirty = true;
                     /* Queued like every write here — this is the MIDI handler. */
-                    queueWrite(S.bus.levelKey, v.toFixed(3), S.bus.levelComp);
+                    queueWrite(sp.key, v.toFixed(3), sp.comp);
                 }
             }
         } else if (S.view === VIEW_BLOCKS) {
@@ -2606,6 +2746,12 @@ export function soundOnCC(d1, d2, decodeDelta) {
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'buslevel') {
             S.busLevelEditing = !S.busLevelEditing;
+        }
+        /* Move's own instrument editor. Not a module browser: Move owns that
+         * voice and there is nothing of ours to load into it. */
+        else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
+                 S.pickRows[S.pickRow].kind === 'movesynth') {
+            S.coRunRequest = S.bus ? S.bus.track : -1;
         }
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'settings') {
@@ -3010,6 +3156,7 @@ function renderBlocks() {
                      value: Math.round((r.val || 0) * 100) + '%',
                      editing: idx === S.pickRow && S.busLevelEditing };
         }
+        if (r.kind === 'movesynth') return { label: r.label, hdr: true, value: r.value };
         if (r.kind !== 'block') return { label: r.label, hdr: true };
         /* A bypassed block still says what it holds — you need to know WHAT is
          * switched out — so the state rides as a prefix. Matches the host's 'B'. */

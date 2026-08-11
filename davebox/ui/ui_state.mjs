@@ -580,7 +580,6 @@ export const S = {
      * { id, label } (id reused = overwrite). */
     pendingSnapshotCopy: null,
     pendingBusMenu: false,      /* Shift+Note/Session in SESSION view: open the session-wide FX list (Master / Send A / Send B) — deferred to tick because opening reads the chain */
-    pendingEditEntryTrack: -1,  /* Shift+Note/Session: deferred "edit this track's sound". -1 = none; track idx = fire on Shift release so Shift state doesn't leak into Move firmware (Move-routed tracks enter co-run, where the shim starts forwarding Shift) */
     /* Session View: the 8 param knobs drive the LEVEL of the Schwung slot(s)
      * each track plays through (knob N -> track N). Per-track because a track's
      * channel can be received by SEVERAL slots (layering, or a slot set to
