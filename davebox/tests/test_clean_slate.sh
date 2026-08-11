@@ -104,6 +104,24 @@ grep -q 'STATE_PREFIX:-seq8sa' ../standalone/scripts/project-cmd.sh \
     && ok "the prefix is seq8sa (not bare seq8, which would sweep Legacy's state too)" \
     || bad "STATE_PREFIX changed — 'seq8' would also delete dAVEBOx Legacy's state for the set"
 
+# 5. A COPY IS A SNAPSHOT, taken at copy time.
+#    Without this, a copy starts with no state file and the module's inherit
+#    machinery seeds it from the source AT FIRST OPEN — so edits made to the
+#    source in between leak into the copy, silently (no picker when there is
+#    exactly one family candidate). Josh hit it on hardware: changes to
+#    "Project 17" showed up in a pre-existing "Project 17 Copy".
+echo "copy is a snapshot:"
+_cp=$(awk '/^do_copy\(\)/,/^}/' ../standalone/scripts/project-cmd.sh)
+printf '%s' "$_cp" | grep -q 'module_state_dir' \
+    && ok "do_copy seeds the destination's module state" \
+    || bad "do_copy no longer copies module state — the copy will silently inherit the source's LATER edits at first open"
+printf '%s' "$_cp" | grep -q 'shutil.copytree(hp_src' \
+    && ok "do_copy seeds the destination's host state (routing/params)" \
+    || bad "do_copy no longer copies host state — a copy starts with the DEFAULT chain/FX config"
+printf '%s' "$_cp" | grep -q 'f.startswith(prefix + "-")' \
+    && ok "the copy reads only our own files from the SHARED module root" \
+    || bad "do_copy is not prefix-scoped in the shared module root"
+
 [ "$fail" -eq 0 ] && echo "PASS: a project switch cannot inherit its predecessor's state" \
                   || echo "FAIL: clean-slate invariants broken"
 exit "$fail"

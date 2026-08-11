@@ -195,9 +195,10 @@ do_new_at() { # index [name]
 do_copy() { # src-index dst-index
     case "${1:-}" in *[!0-9]*|"") die "copy needs a numeric source index" ;; esac
     case "${2:-}" in *[!0-9]*|"") die "copy needs a numeric destination index" ;; esac
-    python3 - "$SETS_DIR" "$1" "$2" <<'PYEOF'
+    python3 - "$SETS_DIR" "$1" "$2" "$SET_STATE_DIR" "$HOST_STATE_DIR" "$STATE_PREFIX" <<'PYEOF'
 import os, re, shutil, sys, uuid as uuidlib
 sets_dir, src, dst = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+module_state_dir, host_state_dir, prefix = sys.argv[4], sys.argv[5], sys.argv[6]
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 def find(idx):
     for u in os.listdir(sets_dir):
@@ -224,6 +225,35 @@ nu = str(uuidlib.uuid4())
 np = os.path.join(sets_dir, nu)
 shutil.copytree(os.path.join(sp, inner[0]), os.path.join(np, inner[0] + " Copy"))
 os.setxattr(np, "user.song-index", str(dst).encode())
+
+# Copy BOTH state halves NOW, so the duplicate is a SNAPSHOT.
+#
+# ⚠ Without this a copy silently TRACKS ITS SOURCE until the first time it is
+# opened: the copy starts with no state file, so the module's inherit machinery
+# (maybeShowInheritPicker, a family lookup on the " Copy" name) seeds it from
+# the source AT FIRST OPEN — picking up every edit made to the source in
+# between, with no prompt at all when there is exactly one candidate.
+# Josh hit this on hardware 2026-08-11: edits to "Project 17" appeared in a
+# pre-existing "Project 17 Copy". We know both uuids right here, so the guessing
+# never needed to happen.
+#
+# Seeding the destination also makes the inherit path a no-op for our own
+# copies (it early-returns when the destination already has a state file), while
+# leaving it intact for Move's native pad-copy, which we get no hook into.
+mp_src = os.path.join(module_state_dir, su)
+if os.path.isdir(mp_src):
+    mp_dst = os.path.join(module_state_dir, nu)
+    os.makedirs(mp_dst, exist_ok=True)
+    n = 0
+    for f in os.listdir(mp_src):
+        if f.startswith(prefix + "-"):          # ours only — the root is SHARED
+            shutil.copy2(os.path.join(mp_src, f), os.path.join(mp_dst, f)); n += 1
+    if n:
+        print("project-cmd: copied %d %s-* file(s) to %s" % (n, prefix, nu))
+hp_src = os.path.join(host_state_dir, su)
+if os.path.isdir(hp_src):                        # this root is ours alone
+    shutil.copytree(hp_src, os.path.join(host_state_dir, nu), dirs_exist_ok=True)
+    print("project-cmd: copied host state to %s" % nu)
 print("project-cmd: copied index %d -> %d (%s)" % (src, dst, nu))
 PYEOF
     do_list
