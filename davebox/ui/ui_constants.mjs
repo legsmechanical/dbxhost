@@ -102,6 +102,31 @@ export function fmtPitchRnd(v) { return v === 0 ? 'OFF' : String(v); }
 const GATE_LABELS = ['Off','1/64','1/32','1/16t','1/16','1/8t','1/8','1/4t','1/4','1/2','1bar'];
 export function fmtGateMod(v) { return GATE_LABELS[v] || 'Off'; }
 export function fmtRoute(v)  { return v === 2 ? 'Ext' : v === 1 ? 'Move' : 'Swng'; }
+/* ---- Instrument selector (a track owns its instrument) ----
+ *
+ * ONE row where a track's route and its Move-instrument/MIDI-channel choice
+ * used to be three (`Channel`, `Slot`, `Route`). The value is a display-level
+ * enum: nothing new is stored, it is the route and the channel read together.
+ *
+ *   0-3  Move 1-4  = ROUTE_MOVE, channel 1-4 (Move addresses its four tracks
+ *                    by MIDI channel, so the channel IS which instrument)
+ *   4    Schwung   = ROUTE_SCHWUNG, playing this track's own chain
+ *   5    MIDI      = ROUTE_EXTERNAL, sent somewhere (see the `MIDI to` row)
+ *
+ * ⚠ `S.trackChannel` is 1-BASED (the DSP stores it 0-based); Move 1 is
+ * channel 1. Getting that wrong addresses the wrong Move instrument. */
+export const INSTR_MOVE_MAX = 3;      /* values 0..3 are Move 1..4 */
+export const INSTR_SCHWUNG  = 4;
+export const INSTR_MIDI     = 5;
+export const INSTR_OPTIONS  = [0, 1, 2, 3, INSTR_SCHWUNG, INSTR_MIDI];
+export function fmtInstr(v) {
+    if (v === INSTR_SCHWUNG) return 'Schwung';
+    if (v === INSTR_MIDI)    return 'MIDI';
+    return 'Move ' + ((v | 0) + 1);
+}
+/* `MIDI to` on a MIDI track: 1-16 = external channel. (Track 1-8 targets are
+ * the other half of this row and are not built yet.) */
+export function fmtMidiTo(v)  { return 'Ext ' + (v | 0); }
 export function fmtPlain(v)  { return String(v); }
 export function fmtNA()      { return '-'; }
 export function fmtArpStyle(v) { return ['Off','Up','Dn','U/D','D/U','Cnv','Div','Ord','Rnd','RnO'][v] || 'Off'; }

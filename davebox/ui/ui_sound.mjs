@@ -125,8 +125,15 @@ const BUS_BLOCKS = [1, 2, 3, 4];      /* fx1..fx4 on every bus */
  * and the "synth" is Move's own editor, reached through co-run.
  *
  * ⚠ `move_fx:` keys are 1-BASED and ignore the slot argument entirely. The bus
- * number is the track number, which is also what 1a made unconditional: track N
- * is always bus N, with no setting anywhere.
+ * number is WHICH MOVE INSTRUMENT the track plays — i.e. its channel, which is
+ * exactly what the Instrument row (`Move 1`-`Move 4`) sets and what the co-run
+ * auto-tap already used to pick Move's track.
+ *
+ * ⚠ It is NOT the track index. 1a made it unconditional that way while a track's
+ * Move instrument was an unsurfaced channel setting; the Instrument selector
+ * surfaces it, so track 6 can play `Move 2` and must then edit BUS 2. Reading
+ * the track index here would open a different instrument's inserts than the one
+ * being played, silently.
  *
  * The strip levels are real host state (`shadow_move_fx_strip[]`): volume is a
  * 0..4 gain like a slot's, the sends are 0..1. Mute/solo are deliberately absent
@@ -134,7 +141,11 @@ const BUS_BLOCKS = [1, 2, 3, 4];      /* fx1..fx4 on every bus */
  * a row that reads nothing is worse than no row. */
 const MOVE_BUS_TITLE = (bus) => 'MOVE ' + bus + ' - SOUND';
 function moveBusFor(track) {
-    const bus = track + 1;                     /* 0-based track -> 1-based bus */
+    /* Channel is 1-based here (0-based in the DSP). Clamp to Move's four, the
+     * same clamp the Instrument row shows — a Move-routed track parked on
+     * channel 9 has no fifth bus to edit. */
+    const ch = GS.trackChannel[track] | 0;
+    const bus = ch < 1 ? 1 : (ch > 4 ? 4 : ch);
     const pfx = 'move_fx:' + bus + ':';
     return {
         id: 'move' + bus, kind: 'move', bus: bus, track: track,

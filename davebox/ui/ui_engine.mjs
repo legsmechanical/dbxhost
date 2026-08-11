@@ -213,12 +213,10 @@ export function slotIndex(v) {
     return n >= CHAIN_SLOTS ? CHAIN_SLOTS - 1 : n;
 }
 
-/* Display letter for a slot (A, B, C, ...). Derived, because the literal
- * 'ABCD' table appeared in three places that had to agree and silently
- * rendered out-of-range slots as A-D. */
-export function slotLetter(v) {
-    return String.fromCharCode(65 + slotIndex(v));
-}
+/* `slotLetter` (A, B, C, ...) lived here until the track gained ownership of
+ * its instrument: the slot stopped being a user-facing concept, so there is
+ * nothing left to letter. `slotIndex` stays — it sanitises an index the DSP
+ * still carries. */
 
 /* Send FX buses (send_fx:a: / send_fx:b:) — routed by this host. */
 export const HAS_SEND_FX = true;

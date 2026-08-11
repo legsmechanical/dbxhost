@@ -109,11 +109,17 @@ track sequences them:
 
 ## Point each track at an instrument
 
-dAVEBOx reaches its instruments over MIDI channels, so Move and Schwung each need
-to listen on a matching channel. **This is a one-time setup.**
+**A track owns its instrument.** Each track's **Instr** setting says what it
+plays, and that is the whole of it — there is nothing to pair up and nothing that
+can half-match.
 
-**On Move** — set tracks 1–4 to receive on channels 1–4, and turn each track's
-MIDI **Out** off:
+The default: **tracks 1–4 play Move's four instruments** and **tracks 5–8 play
+Schwung chains of their own**. Change any track with **Instr** — see
+[Routing & Sync](#141-instruments--routing).
+
+**One-time setup on Move** — dAVEBOx reaches Move's instruments over MIDI, so set
+Move's tracks 1–4 to receive on channels 1–4 and turn each track's MIDI **Out**
+off:
 
 | Move track | MIDI In | MIDI Out |
 |---|---|---|
@@ -122,19 +128,7 @@ MIDI **Out** off:
 | 3 | Ch 3 | Off |
 | 4 | Ch 4 | Off |
 
-**In Schwung** — set slots 1–4 to receive on channels 5–8, with each slot's
-Forward Channel set to **Auto**:
-
-| Schwung slot | Receive channel |
-|---|---|
-| 1 | Ch 5 |
-| 2 | Ch 6 |
-| 3 | Ch 7 |
-| 4 | Ch 8 |
-
-The result is the default routing: **tracks 1–4 play Move instruments** and
-**tracks 5–8 play Schwung chains**. Any track's channel and route can be changed
-later — see [Routing & Sync](#141-instruments--routing).
+Schwung needs no setup: a Schwung track is addressed directly, not by channel.
 
 ## Open dAVEBOx
 
@@ -1066,14 +1060,19 @@ Dust, Robot, Dissolve, Chaos, Lift); 9–16 are yours.
 
 ## 14.1 Instruments & Routing
 
-Two settings decide where a track's MIDI goes ([Track settings](#164-track-settings)):
+One setting decides what a track plays ([Track settings](#164-track-settings)):
 
-- **Channel** — MIDI channel 1–16 (by default track N uses channel N).
-- **Route** — Move, Schwung, or External (USB-A).
+- **Instr** — `Move 1`–`Move 4` (that Move instrument, through its Move FX bus),
+  `Schwung` (this track's own chain), or `MIDI` (out to gear).
+- **MIDI to** — on a `MIDI` track only: `Ext 1`–`Ext 16`, the channel it goes out
+  on.
 
-The default is tracks 1–4 to Move and 5–8 to Schwung, from
-[Connect & Configure](#2-connect--configure). Several tracks can route External at
-once for a multitimbral rig.
+The default is tracks 1–4 on `Move 1`–`Move 4` and tracks 5–8 on `Schwung`, from
+[Connect & Configure](#2-connect--configure). Several tracks can be `MIDI` at once
+for a multitimbral rig.
+
+Two tracks may play the same Move instrument. Each Schwung track has a chain of
+its own — there is no sharing to arrange and no slot to pick.
 
 ## 14.2 External MIDI in and out
 
@@ -1081,13 +1080,13 @@ A USB-A controller plays the **active track**, its notes moved onto that track's
 channel; filter by channel with **MIDI In** in the Settings menu. Whether the
 effects chain shapes live input depends on the route:
 
-| Route | Effects on external input |
+| Instr | Effects on external input |
 |---|---|
 | Schwung | Full chain |
-| External | Full chain, out USB-A |
-| Move | Bypassed (it would loop back) |
+| MIDI | Full chain, out USB-A |
+| Move 1–4 | Bypassed (it would loop back) |
 
-On an **External** track, everything goes out USB-A — the sequence, live pads,
+On a **MIDI** track, everything goes out USB-A — the sequence, live pads,
 effects, and automation. Transport Stop sends note-offs; **Delete + Play** while
 stopped sends a MIDI panic on every channel.
 
@@ -1210,7 +1209,7 @@ directly (transport stopped). Download it from the Schwung web manager
 with tempo and key.
 
 - **Move-routed tracks** export the real Move instrument, preset, and color;
-  Schwung and External tracks get a placeholder.
+  Schwung and MIDI tracks get a placeholder.
 - **Notes are baked** — each clip exports what you hear, effects rendered, delay
   tails wrapped, drum polymeters flattened, and randomized clips written as several
   loops of variation.
@@ -1278,8 +1277,8 @@ type or route are hidden.
 
 | Setting | Values | Notes |
 |---|---|---|
-| Channel | 1–16 | MIDI channel |
-| Route | Move, Schwung, External | Where its MIDI goes |
+| Instr | Move 1–4, Schwung, MIDI | What the track plays |
+| MIDI to | Ext 1–16 | Where a MIDI track's notes go |
 | Mode | Keys, Drums, Conduct | [Track type](#41-track-type) |
 | Layout | Scale, Chrom | Melodic pad layout |
 | VelIn | Live, 1–127 | Fixed value overrides input velocity |

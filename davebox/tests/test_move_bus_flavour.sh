@@ -18,9 +18,15 @@ echo "move-bus flavour invariants:"
 n=$(grep -c "'move_fx:'" ui/*.mjs | awk -F: '{s+=$2} END {print s+0}')
 [ "$n" = "1" ] && ok "move_fx: prefix built once (moveBusFor)" \
                 || bad "move_fx: prefix built in $n places — must be 1 (moveBusFor)"
-grep -q "const bus = track + 1;" ui/ui_sound.mjs \
-    && ok "bus number is 1-based off the track index" \
-    || bad "moveBusFor no longer derives a 1-based bus from the track"
+# The bus is WHICH MOVE INSTRUMENT the track plays — its channel, which is what
+# the Instrument row sets. NOT the track index: track 6 may play `Move 2`, and
+# reading the index there opens another instrument's inserts silently.
+grep -q "const ch = GS.trackChannel\[track\] | 0;" ui/ui_sound.mjs \
+    && ok "bus number follows the track's Move instrument (channel), not its index" \
+    || bad "moveBusFor no longer derives the bus from the track's channel"
+grep -q "const bus = ch < 1 ? 1 : (ch > 4 ? 4 : ch);" ui/ui_sound.mjs \
+    && ok "the bus is clamped to Move's four instruments" \
+    || bad "moveBusFor no longer clamps the bus to 1-4"
 
 # 2. A bus component's :module takes a DSP PATH; a chain component takes an ID.
 #    Passing an id loads nothing (the host answers error 7 and the row stays

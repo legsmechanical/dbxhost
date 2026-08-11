@@ -21,12 +21,12 @@ import {
 
 import {
     PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-    fmtNA, fmtRoute, fmtVelOverride,
+    fmtNA, fmtVelOverride, fmtInstr, fmtMidiTo,
+    INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI, INSTR_OPTIONS,
     NOTE_KEYS, SCALE_NAMES
 } from './ui_constants.mjs';
 
 import { S } from './ui_state.mjs';
-import { CHAIN_SLOTS, slotLetter } from './ui_engine.mjs';
 import { saveState, writeSidecar, showActionPopup, loadSnapshotManifest } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -47,47 +47,60 @@ import { xposePreviewSet } from './ui_xpose.mjs';
 
 function buildGlobalMenuItems() {
     return [
-        createValue('Channel', {
-            get: function() { return S.trackChannel[S.activeTrack]; },
-            /* Conductor has no MIDI channel — inert + shows '-'. */
-            set: function(v) {
-                if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT) return;
-                applyTrackConfig(S.activeTrack, 'channel', v);
+        /* ---- Instrument: the one place a track's destination is expressed ----
+         *
+         * Replaces `Channel`, `Slot` and `Route` (TRACK_OWNS_ITS_INSTRUMENT.md).
+         * A track OWNS its instrument, so there is nothing to pair up: picking
+         * `Move 3` sets the route AND the channel that addresses Move's third
+         * instrument, and picking `Schwung` plays this track's own chain. The
+         * slot is no longer a user-facing concept — the DSP still carries
+         * `tN_slot`, and it is the track's own index.
+         *
+         * Conductor drives transposition and emits nothing, so the row is inert
+         * and shows '-' there, exactly as `Route` did. */
+        createEnum('Instr', {
+            get: function() {
+                const t = S.activeTrack;
+                if (S.trackRoute[t] === 2) return INSTR_MIDI;
+                if (S.trackRoute[t] !== 1) return INSTR_SCHWUNG;
+                /* Move: the channel IS the instrument. Clamp rather than
+                 * invent a value the row cannot show — a Move-routed track on
+                 * channel 5+ addresses an instrument Move does not have. */
+                const ch = (S.trackChannel[t] | 0) - 1;
+                return ch < 0 ? 0 : (ch > INSTR_MOVE_MAX ? INSTR_MOVE_MAX : ch);
             },
-            min: 1, max: 16, step: 1,
+            set: function(v) {
+                const t = S.activeTrack;
+                if (S.trackPadMode[t] === PAD_MODE_CONDUCT) return;
+                if (v === INSTR_SCHWUNG)   { applyTrackConfig(t, 'route', 0); return; }
+                if (v === INSTR_MIDI)      { applyTrackConfig(t, 'route', 2); return; }
+                /* Channel FIRST: applyTrackConfig('route') normalises aftertouch
+                 * and re-derives Link Audio routing off the new route, so the
+                 * channel it will be read against must already be the new one. */
+                applyTrackConfig(t, 'channel', (v | 0) + 1);
+                applyTrackConfig(t, 'route', 1);
+            },
+            options: INSTR_OPTIONS,
             format: function(v) {
-                return S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT ? fmtNA() : String(v);
+                return S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT ? fmtNA() : fmtInstr(v);
             }
         }),
-        createEnum('Slot', {
-            /* Chain slot this track addresses on the Schwung route (direct
-             * slot dispatch — no channel matching). Inert unless the route
-             * is Schwung; Conductor emits nothing. */
-            get: function() { return S.trackSlot[S.activeTrack]; },
-            set: function(v) {
-                if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT) return;
-                if (S.trackRoute[S.activeTrack] !== 0) return;
-                applyTrackConfig(S.activeTrack, 'slot', v);
-            },
-            options: Array.from({ length: CHAIN_SLOTS }, (_, i) => i),
-            format: function(v) {
-                if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT) return fmtNA();
-                if (S.trackRoute[S.activeTrack] !== 0) return fmtNA();
-                return slotLetter(v);
-            }
-        }),
-        createEnum('Route', {
-            get: function() { return S.trackRoute[S.activeTrack]; },
-            /* Conductor routes nowhere (drives transposition) — inert + shows '-'. */
-            set: function(v) {
-                if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT) return;
-                applyTrackConfig(S.activeTrack, 'route', v);
-            },
-            options: [0, 1, 2],
-            format: function(v) {
-                return S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT ? fmtNA() : fmtRoute(v);
-            }
-        }),
+        /* Where a MIDI track's notes go. Only Ext 1-16 for now; `Track 1-8`
+         * (one instrument played by several tracks) is the other half of this
+         * row and needs dispatch the DSP does not have yet. */
+        ...((S.trackRoute[S.activeTrack] === 2) ? [
+            createEnum('MIDI to', {
+                get: function() { return S.trackChannel[S.activeTrack] | 0; },
+                set: function(v) {
+                    if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT) return;
+                    applyTrackConfig(S.activeTrack, 'channel', v | 0);
+                },
+                options: Array.from({ length: 16 }, (_, i) => i + 1),
+                format: function(v) {
+                    return S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT ? fmtNA() : fmtMidiTo(v);
+                }
+            })
+        ] : []),
         createEnum('Mode', {
             get: function() { return S.trackPadMode[S.activeTrack]; },
             /* DEFERRED COMMIT: scrolling only previews the selected type — set()

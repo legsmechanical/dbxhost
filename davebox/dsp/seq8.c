@@ -4339,11 +4339,15 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
         inst->tracks[t].at_last_clip = 0xFF;
         inst->tracks[t].pfx.looper_on = 1;
         inst->tracks[t].pfx.track_idx = (uint8_t)t;
-        /* Default slot (ROUTE_SCHWUNG): tracks round-robin over the chain
-         * slots. Mirrors the old channel<->slot default correspondence.
-         * WARNING: this DEFAULT MAPPING is a product decision, not arithmetic.
-         * If the slot count ever equals the track count, 1:1 is the obvious
-         * default and this round-robin becomes the wrong answer. */
+        /* Slot (ROUTE_SCHWUNG): the track's OWN, 1:1 — a track owns its
+         * instrument, so there is nothing to choose and no sharing to arrange.
+         * The condition the old comment here anticipated has arrived: the slot
+         * count equals the track count, so this round-robin IS 1:1 and the
+         * modulo survives only as a bound, not as a mapping.
+         * WARNING: still a product decision, not arithmetic. If the counts ever
+         * diverge again, two tracks would silently fold onto one instrument —
+         * which is precisely the ambiguity the model exists to make
+         * unrepresentable. Fix the counts, not this line. */
         {
             uint8_t _dsl = (uint8_t)(t % SEQ8_CHAIN_SLOTS);
             inst->tracks[t].pfx.slot = _dsl;

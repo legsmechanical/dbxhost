@@ -2,6 +2,7 @@
  * ui_constants.mjs, ahead of the Phase 1 ui_pure.mjs move. */
 import { parseActionRaw, col4, col5, fmtNote, fmtArpOct, fmtRoute,
          fmtRes, fmtPct, fmtBool, fmtGateMod, fmtDiq, fmtStretch, fmtLen,
+         fmtInstr, fmtMidiTo, INSTR_OPTIONS, INSTR_SCHWUNG, INSTR_MIDI,
          NOTE_KEYS } from '../../ui/ui_constants.mjs';
 
 let failed = 0;
@@ -30,6 +31,19 @@ eq(fmtNote(-1), NOTE_KEYS[11], 'fmtNote -1');
 eq(fmtArpOct(0), 'Off', 'fmtArpOct 0');
 eq(fmtArpOct(2), '+2', 'fmtArpOct +');
 eq(fmtRoute(1), 'Move', 'fmtRoute move');
+
+/* Instrument selector (a track owns its instrument). Values 0-3 are Move 1-4,
+ * so the label is ONE-based off a value that indexes from zero — the whole row
+ * is a channel in disguise and an off-by-one here plays the wrong instrument. */
+eq(fmtInstr(0), 'Move 1', 'fmtInstr first Move is 1-based');
+eq(fmtInstr(3), 'Move 4', 'fmtInstr last Move');
+eq(fmtInstr(INSTR_SCHWUNG), 'Schwung', 'fmtInstr schwung');
+eq(fmtInstr(INSTR_MIDI), 'MIDI', 'fmtInstr midi');
+eq(INSTR_OPTIONS.length, 6, 'six instruments: Move 1-4, Schwung, MIDI');
+eq(INSTR_OPTIONS.join(','), '0,1,2,3,4,5', 'instrument options are contiguous');
+/* `MIDI to` shows the channel as the user numbers it (1-16), not 0-based. */
+eq(fmtMidiTo(1), 'Ext 1', 'fmtMidiTo first channel');
+eq(fmtMidiTo(16), 'Ext 16', 'fmtMidiTo last channel');
 
 /* fmtRes: ['1/32','1/16','1/8','1/4','1/2','1bar'][v] || '1/16' (ui_constants.mjs:95) */
 eq(fmtRes(0), '1/32', 'fmtRes 0');
