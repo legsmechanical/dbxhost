@@ -61,6 +61,13 @@ const KNOB_TURN_HIGHLIGHT_TICKS = 56;             /* ~600ms at 94Hz — highligh
 const STEP_HOLD_TICKS      = 19;   /* ~200ms at ~94Hz (device actual): below = tap, at/above = hold */
 const STEP_SAVE_HOLD_TICKS = 70;   /* ~750ms at 94Hz */
 const STEP_SAVE_FLASH_TICKS = 40;  /* ~200ms double-blink on step button LEDs after save */
+/* How long a select HANDOFF may be in flight before the SELECT-BEFORE-LOAD
+ * watchdog is allowed to treat the session as stranded again. ~15s at the 94Hz
+ * device tick. The handoff itself measured ~6.5s on hardware (arm -> walk Move
+ * to its Set Overview -> replay the pad -> load the set -> resume), so this is
+ * roughly double: too short re-opens the race it exists to close, and the only
+ * cost of too long is a slower recovery from a handoff that genuinely died. */
+const SELECT_HANDOFF_TICKS = 1400;
 /* ~500ms at 94Hz. How long the session-view level must sit still before the
  * chain state is written. Comfortably longer than the gaps inside one turn
  * (encoder messages come in bursts), short enough that a save always lands well
@@ -502,6 +509,13 @@ export function _tickImpl() {
         }
     }
 
+    /* Age the select-handoff window. Observed handoff on hardware: ~6.5 s from
+     * arm to resume (walk Move into its overview, replay the pad, load the set,
+     * wake us). The timeout is generously above that — expiring early would
+     * re-introduce the very race it exists to prevent — and its only job is to
+     * make sure a handoff that never lands cannot disable the watchdog forever. */
+    if (S.selectHandoffTicks > 0) S.selectHandoffTicks--;
+
     /* PROJECTS pad picker: modifier releases cancel its two-step flows. */
     if (S.projectPadPicker) projectPadPickerModifiers();
 
@@ -527,7 +541,21 @@ export function _tickImpl() {
      * and the open re-lists projects, so a spurious re-arm costs nothing.
      * _pppFailOpen still backstops the case where the picker cannot open at
      * all, so this cannot spin forever. */
+    /* ⚠ `S.selectHandoffTicks` is the load-bearing one, added 2026-08-11 after
+     * this watchdog was caught FIRING DURING A HANDOFF and wedging the session
+     * (device trace: actuator armed at T, this line at T+73ms). davebox declares
+     * `suspend_keeps_js`, so its tick keeps running while it is parked for the
+     * handoff — and mid-handoff every condition below is transiently true: the
+     * picker was closed on the way out, and the DSP still says "awaiting"
+     * because the chosen project has not loaded yet. The watchdog then armed a
+     * picker reopen that landed AFTER the resume, so the session came back to
+     * "Tap a pad to load a project" on top of the project it had just loaded,
+     * with input gated by awaitingProjectSelect. Every control dead.
+     *
+     * The lesson is the general one: this is a repair for a DEAD END, so it
+     * must not run while the thing that would end it is still in flight. */
     if (S.awaitingProjectSelect && !S.projectPadPicker &&
+            S.selectHandoffTicks === 0 &&
             !S.pendingOpenProjectPicker && !S.pendingSetLoad &&
             S.pendingProjectSwitch === null &&
             !S.confirmStateWipe && !S.pendingInheritPicker &&
@@ -767,6 +795,12 @@ export function _tickImpl() {
             const _aw = host_module_get_param('awaiting_select');
             const _awUnknown = (_aw === null || _aw === undefined || _aw === '');
             S.awaitingProjectSelect = _awUnknown ? false : (parseInt(_aw, 10) === 1);
+            /* The handoff LANDED — this is the site that proves it, because it
+             * is where the DSP's own readback says a project is live. Close the
+             * window here rather than on resume: a resume can also arrive with
+             * nothing loaded (backing out of the gate), and that case must go
+             * back to being the watchdog's to repair. */
+            S.selectHandoffTicks = 0;
             const _svm = host_module_get_param('state_version_mismatch');
             if (_svm && parseInt(_svm, 10) === 1 && !S.confirmStateWipe) {
                 S.confirmStateWipe = true;
@@ -1814,6 +1848,11 @@ export function _tickImpl() {
         invalidateLEDCache();
         clearAllLEDs();
         for (let _i = 0; _i < 4; _i++) setButtonLED(40 + _i, LED_OFF);
+        /* Open the handoff window BEFORE arming: our own tick keeps running
+         * while parked (`suspend_keeps_js`), so the SELECT-BEFORE-LOAD watchdog
+         * gets a look in as soon as the next tick, and mid-handoff it would
+         * read this as a dead end and re-arm the picker over the resume. */
+        S.selectHandoffTicks = SELECT_HANDOFF_TICKS;
         shadow_select_arm(_psw);
         host_suspend_overtake();
         return;

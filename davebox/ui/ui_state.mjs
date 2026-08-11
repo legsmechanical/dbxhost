@@ -555,6 +555,16 @@ export const S = {
     /* Fresh-session boot: open the picker once LED init settles (armed in
      * init() from the DSP's awaiting_select readback). */
     pendingOpenProjectPicker: false,
+    /* Ticks remaining in a select HANDOFF — the window between arming the host
+     * set-select actuator and the resume that lands the new project. Nonzero
+     * means "a selection is in flight", which is the one situation where
+     * `awaitingProjectSelect && !projectPadPicker` is NORMAL rather than the
+     * dead end the SELECT-BEFORE-LOAD watchdog exists to repair.
+     *
+     * A COUNTDOWN, not a boolean, because it suppresses that watchdog: if the
+     * handoff never lands there would otherwise be nothing left to recover the
+     * session. It expires on its own and the watchdog takes over again. */
+    selectHandoffTicks: 0,
     /* SELECT-BEFORE-LOAD: true = NO project is loaded and the user has yet to
      * choose one. Mirrors the DSP's awaiting_select, which is the authority
      * (it decided at create_instance); init() reads it back rather than
