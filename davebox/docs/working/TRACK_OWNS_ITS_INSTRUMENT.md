@@ -86,8 +86,29 @@ rows being deleted, so it could not have survived its own dependencies. All thre
 absorbed from the host's chain editor in P7 because that screen had them, not because this
 module uses them.
 
-⚠ **Delete the surface, not the host params.** `slot:receive_channel` / `slot:forward_channel`
-remain real host state with other (stock) consumers. This is davebox declining to show them.
+⚠ **Delete the surface, not the host params — but not for the reason first written here.**
+An earlier draft said "other (stock) consumers use them". That was wrong twice. dbxhost and
+stock Schwung are **separate installs with separate binaries** (they share modules/presets/
+patches — content, not code), so nothing deleted here can affect stock at all. And the real
+consumers are not display-only.
+
+Who actually reads these fields in this host:
+
+| site | what it does |
+|---|---|
+| `shadow_midi.c:865` | dispatches external cable-2 MIDI to slots with **receive=All AND forward=THRU** |
+| `schwung_shim.c:6144` | `any_thru_slot_active()` — **globally bypasses** the cable-2 channel remap if any slot is forward=THRU |
+| `shadow_midi.c:216` | channel remap on forward |
+
+⭑ Those first two conditions are the *definition* of MPE mode. **The only load-bearing
+consumers of these fields are the MPE machinery** — which independently corroborates the
+call to drop it: forward=THRU exists to serve nothing else.
+
+So: keep the host fields for now, because host code reads them and removing state is a
+bigger, separate change than removing a UI surface. But note the consequence — with the rows
+gone nothing can ever set recv=All + fwd=THRU, so `any_thru_slot_active()` is permanently
+false and that dispatch loop never matches. **The host is left carrying an unreachable MPE
+path**, which is a later slimming opportunity and belongs on the board, not in this change.
 
 What that leaves on the screen, all genuinely per-instrument: Volume, Send A, Send B,
 Transpose, Muted, Soloed, and the Knobs / LFO 1 / LFO 2 sub-editors.
