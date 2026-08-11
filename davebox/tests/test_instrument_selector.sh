@@ -85,7 +85,34 @@ grep -q "return slotIndex(t);" ui/ui_corun.mjs \
     && ok "schSlotForTrack derives the slot from the track index" \
     || bad "schSlotForTrack no longer derives the slot from the track index"
 
-# 8. The slot has no user-facing spelling left. `slotLetter` existed only to
+# 8. CHAIN PARKING (spec decision 1): changing a track's instrument must PARK
+#    its chain, never destroy it — switching a loaded Schwung track to `Move 2`
+#    and back returns the synth, its effects and their state.
+#
+#    This holds BY CONSTRUCTION and the test's job is to keep it that way: a
+#    track's chain is host state living in slot N, and a route change touches
+#    only the route (plus its drum-lane mirror, the rui index, the dirty flag,
+#    the derived Link Audio routing and the aftertouch normalisation). If
+#    anything chain-shaped ever appears in that path, parking has silently
+#    become a thing someone has to implement correctly — and getting it wrong
+#    is unnoticed until a session later.
+# (comments stripped — the existing ones legitimately discuss route/slot state)
+if awk '/tN_route: set MIDI routing/,/^    }/' dsp/setparam/sp_track_config.c \
+     | grep -vE '^\s*(\*|/\*)' \
+     | grep -qiE "chain|slot|synth|unload|component"; then
+    bad "the route setter now touches the chain — parking is no longer free"
+else
+    ok "a route change does not touch the chain (DSP)"
+fi
+if awk "/else if \(key === 'route'\)/,/^    }/" ui/ui_dsp_bridge.mjs \
+     | grep -vE '^\s*(\*|/\*)' \
+     | grep -qiE "chain|synth|unload|engineSet"; then
+    bad "the JS route path now touches the chain — parking is no longer free"
+else
+    ok "a route change does not touch the chain (JS)"
+fi
+
+# 9. The slot has no user-facing spelling left. `slotLetter` existed only to
 #    print one, so its return means the concept came back.
 grep -rq "slotLetter(" ui/ \
     && bad "slotLetter is back — the slot is user-facing again" \

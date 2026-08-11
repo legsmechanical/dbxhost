@@ -162,8 +162,23 @@ MPE row's `synth:mpe_enabled` write) are gone. Host params untouched, as ruled. 
   stored `t%d_sl` — old projects' tracks 5-8 move to their own (empty) chains, as signed off.
   ⚠ One unexplained observation remains from that report: the shared chain produced NO SOUND,
   which sharing a live slot does not explain. Not reproduced yet.
-- **Step 3 — chain parking: NOT STARTED.** Deliberately last; it is the only part carrying
-  real data-loss risk.
+- **Step 3 — chain parking: SATISFIED BY CONSTRUCTION, and now pinned** (2026-08-11). Decision 1
+  asks that changing a track's instrument PARK its chain rather than destroy it. It already does,
+  and the reason survives the `tN_slot` retirement: a track's chain is HOST state living in slot
+  N, while the instrument selection is davebox state. A route change touches the route, its
+  drum-lane mirror, the rui index, the dirty flag, the derived Link Audio routing and the
+  aftertouch normalisation — **nothing chain-shaped on either side of the seam**. All 8 chains
+  stay instantiated (the other P8-2 ruling) and the idle gate makes a silent one nearly free, so
+  a parked chain costs nothing.
+  ⚠ The spec's warning was that parking would become "a deliberate behaviour someone has to
+  implement correctly". The correct implementation turned out to be *not writing one* — so the
+  risk moved rather than vanished: it is now the risk that someone LATER adds chain teardown to
+  the route path and silently breaks it. `tests/test_instrument_selector.sh` fails if anything
+  chain-shaped appears in either route path, which is the whole defence.
+  **Still owed: a finger check** — load a synth on a Schwung track, switch to `Move 2`, switch
+  back, confirm the synth AND its state return. An on-device probe of this was abandoned (see
+  the worklog): driving the raw param bus destabilised the session, and the check is ten seconds
+  by hand.
 
 ## Migration
 
