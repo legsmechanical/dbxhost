@@ -522,6 +522,14 @@ export function soundEnter(track, slot) {
  * retarget paths (chain slot and Move bus): these edits were made to that track
  * and must not follow you to the next one. */
 function flushForRetarget() {
+    /* ⚠ FIRST, and inside this helper rather than at either call site: the
+     * volume knob's target depends on the CURRENT context (chain level vs Move
+     * bus strip), so a queued turn has to land before S.bus changes underneath
+     * it — otherwise the bus's value is written to a chain slot's key. */
+    if (S.volPending) {
+        S.volPending = false;
+        writeVolLevel(S.slot, S.volLevel);
+    }
     for (const w of S.pendingWrites) engineSet(w.slot, w.comp, w.key, w.val);
     S.pendingWrites.length = 0;
     /* Slot params carry their own slot, so landing them here is correct rather
@@ -595,13 +603,9 @@ export function soundRetarget(track, slot) {
     S.blockNames = [];
     S.presetMsg = '';
     S.pendingDiscover = 0;
-    S.pendingAction = { t: 'retarget' };
-    /* Persist the OLD slot's level before the reading moves — the claim itself
-     * stays up, we're still in sound mode. */
-    if (S.volPending) {                    /* land it on the OLD slot first */
-        S.volPending = false;
-        engineSetSlotParam(S.slot, SLOT_LEVEL_KEY, S.volLevel.toFixed(3));
-    }
+    S.pendingAction = { t: 'retarget', picker: leftMoveBus };
+    /* The pending level already landed in flushForRetarget, against the context
+     * it was turned in. The claim itself stays up — we're still in sound mode. */
     flushVolumeSave();
     /* Coming FROM a Move bus the claim is down — soundEnterMove released it,
      * because a Move bus has no slot level for the knob to mean. Re-claim it
@@ -700,10 +704,35 @@ function refreshBlockNames() {
  * screen with its own volume overlay — CC 79 and touch note 8 are passed to
  * Move unconditionally otherwise, ahead of and independent of the module's
  * button_passthrough list, so there is no module.json way to opt out. */
+/* WHAT the volume knob moves, in the one place both flavours agree on it.
+ *
+ * In sound mode plain Volume means "the level of the thing on this screen".
+ * For a chain that is the slot's module level; for a Move bus it is the bus
+ * strip's own Volume — the same value its VOLUME row shows.
+ *
+ * ⚠ Returning null here is NOT an option, and getting this wrong is exactly the
+ * bug Josh found: with the Move flavour excluded from soundIsGlobal(), the CC 79
+ * branch still consumed the turn and wrote `slot:synth_volume` against S.slot,
+ * which a Move bus pins to 0 — so turning the knob moved a DIFFERENT track's
+ * chain level, while Move (claim released) moved its master underneath. */
+function volTarget() {
+    if (S.bus && S.bus.kind === 'move') {
+        return { comp: S.bus.prefix.slice(0, -1), key: 'volume' };
+    }
+    return null;                                /* null = the slot's own level */
+}
+
 function readSlotVolume(slot) {
-    const raw = engineGetSlotParam(slot, SLOT_LEVEL_KEY);
+    const t = volTarget();
+    const raw = t ? engineGet(slot, t.comp, t.key) : engineGetSlotParam(slot, SLOT_LEVEL_KEY);
     const v = parseFloat(raw);
     return (isFinite(v) && v >= 0) ? v : 1;
+}
+
+function writeVolLevel(slot, v) {
+    const t = volTarget();
+    if (t) engineSet(slot, t.comp, t.key, v.toFixed(3));
+    else engineSetSlotParam(slot, SLOT_LEVEL_KEY, v.toFixed(3));
 }
 
 function claimVolume(slot) {
@@ -1156,15 +1185,20 @@ export function soundIsGlobal() {
 /* The Move flavour of sound mode: the track's Move instrument bus.
  *
  * Same door as soundEnter (Shift+Note/Session from track view) — the ROUTE picks
- * the flavour, not a different gesture. The volume knob claim is dropped: the
- * strip's own Volume row is the level here, and claiming CC 79 for a slot level
- * that doesn't exist would only take Move's master away for nothing. */
+ * the flavour, not a different gesture. The volume knob is CLAIMED here exactly
+ * as it is for a chain, and points at the bus strip's own Volume — in sound mode
+ * plain Volume always means "the level of the thing on this screen".
+ *
+ * ⚠ Releasing it instead (the first attempt) was wrong twice over: Move took the
+ * knob back and covered the screen with its native master overlay, AND sound
+ * mode still consumed the CC, writing the turn into chain slot 0's module level
+ * — a different track's sound. Found by Josh on hardware, 2026-08-11. */
 export function soundEnterMove(track) {
     if (GS.sessionView) return;
     /* Also the RETARGET path (the active track switched to a Move-routed one),
-     * so anything queued against the previous track has to land first. */
+     * so anything queued against the previous track has to land first — while
+     * that track is still the volume knob's target. */
     if (S.active) flushForRetarget();
-    releaseVolume();
     S.active = true;
     S.enterSession = false;
     S.track = track;
@@ -1180,6 +1214,9 @@ export function soundEnterMove(track) {
     S.pendingWrites.length = 0;
     S.blockNames = [];
     S.pendingAction = { t: 'names' };
+    /* AFTER S.bus is set — claimVolume reads through volTarget(), which is what
+     * makes the knob the BUS strip's Volume rather than a chain slot's level. */
+    claimVolume(S.slot);
     S.dirty = true;
     log('enter move bus ' + S.bus.bus + ' (track ' + track + ')');
 }
@@ -2112,9 +2149,16 @@ function commitBaked() {
 /* Every entry point below runs from soundTick(), never from a MIDI handler. */
 /* Runs from soundTick. Keeps the block you were on when the new track has
  * something loaded there; otherwise shows the chain so you can choose. */
-function retargetOpen() {
+/* `picker` forces the block LIST instead of reopening the block you were on.
+ *
+ * Keeping your place is right for chain -> chain (you were inside a block, and
+ * comparing the same block across two tracks is the usual reason to switch).
+ * Coming off a MOVE bus you were on the picker — there is no "place" inside a
+ * block to keep — so reopening the new track's synth canvas drops you a level
+ * deeper than you were. Josh, hardware, 2026-08-11. */
+function retargetOpen(picker) {
     refreshBlockNames();
-    if (engineLoadedModule(S.slot, S.comp)) {
+    if (!picker && engineLoadedModule(S.slot, S.comp)) {
         S.view = VIEW_EDIT;
         runDiscovery();
     } else {
@@ -2126,7 +2170,7 @@ function runAction(a) {
     if (a.t === 'names')        refreshBlockNames();
     else if (a.t === 'bus')     enterBus(a.bus);
     else if (a.t === 'leavebus') leaveBus();
-    else if (a.t === 'retarget') retargetOpen();
+    else if (a.t === 'retarget') retargetOpen(a.picker);
     else if (a.t === 'open')    openBlock(a.comp);
     else if (a.t === 'browse')  openBrowse(a.comp);
     else if (a.t === 'load')    loadSelected();
@@ -2560,11 +2604,17 @@ export function soundOnCC(d1, d2, decodeDelta) {
     }
 
     if (d1 === 79) {                                   /* master knob */
-        /* SESSION-wide context: the knob stays Move's NATIVE master volume.
-         * Nothing here owns a level worth stealing it for — the device already
+        /* SESSION-wide context ONLY: the knob stays Move's NATIVE master volume.
+         * Nothing there owns a level worth stealing it for — the device already
          * has a master output — and the claim is the only reason Move stops
          * seeing CC 79 at all, so declining to consume it is the whole fix.
-         * (soundEnterBuses drops the claim; see releaseVolume there.) */
+         * (soundEnterBuses drops the claim; see releaseVolume there.)
+         *
+         * ⚠ A MOVE bus is deliberately NOT in this branch: it owns a level (its
+         * strip Volume) and claims the knob like a chain does. The test is
+         * soundIsGlobal(), which excludes Move buses — consuming the CC while
+         * the claim was down is exactly how the turn reached both Move's master
+         * and chain slot 0. */
         if (soundIsGlobal()) return false;
         const delta = decodeDelta(d2);
         if (delta) onVolumeTurn(delta);
@@ -3086,7 +3136,12 @@ export function soundTick() {
 
     if (S.volPending) {
         S.volPending = false;
-        engineSetSlotParam(S.slot, SLOT_LEVEL_KEY, S.volLevel.toFixed(3));
+        writeVolLevel(S.slot, S.volLevel);
+        /* Keep the on-screen VOLUME row in step — on a Move bus the knob and the
+         * row are two controls on ONE value, and a stale row is a lie you can
+         * see. (refreshBlockNames only re-reads on entry.) */
+        const _vr = S.pickRows.find(r => r.kind === 'buslevel' && r.spec.key === 'volume');
+        if (_vr) _vr.val = S.volLevel;
     }
 
     /* One heavy job per tick, and never on top of pending writes: a discovery

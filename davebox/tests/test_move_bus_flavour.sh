@@ -52,4 +52,15 @@ grep -q "soundConsumeCoRunRequest" ui/ui_tick.mjs \
     && ok "the tick consumes the co-run request" \
     || bad "nothing consumes soundConsumeCoRunRequest — the SYNTH row is dead"
 
+# 6. The volume knob's target is derived in ONE place. Both halves of this are
+#    silent: a Move bus that does NOT claim the knob lets Move move its master
+#    AND writes the turn into chain slot 0 (S.slot is pinned to 0 on a bus), and
+#    a write site that bypasses volTarget() sends a bus value to a chain key.
+n=$(grep -c "engineSetSlotParam(S.slot, SLOT_LEVEL_KEY" ui/ui_sound.mjs || true)
+[ "$n" = "0" ] && ok "no volume write bypasses writeVolLevel()" \
+                || bad "$n volume write(s) bypass writeVolLevel() — bus value into a chain key"
+grep -q "claimVolume(S.slot);" ui/ui_sound.mjs \
+    && ok "the Move flavour CLAIMS the volume knob" \
+    || bad "soundEnterMove no longer claims the knob — Move's master will move too"
+
 exit $fail
