@@ -1,6 +1,8 @@
 # A track owns its instrument — spec
 
-Status: **proposed** (Josh, 2026-08-11). Supersedes the P8-2 ruling of the same day
+Status: **BUILT and finger-verified** (Josh, 2026-08-11) — steps 1, 2a, 2b, the
+`tN_slot` retirement and step 3 are all shipped and checked on hardware. Originally proposed the
+same day. Supersedes the P8-2 ruling of the same day
 ("1:1 default track→slot with free override"), in the direction that ruling was already
 heading — this makes the 1:1 structural instead of merely default.
 
@@ -175,10 +177,9 @@ MPE row's `synth:mpe_enabled` write) are gone. Host params untouched, as ruled. 
   risk moved rather than vanished: it is now the risk that someone LATER adds chain teardown to
   the route path and silently breaks it. `tests/test_instrument_selector.sh` fails if anything
   chain-shaped appears in either route path, which is the whole defence.
-  **Still owed: a finger check** — load a synth on a Schwung track, switch to `Move 2`, switch
-  back, confirm the synth AND its state return. An on-device probe of this was abandoned (see
-  the worklog): driving the raw param bus destabilised the session, and the check is ten seconds
-  by hand.
+  ✅ **Finger-verified by Josh, 2026-08-11**: a loaded Schwung track switched to `Move 2` and
+  back returns the synth and its state. (An on-device probe of this was abandoned first — see the
+  worklog — because driving the raw param bus destabilised the session.)
 
 ## Migration
 
