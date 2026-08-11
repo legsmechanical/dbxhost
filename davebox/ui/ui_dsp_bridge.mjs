@@ -792,12 +792,31 @@ export function pollDSP() {
     /* Deferred DSP state save: fetch state_full (DSP serializes only when dirty).
      * NEVER while awaiting a selection — the DSP holds defaults, so this would
      * write an empty state over the boot project's file and destroy it. The DSP
-     * also refuses to serve state_full in that condition; both belts stay. */
-    if (S.currentSetUuid && !S.awaitingProjectSelect) {
-        const _st = host_module_get_param('state_full');
-        if (_st && _st.length > 2) {
-            host_write_file(uuidToStatePath(S.currentSetUuid), _st);
-            updateNameIndex();
+     * also refuses to serve state_full in that condition; both belts stay.
+     *
+     * ⚠ The DESTINATION comes from the DSP, not from S.currentSetUuid.
+     * state_full serialises whatever is in `inst` RIGHT NOW, so the only correct
+     * file to put it in is the one the DSP itself is pointed at. Those two
+     * disagree across a project switch — S.currentSetUuid is adopted at the
+     * resume edge (ui_tick.mjs) while the DSP keeps the previous project until
+     * the queued state_load actually lands on the audio thread ~5 ticks later,
+     * and longer still when the inherit picker holds the load pending a user
+     * choice. Keying off S wrote the OLD project's tracks and clips into the NEW
+     * project's file — which the DSP could then load straight back in, so a
+     * freshly created (or freshly deleted and recreated) project came up
+     * carrying its predecessor's routing and clips instead of a clean slate.
+     * state_path is assigned in the same set_param that resets the instance, so
+     * state_uuid flips exactly when the memory becomes the new project's: it is
+     * the authority, and requiring agreement closes the window from both ends. */
+    if (S.currentSetUuid && !S.awaitingProjectSelect &&
+            !S.pendingSetLoad && S.pendingDspSync === 0 && !S.pendingInheritPicker) {
+        const _dspUuid = (host_module_get_param('state_uuid') || '');
+        if (_dspUuid && _dspUuid === S.currentSetUuid) {
+            const _st = host_module_get_param('state_full');
+            if (_st && _st.length > 2) {
+                host_write_file(uuidToStatePath(_dspUuid), _st);
+                updateNameIndex();
+            }
         }
     }
 

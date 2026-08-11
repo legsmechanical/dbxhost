@@ -277,6 +277,29 @@ static int sp_globals_state(sp_ctx_t *cx) {
               memset(inst->snap_drum_eff_mute[_sn], 0, NUM_TRACKS * sizeof(uint32_t));
           }
         }
+        /* Fields the LOADER defaults but this reset block did not. A missing or
+         * empty state file makes seq8_load_state return before its default
+         * assignments run, so anything defaulted only in there survives the
+         * switch and lands in the brand-new project — the "not a clean slate"
+         * class. Reset here, where the file's existence cannot matter; a valid
+         * file still overwrites these below. */
+        inst->clock_follow_on      = 0;
+        inst->clock_send_on        = 0;
+        inst->xpose_preview_active = 0;
+        {
+            /* Same derivation as create_instance: prefer the host's live tempo,
+             * fall back to the compiled default. */
+            double init_bpm = (g_host && g_host->get_bpm)
+                ? (double)g_host->get_bpm() : (double)BPM_DEFAULT;
+            int _t3, _bl3;
+            if (init_bpm < 20.0 || init_bpm > 300.0) init_bpm = (double)BPM_DEFAULT;
+            inst->tick_delta = (uint32_t)((double)MOVE_FRAMES_PER_BLOCK * init_bpm * (double)PPQN);
+            for (_t3 = 0; _t3 < NUM_TRACKS; _t3++) {
+                inst->tracks[_t3].pfx.cached_bpm = init_bpm;
+                for (_bl3 = 0; _bl3 < DRUM_LANES; _bl3++)
+                    inst->tracks[_t3].drum_lane_pfx[_bl3].cached_bpm = init_bpm;
+            }
+        }
         seq8_load_state(inst);
         /* Whole-set content swap (incl. Clear Session via v=0 file): the
          * BROWSER must re-pull or it keeps showing the old set. CONTENT-ONLY

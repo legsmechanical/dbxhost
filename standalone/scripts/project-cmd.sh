@@ -27,6 +27,10 @@ set -eu
 DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
 SETS_DIR="${SETS_DIR:-/data/UserData/UserLibrary/Sets}"
 SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
+# davebox's own per-project state (seq8-state.json, the UI sidecar, snapshots),
+# keyed by the same set uuid. Deleting a project has to take this with it — the
+# module cannot do it itself (host_remove_dir is disallowed under set_state).
+SET_STATE_DIR="${SET_STATE_DIR:-/data/UserData/schwung/set_state}"
 OUT_JSON="$DBX_DIR/projects.json"
 TEMPLATE_DIR="$DBX_DIR/sets/template"
 
@@ -205,9 +209,10 @@ PYEOF
 
 do_delete() { # index
     case "${1:-}" in *[!0-9]*|"") die "delete needs a numeric index" ;; esac
-    python3 - "$SETS_DIR" "$SETTINGS_JSON" "$1" <<'PYEOF'
+    python3 - "$SETS_DIR" "$SETTINGS_JSON" "$1" "$SET_STATE_DIR" <<'PYEOF'
 import os, re, shutil, sys
 sets_dir, settings, idx = sys.argv[1], sys.argv[2], int(sys.argv[3])
+state_dir = sys.argv[4]
 cur = -1
 try:
     m = re.search(r'"currentSongIndex":\s*(-?\d+)', open(settings).read())
@@ -224,6 +229,15 @@ for u in os.listdir(sets_dir):
     try:
         if int(os.getxattr(p, "user.song-index").decode()) == idx:
             shutil.rmtree(p)
+            # davebox's half of the same project. Best-effort and AFTER the set
+            # itself: a leftover set with no state reads as an empty project,
+            # while leftover state with no set is what the orphan pruner is for.
+            sp = os.path.join(state_dir, u)
+            try:
+                shutil.rmtree(sp)
+                print("project-cmd: deleted module state (%s)" % u)
+            except OSError:
+                pass
             print("project-cmd: deleted index %d (%s)" % (idx, u))
             sys.exit(0)
     except (OSError, ValueError):

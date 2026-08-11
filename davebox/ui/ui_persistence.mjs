@@ -248,6 +248,13 @@ export function writeSidecar() {
      * of how input routing happens to be arranged today, and that is too thin a
      * thread to hang a data-loss bug on. */
     if (S.awaitingProjectSelect) return;
+    /* Mid-switch, S still holds the PREVIOUS project's JS state while
+     * S.currentSetUuid has already been adopted for the new one — writing now
+     * files the old project's banks, CC assigns and perf slots under the new
+     * project's uuid. Same window, same shape as the deferred state_full save
+     * in pollDSP; restoreUiSidecar has not run yet, so there is nothing worth
+     * persisting here anyway. */
+    if (S.pendingSetLoad || S.pendingDspSync > 0 || S.pendingInheritPicker) return;
     /* Always sync the live activeBank into per-track storage before serializing. */
     S.trackActiveBank[S.activeTrack] = S.activeBank;
     host_write_file(uuidToUiStatePath(S.currentSetUuid), JSON.stringify({
