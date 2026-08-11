@@ -53,6 +53,11 @@ HOST_STATE_DIR="${HOST_STATE_DIR:-$DBX_DIR/set_state}"
 # (dsp/seq8.c) for this build — `seq8sa` for SA. Deliberately NOT `seq8`, which
 # would also sweep away dAVEBOx Legacy's state for the same set.
 STATE_PREFIX="${STATE_PREFIX:-seq8sa}"
+# The host's own record of the set it loaded, rewritten on every set change.
+# ⚠ THIS install's copy — the stock tree has a file of the same name holding
+# native-session leftovers. Authoritative for "which project is open";
+# Settings.json's currentSongIndex is only written at a relaunch and goes stale.
+ACTIVE_SET_PATH="${ACTIVE_SET_PATH:-$DBX_DIR/active_set.txt}"
 OUT_JSON="$DBX_DIR/projects.json"
 TEMPLATE_DIR="$DBX_DIR/sets/template"
 
@@ -261,16 +266,45 @@ PYEOF
 
 do_delete() { # index
     case "${1:-}" in *[!0-9]*|"") die "delete needs a numeric index" ;; esac
-    python3 - "$SETS_DIR" "$SETTINGS_JSON" "$1" "$SET_STATE_DIR" "$HOST_STATE_DIR" "$STATE_PREFIX" <<'PYEOF'
+    python3 - "$SETS_DIR" "$SETTINGS_JSON" "$1" "$SET_STATE_DIR" "$HOST_STATE_DIR" "$STATE_PREFIX" "$ACTIVE_SET_PATH" <<'PYEOF'
 import os, re, shutil, sys
 sets_dir, settings, idx = sys.argv[1], sys.argv[2], int(sys.argv[3])
 module_state_dir, host_state_dir, prefix = sys.argv[4], sys.argv[5], sys.argv[6]
-cur = -1
-try:
-    m = re.search(r'"currentSongIndex":\s*(-?\d+)', open(settings).read())
-    if m: cur = int(m.group(1))
-except OSError:
-    pass
+active_set_path = sys.argv[7] if len(sys.argv) > 7 else ""
+
+
+def open_uuid():
+    """UUID of the set the HOST has loaded, or '' if unknown.
+
+    active_set.txt is written on every set change; currentSongIndex is only
+    written at a relaunch and goes stale mid-session — measured naming project 5
+    while 14 was loaded. Trusting the stale one here is the dangerous direction:
+    it protects the wrong pad AND permits deleting the project that is live.
+    """
+    try:
+        with open(active_set_path) as f:
+            return f.readline().strip()
+    except OSError:
+        return ""
+
+
+def index_of(uuid):
+    if not uuid:
+        return -1
+    p = os.path.join(sets_dir, uuid)
+    try:
+        return int(os.getxattr(p, "user.song-index").decode())
+    except (OSError, ValueError):
+        return -1
+
+
+cur = index_of(open_uuid())
+if cur < 0:                                  # no usable record — fall back
+    try:
+        m = re.search(r'"currentSongIndex":\s*(-?\d+)', open(settings).read())
+        if m: cur = int(m.group(1))
+    except OSError:
+        pass
 if idx == cur:
     sys.exit("project-cmd: ERROR: refusing to delete the OPEN project")
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')

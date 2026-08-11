@@ -7,7 +7,8 @@ import {
 import { formatItemValue } from '/data/UserData/schwung/shared/menu_items.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
-    dropSnapshots, applySnapshotToLive, copyStateFiles, loadSelectedCurrentProject
+    dropSnapshots, applySnapshotToLive, copyStateFiles, loadSelectedCurrentProject,
+    readActiveSet
 } from './ui_persistence.mjs';
 import { effectiveClip, invalidateLEDCache } from './ui_leds.mjs';
 
@@ -703,11 +704,39 @@ function _pppRunList() {
 
 function _pppApplyList(p, data) {
     p.projects = data.projects;
-    p.current = data.current;
     p.byIndex = {};
     for (let i = 0; i < data.projects.length; i++) {
         const pr = data.projects[i];
         if (pr.index !== null && pr.index !== undefined) p.byIndex[pr.index] = pr;
+    }
+    /* WHICH PROJECT IS OPEN: ask the host, not Settings.json.
+     *
+     * data.current is project-cmd's read of Move's `currentSongIndex`, and that
+     * value is only written at a relaunch — it goes stale in a live session and
+     * then names the WRONG project. Measured on hardware 2026-08-11: it said 5
+     * while active_set.txt, the DSP's own autosave target and the user all said
+     * 14. That is not cosmetic: the pad tap below treats `k === p.current` as
+     * "you tapped the project that is already open" and just closes the picker,
+     * so with a stale value the real project becomes UNSELECTABLE (Josh: "pressing
+     * slot 5 doesn't load anything, it goes back to slot 14"), while the delete
+     * guard protects the wrong pad and would permit deleting the live one.
+     *
+     * active_set.txt is the host's own record of the set it loaded, written on
+     * every set change, and it is per-install — ours, under DAVEBOX_HOST_DIR.
+     * (⚠ The STOCK tree has a file of the same name holding native-session
+     * leftovers; readActiveSet reads OURS. See tests/test_install_paths.sh.)
+     * Match it by uuid and fall back to Settings.json only when it names nothing
+     * we know — at first boot, before any set change has been recorded. */
+    p.current = data.current;
+    const _as = readActiveSet();
+    if (_as.uuid) {
+        for (let i = 0; i < data.projects.length; i++) {
+            const pr = data.projects[i];
+            if (pr.uuid === _as.uuid && pr.index !== null && pr.index !== undefined) {
+                p.current = pr.index;
+                break;
+            }
+        }
     }
 }
 

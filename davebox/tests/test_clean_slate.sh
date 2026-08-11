@@ -110,6 +110,25 @@ grep -q 'STATE_PREFIX:-seq8sa' ../standalone/scripts/project-cmd.sh \
 #    source in between leak into the copy, silently (no picker when there is
 #    exactly one family candidate). Josh hit it on hardware: changes to
 #    "Project 17" showed up in a pre-existing "Project 17 Copy".
+# 6. "WHICH PROJECT IS OPEN" comes from the host's own record, not Settings.json.
+#    currentSongIndex is written only at a relaunch and goes stale mid-session.
+#    Measured naming project 5 while 14 was loaded — which made 14 unselectable
+#    (a tap on the "already open" pad just closes the picker) and pointed the
+#    delete guard at the wrong pad, permitting deletion of the LIVE project.
+echo "which project is open:"
+grep -q 'pr.uuid === _as.uuid' ui/ui_dialogs.mjs \
+    && ok "the picker resolves current from active_set.txt by uuid" \
+    || bad "the picker is back on Settings.json's currentSongIndex — a stale value makes the live project unselectable"
+grep -q '^ACTIVE_SET_PATH=' ../standalone/scripts/project-cmd.sh \
+    && ok "project-cmd declares ACTIVE_SET_PATH" \
+    || bad "project-cmd lost ACTIVE_SET_PATH"
+awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q 'index_of(open_uuid())' \
+    && ok "the delete guard asks the host which set is loaded" \
+    || bad "the delete guard is back on the stale index — it can permit deleting the LIVE project"
+grep -q 'ACTIVE_SET_PATH:-\$DBX_DIR/active_set.txt' ../standalone/scripts/project-cmd.sh \
+    && ok "ACTIVE_SET_PATH points at OUR tree, not the stock one" \
+    || bad "ACTIVE_SET_PATH is not \$DBX_DIR — the stock copy holds native-session leftovers"
+
 echo "copy is a snapshot:"
 _cp=$(awk '/^do_copy\(\)/,/^}/' ../standalone/scripts/project-cmd.sh)
 printf '%s' "$_cp" | grep -q 'module_state_dir' \
