@@ -39,11 +39,14 @@ Known gaps this harness surfaced, both for Stage 1b:
     publish gate keys off `!slot_active`, but shadow_chain_slots[].instance is
     the CHAIN instance, which exists for every slot regardless of whether a
     sound generator is loaded. Does not affect audio.
-  - there is NO getter for move_fx:* keys (the SET side is parsed in two places,
-    the GET side nowhere), so a module readback is always "". The Move-flavour
-    sound mode must SHOW what is loaded on each bus block, so Stage 1b needs to
-    add one. ⚠ Also note the asymmetry: a bus insert loads by DSP PATH, while a
-    chain component loads by module ID.
+  - ~~there is NO getter for move_fx:* keys~~ **WRONG — CORRECTED 2026-08-11.**
+    fx_slot_param_rest() has served the GET side since 0d6402b6 (June): :module
+    returns the DSP path, :name the module id, :bypassed / :chain_params and the
+    strip levels all read. Probed on hardware with shadow_ui SIGSTOPped (the
+    running UI races you for the param mailbox and every request times out,
+    which itself looks like "unimplemented"). The empty readback below was an
+    EMPTY BUS. ⚠ The asymmetry IS real: a bus insert loads by DSP PATH, a chain
+    component by module ID — but passing an id fails LOUDLY (error 7).
 
 ⚠ `la_starve_fallback` still climbs on a minority of frames even at an exact
 feed rate — Python's timing is coarse against a narrow starve/catch-up window.
