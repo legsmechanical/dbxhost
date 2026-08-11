@@ -66,7 +66,7 @@ done
 grep -q 'SET_STATE_DIR' ../standalone/scripts/project-cmd.sh \
     && ok "project-cmd knows where the module state lives" \
     || bad "project-cmd lost SET_STATE_DIR — delete leaves davebox's state on disk"
-awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q 'state_dir' \
+awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q 'shutil.rmtree(sp)' \
     && ok "delete removes the project's module state" \
     || bad "do_delete no longer removes set_state/<uuid> — a deleted project is not a clean slate"
 
