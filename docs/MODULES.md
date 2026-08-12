@@ -414,6 +414,11 @@ under the **Tool tab**, addressed via the `overtake_dsp:<key>` param prefix.
 - **Opt in** by answering `get_param("module_id")` with your module id. The
   manager probes it to discover the active tool, announces arrival/departure
   to open Tool tabs, and serves `web_ui.html` from your module folder.
+  ⚠ The answer is used as a **directory name** — `modules/<category>/<module_id>/web_ui.html` —
+  so it must be the id your module actually *installs under*, not a constant baked into the
+  DSP. If your build can produce more than one id (a `-test` variant, a successor build, a
+  rename), inject it at compile time rather than hardcoding it: a mismatch points the manager
+  at a directory that does not exist, and the only symptom is that the remote UI never appears.
 - **Reads**: the manager seeds and refreshes the browser from
   `get_param("state")` — return a **flat JSON object of delimited string
   values** (nested arrays/objects are dropped by the param explosion).

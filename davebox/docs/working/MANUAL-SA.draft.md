@@ -1321,8 +1321,10 @@ type or route are hidden.
 
 <img src="img/dialog-confirm.png" width="384" alt="Incompatible State confirm dialog with No and Yes buttons">
 
-dAVEBOx stores its data inside the Move set. Duplicating a set inherits it;
-deleting a set removes it on the next launch. Loading a set saved by an **older
+dAVEBOx stores its data inside the Move set. Duplicating a set copies its dAVEBOx
+data as it is at that moment, so the duplicate is a snapshot — later edits to the
+original do not follow it. Deleting a set removes its dAVEBOx data straight away.
+Loading a set saved by an **older
 dAVEBOx** shows an **Incompatible State** dialog — **No** (default) exits with the
 old file kept, **Yes** erases it and starts clean.
 

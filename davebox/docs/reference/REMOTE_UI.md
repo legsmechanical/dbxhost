@@ -31,7 +31,7 @@ manager reaches it through the shim's `overtake_dsp:` prefix rather than a slot'
  browser (web_ui.html)                 schwung-manager                 DSP (seq8.c)
  ─────────────────────                 ───────────────                 ────────────
    getParam(k)  ────────────►  (seeded from snapshot; no live read) 
-                               probe overtake_dsp:module_id → "davebox"
+                               probe overtake_dsp:module_id → "davebox-sound" (SA)
                                poll overtake_dsp:rui_poll  ──────────►  get_param("rui_poll")
                                (rev changed?) ── yes ──►               "rev:on:tick:bpm"
                                get_param("state") ─────────────────►  seq8_remote_snapshot()
@@ -270,8 +270,16 @@ bands without breaking alignment).
 5. **Coalescing:** last `set_param` per buffer wins; multi-field edits must be one atomic key.
 6. **`rui_touch()`** on content edits, or the rev-gated poll won't re-read.
 7. **Alignment:** roll / velocity / automation all use `GUTTER` + `xOfTick`.
-8. **`web_ui.html` is standalone** (not the `ui/` bundle). Deploy = `build.sh` copies it into
-   `dist/`, or `cp web_ui.html dist/davebox/ && install.sh` for a web-only change (no DSP recompile).
+8. **`web_ui.html` is standalone** (not the `ui/` bundle). Deploy = `build_sound.sh` copies it into
+   `dist/davebox-sound/`, or `cp web_ui.html dist/davebox-sound/ && install_sound.sh` for a web-only
+   change (no DSP recompile). ⚠ Legacy's paths are `dist/davebox/` + `install.sh` — the module id
+   differs per build, which is exactly the trap in 11 below.
+11. **⚠⚠ `module_id` is used by the manager as a DIRECTORY NAME**
+    (`modules/<category>/<module_id>/web_ui.html`), so it must be THIS BUILD'S id, not a constant.
+    It was hardcoded `"davebox"` and SA installs as `davebox-sound`, so the manager looked in a
+    directory that does not exist and the remote UI never appeared — while
+    `test_remote_snapshot` asserted the hardcoded string and stayed green. Both halves now take it
+    from `-DDAVEBOX_MODULE_ID` / `--define:DAVEBOX_MODULE_ID` (`b9cfa29e`).
 9. **Mock shim** must learn every new field/key or browser preview drifts from device.
 10. **Optimistic edits + suppress window:** local mutation renders immediately; a `~130 ms`
     `pullSoon()` reconciles; `applyParams` ignores stale snapshots during the suppress window.
