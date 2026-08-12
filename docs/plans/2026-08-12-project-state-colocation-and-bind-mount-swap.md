@@ -1,9 +1,12 @@
 # Project State Co-location + Bind-Mount Library Swap
 
 Date: 2026-08-12
-Status: Design + implementation plan — ready to sequence.
-Phase 0 (delete the native-set-defence machinery) and Phase A (bind mount) are independent of
-P8 and can land first; co-location (B-E) after P8.
+Status: ✅ COMPLETE — all phases shipped 2026-08-12 (same day as the plan).
+Phase 0 `e8fead69`/`c4f2734e`/`47e42df2` · A `df0de6aa` · B `2b3c2fb5` · C `8334ee1b` ·
+D/E `6698a5fa`. Sequencing was re-ruled by Josh mid-arc: B–E landed BEFORE P8, not after.
+Hardware-verified end to end incl. Josh's hands-on (rename both flavours; per-project routing
+isolation). This document is now the RECORD of what was built and why — the review-findings
+section doubles as the trap ledger for anyone touching these paths.
 Rulings folded in 2026-08-12: visible reserved name, sibling layout, no migration.
 Set pages verified already dead — no work needed.
 ⚠⚠ REVIEWED ADVERSARIALLY 2026-08-12 and CORRECTED — two material fixes: the "native set
