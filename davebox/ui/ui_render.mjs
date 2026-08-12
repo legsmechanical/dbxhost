@@ -725,6 +725,29 @@ function drawPositionBar(t) {
     }
 }
 
+/* TRUE while an overlay that sits ABOVE sound mode in drawUI's stack owns the
+ * OLED. Input dispatch reads this so INPUT PRIORITY FOLLOWS DRAW PRIORITY: a
+ * screen that sound mode is not painting must not be one sound mode is
+ * steering. Without it the global/track menu opened from sound mode drew fine
+ * and was input-dead — sound mode owns the jog, and its CC hook sits ahead of
+ * dAVEBOx's own handling, so every turn and click was swallowed by a screen
+ * nobody could see (Josh, on hardware).
+ *
+ * ⚠ This list MIRRORS the checks between `drawUI`'s co-run bail and its
+ * `soundRender()` call, and the two MUST stay in step — a flag added there and
+ * not here re-opens exactly this bug. `tests/test_sound_mode_overlay_gate.sh`
+ * pins that correspondence by diffing the two flag sets. */
+export function soundModeCovered() {
+    return !!(S.sessionOverlayHeld || S.pendingInheritPicker || S.snapshotPicker ||
+        S.projectPadPicker || S.clearAutoMenu || S.pendingSceneBakePicker ||
+        S.mergePlacing || S.mergeNoticePending || S.pendingMergePlacement ||
+        S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
+        S.confirmStateWipe || S.bpmMoveInfo || S.recordBlockedDialog ||
+        S.confirmLgto || S.confirmXpose || S.confirmBakeScene || S.confirmBake ||
+        S.globalMenuOpen || S.tapTempoOpen ||
+        (S.sessionView && (S.loopHeld || S.perfViewLocked)));
+}
+
 export function drawUI() {
     /* CO-RUN: shadow_ui's chain editor owns the OLED while this is active.
     /* Move-native co-run: Move firmware owns the OLED (preset browser /
