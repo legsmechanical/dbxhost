@@ -285,6 +285,17 @@ const HOST_STATE_ROOT = (typeof HOST_INSTALL_DIR === "string" && HOST_INSTALL_DI
     ? HOST_INSTALL_DIR : "/data/UserData/schwung";
 
 const CONFIG_PATH = HOST_STATE_ROOT + "/shadow_chain_config.json";
+/* ⭑ Per-set state lives INSIDE the set's own directory (state co-location,
+ * 2026-08-12): Sets/<uuid>/<SET_STATE_SUBDIR>/. Must agree with the C side's
+ * PER_SET_STATE_SUBDIR (shadow_set_pages.h) — the shim reads at boot what this
+ * file writes on SET_CHANGED. Pinned by check-config.sh. Valid whenever a set
+ * is loaded: the launcher binds the session library over Sets/ before Move
+ * starts, so a uuid we are told about is a dir that exists there. */
+const SETS_LIBRARY_DIR = "/data/UserData/UserLibrary/Sets";
+const SET_STATE_SUBDIR = "dAVEBOx/host";
+function perSetStateDir(uuid) {
+    return SETS_LIBRARY_DIR + "/" + uuid + "/" + SET_STATE_SUBDIR;
+}
 const PATCH_DIR = "/data/UserData/schwung/patches";
 const SLOT_STATE_DIR_DEFAULT = HOST_STATE_ROOT + "/slot_state";
 let activeSlotStateDir = SLOT_STATE_DIR_DEFAULT;
@@ -13939,11 +13950,10 @@ function processSetChangedFlag() {
 
             /* 3. Determine new directory */
             const newDir = uuid
-                ? HOST_STATE_ROOT + "/set_state/" + uuid
+                ? perSetStateDir(uuid)
                 : SLOT_STATE_DIR_DEFAULT;
 
             if (uuid && typeof host_ensure_dir === "function") {
-                host_ensure_dir(HOST_STATE_ROOT + "/set_state");
                 host_ensure_dir(newDir);
             }
 
@@ -15519,7 +15529,7 @@ globalThis.init = function() {
             const lines = raw.split("\n");
             const uuid = lines[0] ? lines[0].trim() : "";
             if (uuid) {
-                const setDir = HOST_STATE_ROOT + "/set_state/" + uuid;
+                const setDir = perSetStateDir(uuid);
                 if (host_file_exists(setDir + "/slot_0.json") || host_file_exists(setDir + "/shadow_chain_config.json")) {
                     activeSlotStateDir = setDir;
                     debugLog("Init: using per-set state dir " + setDir);

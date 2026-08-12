@@ -64,6 +64,11 @@ check "seq8.c reserved subdir"         "$REPO/davebox/dsp/seq8.c"           "\"$
 check "ui_persistence reserved subdir" "$REPO/davebox/ui/ui_persistence.mjs" "'$DBX_SUBDIR_NAME'"
 check "project-cmd reserved subdir"    "$HERE/scripts/project-cmd.sh"        ":-$DBX_SUBDIR_NAME}"
 check "select-list reserved subdir"    "$HERE/scripts/select-list.sh"        ":-$DBX_SUBDIR_NAME}"
+# Phase C: the HOST side has two spellings of the same contract - the shim
+# reads at boot (C) what shadow_ui.js writes on SET_CHANGED (JS). The host
+# half lives one level deeper, under <subdir>/host.
+check "shadow_set_pages.h host subdir" "$REPO/src/host/shadow_set_pages.h"   "\"$DBX_SUBDIR_NAME/host\""
+check "shadow_ui.js host subdir"       "$REPO/src/shadow/shadow_ui.js"       "\"$DBX_SUBDIR_NAME/host\""
 
 # The HOST's own copy. shadow_ui.js owns the Shift+Back exit, so a DBX_DIR
 # change that misses this line breaks exit-to-stock from the host side with

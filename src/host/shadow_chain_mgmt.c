@@ -1344,9 +1344,6 @@ int shadow_inprocess_load_chain(void) {
             (shadow_chain_set_external_fx_mode && shadow_chain_process_fx) ? 1 : 0,
             (void*)shadow_chain_fx_requires_continuous);
 
-    /* Run batch migration for per-set state support */
-    shadow_batch_migrate_sets();
-
     /* Determine boot state directory */
     char boot_state_dir[512];
     snprintf(boot_state_dir, sizeof(boot_state_dir), "%s", SLOT_STATE_DIR);
@@ -1359,7 +1356,11 @@ int shadow_inprocess_load_chain(void) {
                 while (end > boot_uuid && (*end == '\n' || *end == '\r' || *end == ' ')) *end-- = '\0';
                 if (boot_uuid[0]) {
                     char set_dir[512];
-                    snprintf(set_dir, sizeof(set_dir), SET_STATE_DIR "/%s", boot_uuid);
+                    /* Per-set state lives INSIDE the set dir (co-location).
+                     * ⚠ Valid at boot because launch.sh binds the standalone
+                     * library over Sets/ BEFORE starting Move — the shim only
+                     * ever initialises with the mount up. */
+                    snprintf(set_dir, sizeof(set_dir), SET_STATE_DIR_FMT, boot_uuid);
                     char test_slot[768];
                     snprintf(test_slot, sizeof(test_slot), "%s/slot_0.json", set_dir);
                     char test_cfg[768];
@@ -1680,10 +1681,6 @@ int shadow_inprocess_load_chain(void) {
         }
         if (stat(SLOT_STATE_DIR, &st) != 0) {
             const char *mkdir_argv[] = { "mkdir", "-p", SLOT_STATE_DIR, NULL };
-            if (host.run_command) host.run_command(mkdir_argv);
-        }
-        if (stat(SET_STATE_DIR, &st) != 0) {
-            const char *mkdir_argv[] = { "mkdir", "-p", SET_STATE_DIR, NULL };
             if (host.run_command) host.run_command(mkdir_argv);
         }
     }

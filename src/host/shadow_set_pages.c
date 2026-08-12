@@ -107,101 +107,16 @@ static int write_text_file_as_ableton(const char *path, const char *content) {
     return 1;
 }
 
-/* Seed a set directory with EMPTY per-set state. The global default
- * (SLOT_STATE_DIR) must never carry module config into per-set state — a stale
- * global slot (e.g. an old line-in + reverb autosave) would otherwise propagate
- * into every set and reload on boot (boot-feedback fix, 2026-06-25). Mirrors the
- * JS "new set" seed in shadow_ui.js: empty slot/master_fx files + a default
- * chain config (receive Ch 1-4, unity volume, auto forward, unmuted). */
-static void seed_empty_set_state(const char *set_dir) {
-    shadow_ensure_dir(set_dir);
-    char path[700];
-    /* Two separate counts that happen to be equal today: chain slots and
-     * Master FX blocks are independent axes, and the reader loops each over
-     * its own constant. Seeding both from one loop would write phantom
-     * master_fx_N.json files nobody reads the moment they diverge. */
-    for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++) {
-        snprintf(path, sizeof(path), "%s/slot_%d.json", set_dir, i);
-        write_text_file_as_ableton(path, "{}\n");
-    }
-    for (int i = 0; i < MASTER_FX_SLOTS; i++) {
-        snprintf(path, sizeof(path), "%s/master_fx_%d.json", set_dir, i);
-        write_text_file_as_ableton(path, "{}\n");
-    }
-    snprintf(path, sizeof(path), "%s/" SHADOW_CHAIN_CONFIG_FILENAME, set_dir);
-    FILE *f = fopen(path, "w");
-    if (f) {
-        fputs("{\n  \"slots\": [\n", f);
-        for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++) {
-            fprintf(f,
-                "    { \"name\": \"\", \"channel\": %d, \"volume\": 1.0, "
-                "\"forward_channel\": -1, \"muted\": 0, \"soloed\": 0 }%s\n",
-                i + 1, (i < SHADOW_CHAIN_INSTANCES - 1) ? "," : "");
-        }
-        fputs("  ]\n}\n", f);
-        fclose(f);
-        chown_to_ableton(path);
-    }
-}
+/* ⚠ seed_empty_set_state + shadow_batch_migrate_sets are GONE (state
+ * co-location, 2026-08-12). The batch migration seeded EMPTY per-set state
+ * under the parallel set_state/ root for every existing set, once, at shim
+ * init. Under co-location the state lives inside each set dir and a set's
+ * FIRST VISIT seeds it (the SET_CHANGED handler in shadow_ui.js) — an
+ * init-time sweep would create module-named dirs inside every set visible at
+ * boot, for no reader. The boot restore (shadow_chain_mgmt.c) falls back to
+ * SLOT_STATE_DIR when a set has no per-set state yet, exactly as it always
+ * did for a set the migration had not reached. */
 
-/* ============================================================================
- * Batch migration
- * ============================================================================ */
-
-void shadow_batch_migrate_sets(void) {
-    char migrated_path[256];
-    snprintf(migrated_path, sizeof(migrated_path), SET_STATE_DIR "/.migrated");
-    struct stat mst;
-    if (stat(migrated_path, &mst) == 0) return;  /* Already migrated */
-
-    host.log("Batch migration: seeding per-set state for all existing sets");
-    shadow_ensure_dir(SET_STATE_DIR);
-
-    DIR *sets_dir = opendir(SAMPLER_SETS_DIR);
-    if (!sets_dir) {
-        host.log("Batch migration: cannot open Sets dir, writing .migrated anyway");
-        goto write_marker;
-    }
-
-    int count = 0;
-    struct dirent *entry;
-    while ((entry = readdir(sets_dir)) != NULL) {
-        if (entry->d_name[0] == '.') continue;
-
-        /* Each entry under Sets/ is a UUID directory */
-        const char *uuid = entry->d_name;
-        char set_dir[512];
-        snprintf(set_dir, sizeof(set_dir), SET_STATE_DIR "/%s", uuid);
-
-        /* Skip if already has state files */
-        char test_path[768];
-        snprintf(test_path, sizeof(test_path), "%s/slot_0.json", set_dir);
-        struct stat tst;
-        if (stat(test_path, &tst) == 0) continue;
-
-        /* Seed EMPTY per-set state — never copy the global default's module
-         * config (boot-feedback fix, 2026-06-25). A stale global slot must not
-         * propagate into every set. */
-        seed_empty_set_state(set_dir);
-
-        count++;
-    }
-    closedir(sets_dir);
-
-    char m[128];
-    snprintf(m, sizeof(m), "Batch migration: seeded %d sets with empty per-set state", count);
-    host.log(m);
-
-write_marker:
-    {
-        FILE *mf = fopen(migrated_path, "w");
-        if (mf) {
-            fputs("1\n", mf);
-            fclose(mf);
-            chown_to_ableton(migrated_path);
-        }
-    }
-}
 
 /* ============================================================================
  * Config save/load
