@@ -14000,7 +14000,6 @@ function processSetChangedFlag() {
                 }
                 host_write_file(newDir + "/shadow_chain_config.json",
                     JSON.stringify(defaultCfg, null, 2) + "\n");
-                }
             }
 
             /* 5. Switch directory and load chain config (volumes/channels/mute/solo) */
