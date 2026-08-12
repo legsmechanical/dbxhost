@@ -1,7 +1,11 @@
 # Project State Co-location + Bind-Mount Library Swap
 
 Date: 2026-08-12
-Status: Design + implementation plan — ready to sequence (bind mount first; co-location after P8)
+Status: Design + implementation plan — ready to sequence.
+Phase 0 (delete the native-set-defence machinery) and Phase A (bind mount) are independent of
+P8 and can land first; co-location (B-E) after P8.
+Rulings folded in 2026-08-12: SA-only surface invariant, visible reserved name, sibling layout,
+no migration. Set pages verified already dead — no work needed.
 
 ## Problem
 
@@ -72,6 +76,61 @@ library by *mounting* it rather than moving it.
    Move starts? — is already satisfied, because the launcher stops Move at that boundary
    anyway (`standalone/scripts/launch.sh:117-129, 140-159`).
 
+## ⭑⭑ Invariant: dAVEBOx owns the surface — native set management is UNREACHABLE
+
+**Josh, 2026-08-12:** *"the whole point of rebuilding the davebox / host relationship as we've
+been doing is to keep everything user-facing contained inside davebox itself. Users wouldn't
+normally be able to access the native set management apparatus — only what dAVEBOx's project
+load screen gives them."*
+
+This is not a behavioural expectation, it is **structurally enforced, and by the swap itself**:
+
+- **During a session** the SA library is in `Sets/`, and dAVEBOx owns the primary surface. Move's
+  set management is not on screen and cannot be reached.
+- **Outside a session** the SA library is parked in `$DBX_DIR/sets/library/`, which is not Move's
+  library path — stock Move cannot see dAVEBOx projects at all.
+- **Move-native co-run** cedes control for **preset/synth navigation only**
+  (`davebox/ui/ui_corun.mjs:1-8, 23-41`) — device editing, not set management. Audited; it does
+  not undercut this.
+
+⇒ **Move's set management and dAVEBOx projects are never in the same world at the same time.**
+
+This is the surface-level twin of the repo's existing *"no capability probing — one host, one
+module, shipped together"* rule (`CLAUDE.md`), and it should be written down beside it, because
+it is the premise that licenses the Phase 0 deletions below.
+
+**What it kills.** A whole family of code answers exactly one question: *"a set appeared that
+dAVEBOx has never seen — whose descendant is it?"* That question can only arise when something
+OUTSIDE dAVEBOx duplicated a set. That is the **Legacy** world (dAVEBOx as a module under stock
+Schwung, user holding full native set management), and Legacy is a separate frozen repo
+(`../schwung-davebox`) that this deletion does not touch. Under SA nothing can produce the input
+this machinery waits for — dAVEBOx's own copy explicitly routes around it, pre-copying both state
+halves precisely so the inherit path never fires (`standalone/scripts/project-cmd.sh:279-307`,
+and read its comment).
+
+⇒ **This machinery is already dead, TODAY.** It is not "simplified by co-location" — it can be
+deleted before any storage change, which is why Phase 0 exists and runs first.
+
+### ⭑ Set pages are ALREADY GONE — verified 2026-08-12, no work needed
+
+Josh asked that set pages be made unreachable if they were reachable. They are not: **the 8-page
+set-library stash died in P3** of the re-architecture. Evidence:
+
+- `src/host/shadow_set_pages.c:1-4` — *"The 8-page set-library stash this file was named for died
+  in P3; the name stays to keep history legible."* The file now does set **tracking**, not pages.
+- `src/host/shadow_constants.h:173` — `set_pages_enabled` is **RESERVED** and kept only to
+  preserve the SHM layout, commented "set pages died in P3".
+- **No stash writer exists anywhere in the tree** — the only remaining references to a
+  `set_pages` *directory* are the defensive readers listed below, and
+  `davebox/docs/working/DBSA_SET_PAGES_HARDENING.md:23` already records that no
+  `/data/UserData/schwung/set_pages` exists on the device.
+
+So the residue is **dead defensive code guarding against a deleted feature**:
+`SEQ8_SET_PAGES_DIR_A`/`_B` (`davebox/dsp/seq8.c:75-80`), the stash-walk arm of
+`seq8_set_uuid_alive` (`sp_globals_state.c:45-59`), and `SET_PAGES_DIR_A`/`_B` in
+`project-cmd.sh:84-85`. All are already on the Phase 0 / Phase E deletion lists. ⚠ Do not
+"harden" set pages further — hardening a feature that does not exist is how this residue got here.
+
 ## Target model
 
 ### Layout
@@ -95,9 +154,23 @@ Sets/<uuid>/
 Why a **sibling of the inner `<Name>/` dir**, not inside it: fact 1 proves the position is
 safe; the inner dir is the thing Move renames on rename/" Copy", so putting state beside
 it (not inside) means a rename never moves our files; and one subtree =
-one `rmtree` on delete, one `copytree` on copy, zero cross-tree bookkeeping. Everything
-that used to be "keep two trees in step" becomes "the state travels with the set because
-it is IN the set":
+one `rmtree` on delete, one `copytree` on copy, zero cross-tree bookkeeping.
+
+**⭑ RULED (Josh, 2026-08-12): sibling, and the inside-the-inner-dir experiment is NOT to be
+run.** Inside would keep the one-child assumption intact (no filters needed) and would
+likely make a Move-NATIVE duplicate carry our state. Both were judged not worth it:
+
+- The one-child benefit is moot — we want the explicit filters regardless (see below).
+- The Move-native-duplicate benefit serves **a flow users cannot reach** (see
+  *Invariant: dAVEBOx owns the surface*). It buys inheritance for a duplicate that cannot
+  be created.
+- ⚠ Against it: the inner dir is **Move's own**, read/written/cloud-synced by closed
+  firmware. If Move ever tidies unknown files there our data is gone, with no recourse.
+  Beside it, Move only ever moves the enclosing dir wholesale and never has an opinion
+  about our contents. For closed firmware, take the conservative position.
+
+Everything that used to be "keep two trees in step" becomes "the state travels with the
+set because it is IN the set":
 
 - **delete** = `shutil.rmtree(Sets/<uuid>)` — already what `do_delete` does for the set
   itself; the two-root state delete (`project-cmd.sh:372-397`) just disappears.
@@ -140,6 +213,21 @@ Recommend one rule, spelled identically in all four places: **skip the literal n
 and not yet saved — select-hook.sh's whole reason for existing,
 `select-hook.sh:101-112`). Pin the reserved name the way `check-config.sh` pins
 `DBX_DIR` literals — it will exist in sh, py-in-sh, JS, and C.
+
+**⭑ RULED (Josh, 2026-08-12): a VISIBLE name with EXPLICIT filters. The dot-prefix
+shortcut is rejected.** All four sites above already skip `startswith(".")`, so naming the
+folder `.davebox` would need zero edits and no pin. Rejected anyway, for three reasons —
+record them so the shortcut is not rediscovered and adopted:
+
+1. **Wildcards skip dotfiles.** Any user, backup script or sync tool doing
+   `cp -r <project>/* …` silently drops the state and produces a project that looks
+   complete and is not. Silent, data-loss-shaped.
+2. **Hidden exactly when it matters** — invisible over USB / the Move app / a file
+   browser, i.e. while someone is troubleshooting the project.
+3. ⭑ **The protection would be INCIDENTAL.** Those dotfile filters were not written to
+   protect us; nothing marks them load-bearing, and a later refactor could drop one with
+   no way to know. An explicit reserved-name check states the intent and the pin makes a
+   mismatch impossible. Prefer the four edits.
 
 **Safe as-is (verified):**
 
@@ -344,10 +432,57 @@ touches the mount.
 
 ## Phased implementation
 
-Each phase is independently shippable. Phase A is independent of P8 and lands first;
+Each phase is independently shippable. Phase 0 and Phase A are independent of P8 and land first;
 Phases B–E are sequenced **after P8** (the unified slot model is the active arc).
 
-### Phase A — bind-mount swap (independent, first)
+### Phase 0 — write down the invariant, delete the native-set-defence machinery (independent, FIRST)
+
+⭑ **Added after Josh's observation (see *Invariant: dAVEBOx owns the surface*).** No storage
+changes, no migration, no dependency on P8 or on any later phase here. It only deletes code that
+answers a question SA cannot ask — so it shrinks what every later phase has to move, and it is
+worth doing even if the rest of this plan is never scheduled.
+
+1. **`CLAUDE.md`: state the invariant** beside the existing "no capability probing" rule —
+   *dAVEBOx owns the user-facing surface; native set management is unreachable; never add code
+   that defends against a set changing behind our back.* This is the licence for everything below,
+   so it must be written before the deletions, not after.
+2. **Delete the "whose descendant is this?" family:**
+   - inherit picker + `S.pendingInheritPicker` interlocks (`ui_dialogs.mjs`, `ui_tick.mjs:471, 674`,
+     `ui_persistence.mjs:277`)
+   - `findInheritCandidates` / `stripCopySuffix` / `copyStateFiles` (`ui_persistence.mjs:53-58,
+     109-126, 140-188`)
+   - the name→uuid index in full: file, cache, `loadNameIndex`/`saveNameIndex`/`updateNameIndex`/
+     `dropNameIndexUuid` (`ui_persistence.mjs:27, 61-107`), `ui_dialogs.mjs:1048`,
+     `_rename_update_name_index` + call sites (`project-cmd.sh:452-472, 517, 534`),
+     `project-cmd.sh:88-90`
+   - host-side duplicate detection: `detectCopySource` (`shadow_ui.js:4329-4378`),
+     `shadow_get_song_abl_size` / `shadow_set_name_looks_like_copy` / `shadow_detect_copy_source`
+     (`shadow_set_pages.c:380-450`), `copy_source.txt` (`shadow_ui.js:14009-14016`), and the
+     SET_CHANGED copy-seed branch (`shadow_ui.js:14023-14053`)
+3. **Delete the set-pages residue** — dead since P3, verified above: `SEQ8_SET_PAGES_DIR_A`/`_B`
+   (`seq8.c:75-80`), the stash-walk arm of `seq8_set_uuid_alive` (`sp_globals_state.c:45-59`),
+   `SET_PAGES_DIR_A`/`_B` (`project-cmd.sh:84-85`), and the set-pages case in
+   `test_prune_respects_set_pages.c`. ⚠ Leave the RESERVED `set_pages_enabled` SHM byte alone —
+   removing it changes the SHM layout (`shadow_constants.h:173`).
+4. **Keep, for now:** both pruners and the liveness test's `Sets/` + library roots. They are not
+   part of this family — they answer "is this set gone?", which is still a real question until
+   co-location lands. Phase E removes them.
+
+⚠ **Phase 0 has a REAL failure mode: an over-broad delete.** `do_copy` currently pre-copies both
+state halves specifically so the inherit path never fires — that behaviour is what makes a
+dAVEBOx-made duplicate a snapshot, and it **must survive** this phase (it is only simplified later,
+by Phase D's whole-dir copytree). Deleting it here silently turns every duplicate into a blank
+project.
+
+Tests: an eval-level pin that a duplicate made through the picker still carries its source's
+state (extend `davebox/tests/js/` — see `test_name_index_delete.mjs` for the idiom, which is
+itself deleted by this phase). Shell pins that the deleted symbols have no remaining callers.
+`tests/host/test_project_cmd.sh` copy assertions must stay green untouched — if they need editing,
+the delete went too far. Mutation-verify ([[schwung-mutation-test-commit-first]]).
+Hardware acceptance: duplicate a project in the picker → the copy opens with the source's clips
+and routing; create a new project → opens blank.
+
+### Phase A — bind-mount swap (independent, second)
 
 1. `davebox-heal.c`: `--mount-sets` / `--umount-sets` (hardcoded paths;
    `umount` only if `mountpoint`). Update `build-heal.sh` if flags/defines change.
