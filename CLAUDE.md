@@ -45,20 +45,23 @@ So a davebox need is a valid reason to change this host. Do not treat it as an o
   which belongs to the **Legacy** world, where davebox ran as a module under stock Schwung and the
   user held full native set management. Never reintroduce an ancestor guess.
   ⚠ This is a **policy, not an impossibility**, and the difference has already caused one wrong
-  claim in this repo. The ON-DEVICE half is now closed by HIDING rather than by disabling
-  (2026-08-12): while a session is live, the set library is filtered out of every browser that
-  lists through `shared/filepath_browser.mjs` — the file-browser tool, its copy/move destination
-  picker, the shadow UI's tool browser, davebox's own file params — and the file browser's six
-  destructive operations refuse a path inside it even if one is reached another way. The browsers
-  stay fully usable for samples and presets; only the projects disappear. The predicate is
-  `pathHiddenFromBrowsers()` in `shared/session_state.mjs`, which also owns the single definition
-  of `standaloneSessionActive()` (shadow_ui.js imports it; two copies of a liveness probe were two
-  things to keep in step). Outside a session nothing is hidden — `Sets/` is then the user's own set
-  list. ⚠ **Still open: the NETWORK half.** `launch.sh` does not stop schwung-manager, which keeps
-  serving file rename/delete on :7700 with `-roots /data/UserData/`, and the optional third-party
-  `filebrowser` binary (flag-gated, unauthenticated, `--root /data/UserData`) is not ours to
-  filter. Until those close, the blast radius stays a project that opens blank, which is exactly
-  the accepted contract.
+  claim in this repo. Out-of-band mutation IS reachable, and the fix is bounded by a hard rule:
+  **we never modify the stock tree** — not `schwung-manager`, not the built-in modules. The
+  file-browser module in particular ships into the SHARED stock modules dir, so a stock user runs
+  the stock copy and any guard added to it would not even be on the device.
+  What we can do without touching stock, and do: the set library is filtered out of
+  `shared/filepath_browser.mjs` while a session is live. Because this build's module loader
+  **rewrites** the canonical `/data/UserData/schwung/shared/` import prefix to its own `shared/`
+  dir, the STOCK, UNMODIFIED file browser running inside a session lists through OUR browser and
+  inherits the filter for free. The predicate is `pathHiddenFromBrowsers()` in
+  `shared/session_state.mjs`, which also holds the single definition of `standaloneSessionActive()`.
+  Nothing is hidden outside a session — `Sets/` is then the user's own set list.
+  ⚠ **What remains reachable, by design:** the file browser's own copy/move DESTINATION picker
+  (module-side, so out of bounds), `schwung-manager` on :7700 (stock tree), the optional
+  third-party `filebrowser` binary, and any network share. There is no code we own to filter
+  there, so the library instead carries a **`DO-NOT-EDIT.txt`** written by `set-swap.sh` on every
+  enter — visible in exactly those surfaces, absent from the user's own sets. The blast radius
+  stays a project that opens blank, which is exactly the accepted contract.
 - **Keep changes generic anyway** (no module named, docs in the same commit). Not because upstream
   demands it — because a generic change *can* be offered upstream, and each one that merges shrinks
   what this fork carries. See `docs/UPSTREAM.md`.
