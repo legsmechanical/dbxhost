@@ -50,7 +50,7 @@ import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes } from './ui_r
 import { xposeCancelPreview } from './ui_xpose.mjs';
 import { checkBackHold, backTapWouldAct } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
-         SLOT_LEVEL_KEY, CHAIN_SLOTS } from './ui_engine.mjs';
+         SLOT_LEVEL_KEY, CHAIN_SLOTS, DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { soundActive, soundEnter, soundEnterMove, soundEnterBuses, soundExit,
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
     soundEnteredInSession, soundConsumeLedDirty,
@@ -1894,6 +1894,14 @@ export function _tickImpl() {
     if (S.pendingPruneOrphans && !S.pendingSetLoad && S.pendingDspSync === 0) {
         S.pendingPruneOrphans = false;
         host_module_set_param('prune_orphan_states', '1');
+        /* ...and the OTHER half of a project, which the DSP cannot reach: the
+         * HOST state root ($DBX_DIR/set_state/<uuid> — chains, slots, FX). Same
+         * moment, deliberately: both roots are keyed by the same set uuid, and
+         * one prune leaving the other behind is how a "deleted" project kept
+         * its routing. Blocking shell call, but once per session, right after
+         * the load has settled. project-cmd refuses the sweep rather than guess
+         * when the world looks wrong (see do_prune). */
+        host_system_cmd('sh ' + DAVEBOX_HOST_DIR + '/scripts/project-cmd.sh prune');
         /* Drop stale entries from the in-memory index so subsequent inheritance
          * lookups don't find UUIDs whose state file is about to be removed. */
         if (!S.nameIndexCache) S.nameIndexCache = loadNameIndex();

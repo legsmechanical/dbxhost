@@ -27,6 +27,7 @@
 #define SEQ8_SET_STATE_DIR   PRUNE_TMP "/set_state"
 #define SEQ8_SET_PAGES_DIR_A PRUNE_TMP "/set_pages"
 #define SEQ8_SET_PAGES_DIR_B PRUNE_TMP "/dbx_set_pages"
+#define SEQ8_SET_LIBRARY_DIR PRUNE_TMP "/library"
 
 #include "harness.h"
 
@@ -34,6 +35,7 @@
 #define UUID_LIVE  "11111111-1111-4111-8111-111111111111"  /* present in Sets/ */
 #define UUID_PAGED "22222222-2222-4222-8222-222222222222"  /* stashed on a page */
 #define UUID_GONE  "33333333-3333-4333-8333-333333333333"  /* genuinely deleted */
+#define UUID_LIB   "44444444-4444-4444-8444-444444444444"  /* in the SA library */
 
 static void rm_rf(const char *path) {
     char cmd[512];
@@ -97,13 +99,23 @@ int main(void) {
      * cannot quietly reintroduce the bug. */
     mkdirs(SEQ8_SET_PAGES_DIR_A "/page_3/" UUID_PAGED);
 
+    /* The SA project library: where set-swap.sh parks the standalone sets while
+     * no session runs. Sets/ then holds the user's NATIVE sets, so a liveness
+     * test that only knows about Sets/ calls EVERY standalone project dead. The
+     * prune only runs in-session today, which is the sole reason that has never
+     * fired — a guard whose correctness rests on a caller's timing is one
+     * refactor from data loss. */
+    mkdirs(SEQ8_SET_LIBRARY_DIR "/" UUID_LIB);
+
     /* UUID_GONE exists nowhere but in set_state — a genuine orphan. */
     seed_state(UUID_LIVE);
     seed_state(UUID_PAGED);
+    seed_state(UUID_LIB);
     seed_state(UUID_GONE);
 
     HX_ASSERT(state_present(UUID_LIVE),  "fixture: live state missing");
     HX_ASSERT(state_present(UUID_PAGED), "fixture: paged state missing");
+    HX_ASSERT(state_present(UUID_LIB),   "fixture: library state missing");
     HX_ASSERT(state_present(UUID_GONE),  "fixture: orphan state missing");
 
     hx_t *h = hx_create(NULL);
@@ -121,6 +133,13 @@ int main(void) {
               "— this is the data-loss bug; a paged set is alive, not deleted");
     HX_ASSERT(snapshot_present(UUID_PAGED),
               "prune deleted the SNAPSHOTS of a set stashed on an inactive set page");
+
+    /* 2b. Same shape, different root: a set sitting in the SA library. */
+    HX_ASSERT(state_present(UUID_LIB),
+              "prune deleted the state of a set in the SA LIBRARY — that is where "
+              "every standalone project lives while no session runs");
+    HX_ASSERT(snapshot_present(UUID_LIB),
+              "prune deleted the SNAPSHOTS of a set in the SA library");
 
     /* 3. It must still do its job: a truly absent set is pruned. A fix that
      *    simply stopped deleting would pass 1 and 2 and be useless. */

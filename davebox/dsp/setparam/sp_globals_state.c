@@ -31,6 +31,15 @@
  * costs a few KB, deleting a live one destroys work. So anything we cannot
  * verify counts as ALIVE. */
 static int seq8_set_uuid_alive(const char *uuid) {
+    /* Roots holding set dirs DIRECTLY (<root>/<uuid>). Sets/ is the live
+     * library; the SA library is where set-swap parks those same sets outside a
+     * session — see the SEQ8_SET_LIBRARY_DIR note in seq8.c. */
+    static const char *const direct_roots[] = {
+        SEQ8_SETS_DIR,
+        SEQ8_SET_LIBRARY_DIR,
+        NULL
+    };
+    /* Roots holding them one level deeper (<root>/<page>/<uuid>). */
     static const char *const stash_roots[] = {
         SEQ8_SET_PAGES_DIR_A,
         SEQ8_SET_PAGES_DIR_B,
@@ -39,8 +48,10 @@ static int seq8_set_uuid_alive(const char *uuid) {
     char buf[512];
     struct stat st;
 
-    snprintf(buf, sizeof(buf), SEQ8_SETS_DIR "/%s", uuid);
-    if (stat(buf, &st) == 0) return 1;
+    for (int r = 0; direct_roots[r]; r++) {
+        snprintf(buf, sizeof(buf), "%s/%s", direct_roots[r], uuid);
+        if (stat(buf, &st) == 0) return 1;
+    }
 
     for (int r = 0; stash_roots[r]; r++) {
         struct stat rst;

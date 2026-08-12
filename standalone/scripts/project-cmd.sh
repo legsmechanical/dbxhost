@@ -20,6 +20,8 @@
 #   rename <index> <name> rename the inner set dir + name index; the OPEN
 #                     project defers the mv to relaunch_patch.sh and restarts
 #                     Move in place (see do_rename)
+#   prune           drop HOST state dirs whose set is gone, and name-index
+#                     entries whose state file is gone (see do_prune)
 #
 # The switch path mirrors exit-to-stock.sh's shape: SIGTERM so the host runs
 # its normal shutdown saves, detached because our caller dies with the process
@@ -62,6 +64,30 @@ STATE_PREFIX="${STATE_PREFIX:-seq8sa}"
 # native-session leftovers. Authoritative for "which project is open";
 # Settings.json's currentSongIndex is only written at a relaunch and goes stale.
 ACTIVE_SET_PATH="${ACTIVE_SET_PATH:-$DBX_DIR/active_set.txt}"
+# WHERE A SET CAN BE, for the prune's liveness test. Sets/ alone is NOT the
+# answer and assuming it is destroys work:
+#   Sets/          the live library — but that is the SA library only while a
+#                  session runs; outside one it holds the user's NATIVE sets.
+#   sets/library/  the SA library while no session runs (set-swap.sh renames
+#                  whole set dirs between the two — a set is in exactly one).
+#   sets/native-stash/  the natives while a session runs. Ours never land here,
+#                  but a uuid found there is manifestly a live set, so it counts.
+#   set_pages/*/   Schwung's set-pages feature stashes whole set dirs off Sets/
+#                  while another page is active. Both roots, because the stash
+#                  lives under whichever host created it.
+# This is the same union dsp/setparam/sp_globals_state.c's seq8_set_uuid_alive()
+# walks for the MODULE root; keep the two in step.
+SWAP_ROOT="${SWAP_ROOT:-$DBX_DIR/sets}"
+LIBRARY_DIR="${LIBRARY_DIR:-$SWAP_ROOT/library}"
+NATIVE_STASH_DIR="${NATIVE_STASH_DIR:-$SWAP_ROOT/native-stash}"
+SWAP_STATE_FILE="${SWAP_STATE_FILE:-$SWAP_ROOT/swap_state}"
+SET_PAGES_DIR_A="${SET_PAGES_DIR_A:-/data/UserData/schwung/set_pages}"
+SET_PAGES_DIR_B="${SET_PAGES_DIR_B:-$DBX_DIR/set_pages}"
+# name -> uuid map, so a duplicated set can inherit the original's state. Lives
+# in the SHARED module root but is ours by prefix. Read/written by delete,
+# rename and prune here, and by the module (ui_persistence.mjs). ⚠ Declared with
+# the other constants because THREE functions below need it, not just rename.
+NAME_INDEX_PATH="${NAME_INDEX_PATH:-/data/UserData/schwung/${STATE_PREFIX}_name_index.json}"
 OUT_JSON="$DBX_DIR/projects.json"
 TEMPLATE_DIR="$DBX_DIR/sets/template"
 
@@ -361,6 +387,13 @@ for u in os.listdir(sets_dir):
                 print("project-cmd: deleted host state %s/%s" % (host_state_dir, u))
             except OSError:
                 pass
+            # ⚠ The NAME INDEX is deliberately NOT touched here. The module holds
+            # it in memory (S.nameIndexCache) and rewrites the whole file on the
+            # next save, so a drop written behind its back is simply resurrected
+            # — and the module is the one that knows the delete happened. It
+            # drops the entry itself (dropNameIndexUuid, ui_dialogs' delete
+            # branch); the rename path here only writes it because the module is
+            # NOT involved in a rename. One writer per moment.
             print("project-cmd: deleted index %d (%s)" % (idx, u))
             sys.exit(0)
     except (OSError, ValueError):
@@ -415,7 +448,6 @@ PYEOF
 # save, queue, SIGTERM, supervisor relaunch at the same index. Non-open
 # projects rename immediately — the same liveness argument delete already
 # proved on hardware.
-NAME_INDEX_PATH="${NAME_INDEX_PATH:-/data/UserData/schwung/${STATE_PREFIX}_name_index.json}"
 
 _rename_update_name_index() { # uuid newname
     # Drop every stale name -> this-uuid entry, then map the new name iff our
@@ -504,6 +536,101 @@ PYEOF
     do_list
 }
 
+# Reclaim HOST state dirs ($DBX_DIR/set_state/<uuid>: shadow_chain_config,
+# slot_N, master/move/send FX — the ROUTING half of a project) whose set no
+# longer exists. Nothing else does: do_delete takes the one dir it deletes, but
+# everything else leaks — projects deleted before do_delete learned about this
+# root (100 had piled up by 2026-08-11), interrupted deletes, sets removed
+# outside dAVEBOx.
+#
+# ⚠ SCOPE, deliberately narrow — this verb owns ONLY that root:
+#   - the SHARED module root is the module's, via `prune_orphan_states`
+#     (dsp/setparam/sp_globals_state.c), which deletes BY PREFIX because stock's
+#     state sits in the same folders.
+#   - the NAME INDEX is the module's too: it holds the map in memory
+#     (S.nameIndexCache) and rewrites the whole file on the next save, so a
+#     sweep here would be silently undone. Its stale-entry sweep runs in the
+#     same tick branch that fires this verb (ui_tick.mjs).
+#
+# ⭑⭑ THE SAFETY ASYMMETRY, same as the module's: keeping a stale dir costs a few
+# KB; deleting a live one destroys a project's routing with no error and nothing
+# to restore from. So anything we cannot verify counts as ALIVE, and the whole
+# sweep refuses rather than guesses:
+#   - a mid-swap phase means sets are being renamed between roots right now, so
+#     "absent from both" proves nothing → refuse.
+#   - an unreadable Sets/ or an EMPTY alive set means we are looking at the wrong
+#     world (this is exactly what running outside a session used to look like) →
+#     refuse. A real device always has sets.
+do_prune() {
+    python3 - "$SETS_DIR" "$LIBRARY_DIR" "$NATIVE_STASH_DIR" \
+              "$SET_PAGES_DIR_A" "$SET_PAGES_DIR_B" "$SWAP_STATE_FILE" \
+              "$HOST_STATE_DIR" <<'PYEOF'
+import os, re, shutil, sys
+(sets_dir, library_dir, native_stash, pages_a, pages_b, swap_state,
+ host_state_dir) = sys.argv[1:8]
+
+uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}'
+                     r'-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+
+
+def phase():
+    """set-swap's intent marker. Absent = 'none' (its own default)."""
+    try:
+        with open(swap_state) as f:
+            return (f.readline().strip() or "none")
+    except OSError:
+        return "none"
+
+
+if phase() not in ("none", "sa-live"):
+    sys.exit("project-cmd: prune SKIPPED: set swap is mid-flight (%s)" % phase())
+
+
+def entries(path):
+    try:
+        return set(os.listdir(path))
+    except OSError:
+        return set()
+
+
+# Every root a live set can be sitting in. The page stashes are one level
+# deeper (<root>/<page>/<uuid>), and an unreadable one is not evidence of
+# absence — so a page root that exists but cannot be walked aborts the sweep.
+alive = entries(sets_dir) | entries(library_dir) | entries(native_stash)
+for root in (pages_a, pages_b):
+    if not os.path.isdir(root):
+        continue
+    try:
+        pages = os.listdir(root)
+    except OSError:
+        sys.exit("project-cmd: prune SKIPPED: %s exists but cannot be read" % root)
+    for p in pages:
+        alive |= entries(os.path.join(root, p))
+
+if not entries(sets_dir):
+    sys.exit("project-cmd: prune SKIPPED: %s is empty or unreadable" % sets_dir)
+if not alive:
+    sys.exit("project-cmd: prune SKIPPED: no live sets found anywhere")
+
+# 1. HOST state roots with no set behind them.
+removed = 0
+for u in sorted(entries(host_state_dir)):
+    if not uuid_re.match(u) or u in alive:
+        continue
+    p = os.path.join(host_state_dir, u)
+    if not os.path.isdir(p):
+        continue
+    try:
+        shutil.rmtree(p)
+        removed += 1
+        print("project-cmd: prune: removed host state %s" % u)
+    except OSError as e:
+        print("project-cmd: prune: could NOT remove %s: %s" % (u, e))
+
+print("project-cmd: prune: alive=%d host_state_removed=%d" % (len(alive), removed))
+PYEOF
+}
+
 case "${1:-}" in
     list)   do_list ;;
     new)    shift; do_new "${1:-}" ;;
@@ -513,5 +640,6 @@ case "${1:-}" in
     switch) shift; do_switch "${1:-}" ;;
     color)  shift; do_color "${1:-}" "${2:-}" ;;
     rename) shift; do_rename "${1:-}" "${2:-}" "${3:-}" ;;
-    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>" ;;
+    prune)  do_prune ;;
+    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>|prune" ;;
 esac

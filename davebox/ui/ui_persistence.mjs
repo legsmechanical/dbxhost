@@ -86,6 +86,26 @@ export function updateNameIndex() {
     saveNameIndex(S.nameIndexCache);
 }
 
+/* Drop every name that maps to this uuid, cache AND disk, for a project that
+ * has just been deleted.
+ *
+ * ⚠ It has to happen HERE, not in project-cmd.sh's delete: the cache is
+ * authoritative between saves and `saveNameIndex` writes it whole, so an entry
+ * removed from the file behind the module's back is resurrected by the next
+ * save. The tick's periodic sweep would catch it eventually — this closes the
+ * window in between, where creating a project with the deleted one's name
+ * inherits from a uuid whose state files are gone. */
+export function dropNameIndexUuid(uuid) {
+    if (!uuid) return 0;
+    if (!S.nameIndexCache) S.nameIndexCache = loadNameIndex();
+    let dropped = 0;
+    for (const name in S.nameIndexCache) {
+        if (S.nameIndexCache[name] === uuid) { delete S.nameIndexCache[name]; dropped++; }
+    }
+    if (dropped) saveNameIndex(S.nameIndexCache);
+    return dropped;
+}
+
 /* Copy seq8-state.json + seq8-ui-state.json from one UUID folder to another.
  * Used on first launch in a freshly-pasted Move set so the duplicate inherits
  * the source's SEQ8 state. Returns true if the state file was copied. */

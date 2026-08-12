@@ -78,6 +78,15 @@
 #ifndef SEQ8_SET_PAGES_DIR_B
 #define SEQ8_SET_PAGES_DIR_B    "/data/UserData/dbx-host/set_pages"
 #endif
+/* The SA project library. Whole set dirs are renamed between here and Sets/ at
+ * the session edges (standalone/scripts/set-swap.sh), so a set is in exactly one
+ * of the two — and OUTSIDE a session Sets/ holds the user's NATIVE sets, where
+ * every SA project would read as deleted. The prune only ever runs in-session,
+ * so this root is belt-and-braces; it is here because the cost of being wrong
+ * is a user's whole project library. */
+#ifndef SEQ8_SET_LIBRARY_DIR
+#define SEQ8_SET_LIBRARY_DIR    "/data/UserData/dbx-host/sets/library"
+#endif
 
 #define SEQ8_LOG_PATH           "/data/UserData/schwung/" SEQ8_STATE_PREFIX ".log"
 #define SEQ8_STATE_PATH_FALLBACK "/data/UserData/schwung/" SEQ8_STATE_PREFIX "-state.json"

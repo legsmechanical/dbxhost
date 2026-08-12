@@ -8,7 +8,7 @@ import { formatItemValue } from '/data/UserData/schwung/shared/menu_items.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
     dropSnapshots, applySnapshotToLive, copyStateFiles, loadSelectedCurrentProject,
-    readActiveSet
+    readActiveSet, dropNameIndexUuid
 } from './ui_persistence.mjs';
 import { effectiveClip, invalidateLEDCache } from './ui_leds.mjs';
 import {
@@ -1040,7 +1040,12 @@ function _projectPadPickerTap_impl(k) {
         if (!proj) { p.deleteIdx = -1; showActionPopup('EMPTY', 'PAD'); return; }
         if (k === p.current) { p.deleteIdx = -1; showActionPopup('CANT DELETE', 'OPEN PROJ'); return; }
         if (p.deleteIdx === k) {
+            const _goneUuid = proj.uuid;
             host_system_cmd('sh ' + PROJECT_CMD + ' delete ' + k);
+            /* The state files are gone, so the name -> uuid entries that pointed
+             * at them must go with them — from the CACHE, or the next save puts
+             * them back on disk. See dropNameIndexUuid. */
+            dropNameIndexUuid(_goneUuid);
             const d = _pppRunList();
             if (d) _pppApplyList(p, d);
             p.deleteIdx = -1;

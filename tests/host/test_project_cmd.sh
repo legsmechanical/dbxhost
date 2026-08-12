@@ -129,6 +129,73 @@ else
     echo "  skip color/rename checks (no user-xattr support here; device is ext4+Linux)"
 fi
 
+# ---------------------------------------------------------------------------
+# prune: reclaim HOST state dirs whose set is gone.
+#
+# No xattrs needed, so this runs everywhere. Its own fixture tree, because the
+# whole point is which ROOT a set is sitting in — the checks below are mostly
+# "does an ALIVE project survive", and the one that matters most is the SA
+# library: outside a session Sets/ holds the user's NATIVE sets, so a prune that
+# only knows about Sets/ judges every project dead and deletes the routing for
+# the entire library.
+# ---------------------------------------------------------------------------
+P="$(mktemp -d)"
+trap 'rm -rf "$T" "$P"' EXIT
+prune_env() {
+    env DBX_DIR="$P/dbx" SETS_DIR="$P/Sets" SETTINGS_JSON="$P/Settings.json" \
+        SWAP_ROOT="$P/dbx/sets" LIBRARY_DIR="$P/dbx/sets/library" \
+        NATIVE_STASH_DIR="$P/dbx/sets/native-stash" \
+        SWAP_STATE_FILE="$P/dbx/sets/swap_state" \
+        SET_PAGES_DIR_A="$P/pages_a" SET_PAGES_DIR_B="$P/dbx/set_pages" \
+        HOST_STATE_DIR="$P/dbx/set_state" SET_STATE_DIR="$P/set_state" \
+        NAME_INDEX_PATH="$P/name_index.json" \
+        sh "$CMD" prune
+}
+LIVE=aaaaaaaa-1111-4111-8111-000000000001      # in Sets/  (in-session library)
+LIB=bbbbbbbb-2222-4222-8222-000000000002       # in sets/library/ (no session)
+PAGED=cccccccc-3333-4333-8333-000000000003     # parked on an inactive set page
+ORPH=dddddddd-4444-4444-8444-000000000004      # nothing behind it: the target
+mkdir -p "$P/Sets/$LIVE" "$P/dbx/sets/library/$LIB" "$P/pages_a/page_2/$PAGED"
+for u in "$LIVE" "$LIB" "$PAGED" "$ORPH"; do
+    mkdir -p "$P/dbx/set_state/$u"
+    echo '{}' > "$P/dbx/set_state/$u/shadow_chain_config.json"
+done
+mkdir -p "$P/dbx/set_state/not-a-uuid"          # never touched: not uuid-shaped
+printf '{"Ghost": "%s"}\n' "$ORPH" > "$P/name_index.json"
+
+prune_env >/dev/null
+check "prune: orphan host state removed"      bash -c "! test -d '$P/dbx/set_state/$ORPH'"
+check "prune: set in Sets/ survives"          test -d "$P/dbx/set_state/$LIVE"
+check "prune: set in the SA LIBRARY survives" test -d "$P/dbx/set_state/$LIB"
+check "prune: set on an inactive PAGE survives" test -d "$P/dbx/set_state/$PAGED"
+check "prune: non-uuid dirs untouched"        test -d "$P/dbx/set_state/not-a-uuid"
+# The name index belongs to the module (it holds it in memory and rewrites the
+# whole file), so a sweep here would be silently undone — prune must not touch it.
+check "prune: name index NOT touched" \
+    bash -c "grep -q Ghost '$P/name_index.json'"
+
+# Refusals. Each restores the orphan first, then asserts it SURVIVED — a refusal
+# that still deleted would pass a mere exit-code check.
+restore_orphan() { mkdir -p "$P/dbx/set_state/$ORPH"; echo '{}' > "$P/dbx/set_state/$ORPH/x.json"; }
+
+restore_orphan
+echo "entering" > "$P/dbx/sets/swap_state"
+prune_env >/dev/null 2>&1 || true
+check "prune: REFUSES mid-swap (sets are moving between roots)" test -d "$P/dbx/set_state/$ORPH"
+echo "sa-live" > "$P/dbx/sets/swap_state"
+
+restore_orphan
+mv "$P/Sets/$LIVE" "$P/live-hidden"
+prune_env >/dev/null 2>&1 || true
+check "prune: REFUSES when Sets/ is empty (wrong world)" test -d "$P/dbx/set_state/$ORPH"
+mv "$P/live-hidden" "$P/Sets/$LIVE"
+
+# ...and with a settled phase and a populated Sets/, it works again — otherwise
+# the two refusals above would pass for any reason at all, including a typo.
+prune_env >/dev/null
+check "prune: sweeps again once the world looks right" \
+    bash -c "! test -d '$P/dbx/set_state/$ORPH'"
+
 grep -q "project-cmd.sh" scripts/build.sh || { echo "  FAIL not staged into payload" >&2; fails=1; }
 
 [ "$fails" = 0 ] && echo "PASS: project-cmd" || { echo "FAIL: project-cmd" >&2; exit 1; }
