@@ -72,6 +72,15 @@ setsid bash -c '
   # failed and the bare-exit refusal froze the device until an SSH rescue.)
   refuse() {
     echo "$1 — refusing to launch"
+    # ⚠ Undo the library swap on the way out, ALWAYS. Since 2026-08-12 the swap
+    # is a bind mount, so a refusal after `enter` would otherwise strand the
+    # user looking at OUR library instead of their own sets — with stock Move
+    # about to be revived on top of it by the resume below. `exit` is
+    # idempotent and converges from any state, so calling it unconditionally
+    # here is both correct before `enter` (a no-op) and after it.
+    # ⭑ Placed in refuse() rather than at each call site on purpose: a new
+    # refusal path added later inherits the cleanup instead of forgetting it.
+    sh "$DBX_DIR/scripts/set-swap.sh" exit >/dev/null 2>&1 || true
     $DBX_DIR/bin/davebox-heal --resume-launcher || true
     exit 1
   }
@@ -164,8 +173,7 @@ setsid bash -c '
   # preload MoveOriginal comes up silently WITHOUT Schwung, which is a far more
   # confusing failure than not launching at all.
   if ! $DBX_DIR/bin/davebox-heal; then
-    sh "$DBX_DIR/scripts/set-swap.sh" exit 2>/dev/null || true
-    refuse "davebox-heal failed"
+    refuse "davebox-heal failed"     # refuse() undoes the swap
   fi
 
   export LD_LIBRARY_PATH=$DBX_DIR/lib:$LD_LIBRARY_PATH

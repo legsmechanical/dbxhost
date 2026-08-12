@@ -39,6 +39,20 @@ check "bless.sh carries DBX_DIR"       "$HERE/scripts/install-privileged.sh" "DB
 check "bless.sh heal name"             "$HERE/scripts/install-privileged.sh" "DBX_HEAL_NAME=$DBX_HEAL_NAME"
 check "bless.sh soname"                "$HERE/scripts/install-privileged.sh" "DBX_SHIM_SONAME=$DBX_SHIM_SONAME"
 
+# The bind-mount swap (Phase A, 2026-08-12). set-swap.sh asks davebox-heal to
+# mount/unmount, and heal hardcodes BOTH paths — so a DBX_DIR change that misses
+# heal's SA_LIBRARY leaves the helper binding the wrong directory over the user's
+# set library, which is the one operation here that can hide their sets. The verb
+# names are pinned too: heal rejects an unknown argument, so a rename would turn
+# every swap into a silent refusal to launch.
+# heal COMPOSES this from its DBX_DIR define (pinned above), so pin the suffix.
+check "heal SA library path"           "$HERE/src/davebox-heal.c"   'DBX_DIR "/sets/library"'
+check "heal mount verb"                "$HERE/src/davebox-heal.c"   "--mount-sets"
+check "heal umount verb"               "$HERE/src/davebox-heal.c"   "--umount-sets"
+check "set-swap calls the mount verb"  "$HERE/scripts/set-swap.sh"  "--mount-sets"
+check "set-swap calls the umount verb" "$HERE/scripts/set-swap.sh"  "--umount-sets"
+check "set-swap heal path"             "$HERE/scripts/set-swap.sh"  '$DBX_DIR/bin/davebox-heal'
+
 # The HOST's own copy. shadow_ui.js owns the Shift+Back exit, so a DBX_DIR
 # change that misses this line breaks exit-to-stock from the host side with
 # nothing failing. This one is in-repo and was simply overlooked.

@@ -34,6 +34,21 @@
  * two hosts fighting over the SPI device. Both the unit name and the
  * systemctl path are compile-time constants.
  *
+ * --mount-sets / --umount-sets bind-mount this install's project library over
+ * Move's one and only set library, and undo it. Move's library path is not
+ * configurable, so a standalone session has to make Sets/ show a different
+ * population; a bind mount does that atomically, with the user's real sets
+ * untouched underneath and NOTHING moved on disk. mount(2) is a privileged
+ * call, and the launcher runs as ableton — hence this verb.
+ *
+ * Both paths are compile-time constants and no argument reaches them, so this
+ * can only ever mount that one source over that one target. It cannot be aimed
+ * anywhere else, and it takes no filesystem type, no options string and no
+ * device — MS_BIND of a directory that this install already owns.
+ * ⚠ Safety property worth stating: a bind mount HIDES, it never deletes. The
+ * worst outcome of a wrong mount is that the user's sets are temporarily
+ * invisible, and a reboot clears every mount unconditionally.
+ *
  * Install: chown root, chmod 4755. After that every davebox host update is
  * unprivileged — the payload lands in the ableton-owned tree and the launcher
  * calls this to mirror it.
@@ -47,6 +62,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/types.h>
@@ -72,6 +88,13 @@
  * Both hardcoded: this helper must never be steerable at a different service. */
 #define SYSTEMCTL    "/usr/bin/systemctl"
 #define MOVE_UNIT    "move-launcher.service"
+
+/* The ONLY bind mount this helper may make: this install's project library,
+ * over Move's (non-configurable) set library. Both hardcoded — see the note
+ * above. SETS_DIR is Move's own path and is deliberately NOT derived from
+ * DBX_DIR: it belongs to the firmware, not to us. */
+#define SA_LIBRARY   DBX_DIR "/sets/library"
+#define SETS_DIR     "/data/UserData/UserLibrary/Sets"
 
 /* uid/gid of the account Move runs as. Hardcoded rather than resolved through
  * getpwnam(): a setuid binary should not pull in NSS, which can load arbitrary
@@ -192,6 +215,74 @@ static int launcher_unit(const char *verb) {
     return 0;
 }
 
+/* Is SETS_DIR currently a mount point? Compares its st_dev with its parent's:
+ * a bind mount from the SAME filesystem keeps st_dev equal, so that test alone
+ * is not enough — we also compare st_ino against the source, which is what a
+ * bind mount makes identical. Either signal means "already ours".
+ *
+ * Being wrong in the SAFE direction matters differently for each caller:
+ * mounting twice merely stacks (harmless, and the umount below unstacks), while
+ * umounting something that is not ours would expose... nothing, because the
+ * only thing we ever mount is our own library. */
+static int sets_is_bound(void) {
+    struct stat st_target, st_source;
+    if (stat(SETS_DIR, &st_target) < 0) return 0;
+    if (stat(SA_LIBRARY, &st_source) < 0) return 0;
+    return (st_target.st_dev == st_source.st_dev &&
+            st_target.st_ino == st_source.st_ino) ? 1 : 0;
+}
+
+/* Bind the standalone library over Move's set library. Idempotent: a second
+ * call is a no-op rather than a second stacked mount. */
+static int sets_mount(void) {
+    struct stat st;
+    if (stat(SA_LIBRARY, &st) < 0 || !S_ISDIR(st.st_mode)) {
+        fprintf(stderr, "davebox-heal: %s missing or not a directory — refusing to mount\n",
+                SA_LIBRARY);
+        return -1;
+    }
+    if (stat(SETS_DIR, &st) < 0 || !S_ISDIR(st.st_mode)) {
+        fprintf(stderr, "davebox-heal: %s missing or not a directory — refusing to mount\n",
+                SETS_DIR);
+        return -1;
+    }
+    if (sets_is_bound()) {
+        fprintf(stderr, "davebox-heal: sets already bound — nothing to do\n");
+        return 0;
+    }
+    if (mount(SA_LIBRARY, SETS_DIR, NULL, MS_BIND, NULL) < 0) {
+        fprintf(stderr, "davebox-heal: bind %s -> %s: %s\n",
+                SA_LIBRARY, SETS_DIR, strerror(errno));
+        return -1;
+    }
+    fprintf(stderr, "davebox-heal: bound %s -> %s\n", SA_LIBRARY, SETS_DIR);
+    return 0;
+}
+
+/* Undo it. Not-mounted is SUCCESS, not an error: every teardown path calls this
+ * unconditionally (session exit, the launcher's refuse paths, crash recovery),
+ * and they must not fail because there was nothing to undo.
+ *
+ * MNT_DETACH as a fallback for the busy case — a process with a cwd inside the
+ * library would otherwise pin the mount forever, and a lazy unmount detaches
+ * the tree immediately so the user's real sets are visible again. */
+static int sets_umount(void) {
+    if (!sets_is_bound()) {
+        fprintf(stderr, "davebox-heal: sets not bound — nothing to undo\n");
+        return 0;
+    }
+    if (umount(SETS_DIR) == 0) {
+        fprintf(stderr, "davebox-heal: unbound %s\n", SETS_DIR);
+        return 0;
+    }
+    if (errno == EBUSY && umount2(SETS_DIR, MNT_DETACH) == 0) {
+        fprintf(stderr, "davebox-heal: unbound %s (lazy — was busy)\n", SETS_DIR);
+        return 0;
+    }
+    fprintf(stderr, "davebox-heal: umount %s: %s\n", SETS_DIR, strerror(errno));
+    return -1;
+}
+
 /* Returns 1 if the files differ, or on any read error — re-copying is
  * idempotent and safe, skipping a real difference is not. */
 static int contents_differ(const char *a, const char *b) {
@@ -257,8 +348,13 @@ int main(int argc, char **argv) {
             return launcher_unit("stop") == 0 ? 0 : 2;
         if (strcmp(argv[1], "--resume-launcher") == 0)
             return launcher_unit("start") == 0 ? 0 : 2;
-        fprintf(stderr, "davebox-heal: unknown argument %s "
-                        "(expected --pause-launcher or --resume-launcher)\n", argv[1]);
+        if (strcmp(argv[1], "--mount-sets") == 0)
+            return sets_mount() == 0 ? 0 : 2;
+        if (strcmp(argv[1], "--umount-sets") == 0)
+            return sets_umount() == 0 ? 0 : 2;
+        fprintf(stderr, "davebox-heal: unknown argument %s (expected "
+                        "--pause-launcher, --resume-launcher, --mount-sets "
+                        "or --umount-sets)\n", argv[1]);
         return 1;
     }
 
