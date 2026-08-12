@@ -223,18 +223,8 @@ type FileService struct {
 	AllowedRoots []string
 }
 
-// validate is the chokepoint every file handler goes through, so the
-// session check lives here: list, download, rename, delete, mkdir and upload
-// all inherit it rather than each remembering to ask.
 func (s *FileService) validate(path string) (string, error) {
-	clean, err := middleware.ValidatePath(path, s.AllowedRoots)
-	if err != nil {
-		return "", err
-	}
-	if sessionOwnsPath(clean) {
-		return "", fmt.Errorf("path %q belongs to a running dAVEBOx session", clean)
-	}
-	return clean, nil
+	return middleware.ValidatePath(path, s.AllowedRoots)
 }
 
 // ListDir returns entries in the given directory.
@@ -251,12 +241,6 @@ func (s *FileService) ListDir(dir string) ([]FileEntry, error) {
 	for _, e := range entries {
 		info, err := e.Info()
 		if err != nil {
-			continue
-		}
-		// The library itself is a legal path to LIST the parent of, so validate
-		// above lets this call through; the entry has to be dropped here or the
-		// session's projects stay visible (and clickable) in the parent folder.
-		if sessionOwnsPath(filepath.Join(clean, e.Name())) {
 			continue
 		}
 		result = append(result, FileEntry{

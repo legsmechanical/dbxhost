@@ -149,7 +149,11 @@ setsid bash -c '
   if [ -x "$DBX_DIR/scripts/set-swap.sh" ]; then
     sh "$DBX_DIR/scripts/set-swap.sh" recover || refuse "set-swap recover failed"
     # First run: seed the library with the wired-correctly template project.
-    if [ -d "$DBX_DIR/sets/template" ] && [ -z "$(ls "$DBX_DIR/sets/library" 2>/dev/null)" ]; then
+    # ⚠ "First run" means NO PROJECT, not an empty directory: the library also
+    # carries a DO-NOT-EDIT notice for the file surfaces we cannot filter, and a
+    # plain `ls` would count that as a project and silently skip the seeding —
+    # a fresh install would come up on an empty picker. Directories only.
+    if [ -d "$DBX_DIR/sets/template" ] && [ -z "$(ls -d "$DBX_DIR/sets/library"/*/ 2>/dev/null)" ]; then
       _tuuid=$(cat /proc/sys/kernel/random/uuid)
       mkdir -p "$DBX_DIR/sets/library/$_tuuid"
       cp -r "$DBX_DIR/sets/template/." "$DBX_DIR/sets/library/$_tuuid/"

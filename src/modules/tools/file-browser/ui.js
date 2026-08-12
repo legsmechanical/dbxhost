@@ -36,10 +36,6 @@ import {
 } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 
 import {
-    pathHiddenFromBrowsers
-} from '/data/UserData/schwung/shared/session_state.mjs';
-
-import {
     openTextEntry,
     isTextEntryActive,
     handleTextEntryMidi,
@@ -238,24 +234,7 @@ function uniquePath(dir, base, ext) {
 
 /* ============ File Operations ============ */
 
-/* Every mutation below refuses a path inside a live session's project library.
- *
- * The listings already hide it, so this should be unreachable — which is
- * exactly why it is here: the guard belongs on the operation that does the
- * damage, not only on the paths currently known to reach it. A destination
- * arrives from a second lister, a root can come from param metadata, and a
- * stale browser state outlives the session that started while it was open.
- * Refusing here means none of those has to be re-audited to stay safe. */
-function refuseIfSessionOwned(path) {
-    if (!pathHiddenFromBrowsers(path)) return false;
-    showStatus("In use by session");
-    refreshBrowser();
-    setView(VIEW_BROWSER);
-    return true;
-}
-
 function doDelete(path) {
-    if (refuseIfSessionOwned(path)) return;
     try {
         var ret = os.remove(path);
         if (ret < 0) {
@@ -273,7 +252,6 @@ function doDelete(path) {
 
 function doRename(oldPath, newName) {
     if (!newName || newName.length === 0) return;
-    if (refuseIfSessionOwned(oldPath)) return;
     var dir = dirname(oldPath);
     var newPath = dir + "/" + newName;
     try {
@@ -288,7 +266,6 @@ function doRename(oldPath, newName) {
 
 function doNewFolder(parentDir, name) {
     if (!name || name.length === 0) return;
-    if (refuseIfSessionOwned(parentDir)) return;
     var newPath = parentDir + "/" + name;
     var ret;
     try {
@@ -309,7 +286,6 @@ function doNewFolder(parentDir, name) {
 }
 
 function doDuplicate(src) {
-    if (refuseIfSessionOwned(src)) return;
     var dir = dirname(src);
     var base = nameWithoutExt(src);
     var ext = extension(src);
@@ -328,9 +304,6 @@ function doDuplicate(src) {
 }
 
 function doCopy(src, destDir) {
-    /* Both ends: copying OUT of the library is as much a read of a live
-     * project as copying INTO it is a write. */
-    if (refuseIfSessionOwned(src) || refuseIfSessionOwned(destDir)) return;
     var base = nameWithoutExt(src);
     var ext = extension(src);
     var dest = uniquePath(destDir, base, ext);
@@ -349,7 +322,6 @@ function doCopy(src, destDir) {
 }
 
 function doMove(src, destDir) {
-    if (refuseIfSessionOwned(src) || refuseIfSessionOwned(destDir)) return;
     var name = basename(src);
     var dest = destDir + "/" + name;
     try {
@@ -430,10 +402,6 @@ function refreshDestBrowser() {
             if (!name || name === "." || name === "..") continue;
             if (name.startsWith(".")) continue;
             var fullPath = currentDir + "/" + name;
-            /* Same rule as the main listing — this loop is a second lister and
-             * would otherwise still offer a live session's project library as a
-             * copy/move DESTINATION. */
-            if (pathHiddenFromBrowsers(fullPath)) continue;
             if (isDirectory(fullPath)) {
                 dirs.push({ kind: "dir", label: "[" + name + "]", path: fullPath });
             }

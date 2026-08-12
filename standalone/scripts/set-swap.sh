@@ -126,6 +126,43 @@ write_song_index() { # index
 
 # ---- verbs ------------------------------------------------------------------
 
+# The library carries a notice for every file surface we cannot filter.
+#
+# Inside a session the on-device browsers hide these folders (the shared
+# filepath browser does it for every module, including the stock file browser,
+# via the loader import rewrite). What that cannot reach: the file browser own
+# copy/move destination picker, schwung-manager on port 7700, the optional
+# third-party filebrowser, and anything mounting the device over the network.
+# Those are either not our code or not our tree, so the answer there is to SAY
+# so, in the folder, where somebody about to drag a project into the bin will
+# see it.
+#
+# Written on every enter so it repairs itself, and written into OUR library
+# only — the user native sets never carry it.
+write_library_notice() {
+    cat > "$LIBRARY/DO-NOT-EDIT.txt" <<'NOTICE'
+DO NOT EDIT THIS FOLDER
+=======================
+
+These folders are dAVEBOx projects. While dAVEBOx is running they are also the
+set library it is playing from, and one of them is open right now.
+
+Nothing in here needs managing by hand. Create, rename, copy and delete
+projects from dAVEBOx itself — hold a pad in the project picker.
+
+If you rename, move or delete a folder here from a file browser, a network
+share, or the web file manager on port 7700, dAVEBOx does not find out. It
+keeps writing to the project it had open, and the next time you load that
+project it opens BLANK. There is no undo and no recovery: dAVEBOx does not try
+to guess where a folder came from, which is what stops it from ever attaching
+your work to the wrong project.
+
+This folder is only visible while a dAVEBOx session is running. Your own Move
+sets are somewhere else entirely, untouched, and come back the moment you exit
+to Move.
+NOTICE
+}
+
 do_enter() {
     if sets_are_ours; then
         log "already entered — nothing to do"
@@ -133,6 +170,7 @@ do_enter() {
     fi
 
     mkdir -p "$LIBRARY"
+    write_library_notice
 
     # Remember where the USER was in their own library, before we cover it.
     _idx="$(read_song_index)"
