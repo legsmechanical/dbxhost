@@ -7,8 +7,8 @@ import {
 import { formatItemValue } from '/data/UserData/schwung/shared/menu_items.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
-    dropSnapshots, applySnapshotToLive, copyStateFiles, loadSelectedCurrentProject,
-    readActiveSet, dropNameIndexUuid
+    dropSnapshots, applySnapshotToLive, loadSelectedCurrentProject,
+    readActiveSet
 } from './ui_persistence.mjs';
 import { effectiveClip, invalidateLEDCache } from './ui_leds.mjs';
 import {
@@ -324,48 +324,6 @@ export function drawBakeConfirm() {
     }
 }
 
-export function drawInheritPicker() {
-    clear_screen();
-    const p = S.pendingInheritPicker;
-    if (!p) return;
-    /* Header (two preamble lines + title wrapped to two lines; Move display
-     * is 128px wide which only fits ~21 chars at the standard 6px/char font).
-     * Tight 8-9px line stride to leave room for the list below. */
-    print(2, 2,  'Copied Move set', 1);
-    print(2, 10, 'detected',        1);
-    fill_rect(0, 18, 128, 1, 1);
-    print(2, 20, 'Inherit dAVEBOx', 1);
-    print(2, 28, 'state from?',     1);
-    fill_rect(0, 36, 128, 1, 1);
-
-    /* List: candidates + 'Start blank' sentinel. Scroll window of 3 around
-     * the selected index so 4+ entries still fit. Selection inverts the
-     * line; arrows hint at off-screen items. */
-    const total = p.candidates.length + 1;
-    const visible = 3;
-    const sel = p.selectedIndex;
-    let top = Math.max(0, Math.min(sel - 1, total - visible));
-    if (total <= visible) top = 0;
-    const lineH = 9;
-    const listTopY = 39;
-    for (let i = 0; i < visible && (top + i) < total; i++) {
-        const idx = top + i;
-        const y = listTopY + i * lineH;
-        const isBlank = (idx === p.candidates.length);
-        const label = isBlank ? 'Start blank' : p.candidates[idx].name;
-        const truncated = label.length > 20 ? label.substring(0, 19) + '…' : label;
-        if (idx === sel) {
-            fill_rect(2, y - 1, 124, lineH - 1, 1);
-            print(5, y, truncated, 0);
-        } else {
-            print(5, y, truncated, 1);
-        }
-    }
-    /* Scroll indicators */
-    if (top > 0)               print(120, listTopY, '^', 1);
-    if (top + visible < total) print(120, listTopY + (visible - 1) * lineH, 'v', 1);
-}
-
 function snapById(p, id) {
     for (let i = 0; i < p.snaps.length; i++) if (p.snaps[i].id === id) return p.snaps[i];
     return null;
@@ -664,24 +622,6 @@ export function closeConvertConfirm() {
     if (S.globalMenuState) S.globalMenuState.editValue = null;
     S.lastSentMenuEditValue = null;
     S.bpmWasEditing = false;
-}
-
-/* Resolve the inherit picker: action is either the candidates index to
- * inherit from, or -1 for "Start blank". Always trigger pendingSetLoad
- * so DSP runs its state_load handler — which both resets the internal
- * state (clip_init, drum_track_init, etc.) and reads the canonical file.
- * For "Start blank" the file is missing on purpose; the reset alone gives
- * a clean slate. For inherit, we copy the source's state files first so
- * the load reads the seeded content. */
-export function resolveInheritPicker(action) {
-    const p = S.pendingInheritPicker;
-    if (!p) return;
-    if (action >= 0 && action < p.candidates.length) {
-        copyStateFiles(p.candidates[action].uuid, p.dstUuid);
-    }
-    S.pendingSetLoad = true;
-    S.pendingInheritPicker = null;
-    S.screenDirty = true;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1040,12 +980,7 @@ function _projectPadPickerTap_impl(k) {
         if (!proj) { p.deleteIdx = -1; showActionPopup('EMPTY', 'PAD'); return; }
         if (k === p.current) { p.deleteIdx = -1; showActionPopup('CANT DELETE', 'OPEN PROJ'); return; }
         if (p.deleteIdx === k) {
-            const _goneUuid = proj.uuid;
             host_system_cmd('sh ' + PROJECT_CMD + ' delete ' + k);
-            /* The state files are gone, so the name -> uuid entries that pointed
-             * at them must go with them — from the CACHE, or the next save puts
-             * them back on disk. See dropNameIndexUuid. */
-            dropNameIndexUuid(_goneUuid);
             const d = _pppRunList();
             if (d) _pppApplyList(p, d);
             p.deleteIdx = -1;

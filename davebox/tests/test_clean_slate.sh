@@ -37,15 +37,22 @@ grep -q "_dspUuid && _dspUuid === S.currentSetUuid" ui/ui_dsp_bridge.mjs \
     || bad "the agreement check is gone — the switch window is open again"
 
 # 2. Both savers sit out the load window. Every other post-load consumer is
-#    gated on these three; these two were not, which is how the window was
-#    reachable at all. pendingInheritPicker matters most: it holds the load
-#    pending a USER CHOICE, so that window is seconds long, not five ticks.
-for guard in 'S.pendingSetLoad' 'S.pendingDspSync' 'S.pendingInheritPicker'; do
+#    gated on these; these two were not, which is how the window was reachable
+#    at all.
+#    ⚠ There used to be a THIRD gate here, S.pendingInheritPicker — the widest
+#    of them, because it held the load pending a USER CHOICE (seconds, not five
+#    ticks). It went with the inherit picker itself in Phase 0 of the
+#    state-co-location plan: with no picker, no load can be held pending a
+#    choice, so the window it guarded cannot open. ⚠⚠ ONLY that clause was
+#    removed. The two below, and the state_uuid destination-agreement check
+#    pinned in section 1, are what actually fix (14) — deleting them because
+#    they sit next to picker code reopens the cross-project save bug.
+for guard in 'S.pendingSetLoad' 'S.pendingDspSync'; do
     grep -A2 'S.currentSetUuid && !S.awaitingProjectSelect' ui/ui_dsp_bridge.mjs | grep -q "$guard" \
         && ok "the deferred save is gated on $guard" \
         || bad "the deferred save lost its $guard gate"
 done
-grep -q 'S.pendingSetLoad || S.pendingDspSync > 0 || S.pendingInheritPicker' ui/ui_persistence.mjs \
+grep -q 'S.pendingSetLoad || S.pendingDspSync > 0' ui/ui_persistence.mjs \
     && ok "writeSidecar sits out the load window too" \
     || bad "writeSidecar can write the old project's JS state under the new uuid"
 

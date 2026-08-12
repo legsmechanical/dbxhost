@@ -35,7 +35,7 @@ import { saveState, writeSidecar, doClearSession, showActionPopup,
 import {
     openSaveSnapshot, closeSnapshotPicker,
     snapshotPickerRotate, snapshotPickerClick, openClearAutoMenu,
-    clearAutoMenuRotate, clearAutoMenuClick, showMenuInfo, closeConvertConfirm, resolveInheritPicker,
+    clearAutoMenuRotate, clearAutoMenuClick, showMenuInfo, closeConvertConfirm,
     closeProjectPadPicker, projectPadPickerModifiers,
     projectPadPickerClick, projectPadPickerRotate, projectPadPickerBack
 } from './ui_dialogs.mjs';
@@ -81,13 +81,6 @@ function _onCC_jog(d1, d2) {
         showActionPopup('TEMPO SET',
                         Math.round(S.tempoSelectBpms[S.tempoSelectIdx]) + ' BPM');
         S.screenDirty = true;
-        return;
-    }
-    /* Inherit picker: jog click confirms selection (-1 = Start blank). */
-    if (d1 === 3 && d2 === 127 && S.pendingInheritPicker) {
-        const p = S.pendingInheritPicker;
-        const action = (p.selectedIndex === p.candidates.length) ? -1 : p.selectedIndex;
-        resolveInheritPicker(action);
         return;
     }
     /* PROJECTS pad picker: jog click drives the overlay stack (create-confirm,
@@ -679,16 +672,6 @@ function _onCC_jog(d1, d2) {
             return;
         }
 
-        if (S.pendingInheritPicker) {
-            const delta = decodeDelta(d2);
-            if (delta !== 0) {
-                const p = S.pendingInheritPicker;
-                const total = p.candidates.length + 1;
-                p.selectedIndex = (p.selectedIndex + (delta > 0 ? 1 : total - 1)) % total;
-                S.screenDirty = true;
-            }
-            return;
-        }
         if (S.snapshotPicker) {
             snapshotPickerRotate(decodeDelta(d2));
             return;
@@ -1532,7 +1515,7 @@ function _cancelMergeCountIn() {
  * actionable branches. (Boot modals and the Session/Track home no-ops → false.
  * Hold-to-suspend works regardless and is not reflected here.) */
 export function backTapWouldAct() {
-    if (S.confirmStateWipe || S.pendingInheritPicker) return false;
+    if (S.confirmStateWipe) return false;
     if (S.projectPadPicker) {
         const _p = S.projectPadPicker;
         /* An open overlay always peels; the bare grid closes unless the
@@ -1556,7 +1539,7 @@ export function backTapWouldAct() {
 function _backTap() {
     /* Boot-time decision modals (incompatible-state wipe, set-inherit picker):
      * leave to their own jog-click flow; Back must not act underneath them. */
-    if (S.confirmStateWipe || S.pendingInheritPicker) return;
+    if (S.confirmStateWipe) return;
 
     /* 1. Transient dialogs / pickers / modes (one open at a time). */
     if (S.projectPadPicker) {
@@ -1969,10 +1952,7 @@ function _onCC_transport(d1, d2) {
     if (d1 === MoveSample && d2 === 127 && !S.shiftHeld) {
         S.sampleHeld           = true;
         S.sampleUsedAsModifier = false;
-        if (S.pendingInheritPicker) {
-            resolveInheritPicker(-1);  /* Cancel = Start blank */
-            S.sampleUsedAsModifier = true;
-        } else if (S.confirmBakeScene) {
+        if (S.confirmBakeScene) {
             S.confirmBakeScene     = false;
             S.sampleUsedAsModifier = true;
             forceRedraw();

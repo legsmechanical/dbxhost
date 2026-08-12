@@ -122,12 +122,17 @@ descendant is this?", not because the question is impossible to ask. That differ
 means the machinery can go, and it also means we must NOT write "structurally enforced" into
 `CLAUDE.md`.
 
-- [ ] **Josh's ruling wanted before Phase 0**: close the holes, or accept them?
-      Closing is cheap — hide `file-browser` during a live session the same way standalone
-      launchers already are (one predicate at `shadow_ui.js:15138-15144`), and stop or scope
-      schwung-manager in `launch.sh`. Accepting is defensible too, since the blast radius is a
-      project opening blank. ⚠ But it must be a decision on the record, because the plan deletes
-      the machinery that currently papers over exactly this.
+**⭑ RULED (Josh, 2026-08-12): proceed with Phase 0 now; the holes are a FOLLOW-UP, not a
+blocker.** *"let's proceed but not worry about closing those holes right now. we'll deal with them
+in a follow up."* The policy above is what ships: an out-of-band-mutated project opens blank, and
+that is an accepted outcome rather than a bug to be defended against.
+
+- [ ] **FOLLOW-UP (deferred, not cancelled)**: hide `file-browser` during a live session — the same
+      predicate that already hides standalone launchers (`shadow_ui.js:15138-15144`) — and stop or
+      scope schwung-manager in `launch.sh`. Both are small; they were deferred to keep Phase 0
+      moving, not because they are unwanted. ⚠ Until they land, a user with the Tools menu or a
+      browser pointed at port 7700 can rename or delete a live SA project out from under the
+      session, and after Phase 0 nothing will try to recover from it.
 
 ### (Superseded) the original structural claim
 

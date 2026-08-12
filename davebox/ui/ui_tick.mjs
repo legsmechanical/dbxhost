@@ -27,8 +27,8 @@ import {
 
 import { S } from './ui_state.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
-import { saveState, showActionPopup, uuidToStatePath, readActiveSet, loadNameIndex, saveNameIndex,
-    commitSnapshot, updateNameIndex, maybeShowInheritPicker } from './ui_persistence.mjs';
+import { saveState, showActionPopup, uuidToStatePath, readActiveSet,
+    commitSnapshot } from './ui_persistence.mjs';
 import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
          projectPickerTextEntryTick } from './ui_dialogs.mjs';
 import { sceneAllQueued, updateSceneMapLEDs } from './ui_scene.mjs';
@@ -231,7 +231,7 @@ var _lastSessionView = false;
  * - pendingSetLoad GATES BOTH pendingDefaultSetParams (`!S.pendingSetLoad`
  *   guard) AND pendingPruneOrphans (anchor: "if (S.pendingPruneOrphans &&
  *   !S.pendingSetLoad && S.pendingDspSync === 0"), and pendingSetLoad's own
- *   drain (anchor: "if (S.pendingSetLoad && !S.pendingInheritPicker...")
+ *   drain (anchor: "if (S.pendingSetLoad) {")
  *   arms `S.pendingDspSync = 5`. Load is checked/drained first in program
  *   order; defaults/prune wait on `pendingDspSync === 0` by construction.
  *
@@ -468,11 +468,7 @@ export function _tickImpl() {
         if (_as.uuid && _dspUuid !== _as.uuid) {
             S.currentSetUuid = _as.uuid;
             S.currentSetName = _as.name;
-            /* If multiple family candidates, picker opens and state_load is
-             * deferred. Otherwise pendingSetLoad is fine to set immediately
-             * since the auto-inherit branch (or blank branch) is already done. */
-            const _r = maybeShowInheritPicker(_as.uuid, _as.name);
-            if (_r !== 'picker') S.pendingSetLoad = true;
+            S.pendingSetLoad = true;
         }
         /* Self-heal window: the host's set reload can land seconds AFTER we
          * resume (Move writes Settings.json lazily, so the host's detection
@@ -495,16 +491,14 @@ export function _tickImpl() {
      * reload path the resume edge uses. Inert once the window expires. */
     if (S.resumeSetRecheckTicks > 0 && !isSuspended) {
         S.resumeSetRecheckTicks--;
-        if ((S.resumeSetRecheckTicks & 15) === 0 && !S.pendingSetLoad &&
-                !S.pendingInheritPicker) {
+        if ((S.resumeSetRecheckTicks & 15) === 0 && !S.pendingSetLoad) {
             const _las = readActiveSet();
             if (_las.uuid && _las.uuid !== S.currentSetUuid) {
                 console.log('post-resume set flip: ' + S.currentSetUuid +
                             ' -> ' + _las.uuid + ' — reloading');
                 S.currentSetUuid = _las.uuid;
                 S.currentSetName = _las.name;
-                const _lr = maybeShowInheritPicker(_las.uuid, _las.name);
-                if (_lr !== 'picker') S.pendingSetLoad = true;
+                S.pendingSetLoad = true;
                 S.resumeSetRecheckTicks = 0;   /* one heal per resume */
             }
         }
@@ -563,7 +557,7 @@ export function _tickImpl() {
             S.selectHandoffTicks === 0 &&
             !S.pendingOpenProjectPicker && !S.pendingSetLoad &&
             S.pendingProjectSwitch === null &&
-            !S.confirmStateWipe && !S.pendingInheritPicker &&
+            !S.confirmStateWipe &&
             S.pendingDspSync === 0 && S.ledInitComplete) {
         console.log('SELECT-BEFORE-LOAD: awaiting with no picker — re-arming');
         S.pendingOpenProjectPicker = true;
@@ -673,7 +667,7 @@ export function _tickImpl() {
     /* Set change detected in init(): send UUID so DSP constructs path and loads.
      * Suppressed while the inherit picker is open — state_load fires only
      * after the user picks a source (or "Start blank"). */
-    if (S.pendingSetLoad && !S.pendingInheritPicker) {
+    if (S.pendingSetLoad) {
         S.pendingSetLoad = false;
         S.stateLoading = true;
         disarmRecord();
@@ -1820,7 +1814,6 @@ export function _tickImpl() {
      * exit would tear the module down before the buffer processes the save. */
     if (S.pendingSuspendSave) {
         S.pendingSuspendSave = false;
-        updateNameIndex();
         host_module_set_param('save', '1');
     } else if (S.pendingExitAfterSave) {
         S.pendingExitAfterSave = false;
@@ -1902,18 +1895,6 @@ export function _tickImpl() {
          * the load has settled. project-cmd refuses the sweep rather than guess
          * when the world looks wrong (see do_prune). */
         host_system_cmd('sh ' + DAVEBOX_HOST_DIR + '/scripts/project-cmd.sh prune');
-        /* Drop stale entries from the in-memory index so subsequent inheritance
-         * lookups don't find UUIDs whose state file is about to be removed. */
-        if (!S.nameIndexCache) S.nameIndexCache = loadNameIndex();
-        let _dropped = false;
-        for (const _nm in S.nameIndexCache) {
-            const _u = S.nameIndexCache[_nm];
-            if (_u && !host_file_exists(uuidToStatePath(_u))) {
-                delete S.nameIndexCache[_nm];
-                _dropped = true;
-            }
-        }
-        if (_dropped) saveNameIndex(S.nameIndexCache);
     }
 
     /* Drive the alt-mode arrow flash: repaint on each blink-phase edge so the

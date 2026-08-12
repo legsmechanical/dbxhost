@@ -25,7 +25,7 @@ import {
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
-    drawLgtoConfirm, drawBakeConfirm, drawInheritPicker, drawSnapshotPicker,
+    drawLgtoConfirm, drawBakeConfirm, drawSnapshotPicker,
     drawClearAutoMenu, drawBakeSceneConfirm, drawXposeConfirm, drawBpmLine,
     drawProjectPadPicker
 } from './ui_dialogs.mjs';
@@ -738,7 +738,7 @@ function drawPositionBar(t) {
  * not here re-opens exactly this bug. `tests/test_sound_mode_overlay_gate.sh`
  * pins that correspondence by diffing the two flag sets. */
 export function soundModeCovered() {
-    return !!(S.sessionOverlayHeld || S.pendingInheritPicker || S.snapshotPicker ||
+    return !!(S.sessionOverlayHeld || S.snapshotPicker ||
         S.projectPadPicker || S.clearAutoMenu || S.pendingSceneBakePicker ||
         S.mergePlacing || S.mergeNoticePending || S.pendingMergePlacement ||
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
@@ -778,7 +778,6 @@ export function drawUI() {
     S._altPrevBank  = S.activeBank;
     S._altPrevTrack = S.activeTrack;
     if (S.sessionOverlayHeld) { drawSessionOverview(); return; }
-    if (S.pendingInheritPicker) { drawInheritPicker(); return; }
     if (S.snapshotPicker) { drawSnapshotPicker(); return; }
     if (S.projectPadPicker) { drawProjectPadPicker(); return; }
     if (S.clearAutoMenu) { drawClearAutoMenu(); return; }

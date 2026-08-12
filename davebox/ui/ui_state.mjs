@@ -542,8 +542,6 @@ export const S = {
     pendingExport: false,          /* Ableton .ablbundle export — set by menu action, drained in tick() (get_param-safe) */
     pendingExportRun: false,       /* phase 2 of export: armed after EXPORTING popup renders, does the blocking work */
     pendingPruneOrphans: false,
-    nameIndexCache: null,    /* { name: uuid } map, lazy-loaded on first save */
-    pendingInheritPicker: null,  /* { dstUuid, dstName, candidates: [{uuid,name}], selectedIndex } when picker is open */
     /* Snapshot picker (Save state / Load state). Self-contained modal like the
      * inherit picker. { mode:'load'|'overwrite', snaps:[{id,ts,label,sv}], sel,
      * confirm } where confirm is null or { kind:'load'|'overwrite'|'wipe',

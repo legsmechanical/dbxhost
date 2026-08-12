@@ -24,7 +24,6 @@ export function uuidToUiStatePath(uuid) {
         : '/data/UserData/schwung/' + STATE_PREFIX + '-ui-state.json';
 }
 
-const NAME_INDEX_PATH = '/data/UserData/schwung/' + STATE_PREFIX + '_name_index.json';
 const SET_STATE_DIR   = '/data/UserData/schwung/set_state';
 
 /* ⚠ active_set.txt lives under THIS host's install dir, never the stock literal
@@ -50,143 +49,6 @@ export function readActiveSet() {
     }
 }
 
-/* Move's Copy/Paste appends " Copy" (first) or " Copy N" (subsequent) to the
- * inner set folder name. Strip one level; returns null if no suffix matched. */
-export function stripCopySuffix(name) {
-    const m = (name || '').match(/^(.*?)\s+Copy(?:\s+\d+)?\s*$/);
-    return m ? m[1].trimEnd() : null;
-}
-
-/* Lazy-loaded name -> uuid map; survives across saves via S.nameIndexCache. */
-export function loadNameIndex() {
-    if (!host_file_exists(NAME_INDEX_PATH))
-        return {};
-    try {
-        const raw = host_read_file(NAME_INDEX_PATH);
-        if (!raw) return {};
-        const obj = JSON.parse(raw);
-        return (obj && typeof obj === 'object') ? obj : {};
-    } catch (e) {
-        return {};
-    }
-}
-
-export function saveNameIndex(idx) {
-    return host_write_file(NAME_INDEX_PATH, JSON.stringify(idx));
-}
-
-/* Refresh name -> uuid mapping after any successful save so that future
- * duplicates of this set can inherit its state. In-memory cache; disk write
- * happens on suspend, deferred-save, and clear-session. */
-export function updateNameIndex() {
-    if (!S.currentSetUuid || !S.currentSetName) return;
-    if (!S.nameIndexCache) S.nameIndexCache = loadNameIndex();
-    if (S.nameIndexCache[S.currentSetName] === S.currentSetUuid) return;
-    S.nameIndexCache[S.currentSetName] = S.currentSetUuid;
-    saveNameIndex(S.nameIndexCache);
-}
-
-/* Drop every name that maps to this uuid, cache AND disk, for a project that
- * has just been deleted.
- *
- * ⚠ It has to happen HERE, not in project-cmd.sh's delete: the cache is
- * authoritative between saves and `saveNameIndex` writes it whole, so an entry
- * removed from the file behind the module's back is resurrected by the next
- * save. The tick's periodic sweep would catch it eventually — this closes the
- * window in between, where creating a project with the deleted one's name
- * inherits from a uuid whose state files are gone. */
-export function dropNameIndexUuid(uuid) {
-    if (!uuid) return 0;
-    if (!S.nameIndexCache) S.nameIndexCache = loadNameIndex();
-    let dropped = 0;
-    for (const name in S.nameIndexCache) {
-        if (S.nameIndexCache[name] === uuid) { delete S.nameIndexCache[name]; dropped++; }
-    }
-    if (dropped) saveNameIndex(S.nameIndexCache);
-    return dropped;
-}
-
-/* Copy seq8-state.json + seq8-ui-state.json from one UUID folder to another.
- * Used on first launch in a freshly-pasted Move set so the duplicate inherits
- * the source's SEQ8 state. Returns true if the state file was copied. */
-export function copyStateFiles(srcUuid, dstUuid) {
-    if (!srcUuid || !dstUuid) return false;
-    const srcSt = uuidToStatePath(srcUuid);
-    if (!host_file_exists(srcSt)) return false;
-    host_ensure_dir(SET_STATE_DIR + '/' + dstUuid);
-    const stContents = host_read_file(srcSt);
-    if (!stContents) return false;
-    host_write_file(uuidToStatePath(dstUuid), stContents);
-    const srcUi = uuidToUiStatePath(srcUuid);
-    if (host_file_exists(srcUi)) {
-        const uiContents = host_read_file(srcUi);
-        if (uiContents) host_write_file(uuidToUiStatePath(dstUuid), uiContents);
-    }
-    return true;
-}
-
-function escapeForRegex(s) {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-const SETS_BASE_DIR = '/data/UserData/UserLibrary/Sets';
-
-/* All known family members whose state file AND backing Move set still
- * exist, for the inherit picker. Family = the suffix-stripped base name
- * OR base + " Copy [N]". Sorted: base name first, then by length, then
- * alpha. Excludes the currently-active set itself so the picker never
- * offers a no-op. Skipping deleted Move sets keeps the picker honest —
- * the state file may linger on disk if the orphan prune hasn't run yet. */
-export function findInheritCandidates(currentName, idx) {
-    const base = stripCopySuffix(currentName);
-    if (!base) return [];
-    const famRe = new RegExp('^' + escapeForRegex(base) + '(?:\\s+Copy(?:\\s+\\d+)?)?$');
-    const out = [];
-    for (const name in idx) {
-        if (name === currentName) continue;
-        if (!famRe.test(name)) continue;
-        const uuid = idx[name];
-        if (!uuid) continue;
-        if (!host_file_exists(uuidToStatePath(uuid))) continue;
-        if (!host_file_exists(SETS_BASE_DIR + '/' + uuid)) continue;
-        out.push({ uuid: uuid, name: name });
-    }
-    out.sort(function(a, b) {
-        if (a.name === base) return -1;
-        if (b.name === base) return 1;
-        if (a.name.length !== b.name.length) return a.name.length - b.name.length;
-        return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0);
-    });
-    return out;
-}
-
-/* Inherit-picker entry. On first launch in a freshly-pasted Move duplicate
- * (Copy-suffixed name + no canonical state file), check the name index for
- * family members and either auto-inherit (one candidate) or show a picker
- * dialog (two or more). Returns one of:
- *   'auto'   — silently inherited from the single candidate
- *   'picker' — dialog opened, S.pendingInheritPicker set
- *   'blank'  — nothing to inherit; let normal flow proceed */
-export function maybeShowInheritPicker(uuid, name) {
-    if (!uuid || !name) return 'blank';
-    if (host_file_exists(uuidToStatePath(uuid))) return 'blank';
-    const idx = S.nameIndexCache || (S.nameIndexCache = loadNameIndex());
-    const candidates = findInheritCandidates(name, idx);
-    if (candidates.length === 0) return 'blank';
-    if (candidates.length === 1) {
-        copyStateFiles(candidates[0].uuid, uuid);
-        return 'auto';
-    }
-    S.pendingInheritPicker = {
-        dstUuid: uuid,
-        dstName: name,
-        candidates: candidates,
-        selectedIndex: 0
-    };
-    S.screenDirty = true;
-    return 'picker';
-}
-
 /* Decide whether the DSP needs a state_load for the currently-active set, and
  * arm it. Runs the inherit-picker tree first (a freshly-pasted Move duplicate
  * has to be seeded before anything is loaded), then the version-mismatch gate,
@@ -199,7 +61,6 @@ export function maybeShowInheritPicker(uuid, name) {
  * either site would let a duplicate-set inherit silently work on one path and
  * not the other. */
 export function resolveSetLoadDecision() {
-    const inheritResult = maybeShowInheritPicker(S.currentSetUuid, S.currentSetName);
     const _svMismatch = host_module_get_param('state_version_mismatch');
     const dspUuid = (host_module_get_param('state_uuid') || '');
 
@@ -209,17 +70,12 @@ export function resolveSetLoadDecision() {
         S.confirmStateWipeSel = 1;
         S.pendingSetLoad = false;
         S.screenDirty = true;
-    } else if (inheritResult === 'auto') {
-        S.pendingSetLoad = true;
-    } else if (inheritResult === 'picker') {
-        /* state_load deferred until resolveInheritPicker fires */
     } else if (S.currentSetUuid && dspUuid !== S.currentSetUuid) {
         S.pendingSetLoad = true;
     } else if (S.currentSetUuid) {
         if (!host_file_exists(uuidToStatePath(S.currentSetUuid)))
             S.pendingSetLoad = true;
     }
-    return inheritResult;
 }
 
 /* SELECT-BEFORE-LOAD: the user picked the already-current (boot) project, so
@@ -230,8 +86,8 @@ export function resolveSetLoadDecision() {
  * that there is nothing to do. */
 export function loadSelectedCurrentProject() {
     if (!S.awaitingProjectSelect) return;
-    const inheritResult = resolveSetLoadDecision();
-    if (inheritResult !== 'picker' && !S.confirmStateWipe)
+    resolveSetLoadDecision();
+    if (!S.confirmStateWipe)
         S.pendingSetLoad = true;
     S.pendingPruneOrphans = true;
     S.stateLoading = true;      /* "LOADING <project>" from the tap, not the reload */
@@ -274,7 +130,7 @@ export function writeSidecar() {
      * project's uuid. Same window, same shape as the deferred state_full save
      * in pollDSP; restoreUiSidecar has not run yet, so there is nothing worth
      * persisting here anyway. */
-    if (S.pendingSetLoad || S.pendingDspSync > 0 || S.pendingInheritPicker) return;
+    if (S.pendingSetLoad || S.pendingDspSync > 0) return;
     /* Always sync the live activeBank into per-track storage before serializing. */
     S.trackActiveBank[S.activeTrack] = S.activeBank;
     host_write_file(uuidToUiStatePath(S.currentSetUuid), JSON.stringify({

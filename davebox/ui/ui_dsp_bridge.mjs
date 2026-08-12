@@ -37,8 +37,7 @@ import { S, CC_ASSIGN_DEFAULTS } from './ui_state.mjs';
 import { slotIndex, syncLinkAudioRoutingFromRoutes,
          invalidateLinkAudioRoutingCache } from './ui_engine.mjs';
 import { clipHasContent, _clipIsEmpty } from './ui_pure.mjs';
-import { showActionPopup, writeSidecar, uuidToStatePath, uuidToUiStatePath,
-    updateNameIndex } from './ui_persistence.mjs';
+import { showActionPopup, writeSidecar, uuidToStatePath, uuidToUiStatePath} from './ui_persistence.mjs';
 import { computePadNoteMap, setActiveDrumLane, syncDrumClipContent,
     syncDrumLaneSteps, syncDrumLanesMeta, syncDrumRepeatState } from './ui_drummodel.mjs';
 import { effectiveClip, forceRedraw, invalidateLEDCache } from './ui_leds.mjs';
@@ -809,13 +808,12 @@ export function pollDSP() {
      * state_uuid flips exactly when the memory becomes the new project's: it is
      * the authority, and requiring agreement closes the window from both ends. */
     if (S.currentSetUuid && !S.awaitingProjectSelect &&
-            !S.pendingSetLoad && S.pendingDspSync === 0 && !S.pendingInheritPicker) {
+            !S.pendingSetLoad && S.pendingDspSync === 0) {
         const _dspUuid = (host_module_get_param('state_uuid') || '');
         if (_dspUuid && _dspUuid === S.currentSetUuid) {
             const _st = host_module_get_param('state_full');
             if (_st && _st.length > 2) {
                 host_write_file(uuidToStatePath(_dspUuid), _st);
-                updateNameIndex();
             }
         }
     }
