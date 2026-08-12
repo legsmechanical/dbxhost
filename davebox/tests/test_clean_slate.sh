@@ -66,26 +66,17 @@ for f in clock_follow_on clock_send_on xpose_preview_active tick_delta; do
         || bad "$f is defaulted only inside seq8_load_state — a project with no state file inherits it"
 done
 
-# 4. Deleting a project takes ALL its state with it.
-#    Phase B (state-co-location): the MODULE half lives INSIDE the set dir, so
-#    the set-dir rmtree IS its deletion — no second root, no prefix dance, no
-#    pruner. Only the HOST half (routing/params, $DBX_DIR/set_state) is still
-#    parallel, until Phase C; delete must still take it explicitly.
-grep -q "^HOST_STATE_DIR=" ../standalone/scripts/project-cmd.sh \
-    && ok "project-cmd declares HOST_STATE_DIR" \
-    || bad "project-cmd lost HOST_STATE_DIR — delete leaves the routing half on disk"
-awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q 'shutil.rmtree(os.path.join(host_state_dir, u))' \
-    && ok "the HOST root (ours alone) is removed wholesale" \
-    || bad "the host state dir is no longer removed — routing/params survive delete"
-#    Exactly two rmtrees: the set dir (which contains the module state) and the
-#    host root. A THIRD is a regression toward the old shared-root sweep — the
-#    stock host's set_state tree must never be touched again.
+# 4. Deleting a project takes ALL its state with it — because ALL of it lives
+#    INSIDE the set dir (module half since Phase B, host half since Phase C).
+#    ONE rmtree is the whole deletion. A SECOND is a regression toward the old
+#    parallel-root sweeps — whichever root it aims at, it means state has
+#    leaked back outside the project.
 _rm=$(awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh \
         | sed 's/[[:space:]]*#.*$//' | grep -c 'rmtree')
-if [ "$_rm" -eq 2 ]; then
-    ok "do_delete contains exactly the 2 legitimate rmtree calls (set dir + host root)"
+if [ "$_rm" -eq 1 ]; then
+    ok "do_delete contains exactly 1 rmtree (the set dir IS the project)"
 else
-    bad "do_delete has $_rm rmtree calls, expected 2"
+    bad "do_delete has $_rm rmtree calls, expected 1 — per-project state has leaked back outside the set dir"
 fi
 #    ⚠ The old SHARED-root sweep must NOT come back: no reference to the stock
 #    set_state tree anywhere in project-cmd.
@@ -132,9 +123,9 @@ _cp=$(awk '/^do_copy\(\)/,/^}/' ../standalone/scripts/project-cmd.sh)
 printf '%s' "$_cp" | grep -q 'shutil.copytree(sp, np)' \
     && ok "do_copy copies the WHOLE set dir (module state rides along)" \
     || bad "do_copy no longer copies the whole set dir — the module state does not travel"
-printf '%s' "$_cp" | grep -q 'shutil.copytree(hp_src' \
-    && ok "do_copy seeds the destination's host state (routing/params)" \
-    || bad "do_copy no longer copies host state — a copy starts with the DEFAULT chain/FX config"
+printf '%s' "$_cp" | grep -q 'host_state_dir' \
+    && bad "do_copy references a parallel host-state root again — that root died in Phase C" \
+    || ok "do_copy has no parallel root to seed: the copytree carries BOTH halves"
 printf '%s' "$_cp" | grep -q 'n != dbx_subdir' \
     && ok "do_copy skips the reserved state subdir when hunting the inner set" \
     || bad "do_copy lost the reserved-name filter — it can rename the STATE dir as the set"

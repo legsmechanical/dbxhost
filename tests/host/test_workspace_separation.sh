@@ -36,7 +36,7 @@ done
 
 [ "${DBX_SHARED_LINKS:-}" = "modules presets patches" ] ||
   fail "DBX_SHARED_LINKS drifted: '${DBX_SHARED_LINKS:-}'"
-[ "${DBX_PRIVATE_STATE:-}" = "set_state slot_state active_set.txt shadow_chain_config.json shadow_config.json" ] ||
+[ "${DBX_PRIVATE_STATE:-}" = "slot_state active_set.txt shadow_chain_config.json shadow_config.json" ] ||
   fail "DBX_PRIVATE_STATE drifted: '${DBX_PRIVATE_STATE:-}'"
 
 grep -q 'DBX_SHARED_LINKS' "$inst"  || fail "install-host.sh does not consume DBX_SHARED_LINKS"

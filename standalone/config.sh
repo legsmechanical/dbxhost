@@ -76,4 +76,7 @@ DBX_SESSION_LOCK=/dev/shm/.dbxhost-session.lock
 # converts a leftover link in the private list to a real dir/file). Pinned by
 # tests/host/test_workspace_separation.sh.
 DBX_SHARED_LINKS="modules presets patches"
-DBX_PRIVATE_STATE="set_state slot_state active_set.txt shadow_chain_config.json shadow_config.json"
+# (set_state left this list in Phase C of the state-co-location plan: per-set
+# state lives inside each project's set dir now, so no such root is created.
+# A leftover $DBX_DIR/set_state from an older build is inert.)
+DBX_PRIVATE_STATE="slot_state active_set.txt shadow_chain_config.json shadow_config.json"

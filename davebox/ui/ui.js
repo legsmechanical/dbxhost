@@ -251,13 +251,10 @@ globalThis.init = function () {
      * load yet, and the checks would all fire wrongly anyway — the DSP holds
      * no set, so state_uuid is empty and the mismatch branch would force the
      * very load we are deferring. The picker re-runs this chain (via
-     * loadSelectedCurrentProject) the moment the user chooses, so a duplicate
-     * set still inherits and a version mismatch still asks. Orphan pruning
-     * waits too: the picker can create and delete projects before a selection
-     * lands, and the prune walks that same list. */
+     * loadSelectedCurrentProject) the moment the user chooses, so a version
+     * mismatch still asks. */
     if (!S.awaitingProjectSelect) {
         resolveSetLoadDecision();
-        S.pendingPruneOrphans = true;
     }
 
     S.playing = dspSurvived;

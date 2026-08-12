@@ -33,33 +33,14 @@ set -eu
 DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
 SETS_DIR="${SETS_DIR:-/data/UserData/UserLibrary/Sets}"
 SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
-# Per-project state. Since Phase B the MODULE half (clips, sequencer) lives
-# INSIDE the project's set dir (Sets/<uuid>/$DBX_SUBDIR_NAME/), so it needs no
-# constant here — delete/copy of the set dir take it along. Only the HOST half
-# (chains, slots, FX — the routing and params) still lives in a root parallel
-# to the projects, ours alone, until Phase C co-locates it too:
-HOST_STATE_DIR="${HOST_STATE_DIR:-$DBX_DIR/set_state}"
+# Per-project state needs NO constant here: both halves live INSIDE the
+# project's set dir (Sets/<uuid>/$DBX_SUBDIR_NAME/ — module files flat, host
+# half under host/), so delete/copy/rename of the set dir take everything.
 # The host's own record of the set it loaded, rewritten on every set change.
 # ⚠ THIS install's copy — the stock tree has a file of the same name holding
 # native-session leftovers. Authoritative for "which project is open";
 # Settings.json's currentSongIndex is only written at a relaunch and goes stale.
 ACTIVE_SET_PATH="${ACTIVE_SET_PATH:-$DBX_DIR/active_set.txt}"
-# WHERE A SET CAN BE, for the prune's liveness test. Sets/ alone is NOT the
-# answer and assuming it is destroys work:
-#   Sets/          the live library — but that is the SA library only while a
-#                  session runs; outside one it holds the user's NATIVE sets.
-#   sets/library/  the SA library while no session runs (set-swap.sh renames
-#                  whole set dirs between the two — a set is in exactly one).
-#   sets/native-stash/  the natives while a session runs. Ours never land here,
-#                  but a uuid found there is manifestly a live set, so it counts.
-# (A set-pages stash was a fourth root until 2026-08-12; the 8-page feature died
-# in P3 and nothing writes a stash any more.)
-# This is the same union dsp/setparam/sp_globals_state.c's seq8_set_uuid_alive()
-# walks for the MODULE root; keep the two in step.
-SWAP_ROOT="${SWAP_ROOT:-$DBX_DIR/sets}"
-LIBRARY_DIR="${LIBRARY_DIR:-$SWAP_ROOT/library}"
-NATIVE_STASH_DIR="${NATIVE_STASH_DIR:-$SWAP_ROOT/native-stash}"
-SWAP_STATE_FILE="${SWAP_STATE_FILE:-$SWAP_ROOT/swap_state}"
 # ⭑ The reserved state subdir INSIDE each project's set dir (Phase B of the
 # state-co-location plan): Sets/<uuid>/$DBX_SUBDIR_NAME/ holds the module's
 # per-project state, beside Move's inner <Name>/ dir. Every site that hunts the
@@ -224,10 +205,10 @@ do_new_at() { # index [name]
 do_copy() { # src-index dst-index
     case "${1:-}" in *[!0-9]*|"") die "copy needs a numeric source index" ;; esac
     case "${2:-}" in *[!0-9]*|"") die "copy needs a numeric destination index" ;; esac
-    python3 - "$SETS_DIR" "$1" "$2" "$HOST_STATE_DIR" "$DBX_SUBDIR_NAME" <<'PYEOF'
+    python3 - "$SETS_DIR" "$1" "$2" "$DBX_SUBDIR_NAME" <<'PYEOF'
 import os, re, shutil, sys, uuid as uuidlib
 sets_dir, src, dst = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
-host_state_dir, dbx_subdir = sys.argv[4], sys.argv[5]
+dbx_subdir = sys.argv[4]
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 def find(idx):
     for u in os.listdir(sets_dir):
@@ -272,12 +253,9 @@ try:
 except OSError:
     pass
 
-# The HOST half (chains/slots/FX) still lives in a parallel root until Phase C
-# co-locates it too; hand-copy it so the duplicate's ROUTING is a snapshot.
-hp_src = os.path.join(host_state_dir, su)
-if os.path.isdir(hp_src):                        # this root is ours alone
-    shutil.copytree(hp_src, os.path.join(host_state_dir, nu), dirs_exist_ok=True)
-    print("project-cmd: copied host state to %s" % nu)
+# (No second half to hand-copy: since Phase C the HOST state — chains, slots,
+# FX — lives inside the set dir too, under <subdir>/host/, so the copytree
+# above carried BOTH halves. The whole project is one directory.)
 
 # ⚠ SYNC before returning (Josh, hardware, 2026-08-12): a hard power cut can
 # lose unsynced directory operations to journal replay. A copy that vanishes is
@@ -291,11 +269,10 @@ PYEOF
 
 do_delete() { # index
     case "${1:-}" in *[!0-9]*|"") die "delete needs a numeric index" ;; esac
-    python3 - "$SETS_DIR" "$SETTINGS_JSON" "$1" "$HOST_STATE_DIR" "$ACTIVE_SET_PATH" <<'PYEOF'
+    python3 - "$SETS_DIR" "$SETTINGS_JSON" "$1" "$ACTIVE_SET_PATH" <<'PYEOF'
 import os, re, shutil, sys
 sets_dir, settings, idx = sys.argv[1], sys.argv[2], int(sys.argv[3])
-host_state_dir = sys.argv[4]
-active_set_path = sys.argv[5] if len(sys.argv) > 5 else ""
+active_set_path = sys.argv[4] if len(sys.argv) > 4 else ""
 
 
 def open_uuid():
@@ -340,19 +317,10 @@ for u in os.listdir(sets_dir):
     try:
         if int(os.getxattr(p, "user.song-index").decode()) == idx:
             shutil.rmtree(p)
-            # ⭑ The MODULE half (clips, sequencer) went WITH that rmtree — it
-            # lives inside the set dir since Phase B, so "delete the project"
-            # and "delete its patterns" are one operation, not two to keep in
-            # step. Only the HOST half (chains, slots, FX) still lives in a
-            # parallel root, until Phase C co-locates it too. Ours alone, so
-            # the whole directory goes; best-effort and AFTER the set — a
-            # leftover set with no state reads as an empty project, while
-            # leftover host state is what do_prune sweeps.
-            try:
-                shutil.rmtree(os.path.join(host_state_dir, u))
-                print("project-cmd: deleted host state %s/%s" % (host_state_dir, u))
-            except OSError:
-                pass
+            # ⭑ ONE rmtree deletes the WHOLE project. Both state halves live
+            # inside the set dir (module since Phase B, host since Phase C),
+            # so "delete the project" and "delete its state" stopped being two
+            # operations to keep in step — there is nothing else to take.
             # ⚠ SYNC before reporting success (Josh, hardware, 2026-08-12): a
             # hard power cut replays the journal, and an unsynced rmtree can be
             # UNDONE by it — the user watched this project disappear, and it
@@ -485,87 +453,12 @@ PYEOF
     do_list
 }
 
-# Reclaim HOST state dirs ($DBX_DIR/set_state/<uuid>: shadow_chain_config,
-# slot_N, master/move/send FX — the ROUTING half of a project) whose set no
-# longer exists. Nothing else does: do_delete takes the one dir it deletes, but
-# everything else leaks — projects deleted before do_delete learned about this
-# root (100 had piled up by 2026-08-11), interrupted deletes, sets removed
-# outside dAVEBOx.
-#
-# ⚠ SCOPE, deliberately narrow — this verb owns ONLY that root:
-#   - the SHARED module root is the module's, via `prune_orphan_states`
-#     (dsp/setparam/sp_globals_state.c), which deletes BY PREFIX because stock's
-#     state sits in the same folders.
-#   - the NAME INDEX is the module's too: it holds the map in memory
-#     (S.nameIndexCache) and rewrites the whole file on the next save, so a
-#     sweep here would be silently undone. Its stale-entry sweep runs in the
-#     same tick branch that fires this verb (ui_tick.mjs).
-#
-# ⭑⭑ THE SAFETY ASYMMETRY, same as the module's: keeping a stale dir costs a few
-# KB; deleting a live one destroys a project's routing with no error and nothing
-# to restore from. So anything we cannot verify counts as ALIVE, and the whole
-# sweep refuses rather than guesses:
-#   - a mid-swap phase means sets are being renamed between roots right now, so
-#     "absent from both" proves nothing → refuse.
-#   - an unreadable Sets/ or an EMPTY alive set means we are looking at the wrong
-#     world (this is exactly what running outside a session used to look like) →
-#     refuse. A real device always has sets.
-do_prune() {
-    python3 - "$SETS_DIR" "$LIBRARY_DIR" "$NATIVE_STASH_DIR" \
-              "$SWAP_STATE_FILE" "$HOST_STATE_DIR" <<'PYEOF'
-import os, re, shutil, sys
-(sets_dir, library_dir, native_stash, swap_state, host_state_dir) = sys.argv[1:6]
-
-uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}'
-                     r'-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
-
-
-def phase():
-    """set-swap's intent marker. Absent = 'none' (its own default)."""
-    try:
-        with open(swap_state) as f:
-            return (f.readline().strip() or "none")
-    except OSError:
-        return "none"
-
-
-if phase() not in ("none", "sa-live"):
-    sys.exit("project-cmd: prune SKIPPED: set swap is mid-flight (%s)" % phase())
-
-
-def entries(path):
-    try:
-        return set(os.listdir(path))
-    except OSError:
-        return set()
-
-
-# Every root a live set can be sitting in.
-alive = entries(sets_dir) | entries(library_dir) | entries(native_stash)
-
-if not entries(sets_dir):
-    sys.exit("project-cmd: prune SKIPPED: %s is empty or unreadable" % sets_dir)
-if not alive:
-    sys.exit("project-cmd: prune SKIPPED: no live sets found anywhere")
-
-# 1. HOST state roots with no set behind them.
-removed = 0
-for u in sorted(entries(host_state_dir)):
-    if not uuid_re.match(u) or u in alive:
-        continue
-    p = os.path.join(host_state_dir, u)
-    if not os.path.isdir(p):
-        continue
-    try:
-        shutil.rmtree(p)
-        removed += 1
-        print("project-cmd: prune: removed host state %s" % u)
-    except OSError as e:
-        print("project-cmd: prune: could NOT remove %s: %s" % (u, e))
-
-print("project-cmd: prune: alive=%d host_state_removed=%d" % (len(alive), removed))
-PYEOF
-}
+# (do_prune is GONE — Phase C. It reclaimed orphaned HOST state dirs from the
+# parallel $DBX_DIR/set_state root, with a four-root liveness test and a
+# refuse-rather-than-guess sweep, because a deleted set could leave its routing
+# behind. Both state halves live inside the set dir now: no parallel root, no
+# orphan, nothing to reclaim. Devices that ran older builds may hold inert
+# leftovers under $DBX_DIR/set_state — KB-scale history, harmless.)
 
 case "${1:-}" in
     list)   do_list ;;
@@ -576,6 +469,5 @@ case "${1:-}" in
     switch) shift; do_switch "${1:-}" ;;
     color)  shift; do_color "${1:-}" "${2:-}" ;;
     rename) shift; do_rename "${1:-}" "${2:-}" "${3:-}" ;;
-    prune)  do_prune ;;
-    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>|prune" ;;
+    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>" ;;
 esac

@@ -229,11 +229,10 @@ var _lastSessionView = false;
  *   order would drain a half-populated queue.
  *
  * - pendingSetLoad GATES BOTH pendingDefaultSetParams (`!S.pendingSetLoad`
- *   guard) AND pendingPruneOrphans (anchor: "if (S.pendingPruneOrphans &&
- *   !S.pendingSetLoad && S.pendingDspSync === 0"), and pendingSetLoad's own
+ *   guard), and pendingSetLoad's own
  *   drain (anchor: "if (S.pendingSetLoad) {")
  *   arms `S.pendingDspSync = 5`. Load is checked/drained first in program
- *   order; defaults/prune wait on `pendingDspSync === 0` by construction.
+ *   order; defaults wait on `pendingDspSync === 0` by construction.
  *
  * - pollDSP() BEFORE THE LED/SCENE/DRAW BLOCK: the POLL_INTERVAL-gated
  *   pollDSP() call (anchor: "if ((S.tickCount % POLL_INTERVAL) === 0) {
@@ -1881,20 +1880,9 @@ export function _tickImpl() {
         commitSnapshot(S.currentSetUuid, _sc.id, _sc.label);
     }
 
-    /* Orphan prune: clean up set_state/<uuid>/seq8-*.json for sets that no
-     * longer exist on disk. Defer until any state_load + initial sync settles
-     * so the prune set_param doesn't collide with state_load coalescing. */
-    if (S.pendingPruneOrphans && !S.pendingSetLoad && S.pendingDspSync === 0) {
-        S.pendingPruneOrphans = false;
-        /* Only the HOST state root ($DBX_DIR/set_state/<uuid> — chains, slots,
-         * FX) still lives in a tree parallel to the projects, so it is the one
-         * half that can still orphan. The MODULE half moved INSIDE the set dir
-         * in Phase B (state-co-location plan) and its pruner retired with the
-         * old location — no set, no state, nothing to sweep. This call goes
-         * too when Phase C co-locates the host half. project-cmd refuses the
-         * sweep rather than guess when the world looks wrong (see do_prune). */
-        host_system_cmd('sh ' + DAVEBOX_HOST_DIR + '/scripts/project-cmd.sh prune');
-    }
+    /* (The orphan-prune branch that lived here is GONE — Phase C of the
+     * state-co-location plan. Both state halves live inside the set dir now,
+     * so an orphan cannot exist and there is nothing left to sweep.) */
 
     /* Drive the alt-mode arrow flash: repaint on each blink-phase edge so the
      * down-arrow animates even when the UI is otherwise idle. Covers both altMode

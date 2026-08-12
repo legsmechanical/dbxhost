@@ -112,7 +112,6 @@ export function loadSelectedCurrentProject() {
     resolveSetLoadDecision();
     if (!S.confirmStateWipe)
         S.pendingSetLoad = true;
-    S.pendingPruneOrphans = true;
     S.stateLoading = true;      /* "LOADING <project>" from the tap, not the reload */
     S.screenDirty = true;
 }
