@@ -82,9 +82,12 @@ float shadow_send_a_to_b_level = 0.0f;
 
 /* Move FX slots — one mini FX bus per Move track (channel) */
 master_fx_slot_t shadow_move_fx_slots[MOVE_FX_SLOTS][MOVE_FX_BLOCKS];
+/* volume, send_a, send_b, muted, soloed — the two flags zero-fill, which is
+ * the intended default (audible, not soloed). These are process defaults only:
+ * the per-set values arrive from the set's move_fx_meta.json once the UI is up. */
 move_fx_strip_t shadow_move_fx_strip[MOVE_FX_SLOTS] = {
-    { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f },
-    { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f },
+    { 1.0f, 0.0f, 0.0f, 0, 0 }, { 1.0f, 0.0f, 0.0f, 0, 0 },
+    { 1.0f, 0.0f, 0.0f, 0, 0 }, { 1.0f, 0.0f, 0.0f, 0, 0 },
 };
 
 /* Master FX LFOs */
@@ -441,6 +444,25 @@ int shadow_chain_parse_channel(int ch) {
     return ch;
 }
 
+/* Recompute the shared solo flag from both families.
+ *
+ * Every "solo off" path uses this instead of assigning 0, because with two
+ * families the assignment is only correct if you already know nothing else is
+ * soloed — and the restore paths cannot know: chain config and bus config are
+ * restored in sequence, so clearing a stale bus solo would otherwise zero the
+ * count out from under the chain solo that had just been put back. Recomputing
+ * is order-independent, which is the property that matters here. */
+static void shadow_recount_solo(void) {
+    int any = 0;
+    for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++)
+        if (shadow_chain_slots[i].soloed) { any = 1; break; }
+    if (!any) {
+        for (int i = 0; i < MOVE_FX_SLOTS; i++)
+            if (shadow_move_fx_strip[i].soloed) { any = 1; break; }
+    }
+    shadow_solo_count = any;
+}
+
 void shadow_chain_defaults(void) {
     for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++) {
         shadow_chain_slots[i].instance = NULL;
@@ -466,7 +488,9 @@ void shadow_chain_defaults(void) {
                 sizeof(shadow_chain_slots[i].patch_name) - 1);
         shadow_chain_slots[i].patch_name[sizeof(shadow_chain_slots[i].patch_name) - 1] = '\0';
     }
-    shadow_solo_count = 0;
+    /* Recomputed, not zeroed: the solo group is shared with the FX buses, which
+     * this chain-scoped reset does not touch. */
+    shadow_recount_solo();
     /* Clear all master FX slots */
     for (int i = 0; i < MASTER_FX_SLOTS; i++) {
         memset(&shadow_master_fx_slots[i], 0, sizeof(master_fx_slot_t));
@@ -649,28 +673,84 @@ void shadow_apply_mute(int slot, int is_muted) {
     shadow_save_state();
 }
 
-void shadow_toggle_solo(int slot) {
+/* Set (not toggle) a chain slot's solo. The single writer for chain solo, so
+ * that "exclusive across both families" is stated once: every entry point —
+ * the Shift+Mute+Track gesture, the slot:soloed param, a per-set restore —
+ * goes through here rather than repeating the clear loops and getting one of
+ * them wrong. */
+void shadow_chain_set_solo(int slot, int is_soloed) {
     if (slot < 0 || slot >= SHADOW_CHAIN_INSTANCES) return;
-
-    if (shadow_chain_slots[slot].soloed) {
+    if (!is_soloed) {
+        if (!shadow_chain_slots[slot].soloed) return;
         shadow_chain_slots[slot].soloed = 0;
-        shadow_solo_count = 0;
-        char msg[64];
-        snprintf(msg, sizeof(msg), "Solo off: slot %d", slot);
-        shadow_log(msg);
+        shadow_recount_solo();
     } else {
         for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++)
             shadow_chain_slots[i].soloed = 0;
+        for (int i = 0; i < MOVE_FX_SLOTS; i++)
+            shadow_move_fx_strip[i].soloed = 0;
         shadow_chain_slots[slot].soloed = 1;
         shadow_solo_count = 1;
-        char msg[64];
-        snprintf(msg, sizeof(msg), "Solo on: slot %d", slot);
-        shadow_log(msg);
     }
     for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++) {
         shadow_ui_state_update_slot(i);
     }
+    char msg[64];
+    snprintf(msg, sizeof(msg), "Solo %s: slot %d", is_soloed ? "on" : "off", slot);
+    shadow_log(msg);
+}
+
+void shadow_toggle_solo(int slot) {
+    if (slot < 0 || slot >= SHADOW_CHAIN_INSTANCES) return;
+    shadow_chain_set_solo(slot, !shadow_chain_slots[slot].soloed);
     shadow_save_state();
+}
+
+/* Mute an FX bus. The bus follows its own mute only — never the chain slot at
+ * the same index, which is an alternative occupant of the position rather than
+ * a signal in the same path.
+ *
+ * No save call here, unlike the chain-slot toggle: a bus's mixer state is
+ * PER-SET and lives in the set's move_fx_meta.json, which the UI writes from
+ * the values it reads back through move_fx:N:*. It is flushed on the same
+ * cadence as the strip's volume (set change, session exit, overtake entry), so
+ * routing a save through the install-wide config file here would only give the
+ * value a second, staler home. */
+void shadow_move_fx_apply_mute(int bus, int is_muted) {
+    if (bus < 0 || bus >= MOVE_FX_SLOTS) return;
+    if ((uint8_t)(is_muted != 0) == shadow_move_fx_strip[bus].muted) return;
+    shadow_move_fx_strip[bus].muted = (uint8_t)(is_muted != 0);
+    char msg[64];
+    snprintf(msg, sizeof(msg), "Mute: FX bus %d %s", bus, is_muted ? "muted" : "unmuted");
+    shadow_log(msg);
+}
+
+/* Solo an FX bus. Exclusive across both families: a chain slot and a bus can
+ * occupy the same mixer position, and a solo that left the other family
+ * sounding would not be a solo. Clearing this bus's solo clears the count
+ * outright, matching shadow_toggle_solo — only ever one thing is soloed. */
+void shadow_move_fx_set_solo(int bus, int is_soloed) {
+    if (bus < 0 || bus >= MOVE_FX_SLOTS) return;
+    if (!is_soloed) {
+        if (!shadow_move_fx_strip[bus].soloed) return;
+        shadow_move_fx_strip[bus].soloed = 0;
+        shadow_recount_solo();
+    } else {
+        for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++)
+            shadow_chain_slots[i].soloed = 0;
+        for (int i = 0; i < MOVE_FX_SLOTS; i++)
+            shadow_move_fx_strip[i].soloed = 0;
+        shadow_move_fx_strip[bus].soloed = 1;
+        shadow_solo_count = 1;
+    }
+    /* The chain slots' published UI state carries their solo flag, and clearing
+     * it above is invisible to the UI otherwise. */
+    for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++) {
+        shadow_ui_state_update_slot(i);
+    }
+    char msg[64];
+    snprintf(msg, sizeof(msg), "Solo %s: FX bus %d", is_soloed ? "on" : "off", bus);
+    shadow_log(msg);
 }
 
 /* ============================================================================
@@ -1951,18 +2031,11 @@ int shadow_handle_slot_param_set(int slot, const char *key, const char *value) {
         return 1;
     }
     if (strcmp(key, "slot:soloed") == 0) {
-        int val = atoi(value);
-        if (val && !shadow_chain_slots[slot].soloed) {
-            for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++)
-                shadow_chain_slots[i].soloed = 0;
-            shadow_chain_slots[slot].soloed = 1;
-            shadow_solo_count = 1;
-        } else if (!val && shadow_chain_slots[slot].soloed) {
-            shadow_chain_slots[slot].soloed = 0;
-            shadow_solo_count = 0;
-        }
-        for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++)
-            shadow_ui_state_update_slot(i);
+        /* Through the one setter: this used to clear only the CHAIN solos and
+         * assign the count directly, which with FX buses in the same solo group
+         * would leave two things soloed (or drop the count while a bus still
+         * was). */
+        shadow_chain_set_solo(slot, atoi(value) != 0);
         return 1;
     }
     if (strcmp(key, "slot:forward_channel") == 0) {
@@ -2142,6 +2215,13 @@ void shadow_direct_set_param(uint8_t slot, const char *key, const char *value) {
             if (lv < 0.0f) lv = 0.0f; if (lv > 1.0f) lv = 1.0f;
             if (rest[5] == 'a') shadow_move_fx_strip[sl].send_a = lv;
             else                shadow_move_fx_strip[sl].send_b = lv;
+            if (host.on_param_changed) host.on_param_changed(slot, key, value);
+            return;
+        }
+        if (strcmp(rest, "muted") == 0 || strcmp(rest, "soloed") == 0) {
+            int on = (value && value[0]) ? (atoi(value) != 0) : 0;
+            if (rest[0] == 'm') shadow_move_fx_apply_mute(sl, on);
+            else                shadow_move_fx_set_solo(sl, on);
             if (host.on_param_changed) host.on_param_changed(slot, key, value);
             return;
         }
@@ -3483,6 +3563,28 @@ void shadow_inprocess_handle_param_request(void) {
                 shadow_param->result_len = 0;
             } else if (req_type == 2) {  /* GET */
                 snprintf(shadow_param->value, SHADOW_PARAM_VALUE_LEN, "%.3f", *tgt);
+                shadow_param->error = 0;
+                shadow_param->result_len = strlen(shadow_param->value);
+            }
+            shadow_param_publish_response(req_id);
+            return;
+        }
+
+        /* Mute / solo. Kept out of the float block above because they go
+         * through the helpers, which own solo's exclusivity across both
+         * families — writing the field directly here would let two things be
+         * soloed at once. */
+        if (strcmp(rest, "muted") == 0 || strcmp(rest, "soloed") == 0) {
+            uint8_t *tgt = (rest[0] == 'm') ? &shadow_move_fx_strip[sl].muted
+                                            : &shadow_move_fx_strip[sl].soloed;
+            if (req_type == 1) {  /* SET */
+                int on = (shadow_param->value[0]) ? (atoi(shadow_param->value) != 0) : 0;
+                if (rest[0] == 'm') shadow_move_fx_apply_mute(sl, on);
+                else                shadow_move_fx_set_solo(sl, on);
+                shadow_param->error = 0;
+                shadow_param->result_len = 0;
+            } else if (req_type == 2) {  /* GET */
+                snprintf(shadow_param->value, SHADOW_PARAM_VALUE_LEN, "%d", (int)*tgt);
                 shadow_param->error = 0;
                 shadow_param->result_len = strlen(shadow_param->value);
             }

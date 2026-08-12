@@ -136,9 +136,11 @@ const BUS_BLOCKS = [1, 2, 3, 4];      /* fx1..fx4 on every bus */
  * being played, silently.
  *
  * The strip levels are real host state (`shadow_move_fx_strip[]`): volume is a
- * 0..4 gain like a slot's, the sends are 0..1. Mute/solo are deliberately absent
- * — the strip does not participate in either yet (open Stage 1a remainder), and
- * a row that reads nothing is worse than no row. */
+ * 0..4 gain like a slot's, the sends are 0..1, and Muted/Soloed are the bus's
+ * own — a bus follows ITS mute, never the chain slot at the same index, but it
+ * shares the solo group with them, because a solo that left the other family
+ * sounding would not be a solo. Toggle rows flip on jog-click rather than
+ * opening the level editor a 0/1 value has no use for. */
 const MOVE_BUS_TITLE = (bus) => 'MOVE ' + bus + ' - SOUND';
 function moveBusFor(track) {
     /* Channel is 1-based here (0-based in the DSP). Clamp to Move's four, the
@@ -157,6 +159,10 @@ function moveBusFor(track) {
               min: 0, max: 1, step: BUS_LEVEL_STEP },
             { comp: pfx.slice(0, -1), key: 'send_b', label: 'Send B',
               min: 0, max: 1, step: BUS_LEVEL_STEP },
+            { comp: pfx.slice(0, -1), key: 'muted', label: 'Muted',
+              min: 0, max: 1, step: 1, toggle: true },
+            { comp: pfx.slice(0, -1), key: 'soloed', label: 'Soloed',
+              min: 0, max: 1, step: 1, toggle: true },
         ],
     };
 }
@@ -709,8 +715,9 @@ function refreshBlockNames() {
             /* Unity is the right fallback for a level that passes signal
              * through (a return, a strip volume) but NOT for a send: an
              * unreadable send would come up fully open into a bus. */
-            const isSend = r.spec.key === 'send_a' || r.spec.key === 'send_b';
-            r.val = isFinite(raw) ? raw : (isSend ? 0 : 1);
+            const passThrough = !r.spec.toggle &&
+                                r.spec.key !== 'send_a' && r.spec.key !== 'send_b';
+            r.val = isFinite(raw) ? raw : (passThrough ? 1 : 0);
             continue;
         }
         if (r.kind !== 'block') continue;
@@ -2758,7 +2765,21 @@ export function soundOnCC(d1, d2, decodeDelta) {
         }
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'buslevel') {
-            S.busLevelEditing = !S.busLevelEditing;
+            const _r = S.pickRows[S.pickRow];
+            if (_r.spec.toggle) {
+                /* A 0/1 value has nothing to scrub, so the click IS the edit.
+                 * Written as an int: the host parses these with atoi, and a
+                 * "1.000" in the set's meta file would read as a level. */
+                _r.val = _r.val ? 0 : 1;
+                S.busLevelDirty = true;
+                queueWrite(_r.spec.key, String(_r.val), _r.spec.comp);
+                /* Solo is exclusive host-side, so every other row's cached
+                 * value may now be stale — re-read on the tick, where the
+                 * readback traffic belongs. */
+                if (_r.spec.key === 'soloed') S.pendingAction = { t: 'names' };
+            } else {
+                S.busLevelEditing = !S.busLevelEditing;
+            }
         }
         /* Move's own instrument editor. Not a module browser: Move owns that
          * voice and there is nothing of ours to load into it. */
@@ -3171,7 +3192,8 @@ function renderBlocks() {
     drawKitList(S.pickRows.map((r, idx) => {
         if (r.kind === 'buslevel') {
             return { label: r.label, hdr: true,
-                     value: Math.round((r.val || 0) * 100) + '%',
+                     value: r.spec.toggle ? (r.val ? 'ON' : 'OFF')
+                                          : (Math.round((r.val || 0) * 100) + '%'),
                      editing: idx === S.pickRow && S.busLevelEditing };
         }
         if (r.kind === 'movesynth') return { label: r.label, hdr: true, value: r.value };

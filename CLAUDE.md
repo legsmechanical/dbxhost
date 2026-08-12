@@ -380,6 +380,13 @@ Long-press is suppressed once the volume knob is touched during a track press (s
 **While shadow UI shown** (any mode):
 - **Mute + Jog Click** on focused chain/MFX module — toggle bypass. Audio passes through; MIDI FX become passthrough; synth render silenced while MIDI flows (state advances, tails ring out, clean unbypass). 4-row 'B' glyph above the module box.
 - **Mute + Track 1–4** — slot mute. **Shift + Mute + Track 1–4** — slot solo.
+  Solo is **one exclusive group across chain slots AND Move FX buses** (a bus is
+  a mixer position like a slot, so a solo that left the other family sounding
+  would not be a solo); mute stays per-family, because a bus and the chain slot
+  at the same index are alternative occupants of one position, not one signal
+  path. `shadow_chain_set_solo()` / `shadow_move_fx_set_solo()` are the only
+  writers — both clear the other family, and every "solo off" path recomputes
+  `shadow_solo_count` rather than zeroing it.
 
 Mute (CC 88) is passed through to Move firmware (even while shadow UI is shown) so Move-native **Mute + Pad** (per-drum mute) works. `shadow_mute_held` is tracked from the hardware buffer independently, so the shadow combos above still work. Consequences: a plain Mute tap also toggles Move's selected-track mute, and Mute + Track double-mutes (shadow slot + Move track) — these stay in sync, which is intended. **Mute + Pad must NOT mute the shadow slot:** Move announces "<sample> muted" over D-Bus for a pad, and the slot-mute auto-correct (`shadow_dbus.c`) is gated to skip while a drum pad (note 68–99) is held so a pad mute doesn't silence the whole slot. Bypass persists via per-slot autosave (`slot_N.json`, `master_fx_N.json`); patch-library reloads start with bypass=0.
 

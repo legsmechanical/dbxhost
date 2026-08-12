@@ -137,11 +137,22 @@ extern float shadow_send_a_to_b_level;
 extern master_fx_slot_t shadow_move_fx_slots[MOVE_FX_SLOTS][MOVE_FX_BLOCKS];
 
 typedef struct {
-    float volume;   /* 0..4, default 1.0 (unity) */
-    float send_a;   /* 0..1 post-volume send to bus A */
-    float send_b;   /* 0..1 post-volume send to bus B */
+    float volume;     /* 0..4, default 1.0 (unity) */
+    float send_a;     /* 0..1 post-volume send to bus A */
+    float send_b;     /* 0..1 post-volume send to bus B */
+    /* Mute / solo, same meaning and the same exclusive solo group as a chain
+     * slot's — the two families are alternative occupants of one mixer
+     * position, so soloing either must silence everything else. Counted in
+     * shadow_solo_count alongside the chain slots. */
+    uint8_t muted;
+    uint8_t soloed;
 } move_fx_strip_t;
 extern move_fx_strip_t shadow_move_fx_strip[MOVE_FX_SLOTS];
+
+/* Mute / solo for an FX bus. Solo is exclusive across BOTH families, so these
+ * clear any chain-slot solo too (and shadow_toggle_solo clears bus solos). */
+void shadow_move_fx_apply_mute(int bus, int is_muted);
+void shadow_move_fx_set_solo(int bus, int is_soloed);
 
 /* Master FX LFOs */
 #define MASTER_FX_LFO_COUNT 2
@@ -173,6 +184,20 @@ static inline float shadow_effective_volume(int slot) {
     }
     if (shadow_chain_slots[slot].muted) return 0.0f;
     return shadow_chain_slots[slot].volume;
+}
+
+/* The same rule for an FX bus. Deliberately a separate function reading its own
+ * strip: a bus and the chain slot at the same index are alternative occupants
+ * of one mixer position, so the bus follows ITS OWN mute — never the chain
+ * slot's. Solo is the exception and is shared on purpose: shadow_solo_count is
+ * raised by either family, and "solo" is only meaningful if it silences
+ * everything that is not soloed. */
+static inline float shadow_move_fx_effective_volume(int bus) {
+    if (shadow_solo_count > 0) {
+        return shadow_move_fx_strip[bus].soloed ? shadow_move_fx_strip[bus].volume : 0.0f;
+    }
+    if (shadow_move_fx_strip[bus].muted) return 0.0f;
+    return shadow_move_fx_strip[bus].volume;
 }
 
 /* Advance the fade envelope by one sample. Call once per stereo frame in mix loop. */
@@ -260,6 +285,10 @@ void shadow_ui_state_refresh(void);
 /* --- Mute/solo --- */
 void shadow_apply_mute(int slot, int is_muted);
 void shadow_toggle_solo(int slot);
+/* The single writer for chain-slot solo — see the definition. Solo is
+ * exclusive across chain slots AND FX buses, and stating that in one place is
+ * the point of routing every caller through here. */
+void shadow_chain_set_solo(int slot, int is_soloed);
 
 /* --- Master FX --- */
 void shadow_master_fx_slot_unload(int slot);

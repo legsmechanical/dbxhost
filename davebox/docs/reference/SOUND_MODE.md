@@ -72,9 +72,20 @@ SYNTH (MOVE N)  →  FX 1  →  FX 2  →  FX 3  →  FX 4  →  Volume / Send A
   sit in the block list rather than behind a `[SLOT SETTINGS]` screen because
   they are the only slot-ish settings a Move bus has: transpose is a chain
   concept and is omitted (receive/forward channel and MPE were chain concepts
-  too, and no longer exist anywhere — see the slot-settings note below). **Mute/solo are absent**
-  — the strip does not participate in either yet (open Stage 1a remainder), and a
-  row that reads nothing is worse than no row.
+  too, and no longer exist anywhere — see the slot-settings note below).
+- **Muted / Soloed** are the bus's own, and are toggle rows: jog-click flips
+  them, because a 0/1 value has nothing to scrub. Two rules, and they differ on
+  purpose:
+  - **Mute is per-family.** A bus and the chain slot at the same index are
+    alternative occupants of one mixer position, never a shared signal path, so
+    muting the slot leaves the bus sounding and vice versa.
+  - **Solo is one group across both.** Soloing a bus silences every chain slot
+    and every other bus, and a chain slot's solo silences the buses — a solo
+    that left half the mixer playing would not be a solo. Only one thing is
+    ever soloed, whichever family it is in.
+  Both are **per project**, saved in the set's `move_fx_meta.json` beside the
+  levels and flushed on the same cadence (project switch, session exit, overtake
+  entry) — a mute is not written to disk the instant you set it.
 - The master **volume knob is CLAIMED**, as it is for a chain, and moves the bus
   strip's Volume — in sound mode plain Volume always means "the level of the
   thing on this screen". ⚠ Releasing it instead (the first cut) was wrong twice:

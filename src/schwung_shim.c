@@ -2328,10 +2328,13 @@ static void shadow_inprocess_mix_from_buffer(void) {
                     }
                     msrc = mbuf;
                 }
-                /* The Move FX strip is fully independent of the synth slot on
-                 * this channel — its own volume only, deliberately NOT gated by
-                 * the synth slot's mute/solo (that independence is the feature). */
-                float mvol = shadow_move_fx_strip[s].volume;
+                /* The bus's OWN mixer state — its volume, its mute, and the
+                 * shared solo group. Deliberately not the synth slot's mute at
+                 * the same index: the two are alternative occupants of one
+                 * mixer position, so a bus follows only itself. Solo is shared
+                 * because a solo that left the other family sounding would not
+                 * be a solo. */
+                float mvol = shadow_move_fx_effective_volume(s);
                 /* Publish this bus as the slot's ME channel when no synth owns
                  * the slot's ring. The retired "inactive slot, Move>Slot on"
                  * branch below used to do this and would otherwise take the

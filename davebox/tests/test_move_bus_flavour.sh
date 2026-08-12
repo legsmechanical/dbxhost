@@ -96,4 +96,28 @@ grep -rqE "S\.coRunOverlayScreen" ui/*.mjs \
     && bad "coRunOverlayScreen is back — Menu has two meanings in co-run again" \
     || ok "the co-run FX-picker overlay entry is gone"
 
+echo "bus mute/solo rows:"
+# 11. The bus's mixer state is reachable at all. A host that gates the mix on
+#     move_fx:N:muted with no row to set it is a feature nobody can use.
+for k in muted soloed; do
+    grep -q "key: '$k', label:" ui/ui_sound.mjs \
+        && ok "the Move bus has a $k row" \
+        || bad "the Move bus has no $k row — the host state is unreachable from the UI"
+done
+# 12. A 0/1 value has nothing to scrub, so the click IS the edit — entering the
+#     level editor on a toggle leaves a row you can only change by jog-turning
+#     past 1.
+grep -q "if (_r.spec.toggle)" ui/ui_sound.mjs \
+    && ok "jog-click flips a toggle row instead of opening the level editor" \
+    || bad "toggle rows fall through to the level editor"
+# 13. Written as an int. The host parses these with atoi, so "1.000" would read
+#     back as a level in the set meta file.
+grep -q "queueWrite(_r.spec.key, String(_r.val), _r.spec.comp)" ui/ui_sound.mjs \
+    && ok "a toggle writes an int, not a fixed-point level" \
+    || bad "toggle writes are not integers"
+# 14. Solo is exclusive host-side, so flipping it invalidates every other row.
+grep -q "if (_r.spec.key === 'soloed') S.pendingAction = { t: 'names' }" ui/ui_sound.mjs \
+    && ok "flipping solo re-reads the other rows" \
+    || bad "solo does not trigger a re-read — other rows will show a stale solo"
+
 exit $fail

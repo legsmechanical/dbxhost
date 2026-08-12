@@ -7141,17 +7141,26 @@ function saveMoveFxChainConfig(onlySlot) {
                 host_write_file(filePath, JSON.stringify(slotConfig, null, 2) + "\n");
             }
         }
-        /* Per-slot strip levels (volume + sends). A timed-out read must skip
-         * the write, not stamp defaults over real levels. */
+        /* Per-slot strip state (volume + sends + mute/solo). A timed-out read
+         * must skip the write, not stamp defaults over real levels. */
         const strips = [];
         let stripsOk = true;
         for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++) {
             const _v  = shadow_get_param(0, "move_fx:" + (sl + 1) + ":volume");
             const _sa = shadow_get_param(0, "move_fx:" + (sl + 1) + ":send_a");
             const _sb = shadow_get_param(0, "move_fx:" + (sl + 1) + ":send_b");
-            if (_v === null || _sa === null || _sb === null) { stripsOk = false; break; }
+            const _m  = shadow_get_param(0, "move_fx:" + (sl + 1) + ":muted");
+            const _so = shadow_get_param(0, "move_fx:" + (sl + 1) + ":soloed");
+            if (_v === null || _sa === null || _sb === null ||
+                _m === null || _so === null) { stripsOk = false; break; }
             const v = parseFloat(_v || "1.0"), sa = parseFloat(_sa || "0.0"), sb = parseFloat(_sb || "0.0");
-            strips.push({ volume: isNaN(v) ? 1.0 : v, send_a: isNaN(sa) ? 0.0 : sa, send_b: isNaN(sb) ? 0.0 : sb });
+            strips.push({
+                volume: isNaN(v) ? 1.0 : v,
+                send_a: isNaN(sa) ? 0.0 : sa,
+                send_b: isNaN(sb) ? 0.0 : sb,
+                muted: (parseInt(_m, 10) === 1) ? 1 : 0,
+                soloed: (parseInt(_so, 10) === 1) ? 1 : 0,
+            });
         }
         if (stripsOk) {
             host_write_file(activeSlotStateDir + "/move_fx_meta.json",
@@ -7216,6 +7225,18 @@ function restoreMoveFxFromFiles() {
             shadow_set_param(0, "move_fx:" + (sl + 1) + ":volume", vol.toFixed(3));
             shadow_set_param(0, "move_fx:" + (sl + 1) + ":send_a", sa.toFixed(3));
             shadow_set_param(0, "move_fx:" + (sl + 1) + ":send_b", sb.toFixed(3));
+            /* Both written for EVERY bus, for the same reason the levels are:
+             * a set with no meta must RESET the process-wide value rather than
+             * inherit the previous project's. That matters most for solo — a
+             * stale bus solo would silence every chain slot in the new set,
+             * which is why "write it only when this set solos it" is wrong.
+             * Clearing is safe against the chain restore that ran just before:
+             * the host's setter is a no-op for a bus that is not soloed, and
+             * recomputes the shared count rather than zeroing it. */
+            shadow_set_param(0, "move_fx:" + (sl + 1) + ":muted",
+                             (st && st.muted) ? "1" : "0");
+            shadow_set_param(0, "move_fx:" + (sl + 1) + ":soloed",
+                             (st && st.soloed) ? "1" : "0");
         }
     } catch (e) {
         debugLog("restoreMoveFxFromFiles error: " + e);
