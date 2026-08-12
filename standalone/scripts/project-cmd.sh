@@ -119,6 +119,113 @@ print("project-cmd: %d project(s) listed" % len(projects))
 PYEOF
 }
 
+# Force Move's own mixer neutral on every track of a project.
+#
+# All Move track mixing is done by the session's FX buses, so a mute, a solo or
+# a volume trim in the SET is invisible to the surface the user is mixing on:
+# the bus fader they can see moves and nothing happens, because the set-level
+# mute is silencing the instrument underneath it. Move spells mute
+# `speakerOn: false`; volume is dB, 0.0 = unity; solo is `solo-cue`.
+#
+# Pan is deliberately left alone — that is a musical choice, not a level.
+#
+# Idempotent, and only writes a file it actually changes, so running it over
+# the whole library costs a parse per project and nothing else. Used two ways:
+# at creation (every new/copied project), and as a sweep at session entry that
+# repairs projects made before this rule existed — or muted from Move itself in
+# a previous session.
+do_normalize() { # [index]  — every project when omitted
+    python3 - "$SETS_DIR" "$DBX_SUBDIR_NAME" "${1:-}" <<'PYEOF'
+import json, os, re, sys
+
+sets_dir, dbx_subdir, only = sys.argv[1], sys.argv[2], sys.argv[3]
+uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
+
+def song_path(uuid_dir):
+    """The project's Song.abl, via its single inner set dir.
+
+    ⚠ Skip the reserved state subdir — it is a sibling of Move's inner <Name>/
+    dir, not a set, and listdir order is arbitrary."""
+    for n in sorted(os.listdir(uuid_dir)):
+        if n.startswith(".") or n == dbx_subdir:
+            continue
+        p = os.path.join(uuid_dir, n)
+        if os.path.isdir(p):
+            f = os.path.join(p, "Song.abl")
+            if os.path.isfile(f):
+                return f
+    return None
+
+def wanted(mixer):
+    """True when the mixer already satisfies the invariant."""
+    return (mixer.get("speakerOn") is True
+            and mixer.get("solo-cue") is False
+            and mixer.get("volume") == 0.0)
+
+def normalize(song_file):
+    try:
+        with open(song_file) as f:
+            song = json.load(f)
+    except (OSError, ValueError) as e:
+        print("project-cmd: normalize: skipping unreadable %s (%s)" % (song_file, e))
+        return False
+    tracks = song.get("tracks")
+    if not isinstance(tracks, list):
+        return False
+    changed = False
+    for t in tracks:
+        mixer = t.get("mixer") if isinstance(t, dict) else None
+        if not isinstance(mixer, dict) or wanted(mixer):
+            continue
+        mixer["speakerOn"] = True
+        mixer["solo-cue"] = False
+        mixer["volume"] = 0.0
+        changed = True
+    if not changed:
+        return False
+    # Temp sibling + fsync + rename: Move reads this file at boot, and a torn
+    # one is a set that will not open.
+    tmp = song_file + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(song, f, separators=(",", ": "), indent=4)
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.rename(tmp, song_file)
+    return True
+
+want_index = None
+if only:
+    try:
+        want_index = int(only)
+    except ValueError:
+        sys.exit("project-cmd: normalize takes a numeric index")
+
+seen = fixed = 0
+for u in sorted(os.listdir(sets_dir)):
+    p = os.path.join(sets_dir, u)
+    if not os.path.isdir(p) or not uuid_re.match(u):
+        continue
+    if want_index is not None:
+        try:
+            if int(os.getxattr(p, "user.song-index").decode()) != want_index:
+                continue
+        except (OSError, ValueError):
+            continue
+    f = song_path(p)
+    if not f:
+        continue
+    seen += 1
+    if normalize(f):
+        fixed += 1
+        print("project-cmd: normalized Move mixer in %s" % u)
+
+if fixed:
+    os.sync()
+print("project-cmd: mixer check: %d project(s), %d normalized" % (seen, fixed))
+PYEOF
+}
+
 do_new() { # name
     [ -n "${1:-}" ] || die "new needs a name"
     [ -d "$TEMPLATE_DIR" ] || die "no template at $TEMPLATE_DIR"
@@ -130,6 +237,9 @@ do_new() { # name
     _src="$(find "$TEMPLATE_DIR" -name Song.abl | head -n 1)"
     [ -n "$_src" ] || die "template has no Song.abl"
     cp "$_src" "$_dst/Song.abl"
+    # Belt and braces: the template ships neutral, but a project is born here
+    # and this is the one place that can promise it.
+    do_normalize >/dev/null
 
     _idx="$(python3 - "$SETS_DIR" "$_uuid" <<'PYEOF'
 import os, re, sys
@@ -193,6 +303,7 @@ do_new_at() { # index [name]
     cp "$_src" "$SETS_DIR/$_uuid/$_name/Song.abl"
     python3 -c "import os,sys; os.setxattr(sys.argv[1], 'user.song-index', sys.argv[2].encode())" \
         "$SETS_DIR/$_uuid" "$1" 2>/dev/null || true
+    do_normalize "$1" >/dev/null
     do_list
     printf 'project-cmd: created "%s" (%s) at index %s\n' "$_name" "$_uuid" "$1"
 }
@@ -262,6 +373,10 @@ except OSError:
 os.sync()
 print("project-cmd: copied index %d -> %d (%s)" % (src, dst, nu))
 PYEOF
+    # A copy inherits its source's Move mixer, including a mute the user set
+    # from Move itself — so the duplicate gets the invariant applied, not the
+    # source's history.
+    do_normalize "$2" >/dev/null
     do_list
 }
 
@@ -466,6 +581,7 @@ case "${1:-}" in
     delete) shift; do_delete "${1:-}" ;;
     switch) shift; do_switch "${1:-}" ;;
     color)  shift; do_color "${1:-}" "${2:-}" ;;
+    normalize) shift; do_normalize "${1:-}" ;;
     rename) shift; do_rename "${1:-}" "${2:-}" "${3:-}" ;;
     *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>" ;;
 esac

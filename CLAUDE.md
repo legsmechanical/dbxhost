@@ -34,6 +34,18 @@ So a davebox need is a valid reason to change this host. Do not treat it as an o
   during every davebox execution context (module eval, init, tick, onMidi*, onResume, onUnload,
   the parked-tick loop) via the shim-swap-around-callback machinery in `src/shadow/shadow_ui.js` —
   that invariant is what makes the gates deletable. Never write a new gate or a new contract.
+- **📌 Move's own mixer stays NEUTRAL in every project.** Every Move instrument sits at unity,
+  unmuted and unsoloed in the set (`mixer.speakerOn: true`, `solo-cue: false`, `volume: 0.0`),
+  because Move track mixing is done entirely by the session's FX buses. A mute or trim in the SET
+  is invisible on the surface the user mixes on — the bus fader moves and nothing happens, because
+  the instrument is silenced underneath it. Enforced at creation (`make-template.py` bakes it into
+  the template; `project-cmd.sh`'s new/new-at/copy re-apply it) and swept over the whole library by
+  `project-cmd.sh normalize`, called from `launch.sh` **while Move is not running** — the only
+  window where a set file can be rewritten without Move's own save clobbering it. Pan is left
+  alone: that is a musical choice, not a level.
+  ⚠ The bug that produced the rule: the donor fixture the template is generated from was captured
+  with track 2 muted, and "patch the template minimally" carried that mute into every project born
+  from it and every copy of those.
 - **📌 dAVEBOx owns project management. Out-of-band mutation is NOT defended against.**
   Projects are created, copied, renamed and deleted through dAVEBOx's own picker, and that is the
   only path the code answers for. **A project dAVEBOx has never seen opens BLANK** — it does not

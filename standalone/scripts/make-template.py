@@ -10,10 +10,16 @@ The wiring, per the SA spec:
     (midiInputMode: [N] with N 0-based — the Move set schema's own encoding,
     already present on tracks that have an explicit listen channel)
   - MIDI out off (midiOutputEndpoint: null)
+  - every track's mixer at unity, unmuted, unsoloed (see below)
 
 Source of truth for everything else is tests/fixtures/empty_song.abl — a real
 device-authored set — patched minimally rather than synthesized, so schema
 drift in fields we don't care about can never invalidate the template.
+⚠ The mixer turned out to be a field we DO care about: the donor set was
+captured with track 2 muted (`speakerOn: false`), and "patch minimally" carried
+that mute into the template, into every project born from it, and into every
+copy of those. Patched explicitly below — a captured set is a snapshot of
+someone's session, and its mixer is not part of what we mean by "empty".
 
 Run by scripts/build.sh; output lands in the payload at
 build/sets/template/<name>/Song.abl and the launcher seeds the first project
@@ -42,6 +48,16 @@ def main():
     for i, t in enumerate(tracks[:4]):
         t["midiInputMode"] = [i]        # 0-based listen channel = track number
         t["midiOutputEndpoint"] = None  # MIDI out off — loop safety for injection
+        # Move's own mixer stays neutral. Every Move instrument is mixed by the
+        # session's FX bus for that track, so a mute or a trim HERE is invisible
+        # to the surface the user is mixing on: the fader they can see moves and
+        # nothing happens, because a set-level mute is silencing it underneath.
+        # (Move spells mute `speakerOn: false`; volume is dB, 0.0 = unity.)
+        mixer = t.get("mixer")
+        if isinstance(mixer, dict):
+            mixer["speakerOn"] = True
+            mixer["solo-cue"] = False
+            mixer["volume"] = 0.0
 
     # A neutral musical starting point; the fixture's authored tempo is
     # whatever its donor session used.

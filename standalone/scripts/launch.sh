@@ -169,6 +169,16 @@ setsid bash -c '
       sh "$DBX_DIR/scripts/set-swap.sh" recover || true
       refuse "set-swap enter failed"
     }
+    # Move mixer invariant, swept over the whole library while Move is NOT
+    # running — the only window where its set files can be rewritten without
+    # being clobbered by its own save on exit. Every Move track ends up unity,
+    # unmuted, unsoloed, because the session mixes those instruments through
+    # its FX buses and a set-level mute is invisible there. Creation already
+    # guarantees it; this repairs projects that predate the rule, and any track
+    # muted from Move during an earlier session. Parse-only unless something is
+    # actually wrong, so it costs nothing on a healthy library.
+    sh "$DBX_DIR/scripts/project-cmd.sh" normalize || \
+      echo "WARNING: Move mixer normalize failed — continuing"
   fi
 
   # Mirror the shim for THIS build into /usr/lib (setuid) first. We run as
