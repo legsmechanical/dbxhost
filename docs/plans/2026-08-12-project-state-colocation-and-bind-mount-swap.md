@@ -4,8 +4,14 @@ Date: 2026-08-12
 Status: Design + implementation plan — ready to sequence.
 Phase 0 (delete the native-set-defence machinery) and Phase A (bind mount) are independent of
 P8 and can land first; co-location (B-E) after P8.
-Rulings folded in 2026-08-12: SA-only surface invariant, visible reserved name, sibling layout,
-no migration. Set pages verified already dead — no work needed.
+Rulings folded in 2026-08-12: visible reserved name, sibling layout, no migration.
+Set pages verified already dead — no work needed.
+⚠⚠ REVIEWED ADVERSARIALLY 2026-08-12 and CORRECTED — two material fixes: the "native set
+management is structurally unreachable" claim was FALSE (File Browser and schwung-manager both
+reach the live library mid-session) and is now a POLICY, not an invariant; and the reserved-name
+filters MOVED from Phase D into Phase B, where the original ordering was destructive. Review
+findings not yet folded into the body are collected in their own section — read it before
+implementing, especially the citation-drift warning.
 
 ## Problem
 
@@ -76,28 +82,74 @@ library by *mounting* it rather than moving it.
    Move starts? — is already satisfied, because the launcher stops Move at that boundary
    anyway (`standalone/scripts/launch.sh:117-129, 140-159`).
 
-## ⭑⭑ Invariant: dAVEBOx owns the surface — native set management is UNREACHABLE
+## ⭑⭑ Policy: dAVEBOx owns project management — out-of-band mutation is NOT defended against
+
+> ⚠⚠ **CORRECTED 2026-08-12, after an adversarial review.** This section first claimed native set
+> management was *structurally unreachable* under SA. **That claim is FALSE**, and it was mine, not
+> Josh's — his observation was about normal usage, which is correct; I overstated it into a
+> structural guarantee and "audited" it without checking the two paths below. Verified
+> counter-examples:
+>
+> 1. **File Browser, mid-session.** The Tools menu (Shift+Step13, gated only on shift+shadow —
+>    `src/schwung_shim.c:7645-7646`) hides only `standalone` LAUNCHER entries during a live session
+>    (`shadow_ui.js:15138-15144` filters `!t.standalone`). `file-browser` is `component_type:
+>    "tool"` (`src/modules/tools/file-browser/module.json:7`), so it stays launchable — rooted at
+>    `/data/UserData/UserLibrary` (`file-browser/ui.js:68`), which DURING A SESSION IS THE MOUNTED
+>    SA LIBRARY — with `os.remove` (`:239`) and `os.rename` (`:258, :328`).
+> 2. **schwung-manager, over the network, all session long.** `launch.sh:117-129` kills
+>    `MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui` — **not**
+>    schwung-manager. It keeps serving `POST /files/rename|delete|upload|mkdir`
+>    (`schwung-manager/main.go:3432-3436`) rooted at `/data/UserData/`.
+> 3. **Co-run Back depth is unproven.** dAVEBOx cedes Back/Jog/Shift and the OLED to Move firmware
+>    (`ui_corun.mjs:176-180`); "sub-view nav only" is a *comment* (`:25-27`), not a mechanism, and
+>    `cleanupAfterMoveNativeCoRun` (`:204-260`) does no set resync on exit. Closed firmware —
+>    unproven either way, so it must not be asserted either way.
+>
+> Also: `shadow_poll_current_set()` fires SET_CHANGED for **any** origin with no
+> dAVEBOx-initiated check (`shadow_set_pages.c:549+`), and Phase A's crash-without-reboot case
+> leaves stock Move live over the mounted SA library, where it will *write* (autosave, xattrs).
+> So "cosmetic, zero data moved" was also overclaimed there.
+
+**The policy that replaces it** (this is what Phase 0 is licensed by, and it is a decision, not a
+fact about the code):
+
+**dAVEBOx does not defend against out-of-band mutation of its projects. A project dAVEBOx has
+never seen opens BLANK.** Josh has already accepted that contract for the clean break; it is the
+same answer, and it costs nothing to state deliberately instead of inferring an ancestor.
+
+The deletions in Phase 0 are still correct — but because we have *chosen* not to answer "whose
+descendant is this?", not because the question is impossible to ask. That difference matters: it
+means the machinery can go, and it also means we must NOT write "structurally enforced" into
+`CLAUDE.md`.
+
+- [ ] **Josh's ruling wanted before Phase 0**: close the holes, or accept them?
+      Closing is cheap — hide `file-browser` during a live session the same way standalone
+      launchers already are (one predicate at `shadow_ui.js:15138-15144`), and stop or scope
+      schwung-manager in `launch.sh`. Accepting is defensible too, since the blast radius is a
+      project opening blank. ⚠ But it must be a decision on the record, because the plan deletes
+      the machinery that currently papers over exactly this.
+
+### (Superseded) the original structural claim
 
 **Josh, 2026-08-12:** *"the whole point of rebuilding the davebox / host relationship as we've
 been doing is to keep everything user-facing contained inside davebox itself. Users wouldn't
 normally be able to access the native set management apparatus — only what dAVEBOx's project
 load screen gives them."*
 
-This is not a behavioural expectation, it is **structurally enforced, and by the swap itself**:
+Josh's original observation — correct as a statement about NORMAL USAGE, and the reason the
+policy above is the right one:
 
 - **During a session** the SA library is in `Sets/`, and dAVEBOx owns the primary surface. Move's
   set management is not on screen and cannot be reached.
 - **Outside a session** the SA library is parked in `$DBX_DIR/sets/library/`, which is not Move's
   library path — stock Move cannot see dAVEBOx projects at all.
-- **Move-native co-run** cedes control for **preset/synth navigation only**
-  (`davebox/ui/ui_corun.mjs:1-8, 23-41`) — device editing, not set management. Audited; it does
-  not undercut this.
+- **Move-native co-run** is *intended* for preset/synth navigation (`ui_corun.mjs:1-8, 23-41`).
+  ⚠ Intended, not bounded — see counter-example 3 above. Do not cite this as a guarantee.
 
-⇒ **Move's set management and dAVEBOx projects are never in the same world at the same time.**
-
-This is the surface-level twin of the repo's existing *"no capability probing — one host, one
-module, shipped together"* rule (`CLAUDE.md`), and it should be written down beside it, because
-it is the premise that licenses the Phase 0 deletions below.
+⇒ For the ordinary path — the picker, the session, stock Move outside a session — Move's set
+management and dAVEBOx projects are indeed never in the same world at once. ⚠ The Tools menu,
+schwung-manager and co-run are the exceptions above; they are *side doors*, not the normal path,
+which is why the policy (open blank) is an adequate answer rather than a resignation.
 
 **What it kills.** A whole family of code answers exactly one question: *"a set appeared that
 dAVEBOx has never seen — whose descendant is it?"* That question can only arise when something
@@ -391,6 +443,57 @@ touches the mount.
   change; if it stings in practice, a future explicit "seed from…" action beats
   resurrecting the heuristic.
 
+## ⚠ Findings from the adversarial review (2026-08-12) — read before implementing
+
+The invariant correction and the Phase B re-ordering are folded in above. The rest, all verified
+against the code by the reviewer and not yet folded into the body:
+
+- ⚠⚠ **The citation map drifts exactly where Phase 0 deletes.** `ui_persistence.mjs` boundaries
+  are off by one function (actual: `copyStateFiles` 109-126, `findInheritCandidates` **134-161**,
+  `maybeShowInheritPicker` **163-188**); a **third** `maybeShowInheritPicker` caller exists at
+  `ui_tick.mjs:506` (post-resume self-heal) and is cited nowhere; the `pendingInheritPicker`
+  interlocks are far wider than listed (`ui_dsp_bridge.mjs:812`, `ui_input_cc.mjs:87-90, 682-685,
+  1535, 1559, 1972`, `ui_render.mjs:741, 781`, `ui_tick.mjs:475/499/566/676` — the cited 471/674
+  land on comments); `updateNameIndex` is also called at `ui_tick.mjs:1823`;
+  `S.pendingPruneOrphans` is also set at `ui.js:260`; `seq8.c:1074-1075` is the `state_path`
+  struct FIELD, not the handler; heal is `standalone/src/davebox-heal.c`. **Re-derive every line
+  number before executing Phase 0** — a wrong citation in a deletion list is worse than none.
+- ⚠⚠ **Fix (14)'s save-destination guard must survive Phase 0.** Both savers gate on
+  `!pendingSetLoad && pendingDspSync===0 && !pendingInheritPicker` (`ui_dsp_bridge.mjs:812`,
+  `ui_persistence.mjs:277`). Delete **only the `pendingInheritPicker` clause**; the `state_uuid`
+  destination-agreement mechanism survives Phase 0 AND the item-18 "simplify". A mechanical delete
+  of everything referencing the picker reopens the cross-project save bug that started this arc.
+  Same class as the `do_copy` trap already called out — assume there are more, and grep before
+  deleting rather than trusting either list.
+- ⚠ **A THIRD per-set state consumer exists and the plan never mentions it:** song-mode writes
+  `set_state/<uuid>/song_mode.json` into the stock literal root (`src/modules/tools/song-mode/ui.js:150,202`),
+  reachable from the Tools menu mid-session. After Phase 0/E delete both pruners nothing ever
+  reclaims those dirs, and its files block `do_delete`'s legacy `rmdir`-if-empty. Decide: leave it
+  (and accept the orphans), or co-locate it too.
+- ⚠ **The test inventory is incomplete** — also breaking: `davebox/tests/test_clean_slate.sh`
+  (pins the two-root delete, breaks at D), `davebox/tests/test_install_paths.sh` (pins the two-tree
+  layout, breaks at B), `davebox/tests/test_setparam_domains.c:2694+` (`prune_orphan_states`
+  section, breaks at 0/E), `tests/host/test_workspace_separation.sh` + `standalone/config.sh:79`
+  (`DBX_PRIVATE_STATE` includes `set_state`, stale at C). Per [[schwung-test-pinned-the-bug]] these
+  belong on the list, not discovered later as green-and-lying.
+- ⚠ **`shadow_batch_migrate_sets()` is called UNCONDITIONALLY** from `shadow_chain_mgmt.c:1348`
+  via shim init (`schwung_shim.c:4676`) — every build, every boot. Re-pointing it at the new layout
+  would make the shim seed a `dAVEBOx/host/` dir into every uuid dir visible at init — under the
+  mount, every SA project. **Decide at Phase C: gate it off for SA, or re-point deliberately.** Do
+  not re-point mechanically.
+- ⚠ **Export is unexamined**: `ui_export.mjs:51` reads the live GLOBAL
+  `$DBX_DIR/shadow_chain_config.json`, which is only fine if the host keeps maintaining that global
+  copy after Phase C. Verify at Phase C.
+- **Genericity tension**: Phase C bakes the literal module-named `dAVEBOx/host` path into HOST code,
+  which the repo's "no module named" rule discourages and which makes the host's per-set-state
+  layout permanently un-offerable upstream. Either have the host read the reserved name from the
+  one pinned constant (wanted anyway for the four filters) or record the waiver explicitly.
+- ✅ **Checked and holds:** `do_delete` safe through every phase; sampler/skipback write only under
+  `Samples/Schwung/`; `select-hook.sh` stays inside dAVEBOx's own flow; `resolveSetLoadDecision`
+  has exactly the two claimed callers; `ui_export.mjs` uses none of the deleted symbols; no new
+  `typeof` gates anywhere in the plan; heal's hardcoded-verb model is consistent with the existing
+  security model; set-pages "died in P3" fully confirmed.
+
 ## Risks and unknowns
 
 - **(Fact 6) Stock Move over an active bind mount is unverified.** The one open
@@ -505,12 +608,37 @@ at boot; **fact 6**: start stock Move with the mount active, load a set through 
 
 ### Phase B — MODULE half co-location
 
+⚠⚠ **THE RESERVED-NAME FILTERS SHIP IN THIS PHASE, NOT PHASE D.** Found by adversarial review,
+2026-08-12; the original ordering was destructive. Phase B is what first creates a SECOND child
+under a uuid dir, and `os.listdir()` is **unsorted**, so the moment it lands the four one-child
+sites can pick `dAVEBOx` as the set:
+
+- `do_rename` (`project-cmd.sh:492-496`) feeds `inner[0]` to `mv` at `:533` — it would **relocate
+  the state directory** and never touch Move's set. Corruption, not cosmetics.
+- `do_copy` (`:264-270`) can copytree the state dir *as* the set (a "project" with no `Song.abl`);
+  and even when it picks correctly its seeding half (`:293-302`) still reads the OLD module root,
+  so **every copy made between B and D loses its module half** — re-creating the copy-isn't-a-
+  snapshot bug this plan exists to kill (archive worklog (16)).
+- `do_list` (`:129-131`) and `select-list.sh:43-45` display `dAVEBOx` as a project name at once.
+
+So Phase B must land steps 1-3 **and** 4-5 together, or be merged with Phase D outright:
+
 1. `seq8.c:93-94` format strings → `Sets/<uuid>/dAVEBOx/…`; create_instance active-set
    source → `$DBX_DIR/active_set.txt` (`:4387`); `state_uuid` via stored field
-   (`:6315-6330`).
+   (`:6315-6330`). ⚠ Review the SELECT-BEFORE-LOAD marker skip at `seq8.c:4472-4486` in the same
+   pass — it is outside the cited range and an implementer editing only `:4384-4399` will miss it.
 2. `ui_persistence.mjs`: `uuidToStatePath`/`uuidToUiStatePath`/snapshot paths → new
    layout (`host_ensure_dir` the `dAVEBOx/` dir before first write).
 3. No migration (clean break).
+4. **The four reserved-name filters** (`project-cmd.sh:129-131, 264-270, 492-496`,
+   `select-list.sh:43-45`) + the `check-config.sh` pin of the name.
+5. **`do_copy` re-pointed** at the new module path — or promoted to the whole-uuid-dir copytree
+   from Phase D. Either is fine; leaving it reading the old root is not.
+
+⛔ **Gate:** Phase B is not shippable without 4 and 5. `test_project_cmd.sh`'s copy/rename
+assertions must pass with a `dAVEBOx/` dir present in every fixture — add that to the fixtures
+FIRST, watch them fail, then fix. (`do_delete` is safe throughout — it rmtree's the whole uuid dir
+at `:362` before any inner-name logic. Verified, no action.)
 
 Tests: the existing behavioural C harness already overrides `SEQ8_*` dirs for exactly
 this (`seq8.c:57-63`) — point fixtures at a fake `Sets/<uuid>/dAVEBOx/` and run
