@@ -33,32 +33,12 @@ set -eu
 DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
 SETS_DIR="${SETS_DIR:-/data/UserData/UserLibrary/Sets}"
 SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
-# Per-project state, keyed by the same set uuid, in TWO roots — deleting a
-# project has to take BOTH, or it is not the clean slate the user expects:
-#
-#   MODULE  /data/UserData/schwung/set_state/<uuid>/  our seq8sa-* files.
-#           ⚠⚠ This is the STOCK HOST'S OWN state root (SET_STATE_DIR resolves
-#           from SCHWUNG_INSTALL_DIR = /data/UserData/schwung), and the folder is
-#           SHARED: the same <uuid>/ can hold stock's slot_N.json /
-#           shadow_chain_config.json / master_fx_* / move_fx_* / send_fx_*
-#           alongside ours (measured on hardware: 4 of 18 dirs were mixed).
-#           So we delete our FILES BY PREFIX here and never the directory —
-#           rmtree would destroy the stock host's state for that set. The
-#           module cannot do even this itself (host_remove_dir is disallowed
-#           under set_state).
-#   HOST    $DBX_DIR/set_state/<uuid>/                shadow_chain_config.json,
-#           slot_0..N.json, master_fx_*, move_fx_*, send_fx_* — the ROUTING and
-#           PARAMS half. This root belongs to THIS install alone, so the whole
-#           directory goes.
-#
-# ⚠ Missing the host root entirely was a real bug: a deleted project left its
-# whole chain/slot/FX configuration on disk (found on hardware 2026-08-11).
-SET_STATE_DIR="${SET_STATE_DIR:-/data/UserData/schwung/set_state}"
+# Per-project state. Since Phase B the MODULE half (clips, sequencer) lives
+# INSIDE the project's set dir (Sets/<uuid>/$DBX_SUBDIR_NAME/), so it needs no
+# constant here — delete/copy of the set dir take it along. Only the HOST half
+# (chains, slots, FX — the routing and params) still lives in a root parallel
+# to the projects, ours alone, until Phase C co-locates it too:
 HOST_STATE_DIR="${HOST_STATE_DIR:-$DBX_DIR/set_state}"
-# Our filename prefix inside the SHARED module root. Must match SEQ8_STATE_PREFIX
-# (dsp/seq8.c) for this build — `seq8sa` for SA. Deliberately NOT `seq8`, which
-# would also sweep away dAVEBOx Legacy's state for the same set.
-STATE_PREFIX="${STATE_PREFIX:-seq8sa}"
 # The host's own record of the set it loaded, rewritten on every set change.
 # ⚠ THIS install's copy — the stock tree has a file of the same name holding
 # native-session leftovers. Authoritative for "which project is open";
@@ -80,11 +60,15 @@ SWAP_ROOT="${SWAP_ROOT:-$DBX_DIR/sets}"
 LIBRARY_DIR="${LIBRARY_DIR:-$SWAP_ROOT/library}"
 NATIVE_STASH_DIR="${NATIVE_STASH_DIR:-$SWAP_ROOT/native-stash}"
 SWAP_STATE_FILE="${SWAP_STATE_FILE:-$SWAP_ROOT/swap_state}"
-# name -> uuid map, so a duplicated set can inherit the original's state. Lives
-# in the SHARED module root but is ours by prefix. Read/written by delete,
-# rename and prune here, and by the module (ui_persistence.mjs). ⚠ Declared with
-# the other constants because THREE functions below need it, not just rename.
-NAME_INDEX_PATH="${NAME_INDEX_PATH:-/data/UserData/schwung/${STATE_PREFIX}_name_index.json}"
+# ⭑ The reserved state subdir INSIDE each project's set dir (Phase B of the
+# state-co-location plan): Sets/<uuid>/$DBX_SUBDIR_NAME/ holds the module's
+# per-project state, beside Move's inner <Name>/ dir. Every site that hunts the
+# inner set dir by "the one directory inside" MUST skip this name — a project
+# dir has TWO children now, and os.listdir order is arbitrary, so an unfiltered
+# [0] is a coin toss between the set and the state. Grep for dbx_subdir to find
+# the filter sites; check-config.sh pins the spelling here, in the module
+# (ui_persistence.mjs, dsp/seq8.c) and in select-list.sh.
+DBX_SUBDIR_NAME="${DBX_SUBDIR_NAME:-dAVEBOx}"
 OUT_JSON="$DBX_DIR/projects.json"
 TEMPLATE_DIR="$DBX_DIR/sets/template"
 
@@ -107,9 +91,9 @@ write_song_index() { # index
 }
 
 do_list() {
-    python3 - "$SETS_DIR" "$SETTINGS_JSON" "$OUT_JSON" <<'PYEOF'
+    python3 - "$SETS_DIR" "$SETTINGS_JSON" "$OUT_JSON" "$DBX_SUBDIR_NAME" <<'PYEOF'
 import json, os, re, sys
-sets_dir, settings, out = sys.argv[1], sys.argv[2], sys.argv[3]
+sets_dir, settings, out, dbx_subdir = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 cur = 0
 try:
     m = re.search(r'"currentSongIndex":\s*(-?\d+)', open(settings).read())
@@ -123,8 +107,12 @@ if os.path.isdir(sets_dir):
         p = os.path.join(sets_dir, u)
         if not os.path.isdir(p) or not uuid_re.match(u):
             continue
+        # ⚠ TWO children since Phase B: Move's inner <Name>/ AND the reserved
+        # state subdir. listdir order is arbitrary — filter, or the project
+        # can list under the state dir's name.
         names = [n for n in os.listdir(p)
-                 if os.path.isdir(os.path.join(p, n)) and not n.startswith(".")]
+                 if os.path.isdir(os.path.join(p, n)) and not n.startswith(".")
+                 and n != dbx_subdir]
         name = names[0] if names else u[:8]
         idx = None
         color = None
@@ -236,10 +224,10 @@ do_new_at() { # index [name]
 do_copy() { # src-index dst-index
     case "${1:-}" in *[!0-9]*|"") die "copy needs a numeric source index" ;; esac
     case "${2:-}" in *[!0-9]*|"") die "copy needs a numeric destination index" ;; esac
-    python3 - "$SETS_DIR" "$1" "$2" "$SET_STATE_DIR" "$HOST_STATE_DIR" "$STATE_PREFIX" <<'PYEOF'
+    python3 - "$SETS_DIR" "$1" "$2" "$HOST_STATE_DIR" "$DBX_SUBDIR_NAME" <<'PYEOF'
 import os, re, shutil, sys, uuid as uuidlib
 sets_dir, src, dst = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
-module_state_dir, host_state_dir, prefix = sys.argv[4], sys.argv[5], sys.argv[6]
+host_state_dir, dbx_subdir = sys.argv[4], sys.argv[5]
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 def find(idx):
     for u in os.listdir(sets_dir):
@@ -258,49 +246,44 @@ if not su:
 du, _ = find(dst)
 if du:
     sys.exit("project-cmd: ERROR: index %d already occupied" % dst)
-inner = [n for n in os.listdir(sp)
-         if os.path.isdir(os.path.join(sp, n)) and not n.startswith(".")]
-if not inner:
-    sys.exit("project-cmd: ERROR: source has no inner set dir")
+
+# ⭑ COPY = one copytree of the WHOLE uuid dir. The module's state lives INSIDE
+# it (<uuid>/<dbx_subdir>/, Phase B of the state-co-location plan), so the
+# duplicate is a snapshot BY CONSTRUCTION — the hand-copied module-state seeding
+# that used to live here, and the silently-tracks-its-source bug it fixed
+# (Josh, hardware, 2026-08-11), are both structurally impossible now.
+# The inner set dir is renamed to "<Name> Copy" AFTER the copy; the reserved
+# state subdir is skipped when hunting it (it is a sibling, not a set).
 nu = str(uuidlib.uuid4())
 np = os.path.join(sets_dir, nu)
-shutil.copytree(os.path.join(sp, inner[0]), os.path.join(np, inner[0] + " Copy"))
+shutil.copytree(sp, np)
+inner = [n for n in os.listdir(np)
+         if os.path.isdir(os.path.join(np, n)) and not n.startswith(".")
+         and n != dbx_subdir]
+if not inner:
+    shutil.rmtree(np)
+    sys.exit("project-cmd: ERROR: source has no inner set dir")
+os.rename(os.path.join(np, inner[0]), os.path.join(np, inner[0] + " Copy"))
+# copytree carries the INNER tree but not the OUTER dir's xattrs — index and
+# color are the outer dir's, so set by hand.
 os.setxattr(np, "user.song-index", str(dst).encode())
-# The color travels with the copy (copytree of the INNER dir can't carry the
-# OUTER dir's xattrs, same reason song-index is set by hand above).
 try:
     os.setxattr(np, "user.dbx-color", os.getxattr(sp, "user.dbx-color"))
 except OSError:
     pass
 
-# Copy BOTH state halves NOW, so the duplicate is a SNAPSHOT.
-#
-# ⚠ Without this a copy silently TRACKS ITS SOURCE until the first time it is
-# opened: the copy starts with no state file, so the module's inherit machinery
-# (maybeShowInheritPicker, a family lookup on the " Copy" name) seeds it from
-# the source AT FIRST OPEN — picking up every edit made to the source in
-# between, with no prompt at all when there is exactly one candidate.
-# Josh hit this on hardware 2026-08-11: edits to "Project 17" appeared in a
-# pre-existing "Project 17 Copy". We know both uuids right here, so the guessing
-# never needed to happen.
-#
-# Seeding the destination also makes the inherit path a no-op for our own
-# copies (it early-returns when the destination already has a state file), while
-# leaving it intact for Move's native pad-copy, which we get no hook into.
-mp_src = os.path.join(module_state_dir, su)
-if os.path.isdir(mp_src):
-    mp_dst = os.path.join(module_state_dir, nu)
-    os.makedirs(mp_dst, exist_ok=True)
-    n = 0
-    for f in os.listdir(mp_src):
-        if f.startswith(prefix + "-"):          # ours only — the root is SHARED
-            shutil.copy2(os.path.join(mp_src, f), os.path.join(mp_dst, f)); n += 1
-    if n:
-        print("project-cmd: copied %d %s-* file(s) to %s" % (n, prefix, nu))
+# The HOST half (chains/slots/FX) still lives in a parallel root until Phase C
+# co-locates it too; hand-copy it so the duplicate's ROUTING is a snapshot.
 hp_src = os.path.join(host_state_dir, su)
 if os.path.isdir(hp_src):                        # this root is ours alone
     shutil.copytree(hp_src, os.path.join(host_state_dir, nu), dirs_exist_ok=True)
     print("project-cmd: copied host state to %s" % nu)
+
+# ⚠ SYNC before returning (Josh, hardware, 2026-08-12): a hard power cut can
+# lose unsynced directory operations to journal replay. A copy that vanishes is
+# merely surprising; the same replay UN-DOING A DELETE resurrects projects the
+# user watched disappear. All destructive/creative verbs flush.
+os.sync()
 print("project-cmd: copied index %d -> %d (%s)" % (src, dst, nu))
 PYEOF
     do_list
@@ -308,11 +291,11 @@ PYEOF
 
 do_delete() { # index
     case "${1:-}" in *[!0-9]*|"") die "delete needs a numeric index" ;; esac
-    python3 - "$SETS_DIR" "$SETTINGS_JSON" "$1" "$SET_STATE_DIR" "$HOST_STATE_DIR" "$STATE_PREFIX" "$ACTIVE_SET_PATH" <<'PYEOF'
+    python3 - "$SETS_DIR" "$SETTINGS_JSON" "$1" "$HOST_STATE_DIR" "$ACTIVE_SET_PATH" <<'PYEOF'
 import os, re, shutil, sys
 sets_dir, settings, idx = sys.argv[1], sys.argv[2], int(sys.argv[3])
-module_state_dir, host_state_dir, prefix = sys.argv[4], sys.argv[5], sys.argv[6]
-active_set_path = sys.argv[7] if len(sys.argv) > 7 else ""
+host_state_dir = sys.argv[4]
+active_set_path = sys.argv[5] if len(sys.argv) > 5 else ""
 
 
 def open_uuid():
@@ -357,33 +340,24 @@ for u in os.listdir(sets_dir):
     try:
         if int(os.getxattr(p, "user.song-index").decode()) == idx:
             shutil.rmtree(p)
-            # BOTH per-project state roots — the module's (clips, sequencer)
-            # and the host's (chains, slots, FX = the routing and params).
-            # Best-effort and AFTER the set itself: a leftover set with no
-            # state reads as an empty project, while leftover state with no
-            # set is what the orphan pruner is for.
-            #
-            # MODULE root: OUR FILES ONLY. The folder is shared with the stock
-            # host, so remove by prefix and drop the directory only if we left
-            # it empty — never rmtree it.
-            mp = os.path.join(module_state_dir, u)
-            n = 0
-            try:
-                for f in os.listdir(mp):
-                    if f.startswith(prefix + "-"):
-                        os.remove(os.path.join(mp, f)); n += 1
-                if not os.listdir(mp):
-                    os.rmdir(mp)
-            except OSError:
-                pass
-            if n:
-                print("project-cmd: deleted %d %s-* file(s) in %s" % (n, prefix, mp))
-            # HOST root: ours alone, so the whole directory goes.
+            # ⭑ The MODULE half (clips, sequencer) went WITH that rmtree — it
+            # lives inside the set dir since Phase B, so "delete the project"
+            # and "delete its patterns" are one operation, not two to keep in
+            # step. Only the HOST half (chains, slots, FX) still lives in a
+            # parallel root, until Phase C co-locates it too. Ours alone, so
+            # the whole directory goes; best-effort and AFTER the set — a
+            # leftover set with no state reads as an empty project, while
+            # leftover host state is what do_prune sweeps.
             try:
                 shutil.rmtree(os.path.join(host_state_dir, u))
                 print("project-cmd: deleted host state %s/%s" % (host_state_dir, u))
             except OSError:
                 pass
+            # ⚠ SYNC before reporting success (Josh, hardware, 2026-08-12): a
+            # hard power cut replays the journal, and an unsynced rmtree can be
+            # UNDONE by it — the user watched this project disappear, and it
+            # was back after a power pull. Deletion is only real once flushed.
+            os.sync()
             # ⚠ The NAME INDEX is deliberately NOT touched here. The module holds
             # it in memory (S.nameIndexCache) and rewrites the whole file on the
             # next save, so a drop written behind its back is simply resurrected
@@ -434,8 +408,9 @@ PYEOF
     do_list
 }
 
-# Rename a project's INNER set dir — the name Move shows, the name the module's
-# family lookup keys off, and the name in seq8sa_name_index.json.
+# Rename a project's INNER set dir — the name Move shows.
+# (The name→uuid index this used to maintain died with the inherit machinery in
+# Phase 0 of the state-co-location plan; a rename is just the mv now.)
 #
 # ⚠ The OPEN project cannot be renamed live: Move holds the song and its saves
 # write by path, so a live mv risks the dying save re-creating the old dir.
@@ -446,36 +421,14 @@ PYEOF
 # projects rename immediately — the same liveness argument delete already
 # proved on hardware.
 
-_rename_update_name_index() { # uuid newname
-    # Drop every stale name -> this-uuid entry, then map the new name iff our
-    # state file exists (the index only ever holds sets with state to inherit).
-    python3 - "$NAME_INDEX_PATH" "$SET_STATE_DIR" "$STATE_PREFIX" "$1" "$2" <<'PYEOF'
-import json, os, sys
-path, state_dir, prefix, uuid, newname = sys.argv[1:6]
-try:
-    idx = json.load(open(path))
-    if not isinstance(idx, dict):
-        idx = {}
-except (OSError, ValueError):
-    idx = {}
-idx = {k: v for k, v in idx.items() if v != uuid}
-if os.path.isfile(os.path.join(state_dir, uuid, prefix + "-state.json")):
-    idx[newname] = uuid
-tmp = path + ".tmp"
-with open(tmp, "w") as f:
-    json.dump(idx, f)
-os.replace(tmp, path)
-PYEOF
-}
-
 do_rename() { # index newname [reselect]
     case "${1:-}" in *[!0-9]*|"") die "rename needs a numeric index" ;; esac
     [ -n "${2:-}" ] || die "rename needs a name"
     case "$2" in */*) die "name must not contain /" ;; esac
 
-    _found="$(python3 - "$SETS_DIR" "$1" <<'PYEOF'
+    _found="$(python3 - "$SETS_DIR" "$1" "$DBX_SUBDIR_NAME" <<'PYEOF'
 import os, re, sys
-sets_dir, idx = sys.argv[1], int(sys.argv[2])
+sets_dir, idx, dbx_subdir = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 for u in os.listdir(sets_dir):
     p = os.path.join(sets_dir, u)
@@ -487,7 +440,8 @@ for u in os.listdir(sets_dir):
     except (OSError, ValueError):
         continue
     inner = [n for n in os.listdir(p)
-             if os.path.isdir(os.path.join(p, n)) and not n.startswith(".")]
+             if os.path.isdir(os.path.join(p, n)) and not n.startswith(".")
+             and n != dbx_subdir]
     if not inner:
         sys.exit("project-cmd: ERROR: project has no inner set dir")
     print(u); print(inner[0])
@@ -511,7 +465,6 @@ PYEOF
                 "'$SETS_DIR/$_uuid/$(printf '%s' "$_old" | sed "s/'/'\\\\''/g")'" \
                 "'$SETS_DIR/$_uuid/$(printf '%s' "$2"   | sed "s/'/'\\\\''/g")'"
         } >> "$DBX_DIR/relaunch_patch.sh"
-        _rename_update_name_index "$_uuid" "$2"
         printf '%s\n' "$1" > "$DBX_DIR/relaunch_song_index"
         # A rename issued while NOTHING is loaded (the boot picker) must bring
         # the fresh session back to the picker instead of auto-loading — the
@@ -528,7 +481,6 @@ PYEOF
     fi
 
     mv "$SETS_DIR/$_uuid/$_old" "$SETS_DIR/$_uuid/$2"
-    _rename_update_name_index "$_uuid" "$2"
     printf 'project-cmd: renamed index %s to "%s"\n' "$1" "$2"
     do_list
 }

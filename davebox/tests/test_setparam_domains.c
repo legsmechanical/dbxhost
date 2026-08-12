@@ -2626,10 +2626,10 @@ int main(void) {
      * (playing/merge/per-track playback + recording + clips), which would
      * corrupt any assertion that ran afterward. Nothing asserts `inst` after
      * this block, so the reset is collision-safe. This group is I/O-heavy: the
-     * 5 keys are debug_log, save, prune_orphan_states, state_path, state_load.
+     * The keys are debug_log, save, state_path, state_load.
      * seq8_save_state / seq8_load_state use real libc fopen (NOT stubbed), so
      * `save`'s file write IS drivable via a temp path; the on-device /data/...
-     * paths that state_load constructs and that prune_orphan_states scans do
+     * paths that state_load constructs do
      * not exist off-device, so those file operations no-op in-harness and are
      * noted OUT-OF-SCOPE-IN-STUB (the real load round-trip lives in
      * test_state_roundtrip.c). These keys are top-level strcmp(key,...) matches
@@ -2721,18 +2721,24 @@ int main(void) {
         inst->tracks[0].current_step = 5;
         inst->tracks[0].queued_clip  = 3;
         hx_set_param(h, "state_load", "abcdef01-2345-6789-abcd-ef0123456789");
+        /* Phase B (state-co-location): state lives INSIDE the set dir. */
         HX_ASSERT(!strcmp(inst->state_path,
-                  "/data/UserData/schwung/set_state/"
-                  "abcdef01-2345-6789-abcd-ef0123456789/seq8-state.json"),
+                  "/data/UserData/UserLibrary/Sets/"
+                  "abcdef01-2345-6789-abcd-ef0123456789/dAVEBOx/seq8-state.json"),
                   "state_load: builds per-set path from UUID val");
+        HX_ASSERT(!strcmp(inst->state_uuid,
+                  "abcdef01-2345-6789-abcd-ef0123456789"),
+                  "state_load: records the uuid in its own field (get_param state_uuid serves this)");
         HX_ASSERT(inst->playing == 0, "state_load: resets playing");
         HX_ASSERT(inst->count_in_ticks == 0, "state_load: resets count_in_ticks");
         HX_ASSERT(inst->merge_state == MERGE_STATE_IDLE, "state_load: resets merge_state");
         HX_ASSERT(inst->tracks[0].recording == 0, "state_load: resets per-track recording");
         HX_ASSERT(inst->tracks[0].current_step == 0, "state_load: resets per-track current_step");
         HX_ASSERT(inst->tracks[0].queued_clip == -1, "state_load: resets per-track queued_clip to -1");
-        /* empty val -> fallback path. */
+        /* empty val -> fallback path, and NO set identity. */
         hx_set_param(h, "state_load", "");
+        HX_ASSERT(inst->state_uuid[0] == '\0',
+                  "state_load(\"\"): clears state_uuid — the fallback file describes no set");
         HX_ASSERT(!strcmp(inst->state_path, SEQ8_STATE_PATH_FALLBACK),
                   "state_load: empty val -> SEQ8_STATE_PATH_FALLBACK");
 

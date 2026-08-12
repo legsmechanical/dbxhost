@@ -23,6 +23,11 @@ python3 standalone/scripts/make-template.py "$DBX_DIR/sets/template/Project 1/So
 U1=11111111-aaaa-4bbb-8ccc-000000000001
 mkdir -p "$SETS_DIR/$U1/First Project"
 echo '{}' > "$SETS_DIR/$U1/First Project/Song.abl"
+# ⚠ The reserved state subdir sits beside the inner set dir in EVERY fixture —
+# Phase B's gate: the one-child sites must be exercised against two children,
+# or a dropped filter passes on listdir luck.
+mkdir -p "$SETS_DIR/$U1/dAVEBOx"
+echo '{"v":36,"fixture":"first"}' > "$SETS_DIR/$U1/dAVEBOx/seq8sa-state.json"
 
 echo "test_project_cmd"
 
@@ -34,7 +39,8 @@ d = json.load(open(sys.argv[1]))
 assert d["current"] == 0
 assert len(d["projects"]) == 1
 p = d["projects"][0]
-assert p["uuid"].startswith("11111111") and p["name"] == "First Project"
+assert p["uuid"].startswith("11111111") and p["name"] == "First Project", \
+    "list named %r — dAVEBOx leaking through the one-child filter?" % p["name"]
 PY
 
 # `new` creates from template and switches (the pkill half is inert here —
@@ -88,6 +94,22 @@ d = json.load(open(sys.argv[1]))
 p = [x for x in d["projects"] if x["index"] == 5][0]
 assert p["name"] == "First Project Copy" and p["color"] == 3, p
 PY
+    # Phase B: the copy is a whole-uuid-dir copytree, so the state came WITH
+    # it - assert the duplicate's dAVEBOx/ holds the source's bytes, and that
+    # DELETING the duplicate takes the state along (one rmtree, no second root).
+    python3 - "$SETS_DIR" "$DBX_DIR/projects.json" <<'PY' && echo "  ok   copy carries the state INSIDE the set dir" || { echo "  FAIL copy carries the state" >&2; fails=1; }
+import json, os, sys
+d = json.load(open(sys.argv[2]))
+cu = [x for x in d["projects"] if x["index"] == 5][0]["uuid"]
+st = os.path.join(sys.argv[1], cu, "dAVEBOx", "seq8sa-state.json")
+assert os.path.isfile(st), "copy has no co-located state file"
+assert "fixture" in open(st).read(), "state bytes did not come from the source"
+PY
+    _copy5_uuid=$(python3 -c "import json;print([x for x in json.load(open('$DBX_DIR/projects.json'))['projects'] if x['index']==5][0]['uuid'])")
+    sh "$CMD" delete 5 >/dev/null
+    check "delete takes the co-located state with the set dir" \
+        bash -c "! test -e '$SETS_DIR/$_copy5_uuid'"
+    sh "$CMD" copy 7 5 >/dev/null   # re-create: later checks expect index 5
     sh "$CMD" color 7 -1 >/dev/null
     python3 - "$DBX_DIR/projects.json" <<'PY' && echo "  ok   color: -1 clears (back to null)" || { echo "  FAIL color: -1 clears" >&2; fails=1; }
 import json, sys
@@ -96,22 +118,16 @@ p = [x for x in d["projects"] if x["name"] == "First Project"][0]
 assert p["color"] is None, p
 PY
 
-    # rename of a NON-open project: immediate mv + name-index rewrite
-    export ACTIVE_SET_PATH="$T/active_set.txt" NAME_INDEX_PATH="$T/name_index.json"
-    export SET_STATE_DIR="$T/set_state" HOST_STATE_DIR="$DBX_DIR/set_state"
+    # rename of a NON-open project: immediate mv.
+    # (The name-index rewrite this block also pinned died with the inherit
+    # machinery - Phase 0/B of the state-co-location plan.)
+    export ACTIVE_SET_PATH="$T/active_set.txt" HOST_STATE_DIR="$DBX_DIR/set_state"
     printf '%s\nsomething-else\n' "99999999-dead-dead-dead-000000000000" > "$ACTIVE_SET_PATH"
-    mkdir -p "$SET_STATE_DIR/$U1"
-    echo '{}' > "$SET_STATE_DIR/$U1/seq8sa-state.json"
-    printf '{"First Project": "%s", "Stale": "%s"}\n' "$U1" "$U1" > "$NAME_INDEX_PATH"
     sh "$CMD" rename 7 "Renamed Project" >/dev/null
     check "rename: inner dir renamed" test -d "$SETS_DIR/$U1/Renamed Project"
+    check "rename: state subdir untouched by rename" test -f "$SETS_DIR/$U1/dAVEBOx/seq8sa-state.json"
     check "rename: old dir gone" bash -c "! test -d '$SETS_DIR/$U1/First Project'"
     check "rename: no relaunch queued" bash -c "! test -f '$DBX_DIR/relaunch_patch.sh'"
-    python3 - "$NAME_INDEX_PATH" "$U1" <<'PY' && echo "  ok   rename: name index rewritten" || { echo "  FAIL rename: name index rewritten" >&2; fails=1; }
-import json, sys
-idx = json.load(open(sys.argv[1]))
-assert idx == {"Renamed Project": sys.argv[2]}, idx   # stale entries dropped
-PY
 
     # rename of the OPEN project: DEFERRED — dir untouched, mv queued for the
     # launcher, relaunch requested at the same index
@@ -148,8 +164,7 @@ prune_env() {
         SWAP_ROOT="$P/dbx/sets" LIBRARY_DIR="$P/dbx/sets/library" \
         NATIVE_STASH_DIR="$P/dbx/sets/native-stash" \
         SWAP_STATE_FILE="$P/dbx/sets/swap_state" \
-        HOST_STATE_DIR="$P/dbx/set_state" SET_STATE_DIR="$P/set_state" \
-        NAME_INDEX_PATH="$P/name_index.json" \
+        HOST_STATE_DIR="$P/dbx/set_state" \
         sh "$CMD" prune
 }
 LIVE=aaaaaaaa-1111-4111-8111-000000000001      # in Sets/  (in-session library)
@@ -161,17 +176,12 @@ for u in "$LIVE" "$LIB" "$ORPH"; do
     echo '{}' > "$P/dbx/set_state/$u/shadow_chain_config.json"
 done
 mkdir -p "$P/dbx/set_state/not-a-uuid"          # never touched: not uuid-shaped
-printf '{"Ghost": "%s"}\n' "$ORPH" > "$P/name_index.json"
 
 prune_env >/dev/null
 check "prune: orphan host state removed"      bash -c "! test -d '$P/dbx/set_state/$ORPH'"
 check "prune: set in Sets/ survives"          test -d "$P/dbx/set_state/$LIVE"
 check "prune: set in the SA LIBRARY survives" test -d "$P/dbx/set_state/$LIB"
 check "prune: non-uuid dirs untouched"        test -d "$P/dbx/set_state/not-a-uuid"
-# The name index belongs to the module (it holds it in memory and rewrites the
-# whole file), so a sweep here would be silently undone — prune must not touch it.
-check "prune: name index NOT touched" \
-    bash -c "grep -q Ghost '$P/name_index.json'"
 
 # Refusals. Each restores the orphan first, then asserts it SURVIVED — a refusal
 # that still deleted would pass a mere exit-code check.

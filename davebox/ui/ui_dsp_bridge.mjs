@@ -813,6 +813,7 @@ export function pollDSP() {
         if (_dspUuid && _dspUuid === S.currentSetUuid) {
             const _st = host_module_get_param('state_full');
             if (_st && _st.length > 2) {
+                host_ensure_dir(uuidToStatePath(_dspUuid).replace(/\/[^\/]+$/, ''));
                 host_write_file(uuidToStatePath(_dspUuid), _st);
             }
         }

@@ -71,23 +71,43 @@
 #ifndef SEQ8_SETS_DIR
 #define SEQ8_SETS_DIR           "/data/UserData/UserLibrary/Sets"
 #endif
-#ifndef SEQ8_SET_STATE_DIR
-#define SEQ8_SET_STATE_DIR      "/data/UserData/schwung/set_state"
+
+/* ⭑⭑ Per-project state lives INSIDE the project's own set dir, in a reserved
+ * subfolder beside Move's inner <Name>/ dir (Phase B of the state-co-location
+ * plan, 2026-08-12):
+ *
+ *     Sets/<uuid>/dAVEBOx/seq8sa-state.json
+ *
+ * NOT in a tree parallel to the projects. The parallel-tree model (the stock
+ * host's shared set_state/, keyed by uuid) needed a liveness test, an orphan
+ * prune, a two-root delete and a name index just to keep the two in step — and
+ * every one of those had a real bug on hardware. Inside the set dir, the state
+ * travels with the project because it IS in the project: delete/copy/rename of
+ * the set dir take it along, and an orphan cannot exist.
+ *
+ * ⚠ The reserved name is a CONTRACT shared with project-cmd.sh and
+ * select-list.sh (which must skip it when hunting the inner set dir) and is
+ * pinned by check-config.sh in all its spellings. Change it in one place and
+ * the pin names the others.
+ *
+ * ⚠ In-session, Sets/ is the standalone library via the bind mount, so this
+ * path is only ever a dAVEBOx project's dir. The macro stays overridable for
+ * the test harness (real deletes need a real temp tree to be exercised in). */
+#ifndef SEQ8_SET_DBX_SUBDIR
+#define SEQ8_SET_DBX_SUBDIR     "dAVEBOx"
 #endif
-/* The SA project library. Whole set dirs are renamed between here and Sets/ at
- * the session edges (standalone/scripts/set-swap.sh), so a set is in exactly one
- * of the two — and OUTSIDE a session Sets/ holds the user's NATIVE sets, where
- * every SA project would read as deleted. The prune only ever runs in-session,
- * so this root is belt-and-braces; it is here because the cost of being wrong
- * is a user's whole project library. */
-#ifndef SEQ8_SET_LIBRARY_DIR
-#define SEQ8_SET_LIBRARY_DIR    "/data/UserData/dbx-host/sets/library"
+#ifndef SEQ8_SET_STATE_ROOT
+#define SEQ8_SET_STATE_ROOT     SEQ8_SETS_DIR
+#endif
+
+#ifndef SEQ8_ACTIVE_SET_PATH
+#define SEQ8_ACTIVE_SET_PATH    "/data/UserData/dbx-host/active_set.txt"
 #endif
 
 #define SEQ8_LOG_PATH           "/data/UserData/schwung/" SEQ8_STATE_PREFIX ".log"
 #define SEQ8_STATE_PATH_FALLBACK "/data/UserData/schwung/" SEQ8_STATE_PREFIX "-state.json"
-#define SEQ8_SET_STATE_FMT      SEQ8_SET_STATE_DIR "/%s/" SEQ8_STATE_PREFIX "-state.json"
-#define SEQ8_SET_UISTATE_FMT    SEQ8_SET_STATE_DIR "/%s/" SEQ8_STATE_PREFIX "-ui-state.json"
+#define SEQ8_SET_STATE_FMT      SEQ8_SET_STATE_ROOT "/%s/" SEQ8_SET_DBX_SUBDIR "/" SEQ8_STATE_PREFIX "-state.json"
+#define SEQ8_SET_UISTATE_FMT    SEQ8_SET_STATE_ROOT "/%s/" SEQ8_SET_DBX_SUBDIR "/" SEQ8_STATE_PREFIX "-ui-state.json"
 #define SEQ8_SNAP_PREFIX        SEQ8_STATE_PREFIX "-snap-"
 
 /* SELECT-BEFORE-LOAD marker, written by the SA launcher at session entry and
@@ -1069,6 +1089,13 @@ typedef struct {
 
     /* State file path — set by JS via set_param("state_path") before first load/save */
     char state_path[256];
+    /* The set uuid state_path was built FROM — the authority for get_param
+     * "state_uuid". ⚠ Stored, never parsed back out of state_path: the old
+     * getter grepped "/set_state/" out of the path string, which silently
+     * returned "" the moment the path shape changed (as it did in Phase B,
+     * when state moved inside the set dir). Empty on the fallback path, which
+     * readers already treat as "no set". */
+    char state_uuid[64];
 
     /* Monotonic nonce: unique per create_instance call; JS polls to detect DSP hot-reload */
     uint32_t instance_nonce;
@@ -4377,10 +4404,18 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
     memset(inst->drum_last_vel_zone, 0, sizeof(inst->drum_last_vel_zone));
     strncpy(inst->state_path, SEQ8_STATE_PATH_FALLBACK, sizeof(inst->state_path) - 1);
 
-    /* Resolve per-set state path from active_set.txt */
+    /* Resolve per-set state path from active_set.txt.
+     *
+     * ⚠ THIS INSTALL'S copy (fixed in Phase B, 2026-08-12). This read pointed
+     * at the STOCK tree's active_set.txt for its whole life — a file of the
+     * same name holding a different host's leftovers, the
+     * two-install-trees trap. It never bit only because SELECT-BEFORE-LOAD
+     * has JS set state_path explicitly before anything loads; a latent wrong
+     * path is still a wrong path. host active_set.txt is written by
+     * shadow_ui.js on every SET_CHANGED (HOST_STATE_ROOT + "/active_set.txt"). */
     {
         char uuid[128] = {0};
-        FILE *uf = fopen("/data/UserData/schwung/active_set.txt", "r");
+        FILE *uf = fopen(SEQ8_ACTIVE_SET_PATH, "r");
         if (uf) {
             if (fgets(uuid, sizeof(uuid), uf)) {
                 int i = (int)strlen(uuid) - 1;
@@ -4389,9 +4424,11 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
             }
             fclose(uf);
         }
-        if (uuid[0])
+        if (uuid[0]) {
             snprintf(inst->state_path, sizeof(inst->state_path),
                      SEQ8_SET_STATE_FMT, uuid);
+            snprintf(inst->state_uuid, sizeof(inst->state_uuid), "%s", uuid);
+        }
     }
 
     /* Unique nonce: JS polls this to detect DSP hot-reload */
@@ -6309,20 +6346,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
     if (!strcmp(key, "awaiting_select"))
         return snprintf(out, out_len, "%d", inst ? (int)inst->awaiting_select : 0);
     if (!strcmp(key, "state_uuid")) {
-        /* Extract UUID from state_path: .../set_state/<UUID>/seq8-state.json */
-        if (!inst) return snprintf(out, out_len, "");
-        const char *p = strstr(inst->state_path, "/set_state/");
-        if (p) {
-            p += 11; /* strlen("/set_state/") */
-            const char *end = strchr(p, '/');
-            if (end && (end - p) > 0 && (end - p) < out_len) {
-                int len = (int)(end - p);
-                memcpy(out, p, (size_t)len);
-                out[len] = '\0';
-                return len;
-            }
-        }
-        return snprintf(out, out_len, "");
+        /* The stored field, set wherever state_path is set. ⚠ Never parse the
+         * uuid back out of state_path — the old strstr("/set_state/") getter
+         * silently returned "" when the path shape changed underneath it. */
+        return snprintf(out, out_len, "%s", inst ? inst->state_uuid : "");
     }
     if (!strcmp(key, "bpm")) {
         double b = (inst && inst->tracks[0].pfx.cached_bpm > 0)

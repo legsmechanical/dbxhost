@@ -1105,7 +1105,7 @@ static void set_param(void *instance, const char *key, const char *val) {
      * {inst,key,val} entering the state dispatch below. */
     if (sp_globals_transport(&cx)) return;
 
-    /* --- Global state keys (debug_log/save/prune_orphan_states/state_path/
+    /* --- Global state keys (debug_log/save/state_path/
      * state_load) --- now a file-scope GLOBALS handler (phase 4B group 10),
      * dispatched here reusing the call-wide cx. It reads only inst/key/val;
      * returns 1 on a matched key (we return), 0 to fall through. Dispatched

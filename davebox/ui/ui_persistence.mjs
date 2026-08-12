@@ -12,19 +12,43 @@ import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
  * safe, so no define is needed for the stable build. */
 const STATE_PREFIX = (typeof SEQ8_STATE_PREFIX === 'string') ? SEQ8_STATE_PREFIX : 'seq8';
 
+/* ⭑⭑ Per-project state lives INSIDE the project's set dir (Phase B of the
+ * state-co-location plan, 2026-08-12): Sets/<uuid>/dAVEBOx/<prefix>-*.json,
+ * beside Move's inner <Name>/ dir. It travels with the set on copy/delete/
+ * rename because it IS in the set — the parallel set_state/ tree, and all the
+ * machinery that kept it in step (liveness test, orphan prune, two-root
+ * delete, name index), retires with the old location.
+ *
+ * ⚠ These MUST agree with the DSP's SEQ8_SET_STATE_FMT (dsp/seq8.c) — the DSP
+ * writes state where JS expects to read it back — and the reserved subdir name
+ * is a contract with project-cmd.sh/select-list.sh, pinned by check-config.sh.
+ * ⚠ In-session Sets/ is the standalone library (bind-mounted), so these paths
+ * only ever land inside dAVEBOx projects. */
+const SETS_DIR    = '/data/UserData/UserLibrary/Sets';
+const DBX_SUBDIR  = 'dAVEBOx';
+
+function setStateDir(uuid) { return SETS_DIR + '/' + uuid + '/' + DBX_SUBDIR; }
+
+/* Every JS write below an existing project's dir goes through here first. The
+ * DSP's own save creates the subdir itself (ensure_parent_dir, seq8_state.c);
+ * JS writes — the sidecar, snapshots — can land BEFORE any DSP save on a fresh
+ * project, so they must not assume it. Cheap: mkdir on an existing dir is a
+ * no-op. */
+function ensureStateDir(uuid) {
+    if (uuid) host_ensure_dir(setStateDir(uuid));
+}
+
 export function uuidToStatePath(uuid) {
     return uuid
-        ? '/data/UserData/schwung/set_state/' + uuid + '/' + STATE_PREFIX + '-state.json'
+        ? setStateDir(uuid) + '/' + STATE_PREFIX + '-state.json'
         : '/data/UserData/schwung/' + STATE_PREFIX + '-state.json';
 }
 
 export function uuidToUiStatePath(uuid) {
     return uuid
-        ? '/data/UserData/schwung/set_state/' + uuid + '/' + STATE_PREFIX + '-ui-state.json'
+        ? setStateDir(uuid) + '/' + STATE_PREFIX + '-ui-state.json'
         : '/data/UserData/schwung/' + STATE_PREFIX + '-ui-state.json';
 }
-
-const SET_STATE_DIR   = '/data/UserData/schwung/set_state';
 
 /* ⚠ active_set.txt lives under THIS host's install dir, never the stock literal
  * (shadow_ui.js writes HOST_STATE_ROOT + "/active_set.txt" on SET_CHANGED).
@@ -50,9 +74,8 @@ export function readActiveSet() {
 }
 
 /* Decide whether the DSP needs a state_load for the currently-active set, and
- * arm it. Runs the inherit-picker tree first (a freshly-pasted Move duplicate
- * has to be seeded before anything is loaded), then the version-mismatch gate,
- * then the plain "DSP holds a different set / has no state file" checks.
+ * arm it: the version-mismatch gate first, then the plain "DSP holds a
+ * different set / has no state file" checks.
  *
  * TWO callers, and they must stay identical — that is the whole reason this is
  * a function. init() runs it on an ordinary boot; the project picker runs it
@@ -133,6 +156,7 @@ export function writeSidecar() {
     if (S.pendingSetLoad || S.pendingDspSync > 0) return;
     /* Always sync the live activeBank into per-track storage before serializing. */
     S.trackActiveBank[S.activeTrack] = S.activeBank;
+    ensureStateDir(S.currentSetUuid);
     host_write_file(uuidToUiStatePath(S.currentSetUuid), JSON.stringify({
         v: 9, at: S.activeTrack, ac: S.trackActiveClip.slice(), sv: S.sessionView ? 1 : 0,
         dl: S.activeDrumLane.slice(),
@@ -178,7 +202,7 @@ export const SNAPSHOT_CAP = 16;
 const SNAP_MANIFEST_VER = 1;
 
 function snapBaseDir(uuid) {
-    return uuid ? SET_STATE_DIR + '/' + uuid : '/data/UserData/schwung';
+    return uuid ? setStateDir(uuid) : '/data/UserData/schwung';
 }
 function snapManifestPath(uuid) { return snapBaseDir(uuid) + '/' + STATE_PREFIX + '-snap-index.json'; }
 function snapStatePath(uuid, id) { return snapBaseDir(uuid) + '/' + STATE_PREFIX + '-snap-' + id + '-state.json'; }

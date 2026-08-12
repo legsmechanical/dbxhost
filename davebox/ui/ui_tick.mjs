@@ -1886,14 +1886,13 @@ export function _tickImpl() {
      * so the prune set_param doesn't collide with state_load coalescing. */
     if (S.pendingPruneOrphans && !S.pendingSetLoad && S.pendingDspSync === 0) {
         S.pendingPruneOrphans = false;
-        host_module_set_param('prune_orphan_states', '1');
-        /* ...and the OTHER half of a project, which the DSP cannot reach: the
-         * HOST state root ($DBX_DIR/set_state/<uuid> — chains, slots, FX). Same
-         * moment, deliberately: both roots are keyed by the same set uuid, and
-         * one prune leaving the other behind is how a "deleted" project kept
-         * its routing. Blocking shell call, but once per session, right after
-         * the load has settled. project-cmd refuses the sweep rather than guess
-         * when the world looks wrong (see do_prune). */
+        /* Only the HOST state root ($DBX_DIR/set_state/<uuid> — chains, slots,
+         * FX) still lives in a tree parallel to the projects, so it is the one
+         * half that can still orphan. The MODULE half moved INSIDE the set dir
+         * in Phase B (state-co-location plan) and its pruner retired with the
+         * old location — no set, no state, nothing to sweep. This call goes
+         * too when Phase C co-locates the host half. project-cmd refuses the
+         * sweep rather than guess when the world looks wrong (see do_prune). */
         host_system_cmd('sh ' + DAVEBOX_HOST_DIR + '/scripts/project-cmd.sh prune');
     }
 

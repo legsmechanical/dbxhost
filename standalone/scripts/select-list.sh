@@ -23,10 +23,13 @@ DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
 SETS_DIR="${SETS_DIR:-/data/UserData/UserLibrary/Sets}"
 SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
 OUT_JSON="$DBX_DIR/select_list.json"
+# The reserved state subdir inside each set dir (Phase B) — skipped when hunting
+# the inner set dir. One spelling, pinned by check-config.sh.
+DBX_SUBDIR_NAME="${DBX_SUBDIR_NAME:-dAVEBOx}"
 
-python3 - "$SETS_DIR" "$SETTINGS_JSON" "$OUT_JSON" <<'PYEOF'
+python3 - "$SETS_DIR" "$SETTINGS_JSON" "$OUT_JSON" "$DBX_SUBDIR_NAME" <<'PYEOF'
 import json, os, re, sys
-sets_dir, settings, out = sys.argv[1], sys.argv[2], sys.argv[3]
+sets_dir, settings, out, dbx_subdir = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 cur = 0
 try:
     m = re.search(r'"currentSongIndex":\s*(-?\d+)', open(settings).read())
@@ -41,7 +44,8 @@ if os.path.isdir(sets_dir):
         if not os.path.isdir(p) or not uuid_re.match(u):
             continue
         inner = [n for n in os.listdir(p)
-                 if os.path.isdir(os.path.join(p, n)) and not n.startswith(".")]
+                 if os.path.isdir(os.path.join(p, n)) and not n.startswith(".")
+                 and n != dbx_subdir]
         name = inner[0] if inner else u[:8]
         try:
             idx = int(os.getxattr(p, "user.song-index").decode())

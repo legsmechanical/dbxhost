@@ -53,6 +53,18 @@ check "set-swap calls the mount verb"  "$HERE/scripts/set-swap.sh"  "--mount-set
 check "set-swap calls the umount verb" "$HERE/scripts/set-swap.sh"  "--umount-sets"
 check "set-swap heal path"             "$HERE/scripts/set-swap.sh"  '$DBX_DIR/bin/davebox-heal'
 
+# ⭑ The reserved per-project state subdir (Phase B, state-co-location): the ONE
+# name every consumer must agree on. The C side and JS side WRITE state under
+# it; the shell sites SKIP it when hunting the inner set dir. A case slip in any
+# one of them silently re-opens the one-child bug for that site (listdir order
+# is arbitrary, so it passes most of the time — the worst kind).
+REPO="$(cd "$HERE/.." && pwd)"
+DBX_SUBDIR_NAME=dAVEBOx
+check "seq8.c reserved subdir"         "$REPO/davebox/dsp/seq8.c"           "\"$DBX_SUBDIR_NAME\""
+check "ui_persistence reserved subdir" "$REPO/davebox/ui/ui_persistence.mjs" "'$DBX_SUBDIR_NAME'"
+check "project-cmd reserved subdir"    "$HERE/scripts/project-cmd.sh"        ":-$DBX_SUBDIR_NAME}"
+check "select-list reserved subdir"    "$HERE/scripts/select-list.sh"        ":-$DBX_SUBDIR_NAME}"
+
 # The HOST's own copy. shadow_ui.js owns the Shift+Back exit, so a DBX_DIR
 # change that misses this line breaks exit-to-stock from the host side with
 # nothing failing. This one is in-repo and was simply overlooked.

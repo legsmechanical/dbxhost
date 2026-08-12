@@ -4,46 +4,21 @@
  * lint this file on its own. First GLOBALS handler (phase 4B group 10):
  * dispatched BEFORE the tN_ block, so it uses only inst/key/val (never
  * tidx/tr/sub -- they aren't in scope at the globals dispatch point).
- * Covers GLOBAL-key branches: debug_log, save, prune_orphan_states,
- * state_path, state_load. Each is a top-level `strcmp(key,...)` branch.
+ * Covers GLOBAL-key branches: debug_log, save, state_path, state_load.
+ * Each is a top-level `strcmp(key,...)` branch.
  * Returns 1 when it handled the key (caller returns from set_param), 0 to
  * fall through to the remaining globals segments / the tN_ block. */
-/* Is this Move set still alive anywhere?
- *
- * ⚠ "Alive" is NOT the same as "present in Sets/", and the prune below erases
- * state, UI state and EVERY snapshot for the sets it judges orphaned — so a
- * wrong answer here destroys real musical work with no error and nothing to
- * restore from. A set is in exactly one of two roots: the live library (Sets/),
- * or the standalone library, where whole set dirs are parked while no session
- * runs. ⚠⚠ Outside a session Sets/ holds the user's NATIVE sets, so a
- * Sets/-only test judges EVERY standalone project deleted.
- *
- * (A third root, the set-pages stash, was checked here until 2026-08-12. The
- * 8-page stash died in P3 of the re-architecture and nothing writes one any
- * more, so the walk guarded a feature that no longer exists.)
- *
- * ⭑ The asymmetry that decides every unclear case: keeping a stale state file
- * costs a few KB, deleting a live one destroys work. So anything we cannot
- * verify counts as ALIVE. */
-static int seq8_set_uuid_alive(const char *uuid) {
-    /* Roots holding set dirs DIRECTLY (<root>/<uuid>). Sets/ is the live
-     * library; the SA library is where set-swap parks those same sets outside a
-     * session — see the SEQ8_SET_LIBRARY_DIR note in seq8.c. */
-    static const char *const direct_roots[] = {
-        SEQ8_SETS_DIR,
-        SEQ8_SET_LIBRARY_DIR,
-        NULL
-    };
-    char buf[512];
-    struct stat st;
-
-    for (int r = 0; direct_roots[r]; r++) {
-        snprintf(buf, sizeof(buf), "%s/%s", direct_roots[r], uuid);
-        if (stat(buf, &st) == 0) return 1;
-    }
-
-    return 0;
-}
+/* ⚠ The orphan pruner (`prune_orphan_states`) and its liveness helper
+ * (`seq8_set_uuid_alive`) are GONE (Phase B, 2026-08-12). They existed because
+ * state lived in a tree PARALLEL to the projects, keyed by uuid, where a
+ * deleted set left its state behind. State now lives INSIDE the set dir
+ * (SEQ8_SET_STATE_FMT), so an orphan cannot exist: no set, no state. The whole
+ * class — liveness tests, four alive-roots, the "unverifiable counts as ALIVE"
+ * asymmetry — retires with the parallel tree.
+ * (Leftover seq8sa-* files from the old location remain in the stock host's
+ * set_state/ tree on devices that ran earlier builds; they are inert KB-scale
+ * history, in a SHARED tree we no longer touch. Do not write a cleaner for
+ * them there — that tree holds stock's own state.) */
 
 static int sp_globals_state(sp_ctx_t *cx) {
     seq8_instance_t *inst = cx->inst;
@@ -66,79 +41,30 @@ static int sp_globals_state(sp_ctx_t *cx) {
      * seq8-ui-state.json for any UUID-named subdir whose corresponding Move
      * set folder no longer exists. Leaves Schwung core's master_fx_*.json,
      * shadow_chain_config.json, slot_*.json untouched. */
-    if (!strcmp(key, "prune_orphan_states")) {
-        DIR *d = opendir(SEQ8_SET_STATE_DIR);
-        if (!d) { seq8_ilog(inst, "SEQ8 prune: opendir failed"); return 1; }
-        struct dirent *de;
-        char buf[256];
-        int scanned = 0, removed = 0;
-        while ((de = readdir(d)) != NULL) {
-            const char *n = de->d_name;
-            /* UUID format: 8-4-4-4-12 hex chars with hyphens at fixed positions. */
-            if (strlen(n) != 36) continue;
-            if (n[8] != '-' || n[13] != '-' || n[18] != '-' || n[23] != '-') continue;
-            int hex_ok = 1, _i;
-            for (_i = 0; _i < 36 && hex_ok; _i++) {
-                if (_i == 8 || _i == 13 || _i == 18 || _i == 23) continue;
-                char c = n[_i];
-                if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
-                    hex_ok = 0;
-            }
-            if (!hex_ok) continue;
-            scanned++;
-            /* Alive in Sets/ OR in the standalone library — see the helper.
-             * ⚠ Never reduce this back to a bare stat() of Sets/. */
-            if (seq8_set_uuid_alive(n)) continue;
-            snprintf(buf, sizeof(buf), SEQ8_SET_STATE_FMT, n);
-            int u1 = unlink(buf);
-            snprintf(buf, sizeof(buf), SEQ8_SET_UISTATE_FMT, n);
-            int u2 = unlink(buf);
-            /* Snapshot files (seq8-snap-index.json + seq8-snap-<id>-*.json) have
-             * variable names — enumerate the orphaned set's folder and remove
-             * any. Without this the rmdir below always fails for sets that had
-             * snapshots, leaving the folder + snap files behind. */
-            snprintf(buf, sizeof(buf), SEQ8_SET_STATE_DIR "/%s", n);
-            DIR *sd = opendir(buf);
-            if (sd) {
-                struct dirent *sde;
-                char sbuf[512];
-                while ((sde = readdir(sd)) != NULL) {
-                    if (strncmp(sde->d_name, SEQ8_SNAP_PREFIX,
-                                strlen(SEQ8_SNAP_PREFIX)) != 0) continue;
-                    snprintf(sbuf, sizeof(sbuf),
-                             SEQ8_SET_STATE_DIR "/%s/%s", n, sde->d_name);
-                    unlink(sbuf);
-                }
-                closedir(sd);
-            }
-            snprintf(buf, sizeof(buf), SEQ8_SET_STATE_DIR "/%s", n);
-            rmdir(buf);  /* silently fails if other module's files remain */
-            if (u1 == 0 || u2 == 0) removed++;
-        }
-        closedir(d);
-        {
-            char log[96];
-            snprintf(log, sizeof(log), "SEQ8 prune: scanned=%d removed=%d", scanned, removed);
-            seq8_ilog(inst, log);
-        }
-        return 1;
-    }
 
     if (!strcmp(key, "state_path")) {
         strncpy(inst->state_path, val, sizeof(inst->state_path) - 1);
         inst->state_path[sizeof(inst->state_path) - 1] = '\0';
+        /* A raw path carries no set identity — clear rather than leave the
+         * previous set's uuid answering for a file it does not describe. */
+        inst->state_uuid[0] = '\0';
         seq8_ilog(inst, inst->state_path);
         return 1;
     }
 
     if (!strcmp(key, "state_load")) {
-        /* val is the UUID from JS (36 chars); construct path from it. Fallback if empty. */
-        if (val && val[0])
+        /* val is the UUID from JS (36 chars); construct path from it. Fallback if empty.
+         * state_uuid tracks every assignment — it is what get_param "state_uuid"
+         * serves, and the fallback path genuinely has no set, so it clears. */
+        if (val && val[0]) {
             snprintf(inst->state_path, sizeof(inst->state_path),
                      SEQ8_SET_STATE_FMT, val);
-        else
+            snprintf(inst->state_uuid, sizeof(inst->state_uuid), "%s", val);
+        } else {
             strncpy(inst->state_path, SEQ8_STATE_PATH_FALLBACK,
                     sizeof(inst->state_path) - 1);
+            inst->state_uuid[0] = '\0';
+        }
         seq8_ilog(inst, inst->state_path);
         /* Reset internal state without MIDI panic to avoid flooding the MIDI buffer. */
         {

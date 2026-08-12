@@ -66,50 +66,38 @@ for f in clock_follow_on clock_send_on xpose_preview_active tick_delta; do
         || bad "$f is defaulted only inside seq8_load_state — a project with no state file inherits it"
 done
 
-# 4. Deleting a project takes davebox's half with it. The module cannot do this
-#    itself (host_remove_dir is disallowed under set_state), so the shell verb
-#    owns it; otherwise the state lingers until the orphan pruner runs at the
-#    NEXT BOOT.
-#    ⚠ There are TWO roots and delete must take BOTH: the MODULE's
-#    (schwung/set_state — clips, sequencer) and the HOST's ($DBX_DIR/set_state —
-#    shadow_chain_config, slot_N, master_fx/move_fx/send_fx, i.e. the ROUTING
-#    and PARAMS). Missing the host root left a deleted project's entire chain
-#    and FX configuration on disk (found on hardware 2026-08-11).
-for v in SET_STATE_DIR HOST_STATE_DIR STATE_PREFIX; do
-    grep -q "^$v=" ../standalone/scripts/project-cmd.sh \
-        && ok "project-cmd declares $v" \
-        || bad "project-cmd lost $v — delete leaves that state root on disk"
-done
-awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q '"\$HOST_STATE_DIR"' \
-    && ok "the host state root is passed to the delete" \
-    || bad "HOST_STATE_DIR is declared but never passed — the routing/params half survives delete"
+# 4. Deleting a project takes ALL its state with it.
+#    Phase B (state-co-location): the MODULE half lives INSIDE the set dir, so
+#    the set-dir rmtree IS its deletion — no second root, no prefix dance, no
+#    pruner. Only the HOST half (routing/params, $DBX_DIR/set_state) is still
+#    parallel, until Phase C; delete must still take it explicitly.
+grep -q "^HOST_STATE_DIR=" ../standalone/scripts/project-cmd.sh \
+    && ok "project-cmd declares HOST_STATE_DIR" \
+    || bad "project-cmd lost HOST_STATE_DIR — delete leaves the routing half on disk"
 awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q 'shutil.rmtree(os.path.join(host_state_dir, u))' \
     && ok "the HOST root (ours alone) is removed wholesale" \
     || bad "the host state dir is no longer removed — routing/params survive delete"
-
-#    ⚠⚠ THE ASYMMETRY IS THE POINT. The module root is the STOCK HOST'S own
-#    state dir and the per-uuid folder is SHARED — measured on hardware, 4 of 18
-#    held stock's slot_*/move_fx_*/send_fx_* alongside our seq8sa-*. Removing the
-#    DIRECTORY there destroys the stock host's state for that set. Delete our
-#    files by prefix; drop the folder only if we left it empty.
-#    Counted, not pattern-matched: ANY second rmtree in do_delete is the bug,
-#    whatever it is spelled against (a bare variable slipped past an earlier
-#    literal-matching version of this pin). Exactly two are legitimate — the
-#    set dir and the host state dir.
-#    Comments stripped first — the prose here legitimately says "rmtree".
+#    Exactly two rmtrees: the set dir (which contains the module state) and the
+#    host root. A THIRD is a regression toward the old shared-root sweep — the
+#    stock host's set_state tree must never be touched again.
 _rm=$(awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh \
         | sed 's/[[:space:]]*#.*$//' | grep -c 'rmtree')
 if [ "$_rm" -eq 2 ]; then
     ok "do_delete contains exactly the 2 legitimate rmtree calls (set dir + host root)"
 else
-    bad "do_delete has $_rm rmtree calls, expected 2 — an extra one almost certainly rmtree's the SHARED module root and destroys the stock host's state"
+    bad "do_delete has $_rm rmtree calls, expected 2"
 fi
-awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q 'f.startswith(prefix + "-")' \
-    && ok "module-root deletion is scoped to our own filename prefix" \
-    || bad "module-root deletion is no longer prefix-scoped — it can take the stock host's files"
-grep -q 'STATE_PREFIX:-seq8sa' ../standalone/scripts/project-cmd.sh \
-    && ok "the prefix is seq8sa (not bare seq8, which would sweep Legacy's state too)" \
-    || bad "STATE_PREFIX changed — 'seq8' would also delete dAVEBOx Legacy's state for the set"
+#    ⚠ The old SHARED-root sweep must NOT come back: no reference to the stock
+#    set_state tree anywhere in project-cmd.
+grep -q 'schwung/set_state' ../standalone/scripts/project-cmd.sh \
+    && bad "project-cmd references the STOCK set_state tree again — that root is stock's own state" \
+    || ok "project-cmd no longer touches the stock host's set_state tree"
+#    ⚠ Deletion must be DURABLE: a hard power cut replays the journal and an
+#    unsynced rmtree comes back (Josh, hardware, 2026-08-12 — deleted projects
+#    reappeared after a power pull).
+awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q 'os.sync()' \
+    && ok "delete flushes before reporting success (power-cut durability)" \
+    || bad "delete does not sync — a power cut can resurrect the deleted project"
 
 # 5. A COPY IS A SNAPSHOT, taken at copy time.
 #    Without this, a copy starts with no state file and the module's inherit
@@ -137,16 +125,19 @@ grep -q 'ACTIVE_SET_PATH:-\$DBX_DIR/active_set.txt' ../standalone/scripts/projec
     || bad "ACTIVE_SET_PATH is not \$DBX_DIR — the stock copy holds native-session leftovers"
 
 echo "copy is a snapshot:"
+#    Phase B: the module half rides the whole-uuid-dir copytree BY CONSTRUCTION
+#    — pin that shape (copytree of the set dir itself, not of the inner set),
+#    and that the HOST half (still parallel until Phase C) is seeded by hand.
 _cp=$(awk '/^do_copy\(\)/,/^}/' ../standalone/scripts/project-cmd.sh)
-printf '%s' "$_cp" | grep -q 'module_state_dir' \
-    && ok "do_copy seeds the destination's module state" \
-    || bad "do_copy no longer copies module state — the copy will silently inherit the source's LATER edits at first open"
+printf '%s' "$_cp" | grep -q 'shutil.copytree(sp, np)' \
+    && ok "do_copy copies the WHOLE set dir (module state rides along)" \
+    || bad "do_copy no longer copies the whole set dir — the module state does not travel"
 printf '%s' "$_cp" | grep -q 'shutil.copytree(hp_src' \
     && ok "do_copy seeds the destination's host state (routing/params)" \
     || bad "do_copy no longer copies host state — a copy starts with the DEFAULT chain/FX config"
-printf '%s' "$_cp" | grep -q 'f.startswith(prefix + "-")' \
-    && ok "the copy reads only our own files from the SHARED module root" \
-    || bad "do_copy is not prefix-scoped in the shared module root"
+printf '%s' "$_cp" | grep -q 'n != dbx_subdir' \
+    && ok "do_copy skips the reserved state subdir when hunting the inner set" \
+    || bad "do_copy lost the reserved-name filter — it can rename the STATE dir as the set"
 
 [ "$fail" -eq 0 ] && echo "PASS: a project switch cannot inherit its predecessor's state" \
                   || echo "FAIL: clean-slate invariants broken"
