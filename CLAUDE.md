@@ -34,6 +34,23 @@ So a davebox need is a valid reason to change this host. Do not treat it as an o
   during every davebox execution context (module eval, init, tick, onMidi*, onResume, onUnload,
   the parked-tick loop) via the shim-swap-around-callback machinery in `src/shadow/shadow_ui.js` —
   that invariant is what makes the gates deletable. Never write a new gate or a new contract.
+- **📌 dAVEBOx owns project management. Out-of-band mutation is NOT defended against.**
+  Projects are created, copied, renamed and deleted through dAVEBOx's own picker, and that is the
+  only path the code answers for. **A project dAVEBOx has never seen opens BLANK** — it does not
+  try to work out where the project came from. Phase 0 of the state-co-location plan
+  (`docs/plans/2026-08-12-project-state-colocation-and-bind-mount-swap.md`, 2026-08-12) deleted the
+  entire apparatus that used to guess: the inherit picker, the name→uuid index, the copy-suffix
+  family lookup, `copy_source.txt`, and the host's `Song.abl`-file-size duplicate heuristic. All of
+  it answered one question — *"a set appeared that we have never seen; whose descendant is it?"* —
+  which belongs to the **Legacy** world, where davebox ran as a module under stock Schwung and the
+  user held full native set management. Never reintroduce an ancestor guess.
+  ⚠ This is a **policy, not an impossibility**, and the difference has already caused one wrong
+  claim in this repo. Out-of-band mutation IS reachable: the Tools menu hides only `standalone`
+  launcher entries during a live session, so the file browser stays launchable rooted at
+  `UserLibrary` — which mid-session IS the standalone library — and `launch.sh` does not stop
+  schwung-manager, which keeps serving file rename/delete over the network. Closing those is a
+  tracked follow-up (Josh, 2026-08-12: deferred, not cancelled). Until then the blast radius is a
+  project that opens blank, which is exactly the accepted contract.
 - **Keep changes generic anyway** (no module named, docs in the same commit). Not because upstream
   demands it — because a generic change *can* be offered upstream, and each one that merges shrinks
   what this fork carries. See `docs/UPSTREAM.md`.

@@ -62,21 +62,17 @@
  * the deletion is not much of a guard. Defaults are the real device paths, so
  * nothing changes on device.
  *
- * SEQ8_SET_PAGES_DIR_* are the set-pages stashes — a set parked on an inactive
- * page lives there and is ABSENT from Sets/ while being perfectly alive. Two of
- * them because the stash belongs to whichever host wrote it, and dAVEBOx runs
- * under both. */
+ * ⚠ SEQ8_SET_PAGES_DIR_* are GONE (2026-08-12). They pointed at the set-pages
+ * stash — a set parked on an inactive page was absent from Sets/ while being
+ * perfectly alive — but the 8-page stash itself died in P3 of the
+ * re-architecture (src/host/shadow_set_pages.c, src/host/shadow_constants.h:
+ * set_pages_enabled is RESERVED). Nothing writes a stash any more, so the
+ * defensive walk was guarding a feature that does not exist. */
 #ifndef SEQ8_SETS_DIR
 #define SEQ8_SETS_DIR           "/data/UserData/UserLibrary/Sets"
 #endif
 #ifndef SEQ8_SET_STATE_DIR
 #define SEQ8_SET_STATE_DIR      "/data/UserData/schwung/set_state"
-#endif
-#ifndef SEQ8_SET_PAGES_DIR_A
-#define SEQ8_SET_PAGES_DIR_A    "/data/UserData/schwung/set_pages"
-#endif
-#ifndef SEQ8_SET_PAGES_DIR_B
-#define SEQ8_SET_PAGES_DIR_B    "/data/UserData/dbx-host/set_pages"
 #endif
 /* The SA project library. Whole set dirs are renamed between here and Sets/ at
  * the session edges (standalone/scripts/set-swap.sh), so a set is in exactly one

@@ -10,22 +10,17 @@
  * fall through to the remaining globals segments / the tN_ block. */
 /* Is this Move set still alive anywhere?
  *
- * ⚠ "Alive" is NOT the same as "present in Sets/". Schwung's **set pages**
- * feature physically rename()s whole set folders out of Sets/ and into a stash
- * (set_pages/page_N/<uuid>) while another page is active. A set sitting on an
- * inactive page is therefore absent from Sets/ while being entirely intact and
- * one button-press from returning.
+ * ⚠ "Alive" is NOT the same as "present in Sets/", and the prune below erases
+ * state, UI state and EVERY snapshot for the sets it judges orphaned — so a
+ * wrong answer here destroys real musical work with no error and nothing to
+ * restore from. A set is in exactly one of two roots: the live library (Sets/),
+ * or the standalone library, where whole set dirs are parked while no session
+ * runs. ⚠⚠ Outside a session Sets/ holds the user's NATIVE sets, so a
+ * Sets/-only test judges EVERY standalone project deleted.
  *
- * Treating absent-from-Sets as deleted is why this helper exists: the prune
- * below erases seq8 state, UI state and EVERY snapshot for the sets it judges
- * orphaned. Opening dAVEBOx while on page 1 would permanently destroy the
- * user's patterns for every set on pages 2-8 — real musical work, gone, with no
- * error and nothing to restore from.
- *
- * Both stash roots are checked because the stash lives under whichever host
- * created it, and dAVEBOx runs under both. Subdirectories are enumerated rather
- * than assuming page_0..N, so a future re-layout of the stash cannot silently
- * reintroduce the bug.
+ * (A third root, the set-pages stash, was checked here until 2026-08-12. The
+ * 8-page stash died in P3 of the re-architecture and nothing writes one any
+ * more, so the walk guarded a feature that no longer exists.)
  *
  * ⭑ The asymmetry that decides every unclear case: keeping a stale state file
  * costs a few KB, deleting a live one destroys work. So anything we cannot
@@ -39,12 +34,6 @@ static int seq8_set_uuid_alive(const char *uuid) {
         SEQ8_SET_LIBRARY_DIR,
         NULL
     };
-    /* Roots holding them one level deeper (<root>/<page>/<uuid>). */
-    static const char *const stash_roots[] = {
-        SEQ8_SET_PAGES_DIR_A,
-        SEQ8_SET_PAGES_DIR_B,
-        NULL
-    };
     char buf[512];
     struct stat st;
 
@@ -53,21 +42,6 @@ static int seq8_set_uuid_alive(const char *uuid) {
         if (stat(buf, &st) == 0) return 1;
     }
 
-    for (int r = 0; stash_roots[r]; r++) {
-        struct stat rst;
-        if (stat(stash_roots[r], &rst) != 0) continue;  /* no stash here at all */
-        DIR *d = opendir(stash_roots[r]);
-        if (!d) return 1;   /* exists but unreadable — refuse to judge it dead */
-        struct dirent *pe;
-        int found = 0;
-        while (!found && (pe = readdir(d)) != NULL) {
-            if (pe->d_name[0] == '.') continue;
-            snprintf(buf, sizeof(buf), "%s/%s/%s", stash_roots[r], pe->d_name, uuid);
-            if (stat(buf, &st) == 0) found = 1;
-        }
-        closedir(d);
-        if (found) return 1;
-    }
     return 0;
 }
 
@@ -112,8 +86,8 @@ static int sp_globals_state(sp_ctx_t *cx) {
             }
             if (!hex_ok) continue;
             scanned++;
-            /* Alive in Sets/ OR stashed on an inactive set page — see the
-             * helper. Never reduce this back to a bare stat() of Sets/. */
+            /* Alive in Sets/ OR in the standalone library — see the helper.
+             * ⚠ Never reduce this back to a bare stat() of Sets/. */
             if (seq8_set_uuid_alive(n)) continue;
             snprintf(buf, sizeof(buf), SEQ8_SET_STATE_FMT, n);
             int u1 = unlink(buf);

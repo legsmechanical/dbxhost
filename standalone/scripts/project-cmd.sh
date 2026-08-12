@@ -72,17 +72,14 @@ ACTIVE_SET_PATH="${ACTIVE_SET_PATH:-$DBX_DIR/active_set.txt}"
 #                  whole set dirs between the two — a set is in exactly one).
 #   sets/native-stash/  the natives while a session runs. Ours never land here,
 #                  but a uuid found there is manifestly a live set, so it counts.
-#   set_pages/*/   Schwung's set-pages feature stashes whole set dirs off Sets/
-#                  while another page is active. Both roots, because the stash
-#                  lives under whichever host created it.
+# (A set-pages stash was a fourth root until 2026-08-12; the 8-page feature died
+# in P3 and nothing writes a stash any more.)
 # This is the same union dsp/setparam/sp_globals_state.c's seq8_set_uuid_alive()
 # walks for the MODULE root; keep the two in step.
 SWAP_ROOT="${SWAP_ROOT:-$DBX_DIR/sets}"
 LIBRARY_DIR="${LIBRARY_DIR:-$SWAP_ROOT/library}"
 NATIVE_STASH_DIR="${NATIVE_STASH_DIR:-$SWAP_ROOT/native-stash}"
 SWAP_STATE_FILE="${SWAP_STATE_FILE:-$SWAP_ROOT/swap_state}"
-SET_PAGES_DIR_A="${SET_PAGES_DIR_A:-/data/UserData/schwung/set_pages}"
-SET_PAGES_DIR_B="${SET_PAGES_DIR_B:-$DBX_DIR/set_pages}"
 # name -> uuid map, so a duplicated set can inherit the original's state. Lives
 # in the SHARED module root but is ours by prefix. Read/written by delete,
 # rename and prune here, and by the module (ui_persistence.mjs). ⚠ Declared with
@@ -563,11 +560,9 @@ PYEOF
 #     refuse. A real device always has sets.
 do_prune() {
     python3 - "$SETS_DIR" "$LIBRARY_DIR" "$NATIVE_STASH_DIR" \
-              "$SET_PAGES_DIR_A" "$SET_PAGES_DIR_B" "$SWAP_STATE_FILE" \
-              "$HOST_STATE_DIR" <<'PYEOF'
+              "$SWAP_STATE_FILE" "$HOST_STATE_DIR" <<'PYEOF'
 import os, re, shutil, sys
-(sets_dir, library_dir, native_stash, pages_a, pages_b, swap_state,
- host_state_dir) = sys.argv[1:8]
+(sets_dir, library_dir, native_stash, swap_state, host_state_dir) = sys.argv[1:6]
 
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}'
                      r'-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
@@ -593,19 +588,8 @@ def entries(path):
         return set()
 
 
-# Every root a live set can be sitting in. The page stashes are one level
-# deeper (<root>/<page>/<uuid>), and an unreadable one is not evidence of
-# absence — so a page root that exists but cannot be walked aborts the sweep.
+# Every root a live set can be sitting in.
 alive = entries(sets_dir) | entries(library_dir) | entries(native_stash)
-for root in (pages_a, pages_b):
-    if not os.path.isdir(root):
-        continue
-    try:
-        pages = os.listdir(root)
-    except OSError:
-        sys.exit("project-cmd: prune SKIPPED: %s exists but cannot be read" % root)
-    for p in pages:
-        alive |= entries(os.path.join(root, p))
 
 if not entries(sets_dir):
     sys.exit("project-cmd: prune SKIPPED: %s is empty or unreadable" % sets_dir)

@@ -138,6 +138,8 @@ fi
 # library: outside a session Sets/ holds the user's NATIVE sets, so a prune that
 # only knows about Sets/ judges every project dead and deletes the routing for
 # the entire library.
+# (A set-pages stash was a third such root until 2026-08-12; the 8-page feature
+# died in P3, so its case went with it.)
 # ---------------------------------------------------------------------------
 P="$(mktemp -d)"
 trap 'rm -rf "$T" "$P"' EXIT
@@ -146,17 +148,15 @@ prune_env() {
         SWAP_ROOT="$P/dbx/sets" LIBRARY_DIR="$P/dbx/sets/library" \
         NATIVE_STASH_DIR="$P/dbx/sets/native-stash" \
         SWAP_STATE_FILE="$P/dbx/sets/swap_state" \
-        SET_PAGES_DIR_A="$P/pages_a" SET_PAGES_DIR_B="$P/dbx/set_pages" \
         HOST_STATE_DIR="$P/dbx/set_state" SET_STATE_DIR="$P/set_state" \
         NAME_INDEX_PATH="$P/name_index.json" \
         sh "$CMD" prune
 }
 LIVE=aaaaaaaa-1111-4111-8111-000000000001      # in Sets/  (in-session library)
 LIB=bbbbbbbb-2222-4222-8222-000000000002       # in sets/library/ (no session)
-PAGED=cccccccc-3333-4333-8333-000000000003     # parked on an inactive set page
 ORPH=dddddddd-4444-4444-8444-000000000004      # nothing behind it: the target
-mkdir -p "$P/Sets/$LIVE" "$P/dbx/sets/library/$LIB" "$P/pages_a/page_2/$PAGED"
-for u in "$LIVE" "$LIB" "$PAGED" "$ORPH"; do
+mkdir -p "$P/Sets/$LIVE" "$P/dbx/sets/library/$LIB"
+for u in "$LIVE" "$LIB" "$ORPH"; do
     mkdir -p "$P/dbx/set_state/$u"
     echo '{}' > "$P/dbx/set_state/$u/shadow_chain_config.json"
 done
@@ -167,7 +167,6 @@ prune_env >/dev/null
 check "prune: orphan host state removed"      bash -c "! test -d '$P/dbx/set_state/$ORPH'"
 check "prune: set in Sets/ survives"          test -d "$P/dbx/set_state/$LIVE"
 check "prune: set in the SA LIBRARY survives" test -d "$P/dbx/set_state/$LIB"
-check "prune: set on an inactive PAGE survives" test -d "$P/dbx/set_state/$PAGED"
 check "prune: non-uuid dirs untouched"        test -d "$P/dbx/set_state/not-a-uuid"
 # The name index belongs to the module (it holds it in memory and rewrites the
 # whole file), so a sweep here would be silently undone — prune must not touch it.

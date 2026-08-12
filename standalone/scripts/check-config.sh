@@ -68,7 +68,9 @@ check "davebox ui_engine host dir"     "$DBX/ui/ui_engine.mjs"   "'$DBX_DIR'"
 check "davebox ui_dialogs project cmd" "$DBX/ui/ui_dialogs.mjs"  "'$DBX_DIR/scripts/project-cmd.sh'"
 check "davebox ui_dialogs projects"    "$DBX/ui/ui_dialogs.mjs"  "'$DBX_DIR/projects.json'"
 check "davebox ui_tick exit-to-stock"  "$DBX/ui/ui_tick.mjs"     "sh $DBX_DIR/scripts/exit-to-stock.sh"
-check "davebox seq8.c set_pages dir"   "$DBX/dsp/seq8.c"         "\"$DBX_DIR/set_pages\""
+# (A "seq8.c set_pages dir" pin lived here until 2026-08-12. The 8-page set
+# stash died in P3 and nothing writes one, so seq8.c no longer carries that
+# literal — the pin outlived the path it was pinning.)
 check "davebox seq8.c select marker"   "$DBX/dsp/seq8.c"         "\"$DBX_DIR/fresh_session\""
 
 # The SHM namespace, not just the install dir. launch.sh clears the namespace on
