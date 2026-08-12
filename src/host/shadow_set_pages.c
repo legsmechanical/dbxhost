@@ -375,79 +375,14 @@ int shadow_load_config_from_dir(const char *dir) {
  * Set detection
  * ============================================================================ */
 
-/* Find Song.abl size for a given UUID by scanning its subdirectory.
- * Returns file size, or -1 if not found. */
-static long shadow_get_song_abl_size(const char *uuid) {
-    char uuid_path[512];
-    snprintf(uuid_path, sizeof(uuid_path), "%s/%s", SAMPLER_SETS_DIR, uuid);
-    DIR *d = opendir(uuid_path);
-    if (!d) return -1;
-    struct dirent *sub;
-    long result = -1;
-    while ((sub = readdir(d)) != NULL) {
-        if (sub->d_name[0] == '.') continue;
-        char song_path[768];
-        snprintf(song_path, sizeof(song_path), "%s/%s/Song.abl", uuid_path, sub->d_name);
-        struct stat st;
-        if (stat(song_path, &st) == 0 && S_ISREG(st.st_mode)) {
-            result = (long)st.st_size;
-            break;
-        }
-    }
-    closedir(d);
-    return result;
-}
-
-/* Returns non-zero if set name indicates user asked for duplication. */
-static int shadow_set_name_looks_like_copy(const char *set_name) {
-    if (!set_name || !set_name[0]) return 0;
-    if (strcasestr(set_name, "copy")) return 1;
-    if (strcasestr(set_name, "duplicate")) return 1;
-    return 0;
-}
-
-/* Detect if a new set is a copy of an existing tracked set.
- * Compares Song.abl file sizes between the new set and all sets
- * that have per-set state directories.
- * Returns 1 and fills copy_source_uuid if a likely source is found. */
-static int shadow_detect_copy_source(const char *set_name, const char *new_uuid,
-                                     char *copy_source_uuid, int buf_len) {
-    copy_source_uuid[0] = '\0';
-    if (!shadow_set_name_looks_like_copy(set_name)) {
-        return 0;
-    }
-
-    /* Get new set's Song.abl size */
-    long new_size = shadow_get_song_abl_size(new_uuid);
-    if (new_size <= 0) return 0;
-
-    /* Scan set_state/ for existing tracked sets */
-    DIR *state_dir = opendir(SET_STATE_DIR);
-    if (!state_dir) return 0;
-
-    int match_count = 0;
-    char best_uuid[64] = "";
-    struct dirent *entry;
-    while ((entry = readdir(state_dir)) != NULL) {
-        if (entry->d_name[0] == '.') continue;
-        if (strcmp(entry->d_name, new_uuid) == 0) continue;  /* Skip self */
-
-        /* Check if this tracked set's Song.abl matches */
-        long existing_size = shadow_get_song_abl_size(entry->d_name);
-        if (existing_size == new_size) {
-            snprintf(best_uuid, sizeof(best_uuid), "%s", entry->d_name);
-            match_count++;
-        }
-    }
-    closedir(state_dir);
-
-    if (match_count == 1) {
-        snprintf(copy_source_uuid, buf_len, "%s", best_uuid);
-        return 1;
-    }
-
-    return 0;
-}
+/* ⚠ The duplicate-DETECTION helpers that lived here are gone (Phase 0 of the
+ * state-co-location plan): shadow_get_song_abl_size, shadow_set_name_looks_like_copy
+ * and shadow_detect_copy_source. They guessed a new set's ancestor by matching
+ * "copy"/"duplicate" in its name and comparing Song.abl file SIZES, so a module
+ * could seed the duplicate's state from it. Nothing had called them for some
+ * time — the JS side owned the same guess — and the guess itself is retired: a
+ * module that manages its own projects seeds state when it makes the copy, and
+ * a set duplicated out of band honestly starts empty. */
 
 /* Handle a Set being loaded — called from Settings.json poll.
  * set_name: human-readable name (e.g. "My Song")

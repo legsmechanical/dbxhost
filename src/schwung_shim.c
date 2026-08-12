@@ -900,17 +900,13 @@ static volatile int shadow_block_plain_volume_hide_until_release = 0;
 
 /* shadow_ensure_dir, shadow_copy_file, shadow_batch_migrate_sets,
  * shadow_save_config_to_dir, shadow_load_config_from_dir,
- * shadow_get_song_abl_size, shadow_set_name_looks_like_copy,
- * shadow_detect_copy_source, shadow_handle_set_loaded,
+ * shadow_handle_set_loaded,
  * shadow_poll_current_set — all moved to shadow_set_pages.c */
 
 /* shadow_copy_file — moved to shadow_set_pages.c */
 /* shadow_batch_migrate_sets — moved to shadow_set_pages.c */
 /* shadow_save_config_to_dir — moved to shadow_set_pages.c */
 /* shadow_load_config_from_dir — moved to shadow_set_pages.c */
-/* shadow_get_song_abl_size — moved to shadow_set_pages.c */
-/* shadow_set_name_looks_like_copy — moved to shadow_set_pages.c */
-/* shadow_detect_copy_source — moved to shadow_set_pages.c */
 /* shadow_handle_set_loaded — moved to shadow_set_pages.c */
 /* shadow_poll_current_set — moved to shadow_set_pages.c */
 

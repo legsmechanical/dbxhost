@@ -4323,60 +4323,6 @@ function saveChainConfigToDir(dir) {
 /* Load chain config (volumes, channels, mute/solo) from a per-set directory.
  * Mirrors what shadow_load_config_from_dir() did on the C side, but runs
  * on the UI thread to avoid blocking the audio thread. */
-/* Detect if a new set is a copy of an existing tracked set.
- * Compares Song.abl file sizes between the new set UUID and all
- * existing set_state directories. Returns source dir path or null. */
-function detectCopySource(newUuid) {
-    const SETS_DIR = "/data/UserData/UserLibrary/Sets";
-    const STATE_DIR = HOST_STATE_ROOT + "/set_state";
-
-    /* Get new set's Song.abl size */
-    function getSongAblSize(uuid) {
-        try {
-            const uuidPath = SETS_DIR + "/" + uuid;
-            const entries = os.readdir(uuidPath);
-            const dirList = entries[0];
-            if (!Array.isArray(dirList)) return -1;
-            for (const sub of dirList) {
-                if (sub === "." || sub === "..") continue;
-                const songPath = uuidPath + "/" + sub + "/Song.abl";
-                try {
-                    const st = os.stat(songPath);
-                    if (st[0] && st[0].size > 0) return st[0].size;
-                } catch (e) {}
-            }
-        } catch (e) {}
-        return -1;
-    }
-
-    const newSize = getSongAblSize(newUuid);
-    if (newSize <= 0) return null;
-
-    /* Scan set_state/ for tracked sets with matching Song.abl size */
-    try {
-        const entries = os.readdir(STATE_DIR);
-        const dirList = entries[0];
-        if (!Array.isArray(dirList)) return null;
-        let matchUuid = null;
-        let matchCount = 0;
-        for (const entry of dirList) {
-            if (entry === "." || entry === ".." || entry === newUuid) continue;
-            if (!host_file_exists(STATE_DIR + "/" + entry + "/slot_0.json")) continue;
-            const existingSize = getSongAblSize(entry);
-            if (existingSize === newSize) {
-                matchUuid = entry;
-                matchCount++;
-            }
-        }
-        if (matchCount === 1 && matchUuid) {
-            return STATE_DIR + "/" + matchUuid;
-        }
-    } catch (e) {
-        debugLog("detectCopySource error: " + e);
-    }
-    return null;
-}
-
 /* Save current RNBO graph name to a per-set directory.
  * Only writes if RNBO is running and returns a graph name. */
 /* Helper: query an RNBO OSCQuery endpoint and return parsed VALUE, or null. */
@@ -14002,92 +13948,58 @@ function processSetChangedFlag() {
             }
 
             /* 4. First visit to this set: seed its state directory.
-             *    Detect if this is a duplicated set by comparing Song.abl sizes,
-             *    then copy state from the source. Otherwise start with empty slots. */
+             *    A set with no slot_0.json has never been seen before, so it
+             *    starts with empty slot/FX state. */
             if (uuid && !host_file_exists(newDir + "/slot_0.json")) {
-                let copySourceDir = null;
-                /* Check for pre-existing copy_source.txt (from older shim) */
-                const copySourceUuid = host_read_file(newDir + "/copy_source.txt");
-                if (copySourceUuid && copySourceUuid.trim()) {
-                    const srcDir = HOST_STATE_ROOT + "/set_state/" + copySourceUuid.trim();
-                    if (host_file_exists(srcDir + "/slot_0.json")) {
-                        copySourceDir = srcDir;
+                /* ⚠ There is no copy-DETECTION here any more (Phase 0 of the
+                 * state-co-location plan). It used to guess whether this set
+                 * was a duplicate — by reading a copy_source.txt breadcrumb, or
+                 * failing that by matching "copy"/"duplicate" in the name and
+                 * comparing Song.abl file SIZES — and then seed this set's slot
+                 * state from the guessed ancestor.
+                 *
+                 * That guess only ever mattered for a set duplicated OUTSIDE
+                 * the owning module. A module that manages its own projects
+                 * seeds the new set's state when IT makes the copy, in which
+                 * case slot_0.json already exists and this branch is skipped
+                 * entirely. So the guess fired only for out-of-band copies,
+                 * where the honest answer is a set that starts empty. */
+                /* New set — start with empty slots */
+                debugLog("SET_CHANGED: new set, starting with empty slots");
+                for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+                    host_write_file(newDir + "/slot_" + i + ".json", "{}\n");
+                    host_write_file(newDir + "/master_fx_" + i + ".json", "{}\n");
+                }
+                /* Empty send FX files so a new set starts with no send chains. */
+                for (let bi = 0; bi < SEND_FX_BUSES.length; bi++) {
+                    for (let s = 0; s < SEND_FX_SLOTS_JS; s++) {
+                        host_write_file(newDir + "/send_fx_" + SEND_FX_BUSES[bi] + "_" + s + ".json", "{}\n");
                     }
                 }
-                /* Detect copy by comparing Song.abl sizes (if name suggests a copy) */
-                if (!copySourceDir && setName &&
-                    (setName.toLowerCase().indexOf("copy") >= 0 ||
-                     setName.toLowerCase().indexOf("duplicate") >= 0)) {
-                    copySourceDir = detectCopySource(uuid);
+                /* Empty Move FX files so a new set starts with no Move FX chains. */
+                for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++) {
+                    for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) {
+                        host_write_file(newDir + "/move_fx_" + sl + "_" + b + ".json", "{}\n");
+                    }
                 }
-                if (copySourceDir) {
-                    debugLog("SET_CHANGED: duplicated set, copying from " + copySourceDir);
-                    for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
-                        const src = host_read_file(copySourceDir + "/slot_" + i + ".json");
-                        if (src) host_write_file(newDir + "/slot_" + i + ".json", src);
-                        const mfx = host_read_file(copySourceDir + "/master_fx_" + i + ".json");
-                        if (mfx) host_write_file(newDir + "/master_fx_" + i + ".json", mfx);
-                    }
-                    /* Copy send FX per-set files (2 buses × 4 slots) + return-level meta */
-                    for (let bi = 0; bi < SEND_FX_BUSES.length; bi++) {
-                        for (let s = 0; s < SEND_FX_SLOTS_JS; s++) {
-                            const sfxName = "/send_fx_" + SEND_FX_BUSES[bi] + "_" + s + ".json";
-                            const sfx = host_read_file(copySourceDir + sfxName);
-                            if (sfx) host_write_file(newDir + sfxName, sfx);
-                        }
-                    }
-                    const sfxMeta = host_read_file(copySourceDir + "/send_fx_meta.json");
-                    if (sfxMeta) host_write_file(newDir + "/send_fx_meta.json", sfxMeta);
-                    /* Copy Move FX per-set files (4 slots × blocks) + strip meta */
-                    for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++) {
-                        for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) {
-                            const mvName = "/move_fx_" + sl + "_" + b + ".json";
-                            const mv = host_read_file(copySourceDir + mvName);
-                            if (mv) host_write_file(newDir + mvName, mv);
-                        }
-                    }
-                    const mvMeta = host_read_file(copySourceDir + "/move_fx_meta.json");
-                    if (mvMeta) host_write_file(newDir + "/move_fx_meta.json", mvMeta);
-                    /* Also copy chain config */
-                    const chainCfg = host_read_file(copySourceDir + "/shadow_chain_config.json");
-                    if (chainCfg) host_write_file(newDir + "/shadow_chain_config.json", chainCfg);
-                } else {
-                    /* New set — start with empty slots */
-                    debugLog("SET_CHANGED: new set, starting with empty slots");
-                    for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
-                        host_write_file(newDir + "/slot_" + i + ".json", "{}\n");
-                        host_write_file(newDir + "/master_fx_" + i + ".json", "{}\n");
-                    }
-                    /* Empty send FX files so a new set starts with no send chains. */
-                    for (let bi = 0; bi < SEND_FX_BUSES.length; bi++) {
-                        for (let s = 0; s < SEND_FX_SLOTS_JS; s++) {
-                            host_write_file(newDir + "/send_fx_" + SEND_FX_BUSES[bi] + "_" + s + ".json", "{}\n");
-                        }
-                    }
-                    /* Empty Move FX files so a new set starts with no Move FX chains. */
-                    for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++) {
-                        for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) {
-                            host_write_file(newDir + "/move_fx_" + sl + "_" + b + ".json", "{}\n");
-                        }
-                    }
-                    /* Seed a default chain config so receive channels reset to
-                     * per-track defaults (Ch 1-4). Without this, the upcoming
-                     * loadChainConfigFromDir silently bails and the shim's
-                     * slot.channel keeps stale values from the prior set —
-                     * symptom: no audio on new sets until user toggles Recv Ch. */
-                    const defaultCfg = { slots: [] };
-                    for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
-                        defaultCfg.slots.push({
-                            name: "",
-                            channel: i + 1,
-                            volume: 1.0,
-                            forward_channel: -1,
-                            muted: 0,
-                            soloed: 0
-                        });
-                    }
-                    host_write_file(newDir + "/shadow_chain_config.json",
-                        JSON.stringify(defaultCfg, null, 2) + "\n");
+                /* Seed a default chain config so receive channels reset to
+                 * per-track defaults (Ch 1-4). Without this, the upcoming
+                 * loadChainConfigFromDir silently bails and the shim's
+                 * slot.channel keeps stale values from the prior set —
+                 * symptom: no audio on new sets until user toggles Recv Ch. */
+                const defaultCfg = { slots: [] };
+                for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+                    defaultCfg.slots.push({
+                        name: "",
+                        channel: i + 1,
+                        volume: 1.0,
+                        forward_channel: -1,
+                        muted: 0,
+                        soloed: 0
+                    });
+                }
+                host_write_file(newDir + "/shadow_chain_config.json",
+                    JSON.stringify(defaultCfg, null, 2) + "\n");
                 }
             }
 
