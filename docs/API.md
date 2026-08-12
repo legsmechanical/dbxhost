@@ -199,12 +199,25 @@ host_get_refresh_rate()       // Get current refresh rate
 // File system utilities (used by Module Store)
 host_file_exists(path)        // Returns bool - check if file/directory exists
 host_read_file(path)          // Returns file contents as string, or null on error
-host_write_file(path, content) // Write string content to file, returns bool
+host_write_file(path, content) // Replace file with string content (atomic), returns bool
 host_http_download(url, dest) // Download URL to dest path, returns bool
 host_extract_tar(tarball, dir) // Extract .tar.gz to directory, returns bool
 host_extract_tar_strip(tarball, dir, strip) // Extract with --strip-components
 host_ensure_dir(path)         // Create directory if it doesn't exist, returns bool
 host_remove_dir(path)         // Recursively remove directory, returns bool
+
+// `host_write_file` is a whole-file REPLACE and is crash-atomic: the content is
+// written to a `<path>.tmp` sibling, flushed to the medium, then renamed over
+// the destination. A power cut therefore leaves either the complete previous
+// contents or the complete new contents — never a truncated file, which
+// matters because the JSON state readers in this tree parse tolerantly and
+// would load a fragment as a smaller document instead of reporting an error.
+// Consequences worth knowing: the destination gets a NEW inode on every write
+// (an open fd on the old file keeps seeing the old contents), permissions come
+// from the newly created file rather than the one replaced, and a `.tmp`
+// sibling is briefly visible in the directory. The containing directory is not
+// fsynced, so a crash may leave the previous version rather than the newest —
+// losing the last write is acceptable, loading half of it is not.
 
 // Jack state and module metadata (used by feedback-protection gate)
 host_speaker_active()         // Returns bool - true when built-in speakers active (no headphones)

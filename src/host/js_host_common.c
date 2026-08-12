@@ -22,6 +22,7 @@
 #include "quickjs.h"
 #include "quickjs-libc.h"
 
+#include "file_atomic.h"
 #include "js_host_common.h"
 #include "unified_log.h"
 
@@ -344,7 +345,14 @@ static JSValue js_host_read_file_base64(JSContext *ctx, JSValueConst this_val,
     return result;
 }
 
-/* host_write_file(path, content) -> bool */
+/* host_write_file(path, content) -> bool
+ *
+ * Whole-file replace, and CRASH-ATOMIC: the content goes to a temp sibling
+ * which is flushed and renamed over the destination (schwung_write_file_atomic).
+ * The old implementation opened the destination "w", which truncates it before
+ * the first new byte lands — a power cut in that window left the file a
+ * fragment, and JSON state readers that parse tolerantly load a fragment as if
+ * it were a smaller document rather than reporting an error. */
 static JSValue js_host_write_file(JSContext *ctx, JSValueConst this_val,
                                   int argc, JSValueConst *argv) {
     (void)this_val;
@@ -371,22 +379,13 @@ static JSValue js_host_write_file(JSContext *ctx, JSValueConst this_val,
         return JS_FALSE;
     }
 
-    FILE *f = fopen(path, "w");
-    if (!f) {
-        fprintf(stderr, "host_write_file: cannot open file: %s\n", path);
-        JS_FreeCString(ctx, path);
-        JS_FreeCString(ctx, content);
-        return JS_FALSE;
-    }
-
-    size_t len = strlen(content);
-    size_t written = fwrite(content, 1, len, f);
-    fclose(f);
+    int rc = schwung_write_file_atomic(path, content, strlen(content));
+    if (rc != 0) fprintf(stderr, "host_write_file: atomic write failed: %s\n", path);
 
     JS_FreeCString(ctx, path);
     JS_FreeCString(ctx, content);
 
-    return (written == len) ? JS_TRUE : JS_FALSE;
+    return (rc == 0) ? JS_TRUE : JS_FALSE;
 }
 
 /* host_ensure_dir(path) -> bool - creates directory if it doesn't exist */

@@ -535,10 +535,22 @@ static void seq8_save_state(seq8_instance_t *inst) {
      * same flag read back via get_param, so it never even fetches state_full.) */
     if (inst->awaiting_select) return;
     ensure_parent_dir(inst->state_path);
-    FILE *fp = fopen(inst->state_path, "w");
+    /* Temp sibling + fsync + rename, never a truncating write to the live path:
+     * the serialize below is thousands of fprintf calls, so writing in place
+     * would leave the only on-disk copy a fragment for the whole of it. The
+     * loader parses with strstr and would accept such a fragment as a real
+     * project, quietly missing whatever the cut removed. Same contract as the
+     * host's host_write_file — either the old state or the new one, never a
+     * blend of the two. */
+    char tmp_path[sizeof(inst->state_path) + 8];
+    int _n = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", inst->state_path);
+    if (_n < 0 || (size_t)_n >= sizeof(tmp_path)) return;
+    FILE *fp = fopen(tmp_path, "w");
     if (!fp) return;
     seq8_do_serialize(inst, fp);
-    fclose(fp);
+    int ok = (fflush(fp) == 0) && (fsync(fileno(fp)) == 0);
+    if (fclose(fp) != 0) ok = 0;
+    if (!ok || rename(tmp_path, inst->state_path) != 0) remove(tmp_path);
 }
 
 static void seq8_load_state(seq8_instance_t *inst) {

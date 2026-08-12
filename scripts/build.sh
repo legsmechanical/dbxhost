@@ -266,7 +266,7 @@ fi
 # binaries. Globbing every header makes that class of bug impossible.
 if needs_rebuild build/schwung \
     src/schwung_host.c src/host/module_manager.c src/host/settings.c src/host/unified_log.c \
-    src/host/js_host_common.c \
+    src/host/js_host_common.c src/host/file_atomic.c \
     src/host/*.h; then
     echo "Building host..."
     "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 \
@@ -275,6 +275,7 @@ if needs_rebuild build/schwung \
         src/host/settings.c \
         src/host/unified_log.c \
         src/host/js_host_common.c \
+        src/host/file_atomic.c \
         -o build/schwung \
         -Isrc -Isrc/lib \
         -Ilibs/quickjs/quickjs-2025-04-26 \
@@ -368,10 +369,11 @@ fi
 # Build Shadow UI host (uses shared display bindings from js_display.c)
 if needs_rebuild build/shadow/shadow_ui \
     src/shadow/shadow_ui.c src/host/js_display.c src/host/unified_log.c \
-    src/host/js_host_common.c src/host/shadow_shm_util.c \
+    src/host/js_host_common.c src/host/shadow_shm_util.c src/host/file_atomic.c \
     src/host/schwung_trace.c \
     src/host/js_display.h src/host/shadow_constants.h src/host/unified_log.h \
-    src/host/js_host_common.h src/host/shadow_shm_util.h src/host/schwung_trace.h; then
+    src/host/js_host_common.h src/host/shadow_shm_util.h src/host/schwung_trace.h \
+    src/host/file_atomic.h; then
     echo "Building Shadow UI..."
     "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 \
         src/shadow/shadow_ui.c \
@@ -379,6 +381,7 @@ if needs_rebuild build/shadow/shadow_ui \
         src/host/unified_log.c \
         src/host/js_host_common.c \
         src/host/shadow_shm_util.c \
+        src/host/file_atomic.c \
         src/host/schwung_trace.c \
         -o build/shadow/shadow_ui \
         -Isrc -Isrc/lib -Isrc/host \
