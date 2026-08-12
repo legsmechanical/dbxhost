@@ -20,8 +20,6 @@
 #   rename <index> <name> rename the inner set dir + name index; the OPEN
 #                     project defers the mv to relaunch_patch.sh and restarts
 #                     Move in place (see do_rename)
-#   prune           drop HOST state dirs whose set is gone, and name-index
-#                     entries whose state file is gone (see do_prune)
 #
 # The switch path mirrors exit-to-stock.sh's shape: SIGTERM so the host runs
 # its normal shutdown saves, detached because our caller dies with the process
