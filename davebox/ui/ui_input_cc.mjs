@@ -36,7 +36,8 @@ import {
     openSaveSnapshot, closeSnapshotPicker,
     snapshotPickerRotate, snapshotPickerClick, openClearAutoMenu,
     clearAutoMenuRotate, clearAutoMenuClick, showMenuInfo, closeConvertConfirm, resolveInheritPicker,
-    closeProjectPadPicker, projectPadPickerModifiers, projectPadPickerTap
+    closeProjectPadPicker, projectPadPickerModifiers,
+    projectPadPickerClick, projectPadPickerRotate, projectPadPickerBack
 } from './ui_dialogs.mjs';
 import { trackClipHasContent, sessionHasAnyContent } from './ui_scene.mjs';
 import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
@@ -89,14 +90,12 @@ function _onCC_jog(d1, d2) {
         resolveInheritPicker(action);
         return;
     }
-    /* PROJECTS pad picker: jog click opens the pulsing (current) project — the
-     * keyboard-free way to confirm the default under SELECT-BEFORE-LOAD, where
-     * the session starts here and the wheel would otherwise be dead. Routed
-     * through the ordinary pad-tap path so copy/delete flows behave identically
-     * to tapping that pad. */
+    /* PROJECTS pad picker: jog click drives the overlay stack (create-confirm,
+     * color pick, the Load/Rename/Color menu) — and with nothing open it opens
+     * the menu on the CURRENT project, the keyboard-free path under
+     * SELECT-BEFORE-LOAD where the session starts here. */
     if (d1 === 3 && d2 === 127 && S.projectPadPicker) {
-        const _cur = S.projectPadPicker.current;
-        if (_cur >= 0 && _cur < 32) projectPadPickerTap(_cur);
+        projectPadPickerClick();
         return;
     }
     /* Snapshot picker: jog click resolves a confirm or arms one. */
@@ -669,6 +668,14 @@ function _onCC_jog(d1, d2) {
                 S.screenDirty = true;
                 forceRedraw();
             }
+            return;
+        }
+
+        /* PROJECTS pad picker: the wheel drives whichever overlay is open.
+         * (Swallow the turn either way — the picker owns the surface; without
+         * this the turn fell through to the bank knob handling underneath.) */
+        if (S.projectPadPicker) {
+            projectPadPickerRotate(decodeDelta(d2));
             return;
         }
 
@@ -1526,6 +1533,13 @@ function _cancelMergeCountIn() {
  * Hold-to-suspend works regardless and is not reflected here.) */
 export function backTapWouldAct() {
     if (S.confirmStateWipe || S.pendingInheritPicker) return false;
+    if (S.projectPadPicker) {
+        const _p = S.projectPadPicker;
+        /* An open overlay always peels; the bare grid closes unless the
+         * session is still awaiting its selection. */
+        if (_p.menu || _p.colorPick || _p.confirmNew) return true;
+        return !S.awaitingProjectSelect;
+    }
     if (S.snapshotPicker || S.clearAutoMenu || S.tempoSelectActive ||
         S.mergeNoticePending || S.mergeCountingIn ||
         S.pendingMergePlacement || S.mergeSoloPlacement >= 0 ||
@@ -1546,6 +1560,8 @@ function _backTap() {
 
     /* 1. Transient dialogs / pickers / modes (one open at a time). */
     if (S.projectPadPicker) {
+        /* Peel an open overlay (color -> menu -> grid) first. */
+        if (projectPadPickerBack()) return;
         /* SELECT-BEFORE-LOAD: nothing is loaded, so Back has nowhere to go —
          * closing would leave an empty session with no picker and no project.
          * The picker is the session until a choice is made. (Shift+Back still

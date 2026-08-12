@@ -7,6 +7,7 @@ import {
     SEQ8_NAV_FLAGS
 } from './ui_constants.mjs';
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
+import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
 import { arpVelLevel } from './ui_pure.mjs';
 import {
     White, Red, Green, Blue, DarkBlue, LightGrey, DarkGrey, Cyan, PurpleBlue, VividYellow,
@@ -399,14 +400,25 @@ export function updateStepLEDs() {
 function paintProjectPickerLEDs() {
     const p = S.projectPadPicker;
     if (!p) return false;
+    /* Rename keyboard owns the pads while open — do not fight it. */
+    if (p.renameActive) return true;
     const blink = (S.tickCount % 30) < 15;
+    const menuK = p.menu ? p.menu.k : (p.confirmNew ? p.confirmNew.k : -1);
     for (let i = 0; i < 32; i++) {
         let color = LED_OFF;
-        if (p.byIndex[i]) {
+        const proj = p.byIndex[i];
+        const own = projectColorLED(proj);   /* per-project color, default Blue */
+        if (p.colorPick && p.colorPick.k === i) {
+            /* Live preview of the candidate color on the target pad. */
+            color = blink ? PROJECT_COLORS[p.colorPick.sel].led : LED_OFF;
+        } else if (proj) {
             if (p.deleteIdx === i)       color = blink ? Red : DeepRed;
             else if (p.copySrcIdx === i) color = blink ? Cyan : DarkGrey;
+            else if (menuK === i)        color = blink ? White : own;
             else if (p.current === i)    color = blink ? White : LightGrey;
-            else                         color = Blue;
+            else                         color = own;
+        } else if (menuK === i) {
+            color = blink ? White : LED_OFF;   /* create-confirm target */
         }
         cachedSetLED(TRACK_PAD_BASE + i, color);
     }

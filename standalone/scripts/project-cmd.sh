@@ -10,12 +10,16 @@
 # Verbs (driven by the hosted module through host_system_cmd's `sh ` prefix,
 # results returned through files it can host_read_file):
 #   list            write $DBX_DIR/projects.json:
-#                     {"current": N, "projects": [{"uuid","name","index"}...]}
+#                     {"current": N, "projects": [{"uuid","name","index","color"}...]}
 #   new <name>      create a project from the template (fresh uuid, next
 #                     index), then switch to it
 #   switch <index>  save the current song, point currentSongIndex at <index>,
 #                     and restart Move IN PLACE via the launcher's supervisor
 #                     loop (relaunch_requested)
+#   color <index> <n>    set (n < 0: clear) the pad-color palette index
+#   rename <index> <name> rename the inner set dir + name index; the OPEN
+#                     project defers the mv to relaunch_patch.sh and restarts
+#                     Move in place (see do_rename)
 #
 # The switch path mirrors exit-to-stock.sh's shape: SIGTERM so the host runs
 # its normal shutdown saves, detached because our caller dies with the process
@@ -100,12 +104,21 @@ if os.path.isdir(sets_dir):
                  if os.path.isdir(os.path.join(p, n)) and not n.startswith(".")]
         name = names[0] if names else u[:8]
         idx = None
+        color = None
         if hasattr(os, "getxattr"):
             try:
                 idx = int(os.getxattr(p, "user.song-index").decode())
             except (OSError, ValueError):
                 pass
-        projects.append({"uuid": u, "name": name, "index": idx})
+            # Palette index into the picker's PROJECT_COLORS table; absent =
+            # null = the default color. Lives on the uuid dir beside
+            # user.song-index so it travels with the project through the
+            # set-swap and dies with delete for free.
+            try:
+                color = int(os.getxattr(p, "user.dbx-color").decode())
+            except (OSError, ValueError):
+                pass
+        projects.append({"uuid": u, "name": name, "index": idx, "color": color})
 # Unindexed projects sort last, stably.
 projects.sort(key=lambda x: (x["index"] is None, x["index"] if x["index"] is not None else 0, x["name"]))
 tmp = out + ".tmp"
@@ -230,6 +243,12 @@ nu = str(uuidlib.uuid4())
 np = os.path.join(sets_dir, nu)
 shutil.copytree(os.path.join(sp, inner[0]), os.path.join(np, inner[0] + " Copy"))
 os.setxattr(np, "user.song-index", str(dst).encode())
+# The color travels with the copy (copytree of the INNER dir can't carry the
+# OUTER dir's xattrs, same reason song-index is set by hand above).
+try:
+    os.setxattr(np, "user.dbx-color", os.getxattr(sp, "user.dbx-color"))
+except OSError:
+    pass
 
 # Copy BOTH state halves NOW, so the duplicate is a SNAPSHOT.
 #
@@ -351,6 +370,135 @@ PYEOF
     do_list
 }
 
+# Set (or clear, with n < 0) the pad color for a project. The value is an
+# index into the picker's palette table, not an LED code — the module owns
+# what the numbers look like.
+do_color() { # index n
+    case "${1:-}" in *[!0-9]*|"") die "color needs a numeric index" ;; esac
+    case "${2:-}" in -*|[0-9]*) ;; *) die "color needs a numeric value" ;; esac
+    python3 - "$SETS_DIR" "$1" "$2" <<'PYEOF'
+import os, re, sys
+sets_dir, idx, n = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
+for u in os.listdir(sets_dir):
+    p = os.path.join(sets_dir, u)
+    if not os.path.isdir(p) or not uuid_re.match(u):
+        continue
+    try:
+        if int(os.getxattr(p, "user.song-index").decode()) != idx:
+            continue
+    except (OSError, ValueError):
+        continue
+    if n < 0:
+        try:
+            os.removexattr(p, "user.dbx-color")
+        except OSError:
+            pass
+        print("project-cmd: cleared color on index %d" % idx)
+    else:
+        os.setxattr(p, "user.dbx-color", str(n).encode())
+        print("project-cmd: set color %d on index %d" % (n, idx))
+    sys.exit(0)
+sys.exit("project-cmd: ERROR: no project at index %d" % idx)
+PYEOF
+    do_list
+}
+
+# Rename a project's INNER set dir — the name Move shows, the name the module's
+# family lookup keys off, and the name in seq8sa_name_index.json.
+#
+# ⚠ The OPEN project cannot be renamed live: Move holds the song and its saves
+# write by path, so a live mv risks the dying save re-creating the old dir.
+# For the open project the rename is DEFERRED to the launcher's
+# relaunch_patch.sh hook (applied AFTER Move exits, before the in-place
+# restart) and rides the exact switch-in-place machinery do_switch proved:
+# save, queue, SIGTERM, supervisor relaunch at the same index. Non-open
+# projects rename immediately — the same liveness argument delete already
+# proved on hardware.
+NAME_INDEX_PATH="${NAME_INDEX_PATH:-/data/UserData/schwung/${STATE_PREFIX}_name_index.json}"
+
+_rename_update_name_index() { # uuid newname
+    # Drop every stale name -> this-uuid entry, then map the new name iff our
+    # state file exists (the index only ever holds sets with state to inherit).
+    python3 - "$NAME_INDEX_PATH" "$SET_STATE_DIR" "$STATE_PREFIX" "$1" "$2" <<'PYEOF'
+import json, os, sys
+path, state_dir, prefix, uuid, newname = sys.argv[1:6]
+try:
+    idx = json.load(open(path))
+    if not isinstance(idx, dict):
+        idx = {}
+except (OSError, ValueError):
+    idx = {}
+idx = {k: v for k, v in idx.items() if v != uuid}
+if os.path.isfile(os.path.join(state_dir, uuid, prefix + "-state.json")):
+    idx[newname] = uuid
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(idx, f)
+os.replace(tmp, path)
+PYEOF
+}
+
+do_rename() { # index newname
+    case "${1:-}" in *[!0-9]*|"") die "rename needs a numeric index" ;; esac
+    [ -n "${2:-}" ] || die "rename needs a name"
+    case "$2" in */*) die "name must not contain /" ;; esac
+
+    _found="$(python3 - "$SETS_DIR" "$1" <<'PYEOF'
+import os, re, sys
+sets_dir, idx = sys.argv[1], int(sys.argv[2])
+uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
+for u in os.listdir(sets_dir):
+    p = os.path.join(sets_dir, u)
+    if not os.path.isdir(p) or not uuid_re.match(u):
+        continue
+    try:
+        if int(os.getxattr(p, "user.song-index").decode()) != idx:
+            continue
+    except (OSError, ValueError):
+        continue
+    inner = [n for n in os.listdir(p)
+             if os.path.isdir(os.path.join(p, n)) and not n.startswith(".")]
+    if not inner:
+        sys.exit("project-cmd: ERROR: project has no inner set dir")
+    print(u); print(inner[0])
+    sys.exit(0)
+sys.exit("project-cmd: ERROR: no project at index %d" % idx)
+PYEOF
+)" || die "no project at index $1"
+    _uuid="$(printf '%s\n' "$_found" | sed -n 1p)"
+    _old="$(printf '%s\n' "$_found" | sed -n 2p)"
+    [ "$_old" = "$2" ] && { do_list; return 0; }
+
+    _open=""
+    [ -f "$ACTIVE_SET_PATH" ] && _open="$(head -n 1 "$ACTIVE_SET_PATH" | tr -d '[:space:]')"
+    if [ "$_uuid" = "$_open" ]; then
+        # OPEN project: defer the mv to the launcher (post-exit), then restart
+        # Move in place at the same index — do_switch's exact shape. Append to
+        # relaunch_patch.sh rather than clobbering a pending patch.
+        save_song
+        {
+            printf 'mv %s %s\n' \
+                "'$SETS_DIR/$_uuid/$(printf '%s' "$_old" | sed "s/'/'\\\\''/g")'" \
+                "'$SETS_DIR/$_uuid/$(printf '%s' "$2"   | sed "s/'/'\\\\''/g")'"
+        } >> "$DBX_DIR/relaunch_patch.sh"
+        _rename_update_name_index "$_uuid" "$2"
+        printf '%s\n' "$1" > "$DBX_DIR/relaunch_song_index"
+        : > "$DBX_DIR/relaunch_requested"
+        setsid sh -c '
+          sleep 1
+          pkill -x MoveOriginal
+        ' >/dev/null 2>&1 &
+        printf 'project-cmd: rename of OPEN project queued (Move restarting in place)\n'
+        return 0
+    fi
+
+    mv "$SETS_DIR/$_uuid/$_old" "$SETS_DIR/$_uuid/$2"
+    _rename_update_name_index "$_uuid" "$2"
+    printf 'project-cmd: renamed index %s to "%s"\n' "$1" "$2"
+    do_list
+}
+
 case "${1:-}" in
     list)   do_list ;;
     new)    shift; do_new "${1:-}" ;;
@@ -358,5 +506,7 @@ case "${1:-}" in
     copy)   shift; do_copy "${1:-}" "${2:-}" ;;
     delete) shift; do_delete "${1:-}" ;;
     switch) shift; do_switch "${1:-}" ;;
-    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>" ;;
+    color)  shift; do_color "${1:-}" "${2:-}" ;;
+    rename) shift; do_rename "${1:-}" "${2:-}" ;;
+    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>" ;;
 esac

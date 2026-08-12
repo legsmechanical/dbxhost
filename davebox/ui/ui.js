@@ -36,7 +36,7 @@ import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
 import { showActionPopup, readActiveSet, resolveSetLoadDecision } from './ui_persistence.mjs';
 import {
-    closeClearAutoMenu
+    closeClearAutoMenu, projectPickerTextEntryMidi
 } from './ui_dialogs.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { effectiveClip, invalidateLEDCache, trackColor, forceRedraw, installFlagsWrap, buildLedInitQueue } from './ui_leds.mjs';
@@ -328,6 +328,12 @@ function _onMidiInternalImpl(data) {
     const status = data[0] | 0;
     const d1     = (data[1] ?? 0) | 0;
     const d2     = (data[2] ?? 0) | 0;
+
+    /* Project-rename keyboard (picker menu -> Rename) is fully modal and
+     * reads raw messages — same contract as sound mode's preset-name
+     * keyboard below, but the picker can be up when sound mode is not. */
+    if (S.projectPadPicker && S.projectPadPicker.renameActive &&
+            projectPickerTextEntryMidi(data)) return;
 
     /* Pad pressure arrives as poly aftertouch (0xA0) with the pad note in d1.
      * isNoiseMessage() classifies all 0xA0/0xD0 as noise, so handle pressure

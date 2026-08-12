@@ -29,7 +29,8 @@ import { S } from './ui_state.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
 import { saveState, showActionPopup, uuidToStatePath, readActiveSet, loadNameIndex, saveNameIndex,
     commitSnapshot, updateNameIndex, maybeShowInheritPicker } from './ui_persistence.mjs';
-import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker } from './ui_dialogs.mjs';
+import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
+         projectPickerTextEntryTick } from './ui_dialogs.mjs';
 import { sceneAllQueued, updateSceneMapLEDs } from './ui_scene.mjs';
 import { _padDispatchMutedNow, computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
     syncDrumClipContent } from './ui_drummodel.mjs';
@@ -516,8 +517,12 @@ export function _tickImpl() {
      * make sure a handoff that never lands cannot disable the watchdog forever. */
     if (S.selectHandoffTicks > 0) S.selectHandoffTicks--;
 
-    /* PROJECTS pad picker: modifier releases cancel its two-step flows. */
-    if (S.projectPadPicker) projectPadPickerModifiers();
+    /* PROJECTS pad picker: modifier releases cancel its two-step flows, and
+     * a live rename keyboard gets its tick (pad-typing timers + redraw). */
+    if (S.projectPadPicker) {
+        projectPadPickerModifiers();
+        projectPickerTextEntryTick();
+    }
 
     /* Fresh-session boot: open the picker once loading + LED init settle. */
     if (S.pendingOpenProjectPicker && !S.stateLoading && S.ledInitComplete &&

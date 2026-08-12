@@ -171,19 +171,26 @@ never sees — or changes — your Move sets.
 **Shift + Step 1**, from anywhere. The pads become your project shelf — one
 pad per project, 32 slots:
 
-- **Blue pads** are projects; the **pulsing pad** is the one that's open.
-  Touch a pad and its name shows on the screen.
-- **Tap a project** to open it (a moment of "Loading...", then you're in).
-- **Tap an empty pad** for a new project — born already wired the way dAVEBOx
-  needs (instrument tracks on channels 1–4, MIDI out off), from the same
-  template as Project 1 on first launch.
+- **Lit pads** are projects — each in its own color (blue until you pick
+  one); the **pulsing pad** is the one that's open.
+- **Tap a project** for its menu: **Load**, **Rename**, **Color**. Turn the
+  jog wheel to choose, click to select. A tap never loads by itself — Load
+  does (a moment of "Loading...", then you're in).
+  - **Rename** opens the on-screen keyboard. Renaming the *open* project
+    restarts the session in place (a few seconds, like switching projects).
+  - **Color** cycles a palette with the jog wheel — the pad previews it
+    live — and click sets it.
+- **Tap an empty pad** and confirm to create a new project — born already
+  wired the way dAVEBOx needs (instrument tracks on channels 1–4, MIDI out
+  off), from the same template as Project 1 on first launch. It doesn't
+  open until you choose Load.
 - **Copy:** hold Copy, tap the project, then tap an empty pad. Release
-  cancels.
+  cancels. A copy is a snapshot, colors and all.
 - **Delete:** hold Delete, tap the project, tap it again to confirm (it
   blinks red in between). Release cancels. The open project can't be
   deleted — switch away first.
-- **Back** closes the picker; **Shift + Back** leaves dAVEBOx SA entirely,
-  as always.
+- **Back** steps out (color → menu → shelf → closed); **Shift + Back**
+  leaves dAVEBOx SA entirely, as always.
 
 > **Coming from an earlier dAVEBOx?** Work you made back when dAVEBOx used the
 > shared Move sets stays in those Move sets, visible from Move native and

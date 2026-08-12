@@ -11,6 +11,13 @@ import {
     readActiveSet
 } from './ui_persistence.mjs';
 import { effectiveClip, invalidateLEDCache } from './ui_leds.mjs';
+import {
+    openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
+    closeTextEntry,
+} from '/data/UserData/schwung/shared/text_entry.mjs';
+import {
+    Blue, Cyan, Green, Lime, VividYellow, OrangeRed, Red, NeonPink, ElectricViolet, White,
+} from '/data/UserData/schwung/shared/constants.mjs';
 
 export function pixelPrintMcu(x, y, text, scale, color) {
     const charW = 5 * scale + scale;
@@ -766,7 +773,9 @@ function _openProjectPadPicker_impl() {
     const data = _pppRunList();
     if (!data) { showActionPopup('NO PROJECT', 'LIST'); _pppFailOpen(); return; }
     const p = { projects: [], byIndex: {}, current: -1,
-                touchedIdx: -1, copySrcIdx: -1, deleteIdx: -1 };
+                touchedIdx: -1, copySrcIdx: -1, deleteIdx: -1,
+                /* jog-menu overlays (one open at a time; see the tap impl) */
+                menu: null, colorPick: null, confirmNew: null, renameActive: false };
     _pppApplyList(p, data);
     S.projectPadPicker = p;
     S.globalMenuOpen = false;
@@ -775,10 +784,221 @@ function _openProjectPadPicker_impl() {
 }
 
 function _closeProjectPadPicker_impl() {
+    /* A live rename keyboard must not outlive the picker that opened it. */
+    const _p = S.projectPadPicker;
+    if (_p && _p.renameActive && isTextEntryActive()) closeTextEntry();
     S.projectPadPicker = null;
     S.ledInitComplete = false;      /* repaint the sequencer surface */
     invalidateLEDCache();
     S.screenDirty = true;
+}
+
+/* Pre-defined pad colors a project can carry (spec: Josh, 2026-08-11). The
+ * xattr user.dbx-color stores an INDEX into this table (project-cmd.sh
+ * `color` verb); absent/null = index 0, today's uniform blue. Exported for
+ * the LED painter. */
+export const PROJECT_COLORS = [
+    { name: 'BLUE',   led: Blue },
+    { name: 'CYAN',   led: Cyan },
+    { name: 'GREEN',  led: Green },
+    { name: 'LIME',   led: Lime },
+    { name: 'YELLOW', led: VividYellow },
+    { name: 'ORANGE', led: OrangeRed },
+    { name: 'RED',    led: Red },
+    { name: 'PINK',   led: NeonPink },
+    { name: 'VIOLET', led: ElectricViolet },
+    { name: 'WHITE',  led: White },
+];
+export function projectColorLED(proj) {
+    const c = proj && proj.color;
+    return PROJECT_COLORS[(c >= 0 && c < PROJECT_COLORS.length) ? c : 0].led;
+}
+
+/* POSIX single-quote for a name headed through host_system_cmd (system()). */
+function _shq(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
+
+function _pppCloseOverlays(p) {
+    p.menu = null; p.colorPick = null; p.confirmNew = null;
+}
+
+/* The project jog-menu (spec: Josh, 2026-08-11 — tap never loads). */
+const PPP_MENU_ROWS = ['Load', 'Rename', 'Color'];
+
+function _pppOpenMenu(p, k) {
+    _pppCloseOverlays(p);
+    p.menu = { k: k, sel: 0 };
+    S.screenDirty = true;
+}
+
+/* --- menu actions ------------------------------------------------------ */
+
+function _pppLoad(p, k) {
+    if (k === p.current) {
+        /* The already-current project. Under SELECT-BEFORE-LOAD this IS the
+         * selection: create_instance loaded nothing, so load now. Once a
+         * project is live, "Load" on the current one just closes the picker. */
+        closeProjectPadPicker();
+        if (S.awaitingProjectSelect) loadSelectedCurrentProject();
+        return;
+    }
+    /* Switch: save first; the command fires one tick after the save lands
+     * (the switch suspends/tears this module down — same shape as Quit).
+     * saveState() is a no-op while awaiting a selection — there is nothing
+     * loaded to save, and writing would clobber the project we are leaving. */
+    closeProjectPadPicker();
+    showActionPopup('OPENING', 'PROJECT');
+    saveState();
+    S.pendingProjectSwitch = k;
+}
+
+function _pppStartRename(p, k) {
+    const proj = p.byIndex[k];
+    if (!proj) return;
+    p.renameActive = true;
+    openTextEntry({
+        title: '',
+        initialText: proj.name,
+        onConfirm: (name) => { _pppGuard('renamedo', _pppDoRename_impl, [k, name]); },
+        onCancel:  () => {
+            const q = S.projectPadPicker;
+            if (q) { q.renameActive = false; }
+            S.screenDirty = true;
+        },
+    });
+    S.screenDirty = true;
+}
+
+function _pppDoRename_impl(k, name) {
+    const p = S.projectPadPicker;
+    if (!p) return;
+    p.renameActive = false;
+    const proj = p.byIndex[k];
+    const trimmed = String(name || '').trim().replace(/\//g, '-');
+    if (!proj || !trimmed || trimmed === proj.name) { S.screenDirty = true; return; }
+    /* Two projects with one name would confuse the family lookup AND the
+     * name index (name -> uuid) — refuse up front. */
+    for (let i = 0; i < p.projects.length; i++) {
+        if (p.projects[i].uuid !== proj.uuid && p.projects[i].name === trimmed) {
+            showActionPopup('NAME', 'TAKEN');
+            return;
+        }
+    }
+    if (k === p.current) {
+        /* The OPEN project renames via the deferred switch-in-place path:
+         * project-cmd queues the mv for the launcher and restarts Move at the
+         * same index. Save our half first — same ordering as a switch. */
+        saveState();
+        showActionPopup('RENAMING', 'RESTARTING');
+        host_system_cmd('sh ' + PROJECT_CMD + ' rename ' + k + ' ' + _shq(trimmed));
+        return;
+    }
+    host_system_cmd('sh ' + PROJECT_CMD + ' rename ' + k + ' ' + _shq(trimmed));
+    const d = _pppRunList();
+    if (d) _pppApplyList(p, d);
+    const now = p.byIndex[k];
+    if (now && now.name === trimmed) showActionPopup('PROJECT', 'RENAMED');
+    else showActionPopup('RENAME', 'FAILED');
+    S.screenDirty = true;
+}
+
+function _pppCommitColor(p, k, colorIdx) {
+    host_system_cmd('sh ' + PROJECT_CMD + ' color ' + k + ' ' + colorIdx);
+    const d = _pppRunList();
+    if (d) _pppApplyList(p, d);
+    p.colorPick = null;
+    invalidateLEDCache();
+    S.screenDirty = true;
+}
+
+/* Jog click while the picker is up. With no overlay open it opens the menu on
+ * the CURRENT project — the keyboard-free confirm under SELECT-BEFORE-LOAD. */
+function _projectPadPickerClick_impl() {
+    const p = S.projectPadPicker;
+    if (!p) return;
+    if (p.confirmNew) {
+        const c = p.confirmNew;
+        if (c.sel === 0) {          /* Yes — create, then open its menu */
+            host_system_cmd('sh ' + PROJECT_CMD + ' new-at ' + c.k);
+            const d = _pppRunList();
+            if (d) _pppApplyList(p, d);
+            if (!p.byIndex[c.k]) { p.confirmNew = null; showActionPopup('CREATE', 'FAILED'); return; }
+            invalidateLEDCache();
+            _pppOpenMenu(p, c.k);
+        } else {
+            p.confirmNew = null;
+        }
+        S.screenDirty = true;
+        return;
+    }
+    if (p.colorPick) {
+        _pppCommitColor(p, p.colorPick.k, p.colorPick.sel);
+        return;
+    }
+    if (p.menu) {
+        const m = p.menu;
+        if (m.sel === 0) { _pppLoad(p, m.k); return; }
+        if (m.sel === 1) { _pppStartRename(p, m.k); return; }
+        const proj = p.byIndex[m.k];
+        p.colorPick = { k: m.k, sel: (proj && proj.color >= 0 &&
+                                      proj.color < PROJECT_COLORS.length) ? proj.color : 0 };
+        p.menu = null;
+        S.screenDirty = true;
+        return;
+    }
+    if (p.current >= 0 && p.current < 32 && p.byIndex[p.current]) _pppOpenMenu(p, p.current);
+}
+
+function _projectPadPickerRotate_impl(delta) {
+    const p = S.projectPadPicker;
+    if (!p || !delta) return;
+    if (p.confirmNew) {
+        p.confirmNew.sel = p.confirmNew.sel === 0 ? 1 : 0;
+    } else if (p.colorPick) {
+        const n = PROJECT_COLORS.length;
+        p.colorPick.sel = (p.colorPick.sel + (delta > 0 ? 1 : n - 1)) % n;
+        invalidateLEDCache();     /* live preview on the target pad */
+    } else if (p.menu) {
+        const n = PPP_MENU_ROWS.length;
+        p.menu.sel = (p.menu.sel + (delta > 0 ? 1 : n - 1)) % n;
+    } else {
+        return;
+    }
+    S.screenDirty = true;
+}
+
+/* Back while the picker is up: peel one overlay level; returns false when
+ * there was nothing to peel (caller closes the picker itself). */
+function _projectPadPickerBack_impl() {
+    const p = S.projectPadPicker;
+    if (!p) return false;
+    if (p.colorPick) { _pppOpenMenu(p, p.colorPick.k); invalidateLEDCache(); return true; }
+    if (p.menu || p.confirmNew) { _pppCloseOverlays(p); S.screenDirty = true; return true; }
+    return false;
+}
+
+/* Keyboard plumbing while a rename is live: the shared text-entry component
+ * is fully modal and reads raw messages (same contract sound mode uses). */
+function _projectPickerTextEntryMidi_impl(data) {
+    const p = S.projectPadPicker;
+    if (!p || !p.renameActive) return false;
+    if (!isTextEntryActive()) { p.renameActive = false; return false; }
+    handleTextEntryMidi(data);
+    S.screenDirty = true;
+    if (!isTextEntryActive()) {
+        const q = S.projectPadPicker;      /* rename may have torn the picker down */
+        if (q) q.renameActive = false;
+        invalidateLEDCache();
+    }
+    return true;
+}
+
+function _projectPickerTextEntryTick_impl() {
+    const p = S.projectPadPicker;
+    if (p && p.renameActive && isTextEntryActive()) {
+        if (tickTextEntry()) S.screenDirty = true;
+        return true;
+    }
+    return false;
 }
 
 /* Pad tap inside the picker. k = pad index 0-31 == user.song-index. */
@@ -789,6 +1009,7 @@ function _projectPadPickerTap_impl(k) {
     const proj = p.byIndex[k];
 
     if (S.deleteHeld) {
+        _pppCloseOverlays(p);
         if (!proj) { p.deleteIdx = -1; showActionPopup('EMPTY', 'PAD'); return; }
         if (k === p.current) { p.deleteIdx = -1; showActionPopup('CANT DELETE', 'OPEN PROJ'); return; }
         if (p.deleteIdx === k) {
@@ -806,6 +1027,7 @@ function _projectPadPickerTap_impl(k) {
     }
 
     if (S.copyHeld) {
+        _pppCloseOverlays(p);
         if (p.copySrcIdx < 0) {
             if (!proj) { showActionPopup('EMPTY', 'PAD'); return; }
             p.copySrcIdx = k;
@@ -825,31 +1047,17 @@ function _projectPadPickerTap_impl(k) {
         return;
     }
 
-    /* Plain tap: open (or create-and-open on an empty pad). */
+    /* Plain tap NEVER loads (spec: Josh, 2026-08-11 — it also removes the
+     * accidental-load hazard). Occupied pad -> the Load/Rename/Color jog-menu;
+     * empty pad -> a Create-new confirm. Tapping while an overlay is already
+     * open simply re-targets. */
     if (!proj) {
-        host_system_cmd('sh ' + PROJECT_CMD + ' new-at ' + k);
-        const d = _pppRunList();
-        if (d) _pppApplyList(p, d);
-        if (!p.byIndex[k]) { showActionPopup('CREATE', 'FAILED'); return; }
-        invalidateLEDCache();
-    }
-    if (k === p.current) {
-        /* The already-current project. Under SELECT-BEFORE-LOAD this tap IS
-         * the selection: create_instance loaded nothing, so the state has to
-         * be loaded now (no set switch, no relaunch — just the load). Once a
-         * project is live the same tap means "close the picker", as before. */
-        closeProjectPadPicker();
-        if (S.awaitingProjectSelect) loadSelectedCurrentProject();
+        _pppCloseOverlays(p);
+        p.confirmNew = { k: k, sel: 0 };
+        S.screenDirty = true;
         return;
     }
-    /* Switch: save first; the command fires one tick after the save lands
-     * (the switch suspends/tears this module down — same shape as Quit).
-     * saveState() is a no-op while awaiting a selection — there is nothing
-     * loaded to save, and writing would clobber the project we are leaving. */
-    closeProjectPadPicker();
-    showActionPopup('OPENING', 'PROJECT');
-    saveState();
-    S.pendingProjectSwitch = k;
+    _pppOpenMenu(p, k);
 }
 
 /* Modifier releases cancel the two-step flows (OUR semantics — matches how
@@ -864,9 +1072,51 @@ function _projectPadPickerModifiers_impl() {
 }
 
 function _drawProjectPadPicker_impl() {
-    clear_screen();
     const p = S.projectPadPicker;
-    if (!p) return;
+    if (!p) { clear_screen(); return; }
+
+    /* Rename keyboard is fully modal and draws itself. */
+    if (p.renameActive && isTextEntryActive()) { drawTextEntry(); return; }
+
+    clear_screen();
+
+    if (p.confirmNew) {
+        drawMenuHeader('NEW PROJECT');
+        print(4, 20, 'Create new project', 1);
+        print(4, 30, 'on this pad?', 1);
+        drawYesNoRow(p.confirmNew.sel);
+        return;
+    }
+
+    if (p.colorPick) {
+        const cp = p.byIndex[p.colorPick.k];
+        drawMenuHeader(truncLabel(cp ? cp.name : '?', 18));
+        print(4, 20, 'Color:', 1);
+        /* Wheel-changeable value row (< NAME >); the pad itself previews the
+         * actual color live. */
+        const nm = PROJECT_COLORS[p.colorPick.sel].name;
+        print(4, 32, '< ' + nm + ' >', 1);
+        print(4, 50, 'Click: set  Back: cancel', 1);
+        return;
+    }
+
+    if (p.menu) {
+        const mp = p.byIndex[p.menu.k];
+        drawMenuHeader(truncLabel(mp ? mp.name : '?', 18));
+        const lineH = 10, listTopY = 18;
+        for (let i = 0; i < PPP_MENU_ROWS.length; i++) {
+            const y = listTopY + i * lineH;
+            if (i === p.menu.sel) {
+                fill_rect(2, y - 1, 124, lineH - 1, 1);
+                print(5, y, PPP_MENU_ROWS[i], 0);
+            } else {
+                print(5, y, PPP_MENU_ROWS[i], 1);
+            }
+        }
+        print(4, 54, 'Click: select  Back: close', 1);
+        return;
+    }
+
     drawMenuHeader('PROJECTS');
     const cur = p.byIndex[p.current];
     print(4, 16, 'Now: ' + truncLabel(cur ? cur.name : '-', 16), 1);
@@ -878,12 +1128,8 @@ function _drawProjectPadPicker_impl() {
         const sp = p.byIndex[p.copySrcIdx];
         print(4, 28, 'Copy ' + truncLabel(sp ? sp.name : '?', 13), 1);
         print(4, 38, 'Tap an empty pad.', 1);
-    } else if (p.touchedIdx >= 0) {
-        const tp = p.byIndex[p.touchedIdx];
-        print(4, 28, truncLabel(tp ? tp.name : 'Empty pad', 20), 1);
-        print(4, 38, tp ? 'Tap: open' : 'Tap: new project', 1);
     } else {
-        print(4, 28, 'Tap a pad to open.', 1);
+        print(4, 28, 'Tap a pad: menu.', 1);
         print(4, 38, 'Empty pad = new.', 1);
     }
     print(4, 50, 'Copy/Del: hold+tap  Back: close', 1);
@@ -914,3 +1160,8 @@ export function closeProjectPadPicker()     { return _pppGuard('close', _closePr
 export function projectPadPickerTap(k)      { return _pppGuard('tap',   _projectPadPickerTap_impl, [k]); }
 export function projectPadPickerModifiers() { return _pppGuard('mods',  _projectPadPickerModifiers_impl, []); }
 export function drawProjectPadPicker()      { return _pppGuard('draw',  _drawProjectPadPicker_impl, []); }
+export function projectPadPickerClick()     { return _pppGuard('click', _projectPadPickerClick_impl, []); }
+export function projectPadPickerRotate(d)   { return _pppGuard('rot',   _projectPadPickerRotate_impl, [d]); }
+export function projectPadPickerBack()      { return _pppGuard('back',  _projectPadPickerBack_impl, []); }
+export function projectPickerTextEntryMidi(data) { return _pppGuard('kbd',  _projectPickerTextEntryMidi_impl, [data]); }
+export function projectPickerTextEntryTick()     { return _pppGuard('kbdt', _projectPickerTextEntryTick_impl, []); }
