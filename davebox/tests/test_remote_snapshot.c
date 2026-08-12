@@ -56,16 +56,25 @@ static void test_snapshot_empty_clip_has_index(void) {
 }
 
 /* The schwung-manager discovers an active overtake tool by probing
- * "overtake_dsp:module_id" (forwarded to the DSP's get_param("module_id")).
- * davebox must answer "davebox" so the manager can locate web_ui.html and
- * route the remote UI. */
+ * "overtake_dsp:module_id" (forwarded to the DSP's get_param("module_id")) and
+ * then uses the answer as a DIRECTORY NAME:
+ * modules/<category>/<module_id>/web_ui.html.
+ *
+ * So it must be THIS BUILD'S id, not a constant. It used to be hardcoded
+ * "davebox", which meant that under SA — installed as `davebox-sound` — the
+ * manager looked in a directory that does not exist and the remote UI never
+ * appeared. This test asserted the hardcoded string, so it PINNED THE BUG:
+ * it would have gone green while the feature was broken on the device. Assert
+ * against the compiled-in id instead, which is what the installer uses. */
 static void test_module_id_probe(void) {
     hx_t *h = hx_create(NULL);
     HX_ASSERT(h != NULL, "hx_create returned NULL");
     char buf[64];
     int len = hx_get_param(h, "module_id", buf, (int)sizeof(buf));
     HX_ASSERT(len > 0, "get_param module_id returned no data");
-    HX_ASSERT(strcmp(buf, "davebox") == 0, "module_id probe must return \"davebox\"");
+    HX_ASSERT(strcmp(buf, DAVEBOX_MODULE_ID) == 0,
+              "module_id probe must return this build's module id — the manager "
+              "uses it as the directory name holding web_ui.html");
     hx_destroy(h);
 }
 

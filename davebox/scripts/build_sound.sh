@@ -72,6 +72,7 @@ echo "=== Building dAVEBOx SA (state prefix: ${STATE_PREFIX}) ==="
 echo "Compiling DSP..."
 "${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC \
     -DSEQ8_STATE_PREFIX="\"${STATE_PREFIX}\"" \
+    -DDAVEBOX_MODULE_ID="\"${MODULE_ID}\"" \
     dsp/seq8.c \
     -o "dist/${MODULE_ID}/dsp.so" \
     -I. \

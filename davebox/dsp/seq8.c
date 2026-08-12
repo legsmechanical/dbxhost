@@ -44,6 +44,16 @@
 #define SEQ8_STATE_PREFIX "seq8"
 #endif
 
+/* This build's module id — the directory name it installs under, which the
+ * schwung-manager also uses to locate web_ui.html for the remote UI (see the
+ * "module_id" probe in get_param). SA is `davebox-sound`, Legacy `davebox`, a
+ * test build its own again; the default is Legacy's, the one build that does
+ * not inject it. Mirrors SEQ8_STATE_PREFIX: set in build_sound.sh for BOTH
+ * halves, and the JS half gets the matching esbuild --define. */
+#ifndef DAVEBOX_MODULE_ID
+#define DAVEBOX_MODULE_ID "davebox"
+#endif
+
 /* Base directories, overridable at compile time.
  *
  * These exist as macros so the native test harness can point them at a temp
@@ -6171,8 +6181,16 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
          * "synth_module" key. Instead it probes "overtake_dsp:module_id" on the
          * active overtake DSP; answering here opts davebox in to having its
          * web_ui.html served. Any overtake tool that ships a web_ui.html and
-         * answers this key gets a remote UI — generic, no host C change. */
-        return snprintf(out, out_len, "davebox");
+         * answers this key gets a remote UI — generic, no host C change.
+         *
+         * ⚠ This MUST be the build's own module id, because the manager uses it
+         * as a DIRECTORY NAME: modules/<category>/<module_id>/web_ui.html. It
+         * was hardcoded "davebox", so under SA — which installs as
+         * `davebox-sound` — the manager looked in a directory that does not
+         * exist and the remote UI simply never appeared. Same defect class as
+         * EXPORT_MODULE_DIR in ui_export.mjs; the build now injects the id into
+         * both halves, as it already did for SEQ8_STATE_PREFIX. */
+        return snprintf(out, out_len, "%s", DAVEBOX_MODULE_ID);
     }
 
     if (!strcmp(key, "state_full")) {
