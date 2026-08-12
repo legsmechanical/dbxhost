@@ -137,6 +137,19 @@ check "recover(rebooted): phase none"       test "$(phase)" = "none (not bound)"
 check "recover(rebooted): native index"     grep -q '"currentSongIndex": 1' "$SETTINGS_JSON"
 rm -rf "$T"
 
+# ---- 5b. The marker LIES: says none, but our library is still bound ----------
+# ⭑ This is why recover asks the world instead of reading the marker. A marker
+# written before a crash (or by an older build) can say "none" while the mount
+# is up; trusting it strands the user looking at OUR library, with stock Move
+# about to be revived on top of it.
+mk_env
+run enter
+printf 'none\n1\n' > "$SWAP_ROOT/swap_state"     # the lie
+run recover
+check "recover(lying marker): user's sets" test -f "$SETS_DIR/$U1/Song.abl"
+check "recover(lying marker): unbound"     test "$(phase)" = "none (not bound)"
+rm -rf "$T"
+
 # ---- 6. Nothing to do ---------------------------------------------------------
 mk_env
 run recover
