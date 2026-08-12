@@ -57,11 +57,20 @@ sed -n "${enter},$((enter+6))p" "$ls" | grep -qE 'exit 1|refuse ' ||
   fail "a failed set-swap enter no longer refuses the launch"
 
 # refuse() must resume the watchdog before exiting — a refusal past the
-# watchdog pause otherwise strands the device frozen (observed 2026-08-10)
+# watchdog pause otherwise strands the device frozen (observed 2026-08-10) —
+# and since the swap became a bind mount (2026-08-12) it must also UNDO the
+# swap, or the refusal leaves the user's sets hidden under our library with
+# stock Move revived on top of them.
+# ⚠ Scanned over the whole function BODY, not a fixed line window: the previous
+# +4 window failed the moment a comment was added inside refuse(), which says
+# nothing about whether the resume is there.
 refuse_def=$(body_line 'refuse() {')
 [ -n "$refuse_def" ] || fail "refuse() helper missing from launch.sh"
-sed -n "${refuse_def},$((refuse_def+4))p" "$ls" | grep -q 'resume-launcher' ||
+refuse_body=$(sed -n "${refuse_def},\$p" "$ls" | awk 'NR==1{next} /^  \}/{exit} {print}')
+printf '%s' "$refuse_body" | grep -q 'resume-launcher' ||
   fail "refuse() does not resume the watchdog"
+printf '%s' "$refuse_body" | grep -q 'set-swap.sh" exit' ||
+  fail "refuse() does not undo the library swap — a refusal would strand the user's sets hidden"
 
 # Single-quote ban: only the setsid open/close (and pre-block comments) may
 # carry one. Count quotes INSIDE the block body.
