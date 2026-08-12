@@ -775,7 +775,8 @@ function _openProjectPadPicker_impl() {
     const p = { projects: [], byIndex: {}, current: -1,
                 touchedIdx: -1, copySrcIdx: -1, deleteIdx: -1,
                 /* jog-menu overlays (one open at a time; see the tap impl) */
-                menu: null, colorPick: null, confirmNew: null, renameActive: false };
+                menu: null, colorPick: null, confirmNew: null, renameActive: false,
+                restarting: false };
     _pppApplyList(p, data);
     S.projectPadPicker = p;
     S.globalMenuOpen = false;
@@ -893,10 +894,27 @@ function _pppDoRename_impl(k, name) {
     if (k === p.current) {
         /* The OPEN project renames via the deferred switch-in-place path:
          * project-cmd queues the mv for the launcher and restarts Move at the
-         * same index. Save our half first — same ordering as a switch. */
+         * same index. Save our half first — same ordering as a switch.
+         *
+         * ⚠ LOCK THE PICKER FIRST. The SIGTERM lands ~1-2 s after the command
+         * returns, and any gesture accepted in that window races the teardown
+         * — on hardware (2026-08-12) a recolor + Load fired in the gap, the
+         * Load's select-handoff had its Move killed mid-walk, and the session
+         * came back with the module parked under the host UI. `restarting`
+         * makes every picker entry point a no-op until the restart takes us.
+         *
+         * From the BOOT picker (awaiting select) nothing is loaded and nobody
+         * chose anything, so the restart must come back to the picker —
+         * that is the `reselect` arg (launcher re-arms fresh_session). A
+         * rename inside a live session restarts back into the project, which
+         * is what "restart in place" means there. */
+        p.restarting = true;
+        _pppCloseOverlays(p);
+        S.screenDirty = true;
         saveState();
         showActionPopup('RENAMING', 'RESTARTING');
-        host_system_cmd('sh ' + PROJECT_CMD + ' rename ' + k + ' ' + _shq(trimmed));
+        host_system_cmd('sh ' + PROJECT_CMD + ' rename ' + k + ' ' + _shq(trimmed) +
+                        (S.awaitingProjectSelect ? ' reselect' : ''));
         return;
     }
     host_system_cmd('sh ' + PROJECT_CMD + ' rename ' + k + ' ' + _shq(trimmed));
@@ -922,6 +940,7 @@ function _pppCommitColor(p, k, colorIdx) {
 function _projectPadPickerClick_impl() {
     const p = S.projectPadPicker;
     if (!p) return;
+    if (p.restarting) return;      /* rename-of-current: teardown in flight */
     if (p.confirmNew) {
         const c = p.confirmNew;
         if (c.sel === 0) {          /* Yes — create, then open its menu */
@@ -956,6 +975,7 @@ function _projectPadPickerClick_impl() {
 function _projectPadPickerRotate_impl(delta) {
     const p = S.projectPadPicker;
     if (!p || !delta) return;
+    if (p.restarting) return;      /* rename-of-current: teardown in flight */
     if (p.confirmNew) {
         p.confirmNew.sel = p.confirmNew.sel === 0 ? 1 : 0;
     } else if (p.colorPick) {
@@ -976,6 +996,7 @@ function _projectPadPickerRotate_impl(delta) {
 function _projectPadPickerBack_impl() {
     const p = S.projectPadPicker;
     if (!p) return false;
+    if (p.restarting) return true; /* swallow — teardown in flight */
     if (p.colorPick) { _pppOpenMenu(p, p.colorPick.k); invalidateLEDCache(); return true; }
     if (p.menu || p.confirmNew) { _pppCloseOverlays(p); S.screenDirty = true; return true; }
     return false;
@@ -1010,6 +1031,7 @@ function _projectPickerTextEntryTick_impl() {
 function _projectPadPickerTap_impl(k) {
     const p = S.projectPadPicker;
     if (!p) return;
+    if (p.restarting) return;      /* rename-of-current: teardown in flight */
     p.touchedIdx = k;
     const proj = p.byIndex[k];
 
@@ -1084,6 +1106,13 @@ function _drawProjectPadPicker_impl() {
     if (p.renameActive && isTextEntryActive()) { drawTextEntry(); return; }
 
     clear_screen();
+
+    if (p.restarting) {
+        drawMenuHeader('RENAMING');
+        print(4, 24, 'Restarting the', 1);
+        print(4, 34, 'session...', 1);
+        return;
+    }
 
     if (p.confirmNew) {
         drawMenuHeader('NEW PROJECT');

@@ -109,6 +109,26 @@ step('Rename opens the shared keyboard and its draw takes over', () => {
     dlg.drawProjectPadPicker();
     leds.updateSessionLEDs();                   // painter must yield, not crash
 });
+step('restarting locks EVERY picker entry point (the teardown race)', () => {
+    /* Rename-of-current sets p.restarting and then Move dies ~1-2 s later;
+     * any gesture accepted in that window races the teardown — on hardware
+     * a recolor + Load fired in the gap and wedged the session. */
+    const p = S.projectPadPicker;
+    /* Mirror _pppDoRename's arming: overlays closed, then the lock. */
+    p.renameActive = false;
+    p.menu = null; p.colorPick = null; p.confirmNew = null;
+    p.restarting = true;
+    dlg.projectPadPickerTap(0);
+    if (p.menu || p.confirmNew) throw new Error('tap acted while restarting');
+    dlg.projectPadPickerClick();
+    if (p.menu || p.colorPick) throw new Error('click acted while restarting');
+    dlg.projectPadPickerRotate(1);
+    const swallowed = dlg.projectPadPickerBack();
+    if (swallowed !== true) throw new Error('Back not swallowed while restarting');
+    if (!S.projectPadPicker) throw new Error('picker closed while restarting');
+    dlg.drawProjectPadPicker();                  // the RENAMING screen
+    leds.updateSessionLEDs();
+});
 
 }
 

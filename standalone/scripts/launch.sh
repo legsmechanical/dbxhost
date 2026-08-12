@@ -238,7 +238,19 @@ setsid bash -c '
       # rewiring a set), so DIRECT-BOOT the tool. The shadow UI already staged
       # boot_tool.json when the selection was made; re-assert it here so a
       # programmatic switch always lands straight in the module.
-      rm -f "$DBX_DIR/fresh_session"
+      #
+      # EXCEPT when the requester asked to RESELECT (relaunch_reselect marker):
+      # a rename issued from the boot picker restarts Move without the user
+      # ever having chosen a project, so the fresh session must come back to
+      # the picker, not auto-load. Re-arming fresh_session is exactly how a
+      # cold entry asks for that.
+      if [ -f "$DBX_DIR/relaunch_reselect" ]; then
+        rm -f "$DBX_DIR/relaunch_reselect"
+        printf 1 > "$DBX_DIR/fresh_session"
+        echo "reselect requested — re-arming the project picker"
+      else
+        rm -f "$DBX_DIR/fresh_session"
+      fi
       echo "$BOOT_JSON" > "$DBX_DIR/boot_tool.json"
       echo "$BOOT_JSON" > /data/UserData/schwung/open_tool_cmd.json
       continue

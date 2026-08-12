@@ -439,7 +439,7 @@ os.replace(tmp, path)
 PYEOF
 }
 
-do_rename() { # index newname
+do_rename() { # index newname [reselect]
     case "${1:-}" in *[!0-9]*|"") die "rename needs a numeric index" ;; esac
     [ -n "${2:-}" ] || die "rename needs a name"
     case "$2" in */*) die "name must not contain /" ;; esac
@@ -484,6 +484,11 @@ PYEOF
         } >> "$DBX_DIR/relaunch_patch.sh"
         _rename_update_name_index "$_uuid" "$2"
         printf '%s\n' "$1" > "$DBX_DIR/relaunch_song_index"
+        # A rename issued while NOTHING is loaded (the boot picker) must bring
+        # the fresh session back to the picker instead of auto-loading — the
+        # caller says so with a literal third arg `reselect` and the launcher
+        # honours the marker by re-arming fresh_session.
+        [ "${3:-}" = "reselect" ] && : > "$DBX_DIR/relaunch_reselect"
         : > "$DBX_DIR/relaunch_requested"
         setsid sh -c '
           sleep 1
@@ -507,6 +512,6 @@ case "${1:-}" in
     delete) shift; do_delete "${1:-}" ;;
     switch) shift; do_switch "${1:-}" ;;
     color)  shift; do_color "${1:-}" "${2:-}" ;;
-    rename) shift; do_rename "${1:-}" "${2:-}" ;;
+    rename) shift; do_rename "${1:-}" "${2:-}" "${3:-}" ;;
     *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>" ;;
 esac
