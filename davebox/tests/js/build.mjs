@@ -18,6 +18,13 @@ const stubPlugin = {
         build.onResolve({ filter: /^\/data\/UserData\/schwung\/shared\/constants\.mjs$/ }, () => ({
             path: stub,
         }));
+        // Every OTHER device-absolute shared import resolves to the real host
+        // tree — one repo, one deliverable, so the file the device serves is
+        // right here. This is what lets a test import ui modules that pull in
+        // menu_layout/text_entry/input_filter (e.g. the picker boot test).
+        build.onResolve({ filter: /^\/data\/UserData\/schwung\/shared\// }, (args) => ({
+            path: path.join(repoRoot, '../src/shared', path.basename(args.path)),
+        }));
     },
 };
 

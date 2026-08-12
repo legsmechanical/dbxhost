@@ -809,9 +809,16 @@ export const PROJECT_COLORS = [
     { name: 'VIOLET', led: ElectricViolet },
     { name: 'WHITE',  led: White },
 ];
+/* ⚠ `color` is null for a project that never picked one, and `null >= 0` is
+ * TRUE in JS — indexing the table with null crashed the LED painter inside
+ * the tick, which wedged the whole boot (LOADING pinned, pads dark; found on
+ * hardware 2026-08-12). Only a real in-range number selects a palette entry. */
+function projectColorIdx(proj) {
+    const c = proj ? proj.color : null;
+    return (typeof c === 'number' && c >= 0 && c < PROJECT_COLORS.length) ? c : 0;
+}
 export function projectColorLED(proj) {
-    const c = proj && proj.color;
-    return PROJECT_COLORS[(c >= 0 && c < PROJECT_COLORS.length) ? c : 0].led;
+    return PROJECT_COLORS[projectColorIdx(proj)].led;
 }
 
 /* POSIX single-quote for a name headed through host_system_cmd (system()). */
@@ -938,9 +945,7 @@ function _projectPadPickerClick_impl() {
         const m = p.menu;
         if (m.sel === 0) { _pppLoad(p, m.k); return; }
         if (m.sel === 1) { _pppStartRename(p, m.k); return; }
-        const proj = p.byIndex[m.k];
-        p.colorPick = { k: m.k, sel: (proj && proj.color >= 0 &&
-                                      proj.color < PROJECT_COLORS.length) ? proj.color : 0 };
+        p.colorPick = { k: m.k, sel: projectColorIdx(p.byIndex[m.k]) };
         p.menu = null;
         S.screenDirty = true;
         return;
