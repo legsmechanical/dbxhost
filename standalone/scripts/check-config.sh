@@ -80,7 +80,9 @@ check "shadow_ui.js STANDALONE_DIR"    "$HERE/../src/shadow/shadow_ui.js" "STAND
 # and install-host.sh's deploy guard does the same over ssh. A path drift
 # here silently splits "is a session live" into two different answers.
 check "launch.sh session lock"         "$HERE/scripts/launch.sh"   "9>>$DBX_SESSION_LOCK"
-check "shadow_ui.js session lock"      "$HERE/../src/shadow/shadow_ui.js" "\"$DBX_SESSION_LOCK\""
+# The JS-side probe moved to a shared module when the file browsers started
+# asking the same question — one definition of "a session is live".
+check "session_state.mjs lock path"    "$HERE/../src/shared/session_state.mjs" "\"$DBX_SESSION_LOCK\""
 check "install-host.sh session lock"   "$HERE/scripts/install-host.sh" "cat $DBX_SESSION_LOCK"
 
 # The DAVEBOX half. These carry the literal for a real reason — the same ui.js

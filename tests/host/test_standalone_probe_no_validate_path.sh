@@ -7,9 +7,11 @@
 # until 2026-08-09.
 set -euo pipefail
 
-file="src/shadow/shadow_ui.js"
+# The probe moved to a shared module when the file browsers started asking the
+# same question; the trap it guards against is unchanged and travels with it.
+file="src/shared/session_state.mjs"
 
-body=$(awk '/^function standaloneSessionActive\(\)/,/^}/' "$file" \
+body=$(awk '/^export function standaloneSessionActive\(\)/,/^}/' "$file" \
        | grep -Ev '^\s*(/\*|\*|//)')   # code only — the fn's comment cites the trap by name
 if [ -z "$body" ]; then
   echo "FAIL: standaloneSessionActive missing" >&2

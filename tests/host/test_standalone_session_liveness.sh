@@ -29,6 +29,11 @@ fi
 
 launch="standalone/scripts/launch.sh"
 ui="src/shadow/shadow_ui.js"
+# The JS probe moved out of shadow_ui.js into a shared module once the file
+# browsers needed the same answer (to hide a live session's project library).
+# shadow_ui.js is still a CONSUMER — it routes Shift+Back on it — so both files
+# are checked: the semantics where they now live, the retired marker in both.
+probe="src/shared/session_state.mjs"
 inst="standalone/scripts/install-host.sh"
 
 fail() { echo "FAIL: $1" >&2; exit 1; }
@@ -54,19 +59,25 @@ rg -q '/dev/shm/\.dbxhost-session\.lock' "$launch" \
 
 # 4. Nobody writes the retired /data marker any more (the launcher may still
 #    rm a stale one; writing it would resurrect the staleness protocol).
-if rg -n 'standalone_active' "$launch" "$ui" "$inst" | rg -qv 'rm -f|retired|HISTORY|marker'; then
+if rg -n 'standalone_active' "$launch" "$ui" "$probe" "$inst" | rg -qv 'rm -f|retired|HISTORY|marker'; then
   fail "a consumer still reads or writes the retired standalone_active marker"
 fi
 rg -q '> "\$DBX_DIR/standalone_active"' "$launch" \
   && fail "$launch writes the retired standalone_active marker"
 
-# 5. The shadow UI answers by PID liveness with PERMISSIVE fallbacks — a false
-#    negative sends Shift+Back down the teardown path during a real session.
-rg -q '/proc/. \+ pid \+ ./cmdline' "$ui" \
-  || rg -qF '"/proc/" + pid + "/cmdline"' "$ui" \
-  || fail "$ui no longer probes the lock PID against /proc"
-rg -q 'assume live' "$ui" \
-  || fail "$ui lost the permissive fallbacks (unreadable/garbled payload must count as live)"
+# 5. The shared probe answers by PID liveness with PERMISSIVE fallbacks — a
+#    false negative sends Shift+Back down the teardown path during a real
+#    session, AND exposes the live project library to the file browsers.
+rg -q '/proc/. \+ pid \+ ./cmdline' "$probe" \
+  || rg -qF '"/proc/" + pid + "/cmdline"' "$probe" \
+  || fail "$probe no longer probes the lock PID against /proc"
+rg -q 'assume live' "$probe" \
+  || fail "$probe lost the permissive fallbacks (unreadable/garbled payload must count as live)"
+# ...and the shadow UI consumes THAT one, rather than growing its own copy back.
+rg -q 'session_state\.mjs' "$ui" \
+  || fail "$ui no longer imports the shared session probe"
+rg -q '^function standaloneSessionActive' "$ui" \
+  && fail "$ui defined its own standaloneSessionActive again — two probes to keep in step"
 
 # 6. The installer's refuse-to-deploy check probes the same PID, and treats a
 #    non-numeric payload as live rather than deployable.

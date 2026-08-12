@@ -40,6 +40,19 @@ if grep -Eq 'fopen\([^,]*, *"w"\)' <<<"$binding"; then
   exit 1
 fi
 
+# Host settings are a whole-file rewrite too, and their loader treats a missing
+# key as "use the default" — so a torn settings file reads as the device
+# quietly forgetting a preference rather than as damage.
+saver=$(awk '/^int settings_save\(/,/^}/' src/host/settings.c)
+if ! grep -q 'schwung_write_file_atomic(' <<<"$saver"; then
+  echo "FAIL: settings_save does not use the atomic writer" >&2
+  exit 1
+fi
+if grep -Eq 'fopen\([^,]*, *"w"\)' <<<"$saver"; then
+  echo "FAIL: settings_save truncates its destination in place" >&2
+  exit 1
+fi
+
 # The build must actually link the new unit, or the host fails to link and the
 # shadow UI silently keeps whatever it had.
 for target in 'build/schwung' 'build/shadow/shadow_ui'; do

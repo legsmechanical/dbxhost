@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "settings.h"
+#include "file_atomic.h"
 
 /* Velocity curve names for display and parsing */
 static const char *velocity_curve_names[] = {
@@ -136,20 +137,34 @@ void settings_load(host_settings_t *s, const char *path) {
 }
 
 int settings_save(const host_settings_t *s, const char *path) {
-    FILE *f = fopen(path, "w");
-    if (!f) {
-        printf("settings: cannot write to %s\n", path);
+    /* Rendered to a buffer and published atomically rather than written into
+     * the live file: a power cut partway through the six lines below left a
+     * settings file with some keys missing, and the loader treats a missing key
+     * as "use the default" — so the failure looked like the device quietly
+     * forgetting a preference rather than like a damaged file. */
+    char buf[512];
+    int n = snprintf(buf, sizeof(buf),
+                     "velocity_curve=%s\n"
+                     "aftertouch_enabled=%d\n"
+                     "aftertouch_deadzone=%d\n"
+                     "pad_layout=%s\n"
+                     "clock_mode=%s\n"
+                     "tempo_bpm=%d\n",
+                     settings_velocity_curve_name(s->velocity_curve),
+                     s->aftertouch_enabled,
+                     s->aftertouch_deadzone,
+                     settings_pad_layout_name(s->pad_layout),
+                     clock_mode_names[s->clock_mode],
+                     s->tempo_bpm);
+    if (n < 0 || (size_t)n >= sizeof(buf)) {
+        printf("settings: rendered settings do not fit the buffer, not saving\n");
         return -1;
     }
 
-    fprintf(f, "velocity_curve=%s\n", settings_velocity_curve_name(s->velocity_curve));
-    fprintf(f, "aftertouch_enabled=%d\n", s->aftertouch_enabled);
-    fprintf(f, "aftertouch_deadzone=%d\n", s->aftertouch_deadzone);
-    fprintf(f, "pad_layout=%s\n", settings_pad_layout_name(s->pad_layout));
-    fprintf(f, "clock_mode=%s\n", clock_mode_names[s->clock_mode]);
-    fprintf(f, "tempo_bpm=%d\n", s->tempo_bpm);
-
-    fclose(f);
+    if (schwung_write_file_atomic(path, buf, (size_t)n) != 0) {
+        printf("settings: cannot write to %s\n", path);
+        return -1;
+    }
     printf("settings: saved to %s\n", path);
     return 0;
 }

@@ -128,6 +128,10 @@ import {
     activateFilepathBrowserItem
 } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 
+import {
+    standaloneSessionActive
+} from '/data/UserData/schwung/shared/session_state.mjs';
+
 /* Shared context for view modules */
 import { ctx as _ctx } from './shadow_ui_ctx.mjs';
 
@@ -8698,48 +8702,16 @@ function enterMoveFxHierarchyEditor(moveSlot, fxSlot) {
 /* Root of the standalone-session tree. */
 const STANDALONE_DIR = "/data/UserData/dbx-host";
 
-/* Whether a standalone session is running now — true only for the span where
- * "exit" should mean "hand the device back to stock Schwung" rather than
- * "unload this module". Re-read rather than cached: a session can start or
- * end without this process restarting, and a stale answer would send
- * Shift+Back down the wrong path. The probe is two stats + one small read on
- * a gesture, not a hot path.
+/* `standaloneSessionActive` is imported from shared/session_state.mjs — ONE
+ * definition, because the file browsers ask the same question to decide
+ * whether to hide a live session's project library, and two copies of a
+ * liveness probe are two things to keep in step. The rationale for the probe
+ * — why liveness rather than a marker, why the fallbacks are permissive —
+ * lives with it there.
  *
- * HISTORY: this used to be a /data marker (standalone_active) removed only on
- * the launcher's clean-exit path, so a hard reboot
- * — the documented recovery action — left it behind (fixed by boot-id
- * stamping), and a session that CRASHED mid-boot left a same-boot marker that
- * refused every launch until reboot. P4b replaced the marker with LIVENESS:
- * the launcher holds an exclusive flock on a /dev/shm dotfile for the life of
- * the session, with the supervisor PID as payload. /dev/shm clears on reboot
- * by construction, the flock dies with the session's processes, and this
- * reader answers "is a session live" by probing the PID — no staleness
- * protocol left to get wrong. Path must match DBX_SESSION_LOCK in
- * standalone/config.sh (pinned by check-config.sh).
- *
- * Fallbacks are deliberately permissive, because a false NEGATIVE here sends
- * Shift+Back down the teardown path during a real session: a lock file whose
- * payload is unreadable or garbled means "assume live". Only a demonstrably
- * dead PID (readable payload, no /proc entry) is treated as no-session. */
-function standaloneSessionActive() {
-    /* std.loadFile, NOT host_file_exists/host_read_file: those run
-     * validate_path(), which rejects everything outside /data/UserData — so
-     * this probe silently returned false for /dev/shm and /proc since the
-     * P4b marker retirement. The visible failure was Shift+Back falling
-     * through to a plain module exit instead of the session teardown, which
-     * stranded the session (lock held, every relaunch refused). std has no
-     * path allowlist and already reads /opt/move/Move elsewhere in this
-     * file. */
-    try {
-        const payload = std.loadFile("/dev/shm/.dbxhost-session.lock");
-        if (payload === null || payload === undefined) return false;  /* no lock */
-        const pid = parseInt(String(payload).trim(), 10);
-        if (!isFinite(pid) || pid <= 0) return true;  /* garbled — assume live */
-        return std.loadFile("/proc/" + pid + "/cmdline") !== null;
-    } catch (e) {
-        return false;
-    }
-}
+ * Here it decides whether "exit" means "hand the device back to stock Schwung"
+ * rather than "unload this module", so a stale answer sends Shift+Back down
+ * the wrong path. */
 
 /* Load params and knobs for current hierarchy level */
 function loadHierarchyLevel() {

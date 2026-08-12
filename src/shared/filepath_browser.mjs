@@ -5,6 +5,8 @@
  * from shadow_ui.js with minimal glue code.
  */
 
+import { pathHiddenFromBrowsers } from './session_state.mjs';
+
 const DEFAULT_ROOT = '/data/UserData';
 
 function normalizePath(path) {
@@ -186,6 +188,13 @@ export function refreshFilepathBrowser(state, fsLike) {
             if (!name || name === '.' || name === '..') continue;
             if (name.startsWith('.')) continue;  /* Skip dotfiles */
             const fullPath = joinPath(currentDir, name);
+            /* The set library belongs to a live standalone session, which owns
+             * its projects through its own UI and has them open. Every consumer
+             * of this browser is a generic file surface with no idea what a
+             * project is, so the entry is hidden here — at the ONE place all of
+             * them list through — rather than in each of them. Outside a
+             * session it is the user's own set list and stays visible. */
+            if (pathHiddenFromBrowsers(fullPath)) continue;
             const stat = fs.stat(fullPath);
             const isDir = isDirectoryStat(stat);
 

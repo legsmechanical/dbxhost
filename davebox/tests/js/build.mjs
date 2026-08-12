@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../..');
 const stub = path.join(__dirname, 'stubs/shared_constants.mjs');
+const stdStub = path.join(__dirname, 'stubs/quickjs_std.mjs');
 const DEVICE_PATH = '/data/UserData/schwung/shared/constants.mjs';
 
 const stubPlugin = {
@@ -25,6 +26,11 @@ const stubPlugin = {
         build.onResolve({ filter: /^\/data\/UserData\/schwung\/shared\// }, (args) => ({
             path: path.join(repoRoot, '../src/shared', path.basename(args.path)),
         }));
+        // QuickJS built-ins. A shared module may import `std` (session_state
+        // probes the session lock through it); Node has no such module, so the
+        // real host file would fail to bundle and take every test that reaches
+        // it down with it.
+        build.onResolve({ filter: /^std$/ }, () => ({ path: stdStub }));
     },
 };
 
