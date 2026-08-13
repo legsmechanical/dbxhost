@@ -80,6 +80,33 @@ step('⭑ Shift+jog steps the active track', () => {
     shift(false);
 });
 
+step('⭑ it keeps stepping while Shift stays down (the one-shot bug)', () => {
+    /* Josh, on hardware: "tracks should scroll with the wheel continuously
+     * while held. right now it's a one-shot."
+     *
+     * Cause: stepping a track makes tick RETARGET the screen, and soundEnter /
+     * soundRetarget / soundEnterMove each cleared sound mode's shiftHeld. The
+     * key was still physically down, so the copy was simply wrong, and the next
+     * turn read as unshifted — moving the cursor instead of the track.
+     *
+     * The retarget is what makes this specific: one turn works, so any test
+     * that turns once passes. This one turns THREE times on one Shift. */
+    S.activeTrack = 1;
+    snd.soundEnter(1, 1);
+    shift(true);
+    /* ⚠ TICK between turns. The retarget that used to clear shiftHeld happens
+     * in tick, so three turns with no tick never reproduce the bug at all — the
+     * first version of this step passed against the mutation that restores it.
+     * The tick is the mechanism; without it this asserts nothing. */
+    turn(); snd.soundTick();
+    turn(); snd.soundTick();
+    turn(); snd.soundTick();
+    shift(false);
+    if (S.activeTrack !== 4)
+        throw new Error('expected 1 -> 4 on three turns, got ' + S.activeTrack +
+                        (S.activeTrack === 2 ? ' (one-shot: shift was cleared by the retarget)' : ''));
+});
+
 step('...and it clamps at the last track rather than wrapping', () => {
     S.activeTrack = 7;
     shift(true);
@@ -108,16 +135,19 @@ step('⚠ off the menu (slot settings), Shift+jog is NOT the track switch', () =
     S.activeTrack = 2;
     snd.soundEnter(2, 2);
 
-    /* Walk the menu clicking every row until one opens a sub-screen. Clicking a
-     * block row with no module loaded is a no-op under stub host functions, so
-     * sweeping is safe and beats hard-coding a row index that shifts whenever
-     * the FX-block capability probe answers differently. Each action is
-     * deferred to tick, so drain one after each click. */
-    for (let i = 0; i < 6; i++) {
-        send(3, 127);                              /* jog click */
-        snd.soundTick();
-        turn();
-    }
+    /* Navigate deterministically to the Sound Control door and open it.
+     * ⚠ Do NOT sweep-click rows: `Track to` is now row 0, so a sweep enters its
+     * edit and then COMMITS a destination, which changes the route and
+     * retargets the screen. That produced a false failure here (and, in an
+     * earlier form, a false pass). */
+    const st = snd.soundPickStateForTest();
+    const target = st.kinds.indexOf('settings');
+    if (target < 0) throw new Error('no Sound Control door in the menu');
+    for (let i = st.row; i !== target; i = (i + 1) % st.kinds.length) turn();
+    send(3, 127);                                  /* jog click -> Sound Control */
+    snd.soundTick();
+    if (snd.soundPickStateForTest().view === st.view)
+        throw new Error('the door did not open — still on the menu view');
 
     const before = S.activeTrack;
     shift(true); turn(); shift(false);

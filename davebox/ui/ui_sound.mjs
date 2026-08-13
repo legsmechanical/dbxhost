@@ -164,9 +164,9 @@ function moveBusFor(track) {
               min: 0, max: 1, step: BUS_LEVEL_STEP },
             { comp: cmp, key: 'send_b', label: 'Send B',
               min: 0, max: 1, step: BUS_LEVEL_STEP },
-            { comp: cmp, key: 'muted', label: 'Muted',
+            { comp: cmp, key: 'muted', label: 'Mute',
               min: 0, max: 1, step: 1, toggle: true },
-            { comp: cmp, key: 'soloed', label: 'Soloed',
+            { comp: cmp, key: 'soloed', label: 'Solo',
               min: 0, max: 1, step: 1, toggle: true },
         ],
     };
@@ -234,9 +234,9 @@ const SLOT_LEVELS = [
       min: 0, max: 1, step: 0.05, fmt: PCT_FMT, cap: 'sends' },
     { slot: true, key: 'send_b', label: 'Send B',
       min: 0, max: 1, step: 0.05, fmt: PCT_FMT, cap: 'sends' },
-    { slot: true, key: 'muted',  label: 'Muted',
+    { slot: true, key: 'muted',  label: 'Mute',
       min: 0, max: 1, step: 1, int: true, toggle: true, fmt: ONOFF },
-    { slot: true, key: 'soloed', label: 'Soloed',
+    { slot: true, key: 'soloed', label: 'Solo',
       min: 0, max: 1, step: 1, int: true, toggle: true, fmt: ONOFF },
 ];
 
@@ -583,6 +583,15 @@ function log(msg) {
     if (typeof console !== 'undefined' && console.log) console.log('[sound] ' + msg);
 }
 
+/* Read-only view of the pick list, for tests. Blind row-sweeping was the
+ * alternative and it is worse than an accessor: it clicked whatever happened to
+ * be under the cursor, which after the row set changed meant entering `Track
+ * to`'s edit and committing a destination — a test that both failed falsely and
+ * (earlier) passed falsely. Exposes no mutation. */
+export function soundPickStateForTest() {
+    return { kinds: S.pickRows.map(r => r.kind), row: S.pickRow, view: S.view };
+}
+
 export function soundActive() { return S.active; }
 export function soundTrack() { return S.track; }
 export function soundSlot()  { return S.slot; }
@@ -621,7 +630,13 @@ export function soundEnter(track, slot) {
     S.track = track;
     S.slot = slot;
     S.view = VIEW_BLOCKS;
-    S.shiftHeld = false;
+    /* ⚠ SYNC to the physical key, do not assume it is up. Clearing this on a
+     * retarget made Shift+jog a ONE-SHOT: stepping a track retargets, the
+     * retarget forgot Shift was still down, and the next turn was read as an
+     * unshifted jog that moved the cursor instead of the track. Shift is a
+     * physical state — a stale copy is wrong, not safe. davebox tracks it
+     * globally (soundOnCC passes the CC through for exactly that reason). */
+    S.shiftHeld = GS.shiftHeld === true;
     S.touchedIdx = -1;
     S.turnedSinceTouch = false;
     S.pendingWrites.length = 0;
@@ -701,7 +716,13 @@ export function soundRetarget(track, slot) {
         S.blockIdx = 1;
     }
     S.slot = slot;
-    S.shiftHeld = false;
+    /* ⚠ SYNC to the physical key, do not assume it is up. Clearing this on a
+     * retarget made Shift+jog a ONE-SHOT: stepping a track retargets, the
+     * retarget forgot Shift was still down, and the next turn was read as an
+     * unshifted jog that moved the cursor instead of the track. Shift is a
+     * physical state — a stale copy is wrong, not safe. davebox tracks it
+     * globally (soundOnCC passes the CC through for exactly that reason). */
+    S.shiftHeld = GS.shiftHeld === true;
     S.touchedIdx = -1;
     S.turnedSinceTouch = false;
     /* Everything below described the PREVIOUS module: an audition baseline, a
@@ -1349,7 +1370,8 @@ export function soundEnterMove(track) {
     S.view = VIEW_BLOCKS;
     S.pickRow = 0;
     S.comp = '';                /* no chain component is in scope on a Move bus */
-    S.shiftHeld = false;
+    /* Sync, never assume up — see the note in soundEnter. */
+    S.shiftHeld = GS.shiftHeld === true;
     S.pendingWrites.length = 0;
     S.blockNames = [];
     S.pendingAction = { t: 'names' };
@@ -1443,6 +1465,13 @@ function buildPickRows() {
          * hang off its sound generator. Jog-click hands over to Move's editor
          * (co-run) — there is no module to browse, Move owns that voice. */
         if (S.bus.kind === 'move') {
+            /* A Move-routed track is still a TRACK: its destination belongs at
+             * the top of its screen exactly as on a Schwung one. Without this
+             * the bus flavour had no `Track to` at all, so a Move track could
+             * not be re-routed from Track Control — the same gap the EXT case
+             * had, in the other flavour. ⚠ Master/Send buses do NOT get it:
+             * they are entered from the session FX list, not from a track. */
+            rows.push({ kind: 'trackto', label: 'Track to' });
             rows.push({ kind: 'movesynth', label: 'Generator', value: 'Move ' + S.bus.bus + ' >' });
         }
         for (const n of BUS_BLOCKS) {
@@ -1487,6 +1516,17 @@ function buildPickRows() {
         rows.push({ kind: 'config',   label: 'Config' });
         rows.push({ kind: 'patches',  label: 'Presets' });
     }
+    /* ---- grouping rules (1px, drawn by drawKitList) ----
+     * Destination | chain | mixer position | each door on its own. Marked by
+     * ROLE rather than index: which rows exist varies with flavour, the FX
+     * capability probe and the sends gate, so a fixed index would draw the line
+     * in the wrong place on half the hosts. Nothing after the last row. */
+    const _lastOf = (k) => { let i = -1; rows.forEach((r, n) => { if (r.kind === k) i = n; }); return i; };
+    [_lastOf('trackto'), _lastOf('block'), _lastOf('buslevel'),
+     _lastOf('settings'), _lastOf('config')].forEach(i => {
+        if (i >= 0 && i < rows.length - 1) rows[i].divAfter = true;
+    });
+
     S.pickRows = rows;
     /* Keep the cursor on the component it was on — the row INDEX shifts when a
      * host lacks fx3/4, and a bus context has different rows entirely. */
@@ -2315,6 +2355,14 @@ function runAction(a) {
     else if (a.t === 'bakedset') commitBaked();
     else if (a.t === 'menu')     openMenu();
     else if (a.t === 'menuload') refreshMenuRows();
+    else if (a.t === 'reflavour') {
+        /* Re-enter the flavour the track's CURRENT route calls for. Same choice
+         * tick's track-follow makes, for the case where the track did not
+         * change but its destination did. */
+        const _t = S.track;
+        if (GS.trackRoute[_t] === 1) soundEnterMove(_t);
+        else { clearBusContext(); soundRetarget(_t, slotIndex(_t)); }
+    }
     else if (a.t === 'slotcfg')  openSlotCfg(a.keep, a.which);
     else if (a.t === 'knobs')    openKnobEditor();
     else if (a.t === 'knobtarget') openKnobTargets();
@@ -2967,7 +3015,16 @@ export function soundOnCC(d1, d2, decodeDelta) {
                 /* The write can retarget or close this very screen (an EXT route
                  * has no sound to show), so it is the LAST thing done here and
                  * tick's track-follow settles what happens next. */
-                if (S.instrSel !== instrValueFor(S.track)) applyInstrChoice(S.track, S.instrSel);
+                if (S.instrSel !== instrValueFor(S.track)) {
+                    applyInstrChoice(S.track, S.instrSel);
+                    /* The screen must FOLLOW the new destination immediately —
+                     * a track just switched to MIDI has no chain to show, and a
+                     * switch between Schwung and Move changes flavour entirely.
+                     * tick's follow only fires when the TRACK changes, and it
+                     * did not; without this you had to leave and re-enter to
+                     * see the change. Deferred because re-entry reads params. */
+                    S.pendingAction = { t: 'reflavour' };
+                }
                 S.dirty = true;
             }
         }

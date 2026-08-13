@@ -1284,6 +1284,11 @@ export function drawKitList(rows, sel, opts) {
         const on = (idx === s);
         if (on) fill_rect(0, y - 1, fillW, rowH, 1);
         const ink = on ? 0 : 1;
+        /* A 1px rule UNDER this row, for grouping. Drawn at y+rowH-1, which is
+         * the free line between this row's highlight fill (y-1 .. y+rowH-2) and
+         * the next one's — so it never sits inside a selected row's inverse
+         * block. Width follows fillW, keeping it clear of the scroll indicator. */
+        if (row.divAfter) fill_rect(0, y + rowH - 1, fillW, 1, 1);
         let val = row.chevron ? '>' : (row.value != null ? String(row.value) : '');
         if (row.editing && val) val = '[' + val + ']';
         const vw = val ? mvWidth(val) : 0;
