@@ -162,7 +162,14 @@ step('⚠ off the menu (slot settings), Shift+jog is NOT the track switch', () =
     const st = snd.soundPickStateForTest();
     const target = st.kinds.indexOf('settings');
     if (target < 0) throw new Error('no Sound Control door in the menu');
-    for (let i = st.row; i !== target; i = (i + 1) % st.kinds.length) turn();
+    /* ⚠ Turn until the ACTUAL cursor arrives — do not count turns. The cursor
+     * steps OVER grouping-rule rows, so one turn is not one index, and counting
+     * overshot into Presets (which needs host bindings this harness lacks). */
+    for (let guard = 0; guard <= st.kinds.length * 2; guard++) {
+        if (snd.soundPickStateForTest().row === target) break;
+        turn();
+        if (guard === st.kinds.length * 2) throw new Error('never reached the Sound Control row');
+    }
     send(3, 127);                                  /* jog click -> Sound Control */
     snd.soundTick();
     if (snd.soundPickStateForTest().view === st.view)

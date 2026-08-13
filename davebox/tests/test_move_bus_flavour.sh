@@ -65,18 +65,23 @@ grep -q "r.spec.slot$" ui/ui_sound.mjs \
 n=$(grep -c "w.int ? String(w.val) : w.val.toFixed(3)" ui/ui_sound.mjs || true)
 [ "$n" = "3" ] && ok "all 3 slot-write drains take int from the queued item" \
                || bad "$n drain(s) use w.int — expected 3; a table lookup has crept back"
-# The render layer builds NEW cell objects, so anything set on a pickRow must be
-# forwarded explicitly. Both the door chevrons and the grouping rules were
-# invisible for exactly this reason — twice, so it is pinned.
-grep -q "if (r.divAfter) c.divAfter = true;" ui/ui_sound.mjs \
-    && ok "divAfter is forwarded from the pickRow to the drawn cell" \
-    || bad "divAfter is dropped in the cell mapping — the grouping rules will not draw"
-# ⚠ INK FLIP, not a constant: the fills are contiguous, so the rule sits inside
-# the marked row's own band and must invert when that row is selected — else it
-# vanishes exactly when the cursor is on the row above a group boundary.
-grep -q "if (row.divAfter) fill_rect(0, y + rowH - 2, fillW, 1, on ? 0 : 1);" ui/ui_movy.mjs \
-    && ok "drawKitList draws the 1px rule, inverted on the selected row" \
-    || bad "drawKitList no longer draws divAfter (or lost the ink flip)"
+# Grouping rules are REAL ROWS on their own line. They were briefly a flag on a
+# neighbouring row, which fails twice over: the render layer builds new cell
+# objects and dropped the flag entirely, and even when forwarded the line landed
+# inside a row's band — clipping its glyph tops and vanishing under selection.
+grep -q "rows.splice(i + 1, 0, { kind: 'div' });" ui/ui_sound.mjs \
+    && ok "grouping rules are inserted as their own rows" \
+    || bad "the grouping rules are no longer rows — a flag will be dropped by the cell mapper"
+grep -q "if (row.divider) { fill_rect(0, y + (rowH >> 1) - 1, fillW, 1, 1); continue; }" ui/ui_movy.mjs \
+    && ok "drawKitList draws a rule row centred in its band" \
+    || bad "drawKitList no longer renders a divider row"
+# ⚠ A real row is a cursor STOP unless something steps over it.
+grep -q "S.pickRow = pickStep(delta);" ui/ui_sound.mjs \
+    && ok "the pick cursor steps OVER rules" \
+    || bad "the cursor no longer skips rules — the list stops on nothing"
+n=$(grep -c "kind !== 'div'" ui/ui_sound.mjs || true)
+[ "$n" -ge 1 ] && ok "pickStep knows what a rule is" \
+               || bad "pickStep no longer recognises a rule row"
 grep -q "kind: 'settings', label: 'Sound Control'" ui/ui_sound.mjs \
     && ok "the settings door is Sound Control (knobs are direct access, not modulation)" \
     || bad "the Sound Control door is gone or renamed"

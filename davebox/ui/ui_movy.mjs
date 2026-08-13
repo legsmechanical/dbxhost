@@ -1282,18 +1282,21 @@ export function drawKitList(rows, sel, opts) {
         const row = (typeof r === 'string') ? { label: r } : r;
         const y = topY + i * rowH;
         const on = (idx === s);
+        /* A GROUPING RULE, occupying a whole row of its own.
+         *
+         * It was first drawn as a 1px line inside a neighbouring row's band,
+         * which does not work here: the highlight fills are contiguous (row i
+         * covers y-1 .. y+rowH-2, row i+1 starts at y+rowH-1), so such a line
+         * always sits inside SOME row — clipping that row's glyph tops, and
+         * disappearing whenever that row was selected. Its own row has neither
+         * problem and needs no ink flip.
+         *
+         * ⚠ Callers must make these UNSELECTABLE — the cursor has to step over
+         * them, or the list has stops on nothing. Centred in the band, width
+         * follows fillW so it stays clear of the scroll indicator. */
+        if (row.divider) { fill_rect(0, y + (rowH >> 1) - 1, fillW, 1, 1); continue; }
         if (on) fill_rect(0, y - 1, fillW, rowH, 1);
         const ink = on ? 0 : 1;
-        /* A 1px rule UNDER this row, for grouping.
-         *
-         * ⚠ There is NO free line between rows: the highlight fills are
-         * contiguous (row i covers y-1 .. y+rowH-2, row i+1 starts at y+rowH-1),
-         * so the rule always lands inside SOME row's band. It sits on this row's
-         * last line — hence the INK FLIP: white on the normal black rows, black
-         * on this row's inverse block, or it would vanish exactly when the
-         * cursor was on the row above a group boundary.
-         * Width follows fillW, keeping it clear of the scroll indicator. */
-        if (row.divAfter) fill_rect(0, y + rowH - 2, fillW, 1, on ? 0 : 1);
         let val = row.chevron ? '>' : (row.value != null ? String(row.value) : '');
         if (row.editing && val) val = '[' + val + ']';
         const vw = val ? mvWidth(val) : 0;

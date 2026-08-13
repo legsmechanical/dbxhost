@@ -1457,6 +1457,20 @@ function specKeyFor(comp) {
     return COMPONENTS[comp] ? comp : 'fx1';
 }
 
+/* Move the pick cursor by `delta`, stepping OVER grouping rules — they are real
+ * rows so the list geometry stays a simple grid, but they are not stops. Bounded
+ * by the row count so a list of nothing but rules cannot spin. */
+function pickStep(delta) {
+    const n = S.pickRows.length;
+    if (!n) return 0;
+    let i = S.pickRow;
+    for (let guard = 0; guard < n; guard++) {
+        i = listMove(n, i, delta);
+        if (!S.pickRows[i] || S.pickRows[i].kind !== 'div') return i;
+    }
+    return S.pickRow;
+}
+
 function buildPickRows() {
     const rows = [];
     if (S.bus) {
@@ -1516,16 +1530,22 @@ function buildPickRows() {
         rows.push({ kind: 'config',   label: 'Config' });
         rows.push({ kind: 'patches',  label: 'Presets' });
     }
-    /* ---- grouping rules (1px, drawn by drawKitList) ----
-     * Destination | chain | mixer position | each door on its own. Marked by
-     * ROLE rather than index: which rows exist varies with flavour, the FX
-     * capability probe and the sends gate, so a fixed index would draw the line
-     * in the wrong place on half the hosts. Nothing after the last row. */
+    /* ---- grouping rules, each on a row of its own ----
+     *
+     * Three groups: DESTINATION | the chain | the mixer position — and then the
+     * doors, which are left unseparated (Josh: no rules between the submenus).
+     *
+     * Inserted by ROLE, not index: which rows exist varies with flavour, the FX
+     * capability probe and the sends gate, so a fixed index would put a rule in
+     * the wrong place on half the hosts. Never after the last row.
+     *
+     * ⚠ These are REAL rows, so every index-based path has to step over them —
+     * see pickStep() and the cursor restore below. */
     const _lastOf = (k) => { let i = -1; rows.forEach((r, n) => { if (r.kind === k) i = n; }); return i; };
-    [_lastOf('trackto'), _lastOf('block'), _lastOf('buslevel'),
-     _lastOf('settings'), _lastOf('config')].forEach(i => {
-        if (i >= 0 && i < rows.length - 1) rows[i].divAfter = true;
-    });
+    const _after = [_lastOf('trackto'), _lastOf('block'), _lastOf('buslevel')]
+        .filter(i => i >= 0 && i < rows.length - 1)
+        .sort((a, b) => b - a);                 /* descending: splice from the end */
+    for (const i of _after) rows.splice(i + 1, 0, { kind: 'div' });
 
     S.pickRows = rows;
     /* Keep the cursor on the component it was on — the row INDEX shifts when a
@@ -1533,6 +1553,8 @@ function buildPickRows() {
     const at = rows.findIndex(r => r.kind === 'block' && r.comp === S.comp);
     if (at >= 0) S.pickRow = at;
     if (S.pickRow >= rows.length) S.pickRow = 0;
+    /* Never rest on a rule. */
+    if (rows[S.pickRow] && rows[S.pickRow].kind === 'div') S.pickRow = pickStep(1);
 }
 
 function probeCaps() {
@@ -2871,7 +2893,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
             const cur = opts.indexOf(S.instrSel);
             S.instrSel = opts[((cur + (delta > 0 ? 1 : -1)) % opts.length + opts.length) % opts.length];
         } else if (S.view === VIEW_BLOCKS) {
-            S.pickRow = listMove(S.pickRows.length, S.pickRow, delta);
+            S.pickRow = pickStep(delta);
         } else if (S.view === VIEW_SLOTCFG) {
             slotCfgStep(delta);
         } else if (S.view === VIEW_KNOBS) {
@@ -3466,10 +3488,10 @@ function renderBlocks() {
     drawKitHeader(S.bus ? S.bus.title : ('TRACK ' + (S.track + 1) + ' - CONTROL'), false);
     /* ⚠⚠ This builds a NEW object per row, so anything set on the pickRow has to
      * be forwarded EXPLICITLY. It is the second time that has bitten: the doors
-     * had no chevron for the same reason, and `divAfter` — set by role in
-     * buildPickRows — reached drawKitList not at all, so the grouping rules
-     * simply never drew. Forwarding happens once, below, rather than in each of
-     * the six branches. */
+     * had no chevron for the same reason, and the grouping rules' flag reached
+     * drawKitList not at all, so they never drew. (They are their own ROWS now,
+     * which sidesteps the whole class — a row cannot be forgotten by a mapper
+     * that iterates rows.) */
     const _cell = (r, idx) => {
         if (r.kind === 'buslevel') {
             /* `fmt` where the spec carries one — a bus VOLUME is a gain and
@@ -3488,6 +3510,7 @@ function renderBlocks() {
             return { label: r.label, hdr: true,
                      value: S.instrEditing ? '[' + txt + ']' : txt };
         }
+        if (r.kind === 'div') return { divider: true };
         if (r.kind === 'movesynth') return { label: r.label, hdr: true, value: r.value };
         /* Doors get the chevron drawKitList draws for a sub-row. They used to
          * fall through to the bare branch below, which sets neither value nor
@@ -3503,11 +3526,7 @@ function renderBlocks() {
         return { label: r.label, hdr: true,
                  value: (r.bypassed ? 'B ' : '') + String(r.name || '-').toUpperCase() };
     };
-    drawKitList(S.pickRows.map((r, idx) => {
-        const c = _cell(r, idx);
-        if (r.divAfter) c.divAfter = true;
-        return c;
-    }), S.pickRow, {});
+    drawKitList(S.pickRows.map(_cell), S.pickRow, {});
 }
 
 function renderBuses() {
