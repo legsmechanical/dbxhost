@@ -71,6 +71,50 @@ All `tN_` keys: N = 0..7. All writes save state unless noted.
 
 **Other keys**: `clip_copy "srcT srcC dstT dstC"` · `clip_cut "srcT srcC dstT dstC"` (copy+hard-reset src, `undo_begin_clip_pair`) · `row_copy "srcRow dstRow"` · `row_cut "srcRow dstRow"` (`undo_begin_row_pair`) · `tN_active_clip` · `tN_current_step` · `tN_current_clip_tick` (get: `current_step*TPS+tick_in_step`) · `tN_queued_clip` · `tN_cC_steps` (get: 256-char '0'/'1'/'2') · `tN_cC_length` · `tN_cC_step_S` (set '0'/'1'=deactivate/activate) · `tN_launch_clip` · `launch_scene` · `transport` ("play"/"stop"/"panic"/"deactivate_all") · `playing` · `state_snapshot` · `tN_route` · `tN_pad_mode` · `tN_pad_octave` · `key` · `scale` · `scale_aware` · `bpm` · `launch_quant` · `input_vel` · `inp_quant` · `midi_in_channel` (0=All, 1–16).
 
+## `tN_digest` — the whole track's readback in one request
+
+**Read this before adding a get_param to a project-load path.**
+
+A param request is a single-slot mailbox served once per SPI frame, so **every
+`get_param` costs a full audio frame (~2.9 ms measured)** no matter how trivial it is. The cost of
+a readback is the NUMBER of requests, not the work behind them. Re-reading a project after a load
+once took ~1,468 of them: a **4.3 s tick** with the UI frozen and input dead.
+
+`tN_digest` returns a whole track's readback as one value — one line per field:
+
+```
+t3_active_clip=1
+t3_pad_octave=3
+t3_c0_steps=0100100000...
+t3_c0_length=16
+...
+```
+
+The key in each line is the **full key**, so a caller looks up exactly the string it would
+otherwise have asked for. The JS side resolves through `dspGet()` in `ui/ui_dsp_get.mjs`, which
+reads from a prefetched map and **falls back to a live `host_module_get_param` for anything the
+digest does not carry**.
+
+Three properties worth preserving if you touch it:
+
+- **It calls the existing getters** (`get_param` recursively), it does not re-derive values. A
+  digest with its own copy of the logic is a second source of truth, and the drift shows up as a
+  project that loads *subtly wrong* — the worst failure available to a batching optimisation,
+  because nothing looks broken.
+- **The fallback is what makes the key list safe to maintain separately.** If this list and the
+  UI's readers drift, the missing key costs one frame, never a wrong value. Adding a reader without
+  adding its key is a slowdown, not a bug.
+- **The prefetched map is scoped to the sync** (`try/finally` in `syncClipsFromDsp`). Left
+  standing, it would answer for a project that is no longer loaded.
+
+RT note: the digest is serialised **inside the SPI callback**, so it uses stack buffers only,
+bounds-checks every append, and truncates at a line boundary. Adding many keys adds work to that
+frame — check `param.serve` against the 900 µs budget (`touch otlp_trace_on`) if you grow it much.
+
+Pinned by `tests/test_track_digest.c` (every line byte-identical to the individual read) and
+`tests/js/test_track_digest_sync.mjs` (the round trips actually collapse, the mirrors land, the map
+is released).
+
 ## Drum Lane Keys
 
 All operate on active clip's lane L of track N.
