@@ -39,6 +39,36 @@ grep -q "return n < 1 ? 1 : (n > MOVE_BUSES ? MOVE_BUSES : n);" ui/ui_engine.mjs
     && ok "the bus is clamped to Move's four instruments" \
     || bad "moveBusForChannel no longer clamps the bus to 1-4"
 
+echo "mixer-position level rows (one row kind, two backing stores):"
+# A chain slot and a Move bus are alternative occupants of ONE mixer position,
+# so their five level rows are the same rows in the same place. The failure this
+# pins is silent: a SLOT level written through queueWrite() lands in the
+# COMPONENT namespace, so the row moves on screen and the value goes nowhere.
+grep -q "^const SLOT_LEVELS = \[" ui/ui_sound.mjs \
+    && ok "the slot's level rows are declared once" \
+    || bad "SLOT_LEVELS is gone — slot levels have scattered again"
+n=$(grep -c "kind: 'buslevel', label: lv.label" ui/ui_sound.mjs || true)
+[ "$n" = "2" ] && ok "both flavours build level rows from the same row kind" \
+               || bad "$n level-row builder(s) — expected 2 (slot + bus)"
+grep -q "if (sp.slot) queueSlotCfgWrite(sp.key, v, !!sp.int);" ui/ui_sound.mjs \
+    && ok "a slot level edit goes to the SLOT queue, not the component one" \
+    || bad "slot level edits no longer route to queueSlotCfgWrite — writes would vanish"
+grep -q "if (_r.spec.slot) queueSlotCfgWrite(_r.spec.key, _r.val, true);" ui/ui_sound.mjs \
+    && ok "a slot toggle (mute/solo) goes to the SLOT queue too" \
+    || bad "slot toggles no longer route to queueSlotCfgWrite"
+grep -q "r.spec.slot$" ui/ui_sound.mjs \
+    && ok "the level READ picks its store from the same flag as the write" \
+    || bad "read and write disagree about which store a level row uses"
+# int-vs-fixed rides on the QUEUED ITEM. Three drains used to re-find the row in
+# a table to decide; a row that left that table silently started writing "1.000"
+# where the host parses with atoi, turning a mute into a level.
+n=$(grep -c "w.int ? String(w.val) : w.val.toFixed(3)" ui/ui_sound.mjs || true)
+[ "$n" = "3" ] && ok "all 3 slot-write drains take int from the queued item" \
+               || bad "$n drain(s) use w.int — expected 3; a table lookup has crept back"
+grep -q "kind: 'settings', label: 'Sound Control'" ui/ui_sound.mjs \
+    && ok "the settings door is Sound Control (knobs are direct access, not modulation)" \
+    || bad "the Sound Control door is gone or renamed"
+
 echo "session-view level knob (both flavours):"
 # A Move-routed track is a mixer position exactly like a chain slot, so its
 # level knob must work. The bug this pins: the handler asked "is this track a

@@ -197,52 +197,60 @@ const PCT_FMT = (v) => Math.round(v * 100) + '%';
 const GAIN_FMT = (v) => (v || 0).toFixed(2) + 'x';
 const ONOFF   = (v) => (v ? 'Yes' : 'No');
 
-const SLOT_SETTINGS = [
-    /* The slot's OUTPUT, and since the SLOT_LEVEL_KEY flip the same value the
-     * volume knob and the session-view knobs move. Bound by SLOT_LEVEL_MAX
-     * rather than the host's 4x wire clamp — one key must not offer a ceiling
-     * here that the knobs would snap away from on the first detent. */
-    { key: 'volume',        label: 'Volume',      min: 0, max: SLOT_LEVEL_MAX, step: 0.05, fmt: GAIN_FMT },
-    /* Module Level is deliberately NOT here — it belongs to whatever module is
-     * loaded, not to the slot, and it already lives at the root of that
-     * module's own menu. Two homes would make it ambiguous which one wins.
-     * ⚠ It is also no longer written by ANY davebox surface (SLOT_LEVEL_KEY
-     * moved off `synth_volume`); it defaults to unity, so it is an inert
-     * multiplier unless deliberately edited through the host's own row. */
-    { key: 'send_a',        label: 'Send A',      min: 0, max: 1, step: 0.05, fmt: PCT_FMT, cap: 'sends' },
-    { key: 'send_b',        label: 'Send B',      min: 0, max: 1, step: 0.05, fmt: PCT_FMT, cap: 'sends' },
-    /* `Transpose` was here — the chain slot's own `slot:transpose`, which only
-     * ever reached Schwung-routed tracks. Transpose is now a TRACK setting
-     * (`tN_transpose`, in the global menu until sound mode's top level absorbs
-     * it), applied once on the way out so it lands the same on a Schwung slot,
-     * a Move instrument, MIDI out or another track — including drum tracks,
-     * where it is how you match an external device's note region.
-     * ⚠ The host param STAYS and still works; davebox simply no longer writes
-     * it, so it sits at 0. Same shape as `slot:synth_volume`. */
-    /* `Recv Ch`, `Fwd Ch` and the derived `MPE` row were here until the track
-     * gained ownership of its instrument (TRACK_OWNS_ITS_INSTRUMENT.md, Josh
-     * signed off all three). Where a track's notes go is answered entirely by
-     * the Instrument selector — a second place to express routing is the
-     * ambiguity that spec exists to remove, and this was the stale one:
-     * davebox dispatches by ADDRESSED SLOT, never by channel match
-     * (`ROUTE_SCHWUNG` in seq8.c), so a slot's receive channel never affected
-     * anything davebox did. MPE was defined as recv=All + fwd=Thru, built out
-     * of the very two rows above, and davebox does not support MPE anyway.
-     * All three were absorbed from the host's chain editor in P7 because that
-     * screen had them, not because this module used them.
-     * ⚠ The host PARAMS stay — host code still reads them; removing state is a
-     * separate, larger change. The consequence is noted in the spec. */
-    { key: 'muted',         label: 'Muted',       min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
-    { key: 'soloed',        label: 'Soloed',      min: 0, max: 1, step: 1, int: true, fmt: ONOFF },
-    /* `move_to_slot` was here until P8a 1a retired Move>Slot in the host: a slot
-     * is a Move bus or a Schwung chain, never both. The host has no such key any
-     * more, so the row read empty and wrote into the void — deleted rather than
-     * left as a control that does nothing. */
-    /* Sub-screen rows: jog-click opens davebox's own editor; Back returns
-     * here. No value to read or edit on the row itself. */
-    { key: 'knobs', label: 'Knobs...',  sub: 'knobs' },
-    { key: 'lfo1',  label: 'LFO 1...',  sub: 'lfo', lfo: 0 },
-    { key: 'lfo2',  label: 'LFO 2...',  sub: 'lfo', lfo: 1 },
+/* ---- a mixer position's LEVEL rows ----
+ *
+ * A chain slot and a Move FX bus are alternative occupants of ONE mixer
+ * position, so they carry the same five controls and are shown the same way:
+ * inline on the track's top level, not behind a settings door. A Move bus
+ * already read that way; this is the chain slot catching up, and it is why both
+ * flavours can now render from one row kind.
+ *
+ * The only difference is the backing store, which the `slot` flag selects: a bus
+ * addresses `move_fx:N:<key>` through a component, a chain slot addresses
+ * `slot:<key>` directly. Everything else — order, labels, ranges, formatting —
+ * is shared, so the two cannot drift.
+ *
+ * ⚠ Volume is bound by SLOT_LEVEL_MAX, not the host's 4x wire clamp: one key
+ * must not offer a ceiling here that the knobs would snap away from on the
+ * first detent. */
+const SLOT_LEVELS = [
+    { slot: true, key: 'volume', label: 'Volume',
+      min: 0, max: SLOT_LEVEL_MAX, step: 0.05, fmt: GAIN_FMT },
+    { slot: true, key: 'send_a', label: 'Send A',
+      min: 0, max: 1, step: 0.05, fmt: PCT_FMT, cap: 'sends' },
+    { slot: true, key: 'send_b', label: 'Send B',
+      min: 0, max: 1, step: 0.05, fmt: PCT_FMT, cap: 'sends' },
+    { slot: true, key: 'muted',  label: 'Muted',
+      min: 0, max: 1, step: 1, int: true, toggle: true, fmt: ONOFF },
+    { slot: true, key: 'soloed', label: 'Soloed',
+      min: 0, max: 1, step: 1, int: true, toggle: true, fmt: ONOFF },
+];
+
+/* ---- Sound Control: what shapes the sound without being in its signal path ----
+ *
+ * Knob assignments are DIRECT access, LFOs are modulation; "Sound Control" is
+ * the honest superset, and it is why this is not called Modulation. Both are
+ * davebox's own editors (absorbed in P7 — they were host overlay services in
+ * P5), reading and writing the same chain-host slot params the host's editors
+ * did (knob_N_target/param via knob_N_set/clear; lfoN:* keys).
+ *
+ * Door rows: jog-click opens the editor, Back returns here. No value to read.
+ *
+ * ⚠ Chain-slot only. A Move FX bus has no knob or LFO assignment, so the door
+ * does not appear on a Move track at all.
+ *
+ * `Volume`/`Send A`/`Send B`/`Muted`/`Soloed` used to sit here, in a screen
+ * called SLOT SETTINGS, together with `Transpose`, `Recv Ch`, `Fwd Ch` and
+ * `MPE`. The levels moved to the top level (SLOT_LEVELS above); `Transpose`
+ * became a TRACK setting reaching every route; the three routing rows went when
+ * the track gained ownership of its instrument. What is left is these three
+ * doors, which is why the screen is now named for them.
+ * ⚠ The host PARAMS behind the removed rows all still exist and still work —
+ * davebox simply stopped writing them. */
+const SOUND_CONTROL = [
+    { key: 'knobs', label: 'Knobs',  sub: 'knobs' },
+    { key: 'lfo1',  label: 'LFO 1',  sub: 'lfo', lfo: 0 },
+    { key: 'lfo2',  label: 'LFO 2',  sub: 'lfo', lfo: 1 },
 ];
 
 /* ---- knob / LFO editor vocabulary (ported from the host's editors — same
@@ -433,11 +441,11 @@ const S = {
     pickRows: [],               /* picker rows: {kind:'bus'|'block'|'settings'} */
     pickRow: 0,                 /* cursor in the block PICKER (rows, not blocks) */
     blockRows: [],              /* block indices this host actually supports */
-    slotRows: [],               /* SLOT_SETTINGS entries this host supports */
+    slotRows: [],               /* SOUND_CONTROL door rows */
     capFx34: false,
     capSends: false,
     slotCfgIdx: 0,
-    slotCfgVals: [],            /* live values, index-aligned with SLOT_SETTINGS */
+    slotCfgVals: [],            /* live values, index-aligned with slotRows */
     slotCfgEditing: false,
     slotCfgDirty: false,        /* something changed; save on leaving the screen */
     pendingSlotWrites: [],      /* slot-param writes, drained in tick */
@@ -564,8 +572,7 @@ function flushForRetarget() {
     /* Slot params carry their own slot, so landing them here is correct rather
      * than merely tidy. */
     for (const w of S.pendingSlotWrites) {
-        const s = SLOT_SETTINGS.find(x => x.key === w.key);
-        engineSetSlotParam(w.slot, w.key, s && s.int ? String(w.val) : w.val.toFixed(3));
+        engineSetSlotParam(w.slot, w.key, w.int ? String(w.val) : w.val.toFixed(3));
     }
     S.pendingSlotWrites.length = 0;
     if (S.slotCfgDirty || S.busLevelDirty) {
@@ -685,8 +692,7 @@ export function soundExit() {
      * writes: a send you just dialled should survive leaving sound mode, and
      * each carries its own slot so landing them late is still correct. */
     for (const w of S.pendingSlotWrites) {
-        const s = SLOT_SETTINGS.find(x => x.key === w.key);
-        engineSetSlotParam(w.slot, w.key, s && s.int ? String(w.val) : w.val.toFixed(3));
+        engineSetSlotParam(w.slot, w.key, w.int ? String(w.val) : w.val.toFixed(3));
     }
     S.pendingSlotWrites.length = 0;
     if (S.slotCfgDirty) { S.slotCfgDirty = false; engineSaveState(); }
@@ -722,7 +728,12 @@ function refreshBlockNames() {
      * directory and reads the same as the id would. */
     for (const r of S.pickRows) {
         if (r.kind === 'buslevel') {
-            const raw = parseFloat(engineGet(S.slot, r.spec.comp, r.spec.key));
+            /* A bus level addresses a component (`move_fx:N`); a SLOT level is
+             * in the slot: namespace and has no component. One row kind, two
+             * backing stores — see SLOT_LEVELS. */
+            const raw = parseFloat(r.spec.slot
+                ? engineGetSlotParam(S.slot, r.spec.key)
+                : engineGet(S.slot, r.spec.comp, r.spec.key));
             /* Unity is the right fallback for a level that passes signal
              * through (a return, a strip volume) but NOT for a send: an
              * unreadable send would come up fully open into a bus. */
@@ -1365,10 +1376,22 @@ function buildPickRows() {
         for (const i of S.blockRows) {
             rows.push({ kind: 'block', comp: BLOCKS[i].comp, label: BLOCKS[i].label, blockIdx: i });
         }
-        rows.push({ kind: 'settings', label: '[SLOT SETTINGS]' });
-        /* Last row by Josh's ruling; "presets" not "patches" in user-facing
-         * text — the store is still the host's patches/ dir. */
-        rows.push({ kind: 'patches', label: '[SLOT PRESETS]' });
+        /* The slot's LEVELS, inline and immediately after the chain — the same
+         * five rows a Move bus shows, in the same place, because a slot and a
+         * bus are alternative occupants of one mixer position. They sat behind
+         * a settings door until now, which meant the identical controls read
+         * one way on a Move track and another on a Schwung one.
+         *
+         * Sends are capability-gated: a host without send buses would otherwise
+         * offer two rows backed by nothing. */
+        for (const lv of SLOT_LEVELS) {
+            if (lv.cap === 'sends' && !S.capSends) continue;
+            rows.push({ kind: 'buslevel', label: lv.label, spec: lv });
+        }
+        /* Doors last, presets last of all (Josh). "Presets" not "patches" in
+         * user-facing text — the store is still the host's patches/ dir. */
+        rows.push({ kind: 'settings', label: 'Sound Control' });
+        rows.push({ kind: 'patches', label: 'Presets' });
     }
     S.pickRows = rows;
     /* Keep the cursor on the component it was on — the row INDEX shifts when a
@@ -1389,7 +1412,10 @@ function probeCaps() {
         if (!S.capFx34 && (c === 'fx3' || c === 'fx4')) continue;
         S.blockRows.push(i);
     }
-    S.slotRows = SLOT_SETTINGS.filter(s => !s.cap || (s.cap === 'sends' && S.capSends));
+    /* Sound Control is three doors with no capability gate — the knob and LFO
+     * editors exist for every chain slot. The sends gate now applies to the
+     * top-level LEVEL rows instead (see buildPickRows). */
+    S.slotRows = SOUND_CONTROL;
     log('caps: fx34=' + (S.capFx34 ? 1 : 0) + ' sends=' + (S.capSends ? 1 : 0));
 }
 
@@ -1440,12 +1466,19 @@ function queueChainWrite(key, val) {
 }
 
 /* No `comp` argument: the only writer that addressed a component namespace
- * from this queue was the MPE row's `synth:mpe_enabled`, which went with it. */
-function queueSlotCfgWrite(key, val) {
+ * from this queue was the MPE row's `synth:mpe_enabled`, which went with it.
+ *
+ * `isInt` rides on the queued item rather than being looked up from a row table
+ * at drain time. There are THREE drains (tick, the leave-flush, and the
+ * per-tick queue) and each used to re-find the row to decide int-vs-fixed — so
+ * a row that moved out of that table silently started writing "1.000" where the
+ * host parses with atoi, and a mute would read as a level. The producer is the
+ * one place that knows. */
+function queueSlotCfgWrite(key, val, isInt) {
     for (const w of S.pendingSlotWrites) {
         if (w.key === key && w.slot === S.slot && !w.chain) { w.val = val; return; }
     }
-    S.pendingSlotWrites.push({ slot: S.slot, key: key, val: val });
+    S.pendingSlotWrites.push({ slot: S.slot, key: key, val: val, int: !!isInt });
 }
 
 /* Saving is a synchronous whole-chain file write, so it happens on LEAVING the
@@ -1468,8 +1501,7 @@ function drainSlotWrites() {
         /* Chain-level keys (knob_N_*, lfoN:*) go through BARE — they are not
          * in the slot: namespace (see engineSetChainParam). */
         if (w.chain) { engineSetChainParam(w.slot, w.key, String(w.val)); continue; }
-        const s = SLOT_SETTINGS.find(x => x.key === w.key);
-        engineSetSlotParam(w.slot, w.key, s && s.int ? String(w.val) : w.val.toFixed(3));
+        engineSetSlotParam(w.slot, w.key, w.int ? String(w.val) : w.val.toFixed(3));
     }
 }
 
@@ -2665,7 +2697,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
                     r.val = v;
                     S.busLevelDirty = true;
                     /* Queued like every write here — this is the MIDI handler. */
-                    queueWrite(sp.key, v.toFixed(3), sp.comp);
+                    if (sp.slot) queueSlotCfgWrite(sp.key, v, !!sp.int);
+                    else queueWrite(sp.key, v.toFixed(3), sp.comp);
                 }
             }
         } else if (S.view === VIEW_BLOCKS) {
@@ -2809,7 +2842,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
                  * "1.000" in the set's meta file would read as a level. */
                 _r.val = _r.val ? 0 : 1;
                 S.busLevelDirty = true;
-                queueWrite(_r.spec.key, String(_r.val), _r.spec.comp);
+                if (_r.spec.slot) queueSlotCfgWrite(_r.spec.key, _r.val, true);
+                else queueWrite(_r.spec.key, String(_r.val), _r.spec.comp);
                 /* Solo is exclusive host-side, so every other row's cached
                  * value may now be stale — re-read on the tick, where the
                  * readback traffic belongs. */
