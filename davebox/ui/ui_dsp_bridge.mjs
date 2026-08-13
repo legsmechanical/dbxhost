@@ -47,6 +47,7 @@ import { sessionHasAnyContent } from './ui_scene.mjs';
  * cycled bindings only inside function bodies, never at module-init time.
  * Keep it that way: no top-level use of anything from this import. */
 import { disarmRecord } from './ui_record.mjs';
+import { dspGet, prefetchTrackDigests, releaseTrackDigests } from './ui_dsp_get.mjs';
 
 const pendingLiveNotes = Array.from({length: NUM_TRACKS}, () => []);  /* buffered live notes flushed each tick */
 export const pendingDrumNoteOffs = Array.from({length: NUM_TRACKS}, () => []);  /* drum tap note-offs deferred 1 tick to avoid coalescing with note-on */
@@ -826,56 +827,6 @@ export function pollDSP() {
 /* ------------------------------------------------------------------ */
 
 /* Read all wired params for bankIdx on track t from DSP into S.bankParams. */
-/* ---- batched readback ---------------------------------------------------
- *
- * A param request is a single-slot mailbox served once per SPI frame, so every
- * get_param costs a full audio frame (~2.9 ms measured) however trivial it is.
- * Re-reading a project after a load took ~1,468 of them: a 4.3 s tick with the
- * UI frozen and input dead. The DSP can hand over a whole track's readback in
- * ONE request (`tN_digest`, `<full key>=<value>` per line), so a load prefetches
- * eight of those and every reader below resolves out of the map instead.
- *
- * dspGet is a TRANSPORT swap and nothing more: it is the only thing that
- * changed in the readers, so every rule about what a value means still lives in
- * exactly one place. A key the digest does not carry falls through to the live
- * read — so this stays correct if the DSP's key list and the UI's readers ever
- * drift, at the cost of one frame for that key rather than a wrong value.
- *
- * The prefetch is scoped to a call, never left standing: a stale digest would
- * be a mirror of a project that is no longer loaded. */
-let _digest = null;
-
-function dspGet(key) {
-    if (_digest !== null) {
-        const v = _digest.get(key);
-        if (v !== undefined) return v;
-    }
-    return host_module_get_param(key);
-}
-
-/* Fetch every track's digest into one map. Returns the number of keys it
- * carries, for the caller to log/verify — a digest that silently came back
- * empty would look exactly like one that worked, just slow. */
-function prefetchTrackDigests() {
-    const map = new Map();
-    for (let t = 0; t < NUM_TRACKS; t++) {
-        const blob = host_module_get_param('t' + t + '_digest');
-        if (!blob) continue;
-        for (const line of blob.split('\n')) {
-            if (!line) continue;
-            const eq = line.indexOf('=');
-            if (eq <= 0) continue;
-            map.set(line.slice(0, eq), line.slice(eq + 1));
-        }
-    }
-    _digest = map;
-    return map.size;
-}
-
-function releaseTrackDigests() {
-    _digest = null;
-}
-
 export function readBankParams(t, bankIdx) {
     /* Drum pfx banks (0, 1, 3): read via per-lane snapshot, not melodic keys */
     if (S.trackPadMode[t] === PAD_MODE_DRUM && (bankIdx === 0 || bankIdx === 1 || bankIdx === 3)) {

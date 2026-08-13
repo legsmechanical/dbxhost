@@ -6457,7 +6457,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                 "active_clip", "pad_octave", "channel", "diq", "midi_to",
                 "pad_mode", "route", "track_looper", "track_vel_override",
                 "tarp_si", "tarp_sll", "tarp_sv", "drum_r2rt",
-                "cc_assigns", "cc_types", "delay_clock_fb",
+                "cc_assigns", "cc_types", "delay_clock_fb", "drum_meta",
                 /* The knob banks. These are the bulk of a track's readback —
                  * 28 keys x 8 tracks = 224 requests, which was 0.65 s of the
                  * frozen tick on its own. */
@@ -6493,6 +6493,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
             static const char *CLIP_KEYS[] = {
                 "steps", "length", "loop_start", "tps", "cc_lane_loops",
                 "pfx_snapshot", "cc_auto_bits", "at_has", "cc_rest",
+                "drum_has_content",
             };
             char fkey[64];
             char val[1024];

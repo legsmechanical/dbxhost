@@ -35,7 +35,7 @@ const TRACK_KEYS = {
     channel: (t) => t + 1,
     diq: () => 0,
     midi_to: () => 0,
-    pad_mode: () => 0,
+    pad_mode: (t) => (t === 1 ? 1 : 0),   /* track 1 is a DRUM track */
     route: () => 'schwung',
     track_looper: () => 0,
     track_vel_override: () => 0,
@@ -46,6 +46,7 @@ const TRACK_KEYS = {
     cc_assigns: () => '1 2 3 4 5 6 7 8',
     cc_types: () => '0 0 0 0 0 0 0 0',
     delay_clock_fb: () => 0,
+    drum_meta: () => new Array(32).fill('0 16 0 24').join('|'),
     'lgto_apply_factor': () => 0,
     'noteFX_octave': () => 0,
     'noteFX_offset': () => 0,
@@ -87,6 +88,7 @@ const CLIP_KEYS = {
     cc_auto_bits: () => 0,
     at_has: () => 0,
     cc_rest: () => new Array(8).fill(255).join(' '),
+    drum_has_content: () => 0,
 };
 
 function digestFor(t) {

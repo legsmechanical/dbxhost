@@ -9,6 +9,7 @@
 import { S } from './ui_state.mjs';
 import { PAD_MODE_DRUM, DRUM_LANES, DRUM_BASE_NOTE, NUM_CLIPS } from './ui_constants.mjs';
 import { SCALE_INTERVALS } from './ui_pure.mjs';
+import { dspGet } from './ui_dsp_get.mjs';
 
 /* PHASE-1: helper for the pad-dispatch mute condition. Modal sources:
  * - sessionView                 — pads launch clips
@@ -162,21 +163,21 @@ export function computePadNoteMap() {
 
 /** Sync one drum lane's step data and length from DSP. */
 export function syncDrumLaneSteps(t, l) {
-    const raw = host_module_get_param('t' + t + '_l' + l + '_steps');
+    const raw = dspGet('t' + t + '_l' + l + '_steps');
     if (raw) {
         for (let s = 0; s < 256; s++) S.drumLaneSteps[t][l][s] = raw[s] || '0';
         S.drumLaneHasNotes[t][l] = raw.indexOf('1') >= 0;
     }
     if (l === S.activeDrumLane[t]) {
-        const lenRaw = host_module_get_param('t' + t + '_l' + l + '_length');
+        const lenRaw = dspGet('t' + t + '_l' + l + '_length');
         if (lenRaw !== null) S.drumLaneLength[t] = parseInt(lenRaw, 10) || 16;
-        const lsRaw = host_module_get_param('t' + t + '_l' + l + '_loop_start');
+        const lsRaw = dspGet('t' + t + '_l' + l + '_loop_start');
         if (lsRaw !== null) S.drumLaneLoopStart[t] = parseInt(lsRaw, 10) | 0;
         const lsPage = Math.floor(S.drumLaneLoopStart[t] / 16);
         const winPages = Math.max(1, Math.ceil(S.drumLaneLength[t] / 16));
         if (S.drumStepPage[t] < lsPage) S.drumStepPage[t] = lsPage;
         else if (S.drumStepPage[t] > lsPage + winPages - 1) S.drumStepPage[t] = lsPage + winPages - 1;
-        const tpsRaw = host_module_get_param('t' + t + '_l' + l + '_tps');
+        const tpsRaw = dspGet('t' + t + '_l' + l + '_tps');
         if (tpsRaw !== null) S.drumLaneTPS[t] = parseInt(tpsRaw, 10) || 24;
     }
 }
@@ -188,7 +189,7 @@ export function syncDrumLaneSteps(t, l) {
  * it reads all 32 lanes regardless of content). Format:
  * "note0 nc0 note1 nc1 ... note31 nc31 mute solo". */
 export function syncDrumLanesMeta(t) {
-    const raw = host_module_get_param('t' + t + '_drum_meta');
+    const raw = dspGet('t' + t + '_drum_meta');
     if (!raw) return;
     const v = raw.split(' ');
     if (v.length < DRUM_LANES * 2 + 2) return;
@@ -246,7 +247,7 @@ export function setDrumLanePage(t, page) {
 /** Sync S.drumClipNonEmpty[t] for all clips — called on track switch and state load. */
 export function syncDrumClipContent(t) {
     for (let c = 0; c < NUM_CLIPS; c++) {
-        const raw = host_module_get_param('t' + t + '_c' + c + '_drum_has_content');
+        const raw = dspGet('t' + t + '_c' + c + '_drum_has_content');
         S.drumClipNonEmpty[t][c] = raw === '1';
     }
 }
