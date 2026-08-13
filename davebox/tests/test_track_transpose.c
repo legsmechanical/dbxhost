@@ -70,21 +70,30 @@ int main(void) {
      * Change transpose while a note is HELD. The note-off must carry the pitch
      * the note-on used, not the pitch the new offset would produce. This is the
      * whole reason the offset is applied at the head of the FX chain: the held
-     * tracker stores the transposed value, so the off replays it. */
-    hx_set_param(h, "t4_transpose", "0");
+     * tracker stores the transposed value, so the off replays it.
+     *
+     * ⚠ The note-on offset must be NON-ZERO. Written with transpose=0 at
+     * note-on, this assertion passes no matter where the offset is applied —
+     * transposed and untransposed are the same number — and it silently proves
+     * nothing. (Confirmed by mutation: storing the raw note in the held tracker
+     * left the zero-offset version green.) With 3 here, the three candidate
+     * values are distinct: 63 correct, 65 recomputed-at-emit, 60 raw. */
+    hx_set_param(h, "t4_transpose", "3");
     hx_clear_capture(h);
     hx_set_param(h, "t4_live_notes", "on 60 100");
     on = find_note_on();
     HX_ASSERT(on, "no note-on for the held-note case");
     int held_pitch = on->bytes[2];
-    HX_ASSERT((held_pitch) == (60), "baseline note-on should be untransposed");
+    HX_ASSERT((held_pitch) == (63), "note-on should be 60+3");
 
     hx_set_param(h, "t4_transpose", "5");        /* changed WHILE held */
     hx_clear_capture(h);
     hx_set_param(h, "t4_live_notes", "off 60");
     const hx_midi_event *off = find_note_off();
     HX_ASSERT(off, "no note-off emitted");
-    HX_ASSERT((off->bytes[2]) == (held_pitch), "note-off must match the note-on's pitch — else it hangs");
+    HX_ASSERT((off->bytes[2]) == (63),
+              "note-off must replay the note-on's pitch (63) — 65 = recomputed "
+              "at emit, 60 = raw; both strand the note");
 
     /* ---- the DRUM path is separate code and must do the same ---- */
     hx_set_param(h, "t5_route", "schwung");
