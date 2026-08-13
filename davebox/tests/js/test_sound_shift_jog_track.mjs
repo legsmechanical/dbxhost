@@ -43,6 +43,15 @@ globalThis.fill_rect = () => {};
 globalThis.set_pixel = () => {};
 globalThis.move_midi_internal_send = () => {};
 globalThis.set_led = () => {};
+/* ⚠⚠ These matter more than they look. `tick()` wraps _tickImpl in a
+ * try/catch, so a MISSING host binding throws on the first line that touches it
+ * and every later stage of the tick — including sound mode's track-follow —
+ * silently never runs. The whole tick looks like it executed. A fourth version
+ * of the one-shot step passed against its mutation purely because
+ * host_ext_midi_remap_clear was undefined and the follow was unreachable. */
+globalThis.host_ext_midi_remap_clear = () => {};
+globalThis.host_ext_midi_remap_set = () => {};
+globalThis.host_ext_midi_remap_enable = () => {};
 
 async function main() {
 await import('../../ui/ui.js');
@@ -93,14 +102,23 @@ step('⭑ it keeps stepping while Shift stays down (the one-shot bug)', () => {
      * that turns once passes. This one turns THREE times on one Shift. */
     S.activeTrack = 1;
     snd.soundEnter(1, 1);
+    /* ⚠⚠ The follow lives in the `else` of `if (!S.ledInitComplete)`, so every
+     * tick before LED init finishes is consumed by it and never reaches the
+     * retarget. A third earlier version of this step ticked the RIGHT tick and
+     * still passed against the mutation for exactly that reason. LED init is a
+     * precondition here, not the subject, and it does not complete under stub
+     * host functions — so it is set directly. */
+    S.ledInitComplete = true;
     shift(true);
-    /* ⚠ TICK between turns. The retarget that used to clear shiftHeld happens
-     * in tick, so three turns with no tick never reproduce the bug at all — the
-     * first version of this step passed against the mutation that restores it.
-     * The tick is the mechanism; without it this asserts nothing. */
-    turn(); snd.soundTick();
-    turn(); snd.soundTick();
-    turn(); snd.soundTick();
+    /* ⚠⚠ davebox's MAIN tick, not snd.soundTick(). The track-follow that
+     * retargets the screen — and used to clear shiftHeld on the way — lives in
+     * ui_tick's _tickImpl; sound mode's own tick never runs it. Two earlier
+     * versions of this step passed against the mutation that restores the bug:
+     * one turned without ticking at all, one ticked the WRONG tick. Reproducing
+     * a bug means running the mechanism that causes it. */
+    turn(); globalThis.tick();
+    turn(); globalThis.tick();
+    turn(); globalThis.tick();
     shift(false);
     if (S.activeTrack !== 4)
         throw new Error('expected 1 -> 4 on three turns, got ' + S.activeTrack +
@@ -134,6 +152,7 @@ step('⚠ off the menu (slot settings), Shift+jog is NOT the track switch', () =
         throw new Error('control failed: Shift+jog is not switching in the menu');
     S.activeTrack = 2;
     snd.soundEnter(2, 2);
+    snd.soundTick();                 /* rows are built on the tick after entry */
 
     /* Navigate deterministically to the Sound Control door and open it.
      * ⚠ Do NOT sweep-click rows: `Track to` is now row 0, so a sweep enters its
