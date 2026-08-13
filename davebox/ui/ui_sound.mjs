@@ -3464,7 +3464,13 @@ function centreText(y, text) {
 function renderBlocks() {
     clear_screen();
     drawKitHeader(S.bus ? S.bus.title : ('TRACK ' + (S.track + 1) + ' - CONTROL'), false);
-    drawKitList(S.pickRows.map((r, idx) => {
+    /* ⚠⚠ This builds a NEW object per row, so anything set on the pickRow has to
+     * be forwarded EXPLICITLY. It is the second time that has bitten: the doors
+     * had no chevron for the same reason, and `divAfter` — set by role in
+     * buildPickRows — reached drawKitList not at all, so the grouping rules
+     * simply never drew. Forwarding happens once, below, rather than in each of
+     * the six branches. */
+    const _cell = (r, idx) => {
         if (r.kind === 'buslevel') {
             /* `fmt` where the spec carries one — a bus VOLUME is a gain and
              * reads as one (GAIN_FMT), the same notation the slot's Volume row
@@ -3496,6 +3502,11 @@ function renderBlocks() {
          * switched out — so the state rides as a prefix. Matches the host's 'B'. */
         return { label: r.label, hdr: true,
                  value: (r.bypassed ? 'B ' : '') + String(r.name || '-').toUpperCase() };
+    };
+    drawKitList(S.pickRows.map((r, idx) => {
+        const c = _cell(r, idx);
+        if (r.divAfter) c.divAfter = true;
+        return c;
     }), S.pickRow, {});
 }
 
