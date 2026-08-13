@@ -71,9 +71,12 @@ n=$(grep -c "w.int ? String(w.val) : w.val.toFixed(3)" ui/ui_sound.mjs || true)
 grep -q "if (r.divAfter) c.divAfter = true;" ui/ui_sound.mjs \
     && ok "divAfter is forwarded from the pickRow to the drawn cell" \
     || bad "divAfter is dropped in the cell mapping — the grouping rules will not draw"
-grep -q "if (row.divAfter) fill_rect(0, y + rowH - 1, fillW, 1, 1);" ui/ui_movy.mjs \
-    && ok "drawKitList draws the 1px rule under a marked row" \
-    || bad "drawKitList no longer draws divAfter"
+# ⚠ INK FLIP, not a constant: the fills are contiguous, so the rule sits inside
+# the marked row's own band and must invert when that row is selected — else it
+# vanishes exactly when the cursor is on the row above a group boundary.
+grep -q "if (row.divAfter) fill_rect(0, y + rowH - 2, fillW, 1, on ? 0 : 1);" ui/ui_movy.mjs \
+    && ok "drawKitList draws the 1px rule, inverted on the selected row" \
+    || bad "drawKitList no longer draws divAfter (or lost the ink flip)"
 grep -q "kind: 'settings', label: 'Sound Control'" ui/ui_sound.mjs \
     && ok "the settings door is Sound Control (knobs are direct access, not modulation)" \
     || bad "the Sound Control door is gone or renamed"
