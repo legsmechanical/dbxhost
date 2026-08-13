@@ -125,14 +125,23 @@ step('⚠ off the menu (slot settings), Shift+jog is NOT the track switch', () =
         throw new Error('a sub-screen stepped the track: ' + before + ' -> ' + S.activeTrack);
 });
 
-step('⚠ on a GLOBAL bus (Master/Send FX) Shift+jog does not step a track', () => {
+step('⚠ INSIDE a global bus (Master FX) Shift+jog does not step a track', () => {
+    /* ⭑ It must be INSIDE the bus, not on the bus LIST. `enterBus` sets
+     * VIEW_BLOCKS with S.bus global, which is the only state where the view
+     * test passes and the !soundIsGlobal() test is what stops the switch —
+     * a Master FX chain has no track to step.
+     *
+     * Mutation found this gap: an earlier version stopped at soundEnterBuses()
+     * (VIEW_BUSES), where the VIEW condition already blocks the switch, so
+     * deleting !soundIsGlobal() entirely left the test green. */
     snd.soundEnterBuses();
+    send(3, 127);                                  /* jog click -> enter the bus */
+    snd.soundTick();
     if (!snd.soundIsGlobal())
-        throw new Error('soundEnterBuses did not produce a global context');
+        throw new Error('not in a global bus context');
+
     const before = S.activeTrack;
-    shift(true);
-    turn();
-    shift(false);
+    shift(true); turn(); shift(false);
     if (S.activeTrack !== before)
         throw new Error('a global bus stepped the track: ' + before + ' -> ' + S.activeTrack);
 });
