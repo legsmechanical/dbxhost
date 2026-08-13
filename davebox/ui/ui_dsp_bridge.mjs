@@ -29,6 +29,7 @@ import {
 import {
     NUM_TRACKS, NUM_CLIPS, NUM_STEPS, DRUM_LANES,
     TPS_VALUES, BANKS, PAD_MODE_DRUM,
+    INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK,
     MoveRec, LED_OFF, parseActionRaw
 } from './ui_constants.mjs';
 import { Red } from '/data/UserData/schwung/shared/constants.mjs';
@@ -973,6 +974,52 @@ function readTrackConfig(t) {
         S.drumInpQuant[t] = Math.max(0, Math.min(8, parseInt(diq, 10) | 0));
         S.bankParams[t][7][5] = S.drumInpQuant[t];
     }
+}
+
+/* ---- a track's DESTINATION, read and written in one place ----
+ *
+ * `Instr` collapsed Channel + Slot + Route + MIDI-to into a single choice
+ * (TRACK_OWNS_ITS_INSTRUMENT.md), and the encode/decode between that choice and
+ * the three underlying params is fiddly enough that a second copy would drift:
+ * the halves must be written TOGETHER (leaving `midi_to` behind is what lets a
+ * stale target keep stealing notes) and in ORDER (route re-derives Link Audio
+ * routing and normalises aftertouch against the channel it finds, so the
+ * channel must already be the new one).
+ *
+ * Two screens ask for this now — the global menu's row and Track Control's
+ * `Track to` — so it lives here, beside the setter it drives, and neither
+ * screen owns the rules. */
+export function instrValueFor(t) {
+    if (S.trackRoute[t] === 2) {
+        const mt = S.trackMidiTo[t] | 0;
+        if (mt > 0) return INSTR_TRACK + (mt - 1);
+        return INSTR_MIDI_CH + (((S.trackChannel[t] | 0) - 1) & 0x0F);
+    }
+    if (S.trackRoute[t] !== 1) return INSTR_SCHWUNG;
+    /* Move: the channel IS the instrument. Clamp rather than invent a value the
+     * row cannot show — a Move-routed track on channel 5+ addresses an
+     * instrument Move does not have. */
+    const ch = (S.trackChannel[t] | 0) - 1;
+    return ch < 0 ? 0 : (ch > INSTR_MOVE_MAX ? INSTR_MOVE_MAX : ch);
+}
+
+export function applyInstrChoice(t, v) {
+    v = v | 0;
+    if (v === INSTR_SCHWUNG) { applyTrackConfig(t, 'route', 0); return; }
+    if (v >= INSTR_TRACK) {
+        applyTrackConfig(t, 'midi_to', v - INSTR_TRACK + 1);
+        applyTrackConfig(t, 'route', 2);
+        return;
+    }
+    if (v >= INSTR_MIDI_CH) {
+        applyTrackConfig(t, 'midi_to', 0);
+        applyTrackConfig(t, 'channel', v - INSTR_MIDI_CH + 1);
+        applyTrackConfig(t, 'route', 2);
+        return;
+    }
+    applyTrackConfig(t, 'midi_to', 0);
+    applyTrackConfig(t, 'channel', v + 1);
+    applyTrackConfig(t, 'route', 1);
 }
 
 export function applyTrackConfig(t, key, val) {

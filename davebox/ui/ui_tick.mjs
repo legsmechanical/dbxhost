@@ -1308,12 +1308,18 @@ export function _tickImpl() {
                 const _nt = S.activeTrack;
                 /* Follow the track ACROSS flavours: a Move-routed track has a
                  * sound too (its instrument bus), so switching onto one
-                 * retargets into the Move flavour instead of closing. Only an
-                 * EXT-routed track has nothing to point at. */
+                 * retargets into the Move flavour instead of closing.
+                 *
+                 * ⭑ An EXT-routed track USED to close Track Control, because it
+                 * has no chain and no bus. It no longer does, and that is a
+                 * correctness fix rather than a preference: `Track to` lives on
+                 * this screen, so closing here would take away the only control
+                 * that can route the track back — set a track to MIDI out and it
+                 * would be stranded, unreachable from the device. It retargets
+                 * to a screen with no sound on it, which is the truth about an
+                 * EXT track, and the destination row is still there. */
                 if (S.trackRoute[_nt] === 1) {
                     soundEnterMove(_nt);
-                } else if (S.trackRoute[_nt] !== 0) {
-                    soundExit();
                 } else {
                     /* Slot is addressed directly per track — always resolvable. */
                     soundRetarget(_nt, schSlotForTrack(_nt));

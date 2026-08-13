@@ -22,7 +22,6 @@ import {
 import {
     PAD_MODE_DRUM, PAD_MODE_CONDUCT,
     fmtNA, fmtVelOverride, fmtInstr, instrOptions,
-    INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK,
     NOTE_KEYS, SCALE_NAMES
 } from './ui_constants.mjs';
 
@@ -33,7 +32,7 @@ import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw } from './ui_leds.mjs';
 import { enterMoveNativeCoRun, exitMoveNativeCoRun, DAVEBOX_PICKER_KEEP_MASK } from './ui_corun.mjs';
 import { requestExport } from './ui_export.mjs';
-import { applyTrackConfig } from './ui_dsp_bridge.mjs';
+import { applyTrackConfig, instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
 import { openTapTempo } from './ui_record.mjs';
 import { xposePreviewSet } from './ui_xpose.mjs';
 
@@ -65,45 +64,16 @@ function buildGlobalMenuItems() {
          * Conductor drives transposition and emits nothing, so the row is inert
          * and shows '-' there, exactly as `Route` did. */
         createEnum('Instr', {
-            get: function() {
-                const t = S.activeTrack;
-                if (S.trackRoute[t] === 2) {
-                    const mt = S.trackMidiTo[t] | 0;
-                    if (mt > 0) return INSTR_TRACK + (mt - 1);
-                    return INSTR_MIDI_CH + (((S.trackChannel[t] | 0) - 1) & 0x0F);
-                }
-                if (S.trackRoute[t] !== 1) return INSTR_SCHWUNG;
-                /* Move: the channel IS the instrument. Clamp rather than invent
-                 * a value the row cannot show — a Move-routed track on channel
-                 * 5+ addresses an instrument Move does not have. */
-                const ch = (S.trackChannel[t] | 0) - 1;
-                return ch < 0 ? 0 : (ch > INSTR_MOVE_MAX ? INSTR_MOVE_MAX : ch);
-            },
+            /* Read and write both live in ui_dsp_bridge — Track Control's
+             * `Track to` row asks the same question, and the encode/decode
+             * between this one choice and the three underlying params (write
+             * BOTH halves, channel BEFORE route) is exactly the kind of rule a
+             * second copy gets subtly wrong. */
+            get: function() { return instrValueFor(S.activeTrack); },
             set: function(v) {
                 const t = S.activeTrack;
                 if (S.trackPadMode[t] === PAD_MODE_CONDUCT) return;
-                v = v | 0;
-                if (v === INSTR_SCHWUNG) { applyTrackConfig(t, 'route', 0); return; }
-                if (v >= INSTR_TRACK) {
-                    /* Play another track's instrument. Both halves are written:
-                     * leaving the other behind is what lets a stale target
-                     * outlive the choice that set it and keep stealing notes. */
-                    applyTrackConfig(t, 'midi_to', v - INSTR_TRACK + 1);
-                    applyTrackConfig(t, 'route', 2);
-                    return;
-                }
-                if (v >= INSTR_MIDI_CH) {
-                    applyTrackConfig(t, 'midi_to', 0);
-                    applyTrackConfig(t, 'channel', v - INSTR_MIDI_CH + 1);
-                    applyTrackConfig(t, 'route', 2);
-                    return;
-                }
-                /* Move N. Channel FIRST: applyTrackConfig('route') re-derives
-                 * Link Audio routing and normalises aftertouch against the
-                 * channel it finds, so that must already be the new one. */
-                applyTrackConfig(t, 'midi_to', 0);
-                applyTrackConfig(t, 'channel', v + 1);
-                applyTrackConfig(t, 'route', 1);
+                applyInstrChoice(t, v);
             },
             /* Recomputed each menu open, like AftTch: which tracks are eligible
              * targets depends on THEIR instrument, which can have changed. */

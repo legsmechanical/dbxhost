@@ -28,11 +28,21 @@ done
 #    instruments by MIDI channel, so `Move 3` must write channel 3 — and write
 #    it BEFORE the route, because applyTrackConfig('route') re-derives Link
 #    Audio routing and normalises aftertouch against the channel it finds.
-grep -q "applyTrackConfig(t, 'channel', v + 1);" ui/ui_menu.mjs \
+# ⚠ These live in ui_dsp_bridge, NOT ui_menu: the encode/decode moved there when
+# Track Control gained its own `Track to` row, so that TWO screens could not each
+# carry a copy of these rules. Pinning the old file would have passed forever
+# while the real logic drifted somewhere else.
+grep -q "^export function applyInstrChoice" ui/ui_dsp_bridge.mjs \
+    && ok "the destination encode/decode has ONE home (applyInstrChoice)" \
+    || bad "applyInstrChoice is gone — the rules have scattered back into the screens"
+n=$(grep -c "applyInstrChoice(" ui/ui_menu.mjs ui/ui_sound.mjs | awk -F: '{s+=$2} END {print s+0}')
+[ "$n" -ge 2 ] && ok "both screens go through it" \
+               || bad "only $n screen(s) call applyInstrChoice — one has its own copy again"
+grep -q "applyTrackConfig(t, 'channel', v + 1);" ui/ui_dsp_bridge.mjs \
     && ok "picking Move N writes channel N (1-based)" \
     || bad "the Instrument row no longer writes the channel — Move N addresses nothing"
-if [ "$(grep -n "applyTrackConfig(t, 'channel', v + 1);" ui/ui_menu.mjs | cut -d: -f1)" \
-     -lt "$(grep -n "applyTrackConfig(t, 'route', 1);" ui/ui_menu.mjs | cut -d: -f1)" ]; then
+if [ "$(grep -n "applyTrackConfig(t, 'channel', v + 1);" ui/ui_dsp_bridge.mjs | cut -d: -f1)" \
+     -lt "$(grep -n "applyTrackConfig(t, 'route', 1);" ui/ui_dsp_bridge.mjs | cut -d: -f1)" ]; then
     ok "channel is written BEFORE route"
 else
     bad "route is written before channel — the derived state reads the OLD instrument"
@@ -53,7 +63,7 @@ grep -q "options: instrOptions(S.trackRoute, S.activeTrack)," ui/ui_menu.mjs \
 # 4. `MIDI to` writes BOTH halves. The DSP stores the channel and the follow
 #    target separately; leaving the other half behind is how a stale target
 #    outlives the choice that set it and silently keeps stealing the notes.
-grep -c "applyTrackConfig(t, 'midi_to', 0);" ui/ui_menu.mjs | grep -q '^2$' \
+grep -c "applyTrackConfig(t, 'midi_to', 0);" ui/ui_dsp_bridge.mjs | grep -q '^2$' \
     && ok "both non-follow destinations clear the follow target" \
     || bad "a destination no longer clears midi_to — a stale target keeps stealing the notes"
 

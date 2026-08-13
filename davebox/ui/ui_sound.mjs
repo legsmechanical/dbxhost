@@ -35,6 +35,10 @@ import {
  * confusing them is exactly what broke the bypass gesture. Used only for the
  * Back long-press, which davebox owns module-wide. */
 import { S as GS } from './ui_state.mjs';
+/* Destination read/write and the option list. ui_dsp_bridge does not import
+ * this file, so there is no cycle; ui_constants is a leaf. */
+import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
+import { instrOptions, fmtInstr, PAD_MODE_CONDUCT as PMC } from './ui_constants.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
     closeTextEntry,
@@ -441,6 +445,13 @@ const S = {
     pickRows: [],               /* picker rows: {kind:'bus'|'block'|'settings'} */
     pickRow: 0,                 /* cursor in the block PICKER (rows, not blocks) */
     blockRows: [],              /* block indices this host actually supports */
+    /* `Track to` edit state. DEFERRED COMMIT, and not for tidiness: applying a
+     * route on every detent would tear down and rebuild Track Control once per
+     * click as you scrolled past Schwung / Move / MIDI — and scrolling PAST an
+     * EXT route would close the screen out from under the row you were turning.
+     * Scroll previews, click commits. */
+    instrEditing: false,
+    instrSel: 0,
     slotRows: [],               /* SOUND_CONTROL door rows */
     capFx34: false,
     capSends: false,
@@ -1373,6 +1384,16 @@ function buildPickRows() {
             rows.push({ kind: 'buslevel', label: lv.label, spec: lv });
         }
     } else {
+        rows.push({ kind: 'trackto', label: 'Track to' });
+        /* An EXT-routed track (MIDI out, or playing another track's instrument)
+         * has no chain and no bus, so it has no sound to show and no mixer
+         * position to set — every other row here would be backed by nothing.
+         *
+         * The screen is therefore just its destination. That is not a
+         * placeholder: it is what an EXT track HAS, and it is the row you need
+         * to route it back. Track Control stays open on these tracks precisely
+         * so that is reachable (see the follow in ui_tick). */
+        if (GS.trackRoute[S.track] === 2) { S.pickRows = rows; S.pickRow = 0; return; }
         for (const i of S.blockRows) {
             rows.push({ kind: 'block', comp: BLOCKS[i].comp, label: BLOCKS[i].label, blockIdx: i });
         }
@@ -2701,6 +2722,10 @@ export function soundOnCC(d1, d2, decodeDelta) {
                     else queueWrite(sp.key, v.toFixed(3), sp.comp);
                 }
             }
+        } else if (S.view === VIEW_BLOCKS && S.instrEditing) {
+            const opts = instrOptions(GS.trackRoute, S.track);
+            const cur = opts.indexOf(S.instrSel);
+            S.instrSel = opts[((cur + (delta > 0 ? 1 : -1)) % opts.length + opts.length) % opts.length];
         } else if (S.view === VIEW_BLOCKS) {
             S.pickRow = listMove(S.pickRows.length, S.pickRow, delta);
         } else if (S.view === VIEW_SLOTCFG) {
@@ -2834,6 +2859,23 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.pendingAction = { t: 'bus', bus: FX_BUSES[S.busIdx] };
         }
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
+                 S.pickRows[S.pickRow].kind === 'trackto') {
+            if (!S.instrEditing) {
+                /* Conductor emits nothing, so it has no destination to choose —
+                 * the row reads '-' and declines the edit, exactly as the global
+                 * menu's row does. */
+                if (GS.trackPadMode[S.track] === PMC) { S.dirty = true; }
+                else { S.instrSel = instrValueFor(S.track); S.instrEditing = true; S.dirty = true; }
+            } else {
+                S.instrEditing = false;
+                /* The write can retarget or close this very screen (an EXT route
+                 * has no sound to show), so it is the LAST thing done here and
+                 * tick's track-follow settles what happens next. */
+                if (S.instrSel !== instrValueFor(S.track)) applyInstrChoice(S.track, S.instrSel);
+                S.dirty = true;
+            }
+        }
+        else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'buslevel') {
             const _r = S.pickRows[S.pickRow];
             if (_r.spec.toggle) {
@@ -2965,6 +3007,11 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * ⚠ Deliberately the tap only — the long-press suspend above stays
          * unclaimable, the same failsafe shape as the host's Shift+Back. */
         if (hostedBack()) return true;
+        if (S.view === VIEW_BLOCKS && S.instrEditing) {
+            S.instrEditing = false;                 /* abandon, do not apply */
+            S.dirty = true;
+            return true;
+        }
         if (S.view === VIEW_SLOTCFG) {
             if (S.slotCfgEditing) S.slotCfgEditing = false;   /* leave edit first */
             else closeSlotCfg();
@@ -3271,6 +3318,12 @@ function renderBlocks() {
                           : r.spec.fmt   ? r.spec.fmt(r.val || 0)
                                           : (Math.round((r.val || 0) * 100) + '%'),
                      editing: idx === S.pickRow && S.busLevelEditing };
+        }
+        if (r.kind === 'trackto') {
+            const v = S.instrEditing ? S.instrSel : instrValueFor(S.track);
+            const txt = GS.trackPadMode[S.track] === PMC ? '-' : fmtInstr(v);
+            return { label: r.label, hdr: true,
+                     value: S.instrEditing ? '[' + txt + ']' : txt };
         }
         if (r.kind === 'movesynth') return { label: r.label, hdr: true, value: r.value };
         if (r.kind !== 'block') return { label: r.label, hdr: true };
