@@ -6429,6 +6429,98 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         const char *sub = key + 3;
         seq8_track_t *tr = &inst->tracks[tidx];
 
+        /* tN_digest — the whole track's readback in ONE request.
+         *
+         * A param request is a single-slot mailbox served once per SPI frame,
+         * so every get_param costs a full audio frame (~2.9 ms measured)
+         * REGARDLESS of how little work it does. Re-reading a project after a
+         * load took ~1,468 of them: a 4.3 s tick during which the module draws
+         * nothing and answers no input. The values were never the problem —
+         * the round trips were.
+         *
+         * So this serves the same values through the same getters, batched:
+         * one line of `<full key>=<value>` per field, whole key included so the
+         * caller can look up exactly the string it would otherwise have asked
+         * for. The getters below are called recursively, which keeps ONE
+         * implementation per value — a digest that re-derived them would be a
+         * second source of truth, and the two would drift.
+         *
+         * ⚠ A key absent from this list (or one whose getter fails) is simply
+         * not in the digest, and the caller falls back to asking for it
+         * individually. That makes drift between this list and what the UI
+         * reads cost a frame, never a wrong value — which is the only reason it
+         * is safe for the two to be maintained separately.
+         *
+         * RT: stack buffers only, no allocation. */
+        if (!strcmp(sub, "digest")) {
+            static const char *TRACK_KEYS[] = {
+                "active_clip", "pad_octave", "channel", "diq", "midi_to",
+                "pad_mode", "route", "track_looper", "track_vel_override",
+                "tarp_si", "tarp_sll", "tarp_sv", "drum_r2rt",
+                "cc_assigns", "cc_types", "delay_clock_fb",
+                /* The knob banks. These are the bulk of a track's readback —
+                 * 28 keys x 8 tracks = 224 requests, which was 0.65 s of the
+                 * frozen tick on its own. */
+                "lgto_apply_factor",
+                "noteFX_octave",
+                "noteFX_offset",
+                "noteFX_velocity",
+                "quantize",
+                "noteFX_length_mode",
+                "noteFX_gate",
+                "noteFX_random",
+                "harm_octaver",
+                "harm_interval1",
+                "harm_interval2",
+                "harm_interval3",
+                "delay_time",
+                "delay_level",
+                "delay_repeats",
+                "delay_vel_fb",
+                "delay_pitch_fb",
+                "delay_gate_fb",
+                "delay_retrig",
+                "delay_pitch_random",
+                "tarp_style",
+                "tarp_rate",
+                "tarp_octaves",
+                "tarp_gate",
+                "tarp_steps_mode",
+                "tarp_retrigger",
+                "tarp_sync",
+                "tarp_latch",
+            };
+            static const char *CLIP_KEYS[] = {
+                "steps", "length", "loop_start", "tps", "cc_lane_loops",
+                "pfx_snapshot", "cc_auto_bits", "at_has", "cc_rest",
+            };
+            char fkey[64];
+            char val[1024];
+            int pos = 0;
+            size_t i;
+            int c;
+
+            for (i = 0; i < sizeof(TRACK_KEYS) / sizeof(TRACK_KEYS[0]); i++) {
+                snprintf(fkey, sizeof(fkey), "t%d_%s", tidx, TRACK_KEYS[i]);
+                int n = get_param(instance, fkey, val, (int)sizeof(val));
+                if (n <= 0) continue;   /* absent or failed — caller re-asks */
+                int need = (int)strlen(fkey) + 1 + n + 1;
+                if (pos + need >= out_len) break;
+                pos += snprintf(out + pos, (size_t)(out_len - pos), "%s=%s\n", fkey, val);
+            }
+            for (c = 0; c < NUM_CLIPS; c++) {
+                for (i = 0; i < sizeof(CLIP_KEYS) / sizeof(CLIP_KEYS[0]); i++) {
+                    snprintf(fkey, sizeof(fkey), "t%d_c%d_%s", tidx, c, CLIP_KEYS[i]);
+                    int n = get_param(instance, fkey, val, (int)sizeof(val));
+                    if (n <= 0) continue;
+                    int need = (int)strlen(fkey) + 1 + n + 1;
+                    if (pos + need >= out_len) return pos;
+                    pos += snprintf(out + pos, (size_t)(out_len - pos), "%s=%s\n", fkey, val);
+                }
+            }
+            return pos;
+        }
+
         if (!strcmp(sub, "cc_assigns"))
             return snprintf(out, out_len, "%d %d %d %d %d %d %d %d",
                 (int)tr->cc_assign[0], (int)tr->cc_assign[1],

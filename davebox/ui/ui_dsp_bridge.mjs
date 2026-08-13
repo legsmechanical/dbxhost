@@ -80,7 +80,7 @@ export function refreshSeqNotesIfCurrent(t, ac, absIdx) {
 /* Read per-clip bank params from DSP into S.bankParams for track t.
  * Reads from clip[active_clip].pfx_params directly — immune to pfx_sync timing. */
 export function refreshDrumLaneBankParams(t, lane) {
-    const snap = host_module_get_param('t' + t + '_l' + lane + '_pfx_snapshot');
+    const snap = dspGet('t' + t + '_l' + lane + '_pfx_snapshot');
     if (snap) {
         const v = snap.split(' ');
         if (v.length >= 9) {
@@ -104,12 +104,12 @@ export function refreshDrumLaneBankParams(t, lane) {
     S.bankParams[t][0][0] = tpsIdx >= 0 ? tpsIdx : 1;
     S.bankParams[t][0][4] = S.drumLaneEuclidN[t][lane] | 0;
     {
-        const _pd = host_module_get_param('t' + t + '_l' + lane + '_playback_dir');
+        const _pd = dspGet('t' + t + '_l' + lane + '_playback_dir');
         const _pdv = parseInt(_pd, 10);
         const _pdvi = (isFinite(_pdv) && _pdv >= 0 && _pdv <= 3) ? _pdv : 0;
         S.drumLanePlaybackDir[t][lane] = _pdvi;
         S.bankParams[t][0][6] = _pdvi;
-        const _par = host_module_get_param('t' + t + '_l' + lane + '_playback_audio_reverse');
+        const _par = dspGet('t' + t + '_l' + lane + '_playback_audio_reverse');
         const _parv = parseInt(_par, 10);
         S.drumLanePlaybackAudioReverse[t][lane] = (isFinite(_parv) && _parv === 1) ? 1 : 0;
     }
@@ -197,20 +197,20 @@ export function refreshPerClipBankParams(t) {
 
 /* Read TRACK ARP step_vel[8] from DSP for track t. Called on init and track switch. */
 function readTarpStepVel(t) {
-    const raw = host_module_get_param('t' + t + '_tarp_sv');
+    const raw = dspGet('t' + t + '_tarp_sv');
     if (!raw) return;
     const v = raw.split(' ');
     for (let s = 0; s < 8; s++)
         S.tarpStepVel[t][s] = parseInt(v[s], 10) | 0;
     /* Also pull step_int[8] (Arp Steps interval mode). */
-    const rawI = host_module_get_param('t' + t + '_tarp_si');
+    const rawI = dspGet('t' + t + '_tarp_si');
     if (rawI) {
         const vi = rawI.split(' ');
         for (let s = 0; s < 8; s++)
             S.tarpStepInt[t][s] = parseInt(vi[s], 10) | 0;
     }
     /* Step pattern loop length (1..8). */
-    const rawL = host_module_get_param('t' + t + '_tarp_sll');
+    const rawL = dspGet('t' + t + '_tarp_sll');
     if (rawL !== null && rawL !== undefined) {
         const _ll = parseInt(rawL, 10) | 0;
         S.tarpStepLoopLen[t] = (_ll >= 1 && _ll <= 8) ? _ll : 8;
@@ -221,7 +221,7 @@ function readTarpStepVel(t) {
  * load so the rate-pad LED highlight matches the persisted DSP state.
  * (Rpt1's per-track last-rate lives only in DSP — JS has no mirror for it.) */
 function readDrumRepeatRates(t) {
-    const r2 = host_module_get_param('t' + t + '_drum_r2rt');
+    const r2 = dspGet('t' + t + '_drum_r2rt');
     if (r2) {
         const v = r2.split(' ');
         for (let l = 0; l < 32 && l < v.length; l++)
@@ -826,6 +826,56 @@ export function pollDSP() {
 /* ------------------------------------------------------------------ */
 
 /* Read all wired params for bankIdx on track t from DSP into S.bankParams. */
+/* ---- batched readback ---------------------------------------------------
+ *
+ * A param request is a single-slot mailbox served once per SPI frame, so every
+ * get_param costs a full audio frame (~2.9 ms measured) however trivial it is.
+ * Re-reading a project after a load took ~1,468 of them: a 4.3 s tick with the
+ * UI frozen and input dead. The DSP can hand over a whole track's readback in
+ * ONE request (`tN_digest`, `<full key>=<value>` per line), so a load prefetches
+ * eight of those and every reader below resolves out of the map instead.
+ *
+ * dspGet is a TRANSPORT swap and nothing more: it is the only thing that
+ * changed in the readers, so every rule about what a value means still lives in
+ * exactly one place. A key the digest does not carry falls through to the live
+ * read — so this stays correct if the DSP's key list and the UI's readers ever
+ * drift, at the cost of one frame for that key rather than a wrong value.
+ *
+ * The prefetch is scoped to a call, never left standing: a stale digest would
+ * be a mirror of a project that is no longer loaded. */
+let _digest = null;
+
+function dspGet(key) {
+    if (_digest !== null) {
+        const v = _digest.get(key);
+        if (v !== undefined) return v;
+    }
+    return host_module_get_param(key);
+}
+
+/* Fetch every track's digest into one map. Returns the number of keys it
+ * carries, for the caller to log/verify — a digest that silently came back
+ * empty would look exactly like one that worked, just slow. */
+function prefetchTrackDigests() {
+    const map = new Map();
+    for (let t = 0; t < NUM_TRACKS; t++) {
+        const blob = host_module_get_param('t' + t + '_digest');
+        if (!blob) continue;
+        for (const line of blob.split('\n')) {
+            if (!line) continue;
+            const eq = line.indexOf('=');
+            if (eq <= 0) continue;
+            map.set(line.slice(0, eq), line.slice(eq + 1));
+        }
+    }
+    _digest = map;
+    return map.size;
+}
+
+function releaseTrackDigests() {
+    _digest = null;
+}
+
 export function readBankParams(t, bankIdx) {
     /* Drum pfx banks (0, 1, 3): read via per-lane snapshot, not melodic keys */
     if (S.trackPadMode[t] === PAD_MODE_DRUM && (bankIdx === 0 || bankIdx === 1 || bankIdx === 3)) {
@@ -835,7 +885,7 @@ export function readBankParams(t, bankIdx) {
     /* ARP OUT bank: seq_arp_* are set-only; read via per-clip pfx_snapshot */
     if (bankIdx === 4) {
         const ac   = S.trackActiveClip[t];
-        const snap = host_module_get_param('t' + t + '_c' + ac + '_pfx_snapshot');
+        const snap = dspGet('t' + t + '_c' + ac + '_pfx_snapshot');
         if (snap) {
             const v = snap.split(' ');
             if (v.length >= 24) {
@@ -846,13 +896,13 @@ export function readBankParams(t, bankIdx) {
     }
     /* CC PARAM bank: read all 8 CC assignments + per-knob type from DSP */
     if (bankIdx === 6) {
-        const raw = host_module_get_param('t' + t + '_cc_assigns');
+        const raw = dspGet('t' + t + '_cc_assigns');
         if (raw) {
             const parts = raw.split(' ');
             for (let k = 0; k < 8; k++)
                 S.trackCCAssign[t][k] = parseInt(parts[k], 10) || CC_ASSIGN_DEFAULTS[k];
         }
-        const typs = host_module_get_param('t' + t + '_cc_types');
+        const typs = dspGet('t' + t + '_cc_types');
         if (typs) {
             const tp = typs.split(' ');
             for (let k = 0; k < 8; k++) S.trackCCType[t][k] = parseInt(tp[k], 10) || 0;
@@ -869,10 +919,10 @@ export function readBankParams(t, bankIdx) {
             }
         }
         for (let c = 0; c < NUM_CLIPS; c++) {
-            const bits = host_module_get_param('t' + t + '_c' + c + '_cc_auto_bits');
+            const bits = dspGet('t' + t + '_c' + c + '_cc_auto_bits');
             S.trackCCAutoBits[t][c] = bits !== null ? (parseInt(bits, 10) || 0) : 0;
             /* Per-clip resting values ("—"=255 → -1). */
-            const rest = host_module_get_param('t' + t + '_c' + c + '_cc_rest');
+            const rest = dspGet('t' + t + '_c' + c + '_cc_rest');
             if (rest) {
                 const rp = rest.split(' ');
                 for (let k = 0; k < 8; k++) {
@@ -881,7 +931,7 @@ export function readBankParams(t, bankIdx) {
                 }
             }
             /* Aftertouch automation presence (for the AUTOMATION-bank indicator). */
-            const ath = host_module_get_param('t' + t + '_c' + c + '_at_has');
+            const ath = dspGet('t' + t + '_c' + c + '_at_has');
             S.clipAtHas[t][c] = (ath !== null && parseInt(ath, 10) === 1);
         }
         return;
@@ -917,12 +967,12 @@ export function readBankParams(t, bankIdx) {
             /* beat_stretch and clock_shift display per-touch labels (0 at rest) rather than absolute position */
             if (pm.dspKey === 'beat_stretch' || pm.dspKey === 'clock_shift') { S.bankParams[t][bankIdx][k] = 0; continue; }
             const stateKey = 't' + t + '_' + pm.dspKey + pm.actionSuffix;
-            const raw = host_module_get_param(stateKey);
+            const raw = dspGet(stateKey);
             S.bankParams[t][bankIdx][k] = parseActionRaw(raw, pm.def);
             continue;
         }
         const key = pm.scope === 'global' ? pm.dspKey : 't' + t + '_' + pm.dspKey;
-        const raw = host_module_get_param(key);
+        const raw = dspGet(key);
         if (raw === null || raw === undefined) {
             S.bankParams[t][bankIdx][k] = pm.def;
             continue;
@@ -942,30 +992,30 @@ export function readBankParams(t, bankIdx) {
      * S.delayClockFb[t]. Read it explicitly here so the OLED value cell shows
      * the live value when Shift+K1 is touched. */
     if (bankIdx === 3 && S.trackPadMode[t] !== PAD_MODE_DRUM) {
-        const _cf = host_module_get_param('t' + t + '_delay_clock_fb');
+        const _cf = dspGet('t' + t + '_delay_clock_fb');
         if (_cf !== null && _cf !== undefined)
             S.delayClockFb[t] = Math.max(-100, Math.min(100, parseInt(_cf, 10) | 0));
     }
 }
 
 function readTrackConfig(t) {
-    const ch = host_module_get_param('t' + t + '_channel');
+    const ch = dspGet('t' + t + '_channel');
     if (ch !== null && ch !== undefined) S.trackChannel[t] = parseInt(ch, 10) || 1;
     /* No tN_slot read: the slot IS the track index now. It was a stored
      * per-track choice until a track owned its instrument. */
-    const rt = host_module_get_param('t' + t + '_route');
+    const rt = dspGet('t' + t + '_route');
     if (rt !== null && rt !== undefined) S.trackRoute[t] = rt === 'external' ? 2 : rt === 'move' ? 1 : 0;
     /* 0 = plays its own instrument; 1..8 = plays that track's (`MIDI to Track N`). */
-    const mt = host_module_get_param('t' + t + '_midi_to');
+    const mt = dspGet('t' + t + '_midi_to');
     if (mt !== null && mt !== undefined) S.trackMidiTo[t] = parseInt(mt, 10) | 0;
     /* Bulk read (project load): re-derive after the last track, below. */
-    const pm = host_module_get_param('t' + t + '_pad_mode');
+    const pm = dspGet('t' + t + '_pad_mode');
     if (pm !== null && pm !== undefined) S.trackPadMode[t] = parseInt(pm, 10) | 0;
-    const tvo = host_module_get_param('t' + t + '_track_vel_override');
+    const tvo = dspGet('t' + t + '_track_vel_override');
     if (tvo !== null && tvo !== undefined) S.trackVelOverride[t] = parseInt(tvo, 10) | 0;
-    const lpr = host_module_get_param('t' + t + '_track_looper');
+    const lpr = dspGet('t' + t + '_track_looper');
     if (lpr !== null && lpr !== undefined) S.trackLooper[t] = parseInt(lpr, 10) | 0;
-    const diq = host_module_get_param('t' + t + '_diq');
+    const diq = dspGet('t' + t + '_diq');
     if (diq !== null && diq !== undefined) {
         S.drumInpQuant[t] = Math.max(0, Math.min(8, parseInt(diq, 10) | 0));
         S.bankParams[t][7][5] = S.drumInpQuant[t];
@@ -1354,27 +1404,43 @@ export function restoreUiSidecar(applyDefaultsNow) {
 /* Clip / mute-solo sync from DSP (full + targeted)                     */
 /* ------------------------------------------------------------------ */
 
+/* The full project readback. One prefetch, then every reader below resolves out
+ * of the digest map — ~1,468 param round trips become 8, which is the whole
+ * difference between a 4.3 s frozen tick and an unnoticeable one.
+ *
+ * try/finally, not a trailing release: an exception mid-sync would otherwise
+ * leave the map standing, and the next reader to run would silently answer from
+ * a project that is no longer loaded. */
 export function syncClipsFromDsp() {
+    prefetchTrackDigests();
+    try {
+        _syncClipsFromDspInner();
+    } finally {
+        releaseTrackDigests();
+    }
+}
+
+function _syncClipsFromDspInner() {
     for (let t = 0; t < NUM_TRACKS; t++) {
         for (let c = 0; c < NUM_CLIPS; c++) {
-            const bulk = host_module_get_param('t' + t + '_c' + c + '_steps');
+            const bulk = dspGet('t' + t + '_c' + c + '_steps');
             if (bulk && bulk.length >= NUM_STEPS) {
                 for (let s = 0; s < NUM_STEPS; s++)
                     S.clipSteps[t][c][s] = bulk[s] === '1' ? 1 : 0;
                 S.clipNonEmpty[t][c] = clipHasContent(t, c);
             }
-            const len = host_module_get_param('t' + t + '_c' + c + '_length');
+            const len = dspGet('t' + t + '_c' + c + '_length');
             if (len !== null && len !== undefined)
                 S.clipLength[t][c] = parseInt(len, 10) || 16;
-            const ls = host_module_get_param('t' + t + '_c' + c + '_loop_start');
+            const ls = dspGet('t' + t + '_c' + c + '_loop_start');
             if (ls !== null && ls !== undefined)
                 S.clipLoopStart[t][c] = parseInt(ls, 10) | 0;
-            const tpsRaw = host_module_get_param('t' + t + '_c' + c + '_tps');
+            const tpsRaw = dspGet('t' + t + '_c' + c + '_tps');
             if (tpsRaw !== null && tpsRaw !== undefined) {
                 const tpsVal = parseInt(tpsRaw, 10);
                 S.clipTPS[t][c] = TPS_VALUES.indexOf(tpsVal) >= 0 ? tpsVal : 24;
             }
-            var ccll = host_module_get_param('t' + t + '_c' + c + '_cc_lane_loops');
+            var ccll = dspGet('t' + t + '_c' + c + '_cc_lane_loops');
             if (ccll) {
                 var _vals = ccll.split(' ');
                 for (var _k = 0; _k < 8 && _k * 4 + 3 < _vals.length; _k++) {
@@ -1385,12 +1451,12 @@ export function syncClipsFromDsp() {
                 }
             }
         }
-        const ac2 = host_module_get_param('t' + t + '_active_clip');
+        const ac2 = dspGet('t' + t + '_active_clip');
         if (ac2 !== null && ac2 !== undefined) {
             S.trackActiveClip[t] = parseInt(ac2, 10) | 0;
             S.lastDspActiveClip[t] = S.trackActiveClip[t];
         }
-        const po = host_module_get_param('t' + t + '_pad_octave');
+        const po = dspGet('t' + t + '_pad_octave');
         if (po !== null && po !== undefined) S.padOctave[t] = parseInt(po, 10) | 0;
         readTrackConfig(t);
         for (let b = 0; b < 7; b++) readBankParams(t, b);
@@ -1428,26 +1494,26 @@ export function syncClipsFromDsp() {
     invalidateLinkAudioRoutingCache();
     syncLinkAudioRoutingFromRoutes(S.trackRoute);
 
-    const kp = host_module_get_param('key');
+    const kp = dspGet('key');
     if (kp !== null && kp !== undefined) S.padKey   = parseInt(kp, 10) | 0;
-    const sp = host_module_get_param('scale');
+    const sp = dspGet('scale');
     if (sp !== null && sp !== undefined) S.padScale = parseInt(sp, 10) | 0;
-    const lqp = host_module_get_param('launch_quant');
+    const lqp = dspGet('launch_quant');
     if (lqp !== null && lqp !== undefined) S.launchQuant = parseInt(lqp, 10) | 0;
-    const iqp = host_module_get_param('inp_quant');
+    const iqp = dspGet('inp_quant');
     if (iqp !== null && iqp !== undefined) S.inpQuant = iqp === '1';
-    const micp = host_module_get_param('midi_in_channel');
+    const micp = dspGet('midi_in_channel');
     if (micp !== null && micp !== undefined) S.midiInChannel = parseInt(micp, 10) | 0;
-    const monRaw = host_module_get_param('metro_on');
+    const monRaw = dspGet('metro_on');
     if (monRaw !== null && monRaw !== undefined) {
         S.metronomeOn = parseInt(monRaw, 10) | 0;
         if (S.metronomeOn !== 0) S.metronomeOnLast = S.metronomeOn;
     }
-    const mvolRaw = host_module_get_param('metro_vol');
+    const mvolRaw = dspGet('metro_vol');
     if (mvolRaw !== null && mvolRaw !== undefined) S.metronomeVol = parseInt(mvolRaw, 10) | 0;
-    const swaRaw = host_module_get_param('swing_amt');
+    const swaRaw = dspGet('swing_amt');
     if (swaRaw !== null && swaRaw !== undefined) S.swingAmt = parseInt(swaRaw, 10) | 0;
-    const swrRaw = host_module_get_param('swing_res');
+    const swrRaw = dspGet('swing_res');
     if (swrRaw !== null && swrRaw !== undefined) S.swingRes = parseInt(swrRaw, 10) | 0;
 }
 
