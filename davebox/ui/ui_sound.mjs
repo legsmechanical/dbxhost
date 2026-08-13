@@ -1443,7 +1443,7 @@ function buildPickRows() {
          * hang off its sound generator. Jog-click hands over to Move's editor
          * (co-run) — there is no module to browse, Move owns that voice. */
         if (S.bus.kind === 'move') {
-            rows.push({ kind: 'movesynth', label: 'Generator', value: 'Move ' + S.bus.bus, chevron: true });
+            rows.push({ kind: 'movesynth', label: 'Generator', value: 'Move ' + S.bus.bus + ' >' });
         }
         for (const n of BUS_BLOCKS) {
             rows.push({ kind: 'block', comp: S.bus.prefix + 'fx' + n, label: 'FX ' + n });
@@ -3426,6 +3426,14 @@ function renderBlocks() {
                      value: S.instrEditing ? '[' + txt + ']' : txt };
         }
         if (r.kind === 'movesynth') return { label: r.label, hdr: true, value: r.value };
+        /* Doors get the chevron drawKitList draws for a sub-row. They used to
+         * fall through to the bare branch below, which sets neither value nor
+         * chevron, so nothing on screen said they opened anything.
+         * ⚠ `chevron` and `value` are mutually exclusive there (chevron wins),
+         * which is why the Move Generator row carries its marker in the value
+         * string instead — it has to show WHICH instrument it opens. */
+        if (r.kind === 'settings' || r.kind === 'config' || r.kind === 'patches')
+            return { label: r.label, hdr: true, chevron: true };
         if (r.kind !== 'block') return { label: r.label, hdr: true };
         /* A bypassed block still says what it holds — you need to know WHAT is
          * switched out — so the state rides as a prefix. Matches the host's 'B'. */

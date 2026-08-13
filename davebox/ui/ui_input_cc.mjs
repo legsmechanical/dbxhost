@@ -1163,22 +1163,27 @@ function _onCC_buttons(d1, d2) {
                     S.pendingBusMenu = true;
                     S.screenDirty = true;
                 }
-                /* Move- and Schwung-routed tracks take the SAME door now (P8a
-                 * 1b): a Move-routed track's sound is its Move instrument bus,
-                 * which sound mode renders as its own flavour. Move's own editor
-                 * is one jog-click further in, on the SYNTH row, and stays
-                 * directly reachable as `Edit Synth...` in the track menu.
-                 * ⭑ This also drops the Shift-RELEASE deferral that co-run
-                 * needed: sound mode never hands Shift to Move firmware. */
-                else if (S.trackRoute[S.activeTrack] === 1 ||
-                         S.trackRoute[S.activeTrack] === 0) {
+                /* EVERY route takes this door. A Schwung track opens its chain,
+                 * a Move-routed one its instrument bus (its sound is Move's
+                 * voice, one jog-click further in on the Generator row), and an
+                 * EXT one a screen holding just its destination.
+                 *
+                 * ⚠ EXT used to be refused here with 'NO SOUND TO EDIT'. That was
+                 * right while this screen was only about sound; it is a TRAP now
+                 * that `Track to` lives on it — refusing entry would leave a
+                 * track routed to MIDI out with nowhere to route it back from,
+                 * stranded on the device. An EXT track genuinely has no sound,
+                 * and the near-empty screen says so honestly.
+                 * ⭑ The tick-side FOLLOW was fixed with the row (a83fb821); this
+                 * is the other half — the ENTRY — and missing it left the trap
+                 * open through the front door while the back one was closed.
+                 * ⭑ Also drops the Shift-RELEASE deferral co-run needed: this
+                 * screen never hands Shift to Move firmware. */
+                else {
                     S.globalMenuOpen = false;
                     S.lastSentMenuEditValue = null;
                     S.pendingSoundEnterTrack = S.activeTrack;
                     S.screenDirty = true;
-                } else {
-                    showActionPopup('NO SOUND TO EDIT', 'Track route is',
-                                    'neither Schwung nor Move.');
                 }
             } else if (soundActive()) {
                 /* The way OUT, from any depth. Back walks the stack one level

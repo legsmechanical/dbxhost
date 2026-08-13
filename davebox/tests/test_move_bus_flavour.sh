@@ -105,11 +105,23 @@ else
 fi
 
 # 4. Both Move- and Schwung-routed tracks take the same door into sound mode.
-#    A route that falls through to the popup means a track with a perfectly good
-#    sound reports 'NO SOUND TO EDIT'.
-grep -q "S.trackRoute\[S.activeTrack\] === 1 ||" ui/ui_input_cc.mjs \
-    && ok "Shift+Note/Session opens sound mode on BOTH routes" \
-    || bad "the Move route no longer shares the sound-mode entry"
+#    EVERY route now takes it, EXT included: `Track to` lives on that screen, so
+#    refusing entry would strand a MIDI-routed track with nowhere to route it
+#    back from. The old gate reported 'NO SOUND TO EDIT' and was a trap once the
+#    destination row moved in — it was fixed on the tick-side FOLLOW first and
+#    left open at the ENTRY, which is the half a user actually hits.
+# ⚠ Match the CALL, not the words: the code comment explains the old refusal and
+# names it, so a bare string grep pins the comment and fails on a correct tree.
+grep -q "showActionPopup('NO SOUND TO EDIT'" ui/ui_input_cc.mjs \
+    && bad "the route gate is back — an EXT track cannot reach its own Track to row" \
+    || ok "Shift+Note/Session opens Track Control on EVERY route"
+# Both halves, pinned together so neither can be fixed alone again.
+grep -q "if (S.trackRoute\[_nt\] === 1) {" ui/ui_tick.mjs \
+    && ok "tick still picks the Move flavour by route" \
+    || bad "the tick-side flavour choice is gone"
+grep -qE "trackRoute\[_nt\] !== 0\) \{\s*$" ui/ui_tick.mjs \
+    && bad "tick closes the screen on EXT again — the other half of the same trap" \
+    || ok "tick keeps Track Control open on an EXT track"
 
 # 5. Co-run entry from sound mode goes through the consume-flag, not an import:
 #    ui_sound importing ui_corun would close a cycle.
