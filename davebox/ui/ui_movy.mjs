@@ -700,7 +700,11 @@ export function drawBigNum(cellX, ky, text) {
  * filled white bar, black text, left-aligned, ALL CAPS. `invert` = the
  * secondary-bank variant (ARP IN / AUTO): white-on-black. */
 export function drawKitHeader(text, invert) {
-    const t = fitHdr(text, SCREEN_W - 4);
+    /* UPPERCASE for the same reason drawKitList does it: this font keeps true
+     * lowercase `d` and `t` glyphs and maps every other lowercase letter to its
+     * capital, so mixed-case titles come out with two odd letters. A no-op for
+     * everything else. */
+    const t = fitHdr(String(text).toUpperCase(), SCREEN_W - 4);
     if (invert) {
         hdrPrint(2, 1, t, 1);
     } else {

@@ -9,7 +9,7 @@
  */
 
 import {
-    createValue, createEnum, createToggle, createAction, createDivider
+    createValue, createEnum, createToggle, createAction
 } from '/data/UserData/schwung/shared/menu_items.mjs';
 
 import {
@@ -20,10 +20,7 @@ import {
     createMenuStack
 } from '/data/UserData/schwung/shared/menu_stack.mjs';
 
-import {
-    PAD_MODE_CONDUCT,
-    NOTE_KEYS, SCALE_NAMES
-} from './ui_constants.mjs';
+import { NOTE_KEYS, SCALE_NAMES } from './ui_constants.mjs';
 
 import { S } from './ui_state.mjs';
 import { saveState, showActionPopup, loadSnapshotManifest } from './ui_persistence.mjs';
@@ -52,27 +49,18 @@ function buildGlobalMenuItems() {
          * config. A setting with two homes is the ambiguity `Instr` itself was
          * created to remove, so they are GONE here rather than mirrored.
          *
-         * `Edit Slot...` / `Edit Synth...` went too — one row with two labels,
-         * both of which just opened the screen that now owns these settings.
-         * The single `Track Control` row below replaces them and is not
-         * route-conditional: a Move-routed track opens its instrument bus, a
-         * Schwung one its chain, and an EXT one a screen holding just its
-         * destination (an EXT track has no sound, but it must still be
-         * routable back).
+         * `Edit Slot...` / `Edit Synth...` went too, and so did the single
+         * `Track Control` door that briefly replaced them (Josh, 2026-08-13):
+         * this menu is GLOBAL settings and nothing else. Track settings are
+         * reached from the hardware — Shift+Note / Shift+Session — which opens
+         * them on every route, including EXT.
          *
          * `Mode` went last (2026-08-13), and it was the awkward one: its edit
          * CONVERTS the track behind a confirm. Those rules now live in
          * ui_dialogs' requestTrackModeChange, and the confirms it raises draw
          * above Track Control rather than here. */
-        createAction('Track Control', function() {
-            S.globalMenuOpen = false;
-            S.lastSentMenuEditValue = null;
-            /* Deferred to tick: entry's shadow_get/set_param traffic has to run
-             * on the tick budget, and tick picks the flavour from the route. */
-            S.pendingSoundEnterTrack = S.activeTrack;
-            forceRedraw();
-        }),
-        createDivider('Global'),
+        /* No leading divider: with the track section gone this menu is global
+         * throughout, and a 'Global' rule with nothing above it labels nothing. */
         /* Clock Follow: follow Move's MIDI clock + transport. Default off =
          * unchanged internal free-run. When on, BPM is read-only (EXT) and Play
          * drives Move (single source of truth). */
