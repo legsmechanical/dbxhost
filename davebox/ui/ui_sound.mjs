@@ -2624,6 +2624,31 @@ export function soundOnCC(d1, d2, decodeDelta) {
     }
 
     if (d1 === 14) {                                   /* jog turn */
+        /* ---- Shift+jog = SWITCH TRACK, in the menu only ----
+         *
+         * Declining the CC is the whole implementation: davebox's own jog
+         * handler already steps the active track on Shift+jog, and tick already
+         * follows a track change across flavours (ui_tick: Schwung retargets,
+         * Move re-enters the bus flavour, EXT closes). So the gesture means the
+         * same thing here as everywhere else without a second copy of either.
+         *
+         * The global menu does exactly this — `S.globalMenuOpen && !S.shiftHeld`
+         * — so it too falls through to the track switch and rebuilds for the new
+         * track. Same shape, so the two screens cannot drift apart.
+         *
+         * ⚠ MENU ONLY. Inside a module's editor Shift+jog already JUMPS
+         * SECTIONS (see the `S.shiftHeld && S.sections.length > 1` branch
+         * below), which is a different, established meaning; stealing it there
+         * would trade one gesture for another. Level editing is excluded for the
+         * same reason — mid-edit the jog belongs to the value in hand.
+         *
+         * ⚠ And not on a GLOBAL bus (Master/Send FX): those are entered from the
+         * session FX list, not from a track, so there is no track to step. That
+         * is also why tick's follow is gated on !soundIsGlobal(). */
+        if (S.shiftHeld && S.view === VIEW_BLOCKS && !S.busLevelEditing &&
+                !soundIsGlobal()) {
+            return false;                              /* davebox steps the track */
+        }
         const delta = decodeDelta(d2);
         if (!delta) return true;
         if (S.view === VIEW_BUSES) {
