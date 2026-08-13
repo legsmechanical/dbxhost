@@ -8443,9 +8443,9 @@ static int try_attach_in_audio_shm(void)
         return 0;
     }
     if (shm->version != LINK_AUDIO_IN_SHM_VERSION) {
-        LOG_WARN("shim", "/schwung-link-in version mismatch: shm=%u expected=%u "
+        LOG_WARN("shim", "%s version mismatch: shm=%u expected=%u "
                         "— rebuild link-subscriber sidecar",
-                 shm->version, LINK_AUDIO_IN_SHM_VERSION);
+                 SHM_LINK_AUDIO_IN, shm->version, LINK_AUDIO_IN_SHM_VERSION);
         munmap(shm, sizeof(link_audio_in_shm_t));
         return 0;
     }
@@ -8461,7 +8461,11 @@ static int try_attach_in_audio_shm(void)
         __atomic_store_n(&shm->slots[i].read_pos, wp, __ATOMIC_RELEASE);
     }
     shadow_in_audio_shm = shm;
-    LOG_INFO("shim", "/schwung-link-in attached (version=%u)", shm->version);
+    /* Print the REAL segment name. It was a literal, so a davebox build
+     * announced "/schwung-link-in attached" while actually attaching to
+     * /dbxhost-link-in — which reads as a prefix bug during exactly the kind of
+     * hunt this line exists to help with, and cost time in one (2026-08-13). */
+    LOG_INFO("shim", "%s attached (version=%u)", SHM_LINK_AUDIO_IN, shm->version);
     return 1;
 }
 
@@ -8475,8 +8479,8 @@ static void *link_in_attach_retry_thread(void *arg)
         usleep(500000);  /* 500ms */
     }
     if (!shadow_in_audio_shm) {
-        LOG_WARN("shim", "/schwung-link-in never appeared after %d attempts (~%ds) — sidecar not running?",
-                 max_attempts, max_attempts / 2);
+        LOG_WARN("shim", "%s never appeared after %d attempts (~%ds) — sidecar not running?",
+                 SHM_LINK_AUDIO_IN, max_attempts, max_attempts / 2);
     }
     return NULL;
 }
