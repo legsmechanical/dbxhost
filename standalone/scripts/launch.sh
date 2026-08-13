@@ -123,16 +123,27 @@ setsid bash -c '
 
   # Belt and braces: launch-standalone.sh has already done this, but this script
   # is also run directly during development.
-  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui; do
+  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber; do
     pids=$(pidof $name 2>/dev/null || true)
     if [ -n "$pids" ]; then echo "TERM $name $pids"; kill $pids 2>/dev/null || true; fi
   done
   sleep 1
-  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui; do
+  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber; do
     pids=$(pidof $name 2>/dev/null || true)
     if [ -n "$pids" ]; then echo "KILL $name $pids"; kill -9 $pids 2>/dev/null || true; fi
   done
   sleep 0.5
+
+  # Sidecar pid files name processes the sweep above just killed. Leaving them
+  # is not harmless: the shim adopts a live pid it finds there instead of
+  # starting its own sidecar, and a pid can outlive its session — a
+  # link-subscriber from the STOCK stack survived into a session this way
+  # (2026-08-13), so the session ran with no subscriber of its own, no
+  # <prefix>-link-in segment, no Move audio in the mixer, and every Move FX bus
+  # control inert with nothing in any log to say why.
+  # ⚠ The relaunch and exit paths already did this; ENTRY did not, which is the
+  # one that matters most — it is the only path that inherits another stack.
+  rm -f "$DBX_DIR/shadow_ui.pid" "$DBX_DIR/link_sub.pid"
 
   pids=$(fuser /dev/ablspi0.0 2>/dev/null || true)
   if [ -n "$pids" ]; then echo "SPI holders $pids"; kill -9 $pids 2>/dev/null || true; sleep 0.5; fi
@@ -220,16 +231,16 @@ setsid bash -c '
       # sees its stale pid file and never respawns it (observed on hardware
       # 2026-08-06: session alive, module apparently loaded, controls dead).
       # Same name list as the session entry above.
-      for name in MoveMessageDisplay Move schwung shadow_ui; do
+      for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber; do
         pids=$(pidof $name 2>/dev/null || true)
         [ -n "$pids" ] && kill $pids 2>/dev/null || true
       done
       sleep 1
-      for name in MoveMessageDisplay Move schwung shadow_ui; do
+      for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber; do
         pids=$(pidof $name 2>/dev/null || true)
         [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
       done
-      rm -f "$DBX_DIR/shadow_ui.pid"
+      rm -f "$DBX_DIR/shadow_ui.pid" "$DBX_DIR/link_sub.pid"
       rm -f /dev/shm/dbxhost-*
       # Apply the requested project index NOW — after Move exited. Writing it
       # earlier loses: the dying Move saves Settings.json on SIGTERM and
@@ -285,16 +296,16 @@ setsid bash -c '
   # they outlive MoveOriginal, and a stray shadow_ui keeps running against
   # deleted SHM while stock respawns its own (observed: two shadow_ui
   # processes after a session ended via Shift+Back).
-  for name in MoveMessageDisplay Move schwung shadow_ui; do
+  for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber; do
     pids=$(pidof $name 2>/dev/null || true)
     [ -n "$pids" ] && kill $pids 2>/dev/null || true
   done
   sleep 1
-  for name in MoveMessageDisplay Move schwung shadow_ui; do
+  for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber; do
     pids=$(pidof $name 2>/dev/null || true)
     [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
   done
-  rm -f "$DBX_DIR/shadow_ui.pid"
+  rm -f "$DBX_DIR/shadow_ui.pid" "$DBX_DIR/link_sub.pid"
 
   # Swap the project library out and the users native sets back BEFORE stock
   # returns — stock must boot seeing exactly what it saw before the session.

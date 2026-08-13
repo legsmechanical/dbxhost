@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #include <unistd.h>
 #include <signal.h>
 #include <dirent.h>
@@ -78,6 +79,33 @@ void process_init(const process_host_t *h) {
  * Shadow UI process management
  * ============================================================================ */
 
+/* Is this pid a process THIS build started?
+ *
+ * `comm` cannot answer that: two installs run binaries with the same name, so a
+ * stock-tree sidecar looks identical to ours. /proc/<pid>/exe resolves to the
+ * actual binary, and only our install dir is ours.
+ *
+ * A pid we cannot identify (readlink fails — a foreign owner, or the process
+ * died mid-check) is deliberately NOT ours: adopting a sidecar we cannot verify
+ * is how a session ends up with no sidecar at all, which is silent. Our own
+ * children run as the same user, so the readlink succeeds for them.
+ *
+ * The bug this exists to prevent (hardware, 2026-08-13): a stock link-subscriber
+ * started at boot survived into a standalone session — launch.sh's kill list did
+ * not name it — and the session's shim, seeing a live pid in the pid file,
+ * adopted it and never started its own. The stock subscriber publishes into the
+ * STOCK shm namespace, so `<prefix>-link-in` never appeared, Move's audio never
+ * reached the mixer, and every Move FX bus control (volume, mute, solo) was
+ * inert with nothing in any log to say why. */
+static int pid_is_ours(pid_t pid) {
+    char path[64], exe[PATH_MAX];
+    snprintf(path, sizeof(path), "/proc/%d/exe", (int)pid);
+    ssize_t n = readlink(path, exe, sizeof(exe) - 1);
+    if (n <= 0) return 0;
+    exe[n] = '\0';
+    return strncmp(exe, SCHWUNG_INSTALL_DIR "/", strlen(SCHWUNG_INSTALL_DIR "/")) == 0;
+}
+
 static int shadow_ui_pid_alive(pid_t pid) {
     if (pid <= 0) return 0;
     char path[64];
@@ -93,6 +121,9 @@ static int shadow_ui_pid_alive(pid_t pid) {
     if (rpid != (int)pid) return 0;
     if (state == 'Z') return 0;
     if (!strstr(comm, "shadow_ui")) return 0;
+    /* Same name is not the same process — see pid_is_ours. A stale pid naming
+     * the OTHER install's shadow_ui would leave this session with none. */
+    if (!pid_is_ours(pid)) return 0;
     return 1;
 }
 
@@ -185,6 +216,8 @@ static int link_sub_pid_alive(pid_t pid) {
     if (rpid != (int)pid) return 0;
     if (state == 'Z') return 0;
     if (!strstr(comm, "link-sub")) return 0;
+    /* Same name is not the same process — see pid_is_ours. */
+    if (!pid_is_ours(pid)) return 0;
     return 1;
 }
 
