@@ -25,6 +25,7 @@ import {
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
+    drawConvertToDrumConfirm, drawConvertToConductConfirm, drawMenuInfo,
     drawLgtoConfirm, drawBakeConfirm, drawSnapshotPicker,
     drawClearAutoMenu, drawBakeSceneConfirm, drawXposeConfirm, drawBpmLine,
     drawProjectPadPicker
@@ -743,6 +744,8 @@ export function soundModeCovered() {
         S.mergePlacing || S.mergeNoticePending || S.pendingMergePlacement ||
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
         S.confirmStateWipe || S.bpmMoveInfo || S.recordBlockedDialog ||
+        S.confirmConvertToDrum || S.confirmConvertToConduct ||
+        (S.menuInfoLines && S.menuInfoLines.length > 0) ||
         S.confirmLgto || S.confirmXpose || S.confirmBakeScene || S.confirmBake ||
         S.globalMenuOpen || S.tapTempoOpen ||
         (S.sessionView && (S.loopHeld || S.perfViewLocked)));
@@ -840,6 +843,14 @@ export function drawUI() {
     if (S.confirmXpose) { drawXposeConfirm(); return; }
     if (S.confirmBakeScene) { drawBakeSceneConfirm(); return; }
     if (S.confirmBake) { drawBakeConfirm(); return; }
+    /* Modal dialogs that either screen can raise. They belong ABOVE Track
+     * Control, so they are drawn before soundRender() — which returns and would
+     * otherwise swallow them — and they appear in soundModeCovered() so sound
+     * mode stops steering while they are up. `Mode` moving to Config is what
+     * made this reachable with the global menu shut. */
+    if (S.confirmConvertToDrum)    { drawConvertToDrumConfirm();    return; }
+    if (S.confirmConvertToConduct) { drawConvertToConductConfirm(); return; }
+    if (S.menuInfoLines.length > 0){ drawMenuInfo();                return; }
     if (S.globalMenuOpen || S.tapTempoOpen) { ensureGlobalMenuFresh(); drawGlobalMenu(); return; }
     /* Perf Mode OLED takeover (Session View + Loop held or locked) */
     if (S.sessionView && (S.loopHeld || S.perfViewLocked)) { drawPerfModeOled(); return; }

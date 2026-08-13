@@ -1,5 +1,6 @@
-import { S } from './ui_state.mjs';
-import { MCUFONT, STATE_VERSION, NOTE_KEYS, SCALE_DISPLAY, pixelPrintC } from './ui_constants.mjs';
+import { S, conductorTrackIdx } from './ui_state.mjs';
+import { MCUFONT, STATE_VERSION, NOTE_KEYS, SCALE_DISPLAY, pixelPrintC,
+         NUM_CLIPS, PAD_MODE_DRUM, PAD_MODE_CONDUCT } from './ui_constants.mjs';
 import {
     drawMenuHeader, drawMenuList, menuLayoutDefaults,
     drawDialogButton, drawDialogYesNoRow, drawDialogOkButton
@@ -135,7 +136,7 @@ function drawSaveStateConfirm() {
     drawYesNoRow(S.confirmSaveSel);
 }
 
-function drawConvertToDrumConfirm() {
+export function drawConvertToDrumConfirm() {
     clear_screen();
     drawMenuHeader('CONVERT');
     print(4, 16, 'Warning:', 1);
@@ -144,7 +145,7 @@ function drawConvertToDrumConfirm() {
     drawYesNoRow(S.confirmConvertToDrumSel);
 }
 
-function drawConvertToConductConfirm() {
+export function drawConvertToConductConfirm() {
     clear_screen();
     drawMenuHeader('CONVERT');
     print(4, 16, 'Make Conductor?', 1);
@@ -156,7 +157,7 @@ function drawConvertToConductConfirm() {
 /* Generic single-button INFO dialog. Renders up to 4 lines from S.menuInfoLines
  * (empty = closed). Mirrors drawConvertToConductConfirm's layout with one OK
  * button. Used for "Conductor exists", "Stop playback to change type", etc. */
-function drawMenuInfo() {
+export function drawMenuInfo() {
     clear_screen();
     drawMenuHeader('INFO');
     const lines = S.menuInfoLines || [];
@@ -210,8 +211,11 @@ export function drawGlobalMenu() {
     if (S.menuInfoLines.length > 0){ drawMenuInfo(); return; }
     if (S.confirmExport || S.confirmExportCondPhase) { drawExportConfirm(); return; }
     clear_screen();
-    const _inTrackSection = S.globalMenuState.selectedIndex < 5;
-    const _hTitle = _inTrackSection ? 'Track ' + (S.activeTrack + 1) : 'Global';
+    /* Always 'Global' now. This used to read 'Track N' for the first five rows,
+     * back when the menu opened with a TRACK section — that section moved to
+     * Track Control (2026-08-13) and the index test would otherwise label the
+     * clock and key/scale rows with a track number. */
+    const _hTitle = 'Global';
     fill_rect(0, 1, 128, 10, 1);
     pixelPrintMcu(2, 4, _hTitle, 1, 0);
     fill_rect(0, 12, 128, 1, 1);
@@ -1139,3 +1143,60 @@ export function projectPadPickerRotate(d)   { return _pppGuard('rot',   _project
 export function projectPadPickerBack()      { return _pppGuard('back',  _projectPadPickerBack_impl, []); }
 export function projectPickerTextEntryMidi(data) { return _pppGuard('kbd',  _projectPickerTextEntryMidi_impl, [data]); }
 export function projectPickerTextEntryTick()     { return _pppGuard('kbdt', _projectPickerTextEntryTick_impl, []); }
+
+
+/* ---- changing a track's TYPE (Keys / Drums / Conductor) ----
+ *
+ * The only per-track setting whose edit CONVERTS the track, so it is the only
+ * one that has to ask first. Lifted out of the global menu's jog-click handler
+ * when `Mode` moved to Track Control's Config screen — the rules are too
+ * particular to copy, and there is no longer a second screen to copy them to.
+ *
+ * Every branch is a different kind of "no" and they are not interchangeable:
+ *   - playing            -> refuse outright; converting under the transport is
+ *                           not something a confirm can make safe
+ *   - -> Drums           -> confirm ONLY if notes would be lost
+ *   - -> Conductor       -> a Conductor already elsewhere is REFUSED, not
+ *                           confirmed (the DSP would reject it anyway, so
+ *                           asking would be a lie); otherwise always confirm,
+ *                           since it clears FX/ARP/Auto
+ *   - -> Keys            -> no prompt; nothing is lost
+ *
+ * Returns nothing: it raises confirm/info state and the caller redraws. The
+ * conversion itself is deferred to tick via `pendingTrackConvert`.
+ *
+ * ⚠ The dialogs it raises MUST be drawn above Track Control and must gate its
+ * input — see drawUI's pre-soundRender list and soundModeCovered(). */
+export function requestTrackModeChange(t, target) {
+    const cur = S.trackPadMode[t];
+    if (target === cur) return;
+    if (S.playing) {
+        showMenuInfo('Stop playback', 'to change the', 'track type.');
+        return;
+    }
+    if (target === PAD_MODE_DRUM) {
+        let hasData = false;
+        for (let c = 0; c < NUM_CLIPS; c++)
+            if (S.clipNonEmpty[t][c]) { hasData = true; break; }
+        if (hasData) {
+            S.confirmConvertToDrum = true; S.confirmConvertToDrumSel = 1;
+            S.confirmConvertTrack = t;
+        } else {
+            S.pendingTrackConvert = { t: t, toDrum: true };
+        }
+        return;
+    }
+    if (target === PAD_MODE_CONDUCT) {
+        const existingCond = conductorTrackIdx();
+        if (existingCond >= 0 && existingCond !== t) {
+            showMenuInfo('Conductor exists', 'on T' + (existingCond + 1) + '.', 'Route it back first.');
+        } else {
+            S.confirmConvertToConduct = true; S.confirmConvertToConductSel = 1;
+            S.confirmConvertTrack = t;
+        }
+        return;
+    }
+    /* Drums/Conductor -> Keys: no prompt; deferred to tick(). */
+    if (S.conductorTrack === t) S.conductorTrack = -1;
+    S.pendingTrackConvert = { t: t, toDrum: false };
+}

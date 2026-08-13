@@ -316,7 +316,21 @@ function _onCC_jog(d1, d2) {
         S.screenDirty = true;
         return;
     }
-    if (d1 === 3 && d2 === 127 && S.globalMenuOpen) {
+/* A modal dialog that can be raised from EITHER screen.
+ *
+ * The convert confirms and the info dialog used to belong to the global menu —
+ * raised there, drawn inside drawGlobalMenu, and handled inside the
+ * `S.globalMenuOpen` input branches. `Mode` moved to Track Control's Config
+ * screen (2026-08-13), so they can now be raised with that menu shut, and a
+ * modal that is invisible or unanswerable is worse than no modal.
+ *
+ * They are MODAL, so handling them first is correct whoever raised them. */
+function modalDialogUp() {
+    return !!(S.confirmConvertToDrum || S.confirmConvertToConduct ||
+              (S.menuInfoLines && S.menuInfoLines.length > 0));
+}
+
+    if (d1 === 3 && d2 === 127 && (S.globalMenuOpen || modalDialogUp())) {
         if (S.exportDoneDialog) {            /* OK dismiss */
             S.exportDoneDialog = false;
             S.globalMenuOpen   = false;
@@ -414,52 +428,10 @@ function _onCC_jog(d1, d2) {
         {
             const _mi = (S.globalMenuState && S.globalMenuItems)
                         ? S.globalMenuItems[S.globalMenuState.selectedIndex] : null;
-            if (_mi && S.globalMenuState.editing && _mi.label === 'Mode') {
-                const t      = S.activeTrack;
-                const target = S.globalMenuState.editValue !== null ? S.globalMenuState.editValue : _mi.get();
-                const cur    = S.trackPadMode[t];
-                S.globalMenuState.editing = false; S.globalMenuState.editValue = null;
-                S.lastSentMenuEditValue = null; S.bpmWasEditing = false;
-                if (target !== cur) {
-                    if (S.playing) {
-                        showMenuInfo('Stop playback', 'to change the', 'track type.');
-                        S.screenDirty = true;
-                        return;
-                    }
-                    if (target === PAD_MODE_DRUM) {
-                        /* Keys/Cond -> Drums: confirm only if notes would be lost. */
-                        let hasData = false;
-                        for (let c = 0; c < NUM_CLIPS; c++)
-                            if (S.clipNonEmpty[t][c]) { hasData = true; break; }
-                        if (hasData) {
-                            S.confirmConvertToDrum = true; S.confirmConvertToDrumSel = 1;
-                            S.confirmConvertTrack = t;
-                        } else {
-                            S.pendingTrackConvert = { t: t, toDrum: true };
-                        }
-                    } else if (target === PAD_MODE_CONDUCT) {
-                        /* Pre-empt the common case: a Conductor already exists on
-                         * a DIFFERENT track. DSP would refuse, and the action
-                         * popup is invisible while the menu is open. Show the
-                         * menu-visible info dialog instead of confirming/sending. */
-                        const existingCond = conductorTrackIdx();
-                        if (existingCond >= 0 && existingCond !== t) {
-                            showMenuInfo('Conductor exists', 'on T' + (existingCond + 1) + '.', 'Route it back first.');
-                        } else {
-                            /* Keys/Drums -> Conductor: always confirm (keeps notes,
-                             * clears FX/ARP/Auto; DSP enforces one Conductor). */
-                            S.confirmConvertToConduct = true; S.confirmConvertToConductSel = 1;
-                            S.confirmConvertTrack = t;
-                        }
-                    } else {
-                        /* Drums/Conductor -> Keys: no prompt; defer to tick(). */
-                        if (S.conductorTrack === t) S.conductorTrack = -1;
-                        S.pendingTrackConvert = { t: t, toDrum: false };
-                    }
-                }
-                S.screenDirty = true;
-                return;
-            }
+            /* The `Mode` commit-on-click intercept lived here while the row
+             * was in this menu. The row moved to Track Control's Config screen
+             * (2026-08-13) and the rules with it, into ui_dialogs'
+             * requestTrackModeChange — so there is nothing to intercept. */
         }
         handleMenuInput({
             cc: 3, value: d2,
@@ -756,8 +728,8 @@ function _onCC_jog(d1, d2) {
             }
             return;
         }
-        if (S.globalMenuOpen && !S.shiftHeld) {
-            ensureGlobalMenuFresh();
+        if ((S.globalMenuOpen || modalDialogUp()) && !S.shiftHeld) {
+            if (S.globalMenuOpen) ensureGlobalMenuFresh();
             if (S.exportDoneDialog) {
                 /* single OK button — jog does nothing */
             } else if (S.confirmClearSession) {

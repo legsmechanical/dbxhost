@@ -60,22 +60,10 @@ function buildGlobalMenuItems() {
          * destination (an EXT track has no sound, but it must still be
          * routable back).
          *
-         * ⚠ `Mode` STAYS, for now. It is the only one of these whose edit
-         * CONVERTS the track behind a confirm, and that flow is wired into this
-         * menu's jog-click handler (search: label === 'Mode'). Moving it is its
-         * own step; leaving it here in the meantime is deliberate. */
-        createEnum('Mode', {
-            get: function() { return S.trackPadMode[S.activeTrack]; },
-            /* DEFERRED COMMIT: scrolling only previews the selected type — set()
-             * is a no-op, so passing over Drums/Cond while scrolling never fires
-             * a conversion or confirm. The conversion (behind its confirm) is
-             * triggered by the commit CLICK, intercepted in the jog-click handler
-             * (search: label === 'Mode'). Mirrors the Key/Scale commit-on-click
-             * pattern. Keys/Drums/Cond = PAD_MODE_MELODIC_SCALE/DRUM/CONDUCT. */
-            set: function() {},
-            options: [0, 1, 2],
-            format: function(v) { return v === PAD_MODE_CONDUCT ? 'Conduct' : (v ? 'Drums' : 'Keys'); }
-        }),
+         * `Mode` went last (2026-08-13), and it was the awkward one: its edit
+         * CONVERTS the track behind a confirm. Those rules now live in
+         * ui_dialogs' requestTrackModeChange, and the confirms it raises draw
+         * above Track Control rather than here. */
         createAction('Track Control', function() {
             S.globalMenuOpen = false;
             S.lastSentMenuEditValue = null;

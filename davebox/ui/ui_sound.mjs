@@ -44,6 +44,7 @@ import { applyTrackConfig } from './ui_dsp_bridge.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw } from './ui_leds.mjs';
 import { writeSidecar } from './ui_persistence.mjs';
+import { requestTrackModeChange } from './ui_dialogs.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
     closeTextEntry,
@@ -150,7 +151,10 @@ const BUS_BLOCKS = [1, 2, 3, 4];      /* fx1..fx4 on every bus */
  * shares the solo group with them, because a solo that left the other family
  * sounding would not be a solo. Toggle rows flip on jog-click rather than
  * opening the level editor a 0/1 value has no use for. */
-const MOVE_BUS_TITLE = (bus) => 'MOVE ' + bus + ' - TRACK CONTROL';
+/* Short by necessity — the header is 128px wide and the long form did not fit.
+ * The track header is used on screen (see renderBlocks); this remains the bus's
+ * own name for any list that shows one. */
+const MOVE_BUS_TITLE = (bus) => 'MOVE ' + bus;
 function moveBusFor(track) {
     const bus = moveBusForChannel(GS.trackChannel[track]);
     const cmp = moveBusComp(bus);
@@ -284,6 +288,18 @@ const SLOT_LEVELS = [
 function configRows(t) {
     const melodic = GS.trackPadMode[t] === 0;
     const rows = [];
+    /* Mode leads: it decides what the rest of this screen even means (Layout is
+     * melodic-only, AftTch is hidden on drums, Transpose on Conduct).
+     *
+     * ⚠ COMMIT ON CLICK, not per detent — the only row here whose edit CONVERTS
+     * the track. Scrolling past Drums must not fire a conversion, so the value
+     * is previewed and applied when the edit closes. The rules (and the
+     * confirms) are requestTrackModeChange's; this row only chooses a target. */
+    rows.push({ key: 'mode', label: 'Mode', commitOnClick: true,
+        opts: [0, 1, 2],
+        fmt: (v) => (v === PMC ? 'Conduct' : v ? 'Drums' : 'Keys'),
+        get: () => GS.trackPadMode[t] | 0,
+        set: (v) => requestTrackModeChange(t, v | 0) });
     /* Pad layout is a melodic idea — a drum track's pads are its lanes. */
     rows.push({ key: 'layout', label: 'Layout',
         opts: [0, 1], fmt: (v) => (melodic ? (v ? 'Chrom' : 'Scale') : '-'),
@@ -1624,7 +1640,10 @@ function slotCfgStep(delta) {
     S.slotCfgVals[S.slotCfgIdx] = v;
     /* A row with `set` applies immediately and is persisted by whatever that
      * setter uses (the DSP param, or the sidecar). Only slot-backed rows go
-     * through the queue and the chain save. */
+     * through the queue and the chain save.
+     * ⚠ Except a commit-on-click row: scrolling it must PREVIEW, never apply —
+     * passing over `Drums` would otherwise convert the track. */
+    if (s.commitOnClick) { S.dirty = true; return; }
     if (s.set) { s.set(v); S.dirty = true; return; }
     S.slotCfgDirty = true;
     queueSlotCfgWrite(s.key, v, !!s.int);
@@ -2989,6 +3008,10 @@ export function soundOnCC(d1, d2, decodeDelta) {
             if (row && row.sub) {
                 /* Native sub-editor. Opening reads params — tick only. */
                 S.pendingAction = { t: row.sub, lfo: row.lfo | 0 };
+            } else if (row && row.commitOnClick && S.slotCfgEditing) {
+                /* Closing the edit IS the commit. */
+                S.slotCfgEditing = false;
+                if (row.set) row.set(S.slotCfgVals[S.slotCfgIdx]);
             } else {
                 S.slotCfgEditing = !S.slotCfgEditing;
             }
@@ -3485,7 +3508,15 @@ function centreText(y, text) {
 
 function renderBlocks() {
     clear_screen();
-    drawKitHeader(S.bus ? S.bus.title : ('TRACK ' + (S.track + 1) + ' - CONTROL'), false);
+    /* A Move bus IS a track's screen, so it takes the track header too — the
+     * Generator row already says which Move instrument. Only the GLOBAL buses
+     * (Master/Send FX) keep their own title; they are not a track.
+     * ⚠ Measured against the 128px screen: this is 111px at every track number,
+     * where the previous Move-bus title ("MOVE 2 - TRACK CONTROL") was 153px
+     * and never fit. */
+    drawKitHeader((S.bus && S.bus.kind !== 'move')
+        ? S.bus.title
+        : ('TRACK CTRL - TR' + (S.track + 1)), false);
     /* ⚠⚠ This builds a NEW object per row, so anything set on the pickRow has to
      * be forwarded EXPLICITLY. It is the second time that has bitten: the doors
      * had no chevron for the same reason, and the grouping rules' flag reached

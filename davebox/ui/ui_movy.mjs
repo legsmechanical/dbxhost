@@ -1297,10 +1297,25 @@ export function drawKitList(rows, sel, opts) {
         if (row.divider) { fill_rect(0, y + (rowH >> 1) - 1, fillW, 1, 1); continue; }
         if (on) fill_rect(0, y - 1, fillW, rowH, 1);
         const ink = on ? 0 : 1;
-        let val = row.chevron ? '>' : (row.value != null ? String(row.value) : '');
+        /* ---- UPPERCASE before measuring or printing ----
+         *
+         * Both fonts are effectively caps-only, but each keeps a HANDFUL of true
+         * lowercase glyphs, so mixed-case text comes out with a few odd letters
+         * rather than uniformly capitalised — it reads as a typo. Measured, not
+         * assumed: the header font (labels) has real `d` and `t`; the small font
+         * (values) has a real `y`. Hence `Track to` -> "TRACK tO",
+         * `Generator` -> "GENERAtOR", `Poly` -> "POLy".
+         *
+         * ⭑ Uppercasing is a VISUAL NO-OP for every other character, because
+         * they already render as their capital — so this only ever corrects
+         * those glyphs, and no caller has to remember to do it. Same fix
+         * drawKitSectionPicker already applies to its own labels.
+         * ⚠ Before the width/truncation loops: the string measured has to be
+         * the string drawn. */
+        let val = row.chevron ? '>' : (row.value != null ? String(row.value).toUpperCase() : '');
         if (row.editing && val) val = '[' + val + ']';
         const vw = val ? mvWidth(val) : 0;
-        let label = String(row.label || '');
+        let label = String(row.label || '').toUpperCase();
         const availW = rightEdge - 3 - (vw ? vw + 4 : 0);
         if (row.hdr) {
             while (label.length > 1 && hdrWidth(label) > availW) label = label.slice(0, -1);
