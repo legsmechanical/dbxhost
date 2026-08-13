@@ -14,19 +14,51 @@ bad()  { echo "  FAIL — $1"; fail=1; }
 echo "move-bus flavour invariants:"
 
 # 1. The `move_fx:` prefix is 1-BASED and built in exactly ONE place. A second
-#    site is how an off-by-one gets fixed on one screen and not the other.
+#    site is how an off-by-one gets fixed on one screen and not the other —
+#    and there are now two screens addressing a bus (sound mode's strip and
+#    session view's level knob), which is exactly when that starts to bite.
 n=$(grep -c "'move_fx:'" ui/*.mjs | awk -F: '{s+=$2} END {print s+0}')
-[ "$n" = "1" ] && ok "move_fx: prefix built once (moveBusFor)" \
-                || bad "move_fx: prefix built in $n places — must be 1 (moveBusFor)"
+[ "$n" = "1" ] && ok "move_fx: prefix built once (moveBusComp)" \
+                || bad "move_fx: prefix built in $n places — must be 1 (moveBusComp)"
+grep -q "^export function moveBusComp" ui/ui_engine.mjs \
+    && ok "the bus key builders live in ui_engine (shared by both screens)" \
+    || bad "moveBusComp is gone from ui_engine — the key builders have scattered"
 # The bus is WHICH MOVE INSTRUMENT the track plays — its channel, which is what
 # the Instrument row sets. NOT the track index: track 6 may play `Move 2`, and
 # reading the index there opens another instrument's inserts silently.
-grep -q "const ch = GS.trackChannel\[track\] | 0;" ui/ui_sound.mjs \
-    && ok "bus number follows the track's Move instrument (channel), not its index" \
+n=$(grep -c "moveBusForChannel(" ui/*.mjs | awk -F: '{s+=$2} END {print s+0}')
+[ "$n" -ge 3 ] && ok "bus number resolved through moveBusForChannel at every site" \
+               || bad "only $n moveBusForChannel site(s) — expected the definition plus both screens"
+grep -qE "moveBusForChannel\((GS|S)\.trackChannel\[" ui/ui_sound.mjs \
+    && ok "sound mode's bus follows the track's Move instrument (channel), not its index" \
     || bad "moveBusFor no longer derives the bus from the track's channel"
-grep -q "const bus = ch < 1 ? 1 : (ch > 4 ? 4 : ch);" ui/ui_sound.mjs \
+grep -qE "moveBusForChannel\((GS|S)\.trackChannel\[" ui/ui_tick.mjs \
+    && ok "session view's bus follows the track's channel too" \
+    || bad "the session-view level resolver no longer derives the bus from the channel"
+grep -q "return n < 1 ? 1 : (n > MOVE_BUSES ? MOVE_BUSES : n);" ui/ui_engine.mjs \
     && ok "the bus is clamped to Move's four instruments" \
-    || bad "moveBusFor no longer clamps the bus to 1-4"
+    || bad "moveBusForChannel no longer clamps the bus to 1-4"
+
+echo "session-view level knob (both flavours):"
+# A Move-routed track is a mixer position exactly like a chain slot, so its
+# level knob must work. The bug this pins: the handler asked "is this track a
+# Schwung chain" and bailed on everything else, killing the level knob on
+# tracks 1-4 (Move-routed by DEFAULT) — half the session view, silently.
+grep -q "if (S.sessVolBus\[knobIdx\] <= 0) {" ui/ui_input_cc.mjs \
+    && ok "the level knob serves a Move bus as well as a chain slot" \
+    || bad "_sessionKnobVolume gates on the chain route again — Move tracks lose their level knob"
+grep -q "engineSet(0, moveBusComp(_bus), 'volume', _v);" ui/ui_tick.mjs \
+    && ok "a Move-routed track's pending level writes the BUS fader" \
+    || bad "the session level write no longer reaches the bus — turns would vanish"
+# The cached level belongs to whatever source it was read from. Re-routing a
+# track, or pointing it at another Move instrument, must re-seed it or the first
+# detent jumps from a level that belongs to something else.
+grep -q "if (S.sessVolBus\[_t\] !== _bus) {" ui/ui_tick.mjs \
+    && ok "a changed source invalidates the cached level" \
+    || bad "the level cache is no longer invalidated when the track's source changes"
+grep -q "S.sessVolBus\[_t\] = -1;" ui/ui_dsp_bridge.mjs \
+    && ok "a project load drops the cached levels (they belong to the old project)" \
+    || bad "the level cache survives a project load — first turn moves from a stale base"
 
 # 2. A bus component's :module takes a DSP PATH; a chain component takes an ID.
 #    Passing an id loads nothing (the host answers error 7 and the row stays

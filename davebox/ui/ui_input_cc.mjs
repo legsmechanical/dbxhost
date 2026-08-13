@@ -2636,8 +2636,16 @@ function _onCC_stepedit(d1, d2) {
 
 function _sessionKnobVolume(knobIdx, d2) {
     if (knobIdx >= NUM_TRACKS) return;
-    if (S.trackRoute[knobIdx] !== 0) return;      /* not Schwung-routed */
-    if (S.sessVolSlots[knobIdx] === 0) return;    /* resolved, and no slot */
+    /* WHICH level this knob moves was decided in tick — a chain slot's or a
+     * Move bus's. Asking again here is what made this bail on Move-routed
+     * tracks: the test was "is this a Schwung chain", which under the unified
+     * slot model is only half of "does this track have a mixer position".
+     * Tracks 1-4 are Move by default, so half the session view had no level
+     * control at all. The bus's own resolution is one place, in tick. */
+    if (S.sessVolBus[knobIdx] <= 0) {             /* no bus ⇒ must be a chain */
+        if (S.trackRoute[knobIdx] !== 0) return;  /* neither ⇒ nothing to move */
+        if (S.sessVolSlots[knobIdx] === 0) return; /* resolved, and no slot */
+    }
     const lvl = S.sessVolLevel[knobIdx];
     if (lvl < 0) return;                          /* not read yet; tick will */
     const d = (d2 >= 1 && d2 <= 63) ? d2 : (d2 >= 65) ? d2 - 128 : 0;

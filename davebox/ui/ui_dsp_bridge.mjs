@@ -1444,6 +1444,14 @@ function _syncClipsFromDspInner() {
      * first or an unchanged-looking value would suppress the correcting write. */
     invalidateLinkAudioRoutingCache();
     syncLinkAudioRoutingFromRoutes(S.trackRoute);
+    /* Same reason, one level up: session view caches each track's level so the
+     * first knob detent moves from the real value, and that cache belongs to the
+     * PREVIOUS project. Drop it rather than re-read 8 levels here — the tick
+     * re-seeds lazily, and only for tracks the user can actually see. */
+    for (let _t = 0; _t < NUM_TRACKS; _t++) {
+        S.sessVolBus[_t] = -1;
+        S.sessVolLevel[_t] = -1;
+    }
 
     const kp = dspGet('key');
     if (kp !== null && kp !== undefined) S.padKey   = parseInt(kp, 10) | 0;

@@ -28,7 +28,7 @@ import {
     engineGetSlotParam, engineSetSlotParam, engineSaveState, engineVolBlock,
     engineGetChainParam, engineSetChainParam,
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
-    slotIndex,
+    slotIndex, moveBusForChannel, moveBusComp, moveBusPrefix,
 } from './ui_engine.mjs';
 /* davebox's GLOBAL state. Sound mode keeps its own `S`, so this is imported
  * under a different name deliberately — the two are easy to confuse, and
@@ -124,16 +124,11 @@ const BUS_BLOCKS = [1, 2, 3, 4];      /* fx1..fx4 on every bus */
  * NOT have. There is no MIDI FX and no transpose — those are chain concepts —
  * and the "synth" is Move's own editor, reached through co-run.
  *
- * ⚠ `move_fx:` keys are 1-BASED and ignore the slot argument entirely. The bus
- * number is WHICH MOVE INSTRUMENT the track plays — i.e. its channel, which is
- * exactly what the Instrument row (`Move 1`-`Move 4`) sets and what the co-run
- * auto-tap already used to pick Move's track.
- *
- * ⚠ It is NOT the track index. 1a made it unconditional that way while a track's
- * Move instrument was an unsurfaced channel setting; the Instrument selector
- * surfaces it, so track 6 can play `Move 2` and must then edit BUS 2. Reading
- * the track index here would open a different instrument's inserts than the one
- * being played, silently.
+ * ⚠ Which bus, and how its keys are spelled, is `moveBusForChannel` /
+ * `moveBusComp` in ui_engine.mjs — one home, because session view addresses the
+ * same strip for the same track's level knob. The two traps live there: the bus
+ * is the track's CHANNEL (not its index), and `move_fx:` keys are 1-BASED and
+ * ignore the slot argument.
  *
  * The strip levels are real host state (`shadow_move_fx_strip[]`): volume is a
  * 0..4 gain like a slot's, the sends are 0..1, and Muted/Soloed are the bus's
@@ -143,25 +138,21 @@ const BUS_BLOCKS = [1, 2, 3, 4];      /* fx1..fx4 on every bus */
  * opening the level editor a 0/1 value has no use for. */
 const MOVE_BUS_TITLE = (bus) => 'MOVE ' + bus + ' - SOUND';
 function moveBusFor(track) {
-    /* Channel is 1-based here (0-based in the DSP). Clamp to Move's four, the
-     * same clamp the Instrument row shows — a Move-routed track parked on
-     * channel 9 has no fifth bus to edit. */
-    const ch = GS.trackChannel[track] | 0;
-    const bus = ch < 1 ? 1 : (ch > 4 ? 4 : ch);
-    const pfx = 'move_fx:' + bus + ':';
+    const bus = moveBusForChannel(GS.trackChannel[track]);
+    const cmp = moveBusComp(bus);
     return {
         id: 'move' + bus, kind: 'move', bus: bus, track: track,
-        title: MOVE_BUS_TITLE(bus), prefix: pfx,
+        title: MOVE_BUS_TITLE(bus), prefix: moveBusPrefix(bus),
         levels: [
-            { comp: pfx.slice(0, -1), key: 'volume', label: 'Volume',
+            { comp: cmp, key: 'volume', label: 'Volume',
               min: 0, max: SLOT_LEVEL_MAX, step: BUS_LEVEL_STEP },
-            { comp: pfx.slice(0, -1), key: 'send_a', label: 'Send A',
+            { comp: cmp, key: 'send_a', label: 'Send A',
               min: 0, max: 1, step: BUS_LEVEL_STEP },
-            { comp: pfx.slice(0, -1), key: 'send_b', label: 'Send B',
+            { comp: cmp, key: 'send_b', label: 'Send B',
               min: 0, max: 1, step: BUS_LEVEL_STEP },
-            { comp: pfx.slice(0, -1), key: 'muted', label: 'Muted',
+            { comp: cmp, key: 'muted', label: 'Muted',
               min: 0, max: 1, step: 1, toggle: true },
-            { comp: pfx.slice(0, -1), key: 'soloed', label: 'Soloed',
+            { comp: cmp, key: 'soloed', label: 'Soloed',
               min: 0, max: 1, step: 1, toggle: true },
         ],
     };

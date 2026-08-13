@@ -218,6 +218,37 @@ export function slotIndex(v) {
  * nothing left to letter. `slotIndex` stays — it sanitises an index the DSP
  * still carries. */
 
+/* ---- Move FX buses: the OTHER kind of mixer position ----
+ *
+ * A Move-routed track plays one of Move's own instruments, and that
+ * instrument's audio comes back through the matching Move FX bus. So the bus is
+ * a track's mixer position exactly as a chain slot is — its level, sends, mute
+ * and solo are the track's, and every screen that addresses one addresses it
+ * through the key builders here.
+ *
+ * ⚠ The bus number is WHICH MOVE INSTRUMENT the track plays — i.e. its CHANNEL,
+ * which is what the Instrument row (`Move 1`-`Move 4`) sets. It is NOT the track
+ * index: track 6 can play `Move 2` and must then address BUS 2. Reading the
+ * index would open a different instrument's strip, silently.
+ *
+ * ⚠ `move_fx:` keys are 1-BASED and ignore the slot argument of
+ * engineGet/engineSet entirely — pass 0 and read the bus out of the key.
+ *
+ * Clamped, not wrapped, for slotIndex's reason: a Move-routed track parked on
+ * channel 9 has no fifth bus, and bus 4 is wrong in a visible way. */
+export const MOVE_BUSES = 4;
+export function moveBusForChannel(ch) {
+    const n = ch | 0;                       /* 1-based here (0-based in the DSP) */
+    return n < 1 ? 1 : (n > MOVE_BUSES ? MOVE_BUSES : n);
+}
+/* The component half of a bus key, for engineGet/engineSet(0, comp, key). */
+export function moveBusComp(bus) {
+    return 'move_fx:' + bus;
+}
+export function moveBusPrefix(bus) {
+    return moveBusComp(bus) + ':';
+}
+
 /* Send FX buses (send_fx:a: / send_fx:b:) — routed by this host. */
 export const HAS_SEND_FX = true;
 

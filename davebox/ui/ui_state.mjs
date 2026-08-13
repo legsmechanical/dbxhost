@@ -598,6 +598,14 @@ export const S = {
      * channel can be received by SEVERAL slots (layering, or a slot set to
      * "All"), and all of them move together. -1 = not yet resolved/read. */
     sessVolSlots: new Array(8).fill(-1),   /* bitmask of matching slots */
+    /* A MOVE-routed track's level is not a slot's at all: it is the fader of the
+     * Move FX bus its instrument returns on, the same value sound mode's VOLUME
+     * row shows. 0 = this track has no bus (it is a chain, or unrouted); 1-4 =
+     * the bus. A track has one or the other, never both — the two families are
+     * alternative occupants of one mixer position. Also the RE-SEED trigger: the
+     * cached level below belongs to whatever source this held last, so a change
+     * here (re-routing, or picking another Move instrument) invalidates it. */
+    sessVolBus: new Array(8).fill(-1),     /* -1 = unresolved, 0 = none, 1-4 = bus */
     sessVolLevel: new Array(8).fill(-1),   /* 0..4 gain, 1 = unity */
     sessVolPending: new Array(8).fill(false),
     sessVolSaveOwed: false,

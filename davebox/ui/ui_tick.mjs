@@ -50,6 +50,7 @@ import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes } from './ui_r
 import { xposeCancelPreview } from './ui_xpose.mjs';
 import { checkBackHold, backTapWouldAct } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
+         engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, CHAIN_SLOTS, DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { soundActive, soundEnter, soundEnterMove, soundEnterBuses, soundExit,
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
@@ -1111,18 +1112,46 @@ export function _tickImpl() {
 
         if ((S.tickCount % POLL_INTERVAL) === 0) { pollDSP(); S.screenDirty = true; }
 
-        /* SESSION VIEW slot levels: knob N drives track N's Schwung slot(s).
-         * The level is the slot's SOUND GENERATOR (SLOT_LEVEL_KEY), not its bus
-         * fader — the fader would also move Move-track audio routed into the
-         * same slot, which is not this track's sound.
+        /* SESSION VIEW track levels: knob N drives track N's level.
          *
-         * The slot IS the track index (a track owns its instrument), so each mask
-         * holds exactly the track's one addressed slot — the old channel-match
-         * layering (and its "All"-channel hazard) is gone. Writes are
-         * synchronous SHM round-trips, so they stay budgeted here in tick. */
+         * A track's level is its position in the mix, and a position is EITHER a
+         * Schwung chain slot or a Move FX bus — the unified slot model. Both
+         * flavours are resolved here, and only here, so the knob handler has a
+         * single already-answered question to ask.
+         *
+         * Schwung: the level is the slot's SOUND GENERATOR (SLOT_LEVEL_KEY), not
+         * its bus fader — the fader would also move Move-track audio routed into
+         * the same slot, which is not this track's sound. The slot IS the track
+         * index (a track owns its instrument), so each mask holds exactly the
+         * track's one addressed slot — the old channel-match layering (and its
+         * "All"-channel hazard) is gone.
+         *
+         * Move: the level is the bus fader itself (`move_fx:N:volume`), the same
+         * value that track's sound mode shows on its VOLUME row. There is no
+         * "synth" underneath to scale separately — Move's instrument is upstream
+         * of us and the bus is where it arrives.
+         *
+         * Writes are synchronous SHM round-trips, so they stay budgeted here in
+         * tick rather than in the MIDI handler. */
         if (S.sessionView && (S.tickCount % POLL_INTERVAL) === 0) {
             schSlotMasksAllTracks(_sessMaskScratch);
             for (let _t = 0; _t < NUM_TRACKS; _t++) {
+                const _bus = S.trackRoute[_t] === 1 /* ROUTE_MOVE */
+                    ? moveBusForChannel(S.trackChannel[_t]) : 0;
+                /* The source changed under a cached level (re-route, or another
+                 * Move instrument picked): drop it so the seed below re-reads. */
+                if (S.sessVolBus[_t] !== _bus) {
+                    S.sessVolBus[_t] = _bus;
+                    S.sessVolLevel[_t] = -1;
+                }
+                if (_bus) {
+                    S.sessVolSlots[_t] = 0;     /* a bus is not a chain slot */
+                    if (S.sessVolLevel[_t] < 0) {
+                        const _raw = parseFloat(engineGet(0, moveBusComp(_bus), 'volume'));
+                        S.sessVolLevel[_t] = isFinite(_raw) && _raw >= 0 ? _raw : 1;
+                    }
+                    continue;
+                }
                 if (S.trackRoute[_t] !== 0) { S.sessVolSlots[_t] = 0; continue; }
                 const _m = _sessMaskScratch[_t];
                 S.sessVolSlots[_t] = _m;
@@ -1141,15 +1170,27 @@ export function _tickImpl() {
             for (let _t = 0; _t < NUM_TRACKS && _wrote < 2; _t++) {
                 if (!S.sessVolPending[_t]) continue;
                 S.sessVolPending[_t] = false;
-                const _m = S.sessVolSlots[_t] | 0;
                 const _v = S.sessVolLevel[_t].toFixed(3);
-                for (let _s = 0; _s < CHAIN_SLOTS; _s++) {
-                    if (_m & (1 << _s)) engineSetSlotParam(_s, SLOT_LEVEL_KEY, _v);
+                const _bus = S.sessVolBus[_t] | 0;
+                if (_bus > 0) {
+                    engineSet(0, moveBusComp(_bus), 'volume', _v);
+                } else {
+                    const _m = S.sessVolSlots[_t] | 0;
+                    for (let _s = 0; _s < CHAIN_SLOTS; _s++) {
+                        if (_m & (1 << _s)) engineSetSlotParam(_s, SLOT_LEVEL_KEY, _v);
+                    }
                 }
                 _wrote++;
             }
-            /* Persist once the gesture is over, never per detent — the host's
-             * slot-level setter doesn't save, and saving is a sync file write.
+            /* Persist once the gesture is over, never per detent — neither the
+             * host's slot-level setter nor its bus-strip setter saves, and
+             * saving is a sync file write.
+             *
+             * ONE call covers both flavours: engineSaveState flushes every FX
+             * bus family alongside the slots, so a bus level reaches the set's
+             * move_fx_meta.json by the same act that writes slot_N.json. (This
+             * is the same call sound mode's own VOLUME row ends its gesture
+             * with — there is no second cadence to hit.)
              *
              * ⚠ "No writes pending" is NOT the end of a gesture. Encoder messages
              * arrive in bursts, so a continuous turn leaves quiet ticks all the
