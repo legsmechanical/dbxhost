@@ -1119,12 +1119,15 @@ export function _tickImpl() {
          * flavours are resolved here, and only here, so the knob handler has a
          * single already-answered question to ask.
          *
-         * Schwung: the level is the slot's SOUND GENERATOR (SLOT_LEVEL_KEY), not
-         * its bus fader — the fader would also move Move-track audio routed into
-         * the same slot, which is not this track's sound. The slot IS the track
-         * index (a track owns its instrument), so each mask holds exactly the
-         * track's one addressed slot — the old channel-match layering (and its
-         * "All"-channel hazard) is gone.
+         * Schwung: the level is the slot's OUTPUT (SLOT_LEVEL_KEY = the bus
+         * fader). It was the sound generator's own level while Move tracks were
+         * routed THROUGH Schwung slots — the fader would then have moved a Move
+         * track sharing the slot too. Move tracks own their own buses now, so
+         * nothing else is summed into a chain slot and the fader is simply the
+         * track's level. The slot IS the track index (a track owns its
+         * instrument), so each mask holds exactly the track's one addressed slot
+         * — the old channel-match layering (and its "All"-channel hazard) is
+         * gone.
          *
          * Move: the level is the bus fader itself (`move_fx:N:volume`), the same
          * value that track's sound mode shows on its VOLUME row. There is no

@@ -23,7 +23,7 @@ function bad(label, e) { console.error(`  FAIL — ${label}: ${e && e.stack ? e.
 const reads = [], writes = [];
 const PARAM_VALUES = {
     'move_fx:2:volume': '0.750',        /* track 1 plays Move 2 */
-    'slot:synth_volume': '1.000',
+    'slot:volume': '1.000',
 };
 
 globalThis.host_system_cmd = () => 0;
@@ -122,13 +122,22 @@ step('the tick writes it to the BUS fader, not a chain slot', () => {
         throw new Error('wrote ' + busWrites[0] + ' but the level is ' + S.sessVolLevel[0]);
 });
 
-step('a Schwung-routed track still writes its slot level', () => {
+/* The chain flavour writes the slot's OUTPUT (`slot:volume`), not the sound
+ * generator's own level. It was `slot:synth_volume` while Move tracks were
+ * routed through Schwung slots and the fader would have moved a Move track
+ * sharing the slot; Move tracks own their own buses now, so there is no second
+ * signal in the slot and the fader IS the track's level. Asserting the exact key
+ * is the point of this step — writing the wrong one is inaudible in a unit test
+ * and reads as a working knob on the device. */
+step('a Schwung-routed track writes its slot OUTPUT, not the synth level', () => {
     writes.length = 0;
     S.sessVolLevel[4] = 1;                       /* seeded; masks resolved above */
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 75, 1]));   /* knob 5 */
     ticks(1);
-    if (!writes.some((w) => w.startsWith('slot:synth_volume=')))
+    if (!writes.some((w) => w.startsWith('slot:volume=')))
         throw new Error('chain flavour lost its write: ' + JSON.stringify(writes));
+    if (writes.some((w) => w.startsWith('slot:synth_volume=')))
+        throw new Error('still writing the sound generator level: ' + JSON.stringify(writes));
     if (writes.some((w) => w.startsWith('move_fx:')))
         throw new Error('a chain level leaked onto a bus: ' + JSON.stringify(writes));
 });

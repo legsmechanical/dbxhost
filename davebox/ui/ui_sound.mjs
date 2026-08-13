@@ -145,7 +145,7 @@ function moveBusFor(track) {
         title: MOVE_BUS_TITLE(bus), prefix: moveBusPrefix(bus),
         levels: [
             { comp: cmp, key: 'volume', label: 'Volume',
-              min: 0, max: SLOT_LEVEL_MAX, step: BUS_LEVEL_STEP },
+              min: 0, max: SLOT_LEVEL_MAX, step: BUS_LEVEL_STEP, fmt: GAIN_FMT },
             { comp: cmp, key: 'send_a', label: 'Send A',
               min: 0, max: 1, step: BUS_LEVEL_STEP },
             { comp: cmp, key: 'send_b', label: 'Send B',
@@ -188,14 +188,28 @@ const PATCH_RELIST_TICKS = 30;
  * `fmt` exists because a raw number is a lie for most of these: a transpose of
  * 0 is "0 st", a mute is Yes/No. */
 const PCT_FMT = (v) => Math.round(v * 100) + '%';
+/* Levels read as a GAIN, not a percentage — one notation for the quantity
+ * wherever it appears (this row, the Move bus strip, the knob read-out), so the
+ * same value never wears two labels now that they are all the same key. `x`
+ * because a level goes above unity: "200%" invites reading a fader position,
+ * "2.00x" says what it does. Sends keep PCT_FMT — they are 0..1 proportions,
+ * where a percentage is exactly right. */
+const GAIN_FMT = (v) => (v || 0).toFixed(2) + 'x';
 const ST_FMT  = (v) => (v === 0 ? '0 st' : (v > 0 ? '+' : '') + v + ' st');
 const ONOFF   = (v) => (v ? 'Yes' : 'No');
 
 const SLOT_SETTINGS = [
-    { key: 'volume',        label: 'Volume',      min: 0, max: 4, step: 0.05, fmt: PCT_FMT },
+    /* The slot's OUTPUT, and since the SLOT_LEVEL_KEY flip the same value the
+     * volume knob and the session-view knobs move. Bound by SLOT_LEVEL_MAX
+     * rather than the host's 4x wire clamp — one key must not offer a ceiling
+     * here that the knobs would snap away from on the first detent. */
+    { key: 'volume',        label: 'Volume',      min: 0, max: SLOT_LEVEL_MAX, step: 0.05, fmt: GAIN_FMT },
     /* Module Level is deliberately NOT here — it belongs to whatever module is
      * loaded, not to the slot, and it already lives at the root of that
-     * module's own menu. Two homes would make it ambiguous which one wins. */
+     * module's own menu. Two homes would make it ambiguous which one wins.
+     * ⚠ It is also no longer written by ANY davebox surface (SLOT_LEVEL_KEY
+     * moved off `synth_volume`); it defaults to unity, so it is an inert
+     * multiplier unless deliberately edited through the host's own row. */
     { key: 'send_a',        label: 'Send A',      min: 0, max: 1, step: 0.05, fmt: PCT_FMT, cap: 'sends' },
     { key: 'send_b',        label: 'Send B',      min: 0, max: 1, step: 0.05, fmt: PCT_FMT, cap: 'sends' },
     { key: 'transpose',     label: 'Transpose',   min: -12, max: 12, step: 1, int: true, fmt: ST_FMT },
@@ -730,13 +744,14 @@ function refreshBlockNames() {
  * button_passthrough list, so there is no module.json way to opt out. */
 /* WHAT the volume knob moves, in the one place both flavours agree on it.
  *
- * In sound mode plain Volume means "the level of the thing on this screen".
- * For a chain that is the slot's module level; for a Move bus it is the bus
- * strip's own Volume — the same value its VOLUME row shows.
+ * In sound mode plain Volume means "the level of the thing on this screen", and
+ * both answers are now the same KIND of thing: for a chain that is the slot's
+ * output (`slot:volume`, via SLOT_LEVEL_KEY), for a Move bus the bus strip's own
+ * Volume. Two families, one mixer position, one ceiling (SLOT_LEVEL_MAX).
  *
  * ⚠ Returning null here is NOT an option, and getting this wrong is exactly the
  * bug Josh found: with the Move flavour excluded from soundIsGlobal(), the CC 79
- * branch still consumed the turn and wrote `slot:synth_volume` against S.slot,
+ * branch still consumed the turn and wrote the SLOT level key against S.slot,
  * which a Move bus pins to 0 — so turning the knob moved a DIFFERENT track's
  * chain level, while Move (claim released) moved its master underneath. */
 function volTarget() {
@@ -3182,8 +3197,13 @@ function renderBlocks() {
     drawKitHeader(S.bus ? S.bus.title : ('TRACK ' + (S.track + 1) + ' - SOUND'), false);
     drawKitList(S.pickRows.map((r, idx) => {
         if (r.kind === 'buslevel') {
+            /* `fmt` where the spec carries one — a bus VOLUME is a gain and
+             * reads as one (GAIN_FMT), the same notation the slot's Volume row
+             * and the knob read-out use. Sends and returns are 0..1 proportions
+             * and stay a percentage, which is the default here. */
             return { label: r.label, hdr: true,
                      value: r.spec.toggle ? (r.val ? 'ON' : 'OFF')
+                          : r.spec.fmt   ? r.spec.fmt(r.val || 0)
                                           : (Math.round((r.val || 0) * 100) + '%'),
                      editing: idx === S.pickRow && S.busLevelEditing };
         }

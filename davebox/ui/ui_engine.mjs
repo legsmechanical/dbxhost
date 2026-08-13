@@ -67,18 +67,23 @@ export function engineSet(slot, comp, key, val) {
 
 /* The key every "level" control in this module writes.
  *
- * `slot:volume` is the channel's BUS fader: it runs after the slot's FX, so it
- * also scales a Move track routed into that slot and cannot balance the two
- * against each other. `slot:synth_volume` scales the sound generator alone,
- * before anything is summed in — which is what a davebox track's level means,
- * since the routed Move audio belongs to some other track entirely.
+ * `slot:volume` is the channel's BUS fader — the slot's OUTPUT, after its FX.
+ * That is a chain slot's level, in the same sense `move_fx:N:volume` is a Move
+ * bus's: both are a track's one position in the mix, and the two families are
+ * alternative occupants of that position.
  *
- * Requires the paired host (`slot:synth_volume` landed with the sound build). An
- * older shim drops the set silently, so the knob would move and nothing would be
- * heard. Not capability-probed: a get from a MIDI handler returns null on every
- * host, so a probe cannot tell "old shim" from "wrong context" and would latch
- * the wrong answer. Flip this one string to go back to the fader. */
-export const SLOT_LEVEL_KEY = 'synth_volume';
+ * ⚠ This was `synth_volume` (the sound generator's own level, applied before
+ * anything is summed into the slot) for one reason: Move tracks used to be
+ * routed THROUGH Schwung slots (`Move > Schwung`), so the fader also scaled a
+ * Move track sharing the slot and could not balance the two against each other.
+ * Since Move tracks own their own buses nothing else lands in a chain slot, so
+ * there is no second signal to balance and the fader is simply the level.
+ *
+ * The host still applies `slot:synth_volume` underneath — it defaults to unity
+ * and davebox no longer writes it, so it is a no-op multiplier. Deliberately NOT
+ * reset here: rewriting a level at load is how a project quietly changes
+ * loudness, and the host's own Module Level row remains its editor. */
+export const SLOT_LEVEL_KEY = 'volume';
 
 /* And the law for MOVING it, shared by every level control so they cannot drift
  * apart in feel. Levels are 0..4; a detent of 1/64 puts unity ~64 detents away
@@ -96,16 +101,22 @@ export const SLOT_LEVEL_KEY = 'synth_volume';
  * (`claims_master_knob`), so both arrive as the same raw batched counts. */
 export const SLOT_LEVEL_STEP = 1 / 64;
 
-/* Ceiling for every level control, matching the host's Module Level row.
+/* Ceiling for every level control — chain slots AND Move buses alike, so one
+ * mixer position cannot offer more range than another depending on who occupies
+ * it.
  *
- * NOT the slot Volume's 0..4. The gain is applied where the synth is summed into
- * the slot and clamps to int16 right there, so boost above unity clips before
- * the bus fader downstream can do anything about it. Some boost has to stay:
- * turning the synth down is the only way to favour a routed Move track, and
- * turning it up is the only way to favour the synth. Halving the range also
- * doubles the resolution around unity, where balancing actually happens.
- * (The host still CLAMPS at 4 — that is the wire bound, deliberately left
- * permissive so already-saved states aren't reinterpreted.) */
+ * 2x, not the wire bound's 4x, because 4x is not headroom that EXISTS. The gain
+ * clamps to int16 where it is applied, so on anything mixed near full scale the
+ * top half of that range is guaranteed clipping presented as travel — a control
+ * whose upper reaches work only on quiet material reads as more headroom than
+ * the system has. 2x also puts unity at the midpoint of a ~128-detent throw
+ * (SLOT_LEVEL_STEP), which is a better place to mix from than unity at a
+ * quarter of the way up.
+ *
+ * ⚠ The host still CLAMPS at 4 — that is the WIRE bound, deliberately left
+ * permissive so an already-saved state carrying 3.0 loads as 3.0 rather than
+ * being silently reinterpreted. No davebox surface can produce such a value;
+ * this is the UI contract, not the storage one. */
 export const SLOT_LEVEL_MAX = 2;
 export function engineGetSlotParam(slot, key) {
     return shadow_get_param(slot, 'slot:' + key);

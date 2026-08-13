@@ -1418,7 +1418,13 @@ for (let mvSlot = 1; mvSlot <= MOVE_FX_SLOTS_JS; mvSlot++) {
         presetUpdateKey: "update_move_preset",
         presetDeleteKey: "delete_move_preset",
         settingsItems: [
-            { key: "move_volume", label: "Volume", type: "float", min: 0, max: 4, step: 0.05, param: prefix + "volume" },
+            /* 2x, not the 4x this clamps to on the wire: the gain hits int16
+             * where it is applied, so the top half of a 0..4 control is
+             * clipping dressed as travel on anything mixed near full scale.
+             * Same ceiling as a chain slot's Volume — a mixer position must not
+             * offer more range depending on which family occupies it. Loading a
+             * state that already carries more still works; the clamp is 4. */
+            { key: "move_volume", label: "Volume", type: "float", min: 0, max: 2, step: 0.05, param: prefix + "volume" },
             { key: "move_send_a", label: "Send A", type: "float", min: 0, max: 1, step: 0.05, param: prefix + "send_a" },
             { key: "move_send_b", label: "Send B", type: "float", min: 0, max: 1, step: 0.05, param: prefix + "send_b" },
         ]
@@ -1769,7 +1775,9 @@ let storePickerResultTitle = '';       // Result screen header (empty = 'Module 
 /* Chain settings (shown when Settings component is selected) */
 const CHAIN_SETTINGS_ITEMS = [
     { key: "knobs", label: "Knobs", type: "action" },  // Opens knob assignment editor
-    { key: "slot:volume", label: "Volume", type: "float", min: 0, max: 4, step: 0.05 },
+    /* 2x — see the Move bus strip's Volume for the reasoning. The two are one
+     * mixer position occupied by different families, so they share a ceiling. */
+    { key: "slot:volume", label: "Volume", type: "float", min: 0, max: 2, step: 0.05 },
     { key: "slot:send_a", label: "Send A", type: "float", min: 0, max: 1, step: 0.05 },
     { key: "slot:send_b", label: "Send B", type: "float", min: 0, max: 1, step: 0.05 },
     { key: "slot:muted", label: "Muted", type: "int", min: 0, max: 1, step: 1 },
