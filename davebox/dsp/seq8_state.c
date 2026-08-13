@@ -189,6 +189,10 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
     for (t = 0; t < NUM_TRACKS; t++)
         if (inst->tracks[t].track_vel_override != 0)
             fprintf(fp, ",\"t%d_tvo\":%d", t, (int)inst->tracks[t].track_vel_override);
+    /* Track transpose — per-track, sparse (missing = 0 = no offset) */
+    for (t = 0; t < NUM_TRACKS; t++)
+        if (inst->tracks[t].transpose != 0)
+            fprintf(fp, ",\"t%d_tr\":%d", t, (int)inst->tracks[t].transpose);
     for (t = 0; t < NUM_TRACKS; t++) {
         for (c = 0; c < NUM_CLIPS; c++) {
             clip_t *cl = &inst->tracks[t].clips[c];
@@ -844,6 +848,11 @@ static void seq8_load_state(seq8_instance_t *inst) {
         snprintf(key, sizeof(key), "t%d_tvo", t);
         { int _v = clamp_i(json_get_int(buf, key, 0), 0, 128);
           inst->tracks[t].track_vel_override = (uint8_t)(_v == 128 ? 0 : _v); }
+    }
+    /* Track transpose — per-track, sparse (missing = 0 = no offset) */
+    for (t = 0; t < NUM_TRACKS; t++) {
+        snprintf(key, sizeof(key), "t%d_tr", t);
+        inst->tracks[t].transpose = (int8_t)clamp_i(json_get_int(buf, key, 0), -24, 24);
     }
     /* CC PARAM bank: CC assignments + per-knob type (sparse; missing = default) */
     { int _k;

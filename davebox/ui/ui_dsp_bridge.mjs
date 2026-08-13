@@ -964,6 +964,8 @@ function readTrackConfig(t) {
     if (pm !== null && pm !== undefined) S.trackPadMode[t] = parseInt(pm, 10) | 0;
     const tvo = dspGet('t' + t + '_track_vel_override');
     if (tvo !== null && tvo !== undefined) S.trackVelOverride[t] = parseInt(tvo, 10) | 0;
+    const trn = dspGet('t' + t + '_transpose');
+    if (trn !== null && trn !== undefined) S.trackTranspose[t] = parseInt(trn, 10) | 0;
     const lpr = dspGet('t' + t + '_track_looper');
     if (lpr !== null && lpr !== undefined) S.trackLooper[t] = parseInt(lpr, 10) | 0;
     const diq = dspGet('t' + t + '_diq');
@@ -1017,6 +1019,7 @@ export function applyTrackConfig(t, key, val) {
         if (t === S.activeTrack && val === PAD_MODE_DRUM) { computePadNoteMap(); forceRedraw(); }
     }
     else if (key === 'track_vel_override') S.trackVelOverride[t] = val;
+    else if (key === 'transpose')       S.trackTranspose[t] = val;
     else if (key === 'track_looper')    S.trackLooper[t] = val;
 }
 

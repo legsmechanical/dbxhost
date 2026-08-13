@@ -701,6 +701,22 @@ typedef struct {
     uint8_t   pending_note_count;       /* how many entries in pending_notes are valid */
     play_fx_t pfx;
     uint8_t   pad_octave;           /* live pad root octave (0-8, default 3) */
+    /* Track transpose: a semitone offset on EVERYTHING this track plays, live
+     * and sequenced, applied once on the way out — so it lands the same however
+     * the track is routed (Schwung slot, Move instrument, MIDI out, or another
+     * track's instrument). ±24, the usual synth range.
+     *
+     * Deliberately applied in raw semitones and NOT scale-aware: a transpose
+     * that silently snapped to the current scale would stop being a transpose.
+     * Key/Scale and the conductor already own the scale-degree world.
+     *
+     * ⚠ Drum tracks get it too, on purpose — it is how you match an external
+     * device whose drum map sits in a different note region. On an internally
+     * routed drum track it will re-map which sounds the pads fire while the
+     * on-screen kit names still describe the untransposed mapping, because the
+     * offset is applied downstream of the pad model. That is the honest cost of
+     * one offset serving both cases. */
+    int8_t    transpose;            /* -24..+24 semitones, 0 = off */
     uint8_t   pad_mode;             /* PAD_MODE_MELODIC_SCALE = 0 */
     uint8_t   stretch_blocked;      /* 1 if last compress was blocked by collision */
     uint8_t   recording;            /* 1 = actively recording (overdub) into active clip */
@@ -2466,7 +2482,8 @@ static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
     int is_scale_aware = inst->scale_aware &&
         (tr->pad_mode == PAD_MODE_MELODIC_SCALE || tr->pad_mode == PAD_MODE_CONDUCT);
     uint8_t gen[MAX_GEN_NOTES];
-    int gc = pfx_build_gen_notes(inst, is_scale_aware, fx, (int)orig_note, gen);
+    int gc = pfx_build_gen_notes(inst, is_scale_aware, fx, (int)orig_note,
+                                 (int)tr->transpose, gen);
 
     /* Conductor offset from the post-NOTE-FX primary pitch. gen[1+] harmonies
      * are irrelevant for the conductor (its own emit is suppressed). */
@@ -2589,7 +2606,7 @@ static void conductor_apply_now_retrigger(seq8_instance_t *inst) {
             int is_sa = inst->scale_aware &&
                         (tr->pad_mode == PAD_MODE_MELODIC_SCALE);
             uint8_t gen[MAX_GEN_NOTES];
-            int gc = pfx_build_gen_notes(inst, is_sa, fx, p, gen);
+            int gc = pfx_build_gen_notes(inst, is_sa, fx, p, (int)tr->transpose, gen);
             conductor_transpose_gen(inst, t, gen, gc);
             /* on the NEW transposed gen at the note's original velocity */
             for (i = 0; i < gc; i++)
@@ -4441,6 +4458,7 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
         inst->tracks[t].channel     = (uint8_t)t;
         inst->tracks[t].queued_clip = -1;
         inst->tracks[t].pad_octave  = 3;
+        inst->tracks[t].transpose   = 0;
         inst->tracks[t].pad_mode    = PAD_MODE_MELODIC_SCALE;
         for (c = 0; c < NUM_CLIPS; c++)
             clip_init(&inst->tracks[t].clips[c]);
@@ -6454,7 +6472,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
          * RT: stack buffers only, no allocation. */
         if (!strcmp(sub, "digest")) {
             static const char *TRACK_KEYS[] = {
-                "active_clip", "pad_octave", "channel", "diq", "midi_to",
+                "active_clip", "pad_octave", "transpose", "channel", "diq", "midi_to",
                 "pad_mode", "route", "track_looper", "track_vel_override",
                 "tarp_si", "tarp_sll", "tarp_sv", "drum_r2rt",
                 "cc_assigns", "cc_types", "delay_clock_fb", "drum_meta",
@@ -6558,6 +6576,8 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
             return snprintf(out, out_len, "%d", (int)tr->queued_clip);
         if (!strcmp(sub, "pad_octave"))
             return snprintf(out, out_len, "%d", (int)tr->pad_octave);
+        if (!strcmp(sub, "transpose"))
+            return snprintf(out, out_len, "%d", (int)tr->transpose);
         if (!strcmp(sub, "pad_mode"))
             return snprintf(out, out_len, "%d", (int)tr->pad_mode);
         if (!strcmp(sub, "drum_active_lanes")) {

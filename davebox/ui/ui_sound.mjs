@@ -195,7 +195,6 @@ const PCT_FMT = (v) => Math.round(v * 100) + '%';
  * "2.00x" says what it does. Sends keep PCT_FMT — they are 0..1 proportions,
  * where a percentage is exactly right. */
 const GAIN_FMT = (v) => (v || 0).toFixed(2) + 'x';
-const ST_FMT  = (v) => (v === 0 ? '0 st' : (v > 0 ? '+' : '') + v + ' st');
 const ONOFF   = (v) => (v ? 'Yes' : 'No');
 
 const SLOT_SETTINGS = [
@@ -212,7 +211,14 @@ const SLOT_SETTINGS = [
      * multiplier unless deliberately edited through the host's own row. */
     { key: 'send_a',        label: 'Send A',      min: 0, max: 1, step: 0.05, fmt: PCT_FMT, cap: 'sends' },
     { key: 'send_b',        label: 'Send B',      min: 0, max: 1, step: 0.05, fmt: PCT_FMT, cap: 'sends' },
-    { key: 'transpose',     label: 'Transpose',   min: -12, max: 12, step: 1, int: true, fmt: ST_FMT },
+    /* `Transpose` was here — the chain slot's own `slot:transpose`, which only
+     * ever reached Schwung-routed tracks. Transpose is now a TRACK setting
+     * (`tN_transpose`, in the global menu until sound mode's top level absorbs
+     * it), applied once on the way out so it lands the same on a Schwung slot,
+     * a Move instrument, MIDI out or another track — including drum tracks,
+     * where it is how you match an external device's note region.
+     * ⚠ The host param STAYS and still works; davebox simply no longer writes
+     * it, so it sits at 0. Same shape as `slot:synth_volume`. */
     /* `Recv Ch`, `Fwd Ch` and the derived `MPE` row were here until the track
      * gained ownership of its instrument (TRACK_OWNS_ITS_INSTRUMENT.md, Josh
      * signed off all three). Where a track's notes go is answered entirely by

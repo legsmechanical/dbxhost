@@ -5,6 +5,7 @@
  * handler (phase 4B group 5): the former mid-function segment is now a real
  * static int sp_track_config2(sp_ctx_t *).
  * Covers tN_ track keys: clip_resolution, clip_resolution_zoom, pad_octave,
+ * transpose,
  * pad_mode, convert_to_drum, convert_to_melodic, convert_to_conduct, tarp_on,
  * tarp_style, tarp_rate, tarp_octaves, tarp_gate, tarp_steps_mode,
  * track_vel_override, tarp_step_vel, tarp_step_int, tarp_step_loop_len,
@@ -84,6 +85,13 @@ static int sp_track_config2(sp_ctx_t *cx) {
     /* tN_pad_octave / tN_pad_mode */
     if (!strcmp(sub, "pad_octave")) {
         tr->pad_octave = (uint8_t)clamp_i(my_atoi(val), 0, 8);
+        return 1;
+    }
+    /* tN_transpose — the track's own semitone offset on everything it plays.
+     * Distinct from pad_octave above, which moves only what the PADS produce
+     * (Move-parity performance control) and leaves sequenced notes alone. */
+    if (!strcmp(sub, "transpose")) {
+        tr->transpose = (int8_t)clamp_i(my_atoi(val), -24, 24);
         return 1;
     }
     if (!strcmp(sub, "pad_mode")) {

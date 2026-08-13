@@ -37,11 +37,27 @@ static void conductor_transpose_gen(seq8_instance_t *inst, int t,
 /* Generated-note list (direct port from NoteTwist)                    */
 /* ------------------------------------------------------------------ */
 
-/* Pure NOTE FX pitch transform: octave_shift + note_offset, with scale awareness.
- * Returns the post-NOTE-FX primary pitch (clamped 0..127). */
+/* Pure NOTE FX pitch transform: track transpose + octave_shift + note_offset,
+ * with scale awareness. Returns the post-NOTE-FX primary pitch (0..127).
+ *
+ * `transpose` is the TRACK's own semitone offset, applied FIRST and in raw
+ * semitones. First because everything downstream — harmonies, arp, delay
+ * repeats — should derive from the transposed note, so the track moves as one
+ * rather than the offset landing on top of generated material. Raw because a
+ * transpose that snapped to the scale would stop being a transpose.
+ *
+ * ⭑ Applying it here rather than at the emit point is also what makes it safe
+ * against a change mid-note: the held-note tracker stores the pitch this
+ * function returned, so a note-off replays the value its note-on used. Offset
+ * the note on the way out instead and changing transpose while a key is held
+ * sends a note-off that matches nothing — a stuck note.
+ *
+ * Bake passes 0: baking prints the NOTE FX chain into clip notes, and the track
+ * transpose is not part of that chain — it stays applied at play time, so
+ * baking it in would double it. */
 static int pfx_apply_notefx(seq8_instance_t *inst, int scale_aware,
-                             play_fx_t *fx, int orig_note) {
-    int base = orig_note + fx->octave_shift * 12;
+                             play_fx_t *fx, int orig_note, int transpose) {
+    int base = orig_note + transpose + fx->octave_shift * 12;
     int n = scale_aware ? scale_transpose(inst, clamp_i(base, 0, 127), fx->note_offset)
                         : clamp_i(base + fx->note_offset, 0, 127);
     if (fx->note_random > 0) {
@@ -108,8 +124,9 @@ static int pfx_build_harmz_copies(seq8_instance_t *inst, int scale_aware,
 }
 
 static int pfx_build_gen_notes(seq8_instance_t *inst, int scale_aware,
-                               play_fx_t *fx, int orig_note, uint8_t *out) {
-    int primary = pfx_apply_notefx(inst, scale_aware, fx, orig_note);
+                               play_fx_t *fx, int orig_note, int transpose,
+                               uint8_t *out) {
+    int primary = pfx_apply_notefx(inst, scale_aware, fx, orig_note, transpose);
     return pfx_build_harmz_copies(inst, scale_aware, fx, primary, out);
 }
 

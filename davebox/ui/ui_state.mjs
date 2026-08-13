@@ -216,6 +216,12 @@ export const S = {
     moveCoRunDrumHeld: new Set(),             /* d1 notes of drum lane pads currently held in co-run — per-pad Set so a 2nd simultaneous hold doesn't clobber the 1st's tracking (js-input-1). Plain pad note-off (no Shift injection) sent per held pad on physical release / co-run exit */
     trackPadMode: new Array(8).fill(0),
     trackVelOverride: new Array(8).fill(0),
+    /* Track transpose: semitones (-24..+24) applied to EVERYTHING this track
+     * plays, live and sequenced, on its way out — so it lands the same whether
+     * the track drives a Schwung slot, a Move instrument, MIDI out, or another
+     * track. Distinct from padOctave, which moves only what the PADS produce.
+     * Held by the DSP (tN_transpose); this is the UI mirror. */
+    trackTranspose: new Array(8).fill(0),
     trackLooper: new Array(8).fill(1),
     /* Per-track pad-pressure (aftertouch) send mode: 0=Off, 1=Poly (0xA0), 2=Channel (0xD0).
      * Move route supports 0/1 only; Schwung/External support 0/1/2. Persisted in UI sidecar (am). */

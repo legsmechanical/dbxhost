@@ -279,6 +279,17 @@ static void drum_pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
     uint64_t      now = px->sample_counter;
     pfx_active_t *an  = &px->active_note;
 
+    /* Track transpose, on the drum path too — it is how you match an external
+     * device whose drum map sits in a different note region. Applied HERE, at
+     * the top, for the same reason the melodic path applies it early: the
+     * transposed value is what lands in an->gen_notes[0], and every note-off
+     * (immediate, queued, delay echo) replays that, so changing transpose while
+     * a pad is held can never strand a note-off that matches nothing.
+     *
+     * ⚠ Lane LOOKUP is unaffected and must stay that way — drum_pfx_note_off_imm
+     * finds a lane by its own untransposed midi_note. Only emission moves. */
+    pitch = (uint8_t)clamp_i((int)pitch + (int)tr->transpose, 0, 127);
+
     int v = clamp_i((int)vel + px->velocity_offset, 1, 127);
 
     if (an->active)

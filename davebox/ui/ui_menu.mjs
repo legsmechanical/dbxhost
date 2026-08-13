@@ -144,6 +144,28 @@ function buildGlobalMenuItems() {
             min: 0, max: 127, step: 1,
             format: function(v) { return fmtVelOverride(v); }
         }),
+        /* Transpose: semitones on everything this track plays, live and
+         * sequenced, applied once on the way out — so it lands the same however
+         * the track is routed. It replaces the chain slot's own `slot:transpose`
+         * (which only ever reached Schwung-routed tracks); the host param still
+         * exists, davebox no longer writes it, and it sits at 0.
+         *
+         * Shown on DRUM tracks too, deliberately: matching an external device
+         * whose drum map sits in a different note region is the main reason to
+         * want this. On an internally routed drum track it will re-map which
+         * sounds the pads fire while the kit names still describe the
+         * untransposed mapping — the offset is applied downstream of the pad
+         * model. Hidden only in Conduct, which emits nothing at all (the same
+         * reason Instr is inert there); a conductor's octave over its
+         * responders is a different control, in the OCTAVE bank. */
+        ...(S.trackPadMode[S.activeTrack] !== PAD_MODE_CONDUCT ? [
+            createValue('Transpose', {
+                get: function() { return S.trackTranspose[S.activeTrack]; },
+                set: function(v) { applyTrackConfig(S.activeTrack, 'transpose', v); },
+                min: -24, max: 24, step: 1,
+                format: function(v) { return (v === 0 ? '0 st' : (v > 0 ? '+' : '') + v + ' st'); }
+            })
+        ] : []),
         createToggle('Looper', {
             get: function() { return S.trackLooper[S.activeTrack] !== 0; },
             set: function(v) { applyTrackConfig(S.activeTrack, 'track_looper', v ? 1 : 0); },

@@ -357,7 +357,7 @@ static int render_melodic_clip(seq8_instance_t *inst, int t, int c, int loops,
             int vel = (int)nn->vel + fx.velocity_offset;
             if (vel < 1) vel = 1; if (vel > 127) vel = 127;
             uint8_t gen[MAX_GEN_NOTES];
-            int gc = pfx_build_gen_notes(inst, scale_aware, &fx, (int)nn->pitch, gen);
+            int gc = pfx_build_gen_notes(inst, scale_aware, &fx, (int)nn->pitch, 0 /* track transpose is NOT baked */, gen);
 
             /* Apply Conductor (export, Next-style): each rendered responder note
              * takes the conductor offset at its OWN onset (abs tick across the
@@ -507,7 +507,7 @@ static int conductor_bake_offset(seq8_instance_t *inst, clip_t *cc,
          * (offset math uses scale degrees) when global Scale-Aware is on. */
         int sa = (int)inst->scale_aware;
         uint8_t tmp[MAX_GEN_NOTES];
-        int gc = pfx_build_gen_notes(inst, sa, cond_fx, (int)chosen->pitch, tmp);
+        int gc = pfx_build_gen_notes(inst, sa, cond_fx, (int)chosen->pitch, 0 /* not baked */, tmp);
         if (gc < 1) { _ap = 0; }
         else {
             gen0  = (int)tmp[0];
@@ -646,7 +646,7 @@ static void bake_clip(seq8_instance_t *inst, int t, int c, int loops, int wrap,
             int vel = (int)nn->vel + fx.velocity_offset;
             if (vel < 1) vel = 1; if (vel > 127) vel = 127;
             uint8_t gen[MAX_GEN_NOTES];
-            int gc = pfx_build_gen_notes(inst, scale_aware, &fx, (int)nn->pitch, gen);
+            int gc = pfx_build_gen_notes(inst, scale_aware, &fx, (int)nn->pitch, 0 /* track transpose is NOT baked */, gen);
 
             /* Apply Conductor (SCENE bake, Next-style): each baked responder
              * note takes the conductor offset at its OWN onset (loop_offset +
@@ -1174,7 +1174,7 @@ static void bake_drum_clip(seq8_instance_t *inst, int t, int c, int loops, int w
                  * emits the lane's CURRENT midi_note (render_block) — use it
                  * here too, so notes survive a lane re-tune instead of being
                  * dropped by the stale-pitch route-back below. */
-                int gc = pfx_build_gen_notes(inst, scale_aware, &fx, (int)dl->midi_note, gen);
+                int gc = pfx_build_gen_notes(inst, scale_aware, &fx, (int)dl->midi_note, 0 /* not baked */, gen);
 
                 uint32_t emit_ticks[2];
                 int emit_count = compute_bake_emit_positions(pdir, paud, length, tps,
