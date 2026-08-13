@@ -1,8 +1,9 @@
 /* ui_menu.mjs
  * Global settings menu: building the item list (track config, clock/tempo,
  * key/scale, save/load/quit) and opening/refreshing the menu against the
- * active track. Track-config mutation (applyTrackConfig) comes from
- * ui_dsp_bridge.mjs; Tap Tempo (openTapTempo) comes from ui_record.mjs;
+ * active track. The TRACK section dissolved on 2026-08-13 — every per-track
+ * setting lives in Track Control now — so this menu is global settings plus one
+ * door into it. Tap Tempo (openTapTempo) comes from ui_record.mjs;
  * key/scale preview (xposePreviewSet) comes from ui_xpose.mjs.
  * Extracted from ui.js (Phase 5 of the modularity refactor, module 4).
  */
@@ -20,19 +21,16 @@ import {
 } from '/data/UserData/schwung/shared/menu_stack.mjs';
 
 import {
-    PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-    fmtNA, fmtVelOverride, fmtInstr, instrOptions,
+    PAD_MODE_CONDUCT,
     NOTE_KEYS, SCALE_NAMES
 } from './ui_constants.mjs';
 
 import { S } from './ui_state.mjs';
-import { saveState, writeSidecar, showActionPopup, loadSnapshotManifest } from './ui_persistence.mjs';
+import { saveState, showActionPopup, loadSnapshotManifest } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
-import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw } from './ui_leds.mjs';
-import { enterMoveNativeCoRun, exitMoveNativeCoRun, DAVEBOX_PICKER_KEEP_MASK } from './ui_corun.mjs';
+import { exitMoveNativeCoRun, DAVEBOX_PICKER_KEEP_MASK } from './ui_corun.mjs';
 import { requestExport } from './ui_export.mjs';
-import { applyTrackConfig, instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
 import { openTapTempo } from './ui_record.mjs';
 import { xposePreviewSet } from './ui_xpose.mjs';
 
@@ -46,42 +44,26 @@ import { xposePreviewSet } from './ui_xpose.mjs';
 
 function buildGlobalMenuItems() {
     return [
-        /* ---- Instrument: the ONE place a track's destination is expressed ----
+        /* ---- the track section DISSOLVED (2026-08-13) ----
          *
-         * Replaces `Channel`, `Slot` and `Route`, and absorbs `MIDI to`
-         * (TRACK_OWNS_ITS_INSTRUMENT.md). A track OWNS its instrument, so there
-         * is nothing to pair up and nothing that can half-match: `Move 3` sets
-         * the route AND the channel that addresses Move's third instrument;
-         * `MIDI Ch 5` sends out USB-A on channel 5; `Track 2` plays track 2's
-         * instrument.
+         * `Instr`, `Layout`, `VelIn`, `Transpose`, `Looper` and `AftTch` moved
+         * to Track Control, where everything about a track now lives: its
+         * destination (`Track to`), its chain, its mixer position and its
+         * config. A setting with two homes is the ambiguity `Instr` itself was
+         * created to remove, so they are GONE here rather than mirrored.
          *
-         * ⚠ ONE row on purpose. `MIDI to` was briefly a second row shown only on
-         * MIDI tracks, and it did not appear when you switched to MIDI — the
-         * menu list is built on OPEN, so a row that becomes applicable while the
-         * menu is up cannot show until it is reopened. Do not reintroduce a
-         * conditional row here for the same reason.
+         * `Edit Slot...` / `Edit Synth...` went too — one row with two labels,
+         * both of which just opened the screen that now owns these settings.
+         * The single `Track Control` row below replaces them and is not
+         * route-conditional: a Move-routed track opens its instrument bus, a
+         * Schwung one its chain, and an EXT one a screen holding just its
+         * destination (an EXT track has no sound, but it must still be
+         * routable back).
          *
-         * Conductor drives transposition and emits nothing, so the row is inert
-         * and shows '-' there, exactly as `Route` did. */
-        createEnum('Instr', {
-            /* Read and write both live in ui_dsp_bridge — Track Control's
-             * `Track to` row asks the same question, and the encode/decode
-             * between this one choice and the three underlying params (write
-             * BOTH halves, channel BEFORE route) is exactly the kind of rule a
-             * second copy gets subtly wrong. */
-            get: function() { return instrValueFor(S.activeTrack); },
-            set: function(v) {
-                const t = S.activeTrack;
-                if (S.trackPadMode[t] === PAD_MODE_CONDUCT) return;
-                applyInstrChoice(t, v);
-            },
-            /* Recomputed each menu open, like AftTch: which tracks are eligible
-             * targets depends on THEIR instrument, which can have changed. */
-            options: instrOptions(S.trackRoute, S.activeTrack),
-            format: function(v) {
-                return S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT ? fmtNA() : fmtInstr(v);
-            }
-        }),
+         * ⚠ `Mode` STAYS, for now. It is the only one of these whose edit
+         * CONVERTS the track behind a confirm, and that flow is wired into this
+         * menu's jog-click handler (search: label === 'Mode'). Moving it is its
+         * own step; leaving it here in the meantime is deliberate. */
         createEnum('Mode', {
             get: function() { return S.trackPadMode[S.activeTrack]; },
             /* DEFERRED COMMIT: scrolling only previews the selected type — set()
@@ -94,85 +76,14 @@ function buildGlobalMenuItems() {
             options: [0, 1, 2],
             format: function(v) { return v === PAD_MODE_CONDUCT ? 'Conduct' : (v ? 'Drums' : 'Keys'); }
         }),
-        createEnum('Layout', {
-            get: function() { return S.padLayoutChromatic[S.activeTrack] ? 1 : 0; },
-            set: function(v) {
-                if (S.trackPadMode[S.activeTrack] !== 0) return;
-                S.padLayoutChromatic[S.activeTrack] = v !== 0;
-                computePadNoteMap();
-                forceRedraw();
-            },
-            options: [0, 1],
-            format: function(v) {
-                if (S.trackPadMode[S.activeTrack] !== 0) return fmtNA();
-                return v ? 'Chrom' : 'Scale';
-            }
+        createAction('Track Control', function() {
+            S.globalMenuOpen = false;
+            S.lastSentMenuEditValue = null;
+            /* Deferred to tick: entry's shadow_get/set_param traffic has to run
+             * on the tick budget, and tick picks the flavour from the route. */
+            S.pendingSoundEnterTrack = S.activeTrack;
+            forceRedraw();
         }),
-        createValue('VelIn', {
-            get: function() { return S.trackVelOverride[S.activeTrack]; },
-            set: function(v) { applyTrackConfig(S.activeTrack, 'track_vel_override', v); },
-            min: 0, max: 127, step: 1,
-            format: function(v) { return fmtVelOverride(v); }
-        }),
-        /* Transpose: semitones on everything this track plays, live and
-         * sequenced, applied once on the way out — so it lands the same however
-         * the track is routed. It replaces the chain slot's own `slot:transpose`
-         * (which only ever reached Schwung-routed tracks); the host param still
-         * exists, davebox no longer writes it, and it sits at 0.
-         *
-         * Shown on DRUM tracks too, deliberately: matching an external device
-         * whose drum map sits in a different note region is the main reason to
-         * want this. On an internally routed drum track it will re-map which
-         * sounds the pads fire while the kit names still describe the
-         * untransposed mapping — the offset is applied downstream of the pad
-         * model. Hidden only in Conduct, which emits nothing at all (the same
-         * reason Instr is inert there); a conductor's octave over its
-         * responders is a different control, in the OCTAVE bank. */
-        ...(S.trackPadMode[S.activeTrack] !== PAD_MODE_CONDUCT ? [
-            createValue('Transpose', {
-                get: function() { return S.trackTranspose[S.activeTrack]; },
-                set: function(v) { applyTrackConfig(S.activeTrack, 'transpose', v); },
-                min: -24, max: 24, step: 1,
-                format: function(v) { return (v === 0 ? '0 st' : (v > 0 ? '+' : '') + v + ' st'); }
-            })
-        ] : []),
-        createToggle('Looper', {
-            get: function() { return S.trackLooper[S.activeTrack] !== 0; },
-            set: function(v) { applyTrackConfig(S.activeTrack, 'track_looper', v ? 1 : 0); },
-            onLabel: 'On', offLabel: 'Off'
-        }),
-        /* Pad-pressure (aftertouch) send mode — melodic tracks only. On drum
-         * tracks pad pressure is owned by the repeat-velocity system, so the
-         * item is hidden there. Move route supports Off/Poly only (Move
-         * instruments take poly AT); Schwung/External also offer Channel.
-         * Options recompute each menu open (buildGlobalMenuItems re-runs). Mode is
-         * JS-side (carried per-message in tN_live_at) → persisted in the sidecar. */
-        ...(S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM ? [
-            createEnum('AftTch', {
-                get: function() { return S.trackAtMode[S.activeTrack] | 0; },
-                set: function(v) { S.trackAtMode[S.activeTrack] = v | 0; writeSidecar(); },
-                options: S.trackRoute[S.activeTrack] === 1 ? [0, 1] : [0, 1, 2],
-                format: function(v) { return v === 2 ? 'Chan' : v === 1 ? 'Poly' : 'Off'; }
-            })
-        ] : []),
-        /* Edit the track's sound IN sound mode — chain-edit co-run is gone
-         * (P4b follow-up, Josh 2026-08-09): sound mode already carries the
-         * block picker, module browser, editor, presets and slot settings.
-         * Hidden on non-Schwung-routed tracks (symmetric with Edit Synth). */
-        ...((S.trackRoute[S.activeTrack] === 0) ? [
-            createAction('Edit Slot...', function() {
-                S.globalMenuOpen = false;
-                S.lastSentMenuEditValue = null;
-                S.pendingSoundEnterTrack = S.activeTrack;
-                forceRedraw();
-            })
-        ] : []),
-        /* Move-native co-run entry — visible only on ROUTE_MOVE tracks. */
-        ...((S.trackRoute[S.activeTrack] === 1) ? [
-            createAction('Edit Synth...', function() {
-                enterMoveNativeCoRun(S.activeTrack);
-            })
-        ] : []),
         createDivider('Global'),
         /* Clock Follow: follow Move's MIDI clock + transport. Default off =
          * unchanged internal free-run. When on, BPM is read-only (EXT) and Play

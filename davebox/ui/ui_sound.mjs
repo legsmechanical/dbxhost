@@ -38,7 +38,12 @@ import { S as GS } from './ui_state.mjs';
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
-import { instrOptions, fmtInstr, PAD_MODE_CONDUCT as PMC } from './ui_constants.mjs';
+import { instrOptions, fmtInstr, fmtVelOverride,
+         PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD } from './ui_constants.mjs';
+import { applyTrackConfig } from './ui_dsp_bridge.mjs';
+import { computePadNoteMap } from './ui_drummodel.mjs';
+import { forceRedraw } from './ui_leds.mjs';
+import { writeSidecar } from './ui_persistence.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
     closeTextEntry,
@@ -67,7 +72,12 @@ import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mj
  * because the divergence is a key prefix rather than a binding. */
 export const BLOCKS = [
     { comp: 'midi_fx1', label: 'MIDI FX' },
-    { comp: 'synth',    label: 'SYNTH'   },
+    /* `Generator` — the module's own vocabulary (component_type:
+     * sound_generator). `Sound` was doing double duty for the whole screen and
+     * for this one row on it, and `Instrument` is taken: a track's INSTRUMENT is
+     * its destination (TRACK_OWNS_ITS_INSTRUMENT.md), which is the `Track to`
+     * row. */
+    { comp: 'synth',    label: 'Generator' },
     ...Array.from({ length: SLOT_FX_BLOCKS }, (_, i) => ({
         comp: `fx${i + 1}`, label: `FX ${i + 1}`,
     })),
@@ -140,7 +150,7 @@ const BUS_BLOCKS = [1, 2, 3, 4];      /* fx1..fx4 on every bus */
  * shares the solo group with them, because a solo that left the other family
  * sounding would not be a solo. Toggle rows flip on jog-click rather than
  * opening the level editor a 0/1 value has no use for. */
-const MOVE_BUS_TITLE = (bus) => 'MOVE ' + bus + ' - SOUND';
+const MOVE_BUS_TITLE = (bus) => 'MOVE ' + bus + ' - TRACK CONTROL';
 function moveBusFor(track) {
     const bus = moveBusForChannel(GS.trackChannel[track]);
     const cmp = moveBusComp(bus);
@@ -251,6 +261,67 @@ const SLOT_LEVELS = [
  * doors, which is why the screen is now named for them.
  * ⚠ The host PARAMS behind the removed rows all still exist and still work —
  * davebox simply stopped writing them. */
+/* ---- Config: the track's own settings ----
+ *
+ * What the track IS, as opposed to what it sounds like: how its pads are laid
+ * out, what it transposes by, how it treats incoming velocity and pressure.
+ * None of it belongs to the chain, and all of it applies whatever the track is
+ * routed to — which is why these rows are identical on a Schwung track, a Move
+ * track and an EXT one.
+ *
+ * Rows carry their own get/set because the backing store is davebox's OWN state
+ * plus the DSP, reached through applyTrackConfig — not the host's slot params
+ * that the level rows use. The settings screen therefore reads a row's value
+ * through `get` when it has one and falls back to the slot store when it does
+ * not, which is what lets Sound Control and Config share one screen.
+ *
+ * ⚠ `Mode` (Keys/Drums/Conduct) is NOT here yet. It is the only row whose edit
+ * CONVERTS the track, behind a confirm, and that flow still lives in the global
+ * menu's jog-click handler. Moving it is its own step.
+ *
+ * ⚠ Built per open, not once: which rows apply depends on the track's pad mode
+ * and route, and both change under this screen. */
+function configRows(t) {
+    const melodic = GS.trackPadMode[t] === 0;
+    const rows = [];
+    /* Pad layout is a melodic idea — a drum track's pads are its lanes. */
+    rows.push({ key: 'layout', label: 'Layout',
+        opts: [0, 1], fmt: (v) => (melodic ? (v ? 'Chrom' : 'Scale') : '-'),
+        get: () => (GS.padLayoutChromatic[t] ? 1 : 0),
+        set: (v) => {
+            if (!melodic) return;
+            GS.padLayoutChromatic[t] = v !== 0;
+            computePadNoteMap();
+            forceRedraw();
+        } });
+    /* Conduct emits nothing, so it has nothing to transpose. */
+    if (GS.trackPadMode[t] !== PMC) {
+        rows.push({ key: 'transpose', label: 'Transpose',
+            min: -24, max: 24, step: 1, int: true,
+            fmt: (v) => (v === 0 ? '0 st' : (v > 0 ? '+' : '') + v + ' st'),
+            get: () => GS.trackTranspose[t] | 0,
+            set: (v) => applyTrackConfig(t, 'transpose', v) });
+    }
+    rows.push({ key: 'velin', label: 'VelIn',
+        min: 0, max: 127, step: 1, int: true, fmt: fmtVelOverride,
+        get: () => GS.trackVelOverride[t] | 0,
+        set: (v) => applyTrackConfig(t, 'track_vel_override', v) });
+    rows.push({ key: 'looper', label: 'Looper',
+        opts: [0, 1], fmt: (v) => (v ? 'On' : 'Off'),
+        get: () => (GS.trackLooper[t] !== 0 ? 1 : 0),
+        set: (v) => applyTrackConfig(t, 'track_looper', v ? 1 : 0) });
+    /* Pad pressure: owned by the repeat-velocity system on drum tracks, so the
+     * row is hidden there. Move takes poly AT only. */
+    if (GS.trackPadMode[t] !== PMD) {
+        rows.push({ key: 'afttch', label: 'AftTch',
+            opts: GS.trackRoute[t] === 1 ? [0, 1] : [0, 1, 2],
+            fmt: (v) => (v === 2 ? 'Chan' : v === 1 ? 'Poly' : 'Off'),
+            get: () => GS.trackAtMode[t] | 0,
+            set: (v) => { GS.trackAtMode[t] = v | 0; writeSidecar(); } });
+    }
+    return rows;
+}
+
 const SOUND_CONTROL = [
     { key: 'knobs', label: 'Knobs',  sub: 'knobs' },
     { key: 'lfo1',  label: 'LFO 1',  sub: 'lfo', lfo: 0 },
@@ -452,7 +523,8 @@ const S = {
      * Scroll previews, click commits. */
     instrEditing: false,
     instrSel: 0,
-    slotRows: [],               /* SOUND_CONTROL door rows */
+    cfgWhich: 'sound',          /* which list the settings screen is showing */
+    slotRows: [],               /* the active settings row set */
     capFx34: false,
     capSends: false,
     slotCfgIdx: 0,
@@ -1371,7 +1443,7 @@ function buildPickRows() {
          * hang off its sound generator. Jog-click hands over to Move's editor
          * (co-run) — there is no module to browse, Move owns that voice. */
         if (S.bus.kind === 'move') {
-            rows.push({ kind: 'movesynth', label: 'SYNTH', value: 'MOVE ' + S.bus.bus });
+            rows.push({ kind: 'movesynth', label: 'Generator', value: 'Move ' + S.bus.bus, chevron: true });
         }
         for (const n of BUS_BLOCKS) {
             rows.push({ kind: 'block', comp: S.bus.prefix + 'fx' + n, label: 'FX ' + n });
@@ -1412,7 +1484,8 @@ function buildPickRows() {
         /* Doors last, presets last of all (Josh). "Presets" not "patches" in
          * user-facing text — the store is still the host's patches/ dir. */
         rows.push({ kind: 'settings', label: 'Sound Control' });
-        rows.push({ kind: 'patches', label: 'Presets' });
+        rows.push({ kind: 'config',   label: 'Config' });
+        rows.push({ kind: 'patches',  label: 'Presets' });
     }
     S.pickRows = rows;
     /* Keep the cursor on the component it was on — the row INDEX shifts when a
@@ -1433,18 +1506,27 @@ function probeCaps() {
         if (!S.capFx34 && (c === 'fx3' || c === 'fx4')) continue;
         S.blockRows.push(i);
     }
-    /* Sound Control is three doors with no capability gate — the knob and LFO
-     * editors exist for every chain slot. The sends gate now applies to the
-     * top-level LEVEL rows instead (see buildPickRows). */
-    S.slotRows = SOUND_CONTROL;
+    /* ⚠ Deliberately does NOT set S.slotRows. The settings screen owns its own
+     * row set (openSlotCfg picks Sound Control or Config), and probeCaps runs on
+     * entry and on every retarget — assigning here would swap the rows out from
+     * under an open Config list on a track change. The sends gate that used to
+     * live here now applies to the top-level LEVEL rows (see buildPickRows). */
     log('caps: fx34=' + (S.capFx34 ? 1 : 0) + ' sends=' + (S.capSends ? 1 : 0));
 }
 
 /* ---- slot settings: read, edit, persist ---- */
 
-function openSlotCfg(keepCursor) {
+function openSlotCfg(keepCursor, which) {
+    /* One screen, two row sets. `which` is remembered so a return from a
+     * sub-editor (Knobs, LFO) reopens the list it came from rather than
+     * whichever was opened last. */
+    if (which) S.cfgWhich = which;
+    S.slotRows = S.cfgWhich === 'config' ? configRows(S.track) : SOUND_CONTROL;
     S.slotCfgVals = S.slotRows.map(s => {
         if (s.sub) return 0;            /* no stored param behind these rows */
+        /* A row with `get` owns its own value (davebox state + the DSP); one
+         * without it is backed by a host slot param. */
+        if (s.get) { const g = s.get(); return isFinite(g) ? g : 0; }
         const raw = parseFloat(engineGetSlotParam(S.slot, s.key));
         return isFinite(raw) ? raw : 0;
     });
@@ -1463,15 +1545,27 @@ function slotCfgStep(delta) {
         S.slotCfgEditing = false;
         return;
     }
-    let v = S.slotCfgVals[S.slotCfgIdx] + (delta > 0 ? s.step : -s.step);
-    if (s.int) v = Math.round(v);
-    else v = Math.round(v * 1000) / 1000;      /* keep 0.05 steps from drifting */
-    if (v < s.min) v = s.min;
-    if (v > s.max) v = s.max;
+    let v;
+    if (s.opts) {
+        /* Enum: cycle the option list. Wrapping is right for a short closed set
+         * (Off/Poly/Chan), where clamping would strand you at an end. */
+        const cur = s.opts.indexOf(S.slotCfgVals[S.slotCfgIdx]);
+        v = s.opts[((cur + (delta > 0 ? 1 : -1)) % s.opts.length + s.opts.length) % s.opts.length];
+    } else {
+        v = S.slotCfgVals[S.slotCfgIdx] + (delta > 0 ? s.step : -s.step);
+        if (s.int) v = Math.round(v);
+        else v = Math.round(v * 1000) / 1000;  /* keep 0.05 steps from drifting */
+        if (v < s.min) v = s.min;
+        if (v > s.max) v = s.max;
+    }
     if (v === S.slotCfgVals[S.slotCfgIdx]) return;
     S.slotCfgVals[S.slotCfgIdx] = v;
+    /* A row with `set` applies immediately and is persisted by whatever that
+     * setter uses (the DSP param, or the sidecar). Only slot-backed rows go
+     * through the queue and the chain save. */
+    if (s.set) { s.set(v); S.dirty = true; return; }
     S.slotCfgDirty = true;
-    queueSlotCfgWrite(s.key, v);
+    queueSlotCfgWrite(s.key, v, !!s.int);
 }
 
 /* Queued like every other write here: this runs in the MIDI handler.
@@ -1528,7 +1622,9 @@ function drainSlotWrites() {
 
 function renderSlotCfg() {
     clear_screen();
-    drawKitHeader('SLOT ' + (S.slot + 1) + ' SETTINGS', false);
+    drawKitHeader(S.cfgWhich === 'config'
+        ? 'TRACK ' + (S.track + 1) + ' - CONFIG'
+        : 'TRACK ' + (S.track + 1) + ' - SOUND CONTROL', false);
     drawKitList(S.slotRows.map((s, idx) => (s.sub
         ? { label: s.label, chevron: true }
         : { label: s.label, value: s.fmt(S.slotCfgVals[idx]),
@@ -2219,7 +2315,7 @@ function runAction(a) {
     else if (a.t === 'bakedset') commitBaked();
     else if (a.t === 'menu')     openMenu();
     else if (a.t === 'menuload') refreshMenuRows();
-    else if (a.t === 'slotcfg')  openSlotCfg(a.keep);
+    else if (a.t === 'slotcfg')  openSlotCfg(a.keep, a.which);
     else if (a.t === 'knobs')    openKnobEditor();
     else if (a.t === 'knobtarget') openKnobTargets();
     else if (a.t === 'knobparam')  openKnobParams(a.target);
@@ -2902,7 +2998,11 @@ export function soundOnCC(d1, d2, decodeDelta) {
         }
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'settings') {
-            S.pendingAction = { t: 'slotcfg' };   /* reads the slot — tick only */
+            S.pendingAction = { t: 'slotcfg', which: 'sound' };  /* reads the slot — tick only */
+        }
+        else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
+                 S.pickRows[S.pickRow].kind === 'config') {
+            S.pendingAction = { t: 'slotcfg', which: 'config' };
         }
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'patches') {
@@ -3306,7 +3406,7 @@ function centreText(y, text) {
 
 function renderBlocks() {
     clear_screen();
-    drawKitHeader(S.bus ? S.bus.title : ('TRACK ' + (S.track + 1) + ' - SOUND'), false);
+    drawKitHeader(S.bus ? S.bus.title : ('TRACK ' + (S.track + 1) + ' - CONTROL'), false);
     drawKitList(S.pickRows.map((r, idx) => {
         if (r.kind === 'buslevel') {
             /* `fmt` where the spec carries one — a bus VOLUME is a gain and

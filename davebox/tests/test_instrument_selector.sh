@@ -35,9 +35,16 @@ done
 grep -q "^export function applyInstrChoice" ui/ui_dsp_bridge.mjs \
     && ok "the destination encode/decode has ONE home (applyInstrChoice)" \
     || bad "applyInstrChoice is gone — the rules have scattered back into the screens"
-n=$(grep -c "applyInstrChoice(" ui/ui_menu.mjs ui/ui_sound.mjs | awk -F: '{s+=$2} END {print s+0}')
-[ "$n" -ge 2 ] && ok "both screens go through it" \
-               || bad "only $n screen(s) call applyInstrChoice — one has its own copy again"
+# ⭑ ONE home now: the global menu's track section dissolved (2026-08-13) and the
+# destination lives only on Track Control. The helper stays in ui_dsp_bridge
+# regardless — it is what stopped the rules being copied when there WERE two
+# screens, and it is what any future second caller must use.
+grep -q "applyInstrChoice(S.track, S.instrSel)" ui/ui_sound.mjs \
+    && ok "Track Control's Track to row commits through applyInstrChoice" \
+    || bad "Track Control no longer commits through applyInstrChoice"
+grep -qE "create(Enum|Value)\('Instr'" ui/ui_menu.mjs \
+    && bad "the destination row is back in the global menu — two homes again" \
+    || ok "the destination has exactly one home (Track Control)"
 grep -q "applyTrackConfig(t, 'channel', v + 1);" ui/ui_dsp_bridge.mjs \
     && ok "picking Move N writes channel N (1-based)" \
     || bad "the Instrument row no longer writes the channel — Move N addresses nothing"
@@ -56,9 +63,9 @@ fi
 grep -q "createEnum('MIDI to'" ui/ui_menu.mjs \
     && bad "MIDI to is a separate row again — it cannot appear when you switch to MIDI" \
     || ok "every destination lives in the one Instr row"
-grep -q "options: instrOptions(S.trackRoute, S.activeTrack)," ui/ui_menu.mjs \
+grep -q "instrOptions(GS.trackRoute, S.track)" ui/ui_sound.mjs \
     && ok "destinations are recomputed against live routes" \
-    || bad "the Instr option list is stale or hardcoded"
+    || bad "the Track to option list is stale or hardcoded"
 
 # 4. `MIDI to` writes BOTH halves. The DSP stores the channel and the follow
 #    target separately; leaving the other half behind is how a stale target
