@@ -87,14 +87,39 @@ cp export/pack.py                         "dist/${MODULE_ID}/pack.py"
 cp export/ableton-master.json             "dist/${MODULE_ID}/ableton-master.json"
 cp export/ableton-export-drift-dummy.json "dist/${MODULE_ID}/drift-dummy.json"
 
-# Metronome click: the stable build generates this from source at build time.
-# Reuse it if present rather than duplicating the conversion.
-if [ -f "dist/davebox/click-seq8.wav" ]; then
-    cp dist/davebox/click-seq8.wav "dist/${MODULE_ID}/click-seq8.wav"
-else
-    echo "NOTE: dist/davebox/click-seq8.wav not found — run ./scripts/build.sh once"
-    echo "      if you want the metronome click in the test build."
-fi
+# Metronome click: convert source asset to 16-bit mono 48 kHz for DSP render_block.
+python3 - <<'PYEOF'
+import wave, struct, audioop, warnings
+warnings.filterwarnings('ignore')
+src = "assets/db-click.wav"
+dst = "dist/davebox-sound/click-seq8.wav"
+with wave.open(src, 'rb') as r:
+    rate, nch, sw, nf = r.getframerate(), r.getnchannels(), r.getsampwidth(), r.getnframes()
+    raw = r.readframes(nf)
+samples = []
+for i in range(0, len(raw), sw * nch):
+    ch_vals = []
+    for ch in range(nch):
+        b = raw[i + ch*sw : i + ch*sw + sw]
+        if sw == 3:
+            v = struct.unpack('<i', b + (b'\xff' if b[2] & 0x80 else b'\x00'))[0] >> 8
+        elif sw == 2:
+            v = struct.unpack('<h', b)[0]
+        else:
+            v = 0
+        ch_vals.append(v)
+    samples.append(max(-32768, min(32767, sum(ch_vals) // len(ch_vals))))
+peak = max(abs(s) for s in samples) if samples else 1
+if peak == 0: peak = 1
+samples = [max(-32768, min(32767, round(s * 32767 / peak))) for s in samples]
+raw16 = struct.pack('<' + 'h' * len(samples), *samples)
+raw48, _ = audioop.ratecv(raw16, 2, 1, rate, 48000, None)
+with wave.open(dst, 'wb') as w:
+    w.setnchannels(1); w.setsampwidth(2); w.setframerate(48000)
+    w.writeframes(raw48)
+frames_out = len(raw48) // 2
+print(f"click-seq8.wav: {frames_out} frames @ 48000 Hz, 16-bit mono (resampled from {rate} Hz)")
+PYEOF
 
 echo "Verifying GLIBC symbol versions (must be <= 2.35)..."
 NM_BIN="${CROSS_PREFIX}nm"
