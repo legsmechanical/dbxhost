@@ -60,6 +60,38 @@ Caps-only is the default assumption. Three of the five fonts have no real lowerc
 sums real advances. `text.length * charWidth` is wrong for four of the six and will silently
 overflow the cell.
 
+⚠ **The limit is often smaller than the screen.** `drawKitHeader` fits to `SCREEN_W - 4` = **124px**,
+not 128. A title measuring 125px loses its last character with nothing to say so. (Measured
+2026-08-13: `TRACK [5] SETTINGS` = 125px; an earlier `MOVE 2 - TRACK CONTROL` = 153px and never fit
+at all.)
+
+### 2.1 Coverage differs BETWEEN fonts — probe before using a character
+
+"Caps-only" is the default assumption, not a guarantee, and the exceptions are per-font. Established
+by probing the glyph tables (2026-08-13), not by reading comments:
+
+| | Header (`hdrPrint`) | Label (`mvPrint`) |
+|---|---|---|
+| true lowercase glyphs | **`d`, `t`** | **`y`** |
+| square brackets `[` `]` | **ABSENT** — advance, draw nothing | present |
+| punctuation with ink | `! # % ( ) + , - . / : < > ?` | wider |
+
+Two consequences, both seen on hardware:
+
+- **Mixed-case text renders with a few odd letters.** Every other lowercase letter already maps to
+  its capital, so only these show — and the result reads as a typo, not a style. `Track to` drew as
+  "TRACK tO", `Generator` as "GENERAtOR", `Poly` as "POLy".
+  ⇒ `drawKitList` and `drawKitHeader` **uppercase before measuring or printing**. That is a **visual
+  no-op for every other character**, so it can only ever correct these glyphs and no caller has to
+  remember. Prefer this to uppercasing at each call site.
+- **A missing glyph is silent.** `[` and `]` in a header advance the cursor and draw nothing, so
+  `TRACK [5] SETTINGS` came out as `TRACK 5  SETTINGS` with a hole. Use `( )` in the header; the
+  label font has square brackets, which is why the row edit indicator `[VALUE]` is unaffected.
+
+**How to probe:** count `fill_rect`/`set_pixel` calls while printing a single character — zero means
+the glyph is blank. A throwaway `tests/js/test_zz*.mjs` importing `ui_movy.mjs` does it in seconds,
+and a screengrab confirms it on the device.
+
 **Truncation** is hard-clip from the end, no ellipsis:
 `fitHdr(t, maxW)` drops trailing characters until `hdrWidth(t) <= maxW`. The big font instead
 **degrades tier by tier** — normal spacing → condensed → give up and fall back to the label font

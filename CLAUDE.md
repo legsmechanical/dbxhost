@@ -380,9 +380,12 @@ Shim intercepts hardware I/O to mix shadow audio with Move's output.
 **The jump-gesture families were DELETED 2026-08-09** (Josh's ruling: no gesture may open a
 menu that already exists — or is spec'd to exist — in the primary module's own UI). The old
 `shadow_ui_trigger` mode setting, its Global Settings "Shortcuts" page, and the Shift+Vol /
-long-press entries for slot settings, Master FX, and Global Settings are gone: slot settings
-and the FX buses live in the module's sound mode; Global Settings is opened from the module's
-menu (`Host Settings...` → the `global_settings` overlay service). What remains hardware-side:
+long-press entries for slot settings, Master FX, and Global Settings are gone: a track's settings
+and the FX buses live in the module's own screens; Global Settings is opened from the module's
+menu (`Host Settings...` → the `global_settings` overlay service).
+⭑ In davebox that screen is **Track Settings** (2026-08-13), and it now holds EVERYTHING about a
+track — destination, chain, mixer position, config — reached by **Shift+Note / Shift+Session** on
+every route including external. Its global menu is global settings only. What remains hardware-side:
 
 - **Shift+Step13** — Tools menu (the one host menu with no module home). **Held past 500 ms**
   it resumes the most-recently-suspended tool directly (restored per Josh after the first
@@ -453,7 +456,14 @@ Each of the 4 slots has:
   block — the gain scales the synth alone), beside `[Swap module...]`. It is injected as an
   ordinary editable float carrying its metadata inline, with a `slot:`-prefixed key that
   `buildHierarchyParamKey` passes through unprefixed; that is why it needs no special-casing
-  in the render / announce / edit paths. The slot's own **Volume** stays in slot settings.
+  in the render / announce / edit paths.
+  ⚠ **The slot's own Volume is NOT "in slot settings" any more.** That screen was dissolved on
+  2026-08-13: a slot's five level rows (Volume, Send A/B, Mute, Solo) sit inline on the track's
+  own screen, built from the same row kind a Move FX bus uses, because a chain slot and a bus are
+  alternative occupants of one mixer position. What was left of the old screen is `Sound Control`
+  (the knob and LFO editors). ⭑ davebox also stopped writing `slot:synth_volume` entirely — its
+  level controls drive `slot:volume`; the Module Level row described above is the only remaining
+  editor for it, and it sits at unity unless deliberately changed.
 - **State persistence** (synth + FX + MIDI FX).
 
 **MPE controllers** (LinnStrument, Roli, Sensel): set Receive=All, Forward=THRU, enable MPE in the synth. Otherwise channel remap destroys per-note bend/pressure/slide.
