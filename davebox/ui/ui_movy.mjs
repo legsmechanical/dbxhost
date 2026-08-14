@@ -574,6 +574,31 @@ export function drawVBar(kx, ky, norm) {
     if (fillH > 0) fill_rect(kx + 7, ky + 2 + (12 - fillH), 6, fillH, 1);
 }
 
+/* FREE-SIZED vertical fader — the mixer-strip form of drawVBar, which is fixed
+ * at one cell (8x16) and is far too small to read eight of at a glance.
+ *
+ * `markNorm` (0..1, or <0 for none) draws a reference tick — unity on a level
+ * fader. ⚠ It is drawn as ears OUTSIDE the channel, not a line inside it: a
+ * mark within the track is swallowed by the fill at exactly the moment you are
+ * sitting on it, which is the moment it has to be visible. (Same reasoning, and
+ * the same bug once, as the session gauge popup's unity tick.)
+ *
+ * Pure geometry, no state — the caller owns layout. */
+export function drawVFader(x, y, w, h, norm, markNorm) {
+    /* Channel: full-height outline, so an empty fader still reads as a fader
+     * rather than as blank space. */
+    rectOutline(x, y, w, h, 1);
+    const innerH = h - 2;
+    const n = norm < 0 ? 0 : norm > 1 ? 1 : norm;
+    const fillH = Math.round(n * innerH);
+    if (fillH > 0) fill_rect(x + 1, y + 1 + (innerH - fillH), w - 2, fillH, 1);
+    if (markNorm >= 0 && markNorm <= 1) {
+        const my = y + 1 + Math.round((1 - markNorm) * (innerH - 1));
+        fill_rect(x - 2, my, 2, 1, 1);
+        fill_rect(x + w, my, 2, 1, 1);
+    }
+}
+
 /* Framed box with a big diagonal cross — DRAWN, not a font glyph (movy
  * drawXBox). "This modulation target is None": an empty-slot affordance that
  * reads as "nothing routed here" at a glance. */

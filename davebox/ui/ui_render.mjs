@@ -8,6 +8,7 @@
 
 import { S, PERF_FACTORY_PRESETS } from './ui_state.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
+import { SESS_KNOB_MODES } from './ui_engine.mjs';
 import {
     BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
@@ -19,7 +20,7 @@ import {
 } from './ui_constants.mjs';
 import {
     drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitAltArrow,
-    drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, mvPrint, mvWidth, rectOutline,
+    drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawVFader, mvPrint, mvWidth, rectOutline,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H
 } from './ui_movy.mjs';
@@ -189,6 +190,134 @@ function drawStepEditKitPage(title, cells, noteBox) {
     const _ovi = enumOverlayIdx(t);
     drawKitEnumOverlay(cells, _ovi);
     drawKitValueOverlay(cells, _ovi);
+}
+
+/* Session-view MIXER page: the selected mixer mode across ALL EIGHT tracks, in
+ * the same 8-cell shape as a clip param bank, so the mixer reads as one more
+ * bank rather than a screen of its own.
+ *
+ * The widget per mode comes from SESS_KNOB_MODES: a level is a vertical FADER,
+ * pan a BIPOLAR arc (its meaning is distance from centre, so centre must look
+ * like centre), the sends plain arcs.
+ *
+ * ⚠ Values come from the CACHED `S.sessVolLevel[]`, never a fresh read: tick
+ * already maintains it for the selected mode, and eight `get_param`s here would
+ * cost ~23 ms of SPI round-trips per frame — see the param-roundtrip rule.
+ * A track with no mixer position (routed to MIDI/EXT, or a Schwung track with no
+ * slot) has nothing to show, so its cell is BLANK — deliberately distinct from a
+ * track sitting at zero, which draws an empty widget. */
+function drawSessionMixerPage() {
+    const mode = SESS_KNOB_MODES[S.sessKnobMode];
+    const cells = [];
+    for (let t = 0; t < NUM_TRACKS; t++) {
+        const label = 'Tr' + (t + 1);
+        const hasPos = (S.sessVolBus[t] > 0) ||
+                       (S.trackRoute[t] === 0 && (S.sessVolSlots[t] | 0) !== 0);
+        const v = S.sessVolLevel[t];
+        if (!hasPos || !(v >= 0)) { cells.push({ kind: 'blank', label }); continue; }
+        const cell = { label, name: 'TRACK ' + (t + 1) + ' ' + mode.label,
+                       text: String(mode.fmt(v)).toUpperCase() };
+        if (mode.widget === 'arcbip') {
+            /* -1..+1 around centre, which is what the bipolar arc draws from. */
+            cell.kind = 'arcbip';
+            cell.signed = (v - 0.5) * 2;
+        } else {
+            cell.kind = mode.widget;          /* 'vbar' (level) or 'arc' (sends) */
+            cell.norm = mode.max > 0 ? v / mode.max : 0;
+        }
+        cells.push(cell);
+    }
+    if (mode.widget === 'vbar') { drawSessionFaderRow(cells, mode); return; }
+
+    /* Pan / sends: the kit grid of arcs, but WITHOUT drawKitPage's floating
+     * zoom box (Josh: "we can lose the big knob pop-ups for pan and sends").
+     * On a param bank that box is the read-out; here it is noise — it covers
+     * three of the eight tracks the page exists to compare, to magnify a number
+     * the header is already showing. So the header carries the value instead,
+     * exactly as the fader row does, and all eight arcs stay visible.
+     *
+     * The enum overlay goes with it: these cells have no options, so it would
+     * draw nothing anyway — calling neither is clearer than relying on that. */
+    const t = S.knobTouched;
+    const touched = (t >= 0 && cells[t] && cells[t].name) ? cells[t] : null;
+    if (touched) drawKitTouchedHeader(touched.name + '  ' + touched.text);
+    else drawBankHeading(mode.label, false);
+    drawKitCells(cells, t);
+}
+
+/* Levels get their OWN layout: eight tall faders in one row, not the 4x2 kit
+ * grid. A mixer is read by comparing heights across tracks, and that comparison
+ * only works when the strips are side by side on one axis — split over two rows
+ * you are comparing four faders with four other faders somewhere else.
+ * The kit grid stays right for pan and the sends, where each cell is a small
+ * arc that is legible at 32px and meaningless at 16.
+ *
+ * 8 columns x 16px = the full 128. The fader is 8px wide, centred, leaving 4px
+ * of air each side so adjacent strips never touch. A unity tick sits at the
+ * halfway mark (levels are 0..2x, so unity is mid-throw by construction — see
+ * SLOT_LEVEL_MAX) because "am I above or below unity" is the question a mixer
+ * is actually asked. */
+function drawSessionFaderRow(cells, mode) {
+    const t = S.knobTouched;
+    const touched = (t >= 0 && cells[t] && cells[t].name) ? cells[t] : null;
+    if (touched) drawKitTouchedHeader(touched.name + '  ' + touched.text);
+    else drawBankHeading(mode.label, false);
+
+    const COLW = 128 / 8, FW = 8, TOP = 14, BOT = 54, LBL_Y = 56;
+    const unity = mode.max > 0 ? (1.0 / mode.max) : -1;
+    /* TURNING is what asks for a number. The strip being moved swaps its track
+     * number for its VALUE and swaps back once the turn goes quiet; touch alone
+     * keeps the label, which is what tells you WHICH strip you are on.
+     * (Josh: "turn initiates value display, touch falls back to track label".) */
+    const lk = S.sessVolLastKnob;
+    /* Liveness is the PHYSICAL TOUCH, not a timer: the value shows while the
+     * knob is held and the number is back the instant you let go (Josh). A
+     * timeout left the reading hanging around after the hand had moved on, which
+     * makes the row look stale rather than live.
+     *
+     * `knobTouched` persists for the whole hold (see the note above drawKitPage),
+     * so this is exactly "while my finger is on it". A turn that somehow arrives
+     * with no touch — injected MIDI, a knob not reporting capacitance — simply
+     * shows no value; the page and its header still update, so nothing is lost. */
+    const valueLive = lk >= 0 && S.knobTouched === lk;
+
+    for (let i = 0; i < cells.length && i < 8; i++) {
+        const c = cells[i];
+        const cx = Math.round(i * COLW);
+        const fx = cx + Math.round((COLW - FW) / 2);
+        if (c.kind !== 'blank')
+            drawVFader(fx, TOP, FW, BOT - TOP, c.norm || 0, unity);
+        if (valueLive && lk === i && c.kind !== 'blank') continue;  /* drawn last */
+        const lbl = String(i + 1);
+        const lw = mvWidth(lbl);
+        const lx = cx + Math.round((COLW - lw) / 2);
+        if (t === i) {
+            fill_rect(cx, LBL_Y - 1, Math.round(COLW), 9, 1);
+            mvPrint(lx, LBL_Y, lbl, 0);
+        } else {
+            mvPrint(lx, LBL_Y, lbl, 1);
+        }
+    }
+
+    /* The live value goes on LAST and on TOP. Centred on a 16px column it will
+     * overhang for the wider readings ("1.25X"), so it needs to be painted over
+     * its neighbours' numbers rather than under them — which only works if every
+     * neighbour is already down. Its own patch of background is cleared first so
+     * the overhang stays readable. */
+    if (valueLive && lk >= 0 && lk < cells.length && cells[lk] && cells[lk].kind !== 'blank') {
+        const txt = cells[lk].text || '';
+        const w = mvWidth(txt);
+        let x = Math.round(lk * COLW) + Math.round((COLW - w) / 2);
+        if (x < 0) x = 0;
+        if (x + w > 128) x = 128 - w;
+        /* HIGHLIGHTED while live: inverted, the same "this one is active" idiom
+         * the touched label strip uses. It has to win against seven other
+         * numbers on the same line and it is transient, so plain white-on-black
+         * left it reading as just another label. The 1px bleed around the text
+         * is what makes it a block rather than an outline. */
+        fill_rect(x - 1, LBL_Y - 1, w + 2, 9, 1);
+        mvPrint(x, LBL_Y, txt, 0);
+    }
 }
 
 /* Shared canvaskit page entry: touched non-blank cell inverts the header to
@@ -896,6 +1025,18 @@ export function drawUI() {
 
     clear_screen();
     if (S.sessionView) {
+        /* Touch reveals the mix. A knob touch, a jog touch, or the timeout after
+         * a turn opens the 8-track mixer page for the selected mode — the same
+         * gesture and the same window as a clip param bank, which is what makes
+         * the mixer feel like part of the instrument rather than a mode.
+         *
+         * Deliberately ABOVE the popup branch: the page is the richer read-out
+         * (eight tracks vs one), so while a knob is held it should win. Other
+         * popups still show once the finger lifts and the window closes. */
+        if (S.knobTouched >= 0 || S.jogTouched || S.bankSelectTick >= 0) {
+            drawSessionMixerPage();
+            return;
+        }
         if (S.actionPopupEndTick >= 0) {
             const _n = S.actionPopupLines.length;
             if (S.actionPopupGauge >= 0) {

@@ -66,7 +66,16 @@ const { NUM_TRACKS } = await import('../../ui/ui_constants.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
 
 /* Knob 1 = CC 71, one detent clockwise. */
-const turnKnob1 = () => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 1]));
+/* ⚠ A turn is TWO detents since the mixer knobs adopted canvaskit's feel
+ * (KNOB_SENS = 2 — one detent buys nothing, two buy one of 255 positions). This
+ * helper used to send ONE and every assertion below failed when the law
+ * changed. The fix is the STIMULUS, not the assertions: "a turn moves the
+ * level" is still exactly what this test is for. The one-detent case is now
+ * covered deliberately, below. */
+const turnKnob1 = () => {
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 1]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 1]));
+};
 
 /* The resolver and the engine writes both live in the tick, deliberately: they
  * are synchronous SHM round-trips and do not belong in a MIDI handler. Run
@@ -133,6 +142,7 @@ step('a Schwung-routed track writes its slot OUTPUT, not the synth level', () =>
     writes.length = 0;
     S.sessVolLevel[4] = 1;                       /* seeded; masks resolved above */
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 75, 1]));   /* knob 5 */
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 75, 1]));   /* …2 detents */
     ticks(1);
     if (!writes.some((w) => w.startsWith('slot:volume=')))
         throw new Error('chain flavour lost its write: ' + JSON.stringify(writes));
@@ -140,6 +150,18 @@ step('a Schwung-routed track writes its slot OUTPUT, not the synth level', () =>
         throw new Error('still writing the sound generator level: ' + JSON.stringify(writes));
     if (writes.some((w) => w.startsWith('move_fx:')))
         throw new Error('a chain level leaked onto a bus: ' + JSON.stringify(writes));
+});
+
+step('ONE detent moves nothing — the canvas knob law, two detents per step', () => {
+    S.trackChannel[0] = 2;
+    ticks(64);
+    const before = S.sessVolLevel[0];
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 1]));
+    if (S.sessVolLevel[0] !== before)
+        throw new Error('a single detent moved the level: ' + before + ' -> ' + S.sessVolLevel[0]);
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 1]));
+    if (S.sessVolLevel[0] === before)
+        throw new Error('the second detent did not fire a step');
 });
 
 step('re-pointing the track at another Move instrument RE-SEEDS the level', () => {

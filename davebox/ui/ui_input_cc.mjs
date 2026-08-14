@@ -28,7 +28,8 @@ import {
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool
 } from './ui_constants.mjs';
 import { S, conductorTrackIdx } from './ui_state.mjs';
-import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS } from './ui_engine.mjs';
+import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
+         SESS_KNOB_MODES, KNOB_SENS, knobAccumSteps } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity, BANK_CYCLE_DRUM, CONDUCT_BANK_CYCLE } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
          showActionPopupGauge } from './ui_persistence.mjs';
@@ -804,9 +805,14 @@ function modalDialogUp() {
                     }
                 } else if (S.sessionView) {
                     S.sessKnobMode = (S.sessKnobMode + (delta > 0 ? 1 : 3)) % 4;
-                    const modeNames = ['VOLUME', 'PAN', 'SEND A', 'SEND B'];
-                    showActionPopup(modeNames[S.sessKnobMode], 30);
                     _sessInvalidateAllLevels();
+                    /* No popup: turning the jog while touching it now reveals
+                     * the mixer page itself, which already names the mode in its
+                     * header and shows all 8 tracks in it. A popup here would
+                     * cover the thing the turn was meant to show. A turn without
+                     * the touch still opens the page for the timeout window
+                     * (bankSelectTick), so the mode change is never silent. */
+                    S.bankSelectTick = S.tickCount;
                     forceRedraw();
                 } else if (S.loopHeld) {
                     /* Track View + Loop held: adjust length ±1 step */
@@ -2614,17 +2620,6 @@ function _onCC_stepedit(d1, d2) {
  * (SLOT_LEVEL_STEP) — same law, same feel, one constant. 1/16 was 4x too fast
  * and, against decodeDelta's batched counts, jerky with it. */
 
-const SESS_KNOB_MODES = [
-    { key: 'volume',  slotKey: 'volume',  label: 'VOL',    max: SLOT_LEVEL_MAX, step: SLOT_LEVEL_STEP, def: 1.0,
-      fmt: (v) => v.toFixed(2) + 'x' },
-    { key: 'pan',     slotKey: 'pan',     label: 'PAN',    max: 1.0,            step: 0.05,            def: 0.5,
-      fmt: (v) => { const pct = Math.round((v - 0.5) * 200); return pct === 0 ? 'C' : pct < 0 ? Math.abs(pct) + 'L' : pct + 'R'; },
-      snap: 0.5, snapZone: 0.04 },
-    { key: 'send_a',  slotKey: 'send_a',  label: 'SND A',  max: 1.0,            step: 0.05,            def: 0.0,
-      fmt: (v) => Math.round(v * 100) + '%' },
-    { key: 'send_b',  slotKey: 'send_b',  label: 'SND B',  max: 1.0,            step: 0.05,            def: 0.0,
-      fmt: (v) => Math.round(v * 100) + '%' },
-];
 
 function _sessInvalidateAllLevels() {
     S.sessVolLevel.fill(-1);
@@ -2643,7 +2638,22 @@ function _sessionKnobParam(knobIdx, d2) {
     const mode = SESS_KNOB_MODES[S.sessKnobMode];
     const d = (d2 >= 1 && d2 <= 63) ? d2 : (d2 >= 65) ? d2 - 128 : 0;
     if (!d) return;
-    let v = lvl + d * mode.step;
+    /* Canvas knob feel: SENS detents buy one of 255 positions. The accumulator
+     * is per knob so eight fingers on eight strips cannot steal each other's
+     * partial turns, and a direction reversal clears it (see knobAccumSteps). */
+    const acc = knobAccumSteps(S.sessKnobAccum[knobIdx] | 0, d, KNOB_SENS);
+    S.sessKnobAccum[knobIdx] = acc.accum;
+    if (!acc.steps) {
+        /* Partial detent: nothing moves, but the finger is clearly ON this
+         * strip, so show its value. Otherwise the first touch of a slow turn
+         * reads as a dead knob. */
+        S.sessVolLastKnob = knobIdx;
+        S.sessVolLastTurn = S.tickCount;
+        S.bankSelectTick  = S.tickCount;
+        forceRedraw();
+        return;
+    }
+    let v = lvl + acc.steps * mode.step;
     if (v < 0) v = 0;
     if (v > mode.max) v = mode.max;
     if (mode.snap !== undefined) {
@@ -2657,8 +2667,17 @@ function _sessionKnobParam(knobIdx, d2) {
     S.sessVolPending[knobIdx] = true;
     S.sessVolSaveOwed = true;
     S.sessVolLastTurn = S.tickCount;
-    showActionPopupGauge(v / mode.max, mode.step / mode.max,
-                         'TRACK ' + (knobIdx + 1) + ' ' + mode.label, mode.fmt(v));
+    S.sessVolLastKnob = knobIdx;       /* this strip's number swaps to its value */
+    /* The MIXER PAGE is the read-out now — all 8 tracks in this mode, with the
+     * turned knob's cell highlighted and its value in the header. A gauge popup
+     * would cover seven of the eight values the page exists to show, and it is
+     * the one track you already know about.
+     *
+     * Stamping bankSelectTick keeps the page up for the usual window after the
+     * finger lifts, so a turn made without touching first still shows its
+     * result — the same timeout the clip param banks use. */
+    S.bankSelectTick = S.tickCount;
+    forceRedraw();
 }
 
 function _onCC_knobs(d1, d2) {

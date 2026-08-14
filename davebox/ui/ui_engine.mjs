@@ -84,8 +84,7 @@ export function engineSet(slot, comp, key, val) {
  * reset here: rewriting a level at load is how a project quietly changes
  * loudness, and the host's own Module Level row remains its editor. */
 export const SLOT_LEVEL_KEY = 'volume';
-export const SESS_KNOB_KEYS = ['volume', 'pan', 'send_a', 'send_b'];
-export const SESS_KNOB_DEFAULTS = [1.0, 0.5, 0.0, 0.0];
+
 
 /* And the law for MOVING it, shared by every level control so they cannot drift
  * apart in feel. Levels are 0..4; a detent of 1/64 puts unity ~64 detents away
@@ -120,6 +119,69 @@ export const SLOT_LEVEL_STEP = 1 / 64;
  * being silently reinterpreted. No davebox surface can produce such a value;
  * this is the UI contract, not the storage one. */
 export const SLOT_LEVEL_MAX = 2;
+
+/* The four session-view mixer params, as ONE table. Everything about a mode —
+ * its param key, its range and detent, its default, how it formats, how it
+ * DRAWS — lives on the same row, so a mode cannot pick up the wrong key or the
+ * wrong widget by drifting out of step with a parallel array.
+ *
+ * `widget` is a render-cell kind (see ui_cells' toRenderCell for the vocabulary):
+ * a level is a **fader** because that is what a level is; pan is a **bipolar
+ * arc** because its meaning is distance from centre, not a quantity; the sends
+ * are plain unipolar arcs. `snap`/`snapZone` give pan a sticky centre.
+ *
+ * ⚠ Lives here, not in ui_input_cc, because BOTH the input path and the render
+ * path need it and ui_render must not import an input module. ui_engine imports
+ * nothing but `os`, so it is safe for anything to depend on. */
+/* ---- canvas knob feel, ported from canvaskit ------------------------------
+ *
+ * The kit's continuous cells are `min:0, max:255, step:1, sens:2` — 256
+ * positions across the range, TWO detents per position. That is the feel Josh
+ * asked these mixer knobs to adopt, and the resolution comes with it: the old
+ * hand-picked 0.05 step gave pan and the sends twenty positions for a whole
+ * sweep, which is why they felt notchy next to a canvas knob.
+ *
+ * Everything is expressed as a fraction of each param's own range, so one law
+ * covers a 0..2 level and a 0..1 send without either feeling different. */
+export const KNOB_POSITIONS = 255;   /* canvaskit KIT_PARAM_MAX */
+export const KNOB_SENS      = 2;     /* canvaskit KIT_SENS — detents per step */
+
+/* canvaskit's `accumStep`, generalised for BATCHED counts.
+ *
+ * ⚠ The kit is called once per physical detent, so it fires at most one step.
+ * davebox is not: `decodeDelta` hands us the shadow framework's accumulated
+ * count, so a quick turn arrives as one CC carrying several detents. Firing a
+ * single step per message would make a fast turn move LESS than a slow one.
+ * We therefore drain the accumulator, which is the same law sampled coarsely.
+ *
+ * ⭑ The reversal reset is the part that makes it feel right, and it is kept
+ * exactly: turning back does not first have to unwind the detents you already
+ * put in, so a direction change responds on the very next detent. */
+export function knobAccumSteps(accum, delta, sens) {
+    if ((accum > 0 && delta < 0) || (accum < 0 && delta > 0)) accum = 0;
+    accum += delta;
+    const steps = (accum / sens) | 0;               /* trunc toward zero */
+    return { accum: accum - steps * sens, steps };
+}
+
+export const SESS_KNOB_MODES = [
+    { key: 'volume', label: 'VOLUME', widget: 'vbar',   def: 1.0, max: SLOT_LEVEL_MAX,
+      fmt: (v) => v.toFixed(2) + 'x' },
+    { key: 'pan',    label: 'PAN',    widget: 'arcbip', def: 0.5, max: 1.0,
+      fmt: (v) => { const pct = Math.round((v - 0.5) * 200); return pct === 0 ? 'C' : pct < 0 ? Math.abs(pct) + 'L' : pct + 'R'; },
+      snap: 0.5, snapZone: 0.02 },
+    { key: 'send_a', label: 'SEND A', widget: 'arc',    def: 0.0, max: 1.0,
+      fmt: (v) => Math.round(v * 100) + '%' },
+    { key: 'send_b', label: 'SEND B', widget: 'arc',    def: 0.0, max: 1.0,
+      fmt: (v) => Math.round(v * 100) + '%' },
+];
+/* One step = one of 255 positions across THIS mode's range. Derived, not
+ * written per mode, so no mode can drift to a different feel. */
+for (const m of SESS_KNOB_MODES) m.step = m.max / KNOB_POSITIONS;
+/* Derived, never hand-mirrored — these used to be two literal arrays beside the
+ * table above, which is one edit away from a mode writing another mode's key. */
+export const SESS_KNOB_KEYS     = SESS_KNOB_MODES.map(m => m.key);
+export const SESS_KNOB_DEFAULTS = SESS_KNOB_MODES.map(m => m.def);
 export function engineGetSlotParam(slot, key) {
     return shadow_get_param(slot, 'slot:' + key);
 }
