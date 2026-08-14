@@ -447,6 +447,13 @@ Each of the 4 slots has:
 - **Forward channel**: 1–16 or −1 (auto: remap to receive ch, or passthrough if receive=All) or −2 (THRU: preserve original ch). Modules can declare `default_forward_channel` in capabilities.
 - **Volume** (`slot:volume`) — the slot's **output bus** fader, applied *after* the slot's FX.
   It scales everything on the channel, including a Move track routed into this slot's synth.
+- **Pan** (`slot:pan`) — balance-style stereo pan, applied post-fader in all four shim audio
+  mix paths. 0.0 = full left, 0.5 = center (both channels at unity), 1.0 = full right.
+  Off-center attenuates the opposite channel: `gain_l = min(1, 2*(1-pan))`,
+  `gain_r = min(1, 2*pan)`. Sends are post-fader **pre-pan** (standard DAW — pan affects the
+  final stereo mix, not the send taps). Captures (Link Audio publisher) are unaffected.
+  Move FX buses carry the same field (`move_fx_strip_t.pan`, addressed as `move_fx:N:pan`).
+  Pan gain helpers: `shadow_pan_gain_l()`/`shadow_pan_gain_r()` in `shadow_chain_mgmt.h`.
 - **Module level** (`slot:synth_volume`) — the sound generator's own level, applied to the
   synth *before* anything is summed into the slot. This is the only point where the synth and a
   routed Move track can be balanced against each other: post-FX they are one signal (a reverb
