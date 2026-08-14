@@ -1148,6 +1148,21 @@ while turning to jump between sections. Picking an **empty** block opens the
 module list, which is how you add an effect. **Back** steps out one level at a
 time; **Shift + Note/Session** leaves outright.
 
+### The eight knobs outside a block
+
+While you're on the chain list — or any of the sound editor's other screens — the
+eight knobs are the **slot's own knob assignments**, the macros set up under
+**Sound Control → Knobs…**. They stay live there so you can play the sound while
+you navigate it.
+
+**Touch a knob and it tells you what it is**: a card names the block and parameter
+it drives (`SYNTH` / `CUTOFF`), or says `UNASSIGNED`. **Turn it** and the card
+shows the value as it moves. Let go and the card clears itself.
+
+**Shift + touch a knob** goes straight to assigning it — the target list for that
+knob, no menu-walking. Pick a block, pick a parameter, and you're back on the knob
+list with the mapping made.
+
 > **Four insert effects is a dAVEBOx SA feature.** Official Schwung routes two, so
 > running dAVEBOx as an ordinary tool shows **FX 1-2** only. The editor asks the
 > host how many it has and shows exactly that many — it will not offer you a block

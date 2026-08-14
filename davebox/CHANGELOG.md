@@ -8,6 +8,13 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **The sound editor's knobs now say what they do.** Outside a block's own
+  parameter pages the eight knobs drive the slot's knob assignments, and until
+  now nothing on screen told you which was which — you turned one and listened.
+  **Touch a knob** and a card names the block and parameter it drives
+  (`SYNTH` / `CUTOFF`), or says `UNASSIGNED`; **turn it** and the card shows the
+  value live. **Shift + touch** goes straight to assigning that knob, instead of
+  walking down to Sound Control → Knobs… and finding its row.
 - **The whole session reads as dAVEBOx now.** Launching dAVEBOx SA opens on
   the dAVEBOx artwork (with a small "Schwung base: x.x.x" note so you can
   always see which Schwung it's built on). The artwork lives there and only

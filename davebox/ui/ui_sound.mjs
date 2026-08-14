@@ -60,7 +60,7 @@ import { parseValue, stepValue, commitString, renderCellsForBank,
     formatValue } from './ui_cells.mjs';
 import {
     drawKitBankPage, drawKitHeader, drawKitSectionPicker, drawKitList,
-    hdrPrint, mvPrint, mvWidth, shapeSample, plotLine,
+    hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard,
 } from './ui_movy.mjs';
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
@@ -560,12 +560,26 @@ const S = {
 
     /* Knob editor (P7 absorb): per-slot knob->target:param assignment. */
     knobIdx: 0,                 /* cursor, 0-7 */
-    knobAsn: [],                /* 8 x {target, param}, read at open */
+    /* 8 entries, ONE cache with two fillers: the editor reads all eight at open,
+     * a knob TOUCH lazily reads the one it needs. `null` = not read yet, and it
+     * has to be distinguishable from `{target:'',param:''}` (= read, unassigned)
+     * or every touch would re-pay two round trips to learn nothing. */
+    knobAsn: [null, null, null, null, null, null, null, null],
     knobTargets: [],            /* [{id, name}] — components with modules */
     knobTargetIdx: 0,
     knobParams: [],             /* [{key, label}] for the chosen target */
     knobParamIdx: 0,
     knobTarget: '',             /* target chosen in the picker */
+
+    /* Knob HUD (outside a module editor the eight knobs drive the slot's knob
+     * ASSIGNMENTS, and nothing on screen said so). Lifetime is S.touchedIdx —
+     * the physical touch plus tick's existing decay — never a second timer. */
+    asnVal: '',                 /* last value read back for asnValIdx */
+    asnValIdx: -1,              /* which knob asnVal belongs to; -1 = none */
+    asnReadFor: -1,             /* knob whose ASSIGNMENT is owed a read; -1 = none */
+    asnValFor: -1,              /* knob owing a VALUE read-back; -1 = none */
+    asnValDue: 0,               /* earliest tick the next read may run */
+    asnValTurn: -1,             /* tick of the last turn, for the settle read */
 
     /* LFO editor (P7 absorb): lfoN:* slot params, values cached at open and
      * kept current optimistically on edit (reads are SHM round-trips). */
@@ -617,6 +631,23 @@ export function soundPickStateForTest() {
     return { kinds: S.pickRows.map(r => r.kind), row: S.pickRow, view: S.view };
 }
 
+/* Read-only view of the knob HUD's CONTENT decision, for tests. The card's text
+ * goes down one set_pixel at a time, so a render stub can prove that lines were
+ * drawn but never that they say the right thing — this pins the decision, and
+ * the render test pins that the draw path runs. Exposes no mutation. */
+export function soundKnobHudForTest() {
+    const i = S.touchedIdx;
+    const a = i >= 0 ? S.knobAsn[i] : null;
+    return {
+        shown: i >= 0 && knobHudContext(),
+        knob: i,
+        target: a ? a.target : null,
+        param: a ? a.param : null,
+        value: (S.asnValIdx === i) ? fmtAsnValue(S.asnVal) : '',
+        cursor: S.knobIdx,          /* where the assign flow is pointed */
+    };
+}
+
 export function soundActive() { return S.active; }
 export function soundTrack() { return S.track; }
 export function soundSlot()  { return S.slot; }
@@ -664,6 +695,7 @@ export function soundEnter(track, slot) {
     S.shiftHeld = GS.shiftHeld === true;
     S.touchedIdx = -1;
     S.turnedSinceTouch = false;
+    resetKnobAsn();
     S.pendingWrites.length = 0;
     S.blockNames = [];
     S.pendingAction = { t: 'names' };
@@ -750,6 +782,7 @@ export function soundRetarget(track, slot) {
     S.shiftHeld = GS.shiftHeld === true;
     S.touchedIdx = -1;
     S.turnedSinceTouch = false;
+    resetKnobAsn();
     /* Everything below described the PREVIOUS module: an audition baseline, a
      * name cache, a half-open dialog, a browser position. None of it transfers. */
     S.origState = null;
@@ -1727,14 +1760,26 @@ function renderSlotCfg() {
  * knob_{N}_set ("target:param") / knob_{N}_clear. All engine reads run from
  * tick via pendingAction; edits go through the slot-write queue. */
 
+function readKnobAsn(i) {
+    return {
+        target: engineGetChainParam(S.slot, 'knob_' + (i + 1) + '_target') || '',
+        param:  engineGetChainParam(S.slot, 'knob_' + (i + 1) + '_param') || '',
+    };
+}
+
+/* Every assignment belongs to ONE slot, so a retarget must drop the lot. A
+ * stale entry here is the silent kind of wrong: the HUD would name the previous
+ * track's mapping over the new track's knob. */
+function resetKnobAsn() {
+    S.knobAsn = [null, null, null, null, null, null, null, null];
+    S.asnVal = '';
+    S.asnValIdx = -1;
+    S.asnValFor = -1;
+    S.asnReadFor = -1;
+}
+
 function openKnobEditor() {
-    S.knobAsn = [];
-    for (let i = 0; i < NUM_KNOBS; i++) {
-        S.knobAsn.push({
-            target: engineGetChainParam(S.slot, 'knob_' + (i + 1) + '_target') || '',
-            param:  engineGetChainParam(S.slot, 'knob_' + (i + 1) + '_param') || '',
-        });
-    }
+    for (let i = 0; i < NUM_KNOBS; i++) S.knobAsn[i] = readKnobAsn(i);
     S.knobIdx = 0;
     S.view = VIEW_KNOBS;
 }
@@ -1827,6 +1872,9 @@ function knobAsnLabel(a) {
 function commitKnobAssignment(target, param) {
     const n = S.knobIdx + 1;
     S.knobAsn[S.knobIdx] = { target: target || '', param: param || '' };
+    /* The cached read-back belonged to the OLD param — showing it under the new
+     * assignment would be a number from a different control. */
+    if (S.asnValIdx === S.knobIdx) { S.asnVal = ''; S.asnValIdx = -1; }
     if (target && param) queueChainWrite('knob_' + n + '_set', target + ':' + param);
     else queueChainWrite('knob_' + n + '_clear', '1');
     S.view = VIEW_KNOBS;
@@ -1851,6 +1899,118 @@ function renderKnobParam() {
     drawKitHeader('KNOB ' + (S.knobIdx + 1) + ' PARAM', false);
     drawKitList(S.knobParams.map(p => p.label), S.knobParamIdx,
         { emptyMsg: 'NO PARAMS' });
+}
+
+/* ---- knob HUD: touch orients, turn reveals ------------------------------
+ *
+ * Outside a module's editor the eight physical knobs drive the SLOT's knob
+ * assignments (see the CC 71-78 branch in soundOnCC), and until now nothing on
+ * screen said which knob was which — you turned one and watched the sound.
+ * Josh's 08-10 spec: touch names the assignment, turn shows its value, and
+ * Shift+touch jumps to that knob's assign flow.
+ *
+ * ⚠⚠ The gate below is deliberately the SAME predicate as the turn-forwarding
+ * branch (`!S.bus && S.slot >= 0`, view !== VIEW_EDIT): the HUD describes what
+ * the knob actually does, so the two must not be able to disagree. A bus
+ * context has no slot to address and forwards nothing — hence nothing to name.
+ *
+ * ⚠ Every read here is a ~2.9 ms SHM round trip, so they all run from tick:
+ * the assignment once per knob per slot (cached in S.knobAsn), the value on a
+ * bounded cadence while turning plus one settle read after the last detent. */
+
+const KNOB_TARGET_SHORT = {
+    synth: 'SYNTH', midi_fx1: 'MIDI FX',
+    fx1: 'FX 1', fx2: 'FX 2', fx3: 'FX 3', fx4: 'FX 4',
+};
+
+/* Value read-back cadence, in ticks (~94 Hz). One read per ~43 ms while a
+ * sweep is in progress — enough to read as live, and bounded so a fast turn
+ * cannot queue a read per detent. */
+const ASN_VAL_TICKS = 4;
+
+function knobHudContext() {
+    if (!S.active || S.view === VIEW_EDIT) return false;
+    if (S.bus || S.slot < 0) return false;
+    /* The assign screens ARE the assignment, spelled out in full. A card over
+     * them would cover the list it duplicates. */
+    if (S.view === VIEW_KNOBS || S.view === VIEW_KNOB_TARGET ||
+        S.view === VIEW_KNOB_PARAM) return false;
+    return !isTextEntryActive();
+}
+
+/* A knob was touched or turned: show the card, and queue the one read that
+ * fills it if this slot's assignment has never been read. */
+function armKnobHud(idx) {
+    S.touchedIdx = idx;
+    S.touchedTick = S.tickCount;
+    S.dirty = true;
+    /* ⚠ NOT queued on S.pendingAction: that queue is latest-wins navigation, so
+     * a touch arriving behind a pending screen change would drop its read and
+     * the card would read UNASSIGNED for a knob that is assigned — with no
+     * second chance, because the cache would still say "unread" only after the
+     * touch that would have re-armed it. Its own field, drained every tick.
+     *
+     * ⭑ Armed unconditionally; whether it costs a round trip is decided in ONE
+     * place, in the tick. Testing the cache here too would be belt-and-braces
+     * that also has to be right — and it would be checking a value that can
+     * change before the tick runs (openKnobEditor reads all eight). */
+    S.asnReadFor = idx;
+}
+
+function tickKnobAsn() {
+    if (S.asnReadFor >= 0) {
+        const k = S.asnReadFor;
+        S.asnReadFor = -1;
+        if (S.knobAsn[k] === null) { S.knobAsn[k] = readKnobAsn(k); S.dirty = true; }
+    }
+    if (S.asnValFor < 0) return;
+    if (S.tickCount < S.asnValDue) return;
+    const a = S.knobAsn[S.asnValFor];
+    /* Nothing assigned, or the assignment is not read yet — there is no key to
+     * read a value from. Drop the request rather than retrying it forever. */
+    if (!a || !a.target || !a.param) { S.asnValFor = -1; return; }
+    const settled = (S.tickCount - S.asnValTurn) >= ASN_VAL_TICKS;
+    S.asnVal = String(engineGet(S.slot, a.target, a.param) || '');
+    S.asnValIdx = S.asnValFor;
+    S.asnValDue = S.tickCount + ASN_VAL_TICKS;
+    /* This read happened after the turning stopped, so it IS the settled value
+     * — nothing further to watch. */
+    if (settled) S.asnValFor = -1;
+    S.dirty = true;
+}
+
+/* The DSP owns the value (we sent it a relative CC, not a number), so showing
+ * it means reading it back. */
+function armKnobValue(idx) {
+    if (S.asnValIdx !== idx) { S.asnVal = ''; S.asnValIdx = -1; }
+    S.asnValFor = idx;
+    S.asnValTurn = S.tickCount;
+}
+
+function fmtAsnValue(raw) {
+    if (!raw) return '';
+    const n = parseFloat(raw);
+    if (isFinite(n) && raw.indexOf('.') >= 0) return n.toFixed(2);
+    return raw.length > 10 ? raw.slice(0, 10) : raw;
+}
+
+function drawKnobAsnHud() {
+    const i = S.touchedIdx;
+    const a = S.knobAsn[i];
+    const val = (S.asnValIdx === i) ? fmtAsnValue(S.asnVal) : '';
+    const body = hudCard('KNOB ' + (i + 1), val || null);
+    /* Two lines rather than one "SYNTH: CUTOFF": the body is 112px of label
+     * font and a long param key would be truncated exactly where it stops being
+     * identifiable. Unread reads as UNASSIGNED for one frame at most — the read
+     * is queued by the same touch that opened this card. */
+    const line = (n, txt) => {
+        const t = String(txt);
+        mvPrint(Math.max(body.x, body.x + Math.round((body.w - mvWidth(t)) / 2)),
+                body.y + n * 11, t, 1);
+    };
+    if (!a || !a.target || !a.param) { line(0, 'UNASSIGNED'); return; }
+    line(0, KNOB_TARGET_SHORT[a.target] || a.target.toUpperCase());
+    line(1, a.param.toUpperCase());
 }
 
 /* ---- LFO editor (P7 absorb) ---------------------------------------------
@@ -2415,6 +2575,7 @@ function runAction(a) {
     }
     else if (a.t === 'slotcfg')  openSlotCfg(a.keep, a.which);
     else if (a.t === 'knobs')    openKnobEditor();
+    else if (a.t === 'knobasn')  { openKnobEditor(); S.knobIdx = a.knob; openKnobTargets(); }
     else if (a.t === 'knobtarget') openKnobTargets();
     else if (a.t === 'knobparam')  openKnobParams(a.target);
     else if (a.t === 'lfo')      openLfoEditor(a.lfo | 0);
@@ -2865,7 +3026,17 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * (no channel gate); bus contexts have no slot to address. */
         if (!S.bus && S.slot >= 0) {
             const delta = decodeDelta(d2);
-            if (delta) shadow_send_midi_to_dsp(slotIndex(S.slot), [0xB0, d1, delta > 0 ? 1 : 127]);
+            if (delta) {
+                shadow_send_midi_to_dsp(slotIndex(S.slot), [0xB0, d1, delta > 0 ? 1 : 127]);
+                /* Turn reveals. Armed even with no preceding touch (an injected
+                 * CC, or a hand already resting on the knob when the screen
+                 * opened) — a turn is at least as strong a statement of intent
+                 * as a touch, and the card is where the value has to appear. */
+                if (knobHudContext()) {
+                    armKnobHud(d1 - 71);
+                    armKnobValue(d1 - 71);
+                }
+            }
         }
         return true;
     }
@@ -3317,6 +3488,26 @@ export function soundOnNote(status, d1, d2) {
     hostedNote(status, d1, d2);
 
     const on = (status === 0x90 && d2 >= 64);
+
+    /* Touch orients — and Shift+touch goes straight to the assignment.
+     *
+     * The long way round is the menu -> Sound Control -> Knobs... -> row N ->
+     * Target, which is four screens to answer a question you asked by putting
+     * your hand on the knob. Both live on the PRESS: a release-triggered jump
+     * would fire after the hand has already moved on.
+     *
+     * ⭑ The assign route goes through openKnobEditor (all eight assignments)
+     * rather than the one knob it needs, because committing lands you on the
+     * KNOBS list — which would otherwise render seven unread rows as "(None)". */
+    if (on && knobHudContext()) {
+        if (S.shiftHeld) {
+            S.pendingAction = { t: 'knobasn', knob: d1 };
+            S.dirty = true;
+            return true;
+        }
+        armKnobHud(d1);
+    }
+
     const next = on ? d1 : -1;
     if (next !== S.touchedIdx) {
         S.touchedIdx = next;
@@ -3470,6 +3661,10 @@ export function soundTick() {
     }
 
     tickChainPatches();
+
+    /* After the write drain, so a read never overtakes the turn it is reading
+     * back, and after pendingAction so the assignment is cached first. */
+    if (!S.pendingWrites.length) tickKnobAsn();
 
     if (S.needsPoll && !S.pendingWrites.length) {
         S.needsPoll = false;
@@ -3895,6 +4090,9 @@ export function soundRender() {
     else if (S.view === VIEW_PATCHES) renderChainPatches();
     else if (S.view === VIEW_BUSES) renderBuses();
     else renderEdit();
+    /* The level readout wins: it is the same box in the same place, and the
+     * volume knob is a deliberate second gesture on top of this one. */
     if (S.volShownUntil >= 0 && S.tickCount <= S.volShownUntil) drawVolReadout();
+    else if (S.touchedIdx >= 0 && knobHudContext()) drawKnobAsnHud();
     return true;
 }

@@ -183,6 +183,32 @@ makes an unknown synth feel calibrated — verified on device during phase 1.
 Two different knob behaviours in one view, chosen by mode. Deliberate, not
 accidental.
 
+### Outside a block editor the knobs are the SLOT's assignments — and say so
+
+On every non-EDIT screen the eight knobs forward to the chain DSP as relative
+CCs, driving whatever `knob_N_target`/`knob_N_param` says (`soundOnCC`, the
+CC 71-78 branch). Until 2026-08-14 nothing on screen named that mapping.
+
+- **Touch** raises a `hudCard` naming the block and param, on two lines, or
+  `UNASSIGNED`. **Turn** adds the value, read back from `target:param`, in the
+  card header. Lifetime is `S.touchedIdx` — the physical touch plus tick's
+  existing decay, never a second timer.
+- **Shift + touch** opens that knob's assign flow directly (`openKnobEditor`
+  then `S.knobIdx` then `openKnobTargets` — in that order; the editor resets the
+  cursor). It runs the full eight-knob read first so committing lands on a KNOBS
+  list with no unread rows rendering as `(None)`.
+
+⚠⚠ **The card's gate is the SAME predicate as the turn-forwarding branch** —
+non-EDIT view, `!S.bus && S.slot >= 0`, minus the assign screens themselves.
+A bus forwards no knob, so there is nothing there to name; if the two ever
+disagree the card describes a control the knob is not driving.
+
+⚠ **Every read is a ~2.9 ms round trip**, so: the assignment is read once per
+knob per slot into `S.knobAsn` (`null` = unread, distinct from read-and-
+unassigned) and dropped wholesale on a retarget; the value read-back runs on a
+4-tick cadence while turning plus one settle read after the last detent, then
+stops. Pinned by `tests/js/test_sound_knob_hud.mjs`.
+
 ## State
 
 - `S.trackSoundMode[t]` — per track, alongside `trackActiveBank[t]`.
