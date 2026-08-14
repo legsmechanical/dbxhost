@@ -189,10 +189,12 @@ On every non-EDIT screen the eight knobs forward to the chain DSP as relative
 CCs, driving whatever `knob_N_target`/`knob_N_param` says (`soundOnCC`, the
 CC 71-78 branch). Until 2026-08-14 nothing on screen named that mapping.
 
-- **Touch** raises a `hudCard` naming the block and param, on two lines, or
-  `UNASSIGNED`. **Turn** adds the value, read back from `target:param`, in the
-  card header. Lifetime is `S.touchedIdx` — the physical touch plus tick's
-  existing decay, never a second timer.
+- **Touch** raises a `hudCard` naming the block and the param's display name, on
+  two lines, or `UNASSIGNED`. **Turn** adds the value in the card header.
+  Lifetime is `S.touchedIdx` — the physical touch plus tick's existing decay,
+  never a second timer. ⭑ The value is *seeded* on touch (the step law needs a
+  base to add to) but stays hidden until the knob MOVES — touch orients, turn
+  reveals.
 - **Shift + touch** opens that knob's assign flow directly (`openKnobEditor`
   then `S.knobIdx` then `openKnobTargets` — in that order; the editor resets the
   cursor). It runs the full eight-knob read first so committing lands on a KNOBS
@@ -203,11 +205,48 @@ non-EDIT view, `!S.bus && S.slot >= 0`, minus the assign screens themselves.
 A bus forwards no knob, so there is nothing there to name; if the two ever
 disagree the card describes a control the knob is not driving.
 
-⚠ **Every read is a ~2.9 ms round trip**, so: the assignment is read once per
-knob per slot into `S.knobAsn` (`null` = unread, distinct from read-and-
-unassigned) and dropped wholesale on a retarget; the value read-back runs on a
-4-tick cadence while turning plus one settle read after the last detent, then
-stops. Pinned by `tests/js/test_sound_knob_hud.mjs`.
+#### The turn law is movy's, applied in JS on an absolute value
+
+These knobs used to forward to the chain DSP as **relative CCs** and let
+`chain_midi.c` decide. That cost both resolution and feel, three ways:
+
+1. **The hardware delta magnitude was dropped.** The shadow framework hands
+   davebox an *accumulated* detent count; one tick per event went out
+   regardless, so a fast turn moved LESS than a slow one.
+2. **Sending N ticks instead is worse.** The DSP accelerates on the elapsed time
+   *between* events, and N events in one batch are stamped together — every one
+   at maximum acceleration.
+3. **Its base step is the param's declared step**, so a param declaring 0.5 over
+   0..1 has two positions.
+
+So the value is owned here and written absolutely, under movy's law
+(`schwung-movy/src/model/constants.ts`, `MIN_STEP_RANGE_FRAC`):
+
+| type | per-detent step | detents per step |
+|---|---|---|
+| float | **1% of range**, declared step ignored | 1 |
+| int | `max(declared, 1% of range)` — declared acts as a FLOOR | 1 |
+| enum | 1 (index) | **4** |
+
+Direction reversal **resets** the accumulator rather than unwinding it.
+
+⚠ The DSP's `knob_mappings[].current_value` accumulator is consequently unused.
+Nothing reads it under SA (`knob_N_value` has no caller in this tree) and it is
+re-seeded from the live plugin on every state restore — a path whose comment
+already anticipates this. **If a relative-CC writer for these knobs ever comes
+back, the two accumulators will disagree and the knob will jump.**
+
+⚠ **Every read is a ~2.9 ms round trip**, so they run one per tick in dependency
+order: the assignment (cached per knob per slot in `S.knobAsn`, `null` = unread
+and distinct from read-and-unassigned), the target's `chain_params` (cached per
+slot in `S.knobMeta`), then the value. All dropped wholesale on a retarget.
+**A sweep costs ZERO reads** — the value is owned, so it is arithmetic, and the
+writes coalesce to one per tick. ⚠⚠ Only a TOUCH re-seeds the value; a turn must
+not, or a mid-sweep read overwrites the optimistic value with one lagging the
+queued write and the knob stutters backwards under the hand.
+
+Pinned by `tests/js/test_sound_knob_hud.mjs` (20 assertions, each
+mutation-verified).
 
 ## State
 

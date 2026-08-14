@@ -1163,6 +1163,13 @@ shows the value as it moves. Let go and the card clears itself.
 knob, no menu-walking. Pick a block, pick a parameter, and you're back on the knob
 list with the mapping made.
 
+Every knob sweeps its whole range in about the same gesture, whatever the
+parameter's units — a filter cutoff and a 0.5-to-20-second reverb size take the
+same turn. Turning faster moves further, in proportion, and changing direction
+takes effect on the next click rather than unwinding what you just did.
+Whole-number parameters keep their own steps, and list parameters take a few
+clicks each so you can't skip past one by brushing the knob.
+
 > **Four insert effects is a dAVEBOx SA feature.** Official Schwung routes two, so
 > running dAVEBOx as an ordinary tool shows **FX 1-2** only. The editor asks the
 > host how many it has and shows exactly that many — it will not offer you a block

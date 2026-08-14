@@ -573,13 +573,18 @@ const S = {
 
     /* Knob HUD (outside a module editor the eight knobs drive the slot's knob
      * ASSIGNMENTS, and nothing on screen said so). Lifetime is S.touchedIdx —
-     * the physical touch plus tick's existing decay — never a second timer. */
-    asnVal: '',                 /* last value read back for asnValIdx */
-    asnValIdx: -1,              /* which knob asnVal belongs to; -1 = none */
-    asnReadFor: -1,             /* knob whose ASSIGNMENT is owed a read; -1 = none */
-    asnValFor: -1,              /* knob owing a VALUE read-back; -1 = none */
-    asnValDue: 0,               /* earliest tick the next read may run */
-    asnValTurn: -1,             /* tick of the last turn, for the settle read */
+     * the physical touch plus tick's existing decay — never a second timer.
+     * The VALUE is owned here and written absolutely, so a sweep costs no
+     * reads at all; see the turn law above knobCellFor. */
+    knobMeta: {},               /* target id -> chain_params array, cached per slot */
+    asnLoadFor: -1,             /* knob being loaded/edited; -1 = none */
+    asnStage: 0,                /* 0 assignment, 1 metadata, 2 value, 3 loaded */
+    asnCell: null,              /* editable cell for asnCellFor */
+    asnCellFor: -1,
+    asnValNum: null,            /* authoritative local value, optimistic on turn */
+    asnPend: 0,                 /* detent STEPS not yet applied */
+    asnLastDir: 0,              /* for the reversal reset */
+    asnRevealed: false,         /* the value is hidden until the knob MOVES */
 
     /* LFO editor (P7 absorb): lfoN:* slot params, values cached at open and
      * kept current optimistically on edit (reads are SHM round-trips). */
@@ -643,8 +648,9 @@ export function soundKnobHudForTest() {
         knob: i,
         target: a ? a.target : null,
         param: a ? a.param : null,
-        value: (S.asnValIdx === i) ? fmtAsnValue(S.asnVal) : '',
+        value: fmtAsnValue(i),
         cursor: S.knobIdx,          /* where the assign flow is pointed */
+        cell: (S.asnCellFor === i && S.asnCell) ? S.asnCell : null,
     };
 }
 
@@ -1772,10 +1778,15 @@ function readKnobAsn(i) {
  * track's mapping over the new track's knob. */
 function resetKnobAsn() {
     S.knobAsn = [null, null, null, null, null, null, null, null];
-    S.asnVal = '';
-    S.asnValIdx = -1;
-    S.asnValFor = -1;
-    S.asnReadFor = -1;
+    S.knobMeta = {};
+    S.asnLoadFor = -1;
+    S.asnStage = 0;
+    S.asnCell = null;
+    S.asnCellFor = -1;
+    S.asnValNum = null;
+    S.asnPend = 0;
+    S.asnLastDir = 0;
+    S.asnRevealed = false;
 }
 
 function openKnobEditor() {
@@ -1872,9 +1883,13 @@ function knobAsnLabel(a) {
 function commitKnobAssignment(target, param) {
     const n = S.knobIdx + 1;
     S.knobAsn[S.knobIdx] = { target: target || '', param: param || '' };
-    /* The cached read-back belonged to the OLD param — showing it under the new
-     * assignment would be a number from a different control. */
-    if (S.asnValIdx === S.knobIdx) { S.asnVal = ''; S.asnValIdx = -1; }
+    /* The cell and the value belonged to the OLD param — a number from a
+     * different control, and a step law derived from a different range. Force
+     * the whole load to re-run rather than clearing the pieces one by one. */
+    if (S.asnCellFor === S.knobIdx) {
+        S.asnCell = null; S.asnCellFor = -1; S.asnValNum = null; S.asnPend = 0;
+    }
+    if (S.asnLoadFor === S.knobIdx) S.asnStage = 0;
     if (target && param) queueChainWrite('knob_' + n + '_set', target + ':' + param);
     else queueChainWrite('knob_' + n + '_clear', '1');
     S.view = VIEW_KNOBS;
@@ -1914,25 +1929,98 @@ function renderKnobParam() {
  * the knob actually does, so the two must not be able to disagree. A bus
  * context has no slot to address and forwards nothing — hence nothing to name.
  *
- * ⚠ Every read here is a ~2.9 ms SHM round trip, so they all run from tick:
- * the assignment once per knob per slot (cached in S.knobAsn), the value on a
- * bounded cadence while turning plus one settle read after the last detent. */
+ * ⚠ Every read here is a ~2.9 ms SHM round trip, so they all run from tick, one
+ * per tick: the assignment and the target's param metadata are cached per slot,
+ * and the value is re-seeded once per touch. A SWEEP costs zero reads — see the
+ * turn law below, which owns the value rather than reading it back. */
 
 const KNOB_TARGET_SHORT = {
     synth: 'SYNTH', midi_fx1: 'MIDI FX',
     fx1: 'FX 1', fx2: 'FX 2', fx3: 'FX 3', fx4: 'FX 4',
 };
 
-/* Value read-back cadence, in ticks (~94 Hz). One read per ~43 ms while a
- * sweep is in progress — enough to read as live, and bounded so a fast turn
- * cannot queue a read per detent. */
-const ASN_VAL_TICKS = 4;
+/* ── the turn law: movy's, applied in JS on an ABSOLUTE value ───────────────
+ *
+ * ⭑⭑ These knobs used to forward to the chain DSP as relative CCs and let it
+ * decide (`chain_midi.c`, the CC 71-78 branch). That cost both resolution and
+ * feel, for three separate reasons:
+ *
+ *  1. **The hardware delta magnitude was DROPPED.** The shadow framework hands
+ *     davebox an ACCUMULATED detent count, and we sent exactly one tick per
+ *     event regardless — so a fast turn moved LESS than a slow one. Same bug
+ *     the session mixer had, same fix: drain the accumulator.
+ *  2. **Sending N ticks instead would have been worse.** The DSP accelerates on
+ *     the elapsed time BETWEEN events, and N events delivered in one batch are
+ *     all stamped at once — every one of them at maximum acceleration.
+ *  3. **The DSP's base step is the param's DECLARED step**, so a param
+ *     declaring 0.1 over 0..1 has ten positions and nothing can recover them.
+ *
+ * So the value is owned here instead, and written absolutely. The DSP's own
+ * `knob_mappings[].current_value` accumulator goes unused as a result — nothing
+ * reads it under SA (`knob_N_value` has no caller in this tree), and it is
+ * re-seeded from the live plugin on every state restore, a path whose comment
+ * already anticipates exactly this ("may be stale if params were changed via
+ * module UI"). ⚠ If a relative-CC writer for these knobs ever comes back, the
+ * two accumulators will disagree and the knob will jump on the first turn.
+ *
+ * The law itself is movy's (`schwung-movy/src/model/constants.ts`), not an
+ * invention: normalise the per-detent step to a fraction of the param's RANGE
+ * so every knob sweeps in the same number of detents whatever its units — a
+ * wide range (reso 0.5..20) does not crawl and a narrow one is not
+ * hair-trigger. Ints keep their declared step as a FLOOR so discrete values
+ * still move; enums are exempt and cost a fixed number of detents per step. */
 
+const MOVY_STEP_FRAC = 0.01;        /* movy MIN_STEP_RANGE_FRAC: ~100 detents/sweep */
+const ENUM_DETENTS_PER_STEP = 4;    /* movy ENUM_DELTA_DIV */
+
+/* Build the editable cell for an assignment, from the target's chain_params.
+ * Same cell shape the block editor's knobs use, so stepValue / commitString /
+ * formatValue all apply unchanged — including enum option names in the
+ * read-out and the engine-facing commit-by-index rule. */
+function knobCellFor(target, param) {
+    const meta = S.knobMeta[target];
+    const m = meta ? meta.find(p => p && p.key === param) : null;
+    const opts = (m && Array.isArray(m.options) && m.options.length) ? m.options : null;
+    const type = opts ? 'enum' : ((m && m.type) || 'float');
+    /* The fallback is the DSP's own for a param it has no info for: a plain
+     * 0..1 float. Guessing wider would make an unknown knob hair-trigger. */
+    let min = (m && isFinite(m.min)) ? m.min : 0;
+    let max = (m && isFinite(m.max)) ? m.max : 1;
+    if (opts) { min = 0; max = opts.length - 1; }
+    const span = max - min;
+    let step, sens;
+    if (type === 'enum') {
+        step = 1; sens = ENUM_DETENTS_PER_STEP;
+    } else {
+        const rangeStep = span > 0 ? span * MOVY_STEP_FRAC : 0;
+        const declared = (m && isFinite(m.step) && m.step > 0) ? m.step : 0;
+        /* float: normalise OUTRIGHT — the declared step is what costs the
+         * resolution. int: the declared step is a FLOOR, or a 0..3 enum-ish int
+         * would move by 0.03 and never change. */
+        step = (type === 'int') ? Math.max(declared || 1, rangeStep)
+                                : (rangeStep || declared || 0.01);
+        sens = 1;                   /* every detent counts — movy is 1:1 */
+    }
+    return { key: param, name: (m && (m.name || m.label)) || '', type,
+             min, max, step, sens, options: opts };
+}
+
+/* ⚠⚠ TWO predicates, and the card's is a strict SUBSET of the writer's — never
+ * two independent conditions. If the card could be up where the knob does not
+ * write, or vice versa, it would name a control the knob is not driving.
+ *
+ * Where the eight knobs drive the slot's assignments at all. (In VIEW_EDIT they
+ * edit the open block's own cells instead; a bus has no slot to address.) */
+function knobDrivesSlot() {
+    return !!(S.active && S.view !== VIEW_EDIT && !S.bus && S.slot >= 0);
+}
+
+/* ...and where the card that names them may appear. The assign screens ARE the
+ * assignment, spelled out in full, so a card there would cover the list it
+ * duplicates — but the knobs still WRITE there, so you can hear what you are
+ * assigning. */
 function knobHudContext() {
-    if (!S.active || S.view === VIEW_EDIT) return false;
-    if (S.bus || S.slot < 0) return false;
-    /* The assign screens ARE the assignment, spelled out in full. A card over
-     * them would cover the list it duplicates. */
+    if (!knobDrivesSlot()) return false;
     if (S.view === VIEW_KNOBS || S.view === VIEW_KNOB_TARGET ||
         S.view === VIEW_KNOB_PARAM) return false;
     return !isTextEntryActive();
@@ -1940,64 +2028,130 @@ function knobHudContext() {
 
 /* A knob was touched or turned: show the card, and queue the one read that
  * fills it if this slot's assignment has never been read. */
-function armKnobHud(idx) {
+function armKnobHud(idx, reseed) {
     S.touchedIdx = idx;
     S.touchedTick = S.tickCount;
     S.dirty = true;
     /* ⚠ NOT queued on S.pendingAction: that queue is latest-wins navigation, so
-     * a touch arriving behind a pending screen change would drop its read and
+     * a touch arriving behind a pending screen change would drop its load and
      * the card would read UNASSIGNED for a knob that is assigned — with no
      * second chance, because the cache would still say "unread" only after the
      * touch that would have re-armed it. Its own field, drained every tick.
      *
-     * ⭑ Armed unconditionally; whether it costs a round trip is decided in ONE
-     * place, in the tick. Testing the cache here too would be belt-and-braces
-     * that also has to be right — and it would be checking a value that can
-     * change before the tick runs (openKnobEditor reads all eight). */
-    S.asnReadFor = idx;
+     * ⭑ Armed unconditionally; what it COSTS is decided in one place, in the
+     * tick. Testing the caches here too would be belt-and-braces that also has
+     * to be right, against values that can change before the tick runs
+     * (openKnobEditor reads all eight assignments). */
+    if (idx !== S.asnLoadFor) {
+        S.asnLoadFor = idx;
+        S.asnStage = 0;
+        S.knobAccum[idx] = 0;
+        S.asnLastDir = 0;
+        S.asnRevealed = false;
+    } else if (reseed && S.asnStage >= 3) {
+        /* Same knob, TOUCHED again: keep the assignment and metadata, re-seed
+         * the VALUE. Something else may have moved it since (an LFO, a preset
+         * recall), and a card that opens on a stale number is worse than one
+         * that opens a tick late.
+         *
+         * ⚠⚠ TOUCH ONLY — never a turn. A turn also arms the card, and
+         * re-seeding there would read the engine back mid-sweep and overwrite
+         * the optimistic value we just computed, with a number that lags the
+         * write still sitting in the queue. The knob would stutter backwards
+         * under the hand. (Caught by the zero-reads-per-sweep assertion, which
+         * measured the re-seed as a round trip.) */
+        S.asnStage = 2;
+    }
 }
 
+/* One read per tick, in dependency order — the assignment names the target, the
+ * target's chain_params describe the param, the param has a value. Spread
+ * because each is a blocking ~2.9 ms round trip and this runs inside a
+ * sequencer's tick; the card fills in over ~3 ticks (~32 ms), which is not
+ * perceptible, whereas one 9 ms tick is. */
 function tickKnobAsn() {
-    if (S.asnReadFor >= 0) {
-        const k = S.asnReadFor;
-        S.asnReadFor = -1;
-        if (S.knobAsn[k] === null) { S.knobAsn[k] = readKnobAsn(k); S.dirty = true; }
+    const k = S.asnLoadFor;
+    if (k < 0) return;
+    const a = S.knobAsn[k];
+
+    if (S.asnStage === 0) {
+        S.asnStage = 1;
+        if (a === null) { S.knobAsn[k] = readKnobAsn(k); S.dirty = true; return; }
     }
-    if (S.asnValFor < 0) return;
-    if (S.tickCount < S.asnValDue) return;
-    const a = S.knobAsn[S.asnValFor];
-    /* Nothing assigned, or the assignment is not read yet — there is no key to
-     * read a value from. Drop the request rather than retrying it forever. */
-    if (!a || !a.target || !a.param) { S.asnValFor = -1; return; }
-    const settled = (S.tickCount - S.asnValTurn) >= ASN_VAL_TICKS;
-    S.asnVal = String(engineGet(S.slot, a.target, a.param) || '');
-    S.asnValIdx = S.asnValFor;
-    S.asnValDue = S.tickCount + ASN_VAL_TICKS;
-    /* This read happened after the turning stopped, so it IS the settled value
-     * — nothing further to watch. */
-    if (settled) S.asnValFor = -1;
+    const asn = S.knobAsn[k];
+    if (!asn || !asn.target || !asn.param) {   /* unassigned: nothing to load */
+        S.asnStage = 3; S.asnCellFor = -1; S.asnValNum = null; S.asnPend = 0;
+        return;
+    }
+    if (S.asnStage === 1) {
+        S.asnStage = 2;
+        if (!S.knobMeta[asn.target]) {
+            let list = [];
+            try { list = JSON.parse(engineGet(S.slot, asn.target, 'chain_params') || '[]') || []; }
+            catch (e) { list = []; }
+            S.knobMeta[asn.target] = list;
+            S.dirty = true;
+            return;
+        }
+    }
+    if (S.asnStage === 2) {
+        S.asnStage = 3;
+        S.asnCell = knobCellFor(asn.target, asn.param);
+        S.asnCellFor = k;
+        S.asnValNum = parseValue(S.asnCell, engineGet(S.slot, asn.target, asn.param));
+        S.dirty = true;
+        return;
+    }
+
+    /* Loaded. Apply whatever detents arrived — including any that arrived while
+     * the reads above were still in flight, which is why they are ACCUMULATED
+     * rather than applied at the handler. */
+    if (!S.asnPend) return;
+    const steps = S.asnPend;
+    S.asnPend = 0;
+    const cur = (S.asnValNum == null) ? S.asnCell.min : S.asnValNum;
+    const next = stepValue(S.asnCell, cur, steps);
+    if (next === cur) return;
+    S.asnValNum = next;                          /* optimistic, drawn now */
+    queueWrite(S.asnCell.key, commitString(S.asnCell, next), asn.target);
     S.dirty = true;
 }
 
-/* The DSP owns the value (we sent it a relative CC, not a number), so showing
- * it means reading it back. */
-function armKnobValue(idx) {
-    if (S.asnValIdx !== idx) { S.asnVal = ''; S.asnValIdx = -1; }
-    S.asnValFor = idx;
-    S.asnValTurn = S.tickCount;
+/* A turn, in DETENTS. Accumulated rather than written here: this is the MIDI
+ * handler, the value may not be seeded yet, and a sweep must coalesce into one
+ * write per tick rather than one per event. */
+function armKnobValue(idx, delta) {
+    if (idx !== S.asnLoadFor) return;            /* armKnobHud owns the switch */
+    /* ⭑ TOUCH ORIENTS, TURN REVEALS (UI_LANGUAGE, and Josh's spec). The value
+     * is now seeded on touch because the turn law needs a base to add to — but
+     * it stays hidden until the knob actually moves, or a bare orienting touch
+     * would answer a question that was not asked. */
+    S.asnRevealed = true;
+    const dir = delta > 0 ? 1 : -1;
+    /* Direction reversal RESETS the accumulator rather than unwinding it — the
+     * canvaskit rule, and the part that makes a knob feel right. */
+    if (dir !== S.asnLastDir) { S.knobAccum[idx] = 0; S.asnLastDir = dir; }
+    S.knobAccum[idx] += delta;
+    const sens = (S.asnCellFor === idx && S.asnCell) ? (S.asnCell.sens || 1) : 1;
+    while (S.knobAccum[idx] >= sens) { S.asnPend++; S.knobAccum[idx] -= sens; }
+    while (S.knobAccum[idx] <= -sens) { S.asnPend--; S.knobAccum[idx] += sens; }
 }
 
-function fmtAsnValue(raw) {
-    if (!raw) return '';
-    const n = parseFloat(raw);
-    if (isFinite(n) && raw.indexOf('.') >= 0) return n.toFixed(2);
-    return raw.length > 10 ? raw.slice(0, 10) : raw;
+/* The read-out comes from the cell, so an enum reads as its option NAME and a
+ * float rounds by its span — the same rules the block editor's values follow.
+ * ⭑ It is the value we OWN, not a read-back, so it updates on the frame the
+ * detent arrives instead of trailing a round trip. */
+function fmtAsnValue(i) {
+    if (!S.asnRevealed) return '';               /* touch orients; turn reveals */
+    if (S.asnCellFor !== i || !S.asnCell || S.asnValNum == null) return '';
+    const t = formatValue(S.asnCell, S.asnValNum);
+    return (t && t.length > 10) ? t.slice(0, 10) : t;
 }
 
 function drawKnobAsnHud() {
     const i = S.touchedIdx;
     const a = S.knobAsn[i];
-    const val = (S.asnValIdx === i) ? fmtAsnValue(S.asnVal) : '';
+    const val = fmtAsnValue(i);
     const body = hudCard('KNOB ' + (i + 1), val || null);
     /* Two lines rather than one "SYNTH: CUTOFF": the body is 112px of label
      * font and a long param key would be truncated exactly where it stops being
@@ -2010,7 +2164,11 @@ function drawKnobAsnHud() {
     };
     if (!a || !a.target || !a.param) { line(0, 'UNASSIGNED'); return; }
     line(0, KNOB_TARGET_SHORT[a.target] || a.target.toUpperCase());
-    line(1, a.param.toUpperCase());
+    /* The module's own display NAME once its metadata is in ("Room Size", not
+     * `room_size`); the raw key until then, and for a param it does not
+     * declare. */
+    const nm = (S.asnCellFor === i && S.asnCell && S.asnCell.name) || a.param;
+    line(1, String(nm).toUpperCase());
 }
 
 /* ---- LFO editor (P7 absorb) ---------------------------------------------
@@ -3018,24 +3176,20 @@ export function soundOnCC(d1, d2, decodeDelta) {
             return true;
         }
         /* Outside the module editor, the physical knobs drive the slot's
-         * knob-mapping ASSIGNMENTS (Knobs... in slot settings): forward the
-         * turn as the relative CC the chain DSP consumes (chain_midi.c).
-         * One message per event, value 1/127 only — the DSP applies its own
-         * time-based acceleration, so the hardware delta magnitude is
-         * deliberately dropped rather than double-accelerating. Slot-addressed
-         * (no channel gate); bus contexts have no slot to address. */
-        if (!S.bus && S.slot >= 0) {
+         * knob-mapping ASSIGNMENTS (Knobs... in slot settings). The value is
+         * owned and written HERE, absolutely, under movy's step law — see the
+         * turn law above knobCellFor for why forwarding a relative CC to the
+         * chain DSP cost both resolution and feel. Bus contexts have no slot
+         * to address, so they neither write nor show a card. */
+        if (knobDrivesSlot()) {
             const delta = decodeDelta(d2);
             if (delta) {
-                shadow_send_midi_to_dsp(slotIndex(S.slot), [0xB0, d1, delta > 0 ? 1 : 127]);
-                /* Turn reveals. Armed even with no preceding touch (an injected
-                 * CC, or a hand already resting on the knob when the screen
-                 * opened) — a turn is at least as strong a statement of intent
-                 * as a touch, and the card is where the value has to appear. */
-                if (knobHudContext()) {
-                    armKnobHud(d1 - 71);
-                    armKnobValue(d1 - 71);
-                }
+                /* Armed even with no preceding touch (an injected CC, or a hand
+                 * already resting on the knob when the screen opened) — a turn
+                 * is at least as strong a statement of intent as a touch, and
+                 * the card is where the value has to appear. */
+                armKnobHud(d1 - 71, false);   /* a turn never re-seeds */
+                armKnobValue(d1 - 71, delta);
             }
         }
         return true;
@@ -3505,7 +3659,7 @@ export function soundOnNote(status, d1, d2) {
             S.dirty = true;
             return true;
         }
-        armKnobHud(d1);
+        armKnobHud(d1, true);
     }
 
     const next = on ? d1 : -1;

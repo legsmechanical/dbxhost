@@ -15,6 +15,14 @@ the section into a versioned heading at release time.
   (`SYNTH` / `CUTOFF`), or says `UNASSIGNED`; **turn it** and the card shows the
   value live. **Shift + touch** goes straight to assigning that knob, instead of
   walking down to Sound Control → Knobs… and finding its row.
+- **Those knobs now turn at full resolution, and every one feels the same.**
+  They used to hand the turn to the effect chain, which sized each step by
+  whatever the module declared — so a parameter declaring a coarse step had only
+  a handful of usable positions, a wide-range one crawled, and turning fast
+  moved *less* than turning slowly. Now every knob sweeps its whole range in
+  about the same gesture whatever the units, fast turns move proportionally, and
+  a change of direction takes effect immediately. Whole-number and list
+  parameters keep their own natural steps.
 - **The whole session reads as dAVEBOx now.** Launching dAVEBOx SA opens on
   the dAVEBOx artwork (with a small "Schwung base: x.x.x" note so you can
   always see which Schwung it's built on). The artwork lives there and only

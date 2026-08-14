@@ -43,13 +43,41 @@ const ASSIGN = {
     /* A loaded synth, so a block can actually be opened and the VIEW_EDIT
      * exclusion tested against the real view rather than a forced one. */
     'synth:module': 'nusaw',
+    /* ⭑ The metadata is the point of the movy law, so the fixtures are chosen
+     * to break a naive implementation:
+     *   cutoff    — declares a COARSE step (0.5 over a 0..1 range = two
+     *               positions). Normalising outright is what recovers it.
+     *   room_size — a WIDE range (0.5..20) with a fine step. Using the declared
+     *               step here is what makes a knob crawl.
+     *   voices    — an INT whose 1% of range is 0.07; the declared step must
+     *               act as a FLOOR or it would never move.
+     *   shape     — an ENUM, exempt from normalisation, fixed detents per step.
+     */
+    'synth:chain_params': JSON.stringify([
+        { key: 'cutoff', name: 'Cutoff', type: 'float', min: 0, max: 1, step: 0.5 },
+        { key: 'voices', name: 'Voices', type: 'int', min: 1, max: 8, step: 1 },
+        { key: 'shape', name: 'Shape', type: 'enum', options: ['Saw', 'Square', 'Tri'] },
+        { key: 'preset', name: 'Preset', type: 'int', min: 0, max: 99, step: 1 },
+    ]),
+    'fx2:chain_params': JSON.stringify([
+        { key: 'room_size', name: 'Room Size', type: 'float', min: 0.5, max: 20, step: 0.01 },
+    ]),
+    'synth:voices': '4',
+    'synth:shape': 'Saw',
 };
 
 /* Sound mode's view enum (ui_sound.mjs) — not exported, and not worth
  * exporting for a test; pinned here so a renumbering shows up as a failure. */
 const VIEW_EDIT = 1, VIEW_KNOB_TARGET = 12, VIEW_KNOB_PARAM = 13;
 globalThis.shadow_get_param = (slot, key) => { reads.push(key); return ASSIGN[key] || ''; };
-globalThis.shadow_set_param = () => {};
+/* Writes are the observable now that the value is owned in JS and written
+ * absolutely. The stub also RECORDS the write back into ASSIGN, so a re-seed
+ * reads what was actually set — a stub that always answers the original value
+ * would make every re-touch look like a revert. */
+let writes = [];
+globalThis.shadow_set_param = (slot, key, val) => {
+    writes.push({ key, val }); ASSIGN[key] = String(val); return 1;
+};
 let dspMidi = [];
 globalThis.shadow_send_midi_to_dsp = (slot, msg) => { dspMidi.push(msg.slice()); };
 
@@ -106,6 +134,11 @@ const headerRight = () => after(13, 18, 70);
 const cc    = (d1, d2) => snd.soundOnCC(d1, d2, (v) => (v < 64 ? v : v - 128));
 const touch = (k, on) => snd.soundOnNote(on ? 0x90 : 0x80, k, on ? 127 : 0);
 const turn  = (k, dir) => cc(71 + k, dir > 0 ? 1 : 127);
+/* ⚠ ONE event carrying n detents — the shadow framework batches, and dropping
+ * that magnitude is exactly the resolution bug this law replaced. */
+const turnBy = (k, n) => cc(71 + k, n > 0 ? n : 128 + n);
+const wrote = (key) => writes.filter((w) => w.key === key);
+const lastWrite = (key) => { const w = wrote(key); return w.length ? w[w.length - 1].val : null; };
 const shift = (on) => cc(49, on ? 127 : 0);
 const draw  = () => { globalThis.clear_screen(); snd.soundRender(); };
 /* Ticks are where every engine read happens — nothing about this feature is
@@ -151,14 +184,25 @@ step('...and the real render path draws the card, with BOTH body lines', () => {
 step('⭑ the assignment is READ ONCE per knob per slot, not per touch', () => {
     /* Eight touches at two round trips each is ~46 ms of blocking SHM traffic
      * inside a sequencer's tick. The cache is the feature, not an optimisation. */
+    /* ⚠ ALTERNATE knobs. Re-touching the SAME knob skips the assignment stage
+     * anyway (it only re-seeds the value), so a same-knob loop leaves the cache
+     * guard untested — deleting it left this step green. Going away and coming
+     * back is both the realistic gesture and the one that exercises it. */
+    touch(0, false); ticks(6);
+    touch(2, true); ticks(6); touch(2, false);   /* knob 3, warms its own cache */
     reads = [];
-    touch(0, false);
-    touch(0, true); ticks(2);
-    touch(0, false);
-    touch(0, true); ticks(2);
+    touch(0, true); ticks(6); touch(0, false);
+    touch(2, true); ticks(6); touch(2, false);
+    touch(0, true); ticks(6);
     const asnReads = reads.filter((k) => k.indexOf('knob_') === 0);
     if (asnReads.length !== 0)
         throw new Error('re-read the assignment ' + asnReads.length + ' times: ' + asnReads.join(','));
+    /* The target's chain_params is cached per slot too — it is the biggest read
+     * of the three (a whole JSON param list). */
+    const metaReads = reads.filter((k) => k.indexOf('chain_params') >= 0);
+    if (metaReads.length !== 0)
+        throw new Error('re-read metadata ' + metaReads.length + ' times: ' + metaReads.join(','));
+    touch(0, false);
 });
 
 step('⚠ a RETARGET drops the cache — a card must not name the old track', () => {
@@ -186,57 +230,169 @@ step('an UNASSIGNED knob says so, on one line', () => {
     touch(4, false);
 });
 
-step('⭑ TURN reveals the value — read back from the DSP, shown in the header', () => {
-    /* The DSP owns the value: we send it a relative CC, never a number, so the
-     * only way to show one is to read `target:param` back. */
+step('⭑ TURN reveals the value — and WRITES it, absolutely', () => {
+    /* The value is owned in JS and written with shadow_set_param. It used to be
+     * forwarded to the chain DSP as a relative CC and read back; that path is
+     * gone, and with it the DSPs time-based acceleration. */
     ticks(50);                                   /* let the touch decay */
-    dspMidi = [];
-    turn(0, +1);
-    if (!dspMidi.length) throw new Error('the turn was not forwarded to the DSP');
-    ticks(10);
+    writes = []; dspMidi = [];
+    touch(0, true); ticks(4);                    /* seed: assignment, meta, value */
+    if (snd.soundKnobHudForTest().value !== '')
+        throw new Error('a bare TOUCH revealed the value — touch orients, turn reveals');
+    turn(0, +1); ticks(3);
+    if (dspMidi.length)
+        throw new Error('still forwarding a relative CC to the DSP');
+    /* cutoff is 0..1, so one detent is 1% = 0.01 on top of the seeded 0.483. */
+    if (lastWrite('synth:cutoff') !== '0.493')
+        throw new Error('expected a 0.493 write, got ' + lastWrite('synth:cutoff'));
     const h = snd.soundKnobHudForTest();
     if (h.knob !== 0) throw new Error('the turn did not raise knob 1s card');
-    if (h.value !== '0.48')
-        throw new Error('expected the read-back 0.4830 shown as 0.48, got "' + h.value + '"');
+    if (h.value !== '0.49') throw new Error('card shows "' + h.value + '"');
     draw();
     if (headerRight() === 0) throw new Error('the value drew no pixels in the card header');
+    touch(0, false);
 });
 
-step('⚠ the read-back STOPS once the turning settles', () => {
-    /* The cadence bounds a sweep; this bounds the silence after it. Leaving
-     * asnValFor armed turns the settle read into a permanent poll — one
-     * blocking round trip every four ticks, for the rest of the session, for a
-     * value nothing is looking at. It is invisible except as sequencer jitter. */
-    ticks(20);                                   /* let it settle */
-    reads = [];
-    ticks(40);
-    const valReads = reads.filter((k) => k === 'synth:cutoff');
-    if (valReads.length !== 0)
-        throw new Error('still polling ' + valReads.length + ' times over 40 idle ticks');
-});
-
-step('⚠ a value never shows under a knob it does not belong to', () => {
-    /* The read-back is cached, so the ONLY thing stopping knob 1s cutoff being
-     * printed on knob 3s card is that the card checks whose value it is. */
-    touch(2, true); ticks(3);                    /* knob 3, never turned */
-    const h = snd.soundKnobHudForTest();
-    if (h.knob !== 2) throw new Error('wrong knob on the card');
-    if (h.value !== '')
-        throw new Error('knob 3 showed a value it never had: "' + h.value + '"');
-    touch(2, false);
+step('⭑⭑ FULL RESOLUTION — one event carrying n detents moves n steps', () => {
+    /* THE headline fix. The shadow framework hands davebox an ACCUMULATED
+     * detent count; the old path sent one relative tick per event regardless,
+     * so a fast turn moved LESS than a slow one. Ten detents in one event must
+     * move exactly as far as ten events of one. */
     ticks(50);
+    ASSIGN['synth:cutoff'] = '0.0000';
+    touch(0, true); ticks(4);
+    writes = [];
+    turnBy(0, 10); ticks(3);
+    const fast = parseFloat(lastWrite('synth:cutoff'));
+    if (!(Math.abs(fast - 0.10) < 1e-6))
+        throw new Error('10 detents in ONE event moved to ' + fast + ', not 0.10' +
+                        (Math.abs(fast - 0.01) < 1e-6 ? ' (the magnitude was dropped)' : ''));
+
+    ticks(50);
+    ASSIGN['synth:cutoff'] = '0.0000';
+    touch(0, false); touch(0, true); ticks(4);
+    writes = [];
+    for (let n = 0; n < 10; n++) turn(0, +1);
+    ticks(3);
+    const slow = parseFloat(lastWrite('synth:cutoff'));
+    if (Math.abs(fast - slow) > 1e-6)
+        throw new Error('a fast turn (' + fast + ') and a slow one (' + slow + ') disagree');
+    touch(0, false);
 });
 
-step('⚠ a sweep costs a BOUNDED number of read-backs, not one per detent', () => {
-    /* 20 detents inside one tick window. At ~2.9 ms a read, one per detent is
-     * 58 ms of blocking traffic in a single tick of a running sequencer. */
-    reads = [];
-    for (let i = 0; i < 20; i++) turn(0, +1);
-    ticks(8);
-    const valReads = reads.filter((k) => k === 'synth:cutoff');
-    if (valReads.length === 0) throw new Error('no value read at all during the sweep');
-    if (valReads.length > 3)
-        throw new Error('read the value ' + valReads.length + ' times for 20 detents');
+step('⭑ a sweep costs ZERO reads and ONE coalesced write per tick', () => {
+    /* Owning the value is what buys this: the old path read `target:param` back
+     * on a cadence just to show it. 40 detents inside one tick window used to
+     * be blocking round trips; now it is arithmetic. */
+    ticks(50);
+    touch(0, true); ticks(8);
+    reads = []; writes = [];
+    for (let n = 0; n < 40; n++) turn(0, +1);
+    /* ⚠ TWO ticks minimum: the detents are applied at the END of a tick and the
+     * write drains at the START of the next. Measuring after one tick sees the
+     * value move and no write, which reads as a lost write. */
+    ticks(3);
+    if (reads.length !== 0)
+        throw new Error('a sweep cost ' + reads.length + ' round trips: ' + reads.join(','));
+    if (wrote('synth:cutoff').length !== 1)
+        throw new Error('expected ONE coalesced write for 40 detents, got ' +
+                        wrote('synth:cutoff').length);
+    touch(0, false);
+});
+
+step('⭑⭑ MOVY LAW: a coarse declared step is ignored — 1% of RANGE per detent', () => {
+    /* cutoff declares step 0.5 over 0..1 — two positions, and the DSP path used
+     * exactly that. Normalising outright is what recovers the resolution.
+     * ⚠ Self-contained: the accessor reports the cell of the TOUCHED knob, so a
+     * step that inherited the previous one's release read null and failed for a
+     * reason that had nothing to do with the law. */
+    ticks(50);
+    touch(0, true); ticks(6);
+    const cell = snd.soundKnobHudForTest().cell;
+    if (!cell) throw new Error('no cell loaded');
+    if (Math.abs(cell.step - 0.01) > 1e-9)
+        throw new Error('step is ' + cell.step + ', not 1% of the 0..1 range');
+    if (cell.name !== 'Cutoff')
+        throw new Error('the card should name the param "Cutoff", not "' + cell.name + '"');
+    touch(0, false);
+});
+
+step('⭑⭑ MOVY LAW: a WIDE range does not crawl', () => {
+    /* room_size is 0.5..20 declaring step 0.01 — 1950 detents for a sweep on
+     * the declared step. Normalised it is 0.195 a detent, ~100 for the sweep,
+     * the same gesture as cutoff despite the units. */
+    ticks(50);
+    touch(2, true); ticks(4);                    /* knob 3 -> fx2:room_size */
+    const cell = snd.soundKnobHudForTest().cell;
+    if (!cell) throw new Error('no cell for knob 3');
+    if (Math.abs(cell.step - 0.195) > 1e-9)
+        throw new Error('step is ' + cell.step + ', not 1% of the 0.5..20 range');
+    writes = [];
+    turn(2, +1); ticks(3);
+    if (Math.abs(parseFloat(lastWrite('fx2:room_size')) - 0.945) > 1e-6)
+        throw new Error('0.75 + one detent = ' + lastWrite('fx2:room_size') + ', expected 0.945');
+    touch(2, false);
+});
+
+step('⭑ MOVY LAW: an INT keeps its declared step as a FLOOR', () => {
+    /* voices is 1..8: 1% of the range is 0.07, so a normalised float step would
+     * take fourteen detents to move one voice — and round back to where it
+     * started every time in between. */
+    ASSIGN['knob_1_target'] = 'synth'; ASSIGN['knob_1_param'] = 'voices';
+    enterTrack(3);                               /* drop the caches */
+    ticks(50);
+    touch(0, true); ticks(4);
+    const cell = snd.soundKnobHudForTest().cell;
+    if (!cell || cell.type !== 'int') throw new Error('not an int cell: ' + (cell && cell.type));
+    if (cell.step !== 1) throw new Error('int step is ' + cell.step + ', not the declared 1');
+    writes = [];
+    turn(0, +1); ticks(3);
+    if (lastWrite('synth:voices') !== '5')
+        throw new Error('4 + one detent = ' + lastWrite('synth:voices') + ', expected 5');
+    touch(0, false);
+});
+
+step('⭑ MOVY LAW: an ENUM is exempt, and costs 4 detents per step', () => {
+    ASSIGN['knob_1_target'] = 'synth'; ASSIGN['knob_1_param'] = 'shape';
+    enterTrack(4);
+    ticks(50);
+    touch(0, true); ticks(4);
+    const cell = snd.soundKnobHudForTest().cell;
+    if (!cell || cell.type !== 'enum') throw new Error('not an enum cell');
+    writes = [];
+    turnBy(0, 3); ticks(3);                      /* three detents: not yet a step */
+    if (wrote('synth:shape').length)
+        throw new Error('an enum stepped on 3 detents: ' + lastWrite('synth:shape'));
+    turn(0, +1); ticks(3);                       /* the fourth commits */
+    if (lastWrite('synth:shape') !== '1')
+        throw new Error('expected enum index 1 (Square), got ' + lastWrite('synth:shape'));
+    /* ⭑ And it reads out as its NAME, not an index — that is what the cell buys. */
+    if (snd.soundKnobHudForTest().value !== 'Square')
+        throw new Error('enum read-out is "' + snd.soundKnobHudForTest().value + '"');
+    touch(0, false);
+});
+
+step('⭑ a direction REVERSAL resets the accumulator rather than unwinding it', () => {
+    /* Still on the enum, where the 4-detent accumulator is observable.
+     *
+     * ⚠⚠ The stimulus has to DISTINGUISH the two laws, and the obvious one does
+     * not: 3 up then 1 down leaves 2 under a reset and -1 under an unwind, and
+     * neither reaches a step — so the assertion passed against its own mutation.
+     * 3 up then 4 down separates them cleanly: a reset zeroes the 3 and the 4
+     * downs commit a step; an unwind nets to -1 and commits nothing. */
+    writes = [];
+    turnBy(0, 3); ticks(2);
+    turnBy(0, -4); ticks(3);
+    if (lastWrite('synth:shape') !== '0')
+        throw new Error('3 up then 4 down should step DOWN to 0, wrote ' +
+                        lastWrite('synth:shape') +
+                        (lastWrite('synth:shape') === null
+                            ? ' (the reversal unwound the 3 instead of clearing them)' : ''));
+    touch(0, false);
+    /* Put the fixture back for the steps that follow. */
+    ASSIGN['knob_1_target'] = 'synth'; ASSIGN['knob_1_param'] = 'cutoff';
+    ASSIGN['synth:cutoff'] = '0.4830';
+    enterTrack(2);
 });
 
 step('⭑ SHIFT + touch opens the assign flow for THAT knob', () => {
@@ -341,9 +497,12 @@ step('⚠ RE-ASSIGNING a knob drops its cached value — it belonged to the old 
     /* Otherwise the card shows a number read from the parameter the knob USED
      * to drive, under the name of the one it drives now. */
     enterTrack(2);
-    turn(0, +1); ticks(10);                      /* cache 0.48 for synth:cutoff */
-    if (snd.soundKnobHudForTest().value !== '0.48')
-        throw new Error('control failed: no cached value to invalidate');
+    touch(0, true); ticks(4);
+    turn(0, +1); ticks(3);                       /* 0.483 -> 0.493, owned */
+    if (snd.soundKnobHudForTest().value !== '0.49')
+        throw new Error('control failed: no value to invalidate, got "' +
+                        snd.soundKnobHudForTest().value + '"');
+    touch(0, false);
 
     shift(true); touch(0, true); ticks(3); shift(false); touch(0, false);
     if (snd.soundPickStateForTest().view !== VIEW_KNOB_TARGET)
@@ -351,6 +510,13 @@ step('⚠ RE-ASSIGNING a knob drops its cached value — it belonged to the old 
     cc(3, 127); ticks(3);                        /* click: take the seeded target */
     if (snd.soundPickStateForTest().view !== VIEW_KNOB_PARAM)
         throw new Error('did not reach the param picker');
+    /* ⚠ MOVE the cursor first. The picker seeds on the CURRENT assignment, so
+     * clicking straight through re-commits the param it already had and the
+     * step measures nothing. (It did, once chain_params gave the list a real
+     * ordering instead of the two-entry fallback.) */
+    cc(14, 1); ticks(1);
+    cc(14, 1); ticks(1);
+    cc(14, 1); ticks(1);                         /* cutoff -> voices -> shape -> preset */
     cc(3, 127); ticks(3);                        /* click: commit a DIFFERENT param */
 
     /* ⚠⚠ Get back to a screen the card lives on, and TOUCH the knob, before
@@ -367,6 +533,14 @@ step('⚠ RE-ASSIGNING a knob drops its cached value — it belonged to the old 
         throw new Error('the cache still names the old param: ' + h.target + ':' + h.param);
     if (h.value !== '')
         throw new Error('kept the old param\'s value after re-assigning: "' + h.value + '"');
+    /* ⭑ And the CELL is rebuilt too — preset is 0..99, so its step law is a
+     * different one. Keeping cutoff's 0..1 cell would clamp every turn to 1. */
+    turn(0, +1); ticks(3);
+    const c = snd.soundKnobHudForTest().cell;
+    if (!c || c.key !== 'preset')
+        throw new Error('the cell was not rebuilt for the new param: ' + (c && c.key));
+    if (Math.abs(c.step - 1) > 1e-9)
+        throw new Error('preset (0..99, step 1) got step ' + c.step);
     touch(0, false);
 });
 
