@@ -3511,14 +3511,19 @@ function renderBlocks() {
     /* A Move bus IS a track's screen, so it takes the track header too — the
      * Generator row already says which Move instrument. Only the GLOBAL buses
      * (Master/Send FX) keep their own title; they are not a track.
-     * ⚠ Measured against drawKitHeader's real limit (SCREEN_W - 4 = 124px):
-     * this is 118px at every track number. `TRACK [5] SETTINGS` — with the
-     * space before the bracket — is 125px and would silently lose its last
-     * letter; the bracket does the separating instead. (An earlier Move-bus
-     * title, "MOVE 2 - TRACK CONTROL", was 153px and never fit at all.) */
+     * ⚠⚠ ROUND brackets, because the header font has no `[` or `]` — those
+     * advance the cursor and draw NOTHING, so the title came out as
+     * "TRACK 5  SETTINGS" with a hole where the brackets should be. Probed, not
+     * guessed: that font inks ! # % ( ) + , - . / : < > ? and blanks the rest.
+     * ⭑ The SMALL font does have square brackets, which is why the row edit
+     * indicator ("[VALUE]") is unaffected — the two fonts differ.
+     * ⚠ Width, against drawKitHeader's real limit (SCREEN_W - 4 = 124px): this
+     * is 119px at every track number. The square-bracket form measured 125px
+     * and would have lost its last letter even if the glyphs had existed. (An
+     * earlier Move-bus title, "MOVE 2 - TRACK CONTROL", was 153px.) */
     drawKitHeader((S.bus && S.bus.kind !== 'move')
         ? S.bus.title
-        : ('TRACK[' + (S.track + 1) + '] SETTINGS'), false);
+        : ('TRACK (' + (S.track + 1) + ') SETTINGS'), false);
     /* ⚠⚠ This builds a NEW object per row, so anything set on the pickRow has to
      * be forwarded EXPLICITLY. It is the second time that has bitten: the doors
      * had no chevron for the same reason, and the grouping rules' flag reached
