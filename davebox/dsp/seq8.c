@@ -4320,8 +4320,9 @@ static void seq8_clear_state(seq8_instance_t *inst) {
     inst->arp_master_tick     = 0;
 }
 
-static void metro_wav_open(seq8_instance_t *inst) {
-    const char *path = "/data/UserData/schwung/modules/tools/davebox/click-seq8.wav";
+static void metro_wav_open(seq8_instance_t *inst, const char *module_dir) {
+    char path[512];
+    snprintf(path, sizeof(path), "%s/click-seq8.wav", module_dir);
     inst->metro_wav_fd = open(path, O_RDONLY);
     if (inst->metro_wav_fd < 0) return;
 
@@ -4378,7 +4379,7 @@ fail:
 }
 
 static void *create_instance(const char *module_dir, const char *json_defaults) {
-    (void)module_dir; (void)json_defaults;
+    (void)json_defaults;
 
     seq8_instance_t *inst = (seq8_instance_t *)calloc(1, sizeof(seq8_instance_t));
     if (!inst) return NULL;
@@ -4401,7 +4402,7 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
     inst->metro_wav_data  = NULL;
     inst->metro_wav_frames = 0;
     inst->metro_click_pos  = UINT32_MAX;
-    metro_wav_open(inst);
+    metro_wav_open(inst, module_dir);
     inst->looper_sync            = 1;
     inst->looper_pending_silence = 0;
     inst->conductor_track        = -1;  /* no Conductor by default */
