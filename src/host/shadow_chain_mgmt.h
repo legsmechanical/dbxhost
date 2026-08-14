@@ -138,6 +138,7 @@ extern master_fx_slot_t shadow_move_fx_slots[MOVE_FX_SLOTS][MOVE_FX_BLOCKS];
 
 typedef struct {
     float volume;     /* 0..4, default 1.0 (unity) */
+    float pan;        /* 0.0 = full left, 0.5 = center, 1.0 = full right */
     float send_a;     /* 0..1 post-volume send to bus A */
     float send_b;     /* 0..1 post-volume send to bus B */
     /* Mute / solo, same meaning and the same exclusive solo group as a chain
@@ -198,6 +199,15 @@ static inline float shadow_move_fx_effective_volume(int bus) {
     }
     if (shadow_move_fx_strip[bus].muted) return 0.0f;
     return shadow_move_fx_strip[bus].volume;
+}
+
+/* Balance-style pan gains for stereo signals.
+ * pan 0.0 = full left (R silent), 0.5 = center (both unity), 1.0 = full right (L silent). */
+static inline float shadow_pan_gain_l(float pan) {
+    return (pan <= 0.5f) ? 1.0f : 2.0f * (1.0f - pan);
+}
+static inline float shadow_pan_gain_r(float pan) {
+    return (pan >= 0.5f) ? 1.0f : 2.0f * pan;
 }
 
 /* Advance the fade envelope by one sample. Call once per stereo frame in mix loop. */

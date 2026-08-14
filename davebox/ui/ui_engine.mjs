@@ -84,6 +84,8 @@ export function engineSet(slot, comp, key, val) {
  * reset here: rewriting a level at load is how a project quietly changes
  * loudness, and the host's own Module Level row remains its editor. */
 export const SLOT_LEVEL_KEY = 'volume';
+export const SESS_KNOB_KEYS = ['volume', 'pan', 'send_a', 'send_b'];
+export const SESS_KNOB_DEFAULTS = [1.0, 0.5, 0.0, 0.0];
 
 /* And the law for MOVING it, shared by every level control so they cannot drift
  * apart in feel. Levels are 0..4; a detent of 1/64 puts unity ~64 detents away

@@ -28,7 +28,7 @@ import {
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool
 } from './ui_constants.mjs';
 import { S, conductorTrackIdx } from './ui_state.mjs';
-import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX } from './ui_engine.mjs';
+import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity, BANK_CYCLE_DRUM, CONDUCT_BANK_CYCLE } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
          showActionPopupGauge } from './ui_persistence.mjs';
@@ -803,7 +803,10 @@ function modalDialogUp() {
                         forceRedraw();
                     }
                 } else if (S.sessionView) {
-                    S.sceneRow = Math.min(NUM_CLIPS - 4, Math.max(0, S.sceneRow + delta));
+                    S.sessKnobMode = (S.sessKnobMode + (delta > 0 ? 1 : 3)) % 4;
+                    const modeNames = ['VOLUME', 'PAN', 'SEND A', 'SEND B'];
+                    showActionPopup(modeNames[S.sessKnobMode], 30);
+                    _sessInvalidateAllLevels();
                     forceRedraw();
                 } else if (S.loopHeld) {
                     /* Track View + Loop held: adjust length ±1 step */
@@ -2054,8 +2057,8 @@ function _onCC_transport(d1, d2) {
     }
 
     /* Up/Down: scene group nav in Session View or while overview held; octave shift in Track View */
-    if (d1 === MoveDown && d2 === 127 && (S.sessionView || S.sessionOverlayHeld) && S.sceneRow < NUM_CLIPS - 4) { S.sceneRow = Math.min(NUM_CLIPS - 4, S.sceneRow + 4); forceRedraw(); }
-    if (d1 === MoveUp   && d2 === 127 && (S.sessionView || S.sessionOverlayHeld) && S.sceneRow > 0)              { S.sceneRow = Math.max(0, S.sceneRow - 4);              forceRedraw(); }
+    if (d1 === MoveDown && d2 === 127 && (S.sessionView || S.sessionOverlayHeld) && S.sceneRow < NUM_CLIPS - 4) { S.sceneRow = Math.min(NUM_CLIPS - 4, S.sceneRow + 1); forceRedraw(); }
+    if (d1 === MoveUp   && d2 === 127 && (S.sessionView || S.sessionOverlayHeld) && S.sceneRow > 0)              { S.sceneRow = Math.max(0, S.sceneRow - 1);              forceRedraw(); }
     if ((d1 === MoveUp || d1 === MoveDown) && d2 > 0 && !S.sessionView && !S.sessionOverlayHeld &&
             S.loopHeld && S.activeBank === 6) {
         var RES_TPS = [12, 24, 48, 96, 384];
@@ -2611,35 +2614,51 @@ function _onCC_stepedit(d1, d2) {
  * (SLOT_LEVEL_STEP) — same law, same feel, one constant. 1/16 was 4x too fast
  * and, against decodeDelta's batched counts, jerky with it. */
 
-function _sessionKnobVolume(knobIdx, d2) {
+const SESS_KNOB_MODES = [
+    { key: 'volume',  slotKey: 'volume',  label: 'VOL',    max: SLOT_LEVEL_MAX, step: SLOT_LEVEL_STEP, def: 1.0,
+      fmt: (v) => v.toFixed(2) + 'x' },
+    { key: 'pan',     slotKey: 'pan',     label: 'PAN',    max: 1.0,            step: 0.05,            def: 0.5,
+      fmt: (v) => { const pct = Math.round((v - 0.5) * 200); return pct === 0 ? 'C' : pct < 0 ? Math.abs(pct) + 'L' : pct + 'R'; },
+      snap: 0.5, snapZone: 0.04 },
+    { key: 'send_a',  slotKey: 'send_a',  label: 'SND A',  max: 1.0,            step: 0.05,            def: 0.0,
+      fmt: (v) => Math.round(v * 100) + '%' },
+    { key: 'send_b',  slotKey: 'send_b',  label: 'SND B',  max: 1.0,            step: 0.05,            def: 0.0,
+      fmt: (v) => Math.round(v * 100) + '%' },
+];
+
+function _sessInvalidateAllLevels() {
+    S.sessVolLevel.fill(-1);
+    S.sessVolSlots.fill(-1);
+    S.sessVolBus.fill(-1);
+}
+
+function _sessionKnobParam(knobIdx, d2) {
     if (knobIdx >= NUM_TRACKS) return;
-    /* WHICH level this knob moves was decided in tick — a chain slot's or a
-     * Move bus's. Asking again here is what made this bail on Move-routed
-     * tracks: the test was "is this a Schwung chain", which under the unified
-     * slot model is only half of "does this track have a mixer position".
-     * Tracks 1-4 are Move by default, so half the session view had no level
-     * control at all. The bus's own resolution is one place, in tick. */
-    if (S.sessVolBus[knobIdx] <= 0) {             /* no bus ⇒ must be a chain */
-        if (S.trackRoute[knobIdx] !== 0) return;  /* neither ⇒ nothing to move */
-        if (S.sessVolSlots[knobIdx] === 0) return; /* resolved, and no slot */
+    if (S.sessVolBus[knobIdx] <= 0) {
+        if (S.trackRoute[knobIdx] !== 0) return;
+        if (S.sessVolSlots[knobIdx] === 0) return;
     }
     const lvl = S.sessVolLevel[knobIdx];
-    if (lvl < 0) return;                          /* not read yet; tick will */
+    if (lvl < 0) return;
+    const mode = SESS_KNOB_MODES[S.sessKnobMode];
     const d = (d2 >= 1 && d2 <= 63) ? d2 : (d2 >= 65) ? d2 - 128 : 0;
     if (!d) return;
-    let v = lvl + d * SLOT_LEVEL_STEP;
+    let v = lvl + d * mode.step;
     if (v < 0) v = 0;
-    if (v > SLOT_LEVEL_MAX) v = SLOT_LEVEL_MAX;
+    if (v > mode.max) v = mode.max;
+    if (mode.snap !== undefined) {
+        const prev = lvl, next = v;
+        if ((prev < mode.snap && next >= mode.snap - mode.snapZone && next <= mode.snap + mode.snapZone) ||
+            (prev > mode.snap && next >= mode.snap - mode.snapZone && next <= mode.snap + mode.snapZone))
+            v = mode.snap;
+    }
     if (v === lvl) return;
     S.sessVolLevel[knobIdx] = v;
     S.sessVolPending[knobIdx] = true;
-    /* Flagged at change time, not on capacitive release, so it persists even if
-     * the knob was never touch-reported. The tick decides WHEN, and it waits for
-     * the turn to actually stop — see SESSVOL_SAVE_IDLE_TICKS. */
     S.sessVolSaveOwed = true;
     S.sessVolLastTurn = S.tickCount;
-    showActionPopupGauge(v / SLOT_LEVEL_MAX, 1 / SLOT_LEVEL_MAX,
-                         'TRACK ' + (knobIdx + 1) + ' LEVEL', v.toFixed(2) + 'x');
+    showActionPopupGauge(v / mode.max, mode.step / mode.max,
+                         'TRACK ' + (knobIdx + 1) + ' ' + mode.label, mode.fmt(v));
 }
 
 function _onCC_knobs(d1, d2) {
@@ -2663,7 +2682,7 @@ function _onCC_knobs(d1, d2) {
          * editing the ACTIVE track's bank params — invisibly, since the grid
          * doesn't draw them. Returning here means the session grid no longer
          * reaches the bank editor at all. */
-        if (S.sessionView) { _sessionKnobVolume(knobIdx, d2); return; }
+        if (S.sessionView) { _sessionKnobParam(knobIdx, d2); return; }
 
         const bank    = S.activeBank;
         /* Arp Steps interval-mode overlay: K1-K8 set per-step scale-degree

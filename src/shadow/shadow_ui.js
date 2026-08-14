@@ -1778,6 +1778,7 @@ const CHAIN_SETTINGS_ITEMS = [
     /* 2x — see the Move bus strip's Volume for the reasoning. The two are one
      * mixer position occupied by different families, so they share a ceiling. */
     { key: "slot:volume", label: "Volume", type: "float", min: 0, max: 2, step: 0.05 },
+    { key: "slot:pan", label: "Pan", type: "float", min: 0, max: 1, step: 0.05 },
     { key: "slot:send_a", label: "Send A", type: "float", min: 0, max: 1, step: 0.05 },
     { key: "slot:send_b", label: "Send B", type: "float", min: 0, max: 1, step: 0.05 },
     { key: "slot:muted", label: "Muted", type: "int", min: 0, max: 1, step: 1 },
@@ -4319,6 +4320,7 @@ function saveChainConfigToDir(dir) {
         const cfgSlots = [];
         for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
             const vol = parseFloat(getSlotParam(i, "slot:volume") || "1");
+            const pan = parseFloat(getSlotParam(i, "slot:pan") || "0.5");
             const ch = parseInt(getSlotParam(i, "slot:receive_channel") || "0");
             const fwd = parseInt(getSlotParam(i, "slot:forward_channel") || "-1");
             const muted = parseInt(getSlotParam(i, "slot:muted") || "0");
@@ -4334,7 +4336,7 @@ function saveChainConfigToDir(dir) {
              * this file and the last one to run wins it whole, so a field
              * missing from either is silently dropped. */
             const synthVol = parseFloat(getSlotParam(i, "slot:synth_volume") || "1");
-            cfgSlots.push({ name: slots[i] ? slots[i].name : "", channel: ch, volume: vol, forward_channel: fwd, muted: muted, soloed: soloed, send_a: sendA, send_b: sendB, transpose: transpose, synth_volume: isNaN(synthVol) ? 1 : synthVol });
+            cfgSlots.push({ name: slots[i] ? slots[i].name : "", channel: ch, volume: vol, pan: isNaN(pan) ? 0.5 : pan, forward_channel: fwd, muted: muted, soloed: soloed, send_a: sendA, send_b: sendB, transpose: transpose, synth_volume: isNaN(synthVol) ? 1 : synthVol });
         }
         return !!host_write_file(path, JSON.stringify({ slots: cfgSlots }, null, 2) + "\n");
     } catch (e) {
@@ -4453,6 +4455,8 @@ function loadChainConfigFromDir(dir) {
         for (let i = 0; i < SHADOW_UI_SLOTS && i < data.slots.length; i++) {
             const s = data.slots[i];
             if (typeof s.volume === "number") setSlotParamWithTimeout(i, "slot:volume", String(s.volume), 500);
+            const slotPan = (typeof s.pan === "number") ? s.pan : 0.5;
+            setSlotParamWithTimeout(i, "slot:pan", String(slotPan), 500);
             /* Always write receive_channel: use saved value if present, else
              * default to slot index + 1. Chain configs written before
              * 072d3fd3 (or saved by older host code) can lack the field —
@@ -7159,15 +7163,18 @@ function saveMoveFxChainConfig(onlySlot) {
         let stripsOk = true;
         for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++) {
             const _v  = shadow_get_param(0, "move_fx:" + (sl + 1) + ":volume");
+            const _p  = shadow_get_param(0, "move_fx:" + (sl + 1) + ":pan");
             const _sa = shadow_get_param(0, "move_fx:" + (sl + 1) + ":send_a");
             const _sb = shadow_get_param(0, "move_fx:" + (sl + 1) + ":send_b");
             const _m  = shadow_get_param(0, "move_fx:" + (sl + 1) + ":muted");
             const _so = shadow_get_param(0, "move_fx:" + (sl + 1) + ":soloed");
-            if (_v === null || _sa === null || _sb === null ||
+            if (_v === null || _p === null || _sa === null || _sb === null ||
                 _m === null || _so === null) { stripsOk = false; break; }
-            const v = parseFloat(_v || "1.0"), sa = parseFloat(_sa || "0.0"), sb = parseFloat(_sb || "0.0");
+            const v = parseFloat(_v || "1.0"), p = parseFloat(_p || "0.5");
+            const sa = parseFloat(_sa || "0.0"), sb = parseFloat(_sb || "0.0");
             strips.push({
                 volume: isNaN(v) ? 1.0 : v,
+                pan: isNaN(p) ? 0.5 : p,
                 send_a: isNaN(sa) ? 0.0 : sa,
                 send_b: isNaN(sb) ? 0.0 : sb,
                 muted: (parseInt(_m, 10) === 1) ? 1 : 0,
@@ -7232,9 +7239,11 @@ function restoreMoveFxFromFiles() {
         for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++) {
             const st = (moveStrips && moveStrips[sl]) ? moveStrips[sl] : null;
             const vol = (st && typeof st.volume === "number") ? st.volume : 1.0;
+            const pan = (st && typeof st.pan === "number") ? st.pan : 0.5;
             const sa  = (st && typeof st.send_a === "number") ? st.send_a : 0.0;
             const sb  = (st && typeof st.send_b === "number") ? st.send_b : 0.0;
             shadow_set_param(0, "move_fx:" + (sl + 1) + ":volume", vol.toFixed(3));
+            shadow_set_param(0, "move_fx:" + (sl + 1) + ":pan", pan.toFixed(3));
             shadow_set_param(0, "move_fx:" + (sl + 1) + ":send_a", sa.toFixed(3));
             shadow_set_param(0, "move_fx:" + (sl + 1) + ":send_b", sb.toFixed(3));
             /* Both written for EVERY bus, for the same reason the levels are:

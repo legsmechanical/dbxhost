@@ -603,6 +603,7 @@ export const S = {
      * each track plays through (knob N -> track N). Per-track because a track's
      * channel can be received by SEVERAL slots (layering, or a slot set to
      * "All"), and all of them move together. -1 = not yet resolved/read. */
+    sessKnobMode: 0,                        /* 0=Volume, 1=Pan, 2=Send A, 3=Send B */
     sessVolSlots: new Array(8).fill(-1),   /* bitmask of matching slots */
     /* A MOVE-routed track's level is not a slot's at all: it is the fader of the
      * Move FX bus its instrument returns on, the same value sound mode's VOLUME

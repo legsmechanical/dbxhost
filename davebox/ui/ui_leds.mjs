@@ -843,7 +843,16 @@ export function updateTrackLEDs() {
         if (S.perfViewLocked) {
             ledVal = S.trackLooper[k] !== 0 ? trackColor(k) : LED_OFF;
         } else if (S.sessionView) {
-            ledVal = (k === S.activeTrack) ? White : LED_OFF;
+            const _tc = trackColor(k);
+            const _isMuted = S.trackMuted[k];
+            const _isSoloed = S.trackSoloed[k];
+            if (_isSoloed) {
+                ledVal = (S.tickCount & 16) ? _tc : LED_OFF;
+            } else if (_isMuted) {
+                ledVal = LED_OFF;
+            } else {
+                ledVal = _tc;
+            }
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 5) {
             /* Repeat Groove: lit when step k has non-default vel scale or nudge */
             const lane = S.activeDrumLane[S.activeTrack];

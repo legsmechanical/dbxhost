@@ -164,6 +164,8 @@ function moveBusFor(track) {
         levels: [
             { comp: cmp, key: 'volume', label: 'Volume',
               min: 0, max: SLOT_LEVEL_MAX, step: BUS_LEVEL_STEP, fmt: GAIN_FMT },
+            { comp: cmp, key: 'pan', label: 'Pan',
+              min: 0, max: 1, step: BUS_LEVEL_STEP, fmt: PAN_FMT },
             { comp: cmp, key: 'send_a', label: 'Send A',
               min: 0, max: 1, step: BUS_LEVEL_STEP },
             { comp: cmp, key: 'send_b', label: 'Send B',
@@ -213,6 +215,11 @@ const PCT_FMT = (v) => Math.round(v * 100) + '%';
  * "2.00x" says what it does. Sends keep PCT_FMT — they are 0..1 proportions,
  * where a percentage is exactly right. */
 const GAIN_FMT = (v) => (v || 0).toFixed(2) + 'x';
+const PAN_FMT = (v) => {
+    const pct = Math.round((v - 0.5) * 200);
+    if (pct === 0) return 'C';
+    return pct < 0 ? Math.abs(pct) + 'L' : pct + 'R';
+};
 const ONOFF   = (v) => (v ? 'Yes' : 'No');
 
 /* ---- a mixer position's LEVEL rows ----
@@ -234,6 +241,8 @@ const ONOFF   = (v) => (v ? 'Yes' : 'No');
 const SLOT_LEVELS = [
     { slot: true, key: 'volume', label: 'Volume',
       min: 0, max: SLOT_LEVEL_MAX, step: 0.05, fmt: GAIN_FMT },
+    { slot: true, key: 'pan', label: 'Pan',
+      min: 0, max: 1, step: 0.05, fmt: PAN_FMT },
     { slot: true, key: 'send_a', label: 'Send A',
       min: 0, max: 1, step: 0.05, fmt: PCT_FMT, cap: 'sends' },
     { slot: true, key: 'send_b', label: 'Send B',

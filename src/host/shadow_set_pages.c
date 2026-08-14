@@ -142,9 +142,10 @@ void shadow_save_config_to_dir(const char *dir) {
          * STRIPS the fields it omits, so a setting saved by the other writer
          * disappears the next time this one runs. That is how transpose and the
          * sends could vanish without anything failing. */
-        fprintf(f, "    {\"name\": \"%s\", \"channel\": %d, \"volume\": %.3f, \"forward_channel\": %d, \"muted\": %d, \"soloed\": %d, \"send_a\": %.3f, \"send_b\": %.3f, \"transpose\": %d, \"synth_volume\": %.3f}%s\n",
+        fprintf(f, "    {\"name\": \"%s\", \"channel\": %d, \"volume\": %.3f, \"pan\": %.3f, \"forward_channel\": %d, \"muted\": %d, \"soloed\": %d, \"send_a\": %.3f, \"send_b\": %.3f, \"transpose\": %d, \"synth_volume\": %.3f}%s\n",
                 host.chain_slots[i].patch_name, display_ch,
-                host.chain_slots[i].volume, display_fwd,
+                host.chain_slots[i].volume, host.chain_slots[i].pan,
+                display_fwd,
                 host.chain_slots[i].muted, host.chain_slots[i].soloed,
                 host.chain_slots[i].send_a, host.chain_slots[i].send_b,
                 host.chain_slots[i].transpose,
@@ -214,6 +215,14 @@ int shadow_load_config_from_dir(const char *dir) {
                 float vol = atof(vol_colon + 1);
                 if (vol >= 0.0f && vol <= 1.0f)
                     host.chain_slots[i].volume = vol;
+            }
+        }
+        char *pan_pos = strstr(name_pos, "\"pan\"");
+        if (pan_pos) {
+            char *pan_colon = strchr(pan_pos, ':');
+            if (pan_colon) {
+                float p = (float)atof(pan_colon + 1);
+                if (p >= 0.0f && p <= 1.0f) host.chain_slots[i].pan = p;
             }
         }
         char *fwd_pos = strstr(name_pos, "\"forward_channel\"");

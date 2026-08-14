@@ -1839,9 +1839,12 @@ static void shadow_inprocess_render_to_buffer(void) {
                         ps->active = 1;
                     }
                 }
+                float dfr_pan_l = shadow_pan_gain_l(shadow_chain_slots[s].pan);
+                float dfr_pan_r = shadow_pan_gain_r(shadow_chain_slots[s].pan);
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                     float vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
-                    int32_t mixed = shadow_deferred_dsp_buffer[i] + (int32_t)(render_buffer[i] * vol);
+                    float pg = (i & 1) ? dfr_pan_r : dfr_pan_l;
+                    int32_t mixed = shadow_deferred_dsp_buffer[i] + (int32_t)(render_buffer[i] * vol * pg);
                     if (mixed > 32767) mixed = 32767;
                     if (mixed < -32768) mixed = -32768;
                     shadow_deferred_dsp_buffer[i] = (int16_t)mixed;
@@ -2335,6 +2338,8 @@ static void shadow_inprocess_mix_from_buffer(void) {
                  * because a solo that left the other family sounding would not
                  * be a solo. */
                 float mvol = shadow_move_fx_effective_volume(s);
+                float bus_pan_l = shadow_pan_gain_l(shadow_move_fx_strip[s].pan);
+                float bus_pan_r = shadow_pan_gain_r(shadow_move_fx_strip[s].pan);
                 /* Publish this bus as the slot's ME channel when no synth owns
                  * the slot's ring. The retired "inactive slot, Move>Slot on"
                  * branch below used to do this and would otherwise take the
@@ -2350,7 +2355,8 @@ static void shadow_inprocess_mix_from_buffer(void) {
                     ? &shadow_pub_audio_shm->slots[s] : NULL;
                 uint32_t bus_wp = bus_ps ? bus_ps->write_pos : 0;
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-                    int32_t scaled = (int32_t)lroundf((float)msrc[i] * mvol);
+                    float pg = (i & 1) ? bus_pan_r : bus_pan_l;
+                    int32_t scaled = (int32_t)lroundf((float)msrc[i] * mvol * pg);
                     int32_t mixed = (int32_t)mailbox_audio[i] + scaled;
                     if (mixed > 32767) mixed = 32767;
                     if (mixed < -32768) mixed = -32768;
@@ -2565,15 +2571,17 @@ static void shadow_inprocess_mix_from_buffer(void) {
                 }
 
                 /* Add FX output to mailbox */
+                float slot_pan_l = shadow_pan_gain_l(shadow_chain_slots[s].pan);
+                float slot_pan_r = shadow_pan_gain_r(shadow_chain_slots[s].pan);
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                     float vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
-                    float gain = vol;
-                    int32_t mixed = (int32_t)mailbox_audio[i] + (int32_t)lroundf((float)fx_buf[i] * gain);
+                    float pg = (i & 1) ? slot_pan_r : slot_pan_l;
+                    int32_t mixed = (int32_t)mailbox_audio[i] + (int32_t)lroundf((float)fx_buf[i] * vol * pg);
                     if (mixed > 32767) mixed = 32767;
                     if (mixed < -32768) mixed = -32768;
                     mailbox_audio[i] = (int16_t)mixed;
-                    me_full[i] += (int32_t)lroundf((float)fx_buf[i] * vol);
-                    me_unity[i] += (int32_t)lroundf((float)fx_buf[i] * vol);
+                    me_full[i] += (int32_t)lroundf((float)fx_buf[i] * vol * pg);
+                    me_unity[i] += (int32_t)lroundf((float)fx_buf[i] * vol * pg);
                     if (i & 1) shadow_fade_advance(s);
                 }
                 accumulate_sends(s, fx_buf, send_accum);
@@ -2612,9 +2620,12 @@ skip_la_rebuild:
                     ps->write_pos = wp;
                 }
 
+                float spn_l = shadow_pan_gain_l(shadow_chain_slots[s].pan);
+                float spn_r = shadow_pan_gain_r(shadow_chain_slots[s].pan);
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                     float vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
-                    int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol);
+                    float pg = (i & 1) ? spn_r : spn_l;
+                    int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol * pg);
                     me_full[i] += contrib;
                     me_unity[i] += contrib;
                     if (i & 1) shadow_fade_advance(s);
@@ -2659,9 +2670,12 @@ skip_la_rebuild:
                     shadow_slot_fx_idle[s] = 0;
                 }
 
+                float fpn_l = shadow_pan_gain_l(shadow_chain_slots[s].pan);
+                float fpn_r = shadow_pan_gain_r(shadow_chain_slots[s].pan);
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                     float vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
-                    int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol);
+                    float pg = (i & 1) ? fpn_r : fpn_l;
+                    int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol * pg);
                     me_full[i] += contrib;
                     me_unity[i] += contrib;
                     if (i & 1) shadow_fade_advance(s);

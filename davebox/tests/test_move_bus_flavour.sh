@@ -94,7 +94,7 @@ echo "session-view level knob (both flavours):"
 grep -q "if (S.sessVolBus\[knobIdx\] <= 0) {" ui/ui_input_cc.mjs \
     && ok "the level knob serves a Move bus as well as a chain slot" \
     || bad "_sessionKnobVolume gates on the chain route again — Move tracks lose their level knob"
-grep -q "engineSet(0, moveBusComp(_bus), 'volume', _v);" ui/ui_tick.mjs \
+grep -q "engineSet(0, moveBusComp(_bus), _wKey, _v);" ui/ui_tick.mjs \
     && ok "a Move-routed track's pending level writes the BUS fader" \
     || bad "the session level write no longer reaches the bus — turns would vanish"
 # The cached level belongs to whatever source it was read from. Re-routing a

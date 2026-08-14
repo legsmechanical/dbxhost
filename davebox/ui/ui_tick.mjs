@@ -51,7 +51,8 @@ import { xposeCancelPreview } from './ui_xpose.mjs';
 import { checkBackHold, backTapWouldAct } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
-         SLOT_LEVEL_KEY, CHAIN_SLOTS, DAVEBOX_HOST_DIR } from './ui_engine.mjs';
+         SLOT_LEVEL_KEY, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
+         SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS } from './ui_engine.mjs';
 import { soundActive, soundEnter, soundEnterMove, soundEnterBuses, soundExit,
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
     soundEnteredInSession, soundConsumeLedDirty,
@@ -1137,38 +1138,37 @@ export function _tickImpl() {
          * Writes are synchronous SHM round-trips, so they stay budgeted here in
          * tick rather than in the MIDI handler. */
         if (S.sessionView && (S.tickCount % POLL_INTERVAL) === 0) {
+            const _modeKey = SESS_KNOB_KEYS[S.sessKnobMode];
+            const _modeDef = SESS_KNOB_DEFAULTS[S.sessKnobMode];
             schSlotMasksAllTracks(_sessMaskScratch);
             for (let _t = 0; _t < NUM_TRACKS; _t++) {
                 const _bus = S.trackRoute[_t] === 1 /* ROUTE_MOVE */
                     ? moveBusForChannel(S.trackChannel[_t]) : 0;
-                /* The source changed under a cached level (re-route, or another
-                 * Move instrument picked): drop it so the seed below re-reads. */
                 if (S.sessVolBus[_t] !== _bus) {
                     S.sessVolBus[_t] = _bus;
                     S.sessVolLevel[_t] = -1;
                 }
                 if (_bus) {
-                    S.sessVolSlots[_t] = 0;     /* a bus is not a chain slot */
+                    S.sessVolSlots[_t] = 0;
                     if (S.sessVolLevel[_t] < 0) {
-                        const _raw = parseFloat(engineGet(0, moveBusComp(_bus), 'volume'));
-                        S.sessVolLevel[_t] = isFinite(_raw) && _raw >= 0 ? _raw : 1;
+                        const _raw = parseFloat(engineGet(0, moveBusComp(_bus), _modeKey));
+                        S.sessVolLevel[_t] = isFinite(_raw) && _raw >= 0 ? _raw : _modeDef;
                     }
                     continue;
                 }
                 if (S.trackRoute[_t] !== 0) { S.sessVolSlots[_t] = 0; continue; }
                 const _m = _sessMaskScratch[_t];
                 S.sessVolSlots[_t] = _m;
-                /* Seed the level from the lowest matching slot the first time
-                 * we see one, so the first turn moves from the real value. */
                 if (_m !== 0 && S.sessVolLevel[_t] < 0) {
                     let _s0 = 0;
                     while (_s0 < CHAIN_SLOTS && !(_m & (1 << _s0))) _s0++;
-                    const _raw = parseFloat(engineGetSlotParam(_s0, SLOT_LEVEL_KEY));
-                    S.sessVolLevel[_t] = isFinite(_raw) && _raw >= 0 ? _raw : 1;
+                    const _raw = parseFloat(engineGetSlotParam(_s0, _modeKey));
+                    S.sessVolLevel[_t] = isFinite(_raw) && _raw >= 0 ? _raw : _modeDef;
                 }
             }
         }
         {
+            const _wKey = SESS_KNOB_KEYS[S.sessKnobMode];
             let _wrote = 0;
             for (let _t = 0; _t < NUM_TRACKS && _wrote < 2; _t++) {
                 if (!S.sessVolPending[_t]) continue;
@@ -1176,11 +1176,11 @@ export function _tickImpl() {
                 const _v = S.sessVolLevel[_t].toFixed(3);
                 const _bus = S.sessVolBus[_t] | 0;
                 if (_bus > 0) {
-                    engineSet(0, moveBusComp(_bus), 'volume', _v);
+                    engineSet(0, moveBusComp(_bus), _wKey, _v);
                 } else {
                     const _m = S.sessVolSlots[_t] | 0;
                     for (let _s = 0; _s < CHAIN_SLOTS; _s++) {
-                        if (_m & (1 << _s)) engineSetSlotParam(_s, SLOT_LEVEL_KEY, _v);
+                        if (_m & (1 << _s)) engineSetSlotParam(_s, _wKey, _v);
                     }
                 }
                 _wrote++;

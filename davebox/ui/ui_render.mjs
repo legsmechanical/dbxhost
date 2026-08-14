@@ -249,6 +249,12 @@ function drawMetroIndicator() {
         pixelPrint(tx, 22, label, 1);
         fill_rect(tx + tw + 2, 23, 2, 2, 1); /* right dot */
     }
+    if (S.sessionView) {
+        const modeNames = ['Vol', 'Pan', 'SndA', 'SndB'];
+        const ml = modeNames[S.sessKnobMode];
+        const mx = 128 - ml.length * 6;
+        pixelPrint(mx, 22, ml, 1);
+    }
     /* Velocity / Fixed/Adaptive indicators (track view only, y=22) */
     if (!S.sessionView) {
         const t  = S.activeTrack;

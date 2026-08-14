@@ -82,12 +82,13 @@ float shadow_send_a_to_b_level = 0.0f;
 
 /* Move FX slots — one mini FX bus per Move track (channel) */
 master_fx_slot_t shadow_move_fx_slots[MOVE_FX_SLOTS][MOVE_FX_BLOCKS];
-/* volume, send_a, send_b, muted, soloed — the two flags zero-fill, which is
- * the intended default (audible, not soloed). These are process defaults only:
- * the per-set values arrive from the set's move_fx_meta.json once the UI is up. */
+/* volume, pan, send_a, send_b, muted, soloed — the two flags zero-fill, which
+ * is the intended default (audible, not soloed). These are process defaults
+ * only: the per-set values arrive from the set's move_fx_meta.json once the
+ * UI is up. */
 move_fx_strip_t shadow_move_fx_strip[MOVE_FX_SLOTS] = {
-    { 1.0f, 0.0f, 0.0f, 0, 0 }, { 1.0f, 0.0f, 0.0f, 0, 0 },
-    { 1.0f, 0.0f, 0.0f, 0, 0 }, { 1.0f, 0.0f, 0.0f, 0, 0 },
+    { 1.0f, 0.5f, 0.0f, 0.0f, 0, 0 }, { 1.0f, 0.5f, 0.0f, 0.0f, 0, 0 },
+    { 1.0f, 0.5f, 0.0f, 0.0f, 0, 0 }, { 1.0f, 0.5f, 0.0f, 0.0f, 0, 0 },
 };
 
 /* Master FX LFOs */
@@ -471,6 +472,7 @@ void shadow_chain_defaults(void) {
         shadow_chain_slots[i].channel = shadow_chain_parse_channel(1 + i);
         shadow_chain_slots[i].volume = 1.0f;
         shadow_chain_slots[i].synth_volume = 1.0f;
+        shadow_chain_slots[i].pan = 0.5f;
         shadow_chain_slots[i].send_a = 0.0f;
         shadow_chain_slots[i].send_b = 0.0f;
         shadow_chain_slots[i].muted = 0;
@@ -2005,6 +2007,13 @@ int shadow_handle_slot_param_set(int slot, const char *key, const char *value) {
         shadow_chain_slots[slot].synth_volume = vol;
         return 1;
     }
+    if (strcmp(key, "slot:pan") == 0) {
+        float p = atof(value);
+        if (p < 0.0f) p = 0.0f;
+        if (p > 1.0f) p = 1.0f;
+        shadow_chain_slots[slot].pan = p;
+        return 1;
+    }
     if (strcmp(key, "slot:send_a") == 0) {
         float lvl = atof(value);
         if (lvl < 0.0f) lvl = 0.0f;
@@ -2074,6 +2083,9 @@ int shadow_handle_slot_param_get(int slot, const char *key, char *buf, int buf_l
     }
     if (strcmp(key, "slot:synth_volume") == 0) {
         return snprintf(buf, buf_len, "%.2f", shadow_chain_slots[slot].synth_volume);
+    }
+    if (strcmp(key, "slot:pan") == 0) {
+        return snprintf(buf, buf_len, "%.2f", shadow_chain_slots[slot].pan);
     }
     if (strcmp(key, "slot:send_a") == 0) {
         return snprintf(buf, buf_len, "%.2f", shadow_chain_slots[slot].send_a);
@@ -2207,6 +2219,13 @@ void shadow_direct_set_param(uint8_t slot, const char *key, const char *value) {
             float v = (value && value[0]) ? atof(value) : 1.0f;
             if (v < 0.0f) v = 0.0f; if (v > 4.0f) v = 4.0f;
             shadow_move_fx_strip[sl].volume = v;
+            if (host.on_param_changed) host.on_param_changed(slot, key, value);
+            return;
+        }
+        if (strcmp(rest, "pan") == 0) {
+            float p = (value && value[0]) ? atof(value) : 0.5f;
+            if (p < 0.0f) p = 0.0f; if (p > 1.0f) p = 1.0f;
+            shadow_move_fx_strip[sl].pan = p;
             if (host.on_param_changed) host.on_param_changed(slot, key, value);
             return;
         }
@@ -3547,15 +3566,17 @@ void shadow_inprocess_handle_param_request(void) {
             return;
         }
 
-        /* Strip-level params (no fxN prefix): volume / send_a / send_b */
-        if (strcmp(rest, "volume") == 0 || strcmp(rest, "send_a") == 0 || strcmp(rest, "send_b") == 0) {
+        /* Strip-level params (no fxN prefix): volume / pan / send_a / send_b */
+        if (strcmp(rest, "volume") == 0 || strcmp(rest, "pan") == 0 ||
+            strcmp(rest, "send_a") == 0 || strcmp(rest, "send_b") == 0) {
             float *tgt = (rest[0] == 'v') ? &shadow_move_fx_strip[sl].volume
+                       : (rest[0] == 'p') ? &shadow_move_fx_strip[sl].pan
                        : (rest[5] == 'a') ? &shadow_move_fx_strip[sl].send_a
                                           : &shadow_move_fx_strip[sl].send_b;
             float maxv = (rest[0] == 'v') ? 4.0f : 1.0f;
+            float defv = (rest[0] == 'v') ? 1.0f : (rest[0] == 'p') ? 0.5f : 0.0f;
             if (req_type == 1) {  /* SET */
-                float v = (shadow_param->value[0]) ? atof(shadow_param->value)
-                                                   : ((rest[0] == 'v') ? 1.0f : 0.0f);
+                float v = (shadow_param->value[0]) ? atof(shadow_param->value) : defv;
                 if (v < 0.0f) v = 0.0f;
                 if (v > maxv) v = maxv;
                 *tgt = v;

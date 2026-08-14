@@ -783,11 +783,7 @@ export function _onPadPress(status, d1, d2) {
                         forceRedraw();
                         return;
                     }
-                    if (S.muteHeld) {
-                        /* Mute-held + pad: toggle mute/solo on that track's column */
-                        if (S.shiftHeld) setTrackSolo(t, !S.trackSoloed[t]);
-                        else           setTrackMute(t, !S.trackMuted[t]);
-                    } else if (S.copyHeld) {
+                    if (S.copyHeld) {
                         /* Copy + clip pad (Session View): clip-to-clip copy */
                         const clipIdx = S.sceneRow + row;
                         const isDrumT = S.trackPadMode[t] === PAD_MODE_DRUM;

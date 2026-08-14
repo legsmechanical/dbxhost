@@ -43,6 +43,7 @@ typedef struct shadow_chain_slot_t {
      * the only place that separation is possible (post-FX the two are one
      * signal). Unity by default; nothing changes until a UI drives it. */
     float synth_volume;
+    float pan;              /* 0.0 = full left, 0.5 = center, 1.0 = full right */
     float send_a;           /* 0.0 to 1.0, post-fader send level to Send A bus */
     float send_b;           /* 0.0 to 1.0, post-fader send level to Send B bus */
     int muted;              /* 1 = muted (Mute+Track or Move speakerOn sync) */

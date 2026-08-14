@@ -41,6 +41,7 @@ import {
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { effectiveClip, invalidateLEDCache, trackColor, forceRedraw, installFlagsWrap, buildLedInitQueue } from './ui_leds.mjs';
 import { initPrimarySurface } from './ui_corun.mjs';
+import { setTrackMute, setTrackSolo } from './ui_editops.mjs';
 import { applyTrackConfig,
     refreshSeqNotesIfCurrent,
     syncClipsFromDsp, syncMuteSoloFromDsp, restoreUiSidecar,
@@ -428,6 +429,11 @@ function _onMidiInternalImpl(data) {
             if (d2 === 127) {
                 if (d1 <= 7 && S.activeBank >= 0) {
                     S.knobTouched = d1; S.knobPhysIdx = d1; S.knobTurnedTick[d1] = -1; S.screenDirty = true;
+                    if (S.sessionView && S.muteHeld) {
+                        if (S.shiftHeld) setTrackSolo(d1, !S.trackSoloed[d1]);
+                        else             setTrackMute(d1, !S.trackMuted[d1]);
+                        invalidateLEDCache();
+                    }
                     /* CC bank: touching a knob makes it the active lane (persistent
                      * — drives the step-LED gradient and highlighted overview cell). */
                     if (S.activeBank === 6) {
