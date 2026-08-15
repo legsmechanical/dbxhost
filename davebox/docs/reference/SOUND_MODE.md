@@ -24,6 +24,12 @@ One gesture, one meaning, one destination — sound mode — with the **route
 picking the flavour** (P8a 1b). Move's own editor is one jog-click further in
 (the SYNTH row) and stays directly reachable as `Edit Synth…` in the track menu.
 
+⭑ **Titles across the whole tree are `(n) NAME`** since 2026-08-15 — the round-
+bracket track marker the top level uses, then the screen. The previous
+`TRACK n - NAME` measured 160px against `drawKitHeader`'s real 124px limit and
+had been clipping on the device ("TRACK 5 - SOUND C"). See `UI_LANGUAGE.md`
+§5.0 for which chassis a screen takes and §2 for why the brackets are round.
+
 ⭑ Until 1b, the Move route jumped straight into `enterMoveNativeCoRun(t)`, and it
 did so on the Shift **release** — co-run makes the shim forward Shift to Move
 firmware, so a still-held Shift leaked. Sound mode forwards nothing, so both
@@ -127,19 +133,24 @@ An **empty block is the add-an-effect flow**: selecting it opens the module
 browser so you can load a reverb into FX 2. This is how effects get added at
 all, so it is not optional polish.
 
-Below the blocks (track context only) sit two rows (P5):
+Below the blocks (track context only) sit **three** door rows. ⚠ This section
+described **two** — `[SLOT SETTINGS]` and `[SLOT PRESETS]` — until 2026-08-15;
+that had been stale since the 08-13 dissolution and the P7 absorb, in five
+separate ways. Corrected against the tree:
 
-- **[SLOT SETTINGS]** — the slot's own params (volume, sends, transpose,
-  mute/solo) and the **Knobs… / LFO 1… / LFO 2…** rows that open the host
-  editors as overlay services on top of sound mode.
-  ⚠ **Routing is not here.** `Recv Ch`, `Fwd Ch` and the derived **MPE**
+- **Sound Control** — `Knobs`, `LFO 1`, `LFO 2`. ⚠ These are **davebox's OWN
+  editors**, absorbed in P7; they were host overlay services in P5 and this
+  section went on saying so. ⚠ And the slot's **levels are NOT here** — Volume,
+  Send A/B, Mute and Solo sit inline on the track's own screen since 08-13,
+  built from the same row kind a Move FX bus uses.
+  ⚠ **Routing is not here either.** `Recv Ch`, `Fwd Ch` and the derived **MPE**
   toggle were deleted with `TRACK_OWNS_ITS_INSTRUMENT.md` — where a track's
   notes go is answered by its Instrument selector, and davebox dispatches by
   addressed slot rather than by channel match, so those rows never affected
-  anything it did. (The screen's NAME still says "slot"; Josh's direction is
-  to fold all track settings into the sound-mode menu behind section
-  dividers rather than rename it in place.)
-- **[SLOT PRESETS]** (last row) — whole-chain patches over the host's global
+  anything it did.
+- **Config** — `Mode`, `Layout`, `Transpose`, `Vel In`, `Looper`: the track's
+  own settings, as opposed to its sound's.
+- **Slot Presets** (last row) — whole-chain patches over the host's global
   `patches/` store, through the `host_patch_*` API (see host `docs/API.md`)
   so the serializer and index space stay the host's own. `[Save]`
   overwrites the slot's current patch (confirmed), `[Save as…]` names via
