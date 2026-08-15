@@ -56,7 +56,46 @@ fi
 # wait below burns its full ceiling, and the SIGKILL then eats the unsaved
 # state (observed on hardware 2026-08-15, first launch after this order was
 # briefly inverted).
+# Paint the dAVEBOx splash into the STOCK shadow display before freezing, so
+# the frozen frame the panel retains through the whole entry gap is the
+# splash — the user sees "picked the tool → splash" within a second, and the
+# standalone host's own boot splash then replaces it with the same image.
+# Without this the retained frame is the stock Tools menu, which reads as a
+# hang (Josh, first hands-on 2026-08-15: "no indication that it's loading").
+# The shim keeps compositing /dev/shm/schwung-display for the frames between
+# shadow_ui's exit and the freeze — display_mode stays set (re-asserted here
+# for good measure), which is exactly why the menu stayed on screen before.
+# ⚠ The display SHM is PAGE-PACKED (8 pages x 128 cols, byte = 8 vertical
+# pixels, bit 0 topmost — see movy grab-screen / display_server.c), while
+# splash.hex is row-major MSB-first; the python below converts.
+paint_splash() {
+    [ -e /dev/shm/schwung-display ] || return 0
+    [ -f /data/UserData/dbx-host/splash.hex ] || return 0
+    python3 - <<'PY' && echo "quiesce: splash painted into stock display"
+import mmap
+src = bytes.fromhex(open("/data/UserData/dbx-host/splash.hex").read().strip())
+out = bytearray(1024)
+for y in range(64):
+    row = y * 16
+    for x in range(128):
+        if (src[row + (x >> 3)] >> (7 - (x & 7))) & 1:
+            out[(y >> 3) * 128 + x] |= 1 << (y & 7)
+with open("/dev/shm/schwung-display", "r+b") as f:
+    mm = mmap.mmap(f.fileno(), 1024)
+    mm[:] = bytes(out)
+    mm.flush(); mm.close()
+with open("/dev/shm/schwung-control", "r+b") as f:
+    mm = mmap.mmap(f.fileno(), 84)
+    mm[0] = 1          # display_mode: keep the shim compositing our frame
+    mm.flush(); mm.close()
+PY
+}
+
 freeze_move() {
+    paint_splash
+    # A few SPI frames (~3 ms each) so the shim pushes the new frame to the
+    # panel before Move stops producing frames at all.
+    sleep 0.2
     pids=$(pidof MoveOriginal 2>/dev/null || true)
     if [ -n "$pids" ]; then
         kill -STOP $pids 2>/dev/null && echo "quiesce: MoveOriginal frozen ($pids)"
