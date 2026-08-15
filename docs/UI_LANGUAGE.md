@@ -174,6 +174,38 @@ app. Its bar's bottom edge replaced the old separate rule line.
 
 ## 5. Lists, pickers, dialogs
 
+### 5.0 ⭑⭑ WHICH CHASSIS — the rule, and why it exists
+
+Two list chassis are documented below and both are legitimate, which for months
+left no answer to *which one do I reach for*. The answer was therefore whichever
+file a screen happened to be written in: `ui_sound.mjs` was 37 kit calls and 0
+host, `ui_dialogs.mjs` was 0 kit and 31 host. Nobody chose that.
+
+**The rule, normative as of 2026-08-15:**
+
+> **A screen that lists the app's own structure renders on the KIT**
+> (`drawKitHeader` + `drawKitList`). **The host chassis is for DIALOGS** — a
+> header, some prose, and a button row.
+
+Corollaries, each of which was a real screen before the cohesion pass:
+
+- **Structure vs content decides the ROW FONT, not the chassis.** Inside
+  `drawKitList`, `hdr: true` gives a row the header font — use it for the app's
+  own rows (settings, actions, doors). Leave it off for names that come out of
+  data (module lists, preset names, project names, snapshot labels): the label
+  font fits about a third more characters, and truncating a name is worse than
+  truncating a word you chose.
+- **A confirm or an info screen stays a dialog.** It already shares the filled-bar
+  header and the one button family (§5), so it reads as the same app. Converting
+  it to a list is churn that looks like progress.
+- **Do not hand-roll a list.** Every hand-rolled one in this tree drifted: its
+  own row height, its own inset highlight, its own scroll glyphs, and a guessed
+  truncation. All are gone; do not add the next one.
+- **Do not invent a selection idiom.** Inverse video is it. A `< NAME >` value
+  row and a `[x]` checkbox both existed here; the second actively collided with
+  §6, where square brackets mean *being edited*.
+
+
 - **Menu list** — `drawMenuList` (`src/shared/menu_layout.mjs`). Host font, `LIST_TOP_Y = 15`,
   `LIST_LINE_HEIGHT = 9`, labels at `LIST_LABEL_X = 4`, values right-aligned from
   `LIST_VALUE_X = 92`. Selected row is inverse video with a `"> "` prefix (unselected: two
@@ -200,7 +232,22 @@ a button.
   movy-chassis screens: label font, one row height (10px default), windowed scroll with the
   right-edge scrollbar, inverse-video selection, optional right-aligned value / `>` chevron /
   header-font rows, and the same `[brackets]` edit grammar as `drawMenuList`. All of sound
-  mode's lists and the knob/LFO editors render through it.
+  mode's lists and the knob/LFO editors render through it — and, since 2026-08-15, Global
+  settings, the project screens, the snapshot picker and the clear-automation menu.
+  Row kinds beyond a plain label:
+  | key | draws |
+  |---|---|
+  | `hdr: true` | the row in the HEADER font (see §5.0) |
+  | `value` | right-aligned, always the label font |
+  | `chevron: true` | a `>` in the value position — a door |
+  | `editing: true` | wraps the value in `[brackets]`. ⚠ Only if the caller is not already bracketing it: `formatItemValue` does, and both together render `[[MINOR]]` |
+  | `divider: true` | a rule on its own row. ⚠ Costs a whole row — worth it on a ~15-row screen, not on a 3-row one |
+  | `note: '…'` | a **centred, non-selectable status line** at full row height. 1-bit has no dim, so "information, not a control" is said by centring and by the cursor stepping over it (§6). Full height because these REPLACE an action row and a shorter one would reflow the menu under the user's thumb |
+  ⚠ `sel < 0` means **nothing on this screen is selectable** — a prompt whose only
+  inputs are a pad or Back. Without it the clamp highlights row 0, which reads as
+  a selection on a screen that has none.
+  ⚠ Callers must make `divider` and `note` rows unselectable themselves; the list
+  draws them but does not own the cursor.
 
 ## 6. Selection, focus, editing, disabled
 
@@ -295,14 +342,16 @@ Honest status, so nobody mistakes the spec for the state of the tree.
 |---|---|
 | `ui_movy.mjs` + `ui_cells.mjs` | ✅ The reference. Pure, centralized, previewable off-device |
 | `src/shared/menu_layout*.mjs` | ✅ Centralized; owns the one dialog-button family (P7) |
-| `ui_dialogs.mjs` | ✅ Delegates buttons to `menu_layout`; shared header + list |
+| `ui_dialogs.mjs` | ✅ Delegates buttons to `menu_layout`; every LIST on the kit since 2026-08-15 (Global settings, project screens, snapshot picker, clear-automation). Confirms and info screens stay on the dialog chassis by §5.0 |
 | `ui_render.mjs` | ✅ Grid/header chrome all movy-composed; the remaining direct drawing is the signature sequencer visuals (session overview, track rows, position bars, perf mode) — deliberately bespoke, ruled out of the polish pass |
 | `ui_sound.mjs` | ✅ All lists on `drawKitList`; confirms on the shared button row (P7) |
 | `ui_leds.mjs` / `ui_scene.mjs` | 🟡 Direct LED writes; shared constants but no shared helpers |
 
 **Two font systems are in simultaneous use** — the movy fonts and the host's built-in `print()` —
-because the movy grid and the shared menu list are genuinely different chassis. That is tolerable
-and now visually reconciled: both chassis share the filled-bar header and the dialog buttons.
+because the movy grid and the dialog body are genuinely different jobs. That is tolerable and now
+visually reconciled: both share the filled-bar header and the dialog buttons, and §5.0 says which
+one a new screen takes. ⭑ The mcufont 5×5 is no longer used for any header; Global settings was
+its last such caller and moved to `drawKitHeader` on 2026-08-15.
 
 **Canvaskit parity (P7):** `drawVBar` (a `fader` cell renders as the vertical bar, no longer
 falling through to `arc`), `hudCard`, and live waveform rendering (`shapeSample`, `drawWaveBox`,

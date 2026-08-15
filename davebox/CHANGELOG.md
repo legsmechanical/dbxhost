@@ -8,6 +8,22 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **The menus all look like the same app now.** Several screens had drifted onto
+  different layouts — the Settings menu used a different typeface for its title
+  and its rows, the project screens drew their own list that didn't match any
+  other, and the sub-screens under a track's settings were set in a lighter font
+  than the screen they opened from. They now share one look: the same header
+  bar, the same rows, the same highlight, the same scrollbar. **Along the way
+  three pieces of text that ran off the right-hand edge of the display are
+  fixed**, including a track sub-screen whose title read "TRACK 5 - SOUND C".
+- **The project screens are one screen.** Opening Projects now shows the
+  project that's selected — its name, and Load / Rename / Color — instead of a
+  page of instructions. Tapping any pad switches to that project's screen, which
+  is how it already worked; there's just nothing in the way now. On the project
+  you already have open, Load is replaced by **(Current)**. If the project you
+  had last is gone, the screen simply says **Select project** until you pick
+  one. Copy and delete are unchanged — hold the button and tap, the same as
+  Move's own sets.
 - **The sound editor's knobs now say what they do.** Outside a block's own
   parameter pages the eight knobs drive the slot's knob assignments, and until
   now nothing on screen told you which was which — you turned one and listened.

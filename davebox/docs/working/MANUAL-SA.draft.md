@@ -173,13 +173,18 @@ pad per project, 32 slots:
 
 - **Lit pads** are projects — each in its own color (blue until you pick
   one); the **pulsing pad** is the one that's open.
-- **Tap a project** for its menu: **Load**, **Rename**, **Color**. Turn the
-  jog wheel to choose, click to select. A tap never loads by itself — Load
+- **The screen shows the selected project** — its name, then **Load**,
+  **Rename**, **Color**. Opening the picker shows the project you had last,
+  already selected, so Load is one click away. On the project that's already
+  open, Load reads **(Current)** instead. If the project you had last no longer
+  exists, the screen says **Select project** until you tap a pad.
+- **Tap a project** to select it — the screen switches to that project. Turn the
+  jog wheel to choose a row, click to select. A tap never loads by itself — Load
   does (a moment of "Loading...", then you're in).
   - **Rename** opens the on-screen keyboard. Renaming the *open* project
     restarts the session in place (a few seconds, like switching projects).
-  - **Color** cycles a palette with the jog wheel — the pad previews it
-    live — and click sets it.
+  - **Color** lists the palette — the jog wheel moves down it and the pad
+    previews the color live; click sets it.
 - **Tap an empty pad** and confirm to create a new project — born already
   wired the way dAVEBOx needs (instrument tracks on channels 1–4, MIDI out
   off), from the same template as Project 1 on first launch. It doesn't
@@ -189,7 +194,7 @@ pad per project, 32 slots:
 - **Delete:** hold Delete, tap the project, tap it again to confirm (it
   blinks red in between). Release cancels. The open project can't be
   deleted — switch away first.
-- **Back** steps out (color → menu → shelf → closed); **Shift + Back**
+- **Back** steps out (color → the project's screen → closed); **Shift + Back**
   leaves dAVEBOx SA entirely, as always.
 
 > **Coming from an earlier dAVEBOx?** Work you made back when dAVEBOx used the
@@ -1136,6 +1141,14 @@ effects, and automation. Transport Stop sends note-offs; **Delete + Play** while
 stopped sends a MIDI panic on every channel.
 
 ## 14.3 Editing a track's sound
+
+> **Sub-screens look like the screen they came from.** Every list in dAVEBOx —
+> track settings and its sub-screens, the Settings menu, the project screens —
+> shares one layout: a filled title bar, rows in the same face, the selected row
+> filled white, a scrollbar down the right when there's more than fits. A `>` at
+> the right of a row means it opens something; a value at the right means the
+> jog changes it, and it appears in [brackets] while you're changing it.
+
 
 **Shift + Note/Session** means "edit this track's sound" — one gesture, and where
 it lands follows the track's route. Playback carries on either way, and the pads
