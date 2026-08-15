@@ -1,8 +1,12 @@
 import { S, conductorTrackIdx } from './ui_state.mjs';
 import { MCUFONT, STATE_VERSION, NOTE_KEYS, SCALE_DISPLAY, pixelPrintC,
          NUM_CLIPS, PAD_MODE_DRUM, PAD_MODE_CONDUCT } from './ui_constants.mjs';
+/* ⭑ drawMenuList and menuLayoutDefaults are GONE from this file as of the
+ * 2026-08-15 cohesion pass — every list here renders on the kit now (§5.0).
+ * The header and the button family stay: those are the dialog chassis, which
+ * is still the right home for a confirm. */
 import {
-    drawMenuHeader, drawMenuList, menuLayoutDefaults,
+    drawMenuHeader,
     drawDialogButton, drawDialogYesNoRow, drawDialogOkButton
 } from '/data/UserData/schwung/shared/menu_layout.mjs';
 import { formatItemValue, isDivider } from '/data/UserData/schwung/shared/menu_items.mjs';
