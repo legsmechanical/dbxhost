@@ -196,40 +196,50 @@ shoot('global', 'Global settings editing', 'the [brackets] edit grammar');
 GS.globalMenuState = { selectedIndex: 2, editing: false, editValue: null };
 
 /* ---- C. PROJECT MANAGEMENT ---- */
-const PPP = {
-    byIndex: { 0: { name: 'Sketchbook', color: 0 }, 1: { name: 'Live Set A', color: 2 },
-               3: { name: 'Drums Only', color: 4 } },
-    current: 0, cursor: 0, deleteIdx: -1, copySrcIdx: -1,
+GS.globalMenuOpen = false;
+const mkPPP = (over) => Object.assign({
+    byIndex: { 0: { name: 'Sketchbook', color: 1 }, 1: { name: 'Live Set A', color: 0 },
+               3: { name: 'Drums Only', color: 2 } },
+    current: 0, touchedIdx: -1, deleteIdx: -1, copySrcIdx: -1,
     menu: null, colorPick: null, confirmNew: null, restarting: false, renameActive: false,
-};
-GS.projectPadPicker = PPP;
-globalThis.clear_screen(); dlg.drawProjectPadPicker();
-shoot('project', 'Project picker — root', '');
+}, over || {});
 
-PPP.menu = { k: 0, sel: 1 };
+/* Selected but NOT loaded — every fresh launch, and any other project's pad. */
+GS.awaitingProjectSelect = true;
+GS.projectPadPicker = mkPPP({ menu: { k: 0, sel: 0 } });
 globalThis.clear_screen(); dlg.drawProjectPadPicker();
-shoot('project', 'Project pad menu', 'hand-rolled list + footer hint');
-PPP.menu = null;
+shoot('project', 'Selected, not loaded', 'the ordinary screen — Load first');
 
-PPP.colorPick = { k: 0, sel: 3 };
+/* Selected AND loaded: Load is replaced by the centred status line. */
+GS.awaitingProjectSelect = false;
+GS.projectPadPicker = mkPPP({ menu: { k: 0, sel: 1 } });
 globalThis.clear_screen(); dlg.drawProjectPadPicker();
-shoot('project', 'Project colour picker', 'free-text value row');
-PPP.colorPick = null;
+shoot('project', 'Selected and loaded', '(CURRENT) — non-selectable, same row height');
 
-PPP.confirmNew = { k: 5, sel: 0 };
+/* Nothing selected: the prior project is gone. */
+GS.projectPadPicker = mkPPP({ current: -1 });
 globalThis.clear_screen(); dlg.drawProjectPadPicker();
-shoot('project', 'New project confirm', '');
-PPP.confirmNew = null;
+shoot('project', 'Nothing selected', 'prior project no longer exists');
 
-PPP.deleteIdx = 1;
+GS.projectPadPicker = mkPPP({ colorPick: { k: 0, sel: 2 } });
 globalThis.clear_screen(); dlg.drawProjectPadPicker();
-shoot('project', 'Project delete arm', '');
-PPP.deleteIdx = -1;
+shoot('project', 'Colour picker', '');
 
-PPP.restarting = true;
+GS.projectPadPicker = mkPPP({ deleteIdx: 1 });
+globalThis.clear_screen(); dlg.drawProjectPadPicker();
+shoot('project', 'Delete arm', '');
+
+GS.projectPadPicker = mkPPP({ copySrcIdx: 1 });
+globalThis.clear_screen(); dlg.drawProjectPadPicker();
+shoot('project', 'Copy arm', '');
+
+GS.projectPadPicker = mkPPP({ restarting: true });
 globalThis.clear_screen(); dlg.drawProjectPadPicker();
 shoot('project', 'Renaming / restarting', '');
-PPP.restarting = false;
+
+GS.projectPadPicker = mkPPP({ confirmNew: { k: 5, sel: 0 } });
+globalThis.clear_screen(); dlg.drawProjectPadPicker();
+shoot('project', 'New project confirm', 'stays on the shared dialog family');
 
 /* ---- D. DIALOG FAMILY (the shared button row, for comparison) ---- */
 GS.globalMenuOpen = false;

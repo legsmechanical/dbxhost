@@ -9,7 +9,7 @@ import { formatItemValue, isDivider } from '/data/UserData/schwung/shared/menu_i
 /* The KIT chassis. ui_movy is pure — no imports, no state — so pulling it in
  * here cannot cycle. See docs/UI_LANGUAGE.md: a list of the app's own structure
  * renders on the kit; the host chassis is for dialogs. */
-import { drawKitHeader, drawKitList } from './ui_movy.mjs';
+import { drawKitHeader, drawKitList, fitHdr } from './ui_movy.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
     dropSnapshots, applySnapshotToLive, loadSelectedCurrentProject,
@@ -728,6 +728,12 @@ function _openProjectPadPicker_impl() {
                 menu: null, colorPick: null, confirmNew: null, renameActive: false,
                 restarting: false };
     _pppApplyList(p, data);
+    /* ⭑ ONE SCREEN, showing whichever project is SELECTED — and on open the
+     * prior project already is, so the picker comes up on that project's own
+     * screen rather than a bare root (Josh, 2026-08-15). There is no separate
+     * root any more; when nothing is selected, because the prior project was
+     * deleted out from under us, the draw falls through to SELECT PROJECT. */
+    _pppReselect(p);
     S.projectPadPicker = p;
     S.globalMenuOpen = false;
     invalidateLEDCache();
@@ -782,9 +788,36 @@ function _pppCloseOverlays(p) {
 /* The project jog-menu (spec: Josh, 2026-08-11 — tap never loads). */
 const PPP_MENU_ROWS = ['Load', 'Rename', 'Color'];
 
+/* Is THIS project the one actually playing?
+ *
+ * ⚠⚠ `k === p.current` alone is not the question. On a fresh launch the prior
+ * project is current — it is the pulsing pad — but nothing is loaded yet, and
+ * Load is the row the user must press to start the session. Answering "yes"
+ * there would print (CURRENT) on the one screen where nothing is current and
+ * hide the only way forward. awaitingProjectSelect is what separates them. */
+function _pppIsLoaded(p, k) {
+    return k === p.current && !S.awaitingProjectSelect;
+}
+
+/* Row 0 is Load — an action — UNLESS this project is already loaded, in which
+ * case it is a non-selectable (CURRENT) status line and the cursor starts on
+ * Rename. Kept as row 0 rather than dropped so Rename and Color stay at the
+ * same heights in both states; the menu must not reflow under a thumb. */
+function _pppMenuTop(p, k) { return _pppIsLoaded(p, k) ? 1 : 0; }
+
+/* Put the picker back on the SELECTED project's screen. Since the 2026-08-15
+ * cohesion pass that screen is the picker's only resting state, so every path
+ * that closes an overlay has to land here rather than on a root that no longer
+ * exists — otherwise it falls through to SELECT PROJECT while a project is
+ * plainly selected. */
+function _pppReselect(p) {
+    if (p.current >= 0 && p.byIndex[p.current]) p.menu = { k: p.current, sel: _pppMenuTop(p, p.current) };
+    S.screenDirty = true;
+}
+
 function _pppOpenMenu(p, k) {
     _pppCloseOverlays(p);
-    p.menu = { k: k, sel: 0 };
+    p.menu = { k: k, sel: _pppMenuTop(p, k) };
     S.screenDirty = true;
 }
 
@@ -881,6 +914,11 @@ function _pppCommitColor(p, k, colorIdx) {
     const d = _pppRunList();
     if (d) _pppApplyList(p, d);
     p.colorPick = null;
+    /* ⚠ Back to that project's screen. Opening the colour picker nulls the menu,
+     * so without this the commit landed on no screen at all — which used to be
+     * the root and is now the SELECT PROJECT empty state, with a project
+     * selected. */
+    _pppOpenMenu(p, k);
     invalidateLEDCache();
     S.screenDirty = true;
 }
@@ -934,7 +972,11 @@ function _projectPadPickerRotate_impl(delta) {
         invalidateLEDCache();     /* live preview on the target pad */
     } else if (p.menu) {
         const n = PPP_MENU_ROWS.length;
-        p.menu.sel = (p.menu.sel + (delta > 0 ? 1 : n - 1)) % n;
+        const top = _pppMenuTop(p, p.menu.k);
+        /* Wrap across the SELECTABLE rows only — the (CURRENT) status line is
+         * not a stop, the same contract dividers have in drawKitList. */
+        const span = n - top;
+        p.menu.sel = top + (((p.menu.sel - top) + (delta > 0 ? 1 : span - 1)) % span);
     } else {
         return;
     }
@@ -948,7 +990,14 @@ function _projectPadPickerBack_impl() {
     if (!p) return false;
     if (p.restarting) return true; /* swallow — teardown in flight */
     if (p.colorPick) { _pppOpenMenu(p, p.colorPick.k); invalidateLEDCache(); return true; }
-    if (p.menu || p.confirmNew) { _pppCloseOverlays(p); S.screenDirty = true; return true; }
+    if (p.confirmNew) { _pppCloseOverlays(p); _pppReselect(p); return true; }
+    /* ⭑ The menu IS the picker's screen now, so there is nothing behind it to
+     * peel back to and Back closes the picker outright (returning false hands
+     * that to the caller).
+     * ⚠ EXCEPT while awaiting a selection: closing then leaves nothing loaded,
+     * nothing on screen but LOADING, and no way out — the same dead end the
+     * open path guards against. Swallow it there. */
+    if (p.menu) return !!S.awaitingProjectSelect;
     return false;
 }
 
@@ -1055,15 +1104,26 @@ function _drawProjectPadPicker_impl() {
     /* Rename keyboard is fully modal and draws itself. */
     if (p.renameActive && isTextEntryActive()) { drawTextEntry(); return; }
 
+    /* ⭑⭑ RE-DERIVE the resting state here, in ONE place, rather than bookkeeping
+     * it at every mutator — the same rule the edit-CC claim follows, and for the
+     * same reason. Since the menu became the picker's only resting screen, SIX
+     * paths that call _pppCloseOverlays (arming delete or copy, cancelling
+     * either, both completions, and the three refusals) would each have to
+     * remember to put the picker back on the selected project. One of them
+     * forgetting shows SELECT PROJECT while a project is plainly selected. */
+    if (!p.restarting && !p.confirmNew && !p.colorPick && !p.menu &&
+        p.deleteIdx < 0 && p.copySrcIdx < 0) _pppReselect(p);
+
     clear_screen();
 
     if (p.restarting) {
-        drawMenuHeader('RENAMING');
-        print(4, 24, 'Restarting the', 1);
-        print(4, 34, 'session...', 1);
+        drawKitHeader('RENAMING', false);
+        drawKitList([{ note: 'Restarting' }, { note: 'the session...' }], -1, {});
         return;
     }
 
+    /* A CONFIRM, so it stays on the shared dialog family — that is what the
+     * dialog chassis is for, and its header already matches the kit's. */
     if (p.confirmNew) {
         drawMenuHeader('NEW PROJECT');
         print(4, 20, 'Create new project', 1);
@@ -1072,51 +1132,59 @@ function _drawProjectPadPicker_impl() {
         return;
     }
 
+    /* Armed by hold-Delete / hold-Copy + tap. Prompts, not screens: they own
+     * the display until the gesture completes or is cancelled. They used to be
+     * free text squeezed under the root's status line, where the longest of
+     * them ran off the right edge of the panel. */
+    if (p.deleteIdx >= 0) {
+        const dp = p.byIndex[p.deleteIdx];
+        drawKitHeader('DELETE PROJECT', false);
+        drawKitList([{ label: dp ? dp.name : '?', hdr: true },
+                     { divider: true },
+                     { note: 'Tap the pad again' }], -1, {});
+        return;
+    }
+    if (p.copySrcIdx >= 0) {
+        const sp = p.byIndex[p.copySrcIdx];
+        drawKitHeader('COPY PROJECT', false);
+        drawKitList([{ label: sp ? sp.name : '?', hdr: true },
+                     { divider: true },
+                     { note: 'Tap an empty pad' }], -1, {});
+        return;
+    }
+
+    /* The colour picker is a LIST of the colours now, selected by inverse video
+     * like every other list — it was a `< NAME >` text row, a selection idiom
+     * used nowhere else in the app. The pad still previews the real colour
+     * live, which is the part a 1-bit display cannot do. */
     if (p.colorPick) {
         const cp = p.byIndex[p.colorPick.k];
-        drawMenuHeader(truncLabel(cp ? cp.name : '?', 18));
-        print(4, 20, 'Color:', 1);
-        /* Wheel-changeable value row (< NAME >); the pad itself previews the
-         * actual color live. */
-        const nm = PROJECT_COLORS[p.colorPick.sel].name;
-        print(4, 32, '< ' + nm + ' >', 1);
-        print(4, 50, 'Click: set  Back: cancel', 1);
+        drawKitHeader(fitHdr(String(cp ? cp.name : '?').toUpperCase() + ' COLOR', 124), false);
+        drawKitList(PROJECT_COLORS.map(c => ({ label: c.name, hdr: true })),
+                    p.colorPick.sel, {});
         return;
     }
 
     if (p.menu) {
         const mp = p.byIndex[p.menu.k];
-        drawMenuHeader(truncLabel(mp ? mp.name : '?', 18));
-        const lineH = 10, listTopY = 18;
-        for (let i = 0; i < PPP_MENU_ROWS.length; i++) {
-            const y = listTopY + i * lineH;
-            if (i === p.menu.sel) {
-                fill_rect(2, y - 1, 124, lineH - 1, 1);
-                print(5, y, PPP_MENU_ROWS[i], 0);
-            } else {
-                print(5, y, PPP_MENU_ROWS[i], 1);
-            }
-        }
-        print(4, 54, 'Click: select  Back: close', 1);
+        const loaded = _pppIsLoaded(p, p.menu.k);
+        drawKitHeader(fitHdr(String(mp ? mp.name : '?').toUpperCase(), 124), false);
+        drawKitList([
+            /* Row 0 is Load, or the status line that replaces it. */
+            loaded ? { note: '(Current)' } : { label: PPP_MENU_ROWS[0], hdr: true },
+            { label: PPP_MENU_ROWS[1], hdr: true, chevron: true },
+            { label: PPP_MENU_ROWS[2], hdr: true,
+              value: PROJECT_COLORS[projectColorIdx(mp)].name },
+        ], p.menu.sel, {});
         return;
     }
 
-    drawMenuHeader('PROJECTS');
-    const cur = p.byIndex[p.current];
-    print(4, 16, 'Now: ' + truncLabel(cur ? cur.name : '-', 16), 1);
-    if (p.deleteIdx >= 0) {
-        const dp = p.byIndex[p.deleteIdx];
-        print(4, 28, 'Delete ' + truncLabel(dp ? dp.name : '?', 12) + '?', 1);
-        print(4, 38, 'Tap the pad again.', 1);
-    } else if (p.copySrcIdx >= 0) {
-        const sp = p.byIndex[p.copySrcIdx];
-        print(4, 28, 'Copy ' + truncLabel(sp ? sp.name : '?', 13), 1);
-        print(4, 38, 'Tap an empty pad.', 1);
-    } else {
-        print(4, 28, 'Tap a pad: menu.', 1);
-        print(4, 38, 'Empty pad = new.', 1);
-    }
-    print(4, 50, 'Copy/Del: hold+tap  Back: close', 1);
+    /* Nothing selected — the prior project no longer exists. The header drops
+     * to the generic title and the screen carries one centred hint until a pad
+     * is tapped. No gesture legend anywhere in here: copy and delete are
+     * Move-native gestures the user already knows (Josh, 2026-08-15). */
+    drawKitHeader('PROJECTS', false);
+    drawKitList([], -1, { emptyMsg: 'Select project', emptyHdr: true });
 }
 
 /* Fail-SAFE wrappers: see the banner above. */

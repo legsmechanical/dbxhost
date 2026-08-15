@@ -1306,8 +1306,14 @@ export function drawKitList(rows, sel, opts) {
     }
     const visible = o.visible != null ? o.visible
                                       : Math.max(1, Math.floor((64 - topY - 1) / rowH));
-    const s = Math.max(0, Math.min(n - 1, sel | 0));
-    const start = Math.max(0, Math.min(s - Math.floor(visible / 2), n - visible));
+    /* sel < 0 means NOTHING is selectable on this screen — a prompt whose only
+     * inputs are a pad or Back, not a list you move a cursor through. Without
+     * it the clamp turned -1 into 0 and highlighted the first row, which reads
+     * as "this row is selected" on a screen where nothing can be. */
+    const none = (sel | 0) < 0;
+    const s = none ? -1 : Math.max(0, Math.min(n - 1, sel | 0));
+    const start = none ? 0
+        : Math.max(0, Math.min(s - Math.floor(visible / 2), n - visible));
     const hasScroll = n > visible;
     const rightEdge = hasScroll ? SCREEN_W - 5 : SCREEN_W - 3;   /* value right-align x */
     const fillW = hasScroll ? SCREEN_W - 4 : SCREEN_W;
