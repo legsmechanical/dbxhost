@@ -171,23 +171,29 @@ enterSound(); openRow('block');
 draw(); shoot('track', 'Block editor (param page)', 'the movy cell grid — not a list');
 
 /* ---- B. GLOBAL SETTINGS ---- */
+/* ⚠ Built with the REAL menu-item factories, not plain {label,value} objects.
+ * formatItemValue switches on item.type, so untyped fixtures render every value
+ * as empty — which made the first pass of this audit look like the rewrite had
+ * dropped the values. The fixture has to speak the same contract as the screen. */
+const MI = await import('../../src/shared/menu_items.mjs');
 GS.globalMenuOpen = true;
-try {
-    const menu = await import('../ui/ui_menu.mjs');
-    if (menu.rebuildGlobalMenu) menu.rebuildGlobalMenu();
-} catch (e) { /* built lazily by tick on device */ }
-if (!GS.globalMenuItems || !GS.globalMenuItems.length) {
-    GS.globalMenuItems = [
-        { label: 'BPM', value: 120 }, { label: 'Key', value: 'C' },
-        { label: 'Scale', value: 'Minor' }, { label: 'Clock Follow', value: 'Off' },
-        { label: 'Clock Out', value: 'On' }, { label: 'Projects...', value: '' },
-        { label: 'Host Settings...', value: '' },
-    ];
-}
-GS.globalMenuState = GS.globalMenuState || { selectedIndex: 2, editing: false, editValue: null };
-GS.globalMenuState.selectedIndex = 2;
+GS.globalMenuItems = [
+    MI.createValue('BPM', { get: () => 120, min: 20, max: 300 }),
+    MI.createEnum('Key', { get: () => 'C', options: ['C', 'C#', 'D'] }),
+    MI.createEnum('Scale', { get: () => 'Minor', options: ['Major', 'Minor'] }),
+    MI.createEnum('Clock Follow', { get: () => 'Off', options: ['Off', 'Move'] }),
+    MI.createToggle('Clock Out', { get: () => true }),
+    MI.createSubmenu('Projects...', () => []),
+    MI.createSubmenu('Host Settings...', () => []),
+];
+GS.globalMenuState = { selectedIndex: 2, editing: false, editValue: null };
 globalThis.clear_screen(); dlg.drawGlobalMenu();
-shoot('global', 'Global settings menu', 'a third chassis');
+shoot('global', 'Global settings menu', '');
+
+GS.globalMenuState = { selectedIndex: 2, editing: true, editValue: 'Minor' };
+globalThis.clear_screen(); dlg.drawGlobalMenu();
+shoot('global', 'Global settings editing', 'the [brackets] edit grammar');
+GS.globalMenuState = { selectedIndex: 2, editing: false, editValue: null };
 
 /* ---- C. PROJECT MANAGEMENT ---- */
 const PPP = {

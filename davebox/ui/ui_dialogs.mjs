@@ -5,7 +5,11 @@ import {
     drawMenuHeader, drawMenuList, menuLayoutDefaults,
     drawDialogButton, drawDialogYesNoRow, drawDialogOkButton
 } from '/data/UserData/schwung/shared/menu_layout.mjs';
-import { formatItemValue } from '/data/UserData/schwung/shared/menu_items.mjs';
+import { formatItemValue, isDivider } from '/data/UserData/schwung/shared/menu_items.mjs';
+/* The KIT chassis. ui_movy is pure — no imports, no state — so pulling it in
+ * here cannot cycle. See docs/UI_LANGUAGE.md: a list of the app's own structure
+ * renders on the kit; the host chassis is for dialogs. */
+import { drawKitHeader, drawKitList } from './ui_movy.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
     dropSnapshots, applySnapshotToLive, loadSelectedCurrentProject,
@@ -214,26 +218,28 @@ export function drawGlobalMenu() {
     /* Always 'Global' now. This used to read 'Track N' for the first five rows,
      * back when the menu opened with a TRACK section — that section moved to
      * Track Control (2026-08-13) and the index test would otherwise label the
-     * clock and key/scale rows with a track number. */
-    const _hTitle = 'Global';
-    fill_rect(0, 1, 128, 10, 1);
-    pixelPrintMcu(2, 4, _hTitle, 1, 0);
-    fill_rect(0, 12, 128, 1, 1);
-    drawMenuList({
-        items: S.globalMenuItems,
-        selectedIndex: S.globalMenuState.selectedIndex,
-        listArea: { topY: menuLayoutDefaults.listTopY, bottomY: menuLayoutDefaults.listBottomNoFooter },
-        valueX: 76,
-        valueAlignRight: true,
-        prioritizeSelectedValue: true,
-        selectedMinLabelChars: 5,
-        getLabel: function(item) { return item ? (item.label || '') : ''; },
-        getValue: function(item, index) {
-            if (!item) return '';
-            const isEditing = S.globalMenuState.editing && index === S.globalMenuState.selectedIndex;
-            return formatItemValue(item, isEditing, S.globalMenuState.editValue);
-        }
-    });
+     * clock and key/scale rows with a track number.
+     *
+     * ⭑⭑ ON THE KIT since the 2026-08-15 cohesion pass. This screen used to be
+     * the most visually distant in the app and it was the only one built from
+     * two foreign fonts at once: a hand-drawn mcufont 5x5 title bar (a face no
+     * other screen uses for a header) over host-font rows. Both are gone; it is
+     * now the same header bar and the same list body as track settings.
+     *
+     * ⚠⚠ NO `editing` flag on the row. formatItemValue ALREADY wraps an edited
+     * value in [brackets], and drawKitList would add a second pair — the screen
+     * would read "[[MINOR]]". Two components implementing one grammar; the
+     * value's owner keeps it. */
+    drawKitHeader('GLOBAL', false);
+    drawKitList(S.globalMenuItems.map(function(item, index) {
+        if (isDivider(item)) return { divider: true };
+        const isEditing = S.globalMenuState.editing && index === S.globalMenuState.selectedIndex;
+        /* formatItemValue returns '>' for a SUBMENU, which is the same glyph
+         * drawKitList's own `chevron` draws in the same place — so the doors
+         * need no special case here. */
+        return { label: item ? (item.label || '') : '', hdr: true,
+                 value: formatItemValue(item, isEditing, S.globalMenuState.editValue) };
+    }), S.globalMenuState.selectedIndex, {});
 }
 
 /* "REC Unavailable" two-option dialog (OK | BAKE NOW). Opens when Record
