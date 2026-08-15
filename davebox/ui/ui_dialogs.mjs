@@ -195,12 +195,18 @@ function drawExportConfirm() {
 function drawExportDoneDialog() {
     clear_screen();
     drawMenuHeader(S.exportDoneMissing > 0 ? ('EXPORTED -' + S.exportDoneMissing) : 'EXPORTED TO');
+    /* ⚠ MEASURE, never estimate. This wrapped at a fixed 21 characters on a
+     * PROPORTIONAL font, so a path of wide glyphs ran past the right edge and a
+     * path of narrow ones wasted a third of the line. Same family as the two
+     * off-screen strings the 2026-08-15 audit found. */
     const path = S.exportDonePath || '';
-    const W = 21;   /* chars per line at the small print font */
-    let y = 14, lines = 0;
-    for (let i = 0; i < path.length && lines < 4; i += W, lines++) {
-        print(2, y, path.slice(i, i + W), 1);
-        y += 9;
+    const LIMIT = 124;
+    let y = 14, lines = 0, i = 0;
+    while (i < path.length && lines < 4) {
+        let n = 1;
+        while (i + n < path.length && text_width(path.slice(i, i + n + 1)) <= LIMIT) n++;
+        print(2, y, path.slice(i, i + n), 1);
+        i += n; y += 9; lines++;
     }
     drawOkButton(52);
 }
@@ -372,30 +378,16 @@ export function drawSnapshotPicker() {
         return;
     }
 
-    drawMenuHeader(p.mode === 'overwrite' ? 'OVERWRITE WHICH?' : 'LOAD STATE');
-    const total = p.snaps.length;
-    const visible = 4;
-    const sel = p.sel;
-    let top = Math.max(0, Math.min(sel - 1, total - visible));
-    if (total <= visible) top = 0;
-    const lineH = 9;
-    const listTopY = 20;
-    for (let i = 0; i < visible && (top + i) < total; i++) {
-        const idx = top + i;
-        const y = listTopY + i * lineH;
-        const s = p.snaps[idx];
-        let label = s.label || '';
-        if (p.mode === 'load' && s.sv !== STATE_VERSION) label += ' (old)';
-        const truncated = label.length > 20 ? label.substring(0, 19) + '…' : label;
-        if (idx === sel) {
-            fill_rect(2, y - 1, 124, lineH - 1, 1);
-            print(5, y, truncated, 0);
-        } else {
-            print(5, y, truncated, 1);
-        }
-    }
-    if (top > 0)               print(120, listTopY, '^', 1);
-    if (top + visible < total) print(120, listTopY + (visible - 1) * lineH, 'v', 1);
+    /* A list of the app's own state, so it renders on the kit — this was the
+     * last hand-rolled list in the tree, with its own windowing, its own inset
+     * highlight and ^/v glyphs where every other list has a scrollbar. Snapshot
+     * NAMES come from the user, so they stay on the label font (no hdr) and get
+     * drawKitList's measured truncation instead of a guessed 20-char cut. */
+    drawKitHeader(p.mode === 'overwrite' ? 'OVERWRITE WHICH?' : 'LOAD STATE', false);
+    drawKitList(p.snaps.map(function(s) {
+        return { label: (s.label || '') +
+                 ((p.mode === 'load' && s.sv !== STATE_VERSION) ? ' (old)' : '') };
+    }), p.sel, { emptyMsg: 'No states' });
 }
 
 /* CLEAR AUTOMATION modal — checkable AT / PB(disabled) / CC + a CLEAR action. */
@@ -403,23 +395,20 @@ export function drawClearAutoMenu() {
     clear_screen();
     const m = S.clearAutoMenu;
     if (!m) return;
-    drawMenuHeader('CLEAR AUTOMATION');
-    const rows = [
-        { label: 'Aftertouch (AT)',     box: m.at ? '[x]' : '[ ]' },
-        { label: 'Pitch bend (PB)',     box: '( )' },   /* placeholder, not selectable */
-        { label: 'Control Change (CC)', box: m.cc ? '[x]' : '[ ]' },
-        { label: 'CLEAR',  action: true },
-        { label: 'Cancel', action: true }
-    ];
-    const lineH = 9, topY = 18;
-    for (let i = 0; i < rows.length; i++) {
-        const r = rows[i];
-        const y = topY + i * lineH;
-        const seld = (m.sel === i);
-        if (seld) fill_rect(2, y - 1, 124, lineH - 1, 1);
-        const txt = r.action ? r.label : (r.box + ' ' + r.label);
-        print(5, y, txt, seld ? 0 : 1);
-    }
+    /* ⚠ The checkboxes were `[x]` / `[ ]`, which COLLIDES with the kit grammar:
+     * square brackets mean "this value is being edited" everywhere else
+     * (UI_LANGUAGE §6), so a checked box read as a row mid-edit. On / Off in the
+     * value column says the same thing in the app's own vocabulary — and Pitch
+     * bend, which is an unimplemented placeholder, takes the `-` that §6
+     * reserves for unavailable, since 1-bit has no way to grey a row out. */
+    drawKitHeader('CLEAR AUTOMATION', false);
+    drawKitList([
+        { label: 'Aftertouch',     hdr: true, value: m.at ? 'On' : 'Off' },
+        { label: 'Pitch bend',     hdr: true, value: '-' },
+        { label: 'Control Change', hdr: true, value: m.cc ? 'On' : 'Off' },
+        { label: 'Clear',          hdr: true },
+        { label: 'Cancel',         hdr: true },
+    ], m.sel, {});
 }
 
 export function drawBakeSceneConfirm() {

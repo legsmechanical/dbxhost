@@ -241,10 +241,31 @@ GS.projectPadPicker = mkPPP({ confirmNew: { k: 5, sel: 0 } });
 globalThis.clear_screen(); dlg.drawProjectPadPicker();
 shoot('project', 'New project confirm', 'stays on the shared dialog family');
 
-/* ---- D. DIALOG FAMILY (the shared button row, for comparison) ---- */
+/* ---- D. THE PRE-SA SWEEP ---- */
+GS.snapshotPicker = { mode: 'load', sel: 1, confirm: null, snaps: [
+    { id: 1, label: 'Before the bridge', sv: 36 },
+    { id: 2, label: 'Take 4 verse', sv: 36 },
+    { id: 3, label: 'Old idea', sv: 35 },
+    { id: 4, label: 'Warmup jam', sv: 36 },
+    { id: 5, label: 'Soundcheck', sv: 36 },
+] };
+globalThis.clear_screen(); dlg.drawSnapshotPicker();
+shoot('sweep', 'Snapshot picker', 'was the last hand-rolled list in the tree');
+
+GS.clearAutoMenu = { at: true, cc: false, sel: 0 };
+globalThis.clear_screen(); dlg.drawClearAutoMenu();
+shoot('sweep', 'Clear automation', 'checkboxes collided with the [edit] grammar');
+
+S_EXPORT: {
+    GS.exportDonePath = 'UserLibrary/Samples/dAVEBOx/2026-08-15/bounce-take-04.wav';
+    GS.exportDoneMissing = 0;
+    globalThis.clear_screen(); dlg.drawExportDoneDialog && dlg.drawExportDoneDialog();
+}
+
+/* ---- E. DIALOG FAMILY (correct already, for comparison) ---- */
 GS.globalMenuOpen = false;
 globalThis.clear_screen(); dlg.drawStateWipeConfirm();
-shoot('dialog', 'State wipe confirm', 'shared dialog chassis');
+shoot('dialog', 'State wipe confirm', 'shared dialog chassis — deliberately unchanged');
 
 /* ─────────────────────────── output ─────────────────────────── */
 
