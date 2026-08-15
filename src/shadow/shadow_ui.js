@@ -3503,6 +3503,31 @@ function exitOvertakeMode() {
 }
 
 /* Suspend overtake mode — leave background processes running */
+
+/* ⚠⚠ TEMPORARY INSTRUMENTATION (2026-08-15) — REMOVE once the fault is found.
+ *
+ * Chasing an INTERMITTENT half-wired launch: on some launches the device comes
+ * up with the OLED and all input on Move firmware while davebox still paints
+ * the LEDs. Captured state says display_mode=0 with overtake_mode=2 — an
+ * inconsistent pair, and shadow_display_mode arms the MIDI filters as well as
+ * the display, which is exactly why input follows the screen while the LEDs
+ * (written on a path it does not gate) stay davebox's.
+ *
+ * shadow_request_exit() is the only caller that produces that pair — the D-Bus
+ * shutdown path clears overtake_mode too — so this names WHICH of its four call
+ * sites fired and what the select gate looked like at that instant. It cannot
+ * be inferred after the fact: by the time anyone looks, the launch is over.
+ *
+ * Logs on EVERY exit, healthy or not. A healthy baseline is half the signal —
+ * this session already wasted an hour on a fingerprint taken without one. */
+function logShadowExit(where) {
+    try {
+        var phase = (typeof shadow_select_phase_active === "function")
+            ? (shadow_select_phase_active() ? 1 : 0) : -1;
+        console.log("[shadow-exit] site=" + where + " select_phase=" + phase);
+    } catch (e) { /* instrumentation must never break the path it watches */ }
+}
+
 function suspendOvertakeMode() {
     corunTeardown();
     /* PRIMARY (P4a): the registration survives the park (suspend_keeps_js —
@@ -3591,6 +3616,7 @@ function suspendOvertakeMode() {
         const gateArmed = (typeof shadow_select_phase_active === "function") &&
                           shadow_select_phase_active();
         if (!gateArmed && typeof shadow_request_exit === "function") {
+            logShadowExit("suspend");                      /* ⚠ temp, 2026-08-15 */
             shadow_request_exit();
         }
         needsRedraw = true;
@@ -3855,6 +3881,7 @@ function completeOvertakeExit() {
     needsRedraw = true;
     /* Request exit from shadow UI to return to Move */
     if (typeof shadow_request_exit === "function") {
+        logShadowExit("park-tools-menu");                  /* ⚠ temp, 2026-08-15 */
         shadow_request_exit();
     }
 }
@@ -13254,6 +13281,7 @@ function handleBack() {
                 /* Back exits the shadow UI back to Move native. (The previous
                  * exitShadowUI() was undefined and threw, so Back did nothing.) */
                 if (typeof shadow_request_exit === "function") {
+                    logShadowExit("fx-bus-picker-back");   /* ⚠ temp, 2026-08-15 */
                     shadow_request_exit();
                 }
             }
@@ -13313,6 +13341,7 @@ function handleBack() {
         case VIEWS.CHAIN_EDIT:
             /* Exit shadow mode and return to Move */
             if (typeof shadow_request_exit === "function") {
+                logShadowExit("chain-edit-back");          /* ⚠ temp, 2026-08-15 */
                 shadow_request_exit();
             }
             break;
