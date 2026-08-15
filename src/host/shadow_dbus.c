@@ -196,8 +196,32 @@ static void shadow_dbus_handle_text(const char *text)
 
     /* If Move is asking user to confirm shutdown, dismiss shadow UI so jog wheel
      * press reaches Move's native firmware instead of being captured by us.
-     * Also signal the JS UI to save all state before power-off. */
+     * Also signal the JS UI to save all state before power-off.
+     *
+     * ⚠⚠ THIS HANDOVER MUST BE REVERSIBLE, and until 2026-08-15 it was not.
+     *
+     * The prompt does not imply a shutdown. Turning the jog during a standalone
+     * launch makes Move raise it by itself (Josh, reproducible), it announces
+     * "Goodbye" ~400 ms later, and then the shutdown DOES NOT HAPPEN — the
+     * launcher keeps the stack alive. Measured on device: prompt at 16:08:22,
+     * next process start not until 16:10:10, so the session ran on for two
+     * minutes with everything below already torn down and nothing to put it
+     * back.
+     *
+     * The result is a state that cannot be reached any other way: the module
+     * re-takes overtake as its launch completes, giving overtake_mode=2 with
+     * display_mode=0. shadow_display_mode arms the shim's MIDI filters as well
+     * as the display, so the OLED AND all input sit on Move firmware while the
+     * module — still running, still ticking — keeps painting the LEDs. That
+     * three-way split is the signature; a co-run (which uses
+     * shadow_display_owner and leaves display_mode alone) cannot produce it.
+     *
+     * So: remember exactly what we took, and give it back on the next text,
+     * which is the point the confirm decision is behind us either way. If the
+     * device really is powering off, restoring two SHM flags changes nothing. */
     shadow_control_t *ctrl = *host.shadow_control_ptr;
+    static int shutdown_took_display = 0;
+    static uint8_t shutdown_took_overtake = 0;
     if (ctrl && strcasecmp(text, "Press wheel to shut down") == 0) {
         host.log("Shutdown prompt detected — saving state and dismissing shadow UI");
         ctrl->ui_flags |= SHADOW_UI_FLAG_SAVE_STATE;
@@ -205,9 +229,28 @@ static void shadow_dbus_handle_text(const char *text)
         if (*host.display_mode) {
             *host.display_mode = 0;
             ctrl->display_mode = 0;
+            shutdown_took_display = 1;
         }
         /* Clear overtake mode so jog click reaches Move for shutdown confirm */
+        if (ctrl->overtake_mode) shutdown_took_overtake = ctrl->overtake_mode;
         ctrl->overtake_mode = 0;
+    } else if (ctrl && (shutdown_took_display || shutdown_took_overtake)) {
+        /* Any other announcement means the prompt is behind us and we are still
+         * running. Put back precisely what this handler took — never more, so a
+         * session that was already dismissed for its own reasons stays that
+         * way. */
+        char msg[128];
+        snprintf(msg, sizeof(msg),
+                 "Shutdown prompt passed (\"%s\") — restoring shadow UI (display=%d overtake=%u)",
+                 text, shutdown_took_display, (unsigned)shutdown_took_overtake);
+        host.log(msg);
+        if (shutdown_took_display) {
+            *host.display_mode = 1;
+            ctrl->display_mode = 1;
+        }
+        if (shutdown_took_overtake) ctrl->overtake_mode = shutdown_took_overtake;
+        shutdown_took_display = 0;
+        shutdown_took_overtake = 0;
     }
 
     /* Track native Move sampler source from stock announcements. */
