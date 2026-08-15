@@ -214,7 +214,7 @@ shoot('project', 'Selected, not loaded', 'the ordinary screen — Load first');
 GS.awaitingProjectSelect = false;
 GS.projectPadPicker = mkPPP({ menu: { k: 0, sel: 1 } });
 globalThis.clear_screen(); dlg.drawProjectPadPicker();
-shoot('project', 'Selected and loaded', '(CURRENT) — non-selectable, same row height');
+shoot('project', 'Selected and loaded', '(CURRENT) + Resume, cursor opens on Resume');
 
 /* Nothing selected: the prior project is gone. */
 GS.projectPadPicker = mkPPP({ current: -1 });

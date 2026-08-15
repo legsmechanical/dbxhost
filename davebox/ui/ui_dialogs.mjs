@@ -778,8 +778,31 @@ function _pppCloseOverlays(p) {
     p.menu = null; p.colorPick = null; p.confirmNew = null;
 }
 
-/* The project jog-menu (spec: Josh, 2026-08-11 — tap never loads). */
-const PPP_MENU_ROWS = ['Load', 'Rename', 'Color'];
+/* The project jog-menu (spec: Josh, 2026-08-11 — tap never loads).
+ *
+ * ⚠⚠ Built as a MODEL of row KINDS, not a fixed array indexed by position. The
+ * loaded and unloaded states have different row COUNTS, and dispatching a click
+ * on a bare index would mean two index spaces to keep in step — the shape that
+ * silently fires the wrong action the first time a row is inserted. */
+function _pppMenuModel(p, k) {
+    const rows = [];
+    if (_pppIsLoaded(p, k)) {
+        /* Status first, then the way back INTO the project.
+         *
+         * ⭑ Resume exists because removing Load from this screen removed the
+         * only on-screen way out of the picker (Josh, 2026-08-15). Back does
+         * still close it — but a menu offering nothing but Rename and Color on
+         * the project you are already in reads as a dead end, and "Back works"
+         * is not the same as "Back is discoverable". */
+        rows.push({ kind: 'status', label: '(Current)' });
+        rows.push({ kind: 'resume', label: 'Resume' });
+    } else {
+        rows.push({ kind: 'load', label: 'Load' });
+    }
+    rows.push({ kind: 'rename', label: 'Rename' });
+    rows.push({ kind: 'color',  label: 'Color' });
+    return rows;
+}
 
 /* Is THIS project the one actually playing?
  *
@@ -792,10 +815,9 @@ function _pppIsLoaded(p, k) {
     return k === p.current && !S.awaitingProjectSelect;
 }
 
-/* Row 0 is Load — an action — UNLESS this project is already loaded, in which
- * case it is a non-selectable (CURRENT) status line and the cursor starts on
- * Rename. Kept as row 0 rather than dropped so Rename and Color stay at the
- * same heights in both states; the menu must not reflow under a thumb. */
+/* The first SELECTABLE row — index 1 when a (Current) status line occupies
+ * row 0, so the cursor opens on Resume, which is the likeliest thing you came
+ * here to do. */
 function _pppMenuTop(p, k) { return _pppIsLoaded(p, k) ? 1 : 0; }
 
 /* Put the picker back on the SELECTED project's screen. Since the 2026-08-15
@@ -943,8 +965,14 @@ function _projectPadPickerClick_impl() {
     }
     if (p.menu) {
         const m = p.menu;
-        if (m.sel === 0) { _pppLoad(p, m.k); return; }
-        if (m.sel === 1) { _pppStartRename(p, m.k); return; }
+        const row = _pppMenuModel(p, m.k)[m.sel];
+        if (!row || row.kind === 'status') return;      /* not an action */
+        if (row.kind === 'load')   { _pppLoad(p, m.k); return; }
+        /* Resume is simply "put the picker away" — the project is already
+         * playing, so there is nothing to load. Same thing Back does; this is
+         * the visible version of it. */
+        if (row.kind === 'resume') { closeProjectPadPicker(); return; }
+        if (row.kind === 'rename') { _pppStartRename(p, m.k); return; }
         p.colorPick = { k: m.k, sel: projectColorIdx(p.byIndex[m.k]) };
         p.menu = null;
         S.screenDirty = true;
@@ -964,7 +992,7 @@ function _projectPadPickerRotate_impl(delta) {
         p.colorPick.sel = (p.colorPick.sel + (delta > 0 ? 1 : n - 1)) % n;
         invalidateLEDCache();     /* live preview on the target pad */
     } else if (p.menu) {
-        const n = PPP_MENU_ROWS.length;
+        const n = _pppMenuModel(p, p.menu.k).length;
         const top = _pppMenuTop(p, p.menu.k);
         /* Wrap across the SELECTABLE rows only — the (CURRENT) status line is
          * not a stop, the same contract dividers have in drawKitList. */
@@ -1160,15 +1188,14 @@ function _drawProjectPadPicker_impl() {
 
     if (p.menu) {
         const mp = p.byIndex[p.menu.k];
-        const loaded = _pppIsLoaded(p, p.menu.k);
         drawKitHeader(fitHdr(String(mp ? mp.name : '?').toUpperCase(), 124), false);
-        drawKitList([
-            /* Row 0 is Load, or the status line that replaces it. */
-            loaded ? { note: '(Current)' } : { label: PPP_MENU_ROWS[0], hdr: true },
-            { label: PPP_MENU_ROWS[1], hdr: true, chevron: true },
-            { label: PPP_MENU_ROWS[2], hdr: true,
-              value: PROJECT_COLORS[projectColorIdx(mp)].name },
-        ], p.menu.sel, {});
+        drawKitList(_pppMenuModel(p, p.menu.k).map(function(r) {
+            if (r.kind === 'status') return { note: r.label };
+            if (r.kind === 'rename') return { label: r.label, hdr: true, chevron: true };
+            if (r.kind === 'color')  return { label: r.label, hdr: true,
+                                              value: PROJECT_COLORS[projectColorIdx(mp)].name };
+            return { label: r.label, hdr: true };
+        }), p.menu.sel, {});
         return;
     }
 
