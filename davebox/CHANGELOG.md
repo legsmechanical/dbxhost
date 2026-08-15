@@ -20,9 +20,12 @@ the section into a versioned heading at release time.
   whatever the module declared — so a parameter declaring a coarse step had only
   a handful of usable positions, a wide-range one crawled, and turning fast
   moved *less* than turning slowly. Now every knob sweeps its whole range in
-  about the same gesture whatever the units, fast turns move proportionally, and
-  a change of direction takes effect immediately. Whole-number and list
-  parameters keep their own natural steps.
+  the same gesture whatever the units, fast turns move proportionally, and a
+  change of direction takes effect immediately. A continuous parameter takes the
+  same full turn as a fader in the session mixer, so knobs feel the same
+  everywhere in dAVEBOx; whole-number parameters keep their own steps (an
+  eight-voice count is two clicks a voice), and picking from a list takes four
+  clicks so a brush can't change it.
 - **The whole session reads as dAVEBOx now.** Launching dAVEBOx SA opens on
   the dAVEBOx artwork (with a small "Schwung base: x.x.x" note so you can
   always see which Schwung it's built on). The artwork lives there and only

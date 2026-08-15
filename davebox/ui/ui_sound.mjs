@@ -582,7 +582,6 @@ const S = {
     asnCell: null,              /* editable cell for asnCellFor */
     asnCellFor: -1,
     asnValNum: null,            /* authoritative local value, optimistic on turn */
-    asnPend: 0,                 /* detent STEPS not yet applied */
     asnLastDir: 0,              /* for the reversal reset */
     asnRevealed: false,         /* the value is hidden until the knob MOVES */
 
@@ -1784,7 +1783,6 @@ function resetKnobAsn() {
     S.asnCell = null;
     S.asnCellFor = -1;
     S.asnValNum = null;
-    S.asnPend = 0;
     S.asnLastDir = 0;
     S.asnRevealed = false;
 }
@@ -1887,7 +1885,7 @@ function commitKnobAssignment(target, param) {
      * different control, and a step law derived from a different range. Force
      * the whole load to re-run rather than clearing the pieces one by one. */
     if (S.asnCellFor === S.knobIdx) {
-        S.asnCell = null; S.asnCellFor = -1; S.asnValNum = null; S.asnPend = 0;
+        S.asnCell = null; S.asnCellFor = -1; S.asnValNum = null;
     }
     if (S.asnLoadFor === S.knobIdx) S.asnStage = 0;
     if (target && param) queueChainWrite('knob_' + n + '_set', target + ':' + param);
@@ -1963,15 +1961,46 @@ const KNOB_TARGET_SHORT = {
  * module UI"). ⚠ If a relative-CC writer for these knobs ever comes back, the
  * two accumulators will disagree and the knob will jump on the first turn.
  *
- * The law itself is movy's (`schwung-movy/src/model/constants.ts`), not an
- * invention: normalise the per-detent step to a fraction of the param's RANGE
- * so every knob sweeps in the same number of detents whatever its units — a
- * wide range (reso 0.5..20) does not crawl and a narrow one is not
- * hair-trigger. Ints keep their declared step as a FLOOR so discrete values
- * still move; enums are exempt and cost a fixed number of detents per step. */
+ * The law is RANGE NORMALISATION: the per-detent step is a fraction of the
+ * param's own range, so every knob sweeps in the same number of detents
+ * whatever its units — a wide range (reso 0.5..20) does not crawl and a narrow
+ * one is not hair-trigger.
+ *
+ * ⭑ movy (`MIN_STEP_RANGE_FRAC` = 1% of range) and canvaskit (255 positions
+ * across the range, N detents each) are the SAME law at different resolutions,
+ * which is worth saying plainly because carrying both vocabularies invited two
+ * knob feels on one device. Expressed below in canvaskit's terms, because that
+ * is what the block editor and the session mixer already use — so all three
+ * knob surfaces now match. */
 
-const MOVY_STEP_FRAC = 0.01;        /* movy MIN_STEP_RANGE_FRAC: ~100 detents/sweep */
-const ENUM_DETENTS_PER_STEP = 4;    /* movy ENUM_DELTA_DIV */
+/* ── KNOB TRAVEL — the dial, per param type ────────────────────────────────
+ *
+ * Josh, on the first cut: "knob travel end to end is too fast." It was movy's
+ * unscaled 100 detents per sweep (and movy's own on-screen knobs are 200 — its
+ * `ARC_DELTA_SCALE` halves them, which this had not ported).
+ *
+ * PER TYPE because one compromise cannot serve a 0..1 cutoff, an eight-voice
+ * count and a three-entry waveform list. Read it as:
+ *   `positions` = distinct values a full sweep crosses (step = span/positions)
+ *   `sens`      = detents per position
+ *   sweep       = positions x sens detents, end to end
+ */
+const KNOB_TRAVEL = {
+    /* Continuous: canvaskit's law, and identical to the session-view mixer's
+     * knobs — 255 positions, 2 detents each, ~510 detents end to end. The one
+     * knob feel already blessed on this hardware. */
+    float: { positions: 255, sens: 2 },
+    /* Whole numbers keep their DECLARED step as a floor — 1..8 voices must move
+     * one voice per step, never 0.03 — so `positions` only bites on a wide int
+     * that would otherwise crawl (0..1000 → step 4, not 1). 2 detents per step
+     * resists a brush; an eight-voice sweep is 14 detents. */
+    int: { positions: 255, sens: 2 },
+    /* A short named list: its positions ARE the options, so only the detent
+     * cost is a choice. 4 makes changing patch deliberate rather than something
+     * a sleeve does. (movy's ENUM_DELTA_DIV, and canvaskit's "pick" class is
+     * the same idea at 6.) */
+    enum: { positions: 0, sens: 4 },
+};
 
 /* Build the editable cell for an assignment, from the target's chain_params.
  * Same cell shape the block editor's knobs use, so stepValue / commitString /
@@ -1988,18 +2017,19 @@ function knobCellFor(target, param) {
     let max = (m && isFinite(m.max)) ? m.max : 1;
     if (opts) { min = 0; max = opts.length - 1; }
     const span = max - min;
-    let step, sens;
+    const travel = KNOB_TRAVEL[type] || KNOB_TRAVEL.float;
+    const sens = travel.sens;
+    let step;
     if (type === 'enum') {
-        step = 1; sens = ENUM_DETENTS_PER_STEP;
+        step = 1;                   /* the options are the positions */
     } else {
-        const rangeStep = span > 0 ? span * MOVY_STEP_FRAC : 0;
+        const rangeStep = (span > 0 && travel.positions) ? span / travel.positions : 0;
         const declared = (m && isFinite(m.step) && m.step > 0) ? m.step : 0;
         /* float: normalise OUTRIGHT — the declared step is what costs the
-         * resolution. int: the declared step is a FLOOR, or a 0..3 enum-ish int
+         * resolution. int: the declared step is a FLOOR, or a 1..8 voice count
          * would move by 0.03 and never change. */
         step = (type === 'int') ? Math.max(declared || 1, rangeStep)
                                 : (rangeStep || declared || 0.01);
-        sens = 1;                   /* every detent counts — movy is 1:1 */
     }
     return { key: param, name: (m && (m.name || m.label)) || '', type,
              min, max, step, sens, options: opts };
@@ -2080,7 +2110,7 @@ function tickKnobAsn() {
     }
     const asn = S.knobAsn[k];
     if (!asn || !asn.target || !asn.param) {   /* unassigned: nothing to load */
-        S.asnStage = 3; S.asnCellFor = -1; S.asnValNum = null; S.asnPend = 0;
+        S.asnStage = 3; S.asnCellFor = -1; S.asnValNum = null; S.knobAccum[k] = 0;
         return;
     }
     if (S.asnStage === 1) {
@@ -2103,12 +2133,14 @@ function tickKnobAsn() {
         return;
     }
 
-    /* Loaded. Apply whatever detents arrived — including any that arrived while
-     * the reads above were still in flight, which is why they are ACCUMULATED
-     * rather than applied at the handler. */
-    if (!S.asnPend) return;
-    const steps = S.asnPend;
-    S.asnPend = 0;
+    /* Loaded. Drain whatever detents arrived — including any from while the
+     * reads above were still in flight, which is why they ACCUMULATE rather
+     * than being applied at the handler. */
+    const sens = S.asnCell.sens || 1;
+    let steps = 0;
+    while (S.knobAccum[k] >= sens) { steps++; S.knobAccum[k] -= sens; }
+    while (S.knobAccum[k] <= -sens) { steps--; S.knobAccum[k] += sens; }
+    if (!steps) return;
     const cur = (S.asnValNum == null) ? S.asnCell.min : S.asnValNum;
     const next = stepValue(S.asnCell, cur, steps);
     if (next === cur) return;
@@ -2122,6 +2154,10 @@ function tickKnobAsn() {
  * write per tick rather than one per event. */
 function armKnobValue(idx, delta) {
     if (idx !== S.asnLoadFor) return;            /* armKnobHud owns the switch */
+    /* ⚠ Raw DETENTS accumulate here; the tick converts them to steps, because
+     * only the tick knows the cell and therefore the sens. Converting here
+     * would apply sens 1 to every detent that arrived before the metadata
+     * landed — the first flick of a turn, silently at the wrong law. */
     /* ⭑ TOUCH ORIENTS, TURN REVEALS (UI_LANGUAGE, and Josh's spec). The value
      * is now seeded on touch because the turn law needs a base to add to — but
      * it stays hidden until the knob actually moves, or a bare orienting touch
@@ -2132,9 +2168,6 @@ function armKnobValue(idx, delta) {
      * canvaskit rule, and the part that makes a knob feel right. */
     if (dir !== S.asnLastDir) { S.knobAccum[idx] = 0; S.asnLastDir = dir; }
     S.knobAccum[idx] += delta;
-    const sens = (S.asnCellFor === idx && S.asnCell) ? (S.asnCell.sens || 1) : 1;
-    while (S.knobAccum[idx] >= sens) { S.asnPend++; S.knobAccum[idx] -= sens; }
-    while (S.knobAccum[idx] <= -sens) { S.asnPend--; S.knobAccum[idx] += sens; }
 }
 
 /* The read-out comes from the cell, so an enum reads as its option NAME and a

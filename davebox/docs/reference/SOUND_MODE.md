@@ -219,16 +219,33 @@ These knobs used to forward to the chain DSP as **relative CCs** and let
 3. **Its base step is the param's declared step**, so a param declaring 0.5 over
    0..1 has two positions.
 
-So the value is owned here and written absolutely, under movy's law
-(`schwung-movy/src/model/constants.ts`, `MIN_STEP_RANGE_FRAC`):
+So the value is owned here and written absolutely, under **range
+normalisation**: the per-detent step is a fraction of the param's own range.
 
-| type | per-detent step | detents per step |
-|---|---|---|
-| float | **1% of range**, declared step ignored | 1 |
-| int | `max(declared, 1% of range)` — declared acts as a FLOOR | 1 |
-| enum | 1 (index) | **4** |
+⭑ movy's `MIN_STEP_RANGE_FRAC` (1% of range) and canvaskit's *255 positions
+across the range, N detents each* are the **same law at different
+resolutions** — worth stating plainly, because carrying both vocabularies is
+what let two knob feels onto one device. `KNOB_TRAVEL` expresses it in
+canvaskit's terms, which the block editor and the session mixer already use.
+
+**Travel is a PER-TYPE dial** (Josh, 2026-08-14: *"knob travel end to end is too
+fast"* — the first cut was movy's UNSCALED 100 detents; movy's own knobs are 200,
+its `ARC_DELTA_SCALE` having gone unported). `positions` = values a full sweep
+crosses; `sens` = detents per position; sweep = the product.
+
+| type | positions | sens | sweep | note |
+|---|---|---|---|---|
+| float | 255 | 2 | **510 detents** | the session mixer's exact feel |
+| int | 255 | 2 | varies | declared step is a **FLOOR** (1..8 → 14 detents) |
+| enum | options | 4 | options x 4 | exempt from normalisation |
 
 Direction reversal **resets** the accumulator rather than unwinding it.
+
+⚠ The detents→steps conversion happens in the **tick, not the MIDI handler**:
+only the tick knows the cell and therefore the sens, so converting at the
+handler applies sens 1 to every detent arriving before the metadata lands — the
+first flick of a turn, silently at the wrong law. The handler accumulates raw
+detents and owns the reversal reset (that one is about the physical gesture).
 
 ⚠ The DSP's `knob_mappings[].current_value` accumulator is consequently unused.
 Nothing reads it under SA (`knob_N_value` has no caller in this tree) and it is

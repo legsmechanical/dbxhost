@@ -239,12 +239,19 @@ step('⭑ TURN reveals the value — and WRITES it, absolutely', () => {
     touch(0, true); ticks(4);                    /* seed: assignment, meta, value */
     if (snd.soundKnobHudForTest().value !== '')
         throw new Error('a bare TOUCH revealed the value — touch orients, turn reveals');
+    /* ⚠ TWO detents. Continuous knobs are 2 detents per position, so a
+     * one-detent stimulus moves nothing — the same trap that broke
+     * test_session_level_knob when the mixer took this law. The one-detent
+     * case is pinned deliberately just below, rather than papered over. */
+    turn(0, +1); ticks(3);
+    if (lastWrite('synth:cutoff') !== null)
+        throw new Error('ONE detent moved a continuous knob: ' + lastWrite('synth:cutoff'));
     turn(0, +1); ticks(3);
     if (dspMidi.length)
         throw new Error('still forwarding a relative CC to the DSP');
-    /* cutoff is 0..1, so one detent is 1% = 0.01 on top of the seeded 0.483. */
-    if (lastWrite('synth:cutoff') !== '0.493')
-        throw new Error('expected a 0.493 write, got ' + lastWrite('synth:cutoff'));
+    /* cutoff is 0..1 over 255 positions: one position is 0.00392 on 0.483. */
+    if (lastWrite('synth:cutoff') !== '0.4869')
+        throw new Error('expected a 0.4869 write, got ' + lastWrite('synth:cutoff'));
     const h = snd.soundKnobHudForTest();
     if (h.knob !== 0) throw new Error('the turn did not raise knob 1s card');
     if (h.value !== '0.49') throw new Error('card shows "' + h.value + '"');
@@ -262,17 +269,18 @@ step('⭑⭑ FULL RESOLUTION — one event carrying n detents moves n steps', ()
     ASSIGN['synth:cutoff'] = '0.0000';
     touch(0, true); ticks(4);
     writes = [];
-    turnBy(0, 10); ticks(3);
+    turnBy(0, 20); ticks(3);                     /* 20 detents = 10 positions */
     const fast = parseFloat(lastWrite('synth:cutoff'));
-    if (!(Math.abs(fast - 0.10) < 1e-6))
-        throw new Error('10 detents in ONE event moved to ' + fast + ', not 0.10' +
-                        (Math.abs(fast - 0.01) < 1e-6 ? ' (the magnitude was dropped)' : ''));
+    const TEN = 10 / 255;
+    if (!(Math.abs(fast - TEN) < 1e-4))
+        throw new Error('20 detents in ONE event moved to ' + fast + ', not ' + TEN +
+                        (Math.abs(fast - 1 / 255) < 1e-4 ? ' (the magnitude was dropped)' : ''));
 
     ticks(50);
     ASSIGN['synth:cutoff'] = '0.0000';
     touch(0, false); touch(0, true); ticks(4);
     writes = [];
-    for (let n = 0; n < 10; n++) turn(0, +1);
+    for (let n = 0; n < 20; n++) turn(0, +1);
     ticks(3);
     const slow = parseFloat(lastWrite('synth:cutoff'));
     if (Math.abs(fast - slow) > 1e-6)
@@ -300,7 +308,7 @@ step('⭑ a sweep costs ZERO reads and ONE coalesced write per tick', () => {
     touch(0, false);
 });
 
-step('⭑⭑ MOVY LAW: a coarse declared step is ignored — 1% of RANGE per detent', () => {
+step('⭑⭑ TRAVEL: a coarse declared step is ignored — the RANGE sets the step', () => {
     /* cutoff declares step 0.5 over 0..1 — two positions, and the DSP path used
      * exactly that. Normalising outright is what recovers the resolution.
      * ⚠ Self-contained: the accessor reports the cell of the TOUCHED knob, so a
@@ -310,14 +318,20 @@ step('⭑⭑ MOVY LAW: a coarse declared step is ignored — 1% of RANGE per det
     touch(0, true); ticks(6);
     const cell = snd.soundKnobHudForTest().cell;
     if (!cell) throw new Error('no cell loaded');
-    if (Math.abs(cell.step - 0.01) > 1e-9)
-        throw new Error('step is ' + cell.step + ', not 1% of the 0..1 range');
+    if (Math.abs(cell.step - 1 / 255) > 1e-9)
+        throw new Error('step is ' + cell.step + ', not 1/255 of the 0..1 range');
+    /* ⭑ THE DIAL Josh is judging, asserted directly rather than inferred from
+     * the step: how many detents a full sweep costs, end to end. */
+    if (cell.sens * Math.round((cell.max - cell.min) / cell.step) !== 510)
+        throw new Error('a full sweep is ' +
+            cell.sens * Math.round((cell.max - cell.min) / cell.step) +
+            ' detents, not the 510 the mixer uses');
     if (cell.name !== 'Cutoff')
         throw new Error('the card should name the param "Cutoff", not "' + cell.name + '"');
     touch(0, false);
 });
 
-step('⭑⭑ MOVY LAW: a WIDE range does not crawl', () => {
+step('⭑⭑ TRAVEL: a WIDE range does not crawl, and sweeps in the SAME gesture', () => {
     /* room_size is 0.5..20 declaring step 0.01 — 1950 detents for a sweep on
      * the declared step. Normalised it is 0.195 a detent, ~100 for the sweep,
      * the same gesture as cutoff despite the units. */
@@ -325,16 +339,19 @@ step('⭑⭑ MOVY LAW: a WIDE range does not crawl', () => {
     touch(2, true); ticks(4);                    /* knob 3 -> fx2:room_size */
     const cell = snd.soundKnobHudForTest().cell;
     if (!cell) throw new Error('no cell for knob 3');
-    if (Math.abs(cell.step - 0.195) > 1e-9)
-        throw new Error('step is ' + cell.step + ', not 1% of the 0.5..20 range');
+    if (Math.abs(cell.step - 19.5 / 255) > 1e-9)
+        throw new Error('step is ' + cell.step + ', not 1/255 of the 0.5..20 range');
+    /* ⭑ The POINT of normalising: 0.5..20 and 0..1 cost the same gesture. */
+    if (cell.sens * Math.round((cell.max - cell.min) / cell.step) !== 510)
+        throw new Error('a wide-range sweep is a different gesture from a narrow one');
     writes = [];
-    turn(2, +1); ticks(3);
-    if (Math.abs(parseFloat(lastWrite('fx2:room_size')) - 0.945) > 1e-6)
-        throw new Error('0.75 + one detent = ' + lastWrite('fx2:room_size') + ', expected 0.945');
+    turnBy(2, 2); ticks(3);
+    if (Math.abs(parseFloat(lastWrite('fx2:room_size')) - (0.75 + 19.5 / 255)) > 1e-4)
+        throw new Error('0.75 + one position = ' + lastWrite('fx2:room_size'));
     touch(2, false);
 });
 
-step('⭑ MOVY LAW: an INT keeps its declared step as a FLOOR', () => {
+step('⭑ TRAVEL: an INT keeps its declared step as a FLOOR', () => {
     /* voices is 1..8: 1% of the range is 0.07, so a normalised float step would
      * take fourteen detents to move one voice — and round back to where it
      * started every time in between. */
@@ -346,13 +363,18 @@ step('⭑ MOVY LAW: an INT keeps its declared step as a FLOOR', () => {
     if (!cell || cell.type !== 'int') throw new Error('not an int cell: ' + (cell && cell.type));
     if (cell.step !== 1) throw new Error('int step is ' + cell.step + ', not the declared 1');
     writes = [];
-    turn(0, +1); ticks(3);
+    turnBy(0, 2); ticks(3);
     if (lastWrite('synth:voices') !== '5')
-        throw new Error('4 + one detent = ' + lastWrite('synth:voices') + ', expected 5');
+        throw new Error('4 + one position = ' + lastWrite('synth:voices') + ', expected 5');
+    /* An eight-voice sweep is 14 detents — snappy, but two detents a voice so a
+     * brush cannot change it. 1/255 of the range would be 0.027 and never move. */
+    if (cell.sens * Math.round((cell.max - cell.min) / cell.step) !== 14)
+        throw new Error('a 1..8 int sweep is ' +
+            cell.sens * Math.round((cell.max - cell.min) / cell.step) + ' detents, not 14');
     touch(0, false);
 });
 
-step('⭑ MOVY LAW: an ENUM is exempt, and costs 4 detents per step', () => {
+step('⭑ TRAVEL: an ENUM is exempt, and costs 4 detents per step', () => {
     ASSIGN['knob_1_target'] = 'synth'; ASSIGN['knob_1_param'] = 'shape';
     enterTrack(4);
     ticks(50);
@@ -498,7 +520,7 @@ step('⚠ RE-ASSIGNING a knob drops its cached value — it belonged to the old 
      * to drive, under the name of the one it drives now. */
     enterTrack(2);
     touch(0, true); ticks(4);
-    turn(0, +1); ticks(3);                       /* 0.483 -> 0.493, owned */
+    turnBy(0, 2); ticks(3);                      /* one position, owned */
     if (snd.soundKnobHudForTest().value !== '0.49')
         throw new Error('control failed: no value to invalidate, got "' +
                         snd.soundKnobHudForTest().value + '"');
@@ -535,7 +557,7 @@ step('⚠ RE-ASSIGNING a knob drops its cached value — it belonged to the old 
         throw new Error('kept the old param\'s value after re-assigning: "' + h.value + '"');
     /* ⭑ And the CELL is rebuilt too — preset is 0..99, so its step law is a
      * different one. Keeping cutoff's 0..1 cell would clamp every turn to 1. */
-    turn(0, +1); ticks(3);
+    turnBy(0, 2); ticks(3);
     const c = snd.soundKnobHudForTest().cell;
     if (!c || c.key !== 'preset')
         throw new Error('the cell was not rebuilt for the new param: ' + (c && c.key));
