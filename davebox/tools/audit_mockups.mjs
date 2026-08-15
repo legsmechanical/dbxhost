@@ -99,28 +99,66 @@ screen('after-global-edit', 'GLOBAL', [
     { label: 'Host Settings', hdr: true, chevron: true },
 ], 2);
 
-/* ── C. Project management on the kit chassis ──
- * The root becomes the LIST it always implied. The pads stay the fast path,
- * but the screen now shows what exists, which one is live, and scrolls —
- * instead of a four-line instruction sheet that ran off the right edge. */
-screen('after-projects-root', 'PROJECTS', [
-    { label: 'Sketchbook', hdr: true, value: 'Now' },
-    { label: 'Live Set A', hdr: true },
-    { label: 'Drums Only', hdr: true },
-    { label: 'Ideas 04', hdr: true },
-    { label: 'Techno Bits', hdr: true },
-    { label: 'Scratch', hdr: true },
-], 0);
+/* ── C. Project management ──
+ * ⚠ PAD-DRIVEN, and staying that way (Josh, 2026-08-15): Move native selects
+ * and manages sets by pad, so that is the muscle memory to match. No list, no
+ * copy/delete legend (Move-native gestures the user already knows), and no
+ * "Now:" indicator.
+ *
+ * ⭑ ONE SCREEN, showing whichever project is SELECTED — which on launch is the
+ * prior one, already pulsing on its pad. That collapses the old root/menu split
+ * and removes what looked like a fresh-launch special case: the rule is simply
+ * "is this project loaded", and on launch the answer is no, so the ordinary
+ * screen is correct with no branch. */
 
-screen('after-project-menu', 'SKETCHBOOK', [
-    { label: 'Load', hdr: true },
+/* Rows shared by both states. Load is a real action; (CURRENT) is not. */
+const PROJ_ROWS = [
     { label: 'Rename', hdr: true, chevron: true },
     { label: 'Colour', hdr: true, value: 'Blue' },
-    { label: 'Delete', hdr: true },
-], 1);
+];
 
-/* The colour picker becomes a list of the colours, not a `< NAME >` text row —
- * so the selection grammar is the one the rest of the app uses. */
+/* C1 — the selected project is NOT loaded (incl. every fresh launch): the
+ * ordinary screen, Load first and selected. */
+screen('after-project-menu', 'SKETCHBOOK', [
+    { label: 'Load', hdr: true }, ...PROJ_ROWS,
+], 0);
+
+/* C2 — the selected project IS the loaded one. Load is replaced by a centred,
+ * NON-SELECTABLE (CURRENT) line: there is no action to offer, and centring plus
+ * un-selectability is how a 1-bit display says "status, not control" — it has
+ * no dim state to grey a row with (UI_LANGUAGE §6).
+ *
+ * ⚠ It keeps a full row's height so Rename and Colour stay where they are in
+ * the other state; the menu must not reflow under your thumb. The cursor starts
+ * on Rename because it is the first thing that can be pressed.
+ *
+ * ⭑ Needs one small addition to drawKitList — a centred non-selectable row —
+ * which is the right place for it: dividers already prove the pattern, and any
+ * screen wanting a status line gets it for free. */
+globalThis.clear_screen();
+kit.drawKitHeader('LIVE SET A', false);
+(() => {
+    const t = '(CURRENT)';
+    kit.hdrPrint(Math.round((128 - kit.hdrWidth(t)) / 2), 11, t, 1);
+})();
+kit.drawKitList([{ label: 'Rename', hdr: true, chevron: true },
+                 { label: 'Colour', hdr: true, value: 'Red' }], 0, { topY: 21 });
+shoot('after-project-menu-current');
+
+/* C3 — nothing selected, because the prior project no longer exists. The
+ * header drops to the generic title and the screen carries one centred hint
+ * until a pad is tapped. drawKitList's own emptyMsg already centres
+ * horizontally; this sits it on the body's true vertical centre. */
+globalThis.clear_screen();
+kit.drawKitHeader('PROJECTS', false);
+(() => {
+    const t = 'SELECT PROJECT';
+    kit.hdrPrint(Math.round((128 - kit.hdrWidth(t)) / 2), 34, t, 1);
+})();
+shoot('after-projects-empty');
+
+/* C4 — the colour picker becomes a list of the colours, not a `< NAME >` text
+ * row, so its selection grammar is the one the rest of the app uses. */
 screen('after-project-colour', 'SKETCHBOOK COLOUR', [
     { label: 'Red', hdr: true },
     { label: 'Blue', hdr: true },
@@ -128,18 +166,6 @@ screen('after-project-colour', 'SKETCHBOOK COLOUR', [
     { label: 'Mustard', hdr: true },
     { label: 'Pink', hdr: true },
 ], 1);
-
-/* The delete arm keeps its warning, but as the kit's own confirm shape rather
- * than free text at hand-picked y coordinates. */
-globalThis.clear_screen();
-kit.drawKitHeader('DELETE PROJECT', false);
-kit.drawKitList([
-    { label: 'Live Set A', hdr: true, value: 'Delete?' },
-    { divider: true },
-    { label: 'Tap the pad again', hdr: false },
-    { label: 'Back cancels', hdr: false },
-], -1, {});
-shoot('after-project-delete');
 
 /* ── output ── */
 function writePng(fbuf, outPath) {

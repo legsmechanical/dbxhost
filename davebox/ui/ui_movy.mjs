@@ -1292,8 +1292,15 @@ export function drawKitList(rows, sel, opts) {
     const n = rows.length;
     if (!n) {
         if (o.emptyMsg) {
-            const t = String(o.emptyMsg);
-            mvPrint(Math.max(0, Math.round((SCREEN_W - mvWidth(t)) / 2)), 30, t, 1);
+            /* Centred in the BODY, both axes — the body runs topY..63, not
+             * 0..63, so a fixed y=30 sat noticeably high under the header.
+             * `hdr` prints it in the header font, for an empty state that is a
+             * statement about the screen rather than a piece of prose. */
+            const t = String(o.emptyMsg).toUpperCase();
+            const w = o.emptyHdr ? hdrWidth(t) : mvWidth(t);
+            const x = Math.max(0, Math.round((SCREEN_W - w) / 2));
+            const y = topY + Math.round(((64 - topY) - MV_LBL_H) / 2);
+            if (o.emptyHdr) hdrPrint(x, y, t, 1); else mvPrint(x, y, t, 1);
         }
         return 0;
     }
@@ -1324,6 +1331,23 @@ export function drawKitList(rows, sel, opts) {
          * them, or the list has stops on nothing. Centred in the band, width
          * follows fillW so it stays clear of the scroll indicator. */
         if (row.divider) { fill_rect(0, y + (rowH >> 1) - 1, fillW, 1, 1); continue; }
+        /* A STATUS line: centred, never selected, and occupying a full row.
+         *
+         * 1-bit has no dim, so "this is information, not a control" cannot be
+         * said with styling (UI_LANGUAGE §6) — it is said by centring the text
+         * and by the cursor stepping over it. Full row height because these
+         * REPLACE an action row (the project menu swaps Load for `(CURRENT)`),
+         * and a shorter one would shift every row below it as the state
+         * changed, moving the menu under the user's thumb.
+         *
+         * ⚠ Callers must make these unselectable — same contract as `divider`. */
+        if (row.note) {
+            const t = String(row.note).toUpperCase();
+            const nw = row.hdr === false ? mvWidth(t) : hdrWidth(t);
+            const nx = Math.max(0, Math.round((fillW - nw) / 2));
+            if (row.hdr === false) mvPrint(nx, y + 1, t, 1); else hdrPrint(nx, y, t, 1);
+            continue;
+        }
         if (on) fill_rect(0, y - 1, fillW, rowH, 1);
         const ink = on ? 0 : 1;
         /* ---- UPPERCASE before measuring or printing ----

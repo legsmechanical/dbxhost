@@ -1750,12 +1750,13 @@ function drainSlotWrites() {
 
 function renderSlotCfg() {
     clear_screen();
-    drawKitHeader(S.cfgWhich === 'config'
-        ? 'TRACK ' + (S.track + 1) + ' - CONFIG'
-        : 'TRACK ' + (S.track + 1) + ' - SOUND CONTROL', false);
+    drawKitHeader(trackTitle(S.cfgWhich === 'config' ? 'CONFIG' : 'SOUND CONTROL'), false);
+    /* hdr: these are the track's OWN structure, so they take the header font
+     * the top level uses. Without it the same component rendered them in the
+     * thin label font and the submenu read as a different screen. */
     drawKitList(S.slotRows.map((s, idx) => (s.sub
-        ? { label: s.label, chevron: true }
-        : { label: s.label, value: s.fmt(S.slotCfgVals[idx]),
+        ? { label: s.label, hdr: true, chevron: true }
+        : { label: s.label, hdr: true, value: s.fmt(S.slotCfgVals[idx]),
             editing: idx === S.slotCfgIdx && S.slotCfgEditing })),
         S.slotCfgIdx, {});
 }
@@ -1764,6 +1765,16 @@ function renderSlotCfg() {
  * Same param model as the host's editor: read knob_{N}_target/_param, write
  * knob_{N}_set ("target:param") / knob_{N}_clear. All engine reads run from
  * tick via pendingAction; edits go through the slot-write queue. */
+
+/* ── ONE title formula for every screen scoped to a track ──
+ *
+ * The (n) marker the approved top level uses, then the screen's own name.
+ * ⚠⚠ NOT "TRACK n - NAME": that measured 160px against drawKitHeader's real
+ * 124px limit, so "TRACK 5 - SOUND CONTROL" clipped to "TRACK 5 - SOUND C" on
+ * the device with nothing on screen to say so. "(5) SOUND CONTROL" is 112px.
+ * ⚠ ROUND brackets — the header font has no square ones; they advance the
+ * cursor and draw nothing. */
+function trackTitle(name) { return '(' + (S.track + 1) + ') ' + name; }
 
 function readKnobAsn(i) {
     return {
@@ -1895,21 +1906,21 @@ function commitKnobAssignment(target, param) {
 
 function renderKnobs() {
     clear_screen();
-    drawKitHeader('SLOT ' + (S.slot + 1) + ' KNOBS', false);
+    drawKitHeader(trackTitle('KNOBS'), false);
     drawKitList(S.knobAsn.map((a, i) =>
-        ({ label: 'Knob ' + (i + 1), value: knobAsnLabel(a) })),
+        ({ label: 'Knob ' + (i + 1), hdr: true, value: knobAsnLabel(a) })),
         S.knobIdx, {});
 }
 
 function renderKnobTarget() {
     clear_screen();
-    drawKitHeader('KNOB ' + (S.knobIdx + 1) + ' TARGET', false);
+    drawKitHeader('KNOB (' + (S.knobIdx + 1) + ') TARGET', false);
     drawKitList(S.knobTargets.map(t => t.name), S.knobTargetIdx, {});
 }
 
 function renderKnobParam() {
     clear_screen();
-    drawKitHeader('KNOB ' + (S.knobIdx + 1) + ' PARAM', false);
+    drawKitHeader('KNOB (' + (S.knobIdx + 1) + ') PARAM', false);
     drawKitList(S.knobParams.map(p => p.label), S.knobParamIdx,
         { emptyMsg: 'NO PARAMS' });
 }
@@ -2346,12 +2357,12 @@ function renderLfo() {
     clear_screen();
     const t = S.lfoVals.target, p = S.lfoVals.target_param;
     const on = S.lfoVals.enabled === '1';
-    let title = 'LFO ' + (S.lfoNum + 1);
+    let title = 'LFO (' + (S.lfoNum + 1) + ')';
     if (on && t && p) title += ': ' + t + ':' + p;
     else if (!on) title += ': OFF';
     drawKitHeader(title, false);
     drawKitList(lfoItems().map((item, idx) =>
-        ({ label: item.label, value: lfoDisplayValue(item),
+        ({ label: item.label, hdr: true, value: lfoDisplayValue(item),
            editing: idx === S.lfoIdx && S.lfoEditing })),
         S.lfoIdx, { rowH: 9, visible: 4 });
     /* Live waveform strip under the list — the shape as the DSP will run it:
@@ -2382,14 +2393,14 @@ function renderLfo() {
 
 function renderLfoTarget() {
     clear_screen();
-    drawKitHeader('LFO ' + (S.lfoNum + 1) + ' TARGET', false);
+    drawKitHeader('LFO (' + (S.lfoNum + 1) + ') TARGET', false);
     drawKitList(S.lfoComps.map(c => c.label), S.lfoCompIdx, {});
 }
 
 function renderLfoParam() {
     clear_screen();
     const comp = S.lfoComps[S.lfoCompIdx];
-    drawKitHeader('LFO ' + (S.lfoNum + 1) + ' > ' + String(comp ? comp.key : '').toUpperCase(), false);
+    drawKitHeader('LFO (' + (S.lfoNum + 1) + ') ' + String(comp ? comp.key : '').toUpperCase(), false);
     drawKitList(S.lfoParams.map(p => p.label), S.lfoParamIdx,
         { emptyMsg: 'NO PARAMS' });
 }
@@ -4155,7 +4166,7 @@ function renderChainPatches() {
         drawDialogYesNoRow(S.patchConfirmIdx === 1);
         return;
     }
-    drawKitHeader('SLOT PRESETS', false);
+    drawKitHeader(trackTitle('SLOT PRESETS'), false);
     /* '*' marks the slot's current patch — the one [Save] would overwrite. */
     const rows = ['[Save]', '[Save as…]'].concat(
         S.patchNames.map(n => (n === S.patchCur ? '*' : ' ') + n));
