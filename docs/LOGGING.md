@@ -1,5 +1,34 @@
 # Schwung Logging Guide
 
+## ⚠⚠ Under a dAVEBOx SA session, READ THIS FIRST — the log map
+
+Everything below the map describes the **stock** install. A standalone session logs to its **own
+tree**, and getting this wrong produces the worst possible failure: a `grep` that finds nothing,
+which reads as "the thing never happened".
+
+| file | holds |
+|---|---|
+| `/data/UserData/dbx-host/debug.log` | the SA unified log — **shim, C `unified_log()`, and JS** |
+| `/data/UserData/dbx-host/launch.log` | the launcher / Move's own stdout — `About to load …Song.abl`, memory stats |
+| `/data/UserData/schwung/debug.log` | the STOCK tree's same-named, different file |
+
+Arm it with `touch /data/UserData/dbx-host/debug_log_on` — **in that tree**, not the stock one.
+
+- ⭑⭑ **JS `console.log` DOES reach `debug.log`**, tagged `[SEQ8]` / `[shadow]`; davebox's own helper
+  prefixes `[sound]`. (2026-08-15: concluded otherwise, called working instrumentation blind, and
+  discarded a correct negative result on the strength of it.)
+- ⚠ **`launch.log` is ~95% `audio-dropouts`.** Always `grep -v audio-dropouts`, or a `tail` shows
+  nothing but warnings.
+- ⚠ **grep a BINARY with `-a`** when checking whether a build carries a new string, or it reports
+  nothing and you "prove" a good deploy is stale.
+- ⚠⚠ **A screengrab reads `/dev/shm/dbxhost-display` — the RENDER buffer, not the panel.** It cannot
+  tell *on screen* from *rendering but not composited*, which is exactly what a half-wired session
+  looks like.
+- ⚠ **`shadow_ui.log` does not exist.** The name survives only in a comment in `shadow_ui.c`.
+
+⭑ **Take a CONTROL reading.** Capture state when HEALTHY as well as when broken before believing any
+fingerprint — a single sample supported an entire wrong theory on 2026-08-15.
+
 ## Quick Start
 
 ### Enable Logging

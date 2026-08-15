@@ -176,7 +176,9 @@ pad per project, 32 slots:
 - **The screen shows the selected project** — its name, then **Load**,
   **Rename**, **Color**. Opening the picker shows the project you had last,
   already selected, so Load is one click away. On the project that's already
-  open, Load reads **(Current)** instead. If the project you had last no longer
+  open, Load is replaced by a **(Current)** marker and a **Resume** row —
+  Resume simply closes the picker and puts you back in the project you were
+  already in (Back does the same, but Resume says so on screen). If the project you had last no longer
   exists, the screen says **Select project** until you tap a pad.
 - **Tap a project** to select it — the screen switches to that project. Turn the
   jog wheel to choose a row, click to select. A tap never loads by itself — Load

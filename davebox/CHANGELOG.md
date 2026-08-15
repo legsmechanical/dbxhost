@@ -20,9 +20,11 @@ the section into a versioned heading at release time.
   project that's selected — its name, and Load / Rename / Color — instead of a
   page of instructions. Tapping any pad switches to that project's screen, which
   is how it already worked; there's just nothing in the way now. On the project
-  you already have open, Load is replaced by **(Current)**. If the project you
-  had last is gone, the screen simply says **Select project** until you pick
-  one. Copy and delete are unchanged — hold the button and tap, the same as
+  you already have open, Load is replaced by a **(Current)** marker and a
+  **Resume** item that puts the picker away and drops you back in. If the
+  project you had last is gone, the screen simply says **Select project** until
+  you pick one. **Rename** and **Color** both open a screen, so both show a
+  `>` — Color no longer shows its value on the menu itself. Copy and delete are unchanged — hold the button and tap, the same as
   Move's own sets.
 - **The sound editor's knobs now say what they do.** Outside a block's own
   parameter pages the eight knobs drive the slot's knob assignments, and until
