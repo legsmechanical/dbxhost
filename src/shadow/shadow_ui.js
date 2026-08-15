@@ -16775,6 +16775,21 @@ globalThis.onMidiMessageInternal = function(data) {
                  * The script only stops this host; the launcher is waiting on it
                  * and owns the restore. */
                 if (standaloneSessionActive()) {
+                    /* Offer the exit to the module first. A module that
+                     * exports onSessionExitRequest owns the leave-taking —
+                     * it can save, paint a farewell frame and clear its LEDs
+                     * before running the exit script itself (truthy return =
+                     * taken). Running the script from here tears the stack
+                     * down around whatever the module had on the surface. */
+                    if (typeof globalThis.onSessionExitRequest === "function") {
+                        let taken = false;
+                        try { taken = !!globalThis.onSessionExitRequest(); }
+                        catch (e) { debugLog("HOST: onSessionExitRequest threw: " + e); }
+                        if (taken) {
+                            debugLog("HOST: Shift+Back → module owns the session exit");
+                            return;
+                        }
+                    }
                     debugLog("HOST: Shift+Back → leaving the standalone host");
                     if (typeof host_system_cmd === "function") {
                         host_system_cmd("sh " + STANDALONE_DIR + "/scripts/exit-to-stock.sh");

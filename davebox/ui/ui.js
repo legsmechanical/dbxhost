@@ -53,7 +53,7 @@ import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons } from './
 import { _onCCMsg } from './ui_input_cc.mjs';
 import { soundActive, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw } from './ui_sound.mjs';
 import { soundModeCovered } from './ui_render.mjs';
-import { _tickImpl, applyExtMidiRemap } from './ui_tick.mjs';
+import { _tickImpl, applyExtMidiRemap, requestSessionExit } from './ui_tick.mjs';
 
 /* ------------------------------------------------------------------ */
 /* UI state                                                             */
@@ -317,6 +317,13 @@ globalThis.init = function () {
 };
 
 globalThis.tick = function () { try { _tickImpl(); } catch (e) { captureError('tick', e); } };
+
+/* Host's Shift+Back asks us to leave the session; owning it routes the
+ * gesture through the same save → EXITING farewell → teardown staging as the
+ * menu's Quit. Falsy on error tells the host to fall back to its own exit. */
+globalThis.onSessionExitRequest = function () {
+    try { return requestSessionExit(); } catch (e) { captureError('onSessionExitRequest', e); return false; }
+};
 
 /* ------------------------------------------------------------------ */
 /* MIDI input                                                           */

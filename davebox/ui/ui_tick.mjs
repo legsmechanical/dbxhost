@@ -288,6 +288,19 @@ var _lastSessionView = false;
  * Quit became a surprise device restart until somebody deleted the file by hand.
  * Never answer a liveness question with a file that only a clean exit removes. */
 
+/* Session exit on the module's terms: the same staged flow as the menu's
+ * Quit (save → farewell frame + LED clear → teardown cmd). Called by the
+ * host's Shift+Back handler via globalThis.onSessionExitRequest, so the
+ * gesture exit shows the same farewell as Quit instead of tearing the stack
+ * down around a live screen. Returns true = exit owned and in flight. */
+export function requestSessionExit() {
+    if (S.exitFarewell !== 0 || S.pendingExitAfterSave) return true;  /* already leaving */
+    saveState();                       /* sets pendingSuspendSave */
+    S.pendingExitAfterSave = true;     /* drained one tick after the save fires */
+    S.globalMenuOpen = false;
+    return true;
+}
+
 export function _tickImpl() {
     /* Exit farewell: the EXITING frame and the LED clear were queued when Quit
      * drained; freeze everything else so no later stage can repaint over them

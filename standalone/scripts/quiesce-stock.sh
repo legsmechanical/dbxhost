@@ -42,22 +42,30 @@ if pgrep -x MoveOriginal >/dev/null 2>&1; then
                         || echo "quiesce: saveSongIfDirty unavailable"
 fi
 
-# Freeze Move BEFORE asking shadow_ui to exit. The moment shadow_ui goes,
-# display_mode drops and the shim stops compositing — native Move would then
-# repaint the OLED and the pads (its set picker, at full brightness) for the
-# second or two until the kill sweep lands. SIGSTOP means it cannot push a
-# single frame: the panel and the LEDs retain the stock menu exactly as the
-# user left it, straight through to the standalone splash. The stopped
-# process ignores the sweep's SIGTERM but not its SIGKILL, which is what
-# actually takes it down. (The dbus save above already ran — a stopped Move
-# cannot answer D-Bus, so the order of these two blocks is load-bearing.)
-pids=$(pidof MoveOriginal 2>/dev/null || true)
-if [ -n "$pids" ]; then
-    kill -STOP $pids 2>/dev/null && echo "quiesce: MoveOriginal frozen ($pids)"
-fi
+# Freeze Move the moment shadow_ui is gone (freeze_move is called below, on
+# both the clean-exit and the timeout path). Once shadow_ui exits, the shim
+# stops compositing and native Move would repaint the OLED and the pads (its
+# set picker, at full brightness) for the second or two until the kill sweep
+# lands; SIGSTOP means it cannot push a single frame — the panel and LEDs
+# retain the stock menu straight through to the standalone splash. The
+# stopped process ignores the sweep's SIGTERM but not its SIGKILL, which is
+# what actually takes it down.
+# ⚠ The freeze MUST NOT run before shadow_ui has exited: the shim inside
+# MoveOriginal serves the shared-memory param bus shadow_ui blocks on, so a
+# frozen Move deadlocks shadow_ui mid-save — it never sees should_exit, the
+# wait below burns its full ceiling, and the SIGKILL then eats the unsaved
+# state (observed on hardware 2026-08-15, first launch after this order was
+# briefly inverted).
+freeze_move() {
+    pids=$(pidof MoveOriginal 2>/dev/null || true)
+    if [ -n "$pids" ]; then
+        kill -STOP $pids 2>/dev/null && echo "quiesce: MoveOriginal frozen ($pids)"
+    fi
+}
 
 if [ ! -e "$CONTROL" ]; then
     echo "quiesce: no stock control SHM — nothing to save"
+    freeze_move
     exit 0
 fi
 
@@ -81,10 +89,11 @@ PY
 # stall the launch forever.
 i=0
 while [ "$i" -lt 50 ]; do
-    pgrep -x shadow_ui >/dev/null 2>&1 || { echo "quiesce: shadow_ui exited after $((i * 100))ms"; exit 0; }
+    pgrep -x shadow_ui >/dev/null 2>&1 || { echo "quiesce: shadow_ui exited after $((i * 100))ms"; freeze_move; exit 0; }
     sleep 0.1
     i=$((i + 1))
 done
 
 echo "quiesce: shadow_ui still running after 5s — proceeding anyway"
+freeze_move
 exit 0

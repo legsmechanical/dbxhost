@@ -430,7 +430,18 @@ void shadow_clear_move_leds_if_overtake(void) {
      * (capabilities.button_passthrough) keep their firmware LEDs. */
     const uint8_t *passthrough = host.passthrough_ccs;
 
-    int suppress_sysex = (ctrl && ctrl->overtake_suppress_sysex);
+    /* Plain overtake (no co-run, no skip_led_clear) means the module owns the
+     * FULL surface — RGB included — so Move's cable-0 sysex is stripped
+     * unconditionally here, not just when the tool has claimed
+     * overtake_suppress_sysex. The claim lands only once the module's init
+     * has run, seconds after overtake_mode is set, and Move's one-shot boot
+     * pad paint (its set colors, ~2-3 s after process start when the song
+     * finishes loading) fits exactly inside that window: with the strip
+     * gated on the claim, every boot flashed the native set-picker pads over
+     * the tool's cleared surface. The claim flag still matters on the paths
+     * above — this branch is the one where no Move LED write is ever
+     * legitimate. */
+    int suppress_sysex = 1;
     for (int i = 0; i < HW_MIDI_OUT_SIZE; i += 4) {
         uint8_t cable = (midi_out[i] >> 4) & 0x0F;
         uint8_t cin  = midi_out[i] & 0x0F;
