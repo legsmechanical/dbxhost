@@ -5350,10 +5350,21 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
     midi_monitor();
     TIME_SECTION_END(spi_midi_mon_sum, spi_midi_mon_max);
 
-    /* Check if shadow UI requested exit via shared memory */
-    if (shadow_control && shadow_display_mode && !shadow_control->display_mode) {
-        shadow_display_mode = 0;
-        shadow_inject_knob_release = 1;  /* Inject note-offs when exiting shadow mode */
+    /* Sync the shim's display gate with shared memory in BOTH directions.
+     * shadow_control->display_mode is authoritative — shadow_ui arming a
+     * session, the dismissal gestures and the D-Bus handover all write it —
+     * but the MIDI_IN filter and the display compositor gate on this local
+     * copy. Without the upward edge, a session armed while this process
+     * missed open_tool_cmd (another reader consumes it on read) runs with
+     * hardware input and the panel still routed to Move firmware while every
+     * shared flag reads healthy. */
+    if (shadow_control) {
+        if (shadow_display_mode && !shadow_control->display_mode) {
+            shadow_display_mode = 0;
+            shadow_inject_knob_release = 1;  /* Inject note-offs when exiting shadow mode */
+        } else if (!shadow_display_mode && shadow_control->display_mode) {
+            shadow_display_mode = 1;
+        }
     }
 
     /* Check if web UI wants to open a tool — activate shadow display so JS can render */
