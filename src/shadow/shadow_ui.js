@@ -3503,9 +3503,6 @@ function exitOvertakeMode() {
 }
 
 /* Suspend overtake mode — leave background processes running */
-
-}
-
 function suspendOvertakeMode() {
     corunTeardown();
     /* PRIMARY (P4a): the registration survives the park (suspend_keeps_js —
