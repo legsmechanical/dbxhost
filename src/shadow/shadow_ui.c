@@ -478,6 +478,36 @@ static JSValue js_shadow_set_overtake_mode(JSContext *ctx, JSValueConst this_val
     int32_t mode = 0;
     JS_ToInt32(ctx, &mode, argv[0]);
     shadow_control->overtake_mode = (uint8_t)mode;  /* 0=normal, 1=menu, 2=module */
+    /* ⚠⚠ TAKING THE SURFACE IMPLIES THE SHADOW SESSION IS ARMED.
+     *
+     * overtake_mode != 0 with display_mode == 0 is an INCOHERENT pair, and the
+     * cause of the intermittent half-wired launch (2026-08-15): the OLED and
+     * ALL INPUT sit on Move firmware — shadow_display_mode gates the shim's MIDI
+     * filters as well as the display — while the module, still running, still
+     * ticking, keeps painting the LEDs. A co-run does NOT look like this; it
+     * cedes via shadow_display_owner and leaves display_mode alone.
+     *
+     * How the launch got there: the shim arms display_mode=1 for the splash and
+     * re-arms it for a boot tool at `open_tool_cmd && !shadow_display_mode`. But
+     * shadow_get_open_tool_cmd() AUTO-CLEARS on read, so if the JS consumes the
+     * flag before the splash dismiss lowers display_mode, the re-arm can never
+     * fire and nothing else ever sets it. Whether it breaks is pure timing —
+     * which is why it was intermittent, and why turning the jog during load
+     * (Josh's repro) tips it reliably.
+     *
+     * Fixing the race at its source would mean reordering a boot sequence with
+     * several claimants. Asserting the invariant at the ONE call that can
+     * violate it is smaller and cannot be raced: whoever ends up taking the
+     * surface arms the session by doing so.
+     *
+     * ⚠ Only on TAKE. mode==0 is a module LEAVING, and the paths that leave
+     * manage the display themselves — arming here would strand a module that is
+     * trying to hand the screen back. */
+    if (mode != 0 && !shadow_control->display_mode) {
+        shadow_control->display_mode = 1;
+        unified_log("shadow_ui", LOG_LEVEL_DEBUG,
+                    "overtake take (mode=%d): display_mode was 0 — arming shadow session", mode);
+    }
     /* Reset MIDI sync and clear buffer when enabling overtake mode */
     if (mode != 0) {
         last_midi_ready = shadow_control->midi_ready;
