@@ -887,6 +887,18 @@ export function soundModeCovered() {
 }
 
 export function drawUI() {
+    /* Exit farewell: the last frame the session ever pushes — the panel
+     * retains it across the hand-back to stock, so it must win over every
+     * other screen. Same grammar as the LOADING screen (verb, then subject). */
+    if (S.exitFarewell !== 0) {
+        clear_screen();
+        const _xl = 'EXITING';
+        print(Math.max(0, Math.floor((128 - _xl.length * 6) / 2)), 20, _xl, 1);
+        const _xn = 'dAVEBOx';
+        print(Math.max(0, Math.floor((128 - _xn.length * 6) / 2)), 34, _xn, 1);
+        return;
+    }
+
     /* CO-RUN: shadow_ui's chain editor owns the OLED while this is active.
     /* Move-native co-run: Move firmware owns the OLED (preset browser /
      * device-edit pages). The shim's display_mode bypass keeps Move's

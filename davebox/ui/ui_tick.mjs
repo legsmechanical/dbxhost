@@ -289,6 +289,21 @@ var _lastSessionView = false;
  * Never answer a liveness question with a file that only a clean exit removes. */
 
 export function _tickImpl() {
+    /* Exit farewell: the EXITING frame and the LED clear were queued when Quit
+     * drained; freeze everything else so no later stage can repaint over them
+     * (drainLedInit completing would otherwise re-light the surface during the
+     * teardown seconds). A few frozen ticks guarantee at least one SPI frame
+     * flushes both before the stack dies — the panel then retains this frame
+     * across the whole hand-back to stock. */
+    if (S.exitFarewell !== 0) {
+        if (S.screenDirty) { S.screenDirty = false; drawUI(); }
+        if (S.exitFarewell > 0 && --S.exitFarewell === 0) {
+            S.exitFarewell = -1;
+            host_system_cmd('sh /data/UserData/dbx-host/scripts/exit-to-stock.sh');
+        }
+        return;
+    }
+
     S.tickCount++;
     if (S.bootSplashTicks > 0) S.bootSplashTicks--;
     checkBackHold();   /* self-managed Back: fire suspend once a held Back crosses the long-press threshold */
@@ -1877,10 +1892,12 @@ export function _tickImpl() {
          * waiting on that and owns the restore, so we must NOT also try to
          * bring anything back.
          *
-         * Runtime check because this same module directory serves both hosts;
-         * under stock the marker is absent and this stays an ordinary module
-         * exit. LEDs are already cleared above either way. */
-        host_system_cmd('sh /data/UserData/dbx-host/scripts/exit-to-stock.sh');
+         * The teardown cmd itself fires from the farewell countdown at the
+         * top of tick, not here: the EXITING frame and the LED clear above
+         * need at least one flushed SPI frame ahead of the stack dying, and
+         * the freeze keeps every later tick stage from repainting them. */
+        S.exitFarewell = 8;
+        S.screenDirty = true;
         return;
     } else if (S.pendingProjectSwitch !== null) {
         /* Pad-picker project switch, one tick after the deferred save. The

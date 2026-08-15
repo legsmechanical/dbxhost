@@ -42,6 +42,20 @@ if pgrep -x MoveOriginal >/dev/null 2>&1; then
                         || echo "quiesce: saveSongIfDirty unavailable"
 fi
 
+# Freeze Move BEFORE asking shadow_ui to exit. The moment shadow_ui goes,
+# display_mode drops and the shim stops compositing — native Move would then
+# repaint the OLED and the pads (its set picker, at full brightness) for the
+# second or two until the kill sweep lands. SIGSTOP means it cannot push a
+# single frame: the panel and the LEDs retain the stock menu exactly as the
+# user left it, straight through to the standalone splash. The stopped
+# process ignores the sweep's SIGTERM but not its SIGKILL, which is what
+# actually takes it down. (The dbus save above already ran — a stopped Move
+# cannot answer D-Bus, so the order of these two blocks is load-bearing.)
+pids=$(pidof MoveOriginal 2>/dev/null || true)
+if [ -n "$pids" ]; then
+    kill -STOP $pids 2>/dev/null && echo "quiesce: MoveOriginal frozen ($pids)"
+fi
+
 if [ ! -e "$CONTROL" ]; then
     echo "quiesce: no stock control SHM — nothing to save"
     exit 0

@@ -536,6 +536,7 @@ export const S = {
     bootSplashTicks: 188,
     pendingSuspendSave: false,
     pendingExitAfterSave: false,   /* drained one tick after pendingSuspendSave fires; calls host_exit_module */
+    exitFarewell: 0,               /* >0: EXITING screen up, counting down to the teardown cmd; -1: cmd fired, tick frozen */
     pendingHideAfterSave: false,   /* drained one tick after pendingSuspendSave fires; calls host_hide_module */
     pendingSuspendManaged: false,  /* self-managed Back suspend: drained one tick after pendingSuspendSave fires; calls host_suspend_overtake (needs capabilities.suspend_self_managed + a host ≥ PR #165) */
     /* Self-managed Back button (module.json capabilities.suspend_self_managed). Plain Back now

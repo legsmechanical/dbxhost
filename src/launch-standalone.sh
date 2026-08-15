@@ -52,34 +52,18 @@ setsid bash -c '
             exit 0
         fi
     done
-    sleep 1
 
-    # Two-phase kill
-    for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui; do
-        pids=$(pidof $name 2>/dev/null || true)
-        if [ -n "$pids" ]; then
-            log "SIGTERM $name: $pids"
-            kill $pids 2>/dev/null || true
-        fi
-    done
-    sleep 0.5
-
-    for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui; do
-        pids=$(pidof $name 2>/dev/null || true)
-        if [ -n "$pids" ]; then
-            log "SIGKILL $name: $pids"
-            kill -9 $pids 2>/dev/null || true
-        fi
-    done
-    sleep 0.2
-
-    # Free SPI device
-    pids=$(fuser /dev/ablspi0.0 2>/dev/null || true)
-    if [ -n "$pids" ]; then
-        log "Killing SPI holders: $pids"
-        kill -9 $pids 2>/dev/null || true
-        sleep 0.5
-    fi
+    # NO kill here (removed 2026-08-15): the stack is handed to the binary
+    # ALIVE, and tearing it down is the binary side of the contract. Killing
+    # first had two costs, both user-visible: shadow_ui died by SIGKILL before
+    # it could save host state, and killing MoveLauncher started the
+    # move-launcher.service restart clock BEFORE anything could pause the
+    # unit -- systemd then revived a full stock stack mid-handoff, which
+    # booted natively and painted the set-picker pads until the binary
+    # second-sweep killed it (the LED flash seen on every launch). The binary
+    # quiesces (saves + freezes Move), sweeps, and pauses the unit in an
+    # order that closes both. A binary that expects a dead stack must do its
+    # own sweep -- which the davebox launcher always did.
 
     # Run standalone binary (blocks until exit)
     log "Launching: $BINARY"

@@ -3,8 +3,9 @@
 #
 # Invoked by the Schwung Tools menu as a standalone module binary. A module
 # declaring "standalone": true is run through the host's launch-standalone.sh,
-# which has already killed the stock stack and freed the SPI device by the time
-# we get here, and which restarts stock Move when we exit.
+# which hands us the stock stack ALIVE (it stopped pre-killing it 2026-08-15 —
+# the teardown is ours, so the quiesce below can save stock state and freeze
+# the surface first) and which restarts stock Move when we exit.
 #
 # What this does: bring Move back up under the DAVEBOX Schwung build instead of
 # the stock one. The official install is never modified — it stays on disk
@@ -54,15 +55,12 @@ setsid bash -c '
   : > /dev/shm/.dbxhost-session.lock
   printf "%s\n" "$$" >&9
 
-  # Stand the watchdog down FIRST. move-launcher.service is systemd-supervised
-  # with Restart=on-failure, so killing MoveLauncher makes systemd revive the
-  # whole stock stack a few seconds later — and it would then be running
-  # alongside us, both driving /dev/ablspi0.0. We are ableton and cannot stop a
-  # unit, so davebox-heal (setuid root, hardcoded unit name) does it.
-  if ! $DBX_DIR/bin/davebox-heal --pause-launcher; then
-    echo "could not pause move-launcher — refusing to launch (stock would respawn alongside us)"
-    exit 1
-  fi
+  # (The watchdog stand-down moved BELOW the kill sweep, 2026-08-15. It used
+  # to run here — but the stock stack is alive at this point now that
+  # launch-standalone.sh no longer pre-kills it, and `systemctl stop` TERMs
+  # the whole cgroup: shadow_ui would die before quiesce ever saved it. The
+  # sweep leaves the unit empty, so the stop below is instant and cancels any
+  # restart systemd already scheduled.)
 
   # A refusal AFTER this point leaves the watchdog paused — and once the kill
   # loop below has run, the stock stack is dead too, so a bare exit strands
@@ -91,6 +89,42 @@ setsid bash -c '
   # confuse a build that predates the retirement.)
   rm -f "$DBX_DIR/standalone_active"
 
+
+  # Ask stock Schwung to save and exit first. Killing shadow_ui loses host
+  # state: its main loop saves only when it sees should_exit, and nothing else
+  # flushes on the way out. The stock stack is ALIVE here (launch-standalone.sh
+  # stopped pre-killing it, 2026-08-15) so the save is real, and quiesce also
+  # freezes MoveOriginal (SIGSTOP) so native Move cannot repaint the surface
+  # once shadow_ui goes -- the panel and LEDs hold the stock menu until our
+  # splash. Best-effort -- if it does not go, the kill below still does.
+  sh "$DBX_DIR/scripts/quiesce-stock.sh"
+
+  # The one and only teardown of the stock stack (launch-standalone.sh no
+  # longer pre-kills it). The frozen MoveOriginal ignores the TERM phase and
+  # dies on the KILL phase -- that is expected, not a leak.
+  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber; do
+    pids=$(pidof $name 2>/dev/null || true)
+    if [ -n "$pids" ]; then echo "TERM $name $pids"; kill $pids 2>/dev/null || true; fi
+  done
+  sleep 1
+  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber; do
+    pids=$(pidof $name 2>/dev/null || true)
+    if [ -n "$pids" ]; then echo "KILL $name $pids"; kill -9 $pids 2>/dev/null || true; fi
+  done
+  sleep 0.5
+
+  # Stand the watchdog down NOW, tight behind the sweep. move-launcher.service
+  # is systemd-supervised with Restart=on-failure, so the MoveLauncher kill
+  # above already started its restart clock; `systemctl stop` on the emptied
+  # unit is instant, cancels that pending restart, and keeps stock from
+  # respawning alongside us on /dev/ablspi0.0. We are ableton and cannot stop
+  # a unit, so davebox-heal (setuid root, hardcoded unit name) does it.
+  # Runs AFTER quiesce by design: stopping the unit TERMs its whole cgroup,
+  # which would have killed shadow_ui before it saved.
+  if ! $DBX_DIR/bin/davebox-heal --pause-launcher; then
+    refuse "could not pause move-launcher (stock would respawn alongside us)"
+  fi
+
   # DIRECT BOOT into the tool (v3 model): the session opens in the module on
   # the last project, and project selection is the modules OWN pad picker —
   # the set-select gate survives only as a headless actuator the module arms
@@ -116,23 +150,6 @@ setsid bash -c '
   # removes it so an in-session switch or rewire never re-asks.
   printf 1 > "$DBX_DIR/fresh_session"
 
-  # Ask stock Schwung to save and exit first. Killing shadow_ui loses host state:
-  # its main loop saves only when it sees should_exit, and nothing else flushes
-  # on the way out. Best-effort -- if it does not go, the kill below still does.
-  sh "$DBX_DIR/scripts/quiesce-stock.sh"
-
-  # Belt and braces: launch-standalone.sh has already done this, but this script
-  # is also run directly during development.
-  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber; do
-    pids=$(pidof $name 2>/dev/null || true)
-    if [ -n "$pids" ]; then echo "TERM $name $pids"; kill $pids 2>/dev/null || true; fi
-  done
-  sleep 1
-  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber; do
-    pids=$(pidof $name 2>/dev/null || true)
-    if [ -n "$pids" ]; then echo "KILL $name $pids"; kill -9 $pids 2>/dev/null || true; fi
-  done
-  sleep 0.5
 
   # Sidecar pid files name processes the sweep above just killed. Leaving them
   # is not harmless: the shim adopts a live pid it finds there instead of
