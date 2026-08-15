@@ -1191,9 +1191,13 @@ function _drawProjectPadPicker_impl() {
         drawKitHeader(fitHdr(String(mp ? mp.name : '?').toUpperCase(), 124), false);
         drawKitList(_pppMenuModel(p, p.menu.k).map(function(r) {
             if (r.kind === 'status') return { note: r.label };
-            if (r.kind === 'rename') return { label: r.label, hdr: true, chevron: true };
-            if (r.kind === 'color')  return { label: r.label, hdr: true,
-                                              value: PROJECT_COLORS[projectColorIdx(mp)].name };
+            /* Both open a screen, so both carry the chevron and NEITHER carries a
+             * value (Josh, 2026-08-15). Showing the current colour here read as
+             * a value the jog would edit in place, which is the grammar for a
+             * row you scrub — this one is a door. The picker names the colour,
+             * and the pad shows it in the one form a 1-bit panel cannot. */
+            if (r.kind === 'rename' || r.kind === 'color')
+                return { label: r.label, hdr: true, chevron: true };
             return { label: r.label, hdr: true };
         }), p.menu.sel, {});
         return;

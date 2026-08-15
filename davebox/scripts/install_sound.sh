@@ -45,6 +45,32 @@ if ! ssh -o ConnectTimeout=5 "${MOVE_USER}@${MOVE_HOST}" true 2>/dev/null; then
     exit 1
 fi
 
+# ⚠⚠ REFUSE over a live standalone session. This installer ends in
+# restart_move.sh, which tears the running stack down under whoever is using it
+# — exactly what install-host.sh has always refused to do, while this half had
+# no guard at all. It bit on 2026-08-15: a deploy restarted the stack mid-session
+# and left the device in a state that took a reboot to clear.
+#
+# Liveness is the FLOCK, never a marker file (P4b). The launcher holds
+# /dev/shm/.dbxhost-session.lock with the supervisor PID as payload; a session is
+# live iff that PID is alive, and a reboot or crash releases it by construction.
+# ⚠ `standalone_active` is RETIRED — testing it can only ever answer "clear",
+# which is worse than no check because it reads like one.
+# Unreadable/garbled payload counts as LIVE, matching install-host.sh and the
+# host's own reader.
+if [ "${FORCE:-0}" != "1" ] && ssh -o ConnectTimeout=5 "${MOVE_USER}@${MOVE_HOST}" \
+        "p=\$(cat /dev/shm/.dbxhost-session.lock 2>/dev/null) || exit 1; \
+         case \"\$p\" in (*[!0-9]*|'') exit 0;; esac; \
+         [ -d \"/proc/\$p\" ]" 2>/dev/null; then
+    echo "" >&2
+    echo "REFUSING: a standalone session is running right now." >&2
+    echo "  This installer restarts the stack, which would tear it down under you." >&2
+    echo "  Leave the session first (Shift+Back, or Quit in the Settings menu)." >&2
+    echo "  FORCE=1 deploys anyway; the running session keeps the old code and the" >&2
+    echo "  new code takes effect at the next launch." >&2
+    exit 1
+fi
+
 echo "Installing ${MODULE_ID} to ${INSTALL_DIR}..."
 ssh "${MOVE_USER}@${MOVE_HOST}" "mkdir -p ${INSTALL_DIR}"
 scp -r "dist/${MODULE_ID}"/* "${MOVE_USER}@${MOVE_HOST}:${INSTALL_DIR}/"
