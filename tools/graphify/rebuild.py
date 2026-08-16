@@ -24,6 +24,23 @@ from pathlib import Path
 OUT = Path("graphify-out")
 HTML_NODE_LIMIT = 5000
 
+# Directories the AST layer scans. Committed here rather than read back from
+# graphify-out/.graphify_detect.json, which is gitignored and would take the scope
+# decision with it on a wipe. libs/ is excluded on purpose: 1,435 vendored files
+# (QuickJS, curl, Ableton Link) that would swamp clustering with noise nobody queries.
+CODE_ROOTS = ["src", "davebox", "standalone", "schwung-manager", "tests", "tools"]
+
+# Build output, vendored dependencies and minified bundles. graphify's own detector
+# filters these; collect_files() does not, and without this davebox/dist/davebox/ui.js
+# alone contributes a 607-node community that is a duplicate of davebox/ui/.
+EXCLUDE_PARTS = {"dist", "node_modules", "build", ".git", "__pycache__", "vendor", "libs"}
+EXCLUDE_SUFFIX = (".min.js", ".bundle.js")
+
+# Walked explicitly rather than via graphify.extract.collect_files, which does not
+# recognise .mjs and silently dropped 89 files here -- including all of src/shared/*.mjs,
+# the modules davebox actually imports across the seam.
+CODE_SUFFIX = (".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".js", ".mjs", ".go", ".py")
+
 
 def load(p, default=None):
     f = OUT / p
@@ -41,11 +58,22 @@ def reextract():
     """
     from graphify.extract import extract
 
-    detect = load(".graphify_detect.json")
-    if not detect:
-        print("no .graphify_detect.json - run /graphify first", file=sys.stderr)
+    code, skipped = [], 0
+    for root in CODE_ROOTS:
+        p = Path(root)
+        if not p.is_dir():
+            continue
+        for f in p.rglob("*"):
+            if not f.is_file() or not f.name.endswith(CODE_SUFFIX):
+                continue
+            if EXCLUDE_PARTS & set(f.parts) or f.name.endswith(EXCLUDE_SUFFIX):
+                skipped += 1
+                continue
+            code.append(f)
+    if not code:
+        print(f"no code files found under {CODE_ROOTS}", file=sys.stderr)
         return 1
-    code = [Path(f) for f in detect.get("files", {}).get("code", []) if Path(f).exists()]
+    print(f"scanning {len(code)} code files ({skipped} excluded as build/vendored)")
     ast = extract(code, cache_root=Path("."))
     (OUT / ".graphify_ast.json").write_text(json.dumps(ast))
 
@@ -179,11 +207,23 @@ def main():
     if not args.no_html:
         # keep the render under graphify's limit by dropping unnamed micro-communities
         # rather than collapsing everything to a community-level view
-        keep_ids = {c for c, l in labels.items() if not l.startswith("Community ")}
-        keep = {x for c in keep_ids for x in communities[c]}
-        if G.number_of_nodes() > HTML_NODE_LIMIT and keep:
+        named_ids = [c for c, l in labels.items() if not l.startswith("Community ")]
+        if G.number_of_nodes() > HTML_NODE_LIMIT and named_ids:
+            # largest-first, stopping before the cap: an unnamed micro-community is the
+            # least useful thing on the map, and a dropped small named one is recoverable
+            # from the wiki. Erroring out instead would leave no map at all.
+            keep_ids, total = [], 0
+            for c in sorted(named_ids, key=lambda c: -len(communities[c])):
+                if total + len(communities[c]) > HTML_NODE_LIMIT:
+                    continue
+                keep_ids.append(c)
+                total += len(communities[c])
+            keep = {x for c in keep_ids for x in communities[c]}
             H, sub = G.subgraph(keep).copy(), {c: communities[c] for c in keep_ids}
-            note = f" (named communities only; {G.number_of_nodes() - H.number_of_nodes()} nodes omitted)"
+            omitted = [labels[c] for c in named_ids if c not in keep_ids]
+            note = f" ({G.number_of_nodes() - H.number_of_nodes()} nodes omitted to fit)"
+            if omitted:
+                note += f"; dropped named: {', '.join(omitted)}"
         else:
             H, sub, note = G, communities, ""
         to_html(H, sub, str(OUT / "graph.html"),

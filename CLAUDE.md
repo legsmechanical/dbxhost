@@ -622,9 +622,11 @@ Release: bump `src/module.json` version → commit → `git tag v0.2.0 && git pu
 
 ## 🗺️ Code graph (graphify) — read `wiki/index.md` before grepping the tree
 
-`graphify-out/` holds a knowledge graph of **`src/` + `davebox/` + `docs/`** — 5,076 nodes,
-~11,400 edges, 336 communities (33 named). Built 2026-08-15. It is **gitignored**: derived data,
-rebuilt on demand, never committed.
+`graphify-out/` holds a knowledge graph of **`src/`, `davebox/`, `standalone/`,
+`schwung-manager/`, `tests/`, `tools/` (code) + `docs/` (prose/images)** — ~5,800 nodes,
+~13,000 edges, 347 communities (35 named). Built 2026-08-15. It is **gitignored**: derived data,
+rebuilt on demand, never committed. The code roots live in `CODE_ROOTS` in
+`tools/graphify/rebuild.py`, which is committed, so the scope survives a wipe.
 
 **Use it for navigation and relationship questions** — "what calls X", "what would break if I
 change Y", "how does the shim reach the module" — where it answers in ~12k tokens instead of
@@ -637,15 +639,18 @@ graphify path "Quantized Sampler" "unity_view"           # shortest path between
 graphify explain "shadow_corun_begin"                    # a node and everything around it
 ```
 
-`graphify-out/wiki/index.md` is the crawlable form (346 articles, one per community) and is
-usually the cheapest way in. `graphify-out/graph.html` is the visual map.
+`graphify-out/wiki/index.md` is the crawlable form (357 articles, one per community) and is
+usually the cheapest way in. `graphify-out/graph.html` is the visual map — it is capped at 5,000
+nodes, so it renders the largest named communities and prints which ones it dropped; the wiki and
+`graph.json` always hold everything.
 
-⚠ **Scope is deliberate: `libs/` is excluded.** A bare scan of the repo root finds 2,083 files /
-2.5M words, of which 1,435 are vendored (QuickJS, curl, Ableton Link) and would swamp clustering
-with noise nobody queries. Two vendored headers still leak in via `src/lib/` and own their own
-communities — `stb_image` and the font code — ignore those. **Host and davebox are ONE graph**,
-deliberately: they separate into their own communities anyway, and splitting would cut the
-cross-seam edges that are the entire reason they share a repo.
+⚠ **Scope is deliberate.** `libs/` is excluded (1,435 vendored files — QuickJS, curl, Ableton
+Link — that would swamp clustering), as are `dist/`, `node_modules/` and minified bundles: the
+bundled `davebox/dist/davebox/ui.js` alone forms a 607-node community that is a duplicate of
+`davebox/ui/`. Two vendored headers still leak in via `src/lib/` and own their own communities —
+`stb_image` and the font code — ignore those. **Host and davebox are ONE graph**, deliberately:
+they separate into their own communities anyway, and splitting would cut the cross-seam edges
+that are the entire reason they share a repo.
 
 ### ⚠ What the graph gets wrong, and why it is pruned
 
@@ -685,7 +690,13 @@ touching `src/` or `davebox/` code, so the graph tracks the code for free. Enabl
 Community names are hand-written. They survive rebuilds two ways: carried across by membership
 overlap with the previous run, and — because `graphify-out/` is gitignored and can vanish —
 re-anchored from `tools/graphify/labels.json`, which pins each name to a few high-degree node ids
-and **is committed**. Verified to restore all 33 names from a cold start.
+and **is committed**. Verified restoring 35 of 35 from a cold start. Widening `CODE_ROOTS`
+reshuffles communities and will strand a few names; re-label the large unnamed ones and refresh
+the anchor file in the same pass.
+
+⚠ **Do not use `graphify.extract.collect_files()` to gather the file list** — it does not
+recognise `.mjs` and silently dropped 89 files here, including all 22 of `src/shared/*.mjs`, the
+very modules davebox imports across the seam. `rebuild.py` walks `CODE_SUFFIX` explicitly instead.
 
 ## Documentation Index
 
