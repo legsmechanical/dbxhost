@@ -1,0 +1,167 @@
+{
+ "Chain Host DSP": [
+  "dsp_chain_host_v2_set_param",
+  "src_modules_chain_dsp_chain_patch_c",
+  "src_modules_chain_dsp_chain_host_c"
+ ],
+ "Encoder Banks (Arp & Harmony)": [
+  "livearp_encoder_bank",
+  "performance_view",
+  "notefx_encoder_bank"
+ ],
+ "Encoder Banks (Delay & Step)": [
+  "conductor_octave_bank",
+  "delay_bank",
+  "step_editor_screen"
+ ],
+ "Encoder Banks (Lanes & Clip)": [
+  "bank_all_lanes",
+  "bank_arp_in",
+  "bank_clip"
+ ],
+ "File Browser & Filepath": [
+  "src_modules_tools_file_browser_ui_js",
+  "shared_filepath_browser_refreshfilepathbrowser",
+  "file_browser_ui_handlecc"
+ ],
+ "Font Rendering & Display": [
+  "src_lib_stb_truetype_h",
+  "src_host_js_display_c",
+  "lib_stb_truetype_ttushort"
+ ],
+ "Gestures & Master FX Plans": [
+  "remote_ui_go_websocket_bridge",
+  "open_tool_cmd_field",
+  "per_module_mute_gesture"
+ ],
+ "Host Architecture Docs": [
+  "module_json",
+  "subsystem_shadow_ui",
+  "subsystem_shim"
+ ],
+ "Host C Common & Test Daemon": [
+  "shadow_jackshadowdriver_close",
+  "src_host_js_host_common_c",
+  "src_host_test_daemon_commands_c"
+ ],
+ "Host Menu UI": [
+  "src_shared_text_entry_mjs",
+  "src_shared_input_filter_mjs",
+  "shared_text_entry_opentextentry"
+ ],
+ "Host Runtime & Module Manager": [
+  "src_schwung_host_c",
+  "src_host_module_manager_c",
+  "src_schwung_host_main"
+ ],
+ "Link Audio, Tracing & TTS": [
+  "link_subscriber_sidecar",
+  "otlp_tracing_system",
+  "tts_system"
+ ],
+ "Module Store Utils": [
+  "src_shared_store_utils_mjs",
+  "shared_store_utils_installmodule",
+  "shared_store_utils_getinstallsubdir"
+ ],
+ "Plugin DSP Modules": [
+  "src_modules_sound_generators_linein_linein_c",
+  "plugin_api_v1",
+  "src_modules_midi_fx_arp_dsp_arp_c"
+ ],
+ "Remote UI & Manager Plans": [
+  "plan_seamless_set_switching_impl",
+  "schwung_manager_webui",
+  "slot_fade_t"
+ ],
+ "Screen Audit & Preview Tools": [
+  "davebox_tools_audit_screens_mjs",
+  "tools_audit_screens_openrow",
+  "tools_audit_screens_cc"
+ ],
+ "Shadow UI (JS)": [
+  "src_shadow_shadow_ui_js",
+  "shadow_shadow_ui_handleselect",
+  "shared_screen_reader_announce"
+ ],
+ "Shim + Shadow Audio Mix": [
+  "src_schwung_shim_c",
+  "src_host_shadow_chain_mgmt_c",
+  "src_schwung_shim_shim_pre_transfer"
+ ],
+ "Signal Chain UI": [
+  "src_modules_chain_ui_js",
+  "chain_ui_handleeditorselect",
+  "chain_ui_findcomponent"
+ ],
+ "Song Mode": [
+  "src_modules_tools_song_mode_ui_js",
+  "song_mode_ui_isentryempty",
+  "song_mode_ui_getentrydurationbars"
+ ],
+ "TTS Engines & Process Launch": [
+  "host_unified_log_unified_log",
+  "src_host_tts_engine_espeak_c",
+  "src_host_tts_engine_flite_c"
+ ],
+ "Track Owns Its Instrument": [
+  "test_engine_goldens_c",
+  "davebox_dsp_claude",
+  "davebox_tests_readme"
+ ],
+ "User Presets Screens": [
+  "user_presets_browser_screen",
+  "user_presets_picker_row_screen",
+  "user_presets_detail_screen"
+ ],
+ "dAVEBOx C Test Harness": [
+  "stubs_quickjs_std_printf",
+  "harness_harness_hx_create",
+  "harness_harness_hx_destroy"
+ ],
+ "dAVEBOx Capture & Transport": [
+  "davebox_dsp_seq8_set_param_c",
+  "dsp_seq8_set_param_capture_commit",
+  "dsp_seq8_set_param_capture_write_take"
+ ],
+ "dAVEBOx Host Integration": [
+  "dbsa_input_claims_jump_flags",
+  "dbsa_set_model_doc",
+  "module_hosting_ui_engine_mjs"
+ ],
+ "dAVEBOx Input & Dialogs": [
+  "ui_ui_tick_tickimpl",
+  "davebox_ui_ui_constants_mjs",
+  "davebox_ui_ui_leds_mjs"
+ ],
+ "dAVEBOx Render & Display": [
+  "src_schwung_host_clear_screen",
+  "src_schwung_host_print",
+  "davebox_ui_ui_dialogs_mjs"
+ ],
+ "dAVEBOx SA Set Workspace": [
+  "spec_plan_doc",
+  "strategy_doc",
+  "set_workspace_doc"
+ ],
+ "dAVEBOx Sequencer DSP": [
+  "davebox_dsp_seq8_c",
+  "dsp_seq8_clamp_i",
+  "dsp_seq8_drum_pad_event"
+ ],
+ "dAVEBOx Sound Mode": [
+  "davebox_ui_ui_sound_mjs",
+  "davebox_ui_ui_discover_mjs",
+  "davebox_ui_ui_engine_mjs"
+ ],
+ "shadow_ui Process & Tracing": [
+  "src_shadow_shadow_ui_c",
+  "src_host_schwung_trace_c",
+  "shadow_shadow_ui_main"
+ ],
+ "stb_image (vendored)": [
+  "src_lib_stb_image_h",
+  "lib_stb_image_stbi_get8",
+  "lib_stb_image_stbi_err"
+ ]
+}

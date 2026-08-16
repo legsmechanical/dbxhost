@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Keep the graphify knowledge graph in step with the code after each commit.
+#
+# Only the AST layer is rebuilt, so this costs no tokens and no LLM calls -- the
+# semantic layer (docs, images) is read back from graphify-out/.graphify_semantic.json
+# and only goes stale when a doc or image changes. Refresh that with `/graphify --update`.
+#
+# Runs detached and always exits 0: a stale graph must never be able to fail a commit.
+set -u
+
+cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)" || exit 0
+
+# nothing to refresh until /graphify has built the graph once
+[ -f graphify-out/.graphify_extract.json ] || exit 0
+[ -f graphify-out/.graphify_python ] || exit 0
+
+# only bother when this commit actually touched graphed source
+if ! git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null \
+     | grep -qE '^(src|davebox)/.*\.(c|h|cpp|js|mjs)$'; then
+    exit 0
+fi
+
+PY=$(cat graphify-out/.graphify_python)
+[ -x "$PY" ] || exit 0
+
+(
+    "$PY" tools/graphify/rebuild.py --reextract --no-html \
+        >graphify-out/.refresh.log 2>&1
+) &
+
+exit 0

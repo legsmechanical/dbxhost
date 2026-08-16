@@ -620,6 +620,73 @@ scripts/{build.sh, install.sh, Dockerfile}
 
 Release: bump `src/module.json` version → commit → `git tag v0.2.0 && git push --tags`. schwung-manager sees it within minutes. See `BUILDING.md`.
 
+## 🗺️ Code graph (graphify) — read `wiki/index.md` before grepping the tree
+
+`graphify-out/` holds a knowledge graph of **`src/` + `davebox/` + `docs/`** — 5,076 nodes,
+~11,400 edges, 336 communities (33 named). Built 2026-08-15. It is **gitignored**: derived data,
+rebuilt on demand, never committed.
+
+**Use it for navigation and relationship questions** — "what calls X", "what would break if I
+change Y", "how does the shim reach the module" — where it answers in ~12k tokens instead of
+reading the corpus. Entry points:
+
+```bash
+graphify query "how does davebox reach the host mixer"   # BFS, broad context
+graphify query "..." --dfs                               # trace one chain / impact path
+graphify path "Quantized Sampler" "unity_view"           # shortest path between concepts
+graphify explain "shadow_corun_begin"                    # a node and everything around it
+```
+
+`graphify-out/wiki/index.md` is the crawlable form (346 articles, one per community) and is
+usually the cheapest way in. `graphify-out/graph.html` is the visual map.
+
+⚠ **Scope is deliberate: `libs/` is excluded.** A bare scan of the repo root finds 2,083 files /
+2.5M words, of which 1,435 are vendored (QuickJS, curl, Ableton Link) and would swamp clustering
+with noise nobody queries. Two vendored headers still leak in via `src/lib/` and own their own
+communities — `stb_image` and the font code — ignore those. **Host and davebox are ONE graph**,
+deliberately: they separate into their own communities anyway, and splitting would cut the
+cross-seam edges that are the entire reason they share a repo.
+
+### ⚠ What the graph gets wrong, and why it is pruned
+
+graphify's AST pass resolves a call site to a definition **by bare function name across the whole
+corpus**, with no import resolution, then tags the guess `INFERRED`. Any name defined in two files
+produces an edge indistinguishable from a real one. Unpruned, this invented a davebox→host
+dependency on `shadow_ui.js`, `controller/ui.js` and `menu_ui.js` that **does not exist in the
+source at all** — nothing in `davebox/` defines or calls those symbols.
+
+`tools/graphify/prune_edges.py` drops cross-file `calls` edges that no import or header
+declaration can justify (765 of 7,280 here, ~10%). Two rules, both provable from source:
+
+- **JS/MJS** — a cross-file call survives only if the calling file imports the defining file.
+- **C/H** — a target in a header survives only if that header is included (this is what keeps
+  `static inline` helpers such as `shadow_pan_gain_l()`, which are legitimately called
+  everywhere); a target in a `.c` must be non-static and declared in an included header.
+
+📌 **Even after pruning, treat a cross-file `calls` edge as a lead to verify, not a fact.** The
+`imports` / `contains` edges and the whole doc/image semantic layer are accurate; `calls` is the
+one relation built on a guess. The verified davebox→host seam is exactly ten shared ES modules
+imported through the canonical `/data/UserData/schwung/shared/` prefix (`constants`,
+`input_filter`, `text_entry`, `menu_items`, `menu_layout`, `menu_nav`, `menu_stack`,
+`filepath_browser`, `session_state`, `logger`) plus the C-implemented display primitives
+(`set_pixel`, `draw_rect`, …). Nothing else crosses.
+
+### Rebuilding
+
+```bash
+tools/graphify/rebuild.py --reextract    # ~2s, no LLM: AST + cached semantic + prune + wiki + html
+/graphify --update                       # only when DOCS or IMAGES changed (costs tokens)
+```
+
+`scripts/hooks/post-commit` runs the `--reextract` form in the background after any commit
+touching `src/` or `davebox/` code, so the graph tracks the code for free. Enable with
+`./scripts/install-hooks.sh`.
+
+Community names are hand-written. They survive rebuilds two ways: carried across by membership
+overlap with the previous run, and — because `graphify-out/` is gitignored and can vanish —
+re-anchored from `tools/graphify/labels.json`, which pins each name to a few high-degree node ids
+and **is committed**. Verified to restore all 33 names from a cold start.
+
 ## Documentation Index
 
 - `docs/UPSTREAM.md` — **Upstream watermark**: how far `upstream/main` has been reviewed, what was applied/skipped, the keep-list of paths this fork owns, and what is still worth offering upstream. Replaced the dissolved patch series.

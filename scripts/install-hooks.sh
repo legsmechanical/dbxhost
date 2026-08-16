@@ -5,9 +5,10 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
 
-chmod +x scripts/hooks/pre-commit
+chmod +x scripts/hooks/pre-commit scripts/hooks/post-commit
 git config core.hooksPath scripts/hooks
 
 echo "Enabled: core.hooksPath = scripts/hooks"
 echo "Pre-commit now runs: host-tests (unit + contract) + go (schwung-manager)."
+echo "Post-commit refreshes the graphify code graph in the background (no LLM, ~2s)."
 echo "Bypass a commit with:  git commit --no-verify"
