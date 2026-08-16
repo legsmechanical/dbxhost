@@ -2004,10 +2004,8 @@ function _onCC_transport(d1, d2) {
     }
 
     /* Left/Right: page nav in Track View — clamp to the loop window so
-     * step-edit nav never lands on a page that won't play. Not while sound
-     * mode is up: soundOnCC passes 62/63 through unclaimed, and paging a
-     * step view the OLED isn't showing is a silent edit. */
-    if ((d1 === MoveLeft || d1 === MoveRight) && d2 === 127 && !S.sessionView && !soundActive()) {
+     * step-edit nav never lands on a page that won't play. */
+    if ((d1 === MoveLeft || d1 === MoveRight) && d2 === 127 && !S.sessionView) {
         var _t_lr = S.activeTrack;
         if (S.loopHeld && S.activeBank === 6) {
             var RES_TPS = [12, 24, 48, 96, 384];
