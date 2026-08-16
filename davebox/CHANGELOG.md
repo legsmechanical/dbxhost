@@ -123,6 +123,13 @@ the section into a versioned heading at release time.
   inferring its own, so those modules look and navigate the way their author
   intended. Everything else is unchanged.
 
+### Fixes
+- **The page buttons (`<` / `>`) no longer edit the sequencer from inside the
+  sound editor.** Pressing them on a Track Settings screen silently paged the
+  underlying track's step view — you'd come back to the sequencer on a
+  different page than you left it. They now do nothing while the sound editor
+  is open.
+
 ### Performance / UX
 - **The Settings menu is now `Shift + Step 2`.** It was on both that and
   `Shift + Note/Session`; the latter is the sound editor now. Everything in the
