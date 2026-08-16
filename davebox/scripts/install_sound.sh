@@ -58,17 +58,30 @@ fi
 # which is worse than no check because it reads like one.
 # Unreadable/garbled payload counts as LIVE, matching install-host.sh and the
 # host's own reader.
-if [ "${FORCE:-0}" != "1" ] && ssh -o ConnectTimeout=5 "${MOVE_USER}@${MOVE_HOST}" \
+SESSION_LIVE=0
+if ssh -o ConnectTimeout=5 "${MOVE_USER}@${MOVE_HOST}" \
         "p=\$(cat /dev/shm/.dbxhost-session.lock 2>/dev/null) || exit 1; \
          case \"\$p\" in (*[!0-9]*|'') exit 0;; esac; \
          [ -d \"/proc/\$p\" ]" 2>/dev/null; then
-    echo "" >&2
-    echo "REFUSING: a standalone session is running right now." >&2
-    echo "  This installer restarts the stack, which would tear it down under you." >&2
-    echo "  Leave the session first (Shift+Back, or Quit in the Settings menu)." >&2
-    echo "  FORCE=1 deploys anyway; the running session keeps the old code and the" >&2
-    echo "  new code takes effect at the next launch." >&2
-    exit 1
+    SESSION_LIVE=1
+fi
+if [ "$SESSION_LIVE" = "1" ]; then
+    if [ "${FORCE:-0}" != "1" ]; then
+        echo "" >&2
+        echo "REFUSING: a standalone session is running right now." >&2
+        echo "  This installer restarts the stack, which would tear it down under you." >&2
+        echo "  Leave the session first (Shift+Back, or Quit in the Settings menu)." >&2
+        echo "  FORCE=1 deploys anyway; the running session keeps the old code and the" >&2
+        echo "  new code takes effect at the next launch." >&2
+        exit 1
+    fi
+    # FORCE over a live session must actually keep that promise: stage the files
+    # and DO NOT restart. The SA launch restarts the stack itself, so the new
+    # code applies at the next launch either way. (Before 2026-08-16 FORCE=1
+    # only skipped the refusal and the restart below still pkill -9'd the live
+    # session — the message lied.)
+    echo "WARNING: FORCE=1 with a live session; skipping restart, new code applies at next launch."
+    DO_RESTART=0
 fi
 
 echo "Installing ${MODULE_ID} to ${INSTALL_DIR}..."
