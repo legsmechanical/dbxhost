@@ -801,6 +801,18 @@ export function _tickImpl() {
             restoreUiSidecar(true);
             computePadNoteMap();
             S.stateLoading = false;
+            /* Load completion is an INPUT-STATE BARRIER for touch state. The
+             * resync above blocks the tick for seconds, the shim's UI MIDI
+             * ring is 64 slots with silent tail-drop (shadow_ui_midi_publish),
+             * so a touch RELEASE landing in that window can be lost for good —
+             * observed as the jog touch from the picker's load click never
+             * clearing, which pinned session view on the mixer page. A press
+             * the user still holds re-arms on the next event; a dropped
+             * release never does, so end every touch here. */
+            S.jogTouched = false;
+            S.knobTouched = -1;
+            S.knobPhysIdx = -1;
+            S.bankSelectTick = -1;
             invalidateLEDCache();
             forceRedraw();
             /* SELECT-BEFORE-LOAD ends HERE, not when state_load was sent.

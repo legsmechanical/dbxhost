@@ -123,6 +123,13 @@ the section into a versioned heading at release time.
   inferring its own, so those modules look and navigate the way their author
   intended. Everything else is unchanged.
 
+### Fixes
+- **Loading a project no longer lands you on the session mixer page.** Clicking
+  the jog to load meant your finger was on the jog while the project loaded,
+  and the load could swallow the moment you let go — so the session opened with
+  the mixer page pinned, as if the jog were still being touched. Finishing a
+  load now clears any touch it may have swallowed.
+
 ### Performance / UX
 - **The Settings menu is now `Shift + Step 2`.** It was on both that and
   `Shift + Note/Session`; the latter is the sound editor now. Everything in the
