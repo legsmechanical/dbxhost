@@ -24,12 +24,16 @@
 #include <unistd.h>
 
 #include "norns_display_shm.h"
+#include "schwung_paths.h"
 #include "unified_log.h"
 
 #define DEFAULT_PORT       7681
-#define SHM_PATH           "/dev/shm/schwung-display-live"
+/* Composed from SCHWUNG_SHM_PREFIX so a -DSCHWUNG_SHM_PREFIX build (the
+ * dbxhost flavour) reads its own host's segments — a hardcoded stock path
+ * here would mirror the WRONG install's display. */
+#define SHM_PATH           "/dev/shm" SCHWUNG_SHM_PREFIX "display-live"
 #define DISPLAY_SIZE       1024
-#define NORNS_SHM_PATH     "/dev/shm/schwung-norns-display-live"
+#define NORNS_SHM_PATH     "/dev/shm" SCHWUNG_SHM_PREFIX "norns-display-live"
 #define MAX_CLIENTS        8
 #define POLL_INTERVAL_MS   33    /* ~30 Hz */
 #define SHM_RETRY_MS       2000

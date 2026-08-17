@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"hash/crc32"
 	"html/template"
 	"io"
 	"io/fs"
@@ -15,13 +14,11 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -41,118 +38,6 @@ var staticFS embed.FS
 // ---------------------------------------------------------------------------
 // Domain types
 // ---------------------------------------------------------------------------
-
-// CatalogModule describes one entry in the remote module catalog.
-type CatalogModule struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	Author        string `json:"author"`
-	ComponentType string `json:"component_type"`
-	GithubRepo    string `json:"github_repo"`
-	DefaultBranch string `json:"default_branch"`
-	AssetName     string `json:"asset_name"`
-	MinHostVer    string `json:"min_host_version"`
-	Requires      string `json:"requires,omitempty"`
-}
-
-// CatalogHost describes the host entry in the catalog.
-type CatalogHost struct {
-	Name           string `json:"name"`
-	GithubRepo     string `json:"github_repo"`
-	AssetName      string `json:"asset_name"`
-	LatestVersion  string `json:"latest_version"`
-	DownloadURL    string `json:"download_url"`
-	MinHostVersion string `json:"min_host_version"`
-}
-
-// Catalog is the top-level catalog structure.
-type Catalog struct {
-	CatalogVersion int             `json:"catalog_version"`
-	Host           CatalogHost     `json:"host"`
-	Modules        []CatalogModule `json:"modules"`
-}
-
-// ModuleAssets describes user-uploadable assets for a module.
-type ModuleAssets struct {
-	Path         string        `json:"path"`
-	Label        string        `json:"label"`
-	Extensions   []string      `json:"extensions"`
-	Description  string        `json:"description"`
-	Hint         string        `json:"hint"`
-	HintURL      string        `json:"hint_url,omitempty"`
-	HintURLLabel string        `json:"hint_url_label,omitempty"`
-	Optional     bool          `json:"optional"`
-	AllowFolders bool          `json:"allowFolders,omitempty"`
-	Files        []AssetFile   `json:"files,omitempty"`
-	Folders      []AssetFolder `json:"folders,omitempty"`
-}
-
-// AssetFile describes a specific expected file within a module's assets.
-type AssetFile struct {
-	Filename string `json:"filename"`
-	Label    string `json:"label"`
-	Size     int64  `json:"size"`
-	Required bool   `json:"required"`
-	CRC32    string `json:"crc32,omitempty"`
-}
-
-// AssetFolder describes an expected folder within a module's assets.
-type AssetFolder struct {
-	Path        string   `json:"path"`
-	Label       string   `json:"label"`
-	Description string   `json:"description"`
-	Extensions  []string `json:"extensions"`
-	Required    bool     `json:"required"`
-}
-
-// AssetFileStatus is the validation result for a single asset file.
-type AssetFileStatus struct {
-	AssetFile
-	Present    bool
-	SizeMatch  bool
-	CRCMatch   *bool
-	ActualSize int64
-	ActualCRC  string
-}
-
-// AssetFolderStatus is the validation result for a single asset folder.
-type AssetFolderStatus struct {
-	AssetFolder
-	Exists    bool
-	FileCount int
-}
-
-// InstalledModule is read from a module.json on disk.
-type InstalledModule struct {
-	ID            string          `json:"id"`
-	Name          string          `json:"name"`
-	Version       string          `json:"version"`
-	ComponentType string          `json:"component_type"`
-	Description   string          `json:"description"`
-	Author        string          `json:"author"`
-	Assets        []ModuleAssets  `json:"-"` // custom unmarshal: single object or array
-	RawAssets     json.RawMessage `json:"assets,omitempty"`
-}
-
-// UnmarshalAssets parses the raw assets field into the Assets slice.
-// Supports both a single object (backward compat) and an array.
-func (m *InstalledModule) UnmarshalAssets() {
-	if len(m.RawAssets) == 0 {
-		return
-	}
-	// Try array first
-	var arr []ModuleAssets
-	if json.Unmarshal(m.RawAssets, &arr) == nil {
-		m.Assets = arr
-		return
-	}
-	// Fall back to single object
-	var single ModuleAssets
-	if json.Unmarshal(m.RawAssets, &single) == nil {
-		m.Assets = []ModuleAssets{single}
-	}
-}
 
 // SettingsSection describes a section of settings from settings-schema.json.
 type SettingsSection struct {
@@ -191,18 +76,6 @@ type SettingsItem struct {
 	// link after the Help text.
 	Help    string `json:"help,omitempty"`
 	HelpUrl string `json:"help_url,omitempty"`
-}
-
-// HelpNode represents a node in the help content tree.
-type HelpNode struct {
-	Title    string     `json:"title"`
-	Lines    []string   `json:"lines,omitempty"`
-	Children []HelpNode `json:"children,omitempty"`
-}
-
-// HelpContent is the top-level structure of help_content.json.
-type HelpContent struct {
-	Sections []HelpNode `json:"sections"`
 }
 
 // FileEntry represents a file or directory for the file browser.
@@ -261,181 +134,16 @@ func (s *FileService) ListDir(dir string) ([]FileEntry, error) {
 	return result, nil
 }
 
-// ReleaseMeta holds release dates for a module.
-type ReleaseMeta struct {
-	FirstRelease string `json:"first_release"`
-	LastUpdated  string `json:"last_updated"`
-	Version      string `json:"version"`
-}
-
-// CatalogService fetches and caches the remote module catalog.
-//
-// Cache layers: in-memory (5min TTL) and on-disk (last-known-good, no TTL).
-// The disk cache lets the manager render — and let users remove/repair
-// installed modules — when the network is down or GitHub Pages is flaky.
-type CatalogService struct {
-	URL         string
-	CacheDir    string // root directory for persisted cache files
-	catalog     *Catalog
-	releaseMeta map[string]ReleaseMeta
-	fetched     time.Time
-	client      *http.Client
-}
-
-const releaseMetaURL = "https://charlesvestal.github.io/schwung-catalog-site/data/release-metadata.json"
-
-func NewCatalogService(url, cacheDir string) *CatalogService {
-	cs := &CatalogService{
-		URL:      url,
-		CacheDir: cacheDir,
-		client:   &http.Client{Timeout: 15 * time.Second},
-	}
-	cs.loadFromDisk()
-	return cs
-}
-
-func (cs *CatalogService) catalogCachePath() string {
-	if cs.CacheDir == "" {
-		return ""
-	}
-	return filepath.Join(cs.CacheDir, "manager-cache", "catalog.json")
-}
-
-func (cs *CatalogService) metaCachePath() string {
-	if cs.CacheDir == "" {
-		return ""
-	}
-	return filepath.Join(cs.CacheDir, "manager-cache", "release-metadata.json")
-}
-
-func (cs *CatalogService) loadFromDisk() {
-	if p := cs.catalogCachePath(); p != "" {
-		if data, err := os.ReadFile(p); err == nil {
-			var cat Catalog
-			if json.Unmarshal(data, &cat) == nil {
-				cs.catalog = &cat
-			}
+// findModuleDir locates the installed directory for a module by ID, searching
+// the same category subdirs the RemoteUI web_ui discovery uses.
+func (app *App) findModuleDir(id string) string {
+	for _, cat := range moduleCategoryDirs {
+		dir := filepath.Join(app.basePath, "modules", cat, id)
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir
 		}
 	}
-	if p := cs.metaCachePath(); p != "" {
-		if data, err := os.ReadFile(p); err == nil {
-			var meta map[string]ReleaseMeta
-			if json.Unmarshal(data, &meta) == nil {
-				cs.releaseMeta = meta
-			}
-		}
-	}
-}
-
-func (cs *CatalogService) saveToDisk(path string, v any) {
-	if path == "" {
-		return
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return
-	}
-	data, err := json.Marshal(v)
-	if err != nil {
-		return
-	}
-	_ = os.WriteFile(path, data, 0o644)
-}
-
-// Fetch retrieves the catalog, caching for 5 minutes in memory.
-// On HTTP/decode failure it returns the last-known catalog (from memory or
-// disk) along with the error, so callers can render a usable page when the
-// network is unavailable.
-func (cs *CatalogService) Fetch() (*Catalog, error) {
-	if cs.catalog != nil && time.Since(cs.fetched) < 5*time.Minute {
-		return cs.catalog, nil
-	}
-	resp, err := cs.client.Get(cs.URL)
-	if err != nil {
-		return cs.catalog, fmt.Errorf("fetching catalog: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return cs.catalog, fmt.Errorf("catalog returned %d", resp.StatusCode)
-	}
-	var cat Catalog
-	if err := json.NewDecoder(resp.Body).Decode(&cat); err != nil {
-		return cs.catalog, fmt.Errorf("decoding catalog: %w", err)
-	}
-	cs.catalog = &cat
-	cs.fetched = time.Now()
-	cs.saveToDisk(cs.catalogCachePath(), &cat)
-
-	// Fetch release metadata (best-effort, don't fail if unavailable).
-	if metaResp, err := cs.client.Get(releaseMetaURL); err == nil {
-		defer metaResp.Body.Close()
-		if metaResp.StatusCode == http.StatusOK {
-			var meta map[string]ReleaseMeta
-			if json.NewDecoder(metaResp.Body).Decode(&meta) == nil {
-				cs.releaseMeta = meta
-				cs.saveToDisk(cs.metaCachePath(), meta)
-			}
-		}
-	}
-
-	return cs.catalog, nil
-}
-
-// GetReleaseMeta returns cached release metadata.
-func (cs *CatalogService) GetReleaseMeta() map[string]ReleaseMeta {
-	if cs.releaseMeta == nil {
-		return map[string]ReleaseMeta{}
-	}
-	return cs.releaseMeta
-}
-
-// ---------------------------------------------------------------------------
-// Installed module discovery
-// ---------------------------------------------------------------------------
-
-func discoverInstalledModules(base string) map[string]InstalledModule {
-	installed := make(map[string]InstalledModule)
-	// Walk known category dirs and the root modules dir.
-	dirs := []string{
-		filepath.Join(base, "modules"),
-		filepath.Join(base, "modules", "sound_generators"),
-		filepath.Join(base, "modules", "audio_fx"),
-		filepath.Join(base, "modules", "midi_fx"),
-		filepath.Join(base, "modules", "tools"),
-		filepath.Join(base, "modules", "overtake"),
-	}
-	for _, dir := range dirs {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if !e.IsDir() {
-				continue
-			}
-			mj := filepath.Join(dir, e.Name(), "module.json")
-			data, err := os.ReadFile(mj)
-			if err != nil {
-				continue
-			}
-			var m InstalledModule
-			if json.Unmarshal(data, &m) == nil && m.ID != "" {
-				m.UnmarshalAssets()
-				// Fall back to capabilities.component_type if top-level is empty.
-				if m.ComponentType == "" {
-					var raw map[string]any
-					if json.Unmarshal(data, &raw) == nil {
-						if caps, ok := raw["capabilities"].(map[string]any); ok {
-							if ct, ok := caps["component_type"].(string); ok {
-								m.ComponentType = ct
-							}
-						}
-					}
-				}
-				installed[m.ID] = m
-			}
-		}
-	}
-	return installed
+	return ""
 }
 
 // ---------------------------------------------------------------------------
@@ -443,13 +151,10 @@ func discoverInstalledModules(base string) map[string]InstalledModule {
 // ---------------------------------------------------------------------------
 
 var funcMap = template.FuncMap{
-	// needsRepair returns true when the device needs a one-time root
-	// repair: either the boot entrypoint can't self-heal (bootstrapNeeded)
-	// or the live /usr/lib shim is out of date vs the installed payload
-	// (shimStale — the actual blank-slots / can't-load symptom). base.html
-	// renders the repair banner on every page so affected users see what
-	// to do (SSH command + GUI installer). 30s cache.
-	"needsRepair": repairNeeded,
+	// needsRepair: the stock self-heal/repair machinery is gone (under SA it
+	// would mend the WRONG host — this install's shim is davebox-shim.so with
+	// its own setuid healer). Kept as a constant so base.html needs no change.
+	"needsRepair": func() bool { return false },
 	"dict": func(pairs ...any) map[string]any {
 		m := make(map[string]any, len(pairs)/2)
 		for i := 0; i+1 < len(pairs); i += 2 {
@@ -491,13 +196,6 @@ var funcMap = template.FuncMap{
 			return l
 		}
 		return ct
-	},
-	"isInstalled": func(id string, installed map[string]InstalledModule) bool {
-		_, ok := installed[id]
-		return ok
-	},
-	"releaseMeta": func(id string, meta map[string]ReleaseMeta) ReleaseMeta {
-		return meta[id]
 	},
 	"versionStr": func(v string) string {
 		if v == "" {
@@ -584,17 +282,6 @@ var funcMap = template.FuncMap{
 		}
 		return template.HTML(sb.String())
 	},
-	"hasUpdate": func(id string, installed map[string]InstalledModule, meta map[string]ReleaseMeta) bool {
-		inst, ok := installed[id]
-		if !ok {
-			return false
-		}
-		rm, ok := meta[id]
-		if !ok || rm.Version == "" {
-			return false // Can't tell — don't show update button
-		}
-		return isNewerSemver(rm.Version, inst.Version)
-	},
 	"humanSize": func(b int64) string {
 		const unit = 1024
 		if b < unit {
@@ -615,60 +302,6 @@ var funcMap = template.FuncMap{
 	},
 }
 
-// validateAssets checks the presence and integrity of declared asset files and folders.
-func validateAssets(assetsDir string, assets *ModuleAssets) ([]AssetFileStatus, []AssetFolderStatus) {
-	var fileStatuses []AssetFileStatus
-	for _, f := range assets.Files {
-		status := AssetFileStatus{AssetFile: f}
-		path := filepath.Join(assetsDir, f.Filename)
-		info, err := os.Stat(path)
-		if err == nil && !info.IsDir() {
-			status.Present = true
-			status.ActualSize = info.Size()
-			status.SizeMatch = (f.Size == 0 || info.Size() == f.Size)
-			if f.CRC32 != "" {
-				data, err := os.ReadFile(path)
-				if err == nil {
-					actual := fmt.Sprintf("%08X", crc32.ChecksumIEEE(data))
-					status.ActualCRC = actual
-					match := strings.EqualFold(actual, f.CRC32)
-					status.CRCMatch = &match
-				}
-			}
-		}
-		fileStatuses = append(fileStatuses, status)
-	}
-
-	var folderStatuses []AssetFolderStatus
-	for _, f := range assets.Folders {
-		status := AssetFolderStatus{AssetFolder: f}
-		dir := filepath.Join(assetsDir, f.Path)
-		entries, err := os.ReadDir(dir)
-		if err == nil {
-			status.Exists = true
-			for _, e := range entries {
-				if e.IsDir() {
-					continue
-				}
-				if len(f.Extensions) == 0 {
-					status.FileCount++
-					continue
-				}
-				ext := strings.ToLower(filepath.Ext(e.Name()))
-				for _, allowed := range f.Extensions {
-					if strings.EqualFold(ext, allowed) {
-						status.FileCount++
-						break
-					}
-				}
-			}
-		}
-		folderStatuses = append(folderStatuses, status)
-	}
-
-	return fileStatuses, folderStatuses
-}
-
 // templateMap maps page template names to their parsed template sets.
 // hostVersionString returns the trimmed contents of host/version.txt, or
 // "" if the file is unreadable. Used by compat checks that need to fail
@@ -679,48 +312,6 @@ func (app *App) hostVersionString() string {
 		return ""
 	}
 	return strings.TrimSpace(string(b))
-}
-
-// checkHostCompat returns an error if minVersion is set and is newer
-// than the installed host version. A missing/unreadable host version
-// is treated as compatible — refusing installs when version.txt can't
-// be read would brick recovery on broken setups.
-func (app *App) checkHostCompat(minVersion string) error {
-	if minVersion == "" {
-		return nil
-	}
-	hostVersion := app.hostVersionString()
-	if hostVersion == "" || hostVersion == "unknown" {
-		return nil
-	}
-	if isNewerSemver(minVersion, hostVersion) {
-		return fmt.Errorf("requires host %s or later (installed: %s)", minVersion, hostVersion)
-	}
-	return nil
-}
-
-// isNewerSemver returns true if `latest` is a newer version than `current`.
-// Handles v-prefixed versions. Returns false if versions are equal or
-// latest is older (avoids phantom upgrade prompts from stale metadata).
-func isNewerSemver(latest, current string) bool {
-	latest = strings.TrimPrefix(latest, "v")
-	current = strings.TrimPrefix(current, "v")
-	if latest == current {
-		return false
-	}
-	lp := strings.Split(latest, ".")
-	cp := strings.Split(current, ".")
-	for i := 0; i < len(lp) && i < len(cp); i++ {
-		l, _ := strconv.Atoi(lp[i])
-		c, _ := strconv.Atoi(cp[i])
-		if l > c {
-			return true
-		}
-		if l < c {
-			return false
-		}
-	}
-	return len(lp) > len(cp)
 }
 
 type templateMap map[string]*template.Template
@@ -738,16 +329,11 @@ func loadTemplates() (templateMap, error) {
 	// Each page template gets its own clone so "content"/"title" blocks
 	// don't collide across pages.
 	pages := []string{
-		"templates/modules.html",
-		"templates/module_detail.html",
+		"templates/waiting.html",
 		"templates/files.html",
 		"templates/config.html",
 		"templates/system.html",
-		"templates/install.html",
 		"templates/help.html",
-		"templates/remote_ui.html",
-		"templates/download.html",
-		"templates/repair.html",
 	}
 
 	m := make(templateMap, len(pages))
@@ -773,26 +359,14 @@ func loadTemplates() (templateMap, error) {
 // App holds shared dependencies.
 // ---------------------------------------------------------------------------
 
-type downloadJob struct {
-	ID      string `json:"job_id"`
-	State   string `json:"state"`             // "downloading", "done", "error"
-	Message string `json:"message,omitempty"` // progress detail
-	Title   string `json:"title,omitempty"`   // resolved title
-	Path    string `json:"path,omitempty"`
-	Error   string `json:"error,omitempty"`
-}
-
 type App struct {
-	tmpl          templateMap
-	fileSvc       *FileService
-	catalogSvc    *CatalogService
-	basePath      string // e.g. /data/UserData/schwung
-	logger        *slog.Logger
-	shm           *ShmConfig // shared memory for live config sync (nil if not on device)
-	shmParams     *ShmParams // shared memory for param get/set (nil if not on device)
-	upgradeStatus string     // current upgrade step (empty = not upgrading)
-	downloadJobs  map[string]*downloadJob
-	downloadMu    sync.Mutex
+	tmpl      templateMap
+	fileSvc   *FileService
+	basePath  string // the host install dir (-base), e.g. /data/UserData/dbx-host
+	logger    *slog.Logger
+	shm       *ShmConfig // shared memory for live config sync (nil if not on device)
+	shmParams *ShmParams // shared memory for param get/set (nil if not on device)
+	remoteUI  *RemoteUI  // set in main() after construction; used by the landing route
 }
 
 func (app *App) render(w http.ResponseWriter, r *http.Request, name string, data map[string]any) {
@@ -824,1019 +398,59 @@ func (app *App) render(w http.ResponseWriter, r *http.Request, name string, data
 
 // -- Home --
 
+// currentToolAppURL returns the integrated app URL for the running dAVEBOx
+// tool, or "" while no tool (or no web_ui.html) is present.
+func (app *App) currentToolAppURL() string {
+	ru := app.remoteUI
+	if ru == nil {
+		return ""
+	}
+	id, known := ru.activeOvertakeToolID(0)
+	if !known || id == "" {
+		return ""
+	}
+	url := ru.findModuleWebUI(id)
+	if url == "" {
+		return ""
+	}
+	// Redirect (not inline serve) so the app's sibling assets resolve
+	// against the module dir. schwungStandalone=1&tool=1 selects the
+	// remote API's standalone (non-iframe) transport.
+	return url + "?schwungStandalone=1&tool=1"
+}
+
+// handleHome is the landing route: the dAVEBOx app IS the page. While the
+// session is still coming up, a small waiting page polls /api/tool.
 func (app *App) handleHome(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/modules", http.StatusSeeOther)
+	if url := app.currentToolAppURL(); url != "" {
+		http.Redirect(w, r, url, http.StatusFound)
+		return
+	}
+	app.render(w, r, "waiting.html", map[string]any{
+		"Title": "dAVEBOx", "Active": "davebox",
+	})
+}
+
+// handleAPITool reports the running tool for the waiting page's poll.
+func (app *App) handleAPITool(w http.ResponseWriter, r *http.Request) {
+	resp := map[string]string{}
+	if ru := app.remoteUI; ru != nil {
+		if id, known := ru.activeOvertakeToolID(0); known && id != "" {
+			resp["id"] = id
+			if url := app.currentToolAppURL(); url != "" {
+				resp["url"] = url
+			}
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 // -- Modules --
 
-func (app *App) handleModules(w http.ResponseWriter, r *http.Request) {
-	cat, err := app.catalogSvc.Fetch()
-	if err != nil {
-		app.logger.Warn("catalog fetch failed", "err", err)
-	}
-	installed := discoverInstalledModules(app.basePath)
-
-	var modules []CatalogModule
-	if cat != nil {
-		modules = cat.Modules
-	}
-
-	// Build catalog ID set and add built-in modules as synthetic catalog entries.
-	catalogIDs := make(map[string]bool)
-	for _, m := range modules {
-		catalogIDs[m.ID] = true
-	}
-
-	// Hidden test/infrastructure modules.
-	hiddenIDs := map[string]bool{
-		"splash-test":        true,
-		"standalone-example": true,
-		"text-test":          true,
-	}
-
-	// Add built-in installed modules to the catalog list so they appear
-	// alongside external modules. They won't have install/uninstall/update buttons.
-	for id, mod := range installed {
-		if catalogIDs[id] || hiddenIDs[id] {
-			continue
-		}
-		author := mod.Author
-		if author == "" {
-			author = "Unknown"
-		}
-		modules = append(modules, CatalogModule{
-			ID:            id,
-			Name:          mod.Name,
-			Description:   mod.Description,
-			Author:        author,
-			ComponentType: mod.ComponentType,
-			GithubRepo:    "charlesvestal/schwung",
-			MinHostVer:    "0.1.0",
-		})
-	}
-
-	releaseMeta := app.catalogSvc.GetReleaseMeta()
-
-	// Check if any installed module has an update available.
-	hasAnyUpdate := false
-	for id, inst := range installed {
-		rm, ok := releaseMeta[id]
-		if !ok || rm.Version == "" {
-			continue
-		}
-		if isNewerSemver(rm.Version, inst.Version) {
-			hasAnyUpdate = true
-			break
-		}
-	}
-
-	// Host version + update check (mirrors handleSystem so the modules
-	// landing page can surface a Schwung host upgrade prominently).
-	verBytes, _ := os.ReadFile(filepath.Join(app.basePath, "host", "version.txt"))
-	hostVersion := strings.TrimSpace(string(verBytes))
-	if hostVersion == "" {
-		hostVersion = "unknown"
-	}
-	var hostLatestVersion, hostRepo string
-	var hostUpdateAvailable bool
-	if cat != nil {
-		hostLatestVersion = cat.Host.LatestVersion
-		hostRepo = cat.Host.GithubRepo
-		hostUpdateAvailable = hostLatestVersion != "" && hostLatestVersion != hostVersion
-	}
-
-	data := map[string]any{
-		"Title":               "Modules",
-		"Modules":             modules,
-		"Installed":           installed,
-		"HasInstalled":        len(installed) > 0,
-		"HasAnyUpdate":        hasAnyUpdate,
-		"ReleaseMeta":         releaseMeta,
-		"Active":              "modules",
-		"HostVersion":         hostVersion,
-		"HostLatestVersion":   hostLatestVersion,
-		"HostRepo":            hostRepo,
-		"HostUpdateAvailable": hostUpdateAvailable,
-		"Flash":               r.URL.Query().Get("flash"),
-	}
-	app.render(w, r, "modules.html", data)
-}
-
-// findModuleDir locates the installed directory for a module by ID.
-func (app *App) findModuleDir(id string) string {
-	dirs := []string{"modules", "modules/sound_generators", "modules/audio_fx", "modules/midi_fx", "modules/tools", "modules/overtake"}
-	for _, d := range dirs {
-		candidate := filepath.Join(app.basePath, d, id)
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate
-		}
-	}
-	return ""
-}
-
-func (app *App) handleModuleDetail(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	cat, _ := app.catalogSvc.Fetch()
-	installed := discoverInstalledModules(app.basePath)
-
-	var mod *CatalogModule
-	if cat != nil {
-		for i := range cat.Modules {
-			if cat.Modules[i].ID == id {
-				mod = &cat.Modules[i]
-				break
-			}
-		}
-	}
-	// If not in catalog, check if it's an installed module (built-in or custom).
-	builtIn := false
-	if mod == nil {
-		if inst, ok := installed[id]; ok {
-			author := "Unknown"
-			if inst.Author != "" {
-				author = inst.Author
-			}
-			mod = &CatalogModule{
-				ID:            id,
-				Name:          inst.Name,
-				Description:   inst.Description,
-				Author:        author,
-				ComponentType: inst.ComponentType,
-				MinHostVer:    "0.1.0",
-			}
-			// Only mark as built-in if it lives at the root modules/ level (not in a category subdir).
-			modDir := app.findModuleDir(id)
-			if modDir != "" {
-				rel, _ := filepath.Rel(filepath.Join(app.basePath, "modules"), modDir)
-				builtIn = !strings.Contains(rel, string(filepath.Separator))
-			}
-		}
-	}
-	if mod == nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	modDir := app.findModuleDir(id)
-
-	// Build asset groups from installed module.json assets field.
-	type AssetGroup struct {
-		Assets         ModuleAssets
-		AssetsDir      string
-		FileStatuses   []AssetFileStatus
-		FolderStatuses []AssetFolderStatus
-	}
-	var assetGroups []AssetGroup
-
-	// Legacy single-assets compat: also populate top-level fields for templates
-	// that haven't been updated to use AssetGroups yet.
-	assetsDir := ""
-	var moduleAssets *ModuleAssets
-
-	if inst, ok := installed[id]; ok && len(inst.Assets) > 0 {
-		for _, a := range inst.Assets {
-			aDir := modDir
-			if a.Path != "" && a.Path != "." {
-				aDir = filepath.Join(modDir, a.Path)
-			}
-			var fs []AssetFileStatus
-			var fds []AssetFolderStatus
-			if len(a.Files) > 0 && aDir != "" {
-				fs, fds = validateAssets(aDir, &a)
-			}
-			assetGroups = append(assetGroups, AssetGroup{
-				Assets:         a,
-				AssetsDir:      aDir,
-				FileStatuses:   fs,
-				FolderStatuses: fds,
-			})
-		}
-		// Legacy compat: use first group
-		moduleAssets = &assetGroups[0].Assets
-		assetsDir = assetGroups[0].AssetsDir
-	}
-
-	// Legacy compat
-	var fileStatuses []AssetFileStatus
-	var folderStatuses []AssetFolderStatus
-	if len(assetGroups) > 0 {
-		fileStatuses = assetGroups[0].FileStatuses
-		folderStatuses = assetGroups[0].FolderStatuses
-	}
-
-	// Per-module settings: if this module ships a settings-schema.json,
-	// surface it inline on the detail page. Saved values + secret
-	// "is_set" markers are looked up the same way as the JSON values
-	// endpoint so the rendered form matches whatever the file system
-	// holds right now.
-	var moduleSchema *ModuleSettingsSchema
-	settingValues := map[string]any{}
-	secretSet := map[string]bool{}
-	if schema := findModuleSchema(app.basePath, id); schema != nil {
-		moduleSchema = schema
-		saved := readModuleConfig(schema.ModuleDir)
-		for _, section := range schema.Sections {
-			for i := range section.Items {
-				item := &section.Items[i]
-				if item.Type == "password" {
-					secretSet[item.Key] = isModuleSecretSet(schema.ModuleDir, item.Key)
-					continue
-				}
-				if v := moduleConfigValue(schema, item, saved); v != nil {
-					settingValues[item.Key] = v
-				}
-			}
-		}
-	}
-
-	data := map[string]any{
-		"Title":          mod.Name,
-		"Module":         mod,
-		"Installed":      installed,
-		"ModuleDir":      modDir,
-		"AssetsDir":      assetsDir,
-		"ModuleAssets":   moduleAssets,
-		"FileStatuses":   fileStatuses,
-		"FolderStatuses": folderStatuses,
-		"AssetGroups":    assetGroups,
-		"BuiltIn":        builtIn,
-		"ReleaseMeta":    app.catalogSvc.GetReleaseMeta(),
-		"Active":         "modules",
-		"ModuleSchema":   moduleSchema,
-		"SettingValues":  settingValues,
-		"SecretSet":      secretSet,
-		"Flash":          r.URL.Query().Get("flash"),
-	}
-	app.render(w, r, "module_detail.html", data)
-}
-
-// getInstallSubdir maps component_type to the install subdirectory name.
-func getInstallSubdir(componentType string) string {
-	switch componentType {
-	case "sound_generator":
-		return "sound_generators"
-	case "audio_fx":
-		return "audio_fx"
-	case "midi_fx":
-		return "midi_fx"
-	case "utility":
-		return "utilities"
-	case "overtake":
-		return "overtake"
-	case "tool":
-		return "tools"
-	default:
-		return "other"
-	}
-}
-
-// ReleaseJSON is the structure of a module's release.json file.
-type ReleaseJSON struct {
-	Version     string                 `json:"version"`
-	DownloadURL string                 `json:"download_url"`
-	Modules     map[string]ReleaseJSON `json:"modules,omitempty"`
-}
-
-// forModule resolves both the original single-module release.json shape and
-// the multi-module shape used when one repository publishes several catalog
-// entries. A multi-module document must contain the requested catalog ID; the
-// caller can then fall back to the catalog asset name when it does not.
-func (r ReleaseJSON) forModule(moduleID string) (ReleaseJSON, bool) {
-	if len(r.Modules) == 0 {
-		return r, true
-	}
-	moduleRelease, ok := r.Modules[moduleID]
-	return moduleRelease, ok
-}
-
-// installModule downloads and extracts a module from its GitHub release.
-func (app *App) installModule(mod *CatalogModule) error {
-	if err := app.checkHostCompat(mod.MinHostVer); err != nil {
-		return err
-	}
-
-	client := &http.Client{Timeout: 120 * time.Second}
-
-	// 1. Fetch release.json to get download URL.
-	releaseURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/release.json",
-		mod.GithubRepo, mod.DefaultBranch)
-	app.logger.Info("fetching release.json", "url", releaseURL)
-
-	resp, err := client.Get(releaseURL)
-	if err != nil {
-		return fmt.Errorf("fetching release.json: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		// Fall back to latest release download URL.
-		app.logger.Warn("release.json not found, using fallback URL", "status", resp.StatusCode)
-	}
-
-	var downloadURL, releaseVersion string
-	if resp.StatusCode == http.StatusOK {
-		var rel ReleaseJSON
-		if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-			return fmt.Errorf("decoding release.json: %w", err)
-		}
-		if moduleRelease, ok := rel.forModule(mod.ID); ok {
-			downloadURL = moduleRelease.DownloadURL
-			releaseVersion = moduleRelease.Version
-		} else {
-			app.logger.Warn("module missing from multi-module release.json; using fallback URL",
-				"id", mod.ID)
-		}
-	}
-	if downloadURL == "" {
-		// Fallback: use GitHub releases latest download.
-		downloadURL = fmt.Sprintf("https://github.com/%s/releases/latest/download/%s",
-			mod.GithubRepo, mod.AssetName)
-	}
-
-	// 2. Download the tarball.
-	app.logger.Info("downloading module", "id", mod.ID, "url", downloadURL)
-	dlResp, err := client.Get(downloadURL)
-	if err != nil {
-		return fmt.Errorf("downloading tarball: %w", err)
-	}
-	defer dlResp.Body.Close()
-	if dlResp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download returned %d", dlResp.StatusCode)
-	}
-
-	// Save to temp file in /data/UserData/ (not /tmp which is on rootfs).
-	tmpPath := filepath.Join(app.basePath, ".tmp-module-download.tar.gz")
-	tmpFile, err := os.Create(tmpPath)
-	if err != nil {
-		return fmt.Errorf("creating temp file: %w", err)
-	}
-	defer os.Remove(tmpPath)
-
-	if _, err := io.Copy(tmpFile, dlResp.Body); err != nil {
-		tmpFile.Close()
-		return fmt.Errorf("saving tarball: %w", err)
-	}
-	tmpFile.Close()
-
-	// 3. Extract to the correct category directory.
-	categoryDir := filepath.Join(app.basePath, "modules", getInstallSubdir(mod.ComponentType))
-	if err := os.MkdirAll(categoryDir, 0755); err != nil {
-		return fmt.Errorf("creating category dir: %w", err)
-	}
-
-	// Preserve user-owned state across upgrade. The contract is that
-	// tarballs ship settings-schema.json (immutable) but never ship
-	// config.json or secrets/ (mutable, user-owned). Tar's default is
-	// non-destructive for untouched destination files, so these would
-	// normally survive — but a misbehaving tarball that includes them
-	// would clobber the user's data. Snapshot + restore protects
-	// against that.
-	modDir := filepath.Join(categoryDir, mod.ID)
-	preserved, restoreErr := snapshotModuleUserState(modDir)
-	if restoreErr != nil {
-		app.logger.Warn("failed to snapshot user state pre-upgrade",
-			"id", mod.ID, "err", restoreErr)
-	}
-
-	// Extract using tar command (busybox tar on Move).
-	app.logger.Info("extracting module", "id", mod.ID, "dest", categoryDir)
-	cmd := exec.Command("tar", "-xzf", tmpPath, "-C", categoryDir)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("extracting tarball: %w\noutput: %s", err, output)
-	}
-
-	if preserved != nil {
-		if err := restoreModuleUserState(modDir, preserved); err != nil {
-			app.logger.Warn("failed to restore user state post-upgrade",
-				"id", mod.ID, "err", err)
-		}
-	}
-
-	// Pin module.json's version field to the release.json version we
-	// installed from. Without this, a publisher tarball whose bundled
-	// module.json is one bump behind release.json traps the user in an
-	// endless update loop: compare installed (old) vs release (new) →
-	// "update available" → re-download same tarball → repeat.
-	if err := pinInstalledModuleVersion(modDir, releaseVersion, app.logger); err != nil {
-		app.logger.Warn("failed to pin module.json version", "id", mod.ID, "err", err)
-	}
-
-	// Fix ownership — schwung-manager runs as root but modules should be owned by ableton.
-	chown := exec.Command("chown", "-R", "ableton:users", modDir)
-	if out, err := chown.CombinedOutput(); err != nil {
-		app.logger.Warn("chown failed (non-fatal)", "id", mod.ID, "err", err, "output", string(out))
-	}
-
-	app.logger.Info("module installed", "id", mod.ID, "path", categoryDir)
-	return nil
-}
-
-// pinInstalledModuleVersion rewrites the installed module.json's "version"
-// field to match expectedVersion (the release.json version that drove the
-// install). No-ops if expectedVersion is empty, module.json is missing or
-// unparseable, or the version already matches.
-func pinInstalledModuleVersion(modDir, expectedVersion string, logger *slog.Logger) error {
-	if expectedVersion == "" {
-		return nil
-	}
-	modJsonPath := filepath.Join(modDir, "module.json")
-	raw, err := os.ReadFile(modJsonPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("reading module.json: %w", err)
-	}
-	var parsed map[string]any
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		logger.Warn("module.json parse failed during version pin",
-			"path", modJsonPath, "err", err)
-		return nil
-	}
-	currentVersion, _ := parsed["version"].(string)
-	if currentVersion == expectedVersion {
-		return nil
-	}
-	logger.Info("pinning module.json version",
-		"id", filepath.Base(modDir),
-		"tarball_version", currentVersion,
-		"release_version", expectedVersion)
-	parsed["version"] = expectedVersion
-	out, err := json.MarshalIndent(parsed, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling module.json: %w", err)
-	}
-	out = append(out, '\n')
-	return os.WriteFile(modJsonPath, out, 0644)
-}
-
-// uninstallModule removes a module from disk.
-func (app *App) uninstallModule(id string) error {
-	modDir := app.findModuleDir(id)
-	if modDir == "" {
-		return fmt.Errorf("module %q not found on disk", id)
-	}
-	app.logger.Info("uninstalling module", "id", id, "path", modDir)
-	return os.RemoveAll(modDir)
-}
-
-// findCatalogModule looks up a module by ID in the catalog.
-func (app *App) findCatalogModule(id string) *CatalogModule {
-	cat, _ := app.catalogSvc.Fetch()
-	if cat == nil {
-		return nil
-	}
-	for i := range cat.Modules {
-		if cat.Modules[i].ID == id {
-			return &cat.Modules[i]
-		}
-	}
-	return nil
-}
-
-// moduleRedirect sends the user back to where they came from (Referer),
-// falling back to the module detail page.
-func (app *App) moduleRedirect(w http.ResponseWriter, r *http.Request, id, flash string) {
-	dest := r.Header.Get("Referer")
-	if dest == "" {
-		dest = "/modules/" + id
-	}
-	// Append flash as query param
-	sep := "?"
-	if strings.Contains(dest, "?") {
-		sep = "&"
-	}
-	http.Redirect(w, r, dest+sep+"flash="+flash, http.StatusSeeOther)
-}
-
-func (app *App) handleModuleInstall(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	mod := app.findCatalogModule(id)
-	if mod == nil {
-		app.moduleRedirect(w, r, id, "Module+not+found:+"+id)
-		return
-	}
-	if err := app.installModule(mod); err != nil {
-		app.logger.Error("module install failed", "id", id, "err", err)
-		app.moduleRedirect(w, r, id, "Install+failed:+"+err.Error())
-		return
-	}
-	app.moduleRedirect(w, r, id, mod.Name+"+installed+successfully")
-}
-
-func (app *App) handleModuleUninstall(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if err := app.uninstallModule(id); err != nil {
-		app.logger.Error("module uninstall failed", "id", id, "err", err)
-		app.moduleRedirect(w, r, id, "Uninstall+failed:+"+err.Error())
-		return
-	}
-	// Sideloaded modules without a catalog entry have no detail page once
-	// removed, so going back to the Referer 404s. Send the user to the
-	// modules list instead — same destination as install-all/update-all.
-	http.Redirect(w, r, "/modules?flash=Module+uninstalled", http.StatusSeeOther)
-}
-
-func (app *App) handleModuleUpdate(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	mod := app.findCatalogModule(id)
-	if mod == nil {
-		app.moduleRedirect(w, r, id, "Module+not+found:+"+id)
-		return
-	}
-	if err := app.installModule(mod); err != nil {
-		app.logger.Error("module update failed", "id", id, "err", err)
-		app.moduleRedirect(w, r, id, "Update+failed:+"+err.Error())
-		return
-	}
-	app.moduleRedirect(w, r, id, mod.Name+"+updated+successfully")
-}
-
-func (app *App) handleModuleUpdateAll(w http.ResponseWriter, r *http.Request) {
-	installed := discoverInstalledModules(app.basePath)
-	var updated, failed int
-	for id := range installed {
-		mod := app.findCatalogModule(id)
-		if mod == nil {
-			continue
-		}
-		if err := app.installModule(mod); err != nil {
-			app.logger.Error("update failed", "id", id, "err", err)
-			failed++
-		} else {
-			updated++
-		}
-	}
-	msg := fmt.Sprintf("Updated+%d+modules", updated)
-	if failed > 0 {
-		msg += fmt.Sprintf(",+%d+failed", failed)
-	}
-	http.Redirect(w, r, "/modules?flash="+msg, http.StatusSeeOther)
-}
-
-func (app *App) handleModuleInstallAll(w http.ResponseWriter, r *http.Request) {
-	cat, err := app.catalogSvc.Fetch()
-	if err != nil {
-		app.logger.Error("install-all: fetch catalog failed", "err", err)
-		http.Redirect(w, r, "/modules?flash=Install+all+failed:+"+err.Error(), http.StatusSeeOther)
-		return
-	}
-	installed := discoverInstalledModules(app.basePath)
-	var ok, failed, skipped int
-	for i := range cat.Modules {
-		mod := &cat.Modules[i]
-		if _, alreadyInstalled := installed[mod.ID]; alreadyInstalled {
-			skipped++
-			continue
-		}
-		if err := app.installModule(mod); err != nil {
-			app.logger.Error("install-all: module install failed", "id", mod.ID, "err", err)
-			failed++
-		} else {
-			ok++
-		}
-	}
-	msg := fmt.Sprintf("Installed+%d+modules", ok)
-	if failed > 0 {
-		msg += fmt.Sprintf(",+%d+failed", failed)
-	}
-	if skipped > 0 {
-		msg += fmt.Sprintf(",+%d+already+installed", skipped)
-	}
-	http.Redirect(w, r, "/modules?flash="+msg, http.StatusSeeOther)
-}
-
-// firstModuleDir returns the first directory entry among a tar's top-level
-// extracted entries. Archives built on macOS can carry hidden AppleDouble
-// sidecar files (e.g. "._modname") that "tar -tvf" on macOS hides but a
-// non-macOS tar (as used here) extracts literally; those sort before normal
-// names and are plain files, so entries[0] alone isn't reliable.
-func firstModuleDir(entries []os.DirEntry) (os.DirEntry, bool) {
-	for _, e := range entries {
-		if e.IsDir() {
-			return e, true
-		}
-	}
-	return nil, false
-}
-
-func (app *App) handleCustomInstall(w http.ResponseWriter, r *http.Request) {
-	source := r.FormValue("source")
-	switch source {
-	case "github":
-		repoInput := r.FormValue("url")
-		// Normalize: strip https://github.com/ prefix if present.
-		repo := strings.TrimPrefix(repoInput, "https://github.com/")
-		repo = strings.TrimPrefix(repo, "http://github.com/")
-		repo = strings.TrimSuffix(repo, "/")
-		repo = strings.TrimSuffix(repo, ".git")
-
-		if repo == "" || !strings.Contains(repo, "/") {
-			http.Redirect(w, r, "/modules?flash=Invalid+GitHub+URL", http.StatusSeeOther)
-			return
-		}
-
-		// Fetch release.json from the repo (try main, then master).
-		client := &http.Client{Timeout: 30 * time.Second}
-		var rel ReleaseJSON
-		var found bool
-		for _, branch := range []string{"main", "master"} {
-			u := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/release.json", repo, branch)
-			resp, err := client.Get(u)
-			if err != nil {
-				continue
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				if json.NewDecoder(resp.Body).Decode(&rel) == nil && rel.DownloadURL != "" {
-					found = true
-					break
-				}
-			}
-		}
-		if !found {
-			http.Redirect(w, r, "/modules?flash=Could+not+find+release.json+in+"+repo, http.StatusSeeOther)
-			return
-		}
-
-		// Download and extract.
-		app.logger.Info("custom install from github", "repo", repo, "url", rel.DownloadURL)
-		dlResp, err := client.Get(rel.DownloadURL)
-		if err != nil || dlResp.StatusCode != http.StatusOK {
-			http.Redirect(w, r, "/modules?flash=Download+failed+for+"+repo, http.StatusSeeOther)
-			return
-		}
-		defer dlResp.Body.Close()
-
-		// Save and extract (we don't know the component_type, extract to a temp location,
-		// then read module.json to determine the correct category).
-		tmpPath := filepath.Join(app.basePath, ".tmp-custom-download.tar.gz")
-		tmpFile, _ := os.Create(tmpPath)
-		io.Copy(tmpFile, dlResp.Body)
-		tmpFile.Close()
-		defer os.Remove(tmpPath)
-
-		// Extract to a temp dir first to read module.json.
-		tmpDir := filepath.Join(app.basePath, ".tmp-custom-extract")
-		os.MkdirAll(tmpDir, 0755)
-		defer os.RemoveAll(tmpDir)
-
-		cmd := exec.Command("tar", "-xzf", tmpPath, "-C", tmpDir)
-		if output, err := cmd.CombinedOutput(); err != nil {
-			http.Redirect(w, r, "/modules?flash=Extract+failed:+"+string(output), http.StatusSeeOther)
-			return
-		}
-
-		// Find module.json in the extracted directory.
-		entries, _ := os.ReadDir(tmpDir)
-		if len(entries) == 0 {
-			http.Redirect(w, r, "/modules?flash=Tarball+is+empty", http.StatusSeeOther)
-			return
-		}
-		modEntry, ok := firstModuleDir(entries)
-		if !ok {
-			http.Redirect(w, r, "/modules?flash=No+module+directory+found+in+tarball", http.StatusSeeOther)
-			return
-		}
-		moduleDir := filepath.Join(tmpDir, modEntry.Name())
-		mjData, err := os.ReadFile(filepath.Join(moduleDir, "module.json"))
-		if err != nil {
-			http.Redirect(w, r, "/modules?flash=No+module.json+found+in+tarball", http.StatusSeeOther)
-			return
-		}
-		var mj struct {
-			ID            string `json:"id"`
-			ComponentType string `json:"component_type"`
-			Capabilities  struct {
-				ComponentType string `json:"component_type"`
-			} `json:"capabilities"`
-		}
-		json.Unmarshal(mjData, &mj)
-
-		componentType := mj.ComponentType
-		if componentType == "" {
-			componentType = mj.Capabilities.ComponentType
-		}
-
-		// Move to the correct category directory.
-		categoryDir := filepath.Join(app.basePath, "modules", getInstallSubdir(componentType))
-		os.MkdirAll(categoryDir, 0755)
-		destDir := filepath.Join(categoryDir, modEntry.Name())
-		os.RemoveAll(destDir) // Remove old version if exists.
-		if err := os.Rename(moduleDir, destDir); err != nil {
-			http.Redirect(w, r, "/modules?flash=Move+failed:+"+err.Error(), http.StatusSeeOther)
-			return
-		}
-
-		// Fix ownership — schwung-manager runs as root but modules should be owned by ableton.
-		chown := exec.Command("chown", "-R", "ableton:users", destDir)
-		if out, err := chown.CombinedOutput(); err != nil {
-			app.logger.Warn("chown failed (non-fatal)", "id", mj.ID, "err", err, "output", string(out))
-		}
-
-		app.logger.Info("custom module installed", "id", mj.ID, "path", destDir)
-		http.Redirect(w, r, "/modules?flash=Installed+"+modEntry.Name()+"+from+GitHub", http.StatusSeeOther)
-
-	case "tarball":
-		file, header, err := r.FormFile("file")
-		if err != nil {
-			http.Redirect(w, r, "/modules?flash=No+file+provided", http.StatusSeeOther)
-			return
-		}
-		defer file.Close()
-
-		// Save uploaded tarball.
-		tmpPath := filepath.Join(app.basePath, ".tmp-upload-"+header.Filename)
-		tmpFile, err := os.Create(tmpPath)
-		if err != nil {
-			http.Redirect(w, r, "/modules?flash=Failed+to+save+upload", http.StatusSeeOther)
-			return
-		}
-		io.Copy(tmpFile, file)
-		tmpFile.Close()
-		defer os.Remove(tmpPath)
-
-		// Extract to temp dir to read module.json.
-		tmpDir := filepath.Join(app.basePath, ".tmp-tarball-extract")
-		os.MkdirAll(tmpDir, 0755)
-		defer os.RemoveAll(tmpDir)
-
-		cmd := exec.Command("tar", "-xzf", tmpPath, "-C", tmpDir)
-		if output, err := cmd.CombinedOutput(); err != nil {
-			http.Redirect(w, r, "/modules?flash=Extract+failed:+"+string(output), http.StatusSeeOther)
-			return
-		}
-
-		entries, _ := os.ReadDir(tmpDir)
-		if len(entries) == 0 {
-			http.Redirect(w, r, "/modules?flash=Tarball+is+empty", http.StatusSeeOther)
-			return
-		}
-		modEntry, ok := firstModuleDir(entries)
-		if !ok {
-			http.Redirect(w, r, "/modules?flash=No+module+directory+found+in+tarball", http.StatusSeeOther)
-			return
-		}
-		moduleDir := filepath.Join(tmpDir, modEntry.Name())
-		mjData, err := os.ReadFile(filepath.Join(moduleDir, "module.json"))
-		if err != nil {
-			http.Redirect(w, r, "/modules?flash=No+module.json+found+in+tarball", http.StatusSeeOther)
-			return
-		}
-		var mj struct {
-			ID            string `json:"id"`
-			ComponentType string `json:"component_type"`
-			Capabilities  struct {
-				ComponentType string `json:"component_type"`
-			} `json:"capabilities"`
-		}
-		json.Unmarshal(mjData, &mj)
-
-		componentType := mj.ComponentType
-		if componentType == "" {
-			componentType = mj.Capabilities.ComponentType
-		}
-
-		categoryDir := filepath.Join(app.basePath, "modules", getInstallSubdir(componentType))
-		os.MkdirAll(categoryDir, 0755)
-		destDir := filepath.Join(categoryDir, modEntry.Name())
-		os.RemoveAll(destDir)
-		if err := os.Rename(moduleDir, destDir); err != nil {
-			http.Redirect(w, r, "/modules?flash=Move+failed:+"+err.Error(), http.StatusSeeOther)
-			return
-		}
-
-		// Fix ownership — schwung-manager runs as root but modules should be owned by ableton.
-		chown := exec.Command("chown", "-R", "ableton:users", destDir)
-		if out, err := chown.CombinedOutput(); err != nil {
-			app.logger.Warn("chown failed (non-fatal)", "id", mj.ID, "err", err, "output", string(out))
-		}
-
-		app.logger.Info("tarball module installed", "id", mj.ID, "path", destDir)
-		http.Redirect(w, r, "/modules?flash=Installed+"+modEntry.Name()+"+from+tarball", http.StatusSeeOther)
-
-	default:
-		http.Redirect(w, r, "/modules?flash=Unknown+install+source", http.StatusSeeOther)
-	}
-}
-
 // -- API (JSON) --
 
-func (app *App) handleAPIModules(w http.ResponseWriter, r *http.Request) {
-	cat, err := app.catalogSvc.Fetch()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	installed := discoverInstalledModules(app.basePath)
-	type apiModule struct {
-		CatalogModule
-		Installed        bool   `json:"installed"`
-		InstalledVersion string `json:"installed_version,omitempty"`
-	}
-	var result []apiModule
-	for _, m := range cat.Modules {
-		am := apiModule{CatalogModule: m}
-		if inst, ok := installed[m.ID]; ok {
-			am.Installed = true
-			am.InstalledVersion = inst.Version
-		}
-		result = append(result, am)
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
-}
-
-func (app *App) handleAPIModuleInstall(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	app.logger.Info("API module install", "id", id)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "started", "module": id})
-}
-
 // -- Module Assets --
-
-func (app *App) handleModuleAssets(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	modDir := app.findModuleDir(id)
-	if modDir == "" {
-		http.NotFound(w, r)
-		return
-	}
-	entries, _ := app.fileSvc.ListDir(modDir)
-	data := map[string]any{
-		"Title":    id + " Assets",
-		"ModuleID": id,
-		"Dir":      modDir,
-		"Entries":  entries,
-		"ModDir":   modDir,
-		"Active":   "modules",
-	}
-	app.render(w, r, "files.html", data)
-}
-
-func (app *App) handleModuleAssetUpload(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	dest := r.FormValue("path")
-	if dest == "" {
-		http.Error(w, "missing path", http.StatusBadRequest)
-		return
-	}
-	if _, err := app.fileSvc.validate(dest); err != nil {
-		http.Error(w, "Forbidden: "+err.Error(), http.StatusForbidden)
-		return
-	}
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, "missing file", http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	target := filepath.Join(dest, header.Filename)
-	out, err := os.Create(target)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer out.Close()
-	io.Copy(out, file)
-
-	app.logger.Info("asset uploaded", "module", id, "file", target)
-	http.Redirect(w, r, fmt.Sprintf("/modules/%s/assets?flash=Uploaded+%s", id, header.Filename), http.StatusSeeOther)
-}
-
-func (app *App) handleModuleAssetUploadSlot(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	targetFilename := r.PathValue("filename")
-	modDir := app.findModuleDir(id)
-	if modDir == "" {
-		http.NotFound(w, r)
-		return
-	}
-
-	installed := discoverInstalledModules(app.basePath)
-	inst, ok := installed[id]
-	if !ok || len(inst.Assets) == 0 {
-		http.Error(w, "module has no asset configuration", http.StatusBadRequest)
-		return
-	}
-
-	// Find the asset group that contains this filename.
-	// Also accept an assetPath query param to disambiguate.
-	queryAssetPath := r.URL.Query().Get("assetPath")
-	assetsDir := modDir
-	found := false
-	for _, a := range inst.Assets {
-		if queryAssetPath != "" && a.Path != queryAssetPath {
-			continue
-		}
-		for _, f := range a.Files {
-			if f.Filename == targetFilename {
-				if a.Path != "" && a.Path != "." {
-					assetsDir = filepath.Join(modDir, a.Path)
-				}
-				found = true
-				break
-			}
-		}
-		if found {
-			break
-		}
-		// If no specific file match, use first group with matching path
-		if queryAssetPath != "" && a.Path == queryAssetPath {
-			if a.Path != "" && a.Path != "." {
-				assetsDir = filepath.Join(modDir, a.Path)
-			}
-			found = true
-			break
-		}
-	}
-	if !found {
-		// Fallback: use first asset group
-		if inst.Assets[0].Path != "" && inst.Assets[0].Path != "." {
-			assetsDir = filepath.Join(modDir, inst.Assets[0].Path)
-		}
-	}
-
-	os.MkdirAll(assetsDir, 0755)
-
-	file, _, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, "missing file", http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	target := filepath.Join(assetsDir, targetFilename)
-	if !strings.HasPrefix(filepath.Clean(target), filepath.Clean(assetsDir)) {
-		http.Error(w, "invalid filename", http.StatusForbidden)
-		return
-	}
-
-	out, err := os.Create(target)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer out.Close()
-	io.Copy(out, file)
-
-	app.logger.Info("asset slot upload", "module", id, "file", target)
-	http.Redirect(w, r, fmt.Sprintf("/modules/%s?flash=Uploaded+%s", id, targetFilename), http.StatusSeeOther)
-}
-
-func (app *App) handleModuleAssetDelete(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	targetFilename := r.PathValue("filename")
-	modDir := app.findModuleDir(id)
-	if modDir == "" {
-		http.NotFound(w, r)
-		return
-	}
-
-	installed := discoverInstalledModules(app.basePath)
-	inst, ok := installed[id]
-	if !ok || len(inst.Assets) == 0 {
-		http.Error(w, "module has no asset configuration", http.StatusBadRequest)
-		return
-	}
-
-	// Find which asset group contains this file.
-	queryAssetPath := r.URL.Query().Get("assetPath")
-	assetsDir := modDir
-	for _, a := range inst.Assets {
-		if queryAssetPath != "" && a.Path != queryAssetPath {
-			continue
-		}
-		for _, f := range a.Files {
-			if f.Filename == targetFilename {
-				if a.Path != "" && a.Path != "." {
-					assetsDir = filepath.Join(modDir, a.Path)
-				}
-				break
-			}
-		}
-	}
-	// Fallback: use first asset group
-	if assetsDir == modDir && inst.Assets[0].Path != "" && inst.Assets[0].Path != "." {
-		assetsDir = filepath.Join(modDir, inst.Assets[0].Path)
-	}
-
-	target := filepath.Join(assetsDir, targetFilename)
-	if !strings.HasPrefix(filepath.Clean(target), filepath.Clean(assetsDir)) {
-		http.Error(w, "invalid filename", http.StatusForbidden)
-		return
-	}
-
-	if err := os.Remove(target); err != nil {
-		app.logger.Error("asset delete failed", "module", id, "file", target, "err", err)
-	} else {
-		app.logger.Info("asset deleted", "module", id, "file", target)
-	}
-
-	http.Redirect(w, r, fmt.Sprintf("/modules/%s?flash=Deleted+%s", id, targetFilename), http.StatusSeeOther)
-}
 
 // -- Files --
 
@@ -2412,16 +1026,6 @@ func (app *App) handleSystem(w http.ResponseWriter, r *http.Request) {
 		version = strings.TrimSpace(string(verBytes))
 	}
 
-	// Best-effort catalog fetch for update check.
-	var latestVersion, hostRepo string
-	var updateAvailable bool
-	cat, err := app.catalogSvc.Fetch()
-	if err == nil && cat != nil {
-		latestVersion = cat.Host.LatestVersion
-		hostRepo = cat.Host.GithubRepo
-		updateAvailable = latestVersion != "" && latestVersion != version
-	}
-
 	// Disk usage via stat (simplified).
 	var diskTotal, diskFree uint64
 	var stat syscall.Statfs_t
@@ -2431,442 +1035,19 @@ func (app *App) handleSystem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]any{
-		"Title":           "System",
-		"Version":         version,
-		"LatestVersion":   latestVersion,
-		"HostRepo":        hostRepo,
-		"UpdateAvailable": updateAvailable,
-		"DiskTotal":       int64(diskTotal),
-		"DiskFree":        int64(diskFree),
-		"DiskUsed":        int64(diskTotal - diskFree),
-		"DiskPercent":     0,
-		"Flash":           r.URL.Query().Get("flash"),
-		"Active":          "system",
+		"Title":       "System",
+		"Version":     version,
+		"DiskTotal":   int64(diskTotal),
+		"DiskFree":    int64(diskFree),
+		"DiskUsed":    int64(diskTotal - diskFree),
+		"DiskPercent": 0,
+		"Flash":       r.URL.Query().Get("flash"),
+		"Active":      "system",
 	}
 	if diskTotal > 0 {
 		data["DiskPercent"] = int((diskTotal - diskFree) * 100 / diskTotal)
 	}
 	app.render(w, r, "system.html", data)
-}
-
-// handleSystemRepair shows the dedicated repair page with the SSH
-// bootstrap command + GUI installer fallback. Reachable from the
-// banner on every page (see partials/repair_banner.html).
-func (app *App) handleSystemRepair(w http.ResponseWriter, r *http.Request) {
-	host := r.Host
-	// Strip port if present so the SSH command says move.local rather
-	// than move.local:7700. The banner asks for a hostname/IP for ssh.
-	if i := strings.IndexByte(host, ':'); i >= 0 {
-		host = host[:i]
-	}
-	if host == "" {
-		host = "move.local"
-	}
-	data := map[string]any{
-		"Title":       "Repair",
-		"Active":      "system",
-		"Hostname":    host,
-		"NeedsRepair": repairNeeded(),
-	}
-	app.render(w, r, "repair.html", data)
-}
-
-// handleSystemRepairRecheck invalidates the bootstrap-needed cache and
-// redirects back to /system/repair so the user can verify their fix
-// took without waiting 30s for the cache to expire.
-func (app *App) handleSystemRepairRecheck(w http.ResponseWriter, r *http.Request) {
-	invalidateRepairCache()
-	http.Redirect(w, r, "/system/repair", http.StatusSeeOther)
-}
-
-func (app *App) handleSystemCheckUpdate(w http.ResponseWriter, r *http.Request) {
-	cat, err := app.catalogSvc.Fetch()
-	if err != nil {
-		http.Redirect(w, r, "/system?flash=Failed+to+check:+"+err.Error(), http.StatusSeeOther)
-		return
-	}
-	http.Redirect(w, r, "/system?flash=Latest+version:+"+cat.Host.LatestVersion, http.StatusSeeOther)
-}
-
-func (app *App) setUpgradeStatus(status string) {
-	app.upgradeStatus = status
-	// Write to file for shadow UI to display on OLED.
-	statusPath := filepath.Join(app.basePath, "upgrade_status")
-	if status == "" {
-		os.Remove(statusPath)
-	} else {
-		os.WriteFile(statusPath, []byte(status), 0644)
-	}
-	app.logger.Info("upgrade status", "step", status)
-}
-
-func (app *App) handleUpgradeStatus(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": app.upgradeStatus})
-}
-
-func (app *App) handleSystemUpgrade(w http.ResponseWriter, r *http.Request) {
-	app.logger.Info("system upgrade requested")
-
-	// 1. Fetch catalog.
-	cat, err := app.catalogSvc.Fetch()
-	if err != nil {
-		http.Redirect(w, r, "/system?flash=Failed+to+fetch+catalog:+"+err.Error(), http.StatusSeeOther)
-		return
-	}
-
-	// 2. Compare versions.
-	verBytes, _ := os.ReadFile(filepath.Join(app.basePath, "host", "version.txt"))
-	installedVersion := strings.TrimSpace(string(verBytes))
-	latestVersion := cat.Host.LatestVersion
-	downloadURL := cat.Host.DownloadURL
-
-	if latestVersion != "" && latestVersion == installedVersion {
-		http.Redirect(w, r, "/system?flash=Already+up+to+date+("+installedVersion+")", http.StatusSeeOther)
-		return
-	}
-
-	if err := app.checkHostCompat(cat.Host.MinHostVersion); err != nil {
-		app.logger.Warn("host upgrade blocked", "min", cat.Host.MinHostVersion, "installed", installedVersion, "err", err)
-		http.Redirect(w, r, "/system?flash=Upgrade+blocked:+"+err.Error(), http.StatusSeeOther)
-		return
-	}
-
-	if downloadURL == "" {
-		http.Redirect(w, r, "/system?flash=No+download+URL+in+catalog", http.StatusSeeOther)
-		return
-	}
-
-	// 3. Download the tarball.
-	tarPath := filepath.Join(app.basePath, "schwung-upgrade.tar.gz")
-	app.logger.Info("downloading upgrade", "url", downloadURL, "dest", tarPath)
-
-	client := &http.Client{Timeout: 300 * time.Second}
-	dlResp, err := client.Get(downloadURL)
-	if err != nil {
-		http.Redirect(w, r, "/system?flash=Download+failed:+"+err.Error(), http.StatusSeeOther)
-		return
-	}
-	defer dlResp.Body.Close()
-	if dlResp.StatusCode != http.StatusOK {
-		http.Redirect(w, r, "/system?flash=Download+returned+"+strconv.Itoa(dlResp.StatusCode), http.StatusSeeOther)
-		return
-	}
-
-	tarFile, err := os.Create(tarPath)
-	if err != nil {
-		http.Redirect(w, r, "/system?flash=Failed+to+create+file:+"+err.Error(), http.StatusSeeOther)
-		return
-	}
-	if _, err := io.Copy(tarFile, dlResp.Body); err != nil {
-		tarFile.Close()
-		os.Remove(tarPath)
-		http.Redirect(w, r, "/system?flash=Download+write+failed:+"+err.Error(), http.StatusSeeOther)
-		return
-	}
-	tarFile.Close()
-
-	app.logger.Info("download complete, starting upgrade", "version", latestVersion)
-
-	// 4. Kick off upgrade in background goroutine.
-	// Follows the same flow as the on-device Module Store:
-	// extract tarball → chmod u+s shim → run post-update.sh → restart Move.
-	go func() {
-		// Wait for HTTP response to be sent.
-		time.Sleep(2 * time.Second)
-
-		app.setUpgradeStatus("Extracting update...")
-
-		// Extract tarball. Use -o to ignore tarball ownership.
-		// EXCLUDE bin/schwung-heal: overwriting it here (as ableton) strips its
-		// setuid-root bit, after which it can no longer reboot, mirror the new
-		// shim into /usr/lib, or install its own replacement. We preserve the
-		// live setuid heal and stage the new one separately (below) for it to
-		// install with privilege.
-		// EXCLUDE host/version.txt too: it is BOTH the success marker and the
-		// retry gate (handleSystemCheckUpdate early-returns "Already up to date"
-		// when it equals the catalog's latest). The bulk extract commits it
-		// atomically with the JS/shadow_ui, BEFORE the shim is mirrored — so if
-		// the shim step later fails, the device reports the new version while
-		// running the old shim, and every retry short-circuits without ever
-		// re-attempting the mirror (a permanent, self-concealing failure). We
-		// hold it back and place it only AFTER confirming the live shim matches
-		// (below), so a half-applied update stays retryable.
-		extractCmd := exec.Command("tar", "-xzof", tarPath, "-C", app.basePath,
-			"--strip-components=1", "--exclude=*/bin/schwung-heal",
-			"--exclude=*/host/version.txt")
-		if output, err := extractCmd.CombinedOutput(); err != nil {
-			app.setUpgradeStatus("Extract failed")
-			app.logger.Error("extract failed", "err", err, "output", string(output))
-			return
-		}
-
-		// Stage the new schwung-heal as bin/schwung-heal.new. The live (still
-		// setuid-root) heal installs it as root-owned 04755 on its next run
-		// (hardcoded .new path in schwung-heal.c), so the helper self-updates
-		// without ever losing its privilege.
-		healStage := filepath.Join(app.basePath, "upgrade-heal")
-		os.RemoveAll(healStage)
-		if err := os.MkdirAll(healStage, 0755); err == nil {
-			stageCmd := exec.Command("tar", "-xzof", tarPath, "-C", healStage,
-				"--strip-components=2", "schwung/bin/schwung-heal")
-			if output, err := stageCmd.CombinedOutput(); err != nil {
-				app.logger.Warn("upgrade: staging new heal failed (keeping existing heal)",
-					"err", err, "output", string(output))
-			} else {
-				if err := os.Rename(filepath.Join(healStage, "schwung-heal"),
-					filepath.Join(app.basePath, "bin", "schwung-heal.new")); err != nil {
-					app.logger.Warn("upgrade: could not stage heal.new", "err", err)
-				}
-			}
-			os.RemoveAll(healStage)
-		}
-
-		app.setUpgradeStatus("Configuring...")
-
-		// Belt-and-suspenders: set the setuid bit on the /data shim. The live
-		// heal re-mirrors it to /usr/lib as root-owned 04755 below regardless.
-		shimPath := filepath.Join(app.basePath, "schwung-shim.so")
-		exec.Command("chmod", "u+s", shimPath).Run()
-
-		// Run post-update.sh (symlinks, permissions, entrypoint update).
-		postUpdate := filepath.Join(app.basePath, "scripts", "post-update.sh")
-		postCmd := exec.Command("sh", postUpdate)
-		postCmd.Dir = app.basePath
-		if output, err := postCmd.CombinedOutput(); err != nil {
-			app.setUpgradeStatus("Post-update failed")
-			app.logger.Error("post-update failed", "err", err, "output", string(output))
-		}
-
-		// Mirror the shim NOW, synchronously, via the setuid heal — do not rely
-		// on the later detached `heal --reboot` leg (whose reboot is historically
-		// flaky) NOR on post-update.sh (a genuine tarball's post-update.sh does
-		// not mirror). This is what makes the verify gate below meaningful: it
-		// must run AFTER a real mirror attempt, not before. heal is setuid-root
-		// and idempotent; if it can't escalate (missing/non-setuid/wrong owner)
-		// the mirror fails and the verify catches it. No --reboot here — the
-		// reboot stays with the detached leg / the user.
-		healMirror := filepath.Join(app.basePath, "bin", "schwung-heal")
-		if output, err := exec.Command(healMirror).CombinedOutput(); err != nil {
-			app.logger.Warn("upgrade: synchronous heal mirror returned error (verify will catch a stale shim)",
-				"err", err, "output", string(output))
-		}
-
-		// Gate version.txt on the live shim actually being mirrored: confirm the
-		// /data and /usr/lib shims are byte-identical before stamping the version.
-		// If the mirror did not take, leave version.txt at its OLD value so the
-		// next Check Updates retries instead of falsely reporting success.
-		shimData := filepath.Join(app.basePath, "schwung-shim.so")
-		const shimLib = "/usr/lib/schwung-shim.so"
-		if !filesIdentical(shimData, shimLib) {
-			app.logger.Error("upgrade: live shim not mirrored — leaving version.txt at old value so the update stays retryable",
-				"data", shimData, "lib", shimLib)
-			app.setUpgradeStatus("Update incomplete — shim not activated. Reboot the device, then re-run Check Updates.")
-			os.Remove(tarPath)
-			return
-		}
-
-		// Mirror confirmed — NOW place the new version.txt (held back from the
-		// bulk extract above). This is the last write, so version.txt only ever
-		// advances once the live shim is current.
-		verCmd := exec.Command("tar", "-xzof", tarPath, "-C", app.basePath,
-			"--strip-components=1", "schwung/host/version.txt")
-		if output, err := verCmd.CombinedOutput(); err != nil {
-			app.logger.Warn("upgrade: could not place version.txt after mirror",
-				"err", err, "output", string(output))
-		}
-
-		// Clean up tarball.
-		os.Remove(tarPath)
-
-		app.setUpgradeStatus("Update applied — restart device if it doesn't reboot")
-
-		// Reboot the device. The legacy `killall MoveOriginal MoveLauncher`
-		// path produced unsupervised orphans that froze the device 100% of
-		// the time — same bug install.sh hit, fixed by switching to a real
-		// reboot. shim-entrypoint.sh runs schwung-heal at boot which
-		// mirrors the now-current /data shim into /usr/lib before
-		// LD_PRELOAD takes over, so the new shim is what MoveOriginal
-		// loads on the way back up.
-		//
-		// Also draw the "Rebooting Move..." overlay onto the device's
-		// display first so the user sees explicit feedback during the
-		// ~30-45s blank period.
-		var frame [1024]byte
-		msg := "Rebooting Move..."
-		startX := (dispW - len(msg)*6) / 2
-		if startX < 0 {
-			startX = 0
-		}
-		renderText(frame[:], startX, 28, msg)
-		_ = os.WriteFile(dispSHM, frame[:], 0644)
-
-		// schwung-manager runs as ableton; reboot needs root. schwung-heal is
-		// setuid-root and supports --reboot. Call it DIRECTLY (synchronously),
-		// not as a backgrounded `sh -c "(... ) &"`: the orphaned subshell form
-		// proved unreliable in practice (it didn't always reach reboot()), and
-		// this goroutine already slept 2s after the HTTP response was sent, so
-		// nothing needs the manager to stay responsive. Capture heal's output
-		// so a non-reboot (e.g. a mirror error that sets heal's rc!=0, which
-		// makes heal skip its own reboot) is diagnosable instead of a silent
-		// stuck splash.
-		heal := filepath.Join(app.basePath, "bin", "schwung-heal")
-		healNew := heal + ".new"
-		fi, statErr := os.Stat(heal)
-		if statErr == nil && fi.Mode()&os.ModeSetuid != 0 {
-			// Privileged live heal: installs the staged new heal as root-owned
-			// 04755, mirrors the new shim to /usr/lib, then reboots.
-			//
-			// CRITICAL: launch heal in a fully DETACHED new session, not as a
-			// plain child of this Go daemon. Verified on-device: `heal --reboot`
-			// reboots reliably from a clean shell (ssh/nohup) but HANGS when run
-			// as a direct child of schwung-manager — heal inherits the daemon's
-			// session, signal state, and file descriptors and stalls before
-			// reaching reboot(). Setsid + a clean stdio set (/dev/null in, log
-			// file out) reproduces the working shell context. We Start() and do
-			// not Wait(): heal reboots the box, so there is nothing to wait for,
-			// and not waiting keeps the daemon out of heal's process group.
-			rebootCmd := exec.Command(heal, "--reboot")
-			rebootCmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-			if devnull, e := os.Open(os.DevNull); e == nil {
-				rebootCmd.Stdin = devnull
-			}
-			if lf, e := os.Create(filepath.Join(app.basePath, "heal-reboot.log")); e == nil {
-				rebootCmd.Stdout, rebootCmd.Stderr = lf, lf
-			}
-			if err := rebootCmd.Start(); err != nil {
-				app.logger.Error("upgrade: failed to launch heal --reboot", "err", err)
-				app.setUpgradeStatus("Update applied — reboot helper failed to launch; please restart the device")
-			} else {
-				_ = rebootCmd.Process.Release() // fully detach; don't reap/wait
-				app.logger.Info("upgrade: heal --reboot launched (detached); device rebooting")
-				app.setUpgradeStatus("Update applied — rebooting…")
-			}
-		} else {
-			// No privileged heal — it's missing, or present but not setuid-root
-			// (e.g. a device that never ran install.sh, or upgraded before this
-			// fix). schwung-manager runs as ableton and cannot create a
-			// setuid-root file, reboot, or write /usr/lib. Put the new heal file
-			// in place (non-setuid) so it at least exists for install.sh to
-			// bless, then tell the user how to finish.
-			if _, nerr := os.Stat(healNew); nerr == nil {
-				if err := os.Rename(healNew, heal); err != nil {
-					app.logger.Warn("upgrade: could not place new heal", "err", err)
-				}
-			}
-			if statErr != nil {
-				app.logger.Error("upgrade: schwung-heal not installed — privileged steps skipped",
-					"path", heal)
-				app.setUpgradeStatus("Update staged — schwung-heal missing; run install.sh, then reboot")
-			} else {
-				app.logger.Error("upgrade: schwung-heal lacks setuid — privileged steps skipped",
-					"path", heal, "mode", fi.Mode().String())
-				app.setUpgradeStatus("Update staged — run install.sh, then reboot (heal not privileged)")
-			}
-		}
-	}()
-
-	// 5. Return inline HTML restarting page.
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	app.setUpgradeStatus("Downloading...")
-
-	fmt.Fprintf(w, `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Upgrading Schwung...</title>
-<style>
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-         display: flex; justify-content: center; align-items: center; min-height: 100vh;
-         margin: 0; background: #1a1a2e; color: #e0e0e0; }
-  .container { text-align: center; max-width: 480px; padding: 2rem; }
-  h1 { margin-bottom: 0.5rem; }
-  .spinner { display: inline-block; width: 48px; height: 48px; border: 4px solid #444;
-             border-top-color: #6c63ff; border-radius: 50%%;
-             animation: spin 1s linear infinite; margin: 1.5rem 0; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .status { color: #aaa; font-size: 0.9rem; }
-  .steps { list-style: none; padding: 0; margin: 1rem 0; text-align: left; display: inline-block; }
-  .steps li { padding: 0.25rem 0; color: #666; }
-  .steps li.done { color: #4caf50; }
-  .steps li.done::before { content: "\2713 "; }
-  .steps li.active { color: #e0e0e0; }
-  .steps li.active::before { content: "\25B6 "; color: #6c63ff; }
-  .steps li.pending::before { content: "\25CB "; }
-  #error { display: none; color: #ff6b6b; margin-top: 1rem; }
-</style>
-</head>
-<body>
-<div class="container">
-  <h1>Upgrading to %s</h1>
-  <div class="spinner"></div>
-  <ul class="steps">
-    <li id="s-download" class="active">Downloading update...</li>
-    <li id="s-extract" class="pending">Extracting files</li>
-    <li id="s-configure" class="pending">Configuring</li>
-    <li id="s-restart" class="pending">Restart device to finish</li>
-  </ul>
-  <p id="error">The server did not come back. You may need to check the device manually.</p>
-</div>
-<script>
-(function() {
-  var start = Date.now();
-  var timeout = 180000;
-  var steps = {
-    "Downloading...": "s-download",
-    "Extracting update...": "s-extract",
-    "Configuring...": "s-configure",
-    "Update applied — restart device if it doesn't reboot": "s-restart"
-  };
-  var order = ["s-download", "s-extract", "s-configure", "s-restart"];
-  var serverDown = false;
-
-  function setStep(id) {
-    var idx = order.indexOf(id);
-    for (var i = 0; i < order.length; i++) {
-      var el = document.getElementById(order[i]);
-      if (i < idx) el.className = "done";
-      else if (i === idx) el.className = "active";
-      else el.className = "pending";
-    }
-  }
-
-  function pollStatus() {
-    fetch("/system/upgrade-status", {cache: "no-store"})
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (data.status && steps[data.status]) {
-          setStep(steps[data.status]);
-        }
-      })
-      .catch(function() {
-        // Server went down — it's restarting
-        if (!serverDown) {
-          serverDown = true;
-          for (var i = 0; i < order.length; i++) {
-            document.getElementById(order[i]).className = "done";
-          }
-        }
-      });
-  }
-
-  function pollReady() {
-    if (Date.now() - start > timeout) {
-      document.getElementById("error").style.display = "block";
-      return;
-    }
-    fetch("/system", {method: "GET", cache: "no-store"})
-      .then(function(r) { if (r.ok) window.location.href = "/system?flash=Upgrade+complete"; else setTimeout(pollReady, 2000); })
-      .catch(function() { setTimeout(pollReady, 2000); });
-  }
-
-  setInterval(pollStatus, 1000);
-  setTimeout(pollReady, 8000);
-})();
-</script>
-</body>
-</html>`, latestVersion)
 }
 
 func (app *App) handleSystemLogs(w http.ResponseWriter, r *http.Request) {
@@ -2886,111 +1067,7 @@ func (app *App) handleSystemLogs(w http.ResponseWriter, r *http.Request) {
 
 // -- Help --
 
-func (app *App) handleHelp(w http.ResponseWriter, r *http.Request) {
-	var sections []HelpNode
-
-	// Load main help_content.json (Schwung help).
-	helpPath := filepath.Join(app.basePath, "shared", "help_content.json")
-	if data, err := os.ReadFile(helpPath); err == nil {
-		var hc HelpContent
-		if json.Unmarshal(data, &hc) == nil {
-			for _, s := range hc.Sections {
-				// Skip "Move Manual" and "Notice" — only include Schwung help
-				if s.Title == "Move Manual" || s.Title == "Notice" {
-					continue
-				}
-				sections = append(sections, s)
-			}
-		}
-	}
-
-	// Scan installed modules for help.json files.
-	installed := discoverInstalledModules(app.basePath)
-	// Collect module help in a "Modules" section.
-	var moduleHelp []HelpNode
-	// Sort module IDs for stable ordering.
-	ids := make([]string, 0, len(installed))
-	for id := range installed {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	for _, id := range ids {
-		mod := installed[id]
-		modDir := app.findModuleDir(id)
-		if modDir == "" {
-			continue
-		}
-		helpFile := filepath.Join(modDir, "help.json")
-		data, err := os.ReadFile(helpFile)
-		if err != nil {
-			continue
-		}
-		var node HelpNode
-		if json.Unmarshal(data, &node) == nil {
-			// Use the module's display name if the help title matches
-			if node.Title == "" {
-				node.Title = mod.Name
-			}
-			moduleHelp = append(moduleHelp, node)
-		}
-	}
-	if len(moduleHelp) > 0 {
-		sections = append(sections, HelpNode{
-			Title:    "Modules",
-			Children: moduleHelp,
-		})
-	}
-
-	data := map[string]any{
-		"Title":    "Help",
-		"Sections": sections,
-		"Active":   "help",
-	}
-	app.render(w, r, "help.html", data)
-}
-
 // -- Install --
-
-func (app *App) handleInstallPage(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	cat, _ := app.catalogSvc.Fetch()
-	var mod *CatalogModule
-	if cat != nil {
-		for i := range cat.Modules {
-			if cat.Modules[i].ID == id {
-				mod = &cat.Modules[i]
-				break
-			}
-		}
-	}
-	if mod == nil {
-		http.NotFound(w, r)
-		return
-	}
-	installed := discoverInstalledModules(app.basePath)
-	data := map[string]any{
-		"Title":     "Install " + mod.Name,
-		"Module":    mod,
-		"Installed": installed,
-		"Active":    "modules",
-	}
-	app.render(w, r, "install.html", data)
-}
-
-func (app *App) handleInstallAction(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	mod := app.findCatalogModule(id)
-	if mod == nil {
-		http.Redirect(w, r, "/modules?flash=Module+not+found:+"+id, http.StatusSeeOther)
-		return
-	}
-	if err := app.installModule(mod); err != nil {
-		app.logger.Error("install failed", "id", id, "err", err)
-		http.Redirect(w, r, "/modules/"+id+"?flash=Install+failed:+"+err.Error(), http.StatusSeeOther)
-		return
-	}
-	http.Redirect(w, r, "/modules/"+id+"?flash="+mod.Name+"+installed+successfully", http.StatusSeeOther)
-}
 
 // -- Download --
 
@@ -2999,250 +1076,12 @@ const (
 	downloadOutDir  = "/data/UserData/UserLibrary/Samples/Schwung/Webstream"
 )
 
-func (app *App) handleDownloadPage(w http.ResponseWriter, r *http.Request) {
-	urlParam := r.URL.Query().Get("url")
-	titleParam := r.URL.Query().Get("title")
-	data := map[string]any{
-		"Title":     "Download",
-		"Active":    "download",
-		"URL":       urlParam,
-		"FileTitle": titleParam,
-		"AutoStart": urlParam != "",
-	}
-	app.render(w, r, "download.html", data)
-}
-
-func (app *App) handleAPIDownload(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		URL   string `json:"url"`
-		Title string `json:"title"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	if req.URL == "" {
-		http.Error(w, "missing url", http.StatusBadRequest)
-		return
-	}
-
-	job := &downloadJob{
-		ID:    fmt.Sprintf("%d", time.Now().UnixNano()),
-		State: "downloading",
-	}
-	app.downloadMu.Lock()
-	app.downloadJobs[job.ID] = job
-	app.downloadMu.Unlock()
-
-	go app.runDownload(job, req.URL, req.Title)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"job_id": job.ID})
-}
-
-// sanitizeFilename returns a safe filename derived from title, replacing
-// dangerous characters and falling back to "download" if the result is empty.
-func sanitizeFilename(title string) string {
-	name := title
-	if name == "" {
-		name = "download"
-	}
-	for _, ch := range []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|"} {
-		name = strings.ReplaceAll(name, ch, "_")
-	}
-	name = strings.TrimRight(name, " .")
-	if name == "" {
-		name = "download"
-	}
-	return name
-}
-
-func (app *App) runDownload(job *downloadJob, url, title string) {
-	// Schedule cleanup of the job entry after it reaches a terminal state.
-	defer func() {
-		go func() {
-			time.Sleep(10 * time.Minute)
-			app.downloadMu.Lock()
-			delete(app.downloadJobs, job.ID)
-			app.downloadMu.Unlock()
-		}()
-	}()
-
-	// Validate URL scheme and reject shell-injection characters.
-	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
-		app.downloadMu.Lock()
-		job.State = "error"
-		job.Error = "Invalid URL scheme"
-		app.downloadMu.Unlock()
-		return
-	}
-	if strings.ContainsAny(url, "`\x00\n\r") || strings.Contains(url, "$(") {
-		app.downloadMu.Lock()
-		job.State = "error"
-		job.Error = "Invalid URL characters"
-		app.downloadMu.Unlock()
-		return
-	}
-
-	if err := os.MkdirAll(downloadOutDir, 0755); err != nil {
-		app.downloadMu.Lock()
-		job.State = "error"
-		job.Error = "mkdir: " + err.Error()
-		app.downloadMu.Unlock()
-		return
-	}
-
-	// If no title provided, resolve it via yt-dlp --get-title.
-	if title == "" {
-		app.downloadMu.Lock()
-		job.Message = "Resolving title..."
-		app.downloadMu.Unlock()
-
-		ytdlpBin := filepath.Join(webstreamBinDir, "yt-dlp")
-		titleCtx, titleCancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer titleCancel()
-		titleCmd := exec.CommandContext(titleCtx, ytdlpBin, "--no-playlist", "--get-title", url)
-		if out, err := titleCmd.Output(); err == nil {
-			title = strings.TrimSpace(string(out))
-		}
-	}
-	if title != "" {
-		app.downloadMu.Lock()
-		job.Title = title
-		app.downloadMu.Unlock()
-	}
-
-	name := sanitizeFilename(title)
-
-	// Deduplicate.
-	outPath := filepath.Join(downloadOutDir, name+".wav")
-	if _, err := os.Stat(outPath); err == nil {
-		for i := 2; i <= 99; i++ {
-			candidate := filepath.Join(downloadOutDir, fmt.Sprintf("%s (%d).wav", name, i))
-			if _, err := os.Stat(candidate); os.IsNotExist(err) {
-				outPath = candidate
-				break
-			}
-		}
-	}
-	if _, err := os.Stat(outPath); err == nil {
-		app.downloadMu.Lock()
-		job.State = "error"
-		job.Error = "Too many files with same name"
-		app.downloadMu.Unlock()
-		return
-	}
-
-	ytdlp := filepath.Join(webstreamBinDir, "yt-dlp")
-	ffmpeg := filepath.Join(webstreamBinDir, "ffmpeg")
-
-	app.downloadMu.Lock()
-	job.Message = "Downloading and converting to WAV..."
-	app.downloadMu.Unlock()
-
-	cmdStr := fmt.Sprintf(
-		`%q --no-playlist -f "bestaudio[ext=m4a]/bestaudio" -o - %q 2>/dev/null | %q -hide_banner -loglevel warning -i pipe:0 -vn -sn -dn -af "aresample=44100" -ac 2 -ar 44100 %q -y 2>/dev/null`,
-		ytdlp, url, ffmpeg, outPath,
-	)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
-	if err := cmd.Run(); err != nil {
-		app.downloadMu.Lock()
-		job.State = "error"
-		job.Error = "download failed: " + err.Error()
-		app.downloadMu.Unlock()
-		return
-	}
-
-	app.downloadMu.Lock()
-	job.Message = "Verifying output..."
-	app.downloadMu.Unlock()
-
-	// Verify output.
-	info, err := os.Stat(outPath)
-	if err != nil || info.Size() <= 44 {
-		app.downloadMu.Lock()
-		job.State = "error"
-		job.Error = "output file missing or too small"
-		app.downloadMu.Unlock()
-		return
-	}
-
-	app.downloadMu.Lock()
-	job.State = "done"
-	job.Path = outPath
-	job.Message = "Saved: " + filepath.Base(outPath)
-	app.downloadMu.Unlock()
-}
-
-func (app *App) handleAPIDownloadStatus(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	app.downloadMu.Lock()
-	job, ok := app.downloadJobs[id]
-	app.downloadMu.Unlock()
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(job)
-}
-
-func (app *App) handleAPIOpenInTool(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		FilePath string `json:"file_path"`
-		ToolID   string `json:"tool_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	if req.FilePath == "" || req.ToolID == "" {
-		http.Error(w, "missing file_path or tool_id", http.StatusBadRequest)
-		return
-	}
-	if !strings.HasPrefix(req.FilePath, "/data/UserData/") {
-		http.Error(w, `{"error":"invalid file path"}`, http.StatusBadRequest)
-		return
-	}
-
-	cmdPath := filepath.Join(app.basePath, "open_tool_cmd.json")
-	payload, _ := json.Marshal(map[string]string{
-		"file_path": req.FilePath,
-		"tool_id":   req.ToolID,
-	})
-	if err := os.WriteFile(cmdPath, payload, 0644); err != nil {
-		http.Error(w, "write failed: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Lazy-connect to SHM if it wasn't available at startup (shim may
-	// have started after schwung-manager).
-	if app.shm == nil {
-		if s := OpenShmConfig(); s != nil {
-			app.shm = s
-			app.logger.Info("shared memory config: connected (lazy)")
-		}
-	}
-	if app.shm != nil {
-		app.shm.SetOpenToolCmd(1)
-	} else {
-		app.logger.Warn("open-in-tool: shared memory not available, tool command may not be delivered")
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
-}
-
 // -- Remote UI --
 
+// handleRemoteUI survives as a redirect: the stock tab page it rendered is
+// gone — the integrated app at / is the remote UI now.
 func (app *App) handleRemoteUI(w http.ResponseWriter, r *http.Request) {
-	app.render(w, r, "remote_ui.html", map[string]any{
-		"Title":  "Remote UI",
-		"Active": "remote-ui",
-	})
+	http.Redirect(w, r, "/", http.StatusMovedPermanently)
 }
 
 // handleModuleWebUIAsset serves static files from a module's install directory.
@@ -3314,9 +1153,6 @@ func main() {
 	// so large uploads (e.g. soundfonts) fail and surface as "invalid CSRF token".
 	port := flag.Int("port", 7700, "HTTP listen port")
 	roots := flag.String("roots", "/data/UserData/", "Comma-separated allowed filesystem roots")
-	catalogURL := flag.String("catalog-url",
-		"https://raw.githubusercontent.com/charlesvestal/schwung/main/module-catalog.json",
-		"URL for the module catalog JSON")
 	displayBackend := flag.String("display-backend", "127.0.0.1:7681", "Address of display server")
 	baseFlag := flag.String("base", "", "Host install dir (default: probe <root>/schwung)")
 	shmPrefixFlag := flag.String("shm-prefix", "", "Override the built-in SHM prefix (dev use)")
@@ -3388,26 +1224,13 @@ func main() {
 	}
 
 	app := &App{
-		tmpl:         tmpl,
-		fileSvc:      &FileService{AllowedRoots: allowedRoots},
-		catalogSvc:   NewCatalogService(*catalogURL, basePath),
-		basePath:     basePath,
-		logger:       logger,
-		shm:          shm,
-		shmParams:    shmParams,
-		downloadJobs: make(map[string]*downloadJob),
+		tmpl:      tmpl,
+		fileSvc:   &FileService{AllowedRoots: allowedRoots},
+		basePath:  basePath,
+		logger:    logger,
+		shm:       shm,
+		shmParams: shmParams,
 	}
-
-	// Clear any stale upgrade_status from a previous upgrade that
-	// didn't clean up (e.g., the old manager was killed mid-upgrade).
-	app.setUpgradeStatus("")
-
-	// Self-heal stale shim/entrypoint. On-device update paths run as ableton
-	// and silently fail post-update.sh's /usr/lib/ + /opt/move/ writes, so
-	// users who upgraded host on-device end up with new files in /data/.../
-	// but stale ones at the OS-level locations. We run as root via the
-	// entrypoint, so we can finish the install and reboot once.
-	app.healShimIfStale()
 
 	mux := http.NewServeMux()
 
@@ -3419,24 +1242,10 @@ func main() {
 	mux.HandleFunc("GET /{$}", app.handleHome)
 
 	// Modules.
-	mux.HandleFunc("GET /modules", app.handleModules)
-	mux.HandleFunc("GET /modules/{id}", app.handleModuleDetail)
-	mux.HandleFunc("POST /modules/{id}/install", app.handleModuleInstall)
-	mux.HandleFunc("POST /modules/{id}/uninstall", app.handleModuleUninstall)
-	mux.HandleFunc("POST /modules/{id}/update", app.handleModuleUpdate)
-	mux.HandleFunc("POST /modules/update-all", app.handleModuleUpdateAll)
-	mux.HandleFunc("POST /modules/install-all", app.handleModuleInstallAll)
-	mux.HandleFunc("POST /modules/install-custom", app.handleCustomInstall)
 
 	// Module assets.
-	mux.HandleFunc("GET /modules/{id}/assets", app.handleModuleAssets)
-	mux.HandleFunc("POST /modules/{id}/assets/upload", app.handleModuleAssetUpload)
-	mux.HandleFunc("POST /modules/{id}/assets/upload/{filename}", app.handleModuleAssetUploadSlot)
-	mux.HandleFunc("POST /modules/{id}/assets/delete/{filename}", app.handleModuleAssetDelete)
 
 	// API (JSON).
-	mux.HandleFunc("GET /api/modules", app.handleAPIModules)
-	mux.HandleFunc("POST /api/modules/{id}/install", app.handleAPIModuleInstall)
 
 	// Files.
 	mux.HandleFunc("GET /files", app.handleFiles)
@@ -3455,17 +1264,9 @@ func main() {
 	// (/modules/{id}). These endpoints are the JSON read/write
 	// API the page polls and posts to. Values and secrets are
 	// stored inside the module's install directory.
-	mux.HandleFunc("GET /modules/{id}/settings/values", app.handleConfigModuleValues)
-	mux.HandleFunc("POST /modules/{id}/settings/set", app.handleConfigModuleSet)
-	mux.HandleFunc("POST /modules/{id}/settings/clear", app.handleConfigModuleClearSecret)
 
 	// System.
 	mux.HandleFunc("GET /system", app.handleSystem)
-	mux.HandleFunc("GET /system/repair", app.handleSystemRepair)
-	mux.HandleFunc("POST /system/repair/recheck", app.handleSystemRepairRecheck)
-	mux.HandleFunc("POST /system/check-update", app.handleSystemCheckUpdate)
-	mux.HandleFunc("POST /system/upgrade", app.handleSystemUpgrade)
-	mux.HandleFunc("GET /system/upgrade-status", app.handleUpgradeStatus)
 	mux.HandleFunc("GET /system/logs", app.handleSystemLogs)
 
 	// Help.
@@ -3475,15 +1276,8 @@ func main() {
 	mux.HandleFunc("GET /remote-ui", app.handleRemoteUI)
 
 	// Install.
-	mux.HandleFunc("GET /install/{id}", app.handleInstallPage)
-	mux.HandleFunc("POST /install/{id}", app.handleInstallAction)
 
 	// Download.
-	mux.HandleFunc("GET /download", app.handleDownloadPage)
-	mux.HandleFunc("POST /api/download", app.handleAPIDownload)
-	mux.HandleFunc("GET /api/download/status/{id}", app.handleAPIDownloadStatus)
-	mux.HandleFunc("POST /api/open-in-tool", app.handleAPIOpenInTool)
-	mux.HandleFunc("POST /api/show-rebooting", app.handleShowRebooting)
 
 	// Graceful shutdown context — created early so RemoteUI can use it.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -3492,7 +1286,9 @@ func main() {
 	// Remote UI WebSocket (shmParams may be nil — lazy connect when Move starts).
 	remoteUI := NewRemoteUI(shmParams, webSetRing, app.basePath, logger)
 	remoteUI.Start(ctx)
+	app.remoteUI = remoteUI // landing route asks it for the running tool
 	mux.Handle("GET /ws/remote-ui", remoteUI)
+	mux.HandleFunc("GET /api/tool", app.handleAPITool)
 
 	// Module web UI assets (custom web_ui.html and related files).
 	mux.HandleFunc("GET /api/remote-ui/module-assets/{id}/{filepath...}", app.handleModuleWebUIAsset)
@@ -3515,9 +1311,23 @@ func main() {
 			http.Error(w, "Display server unavailable", http.StatusBadGateway)
 		},
 	}
-	mux.Handle("GET /mirror", displayProxy)
-	mux.Handle("GET /mirror/", displayProxy)
-	mux.Handle("GET /stream-auto", displayProxy)
+	// Opening the mirror turns the shim's display-mirror flag on in SHM: the
+	// shim only pays for the live-frame copy while someone is watching, and
+	// the shim asserts the flag ONCE at startup (from features.json), so a
+	// runtime enable here sticks for the session without touching the
+	// persisted setting.
+	mirrorOn := func(h http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if app.shm != nil && !app.shm.DisplayMirror() {
+				app.shm.SetDisplayMirror(true)
+				logger.Info("display mirror enabled (viewer opened /mirror)")
+			}
+			h.ServeHTTP(w, r)
+		})
+	}
+	mux.Handle("GET /mirror", mirrorOn(displayProxy))
+	mux.Handle("GET /mirror/", mirrorOn(displayProxy))
+	mux.Handle("GET /stream-auto", mirrorOn(displayProxy))
 
 	// Apply middleware.  WebSocket paths bypass CSRF (upgrades don't carry tokens).
 	// SecurityHeaders runs outermost so headers are set even on responses

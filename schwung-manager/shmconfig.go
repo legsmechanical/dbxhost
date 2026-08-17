@@ -135,34 +135,32 @@ func (s *ShmConfig) setF32(off int, v float32) {
 
 // --- Public accessors for config settings ---
 
-func (s *ShmConfig) DisplayMirror() bool      { return s.getU8(offDisplayMirror) != 0 }
-func (s *ShmConfig) SetDisplayMirror(v bool)   { s.setU8(offDisplayMirror, boolU8(v)) }
+func (s *ShmConfig) DisplayMirror() bool     { return s.getU8(offDisplayMirror) != 0 }
+func (s *ShmConfig) SetDisplayMirror(v bool) { s.setU8(offDisplayMirror, boolU8(v)) }
 
-func (s *ShmConfig) OverlayKnobsMode() uint8  { return s.getU8(offOverlayKnobs) }
+func (s *ShmConfig) OverlayKnobsMode() uint8     { return s.getU8(offOverlayKnobs) }
 func (s *ShmConfig) SetOverlayKnobsMode(v uint8) { s.setU8(offOverlayKnobs, v) }
 
-func (s *ShmConfig) TTSEnabled() bool          { return s.getU8(offTTSEnabled) != 0 }
-func (s *ShmConfig) SetTTSEnabled(v bool)      { s.setU8(offTTSEnabled, boolU8(v)) }
+func (s *ShmConfig) TTSEnabled() bool     { return s.getU8(offTTSEnabled) != 0 }
+func (s *ShmConfig) SetTTSEnabled(v bool) { s.setU8(offTTSEnabled, boolU8(v)) }
 
-func (s *ShmConfig) TTSEngine() uint8          { return s.getU8(offTTSEngine) }
-func (s *ShmConfig) SetTTSEngine(v uint8)      { s.setU8(offTTSEngine, v) }
+func (s *ShmConfig) TTSEngine() uint8     { return s.getU8(offTTSEngine) }
+func (s *ShmConfig) SetTTSEngine(v uint8) { s.setU8(offTTSEngine, v) }
 
-func (s *ShmConfig) TTSSpeed() float32         { return s.getF32(offTTSSpeed) }
-func (s *ShmConfig) SetTTSSpeed(v float32)     { s.setF32(offTTSSpeed, v) }
+func (s *ShmConfig) TTSSpeed() float32     { return s.getF32(offTTSSpeed) }
+func (s *ShmConfig) SetTTSSpeed(v float32) { s.setF32(offTTSSpeed, v) }
 
-func (s *ShmConfig) TTSPitch() uint16          { return s.getU16(offTTSPitch) }
-func (s *ShmConfig) SetTTSPitch(v uint16)      { s.setU16(offTTSPitch, v) }
+func (s *ShmConfig) TTSPitch() uint16     { return s.getU16(offTTSPitch) }
+func (s *ShmConfig) SetTTSPitch(v uint16) { s.setU16(offTTSPitch, v) }
 
-func (s *ShmConfig) TTSVolume() uint8          { return s.getU8(offTTSVolume) }
-func (s *ShmConfig) SetTTSVolume(v uint8)      { s.setU8(offTTSVolume, v) }
+func (s *ShmConfig) TTSVolume() uint8     { return s.getU8(offTTSVolume) }
+func (s *ShmConfig) SetTTSVolume(v uint8) { s.setU8(offTTSVolume, v) }
 
-func (s *ShmConfig) TTSDebounce() uint16       { return s.getU16(offTTSDebounce) }
-func (s *ShmConfig) SetTTSDebounce(v uint16)   { s.setU16(offTTSDebounce, v) }
+func (s *ShmConfig) TTSDebounce() uint16     { return s.getU16(offTTSDebounce) }
+func (s *ShmConfig) SetTTSDebounce(v uint16) { s.setU16(offTTSDebounce, v) }
 
-
-
-func (s *ShmConfig) SkipbackSeconds() uint16          { return s.getU16(offSkipbackSeconds) }
-func (s *ShmConfig) SetSkipbackSeconds(v uint16)      { s.setU16(offSkipbackSeconds, v) }
+func (s *ShmConfig) SkipbackSeconds() uint16     { return s.getU16(offSkipbackSeconds) }
+func (s *ShmConfig) SetSkipbackSeconds(v uint16) { s.setU16(offSkipbackSeconds, v) }
 
 func (s *ShmConfig) SetOpenToolCmd(v uint8) { s.setU8(offOpenToolCmd, v) }
 

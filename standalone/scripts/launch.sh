@@ -110,12 +110,12 @@ setsid bash -c '
   # (NOTE for editors: this whole session body is ONE single-quoted bash -c
   # string -- a bare apostrophe anywhere in it, even in a comment, ends the
   # string and the script stops parsing.)
-  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber schwung-manager; do
+  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber schwung-manager display-server; do
     pids=$(pidof $name 2>/dev/null || true)
     if [ -n "$pids" ]; then echo "TERM $name $pids"; kill $pids 2>/dev/null || true; fi
   done
   sleep 1
-  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber schwung-manager; do
+  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber schwung-manager display-server; do
     pids=$(pidof $name 2>/dev/null || true)
     if [ -n "$pids" ]; then echo "KILL $name $pids"; kill -9 $pids 2>/dev/null || true; fi
   done
@@ -244,6 +244,14 @@ setsid bash -c '
         -base "$DBX_DIR" >>"$mgr_log" 2>&1 &
       echo "started schwung-manager ($!)"
     fi
+    # OLED mirror source (SSE on :7681, proxied by the manager at /mirror).
+    # Costs nothing until a viewer opens the page: the shim only copies
+    # frames while shadow_control display_mirror is set, and the manager
+    # sets that when /mirror is opened.
+    if [ -x "$DBX_DIR/display-server" ]; then
+      "$DBX_DIR/display-server" >/dev/null 2>&1 &
+      echo "started display-server ($!)"
+    fi
   }
   start_manager
 
@@ -277,12 +285,12 @@ setsid bash -c '
       # Same name list as the session entry above. schwung-manager dies here
       # too — its SHM mappings would otherwise outlive the wipe below and keep
       # pointing at deleted segments; the browser reconnects to the fresh one.
-      for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager; do
+      for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager display-server; do
         pids=$(pidof $name 2>/dev/null || true)
         [ -n "$pids" ] && kill $pids 2>/dev/null || true
       done
       sleep 1
-      for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager; do
+      for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager display-server; do
         pids=$(pidof $name 2>/dev/null || true)
         [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
       done
@@ -345,12 +353,12 @@ setsid bash -c '
   # processes after a session ended via Shift+Back).
   # schwung-manager included: ours must release :7700 (and its SHM mappings)
   # before the stock shim-entrypoint starts the stock manager.
-  for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager; do
+  for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager display-server; do
     pids=$(pidof $name 2>/dev/null || true)
     [ -n "$pids" ] && kill $pids 2>/dev/null || true
   done
   sleep 1
-  for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager; do
+  for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager display-server; do
     pids=$(pidof $name 2>/dev/null || true)
     [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
   done

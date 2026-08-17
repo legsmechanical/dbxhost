@@ -1,0 +1,28 @@
+{{template "base" .}}
+
+{{define "title"}}dAVEBOx{{end}}
+
+{{define "content"}}
+<div class="page-header">
+    <h1>Waiting for dAVEBOx&hellip;</h1>
+</div>
+<p>No session is running yet. Launch dAVEBOx on the Move and this page will
+open the app automatically.</p>
+<p id="waiting-status" aria-live="polite">Checking&hellip;</p>
+<script>
+(function () {
+    function poll() {
+        fetch('/api/tool', {cache: 'no-store'})
+            .then(function (r) { return r.json(); })
+            .then(function (t) {
+                if (t && t.url) { window.location.replace(t.url); return; }
+                document.getElementById('waiting-status').textContent =
+                    'No session detected — checking again…';
+                setTimeout(poll, 2000);
+            })
+            .catch(function () { setTimeout(poll, 2000); });
+    }
+    poll();
+})();
+</script>
+{{end}}

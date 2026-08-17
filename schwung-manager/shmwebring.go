@@ -36,12 +36,12 @@ const (
 	webRingOffReadIdx  = 2 // uint8, monotonic consumer cursor (shim-published)
 	// reserved byte at 3
 
-	webEntryStart  = 4 // first entry starts at byte 4
-	webEntrySlot   = 0 // uint8 at offset 0 within entry
+	webEntryStart = 4 // first entry starts at byte 4
+	webEntrySlot  = 0 // uint8 at offset 0 within entry
 	// reserved[3] at 1-3
-	webEntryKey    = 4   // char[64]
-	webEntryValue  = 68  // char[256]
-	webEntrySize   = 324 // 4 + 64 + 256
+	webEntryKey   = 4   // char[64]
+	webEntryValue = 68  // char[256]
+	webEntrySize  = 324 // 4 + 64 + 256
 
 	webMaxEntries = 32
 	webKeyLen     = 64

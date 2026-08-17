@@ -1,59 +1,24 @@
 {{template "base" .}}
 
-{{define "title"}}Help - Schwung Manager{{end}}
+{{define "title"}}Help - dAVEBOx{{end}}
 
 {{define "content"}}
 <div class="page-header">
-    <h1>Help</h1>
-    <p>Read the <a href="https://schwung.dev/manual.html" target="_blank" rel="noopener">full Schwung manual</a>. Need more help? Want to chat? <a href="https://discord.com/invite/GHWaZCC9bQ" target="_blank" rel="noopener">Join us on Discord</a></p>
-    <nav class="help-nav" aria-label="Help sections">
-        {{range .Sections}}<a href="#help-{{.Title}}">{{.Title}}</a>{{end}}
-    </nav>
+    <h1>{{if .DocTitle}}{{.DocTitle}}{{else}}Help{{end}}</h1>
 </div>
 
-{{range .Sections}}
-<section class="info-card help-section" id="help-{{.Title}}">
-    <h2>{{.Title}}</h2>
-    {{if .Children}}
-    <div class="help-topics">
-        {{template "helpChildren" .Children}}
-    </div>
+{{if .DocHTML}}
+<p><a href="/help">&larr; All topics</a></p>
+<article class="help-doc">
+    {{.DocHTML}}
+</article>
+{{else if .Docs}}
+<ul class="help-topics">
+    {{range .Docs}}
+    <li><a href="/help?doc={{.Name}}">{{.Title}}</a></li>
     {{end}}
-    {{if .Lines}}
-    <div class="help-body">
-        {{joinHelpLines .Lines}}
-    </div>
-    {{end}}
-</section>
-{{end}}
-
-<script>
-/* When a module topic is opened, auto-expand its first subtopic (typically Overview) */
-document.querySelectorAll('.help-topics > .help-topic').forEach(function(topic) {
-    topic.addEventListener('toggle', function() {
-        if (topic.open) {
-            var first = topic.querySelector('.help-subtopics > .help-topic');
-            if (first && !first.open) first.open = true;
-        }
-    });
-});
-</script>
-{{end}}
-
-{{define "helpChildren"}}
-{{range .}}
-<details class="help-topic">
-    <summary><h3>{{.Title}}</h3></summary>
-    {{if .Lines}}
-    <div class="help-body">
-        {{joinHelpLines .Lines}}
-    </div>
-    {{end}}
-    {{if .Children}}
-    <div class="help-subtopics">
-        {{template "helpChildren" .Children}}
-    </div>
-    {{end}}
-</details>
+</ul>
+{{else}}
+<p>Documentation is coming. This page will hold the dAVEBOx manual.</p>
 {{end}}
 {{end}}

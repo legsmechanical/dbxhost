@@ -1,6 +1,6 @@
 {{template "base" .}}
 
-{{define "title"}}System - Schwung Manager{{end}}
+{{define "title"}}System - dAVEBOx{{end}}
 
 {{define "content"}}
 <div class="page-header">
@@ -9,25 +9,12 @@
 
 <div class="system-info">
     <section class="info-card">
-        <h2>Schwung Host</h2>
+        <h2>dAVEBOx</h2>
         <dl class="detail-list">
             <dt>Version</dt>
-            <dd>{{if .HostRepo}}<a href="{{releaseURL .HostRepo .Version}}" target="_blank" rel="noopener noreferrer">{{.Version}}</a>{{else}}{{.Version}}{{end}}</dd>
+            <dd>{{.Version}}</dd>
         </dl>
-        <div class="system-actions">
-            <form method="POST" action="/system/check-update" class="inline-form">
-                <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-                <button type="submit" class="btn btn-secondary">Check for Update</button>
-            </form>
-            {{if .UpdateAvailable}}
-            <form method="POST" action="/system/upgrade" class="inline-form"
-                  data-confirm="Upgrade to {{.LatestVersion}}? This will restart the service." data-confirm-title="Upgrade Schwung" data-confirm-label="Upgrade">
-                <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-                <button type="submit" class="btn btn-primary">Upgrade to {{.LatestVersion}}</button>
-            </form>
-            <a class="release-notes-link" href="{{releaseURL .HostRepo .LatestVersion}}" target="_blank" rel="noopener noreferrer">release notes</a>
-            {{end}}
-        </div>
+        <!-- Updates ship through the installer, not the browser. -->
     </section>
 
     <section class="info-card">
