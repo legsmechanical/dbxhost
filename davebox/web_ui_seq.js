@@ -1556,6 +1556,25 @@ let lastFoldSig="";   /* scale-aware + scale-mask signature; re-layout the roll 
 function firstLaneWithHits(){ if(!M||!M.dnotes) return 0; let best=-1;
   for(const L in M.dnotes){ if(M.dnotes[L]&&M.dnotes[L].length){ const l=+L; if(best<0||l<best) best=l; } }
   return best<0?0:best; }
+/* Rejected-push stash. The server pushes DELTAS (only keys that changed since
+ * the snapshot this client last received), so a rejected message is no longer
+ * recoverable from "the next push carries everything again" — a delta dropped
+ * during a drag or the suppress window would leave kv stale on exactly its
+ * keys until some unrelated edit touched them. So reject paths STASH the
+ * message and a pump re-applies it once the rejecting condition clears; an
+ * ACCEPTED message drops any stashed keys it supersedes. */
+let rejectStash=null, rejectPump=0;
+function stashRejected(params){
+  rejectStash=Object.assign(rejectStash||{},params);
+  if(rejectPump) return;
+  rejectPump=setInterval(()=>{
+    if(dragging||clipDrag) return;
+    if(now()<suppressRefreshUntil) return;
+    const s=rejectStash; rejectStash=null;
+    clearInterval(rejectPump); rejectPump=0;
+    if(s) applyParams(s);
+  },200);
+}
 function applyParams(params){
   /* STAGED merge: the sticky kv cache must only keep values from ACCEPTED
    * messages. It used to be written before the reject gate, so a WiFi-delayed
@@ -1566,8 +1585,9 @@ function applyParams(params){
   const prevKv={}; let touched=false;
   for(const k in params){ if(k.indexOf(P+"rui_")===0){ prevKv[k]=kv[k]; kv[k]=params[k]; touched=true; } }
   if(!touched) return;
+  if(rejectStash){ for(const k in params) delete rejectStash[k]; } /* accepted supersedes stashed */
   const revert=()=>{ for(const k in prevKv){ if(prevKv[k]===undefined) delete kv[k]; else kv[k]=prevKv[k]; } };
-  if(dragging || clipDrag){ revert(); return; }   /* don't clobber a canvas OR session-grid clip drag */
+  if(dragging || clipDrag){ revert(); stashRejected(params); return; }   /* don't clobber a canvas OR session-grid clip drag */
   const m=parseModel(); if(!m){ revert(); return; }
   /* Playhead/transport target: applied BEFORE the content gate — the post-edit
    * suppress window must never delay a stop/start edge or a phase correction.
@@ -1590,7 +1610,7 @@ function applyParams(params){
     }
   }
   /* during the post-edit suppress window, ignore snapshots that haven't caught up */
-  if(now()<suppressRefreshUntil && M && m.rev<=M.rev){ revert(); return; }
+  if(now()<suppressRefreshUntil && M && m.rev<=M.rev){ revert(); stashRejected(params); return; }
   const prevRev=lastRev, prevSel=lastSelKey;
   M=m;
   /* drum: land on a lane so the Lane + FX populate immediately instead of a blank
