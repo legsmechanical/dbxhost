@@ -8,6 +8,17 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **The browser editor is now the whole page.** Opening `http://move.local:7700`
+  lands directly in the dAVEBOx editor — no more Schwung tabs, module store, or
+  "Connecting to the Move…" hang. While no session is running, the page says so
+  and opens the editor automatically when one starts. A live view of the Move's
+  screen is at Mirror, and Files / Help / Config / System keep their pages.
+- **The browser editor keeps up.** Updates from the device now arrive as small
+  changes instead of the whole project every time, and the connection is
+  compressed — editing over WiFi stays responsive during playback.
+- **Connection pill.** The editor's header now shows the link state at a
+  glance: Live, Reconnecting, or "dAVEBOx not running" (the session was left
+  while the page stayed open). Press ` to open a diagnostics readout.
 - **The menus all look like the same app now.** Several screens had drifted onto
   different layouts — the Settings menu used a different typeface for its title
   and its rows, the project screens drew their own list that didn't match any

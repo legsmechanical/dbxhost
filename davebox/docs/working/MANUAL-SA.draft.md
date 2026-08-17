@@ -1381,9 +1381,13 @@ presets; and Note Repeat masks and rates.
 
 # 17. The Browser Editor
 
-With dAVEBOx loaded, open the Schwung web manager (`http://move.local:7700`) →
-**Remote UI → Tool tab** for a full clip editor in the browser. It mirrors the
-device both ways — edits on either side show up on the other.
+Open `http://move.local:7700` in a browser on the same network — the page IS
+the dAVEBOx editor. It mirrors the device both ways — edits on either side show
+up on the other. If no session is running yet, the page waits and opens the
+editor by itself when one starts. The header's **connection pill** shows the
+link state (Live / Reconnecting / "dAVEBOx not running"). The site's small nav
+also offers **Mirror** (a live view of the Move's screen), **Files** (pull
+recordings and projects off the device), and **Help**.
 
 - **Session grid:** click a clip to launch it (Alt/Shift-click views it without
   launching); drag to move (Alt-drag copies); a clip's **≡ menu** duplicates,

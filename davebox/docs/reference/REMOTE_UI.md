@@ -251,6 +251,18 @@ bands without breaking alignment).
 
 ## 8. Invariants & gotchas (hard-won)
 
+0. **The manager pushes per-client DELTAS (2026-08-16).** `serviceToolClients` diffs each new
+   snapshot against the last one the client ACKED and sends only changed keys; a key that LEFT the
+   snapshot arrives as an explicit `""` (the browser kv cache is sticky — an omitted key would pin
+   its stale value forever). Anything that resets a client's `toolSynced` (subscribe, resubscribe,
+   tool arrival) also clears its delta base, so fresh/rejoining clients always get the full map
+   (`snapshot_delta_test.go` pins all of this). Consequence for the BROWSER: a rejected push is no
+   longer healed by "the next push carries everything" — `applyParams`'s reject paths (mid-drag,
+   post-edit suppress window) must **stash the message and replay it** once the condition clears
+   (`stashRejected` in `web_ui_seq.js`; an accepted message drops the stashed keys it supersedes).
+   The split files: shell `web_ui.html`, transport/parsers/mock in `web_ui_core.js`, render/edit in
+   `web_ui_seq.js` — classic scripts sharing one global scope, order pinned by
+   `tests/host/test_web_ui_assets_shipped.sh`.
 1. **Display = snapshot fields only.** No live `getParam` round-trip. New UI data ⇒ new `rui_*` field.
 2. **64 KB snapshot budget — truncation-safe.** Gate large per-clip data (automation curves via `rui_cc`
    focus) so a full snapshot stays small. `seq8_remote_snapshot` reserves `RUI_TAIL_RESERVE` (96 B) of tail
