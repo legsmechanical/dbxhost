@@ -49,7 +49,7 @@ const (
 	webRingSize   = 4 + webMaxEntries*webEntrySize // header + entries
 )
 
-const shmWebParamSetPath = "/dev/shm/schwung-web-param-set"
+var shmWebParamSetPath = shmPath("web-param-set")
 
 // OpenShmWebParamSetRing opens the web param set ring buffer.
 // Returns nil if the segment doesn't exist.
@@ -143,7 +143,7 @@ const (
 	notifyRingSize   = 4 + notifyMaxEntries*notifyEntrySize
 )
 
-const shmWebParamNotifyPath = "/dev/shm/schwung-web-param-notify"
+var shmWebParamNotifyPath = shmPath("web-param-notify")
 
 // ParamChange represents a single param value change from the shim.
 type ParamChange struct {

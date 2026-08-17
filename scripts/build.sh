@@ -103,9 +103,14 @@ if [ -z "$CROSS_PREFIX" ] && [ ! -f "/.dockerenv" ]; then
     if [ -d "$REPO_ROOT/schwung-manager" ]; then
         echo "=== Building schwung-manager (Go) ==="
         mkdir -p "$REPO_ROOT/build"
+        # SHM prefix stamp: SCHWUNG_SHM_PREFIX comes from the caller
+        # (standalone/scripts/build-host.sh exports $DBX_SHM_PREFIX). Unset =
+        # stock prefix, matching the additive convention of the C build. ONE
+        # variable feeds BOTH build branches below — never edit only one.
+        GO_LDFLAGS="-s -w -X main.shmPrefix=${SCHWUNG_SHM_PREFIX:-/schwung-}"
         if command -v go &>/dev/null; then
             cd "$REPO_ROOT/schwung-manager"
-            GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o "$REPO_ROOT/build/schwung-manager" -ldflags="-s -w" .
+            GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o "$REPO_ROOT/build/schwung-manager" -ldflags="$GO_LDFLAGS" .
             cd "$REPO_ROOT"
         elif command -v docker &>/dev/null; then
             echo "Local 'go' not found — building via golang:1.26-bookworm container"
@@ -120,7 +125,7 @@ if [ -z "$CROSS_PREFIX" ] && [ ! -f "/.dockerenv" ]; then
                 -e GOOS=linux -e GOARCH=arm64 -e CGO_ENABLED=0 \
                 -e GOCACHE=/gocache -e GOMODCACHE=/go-mod-cache \
                 golang:1.26-bookworm \
-                go build -buildvcs=false -o /out/schwung-manager -ldflags="-s -w" .
+                go build -buildvcs=false -o /out/schwung-manager -ldflags="$GO_LDFLAGS" .
         else
             echo "ERROR: neither 'go' nor 'docker' available — cannot build schwung-manager."
             echo "       The web manager will be missing from the tarball."

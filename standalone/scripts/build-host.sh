@@ -20,7 +20,10 @@ echo "    install dir : $DBX_DIR"
 echo "    SHM prefix  : $DBX_SHM_PREFIX"
 echo ""
 
+# SCHWUNG_SHM_PREFIX feeds the Go schwung-manager build (-ldflags -X stamp);
+# the C half gets the same value via -DSCHWUNG_SHM_PREFIX in SCHWUNG_CFLAGS.
 SCHWUNG_CFLAGS="-DSCHWUNG_INSTALL_DIR=\"$DBX_DIR\" -DSCHWUNG_SHM_PREFIX=\"$DBX_SHM_PREFIX\"" \
+SCHWUNG_SHM_PREFIX="$DBX_SHM_PREFIX" \
     "$REPO_ROOT/scripts/build.sh" "$@"
 
 echo ""

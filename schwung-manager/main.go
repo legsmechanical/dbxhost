@@ -3312,20 +3312,14 @@ func main() {
 	// Move's /tmp is on the root filesystem which is nearly always full.
 	// Go's multipart parser writes temp files to os.TempDir() (/tmp by default),
 	// so large uploads (e.g. soundfonts) fail and surface as "invalid CSRF token".
-	// Redirect temp files to /data/UserData/ which has space.
-	tmpDir := "/data/UserData/schwung/.tmp"
-	if info, err := os.Stat("/data/UserData"); err == nil && info.IsDir() {
-		os.RemoveAll(tmpDir) // clear stale temp files from previous runs
-		os.MkdirAll(tmpDir, 0755)
-		os.Setenv("TMPDIR", tmpDir)
-	}
-
 	port := flag.Int("port", 7700, "HTTP listen port")
 	roots := flag.String("roots", "/data/UserData/", "Comma-separated allowed filesystem roots")
 	catalogURL := flag.String("catalog-url",
 		"https://raw.githubusercontent.com/charlesvestal/schwung/main/module-catalog.json",
 		"URL for the module catalog JSON")
 	displayBackend := flag.String("display-backend", "127.0.0.1:7681", "Address of display server")
+	baseFlag := flag.String("base", "", "Host install dir (default: probe <root>/schwung)")
+	shmPrefixFlag := flag.String("shm-prefix", "", "Override the built-in SHM prefix (dev use)")
 	// Deprecated flags — accepted but ignored for backwards compatibility with old entrypoints.
 	flag.String("move-backend", "", "(deprecated, ignored)")
 	flag.String("schwung-host", "", "(deprecated, ignored)")
@@ -3334,19 +3328,36 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
+	if *shmPrefixFlag != "" {
+		setShmPrefix(*shmPrefixFlag)
+	}
+	logger.Info("shm prefix", "prefix", shmPrefix)
+
 	allowedRoots := strings.Split(*roots, ",")
 	for i := range allowedRoots {
 		allowedRoots[i] = strings.TrimSpace(allowedRoots[i])
 	}
 
-	// Determine Schwung base path.
-	basePath := "/data/UserData/schwung"
-	for _, r := range allowedRoots {
-		candidate := filepath.Join(r, "schwung")
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			basePath = candidate
-			break
+	// Determine the host install base path.
+	basePath := *baseFlag
+	if basePath == "" {
+		basePath = "/data/UserData/schwung"
+		for _, r := range allowedRoots {
+			candidate := filepath.Join(r, "schwung")
+			if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+				basePath = candidate
+				break
+			}
 		}
+	}
+
+	// Redirect temp files under the install base, which has space (never /tmp:
+	// the root FS is small) and never the other install's tree.
+	tmpDir := filepath.Join(basePath, ".tmp")
+	if info, err := os.Stat("/data/UserData"); err == nil && info.IsDir() {
+		os.RemoveAll(tmpDir) // clear stale temp files from previous runs
+		os.MkdirAll(tmpDir, 0755)
+		os.Setenv("TMPDIR", tmpDir)
 	}
 
 	tmpl, err := loadTemplates()

@@ -102,15 +102,24 @@ setsid bash -c '
   # The one and only teardown of the stock stack (launch-standalone.sh no
   # longer pre-kills it). The frozen MoveOriginal ignores the TERM phase and
   # dies on the KILL phase -- that is expected, not a leak.
-  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber; do
+  # schwung-manager is in the list to catch the STOCK manager (same binary
+  # name, spawned by shim-entrypoint.sh): it holds :7700 and reads the stock
+  # /schwung-* segments, so left alive it answers the browser with the wrong
+  # host. The stock pid file goes too, or the stock "already running" check
+  # misfires on pid reuse when stock returns.
+  # (NOTE for editors: this whole session body is ONE single-quoted bash -c
+  # string -- a bare apostrophe anywhere in it, even in a comment, ends the
+  # string and the script stops parsing.)
+  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber schwung-manager; do
     pids=$(pidof $name 2>/dev/null || true)
     if [ -n "$pids" ]; then echo "TERM $name $pids"; kill $pids 2>/dev/null || true; fi
   done
   sleep 1
-  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber; do
+  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber schwung-manager; do
     pids=$(pidof $name 2>/dev/null || true)
     if [ -n "$pids" ]; then echo "KILL $name $pids"; kill -9 $pids 2>/dev/null || true; fi
   done
+  rm -f /data/UserData/schwung/schwung-manager.pid
   sleep 0.5
 
   # Stand the watchdog down NOW, tight behind the sweep. move-launcher.service
@@ -220,6 +229,24 @@ setsid bash -c '
 
   export LD_LIBRARY_PATH=$DBX_DIR/lib:$LD_LIBRARY_PATH
 
+  # Web manager sidecar (browser UI on :7700). Started BEFORE the host on
+  # purpose: every SHM attach in it is lazy-with-retry, so an early start is
+  # free and the browser is reachable while Move boots. Restarted by the
+  # relaunch branch below after each SHM wipe — its mappings die with the
+  # segments, same rule as every other sidecar.
+  start_manager() {
+    mgr_log="$DBX_DIR/manager.log"
+    if [ -f "$mgr_log" ] && [ "$(wc -c < "$mgr_log" 2>/dev/null || echo 0)" -gt 102400 ]; then
+      tail -c 102400 "$mgr_log" > "$mgr_log.tmp" 2>/dev/null && mv "$mgr_log.tmp" "$mgr_log"
+    fi
+    if [ -x "$DBX_DIR/schwung-manager" ]; then
+      "$DBX_DIR/schwung-manager" -port 7700 -roots /data/UserData/ \
+        -base "$DBX_DIR" >>"$mgr_log" 2>&1 &
+      echo "started schwung-manager ($!)"
+    fi
+  }
+  start_manager
+
   # BARE SONAME, never a path. MoveOriginal carries file capabilities, so it
   # runs AT_SECURE, where glibc silently drops any LD_PRELOAD entry containing a
   # slash and honours only bare names from standard directories carrying the
@@ -247,18 +274,21 @@ setsid bash -c '
       # DELETED segments, invisible to the fresh stack, while the new shim
       # sees its stale pid file and never respawns it (observed on hardware
       # 2026-08-06: session alive, module apparently loaded, controls dead).
-      # Same name list as the session entry above.
-      for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber; do
+      # Same name list as the session entry above. schwung-manager dies here
+      # too — its SHM mappings would otherwise outlive the wipe below and keep
+      # pointing at deleted segments; the browser reconnects to the fresh one.
+      for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager; do
         pids=$(pidof $name 2>/dev/null || true)
         [ -n "$pids" ] && kill $pids 2>/dev/null || true
       done
       sleep 1
-      for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber; do
+      for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager; do
         pids=$(pidof $name 2>/dev/null || true)
         [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
       done
       rm -f "$DBX_DIR/shadow_ui.pid" "$DBX_DIR/link_sub.pid"
       rm -f /dev/shm/dbxhost-*
+      start_manager
       # Apply the requested project index NOW — after Move exited. Writing it
       # earlier loses: the dying Move saves Settings.json on SIGTERM and
       # overwrites the value with its own stale in-memory index, so the fresh
@@ -313,12 +343,14 @@ setsid bash -c '
   # they outlive MoveOriginal, and a stray shadow_ui keeps running against
   # deleted SHM while stock respawns its own (observed: two shadow_ui
   # processes after a session ended via Shift+Back).
-  for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber; do
+  # schwung-manager included: ours must release :7700 (and its SHM mappings)
+  # before the stock shim-entrypoint starts the stock manager.
+  for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager; do
     pids=$(pidof $name 2>/dev/null || true)
     [ -n "$pids" ] && kill $pids 2>/dev/null || true
   done
   sleep 1
-  for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber; do
+  for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager; do
     pids=$(pidof $name 2>/dev/null || true)
     [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
   done

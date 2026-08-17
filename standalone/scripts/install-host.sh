@@ -102,7 +102,7 @@ fi
 # ⚠ build.sh exits 0 even when a sub-build fails (observed: the Go step died on a
 # full Docker disk and the script still reported success with no artifacts). Check
 # for the artifacts themselves, never the exit status.
-for a in build/schwung build/schwung-shim.so build/shadow/shadow_ui; do
+for a in build/schwung build/schwung-shim.so build/shadow/shadow_ui build/schwung-manager; do
     [ -f "$REPO_ROOT/$a" ] || { echo "ERROR: missing $a — build did not produce it" >&2; exit 1; }
 done
 [ -f "$HERE/build/$DBX_HEAL_NAME" ] || {
@@ -119,7 +119,9 @@ done
 # It stays because it is the check that actually looks at what is about to be
 # SHIPPED, and it costs one `strings` call. Verify the artifact, not the recipe.
 say ""; say "--- verifying the payload targets $DBX_SHM_PREFIX"
-for a in build/schwung build/schwung-shim.so build/shadow/shadow_ui; do
+# schwung-manager is Go: the prefix arrives as an -ldflags -X stamp, but -s -w
+# strips symbols only, not string data, so `strings` still sees it.
+for a in build/schwung build/schwung-shim.so build/shadow/shadow_ui build/schwung-manager; do
     bin="$REPO_ROOT/$a"
     # SUBSTRING, not whole-line: only shadow_ui keeps the bare prefix as its own
     # string. The others embed it already concatenated with the segment name
@@ -151,7 +153,7 @@ for a in build/schwung build/schwung-shim.so build/shadow/shadow_ui; do
         exit 1
     fi
 done
-say "      ok — all three binaries carry $DBX_SHM_PREFIX"
+say "      ok — all four binaries carry $DBX_SHM_PREFIX"
 
 # --- Link Audio sidecar present? -------------------------------------------
 # The shim resolves the subscriber at SCHWUNG_INSTALL_DIR/link-subscriber, i.e.

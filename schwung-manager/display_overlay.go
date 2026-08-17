@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	dispW   = 128
-	dispH   = 64
-	dispSHM = "/dev/shm/schwung-display-live"
+	dispW = 128
+	dispH = 64
 )
+
+var dispSHM = shmPath("display-live")
 
 // 5x7 bitmap font for the characters we need. Each rune maps to 5 bytes
 // (one per column). bit 0 = topmost pixel in the column. Hand-rolled so

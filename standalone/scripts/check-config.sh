@@ -112,6 +112,19 @@ check "davebox seq8.c select marker"   "$DBX/dsp/seq8.c"         "\"$DBX_DIR/fre
 # -ring hang the prefix exists to prevent.
 check "launch.sh clears SHM namespace" "$HERE/scripts/launch.sh" "/dev/shm/${DBX_SHM_PREFIX#/}*"
 
+# The Go schwung-manager gets the prefix as a link-time stamp, not a -D flag.
+# Three pins hold that seam together:
+#   1. build-host.sh must export the env var that feeds the stamp;
+#   2. scripts/build.sh must actually apply it in the ldflags;
+#   3. shmconfig.go's compiled-in default must stay the STOCK prefix, so an
+#      unstamped/stale binary under SA fails loudly (ENOENT on every segment)
+#      instead of silently attaching to the wrong host's segments. Do NOT
+#      "fix" that default to $DBX_SHM_PREFIX — that re-opens the silent-skew
+#      hole the stamp exists to close.
+check "build-host.sh exports Go shm prefix" "$HERE/scripts/build-host.sh" "SCHWUNG_SHM_PREFIX=\"\$DBX_SHM_PREFIX\""
+check "build.sh stamps manager shm prefix"  "$HERE/../scripts/build.sh" "-X main.shmPrefix=\${SCHWUNG_SHM_PREFIX"
+check "manager default prefix is STOCK"     "$HERE/../schwung-manager/shmconfig.go" "var shmPrefix = \"/schwung-\""
+
 if [ "$fail" != "0" ]; then
     echo "config drift — fix the file above, or config.sh if the new value is intended" >&2
     exit 1

@@ -68,7 +68,7 @@ const (
 	paramPollInterval    = 500 * time.Microsecond
 )
 
-const shmParamPath = "/dev/shm/schwung-param"
+var shmParamPath = shmPath("param")
 
 // OpenShmParams opens and mmaps the param shared memory segment.
 // Returns nil if the segment doesn't exist (not running on device).

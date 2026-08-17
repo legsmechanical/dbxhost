@@ -59,12 +59,29 @@ const (
 	shmControlSize     = 64
 )
 
-const shmPath = "/dev/shm/schwung-control"
+// shmPrefix is overridden at build time: -ldflags "-X main.shmPrefix=/dbxhost-".
+// The default is deliberately the STOCK prefix: an unstamped binary launched
+// into a dbxhost session must fail loudly (every segment open ENOENT, logged at
+// startup) rather than silently attach to another install's segments.
+var shmPrefix = "/schwung-"
+
+func shmPath(name string) string { return "/dev/shm" + shmPrefix + name }
+
+// setShmPrefix overrides the prefix at runtime (the -shm-prefix flag, dev use
+// only). The derived package-level paths were computed at init, so they must
+// be re-derived here. Call before any segment is opened.
+func setShmPrefix(p string) {
+	shmPrefix = p
+	shmParamPath = shmPath("param")
+	shmWebParamSetPath = shmPath("web-param-set")
+	shmWebParamNotifyPath = shmPath("web-param-notify")
+	dispSHM = shmPath("display-live")
+}
 
 // OpenShmConfig opens and mmaps the shared memory control segment.
 // Returns nil if the segment doesn't exist (not running on device).
 func OpenShmConfig() *ShmConfig {
-	f, err := os.OpenFile(shmPath, os.O_RDWR, 0)
+	f, err := os.OpenFile(shmPath("control"), os.O_RDWR, 0)
 	if err != nil {
 		return nil
 	}
