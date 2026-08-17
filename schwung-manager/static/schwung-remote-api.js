@@ -160,6 +160,7 @@
     // (a real state under SA — session exited, manager still up), null means
     // not yet known.
     var status = { state: "closed", toolId: null };
+    var wantMixer = false; // subscribeMixer() called — re-subscribed on every reconnect
     var statusListeners = [];
     function emitStatus() {
         for (var i = 0; i < statusListeners.length; i++) {
@@ -229,6 +230,9 @@
                 ws.send(JSON.stringify({ type: "subscribe_tool" }));
             } else {
                 ws.send(JSON.stringify({ type: "subscribe", slot: slot }));
+            }
+            if (wantMixer) {
+                ws.send(JSON.stringify({ type: "subscribe_mixer" }));
             }
         };
 
@@ -304,6 +308,16 @@
         onStatus: function (cb) {
             statusListeners.push(cb);
             try { cb(status); } catch (e) { /* ignore */ }
+        },
+
+        // subscribeMixer(): opt in to the mixer surface (chain:<n>:/move_fx:<n>:
+        // wire keys, seeded then pushed live). Sticky across reconnects. Values
+        // arrive via onParamChange like everything else.
+        subscribeMixer: function () {
+            wantMixer = true;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "subscribe_mixer" }));
+            }
         }
     };
 })();

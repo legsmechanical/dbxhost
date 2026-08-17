@@ -51,6 +51,10 @@ type RemoteUI struct {
 	// the client's tool UI).
 	toolGoneStreak int
 
+	// moduleNames caches module id -> module.json display name (mixer badge).
+	// Guarded by mu.
+	moduleNames map[string]string
+
 	// toolKick delivers a shim-pushed "rui_poll" digest (notify ring, F4 push
 	// path) to toolTickLoop so it services Tool-tab clients immediately instead
 	// of waiting for the next poll tick. Buffered(1); a pending kick is replaced
@@ -81,6 +85,9 @@ type ruClient struct {
 	subs map[uint8]bool
 	// whether this client is subscribed to master FX
 	masterFxSub bool
+	// whether this client is subscribed to the mixer surface (the 8 unified
+	// positions in the chain:<n>:/move_fx:<n>: wire namespace — see mixerkeys.go)
+	mixerSub bool
 	// whether this client is subscribed to the active overtake tool's UI
 	toolSub bool
 	// rev-gated tool polling: skip the heavy "state" snapshot read unless the
@@ -466,6 +473,12 @@ func (ru *RemoteUI) readLoop(ctx context.Context, c *ruClient) {
 			ru.handleSubscribeMasterFx(ctx, c)
 		case "unsubscribe_master_fx":
 			ru.handleUnsubscribeMasterFx(c)
+		case "subscribe_mixer":
+			ru.handleSubscribeMixer(ctx, c)
+		case "unsubscribe_mixer":
+			c.mu.Lock()
+			c.mixerSub = false
+			c.mu.Unlock()
 		case "subscribe_tool":
 			ru.handleSubscribeTool(ctx, c)
 		case "unsubscribe_tool":
@@ -782,6 +795,15 @@ func (ru *RemoteUI) handleSetParam(ctx context.Context, c *ruClient, msg wsMessa
 		ru.sendError(ctx, c, "set_param requires key")
 		return
 	}
+	// Mixer wire keys (chain:<n>:/move_fx:<n>:) carry their own address —
+	// translate to (slot, mailbox key) and ignore the message's slot field.
+	if s, k, ok := mixerWireToShm(msg.Key); ok {
+		if err := ru.setParam(s, k, msg.Value); err != nil {
+			ru.logger.Error("mixer set failed", "key", msg.Key, "err", err)
+			ru.sendError(ctx, c, "set_param failed: "+err.Error())
+		}
+		return
+	}
 	// Overtake CONTENT edits mark the sender mid-edit: snapshot echoes back to
 	// it are suppressed for a short window (see ruClient.toolQuietUntil) — its
 	// optimistic UI rejects them anyway. Selection/transport/focus keys are
@@ -849,6 +871,80 @@ func (ru *RemoteUI) handleGetHierarchy(ctx context.Context, c *ruClient, msg wsM
 		ru.sendHierarchy(ctx, c, slot, comp)
 		ru.sendChainParams(ctx, c, slot, comp)
 	}
+}
+
+// handleSubscribeMixer marks the client for mixer fan-out and seeds it with
+// the full strip surface: 8 chain positions + 4 Move buses × 6 strip keys,
+// plus each chain position's instrument identity for the badge. The seed is
+// serial mailbox reads (~72 × ~3ms ≈ 220ms) in a goroutine so another
+// client's latency never rides on it; live updates thereafter come from the
+// notify ring, which the host already fires on every strip set.
+func (ru *RemoteUI) handleSubscribeMixer(ctx context.Context, c *ruClient) {
+	c.mu.Lock()
+	c.mixerSub = true
+	c.mu.Unlock()
+	ru.logger.Info("ws subscribe mixer")
+	if !ru.requireShm(ctx, c) {
+		return
+	}
+	go func() {
+		params := make(map[string]string)
+		for n := 0; n < maxChainSlots; n++ {
+			for _, k := range mixerSeedKeys {
+				if v, err := ru.shm.GetParam(uint8(n), "slot:"+k); err == nil {
+					params["chain:"+strconv.Itoa(n)+":"+k] = v
+				}
+			}
+			if id, err := ru.shm.GetParam(uint8(n), "synth_module"); err == nil {
+				params["chain:"+strconv.Itoa(n)+":synth_module"] = id
+				if id != "" {
+					params["chain:"+strconv.Itoa(n)+":synth_name"] = ru.moduleDisplayName(id)
+				}
+			}
+		}
+		for b := 1; b <= moveBusCount; b++ {
+			for _, k := range mixerSeedKeys {
+				key := "move_fx:" + strconv.Itoa(b) + ":" + k
+				if v, err := ru.shm.GetParam(0, key); err == nil {
+					params[key] = v
+				}
+			}
+		}
+		ru.writeJSONTry(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
+	}()
+}
+
+// moduleDisplayName resolves a module id to its module.json "name" (cached).
+// User-facing surfaces name a track's INSTRUMENT, so the badge should read
+// "OB-Xd", not "obxd", wherever the manifest provides it.
+func (ru *RemoteUI) moduleDisplayName(id string) string {
+	ru.mu.Lock()
+	if ru.moduleNames == nil {
+		ru.moduleNames = make(map[string]string)
+	}
+	if n, ok := ru.moduleNames[id]; ok {
+		ru.mu.Unlock()
+		return n
+	}
+	ru.mu.Unlock()
+	name := id
+	for _, cat := range moduleCategoryDirs {
+		data, err := os.ReadFile(filepath.Join(ru.basePath, "modules", cat, id, "module.json"))
+		if err != nil {
+			continue
+		}
+		var m struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(data, &m) == nil && m.Name != "" {
+			name = m.Name
+		}
+		break
+	}
+	ru.mu.Lock()
+	ru.moduleNames[id] = name
+	ru.mu.Unlock()
+	return name
 }
 
 func (ru *RemoteUI) handleSubscribeMasterFx(ctx context.Context, c *ruClient) {
@@ -1616,7 +1712,15 @@ func (ru *RemoteUI) notifyLoop(ctx context.Context) {
 			// subscribers receive them without needing a slot 0 subscription.
 			slotChanges := make(map[uint8]map[string]string)
 			masterFxChanges := make(map[string]string)
+			// Mixer surface: every strip change (device knob turn, another
+			// browser's fader) re-shaped to the wire namespace and fanned out
+			// to mixer subscribers — this is the whole device→browser mixer
+			// sync path; the host already fires on_param_changed on every set.
+			mixerChanges := make(map[string]string)
 			for _, c := range changes {
+				if wire, ok := mixerShmToWire(c.Slot, c.Key); ok {
+					mixerChanges[wire] = c.Value
+				}
 				if c.Slot == 0 && c.Key == overtakeParamPrefix+"rui_poll" {
 					// F4 push: the shim probes the overtake tool's rui_poll
 					// digest and pushes changes here. Don't forward raw —
@@ -1699,6 +1803,18 @@ func (ru *RemoteUI) notifyLoop(ctx context.Context) {
 				for _, c := range clients {
 					c.mu.Lock()
 					subscribed := c.masterFxSub
+					c.mu.Unlock()
+					if subscribed {
+						ru.writeJSONTry(ctx, c, update)
+					}
+				}
+			}
+
+			if len(mixerChanges) > 0 {
+				update := wsParamUpdate{Type: "param_update", Slot: 0, Params: mixerChanges}
+				for _, c := range clients {
+					c.mu.Lock()
+					subscribed := c.mixerSub
 					c.mu.Unlock()
 					if subscribed {
 						ru.writeJSONTry(ctx, c, update)
