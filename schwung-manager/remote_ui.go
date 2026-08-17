@@ -127,10 +127,11 @@ type slotCache struct {
 // --- Inbound message types (browser -> server) ---
 
 type wsMessage struct {
-	Type  string `json:"type"`
-	Slot  *uint8 `json:"slot,omitempty"`
-	Key   string `json:"key,omitempty"`
-	Value string `json:"value,omitempty"`
+	Type      string `json:"type"`
+	Slot      *uint8 `json:"slot,omitempty"`
+	Key       string `json:"key,omitempty"`
+	Value     string `json:"value,omitempty"`
+	Component string `json:"component,omitempty"` // get_hierarchy: serve ONE component
 }
 
 // --- Outbound message types (server -> browser) ---
@@ -856,6 +857,18 @@ func (ru *RemoteUI) handleGetHierarchy(ctx context.Context, c *ruClient, msg wsM
 		return
 	}
 	slot := ru.slotFromMsg(msg)
+	// Component-targeted request (the Sound view): serve ONE component, which
+	// may be any component string the host routes — chain components ("synth",
+	// "fx1".."fx4", "midi_fx1") on the slot, or a Move bus's insert block
+	// ("move_fx:<1-4>:fx<1-4>") on slot 0 — the exact keys the on-device
+	// editor builds. hierarchy + chain_params + current values, one shot.
+	if msg.Component != "" {
+		comp := msg.Component
+		ru.sendHierarchy(ctx, c, slot, comp)
+		ru.sendChainParams(ctx, c, slot, comp)
+		ru.sendInitialParamValues(ctx, c, slot, comp)
+		return
+	}
 	ru.sendSlotInfo(ctx, c, slot)
 	for _, comp := range componentPrefixes {
 		moduleKey := comp + "_module"

@@ -176,9 +176,21 @@
         return out;
     }
 
-    function emit(params) {
+    function emit(params, msgSlot) {
         for (var i = 0; i < listeners.length; i++) {
-            try { listeners[i](params); } catch (e) { /* keep other listeners alive */ }
+            // Second arg (the message's slot) is additive — existing
+            // single-arg listeners are unaffected.
+            try { listeners[i](params, msgSlot); } catch (e) { /* keep other listeners alive */ }
+        }
+    }
+
+    // Component metadata stream (hierarchy / chain_params for ANY component —
+    // the Sound view's generated editors). cb gets the raw message
+    // ({type, slot, component, data}).
+    var componentListeners = [];
+    function emitComponent(msg) {
+        for (var i = 0; i < componentListeners.length; i++) {
+            try { componentListeners[i](msg); } catch (e) { /* keep alive */ }
         }
     }
 
@@ -195,7 +207,7 @@
                             cache[k] = msg.params[k];
                         }
                     }
-                    emit(msg.params);
+                    emit(msg.params, msg.slot);
                 }
                 break;
             case "hierarchy":
@@ -204,12 +216,14 @@
                     hierarchyData = msg.data;
                     resolveWaiters(hierarchyWaiters, hierarchyData);
                 }
+                emitComponent(msg);
                 break;
             case "chain_params":
                 if (msg.component === "synth") {
                     chainParamsData = msg.data;
                     resolveWaiters(chainParamsWaiters, chainParamsData);
                 }
+                emitComponent(msg);
                 break;
             case "tool_info":
                 status.toolId = (typeof msg.id === "string") ? msg.id : "";
@@ -317,6 +331,26 @@
             wantMixer = true;
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: "subscribe_mixer" }));
+            }
+        },
+
+        // requestComponent(slot, component): ask for one component's
+        // hierarchy + chain_params + current values (the Sound view's
+        // generated editors). Metadata arrives via onComponentData; values
+        // via onParamChange (second arg = the message's slot).
+        requestComponent: function (compSlot, component) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "get_hierarchy", slot: compSlot, component: component }));
+            }
+        },
+        onComponentData: function (cb) { componentListeners.push(cb); },
+
+        // setParamAt(slot, key, value): a write addressed to a specific chain
+        // position — the tool page is pinned to slot 0, but the Sound view
+        // edits the SELECTED track's components.
+        setParamAt: function (compSlot, key, value) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "set_param", slot: compSlot, key: key, value: String(value) }));
             }
         }
     };

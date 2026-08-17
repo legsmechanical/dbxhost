@@ -431,6 +431,21 @@ func (app *App) handleHome(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleAPIModulePanel reports whether a module ships its own web panel
+// (web_ui.html) and where it is served from. The Sound view uses this to
+// decide between hosting the module's panel and the generated param editor.
+func (app *App) handleAPIModulePanel(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	resp := map[string]string{}
+	if ru := app.remoteUI; ru != nil && id != "" && !strings.ContainsAny(id, "/\\.") {
+		if url := ru.findModuleWebUI(id); url != "" {
+			resp["url"] = url
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
 // handleAPITool reports the running tool for the waiting page's poll.
 func (app *App) handleAPITool(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]string{}
@@ -1289,6 +1304,7 @@ func main() {
 	app.remoteUI = remoteUI // landing route asks it for the running tool
 	mux.Handle("GET /ws/remote-ui", remoteUI)
 	mux.HandleFunc("GET /api/tool", app.handleAPITool)
+	mux.HandleFunc("GET /api/module-panel/{id}", app.handleAPIModulePanel)
 
 	// Module web UI assets (custom web_ui.html and related files).
 	mux.HandleFunc("GET /api/remote-ui/module-assets/{id}/{filepath...}", app.handleModuleWebUIAsset)
