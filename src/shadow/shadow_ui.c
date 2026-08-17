@@ -46,6 +46,7 @@ static shadow_midi_inject_t *shadow_midi_inject = NULL;
 static schwung_ext_midi_remap_t *ext_midi_remap = NULL;
 static shadow_screenreader_t *shadow_screenreader = NULL;
 static shadow_overlay_state_t *shadow_overlay = NULL;
+static web_write_dirty_t *web_write_dirty = NULL; /* shim's autosave hints for web-originated writes */
 
 static int global_exit_flag = 0;
 static uint8_t last_midi_ready = 0;
@@ -93,6 +94,8 @@ static int open_shadow_shm(void) {
     }
 
     shadow_overlay = (shadow_overlay_state_t *)shadow_shm_map(SHM_SHADOW_OVERLAY, SHADOW_OVERLAY_BUFFER_SIZE, 0, 0);
+
+    web_write_dirty = (web_write_dirty_t *)shadow_shm_map(SHM_WEB_WRITE_DIRTY, sizeof(web_write_dirty_t), 0, 0);
     if (shadow_overlay) {
         unified_log("shadow_ui", LOG_LEVEL_DEBUG, "Shadow overlay shm mapped: %p", shadow_overlay);
     }
@@ -759,10 +762,9 @@ static uint32_t g_slot_param_dirty_mask = 0;
  *
  *   bit 0      master        bit 1  send A       bit 2  send B
  *   bit 8 + n  Move bus n (0-based)                                          */
-#define FXBUS_DIRTY_MASTER   (1u << 0)
-#define FXBUS_DIRTY_SEND_A   (1u << 1)
-#define FXBUS_DIRTY_SEND_B   (1u << 2)
-#define FXBUS_DIRTY_MOVE_SHIFT 8
+/* FXBUS_DIRTY_* moved to shadow_constants.h (2026-08-16): the shim now marks
+ * the same encoding for web-originated writes (web_write_dirty_t), and two
+ * local copies of a bit layout is how they drift apart. */
 static uint32_t g_fx_bus_dirty_mask = 0;
 
 static void shadow_mark_fx_bus_dirty(const char *key) {
@@ -977,8 +979,19 @@ static JSValue js_shadow_set_params(JSContext *ctx, JSValueConst this_val,
  * the next pass. Callers must therefore act on the returned mask (or re-set it),
  * never discard it.
  */
+/* Fold in the shim's hints for WEB-originated writes (browser edits ride the
+ * web-set ring into shadow_direct_set_param, which never enters this process —
+ * without this they were only persisted by transition flushes). Exchange, not
+ * read+store: a shim OR landing between the two would be lost forever. */
+static void web_write_dirty_fold(void) {
+    if (!web_write_dirty) return;
+    g_slot_param_dirty_mask |= __atomic_exchange_n(&web_write_dirty->slot_mask, 0, __ATOMIC_ACQ_REL);
+    g_fx_bus_dirty_mask |= __atomic_exchange_n(&web_write_dirty->fxbus_mask, 0, __ATOMIC_ACQ_REL);
+}
+
 static JSValue js_shadow_take_dirty_slots(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
     (void)ctx; (void)this_val; (void)argc; (void)argv;
+    web_write_dirty_fold();
     uint32_t mask = g_slot_param_dirty_mask;
     g_slot_param_dirty_mask = 0;
     return JS_NewInt32(ctx, (int32_t)mask);
@@ -992,6 +1005,7 @@ static JSValue js_shadow_take_dirty_slots(JSContext *ctx, JSValueConst this_val,
  */
 static JSValue js_shadow_take_dirty_fx_buses(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
     (void)ctx; (void)this_val; (void)argc; (void)argv;
+    web_write_dirty_fold();
     uint32_t mask = g_fx_bus_dirty_mask;
     g_fx_bus_dirty_mask = 0;
     return JS_NewInt32(ctx, (int32_t)mask);

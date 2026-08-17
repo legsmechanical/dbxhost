@@ -37,6 +37,7 @@
 #define SHM_DISPLAY_LIVE SCHWUNG_SHM_PREFIX "display-live"    /* Live display for remote viewer */
 #define SHM_WEB_PARAM_SET SCHWUNG_SHM_PREFIX "web-param-set"   /* Web UI → shim param set ring */
 #define SHM_WEB_PARAM_NOTIFY SCHWUNG_SHM_PREFIX "web-param-notify" /* Shim → web UI param change ring */
+#define SHM_WEB_WRITE_DIRTY SCHWUNG_SHM_PREFIX "web-write-dirty" /* Shim → shadow_ui autosave dirty hints */
 
 /* ============================================================================
  * Audio Constants
@@ -681,6 +682,32 @@ typedef struct web_param_notify_ring_t {
     volatile uint8_t reserved[2];
     web_param_notify_entry_t entries[WEB_PARAM_NOTIFY_ENTRIES];
 } web_param_notify_ring_t;
+
+/*
+ * Autosave dirty hints for web-originated writes (the direct-set path).
+ *
+ * The autosave dirty masks live in shadow_ui (the JS sidecar process), fed by
+ * shadow_set_param_common — but a browser edit rides the web-set ring into the
+ * SHIM's shadow_direct_set_param and never enters that process, so it was only
+ * persisted by transition flushes. The shim ORs bits here after each
+ * successful direct set; shadow_ui exchanges them to 0 each tick and folds
+ * them into its own masks. Lock-free (fetch_or / exchange), one word each.
+ *
+ * fxbus_mask uses the same encoding as shadow_ui's autosave scheduler:
+ *   bit 0 master · bit 1 send A · bit 2 send B · bit (8+n) Move bus n (0-based)
+ * The FXBUS_DIRTY_* defines below are that encoding's single home — both
+ * writers must use them, never a local copy.
+ */
+#define FXBUS_DIRTY_MASTER     (1u << 0)
+#define FXBUS_DIRTY_SEND_A     (1u << 1)
+#define FXBUS_DIRTY_SEND_B     (1u << 2)
+#define FXBUS_DIRTY_MOVE_SHIFT 8
+
+typedef struct web_write_dirty_t {
+    volatile uint32_t slot_mask;  /* chain slots, bit per slot index */
+    volatile uint32_t fxbus_mask; /* FXBUS_DIRTY_* encoding above */
+    uint8_t reserved[56];         /* 64 bytes total, matching the launcher wipe glob */
+} web_write_dirty_t;
 
 /*
  * Screen reader message structure.

@@ -139,6 +139,7 @@ static shadow_ui_state_t *shadow_ui_state = NULL;
 static shadow_param_t *shadow_param = NULL;
 static web_param_set_ring_t *web_param_set_shm = NULL;       /* Web UI → shim param set ring */
 static web_param_notify_ring_t *web_param_notify_shm = NULL;  /* Shim → web UI param change ring */
+static web_write_dirty_t *web_write_dirty_shm = NULL;         /* Shim → shadow_ui autosave dirty hints */
 static shadow_screenreader_t *shadow_screenreader_shm = NULL;  /* Forward declaration for D-Bus handler */
 static shadow_overlay_state_t *shadow_overlay_shm = NULL;     /* Overlay state for JS rendering */
 
@@ -3383,6 +3384,11 @@ static void init_shadow_shm(void)
     web_param_notify_shm = (web_param_notify_ring_t *)shadow_shm_map(SHM_WEB_PARAM_NOTIFY,
                                                                      sizeof(web_param_notify_ring_t), 1, 1);
 
+    /* Create/open the autosave dirty-hint word for web-originated writes
+     * (shim → shadow_ui; see web_write_dirty_t in shadow_constants.h) */
+    web_write_dirty_shm = (web_write_dirty_t *)shadow_shm_map(SHM_WEB_WRITE_DIRTY,
+                                                              sizeof(web_write_dirty_t), 1, 1);
+
     /* Create/open MIDI out shared memory (for shadow UI to send MIDI) */
     shadow_midi_out_shm = (shadow_midi_out_t *)shadow_shm_map(SHM_SHADOW_MIDI_OUT,
                                                               sizeof(shadow_midi_out_t), 1, 1);
@@ -3832,6 +3838,33 @@ static void shadow_drain_web_param_set(void) {
         }
 
         shadow_direct_set_param(e.slot, e.key, e.value);
+
+        /* Autosave dirty hint: this write bypassed shadow_ui (whose
+         * shadow_set_param_common feeds the dirty masks), so without this a
+         * browser edit only ever persisted via transition flushes. Mirror its
+         * policy — over-mark on any slot-targeted key, per-bus for the fx-bus
+         * namespaces — using the shared FXBUS_DIRTY_* encoding. Lock-free OR;
+         * shadow_ui exchanges the words to 0 each tick. */
+        if (web_write_dirty_shm) {
+            if (strncmp(e.key, "master_fx:", 10) == 0) {
+                __atomic_fetch_or(&web_write_dirty_shm->fxbus_mask,
+                                  FXBUS_DIRTY_MASTER, __ATOMIC_RELEASE);
+            } else if (strncmp(e.key, "send_fx:", 8) == 0) {
+                uint32_t bit = (e.key[8] == 'a') ? FXBUS_DIRTY_SEND_A
+                             : (e.key[8] == 'b') ? FXBUS_DIRTY_SEND_B : 0;
+                if (bit) __atomic_fetch_or(&web_write_dirty_shm->fxbus_mask,
+                                           bit, __ATOMIC_RELEASE);
+            } else if (strncmp(e.key, "move_fx:", 8) == 0) {
+                int n = e.key[8] - '0';
+                if (n >= 1 && n <= 16)
+                    __atomic_fetch_or(&web_write_dirty_shm->fxbus_mask,
+                                      1u << (FXBUS_DIRTY_MOVE_SHIFT + (n - 1)),
+                                      __ATOMIC_RELEASE);
+            } else if (e.slot < 32) {
+                __atomic_fetch_or(&web_write_dirty_shm->slot_mask,
+                                  1u << e.slot, __ATOMIC_RELEASE);
+            }
+        }
     }
     tail = head;
     __atomic_store_n(&web_param_set_shm->reserved[0], tail, __ATOMIC_RELEASE);
