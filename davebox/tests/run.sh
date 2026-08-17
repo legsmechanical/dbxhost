@@ -37,6 +37,20 @@ else
     echo "JS: SKIPPED (node not found)"
 fi
 
+# Remote UI halves: web_ui.html loads web_ui_*.js as plain classic scripts, so a
+# syntax error there is only visible as a dead page on the device. node --check
+# parses each one as a classic script (they are not modules and must not be).
+web_fail=0
+if command -v node >/dev/null 2>&1; then
+    for f in web_ui_*.js; do
+        [ -f "$f" ] || continue
+        if node --check "$f"; then echo "PASS: node --check $f"
+        else echo "FAIL: node --check $f"; web_fail=1; fi
+    done
+else
+    echo "WEB UI: SKIPPED (node not found)"
+fi
+
 # Repo-invariant shell checks (no compilation, no device). These pin conventions
 # whose breakage is silent — e.g. a release overwriting the frozen legacy manual.
 sh_fail=0
@@ -45,4 +59,4 @@ for t in tests/test_*.sh; do
     if bash "$t"; then :; else echo "FAIL: $(basename "$t")"; sh_fail=1; fi
 done
 
-[ "$fail" -eq 0 ] && [ "$js_fail" -eq 0 ] && [ "$sh_fail" -eq 0 ]
+[ "$fail" -eq 0 ] && [ "$js_fail" -eq 0 ] && [ "$web_fail" -eq 0 ] && [ "$sh_fail" -eq 0 ]

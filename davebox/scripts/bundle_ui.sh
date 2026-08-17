@@ -39,5 +39,7 @@ echo "Bundle: dist/davebox/ui.js (${lines} lines, ${bytes} bytes)"
 # (install.sh scp's dist/davebox/*). build.sh also copies it for full builds.
 if [ -f web_ui.html ]; then
     cp web_ui.html dist/davebox/web_ui.html
+    # Sibling JS (split 2026-08-16): without these the shell loads NOTHING.
+    cp web_ui_*.js dist/davebox/ 2>/dev/null || true
     echo "Copied: dist/davebox/web_ui.html ($(wc -c < web_ui.html | tr -d ' ') bytes)"
 fi

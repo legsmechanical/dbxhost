@@ -85,7 +85,7 @@ fi
 # difference play into the wrong chain silently.
 db_ui="davebox/ui/ui_engine.mjs"
 db_dsp="davebox/dsp/seq8.c"
-db_web="davebox/web_ui.html"
+db_web="davebox/web_ui_core.js"   # the remote UI's transport/state half (was inline in web_ui.html)
 
 db_ui_count="$(grep -oE 'export const CHAIN_SLOTS = [0-9]+' "$db_ui" | grep -oE '[0-9]+$' || true)"
 db_dsp_count="$(grep -oE '^#define SEQ8_CHAIN_SLOTS +[0-9]+' "$db_dsp" | grep -oE '[0-9]+$' || true)"

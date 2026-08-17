@@ -38,6 +38,9 @@ cp module.json           "dist/${MODULE_ID}/"
 # Remote-UI (browser piano-roll editor): schwung-manager auto-discovers
 # web_ui.html next to module.json and serves it at move.local:7700/remote-ui.
 cp web_ui.html           "dist/${MODULE_ID}/"
+# The app's JS is sibling files (split 2026-08-16) — a shell copied without
+# them loads NOTHING, silently. Glob so future web_ui_*.js ride along.
+cp web_ui_*.js           "dist/${MODULE_ID}/"
 # UI bundle already produced by scripts/bundle_ui.sh (runs before Docker).
 # Ship the Ableton-export packager + JSON templates alongside the module (read at
 # export time; pack.py is invoked on-device via host_system_cmd). These are plain
