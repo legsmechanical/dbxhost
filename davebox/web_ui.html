@@ -235,10 +235,19 @@
     border:2px solid #0a1a19;box-shadow:0 1px 3px rgba(0,0,0,.5);cursor:grab}
   input[type=range]:active::-webkit-slider-thumb{cursor:grabbing;background:#5fe0d8}
   input[type=range].bip{background:linear-gradient(90deg,#2a2f3a 0 calc(50% - 1px),#454c5a calc(50% - 1px) calc(50% + 1px),#2a2f3a calc(50% + 1px) 100%)}
+/* connection pill (C5) + DIAG overlay (C1) */
+#connpill.live{background:#123f21;color:#5fe08a;border-color:#1d5c31}
+#connpill.recon{background:#4a3210;color:#ffc86b;border-color:#6b4a1a}
+#connpill.notool{background:#4a1515;color:#ff8f8f;border-color:#6b2020}
+#diag{position:fixed;right:8px;bottom:8px;z-index:99;background:rgba(10,12,16,.92);
+  border:1px solid #2a3140;border-radius:8px;padding:8px 10px;font:11px/1.5 ui-monospace,monospace;
+  color:#9fb4d0;min-width:230px;white-space:pre;display:none}
+#diag b{color:#dfe8f5}
 </style></head>
 <body><div id="app">
   <div id="top">
     <span class="brand">dAVEBO<span class="dot">x</span></span>
+    <span class="badge pill" id="connpill" title="Connection to the Move — ~ toggles diagnostics">…</span>
     <button class="ghost" id="xport" title="Start / stop transport">▶</button>
     <span class="badge play" id="transport">—</span>
     <span id="globals"></span>
@@ -294,6 +303,7 @@
   <div id="scrim"></div>
   <div id="globalpop"><h4>Global settings</h4><div id="globalpanel"></div></div>
 </div>
+<div id="diag"></div>
 
 <script src="/static/schwung-remote-api.js"></script>
 <script src="web_ui_core.js"></script>

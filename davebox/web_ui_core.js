@@ -152,7 +152,9 @@ if (!window.schwungRemote) {
     },
     onParamChange:cb=>{subs.push(cb);},
     resubscribe:()=>{ KV["overtake_dsp:rui_play"]=mockPlay+":"+phTick()+":120";   /* keep preview tick live */
-      subs.forEach(cb=>cb(Object.assign({},KV))); }
+      subs.forEach(cb=>cb(Object.assign({},KV))); },
+    /* status surface (pill/DIAG) — the mock is always "connected" */
+    onStatus:cb=>{ try{cb({state:"open",toolId:"mock"});}catch(e){} }
   };
 }
 
@@ -346,3 +348,72 @@ function phStep(){
 function startPlayhead(){ if(!phRAF) phRAF=requestAnimationFrame(phStep); }
 function stopPlayhead(){ if(phRAF){ cancelAnimationFrame(phRAF); phRAF=0; }
   const ph=document.getElementById("playhead"); if(ph) ph.style.display="none"; }
+
+/* ---------- connection pill (C5) + DIAG overlay (C1) ----------
+ * The pill is the user-facing truth about the link: Live (socket open, a
+ * dAVEBOx session answering), Reconnecting (socket down, transport retrying),
+ * or "dAVEBOx not running" — a REAL state under SA: the session exited while
+ * the manager stayed up. DIAG (` / ~ toggles, persisted) is the instrument
+ * every perf claim in this arc is measured with, instead of argued about. */
+let connState={state:"closed",toolId:null};
+let diagPushCount=0, diagPushAt=0, diagPushBytes=0, diagPushKeys=0, diagWinCount=0, diagWinAt=0, diagRate=0;
+let diagFull=0, diagPartial=0;
+function pillRender(){
+  const el=document.getElementById("connpill"); if(!el) return;
+  let cls="", txt="";
+  if(connState.state!=="open"){ cls="recon"; txt="reconnecting…"; }
+  else if(connState.toolId===""){ cls="notool"; txt="dAVEBOx not running"; }
+  else if(connState.toolId===null){ cls="recon"; txt="connecting…"; }
+  else { cls="live"; txt="● live"; }
+  el.className="badge pill "+cls; el.textContent=txt;
+}
+if(R && typeof R.onStatus==="function"){
+  R.onStatus(s=>{ connState=Object.assign({},s); pillRender(); });
+}
+pillRender();
+
+/* every push feeds the counters; JSON size only measured while DIAG is open */
+if(R && typeof R.onParamChange==="function"){
+  R.onParamChange(params=>{
+    diagPushCount++; diagPushAt=now();
+    let n=0; for(const k in params) n++;
+    diagPushKeys=n;
+    /* full snapshots carry the whole rui_* family; deltas a handful */
+    if(n>=10) diagFull++; else diagPartial++;
+    diagWinCount++;
+    if(now()-diagWinAt>2000){ diagRate=diagWinCount/((now()-diagWinAt)/1000); diagWinCount=0; diagWinAt=now(); }
+    if(diagOpen) diagPushBytes=JSON.stringify(params).length;
+  });
+}
+
+let diagOpen=false, diagTimer=0;
+function diagRender(){
+  const el=document.getElementById("diag"); if(!el) return;
+  const age=diagPushAt?Math.round(now()-diagPushAt):-1;
+  const devRev=kv[P+"rui_rev"]!==undefined?kv[P+"rui_rev"]:"?";
+  const appRev=(M&&M.rev!==undefined)?M.rev:"?";
+  const sup=Math.max(0,Math.round(suppressRefreshUntil-now()));
+  const off=Number.isFinite(phOff)?Math.round(phOff)+"ms":"—";
+  el.innerHTML=
+    "<b>ws</b> "+connState.state+"  <b>tool</b> "+(connState.toolId==null?"?":(connState.toolId||"none"))+"\n"+
+    "<b>push</b> #"+diagPushCount+"  age "+(age<0?"—":age+"ms")+"  "+diagRate.toFixed(1)+"/s\n"+
+    "<b>last</b> "+diagPushKeys+" keys  "+(diagPushBytes?diagPushBytes+" B":"(open to measure)")+"\n"+
+    "<b>delta/full</b> "+diagPartial+"/"+diagFull+"\n"+
+    "<b>rev</b> dev "+devRev+"  applied "+appRev+"\n"+
+    "<b>suppress</b> "+(sup>0?sup+"ms":"—")+"  <b>ph off</b> "+off+"\n"+
+    "<b>trunc</b> "+(kv[P+"rui_trunc"]==="1"?"YES":"no")+"  <b>playing</b> "+(phPlaying?"yes":"no");
+}
+function diagSet(open){
+  diagOpen=open;
+  const el=document.getElementById("diag"); if(!el) return;
+  el.style.display=open?"block":"none";
+  try{ localStorage.setItem("dbx_diag",open?"1":"0"); }catch(e){}
+  if(open && !diagTimer){ diagTimer=setInterval(diagRender,500); diagRender(); }
+  if(!open && diagTimer){ clearInterval(diagTimer); diagTimer=0; }
+}
+window.addEventListener("keydown",e=>{
+  if((e.key==="`"||e.key==="~") && !e.target.closest("input,textarea,select")){
+    e.preventDefault(); diagSet(!diagOpen);
+  }
+});
+try{ if(localStorage.getItem("dbx_diag")==="1") diagSet(true); }catch(e){}

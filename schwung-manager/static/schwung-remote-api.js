@@ -123,6 +123,12 @@
              */
             resubscribe: function () {
                 window.parent.postMessage({ type: "resubscribe" }, "*");
+            },
+
+            // In an iframe the parent owns the socket; report a steady "open"
+            // so status-aware apps don't render a false disconnect pill.
+            onStatus: function (cb) {
+                try { cb({ state: "open", toolId: null }); } catch (e) { /* ignore */ }
             }
         };
         return;
@@ -148,6 +154,18 @@
     var ws = null;
     var reconnectDelay = 1000;    // exponential backoff, capped
     var RECONNECT_MAX = 10000;
+
+    // Connection/tool status for the app's pill: state is "open"/"closed";
+    // toolId "" means the manager answered but no dAVEBOx session is running
+    // (a real state under SA — session exited, manager still up), null means
+    // not yet known.
+    var status = { state: "closed", toolId: null };
+    var statusListeners = [];
+    function emitStatus() {
+        for (var i = 0; i < statusListeners.length; i++) {
+            try { statusListeners[i](status); } catch (e) { /* keep alive */ }
+        }
+    }
 
     function copyCache() {
         var out = {};
@@ -192,6 +210,10 @@
                     resolveWaiters(chainParamsWaiters, chainParamsData);
                 }
                 break;
+            case "tool_info":
+                status.toolId = (typeof msg.id === "string") ? msg.id : "";
+                emitStatus();
+                break;
             // slot_info / custom_ui / error are not needed by the module UI.
         }
     }
@@ -201,6 +223,8 @@
 
         ws.onopen = function () {
             reconnectDelay = 1000;
+            status.state = "open";
+            emitStatus();
             if (isTool) {
                 ws.send(JSON.stringify({ type: "subscribe_tool" }));
             } else {
@@ -216,6 +240,8 @@
 
         ws.onclose = function () {
             ws = null;
+            status.state = "closed";
+            emitStatus();
             setTimeout(connect, reconnectDelay);
             reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX);
         };
@@ -271,6 +297,13 @@
                 ws.send(JSON.stringify(isTool ? { type: "refetch_tool" }
                                               : { type: "subscribe", slot: slot }));
             }
+        },
+
+        // onStatus(cb): connection/tool state for the app's pill. cb gets
+        // {state:"open"|"closed", toolId:string|null} now and on every change.
+        onStatus: function (cb) {
+            statusListeners.push(cb);
+            try { cb(status); } catch (e) { /* ignore */ }
         }
     };
 })();
