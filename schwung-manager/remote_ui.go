@@ -90,6 +90,13 @@ type ruClient struct {
 	toolSynced   bool
 	toolLastRev  int64
 	toolLastTick int64
+	// toolLastSnap: the last full snapshot this client ACKED (write returned
+	// true), used to send per-client DELTAS instead of the whole ~64KB map on
+	// every rev change. nil = next push must be full (fresh subscribe,
+	// resubscribe, tool arrival — anything that resets toolSynced also nils
+	// this). The stored map is never mutated after fetch, so sharing the
+	// fetch's map across clients is safe.
+	toolLastSnap map[string]string
 	toolLastOn   bool      // last pushed play-state; start/stop EDGES must be pushed
 	toolPlayAt   time.Time // last playhead push — rate-limited (edges exempt)
 	// toolLastEditAt: when this client last sent an overtake CONTENT edit —
@@ -136,8 +143,13 @@ type wsChainParams struct {
 }
 
 type wsSlotInfo struct {
-	Type    string `json:"type"`
-	Slot    uint8  `json:"slot"`
+	Type string `json:"type"`
+	Slot uint8  `json:"slot"`
+	// Components maps component prefix -> loaded module id, keyed by the
+	// entries of componentPrefixes ("synth", "fx1".."fx4", "midi_fx1"), so
+	// new components ride free instead of growing this struct.
+	Components map[string]string `json:"components"`
+	// Legacy flat fields kept for any old client; mirror Components.
 	Synth   string `json:"synth"`
 	FX1     string `json:"fx1"`
 	FX2     string `json:"fx2"`
@@ -177,8 +189,14 @@ type wsError struct {
 	Message string `json:"message"`
 }
 
-// componentPrefixes lists all component types in a shadow slot.
-var componentPrefixes = []string{"synth", "fx1", "fx2", "midi_fx1"}
+// componentPrefixes lists all component types in a shadow slot. This host
+// carries FOUR audio-FX blocks per slot (fx3/fx4 are a fork divergence —
+// any FX-block change must be checked at all four blocks).
+var componentPrefixes = []string{"synth", "fx1", "fx2", "fx3", "fx4", "midi_fx1"}
+
+// maxChainSlots mirrors SHADOW_CHAIN_INSTANCES in src/host/shadow_constants.h:
+// 8 unified positions, not stock's 4.
+const maxChainSlots = 8
 
 // masterFxSlots lists the 4 master FX slot identifiers.
 var masterFxSlots = []string{"fx1", "fx2", "fx3", "fx4"}
@@ -386,6 +404,10 @@ func (ru *RemoteUI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		// Allow any origin — the server is on a local network device.
 		InsecureSkipVerify: true,
+		// permessage-deflate: the rui_* JSON payloads are extremely
+		// repetitive (step grids, note lists), and Move's WiFi is the
+		// bottleneck — negotiated only when the browser offers it.
+		CompressionMode: websocket.CompressionContextTakeover,
 	})
 	if err != nil {
 		ru.logger.Error("websocket accept failed", "err", err)
@@ -874,6 +896,7 @@ func (ru *RemoteUI) handleSubscribeTool(ctx context.Context, c *ruClient) {
 	c.mu.Lock()
 	c.toolSub = true
 	c.toolSynced = false // force the next poll to do a full fetch
+	c.toolLastSnap = nil
 	c.mu.Unlock()
 
 	ru.logger.Info("ws subscribe tool")
@@ -919,6 +942,7 @@ func (ru *RemoteUI) handleUnsubscribeTool(c *ruClient) {
 	c.mu.Lock()
 	c.toolSub = false
 	c.toolSynced = false
+	c.toolLastSnap = nil
 	c.mu.Unlock()
 	ru.logger.Info("ws unsubscribe tool")
 }
@@ -1136,6 +1160,7 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 				c.mu.Lock()
 				stale := !c.toolSynced || rev != c.toolLastRev
 				quiet := time.Now().Before(c.toolQuietUntil)
+				lastSnap := c.toolLastSnap
 				c.mu.Unlock()
 				if !stale {
 					continue
@@ -1144,10 +1169,21 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 					pending = true // sync right after the quiet window
 					continue
 				}
+				// DELTA: a synced client gets only the keys that changed since
+				// the snapshot it last acked — a note edit changes rui_notes +
+				// rui_rev while the session grid, drum lanes and index ride
+				// along unchanged, so the typical push drops from ~64KB to a
+				// few hundred bytes. Two invariants: diff the key SETS, not
+				// just values (the browser kv cache is sticky, so a key that
+				// left the snapshot — rui_cc when cc focus closes — must be
+				// sent as "" rather than omitted or it pins stale forever);
+				// and anything that resets toolSynced nils toolLastSnap, so a
+				// fresh/rejoining client always gets the FULL map.
+				payload := snapshotDelta(lastSnap, params)
 				// Non-blocking dispatch: on drop (a write to this client is
 				// still in flight) the cursors stay stale, so the next tick
 				// retries — a wedged client can't stall the whole fan-out.
-				if !ru.writeJSONTry(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params}) {
+				if !ru.writeJSONTry(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: payload}) {
 					pending = true
 					continue
 				}
@@ -1155,6 +1191,7 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 				c.toolSynced = true
 				c.toolLastRev = blobRev
 				c.toolLastTick = tick
+				c.toolLastSnap = params
 				edge := on != c.toolLastOn
 				c.mu.Unlock()
 				// A play-STATE edge must ride along with the snapshot: the
@@ -1211,6 +1248,29 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 	return on, pending
 }
 
+// snapshotDelta returns the keys of cur that changed vs last, plus last's keys
+// missing from cur as "" (the browser kv cache is sticky — an omitted key pins
+// its stale value forever, so removal must be an explicit empty write). A nil
+// last means "no acked snapshot": the full map is returned so fresh or
+// rejoining clients never start from a delta.
+func snapshotDelta(last, cur map[string]string) map[string]string {
+	if last == nil {
+		return cur
+	}
+	delta := make(map[string]string)
+	for k, v := range cur {
+		if old, ok := last[k]; !ok || old != v {
+			delta[k] = v
+		}
+	}
+	for k := range last {
+		if _, ok := cur[k]; !ok {
+			delta[k] = ""
+		}
+	}
+	return delta
+}
+
 // markToolPresent latches that an overtake tool is currently active, so a later
 // transition to "no tool" fires exactly one tool-gone signal. Returns true when
 // this call is the not-present -> present EDGE (a fresh arrival).
@@ -1262,6 +1322,7 @@ func (ru *RemoteUI) announceToolArrival(ctx context.Context, clients []*ruClient
 	for _, c := range clients {
 		c.mu.Lock()
 		c.toolSynced = false
+		c.toolLastSnap = nil
 		c.mu.Unlock()
 		go func(c *ruClient) {
 			ru.writeJSON(ctx, c, wsToolInfo{Type: "tool_info", ID: toolID})
@@ -1334,9 +1395,11 @@ func (ru *RemoteUI) handleSetMasterFxParam(ctx context.Context, c *ruClient, msg
 	}
 }
 
-// slotFromMsg returns the slot number, defaulting to 0.
+// slotFromMsg returns the slot number, defaulting to 0. Out-of-range slots
+// clamp to 0 rather than addressing memory the host does not have — the
+// mailbox accepts 0..SHADOW_CHAIN_INSTANCES-1 (8 on this host, not stock's 4).
 func (ru *RemoteUI) slotFromMsg(msg wsMessage) uint8 {
-	if msg.Slot != nil {
+	if msg.Slot != nil && *msg.Slot < maxChainSlots {
 		return *msg.Slot
 	}
 	return 0
@@ -1347,9 +1410,10 @@ func (ru *RemoteUI) slotFromMsg(msg wsMessage) uint8 {
 // ---------------------------------------------------------------------------
 
 func (ru *RemoteUI) sendSlotInfo(ctx context.Context, c *ruClient, slot uint8) {
-	info := wsSlotInfo{Type: "slot_info", Slot: slot}
+	info := wsSlotInfo{Type: "slot_info", Slot: slot, Components: map[string]string{}}
 	for _, comp := range componentPrefixes {
 		modID, _ := ru.shm.GetParam(slot, comp+"_module")
+		info.Components[comp] = modID
 		switch comp {
 		case "synth":
 			info.Synth = modID
