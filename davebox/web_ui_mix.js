@@ -220,20 +220,29 @@ function escMix(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "
 function cssq(s) { return s.replace(/["\\]/g, "\\$&"); }
 function round4(v) { return Math.round(v * 10000) / 10000; }
 
-/* ---- view switching. The header stays; the playhead keeps running. ---- */
+/* ---- view switching. The header stays; the playhead keeps running.
+ * Three views share it: the sequencer (the session grid + the clip editor),
+ * the mixer, and the sound view (web_ui_sound.js). Each view owns one
+ * container and one header button; this only shows/hides and hands over. ---- */
 function setView(view) {
+  if (view !== "mix" && view !== "sound") view = "seq";
+  const seqOn = view === "seq", soundOn = view === "sound";
   mixVisible = view === "mix";
-  document.getElementById("session").style.display = mixVisible ? "none" : "";
-  document.getElementById("main").style.display = mixVisible ? "none" : "";
-  document.getElementById("mixer").style.display = mixVisible ? "block" : "";
-  document.getElementById("viewSeq").classList.toggle("on", !mixVisible);
+  soundVisible = soundOn;
+  document.getElementById("session").style.display = seqOn ? "" : "none";
+  document.getElementById("main").style.display = seqOn ? "" : "none";
+  document.getElementById("mixer").style.display = mixVisible ? "block" : "none";
+  document.getElementById("sound").style.display = soundOn ? "block" : "none";
+  document.getElementById("viewSeq").classList.toggle("on", seqOn);
   document.getElementById("viewMix").classList.toggle("on", mixVisible);
-  if (mixVisible) {
-    if (!mixSubscribed && typeof R.subscribeMixer === "function") {
-      mixSubscribed = true; R.subscribeMixer();
-    }
-    mixStructSig = ""; renderMixer();
+  document.getElementById("viewSound").classList.toggle("on", soundOn);
+  /* both non-sequencer views read the mixer wire namespace (the sound view for
+   * the track's strip and its instrument's name) */
+  if ((mixVisible || soundOn) && !mixSubscribed && typeof R.subscribeMixer === "function") {
+    mixSubscribed = true; R.subscribeMixer();
   }
+  if (mixVisible) { mixStructSig = ""; renderMixer(); }
+  if (soundOn) { soundSig = ""; renderSound(); }
   try { localStorage.setItem("dbx_view", view); } catch (e) { /* ignore */ }
 }
 document.getElementById("viewSeq").onclick = () => setView("seq");
@@ -243,5 +252,5 @@ document.getElementById("viewMix").onclick = () => setView("mix");
  * a light interval covers M changes without hooking applyParams */
 setInterval(() => { if (mixVisible) renderMixer(); }, 300);
 
-/* restore the last view (sequencer stays the landing default) */
-try { if (localStorage.getItem("dbx_view") === "mix") setView("mix"); } catch (e) { /* ignore */ }
+/* The last-view restore lives at the bottom of web_ui_sound.js — the LAST view
+ * script — so every view's render function exists before setView first runs. */

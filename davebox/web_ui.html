@@ -261,6 +261,76 @@
 .strip .ms button.on.solo{background:#123f21;color:#5fe08a;border-color:#1d5c31}
 .strip .mslabel{font-size:8.5px;color:#4d5b70;text-align:center;letter-spacing:.06em}
 .strip .ext-note{font-size:10px;color:#5d6d84;text-align:center;margin-top:8px}
+/* sound view — the selected track's signal path, left to right, ending in its
+   mixer strip. Cards are a fixed-width row that scrolls horizontally; the page
+   body never scrolls sideways. */
+#sound{display:none;flex:1;min-height:0;overflow:auto;padding:14px}
+#soundwrap{display:flex;flex-direction:column;gap:10px;min-height:0}
+.sndhead{font-size:13px;font-weight:700;color:#dfe8f5;letter-spacing:.02em}
+.sndcards{display:flex;gap:10px;align-items:stretch;overflow-x:auto;padding-bottom:6px}
+.sndcard{flex:0 0 auto;width:250px;display:flex;flex-direction:column;
+  background:#12151c;border:1px solid #232a38;border-radius:10px;overflow:hidden}
+.sndcard-mix{width:120px}
+.sndcard-h{display:flex;align-items:center;gap:6px;padding:7px 9px;background:#161a23;
+  border-bottom:1px solid #232a38}
+.sndrole{font-size:9.5px;font-weight:700;letter-spacing:.09em;color:#5d6d84;flex:0 0 auto}
+.sndmod{font-size:11px;color:#dfe8f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.sndbypass{flex:0 0 auto;font-size:9px;padding:2px 6px;border-radius:5px;border:1px solid #2a3140;
+  background:#171b24;color:#5d6d84;cursor:pointer}
+.sndbypass.on{background:#4a3210;color:#ffc86b;border-color:#6b4a1a}
+.sndcard-b{padding:9px;flex:1;min-height:0;overflow:auto}
+.sndcard-mix .sndcard-b{display:flex;padding:8px}
+.sndcard-mix .strip{flex:1;max-width:none;min-width:0;background:transparent;border:0;padding:0}
+.sndnote{font-size:11px;color:#9fb4d0;line-height:1.5}
+.sndnote.dim{color:#5d6d84}
+.sndpanel{display:block;width:100%;max-width:520px;height:420px;border:0;border-radius:6px;
+  background:#0b0d11}
+.sndcard:has(.sndpanel){width:540px}
+.sndopen{display:inline-block;margin-top:6px;font-size:10.5px;color:#5fa8e0;text-decoration:none}
+.sndopen:hover{text-decoration:underline}
+/* generated param editor (web_ui_params.js) — self-contained, cpk- prefixed */
+.cpk{display:flex;flex-direction:column;gap:8px;color:#9fb4d0;font-size:11.5px}
+.cpk-title{font-size:10px;letter-spacing:.08em;color:#5d6d84;text-transform:uppercase}
+.cpk-empty{font-size:11px;color:#5d6d84;font-style:italic}
+.cpk-breadcrumb{display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:10.5px;
+  padding-bottom:4px;border-bottom:1px solid #232a38}
+.cpk-back{font-size:10px;padding:2px 6px;border-radius:5px;border:1px solid #2a3140;
+  background:#171b24;color:#9fb4d0;cursor:pointer}
+.cpk-crumb{color:#5d6d84;cursor:pointer}
+.cpk-crumb-cur{color:#dfe8f5;cursor:default}
+.cpk-crumbsep{color:#3a4354}
+.cpk-presets{display:flex;align-items:center;gap:6px}
+.cpk-presetnav{font-size:11px;padding:2px 8px;border-radius:5px;border:1px solid #2a3140;
+  background:#171b24;color:#9fb4d0;cursor:pointer}
+.cpk-presetnav:disabled{opacity:.35;cursor:default}
+.cpk-presetname{flex:1;font:11px ui-monospace,monospace;color:#dfe8f5;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cpk-knobs{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-start}
+.cpk-knob{width:66px;display:flex;flex-direction:column;align-items:center;gap:1px;
+  cursor:ns-resize;touch-action:none;user-select:none}
+.cpk-knob-svg{display:block}
+.cpk-knob-label{font-size:9.5px;color:#5d6d84;text-align:center;max-width:66px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cpk-knob-value{font:10px ui-monospace,monospace;color:#dfe8f5}
+.cpk-list{display:flex;flex-direction:column}
+.cpk-row{display:flex;align-items:center;gap:8px;padding:5px 0;min-height:26px}
+.cpk-row+.cpk-row{border-top:1px solid #1c2128}
+.cpk-label{flex:0 0 40%;color:#9fb4d0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cpk-ctl{flex:1;display:flex;align-items:center;gap:6px;min-width:0}
+.cpk-ctl input[type=range]{flex:1;min-width:0;margin:0}
+.cpk-val{flex:0 0 auto;font:10px ui-monospace,monospace;color:#dfe8f5;min-width:38px;text-align:right}
+.cpk-select,.cpk-text{flex:1;min-width:0;font-size:11px;padding:3px 5px}
+.cpk-toggle{font-size:10px;padding:2px 8px;border-radius:5px;border:1px solid #2a3140;
+  background:#171b24;color:#9fb4d0;cursor:pointer}
+.cpk-toggle.on{background:#123f21;color:#5fe08a;border-color:#1d5c31}
+.cpk-nav{cursor:pointer;color:#dfe8f5}
+.cpk-nav:hover .cpk-label{color:#5fe0d8}
+.cpk-arrow{margin-left:auto;color:#5d6d84}
+/* a parameter the module lists but publishes no metadata for: never silent */
+.cpk-row.cpk-nometa .cpk-label{font-family:ui-monospace,monospace;color:#ffc86b}
+.cpk-warn{font-size:9px;color:#ffc86b;border:1px solid #6b4a1a;background:#241d09;
+  border-radius:4px;padding:1px 4px;white-space:nowrap}
+.cpk-knob.cpk-nometa .cpk-knob-label{color:#ffc86b;font-family:ui-monospace,monospace}
 /* connection pill (C5) + DIAG overlay (C1) */
 #connpill.live{background:#123f21;color:#5fe08a;border-color:#1d5c31}
 #connpill.recon{background:#4a3210;color:#ffc86b;border-color:#6b4a1a}
@@ -276,7 +346,8 @@
     <span class="badge pill" id="connpill" title="Connection to the Move — ~ toggles diagnostics">…</span>
     <span class="seg views" id="viewseg" title="Views — the selected track is shared across them">
       <button id="viewSeq" class="on">Sequencer</button>
-      <button id="viewMix">Mixer</button></span>
+      <button id="viewMix">Mixer</button>
+      <button id="viewSound">Sound</button></span>
     <button class="ghost" id="xport" title="Start / stop transport">▶</button>
     <span class="badge play" id="transport">—</span>
     <span id="globals"></span>
@@ -332,6 +403,7 @@
   <div id="scrim"></div>
   <div id="globalpop"><h4>Global settings</h4><div id="globalpanel"></div></div>
   <div id="mixer"><div class="strips" id="mixstrips"></div></div>
+  <div id="sound"><div id="soundwrap"></div></div>
 </div>
 <div id="diag"></div>
 
@@ -339,4 +411,6 @@
 <script src="web_ui_core.js"></script>
 <script src="web_ui_seq.js"></script>
 <script src="web_ui_mix.js"></script>
+<script src="web_ui_params.js"></script>
+<script src="web_ui_sound.js"></script>
 </body></html>

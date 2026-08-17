@@ -96,6 +96,9 @@ if (!window.schwungRemote) {
   }
   rebuild();
   let subs=[];
+  const compSubs=[];          /* onComponentData listeners */
+  const compKV={};            /* "<component>:<param>" -> value */
+  const compSets=[];          /* every setParamAt, in order (smoke test reads it) */
   window.schwungRemote={
     _mock:true,
     getParam:k=>Promise.resolve(KV[k]!=null?KV[k]:""),
@@ -168,7 +171,34 @@ if (!window.schwungRemote) {
       for(let b=1;b<=4;b++){ m["move_fx:"+b+":volume"]="1"; m["move_fx:"+b+":pan"]="0.5";
         m["move_fx:"+b+":send_a"]="0"; m["move_fx:"+b+":send_b"]="0";
         m["move_fx:"+b+":muted"]="0"; m["move_fx:"+b+":soloed"]="0"; }
-      Object.assign(KV,m); subs.forEach(cb=>cb(Object.assign({},m))); }
+      Object.assign(KV,m); subs.forEach(cb=>cb(Object.assign({},m))); },
+    /* component surface (Sound view): one fake instrument on the Schwung-routed
+     * tracks so the generated editor previews in a plain browser; every other
+     * position answers "nothing loaded" (empty hierarchy + empty metadata). */
+    requestComponent:(compSlot,component)=>{
+      const fake = compSlot>=4 && component==="synth";
+      const hier = fake ? {levels:{root:{label:"OB-Xd",
+          params:[{key:"cutoff",label:"Cutoff"},{key:"resonance",label:"Resonance"}], knobs:[]}}} : {};
+      const cps = fake ? [
+          {key:"cutoff",name:"Cutoff",type:"float",min:0,max:1,step:0.01,default:0.5},
+          {key:"resonance",name:"Resonance",type:"float",min:0,max:1,step:0.01,default:0.1}] : [];
+      setTimeout(()=>{
+        compSubs.forEach(cb=>cb({type:"hierarchy",slot:compSlot,component,data:hier}));
+        compSubs.forEach(cb=>cb({type:"chain_params",slot:compSlot,component,data:cps}));
+        if(!cps.length) return;
+        const vals={};
+        cps.forEach(p=>{ const wire=component+":"+p.key;
+          if(compKV[wire]===undefined) compKV[wire]=String(p.default);
+          vals[wire]=compKV[wire]; });
+        subs.forEach(cb=>cb(vals,compSlot));
+      },0);
+    },
+    onComponentData:cb=>{compSubs.push(cb);},
+    setParamAt:(compSlot,key,value)=>{ compKV[key]=String(value);
+      compSets.push({slot:compSlot,key,value:String(value)}); },
+    /* preview-only introspection for the headless smoke test */
+    _compSets:()=>compSets.slice(),
+    _compKV:()=>Object.assign({},compKV)
   };
 }
 
