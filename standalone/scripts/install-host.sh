@@ -206,15 +206,29 @@ is_link() {
 # Atomic per entry: land beside the target then mv -f. A plain scp over a mapped
 # binary fails with ETXTBSY (or worse, truncates it), and shadow_ui/schwung are
 # exactly the files that may be mapped.
-say ""; say "--- deploying payload"
+say ""; say "--- deploying payload (rsync, drop-tolerant)"
 STAGE="$DBX_DIR/.deploy-stage"
-$SSH "rm -rf '$STAGE' && mkdir -p '$STAGE'"
+$SSH "mkdir -p '$STAGE'"
 
-for entry in "$REPO_ROOT"/build/*; do
-    name="$(basename "$entry")"
-    if is_link "$name"; then say "      skip (symlink): $name"; continue; fi
-    scp -qr "$entry" "${MOVE_USER}@${MOVE_HOST}:$STAGE/$name" || {
-        echo "ERROR: failed to stage $name" >&2; exit 1; }
+# rsync with a retry loop, not scp: the USB tether drops under sustained
+# transfer and scp dies with the whole batch (observed twice on 2026-08-16,
+# ⚠ the tether may be the ONLY link — the Move does not always have WiFi up).
+# rsync resumes: --partial keeps half-sent files across drops, per-file
+# temp+rename keeps every staged file whole, and --delete makes the stage an
+# exact mirror of build/ so a stale entry from an OLDER build can never ride
+# a resumed stage into the swap below. Symlinked names are excluded exactly
+# as the old loop skipped them.
+RSYNC_EXCLUDES=()
+for l in $LINKS; do RSYNC_EXCLUDES+=("--exclude=/$l"); done
+tries=0
+until rsync -r --partial --delete --timeout=30 "${RSYNC_EXCLUDES[@]}" \
+        "$REPO_ROOT/build/" "${MOVE_USER}@${MOVE_HOST}:$STAGE/"; do
+    tries=$((tries+1))
+    if [ "$tries" -ge 20 ]; then
+        echo "ERROR: staging failed after $tries rsync attempts" >&2; exit 1
+    fi
+    say "      link dropped — resuming (attempt $((tries+1)))"
+    sleep 2
 done
 
 # ⚠⚠ Directories must be MERGED, not replaced. This originally mv'd each top-level

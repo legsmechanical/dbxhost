@@ -1380,6 +1380,15 @@ func snapshotDelta(last, cur map[string]string) map[string]string {
 	return delta
 }
 
+// cachedToolID returns the last known overtake tool id without touching the
+// mailbox — the landing route uses it so a page load never loses a race with
+// device-side param traffic (the probe path stays as the cold-start fallback).
+func (ru *RemoteUI) cachedToolID() (string, bool) {
+	ru.mu.Lock()
+	defer ru.mu.Unlock()
+	return ru.toolID, ru.toolPresent && ru.toolID != ""
+}
+
 // markToolPresent latches that an overtake tool is currently active, so a later
 // transition to "no tool" fires exactly one tool-gone signal. Returns true when
 // this call is the not-present -> present EDGE (a fresh arrival).

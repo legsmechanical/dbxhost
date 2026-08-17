@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -364,9 +365,23 @@ type App struct {
 	fileSvc   *FileService
 	basePath  string // the host install dir (-base), e.g. /data/UserData/dbx-host
 	logger    *slog.Logger
-	shm       *ShmConfig // shared memory for live config sync (nil if not on device)
+	shmMu     sync.Mutex
+	shm       *ShmConfig // via shmConfig() ONLY — lazy: the manager starts BEFORE the host under SA
 	shmParams *ShmParams // shared memory for param get/set (nil if not on device)
 	remoteUI  *RemoteUI  // set in main() after construction; used by the landing route
+}
+
+// shmConfig returns the control segment, attaching lazily: under SA the
+// launcher starts this manager BEFORE the host creates any segment, so an
+// open-at-startup handle would stay nil for the whole session (the /mirror
+// auto-enable and /config live-apply both died of exactly that).
+func (app *App) shmConfig() *ShmConfig {
+	app.shmMu.Lock()
+	defer app.shmMu.Unlock()
+	if app.shm == nil {
+		app.shm = OpenShmConfig()
+	}
+	return app.shm
 }
 
 func (app *App) render(w http.ResponseWriter, r *http.Request, name string, data map[string]any) {
@@ -381,8 +396,8 @@ func (app *App) render(w http.ResponseWriter, r *http.Request, name string, data
 		data["CSRFToken"] = cookie.Value
 	}
 	// Inject mirror enabled state for nav bar.
-	if app.shm != nil {
-		data["MirrorEnabled"] = app.shm.DisplayMirror()
+	if app.shmConfig() != nil {
+		data["MirrorEnabled"] = app.shmConfig().DisplayMirror()
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// ParseFS names templates by the base filename, not the full path.
@@ -405,8 +420,22 @@ func (app *App) currentToolAppURL() string {
 	if ru == nil {
 		return ""
 	}
-	id, known := ru.activeOvertakeToolID(0)
-	if !known || id == "" {
+	id, ok := ru.cachedToolID()
+	if !ok {
+		// Cold cache (fresh manager, no tool client yet): probe, with a few
+		// bounded retries — a single mailbox-contention miss must not send a
+		// page load to the waiting page when a session is plainly live.
+		for i := 0; i < 3; i++ {
+			var known bool
+			id, known = ru.activeOvertakeToolID(0)
+			if known && id != "" {
+				break
+			}
+			id = ""
+			time.Sleep(60 * time.Millisecond)
+		}
+	}
+	if id == "" {
 		return ""
 	}
 	url := ru.findModuleWebUI(id)
@@ -825,20 +854,20 @@ func (app *App) handleConfigValues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Overlay with live values from shared memory (source of truth for device state).
-	if app.shm != nil {
-		values["display_mirror"] = app.shm.DisplayMirror()
-		values["overlay_knobs"] = float64(app.shm.OverlayKnobsMode())
-		values["screen_reader_enabled"] = app.shm.TTSEnabled()
-		if app.shm.TTSEngine() == 1 {
+	if app.shmConfig() != nil {
+		values["display_mirror"] = app.shmConfig().DisplayMirror()
+		values["overlay_knobs"] = float64(app.shmConfig().OverlayKnobsMode())
+		values["screen_reader_enabled"] = app.shmConfig().TTSEnabled()
+		if app.shmConfig().TTSEngine() == 1 {
 			values["screen_reader_engine"] = "flite"
 		} else {
 			values["screen_reader_engine"] = "espeak"
 		}
-		values["screen_reader_speed"] = float64(app.shm.TTSSpeed())
-		values["screen_reader_pitch"] = float64(app.shm.TTSPitch())
-		values["screen_reader_volume"] = float64(app.shm.TTSVolume())
-		values["screen_reader_debounce"] = float64(app.shm.TTSDebounce())
-		if s := app.shm.SkipbackSeconds(); s > 0 {
+		values["screen_reader_speed"] = float64(app.shmConfig().TTSSpeed())
+		values["screen_reader_pitch"] = float64(app.shmConfig().TTSPitch())
+		values["screen_reader_volume"] = float64(app.shmConfig().TTSVolume())
+		values["screen_reader_debounce"] = float64(app.shmConfig().TTSDebounce())
+		if s := app.shmConfig().SkipbackSeconds(); s > 0 {
 			values["skipback_seconds"] = float64(s)
 		}
 	}
@@ -989,34 +1018,34 @@ func (app *App) applyShmSetting(key, value string) {
 	}
 	switch key {
 	case "display_mirror":
-		app.shm.SetDisplayMirror(value == "true")
+		app.shmConfig().SetDisplayMirror(value == "true")
 	case "overlay_knobs":
 		if v, err := strconv.Atoi(value); err == nil {
-			app.shm.SetOverlayKnobsMode(uint8(v))
+			app.shmConfig().SetOverlayKnobsMode(uint8(v))
 		}
 	case "screen_reader_enabled":
-		app.shm.SetTTSEnabled(value == "true")
+		app.shmConfig().SetTTSEnabled(value == "true")
 	case "screen_reader_engine":
 		if value == "flite" {
-			app.shm.SetTTSEngine(1)
+			app.shmConfig().SetTTSEngine(1)
 		} else {
-			app.shm.SetTTSEngine(0)
+			app.shmConfig().SetTTSEngine(0)
 		}
 	case "screen_reader_speed":
 		if v, err := strconv.ParseFloat(value, 32); err == nil {
-			app.shm.SetTTSSpeed(float32(v))
+			app.shmConfig().SetTTSSpeed(float32(v))
 		}
 	case "screen_reader_pitch":
 		if v, err := strconv.Atoi(value); err == nil {
-			app.shm.SetTTSPitch(uint16(v))
+			app.shmConfig().SetTTSPitch(uint16(v))
 		}
 	case "screen_reader_volume":
 		if v, err := strconv.Atoi(value); err == nil {
-			app.shm.SetTTSVolume(uint8(v))
+			app.shmConfig().SetTTSVolume(uint8(v))
 		}
 	case "screen_reader_debounce":
 		if v, err := strconv.Atoi(value); err == nil {
-			app.shm.SetTTSDebounce(uint16(v))
+			app.shmConfig().SetTTSDebounce(uint16(v))
 		}
 	case "skipback_seconds":
 		if v, err := strconv.Atoi(value); err == nil {
@@ -1026,7 +1055,7 @@ func (app *App) applyShmSetting(key, value string) {
 			if v > 300 {
 				v = 300
 			}
-			app.shm.SetSkipbackSeconds(uint16(v))
+			app.shmConfig().SetSkipbackSeconds(uint16(v))
 		}
 	}
 }
@@ -1334,8 +1363,8 @@ func main() {
 	// persisted setting.
 	mirrorOn := func(h http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if app.shm != nil && !app.shm.DisplayMirror() {
-				app.shm.SetDisplayMirror(true)
+			if app.shmConfig() != nil && !app.shmConfig().DisplayMirror() {
+				app.shmConfig().SetDisplayMirror(true)
 				logger.Info("display mirror enabled (viewer opened /mirror)")
 			}
 			h.ServeHTTP(w, r)
