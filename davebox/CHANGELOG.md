@@ -19,6 +19,19 @@ the section into a versioned heading at release time.
 - **Connection pill.** The editor's header now shows the link state at a
   glance: Live, Reconnecting, or "dAVEBOx not running" (the session was left
   while the page stayed open). Press ` to open a diagnostics readout.
+- **A Mixer view in the browser.** The editor gained a view switcher —
+  Sequencer, Mixer, Sound — sharing one selected track. The Mixer shows all 8
+  tracks as strips: what each one plays (the instrument's name, "Move 2",
+  "MIDI"), a level fader with unity at 1.00x (double-click resets), pan with a
+  sticky centre, both sends, and audio mute/solo. Turn a knob on the Move and
+  the strip follows; drag a fader in the browser and the audio changes — and
+  the change is saved with the project.
+- **A Sound view in the browser.** The selected track's instrument and effects,
+  laid out the way the signal flows, each editable with real knobs and preset
+  browsing. An instrument that ships its own editor page (like OB-Xd) appears
+  as that editor; everything else gets controls generated from what the
+  instrument declares. The track's audio strip sits at the right edge, same as
+  on the device's own track screen.
 - **The menus all look like the same app now.** Several screens had drifted onto
   different layouts — the Settings menu used a different typeface for its title
   and its rows, the project screens drew their own list that didn't match any

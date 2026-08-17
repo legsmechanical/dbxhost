@@ -1,5 +1,11 @@
 # dbxhost remote UI rework — davebox-first integrated app
 
+> **STATUS 2026-08-16 (end of build session): phases A–E ALL BUILT AND COMMITTED
+> (`0e5fbae3`→`7ad8bdfb`); every off-device gate green (Go+C+JS suites, SA cross-compile,
+> jsdom smokes). The device was unreachable all session, so EVERY on-device gate is OWED —
+> deploy with `install-sa.sh` (WiFi for the host half), then walk the per-phase verification
+> in this doc. Deferred by design: D1a bulk seed; stock remote-ui.js/css left dormant.**
+
 ## Context
 
 The browser remote UI is broken and stock-shaped. Under a dAVEBOx SA session, `schwung-manager`

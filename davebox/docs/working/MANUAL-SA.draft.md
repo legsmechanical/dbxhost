@@ -1401,6 +1401,21 @@ recordings and projects off the device), and **Help**.
   playhead stays smooth over WiFi; a **sync** button forces a re-read if the two
   drift apart.
 
+The header's view switcher adds two more views beside the sequencer, all three
+following one selected track:
+
+- **Mixer:** all 8 tracks as strips — what each plays (the instrument's name,
+  "Move 2", "MIDI"), a level fader (unity at **1.00x**; double-click resets),
+  pan with a sticky centre, Send A/B, and **audio** mute/solo (the session
+  grid's M/S stops the sequencer instead — they're different switches). Solo is
+  one group: soloing any strip dims the rest. Hardware knob moves show up live;
+  browser fader moves are heard immediately and saved with the project.
+- **Sound:** the selected track's instrument and effects left-to-right, each a
+  card of editable controls with preset browsing. An instrument that ships its
+  own editor page opens as that editor; a Move-played track shows its effects
+  here and its instrument stays edited on the device. The track's audio strip
+  rides the right edge.
+
 ---
 
 # 18. Quick Reference

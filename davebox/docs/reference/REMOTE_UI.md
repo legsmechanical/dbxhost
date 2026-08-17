@@ -261,8 +261,17 @@ bands without breaking alignment).
    post-edit suppress window) must **stash the message and replay it** once the condition clears
    (`stashRejected` in `web_ui_seq.js`; an accepted message drops the stashed keys it supersedes).
    The split files: shell `web_ui.html`, transport/parsers/mock in `web_ui_core.js`, render/edit in
-   `web_ui_seq.js` — classic scripts sharing one global scope, order pinned by
-   `tests/host/test_web_ui_assets_shipped.sh`.
+   `web_ui_seq.js`, the Mixer view in `web_ui_mix.js`, the Sound view in `web_ui_sound.js`, the
+   generated param editor in `web_ui_params.js` — classic scripts sharing one global scope, order
+   pinned by `tests/host/test_web_ui_assets_shipped.sh`.
+   **Beyond the rui snapshot, two more data surfaces exist (2026-08-16):** the MIXER wire
+   namespace (`chain:<0-7>:<strip key>` / `move_fx:<1-4>:<strip key>` — `subscribe_mixer` seeds,
+   the notify ring pushes live; manager side in `schwung-manager/mixerkeys.go`, addressing law
+   mirrored from `ui/ui_engine.mjs` and pinned by `tests/host/test_web_mixer_bus_law.sh`), and
+   per-COMPONENT metadata (`get_hierarchy {slot, component}` → hierarchy + chain_params + values;
+   works for `move_fx:<b>:fx<k>` too). A module shipping its own `web_ui.html` is hosted by the
+   Sound view as an iframe running its OWN slot-scoped standalone connection
+   (`?schwungStandalone=1&slot=<t>`) — never a postMessage bridge.
 1. **Display = snapshot fields only.** No live `getParam` round-trip. New UI data ⇒ new `rui_*` field.
 2. **64 KB snapshot budget — truncation-safe.** Gate large per-clip data (automation curves via `rui_cc`
    focus) so a full snapshot stays small. `seq8_remote_snapshot` reserves `RUI_TAIL_RESERVE` (96 B) of tail
