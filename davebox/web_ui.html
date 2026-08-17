@@ -235,6 +235,32 @@
     border:2px solid #0a1a19;box-shadow:0 1px 3px rgba(0,0,0,.5);cursor:grab}
   input[type=range]:active::-webkit-slider-thumb{cursor:grabbing;background:#5fe0d8}
   input[type=range].bip{background:linear-gradient(90deg,#2a2f3a 0 calc(50% - 1px),#454c5a calc(50% - 1px) calc(50% + 1px),#2a2f3a calc(50% + 1px) 100%)}
+/* mixer view (phase D) */
+#mixer{display:none;flex:1;min-height:0;overflow:auto;padding:14px}
+#mixer .strips{display:flex;gap:8px;align-items:stretch;min-height:340px}
+.strip{flex:1;min-width:86px;max-width:150px;display:flex;flex-direction:column;gap:6px;
+  background:#12151c;border:1px solid #232a38;border-radius:10px;padding:8px 8px 10px;
+  transition:opacity .15s}
+.strip.sel{border-color:#3d7bd6;box-shadow:0 0 0 1px #3d7bd6 inset}
+.strip.dim{opacity:.38}
+.strip.ext .ctl{visibility:hidden}
+.strip .thead{cursor:pointer;text-align:center;line-height:1.25}
+.strip .tnum{font-weight:700;font-size:12px;color:#dfe8f5}
+.strip .inst{display:block;font-size:10.5px;color:#8fa4c0;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.strip .mode{font-size:9px;color:#5d6d84;letter-spacing:.06em}
+.strip .fader{flex:1;display:flex;justify-content:center;min-height:120px}
+.strip .fader input{writing-mode:vertical-lr;direction:rtl;width:26px;height:100%}
+.strip .val{text-align:center;font:10.5px ui-monospace,monospace;color:#9fb4d0;min-height:13px}
+.strip .ctl label{display:block;font-size:9px;color:#5d6d84;text-align:center;letter-spacing:.05em}
+.strip .ctl input{width:100%}
+.strip .ms{display:flex;gap:4px;justify-content:center}
+.strip .ms button{flex:1;font-size:10px;padding:2px 0;border-radius:5px;border:1px solid #2a3140;
+  background:#171b24;color:#8fa4c0;cursor:pointer}
+.strip .ms button.on.mute{background:#4a3210;color:#ffc86b;border-color:#6b4a1a}
+.strip .ms button.on.solo{background:#123f21;color:#5fe08a;border-color:#1d5c31}
+.strip .mslabel{font-size:8.5px;color:#4d5b70;text-align:center;letter-spacing:.06em}
+.strip .ext-note{font-size:10px;color:#5d6d84;text-align:center;margin-top:8px}
 /* connection pill (C5) + DIAG overlay (C1) */
 #connpill.live{background:#123f21;color:#5fe08a;border-color:#1d5c31}
 #connpill.recon{background:#4a3210;color:#ffc86b;border-color:#6b4a1a}
@@ -248,6 +274,9 @@
   <div id="top">
     <span class="brand">dAVEBO<span class="dot">x</span></span>
     <span class="badge pill" id="connpill" title="Connection to the Move — ~ toggles diagnostics">…</span>
+    <span class="seg views" id="viewseg" title="Views — the selected track is shared across them">
+      <button id="viewSeq" class="on">Sequencer</button>
+      <button id="viewMix">Mixer</button></span>
     <button class="ghost" id="xport" title="Start / stop transport">▶</button>
     <span class="badge play" id="transport">—</span>
     <span id="globals"></span>
@@ -302,10 +331,12 @@
   </div>
   <div id="scrim"></div>
   <div id="globalpop"><h4>Global settings</h4><div id="globalpanel"></div></div>
+  <div id="mixer"><div class="strips" id="mixstrips"></div></div>
 </div>
 <div id="diag"></div>
 
 <script src="/static/schwung-remote-api.js"></script>
 <script src="web_ui_core.js"></script>
 <script src="web_ui_seq.js"></script>
+<script src="web_ui_mix.js"></script>
 </body></html>

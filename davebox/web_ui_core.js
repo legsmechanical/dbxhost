@@ -101,6 +101,8 @@ if (!window.schwungRemote) {
     getParam:k=>Promise.resolve(KV[k]!=null?KV[k]:""),
     setParam:(k,v)=>{
       let m;
+      /* mixer wire keys (phase D) — plain KV store in the preview */
+      if(/^(chain|move_fx):/.test(k)){ KV[k]=String(v); return; }
       /* transport start/stop — flip the preview playing state */
       if(/(^|:)transport$/.test(k)){ mockPlay=(String(v)==="play")?1:0; rev++; rebuild(); return; }
       /* CC automation (Task 1 keys) — keep the preview curve live */
@@ -154,7 +156,19 @@ if (!window.schwungRemote) {
     resubscribe:()=>{ KV["overtake_dsp:rui_play"]=mockPlay+":"+phTick()+":120";   /* keep preview tick live */
       subs.forEach(cb=>cb(Object.assign({},KV))); },
     /* status surface (pill/DIAG) — the mock is always "connected" */
-    onStatus:cb=>{ try{cb({state:"open",toolId:"mock"});}catch(e){} }
+    onStatus:cb=>{ try{cb({state:"open",toolId:"mock"});}catch(e){} },
+    /* mixer surface (phase D): seed the wire namespace with plausible strips
+     * so the Mixer view previews in a plain browser. Writes just land in KV. */
+    subscribeMixer:()=>{ const m={};
+      for(let t=0;t<8;t++){ m["chain:"+t+":volume"]="1"; m["chain:"+t+":pan"]="0.5";
+        m["chain:"+t+":send_a"]="0"; m["chain:"+t+":send_b"]="0";
+        m["chain:"+t+":muted"]="0"; m["chain:"+t+":soloed"]="0";
+        if(t>=4){ m["chain:"+t+":synth_module"]=["obxd","dexed","",""][t-4]||"";
+                  m["chain:"+t+":synth_name"]=["OB-Xd","Dexed","",""][t-4]||""; } }
+      for(let b=1;b<=4;b++){ m["move_fx:"+b+":volume"]="1"; m["move_fx:"+b+":pan"]="0.5";
+        m["move_fx:"+b+":send_a"]="0"; m["move_fx:"+b+":send_b"]="0";
+        m["move_fx:"+b+":muted"]="0"; m["move_fx:"+b+":soloed"]="0"; }
+      Object.assign(KV,m); subs.forEach(cb=>cb(Object.assign({},m))); }
   };
 }
 
