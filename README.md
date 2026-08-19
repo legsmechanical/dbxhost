@@ -1,158 +1,87 @@
-# davebox host — a Schwung fork
+# dAVEBOx
 
-> **This is a fork of [stock Schwung](https://github.com/charlesvestal/schwung) (MIT),
-> carrying the host changes davebox depends on.** Everything below is Schwung's own README and still
-> describes the framework accurately; this repo diverges only where davebox needs it to.
->
-> **Why it exists.** davebox regularly needs host changes. Sending each one upstream means its
-> features ship on someone else's review timeline, and shipping a modified Schwung as the *only* way
-> to run davebox would force users to choose between official Schwung and a davebox build. This fork
-> is the third option: davebox ships as an ordinary Schwung tool module that declares
-> `"standalone": true`, and launching it tears down the stock stack and brings Move back up under
-> **this** build instead. The official install is never modified, keeps updating normally, and a
-> reboot always returns to it — so a broken davebox build cannot brick the device.
->
-> The launcher that makes this possible (`src/launch-standalone.sh`) is already upstream, so nothing
-> here needs merging by anyone.
->
-> **Base.** Forked from the `davebox-sound-mode` branch of `legsmechanical/schwung` — the build
-> verified running on-device — plus the `SCHWUNG_INSTALL_DIR` module-loader change, which is a no-op
-> for default builds. Deliberately **not** carried over: `pad_events` / `MOVE_MIDI_SOURCE_PAD`
-> (superseded by canvas pad-forwarding, `1bab8a25`) and the unmerged remote-ui-v2 branch — neither
-> is device-verified, and "what runs on the device" is the base.
->
-> **Upstream.** `upstream` is set to the stock Schwung repo, fetch-only. Pulling improvements is encouraged;
-> pushing there is disabled. Changes that are generic still belong upstream as PRs — every one that
-> merges shrinks this fork's delta.
->
-> The davebox side (launcher, `davebox-heal`, privileged installer) lives in
-> `schwung-davebox`, branch `standalone`, under `standalone/`.
+**A standalone 8-track MIDI sequencer and live environment for Ableton Move.**
 
----
+dAVEBOx turns a Move into a session machine: eight tracks of clips on the pads,
+each track playing either one of Move's own instruments or a hosted synth
+(OB-Xd, Dexed, and the rest of the Schwung module ecosystem), with per-clip
+note effects, conditions and automation, a conductor track for harmonic
+movement, retrospective capture, and a full browser editor on the same WiFi.
 
-# Schwung (Formerly Move Everything)
+It runs as its own session on the device. **The official firmware and the
+official Schwung install are never modified** — launching dAVEBOx relaunches
+Move under this repo's host build, leaving stock untouched on disk, and a
+reboot (even a power cut) always returns the device to stock exactly as it
+was. Your Move sets are never touched either: dAVEBOx keeps its own project
+workspace and swaps it in only while a session runs.
 
-[![Schwung Video](https://img.youtube.com/vi/AQ-5RZlg6gw/0.jpg)](https://www.youtube.com/watch?v=AQ-5RZlg6gw)
+## Highlights
 
-An unofficial framework for running custom instruments, effects, and controllers on Ableton Move.
+- **8 tracks × 16 scenes** of melodic and drum clips, launched from the pads —
+  with per-step conditions, ratchets, nudge and probability.
+- **Every track picks its instrument**: one of Move's four internal
+  instruments, a hosted synth with four insert effects and two send buses, or
+  external MIDI hardware.
+- **Note effects per clip**: harmony, MIDI delay with pitch/velocity feedback,
+  arpeggiator, quantise/gate/velocity shaping — all sequenceable.
+- **A conductor track** that shifts responding tracks harmonically as its own
+  clips play.
+- **Retrospective capture** — what you just played is already recorded.
+- **Projects on the pads**: one pad per project, copy/delete with the hardware
+  verbs, born correctly wired from a template.
+- **The browser editor** at `http://move.local:7700`: the page *is* dAVEBOx —
+  a piano-roll/session editor, an 8-strip mixer, and a per-track sound editor
+  (hosted synths bring their own panels), all live in both directions, plus a
+  real-time mirror of the device's screen. Phone-bookmarkable per view.
 
-Schwung adds a Shadow UI that runs alongside stock Move, enabling additional Synths, FX, and other tools to run in parallel to the usual UI.
+## Installing
 
-- **Website:** [schwung.dev](https://schwung.dev)
-- **Manual:** [schwung.dev/manual.html](https://schwung.dev/manual.html)
-- **Module catalog:** [schwung.dev/catalog.html](https://schwung.dev/catalog.html)
+> ⚠ **No packaged first-time install yet.** dAVEBOx is developed and used
+> daily, but the install story is currently a developer deploy loop, not a
+> product installer — a proper one is planned.
 
-## License
+Prerequisites: an Ableton Move with [stock
+Schwung](https://github.com/charlesvestal/schwung) installed and SSH access.
 
-MIT - See [LICENSE](LICENSE) and [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)
+What exists today, in `standalone/scripts/`:
 
-Schwung would not be possible without the work of the [Move Anything](https://github.com/bobbydigitales/move-anything) project which provided the base techniques for accessing Move's hardware and system functions. Thanks to @talktogreg, @impbox, @deets, and especially @bobbyd for those contributions.
+- `install-sa.sh` — builds and deploys the whole deliverable (host + module)
+  to an existing dAVEBOx install; this is the update path.
+- `install-privileged.sh` — the one root step, run **once, ever, on the
+  device** (it lands there as `bless.sh`). It installs only the small heal
+  helper; the file documents exactly what it does and why root is needed.
+- First-time bootstrap (getting the tree onto a fresh device so the two
+  scripts above have something to update) is not yet scripted end-to-end —
+  if you want to run dAVEBOx before the installer lands, open an issue.
 
-## Important Notice
-
-This project is in no way approved, endorsed or supported by Ableton.
-
-This project modifies software on your Ableton Move. Back up important sets and samples before installing and familiarize yourself with DFU restore mode (on [Centercode](https://ableton.centercode.com/project/article/item.html?cap=ecd3942a1fe3405eb27a806608401a0b&arttypeid=%7Be70be312-f44a-418b-bb74-ed1030e3a49a%7D&artid=%7BC0A2D9E2-D52F-4DEB-8BEE-356B65C8942E%7D)) in case you need to restore your device. Move still works normally after installation; Schwung runs alongside it.
-
-This is, in the truest sense of the word, a hack. It is not stable, or generally usable as a daily driver, but it's interesting, and super fun. Be warned, but have fun!
-
-Also: this code is heavily written by coding agents, with human supervision. If that makes you nervous or you disagree with the approach, totally fine! Thanks for checking it out.
-
-## Installation
-
-### Desktop Installer (Recommended)
-
-Download the [Schwung Installer](https://github.com/charlesvestal/schwung-installer/releases/latest) for your platform (macOS, Windows, Linux). It handles SSH setup, module selection, and upgrades via a graphical interface. The desktop installer is also accessible via screen reader.
-
-### Command Line
-
-**Prerequisites:**
-- Move connected to WiFi
-- A computer on the same network
-- **Mac/Linux:** Terminal
-- **Windows:** [Git Bash](https://git-scm.com/downloads) (comes with Git for Windows)
-
-**Install:**
-```bash
-curl -L https://raw.githubusercontent.com/charlesvestal/schwung/main/scripts/install.sh | sh
-```
-
-**Screen reader only (accessible install):**
-```bash
-curl -sL https://raw.githubusercontent.com/charlesvestal/schwung/main/scripts/install.sh | sh -s -- --enable-screen-reader --disable-shadow-ui
-```
-_Note: Uses `-sL` (silent) for minimal output, suitable for screen readers._
-
-The installer will:
-1. **Guide you through SSH setup** if needed (generates key, shows how to add it to Move)
-2. **Download and install** the Schwung framework
-3. **Offer to install modules** (synths, effects) from the catalog
-4. **Copy assets** for modules that need them (ROMs, SoundFonts, etc.)
-
-**Installation options:**
-```bash
-# Enable screen reader (TTS announcements) by default
-./scripts/install.sh local --enable-screen-reader
-
-# Install only screen reader, without UI features
-./scripts/install.sh --enable-screen-reader --disable-shadow-ui
-
-# Skip module installation prompt
-./scripts/install.sh --skip-modules
-```
-
-For managing files on your Move, you can also use [Cyberduck](https://cyberduck.io) (SFTP to `move.local`, select your SSH private key).
-
-For troubleshooting and manual setup, see the [Schwung Manual](https://schwung.dev/manual.html).
-
-## Uninstall
-
-```bash
-curl -L https://raw.githubusercontent.com/charlesvestal/schwung/main/scripts/uninstall.sh | sh
-```
-
-By default, uninstall exports inactive Set Pages backups to `/data/UserData/UserLibrary/Schwung Backups/Set Pages/` before removing Schwung.
-
-To permanently delete Schwung data instead of exporting a backup:
-
-```bash
-curl -L https://raw.githubusercontent.com/charlesvestal/schwung/main/scripts/uninstall.sh | sh -s -- --purge-data
-```
+Once installed: stock Schwung's **Tools menu → dAVEBOx** starts a session;
+**Shift + Back** (or Quit in the Settings menu) hands the device back to
+stock.
 
 ## Documentation
 
-- [Schwung Manual](https://schwung.dev/manual.html) - User guide and shortcuts
-- [CONTRIBUTING.md](CONTRIBUTING.md) - Dev workflow, CI, and pull-request checks
-- [BUILDING.md](BUILDING.md) - Build instructions
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - System and Shadow UI architecture
-- [docs/MODULES.md](docs/MODULES.md) - Module development, Shadow UI integration, overtake modules
-- [docs/API.md](docs/API.md) - JavaScript module API
-- [src/modules/chain/README.md](src/modules/chain/README.md) - Signal Chain module notes
+- **[The dAVEBOx Manual](davebox/MANUAL-SA.md)** — the complete user manual.
+- [CHANGELOG](davebox/CHANGELOG.md) — what's new.
+- `docs/` — architecture, module and API references for the underlying
+  framework, and the OLED UI specification.
 
-## Contributing
+## Relationship to Schwung
 
-PRs welcome. `main` is protected and CI-gated: every change lands via a pull
-request that passes three checks (`host-tests`, `go`, `cross-compile`) — direct
-pushes to `main` are blocked. Branch off `main` (or fork), open a PR, and
-optionally install the fast local checks with `./scripts/install-hooks.sh`. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
+This repo contains the whole deliverable in one place: the sequencer module
+(`davebox/`), a host — a fork of [stock
+Schwung](https://github.com/charlesvestal/schwung) (MIT) carrying the changes
+dAVEBOx depends on — the browser editor and its web server, and the launcher
+and installer. `upstream` is the stock Schwung repo, fetch-only; changes that
+are generic are still offered upstream as PRs. For the framework's own
+documentation (writing modules, the JS/DSP APIs), see stock Schwung's README
+and `docs/MODULES.md` here.
 
-## Available Modules
+**dAVEBOx Legacy** — the earlier version that ran as an ordinary module inside
+stock Schwung — lives at
+[schwung-davebox](https://github.com/legsmechanical/schwung-davebox) and is
+frozen. This standalone line is its successor; sessions are not compatible
+between the two.
 
-Browse the full module catalog at [schwung.dev/catalog.html](https://schwung.dev/catalog.html). Modules are installable via [Schwung Manager](http://move.local:7700) on the device or the desktop installer. The catalog source lives in [module-catalog.json](module-catalog.json).
+## License
 
-## Related Repositories
-
-**Installer:**
-- [move-everything-installer](https://github.com/charlesvestal/schwung-installer) - Cross-platform desktop installer (macOS, Windows, Linux)
-
-## Community
-
-- Discord: [https://discord.gg/GHWaZCC9bQ](https://discord.gg/GHWaZCC9bQ)
-
-## AI Assistance Disclaimer
-
-This module is part of Schwung and was developed with AI assistance, including Claude, Codex, and other AI assistants.
-
-All architecture, implementation, and release decisions are reviewed by human maintainers.  
-AI-assisted content may still contain errors, so please validate functionality, security, and license compatibility before production use.
+MIT, as inherited from Schwung — see [LICENSE](LICENSE).
