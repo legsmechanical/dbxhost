@@ -120,12 +120,10 @@ Static/regression suite: `for t in tests/{host,shadow,store,build}/*.sh; do bash
 (`schwung-manager`), and `cross-compile` (ARM64 Docker build) on every PR and push
 to `main`. The davebox job is new as of the merge — that suite had no CI at all
 while it lived in a separate repo. ⚠ **`main` is NOT branch-protected in THIS fork — commit to it directly.**
-This paragraph used to claim protection was enforced and PRs were required; that was
-inherited verbatim from upstream's PUBLIC repo, where it is true. This fork is
-**private on a free plan**, where GitHub offers neither branch protection nor
-rulesets — the API returns 403 on read *and* write. The stale claim caused real
-wasted work (a worktree and branch created for a change that could have landed
-directly, plus a "this needs a PR" hand-off that was not true).
+(The repo went PUBLIC on 2026-08-19, so protection is now *possible* — but the
+standing rule is unchanged until Josh says otherwise: no protection is enabled,
+commit to main directly. An earlier stale claim that PRs were required caused
+real wasted work; do not resurrect it by inference from the repo being public.)
 CI still runs on every push, so the signal is intact without the gate; run
 `tests/host/` locally before pushing rather than relying on a merge check. Install
 the fast local checks with `./scripts/install-hooks.sh`. The broader
