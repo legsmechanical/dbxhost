@@ -247,6 +247,13 @@ let curView = "seq";
  * track is selected on the DEVICE first (selectClip writes the _ruisel key;
  * device-side selection stays the single source of truth, the optimistic
  * M.sel update is just the immediate highlight), then the view switches. */
+function ensureMixSub() {
+  if (!mixSubscribed && typeof R.subscribeMixer === "function") {
+    mixSubscribed = true;
+    R.subscribeMixer();
+  }
+}
+
 function jumpTo(view, t) {
   if (M && M.sel && typeof t === "number" && t !== M.sel.t) {
     selectClip(t, M.sel.c || 0);
@@ -262,6 +269,7 @@ function setView(view, fromHash) {
   mixVisible = view === "mix";
   soundVisible = soundOn;
   document.getElementById("session").style.display = seqOn ? "" : "none";
+  document.getElementById("miniribbon").style.display = seqOn ? "" : "none";
   document.getElementById("main").style.display = seqOn ? "" : "none";
   document.getElementById("mixer").style.display = mixVisible ? "block" : "none";
   document.getElementById("sound").style.display = soundOn ? "block" : "none";
@@ -270,11 +278,12 @@ function setView(view, fromHash) {
   document.getElementById("viewMix").classList.toggle("on", mixVisible);
   document.getElementById("viewSound").classList.toggle("on", soundOn);
   /* both non-sequencer views read the mixer wire namespace (the sound view for
-   * the track's strip and its instrument's name) */
-  if ((mixVisible || soundOn) && !mixSubscribed && typeof R.subscribeMixer === "function") {
-    mixSubscribed = true; R.subscribeMixer();
-  }
+   * the track's strip and its instrument's name); the sequencer's mini-mixer
+   * ribbon subscribes through the same gate when it is on screen */
+  if (mixVisible || soundOn) ensureMixSub();
   if (mixVisible) { mixStructSig = ""; renderMixer(); }
+  placeClipRibbon(view);                       /* web_ui_ribbon.js, parsed before any event fires */
+  if (seqOn) renderMiniRibbon();
   if (soundOn) { soundSig = ""; renderSound(); }
   /* stop the device stream when the view closes (defined in web_ui_sound.js —
    * later in load order, but setView only ever runs from events after parse) */

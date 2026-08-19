@@ -1414,6 +1414,13 @@ views (`#seq` / `#mix` / `#sound` in the address bar can be bookmarked).
   grid's M/S stops the sequencer instead — they're different switches). Solo is
   one group: soloing any strip dims the rest. Hardware knob moves show up live;
   browser fader moves are heard immediately and saved with the project.
+- **The level ribbon** sits under the sequencer's session grid: one slim cell
+  per track with a level bar (unity notch), audio mute/solo, and the track
+  number. Drag to trim, double-click for 1.00x, click the cell to open the
+  full Mixer there. The ▾ at its left edge collapses it.
+- **Clip chips** ride above the Mixer and Sound views — the playing clip shows
+  ▶ (dashed while queued); click a chip to launch that track's playing or
+  first clip without leaving the view.
 - **Sound:** the selected track's instrument and effects left-to-right, each a
   card of editable controls with preset browsing. An instrument that ships its
   own editor page opens as that editor; a Move-played track shows its effects

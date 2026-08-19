@@ -37,6 +37,15 @@ the section into a versioned heading at release time.
 - **The Mixer says when it's still syncing.** Strips show "…" and disable
   their controls until real values arrive, instead of briefly showing
   defaults that look like data.
+- **A level ribbon lives under the session grid.** Eight slim cells — one per
+  track, in its color — each with a level bar (notch at 1.00x), audio
+  mute/solo, and the track number. Drag a bar to trim a level without leaving
+  the sequencer; double-click for unity; click the cell to open the full
+  Mixer on that track. Collapsible from its left edge, and it remembers.
+- **Clips stay launchable from the Mixer and Sound views.** A row of clip
+  chips (track colors, ▶ on the playing one, a dashed ring while queued)
+  sits above both views — click a chip to launch that track's playing or
+  first clip, so performing never requires jumping back to the sequencer.
 - **The views connect through the music, not just the switcher.** In the
   browser editor, clicking an instrument name in the Mixer opens that track's
   Sound view; double-clicking a track header in the sequencer does the same

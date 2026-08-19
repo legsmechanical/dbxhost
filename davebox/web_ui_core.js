@@ -39,7 +39,7 @@ if (!window.schwungRemote) {
   [[0,0],[0,96],[0,192],[0,288]].forEach(([l,t])=>drum[0].hits.push({tick:t,vel:110,gate:24})); // kick
   [[2,96],[2,288]].forEach(([l,t])=>drum[2].hits.push({tick:t,vel:100,gate:24}));               // snare
   for(let t=0;t<384;t+=48) drum[6].hits.push({tick:t,vel:70,gate:24});                            // hat
-  const tracks=Array.from({length:8},(_,t)=>({pm:t===0?1:0, ac:0, mute:0, solo:0, route:t<4?1:0, chan:t+1}));
+  const tracks=Array.from({length:8},(_,t)=>({pm:t===0?1:0, ac:0, pl:0, qc:-1, mute:0, solo:0, route:t<4?1:0, chan:t+1}));
   // per-clip FX (melodic), 29 values matching the DSP rui_pfx order
   const PFXKEYS=["noteFX_octave","noteFX_offset","noteFX_gate","noteFX_velocity","quantize",
     "noteFX_random","noteFX_random_mode","noteFX_length_mode","harm_octaver","harm_interval1",
@@ -65,7 +65,7 @@ if (!window.schwungRemote) {
       const has=Array.from({length:16},(_,c)=> (c===0 && ((t===0&&drum.some(l=>l.hits.length))||(t===1&&mel.length)))?1:0).join("");
       /* mock seeds route/chan on the track (0-3 Move, 4-7 Schwung; ch=track#) and
        * carries mute/solo so the header state + gear dropdown preview in a browser */
-      return tk.pm+":"+tk.ac+":-1:0:"+has+":"+tk.route+":"+tk.chan+":"+(tk.mute?1:0)+":"+(tk.solo?1:0)+":"+(tk.slot||0);
+      return tk.pm+":"+tk.ac+":"+(tk.qc!=null?tk.qc:-1)+":"+(tk.pl?1:0)+":"+has+":"+tk.route+":"+tk.chan+":"+(tk.mute?1:0)+":"+(tk.solo?1:0)+":"+(tk.slot||0);
     }).join(";");
     if(isDrum){
       KV["overtake_dsp:rui_clip"]="16:24:0:0";
@@ -123,6 +123,8 @@ if (!window.schwungRemote) {
       if(/_cond_oct$/.test(k)){ const a=String(v).split(/\s+/).map(Number);
         if(cond.resp[a[0]]) cond.resp[a[0]].oct=Math.max(-4,Math.min(4,a[1]|0)); rev++; rebuild(); return; }
       /* track header gear / mute / solo (Change 1) — keep the preview header live */
+      if((m=k.match(/t(\d+)_launch_clip$/))){ const tk=tracks[+m[1]];
+        if(tk){ tk.pl=1; tk.ac=Math.max(0,+v|0); tk.qc=-1; } rev++; rebuild(); return; }
       if((m=k.match(/t(\d+)_(mute|solo)$/))){ tracks[+m[1]][m[2]]=+v?1:0; rev++; rebuild(); return; }
       if((m=k.match(/t(\d+)_route$/))){ const r={schwung:0,move:1,external:2}[v];
         if(r!=null) tracks[+m[1]].route=r; rev++; rebuild(); return; }
