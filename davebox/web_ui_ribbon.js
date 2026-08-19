@@ -6,8 +6,10 @@
  * the SAME wire keys and echo-window discipline as the Mixer's strips
  * (mixSet/mixDragKey/mixQuiet); most mixing gestures are one-knob trims, and
  * this removes the view jump for exactly those. Clicking the track number
- * selects the track; clicking anywhere else in the cell opens the full Mixer
- * on it (through jumpTo, like every cross-view door). Collapsible; the state
+ * is the door to the full Mixer on that track (through jumpTo, like every
+ * cross-view door) — deliberately ONLY the number: a cell-wide click handler
+ * swallowed the synthesized click after a level-bar drag and yanked the user
+ * into the Mixer on release. Collapsible; the state
  * persists. Cells show the syncing treatment until their values arrive.
  *
  * CLIP RIBBON (Mixer and Sound views, one row up top): per track a colored
@@ -46,15 +48,14 @@ function buildRibbonCells(host) {
     const cell = document.createElement("div");
     cell.className = "ribcell" + (M.sel && M.sel.t === t ? " sel" : "") + (prefix ? "" : " ext");
     cell.dataset.t = t;
-    cell.title = prefix ? "Open the Mixer on this track" : "sends MIDI out — no audio to mix";
+    cell.title = prefix ? "" : "sends MIDI out — no audio to mix";
 
     const num = document.createElement("span");
     num.className = "ribnum";
     num.style.color = tc;
     num.textContent = "T" + (t + 1);
-    num.title = "Select this track (all views follow)";
-    num.onclick = (e) => { e.stopPropagation();
-      selectClip(t, (M && M.sel && M.sel.c) || 0); };
+    num.title = "Open the Mixer on this track";
+    num.onclick = (e) => { e.stopPropagation(); jumpTo("mix", t); };
     cell.appendChild(num);
 
     if (prefix) {
@@ -85,7 +86,6 @@ function buildRibbonCells(host) {
       cell.appendChild(ms);
     }
 
-    cell.onclick = () => { if (prefix) jumpTo("mix", t); };
     host.appendChild(cell);
   }
 }

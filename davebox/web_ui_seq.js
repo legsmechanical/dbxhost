@@ -666,7 +666,8 @@ function renderSession(){
      * name once known, "Synth" until the mixer namespace has been seeded),
      * "1 - Move 3", "3 - MIDI Ch.3"; falls back to mode+index without route
      * data. Never the retired position letters. */
-    const instShort=trk.route===0?(mixKV["chain:"+t+":synth_name"]||mixKV["chain:"+t+":synth_module"]||"Synth")
+    const instShort=trk.pm===2?"Conductor"   /* its instrument row is inert — say what it IS */
+      :trk.route===0?(mixKV["chain:"+t+":synth_name"]||mixKV["chain:"+t+":synth_module"]||"Synth")
       :trk.route===1?("Move "+moveBusForChannel(trk.chan))
       :trk.route===2?("MIDI Ch."+trk.chan):null;
     const lbl=(instShort!=null)?`${t+1} - ${instShort}`:(trk.pm===1?"D":trk.pm===2?"C":"M")+(t+1);
@@ -703,19 +704,15 @@ function renderSession(){
     });
   }
   grid.innerHTML=html;
-  /* track header: BODY click = mute, right-click = solo (selection stays on the
-   * clip cells below), DOUBLE-click = jump to this track's Sound view. The
-   * single-click mute defers ~250ms so a double-click never toggles it — the
-   * two would otherwise fire mute on+off around every jump. The gear
-   * (stopPropagation) opens route/channel settings. */
+  /* track header: click = jump to this track's Sound view (double-click too —
+   * same door). Mute/solo LEFT the header 2026-08-19: a click meant as a jump
+   * kept muting the track. Sequencer M/S lives in the gear menu now (a
+   * DIFFERENT switch from the mini-mixer ribbon's audio M/S below); the
+   * header badges still show its state. */
   grid.querySelectorAll(".strk").forEach(el=>{
     const t=+el.dataset.t;
-    el.onclick=()=>{ clearTimeout(el._muteT);
-      el._muteT=setTimeout(()=>{ const tr=M.tracks[t]; tr.mute=tr.mute?0:1;
-        R.setParam(P+`t${t}_mute`, tr.mute?"1":"0"); afterEdit(); renderSession(); pullSoon(); },250); };
-    el.ondblclick=()=>{ clearTimeout(el._muteT); jumpTo("sound", t); };
-    el.oncontextmenu=e=>{ e.preventDefault(); const tr=M.tracks[t]; tr.solo=tr.solo?0:1;
-      R.setParam(P+`t${t}_solo`, tr.solo?"1":"0"); afterEdit(); renderSession(); pullSoon(); };
+    el.onclick=()=>jumpTo("sound", t);
+    el.ondblclick=()=>jumpTo("sound", t);
   });
   grid.querySelectorAll(".strk-gear").forEach(el=>{
     el.onclick=e=>{ e.stopPropagation(); openTrackGear(+el.dataset.t, el); };
@@ -824,6 +821,8 @@ function openTrackGear(t,anchor){
       `</select></div>`+
     `<div class="tgrow"><span>MIDI Channel</span><select id="tgChan" class="full">`+
       Array.from({length:16},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join("")+`</select></div>`+
+    `<div class="tgrow tgviews"><span>Sequencer</span>`+
+      `<button id="tgMute" class="sm">Mute</button><button id="tgSolo" class="sm">Solo</button></div>`+
     `<div class="tgrow tgviews"><span>Open in</span>`+
       `<button id="tgMix" class="sm">Mixer</button><button id="tgSound" class="sm">Sound</button></div>`;
   document.body.appendChild(el);
@@ -831,6 +830,13 @@ function openTrackGear(t,anchor){
   el.querySelector("#tgChan").value=String(tr.chan||1);
   el.querySelector("#tgRoute").onchange=e=>{ R.setParam(P+`t${t}_route`, e.target.value); afterEdit(); pullSoon(); };
   el.querySelector("#tgChan").onchange=e=>{ R.setParam(P+`t${t}_channel`, String(e.target.value)); afterEdit(); pullSoon(); };
+  /* sequencer mute/solo (stops NOTES — the ribbon's M/S silences AUDIO) */
+  const tgMS=(btn,key)=>{ const b=el.querySelector(btn);
+    const paint=()=>b.classList.toggle("on", !!M.tracks[t][key]);
+    paint();
+    b.onclick=()=>{ const tr=M.tracks[t]; tr[key]=tr[key]?0:1;
+      R.setParam(P+`t${t}_${key}`, tr[key]?"1":"0"); afterEdit(); renderSession(); paint(); pullSoon(); }; };
+  tgMS("#tgMute","mute"); tgMS("#tgSolo","solo");
   el.querySelector("#tgMix").onclick=()=>{ closeTrackGear(); jumpTo("mix", t); };
   el.querySelector("#tgSound").onclick=()=>{ closeTrackGear(); jumpTo("sound", t); };
   const r=anchor.getBoundingClientRect();

@@ -68,6 +68,7 @@ function mixPrefixFor(t) {
 }
 function mixInstLabel(t) {
   const trk = (M && M.tracks && M.tracks[t]) || {};
+  if (trk.pm === 2) return "Conductor";   /* drives responders; instrument row is inert */
   const route = trk.route === undefined ? 0 : trk.route;
   if (route === 1) return "Move " + moveBusForChannel(trk.chan);
   if (route === 2) return "MIDI";

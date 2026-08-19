@@ -8,6 +8,13 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **Ribbon and header gestures do what they look like.** In the browser
+  editor, dragging a level bar on the mini-mixer ribbon no longer throws you
+  into the Mixer on release — the track number is the Mixer link now. Clicking
+  a track header opens that track's Sound view (it used to mute the track);
+  sequencer mute/solo moved into the track's gear menu, and the header badges
+  still show their state. A conductor track now says "Conductor" wherever
+  instruments are named — its instrument setting never did anything.
 - **The browser editor is now the whole page.** Opening `http://move.local:7700`
   lands directly in the dAVEBOx editor — no more Schwung tabs, module store, or
   "Connecting to the Move…" hang. While no session is running, the page says so

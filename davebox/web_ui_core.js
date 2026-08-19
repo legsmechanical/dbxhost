@@ -39,7 +39,10 @@ if (!window.schwungRemote) {
   [[0,0],[0,96],[0,192],[0,288]].forEach(([l,t])=>drum[0].hits.push({tick:t,vel:110,gate:24})); // kick
   [[2,96],[2,288]].forEach(([l,t])=>drum[2].hits.push({tick:t,vel:100,gate:24}));               // snare
   for(let t=0;t<384;t+=48) drum[6].hits.push({tick:t,vel:70,gate:24});                            // hat
-  const tracks=Array.from({length:8},(_,t)=>({pm:t===0?1:0, ac:0, pl:0, qc:-1, mute:0, solo:0, route:t<4?1:0, chan:t+1}));
+  /* T7 (index 6) previews the CONDUCTOR coherently (pm=2 AND rui_cond points at
+   * it) — it was T2, which is also the melodic preview and Move-routed, so the
+   * sample data showed one track as conductor and instrument at once. */
+  const tracks=Array.from({length:8},(_,t)=>({pm:t===0?1:(t===6?2:0), ac:0, pl:0, qc:-1, mute:0, solo:0, route:t<4?1:0, chan:t+1}));
   // per-clip FX (melodic), 29 values matching the DSP rui_pfx order
   const PFXKEYS=["noteFX_octave","noteFX_offset","noteFX_gate","noteFX_velocity","quantize",
     "noteFX_random","noteFX_random_mode","noteFX_length_mode","harm_octaver","harm_interval1",
@@ -54,7 +57,7 @@ if (!window.schwungRemote) {
   const CC_ASSIGN=[7,74,71,73,72,91,93,10];
   /* mock conductor: selected track (1) is the conductor of clip 0, all tracks set
    * as responders so the responder panel + grid badges preview on a plain browser. */
-  const cond={trk:1,clip:0,lock:0,resp:Array.from({length:8},()=>({resp:1,oct:0,when:0}))};
+  const cond={trk:6,clip:0,lock:0,resp:Array.from({length:8},()=>({resp:1,oct:0,when:0}))};
   const KV={};
   function rebuild(){
     KV["overtake_dsp:rui_rev"]=String(rev);
