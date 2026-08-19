@@ -314,6 +314,12 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
    body never scrolls sideways. */
 #sound{display:none;flex:1;min-height:0;overflow:auto;padding:14px}
 #soundwrap{display:flex;flex-direction:column;gap:10px;min-height:0}
+.sndheadbar{display:flex;align-items:center;gap:12px}
+.sndtracks{display:flex;gap:4px}
+.sndchip{width:22px;height:22px;padding:0;border:0;border-radius:5px;cursor:pointer;
+  font:700 10px ui-monospace,monospace;color:#0b0d11;opacity:.55;transition:opacity .12s}
+.sndchip:hover{opacity:.85}
+.sndchip.sel{opacity:1;outline:2px solid #dfe8f5;outline-offset:-1px}
 .sndhead{font-size:13px;font-weight:700;color:#dfe8f5;letter-spacing:.02em}
 /* two panes: the signal path stacks VERTICALLY (top → bottom = signal order),
  * the audio strip rides the right as a sticky sidebar */

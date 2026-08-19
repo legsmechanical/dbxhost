@@ -143,12 +143,29 @@ function renderSound() {
   const r0 = sndRoute(t);
   sndListen(r0 === 2 ? -1 : (r0 === 1 ? 0 : t));
 
+  /* track chips: pick which track you're sound-editing without leaving the
+   * view — same colored identity as the session grid and the ribbon */
+  const chips = document.createElement("div");
+  chips.className = "sndtracks";
+  for (let i = 0; i < 8; i++) {
+    const ch = document.createElement("button");
+    ch.className = "sndchip" + (i === t ? " sel" : "");
+    ch.style.background = trackColor(i);
+    ch.textContent = i + 1;
+    ch.title = "Edit T" + (i + 1) + " — " + mixInstLabel(i);
+    ch.onclick = () => jumpTo("sound", i);
+    chips.appendChild(ch);
+  }
   const head = document.createElement("div");
   head.className = "sndhead";
   head.textContent = "T" + (t + 1) + " — " + mixInstLabel(t);
   head.title = "Back to the sequencer on this track";
   head.onclick = () => jumpTo("seq", t);
-  wrap.appendChild(head);
+  const bar = document.createElement("div");
+  bar.className = "sndheadbar";
+  bar.appendChild(chips);
+  bar.appendChild(head);
+  wrap.appendChild(bar);
 
   /* two panes: the signal path as a VERTICAL stack (top → bottom = signal
    * order), the track's audio strip as a sticky sidebar on the right */
@@ -265,18 +282,31 @@ function sndCardBody(c) {
   }
   if (c.timer) { clearTimeout(c.timer); c.timer = 0; }
 
-  /* The instrument may ship its own web panel; ask once, then either embed it
-   * or fall back to the generated editor. */
+  /* The instrument may ship its own web panel; ask once the identity is
+   * KNOWN, then either embed it or fall back to the generated editor. */
   if (c.comp === "synth" && c.rendered === undefined) {
     c.rendered = "pending-panel";
     const id = mixKV["chain:" + c.slot + ":synth_module"] || "";
     const done = d => {
       if (c.rendered !== "pending-panel") return;
       c.rendered = undefined;
-      if (d && d.url) sndMountPanel(c, d.url);
+      c.panelUrl = (d && d.url) || null;
+      /* per-instrument preference: a user who switched to controls stays
+       * there (sndPanelPref, localStorage) */
+      if (c.panelUrl && sndPanelPref(id) !== "controls") sndMountPanel(c, c.panelUrl);
       else sndMountEditor(c);
+      sndPanelToggle(c, id);
     };
-    if (!id) { done(null); return; }
+    if (!id) {
+      /* the mixer namespace seeds ASYNCHRONOUSLY (~220ms serial reads on
+       * device) — deciding "no panel" now sticks the generated editor
+       * forever, which is exactly how custom panels never appeared on
+       * hardware. Wait for the identity instead (bounded). */
+      c.panelTries = (c.panelTries || 0) + 1;
+      c.rendered = undefined;
+      if (c.panelTries <= 24) { setTimeout(() => sndCardBody(c), 250); return; }
+      sndMountEditor(c); return;
+    }
     /* Asking is best-effort: a preview with no server behind it 404s (the JSON
      * parse throws) and an environment without fetch at all throws on the call
      * itself — both mean "no panel", and both must land on the generated
@@ -291,6 +321,42 @@ function sndCardBody(c) {
   if (c.rendered === "pending-panel") return;
   if (c.rendered === "panel") return;
   sndMountEditor(c);
+}
+
+/** A small header toggle between the instrument's own panel and the generated
+ * controls — shown only when a panel exists. Preference sticks per instrument. */
+function sndPanelPref(id, set) {
+  const key = "dbx_panelpref_" + id;
+  try {
+    if (set !== undefined) localStorage.setItem(key, set);
+    return localStorage.getItem(key) || "panel";
+  } catch (e) { return "panel"; }
+}
+function sndPanelToggle(c, id) {
+  const h = c.body.parentElement && c.body.parentElement.querySelector(".sndcard-h");
+  if (!h) return;
+  let b = h.querySelector(".sndpaneltoggle");
+  if (!c.panelUrl) { if (b) b.remove(); return; }
+  if (!b) {
+    b = document.createElement("button");
+    b.className = "sndbypass sndpaneltoggle";
+    h.appendChild(b);
+  }
+  const showingPanel = c.rendered === "panel";
+  b.textContent = showingPanel ? "controls" : "panel";
+  b.title = showingPanel ? "Show the generated controls instead" : "Show this instrument's own editor";
+  b.onclick = () => {
+    if (c.rendered === "panel") {
+      sndPanelPref(id, "controls");
+      c.rendered = undefined; c.editor = null;
+      sndMountEditor(c);
+    } else {
+      sndPanelPref(id, "panel");
+      c.editor = null;
+      sndMountPanel(c, c.panelUrl);
+    }
+    sndPanelToggle(c, id);
+  };
 }
 
 /** The module's own panel, in its own connection (it takes the position from

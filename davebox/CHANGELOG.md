@@ -8,6 +8,14 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **Instruments' own editors now actually appear.** An instrument that ships
+  its own panel (like OB-Xd) shows it on the Sound page — a timing bug decided
+  "no panel" before the instrument's identity had loaded, so hardware always
+  got the generated controls. A small panel/controls button on the instrument
+  card lets you pick either, and it remembers your choice per instrument.
+- **Track chips on the Sound page.** Eight colored track buttons above the
+  signal path switch which track you're sound-editing without leaving the
+  view.
 - **Ribbon and header gestures do what they look like.** In the browser
   editor, dragging a level bar on the mini-mixer ribbon no longer throws you
   into the Mixer on release — the track number is the Mixer link now. Clicking
