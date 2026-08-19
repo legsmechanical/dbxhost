@@ -433,7 +433,14 @@ function pillRender(){
   el.className="badge pill "+cls; el.textContent=txt;
 }
 if(R && typeof R.onStatus==="function"){
-  R.onStatus(s=>{ connState=Object.assign({},s); pillRender(); });
+  R.onStatus(s=>{ connState=Object.assign({},s); pillRender();
+
+/* the site links (/mirror, /files, /help) live on the manager — in the
+ * offline preview there is nothing behind them, so hide rather than 404 */
+if (R && R._mock) {
+  const sl = document.querySelector(".sitelinks");
+  if (sl) sl.style.display = "none";
+} });
 }
 pillRender();
 

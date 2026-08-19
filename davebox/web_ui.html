@@ -235,6 +235,9 @@
     border:2px solid #0a1a19;box-shadow:0 1px 3px rgba(0,0,0,.5);cursor:grab}
   input[type=range]:active::-webkit-slider-thumb{cursor:grabbing;background:#5fe0d8}
   input[type=range].bip{background:linear-gradient(90deg,#2a2f3a 0 calc(50% - 1px),#454c5a calc(50% - 1px) calc(50% + 1px),#2a2f3a calc(50% + 1px) 100%)}
+.sitelinks{display:inline-flex;gap:2px;margin-left:4px;padding-left:8px;border-left:1px solid var(--line)}
+.sitelinks a{color:var(--faint);font-size:11px;text-decoration:none;padding:4px 5px;border-radius:4px}
+.sitelinks a:hover{color:var(--ink);background:#21262f}
 /* sequencer-only header chrome hides in the other views (data-view is set by
  * setView; absent at boot = sequencer, so first paint shows everything) */
 body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
@@ -442,6 +445,7 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
     <button class="ghost" id="gear" title="Global settings (key, scale, swing, launch)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V15z"/></svg></button>
     <button class="ghost" id="sync" title="Re-pull from device"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3.5v6h-6"/></svg></button>
     <button id="auto" class="on sm" title="Auto-refresh from device">Auto</button>
+    <span class="sitelinks"><a href="/mirror" target="_blank" rel="noopener" title="Live view of the Move's screen">Mirror</a><a href="/files" target="_blank" rel="noopener" title="Browse files on the device">Files</a><a href="/help" target="_blank" rel="noopener" title="Manual & help">Help</a></span>
   </div>
   <div id="session"><div id="grid" title="tracks × scenes — click a clip to launch it (editor follows, like the hardware); Alt/Shift-click to view without launching; ▶ launches a scene"></div></div>
   <div id="miniribbon"><button id="ribToggle" title="Show / hide the level ribbon">▾</button><div id="ribcells"></div></div>
