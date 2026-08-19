@@ -116,11 +116,15 @@ function buildStrips(host, anySolo) {
     const el = document.createElement("div");
     el.className = "strip" + (M && M.sel && M.sel.t === t ? " sel" : "") + (prefix ? "" : " ext");
     el.dataset.t = t;
+    /* track color, matching the session grid: a thin cap + the track number.
+     * Kept subtle so the SELECTED ring still reads instantly. */
+    const tc = trackColor(t);
+    el.style.borderTop = "3px solid " + tc;
 
     const head = document.createElement("div");
     head.className = "thead";
     head.title = "Select this track (all views follow)";
-    head.innerHTML = '<span class="tnum">T' + (t + 1) + "</span>" +
+    head.innerHTML = '<span class="tnum" style="color:' + tc + '">T' + (t + 1) + "</span>" +
       '<span class="inst">' + escMix(mixInstLabel(t)) + "</span>" +
       '<span class="mode">' + mixModeGlyph(trk) + "</span>";
     head.onclick = () => {
@@ -128,6 +132,10 @@ function buildStrips(host, anySolo) {
       R.setParam(P + "t" + t + "_c" + c + "_ruisel", "");
       afterEdit(); pullSoon();
     };
+    /* the instrument badge is a door: click it to edit that instrument */
+    const instEl = head.querySelector(".inst");
+    instEl.title = "Edit this instrument (Sound view)";
+    instEl.onclick = (e) => { e.stopPropagation(); jumpTo("sound", t); };
     el.appendChild(head);
 
     if (!prefix) {
@@ -224,9 +232,24 @@ function round4(v) { return Math.round(v * 10000) / 10000; }
  * Three views share it: the sequencer (the session grid + the clip editor),
  * the mixer, and the sound view (web_ui_sound.js). Each view owns one
  * container and one header button; this only shows/hides and hands over. ---- */
-function setView(view) {
+let curView = "seq";
+
+/* jumpTo(view, t): EVERY cross-view affordance routes through here — the
+ * track is selected on the DEVICE first (selectClip writes the _ruisel key;
+ * device-side selection stays the single source of truth, the optimistic
+ * M.sel update is just the immediate highlight), then the view switches. */
+function jumpTo(view, t) {
+  if (M && M.sel && typeof t === "number" && t !== M.sel.t) {
+    selectClip(t, M.sel.c || 0);
+  }
+  setView(view);
+}
+
+function setView(view, fromHash) {
   if (view !== "mix" && view !== "sound") view = "seq";
   const seqOn = view === "seq", soundOn = view === "sound";
+  const changed = view !== curView;
+  curView = view;
   mixVisible = view === "mix";
   soundVisible = soundOn;
   document.getElementById("session").style.display = seqOn ? "" : "none";
@@ -243,8 +266,26 @@ function setView(view) {
   }
   if (mixVisible) { mixStructSig = ""; renderMixer(); }
   if (soundOn) { soundSig = ""; renderSound(); }
+  /* brief crossfade on the pane(s) coming in — only on a real change, so the
+   * hashchange echo of our own hash write never replays it */
+  if (changed) {
+    const panes = seqOn ? ["session", "main"] : [mixVisible ? "mixer" : "sound"];
+    for (const id of panes) {
+      const el = document.getElementById(id);
+      el.classList.remove("viewfade"); void el.offsetWidth; el.classList.add("viewfade");
+    }
+  }
   try { localStorage.setItem("dbx_view", view); } catch (e) { /* ignore */ }
+  /* the address bar mirrors the view: back/forward walk view history, and a
+   * bookmark (or a phone home-screen shortcut) opens straight into a view */
+  if (!fromHash && location.hash !== "#" + view) {
+    try { location.hash = view; } catch (e) { /* ignore */ }
+  }
 }
+window.addEventListener("hashchange", () => {
+  const v = (location.hash || "").slice(1);
+  if (v === "seq" || v === "mix" || v === "sound") setView(v, true);
+});
 document.getElementById("viewSeq").onclick = () => setView("seq");
 document.getElementById("viewMix").onclick = () => setView("mix");
 

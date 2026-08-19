@@ -26,6 +26,15 @@ the section into a versioned heading at release time.
   sticky centre, both sends, and audio mute/solo. Turn a knob on the Move and
   the strip follows; drag a fader in the browser and the audio changes — and
   the change is saved with the project.
+- **The views connect through the music, not just the switcher.** In the
+  browser editor, clicking an instrument name in the Mixer opens that track's
+  Sound view; double-clicking a track header in the sequencer does the same
+  (its gear menu also gained Open in Mixer / Sound); the Sound page's title
+  takes you back to the sequencer, and its level readout opens the Mixer with
+  that track's strip highlighted. View switches crossfade, each track's Sound
+  page remembers where you scrolled it, and the address bar tracks the view —
+  so the browser back button steps between views and a phone can bookmark the
+  Mixer directly.
 - **A Sound view in the browser.** The selected track's instrument and effects,
   laid out the way the signal flows, each editable with real knobs and preset
   browsing. An instrument that ships its own editor page (like OB-Xd) appears

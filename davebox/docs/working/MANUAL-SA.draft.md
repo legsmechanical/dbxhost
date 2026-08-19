@@ -1402,7 +1402,11 @@ recordings and projects off the device), and **Help**.
   drift apart.
 
 The header's view switcher adds two more views beside the sequencer, all three
-following one selected track:
+following one selected track — and the views link through their content:
+click an instrument name in the Mixer to edit it in Sound, double-click a
+track header in the sequencer for the same jump, and click the Sound page's
+title to return to the sequencer. The browser's back button steps between
+views (`#seq` / `#mix` / `#sound` in the address bar can be bookmarked).
 
 - **Mixer:** all 8 tracks as strips — what each plays (the instrument's name,
   "Move 2", "MIDI"), a level fader (unity at **1.00x**; double-click resets),

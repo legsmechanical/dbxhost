@@ -42,6 +42,15 @@ const SND_EMPTY_AFTER = 2500;   /* ms with no reply → treat the position as em
 
 let soundVisible = false;
 let soundSig = "";              /* identity of what's on screen; a change rebuilds */
+/* per-track scroll memory: returning to a track restores where you were in
+ * its stack. Keyed by the track the pane was SHOWING when the scroll happened. */
+const sndScroll = {};
+let sndScrollTrack = -1;
+document.getElementById("sound").addEventListener("scroll", () => {
+  if (soundVisible && sndScrollTrack >= 0) {
+    sndScroll[sndScrollTrack] = document.getElementById("sound").scrollTop;
+  }
+}, { passive: true });
 const sndComps = {};            /* "<slot>|<component>" -> card state */
 
 /* ---- incoming metadata + values -------------------------------------- */
@@ -117,32 +126,43 @@ function renderSound() {
   sndTeardown();
   wrap.innerHTML = "";
 
+  sndScrollTrack = t;
+
   const head = document.createElement("div");
   head.className = "sndhead";
   head.textContent = "T" + (t + 1) + " — " + mixInstLabel(t);
+  head.title = "Back to the sequencer on this track";
+  head.onclick = () => jumpTo("seq", t);
   wrap.appendChild(head);
 
+  /* two panes: the signal path as a VERTICAL stack (top → bottom = signal
+   * order), the track's audio strip as a sticky sidebar on the right */
   const row = document.createElement("div");
   row.className = "sndcards";
   wrap.appendChild(row);
+  const chain = document.createElement("div");
+  chain.className = "sndchain";
+  row.appendChild(chain);
 
   const route = sndRoute(t);
   if (route === 2) {
-    row.appendChild(sndStaticCard("MIDI", "sends MIDI out — nothing to edit here"));
+    chain.appendChild(sndStaticCard("MIDI", "sends MIDI out — nothing to edit here"));
     return;
   }
   if (route === 1) {
     const bus = moveBusForChannel(trk.chan);
-    row.appendChild(sndStaticCard("INSTRUMENT", "Move " + bus + " — edit on device"));
+    chain.appendChild(sndStaticCard("INSTRUMENT", "Move " + bus + " — edit on device"));
     for (let i = 0; i < SND_MOVE_FX.length; i++) {
       /* a Move instrument's insert blocks are self-addressing components on
        * position 0 — the same keys the on-device editor builds */
-      row.appendChild(sndCard(0, "move_fx:" + bus + ":" + SND_MOVE_FX[i], "FX " + (i + 1)));
+      chain.appendChild(sndCard(0, "move_fx:" + bus + ":" + SND_MOVE_FX[i], "FX " + (i + 1)));
     }
   } else {
-    for (const spec of SND_CHAIN_COMPONENTS) row.appendChild(sndCard(t, spec.comp, spec.role));
+    for (const spec of SND_CHAIN_COMPONENTS) chain.appendChild(sndCard(t, spec.comp, spec.role));
   }
   row.appendChild(sndMixCard(t));
+  /* restore where this track's stack was scrolled to last time */
+  document.getElementById("sound").scrollTop = sndScroll[t] || 0;
   sndTick();
 }
 
@@ -315,7 +335,16 @@ function sndMixCard(t) {
   fwrap.appendChild(sndRange(prefix + "volume", MIX_MODES[0], true));
   strip.appendChild(fwrap);
   const val = document.createElement("div");
-  val.className = "val"; val.dataset.k = prefix + "volume";
+  val.className = "val linky"; val.dataset.k = prefix + "volume";
+  val.title = "Open the mixer";
+  val.onclick = () => {
+    jumpTo("mix", t);
+    /* pulse the matching strip so the eye lands on it */
+    setTimeout(() => {
+      const s = document.querySelector('#mixer .strip[data-t="' + t + '"]');
+      if (s) { s.classList.remove("pulse"); void s.offsetWidth; s.classList.add("pulse"); }
+    }, 60);
+  };
   strip.appendChild(val);
 
   /* pan + sends */
@@ -412,9 +441,12 @@ setInterval(() => { if (soundVisible) renderSound(); }, 300);
 
 document.getElementById("viewSound").onclick = () => setView("sound");
 
-/* Restore the last view. This lives in the LAST view script so every view's
- * render function exists by the time setView runs. */
+/* Restore the last view — a #hash in the URL wins (bookmark / back-forward /
+ * a phone home-screen shortcut straight into a view), localStorage otherwise.
+ * This lives in the LAST view script so every view's render function exists
+ * by the time setView runs. */
 try {
-  const v = localStorage.getItem("dbx_view");
+  const h = (location.hash || "").slice(1);
+  const v = (h === "seq" || h === "mix" || h === "sound") ? h : localStorage.getItem("dbx_view");
   if (v === "mix" || v === "sound") setView(v);
 } catch (e) { /* ignore */ }

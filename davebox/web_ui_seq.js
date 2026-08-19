@@ -703,11 +703,16 @@ function renderSession(){
   }
   grid.innerHTML=html;
   /* track header: BODY click = mute, right-click = solo (selection stays on the
-   * clip cells below). The gear (stopPropagation) opens route/channel settings. */
+   * clip cells below), DOUBLE-click = jump to this track's Sound view. The
+   * single-click mute defers ~250ms so a double-click never toggles it — the
+   * two would otherwise fire mute on+off around every jump. The gear
+   * (stopPropagation) opens route/channel settings. */
   grid.querySelectorAll(".strk").forEach(el=>{
     const t=+el.dataset.t;
-    el.onclick=()=>{ const tr=M.tracks[t]; tr.mute=tr.mute?0:1;
-      R.setParam(P+`t${t}_mute`, tr.mute?"1":"0"); afterEdit(); renderSession(); pullSoon(); };
+    el.onclick=()=>{ clearTimeout(el._muteT);
+      el._muteT=setTimeout(()=>{ const tr=M.tracks[t]; tr.mute=tr.mute?0:1;
+        R.setParam(P+`t${t}_mute`, tr.mute?"1":"0"); afterEdit(); renderSession(); pullSoon(); },250); };
+    el.ondblclick=()=>{ clearTimeout(el._muteT); jumpTo("sound", t); };
     el.oncontextmenu=e=>{ e.preventDefault(); const tr=M.tracks[t]; tr.solo=tr.solo?0:1;
       R.setParam(P+`t${t}_solo`, tr.solo?"1":"0"); afterEdit(); renderSession(); pullSoon(); };
   });
@@ -819,7 +824,9 @@ function openTrackGear(t,anchor){
     `<div class="tgrow"><span>Slot</span><select id="tgSlot" class="full">`+
       Array.from({length:window.CHAIN_SLOTS},(_,i)=>`<option value="${i}">${window.slotLetter(i)}</option>`).join("")+`</select></div>`+
     `<div class="tgrow"><span>MIDI Channel</span><select id="tgChan" class="full">`+
-      Array.from({length:16},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join("")+`</select></div>`;
+      Array.from({length:16},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join("")+`</select></div>`+
+    `<div class="tgrow tgviews"><span>Open in</span>`+
+      `<button id="tgMix" class="sm">Mixer</button><button id="tgSound" class="sm">Sound</button></div>`;
   document.body.appendChild(el);
   el.querySelector("#tgRoute").value=routeVal;
   el.querySelector("#tgSlot").value=String(tr.slot||0);
@@ -827,6 +834,8 @@ function openTrackGear(t,anchor){
   el.querySelector("#tgRoute").onchange=e=>{ R.setParam(P+`t${t}_route`, e.target.value); afterEdit(); pullSoon(); };
   el.querySelector("#tgSlot").onchange=e=>{ R.setParam(P+`t${t}_slot`, String(e.target.value)); afterEdit(); pullSoon(); };
   el.querySelector("#tgChan").onchange=e=>{ R.setParam(P+`t${t}_channel`, String(e.target.value)); afterEdit(); pullSoon(); };
+  el.querySelector("#tgMix").onclick=()=>{ closeTrackGear(); jumpTo("mix", t); };
+  el.querySelector("#tgSound").onclick=()=>{ closeTrackGear(); jumpTo("sound", t); };
   const r=anchor.getBoundingClientRect();
   el.style.left=Math.max(6,Math.min(window.innerWidth-194, r.left))+"px";
   el.style.top=(r.bottom+4)+"px";
