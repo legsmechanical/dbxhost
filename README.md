@@ -1,6 +1,6 @@
 # davebox host — a Schwung fork
 
-> **This is a fork of [Schwung](https://github.com/charlesvestal/schwung) (MIT, Charles Vestal),
+> **This is a fork of [stock Schwung](https://github.com/charlesvestal/schwung) (MIT),
 > carrying the host changes davebox depends on.** Everything below is Schwung's own README and still
 > describes the framework accurately; this repo diverges only where davebox needs it to.
 >
@@ -21,7 +21,7 @@
 > (superseded by canvas pad-forwarding, `1bab8a25`) and the unmerged remote-ui-v2 branch — neither
 > is device-verified, and "what runs on the device" is the base.
 >
-> **Upstream.** `upstream` is set to Charles's repo, fetch-only. Pulling improvements is encouraged;
+> **Upstream.** `upstream` is set to the stock Schwung repo, fetch-only. Pulling improvements is encouraged;
 > pushing there is disabled. Changes that are generic still belong upstream as PRs — every one that
 > merges shrinks this fork's delta.
 >
