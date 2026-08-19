@@ -52,6 +52,17 @@ document.getElementById("sound").addEventListener("scroll", () => {
   }
 }, { passive: true });
 const sndComps = {};            /* "<slot>|<component>" -> card state */
+/* live device→browser sync: while the view shows a position, listen to its
+ * notify-ring fan-out (listen-only — no seed; the cards request their own
+ * metadata). A hardware knob turn then streams into the generated editors
+ * through the onParamChange handler below. */
+let sndListened = -1;
+function sndListen(slot) {
+  if (slot === sndListened) return;
+  if (sndListened >= 0 && typeof R.unlistenSlot === "function") R.unlistenSlot(sndListened);
+  sndListened = slot;
+  if (slot >= 0 && typeof R.listenSlot === "function") R.listenSlot(slot);
+}
 
 /* ---- incoming metadata + values -------------------------------------- */
 if (R && typeof R.onComponentData === "function") {
@@ -127,6 +138,10 @@ function renderSound() {
   wrap.innerHTML = "";
 
   sndScrollTrack = t;
+  /* which position to stream: the track's own for a hosted instrument, 0 for
+   * a Move instrument's insert blocks, none for MIDI-out */
+  const r0 = sndRoute(t);
+  sndListen(r0 === 2 ? -1 : (r0 === 1 ? 0 : t));
 
   const head = document.createElement("div");
   head.className = "sndhead";

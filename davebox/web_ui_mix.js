@@ -11,17 +11,9 @@
  * and comments. ⚠ TWO mutes, never conflated: the session grid's M/S stops the
  * SEQUENCER; the strip's pair mutes AUDIO, and is labelled so. */
 
-/* ---- addressing (mirrors ui/ui_engine.mjs — pinned by
- * tests/host/test_web_mixer_bus_law.sh) ----
- * A Move-routed track's bus is WHICH MOVE INSTRUMENT it plays — its CHANNEL
- * (the Instrument row's "Move 1..4") — never the track index: track 6 playing
- * Move 2 addresses bus 2. Clamped, not wrapped. */
-var MIX_MOVE_BUSES = 4;
-function moveBusForChannel(ch) {
-  const n = ch | 0;
-  return n < 1 ? 1 : (n > MIX_MOVE_BUSES ? MIX_MOVE_BUSES : n);
-}
-
+/* moveBusForChannel + mixKV live in web_ui_core.js since 2026-08-19: the
+ * sequencer's track headers read both at LOAD time, and a later classic
+ * script's const/let are in the temporal dead zone until it runs. */
 /* The strip laws, from ui_engine.mjs's SESS_KNOB_MODES: one table so a control
  * cannot pick up another's range or format. Level ceiling is the UI contract
  * (2x), not the host's permissive 4x wire clamp. */
@@ -37,7 +29,6 @@ const MIX_MODES = [
     fmt: v => Math.round(v * 100) + "%" },
 ];
 
-const mixKV = {};              /* wire key -> value (numbers as strings) */
 let mixSubscribed = false;
 let mixVisible = false;
 let mixStructSig = "";         /* rebuild strips only when the shape changes */
@@ -48,17 +39,22 @@ let mixQuiet = {};             /* wire key -> ts of our last write (echo window)
  * as everything else; they are OURS, not rui_* — applyParams ignores them. */
 if (R && typeof R.onParamChange === "function") {
   R.onParamChange(params => {
-    let touched = false;
+    let touched = false, namesFresh = false;
     for (const k in params) {
       if (k.indexOf("chain:") === 0 || k.indexOf("move_fx:") === 0) {
         /* our own recent write echoes back through the notify ring — keep the
          * optimistic value while the pointer is (or just was) on the control */
         if (k === mixDragKey) continue;
         if (mixQuiet[k] && now() - mixQuiet[k] < 400) continue;
+        /* instrument names feed the sequencer's track headers too — when one
+         * FIRST arrives, repaint the session grid or "Synth" sticks until the
+         * next model change */
+        if (k.endsWith(":synth_name") && mixKV[k] !== params[k]) namesFresh = true;
         mixKV[k] = params[k]; touched = true;
       }
     }
     if (touched && mixVisible) renderMixer();
+    if (namesFresh && M) renderSession();
   });
 }
 
@@ -77,6 +73,13 @@ function mixInstLabel(t) {
   if (route === 2) return "MIDI";
   const name = mixKV["chain:" + t + ":synth_name"] || mixKV["chain:" + t + ":synth_module"];
   return name || "no instrument";
+}
+/* a strip is UNSYNCED until any of its keys has arrived (seed or push) —
+ * rendering the defaults before that would show plausible but FALSE values
+ * (1.00x on a track someone mixed to 0.6 reads as data, not placeholder) */
+function mixSeeded(prefix) {
+  for (const mode of MIX_MODES) if (mixKV[prefix + mode.key] !== undefined) return true;
+  return mixKV[prefix + "muted"] !== undefined || mixKV[prefix + "soloed"] !== undefined;
 }
 function mixNum(key, def) {
   const v = parseFloat(mixKV[key]);
@@ -204,6 +207,11 @@ function mkRange(key, mode, vertical) {
 }
 function updateStrips(host) {
   if (!host) return;
+  host.querySelectorAll(".strip").forEach(el => {
+    const t = +el.dataset.t;
+    const prefix = mixPrefixFor(t);
+    el.classList.toggle("wait", !!prefix && !mixSeeded(prefix));
+  });
   host.querySelectorAll("input[type=range]").forEach(inp => {
     const key = inp.dataset.k;
     if (key === mixDragKey) return;
@@ -213,6 +221,7 @@ function updateStrips(host) {
   });
   host.querySelectorAll(".val").forEach(el => {
     const key = el.dataset.k;
+    if (el.closest(".strip").classList.contains("wait")) { el.textContent = "…"; return; }
     const mode = MIX_MODES.find(m => key.endsWith(":" + m.key));
     if (mode) el.textContent = mode.fmt(mixNum(key, mode.def));
   });
@@ -256,6 +265,7 @@ function setView(view, fromHash) {
   document.getElementById("main").style.display = seqOn ? "" : "none";
   document.getElementById("mixer").style.display = mixVisible ? "block" : "none";
   document.getElementById("sound").style.display = soundOn ? "block" : "none";
+  document.body.dataset.view = view;   /* hides .seqonly chrome outside the sequencer */
   document.getElementById("viewSeq").classList.toggle("on", seqOn);
   document.getElementById("viewMix").classList.toggle("on", mixVisible);
   document.getElementById("viewSound").classList.toggle("on", soundOn);
@@ -266,6 +276,9 @@ function setView(view, fromHash) {
   }
   if (mixVisible) { mixStructSig = ""; renderMixer(); }
   if (soundOn) { soundSig = ""; renderSound(); }
+  /* stop the device stream when the view closes (defined in web_ui_sound.js —
+   * later in load order, but setView only ever runs from events after parse) */
+  else sndListen(-1);
   /* brief crossfade on the pane(s) coming in — only on a real change, so the
    * hashchange echo of our own hash write never replays it */
   if (changed) {

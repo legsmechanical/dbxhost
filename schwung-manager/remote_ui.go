@@ -476,6 +476,17 @@ func (ru *RemoteUI) readLoop(ctx context.Context, c *ruClient) {
 			ru.handleUnsubscribeMasterFx(c)
 		case "subscribe_mixer":
 			ru.handleSubscribeMixer(ctx, c)
+		case "listen_slot":
+			// Listen-only: notify-ring fan-out for this position WITHOUT the
+			// full subscribe seed — the Sound view already requests each
+			// component itself and only needs device-side edits streamed.
+			c.mu.Lock()
+			c.subs[ru.slotFromMsg(msg)] = true
+			c.mu.Unlock()
+		case "unlisten_slot":
+			c.mu.Lock()
+			delete(c.subs, ru.slotFromMsg(msg))
+			c.mu.Unlock()
 		case "unsubscribe_mixer":
 			c.mu.Lock()
 			c.mixerSub = false

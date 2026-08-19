@@ -161,6 +161,7 @@
     // not yet known.
     var status = { state: "closed", toolId: null };
     var wantMixer = false; // subscribeMixer() called — re-subscribed on every reconnect
+    var listenedSlot = null; // listenSlot() position — re-listened on every reconnect
     var statusListeners = [];
     function emitStatus() {
         for (var i = 0; i < statusListeners.length; i++) {
@@ -247,6 +248,9 @@
             }
             if (wantMixer) {
                 ws.send(JSON.stringify({ type: "subscribe_mixer" }));
+            }
+            if (listenedSlot !== null) {
+                ws.send(JSON.stringify({ type: "listen_slot", slot: listenedSlot }));
             }
         };
 
@@ -344,6 +348,22 @@
             }
         },
         onComponentData: function (cb) { componentListeners.push(cb); },
+
+        // listenSlot(slot)/unlistenSlot(slot): stream device-side edits for a
+        // position's components (notify-ring fan-out only, no seed). Sticky
+        // across reconnects for the one position last listened to.
+        listenSlot: function (compSlot) {
+            listenedSlot = compSlot;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "listen_slot", slot: compSlot }));
+            }
+        },
+        unlistenSlot: function (compSlot) {
+            if (listenedSlot === compSlot) listenedSlot = null;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "unlisten_slot", slot: compSlot }));
+            }
+        },
 
         // setParamAt(slot, key, value): a write addressed to a specific chain
         // position — the tool page is pinned to slot 0, but the Sound view

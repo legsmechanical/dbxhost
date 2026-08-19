@@ -26,6 +26,17 @@ the section into a versioned heading at release time.
   sticky centre, both sends, and audio mute/solo. Turn a knob on the Move and
   the strip follows; drag a fader in the browser and the audio changes — and
   the change is saved with the project.
+- **Each view shows only its own tools.** The sequencer's draw/select/erase
+  tools, zoom, snap and undo buttons now leave the header in the Mixer and
+  Sound views instead of sitting there doing nothing.
+- **Track headers name the instrument.** The sequencer's track headers now
+  read "5 - OB-Xd" or "1 - Move 3" instead of routing shorthand, and a
+  dead track-settings row that no longer did anything is gone.
+- **The Sound view follows the hardware.** Turn a knob on the Move while its
+  track's Sound page is open in the browser and the control moves with it.
+- **The Mixer says when it's still syncing.** Strips show "…" and disable
+  their controls until real values arrive, instead of briefly showing
+  defaults that look like data.
 - **The views connect through the music, not just the switcher.** In the
   browser editor, clicking an instrument name in the Mixer opens that track's
   Sound view; double-clicking a track header in the sequencer does the same

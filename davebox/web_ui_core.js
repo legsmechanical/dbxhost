@@ -158,6 +158,8 @@ if (!window.schwungRemote) {
     onParamChange:cb=>{subs.push(cb);},
     resubscribe:()=>{ KV["overtake_dsp:rui_play"]=mockPlay+":"+phTick()+":120";   /* keep preview tick live */
       subs.forEach(cb=>cb(Object.assign({},KV))); },
+    /* listen-only slot stream (Sound view live sync) — no-op in the preview */
+    listenSlot:()=>{}, unlistenSlot:()=>{},
     /* status surface (pill/DIAG) — the mock is always "connected" */
     onStatus:cb=>{ try{cb({state:"open",toolId:"mock"});}catch(e){} },
     /* mixer surface (phase D): seed the wire namespace with plausible strips
@@ -203,6 +205,20 @@ if (!window.schwungRemote) {
 }
 
 const R = window.schwungRemote;
+
+/* ---- mixer-namespace addressing, HERE (not web_ui_mix.js) because the
+ * sequencer's track headers read these at load time and a later classic
+ * script's const/let are TDZ until it runs. Law mirrors ui/ui_engine.mjs —
+ * pinned by tests/host/test_web_mixer_bus_law.sh:
+ * a Move-routed track's bus is WHICH MOVE INSTRUMENT it plays — its CHANNEL
+ * (the Instrument row's "Move 1..4") — never the track index: track 6 playing
+ * Move 2 addresses bus 2. Clamped, not wrapped. */
+var MIX_MOVE_BUSES = 4;
+function moveBusForChannel(ch) {
+  const n = ch | 0;
+  return n < 1 ? 1 : (n > MIX_MOVE_BUSES ? MIX_MOVE_BUSES : n);
+}
+const mixKV = {};              /* mixer wire key -> value (numbers as strings) */
 const P = "overtake_dsp:";
 const kv = {};
 let M = null;

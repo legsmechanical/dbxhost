@@ -662,14 +662,15 @@ function renderSession(){
   let html=`<div class="scorner"></div>`;
   const soloAny=M.tracks.some(x=>x.solo);
   M.tracks.forEach((trk,t)=>{
-    /* header shows ROUTING: "1 - Mv Ch.3" (Move) / "5 - Schw Ch.5" (Schwung) /
-     * "3 - Ext Ch.3"; falls back to mode+index on an older DSP w/o route data. */
-    const rl=trk.route===1?"Mv":trk.route===2?"Ext":trk.route===0?"Schw":null;
-    /* Schwung tracks address a chain SLOT directly (A-D); channel only matters
-     * for Move/External routes. */
-    const schwSlot=(trk.route===0&&trk.slot!=null)?window.slotLetter(trk.slot):null;
-    const lbl=(rl!=null&&trk.chan!=null)?`${t+1} - ${rl} ${schwSlot!=null?`Slot ${schwSlot}`:`Ch.${trk.chan}`}`:(trk.pm===1?"D":trk.pm===2?"C":"M")+(t+1);
-    const ttl=(rl!=null&&trk.chan!=null)?`Track ${t+1} → ${rl==="Mv"?"Move":rl==="Schw"?"Schwung":"External"}, ${schwSlot!=null?`Slot ${schwSlot}`:`MIDI Ch ${trk.chan}`}`:`track ${t+1}`;
+    /* header names the track's INSTRUMENT: "5 - OB-Xd" (own instrument; module
+     * name once known, "Synth" until the mixer namespace has been seeded),
+     * "1 - Move 3", "3 - MIDI Ch.3"; falls back to mode+index without route
+     * data. Never the retired position letters. */
+    const instShort=trk.route===0?(mixKV["chain:"+t+":synth_name"]||mixKV["chain:"+t+":synth_module"]||"Synth")
+      :trk.route===1?("Move "+moveBusForChannel(trk.chan))
+      :trk.route===2?("MIDI Ch."+trk.chan):null;
+    const lbl=(instShort!=null)?`${t+1} - ${instShort}`:(trk.pm===1?"D":trk.pm===2?"C":"M")+(t+1);
+    const ttl=(instShort!=null)?`Track ${t+1} → ${instShort}`:`track ${t+1}`;
     /* conductor / responder indicator (rui_cond): "C" on the conductor track,
      * a dot on every non-drum responder track */
     let cind="";
@@ -818,21 +819,17 @@ function openTrackGear(t,anchor){
   const el=document.createElement("div"); el.className="trkgear"; el.dataset.t=String(t);
   el.innerHTML=
     `<h4>Track ${t+1}</h4>`+
-    `<div class="tgrow"><span>Route</span><select id="tgRoute" class="full">`+
-      `<option value="schwung">Schwung</option><option value="move">Move</option><option value="external">External</option>`+
+    `<div class="tgrow"><span>Instrument</span><select id="tgRoute" class="full">`+
+      `<option value="schwung">Schwung</option><option value="move">Move</option><option value="external">MIDI</option>`+
       `</select></div>`+
-    `<div class="tgrow"><span>Slot</span><select id="tgSlot" class="full">`+
-      Array.from({length:window.CHAIN_SLOTS},(_,i)=>`<option value="${i}">${window.slotLetter(i)}</option>`).join("")+`</select></div>`+
     `<div class="tgrow"><span>MIDI Channel</span><select id="tgChan" class="full">`+
       Array.from({length:16},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join("")+`</select></div>`+
     `<div class="tgrow tgviews"><span>Open in</span>`+
       `<button id="tgMix" class="sm">Mixer</button><button id="tgSound" class="sm">Sound</button></div>`;
   document.body.appendChild(el);
   el.querySelector("#tgRoute").value=routeVal;
-  el.querySelector("#tgSlot").value=String(tr.slot||0);
   el.querySelector("#tgChan").value=String(tr.chan||1);
   el.querySelector("#tgRoute").onchange=e=>{ R.setParam(P+`t${t}_route`, e.target.value); afterEdit(); pullSoon(); };
-  el.querySelector("#tgSlot").onchange=e=>{ R.setParam(P+`t${t}_slot`, String(e.target.value)); afterEdit(); pullSoon(); };
   el.querySelector("#tgChan").onchange=e=>{ R.setParam(P+`t${t}_channel`, String(e.target.value)); afterEdit(); pullSoon(); };
   el.querySelector("#tgMix").onclick=()=>{ closeTrackGear(); jumpTo("mix", t); };
   el.querySelector("#tgSound").onclick=()=>{ closeTrackGear(); jumpTo("sound", t); };
