@@ -435,11 +435,21 @@ function pillRender(){
 if(R && typeof R.onStatus==="function"){
   R.onStatus(s=>{ connState=Object.assign({},s); pillRender();
 
-/* the site links (/mirror, /files, /help) live on the manager — in the
- * offline preview there is nothing behind them, so hide rather than 404 */
+/* The site links (/mirror, /files, /help) live on the manager, so in the
+ * offline preview there is nothing behind them.
+ * ⚠ They used to be HIDDEN here, which made the preview lie about the one
+ * thing it is most used to judge — how crowded the top bar is. Show them,
+ * inert: the layout is then truthful and a click cannot 404. */
 if (R && R._mock) {
   const sl = document.querySelector(".sitelinks");
-  if (sl) sl.style.display = "none";
+  if (sl) {
+    sl.classList.add("inert");
+    sl.querySelectorAll("a").forEach(a => {
+      a.removeAttribute("href");
+      a.removeAttribute("target");
+      a.title = a.title + " — device only; inert in the offline preview";
+    });
+  }
 } });
 }
 pillRender();

@@ -1000,8 +1000,6 @@ function zoomAroundX(f,fx){ const t=tickOfX(fx); PXPERTICK=Math.max(MIN_PX,Math.
   scrollX=(GUTTER + t*PXPERTICK) - fx; clampScroll(); draw(); }
 function zoomAroundY(f,fy){ const r=(fy-RULER+scrollY)/ROWH; ROWH=Math.max(MIN_ROWH,Math.min(MAX_ROWH,Math.round(ROWH*f)));
   scrollY=(RULER + r*ROWH) - fy; clampScroll(); draw(); }
-function zoomH(f){ zoomAroundX(f, GUTTER+noteAreaW()/2); }
-function zoomV(f){ zoomAroundY(f, RULER+noteAreaH()/2); }
 function zoomReset(){ fitView(); draw(); }
 
 /* ---------- draw ---------- */
@@ -1699,10 +1697,12 @@ document.getElementById("velhdr").onclick=()=>{ velOpen=!velOpen; saveBands(); b
 document.getElementById("autohdr").onclick=()=>{ autoOpen=!autoOpen; saveBands(); bandsApply();
   renderCcPicker(); renderCcCtl(); if(M){ layout(); draw(); } };
 bandsApply();   /* initial show/hide from persisted prefs (before first model) */
-document.getElementById("zxin").onclick=()=>zoomH(1.3);
-document.getElementById("zxout").onclick=()=>zoomH(1/1.3);
-document.getElementById("zyin").onclick=()=>zoomV(1.3);
-document.getElementById("zyout").onclick=()=>zoomV(1/1.3);
+/* The H+/H-/V+/V- buttons are gone (2026-08-20): the drag strips at the roll's
+ * top and left edges and Ctrl(+Shift)+wheel already did the same job, so they
+ * were a THIRD way to zoom occupying four slots in a crowded top bar.
+ * ⚠ Fit is NOT redundant and stays — it was the only user-reachable caller of
+ * zoomReset, so dropping it too would leave no way out of a bad zoom. It now
+ * has a second route: double-click either zoom strip. */
 document.getElementById("zrst").onclick=zoomReset;
 /* ---------- continuous edge zoom strips (top = horizontal, left = vertical) ----------
  * Reuse the existing PXPERTICK / ROWH zoom vars + the same MIN/MAX clamps the H/V
@@ -1717,11 +1717,16 @@ function wireZoomStrip(el,axis){
     drag={x:e.clientX,y:e.clientY,px:PXPERTICK,rh:ROWH,
           tAt:scrollX/PXPERTICK, rAt:scrollY/ROWH}; });   /* tick at left edge / row at top */
   el.addEventListener("pointermove",e=>{ if(!drag) return; e.preventDefault();
-    if(axis==="h"){ const dy=e.clientY-drag.y;            /* drag down = zoom in */
+    /* ⭑ BOTH strips read the SAME axis: drag DOWN = zoom in, UP = zoom out.
+     * The vertical strip used to read horizontal movement, which is the wrong
+     * gesture for an 18px-wide column — there is nowhere to drag sideways.
+     * One rule for both is also one thing to learn. */
+    const dy=e.clientY-drag.y;
+    if(axis==="h"){
       PXPERTICK=Math.max(MIN_PX,Math.min(MAX_PX, drag.px*Math.pow(2,dy/Z_SENS_H)));
       scrollX=drag.tAt*PXPERTICK; }                       /* pin left-edge tick */
-    else { const dx=e.clientX-drag.x;                     /* drag right = zoom in */
-      ROWH=Math.max(MIN_ROWH,Math.min(MAX_ROWH, Math.round(drag.rh*Math.pow(2,dx/Z_SENS_V))));
+    else {
+      ROWH=Math.max(MIN_ROWH,Math.min(MAX_ROWH, Math.round(drag.rh*Math.pow(2,dy/Z_SENS_V))));
       scrollY=drag.rAt*ROWH; }                            /* pin top row */
     clampScroll(); draw(); });
   const end=e=>{ if(drag){ try{el.releasePointerCapture(e.pointerId);}catch(_){} drag=null; } };
@@ -1729,6 +1734,9 @@ function wireZoomStrip(el,axis){
 }
 wireZoomStrip(document.getElementById("zstripH"),"h");
 wireZoomStrip(document.getElementById("zstripV"),"v");
+/* double-click a strip = fit, so the gesture that zooms also un-zooms */
+document.getElementById("zstripH").ondblclick=zoomReset;
+document.getElementById("zstripV").ondblclick=zoomReset;
 /* edit-tool toggle (Draw / Select / Erase) */
 function setTool(t){ tool=t;
   document.getElementById("toolDraw").classList.toggle("on",t==="draw");

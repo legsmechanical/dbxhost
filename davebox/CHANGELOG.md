@@ -8,6 +8,14 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **A calmer top bar, and zoom where you're looking.** The four H/V zoom buttons
+  are gone — the drag strips along the top and left edges of the piano roll, and
+  Ctrl+wheel, already did the same job. **Fit** and **Snap** moved onto the roll
+  itself, bottom-right, fading in as you point at it. Double-clicking either
+  zoom strip now fits too.
+- **Vertical zoom is an up/down drag.** It read left/right movement on a strip
+  eighteen pixels wide, which left nowhere to drag. Both strips now work the
+  same way: drag down to zoom in, up to zoom out.
 - **Sound editing got wider and simpler.** An instrument's own editor now fills
   the page instead of a 620-pixel column — obxd and Osirus both need about 980
   pixels and were being clipped. Its card header now carries a **Custom UI /

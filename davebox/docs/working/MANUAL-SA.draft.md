@@ -1402,6 +1402,11 @@ no connection to anywhere else.
 - **Transport:** the header runs the device's transport on a synced clock, so the
   playhead stays smooth over WiFi; a **sync** button forces a re-read if the two
   drift apart.
+- **Zoom:** drag the strip along the roll's **top** edge to zoom horizontally and
+  the one down its **left** edge to zoom vertically — both zoom in as you drag
+  **down**. `Ctrl+wheel` does the same, `Ctrl+Shift+wheel` for vertical. **Fit**
+  sits at the roll's bottom-right corner beside **Snap**, and double-clicking
+  either strip fits as well.
 
 The header's view switcher adds two more views beside the sequencer, all three
 following one selected track — and the views link through their content:
