@@ -295,7 +295,7 @@ function sndCardBody(c) {
        * there (sndPanelPref, localStorage) */
       if (c.panelUrl && sndPanelPref(id) !== "controls") sndMountPanel(c, c.panelUrl);
       else sndMountEditor(c);
-      sndPanelToggle(c, id);
+      sndPanelHeader(c, id);
     };
     if (!id) {
       /* the mixer namespace seeds ASYNCHRONOUSLY (~220ms serial reads on
@@ -323,8 +323,9 @@ function sndCardBody(c) {
   sndMountEditor(c);
 }
 
-/** A small header toggle between the instrument's own panel and the generated
- * controls — shown only when a panel exists. Preference sticks per instrument. */
+/** Which editor this instrument was last read with. Sticks per instrument, so
+ * a player who prefers the generated controls for one synth keeps them there
+ * without changing anything for the others. */
 function sndPanelPref(id, set) {
   const key = "dbx_panelpref_" + id;
   try {
@@ -332,52 +333,80 @@ function sndPanelPref(id, set) {
     return localStorage.getItem(key) || "panel";
   } catch (e) { return "panel"; }
 }
-function sndPanelToggle(c, id) {
-  const h = c.body.parentElement && c.body.parentElement.querySelector(".sndcard-h");
-  if (!h) return;
-  let b = h.querySelector(".sndpaneltoggle");
-  if (!c.panelUrl) { if (b) b.remove(); return; }
-  if (!b) {
-    b = document.createElement("button");
-    b.className = "sndbypass sndpaneltoggle";
-    h.appendChild(b);
-  }
-  const showingPanel = c.rendered === "panel";
-  b.textContent = showingPanel ? "controls" : "panel";
-  b.title = showingPanel ? "Show the generated controls instead" : "Show this instrument's own editor";
-  b.onclick = () => {
-    if (c.rendered === "panel") {
-      sndPanelPref(id, "controls");
-      c.rendered = undefined; c.editor = null;
-      sndMountEditor(c);
-    } else {
-      sndPanelPref(id, "panel");
-      c.editor = null;
-      sndMountPanel(c, c.panelUrl);
-    }
-    sndPanelToggle(c, id);
-  };
-}
 
-/** The module's own panel, in its own connection (it takes the position from
- * the query string, exactly as the manager's pop-out does). */
-function sndMountPanel(c, url) {
-  c.rendered = "panel";
-  c.body.innerHTML = "";
-  const full = url + (url.indexOf("?") >= 0 ? "&" : "?") + "schwungStandalone=1&slot=" + c.slot;
-  const frame = document.createElement("iframe");
-  frame.className = "sndpanel";
-  frame.src = full;
-  frame.width = "520";
-  frame.height = "420";
-  c.body.appendChild(frame);
+/** Header controls for an instrument that ships its own editor: a segmented
+ * Custom UI / Generic switch and the open-in-tab link.
+ *
+ * Both live in the card HEADER, matching the stock Remote UI's slot header
+ * (`.ui-mode-toggle` + `.custom-ui-popout-btn`). The link used to sit UNDER the
+ * panel, which put it below a 60vh iframe — reachable only by scrolling past
+ * the thing you wanted to pop out. */
+function sndPanelHeader(c, id) {
+  const h = c.el && c.el.querySelector(".sndcard-h");
+  if (!h) return;
+  let box = h.querySelector(".sndui");
+  if (!c.panelUrl) { if (box) box.remove(); return; }
+  if (!box) {
+    box = document.createElement("span");
+    box.className = "sndui";
+    h.appendChild(box);
+  }
+  box.innerHTML = "";
+
+  const showingPanel = c.rendered === "panel";
+  const group = document.createElement("span");
+  group.className = "snduigroup";
+  /* value is what the button SELECTS — a segmented switch shows both states and
+   * marks the live one, so it never has to be read as an action */
+  [["Custom UI", "panel"], ["Generic", "controls"]].forEach(([label, mode]) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "snduibtn" + ((mode === "panel") === showingPanel ? " active" : "");
+    b.textContent = label;
+    b.setAttribute("aria-pressed", (mode === "panel") === showingPanel ? "true" : "false");
+    b.title = mode === "panel"
+      ? "This instrument's own editor"
+      : "Controls generated from the instrument's parameters";
+    b.onclick = () => {
+      if ((mode === "panel") === showingPanel) return;
+      sndPanelPref(id, mode);
+      c.editor = null;
+      if (mode === "panel") sndMountPanel(c, c.panelUrl);
+      else { c.rendered = undefined; sndMountEditor(c); }
+      sndPanelHeader(c, id);
+    };
+    group.appendChild(b);
+  });
+  box.appendChild(group);
+
   const a = document.createElement("a");
   a.className = "sndopen";
-  a.href = full;
+  a.href = sndPanelUrl(c);
   a.target = "_blank";
   a.rel = "noopener";
   a.textContent = "open in tab ↗";
-  c.body.appendChild(a);
+  a.title = "Open this editor in its own tab";
+  box.appendChild(a);
+}
+
+/** The panel URL with the position appended — the module reads it from the
+ * query string, exactly as the manager's pop-out does. */
+function sndPanelUrl(c) {
+  const url = c.panelUrl || "";
+  return url + (url.indexOf("?") >= 0 ? "&" : "?") + "schwungStandalone=1&slot=" + c.slot;
+}
+
+/** The module's own panel, in its own connection. Sized by CSS (full column
+ * width, 60vh) rather than by width/height attributes: obxd and osirus both
+ * declare a 980px layout, so a fixed 520px box was guaranteed to clip them. */
+function sndMountPanel(c, url) {
+  c.rendered = "panel";
+  c.body.innerHTML = "";
+  const frame = document.createElement("iframe");
+  frame.className = "sndpanel";
+  frame.src = sndPanelUrl(c);
+  frame.setAttribute("title", "Instrument editor");
+  c.body.appendChild(frame);
 }
 
 function sndMountEditor(c) {

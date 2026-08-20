@@ -8,6 +8,20 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **Sound editing got wider and simpler.** An instrument's own editor now fills
+  the page instead of a 620-pixel column — obxd and Osirus both need about 980
+  pixels and were being clipped. Its card header now carries a **Custom UI /
+  Generic** switch (clearer than the old "panel / controls") and the **open in
+  tab** link, which used to sit below the editor where you had to scroll past
+  the whole thing to reach it.
+- **Generic controls are collapsible banks.** Opening one group of parameters no
+  longer replaces the card and leaves a breadcrumb as the only way back: every
+  group is a section you expand or collapse, as many at once as you like, with
+  the others still on screen.
+- **One row of chips on the Sound page.** The clip chips no longer ride above
+  the track chips there — two rows of eight colored chips doing different jobs
+  read as one confused control. Clip launching stays on the Mixer and the
+  sequencer; the Sound page keeps the track chips.
 - **The Help page now holds the manual.** It was an empty shell; it now carries
   the full dAVEBOx manual and the quick start, split into one page per chapter
   with a topic index and working cross-references. It reads off the device

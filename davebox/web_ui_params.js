@@ -10,9 +10,24 @@
  * EXTRACTED from schwung-manager/static/remote-ui.js (the manager's Remote UI
  * page) so the two stay visually and behaviourally the same instrument: the
  * knob geometry/drag law, the value formatting (which itself mirrors the
- * device's shadow_ui.js overlay), the preset browser, the breadcrumb and the
- * nav-stack reconciliation are that code with its global/WS/tab coupling
- * removed. Adaptations are noted inline.
+ * device's shadow_ui.js overlay) and the preset browser are that code with its
+ * global/WS/tab coupling removed. Adaptations are noted inline.
+ *
+ * ⭑⭑ ONE DELIBERATE DIVERGENCE FROM STOCK: levels are COLLAPSIBLE BANKS, not a
+ * navigation stack. Stock (and this file until 2026-08-20) treated a level as a
+ * place you GO: opening one replaced the whole body and left a breadcrumb as the
+ * only way back, so reading two banks meant travelling between them and the
+ * sibling banks were invisible while you were inside one. Every level is now
+ * rendered in place inside a collapsible section, so the banks are a list you
+ * open and close rather than a hierarchy you navigate. There is no breadcrumb
+ * and no back button, because you never left.
+ *
+ * ⚠ The consequence to remember: with every level rendered at once, ONE PARAM
+ * KEY CAN APPEAR IN SEVERAL PLACES (a knob at the root and a row inside a bank).
+ * Every value patch below therefore updates ALL matching elements —
+ * querySelectorAll, never querySelector. Under the old model only one level was
+ * ever in the DOM, so the first match was the only match, and code written that
+ * way silently updates one of them and leaves the rest stale.
  *
  * Public API (one global, one entry point):
  *   const ed = window.chainParams.mount(el, {
@@ -118,7 +133,8 @@
   }
 
   /* ---- hierarchy helpers (remote-ui.js: hierarchyStructureKey /
-   *      reconcileNavStack / resolveCompLevel, de-globalised) ---- */
+   *      resolveCompLevel, de-globalised; the nav-stack half is gone — see the
+   *      collapsible-banks note in the header) ---- */
 
   /** Fingerprint the navigation STRUCTURE only (level names + param/child ids +
    * knob mappings + list/select keys), so a re-broadcast that only carries new
@@ -146,13 +162,12 @@
     return parts.join(";");
   }
 
-  /** Keep the open submenu across a re-broadcast when every level it points at
-   * still exists; otherwise fall back to the root. */
-  function reconcileNavStack(navStack, newData) {
-    var levels = newData && newData.levels;
-    if (!levels || !Array.isArray(navStack) || navStack.length === 0) return ["root"];
-    for (var i = 0; i < navStack.length; i++) if (!levels[navStack[i]]) return ["root"];
-    return navStack;
+  /** Drop remembered open/closed state for levels a new hierarchy no longer has,
+   * so a module swap cannot leave stale level names pinning sections open. */
+  function pruneOpenState(open, data) {
+    var levels = (data && data.levels) || {};
+    for (var k in open) if (!levels[k]) delete open[k];
+    return open;
   }
 
   /* ---- the editor ---- */
@@ -166,7 +181,10 @@
       values: Object.assign({}, opts.values || {}),
       onSet: typeof opts.onSet === "function" ? opts.onSet : function () {},
       title: opts.title || "",
-      navStack: ["root"],
+      /* level name -> expanded? Survives re-renders and re-broadcasts, so an
+       * open bank stays open while values stream in. */
+      open: {},
+      seededOpen: false,    /* the "first bank starts expanded" default, applied once */
       structKey: "",
       drag: null,           /* active knob drag */
       throttle: null,       /* drag write throttle handle */
@@ -191,22 +209,26 @@
     }
     function setLocal(key, v) { st.values[key] = String(v); }
 
-    /* ---- level resolution ---- */
-    function currentLevel() {
-      if (!st.hierarchy || !st.hierarchy.levels) return null;
-      return st.hierarchy.levels[st.navStack[st.navStack.length - 1]] || null;
-    }
-    /** A level whose only content is "children" auto-navigates into them. */
-    function resolveLevel() {
-      if (!st.hierarchy || !st.hierarchy.levels) return;
-      var depth = 10;
+    /* ---- level resolution ----
+     * A level whose content is "children" is a pass-through: it is not a bank
+     * of its own, it just points at the level that holds the controls. Follow
+     * the chain and render what it lands on IN PLACE, so a pass-through never
+     * costs the reader a click. (Stock's resolveCompLevel did the same thing by
+     * pushing onto the nav stack.) */
+    function resolveChain(name) {
+      var levels = (st.hierarchy && st.hierarchy.levels) || {};
+      var seen = {}, depth = 10;
       while (depth-- > 0) {
-        var lvl = st.hierarchy.levels[st.navStack[st.navStack.length - 1]];
-        if (!lvl || !lvl.children) break;
-        if (!st.hierarchy.levels[lvl.children]) break;
-        st.navStack.push(lvl.children);
+        var lvl = levels[name];
+        if (!lvl || !lvl.children || !levels[lvl.children]) break;
+        if (seen[name]) break;              /* a children-cycle would hang */
+        seen[name] = 1;
+        name = lvl.children;
       }
+      return name;
     }
+    /** Does this level declare a preset browser? */
+    function hasPresets(lvl) { return !!(lvl && lvl.list_param && lvl.count_param); }
 
     /* ---- knob ---- */
     function knobSVG(meta, value) {
@@ -260,27 +282,37 @@
       if (line) { line.setAttribute("x2", ind.x); line.setAttribute("y2", ind.y); }
     }
 
+    /* ⚠ ALL matching knobs, not the first: with every bank rendered at once the
+     * same key legitimately appears more than once (see the header note). */
     function knobEls(key) {
-      var c = st.el.querySelector('[data-cpk-knob="' + cssq(key) + '"]');
-      if (!c) return null;
-      return { c: c, svg: c.querySelector(".cpk-knob-svg"), val: c.querySelector(".cpk-knob-value") };
+      var out = [];
+      var list = st.el.querySelectorAll('[data-cpk-knob="' + cssq(key) + '"]');
+      for (var i = 0; i < list.length; i++) {
+        out.push({ c: list[i], svg: list[i].querySelector(".cpk-knob-svg"),
+                   val: list[i].querySelector(".cpk-knob-value") });
+      }
+      return out.length ? out : null;
     }
     function knobDirect(key, value) {
-      var e = knobEls(key); if (!e) return;
+      var els = knobEls(key); if (!els) return;
       var meta = findMeta(key);
-      if (e.svg) knobSVGInPlace(e.svg, value, meta);
-      if (e.val) e.val.textContent = formatValue(value, meta);
+      for (var i = 0; i < els.length; i++) {
+        if (els[i].svg) knobSVGInPlace(els[i].svg, value, meta);
+        if (els[i].val) els[i].val.textContent = formatValue(value, meta);
+      }
     }
     /** Incoming (not user-driven) change: ease it, unless updates are streaming
      * fast (< 100ms apart — a hardware knob being turned) or the step is tiny. */
     function knobAnimated(key, target) {
-      var e = knobEls(key); if (!e || !e.svg) { knobDirect(key, target); return; }
+      var els = knobEls(key); if (!els || !els[0].svg) { knobDirect(key, target); return; }
       var meta = findMeta(key);
       if (!meta) { knobDirect(key, target); return; }
       var t = perfNow(), last = st.lastAnimAt[key] || 0;
       st.lastAnimAt[key] = t;
       if (t - last < 100) { cancelAnim(key); knobDirect(key, target); return; }
-      var cur = parseFloat(e.svg.getAttribute("data-raw-value") || "0");
+      /* every copy of this knob shows the same value, so one animation drives
+       * them all — read the current value from the first */
+      var cur = parseFloat(els[0].svg.getAttribute("data-raw-value") || "0");
       if (isNaN(cur)) cur = meta.min || 0;
       var tgt = parseFloat(target);
       if (isNaN(tgt)) tgt = meta.min || 0;
@@ -293,8 +325,10 @@
         if (st.destroyed) return;
         var p = Math.min(1, (perfNow() - anim.start) / KNOB_ANIM_DURATION);
         var v = anim.from + (anim.to - anim.from) * (1 - Math.pow(1 - p, 3));
-        knobSVGInPlace(e.svg, v, meta);
-        if (e.val) e.val.textContent = formatValue(v, meta);
+        for (var i = 0; i < els.length; i++) {
+          if (els[i].svg) knobSVGInPlace(els[i].svg, v, meta);
+          if (els[i].val) els[i].val.textContent = formatValue(v, meta);
+        }
         if (p < 1) anim.raf = requestAnimationFrame(step);
         else delete st.anims[key];
       })();
@@ -396,22 +430,13 @@
       return box;
     }
 
-    /* ---- one param row (nav link, enum, float/int, or the visible
-     *      no-metadata fallback) ---- */
+    /* ---- one param row (enum, float/int, or the visible no-metadata
+     *      fallback). A `{level:...}` entry is NOT a row \u2014 the caller turns it
+     *      into a bank section instead. ---- */
     function renderParamItem(entry) {
-      var key = null, label = null, navLevel = null;
+      var key = null, label = null;
       if (typeof entry === "string") key = entry;
-      else if (entry && entry.level) { navLevel = entry.level; label = entry.label || entry.level; }
       else if (entry && entry.key) { key = entry.key; label = entry.label; }
-
-      if (navLevel) {
-        var nav = document.createElement("div");
-        nav.className = "cpk-row cpk-nav";
-        nav.innerHTML = '<span class="cpk-label">' + escapeHtml(label) + "</span>" +
-          '<span class="cpk-arrow">\u203A</span>';
-        nav.onclick = function () { st.navStack.push(navLevel); render(); };
-        return nav;
-      }
       if (!key) return null;
 
       var meta = findMeta(key);
@@ -515,39 +540,134 @@
       return row;
     }
 
-    /* ---- breadcrumb ---- */
-    function renderBreadcrumb(into) {
-      into.innerHTML = "";
-      if (!st.hierarchy || !st.hierarchy.levels) return;
-      var back = document.createElement("button");
-      back.className = "cpk-back";
-      back.textContent = "\u2039 back";
-      back.onclick = function () { st.navStack.pop(); if (!st.navStack.length) st.navStack = ["root"]; render(); };
-      into.appendChild(back);
-      for (var i = 0; i < st.navStack.length; i++) {
-        if (i > 0) {
-          var sep = document.createElement("span");
-          sep.className = "cpk-crumbsep"; sep.textContent = "\u203A";
-          into.appendChild(sep);
-        }
-        var lvl = st.hierarchy.levels[st.navStack[i]] || {};
-        var label = lvl.label || st.navStack[i];
-        if (i < st.navStack.length - 1) {
-          var a = document.createElement("a");
-          a.className = "cpk-crumb"; a.textContent = label;
-          a.onclick = (function (idx) {
-            return function () { st.navStack = st.navStack.slice(0, idx + 1); render(); };
-          })(i);
-          into.appendChild(a);
-        } else {
-          var cur = document.createElement("span");
-          cur.className = "cpk-crumb cpk-crumb-cur"; cur.textContent = label;
-          into.appendChild(cur);
-        }
+    /* ---- one level, rendered in place ----
+     * Emits this level's own content (preset browser, knob row, param rows) into
+     * `into`, and turns each `{level:...}` entry into a collapsible bank holding
+     * that level's content, recursively.
+     *
+     * `depth` only drives the indent class; `seen` stops a hierarchy that points
+     * back at itself from recursing forever \u2014 a module's metadata is data we do
+     * not control, and a cycle here would hang the whole page. */
+    function renderLevelInto(into, name, depth, seen) {
+      var levels = (st.hierarchy && st.hierarchy.levels) || {};
+      name = resolveChain(name);
+      var level = levels[name];
+      if (!level) return false;
+      if (seen[name] || depth > 6) return false;
+      seen[name] = 1;
+
+      var wrote = false;
+
+      if (hasPresets(level)) {
+        var pb = renderPresetBrowser(level);
+        if (pb) { into.appendChild(pb); wrote = true; }
       }
+
+      var knobs = level.knobs || [];
+      if (knobs.length) {
+        var kr = document.createElement("div");
+        kr.className = "cpk-knobs";
+        for (var i = 0; i < knobs.length && i < 8; i++) {
+          kr.appendChild(renderKnob(knobs[i], findMeta(knobs[i])));
+        }
+        into.appendChild(kr);
+        wrote = true;
+      }
+
+      var params = level.params || [];
+      var list = null;
+      for (var j = 0; j < params.length; j++) {
+        var entry = params[j];
+        var sub = (entry && entry.level) ? entry.level : null;
+        if (sub) {
+          /* a bank: close any open row run first so ordering is preserved */
+          list = null;
+          var bank = renderBank(sub, entry.label || sub, depth, seen);
+          if (bank) { into.appendChild(bank); wrote = true; }
+          continue;
+        }
+        var item = renderParamItem(entry);
+        if (!item) continue;
+        if (!list) {
+          list = document.createElement("div");
+          list.className = "cpk-list";
+          into.appendChild(list);
+        }
+        list.appendChild(item);
+        wrote = true;
+      }
+      return wrote;
     }
 
-    /* ---- full render of the current level ---- */
+    /** A collapsible bank: a header that toggles, and the level's content. */
+    function renderBank(levelName, label, depth, seen) {
+      var levels = (st.hierarchy && st.hierarchy.levels) || {};
+      var resolved = resolveChain(levelName);
+      if (!levels[resolved] || seen[resolved]) return null;
+
+      var sec = document.createElement("div");
+      sec.className = "cpk-bank";
+      sec.setAttribute("data-cpk-bank", levelName);
+
+      var head = document.createElement("button");
+      head.type = "button";
+      head.className = "cpk-bankhead";
+      var arrow = document.createElement("span");
+      arrow.className = "cpk-bankarrow";
+      var title = document.createElement("span");
+      title.className = "cpk-banklabel";
+      title.textContent = label;
+      head.appendChild(arrow);
+      head.appendChild(title);
+      sec.appendChild(head);
+
+      var body = document.createElement("div");
+      body.className = "cpk-bankbody";
+      sec.appendChild(body);
+
+      /* Default: the FIRST bank of the whole editor starts open, the rest
+       * closed \u2014 so an instrument whose root is nothing but bank links still
+       * shows controls on arrival, without unrolling every level of a deep
+       * module. Only seeded once; after that the user's choice is the truth. */
+      if (st.open[levelName] === undefined && !st.seededOpen) {
+        st.open[levelName] = true;
+        st.seededOpen = true;
+      }
+      var isOpen = !!st.open[levelName];
+
+      function paint() {
+        arrow.textContent = isOpen ? "\u25BC" : "\u25B6";
+        head.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        sec.classList.toggle("open", isOpen);
+        body.style.display = isOpen ? "" : "none";
+      }
+      head.onclick = function () {
+        isOpen = !isOpen;
+        st.open[levelName] = isOpen;
+        paint();
+        /* Build the contents on first open. Deferring costs nothing visually
+         * and keeps a deep module's closed banks out of the DOM entirely. */
+        if (isOpen && !body.childNodes.length) fill();
+      };
+
+      function fill() {
+        /* each bank gets its OWN visited set: two sibling banks may legitimately
+         * both point at a shared sub-level, and a set shared across siblings
+         * would render it in the first and silently drop it from the second */
+        var wrote = renderLevelInto(body, levelName, depth + 1, Object.assign({}, seen));
+        if (!wrote) {
+          var e = document.createElement("div");
+          e.className = "cpk-empty";
+          e.textContent = "no parameters here";
+          body.appendChild(e);
+        }
+      }
+      if (isOpen) fill();
+      paint();
+      return sec;
+    }
+
+    /* ---- full render ---- */
     function render() {
       if (st.destroyed) return;
       st.el.innerHTML = "";
@@ -558,67 +678,15 @@
         h.textContent = st.title;
         st.el.appendChild(h);
       }
-      if (!st.hierarchy || !st.hierarchy.levels) {
+      if (!st.hierarchy || !st.hierarchy.levels || !st.hierarchy.levels[resolveChain("root")]) {
         var none = document.createElement("div");
         none.className = "cpk-empty";
         none.textContent = "no parameters";
         st.el.appendChild(none);
         return;
       }
-      st.navStack = reconcileNavStack(st.navStack, st.hierarchy);
-      resolveLevel();
-      if (st.navStack.length > 1) {
-        var bc = document.createElement("div");
-        bc.className = "cpk-breadcrumb";
-        renderBreadcrumb(bc);
-        st.el.appendChild(bc);
-      }
-      var level = currentLevel();
-      if (!level) {
-        var nl = document.createElement("div");
-        nl.className = "cpk-empty";
-        nl.textContent = "no parameters";
-        st.el.appendChild(nl);
-        return;
-      }
-
-      /* preset browser: this level's, else the nearest ancestor that has one
-       * (modules that hang their preset picker off an auto-navigated parent) */
-      var presetLevel = null;
-      if (level.list_param && level.count_param) presetLevel = level;
-      else {
-        for (var pi = 0; pi < st.navStack.length; pi++) {
-          var anc = st.hierarchy.levels[st.navStack[pi]];
-          if (anc && anc.list_param && anc.count_param) { presetLevel = anc; break; }
-        }
-      }
-      if (presetLevel) {
-        var pb = renderPresetBrowser(presetLevel);
-        if (pb) st.el.appendChild(pb);
-      }
-
-      var knobs = level.knobs || [];
-      if (knobs.length) {
-        var kr = document.createElement("div");
-        kr.className = "cpk-knobs";
-        for (var i = 0; i < knobs.length && i < 8; i++) {
-          kr.appendChild(renderKnob(knobs[i], findMeta(knobs[i])));
-        }
-        st.el.appendChild(kr);
-      }
-
-      var params = level.params || [];
-      if (params.length) {
-        var list = document.createElement("div");
-        list.className = "cpk-list";
-        for (var j = 0; j < params.length; j++) {
-          var item = renderParamItem(params[j]);
-          if (item) list.appendChild(item);
-        }
-        st.el.appendChild(list);
-      }
-
-      if (!knobs.length && !params.length && !presetLevel) {
+      pruneOpenState(st.open, st.hierarchy);
+      if (!renderLevelInto(st.el, "root", 0, {})) {
         var e = document.createElement("div");
         e.className = "cpk-empty";
         e.textContent = "no parameters here";
@@ -646,25 +714,39 @@
         st.values[bare] = values[k];
       }
       if (structural) { render(); return; }
+      var repaintPresets = false;
       for (var i = 0; i < changed.length; i++) {
         var key2 = changed[i];
         if (st.drag && st.drag.key === key2) continue;
         var v = st.values[key2];
         if (knobEls(key2)) knobAnimated(key2, parseFloat(v));
-        var row = st.el.querySelector('[data-cpk-row="' + cssq(key2) + '"]');
-        if (row) {
-          var input = row.querySelector('[data-cpk-input="' + cssq(key2) + '"]');
+        /* ⚠ ALL rows, not the first — see the header note on duplicate keys */
+        var rows = st.el.querySelectorAll('[data-cpk-row="' + cssq(key2) + '"]');
+        for (var r = 0; r < rows.length; r++) {
+          var input = rows[r].querySelector('[data-cpk-input="' + cssq(key2) + '"]');
           if (input) {
             if (input.tagName === "SELECT" || input.type === "text") input.value = String(v);
             else if (input.type === "range") input.value = v;
           }
-          var vd = row.querySelector('[data-cpk-value="' + cssq(key2) + '"]');
+          var vd = rows[r].querySelector('[data-cpk-value="' + cssq(key2) + '"]');
           if (vd) vd.textContent = formatValue(v, findMeta(key2));
         }
-        /* a preset index/name change re-labels the browser */
-        var lvl = currentLevel();
-        if (lvl && (key2 === lvl.list_param || key2 === lvl.count_param || key2 === lvl.name_param)) render();
+        if (isPresetKey(key2)) repaintPresets = true;
       }
+      /* a preset index/name change re-labels its browser; with every bank
+       * rendered, the level that owns it may be any of them */
+      if (repaintPresets) render();
+    }
+
+    /** Is this key the list/count/name param of ANY level's preset browser? */
+    function isPresetKey(key) {
+      var levels = (st.hierarchy && st.hierarchy.levels) || {};
+      for (var n in levels) {
+        var l = levels[n];
+        if (!l) continue;
+        if (key === l.list_param || key === l.count_param || key === l.name_param) return true;
+      }
+      return false;
     }
 
     function destroy() {

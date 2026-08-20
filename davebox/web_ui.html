@@ -327,7 +327,11 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
 /* two panes: the signal path stacks VERTICALLY (top → bottom = signal order),
  * the audio strip rides the right as a sticky sidebar */
 .sndcards{display:flex;gap:12px;align-items:flex-start}
-.sndchain{flex:1;min-width:0;max-width:620px;display:flex;flex-direction:column;gap:10px}
+/* NO max-width: a hosted instrument editor is the widest thing this app shows
+ * (obxd and osirus both declare a 980px layout), and a 620px cap clipped every
+ * one of them. Stock's .custom-ui-container is plain width:100% for the same
+ * reason — the column is as wide as the pane, minus the sticky audio strip. */
+.sndchain{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
 .sndcard{display:flex;flex-direction:column;
   background:#12151c;border:1px solid #232a38;border-radius:10px;overflow:hidden}
 .sndcard-mix{flex:0 0 120px;position:sticky;top:0}
@@ -343,21 +347,33 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
 .sndcard-mix .strip{flex:1;max-width:none;min-width:0;background:transparent;border:0;padding:0}
 .sndnote{font-size:11px;color:#9fb4d0;line-height:1.5}
 .sndnote.dim{color:#5d6d84}
-.sndpanel{display:block;width:100%;height:420px;border:0;border-radius:6px;
+/* stock's .custom-ui-iframe law: full width, min 400px tall, 60vh */
+.sndpanel{display:block;width:100%;min-height:400px;height:60vh;border:0;border-radius:6px;
   background:#0b0d11}
-.sndopen{display:inline-block;margin-top:6px;font-size:10.5px;color:#5fa8e0;text-decoration:none}
+/* Custom UI / Generic switch + open-in-tab, both in the card header
+ * (stock: .ui-mode-toggle + .custom-ui-popout-btn in the slot header) */
+.sndui{flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;margin-left:auto}
+.snduigroup{display:inline-flex;border:1px solid #2a3140;border-radius:5px;overflow:hidden}
+.snduibtn{font-size:9px;padding:2px 7px;border:0;background:#171b24;color:#5d6d84;
+  cursor:pointer;font-family:inherit;line-height:1.6}
+.snduibtn:hover{color:#dfe8f5;background:#21262f}
+.snduibtn.active{background:#1b2430;color:#5fe0d8;font-weight:700}
+.sndopen{flex:0 0 auto;font-size:10.5px;color:#5fa8e0;text-decoration:none;white-space:nowrap}
 .sndopen:hover{text-decoration:underline}
 /* generated param editor (web_ui_params.js) — self-contained, cpk- prefixed */
 .cpk{display:flex;flex-direction:column;gap:8px;color:#9fb4d0;font-size:11.5px}
 .cpk-title{font-size:10px;letter-spacing:.08em;color:#5d6d84;text-transform:uppercase}
 .cpk-empty{font-size:11px;color:#5d6d84;font-style:italic}
-.cpk-breadcrumb{display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:10.5px;
-  padding-bottom:4px;border-bottom:1px solid #232a38}
-.cpk-back{font-size:10px;padding:2px 6px;border-radius:5px;border:1px solid #2a3140;
-  background:#171b24;color:#9fb4d0;cursor:pointer}
-.cpk-crumb{color:#5d6d84;cursor:pointer}
-.cpk-crumb-cur{color:#dfe8f5;cursor:default}
-.cpk-crumbsep{color:#3a4354}
+/* collapsible banks — a level is a section you open, not a place you go */
+.cpk-bank{border:1px solid #212836;border-radius:7px;background:#10141b;overflow:hidden}
+.cpk-bankhead{display:flex;align-items:center;gap:6px;width:100%;padding:5px 8px;
+  border:0;background:#161a23;color:#9fb4d0;cursor:pointer;text-align:left;
+  font-family:inherit;font-size:11px}
+.cpk-bankhead:hover{background:#1b2029;color:#dfe8f5}
+.cpk-bank.open>.cpk-bankhead{color:#dfe8f5}
+.cpk-bankarrow{flex:0 0 auto;font-size:8px;color:#5d6d84}
+.cpk-banklabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cpk-bankbody{display:flex;flex-direction:column;gap:8px;padding:8px}
 .cpk-presets{display:flex;align-items:center;gap:6px}
 .cpk-presetnav{font-size:11px;padding:2px 8px;border-radius:5px;border:1px solid #2a3140;
   background:#171b24;color:#9fb4d0;cursor:pointer}
@@ -382,9 +398,6 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
 .cpk-toggle{font-size:10px;padding:2px 8px;border-radius:5px;border:1px solid #2a3140;
   background:#171b24;color:#9fb4d0;cursor:pointer}
 .cpk-toggle.on{background:#123f21;color:#5fe08a;border-color:#1d5c31}
-.cpk-nav{cursor:pointer;color:#dfe8f5}
-.cpk-nav:hover .cpk-label{color:#5fe0d8}
-.cpk-arrow{margin-left:auto;color:#5d6d84}
 /* a parameter the module lists but publishes no metadata for: never silent */
 .cpk-row.cpk-nometa .cpk-label{font-family:ui-monospace,monospace;color:#ffc86b}
 .cpk-warn{font-size:9px;color:#ffc86b;border:1px solid #6b4a1a;background:#241d09;

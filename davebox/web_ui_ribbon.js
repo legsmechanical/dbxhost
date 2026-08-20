@@ -12,7 +12,7 @@
  * into the Mixer on release. Collapsible; the state
  * persists. Cells show the syncing treatment until their values arrive.
  *
- * CLIP RIBBON (Mixer and Sound views, one row up top): per track a colored
+ * CLIP RIBBON (Mixer view only — see placeClipRibbon; one row up top): per track a colored
  * chip with the session grid's OWN playing/queued truth (trk.pl && trk.ac /
  * trk.qc — never re-derived), click = launch that track's playing-or-first
  * clip via the grid's launchClip path. Performance never requires leaving
@@ -145,18 +145,19 @@ function updateRibbonCells(host) {
 function placeClipRibbon(view) {
   const rib = document.getElementById("clipribbon");
   if (!rib) return;
+  /* MIXER ONLY. It rode the Sound view too until 2026-08-20, where it sat
+   * directly above that view's track chips — two rows of eight colored chips,
+   * one launching clips and one choosing the track being edited, reading as one
+   * confused control (Josh). The Sound view keeps the track chips, which are
+   * what that page is FOR; launching stays on the Mixer and the sequencer. */
   if (view === "mix") {
     const mixer = document.getElementById("mixer");
     if (rib.parentNode !== mixer) mixer.insertBefore(rib, mixer.firstChild);
     rib.style.display = "";
-  } else if (view === "sound") {
-    const sound = document.getElementById("sound");
-    if (rib.parentNode !== sound) sound.insertBefore(rib, sound.firstChild);
-    rib.style.display = "";
+    renderClipRibbon();
   } else {
     rib.style.display = "none";
   }
-  if (view !== "seq") renderClipRibbon();
 }
 function renderClipRibbon() {
   const rib = document.getElementById("clipribbon");
@@ -213,5 +214,5 @@ if (R && typeof R.onParamChange === "function") {
 /* model changes (selection, routing, playing/queued) at a light cadence */
 setInterval(() => {
   if (ribVisible()) renderMiniRibbon();
-  else if (curView !== "seq") renderClipRibbon();
+  else if (curView === "mix") renderClipRibbon();
 }, 350);

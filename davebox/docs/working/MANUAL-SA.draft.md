@@ -1420,14 +1420,22 @@ views (`#seq` / `#mix` / `#sound` in the address bar can be bookmarked).
   per track with a level bar (unity notch), audio mute/solo, and the track
   number. Drag to trim, double-click for 1.00x, click the cell to open the
   full Mixer there. The ▾ at its left edge collapses it.
-- **Clip chips** ride above the Mixer and Sound views — the playing clip shows
-  ▶ (dashed while queued); click a chip to launch that track's playing or
-  first clip without leaving the view.
-- **Sound:** the selected track's instrument and effects left-to-right, each a
-  card of editable controls with preset browsing. An instrument that ships its
-  own editor page opens as that editor; a Move-played track shows its effects
-  here and its instrument stays edited on the device. The track's audio strip
-  rides the right edge.
+- **Clip chips** ride above the Mixer — the playing clip shows ▶ (dashed while
+  queued); click a chip to launch that track's playing or first clip without
+  leaving the view.
+- **Sound:** the selected track's instrument and effects top-to-bottom in signal
+  order, each a card of editable controls with preset browsing. A row of
+  **track chips** at the top switches which track you are editing. An instrument
+  that ships its own editor page opens as that editor, full width; the card
+  header carries a **Custom UI / Generic** switch and an **open in tab** link, so
+  you can fall back to the generated controls for any instrument (it remembers
+  your choice per instrument) or give the editor a whole window. A Move-played
+  track shows its effects here and its instrument stays edited on the device.
+  The track's audio strip rides the right edge.
+- **Generic controls are banks you open, not pages you visit.** Where an
+  instrument groups its parameters, each group is a section with a ▶/▼ header:
+  open as many as you like, side by side, and the ones you are not using stay
+  where they are. Nothing is hidden behind a menu you have to back out of.
 
 ---
 
