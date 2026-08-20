@@ -8,6 +8,12 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **The Help page now holds the manual.** It was an empty shell; it now carries
+  the full dAVEBOx manual and the quick start, split into one page per chapter
+  with a topic index and working cross-references. It reads off the device
+  itself, so it works with no internet connection — and it is generated from
+  the manual at install time, so it can never fall behind the build you are
+  running.
 - **Instruments' own editors now actually appear.** An instrument that ships
   its own panel (like OB-Xd) shows it on the Sound page — a timing bug decided
   "no panel" before the instrument's identity had loaded, so hardware always

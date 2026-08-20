@@ -2142,3 +2142,136 @@ code {
     background: #4caf50;
     color: #fff;
 }
+
+/* ---- Help / manual ---------------------------------------------------------
+   The Help page renders the dAVEBOx manual, which is prose-shaped rather than
+   dashboard-shaped: long paragraphs, deep heading structure, and a lot of
+   control-map tables. It gets a reading measure and its own rhythm, while
+   still using the app's tables and type. */
+
+.help-topics {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-width: 46rem;
+}
+
+.help-topics li {
+    border-bottom: 1px solid var(--border);
+}
+
+.help-topics a {
+    display: block;
+    padding: var(--space-md) var(--space-sm);
+    color: var(--text);
+    text-decoration: none;
+    font-size: 1.0625rem;
+    /* The touch target matters: this index is read on a phone beside the Move. */
+    min-height: var(--min-touch);
+}
+
+.help-topics a:hover,
+.help-topics a:focus-visible {
+    background: var(--bg-card-hover);
+    color: var(--accent);
+}
+
+.help-doc {
+    /* ~70 characters. Full-bleed prose is the one thing that makes a manual
+       genuinely hard to read on a desktop screen. */
+    max-width: 46rem;
+    line-height: 1.65;
+}
+
+.help-doc h1,
+.help-doc h2,
+.help-doc h3,
+.help-doc h4 {
+    margin: var(--space-xl) 0 var(--space-sm);
+    line-height: 1.25;
+    /* Anchored headings are jump targets, so keep them clear of the sticky
+       header when a cross-reference lands on one. */
+    scroll-margin-top: var(--space-xl);
+}
+
+.help-doc h1 { font-size: 1.5rem; }
+.help-doc h2 { font-size: 1.25rem; color: var(--accent); }
+.help-doc h3 { font-size: 1.0625rem; }
+.help-doc h4 { font-size: 1rem; color: var(--text-muted); }
+.help-doc > h1:first-child { margin-top: 0; }
+
+.help-doc p { margin: 0 0 var(--space-md); }
+
+.help-doc ul,
+.help-doc ol {
+    margin: 0 0 var(--space-md);
+    padding-left: var(--space-lg);
+}
+
+.help-doc li { margin-bottom: var(--space-xs); }
+
+.help-doc a { color: var(--accent-secondary); }
+
+.help-doc code {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    background: var(--bg-card);
+    border-radius: var(--radius-sm);
+    padding: 0.1em 0.35em;
+}
+
+.help-doc pre {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--space-md);
+    margin: 0 0 var(--space-md);
+    /* Several code blocks are box-drawing diagrams of the hardware — they must
+       scroll rather than wrap, or the panel layout collapses into noise. */
+    overflow-x: auto;
+}
+
+.help-doc pre code {
+    background: none;
+    padding: 0;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    white-space: pre;
+}
+
+.help-doc blockquote {
+    margin: 0 0 var(--space-md);
+    padding: var(--space-sm) var(--space-md);
+    border-left: 3px solid var(--accent-dim);
+    background: var(--color-warning-bg);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.help-doc blockquote > :last-child { margin-bottom: 0; }
+
+.help-doc hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: var(--space-xl) 0;
+}
+
+/* A wide control map must scroll inside itself; the page never scrolls
+   sideways. Bounded by the reading measure above, so a 4-column gesture table
+   on a phone stays a table instead of reflowing into unreadable slivers. */
+.table-scroll {
+    overflow-x: auto;
+    margin: 0 0 var(--space-md);
+    -webkit-overflow-scrolling: touch;
+}
+
+.help-doc .table-scroll table { min-width: 22rem; }
+
+.help-doc .table-scroll td:first-child {
+    /* The left column is almost always the control or gesture being named. */
+    white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+    .help-doc .table-scroll td:first-child { white-space: normal; }
+    .help-doc { line-height: 1.6; }
+}

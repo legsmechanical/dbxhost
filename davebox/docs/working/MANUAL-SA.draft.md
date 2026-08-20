@@ -1387,7 +1387,9 @@ up on the other. If no session is running yet, the page waits and opens the
 editor by itself when one starts. The header's **connection pill** shows the
 link state (Live / Reconnecting / "dAVEBOx not running"). The site's small nav
 also offers **Mirror** (a live view of the Move's screen), **Files** (pull
-recordings and projects off the device), and **Help**.
+recordings and projects off the device), and **Help** — this manual and the
+quick start, one page per chapter, readable on the device's own network with
+no connection to anywhere else.
 
 - **Session grid:** click a clip to launch it (Alt/Shift-click views it without
   launching); drag to move (Alt-drag copies); a clip's **≡ menu** duplicates,
