@@ -1811,5 +1811,35 @@ refresh();
 function relayout(){ if(M){ layout(); draw(); } }
 requestAnimationFrame(relayout);
 window.addEventListener("resize", relayout);
+
+/* ⚠⚠ WATCH THE BOX, don't chase the things that change it.
+ *
+ * layout() sizes the canvas from #rollview's measured height, so anything that
+ * changes that height must re-run it — and the window `resize` event does NOT
+ * fire for a sibling growing inside the same column. The mini-mixer ribbon and
+ * the session grid both fill in AFTER the boot relayout, which shrank #rollview
+ * under a canvas that kept its taller pixel size; since #rollview is
+ * overflow:hidden, the part clipped away is exactly the bottom STEPBAND, so the
+ * step-edit row vanished "behind" the VELOCITY header while you watched it load.
+ *
+ * A ResizeObserver on the box itself covers every cause at once — the ribbon,
+ * the session grid, band headers, a wrapping edit bar, and whatever gets added
+ * next — instead of a new layout() call site per feature, which is the pattern
+ * that let this through.
+ *
+ * Guarded two ways: only when the measurement actually CHANGED (layout() writes
+ * inside the observed element, so an unguarded handler can feed itself), and on
+ * ResizeObserver existing at all — the offline preview's jsdom has no layout
+ * engine and does not implement it. */
+if(typeof ResizeObserver==="function"){
+  let lastW=0,lastH=0;
+  new ResizeObserver(()=>{
+    const v=document.getElementById("rollview"); if(!v) return;
+    const w=v.clientWidth,h=v.clientHeight;
+    if(w===lastW&&h===lastH) return;
+    lastW=w; lastH=h;
+    relayout();
+  }).observe(document.getElementById("rollview"));
+}
 window._dbg={get M(){return M;}, refresh, applyParams, draw, noteAt, xOfTick, yOfRow,
              geom:{get rowh(){return ROWH;}, get px(){return PXPERTICK;}, get sx(){return scrollX;}, get sy(){return scrollY;}}};

@@ -21,6 +21,11 @@ the section into a versioned heading at release time.
   what two things on screen already showed.
 
 ### Fixes
+- **The step-edit row no longer disappears as the page loads.** The level ribbon
+  and the session grid fill in after the piano roll has already sized itself, and
+  the roll did not re-measure — so its bottom row, the step editor, got clipped
+  out of sight behind the VELOCITY header. The roll now follows its own box
+  whatever changes it.
 - **The Snap/fit control no longer covers the step row.** It was floating over
   the right-hand end of the step-edit band at the bottom of the piano roll,
   hiding those cells and swallowing clicks on them.
