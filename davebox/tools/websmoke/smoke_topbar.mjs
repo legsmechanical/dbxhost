@@ -33,6 +33,7 @@ if (missing.length) {
 }
 
 const d = window.document;
+const rules = [...window.document.styleSheets[0].cssRules].map(r => r.cssText).join("\n");
 const out = {}, fails = [];
 const ok = (n, c, x) => { out[n] = c ? "PASS" : ("FAIL " + (x === undefined ? "" : x)); if (!c) fails.push(n); };
 
@@ -57,6 +58,15 @@ const snap = d.getElementById("snap");
 ok("snapOnCanvas", !!snap && !!snap.closest("#rollview"));
 ok("snapStillReadable", window.eval('typeof snapTicks === "function" && !isNaN(snapTicks())'));
 ok("snapOverlayExists", !!d.getElementById("rollzoom"));
+/* ⚠ The overlay must CLEAR THE STEP BAND — the bottom STEPBAND px of the roll
+ * canvas is the interactive step-edit row, and the overlay sat on top of it,
+ * swallowing clicks on its right-hand cells. Read the constant from the running
+ * code so the CSS cannot drift away from it. */
+const STEPBAND = window.eval("STEPBAND");
+const zoomBottom = parseFloat((rules.match(/#rollzoom[^}]*bottom:\s*(\d+(?:\.\d+)?)px/) || [])[1]);
+ok("stepBandConstantReadable", Number.isFinite(STEPBAND) && STEPBAND > 0, STEPBAND);
+ok("overlayClearsStepBand", zoomBottom >= STEPBAND,
+  "bottom:" + zoomBottom + "px vs STEPBAND " + STEPBAND + "px");
 
 /* ---- the top bar is lighter, and kept what it should ---- */
 const top = d.getElementById("top");
@@ -107,7 +117,7 @@ const gridCss = window.getComputedStyle(sess);
 ok("sessionScrolls", gridCss.overflow === "auto" || gridCss.overflowY === "auto", gridCss.overflow);
 ok("sessionNotViewportFraction", !/vh/.test(sess.style.maxHeight || "") &&
   !/30vh/.test([...d.styleSheets[0].cssRules].map(r => r.cssText).join("")), "30vh still present");
-const rules = [...d.styleSheets[0].cssRules].map(r => r.cssText).join("\n");
+
 /* ⚠ jsdom FOLDS calc() — the source says calc(22px + 6 * (17px + 3px) + 14px)
  * and the rule reads back as calc(156px). Assert the ARITHMETIC, which is the
  * thing that matters (header + six whole rows + padding) and is also a stronger

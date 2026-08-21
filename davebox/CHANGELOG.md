@@ -21,6 +21,9 @@ the section into a versioned heading at release time.
   what two things on screen already showed.
 
 ### Fixes
+- **The Snap/fit control no longer covers the step row.** It was floating over
+  the right-hand end of the step-edit band at the bottom of the piano roll,
+  hiding those cells and swallowing clicks on them.
 - **The BPM box no longer clips its own number.** Everything in the toolbar was
   allowed to be squeezed when the bar got full, and the number input was the
   first thing to lose width.

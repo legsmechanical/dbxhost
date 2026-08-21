@@ -136,7 +136,11 @@
    * controls crowding it. Inside #rollview, which is display:none outside the
    * sequencer, so they need no .seqonly of their own. Subdued until the roll is
    * hovered, so they never compete with the notes. */
-  #rollzoom{position:absolute;z-index:8;right:10px;bottom:10px;display:flex;align-items:center;
+  /* ⚠ bottom offset CLEARS THE STEP BAND. The bottom 28px of the roll canvas is
+   * the interactive step-edit row (STEPBAND in web_ui_seq.js), not empty canvas
+   * — at bottom:10px this overlay sat directly on top of its right-hand cells
+   * and swallowed their clicks. 28 + 8 of air. A smoke pins the two together. */
+  #rollzoom{position:absolute;z-index:8;right:10px;bottom:36px;display:flex;align-items:center;
     gap:6px;padding:4px 6px;border-radius:8px;background:rgba(11,13,17,.82);
     border:1px solid #232a38;backdrop-filter:blur(3px);opacity:.42;transition:opacity .14s}
   #rollview:hover #rollzoom,#rollzoom:hover,#rollzoom:focus-within{opacity:1}
