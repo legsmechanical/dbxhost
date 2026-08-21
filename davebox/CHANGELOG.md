@@ -21,6 +21,9 @@ the section into a versioned heading at release time.
   what two things on screen already showed.
 
 ### Fixes
+- **The automation lane opens when you click a CC button.** It was opening but
+  drawing nothing — the lane's canvas could end up with no size at all, so you
+  got an empty strip that looked exactly like a button that did nothing.
 - **The step-edit row no longer disappears as the page loads.** The level ribbon
   and the session grid fill in after the piano roll has already sized itself, and
   the roll did not re-measure — so its bottom row, the step editor, got clipped

@@ -977,8 +977,15 @@ function layout(){
   VVW=Math.max(300,vw.clientWidth||VW); VVH=vw.clientHeight||56;
   vc.style.width=VVW+"px"; vc.style.height=VVH+"px"; vc.width=Math.round(VVW*dpr); vc.height=Math.round(VVH*dpr);
   vctx.setTransform(dpr,0,0,dpr,0,0);
+  /* ⚠ Sized like the velocity lane above — FALL BACK on a zero measurement, do
+   * not skip. This used to be gated on `aw.clientHeight>0`, so a single layout()
+   * that measured 0 (the lane is revealed and measured in the same synchronous
+   * block when a CC chip is clicked) left the canvas at 0x0 FOREVER: drawAuto()
+   * then painted into nothing and the automation lane opened blank — indistin-
+   * guishable from "the button did nothing". Its velocity sibling one line up
+   * always had the fallback; this was the odd one out. */
   const aw=document.getElementById("autowrap");
-  if(aw && aw.style.display!=="none" && aw.clientHeight>0){ AVW=Math.max(300,aw.clientWidth||VW); AVH=aw.clientHeight||70;
+  if(aw && aw.style.display!=="none"){ AVW=Math.max(300,aw.clientWidth||VW); AVH=aw.clientHeight||72;
     ac.style.width=AVW+"px"; ac.style.height=AVH+"px"; ac.width=Math.round(AVW*dpr); ac.height=Math.round(AVH*dpr);
     actx.setTransform(dpr,0,0,dpr,0,0); }
   if(!M) return;
