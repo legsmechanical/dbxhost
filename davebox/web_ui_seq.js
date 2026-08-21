@@ -55,8 +55,8 @@ function renderChrome(){
     xp.title=M.play.on?"Stop transport":"Start transport"; }
   /* keep the BPM input live without clobbering an in-progress edit */
   const bi=document.getElementById("bpmIn"); if(bi && document.activeElement!==bi) bi.value=M.play.bpm|0;
-  const lane=(isDrum()&&M.sel.lane>=0)?(" · lane "+M.sel.lane):"";
-  document.getElementById("clipname").textContent=(isDrum()?"D":"M")+(M.sel.t+1)+" · "+SCENE_LETTERS[M.sel.c]+lane;
+  /* the header's clip badge is gone (2026-08-21): the session grid already
+   * highlights the selected clip, and the piano roll IS that clip. */
   /* truncation badge: the DSP snapshot dropped notes/CC at the 64KB budget. */
   const tb=document.getElementById("trunc"); if(tb) tb.style.display=(M&&M.trunc)?"":"none";
 }

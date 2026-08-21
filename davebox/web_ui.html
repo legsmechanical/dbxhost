@@ -12,10 +12,25 @@
     -webkit-user-select:none;user-select:none}
   #app{display:flex;flex-direction:column;height:100%}
   /* ---------- header ---------- */
+  /* site ribbon — identity + cross-page nav, mirrored from the manager's header */
+  #site{display:flex;align-items:center;gap:10px;height:26px;padding:0 12px;flex:0 0 auto;
+        background:#0b0d11;border-bottom:1px solid #1b212b}
+  #site .sitebrand{font-weight:700;letter-spacing:.5px;font-size:12px;color:var(--ink);
+        text-decoration:none}
+  #site .sitebrand .dot{color:var(--accent)}
+  #site .sitelinks{margin-left:auto;display:flex;gap:2px}
+  #site .sitelinks a{color:var(--faint);font-size:11px;text-decoration:none;padding:3px 7px;
+        border-radius:4px}
+  #site .sitelinks a:hover{color:var(--ink);background:#21262f}
+  #site .sitelinks.inert a{opacity:.45;cursor:default}
+  #site .sitelinks.inert a:hover{color:var(--faint);background:transparent}
+  /* ⚠ every child is flex-shrink:0. Without it the toolbar SQUEEZES its items
+   * when crowded, and the first casualty is the BPM number-input — it was
+   * visibly clipping its own value. Only .spacer flexes. */
   #top{display:flex;gap:10px;align-items:center;padding:0 12px;height:46px;background:var(--panel);
        border-bottom:1px solid #000;flex:0 0 auto}
-  #top .brand{font-weight:700;letter-spacing:.5px;font-size:14px}
-  #top .brand .dot{color:inherit}   /* the x matches the rest of the wordmark */
+  #top > *{flex:0 0 auto}
+  #top .spacer{flex:1 1 auto}
   .badge{padding:3px 10px;border-radius:20px;background:#0b0d11;color:var(--dim);font-size:12px;
     font-variant-numeric:tabular-nums;white-space:nowrap}
   .badge.play{color:var(--play)}
@@ -46,12 +61,19 @@
   .toolset{display:flex;gap:4px;align-items:center;color:var(--dim);font-size:12px}
   .seg.tools button{font-size:15px;min-width:32px;padding:4px 9px}
   /* ---------- session grid (tracks = columns, scenes = rows) ---------- */
-  #session{flex:0 0 auto;max-height:30vh;overflow:auto;background:var(--panel);
-           border-bottom:1px solid #000;padding:7px 10px}
+  /* SIX clip rows, then scroll — the height is derived from the row geometry
+   * below, not a viewport fraction, so it always lands on a whole row instead of
+   * slicing one in half. 30vh used to eat ~a third of the window on a laptop and
+   * the piano roll got what was left. There are 16 scenes; the rest scroll. */
+  #session{flex:0 0 auto;overflow:auto;background:var(--panel);
+           border-bottom:1px solid #000;padding:7px 10px;
+           max-height:calc(22px + 6 * (17px + 3px) + 14px)}
   #session.collapsed{display:none}
-  #grid{display:grid;gap:3px;align-items:stretch}
+  /* fixed row geometry — #session's max-height is computed from these */
+  #grid{display:grid;gap:3px;align-items:stretch;grid-template-rows:22px;grid-auto-rows:17px}
   .strk{position:relative;font:11px ui-monospace,monospace;font-weight:700;color:#0b0d11;text-align:center;
-        padding:4px 17px 4px 4px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+        padding:0 17px 0 4px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+        cursor:pointer;display:flex;align-items:center;justify-content:center;box-sizing:border-box}
   .strk.sel{outline:2px solid var(--ink);outline-offset:-1px}
   .strk.eff{opacity:.42}                 /* effectively silenced (muted, or solo elsewhere) */
   .strk .cind{font-weight:800;margin-left:2px}
@@ -218,7 +240,11 @@
   .hint b{color:var(--dim)}
   /* header controls */
   #globals{display:flex;gap:8px;align-items:center}
-  #globals input[type=number]{width:50px;text-align:right}
+  /* wide enough for "250" plus the caret; the spinner is dropped because it
+   * stole the width the value needed and is useless on touch */
+  #globals input[type=number]{width:56px;text-align:right;-moz-appearance:textfield}
+  #globals input[type=number]::-webkit-outer-spin-button,
+  #globals input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
   .zoom{display:flex;gap:2px;align-items:center;color:var(--dim);font-size:12px}
   .zoom button{padding:3px 6px;font-size:11px}
   /* global settings popover */
@@ -247,11 +273,6 @@
     border:2px solid #0a1a19;box-shadow:0 1px 3px rgba(0,0,0,.5);cursor:grab}
   input[type=range]:active::-webkit-slider-thumb{cursor:grabbing;background:#5fe0d8}
   input[type=range].bip{background:linear-gradient(90deg,#2a2f3a 0 calc(50% - 1px),#454c5a calc(50% - 1px) calc(50% + 1px),#2a2f3a calc(50% + 1px) 100%)}
-.sitelinks{display:inline-flex;gap:2px;margin-left:4px;padding-left:8px;border-left:1px solid var(--line)}
-.sitelinks a{color:var(--faint);font-size:11px;text-decoration:none;padding:4px 5px;border-radius:4px}
-.sitelinks a:hover{color:var(--ink);background:#21262f}
-.sitelinks.inert a{opacity:.5;cursor:default}
-.sitelinks.inert a:hover{color:var(--faint);background:transparent}
 /* sequencer-only header chrome hides in the other views (data-view is set by
  * setView; absent at boot = sequencer, so first paint shows everything) */
 body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
@@ -440,8 +461,25 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
 #diag b{color:#dfe8f5}
 </style></head>
 <body><div id="app">
+  <!-- The SITE ribbon: identity + where else you can go. Deliberately the same
+       shape as the manager's own pages (schwung-manager/templates/base.html), so
+       the browser editor, Mirror, Files, Help, Config and System read as one app
+       rather than a tool that links out to a different site. Slim on purpose —
+       it is navigation, not a toolbar. ⚠ Keep it in step with base.html and with
+       `.site-*` in the manager's style.css; they are two copies of one design
+       because the editor must also render in the OFFLINE PREVIEW, where nothing
+       from /static is served. -->
+  <div id="site">
+    <a class="sitebrand" href="/" title="dAVEBOx">dAVEBO<span class="dot">x</span></a>
+    <span class="sitelinks">
+      <a href="/mirror" target="_blank" rel="noopener" title="Live view of the Move's screen">Mirror</a>
+      <a href="/files" target="_blank" rel="noopener" title="Browse files on the device">Files</a>
+      <a href="/help" target="_blank" rel="noopener" title="Manual &amp; help">Help</a>
+      <a href="/config" target="_blank" rel="noopener" title="Host configuration">Config</a>
+      <a href="/system" target="_blank" rel="noopener" title="System status and logs">System</a>
+    </span>
+  </div>
   <div id="top">
-    <span class="brand">dAVEBO<span class="dot">x</span></span>
     <span class="badge pill" id="connpill" title="Connection to the Move — ~ toggles diagnostics">…</span>
     <span class="seg views" id="viewseg" title="Views — the selected track is shared across them">
       <button id="viewSeq" class="on">Sequencer</button>
@@ -450,7 +488,6 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
     <button class="ghost" id="xport" title="Start / stop transport">▶</button>
     <span class="badge play" id="transport">—</span>
     <span id="globals"></span>
-    <span class="badge clip" id="clipname">—</span>
     <span class="badge warn" id="trunc" title="This clip has more notes/automation than the editor can load — some are hidden. Thin the clip on-device to edit them." style="display:none">⚠ clip too dense — some notes hidden</span>
     <span class="spacer"></span>
     <span class="seg tools seqonly" title="Edit tool — B Draw · V Select · E Erase · Del removes selection · arrows nudge · ⌘A all">
@@ -464,7 +501,6 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
     <button class="ghost" id="gear" title="Global settings (key, scale, swing, launch)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V15z"/></svg></button>
     <button class="ghost" id="sync" title="Re-pull from device"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3.5v6h-6"/></svg></button>
     <button id="auto" class="on sm" title="Auto-refresh from device">Auto</button>
-    <span class="sitelinks"><a href="/mirror" target="_blank" rel="noopener" title="Live view of the Move's screen">Mirror</a><a href="/files" target="_blank" rel="noopener" title="Browse files on the device">Files</a><a href="/help" target="_blank" rel="noopener" title="Manual & help">Help</a></span>
   </div>
   <div id="session"><div id="grid" title="tracks × scenes — click a clip to launch it (editor follows, like the hardware); Alt/Shift-click to view without launching; ▶ launches a scene"></div></div>
   <div id="miniribbon"><button id="ribToggle" title="Show / hide the level ribbon">▾</button><div id="ribcells"></div></div>

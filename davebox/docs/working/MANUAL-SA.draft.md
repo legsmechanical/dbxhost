@@ -1382,14 +1382,19 @@ presets; and Note Repeat masks and rates.
 # 17. The Browser Editor
 
 Open `http://move.local:7700` in a browser on the same network — the page IS
-the dAVEBOx editor. It mirrors the device both ways — edits on either side show
+the dAVEBOx editor. A slim ribbon along the very top carries the dAVEBOx name and
+links to **Mirror**, **Files**, **Help**, **Config** and **System**; the same
+ribbon sits on each of those pages, so they are all one interface. It mirrors the device both ways — edits on either side show
 up on the other. If no session is running yet, the page waits and opens the
 editor by itself when one starts. The header's **connection pill** shows the
 link state (Live / Reconnecting / "dAVEBOx not running"). The site's small nav
-also offers **Mirror** (a live view of the Move's screen), **Files** (pull
-recordings and projects off the device), and **Help** — this manual and the
-quick start, one page per chapter, readable on the device's own network with
-no connection to anywhere else.
+The top ribbon's links are **Mirror** (a live view of the Move's screen),
+**Files** (pull recordings and projects off the device), **Help** — this manual
+and the quick start, one page per chapter, readable on the device's own network
+with no connection to anywhere else — plus **Config** and **System**.
+
+The **session grid** shows six scene rows at a time and scrolls to the rest, so
+the piano roll keeps the bulk of the window.
 
 - **Session grid:** click a clip to launch it (Alt/Shift-click views it without
   launching); drag to move (Alt-drag copies); a clip's **≡ menu** duplicates,

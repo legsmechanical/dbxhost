@@ -36,7 +36,11 @@
             <button class="nav-toggle" aria-label="Toggle navigation" aria-expanded="false" onclick="this.setAttribute('aria-expanded',this.getAttribute('aria-expanded')==='false'?'true':'false');this.closest('.header-inner').querySelector('nav').classList.toggle('nav-open')">&#9776;</button>
             <nav aria-label="Main navigation">
                 <ul>
-                    <li><a href="/"{{if eq .Active "davebox"}} class="active" aria-current="page"{{end}}>dAVEBOx</a></li>
+                    {{/* No "dAVEBOx" nav item: the site name to the left IS the
+                         link home, and listing it twice made the header read as
+                         two different things. Matches the editor's own ribbon
+                         (davebox/web_ui.html #site). */}}
+                    <li><a href="/"{{if eq .Active "davebox"}} class="active" aria-current="page"{{end}}>Editor</a></li>
                     <li><a href="/mirror" target="_blank" rel="noopener">Mirror</a></li>
                     <li><a href="/files"{{if eq .Active "files"}} class="active" aria-current="page"{{end}}>Files</a></li>
                     <li><a href="/help"{{if eq .Active "help"}} class="active" aria-current="page"{{end}}>Help</a></li>

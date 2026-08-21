@@ -141,7 +141,13 @@ a:hover {
     color: var(--accent);
 }
 
-/* ---- Header ---- */
+/* ---- Header ----
+   Slimmed 2026-08-21 to read as the same bar as the browser editor's own site
+   ribbon (davebox/web_ui.html #site), so moving between the editor, Mirror,
+   Files, Help, Config and System feels like one app rather than a jump to a
+   different site. NOT taken all the way down to the editor's 26px: these are
+   document pages that get used on a phone, and the nav links have to stay a
+   real touch target. ⚠ Keep the link SET and ORDER in step with that ribbon. */
 header {
     background: var(--bg-card);
     border-bottom: 1px solid var(--border);
@@ -154,11 +160,11 @@ header {
     display: flex;
     align-items: center;
     gap: var(--space-lg);
-    min-height: var(--min-touch);
+    min-height: 36px;
 }
 
 .site-name {
-    font-size: 1.125rem;
+    font-size: 0.9375rem;
     font-weight: 700;
     color: var(--accent);
     text-decoration: none;

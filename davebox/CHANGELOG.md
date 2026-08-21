@@ -8,6 +8,22 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **One header across the whole browser interface.** A slim ribbon at the very
+  top carries the dAVEBOx name and the links to Mirror, Files, Help, Config and
+  System — the same set, in the same order, on the editor and on every one of
+  those pages, so moving between them feels like one app instead of a jump to a
+  different site. The links left the editor's crowded toolbar to get there.
+- **The clip grid shows six rows and gives the rest to the piano roll.** It used
+  to take up to a third of the window height whatever was in it; the roll now
+  gets that space back, and the remaining scenes scroll.
+- **The header's clip badge is gone.** The session grid already highlights the
+  selected clip and the piano roll *is* that clip, so it was saying a third time
+  what two things on screen already showed.
+
+### Fixes
+- **The BPM box no longer clips its own number.** Everything in the toolbar was
+  allowed to be squeezed when the bar got full, and the number input was the
+  first thing to lose width.
 - **A calmer top bar, and zoom where you're looking.** The four H/V zoom buttons
   are gone — the drag strips along the top and left edges of the piano roll, and
   Ctrl+wheel, already did the same job. **Fit** and **Snap** moved onto the roll
