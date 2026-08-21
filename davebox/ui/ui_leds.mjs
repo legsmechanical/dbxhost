@@ -392,11 +392,12 @@ export function updateStepLEDs() {
 }
 
 /* PROJECTS pad picker surface: pads are project slots (pad k = song-index k,
- * the same bottom-left-up mapping the host actuator replays). Current
- * project pulses white; projects blue; a pending delete-confirm blinks red;
- * a copy source blinks cyan; empty pads dark; steps + icons off — the
- * picker owns the whole surface. Returns true when it painted (callers
- * return early). Shared by both view painters. */
+ * the same bottom-left-up mapping the host actuator replays). The CURRENT
+ * project is solid white and the SELECTED one pulses in its own colour (see
+ * the note at the branch); other projects sit solid in their colour; a
+ * pending delete-confirm blinks red; a copy source blinks cyan; empty pads
+ * dark; steps + icons off — the picker owns the whole surface. Returns true
+ * when it painted (callers return early). Shared by both view painters. */
 function paintProjectPickerLEDs() {
     const p = S.projectPadPicker;
     if (!p) return false;
@@ -412,11 +413,24 @@ function paintProjectPickerLEDs() {
             /* Live preview of the candidate color on the target pad. */
             color = blink ? PROJECT_COLORS[p.colorPick.sel].led : LED_OFF;
         } else if (proj) {
+            /* ⭑⭑ CURRENT is STEADY, SELECTED MOVES. Both used to blink white, which
+             * made them impossible to tell apart (Josh) — two blinking things read
+             * as one blinking thing. Motion, not colour, carries the distinction:
+             *   loaded project      solid White, never blinks — a fixed fact
+             *   cursor              pulses in the project's OWN colour
+             *   both on one pad     pulses White <-> own colour, i.e. both at once
+             * ⚠ White is also one of the ten user-selectable project colours, so
+             * colour alone cannot mark "current" — which is exactly why the loaded
+             * one is the only pad in the picker that is deliberately STILL. */
             if (p.deleteIdx === i)       color = blink ? Red : DeepRed;
             else if (p.copySrcIdx === i) color = blink ? Cyan : DarkGrey;
-            else if (menuK === i)        color = blink ? White : own;
-            else if (p.current === i)    color = blink ? White : LightGrey;
-            else                         color = own;
+            else {
+                const isSel = (menuK === i), isCur = (p.current === i);
+                if (isSel && isCur)      color = blink ? White : own;
+                else if (isCur)          color = White;
+                else if (isSel)          color = blink ? own : LED_OFF;
+                else                     color = own;
+            }
         } else if (menuK === i) {
             color = blink ? White : LED_OFF;   /* create-confirm target */
         }

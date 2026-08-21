@@ -1,0 +1,128 @@
+/* tests/js/test_project_picker_leds.mjs — the project picker's pad LEDs must
+ * make CURRENT and SELECTED tellable apart.
+ *
+ * Both used to blink white (Josh, 2026-08-21: "very difficult to determine
+ * which is the active and which is the selected"), and two blinking things read
+ * as one blinking thing. The rule now is MOTION, not colour:
+ *
+ *   loaded (current)    solid White, never blinks — a fixed fact
+ *   cursor (selected)   pulses in the project's OWN colour
+ *   both on one pad     pulses White <-> own colour
+ *   any other project   solid own colour
+ *
+ * ⚠ Why drive the real painter rather than assert on a colour table: the bug was
+ * never a wrong constant, it was two branches choosing the SAME one. Only
+ * running both blink phases and comparing the pads to each other can catch that
+ * — a per-branch unit assertion passes happily while the branches collide.
+ *
+ * ⚠ There are TWO LED caches in the path (ui_leds' lastSentNoteLED and
+ * input_filter's own ledCache), so an unchanged pad is simply not re-sent. The
+ * test therefore tracks last-known state per note across the whole run instead
+ * of expecting a write every frame — expecting a write per frame would report
+ * the STEADY pad (the whole point of the fix) as "never painted".
+ */
+
+let failed = 0;
+function ok(label) { console.log(`  ok   — ${label}`); }
+function bad(label, got, want) {
+    console.error(`  FAIL — ${label}: got ${got}, want ${want}`);
+    failed = 1;
+}
+function eq(label, got, want) { (got === want) ? ok(label) : bad(label, got, want); }
+
+/* host surface */
+const ledState = {};
+globalThis.move_midi_internal_send = (pkt) => { ledState[pkt[2]] = pkt[3]; };
+globalThis.host_module_set_param = () => {};
+globalThis.host_module_get_param = () => '';
+globalThis.host_system_cmd = () => 0;
+globalThis.host_read_file = () => '';
+globalThis.host_file_exists = () => false;
+globalThis.host_write_file = () => true;
+globalThis.clear_screen = () => {};
+globalThis.print = () => {};
+globalThis.set_pixel = () => {};
+globalThis.fill_rect = () => {};
+globalThis.draw_rect = () => {};
+
+/* Dynamic imports inside an async main: the runner bundles to CJS, where
+ * top-level await is unavailable — and the host globals above must be installed
+ * before any ui module body runs. (Same shape as test_picker_boot.mjs.) */
+async function main() {
+const { S } = await import('../../ui/ui_state.mjs');
+const { updateSessionLEDs } = await import('../../ui/ui_leds.mjs');
+const { PROJECT_COLORS } = await import('../../ui/ui_dialogs.mjs');
+const { White } = await import('/data/UserData/schwung/shared/constants.mjs');
+const LED_OFF = 0, TRACK_PAD_BASE = 68;
+
+const GREEN = PROJECT_COLORS[2].led;      /* pad 0's colour */
+const BLUE  = PROJECT_COLORS[0].led;      /* pad 1's colour */
+const RED   = PROJECT_COLORS[6].led;      /* pad 2's colour */
+const pad = (i) => ledState[TRACK_PAD_BASE + i];
+
+function mkPicker(currentIdx, selectedIdx) {
+    return {
+        projects: [], current: currentIdx,
+        byIndex: {
+            0: { uuid: 'a', name: 'A', index: 0, color: 2 },
+            1: { uuid: 'b', name: 'B', index: 1, color: 0 },
+            2: { uuid: 'c', name: 'C', index: 2, color: 6 },
+        },
+        touchedIdx: -1, copySrcIdx: -1, deleteIdx: -1,
+        menu: selectedIdx >= 0 ? { k: selectedIdx, sel: 0 } : null,
+        colorPick: null, confirmNew: null, renameActive: false, restarting: false,
+    };
+}
+/* blink is (S.tickCount % 30) < 15 */
+function paintAt(tick) { S.tickCount = tick; updateSessionLEDs(); }
+
+S.ledInitComplete = true;
+
+/* ---- current and selected on DIFFERENT pads ---- */
+S.projectPadPicker = mkPicker(/*current*/1, /*selected*/0);
+paintAt(0);                                  /* blink phase ON */
+const onSel = pad(0), onCur = pad(1), onOther = pad(2);
+paintAt(20);                                 /* blink phase OFF */
+const offSel = pad(0), offCur = pad(1), offOther = pad(2);
+
+eq('selected pad shows its own colour on the blink', onSel, GREEN);
+eq('selected pad goes dark off the blink (it MOVES)', offSel, LED_OFF);
+eq('current pad is White on the blink', onCur, White);
+eq('current pad is STILL White off the blink (it does not move)', offCur, White);
+eq('an ordinary project is its own colour', onOther, RED);
+eq('an ordinary project does not blink', offOther, RED);
+
+/* ⭑ THE REGRESSION ITSELF: the two must not look the same in either phase. */
+(onSel !== onCur && offSel !== offCur)
+    ? ok('current and selected differ in BOTH blink phases')
+    : bad('current and selected differ in BOTH blink phases',
+          `on:${onSel}/${onCur} off:${offSel}/${offCur}`, 'different');
+/* and only ONE of them is the one that moves */
+((onSel !== offSel) && (onCur === offCur))
+    ? ok('exactly one of the two blinks — the selected one')
+    : bad('exactly one of the two blinks', `sel ${onSel}/${offSel}, cur ${onCur}/${offCur}`,
+          'selected changes, current steady');
+
+/* ---- current and selected on the SAME pad (the common case on open) ---- */
+S.projectPadPicker = mkPicker(/*current*/1, /*selected*/1);
+paintAt(0);  const onBoth = pad(1);
+paintAt(20); const offBoth = pad(1);
+eq('both-on-one-pad shows White on the blink', onBoth, White);
+eq('both-on-one-pad shows its own colour off the blink', offBoth, BLUE);
+(onBoth !== offBoth)
+    ? ok('both-on-one-pad pulses, so it reads as selected too')
+    : bad('both-on-one-pad pulses', `${onBoth}/${offBoth}`, 'two different colours');
+
+/* ---- a plain project must never be mistaken for the current one ---- */
+S.projectPadPicker = mkPicker(/*current*/-1, /*selected*/-1);
+paintAt(0);
+((pad(0) !== White) && (pad(1) !== White) && (pad(2) !== White))
+    ? ok('with no current project, no pad is White')
+    : bad('with no current project, no pad is White',
+          `${pad(0)}/${pad(1)}/${pad(2)}`, 'no White');
+
+console.log(failed ? 'project picker LEDs: FAILED' : 'project picker LEDs: PASS');
+process.exit(failed);
+}
+
+main().catch((e) => { console.error('  FAIL — harness:', e && e.stack ? e.stack : e); process.exit(1); });

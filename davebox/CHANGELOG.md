@@ -21,6 +21,11 @@ the section into a versioned heading at release time.
   what two things on screen already showed.
 
 ### Fixes
+- **You can tell the loaded project from the selected one again.** On the project
+  pads both were flashing white, which made them impossible to distinguish. The
+  loaded project now sits steady white and never blinks; the pad you have
+  selected pulses in its own colour. When they are the same project, that pad
+  pulses white against its colour.
 - **The automation lane opens when you click a CC button.** It was opening but
   drawing nothing — the lane's canvas could end up with no size at all, so you
   got an empty strip that looked exactly like a button that did nothing.
