@@ -9961,6 +9961,7 @@ function processPendingHierKnob() {
             refreshHierarchyChainParams();
         }
         refreshHierarchyVisibility();
+        maybeReloadHierarchyForParam(ctx.meta);
         showOverlay(ctx.title, formatMetaOptionValue(ctx.meta, newVal));
         return;
     }
