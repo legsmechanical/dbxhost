@@ -12,7 +12,7 @@
 #   list            write $DBX_DIR/projects.json:
 #                     {"current": N, "projects": [{"uuid","name","index","color"}...]}
 #   new <name>      create a project from the template (fresh uuid, next
-#                     index), then switch to it
+#                     index, colour = index % DBX_PALETTE_N), then switch to it
 #   switch <index>  save the current song, point currentSongIndex at <index>,
 #                     and restart Move IN PLACE via the launcher's supervisor
 #                     loop (relaunch_requested)
@@ -30,6 +30,13 @@ set -eu
 
 DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
 SETS_DIR="${SETS_DIR:-/data/UserData/UserLibrary/Sets}"
+# Size of the picker's PROJECT_COLORS palette (davebox/ui/ui_dialogs.mjs). A
+# new project is born with color `index % DBX_PALETTE_N` — round-robin by pad,
+# so a shelf of fresh projects is not a wall of one colour, and the same pad
+# always gets the same default. ⚠ Pinned to the JS table's length by
+# davebox/tests/js/test_project_picker_leds.mjs: change both or the picker
+# reads an out-of-range index as colour 0.
+DBX_PALETTE_N=9
 SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
 # Per-project state needs NO constant here: both halves live INSIDE the
 # project's set dir (Sets/<uuid>/$DBX_SUBDIR_NAME/ — module files flat, host
@@ -241,9 +248,9 @@ do_new() { # name
     # and this is the one place that can promise it.
     do_normalize >/dev/null
 
-    _idx="$(python3 - "$SETS_DIR" "$_uuid" <<'PYEOF'
+    _idx="$(python3 - "$SETS_DIR" "$_uuid" "$DBX_PALETTE_N" <<'PYEOF'
 import os, re, sys
-sets_dir, new_uuid = sys.argv[1], sys.argv[2]
+sets_dir, new_uuid, palette_n = sys.argv[1], sys.argv[2], int(sys.argv[3])
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 top = -1
 for u in os.listdir(sets_dir):
@@ -259,6 +266,7 @@ nxt = top + 1
 if hasattr(os, "setxattr"):
     try:
         os.setxattr(os.path.join(sets_dir, new_uuid), "user.song-index", str(nxt).encode())
+        os.setxattr(os.path.join(sets_dir, new_uuid), "user.dbx-color", str(nxt % palette_n).encode())
     except OSError:
         pass
 print(nxt)
@@ -303,6 +311,10 @@ do_new_at() { # index [name]
     cp "$_src" "$SETS_DIR/$_uuid/$_name/Song.abl"
     python3 -c "import os,sys; os.setxattr(sys.argv[1], 'user.song-index', sys.argv[2].encode())" \
         "$SETS_DIR/$_uuid" "$1" 2>/dev/null || true
+    # Default colour: round-robin by pad (see DBX_PALETTE_N). Same best-effort
+    # shape as the index above — a project without the xattr is simply colour 0.
+    python3 -c "import os,sys; os.setxattr(sys.argv[1], 'user.dbx-color', str(int(sys.argv[2]) % int(sys.argv[3])).encode())" \
+        "$SETS_DIR/$_uuid" "$1" "$DBX_PALETTE_N" 2>/dev/null || true
     do_normalize "$1" >/dev/null
     do_list
     printf 'project-cmd: created "%s" (%s) at index %s\n' "$_name" "$_uuid" "$1"

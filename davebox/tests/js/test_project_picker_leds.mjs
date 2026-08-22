@@ -121,6 +121,36 @@ paintAt(0);
     : bad('with no current project, no pad is White',
           `${pad(0)}/${pad(1)}/${pad(2)}`, 'no White');
 
+/* ---- the palette itself must not contain the "current" colour ----
+ * Josh, 2026-08-22: WHITE was dropped from PROJECT_COLORS because a
+ * white-coloured project sitting idle was indistinguishable from the OPEN one.
+ * Check the LEDs, not the names — a renamed entry with the same LED would
+ * still collide. */
+const whiteEntries = PROJECT_COLORS.filter(c => c.led === White);
+eq('no palette entry paints the pad White (White means CURRENT)', whiteEntries.length, 0);
+
+/* A stored index from the retired entry (9) must degrade, not crash or paint. */
+S.projectPadPicker = mkPicker(-1, -1);
+S.projectPadPicker.byIndex[2].color = 9;
+paintAt(0);
+eq('a retired/out-of-range stored colour falls back to colour 0', pad(2), PROJECT_COLORS[0].led);
+
+/* ---- round-robin default colour: the shell side is pinned to this table ----
+ * project-cmd.sh gives a new project colour `index % DBX_PALETTE_N`. The
+ * script cannot import the JS table, so its constant is checked here. */
+const fs = await import('fs');
+/* run.sh bundles to CJS (no import.meta) and runs from davebox/, so cwd-relative. */
+const script = fs.readFileSync('../standalone/scripts/project-cmd.sh', 'utf8');
+const m = script.match(/^DBX_PALETTE_N=(\d+)$/m);
+eq('project-cmd.sh declares DBX_PALETTE_N', !!m, true);
+eq('DBX_PALETTE_N matches PROJECT_COLORS.length', m ? Number(m[1]) : -1, PROJECT_COLORS.length);
+/* both creation verbs must write the colour, not just the index */
+const body = (name) => { const i = script.indexOf(name + '() {'); return script.slice(i, script.indexOf('\n}\n', i)); };
+eq('do_new_at writes user.dbx-color', /user\.dbx-color/.test(body('do_new_at')), true);
+eq('do_new writes user.dbx-color', /user\.dbx-color/.test(body('do_new')), true);
+eq('do_new_at takes the colour modulo DBX_PALETTE_N', /%\s*int\(sys\.argv\[3\]\)/.test(body('do_new_at')) && /DBX_PALETTE_N/.test(body('do_new_at')), true);
+eq('do_new takes the colour modulo the palette', /nxt\s*%\s*palette_n/.test(body('do_new')), true);
+
 console.log(failed ? 'project picker LEDs: FAILED' : 'project picker LEDs: PASS');
 process.exit(failed);
 }

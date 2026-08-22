@@ -25,7 +25,7 @@ import {
     closeTextEntry,
 } from '/data/UserData/schwung/shared/text_entry.mjs';
 import {
-    Blue, Cyan, Green, Lime, VividYellow, OrangeRed, Red, NeonPink, ElectricViolet, White,
+    Blue, Cyan, Green, Lime, VividYellow, OrangeRed, Red, NeonPink, ElectricViolet,
 } from '/data/UserData/schwung/shared/constants.mjs';
 
 export function pixelPrintMcu(x, y, text, scale, color) {
@@ -745,7 +745,10 @@ function _closeProjectPadPicker_impl() {
 
 /* Pre-defined pad colors a project can carry (spec: Josh, 2026-08-11). The
  * xattr user.dbx-color stores an INDEX into this table (project-cmd.sh
- * `color` verb); absent/null = index 0, today's uniform blue. Exported for
+ * `color` verb); absent/null or out of range = index 0. A new project is born
+ * with `index % PROJECT_COLORS.length` (project-cmd.sh DBX_PALETTE_N, pinned
+ * to this table's length by test_project_picker_leds) so the shelf is not a
+ * wall of one colour. Exported for
  * the LED painter. */
 export const PROJECT_COLORS = [
     { name: 'BLUE',   led: Blue },
@@ -757,8 +760,12 @@ export const PROJECT_COLORS = [
     { name: 'RED',    led: Red },
     { name: 'PINK',   led: NeonPink },
     { name: 'VIOLET', led: ElectricViolet },
-    { name: 'WHITE',  led: White },
 ];
+/* ⚠ No WHITE here, on purpose (Josh, 2026-08-22). The picker's pad grammar
+ * spends solid White on exactly one meaning — "this is the OPEN project"
+ * (ui_leds paintProjectPickerLEDs) — so a project painted white would read as
+ * current whenever it sat idle. A project that picked WHITE before it was
+ * retired stores index 9, which is now out of range and falls back to 0. */
 /* ⚠ `color` is null for a project that never picked one, and `null >= 0` is
  * TRUE in JS — indexing the table with null crashed the LED painter inside
  * the tick, which wedged the whole boot (LOADING pinned, pads dark; found on
