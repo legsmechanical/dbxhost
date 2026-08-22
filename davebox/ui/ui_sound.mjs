@@ -3117,6 +3117,19 @@ function onKnobTurn(knobIdx, delta) {
     const next = stepValue(cell, S.values[cell.key], steps);
     if (next === S.values[cell.key]) return;
     S.values[cell.key] = next;                   /* optimistic, drawn now */
+    if (cell.reload) {
+        /* A param that changes the param SET (the effect selector). Write it
+         * SYNCHRONOUSLY and re-discover, so the labels, knob count and rows
+         * follow the new selection live rather than only on re-entry.
+         * Pending optimistic writes were edits to the OUTGOING selection's
+         * params — runDiscovery resets S.values anyway, so drop them for this
+         * component instead of landing them on the wrong effect. */
+        S.pendingWrites = S.pendingWrites.filter(
+            w => !(w.slot === S.slot && w.comp === S.comp));
+        engineSet(S.slot, S.comp, cell.key, commitString(cell, next));
+        runDiscovery();
+        return;
+    }
     queueWrite(cell.key, commitString(cell, next));
 }
 

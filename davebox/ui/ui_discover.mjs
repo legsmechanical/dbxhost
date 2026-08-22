@@ -331,6 +331,11 @@ function makeCell(key, meta) {
             min: 0, max: n - 1, step: 1,
             sens: n <= 2 ? SENS_DELIBERATE : SENS_PICK,
             options,
+            /* Editing this param changes WHICH params the module exposes
+             * (e.g. an effect selector whose choice swaps the whole knob set)
+             * — the sound menu re-discovers after such a write. Opt-in via
+             * chain_params `reload_level`; MODULES.md documents the flag. */
+            reload: !!meta.reload_level,
         };
     }
 
