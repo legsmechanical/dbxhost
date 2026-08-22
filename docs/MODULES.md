@@ -1083,6 +1083,16 @@ Each entry in `params` is either:
 
 **Important:** Use `key` (not `param`) for editable parameter objects. Metadata (type, min, max) can come from either the hierarchy or `chain_params`.
 
+**`reload_level`** (chain_params flag, opt-in): set `"reload_level": true` on
+an editable param whose edit changes *which params the component exposes* — a
+plugin that hosts multiple effects/instruments and re-emits a different
+`ui_hierarchy` + `chain_params` per selection. Editing such a param then
+re-fetches both and rebuilds the current level in place, so labels, knob names
+and row count follow the selection without leaving and re-entering the block.
+Default-off; the preset-browser and dynamic-item levels already refresh this
+way. Example: the `zdl` module's `Effect` enum (one of ~830 Zoom effects, each
+with its own knob layout).
+
 ### Parameter Types
 
 | Type | Fields | Description |
