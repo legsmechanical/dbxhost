@@ -9230,6 +9230,31 @@ function shouldRefreshDynamicRateMeta(key) {
     return typeof key === "string" && /_rate_mode$/.test(key);
 }
 
+/* Some params change the very SET of params a component exposes — a plugin
+ * that hosts multiple effects/instruments (each with its own knob names and
+ * count) re-emits ui_hierarchy + chain_params after such a param is set. The
+ * preset and dynamic-item paths already re-fetch on change; a plain param
+ * does not, so its edit would leave the previous set's labels/rows on screen
+ * until the block is re-entered. A param opts in via `reload_level: true` in
+ * its chain_params metadata; the reload mirrors changeHierPreset's. */
+function maybeReloadHierarchyForParam(meta) {
+    if (!meta || !meta.reload_level) return;
+    let newHierarchy = null;
+    if (hierEditorIsMasterFx) {
+        hierEditorChainParams = getMasterFxChainParams(hierEditorMasterFxSlot);
+        newHierarchy = getMasterFxHierarchy(hierEditorMasterFxSlot);
+    } else {
+        hierEditorChainParams = getComponentChainParams(hierEditorSlot, hierEditorComponent);
+        newHierarchy = getComponentHierarchy(hierEditorSlot, hierEditorComponent);
+    }
+    if (newHierarchy) {
+        hierEditorHierarchy = newHierarchy;
+        loadHierarchyLevel();
+    }
+    invalidateKnobContextCache();
+    invalidateKnobValueCache();
+}
+
 /* Adjust selected param value via jog */
 function adjustHierSelectedParam(delta) {
     if (hierEditorSelectedIdx >= hierEditorParams.length) return;
@@ -9279,6 +9304,7 @@ function adjustHierSelectedParam(delta) {
             refreshHierarchyChainParams();
         }
         refreshHierarchyVisibility();
+        maybeReloadHierarchyForParam(meta);
         return;
     }
 
