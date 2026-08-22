@@ -171,8 +171,11 @@ never sees — or changes — your Move sets.
 **Shift + Step 1**, from anywhere. The pads become your project shelf — one
 pad per project, 32 slots:
 
-- **Lit pads** are projects — each in its own color (blue until you pick
-  one); the **pulsing pad** is the one that's open.
+- **Lit pads** are projects — each is born with its own default color (the
+  shelf cycles through the palette, so a row of new projects isn't all one
+  color) and you can change it with **Color**. The pad lit **solid white**
+  is the project that's open; the one you've **selected** pulses in its own
+  color (if that's the open one too, it pulses white).
 - **The screen shows the selected project** — its name, then **Load**,
   **Rename**, **Color**. Opening the picker shows the project you had last,
   already selected, so Load is one click away. On the project that's already

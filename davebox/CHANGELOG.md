@@ -26,6 +26,12 @@ the section into a versioned heading at release time.
   loaded project now sits steady white and never blinks; the pad you have
   selected pulses in its own colour. When they are the same project, that pad
   pulses white against its colour.
+- **A white project can no longer be mistaken for the loaded one.** White is
+  reserved for "this is the open project" in the picker's pad grammar, so a
+  project that had picked white as its own colour sat there looking current
+  even when it wasn't. White is off the palette now, and any project that had
+  it falls back to blue. New projects also get a round-robin default colour
+  by pad position instead of all starting blue.
 - **The automation lane opens when you click a CC button.** It was opening but
   drawing nothing — the lane's canvas could end up with no size at all, so you
   got an empty strip that looked exactly like a button that did nothing.
