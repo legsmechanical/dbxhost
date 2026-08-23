@@ -419,10 +419,23 @@ export const BANKS = [
     { name: 'OCTAVE',    knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
     /* 10 — WHEN (conduct) — per-track Next/Now, custom render+handler */
     { name: 'WHEN',      knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
+    /* 11 — SOUND + CONFIG (BANK_SOUND) — sound mode AS a bank (Josh,
+     * 2026-08-23: "the sound+config bank should be treated as its own thing").
+     * While its screen is up S.activeBank IS this index, so every handler,
+     * LED path and overview keyed on a bank number falls into its DEFAULT
+     * branch — sequencing behaves exactly as on a standard bank, whatever
+     * bank the jog came from. All stubs: ui_sound owns the knobs there. The
+     * entry exists so generic BANKS[S.activeBank] readers stay safe. */
+    { name: 'SOUND + CONFIG', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
 ];
 
 /* Conductor bank indices. Bank 0 (CLIP) is reused as the "Conduct" bank. */
 export const BANK_RESPONDER = 8, BANK_OCTAVE = 9, BANK_WHEN = 10;
+/* Sound mode's bank identity — assigned to S.activeBank by soundEnter /
+ * soundRetarget / soundEnterMove (melodic + drum; a Conductor keeps its own
+ * bank) and restored to trackActiveBank's origin by soundExit. NEVER persisted:
+ * the two trackActiveBank sync sites guard against writing it. */
+export const BANK_SOUND = 11;
 
 /* JS tick rate on device (~94 Hz measured). Older constants were calibrated
  * against a mistaken 196 Hz assumption — derive new timings from this. */

@@ -1509,11 +1509,9 @@ export function drawUI() {
     }
 
     /* Auto bank idle display: lane info + automation graph + progress bar.
-     * NOT while sound mode is up (S.soundOpen): the SOUND + CONFIG top level
-     * yields to the overview under the banks' display law, and entered from
-     * AUTO that fallback must be the DEFAULT overview — same stand-down as the
-     * AUTO pad/step LEDs (ui_leds autoBankLeds). */
-    if (bank === 6 && !S.soundOpen && !S.loopHeld && S.knobTouched < 0 && !inTimeout) {
+     * (While SOUND + CONFIG is up, activeBank is BANK_SOUND — not 6 — so the
+     * fallback overview takes the default branches by construction.) */
+    if (bank === 6 && !S.loopHeld && S.knobTouched < 0 && !inTimeout) {
         var _gt = S.activeTrack;
         var _gac = effectiveClip(_gt);
         var _gLane = S.ccActiveLane[_gt];

@@ -9,7 +9,7 @@
 import {
     NUM_TRACKS, NUM_STEPS, DRUM_LANES,
     PAD_MODE_DRUM, PAD_MODE_CONDUCT, BANKS, ACTION_POPUP_TICKS,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND
 } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
 import { clipHasContent } from './ui_pure.mjs';
@@ -474,7 +474,12 @@ export function clearRow(rowIdx) {
  * Existing post-switch validity checks (e.g. drum-track hidden banks → 0)
  * still apply to the loaded value. Use at every site that assigns S.activeTrack. */
 export function _switchActiveTrack(newT) {
-    S.trackActiveBank[S.activeTrack] = S.activeBank;
+    /* NEVER persist BANK_SOUND: while sound mode is up the ORIGIN bank waits
+     * in trackActiveBank, and overwriting it with the identity would strand
+     * the outgoing track on a bank the jog cannot reach. (Shift+jog switches
+     * tracks with sound mode open — this site IS live then.) */
+    if (S.activeBank !== BANK_SOUND)
+        S.trackActiveBank[S.activeTrack] = S.activeBank;
     S.activeTrack = newT | 0;
     S.activeBank = S.trackActiveBank[S.activeTrack] | 0;
     if (S.activeBank === 7) S.allLanesConfirmed = false;

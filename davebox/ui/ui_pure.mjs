@@ -13,7 +13,7 @@
 
 import { S } from './ui_state.mjs';
 import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, NUM_STEPS,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN } from './ui_constants.mjs';
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND } from './ui_constants.mjs';
 
 /* Live pad note input — isomorphic 4ths diatonic layout.
  * EXPORTED for ui.js's computePadNoteMap (impure, moves in Phase 5) — do not
@@ -54,6 +54,8 @@ export function bankCyclePos() {
      * reaches it, which is exactly right — you are not there. Conductor tracks
      * have no sound bank, so their count stays the cycle's own. */
     if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
+        if (S.activeBank === BANK_SOUND)
+            return { idx: BANK_CYCLE_DRUM.length, count: BANK_CYCLE_DRUM.length + 1 };
         const i = BANK_CYCLE_DRUM.indexOf(S.activeBank);
         return { idx: i < 0 ? 0 : i, count: BANK_CYCLE_DRUM.length + 1 };
     }
@@ -61,6 +63,7 @@ export function bankCyclePos() {
         const i = CONDUCT_BANK_CYCLE.indexOf(S.activeBank);
         return { idx: i < 0 ? 0 : i, count: CONDUCT_BANK_CYCLE.length };
     }
+    if (S.activeBank === BANK_SOUND) return { idx: 7, count: 8 };
     return { idx: Math.max(0, Math.min(6, S.activeBank)), count: 8 };
 }
 

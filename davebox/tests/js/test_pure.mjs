@@ -15,7 +15,7 @@ import { drumPadToLane, drumPadToVelZone, drumVelZoneToVelocity,
          _clipIsEmpty, clipHasContent,
          bankCyclePos, scaleNudgeNote } from '../../ui/ui_pure.mjs';
 import { PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-         BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN } from '../../ui/ui_constants.mjs';
+         BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND } from '../../ui/ui_constants.mjs';
 
 let failed = 0;
 function eq(got, want, label) {
@@ -116,6 +116,8 @@ S.activeBank = 9;                          /* clamp high -> 6 */
 eqObj(bankCyclePos(), { idx: 6, count: 8 }, 'bankCyclePos melodic clamp-high');
 S.activeBank = -2;                         /* clamp low -> 0 */
 eqObj(bankCyclePos(), { idx: 0, count: 8 }, 'bankCyclePos melodic clamp-low');
+S.activeBank = BANK_SOUND;                 /* sound mode's identity -> last segment */
+eqObj(bankCyclePos(), { idx: 7, count: 8 }, 'bankCyclePos melodic sound bank');
 /* Drum branch: indexOf into [7,0,1,3,5,6] */
 S.trackPadMode[0] = PAD_MODE_DRUM;
 S.activeBank = 7;                          /* indexOf(7) = 0 */
@@ -124,6 +126,8 @@ S.activeBank = 6;                          /* indexOf(6) = 5 */
 eqObj(bankCyclePos(), { idx: 5, count: 7 }, 'bankCyclePos drum bank6');
 S.activeBank = 2;                          /* indexOf(2) = -1 -> idx 0 */
 eqObj(bankCyclePos(), { idx: 0, count: 7 }, 'bankCyclePos drum not-in-cycle');
+S.activeBank = BANK_SOUND;
+eqObj(bankCyclePos(), { idx: 6, count: 7 }, 'bankCyclePos drum sound bank');
 
 /* -- bankCyclePos() conductor branch (fix: bankCyclePos drift, phase 5b) --
  * A Conductor track jog-cycles 5 banks (see _onCC_jog / CONDUCT_BANK_CYCLE in

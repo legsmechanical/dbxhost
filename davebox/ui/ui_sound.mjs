@@ -38,7 +38,7 @@ import { S as GS } from './ui_state.mjs';
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
-import { instrOptions, fmtInstr, fmtVelOverride,
+import { instrOptions, fmtInstr, fmtVelOverride, BANK_SOUND,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD } from './ui_constants.mjs';
 import { applyTrackConfig } from './ui_dsp_bridge.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -684,7 +684,7 @@ export function soundEnter(track, slot) {
      * mechanism so every door is covered. */
     if (GS.sessionView) return;
     S.active = true;
-    GS.soundOpen = true;        /* mirror — see ui_state soundOpen */
+    takeBankIdentity(track);
     GS.bankSelectTick = GS.tickCount;   /* the banks' display window: the screen
                                          * shows, then falls back to the overview
                                          * unless the jog is touched (soundRender) */
@@ -748,8 +748,20 @@ function flushForRetarget() {
     }
 }
 
+/* SOUND + CONFIG is its own BANK while its screen is up (Josh, 2026-08-23):
+ * S.activeBank becomes BANK_SOUND, so sequencing, LEDs and the fallback
+ * overview all run their standard-bank branches whatever bank the jog came
+ * from (AUTO's step editing included). The origin stays in trackActiveBank —
+ * untouched, because the identity is never written there — and soundExit
+ * restores it. Conductor tracks keep their own bank: they have no sound bank
+ * in the cycle, and their screens key on banks 0/8/9/10. */
+function takeBankIdentity(track) {
+    if (GS.trackPadMode[track] !== PMC) GS.activeBank = BANK_SOUND;
+}
+
 export function soundRetarget(track, slot) {
     flushForRetarget();
+    takeBankIdentity(track);
 
     S.track = track;
     /* A SESSION bus is global — following the active track must not drag its
@@ -878,7 +890,12 @@ export function soundExit() {
     S.pendingWrites.length = 0;
     if (S.busLevelDirty) engineSaveState();
     S.active = false;
-    GS.soundOpen = false;       /* mirror — see ui_state soundOpen */
+    /* Hand the bank identity back: while the screen was up S.activeBank was
+     * BANK_SOUND, so every bank-keyed behaviour ran its default branch; the
+     * bank the jog came from waited in trackActiveBank (the sync sites guard
+     * against BANK_SOUND leaking into it) and is where you land now. */
+    if (GS.activeBank === BANK_SOUND)
+        GS.activeBank = GS.trackActiveBank[GS.activeTrack] | 0;
     clearBusContext();
     S.pendingAction = null;
     S.pendingDiscover = 0;
@@ -1430,7 +1447,7 @@ export function soundEnterMove(track) {
      * that track is still the volume knob's target. */
     if (S.active) flushForRetarget();
     S.active = true;
-    GS.soundOpen = true;        /* mirror — see ui_state soundOpen */
+    takeBankIdentity(track);
     GS.bankSelectTick = GS.tickCount;   /* same display window as soundEnter */
     S.enterSession = false;
     S.track = track;
@@ -1478,7 +1495,6 @@ export function soundEnterBuses() {
      * also flushes any pending level save for the track we came from. */
     releaseVolume();
     S.active = true;
-    GS.soundOpen = true;        /* mirror — see ui_state soundOpen */
     S.enterSession = true;      /* called from SESSION view */
     S.bus = null;
     S.track = -1;
@@ -3978,9 +3994,10 @@ function renderBlocks() {
      * segment gaps are UNPAINTED pixels, so anything already on the row would
      * fill them back in. */
     if (!soundIsGlobal() && GS.trackPadMode[S.track] !== PMC) {
-        const pos = bankCyclePos();
+        const pos = bankCyclePos();   /* activeBank === BANK_SOUND here, so the
+                                       * idx IS the last segment — one source */
         fill_rect(0, MV_BAR_Y, 128, 1, 0);
-        drawKitPageBar(pos.count - 1, pos.count);
+        drawKitPageBar(pos.idx, pos.count);
     }
     /* ⚠⚠ This builds a NEW object per row, so anything set on the pickRow has to
      * be forwarded EXPLICITLY. It is the second time that has bitten: the doors

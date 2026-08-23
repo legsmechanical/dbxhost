@@ -51,7 +51,8 @@ const { computePadNoteMap } = await import('../../ui/ui_drummodel.mjs');
 const constsMod = await import('../../ui/ui_constants.mjs');
 const ledsMod = await import('../../ui/ui_leds.mjs');
 const ifMod = await import('/data/UserData/schwung/shared/input_filter.mjs');
-const { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, BANK_WHEN } = constsMod;
+const persistMod = await import('../../ui/ui_persistence.mjs');
+const { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, BANK_WHEN, BANK_SOUND } = constsMod;
 
 const send  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 const right = () => { send(14, 1);   globalThis.tick(); };
@@ -100,7 +101,11 @@ step('⭑ melodic: right past AUTOMATION (6) enters SOUND + CONFIG', () => {
     reset(PAD_MODE_MELODIC_SCALE, 6);
     right();
     if (!snd.soundActive()) throw new Error('sound mode did not open');
-    if (S.activeBank !== 6) throw new Error('activeBank moved off the last clip bank: ' + S.activeBank);
+    /* The screen IS a bank (Josh, 2026-08-23): activeBank takes the BANK_SOUND
+     * identity so every bank-keyed behaviour runs its standard branch; the
+     * origin waits in trackActiveBank for the exit landing. */
+    if (S.activeBank !== BANK_SOUND) throw new Error('activeBank did not take the sound identity: ' + S.activeBank);
+    if (S.trackActiveBank[2] !== 6) throw new Error('the origin bank was not preserved: ' + S.trackActiveBank[2]);
 });
 
 step('⭑ ...and the next right turn walks the menu, not the banks', () => {
@@ -110,7 +115,8 @@ step('⭑ ...and the next right turn walks the menu, not the banks', () => {
     const r1 = snd.soundPickStateForTest().row;
     if (!snd.soundActive()) throw new Error('sound mode closed on a right turn');
     if (r1 <= r0) throw new Error('cursor did not move down: ' + r0 + ' -> ' + r1);
-    if (S.activeBank !== 6) throw new Error('the bank changed underneath: ' + S.activeBank);
+    if (S.activeBank !== BANK_SOUND) throw new Error('the identity was lost underneath: ' + S.activeBank);
+    if (S.trackActiveBank[2] !== 6) throw new Error('the origin bank drifted: ' + S.trackActiveBank[2]);
 });
 
 step('⭑ left turns walk back up, and past the top row leave to the last clip bank', () => {
@@ -246,6 +252,40 @@ step('⭑ the TOP LEVEL keeps the banks\' display law: falls back to the overvie
         if (!snd.soundRender()) throw new Error('a sub-screen yielded to the overview');
     }
     snd.soundExit();
+});
+
+step('⭑ the identity NEVER persists: sidecar write + Shift+jog track switch', () => {
+    /* Two live writers sync activeBank into trackActiveBank; both must skip
+     * BANK_SOUND or a track gets stranded on a bank the jog cannot reach —
+     * silently, on the next launch or the next switch back. */
+    const { writeSidecar } = persistMod;
+    reset(PAD_MODE_MELODIC_SCALE, 6);
+    right();                             /* enter from AUTOMATION */
+    if (!snd.soundActive() || S.activeBank !== BANK_SOUND)
+        throw new Error('control: not in sound mode with the identity on');
+    let tab = null;
+    globalThis.host_write_file = (path, body) => {
+        if (String(path).indexOf('ui-state') >= 0) { try { tab = JSON.parse(body).tab; } catch (e) {} }
+        return true;
+    };
+    S.currentSetUuid = 'testuuid';
+    writeSidecar();
+    globalThis.host_write_file = () => true;
+    if (S.trackActiveBank[2] !== 6) throw new Error('sidecar sync clobbered the origin: ' + S.trackActiveBank[2]);
+    if (tab && tab[2] === BANK_SOUND) throw new Error('BANK_SOUND serialized into the sidecar');
+    /* Shift+jog switches tracks with sound mode open: the outgoing track's
+     * origin must survive, and the retarget re-takes the identity. */
+    S.trackActiveBank[3] = 2;
+    send(49, 127);                        /* shift down */
+    send(14, 1); globalThis.tick();       /* track 2 -> 3, retarget on tick */
+    send(49, 0);
+    if (S.activeTrack !== 3) throw new Error('control: track did not switch');
+    if (S.trackActiveBank[2] !== 6) throw new Error('switch wrote the identity into track 2: ' + S.trackActiveBank[2]);
+    if (S.activeBank !== BANK_SOUND) throw new Error('retarget did not re-take the identity: ' + S.activeBank);
+    /* Exit lands on the NEW track's own origin. */
+    snd.soundTick(); toTop(); left();
+    if (snd.soundActive()) throw new Error('did not exit');
+    if (S.activeBank !== 2) throw new Error('exit did not restore track 3\'s origin: ' + S.activeBank);
 });
 
 step('⚠ a GLOBAL bus keeps its clamp: left at the top does not exit', () => {

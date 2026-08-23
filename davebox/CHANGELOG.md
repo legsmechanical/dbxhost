@@ -14,9 +14,11 @@ the section into a versioned heading at release time.
   move down its rows; turn left past the top row to return to the bank you came
   from. Click and Back work as before. Instruments and effects can now be edited
   without leaving the track's banks. (Conductor tracks keep their own five banks.)
-  Entered from the AUTOMATION bank, the pads drop that bank's grey coloring and
-  wear their normal track colors — on SOUND + CONFIG they play notes, so they
-  look like it. Its top level also keeps the banks' display rhythm: release the
+  On SOUND + CONFIG the sequencer underneath behaves exactly as on a standard
+  bank, whichever bank you scrolled in from: pads wear their normal track
+  colors and play notes, steps show and edit notes — the AUTOMATION bank's
+  special pad, step and screen behavior applies only while you are actually
+  on AUTOMATION. Its top level also keeps the banks' display rhythm: release the
   jog and the screen falls back to the track overview, touch it to bring the
   screen back — sound mode stays active underneath, and deeper screens (a block
   editor, presets, config) stay up on their own.

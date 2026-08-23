@@ -1,5 +1,5 @@
 import { S, CC_ASSIGN_DEFAULTS } from './ui_state.mjs';
-import { NUM_TRACKS, NUM_CLIPS, DRUM_LANES, BANKS, ACTION_POPUP_TICKS } from './ui_constants.mjs';
+import { NUM_TRACKS, NUM_CLIPS, DRUM_LANES, BANKS, BANK_SOUND, ACTION_POPUP_TICKS } from './ui_constants.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 
 /* Basename prefix for every file this module owns. Mirrors the C-side
@@ -153,8 +153,11 @@ export function writeSidecar() {
      * in pollDSP; restoreUiSidecar has not run yet, so there is nothing worth
      * persisting here anyway. */
     if (S.pendingSetLoad || S.pendingDspSync > 0) return;
-    /* Always sync the live activeBank into per-track storage before serializing. */
-    S.trackActiveBank[S.activeTrack] = S.activeBank;
+    /* Always sync the live activeBank into per-track storage before serializing
+     * — except BANK_SOUND, sound mode's transient identity: the origin bank is
+     * already in trackActiveBank and is what the next launch should land on. */
+    if (S.activeBank !== BANK_SOUND)
+        S.trackActiveBank[S.activeTrack] = S.activeBank;
     ensureStateDir(S.currentSetUuid);
     host_write_file(uuidToUiStatePath(S.currentSetUuid), JSON.stringify({
         v: 9, at: S.activeTrack, ac: S.trackActiveClip.slice(), sv: S.sessionView ? 1 : 0,
