@@ -1,4 +1,5 @@
 import { S, conductorTrackIdx } from './ui_state.mjs';
+import { computePadNoteMap } from './ui_drummodel.mjs';
 import { MCUFONT, STATE_VERSION, NOTE_KEYS, SCALE_DISPLAY, pixelPrintC,
          NUM_CLIPS, PAD_MODE_DRUM, PAD_MODE_CONDUCT } from './ui_constants.mjs';
 /* ⭑ drawMenuList and menuLayoutDefaults are GONE from this file as of the
@@ -728,6 +729,7 @@ function _openProjectPadPicker_impl() {
      * deleted out from under us, the draw falls through to SELECT PROJECT. */
     _pppReselect(p);
     S.projectPadPicker = p;
+    computePadNoteMap();            /* pads become PROJECT BUTTONS — DSP sees all-0xFF (see _padDispatchMutedNow) */
     S.globalMenuOpen = false;
     invalidateLEDCache();
     S.screenDirty = true;
@@ -738,6 +740,7 @@ function _closeProjectPadPicker_impl() {
     const _p = S.projectPadPicker;
     if (_p && _p.renameActive && isTextEntryActive()) closeTextEntry();
     S.projectPadPicker = null;
+    computePadNoteMap();            /* pads become NOTES again (DSP side) */
     S.ledInitComplete = false;      /* repaint the sequencer surface */
     invalidateLEDCache();
     S.screenDirty = true;
@@ -1258,7 +1261,7 @@ function _pppGuard(name, impl, args) {
     try { return impl.apply(null, args); }
     catch (e) {
         try { console.log('projectPadPicker FAULT in ' + name + ': ' + e + ' :: ' + (e && e.stack ? e.stack : 'no stack')); } catch (e2) {}
-        try { S.projectPadPicker = null; } catch (e3) {}
+        try { S.projectPadPicker = null; computePadNoteMap(); } catch (e3) {}
         /* Nulling the picker is survivable once a project is loaded — the user
          * lands back on the sequencer. While AWAITING it is a dead end: no
          * project, no picker, LOADING pinned, transport locked. The tick

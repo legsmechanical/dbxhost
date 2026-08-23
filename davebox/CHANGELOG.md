@@ -8,6 +8,12 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **The project screen is fully its own surface.** While it's open, only its
+  controls do anything: pads pick projects (they no longer also play the loaded
+  instrument), the jog navigates, Back closes, and hold-Delete / hold-Copy work
+  the project gestures. Everything else — the menu, transport, knobs, steps,
+  track buttons — is ignored until you leave, so nothing can poke the loaded
+  project from behind the screen.
 - **The project screen wears the dAVEBOx wordmark.** It's the first thing you
   see after loading, so its header now always reads "dAVEBOx" — with the real
   lowercase letters — on every project screen: the picker, a project's menu,

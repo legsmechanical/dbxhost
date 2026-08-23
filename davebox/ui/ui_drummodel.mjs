@@ -22,6 +22,11 @@ import { dspGet } from './ui_dsp_get.mjs';
  * track view while the menu is open (user confirmed 2026-05-17). */
 export function _padDispatchMutedNow() {
     if (S.sessionView) return true;
+    /* The SET MANAGER owns the pads while it is up — they are project
+     * buttons, not notes, so the DSP must see all-0xFF or every tap sounds
+     * the loaded project's instrument underneath (the modal gate in ui.js
+     * only stops the JS side). Recomputed at picker open/close. */
+    if (S.projectPadPicker) return true;
     /* captureHeld no longer mutes pads: the Capture+pad lane-select gesture
      * was removed (Capture is capture-only); Capture+scene is Session View,
      * where the sessionView check above already mutes. */

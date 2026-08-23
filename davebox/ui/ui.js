@@ -24,7 +24,7 @@ import {
 
 import {
     MoveNoteSession, MoveMainTouch,
-    MoveMainKnob,
+    MoveMainKnob, MoveMainButton, MoveCopy,
     LED_OFF,
     NUM_TRACKS,
     TRACK_PAD_BASE,
@@ -36,8 +36,10 @@ import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
 import { showActionPopup, readActiveSet, resolveSetLoadDecision } from './ui_persistence.mjs';
 import {
-    closeClearAutoMenu, projectPickerTextEntryMidi
+    closeClearAutoMenu, projectPickerTextEntryMidi,
+    projectPadPickerTap, projectPadPickerRotate, projectPadPickerClick
 } from './ui_dialogs.mjs';
+import { MoveShift } from '/data/UserData/schwung/shared/constants.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { effectiveClip, invalidateLEDCache, trackColor, forceRedraw, installFlagsWrap, buildLedInitQueue } from './ui_leds.mjs';
 import { initPrimarySurface } from './ui_corun.mjs';
@@ -345,10 +347,58 @@ function _onMidiInternalImpl(data) {
      * isNoiseMessage() classifies all 0xA0/0xD0 as noise, so handle pressure
      * here BEFORE that filter would drop it, then return. */
     if ((status & 0xF0) === 0xA0) {
-        if (d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32) _onPadAftertouch(d1, d2);
+        if (d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32 &&
+            !S.projectPadPicker) _onPadAftertouch(d1, d2);
         return;
     }
     if (isNoiseMessage(data)) return;
+
+    /* ---- SET MANAGER IS MODAL (Josh, 2026-08-23) ----------------------
+     * "It should stand apart from the rest of davebox." While the project
+     * picker is up, the surface belongs to IT: only its own controls do
+     * anything, everything else is swallowed here rather than reaching the
+     * loaded project underneath (the menu opener, transport, knobs, steps,
+     * track buttons — all of it). Handled directly instead of allow-listed
+     * into the normal dispatch, because the picker's branches sit DEEP in
+     * those handlers and gestures like Shift+Delete+jog act on the project
+     * before the picker's own branch is reached.
+     *   pads 68-99  -> picker tap        jog turn/click -> picker nav
+     *   Back (51)   -> normal dispatch (its Back logic starts at the picker:
+     *                  peel overlay / close; hold-suspend + Shift+Back keep working)
+     *   Shift/Delete/Copy -> held-state only (the tick's
+     *                  projectPadPickerModifiers() and the copy/delete arm
+     *                  gestures read these flags)
+     * The rename keyboard already returned above; sound mode never steers
+     * under the picker (soundModeCovered). The DSP side is muted separately:
+     * _padDispatchMutedNow() blanks the padmap while the picker is open, so
+     * pads stop SOUNDING the underlying instrument too. */
+    if (S.projectPadPicker) {
+        const hi = status & 0xF0;
+        if (hi === 0x90 || hi === 0x80) {
+            if (hi === 0x90 && d2 > 0 &&
+                d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32) {
+                projectPadPickerTap(d1 - TRACK_PAD_BASE);
+            }
+            return;                       /* knob/jog touches included */
+        }
+        if (status === 0xB0) {
+            if (d1 === MoveBack) { /* falls through to the normal dispatch */ }
+            else if (d1 === MoveMainKnob) {
+                const _pd = decodeDelta(d2);
+                if (_pd) projectPadPickerRotate(_pd);
+                return;
+            }
+            else if (d1 === MoveMainButton) {
+                if (d2 === 127) projectPadPickerClick();
+                return;
+            }
+            else if (d1 === MoveShift)  { S.shiftHeld  = d2 === 127; return; }
+            else if (d1 === MoveDelete) { S.deleteHeld = d2 === 127; return; }
+            else if (d1 === MoveCopy)   { S.copyHeld   = d2 === 127;
+                                          if (!S.copyHeld) S.copySrc = null; return; }
+            else return;                  /* every other button: swallowed */
+        }
+    }
 
     /* Master volume knob (CC 79) + its capacitive touch (note 8) are owned by
      * Move firmware (button_passthrough[79] + the shim's overtake-mode volume
