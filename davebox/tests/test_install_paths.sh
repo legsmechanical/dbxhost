@@ -65,6 +65,17 @@ else
     echo "  skip — dist/davebox-sound/ui.js not built"
 fi
 
+# 5. The umbrella installer must hand FORCE to the module half. install-host.sh
+#    takes --force; install_sound.sh reads $FORCE. Until 2026-08-23 install-sa.sh
+#    only did the first, so `--force` over a live session landed the host half
+#    and then refused the davebox half — two halves, two versions.
+if sed -n '/^if \[ "\$DO_DAVEBOX" = "1" \]/,/^fi/p' ../standalone/scripts/install-sa.sh \
+        | grep -v '^ *#' | tr '\\\n' '  ' | grep -q 'FORCE="\$FORCE".*install_sound.sh'; then
+    ok "install-sa.sh passes FORCE through to the davebox half"
+else
+    bad "install-sa.sh does not pass FORCE to install_sound.sh (--force would deploy only the host half)"
+fi
+
 [ "$fail" -eq 0 ] && echo "PASS: paths point at the install tree that owns them" \
                   || echo "FAIL: an install-tree path points at the wrong host"
 exit "$fail"

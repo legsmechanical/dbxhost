@@ -101,7 +101,11 @@ if [ "$DO_DAVEBOX" = "1" ]; then
     say ""; say "--- davebox half"
     dbx_args=(--no-build)                                   # built above, or intentionally stale
     [ "$RESTART_STOCK" = "1" ] || dbx_args+=(--no-restart)
-    MOVE_HOST="$MOVE_HOST" MOVE_USER="$MOVE_USER" \
+    # ⚠ The module installer reads FORCE from the ENVIRONMENT, not a flag — the
+    # host half takes --force. Until 2026-08-23 this line did not pass it, so
+    # `install-sa.sh --force` over a live session deployed the host half and
+    # then REFUSED the davebox half, leaving the two out of step.
+    MOVE_HOST="$MOVE_HOST" MOVE_USER="$MOVE_USER" FORCE="$FORCE" \
         bash "$DAVEBOX/scripts/install_sound.sh" "${dbx_args[@]}"
 fi
 
