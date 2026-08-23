@@ -13,7 +13,7 @@ import { formatItemValue, isDivider } from '/data/UserData/schwung/shared/menu_i
 /* The KIT chassis. ui_movy is pure — no imports, no state — so pulling it in
  * here cannot cycle. See docs/UI_LANGUAGE.md: a list of the app's own structure
  * renders on the kit; the host chassis is for dialogs. */
-import { drawKitHeader, drawKitList, fitHdr } from './ui_movy.mjs';
+import { drawKitHeader, drawKitBrandHeader, drawKitList, fitHdr } from './ui_movy.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
     dropSnapshots, applySnapshotToLive, loadSelectedCurrentProject,
@@ -1144,9 +1144,16 @@ function _drawProjectPadPicker_impl() {
 
     clear_screen();
 
+    /* ⭑ The wordmark is the set manager's ALWAYS-ON header (Josh, 2026-08-23):
+     * this screen is the first thing a user lands on after load, so it is the
+     * app's face. Every kit-chassis screen below takes drawKitBrandHeader()
+     * and carries its former title as its first list row instead. The one
+     * yes/no confirm keeps the shared DIALOG chassis (§5.0 — dialogs are the
+     * host family, and it is transient). */
     if (p.restarting) {
-        drawKitHeader('RENAMING', false);
-        drawKitList([{ note: 'Restarting' }, { note: 'the session...' }], -1, {});
+        drawKitBrandHeader();
+        drawKitList([{ label: 'RENAMING', hdr: true },
+                     { note: 'Restarting' }, { note: 'the session...' }], -1, {});
         return;
     }
 
@@ -1166,16 +1173,16 @@ function _drawProjectPadPicker_impl() {
      * them ran off the right edge of the panel. */
     if (p.deleteIdx >= 0) {
         const dp = p.byIndex[p.deleteIdx];
-        drawKitHeader('DELETE PROJECT', false);
-        drawKitList([{ label: dp ? dp.name : '?', hdr: true },
+        drawKitBrandHeader();
+        drawKitList([{ label: 'DELETE ' + (dp ? dp.name : '?'), hdr: true },
                      { divider: true },
                      { note: 'Tap the pad again' }], -1, {});
         return;
     }
     if (p.copySrcIdx >= 0) {
         const sp = p.byIndex[p.copySrcIdx];
-        drawKitHeader('COPY PROJECT', false);
-        drawKitList([{ label: sp ? sp.name : '?', hdr: true },
+        drawKitBrandHeader();
+        drawKitList([{ label: 'COPY ' + (sp ? sp.name : '?'), hdr: true },
                      { divider: true },
                      { note: 'Tap an empty pad' }], -1, {});
         return;
@@ -1187,7 +1194,12 @@ function _drawProjectPadPicker_impl() {
      * live, which is the part a 1-bit display cannot do. */
     if (p.colorPick) {
         const cp = p.byIndex[p.colorPick.k];
-        drawKitHeader(fitHdr(String(cp ? cp.name : '?').toUpperCase() + ' COLOR', 124), false);
+        drawKitBrandHeader();
+        /* No title row here, deliberately: the colour list SCROLLS, and a row-0
+         * title scrolls off with it — worse than absent. Context is carried by
+         * the flow (this screen opens from that project's own menu) and by the
+         * pad, which previews the colour live. `cp` stays for the guard. */
+        void cp;
         drawKitList(PROJECT_COLORS.map(c => ({ label: c.name, hdr: true })),
                     p.colorPick.sel, {});
         return;
@@ -1195,8 +1207,9 @@ function _drawProjectPadPicker_impl() {
 
     if (p.menu) {
         const mp = p.byIndex[p.menu.k];
-        drawKitHeader(fitHdr(String(mp ? mp.name : '?').toUpperCase(), 124), false);
-        drawKitList(_pppMenuModel(p, p.menu.k).map(function(r) {
+        drawKitBrandHeader();
+        drawKitList([{ label: fitHdr(String(mp ? mp.name : '?').toUpperCase(), 124), hdr: true }]
+            .concat(_pppMenuModel(p, p.menu.k).map(function(r) {
             if (r.kind === 'status') return { note: r.label };
             /* Both open a screen, so both carry the chevron and NEITHER carries a
              * value (Josh, 2026-08-15). Showing the current colour here read as
@@ -1206,7 +1219,7 @@ function _drawProjectPadPicker_impl() {
             if (r.kind === 'rename' || r.kind === 'color')
                 return { label: r.label, hdr: true, chevron: true };
             return { label: r.label, hdr: true };
-        }), p.menu.sel, {});
+        })), p.menu.sel + 1, {});
         return;
     }
 
@@ -1214,7 +1227,7 @@ function _drawProjectPadPicker_impl() {
      * to the generic title and the screen carries one centred hint until a pad
      * is tapped. No gesture legend anywhere in here: copy and delete are
      * Move-native gestures the user already knows (Josh, 2026-08-15). */
-    drawKitHeader('PROJECTS', false);
+    drawKitBrandHeader();
     drawKitList([], -1, { emptyMsg: 'Select project', emptyHdr: true });
 }
 

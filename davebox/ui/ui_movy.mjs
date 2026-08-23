@@ -65,6 +65,11 @@ const HDR_G = [
  * 6 columns, 6 rows, bit0 = leftmost — same encoding as HDR_G above. */
 HDR_G[0x64 - 0x20] = [7, 48, 48, 62, 51, 51, 62];   /* 'd' */
 HDR_G[0x74 - 0x20] = [7, 12, 30, 12, 12, 12, 28];   /* 't' */
+/* TRUE lowercase 'x' — added for the brand mark "dAVEBOx" (the set manager's
+ * always-on header): both minuscules in the wordmark now render as themselves.
+ * x-height only (rows 2-5), two strokes crossing without a shared centre —
+ * at 4px tall a centre pixel welds the strokes into a blob. */
+HDR_G[0x78 - 0x20] = [7, 0, 0, 51, 30, 30, 51];     /* 'x' */
 
 function hdrGlyph(cp) { return (cp < 0x20 || cp > 0x7E) ? null : HDR_G[cp - 0x20]; }
 
@@ -745,6 +750,15 @@ export function drawKitTouchedHeader(name) {
     const t = fitHdr(name, SCREEN_W - 4);
     hdrPrint(Math.max(2, Math.round((SCREEN_W - hdrWidth(t)) / 2)), 1, t, 1);
     fill_rect(0, MV_BAR_Y, SCREEN_W, 1, 1);   /* same rule as the resting header */
+}
+
+/* Brand header: the kit header bar carrying the wordmark VERBATIM.
+ * drawKitHeader uppercases — right for screen titles, wrong for "dAVEBOx",
+ * whose minuscules are the mark (the font carries true 'd' and 'x' for it). */
+export function drawKitBrandHeader() {
+    const t = 'dAVEBOx';
+    fill_rect(0, 0, SCREEN_W, MV_HDR_H, 1);
+    hdrPrint(2, 1, t, 0);
 }
 
 /* Page-indicator bar (row 9, resting only) — kit v28 port: one segment per

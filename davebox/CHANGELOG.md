@@ -8,6 +8,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **The project screen wears the dAVEBOx wordmark.** It's the first thing you
+  see after loading, so its header now always reads "dAVEBOx" — with the real
+  lowercase letters — on every project screen: the picker, a project's menu,
+  the colour list, and the copy/delete/rename prompts. Each screen's title
+  moved into the body.
 - **The sound editor is now a bank.** Turning the jog right past a track's last
   parameter bank lands on **SOUND + CONFIG** — the same screen Shift + Note/Session
   opens, with the instrument, effects, sound control and config. Keep turning to
