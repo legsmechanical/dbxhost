@@ -1231,14 +1231,14 @@ function _drawProjectPadPicker_impl() {
             return { label: r.label, hdr: true };
         }));
         drawKitList(rows, p.menu.sel + 1 - (hasStatus ? 1 : 0), {});
-        /* UNDERLINE the name — a rule inside its row band, the name's own
-         * width, not a divider row (Josh, 2026-08-23). In-band and safe: the
-         * name row is never selectable so no fill ever clips it, and spanning
-         * only the name keeps it clear of the right-aligned value's
-         * descenders AND of the next row's fill edge (a full-width rule at
-         * the band's last pixel merged into the selected row below and read
-         * as a taller highlight). Name glyphs sit at y=11..16; rule at 18. */
-        fill_rect(2, 18, hdrWidth(nameLbl), 1, 1);
+        /* Full-width rule inside the name row's band (Josh, 2026-08-23 —
+         * position at y=18, "should extend full screen width"). In-band and
+         * safe: the name row is never selectable so no fill ever clips it,
+         * and y=18 leaves one clear pixel above the next row's fill edge at
+         * 20 — the earlier rule at 19 touched it and read as a taller
+         * highlight. Name glyphs sit at y=11..16. */
+        void hdrWidth; void nameLbl;
+        fill_rect(0, 18, 128, 1, 1);
         return;
     }
 
