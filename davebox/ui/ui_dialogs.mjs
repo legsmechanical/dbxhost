@@ -1208,9 +1208,19 @@ function _drawProjectPadPicker_impl() {
     if (p.menu) {
         const mp = p.byIndex[p.menu.k];
         drawKitBrandHeader();
-        drawKitList([{ label: fitHdr(String(mp ? mp.name : '?').toUpperCase(), 124), hdr: true }]
-            .concat(_pppMenuModel(p, p.menu.k).map(function(r) {
-            if (r.kind === 'status') return { note: r.label };
+        /* Name row + rule under it (Josh, 2026-08-23), then the actions. The
+         * (Current) status folds into the name row's VALUE rather than keeping
+         * its own note row — with the brand header above, a sixth row pushes
+         * the name off the top the moment the cursor rests on RESUME.
+         * `sel` never lands on the status row (_pppMenuTop skips it, the wrap
+         * spans selectable rows only), so the display offset is title+divider
+         * minus the folded status row when one exists. */
+        const model = _pppMenuModel(p, p.menu.k);
+        const hasStatus = model.length > 0 && model[0].kind === 'status';
+        const rows = [{ label: fitHdr(String(mp ? mp.name : '?').toUpperCase(), 124),
+                        hdr: true, value: hasStatus ? 'CURRENT' : undefined },
+                      { divider: true }]
+            .concat(model.filter(r => r.kind !== 'status').map(function(r) {
             /* Both open a screen, so both carry the chevron and NEITHER carries a
              * value (Josh, 2026-08-15). Showing the current colour here read as
              * a value the jog would edit in place, which is the grammar for a
@@ -1219,7 +1229,8 @@ function _drawProjectPadPicker_impl() {
             if (r.kind === 'rename' || r.kind === 'color')
                 return { label: r.label, hdr: true, chevron: true };
             return { label: r.label, hdr: true };
-        })), p.menu.sel + 1, {});
+        }));
+        drawKitList(rows, p.menu.sel + 2 - (hasStatus ? 1 : 0), {});
         return;
     }
 

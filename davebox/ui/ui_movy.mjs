@@ -758,7 +758,7 @@ export function drawKitTouchedHeader(name) {
 export function drawKitBrandHeader() {
     const t = 'dAVEBOx';
     fill_rect(0, 0, SCREEN_W, MV_HDR_H, 1);
-    hdrPrint(2, 1, t, 0);
+    hdrPrint(Math.max(2, Math.round((SCREEN_W - hdrWidth(t)) / 2)), 1, t, 0);
 }
 
 /* Page-indicator bar (row 9, resting only) — kit v28 port: one segment per
