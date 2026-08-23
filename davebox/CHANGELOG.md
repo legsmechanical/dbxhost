@@ -14,6 +14,9 @@ the section into a versioned heading at release time.
   move down its rows; turn left past the top row to return to the bank you came
   from. Click and Back work as before. Instruments and effects can now be edited
   without leaving the track's banks. (Conductor tracks keep their own five banks.)
+  Entered from the AUTOMATION bank, the pads drop that bank's grey coloring and
+  wear their normal track colors — on SOUND + CONFIG they play notes, so they
+  look like it.
 - **One header across the whole browser interface.** A slim ribbon at the very
   top carries the dAVEBOx name and the links to Mirror, Files, Help, Config and
   System — the same set, in the same order, on the editor and on every one of

@@ -47,7 +47,11 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
-const { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, BANK_WHEN } = await import('../../ui/ui_constants.mjs');
+const { computePadNoteMap } = await import('../../ui/ui_drummodel.mjs');
+const constsMod = await import('../../ui/ui_constants.mjs');
+const ledsMod = await import('../../ui/ui_leds.mjs');
+const ifMod = await import('/data/UserData/schwung/shared/input_filter.mjs');
+const { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, BANK_WHEN } = constsMod;
 
 const send  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 const right = () => { send(14, 1);   globalThis.tick(); };
@@ -78,6 +82,10 @@ function reset(mode, bank) {
     S.activeTrack = 2;
     S.trackPadMode[2] = mode;
     S.activeBank = bank; S.trackActiveBank[2] = bank;
+    /* LED paths read bankParams, which init() builds on-device only */
+    if (!S.bankParams)
+        S.bankParams = Array.from({ length: 8 }, () =>
+            Array.from({ length: 11 }, () => new Array(8).fill(0)));
     S.bankSelectTick = -1; S.jogTouched = false;
 }
 
@@ -139,6 +147,61 @@ step('⚠ Shift+Note entry is unchanged: left at the top still exits (same door,
     left();
     if (snd.soundActive()) throw new Error('left at the top did not exit');
     if (S.activeBank !== 3) throw new Error('landed on the wrong bank: ' + S.activeBank);
+});
+
+step('⭑ AUTO-bank pad coloring stands down while SOUND + CONFIG is up', () => {
+    /* The AUTO bank paints the melodic pads grey (palette 118 root / 124
+     * non-root). Sound mode leaves S.activeBank on the bank it was entered
+     * from — which can be AUTO — but the pads stay with the SEQUENCER there,
+     * so they must wear their default clip coloring. The gate is
+     * ui_leds' autoBankLeds() reading the S.soundOpen mirror; both halves
+     * fail silently (a stale mirror or a missed site just leaves grey pads).
+     * Captured at the wire: setLED emits [0x09, 0x90, note, color]. */
+    const { updateTrackLEDs, invalidateLEDCache } = ledsMod;
+    const { clearAllLEDs } = ifMod;   /* resets input_filter's send cache too */
+    const { TRACK_PAD_BASE } = constsMod;
+    const padColors = () => {
+        const seen = {};
+        clearAllLEDs();               /* before the capture arms — its own
+                                       * note-offs are not pad paint */
+        globalThis.move_midi_internal_send = (b) => {
+            if (b && b[1] === 0x90 && b[2] >= TRACK_PAD_BASE && b[2] < TRACK_PAD_BASE + 32)
+                seen[b[2]] = b[3];
+        };               /* both caches — ui_leds' AND input_filter's;
+                                       * ticks during earlier steps already primed
+                                       * them, and a primed cache eats the repaint */
+        invalidateLEDCache();
+        updateTrackLEDs();
+        globalThis.move_midi_internal_send = () => {};
+        return Object.values(seen);
+    };
+    /* ⚠ DarkGrey === 124 === the AUTO non-root grey, so the non-root pads are
+     * IDENTICAL in both states. The tell is the ROOT pads: AUTO paints them
+     * 118 (LightGrey), the default coloring paints them trackColor(t). A real
+     * pad map is needed or every pad is non-root and both states read all-124. */
+    reset(PAD_MODE_MELODIC_SCALE, 6);
+    computePadNoteMap();
+    const tCol = ledsMod.trackColor(2);
+    if (tCol === 118) throw new Error('fixture: trackColor(2) is LightGrey — pick another track');
+    const grey = padColors();
+    if (!grey.length) throw new Error('control: no pad LEDs painted at all');
+    if (!grey.some(c => c === 118))
+        throw new Error('control: AUTO bank painted no LightGrey root pads (' + grey.join(',') + ')');
+    if (grey.some(c => c === tCol))
+        throw new Error('control: AUTO bank painted track-color pads');
+    right();                            /* enter SOUND + CONFIG from AUTO */
+    if (!snd.soundActive()) throw new Error('did not enter sound mode');
+    const inSound = padColors();
+    if (!inSound.length) throw new Error('no pad LEDs painted in sound mode');
+    if (inSound.some(c => c === 118))
+        throw new Error('AUTO root grey still painted under sound mode: ' + inSound.join(','));
+    if (!inSound.some(c => c === tCol))
+        throw new Error('default track-color roots missing under sound mode: ' + inSound.join(','));
+    snd.soundTick(); toTop(); left();   /* back out onto AUTO */
+    if (snd.soundActive()) throw new Error('did not exit');
+    const back = padColors();
+    if (!back.some(c => c === 118))
+        throw new Error('AUTO grey palette did not return after exit: ' + back.join(','));
 });
 
 step('⚠ a GLOBAL bus keeps its clamp: left at the top does not exit', () => {

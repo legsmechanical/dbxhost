@@ -18,6 +18,14 @@ import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter
 const lastSentNoteLED   = new Array(128).fill(-1);
 const lastSentButtonLED = new Array(128).fill(-1);
 
+/* The AUTO bank's LED language (grey pads, CC step gradient, per-lane page
+ * window) stands down while sound mode is up: the SOUND + CONFIG screen leaves
+ * `S.activeBank` on the clip bank it was entered from — which can be AUTO — and
+ * the pads/steps stay with the SEQUENCER there, so they wear their default
+ * clip coloring, same as every non-automation bank (Josh, 2026-08-23).
+ * `S.soundOpen` is the mirror of sound mode's active flag (see ui_state). */
+function autoBankLeds() { return S.activeBank === 6 && !S.soundOpen; }
+
 function clipHasActiveNotes(t, c) {
     const s = S.clipSteps[t][c];
     for (let i = 0; i < NUM_STEPS; i++) if (s[i] === 1) return true;
@@ -110,7 +118,7 @@ export function updateStepLEDs() {
         const tCol = trackColor(t);
         const pulsOn = S.playing ? S.flashSixteenth : (Math.floor(S.tickCount / 24) % 2);
         const gestureHeldPage = (S.loopGestureStart >= 0 && S.loopGestureTrack === t) ? S.loopGestureStart : -1;
-        if (S.trackPadMode[t] === PAD_MODE_DRUM && S.activeBank !== 6) {
+        if (S.trackPadMode[t] === PAD_MODE_DRUM && !autoBankLeds()) {
             const lane = S.activeDrumLane[t];
             const len  = S.drumLaneLength[t];
             const lsBase = S.drumLaneLoopStart[t] | 0;
@@ -136,7 +144,7 @@ export function updateStepLEDs() {
             }
         } else {
             var _ccLen = 0, _ccLs = 0;
-            if (S.activeBank === 6) {
+            if (autoBankLeds()) {
                 var _ccL = S.ccActiveLane[t];
                 _ccLen = S.ccLaneLength[t][ac][_ccL];
                 _ccLs  = S.ccLaneLoopStart[t][ac][_ccL] | 0;
@@ -189,7 +197,7 @@ export function updateStepLEDs() {
                 /* Step1 = project picker (set-select gate) — davebox host only */
                 if (i === 0) on = true;
                 if (i === 7 || i === 9 || (i === 10 && !isDrum) || i === 14
-                    || (i === 15 && S.activeBank !== 6)) on = true;
+                    || (i === 15 && !autoBankLeds())) on = true;
                 /* ALL LANES unconfirmed: gated double-fill (15) / quantize (16)
                  * shortcuts stay dark — don't advertise a blocked action. */
                 if (_allLanesLocked && (i === 14 || i === 15)) on = false;
@@ -202,7 +210,7 @@ export function updateStepLEDs() {
     /* Drum mode: step buttons show active lane's steps — identical visualization to melodic.
      * On the AUTO bank (6) drum falls through to the CC-automation gradient block below,
      * so drum AUTO shows the CC gradient/playhead, not drum-lane state (parity w/ melodic). */
-    if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank !== 6) {
+    if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && !autoBankLeds()) {
         const t    = S.activeTrack;
         const lane = S.activeDrumLane[t];
         const ls   = S.drumLaneSteps[t][lane];
@@ -261,7 +269,7 @@ export function updateStepLEDs() {
     /* CC bank: step LEDs show the active lane's automation as a warm gradient
      * (7 levels: val=0 → dim, rising through yellow/orange/red to full white).
      * "—"=off; playhead = track color; out-of-window = DarkGrey. */
-    if (S.activeBank === 6) {
+    if (autoBankLeds()) {
         const CC_GRAD = [76, 29, 29, 3, 4, 67, 127];
         const t    = S.activeTrack;
         const c    = ac;
@@ -658,7 +666,7 @@ export function updateTrackLEDs() {
             for (let i = 0; i < 32; i++) {
                 const col = i % 8;
                 const row = Math.floor(i / 8);
-                if (S.activeBank === 6) {
+                if (autoBankLeds()) {
                     /* AUTO bank: the drum pads still PLAY their drum sounds (handled
                      * in _onPadPressTrackView) but are not lane-selectors here. Left
                      * 4x4 (lane/sound pads): the active lane = bright track color, any
@@ -764,7 +772,7 @@ export function updateTrackLEDs() {
                 cachedSetLED(TRACK_PAD_BASE + i, color);
             }
         } else {
-        const _autoGrey    = S.activeBank === 6;
+        const _autoGrey    = autoBankLeds();
         const rootColor    = _autoGrey ? 118 : (_inCoRunPad ? DarkGrey : trackColor(S.activeTrack));
         const nonRootColor = _autoGrey ? 124 : (_inCoRunPad ? trackDimColor(S.activeTrack) : DarkGrey);
         const _tarpActive = (S.bankParams[S.activeTrack][5][7] | 0) !== 0 &&
@@ -873,7 +881,7 @@ export function updateTrackLEDs() {
             const isDirty = (S.drumRepeatVelScale[S.activeTrack][lane][k] !== 100) ||
                             (S.drumRepeatNudge[S.activeTrack][lane][k] !== 0);
             ledVal = isDirty ? White : LED_OFF;
-        } else if (S.activeBank === 6) {
+        } else if (autoBankLeds()) {
             /* Solid colors: red = recording, green = automation playing back,
              * yellow = automation exists, white = resting value set, off = empty. */
             const _t6 = S.activeTrack, _c6 = effectiveClip(_t6);

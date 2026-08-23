@@ -684,6 +684,7 @@ export function soundEnter(track, slot) {
      * mechanism so every door is covered. */
     if (GS.sessionView) return;
     S.active = true;
+    GS.soundOpen = true;        /* mirror — see ui_state soundOpen */
     S.enterSession = false;     /* called from TRACK view */
     /* A TRACK context is not a bus one. Without this the previous session's bus
      * survived — S.bus is what soundIsGlobal() and buildPickRows() read, so
@@ -874,6 +875,7 @@ export function soundExit() {
     S.pendingWrites.length = 0;
     if (S.busLevelDirty) engineSaveState();
     S.active = false;
+    GS.soundOpen = false;       /* mirror — see ui_state soundOpen */
     clearBusContext();
     S.pendingAction = null;
     S.pendingDiscover = 0;
@@ -1425,6 +1427,7 @@ export function soundEnterMove(track) {
      * that track is still the volume knob's target. */
     if (S.active) flushForRetarget();
     S.active = true;
+    GS.soundOpen = true;        /* mirror — see ui_state soundOpen */
     S.enterSession = false;
     S.track = track;
     S.slot = 0;                 /* move_fx: keys ignore the slot argument */
@@ -1471,6 +1474,7 @@ export function soundEnterBuses() {
      * also flushes any pending level save for the track we came from. */
     releaseVolume();
     S.active = true;
+    GS.soundOpen = true;        /* mirror — see ui_state soundOpen */
     S.enterSession = true;      /* called from SESSION view */
     S.bus = null;
     S.track = -1;

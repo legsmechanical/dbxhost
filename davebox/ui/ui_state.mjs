@@ -624,6 +624,7 @@ export const S = {
                                             * per knob; sign carries direction so
                                             * a reversal can reset it */
     moveCoRunOrigin: null,      /* P8a 1d: where Move co-run was entered FROM ('sound' = the SYNTH row of that track's Move sound mode, so Menu returns there; 'track' = the track menu's Edit Synth..., where a plain close already lands). Recorded at ENTRY — sound mode is exited on the way in, so nothing is left to infer it from on return. */
+    soundOpen: false,           /* MIRROR of sound mode's own S.active (ui_sound keeps its own state object). Written ONLY next to the four S.active assignments there — never anywhere else, or the mirror drifts. Consumers: ui_leds (the AUTO bank's pad/step coloring stands down while the SOUND + CONFIG screen is up). */
     pendingSoundEnterTrack: -1, /* Sound mode entry queued from the Shift-release dispatch or the track menu. Entry's shadow_get/set_param traffic must run on the tick budget — hence the deferral. */
     pendingUndoSync: 0,
     pendingDefaultSetParams: [],
