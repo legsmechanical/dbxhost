@@ -1226,9 +1226,12 @@ function _drawProjectPadPicker_impl() {
              * a value the jog would edit in place, which is the grammar for a
              * row you scrub — this one is a door. The picker names the colour,
              * and the pad shows it in the one form a 1-bit panel cannot. */
+            /* Action rows take the SMALL (movy label) font — the name above
+             * stays in the header font, so the two element kinds read apart
+             * at a glance (Josh, 2026-08-23). */
             if (r.kind === 'rename' || r.kind === 'color')
-                return { label: r.label, hdr: true, chevron: true };
-            return { label: r.label, hdr: true };
+                return { label: r.label, chevron: true };
+            return { label: r.label };
         }));
         drawKitList(rows, p.menu.sel + 1 - (hasStatus ? 1 : 0), {});
         /* Full-width rule inside the name row's band (Josh, 2026-08-23 —
