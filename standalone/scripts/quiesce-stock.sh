@@ -86,7 +86,6 @@ PY
 
 freeze_move() {
     paint_splash
-    stop_ticker
     # A few SPI frames (~3 ms each) so the shim pushes the new frame to the
     # panel before Move stops producing frames at all.
     sleep 0.2
@@ -108,30 +107,6 @@ freeze_move() {
 # lost by letting the user see the splash first. The stale claim that stock
 # "is already gone by now" dates from before launch-standalone.sh stopped
 # pre-killing it (2026-08-15); Move is alive here, and this runs every launch.
-# The launch ticker: "dAVEBOx" scrolling across the pads (Josh, 2026-08-23)
-# for as long as stock Move is alive to show it — from the moment stock's UI
-# has gone until the freeze. It writes stock's shadow-UI LED ring, the same
-# path stock's menu LEDs took a second ago; pad-ticker.py documents the ring.
-# Looping with no end by design: the freeze simply keeps the last frame.
-TICKER_PID=""
-start_ticker() {
-    [ -x /data/UserData/dbx-host/scripts/pad-ticker.py ] || return 0
-    [ -e /dev/shm/schwung-midi-out ] || return 0
-    # --state: the column the freeze catches is where launch.sh's second leg
-    # resumes, so the word continues across the dead gap instead of restarting.
-    rm -f /data/UserData/dbx-host/ticker_stop
-    python3 /data/UserData/dbx-host/scripts/pad-ticker.py \
-        --state /data/UserData/dbx-host/ticker_offset >/dev/null 2>&1 &
-    TICKER_PID=$!
-    say "pad ticker started ($TICKER_PID)"
-}
-stop_ticker() {
-    [ -n "$TICKER_PID" ] || return 0
-    kill "$TICKER_PID" 2>/dev/null && say "pad ticker stopped (last frame stays on the pads)"
-    TICKER_PID=""
-}
-trap stop_ticker EXIT
-
 save_song() {
     pgrep -x MoveOriginal >/dev/null 2>&1 || return 0
     dbus-send --system --print-reply --reply-timeout=4000 \
@@ -162,7 +137,6 @@ shadow_ui_live() {
 if [ ! -e "$CONTROL" ]; then
     say "no stock control SHM — nothing to save"
     paint_splash
-    start_ticker
     save_song
     freeze_move
     exit 0
@@ -194,7 +168,6 @@ while [ "$i" -lt 50 ]; do
         z=""; pgrep -x shadow_ui >/dev/null 2>&1 && z=" (zombie left for stock to reap)"
         say "shadow_ui exited after $((i * 100))ms$z"
         paint_splash
-        start_ticker
         save_song
         freeze_move
         exit 0
@@ -205,7 +178,6 @@ done
 
 say "shadow_ui still running after 5s — proceeding anyway"
 paint_splash
-start_ticker
 save_song
 freeze_move
 exit 0

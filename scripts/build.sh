@@ -803,7 +803,6 @@ chmod +x ./build/scripts/post-update.sh
 # build in a tree without standalone/ is unaffected.
 if [ -d ./standalone ]; then
     cp ./standalone/scripts/quiesce-stock.sh ./build/scripts/
-    cp ./standalone/scripts/pad-ticker.py ./build/scripts/      # quiesce-stock.sh launch ticker
     cp ./standalone/scripts/exit-to-stock.sh ./build/scripts/
     # set-swap.sh: the Design-B project-library swap engine — a runtime
     # dependency of launch.sh (session entry/exit) and of the blessed

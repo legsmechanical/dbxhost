@@ -26,12 +26,6 @@ the section into a versioned heading at release time.
   loaded project now sits steady white and never blinks; the pad you have
   selected pulses in its own colour. When they are the same project, that pad
   pulses white against its colour.
-- **The pads show a "dAVEBOx" ticker while a launch is in flight.** From the
-  moment stock's menu goes until the session's own splash, the 8×4 pad grid
-  scrolls the name right-to-left like a stock ticker, looping; the last
-  frame stays up through the few seconds nothing is drawing the pads, then
-  the scroll carries on from that exact spot once the session's own display
-  comes up, until the project picker takes the pads over.
 - **Launching from stock's Tools menu answers the first click.** It always
   did launch on the first click, but for about nine seconds nothing changed
   on screen and stock's menu stayed live, so it felt like it needed three.

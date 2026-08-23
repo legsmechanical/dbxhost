@@ -276,7 +276,7 @@ $SSH "set -eu
   done
   cd '$DBX_DIR' && rm -rf '$STAGE'
   chmod +x '$DBX_DIR/schwung' '$DBX_DIR/shadow/shadow_ui' 2>/dev/null || true
-  chmod +x '$DBX_DIR'/scripts/*.sh '$DBX_DIR'/scripts/*.py '$DBX_DIR/bless.sh' 2>/dev/null || true
+  chmod +x '$DBX_DIR'/scripts/*.sh '$DBX_DIR/bless.sh' 2>/dev/null || true
 "
 say "      payload in place"
 
