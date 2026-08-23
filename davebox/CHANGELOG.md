@@ -16,7 +16,10 @@ the section into a versioned heading at release time.
   without leaving the track's banks. (Conductor tracks keep their own five banks.)
   Entered from the AUTOMATION bank, the pads drop that bank's grey coloring and
   wear their normal track colors — on SOUND + CONFIG they play notes, so they
-  look like it.
+  look like it. Its top level also keeps the banks' display rhythm: release the
+  jog and the screen falls back to the track overview, touch it to bring the
+  screen back — sound mode stays active underneath, and deeper screens (a block
+  editor, presets, config) stay up on their own.
 - **One header across the whole browser interface.** A slim ribbon at the very
   top carries the dAVEBOx name and the links to Mirror, Files, Help, Config and
   System — the same set, in the same order, on the editor and on every one of

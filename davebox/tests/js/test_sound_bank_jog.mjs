@@ -143,6 +143,11 @@ step('⚠ Shift+Note entry is unchanged: left at the top still exits (same door,
     reset(PAD_MODE_MELODIC_SCALE, 3);
     S.pendingSoundEnterTrack = 2; globalThis.tick(); snd.soundTick();
     if (!snd.soundActive()) throw new Error('control: deferred entry did not open');
+    /* This entry has NO jog behind it, so soundEnter itself must arm the
+     * display window — without that the screen yields to the overview on the
+     * very first frame and Shift+Note appears to do nothing. (The jog entry
+     * path arms it at the CC site too, which masked this once.) */
+    if (!snd.soundRender()) throw new Error('Shift+Note entry did not show the screen');
     toTop();
     left();
     if (snd.soundActive()) throw new Error('left at the top did not exit');
@@ -202,6 +207,45 @@ step('⭑ AUTO-bank pad coloring stands down while SOUND + CONFIG is up', () => 
     const back = padColors();
     if (!back.some(c => c === 118))
         throw new Error('AUTO grey palette did not return after exit: ' + back.join(','));
+});
+
+step('⭑ the TOP LEVEL keeps the banks\' display law: falls back to the overview', () => {
+    /* Same flags the clip banks read: the screen shows while the jog is
+     * touched or the bank-display window is open, and yields to the track
+     * overview otherwise — sound mode stays ACTIVE underneath. Every branch
+     * here fails silently (a screen that never yields just looks like the
+     * old behaviour; one that never comes back looks broken only on device). */
+    const jogTouch   = (on) => globalThis.onMidiMessageInternal(new Uint8Array([on ? 0x90 : 0x80, 9, on ? 127 : 0]));
+    reset(PAD_MODE_MELODIC_SCALE, 6);
+    right();                             /* enter SOUND + CONFIG */
+    if (!snd.soundActive()) throw new Error('did not enter');
+    snd.soundTick();
+    if (!snd.soundRender()) throw new Error('screen not shown inside the entry window');
+    /* Window expires: the banks\' own timeout clears bankSelectTick in tick. */
+    S.tickCount += 200; globalThis.tick();
+    if (S.bankSelectTick >= 0) throw new Error('control: display window did not expire');
+    if (snd.soundRender()) throw new Error('top level did not yield to the overview after the window');
+    if (!snd.soundActive()) throw new Error('yielding must not EXIT sound mode');
+    /* Touch the jog: the screen comes back; release: it yields at once. */
+    jogTouch(true);
+    if (!S.jogTouched) throw new Error('control: jog touch not tracked');
+    if (!snd.soundRender()) throw new Error('jog touch did not bring the screen back');
+    jogTouch(false);
+    if (snd.soundRender()) throw new Error('jog release did not yield immediately');
+    /* A turn re-opens the window (and still moves the cursor). */
+    const r0 = snd.soundPickStateForTest().row;
+    right();
+    if (snd.soundPickStateForTest().row === r0) throw new Error('turn no longer moves the cursor');
+    if (!snd.soundRender()) throw new Error('a turn did not re-open the display window');
+    /* Deeper levels never yield: open the row under the cursor via the real
+     * click, then check with the window closed. */
+    snd.soundTick();
+    send(3, 127); snd.soundTick(); globalThis.tick();
+    S.tickCount += 200; globalThis.tick();
+    if (snd.soundPickStateForTest && snd.soundActive()) {
+        if (!snd.soundRender()) throw new Error('a sub-screen yielded to the overview');
+    }
+    snd.soundExit();
 });
 
 step('⚠ a GLOBAL bus keeps its clamp: left at the top does not exit', () => {

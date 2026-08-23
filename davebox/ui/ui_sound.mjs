@@ -685,6 +685,9 @@ export function soundEnter(track, slot) {
     if (GS.sessionView) return;
     S.active = true;
     GS.soundOpen = true;        /* mirror — see ui_state soundOpen */
+    GS.bankSelectTick = GS.tickCount;   /* the banks' display window: the screen
+                                         * shows, then falls back to the overview
+                                         * unless the jog is touched (soundRender) */
     S.enterSession = false;     /* called from TRACK view */
     /* A TRACK context is not a bus one. Without this the previous session's bus
      * survived — S.bus is what soundIsGlobal() and buildPickRows() read, so
@@ -1428,6 +1431,7 @@ export function soundEnterMove(track) {
     if (S.active) flushForRetarget();
     S.active = true;
     GS.soundOpen = true;        /* mirror — see ui_state soundOpen */
+    GS.bankSelectTick = GS.tickCount;   /* same display window as soundEnter */
     S.enterSession = false;
     S.track = track;
     S.slot = 0;                 /* move_fx: keys ignore the slot argument */
@@ -3326,6 +3330,10 @@ export function soundOnCC(d1, d2, decodeDelta) {
                 return true;
             }
             S.pickRow = next;
+            /* Each turn re-opens the display window, as a bank change does on
+             * the clip banks — without this the screen would fall back mid-
+             * scroll, 2s after entry, while the cursor is still moving. */
+            if (!soundIsGlobal() && !S.enterSession) GS.bankSelectTick = GS.tickCount;
         } else if (S.view === VIEW_SLOTCFG) {
             slotCfgStep(delta);
         } else if (S.view === VIEW_KNOBS) {
@@ -4319,6 +4327,21 @@ function drawVolReadout() {
 export function soundRender() {
     if (!S.active) return false;
     if (isTextEntryActive()) { drawTextEntry(); return true; }
+    /* At the TOP LEVEL the screen keeps the clip banks' display law (Josh,
+     * 2026-08-23): it shows while the jog is touched or the bank-display
+     * window is open — the SAME flags the banks read — and otherwise stands
+     * down so drawUI falls through to the track overview. Sound mode stays
+     * ACTIVE underneath (input, knobs, the bank walk); only the drawing
+     * yields, and touching the jog brings the screen back, exactly as on any
+     * other bank. Held gestures keep it up: an in-progress row edit, the knob
+     * card (S.touchedIdx), the volume gesture and its readout window. Track
+     * flavour only — the session buses are not banks and never yield. */
+    if (S.view === VIEW_BLOCKS && !soundIsGlobal() && !S.enterSession &&
+            !S.instrEditing && !S.busLevelEditing &&
+            S.touchedIdx < 0 && !S.volTouched &&
+            !(S.volShownUntil >= 0 && S.tickCount <= S.volShownUntil) &&
+            !GS.jogTouched && GS.bankSelectTick < 0)
+        return false;
     if (S.view === VIEW_BLOCKS) renderBlocks();
     else if (S.view === VIEW_BROWSE) renderBrowse();
     else if (S.view === VIEW_PRESET_SRC) renderPresetSrc();

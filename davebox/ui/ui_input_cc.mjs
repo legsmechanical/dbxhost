@@ -920,7 +920,9 @@ function modalDialogUp() {
                         S.globalMenuOpen = false;
                         S.lastSentMenuEditValue = null;
                         S.pendingSoundEnterTrack = S.activeTrack;
-                        S.bankSelectTick = -1;
+                        S.bankSelectTick = S.tickCount;   /* keep the display window
+                                         * open across the deferred entry — soundEnter
+                                         * re-arms it, but the entry runs a tick later */
                         S.screenDirty = true;
                         return;
                     }

@@ -1508,8 +1508,12 @@ export function drawUI() {
         return;
     }
 
-    /* Auto bank idle display: lane info + automation graph + progress bar */
-    if (bank === 6 && !S.loopHeld && S.knobTouched < 0 && !inTimeout) {
+    /* Auto bank idle display: lane info + automation graph + progress bar.
+     * NOT while sound mode is up (S.soundOpen): the SOUND + CONFIG top level
+     * yields to the overview under the banks' display law, and entered from
+     * AUTO that fallback must be the DEFAULT overview — same stand-down as the
+     * AUTO pad/step LEDs (ui_leds autoBankLeds). */
+    if (bank === 6 && !S.soundOpen && !S.loopHeld && S.knobTouched < 0 && !inTimeout) {
         var _gt = S.activeTrack;
         var _gac = effectiveClip(_gt);
         var _gLane = S.ccActiveLane[_gt];
