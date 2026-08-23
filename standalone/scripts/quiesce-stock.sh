@@ -26,21 +26,14 @@
 
 CONTROL=/dev/shm/schwung-control
 
-# Ask Move to save a dirty song first — the Design-B library swap moves the
-# native set directories, so unsaved musical edits must reach disk before the
-# stack dies. Best-effort like everything here: in the ordinary Tools-menu
-# launch Move is already gone by now (launch-standalone.sh killed it) and this
-# no-ops; it matters on the direct/dev launch path where the stack is alive.
-# Whether Move's own clean teardown also saves is device experiment DE-1
-# (docs/working/DBSA_SET_WORKSPACE.md in the davebox repo).
-if pgrep -x MoveOriginal >/dev/null 2>&1; then
-    dbus-send --system --print-reply --reply-timeout=4000 \
-        --dest=com.ableton.move \
-        /com/ableton/move/browser \
-        com.ableton.move.Browser.saveSongIfDirty string: \
-        >/dev/null 2>&1 && echo "quiesce: saveSongIfDirty done" \
-                        || echo "quiesce: saveSongIfDirty unavailable"
-fi
+# Every line carries a wall-clock stamp: launch.log has none of its own, and
+# the 2026-08-23 "three clicks to launch" hunt had to reconstruct this script's
+# timeline from stock's debug.log. Never again.
+say() {
+    t=$(date '+%H:%M:%S.%N' 2>/dev/null | cut -c1-12)
+    case "$t" in *N*) t=${t%.*} ;; esac      # a date without %N (BSD) prints the literal
+    echo "$t quiesce: $*"
+}
 
 # Freeze Move the moment shadow_ui is gone (freeze_move is called below, on
 # both the clean-exit and the timeout path). Once shadow_ui exits, the shim
@@ -71,7 +64,7 @@ fi
 paint_splash() {
     [ -e /dev/shm/schwung-display ] || return 0
     [ -f /data/UserData/dbx-host/splash.hex ] || return 0
-    python3 - <<'PY' && echo "quiesce: splash painted into stock display"
+    python3 - <<'PY' && say "splash painted into stock display"
 import mmap
 src = bytes.fromhex(open("/data/UserData/dbx-host/splash.hex").read().strip())
 out = bytearray(1024)
@@ -98,19 +91,61 @@ freeze_move() {
     sleep 0.2
     pids=$(pidof MoveOriginal 2>/dev/null || true)
     if [ -n "$pids" ]; then
-        kill -STOP $pids 2>/dev/null && echo "quiesce: MoveOriginal frozen ($pids)"
+        kill -STOP $pids 2>/dev/null && say "MoveOriginal frozen ($pids)"
     fi
 }
 
+# Move's own song save, asked over D-Bus. Best-effort; it matters because the
+# library swap moves the native set directories, so unsaved musical edits must
+# reach disk before the stack dies.
+# ⚠ Ordered AFTER shadow_ui's exit and the splash, on purpose. It used to run
+# FIRST, and with a 4 s reply timeout that was the first of two stalls behind
+# "dAVEBOx needs three clicks" (Josh, 2026-08-23): stock's Tools menu stayed
+# fully live for those seconds — jog, click, launch again (refused by the lock)
+# — with nothing on screen to say the first click had taken. The call is
+# independent of shadow_ui (it is Move's save, not the host's), so nothing is
+# lost by letting the user see the splash first. The stale claim that stock
+# "is already gone by now" dates from before launch-standalone.sh stopped
+# pre-killing it (2026-08-15); Move is alive here, and this runs every launch.
+save_song() {
+    pgrep -x MoveOriginal >/dev/null 2>&1 || return 0
+    dbus-send --system --print-reply --reply-timeout=4000 \
+        --dest=com.ableton.move \
+        /com/ableton/move/browser \
+        com.ableton.move.Browser.saveSongIfDirty string: \
+        >/dev/null 2>&1 && say "saveSongIfDirty done" \
+                        || say "saveSongIfDirty unavailable"
+}
+
+# "Still running" must mean RUNNING. Stock's shim reaps shadow_ui only inside
+# launch_shadow_ui(), after an early return that fires while it still believes
+# the child is up — so the exited shadow_ui sits as a ZOMBIE until MoveOriginal
+# dies, and `pgrep -x shadow_ui` keeps listing it. That was the second stall:
+# the wait below burned its full 5 s ceiling on EVERY launch ("still running
+# after 5s — proceeding anyway" on each header since the order was fixed on
+# 08-15). A zombie has saved and gone; treat it as exited.
+shadow_ui_live() {
+    for p in $(pgrep -x shadow_ui 2>/dev/null); do
+        case "$(cut -d' ' -f3 "/proc/$p/stat" 2>/dev/null)" in
+            Z|X|"") ;;            # zombie / dead / vanished between pgrep and read
+            *) return 0 ;;
+        esac
+    done
+    return 1
+}
+
 if [ ! -e "$CONTROL" ]; then
-    echo "quiesce: no stock control SHM — nothing to save"
+    say "no stock control SHM — nothing to save"
+    paint_splash
+    save_song
     freeze_move
     exit 0
 fi
 
 # should_exit is byte 2 of shadow_control_t (display_mode, shadow_ready,
-# should_exit, ...). Setting it asks for a saved, orderly exit.
-python3 - "$CONTROL" <<'PY'
+# should_exit, ...). Setting it asks for a saved, orderly exit. FIRST thing we
+# do: the sooner the menu is gone, the sooner the user stops clicking it.
+say "$(python3 - "$CONTROL" <<'PY'
 import mmap, sys
 try:
     with open(sys.argv[1], "r+b") as f:
@@ -118,21 +153,31 @@ try:
         mm[2] = 1
         mm.flush()
         mm.close()
-    print("quiesce: should_exit set")
+    print("should_exit set")
 except Exception as e:
-    print("quiesce: could not set should_exit: %s" % e)
+    print("could not set should_exit: %s" % e)
 PY
+)"
 
 # Wait for shadow_ui to finish saving and go. The save is a handful of small
-# JSON writes, so this is fast; the ceiling only exists so a wedged UI cannot
-# stall the launch forever.
+# JSON writes (~0.4 s on hardware); the ceiling only exists so a wedged UI
+# cannot stall the launch forever.
 i=0
 while [ "$i" -lt 50 ]; do
-    pgrep -x shadow_ui >/dev/null 2>&1 || { echo "quiesce: shadow_ui exited after $((i * 100))ms"; freeze_move; exit 0; }
+    if ! shadow_ui_live; then
+        z=""; pgrep -x shadow_ui >/dev/null 2>&1 && z=" (zombie left for stock to reap)"
+        say "shadow_ui exited after $((i * 100))ms$z"
+        paint_splash
+        save_song
+        freeze_move
+        exit 0
+    fi
     sleep 0.1
     i=$((i + 1))
 done
 
-echo "quiesce: shadow_ui still running after 5s — proceeding anyway"
+say "shadow_ui still running after 5s — proceeding anyway"
+paint_splash
+save_song
 freeze_move
 exit 0
