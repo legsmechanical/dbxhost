@@ -26,6 +26,13 @@ the section into a versioned heading at release time.
   loaded project now sits steady white and never blinks; the pad you have
   selected pulses in its own colour. When they are the same project, that pad
   pulses white against its colour.
+- **Launching from stock's Tools menu answers the first click.** It always
+  did launch on the first click, but for about nine seconds nothing changed
+  on screen and stock's menu stayed live, so it felt like it needed three.
+  The launcher now asks stock's UI to save and exit first, puts the splash up
+  as soon as it has gone (about half a second), and only then asks Move to
+  save the song. It also no longer waits five seconds for a stock UI process
+  that had already exited.
 - **A white project can no longer be mistaken for the loaded one.** White is
   reserved for "this is the open project" in the picker's pad grammar, so a
   project that had picked white as its own colour sat there looking current
