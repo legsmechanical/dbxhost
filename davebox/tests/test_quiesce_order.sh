@@ -133,8 +133,18 @@ sed -n "${leg2},$((leg2+3))p" "$L" | tr '\n' ' ' | grep -q -- '--offset-file.*ti
     || bad "leg 2 lacks --offset-file ticker_offset / --stop ticker_stop"
 grep -q 'rm -f "\$DBX_DIR/ticker_stop"' "$L" && ok "launch.sh clears a stale ticker_stop before leg 2" \
                                              || bad "a stale ticker_stop would end leg 2 instantly"
-grep -q 'pkill -f "scripts/pad-ticker.py"' "$L" && ok "launch.sh kills the ticker after Move exits" \
-                                                 || bad "a ticker could outlive the session"
+grep -q 'kill "\$TICKER2_PID"' "$L" && ok "launch.sh kills leg 2 by PID after Move exits" \
+                                      || bad "a ticker could outlive the session"
+# ⚠ The launcher body is ONE bash -c argv: any `pkill -f` pattern that appears
+# in the body matches the supervisor itself. 2026-08-23: pkill -f pad-ticker.py
+# killed the launcher on exit; the device froze on the farewell screen.
+open=$(grep -n "^setsid bash -c '" "$L" | head -1 | cut -d: -f1)
+close=$(grep -n "^' &" "$L" | head -1 | cut -d: -f1)
+if sed -n "$((open+1)),$((close-1))p" "$L" | grep -v '^[[:space:]]*#' | grep -q 'pkill -f'; then
+    bad "pkill -f inside the launcher body — it matches the supervisor's own argv"
+else
+    ok "no pkill -f inside the launcher body (it would kill the supervisor)"
+fi
 U=ui/ui_leds.mjs
 d=$(sed -n '/^export function drainLedInit()/,/^}/p' "$U")
 printf '%s\n' "$d" | grep -q "ticker_stop" && ok "drainLedInit writes ticker_stop" || bad "drainLedInit does not write ticker_stop"

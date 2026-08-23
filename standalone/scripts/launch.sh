@@ -278,16 +278,23 @@ setsid bash -c '
     # (ticker_offset), and exits when the session LED init touches ticker_stop
     # just before its first paint. Dead gap = a pause mid-word.
     # (No apostrophes in here: this whole body is one single-quoted string.)
+    # ⚠ Kill it by PID, never pkill -f: this whole body is the argv of one
+    # bash -c, so a pattern that names pad-ticker.py matches the SUPERVISOR
+    # too. That is exactly what happened on 2026-08-23 — the launcher killed
+    # itself the moment Move exited, the teardown below never ran, and the
+    # device sat on the EXITING farewell with the library still bound.
     rm -f "$DBX_DIR/ticker_stop"
+    TICKER2_PID=""
     if [ -x "$DBX_DIR/scripts/pad-ticker.py" ]; then
       python3 "$DBX_DIR/scripts/pad-ticker.py" --shm /dev/shm/dbxhost-midi-out --wait 20 \
         --offset-file "$DBX_DIR/ticker_offset" --state "$DBX_DIR/ticker_offset" \
         --stop "$DBX_DIR/ticker_stop" >/dev/null 2>&1 &
-      echo "started pad ticker leg 2 ($!)"
+      TICKER2_PID=$!
+      echo "started pad ticker leg 2 ($TICKER2_PID)"
     fi
     echo "run LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal"
     env LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal
-    pkill -f "scripts/pad-ticker.py" 2>/dev/null || true
+    [ -n "$TICKER2_PID" ] && kill "$TICKER2_PID" 2>/dev/null || true
     if [ -f "$DBX_DIR/relaunch_requested" ]; then
       rm -f "$DBX_DIR/relaunch_requested"
       # Kill the session sidecars BEFORE wiping SHM. They survive MoveOriginal
