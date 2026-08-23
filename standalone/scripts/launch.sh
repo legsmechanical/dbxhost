@@ -272,8 +272,22 @@ setsid bash -c '
   # session entry does.
   rm -f "$DBX_DIR/relaunch_requested"
   while :; do
+    # Second leg of the pad ticker (the first ran in quiesce-stock.sh against
+    # the STOCK ring until the freeze). Waits for OUR midi-out ring, which the
+    # shim creates while Move boots, resumes at the column the freeze kept
+    # (ticker_offset), and exits when the session LED init touches ticker_stop
+    # just before its first paint. Dead gap = a pause mid-word.
+    # (No apostrophes in here: this whole body is one single-quoted string.)
+    rm -f "$DBX_DIR/ticker_stop"
+    if [ -x "$DBX_DIR/scripts/pad-ticker.py" ]; then
+      python3 "$DBX_DIR/scripts/pad-ticker.py" --shm /dev/shm/dbxhost-midi-out --wait 20 \
+        --offset-file "$DBX_DIR/ticker_offset" --state "$DBX_DIR/ticker_offset" \
+        --stop "$DBX_DIR/ticker_stop" >/dev/null 2>&1 &
+      echo "started pad ticker leg 2 ($!)"
+    fi
     echo "run LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal"
     env LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal
+    pkill -f "scripts/pad-ticker.py" 2>/dev/null || true
     if [ -f "$DBX_DIR/relaunch_requested" ]; then
       rm -f "$DBX_DIR/relaunch_requested"
       # Kill the session sidecars BEFORE wiping SHM. They survive MoveOriginal

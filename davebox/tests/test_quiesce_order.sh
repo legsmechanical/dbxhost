@@ -112,6 +112,54 @@ else
     bad "install-host.sh leaves scripts/*.py non-executable (start_ticker tests -x)"
 fi
 
+# 3d. Two legs, one scroll: quiesce keeps the offset, launch.sh resumes from it
+#     before each Move exec and stops on the session's flag; the session writes
+#     that flag on its FIRST LED-init batch (before it clears any pad).
+L=../standalone/scripts/launch.sh
+if code | sed -n '/^start_ticker()/,/^}/p' | grep -q -- '--state /data/UserData/dbx-host/ticker_offset'; then
+    ok "quiesce leg 1 records the offset (--state ticker_offset)"
+else
+    bad "quiesce leg 1 does not record its offset — leg 2 would restart the word"
+fi
+leg2=$(grep -n 'pad-ticker.py.*--shm /dev/shm/dbxhost-midi-out' "$L" | head -1 | cut -d: -f1)
+execl=$(grep -n '^ *env LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal' "$L" | head -1 | cut -d: -f1)
+if [ -n "$leg2" ] && [ -n "$execl" ] && [ "$leg2" -lt "$execl" ]; then
+    ok "launch.sh starts leg 2 against OUR ring before exec'ing Move (line $leg2 < $execl)"
+else
+    bad "launch.sh leg 2 missing or after the Move exec (it blocks until Move exits)"
+fi
+sed -n "${leg2},$((leg2+3))p" "$L" | tr '\n' ' ' | grep -q -- '--offset-file.*ticker_offset.*--stop.*ticker_stop' \
+    && ok "leg 2 resumes from ticker_offset and stops on ticker_stop" \
+    || bad "leg 2 lacks --offset-file ticker_offset / --stop ticker_stop"
+grep -q 'rm -f "\$DBX_DIR/ticker_stop"' "$L" && ok "launch.sh clears a stale ticker_stop before leg 2" \
+                                             || bad "a stale ticker_stop would end leg 2 instantly"
+grep -q 'pkill -f "scripts/pad-ticker.py"' "$L" && ok "launch.sh kills the ticker after Move exits" \
+                                                 || bad "a ticker could outlive the session"
+U=ui/ui_leds.mjs
+d=$(sed -n '/^export function drainLedInit()/,/^}/p' "$U")
+printf '%s\n' "$d" | grep -q "ticker_stop" && ok "drainLedInit writes ticker_stop" || bad "drainLedInit does not write ticker_stop"
+w=$(printf '%s\n' "$d" | grep -n "ticker_stop" | head -1 | cut -d: -f1)
+c=$(printf '%s\n' "$d" | grep -n "LED_OFF" | head -1 | cut -d: -f1)
+[ -n "$w" ] && [ -n "$c" ] && [ "$w" -lt "$c" ] && ok "…before the first pad is cleared (line $w < $c)" \
+                                                 || bad "ticker_stop is written after pads start clearing — the ticker repaints them"
+printf '%s\n' "$d" | grep -q "ledInitIndex === 0" && ok "…on the FIRST batch only" || bad "ticker_stop is not gated on the first batch"
+# Functional: stop flag ends the run, the offset resumes and advances.
+python3 - "$T" <<'PY' && ok "ticker: resumes from --offset-file, advances --state, exits on --stop, waits for the ring" \
+                 || bad "ticker two-leg contract broke"
+import subprocess, tempfile, os, time, sys
+T = sys.argv[1]; d = tempfile.mkdtemp()
+shm = os.path.join(d, "ring"); st = os.path.join(d, "off"); stop = os.path.join(d, "stop")
+open(st, "w").write("23\n")
+p = subprocess.Popen([sys.executable, T, "--shm", shm, "--wait", "3", "--fps", "50",
+                      "--offset-file", st, "--state", st, "--stop", stop])
+time.sleep(0.3); open(shm, "wb").write(b"\0" * 516)     # ring appears late, as on boot
+time.sleep(0.4); open(stop, "w").write("1")
+assert p.wait(timeout=3) == 0
+ring = open(shm, "rb").read(); off = int(open(st).read())
+assert ring[0] == 128 and ring[1] == 1, (ring[0], ring[1])
+assert 23 < off < 58, off
+PY
+
 # 4. Every progress line is stamped (launch.log has no timestamps of its own).
 if code | grep -q 'quiesce: ' ; then
     n=$(code | grep -c 'echo "quiesce:' || true)

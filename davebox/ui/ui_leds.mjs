@@ -9,6 +9,7 @@ import {
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
 import { arpVelLevel } from './ui_pure.mjs';
+import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import {
     White, Red, Green, Blue, DarkBlue, LightGrey, DarkGrey, Cyan, PurpleBlue, VividYellow,
     DeepRed, DeepGreen, DeepMagenta, Mustard
@@ -976,6 +977,14 @@ export function buildLedInitQueue() {
 }
 
 export function drainLedInit() {
+    /* The launcher's pad ticker (pad-ticker.py, second leg) is still writing
+     * the pads until we take them over. Stop it on the FIRST init batch, not
+     * on ledInitComplete: this drain clears every pad in chunks, and a ticker
+     * still running under it would repaint what we just cleared. */
+    if (S.ledInitIndex === 0 && !S.tickerStopped) {
+        S.tickerStopped = true;
+        host_write_file(DAVEBOX_HOST_DIR + '/ticker_stop', '1');
+    }
     const end = Math.min(S.ledInitIndex + LEDS_PER_FRAME, S.ledInitQueue.length);
     for (let i = S.ledInitIndex; i < end; i++) {
         const led = S.ledInitQueue[i];

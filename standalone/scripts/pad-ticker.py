@@ -20,8 +20,21 @@ bump `ready`; write_idx is a uint8, so a frame must stay under 252 bytes —
 PADS. Notes 68..99, bottom-left to top-right, 8 per row. Row 0 of a glyph is
 the TOP of the grid.
 
+TWO LEGS, ONE SCROLL. The launch has a dead gap (stock Move frozen → our
+Move's first frames) where nothing owns the panel and the pads hold their
+last frame. So the ticker runs twice: leg 1 from quiesce-stock.sh against
+stock's ring, leg 2 from launch.sh against OUR ring (dbxhost-midi-out, same
+struct, drained the same way by our shim from its first frame). --state keeps
+the current column offset on disk every frame; leg 2 starts from it with
+--offset, so the word resumes exactly where the freeze caught it. --stop
+names a file whose appearance ends the run — the session's own LED init
+touches it just before its first paint. --wait polls for the SHM to appear
+(our shim creates it during Move's boot).
+
 Usage:
     pad-ticker.py [--shm PATH] [--fps N] [--color N] [--preview FRAMES]
+                  [--offset N | --offset-file F] [--state F] [--stop F]
+                  [--wait SECONDS]
   --preview prints frames as ASCII instead of touching any SHM (tests, and
   checking the font on a laptop).
 """
@@ -120,15 +133,35 @@ def ascii_frame(win):
                      for r in range(ROWS))
 
 
-def run(shm_path, fps, color):
+def read_offset(path):
+    try:
+        with open(path) as f:
+            return int(f.read().strip() or 0)
+    except (OSError, ValueError):
+        return 0
+
+
+def write_offset(path, off):
+    try:
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            f.write("%d\n" % off)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+def run(shm_path, fps, color, offset=0, state=None, stop=None):
     cols = columns(TEXT)
     n = period(cols)
     with open(shm_path, "r+b") as f:
         mm = mmap.mmap(f.fileno(), HDR + BUF_SIZE)
-        off = 0
+        off = offset % n
         dt = 1.0 / fps
         nxt = time.monotonic()
         while True:
+            if stop and os.path.exists(stop):
+                return
             pk = packets(frame(cols, off), color)
             # Append behind whatever the shim has not drained yet; if the ring
             # is full just skip this frame rather than tear the header.
@@ -137,6 +170,8 @@ def run(shm_path, fps, color):
                 mm[HDR + widx:HDR + widx + len(pk)] = pk
                 mm[0] = widx + len(pk)
                 mm[1] = (mm[1] + 1) & 0xFF
+            if state:
+                write_offset(state, off)      # where the panel will hold if we die now
             off = (off + 1) % n
             nxt += dt
             time.sleep(max(0.0, nxt - time.monotonic()))
@@ -148,6 +183,11 @@ def main():
     ap.add_argument("--fps", type=float, default=10.0)
     ap.add_argument("--color", type=int, default=LED_WHITE)
     ap.add_argument("--preview", type=int, default=0, metavar="FRAMES")
+    ap.add_argument("--offset", type=int, default=None)
+    ap.add_argument("--offset-file", default=None, help="read the start offset from this file")
+    ap.add_argument("--state", default=None, help="write the current offset here every frame")
+    ap.add_argument("--stop", default=None, help="exit as soon as this file exists")
+    ap.add_argument("--wait", type=float, default=0.0, help="seconds to wait for --shm to appear")
     a = ap.parse_args()
     if a.preview:
         cols = columns(TEXT)
@@ -155,11 +195,17 @@ def main():
             print("frame %d" % i); print(ascii_frame(frame(cols, i))); print()
         print("period %d columns" % period(cols))
         return 0
-    if not os.path.exists(a.shm):
-        sys.stderr.write("pad-ticker: no %s (stock shim not running?)\n" % a.shm)
-        return 1
+    deadline = time.monotonic() + a.wait
+    while not os.path.exists(a.shm):
+        if a.stop and os.path.exists(a.stop):
+            return 0                      # the session got there first
+        if time.monotonic() >= deadline:
+            sys.stderr.write("pad-ticker: no %s (shim not running?)\n" % a.shm)
+            return 1
+        time.sleep(0.05)
+    offset = a.offset if a.offset is not None else (read_offset(a.offset_file) if a.offset_file else 0)
     try:
-        run(a.shm, a.fps, a.color)
+        run(a.shm, a.fps, a.color, offset=offset, state=a.state, stop=a.stop)
     except KeyboardInterrupt:
         pass
     return 0

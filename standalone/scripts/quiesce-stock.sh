@@ -117,7 +117,11 @@ TICKER_PID=""
 start_ticker() {
     [ -x /data/UserData/dbx-host/scripts/pad-ticker.py ] || return 0
     [ -e /dev/shm/schwung-midi-out ] || return 0
-    python3 /data/UserData/dbx-host/scripts/pad-ticker.py >/dev/null 2>&1 &
+    # --state: the column the freeze catches is where launch.sh's second leg
+    # resumes, so the word continues across the dead gap instead of restarting.
+    rm -f /data/UserData/dbx-host/ticker_stop
+    python3 /data/UserData/dbx-host/scripts/pad-ticker.py \
+        --state /data/UserData/dbx-host/ticker_offset >/dev/null 2>&1 &
     TICKER_PID=$!
     say "pad ticker started ($TICKER_PID)"
 }
