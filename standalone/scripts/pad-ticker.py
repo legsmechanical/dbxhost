@@ -47,41 +47,41 @@ BUF_SIZE = 512
 HDR = 4
 LED_WHITE = 120        # shared/constants.mjs White
 
-# 4-row glyphs, variable width, '#' lit. Caps use the full height; the
-# lowercase d keeps its ascender and x sits on a 3-row x-height so the case
-# contrast survives at pad resolution. One blank column between glyphs.
+# 4-row, 3-wide glyphs, '#' lit — Josh's own lettering (two screenshots of
+# the pad grid, 2026-08-23, stitched; they overlap at columns 8-24 and agree).
+# Lowercase d, b and x; caps A V E O. One blank column between glyphs.
 FONT = {
-    "d": ["....#",
-          ".####",
-          "#...#",
-          ".####"],
-    "A": [".###.",
-          "#...#",
-          "#####",
-          "#...#"],
-    "V": ["#...#",
-          "#...#",
-          ".#.#.",
-          "..#.."],
-    "E": ["#####",
-          "#....",
-          "####.",
-          "#####"],
-    "B": ["####.",
-          "#...#",
-          "####.",
-          "#####"],
-    "O": [".###.",
-          "#...#",
-          "#...#",
-          ".###."],
-    "x": [".....",
-          "#...#",
-          ".#.#.",
-          "#...#"],
+    "d": ["..#",
+          "###",
+          "#.#",
+          "###"],
+    "A": [".#.",
+          "#.#",
+          "###",
+          "#.#"],
+    "V": ["#.#",
+          "#.#",
+          "#.#",
+          ".#."],
+    "E": ["###",
+          "##.",
+          "#..",
+          "###"],
+    "b": ["#..",
+          "###",
+          "#.#",
+          "###"],
+    "O": ["###",
+          "#.#",
+          "#.#",
+          "###"],
+    "x": ["...",
+          "#.#",
+          ".#.",
+          "#.#"],
     " ": ["..", "..", "..", ".."],
 }
-TEXT = "dAVEBOx"
+TEXT = "dAVEbOx"
 
 
 def columns(text):
