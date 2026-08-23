@@ -13,7 +13,7 @@ import { formatItemValue, isDivider } from '/data/UserData/schwung/shared/menu_i
 /* The KIT chassis. ui_movy is pure — no imports, no state — so pulling it in
  * here cannot cycle. See docs/UI_LANGUAGE.md: a list of the app's own structure
  * renders on the kit; the host chassis is for dialogs. */
-import { drawKitHeader, drawKitBrandHeader, drawKitList, fitHdr } from './ui_movy.mjs';
+import { drawKitHeader, drawKitBrandHeader, drawKitList, fitHdr, hdrWidth } from './ui_movy.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
     dropSnapshots, applySnapshotToLive, loadSelectedCurrentProject,
@@ -1217,9 +1217,9 @@ function _drawProjectPadPicker_impl() {
          * minus the folded status row when one exists. */
         const model = _pppMenuModel(p, p.menu.k);
         const hasStatus = model.length > 0 && model[0].kind === 'status';
-        const rows = [{ label: fitHdr(String(mp ? mp.name : '?').toUpperCase(), 124),
-                        hdr: true, value: hasStatus ? 'CURRENT' : undefined },
-                      { divider: true }]
+        const nameLbl = fitHdr(String(mp ? mp.name : '?').toUpperCase(), 124);
+        const rows = [{ label: nameLbl,
+                        hdr: true, value: hasStatus ? 'CURRENT' : undefined }]
             .concat(model.filter(r => r.kind !== 'status').map(function(r) {
             /* Both open a screen, so both carry the chevron and NEITHER carries a
              * value (Josh, 2026-08-15). Showing the current colour here read as
@@ -1230,7 +1230,15 @@ function _drawProjectPadPicker_impl() {
                 return { label: r.label, hdr: true, chevron: true };
             return { label: r.label, hdr: true };
         }));
-        drawKitList(rows, p.menu.sel + 2 - (hasStatus ? 1 : 0), {});
+        drawKitList(rows, p.menu.sel + 1 - (hasStatus ? 1 : 0), {});
+        /* UNDERLINE the name — a rule inside its row band, the name's own
+         * width, not a divider row (Josh, 2026-08-23). In-band and safe: the
+         * name row is never selectable so no fill ever clips it, and spanning
+         * only the name keeps it clear of the right-aligned value's
+         * descenders AND of the next row's fill edge (a full-width rule at
+         * the band's last pixel merged into the selected row below and read
+         * as a taller highlight). Name glyphs sit at y=11..16; rule at 18. */
+        fill_rect(2, 18, hdrWidth(nameLbl), 1, 1);
         return;
     }
 
