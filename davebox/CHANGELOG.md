@@ -26,6 +26,10 @@ the section into a versioned heading at release time.
   loaded project now sits steady white and never blinks; the pad you have
   selected pulses in its own colour. When they are the same project, that pad
   pulses white against its colour.
+- **Launching from stock's Tools menu no longer pauses a few seconds.** The
+  launcher was waiting up to four seconds on a save request the returning host
+  didn't answer; it now checks first and skips instantly when there's nothing
+  listening, so the launch is quick every time.
 - **Launching from stock's Tools menu answers the first click.** It always
   did launch on the first click, but for about nine seconds nothing changed
   on screen and stock's menu stayed live, so it felt like it needed three.
