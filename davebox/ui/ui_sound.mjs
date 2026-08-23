@@ -60,8 +60,10 @@ import { parseValue, stepValue, commitString, renderCellsForBank,
     formatValue } from './ui_cells.mjs';
 import {
     drawKitBankPage, drawKitHeader, drawKitSectionPicker, drawKitList,
+    drawKitPageBar, MV_BAR_Y,
     hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard,
 } from './ui_movy.mjs';
+import { bankCyclePos } from './ui_pure.mjs';
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* Chain blocks in signal order, across the audio-FX blocks the host routes.
@@ -3954,7 +3956,20 @@ function renderBlocks() {
      * earlier Move-bus title, "MOVE 2 - TRACK CONTROL", was 153px.) */
     drawKitHeader((S.bus && S.bus.kind !== 'move')
         ? S.bus.title
-        : trackTitle('SOUND + CONFIG'), false);
+        : 'SOUND + CONFIG', false);   /* no track marker (Josh, 2026-08-23) —
+                                       * a bank heading, like the clip banks' */
+    /* The bank-position bar, continued: this screen is the LAST segment of the
+     * jog's bank cycle, so it keeps the same indicator the clip banks carry —
+     * the strip reads as one. Track flavour only (a session bus is not a bank),
+     * and not for a Conductor track (its cycle has no sound bank; it can still
+     * arrive here via Shift+Note). Row 9 is cleared first: the page bar's
+     * segment gaps are UNPAINTED pixels, so anything already on the row would
+     * fill them back in. */
+    if (!soundIsGlobal() && GS.trackPadMode[S.track] !== PMC) {
+        const pos = bankCyclePos();
+        fill_rect(0, MV_BAR_Y, 128, 1, 0);
+        drawKitPageBar(pos.count - 1, pos.count);
+    }
     /* ⚠⚠ This builds a NEW object per row, so anything set on the pickRow has to
      * be forwarded EXPLICITLY. It is the second time that has bitten: the doors
      * had no chevron for the same reason, and the grouping rules' flag reached

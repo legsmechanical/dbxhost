@@ -47,15 +47,21 @@ export const CONDUCT_BANK_CYCLE = [0, 1, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN]
  * conductor banks cycle in CONDUCT_BANK_CYCLE order. Returns {idx, count} for
  * the active track's chain — mirrors the jog nav in _onCC_jog. */
 export function bankCyclePos() {
+    /* +1 on the melodic and drum counts: the jog's last stop is the SOUND +
+     * CONFIG screen (sound mode as a bank, 2026-08-23), so the bar shows one
+     * more segment than there are clip banks. Its own screen draws that last
+     * segment active (ui_sound renderBlocks); on the clip banks the idx never
+     * reaches it, which is exactly right — you are not there. Conductor tracks
+     * have no sound bank, so their count stays the cycle's own. */
     if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
         const i = BANK_CYCLE_DRUM.indexOf(S.activeBank);
-        return { idx: i < 0 ? 0 : i, count: BANK_CYCLE_DRUM.length };
+        return { idx: i < 0 ? 0 : i, count: BANK_CYCLE_DRUM.length + 1 };
     }
     if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT) {
         const i = CONDUCT_BANK_CYCLE.indexOf(S.activeBank);
         return { idx: i < 0 ? 0 : i, count: CONDUCT_BANK_CYCLE.length };
     }
-    return { idx: Math.max(0, Math.min(6, S.activeBank)), count: 7 };
+    return { idx: Math.max(0, Math.min(6, S.activeBank)), count: 8 };
 }
 
 /* Step-edit pitch nudge: move note up/down to next in-scale pitch.

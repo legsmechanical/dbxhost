@@ -100,27 +100,30 @@ eq(_clipIsEmpty(1, 2), true, '_clipIsEmpty drum empty (ignores clipNonEmpty)');
 S.drumClipNonEmpty[1][2] = true;
 eq(_clipIsEmpty(1, 2), false, '_clipIsEmpty drum non-empty');
 
-/* -- bankCyclePos() (ui.js:104-110): melodic track -> {idx: clamp(activeBank,0,6),
- *    count:7}; drum track -> i=BANK_CYCLE_DRUM.indexOf(activeBank) with
- *    BANK_CYCLE_DRUM=[7,0,1,3,5,6], {idx: i<0?0:i, count:6}. Reads
- *    S.trackPadMode[S.activeTrack] + S.activeBank. --
+/* -- bankCyclePos(): melodic track -> {idx: clamp(activeBank,0,6), count:8};
+ *    drum track -> i=BANK_CYCLE_DRUM.indexOf(activeBank) with
+ *    BANK_CYCLE_DRUM=[7,0,1,3,5,6], {idx: i<0?0:i, count:7}. Reads
+ *    S.trackPadMode[S.activeTrack] + S.activeBank.
+ *    Counts are ONE MORE than the clip-bank cycles since 2026-08-23: the last
+ *    segment is the SOUND + CONFIG screen, whose idx the clip banks never
+ *    reach (its own render draws the bar with idx = count-1). --
  * Melodic branch (trackPadMode 0): */
 S.activeTrack = 0;
 S.trackPadMode[0] = 0;
 S.activeBank = 3;
-eqObj(bankCyclePos(), { idx: 3, count: 7 }, 'bankCyclePos melodic mid');
+eqObj(bankCyclePos(), { idx: 3, count: 8 }, 'bankCyclePos melodic mid');
 S.activeBank = 9;                          /* clamp high -> 6 */
-eqObj(bankCyclePos(), { idx: 6, count: 7 }, 'bankCyclePos melodic clamp-high');
+eqObj(bankCyclePos(), { idx: 6, count: 8 }, 'bankCyclePos melodic clamp-high');
 S.activeBank = -2;                         /* clamp low -> 0 */
-eqObj(bankCyclePos(), { idx: 0, count: 7 }, 'bankCyclePos melodic clamp-low');
+eqObj(bankCyclePos(), { idx: 0, count: 8 }, 'bankCyclePos melodic clamp-low');
 /* Drum branch: indexOf into [7,0,1,3,5,6] */
 S.trackPadMode[0] = PAD_MODE_DRUM;
 S.activeBank = 7;                          /* indexOf(7) = 0 */
-eqObj(bankCyclePos(), { idx: 0, count: 6 }, 'bankCyclePos drum bank7');
+eqObj(bankCyclePos(), { idx: 0, count: 7 }, 'bankCyclePos drum bank7');
 S.activeBank = 6;                          /* indexOf(6) = 5 */
-eqObj(bankCyclePos(), { idx: 5, count: 6 }, 'bankCyclePos drum bank6');
+eqObj(bankCyclePos(), { idx: 5, count: 7 }, 'bankCyclePos drum bank6');
 S.activeBank = 2;                          /* indexOf(2) = -1 -> idx 0 */
-eqObj(bankCyclePos(), { idx: 0, count: 6 }, 'bankCyclePos drum not-in-cycle');
+eqObj(bankCyclePos(), { idx: 0, count: 7 }, 'bankCyclePos drum not-in-cycle');
 
 /* -- bankCyclePos() conductor branch (fix: bankCyclePos drift, phase 5b) --
  * A Conductor track jog-cycles 5 banks (see _onCC_jog / CONDUCT_BANK_CYCLE in
