@@ -64,6 +64,54 @@ else
     bad "the wait loop does not call shadow_ui_live"
 fi
 
+# 3b. The pad ticker runs between the splash and the freeze, and the freeze
+#     stops it BEFORE SIGSTOP (a stopped Move would never flush the kill).
+order=$(printf '%s\n' "$branch" | grep -o 'paint_splash\|start_ticker\|save_song\|freeze_move' | tr '\n' ' ')
+if [ "$order" = "paint_splash start_ticker save_song freeze_move " ]; then
+    ok "exited branch: splash → ticker → save → freeze"
+else
+    bad "exited branch order is '$order', want 'paint_splash start_ticker save_song freeze_move '"
+fi
+fm=$(code | sed -n '/^freeze_move()/,/^}/p')
+st=$(printf '%s\n' "$fm" | grep -n 'stop_ticker' | head -1 | cut -d: -f1)
+sp=$(printf '%s\n' "$fm" | grep -n 'kill -STOP' | head -1 | cut -d: -f1)
+if [ -n "$st" ] && [ -n "$sp" ] && [ "$st" -lt "$sp" ]; then
+    ok "freeze_move stops the ticker before SIGSTOP"
+else
+    bad "freeze_move does not stop the ticker before kill -STOP"
+fi
+# The ticker itself renders (no SHM needed in preview) and keeps a frame under
+# the ring's uint8 write_idx ceiling.
+T=../standalone/scripts/pad-ticker.py
+if out=$(python3 "$T" --preview 1 2>&1) && printf '%s' "$out" | grep -q 'period [0-9]* columns'; then
+    ok "pad-ticker.py renders a preview"
+else
+    bad "pad-ticker.py --preview failed: $out"
+fi
+python3 - "$T" <<'PY' && ok "a ticker frame is 32 pad packets (128 B) under the 252 B ring ceiling, notes 68..99" \
+                 || bad "pad-ticker frame/packet contract broke"
+import importlib.util, sys
+sp = importlib.util.spec_from_file_location("t", sys.argv[1]); t = importlib.util.module_from_spec(sp); sp.loader.exec_module(t)
+cols = t.columns(t.TEXT); pk = t.packets(t.frame(cols, 3), 120)
+assert len(pk) == 128 and len(pk) <= 252
+notes = sorted(pk[i + 2] for i in range(0, 128, 4)); assert notes == list(range(68, 100)), notes
+assert all(pk[i] == 0x09 and pk[i + 1] == 0x90 for i in range(0, 128, 4))
+assert t.pad_note(0, 0) == 92 and t.pad_note(3, 0) == 68 and t.pad_note(3, 7) == 75
+assert t.period(cols) > t.COLS * 2
+PY
+
+# 3c. The ticker ships: build.sh stages scripts/ by an explicit cp list.
+if grep -v '^[[:space:]]*#' ../scripts/build.sh | grep -q 'cp ./standalone/scripts/pad-ticker.py ./build/scripts/'; then
+    ok "build.sh stages pad-ticker.py into the payload"
+else
+    bad "build.sh does not stage pad-ticker.py — quiesce would silently skip the ticker on device"
+fi
+if grep -q "scripts/\*.py" ../standalone/scripts/install-host.sh; then
+    ok "install-host.sh chmods scripts/*.py"
+else
+    bad "install-host.sh leaves scripts/*.py non-executable (start_ticker tests -x)"
+fi
+
 # 4. Every progress line is stamped (launch.log has no timestamps of its own).
 if code | grep -q 'quiesce: ' ; then
     n=$(code | grep -c 'echo "quiesce:' || true)
