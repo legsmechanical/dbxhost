@@ -85,6 +85,20 @@ if code | grep -q 'quiesce: ' ; then
                         || bad "$n unstamped echo \"quiesce:\" line(s) — use say"
 fi
 
+# 5. save_song Pings for D-Bus liveness (short timeout) before the 4 s save —
+#    the returned Move can be deaf on D-Bus and stall the launch (dbxhost.md 81).
+sb=$(code | sed -n '/^save_song()/,/^}/p')
+ping_l=$(printf '%s\n' "$sb" | grep -n 'Peer.Ping' | head -1 | cut -d: -f1)
+save_l=$(printf '%s\n' "$sb" | grep -n 'saveSongIfDirty' | grep -v SKIPPED | head -1 | cut -d: -f1)
+if [ -n "$ping_l" ] && [ -n "$save_l" ] && [ "$ping_l" -lt "$save_l" ]; then
+    ok "save_song pings for D-Bus liveness before the save"
+else
+    bad "save_song does not gate the 4 s save on a fast liveness ping"
+fi
+printf '%s\n' "$sb" | grep -q 'reply-timeout="?800' || printf '%s\n' "$sb" | grep -q '800' \
+    && ok "the liveness ping uses a short (sub-second) timeout" \
+    || bad "the liveness ping has no short timeout — a deaf Move still stalls the launch"
+
 [ "$fail" -eq 0 ] && echo "PASS: quiesce order and zombie-aware wait are pinned" \
                   || echo "FAIL: quiesce-stock.sh regressed"
 exit "$fail"

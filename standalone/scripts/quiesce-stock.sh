@@ -109,12 +109,38 @@ freeze_move() {
 # pre-killing it (2026-08-15); Move is alive here, and this runs every launch.
 save_song() {
     pgrep -x MoveOriginal >/dev/null 2>&1 || return 0
-    dbus-send --system --print-reply --reply-timeout=4000 \
-        --dest=com.ableton.move \
-        /com/ableton/move/browser \
-        com.ableton.move.Browser.saveSongIfDirty string: \
-        >/dev/null 2>&1 && say "saveSongIfDirty done" \
-                        || say "saveSongIfDirty unavailable"
+
+    # ⚠ GATE the save on a fast liveness Ping, and NEVER block long on it.
+    # The Move that a Tools-menu launch quiesces is the one the PREVIOUS
+    # session left running (launch-standalone.sh restarts it on exit), and that
+    # Move can sit not answering com.ableton.move D-Bus at all — NoReply for the
+    # full reply-timeout, on every launch, well past its boot (measured
+    # 2026-08-23: ~15 ms on a systemd-booted Move, 4008 ms NoReply on the
+    # returned one). A freshly booted Move answers at once. So Ping first with a
+    # tight ceiling: if it does not answer, the save could not have run anyway
+    # and the 4 s wait bought nothing but a frozen-looking launch. (Why the
+    # returned Move goes deaf — a second MoveOriginal, an unclean D-Bus name
+    # hand-off — is a separate board item; this only stops the stall.)
+    _dbus() {  # method, extra-args...  — $1 timeout-ms
+        local to="$1"; shift
+        dbus-send --system --print-reply --reply-timeout="$to" \
+            --dest=com.ableton.move "$@" 2>&1
+    }
+    t0=$(date +%s%N 2>/dev/null || echo 0)
+    if ! _dbus 800 /com/ableton/move/browser org.freedesktop.DBus.Peer.Ping >/dev/null 2>&1; then
+        t1=$(date +%s%N 2>/dev/null || echo 0)
+        say "saveSongIfDirty SKIPPED — Move not answering D-Bus ($(( (t1 - t0) / 1000000 )) ms ping)"
+        return 0
+    fi
+    out=$(_dbus 4000 /com/ableton/move/browser com.ableton.move.Browser.saveSongIfDirty string:)
+    rc=$?
+    t1=$(date +%s%N 2>/dev/null || echo 0)
+    ms=$(( (t1 - t0) / 1000000 ))
+    if [ "$rc" = "0" ]; then
+        say "saveSongIfDirty done (${ms} ms)"
+    else
+        say "saveSongIfDirty FAILED rc=$rc after ${ms} ms: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"
+    fi
 }
 
 # "Still running" must mean RUNNING. Stock's shim reaps shadow_ui only inside
