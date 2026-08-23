@@ -1200,8 +1200,8 @@ function _drawProjectPadPicker_impl() {
          * the flow (this screen opens from that project's own menu) and by the
          * pad, which previews the colour live. `cp` stays for the guard. */
         void cp;
-        drawKitList(PROJECT_COLORS.map(c => ({ label: c.name, hdr: true })),
-                    p.colorPick.sel, {});
+        drawKitList(PROJECT_COLORS.map(c => ({ label: c.name })),
+                    p.colorPick.sel, {});   /* small font, like the menu's actions */
         return;
     }
 
