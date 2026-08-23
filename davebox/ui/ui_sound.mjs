@@ -3303,7 +3303,23 @@ export function soundOnCC(d1, d2, decodeDelta) {
             const cur = opts.indexOf(S.instrSel);
             S.instrSel = opts[((cur + (delta > 0 ? 1 : -1)) % opts.length + opts.length) % opts.length];
         } else if (S.view === VIEW_BLOCKS) {
-            S.pickRow = pickStep(delta);
+            const next = pickStep(delta);
+            /* This screen is also the SOUND + CONFIG bank — the one past the
+             * last clip bank on the jog (ui_input_cc's bank walk). So a left
+             * turn that cannot move the cursor any further up leaves the
+             * screen the way it was entered: back onto the clip bank the jog
+             * came from (`GS.activeBank` is untouched by sound mode, so that
+             * is wherever it already points). Back and jog-click keep their
+             * meanings; only the clamped top edge gains one.
+             * ⚠ Track flavour only. The session buses (Master/Send FX) are
+             * entered from the session FX list, not from a bank, so for them
+             * the top edge stays a clamp. */
+            if (next === S.pickRow && delta < 0 && !soundIsGlobal() && !S.enterSession) {
+                soundExit();
+                forceRedraw();
+                return true;
+            }
+            S.pickRow = next;
         } else if (S.view === VIEW_SLOTCFG) {
             slotCfgStep(delta);
         } else if (S.view === VIEW_KNOBS) {
@@ -3938,7 +3954,7 @@ function renderBlocks() {
      * earlier Move-bus title, "MOVE 2 - TRACK CONTROL", was 153px.) */
     drawKitHeader((S.bus && S.bus.kind !== 'move')
         ? S.bus.title
-        : ('TRACK (' + (S.track + 1) + ') SETTINGS'), false);
+        : trackTitle('SOUND + CONFIG'), false);
     /* ⚠⚠ This builds a NEW object per row, so anything set on the pickRow has to
      * be forwarded EXPLICITLY. It is the second time that has bitten: the doors
      * had no chevron for the same reason, and the grouping rules' flag reached

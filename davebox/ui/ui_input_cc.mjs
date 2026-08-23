@@ -901,6 +901,29 @@ function modalDialogUp() {
                     } else {
                         next = Math.min(6, Math.max(0, cur + delta));
                     }
+                    /* SOUND + CONFIG: one bank PAST the last clip bank is the
+                     * track's sound-mode screen (instrument, effects, sound
+                     * control, config) — reached by the same jog that walks the
+                     * clip banks, so a track's sound can be edited without
+                     * leaving track view. The top level's cursor clamps at its
+                     * first row and a further left turn there steps back to this
+                     * bank (soundOnCC), so the jog reads as ONE strip:
+                     * CLIP … AUTOMATION · SOUND + CONFIG · (its rows…).
+                     * Entry is the SAME door as Shift+Note (deferred to the
+                     * tick; the route picks the flavour), so nothing is
+                     * duplicated. `S.activeBank` is left on the last clip bank,
+                     * which is where the left turn out of sound mode lands —
+                     * it is not a persisted bank (Josh, 2026-08-23).
+                     * ⚠ Not for Conductor tracks: their cycle ends at WHEN
+                     * (Josh, 2026-08-23). */
+                    if (next === cur && delta > 0 && !isConductJog && !soundActive()) {
+                        S.globalMenuOpen = false;
+                        S.lastSentMenuEditValue = null;
+                        S.pendingSoundEnterTrack = S.activeTrack;
+                        S.bankSelectTick = -1;
+                        S.screenDirty = true;
+                        return;
+                    }
                     if (next !== cur) {
                         S.activeBank = next;
                         S.trackActiveBank[S.activeTrack] = next;

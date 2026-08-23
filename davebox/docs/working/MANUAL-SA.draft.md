@@ -315,6 +315,12 @@ covered in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), a
   bank or track, to return to the primary set.
 - The bank display falls back to a track overview after a moment. **Touch the jog**
   to bring it back.
+- The last stop on the jog is **SOUND + CONFIG** — the track's sound editor
+  (its instrument, effects, sound control and config), reached like any other
+  bank by turning right past the last one. Keep turning to move down its rows;
+  turning left past its top row returns to the bank you came from. Click and
+  Back work as they do when it's opened with **Shift + Note/Session**. Conductor
+  tracks don't have it.
 
 ## 3.6 The Settings menu
 
@@ -1156,7 +1162,9 @@ stopped sends a MIDI panic on every channel.
 
 
 **Shift + Note/Session** means "edit this track's sound" — one gesture, and where
-it lands follows the track's route. Playback carries on either way, and the pads
+it lands follows the track's route. The same screen is also the **SOUND + CONFIG**
+bank, one jog turn past the last [parameter bank](#35-parameter-banks), so you
+never have to leave the track's banks to reach it. Playback carries on either way, and the pads
 and step buttons stay with the sequencer, so you can keep playing while you dial.
 
 **Schwung tracks** open dAVEBOx's own sound editor. It starts on the track's
