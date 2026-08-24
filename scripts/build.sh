@@ -828,8 +828,22 @@ if [ -d ./standalone ]; then
     # the Schwung base it runs on. Harmless if this payload ever reaches a
     # stock install — the host honours the files only alongside a standalone
     # session-boot signal (select_phase / boot_tool.json).
+    # splash.hex        frame 0, for an older launcher that only knows this name
+    # splash-N.hex      the artwork pool — quiesce-stock picks one per launch
+    # splash2.hex       the TEXT screen the host's own boot splash draws
+    # splash_caption.txt kept for the fallback path in ensureCustomSplash
+    #
+    # ⭑ COMMITTED, not generated here: this build runs inside the cross-compile
+    # container, which has no node, and splash2.hex is rendered with the
+    # module's fonts (standalone/scripts/make-splashes.mjs). Regenerate that
+    # script's output when the art or src/host/version.txt changes —
+    # tests/host/test_splash_assets.sh fails if you forget.
     if [ -f ./standalone/assets/splash.hex ]; then
         cp ./standalone/assets/splash.hex ./build/splash.hex
+        for _sp in ./standalone/assets/splash-*.hex; do
+            [ -f "$_sp" ] && cp "$_sp" "./build/$(basename "$_sp")"
+        done
+        [ -f ./standalone/assets/splash2.hex ] && cp ./standalone/assets/splash2.hex ./build/splash2.hex
         printf 'Schwung base: %s\n' "$(cat ./src/host/version.txt)" > ./build/splash_caption.txt
     fi
     cp ./standalone/scripts/install-privileged.sh ./build/bless.sh

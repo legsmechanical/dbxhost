@@ -52,7 +52,12 @@ say() {
 # Paint the dAVEBOx splash into the STOCK shadow display before freezing, so
 # the frozen frame the panel retains through the whole entry gap is the
 # splash — the user sees "picked the tool → splash" within a second, and the
-# standalone host's own boot splash then replaces it with the same image.
+# standalone host's own boot splash then replaces it — with the TEXT screen
+# now (wordmark + Schwung base version), so the two screens say different
+# things instead of the same one twice.
+# ⭑ The artwork ROTATES (Josh, 2026-08-24): one of splash-0..N.hex at random,
+# a different face each launch. Falls back to the single splash.hex if the
+# numbered set is not installed, so an older payload still paints something.
 # Without this the retained frame is the stock Tools menu, which reads as a
 # hang (Josh, first hands-on 2026-08-15: "no indication that it's loading").
 # The shim keeps compositing /dev/shm/schwung-display for the frames between
@@ -63,10 +68,13 @@ say() {
 # splash.hex is row-major MSB-first; the python below converts.
 paint_splash() {
     [ -e /dev/shm/schwung-display ] || return 0
-    [ -f /data/UserData/dbx-host/splash.hex ] || return 0
     python3 - <<'PY' && say "splash painted into stock display"
-import mmap
-src = bytes.fromhex(open("/data/UserData/dbx-host/splash.hex").read().strip())
+import glob, mmap, os, random
+frames = sorted(glob.glob("/data/UserData/dbx-host/splash-*.hex"))
+pick = random.choice(frames) if frames else "/data/UserData/dbx-host/splash.hex"
+if not os.path.isfile(pick):
+    raise SystemExit(0)
+src = bytes.fromhex(open(pick).read().strip())
 out = bytearray(1024)
 for y in range(64):
     row = y * 16

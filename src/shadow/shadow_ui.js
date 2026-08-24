@@ -806,8 +806,22 @@ function ensureCustomSplash() {
     try {
         if (typeof host_file_exists !== "function") return;
         const sessionBoot = host_file_exists(HOST_STATE_ROOT + "/boot_tool.json");
-        if (!sessionBoot || !host_file_exists(HOST_STATE_ROOT + "/splash.hex")) return;
-        const hex = (host_read_file(HOST_STATE_ROOT + "/splash.hex") || "").trim();
+        if (!sessionBoot) return;
+        /* splash2.hex is the TEXT screen — wordmark over "Schwung base: x.y.z",
+         * pre-rendered at build time in the module's own fonts (the host half
+         * has only its single 6px `print`, and porting two glyph tables across
+         * the seam would be a second copy to keep in step forever). It replaces
+         * the artwork here on purpose: the INSTANT splash painted into the
+         * stock display is the artwork, and it rotates, so showing the same
+         * picture again for another 3 s said nothing (Josh, 2026-08-24).
+         * Falls back to splash.hex + caption when splash2 is absent, which is
+         * what an older payload on the device looks like. */
+        let file = "/splash2.hex", captioned = false;
+        if (!host_file_exists(HOST_STATE_ROOT + file)) {
+            file = "/splash.hex"; captioned = true;
+            if (!host_file_exists(HOST_STATE_ROOT + file)) return;
+        }
+        const hex = (host_read_file(HOST_STATE_ROOT + file) || "").trim();
         if (hex.length < 2048) return;
         const bits = new Uint8Array(1024);
         for (let i = 0; i < 1024; i++) {
@@ -816,9 +830,12 @@ function ensureCustomSplash() {
             bits[i] = b;
         }
         customSplash = bits;
-        customSplashCaption =
-            ((host_read_file(HOST_STATE_ROOT + "/splash_caption.txt") || "")
-                .split("\n")[0] || "").trim();
+        /* The text screen already CONTAINS the version, so a caption band over
+         * it would print it twice, in a different font, on top of itself. */
+        customSplashCaption = captioned
+            ? ((host_read_file(HOST_STATE_ROOT + "/splash_caption.txt") || "")
+                .split("\n")[0] || "").trim()
+            : "";
     } catch (e) { customSplash = null; }
 }
 
