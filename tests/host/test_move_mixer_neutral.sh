@@ -75,16 +75,33 @@ print("  ok   — mute, solo and trim cleared; pan left alone")
 PY
 
 # --- 3. idempotent, and it does not rewrite a healthy file ------------------
-before=$(stat -f %m "$lib/$uuid/My Project/Song.abl" 2>/dev/null || stat -c %Y "$lib/$uuid/My Project/Song.abl")
-sleep 1
+# ⚠⚠ Identity via PYTHON, not `stat`. This check spent a day red on Linux CI
+# while passing on macOS, and the sweep was innocent throughout: the old line was
+#     stat -f %m "$f" 2>/dev/null || stat -c %Y "$f"
+# meaning to be "BSD format, else GNU format". But GNU's `-f` is --file-system,
+# so on Linux it parses `%m` as a FILENAME (which fails, so the fallback runs and
+# appends the real mtime) and ALSO prints a filesystem block for "$f" first —
+# free-block counts included. Both readings therefore carried the runner's disk
+# free space, which drifts between two calls, and the test was comparing that.
+# ⭑ The lesson is not "quote it better": a probe assembled out of two tools'
+# incompatible flags can FAIL OPEN on one platform. python3 is already a hard
+# dependency of this file, so ask it directly and the question has one answer
+# everywhere.
+# ⭑⭑ INODE as well as mtime. The write path here is temp-sibling + rename, which
+# REPLACES the file — so the inode is the pin that cannot be fooled, and mtime
+# alone would miss a rewrite landing inside the same clock tick
+# (see the atomic-write lesson in auto-memory).
+ident() { python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(s.st_ino, s.st_mtime_ns)' "$1"; }
+song="$lib/$uuid/My Project/Song.abl"
+before=$(ident "$song")
 out=$(SETS_DIR="$lib" DBX_DIR="$lib/.dbx" sh standalone/scripts/project-cmd.sh normalize 2>&1)
-after=$(stat -f %m "$lib/$uuid/My Project/Song.abl" 2>/dev/null || stat -c %Y "$lib/$uuid/My Project/Song.abl")
+after=$(ident "$song")
 grep -q "1 project(s), 0 normalized" <<<"$out" \
     && ok "a healthy library reports nothing to do" \
     || bad "second pass did not report 0 normalized: $out"
 [ "$before" = "$after" ] \
     && ok "and does not rewrite the file (parse-only on a healthy library)" \
-    || bad "the sweep rewrote a file it did not need to — that is a write per project per launch"
+    || bad "the sweep rewrote a file it did not need to — that is a write per project per launch (inode/mtime $before -> $after)"
 [ -f "$lib/$uuid/My Project/Song.abl.tmp" ] \
     && bad "left a .tmp sibling behind" \
     || ok "no .tmp residue"

@@ -76,9 +76,19 @@ grep -q "if (row.divider) { fill_rect(0, y + (rowH >> 1) - 1, fillW, 1, 1); cont
     && ok "drawKitList draws a rule row centred in its band" \
     || bad "drawKitList no longer renders a divider row"
 # ⚠ A real row is a cursor STOP unless something steps over it.
-grep -q "S.pickRow = pickStep(delta);" ui/ui_sound.mjs \
-    && ok "the pick cursor steps OVER rules" \
-    || bad "the cursor no longer skips rules — the list stops on nothing"
+# Pinned in TWO places since 2026-08-24, after this check spent a day red for the
+# wrong reason: it matched the literal `S.pickRow = pickStep(delta);`, and the
+# SOUND + CONFIG arc split that line in two (the top row now has to test the
+# clamped edge before committing the move) without touching the mechanism at
+# all. A source pin that names one line is a pin on the LINE, not on the
+# behaviour — so the second grep below pins the part that actually matters and
+# survives the call site being rearranged again.
+grep -q "const next = pickStep(delta);" ui/ui_sound.mjs \
+    && ok "the jog's pick step goes through pickStep" \
+    || bad "the jog no longer routes its cursor move through pickStep"
+grep -q "kind !== 'div'" ui/ui_sound.mjs \
+    && ok "...and pickStep is what steps OVER the rules" \
+    || bad "pickStep no longer skips divider rows — the list stops on nothing"
 n=$(grep -c "kind !== 'div'" ui/ui_sound.mjs || true)
 [ "$n" -ge 1 ] && ok "pickStep knows what a rule is" \
                || bad "pickStep no longer recognises a rule row"
