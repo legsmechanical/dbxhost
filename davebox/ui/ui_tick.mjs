@@ -1271,12 +1271,22 @@ export function _tickImpl() {
         if (S.pendingSoundEnterTrack >= 0) {
             const _st = S.pendingSoundEnterTrack;
             S.pendingSoundEnterTrack = -1;
+            const _silent = S.pendingSoundEnterSilent;
+            S.pendingSoundEnterSilent = false;
             if (_st === S.activeTrack && !soundActive()) {
                 /* The ROUTE picks the flavour: a Move-routed track's sound is
                  * its Move instrument bus, a Schwung-routed one's is its chain.
                  * Slot is addressed directly per track — always resolvable. */
                 if (S.trackRoute[_st] === 1) soundEnterMove(_st);
                 else soundEnter(_st, schSlotForTrack(_st));
+                /* A RETURN, not a gesture: the user switched tracks, they did
+                 * not ask to see this screen. Both entry paths stamp the bank
+                 * display window unconditionally (Shift+Note NEEDS that — see
+                 * the 08-23 arm), so the return undoes it here rather than
+                 * teaching the entries a second meaning. Without this the
+                 * screen pops up over the track overview mid-switch, which is
+                 * the very thing the display-law fix removed. */
+                if (_silent) S.bankSelectTick = -1;
             }
         }
         /* Sound mode asking for Move's own editor (the SYNTH row of a Move bus).

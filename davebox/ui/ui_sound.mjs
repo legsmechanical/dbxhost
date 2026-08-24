@@ -704,6 +704,7 @@ export function soundEnter(track, slot) {
     if (GS.sessionView) return;
     S.active = true;
     takeBankIdentity(track);
+    GS.trackSoundOpen[track] = true;
     GS.bankSelectTick = GS.tickCount;   /* the banks' display window: the screen
                                          * shows, then falls back to the overview
                                          * unless the jog is touched (soundRender) */
@@ -786,6 +787,7 @@ function takeBankIdentity(track) {
 export function soundRetarget(track, slot) {
     flushForRetarget();
     takeBankIdentity(track);
+    GS.trackSoundOpen[track] = true;
 
     S.track = track;
     /* A SESSION bus is global — following the active track must not drag its
@@ -924,6 +926,11 @@ export function soundExit() {
      * against BANK_SOUND leaking into it) and is where you land now. */
     if (GS.activeBank === BANK_SOUND)
         GS.activeBank = GS.trackActiveBank[GS.activeTrack] | 0;
+    /* CLOSING forgets; LEAVING does not. This is the deliberate close (Back, or
+     * a left turn off the top of the bank), so the track stops being one that
+     * returns to SOUND + CONFIG. The track-switch site re-arms the bit straight
+     * after calling us, because arriving somewhere else is not closing this. */
+    if (!soundIsGlobal() && S.track >= 0) GS.trackSoundOpen[S.track] = false;
     clearBusContext();
     S.pendingAction = null;
     S.pendingDiscover = 0;
@@ -1480,6 +1487,7 @@ export function soundEnterMove(track) {
     if (S.active) flushForRetarget();
     S.active = true;
     takeBankIdentity(track);
+    GS.trackSoundOpen[track] = true;
     /* Only a genuine ENTRY opens the banks' display window. Arriving here as the
      * track-FOLLOW — Shift+jog stepping onto a Move-routed track, ui_tick's
      * reconcile block — is not a bank gesture, and stamping made the SOUND +

@@ -482,6 +482,18 @@ export function _switchActiveTrack(newT) {
         S.trackActiveBank[S.activeTrack] = S.activeBank;
     S.activeTrack = newT | 0;
     S.activeBank = S.trackActiveBank[S.activeTrack] | 0;
+    /* ...unless the track was LEFT on SOUND + CONFIG, which trackActiveBank
+     * cannot say (it never holds BANK_SOUND). Queued rather than opened here:
+     * entry drives shadow_get/set_param traffic that must run on the tick
+     * budget, which is what pendingSoundEnterTrack exists for — and tick's
+     * handler already declines when sound mode is still open, so the routes
+     * that FOLLOW the track (Shift+pad, launchers, remote UI) are unaffected.
+     * SILENT: arriving is not a bank gesture, so the display window stays shut
+     * and the screen behaves like any other bank — touch the jog to see it. */
+    if (S.trackSoundOpen[S.activeTrack]) {
+        S.pendingSoundEnterTrack = S.activeTrack;
+        S.pendingSoundEnterSilent = true;
+    }
     if (S.activeBank === 7) S.allLanesConfirmed = false;
     /* Focused-clip-by-default: ONLY while transport is running — entering a track
      * launches its focused clip so it's live. While stopped we do NOT arm (passive

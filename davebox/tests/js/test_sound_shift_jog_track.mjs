@@ -58,6 +58,8 @@ await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 
+const { BANK_SOUND } = await import('../../ui/ui_constants.mjs');
+
 const send  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 const shift = (on) => send(49, on ? 127 : 0);
 const turn  = () => send(14, 1);                 /* +1 detent */
@@ -202,6 +204,77 @@ step('⚠ a CLAMPED Shift+jog must NOT close sound mode (nothing moved)', () => 
         throw new Error('a clamped turn closed sound mode');
     snd.soundExit();
     S.activeTrack = 2; S.activeBank = 0;
+});
+
+step('⭑ ...but the track REMEMBERS it: leave and come back and SOUND + CONFIG is there', () => {
+    /* Josh, on device: "sound+config doesn't stick when i leave the track and
+     * come back. it lands on automation instead."
+     *
+     * The completion of "a bank is per-track". `trackActiveBank` deliberately
+     * never holds BANK_SOUND — it stores the jog-reachable clip bank and it is
+     * what the sidecar serializes — so on the way back it handed over the
+     * ORIGIN bank (AUTOMATION, the bank you jog right from to get here). The
+     * memory needs its own bit; `trackSoundOpen` is it.
+     *
+     * ⭑ SILENT on return. Arriving is not a bank gesture, so the display window
+     * must stay shut — otherwise the screen pops up over the track overview
+     * mid-switch, which is exactly what the display-law fix removed. */
+    snd.soundExit();
+    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackSoundOpen[t] = false; }
+    S.trackActiveBank[2] = 6;                  /* track 2's origin: AUTOMATION */
+    S.trackActiveBank[3] = 1;                  /* track 3's own bank */
+    S.activeTrack = 2;
+    S.ledInitComplete = true;
+    snd.soundEnter(2, 2);
+    if (S.activeBank !== BANK_SOUND) throw new Error('control: identity not taken');
+
+    shift(true);
+    turn(); globalThis.tick();                 /* 2 -> 3: closes, per the rule above */
+    if (S.activeTrack !== 3) throw new Error('control: did not step to 3');
+    if (snd.soundActive()) throw new Error('control: it followed instead of closing');
+    if (S.activeBank !== 1) throw new Error('control: track 3 did not get its own bank');
+
+    /* ...and back onto track 2, the one that was LEFT on the bank. Shift never
+     * lifts in between: this is one continuous scroll out and back, the gesture
+     * Josh described. */
+    S.bankSelectTick = -1;                     /* what the Shift edge's clear leaves */
+    send(14, 127); globalThis.tick();          /* 3 -> 2 */
+    const _stamp = S.bankSelectTick;           /* ⚠⚠ read with Shift still DOWN */
+    shift(false);
+    if (S.activeTrack !== 2)
+        throw new Error('did not step back to track 2 (' + S.activeTrack + ')');
+    if (!snd.soundActive())
+        throw new Error('SOUND + CONFIG did not stick — the track came back closed');
+    if (S.activeBank !== BANK_SOUND)
+        throw new Error('came back on bank ' + S.activeBank +
+                        (S.activeBank === 6 ? ' (AUTOMATION — the origin, Josh\'s report)' : ''));
+    if (_stamp >= 0)
+        throw new Error('the return opened the bank display window (tick ' + _stamp +
+                        ') — the screen pops up over the track overview mid-switch');
+    snd.soundExit();
+});
+
+step('⚠ a track CLOSED deliberately does not come back on SOUND + CONFIG', () => {
+    /* Leaving remembers; CLOSING forgets. Without this half the bit is
+     * write-only and every track you ever opened the screen on would re-open it
+     * forever — the opposite bug, and just as silent. */
+    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackSoundOpen[t] = false; }
+    S.trackActiveBank[2] = 6; S.trackActiveBank[3] = 1;
+    S.activeTrack = 2;
+    snd.soundEnter(2, 2);
+    snd.soundExit();                           /* the deliberate close (Back / left off the top) */
+    if (S.trackSoundOpen[2])
+        throw new Error('closing did not forget — the track will re-open the screen on return');
+
+    shift(true); turn(); globalThis.tick();            /* 2 -> 3 */
+    send(14, 127); globalThis.tick();                  /* 3 -> 2, back again */
+    shift(false);
+    if (S.activeTrack !== 2) throw new Error('control: did not return to track 2');
+    if (snd.soundActive())
+        throw new Error('a track closed deliberately re-opened SOUND + CONFIG on return');
+    if (S.activeBank !== 6)
+        throw new Error('expected track 2 on its origin AUTOMATION, got ' + S.activeBank);
+    S.activeBank = 0;
 });
 
 step('⚠ off the menu (slot settings), Shift+jog is NOT the track switch', () => {
