@@ -804,6 +804,11 @@ chmod +x ./build/scripts/post-update.sh
 if [ -d ./standalone ]; then
     cp ./standalone/scripts/quiesce-stock.sh ./build/scripts/
     cp ./standalone/scripts/exit-to-stock.sh ./build/scripts/
+    # blank-leds.py: writes every LED dark at launch, through the shadow-UI
+    # MIDI-out ring. A runtime dependency of BOTH legs — quiesce-stock.sh
+    # (stock ring, before the freeze) and launch.sh (our ring, during boot).
+    cp ./standalone/scripts/blank-leds.py ./build/scripts/
+    chmod +x ./build/scripts/blank-leds.py
     # set-swap.sh: the Design-B project-library swap engine — a runtime
     # dependency of launch.sh (session entry/exit) and of the blessed
     # davebox-restore boot recovery.

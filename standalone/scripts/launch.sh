@@ -272,6 +272,20 @@ setsid bash -c '
   # session entry does.
   rm -f "$DBX_DIR/relaunch_requested"
   while :; do
+    # Second leg of the LED blank, against OUR ring — the same two-leg shape the
+    # pad ticker had, for the same reason: leg 1 (quiesce-stock, stock ring)
+    # covers "tool picked -> frozen", then a dead gap where the panel holds,
+    # and this covers the boot of the new Move. Backgrounded with --wait
+    # because our ring does not exist until the shim creates it during that
+    # boot; it gives up quietly if it never appears.
+    # ⚠ NO APOSTROPHES anywhere in this block — the whole session body is one
+    # single-quoted bash -c string, so one would end it and every later line is
+    # reparsed as garbage, silently, in a detached launcher. This exact comment
+    # already broke it once.
+    if [ -x "$DBX_DIR/scripts/blank-leds.py" ]; then
+      python3 "$DBX_DIR/scripts/blank-leds.py" --shm /dev/shm/dbxhost-midi-out \
+        --wait 20 --rounds 8 >/dev/null 2>&1 &
+    fi
     echo "run LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal"
     env LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal
     if [ -f "$DBX_DIR/relaunch_requested" ]; then

@@ -66,7 +66,30 @@ say() {
 # ⚠ The display SHM is PAGE-PACKED (8 pages x 128 cols, byte = 8 vertical
 # pixels, bit 0 topmost — see movy grab-screen / display_server.c), while
 # splash.hex is row-major MSB-first; the python below converts.
+# Every LED dark, as early as the surface can be written (Josh, 2026-08-24:
+# "as early as possible when davebox is selected from stock tool menu").
+#
+# ⚠⚠ The shim boot LED-strip is NOT enough on its own, and a first attempt that
+# relied on it shipped without darkening anything: stripping stops Move
+# REPAINTING, but an LED holds its last physically-written value and the freeze
+# below catches a lit Tools menu. Only a write turns a pad off.
+#
+# blank-leds.py reaches the pads through the same shadow-UI MIDI-out ring the
+# old pad ticker used — which is why this works this early in the launch, and
+# was the lead Josh gave when the first attempt failed.
+blank_leds() {
+    [ -x "$DBX_DIR/scripts/blank-leds.py" ] || return 0
+    python3 "$DBX_DIR/scripts/blank-leds.py" --shm /dev/shm/schwung-midi-out \
+        >/dev/null 2>&1 && say "LEDs blanked (stock ring)"
+    return 0
+}
+
 paint_splash() {
+    # ⭑ Here rather than at the call sites: every path that reaches the freeze
+    # paints, and freeze_move paints again after the save, so one insertion
+    # covers all four routes and a new one inherits it. Writing dark twice is
+    # dark — the repeat also re-asserts after the save.
+    blank_leds
     [ -e /dev/shm/schwung-display ] || return 0
     python3 - <<'PY' && say "splash painted into stock display"
 import glob, mmap, os, random

@@ -884,18 +884,6 @@ static void shim_select_blank_move_leds(void);   /* defined with the gate below 
 #define BOOT_LED_BLANK_MAX_MS 20000
 static int boot_tool_led_blank = 0;
 static uint64_t boot_tool_led_blank_deadline_ms = 0;
-/* One-shot all-LEDs-off sweep at boot — see shim_select_blank_move_leds. The
- * CC list is the button set the module's own drainLedInit owns, so the two
- * agree on what "all LEDs" means; notes are pads 68-99 then steps 16-31. */
-static const uint8_t boot_led_off_ccs[] = {
-    16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
-    40, 41, 42, 43, 49, 50, 51, 52, 54, 55, 56, 58, 60, 62, 63,
-    71, 72, 73, 74, 75, 76, 77, 78, 85, 86, 88, 118, 119
-};
-#define BOOT_LED_OFF_NOTES 48    /* 32 pads + 16 step buttons */
-#define BOOT_LED_OFF_TOTAL (BOOT_LED_OFF_NOTES + (int)(sizeof(boot_led_off_ccs)))
-#define BOOT_LED_OFF_PER_FRAME 8
-static int boot_led_off_cursor = 0;
 /* Suppress plain volume-touch hide until touch is fully released after
  * Shift+Vol shortcut launches, avoiding a brief native volume flash. */
 static volatile int shadow_block_plain_volume_hide_until_release = 0;
@@ -6386,46 +6374,6 @@ static void shim_select_blank_move_leds(void)
         }
     }
 
-    /* ...and, at BOOT, actually turn them OFF (Josh, 2026-08-24: "turn off all
-     * leds as early as possible when davebox is selected ... and leave them
-     * off until davebox is loaded to project management ui").
-     *
-     * ⚠⚠ Stripping is not blanking. The strip above stops Move REPAINTING the
-     * pads, but an LED holds its last physically-written value — and the launch
-     * SIGSTOPs Move mid-Tools-menu, so what the surface holds is a lit stock
-     * menu, and it holds it through the whole teardown and splash. Nothing ever
-     * wrote zero. So write zero: once, spread over frames, into the slots the
-     * strip just freed.
-     *
-     * Boot only (`boot_tool_led_blank`) — a select_phase run happens mid-session
-     * where the suspending tool has already cleared its own LEDs, and painting
-     * over that would be work for no change.
-     *
-     * Bounded by construction: a cursor that only ever moves forward, a few
-     * writes per frame, and it stops for good when the sweep completes. No
-     * allocation, no scan, nothing that grows with the mailbox. */
-    if (boot_tool_led_blank && boot_led_off_cursor < BOOT_LED_OFF_TOTAL) {
-        int wrote = 0;
-        for (int i = 0; i < HW_MIDI_OUT_SIZE && wrote < BOOT_LED_OFF_PER_FRAME
-                        && boot_led_off_cursor < BOOT_LED_OFF_TOTAL; i += 4) {
-            if (midi_out[i] || midi_out[i + 1]) continue;   /* slot in use */
-            int c = boot_led_off_cursor++;
-            uint8_t status, d1;
-            if (c < BOOT_LED_OFF_NOTES) {
-                /* Pads 68-99 and step buttons 16-31 are NOTE LEDs. */
-                status = 0x90;
-                d1 = (c < 32) ? (uint8_t)(68 + c) : (uint8_t)(16 + (c - 32));
-            } else {
-                status = 0xB0;
-                d1 = boot_led_off_ccs[c - BOOT_LED_OFF_NOTES];
-            }
-            midi_out[i]     = (uint8_t)((status == 0x90) ? 0x09 : 0x0B);
-            midi_out[i + 1] = status;
-            midi_out[i + 2] = d1;
-            midi_out[i + 3] = 0;      /* velocity / value 0 == dark */
-            wrote++;
-        }
-    }
 }
 
 static void shim_select_gate_frame(const uint8_t *hw_midi, uint8_t *sh_midi)
