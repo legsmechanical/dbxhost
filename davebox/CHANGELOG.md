@@ -16,6 +16,11 @@ the section into a versioned heading at release time.
   MIDI-routed track sends standard MIDI volume (CC 7) on its channel.
 
 ### Fixes
+- **Double-and-fill can no longer half-work.** With a loop window set on a
+  long clip, Shift + Step 15 could say "LOOP DOUBLED" on screen while the
+  engine refused the doubling — leaving the display and the playing loop
+  disagreeing about the length. Both sides now agree: when it doesn't fit,
+  it says CLIP FULL and changes nothing.
 - **Knobs in the sound editor no longer snap back.** Turning a parameter —
   in the editor's own pages or a module's hosted canvas — could occasionally
   lose the change under the hood while the knob briefly showed it, and the

@@ -525,7 +525,13 @@ export function doDoubleFill() {
     } else if (S.trackPadMode[_t] === PAD_MODE_DRUM) {
         const _l   = S.activeDrumLane[_t];
         const _len = S.drumLaneLength[_t];
-        if (_len * 2 > 256) {
+        /* MIRROR the DSP's guard, loop_start included: the DSP refuses
+         * `ls + len*2 > 256` SILENTLY (sp_track_drum), so a JS check that
+         * ignores the loop window pops LOOP DOUBLED and doubles the local
+         * length while the engine kept the old one — a UI/DSP desync that
+         * reads as "loop double not working" (found 2026-08-24 while chasing
+         * exactly that report). Same fix on the melodic branch below. */
+        if ((S.drumLaneLoopStart[_t] | 0) + _len * 2 > 256) {
             showActionPopup('CLIP FULL');
         } else {
             S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
@@ -539,7 +545,8 @@ export function doDoubleFill() {
     } else {
         const _ac  = effectiveClip(_t);
         const _len = S.clipLength[_t][_ac];
-        if (_len * 2 > 256) {
+        /* loop_start included — see the drum branch's note. */
+        if ((S.clipLoopStart[_t][_ac] | 0) + _len * 2 > 256) {
             showActionPopup('CLIP FULL');
         } else {
             S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
