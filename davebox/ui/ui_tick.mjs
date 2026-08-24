@@ -1312,9 +1312,19 @@ export function _tickImpl() {
          *   the VIEW it was      | the view-binding check below -> soundExit
          *     called from        |
          *   OLED is ours         | co-run check below -> soundExit
-         *   track is active      | the follow below -> soundRetarget
+         *   track is active      | _switchActiveTrack -> soundExit (see below)
          *   route picks FLAVOUR  | the follow below -> soundEnterMove / retarget
          *   track HAS a sound    | the follow below -> soundExit (Ext only)
+         *
+         * ⚠ THE FOLLOW IS RETIRED for user gestures (Josh, 2026-08-24). A track
+         * switch now LEAVES sound mode, in _switchActiveTrack, for every route
+         * alike — the per-track `trackSoundOpen` memory reopens the screen on
+         * any track that was left on it, which is what made following
+         * redundant. `_switchActiveTrack` and the sidecar restore are the only
+         * two writers of S.activeTrack, so the branch below can now be reached
+         * ONLY from the restore, and only if sound mode were somehow open
+         * across a project load. Kept as a backstop rather than deleted,
+         * because that one path was not worth proving cold.
          *
          * Track ROUTE cannot change while sound mode is up (route is set only
          * from the global menu, and the two are mutually exclusive), so it

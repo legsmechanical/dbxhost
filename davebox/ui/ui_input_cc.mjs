@@ -811,15 +811,8 @@ function modalDialogUp() {
                          * switch, so sound mode's queued writes flush while the
                          * outgoing track is still their target (the same
                          * ordering flushForRetarget exists to protect). */
-                        if (soundActive()) {
-                            const _sndT = S.activeTrack;
-                            soundExit();
-                            /* soundExit CLOSES, and closing forgets. This is
-                             * LEAVING: the track keeps SOUND + CONFIG as the
-                             * bank it is on, so coming back lands there rather
-                             * than on the origin the exit just restored. */
-                            S.trackSoundOpen[_sndT] = true;
-                        }
+                        /* (Leaving sound mode is _switchActiveTrack's job now —
+                         * every switch route means the same thing.) */
                         extNoteOffAll();
                         handoffRecordingToTrack(next);
                         _switchActiveTrack(next);

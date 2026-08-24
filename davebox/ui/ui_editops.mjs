@@ -12,6 +12,7 @@ import {
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND
 } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
+import { soundActive, soundExit, soundIsGlobal } from './ui_sound.mjs';
 import { clipHasContent } from './ui_pure.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { effectiveClip, invalidateLEDCache, forceRedraw } from './ui_leds.mjs';
@@ -474,6 +475,33 @@ export function clearRow(rowIdx) {
  * Existing post-switch validity checks (e.g. drum-track hidden banks → 0)
  * still apply to the loaded value. Use at every site that assigns S.activeTrack. */
 export function _switchActiveTrack(newT) {
+    /* A track switch LEAVES sound mode — every route, no exceptions (Josh,
+     * 2026-08-24). SOUND + CONFIG is a BANK and a bank is per-track, so the new
+     * track lands on ITS bank; and because `trackSoundOpen` re-opens the screen
+     * for any track that was left on it, that IS "landing on SOUND + CONFIG"
+     * whenever the track was there.
+     *
+     * ⭑ That memory is what retired the old FOLLOW. The follow existed so you
+     * could switch tracks mid-edit and compare two sounds — but with the bank
+     * remembered per track you get the same thing by putting both tracks on it,
+     * and now Shift+pad, Shift+jog, the session launchers and the remote UI all
+     * mean the same thing. Josh, ruling it: "if 2 sounds mid-edit need
+     * comparing, both can just be set to the sound+config bank and they'll land
+     * there from shift+pad just like they would from shift+scroll."
+     *
+     * Here rather than at the switch SITES because there are six of them, and
+     * spreading this across them is what produced the earlier bugs of this
+     * shape. ⚠ A GLOBAL bus (Master/Send FX) is excluded: it is not a track's
+     * sound, so a track switch has nothing to say about it.
+     *
+     * LEAVING remembers, CLOSING forgets — so the bit is re-armed straight after
+     * the exit, which clears it. Before the switch, so sound mode's queued
+     * writes flush while the outgoing track is still their target. */
+    if (soundActive() && !soundIsGlobal()) {
+        const _sndT = S.activeTrack;
+        soundExit();
+        S.trackSoundOpen[_sndT] = true;
+    }
     /* NEVER persist BANK_SOUND: while sound mode is up the ORIGIN bank waits
      * in trackActiveBank, and overwriting it with the identity would strand
      * the outgoing track on a bank the jog cannot reach. (Shift+jog switches

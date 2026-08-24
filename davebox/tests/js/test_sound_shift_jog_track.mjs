@@ -59,6 +59,7 @@ const { S } = await import('../../ui/ui_state.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 
 const { BANK_SOUND } = await import('../../ui/ui_constants.mjs');
+const editops = await import('../../ui/ui_editops.mjs');
 
 const send  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 const shift = (on) => send(49, on ? 127 : 0);
@@ -275,6 +276,70 @@ step('⚠ a track CLOSED deliberately does not come back on SOUND + CONFIG', () 
     if (S.activeBank !== 6)
         throw new Error('expected track 2 on its origin AUTOMATION, got ' + S.activeBank);
     S.activeBank = 0;
+});
+
+step('⭑ Shift+PAD means exactly what Shift+jog means — one rule, every route', () => {
+    /* Josh, 2026-08-24, retiring the follow: "shift+pad should behave the same
+     * as scrolling. if 2 sounds mid-edit need comparing, both can just be set
+     * to the sound+config bank and they'll land there from shift+pad just like
+     * they would from shift+scroll, right?" — right. The per-track memory makes
+     * the follow redundant, so the exit moved into _switchActiveTrack and every
+     * switch route inherits it instead of six sites agreeing by hand.
+     *
+     * Bottom-row pads are notes TRACK_PAD_BASE(68)+track under Shift. */
+    const padSelect = (t) => globalThis.onMidiMessageInternal(
+        new Uint8Array([0x90, 68 + t, 127]));
+
+    snd.soundExit();
+    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackSoundOpen[t] = false; }
+    S.trackActiveBank[2] = 6;                  /* track 2's origin: AUTOMATION */
+    S.trackActiveBank[4] = 1;                  /* track 4's own bank */
+    S.activeTrack = 2;
+    S.sessionView = false;
+    S.ledInitComplete = true;
+    snd.soundEnter(2, 2);
+    if (S.activeBank !== BANK_SOUND) throw new Error('control: identity not taken');
+
+    shift(true);
+    padSelect(4); globalThis.tick();
+    if (S.activeTrack !== 4)
+        throw new Error('control: Shift+pad did not select track 4 (' + S.activeTrack + ')');
+    if (snd.soundActive())
+        throw new Error('Shift+pad still FOLLOWED the track — it must mean what the jog means');
+    if (S.activeBank !== 1)
+        throw new Error('track 4 did not get its own bank: ' + S.activeBank);
+
+    /* ...and back onto track 2, which was LEFT on the bank: it returns. */
+    padSelect(2); globalThis.tick();
+    const _stamp = S.bankSelectTick;           /* ⚠⚠ read with Shift still DOWN */
+    shift(false);
+    if (S.activeTrack !== 2) throw new Error('did not return to track 2');
+    if (!snd.soundActive())
+        throw new Error('Shift+pad back onto the track did not restore SOUND + CONFIG');
+    if (S.activeBank !== BANK_SOUND)
+        throw new Error('came back on bank ' + S.activeBank);
+    if (_stamp >= 0)
+        throw new Error('the return opened the bank display window (tick ' + _stamp + ')');
+    snd.soundExit();
+    S.activeBank = 0;
+});
+
+step('⚠ a SESSION bus is not a track sound — a track switch leaves it alone', () => {
+    /* The one exclusion in _switchActiveTrack. Master/Send FX are entered from
+     * the session FX list, not from a track, so a track switch has nothing to
+     * say about them — closing one would be the follow's mistake in reverse. */
+    snd.soundExit();
+    S.sessionView = true;
+    snd.soundEnterBuses();
+    send(3, 127); snd.soundTick(); globalThis.tick();   /* enter the bus */
+    if (!snd.soundIsGlobal()) throw new Error('control: not on a global bus');
+    const _before = snd.soundActive();
+    editops._switchActiveTrack(5);
+    if (!_before || !snd.soundActive())
+        throw new Error('a track switch closed a SESSION bus screen');
+    snd.soundExit();
+    S.sessionView = false;
+    S.activeTrack = 2; S.activeBank = 0;
 });
 
 step('⚠ off the menu (slot settings), Shift+jog is NOT the track switch', () => {
