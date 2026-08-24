@@ -114,6 +114,41 @@ step('session mixer banks (real dispatch): the mode list clamps both ways', () =
     S.sessionView = false;
 });
 
+step('⚠ a CLAMPED mixer turn must not discard the level cache (the flicker)', () => {
+    /* The clamp's own regression, found by Josh on device the day it landed:
+     * the branch invalidated all eight cached levels on EVERY turn, which was
+     * harmless while it wrapped (a turn always changed the mode, so the cache
+     * was genuinely stale) and destructive once it clamped — a track with no
+     * level draws no widget, so each blocked detent wiped the page and let the
+     * poll paint it back. The OLED flickered at both ends of the list.
+     *
+     * ⭑ POSITIVE CONTROL first: a REAL change must still invalidate, or this
+     * passes just as well against the invalidator deleted outright. */
+    S.ledInitComplete = true;
+    S.globalMenuOpen = false;
+    S.sessionView = true;
+    S.shiftHeld = false;
+
+    S.sessKnobMode = 1;
+    S.sessVolLevel.fill(0.5);
+    cc(14, 1);                                /* 1 -> 2: a real step */
+    if (S.sessVolLevel[0] !== -1)
+        throw new Error('control failed: a real mode change no longer re-reads the levels');
+
+    S.sessKnobMode = 3;                       /* SEND B, clamped */
+    S.sessVolLevel.fill(0.5);
+    cc(14, 1);
+    if (S.sessVolLevel.some((v) => v === -1))
+        throw new Error('a clamped turn at the END wiped the level cache — the mixer flickers');
+
+    S.sessKnobMode = 0;                       /* VOLUME, clamped */
+    S.sessVolLevel.fill(0.5);
+    cc(14, 127);
+    if (S.sessVolLevel.some((v) => v === -1))
+        throw new Error('a clamped turn at the START wiped the level cache — the mixer flickers');
+    S.sessionView = false;
+});
+
 step('source pin: the mixer mode walk does not modulo again (ui_input_cc)', () => {
     const src = readFileSync('ui/ui_input_cc.mjs', 'utf8');
     if (/sessKnobMode[^;]*%\s*4/.test(src))

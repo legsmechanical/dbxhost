@@ -812,9 +812,18 @@ function modalDialogUp() {
                      * Instrument picker took on 08-23: a list of choices has two
                      * ends, and rolling past one of them reads as the knob having
                      * skipped rather than as having arrived. */
+                    const _skPrev = S.sessKnobMode;
                     S.sessKnobMode = Math.max(0, Math.min(SESS_KNOB_MODES.length - 1,
                                                           S.sessKnobMode + (delta > 0 ? 1 : -1)));
-                    _sessInvalidateAllLevels();
+                    /* ⚠⚠ ONLY on a real change. The invalidator blanks all eight
+                     * cached levels to -1, and a track with no level draws NO
+                     * widget — so running it on a CLAMPED turn wiped the page
+                     * and let the poll paint it back in, once per detent: the
+                     * mixer flickered at both ends of the list (Josh, on device,
+                     * the day the clamp landed). The wrap never exposed this
+                     * because every turn used to change the mode, which is
+                     * exactly when discarding the cache is the right thing. */
+                    if (S.sessKnobMode !== _skPrev) _sessInvalidateAllLevels();
                     /* No popup: turning the jog while touching it now reveals
                      * the mixer page itself, which already names the mode in its
                      * header and shows all 8 tracks in it. A popup here would
