@@ -764,10 +764,13 @@ function modalDialogUp() {
                         const cur = S.globalMenuState.editValue !== null ? S.globalMenuState.editValue : item.get();
                         S.globalMenuState.editValue = Math.min(item.max, Math.max(item.min, cur + delta));
                     } else if (item && item.type === 'enum') {
+                        /* Clamp, never wrap (Josh, 2026-08-23) — same law as
+                         * menu_nav.adjustValue, which handles the other door
+                         * into the same edit. */
                         const opts = item.options || [];
                         const idx  = opts.indexOf(S.globalMenuState.editValue);
                         const sign = delta > 0 ? 1 : -1;
-                        S.globalMenuState.editValue = opts[((idx + sign) % opts.length + opts.length) % opts.length];
+                        S.globalMenuState.editValue = opts[Math.max(0, Math.min(opts.length - 1, idx + sign))];
                     }
                     S.screenDirty = true;
                 }

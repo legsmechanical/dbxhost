@@ -8,6 +8,10 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **Settings values stop at the ends of their lists.** In the Settings menu and
+  the track screens (Config rows, the Instrument picker), scrolling a value no
+  longer loops around from the last option to the first — overshooting a scroll
+  can't land you on the opposite extreme any more.
 - **The project screen is fully its own surface.** While it's open, only its
   controls do anything: pads pick projects (they no longer also play the loaded
   instrument), the jog navigates, Back closes, and hold-Delete / hold-Copy work

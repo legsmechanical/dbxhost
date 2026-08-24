@@ -211,12 +211,15 @@ function adjustValue(item, state, delta, shiftHeld) {
         const step = shiftHeld ? (item.fineStep || 1) : 1;
         newVal = clamp(currentVal + delta * step, item.min, item.max);
     } else if (item.type === MenuItemType.ENUM) {
-        /* For enums, use simple ±1 to cycle through options */
+        /* Enums step ±1 and CLAMP at the ends — no wrap-around (Josh,
+         * 2026-08-23: settings values stop at the beginning and end of their
+         * lists, so overshooting a scroll can never silently land you on the
+         * opposite extreme). */
         const opts = item.options || [];
         if (opts.length === 0) return false;
         const idx = opts.indexOf(currentVal);
         const sign = delta > 0 ? 1 : -1;
-        const newIdx = (idx + sign + opts.length) % opts.length;
+        const newIdx = Math.max(0, Math.min(opts.length - 1, idx + sign));
         newVal = opts[newIdx];
     } else {
         return false;

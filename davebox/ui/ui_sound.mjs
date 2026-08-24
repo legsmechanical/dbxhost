@@ -1698,10 +1698,14 @@ function slotCfgStep(delta) {
     }
     let v;
     if (s.opts) {
-        /* Enum: cycle the option list. Wrapping is right for a short closed set
-         * (Off/Poly/Chan), where clamping would strand you at an end. */
+        /* Enum: step the option list, CLAMPED at the ends. This used to wrap,
+         * with a comment defending it for short closed sets — overridden by
+         * Josh 2026-08-23: settings values stop at the beginning and end of
+         * their lists, everywhere, so a scroll can never overshoot onto the
+         * opposite extreme. (An end is one detent away from anywhere in a
+         * 3-option set; nothing is stranded.) */
         const cur = s.opts.indexOf(S.slotCfgVals[S.slotCfgIdx]);
-        v = s.opts[((cur + (delta > 0 ? 1 : -1)) % s.opts.length + s.opts.length) % s.opts.length];
+        v = s.opts[Math.max(0, Math.min(s.opts.length - 1, cur + (delta > 0 ? 1 : -1)))];
     } else {
         v = S.slotCfgVals[S.slotCfgIdx] + (delta > 0 ? s.step : -s.step);
         if (s.int) v = Math.round(v);
@@ -3327,7 +3331,9 @@ export function soundOnCC(d1, d2, decodeDelta) {
         } else if (S.view === VIEW_BLOCKS && S.instrEditing) {
             const opts = instrOptions(GS.trackRoute, S.track);
             const cur = opts.indexOf(S.instrSel);
-            S.instrSel = opts[((cur + (delta > 0 ? 1 : -1)) % opts.length + opts.length) % opts.length];
+            /* Clamp, never wrap (Josh, 2026-08-23) — the Instrument list is a
+             * settings value like any other. */
+            S.instrSel = opts[Math.max(0, Math.min(opts.length - 1, cur + (delta > 0 ? 1 : -1)))];
         } else if (S.view === VIEW_BLOCKS) {
             const next = pickStep(delta);
             /* This screen is also the SOUND + CONFIG bank — the one past the
