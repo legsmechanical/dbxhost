@@ -1476,10 +1476,17 @@ export function soundEnterMove(track) {
     /* Also the RETARGET path (the active track switched to a Move-routed one),
      * so anything queued against the previous track has to land first — while
      * that track is still the volume knob's target. */
+    const wasActive = S.active;
     if (S.active) flushForRetarget();
     S.active = true;
     takeBankIdentity(track);
-    GS.bankSelectTick = GS.tickCount;   /* same display window as soundEnter */
+    /* Only a genuine ENTRY opens the banks' display window. Arriving here as the
+     * track-FOLLOW — Shift+jog stepping onto a Move-routed track, ui_tick's
+     * reconcile block — is not a bank gesture, and stamping made the SOUND +
+     * CONFIG screen jump back over the track overview on every such step while
+     * every other bank stayed put. soundRetarget, the chain-side twin of this
+     * call, has never stamped; this is the two paths agreeing. (Josh, 2026-08-24) */
+    if (!wasActive) GS.bankSelectTick = GS.tickCount;   /* same display window as soundEnter */
     S.enterSession = false;
     S.track = track;
     S.slot = 0;                 /* move_fx: keys ignore the slot argument */

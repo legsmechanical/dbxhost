@@ -1510,8 +1510,17 @@ export function drawUI() {
 
     /* Auto bank idle display: lane info + automation graph + progress bar.
      * (While SOUND + CONFIG is up, activeBank is BANK_SOUND — not 6 — so the
-     * fallback overview takes the default branches by construction.) */
-    if (bank === 6 && !S.loopHeld && S.knobTouched < 0 && !inTimeout) {
+     * fallback overview takes the default branches by construction.)
+     *
+     * ⚠ Stands down while SHIFT is held (Josh, 2026-08-24). Shift in track view
+     * is the track-SWITCH modifier, and every other bank already yields to the
+     * track overview for it — the Shift edges clear jogTouched/bankSelectTick
+     * (see the MoveShift handler in ui_input_cc), which is exactly the flags
+     * `inTimeout` reads. This screen is PERSISTENT, so it never saw that clear
+     * and kept the graph up over the one read-out the gesture exists to show:
+     * which track you have landed on. A Shift+knob gesture is unaffected — a
+     * touched knob already takes the bank overview branch above this one. */
+    if (bank === 6 && !S.loopHeld && S.knobTouched < 0 && !inTimeout && !S.shiftHeld) {
         var _gt = S.activeTrack;
         var _gac = effectiveClip(_gt);
         var _gLane = S.ccActiveLane[_gt];

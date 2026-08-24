@@ -135,6 +135,50 @@ step('...and it clamps at the last track rather than wrapping', () => {
     S.activeTrack = 2;
 });
 
+step('⭑ the FOLLOW onto a Move-routed track does not re-open the display window', () => {
+    /* Josh, 2026-08-24: "Shift + jog scroll gesture to switch tracks shouldn't
+     * register the touch as a show bank gesture."
+     *
+     * SOUND + CONFIG obeys the clip banks' display law — it draws only while
+     * GS.jogTouched or the GS.bankSelectTick window is open, and the Shift
+     * EDGES clear both precisely so the OLED stays on the track overview while
+     * you switch. But the track-follow re-entered the Move flavour through
+     * soundEnterMove, which stamped the window as if the user had just walked
+     * onto the bank — so on a Move-routed track the screen jumped back over the
+     * overview on every step, while chain tracks (soundRetarget, which never
+     * stamped) behaved. The two paths now agree: only a genuine ENTRY stamps.
+     *
+     * ⭑ POSITIVE CONTROL first — a cold soundEnterMove must still stamp, or
+     * this passes just as well against a stamp deleted outright. */
+    snd.soundExit();
+    S.trackRoute[5] = 1;                       /* Move-routed */
+    S.bankSelectTick = -1;
+    snd.soundEnterMove(5);
+    if (S.bankSelectTick < 0)
+        throw new Error('control failed: a cold entry no longer opens the display window');
+
+    /* Now the FOLLOW: already inside sound mode, Shift+jog steps onto track 6,
+     * also Move-routed, and tick re-enters the Move flavour for it. */
+    S.trackRoute[6] = 1;
+    S.activeTrack = 5;
+    S.ledInitComplete = true;
+    S.bankSelectTick = -1;                     /* the Shift edge's clear */
+    shift(true);
+    turn();
+    globalThis.tick();                         /* ui_tick's follow runs here */
+    shift(false);
+    if (S.activeTrack !== 6)
+        throw new Error('control failed: the track did not step (' + S.activeTrack + ')');
+    if (snd.soundTrack() !== 6)
+        throw new Error('control failed: sound mode did not follow onto the Move track');
+    if (S.bankSelectTick >= 0)
+        throw new Error('the follow re-opened the bank display window (tick ' +
+                        S.bankSelectTick + ') — SOUND + CONFIG covers the track overview');
+    snd.soundExit();
+    S.trackRoute[5] = 0; S.trackRoute[6] = 0;
+    S.activeTrack = 2;
+});
+
 step('⚠ off the menu (slot settings), Shift+jog is NOT the track switch', () => {
     /* Sub-screens reached FROM the menu keep their own jog meaning — in a
      * module editor Shift+jog jumps param sections, which is the gesture this
