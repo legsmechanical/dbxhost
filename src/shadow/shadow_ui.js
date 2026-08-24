@@ -16463,9 +16463,26 @@ globalThis.tick = function() {
                     debugLog("OVERTAKE init phase: tick=" + overtakeInitTicks + " ledIdx=" + ledClearIndex);
                     /* Show loading screen while clearing LEDs. The label is
                      * "Loading..." unless a flow that KNOWS what is loading
-                     * set a richer one (the select gate: "Loading <project>"). */
-                    clear_screen();
-                    {
+                     * set a richer one (the select gate: "Loading <project>").
+                     *
+                     * ⭑ EXCEPT on a standalone boot with a custom splash, where
+                     * a bare "Loading..." is a THIRD screen between the splash
+                     * and the app for the sake of ~500 ms (Josh, 2026-08-24:
+                     * "is there any way to skip the Loading.... after the
+                     * schwung base screen?"). Holding the splash instead says
+                     * the same thing — still starting up — without a hand-off
+                     * to a screen that carries no more information than the one
+                     * it replaced. The WORK is untouched: LEDs still clear on
+                     * the same schedule and init still waits out the delay.
+                     *
+                     * ⚠ Only for the DEFAULT label. A richer one names the
+                     * project being loaded, which is real information and beats
+                     * the artwork; that path is unchanged. */
+                    ensureCustomSplash();
+                    if (customSplash && overtakeLoadingLabel === "Loading...") {
+                        drawCustomSplash();
+                    } else {
+                        clear_screen();
                         const _ll = truncateText(overtakeLoadingLabel, 21);
                         print(Math.max(0, Math.floor((128 - _ll.length * 6) / 2)), 28, _ll, 1);
                     }

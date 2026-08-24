@@ -96,5 +96,23 @@ awk "/python3 - <<'PY'/,/^PY\$/" standalone/scripts/quiesce-stock.sh \
     && bad "the PAINT step still rolls its own frame — the cache is decoration" \
     || ok "...and the paint step only reads the cached pick, never re-rolls"
 
+# --- 5. no third screen between the splash and the app ---------------------
+# Josh, 2026-08-24: "is there any way to skip the Loading.... after the schwung
+# base screen?" A bare "Loading..." carried no more information than the splash
+# it replaced, for the sake of ~500 ms of LED clearing. The overtake init now
+# HOLDS the splash instead — the work is unchanged, only the picture is.
+# ⚠ The richer label ("Loading <project>", set by the select gate) DOES carry
+# information and must still win; that is the second grep.
+ov=$(sed -n '/else if (overtakeInitPending)/,/const ledsCleared = clearLedBatch/p' src/shadow/shadow_ui.js)
+printf '%s' "$ov" | grep -q 'drawCustomSplash()' \
+    && ok "overtake init holds the splash instead of a bare Loading..." \
+    || bad "the Loading... screen is back between the splash and the app"
+printf '%s' "$ov" | grep -q 'overtakeLoadingLabel === "Loading\.\.\."' \
+    && ok "...only for the DEFAULT label — a named project still shows its name" \
+    || bad "the splash would hide 'Loading <project>', which is real information"
+printf '%s' "$ov" | grep -q 'overtakeLoadingLabel, 21' \
+    && ok "...and the label path still exists for that case" \
+    || bad "the labelled loading screen was removed entirely"
+
 [ "$fail" = "0" ] && printf 'PASS: splash payload is complete and current\n'
 exit $fail
