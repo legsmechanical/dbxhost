@@ -38,7 +38,8 @@ import {
     effectiveClip, paintCoRunSideButtons,
     bankHasAltParams, altIndicatorActive
 } from './ui_leds.mjs';
-import { soundRender } from './ui_sound.mjs';
+import { soundRender, soundActive, soundIsGlobal,
+         soundEnteredInSession } from './ui_sound.mjs';
 import { drawMenuHeader } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* ------------------------------------------------------------------ */
@@ -380,7 +381,13 @@ function drawMetroIndicator() {
     }
     if (S.sessionView) {
         const modeNames = ['Vol', 'Pan', 'SndA', 'SndB'];
-        const ml = modeNames[S.sessKnobMode];
+        /* ...and 'FX' for the bank one past SEND B. sessKnobMode deliberately
+         * stays on SEND B while the FX list is up (that is where a left turn
+         * back out lands), so the position has to be read from the screen
+         * itself or the indicator would claim SEND B while the jog is
+         * somewhere else — which is the whole reason this label exists. */
+        const ml = (soundActive() && soundIsGlobal() && soundEnteredInSession())
+                 ? 'FX' : modeNames[S.sessKnobMode];
         const mx = 128 - ml.length * 6;
         pixelPrint(mx, 22, ml, 1);
     }

@@ -847,6 +847,20 @@ function modalDialogUp() {
                      * because every turn used to change the mode, which is
                      * exactly when discarding the cache is the right thing. */
                     if (S.sessKnobMode !== _skPrev) _sessInvalidateAllLevels();
+                    /* MASTER + SEND FX: one step PAST the last mixer mode is the
+                     * session's own FX list, reached by the same jog that walks
+                     * the mixer modes — the session-view twin of SOUND + CONFIG
+                     * sitting one past AUTOMATION (Josh, 2026-08-24). The list's
+                     * cursor clamps at its first row and a further left turn
+                     * there steps back out to the mixer (soundOnCC), so the jog
+                     * reads as ONE strip: VOLUME … SEND B · FX · (its rows…).
+                     * Entry is the SAME door Shift+Note/Session uses, deferred
+                     * to the tick because opening reads the chain — nothing is
+                     * duplicated. `sessKnobMode` stays on SEND B, which is where
+                     * the left turn back out lands. */
+                    else if (delta > 0 && !soundActive()) {
+                        S.pendingBusMenu = true;
+                    }
                     /* No popup: turning the jog while touching it now reveals
                      * the mixer page itself, which already names the mode in its
                      * header and shows all 8 tracks in it. A popup here would

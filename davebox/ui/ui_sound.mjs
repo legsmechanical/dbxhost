@@ -659,6 +659,7 @@ export function soundPickStateForTest() {
  * drawn but never that they say the right thing — this pins the decision, and
  * the render test pins that the draw path runs. Exposes no mutation. */
 export function soundInflightForTest() { return S.inflight; }
+export function soundBusCountForTest() { return FX_BUSES.length; }
 export function soundValueForTest(key) { return S.values[key]; }
 export function soundKnobHudForTest() {
     const i = S.touchedIdx;
@@ -3425,7 +3426,23 @@ export function soundOnCC(d1, d2, decodeDelta) {
         const delta = decodeDelta(d2);
         if (!delta) return true;
         if (S.view === VIEW_BUSES) {
-            S.busIdx = listMove(FX_BUSES.length, S.busIdx, delta);
+            /* This list is also the session's FX BANK — the one past the last
+             * mixer mode on the jog. So a left turn that cannot move the cursor
+             * any further up leaves it the way it was entered: back onto the
+             * mixer, exactly as the track flavour's top row steps back onto the
+             * clip banks. Only the LIST does this; inside a bus the top edge
+             * stays a clamp, same as inside a module's editor. */
+            const _nextBus = listMove(FX_BUSES.length, S.busIdx, delta);
+            if (_nextBus === S.busIdx && delta < 0 && S.enterSession) {
+                soundExit();
+                forceRedraw();
+                return true;
+            }
+            S.busIdx = _nextBus;
+            /* Each turn re-opens the display window, as a mixer mode change
+             * does — without this the list would fall back to the overview
+             * mid-scroll, 2s after entry, with the cursor still moving. */
+            if (S.enterSession) GS.bankSelectTick = GS.tickCount;
         } else if (S.view === VIEW_BLOCKS && S.busLevelEditing) {
             const r = S.pickRows[S.pickRow];
             if (r && r.kind === 'buslevel') {
@@ -4480,6 +4497,15 @@ export function soundRender() {
      * other bank. Held gestures keep it up: an in-progress row edit, the knob
      * card (S.touchedIdx), the volume gesture and its readout window. Track
      * flavour only — the session buses are not banks and never yield. */
+    /* The session FX LIST obeys the same law, for the same reason: since
+     * 2026-08-24 it is the bank one past SEND B, so it shows while the jog is
+     * touched or the display window is open and otherwise stands down to the
+     * session overview. Its own rows (inside a bus) never yield — deeper
+     * screens are work in progress, exactly as in the track flavour. */
+    if (S.view === VIEW_BUSES && S.enterSession &&
+            S.touchedIdx < 0 && !S.volTouched &&
+            !GS.jogTouched && GS.bankSelectTick < 0)
+        return false;
     if (S.view === VIEW_BLOCKS && !soundIsGlobal() && !S.enterSession &&
             !S.instrEditing && !S.busLevelEditing &&
             S.touchedIdx < 0 && !S.volTouched &&

@@ -294,6 +294,94 @@ step('⭑ the identity NEVER persists: sidecar write + Shift+jog track switch', 
                         (S.activeBank === BANK_SOUND ? ' (still SOUND + CONFIG)' : ''));
 });
 
+/* ── the SESSION FX bank: the same idea, one view over ──────────────────────
+ *
+ * Josh, 2026-08-24: "can we have a master/send effects bank on session view
+ * after the mixer items that works like the track view sound/config bank?"
+ *
+ * The screen already existed (Shift+Note/Session opened it); what it lacked was
+ * a POSITION on the jog. So it is the same three-part contract as SOUND + CONFIG
+ * — reachable one step past the last mixer mode, steps back out from its top
+ * row, and obeys the banks' display law — and it is tested as that contract
+ * rather than as a new screen. */
+function sessReset() {
+    if (snd.soundActive()) snd.soundExit();
+    S.globalMenuOpen = false;
+    S.ledInitComplete = true;
+    S.stateLoading = false; S.bootSplashTicks = 0; S.awaitingProjectSelect = false;
+    S.loopHeld = false; S.shiftHeld = false; S.perfViewLocked = false;
+    S.sessionView = true;
+    S.sessKnobMode = 0;
+    S.knobTouched = -1; S.jogTouched = false; S.bankSelectTick = -1;
+    S.touchedIdx = -1;
+}
+
+step('control: the session mixer walk is live (VOLUME -> PAN)', () => {
+    sessReset();
+    right();
+    if (S.sessKnobMode !== 1) throw new Error('mixer mode did not step: ' + S.sessKnobMode);
+    if (snd.soundActive()) throw new Error('opened the FX list from the middle of the mixer');
+});
+
+step('⭑ right past the LAST mixer mode opens the session FX list', () => {
+    sessReset();
+    S.sessKnobMode = 3;                       /* SEND B, the last one */
+    right();
+    if (!snd.soundActive()) throw new Error('the FX list did not open');
+    if (!snd.soundIsGlobal()) throw new Error('opened a TRACK sound, not the session buses');
+    if (!snd.soundEnteredInSession()) throw new Error('not marked as entered from session view');
+    /* sessKnobMode stays put — it is where the left turn back out lands, the
+     * same way activeBank stays on the last clip bank in track view. */
+    if (S.sessKnobMode !== 3) throw new Error('the mixer position moved: ' + S.sessKnobMode);
+});
+
+step('⭑ ...and a left turn at its TOP ROW steps back out to the mixer', () => {
+    /* The half that makes it a bank rather than a destination. */
+    if (!snd.soundActive()) throw new Error('control: the list is not open');
+    left();
+    if (snd.soundActive()) throw new Error('the top row did not step back out');
+    if (S.sessKnobMode !== 3)
+        throw new Error('landed on mixer mode ' + S.sessKnobMode + ', not SEND B');
+});
+
+step('⚠ a left turn BELOW the top row moves the cursor, it does not exit', () => {
+    /* Positive control for the step above: prove the exit is the CLAMPED edge
+     * and not simply "any left turn". Needs more than one bus to be meaningful,
+     * which HAS_SEND_FX gives us; skip honestly if the build has only Master. */
+    sessReset();
+    S.sessKnobMode = 3; right();
+    if (!snd.soundActive()) throw new Error('control: list did not open');
+    const _n = snd.soundBusCountForTest();
+    if (_n < 2) { ok('   (skipped: this build has one bus, no interior row to test)'); return; }
+    right();                                   /* down one row */
+    if (!snd.soundActive()) throw new Error('a right turn inside the list exited it');
+    left();                                    /* back up to the top — must NOT exit */
+    if (!snd.soundActive()) throw new Error('a left turn from row 1 exited instead of moving');
+    left();                                    /* NOW at the top: this one exits */
+    if (snd.soundActive()) throw new Error('the top row did not step back out');
+});
+
+step('⭑ the FX list obeys the banks DISPLAY LAW (stands down to the overview)', () => {
+    sessReset();
+    S.sessKnobMode = 3; right();
+    if (!snd.soundActive()) throw new Error('control: list did not open');
+    /* Entry leaves the window open, so it DRAWS — the positive control. */
+    S.bankSelectTick = S.tickCount; S.jogTouched = false; S.touchedIdx = -1;
+    if (snd.soundRender() !== true)
+        throw new Error('control failed: the list does not draw even with the window open');
+    /* Window shut and nothing touched: it must yield so drawUI falls through to
+     * the session overview, exactly as a clip bank does in track view. */
+    S.bankSelectTick = -1; S.jogTouched = false; S.touchedIdx = -1; S.volTouched = false;
+    if (snd.soundRender() !== false)
+        throw new Error('the FX list held the screen with no gesture and no window — ' +
+                        'it covers the session overview');
+    /* ...and a jog touch brings it straight back. */
+    S.jogTouched = true;
+    if (snd.soundRender() !== true)
+        throw new Error('a jog touch did not bring the list back');
+    snd.soundExit(); S.jogTouched = false; S.sessionView = false;
+});
+
 step('⚠ a GLOBAL bus keeps its clamp: left at the top does not exit', () => {
     reset(PAD_MODE_MELODIC_SCALE, 0);
     S.sessionView = true;
