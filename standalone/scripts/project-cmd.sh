@@ -76,6 +76,17 @@ write_song_index() { # index
         "$SETTINGS_JSON" > "$_tmp" && mv -f "$_tmp" "$SETTINGS_JSON"
 }
 
+# The pad position of a project directory, or -1. The xattr IS the position —
+# same source do_list, do_new_at and Move's own picker read (see the header
+# note), so nothing here needs to keep a second opinion in step.
+song_index() { # set-dir
+    python3 -c 'import os,sys
+try:
+    print(int(os.getxattr(sys.argv[1], "user.song-index").decode()))
+except Exception:
+    print(-1)' "$1" 2>/dev/null || printf '%s\n' -1
+}
+
 do_list() {
     python3 - "$SETS_DIR" "$SETTINGS_JSON" "$OUT_JSON" "$DBX_SUBDIR_NAME" <<'PYEOF'
 import json, os, re, sys
@@ -394,6 +405,66 @@ PYEOF
 
 do_delete() { # index
     case "${1:-}" in *[!0-9]*|"") die "delete needs a numeric index" ;; esac
+
+    # ---- deleting the OPEN project (Josh, 2026-08-24) -----------------------
+    # Used to be refused outright, by two independent guards, because you cannot
+    # rmtree a set the host has loaded and expect the session to survive it. The
+    # answer is the one do_rename already uses for the same problem: don't do it
+    # NOW, hand it to the launcher to do after Move has exited, and restart in
+    # place. `relaunch_patch.sh` runs in exactly that window — no process holding
+    # the directory, and no dying Move able to save the set back into existence.
+    #
+    # The session comes back on the LOWEST remaining project, or, if that was the
+    # last one, on the picker (`reselect`), which is also what a fresh install
+    # shows. The guard below still stands for every path that has NOT arranged
+    # this — it is the accident that is refused, not the intent.
+    _open_del=""
+    [ -f "$ACTIVE_SET_PATH" ] && _open_del="$(head -n 1 "$ACTIVE_SET_PATH" | tr -d '[:space:]')"
+    if [ -n "$_open_del" ] && [ -d "$SETS_DIR/$_open_del" ] && \
+       [ "$(song_index "$SETS_DIR/$_open_del")" = "$1" ]; then
+        _next_idx="$(python3 - "$SETS_DIR" "$_open_del" <<'PYEOF'
+import os, re, sys
+sets_dir, skip = sys.argv[1], sys.argv[2]
+uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
+idxs = []
+for u in os.listdir(sets_dir):
+    if u == skip or not uuid_re.match(u):
+        continue
+    p = os.path.join(sets_dir, u)
+    if not os.path.isdir(p):
+        continue
+    try:
+        idxs.append(int(os.getxattr(p, "user.song-index").decode()))
+    except (OSError, ValueError):
+        pass
+print(min(idxs) if idxs else -1)
+PYEOF
+)"
+        save_song
+        # ⭑ rm -rf, not rmtree-in-python: this line is executed by the LAUNCHER
+        # long after this script is gone. Quote it the way do_rename quotes its
+        # mv — a set directory is a uuid, but $SETS_DIR need not be innocent.
+        printf 'rm -rf %s\n' \
+            "'$(printf '%s' "$SETS_DIR/$_open_del" | sed "s/'/'\\\\''/g")'" \
+            >> "$DBX_DIR/relaunch_patch.sh"
+        # ⚠ sync AFTER the rm, in the same deferred script — an unsynced rmtree
+        # can be undone by journal replay after a power cut (Josh, hardware,
+        # 2026-08-12), and that lesson does not stop applying because the delete
+        # moved into the launcher.
+        printf 'sync\n' >> "$DBX_DIR/relaunch_patch.sh"
+        if [ "$_next_idx" -ge 0 ] 2>/dev/null; then
+            printf '%s\n' "$_next_idx" > "$DBX_DIR/relaunch_song_index"
+        else
+            : > "$DBX_DIR/relaunch_reselect"
+        fi
+        : > "$DBX_DIR/relaunch_requested"
+        setsid sh -c '
+          sleep 1
+          pkill -x MoveOriginal
+        ' >/dev/null 2>&1 &
+        printf 'project-cmd: delete of OPEN project queued (Move restarting in place)\n'
+        return 0
+    fi
     python3 - "$SETS_DIR" "$SETTINGS_JSON" "$1" "$ACTIVE_SET_PATH" <<'PYEOF'
 import os, re, shutil, sys
 sets_dir, settings, idx = sys.argv[1], sys.argv[2], int(sys.argv[3])

@@ -1088,6 +1088,14 @@ function openPresets() {
     S.srcRows = [{ kind: 'user', label: 'User Presets' }];
     if (S.presetSpec) S.srcRows.push({ kind: 'baked', label: modLabel() + ' Presets' });
     S.srcRows.push({ kind: 'menu', label: 'Module Menu' });
+    /* Swap Module: the same thing Shift+click does on the block picker, offered
+     * here as a plain row (Josh, 2026-08-24). Shift+click is fine when you are
+     * LOOKING at the block list — the modifier reads as "not that block, the
+     * question of what it is". Inside a module's own canvas there is no block
+     * list on screen to shift-click, so without this row the gesture is simply
+     * unreachable from where you are. Last in the list, because it is still the
+     * destructive one: it throws away the sound you are editing. */
+    S.srcRows.push({ kind: 'swap', label: 'Swap Module' });
     if (S.presetSrcIdx >= S.srcRows.length) S.presetSrcIdx = 0;
     S.view = VIEW_PRESET_SRC;
 }
@@ -3732,6 +3740,10 @@ export function soundOnCC(d1, d2, decodeDelta) {
             if (!row) { /* nothing */ }
             else if (row.kind === 'baked') S.pendingAction = { t: 'baked' };
             else if (row.kind === 'menu')  S.pendingAction = { t: 'menu' };
+            /* Carries the CURRENT comp explicitly, exactly as the block-picker
+             * route does — openBrowse falls back to fx1 on a bus when handed
+             * nothing, which would silently browse the wrong block. */
+            else if (row.kind === 'swap')  S.pendingAction = { t: 'browse', comp: S.comp };
             else                           S.pendingAction = { t: 'usrlist' };
         }
         else if (S.view === VIEW_PRESET_LIST) {

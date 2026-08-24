@@ -916,7 +916,7 @@ function _pppDoRename_impl(k, name) {
          * that is the `reselect` arg (launcher re-arms fresh_session). A
          * rename inside a live session restarts back into the project, which
          * is what "restart in place" means there. */
-        p.restarting = true;
+        p.restarting = 'RENAMING';
         _pppCloseOverlays(p);
         S.screenDirty = true;
         saveState();
@@ -1068,7 +1068,33 @@ function _projectPadPickerTap_impl(k) {
     if (S.deleteHeld) {
         _pppCloseOverlays(p);
         if (!proj) { p.deleteIdx = -1; showActionPopup('EMPTY', 'PAD'); return; }
-        if (k === p.current) { p.deleteIdx = -1; showActionPopup('CANT DELETE', 'OPEN PROJ'); return; }
+        if (k === p.current) {
+            /* Deleting the project you are IN (Josh, 2026-08-24). It cannot
+             * happen underneath a running session, so it happens the way a
+             * rename of the open project already does: project-cmd queues the
+             * rm into relaunch_patch.sh and restarts Move in place, and the
+             * launcher runs it in the window after Move exits — nothing holding
+             * the directory, no dying save able to write it back. The session
+             * comes back on the lowest remaining project, or on the picker if
+             * that was the last one.
+             * ⚠ No saveState() here, unlike the rename: we would be writing
+             * this project's state into a directory that is about to be
+             * removed, and the shell's save_song is skipped for the same
+             * reason. Everything else about the gesture is unchanged — hold
+             * Delete, tap once to arm, tap again to confirm. */
+            if (p.deleteIdx === k) {
+                p.restarting = 'DELETING';
+                _pppCloseOverlays(p);
+                p.deleteIdx = -1;
+                S.screenDirty = true;
+                showActionPopup('DELETING', 'RESTARTING');
+                host_system_cmd('sh ' + PROJECT_CMD + ' delete ' + k);
+                return;
+            }
+            p.deleteIdx = k;
+            S.screenDirty = true;
+            return;
+        }
         if (p.deleteIdx === k) {
             host_system_cmd('sh ' + PROJECT_CMD + ' delete ' + k);
             const d = _pppRunList();
@@ -1154,8 +1180,11 @@ function _drawProjectPadPicker_impl() {
      * yes/no confirm keeps the shared DIALOG chassis (§5.0 — dialogs are the
      * host family, and it is transient). */
     if (p.restarting) {
+        /* `restarting` carries its VERB rather than a bare true — two gestures
+         * now take this path (rename of the open project, delete of it) and a
+         * screen that says RENAMING through a delete is worse than no screen. */
         drawKitBrandHeader();
-        drawKitList([{ label: 'RENAMING', hdr: true },
+        drawKitList([{ label: p.restarting, hdr: true },
                      { note: 'Restarting' }, { note: 'the session...' }], -1, {});
         return;
     }
@@ -1179,7 +1208,10 @@ function _drawProjectPadPicker_impl() {
         drawKitBrandHeader();
         drawKitList([{ label: 'DELETE ' + (dp ? dp.name : '?'), hdr: true },
                      { divider: true },
-                     { note: 'Tap the pad again' }], -1, {});
+                     { note: 'Tap the pad again' },
+                     ...(p.deleteIdx === p.current
+                         ? [{ note: 'This one is OPEN —' }, { note: 'session restarts' }]
+                         : [])], -1, {});
         return;
     }
     if (p.copySrcIdx >= 0) {
