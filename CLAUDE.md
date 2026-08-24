@@ -726,3 +726,24 @@ very modules davebox imports across the seam. `rebuild.py` walks `CODE_SUFFIX` e
 ## Dependencies
 
 QuickJS (`libs/quickjs/`), stb_image.h (`src/lib/`), curl (`libs/curl/`, download backend for catalog detection + manual refresh).
+
+## 🔁 Mutation testing: `tools/mutate.sh`, never a bare revert
+
+**Never `git checkout -- <file>` / `git restore` / `git clean` / `git stash` to undo a mutation.**
+Twice on 2026-08-24 that discarded work that had never been committed — and once the mutated file
+was **untracked**, which `git checkout` ignores entirely, so the "restored" tree was still mutated
+and the next run reported a pass that meant nothing.
+
+```sh
+tools/mutate.sh <file> <find> <replace> -- <test command...>
+```
+
+It refuses to start on a dirty tree (so the baseline is always committed), applies the mutation,
+runs the test, and restores on any exit — tracked and untracked alike.
+Exit **0** = caught (the test failed, as it should) · **1** = survived (the test does not pin that
+behaviour) · **2** = could not run.
+
+A workspace PreToolUse hook (`.claude/hooks/dirty-tree-guard.sh`) refuses those git verbs whenever
+the tree is dirty, so the mistake is not available rather than merely discouraged. It matches on the
+command string, so it also trips on commands that only *mention* those verbs — reword rather than
+weaken it.
