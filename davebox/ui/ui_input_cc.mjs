@@ -790,6 +790,28 @@ function modalDialogUp() {
                     /* Shift + jog (any view): step active track 0–7, clamp at ends */
                     const next = Math.min(NUM_TRACKS - 1, Math.max(0, S.activeTrack + delta));
                     if (next !== S.activeTrack) {
+                        /* SOUND + CONFIG is a BANK, and a bank is PER TRACK
+                         * (Josh, 2026-08-24). So this gesture closes it and the
+                         * new track lands on whatever bank IT was on, exactly
+                         * like every other bank. Before, ui_tick's reconcile
+                         * FOLLOWED the track and re-took the bank identity, so
+                         * every track you scrolled through reported SOUND +
+                         * CONFIG — visible only once the screen started standing
+                         * down for the switch, but true long before that.
+                         *
+                         * ⚠ Only THIS route. The follow is still right for the
+                         * other switch sites (Shift+pad, session launchers,
+                         * remote UI), where you are deep in a module's editor
+                         * and switching tracks to compare two sounds is the
+                         * whole point — that is what tick's reconcile is for.
+                         *
+                         * ⚠ Placed INSIDE the `next !== activeTrack` guard, so a
+                         * clamped turn at track 0 or 7 does not close the screen
+                         * for a gesture that moved nothing; and BEFORE the
+                         * switch, so sound mode's queued writes flush while the
+                         * outgoing track is still their target (the same
+                         * ordering flushForRetarget exists to protect). */
+                        if (soundActive()) soundExit();
                         extNoteOffAll();
                         handoffRecordingToTrack(next);
                         _switchActiveTrack(next);

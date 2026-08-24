@@ -135,55 +135,73 @@ step('...and it clamps at the last track rather than wrapping', () => {
     S.activeTrack = 2;
 });
 
-step('⭑ the FOLLOW onto a Move-routed track does not re-open the display window', () => {
-    /* Josh, 2026-08-24: "Shift + jog scroll gesture to switch tracks shouldn't
-     * register the touch as a show bank gesture."
+step('⭑ Shift+jog CLOSES sound mode — the new track keeps its OWN bank', () => {
+    /* Josh, 2026-08-24: "switching a track from the sound+config bank causes
+     * ALL tracks to land on the sound+config bank when scrolling through them."
      *
-     * SOUND + CONFIG obeys the clip banks' display law — it draws only while
-     * GS.jogTouched or the GS.bankSelectTick window is open, and the Shift
-     * EDGES clear both precisely so the OLED stays on the track overview while
-     * you switch. But the track-follow re-entered the Move flavour through
-     * soundEnterMove, which stamped the window as if the user had just walked
-     * onto the bank — so on a Move-routed track the screen jumped back over the
-     * overview on every step, while chain tracks (soundRetarget, which never
-     * stamped) behaved. The two paths now agree: only a genuine ENTRY stamps.
+     * SOUND + CONFIG is a BANK, and a bank is per-track. ui_tick's reconcile
+     * used to FOLLOW the track and re-take the bank identity, so every track
+     * you scrolled onto reported SOUND + CONFIG. Ruled (Josh): this route
+     * closes it. The follow stays for the OTHER switch sites — Shift+pad,
+     * session launchers, remote UI — where you are inside a module's editor and
+     * comparing two sounds across tracks is the point.
      *
-     * ⭑ POSITIVE CONTROL first — a cold soundEnterMove must still stamp, or
-     * this passes just as well against a stamp deleted outright. */
+     * ⭑ Move-routed on both sides, because that is the flavour that also
+     * re-stamped the display window (soundEnterMove) — one gesture, both
+     * failure modes. */
     snd.soundExit();
-    S.trackRoute[5] = 1;                       /* Move-routed */
-    S.bankSelectTick = -1;
-    snd.soundEnterMove(5);
-    if (S.bankSelectTick < 0)
-        throw new Error('control failed: a cold entry no longer opens the display window');
-
-    /* Now the FOLLOW: already inside sound mode, Shift+jog steps onto track 6,
-     * also Move-routed, and tick re-enters the Move flavour for it. */
-    S.trackRoute[6] = 1;
+    S.trackRoute[5] = 1; S.trackRoute[6] = 1;      /* Move-routed */
+    S.trackActiveBank[5] = 11;                     /* never persisted, but prove it is not read */
+    S.trackActiveBank[6] = 3;                      /* track 6's OWN bank */
     S.activeTrack = 5;
     S.ledInitComplete = true;
-    S.bankSelectTick = -1;                     /* the Shift edge's clear */
+    snd.soundEnterMove(5);
+    if (!snd.soundActive()) throw new Error('control failed: sound mode did not open');
+    if (S.activeBank !== 11)
+        throw new Error('control failed: the bank identity was not taken (' + S.activeBank + ')');
+
+    S.bankSelectTick = -1;                         /* the Shift edge's clear */
     shift(true);
     turn();
-    globalThis.tick();                         /* ui_tick's follow runs here */
+    globalThis.tick();                             /* ui_tick's reconcile runs here */
     /* ⚠⚠ READ THE FLAG WITH SHIFT STILL DOWN. The Shift RELEASE clears
      * bankSelectTick too (the MoveShift handler clears both edges), so a check
-     * placed after shift(false) reads -1 no matter what the follow did — the
-     * first version of this step passed with the bug restored, which is the
-     * only reason it is written this way. The window being shut mid-gesture is
-     * also the actual thing the user sees. */
+     * placed after shift(false) reads -1 no matter what happened — the first
+     * version of this step passed with the bug restored for exactly that
+     * reason. */
     const _stamp = S.bankSelectTick;
+    shift(false);
+
     if (S.activeTrack !== 6)
         throw new Error('control failed: the track did not step (' + S.activeTrack + ')');
-    if (snd.soundTrack() !== 6)
-        throw new Error('control failed: sound mode did not follow onto the Move track');
+    if (snd.soundActive())
+        throw new Error('sound mode followed the track — every track scrolled onto ' +
+                        'would report SOUND + CONFIG');
+    if (S.activeBank !== 3)
+        throw new Error("the new track did not land on its OWN bank: expected 3, got " +
+                        S.activeBank + (S.activeBank === 11 ? ' (still SOUND + CONFIG)' : ''));
     if (_stamp >= 0)
-        throw new Error('the follow re-opened the bank display window (tick ' +
-                        _stamp + ') — SOUND + CONFIG covers the track overview');
-    shift(false);
-    snd.soundExit();
+        throw new Error('the switch re-opened the bank display window (tick ' + _stamp + ')');
+
     S.trackRoute[5] = 0; S.trackRoute[6] = 0;
-    S.activeTrack = 2;
+    S.trackActiveBank[5] = 0; S.trackActiveBank[6] = 0;
+    S.activeTrack = 2; S.activeBank = 0;
+});
+
+step('⚠ a CLAMPED Shift+jog must NOT close sound mode (nothing moved)', () => {
+    /* The exit lives inside the `next !== activeTrack` guard. At track 7 a right
+     * turn moves nothing, so closing the screen would punish a gesture that did
+     * not happen — and it is the easy way to write this fix wrong. */
+    S.activeTrack = 7;
+    snd.soundEnter(7, 7);
+    if (!snd.soundActive()) throw new Error('control failed: sound mode did not open');
+    shift(true); turn(); globalThis.tick(); shift(false);
+    if (S.activeTrack !== 7)
+        throw new Error('the clamp broke: stepped to ' + S.activeTrack);
+    if (!snd.soundActive())
+        throw new Error('a clamped turn closed sound mode');
+    snd.soundExit();
+    S.activeTrack = 2; S.activeBank = 0;
 });
 
 step('⚠ off the menu (slot settings), Shift+jog is NOT the track switch', () => {

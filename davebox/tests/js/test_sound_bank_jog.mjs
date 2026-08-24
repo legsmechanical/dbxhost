@@ -273,19 +273,25 @@ step('⭑ the identity NEVER persists: sidecar write + Shift+jog track switch', 
     globalThis.host_write_file = () => true;
     if (S.trackActiveBank[2] !== 6) throw new Error('sidecar sync clobbered the origin: ' + S.trackActiveBank[2]);
     if (tab && tab[2] === BANK_SOUND) throw new Error('BANK_SOUND serialized into the sidecar');
-    /* Shift+jog switches tracks with sound mode open: the outgoing track's
-     * origin must survive, and the retarget re-takes the identity. */
+    /* Shift+jog switches tracks with sound mode open. RULED 2026-08-24 (Josh):
+     * SOUND + CONFIG is a BANK and a bank is per-track, so this gesture CLOSES
+     * it and the new track lands on its OWN origin — it does NOT follow.
+     * (Until then the reconcile re-took the identity on every step, so each
+     * track scrolled onto reported SOUND + CONFIG.) The outgoing track's origin
+     * must still survive the switch, which is what the rest of this step is for.
+     *
+     * ⚠ The follow itself is NOT retired — it still runs for the other switch
+     * sites (Shift+pad, session launchers, remote UI). Only this route exits. */
     S.trackActiveBank[3] = 2;
     send(49, 127);                        /* shift down */
-    send(14, 1); globalThis.tick();       /* track 2 -> 3, retarget on tick */
+    send(14, 1); globalThis.tick();       /* track 2 -> 3 */
     send(49, 0);
     if (S.activeTrack !== 3) throw new Error('control: track did not switch');
     if (S.trackActiveBank[2] !== 6) throw new Error('switch wrote the identity into track 2: ' + S.trackActiveBank[2]);
-    if (S.activeBank !== BANK_SOUND) throw new Error('retarget did not re-take the identity: ' + S.activeBank);
-    /* Exit lands on the NEW track's own origin. */
-    snd.soundTick(); toTop(); left();
-    if (snd.soundActive()) throw new Error('did not exit');
-    if (S.activeBank !== 2) throw new Error('exit did not restore track 3\'s origin: ' + S.activeBank);
+    if (snd.soundActive()) throw new Error('sound mode followed the Shift+jog switch');
+    if (S.activeBank !== 2)
+        throw new Error("the switch did not land on track 3's own origin: " + S.activeBank +
+                        (S.activeBank === BANK_SOUND ? ' (still SOUND + CONFIG)' : ''));
 });
 
 step('⚠ a GLOBAL bus keeps its clamp: left at the top does not exit', () => {
