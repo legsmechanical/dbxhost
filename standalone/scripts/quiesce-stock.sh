@@ -102,11 +102,26 @@ paint_splash() {
     # dark — the repeat also re-asserts after the save.
     blank_leds
     [ -e /dev/shm/schwung-display ] || return 0
-    python3 - <<'PY' && say "splash painted into stock display"
-import glob, mmap, os, random
-frames = sorted(glob.glob("/data/UserData/dbx-host/splash-*.hex"))
-pick = random.choice(frames) if frames else "/data/UserData/dbx-host/splash.hex"
-if not os.path.isfile(pick):
+    # ⭑ ONE frame per LAUNCH, not one per call (Josh, 2026-08-24: "the splash
+    # sometimes shows one for a brief second and then a different one"). This
+    # function runs TWICE on every route — once directly, then again inside
+    # freeze_move to re-assert after the save — and the pick used to be made
+    # inside the python each time, so the second call rolled a different face
+    # and the user watched it change. The choice is made once here, in the
+    # shell, and reused; rotation is between launches, which is the whole idea.
+    if [ -z "${SPLASH_PICK:-}" ]; then
+        SPLASH_PICK=$(python3 -c '
+import glob, os, random
+f = sorted(glob.glob("/data/UserData/dbx-host/splash-*.hex"))
+p = random.choice(f) if f else "/data/UserData/dbx-host/splash.hex"
+print(p if os.path.isfile(p) else "")')
+        export SPLASH_PICK
+    fi
+    [ -n "$SPLASH_PICK" ] || return 0
+    python3 - <<'PY' && say "splash painted into stock display ($SPLASH_PICK)"
+import mmap, os
+pick = os.environ.get("SPLASH_PICK", "")
+if not pick or not os.path.isfile(pick):
     raise SystemExit(0)
 src = bytes.fromhex(open(pick).read().strip())
 out = bytearray(1024)

@@ -80,6 +80,21 @@ grep -q 'splash2\.hex' scripts/build.sh \
 grep -q 'splash-\*\.hex' standalone/scripts/quiesce-stock.sh \
     && ok "the instant splash picks from the rotating set" \
     || bad "quiesce-stock still paints the single splash.hex — no rotation"
+# ⚠⚠ ONE frame per LAUNCH, not one per CALL. paint_splash runs TWICE on every
+# route (directly, then again inside freeze_move to re-assert after the save).
+# The first version picked inside the python each time, so the second paint
+# showed a DIFFERENT face and the user watched it change mid-launch — Josh saw
+# it immediately. The pick has to be cached across the two calls.
+grep -q 'SPLASH_PICK' standalone/scripts/quiesce-stock.sh \
+    && ok "the frame is chosen once per launch and reused" \
+    || bad "no cached pick — the second paint would roll a different splash"
+# The PAINTING step must be deterministic given the cached pick: it reads
+# SPLASH_PICK and never chooses. If the roll lives in the paint heredoc, the
+# cache is decoration and the second call changes the face again.
+awk "/python3 - <<'PY'/,/^PY\$/" standalone/scripts/quiesce-stock.sh \
+    | grep -q 'random' \
+    && bad "the PAINT step still rolls its own frame — the cache is decoration" \
+    || ok "...and the paint step only reads the cached pick, never re-rolls"
 
 [ "$fail" = "0" ] && printf 'PASS: splash payload is complete and current\n'
 exit $fail
