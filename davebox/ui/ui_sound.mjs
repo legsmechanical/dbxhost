@@ -420,6 +420,22 @@ const VOUCH_MAX_TRIES = 4;
  * most visible. Measured cost per get_param on device: ~2.6ms. */
 const POLL_PER_TICK = 3;
 const WRITES_PER_TICK = 2;      /* bound the per-tick SHM cost */
+/* ---- verify-and-rewrite (2026-08-24) ----
+ * A write is not DONE until a read confirms it. shadow_set_param is
+ * fire-and-forget in overtake mode: it waits <=8ms for the one-deep mailbox,
+ * then claims it, STOMPING any unconsumed request — so back-to-back writes on
+ * different keys silently lose the first whenever the shim is >8ms behind (a
+ * module load stalls SPI ~200ms; proven on device 2026-08-23 with
+ * junologue-chorus: mix=0.90 placed, mode=2 placed 8ms later, mix never
+ * reached the engine). The UI then shows the optimistic value until a poll or
+ * the hosted kit's cache flush re-reads the engine, and the knob SNAPS BACK.
+ * So: every drained write stays IN-FLIGHT — polls treat it like a pending
+ * write — until a budgeted verifier (one read per tick, ~2.9ms) reads it
+ * back. Match -> confirmed, drop. Mismatch -> REWRITE, up to
+ * INFLIGHT_TRIES, then log and accept the engine's value (a module whose
+ * readback genuinely disagrees would otherwise be rewritten forever). */
+const INFLIGHT_CONFIRM_TICKS = 2;   /* let the mailbox serve before reading */
+const INFLIGHT_TRIES = 3;
 const TOUCH_HOLD_TICKS = 45;
 
 const S = {
@@ -521,6 +537,7 @@ const S = {
     confirmIdx: 0,              /* 0 = No, 1 = Yes */
 
     pendingWrites: [],
+    inflight: [],               /* drained-but-unconfirmed writes: {slot,comp,key,val,tick,tries} */
     pendingDiscover: 0,
     /* Single-slot navigation queue. Knob edits were always deferred, but the
      * VIEW transitions are the expensive ones — a discovery pass is dozens of
@@ -641,6 +658,8 @@ export function soundPickStateForTest() {
  * goes down one set_pixel at a time, so a render stub can prove that lines were
  * drawn but never that they say the right thing — this pins the decision, and
  * the render test pins that the draw path runs. Exposes no mutation. */
+export function soundInflightForTest() { return S.inflight; }
+export function soundValueForTest(key) { return S.values[key]; }
 export function soundKnobHudForTest() {
     const i = S.touchedIdx;
     const a = i >= 0 ? S.knobAsn[i] : null;
@@ -733,7 +752,12 @@ function flushForRetarget() {
         S.volPending = false;
         writeVolLevel(S.slot, S.volLevel);
     }
-    for (const w of S.pendingWrites) engineSet(w.slot, w.comp, w.key, w.val);
+    for (const w of S.pendingWrites) {
+        engineSet(w.slot, w.comp, w.key, w.val);
+        /* Entries carry their own address, so the verifier can still confirm
+         * them after the retarget points the screen elsewhere. */
+        trackInflight(w.slot, w.comp, w.key, w.val);
+    }
     S.pendingWrites.length = 0;
     /* Slot params carry their own slot, so landing them here is correct rather
      * than merely tidy. */
@@ -888,6 +912,10 @@ export function soundExit() {
      * slot and comp, so landing them here is correct, not merely tidy. */
     for (const w of S.pendingWrites) engineSet(w.slot, w.comp, w.key, w.val);
     S.pendingWrites.length = 0;
+    /* Exit-flush is UNVERIFIED — soundTick stops running, so in-flight
+     * entries could never be checked. Accepted residual risk of the
+     * fire-and-forget mailbox on the way out. */
+    S.inflight.length = 0;
     if (S.busLevelDirty) engineSaveState();
     S.active = false;
     /* Hand the bank identity back: while the screen was up S.activeBank was
@@ -2924,6 +2952,11 @@ function pollValues(force) {
          * when the poll runs. */
         if (!force && S.pendingWrites.some(w => w.key === cell.key &&
                                                 w.comp === S.comp && w.slot === S.slot)) continue;
+        /* In-flight = drained but unconfirmed. Shielded even on a FORCED poll:
+         * the engine is allowed to be stale (or to have LOST the write — the
+         * fire-and-forget mailbox) for these keys until the verifier settles
+         * them; reading them back now is how the knob used to snap back. */
+        if (inflightFor(S.slot, S.comp, cell.key)) continue;
         if (!force && S.touchedIdx >= 0 && bank.cells[S.touchedIdx] &&
             bank.cells[S.touchedIdx].key === cell.key) continue;
         const raw = engineGet(S.slot, S.comp, cell.key);
@@ -2943,6 +2976,67 @@ function pollValues(force) {
         }
     }
     S.dirty = true;
+}
+
+/* A drained write enters the in-flight ledger; coalesced by address so a
+ * fast sweep keeps ONE entry carrying the newest value. */
+function trackInflight(slot, comp, key, val) {
+    for (const w of S.inflight) {
+        if (w.key === key && w.comp === comp && w.slot === slot) {
+            w.val = val; w.tick = S.tickCount; w.tries = 0; return;
+        }
+    }
+    S.inflight.push({ slot, comp, key, val, tick: S.tickCount, tries: 0 });
+}
+
+function inflightFor(slot, comp, key) {
+    return S.inflight.find(w => w.key === key && w.comp === comp && w.slot === slot) || null;
+}
+
+/* Does the engine's readback SAY the write landed? Tolerant on purpose:
+ * floats come back reformatted ("0.9" -> "0.900000"), and an enum written as
+ * an INDEX may echo as its option STRING (junologue-chorus mode: wrote "2",
+ * read "II") — a re-quantizing engine must read as CONFIRMED, or the
+ * verifier rewrites in a loop. */
+function engineEcho(w, raw) {
+    if (raw == null) return false;
+    const rs = String(raw).trim(), ws = String(w.val).trim();
+    if (rs === ws) return true;
+    const rn = parseFloat(rs), wn = parseFloat(ws);
+    if (isFinite(rn) && isFinite(wn) && /^[-+0-9.eE]+$/.test(rs))
+        return Math.abs(rn - wn) <= Math.max(1e-3, Math.abs(wn) * 1e-3);
+    if (isFinite(wn)) {
+        /* index -> option string, via the cell if the bank still shows it */
+        for (const b of S.banks) {
+            for (const c of (b.cells || [])) {
+                if (c && c.key === w.key && c.options && c.options.length) {
+                    const opt = c.options[Math.round(wn)];
+                    return opt != null && String(opt).trim() === rs;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/* One verification per tick, oldest first. Skips a key that has a NEWER write
+ * still queued — verify the value that will actually stand. */
+function verifyInflight() {
+    if (!S.inflight.length) return;
+    const w = S.inflight[0];
+    if (S.tickCount - w.tick < INFLIGHT_CONFIRM_TICKS) return;
+    if (S.pendingWrites.some(p => p.key === w.key && p.comp === w.comp && p.slot === w.slot))
+        return;
+    const raw = engineGet(w.slot, w.comp, w.key);
+    if (engineEcho(w, raw)) { S.inflight.shift(); return; }
+    if (++w.tries > INFLIGHT_TRIES) {
+        log('write UNCONFIRMED after ' + INFLIGHT_TRIES + ' rewrites: ' +
+            w.comp + ':' + w.key + '=' + w.val + ' engine=' + raw);
+        S.inflight.shift();
+        return;
+    }
+    engineSet(w.slot, w.comp, w.key, w.val);   /* the rewrite */
+    w.tick = S.tickCount;
 }
 
 /* Queue rather than write. Coalesces by key so a fast sweep costs one write per
@@ -3893,11 +3987,14 @@ export function soundTick() {
         }
     }
 
-    /* Drain a bounded number of queued writes. */
+    /* Drain a bounded number of queued writes. Each drained write enters the
+     * in-flight ledger — it is not DONE until verifyInflight reads it back. */
     for (let n = 0; n < WRITES_PER_TICK && S.pendingWrites.length; n++) {
         const w = S.pendingWrites.shift();
         engineSet(w.slot, w.comp, w.key, w.val);
+        trackInflight(w.slot, w.comp, w.key, w.val);
     }
+    verifyInflight();
     drainSlotWrites();
     drainForcedPoll();
 
@@ -4118,8 +4215,20 @@ function hostedCtx() {
         print: (x, y, t, c) => print(x | 0, y | 0, String(t), c ? 1 : 0),
         measureText: (s) => (typeof text_width === 'function'
             ? text_width(String(s)) : String(s).length * 6),
-        getParam: (k) => engineGet(S.slot, S.comp, k),
-        setParam: (k, v) => engineSet(S.slot, S.comp, k, String(v)),
+        /* Same verify-and-rewrite contract as the generated EDIT view: the
+         * kit's 2x/sec cache flush re-reads every key, and a flush landing
+         * after a write the mailbox LOST is exactly the hosted flavour of
+         * "the knob resets". Reads serve the in-flight value until the
+         * verifier confirms it; writes enter the ledger. */
+        getParam: (k) => {
+            const w = inflightFor(S.slot, S.comp, k);
+            return w ? String(w.val) : engineGet(S.slot, S.comp, k);
+        },
+        setParam: (k, v) => {
+            const r = engineSet(S.slot, S.comp, k, String(v));
+            trackInflight(S.slot, S.comp, k, String(v));
+            return r;
+        },
         /* The canvas persists its own bank index through these. Keyed per
          * MODULE so reopening a block returns to the page you left it on —
          * S.hostedValue used to be a single slot wiped by hostedReset(), so

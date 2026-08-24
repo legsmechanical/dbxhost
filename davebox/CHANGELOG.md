@@ -7,6 +7,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixes
+- **Knobs in the sound editor no longer snap back.** Turning a parameter —
+  in the editor's own pages or a module's hosted canvas — could occasionally
+  lose the change under the hood while the knob briefly showed it, and the
+  display would then jump back (first documented on the Junologue Chorus).
+  Every change is now read back and re-sent until the engine confirms it.
+
 ### Features
 - **Settings values stop at the ends of their lists.** In the Settings menu and
   the track screens (Config rows, the Instrument picker), scrolling a value no
