@@ -898,11 +898,21 @@ export function drawUI() {
      * retains it across the hand-back to stock, so it must win over every
      * other screen. Same grammar as the LOADING screen (verb, then subject). */
     if (S.exitFarewell !== 0) {
+        /* Wordmark over the verb, in the app's own fonts (Josh, 2026-08-24) —
+         * deliberately the SAME layout and the same two fonts as the boot text
+         * screen, so the session opens and closes on one face instead of two.
+         * The name goes FIRST now: it is the subject, and "Exiting..." is what
+         * is happening to it.
+         *
+         * ⭑ hdrPrint prints VERBATIM — the header font carries real lowercase
+         * d/x glyphs, and uppercasing would destroy the mark. Host `print` is
+         * gone from here: it is one fixed 6px face, which is why this screen
+         * used to read as a system message rather than as ours. */
         clear_screen();
-        const _xl = 'EXITING';
-        print(Math.max(0, Math.floor((128 - _xl.length * 6) / 2)), 20, _xl, 1);
         const _xn = 'dAVEBOx';
-        print(Math.max(0, Math.floor((128 - _xn.length * 6) / 2)), 34, _xn, 1);
+        hdrPrint(Math.max(0, Math.round((128 - hdrWidth(_xn)) / 2)), 26, _xn, 1);
+        const _xl = 'Exiting...';
+        mvPrint(Math.max(0, Math.round((128 - mvWidth(_xl)) / 2)), 40, _xl, 1);
         return;
     }
 
