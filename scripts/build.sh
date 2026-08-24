@@ -805,8 +805,9 @@ if [ -d ./standalone ]; then
     cp ./standalone/scripts/quiesce-stock.sh ./build/scripts/
     cp ./standalone/scripts/exit-to-stock.sh ./build/scripts/
     # blank-leds.py: writes every LED dark at launch, through the shadow-UI
-    # MIDI-out ring. A runtime dependency of BOTH legs — quiesce-stock.sh
-    # (stock ring, before the freeze) and launch.sh (our ring, during boot).
+    # MIDI-out ring. A runtime dependency of quiesce-stock.sh, which blanks
+    # while STOCK still owns the surface — the only window where the write
+    # survives (our own shim strips cable-0 LED writes for the whole boot).
     cp ./standalone/scripts/blank-leds.py ./build/scripts/
     chmod +x ./build/scripts/blank-leds.py
     # set-swap.sh: the Design-B project-library swap engine — a runtime

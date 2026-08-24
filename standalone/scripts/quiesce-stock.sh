@@ -77,10 +77,21 @@ say() {
 # blank-leds.py reaches the pads through the same shadow-UI MIDI-out ring the
 # old pad ticker used — which is why this works this early in the launch, and
 # was the lead Josh gave when the first attempt failed.
+# ⚠⚠ ABSOLUTE PATH, like everything else in this file. The first version used
+# "$DBX_DIR/scripts/..." — and DBX_DIR is never DEFINED here (this script is run
+# as `sh quiesce-stock.sh`, not sourced from the launcher). It expanded to
+# empty, the -x test failed, and the function returned 0 in silence: the whole
+# feature shipped, twice, doing nothing. A guard that skips quietly on a
+# misspelled path is indistinguishable from a feature that ran.
+BLANK_LEDS=/data/UserData/dbx-host/scripts/blank-leds.py
 blank_leds() {
-    [ -x "$DBX_DIR/scripts/blank-leds.py" ] || return 0
-    python3 "$DBX_DIR/scripts/blank-leds.py" --shm /dev/shm/schwung-midi-out \
-        >/dev/null 2>&1 && say "LEDs blanked (stock ring)"
+    if [ ! -x "$BLANK_LEDS" ]; then
+        say "WARNING: $BLANK_LEDS missing — LEDs will hold the stock menu"
+        return 0
+    fi
+    python3 "$BLANK_LEDS" --shm /dev/shm/schwung-midi-out >/dev/null 2>&1 \
+        && say "LEDs blanked (stock ring)" \
+        || say "WARNING: LED blank failed"
     return 0
 }
 

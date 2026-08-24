@@ -71,9 +71,32 @@ grep -q 'blank-leds.py' standalone/scripts/quiesce-stock.sh \
 grep -q 'blank_leds' standalone/scripts/quiesce-stock.sh \
     && ok "...and paint_splash carries the call, so every route inherits it" \
     || bad "the blank is not wired into paint_splash"
+# ⚠⚠ THE BUG THAT SHIPPED TWICE: the call used "$DBX_DIR/scripts/blank-leds.py",
+# and DBX_DIR is never DEFINED in quiesce-stock.sh (it is run as a script, not
+# sourced from the launcher). It expanded to empty, the -x test failed, and the
+# function returned 0 in silence — the feature shipped doing nothing, and looked
+# wired the whole time because the grep above passed. So: assert the path is
+# ABSOLUTE and that it is the path the installer actually writes to.
+grep -qE 'BLANK_LEDS=/data/UserData/dbx-host/scripts/blank-leds\.py' standalone/scripts/quiesce-stock.sh \
+    && ok "leg 1 names an ABSOLUTE path (no undefined variable to expand to nothing)" \
+    || bad "the blank path is not absolute — an unset variable makes it a silent no-op"
+grep -q 'DBX_DIR' standalone/scripts/quiesce-stock.sh && {
+    # only the explanatory comment may mention it
+    if grep 'DBX_DIR' standalone/scripts/quiesce-stock.sh | grep -qv '^#'; then
+        bad "quiesce-stock.sh USES \$DBX_DIR, which it never defines"
+    else
+        ok "...and \$DBX_DIR appears only in the comment explaining why not"
+    fi
+}
+grep -q 'WARNING' standalone/scripts/quiesce-stock.sh \
+    && ok "a missing script SAYS SO instead of skipping quietly" \
+    || bad "the blank still fails silently when the script is absent"
+# ⭑ There is deliberately NO second leg. Writing note-offs down OUR ring during
+# boot cannot work: the shim drains the ring into the outgoing mailbox and then
+# strips every cable-0 LED write from it while boot_tool_led_blank is armed.
 grep -q 'blank-leds.py' standalone/scripts/launch.sh \
-    && ok "leg 2: launch.sh blanks our ring during the boot of the new Move" \
-    || bad "launch.sh does not call blank-leds.py — LEDs relight as Move boots"
+    && bad "launch.sh blanks our ring — those writes are stripped by the shim; it is a no-op" \
+    || ok "no second leg: our own boot strip would eat it, and leg 1 already covers the window"
 grep -q 'blank-leds.py' scripts/build.sh \
     && ok "build.sh ships it (both legs depend on it being on the device)" \
     || bad "build.sh does not stage blank-leds.py — both call sites would no-op"
@@ -90,5 +113,5 @@ bash -n standalone/scripts/launch.sh 2>/dev/null \
 bash -n standalone/scripts/quiesce-stock.sh 2>/dev/null \
     && ok "quiesce-stock.sh parses" || bad "quiesce-stock.sh does not parse"
 
-[ "$fail" = "0" ] && printf 'PASS: the launch writes every LED dark, on both legs\n'
+[ "$fail" = "0" ] && printf 'PASS: the launch writes every LED dark, while stock still owns the surface\n'
 exit $fail
