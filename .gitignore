@@ -28,3 +28,7 @@ graphify-out/
 
 # standalone build output (cross-compiled davebox-heal)
 standalone/build/
+
+# python bytecode from running a script under test
+__pycache__/
+*.pyc
