@@ -807,7 +807,13 @@ function modalDialogUp() {
                         forceRedraw();
                     }
                 } else if (S.sessionView) {
-                    S.sessKnobMode = (S.sessKnobMode + (delta > 0 ? 1 : 3)) % 4;
+                    /* Clamp, never wrap (Josh, 2026-08-24) — hard stop at
+                     * VOLUME and at SEND B. Same law the settings enums and the
+                     * Instrument picker took on 08-23: a list of choices has two
+                     * ends, and rolling past one of them reads as the knob having
+                     * skipped rather than as having arrived. */
+                    S.sessKnobMode = Math.max(0, Math.min(SESS_KNOB_MODES.length - 1,
+                                                          S.sessKnobMode + (delta > 0 ? 1 : -1)));
                     _sessInvalidateAllLevels();
                     /* No popup: turning the jog while touching it now reveals
                      * the mixer page itself, which already names the mode in its

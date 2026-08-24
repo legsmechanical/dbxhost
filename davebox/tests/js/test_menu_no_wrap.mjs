@@ -85,6 +85,41 @@ step('global menu (real dispatch): enum edit clamps both ways', () => {
     S.globalMenuState = null; S.globalMenuOpen = false;
 });
 
+step('session mixer banks (real dispatch): the mode list clamps both ways', () => {
+    /* Josh, 2026-08-24: "Session view mixer banks should not loop around when
+     * scrolling through them. Hard stop at beginning and end." Same law as the
+     * settings enums above — four modes (Volume / Pan / Send A / Send B) walked
+     * by the jog, and the wrap made the last one look like the first.
+     *
+     * ⭑ POSITIVE CONTROL first: an interior step must still move, or a clamp
+     * test passes just as well against a jog that does nothing at all. */
+    S.ledInitComplete = true;
+    S.globalMenuOpen = false;
+    S.sessionView = true;
+    S.shiftHeld = false;
+    S.sessKnobMode = 1;
+    cc(14, 1);
+    if (S.sessKnobMode !== 2)
+        throw new Error('control failed: an interior step did not move (' + S.sessKnobMode + ')');
+
+    S.sessKnobMode = 3;                       /* SEND B, the last mode */
+    cc(14, 1);
+    if (S.sessKnobMode !== 3)
+        throw new Error('wrapped past SEND B to mode ' + S.sessKnobMode);
+
+    S.sessKnobMode = 0;                       /* VOLUME, the first */
+    cc(14, 127);                              /* -1 detent */
+    if (S.sessKnobMode !== 0)
+        throw new Error('wrapped below VOLUME to mode ' + S.sessKnobMode);
+    S.sessionView = false;
+});
+
+step('source pin: the mixer mode walk does not modulo again (ui_input_cc)', () => {
+    const src = readFileSync('ui/ui_input_cc.mjs', 'utf8');
+    if (/sessKnobMode[^;]*%\s*4/.test(src))
+        throw new Error('the mixer mode walk wraps again');
+});
+
 step('source pins: no % wrap in slotCfgStep / Instrument picker (ui_sound)', () => {
     const src = readFileSync('ui/ui_sound.mjs', 'utf8');
     if (/% s\.opts\.length/.test(src)) throw new Error('slotCfgStep wraps again');
