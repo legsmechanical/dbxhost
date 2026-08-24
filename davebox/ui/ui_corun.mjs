@@ -15,13 +15,31 @@ import { computePadNoteMap } from './ui_drummodel.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 
 /* Keep-mask flags — mirrors the CORUN_GRP_* / CORUN_KEEP_* bits in
- * Schwung's shadow_constants.h. Keep in sync with docs/CORUN.md. */
+ * Schwung's shadow_constants.h. Keep in sync with docs/CORUN.md.
+ * ⚠⚠ Bit 3 is the RETIRED single-bit TRANSPORT — corun_group_for_event never
+ * returns it, so keeping it keeps NOTHING. This file carried it until
+ * 2026-08-24, which meant Play/Rec/Sample/Loop were silently CEDED to Move
+ * during co-run despite the mask reading as if the tool kept transport. The
+ * real transport is the composite of the per-button bits below. */
+const CORUN_GRP_SHIFT          = 1 << 8;  /* CC 49 */
 const CORUN_GRP_PADS           = 1 << 1;
 const CORUN_GRP_STEPS          = 1 << 2;
-const CORUN_GRP_TRANSPORT      = 1 << 3;
 const CORUN_GRP_MENU           = 1 << 10;
-/* Default split: tool keeps pads / steps / transport / Menu, cedes the rest. */
-const DAVEBOX_CORUN_KEEP_DEFAULT = CORUN_GRP_PADS | CORUN_GRP_STEPS | CORUN_GRP_TRANSPORT | CORUN_GRP_MENU;
+const CORUN_GRP_PLAY           = 1 << 13; /* CC 85 */
+const CORUN_GRP_REC            = 1 << 14; /* CC 86 */
+const CORUN_GRP_SAMPLE         = 1 << 16; /* CC 118 */
+const CORUN_GRP_LOOP           = 1 << 17; /* CC 58 */
+const CORUN_GRP_TRANSPORT      = CORUN_GRP_PLAY | CORUN_GRP_REC | CORUN_GRP_SAMPLE | CORUN_GRP_LOOP;
+/* Co-run pass-through split (CORUN_PASSTHROUGH.md, ruled by Josh 2026-08-24):
+ * the sequencing surface stays with davebox — pads, steps, the REAL transport
+ * composite, Menu, and SHIFT (davebox's shift gestures win over Move's
+ * fine-adjust; Josh took the rec). CEDED: everything Move's editor needs
+ * (OLED, knobs+touch, jog, Back, track row, master) plus MUTE (Move drum-pad
+ * mutes, the #8 case) and COPY/DELETE (used natively in Move drum-rack
+ * editing — Josh). Modifier releases for CEDED keys still never reach us;
+ * the defensive clear in cleanupAfterMoveNativeCoRun covers them. */
+const DAVEBOX_CORUN_KEEP_DEFAULT = CORUN_GRP_PADS | CORUN_GRP_STEPS | CORUN_GRP_TRANSPORT |
+                                   CORUN_GRP_MENU | CORUN_GRP_SHIFT;
 /* Opt out of framework Back-as-exit. dAVEBOx uses Menu as the canonical exit
  * (existing muscle memory) and lets Back cede to the peer for sub-view nav
  * (chain editor pop-up, Move firmware preset/synth navigation). */
@@ -33,7 +51,6 @@ const DAVEBOX_CORUN_KEEP_MASK  = DAVEBOX_CORUN_KEEP_DEFAULT | CORUN_KEEP_BACK_BI
 const CORUN_GRP_JOG   = 1 << 4;
 const CORUN_GRP_TRACK  = 1 << 5;  /* CC 40-43 — the side clip buttons */
 const CORUN_GRP_KNOBS = 1 << 6;
-const CORUN_GRP_SHIFT = 1 << 8;
 const CORUN_GRP_BACK  = 1 << 9;
 const CORUN_GRP_TOUCH = 1 << 11;
 const CORUN_GRP_MUTE  = 1 << 12;  /* CC 88 — the Mute button */

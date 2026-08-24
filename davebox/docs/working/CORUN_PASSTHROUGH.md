@@ -1,6 +1,6 @@
 # Co-run pass-through — sequencing stays live under Move's editor
 
-**Status: SPEC, not built.** Drafted 2026-08-24 from Josh's nice-to-have
+**Status: RULED + BUILT 2026-08-24** (mask commit; rulings inline). Drafted 2026-08-24 from Josh's nice-to-have
 (2026-08-23): *"Allow sequencing UI elements through in Move co-run just like
 Schwung tracks. Hold only what co-run needs to navigate Move instrument
 params."* Decisions marked ⚖ need Josh's ruling before code.
@@ -38,10 +38,10 @@ davebox — the same pass-through contract sound mode already lives by
 | STEPS | keep | **keep** (unchanged) | Step editing under a synth editor is the headline feature. |
 | TRANSPORT | keep | **keep** (unchanged) | Play/Rec. |
 | MENU | keep | **keep** (unchanged) | The exit. |
-| LOOP (58) | cede (not in any kept group) | **keep** ⚖ | It's a sequencing control (perf mode / length gestures). Verify which group carries CC 58 — if TRANSPORT already covers it, nothing to do; if not, it needs a bit. |
-| SHIFT (49) | cede | ⚖ **contested — Josh's call** | Move's editor uses Shift for fine knob adjust; davebox uses it for step shortcuts, track switch, and now Shift+Volume. Options: (a) cede (today — Move fine-adjust works, davebox shift gestures dead in co-run); (b) keep (davebox gestures + Shift+Volume work, Move fine-adjust dies); (c) keep + re-inject to Move alongside (both see it; risk: Move reacting to Shift+pad combos it half-sees). Recommendation: **(b)** — fine-adjust is the smaller loss and consistency wins — but this is a feel call. |
-| MUTE (88) | cede (deliberate, #8) | ⚖ **contested** | Ceded so Move drum-pad mutes work. Keeping it restores davebox mute gestures. Recommendation: leave ceded — the drum-mute use case was fought for. |
-| DELETE / COPY / other modifiers | cede (unclassified) | **keep** ⚖ | Step-clear (Delete+step) and copy gestures are sequencing. Same contest shape as Shift if Move's editor uses them; believed unused there. |
+| LOOP (58) | cede (found: the local TRANSPORT bit was the RETIRED bit 3 — Play/Rec/Sample/Loop were ALL silently ceded) | **keep — via the real transport composite (bits 13/14/16/17)** | It's a sequencing control (perf mode / length gestures). Verify which group carries CC 58 — if TRANSPORT already covers it, nothing to do; if not, it needs a bit. |
+| SHIFT (49) | cede | **keep — RULED (Josh took the rec)** | Move's editor uses Shift for fine knob adjust; davebox uses it for step shortcuts, track switch, and now Shift+Volume. Options: (a) cede (today — Move fine-adjust works, davebox shift gestures dead in co-run); (b) keep (davebox gestures + Shift+Volume work, Move fine-adjust dies); (c) keep + re-inject to Move alongside (both see it; risk: Move reacting to Shift+pad combos it half-sees). Recommendation: **(b)** — fine-adjust is the smaller loss and consistency wins — but this is a feel call. |
+| MUTE (88) | cede (deliberate, #8) | **cede — RULED** | Ceded so Move drum-pad mutes work. Keeping it restores davebox mute gestures. Recommendation: leave ceded — the drum-mute use case was fought for. |
+| DELETE / COPY | cede | **cede — RULED (Josh: used natively in Move drum-rack editing)** | Step-clear (Delete+step) and copy gestures are sequencing. Same contest shape as Shift if Move's editor uses them; believed unused there. |
 
 ## Known traps to carry into implementation
 

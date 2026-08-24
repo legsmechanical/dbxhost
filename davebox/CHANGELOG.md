@@ -16,6 +16,12 @@ the section into a versioned heading at release time.
   MIDI-routed track sends standard MIDI volume (CC 7) on its channel.
 
 ### Fixes
+- **Sequencing controls actually work while editing a Move synth.** During
+  Move co-run, Play, Record, Sample and Loop were silently going to Move
+  instead of the sequencer (a stale constant), and Shift belonged to Move
+  too. Now the sequencer keeps pads, steps, transport and its Shift gestures
+  under Move's editor; Move keeps its screen, the eight knobs, the jog, Back,
+  the track row, Mute, and Copy/Delete for drum-rack editing.
 - **Double-and-fill can no longer half-work.** With a loop window set on a
   long clip, Shift + Step 15 could say "LOOP DOUBLED" on screen while the
   engine refused the doubling — leaving the display and the playing loop
