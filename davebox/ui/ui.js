@@ -400,20 +400,20 @@ function _onMidiInternalImpl(data) {
         }
     }
 
-    /* Master volume knob (CC 79) + its capacitive touch (note 8) are owned by
-     * Move firmware (button_passthrough[79] + the shim's overtake-mode volume
-     * passthrough). dAVEBOx does nothing with them, but the host still forwards
-     * the full detent stream to us in overtake mode — processing every one
-     * competes with sequencer/MIDI output and stutters playback. Drop them
-     * immediately so volume adjustment stays entirely Move-native. */
-    /* ...EXCEPT in sound mode, which claims the knob (host_vol_block) to drive
-     * the chain slot's level. The drop stays for every other view: processing
-     * every detent there competes with sequencer output for nothing, since
-     * dAVEBOx has no use for the knob. */
-    if (!soundActive()) {
-        if ((status & 0xF0) === 0xB0 && d1 === 79) return;
-        if (((status & 0xF0) === 0x90 || (status & 0xF0) === 0x80) && d1 === 8) return;
-    }
+    /* Master volume knob (CC 79) + its capacitive touch (note 8): PLAIN turns
+     * are Move's native main output, EVERYWHERE — sound mode included (Josh,
+     * 2026-08-24; it used to claim the plain knob for the screen's level).
+     * The host still forwards the full detent stream in overtake mode, and
+     * processing it competes with sequencer output, so plain events drop
+     * here immediately.
+     * SHIFT+volume is the ACTIVE TRACK's volume, everywhere — the claim
+     * (host_vol_block) rides the Shift key itself (see the MoveShift handler),
+     * so Move's master stays quiet under the gesture; the turn passes on to
+     * sound mode (track flavour consumes: its screen level IS the active
+     * track's volume) or to the track-volume handler in ui_input_cc. The
+     * touch note stays dropped — the gesture is turn-driven. */
+    if ((status & 0xF0) === 0xB0 && d1 === 79 && !S.shiftHeld) return;
+    if (((status & 0xF0) === 0x90 || (status & 0xF0) === 0x80) && d1 === 8) return;
 
     /* AUTO-bank Delete-tap detection: any input other than the Delete button
      * itself while Delete is armed disqualifies the tap, so Delete+jog /

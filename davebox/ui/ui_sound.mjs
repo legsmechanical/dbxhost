@@ -25,7 +25,7 @@ import {
     engineClaimsEditCcs, SLOT_FX_BLOCKS, HAS_SEND_FX,
     engineLoadModule, engineLoadedModule, engineGetState, engineSetState,
     engineListUserPresets, engineReadUserPreset,
-    engineGetSlotParam, engineSetSlotParam, engineSaveState, engineVolBlock,
+    engineGetSlotParam, engineSetSlotParam, engineSaveState,
     engineGetChainParam, engineSetChainParam,
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
     slotIndex, moveBusForChannel, moveBusComp, moveBusPrefix,
@@ -1010,19 +1010,22 @@ function writeVolLevel(slot, v) {
     else engineSetSlotParam(slot, SLOT_LEVEL_KEY, v.toFixed(3));
 }
 
+/* ⚠ Renamed in spirit, 2026-08-24: these no longer touch host_vol_block.
+ * The knob CLAIM rides the Shift key globally (ui_input_cc's MoveShift
+ * handler) — plain volume is Move's main output everywhere now, and
+ * Shift+volume is the active track's volume. What remains here is the
+ * per-context level cache (seed on entry/retarget) and the save flush. */
 function claimVolume(slot) {
     S.volLevel = readSlotVolume(slot);
     S.volShownUntil = -1;
     S.volTouched = false;
     S.volDirtySave = false;
-    engineVolBlock(true);
 }
 
 function releaseVolume() {
     flushVolumeSave();
     S.volTouched = false;
     S.volShownUntil = -1;
-    engineVolBlock(false);
 }
 
 /* The host's slot-level setter updates runtime state but never persists, so
@@ -1503,6 +1506,10 @@ export function soundEnterMove(track) {
  * which owns the co-run entry — importing ui_corun here would close a cycle
  * (co-run reads sound mode's state on the way back). Same take-semantics as
  * soundConsumeLedDirty. */
+/* The Shift key is the volume gesture now; its RELEASE is the end of it and
+ * the one moment worth persisting (saving is a synchronous file write). */
+export function soundVolGestureEnd() { if (S.active) flushVolumeSave(); }
+
 export function soundConsumeCoRunRequest() {
     const t = S.coRunRequest;
     S.coRunRequest = -1;
@@ -1519,8 +1526,8 @@ export function soundConsumeCoRunRequest() {
 export function soundEnteredInSession() { return S.enterSession; }
 
 export function soundEnterBuses() {
-    /* Hand the volume knob back to Move before the screen opens. releaseVolume
-     * also flushes any pending level save for the track we came from. */
+    /* Flush any pending level save for the track we came from (the knob
+     * itself is Move's unless Shift is held — nothing to hand back). */
     releaseVolume();
     S.active = true;
     S.enterSession = true;      /* called from SESSION view */
@@ -3333,17 +3340,15 @@ export function soundOnCC(d1, d2, decodeDelta) {
     }
 
     if (d1 === 79) {                                   /* master knob */
-        /* SESSION-wide context ONLY: the knob stays Move's NATIVE master volume.
-         * Nothing there owns a level worth stealing it for — the device already
-         * has a master output — and the claim is the only reason Move stops
-         * seeing CC 79 at all, so declining to consume it is the whole fix.
-         * (soundEnterBuses drops the claim; see releaseVolume there.)
-         *
-         * ⚠ A MOVE bus is deliberately NOT in this branch: it owns a level (its
-         * strip Volume) and claims the knob like a chain does. The test is
-         * soundIsGlobal(), which excludes Move buses — consuming the CC while
-         * the claim was down is exactly how the turn reached both Move's master
-         * and chain slot 0. */
+        /* SHIFT+volume only (2026-08-24): plain turns never arrive — ui.js
+         * drops them and Move's native main output acts. In the TRACK flavour
+         * the screen's level IS the active track's volume (chain slot level,
+         * or a Move bus's strip Volume — volTarget decides), so consuming here
+         * keeps the on-screen rows, the readout and the save flush in step.
+         * A GLOBAL bus screen (Master/Send FX) has no track on it: decline,
+         * and the track-volume handler in ui_input_cc acts on the active
+         * track exactly as it does outside sound mode. */
+        if (!S.shiftHeld) return false;
         if (soundIsGlobal()) return false;
         const delta = decodeDelta(d2);
         if (delta) onVolumeTurn(delta);
@@ -3815,18 +3820,10 @@ export function soundOnNote(status, d1, d2) {
     if (!S.active) return false;
     if (status !== 0x90 && status !== 0x80) return false;
 
-    /* Note 8 = volume-knob touch. Its RELEASE is the end of the gesture, and
-     * the only moment worth persisting: the host's slot-level setter doesn't
-     * save, and saving is a synchronous file write. */
-    if (d1 === 8) {
-        if (soundIsGlobal()) return false;   /* the knob is Move's here */
-        const on = (status === 0x90 && d2 >= 64);
-        if (S.volTouched && !on) flushVolumeSave();
-        S.volTouched = on;
-        S.volShownUntil = on ? (S.tickCount + VOL_SHOW_TICKS * 4) : S.tickCount + VOL_SHOW_TICKS;
-        S.dirty = true;
-        return true;
-    }
+    /* Note 8 (volume-knob touch) never arrives: ui.js drops it
+     * unconditionally since the claim moved onto the Shift key (2026-08-24).
+     * The save flush that used to ride the touch RELEASE rides the Shift
+     * release instead — soundVolGestureEnd, called by the MoveShift handler. */
     if (d1 > 7) return false;
 
     /* Knob touch is a NOTE, and hostedTakes() only forwards CCs — so a hosted

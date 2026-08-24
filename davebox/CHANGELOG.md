@@ -7,6 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Features
+- **Shift + Volume adjusts the active track's volume — everywhere.** Track
+  View, Session View, and the sound editor all share one rule now: the Volume
+  knob alone is always Move's master output (including in the sound editor,
+  which used to take it over for the on-screen level), and holding Shift makes
+  it the active track's level. The level is saved when Shift is released; a
+  MIDI-routed track has no volume and says so.
+
 ### Fixes
 - **Knobs in the sound editor no longer snap back.** Turning a parameter —
   in the editor's own pages or a module's hosted canvas — could occasionally

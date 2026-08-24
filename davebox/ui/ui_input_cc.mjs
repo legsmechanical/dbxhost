@@ -29,7 +29,7 @@ import {
 } from './ui_constants.mjs';
 import { S, conductorTrackIdx } from './ui_state.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
-         SESS_KNOB_MODES, KNOB_SENS, knobAccumSteps } from './ui_engine.mjs';
+         SESS_KNOB_MODES, KNOB_SENS, knobAccumSteps, engineVolBlock } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity, BANK_CYCLE_DRUM, CONDUCT_BANK_CYCLE } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
          showActionPopupGauge } from './ui_persistence.mjs';
@@ -46,7 +46,7 @@ import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
 import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
 import { exitMoveNativeCoRun } from './ui_corun.mjs';
-import { soundActive, soundExit } from './ui_sound.mjs';
+import { soundActive, soundExit, soundVolGestureEnd } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
 import { applyTrackConfig, readBankParams, applyBankParam,
@@ -951,6 +951,19 @@ function _onCC_buttons(d1, d2) {
     if (d1 === MoveShift) {
         S.shiftHeld = d2 === 127;
         S.shiftTrackLEDActive = d2 === 127;
+        /* Shift IS the volume-knob claim (Josh, 2026-08-24): while held, Move's
+         * native main output stands aside and CC 79 becomes the ACTIVE TRACK's
+         * volume — in every view. Claimed on the press so the very first detent
+         * cannot leak into Move's master; the release ends the gesture: the
+         * per-gesture level cache drops (an edit made elsewhere is re-read next
+         * time, never assumed) and the save lands once, not per detent. */
+        engineVolBlock(S.shiftHeld);
+        if (!S.shiftHeld) {
+            S.tvSeeded = false;
+            S.tvExtWarned = false;
+            if (S.tvDirty) S.tvSavePending = true;
+            soundVolGestureEnd();
+        }
         /* PHASE-1: re-push padmap on Shift transitions so DSP on_midi sees
          * all-0xFF while Shift is held (suppress pad-shortcut notes) and
          * the real map again on release. See computePadNoteMap mute logic. */
@@ -3678,6 +3691,16 @@ export function _onCCMsg(d1, d2) {
         S.capturePlaceTrack = -1;
         S._modalSwallowCC = d1;
         forceRedraw();
+        return;
+    }
+    /* Shift+volume: accumulate here, apply in ONE read-modify-write per tick
+     * (ui_tick) — engine reads do not belong in the MIDI handler. Plain CC 79
+     * never reaches this function (ui.js drops it; Move native). Sound mode's
+     * track flavour consumed the CC before dispatch got here, so this handler
+     * covers everywhere else — track view, session view, the session-FX
+     * screen — with one meaning. */
+    if (d1 === 79) {
+        if (S.shiftHeld) { S.tvDeltaAcc += decodeDelta(d2); }
         return;
     }
     _onCC_jog(d1, d2);

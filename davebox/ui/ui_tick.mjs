@@ -51,7 +51,7 @@ import { xposeCancelPreview } from './ui_xpose.mjs';
 import { checkBackHold, backTapWouldAct } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
-         SLOT_LEVEL_KEY, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
+         SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
          SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS } from './ui_engine.mjs';
 import { soundActive, soundEnter, soundEnterMove, soundEnterBuses, soundExit,
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
@@ -1369,6 +1369,47 @@ export function _tickImpl() {
             /* The name keyboard painted its own pad LEDs; put davebox's back. */
             if (soundConsumeLedDirty()) { invalidateLEDCache(); forceRedraw(); }
             if (soundDirty()) S.screenDirty = true;
+        }
+
+        /* ---- Shift+volume = ACTIVE TRACK volume (Josh, 2026-08-24) ----
+         * Deltas accumulated by the CC handler land as ONE read-modify-write
+         * here. The seed read happens once per gesture per track (Shift
+         * release clears tvSeeded), so a level edited elsewhere between
+         * gestures is re-read, never assumed. Route decides the store: a
+         * chain track's slot level, a Move track's bus strip Volume — the
+         * same two families the mixer rows use. An EXT track has no volume;
+         * it says so once per gesture instead of silently doing nothing. */
+        if (S.tvDeltaAcc) {
+            const _tvD = S.tvDeltaAcc; S.tvDeltaAcc = 0;
+            const _tvT = S.activeTrack;
+            if (S.trackRoute[_tvT] === 2) {
+                if (!S.tvExtWarned) { S.tvExtWarned = true; showActionPopup('EXT TRACK', 'NO VOLUME'); }
+            } else {
+                const _tvBus = S.trackRoute[_tvT] === 1 ? moveBusForChannel(S.trackChannel[_tvT]) : 0;
+                if (!S.tvSeeded || S.tvTrack !== _tvT) {
+                    const _raw = S.trackRoute[_tvT] === 1
+                        ? engineGet(0, moveBusComp(_tvBus), 'volume')
+                        : engineGetSlotParam(slotIndex(_tvT), SLOT_LEVEL_KEY);
+                    const _sv = parseFloat(_raw);
+                    S.tvLevel = (isFinite(_sv) && _sv >= 0) ? _sv : 1;
+                    S.tvSeeded = true; S.tvTrack = _tvT;
+                }
+                let _tvV = S.tvLevel + _tvD * SLOT_LEVEL_STEP;
+                if (_tvV < 0) _tvV = 0;
+                if (_tvV > SLOT_LEVEL_MAX) _tvV = SLOT_LEVEL_MAX;
+                if (_tvV !== S.tvLevel) {
+                    S.tvLevel = _tvV; S.tvDirty = true;
+                    if (S.trackRoute[_tvT] === 1) engineSet(0, moveBusComp(_tvBus), 'volume', _tvV.toFixed(3));
+                    else engineSetSlotParam(slotIndex(_tvT), SLOT_LEVEL_KEY, _tvV.toFixed(3));
+                }
+                showActionPopup('TRACK ' + (_tvT + 1) + ' VOLUME', _tvV.toFixed(2) + 'x');
+            }
+        }
+        /* The save is deferred off the release — a synchronous file write has
+         * no business in a MIDI handler. */
+        if (S.tvSavePending) {
+            S.tvSavePending = false;
+            if (S.tvDirty) { S.tvDirty = false; engineSaveState(); }
         }
 
         /* Metro beat detection: checked every tick via dedicated get_param for minimal jitter */

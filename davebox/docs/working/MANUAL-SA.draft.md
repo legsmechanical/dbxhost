@@ -266,7 +266,7 @@ While dAVEBOx is open, Move's controls map like this:
 |---|---|
 | **Knobs 1–8** | Adjust the active bank's parameters. |
 | **Jog** | Turn to cycle parameter banks and scroll lists. |
-| **Volume** | Master output level. |
+| **Volume** | Master output level. **Shift+Volume**: active track's volume. |
 | **Pad grid** | Plays notes and drum lanes, or shows the clip grid. |
 | **Side buttons** | Switch clips on the active track. |
 | **Step buttons 1–16** | Show the active clip's steps, or launch scenes. |
@@ -1021,8 +1021,12 @@ Snapshots persist across reboots.
 
 ## 12.5 Volume
 
-The **Volume** knob controls Move's master output. There is no per-track volume —
-set level on the instrument (the Move mixer, or the Schwung chain).
+The **Volume** knob controls Move's master output, everywhere. **Shift +
+Volume** adjusts the **active track's** volume — also everywhere: Track View,
+Session View, and inside the sound editor. A chain track's level and a
+Move-routed track's mixer level are the same values the mixer rows show; the
+level is saved when you let go of Shift. A MIDI-routed track has no volume of
+its own and says so.
 
 ---
 

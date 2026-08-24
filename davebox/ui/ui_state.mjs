@@ -624,6 +624,12 @@ export const S = {
                                             * per knob; sign carries direction so
                                             * a reversal can reset it */
     moveCoRunOrigin: null,      /* P8a 1d: where Move co-run was entered FROM ('sound' = the SYNTH row of that track's Move sound mode, so Menu returns there; 'track' = the track menu's Edit Synth..., where a plain close already lands). Recorded at ENTRY — sound mode is exited on the way in, so nothing is left to infer it from on return. */
+    /* Shift+volume = ACTIVE TRACK volume (2026-08-24). Deltas accumulate in
+     * the CC handler and land in ONE read-modify-write per tick; the level
+     * cache is per-gesture (Shift release clears tvSeeded), so an edit made
+     * elsewhere between gestures is re-read, never assumed. */
+    tvDeltaAcc: 0, tvSeeded: false, tvTrack: -1, tvLevel: 1,
+    tvDirty: false, tvSavePending: false, tvExtWarned: false,
     pendingSoundEnterTrack: -1, /* Sound mode entry queued from the Shift-release dispatch or the track menu. Entry's shadow_get/set_param traffic must run on the tick budget — hence the deferral. */
     pendingUndoSync: 0,
     pendingDefaultSetParams: [],
