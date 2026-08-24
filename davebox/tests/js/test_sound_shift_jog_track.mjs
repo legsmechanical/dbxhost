@@ -166,14 +166,21 @@ step('⭑ the FOLLOW onto a Move-routed track does not re-open the display windo
     shift(true);
     turn();
     globalThis.tick();                         /* ui_tick's follow runs here */
-    shift(false);
+    /* ⚠⚠ READ THE FLAG WITH SHIFT STILL DOWN. The Shift RELEASE clears
+     * bankSelectTick too (the MoveShift handler clears both edges), so a check
+     * placed after shift(false) reads -1 no matter what the follow did — the
+     * first version of this step passed with the bug restored, which is the
+     * only reason it is written this way. The window being shut mid-gesture is
+     * also the actual thing the user sees. */
+    const _stamp = S.bankSelectTick;
     if (S.activeTrack !== 6)
         throw new Error('control failed: the track did not step (' + S.activeTrack + ')');
     if (snd.soundTrack() !== 6)
         throw new Error('control failed: sound mode did not follow onto the Move track');
-    if (S.bankSelectTick >= 0)
+    if (_stamp >= 0)
         throw new Error('the follow re-opened the bank display window (tick ' +
-                        S.bankSelectTick + ') — SOUND + CONFIG covers the track overview');
+                        _stamp + ') — SOUND + CONFIG covers the track overview');
+    shift(false);
     snd.soundExit();
     S.trackRoute[5] = 0; S.trackRoute[6] = 0;
     S.activeTrack = 2;
