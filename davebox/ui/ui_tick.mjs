@@ -1383,7 +1383,27 @@ export function _tickImpl() {
             const _tvD = S.tvDeltaAcc; S.tvDeltaAcc = 0;
             const _tvT = S.activeTrack;
             if (S.trackRoute[_tvT] === 2) {
-                if (!S.tvExtWarned) { S.tvExtWarned = true; showActionPopup('EXT TRACK', 'NO VOLUME'); }
+                /* A MIDI-routed track's volume IS standard MIDI volume: send
+                 * CC 7 on the track's channel out the port (Josh, 2026-08-24).
+                 * One CC per detent, 0-127, seeded from the session-local
+                 * last-sent value — the receiver owns the real state, this is
+                 * just where the knob left off. A `MIDI to Track N` follower
+                 * does not reach the port (its output feeds another track),
+                 * so it keeps the NO VOLUME popup instead of sending a CC
+                 * nothing will hear. */
+                if ((S.trackMidiTo[_tvT] | 0) > 0) {
+                    if (!S.tvExtWarned) { S.tvExtWarned = true; showActionPopup('MIDI FOLLOWER', 'NO VOLUME'); }
+                } else {
+                    let _cc = (S.tvExtCC7[_tvT] | 0) + _tvD;
+                    if (_cc < 0) _cc = 0;
+                    if (_cc > 127) _cc = 127;
+                    if (_cc !== S.tvExtCC7[_tvT]) {
+                        S.tvExtCC7[_tvT] = _cc;
+                        const _st = 0xB0 | ((S.trackChannel[_tvT] - 1) & 0x0F);
+                        move_midi_external_send([0x0B, _st, 7, _cc]);
+                    }
+                    showActionPopup('TRACK ' + (_tvT + 1) + ' VOLUME', 'CC7 ' + _cc);
+                }
             } else {
                 const _tvBus = S.trackRoute[_tvT] === 1 ? moveBusForChannel(S.trackChannel[_tvT]) : 0;
                 if (!S.tvSeeded || S.tvTrack !== _tvT) {

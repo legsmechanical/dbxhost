@@ -19,6 +19,8 @@ globalThis.shadow_get_param = (slot, key) => (ENGINE[slot + '|' + key] != null ?
 globalThis.shadow_set_param = (slot, key, val) => { setCalls.push([slot, key, val]); ENGINE[slot + '|' + key] = String(val); return 1; };
 globalThis.host_vol_block = (on) => { volBlockCalls.push(on); };
 globalThis.shadow_save_state_now = () => { saveCalls++; return 1; };
+let extSends = [];
+globalThis.move_midi_external_send = (pkt) => { extSends.push(pkt.slice ? pkt.slice() : pkt); };
 
 globalThis.host_system_cmd = () => 0;
 globalThis.host_read_file = () => '';
@@ -109,14 +111,30 @@ step('⭑ a MOVE-routed track writes its BUS strip Volume, not a slot', () => {
     S.trackRoute[2] = 0;
 });
 
-step('⚠ an EXT track says so instead of silently doing nothing', () => {
-    S.trackRoute[2] = 2;
-    setCalls = [];
+step('⭑ a MIDI track sends CC 7 on its channel (standard MIDI volume)', () => {
+    S.trackRoute[2] = 2; S.trackChannel[2] = 5;
+    setCalls = []; extSends = [];
+    shift(true); vol(3); globalThis.tick(); shift(false); globalThis.tick();
+    if (volWrites().length) throw new Error('EXT track wrote an engine level');
+    const cc7 = extSends.filter(p => p[1] === (0xB0 | 4) && p[2] === 7);
+    if (cc7.length !== 1) throw new Error('CC7 sends: ' + JSON.stringify(extSends));
+    if (cc7[0][3] !== 103) throw new Error('expected 100+3=103, sent ' + cc7[0][3]);
+    /* clamp: spin far past the top */
+    extSends = [];
+    shift(true); for (let i = 0; i < 8; i++) vol(9); globalThis.tick(); shift(false); globalThis.tick();
+    const last = extSends.filter(p => p[2] === 7).pop();
+    if (!last || last[3] !== 127) throw new Error('no clamp at 127: ' + JSON.stringify(last));
+    S.trackRoute[2] = 0; S.trackChannel[2] = 1;
+});
+
+step('⚠ a MIDI-to-Track follower says NO VOLUME (its output never reaches the port)', () => {
+    S.trackRoute[2] = 2; S.trackMidiTo[2] = 3;
+    extSends = [];
     shift(true); vol(1); globalThis.tick(); shift(false); globalThis.tick();
-    if (volWrites().length) throw new Error('EXT track wrote a level');
+    if (extSends.some(p => p[2] === 7)) throw new Error('follower sent CC7');
     if (!S.actionPopupLines.some(l => /NO VOLUME/.test(l)))
         throw new Error('no popup: ' + JSON.stringify(S.actionPopupLines));
-    S.trackRoute[2] = 0;
+    S.trackRoute[2] = 0; S.trackMidiTo[2] = 0;
 });
 
 step('⭑ a NEW gesture re-reads the level — an edit made elsewhere is honoured', () => {

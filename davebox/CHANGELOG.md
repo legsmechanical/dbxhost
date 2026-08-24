@@ -12,8 +12,8 @@ the section into a versioned heading at release time.
   View, Session View, and the sound editor all share one rule now: the Volume
   knob alone is always Move's master output (including in the sound editor,
   which used to take it over for the on-screen level), and holding Shift makes
-  it the active track's level. The level is saved when Shift is released; a
-  MIDI-routed track has no volume and says so.
+  it the active track's level. The level is saved when Shift is released. A
+  MIDI-routed track sends standard MIDI volume (CC 7) on its channel.
 
 ### Fixes
 - **Knobs in the sound editor no longer snap back.** Turning a parameter —

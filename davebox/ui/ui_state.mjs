@@ -630,6 +630,7 @@ export const S = {
      * elsewhere between gestures is re-read, never assumed. */
     tvDeltaAcc: 0, tvSeeded: false, tvTrack: -1, tvLevel: 1,
     tvDirty: false, tvSavePending: false, tvExtWarned: false,
+    tvExtCC7: new Array(8).fill(100), /* per-track MIDI volume (CC 7) last sent; session-local — receivers keep their own state, we just remember where the knob left off */
     pendingSoundEnterTrack: -1, /* Sound mode entry queued from the Shift-release dispatch or the track menu. Entry's shadow_get/set_param traffic must run on the tick budget — hence the deferral. */
     pendingUndoSync: 0,
     pendingDefaultSetParams: [],

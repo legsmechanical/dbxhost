@@ -1025,8 +1025,9 @@ The **Volume** knob controls Move's master output, everywhere. **Shift +
 Volume** adjusts the **active track's** volume — also everywhere: Track View,
 Session View, and inside the sound editor. A chain track's level and a
 Move-routed track's mixer level are the same values the mixer rows show; the
-level is saved when you let go of Shift. A MIDI-routed track has no volume of
-its own and says so.
+level is saved when you let go of Shift. A MIDI-routed track sends standard
+**MIDI volume (CC 7)** on its channel out the USB port (a `MIDI to Track`
+follower has no output of its own and says so).
 
 ---
 
