@@ -38,7 +38,8 @@ import { S, CC_ASSIGN_DEFAULTS } from './ui_state.mjs';
 import { slotIndex, syncLinkAudioRoutingFromRoutes,
          invalidateLinkAudioRoutingCache } from './ui_engine.mjs';
 import { clipHasContent, _clipIsEmpty } from './ui_pure.mjs';
-import { showActionPopup, writeSidecar, uuidToStatePath, uuidToUiStatePath} from './ui_persistence.mjs';
+import { showActionPopup, writeSidecar, uuidToStatePath, uuidToUiStatePath,
+         uuidToNewProjectPath } from './ui_persistence.mjs';
 import { computePadNoteMap, setActiveDrumLane, syncDrumClipContent,
     syncDrumLaneSteps, syncDrumLanesMeta, syncDrumRepeatState } from './ui_drummodel.mjs';
 import { effectiveClip, forceRedraw, invalidateLEDCache } from './ui_leds.mjs';
@@ -1412,6 +1413,43 @@ export function restoreUiSidecar(applyDefaultsNow) {
  * try/finally, not a trailing release: an exception mid-sync would otherwise
  * leave the map standing, and the next reader to run would silently answer from
  * a project that is no longer loaded. */
+/* A project created since the last launch carries a one-shot note naming the
+ * random key and scale it was born in (project-cmd's seed_random_key). Apply it,
+ * then DELETE it — the whole contract is that it fires once. A project that has
+ * been opened before has no note and keeps whatever the user set.
+ *
+ * ⚠ Deleted even when the contents are unusable. A note we cannot parse is a
+ * note that would be re-read on every single load, re-randomising a project the
+ * user has already tuned — the failure has to be one bad launch, not a project
+ * that will never hold its key.
+ *
+ * ⚠ Writes through host_module_set_param, not just S.padKey/S.padScale: the DSP
+ * owns these (it clamps them, and it is what the pads are built from), so a
+ * JS-only assignment would show the new key and play the old one. */
+function consumeNewProjectSeed() {
+    const path = uuidToNewProjectPath(S.currentSetUuid);
+    if (!path || !host_file_exists(path)) return;
+    let key = -1, scale = -1;
+    try {
+        const raw = host_read_file(path);
+        if (raw) {
+            const j = JSON.parse(raw);
+            key   = parseInt(j.key, 10);
+            scale = parseInt(j.scale, 10);
+        }
+    } catch (e) { /* fall through to the delete — see above */ }
+    /* No host binding removes a FILE — the API has host_remove_dir and nothing
+     * else — so this goes out through the shell, the same route the module
+     * already uses for project-cmd. The path is built from a uuid and two fixed
+     * names, so there is nothing in it to quote against; quoted anyway. */
+    host_system_cmd("rm -f '" + path + "'");
+    if (!(key >= 0 && key <= 11) || !(scale >= 0 && scale <= 13)) return;
+    S.padKey = key;
+    S.padScale = scale;
+    host_module_set_param('key', String(key));
+    host_module_set_param('scale', String(scale));
+}
+
 export function syncClipsFromDsp() {
     prefetchTrackDigests();
     try {
@@ -1507,6 +1545,12 @@ function _syncClipsFromDspInner() {
     if (kp !== null && kp !== undefined) S.padKey   = parseInt(kp, 10) | 0;
     const sp = dspGet('scale');
     if (sp !== null && sp !== undefined) S.padScale = parseInt(sp, 10) | 0;
+    /* ...unless this project has never been opened before, in which case it was
+     * born in a random key (Josh, 2026-08-24) and the note saying which one is
+     * still sitting in its state dir. Applied HERE, right after the reads it
+     * overrides, so there is no window where the UI shows A minor and the engine
+     * has something else. Consumed once — see consumeNewProjectSeed. */
+    consumeNewProjectSeed();
     const lqp = dspGet('launch_quant');
     if (lqp !== null && lqp !== undefined) S.launchQuant = parseInt(lqp, 10) | 0;
     const iqp = dspGet('inp_quant');

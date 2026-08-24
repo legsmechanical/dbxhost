@@ -52,8 +52,15 @@ import json, os, re, sys
 sets_dir, settings = sys.argv[1], sys.argv[2]
 dirs = [u for u in os.listdir(sets_dir) if not u.startswith("11111111")]
 assert len(dirs) == 1, dirs
-inner = os.listdir(os.path.join(sets_dir, dirs[0]))
-assert inner == ["Project 2"], inner
+inner = sorted(os.listdir(os.path.join(sets_dir, dirs[0])))
+# The set dir holds the named project AND the dAVEBOx state dir — the latter
+# since 2026-08-24, when creation started seeding a random key/scale note into
+# it (project-cmd's seed_random_key). It used to appear only on the first save.
+# Asserted as a SET rather than loosened to a substring check: a stray third
+# entry here is still worth failing on.
+assert inner == ["Project 2", "dAVEBOx"], inner
+seed = os.path.join(sets_dir, dirs[0], "dAVEBOx", "new-project.json")
+assert os.path.isfile(seed), "no key/scale seed written for the new project"
 song = json.load(open(os.path.join(sets_dir, dirs[0], "Project 2", "Song.abl")))
 assert song["tracks"][0]["midiInputMode"] == [0]   # template wiring intact
 PY

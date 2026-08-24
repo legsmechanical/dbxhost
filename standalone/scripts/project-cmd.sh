@@ -46,6 +46,9 @@ SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
 # native-session leftovers. Authoritative for "which project is open";
 # Settings.json's currentSongIndex is only written at a relaunch and goes stale.
 ACTIVE_SET_PATH="${ACTIVE_SET_PATH:-$DBX_DIR/active_set.txt}"
+# Move's stock instrument library. Overridable so the tests can point at a
+# fixture instead of the device's real one.
+CORE_LIBRARY_DIR="${CORE_LIBRARY_DIR:-/data/CoreLibrary}"
 # ⭑ The reserved state subdir INSIDE each project's set dir (Phase B of the
 # state-co-location plan): Sets/<uuid>/$DBX_SUBDIR_NAME/ holds the module's
 # per-project state, beside Move's inner <Name>/ dir. Every site that hunts the
@@ -244,6 +247,134 @@ print("project-cmd: mixer check: %d project(s), %d normalized" % (seen, fixed))
 PYEOF
 }
 
+# ---- random stock instruments for a new project -----------------------------
+# Move native fills a fresh set with random instruments from the stock library;
+# ours always came up with the template's four, which made every new project
+# sound identical (Josh, 2026-08-24). So: same idea, same library.
+#
+#   track 1  a drum kit          Drums/**            (kits are nested a level)
+#   track 2  a bass              Bass/
+#   track 3  polyphonic          one of POLY, and
+#   track 4  polyphonic          a DIFFERENT one where the library allows
+#
+# ⭑ A stock Track Preset file IS the track's device object — same shape, minus
+# `presetUri` and plus `$schema`. So installing one is a swap, not a merge, and
+# there is nothing to keep in step when Ableton changes a device's parameters.
+#
+# ⚠ NEVER fails project creation. A missing library, an unreadable preset, an
+# empty category — each one just leaves that track on whatever the template
+# shipped, which is a working instrument. A new project you cannot make is a
+# far worse outcome than a new project that sounds like the last one.
+# ---- a new project starts in a random key ------------------------------------
+# Josh, 2026-08-24. Key and scale are per-project DSP state, not something the
+# Song.abl carries, and the DSP's own defaults (A minor) are compiled in — so a
+# fresh project cannot be born in a random key from here. What CAN be done here
+# is leave a note: the module reads it on the first load of that project,
+# applies it, and deletes it. One marker, consumed once.
+#
+# ⚠ Written into the project's own dAVEBOx dir, so it travels with the project
+# and dies with it — a copy of a project is NOT a new project and must not be
+# re-randomised, which is exactly what a marker in a shared location would do.
+seed_random_key() { # set-dir
+    python3 - "$1" <<'PYEOF' || true
+import json, os, random, sys
+d = os.path.join(sys.argv[1], "dAVEBOx")
+try:
+    os.makedirs(d, exist_ok=True)
+    # 12 keys x 14 scales — the same ranges the DSP clamps to
+    # (sp_globals_transport.c: key 0-11, scale 0-13).
+    with open(os.path.join(d, "new-project.json"), "w") as f:
+        json.dump({"key": random.randint(0, 11), "scale": random.randint(0, 13)}, f)
+except OSError:
+    pass
+PYEOF
+}
+
+randomize_instruments() { # song.abl
+    python3 - "$1" "$CORE_LIBRARY_DIR" <<'PYEOF' || true
+import json, os, random, sys
+from urllib.parse import quote
+
+song_path, core = sys.argv[1], sys.argv[2]
+root = os.path.join(core, "Track Presets")
+# Polyphonic = things you would play a chord on. Synth Lead is deliberately out
+# (it is the one category that is monophonic by intent), as are Drums, Rhythmic,
+# Sliced Loops, Special Effects and Templates — none of them are "an instrument
+# on a melodic track".
+POLY = ["Piano & Keys", "Synth Keys", "Pad", "Strings", "Mallets",
+        "Guitar & Plucked", "Synth Pluck", "Brass", "Evolving"]
+
+
+def presets_in(rel):
+    """Every .json under one category, recursively — Drums nests by kit family."""
+    base = os.path.join(root, rel)
+    out = []
+    for dirpath, _dirs, files in os.walk(base):
+        for f in files:
+            if f.endswith(".json"):
+                out.append(os.path.join(dirpath, f))
+    return out
+
+
+def device_from(path):
+    """A preset file as a track device: drop $schema, add the presetUri."""
+    with open(path) as f:
+        dev = json.load(f)
+    if not isinstance(dev, dict) or "kind" not in dev:
+        raise ValueError("not a preset")
+    dev.pop("$schema", None)
+    rel = os.path.relpath(path, core)
+    # Percent-encoding exactly as Move writes it — spaces %20, ampersands %26.
+    dev["presetUri"] = "ableton:/packs/abl-core-library/" + quote(rel, safe="/")
+    return dev
+
+
+try:
+    with open(song_path) as f:
+        song = json.load(f)
+    tracks = song.get("tracks")
+    if not isinstance(tracks, list):
+        sys.exit(0)
+
+    poly_pool = []
+    for c in POLY:
+        poly_pool.extend(presets_in(c))
+    random.shuffle(poly_pool)
+    # Two DIFFERENT poly instruments when the library can offer two.
+    poly_pick = poly_pool[:2]
+
+    wanted = [presets_in("Drums"), presets_in("Bass")]
+    picks = [random.choice(w) if w else None for w in wanted]
+    picks.append(poly_pick[0] if len(poly_pick) > 0 else None)
+    picks.append(poly_pick[1] if len(poly_pick) > 1 else None)
+
+    changed = False
+    for i, pick in enumerate(picks):
+        if pick is None or i >= len(tracks):
+            continue
+        t = tracks[i]
+        if not isinstance(t, dict) or not isinstance(t.get("devices"), list) or not t["devices"]:
+            continue
+        try:
+            t["devices"][0] = device_from(pick)
+            changed = True
+        except (OSError, ValueError, json.JSONDecodeError):
+            pass          # this track keeps the template's instrument
+    if not changed:
+        sys.exit(0)
+
+    tmp = song_path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(song, f, separators=(",", ": "), indent=4)
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.rename(tmp, song_path)
+except Exception:
+    sys.exit(0)     # never block project creation
+PYEOF
+}
+
 do_new() { # name
     [ -n "${1:-}" ] || die "new needs a name"
     [ -d "$TEMPLATE_DIR" ] || die "no template at $TEMPLATE_DIR"
@@ -255,6 +386,10 @@ do_new() { # name
     _src="$(find "$TEMPLATE_DIR" -name Song.abl | head -n 1)"
     [ -n "$_src" ] || die "template has no Song.abl"
     cp "$_src" "$_dst/Song.abl"
+    # Random stock instruments, like Move native does on a new set.
+    # After the copy (there is a file), before normalize (which re-reads it).
+    randomize_instruments "$_dst/Song.abl"
+    seed_random_key "$SETS_DIR/$_uuid"
     # Belt and braces: the template ships neutral, but a project is born here
     # and this is the one place that can promise it.
     do_normalize >/dev/null
@@ -320,6 +455,10 @@ do_new_at() { # index [name]
     _name="${2:-Project $(($1 + 1))}"
     mkdir -p "$SETS_DIR/$_uuid/$_name"
     cp "$_src" "$SETS_DIR/$_uuid/$_name/Song.abl"
+    # Random stock instruments, like Move native does on a new set.
+    # After the copy (there is a file), before normalize (which re-reads it).
+    randomize_instruments "$SETS_DIR/$_uuid/$_name/Song.abl"
+    seed_random_key "$SETS_DIR/$_uuid"
     python3 -c "import os,sys; os.setxattr(sys.argv[1], 'user.song-index', sys.argv[2].encode())" \
         "$SETS_DIR/$_uuid" "$1" 2>/dev/null || true
     # Default colour: round-robin by pad (see DBX_PALETTE_N). Same best-effort

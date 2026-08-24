@@ -38,6 +38,12 @@ function ensureStateDir(uuid) {
     if (uuid) host_ensure_dir(setStateDir(uuid));
 }
 
+/* The "this project is brand new" note project-cmd leaves at creation. Read and
+ * DELETED on the first load of that project — see consumeNewProjectSeed. */
+export function uuidToNewProjectPath(uuid) {
+    return uuid ? setStateDir(uuid) + '/new-project.json' : '';
+}
+
 export function uuidToStatePath(uuid) {
     return uuid
         ? setStateDir(uuid) + '/' + STATE_PREFIX + '-state.json'
