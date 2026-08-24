@@ -52,21 +52,39 @@ def chunks(payload):
     return [payload[i:i + per] for i in range(0, len(payload), per)]
 
 
+def wait_for_room(mm, need, gap):
+    """Block until the shim has drained enough of the ring for `need` bytes.
+
+    ⚠⚠ This is not a nicety. The payload is two frames, and a plain
+    sleep-between-chunks DROPPED THE SECOND ONE: measured on device, the first
+    252-byte frame filled the ring, the second found no room and was skipped
+    silently, so the pads went dark and every BUTTON stayed lit. The ring tells
+    us when it is empty — ask it instead of guessing a delay.
+    """
+    deadline = time.monotonic() + 2.0
+    while mm[0] + need > MAX_FRAME:
+        if time.monotonic() >= deadline:
+            return False          # shim is not draining; nothing more to do
+        time.sleep(gap if gap > 0 else 0.002)
+    return True
+
+
 def blank(shm_path, rounds, gap):
     with open(shm_path, "r+b") as f:
         mm = mmap.mmap(f.fileno(), HDR + BUF_SIZE)
-        # Repeated deliberately. A frame lands only if the shim has drained
-        # what came before, and at boot we are racing its first frames — one
-        # attempt that arrives while the ring is full is a surface that stays
-        # lit, with nothing to say so. Idempotent: writing dark twice is dark.
+        # Repeated deliberately. At boot we are racing the shim's first frames,
+        # and an attempt that finds no room is a surface that stays lit with
+        # nothing to say so. Idempotent: writing dark twice is dark.
         for _ in range(rounds):
             for pk in chunks(messages()):
+                if not wait_for_room(mm, len(pk), gap):
+                    return
                 widx = mm[0]
-                if widx + len(pk) <= MAX_FRAME:
-                    mm[HDR + widx:HDR + widx + len(pk)] = pk
-                    mm[0] = widx + len(pk)
-                    mm[1] = (mm[1] + 1) & 0xFF
-                time.sleep(gap)
+                mm[HDR + widx:HDR + widx + len(pk)] = pk
+                mm[0] = widx + len(pk)
+                mm[1] = (mm[1] + 1) & 0xFF
+                if gap:
+                    time.sleep(gap)
 
 
 def main():
