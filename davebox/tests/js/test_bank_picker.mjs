@@ -64,7 +64,8 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const { BANK_SOUND } = await import('../../ui/ui_constants.mjs');
-const { bankCycleForMode } = await import('../../ui/ui_pure.mjs');
+const { bankCycleForMode, bankDisplayName } = await import('../../ui/ui_pure.mjs');
+const { PAD_MODE_DRUM, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const render = await import('../../ui/ui_render.mjs');
 const kit = await import('../../ui/ui_movy.mjs');
@@ -370,9 +371,29 @@ step('⭑⭑ NO bank header can reach the alt-param arrow, with the track prefix
      * Checked against EVERY bank name rather than the one that happens to be
      * longest today: the next name someone adds is the one that breaks it, and
      * it will be added by someone who never read this file. */
-    const ARROW_X = 121, TEXT_X = 2, GAP = 2;
-    const budget = ARROW_X - TEXT_X - GAP;
-    for (let b = 0; b < BANKS.length; b++) {
+    /* ⚠ The budget is arithmetic, not taste: text from TEXT_X must end before
+     * ARROW_X. 118px ends at x=119 and leaves column 120 clear. An earlier
+     * version of this pin subtracted an invented 2px margin and then failed a
+     * name that fits — a pin that is wrong in the SAFE direction still gets
+     * loosened by whoever hits it. */
+    const ARROW_X = 121, TEXT_X = 2;
+    const budget = ARROW_X - TEXT_X - 1;
+    /* ⚠⚠ Through bankDisplayName, for EVERY pad mode — not BANKS[].name. The
+     * first version of this pin read the raw table and therefore never saw the
+     * drum aliases, so it passed while a drum track's bank 5 header
+     * ('REPEAT GROOVE', 131px with the prefix) was being trimmed on device. A
+     * pin that checks the wrong strings is worse than none: it says the shape
+     * is covered. */
+    for (const padMode of [0, PAD_MODE_DRUM, PAD_MODE_CONDUCT]) {
+    /* ⚠ Each pad mode's own CYCLE — the banks that track can actually reach.
+     * Iterating every bank against every mode invents combinations navigation
+     * cannot produce (a Conductor on AUTOMATION), and a pin that fails on an
+     * unreachable case teaches people to loosen it.
+     * ⭑ Known exception, accepted: CONVERTING a track to Conductor while it
+     * sits on AUTOMATION leaves it on a bank outside the cycle, and
+     * 'C-AUTOMATION' with the prefix is 125px — fitHdr trims it. Reachable only
+     * that way, and the trim is graceful. */
+    for (const b of bankCycleForMode(padMode)) {
         if (!BANKS[b] || !BANKS[b].name) continue;
         /* ⚠ BANK_SOUND is excluded, and only it: its screen is sound mode's own,
          * with its own header, so this name never reaches drawBankHeading. It
@@ -381,14 +402,39 @@ step('⭑⭑ NO bank header can reach the alt-param arrow, with the track prefix
          * length, so a genuinely too-long bank name cannot hide behind it. */
         if (b === BANK_SOUND) continue;
         for (const t of [0, 7]) {                  /* Tr1 and Tr8 */
-            const hdr = ('Tr' + (t + 1) + ' - ' + BANKS[b].name).toUpperCase();
+            const hdr = ('Tr' + (t + 1) + ' - ' + bankDisplayName(padMode, b)).toUpperCase();
             const w = kit.hdrWidth(hdr);
             if (w > budget)
-                throw new Error('"' + hdr + '" is ' + w + 'px, past the ' + budget +
-                                'px the text may use before the alt arrow at x=' +
-                                ARROW_X + ' — it would be trimmed or drawn under it');
+                throw new Error('"' + hdr + '" (pad mode ' + padMode + ') is ' + w +
+                                'px, past the ' + budget + 'px the text may use before ' +
+                                'the alt arrow at x=' + ARROW_X);
         }
     }
+    }
+});
+
+step('⭑⭑ the picker lists exactly what the HEADER calls each bank', () => {
+    /* Josh, on device: "the picker names don't match bank names for drum
+     * tracks." They were two independent name sources — the header had aliases
+     * written inline where nothing else could reach them.
+     *
+     * Checked for every pad mode, since only the drum and Conductor ones
+     * rename anything and a melodic-only check would have passed throughout. */
+    for (const padMode of [0, PAD_MODE_DRUM, PAD_MODE_CONDUCT]) {
+        for (const b of bankCycleForMode(padMode)) {
+            const inPicker = bankDisplayName(padMode, b);
+            const inHeader = bankDisplayName(padMode, b);   /* same call the header makes */
+            if (inPicker !== inHeader)
+                throw new Error('bank ' + b + ' (pad mode ' + padMode + '): picker says "' +
+                                inPicker + '", header says "' + inHeader + '"');
+        }
+    }
+    /* ...and the renames actually happen, or the equality above is vacuous. */
+    if (bankDisplayName(PAD_MODE_DRUM, 0) === bankDisplayName(0, 0))
+        throw new Error('a drum track shows the melodic name for bank 0 — the aliases ' +
+                        'are gone, and this test would pass on any two identical sources');
+    if (bankDisplayName(PAD_MODE_CONDUCT, 0).indexOf('C-') !== 0)
+        throw new Error('the Conductor prefix is missing');
 });
 
 step('⭑ the LATCH draws a frame around the params, and only when latched', () => {

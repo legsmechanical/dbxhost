@@ -12,7 +12,7 @@
  */
 
 import { S } from './ui_state.mjs';
-import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, NUM_STEPS,
+import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, NUM_STEPS, BANKS,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND } from './ui_constants.mjs';
 
 /* Live pad note input — isomorphic 4ths diatonic layout.
@@ -41,6 +41,33 @@ export const BANK_CYCLE_DRUM = [7, 0, 1, 3, 5, 6];
  * → When. Single source of truth for both the jog nav (_onCC_jog) and the
  * header position strip (bankCyclePos below) — they must stay in lockstep. */
 export const CONDUCT_BANK_CYCLE = [0, 1, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN];
+
+/* THE name of a bank on a given track — one source for the card header, the
+ * bank picker, and anything else that shows a bank to the user.
+ *
+ * ⚠⚠ The aliases used to live inline in the render's drum branch, so nothing
+ * else could see them: the picker listed CLIP and LIVE ARP for banks that the
+ * header called DRUM LANE and REPEAT GROOVE. Josh, on device: "the picker names
+ * don't match bank names for drum tracks."
+ *
+ * A drum track renames three banks — the same index means a different thing
+ * there. A Conductor prefixes every bank with C- and calls bank 0 CONDUCT. A
+ * MIDI track renames nothing: MIDI is a ROUTE, not a pad mode, so it reads as
+ * melodic (verified, not assumed — no route-keyed naming exists).
+ *
+ * ⚠ STATIC: the blinking variants (the drum ALL/blank on ALL LANES, the
+ * Conductor C- blink) are the HEADER's animation, applied on top. A list of
+ * names must not blink. */
+export function bankDisplayName(padMode, bank) {
+    const base = (BANKS[bank] && BANKS[bank].name) || '?';
+    if (padMode === PAD_MODE_CONDUCT) return 'C-' + (bank === 0 ? 'CONDUCT' : base);
+    if (padMode === PAD_MODE_DRUM) {
+        if (bank === 0) return 'DRUM LANE';
+        if (bank === 5) return 'RPT GROOVE';
+        if (bank === 7) return 'ALL LANES';
+    }
+    return base;
+}
 
 /* The banks a track can reach on the jog, in jog order — the SAME strip the
  * unshifted turn walks, so the bank picker (Shift+jog) is a VIEW of the

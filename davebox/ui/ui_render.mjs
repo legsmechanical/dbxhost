@@ -34,7 +34,7 @@ import {
     drawProjectPadPicker
 } from './ui_dialogs.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
-import { bankCyclePos, bankCycleForMode } from './ui_pure.mjs';
+import { bankCyclePos, bankCycleForMode, bankDisplayName } from './ui_pure.mjs';
 import { syncDrumRepeatState } from './ui_drummodel.mjs';
 import {
     effectiveClip,
@@ -78,7 +78,11 @@ function drawBankHeaderRight(showTrack, hdrFilled) {
  * SEQUENCE ARP became SEQ ARP (Josh offered the rename when the long form did
  * not fit). Measured, not guessed — measure again before adding a longer
  * bank name. */
-const BANK_HDR_TEXT_W = 117;
+/* Text starts at x=2 and the alt arrow starts at x=121, so 118px of text ends
+ * at x=119 and leaves column 120 clear. ⚠ Derived from the two positions, not a
+ * margin picked by eye — the first value here was 117 from an invented 2px gap,
+ * and it failed the Conductor's 'C-RESPONDER' by exactly one pixel. */
+const BANK_HDR_TEXT_W = 118;
 
 /* Top of the latch frame: the row the header rule used to draw on. Reclaiming
  * it is why the rule went (Josh, 2026-08-25) — the frame sits in that space
@@ -460,11 +464,11 @@ function midiNoteName(n) {
 /* Bank header label. Identical to BANKS[bank].name except a Conductor track
  * relabels bank 0 (CLIP) to "CONDUCT" — the CLIP bank is reused as the Conduct
  * bank. Does NOT rename BANKS[0] globally (other track types keep "CLIP"). */
+/* One source for what a bank is CALLED — see bankDisplayName in ui_pure. The
+ * drum aliases used to live inline in the drum render branch below, which is
+ * how the picker ended up listing different names than the header. */
 function bankHeaderName(t, bank) {
-    /* Conductor banks: "C-" prefix on the bank name (bank 0/CLIP shown as CONDUCT). */
-    if (S.trackPadMode[t] === PAD_MODE_CONDUCT)
-        return 'C-' + (bank === 0 ? 'CONDUCT' : BANKS[bank].name);
-    return BANKS[bank].name;
+    return bankDisplayName(S.trackPadMode[t], bank);
 }
 
 /* ------------------------------------------------------------------ */
@@ -966,7 +970,7 @@ function drawBankPicker() {
     /* Width is the overlay's own business now — it sizes to the longest label,
      * which is what makes 'SOUND + CONFIG' readable here and stops any enum
      * picker being cut elsewhere. */
-    drawKitListOverlay(cyc.map((b) => (BANKS[b] && BANKS[b].name) || '?'),
+    drawKitListOverlay(cyc.map((b) => bankDisplayName(S.trackPadMode[S.activeTrack], b)),
                        Math.max(0, Math.min(cyc.length - 1, S.bankPickerSel)));
 }
 
@@ -2175,7 +2179,13 @@ function drawUIBody() {
         const oct       = Math.floor(note / 12) - 2;
         const name      = NOTE_KEYS[note % 12];
         const bankGroup = pg === 0 ? 'Bank:A' : 'Bank:B';
-        const bankName  = S.activeBank === 0 ? 'DRUM LANE' : S.activeBank === 1 ? 'NOTE FX' : S.activeBank === 5 ? 'REPEAT GROOVE' : S.activeBank === 6 ? BANKS[6].name : S.activeBank === 7 ? (Math.floor(S.tickCount / 24) % 2 === 0 ? 'ALL' : '   ') + ' LANES' : BANKS[S.activeBank] ? BANKS[S.activeBank].name : '?';
+        /* ⚠ The name comes from bankDisplayName now — these aliases used to be
+         * written out here, where only this screen could see them. The BLINK
+         * stays local: it is this header's animation, not part of the name. */
+        const _bnStatic = bankHeaderName(t, S.activeBank);
+        const bankName  = S.activeBank === 7
+            ? (Math.floor(S.tickCount / 24) % 2 === 0 ? 'ALL' : '   ') + ' LANES'
+            : _bnStatic;
         (S.activeBank === 5 || S.activeBank === 6 ? drawBankHeadingInverted : drawBankHeading)(bankName, false);
         /* info row sits at y=12 — 2px clear of the header rule on row 9 */
         pixelPrint(4, 12, bankGroup + '  Pad:' + name + oct + ' (' + note + ')', 1);
