@@ -134,7 +134,8 @@ static pthread_t skipback_writer_thread;
 volatile int skipback_overlay_timeout = 0;
 
 /* Runtime size of the rolling buffer (in samples per channel × frames).
- * Established by skipback_init(); may be changed by skipback_resize(). */
+ * Established by skipback_prepare() at startup; may be changed by
+ * skipback_resize(). Both are non-RT; the audio thread only ever reads. */
 static volatile int skipback_seconds_actual = 0;
 static volatile size_t skipback_total_samples = 0;  /* skipback_seconds_actual * SR * channels */
 static pthread_mutex_t skipback_resize_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -1029,23 +1030,53 @@ void sampler_on_clock(uint8_t status) {
  * Skipback
  * ============================================================================ */
 
-void skipback_init(int seconds) {
+/* ⚠⚠ NON-REALTIME ONLY. This allocates and logs; neither belongs on the SPI
+ * callback, and until 2026-08-25 this ran there under the name skipback_init(),
+ * called every block from BOTH the pre-ioctl mix and the post-ioctl capture.
+ * It early-returned once the buffer existed, so the cost was one-shot — but
+ * that one shot landed inside a 900 us deadline the moment Resample capture
+ * first engaged:
+ *
+ *   · calloc() of 5.3 MB at the 30 s default (53 MB at the 300 s max) is far
+ *     over glibc's 128 KB mmap threshold, so it is an mmap syscall holding the
+ *     process memory lock — and under memory pressure it can block on reclaim.
+ *     Unbounded latency inside a hard deadline.
+ *   · the pages come back lazily zeroed, so the rest of the bill arrives later
+ *     as ~1300 minor faults inside skipback_capture() over the following
+ *     minute — invisible in any single frame measurement.
+ *   · s_host.log() reaches unified_log, which takes a mutex, may fopen, and
+ *     fflush()es to eMMC. A SCHED_FIFO 90 thread blocking on a mutex held by a
+ *     SCHED_OTHER logger is textbook priority inversion.
+ *
+ * The safe shape already existed in this file — skipback_resize() has always
+ * allocated off-thread behind the saving flag. This just makes the first
+ * allocation follow the same rule instead of being the one path that did not.
+ *
+ * Call once at startup. Idempotent: a second call with a buffer already present
+ * is a no-op (use skipback_resize() to change size). */
+void skipback_prepare(int seconds) {
     if (skipback_buffer) return;
     int sec = skipback_clamp_seconds(seconds);
     size_t samples = (size_t)SAMPLER_SAMPLE_RATE * (size_t)sec * (size_t)SAMPLER_NUM_CHANNELS;
-    skipback_buffer = (int16_t *)calloc(samples, sizeof(int16_t));
-    if (skipback_buffer) {
-        skipback_write_pos = 0;
-        skipback_buffer_full = 0;
-        skipback_seconds_actual = sec;
-        skipback_total_samples = samples;
-        char msg[96];
-        snprintf(msg, sizeof(msg), "Skipback: allocated %ds rolling buffer (%.1f MB)",
-                 sec, (double)(samples * sizeof(int16_t)) / (1024.0 * 1024.0));
-        s_host.log(msg);
-    } else {
+    int16_t *buf = (int16_t *)calloc(samples, sizeof(int16_t));
+    if (!buf) {
         s_host.log("Skipback: failed to allocate buffer");
+        return;
     }
+    /* Fill the geometry BEFORE publishing the pointer, then publish with a
+     * release-store. skipback_capture() acquire-loads the pointer, so it can
+     * never observe a live buffer alongside a stale length — the one way this
+     * could corrupt now that the allocation is on another thread. */
+    skipback_write_pos = 0;
+    skipback_buffer_full = 0;
+    skipback_seconds_actual = sec;
+    skipback_total_samples = samples;
+    __atomic_store_n(&skipback_buffer, buf, __ATOMIC_RELEASE);
+
+    char msg[96];
+    snprintf(msg, sizeof(msg), "Skipback: allocated %ds rolling buffer (%.1f MB)",
+             sec, (double)(samples * sizeof(int16_t)) / (1024.0 * 1024.0));
+    s_host.log(msg);
 }
 
 int skipback_get_seconds(void) {
@@ -1053,7 +1084,13 @@ int skipback_get_seconds(void) {
 }
 
 void skipback_capture(int16_t *audio) {
-    if (!skipback_buffer || !audio || __atomic_load_n(&skipback_saving, __ATOMIC_ACQUIRE)) return;
+    /* Acquire-load pairs with the release-store in skipback_prepare(): the
+     * buffer is allocated on another thread now, so reading the pointer without
+     * it could pair a live pointer with a length that is not yet visible.
+     * A NULL here simply means "not ready yet" — the RT path no longer creates
+     * the buffer, it just declines the block. */
+    int16_t *buf = __atomic_load_n(&skipback_buffer, __ATOMIC_ACQUIRE);
+    if (!buf || !audio || __atomic_load_n(&skipback_saving, __ATOMIC_ACQUIRE)) return;
 
     size_t total_samples = skipback_total_samples;
     if (total_samples == 0) return;
@@ -1061,7 +1098,7 @@ void skipback_capture(int16_t *audio) {
     size_t wp = skipback_write_pos;
 
     for (size_t i = 0; i < block_samples; i++) {
-        skipback_buffer[wp] = audio[i];
+        buf[wp] = audio[i];
         wp = (wp + 1) % total_samples;
     }
 

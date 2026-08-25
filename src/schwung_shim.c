@@ -3064,8 +3064,9 @@ skip_la_rebuild:
     if (sampler_source == SAMPLER_SOURCE_RESAMPLE) {
         sampler_capture_audio_from_buffer(unity_view);
         sampler_tick_preroll();
-        /* Skipback: always capture Resample source into rolling buffer */
-        skipback_init(skipback_seconds_setting);
+        /* Skipback: always capture Resample source into rolling buffer.
+         * No init call here — the buffer is allocated at startup by
+         * skipback_prepare(). Capture declines the block if it is not ready. */
         skipback_capture(unity_view);
     }
 
@@ -4665,6 +4666,14 @@ static void shim_init_subsystems(void)
             .hardware_mmap_addr = &hardware_mmap_addr,
         };
         sampler_init(&sampler_host, &sampler_set_tempo);
+        /* Allocate the skipback rolling buffer HERE, on the startup thread —
+         * never on the SPI callback, where it used to happen the first time
+         * Resample capture engaged. 5.3 MB at the 30 s default against ~4 GB of
+         * RAM, so paying for it unconditionally is cheaper than a stall, and it
+         * removes the allocation from the deadline entirely. A later size
+         * change still goes through skipback_resize(), which has always been
+         * off-thread. */
+        skipback_prepare(skipback_seconds_setting);
     }
     /* Initialize set pages subsystem with callbacks to shim functions */
     {
@@ -6839,8 +6848,8 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
     if (sampler_source == SAMPLER_SOURCE_MOVE_INPUT) {
         sampler_capture_audio();
         sampler_tick_preroll();
-        /* Skipback: always capture Move Input source into rolling buffer */
-        skipback_init(skipback_seconds_setting);
+        /* Skipback: always capture Move Input source into rolling buffer.
+         * No init call here — see the Resample site in the mix path. */
         skipback_capture((int16_t *)(hw + AUDIO_IN_OFFSET));
     }
 

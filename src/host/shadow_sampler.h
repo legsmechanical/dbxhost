@@ -208,8 +208,14 @@ void sampler_on_clock(uint8_t status);
 
 /* Skipback: allocate buffer, capture audio, trigger save.
  * Pass desired duration in seconds (clamped to [SKIPBACK_DEFAULT_SECONDS, SKIPBACK_MAX_SECONDS]).
- * Calling skipback_init() multiple times is safe; size is established on first call. */
-void skipback_init(int seconds);
+ *
+ * ⚠⚠ skipback_prepare() is NON-REALTIME ONLY — it allocates (5.3 MB at the 30 s
+ * default) and logs. Call it once at startup, NEVER from the audio callback.
+ * It replaced skipback_init(), which had the same body and was called every
+ * block from the SPI callback; renamed rather than kept as a wrapper so the old
+ * name cannot quietly come back on the RT path. skipback_capture() no longer
+ * creates the buffer — it declines the block until one is published. */
+void skipback_prepare(int seconds);
 void skipback_capture(int16_t *audio);
 void skipback_amend(const int16_t *audio);
 void skipback_trigger_save(void);
