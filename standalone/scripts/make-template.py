@@ -21,6 +21,21 @@ that mute into the template, into every project born from it, and into every
 copy of those. Patched explicitly below — a captured set is a snapshot of
 someone's session, and its mixer is not part of what we mean by "empty".
 
+⚠⚠ THE SAME DONOR CARRIED ITS MUSIC, and nobody extended that reasoning to the
+clips. `empty_song.abl` is not empty: 14 notes + one automation envelope on
+track 1, 5 on track 2, 19 on track 3. Every project ever created here was born
+holding 38 notes of a stranger's demo — and the envelope was actively fatal.
+It is bound to a device parameter by id, `randomize_instruments` then swaps that
+track's device for a random kit, the id no longer resolves, and Move refuses the
+WHOLE set with "Unknown id": no song loads, currentSongIndex goes to -1, and the
+session shows whatever set was already resident. Three of four of Josh's
+projects were unloadable this way (2026-08-25), which read as "the wrong set
+loads on relaunch".
+⭑ Josh put it plainly: new sets should be empty apart from the track devices.
+So the clips are cleared here rather than the envelope being stripped at swap
+time — an empty set cannot carry a stale binding, and no future donor can
+reintroduce one.
+
 Run by scripts/build.sh; output lands in the payload at
 build/sets/template/<name>/Song.abl and the launcher seeds the first project
 from it (launch.sh first-run branch).
@@ -58,6 +73,18 @@ def main():
             mixer["speakerOn"] = True
             mixer["solo-cue"] = False
             mixer["volume"] = 0.0
+
+    # A new project is EMPTY apart from its track devices. Clear every clip on
+    # every track — not just the four the donor happened to fill, and not just
+    # the one carrying the envelope. `{"hasStop": true, "clip": null}` is the
+    # donor's own empty-slot shape (see its unfilled slots), so this is the
+    # file's own vocabulary rather than an invented one.
+    for t in tracks:
+        slots = t.get("clipSlots")
+        if isinstance(slots, list):
+            for cs in slots:
+                if isinstance(cs, dict):
+                    cs["clip"] = None
 
     # A neutral musical starting point; the fixture's authored tempo is
     # whatever its donor session used.
