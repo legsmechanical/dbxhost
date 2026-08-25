@@ -1078,12 +1078,37 @@ function _onCC_buttons(d1, d2) {
     }
 
     if (d1 === MoveCopy) {
-        S.copyHeld = d2 === 127;
-        if (!S.copyHeld) {
-            S.copySrc = null;
-            invalidateLEDCache();
+        /* ⚠⚠ In Move co-run, Copy is FORWARDED to Move rather than handled here
+         * (Josh, 2026-08-24: "mute + pad works to mute move pads natively. so
+         * copy should too, right?").
+         *
+         * It cannot be ceded through the mask: the framework's legacy carve-out
+         * (corun_event_owner) keeps the EDIT group — Copy, Delete, Undo,
+         * Capture — with the TOOL regardless of keep_mask, so Move firmware
+         * never sees CC 60 no matter what we declare. Mute works today because
+         * CC 88 is outside that group and cedes normally, and because pad
+         * presses are already injected to Move. So Copy takes the same road as
+         * the pads: inject it.
+         *
+         * ⭑ And stand OUR gesture down while we do — davebox owning Copy AND
+         * forwarding it would run both copies off one press, on a surface where
+         * the pad taps are already going to Move. */
+        if (S.moveCoRunTrack >= 0) {
+            move_midi_inject_to_move([0x0B, 0xB0, MoveCopy, d2 & 0x7F]);
+            if (S.copyHeld || S.copySrc) {
+                S.copyHeld = false;
+                S.copySrc = null;
+                invalidateLEDCache();
+                computePadNoteMap();
+            }
+        } else {
+            S.copyHeld = d2 === 127;
+            if (!S.copyHeld) {
+                S.copySrc = null;
+                invalidateLEDCache();
+            }
+            computePadNoteMap();
         }
-        computePadNoteMap();
     }
 
     if (d1 === MoveMute) {

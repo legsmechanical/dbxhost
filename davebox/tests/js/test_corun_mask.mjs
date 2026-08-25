@@ -114,6 +114,7 @@ step('the LED mask matches the keep mask — no lights/input split any more', ()
  * mutation proved it uncovered — flipping the lit pad back to White passed
  * every other test in the suite. Captured at the wire, the way the bank-jog
  * test does it: setLED emits [0x09, 0x90, note, color]. */
+await import('../../ui/ui.js');          /* installs onMidiMessageInternal */
 const ledsMod2 = await import('../../ui/ui_leds.mjs');
 const constsMod2 = await import('../../ui/ui_constants.mjs');
 const ifMod2 = await import('/data/UserData/schwung/shared/input_filter.mjs');
@@ -164,6 +165,59 @@ step('⭑ a sounding pad wears the TRACK colour in co-run, not white', () => {
                         (inside === outside ? ' (it is still painting the non-co-run white)' : ''));
     if (outside === inside)
         throw new Error('control failed: co-run and normal look identical, so this proves nothing');
+});
+
+/* ── Copy is FORWARDED to Move in co-run ───────────────────────────────────
+ *
+ * Josh: "mute + pad works to mute move pads natively. so copy should too,
+ * right?" It could not, and no mask setting would have fixed it — the
+ * framework's legacy carve-out keeps the EDIT group (Copy/Delete/Undo/Capture)
+ * with the TOOL regardless of keep_mask, so Move never saw CC 60. Mute works
+ * because CC 88 is outside that group AND pad presses are already injected. So
+ * Copy takes the same road: inject it.
+ *
+ * ⚠ Two halves, and the second is the one that would rot silently: forwarding
+ * WITHOUT standing our own gesture down would run both copies off one press. */
+step('⭑ co-run FORWARDS Copy to Move, and stands our own copy gesture down', () => {
+    const sent = [];
+    const prev = globalThis.move_midi_inject_to_move;
+    globalThis.move_midi_inject_to_move = (b) => { sent.push(Array.from(b)); };
+
+    S.sessionView = false;
+    S.moveCoRunTrack = 2;
+    S.copyHeld = false; S.copySrc = null;
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 60, 127]));
+
+    globalThis.move_midi_inject_to_move = prev;
+    S.moveCoRunTrack = -1;
+
+    const copyMsg = sent.find((m) => m[1] === 0xB0 && m[2] === 60);
+    if (!copyMsg)
+        throw new Error('Copy was not forwarded to Move — it stays with the tool ' +
+                        'by carve-out, so nothing native can ever see it');
+    if (copyMsg[3] !== 127)
+        throw new Error('forwarded the wrong value: ' + copyMsg[3]);
+    if (S.copyHeld)
+        throw new Error('our own copy gesture armed too — one press, two copies');
+});
+
+step('⚠ CONTROL: outside co-run, Copy is OURS and is not forwarded', () => {
+    /* Without this the step above passes just as well against a Copy handler
+     * that forwards unconditionally and never works anywhere. */
+    const sent = [];
+    const prev = globalThis.move_midi_inject_to_move;
+    globalThis.move_midi_inject_to_move = (b) => { sent.push(Array.from(b)); };
+
+    S.moveCoRunTrack = -1;
+    S.copyHeld = false;
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 60, 127]));
+
+    globalThis.move_midi_inject_to_move = prev;
+    if (sent.some((m) => m[1] === 0xB0 && m[2] === 60))
+        throw new Error('Copy is forwarded to Move OUTSIDE co-run');
+    if (!S.copyHeld)
+        throw new Error('Copy no longer arms our own gesture outside co-run');
+    S.copyHeld = false;
 });
 
 process.exit(failed);
