@@ -1092,6 +1092,14 @@ export function _resolveLoopGesture(fireFallback) {
 }
 
 export function _onStepButtons(d1, d2) {
+    /* ⚠ TEMPORARY INSTRUMENTATION (2026-08-24). Steps read as dead in Move
+     * co-run and every static lead says they should work: the mask keeps
+     * CORUN_GRP_STEPS, ui.js routes notes 16-31 here, and the co-run gate that
+     * used to swallow them is gone. Rather than guess a fourth time, log
+     * whether the press ARRIVES — if this line never appears, the event is
+     * being taken above us and the fix is host-side, not here. Remove once the
+     * answer is known. */
+    if (S.moveCoRunTrack >= 0) console.log('[corun] step press d1=' + d1 + ' d2=' + d2);
     if (S.mergeNoticePending) return;   /* Live Merge notice is modal (Rec/Back only) */
     /* SELECT-BEFORE-LOAD: the step grid edits a clip, and there is no project
      * to edit yet. Shift+Step 1 (open Projects) is swallowed too — the picker

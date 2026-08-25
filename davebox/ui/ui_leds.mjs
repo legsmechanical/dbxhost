@@ -668,7 +668,12 @@ export function updateTrackLEDs() {
                     if (sounding) {
                         color = White;
                     } else if (flashing) {
-                        color = isMuted ? DarkGrey : tc;
+                        /* ⭑ The just-hit pad flashes in the REAL track colour in
+                         * co-run (Josh, 2026-08-24 — the melodic side got this
+                         * first and drum tracks still showed white). `tc` is
+                         * White here during co-run, which is what made the last
+                         * touched pad say nothing about which track it was. */
+                        color = isMuted ? DarkGrey : (_inCoRunPad ? tcReal : tc);
                     } else if (isMuted) {
                         color = LED_OFF;
                     } else if (isActive) {

@@ -265,6 +265,42 @@ PYEOF
 # empty category — each one just leaves that track on whatever the template
 # shipped, which is a working instrument. A new project you cannot make is a
 # far worse outcome than a new project that sounds like the last one.
+# ---- a new project starts with Full Velocity OFF ----------------------------
+# Josh, 2026-08-24: "move sets have a fixed velocity setting. i want to make sure
+# that is always off by default when new sets are created."
+#
+# ⚠ It is Move's GLOBAL setting (`isFullVelocityOn` in Settings.json), not a
+# per-set field — there is nothing in Song.abl to carry it. So a new project
+# cannot own the value; the best we can do is clear it at creation, which is
+# what "off by default when new sets are created" asks for.
+#
+# ⚠⚠ And it can be clobbered: Move rewrites Settings.json on SIGTERM, so a value
+# written while Move is running is lost if Move exits without re-reading it.
+# That is the same exposure every Settings.json write in this file has (see
+# write_song_index and the launcher deferral) — worth knowing, not worth a
+# relaunch for a velocity toggle.
+clear_full_velocity() {
+    [ -f "$SETTINGS_JSON" ] || return 0
+    python3 - "$SETTINGS_JSON" <<'PYEOF' || true
+import json, os, sys
+p = sys.argv[1]
+try:
+    with open(p) as f:
+        cfg = json.load(f)
+except (OSError, ValueError):
+    sys.exit(0)                      # never block creation over a toggle
+if cfg.get("isFullVelocityOn") is False:
+    sys.exit(0)                      # already off — do not rewrite the file
+cfg["isFullVelocityOn"] = False
+tmp = p + ".fvtmp"
+with open(tmp, "w") as f:
+    json.dump(cfg, f, indent=4)
+    f.flush()
+    os.fsync(f.fileno())
+os.rename(tmp, p)
+PYEOF
+}
+
 # ---- a new project starts in a random key ------------------------------------
 # Josh, 2026-08-24. Key and scale are per-project DSP state, not something the
 # Song.abl carries, and the DSP's own defaults (A minor) are compiled in — so a
@@ -390,6 +426,7 @@ do_new() { # name
     # After the copy (there is a file), before normalize (which re-reads it).
     randomize_instruments "$_dst/Song.abl"
     seed_random_key "$SETS_DIR/$_uuid"
+    clear_full_velocity
     # Belt and braces: the template ships neutral, but a project is born here
     # and this is the one place that can promise it.
     do_normalize >/dev/null
@@ -459,6 +496,7 @@ do_new_at() { # index [name]
     # After the copy (there is a file), before normalize (which re-reads it).
     randomize_instruments "$SETS_DIR/$_uuid/$_name/Song.abl"
     seed_random_key "$SETS_DIR/$_uuid"
+    clear_full_velocity
     python3 -c "import os,sys; os.setxattr(sys.argv[1], 'user.song-index', sys.argv[2].encode())" \
         "$SETS_DIR/$_uuid" "$1" 2>/dev/null || true
     # Default colour: round-robin by pad (see DBX_PALETTE_N). Same best-effort
