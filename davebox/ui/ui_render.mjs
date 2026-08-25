@@ -21,6 +21,7 @@ import {
 import {
     drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitAltArrow,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawVFader, mvPrint, mvWidth, rectOutline,
+    drawLevelCard,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H
 } from './ui_movy.mjs';
@@ -893,7 +894,27 @@ export function soundModeCovered() {
         (S.sessionView && (S.loopHeld || S.perfViewLocked)));
 }
 
+/* Shift+Volume's level card, drawn OVER whatever is on screen.
+ *
+ * ⚠ It has to live outside drawUIBody: that function returns early from a dozen
+ * places (loading, popups, sound mode, every bank branch), so anything drawn at
+ * its end would simply never appear on most screens — and "everywhere" is the
+ * whole request. Drawn last, unconditionally, which is what makes it an overlay
+ * rather than another branch competing for the screen.
+ *
+ * Sound mode keeps drawing its OWN read-out through the same drawLevelCard, so
+ * the two are one card by construction; this one covers everywhere else. */
+function drawTrackVolCard() {
+    if (S.tvCardUntil < 0 || S.tickCount > S.tvCardUntil) return;
+    drawLevelCard(S.tvCardText, S.tvCardFrac);
+}
+
 export function drawUI() {
+    drawUIBody();
+    drawTrackVolCard();
+}
+
+function drawUIBody() {
     /* Exit farewell: the last frame the session ever pushes — the panel
      * retains it across the hand-back to stock, so it must win over every
      * other screen. Same grammar as the LOADING screen (verb, then subject). */

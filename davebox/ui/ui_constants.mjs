@@ -442,6 +442,10 @@ export const BANK_SOUND = 11;
 export const TICK_HZ = 94;
 
 export const ACTION_POPUP_TICKS = 49; /* ~520ms at 94Hz */
+/* Shift+Volume's level card lingers ~1s after the last turn — the same window
+ * sound mode uses for its own read-out (VOL_SHOW_TICKS), because they are the
+ * same card and must not feel like two controls. */
+export const VOL_CARD_TICKS = 94;
 export const POLL_INTERVAL = 4;
 export const CC_SCRATCH_PALETTE_BASE = 51;  /* 51-58: per-knob value brightness (knob LEDs) */
 export const OOB_SCRATCH_PALETTE     = 50;  /* scratch index for 50%-white OOB step LEDs */

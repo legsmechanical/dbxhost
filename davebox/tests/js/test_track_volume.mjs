@@ -98,6 +98,55 @@ step('⭑ the save lands ONCE, on the Shift release — never per detent', () =>
     if (saveCalls !== 1) throw new Error('kept saving after the gesture');
 });
 
+step('⭑ the level CARD shows — the same one sound mode draws, over any screen', () => {
+    /* Josh, 2026-08-24: Shift+Volume should "show everywhere as an overlay with
+     * the same card we use for track volume adjustment in sound mode". It used
+     * to raise a two-line TEXT popup instead, which reads as a different
+     * control from the boxed level-with-a-bar sound mode shows for the same
+     * value.
+     *
+     * ⚠ Asserted on the CARD state, not on the popup: an actionPopup would
+     * satisfy "something appeared" while being the wrong thing entirely, which
+     * is exactly what was there before. */
+    S.tvCardUntil = -1;
+    S.actionPopupEndTick = -1;
+    shift(true);
+    vol(1); globalThis.tick();
+    if (S.tvCardUntil < 0)
+        throw new Error('no level card was raised by a Shift+Volume turn');
+    if (S.tvCardUntil <= S.tickCount)
+        throw new Error('the card was raised already expired');
+    if (!/^LEVEL /.test(S.tvCardText))
+        throw new Error('card text is not the shared LEVEL read-out: ' + S.tvCardText);
+    if (!(S.tvCardFrac >= 0 && S.tvCardFrac <= 1))
+        throw new Error('card fraction out of range: ' + S.tvCardFrac);
+    if (S.actionPopupEndTick >= 0)
+        throw new Error('it ALSO raised a text popup — two controls for one value');
+    shift(false);
+});
+
+step('⚠ a MIDI track shows the same card in MIDI units (CC 7 is 0-127)', () => {
+    /* One card, and the caller owns the unit — a slot level is 0-2x, CC 7 is
+     * 0-127, and the bar shows the proportion either way. */
+    /* ⚠ Restores what it touches. The CC 7 value is session-local state that a
+     * LATER step asserts an exact number against — leaving this turn in it made
+     * that step fail by one, which is a test-ordering bug pretending to be a
+     * regression. */
+    const _cc0 = S.tvExtCC7[2];
+    S.tvCardUntil = -1;
+    S.trackRoute[2] = 2;
+    S.trackMidiTo[2] = 0;
+    shift(true);
+    vol(1); globalThis.tick();
+    if (S.tvCardUntil < 0) throw new Error('no card on a MIDI track');
+    if (!/^CC7 /.test(S.tvCardText))
+        throw new Error('MIDI card should read in CC units, got: ' + S.tvCardText);
+    shift(false);
+    S.trackRoute[2] = 0;
+    S.tvExtCC7[2] = _cc0;
+    S.tvSeeded = false;
+});
+
 step('⭑ a MOVE-routed track writes its BUS strip Volume, not a slot', () => {
     S.trackRoute[2] = 1; S.trackChannel[2] = 3;
     ENGINE['0|move_fx:3:volume'] = '0.800';

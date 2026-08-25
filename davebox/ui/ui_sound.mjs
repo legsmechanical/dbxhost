@@ -61,7 +61,7 @@ import { parseValue, stepValue, commitString, renderCellsForBank,
 import {
     drawKitBankPage, drawKitHeader, drawKitSectionPicker, drawKitList,
     drawKitPageBar, MV_BAR_Y,
-    hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard,
+    hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard,
 } from './ui_movy.mjs';
 import { bankCyclePos } from './ui_pure.mjs';
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
@@ -4485,16 +4485,9 @@ function renderFile() {
  * screen: the knob is live everywhere in sound mode, so it has to be readable
  * from everywhere, and it should not cost you your place. */
 function drawVolReadout() {
-    const pct = Math.round((S.volLevel / VOL_MAX) * 100);
-    const txt = 'LEVEL  ' + (S.volLevel).toFixed(2) + 'x';
-    const w = 100, h = 22, x = (128 - w) >> 1, y = 21;
-    fill_rect(x, y, w, h, 0);
-    draw_rect(x, y, w, h, 1);
-    mvPrint(x + 5, y + 4, txt, 1);
-    const bw = w - 10;
-    draw_rect(x + 5, y + 14, bw, 4, 1);
-    const fillw = Math.max(0, Math.min(bw, Math.round(bw * pct / 100)));
-    if (fillw > 0) fill_rect(x + 5, y + 14, fillw, 4, 1);
+    /* The card itself moved to ui_movy (drawLevelCard) when Shift+Volume started
+     * showing the same one everywhere — same control, one drawer. */
+    drawLevelCard('LEVEL  ' + S.volLevel.toFixed(2) + 'x', S.volLevel / VOL_MAX);
 }
 
 export function soundRender() {

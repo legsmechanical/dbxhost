@@ -514,6 +514,30 @@ export function plotLine(x1, y1, x2, y2, fg) {
     }
 }
 
+/* The level card: a boxed read-out with a fill bar under it.
+ *
+ * ⭑ ONE drawer, because it is ONE control seen from several places (Josh,
+ * 2026-08-24: Shift+Volume should "show everywhere as an overlay with the same
+ * card we use for track volume adjustment in sound mode"). Sound mode's own
+ * read-out and the global Shift+Volume overlay both come through here, so they
+ * cannot drift into two cards that mean the same thing.
+ *
+ * `frac` is 0..1 — the caller owns the unit, because the units genuinely
+ * differ: a chain slot or Move bus level is 0..2x, a MIDI track's volume is
+ * CC 7 at 0..127. The card shows a proportion either way.
+ */
+export function drawLevelCard(valueText, frac) {
+    const w = 100, h = 22, x = (128 - w) >> 1, y = 21;
+    fill_rect(x, y, w, h, 0);          /* punch a hole in whatever is under us */
+    draw_rect(x, y, w, h, 1);
+    mvPrint(x + 5, y + 4, valueText, 1);
+    const bw = w - 10;
+    draw_rect(x + 5, y + 14, bw, 4, 1);
+    const f = Math.max(0, Math.min(1, frac));
+    const fillw = Math.round(bw * f);
+    if (fillw > 0) fill_rect(x + 5, y + 14, fillw, 4, 1);
+}
+
 export function rectOutline(x, y, w, h, fg) {
     fill_rect(x, y, w, 1, fg);
     fill_rect(x, y + h - 1, w, 1, fg);

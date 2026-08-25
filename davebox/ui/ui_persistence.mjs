@@ -1,5 +1,6 @@
 import { S, CC_ASSIGN_DEFAULTS } from './ui_state.mjs';
-import { NUM_TRACKS, NUM_CLIPS, DRUM_LANES, BANKS, BANK_SOUND, ACTION_POPUP_TICKS } from './ui_constants.mjs';
+import { NUM_TRACKS, NUM_CLIPS, DRUM_LANES, BANKS, BANK_SOUND, ACTION_POPUP_TICKS,
+         VOL_CARD_TICKS } from './ui_constants.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 
 /* Basename prefix for every file this module owns. Mirrors the C-side
@@ -119,6 +120,18 @@ export function loadSelectedCurrentProject() {
     if (!S.confirmStateWipe)
         S.pendingSetLoad = true;
     S.stateLoading = true;      /* "LOADING <project>" from the tap, not the reload */
+    S.screenDirty = true;
+}
+
+/* Shift+Volume's level card. Sibling of showActionPopup, deliberately NOT built
+ * on it: a popup is two lines of text that defers to held gestures, and this has
+ * to be the same boxed level-with-a-bar sound mode shows, over any screen, while
+ * the gesture is still being held. ~1s after the last turn, matching sound
+ * mode's own VOL_SHOW_TICKS so the two behave identically. */
+export function showTrackVolCard(text, frac) {
+    S.tvCardText = text;
+    S.tvCardFrac = frac;
+    S.tvCardUntil = S.tickCount + VOL_CARD_TICKS;
     S.screenDirty = true;
 }
 

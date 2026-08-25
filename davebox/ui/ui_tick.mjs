@@ -27,7 +27,7 @@ import {
 
 import { S } from './ui_state.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
-import { saveState, showActionPopup, uuidToStatePath, readActiveSet,
+import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, readActiveSet,
     commitSnapshot } from './ui_persistence.mjs';
 import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
          projectPickerTextEntryTick } from './ui_dialogs.mjs';
@@ -1422,7 +1422,9 @@ export function _tickImpl() {
                         const _st = 0xB0 | ((S.trackChannel[_tvT] - 1) & 0x0F);
                         move_midi_external_send([0x0B, _st, 7, _cc]);
                     }
-                    showActionPopup('TRACK ' + (_tvT + 1) + ' VOLUME', 'CC7 ' + _cc);
+                    /* Same card, MIDI's own unit: CC 7 is 0-127, not a 0-2x
+                     * level, and the bar shows the proportion either way. */
+                    showTrackVolCard('CC7  ' + _cc, _cc / 127);
                 }
             } else {
                 const _tvBus = S.trackRoute[_tvT] === 1 ? moveBusForChannel(S.trackChannel[_tvT]) : 0;
@@ -1442,7 +1444,7 @@ export function _tickImpl() {
                     if (S.trackRoute[_tvT] === 1) engineSet(0, moveBusComp(_tvBus), 'volume', _tvV.toFixed(3));
                     else engineSetSlotParam(slotIndex(_tvT), SLOT_LEVEL_KEY, _tvV.toFixed(3));
                 }
-                showActionPopup('TRACK ' + (_tvT + 1) + ' VOLUME', _tvV.toFixed(2) + 'x');
+                showTrackVolCard('LEVEL  ' + _tvV.toFixed(2) + 'x', _tvV / SLOT_LEVEL_MAX);
             }
         }
         /* The save is deferred off the release — a synchronous file write has

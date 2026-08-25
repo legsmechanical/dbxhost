@@ -637,6 +637,13 @@ export const S = {
      * its own bit or coming back lands you on the ORIGIN bank instead — which
      * is what Josh hit on device: leave a track on SOUND + CONFIG, come back,
      * land on AUTOMATION. Transient: a fresh launch starts on a clip bank. */
+    /* Shift+Volume's level card, shown as an OVERLAY over whatever screen is up
+     * (Josh, 2026-08-24). Not an actionPopup: popups are two lines of text and
+     * defer to held gestures, and this has to read as the same control sound
+     * mode shows — a boxed level with a bar — from anywhere. */
+    tvCardUntil: -1,
+    tvCardText: '',
+    tvCardFrac: 0,
     trackSoundOpen: new Array(8).fill(false),
     pendingSoundEnterSilent: false, /* the queued entry is a RETURN, not a gesture — do not open the bank display window */
     pendingSoundEnterTrack: -1, /* Sound mode entry queued from the Shift-release dispatch or the track menu. Entry's shadow_get/set_param traffic must run on the tick budget — hence the deferral. */

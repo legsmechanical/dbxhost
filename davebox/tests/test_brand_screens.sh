@@ -56,5 +56,28 @@ gy=$(grep -o 'hdrPrint([^;]*' "$G" | grep -oE ', [0-9]+, ' | head -1 | tr -d ' ,
     && ok "both screens share the wordmark baseline (y=$fy)" \
     || bad "wordmark baselines differ: farewell y=$fy, boot y=$gy"
 
+# --- the level card: ONE card, drawn as a true OVERLAY --------------------
+# Josh, 2026-08-24: Shift+Volume shows "the same card we use for track volume
+# adjustment in sound mode", everywhere.
+grep -q 'export function drawLevelCard' ui/ui_movy.mjs \
+    && ok "the level card has ONE drawer, in the shared kit" \
+    || bad "drawLevelCard is gone — the two level read-outs can drift apart"
+grep -q 'drawLevelCard(' ui/ui_sound.mjs \
+    && ok "...sound mode draws through it" \
+    || bad "sound mode has its own copy of the card again"
+grep -q 'drawLevelCard(' ui/ui_render.mjs \
+    && ok "...and so does the global overlay" \
+    || bad "the overlay no longer draws the shared card"
+# ⚠⚠ The structural part. drawUIBody returns early from a dozen places — every
+# bank branch, sound mode, popups, the loading screen — so a card drawn at its
+# END would simply never appear on most screens, which is the entire request.
+# It has to sit OUTSIDE that function.
+grep -q 'drawUIBody();' ui/ui_render.mjs \
+    && ok "drawUI wraps the body, so the card survives its early returns" \
+    || bad "the overlay is back inside drawUIBody — early returns would skip it"
+awk '/^export function drawUI\(\) \{/,/^\}/' ui/ui_render.mjs | grep -q 'drawTrackVolCard();' \
+    && ok "...and the card is drawn LAST, over whatever is on screen" \
+    || bad "drawUI no longer draws the card after the body"
+
 [ "$fail" = "0" ] && printf 'PASS: the opening and closing screens are one design\n'
 exit $fail
