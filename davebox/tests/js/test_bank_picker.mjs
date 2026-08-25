@@ -34,7 +34,8 @@ globalThis.host_vol_block = () => {};
 globalThis.host_edit_cc_block = () => {};
 globalThis.host_register_primary = () => true;
 globalThis.clear_screen = () => {};
-globalThis.print = () => {};
+let prints = [];
+globalThis.print = (x, y, t) => { prints.push(String(t)); };
 globalThis.fill_rect = () => {};
 globalThis.draw_rect = () => {};
 globalThis.set_pixel = () => {};
@@ -52,6 +53,17 @@ const { S } = await import('../../ui/ui_state.mjs');
 const { BANK_SOUND } = await import('../../ui/ui_constants.mjs');
 const { bankCycleForMode } = await import('../../ui/ui_pure.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
+const render = await import('../../ui/ui_render.mjs');
+
+/* WHICH screen is up. The track overview draws the eight track digits through
+ * the host print global (drawTrackRow); a bank page draws none of them. ⚠ The
+ * flag alone is not the answer — bankSelectTick can be held while the renderer
+ * ignores it, which is exactly what a mutation proved. */
+function overviewIsUp() {
+    prints = [];
+    render.drawUI();
+    return [1,2,3,4,5,6,7,8].every((n) => prints.indexOf(String(n)) >= 0);
+}
 
 const cc    = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 const note  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0x90, d1, d2]));
@@ -145,12 +157,17 @@ step('⭑ Shift + jog CLICK latches the bank card; Back unlatches and dismisses'
     if (!S.bankCardLatched) throw new Error('Shift+click did not latch');
     S.tickCount += 500; globalThis.tick();
     if (S.bankSelectTick < 0)
-        throw new Error('the card stood down while latched — the latch is the one ' +
-                        'thing that stops it');
+        throw new Error('the display window expired while latched');
+    /* ⭑ The screen, not the flag: the renderer has to honour the latch too. */
+    if (overviewIsUp())
+        throw new Error('the track overview took the screen while LATCHED — the ' +
+                        'flag survived but the renderer ignored it');
     const bankBefore = S.activeBank;
     cc(51, 127); cc(51, 0); globalThis.tick();        /* Back */
     if (S.bankCardLatched) throw new Error('Back did not unlatch');
     if (S.bankSelectTick >= 0) throw new Error('Back did not dismiss to the overview');
+    if (!overviewIsUp())
+        throw new Error('Back unlatched but the overview did not come back');
     if (S.activeBank !== bankBefore)
         throw new Error('Back MOVED the bank to ' + S.activeBank + ' — it dismisses the ' +
                         'screen now, it does not change where you are');
