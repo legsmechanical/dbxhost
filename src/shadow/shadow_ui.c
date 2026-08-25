@@ -31,7 +31,8 @@
 #include "host/js_host_common.h"
 #include "host/shadow_midi_inject_writer.h"
 #include "../host/unified_log.h"
-#include "host/schwung_trace.h"   /* Phase 2: JS-side OTLP spans (js.tick, param.get) */
+#include "host/schwung_trace.h"
+#include "host/surface_trace.h"   /* Phase 2: JS-side OTLP spans (js.tick, param.get) */
 
 #define SAMPLER_CMD_PATH SCHWUNG_INSTALL_DIR "/sampler_cmd_path.txt"
 
@@ -1292,6 +1293,13 @@ static JSValue js_move_midi_inject_to_move(JSContext *ctx, JSValueConst this_val
         /* Cable bits in packet[0] preserved as-is — caller picks the
          * route (cable 0 = pad simulation, cable 2 = external MIDI in
          * to the track synth). See function docblock. */
+
+        /* surface.push — the reply enters the inject ring. Everything after
+         * this instant is the shim's to answer for (the hardware-quiet gate and
+         * frame quantisation); everything before it is ours. */
+        if (atomic_load_explicit(&schwung_trace_on, memory_order_relaxed) &&
+            surface_is_pad_note(packet))
+            surface_mark("surface.push");
 
         if (shadow_midi_inject_push(shadow_midi_inject, packet) != 0) {
             /* Ring full (drain starved) — drop this packet and stop the
@@ -2793,6 +2801,14 @@ static int process_shadow_midi(JSContext *ctx, JSValue *onInternal, JSValue *onE
                 JS_FreeValue(ctx, freshExternal);
             }
         } else {
+            /* surface.rx — the instant a pad event reaches JS. The gap back to
+             * surface.fwd is this process's pickup latency: the shim publish,
+             * plus however long the main loop was still inside the PREVIOUS
+             * tick(). That gap is the leg no existing span covers. */
+            if (atomic_load_explicit(&schwung_trace_on, memory_order_relaxed)) {
+                uint8_t probe[4] = { head, msg[0], msg[1], msg[2] };
+                if (surface_is_pad_note(probe)) surface_mark("surface.rx");
+            }
             callGlobalFunction(ctx, onInternal, msg);
         }
         /* Release the slot back to the producer. Producer overwrites bytes

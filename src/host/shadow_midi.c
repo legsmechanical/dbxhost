@@ -10,8 +10,7 @@
 #include "shadow_led_queue.h"
 #include "host/schwung_paths.h"
 #include "shadow_overlay.h"  /* MIDI channel indicator globals */
-
-static void shadow_chain_transpose_reset(void);
+#include "host/surface_trace.h"
 
 /* ============================================================================
  * External cable-2 dispatch ring
@@ -649,11 +648,24 @@ void shadow_drain_midi_inject(void)
     int hw_cable_active = 0;
     for (int j = 0; j < MIDI_IN_MAX_BYTES; j += MIDI_IN_EVT_STRIDE)
         if (midi_in_scan[j] != 0) { hw_cable_active = 1; break; }
+    /* Count the frames the gate actually costs, and ONLY when it costs
+     * something: a held frame with an empty ring held nothing back. Both marks
+     * are inside the trace gate, and the peek is non-destructive. */
     if (hw_cable_active) {
+        if (atomic_load_explicit(&schwung_trace_on, memory_order_relaxed)) {
+            uint8_t pk[4];
+            if (shadow_midi_inject_peek(inject_shm, pk) && surface_is_pad_note(pk))
+                surface_mark("surface.defer");
+        }
         defer_counter = 0;
         return;
     }
     if (defer_counter < DEFER_FRAMES) {
+        if (atomic_load_explicit(&schwung_trace_on, memory_order_relaxed)) {
+            uint8_t pk[4];
+            if (shadow_midi_inject_peek(inject_shm, pk) && surface_is_pad_note(pk))
+                surface_mark("surface.defer");
+        }
         defer_counter++;
         return;
     }
@@ -695,6 +707,9 @@ void shadow_drain_midi_inject(void)
          * Cable nibble in pkt[0] is preserved — callers choose cable:
          * 0 for internal hardware (pads/buttons, Move-prefix protocol),
          * 2 for external USB (general MIDI, routed to tracks by channel). */
+        if (atomic_load_explicit(&schwung_trace_on, memory_order_relaxed) &&
+            surface_is_pad_note(pkt))
+            surface_mark("surface.place");
         memcpy(&midi_in[hw_offset], pkt, 4);
         memset(&midi_in[hw_offset + 4], 0, 4);
         hw_offset += MIDI_IN_EVT_STRIDE;
@@ -1154,6 +1169,13 @@ void shadow_forward_midi(void)
 
     if (has_midi) {
         memcpy(shadow_midi_shm, filtered, MIDI_BUFFER_SIZE);
+        /* Mark BEFORE the publish: midi_ready is what wakes the tool process,
+         * so stamping after it would put our timestamp on the wrong side of the
+         * handoff we are trying to measure. */
+        if (atomic_load_explicit(&schwung_trace_on, memory_order_relaxed)) {
+            for (int k = 0; k < MIDI_BUFFER_SIZE; k += 4)
+                if (surface_is_pad_note(&filtered[k])) { surface_mark("surface.fwd"); break; }
+        }
         shadow_control->midi_ready++;
     }
 }

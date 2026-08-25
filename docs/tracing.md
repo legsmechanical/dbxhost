@@ -59,6 +59,37 @@ collector or import directly into Tempo/Jaeger.
 - `param.get` — child around the synchronous `shadow_get_param` round-trip (the
   JS side busy-waits for the shim to service it once per SPI frame).
 
+### The surface round trip (`surface.*`)
+
+A control-surface event that a tool re-injects to Move firmware does not take
+the short road. It leaves the hardware, is forwarded to the tool process, comes
+back through the inject ring, and only then reaches `MIDI_IN`. Neither existing
+root covers that: `spi.pre` and `js.tick` each see one end of the trip and
+neither sees the gap between them.
+
+Five **instants** (zero-width spans) close it, emitted for pad notes (68-99,
+cable 0) only — marking every event would bury the handful that matter:
+
+| mark | emitted by | meaning |
+|---|---|---|
+| `surface.fwd` | shim (`shadow_midi.c`) | the hardware event is handed to the tool process |
+| `surface.rx` | `shadow_ui.c` | the tool process dispatches it into JS |
+| `surface.push` | `shadow_ui.c` | the tool's reply enters the inject ring |
+| `surface.defer` | shim (`shadow_midi.c`) | one frame the hardware-quiet gate held the reply back |
+| `surface.place` | shim (`shadow_midi.c`) | the reply lands in Move's `MIDI_IN` |
+
+The three gaps are the three legs — pickup, JS handling, and the drain — and the
+`surface.defer` count says how much of the last one is the gate (`DEFER_FRAMES`,
+which exists to prevent a Move-firmware SIGABRT) rather than plain frame
+quantisation.
+
+⚠ **What this cannot see:** what Move firmware does after `surface.place`. The
+trip is measured to the mailbox, not to the sound. Treat the total as a floor.
+
+⚠ Correlate by **timestamp**, not by trace id: the marks are separate roots in
+two services sharing one `CLOCK_MONOTONIC_RAW` timebase. That is unambiguous for
+an isolated tap and NOT for a roll — tap once every few seconds when measuring.
+
 JS modules (overtake/chain, e.g. ion) add their own spans under `js.tick` — see
 [Adding spans](#adding-spans).
 
