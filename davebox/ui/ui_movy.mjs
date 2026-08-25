@@ -70,6 +70,17 @@ HDR_G[0x74 - 0x20] = [7, 12, 30, 12, 12, 12, 28];   /* 't' */
  * x-height only (rows 2-5), two strokes crossing without a shared centre —
  * at 4px tall a centre pixel welds the strokes into a blob. */
 HDR_G[0x78 - 0x20] = [7, 0, 0, 51, 30, 30, 51];     /* 'x' */
+/* '@' and TRUE lowercase 'o' — added 2026-08-25 for the session banner, whose
+ * wordmark animates 'A'->'@' and 'O'->'o' while the transport runs. Neither
+ * existed here: '@' was unmapped (the letter simply VANISHED mid-animation) and
+ * lowercase 'o' fell through to the capital, so that swap showed nothing at
+ * all. Same reasoning as 'd'/'t'/'x' above — the mark needs glyphs this caps
+ * design does not carry.
+ * ⚠ 'o' is drawn with ONE-pixel strokes, not the font's usual two: at x-height
+ * (rows 2-5) a 2px ring closes up into a blob, the same trap the 'x' note
+ * records. */
+HDR_G[0x40 - 0x20] = [7, 30, 33, 45, 45, 1, 30];   /* '@' */
+HDR_G[0x6F - 0x20] = [7, 0, 0, 30, 18, 18, 30];    /* 'o' */
 
 function hdrGlyph(cp) { return (cp < 0x20 || cp > 0x7E) ? null : HDR_G[cp - 0x20]; }
 
