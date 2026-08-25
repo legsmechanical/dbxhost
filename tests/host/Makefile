@@ -33,16 +33,27 @@ all: $(TARGETS)
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
+# -MMD -MP emits a .d file per target listing the HEADERS it included, and the
+# -include below feeds those back to make.
+#
+# ⚠⚠ Without this, editing a header-only unit does NOT rebuild its test: make
+# sees the .c unchanged and reuses the old binary, so the suite passes against
+# the PREVIOUS code. Found 2026-08-25 by mutation-testing shadow_midi_coalesce.h
+# — two mutations "survived" that the tests do in fact catch, because the binary
+# under test was stale. A green run meant nothing for every header-only unit
+# here (sa_master_volume.h, spawn_command.h, surface_trace.h included).
 $(BUILD_DIR)/%: %.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) $(INCLUDES) -MMD -MP $< -o $@ $(LDFLAGS)
 
 # Links the unit under test rather than re-declaring it: a test that copies the
 # implementation passes forever after the real one changes.
 $(BUILD_DIR)/test_sa_master_volume: test_sa_master_volume.c ../../src/host/sa_master_volume.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) $^ -o $@ $(LDFLAGS) -lm
+	$(CC) $(CFLAGS) $(INCLUDES) -MMD -MP $^ -o $@ $(LDFLAGS) -lm
 
 $(BUILD_DIR)/test_spawn_command: test_spawn_command.c ../../src/host/spawn_command.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) $^ -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) $(INCLUDES) -MMD -MP $^ -o $@ $(LDFLAGS)
+
+-include $(TARGETS:=.d)
 
 test: $(TARGETS)
 	@for t in $(TARGETS); do \
