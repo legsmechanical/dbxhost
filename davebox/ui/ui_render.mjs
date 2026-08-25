@@ -1829,7 +1829,9 @@ function drawUIBody() {
                 { kind: 'hbar', label: 'SeqFl', name: 'Seq Follow',
                   text: fmtBool(sqfl), norm: sqfl ? 1 : 0 },
             ];
-            drawKitPage('DRUM LANE', cells, false);
+            /* Named by bankDisplayName, not spelled here — this literal and
+             * the one below are how the picker and the header drifted apart. */
+            drawKitPage(bankHeaderName(S.activeTrack, 0), cells, false);
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 7 && !S.allLanesConfirmed) {
             /* ALL LANES confirmation screen */
             drawKitHeader((Math.floor(S.tickCount / 24) % 2 === 0 ? 'ALL' : '   ') + ' LANES', false);
@@ -1937,7 +1939,12 @@ function drawUIBody() {
              * highlighted in the row below. */
             drawKitTouchedHeader((S.altMode ? 'Nudge' : 'Velocity') + ': ' + _val);
         } else {
-            drawBankHeadingInverted('REPEAT GROOVE');
+            /* ⚠ This one still said 'REPEAT GROOVE' after the rename, so a drum
+             * track's bank-5 header disagreed with its own picker AND overflowed
+             * the header budget at 131px. Found by the source scan, not by the
+             * name table — a table can only catch a wrong name, never a second
+             * place that names things. */
+            drawBankHeadingInverted(bankHeaderName(S.activeTrack, 5));
         }
         const _colW = 16, _barW = 10, _top = 14, _bot = 54, _numY = 57;
         if (S.altMode) {

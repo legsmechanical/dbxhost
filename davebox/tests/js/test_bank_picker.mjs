@@ -60,6 +60,8 @@ globalThis.host_ext_midi_remap_clear = () => {};
 globalThis.host_ext_midi_remap_set = () => {};
 globalThis.host_ext_midi_remap_enable = () => {};
 
+import { readFileSync } from 'node:fs';
+
 async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
@@ -413,28 +415,46 @@ step('⭑⭑ NO bank header can reach the alt-param arrow, with the track prefix
     }
 });
 
-step('⭑⭑ the picker lists exactly what the HEADER calls each bank', () => {
+step('⭑⭑ each track type shows ITS OWN bank names, in the picker and the header', () => {
     /* Josh, on device: "the picker names don't match bank names for drum
-     * tracks." They were two independent name sources — the header had aliases
-     * written inline where nothing else could reach them.
+     * tracks." They were two sources — the drum aliases lived inline in the
+     * render where nothing else could reach them.
      *
-     * Checked for every pad mode, since only the drum and Conductor ones
-     * rename anything and a melodic-only check would have passed throughout. */
-    for (const padMode of [0, PAD_MODE_DRUM, PAD_MODE_CONDUCT]) {
-        for (const b of bankCycleForMode(padMode)) {
-            const inPicker = bankDisplayName(padMode, b);
-            const inHeader = bankDisplayName(padMode, b);   /* same call the header makes */
-            if (inPicker !== inHeader)
-                throw new Error('bank ' + b + ' (pad mode ' + padMode + '): picker says "' +
-                                inPicker + '", header says "' + inHeader + '"');
+     * ⚠⚠ Spelled out as a TABLE, not as picker-vs-header. Both now call
+     * bankDisplayName, so comparing them compares a function to itself: the
+     * first version of this step did exactly that, passed, and let a mutation
+     * deleting the bank-5 alias straight through. The expectations have to come
+     * from outside the code under test. */
+    const EXPECT = {
+        0: { 0: 'CLIP', 1: 'NOTE FX', 5: 'LIVE ARP', 6: 'AUTOMATION' },
+        [PAD_MODE_DRUM]:    { 0: 'DRUM LANE', 1: 'NOTE FX', 5: 'RPT GROOVE',
+                              6: 'AUTOMATION', 7: 'ALL LANES' },
+        [PAD_MODE_CONDUCT]: { 0: 'C-CONDUCT', 1: 'C-NOTE FX', 8: 'C-RESPONDER',
+                              9: 'C-OCTAVE', 10: 'C-WHEN' },
+    };
+    for (const mode of Object.keys(EXPECT)) {
+        for (const bank of Object.keys(EXPECT[mode])) {
+            const got = bankDisplayName(Number(mode), Number(bank));
+            if (got !== EXPECT[mode][bank])
+                throw new Error('pad mode ' + mode + ' bank ' + bank + ': got "' + got +
+                                '", expected "' + EXPECT[mode][bank] + '"');
         }
     }
-    /* ...and the renames actually happen, or the equality above is vacuous. */
-    if (bankDisplayName(PAD_MODE_DRUM, 0) === bankDisplayName(0, 0))
-        throw new Error('a drum track shows the melodic name for bank 0 — the aliases ' +
-                        'are gone, and this test would pass on any two identical sources');
-    if (bankDisplayName(PAD_MODE_CONDUCT, 0).indexOf('C-') !== 0)
-        throw new Error('the Conductor prefix is missing');
+});
+
+step('⚠ ...and the render calls that function rather than naming banks itself', () => {
+    /* The aliases came back as a mismatch once because they were written inline
+     * in one screen. A scan is what stops that recurring — the table above
+     * cannot see a second source, only a wrong one. */
+    const src = readFileSync('ui/ui_render.mjs', 'utf8');
+    const strays = [];
+    for (const line of src.split('\n')) {
+        const code = line.trim();
+        if (code.startsWith('*') || code.startsWith('/*') || code.startsWith('//')) continue;
+        if (/'(DRUM LANE|RPT GROOVE|REPEAT GROOVE|C-CONDUCT)'/.test(code)) strays.push(code);
+    }
+    if (strays.length)
+        throw new Error('the render names banks itself again:\n  ' + strays.join('\n  '));
 });
 
 step('⭑ the LATCH draws a frame around the params, and only when latched', () => {
