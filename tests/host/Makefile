@@ -42,6 +42,13 @@ $(BUILD_DIR):
 # — two mutations "survived" that the tests do in fact catch, because the binary
 # under test was stale. A green run meant nothing for every header-only unit
 # here (sa_master_volume.h, spawn_command.h, surface_trace.h included).
+#
+# ⚠ The .d files only exist AFTER one build, so the very first run in a clean
+# tree still cannot know its headers — that is inherent to this scheme, not a
+# bug. It cost a confused round here: two mutations reported SURVIVED, were
+# diagnosed as stale, and still reported SURVIVED until a bootstrap build had
+# generated the deps. If a mutation on a header-only unit survives, run
+# `make -C tests/host all` once and try again before believing it.
 $(BUILD_DIR)/%: %.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -MMD -MP $< -o $@ $(LDFLAGS)
 
