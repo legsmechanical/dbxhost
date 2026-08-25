@@ -156,9 +156,11 @@ step('⭑ Shift + jog CLICK latches the bank card; Back unlatches and dismisses'
     shift(true); cc(3, 127); cc(3, 0); globalThis.tick(); shift(false);
     if (!S.bankCardLatched) throw new Error('Shift+click did not latch');
     S.tickCount += 500; globalThis.tick();
-    if (S.bankSelectTick < 0)
-        throw new Error('the display window expired while latched');
-    /* ⭑ The screen, not the flag: the renderer has to honour the latch too. */
+    /* ⚠ The window itself is EXPECTED to expire — the latch is a separate
+     * reason to hold the screen, not a freeze on the timer. Asserting the
+     * window survived is what let a mutation through: both mechanisms existed,
+     * so removing either changed nothing. */
+    /* ⭑ The screen, not the flag: the renderer has to honour the latch. */
     if (overviewIsUp())
         throw new Error('the track overview took the screen while LATCHED — the ' +
                         'flag survived but the renderer ignored it');

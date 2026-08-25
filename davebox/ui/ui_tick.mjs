@@ -1084,11 +1084,12 @@ export function _tickImpl() {
         drainLedInit();
     } else {
         /* Bank select display timeout: State 3 → State 4 after ~2000ms.
-         * ⚠ Not while LATCHED — the latch exists precisely to stop this, and
-         * letting the tick clear the tick-stamp underneath it would leave the
-         * screen up on a flag the rest of the code thinks has expired. */
-        if (!S.bankCardLatched &&
-                S.bankSelectTick >= 0 && (S.tickCount - S.bankSelectTick) >= BANK_DISPLAY_TICKS) {
+         * ⚠ Runs while LATCHED too, on purpose. The latch is a SEPARATE reason
+         * to hold the screen (see inTimeout in ui_render), not a pause button on
+         * this window — freezing the window here as well made two mechanisms for
+         * one behaviour, and a mutation that deleted either was invisible
+         * because the other still held the screen. One reason, one place. */
+        if (S.bankSelectTick >= 0 && (S.tickCount - S.bankSelectTick) >= BANK_DISPLAY_TICKS) {
             S.bankSelectTick = -1;
             S.screenDirty = true;
         }
