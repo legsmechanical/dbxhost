@@ -90,6 +90,59 @@ step('the LED mask matches the keep mask — no lights/input split any more', ()
         throw new Error('TRACK is lit but its presses cede — lights without input');
 });
 
+/* ── the LIT pad keeps its track colour in co-run ──────────────────────────
+ *
+ * Josh's other half of the same ruling: the inverted co-run pad scheme stays,
+ * but "the last pressed pad" must still read as this track. Added because a
+ * mutation proved it uncovered — flipping the lit pad back to White passed
+ * every other test in the suite. Captured at the wire, the way the bank-jog
+ * test does it: setLED emits [0x09, 0x90, note, color]. */
+step('⭑ a sounding pad wears the TRACK colour in co-run, not white', async () => {
+    const ledsMod = await import('../../ui/ui_leds.mjs');
+    const constsMod = await import('../../ui/ui_constants.mjs');
+    const ifMod = await import('/data/UserData/schwung/shared/input_filter.mjs');
+    const { updateTrackLEDs, invalidateLEDCache, trackColor } = ledsMod;
+    const { TRACK_PAD_BASE, PAD_MODE_MELODIC_SCALE } = constsMod;
+
+    S.sessionView = false;
+    S.activeTrack = 2;
+    S.trackPadMode[2] = PAD_MODE_MELODIC_SCALE;
+    S.activeBank = 0;                       /* not AUTO — that greys everything */
+    S.ledInitComplete = true;
+
+    const colorsOfSounding = () => {
+        const seen = {};
+        ifMod.clearAllLEDs();
+        globalThis.move_midi_internal_send = (b) => {
+            if (b && b[1] === 0x90 && b[2] >= TRACK_PAD_BASE && b[2] < TRACK_PAD_BASE + 32)
+                seen[b[2]] = b[3];
+        };
+        invalidateLEDCache();
+        updateTrackLEDs();
+        globalThis.move_midi_internal_send = () => {};
+        return seen;
+    };
+
+    /* Sound ONE pad, so exactly one LED can carry the lit colour. */
+    const pitch = S.padNoteMap[0] + S.trackOctave[2] * 12;
+    if (!(pitch >= 0 && pitch <= 127)) throw new Error('pad 0 has no usable pitch');
+    S.liveActiveNotes = new Set([pitch]);
+
+    S.moveCoRunTrack = -1;
+    const outside = colorsOfSounding()[TRACK_PAD_BASE];
+    S.moveCoRunTrack = 2;
+    const inside = colorsOfSounding()[TRACK_PAD_BASE];
+    S.moveCoRunTrack = -1;
+    S.liveActiveNotes = new Set();
+
+    const tc = trackColor(2);
+    if (inside !== tc)
+        throw new Error('lit pad in co-run is ' + inside + ', expected track colour ' + tc +
+                        (inside === outside ? ' (it is still painting the non-co-run white)' : ''));
+    if (outside === inside)
+        throw new Error('control failed: co-run and normal look identical, so this proves nothing');
+});
+
 process.exit(failed);
 }
 main().catch((e) => { console.error(e && e.stack ? e.stack : e); process.exit(1); });
