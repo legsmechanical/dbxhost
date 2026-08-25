@@ -8,6 +8,41 @@ import { PAD_MODE_CONDUCT, NUM_TRACKS } from './ui_constants.mjs';
 /* ui_engine.mjs imports nothing local, so this cannot cycle. */
 import { CHAIN_SLOTS } from './ui_engine.mjs';
 
+/* ---- the transient BANK DISPLAY window -------------------------------------
+ *
+ * ⚠⚠ WHY THIS HAS AN OWNER. `bankSelectTick` is armed from ten places and
+ * cleared from six, across five files, and the clears are TEARDOWNS on input
+ * edges — the Shift press/release, the jog-touch release, a project switch.
+ * Nothing orders them against the arms, so a feature that arms the window
+ * during an input event gets it wiped microseconds later by an edge handler
+ * further down the SAME event, and the symptom is always "the thing I just
+ * chose never appeared".
+ *
+ * That happened three times in one day (2026-08-25): a committed bank pick, the
+ * bank a pick landed on, and the Shift+click latch — each fixed by adding
+ * another `&& !justDidTheThing` to another teardown. Josh, correctly: fix the
+ * issue rather than working around it each time.
+ *
+ * So the rule lives here, once: A STAND-DOWN THAT RUNS IN THE SAME INPUT PASS
+ * AS AN ARM IS STALE and does nothing. A teardown cannot clear something that
+ * was deliberately set after the event it is tearing down began.
+ *
+ * `force` is for the two places that genuinely mean "no window": Back
+ * dismissing the screen, and the SILENT re-entry, whose whole purpose is to
+ * arrive without the display window opening. */
+export function armBankDisplay() {
+    S.bankSelectTick = S.tickCount;
+    S.bankDisplayArmedTick = S.tickCount;
+}
+
+export function standDownBankDisplay(force) {
+    if (!force) {
+        if (S.bankDisplayArmedTick === S.tickCount) return;   /* armed this pass */
+        if (S.bankCardLatched) return;                        /* held until Back */
+    }
+    S.bankSelectTick = -1;
+}
+
 /* Conductor track index derived from pad_mode — the reliable source. The
  * S.conductorTrack mirror can be stale/-1 (flaky single-tick load readback), so
  * anything that must KNOW the conductor (not just "am I viewing it") derives it
@@ -668,6 +703,9 @@ export const S = {
      * ⚠ It does NOT change which bank is active — it is a display mode, and
      * Back clears it rather than stepping the bank. */
     bankCardLatched: false,
+    /* Tick of the last armBankDisplay(), so a teardown later in the SAME input
+     * pass can tell it is stale. See armBankDisplay/standDownBankDisplay. */
+    bankDisplayArmedTick: -1,
 
 
     pendingSoundEnterSilent: false, /* the queued entry is a RETURN, not a gesture — do not open the bank display window */

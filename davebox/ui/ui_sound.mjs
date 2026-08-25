@@ -34,7 +34,7 @@ import {
  * under a different name deliberately — the two are easy to confuse, and
  * confusing them is exactly what broke the bypass gesture. Used only for the
  * Back long-press, which davebox owns module-wide. */
-import { S as GS } from './ui_state.mjs';
+import { armBankDisplay, S as GS } from './ui_state.mjs';
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
@@ -710,7 +710,7 @@ export function soundEnter(track, slot) {
     if (GS.sessionView) return;
     S.active = true;
     takeBankIdentity(track);
-    GS.bankSelectTick = GS.tickCount;   /* the banks' display window: the screen
+    armBankDisplay();   /* the banks' display window: the screen
                                          * shows, then falls back to the overview
                                          * unless the jog is touched (soundRender) */
     S.enterSession = false;     /* called from TRACK view */
@@ -1565,7 +1565,7 @@ export function soundEnterMove(track) {
      * CONFIG screen jump back over the track overview on every such step while
      * every other bank stayed put. soundRetarget, the chain-side twin of this
      * call, has never stamped; this is the two paths agreeing. (Josh, 2026-08-24) */
-    if (!wasActive) GS.bankSelectTick = GS.tickCount;   /* same display window as soundEnter */
+    if (!wasActive) armBankDisplay();   /* same display window as soundEnter */
     S.enterSession = false;
     S.track = track;
     S.slot = 0;                 /* move_fx: keys ignore the slot argument */
@@ -3512,7 +3512,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
             /* Each turn re-opens the display window, as a mixer mode change
              * does — without this the list would fall back to the overview
              * mid-scroll, 2s after entry, with the cursor still moving. */
-            if (S.enterSession) GS.bankSelectTick = GS.tickCount;
+            if (S.enterSession) armBankDisplay();
         } else if (S.view === VIEW_BLOCKS && S.busLevelEditing) {
             const r = S.pickRows[S.pickRow];
             if (r && r.kind === 'buslevel') {
@@ -3557,7 +3557,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
             /* Each turn re-opens the display window, as a bank change does on
              * the clip banks — without this the screen would fall back mid-
              * scroll, 2s after entry, while the cursor is still moving. */
-            if (!soundIsGlobal() && !S.enterSession) GS.bankSelectTick = GS.tickCount;
+            if (!soundIsGlobal() && !S.enterSession) armBankDisplay();
         } else if (S.view === VIEW_SLOTCFG) {
             slotCfgStep(delta);
         } else if (S.view === VIEW_KNOBS) {

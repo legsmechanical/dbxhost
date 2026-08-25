@@ -53,6 +53,7 @@ import { recordNoteOn, recordNoteOff,
     extHeldNotes, extCountInCapture } from './ui_record.mjs';
 import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons } from './ui_input_pads.mjs';
 import { applyBankPick } from './ui_input_cc.mjs';
+import { standDownBankDisplay } from './ui_state.mjs';
 import { _onCCMsg } from './ui_input_cc.mjs';
 import { soundActive, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw } from './ui_sound.mjs';
 import { soundModeCovered } from './ui_render.mjs';
@@ -350,8 +351,11 @@ globalThis.onMidiMessageInternal = function (data) { try { _onMidiInternalImpl(d
  * site remembering the rule. */
 function _jogTouchRelease() {
     S.jogTouched = false;
-    if (S.bankPickerSel >= 0) applyBankPick();   /* arms its own display window */
-    else S.bankSelectTick = -1;
+    if (S.bankPickerSel >= 0) applyBankPick();
+    /* ⚠ Unconditional: standDownBankDisplay declines when this same input pass
+     * armed the window, which is exactly what a commit above just did. The
+     * rule is the owner's, not this site's — see ui_state. */
+    standDownBankDisplay();
     forceRedraw();
 }
 

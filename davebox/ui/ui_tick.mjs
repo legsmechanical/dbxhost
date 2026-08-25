@@ -27,7 +27,7 @@ import {
     CC_GRADIENT_BASE, CC_GRADIENT_LEVELS, CC_GRADIENT_SCALARS
 } from './ui_constants.mjs';
 
-import { S } from './ui_state.mjs';
+import { S, standDownBankDisplay } from './ui_state.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
 import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, readActiveSet,
     commitSnapshot } from './ui_persistence.mjs';
@@ -814,7 +814,7 @@ export function _tickImpl() {
             S.jogTouched = false;
             S.knobTouched = -1;
             S.knobPhysIdx = -1;
-            S.bankSelectTick = -1;
+            standDownBankDisplay(true);   /* a project switch: no window survives it */
             invalidateLEDCache();
             forceRedraw();
             /* SELECT-BEFORE-LOAD ends HERE, not when state_load was sent.
@@ -1090,7 +1090,7 @@ export function _tickImpl() {
          * one behaviour, and a mutation that deleted either was invisible
          * because the other still held the screen. One reason, one place. */
         if (S.bankSelectTick >= 0 && (S.tickCount - S.bankSelectTick) >= BANK_DISPLAY_TICKS) {
-            S.bankSelectTick = -1;
+            standDownBankDisplay();
             S.screenDirty = true;
         }
         /* Overlay expiry: clear timer here so drawUI() can gate on flag alone */
@@ -1331,7 +1331,7 @@ export function _tickImpl() {
                  * teaching the entries a second meaning. Without this the
                  * screen pops up over the track overview mid-switch, which is
                  * the very thing the display-law fix removed. */
-                if (_silent) S.bankSelectTick = -1;
+                if (_silent) standDownBankDisplay(true);   /* a RETURN opens no window, by design */
             }
         }
         /* Sound mode asking for Move's own editor (the SYNTH row of a Move bus).

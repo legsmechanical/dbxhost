@@ -27,7 +27,7 @@ import {
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool
 } from './ui_constants.mjs';
-import { S, conductorTrackIdx } from './ui_state.mjs';
+import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay } from './ui_state.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, KNOB_SENS, knobAccumSteps, engineVolBlock } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity, BANK_CYCLE_DRUM, CONDUCT_BANK_CYCLE,
@@ -592,7 +592,7 @@ function modalDialogUp() {
      * Track view only: the fall-back this defeats is a track-view screen. */
     if (d1 === 3 && d2 === 127 && S.shiftHeld && !S.sessionView && !soundActive()) {
         S.bankCardLatched = !S.bankCardLatched;
-        if (S.bankCardLatched) S.bankSelectTick = S.tickCount;
+        if (S.bankCardLatched) armBankDisplay();
         S.screenDirty = true;
         forceRedraw();
         return;
@@ -890,7 +890,7 @@ function modalDialogUp() {
                      * cover the thing the turn was meant to show. A turn without
                      * the touch still opens the page for the timeout window
                      * (bankSelectTick), so the mode change is never silent. */
-                    S.bankSelectTick = S.tickCount;
+                    armBankDisplay();
                     forceRedraw();
                 } else if (S.loopHeld) {
                     /* Track View + Loop held: adjust length ±1 step */
@@ -996,7 +996,7 @@ function modalDialogUp() {
                     }
                     S.bankPickerSel = Math.max(0, Math.min(cyc.length - 1, S.bankPickerSel + delta));
                     S.bankPickerIdleTick = S.tickCount;
-                    S.bankSelectTick = S.tickCount;
+                    armBankDisplay();
                     forceRedraw();
                 }
             }
@@ -1023,7 +1023,7 @@ export function applyBankPick() {
             S.globalMenuOpen = false;
             S.lastSentMenuEditValue = null;
             S.pendingSoundEnterTrack = t;
-            S.bankSelectTick = S.tickCount;
+            armBankDisplay();
         }
         S.screenDirty = true;
         return;
@@ -1034,7 +1034,7 @@ export function applyBankPick() {
     if (next === 7) S.allLanesConfirmed = false;
     if (next === 6) S.schLabelFetchLane = 0;
     readBankParams(t, next);
-    S.bankSelectTick = S.tickCount;
+    armBankDisplay();
     writeSidecar();
     forceRedraw();
 }
@@ -1066,12 +1066,10 @@ function _onCC_buttons(d1, d2) {
          * the usual gesture touches the jog (jogTouched→bank view) before pressing
          * Shift, and Shift-press never cleared it before. Mirrors the jog-release
          * clear in the MoveMainTouch handler. */
-        /* ⚠ ...but NOT while the card is LATCHED. This is the third teardown in
-         * this file that runs after something deliberately set the display
-         * window and wipes it: releasing Shift right after the Shift+click that
-         * latched would undo the latch in the same gesture. A latch is only
-         * cleared by Back, or by clicking again. */
-        if (!S.sessionView && !S.bankCardLatched) { S.jogTouched = false; S.bankSelectTick = -1; }
+        /* ⚠ A teardown on an input edge — see standDownBankDisplay: it declines
+         * if this same pass armed the window (the Shift+click latch arms it) or
+         * if the card is latched. This site does NOT re-implement either rule. */
+        if (!S.sessionView) { S.jogTouched = false; standDownBankDisplay(); }
         /* Arp step editor: Shift flips the Pitch <-> Velocity page — redraw on
          * both edges so the flip is immediate. */
         if (S.stepIntervalMode && !S.sessionView) forceRedraw();
@@ -1764,7 +1762,7 @@ function _backTap() {
          * affects what is on screen; where you are is the jog's business. */
         if (S.bankCardLatched || S.bankSelectTick >= 0 || S.jogTouched) {
             S.bankCardLatched = false;
-            S.bankSelectTick = -1;
+            standDownBankDisplay(true);      /* Back genuinely means "no window" */
             S.jogTouched = false;
             invalidateLEDCache(); forceRedraw(); return;
         }
@@ -2794,7 +2792,7 @@ function _sessionKnobParam(knobIdx, d2) {
          * reads as a dead knob. */
         S.sessVolLastKnob = knobIdx;
         S.sessVolLastTurn = S.tickCount;
-        S.bankSelectTick  = S.tickCount;
+        armBankDisplay();
         forceRedraw();
         return;
     }
@@ -2821,7 +2819,7 @@ function _sessionKnobParam(knobIdx, d2) {
      * Stamping bankSelectTick keeps the page up for the usual window after the
      * finger lifts, so a turn made without touching first still shows its
      * result — the same timeout the clip param banks use. */
-    S.bankSelectTick = S.tickCount;
+    armBankDisplay();
     forceRedraw();
 }
 
