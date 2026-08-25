@@ -116,8 +116,10 @@ step('⭑ the level CARD shows — the same one sound mode draws, over any scree
         throw new Error('no level card was raised by a Shift+Volume turn');
     if (S.tvCardUntil <= S.tickCount)
         throw new Error('the card was raised already expired');
-    if (!/^LEVEL /.test(S.tvCardText))
-        throw new Error('card text is not the shared LEVEL read-out: ' + S.tvCardText);
+    /* Named with its track: the card can be raised from a bank, the mixer or a
+     * module editor, so the value alone does not say whose it is. */
+    if (!/^Tr 3  LEVEL /.test(S.tvCardText))
+        throw new Error('card text is not "Tr <n>  LEVEL ...": ' + S.tvCardText);
     if (!(S.tvCardFrac >= 0 && S.tvCardFrac <= 1))
         throw new Error('card fraction out of range: ' + S.tvCardFrac);
     if (S.actionPopupEndTick >= 0)
@@ -139,8 +141,8 @@ step('⚠ a MIDI track shows the same card in MIDI units (CC 7 is 0-127)', () =>
     shift(true);
     vol(1); globalThis.tick();
     if (S.tvCardUntil < 0) throw new Error('no card on a MIDI track');
-    if (!/^CC7 /.test(S.tvCardText))
-        throw new Error('MIDI card should read in CC units, got: ' + S.tvCardText);
+    if (!/^Tr 3  CC7 /.test(S.tvCardText))
+        throw new Error('MIDI card should read "Tr <n>  CC7 ...", got: ' + S.tvCardText);
     shift(false);
     S.trackRoute[2] = 0;
     S.tvExtCC7[2] = _cc0;

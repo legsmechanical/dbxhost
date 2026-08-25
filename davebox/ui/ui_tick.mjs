@@ -1424,7 +1424,7 @@ export function _tickImpl() {
                     }
                     /* Same card, MIDI's own unit: CC 7 is 0-127, not a 0-2x
                      * level, and the bar shows the proportion either way. */
-                    showTrackVolCard('CC7  ' + _cc, _cc / 127);
+                    showTrackVolCard('Tr ' + (_tvT + 1) + '  CC7  ' + _cc, _cc / 127);
                 }
             } else {
                 const _tvBus = S.trackRoute[_tvT] === 1 ? moveBusForChannel(S.trackChannel[_tvT]) : 0;
@@ -1444,7 +1444,8 @@ export function _tickImpl() {
                     if (S.trackRoute[_tvT] === 1) engineSet(0, moveBusComp(_tvBus), 'volume', _tvV.toFixed(3));
                     else engineSetSlotParam(slotIndex(_tvT), SLOT_LEVEL_KEY, _tvV.toFixed(3));
                 }
-                showTrackVolCard('LEVEL  ' + _tvV.toFixed(2) + 'x', _tvV / SLOT_LEVEL_MAX);
+                showTrackVolCard('Tr ' + (_tvT + 1) + '  LEVEL  ' + _tvV.toFixed(2) + 'x',
+                                 _tvV / SLOT_LEVEL_MAX);
             }
         }
         /* The save is deferred off the release — a synchronous file write has

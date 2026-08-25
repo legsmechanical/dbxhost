@@ -34,6 +34,43 @@ const stubPlugin = {
     },
 };
 
+/* ---- staleness guard -------------------------------------------------------
+ *
+ * ⚠⚠ THE BUG THIS KILLS. Tests compile to /tmp and the bundle is a plain node
+ * script, so ANY invocation that skips this build runs the PREVIOUS code — and
+ * passes, which is the worst possible outcome. It bit on 2026-08-24: a mutation
+ * test reported SURVIVED against a bundle that had never been rebuilt with the
+ * mutation in it, i.e. the tool said the test was weak when the test was fine.
+ * A green run against stale code is indistinguishable from a green run.
+ *
+ * So a stale bundle now REFUSES to run rather than lying. mtime, not a content
+ * hash: it costs one stat per source file, needs nothing baked in, and cannot
+ * itself go out of date.
+ */
+const WATCH_DIRS = [
+    path.join(repoRoot, 'ui'),
+    path.join(repoRoot, 'tests/js'),
+    path.resolve(repoRoot, '../src/shared'),
+];
+const guard = `(function(){try{
+var _fs=require('fs'),_p=require('path');
+var _dirs=${JSON.stringify(WATCH_DIRS)};
+var _mine=_fs.statSync(__filename).mtimeMs,_new=0,_who='';
+while(_dirs.length){var _d=_dirs.pop(),_e;
+try{_e=_fs.readdirSync(_d,{withFileTypes:true});}catch(_){continue;}
+for(var _i=0;_i<_e.length;_i++){var _f=_p.join(_d,_e[_i].name);
+if(_e[_i].isDirectory()){if(_e[_i].name!=='node_modules'&&_e[_i].name!=='stubs')_dirs.push(_f);continue;}
+if(!/\.(mjs|js)$/.test(_e[_i].name))continue;
+var _m=_fs.statSync(_f).mtimeMs;if(_m>_new){_new=_m;_who=_f;}}}
+if(_new>_mine+1000){
+process.stderr.write('\\n  STALE BUNDLE — refusing to run.\\n'+
+'  '+_p.basename(__filename)+' was built before '+_p.basename(_who)+' changed.\\n'+
+'  Running it would test the PREVIOUS code and pass, which is worse than failing.\\n\\n'+
+'  Rebuild first:  node tests/js/build.mjs\\n'+
+'  Or run one test:  bash tests/js/run-one.sh '+_p.basename(__filename,'.js')+'\\n\\n');
+process.exit(2);}
+}catch(_){/* guard must never be the reason a test cannot run */}})();`;
+
 const outDir = '/tmp/davebox-js-tests';
 const tests = globSync(path.join(repoRoot, 'tests/js/test_*.mjs'));
 
@@ -47,6 +84,7 @@ for (const t of tests) {
         platform: 'node',
         outfile,
         logLevel: 'warning',
+        banner: { js: guard },
         plugins: [stubPlugin],
     });
     console.log(outfile);

@@ -4487,7 +4487,12 @@ function renderFile() {
 function drawVolReadout() {
     /* The card itself moved to ui_movy (drawLevelCard) when Shift+Volume started
      * showing the same one everywhere — same control, one drawer. */
-    drawLevelCard('LEVEL  ' + S.volLevel.toFixed(2) + 'x', S.volLevel / VOL_MAX);
+    /* Named with its track (Josh, 2026-08-24). The card can be raised from a
+     * bank, the mixer or a module editor, and "LEVEL 1.35x" alone does not say
+     * WHOSE. At the widest — "Tr 8  LEVEL  2.00x" — it is 86px in the 90px the
+     * card has, so the label fits without truncation. */
+    drawLevelCard('Tr ' + (S.track + 1) + '  LEVEL  ' + S.volLevel.toFixed(2) + 'x',
+                  S.volLevel / VOL_MAX);
 }
 
 export function soundRender() {
