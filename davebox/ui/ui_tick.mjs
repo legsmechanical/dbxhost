@@ -1430,7 +1430,12 @@ export function _tickImpl() {
          * it says so once per gesture instead of silently doing nothing. */
         if (S.tvDeltaAcc) {
             const _tvD = S.tvDeltaAcc; S.tvDeltaAcc = 0;
-            const _tvT = S.activeTrack;
+            /* In Move-native co-run the gesture belongs to the track whose
+             * instrument is on screen — its Move bus strip volume (Josh,
+             * 2026-08-25). That is normally the active track, but co-run names
+             * its own, so take it from the source of truth rather than assuming
+             * the two agree. Everywhere else: the active track, as before. */
+            const _tvT = S.moveCoRunTrack >= 0 ? S.moveCoRunTrack : S.activeTrack;
             if (S.trackRoute[_tvT] === 2) {
                 /* A MIDI-routed track's volume IS standard MIDI volume: send
                  * CC 7 on the track's channel out the port (Josh, 2026-08-24).
@@ -1453,7 +1458,8 @@ export function _tickImpl() {
                     }
                     /* Same card, MIDI's own unit: CC 7 is 0-127, not a 0-2x
                      * level, and the bar shows the proportion either way. */
-                    showTrackVolCard('Tr ' + (_tvT + 1) + '  CC7  ' + _cc, _cc / 127);
+                    if (S.moveCoRunTrack < 0)
+                        showTrackVolCard('Tr ' + (_tvT + 1) + '  CC7  ' + _cc, _cc / 127);
                 }
             } else {
                 const _tvBus = S.trackRoute[_tvT] === 1 ? moveBusForChannel(S.trackChannel[_tvT]) : 0;
@@ -1473,8 +1479,13 @@ export function _tickImpl() {
                     if (S.trackRoute[_tvT] === 1) engineSet(0, moveBusComp(_tvBus), 'volume', _tvV.toFixed(3));
                     else engineSetSlotParam(slotIndex(_tvT), SLOT_LEVEL_KEY, _tvV.toFixed(3));
                 }
-                showTrackVolCard('Tr ' + (_tvT + 1) + '  LEVEL  ' + _tvV.toFixed(2) + 'x',
-                                 _tvV / SLOT_LEVEL_MAX);
+                /* ⚠ No card in co-run: Move owns the OLED, so it would draw
+                 * into a buffer nobody composites — and worse, its timer would
+                 * outlive the co-run exit and pop a stale level over the screen
+                 * you land on. The gesture is deliberately blind there. */
+                if (S.moveCoRunTrack < 0)
+                    showTrackVolCard('Tr ' + (_tvT + 1) + '  LEVEL  ' + _tvV.toFixed(2) + 'x',
+                                     _tvV / SLOT_LEVEL_MAX);
             }
         }
         /* The save is deferred off the release — a synchronous file write has

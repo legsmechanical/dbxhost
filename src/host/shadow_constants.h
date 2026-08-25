@@ -487,6 +487,25 @@ static inline corun_owner_t corun_event_owner(const volatile shadow_control_t *c
         return CORUN_OWNER_NONE;
     }
     if (!grp) return CORUN_OWNER_TOOL; /* unclassified (sensor) events stay with tool */
+    /* A RUNTIME master-knob claim beats the cede, exactly as it beats the static
+     * button_passthrough list in the shim filter. vol_block is raised and dropped
+     * as a tool changes mode — dAVEBOx raises it only while Shift is held — so
+     * this is not "the tool keeps the knob in co-run": a plain turn still reaches
+     * Move and moves its master, and only the claimed gesture is the tool's.
+     * Without it, Shift+volume in co-run moved MOVE's master instead of the
+     * track's own level (Josh, 2026-08-25), which is the one thing the claim
+     * exists to prevent.
+     *
+     * ⚠ The capacitive touch (note 8) travels WITH the CC, for the reason the
+     * vol_block field comment gives: passing the touch alone still pops Move's
+     * volume overlay — over Move's own screen here — showing a master that is
+     * not the thing being moved. Note 8 ONLY: the other knob touches are
+     * ordinary co-run knob events and must keep ceding. */
+    if (ctrl->vol_block &&
+        ((type == 0xB0 && d1 == 79) ||
+         ((type == 0x90 || type == 0x80) && d1 == 8))) {
+        return CORUN_OWNER_TOOL;
+    }
     /* Legacy carve-out: a pre-cede tool never named the extended buttons, so they
      * stay with it regardless of its keep_mask — byte-identical to pre-cede
      * behavior. Cede-model tools govern the full surface uniformly (no carve-out). */

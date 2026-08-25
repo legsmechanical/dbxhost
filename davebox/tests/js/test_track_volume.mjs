@@ -172,6 +172,67 @@ step('⭑ a MOVE-routed track writes its BUS strip Volume, not a slot', () => {
     S.trackRoute[2] = 0;
 });
 
+/* ── in Move-native CO-RUN the gesture belongs to the CO-RUN track ──────────
+ *
+ * Josh, 2026-08-25. This was a documented limit: in co-run the knob moved
+ * MOVE's master, because CC 79 is ceded to Move firmware and the cede ignored
+ * the runtime claim. The claim (vol_block, raised only while Shift is held) now
+ * beats the cede — a PLAIN turn still reaches Move's master, only the Shift
+ * gesture is ours. That half lives in tests/host/test_corun_cede_default.c;
+ * this is what dAVEBOx does with the CC once it arrives.
+ *
+ * ⚠ The active track and the co-run track DIFFER here on purpose. They usually
+ * agree on device, so a test where they agree would pass against code that
+ * takes the wrong one — which is the only mistake this step can catch. */
+step('⭑ co-run: Shift+volume writes the CO-RUN track bus, not the active track', () => {
+    S.activeTrack = 5;
+    S.trackRoute[5] = 0;                       /* chain track — the WRONG answer */
+    ENGINE['5|slot:volume'] = '1.000';
+    S.trackRoute[2] = 1; S.trackChannel[2] = 4;
+    ENGINE['0|move_fx:4:volume'] = '0.500';
+    S.moveCoRunTrack = 2;                      /* co-run is on track 2 */
+    S.tvSeeded = false; S.tvCardUntil = -1;
+    setCalls = [];
+
+    shift(true); vol(2); globalThis.tick(); shift(false); globalThis.tick();
+
+    const w = volWrites();
+    if (!w.length) throw new Error('the gesture was inert in co-run');
+    const slotWrite = w.find(([, k]) => String(k).indexOf('slot:') === 0);
+    if (slotWrite)
+        throw new Error('wrote the ACTIVE track chain slot: ' + JSON.stringify(slotWrite));
+    const [sl, k, v] = w[0];
+    if (sl !== 0 || k !== 'move_fx:4:volume')
+        throw new Error('wrote ' + sl + '/' + k + ' — expected the co-run track bus');
+    if (Math.abs(parseFloat(v) - (0.5 + 2 / 64)) > 2e-3) throw new Error('value ' + v);
+
+    /* ⚠ No level card: Move owns the OLED in co-run, so it would draw into a
+     * buffer nobody composites and then pop, stale, over the screen you land on
+     * when co-run exits. The gesture is deliberately blind there. */
+    if (S.tvCardUntil >= 0)
+        throw new Error('armed the level card while Move owns the OLED');
+
+    S.moveCoRunTrack = -1;
+    S.trackRoute[2] = 0; S.trackChannel[2] = 1;
+    S.activeTrack = 2;
+});
+
+step('⭑ ...and OUTSIDE co-run the very same gesture is the active track again', () => {
+    /* The positive control for the step above: without it, code that always
+     * used moveCoRunTrack (or never did) could pass one of the two. */
+    S.activeTrack = 2; S.moveCoRunTrack = -1;
+    S.trackRoute[2] = 0;
+    ENGINE['2|slot:volume'] = '1.000';
+    S.tvSeeded = false; S.tvCardUntil = -1;
+    setCalls = [];
+    shift(true); vol(1); globalThis.tick(); shift(false); globalThis.tick();
+    const w = volWrites();
+    if (!w.length || String(w[0][1]).indexOf('slot:') !== 0)
+        throw new Error('outside co-run it stopped writing the active track: ' + JSON.stringify(w));
+    if (S.tvCardUntil < 0)
+        throw new Error('the level card vanished outside co-run too — the guard is too wide');
+});
+
 step('⭑ a MIDI track sends CC 7 on its channel (standard MIDI volume)', () => {
     S.trackRoute[2] = 2; S.trackChannel[2] = 5;
     setCalls = []; extSends = [];

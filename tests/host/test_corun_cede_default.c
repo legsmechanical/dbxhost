@@ -132,6 +132,56 @@ int main(void) {
     { shadow_control_t c = mk_cede(CORUN_GRP_BACK, CORUN_F_OWN_BACK);
       CHECK(OWN(c, CC, 51)  == CORUN_OWNER_PEER, "cede OWN_BACK + ceded BACK -> peer"); }
 
+    /* ---- The RUNTIME master-knob claim beats the cede ----
+     *
+     * vol_block is raised and dropped as a tool changes mode (dAVEBOx raises it
+     * only while Shift is held), so this is not "the tool keeps the knob in
+     * co-run" — it is "the claimed GESTURE is the tool's". Without it,
+     * Shift+volume in co-run moved Move's master instead of the track's own
+     * level, which is the one thing the claim exists to prevent.
+     *
+     * Each check has its unclaimed twin directly beneath it: an exception that
+     * is always on is not an exception, and only the pair can tell them apart. */
+    {
+        shadow_control_t c = mk_cede(CORUN_GRP_MASTER | CORUN_GRP_TOUCH |
+                                     CORUN_GRP_KNOBS | CORUN_GRP_MUTE, 0); /* master CEDED */
+        CHECK(OWN(c, CC, 79) == CORUN_OWNER_PEER,   "unclaimed: CC 79 cedes to Move");
+        CHECK(OWN(c, NOTE, 8) == CORUN_OWNER_PEER,  "unclaimed: volume touch cedes");
+
+        c.vol_block = 1;
+        CHECK(OWN(c, CC, 79) == CORUN_OWNER_TOOL,   "claimed: CC 79 comes to the tool");
+        /* The touch travels WITH the CC: passing it alone still pops Move's
+         * volume overlay, showing a master that is not what is moving. */
+        CHECK(OWN(c, NOTE, 8) == CORUN_OWNER_TOOL,  "claimed: volume touch follows the CC");
+        /* ...and NOTHING else moves. The other knob touches are ordinary co-run
+         * events; a claim that swept the whole TOUCH group would silently take
+         * the seven knobs Move is being driven with. */
+        CHECK(OWN(c, NOTE, 0) == CORUN_OWNER_PEER,  "claimed: knob-1 touch still cedes");
+        CHECK(OWN(c, NOTE, 7) == CORUN_OWNER_PEER,  "claimed: knob-8 touch still cedes");
+        CHECK(OWN(c, CC, 71) == CORUN_OWNER_PEER,   "claimed: knob CCs still cede");
+        CHECK(OWN(c, CC, 88) == CORUN_OWNER_PEER,   "claimed: mute still cedes");
+    }
+    {
+        /* Same rule under the legacy keep-list model — dAVEBOx is a legacy
+         * module, so this is the path that actually runs today. */
+        shadow_control_t c = mk_legacy(0);          /* keeps nothing routable */
+        CHECK(OWN(c, CC, 79) == CORUN_OWNER_PEER,   "legacy unclaimed: CC 79 cedes");
+        c.vol_block = 1;
+        CHECK(OWN(c, CC, 79) == CORUN_OWNER_TOOL,   "legacy claimed: CC 79 to the tool");
+        CHECK(OWN(c, NOTE, 8) == CORUN_OWNER_TOOL,  "legacy claimed: touch follows");
+    }
+    {
+        /* Outside co-run the claim changes nothing here — everything is the
+         * tool's already, and this is what says the exception did not smuggle in
+         * a second meaning. */
+        shadow_control_t c;
+        memset(&c, 0, sizeof c);
+        c.corun.target = CORUN_TARGET_NONE;
+        c.vol_block = 1;
+        CHECK(OWN(c, CC, 79) == CORUN_OWNER_TOOL,   "no co-run: CC 79 is the tool's anyway");
+        CHECK(OWN(c, CC, 71) == CORUN_OWNER_TOOL,   "no co-run: knobs are the tool's anyway");
+    }
+
     if (fails) { fprintf(stderr, "%d check(s) failed\n", fails); return 1; }
     printf("PASS: corun cede-default contract (%d checks)\n", 0);
     return 0;
