@@ -67,7 +67,22 @@ const WATCH_DIRS = [
  * that would matter on device. Fixed in the RIG, not in the module: on device
  * the binding always exists, and gating the module on `typeof` would break the
  * no-capability-probing invariant. */
-const primaryStub = `if(typeof globalThis.host_register_primary!=='function')globalThis.host_register_primary=function(){return true;};\n`;
+const primaryStub = `if(typeof globalThis.host_register_primary!=='function')globalThis.host_register_primary=function(){return true;};\n` +
+/* shadow_get_shift_held: the tick's stuck-modifier reconcile reads it every
+ * frame. Undefined in the rig it throws INSIDE tick() — which swallows errors —
+ * so every test that calls tick() would keep passing while silently doing
+ * NOTHING after that line. That is why it is stubbed here at all.
+ *
+ * ⚠ It returns 1 ("hardware agrees Shift is down"), which makes the reconcile
+ * INERT by default — it only fires on `shiftHeld && !hardware`. The first cut
+ * returned 0 and broke two real tests: they hold Shift via CC 49, and the
+ * reconcile correctly healed it away because the stubbed hardware disagreed.
+ * On DEVICE the hardware is authoritative and that is right; in a rig with no
+ * hands on it, the module's own view is the only truth there is.
+ *
+ * A test that wants to exercise HEALING overrides this with a stub returning 0
+ * — see test_shift_stuck_reconcile.mjs. */
+`if(typeof globalThis.shadow_get_shift_held!=='function')globalThis.shadow_get_shift_held=function(){return 1;};\n`;
 
 const guard = primaryStub + `(function(){try{
 var _fs=require('fs'),_p=require('path');

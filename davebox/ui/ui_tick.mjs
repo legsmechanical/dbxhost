@@ -50,7 +50,7 @@ import { pollDSP,
     pendingDrumNoteOffs, _drumRecNoteOns, _drumRecNoteOffs } from './ui_dsp_bridge.mjs';
 import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes } from './ui_record.mjs';
 import { xposeCancelPreview } from './ui_xpose.mjs';
-import { checkBackHold, backTapWouldAct } from './ui_input_cc.mjs';
+import { checkBackHold, backTapWouldAct, applyShiftEdge } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
@@ -304,6 +304,42 @@ export function requestSessionExit() {
 }
 
 export function _tickImpl() {
+    /* ⭑⭑ STUCK-MODIFIER RECONCILE — heal a Shift release that never arrived.
+     *
+     * ⚠ FIRST, and UNCONDITIONAL. The first cut sat beside updateTrackLEDs(),
+     * which is inside the `else` of `if (S.sessionView)` — so a Shift stuck in
+     * SESSION view would never have healed, and any earlier stage throwing would
+     * skip it silently, because tick() swallows errors. A stuck modifier is
+     * exactly the state that must not depend on which view you are in or on the
+     * rest of the tick surviving. Caught by test_shift_stuck_reconcile.
+     *
+     * The shim publishes hardware MIDI to us through a 64-slot ring that
+     * DROPS SILENTLY when full, and we drain it only between JS callbacks.
+     * A dropped PRESS is self-healing; a dropped RELEASE latches forever.
+     * Josh, 2026-08-25: after Shift+volume in track view the Shift+bottom-row
+     * track LEDs kept animating "as if they're still in track switch mode" —
+     * because as far as we knew, Shift WAS still down. The volume gesture is
+     * the worst case for the ring: a CC 79 detent stream plus capacitive
+     * touch, with per-detent work on our side.
+     *
+     * ⭑ The shim tracks Shift from the HARDWARE BUFFER, independently of that
+     * ring, and already publishes it in shared memory — so there is an
+     * authoritative answer available for free, no round-trip.
+     *
+     * ⚠ ONE DIRECTION ONLY. We heal stuck-HELD (we think down, hardware says
+     * up) because that is the state that never recovers by itself. We do NOT
+     * assert Shift from the other direction: a dropped press heals the moment
+     * the user presses again, and synthesising a modifier nobody is holding is
+     * a worse failure than the one being fixed.
+     *
+     * Routed through applyShiftEdge() rather than clearing the flag here, so
+     * the heal drops the volume claim, flushes the pending level and re-pushes
+     * the pad map exactly as a real release would. */
+    if (S.shiftHeld && !shadow_get_shift_held()) {
+        console.log('stuck Shift healed — release was dropped by the input ring');
+        applyShiftEdge(false);
+    }
+
     /* Exit farewell: the EXITING frame and the LED clear were queued when Quit
      * drained; freeze everything else so no later stage can repaint over them
      * (drainLedInit completing would otherwise re-light the surface during the

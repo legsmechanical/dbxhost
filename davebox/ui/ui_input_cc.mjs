@@ -1073,10 +1073,25 @@ export function applyBankPick() {
     forceRedraw();
 }
 
-function _onCC_buttons(d1, d2) {
-    if (d1 === MoveShift) {
-        S.shiftHeld = d2 === 127;
-        S.shiftTrackLEDActive = d2 === 127;
+/* ⭑ THE SHIFT EDGE HAS ONE OWNER.
+ *
+ * Called by the CC 49 handler and by the tick's stuck-modifier reconcile, which
+ * heals a Shift RELEASE that never arrived. Those two must do the SAME work: a
+ * heal that only cleared `shiftHeld` would leave the volume claim raised, the
+ * pending level unsaved and the pad map suppressed — a subtler wrong state than
+ * the stuck LEDs it was fixing.
+ *
+ * Why a release can go missing: the shim publishes hardware MIDI to us through a
+ * 64-slot ring that DROPS SILENTLY when full, and the consumer drains it only
+ * between JS callbacks. A volume gesture is the worst case — a CC 79 detent
+ * stream plus capacitive touch, with per-detent work on our side. A dropped
+ * PRESS is self-healing (press again); a dropped RELEASE latches forever.
+ * Reported by Josh 2026-08-25: the Shift+bottom-row track LEDs kept animating
+ * after Shift was released. [[schwung-blocked-tick-drops-midi-releases]] had
+ * predicted exactly this for the held-modifier flags and was waiting for a repro. */
+export function applyShiftEdge(held) {
+    S.shiftHeld = held;
+    S.shiftTrackLEDActive = held;
         /* Shift IS the volume-knob claim (Josh, 2026-08-24): while held, Move's
          * native main output stands aside and CC 79 becomes the ACTIVE TRACK's
          * volume — in every view. Claimed on the press so the very first detent
@@ -1114,6 +1129,11 @@ function _onCC_buttons(d1, d2) {
          * Move flavour of SOUND MODE, which forwards nothing, and both routes
          * fire on the PRESS like every other entry. */
         if (!S.sessionView) forceRedraw();
+}
+
+function _onCC_buttons(d1, d2) {
+    if (d1 === MoveShift) {
+        applyShiftEdge(d2 === 127);
     }
 
     /* Any non-Shift CC button press while Shift overlay is active clears the overlay */
