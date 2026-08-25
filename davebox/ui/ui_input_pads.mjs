@@ -22,7 +22,6 @@ import { computePadNoteMap, syncDrumLaneSteps, setActiveDrumLane,
     setDrumPerformMode } from './ui_drummodel.mjs';
 import { effectiveClip, invalidateLEDCache, forceRedraw, sendPerfMods,
     PERF_MOD_PAD_MAP } from './ui_leds.mjs';
-import { exitMoveNativeCoRun } from './ui_corun.mjs';
 import { openGlobalMenu } from './ui_menu.mjs';
 import { openProjectPadPicker, projectPadPickerTap } from './ui_dialogs.mjs';
 import { applyBankParam, applyTrackConfig, readBankParams,
@@ -1099,14 +1098,13 @@ export function _onStepButtons(d1, d2) {
      * is already the session, and openProjectPadPicker TOGGLES, so letting it
      * through would CLOSE the picker the user is standing in. */
     if (S.awaitingProjectSelect) return;
-    /* Co-run (Schwung chain-edit or Move-native): the step grid is blanked down
-     * to a single exit affordance (the blinking Step 3 button + lit icon).
-     * Step 3 (idx 2) exits co-run; every other step press is swallowed so it
-     * can't edit the clip hidden underneath. Mirrors the Menu (CC 50) exit. */
-    if (S.moveCoRunTrack >= 0) {
-        if (d1 - 16 === 2) exitMoveNativeCoRun();
-        return;
-    }
+    /* ⚠ NO co-run gate here any more (Josh, 2026-08-24). This swallowed EVERY
+     * step press in co-run and mapped Step 3 to "exit" — which is why the step
+     * row did nothing at all: no sequencing, no editing, one dead button. Both
+     * halves are retired. MENU is the canonical exit and does the job alone, so
+     * the affordance had nothing left to advertise; and steps are KEPT by the
+     * co-run mask, so swallowing them here contradicted the mask. Steps
+     * sequence in co-run exactly as they do outside it. */
     if (S.tapTempoOpen) return;
     if (d2 > 0 && S.shiftTrackLEDActive) { S.shiftTrackLEDActive = false; S.screenDirty = true; }
     const idx = d1 - 16;

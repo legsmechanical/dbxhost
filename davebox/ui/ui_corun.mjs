@@ -23,6 +23,7 @@ import { showActionPopup } from './ui_persistence.mjs';
  * real transport is the composite of the per-button bits below. */
 const CORUN_GRP_SHIFT          = 1 << 8;  /* CC 49 */
 const CORUN_GRP_TRACK          = 1 << 5;  /* CC 40-43 — the side clip buttons */
+const CORUN_GRP_DELETE         = 1 << 19; /* CC 119 */
 const CORUN_GRP_PADS           = 1 << 1;
 const CORUN_GRP_STEPS          = 1 << 2;
 const CORUN_GRP_MENU           = 1 << 10;
@@ -49,6 +50,26 @@ const CORUN_GRP_TRANSPORT      = CORUN_GRP_PLAY | CORUN_GRP_REC | CORUN_GRP_SAMP
  * They used to cede their presses to Move while we blinked a paired-track
  * indicator on them — the indicator is gone.
  *
+ * ⭑ DELETE is KEPT — Josh's own correction ("I was wrong about delete being
+ * used in co-run").
+ *
+ * ⚠⚠ COPY IS NOT CEDEABLE AT ALL, and naming it here changes nothing. The
+ * framework has a LEGACY CARVE-OUT (shadow_constants.h, corun_event_owner):
+ *
+ *     if (!cede_model && (grp & CORUN_GRP_EXTENDED_ALL)) return CORUN_OWNER_TOOL;
+ *
+ * CORUN_GRP_EXTENDED_ALL covers TRANSPORT | EDIT | NAV, and CORUN_GRP_EDIT is
+ * Copy | Delete | Undo | Capture — so under the legacy model those four stay
+ * with the TOOL regardless of keep_mask. Move firmware never sees CC 60, which
+ * is why "hold Copy, tap pads" does nothing natively while the same shape works
+ * for MUTE (CC 88 is not in that set, so it cedes normally, and the pad taps
+ * reach Move because we INJECT them — see _onPadPress).
+ *
+ * ⭑ Two ways out, both real decisions rather than tweaks: inject CC 60 to Move
+ * the way pad presses are already injected, or opt davebox into the cede model
+ * (CORUN_F_CEDE_MODEL) and lose the carve-out for all four buttons at once.
+ * Left for Josh — see the worklog entry.
+ *
  * ⚠⚠ Bit 3 is the RETIRED single-bit TRANSPORT (see above): the real transport
  * is the per-button composite, which is why Play/Rec/Loop silently did nothing
  * here for months.
@@ -56,7 +77,8 @@ const CORUN_GRP_TRANSPORT      = CORUN_GRP_PLAY | CORUN_GRP_REC | CORUN_GRP_SAMP
  * Modifier releases for CEDED keys still never reach us; the defensive clear in
  * cleanupAfterMoveNativeCoRun covers them. */
 const DAVEBOX_CORUN_KEEP_DEFAULT = CORUN_GRP_PADS | CORUN_GRP_STEPS | CORUN_GRP_TRANSPORT |
-                                   CORUN_GRP_MENU | CORUN_GRP_SHIFT | CORUN_GRP_TRACK;
+                                   CORUN_GRP_MENU | CORUN_GRP_SHIFT | CORUN_GRP_TRACK |
+                                   CORUN_GRP_DELETE;
 /* Opt out of framework Back-as-exit. dAVEBOx uses Menu as the canonical exit
  * (existing muscle memory) and lets Back cede to the peer for sub-view nav
  * (chain editor pop-up, Move firmware preset/synth navigation). */

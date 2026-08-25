@@ -79,9 +79,16 @@ step('move-native declares the ruled split', () => {
      * outside of co-run in track view". TRACK moved KEEP-side with that — they
      * are the clip buttons, and selecting clips is what they do everywhere
      * else. Shift stayed ours (no recalled use for it in Move's editor). */
+    /* ⭑⭑ COPY and DELETE are KEPT because a pad-based gesture must live on the
+     * same side as the PADS: Move's copy is hold-Copy, tap-source, tap-dest, so
+     * ceding the button while keeping the pads hands Move a modifier it never
+     * sees taps for and the gesture completes nowhere. Josh reported it as
+     * copy not copying; Delete was his own correction.
+     * ⚠ MUTE is still ceded and has the same defect — left as ruled, not
+     * reversed unasked. If it ever moves, it moves for this reason. */
     const mustKeep = ['PADS', 'STEPS', 'MENU', 'SHIFT', 'TRACK',
-                      'PLAY', 'REC', 'SAMPLE', 'LOOP'];
-    const mustCede = ['JOG', 'KNOBS', 'MASTER', 'BACK', 'TOUCH', 'MUTE', 'COPY', 'DELETE'];
+                      'PLAY', 'REC', 'SAMPLE', 'LOOP', 'DELETE'];
+    const mustCede = ['JOG', 'KNOBS', 'MASTER', 'BACK', 'TOUCH', 'MUTE'];
     for (const g of mustKeep) if (!(m & GRP[g])) throw new Error('does not keep ' + g);
     for (const g of mustCede) if (m & GRP[g]) throw new Error('keeps ' + g + ' (must cede)');
     if (m & GRP.DEAD_TRANSPORT)
