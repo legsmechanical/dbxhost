@@ -1169,18 +1169,23 @@ stopped sends a MIDI panic on every channel.
 > jog changes it, and it appears in [brackets] while you're changing it.
 
 
-**Shift + Note/Session** means "edit this track's sound" — one gesture, and where
-it lands follows the track's route. The same screen is also the **SOUND + CONFIG**
-bank, one jog turn past the last [parameter bank](#35-parameter-banks), so you
-never have to leave the track's banks to reach it. Playback carries on either way, and the pads
-and step buttons stay with the sequencer, so you can keep playing while you dial.
+**SOUND + CONFIG** is where you edit a track's sound, and what it shows follows
+the track's route. It is a **bank** — one jog turn past the last
+[parameter bank](#35-parameter-banks) — so you never have to leave the track's
+banks to reach it, and it is remembered per track like any other bank.
+**Shift + Note/Session** closes it from any depth in one press; the plain
+**Note/Session** button jumps to Session view as usual and leaves the track
+where it was, so coming back brings the screen with it. Playback carries on
+either way, and the pads and step buttons stay with the sequencer, so you can
+keep playing while you dial.
 
 **Schwung tracks** open dAVEBOx's own sound editor. It starts on the track's
 chain — MIDI FX, the synth, then **FX 1-4** — and the jog picks a block. Inside a
 block the knobs edit its parameters and the jog turns the pages; hold **Shift**
 while turning to jump between sections. Picking an **empty** block opens the
 module list, which is how you add an effect. **Back** steps out one level at a
-time; **Shift + Note/Session** leaves outright.
+time, and closes the bank from its top level; **Shift + Note/Session** leaves
+outright from any depth.
 
 ### The eight knobs outside a block
 

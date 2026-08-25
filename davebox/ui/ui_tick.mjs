@@ -1362,7 +1362,16 @@ export function _tickImpl() {
              * are five, and spreading the bookkeeping across them is what
              * produced the earlier bugs of this shape. */
             if (soundEnteredInSession() !== S.sessionView) {
-                soundExit();
+                /* ⭑ A LEAVE, not a close (Josh, 2026-08-25): "note/session should
+                 * always jump to session view from track view without resetting
+                 * the track's current bank place." The track comes WITH you —
+                 * same shape as the track switch — so it stays RECORDED on
+                 * SOUND + CONFIG and the invariant above re-opens the screen when
+                 * you come back to track view. A plain close would land it on the
+                 * default bank, which is the reset he saw.
+                 * ⚠ Only the VIEW toggle. Shift+Note/Session still CLOSES (it is
+                 * the deliberate way out), and lands on the default bank. */
+                soundExit({ leaving: true });
                 invalidateLEDCache();
                 forceRedraw();
             }

@@ -353,6 +353,56 @@ step('⭑ BACK lands on the DEFAULT bank — the jog\'s left turn lands on the o
     S.activeBank = 0;
 });
 
+step('⭑ NOTE/SESSION is a LEAVE: the view toggle must not reset the track\'s bank', () => {
+    /* Josh, 2026-08-25: "note/session should always jump to session view from
+     * track view without resetting the track's current bank place. right now,
+     * pressing it in sound+config jumps to the first bank."
+     *
+     * The press flips S.sessionView directly; tick's reconcile then ends sound
+     * mode because the view it was called from is gone. That end is a LEAVE, not
+     * a close — the track comes WITH you, so it stays recorded on the bank and
+     * the screen is back when you return. A close would land it on the default
+     * bank, which is the reset he saw. MoveNoteSession is CC 50.
+     *
+     * ⚠ The unshifted button used to be a CLOSER — "the way out from any depth"
+     * — so it never reached the view toggle at all, which is why the bank moved
+     * and the view did not. Retired 2026-08-25; Shift+Note/Session is still the
+     * one-press way out. That is the half this step would fail on if it came
+     * back: the first assertion is that the VIEW actually changed. */
+    const noteSession = () => { send(50, 127); globalThis.tick(); send(50, 0); globalThis.tick(); };
+
+    reset(PAD_MODE_MELODIC_SCALE, 6);
+    right();                                   /* into SOUND + CONFIG */
+    if (!snd.soundActive()) throw new Error('control: did not enter sound mode');
+
+    noteSession();                             /* -> session view */
+    if (!S.sessionView) throw new Error('control: did not switch to session view');
+    if (snd.soundActive()) throw new Error('the screen survived the view change');
+    if (S.trackActiveBank[2] !== BANK_SOUND)
+        throw new Error('the view change RESET the bank to ' + S.trackActiveBank[2] +
+                        (S.trackActiveBank[2] === 0 ? " — Josh's report" : ''));
+
+    S.bankSelectTick = -1;
+    noteSession();                             /* -> back to track view */
+    if (S.sessionView) throw new Error('control: did not switch back to track view');
+    if (!snd.soundActive())
+        throw new Error('the track came back to track view without its screen');
+    if (S.activeBank !== BANK_SOUND) throw new Error('came back on bank ' + S.activeBank);
+    if (S.bankSelectTick >= 0)
+        throw new Error('the return opened the bank display window (tick ' + S.bankSelectTick + ')');
+    snd.soundExit();
+    S.activeBank = 0;
+
+    /* ...and an ORDINARY bank survives the same round trip, which it always did
+     * — the positive control that says this step can tell the two apart. */
+    reset(PAD_MODE_MELODIC_SCALE, 3);
+    noteSession();
+    noteSession();
+    if (S.activeBank !== 3 || S.trackActiveBank[2] !== 3)
+        throw new Error('an ordinary bank did not survive the view round trip: ' +
+                        S.activeBank + '/' + S.trackActiveBank[2]);
+});
+
 step('⭑⭑ THE FIX, end to end: a track left on SOUND + CONFIG comes back on it', () => {
     /* Josh, 2026-08-24/25 — symptom (c) of STATE ON EXIT: "banks land somewhere
      * I did not leave them." The whole chain in one step, because each half

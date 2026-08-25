@@ -1258,15 +1258,20 @@ function _onCC_buttons(d1, d2) {
                  * — is not gone, it MOVED: the bank walk is now the only way to
                  * `Track to`, and it lets every route through, EXT included. */
 
-            } else if (soundActive()) {
-                /* The way OUT, from any depth. Back walks the stack one level
-                 * at a time — fine when you're one step in, tedious from a
-                 * preset list inside a block — so the button that got you here
-                 * also gets you out in one press, wherever you are. It cannot
-                 * flip the view underneath either, which is what this branch
-                 * used to be for. */
-                soundExit();
-                forceRedraw();
+            /* ⚠⚠ RETIRED 2026-08-25 (Josh): the UNSHIFTED button is no longer a
+             * closer. "note/session should always jump to session view from
+             * track view without resetting the track's current bank place" — so
+             * it falls through to the view toggle below like it does on any
+             * other bank, and tick's reconcile ends sound mode as a LEAVE: the
+             * track stays recorded on SOUND + CONFIG and the screen is back when
+             * you return to track view.
+             *
+             * It was a closer because the button that OPENED the screen should
+             * also get you out of it in one press from any depth. That reason
+             * expired when Shift+Note/Session stopped opening anything (08-24) —
+             * the opener is the bank walk now. ⭑ Shift+Note/Session is still the
+             * deliberate one-press way out from any depth, and still lands on the
+             * default bank; the branch above is it. */
             } else if (S.tapTempoOpen) {
                 closeTapTempo();
                 forceRedraw();

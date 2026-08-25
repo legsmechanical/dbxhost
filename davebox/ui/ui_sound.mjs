@@ -984,12 +984,13 @@ export function soundExit(opts) {
     }
     /* A global bus (Master/Send FX) never took a track's bank, but it can be
      * open while activeBank still reads BANK_SOUND from a track flavour that
-     * preceded it — fall back to the active track's recorded bank rather than
-     * leaving the identity stranded on a stub. */
-    if (GS.activeBank === BANK_SOUND && !_leaving) {
-        const _tb = GS.trackActiveBank[GS.activeTrack] | 0;
-        GS.activeBank = (_tb === BANK_SOUND) ? BANK_DEFAULT : _tb;
-    }
+     * preceded it. RESYNC from the record rather than picking a bank: if the
+     * active track really is recorded on SOUND + CONFIG then BANK_SOUND is the
+     * truth, and the tick invariant re-opens its screen the moment track view
+     * is showing. Forcing a default here instead would leave the live mirror
+     * disagreeing with the record — the track's screen would not come back. */
+    if (GS.activeBank === BANK_SOUND && !_leaving)
+        GS.activeBank = GS.trackActiveBank[GS.activeTrack] | 0;
     clearBusContext();
     S.pendingAction = null;
     S.pendingDiscover = 0;
