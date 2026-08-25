@@ -2088,7 +2088,50 @@ static inline void accumulate_sends(int slot, const int16_t *fx_buf,
                         shadow_chain_slots[slot].send_b, send_accum);
 }
 
+/* ── mix_buf phase timers ────────────────────────────────────────────────────
+ *
+ * `mix_buf` is ONE number in the spi_timing line and it is the biggest one:
+ * measured at 1915 µs of a 1946 µs frame on 2026-08-22, against a 900 µs budget,
+ * while every DSP slot together spent 28 µs. So the frame was lost in here, and
+ * a single total cannot say WHERE — this function is ~900 lines across six
+ * phases, any of which could be the one.
+ *
+ * Max per phase, same shape as the per-slot maxima, reset each report window. A
+ * max (not a sum) because the question is "which phase blows the budget", and an
+ * average hides a phase that is cheap 999 frames out of 1000.
+ *
+ * ⚠ RT path: two vDSO clock reads per phase, ~40 ns each — call it 0.5 µs a
+ * frame against a 900 µs budget. Always-on for the same reason the slot timers
+ * are: a stall you have to redeploy to observe is a stall you will not catch. */
+#define MIX_PHASE_HEAD        0   /* setup, link-audio read, jack mix           */
+#define MIX_PHASE_LA_REBUILD  1   /* the zero-and-rebuild-from-Link-Audio path  */
+#define MIX_PHASE_CHAIN_FX    2   /* per-slot chain FX (non-rebuild)            */
+#define MIX_PHASE_SEND_FX     3   /* send FX buses + returns                    */
+#define MIX_PHASE_ODSP_FX     4   /* overtake DSP FX                            */
+#define MIX_PHASE_MFX         5   /* master FX chain                            */
+#define MIX_PHASE_COUNT       6
+static uint64_t spi_mix_phase_max[MIX_PHASE_COUNT];
+static const char *const spi_mix_phase_name[MIX_PHASE_COUNT] = {
+    "head", "la_rebuild", "chain_fx", "send_fx", "odsp_fx", "mfx"
+};
+/* ⚠ ONE shared pair, declared at the top of the function — NOT per call site.
+ * All six BEGINs sit at the same block scope, so a declaration inside the macro
+ * would redeclare _mp0 six times in one scope and fail to compile. The phases
+ * are strictly sequential and never nested, so sharing is safe; if one is ever
+ * nested inside another, this breaks silently and needs per-phase names. */
+#define MIX_PHASE_BEGIN()                                                      \
+    clock_gettime(CLOCK_MONOTONIC, &_mp0)
+#define MIX_PHASE_END(idx)                                                     \
+    do {                                                                       \
+        clock_gettime(CLOCK_MONOTONIC, &_mp1);                                 \
+        uint64_t _us = (uint64_t)(_mp1.tv_sec - _mp0.tv_sec) * 1000000 +       \
+                       (uint64_t)(_mp1.tv_nsec - _mp0.tv_nsec) / 1000;         \
+        if (_us > spi_mix_phase_max[idx]) spi_mix_phase_max[idx] = _us;        \
+    } while (0)
+
 static void shadow_inprocess_mix_from_buffer(void) {
+    struct timespec _mp0, _mp1;   /* the shared pair MIX_PHASE_BEGIN/END use */
+    (void)_mp1;
     if (!shadow_inprocess_ready || !global_mmap_addr) return;
     if (!shadow_deferred_dsp_valid) return;  /* No buffer to mix yet */
 
@@ -2120,6 +2163,7 @@ static void shadow_inprocess_mix_from_buffer(void) {
     int16_t *mailbox_audio = (int16_t *)(global_mmap_addr + AUDIO_OUT_OFFSET);
     float mv = shadow_master_volume;
     (void)shadow_master_fx_chain_active();  /* MFX slots processed unconditionally below */
+    MIX_PHASE_BEGIN();
     /* Always build the mix at unity level so sampler/skipback capture audio
      * at full gain (independent of master volume).  Apply mv at the end. */
 
@@ -2247,6 +2291,9 @@ static void shadow_inprocess_mix_from_buffer(void) {
     int la_cache_valid[SHADOW_CHAIN_INSTANCES];
     memset(la_cache_valid, 0, sizeof(la_cache_valid));
 
+    MIX_PHASE_END(MIX_PHASE_HEAD);
+
+    MIX_PHASE_BEGIN();
     if (rebuild_from_la) {
         /* Read all Link Audio channels FIRST so we can decide whether to
          * actually rebuild. If every slot starves (e.g. during a Move set
@@ -2603,7 +2650,9 @@ static void shadow_inprocess_mix_from_buffer(void) {
         }
 
     }
+    MIX_PHASE_END(MIX_PHASE_LA_REBUILD);
 skip_la_rebuild:
+    MIX_PHASE_BEGIN();
     if (!rebuild_from_la && shadow_chain_process_fx) {
         /* No Link Audio — use deferred FX output from post-ioctl (fast path) */
         for (int s = 0; s < SHADOW_CHAIN_INSTANCES; s++) {
@@ -2693,7 +2742,9 @@ skip_la_rebuild:
             }
         }
     }
+    MIX_PHASE_END(MIX_PHASE_CHAIN_FX);
 
+    MIX_PHASE_BEGIN();
     /* Process send FX buses and sum returns into ME bus (before Master FX) */
     for (int b = 0; b < SEND_BUS_COUNT; b++) {
         if (!shadow_send_fx_bus_active(b)) continue;
@@ -2740,6 +2791,7 @@ skip_la_rebuild:
             }
         }
     }
+    MIX_PHASE_END(MIX_PHASE_SEND_FX);
 
     /* Mix overtake DSP buffer into ME bus unconditionally. Under rebuild_from_la,
      * the mailbox is already the ME reconstruction and also needs overtake DSP;
@@ -2793,10 +2845,13 @@ skip_la_rebuild:
     int16_t *fx_target = rebuild_from_la ? mailbox_audio : me_unity_i16;
 
     /* Overtake DSP FX: process ME bus (non-rebuild) or reconstructed mailbox (rebuild_from_la) */
+    MIX_PHASE_BEGIN();
     if (overtake_dsp_fx && overtake_dsp_fx_inst && overtake_dsp_fx->process_block) {
         overtake_dsp_fx->process_block(overtake_dsp_fx_inst, fx_target, FRAMES_PER_BLOCK);
     }
+    MIX_PHASE_END(MIX_PHASE_ODSP_FX);
 
+    MIX_PHASE_BEGIN();
     /* Apply master FX chain. Under non-rebuild, MFX processes ME only; under
      * rebuild_from_la, mailbox contains reconstructed ME tracks and MFX
      * processes mailbox (Task 8 revisits). */
@@ -2812,6 +2867,7 @@ skip_la_rebuild:
             memcpy(fx_target, mfx_dry, FRAMES_PER_BLOCK * 2 * sizeof(int16_t));
         }
     }
+    MIX_PHASE_END(MIX_PHASE_MFX);
 
     /* Tick Master FX LFOs after processing so updated params apply next block.
      * This mirrors the legacy in-process mix path behavior. */
@@ -4971,6 +5027,7 @@ typedef struct {
     /* Per-slot render breakdown (added 2026-05-15 for render spike hunt) */
     uint64_t slot_render_max[SHADOW_CHAIN_INSTANCES];
     uint64_t slot_synth_max[SHADOW_CHAIN_INSTANCES];
+    uint64_t mix_phase_max[MIX_PHASE_COUNT];   /* where mix_buf's time went */
     uint64_t slot_fx_max[SHADOW_CHAIN_INSTANCES];
     uint32_t slot_probe_burst_max;
     /* JACK audio double-buffer stats */
@@ -8459,6 +8516,8 @@ post_timing:
             spi_snap.slot_synth_max[s] = spi_slot_synth_max[s];
             spi_snap.slot_fx_max[s] = spi_slot_fx_max[s];
         }
+        for (int i = 0; i < MIX_PHASE_COUNT; i++)
+            spi_snap.mix_phase_max[i] = spi_mix_phase_max[i];
         spi_snap.slot_probe_burst_max = spi_slot_probe_burst_max;
         spi_snap.jack_audio_hits = schwung_jack_bridge_get_hit_count();
         spi_snap.jack_audio_misses = schwung_jack_bridge_get_miss_count();
@@ -8485,6 +8544,7 @@ post_timing:
             spi_slot_synth_max[s] = 0;
             spi_slot_fx_max[s] = 0;
         }
+        for (int i = 0; i < MIX_PHASE_COUNT; i++) spi_mix_phase_max[i] = 0;
         spi_slot_probe_burst_max = 0;
         spi_granular_count = 0;
     }
@@ -8716,6 +8776,21 @@ static void *spi_timing_logger_thread(void *arg)
                 unified_log("spi_timing", LOG_LEVEL_DEBUG,
                     "Slot synth max(us):%s | Slot fx max(us):%s",
                     synth_buf, fx_buf);
+                /* Where mix_buf's time went. Printed next to the slot lines
+                 * because the pair is the whole diagnosis: on 2026-08-22 the
+                 * slots held 28 µs and mix_buf held 1915 µs of a 1946 µs
+                 * frame, and nothing said which of its six phases that was. */
+                {
+                    char mix_buf_phases[MIX_PHASE_COUNT * 24 + 1];
+                    int mn = 0;
+                    for (int i = 0; i < MIX_PHASE_COUNT; i++)
+                        mn += snprintf(mix_buf_phases + mn,
+                                       sizeof(mix_buf_phases) - mn, " %s=%llu",
+                                       spi_mix_phase_name[i],
+                                       (unsigned long long)spi_snap.mix_phase_max[i]);
+                    unified_log("spi_timing", LOG_LEVEL_DEBUG,
+                        "MixBuf phase max(us):%s", mix_buf_phases);
+                }
             }
             if (spi_snap.jack_audio_hits > 0 || spi_snap.jack_audio_misses > 0) {
                 unified_log("spi_timing", LOG_LEVEL_DEBUG,
