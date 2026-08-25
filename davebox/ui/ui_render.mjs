@@ -375,9 +375,9 @@ function drawMetroIndicator() {
     const label = METRO_LABELS[S.metronomeOn];
     if (label) {
         const tx = 8;
-        const tw = mvWidth(label);
+        const tw = label.length * 6;
         fill_rect(4, 23, 2, 2, 1);           /* left dot */
-        mvPrint(tx, 22, label, 1);
+        pixelPrint(tx, 22, label, 1);
         fill_rect(tx + tw + 2, 23, 2, 2, 1); /* right dot */
     }
     if (S.sessionView) {
@@ -389,8 +389,8 @@ function drawMetroIndicator() {
          * somewhere else — which is the whole reason this label exists. */
         const ml = (soundActive() && soundIsGlobal() && soundEnteredInSession())
                  ? 'FX' : modeNames[S.sessKnobMode];
-        const mx = 128 - mvWidth(ml) - 1;
-        mvPrint(mx, 22, ml, 1);
+        const mx = 128 - ml.length * 6;
+        pixelPrint(mx, 22, ml, 1);
     }
     /* Velocity / Fixed/Adaptive indicators (track view only, y=22) */
     if (!S.sessionView) {
@@ -400,12 +400,12 @@ function drawMetroIndicator() {
         const _isEmpty7  = _isDrum7 ? !S.drumClipNonEmpty[t][ac] : !S.clipNonEmpty[t][ac];
         const _manualL7  = _isDrum7 ? S.drumLaneLengthManuallySet[t] : S.clipLengthManuallySet[t][ac];
         /* Velocity input indicator (between metro and fixed/adap) */
-        mvPrint(67, 22, fmtVelOverride(S.trackVelOverride[t]), 1);
-        /* ⚠ Right-ALIGNED to the same edge the fixed-pitch version landed on
-         * (x=103/109 + 6px per char = 127). The movy face is proportional, so
-         * the x has to be derived or 'Adap' and 'Fix' stop sharing an edge. */
-        const _tag7 = (_isEmpty7 && !_manualL7) ? 'Adap' : 'Fix';
-        mvPrint(127 - mvWidth(_tag7), 22, _tag7, 1);
+        pixelPrint(67, 22, fmtVelOverride(S.trackVelOverride[t]), 1);
+        if (_isEmpty7 && !_manualL7) {
+            pixelPrint(103, 22, 'Adap', 1);
+        } else {
+            pixelPrint(109, 22, 'Fix', 1);
+        }
     }
 }
 
@@ -580,30 +580,22 @@ function kitCellForKnob(knob, val) {
  *   active clip on other track  → solid fill (16×4)
  *   has content, not active     → center bar (14×2 at x+1,y+1)
  *   empty                       → nothing */
-/* The session banner's wordmark, set in the BANK-HEADING font (Josh,
- * 2026-08-25) — the same 6x6 face drawKitHeader uses, so the banner and every
- * bank heading are one voice. That font carries a true lowercase 'x' added for
- * this very mark, and a true 'd', so the casing survives.
+/* The session banner's wordmark, set in the BANK-HEADING font — the same 6x6
+ * face drawKitHeader uses, drawn the same way it draws: ONE hdrPrint of the
+ * whole string, centred on its measured width. That font carries a true
+ * lowercase 'd' and an 'x' added for this very mark, so the casing survives.
  *
- * Fixed slots: each character owns a slot and is centred in it, so an animated
- * swap changes the glyph and never the position. (The heading font is
- * fixed-advance, so this costs nothing here — it is kept because the layout
- * must not depend on that.) */
+ * ⚠ It was briefly drawn letter-by-letter into per-character slots, to stop the
+ * transport animation shifting the word. That was wrong twice over: the face is
+ * FIXED-ADVANCE, so a swapped glyph cannot move anything and the slots bought
+ * nothing — and each slot was sized with hdrWidth(oneChar), which returns the
+ * advance MINUS the trailing gap (6, not 7). Every letter lost a pixel and the
+ * word closed up: "squashed and blurry" (Josh, on hardware). Measure a STRING
+ * with hdrWidth, never a character as if it were a cell. */
 const MARK_BAR_H = 12;
-const MARK_ALTS = { 1: '@', 3: '3', 5: 'o' };   /* slot -> its animated twin */
-const MARK_REST = ['d', 'A', 'V', 'E', 'B', 'O', 'x'];
 
-function drawWordmark(chars) {
-    const w = MARK_REST.map((ch, i) => Math.max(
-        hdrWidth(ch),
-        MARK_ALTS[i] ? hdrWidth(MARK_ALTS[i]) : 0));
-    const total = w.reduce((a, b) => a + b, 0);
-    let x = Math.round((128 - total) / 2);
-    for (let i = 0; i < chars.length; i++) {
-        const g = chars[i];
-        hdrPrint(x + Math.round((w[i] - hdrWidth(g)) / 2), 3, g, 0);
-        x += w[i];
-    }
+function drawWordmark(mark) {
+    hdrPrint(Math.round((128 - hdrWidth(mark)) / 2), 3, mark, 0);
 }
 
 function drawSessionOverview() {
@@ -1168,7 +1160,7 @@ function drawUIBody() {
         } else {
             dA = 'A'; dE = 'E'; dO = 'O';
         }
-        drawWordmark(['d', dA, 'V', dE, 'B', dO, 'x']);
+        drawWordmark('d' + dA + 'V' + dE + 'B' + dO + 'x');
         drawMetroIndicator();
         drawTrackRow(35);
         for (let t = 0; t < NUM_TRACKS; t++) {
@@ -2125,13 +2117,13 @@ function drawUIBody() {
         const bankName  = S.activeBank === 0 ? 'DRUM LANE' : S.activeBank === 1 ? 'NOTE FX' : S.activeBank === 5 ? 'REPEAT GROOVE' : S.activeBank === 6 ? BANKS[6].name : S.activeBank === 7 ? (Math.floor(S.tickCount / 24) % 2 === 0 ? 'ALL' : '   ') + ' LANES' : BANKS[S.activeBank] ? BANKS[S.activeBank].name : '?';
         (S.activeBank === 5 || S.activeBank === 6 ? drawBankHeadingInverted : drawBankHeading)(bankName, false);
         /* info row sits at y=12 — 2px clear of the header rule on row 9 */
-        mvPrint(4, 12, bankGroup + '  Pad:' + name + oct + ' (' + note + ')', 1);
+        pixelPrint(4, 12, bankGroup + '  Pad:' + name + oct + ' (' + note + ')', 1);
         const laneBit = 1 << lane;
         if (S.drumLaneSolo[t] & laneBit) {
-            mvPrint(128 - 4 - mvWidth('SOLOED'), 22, 'SOLOED', 1);
+            pixelPrint(128 - 4 - 6 * 6, 22, 'SOLOED', 1);
         } else if (S.drumLaneMute[t] & laneBit) {
             if (Math.floor(S.tickCount / 50) % 2 === 0)
-                mvPrint(128 - 4 - mvWidth('MUTED'), 22, 'MUTED', 1);
+                pixelPrint(128 - 4 - 5 * 6, 22, 'MUTED', 1);
         }
         drawMetroIndicator();
         drawTrackRow(35);
@@ -2157,25 +2149,24 @@ function drawUIBody() {
         const oct     = S.trackOctave[S.activeTrack];
         const octStr  = 'Oct:' + (oct >= 0 ? '+' : '') + oct;
         const keyScl  = NOTE_KEYS[S.padKey] + ' ' + (SCALE_DISPLAY[S.padScale] || '?');
-        const keySclW = mvWidth(keyScl);
-        const keySclX = 128 - 4 - keySclW;
+        const CHAR_W  = 6;
+        const keySclX = 128 - 4 - keyScl.length * CHAR_W;
         (S.activeBank === 5 || S.activeBank === 6 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(S.activeTrack, S.activeBank) + recTag, false);
         /* info row sits at y=12 — 2px clear of the header rule on row 9 */
-        mvPrint(4, 12, octStr, 1);
+        pixelPrint(4, 12, octStr, 1);
         if (S.bankParams[S.activeTrack][5][0]) {
             if (S.bankParams[S.activeTrack][5][7]) {
-                /* Latch on: invert 'Arp' (black on white chip). ⚠ The chip is
-                 * sized from the MEASURED text now — the old 19px was the 5x5
-                 * font's fixed 3*6 step plus padding, and a proportional face
-                 * would have left the chip too wide or clipped the 'p'. */
-                fill_rect(51, 11, mvWidth('Arp') + 2, 7, 1);
-                mvPrint(52, 12, 'Arp', 0);
+                /* Latch on: invert 'Arp' (black on white chip) — pixelPrint
+                 * uses a 5x5 glyph with 6px step; 'Arp' spans x=52..68, y=12..16.
+                 * Chip pads 1px around: x=51..69 (w=19), y=11..17 (h=7). */
+                fill_rect(51, 11, 19, 7, 1);
+                pixelPrint(52, 12, 'Arp', 0);
             } else {
-                mvPrint(52, 12, 'Arp', 1);
+                pixelPrint(52, 12, 'Arp', 1);
             }
         }
-        mvPrint(keySclX, 12, keyScl, 1);
-        if (S.scaleAware) fill_rect(keySclX, 17, keySclW, 1, 1);
+        pixelPrint(keySclX, 12, keyScl, 1);
+        if (S.scaleAware) fill_rect(keySclX, 17, keyScl.length * CHAR_W, 1, 1);
         drawMetroIndicator();
         drawTrackRow(35);
         for (let t = 0; t < NUM_TRACKS; t++) {
