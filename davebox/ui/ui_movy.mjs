@@ -764,12 +764,17 @@ export function drawBigNum(cellX, ky, text) {
 /* Resting header (davebox flavor — colors inverted vs kit v27, Josh's call):
  * filled white bar, black text, left-aligned, ALL CAPS. `invert` = the
  * secondary-bank variant (ARP IN / AUTO): white-on-black. */
-export function drawKitHeader(text, invert) {
+export function drawKitHeader(text, invert, maxW) {
     /* UPPERCASE for the same reason drawKitList does it: this font keeps true
      * lowercase `d` and `t` glyphs and maps every other lowercase letter to its
      * capital, so mixed-case titles come out with two odd letters. A no-op for
-     * everything else. */
-    const t = fitHdr(String(text).toUpperCase(), SCREEN_W - 4);
+     * everything else.
+     *
+     * ⚠ maxW exists because the header band is not empty on the right: a bank
+     * page draws the alt-param arrow at x=121 INSIDE this band, so trimming to
+     * the full width lets a long title slide under it (Josh spotted the
+     * omission). Callers that share the band pass their real budget. */
+    const t = fitHdr(String(text).toUpperCase(), maxW || (SCREEN_W - 4));
     if (invert) {
         hdrPrint(2, 1, t, 1);
     } else {

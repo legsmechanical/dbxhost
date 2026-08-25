@@ -810,7 +810,18 @@ function modalDialogUp() {
                     /* Shift + jog (any view): step active track 0–7, clamp at
                      * ends. ⭑ Restored to every view on 2026-08-25: the bank
                      * picker moved onto the UNSHIFTED turn, so Shift no longer
-                     * has to share this gesture with anything. */
+                     * has to share this gesture with anything.
+                     *
+                     * ⭑ DROP the picker if it is up (Josh): pressing Shift means
+                     * the jog is choosing a TRACK now, so leaving a bank list on
+                     * screen — being scrolled under by a gesture that is no
+                     * longer selecting banks — is a lie about what the wheel is
+                     * doing. Dropped, NOT committed: the pick was abandoned, and
+                     * a gesture you walked away from must not apply itself. */
+                    if (S.bankPickerSel >= 0) {
+                        S.bankPickerSel = -1;
+                        S.bankPickerIdleTick = -1;
+                    }
                     const next = Math.min(NUM_TRACKS - 1, Math.max(0, S.activeTrack + delta));
                     if (next !== S.activeTrack) {
                         /* SOUND + CONFIG is a BANK, and a bank is PER TRACK

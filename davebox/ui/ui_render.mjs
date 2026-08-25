@@ -64,14 +64,37 @@ function drawBankHeaderRight(showTrack, hdrFilled) {
 /* Canvaskit chrome: resting header = white-on-black bank name (ALL CAPS, 6x6
  * header font); the "inverted" variant (secondary banks: ARP IN / AUTO) is a
  * filled white bar with black text. */
+/* Every bank card names its TRACK first (Josh, 2026-08-25): "TR3 NOTE FX".
+ *
+ * ⚠ Because of the LATCH — a latched card holds the screen indefinitely, and
+ * the track overview is what used to tell you which track you were on. Without
+ * this you can sit on a bank page for as long as you like with no way to know.
+ *
+ * ⚠⚠ The budget is NOT the full header width. The alt-param arrow is drawn at
+ * x=121, INSIDE this band, so the text has to stop before it — BANK_HDR_TEXT_W
+ * below. Trimming to the full 124 (what drawKitHeader does by default) lets a
+ * long title slide under the arrow, which was already true before this prefix
+ * and is what Josh caught.
+ *
+ * With 'Tr<n> - ' the widest bank name has to fit 117px, which is why
+ * SEQUENCE ARP became SEQ ARP (Josh offered the rename when the long form did
+ * not fit). Measured, not guessed — measure again before adding a longer
+ * bank name. */
+const BANK_HDR_TEXT_W = 117;
+
+function bankHeadingPrefix() {
+    return 'Tr' + (S.activeTrack + 1) + ' - ';
+}
+
 function drawBankHeading(name, showTrack) {
+    const pfx = bankHeadingPrefix();
     /* Conductor banks: blink ONLY the "C-" prefix (phase driven in the tick
      * loop); the header font is fixed-advance so the name stays steady. */
     if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT &&
             name.charAt(0) === 'C' && name.charAt(1) === '-') {
-        drawKitHeader((S._altBlinkPhase !== 1 ? 'C-' : '  ') + name.slice(2), false);
+        drawKitHeader(pfx + (S._altBlinkPhase !== 1 ? 'C-' : '  ') + name.slice(2), false, BANK_HDR_TEXT_W);
     } else {
-        drawKitHeader(name, false);
+        drawKitHeader(pfx + name, false, BANK_HDR_TEXT_W);
     }
     drawBankHeaderRight(showTrack, true);
 }

@@ -36,9 +36,14 @@ globalThis.host_register_primary = () => true;
 globalThis.clear_screen = () => {};
 let prints = [];
 globalThis.print = (x, y, t) => { prints.push(String(t)); };
-globalThis.fill_rect = () => {};
+/* A real framebuffer: the bank HEADER is drawn with hdrPrint (set_pixel), not
+ * the host print global, so a print spy cannot see it at all. */
+const FBW = 128, FBH = 64;
+const fb = new Uint8Array(FBW * FBH);
+const _px = (x, y, v) => { x |= 0; y |= 0; if (x >= 0 && x < FBW && y >= 0 && y < FBH) fb[y * FBW + x] = v ? 1 : 0; };
+globalThis.fill_rect = (x, y, w, h, v) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) _px(x + i, y + j, v); };
 globalThis.draw_rect = () => {};
-globalThis.set_pixel = () => {};
+globalThis.set_pixel = _px;
 globalThis.move_midi_internal_send = () => {};
 globalThis.set_led = () => {};
 globalThis.text_width = (t) => String(t).length * 6;
@@ -54,6 +59,8 @@ const { BANK_SOUND } = await import('../../ui/ui_constants.mjs');
 const { bankCycleForMode } = await import('../../ui/ui_pure.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const render = await import('../../ui/ui_render.mjs');
+const kit = await import('../../ui/ui_movy.mjs');
+const { BANKS } = await import('../../ui/ui_constants.mjs');
 
 /* WHICH screen is up. The track overview draws the eight track digits through
  * the host print global (drawTrackRow); a bank page draws none of them. ⚠ The
@@ -150,6 +157,71 @@ step('⚠ SHIFT+jog steps the TRACK again — the picker is the unshifted turn',
     shift(false); globalThis.tick();
 });
 
+step('⭑ Shift+jog DROPS an open picker — and does not commit it', () => {
+    /* Pressing Shift means the wheel is choosing a TRACK now. Leaving the bank
+     * list up while it scrolls underneath is a lie about what the jog is doing;
+     * committing it would apply a pick the user walked away from. */
+    reset();
+    const bankBefore = S.activeBank;
+    touch(true); jog(1); globalThis.tick();          /* picker open, browsing */
+    if (S.bankPickerSel < 0) throw new Error('control: the picker did not open');
+    shift(true); jog(1); globalThis.tick();
+    if (S.bankPickerSel >= 0)
+        throw new Error('the picker survived under a track switch');
+    if (S.activeBank !== bankBefore)
+        throw new Error('dropping the picker COMMITTED it — the bank moved to ' +
+                        S.activeBank);
+    if (S.activeTrack !== 3) throw new Error('the track did not step: ' + S.activeTrack);
+    shift(false); touch(false); globalThis.tick();
+    if (S.activeBank !== bankBefore)
+        throw new Error('the later touch release committed the abandoned pick');
+});
+
+step('⭑ the bank card names its TRACK, so a latched card still says where you are', () => {
+    /* ⚠ Compared PIXEL-FOR-PIXEL against a reference drawn by the same
+     * primitive, because the alternative — asserting some ink exists — passes
+     * on any header at all. The reference is the string the header is supposed
+     * to be, so this also catches a prefix that is right but truncated. */
+    reset();
+    S.activeTrack = 4;
+    S.activeBank = 1;                                 /* NOTE FX */
+    S.bankSelectTick = S.tickCount;                   /* card up, not the overview */
+    fb.fill(0);
+    render.drawUI();
+    const got = fb.slice(0, FBW * 8);                 /* the 8px header band */
+
+    fb.fill(0);
+    kit.drawKitHeader('Tr5 - ' + BANKS[1].name, false, 117);
+    const want = fb.slice(0, FBW * 8);
+
+    /* ⚠ Text region only: the header's RIGHT edge carries the page-position bar
+     * and the alt arrow (drawBankHeaderRight), which the reference does not
+     * draw. Comparing the whole band reports those as a mismatch at x=121. */
+    const TEXT_W = 118;
+    for (let y = 0; y < 8; y++)
+        for (let x = 0; x < TEXT_W; x++) {
+            const i = y * FBW + x;
+            if (got[i] !== want[i])
+                throw new Error('the header is not "Tr5 - ' + BANKS[1].name + '" — first ' +
+                                'difference at x=' + x + ' y=' + y);
+        }
+});
+
+step('⚠ control: the same comparison FAILS without the prefix', () => {
+    /* Otherwise the step above would pass against a header that never carried a
+     * track at all, if the reference happened to be drawn the same way. */
+    fb.fill(0);
+    kit.drawKitHeader(BANKS[1].name, false, 117);
+    const bare = fb.slice(0, FBW * 8);
+    fb.fill(0);
+    kit.drawKitHeader('Tr5 - ' + BANKS[1].name, false, 117);
+    const prefixed = fb.slice(0, FBW * 8);
+    let same = true;
+    for (let i = 0; i < bare.length; i++) if (bare[i] !== prefixed[i]) { same = false; break; }
+    if (same) throw new Error('prefixed and bare headers render identically — the ' +
+                              'comparison above cannot detect a missing prefix');
+});
+
 step('⭑ Shift + jog CLICK latches the bank card; Back unlatches and dismisses', () => {
     reset();
     turn(1);                                          /* land on a bank */
@@ -210,6 +282,36 @@ step('⚠ ...and Shift + a BOTTOM-row pad still selects the track', () => {
     shift(false); globalThis.tick();
     if (S.activeTrack !== 5)
         throw new Error('Shift+bottom-pad did not select the track: ' + S.activeTrack);
+});
+
+step('⭑⭑ NO bank header can reach the alt-param arrow, with the track prefix on', () => {
+    /* ⚠ The arrow is drawn at x=121 INSIDE the header band, so the header does
+     * not own the full width — and drawKitHeader trims to the full width by
+     * default, which is how a long title slides underneath it. That was already
+     * possible before the prefix; the prefix just made it near.
+     *
+     * Checked against EVERY bank name rather than the one that happens to be
+     * longest today: the next name someone adds is the one that breaks it, and
+     * it will be added by someone who never read this file. */
+    const ARROW_X = 121, TEXT_X = 2, GAP = 2;
+    const budget = ARROW_X - TEXT_X - GAP;
+    for (let b = 0; b < BANKS.length; b++) {
+        if (!BANKS[b] || !BANKS[b].name) continue;
+        /* ⚠ BANK_SOUND is excluded, and only it: its screen is sound mode's own,
+         * with its own header, so this name never reaches drawBankHeading. It
+         * DOES appear in the picker list, which auto-sizes — that is where the
+         * full 'SOUND + CONFIG' is read. Excluded by identity rather than by
+         * length, so a genuinely too-long bank name cannot hide behind it. */
+        if (b === BANK_SOUND) continue;
+        for (const t of [0, 7]) {                  /* Tr1 and Tr8 */
+            const hdr = ('Tr' + (t + 1) + ' - ' + BANKS[b].name).toUpperCase();
+            const w = kit.hdrWidth(hdr);
+            if (w > budget)
+                throw new Error('"' + hdr + '" is ' + w + 'px, past the ' + budget +
+                                'px the text may use before the alt arrow at x=' +
+                                ARROW_X + ' — it would be trimmed or drawn under it');
+        }
+    }
 });
 
 process.exit(failed);

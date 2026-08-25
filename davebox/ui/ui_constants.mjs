@@ -376,7 +376,10 @@ export const BANKS = [
         p('Rand',  'Pitch Random',   'delay_pitch_random', 'track', 0,   24,   0, fmtPitchRnd, 4),
     ]},
     /* 4 — ARP OUT (pad 96) */
-    { name: 'SEQUENCE ARP', knobs: [
+    /* 'SEQ ARP', not 'SEQUENCE ARP' (Josh, 2026-08-25): the bank header now
+     * carries a 'Tr<n> - ' prefix, and the long form no longer fits beside the
+     * alt-param arrow. */
+    { name: 'SEQ ARP', knobs: [
         p('Style', 'Arp Style',    'seq_arp_style',      'track', 0,    9,   0, fmtArpStyle, 8),
         p('Rate', 'Arp Rate',     'seq_arp_rate',       'track', 0,    9,   1, fmtArpRate,  8),
         p('Oct',  'Octave Range', 'seq_arp_octaves',    'track', -4,   4,   0, fmtArpOct,   8),
