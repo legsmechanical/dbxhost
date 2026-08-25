@@ -64,6 +64,13 @@ function draw(slug){ globalThis.clear_screen(); render.drawUI(); shoot(slug); }
 S.sessionView = false; S.activeBank = 0; S.bankSelectTick = -1; S.jogTouched = false;
 draw('track-overview');
 
+/* BANK CARD, LATCHED — the flashing frame, both phases. */
+S.sessionView = false; S.activeBank = 1; S.bankSelectTick = S.tickCount;
+S.bankCardLatched = true;
+S.tickCount = 0;  draw('latch-solid');
+S.tickCount = 24; draw('latch-dashed');
+S.bankCardLatched = false; S.tickCount = 100; S.bankSelectTick = -1;
+
 /* BANK PICKER — Shift+jog in track view, over the track overview. */
 S.sessionView = false; S.activeBank = 0; S.bankPickerSel = 6;
 draw('bank-picker');

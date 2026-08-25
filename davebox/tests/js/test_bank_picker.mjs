@@ -359,6 +359,62 @@ step('⭑⭑ NO bank header can reach the alt-param arrow, with the track prefix
     }
 });
 
+step('⭑ the LATCH draws a frame around the params, and only when latched', () => {
+    /* The visible half of the latch. ⚠ Asserted on the FRAME EDGES rather than
+     * "the screen changed": a card redraws for many reasons, and only the edges
+     * are the indicator. */
+    const edgeInk = () => {
+        let n = 0;
+        for (let x = 0; x < FBW; x++) { if (fb[8 * FBW + x]) n++; if (fb[63 * FBW + x]) n++; }
+        for (let y = 8; y <= 63; y++) { if (fb[y * FBW]) n++; if (fb[y * FBW + 127]) n++; }
+        return n;
+    };
+    reset();
+    S.activeBank = 1;
+    S.bankSelectTick = S.tickCount;
+    fb.fill(0); render.drawUI();
+    if (edgeInk() !== 0)
+        throw new Error('an UNLATCHED card already draws a frame — the indicator ' +
+                        'would mean nothing');
+
+    S.bankCardLatched = true;
+    S.tickCount = 0;  fb.fill(0); render.drawUI();
+    const solid = edgeInk();
+    S.tickCount = 24; fb.fill(0); render.drawUI();
+    const dashed = edgeInk();
+    if (!solid || !dashed) throw new Error('the latch frame did not draw: ' +
+                                           JSON.stringify({ solid, dashed }));
+    /* ⭑ It alternates SOLID <-> SEGMENTED rather than blinking out: a frame that
+     * vanishes makes the page twitch. So both phases have ink, and the dashed
+     * one has meaningfully less. */
+    if (dashed >= solid)
+        throw new Error('the two phases are not solid vs segmented (' + solid +
+                        ' vs ' + dashed + ') — it is not animating, or it blinks out');
+    S.bankCardLatched = false;
+});
+
+step('⚠ the latch frame does not sit ON the params', () => {
+    /* The body was shifted up into the reclaimed rule space so the frame has a
+     * row of its own. Measured, because a frame touching the labels looks
+     * identical to one clipping them — I misread it as clipping twice. */
+    reset();
+    S.activeBank = 1;
+    S.bankSelectTick = S.tickCount;
+    S.bankCardLatched = false;
+    fb.fill(0); render.drawUI();
+    let lowest = -1;
+    for (let y = 0; y < 64; y++)
+        for (let x = 0; x < FBW; x++)
+            if (fb[y * FBW + x]) { lowest = y; break; }
+    if (lowest >= 63)
+        throw new Error('card content reaches row ' + lowest + ', where the frame ' +
+                        'draws — they would overlap');
+    for (let y = 9; y < 63; y++)
+        if (fb[y * FBW] || fb[y * FBW + 127])
+            throw new Error('content touches column 0/127 at row ' + y + ' — the ' +
+                            'frame edges would cut through it');
+});
+
 process.exit(failed);
 }
 main().catch((e) => { console.error(e && e.stack ? e.stack : e); process.exit(1); });

@@ -19,7 +19,7 @@ import {
     fmtDly, fmtArpStyle, fmtArpSteps, fmtDiq, fmtPlain, fmtLgto, fmtPitchRnd
 } from './ui_constants.mjs';
 import {
-    drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitAltArrow,
+    drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitAltArrow, drawKitLatchBox,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
     drawVFader, mvPrint, mvWidth, rectOutline,
     drawLevelCard,
@@ -79,6 +79,11 @@ function drawBankHeaderRight(showTrack, hdrFilled) {
  * not fit). Measured, not guessed — measure again before adding a longer
  * bank name. */
 const BANK_HDR_TEXT_W = 117;
+
+/* Top of the latch frame: the row the header rule used to draw on. Reclaiming
+ * it is why the rule went (Josh, 2026-08-25) — the frame sits in that space
+ * instead of stealing a row from the params. */
+const LATCH_BOX_Y = 8;
 
 function bankHeadingPrefix() {
     return 'Tr' + (S.activeTrack + 1) + ' - ';
@@ -965,8 +970,23 @@ function drawBankPicker() {
                        Math.max(0, Math.min(cyc.length - 1, S.bankPickerSel)));
 }
 
+/* The bank-card LATCH indicator: a 1px frame around the params, alternating
+ * solid and segmented at the standard blink rate.
+ *
+ * ⚠ Drawn after the body, for the reason drawKitLatchBox gives — a widget that
+ * reaches the panel edge would punch holes in a frame drawn underneath it.
+ *
+ * Only where a bank CARD is what is on screen: not in session view, and not in
+ * sound mode, which owns the whole panel and is not a card to frame. */
+function drawBankLatchBox() {
+    if (!S.bankCardLatched || S.sessionView || soundActive()) return;
+    const dashed = Math.floor(S.tickCount / 24) % 2 === 1;
+    drawKitLatchBox(LATCH_BOX_Y, dashed);
+}
+
 export function drawUI() {
     drawUIBody();
+    drawBankLatchBox();
     drawTrackVolCard();
     drawBankPicker();
 }

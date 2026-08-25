@@ -32,12 +32,17 @@
  * w0 14-29 | lbl0 30-36 | gap 37-40 | w1 41-56 | lbl1 57-63 */
 export const MV_HDR_H = 8;
 export const MV_BAR_Y = 9;
-export const MV_ROW0_Y = 14, MV_LBL0_Y = 30, MV_ROW1_Y = 41, MV_LBL1_Y = 57;
+/* ⭑ Shifted UP 2px on 2026-08-25, into the space the header rule used to take.
+ * The kit body used to end at row 62, flush against the panel edge; the latch
+ * frame needs the bottom row, and content touching a frame reads as clipped
+ * even when it is not. Josh: reclaim that space and bump things up. */
+export const MV_ROW0_Y = 12, MV_LBL0_Y = 28, MV_ROW1_Y = 39, MV_LBL1_Y = 55;
 export const MV_CELL_W = 32, MV_KW = 20, MV_KH = 16, MV_LBL_H = 7;
 /* Centered overlay box shared by the turn-to-reveal value zoom (ui_render) and
  * the picker list overlay below — same footprint so both read as one control. */
 export const MV_ZOOM_X = 32, MV_ZOOM_Y = 14, MV_ZOOM_W = 64, MV_ZOOM_H = 48;
 const SCREEN_W = 128;
+const SCREEN_H_LATCH = 64;   /* panel height, for the latch frame */
 
 /* ---- header font: "6x6 Pixel Font" by asciimario (CC BY-NC 3.0) ----
  * Glyph: [advance, ...6 rowBits], bit0 = leftmost; [n] alone = blank;
@@ -554,6 +559,29 @@ export function rectOutline(x, y, w, h, fg) {
     fill_rect(x, y + h - 1, w, 1, fg);
     fill_rect(x, y, 1, h, fg);
     fill_rect(x + w - 1, y, 1, h, fg);
+}
+
+/* The LATCH box: a 1px frame around the param area of a bank card, alternating
+ * SOLID and SEGMENTED so it reads as live without blinking out (Josh,
+ * 2026-08-25). A frame that vanishes on the off phase makes the whole page
+ * twitch; one that changes texture animates without moving anything.
+ *
+ * It lives in the row the header rule used to occupy — the rule went with the
+ * bank walk, and this is what the space was reclaimed FOR.
+ *
+ * ⚠ Drawn LAST, over the cells: the frame is 1px on the outer edge of the
+ * panel, and a widget that reaches the edge would otherwise punch holes in it. */
+export function drawKitLatchBox(y, dashed) {
+    const x = 0, w = SCREEN_W, h = SCREEN_H_LATCH - y;
+    if (!dashed) { rectOutline(x, y, w, h, 1); return; }
+    for (let i = 0; i < w; i += 2) {
+        set_pixel(x + i, y, 1);
+        set_pixel(x + i, y + h - 1, 1);
+    }
+    for (let j = 0; j < h; j += 2) {
+        set_pixel(x, y + j, 1);
+        set_pixel(x + w - 1, y + j, 1);
+    }
 }
 
 /* ---- widgets (movy language, kit v27 metrics: 16px tall in 32px cells) ---- */
