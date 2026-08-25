@@ -45,6 +45,7 @@
 #include "host/shadow_test_stream.h"
 #include "host/shadow_chain_types.h"
 #include "host/unified_log.h"
+#include "host/sa_master_volume.h"
 #include "host/schwung_trace.h"
 #include "host/tts_engine.h"
 #include "host/link_audio.h"
@@ -1116,6 +1117,22 @@ static void shadow_read_initial_volume(void)
 {
     float linear = 1.0f;
     float db = 0.0f;
+    char msg[80];
+
+    sa_master_volume_open();
+
+    /* The session's own value wins when it has one (sa_master_volume.h has the
+     * why: Settings.json keeps the value the session STARTED with, which the
+     * dB->linear map turns into silence). Only a device that has never run a
+     * session falls through to Settings.json — the right seed for exactly that
+     * first launch, and the only time we read it. */
+    if (sa_master_volume_load(&linear)) {
+        shadow_master_volume = linear;
+        snprintf(msg, sizeof(msg), "Master volume: session value %.3f linear", (double)linear);
+        shadow_log(msg);
+        return;
+    }
+
     if (!shadow_read_global_volume_from_settings(&linear, &db)) {
         shadow_log("Master volume: Settings.json not found, defaulting to 1.0");
         return;
@@ -1123,7 +1140,6 @@ static void shadow_read_initial_volume(void)
 
     shadow_master_volume = linear;
 
-    char msg[64];
     snprintf(msg, sizeof(msg), "Master volume: read %.1f dB -> %.3f linear", db, shadow_master_volume);
     shadow_log(msg);
 }
@@ -5760,6 +5776,11 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
 
                     if (amplitude == 0.0f || fabsf(amplitude - shadow_master_volume) > 0.003f) {
                         shadow_master_volume = amplitude;
+                        /* Persist as it moves, not at shutdown: the shim can be
+                         * killed outright (the relaunch loop escalates to
+                         * kill -9), and a value only written on a clean exit is
+                         * a value that is usually not written. */
+                        sa_master_volume_store(amplitude);
                         float db_val = (amplitude > 0.0f) ? (20.0f * log10f(amplitude)) : -99.0f;
                         char msg[112];
                         snprintf(msg, sizeof(msg), "Master volume: x=%d pos=%.3f dB=%.1f amp=%.4f", bar_col, normalized, db_val, amplitude);

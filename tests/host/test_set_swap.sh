@@ -94,6 +94,85 @@ check "exit: native index restored"         grep -q '"currentSongIndex": 1' "$SE
 check "exit: SA index remembered"           test "$(cat "$SWAP_ROOT/sa_song_index")" = "1"
 rm -rf "$T"
 
+# ---- 1b. THE DEVICE TRUTH: a session switches project, currentSongIndex does NOT
+#
+# ⚠⚠ Case 1 above moves currentSongIndex by hand to represent "the session went
+# somewhere". THE REAL SYSTEM NEVER DOES THAT — Move writes that field only at a
+# relaunch, and the module deliberately leaves it alone mid-session because Move
+# is alive and would clobber it. So case 1 was passing against a fixture that
+# behaves better than the device, and the bug lived in the gap: do_exit filed the
+# STARTING index as the session position, and every launch reopened it. Josh:
+# "the same set shows as the last one on load regardless of what I was in on
+# exit."
+#
+# Here the session moves the way it really moves: the module writes the new
+# project's autosave, and nothing touches Settings.json.
+#
+# ⚠ Needs user.* xattrs (the uuid -> song-index mapping lives there). Linux has
+# them; a Mac working copy may not, and this SKIPS LOUDLY rather than passing
+# for the wrong reason — CI is Linux, so the pin is real where it counts.
+xattr_supported() {
+    python3 - "$1" <<'XPY' 2>/dev/null
+import os, sys
+try:
+    os.setxattr(sys.argv[1], "user.probe", b"1")
+except Exception:
+    sys.exit(1)
+XPY
+}
+set_song_index() { # dir index
+    python3 -c 'import os,sys; os.setxattr(sys.argv[1], "user.song-index", sys.argv[2].encode())' "$1" "$2"
+}
+
+mk_env
+if ! xattr_supported "$SWAP_ROOT"; then
+    echo "  SKIP xattrs unsupported here — the session-position pin runs in CI (Linux)"
+else
+    set_song_index "$SWAP_ROOT/library/$P1" 0
+    run enter
+    check "1b enter: opened the remembered project (0)" grep -q '"currentSongIndex": 0' "$SETTINGS_JSON"
+
+    # The session switches to a second project. On device this means: the module
+    # autosaves the NEW project from now on, and active_set.txt names it. It does
+    # NOT mean Settings.json changes.
+    mkdir -p "$SETS_DIR/$P2/dAVEBOx"
+    set_song_index "$SETS_DIR/$P2" 5
+    mkdir -p "$SETS_DIR/$P1/dAVEBOx"
+    echo '{}' > "$SETS_DIR/$P1/dAVEBOx/seq8sa-state.json"
+    sleep 1
+    echo '{}' > "$SETS_DIR/$P2/dAVEBOx/seq8sa-state.json"   # newer: the live one
+    printf '%s\nProject Two\n' "$P2" > "$DBX_DIR/active_set.txt"
+
+    check "1b control: Settings.json still says the OLD project" \
+        grep -q '"currentSongIndex": 0' "$SETTINGS_JSON"
+
+    run exit
+    check "1b exit: the session position is where the session ENDED (5)" \
+        bash -c "[ \"\$(cat '$SWAP_ROOT/sa_song_index')\" = 5 ]"
+
+    run enter
+    check "1b relaunch: opens the project you were on, not the one you started on" \
+        grep -q '"currentSongIndex": 5' "$SETTINGS_JSON"
+    run exit
+
+    # ...and with no autosave to read, active_set.txt answers instead.
+    rm -f "$SWAP_ROOT/library/$P1/dAVEBOx/seq8sa-state.json" \
+          "$SWAP_ROOT/library/$P2/dAVEBOx/seq8sa-state.json"
+    printf '%s\nProject One\n' "$P1" > "$DBX_DIR/active_set.txt"
+    run enter; run exit
+    check "1b fallback: active_set.txt answers when no autosave exists" \
+        bash -c "[ \"\$(cat '$SWAP_ROOT/sa_song_index')\" = 0 ]"
+
+    # ...and with BOTH gone it degrades to the old behaviour rather than to 0.
+    rm -f "$DBX_DIR/active_set.txt"
+    run enter
+    sed -i.bak 's/"currentSongIndex": 0/"currentSongIndex": 7/' "$SETTINGS_JSON"
+    run exit
+    check "1b fallback: currentSongIndex when nothing else can answer" \
+        bash -c "[ \"\$(cat '$SWAP_ROOT/sa_song_index')\" = 7 ]"
+fi
+rm -rf "$T"
+
 # ---- 2. A second session resumes the SA index -------------------------------
 mk_env
 echo 3 > "$SWAP_ROOT/sa_song_index"

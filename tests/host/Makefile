@@ -4,6 +4,8 @@
 # Currently:
 #   - test_midi_inject_writer — exercises the lock-free MPSC helper for
 #     the /schwung-midi-inject ring with multi-threaded producers.
+#   - test_sa_master_volume — the session's own master volume, which Move's
+#     Settings.json cannot carry (see src/host/sa_master_volume.h).
 #
 # Usage: `make -C tests/host test`
 
@@ -14,7 +16,8 @@ LDFLAGS = -lpthread
 
 BUILD_DIR = ../../build/tests/host
 
-TARGETS = $(BUILD_DIR)/test_midi_inject_writer
+TARGETS = $(BUILD_DIR)/test_midi_inject_writer \
+          $(BUILD_DIR)/test_sa_master_volume
 
 .PHONY: all test clean
 
@@ -25,6 +28,11 @@ $(BUILD_DIR):
 
 $(BUILD_DIR)/%: %.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+
+# Links the unit under test rather than re-declaring it: a test that copies the
+# implementation passes forever after the real one changes.
+$(BUILD_DIR)/test_sa_master_volume: test_sa_master_volume.c ../../src/host/sa_master_volume.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) $^ -o $@ $(LDFLAGS) -lm
 
 test: $(TARGETS)
 	@for t in $(TARGETS); do \

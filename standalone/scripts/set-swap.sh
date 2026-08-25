@@ -58,6 +58,7 @@ SWAP_ROOT="${SWAP_ROOT:-$DBX_DIR/sets}"
 LIBRARY="$SWAP_ROOT/library"
 STATE_FILE="$SWAP_ROOT/swap_state"
 SA_INDEX_FILE="$SWAP_ROOT/sa_song_index"
+ACTIVE_SET_PATH="${ACTIVE_SET_PATH:-$DBX_DIR/active_set.txt}"
 
 # The privileged helper. Overridable ONLY so the tests can inject a stub — on
 # device this is the setuid binary and nothing else.
@@ -122,6 +123,76 @@ write_song_index() { # index
     _tmp="$SETTINGS_JSON.setswap.tmp"
     sed 's/\("currentSongIndex":[[:space:]]*\)-\{0,1\}[0-9][0-9]*/\1'"$1"'/' \
         "$SETTINGS_JSON" > "$_tmp" && mv -f "$_tmp" "$SETTINGS_JSON"
+}
+
+# ---- which project the SESSION is actually on --------------------------------
+#
+# ⚠⚠ NOT currentSongIndex. Move writes that field only at a RELAUNCH, and the
+# module deliberately does not write it mid-session (Move is alive and its
+# in-memory copy would clobber ours — project-cmd.sh says so at its own write
+# site). So inside a session it names the project you STARTED on, and reading it
+# at exit is what made "the same set loads regardless of what I was in on exit":
+# do_exit filed the STARTING index as the session's position and do_enter
+# faithfully restored it next launch. Every project switch made in between was
+# thrown away right here.
+#
+# So ask the WRITER, not a mirror. The module autosaves the LIVE project
+# continuously, so the newest per-project state file names it — seconds old
+# against many minutes for every other project. Two fallbacks behind it, each
+# checked for existence rather than trusted:
+#   1. the autosave mtime (the writer)
+#   2. active_set.txt (a mirror, but written on every set change — it has been
+#      measured naming a uuid with NO set dir, hence the existence check)
+#   3. nothing: the caller keeps currentSongIndex, which is today's behaviour and
+#      is right in the one case it can be, a session that never switched project.
+#
+# Prints the index, or nothing if no source could answer.
+session_song_index() {
+    python3 - "$SETS_DIR" "$ACTIVE_SET_PATH" <<'SESSIDX_PY' 2>/dev/null
+import os, sys, glob
+
+sets_dir, active_set_path = sys.argv[1], sys.argv[2]
+
+
+def index_of(uuid):
+    if not uuid:
+        return None
+    try:
+        return int(os.getxattr(os.path.join(sets_dir, uuid),
+                               "user.song-index").decode())
+    except (OSError, ValueError):
+        return None
+
+
+def newest_autosave_uuid():
+    """The project the module is writing IS the project that is loaded."""
+    best, best_t = None, None
+    for path in glob.glob(os.path.join(sets_dir, "*", "dAVEBOx", "seq8sa-state.json")):
+        try:
+            t = os.stat(path).st_mtime
+        except OSError:
+            continue
+        if best_t is None or t > best_t:
+            best, best_t = path, t
+    if best is None:
+        return ""
+    return os.path.basename(os.path.dirname(os.path.dirname(best)))
+
+
+def active_set_uuid():
+    try:
+        with open(active_set_path) as f:
+            return f.readline().strip()
+    except OSError:
+        return ""
+
+
+for candidate in (newest_autosave_uuid(), active_set_uuid()):
+    i = index_of(candidate)
+    if i is not None and i >= 0:
+        print(i)
+        break
+SESSIDX_PY
 }
 
 # ---- verbs ------------------------------------------------------------------
@@ -195,8 +266,15 @@ do_exit() {
 
     # Save the session's position for next time — but only while OUR library is
     # the one on screen, or we would record a position in the user's library.
+    # ⭑ From the WRITER (session_song_index), never from currentSongIndex, which
+    # is stale inside a session; that field is only the last fallback now.
     if sets_are_ours; then
-        read_song_index > "$SA_INDEX_FILE.tmp" && mv -f "$SA_INDEX_FILE.tmp" "$SA_INDEX_FILE"
+        _sess="$(session_song_index || true)"
+        [ -n "$_sess" ] || _sess="$(read_song_index)"
+        [ -n "$_sess" ] || _sess=0
+        printf '%s\n' "$_sess" > "$SA_INDEX_FILE.tmp" &&
+            mv -f "$SA_INDEX_FILE.tmp" "$SA_INDEX_FILE"
+        log "session position recorded: index $_sess"
     fi
 
     write_state "exiting" "$_idx"
