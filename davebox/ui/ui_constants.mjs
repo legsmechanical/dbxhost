@@ -442,6 +442,11 @@ export const BANK_RESPONDER = 8, BANK_OCTAVE = 9, BANK_WHEN = 10;
  * come back to" half they were carrying now lives in S.trackSoundOrigin. */
 export const BANK_SOUND = 11;
 
+/* The track's DEFAULT bank — CLIP on a melodic track, DRUM LANE on a drum one,
+ * CONDUCT on a Conductor. All three are index 0: the bank a track is on when a
+ * session is first created, and where Back lands from any other bank. */
+export const BANK_DEFAULT = 0;
+
 /* The bank immediately BEFORE SOUND + CONFIG on the jog — AUTOMATION, which is
  * both the melodic walk's last stop and the last entry of BANK_CYCLE_DRUM (CC
  * PARAM). Where the top-edge left turn lands when no origin was remembered:

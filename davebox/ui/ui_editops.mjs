@@ -499,7 +499,7 @@ export function _switchActiveTrack(newT) {
      * keeps the outgoing track's bank on BANK_SOUND instead of handing it back.
      * Before the switch, so sound mode's queued writes flush while the outgoing
      * track is still their target. */
-    if (soundActive() && !soundIsGlobal()) soundExit(true);
+    if (soundActive() && !soundIsGlobal()) soundExit({ leaving: true });
     /* Records BANK_SOUND like any other bank now (Josh, 2026-08-25) — the old
      * guard here existed only because the identity was transient and writing it
      * would have stranded the track on a bank the jog could not reach. It can

@@ -279,10 +279,16 @@ step('⚠ a track CLOSED deliberately does not come back on SOUND + CONFIG', () 
     snd.soundEnter(2, 2);
     if (S.trackActiveBank[2] !== BANK_SOUND)
         throw new Error('control: entering did not record the bank');
-    snd.soundExit();                           /* the deliberate close (Back / left off the top) */
-    if (S.trackActiveBank[2] !== 6)
-        throw new Error('closing did not hand the bank back (got ' + S.trackActiveBank[2] +
-                        ') — the track will re-open the screen on return');
+    snd.soundExit();                           /* the deliberate close (Back) */
+    /* ⭑ A CLOSE lands on the track's DEFAULT bank, not on the bank it was
+     * entered from (Josh, 2026-08-25: "back inside a bank should always go to
+     * the default bank — the one the track is on when the session is first
+     * created"). Which is what Back does from every other bank. The bank it was
+     * entered from is the JOG's business — see the top-edge left turn in
+     * test_sound_bank_jog.mjs. */
+    if (S.trackActiveBank[2] !== 0)
+        throw new Error('closing did not land on the default bank (got ' + S.trackActiveBank[2] +
+                        ') — it must not come back on SOUND + CONFIG either');
 
     shift(true); turn(); globalThis.tick();            /* 2 -> 3 */
     send(14, 127); globalThis.tick();                  /* 3 -> 2, back again */
@@ -290,8 +296,8 @@ step('⚠ a track CLOSED deliberately does not come back on SOUND + CONFIG', () 
     if (S.activeTrack !== 2) throw new Error('control: did not return to track 2');
     if (snd.soundActive())
         throw new Error('a track closed deliberately re-opened SOUND + CONFIG on return');
-    if (S.activeBank !== 6)
-        throw new Error('expected track 2 on its origin AUTOMATION, got ' + S.activeBank);
+    if (S.activeBank !== 0)
+        throw new Error('expected track 2 on its DEFAULT bank, got ' + S.activeBank);
     S.activeBank = 0;
 });
 

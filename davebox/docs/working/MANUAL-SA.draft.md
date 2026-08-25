@@ -318,9 +318,9 @@ covered in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), a
 - The last stop on the jog is **SOUND + CONFIG** — the track's sound editor
   (its instrument, effects, sound control and config), reached like any other
   bank by turning right past the last one. Keep turning to move down its rows;
-  turning left past its top row returns to the bank you came from. Click and
-  Back work as they do when it's opened with **Shift + Note/Session**. Conductor
-  tracks don't have it.
+  turning left past its top row returns to the bank you came from. **Back**
+  closes it and lands on the track's default bank, exactly as Back does from any
+  other bank. Conductor tracks don't have it.
 - **Each track remembers the bank it was on** — SOUND + CONFIG included. Scroll
   away to another track and back, or quit and relaunch, and you land on the bank
   you left that track on.

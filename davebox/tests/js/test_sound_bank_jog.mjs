@@ -318,6 +318,41 @@ step('⭑⭑ the bank RECORDS ITSELF: sidecar write + Shift+jog track switch', (
                         (S.activeBank === BANK_SOUND ? ' (still SOUND + CONFIG)' : ''));
 });
 
+step('⭑ BACK lands on the DEFAULT bank — the jog\'s left turn lands on the origin', () => {
+    /* Josh, 2026-08-25: "back inside a bank (top level on sound-config) should
+     * always go to the default bank. the one that the track is on when the
+     * session is first created." That is what Back does from every OTHER bank
+     * (ui_input_cc steps a non-default bank back to 0), so this is SOUND +
+     * CONFIG behaving like the rest of them rather than carrying its own rule.
+     *
+     * The two exits are DIFFERENT and both are pinned here, because they read
+     * alike in the code and the difference is the whole point: Back CLOSES (the
+     * default bank), the jog's top-edge left turn WALKS THE STRIP (the bank you
+     * came from). Driven through the real CC — MoveBack is 51 — so this proves
+     * dispatch, not spelling. */
+    reset(PAD_MODE_MELODIC_SCALE, 6);
+    right();                                   /* enter from AUTOMATION (6) */
+    if (!snd.soundActive()) throw new Error('control: did not enter sound mode');
+    send(51, 127); send(51, 0); globalThis.tick();
+    if (snd.soundActive()) throw new Error('Back did not close SOUND + CONFIG');
+    if (S.activeBank !== 0)
+        throw new Error('Back landed on ' + S.activeBank + ', not the default bank' +
+                        (S.activeBank === 6 ? ' (AUTOMATION — the bank it was entered from)' : ''));
+    if (S.trackActiveBank[2] !== 0)
+        throw new Error('the recorded bank did not follow Back: ' + S.trackActiveBank[2]);
+
+    /* ...and the jog still walks back onto the bank it came from. */
+    reset(PAD_MODE_MELODIC_SCALE, 6);
+    right();
+    snd.soundTick();
+    toTop();
+    left();
+    if (snd.soundActive()) throw new Error('control: the top-edge left turn did not exit');
+    if (S.activeBank !== 6)
+        throw new Error('the jog exit landed on ' + S.activeBank + ', not the bank it came from');
+    S.activeBank = 0;
+});
+
 step('⭑⭑ THE FIX, end to end: a track left on SOUND + CONFIG comes back on it', () => {
     /* Josh, 2026-08-24/25 — symptom (c) of STATE ON EXIT: "banks land somewhere
      * I did not leave them." The whole chain in one step, because each half

@@ -39,6 +39,7 @@ import { S as GS } from './ui_state.mjs';
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
 import { instrOptions, fmtInstr, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV,
+         BANK_DEFAULT,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD } from './ui_constants.mjs';
 import { applyTrackConfig } from './ui_dsp_bridge.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -801,9 +802,10 @@ function takeBankIdentity(track) {
     GS.trackActiveBank[track] = BANK_SOUND;
 }
 
-/* Where leaving SOUND + CONFIG lands this track: the bank it was entered from,
- * or — for a track restored from the sidecar already on it, or arrived at by a
- * track switch — the bank the jog would have come through anyway. */
+/* Where the JOG's top-edge left turn lands: the bank this track was entered
+ * from, or — for a track restored from the sidecar already on it, or arrived at
+ * by a track switch — the bank the jog would have come through anyway. ⚠ Only
+ * the jog reads this. A CLOSE (Back and friends) goes to the DEFAULT bank. */
 function soundOriginBank(track) {
     const o = GS.trackSoundOrigin[track];
     return (typeof o === 'number' && o >= 0 && o !== BANK_SOUND) ? (o | 0) : BANK_SOUND_PREV;
@@ -914,12 +916,29 @@ function clearBusContext() {
     S.busLevelDirty = false;
 }
 
-/* `leaving` = the screen is being closed because we are going somewhere the
- * track comes WITH us from — today only a track switch, which leaves the
- * outgoing track ON this bank so returning to it returns here. The default is
- * the deliberate CLOSE (Back, a left turn off the top row, a view change),
- * which hands the bank back and forgets the origin. */
-export function soundExit(leaving) {
+/* Where you land, in one place, because there are three different answers and
+ * they used to be spread across the call sites:
+ *
+ *   soundExit()                — a deliberate CLOSE: the track's DEFAULT bank
+ *                                (CLIP / DRUM LANE / CONDUCT). Back, Shift+
+ *                                Note/Session, a view change, co-run taking the
+ *                                OLED. ⭑ Josh, 2026-08-25: "back inside a bank
+ *                                should always go to the default bank — the one
+ *                                the track is on when the session is created."
+ *                                Which is exactly what Back does from every
+ *                                OTHER bank, so this is the bank behaving like
+ *                                the rest of them, not a rule of its own.
+ *   soundExit({landOn: n})     — the JOG's top-edge left turn, which is a walk
+ *                                along the strip rather than a close: it steps
+ *                                back onto the bank you came from.
+ *   soundExit({leaving: true}) — going somewhere the track comes WITH us from
+ *                                (the track switch). The outgoing track STAYS
+ *                                recorded on this bank, so returning returns
+ *                                here.
+ */
+export function soundExit(opts) {
+    const _opts = (opts && typeof opts === 'object') ? opts : {};
+    const _leaving = _opts.leaving === true;
     /* Give the edit CCs back to Move FIRST. Everything below can throw or take a
      * slow path, and a stranded claim silently steals the user's native Undo. */
     reconcileEditCcClaim(true);
@@ -955,8 +974,8 @@ export function soundExit(leaving) {
      * or the next load/switch would put you straight back on a screen you just
      * closed. The origin crumb is spent either way it is read, so it is dropped
      * here and re-earned by the next entry. */
-    if (!leaving && !soundIsGlobal() && S.track >= 0) {
-        const _back = soundOriginBank(S.track);
+    if (!_leaving && !soundIsGlobal() && S.track >= 0) {
+        const _back = (typeof _opts.landOn === 'number') ? (_opts.landOn | 0) : BANK_DEFAULT;
         if (GS.trackActiveBank[S.track] === BANK_SOUND)
             GS.trackActiveBank[S.track] = _back;
         if (GS.activeBank === BANK_SOUND && S.track === GS.activeTrack)
@@ -967,9 +986,9 @@ export function soundExit(leaving) {
      * open while activeBank still reads BANK_SOUND from a track flavour that
      * preceded it — fall back to the active track's recorded bank rather than
      * leaving the identity stranded on a stub. */
-    if (GS.activeBank === BANK_SOUND && !leaving) {
+    if (GS.activeBank === BANK_SOUND && !_leaving) {
         const _tb = GS.trackActiveBank[GS.activeTrack] | 0;
-        GS.activeBank = (_tb === BANK_SOUND) ? soundOriginBank(GS.activeTrack) : _tb;
+        GS.activeBank = (_tb === BANK_SOUND) ? BANK_DEFAULT : _tb;
     }
     clearBusContext();
     S.pendingAction = null;
@@ -3517,15 +3536,15 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * last clip bank on the jog (ui_input_cc's bank walk). So a left
              * turn that cannot move the cursor any further up leaves the
              * screen the way it was entered: back onto the bank the jog came
-             * from, which soundExit restores from trackSoundOrigin (the live
-             * mirror reads BANK_SOUND while the screen is up — the bank IS this
-             * screen now). Back and jog-click keep their meanings; only the
-             * clamped top edge gains one.
+             * from (trackSoundOrigin), which is a walk along the strip, not a
+             * close — ⭑ Back is the close, and it lands on the track's DEFAULT
+             * bank like it does from every other bank. Back and jog-click keep
+             * their meanings; only the clamped top edge gains one.
              * ⚠ Track flavour only. The session buses (Master/Send FX) are
              * entered from the session FX list, not from a bank, so for them
              * the top edge stays a clamp. */
             if (next === S.pickRow && delta < 0 && !soundIsGlobal() && !S.enterSession) {
-                soundExit();
+                soundExit({ landOn: soundOriginBank(S.track) });
                 forceRedraw();
                 return true;
             }
