@@ -19,7 +19,7 @@ import {
     fmtDly, fmtArpStyle, fmtArpSteps, fmtDiq, fmtPlain, fmtLgto, fmtPitchRnd
 } from './ui_constants.mjs';
 import {
-    drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitHeaderRule, drawKitAltArrow,
+    drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitAltArrow,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
     drawVFader, mvPrint, mvWidth, rectOutline,
     drawLevelCard,
@@ -54,10 +54,6 @@ import { drawMenuHeader } from '/data/UserData/schwung/shared/menu_layout.mjs';
  * the header bar is filled white (arrow inks black). */
 function drawBankHeaderRight(showTrack, hdrFilled) {
     if (S.sessionView) return;
-    /* A plain rule, not the segmented bank indicator — the jog opens a named
-     * list now, so a scroll position for stepping through banks describes
-     * navigation that no longer happens (Josh, 2026-08-25). */
-    drawKitHeaderRule();
     if (bankHasAltParams(S.activeTrack, S.activeBank)) {
         drawAltArrow(121, hdrFilled, altIndicatorActive(S.activeTrack, S.activeBank));
     }
@@ -1813,7 +1809,6 @@ function drawUIBody() {
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 7 && !S.allLanesConfirmed) {
             /* ALL LANES confirmation screen */
             drawKitHeader((Math.floor(S.tickCount / 24) % 2 === 0 ? 'ALL' : '   ') + ' LANES', false);
-            drawKitHeaderRule();
             print(10, 18, 'Edits will affect', 1);
             print(10, 28, 'all lanes. Proceed?', 1);
             fill_rect(40, 44, 48, 16, 1);

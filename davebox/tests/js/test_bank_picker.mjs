@@ -234,6 +234,24 @@ step('⭑ the bank card names its TRACK, so a latched card still says where you 
         }
 });
 
+step('⭑ a bank card draws NO rule under the header', () => {
+    /* The segmented bank indicator went when the jog became a picker, and Josh
+     * then took the line itself: the header is a filled white bar, so it
+     * separates itself.
+     * ⚠ Measured, not eyeballed — with and without the rule the screen looks
+     * near identical in a render, because row 7 is the bottom of the header bar
+     * and the eye reads that as the line. */
+    reset();
+    S.activeBank = 1;
+    S.bankSelectTick = S.tickCount;
+    fb.fill(0);
+    render.drawUI();
+    let ink = 0;
+    for (let x = 0; x < FBW; x++) if (fb[kit.MV_BAR_Y * FBW + x]) ink++;
+    if (ink) throw new Error('row ' + kit.MV_BAR_Y + ' has ' + ink + 'px of ink — ' +
+                             'something is drawing a rule under the header again');
+});
+
 step('⚠ control: the same comparison FAILS without the prefix', () => {
     /* Otherwise the step above would pass against a header that never carried a
      * track at all, if the reference happened to be drawn the same way. */
