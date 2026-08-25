@@ -56,8 +56,15 @@ const bridgeMod = await import('../../ui/ui_dsp_bridge.mjs');
 const { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, BANK_WHEN, BANK_SOUND } = constsMod;
 
 const send  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
-const right = () => { send(14, 1);   globalThis.tick(); };
-const left  = () => { send(14, 127); globalThis.tick(); };
+const note  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0x90, d1, d2]));
+/* ⚠ A jog turn is TOUCH, turn, RELEASE — you cannot turn the wheel without
+ * touching it. Since 2026-08-25 that release is what commits the bank picker in
+ * track view, so a test that sends the CC alone leaves the gesture unfinished
+ * and nothing lands. (Inside sound mode the jog is that screen's and the touch
+ * is simply along for the ride.) MoveMainTouch is note 9. */
+const turn  = (d) => { note(9, 127); send(14, d > 0 ? 1 : 127); globalThis.tick(); note(9, 0); globalThis.tick(); };
+const right = () => turn(1);
+const left  = () => turn(-1);
 
 function step(label, fn) {
     /* ⚠⚠ An ASYNC fn returns a promise this runner never awaits: the body would
@@ -255,11 +262,17 @@ step('⭑ the TOP LEVEL keeps the banks\' display law: falls back to the overvie
     if (!snd.soundRender()) throw new Error('jog touch did not bring the screen back');
     jogTouch(false);
     if (snd.soundRender()) throw new Error('jog release did not yield immediately');
-    /* A turn re-opens the window (and still moves the cursor). */
+    /* A turn re-opens the window (and still moves the cursor).
+     * ⚠ Asserted mid-gesture — touch and turn, NO release. The release stands
+     * the window down by design (two lines up, this file proves it), so a
+     * complete turn would open the window and close it again before the
+     * assertion ran. What is under test is the TURN. */
     const r0 = snd.soundPickStateForTest().row;
-    right();
+    jogTouch(true);
+    send(14, 1); globalThis.tick();
     if (snd.soundPickStateForTest().row === r0) throw new Error('turn no longer moves the cursor');
     if (!snd.soundRender()) throw new Error('a turn did not re-open the display window');
+    jogTouch(false);
     /* Deeper levels never yield: open the row under the cursor via the real
      * click, then check with the window closed. */
     snd.soundTick();

@@ -656,14 +656,18 @@ export const S = {
      * pad-mode and neither contiguous nor ordered by index. -1 = closed.
      * Transient: the gesture ends with the Shift release that commits it. */
     bankPickerSel: -1,
-    /* Which meaning THIS Shift+jog hold has, latched on its first turn:
-     * 0 = undecided, 1 = bank picker, 2 = step the track.
-     * ⚠ Decided once per HOLD, not per turn. A track step EXITS sound mode, so
-     * a per-turn test flips to "track view" mid-gesture and the rest of one
-     * continuous scroll lands in the picker instead — which is exactly what the
-     * sound-mode scroll test caught. A gesture means one thing for its whole
-     * duration. Cleared on the Shift press edge. */
-    shiftJogMode: 0,
+    /* Tick of the last picker turn, for the SETTLE fallback. The gesture
+     * normally ends with the jog-touch release, but a turn can arrive with no
+     * touch at all (the capacitive read can miss a quick flick, and the remote
+     * UI has no wheel), and a picker with no way to close would sit over the
+     * screen forever. Committing on settle is the floor, not the design. */
+    bankPickerIdleTick: -1,
+    /* Bank card LATCH (Shift + jog click, 2026-08-25). Latched, the bank's page
+     * holds the screen instead of standing down to the track overview after its
+     * window expires. Unlatched is exactly today's behaviour.
+     * ⚠ It does NOT change which bank is active — it is a display mode, and
+     * Back clears it rather than stepping the bank. */
+    bankCardLatched: false,
 
 
     pendingSoundEnterSilent: false, /* the queued entry is a RETURN, not a gesture — do not open the bank display window */

@@ -579,6 +579,25 @@ function modalDialogUp() {
         forceRedraw();
         return;
     }
+    /* ⭑ Shift + jog click: LATCH the bank card (Josh, 2026-08-25). Latched, the
+     * bank page holds the screen instead of falling back to the track overview.
+     *
+     * ⚠ On Shift, not on the plain click, for two reasons: the plain click is
+     * the ALT-PARAM toggle and is used constantly mid-edit, and Shift+knob —
+     * the other candidate for alt-params — is already the fine step-velocity
+     * page on the Arp Steps bank. Alt-params also USED to live on Shift+knob
+     * and were deliberately moved here; moving them back would undo that and
+     * collide with the step editor.
+     *
+     * Track view only: the fall-back this defeats is a track-view screen. */
+    if (d1 === 3 && d2 === 127 && S.shiftHeld && !S.sessionView && !soundActive()) {
+        S.bankCardLatched = !S.bankCardLatched;
+        if (S.bankCardLatched) S.bankSelectTick = S.tickCount;
+        S.screenDirty = true;
+        forceRedraw();
+        return;
+    }
+
     /* Plain jog click on an alt-param bank: toggle sticky alt-param mode.
      * Perform-mode switching now lives only on Shift+step-8 (see _onStepButtons).
      * The Arp-Steps block above is gated melodic-only, so on drum tracks bank 5
@@ -787,55 +806,11 @@ function modalDialogUp() {
         } else {
             const delta = decodeDelta(d2);
             if (delta !== 0) {
-                if (S.shiftHeld && S.shiftJogMode === 0) {
-                    /* First turn of this hold decides what the hold MEANS, and
-                     * it stays decided — see S.shiftJogMode. */
-                    S.shiftJogMode = (!S.sessionView && !soundActive() && !S.globalMenuOpen)
-                        ? 1 : 2;
-                }
-                if (S.shiftHeld && S.shiftJogMode === 1) {
-                    /* ⭑ TRACK VIEW: Shift + jog browses this track's BANKS in the
-                     * kit's list overlay (Josh, 2026-08-25). It used to step the
-                     * active track; that meaning now lives on Shift + the bottom
-                     * pad row, which says which track it means by lighting it.
-                     *
-                     * The list is the track's own jog cycle, so the picker shows
-                     * the strip the unshifted jog already walks — including
-                     * SOUND + CONFIG at the end, where the walk ends.
-                     *
-                     * The gesture is the HOLD: turns move the selection, the
-                     * Shift release commits it (see the MoveShift handler). A
-                     * turn does NOT apply as it goes, because landing on
-                     * AUTOMATION or SOUND + CONFIG in passing has side effects —
-                     * a bank read, or entering a screen — and browsing past
-                     * something must not do the thing.
-                     *
-                     * ⚠ Track view ONLY, and the three exclusions are all live
-                     * gestures with their own meaning for Shift+jog: session
-                     * view and sound mode still STEP THE TRACK (sound mode's is
-                     * specified — pinned in test_sound_shift_jog_track), and the
-                     * global menu scrolls its own list. */
-                    const cyc = bankCycleFor(S.activeTrack);
-                    if (S.bankPickerSel < 0) {
-                        /* Opening: start from where the track actually is, so
-                         * the first turn moves ONE step from the current bank
-                         * rather than from the top of the list. Sound mode is
-                         * excluded above, so activeBank is a real cycle member. */
-                        const at = cyc.indexOf(S.activeBank);
-                        S.bankPickerSel = at >= 0 ? at : 0;
-                    }
-                    S.bankPickerSel = Math.max(0, Math.min(cyc.length - 1, S.bankPickerSel + delta));
-                    S.bankSelectTick = S.tickCount;
-                    forceRedraw();
-                    return;
-                }
                 if (S.shiftHeld) {
-                    /* Shift + jog (session view, sound mode, menu): step active
-                     * track 0–7, clamp at ends.
-                     * ⚠ Reached for the whole hold once latched, even after the
-                     * first step closes sound mode — scrolling out through the
-                     * tracks and back is ONE gesture (Josh), and re-deciding per
-                     * turn would drop the rest of it into the bank picker. */
+                    /* Shift + jog (any view): step active track 0–7, clamp at
+                     * ends. ⭑ Restored to every view on 2026-08-25: the bank
+                     * picker moved onto the UNSHIFTED turn, so Shift no longer
+                     * has to share this gesture with anything. */
                     const next = Math.min(NUM_TRACKS - 1, Math.max(0, S.activeTrack + delta));
                     if (next !== S.activeTrack) {
                         /* SOUND + CONFIG is a BANK, and a bank is PER TRACK
@@ -987,59 +962,42 @@ function modalDialogUp() {
                     }
                     }
                 } else {
-                    const cur = S.activeBank;
-                    const isDrumJog = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
-                    const isConductJog = S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT;
-                    let next;
-                    if (isConductJog) {
-                        /* Conductor cycles 5 banks: Conduct(0=CLIP) → NOTE FX(1) → Responder → Octave → When */
-                        const ci = CONDUCT_BANK_CYCLE.indexOf(cur);
-                        const ni = Math.max(0, Math.min(CONDUCT_BANK_CYCLE.length - 1, (ci >= 0 ? ci : 0) + delta));
-                        next = CONDUCT_BANK_CYCLE[ni];
-                    } else if (isDrumJog) {
-                        /* Drum bank order: ALL LANES(7) → DRUM LANE(0) → NOTE FX(1) → MIDI DLY(3) → RPT GROOVE(5) → CC PARAM(6) */
-                        const ci = BANK_CYCLE_DRUM.indexOf(cur);
-                        const ni = Math.max(0, Math.min(BANK_CYCLE_DRUM.length - 1, (ci >= 0 ? ci : 0) + delta));
-                        next = BANK_CYCLE_DRUM[ni];
-                    } else {
-                        next = Math.min(6, Math.max(0, cur + delta));
+                    /* ⭑⭑ THE UNSHIFTED JOG IS THE BANK PICKER (Josh, 2026-08-25).
+                     *
+                     * It used to WALK the banks one detent at a time, applying
+                     * each step as it passed. Now the first turn opens the kit's
+                     * list overlay ON TOP of the page you were already on, the
+                     * turns move a selection, and NOTHING is applied until the
+                     * gesture ends — you see where you are going instead of
+                     * arriving somewhere and reading the header.
+                     *
+                     * Not applying in passing is the point, not a detail: the
+                     * old walk read a bank's params on every step and ENTERED
+                     * sound mode the moment it reached SOUND + CONFIG, so a
+                     * scroll across the strip did all of that on the way.
+                     *
+                     * ⚠ The page underneath deliberately does not change while
+                     * browsing — the picker is an overlay over the card it was
+                     * entered on (Josh), which is what makes "cancel by not
+                     * committing" legible.
+                     *
+                     * Commit is the release of the jog TOUCH (ui.js) — you have
+                     * to be touching the wheel to turn it, so the gesture has a
+                     * natural end. Sound mode is excluded here: inside it the
+                     * jog belongs to that screen, and the picker comes back only
+                     * on the left turn off its top row (soundOnCC). */
+                    const cyc = bankCycleFor(S.activeTrack);
+                    if (S.bankPickerSel < 0) {
+                        /* Open where the track actually IS, so the first detent
+                         * moves one step from here rather than from the top of
+                         * the list. */
+                        const at = cyc.indexOf(S.activeBank);
+                        S.bankPickerSel = at >= 0 ? at : 0;
                     }
-                    /* SOUND + CONFIG: one bank PAST the last clip bank is the
-                     * track's sound-mode screen (instrument, effects, sound
-                     * control, config) — reached by the same jog that walks the
-                     * clip banks, so a track's sound can be edited without
-                     * leaving track view. The top level's cursor clamps at its
-                     * first row and a further left turn there steps back to this
-                     * bank (soundOnCC), so the jog reads as ONE strip:
-                     * CLIP … AUTOMATION · SOUND + CONFIG · (its rows…).
-                     * Entry is deferred to the tick (the route picks the
-                     * flavour), so nothing is duplicated. `S.activeBank` is
-                     * still the last clip bank at this point — the entry takes
-                     * the BANK_SOUND identity, records it in trackActiveBank
-                     * like every other bank, and remembers this bank as the
-                     * origin the left turn out lands on (Josh, 2026-08-25).
-                     * ⚠ Not for Conductor tracks: their cycle ends at WHEN
-                     * (Josh, 2026-08-23). */
-                    if (next === cur && delta > 0 && !isConductJog && !soundActive()) {
-                        S.globalMenuOpen = false;
-                        S.lastSentMenuEditValue = null;
-                        S.pendingSoundEnterTrack = S.activeTrack;
-                        S.bankSelectTick = S.tickCount;   /* keep the display window
-                                         * open across the deferred entry — soundEnter
-                                         * re-arms it, but the entry runs a tick later */
-                        S.screenDirty = true;
-                        return;
-                    }
-                    if (next !== cur) {
-                        S.activeBank = next;
-                        S.trackActiveBank[S.activeTrack] = next;
-                        if (next === 7) S.allLanesConfirmed = false;
-                        if (next === 6) S.schLabelFetchLane = 0;
-                        readBankParams(S.activeTrack, next);
-                        S.bankSelectTick = S.tickCount;
-                        writeSidecar();
-                        forceRedraw();
-                    }
+                    S.bankPickerSel = Math.max(0, Math.min(cyc.length - 1, S.bankPickerSel + delta));
+                    S.bankPickerIdleTick = S.tickCount;
+                    S.bankSelectTick = S.tickCount;
+                    forceRedraw();
                 }
             }
         }
@@ -1053,7 +1011,7 @@ const bankCycleFor = (track) => bankCycleForMode(S.trackPadMode[track]);
 /* Commit the picker's selection: the same work an unshifted jog step does when
  * it lands on that bank, including the deferred entry for SOUND + CONFIG (the
  * screen has to be re-entered — BANKS[11] draws nothing on its own). */
-function applyBankPick() {
+export function applyBankPick() {
     const t = S.activeTrack;
     const cyc = bankCycleFor(t);
     const idx = S.bankPickerSel;
@@ -1085,7 +1043,6 @@ function _onCC_buttons(d1, d2) {
     if (d1 === MoveShift) {
         S.shiftHeld = d2 === 127;
         S.shiftTrackLEDActive = d2 === 127;
-        S.shiftJogMode = 0;          /* each hold decides for itself */
         /* Shift IS the volume-knob claim (Josh, 2026-08-24): while held, Move's
          * native main output stands aside and CC 79 becomes the ACTIVE TRACK's
          * volume — in every view. Claimed on the press so the very first detent
@@ -1093,13 +1050,6 @@ function _onCC_buttons(d1, d2) {
          * per-gesture level cache drops (an edit made elsewhere is re-read next
          * time, never assumed) and the save lands once, not per detent. */
         engineVolBlock(S.shiftHeld);
-        let _bankPicked = false;
-        if (!S.shiftHeld && S.bankPickerSel >= 0) {
-            /* The bank picker commits on the RELEASE — the whole gesture is the
-             * hold, and nothing was applied while browsing. */
-            applyBankPick();
-            _bankPicked = true;
-        }
         if (!S.shiftHeld) {
             S.tvSeeded = false;
             S.tvExtWarned = false;
@@ -1116,12 +1066,12 @@ function _onCC_buttons(d1, d2) {
          * the usual gesture touches the jog (jogTouched→bank view) before pressing
          * Shift, and Shift-press never cleared it before. Mirrors the jog-release
          * clear in the MoveMainTouch handler. */
-        /* ⚠ ...but NOT when the release just committed a bank pick. This clear
-         * runs AFTER the commit, so it would wipe the display window the new
-         * bank was just given — you would pick a bank and never see it, and a
-         * pick of SOUND + CONFIG would lose the window it needs to survive its
-         * deferred entry (the same window the bank walk arms for that reason). */
-        if (!S.sessionView && !_bankPicked) { S.jogTouched = false; S.bankSelectTick = -1; }
+        /* ⚠ ...but NOT while the card is LATCHED. This is the third teardown in
+         * this file that runs after something deliberately set the display
+         * window and wipes it: releasing Shift right after the Shift+click that
+         * latched would undo the latch in the same gesture. A latch is only
+         * cleared by Back, or by clicking again. */
+        if (!S.sessionView && !S.bankCardLatched) { S.jogTouched = false; S.bankSelectTick = -1; }
         /* Arp step editor: Shift flips the Pitch <-> Velocity page — redraw on
          * both edges so the flip is immediate. */
         if (S.stepIntervalMode && !S.sessionView) forceRedraw();
@@ -1804,17 +1754,21 @@ function _backTap() {
         if (S.stepIntervalMode)   { S.stepIntervalMode = false; computePadNoteMap(); forceRedraw(); return; }
         if (S.altMode)            { S.altMode = false; forceRedraw(); return; }
         if (S.activeBank === 7 && S.allLanesConfirmed) { S.allLanesConfirmed = false; forceRedraw(); return; }
-        if (S.activeBank !== 0) {
-            /* Step back to the track's default bank (Clip / Drum Lane / Conduct),
-             * matching a normal Shift-pad bank switch's side-effects. */
-            S.activeBank = 0;
-            S.trackActiveBank[S.activeTrack] = 0;
-            readBankParams(S.activeTrack, 0);
-            S.bankSelectTick = S.tickCount;
-            writeSidecar();
+        /* ⭑ Back DISMISSES the screen: unlatch if latched, stand the bank card
+         * down, and show the track overview (Josh, 2026-08-25).
+         *
+         * ⚠ It used to step the bank back to 0 (CLIP / DRUM LANE / CONDUCT).
+         * That made Back a hidden STATE change — you pressed it to get rid of a
+         * screen and it silently moved you off the bank you were working on,
+         * with no way back except navigating there again. Back now only ever
+         * affects what is on screen; where you are is the jog's business. */
+        if (S.bankCardLatched || S.bankSelectTick >= 0 || S.jogTouched) {
+            S.bankCardLatched = false;
+            S.bankSelectTick = -1;
+            S.jogTouched = false;
             invalidateLEDCache(); forceRedraw(); return;
         }
-        return;   /* Track view, default bank, nothing open — stop here. */
+        return;   /* Track view, nothing on screen to dismiss — stop here. */
     }
 
     /* 6. Session view home (nothing open) — a Back TAP no longer suspends

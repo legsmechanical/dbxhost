@@ -52,6 +52,7 @@ import { applyTrackConfig,
 import { recordNoteOn, recordNoteOff,
     extHeldNotes, extCountInCapture } from './ui_record.mjs';
 import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons } from './ui_input_pads.mjs';
+import { applyBankPick } from './ui_input_cc.mjs';
 import { _onCCMsg } from './ui_input_cc.mjs';
 import { soundActive, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw } from './ui_sound.mjs';
 import { soundModeCovered } from './ui_render.mjs';
@@ -332,6 +333,28 @@ globalThis.onSessionExitRequest = function () {
 /* ------------------------------------------------------------------ */
 
 globalThis.onMidiMessageInternal = function (data) { try { _onMidiInternalImpl(data); } catch (e) { captureError('onMidiInternal', e); } };
+/* Letting go of the jog wheel.
+ *
+ * ⭑ This is where the bank picker COMMITS (Josh, 2026-08-25): you have to be
+ * touching the wheel to turn it, so its release is the natural end of the
+ * gesture — no modifier needed to say "I mean this one".
+ *
+ * ⚠ The release also stands the transient bank display down (bankSelectTick =
+ * -1), and that must NOT happen on a commit: the bank you just chose would
+ * vanish the instant you let go, and a pick of SOUND + CONFIG would lose the
+ * window its deferred entry needs. So a commit keeps the window applyBankPick
+ * just armed. (Same shape as the Shift-edge clear that bit earlier in the day —
+ * a teardown running after the thing it tears down was deliberately set up.)
+ *
+ * The touch has two note-off encodings and both land here, rather than each
+ * site remembering the rule. */
+function _jogTouchRelease() {
+    S.jogTouched = false;
+    if (S.bankPickerSel >= 0) applyBankPick();   /* arms its own display window */
+    else S.bankSelectTick = -1;
+    forceRedraw();
+}
+
 function _onMidiInternalImpl(data) {
     const status = data[0] | 0;
     const d1     = (data[1] ?? 0) | 0;
@@ -565,7 +588,7 @@ function _onMidiInternalImpl(data) {
                     S.knobAccum[d1]  = 0;
                     S.screenDirty = true;
                 }
-                if (d1 === MoveMainTouch && S.jogTouched) { S.jogTouched = false; S.bankSelectTick = -1; forceRedraw(); }
+                if (d1 === MoveMainTouch && S.jogTouched) { _jogTouchRelease(); }
             }
             return;
         }
@@ -600,7 +623,7 @@ function _onMidiInternalImpl(data) {
                 S.knobAccum[d1]  = 0;
                 S.screenDirty = true;
             }
-            if (d1 === MoveMainTouch && S.jogTouched) { S.jogTouched = false; S.bankSelectTick = -1; forceRedraw(); }
+            if (d1 === MoveMainTouch && S.jogTouched) { _jogTouchRelease(); }
             return;
         }
     }

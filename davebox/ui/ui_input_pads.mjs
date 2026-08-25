@@ -10,7 +10,6 @@
 import {
     NUM_TRACKS, TRACK_PAD_BASE, DRUM_LANES,
     PAD_MODE_DRUM, PAD_MODE_CONDUCT, BANKS,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN,
     NO_NOTE_FLASH_TICKS
 } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
@@ -486,41 +485,18 @@ function _onPadPressTrackView(status, d1, d2) {
             liveSendNote(S.activeTrack, 0x90, pitch, effectiveVelocity(d2));
             forceRedraw();
         } else if (S.shiftHeld && padIdx >= 24 && padIdx <= 31) {
-            const _padOff = padIdx - 24;
-            const _isDrum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
-            const _isConduct = S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT;
-            let bankIdx;
-            if (_isDrum) {
-                /* Drum pad map: 92=ALL LANES(7) 93=DRUM LANE(0) 94=NOTE FX(1)
-                                 95=MIDI DLY(3) 96=RPT GROOVE(5) 97=hidden
-                                 98=CC PARAM(6) 99=hidden */
-                const DRUM_PAD_MAP = [7, 0, 1, 3, 5, -1, 6, -1];
-                bankIdx = DRUM_PAD_MAP[_padOff];
-            } else if (_isConduct) {
-                /* Conductor reaches only its five banks: pads 0-4 select
-                   CONDUCT(0)/NOTE FX(1)/RESPONDER/OCTAVE/WHEN; pads 5-7 are no-ops.
-                   First five entries must stay in lockstep with ui_pure's
-                   CONDUCT_BANK_CYCLE (kept a parallel literal, like DRUM_PAD_MAP). */
-                const CONDUCT_PAD_MAP = [0, 1, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, -1, -1, -1];
-                bankIdx = CONDUCT_PAD_MAP[_padOff];
-            } else {
-                bankIdx = _padOff;
-            }
-            /* 8-10 reachable only via CONDUCT_PAD_MAP; drum/melodic cap at 7 */
-            if (bankIdx >= 0 && bankIdx < BANKS.length && BANKS[bankIdx]) {
-                if (S.activeBank === bankIdx) {
-                    S.bankSelectTick = -1;
-                } else {
-                    S.activeBank = bankIdx;
-                    S.trackActiveBank[S.activeTrack] = bankIdx;
-                    if (bankIdx === 7) S.allLanesConfirmed = false;
-                    if (bankIdx === 6) S.schLabelFetchLane = 0;
-                    readBankParams(S.activeTrack, bankIdx);
-                    S.bankSelectTick = S.tickCount;
-                    writeSidecar();
-                }
-                S.screenDirty = true;
-            }
+            /* ⚠⚠ RETIRED 2026-08-25 (Josh): Shift + a top-row pad used to jump
+             * straight to a bank. The jog IS the bank picker now — a turn opens
+             * a list of the track's banks by name and the touch release commits
+             * — so this was a second, silent door to the same place, addressed
+             * by pad POSITION rather than by name, with three parallel pad maps
+             * (melodic / DRUM_PAD_MAP / CONDUCT_PAD_MAP) that had to be kept in
+             * lockstep with the jog cycles by hand.
+             *
+             * Deliberately an EMPTY branch rather than a deletion: pads are
+             * suppressed while Shift is held (computePadNoteMap pushes all-0xFF),
+             * so falling through would reach the note path with a map that says
+             * nothing is there. Swallowing here says so once, out loud. */
         } else if (S.shiftHeld && padIdx < NUM_TRACKS) {
             /* Shift + bottom-row pad: select active track */
             extNoteOffAll();

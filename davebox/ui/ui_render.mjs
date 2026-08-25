@@ -1200,7 +1200,11 @@ function drawUIBody() {
 
     /* Track View — priority display state machine */
     const bank      = S.activeBank;
-    const inTimeout = S.bankSelectTick >= 0 || S.jogTouched;
+    /* ⭑ The LATCH (Shift + jog click) is a third way to be "in" the bank
+     * display, and it does not expire — that is the whole point of it. Folded
+     * into the ONE predicate every screen reads rather than added at each
+     * screen, so a bank that forgot to check it cannot exist. */
+    const inTimeout = S.bankCardLatched || S.bankSelectTick >= 0 || S.jogTouched;
 
     /* Compress-limit override: highest priority for ~1500ms after a blocked compress */
     if (S.stretchBlockedEndTick >= 0) {

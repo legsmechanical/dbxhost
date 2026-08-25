@@ -459,6 +459,11 @@ export const BANK_SOUND_PREV = 6;
 export const TICK_HZ = 94;
 
 export const ACTION_POPUP_TICKS = 49; /* ~520ms at 94Hz */
+/* Bank picker: how long an untouched selection sits before it commits itself.
+ * ~1.3s at 94Hz — long enough that it never pre-empts someone deciding, short
+ * enough that a picker opened by a touchless turn does not feel stuck. It is a
+ * safety floor; the real commit is the jog-touch release. */
+export const BANK_PICKER_SETTLE_TICKS = 120;
 /* Shift+Volume's level card lingers ~1s after the last turn — the same window
  * sound mode uses for its own read-out (VOL_SHOW_TICKS), because they are the
  * same card and must not feel like two controls. */
