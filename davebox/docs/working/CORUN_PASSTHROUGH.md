@@ -33,7 +33,7 @@ davebox — the same pass-through contract sound mode already lives by
 | JOG (14/3) + MAIN TOUCH | cede | **cede** | Move's param/preset navigation. |
 | TRACK (40-43) | cede (input) | **cede** | Switches the Move track being edited. LED split stays: davebox paints the paired-track indicator, presses cede. |
 | BACK | cede (routing grp) | **cede** | Move's page-out. Menu remains the canonical exit (existing opt-out bit). |
-| MASTER (79) | cede | **cede** — with one carve-out | Plain volume is Move-native everywhere anyway. ⚖ Shift+Volume (track volume, 2026-08-24) inside co-run: to honour "all modes" it needs SHIFT kept *and* CC 79 intercepted while Shift is down. Ship without it first; add if the SHIFT ruling below lands on "keep". |
+| MASTER (79) | cede | **cede — with the runtime carve-out, SHIPPED 2026-08-25** | Plain volume stays Move-native: a plain turn moves Move's master, in co-run as everywhere. ✅ Shift+Volume now edits the **co-run track's Move bus volume** instead. It needed SHIFT kept (ruled below) *and* CC 79 intercepted while Shift is down — the second half was the gap: `vol_block`, the runtime master-knob claim, was ignored by the cede. `corun_event_owner` now honours it, so the CLAIMED GESTURE is the tool's while the unclaimed knob still reaches Move. The capacitive touch (note 8) travels with the CC or Move pops its master overlay over its own screen. ⚠ No level card in co-run — Move owns the OLED, so the gesture is blind there. |
 | PADS | keep | **keep** (unchanged) | Melodic pads already play the sequencer. Drum: see the padmap note below. |
 | STEPS | keep | **keep** (unchanged) | Step editing under a synth editor is the headline feature. |
 | TRANSPORT | keep | **keep** (unchanged) | Play/Rec. |
@@ -69,9 +69,12 @@ davebox — the same pass-through contract sound mode already lives by
 
 1. Adjust `DAVEBOX_CORUN_KEEP_MASK` (+ LOOP/DELETE/COPY bits as ruled;
    SHIFT per ruling) and `DAVEBOX_CORUN_LED_KEEP_MASK` to match.
-2. If SHIFT is kept: route Shift+Volume in co-run (the ui.js gate already
-   passes Shift+79 when `shiftHeld` is tracked — verify the tracking sees
-   CC 49 during co-run once kept).
+2. ✅ DONE 2026-08-25 (`3d7c7885`). SHIFT was kept, and Shift+Volume in co-run
+   now edits the co-run track's Move bus. ⚠ The ui.js gate was NOT the whole
+   story: the CC never reached davebox at all, because the co-run cede ignored
+   the runtime `vol_block` claim. Fixed in `corun_event_owner` (one predicate,
+   so the Move-firmware filter and the forward-to-shadow_ui suppress cannot
+   drift), and the module targets `S.moveCoRunTrack`, not the active track.
 3. Verify the shim's group classification covers CC 58 / 119 / 60
    (`shadow_constants.h`) — add bits only if genuinely unclassified.
 4. Tests: dispatch-level JS tests (step toggle, Delete+step clear, transport,
