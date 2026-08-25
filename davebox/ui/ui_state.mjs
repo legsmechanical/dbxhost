@@ -631,12 +631,6 @@ export const S = {
     tvDeltaAcc: 0, tvSeeded: false, tvTrack: -1, tvLevel: 1,
     tvDirty: false, tvSavePending: false, tvExtWarned: false,
     tvExtCC7: new Array(8).fill(100), /* per-track MIDI volume (CC 7) last sent; session-local — receivers keep their own state, we just remember where the knob left off */
-    /* Per-track memory for SOUND + CONFIG. `trackActiveBank` deliberately never
-     * holds BANK_SOUND (it stores the jog-reachable clip bank, and it is what
-     * the sidecar serializes), so "this track was left on SOUND + CONFIG" needs
-     * its own bit or coming back lands you on the ORIGIN bank instead — which
-     * is what Josh hit on device: leave a track on SOUND + CONFIG, come back,
-     * land on AUTOMATION. Transient: a fresh launch starts on a clip bank. */
     /* Shift+Volume's level card, shown as an OVERLAY over whatever screen is up
      * (Josh, 2026-08-24). Not an actionPopup: popups are two lines of text and
      * defer to held gestures, and this has to read as the same control sound
@@ -644,7 +638,16 @@ export const S = {
     tvCardUntil: -1,
     tvCardText: '',
     tvCardFrac: 0,
-    trackSoundOpen: new Array(8).fill(false),
+    /* Where a left turn off the top of SOUND + CONFIG lands, per track.
+     * SOUND + CONFIG RECORDS ITSELF in `trackActiveBank` like every other bank
+     * (Josh, 2026-08-25), so that array can no longer double as "the bank to
+     * come back to" the way it did while the identity was transient — this is
+     * that half, split out. -1 = no remembered origin, and the exit falls back
+     * to the bank immediately before SOUND + CONFIG on the jog (BANK_SOUND_PREV
+     * — where a plain left turn would have come from anyway), which is what a
+     * track restored from the sidecar or arrived at by a track switch gets.
+     * Session-only: the origin is a navigation crumb, not project state. */
+    trackSoundOrigin: new Array(8).fill(-1),
     pendingSoundEnterSilent: false, /* the queued entry is a RETURN, not a gesture — do not open the bank display window */
     pendingSoundEnterTrack: -1, /* Sound mode entry queued from the Shift-release dispatch or the track menu. Entry's shadow_get/set_param traffic must run on the tick budget — hence the deferral. */
     pendingUndoSync: 0,

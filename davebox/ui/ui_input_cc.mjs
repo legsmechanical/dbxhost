@@ -964,11 +964,12 @@ function modalDialogUp() {
                      * first row and a further left turn there steps back to this
                      * bank (soundOnCC), so the jog reads as ONE strip:
                      * CLIP … AUTOMATION · SOUND + CONFIG · (its rows…).
-                     * Entry is the SAME door as Shift+Note (deferred to the
-                     * tick; the route picks the flavour), so nothing is
-                     * duplicated. `S.activeBank` is left on the last clip bank,
-                     * which is where the left turn out of sound mode lands —
-                     * it is not a persisted bank (Josh, 2026-08-23).
+                     * Entry is deferred to the tick (the route picks the
+                     * flavour), so nothing is duplicated. `S.activeBank` is
+                     * still the last clip bank at this point — the entry takes
+                     * the BANK_SOUND identity, records it in trackActiveBank
+                     * like every other bank, and remembers this bank as the
+                     * origin the left turn out lands on (Josh, 2026-08-25).
                      * ⚠ Not for Conductor tracks: their cycle ends at WHEN
                      * (Josh, 2026-08-23). */
                     if (next === cur && delta > 0 && !isConductJog && !soundActive()) {

@@ -1,5 +1,5 @@
 import { S, CC_ASSIGN_DEFAULTS } from './ui_state.mjs';
-import { NUM_TRACKS, NUM_CLIPS, DRUM_LANES, BANKS, BANK_SOUND, ACTION_POPUP_TICKS,
+import { NUM_TRACKS, NUM_CLIPS, DRUM_LANES, BANKS, ACTION_POPUP_TICKS,
          VOL_CARD_TICKS } from './ui_constants.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 
@@ -173,10 +173,12 @@ export function writeSidecar() {
      * persisting here anyway. */
     if (S.pendingSetLoad || S.pendingDspSync > 0) return;
     /* Always sync the live activeBank into per-track storage before serializing
-     * — except BANK_SOUND, sound mode's transient identity: the origin bank is
-     * already in trackActiveBank and is what the next launch should land on. */
-    if (S.activeBank !== BANK_SOUND)
-        S.trackActiveBank[S.activeTrack] = S.activeBank;
+     * — BANK_SOUND included (Josh, 2026-08-25): SOUND + CONFIG records itself
+     * like every other bank, so a track left on it comes back to it. The old
+     * exception here is exactly why it did not: trackActiveBank stayed on the
+     * bank you walked through (AUTOMATION), and that stale value is what the
+     * exit restore, the co-run landing and the next launch all read. */
+    S.trackActiveBank[S.activeTrack] = S.activeBank;
     ensureStateDir(S.currentSetUuid);
     host_write_file(uuidToUiStatePath(S.currentSetUuid), JSON.stringify({
         v: 9, at: S.activeTrack, ac: S.trackActiveClip.slice(), sv: S.sessionView ? 1 : 0,

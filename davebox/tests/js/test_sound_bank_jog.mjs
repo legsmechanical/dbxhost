@@ -52,6 +52,7 @@ const constsMod = await import('../../ui/ui_constants.mjs');
 const ledsMod = await import('../../ui/ui_leds.mjs');
 const ifMod = await import('/data/UserData/schwung/shared/input_filter.mjs');
 const persistMod = await import('../../ui/ui_persistence.mjs');
+const bridgeMod = await import('../../ui/ui_dsp_bridge.mjs');
 const { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, BANK_WHEN, BANK_SOUND } = constsMod;
 
 const send  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
@@ -111,11 +112,16 @@ step('⭑ melodic: right past AUTOMATION (6) enters SOUND + CONFIG', () => {
     reset(PAD_MODE_MELODIC_SCALE, 6);
     right();
     if (!snd.soundActive()) throw new Error('sound mode did not open');
-    /* The screen IS a bank (Josh, 2026-08-23): activeBank takes the BANK_SOUND
-     * identity so every bank-keyed behaviour runs its standard branch; the
-     * origin waits in trackActiveBank for the exit landing. */
+    /* The screen IS a bank (Josh, 2026-08-23) and it RECORDS ITSELF like every
+     * other one (Josh, 2026-08-25): activeBank takes the BANK_SOUND identity so
+     * every bank-keyed behaviour runs its standard branch, AND trackActiveBank
+     * takes it too — that write is the whole fix. The bank to come back to is
+     * the separate crumb, trackSoundOrigin. */
     if (S.activeBank !== BANK_SOUND) throw new Error('activeBank did not take the sound identity: ' + S.activeBank);
-    if (S.trackActiveBank[2] !== 6) throw new Error('the origin bank was not preserved: ' + S.trackActiveBank[2]);
+    if (S.trackActiveBank[2] !== BANK_SOUND)
+        throw new Error('the bank did not record itself: ' + S.trackActiveBank[2]);
+    if (S.trackSoundOrigin[2] !== 6)
+        throw new Error('the origin crumb was not kept: ' + S.trackSoundOrigin[2]);
 });
 
 step('⭑ ...and the next right turn walks the menu, not the banks', () => {
@@ -126,7 +132,8 @@ step('⭑ ...and the next right turn walks the menu, not the banks', () => {
     if (!snd.soundActive()) throw new Error('sound mode closed on a right turn');
     if (r1 <= r0) throw new Error('cursor did not move down: ' + r0 + ' -> ' + r1);
     if (S.activeBank !== BANK_SOUND) throw new Error('the identity was lost underneath: ' + S.activeBank);
-    if (S.trackActiveBank[2] !== 6) throw new Error('the origin bank drifted: ' + S.trackActiveBank[2]);
+    if (S.trackActiveBank[2] !== BANK_SOUND) throw new Error('the recorded bank drifted: ' + S.trackActiveBank[2]);
+    if (S.trackSoundOrigin[2] !== 6) throw new Error('the origin crumb drifted: ' + S.trackSoundOrigin[2]);
 });
 
 step('⭑ left turns walk back up, and past the top row leave to the last clip bank', () => {
@@ -264,10 +271,13 @@ step('⭑ the TOP LEVEL keeps the banks\' display law: falls back to the overvie
     snd.soundExit();
 });
 
-step('⭑ the identity NEVER persists: sidecar write + Shift+jog track switch', () => {
-    /* Two live writers sync activeBank into trackActiveBank; both must skip
-     * BANK_SOUND or a track gets stranded on a bank the jog cannot reach —
-     * silently, on the next launch or the next switch back. */
+step('⭑⭑ the bank RECORDS ITSELF: sidecar write + Shift+jog track switch', () => {
+    /* ⚠ This step pinned the OPPOSITE until 2026-08-25 ("the identity NEVER
+     * persists"). That rule is what made SOUND + CONFIG the one bank in the walk
+     * that never wrote itself down: trackActiveBank stayed on the bank you came
+     * through — always AUTOMATION, the only neighbour — and the exit restore,
+     * the co-run landing and "banks land somewhere I did not leave them" all
+     * read that stale value. Josh ruled it records itself, like all the others. */
     const { writeSidecar } = persistMod;
     reset(PAD_MODE_MELODIC_SCALE, 6);
     right();                             /* enter from AUTOMATION */
@@ -281,14 +291,17 @@ step('⭑ the identity NEVER persists: sidecar write + Shift+jog track switch', 
     S.currentSetUuid = 'testuuid';
     writeSidecar();
     globalThis.host_write_file = () => true;
-    if (S.trackActiveBank[2] !== 6) throw new Error('sidecar sync clobbered the origin: ' + S.trackActiveBank[2]);
-    if (tab && tab[2] === BANK_SOUND) throw new Error('BANK_SOUND serialized into the sidecar');
+    if (S.trackActiveBank[2] !== BANK_SOUND)
+        throw new Error('sidecar sync dropped the recorded bank: ' + S.trackActiveBank[2]);
+    if (!tab || tab[2] !== BANK_SOUND)
+        throw new Error('BANK_SOUND did not reach the sidecar: ' + (tab ? tab[2] : 'no tab'));
     /* Shift+jog switches tracks with sound mode open. RULED 2026-08-24 (Josh):
      * SOUND + CONFIG is a BANK and a bank is per-track, so this gesture CLOSES
-     * it and the new track lands on its OWN origin — it does NOT follow.
+     * it and the new track lands on its OWN bank — it does NOT follow.
      * (Until then the reconcile re-took the identity on every step, so each
-     * track scrolled onto reported SOUND + CONFIG.) The outgoing track's origin
-     * must still survive the switch, which is what the rest of this step is for.
+     * track scrolled onto reported SOUND + CONFIG.) ⭑ LEAVING remembers: the
+     * outgoing track stays RECORDED on SOUND + CONFIG, which is what the rest of
+     * this step is for — switch back and its screen is there again.
      *
      * ⚠ The follow itself is NOT retired — it still runs for the other switch
      * sites (Shift+pad, session launchers, remote UI). Only this route exits. */
@@ -297,11 +310,80 @@ step('⭑ the identity NEVER persists: sidecar write + Shift+jog track switch', 
     send(14, 1); globalThis.tick();       /* track 2 -> 3 */
     send(49, 0);
     if (S.activeTrack !== 3) throw new Error('control: track did not switch');
-    if (S.trackActiveBank[2] !== 6) throw new Error('switch wrote the identity into track 2: ' + S.trackActiveBank[2]);
+    if (S.trackActiveBank[2] !== BANK_SOUND)
+        throw new Error('leaving forgot the bank on track 2: ' + S.trackActiveBank[2]);
     if (snd.soundActive()) throw new Error('sound mode followed the Shift+jog switch');
     if (S.activeBank !== 2)
         throw new Error("the switch did not land on track 3's own origin: " + S.activeBank +
                         (S.activeBank === BANK_SOUND ? ' (still SOUND + CONFIG)' : ''));
+});
+
+step('⭑⭑ THE FIX, end to end: a track left on SOUND + CONFIG comes back on it', () => {
+    /* Josh, 2026-08-24/25 — symptom (c) of STATE ON EXIT: "banks land somewhere
+     * I did not leave them." The whole chain in one step, because each half
+     * passed on its own while the feature stayed broken: the bank records
+     * itself -> the sidecar carries it -> the restore keeps it (the old clamp
+     * was 0-7, so a persisted 11 loaded SILENTLY as 0) -> the tick invariant
+     * re-opens the screen, because BANKS[11] is a stub that draws nothing. */
+    const { writeSidecar } = persistMod;
+    reset(PAD_MODE_MELODIC_SCALE, 6);
+    right();                                   /* enter SOUND + CONFIG from AUTOMATION */
+    if (!snd.soundActive()) throw new Error('control: did not enter sound mode');
+
+    let body = null;
+    globalThis.host_write_file = (path, b) => {
+        if (String(path).indexOf('ui-state') >= 0) body = b;
+        return true;
+    };
+    S.currentSetUuid = 'testuuid';
+    writeSidecar();
+    globalThis.host_write_file = () => true;
+    if (!body) throw new Error('control: no sidecar was written');
+    if (JSON.parse(body).tab[2] !== BANK_SOUND)
+        throw new Error('the bank did not reach the sidecar: ' + JSON.parse(body).tab[2]);
+
+    /* Quit and relaunch: sound mode closed, banks blank, then the sidecar back. */
+    snd.soundExit();
+    for (let t = 0; t < 8; t++) { S.trackActiveBank[t] = 0; S.trackSoundOrigin[t] = -1; }
+    S.activeBank = 0;
+    globalThis.host_file_exists = (path) => String(path).indexOf('ui-state') >= 0;
+    globalThis.host_read_file = (path) => (String(path).indexOf('ui-state') >= 0 ? body : '');
+    bridgeMod.restoreUiSidecar(false);
+    globalThis.host_file_exists = () => false;
+    globalThis.host_read_file = () => '';
+
+    if (S.trackActiveBank[2] !== BANK_SOUND)
+        throw new Error('the restore dropped the bank (got ' + S.trackActiveBank[2] +
+                        (S.trackActiveBank[2] === 0 ? ' — the old 0-7 clamp' : '') + ')');
+    if (S.activeBank !== BANK_SOUND)
+        throw new Error('the live mirror did not take it: ' + S.activeBank);
+    if (snd.soundActive()) throw new Error('control: the restore should not open screens itself');
+
+    /* ...and the SCREEN follows on the tick, silently — arriving by load is not
+     * a bank gesture, so the display window must stay shut. */
+    S.bankSelectTick = -1;
+    S.ledInitComplete = true; S.stateLoading = false; S.bootSplashTicks = 0;
+    globalThis.tick();
+    if (!snd.soundActive())
+        throw new Error('the bank came back but the screen did not — BANKS[11] draws nothing');
+    if (S.bankSelectTick >= 0)
+        throw new Error('the return opened the bank display window (tick ' + S.bankSelectTick + ')');
+    snd.soundExit();
+    S.activeBank = 0;
+});
+
+step('⚠ a hand-edited sidecar bank outside the walk still falls back to CLIP', () => {
+    /* The clamp gained ONE legal value, not a hole. */
+    for (let t = 0; t < 8; t++) S.trackActiveBank[t] = 0;
+    const body = JSON.stringify({ v: 9, at: 2, tab: [0, 0, 9, 12, -1, 0, 0, 0] });
+    globalThis.host_file_exists = (path) => String(path).indexOf('ui-state') >= 0;
+    globalThis.host_read_file = (path) => (String(path).indexOf('ui-state') >= 0 ? body : '');
+    bridgeMod.restoreUiSidecar(false);
+    globalThis.host_file_exists = () => false;
+    globalThis.host_read_file = () => '';
+    if (S.trackActiveBank[2] !== 0 || S.trackActiveBank[3] !== 0 || S.trackActiveBank[4] !== 0)
+        throw new Error('an out-of-range bank survived the clamp: ' + S.trackActiveBank.join(','));
+    S.activeBank = 0;
 });
 
 /* ── the SESSION FX bank: the same idea, one view over ──────────────────────

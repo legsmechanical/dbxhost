@@ -433,9 +433,21 @@ export const BANKS = [
 export const BANK_RESPONDER = 8, BANK_OCTAVE = 9, BANK_WHEN = 10;
 /* Sound mode's bank identity — assigned to S.activeBank by soundEnter /
  * soundRetarget / soundEnterMove (melodic + drum; a Conductor keeps its own
- * bank) and restored to trackActiveBank's origin by soundExit. NEVER persisted:
- * the two trackActiveBank sync sites guard against writing it. */
+ * bank), and RECORDED into trackActiveBank exactly like every other bank
+ * (Josh, 2026-08-25: "it records itself, like all the others"). It therefore
+ * persists in the sidecar's `tab` and is restored on load by re-ENTERING the
+ * screen — BANKS[11] is a stub, so the bank number alone draws nothing.
+ * ⚠ Before that ruling the identity was transient and both trackActiveBank
+ * sync sites guarded against writing it; the guards are gone, and the "bank to
+ * come back to" half they were carrying now lives in S.trackSoundOrigin. */
 export const BANK_SOUND = 11;
+
+/* The bank immediately BEFORE SOUND + CONFIG on the jog — AUTOMATION, which is
+ * both the melodic walk's last stop and the last entry of BANK_CYCLE_DRUM (CC
+ * PARAM). Where the top-edge left turn lands when no origin was remembered:
+ * a track restored from the sidecar on SOUND + CONFIG, or arrived at by a
+ * track switch. Keep in lockstep with the two cycles. */
+export const BANK_SOUND_PREV = 6;
 
 /* JS tick rate on device (~94 Hz measured). Older constants were calibrated
  * against a mistaken 196 Hz assumption — derive new timings from this. */

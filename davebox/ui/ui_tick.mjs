@@ -21,6 +21,7 @@ import {
     MoveNoteSession, MoveUndo, MoveLoop, MoveCopy, MoveRec, MoveCapture, MoveSample,
     LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
     ACTION_POPUP_TICKS, PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
+    BANK_SOUND,
     POLL_INTERVAL, NO_NOTE_FLASH_TICKS,
     CC_GRADIENT_BASE, CC_GRADIENT_LEVELS, CC_GRADIENT_SCALARS
 } from './ui_constants.mjs';
@@ -1268,6 +1269,25 @@ export function _tickImpl() {
             S.pendingBusMenu = false;
             if (!soundActive()) soundEnterBuses();
         }
+        /* ⭑ THE INVARIANT: in track view, activeBank === BANK_SOUND MEANS the
+         * screen is open. SOUND + CONFIG records itself in trackActiveBank like
+         * every other bank (Josh, 2026-08-25), so the bank can arrive without
+         * the screen — from a sidecar load, from a load that landed in session
+         * view and then switched, from any future writer of the bank. BANKS[11]
+         * is a stub, so the number alone draws the overview and nothing else:
+         * the bank IS the screen, and this is the one place that makes it true
+         * rather than each of those routes remembering to.
+         *
+         * SILENT — arriving is not a bank gesture. ⚠ Conductor tracks never
+         * take this bank (takeBankIdentity skips them); the pad-mode check keeps
+         * a hand-edited sidecar from opening a screen they have no row for. */
+        if (!S.sessionView && !soundActive() && S.activeBank === BANK_SOUND
+                && S.pendingSoundEnterTrack < 0 && S.moveCoRunTrack < 0
+                && !S.awaitingProjectSelect
+                && S.trackPadMode[S.activeTrack] !== PAD_MODE_CONDUCT) {
+            S.pendingSoundEnterTrack = S.activeTrack;
+            S.pendingSoundEnterSilent = true;
+        }
         if (S.pendingSoundEnterTrack >= 0) {
             const _st = S.pendingSoundEnterTrack;
             S.pendingSoundEnterTrack = -1;
@@ -1318,9 +1338,9 @@ export function _tickImpl() {
          *
          * ⚠ THE FOLLOW IS RETIRED for user gestures (Josh, 2026-08-24). A track
          * switch now LEAVES sound mode, in _switchActiveTrack, for every route
-         * alike — the per-track `trackSoundOpen` memory reopens the screen on
-         * any track that was left on it, which is what made following
-         * redundant. `_switchActiveTrack` and the sidecar restore are the only
+         * alike — the bank itself is the memory (trackActiveBank holds
+         * BANK_SOUND for a track left on it, and the invariant above reopens the
+         * screen), which is what made following redundant. `_switchActiveTrack` and the sidecar restore are the only
          * two writers of S.activeTrack, so the branch below can now be reached
          * ONLY from the restore, and only if sound mode were somehow open
          * across a project load. Kept as a backstop rather than deleted,

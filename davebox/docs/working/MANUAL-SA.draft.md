@@ -321,6 +321,9 @@ covered in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), a
   turning left past its top row returns to the bank you came from. Click and
   Back work as they do when it's opened with **Shift + Note/Session**. Conductor
   tracks don't have it.
+- **Each track remembers the bank it was on** — SOUND + CONFIG included. Scroll
+  away to another track and back, or quit and relaunch, and you land on the bank
+  you left that track on.
 
 ## 3.6 The Settings menu
 

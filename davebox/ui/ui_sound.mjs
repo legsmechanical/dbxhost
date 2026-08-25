@@ -38,7 +38,7 @@ import { S as GS } from './ui_state.mjs';
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
-import { instrOptions, fmtInstr, fmtVelOverride, BANK_SOUND,
+import { instrOptions, fmtInstr, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD } from './ui_constants.mjs';
 import { applyTrackConfig } from './ui_dsp_bridge.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -705,7 +705,6 @@ export function soundEnter(track, slot) {
     if (GS.sessionView) return;
     S.active = true;
     takeBankIdentity(track);
-    GS.trackSoundOpen[track] = true;
     GS.bankSelectTick = GS.tickCount;   /* the banks' display window: the screen
                                          * shows, then falls back to the overview
                                          * unless the jog is touched (soundRender) */
@@ -774,21 +773,45 @@ function flushForRetarget() {
     }
 }
 
-/* SOUND + CONFIG is its own BANK while its screen is up (Josh, 2026-08-23):
- * S.activeBank becomes BANK_SOUND, so sequencing, LEDs and the fallback
- * overview all run their standard-bank branches whatever bank the jog came
- * from (AUTO's step editing included). The origin stays in trackActiveBank —
- * untouched, because the identity is never written there — and soundExit
- * restores it. Conductor tracks keep their own bank: they have no sound bank
- * in the cycle, and their screens key on banks 0/8/9/10. */
+/* SOUND + CONFIG is its own BANK (Josh, 2026-08-23), and it RECORDS ITSELF
+ * like every other bank (Josh, 2026-08-25). S.activeBank becomes BANK_SOUND, so
+ * sequencing, LEDs and the fallback overview all run their standard-bank
+ * branches whatever bank the jog came from (AUTO's step editing included) —
+ * and trackActiveBank takes it too, so the track IS on this bank as far as the
+ * sidecar, the track switch and the exit restore are concerned.
+ *
+ * ⭑ That recording is the whole of the 08-25 fix. It was the ONE bank in the
+ * walk that never wrote itself down, so trackActiveBank stayed STALE on the
+ * bank you arrived from (always AUTOMATION — the only neighbour), and the exit
+ * restore, the co-run landing and "banks land somewhere I did not leave them"
+ * all fell out of that single omission.
+ *
+ * The bank to come BACK to on a top-edge left turn is the half trackActiveBank
+ * used to carry implicitly; it now has its own store, trackSoundOrigin.
+ * Conductor tracks keep their own bank: they have no sound bank in the cycle,
+ * and their screens key on banks 0/8/9/10. */
 function takeBankIdentity(track) {
-    if (GS.trackPadMode[track] !== PMC) GS.activeBank = BANK_SOUND;
+    if (GS.trackPadMode[track] === PMC) return;
+    /* Remember where we came from BEFORE overwriting the live mirror, and only
+     * on a genuine arrival — a retarget onto a track already on this bank must
+     * not overwrite its origin with BANK_SOUND. */
+    if (GS.activeBank !== BANK_SOUND && GS.trackActiveBank[track] !== BANK_SOUND)
+        GS.trackSoundOrigin[track] = GS.activeBank | 0;
+    GS.activeBank = BANK_SOUND;
+    GS.trackActiveBank[track] = BANK_SOUND;
+}
+
+/* Where leaving SOUND + CONFIG lands this track: the bank it was entered from,
+ * or — for a track restored from the sidecar already on it, or arrived at by a
+ * track switch — the bank the jog would have come through anyway. */
+function soundOriginBank(track) {
+    const o = GS.trackSoundOrigin[track];
+    return (typeof o === 'number' && o >= 0 && o !== BANK_SOUND) ? (o | 0) : BANK_SOUND_PREV;
 }
 
 export function soundRetarget(track, slot) {
     flushForRetarget();
     takeBankIdentity(track);
-    GS.trackSoundOpen[track] = true;
 
     S.track = track;
     /* A SESSION bus is global — following the active track must not drag its
@@ -891,7 +914,12 @@ function clearBusContext() {
     S.busLevelDirty = false;
 }
 
-export function soundExit() {
+/* `leaving` = the screen is being closed because we are going somewhere the
+ * track comes WITH us from — today only a track switch, which leaves the
+ * outgoing track ON this bank so returning to it returns here. The default is
+ * the deliberate CLOSE (Back, a left turn off the top row, a view change),
+ * which hands the bank back and forgets the origin. */
+export function soundExit(leaving) {
     /* Give the edit CCs back to Move FIRST. Everything below can throw or take a
      * slow path, and a stranded claim silently steals the user's native Undo. */
     reconcileEditCcClaim(true);
@@ -921,17 +949,28 @@ export function soundExit() {
     S.inflight.length = 0;
     if (S.busLevelDirty) engineSaveState();
     S.active = false;
-    /* Hand the bank identity back: while the screen was up S.activeBank was
-     * BANK_SOUND, so every bank-keyed behaviour ran its default branch; the
-     * bank the jog came from waited in trackActiveBank (the sync sites guard
-     * against BANK_SOUND leaking into it) and is where you land now. */
-    if (GS.activeBank === BANK_SOUND)
-        GS.activeBank = GS.trackActiveBank[GS.activeTrack] | 0;
-    /* CLOSING forgets; LEAVING does not. This is the deliberate close (Back, or
-     * a left turn off the top of the bank), so the track stops being one that
-     * returns to SOUND + CONFIG. The track-switch site re-arms the bit straight
-     * after calling us, because arriving somewhere else is not closing this. */
-    if (!soundIsGlobal() && S.track >= 0) GS.trackSoundOpen[S.track] = false;
+    /* CLOSING hands the bank back; LEAVING keeps it. On a close the track stops
+     * being on SOUND + CONFIG — in the live mirror AND in trackActiveBank,
+     * which now records this bank like any other, so the two must move together
+     * or the next load/switch would put you straight back on a screen you just
+     * closed. The origin crumb is spent either way it is read, so it is dropped
+     * here and re-earned by the next entry. */
+    if (!leaving && !soundIsGlobal() && S.track >= 0) {
+        const _back = soundOriginBank(S.track);
+        if (GS.trackActiveBank[S.track] === BANK_SOUND)
+            GS.trackActiveBank[S.track] = _back;
+        if (GS.activeBank === BANK_SOUND && S.track === GS.activeTrack)
+            GS.activeBank = _back;
+        GS.trackSoundOrigin[S.track] = -1;
+    }
+    /* A global bus (Master/Send FX) never took a track's bank, but it can be
+     * open while activeBank still reads BANK_SOUND from a track flavour that
+     * preceded it — fall back to the active track's recorded bank rather than
+     * leaving the identity stranded on a stub. */
+    if (GS.activeBank === BANK_SOUND && !leaving) {
+        const _tb = GS.trackActiveBank[GS.activeTrack] | 0;
+        GS.activeBank = (_tb === BANK_SOUND) ? soundOriginBank(GS.activeTrack) : _tb;
+    }
     clearBusContext();
     S.pendingAction = null;
     S.pendingDiscover = 0;
@@ -1496,7 +1535,6 @@ export function soundEnterMove(track) {
     if (S.active) flushForRetarget();
     S.active = true;
     takeBankIdentity(track);
-    GS.trackSoundOpen[track] = true;
     /* Only a genuine ENTRY opens the banks' display window. Arriving here as the
      * track-FOLLOW — Shift+jog stepping onto a Move-routed track, ui_tick's
      * reconcile block — is not a bank gesture, and stamping made the SOUND +
@@ -3478,10 +3516,11 @@ export function soundOnCC(d1, d2, decodeDelta) {
             /* This screen is also the SOUND + CONFIG bank — the one past the
              * last clip bank on the jog (ui_input_cc's bank walk). So a left
              * turn that cannot move the cursor any further up leaves the
-             * screen the way it was entered: back onto the clip bank the jog
-             * came from (`GS.activeBank` is untouched by sound mode, so that
-             * is wherever it already points). Back and jog-click keep their
-             * meanings; only the clamped top edge gains one.
+             * screen the way it was entered: back onto the bank the jog came
+             * from, which soundExit restores from trackSoundOrigin (the live
+             * mirror reads BANK_SOUND while the screen is up — the bank IS this
+             * screen now). Back and jog-click keep their meanings; only the
+             * clamped top edge gains one.
              * ⚠ Track flavour only. The session buses (Master/Send FX) are
              * entered from the session FX list, not from a bank, so for them
              * the top edge stays a clamp. */

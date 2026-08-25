@@ -221,20 +221,22 @@ step('⭑ ...but the track REMEMBERS it: leave and come back and SOUND + CONFIG 
     /* Josh, on device: "sound+config doesn't stick when i leave the track and
      * come back. it lands on automation instead."
      *
-     * The completion of "a bank is per-track". `trackActiveBank` deliberately
-     * never holds BANK_SOUND — it stores the jog-reachable clip bank and it is
-     * what the sidecar serializes — so on the way back it handed over the
-     * ORIGIN bank (AUTOMATION, the bank you jog right from to get here). The
-     * memory needs its own bit; `trackSoundOpen` is it.
+     * The completion of "a bank is per-track". `trackActiveBank` used to skip
+     * BANK_SOUND — it stored the jog-reachable clip bank and it is what the
+     * sidecar serializes — so on the way back it handed over the bank you jog
+     * right FROM (AUTOMATION). Josh ruled the fix on 2026-08-25: the bank
+     * RECORDS ITSELF like all the others, and the screen is re-entered when the
+     * track comes back on it.
      *
      * ⭑ SILENT on return. Arriving is not a bank gesture, so the display window
      * must stay shut — otherwise the screen pops up over the track overview
      * mid-switch, which is exactly what the display-law fix removed. */
     snd.soundExit();
-    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackSoundOpen[t] = false; }
-    S.trackActiveBank[2] = 6;                  /* track 2's origin: AUTOMATION */
+    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackSoundOrigin[t] = -1; }
+    S.trackActiveBank[2] = 6;                  /* track 2 starts on AUTOMATION */
     S.trackActiveBank[3] = 1;                  /* track 3's own bank */
     S.activeTrack = 2;
+    S.activeBank = 6;
     S.ledInitComplete = true;
     snd.soundEnter(2, 2);
     if (S.activeBank !== BANK_SOUND) throw new Error('control: identity not taken');
@@ -266,16 +268,21 @@ step('⭑ ...but the track REMEMBERS it: leave and come back and SOUND + CONFIG 
 });
 
 step('⚠ a track CLOSED deliberately does not come back on SOUND + CONFIG', () => {
-    /* Leaving remembers; CLOSING forgets. Without this half the bit is
-     * write-only and every track you ever opened the screen on would re-open it
-     * forever — the opposite bug, and just as silent. */
-    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackSoundOpen[t] = false; }
+    /* Leaving remembers; CLOSING hands the bank back. Without this half the
+     * recording is write-only and every track you ever opened the screen on
+     * would re-open it forever — the opposite bug, and just as silent. */
+    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackSoundOrigin[t] = -1; }
     S.trackActiveBank[2] = 6; S.trackActiveBank[3] = 1;
     S.activeTrack = 2;
+    S.activeBank = 6;                          /* the live mirror agrees — it is
+                                                * what the entry reads as the origin */
     snd.soundEnter(2, 2);
+    if (S.trackActiveBank[2] !== BANK_SOUND)
+        throw new Error('control: entering did not record the bank');
     snd.soundExit();                           /* the deliberate close (Back / left off the top) */
-    if (S.trackSoundOpen[2])
-        throw new Error('closing did not forget — the track will re-open the screen on return');
+    if (S.trackActiveBank[2] !== 6)
+        throw new Error('closing did not hand the bank back (got ' + S.trackActiveBank[2] +
+                        ') — the track will re-open the screen on return');
 
     shift(true); turn(); globalThis.tick();            /* 2 -> 3 */
     send(14, 127); globalThis.tick();                  /* 3 -> 2, back again */
@@ -294,17 +301,20 @@ step('⭑ Shift+PAD means exactly what Shift+jog means — one rule, every route
      * to the sound+config bank and they'll land there from shift+pad just like
      * they would from shift+scroll, right?" — right. The per-track memory makes
      * the follow redundant, so the exit moved into _switchActiveTrack and every
-     * switch route inherits it instead of six sites agreeing by hand.
+     * switch route inherits it instead of six sites agreeing by hand. Since
+     * 2026-08-25 that memory IS the recorded bank — trackActiveBank holding
+     * BANK_SOUND — not a bit beside it.
      *
      * Bottom-row pads are notes TRACK_PAD_BASE(68)+track under Shift. */
     const padSelect = (t) => globalThis.onMidiMessageInternal(
         new Uint8Array([0x90, 68 + t, 127]));
 
     snd.soundExit();
-    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackSoundOpen[t] = false; }
-    S.trackActiveBank[2] = 6;                  /* track 2's origin: AUTOMATION */
+    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackSoundOrigin[t] = -1; }
+    S.trackActiveBank[2] = 6;                  /* track 2 starts on AUTOMATION */
     S.trackActiveBank[4] = 1;                  /* track 4's own bank */
     S.activeTrack = 2;
+    S.activeBank = 6;
     S.sessionView = false;
     S.ledInitComplete = true;
     snd.soundEnter(2, 2);

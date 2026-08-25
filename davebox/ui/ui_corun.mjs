@@ -223,7 +223,10 @@ export function enterMoveNativeCoRun(t, origin) {
      *
      * Written to trackActiveBank too, not just activeBank — soundExit and the
      * track-switch sites both restore from there, so setting only the live
-     * value would be undone the moment either ran. */
+     * value would be undone the moment either ran. ⚠ Still required after the
+     * 08-25 change, and MORE so: SOUND + CONFIG now records ITSELF there, so
+     * without this write a track entering co-run from that screen would be
+     * stored on BANK_SOUND and walk straight back into it on the way out. */
     S.activeBank = 0;
     S.trackActiveBank[t] = 0;
     /* WHERE you came in from, so Menu can put you back there (P8a 1d).

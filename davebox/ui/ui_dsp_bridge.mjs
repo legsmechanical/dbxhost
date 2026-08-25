@@ -28,7 +28,7 @@ import {
 
 import {
     NUM_TRACKS, NUM_CLIPS, NUM_STEPS, DRUM_LANES,
-    TPS_VALUES, BANKS, PAD_MODE_DRUM,
+    TPS_VALUES, BANKS, PAD_MODE_DRUM, BANK_SOUND,
     INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK,
     MoveRec, LED_OFF, parseActionRaw
 } from './ui_constants.mjs';
@@ -1345,13 +1345,25 @@ export function restoreUiSidecar(applyDefaultsNow) {
         if (us.v >= 8 && Array.isArray(us.tab)) {
             for (let _t = 0; _t < NUM_TRACKS; _t++) {
                 const _b = us.tab[_t];
-                S.trackActiveBank[_t] = (typeof _b === 'number' && _b >= 0 && _b <= 7) ? (_b | 0) : 0;
+                /* BANK_SOUND is a legal stored bank (Josh, 2026-08-25): SOUND +
+                 * CONFIG records itself like every other one, so a track left on
+                 * it comes back to it. ⚠ The old clamp was 0-7, which would have
+                 * silently turned a persisted 11 into 0 — a load that lands you
+                 * somewhere you did not leave, which is the symptom this whole
+                 * change is about. Anything else still falls back to 0. */
+                S.trackActiveBank[_t] = (typeof _b === 'number' &&
+                    ((_b >= 0 && _b <= 7) || _b === BANK_SOUND)) ? (_b | 0) : 0;
             }
             /* Sync live mirror to the restored active track. Subsequent
              * post-restore validity checks (e.g. hide bank 7 on melodic) still
              * apply because activeBank is a regular live variable from here on. */
             S.activeBank = S.trackActiveBank[S.activeTrack] | 0;
             if (S.activeBank === 7) S.allLanesConfirmed = false;
+            /* A restored BANK_SOUND needs its SCREEN re-opened (BANKS[11] is a
+             * stub), but NOT from here: tick holds that as an invariant — in
+             * track view, activeBank === BANK_SOUND means the screen is open —
+             * and re-opening it there covers this load, a load that arrives in
+             * session view, and every other route in one rule. */
         }
         if (us.v >= 9 && Array.isArray(us.am)) {
             for (let _t = 0; _t < NUM_TRACKS; _t++) {

@@ -477,9 +477,10 @@ export function clearRow(rowIdx) {
 export function _switchActiveTrack(newT) {
     /* A track switch LEAVES sound mode — every route, no exceptions (Josh,
      * 2026-08-24). SOUND + CONFIG is a BANK and a bank is per-track, so the new
-     * track lands on ITS bank; and because `trackSoundOpen` re-opens the screen
-     * for any track that was left on it, that IS "landing on SOUND + CONFIG"
-     * whenever the track was there.
+     * track lands on ITS bank; and because the bank RECORDS ITSELF in
+     * trackActiveBank like every other one (Josh, 2026-08-25), "the new track
+     * was left on SOUND + CONFIG" is just its stored bank reading BANK_SOUND —
+     * no separate bit, and the screen is re-entered to draw it.
      *
      * ⭑ That memory is what retired the old FOLLOW. The follow existed so you
      * could switch tracks mid-edit and compare two sounds — but with the bank
@@ -494,31 +495,28 @@ export function _switchActiveTrack(newT) {
      * shape. ⚠ A GLOBAL bus (Master/Send FX) is excluded: it is not a track's
      * sound, so a track switch has nothing to say about it.
      *
-     * LEAVING remembers, CLOSING forgets — so the bit is re-armed straight after
-     * the exit, which clears it. Before the switch, so sound mode's queued
-     * writes flush while the outgoing track is still their target. */
-    if (soundActive() && !soundIsGlobal()) {
-        const _sndT = S.activeTrack;
-        soundExit();
-        S.trackSoundOpen[_sndT] = true;
-    }
-    /* NEVER persist BANK_SOUND: while sound mode is up the ORIGIN bank waits
-     * in trackActiveBank, and overwriting it with the identity would strand
-     * the outgoing track on a bank the jog cannot reach. (Shift+jog switches
-     * tracks with sound mode open — this site IS live then.) */
-    if (S.activeBank !== BANK_SOUND)
-        S.trackActiveBank[S.activeTrack] = S.activeBank;
+     * LEAVING remembers, CLOSING forgets — hence the `leaving` exit, which
+     * keeps the outgoing track's bank on BANK_SOUND instead of handing it back.
+     * Before the switch, so sound mode's queued writes flush while the outgoing
+     * track is still their target. */
+    if (soundActive() && !soundIsGlobal()) soundExit(true);
+    /* Records BANK_SOUND like any other bank now (Josh, 2026-08-25) — the old
+     * guard here existed only because the identity was transient and writing it
+     * would have stranded the track on a bank the jog could not reach. It can
+     * be reached: the entry below re-opens the screen. */
+    S.trackActiveBank[S.activeTrack] = S.activeBank;
     S.activeTrack = newT | 0;
     S.activeBank = S.trackActiveBank[S.activeTrack] | 0;
-    /* ...unless the track was LEFT on SOUND + CONFIG, which trackActiveBank
-     * cannot say (it never holds BANK_SOUND). Queued rather than opened here:
+    /* A track recorded on SOUND + CONFIG needs its SCREEN re-opened: BANKS[11]
+     * is a stub, so the bank number alone draws the overview and nothing else.
+     * Queued rather than opened here:
      * entry drives shadow_get/set_param traffic that must run on the tick
      * budget, which is what pendingSoundEnterTrack exists for — and tick's
      * handler already declines when sound mode is still open, so the routes
      * that FOLLOW the track (Shift+pad, launchers, remote UI) are unaffected.
      * SILENT: arriving is not a bank gesture, so the display window stays shut
      * and the screen behaves like any other bank — touch the jog to see it. */
-    if (S.trackSoundOpen[S.activeTrack]) {
+    if (S.activeBank === BANK_SOUND) {
         S.pendingSoundEnterTrack = S.activeTrack;
         S.pendingSoundEnterSilent = true;
     }
