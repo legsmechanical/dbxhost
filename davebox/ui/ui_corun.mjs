@@ -213,6 +213,19 @@ export function enterMoveNativeCoRun(t, origin) {
         return;
     }
     S.moveCoRunTrack = t;
+    /* ⭑ Land on a CLIP bank (Josh, 2026-08-24: "entering co-run should always
+     * land on a clip bank"). Co-run is reached through SOUND + CONFIG, which
+     * sits one jog past AUTOMATION — so the bank underneath is whatever you
+     * walked through to get there, and in practice that is AUTOMATION. Steps
+     * then edit automation lanes and the row reads as dead, which is exactly
+     * the "step buttons do nothing" report: measured as bank=6, no modifier
+     * stuck, the presses arriving fine.
+     *
+     * Written to trackActiveBank too, not just activeBank — soundExit and the
+     * track-switch sites both restore from there, so setting only the live
+     * value would be undone the moment either ran. */
+    S.activeBank = 0;
+    S.trackActiveBank[t] = 0;
     /* WHERE you came in from, so Menu can put you back there (P8a 1d).
      * 'sound' = the SYNTH row of the track's Move sound mode; anything else
      * (the track menu's `Edit Synth...`) means track view, which is where a

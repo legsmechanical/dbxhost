@@ -23,6 +23,8 @@ function step(label, fn) {
     try { fn(); ok(label); } catch (e) { bad(label, e); }
 }
 
+import { readFileSync } from 'fs';
+
 let opened = null;
 globalThis.host_register_primary = () => true;
 globalThis.host_open_service = (id, opts) => { opened = { id, opts }; return true; };
@@ -218,6 +220,63 @@ step('⚠ CONTROL: outside co-run, Copy is OURS and is not forwarded', () => {
     if (!S.copyHeld)
         throw new Error('Copy no longer arms our own gesture outside co-run');
     S.copyHeld = false;
+});
+
+/* ── co-run lands on a CLIP bank ───────────────────────────────────────────
+ *
+ * Josh, 2026-08-24: "entering co-run should always land on a clip bank."
+ *
+ * ⭑ This is the resolution of the "step buttons do nothing in co-run" report,
+ * and it was NOT an input bug. Instrumentation showed the presses arriving
+ * fine, no modifier stuck — and `bank=6`, AUTOMATION. Steps there edit
+ * automation lanes, so with no lane armed the row is silently inert. Co-run is
+ * reached through SOUND + CONFIG, which sits one jog PAST automation, so the
+ * bank underneath was reliably the one that makes steps look dead.
+ *
+ * ⚠ trackActiveBank must move too: soundExit and every track-switch site
+ * restore activeBank from it, so setting only the live value gets undone by
+ * whichever runs first. */
+step('⭑ entering co-run lands on the CLIP bank, not whatever was underneath', () => {
+    S.sessionView = false;
+    S.moveCoRunTrack = -1;
+    S.activeTrack = 2;
+    S.trackChannel[2] = 1; S.trackRoute[2] = 1;
+    S.activeBank = 6;                       /* AUTOMATION — what SOUND + CONFIG leaves behind */
+    S.trackActiveBank[2] = 6;
+
+    corun.enterMoveNativeCoRun(2, 'sound');
+
+    if (S.activeBank !== 0)
+        throw new Error('co-run kept bank ' + S.activeBank +
+                        (S.activeBank === 6 ? ' (AUTOMATION — steps edit lanes, row reads dead)' : ''));
+    if (S.trackActiveBank[2] !== 0)
+        throw new Error('trackActiveBank still ' + S.trackActiveBank[2] +
+                        ' — soundExit or a track switch would put the old bank straight back');
+    S.moveCoRunTrack = -1;
+});
+
+/* ── Shift+Note/Session no longer OPENS anything ───────────────────────────
+ *
+ * Josh, 2026-08-24: "I want to retire shift+menu to enter sound mode now that
+ * we have that bank set up" — SOUND + CONFIG (track view) and MASTER + SEND FX
+ * (session view) are both jog banks now, so the gesture was a second door to a
+ * place the jog already reaches, and having two doors is what let people enter
+ * co-run by a route that skipped the bank walk.
+ *
+ * ⚠ Source-pinned rather than driven: the opener is GONE, and a dispatch test
+ * can only show that nothing happened — which is equally true if the whole
+ * handler broke. The pin names the two things that must not come back. */
+step('⚠ Shift+Note/Session opens neither sound mode nor the session buses', () => {
+    const src = readFileSync('ui/ui_input_cc.mjs', 'utf8');
+    const i = src.indexOf('if (d1 === MoveNoteSession)');
+    if (i < 0) throw new Error('the Note/Session handler moved — re-anchor this pin');
+    const body = src.slice(i, i + 4000);
+    if (/pendingSoundEnterTrack\s*=/.test(body))
+        throw new Error('Shift+Note opens sound mode again — the bank walk is the only door');
+    if (/pendingBusMenu\s*=\s*true/.test(body))
+        throw new Error('Shift+Note opens the session buses again');
+    if (!/soundExit\(\)/.test(body))
+        throw new Error('it no longer CLOSES either — that half was deliberately kept');
 });
 
 process.exit(failed);

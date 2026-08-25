@@ -1235,55 +1235,28 @@ function _onCC_buttons(d1, d2) {
                 return;
             }
             if (S.shiftHeld) {
-                /* Shift+Note/Session = "edit this track's sound". One gesture,
-                 * two destinations, chosen by the track's route.
-                 *
-                 * Only the MOVE branch waits for the Shift release — co-run
-                 * makes the shim forward Shift to Move firmware, so a held
-                 * Shift would leak into it. Sound mode isn't co-run, so the
-                 * Schwung branch fires now and just arms tick() to enter
-                 * (entry's shadow_get/set_param traffic belongs on the tick
-                 * budget, not in a MIDI handler; the slot itself is a direct
-                 * slot derived from the track index now).
-                 *
-                 * The global menu is NOT opened here — it lives on Shift+Step2
-                 * (_doShiftStepCommon idx 1). This was a duplicate opener; the
-                 * gesture is worth more than the second door. Closing an open
-                 * menu stays, so Shift+Note/Session never traps you in it. */
+                /* Shift+Note/Session is a CLOSER now, not an opener — see the
+                 * retirement note below. It still shuts sound mode or the
+                 * global menu, and does nothing otherwise. */
                 if (soundActive()) { soundExit(); forceRedraw(); }
                 else if (S.globalMenuOpen) { S.globalMenuOpen = false; forceRedraw(); }
-                else if (S.sessionView) {
-                    /* In SESSION view the same gesture opens the session-wide FX
-                     * — Master and the two Sends. They belong to the set, not to
-                     * whichever track is selected, so they are reached from the
-                     * screen that is already about the whole set rather than
-                     * from inside one track's sound. Deferred like every other
-                     * entry here: opening reads the chain. */
-                    S.pendingBusMenu = true;
-                    S.screenDirty = true;
-                }
-                /* EVERY route takes this door. A Schwung track opens its chain,
-                 * a Move-routed one its instrument bus (its sound is Move's
-                 * voice, one jog-click further in on the Generator row), and an
-                 * EXT one a screen holding just its destination.
+                /* ⚠⚠ RETIRED 2026-08-24 (Josh): Shift+Note/Session no longer
+                 * OPENS anything. Both destinations it used to reach are banks
+                 * on the jog now — SOUND + CONFIG one past AUTOMATION in track
+                 * view, MASTER + SEND FX one past SEND B in session view — and
+                 * a second door to a bank is a gesture spent on nothing. The
+                 * bank walk is the only way in, which also makes it the only
+                 * way into co-run, as Josh asked.
                  *
-                 * ⚠ EXT used to be refused here with 'NO SOUND TO EDIT'. That was
-                 * right while this screen was only about sound; it is a TRAP now
-                 * that `Track to` lives on it — refusing entry would leave a
-                 * track routed to MIDI out with nowhere to route it back from,
-                 * stranded on the device. An EXT track genuinely has no sound,
-                 * and the near-empty screen says so honestly.
-                 * ⭑ The tick-side FOLLOW was fixed with the row (a83fb821); this
-                 * is the other half — the ENTRY — and missing it left the trap
-                 * open through the front door while the back one was closed.
-                 * ⭑ Also drops the Shift-RELEASE deferral co-run needed: this
-                 * screen never hands Shift to Move firmware. */
-                else {
-                    S.globalMenuOpen = false;
-                    S.lastSentMenuEditValue = null;
-                    S.pendingSoundEnterTrack = S.activeTrack;
-                    S.screenDirty = true;
-                }
+                 * ⭑ The way OUT is deliberately KEPT (the soundExit branch
+                 * above): a gesture that can no longer open a screen can still
+                 * close one, and removing it would strand anyone whose muscle
+                 * memory reaches for it. */
+                /* ⚠ The EXT trap the old door had to dodge — refusing entry on
+                 * a MIDI-routed track would strand it with no way to route back
+                 * — is not gone, it MOVED: the bank walk is now the only way to
+                 * `Track to`, and it lets every route through, EXT included. */
+
             } else if (soundActive()) {
                 /* The way OUT, from any depth. Back walks the stack one level
                  * at a time — fine when you're one step in, tedious from a
