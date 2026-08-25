@@ -2,12 +2,16 @@
  * kit's list overlay over the page you were on, turns move a selection, and
  * letting go of the jog TOUCH commits. Shift+jog goes back to stepping tracks.
  *
- * ⭑⭑ ONLY THE JOG CLICK APPLIES A BANK (Josh, 2026-08-25). The touch release,
- * the settle timeout, Shift+jog and Back all ABANDON. One rule, and it removes
- * a class of bug rather than adding a case: the timeout used to commit, so a
- * picker you forgot about quietly changed your bank.
+ * TWO gestures commit: the jog CLICK (choose while staying in contact, so the
+ * card stays up under your finger) and the touch RELEASE ("I am done, take
+ * it"). Both call applyBankPick — two gestures for one behaviour, not two
+ * implementations of it.
  *
- * ⚠ A turn is TOUCH, turn, then either CLICK (choose) or RELEASE (walk away). A test that
+ * ⚠ The settle timeout does NOT commit. It is the one path that fires with
+ * nobody asking, and a picker you forgot about must not quietly change your
+ * bank. Shift+jog, Shift+click and Back abandon too — they close the picker
+ * BEFORE any release, which is also why a release cannot resurrect an
+ * abandoned pick. A test that
  * sends the CC alone leaves the gesture unfinished and nothing lands.
  *
  * ⚠⚠ Nothing may be applied while browsing. The old walk applied every step as
@@ -119,18 +123,44 @@ step('⭑ the CLICK commits the selection', () => {
     touch(false); globalThis.tick();
 });
 
-step('⭑⭑ letting go ABANDONS — releasing is not choosing', () => {
-    /* The change of model: release used to commit. Nothing was applied while
-     * browsing, so walking away leaves the card you were already on. */
+step('⭑ letting go ALSO commits — the other natural end of the gesture', () => {
     reset();
-    const before = S.activeBank;
+    const cyc = bankCycleForMode(0);
     touch(true); jog(1); jog(1); globalThis.tick();
-    if (S.bankPickerSel < 0) throw new Error('control: the picker did not open');
+    const want = cyc[S.bankPickerSel];
+    if (S.activeBank === want) throw new Error('control: it applied before the release');
     touch(false); globalThis.tick();
+    if (S.activeBank !== want)
+        throw new Error('the release did not commit: landed on ' + S.activeBank);
     if (S.bankPickerSel >= 0) throw new Error('the picker stayed open after the release');
-    if (S.activeBank !== before)
-        throw new Error('the release applied a bank (' + S.activeBank + ') — only the ' +
-                        'click may do that');
+});
+
+step('⭑ the picked bank LINGERS after a release-commit', () => {
+    /* ⚠ The release's own teardown stands the display window down, and it runs
+     * AFTER the commit armed it — the bug that bit three times. It is the
+     * OWNER that declines a same-pass teardown, not this path, which is why
+     * adding release-commit back needed no new guard. */
+    reset();
+    touch(true); jog(1); globalThis.tick();
+    touch(false); globalThis.tick();
+    if (S.bankSelectTick < 0)
+        throw new Error('the picked bank has no display window — the release wiped ' +
+                        'what its own commit had just armed');
+});
+
+step('⚠ a click then its release does NOT apply twice', () => {
+    /* Both gestures commit, so the ordinary case fires both. The click closes
+     * the picker, so the release finds nothing — but if it did not, the second
+     * apply would land on a selection index into a stale cycle. */
+    reset();
+    const cyc = bankCycleForMode(0);
+    touch(true); jog(1); globalThis.tick();
+    const want = cyc[S.bankPickerSel];
+    click();
+    if (S.bankPickerSel >= 0) throw new Error('control: the click left the picker open');
+    touch(false); globalThis.tick();
+    if (S.activeBank !== want)
+        throw new Error('the bank moved again on the release: ' + S.activeBank);
 });
 
 step('⭑ the picked bank stays on screen — you are still touching the wheel', () => {
@@ -200,8 +230,10 @@ step('⭑ Shift+jog DROPS an open picker — and does not commit it', () => {
                         S.activeBank);
     if (S.activeTrack !== 3) throw new Error('the track did not step: ' + S.activeTrack);
     shift(false); touch(false); globalThis.tick();
+    /* ⚠ The release commits an OPEN picker, so this also proves the drop really
+     * closed it — an abandoned pick must not be resurrected by letting go. */
     if (S.activeBank !== bankBefore)
-        throw new Error('something after the drop committed the abandoned pick');
+        throw new Error('the release resurrected the abandoned pick: ' + S.activeBank);
 });
 
 step('⭑ the bank card names its TRACK, so a latched card still says where you are', () => {

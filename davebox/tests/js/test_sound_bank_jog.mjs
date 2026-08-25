@@ -57,8 +57,8 @@ const { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, BANK_WHEN, BANK
 
 const send  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 const note  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0x90, d1, d2]));
-/* ⚠ A jog turn in TRACK VIEW is TOUCH, turn, CLICK, release: the turn opens the
- * bank picker and only the CLICK applies a bank (Josh, 2026-08-25). A test that
+/* ⚠ A jog turn in TRACK VIEW is TOUCH, turn, then CLICK or RELEASE — the turn
+ * opens the bank picker and either gesture applies the selection. A test that
  * sends the CC alone leaves the gesture unfinished and nothing lands.
  * (Inside sound mode the jog is that screen's own — the picker never opens, the
  * click drives the row under the cursor, and this helper is not used for it.)

@@ -52,6 +52,7 @@ import { applyTrackConfig,
 import { recordNoteOn, recordNoteOff,
     extHeldNotes, extCountInCapture } from './ui_record.mjs';
 import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons } from './ui_input_pads.mjs';
+import { applyBankPick } from './ui_input_cc.mjs';
 import { standDownBankDisplay } from './ui_state.mjs';
 import { _onCCMsg } from './ui_input_cc.mjs';
 import { soundActive, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw } from './ui_sound.mjs';
@@ -350,11 +351,20 @@ globalThis.onMidiMessageInternal = function (data) { try { _onMidiInternalImpl(d
  * site remembering the rule. */
 function _jogTouchRelease() {
     S.jogTouched = false;
-    /* ⚠ Letting go ABANDONS an open pick — it does not apply it (Josh,
-     * 2026-08-25). Only the jog CLICK applies a bank. Nothing was changed while
-     * browsing, so the card underneath is still the bank you were on and
-     * "nothing happened" is visible rather than silent. */
-    if (S.bankPickerSel >= 0) { S.bankPickerSel = -1; S.bankPickerIdleTick = -1; }
+    /* Letting go COMMITS an open pick, as the click does (Josh, 2026-08-25:
+     * both feel natural and serve different purposes — the click chooses while
+     * you stay in contact, the release is "I am done, take it").
+     *
+     * ⚠ Both paths converge on applyBankPick, so this is two GESTURES for one
+     * behaviour, not two implementations of it. A click has already closed the
+     * picker by the time its release arrives, so this cannot double-apply, and
+     * the abandon paths (Shift+jog, Shift+click) close it first for the same
+     * reason.
+     *
+     * ⭑ The window this arms survives the standDownBankDisplay below because
+     * the owner declines a teardown from the same input pass — the bug that
+     * bit three times is why that rule exists, and it makes this free. */
+    if (S.bankPickerSel >= 0) applyBankPick();
     standDownBankDisplay();
     forceRedraw();
 }
