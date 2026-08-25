@@ -64,8 +64,14 @@ step('move-native declares the ruled split', () => {
     corun.enterMoveNativeCoRun(2, 'track');
     if (!opened || opened.id !== 'move_native') throw new Error('service not opened');
     const m = opened.opts.keep_mask;
-    const mustKeep = ['PADS', 'STEPS', 'MENU', 'SHIFT', 'PLAY', 'REC', 'SAMPLE', 'LOOP'];
-    const mustCede = ['JOG', 'TRACK', 'KNOBS', 'MASTER', 'BACK', 'TOUCH', 'MUTE', 'COPY', 'DELETE'];
+    /* RE-RULED by Josh 2026-08-24, after living with the first cut: cede exactly
+     * the instrument-editing controls, keep everything else "fully as it is
+     * outside of co-run in track view". TRACK moved KEEP-side with that — they
+     * are the clip buttons, and selecting clips is what they do everywhere
+     * else. Shift stayed ours (no recalled use for it in Move's editor). */
+    const mustKeep = ['PADS', 'STEPS', 'MENU', 'SHIFT', 'TRACK',
+                      'PLAY', 'REC', 'SAMPLE', 'LOOP'];
+    const mustCede = ['JOG', 'KNOBS', 'MASTER', 'BACK', 'TOUCH', 'MUTE', 'COPY', 'DELETE'];
     for (const g of mustKeep) if (!(m & GRP[g])) throw new Error('does not keep ' + g);
     for (const g of mustCede) if (m & GRP[g]) throw new Error('keeps ' + g + ' (must cede)');
     if (m & GRP.DEAD_TRANSPORT)
@@ -73,10 +79,15 @@ step('move-native declares the ruled split', () => {
     if (!(m & GRP.KEEP_BACK)) throw new Error('lost the framework Back-exit opt-out');
 });
 
-step('the LED mask is the keep mask plus the TRACK indicator', () => {
+step('the LED mask matches the keep mask — no lights/input split any more', () => {
+    /* There used to be one: we owned CC 40-43's LIGHTS to blink a paired-track
+     * indicator while their PRESSES ceded to Move. Both halves are ours now, so
+     * a divergence here would mean a surface we light but cannot operate. */
     const m = opened.opts.led_keep_mask;
     if (m !== (opened.opts.keep_mask | GRP.TRACK))
         throw new Error('led mask drifted: ' + m + ' vs ' + (opened.opts.keep_mask | GRP.TRACK));
+    if (!(opened.opts.keep_mask & GRP.TRACK))
+        throw new Error('TRACK is lit but its presses cede — lights without input');
 });
 
 process.exit(failed);

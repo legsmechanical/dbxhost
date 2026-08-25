@@ -36,7 +36,7 @@ import { ensureGlobalMenuFresh } from './ui_menu.mjs';
 import { bankCyclePos } from './ui_pure.mjs';
 import { syncDrumRepeatState } from './ui_drummodel.mjs';
 import {
-    effectiveClip, paintCoRunSideButtons,
+    effectiveClip,
     bankHasAltParams, altIndicatorActive
 } from './ui_leds.mjs';
 import { soundRender, soundActive, soundIsGlobal,
@@ -952,7 +952,11 @@ function drawUIBody() {
          * POLL_INTERVAL to re-assert over Move firmware's pass-through writes. */
         const _coRunCh = (S.trackChannel[S.moveCoRunTrack] | 0);
         const _litMask = (_coRunCh >= 1 && _coRunCh <= 4) ? (1 << (_coRunCh - 1)) : 0;
-        paintCoRunSideButtons(_litMask, (S.tickCount % POLL_INTERVAL) === 0);
+        /* ⚠ The paired-track blink is GONE (Josh, 2026-08-24). It owned CC 40-43
+         * so co-run could show which track was paired — but those are the clip
+         * buttons, and Josh's rule is that everything outside the instrument-
+         * editing controls behaves as it does in track view. They paint clip
+         * state now, from updateTrackLEDs, and their presses are kept. */
         return;
     }
     /* Alt-param mode is transient: any bank change, track change, or entering

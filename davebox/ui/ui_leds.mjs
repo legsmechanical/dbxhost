@@ -65,38 +65,17 @@ export function trackDimColor(t) { return TRACK_DIM_COLORS[t]; }
  * light-grey; the rest stay dark grey. Shared by Schwung co-run (mask = slots
  * receiving the track's channel) and Move co-run (single paired track) so the
  * blink rate, colors, and force cadence stay in one place. */
-export function paintCoRunSideButtons(litMask, force) {
-    const blinkOn = (Math.floor(Date.now() / 250) % 2) === 1;
-    for (let i = 0; i < 4; i++) {
-        const lit = (litMask >> i) & 1;
-        setButtonLED(43 - i, lit ? (blinkOn ? LightGrey : DarkGrey) : DarkGrey, force);
-    }
-}
 
 export function updateStepLEDs() {
     if (!S.ledInitComplete) return;
 
-    /* Co-run (Schwung chain-edit or Move-native): the co-run target owns the
-     * surface, so blank the step button main LEDs — except Step 3 (index 2),
-     * which blinks dark-grey/bright-white at a steady rate as the "Edit Slot/Synth"
-     * affordance. Return early so the normal step grid neither paints nor burns
-     * LED budget (see SCHWUNG_DAVEBOX_LIMITATIONS.md §14). */
-    if (S.moveCoRunTrack >= 0) {
-        /* Blink off wall-clock, NOT tickCount (rate stays steady if tick()
-         * slows). ~250ms half-period. Date.now() works on-device (see ui.js). */
-        const _blinkOn = (Math.floor(Date.now() / 250) % 2) === 1;
-        /* Force-resend every POLL_INTERVAL so the blanking re-asserts over the
-         * other layer's writes — Move firmware paints these step buttons (its
-         * own LED writes pass through under skip_led_clear, e.g. red on track 1)
-         * in Move co-run, and the shim's overtake LED loop eats the blink's lit
-         * phase in Schwung co-run (making it look slower). Mirrors the step-icon
-         * force below. Without it our LED_OFF lands once then loses to that layer. */
-        const _force = (S.tickCount % POLL_INTERVAL) === 0;
-        for (let i = 0; i < 16; i++) {
-            setLED(16 + i, i === 2 ? (_blinkOn ? White : DarkGrey) : LED_OFF, _force);
-        }
-        return;
-    }
+    /* ⚠ NO co-run branch here any more (Josh, 2026-08-24). This used to blank
+     * every step button and blink Step 3 as an "Edit Slot/Synth" affordance —
+     * which is why co-run showed a dead step row with one blinking light. The
+     * affordance is obsolete: co-run is exited by MENU, so nothing needs
+     * advertising, and Josh's rule is that everything except the instrument-
+     * editing controls (jog, knobs, Shift, Mute, Copy, Delete) behaves exactly
+     * as it does outside co-run. Steps are ours, so they paint normally. */
 
     const ac = effectiveClip(S.activeTrack);
 
@@ -532,14 +511,9 @@ export function updateTrackLEDs() {
             (S.activeBank === 0 && (_kt === 1 || _kt === 2)) ||
             (S.activeBank === 7 && _kt === 1);
         const _compoundHeld = S.muteHeld || S.deleteHeld || S.copyHeld || S.loopHeld;
-        const _inCoRun = S.moveCoRunTrack >= 0;
         for (let i = 0; i < 16; i++) {
             let color;
-            if (_inCoRun) {
-                /* Co-run: only the Step 3 icon stays lit (solid White) as the
-                 * Edit Slot/Synth affordance; all other step icons go dark. */
-                color = (i === 2) ? White : LED_OFF;
-            } else {
+            {
                 let on = false;
                 if (S.shiftHeld && !_knobShiftMode && !_compoundHeld) {
                     if (i === 1 || (i >= 4 && i <= 6) || i === 8) on = true; /* shared shortcuts */
@@ -799,7 +773,14 @@ export function updateTrackLEDs() {
             const semitone = ((S.padNoteMap[i] % 12) - _effKey + 12) % 12;
             const inScale  = S.padScaleSet.has(semitone);
             const chromatic = S.padLayoutChromatic[S.activeTrack];
-            color = (sounding || inHeld || inLatch) ? (_autoGrey ? 120 : White)
+            /* ⭑ The lit pad stays TRACK-COLOURED in co-run (Josh, 2026-08-24:
+             * keep the distinct scheme, but "the last pressed pad" must still
+             * read as this track). The rest of the inversion below is untouched
+             * — roots grey, others track-dim — so the surface still says you are
+             * in Move's editor. Matches the drum flavour, where the selected
+             * lane already takes the real track colour. */
+            color = (sounding || inHeld || inLatch)
+                    ? (_autoGrey ? 120 : (_inCoRunPad ? trackColor(S.activeTrack) : White))
                   : (chromatic && !inScale) ? LED_OFF
                   : (S.padNoteMap[i] % 12 === _effKey ? rootColor : nonRootColor);
             cachedSetLED(TRACK_PAD_BASE + i, color);
@@ -807,13 +788,11 @@ export function updateTrackLEDs() {
         }
     }
 
-    /* Co-run: track buttons are owned by the co-run UI — skip the scene/clip-color
-     * writes so they don't fight the co-run indicator. Schwung chain-edit co-run
-     * shows the bright-White indicator written at the top of this function;
-     * Move-native co-run blinks them dark-grey from drawUI. Either way, the
-     * per-frame clip-playback paint here must stand down. Knob LEDs below still
-     * update normally so dAVEBOx's sequencer-side controls stay legible. */
-  if ((S.moveCoRunTrack | 0) < 0) {
+    /* ⚠ NOT gated on co-run any more (Josh, 2026-08-24). The track buttons used
+     * to stand down here so a blinking paired-track indicator could own them;
+     * they are ordinary clip buttons again, in co-run as everywhere else, and
+     * their presses are kept by the mask rather than ceded to Move. */
+  {
     for (let idx = 0; idx < 4; idx++) {
         const row      = 3 - idx;
         const sceneIdx = S.sceneRow + row;

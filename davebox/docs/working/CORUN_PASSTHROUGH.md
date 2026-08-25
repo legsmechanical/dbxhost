@@ -83,3 +83,36 @@ davebox — the same pass-through contract sound mode already lives by
 
 Bidirectional Shift mirroring (option c), popup OLED reclaim, and any change
 to the chain-editor (Schwung) co-run flavour — it already behaves.
+
+
+---
+
+## Re-ruled 2026-08-24, after living with it
+
+Josh, on device: *"pads to preserve the distinct color scheme they have in
+co-run, but everything else except jog wheel/click, knobs, shift, mute, copy,
+and delete (things used to edit instruments in move native) to remain fully as
+they are outside of co-run in track view."* — and then, separately, that Shift
+should stay OURS after all ("i can't recall there being a use for it there").
+
+**The rule is now stated the other way round, which is why it is simpler:** cede
+exactly the controls Move's editor needs to edit an instrument, keep everything
+else untouched.
+
+| | |
+|---|---|
+| **CEDED** | jog turn + click, knobs + touch, Mute, Copy, Delete — plus the OLED and Back, which Move's editor navigates itself |
+| **KEPT** | everything else: pads, steps, the transport composite, Menu, Shift, **and the track buttons** |
+
+Three things changed from the first cut, all reported by Josh as bugs:
+
+- **Track buttons (CC 40-43) are fully KEPT.** They were LED-only — we blinked a
+  paired-track indicator on them while their presses ceded to Move, so they did
+  not select clips. The indicator is gone; they are clip buttons.
+- **The step row paints normally.** It used to be blanked with Step 3 blinking as
+  an "Edit Slot/Synth" affordance. Obsolete — co-run exits by MENU — and it left
+  the row looking dead.
+- **The lit pad keeps its track colour.** The inverted co-run pad scheme stays
+  (it is what says you are in Move's editor), but a sounding/held pad reads in
+  track colour rather than white, matching the drum flavour where the selected
+  lane already did.

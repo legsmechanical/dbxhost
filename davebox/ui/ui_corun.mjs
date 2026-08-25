@@ -22,6 +22,7 @@ import { showActionPopup } from './ui_persistence.mjs';
  * during co-run despite the mask reading as if the tool kept transport. The
  * real transport is the composite of the per-button bits below. */
 const CORUN_GRP_SHIFT          = 1 << 8;  /* CC 49 */
+const CORUN_GRP_TRACK          = 1 << 5;  /* CC 40-43 — the side clip buttons */
 const CORUN_GRP_PADS           = 1 << 1;
 const CORUN_GRP_STEPS          = 1 << 2;
 const CORUN_GRP_MENU           = 1 << 10;
@@ -30,16 +31,32 @@ const CORUN_GRP_REC            = 1 << 14; /* CC 86 */
 const CORUN_GRP_SAMPLE         = 1 << 16; /* CC 118 */
 const CORUN_GRP_LOOP           = 1 << 17; /* CC 58 */
 const CORUN_GRP_TRANSPORT      = CORUN_GRP_PLAY | CORUN_GRP_REC | CORUN_GRP_SAMPLE | CORUN_GRP_LOOP;
-/* Co-run pass-through split (CORUN_PASSTHROUGH.md, ruled by Josh 2026-08-24):
- * the sequencing surface stays with davebox — pads, steps, the REAL transport
- * composite, Menu, and SHIFT (davebox's shift gestures win over Move's
- * fine-adjust; Josh took the rec). CEDED: everything Move's editor needs
- * (OLED, knobs+touch, jog, Back, track row, master) plus MUTE (Move drum-pad
- * mutes, the #8 case) and COPY/DELETE (used natively in Move drum-rack
- * editing — Josh). Modifier releases for CEDED keys still never reach us;
- * the defensive clear in cleanupAfterMoveNativeCoRun covers them. */
+/* Co-run pass-through split (CORUN_PASSTHROUGH.md). RE-RULED by Josh
+ * 2026-08-24, after living with the first cut:
+ *
+ *   "pads to preserve the distinct color scheme they have in co-run, but
+ *    everything else except jog wheel/click, knobs, shift, mute, copy, and
+ *    delete (things used to edit instruments in move native) to remain fully
+ *    as they are outside of co-run in track view."
+ *
+ * So the CEDED list is exactly the instrument-editing controls — jog+click,
+ * knobs+touch, Mute, Copy/Delete — plus the OLED and Back, which Move's editor
+ * needs to navigate itself. Shift STAYS ours (Josh: he could not recall a use
+ * for it in Move's editor).
+ *
+ * ⭑ TRACK (CC 40-43) moved from LED-only to fully KEPT in that ruling: they are
+ * the clip buttons, and "as they are outside co-run" means they select clips.
+ * They used to cede their presses to Move while we blinked a paired-track
+ * indicator on them — the indicator is gone.
+ *
+ * ⚠⚠ Bit 3 is the RETIRED single-bit TRANSPORT (see above): the real transport
+ * is the per-button composite, which is why Play/Rec/Loop silently did nothing
+ * here for months.
+ *
+ * Modifier releases for CEDED keys still never reach us; the defensive clear in
+ * cleanupAfterMoveNativeCoRun covers them. */
 const DAVEBOX_CORUN_KEEP_DEFAULT = CORUN_GRP_PADS | CORUN_GRP_STEPS | CORUN_GRP_TRANSPORT |
-                                   CORUN_GRP_MENU | CORUN_GRP_SHIFT;
+                                   CORUN_GRP_MENU | CORUN_GRP_SHIFT | CORUN_GRP_TRACK;
 /* Opt out of framework Back-as-exit. dAVEBOx uses Menu as the canonical exit
  * (existing muscle memory) and lets Back cede to the peer for sub-view nav
  * (chain editor pop-up, Move firmware preset/synth navigation). */
@@ -49,7 +66,6 @@ const DAVEBOX_CORUN_KEEP_MASK  = DAVEBOX_CORUN_KEEP_DEFAULT | CORUN_KEEP_BACK_BI
  * STEPS=2, TRANSPORT=3, JOG=4, TRACK=5, KNOBS=6, MASTER=7, SHIFT=8, BACK=9,
  * MENU=10, TOUCH=11). */
 const CORUN_GRP_JOG   = 1 << 4;
-const CORUN_GRP_TRACK  = 1 << 5;  /* CC 40-43 — the side clip buttons */
 const CORUN_GRP_KNOBS = 1 << 6;
 const CORUN_GRP_BACK  = 1 << 9;
 const CORUN_GRP_TOUCH = 1 << 11;
