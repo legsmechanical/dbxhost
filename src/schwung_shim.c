@@ -2100,6 +2100,16 @@ static inline void accumulate_sends(int slot, const int16_t *fx_buf,
  * max (not a sum) because the question is "which phase blows the budget", and an
  * average hides a phase that is cheap 999 frames out of 1000.
  *
+ * ⭑⭑ The phases TILE the function — every line between the fast-path return and
+ * the closing brace is inside exactly one. That is not tidiness, it is the
+ * self-check: the phases should roughly SUM to mix_buf, so if they do not, the
+ * cost is in a region we forgot to time and the log says so instead of quietly
+ * pointing everywhere-but. The first cut had six phases and two untimed gaps
+ * (the publisher/me_unity middle, and the whole ~185-line capture tail); it
+ * would have reported six small numbers against a huge total and taught us
+ * nothing. Found because Josh asked whether the PCM dumps were skipback-related
+ * — the capture tail is where skipback's consumers are built.
+ *
  * ⚠ RT path: two vDSO clock reads per phase, ~40 ns each — call it 0.5 µs a
  * frame against a 900 µs budget. Always-on for the same reason the slot timers
  * are: a stall you have to redeploy to observe is a stall you will not catch. */
@@ -2109,10 +2119,12 @@ static inline void accumulate_sends(int slot, const int16_t *fx_buf,
 #define MIX_PHASE_SEND_FX     3   /* send FX buses + returns                    */
 #define MIX_PHASE_ODSP_FX     4   /* overtake DSP FX                            */
 #define MIX_PHASE_MFX         5   /* master FX chain                            */
-#define MIX_PHASE_COUNT       6
+#define MIX_PHASE_MID         6   /* publisher write, me_unity view, ME->mailbox */
+#define MIX_PHASE_TAIL        7   /* unity_view for capture, master vol, spkr EQ */
+#define MIX_PHASE_COUNT       8
 static uint64_t spi_mix_phase_max[MIX_PHASE_COUNT];
 static const char *const spi_mix_phase_name[MIX_PHASE_COUNT] = {
-    "head", "la_rebuild", "chain_fx", "send_fx", "odsp_fx", "mfx"
+    "head", "la_rebuild", "chain_fx", "send_fx", "odsp_fx", "mfx", "mid", "tail"
 };
 /* ⚠ ONE shared pair, declared at the top of the function — NOT per call site.
  * All six BEGINs sit at the same block scope, so a declaration inside the macro
@@ -2793,6 +2805,8 @@ skip_la_rebuild:
     }
     MIX_PHASE_END(MIX_PHASE_SEND_FX);
 
+    MIX_PHASE_BEGIN();
+
     /* Mix overtake DSP buffer into ME bus unconditionally. Under rebuild_from_la,
      * the mailbox is already the ME reconstruction and also needs overtake DSP;
      * under non-rebuild, the mailbox is Move-only and overtake DSP stays in ME. */
@@ -2845,6 +2859,8 @@ skip_la_rebuild:
     int16_t *fx_target = rebuild_from_la ? mailbox_audio : me_unity_i16;
 
     /* Overtake DSP FX: process ME bus (non-rebuild) or reconstructed mailbox (rebuild_from_la) */
+    MIX_PHASE_END(MIX_PHASE_MID);
+
     MIX_PHASE_BEGIN();
     if (overtake_dsp_fx && overtake_dsp_fx_inst && overtake_dsp_fx->process_block) {
         overtake_dsp_fx->process_block(overtake_dsp_fx_inst, fx_target, FRAMES_PER_BLOCK);
@@ -2868,6 +2884,8 @@ skip_la_rebuild:
         }
     }
     MIX_PHASE_END(MIX_PHASE_MFX);
+
+    MIX_PHASE_BEGIN();
 
     /* Tick Master FX LFOs after processing so updated params apply next block.
      * This mirrors the legacy in-process mix path behavior. */
@@ -3051,6 +3069,7 @@ skip_la_rebuild:
         skipback_capture(unity_view);
     }
 
+    MIX_PHASE_END(MIX_PHASE_TAIL);
 }
 
 /* Shared memory segment names from shadow_constants.h */
