@@ -303,24 +303,32 @@ A box around a track number marks the active track.
 ## 3.5 Parameter banks
 
 In Track View, the eight knobs control a **bank** of parameters, and the **jog**
-cycles through the banks. Which banks exist depends on the track type; they are
-covered in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
+picks which bank. Which banks exist depends on the track type; they are covered
+in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
 [Automation](#11-automation).
 
-- **Touch** a knob to see its full name and current value; **turn** it for a large
-  read-out. The LED under a knob lights when its parameter is set away from default.
-- **Click the jog** to switch a bank between its primary and alternate parameters
-  (the labels change). A **down-arrow** in the header marks any bank that has
-  alternates, and blinks while the alternates are showing. Click again, or change
-  bank or track, to return to the primary set.
-- The bank display falls back to a track overview after a moment. **Touch the jog**
-  to bring it back.
-- The last stop on the jog is **SOUND + CONFIG** — the track's sound editor
-  (its instrument, effects, sound control and config), reached like any other
-  bank by turning right past the last one. Keep turning to move down its rows;
-  turning left past its top row returns to the bank you came from. **Back**
-  closes it and lands on the track's default bank, exactly as Back does from any
-  other bank. Conductor tracks don't have it.
+- **Turn the jog** to open the **bank picker** — a list of this track's banks by
+  name, over whatever page you were on. Keep turning to move the selection.
+  Nothing changes until you choose, so you can browse past a bank without
+  landing on it.
+- **Click the jog, or let go of it**, to go to the selected bank. Clicking keeps
+  your hand on the wheel, so the bank's page stays up while you look at it.
+  **Back** closes the picker without choosing, as does **Shift + jog**.
+- **SOUND + CONFIG** — the track's sound editor (its instrument, effects, sound
+  control and config) — is the last entry in the list. Inside it the jog moves
+  through its own rows, and turning left past the top row brings the picker back.
+  Conductor tracks don't have it.
+- **Click the jog** (with no picker open) switches a bank between its primary and
+  alternate parameters (the labels change). A **down-arrow** in the header marks
+  any bank that has alternates, and blinks while the alternates are showing.
+- **Shift + jog** steps through the **tracks**, not the banks.
+- The bank page falls back to the track overview after a moment. **Touch the jog**
+  to bring it back — or **Shift + click the jog** to **latch** it, and it stays
+  until you unlatch. A flashing frame around the parameters shows the latch is
+  on, and the header names the track (`Tr4 - CLIP`) so you always know where you
+  are.
+- **Back** dismisses whatever is on screen — it unlatches and returns to the
+  track overview. It never changes which bank you are on.
 - **Each track remembers the bank it was on** — SOUND + CONFIG included. Scroll
   away to another track and back, or quit and relaunch, and you land on the bank
   you left that track on.
