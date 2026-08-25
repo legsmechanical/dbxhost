@@ -11,6 +11,7 @@
 #include "host/schwung_paths.h"
 #include "shadow_overlay.h"  /* MIDI channel indicator globals */
 #include "host/surface_trace.h"
+#include "shadow_midi_coalesce.h"
 
 /* ============================================================================
  * External cable-2 dispatch ring
@@ -1167,7 +1168,11 @@ void shadow_forward_midi(void)
         has_midi = 1;
     }
 
+    /* Coalesce relative-encoder CCs before publishing — see the header for why
+     * this is lossless and why it must never touch notes or buttons. Runs on the
+     * caller-owned `filtered` buffer, so it cannot race the consumer. */
     if (has_midi) {
+        shadow_coalesce_relative_ccs(filtered, MIDI_BUFFER_SIZE);
         memcpy(shadow_midi_shm, filtered, MIDI_BUFFER_SIZE);
         /* Mark BEFORE the publish: midi_ready is what wakes the tool process,
          * so stamping after it would put our timestamp on the wrong side of the

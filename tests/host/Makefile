@@ -2,6 +2,9 @@
 # dev machine, without the Move device or its toolchain.
 #
 # Currently:
+#   - test_midi_coalesce — relative-encoder CC merging: lossless for knobs,
+#     and provably inert for notes/buttons (merging those would DELETE a
+#     press or release, the bug it exists to make rarer).
 #   - test_midi_inject_writer — exercises the lock-free MPSC helper for
 #     the /schwung-midi-inject ring with multi-threaded producers.
 #   - test_sa_master_volume — the session's own master volume, which Move's
@@ -18,7 +21,8 @@ LDFLAGS = -lpthread
 
 BUILD_DIR = ../../build/tests/host
 
-TARGETS = $(BUILD_DIR)/test_midi_inject_writer \
+TARGETS = $(BUILD_DIR)/test_midi_coalesce \
+          $(BUILD_DIR)/test_midi_inject_writer \
           $(BUILD_DIR)/test_sa_master_volume \
           $(BUILD_DIR)/test_spawn_command
 
