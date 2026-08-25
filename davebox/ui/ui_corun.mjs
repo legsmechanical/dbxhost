@@ -68,7 +68,18 @@ const CORUN_GRP_TRANSPORT      = CORUN_GRP_PLAY | CORUN_GRP_REC | CORUN_GRP_SAMP
  * ⭑ Two ways out, both real decisions rather than tweaks: inject CC 60 to Move
  * the way pad presses are already injected, or opt davebox into the cede model
  * (CORUN_F_CEDE_MODEL) and lose the carve-out for all four buttons at once.
- * Left for Josh — see the worklog entry.
+ * COPY took the first road (see the MoveCopy handler in ui_input_cc).
+ *
+ * ✅ RULED by Josh, 2026-08-25: UNDO and CAPTURE stay with dAVEBOx — they are
+ * NOT forwarded, and this is a decision, not an omission. Do not "finish the
+ * set" by adding them.
+ *   · Undo, because dAVEBOx KEEPS CORUN_GRP_SHIFT in co-run, so Move firmware
+ *     never sees Shift held: a forwarded Shift+Undo would reach Move as a
+ *     PLAIN undo and redo would be unreachable. Injecting a synthetic Shift is
+ *     the scheme that double-tap-latched Move's own Shift (see _onPadPress).
+ *   · Capture, because its modifier gestures — Capture+scene row, and
+ *     Capture+pad drum-lane select — would have to be given up in co-run, and
+ *     the drum case IS the co-run case.
  *
  * ⚠⚠ Bit 3 is the RETIRED single-bit TRANSPORT (see above): the real transport
  * is the per-button composite, which is why Play/Rec/Loop silently did nothing

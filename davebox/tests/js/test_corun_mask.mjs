@@ -255,6 +255,66 @@ step('⭑ entering co-run lands on the CLIP bank, not whatever was underneath', 
     S.moveCoRunTrack = -1;
 });
 
+/* ── Undo and Capture are NOT forwarded — a RULING, not an omission ────────
+ *
+ * Copy takes the injection road out of the legacy carve-out (above). The
+ * obvious next move is to "finish the set" with the other two EDIT-group
+ * buttons, and Josh ruled on 2026-08-25 that neither goes:
+ *
+ *   · UNDO — dAVEBOx KEEPS CORUN_GRP_SHIFT in co-run, so Move firmware never
+ *     sees Shift held. A forwarded Shift+Undo would land on Move as a PLAIN
+ *     undo and redo would be unreachable; injecting a synthetic Shift is the
+ *     scheme that double-tap-latched Move's own Shift.
+ *   · CAPTURE — Capture+scene row and Capture+pad (drum-lane select) would have
+ *     to be surrendered in co-run, and the drum case IS the co-run case.
+ *
+ * ⚠ These steps assert the NEGATIVE, so each also asserts that our own handler
+ * still ran — otherwise they would pass just as well against a handler that
+ * was deleted or that returned early. */
+step('⭑ co-run does NOT forward Undo — it stays dAVEBOx\'s, and ours still runs', () => {
+    const sent = [];
+    const prev = globalThis.move_midi_inject_to_move;
+    globalThis.move_midi_inject_to_move = (b) => { sent.push(Array.from(b)); };
+
+    S.sessionView = false;
+    S.moveCoRunTrack = 2;
+    S.shiftHeld = false;
+    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 56, 127]));
+
+    globalThis.move_midi_inject_to_move = prev;
+    S.moveCoRunTrack = -1;
+
+    if (sent.some((m) => m[1] === 0xB0 && m[2] === 56))
+        throw new Error('Undo was forwarded to Move — ruled against 2026-08-25 ' +
+                        '(Move never sees our Shift, so redo would be unreachable)');
+    if (S.undoAvailable || !S.redoAvailable)
+        throw new Error('our own undo did not run in co-run, so the negative above ' +
+                        'proves nothing');
+});
+
+step('⭑ co-run does NOT forward Capture — the modifier gestures stay ours', () => {
+    const sent = [];
+    const prev = globalThis.move_midi_inject_to_move;
+    globalThis.move_midi_inject_to_move = (b) => { sent.push(Array.from(b)); };
+
+    S.sessionView = false;
+    S.moveCoRunTrack = 2;
+    S.captureHeld = false;
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 52, 127]));
+
+    globalThis.move_midi_inject_to_move = prev;
+    S.moveCoRunTrack = -1;
+
+    if (sent.some((m) => m[1] === 0xB0 && m[2] === 52))
+        throw new Error('Capture was forwarded to Move — ruled against 2026-08-25 ' +
+                        '(Capture+row and Capture+pad would be lost in co-run)');
+    if (!S.captureHeld)
+        throw new Error('our own Capture hold did not arm in co-run, so the negative ' +
+                        'above proves nothing');
+    S.captureHeld = false;
+});
+
 /* ── Shift+Note/Session no longer OPENS anything ───────────────────────────
  *
  * Josh, 2026-08-24: "I want to retire shift+menu to enter sound mode now that
