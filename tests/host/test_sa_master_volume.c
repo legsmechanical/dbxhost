@@ -24,6 +24,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <math.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 static int fails = 0;
 static char path[256];
@@ -52,10 +54,14 @@ static float roundtrip(float v)
 
 int main(void)
 {
-    char dir[] = "/tmp/samv-XXXXXX";
+    char dir[64];
     float got = 12345.0f;
 
-    if (!mkdtemp(dir)) { perror("mkdtemp"); return 2; }
+    /* ⚠ NOT mkdtemp: it needs a feature macro under -std=c11 on glibc, and
+     * defining that macro HIDES it on macOS. pid + mkdir needs neither and is
+     * unique enough for a test that removes its own directory. */
+    snprintf(dir, sizeof(dir), "/tmp/samv-%ld", (long)getpid());
+    if (mkdir(dir, 0700) != 0) { perror("mkdir"); return 2; }
     snprintf(path, sizeof(path), "%s/sa_master_volume", dir);
     sa_master_volume_set_path_for_test(path);
 

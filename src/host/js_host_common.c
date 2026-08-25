@@ -24,6 +24,7 @@
 
 #include "file_atomic.h"
 #include "js_host_common.h"
+#include "spawn_command.h"
 #include "unified_log.h"
 
 #include "host/schwung_paths.h"
@@ -127,47 +128,19 @@ int callGlobalFunction(JSContext *ctx, JSValue *pfunc, unsigned char *data) {
  * Path / process helpers
  * ============================================================================ */
 
-/* Execute a command safely using fork/execvp instead of system() */
+/* Execute a command. ONE implementation, shared with the shim — see
+ * host/spawn_command.h for why it is posix_spawnp and not fork + execvp
+ * (a child forked from a multithreaded process can hang before exec). */
 int run_command(const char *const argv[]) {
-    pid_t pid = fork();
-    if (pid < 0) {
-        perror("fork");
-        return -1;
-    }
-    if (pid == 0) {
-        /* Child: redirect stderr to stdout, exec the command */
-        dup2(STDOUT_FILENO, STDERR_FILENO);
-        execvp(argv[0], (char *const *)argv);
-        _exit(127); /* exec failed */
-    }
-    /* Parent: wait for child */
-    int status;
-    if (waitpid(pid, &status, 0) < 0) {
-        perror("waitpid");
-        return -1;
-    }
-    if (WIFEXITED(status)) {
-        return WEXITSTATUS(status);
-    }
-    return -1;
+    return spawn_command(argv);
 }
 
-/* Fire-and-forget: fork + setsid, parent returns immediately.
- * Child detaches from session and redirects stdio to /dev/null. */
+/* Fire-and-forget: own session, stdio on /dev/null, caller returns at once.
+ * Same shared unit as run_command, and the reasoning matters more here: nothing
+ * ever waits on this child, so one stuck between fork and exec is a process
+ * nobody would look at. */
 static void run_command_background(const char *const argv[]) {
-    pid_t pid = fork();
-    if (pid != 0) return;          /* parent (or error) */
-    /* child */
-    setsid();
-    int devnull = open("/dev/null", O_RDWR);
-    if (devnull >= 0) {
-        dup2(devnull, STDIN_FILENO);
-        dup2(devnull, STDOUT_FILENO);
-        dup2(devnull, STDERR_FILENO);
-        if (devnull > 2) close(devnull);
-    }
-    execvp(argv[0], (char *const *)argv);
-    _exit(127);
+    (void)spawn_command_background(argv);
 }
 
 /* Helper: validate path is within BASE_DIR to prevent directory traversal */

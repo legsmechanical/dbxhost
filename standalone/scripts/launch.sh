@@ -394,4 +394,32 @@ setsid bash -c '
   # Leave no standing open-tool command behind for the stock host to act on.
   rm -f /data/UserData/schwung/open_tool_cmd.json
   $DBX_DIR/bin/davebox-heal --resume-launcher
+
+  # WAIT for stock Move to actually be back before this script exits, because
+  # OUR EXIT IS WHAT STARTS THE RACE. The caller — stock launch-standalone.sh —
+  # does a 0.5 s sleep, then pidof MoveOriginal, and nohup-starts a SECOND
+  # /opt/move/Move when it does not see one. Resuming the unit above is
+  # asynchronous and systemd needs longer than half a second, so that check
+  # usually looked into a gap and started a duplicate. The duplicate wins the
+  # race to claim com.ableton.move, the real Move never registers the name, and
+  # every later saveSongIfDirty comes back NoReply: an edit made in stock right
+  # before launching dAVEBOx is silently not saved. Measured 2026-08-25 from the
+  # launch log, 3 skipped saves in 90.
+  #
+  # NOTE the caller lives in the STOCK tree, which we do not touch. So the fix
+  # is to make its own guard TRUE: hold here until MoveOriginal is up and it
+  # takes the "Move already running -- skipping restart" branch. Bounded, and
+  # giving up leaves exactly the behaviour we have today, never worse.
+  _wait=0
+  while [ "$_wait" -lt 75 ]; do
+    if pidof MoveOriginal >/dev/null 2>&1; then
+      echo "stock Move is back after $((_wait * 200)) ms -- caller will skip its restart"
+      break
+    fi
+    sleep 0.2
+    _wait=$((_wait + 1))
+  done
+  if [ "$_wait" -ge 75 ]; then
+    echo "WARNING: stock Move did not return within 15s -- the caller starts one, and it may squat com.ableton.move"
+  fi
 ' &

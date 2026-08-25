@@ -1,5 +1,14 @@
 /* sa_master_volume.c — the session's own master volume, remembered across
  * launches. The why is in the header. */
+/* ⚠ pwrite is POSIX, and glibc HIDES it under a strict -std=c11 unless a
+ * feature macro asks for it — while macOS clang exposes it regardless. So the
+ * omission is invisible on a Mac working copy and breaks only in Linux CI or on
+ * the device. Declared here rather than in a build flag so any consumer of this
+ * file compiles, whatever CFLAGS it uses. */
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "sa_master_volume.h"
 
 #include <fcntl.h>

@@ -46,6 +46,7 @@
 #include "host/shadow_chain_types.h"
 #include "host/unified_log.h"
 #include "host/sa_master_volume.h"
+#include "host/spawn_command.h"
 #include "host/schwung_trace.h"
 #include "host/tts_engine.h"
 #include "host/link_audio.h"
@@ -912,24 +913,15 @@ static volatile int shadow_block_plain_volume_hide_until_release = 0;
 /* shadow_poll_current_set — moved to shadow_set_pages.c */
 
 
-/* Execute a command safely using fork/execvp instead of system() */
+/* Execute a command. posix_spawnp, NOT fork + execvp: this runs on Move
+ * threads, and a child forked out of a multithreaded process can block forever
+ * in execvp PATH lookup on a malloc lock another thread held at fork time. It
+ * then never execs, so it keeps Move name and argv — the orphaned
+ * "Audio Main/SPI" process seen on 2026-08-23. See host/spawn_command.h.
+ * Still drops SCHED_FIFO and still merges stderr into stdout; both moved into
+ * the shared unit, which the JS host uses too. */
 static int shim_run_command(const char *const argv[]) {
-    pid_t pid = fork();
-    if (pid < 0) return -1;
-    if (pid == 0) {
-        /* Drop inherited SCHED_FIFO — children of MoveOriginal's audio
-         * threads otherwise run at RT priority, competing with the SPI
-         * driver (same fix as shadow_process.c's launchers). */
-        struct sched_param sp = { .sched_priority = 0 };
-        sched_setscheduler(0, SCHED_OTHER, &sp);
-        dup2(STDOUT_FILENO, STDERR_FILENO);
-        execvp(argv[0], (char *const *)argv);
-        _exit(127);
-    }
-    int status;
-    if (waitpid(pid, &status, 0) < 0) return -1;
-    if (WIFEXITED(status)) return WEXITSTATUS(status);
-    return -1;
+    return spawn_command(argv);
 }
 
 /* Overlay font, drawing, overlay_sync — moved to shadow_overlay.c */

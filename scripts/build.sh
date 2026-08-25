@@ -271,7 +271,7 @@ fi
 # binaries. Globbing every header makes that class of bug impossible.
 if needs_rebuild build/schwung \
     src/schwung_host.c src/host/module_manager.c src/host/settings.c src/host/unified_log.c \
-    src/host/js_host_common.c src/host/file_atomic.c \
+    src/host/js_host_common.c src/host/file_atomic.c src/host/spawn_command.c src/host/spawn_command.h \
     src/host/*.h; then
     echo "Building host..."
     "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 \
@@ -280,6 +280,7 @@ if needs_rebuild build/schwung \
         src/host/settings.c \
         src/host/unified_log.c \
         src/host/js_host_common.c \
+        src/host/spawn_command.c \
         src/host/file_atomic.c \
         -o build/schwung \
         -Isrc -Isrc/lib \
@@ -302,6 +303,7 @@ if needs_rebuild build/schwung-shim.so \
     src/host/shadow_midi.c src/host/unified_log.c src/host/shim_worker.c \
     src/host/shadow_shm_util.c src/host/schwung_trace.c src/host/shadow_test_stream.c src/host/shadow_test_stream.h \
     src/host/sa_master_volume.c src/host/sa_master_volume.h \
+    src/host/spawn_command.c src/host/spawn_command.h \
     $SHIM_TTS_SRC \
     src/host/shadow_constants.h src/host/shadow_midi_inject_writer.h src/host/shadow_midi.h src/host/shadow_sampler.h \
     src/host/shim_worker.h src/host/shadow_transport.h \
@@ -337,6 +339,7 @@ if needs_rebuild build/schwung-shim.so \
         src/host/schwung_trace.c \
         src/host/shadow_test_stream.c \
         src/host/sa_master_volume.c \
+        src/host/spawn_command.c \
         $SHIM_TTS_SRC \
         $SHIM_DEFINES \
         $SHIM_INCLUDES \
@@ -376,7 +379,7 @@ fi
 # Build Shadow UI host (uses shared display bindings from js_display.c)
 if needs_rebuild build/shadow/shadow_ui \
     src/shadow/shadow_ui.c src/host/js_display.c src/host/unified_log.c \
-    src/host/js_host_common.c src/host/shadow_shm_util.c src/host/file_atomic.c \
+    src/host/js_host_common.c src/host/shadow_shm_util.c src/host/file_atomic.c src/host/spawn_command.c src/host/spawn_command.h \
     src/host/schwung_trace.c \
     src/host/js_display.h src/host/shadow_constants.h src/host/unified_log.h \
     src/host/js_host_common.h src/host/shadow_shm_util.h src/host/schwung_trace.h \
@@ -387,6 +390,7 @@ if needs_rebuild build/shadow/shadow_ui \
         src/host/js_display.c \
         src/host/unified_log.c \
         src/host/js_host_common.c \
+        src/host/spawn_command.c \
         src/host/shadow_shm_util.c \
         src/host/file_atomic.c \
         src/host/schwung_trace.c \
