@@ -42,6 +42,20 @@ export const BANK_CYCLE_DRUM = [7, 0, 1, 3, 5, 6];
  * header position strip (bankCyclePos below) — they must stay in lockstep. */
 export const CONDUCT_BANK_CYCLE = [0, 1, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN];
 
+/* The banks a track can reach on the jog, in jog order — the SAME strip the
+ * unshifted turn walks, so the bank picker (Shift+jog) is a VIEW of the
+ * existing navigation rather than a second model of it. Melodic ends on
+ * SOUND + CONFIG because the walk does; a Conductor track does not have it
+ * (Josh, 2026-08-23).
+ *
+ * ⚠ Pure: takes the pad MODE, not a track index, so ui_render and ui_input_cc
+ * can both call it without either importing the other. */
+export function bankCycleForMode(padMode) {
+    if (padMode === PAD_MODE_CONDUCT) return CONDUCT_BANK_CYCLE.slice();
+    if (padMode === PAD_MODE_DRUM)    return BANK_CYCLE_DRUM.concat([BANK_SOUND]);
+    return [0, 1, 2, 3, 4, 5, 6, BANK_SOUND];
+}
+
 /* Bank position in the jog-cycle order, for the header position strip. Melodic
  * banks cycle 0..6 linearly; drum banks cycle in BANK_CYCLE_DRUM order;
  * conductor banks cycle in CONDUCT_BANK_CYCLE order. Returns {idx, count} for

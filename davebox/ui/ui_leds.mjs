@@ -886,16 +886,22 @@ export function updateTrackLEDs() {
      * S.shiftHeld at all — so the flash promised a gesture that does nothing. The
      * down-arrow header indicator already signals alt-param availability.) */
 
-    /* Shift overlay: bottom row shows track-switch color hints (all track types).
-     * The active track's pad is solid bright track color; every other pad blinks
-     * dim grey (DarkGrey, dimmest available) ↔ dim track color (~2 Hz, 24-tick
-     * rate) so the current track stands out from the switch targets. */
+    /* Shift overlay: bottom row shows track-switch colour hints (all track
+     * types). Every switch target pulses BETWEEN ITS OWN dim and bright track
+     * colour (~2 Hz, 24-tick rate); the active track's pad sits solid bright,
+     * so it reads as the one that is already chosen rather than one more
+     * target (Josh, 2026-08-25).
+     *
+     * ⚠ It used to blink DarkGrey ↔ dim track colour. Grey is not a track
+     * colour, so the row said "eight greys" as often as it said which track was
+     * which — the colour is the whole point of the hint, and half the duty cycle
+     * was spending it on nothing. */
     if (!S.sessionView && S.shiftHeld && S.shiftTrackLEDActive) {
         const _ttPhase = (Math.floor(S.tickCount / 24) % 2) === 1;
         for (let i = 0; i < NUM_TRACKS; i++) {
             const color = (i === S.activeTrack)
                 ? trackColor(i)
-                : (_ttPhase ? DarkGrey : trackDimColor(i));
+                : (_ttPhase ? trackDimColor(i) : trackColor(i));
             cachedSetLED(TRACK_PAD_BASE + i, color);
         }
     }

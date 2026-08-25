@@ -64,6 +64,11 @@ function draw(slug){ globalThis.clear_screen(); render.drawUI(); shoot(slug); }
 S.sessionView = false; S.activeBank = 0; S.bankSelectTick = -1; S.jogTouched = false;
 draw('track-overview');
 
+/* BANK PICKER — Shift+jog in track view, over the track overview. */
+S.sessionView = false; S.activeBank = 0; S.bankPickerSel = 6;
+draw('bank-picker');
+S.bankPickerSel = -1;
+
 /* SESSION VIEW — the banner, the mixer-mode label, track row, scene letters. */
 S.sessionView = true; S.sessKnobMode = 2;   /* SndA */
 draw('session-overview');

@@ -1136,8 +1136,35 @@ export function drawKitEnumOverlay(cells, touchedIdx) {
     if (!cell || !cell.options || cell.options.length <= 2) return;
     const sel = cell.sel | 0;
     if (sel < 0) return; /* unset value ("--") — nothing to browse */
+    drawKitListOverlay(cell.options, sel);
+}
 
-    const X = MV_ZOOM_X, Y = MV_ZOOM_Y, W = MV_ZOOM_W, H = MV_ZOOM_H;
+/* The kit's centred list overlay: the box, the rows, the selection, and the
+ * scroll indicator. Factored out of drawKitEnumOverlay so anything that needs
+ * "pick one of these" looks identical to an enum picker without re-deriving the
+ * layout — the bank picker (Shift+jog in track view) is the second caller.
+ * ⚠ One implementation on purpose: two copies of this maths drift by a pixel
+ * and then read as two different controls. */
+export function drawKitListOverlay(options, sel, opts) {
+    /* ⭑ The box AUTO-SIZES to its longest label (Josh, 2026-08-25). It starts at
+     * the kit's zoom footprint — so a short enum looks exactly as it always has,
+     * sharing its outline with the value zoom — and grows only when the text
+     * would otherwise be cut. It never shrinks below that.
+     *
+     * ⚠ Truncation is the failure this removes, and it is a bad one because the
+     * result still looks like a word: 'AUTOMATION' came back as 'AUTOMAT' and
+     * 'SOUND + CONFIG' as 'SOUND +'. Derived from the labels rather than set to
+     * a number, so a renamed or added option carries its own width with it.
+     *
+     * The +12 is what the list spends around the text: the 2px box inset and a
+     * 3px row pad on each side, plus the 4px scrollbar gutter. */
+    const o = opts || {};
+    let natural = 0;
+    for (const opt of options) natural = Math.max(natural, hdrWidth(String(opt)));
+    const W = o.w || Math.max(MV_ZOOM_W, Math.min(SCREEN_W, natural + 12));
+    const X = (o.x != null) ? o.x : Math.round((SCREEN_W - W) / 2);
+    const Y = MV_ZOOM_Y, H = MV_ZOOM_H;
+    const cell = { options: options, sel: sel };
     fill_rect(X, Y, W, H, 0);
     rectOutline(X, Y, W, H, 1);
 

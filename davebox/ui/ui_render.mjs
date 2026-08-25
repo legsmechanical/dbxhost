@@ -20,7 +20,8 @@ import {
 } from './ui_constants.mjs';
 import {
     drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitAltArrow,
-    drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawVFader, mvPrint, mvWidth, rectOutline,
+    drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
+    drawVFader, mvPrint, mvWidth, rectOutline,
     drawLevelCard,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H
@@ -33,7 +34,7 @@ import {
     drawProjectPadPicker
 } from './ui_dialogs.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
-import { bankCyclePos } from './ui_pure.mjs';
+import { bankCyclePos, bankCycleForMode } from './ui_pure.mjs';
 import { syncDrumRepeatState } from './ui_drummodel.mjs';
 import {
     effectiveClip,
@@ -927,9 +928,26 @@ function drawTrackVolCard() {
     drawLevelCard(S.tvCardText, S.tvCardFrac);
 }
 
+/* Bank picker (Shift+jog in track view): the kit's list overlay, the same
+ * control an enum param opens, over whatever screen is underneath. An OVERLAY
+ * rather than a screen, like the volume card — the gesture is a hold, and what
+ * it is browsing away from should stay visible behind it. */
+function drawBankPicker() {
+    if (S.bankPickerSel < 0) return;
+    const cyc = bankCycleForMode(S.trackPadMode[S.activeTrack]);
+    /* BANKS[] names the real banks; SOUND + CONFIG is a stub entry there, so it
+     * still carries its own name — every reader of that index does this. */
+    /* Width is the overlay's own business now — it sizes to the longest label,
+     * which is what makes 'SOUND + CONFIG' readable here and stops any enum
+     * picker being cut elsewhere. */
+    drawKitListOverlay(cyc.map((b) => (BANKS[b] && BANKS[b].name) || '?'),
+                       Math.max(0, Math.min(cyc.length - 1, S.bankPickerSel)));
+}
+
 export function drawUI() {
     drawUIBody();
     drawTrackVolCard();
+    drawBankPicker();
 }
 
 function drawUIBody() {

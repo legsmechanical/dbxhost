@@ -648,6 +648,24 @@ export const S = {
      * track restored from the sidecar or arrived at by a track switch gets.
      * Session-only: the origin is a navigation crumb, not project state. */
     trackSoundOrigin: new Array(8).fill(-1),
+    /* Bank picker (Shift+jog in track view, 2026-08-25). Shift+jog used to step
+     * the active TRACK; that meaning moved to Shift + the bottom pad row, and
+     * the jog now browses the current track's banks in the kit's list overlay.
+     * `bankPickerSel` indexes the track's own bank CYCLE — the same list the
+     * unshifted jog walks — not a bank number, because the cycles are per
+     * pad-mode and neither contiguous nor ordered by index. -1 = closed.
+     * Transient: the gesture ends with the Shift release that commits it. */
+    bankPickerSel: -1,
+    /* Which meaning THIS Shift+jog hold has, latched on its first turn:
+     * 0 = undecided, 1 = bank picker, 2 = step the track.
+     * ⚠ Decided once per HOLD, not per turn. A track step EXITS sound mode, so
+     * a per-turn test flips to "track view" mid-gesture and the rest of one
+     * continuous scroll lands in the picker instead — which is exactly what the
+     * sound-mode scroll test caught. A gesture means one thing for its whole
+     * duration. Cleared on the Shift press edge. */
+    shiftJogMode: 0,
+
+
     pendingSoundEnterSilent: false, /* the queued entry is a RETURN, not a gesture — do not open the bank display window */
     pendingSoundEnterTrack: -1, /* Sound mode entry queued from the Shift-release dispatch or the track menu. Entry's shadow_get/set_param traffic must run on the tick budget — hence the deferral. */
     pendingUndoSync: 0,
