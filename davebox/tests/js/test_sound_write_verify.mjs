@@ -8,9 +8,9 @@
  * silently in real use, which is why this drives the REAL modules over a fake
  * engine that can be told to lose writes.
  *
- * ⚠ Coverage gap, known: the HOSTED-canvas read shield (hostedCtx getParam
- * serving the in-flight value) has no behaviour test — it needs a fake kit
- * module fixture. The ledger+verifier it rides on is covered here. */
+ * The HOSTED-canvas read shield is covered at the bottom: the kit re-reads
+ * every key twice a second, so a flush landing after a LOST write is the hosted
+ * flavour of "the knob resets", and the shield is what stands in front of it. */
 
 let failed = 0;
 function ok(label) { console.log(`  ok   — ${label}`); }
@@ -183,6 +183,59 @@ step('⚠ an engine that NEVER echoes gives up after bounded tries (no loop)', (
     if (snd.soundInflightForTest().length)
         throw new Error('unconfirmable write never evicted');
     globalThis.shadow_set_param = realSet;
+    snd.soundExit();
+});
+
+/* ---- the HOSTED-canvas read shield ----------------------------------------
+ *
+ * A hosted module draws its own editor and reads its values back through the
+ * ctx davebox hands it. The kit flushes that cache 2x/sec, so if a write was
+ * LOST in the mailbox and the flush reads the engine directly, the canvas
+ * repaints the OLD value — the knob snaps back, which is exactly Josh's report
+ * in its hosted flavour. The ctx must serve the in-flight value until the
+ * verifier has confirmed the write really landed.
+ *
+ * ⚠ This was the known coverage gap left by the 08-24 fix: the ledger and the
+ * verifier were tested, the ctx wrapper around them was not. */
+step('⭑ hosted ctx: a read after a LOST write serves the value you set, not the stale engine', () => {
+    openSynth();
+    const ctx = snd.soundHostedCtxForTest();
+    if (!ctx || typeof ctx.getParam !== 'function')
+        throw new Error('control: no hosted ctx');
+
+    /* Control: with nothing in flight the ctx is a pass-through to the engine. */
+    /* ⚠ ctx keys are BARE — the comp prefix ('synth:') is added by
+     * engineGet/engineSet underneath. Passing the prefixed key reads '' and the
+     * whole step passes for the wrong reason. */
+    ENGINE['synth:cutoff'] = '0.30';
+    if (ctx.getParam('cutoff') !== '0.30')
+        throw new Error('control: ctx did not read the engine: ' + ctx.getParam('cutoff'));
+
+    dropNextSets = 1;                       /* the mailbox stomp */
+    setCalls = [];
+    ctx.setParam('cutoff', '0.90');
+
+    if (ENGINE['synth:cutoff'] !== '0.30')
+        throw new Error('control: the fixture did not actually lose the write');
+    const shielded = ctx.getParam('cutoff');
+    if (String(parseFloat(shielded)) !== '0.9')
+        throw new Error('the kit flush would repaint the OLD value (' + shielded +
+                        ') — the knob snaps back');
+});
+
+step('⭑ ...and once the verifier lands it, the ctx goes back to reading the engine', () => {
+    tick(12);                               /* verify -> mismatch -> rewrite */
+    if (ENGINE['synth:cutoff'] === '0.30')
+        throw new Error('the lost write was never rewritten: engine still 0.30');
+    if (snd.soundInflightForTest().length)
+        throw new Error('confirmed write left in the ledger — the shield would never lift');
+
+    /* The shield is OFF now, so a value changed BEHIND the UI (a preset load,
+     * the browser editor) is seen. A shield that never lifts is its own bug. */
+    ENGINE['synth:cutoff'] = '0.10';
+    const after = snd.soundHostedCtxForTest().getParam('cutoff');
+    if (String(parseFloat(after)) !== '0.1')
+        throw new Error('ctx kept serving a stale in-flight value: ' + after);
     snd.soundExit();
 });
 

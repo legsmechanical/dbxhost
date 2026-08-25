@@ -660,6 +660,10 @@ export function soundPickStateForTest() {
  * drawn but never that they say the right thing — this pins the decision, and
  * the render test pins that the draw path runs. Exposes no mutation. */
 export function soundInflightForTest() { return S.inflight; }
+/* The hosted canvas's ctx, for the read-shield behaviour test. Exposes the same
+ * object the kit is handed — nothing a test could not already reach by faking a
+ * kit module, minus the fixture. */
+export function soundHostedCtxForTest() { return hostedCtx(); }
 export function soundBusCountForTest() { return FX_BUSES.length; }
 export function soundValueForTest(key) { return S.values[key]; }
 export function soundKnobHudForTest() {
