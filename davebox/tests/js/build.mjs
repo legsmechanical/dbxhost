@@ -52,7 +52,24 @@ const WATCH_DIRS = [
     path.join(repoRoot, 'tests/js'),
     path.resolve(repoRoot, '../src/shared'),
 ];
-const guard = `(function(){try{
+/* ⚠ ONE host binding is defaulted for every rig, and only one.
+ *
+ * Blanket-stubbing the host surface would be actively harmful: a MISSING
+ * binding throws inside tick(), which swallows it, so every later stage of the
+ * tick silently never runs and the test passes against a tick that stopped on
+ * line one. Rigs declare their own stubs so that absence stays loud.
+ *
+ * host_register_primary is different: its absence does not throw, it makes
+ * init() log "PRIMARY: registration FAILED — host defect, ownership claims not
+ * live" on EVERY run. That is a false alarm about the ownership model printed
+ * ~20 times per suite, and a false alarm that constant is worse than no message
+ * — it trains everyone (me included, repeatedly) to filter out the exact line
+ * that would matter on device. Fixed in the RIG, not in the module: on device
+ * the binding always exists, and gating the module on `typeof` would break the
+ * no-capability-probing invariant. */
+const primaryStub = `if(typeof globalThis.host_register_primary!=='function')globalThis.host_register_primary=function(){return true;};\n`;
+
+const guard = primaryStub + `(function(){try{
 var _fs=require('fs'),_p=require('path');
 var _dirs=${JSON.stringify(WATCH_DIRS)};
 var _mine=_fs.statSync(__filename).mtimeMs,_new=0,_who='';

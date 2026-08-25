@@ -52,7 +52,7 @@ globalThis.flush_display = () => {};
 globalThis.move_midi_internal_send = () => {};
 globalThis.set_led = () => {};
 globalThis.shadow_get_ui_flags = () => 0;
-globalThis.host_register_primary = () => {};
+globalThis.host_register_primary = () => true;   /* returning nothing reads as a FAILED registration */
 globalThis.host_open_service = () => {};
 globalThis.host_close_service = () => {};
 globalThis.host_ext_midi_remap_clear = () => {};
