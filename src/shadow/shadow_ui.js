@@ -129,7 +129,8 @@ import {
 } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 
 import {
-    standaloneSessionActive
+    standaloneSessionActive,
+    setUuidIsProvisional
 } from '/data/UserData/schwung/shared/session_state.mjs';
 
 /* Shared context for view modules */
@@ -298,6 +299,13 @@ const CONFIG_PATH = HOST_STATE_ROOT + "/shadow_chain_config.json";
 const SETS_LIBRARY_DIR = "/data/UserData/UserLibrary/Sets";
 const SET_STATE_SUBDIR = "dAVEBOx/host";
 function perSetStateDir(uuid) {
+    /* ⚠⚠ Empty for a PROVISIONAL identity. `__pending-N-M` is this process's
+     * OWN placeholder (shadow_set_pages.c publishes it when Move's song index
+     * moves before the set folder exists) — building a state path from it
+     * creates a fake project directory in the set library and files host slot
+     * state where no real project will read it. Callers must treat "" as
+     * "nowhere to save yet" and skip. */
+    if (!uuid || setUuidIsProvisional(uuid)) return "";
     return SETS_LIBRARY_DIR + "/" + uuid + "/" + SET_STATE_SUBDIR;
 }
 const PATCH_DIR = "/data/UserData/schwung/patches";
@@ -14003,9 +14011,10 @@ function processSetChangedFlag() {
             }
 
             /* 3. Determine new directory */
-            const newDir = uuid
-                ? perSetStateDir(uuid)
-                : SLOT_STATE_DIR_DEFAULT;
+            /* perSetStateDir returns "" for a provisional identity — fall back
+             * to the install-local dir rather than building a path from "". */
+            const _perSet = perSetStateDir(uuid);
+            const newDir = _perSet ? _perSet : SLOT_STATE_DIR_DEFAULT;
 
             if (uuid && typeof host_ensure_dir === "function") {
                 host_ensure_dir(newDir);
@@ -15584,7 +15593,10 @@ globalThis.init = function() {
             const uuid = lines[0] ? lines[0].trim() : "";
             if (uuid) {
                 const setDir = perSetStateDir(uuid);
-                if (host_file_exists(setDir + "/slot_0.json") || host_file_exists(setDir + "/shadow_chain_config.json")) {
+                /* "" = provisional identity, no project to read from. Without
+                 * this the probe would stat "/slot_0.json" at the filesystem
+                 * root. */
+                if (setDir && (host_file_exists(setDir + "/slot_0.json") || host_file_exists(setDir + "/shadow_chain_config.json"))) {
                     activeSlotStateDir = setDir;
                     debugLog("Init: using per-set state dir " + setDir);
                 }

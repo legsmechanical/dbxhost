@@ -68,6 +68,35 @@ export function isSetLibraryPath(path) {
     return p.indexOf(SET_LIBRARY_DIR + "/") === 0;
 }
 
+/* ── Provisional (not-yet-real) set identities ───────────────────────────────
+ *
+ * When Move's currentSongIndex moves before the matching `Sets/<UUID>/` folder
+ * exists, the host publishes a SYNTHETIC identity so there is something to show
+ * meanwhile: `__pending-<songIndex>-<seq>` (shadow_set_pages.c). It is a
+ * placeholder for a blank working state, and it is deliberately not a uuid.
+ *
+ * ⚠⚠ It must NEVER be used as a storage path. Per-project state lives at
+ * `Sets/<uuid>/dAVEBOx/`, so a placeholder uuid makes a REAL directory named
+ * `__pending-2-1` in the set library, and that session's work is filed where no
+ * real project will ever look for it. Five such directories were found on Josh's
+ * device (2026-08-25), one created that same session — each holding only a
+ * `dAVEBOx/` state dir and no Song.abl.
+ *
+ * ⭑ It lives HERE because both writers need it and they are in different
+ * codebases: dAVEBOx (`ui_persistence.mjs`) and the host UI (`shadow_ui.js`,
+ * which writes `dAVEBOx/host` under the same uuid). A copy in each is how the
+ * two drift.
+ *
+ * The right behaviour when provisional is to write NOTHING and wait for a real
+ * uuid — not to fall back to some other path. There is no project to save to
+ * yet, and inventing one is what created the debris. */
+export const PROVISIONAL_SET_UUID_PREFIX = "__pending-";
+
+export function setUuidIsProvisional(uuid) {
+    if (!uuid) return false;
+    return String(uuid).indexOf(PROVISIONAL_SET_UUID_PREFIX) === 0;
+}
+
 /* The one question a file surface should ask before listing or offering an
  * entry: is this path off-limits right now?
  *

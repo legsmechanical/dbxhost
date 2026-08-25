@@ -25,6 +25,9 @@ const STATE_PREFIX = (typeof SEQ8_STATE_PREFIX === 'string') ? SEQ8_STATE_PREFIX
  * is a contract with project-cmd.sh/select-list.sh, pinned by check-config.sh.
  * ⚠ In-session Sets/ is the standalone library (bind-mounted), so these paths
  * only ever land inside dAVEBOx projects. */
+import { setUuidIsProvisional }
+    from '/data/UserData/schwung/shared/session_state.mjs';
+
 const SETS_DIR    = '/data/UserData/UserLibrary/Sets';
 const DBX_SUBDIR  = 'dAVEBOx';
 
@@ -36,7 +39,13 @@ function setStateDir(uuid) { return SETS_DIR + '/' + uuid + '/' + DBX_SUBDIR; }
  * project, so they must not assume it. Cheap: mkdir on an existing dir is a
  * no-op. */
 function ensureStateDir(uuid) {
-    if (uuid) host_ensure_dir(setStateDir(uuid));
+    /* ⚠ NEVER create a directory for a PROVISIONAL identity. `__pending-N-M`
+     * is the host's placeholder for "Move moved to a set whose folder does not
+     * exist yet"; making a dir for it puts a fake project in the set library and
+     * files this session's state where no real project will read it. Belt and
+     * braces — readActiveSet() already refuses to report one — because this is
+     * the function that actually makes the directory. */
+    if (uuid && !setUuidIsProvisional(uuid)) host_ensure_dir(setStateDir(uuid));
 }
 
 /* The "this project is brand new" note project-cmd leaves at creation. Read and
@@ -71,8 +80,15 @@ export function readActiveSet() {
         const raw = host_read_file(ACTIVE_SET_PATH);
         if (!raw) return { uuid: '', name: '' };
         const lines = raw.split('\n');
+        const _u = (lines[0] || '').trim();
+        /* ⚠⚠ A PROVISIONAL identity is reported as NO PROJECT, not as itself.
+         * `__pending-N-M` is the host's placeholder while Move sits on a song
+         * index whose set folder does not exist yet. This is the single choke
+         * point where the uuid enters dAVEBOx (both S.currentSetUuid writes in
+         * ui_tick read it from here), so refusing it here keeps every path
+         * builder, save and snapshot downstream from ever seeing one. */
         return {
-            uuid: (lines[0] || '').trim(),
+            uuid: setUuidIsProvisional(_u) ? '' : _u,
             name: (lines[1] || '').trim()
         };
     } catch (e) {
