@@ -52,7 +52,6 @@ import { applyTrackConfig,
 import { recordNoteOn, recordNoteOff,
     extHeldNotes, extCountInCapture } from './ui_record.mjs';
 import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons } from './ui_input_pads.mjs';
-import { applyBankPick } from './ui_input_cc.mjs';
 import { standDownBankDisplay } from './ui_state.mjs';
 import { _onCCMsg } from './ui_input_cc.mjs';
 import { soundActive, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw } from './ui_sound.mjs';
@@ -351,10 +350,11 @@ globalThis.onMidiMessageInternal = function (data) { try { _onMidiInternalImpl(d
  * site remembering the rule. */
 function _jogTouchRelease() {
     S.jogTouched = false;
-    if (S.bankPickerSel >= 0) applyBankPick();
-    /* ⚠ Unconditional: standDownBankDisplay declines when this same input pass
-     * armed the window, which is exactly what a commit above just did. The
-     * rule is the owner's, not this site's — see ui_state. */
+    /* ⚠ Letting go ABANDONS an open pick — it does not apply it (Josh,
+     * 2026-08-25). Only the jog CLICK applies a bank. Nothing was changed while
+     * browsing, so the card underneath is still the bank you were on and
+     * "nothing happened" is visible rather than silent. */
+    if (S.bankPickerSel >= 0) { S.bankPickerSel = -1; S.bankPickerIdleTick = -1; }
     standDownBankDisplay();
     forceRedraw();
 }

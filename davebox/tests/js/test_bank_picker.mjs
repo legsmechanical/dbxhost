@@ -2,8 +2,12 @@
  * kit's list overlay over the page you were on, turns move a selection, and
  * letting go of the jog TOUCH commits. Shift+jog goes back to stepping tracks.
  *
- * ⚠ A turn is TOUCH, turn, RELEASE — you cannot turn the wheel without touching
- * it, which is what lets the gesture commit without a modifier. A test that
+ * ⭑⭑ ONLY THE JOG CLICK APPLIES A BANK (Josh, 2026-08-25). The touch release,
+ * the settle timeout, Shift+jog and Back all ABANDON. One rule, and it removes
+ * a class of bug rather than adding a case: the timeout used to commit, so a
+ * picker you forgot about quietly changed your bank.
+ *
+ * ⚠ A turn is TOUCH, turn, then either CLICK (choose) or RELEASE (walk away). A test that
  * sends the CC alone leaves the gesture unfinished and nothing lands.
  *
  * ⚠⚠ Nothing may be applied while browsing. The old walk applied every step as
@@ -77,8 +81,9 @@ const note  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0x90,
 const shift = (on) => cc(49, on ? 127 : 0);
 const touch = (on) => note(9, on ? 127 : 0);      /* MoveMainTouch = note 9 */
 const jog   = (d) => cc(14, d > 0 ? 1 : 127);
-/* One complete turn of the wheel: touch, detent, release. */
-const turn  = (d) => { touch(true); jog(d); globalThis.tick(); touch(false); globalThis.tick(); };
+const click = () => { cc(3, 127); cc(3, 0); globalThis.tick(); };
+/* Turn and CHOOSE: touch, detent, click, release. */
+const turn  = (d) => { touch(true); jog(d); globalThis.tick(); click(); touch(false); globalThis.tick(); };
 
 function reset() {
     S.sessionView = false; S.globalMenuOpen = false;
@@ -100,27 +105,43 @@ step('⭑ a jog turn opens the picker and does NOT change the bank yet', () => {
     touch(false); globalThis.tick();
 });
 
-step('⭑ letting go of the jog COMMITS the selection', () => {
+step('⭑ the CLICK commits the selection', () => {
     reset();
     const cyc = bankCycleForMode(0);
     touch(true); jog(1); jog(1); globalThis.tick();
     const want = cyc[S.bankPickerSel];
-    if (S.activeBank === want) throw new Error('control: it applied before the release');
-    touch(false); globalThis.tick();
+    if (S.activeBank === want) throw new Error('control: it applied before the click');
+    click();
     if (S.activeBank !== want) throw new Error('landed on ' + S.activeBank + ', expected ' + want);
     if (S.trackActiveBank[2] !== want)
         throw new Error('the per-track record did not follow: ' + S.trackActiveBank[2]);
-    if (S.bankPickerSel >= 0) throw new Error('the picker stayed open after the release');
+    if (S.bankPickerSel >= 0) throw new Error('the picker stayed open after the click');
+    touch(false); globalThis.tick();
 });
 
-step('⭑ the picked bank LINGERS on screen — the release must not wipe its window', () => {
-    /* The jog-touch release also stands the bank display down. On a commit that
-     * would make the bank you just chose vanish as you let go. */
+step('⭑⭑ letting go ABANDONS — releasing is not choosing', () => {
+    /* The change of model: release used to commit. Nothing was applied while
+     * browsing, so walking away leaves the card you were already on. */
     reset();
-    turn(1);
-    if (S.bankSelectTick < 0)
-        throw new Error('the release cleared the display window — the picked bank ' +
-                        'never gets shown');
+    const before = S.activeBank;
+    touch(true); jog(1); jog(1); globalThis.tick();
+    if (S.bankPickerSel < 0) throw new Error('control: the picker did not open');
+    touch(false); globalThis.tick();
+    if (S.bankPickerSel >= 0) throw new Error('the picker stayed open after the release');
+    if (S.activeBank !== before)
+        throw new Error('the release applied a bank (' + S.activeBank + ') — only the ' +
+                        'click may do that');
+});
+
+step('⭑ the picked bank stays on screen — you are still touching the wheel', () => {
+    /* The ergonomic point of committing on the click: you never let go, so the
+     * card is up under your finger instead of needing a re-touch to look at. */
+    reset();
+    touch(true); jog(1); globalThis.tick();
+    click();
+    if (S.bankSelectTick < 0) throw new Error('the picked bank has no display window');
+    if (!S.jogTouched) throw new Error('the click ended the touch — the card will drop');
+    touch(false); globalThis.tick();
 });
 
 step('⭑ picking SOUND + CONFIG enters it, and keeps its display window', () => {
@@ -131,22 +152,28 @@ step('⭑ picking SOUND + CONFIG enters it, and keeps its display window', () =>
     globalThis.tick();
     if (cyc[S.bankPickerSel] !== BANK_SOUND) throw new Error('control: not on SOUND + CONFIG');
     if (snd.soundActive()) throw new Error('it entered while merely scrolling past');
-    touch(false); globalThis.tick();
-    if (!snd.soundActive()) throw new Error('the release did not open the screen');
+    click();
+    if (!snd.soundActive()) throw new Error('the click did not open the screen');
+    touch(false);
     if (S.bankSelectTick < 0)
         throw new Error('the deferred entry lost its display window');
     snd.soundExit();
 });
 
-step('⚠ a touchless turn still commits, on settle — the overlay cannot strand', () => {
-    /* The capacitive read can miss a flick and the remote UI has no wheel; a
-     * picker with no way to close would swallow the jog forever. */
+step('⚠ a touchless turn settles CLOSED, and applies nothing', () => {
+    /* The capacitive read can miss a flick and the remote UI has no wheel, so a
+     * picker with no way to close would swallow the jog forever. ⚠ It closes
+     * without choosing: a timeout is the one caller that fires with nobody
+     * asking, and committing there meant a forgotten picker changed your bank. */
     reset();
+    const before = S.activeBank;
     jog(1); globalThis.tick();                        /* no touch at all */
     if (S.bankPickerSel < 0) throw new Error('control: the picker did not open');
     S.tickCount += 500; globalThis.tick();
     if (S.bankPickerSel >= 0) throw new Error('the picker never settled — it is stranded');
-    if (S.activeBank === 0) throw new Error('settling did not apply the selection');
+    if (S.activeBank !== before)
+        throw new Error('the timeout APPLIED a bank (' + S.activeBank + ') — only the ' +
+                        'click may do that');
 });
 
 step('⚠ SHIFT+jog steps the TRACK again — the picker is the unshifted turn', () => {
@@ -174,7 +201,7 @@ step('⭑ Shift+jog DROPS an open picker — and does not commit it', () => {
     if (S.activeTrack !== 3) throw new Error('the track did not step: ' + S.activeTrack);
     shift(false); touch(false); globalThis.tick();
     if (S.activeBank !== bankBefore)
-        throw new Error('the later touch release committed the abandoned pick');
+        throw new Error('something after the drop committed the abandoned pick');
 });
 
 step('⭑ the bank card names its TRACK, so a latched card still says where you are', () => {
@@ -253,7 +280,7 @@ step('⭑ a drum track offers ITS cycle, not the melodic one', () => {
     const cyc = bankCycleForMode(1);
     touch(true); jog(1); globalThis.tick();
     const want = cyc[S.bankPickerSel];
-    touch(false); globalThis.tick();
+    click(); touch(false); globalThis.tick();
     if (S.activeBank !== want)
         throw new Error('landed on ' + S.activeBank + ', not the drum cycle step ' + want);
     S.trackPadMode[2] = 0;

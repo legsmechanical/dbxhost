@@ -61,7 +61,7 @@ import { parseValue, stepValue, commitString, renderCellsForBank,
     formatValue } from './ui_cells.mjs';
 import {
     drawKitBankPage, drawKitHeader, drawKitSectionPicker, drawKitList,
-    drawKitPageBar, MV_BAR_Y,
+    drawKitHeaderRule, MV_BAR_Y,
     hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard,
 } from './ui_movy.mjs';
 import { bankCyclePos } from './ui_pure.mjs';
@@ -4201,10 +4201,10 @@ function renderBlocks() {
      * segment gaps are UNPAINTED pixels, so anything already on the row would
      * fill them back in. */
     if (!soundIsGlobal() && GS.trackPadMode[S.track] !== PMC) {
-        const pos = bankCyclePos();   /* activeBank === BANK_SOUND here, so the
-                                       * idx IS the last segment — one source */
+        /* Same plain rule the bank cards draw: this screen IS a bank, and the
+         * segmented indicator went with the bank walk it described. */
         fill_rect(0, MV_BAR_Y, 128, 1, 0);
-        drawKitPageBar(pos.idx, pos.count);
+        drawKitHeaderRule();
     }
     /* ⚠⚠ This builds a NEW object per row, so anything set on the pickRow has to
      * be forwarded EXPLICITLY. It is the second time that has bitten: the doors

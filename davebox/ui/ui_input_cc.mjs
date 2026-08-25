@@ -76,6 +76,25 @@ const BACK_HOLD_TICKS = 42;          /* ~450ms at 94Hz — a deliberate long-pre
 
 function _onCC_jog(d1, d2) {
     if (S.shiftTrackLEDActive) { S.shiftTrackLEDActive = false; S.screenDirty = true; }
+    /* ⭑⭑ BANK PICKER: the click is the ONLY thing that applies a bank (Josh,
+     * 2026-08-25). Everything else abandons — the touch release, the settle
+     * timeout, Shift+jog, Back.
+     *
+     * One rule, and it removes a class of bug rather than adding a case: the
+     * settle timeout used to COMMIT, so a picker you forgot about quietly
+     * changed your bank. Now nothing applies unless you say so.
+     *
+     * Click is also the app's existing verb for "choose this" — it is how a row
+     * opens in sound mode — and committing without letting go keeps the card up
+     * under your finger instead of making you re-touch to see where you landed.
+     *
+     * ⚠ FIRST among the click handlers, before the alt-param toggle further
+     * down: while the overlay is up the click means commit. That is
+     * context-dependent, but the context is a list filling the screen. */
+    if (d1 === 3 && d2 === 127 && S.bankPickerSel >= 0 && !S.shiftHeld) {
+        applyBankPick();
+        return;
+    }
     /* Tempo selector (post-capture): jog click keeps the current tempo. */
     if (d1 === 3 && d2 === 127 && S.tempoSelectActive) {
         host_module_set_param('t' + S.tempoSelectTrack + '_capture_confirm', '');
@@ -591,6 +610,10 @@ function modalDialogUp() {
      *
      * Track view only: the fall-back this defeats is a track-view screen. */
     if (d1 === 3 && d2 === 127 && S.shiftHeld && !S.sessionView && !soundActive()) {
+        /* Shift means the gesture is not about picking a bank, so an open
+         * picker is abandoned here exactly as Shift+jog abandons it — never
+         * committed by a chord that was reaching for something else. */
+        if (S.bankPickerSel >= 0) { S.bankPickerSel = -1; S.bankPickerIdleTick = -1; }
         S.bankCardLatched = !S.bankCardLatched;
         if (S.bankCardLatched) armBankDisplay();
         S.screenDirty = true;

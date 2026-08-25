@@ -50,7 +50,7 @@ import { pollDSP,
     pendingDrumNoteOffs, _drumRecNoteOns, _drumRecNoteOffs } from './ui_dsp_bridge.mjs';
 import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes } from './ui_record.mjs';
 import { xposeCancelPreview } from './ui_xpose.mjs';
-import { checkBackHold, backTapWouldAct, applyBankPick } from './ui_input_cc.mjs';
+import { checkBackHold, backTapWouldAct } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
@@ -1275,7 +1275,7 @@ export function _tickImpl() {
             S.pendingBusMenu = false;
             if (!soundActive()) soundEnterBuses();
         }
-        /* Bank-picker SETTLE fallback.
+        /* Bank-picker SETTLE fallback — it ABANDONS.
          *
          * The gesture normally ends when you let go of the jog wheel. But a
          * turn can arrive with no touch at all — the capacitive read can miss a
@@ -1283,14 +1283,17 @@ export function _tickImpl() {
          * to close would sit over the screen forever, swallowing the jog. So an
          * idle selection commits itself.
          *
-         * ⚠ Deliberately LONGER than a human pause between detents: this is the
-         * floor that stops the overlay stranding, not a second way to choose. If
-         * it fires while someone is still deciding, the number is wrong.
+         * ⚠⚠ It CLOSES the picker, it does not choose. Only the jog click
+         * applies a bank (Josh, 2026-08-25), and a timeout is the one caller
+         * that fires with nobody asking — committing there meant a picker you
+         * forgot about quietly changed your bank.
+         *
          * Gated on the touch being UP, so it can never pre-empt a hand that is
          * still on the wheel. */
         if (S.bankPickerSel >= 0 && !S.jogTouched && S.bankPickerIdleTick >= 0 &&
                 (S.tickCount - S.bankPickerIdleTick) > BANK_PICKER_SETTLE_TICKS) {
-            applyBankPick();
+            S.bankPickerSel = -1;
+            S.bankPickerIdleTick = -1;
             S.screenDirty = true;
         }
 

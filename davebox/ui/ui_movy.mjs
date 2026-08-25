@@ -807,6 +807,24 @@ export function drawKitBrandHeader() {
  * is spread across the first segments so every segment reads the same width.
  * (Redraw cadence: pollDSP dirties the screen every few ticks, which keeps
  * the flash animating on resting views.) */
+/* The header/body rule with NO segmentation.
+ *
+ * The bank cards used to draw drawKitPageBar here, showing which of N banks you
+ * were on — a scroll position for a jog that stepped through banks one at a
+ * time. The jog opens a NAMED LIST now (Josh, 2026-08-25), so the segments were
+ * describing navigation that no longer happens, and the header already says
+ * which bank you are on.
+ *
+ * ⚠ The rule itself stays: it is the chassis line between the header and the
+ * body, and drawKitPageBar drew it too (its count<=1 branch). Removing the bar
+ * entirely would leave the header floating.
+ *
+ * The segmented bar is NOT retired — module param PAGES still scroll, and there
+ * it means what it says. */
+export function drawKitHeaderRule() {
+    fill_rect(0, MV_BAR_Y, SCREEN_W, 1, 1);
+}
+
 export function drawKitPageBar(idx, count) {
     if (count <= 1) { fill_rect(0, MV_BAR_Y, SCREEN_W, 1, 1); return; }
     const blinkOn = Math.floor(Date.now() / 375) % 2 === 0;

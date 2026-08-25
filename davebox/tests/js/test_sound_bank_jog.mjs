@@ -57,12 +57,20 @@ const { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, BANK_WHEN, BANK
 
 const send  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 const note  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0x90, d1, d2]));
-/* ⚠ A jog turn is TOUCH, turn, RELEASE — you cannot turn the wheel without
- * touching it. Since 2026-08-25 that release is what commits the bank picker in
- * track view, so a test that sends the CC alone leaves the gesture unfinished
- * and nothing lands. (Inside sound mode the jog is that screen's and the touch
- * is simply along for the ride.) MoveMainTouch is note 9. */
-const turn  = (d) => { note(9, 127); send(14, d > 0 ? 1 : 127); globalThis.tick(); note(9, 0); globalThis.tick(); };
+/* ⚠ A jog turn in TRACK VIEW is TOUCH, turn, CLICK, release: the turn opens the
+ * bank picker and only the CLICK applies a bank (Josh, 2026-08-25). A test that
+ * sends the CC alone leaves the gesture unfinished and nothing lands.
+ * (Inside sound mode the jog is that screen's own — the picker never opens, the
+ * click drives the row under the cursor, and this helper is not used for it.)
+ * MoveMainTouch is note 9; the jog click is CC 3. */
+const turn  = (d) => {
+    note(9, 127);
+    send(14, d > 0 ? 1 : 127);
+    globalThis.tick();
+    if (S.bankPickerSel >= 0) { send(3, 127); send(3, 0); globalThis.tick(); }
+    note(9, 0);
+    globalThis.tick();
+};
 const right = () => turn(1);
 const left  = () => turn(-1);
 
