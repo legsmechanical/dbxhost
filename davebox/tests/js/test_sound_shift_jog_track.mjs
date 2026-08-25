@@ -65,7 +65,17 @@ const send  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0,
 const shift = (on) => send(49, on ? 127 : 0);
 const turn  = () => send(14, 1);                 /* +1 detent */
 
-function step(label, fn) { try { fn(); ok(label); } catch (e) { bad(label, e); } }
+function step(label, fn) {
+    /* ⚠⚠ An ASYNC fn returns a promise this runner never awaits: the body would
+     * not run, nothing would throw, and the step would report ok. A test that
+     * passes because it did NOTHING is worse than one that fails. Caught
+     * 2026-08-24 — an async step "passed" against a mutation it could not have
+     * seen. Hoist awaits to module scope; keep step bodies synchronous. */
+    if (fn && fn.constructor && fn.constructor.name === 'AsyncFunction')
+        throw new Error('step("' + label + '") got an ASYNC function — it would pass ' +
+                        'without running. Hoist the awaits to module scope.');
+    try { fn(); ok(label); } catch (e) { bad(label, e); }
+}
 
 step('setup: sound mode on a Schwung track, at its menu', () => {
     S.sessionView = false;

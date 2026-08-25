@@ -81,7 +81,17 @@ S.stepIntervalMode = false;
 function draw() { globalThis.clear_screen(); render.drawUI(); }
 /* The eight track digits, printed only by drawTrackRow. */
 const trackRowDrawn = () => [1,2,3,4,5,6,7,8].every((n) => prints.indexOf(String(n)) >= 0);
-function step(label, fn) { try { fn(); ok(label); } catch (e) { bad(label, e); } }
+function step(label, fn) {
+    /* ⚠⚠ An ASYNC fn returns a promise this runner never awaits: the body would
+     * not run, nothing would throw, and the step would report ok. A test that
+     * passes because it did NOTHING is worse than one that fails. Caught
+     * 2026-08-24 — an async step "passed" against a mutation it could not have
+     * seen. Hoist awaits to module scope; keep step bodies synchronous. */
+    if (fn && fn.constructor && fn.constructor.name === 'AsyncFunction')
+        throw new Error('step("' + label + '") got an ASYNC function — it would pass ' +
+                        'without running. Hoist the awaits to module scope.');
+    try { fn(); ok(label); } catch (e) { bad(label, e); }
+}
 
 step('⭑ CONTROL: idle on AUTOMATION, the graph holds the screen (no track row)', () => {
     S.shiftHeld = false;

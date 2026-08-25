@@ -82,7 +82,17 @@ const turnKnob1 = () => {
  * enough ticks to cross a POLL_INTERVAL boundary. */
 function ticks(n) { for (let i = 0; i < n; i++) tickmod._tickImpl(); }
 
-function step(label, fn) { try { fn(); ok(label); } catch (e) { bad(label, e); } }
+function step(label, fn) {
+    /* ⚠⚠ An ASYNC fn returns a promise this runner never awaits: the body would
+     * not run, nothing would throw, and the step would report ok. A test that
+     * passes because it did NOTHING is worse than one that fails. Caught
+     * 2026-08-24 — an async step "passed" against a mutation it could not have
+     * seen. Hoist awaits to module scope; keep step bodies synchronous. */
+    if (fn && fn.constructor && fn.constructor.name === 'AsyncFunction')
+        throw new Error('step("' + label + '") got an ASYNC function — it would pass ' +
+                        'without running. Hoist the awaits to module scope.');
+    try { fn(); ok(label); } catch (e) { bad(label, e); }
+}
 
 step('setup: session view, track 1 routed to Move instrument 2', () => {
     globalThis.init();                           /* the real init the host calls */

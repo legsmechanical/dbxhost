@@ -58,7 +58,17 @@ const send  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0,
 const right = () => { send(14, 1);   globalThis.tick(); };
 const left  = () => { send(14, 127); globalThis.tick(); };
 
-function step(label, fn) { try { fn(); ok(label); } catch (e) { bad(label, e); } }
+function step(label, fn) {
+    /* ⚠⚠ An ASYNC fn returns a promise this runner never awaits: the body would
+     * not run, nothing would throw, and the step would report ok. A test that
+     * passes because it did NOTHING is worse than one that fails. Caught
+     * 2026-08-24 — an async step "passed" against a mutation it could not have
+     * seen. Hoist awaits to module scope; keep step bodies synchronous. */
+    if (fn && fn.constructor && fn.constructor.name === 'AsyncFunction')
+        throw new Error('step("' + label + '") got an ASYNC function — it would pass ' +
+                        'without running. Hoist the awaits to module scope.');
+    try { fn(); ok(label); } catch (e) { bad(label, e); }
+}
 
 /* Walk the menu cursor to its top row with left turns, asserting each one
  * stays INSIDE sound mode. Entry lands on the GENERATOR row (the block you

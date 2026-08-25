@@ -15,7 +15,17 @@
 let failed = 0;
 function ok(label) { console.log(`  ok   — ${label}`); }
 function bad(label, e) { console.error(`  FAIL — ${label}: ${e && e.stack ? e.stack : e}`); failed = 1; }
-function step(label, fn) { try { fn(); ok(label); } catch (e) { bad(label, e); } }
+function step(label, fn) {
+    /* ⚠⚠ An ASYNC fn returns a promise this runner never awaits: the body would
+     * not run, nothing would throw, and the step would report ok. A test that
+     * passes because it did NOTHING is worse than one that fails. Caught
+     * 2026-08-24 — an async step "passed" against a mutation it could not have
+     * seen. Hoist awaits to module scope; keep step bodies synchronous. */
+    if (fn && fn.constructor && fn.constructor.name === 'AsyncFunction')
+        throw new Error('step("' + label + '") got an ASYNC function — it would pass ' +
+                        'without running. Hoist the awaits to module scope.');
+    try { fn(); ok(label); } catch (e) { bad(label, e); }
+}
 
 /* ---- fake chain engine over the shadow bindings ---- */
 const ENGINE = {

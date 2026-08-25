@@ -11,7 +11,17 @@
 let failed = 0;
 function ok(label) { console.log(`  ok   — ${label}`); }
 function bad(label, e) { console.error(`  FAIL — ${label}: ${e && e.stack ? e.stack : e}`); failed = 1; }
-function step(label, fn) { try { fn(); ok(label); } catch (e) { bad(label, e); } }
+function step(label, fn) {
+    /* ⚠⚠ An ASYNC fn returns a promise this runner never awaits: the body would
+     * not run, nothing would throw, and the step would report ok. A test that
+     * passes because it did NOTHING is worse than one that fails. Caught
+     * 2026-08-24 — an async step "passed" against a mutation it could not have
+     * seen. Hoist awaits to module scope; keep step bodies synchronous. */
+    if (fn && fn.constructor && fn.constructor.name === 'AsyncFunction')
+        throw new Error('step("' + label + '") got an ASYNC function — it would pass ' +
+                        'without running. Hoist the awaits to module scope.');
+    try { fn(); ok(label); } catch (e) { bad(label, e); }
+}
 
 let opened = null;
 globalThis.host_register_primary = () => true;
@@ -97,22 +107,28 @@ step('the LED mask matches the keep mask — no lights/input split any more', ()
  * mutation proved it uncovered — flipping the lit pad back to White passed
  * every other test in the suite. Captured at the wire, the way the bank-jog
  * test does it: setLED emits [0x09, 0x90, note, color]. */
-step('⭑ a sounding pad wears the TRACK colour in co-run, not white', async () => {
-    const ledsMod = await import('../../ui/ui_leds.mjs');
-    const constsMod = await import('../../ui/ui_constants.mjs');
-    const ifMod = await import('/data/UserData/schwung/shared/input_filter.mjs');
-    const { updateTrackLEDs, invalidateLEDCache, trackColor } = ledsMod;
-    const { TRACK_PAD_BASE, PAD_MODE_MELODIC_SCALE } = constsMod;
+const ledsMod2 = await import('../../ui/ui_leds.mjs');
+const constsMod2 = await import('../../ui/ui_constants.mjs');
+const ifMod2 = await import('/data/UserData/schwung/shared/input_filter.mjs');
+
+step('⭑ a sounding pad wears the TRACK colour in co-run, not white', () => {
+    const { updateTrackLEDs, invalidateLEDCache, trackColor } = ledsMod2;
+    const { TRACK_PAD_BASE, PAD_MODE_MELODIC_SCALE } = constsMod2;
 
     S.sessionView = false;
     S.activeTrack = 2;
     S.trackPadMode[2] = PAD_MODE_MELODIC_SCALE;
     S.activeBank = 0;                       /* not AUTO — that greys everything */
     S.ledInitComplete = true;
+    /* init() builds this on-device only, and the melodic pad path reads it for
+     * the track-arp latch check. */
+    if (!S.bankParams)
+        S.bankParams = Array.from({ length: 8 }, () =>
+            Array.from({ length: 12 }, () => new Array(8).fill(0)));
 
     const colorsOfSounding = () => {
         const seen = {};
-        ifMod.clearAllLEDs();
+        ifMod2.clearAllLEDs();
         globalThis.move_midi_internal_send = (b) => {
             if (b && b[1] === 0x90 && b[2] >= TRACK_PAD_BASE && b[2] < TRACK_PAD_BASE + 32)
                 seen[b[2]] = b[3];
