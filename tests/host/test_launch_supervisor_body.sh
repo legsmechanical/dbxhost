@@ -55,6 +55,16 @@ check "and stock Move is waited for AFTER that, not before" \
 check "the wait is BOUNDED (a hung Move must not strand the exit)" \
     grep -qE '_wait"? -(lt|ge) [0-9]+' "$body"
 
+# 3. Orphaned crash handlers are reaped, and ONLY orphans.
+#    XCrashpadHandler outlives the Move that spawned it, so one accumulates per
+#    swept Move. It is reaped where Move has just been killed — but the PPid
+#    test is what makes that safe: without it, a session entry would kill the
+#    handler belonging to the Move it is about to run.
+check "orphaned crash handlers are reaped"        grep -q 'pidof XCrashpadHandler' "$body"
+check "...gated on PPid 1, so only ORPHANS die"   grep -q '_pp" = "1"' "$body"
+check "...reaped at BOTH sweeps (entry and exit)" \
+    bash -c "[ \$(grep -c 'pidof XCrashpadHandler' '$body') -ge 2 ]"
+
 rm -f "$body"
 [ "$fails" = 0 ] && echo "PASS: launch supervisor body" || echo "FAIL: launch supervisor body"
 exit $fails

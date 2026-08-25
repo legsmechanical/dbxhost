@@ -119,6 +119,20 @@ setsid bash -c '
     pids=$(pidof $name 2>/dev/null || true)
     if [ -n "$pids" ]; then echo "KILL $name $pids"; kill -9 $pids 2>/dev/null || true; fi
   done
+  # Reap ORPHANED crash handlers. XCrashpadHandler outlives the Move that
+  # started it -- it is reparented to init and sits there forever, one per
+  # swept Move, and it is not in the name list above because killing a LIVE
+  # Move handler would take away crash reporting for the Move we are about to
+  # run. Found 2026-08-25: a handler from the boot-era stock Move, still
+  # resident after 19 hours.
+  #
+  # Safe HERE and only here: Move has just been killed, so every handler left
+  # is an orphan by definition. PPid 1 is the test, so a handler belonging to
+  # anything still running is never touched.
+  for _cp in $(pidof XCrashpadHandler 2>/dev/null || true); do
+    _pp=$(awk "{print \$4}" /proc/$_cp/stat 2>/dev/null || echo 0)
+    if [ "$_pp" = "1" ]; then echo "reap orphan XCrashpadHandler $_cp"; kill -9 $_cp 2>/dev/null || true; fi
+  done
   rm -f /data/UserData/schwung/schwung-manager.pid
   sleep 0.5
 
@@ -369,6 +383,20 @@ setsid bash -c '
   for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager display-server; do
     pids=$(pidof $name 2>/dev/null || true)
     [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
+  done
+  # Reap ORPHANED crash handlers. XCrashpadHandler outlives the Move that
+  # started it -- it is reparented to init and sits there forever, one per
+  # swept Move, and it is not in the name list above because killing a LIVE
+  # Move handler would take away crash reporting for the Move we are about to
+  # run. Found 2026-08-25: a handler from the boot-era stock Move, still
+  # resident after 19 hours.
+  #
+  # Safe HERE and only here: Move has just been killed, so every handler left
+  # is an orphan by definition. PPid 1 is the test, so a handler belonging to
+  # anything still running is never touched.
+  for _cp in $(pidof XCrashpadHandler 2>/dev/null || true); do
+    _pp=$(awk "{print \$4}" /proc/$_cp/stat 2>/dev/null || echo 0)
+    if [ "$_pp" = "1" ]; then echo "reap orphan XCrashpadHandler $_cp"; kill -9 $_cp 2>/dev/null || true; fi
   done
   rm -f "$DBX_DIR/shadow_ui.pid" "$DBX_DIR/link_sub.pid"
 
