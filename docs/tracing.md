@@ -33,6 +33,14 @@ ssh ableton@move.local "rm /data/UserData/schwung/otlp_trace_on"
 scp 'ableton@move.local:/data/UserData/schwung/traces/*.otlp.jsonl' .
 ```
 
+⚠ **Those paths are the STOCK install's.** `TRACE_TOUCH_FILE` and `TRACE_DIR`
+are built from `SCHWUNG_INSTALL_DIR`, which this fork overrides — a dbxhost
+build watches `/data/UserData/dbx-host/otlp_trace_on` and writes to
+`/data/UserData/dbx-host/traces`. Touching the stock path while a dAVEBOx
+session is running enables tracing in *stock's* processes and looks exactly like
+tracing that silently produced nothing. Check which tree you mean:
+`strings <binary> | grep otlp_trace_on`.
+
 The touch-file gates every process (polled within ~5 s, so toggling is live).
 Output lands in `/data/UserData/schwung/traces/`, one file per service:
 
