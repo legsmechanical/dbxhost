@@ -64,7 +64,7 @@ await import('../../ui/ui.js');                 /* installs onMidiMessageInterna
 const { S } = await import('../../ui/ui_state.mjs');
 const { NUM_TRACKS } = await import('../../ui/ui_constants.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
-const { SLOT_LEVEL_MAX, KNOB_POSITIONS, SESS_KNOB_MODES } = await import('../../ui/ui_engine.mjs');
+const { SLOT_LEVEL_MAX, SESS_KNOB_MODES } = await import('../../ui/ui_engine.mjs');
 
 /* Knob 1 = CC 71, one detent clockwise. */
 /* ⚠ A turn is TWO detents since the mixer knobs adopted canvaskit's feel
@@ -184,10 +184,10 @@ step('a COLD detent moves exactly ONE position — exact dialing survives', () =
     const before = S.sessVolLevel[0];
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 1]));
     const moved = S.sessVolLevel[0] - before;
-    const onePos = SLOT_LEVEL_MAX / KNOB_POSITIONS;
+    const onePos = SESS_KNOB_MODES[0].step;   /* volume's own unit: 0.01 */
     if (Math.abs(moved - onePos) > onePos / 100)
-        throw new Error('a cold detent should move exactly one of ' + KNOB_POSITIONS +
-                        ' positions (' + onePos + '), moved ' + moved);
+        throw new Error('a cold detent should move exactly ONE unit (' + onePos +
+                        ', what the readout prints), moved ' + moved);
 });
 
 /* ⭑ THE ASSERTIONS ARE RANGES, not the tuned numbers. Josh is hunting the sweet
@@ -220,9 +220,9 @@ step('a SEND sweep costs a human gesture, not four revolutions', () => {
     if (counts < 40)
         throw new Error('a full sweep cost only ' + counts + ' counts — too fast to ' +
                         'place a value; the range scaling has overshot');
-    const oldLawCounts = KNOB_POSITIONS * 2;
+    const oldLawCounts = 510;   /* the retired flat law: 255 positions x sens 2 */
     if (oldLawCounts <= 250)
-        throw new Error('control broke: the old 255x2 law no longer exceeds the bound, ' +
+        throw new Error('control broke: the old 510-count law no longer exceeds the bound, ' +
                         'so this step would pass against the bug it exists to catch');
 });
 

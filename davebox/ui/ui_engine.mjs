@@ -143,35 +143,56 @@ export const SLOT_LEVEL_MAX = 2;
  *
  * Everything is expressed as a fraction of each param's own range, so one law
  * covers a 0..2 level and a 0..1 send without either feeling different. */
-export const KNOB_POSITIONS = 255;   /* canvaskit KIT_PARAM_MAX */
-/* ⚠ KNOB_SENS (2) and knobAccumSteps() were REMOVED 2026-08-26. They were a
- * THIRD knob law — a flat drain of two counts per position, no speed curve —
- * and at KNOB_POSITIONS * 2 = 510 counts per sweep the mixer strips were 5.1x
- * slower than the bank knobs beside them. The mixer now runs the shared
- * ccKnobDelta law scaled by KNOB_POSITIONS / SWEEP_UNITS, which keeps all 255
- * positions. Deleted rather than left in place: a dead law is what the next
- * surface copies. */
+/* ⭑⭑ A KNOB'S UNIT IS WHAT ITS READOUT SHOWS (Josh, 2026-08-26: "is there a way
+ * to make all the knobs feel the same and still allow fine tuning (+/-1) with
+ * very slow movements?").
+ *
+ * The shared law already grants exactly that: a cold detent moves ONE unit, and
+ * the fine bands cap at one unit per count. Bank params get it for free because
+ * their unit is a real one — Velocity steps by 1, Quantize by 1% — so easing off
+ * lands on the number you are reading.
+ *
+ * The mixer did NOT, and that is why it alone felt textureless next to them. Its
+ * unit was 1/255 of the range: a canvaskit artefact (KIT_PARAM_MAX) that nothing
+ * displays and nothing audibly steps, so a slow turn slid between values instead
+ * of ticking onto one. Same RATE as a bank knob (measured: 121 counts a sweep vs
+ * Vel's ~120) but no grain — which reads as "faster" under the finger.
+ *
+ * So each mode now declares the unit its own formatter prints:
+ *     volume  0..2   -> 200 units (0.01, matching `toFixed(2)`)
+ *     pan     0..1   -> 200 units (one percentage point of the 100L..100R it shows)
+ *     sends   0..1   -> 100 units (one percent, matching `Math.round(v * 100)`)
+ * ⇒ ease off any of them and the display moves by exactly 1 per detent.
+ *
+ * ⚠ KNOB_SENS (2) and knobAccumSteps() were REMOVED earlier the same day. They
+ * were a THIRD knob law — a flat drain of two counts per position — costing 510
+ * counts a sweep against the bank knobs' 100. Deleted rather than left in place:
+ * a dead law is what the next surface copies, which is how it got here. */
 
 export const SESS_KNOB_MODES = [
     /* ⚠ `sweep` is VOLUME's alone: the encoder counts a full 0..max sweep should
      * cost, overriding the universal SWEEP_UNITS. Josh judged the universal rate
      * right for pan and the sends and WRONG here, on hardware — a fader wants
-     * travel where a pan wants reach. KNOB_POSITIONS * 2 is exactly the
-     * pre-2026-08-26 feel he asked to keep (measured at 511 counts). */
+     * travel where a pan wants reach. 510 is the pre-2026-08-26 feel he asked to
+     * keep, measured at 511 counts. */
     { key: 'volume', label: 'VOLUME', widget: 'vbar',   def: 1.0, max: SLOT_LEVEL_MAX,
-      sweep: KNOB_POSITIONS * 2,
+      units: 200, sweep: 510,
       fmt: (v) => v.toFixed(2) + 'x' },
     { key: 'pan',    label: 'PAN',    widget: 'arcbip', def: 0.5, max: 1.0,
+      units: 200,
       fmt: (v) => { const pct = Math.round((v - 0.5) * 200); return pct === 0 ? 'C' : pct < 0 ? Math.abs(pct) + 'L' : pct + 'R'; },
       snap: 0.5, snapZone: 0.02 },
     { key: 'send_a', label: 'SEND A', widget: 'arc',    def: 0.0, max: 1.0,
+      units: 100,
       fmt: (v) => Math.round(v * 100) + '%' },
     { key: 'send_b', label: 'SEND B', widget: 'arc',    def: 0.0, max: 1.0,
+      units: 100,
       fmt: (v) => Math.round(v * 100) + '%' },
 ];
-/* One step = one of 255 positions across THIS mode's range. Derived, not
- * written per mode, so no mode can drift to a different feel. */
-for (const m of SESS_KNOB_MODES) m.step = m.max / KNOB_POSITIONS;
+/* One step = one of THIS mode's own units. Derived from the declaration, never
+ * written per mode, so a mode cannot drift to a different feel — and the unit is
+ * now a number the user can actually see change. */
+for (const m of SESS_KNOB_MODES) m.step = m.max / m.units;
 /* Derived, never hand-mirrored — these used to be two literal arrays beside the
  * table above, which is one edit away from a mode writing another mode's key. */
 export const SESS_KNOB_KEYS     = SESS_KNOB_MODES.map(m => m.key);

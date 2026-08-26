@@ -15,7 +15,7 @@
  */
 
 import { SESS_KNOB_MODES, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
-         SLOT_LEVEL_MAX, KNOB_POSITIONS } from '../../ui/ui_engine.mjs';
+         SLOT_LEVEL_MAX } from '../../ui/ui_engine.mjs';
 
 let failed = 0;
 function ok(label) { console.log(`  ok   — ${label}`); }
@@ -53,7 +53,25 @@ eq(SESS_KNOB_MODES[3].widget, 'arc',    'send B draws as a plain arc');
 eq(SESS_KNOB_MODES[0].max, SLOT_LEVEL_MAX, 'volume max is the shared level ceiling');
 for (let i = 1; i < 4; i++) eq(SESS_KNOB_MODES[i].max, 1.0, `${SESS_KNOB_MODES[i].key} max is 1.0`);
 for (const m of SESS_KNOB_MODES)
-    eq(Math.round(m.max / m.step), KNOB_POSITIONS, `${m.key}: ${KNOB_POSITIONS} positions across its range`);
+    eq(Math.round(m.max / m.step), m.units, `${m.key}: ${m.units} units across its range`);
+
+/* ⭑⭑ THE UNIT MUST BE VISIBLE — this is the whole point of the 2026-08-26 change.
+ * Josh: "is there a way to make all the knobs feel the same and still allow fine
+ * tuning (+/-1) with very slow movements?" The shared curve already pins a slow
+ * detent to exactly ONE unit, so fine tuning means something only if one unit is
+ * an increment the formatter actually PRINTS. The mixer's old unit was 1/255 of
+ * range — a canvaskit artefact nothing displayed — so easing off sild between
+ * readings instead of landing on them.
+ *
+ * Asserted by DRIVING each formatter, not by comparing the numbers: a unit that
+ * rounds away in `fmt` is exactly the bug, and only fmt can reveal it. */
+for (const m of SESS_KNOB_MODES) {
+    const mid = m.max / 2;
+    if (m.fmt(mid) === m.fmt(mid + m.step))
+        throw new Error(`${m.key}: one unit (${m.step}) does not change the readout ` +
+                        `("${m.fmt(mid)}"), so a slow turn cannot dial +/-1`);
+    ok(`${m.key}: one unit moves the readout — "${m.fmt(mid)}" -> "${m.fmt(mid + m.step)}"`);
+}
 
 /* 4b. ⚠ The accumulator block that stood here is GONE (2026-08-26), with the law
  *     it tested. It pinned `knobAccumSteps` + `KNOB_SENS = 2` — a flat two
@@ -63,8 +81,8 @@ for (const m of SESS_KNOB_MODES)
  *     mixer that was 5.1x slower than its neighbours.
  *
  *     The mixer now runs the shared ccKnobDelta law (see _sessionKnobParam),
- *     scaled by KNOB_POSITIONS / SWEEP_UNITS so the 255 positions asserted just
- *     above are all still reachable. The FEEL is covered where it can be driven
+ *     scaled by `units / SWEEP_UNITS`, where `units` is now the increment each
+ *     mode's own formatter prints. The FEEL is covered where it can be driven
  *     end to end through a real CC — test_session_level_knob — rather than here,
  *     where only the pure helper was ever in reach.
 

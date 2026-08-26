@@ -29,7 +29,7 @@ import {
 } from './ui_constants.mjs';
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay } from './ui_state.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
-         SESS_KNOB_MODES, KNOB_POSITIONS, engineVolBlock } from './ui_engine.mjs';
+         SESS_KNOB_MODES, engineVolBlock } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity, BANK_CYCLE_DRUM, CONDUCT_BANK_CYCLE,
          bankCycleForMode } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
@@ -3235,37 +3235,29 @@ function _sessionKnobParam(knobIdx, d2) {
     const mode = SESS_KNOB_MODES[S.sessKnobMode];
     const d = (d2 >= 1 && d2 <= 63) ? d2 : (d2 >= 65) ? d2 - 128 : 0;
     if (!d) return;
-    /* The SAME law as the bank knobs, in POSITIONS instead of param units.
+    /* The SAME law as the bank knobs, in each mode's OWN UNITS.
      *
-     * ⚠ This used to be a third law of its own — `knobAccumSteps(.., KNOB_SENS)`,
-     * a flat two-counts-per-position drain with no speed curve. That cost
-     * KNOB_POSITIONS * KNOB_SENS = 510 counts for a full sweep, against the 100
-     * the bank knobs were tuned to on Josh's ear: the mixer strips were 5.1x
-     * slower than the knobs beside them. 510 is not a coincidence — it is the
-     * same ~508 that made the bank knobs "slow as hell" before `6ff275a0`, and
-     * it arrived here the same way, by copying canvaskit's CONTINUOUS-CELL
-     * default (min 0, max 255, step 1, sens 2) rather than what a real canvas
-     * param declares. [[mimic-means-read-the-inputs]]
+     * ⚠ This used to be a third law — `knobAccumSteps(.., KNOB_SENS)`, a flat
+     * two-counts-per-position drain with no speed curve — costing 510 counts a
+     * sweep against the bank knobs' tuned 100. It came from copying canvaskit's
+     * CONTINUOUS-CELL default rather than what a real param declares, which is
+     * the same mistake that made the bank knobs slow before `6ff275a0`.
+     * [[mimic-means-read-the-inputs]]
      *
-     * ⭑ Resolution is NOT the price of the fix. Scaling by
-     * KNOB_POSITIONS / SWEEP_UNITS keeps all 255 positions and makes a
-     * full-speed sweep cost ~SWEEP_UNITS counts; the fine bands still cap at one
-     * count per position, so a slow turn reaches a single 1/255 position exactly
-     * as before. What it ADDS is the deceleration curve, which the flat drain
-     * had no notion of.
+     * ⭑ The unit is the mode's own `units` — the increment its formatter PRINTS
+     * (pan a percentage point, a send one percent, volume 0.01). That is what
+     * makes ease-off fine tuning mean something: the curve pins a cold detent to
+     * exactly ONE unit and caps the fine bands at one unit per count, so a slow
+     * turn moves the READOUT by exactly 1. With the old 1/255-of-range unit the
+     * same law slid between displayed values instead of landing on them — same
+     * rate as a bank knob (measured: 121 counts a sweep against Vel's ~120) with
+     * no grain, which is what read as "faster" under the finger.
      *
-     * ⭑ Per-knob accumulator state now lives in the shared S.knobAccel* arrays,
-     * keyed by the same knob index — eight strips still cannot steal each
-     * other's partial turns, and a strip cannot be turned as a bank knob at the
-     * same time, so there is nothing for the two contexts to fight over. */
-    /* ⭑ VOLUME keeps its own, deliberately SLOWER sweep (Josh, 2026-08-26:
-     * "volume can be reverted ... the rest feel great"). A fader carries the
-     * mix, so it wants travel where a pan or a send wants reach — the one place
-     * the universal rate was judged wrong rather than merely unfamiliar.
-     * ⚠ This is the RATE restored, not the old law resurrected: volume still
-     * runs the shared ccKnobDelta, so it also keeps the deceleration and the
-     * one-position cold click that the retired flat drain never had. */
-    const steps = ccKnobDelta(d2, knobIdx, KNOB_POSITIONS / (mode.sweep || SWEEP_UNITS));
+     * ⭑ Per-knob accumulator state lives in the shared S.knobAccel* arrays, keyed
+     * by the same knob index — eight strips still cannot steal each other's
+     * partial turns, and a strip cannot be turned as a bank knob at the same
+     * time, so there is nothing for the two contexts to fight over. */
+    const steps = ccKnobDelta(d2, knobIdx, mode.units / (mode.sweep || SWEEP_UNITS));
     const acc = { steps };
     if (!acc.steps) {
         /* Partial detent: nothing moves, but the finger is clearly ON this
