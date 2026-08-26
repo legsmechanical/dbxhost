@@ -1105,12 +1105,17 @@ stopped sends a MIDI panic on every channel.
 it lands follows the track's route. Playback carries on either way, and the pads
 and step buttons stay with the sequencer, so you can keep playing while you dial.
 
-**Schwung tracks** open dAVEBOx's own sound editor. It starts on the track's
-chain — MIDI FX, the synth, then **FX 1-4** — and the jog picks a block. Inside a
-block the knobs edit its parameters and the jog turns the pages; hold **Shift**
-while turning to jump between sections. Picking an **empty** block opens the
-module list, which is how you add an effect. **Back** steps out one level at a
-time; **Shift + Note/Session** leaves outright.
+**Schwung tracks** open dAVEBOx's own sound editor, landing straight in the
+**Generator** — the part you almost always want — with its knobs live under your
+fingers. **Back** steps out to the track's chain: MIDI FX, the Generator, then
+**FX 1-4**, with the jog picking a block. Inside a block the knobs edit its
+parameters and the jog turns the pages; hold **Shift** while turning to jump
+between sections. Picking an **empty** block opens the module list, which is how
+you add an effect. **Back** keeps stepping out one level at a time;
+**Shift + Note/Session** leaves outright, from any depth.
+
+If the track's Generator is empty there is nothing to open, so the gesture leaves
+you on the chain with the module list a click away.
 
 > **Four insert effects is a dAVEBOx SA feature.** Official Schwung routes two, so
 > running dAVEBOx as an ordinary tool shows **FX 1-2** only. The editor asks the
@@ -1357,7 +1362,7 @@ device both ways — edits on either side show up on the other.
 | Delete + Play | Deactivate clips (running) · panic (stopped) |
 | Undo / Shift + Undo | Undo / redo |
 | Note/Session (tap / hold) | Switch / peek view |
-| Shift + Note/Session | Edit this track's sound |
+| Shift + Note/Session | Edit this track's sound (again to leave) |
 | Shift + Step 2 | Settings menu |
 
 ### Drum track (additions)

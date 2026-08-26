@@ -114,6 +114,16 @@ harder to hold in your head than one.
 (`ui_input_cc.mjs`, inside the `MoveNoteSession` block) is what gets removed to
 free the gesture. Nothing moves, nothing is relearned.
 
+> **Superseded in part, 2026-08-26.** Shift+Note/Session opens again — but not as
+> the duplicate door this retired. It is now a TOGGLE: it still closes whatever is
+> open (which is what made it the one-press way out from any depth, and that comes
+> first), and when nothing is open it goes one level PAST this screen, straight
+> into the focused track's GENERATOR editor. The bank walk remains the only way to
+> the screen itself, so the "two doors to the same room" rule above still holds —
+> what changed is that there is now a shortcut to a leaf. The destination follows
+> the track's route: Schwung → generator editor, Move → co-run, MIDI → declines
+> and says why.
+
 That button already carries LED state (`ui_tick.mjs`), so it can indicate
 sound mode without using the screen.
 
