@@ -1130,6 +1130,34 @@ function _projectPadPickerTap_impl(k) {
         return;
     }
 
+    /* SHIFT+pad = load it NOW, creating it first if the pad is empty (Josh,
+     * 2026-08-26). The third modifier in the picker's own vocabulary, beside
+     * Delete+tap and Copy+tap — and placed AFTER both so a held Delete or Copy
+     * keeps its meaning rather than becoming ambiguous.
+     *
+     * ⭑ This does not weaken the 2026-08-11 spec below. That rule is that a
+     * PLAIN tap never loads, because a stray finger on the picker should not
+     * swap the project out from under you. A held modifier is not a stray
+     * finger — it is the same reason Delete+tap is allowed to delete.
+     *
+     * ⚠ Create-then-load is deliberately NOT the confirm flow: the confirm
+     * exists so a plain tap on an empty pad cannot create by accident, and Shift
+     * is that intent already stated. Failure is still reported — the create can
+     * fail (a full disk, a name collision), and loading a project that was never
+     * made would be a silent no-op. */
+    if (S.shiftHeld) {
+        _pppCloseOverlays(p);
+        if (!proj) {
+            host_system_cmd('sh ' + PROJECT_CMD + ' new-at ' + k);
+            const d = _pppRunList();
+            if (d) _pppApplyList(p, d);
+            if (!p.byIndex[k]) { showActionPopup('CREATE', 'FAILED'); return; }
+            invalidateLEDCache();
+        }
+        _pppLoad(p, k);
+        return;
+    }
+
     /* Plain tap NEVER loads (spec: Josh, 2026-08-11 — it also removes the
      * accidental-load hazard). Occupied pad -> the Load/Rename/Color jog-menu;
      * empty pad -> a Create-new confirm. Tapping while an overlay is already
