@@ -2617,7 +2617,36 @@ function knobClass(pm) {
     return 'cont';
 }
 
-function ccKnobDelta(d2, k) {
+/* How much VALUE one detent is worth at full speed, scaled so a sweep costs the
+ * same GESTURE whatever the parameter's range — an analog pot's feel, where the
+ * distance your fingers travel maps to a proportion of the range rather than to
+ * a count of integers (Josh, 2026-08-26).
+ *
+ * SWEEP_UNITS is the one tunable: the knob units a full-range sweep should cost.
+ * 128 is chosen so a 0-127 parameter — the commonest range on the device, and
+ * the anchor everything else was tuned against — keeps a step of exactly 1 and
+ * feels precisely as it does today. Only WIDER ranges are scaled.
+ *
+ * ⭑ The host's own hosted-canvas cells already do this (`ui_cells.mjs`:
+ * `inc = cell.step || (max - min) / 100`), which is part of why those knobs feel
+ * right on wide params and dAVEBOx's did not.
+ *
+ * ⚠ Floors at 1, never below: a step of 0 would make a knob completely dead.
+ *
+ * ⚠ pm.step (declared by two params, Quant and Gate) is STILL not read here. It
+ * has never been read by anything since the factory gained it, so honouring it
+ * now would silently change two params on the strength of a declaration nobody
+ * has ever felt. Left as its own decision. */
+const SWEEP_UNITS = 128;
+function bankStep(pm) {
+    /* The floor at 1 IS the narrow-range case: any range at or under SWEEP_UNITS
+     * rounds to 0 or 1 and comes out as 1. An explicit early return for it was
+     * dead code — mutation-testing showed changing its condition altered nothing,
+     * which is the tell. */
+    return Math.max(1, Math.round((pm.max - pm.min) / SWEEP_UNITS));
+}
+
+function ccKnobDelta(d2, k, stepScale) {
     /* decodeDelta, NOT a sign test: the value carries the whole frame's detent
      * count and discarding it is the bug this replaced. */
     const dir = decodeDelta(d2);
@@ -2625,14 +2654,32 @@ function ccKnobDelta(d2, k) {
     const now = Date.now();
     const div = knobDivisor(k, now);
     S.knobAccelLast[k] = now;
-    /* A reversal drains through the accumulator rather than resetting it —
-     * knob_engine's anti-jitter rule, and the reason Math.trunc (toward zero)
-     * is correct here where Math.floor would bias negative turns. */
+
+    /* ---- DECELERATION, which is the actual ask ----
+     * A wide param needs a big step to sweep in a human gesture, and a step of
+     * ONE to be dialled exactly. Both, from the same knob, chosen by how fast it
+     * is turning: the value moved per detent is `step / divisor`, accumulated as
+     * a FRACTION and spent when it reaches a whole unit.
+     *
+     *   turning normally (divisor 4)  → the full range-scaled step: an analog
+     *                                   pot, same gesture whatever the range.
+     *   turning slowly   (divisor 16) → a SIXTEENTH of it, so the knob decelerates
+     *                                   into single-unit precision as you ease off.
+     *
+     * This is exactly what the host's engine does for FLOAT params — step/divisor
+     * per tick — and why those knobs feel right at both ends. Integer params
+     * could not express a fractional move, which is why dAVEBOx needed the
+     * accumulator to carry the remainder rather than rounding it away.
+     *
+     * ⚠ The FIRST motion after idle is pinned to one unit of value, never the
+     * scaled step. That is the "click" that makes an exact value dialable: tap
+     * the knob one detent and the param moves by exactly 1, on any range. */
+    const scale = (div === 1) ? 1 : (stepScale > 0 ? stepScale : 1);
     if ((dir > 0) !== (S.knobAccelDir[k] > 0)) S.knobAccelDir[k] = dir > 0 ? 1 : -1;
-    S.knobAccelAcc[k] += dir;
-    const units = Math.trunc(S.knobAccelAcc[k] / div);
+    S.knobAccelAcc[k] += dir * scale / div;
+    const units = Math.trunc(S.knobAccelAcc[k]);
     if (units === 0) return 0;
-    S.knobAccelAcc[k] -= units * div;
+    S.knobAccelAcc[k] -= units;
     return units;
 }
 
@@ -3676,7 +3723,7 @@ function _onCC_knobs(d1, d2) {
              * (set_param coalescing forbids bursts). */
             let _cls = knobClass(pm);
             if (pm.dspKey === 'clock_shift') _cls = 'pick';
-            let _delta = _cls === 'cont' ? ccKnobDelta(d2, knobIdx)
+            let _delta = _cls === 'cont' ? ccKnobDelta(d2, knobIdx, bankStep(pm))
                        : knobPick(knobIdx, decodeDelta(d2), _cls === 'delib' ? KNOB_DELIB : KNOB_PICK);
             /* ⚠ Two consumers cannot take a multi-step delta, so clamp AFTER the
              * accumulator (the remainder is kept either way — clamping the input
@@ -3787,7 +3834,15 @@ function _onCC_knobs(d1, d2) {
                     const cur  = S.bankParams[S.activeTrack][bank][knobIdx];
                     /* _delta already carries acceleration for 'cont' knobs;
                      * slow turns are always ±1 so exact values stay dialable
-                     * (the old step-2 skips are gone). */
+                     * (the old step-2 skips are gone).
+                     *
+                     * ⭑ ...and one unit is scaled to the param's RANGE. Without
+                     * that, a knob unit was always one integer value, so the
+                     * detents needed to cross a param were proportional to its
+                     * range: Res (0-5) swept in 5, Gate (0-400) needed 400 —
+                     * eighty times the travel for the same gesture. Josh,
+                     * 2026-08-26: "it feels like larger ranges move slower from
+                     * min to max than smaller ranges." They did. */
                     let nv  = Math.max(pm.min, Math.min(pm.max, cur + _delta));
                     if (nv !== cur) {
                         if (S.altMode && pm.dspKey === 'clip_resolution') {

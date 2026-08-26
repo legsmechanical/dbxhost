@@ -67,6 +67,7 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
+const { PAD_MODE_MELODIC_SCALE } = await import('../../ui/ui_constants.mjs');
 
 function ticks(n) { for (let i = 0; i < n; i++) tickmod._tickImpl(); }
 
@@ -83,11 +84,12 @@ function step(label, fn) {
  * small-range param deliberately: a 'pick' knob would mask the magnitude behind
  * its fixed divisor. */
 const KNOB_CC = 73;
-/* ⚠ The write does NOT land on the bank's dspKey. A NOTE FX knob writes the
- * ACTIVE CLIP's per-clip override: `t0_l0_pfx_set=velocity_offset <n>`. Asserting
- * the dspKey name here would report "the knob never moved" while it was moving
- * perfectly — measure the key the code actually writes. */
-const PARAM = 'velocity_offset';
+/* ⚠ In MELODIC mode a NOTE FX knob writes the track key `t0_noteFX_velocity`.
+ * In DRUM mode the same knob writes a per-LANE override
+ * (`t0_l0_pfx_set=velocity_offset <n>`) through an entirely different branch.
+ * Asserting the wrong one reports "the knob never moved" while it moves
+ * perfectly — measure the key the code actually writes, in the mode you set. */
+const PARAM = 'noteFX_velocity';
 function flick(magnitude, frames) {
     for (let i = 0; i < frames; i++) {
         globalThis.onMidiMessageInternal(new Uint8Array([0xB0, KNOB_CC, magnitude]));
@@ -131,6 +133,14 @@ step('setup: the NOTE FX bank live, melodic pads, knobs unlocked', () => {
     S.sessionView = false;
     S.activeBank = 1;
     S.activeTrack = 0;
+    /* ⚠⚠ MELODIC, explicitly. Bank 1 has a whole separate DRUM branch (K1/K2 =
+     * lane octave/note, per-LANE writes) that never reaches the generic
+     * bank-param handler this file is about. The first draft of this test ran in
+     * drum mode without noticing: the magnitude assertions passed — that path
+     * uses ccKnobDelta too — while the range assertions measured a code path
+     * that had not been touched. The tell was `t0_l0_...` (a LANE key) in the
+     * writes. */
+    S.trackPadMode.fill(PAD_MODE_MELODIC_SCALE);
     S.knobLocked.fill(false);
     ticks(16);
     /* Prove the stimulus lands on the param before measuring how FAR it lands —
@@ -199,6 +209,155 @@ step('a FRESH knob moves on its very first detent — exact dialing survives', (
     if (moved.length === 0)
         throw new Error('a deliberate single detent did nothing — exact dialing is gone; ' +
                         'writes=' + JSON.stringify(writes.slice(before.length).slice(-3)));
+});
+
+
+/* ---- Range normalisation (Josh, 2026-08-26, after feeling the fix above) ----
+ * "does the param min/max affect the speed? b/c it feels like larger ranges move
+ * slower from min to max than smaller ranges." They did, exactly: one knob unit
+ * was one integer value, so crossing a param cost detents in proportion to its
+ * range. A knob unit is now scaled by the range, so the GESTURE that sweeps a
+ * narrow param also sweeps a wide one.
+ *
+ * ⚠ Asserted as a RATIO between two real params rather than as step sizes, so
+ * SWEEP_UNITS stays tunable without a test edit. NOTE FX K6 = Gate (0-400) is
+ * the widest continuous param on the bank; K3 = Velocity (-127..127) is the
+ * anchor range whose step must stay exactly 1. */
+step('a WIDE param sweeps in a comparable gesture, not 3x the travel', () => {
+    const GATE_CC = 76;        /* NOTE FX K6, range 0-400  */
+    const VEL_CC  = 73;        /* NOTE FX K3, range -127..127 (the 128 anchor) */
+    const spin = (cc, key) => {
+        /* Seed the key first: travel() differences against a BASELINE, and a
+         * param that has never been written has none — it would read 0, which is
+         * indistinguishable from "did not move". */
+        globalThis.onMidiMessageInternal(new Uint8Array([0xB0, cc, 1]));
+        ticks(1);
+        ticks(8);
+        const before = writes.slice();
+        for (let i = 0; i < 20; i++) {
+            globalThis.onMidiMessageInternal(new Uint8Array([0xB0, cc, 4]));
+            ticks(1);
+        }
+        return travel(before, writes, key);
+    };
+    const velTravel  = spin(VEL_CC,  'noteFX_velocity');
+    const gateTravel = spin(GATE_CC, 'noteFX_gate');
+    if (velTravel === 0 || gateTravel === 0)
+        throw new Error('a spin moved nothing: vel=' + velTravel + ' gate=' + gateTravel +
+                        ' writes=' + JSON.stringify(writes.slice(-3)));
+    /* Gate's range is ~1.6x Velocity's, so its step should be ~2-3x — the point
+     * is that it moves MORE per gesture, not the same. Before the fix these were
+     * identical, since both moved one integer per unit. */
+    if (!(gateTravel > velTravel))
+        throw new Error('gate travelled ' + gateTravel + ' vs velocity ' + velTravel +
+                        ' — a wider param is not being scaled, so it still crawls');
+});
+
+/* A NARROW param must keep a step of exactly 1 — that is what every existing
+ * feel was tuned against, and speeding it up would be a regression dressed as a
+ * fix. Only ranges WIDER than SWEEP_UNITS are scaled.
+ *
+ * ⚠ Uses NOTE FX K2 = Note Offset (-24..24), untouched until here, so its knob
+ * state is genuinely cold (divisor 1 → exactly one knob unit). Velocity is NOT
+ * the anchor despite spanning ±127: its RANGE is 254, wide enough to be scaled.
+ * That mistake was in this test first and the assertion caught it. */
+step('a narrow param keeps a step of exactly 1', () => {
+    const RAND_CC = 72;        /* NOTE FX K2 = Note Offset, -24..24 */
+    const before = writes.slice();
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, RAND_CC, 1]));
+    ticks(1);
+    const w = writes.slice(before.length).filter((x) => x.indexOf('noteFX_offset') >= 0);
+    if (w.length === 0)
+        throw new Error('the narrow knob wrote nothing: ' + JSON.stringify(writes.slice(before.length).slice(-3)));
+    const v = Math.abs(parseFloat(w[0].trim().split(/[=\s]+/).pop()));
+    if (v !== 1)
+        throw new Error('one cold detent on a narrow param produced ' + v + ' (' + w[0] + '), expected 1');
+});
+
+
+/* ---- DECELERATION: the step SHRINKS as the turn slows ----
+ * Josh, 2026-08-26: "a consistent speed feel across the whole range ... like an
+ * analog pot when turning normally (for large continuous value params) but can
+ * be dialed in to a single dent when turning pretty slowly."
+ *
+ * Those are two different step sizes from one knob, chosen by speed. The range
+ * scaling above delivers the pot half; this pins the OTHER half, which the
+ * scaling alone would have broken — a wide param whose smallest possible move is
+ * 3 cannot be dialled to an exact value.
+ *
+ * ⚠⚠ Every other step in this file runs at ZERO elapsed time, so they all sit in
+ * the fast band and CANNOT see this. Nothing here was observable until the clock
+ * was controllable — a green suite was not evidence either way. Date.now is
+ * stubbed rather than slept: the real gaps would add ~7 s to the suite.
+ */
+step('turning SLOWLY on a wide param moves ONE unit at a time', () => {
+    const GATE_CC = 76;                 /* NOTE FX K6, range 0-400 → scaled step 3 */
+    const realNow = Date.now;
+    try {
+        let clock = realNow.call(Date) + 10_000;
+        globalThis.Date.now = () => clock;
+        /* A gap over KNOB_ACCEL_MED_MS (150) is the "fine" band. Start beyond
+         * KNOB_STALE_MS so the first detent is the cold-start click, then keep
+         * every following gap slow. */
+        clock += 5_000;
+        const seen = [];
+        let prev = null;
+        for (let i = 0; i < 40; i++) {
+            const before = writes.length;
+            globalThis.onMidiMessageInternal(new Uint8Array([0xB0, GATE_CC, 1]));
+            ticks(1);
+            for (const w of writes.slice(before)) {
+                if (w.indexOf('noteFX_gate') < 0) continue;
+                const v = parseFloat(w.split('=').pop());
+                if (!isFinite(v)) continue;
+                if (prev !== null) seen.push(Math.abs(v - prev));
+                prev = v;
+            }
+            clock += 200;               /* a slow, deliberate turn */
+        }
+        if (seen.length === 0)
+            throw new Error('a slow turn never moved the param at all');
+        const biggest = Math.max(...seen);
+        if (biggest !== 1)
+            throw new Error('a slow turn stepped by ' + biggest +
+                            ' — a wide param cannot be dialled exactly (steps seen: ' +
+                            JSON.stringify(seen.slice(0, 8)) + ')');
+    } finally {
+        globalThis.Date.now = realNow;
+    }
+});
+
+/* The other end of the same knob: at speed it must move in the RANGE-SCALED step,
+ * or the analog-pot half is gone and we are back to 400 detents for a sweep. */
+step('...and turning FAST on the same param moves in bigger steps', () => {
+    const GATE_CC = 76;
+    const realNow = Date.now;
+    try {
+        let clock = realNow.call(Date) + 50_000;
+        globalThis.Date.now = () => clock;
+        const seen = [];
+        let prev = null;
+        for (let i = 0; i < 40; i++) {
+            const before = writes.length;
+            globalThis.onMidiMessageInternal(new Uint8Array([0xB0, GATE_CC, 4]));
+            ticks(1);
+            for (const w of writes.slice(before)) {
+                if (w.indexOf('noteFX_gate') < 0) continue;
+                const v = parseFloat(w.split('=').pop());
+                if (!isFinite(v)) continue;
+                if (prev !== null) seen.push(Math.abs(v - prev));
+                prev = v;
+            }
+            clock += 10;                /* well inside the fast band */
+        }
+        if (seen.length === 0) throw new Error('a fast turn never moved the param');
+        const biggest = Math.max(...seen);
+        if (!(biggest > 1))
+            throw new Error('a fast turn still moved one unit at a time (' +
+                            JSON.stringify(seen.slice(0, 8)) + ') — the range scaling is not reaching it');
+    } finally {
+        globalThis.Date.now = realNow;
+    }
 });
 
 if (failed) process.exit(1);
