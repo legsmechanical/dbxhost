@@ -3639,6 +3639,21 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * one you're in). Toggled optimistically and queued, because this runs
          * in the MIDI handler. */
         if (S.muteHeld && S.view === VIEW_BLOCKS) {
+            /* ⚠⚠ Tell DAVEBOX the Mute was a MODIFIER, on its own state object.
+             * Swallowing the click here is not enough: davebox acts on the Mute
+             * RELEASE (`d1 === MoveMute && d2 === 0`), and that handler fires
+             * unless muteUsedAsModifier is set. So Mute+click bypassed the block
+             * AND muted the track — Josh, 2026-08-26: "falls through to track
+             * mute instead of only bypassing the focused effect."
+             *
+             * ⚠ It must be GS, not S. The `S` in this file is sound mode's own
+             * object; setting the flag on it would be silently inert, which is
+             * the exact mistake that broke this same gesture once before (see the
+             * muteHeld tracking note above). Set OUTSIDE the row check: the
+             * modifier was used the moment the gesture was claimed, even if the
+             * row was empty and nothing was bypassed — otherwise a click on a
+             * blank row still mutes the track. */
+            GS.muteUsedAsModifier = true;
             const r = S.pickRows[S.pickRow];
             if (r && r.kind === 'block' && r.name) {   /* empty = nothing to bypass */
                 r.bypassed = r.bypassed ? 0 : 1;
