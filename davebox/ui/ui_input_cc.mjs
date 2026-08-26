@@ -29,7 +29,7 @@ import {
 } from './ui_constants.mjs';
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay } from './ui_state.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
-         SESS_KNOB_MODES, engineVolBlock } from './ui_engine.mjs';
+         SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity, BANK_CYCLE_DRUM, CONDUCT_BANK_CYCLE,
          bankCycleForMode } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
@@ -2901,14 +2901,10 @@ function applyDrumNoteFxKnob(knobIdx, d2, t, lane) {
  * asked for: a 0-5 param and a 0-400 param both cross in the same gesture,
  * because the value each count buys is derived from the range rather than being
  * a fixed 1. */
-/* ⭑ TUNING LOG — Josh's ear, all on hardware:
- *     80  measured from the canvas (freeverb room_size: 20 steps x divisor 4)
- *    100  "a tad slower" than 80        -> "MUCH BETTER" / "knob feel is good"
- *    120  "slow down ... by maybe 20% and see how that feels" (2026-08-26,
- *         after pan/sends joined this law: "the rest feel great")
- * He is hunting the sweet spot, so this is expected to move again. It is the
- * ONE number to change: every range-scaled knob reads it. */
-const SWEEP_UNITS = 120;
+/* SWEEP_UNITS now lives in ui_engine.mjs (imported above) so the TESTS can read
+ * the live value instead of hard-coding it. Tuning it must stay a ONE-NUMBER
+ * change — Josh, 2026-08-26: "i just want to make sure that we can fine tune
+ * knobs that use the general rules without it turning into a big thing." */
 
 /* The divisor the curve uses at normal turning speed. Everything is expressed
  * RELATIVE to it: at speed a count is worth a full unit, and easing off into

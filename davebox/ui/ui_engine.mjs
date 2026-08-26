@@ -143,6 +143,31 @@ export const SLOT_LEVEL_MAX = 2;
  *
  * Everything is expressed as a fraction of each param's own range, so one law
  * covers a 0..2 level and a 0..1 send without either feeling different. */
+/* ⭑ TUNING LOG — Josh's ear, all on hardware:
+ *     80  measured from the canvas (freeverb room_size: 20 steps x divisor 4)
+ *    100  "a tad slower" than 80        -> "MUCH BETTER" / "knob feel is good"
+ *    120  "slow down ... by maybe 20% and see how that feels" (2026-08-26,
+ *         after pan/sends joined this law: "the rest feel great")
+ * He is hunting the sweet spot, so this is expected to move again. It is the
+ * ONE number to change: every range-scaled knob reads it. */
+export const SWEEP_UNITS = 120;
+
+/* ⭑⭑ HOW TO TUNE, and what it is guaranteed to cost (Josh, 2026-08-26: "without
+ * it turning into a big thing").
+ *
+ *   SLOWER/FASTER EVERYWHERE  -> change SWEEP_UNITS above. ONE number. It reaches
+ *       every range-scaled knob: bank `cont` params (via bankStep) and all four
+ *       mixer modes. Higher = slower.
+ *   ONE SURFACE ONLY          -> give that mode a `sweep:` override, the way
+ *       volume does. ONE field.
+ *   GRAIN (how chunky it feels)-> change that mode's `units`. ONE field. Units are
+ *       what the readout prints, so this also sets what a slow turn dials.
+ *
+ * ⚠ THE TESTS READ THIS CONSTANT rather than repeating its value, and their
+ * bounds are RATIOS of it. That is deliberate and load-bearing: an earlier cut
+ * hard-coded 250/40/2*120, which meant any real retune failed the suite and
+ * turned a one-number change into a test-editing session. If you add an assertion
+ * about knob rate, express it as a multiple of SWEEP_UNITS. */
 /* ⭑⭑ A KNOB'S UNIT IS WHAT ITS READOUT SHOWS (Josh, 2026-08-26: "is there a way
  * to make all the knobs feel the same and still allow fine tuning (+/-1) with
  * very slow movements?").

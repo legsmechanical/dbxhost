@@ -64,7 +64,7 @@ await import('../../ui/ui.js');                 /* installs onMidiMessageInterna
 const { S } = await import('../../ui/ui_state.mjs');
 const { NUM_TRACKS } = await import('../../ui/ui_constants.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
-const { SLOT_LEVEL_MAX, SESS_KNOB_MODES } = await import('../../ui/ui_engine.mjs');
+const { SLOT_LEVEL_MAX, SESS_KNOB_MODES, SWEEP_UNITS } = await import('../../ui/ui_engine.mjs');
 
 /* Knob 1 = CC 71, one detent clockwise. */
 /* ⚠ A turn is TWO detents since the mixer knobs adopted canvaskit's feel
@@ -214,16 +214,22 @@ step('a SEND sweep costs a human gesture, not four revolutions', () => {
     }
     if (S.sessVolLevel[0] < max)
         throw new Error('the knob never reached full scale in ' + counts + ' counts');
-    if (counts > 250)
-        throw new Error('a full send sweep cost ' + counts + ' encoder counts — that is the ' +
-                        '510-count law this replaced, not a human gesture');
-    if (counts < 40)
-        throw new Error('a full sweep cost only ' + counts + ' counts — too fast to ' +
-                        'place a value; the range scaling has overshot');
-    const oldLawCounts = 510;   /* the retired flat law: 255 positions x sens 2 */
-    if (oldLawCounts <= 250)
-        throw new Error('control broke: the old 510-count law no longer exceeds the bound, ' +
-                        'so this step would pass against the bug it exists to catch');
+    /* ⚠ BOUNDS ARE RATIOS OF THE LIVE SWEEP_UNITS, never literals. Josh tunes this
+     * by ear (80 -> 100 -> 120 so far) and asked that retuning not become "a big
+     * thing" — hard-coded bounds would fail the suite on every real change and
+     * make a one-number edit into a test-editing session. */
+    const hi = SWEEP_UNITS * 2, lo = SWEEP_UNITS * 0.4;
+    if (counts > hi)
+        throw new Error('a full send sweep cost ' + counts + ' encoder counts against a ' +
+                        'SWEEP_UNITS of ' + SWEEP_UNITS + ' — it is not tracking the tunable');
+    if (counts < lo)
+        throw new Error('a full sweep cost only ' + counts + ' counts against a SWEEP_UNITS ' +
+                        'of ' + SWEEP_UNITS + ' — the range scaling has overshot');
+    /* Control: the retired flat law (255 positions x sens 2) must still exceed the
+     * upper bound, or this step would pass against the bug it exists to catch. */
+    if (510 <= hi)
+        throw new Error('control broke: at SWEEP_UNITS ' + SWEEP_UNITS + ' the old 510-count ' +
+                        'law no longer exceeds the bound — this step has stopped discriminating');
 });
 
 /* Josh, 2026-08-26, having felt the universal rate on all four banks: "volume
@@ -241,9 +247,9 @@ step('VOLUME is deliberately SLOWER than the universal law', () => {
     if (sendSweep)
         throw new Error('a send grew its own sweep override — the whole point is that ' +
                         'everything except volume shares one tunable');
-    if (volSweep < 2 * 120)
-        throw new Error('volume is no longer meaningfully slower than the universal rate: ' +
-                        'sweep ' + volSweep);
+    if (volSweep < 2 * SWEEP_UNITS)
+        throw new Error('volume is no longer meaningfully slower than the universal rate ' +
+                        '(SWEEP_UNITS ' + SWEEP_UNITS + '): sweep ' + volSweep);
     /* Drive it, so the override is proven to REACH the knob rather than merely
      * being present in the table — the failure mode a pure data assertion misses. */
     S.sessKnobMode = 0;
@@ -255,9 +261,10 @@ step('VOLUME is deliberately SLOWER than the universal law', () => {
         globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 1]));
         counts++;
     }
-    if (counts < 300)
-        throw new Error('volume swept in ' + counts + ' counts — the override is in the ' +
-                        'table but is not reaching the knob');
+    if (counts < SWEEP_UNITS * 2)
+        throw new Error('volume swept in ' + counts + ' counts, under 2x SWEEP_UNITS (' +
+                        SWEEP_UNITS + ') — the override is in the table but is not reaching ' +
+                        'the knob');
 });
 
 step('re-pointing the track at another Move instrument RE-SEEDS the level', () => {
