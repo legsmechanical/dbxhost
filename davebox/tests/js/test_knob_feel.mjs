@@ -67,7 +67,8 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
-const { PAD_MODE_MELODIC_SCALE, PAD_MODE_DRUM } = await import('../../ui/ui_constants.mjs');
+const { PAD_MODE_MELODIC_SCALE, PAD_MODE_DRUM, BANKS } = await import('../../ui/ui_constants.mjs');
+const { DRUM_NOTEFX_SITES } = await import('../../ui/ui_input_cc.mjs');
 
 function ticks(n) { for (let i = 0; i < n; i++) tickmod._tickImpl(); }
 
@@ -429,6 +430,82 @@ step('the same knob on the same param feels the same in DRUM mode', () => {
     if (Math.abs(melodic - drum) > 1)
         throw new Error('same gesture, same param: melodic moved ' + melodic +
                         ' but drum moved ' + drum + ' — the two branches have drifted');
+});
+
+
+/* ---- ENUMERATED coverage: every table-driven knob, no site named twice ------
+ * This is the payoff of making the drum bank declarative. The if-chain it
+ * replaced could not be enumerated by a test, which is exactly why the same bug
+ * reached Josh twice from two screens — so the assertions below do not name a
+ * knob at all. They iterate whatever the table declares, and a knob added to it
+ * later is covered the moment it is added.
+ */
+step('every declared drum NOTE FX knob writes the param it declares', () => {
+    S.trackPadMode.fill(PAD_MODE_DRUM);
+    ticks(4);
+    for (const idx of Object.keys(DRUM_NOTEFX_SITES).map(Number)) {
+        const site = DRUM_NOTEFX_SITES[idx];
+        site.set(0, S.activeDrumLane[0] | 0, BANKS[1].knobs[idx].min);
+        S.knobAccelAcc[idx] = 0; S.knobAccelLast[idx] = 0; S.knobAccum[idx] = 0;
+        ticks(2);
+        const before = writes.length;
+        for (let i = 0; i < 8; i++) {
+            globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71 + idx, 4]));
+            ticks(1);
+        }
+        const mine = writes.slice(before).filter((w) => w.indexOf('pfx_set') >= 0);
+        if (mine.length === 0)
+            throw new Error(`K${idx + 1} (${site.pfx}) wrote nothing at all`);
+        const wrong = mine.filter((w) => w.indexOf(site.pfx) < 0);
+        if (wrong.length)
+            throw new Error(`K${idx + 1} declares "${site.pfx}" but wrote ${JSON.stringify(wrong[0])}`);
+    }
+    S.trackPadMode.fill(PAD_MODE_MELODIC_SCALE);
+    ticks(4);
+});
+
+/* Each entry must respect the RANGE its metadata declares — the clamp now comes
+ * from BANKS[1] rather than a copy beside each branch, and this is what proves
+ * the two are actually connected. Drive well past the top and check where it
+ * stops. */
+step('every declared knob clamps to its metadata range, not a private copy', () => {
+    S.trackPadMode.fill(PAD_MODE_DRUM);
+    ticks(4);
+    for (const idx of Object.keys(DRUM_NOTEFX_SITES).map(Number)) {
+        const site = DRUM_NOTEFX_SITES[idx], pm = BANKS[1].knobs[idx];
+        /* ⚠ Park through the TABLE's own setter, not park(): each drum entry
+         * declares its own storage (velocity lives at bankParams[t][1][1], not
+         * [2]), and that difference is the entire reason the table exists.
+         * Using the melodic layout here left velocity pinned at its ceiling from
+         * the previous step and the knob read as dead. */
+        site.set(0, S.activeDrumLane[0] | 0, pm.min);
+        S.knobAccelAcc[idx] = 0; S.knobAccelLast[idx] = 0; S.knobAccum[idx] = 0;
+        ticks(2);
+        const before = writes.length;
+        /* Enough travel to pin any of these against the ceiling. */
+        for (let i = 0; i < 200; i++) {
+            globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71 + idx, 20]));
+            ticks(1);
+        }
+        const mine = writes.slice(before).filter((w) => w.indexOf(site.pfx) >= 0);
+        if (mine.length === 0) throw new Error(`K${idx + 1} (${site.pfx}) wrote nothing`);
+        const last = parseFloat(mine[mine.length - 1].trim().split(/\s+/).pop());
+        if (last !== pm.max)
+            throw new Error(`K${idx + 1} (${site.pfx}) topped out at ${last}, but its metadata says max ${pm.max}`);
+    }
+    S.trackPadMode.fill(PAD_MODE_MELODIC_SCALE);
+    ticks(4);
+});
+
+/* A table entry pointing at a knob the bank calls a stub would be a silent
+ * no-op on hardware: the LED ring and the label strip both read the metadata. */
+step('no table entry points at a stub or blocked knob', () => {
+    for (const idx of Object.keys(DRUM_NOTEFX_SITES).map(Number)) {
+        const pm = BANKS[1].knobs[idx];
+        if (!pm) throw new Error(`K${idx + 1} has no metadata in BANKS[1]`);
+        if (pm.scope === 'stub' || !pm.abbrev)
+            throw new Error(`K${idx + 1} is declared in the table but is a stub in BANKS[1]`);
+    }
 });
 
 if (failed) process.exit(1);

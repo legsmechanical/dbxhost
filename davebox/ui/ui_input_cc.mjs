@@ -2648,6 +2648,65 @@ function knobClass(pm) {
     return 'cont';
 }
 
+/* ---- Drum NOTE FX (bank 1): the DECLARATIVE half ----------------------------
+ *
+ * The drum flavour of NOTE FX edits the SAME eight params as the melodic one and
+ * writes them to the active LANE instead of the track. That difference is the
+ * only thing that was ever special about it — Josh, 2026-08-26: "there's nothing
+ * special about the patterns in those banks that should require special
+ * treatment." He was right, and this is that claim expressed in code.
+ *
+ * Each entry says WHERE the value lives; everything else — range, response class,
+ * accumulation, scaling, clamping — is read from `BANKS[1].knobs[i]`, the exact
+ * metadata the melodic path uses. So the two cannot drift again: there is no
+ * second copy of the range to fall out of step, and no second choice of feel.
+ *
+ * ⚠ That drift is not hypothetical. Both of Josh's drum knob reports came from
+ * it — first the whole branch ran unscaled while melodic ran scaled, then its
+ * hardcoded clamps sat beside a metadata copy of the same numbers.
+ *
+ * `get`/`set` stay per-entry because the JS-side mirrors genuinely differ (some
+ * params shadow into bankParams, some into a per-lane array, Qnt into both).
+ * Those are STORAGE, not feel, which is exactly the split worth making. */
+export const DRUM_NOTEFX_SITES = {
+    2: { pfx: 'velocity_offset',
+         get: (t, lane) => S.bankParams[t][1][1] | 0,
+         set: (t, lane, v) => { S.bankParams[t][1][1] = v; } },
+    3: { pfx: 'quantize',
+         get: (t, lane) => S.drumLaneQnt[t] | 0,
+         set: (t, lane, v) => { S.drumLaneQnt[t] = v; S.bankParams[t][1][2] = v; } },
+    4: { pfx: 'note_length_mode',
+         get: (t, lane) => S.drumLaneLenMode[t][lane] | 0,
+         set: (t, lane, v) => { S.drumLaneLenMode[t][lane] = v; } },
+    5: { pfx: 'gate_time',
+         get: (t, lane) => S.bankParams[t][1][0] | 0,
+         set: (t, lane, v) => { S.bankParams[t][1][0] = v; } },
+};
+
+/* Apply one drum NOTE FX knob turn. Returns true if this knob is table-driven,
+ * so the caller can `return` — an unknown knob falls through to whatever
+ * bespoke branch follows, rather than being silently swallowed. */
+function applyDrumNoteFxKnob(knobIdx, d2, t, lane) {
+    const site = DRUM_NOTEFX_SITES[knobIdx];
+    if (!site) return false;
+    const pm   = BANKS[1].knobs[knobIdx];
+    const cls  = knobClass(pm);
+    const step = cls === 'cont'
+        ? ccKnobDelta(d2, knobIdx, bankStep(pm))
+        : knobStep(knobIdx, d2, cls === 'delib' ? KNOB_DELIB : KNOB_PICK);
+    if (step !== 0) {
+        const cur = site.get(t, lane);
+        const nv  = Math.max(pm.min, Math.min(pm.max, cur + step));
+        if (nv !== cur) {
+            site.set(t, lane, nv);
+            host_module_set_param('t' + t + '_l' + lane + '_pfx_set', site.pfx + ' ' + nv);
+        }
+        S.screenDirty = true;
+    }
+    return true;
+}
+
+
 /* How much VALUE one detent is worth at full speed, scaled so a sweep costs the
  * same GESTURE whatever the parameter's range — an analog pot's feel, where the
  * distance your fingers travel maps to a proportion of the range rather than to
@@ -3484,68 +3543,13 @@ function _onCC_knobs(d1, d2) {
                 }
                 return;
             }
-            if (knobIdx === 2) {
-                /* K3 = Vel: -127..127, cont accel.
-                 * ⚠ Range scale from BANKS[1].knobs[2] — the SAME metadata the
-                 * melodic path uses for this param. Without it this branch ran
-                 * unscaled (one value per count) while melodic ran scaled, so
-                 * the identical knob on the identical range was 2.5x slower in
-                 * drum mode. Josh spotted it: "velocity knob in drum track
-                 * notefx bank is slower by a good bit". */
-                const _d3 = ccKnobDelta(d2, knobIdx, bankStep(BANKS[1].knobs[2]));
-                if (_d3 !== 0) {
-                    const nv = Math.max(-127, Math.min(127, (S.bankParams[t][1][1] | 0) + _d3));
-                    if (nv !== S.bankParams[t][1][1]) {
-                        S.bankParams[t][1][1] = nv;
-                        host_module_set_param('t' + t + '_l' + lane + '_pfx_set', 'velocity_offset ' + nv);
-                    }
-                    S.screenDirty = true;
-                }
-                return;
-            }
-            if (knobIdx === 3) {
-                /* K4 = Qnt — per-lane quantize, cont accel */
-                const _d4 = ccKnobDelta(d2, knobIdx, bankStep(BANKS[1].knobs[3]));
-                if (_d4 !== 0) {
-                    const nv = Math.max(0, Math.min(100, S.drumLaneQnt[t] + _d4));
-                    if (nv !== S.drumLaneQnt[t]) {
-                        S.drumLaneQnt[t] = nv;
-                        S.bankParams[t][1][2] = nv;
-                        host_module_set_param('t' + t + '_l' + lane + '_pfx_set', 'quantize ' + nv);
-                    }
-                    S.screenDirty = true;
-                }
-                return;
-            }
-            if (knobIdx === 4) {
-                /* K5 = Len: 0..8, picker pace */
-                if (knobStep(knobIdx, d2, KNOB_PICK) !== 0) {
-                    const cur = S.drumLaneLenMode[t][lane] | 0;
-                    const nv  = Math.max(0, Math.min(8, cur + dir));
-                    if (nv !== cur) {
-                        S.drumLaneLenMode[t][lane] = nv;
-                        host_module_set_param('t' + t + '_l' + lane + '_pfx_set', 'note_length_mode ' + nv);
-                    }
-                    S.screenDirty = true;
-                }
-                return;
-            }
-            if (knobIdx === 5) {
-                /* K6 = Gate: 0-400, cont accel — scaled from the same metadata
-                 * as the melodic path (see K3 above). This is the WIDEST param
-                 * on the bank, so it was the worst offender: 400 counts to
-                 * cross, four times the melodic gesture. */
-                const _d6 = ccKnobDelta(d2, knobIdx, bankStep(BANKS[1].knobs[5]));
-                if (_d6 !== 0) {
-                    const nv = Math.max(0, Math.min(400, (S.bankParams[t][1][0] | 0) + _d6));
-                    if (nv !== S.bankParams[t][1][0]) {
-                        S.bankParams[t][1][0] = nv;
-                        host_module_set_param('t' + t + '_l' + lane + '_pfx_set', 'gate_time ' + nv);
-                    }
-                    S.screenDirty = true;
-                }
-                return;
-            }
+            /* K3 Vel · K4 Qnt · K5 Len · K6 Gate — all four are the same shape:
+             * take the melodic param's own metadata, write the result to this
+             * LANE. See DRUM_NOTEFX_SITES for why they are a table and not four
+             * branches: the four hand-written versions carried their own copies
+             * of the ranges and their own choice of feel, and both of Josh's
+             * drum knob reports came from those copies drifting. */
+            if (applyDrumNoteFxKnob(knobIdx, d2, t, lane)) return;
             return;
         }
         /* Repeat Groove bank (bank 6 on drum tracks): vel scale (unshifted) or nudge (Shift) */
