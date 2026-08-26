@@ -3484,8 +3484,14 @@ function _onCC_knobs(d1, d2) {
                 return;
             }
             if (knobIdx === 2) {
-                /* K3 = Vel: -127..127, cont accel */
-                const _d3 = ccKnobDelta(d2, knobIdx);
+                /* K3 = Vel: -127..127, cont accel.
+                 * ⚠ Range scale from BANKS[1].knobs[2] — the SAME metadata the
+                 * melodic path uses for this param. Without it this branch ran
+                 * unscaled (one value per count) while melodic ran scaled, so
+                 * the identical knob on the identical range was 2.5x slower in
+                 * drum mode. Josh spotted it: "velocity knob in drum track
+                 * notefx bank is slower by a good bit". */
+                const _d3 = ccKnobDelta(d2, knobIdx, bankStep(BANKS[1].knobs[2]));
                 if (_d3 !== 0) {
                     const nv = Math.max(-127, Math.min(127, (S.bankParams[t][1][1] | 0) + _d3));
                     if (nv !== S.bankParams[t][1][1]) {
@@ -3498,7 +3504,7 @@ function _onCC_knobs(d1, d2) {
             }
             if (knobIdx === 3) {
                 /* K4 = Qnt — per-lane quantize, cont accel */
-                const _d4 = ccKnobDelta(d2, knobIdx);
+                const _d4 = ccKnobDelta(d2, knobIdx, bankStep(BANKS[1].knobs[3]));
                 if (_d4 !== 0) {
                     const nv = Math.max(0, Math.min(100, S.drumLaneQnt[t] + _d4));
                     if (nv !== S.drumLaneQnt[t]) {
@@ -3526,8 +3532,11 @@ function _onCC_knobs(d1, d2) {
                 return;
             }
             if (knobIdx === 5) {
-                /* K6 = Gate: 0-400, cont accel */
-                const _d6 = ccKnobDelta(d2, knobIdx);
+                /* K6 = Gate: 0-400, cont accel — scaled from the same metadata
+                 * as the melodic path (see K3 above). This is the WIDEST param
+                 * on the bank, so it was the worst offender: 400 counts to
+                 * cross, four times the melodic gesture. */
+                const _d6 = ccKnobDelta(d2, knobIdx, bankStep(BANKS[1].knobs[5]));
                 if (_d6 !== 0) {
                     const nv = Math.max(0, Math.min(400, (S.bankParams[t][1][0] | 0) + _d6));
                     if (nv !== S.bankParams[t][1][0]) {

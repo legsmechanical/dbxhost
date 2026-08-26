@@ -67,7 +67,7 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
-const { PAD_MODE_MELODIC_SCALE } = await import('../../ui/ui_constants.mjs');
+const { PAD_MODE_MELODIC_SCALE, PAD_MODE_DRUM } = await import('../../ui/ui_constants.mjs');
 
 function ticks(n) { for (let i = 0; i < n; i++) tickmod._tickImpl(); }
 
@@ -375,6 +375,60 @@ step('...and turning FAST on the same param moves in bigger steps', () => {
     } finally {
         globalThis.Date.now = realNow;
     }
+});
+
+
+/* ---- DRUM mode must feel the same as MELODIC on the same param ----
+ * Josh, 2026-08-26: "velocity knob in drum track notefx bank is slower by a good
+ * bit... it does have twice the parameter range, though." The range was a red
+ * herring — melodic Velocity has the identical -127..127. The difference was
+ * that bank 1's DRUM branch is separate code with its own hardcoded clamps, and
+ * it called ccKnobDelta with no range scale at all: one value per count (254 to
+ * cross) against melodic's scaled ~100.
+ *
+ * ⚠ This is the second bug caused by that branch being invisible to a test
+ * written for the generic path. The parity assertion is the durable fix: it does
+ * not care what either rate IS, only that the same gesture on the same parameter
+ * moves it the same distance in both modes. Retuning cannot break it; forgetting
+ * one of the two paths will. */
+step('the same knob on the same param feels the same in DRUM mode', () => {
+    const VEL_CC = 73, IDX = 2;
+    const gesture = (key) => {
+        park(IDX, 0);
+        /* Seed the key: travel() differences against a baseline and a param that
+         * has never been written has none — it reads 0, which is
+         * indistinguishable from "did not move". Third time this bit in this
+         * file; it is why the throw below prints the raw writes. */
+        globalThis.onMidiMessageInternal(new Uint8Array([0xB0, VEL_CC, 1]));
+        ticks(1);
+        ticks(4);
+        const before = writes.slice();
+        for (let i = 0; i < 6; i++) {
+            globalThis.onMidiMessageInternal(new Uint8Array([0xB0, VEL_CC, 4]));
+            ticks(1);
+        }
+        return travel(before, writes, key);
+    };
+
+    S.trackPadMode.fill(PAD_MODE_MELODIC_SCALE);
+    ticks(4);
+    const melodic = gesture('noteFX_velocity');
+
+    S.trackPadMode.fill(PAD_MODE_DRUM);
+    ticks(4);
+    const drum = gesture('velocity_offset');
+
+    S.trackPadMode.fill(PAD_MODE_MELODIC_SCALE);
+    ticks(4);
+
+    if (melodic === 0 || drum === 0)
+        throw new Error('a mode moved nothing: melodic=' + melodic + ' drum=' + drum +
+                        ' lane=' + S.activeDrumLane[0] +
+                        ' last=' + JSON.stringify(writes.slice(-4)));
+    /* One unit of slack for where each lands on its accumulator's remainder. */
+    if (Math.abs(melodic - drum) > 1)
+        throw new Error('same gesture, same param: melodic moved ' + melodic +
+                        ' but drum moved ' + drum + ' — the two branches have drifted');
 });
 
 if (failed) process.exit(1);
