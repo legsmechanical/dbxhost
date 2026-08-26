@@ -1735,7 +1735,7 @@ static void shadow_overtake_dsp_unload(void) {
  * these arrays differently from the rest of the build, silently. */
 static uint64_t spi_slot_render_max[SHADOW_CHAIN_INSTANCES];
 static uint64_t spi_slot_synth_max[SHADOW_CHAIN_INSTANCES];  /* render_block only */
-static uint64_t spi_slot_fx_max[SHADOW_CHAIN_INSTANCES];     /* chain_process_fx only */
+static uint64_t spi_slot_fx_max[SHADOW_CHAIN_INSTANCES];     /* chain_process_fx, ALL 3 paths */
 static uint32_t spi_slot_probe_burst_max;
 
 /* === DEFERRED DSP RENDERING ===
@@ -2586,9 +2586,29 @@ static void shadow_inprocess_mix_from_buffer(void) {
                                    FRAMES_PER_BLOCK * 2, mpre_f[s]);
                     }
 
-                    /* Run FX chain */
+                    /* Run FX chain.
+                     * ⚠⚠ TIMED, and it must stay timed: this is the call
+                     * `Slot fx max` reports for, and for a Link-Audio session
+                     * it is the ONLY one that runs. The deferred site (~line
+                     * 1925) was timed from the start, but `skip_deferred_fx`
+                     * above it skips that path whenever Link Audio is routing
+                     * a live slot — the normal case once Move tracks are in
+                     * play — so the counter read ZERO for a chain burning most
+                     * of a core, and that zero was taken as "the modules were
+                     * idle" in two separate investigations (2026-08-25/26).
+                     * The cost did not vanish; it was inside the la_rebuild
+                     * mix phase, which is the very phase those investigations
+                     * were trying to explain. See timespec_delta.h for why the
+                     * subtraction is not spelled inline. */
+                    struct timespec mfx_t0, mfx_t1;
+                    clock_gettime(CLOCK_MONOTONIC, &mfx_t0);
                     shadow_chain_process_fx(shadow_chain_slots[s].instance,
                                             fx_buf, MOVE_FRAMES_PER_BLOCK);
+                    clock_gettime(CLOCK_MONOTONIC, &mfx_t1);
+                    {
+                        uint64_t mfx_us = timespec_delta_us(&mfx_t0, &mfx_t1);
+                        if (mfx_us > spi_slot_fx_max[s]) spi_slot_fx_max[s] = mfx_us;
+                    }
 
                     if (main_dump_frames > 0) {
                         if (mpost_f[s])
@@ -2713,8 +2733,19 @@ skip_la_rebuild:
                 int16_t fx_buf[FRAMES_PER_BLOCK * 2];
                 memcpy(fx_buf, shadow_slot_deferred[s], sizeof(fx_buf));
                 shadow_apply_synth_level(s, fx_buf);
+                /* Timed for the same reason as the other two sites: an FX path
+                 * that does not feed `Slot fx max` reports zero cost however
+                 * expensive it is. Rare (it needs same_frame_fx to be off), but
+                 * "rare" is exactly when an untimed path is most misleading. */
+                struct timespec lfx_t0, lfx_t1;
+                clock_gettime(CLOCK_MONOTONIC, &lfx_t0);
                 shadow_chain_process_fx(shadow_chain_slots[s].instance,
                                         fx_buf, MOVE_FRAMES_PER_BLOCK);
+                clock_gettime(CLOCK_MONOTONIC, &lfx_t1);
+                {
+                    uint64_t lfx_us = timespec_delta_us(&lfx_t0, &lfx_t1);
+                    if (lfx_us > spi_slot_fx_max[s]) spi_slot_fx_max[s] = lfx_us;
+                }
 
                 if (link_audio.enabled && s < LINK_AUDIO_SHADOW_CHANNELS && shadow_pub_audio_shm) {
                     float cap_vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
