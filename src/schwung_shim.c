@@ -6867,6 +6867,42 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
      * Move doesn't think buttons are still held.
      * This covers all exit paths: JS shadow_set_overtake_mode(0), D-Bus shutdown
      * prompt, or any other direct write to shadow_control->overtake_mode. */
+    /* ── Volume claim released MID-TOUCH: hand Move the touch it never saw ───
+     *
+     * While vol_block is raised we withhold BOTH the volume CC and the
+     * capacitive TOUCH note (note 8) from Move firmware — the pair travel
+     * together, because passing the touch alone pops Move's volume overlay over
+     * the tool's screen. dAVEBOx raises the claim only while Shift is held.
+     *
+     * So releasing Shift with the knob STILL PHYSICALLY HELD leaves Move's view
+     * of the world wrong: it starts receiving the CCs again (and shows volume
+     * while they arrive) but it never got the touch-ON, so the moment you stop
+     * turning it reverts to its normal screen — as if the knob were not being
+     * touched, which it is. Josh, 2026-08-25: "i can get it so that it always
+     * shows volume ... but i have to be actively moving the volume during shift
+     * release."
+     *
+     * Fix the STATE rather than the symptom: on the 1->0 edge, if the knob is
+     * still down, inject the touch-on Move missed. Its subsequent real note-off
+     * passes through normally (the claim is gone), so the two stay in step.
+     *
+     * ⭑ Exactly the mirror of the overtake-exit cleanup below, which injects a
+     * touch-OFF for the same reason in the opposite direction: whoever takes the
+     * surface must inherit a truthful picture of what is physically held. */
+    {
+        static int prev_vol_block = 0;
+        int vb_now = shadow_control ? (int)shadow_control->vol_block : 0;
+        if (prev_vol_block && !vb_now && shadow_volume_knob_touched &&
+            shadow_midi_inject_shm) {
+            const uint8_t vol_touch_on[4] = {0x09, 0x90, 8, 127};
+            if (shadow_midi_inject_push(shadow_midi_inject_shm, vol_touch_on) == 0)
+                shadow_log("vol claim released mid-touch: injected volume-touch-on to Move");
+            else
+                shadow_log("vol claim released mid-touch: touch-on DROPPED (inject ring full)");
+        }
+        prev_vol_block = vb_now;
+    }
+
     {
         static int prev_overtake_mode = 0;
         if (prev_overtake_mode != 0 && overtake_mode == 0 && shadow_midi_inject_shm) {
