@@ -2637,13 +2637,45 @@ function knobClass(pm) {
  * has never been read by anything since the factory gained it, so honouring it
  * now would silently change two params on the strength of a declaration nobody
  * has ever felt. Left as its own decision. */
-const SWEEP_UNITS = 128;
+/* SWEEP_UNITS — the ONE tunable, and now it means something you can measure:
+ * a full min-to-max sweep costs about this many encoder counts at normal turning
+ * speed. Lower = faster knobs, everywhere.
+ *
+ * ⚠⚠ Move's encoder sends SEVERAL COUNTS PER PHYSICAL CLICK — measured
+ * 2026-08-26, ~2800 counts from a few seconds of flicking one knob, far more
+ * than that knob has detents. That is why the first cut felt slow: it treated a
+ * count as a click, so 0-127 cost ~508 counts (roughly four revolutions) at full
+ * speed. Josh: "i can't do the full travel without breaking my wrist... and i'm
+ * testing with delay level, which is only 0-127."
+ *
+ * 80 is MEASURED FROM THE THING WE ARE MIMICKING, not guessed. A canvas float
+ * param (freeverb room_size: min 0, max 1, step 0.05) is 20 steps across its
+ * range, and knob_engine moves step/divisor per count — so a full canvas sweep
+ * costs 20 x 4 = 80 counts. dAVEBOx's delay level (0-127, one value per 4
+ * counts) was costing 508. That 6x IS the difference Josh could feel.
+ *
+ * ⭑ This is also what makes the range irrelevant to the FEEL, which is what he
+ * asked for: a 0-5 param and a 0-400 param both cross in the same gesture,
+ * because the value each count buys is derived from the range rather than being
+ * a fixed 1. */
+const SWEEP_UNITS = 80;
+
+/* The divisor the curve uses at normal turning speed. Everything is expressed
+ * RELATIVE to it: at speed a count is worth a full unit, and easing off into
+ * divisor 8 or 16 makes each count worth a half or a quarter of that. Without
+ * this normalisation the fast band was itself divided by 4, which is precisely
+ * the four-revolution sweep above. */
+const KNOB_FAST_DIVISOR = 4;
+
+/* Value one encoder count buys at normal speed. Deliberately FRACTIONAL — a
+ * narrow param is worth a fraction of a value per count, and the accumulator in
+ * ccKnobDelta carries the remainder so nothing is lost. Flooring this at 1 (the
+ * first cut did) is what pinned narrow params to one-value-per-count and made
+ * the feel range-dependent again. */
 function bankStep(pm) {
-    /* The floor at 1 IS the narrow-range case: any range at or under SWEEP_UNITS
-     * rounds to 0 or 1 and comes out as 1. An explicit early return for it was
-     * dead code — mutation-testing showed changing its condition altered nothing,
-     * which is the tell. */
-    return Math.max(1, Math.round((pm.max - pm.min) / SWEEP_UNITS));
+    const range = Math.abs(pm.max - pm.min);
+    if (!(range > 0)) return 1;
+    return range / SWEEP_UNITS;
 }
 
 function ccKnobDelta(d2, k, stepScale) {
@@ -2663,7 +2695,7 @@ function ccKnobDelta(d2, k, stepScale) {
      *
      *   turning normally (divisor 4)  → the full range-scaled step: an analog
      *                                   pot, same gesture whatever the range.
-     *   turning slowly   (divisor 16) → a SIXTEENTH of it, so the knob decelerates
+     *   turning slowly   (divisor 16) → a QUARTER of it, so the knob decelerates
      *                                   into single-unit precision as you ease off.
      *
      * This is exactly what the host's engine does for FLOAT params — step/divisor
@@ -2674,9 +2706,31 @@ function ccKnobDelta(d2, k, stepScale) {
      * ⚠ The FIRST motion after idle is pinned to one unit of value, never the
      * scaled step. That is the "click" that makes an exact value dialable: tap
      * the knob one detent and the param moves by exactly 1, on any range. */
-    const scale = (div === 1) ? 1 : (stepScale > 0 ? stepScale : 1);
     if ((dir > 0) !== (S.knobAccelDir[k] > 0)) S.knobAccelDir[k] = dir > 0 ? 1 : -1;
-    S.knobAccelAcc[k] += dir * scale / div;
+    /* Normalised against the FAST divisor: at normal speed a count is worth a
+     * whole unit of `scale`, and easing off divides it down from there.
+     *
+     * ⚠ The cold-start case is NOT scaled at all — it contributes exactly one
+     * unit of value, on any range. Running it through the same expression gave
+     * it `1 * 4 / 1` = four, so the deliberate single tap moved by 4 on a narrow
+     * param. The test caught that within a minute of the normalisation landing;
+     * it is the reason the branch is written out rather than folded in. */
+    const scale = (stepScale > 0) ? stepScale : 1;
+    let inc = (div === 1) ? dir : dir * scale * KNOB_FAST_DIVISOR / div;
+
+    /* ⭑ THE FINE BANDS NEVER MOVE MORE THAN ONE VALUE PER COUNT. Deceleration
+     * is only half the promise — "can be dialed in to a single dent when turning
+     * pretty slowly" (Josh) means the slow end must reach the SMALLEST possible
+     * increment, on any range. Without this cap a 0-400 param eased right down
+     * still moved 1.25 per count, stepping 1,1,1,2,1,1,1,2 — visibly not
+     * dialable, and caught by the test rather than by reading the arithmetic.
+     * Narrow params are already far below the cap, so it only binds where the
+     * range scaling would otherwise overshoot. */
+    if (div > KNOB_FAST_DIVISOR) {
+        const cap = Math.abs(dir);
+        if (Math.abs(inc) > cap) inc = inc > 0 ? cap : -cap;
+    }
+    S.knobAccelAcc[k] += inc;
     const units = Math.trunc(S.knobAccelAcc[k]);
     if (units === 0) return 0;
     S.knobAccelAcc[k] -= units;

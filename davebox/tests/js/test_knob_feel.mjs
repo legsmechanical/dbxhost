@@ -71,6 +71,18 @@ const { PAD_MODE_MELODIC_SCALE } = await import('../../ui/ui_constants.mjs');
 
 function ticks(n) { for (let i = 0; i < n; i++) tickmod._tickImpl(); }
 
+/* Park a knob's param mid-range and clear its curve state before measuring.
+ * ⚠ Without this the steps interfere: the knobs are now fast enough to slam a
+ * param into its max, and every later measurement on it reads 0 movement — which
+ * looks exactly like "the knob is broken". Four assertions failed that way the
+ * moment the rate was corrected, and none of them were about the rate. */
+function park(knobIdx, value) {
+    S.bankParams[0][1][knobIdx] = value;
+    S.knobAccelAcc[knobIdx] = 0;
+    S.knobAccelLast[knobIdx] = 0;
+    S.knobAccum[knobIdx] = 0;
+}
+
 function step(label, fn) {
     if (fn && fn.constructor && fn.constructor.name === 'AsyncFunction')
         throw new Error('step("' + label + '") got an ASYNC function — it would pass without running.');
@@ -156,17 +168,19 @@ step('setup: the NOTE FX bank live, melodic pads, knobs unlocked', () => {
 
 step('a SLOW turn: one detent per frame', () => {
     /* Settle first so the gesture starts cold, the way a real one does. */
+    park(2, 0);
     ticks(64);
     const before = writes.slice();
-    flick(1, 24);
+    flick(1, 6);
     slowTravel = travel(before, writes);
     if (slowTravel === 0) throw new Error('a 24-frame turn moved nothing at all: ' + JSON.stringify(writes.slice(-4)));
 });
 
 step('a FAST turn: six detents per frame, SAME number of frames', () => {
+    park(2, 0);
     ticks(64);
     const before = writes.slice();
-    flick(6, 24);
+    flick(6, 6);
     fastTravel = travel(before, writes);
     if (fastTravel === 0) throw new Error('a fast turn moved nothing: ' + JSON.stringify(writes.slice(-4)));
 });
@@ -227,6 +241,7 @@ step('a WIDE param sweeps in a comparable gesture, not 3x the travel', () => {
     const GATE_CC = 76;        /* NOTE FX K6, range 0-400  */
     const VEL_CC  = 73;        /* NOTE FX K3, range -127..127 (the 128 anchor) */
     const spin = (cc, key) => {
+        park(cc - 71, 0);
         /* Seed the key first: travel() differences against a BASELINE, and a
          * param that has never been written has none — it would read 0, which is
          * indistinguishable from "did not move". */
@@ -234,7 +249,7 @@ step('a WIDE param sweeps in a comparable gesture, not 3x the travel', () => {
         ticks(1);
         ticks(8);
         const before = writes.slice();
-        for (let i = 0; i < 20; i++) {
+        for (let i = 0; i < 6; i++) {
             globalThis.onMidiMessageInternal(new Uint8Array([0xB0, cc, 4]));
             ticks(1);
         }
@@ -294,6 +309,7 @@ step('turning SLOWLY on a wide param moves ONE unit at a time', () => {
     const GATE_CC = 76;                 /* NOTE FX K6, range 0-400 → scaled step 3 */
     const realNow = Date.now;
     try {
+        park(GATE_CC - 71, 100);
         let clock = realNow.call(Date) + 10_000;
         globalThis.Date.now = () => clock;
         /* A gap over KNOB_ACCEL_MED_MS (150) is the "fine" band. Start beyond
@@ -333,6 +349,7 @@ step('...and turning FAST on the same param moves in bigger steps', () => {
     const GATE_CC = 76;
     const realNow = Date.now;
     try {
+        park(GATE_CC - 71, 100);
         let clock = realNow.call(Date) + 50_000;
         globalThis.Date.now = () => clock;
         const seen = [];
