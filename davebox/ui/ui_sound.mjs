@@ -39,7 +39,6 @@ import { armBankDisplay, S as GS } from './ui_state.mjs';
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
 import { instrOptions, fmtInstr, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV,
-         BANK_DEFAULT,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD } from './ui_constants.mjs';
 import { applyTrackConfig } from './ui_dsp_bridge.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -938,18 +937,23 @@ function clearBusContext() {
 /* Where you land, in one place, because there are three different answers and
  * they used to be spread across the call sites:
  *
- *   soundExit()                — a deliberate CLOSE: the track's DEFAULT bank
- *                                (CLIP / DRUM LANE / CONDUCT). Back, Shift+
- *                                Note/Session, a view change, co-run taking the
- *                                OLED. ⭑ Josh, 2026-08-25: "back inside a bank
- *                                should always go to the default bank — the one
- *                                the track is on when the session is created."
- *                                Which is exactly what Back does from every
- *                                OTHER bank, so this is the bank behaving like
- *                                the rest of them, not a rule of its own.
- *   soundExit({landOn: n})     — the JOG's top-edge left turn, which is a walk
- *                                along the strip rather than a close: it steps
- *                                back onto the bank you came from.
+ *   soundExit()                — a deliberate CLOSE: the bank you CAME FROM.
+ *                                Back, Shift+Note/Session, a view change, co-run
+ *                                taking the OLED.
+ *                                ⚠⚠ SUPERSEDED 2026-08-26. This used to land on
+ *                                the track's DEFAULT bank, per Josh 2026-08-25:
+ *                                "back inside a bank should always go to the
+ *                                default bank." He RETIRED that on 2026-08-26 —
+ *                                "we can get rid of the back goes to default
+ *                                bank entirely" — after living with the gesture
+ *                                return, which lands you where you pressed. Two
+ *                                ways out that disagreed about where "out" is
+ *                                was the thing that felt wrong; now there is one
+ *                                answer everywhere: you go back where you came
+ *                                from. Do not reinstate BANK_DEFAULT here.
+ *   soundExit({landOn: n})     — an explicit destination: the JOG's top-edge
+ *                                left turn, and the gesture return. Same law as
+ *                                the default above, just named outright.
  *   soundExit({leaving: true}) — going somewhere the track comes WITH us from
  *                                (the track switch). The outgoing track STAYS
  *                                recorded on this bank, so returning returns
@@ -998,7 +1002,12 @@ export function soundExit(opts) {
      * closed. The origin crumb is spent either way it is read, so it is dropped
      * here and re-earned by the next entry. */
     if (!_leaving && !soundIsGlobal() && S.track >= 0) {
-        const _back = (typeof _opts.landOn === 'number') ? (_opts.landOn | 0) : BANK_DEFAULT;
+        /* No explicit destination ⇒ the bank this track was entered from.
+         * soundOriginBank() already falls back sensibly when there is no crumb
+         * (the neighbour the jog would have come through), so a close never has
+         * to invent a bank. See the docblock above for why BANK_DEFAULT is gone. */
+        const _back = (typeof _opts.landOn === 'number') ? (_opts.landOn | 0)
+                                                         : soundOriginBank(S.track);
         if (GS.trackActiveBank[S.track] === BANK_SOUND)
             GS.trackActiveBank[S.track] = _back;
         if (GS.activeBank === BANK_SOUND && S.track === GS.activeTrack)

@@ -339,30 +339,32 @@ step('⭑⭑ the bank RECORDS ITSELF: sidecar write + Shift+jog track switch', (
                         (S.activeBank === BANK_SOUND ? ' (still SOUND + CONFIG)' : ''));
 });
 
-step('⭑ BACK lands on the DEFAULT bank — the jog\'s left turn lands on the origin', () => {
-    /* Josh, 2026-08-25: "back inside a bank (top level on sound-config) should
-     * always go to the default bank. the one that the track is on when the
-     * session is first created." That is what Back does from every OTHER bank
-     * (ui_input_cc steps a non-default bank back to 0), so this is SOUND +
-     * CONFIG behaving like the rest of them rather than carrying its own rule.
+step('⭑ BACK lands on the bank you CAME FROM — same as the jog\'s left turn', () => {
+    /* ⚠⚠ REWRITTEN 2026-08-26. This used to assert the opposite: Josh ruled on
+     * 2026-08-25 that "back inside a bank should always go to the default bank",
+     * and this step pinned Back (default) as DIFFERENT from the jog (origin).
+     * He RETIRED that on 2026-08-26 — "we can get rid of the back goes to
+     * default bank entirely" — having lived with the gesture return, which lands
+     * you where you pressed. Two ways out that disagreed about where "out" is
+     * was the thing that felt wrong.
      *
-     * The two exits are DIFFERENT and both are pinned here, because they read
-     * alike in the code and the difference is the whole point: Back CLOSES (the
-     * default bank), the jog's top-edge left turn WALKS THE STRIP (the bank you
-     * came from). Driven through the real CC — MoveBack is 51 — so this proves
-     * dispatch, not spelling. */
+     * So the two exits are now the SAME law, and that sameness is what is pinned
+     * here: whichever way you leave, you land on the bank you came from. Driven
+     * through the real CC — MoveBack is 51 — so this proves dispatch, not
+     * spelling. */
     reset(PAD_MODE_MELODIC_SCALE, 6);
     right();                                   /* enter from AUTOMATION (6) */
     if (!snd.soundActive()) throw new Error('control: did not enter sound mode');
     send(51, 127); send(51, 0); globalThis.tick();
     if (snd.soundActive()) throw new Error('Back did not close SOUND + CONFIG');
-    if (S.activeBank !== 0)
-        throw new Error('Back landed on ' + S.activeBank + ', not the default bank' +
-                        (S.activeBank === 6 ? ' (AUTOMATION — the bank it was entered from)' : ''));
-    if (S.trackActiveBank[2] !== 0)
+    if (S.activeBank !== 6)
+        throw new Error('Back landed on ' + S.activeBank + ', not AUTOMATION (6) — the bank it ' +
+                        'was entered from' + (S.activeBank === 0 ? '; 0 is the RETIRED ' +
+                        'default-bank close' : ''));
+    if (S.trackActiveBank[2] !== 6)
         throw new Error('the recorded bank did not follow Back: ' + S.trackActiveBank[2]);
 
-    /* ...and the jog still walks back onto the bank it came from. */
+    /* ...and the jog agrees, which is now the point rather than the contrast. */
     reset(PAD_MODE_MELODIC_SCALE, 6);
     right();
     snd.soundTick();
@@ -382,8 +384,11 @@ step('⭑ NOTE/SESSION is a LEAVE: the view toggle must not reset the track\'s b
      * The press flips S.sessionView directly; tick's reconcile then ends sound
      * mode because the view it was called from is gone. That end is a LEAVE, not
      * a close — the track comes WITH you, so it stays recorded on the bank and
-     * the screen is back when you return. A close would land it on the default
-     * bank, which is the reset he saw. MoveNoteSession is CC 50.
+     * the screen is back when you return. A close would move it off SOUND +
+     * CONFIG, which is the reset he saw. MoveNoteSession is CC 50.
+     * ⚠ 2026-08-26: a close now lands on the bank you came FROM rather than the
+     * default, but this step is unaffected — it is about LEAVE vs CLOSE, not
+     * about which bank a close picks.
      *
      * ⚠ The unshifted button used to be a CLOSER — "the way out from any depth"
      * — so it never reached the view toggle at all, which is why the bank moved
