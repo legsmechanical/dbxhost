@@ -153,7 +153,13 @@ export const KNOB_POSITIONS = 255;   /* canvaskit KIT_PARAM_MAX */
  * surface copies. */
 
 export const SESS_KNOB_MODES = [
+    /* ⚠ `sweep` is VOLUME's alone: the encoder counts a full 0..max sweep should
+     * cost, overriding the universal SWEEP_UNITS. Josh judged the universal rate
+     * right for pan and the sends and WRONG here, on hardware — a fader wants
+     * travel where a pan wants reach. KNOB_POSITIONS * 2 is exactly the
+     * pre-2026-08-26 feel he asked to keep (measured at 511 counts). */
     { key: 'volume', label: 'VOLUME', widget: 'vbar',   def: 1.0, max: SLOT_LEVEL_MAX,
+      sweep: KNOB_POSITIONS * 2,
       fmt: (v) => v.toFixed(2) + 'x' },
     { key: 'pan',    label: 'PAN',    widget: 'arcbip', def: 0.5, max: 1.0,
       fmt: (v) => { const pct = Math.round((v - 0.5) * 200); return pct === 0 ? 'C' : pct < 0 ? Math.abs(pct) + 'L' : pct + 'R'; },

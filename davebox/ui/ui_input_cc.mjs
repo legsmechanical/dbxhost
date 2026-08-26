@@ -2901,7 +2901,14 @@ function applyDrumNoteFxKnob(knobIdx, d2, t, lane) {
  * asked for: a 0-5 param and a 0-400 param both cross in the same gesture,
  * because the value each count buys is derived from the range rather than being
  * a fixed 1. */
-const SWEEP_UNITS = 100;
+/* ⭑ TUNING LOG — Josh's ear, all on hardware:
+ *     80  measured from the canvas (freeverb room_size: 20 steps x divisor 4)
+ *    100  "a tad slower" than 80        -> "MUCH BETTER" / "knob feel is good"
+ *    120  "slow down ... by maybe 20% and see how that feels" (2026-08-26,
+ *         after pan/sends joined this law: "the rest feel great")
+ * He is hunting the sweet spot, so this is expected to move again. It is the
+ * ONE number to change: every range-scaled knob reads it. */
+const SWEEP_UNITS = 120;
 
 /* The divisor the curve uses at normal turning speed. Everything is expressed
  * RELATIVE to it: at speed a count is worth a full unit, and easing off into
@@ -3251,7 +3258,14 @@ function _sessionKnobParam(knobIdx, d2) {
      * keyed by the same knob index — eight strips still cannot steal each
      * other's partial turns, and a strip cannot be turned as a bank knob at the
      * same time, so there is nothing for the two contexts to fight over. */
-    const steps = ccKnobDelta(d2, knobIdx, KNOB_POSITIONS / SWEEP_UNITS);
+    /* ⭑ VOLUME keeps its own, deliberately SLOWER sweep (Josh, 2026-08-26:
+     * "volume can be reverted ... the rest feel great"). A fader carries the
+     * mix, so it wants travel where a pan or a send wants reach — the one place
+     * the universal rate was judged wrong rather than merely unfamiliar.
+     * ⚠ This is the RATE restored, not the old law resurrected: volume still
+     * runs the shared ccKnobDelta, so it also keeps the deceleration and the
+     * one-position cold click that the retired flat drain never had. */
+    const steps = ccKnobDelta(d2, knobIdx, KNOB_POSITIONS / (mode.sweep || SWEEP_UNITS));
     const acc = { steps };
     if (!acc.steps) {
         /* Partial detent: nothing moves, but the finger is clearly ON this

@@ -64,7 +64,7 @@ await import('../../ui/ui.js');                 /* installs onMidiMessageInterna
 const { S } = await import('../../ui/ui_state.mjs');
 const { NUM_TRACKS } = await import('../../ui/ui_constants.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
-const { SLOT_LEVEL_MAX, KNOB_POSITIONS } = await import('../../ui/ui_engine.mjs');
+const { SLOT_LEVEL_MAX, KNOB_POSITIONS, SESS_KNOB_MODES } = await import('../../ui/ui_engine.mjs');
 
 /* Knob 1 = CC 71, one detent clockwise. */
 /* ⚠ A turn is TWO detents since the mixer knobs adopted canvaskit's feel
@@ -190,36 +190,74 @@ step('a COLD detent moves exactly ONE position — exact dialing survives', () =
                         ' positions (' + onePos + '), moved ' + moved);
 });
 
-/* ⭑ THE ASSERTION IS A RANGE, not the tuned number. Pinning "a sweep costs
- * exactly 100" would freeze a value Josh tunes by ear. The property that must
- * never regress is that a sweep is a HUMAN GESTURE rather than four revolutions
- * — so the bound that matters is the upper one, and it sits far below the 510
- * this replaced. A control asserts the old law would FAIL it. */
-step('a full-speed sweep costs a human gesture, not four revolutions', () => {
+/* ⭑ THE ASSERTIONS ARE RANGES, not the tuned numbers. Josh is hunting the sweet
+ * spot by ear (80 -> 100 -> 120 so far), so pinning an exact count would turn
+ * every tuning pass into a test edit. The properties that must never regress are
+ * that a sweep is a HUMAN GESTURE rather than four revolutions, and that VOLUME
+ * is deliberately slower than the rest.
+ *
+ * ⚠ These two steps are a PAIR. Volume carries its own `sweep` override, so a
+ * test that only drove volume would say nothing about the universal law, and one
+ * that only drove a send would not notice the override being dropped. */
+step('a SEND sweep costs a human gesture, not four revolutions', () => {
     S.trackChannel[0] = 2;
     ticks(64);
+    S.sessKnobMode = 2;                          /* SEND A — the universal law */
     S.knobAccelLast[0] = 0;
     S.knobAccelAcc[0] = 0;
     S.sessVolLevel[0] = 0;
+    const max = SESS_KNOB_MODES[2].max;
     let counts = 0;
-    while (S.sessVolLevel[0] < SLOT_LEVEL_MAX && counts < 2000) {
+    while (S.sessVolLevel[0] < max && counts < 2000) {
         globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 1]));
         counts++;
     }
-    if (S.sessVolLevel[0] < SLOT_LEVEL_MAX)
+    if (S.sessVolLevel[0] < max)
         throw new Error('the knob never reached full scale in ' + counts + ' counts');
-    if (counts > 200)
-        throw new Error('a full sweep cost ' + counts + ' encoder counts — that is the ' +
+    if (counts > 250)
+        throw new Error('a full send sweep cost ' + counts + ' encoder counts — that is the ' +
                         '510-count law this replaced, not a human gesture');
     if (counts < 40)
         throw new Error('a full sweep cost only ' + counts + ' counts — too fast to ' +
                         'place a value; the range scaling has overshot');
-    /* Control: the retired law would land at ~510 and fail the bound above, so
-     * the bound is doing work rather than passing on anything. */
     const oldLawCounts = KNOB_POSITIONS * 2;
-    if (oldLawCounts <= 200)
+    if (oldLawCounts <= 250)
         throw new Error('control broke: the old 255x2 law no longer exceeds the bound, ' +
                         'so this step would pass against the bug it exists to catch');
+});
+
+/* Josh, 2026-08-26, having felt the universal rate on all four banks: "volume
+ * can be reverted. the rest feel great." A fader wants travel where a pan wants
+ * reach — so volume keeps its own, slower sweep, and that override is a DECISION
+ * to be defended, not an accident to be tidied away. */
+step('VOLUME is deliberately SLOWER than the universal law', () => {
+    S.trackChannel[0] = 2;
+    ticks(64);
+    const volSweep  = SESS_KNOB_MODES[0].sweep;
+    const sendSweep = SESS_KNOB_MODES[2].sweep;
+    if (!volSweep)
+        throw new Error('volume lost its sweep override — it is back on the universal ' +
+                        'rate Josh judged wrong for a fader');
+    if (sendSweep)
+        throw new Error('a send grew its own sweep override — the whole point is that ' +
+                        'everything except volume shares one tunable');
+    if (volSweep < 2 * 120)
+        throw new Error('volume is no longer meaningfully slower than the universal rate: ' +
+                        'sweep ' + volSweep);
+    /* Drive it, so the override is proven to REACH the knob rather than merely
+     * being present in the table — the failure mode a pure data assertion misses. */
+    S.sessKnobMode = 0;
+    S.knobAccelLast[0] = 0;
+    S.knobAccelAcc[0] = 0;
+    S.sessVolLevel[0] = 0;
+    let counts = 0;
+    while (S.sessVolLevel[0] < SLOT_LEVEL_MAX && counts < 4000) {
+        globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 1]));
+        counts++;
+    }
+    if (counts < 300)
+        throw new Error('volume swept in ' + counts + ' counts — the override is in the ' +
+                        'table but is not reaching the knob');
 });
 
 step('re-pointing the track at another Move instrument RE-SEEDS the level', () => {
