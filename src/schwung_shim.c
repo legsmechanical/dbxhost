@@ -42,6 +42,7 @@
 #include "host/audio_fx_api_v2.h"
 #include "host/shadow_constants.h"
 #include "host/shadow_ui_midi_policy.h"
+#include "host/timespec_delta.h"
 #include "host/shadow_midi_inject_writer.h"
 #include "host/shadow_test_stream.h"
 #include "host/shadow_chain_types.h"
@@ -2137,8 +2138,11 @@ static const char *const spi_mix_phase_name[MIX_PHASE_COUNT] = {
 #define MIX_PHASE_END(idx)                                                     \
     do {                                                                       \
         clock_gettime(CLOCK_MONOTONIC, &_mp1);                                 \
-        uint64_t _us = (uint64_t)(_mp1.tv_sec - _mp0.tv_sec) * 1000000 +       \
-                       (uint64_t)(_mp1.tv_nsec - _mp0.tv_nsec) / 1000;         \
+        /* ⚠ NOT computed inline: casting the nsec difference to unsigned BEFORE
+         * dividing wraps a second-boundary crossing to ~1.8e16, and these are
+         * MAX trackers, so one hit poisons the whole 5 s window. Seen live.
+         * See timespec_delta.h. */                                            \
+        uint64_t _us = timespec_delta_us(&_mp0, &_mp1);                        \
         if (_us > spi_mix_phase_max[idx]) spi_mix_phase_max[idx] = _us;        \
     } while (0)
 
