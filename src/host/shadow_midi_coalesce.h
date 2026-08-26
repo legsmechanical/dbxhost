@@ -8,13 +8,12 @@
  * the Shift+bottom-row LEDs kept animating after Shift+volume). Fewer knob
  * events in the ring means fewer chances to push a release off the end.
  *
- * ⭑ LOSSLESS, not an approximation. Move's knobs are RELATIVE encoders: a
- * message says "+2" or "-1", never "position 47". Summing deltas lands on the
- * identical value, so N events collapse to one with nothing lost. dAVEBOx's own
- * handlers already perform this exact sum — CC 79 is
- * `S.tvDeltaAcc += decodeDelta(d2)`, and `_onCC_knobs` documents 71-78 as
- * relative — so doing it one layer earlier is provably equivalent, not a new
- * behaviour.
+ * ⭑ LOSSLESS **for CC 79**, because dAVEBOx sums that one's deltas itself:
+ * `S.tvDeltaAcc += decodeDelta(d2)`. Move's knobs are relative encoders ("+2",
+ * "-1", never "position 47"), so for a consumer that reads the magnitude,
+ * merging N events into one carrying the sum lands on the identical value.
+ * ⚠ That property belongs to the CONSUMER, not to the encoder — see the scope
+ * note on shadow_cc_is_relative_encoder() for why 71-78 are excluded.
  *
  * ⚠⚠ NEVER extend this to NOTES or BUTTONS. Every press AND release must
  * survive: those are precisely the events whose loss sticks, and merging them
@@ -32,10 +31,29 @@
 
 #include <stdint.h>
 
-/* The relative-encoder CCs on Move: the eight parameter knobs and the master /
- * volume knob. Anything not named here is left strictly alone. */
+/* ⚠⚠ CC 79 ONLY — the master / volume knob. NOT the parameter knobs 71-78.
+ *
+ * Whether merging is lossless depends entirely on how the CONSUMER reads the
+ * value, and the two differ:
+ *
+ *   CC 79   dAVEBOx does `S.tvDeltaAcc += decodeDelta(d2)` — magnitude-aware,
+ *           a genuine sum. Merging N events into one carrying the summed delta
+ *           is exactly equivalent.
+ *
+ *   71-78   `ccKnobDelta()` reads only the SIGN of d2 and then COUNTS EVENTS:
+ *           `S.knobAccelRun[k]++`, with the acceleration gain stepping 1→2→4→6
+ *           as that run grows. One event IS one click regardless of magnitude.
+ *           Merging four detents into a single "+4" therefore throws away three
+ *           clicks AND starves the acceleration ramp — the knob becomes very
+ *           slow across its range.
+ *
+ * ⚠ That regression shipped for one commit (3a98ec6b, 2026-08-25) and Josh
+ * caught it on hardware within the hour: "the knob seems really slow to go from
+ * min-to-max". The mistake was verifying CC 79's handler, then generalising to
+ * 71-78 from a DOC COMMENT ("d2 1-63 = CW (+1)") instead of reading
+ * ccKnobDelta. Before adding any CC here, read the code that CONSUMES it. */
 static inline int shadow_cc_is_relative_encoder(uint8_t cc) {
-    return (cc >= 71 && cc <= 78) || cc == 79;
+    return cc == 79;
 }
 
 /* Decode Move's relative-encoder byte: 1..63 = +n, 65..127 = n-128, 0/64 = 0. */
