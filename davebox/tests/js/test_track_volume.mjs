@@ -97,15 +97,35 @@ step('⭑ Shift+volume writes the active CHAIN track\'s slot level, once per tic
     shift(false);
 });
 
-step('⭑ the save lands ONCE, on the Shift release — never per detent', () => {
-    globalThis.tick();                    /* drain the PREVIOUS gesture's save */
+/* ⚠⚠ THE CONTRACT CHANGED 2026-08-26 — this step used to assert the opposite.
+ *
+ * It required exactly ONE save on the Shift release, which was right when the
+ * alternative was saving per detent. It is wrong now: engineSaveState() is
+ * shadow_save_state_now(), the SHUTDOWN flush ("flushed set state before exit"),
+ * which writes all eight slots, every FX bus and the chain config synchronously.
+ * Measured on Josh's device, that froze the UI loop for 771 ms against a median
+ * tick of 11-17 ms — and that stall let the input ring overflow, which dropped
+ * the Shift RELEASE, which left the track LEDs blinking. It was the root cause
+ * of the "LED linger" chased across two sessions.
+ *
+ * The host persists this correctly and incrementally on its own: the write marks
+ * the slot dirty and shadow_ui's autosave saves ONE unit after a quiet period.
+ * So the gesture must now save NOTHING, and the assertion is inverted.
+ *
+ * ⚠ Verified on hardware before this was allowed to stand — removing a save is a
+ * data-loss risk, so Josh confirmed a volume change survives quit + relaunch.
+ * Do not "restore" the save to make some future test green without repeating
+ * that check. */
+step('⭑ the gesture saves NOTHING — a full flush here froze the loop for 771 ms', () => {
+    globalThis.tick();
     saveCalls = 0;
     shift(true); vol(1); globalThis.tick(); vol(1); globalThis.tick();
-    if (saveCalls) throw new Error('saved mid-gesture');
+    if (saveCalls) throw new Error('saved mid-gesture: ' + saveCalls);
     shift(false); globalThis.tick();
-    if (saveCalls !== 1) throw new Error('saves on release: ' + saveCalls);
-    globalThis.tick();
-    if (saveCalls !== 1) throw new Error('kept saving after the gesture');
+    if (saveCalls) throw new Error('saved on release: ' + saveCalls +
+                                   ' — that is the 771 ms full flush, back again');
+    globalThis.tick(); globalThis.tick();
+    if (saveCalls) throw new Error('saved after the gesture: ' + saveCalls);
 });
 
 step('⭑ the level CARD shows — the same one sound mode draws, over any screen', () => {
