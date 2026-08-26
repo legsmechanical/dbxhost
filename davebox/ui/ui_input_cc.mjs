@@ -2532,31 +2532,80 @@ function _onCC_side(d1, d2) {
 
 }
 
-/* CC-knob acceleration. The Move knobs fire ~2-4 ±1 detent messages per
- * physical click at ~8-35ms apart, so timing can't tell slow from fast. We use
- * a fractional accumulator: each message adds `gain` (1 at the start) to an
- * accumulator and emits whole units of BASE. BASE=3 makes the slow/fine rate
- * ~1 value per 3 messages; `gain` grows only
- * after sustained continuous turning, so big sweeps accelerate. A direction
- * change or a pause (>180ms) resets. Returns a signed integer step (0 if the
- * accumulator hasn't reached a whole unit yet). */
-/* ---- Unified knob response (2026-07-18) ----
+/* ---- Unified knob response (2026-08-26 — matched to the generated canvas) ----
+ *
+ * Josh: "the generated canvas ui knobs feel perfect. i want that." So this is a
+ * port of the host's own `src/shared/knob_engine.mjs`, not a fresh curve.
+ *
+ * ⚠⚠ THE PREMISE THE OLD CURVE WAS BUILT ON WAS FALSE AT THIS LAYER. Its comment
+ * read: "The Move knobs fire ~2-4 ±1 detent messages per physical click at
+ * ~8-35ms apart, so timing can't tell slow from fast." That describes the RAW
+ * HARDWARE STREAM. It is not what a tool receives. shadow_ui BATCHES encoder
+ * CCs and flushes ONE synthetic message per knob per frame, with the summed
+ * detent count in the value — its own comment says so: "Modules using
+ * decodeDelta() will get direction; modules reading the raw value get the
+ * magnitude for acceleration" (shadow_ui.js, overtake flush).
+ *
+ * So `ccKnobDelta()` read the SIGN of an already-summed batch and threw the sum
+ * away. Spin fast enough to land six detents in one frame and dAVEBOx saw "one
+ * event, clockwise" — which is precisely the "slow as hell" Josh reported, and
+ * why the generated editors (which DO read the magnitude) feel different on the
+ * same hardware. Measured 2026-08-26, one fast flick of knob 3: 48% of detents
+ * carried more than 1, up to ±6.
+ *
+ * Because the delivery is one call per knob per FRAME, the engine's divisor
+ * curve transfers directly — same cadence it was tuned against. The rule:
+ *
+ *   first motion after idle (or a gap > KNOB_STALE_MS) → divisor 1
+ *       an immediate ±1 "click", so a single detent still dials exactly.
+ *   gap > KNOB_ACCEL_MED_MS  → divisor 16   (fine)
+ *   gap > KNOB_ACCEL_FAST_MS → divisor 8
+ *   otherwise                → divisor 4    (sweep)
+ *
+ * Accumulate the signed MAGNITUDE, emit whole units of the divisor, keep the
+ * remainder. The accumulator must drain before reversing — that is the engine's
+ * anti-jitter behaviour, and Math.trunc (toward zero) preserves it in both
+ * directions.
+ *
  * Three classes, one feel each:
- *  'cont'  — continuous values: ccKnobDelta() run-length acceleration.
- *            Slow turning always yields ±1 (exact dialing guaranteed);
- *            sustained fast turning ramps ×2/×4/×6. NO step multipliers.
- *  'pick'  — discrete options (enums, octaves, small counts): one step per
- *            KNOB_PICK detents, never accelerated, clamp-no-wrap.
- *  'delib' — toggles, one-shot actions, destructive things: one step per
- *            KNOB_DELIB detents (an accidental brush must not fire).
- * knobPick() is the shared accumulator for the fixed classes; every knob
- * site routes through ccKnobDelta or knobPick — no private thresholds. */
-const KNOB_PICK = 6, KNOB_DELIB = 12;
+ *  'cont'  — continuous values: the divisor curve above.
+ *  'pick'  — discrete options (enums, octaves, small counts): a FIXED divisor,
+ *            never accelerated, so a binary toggle and a 47-option picker feel
+ *            the same. KNOB_PICK matches the engine's enum divisor exactly.
+ *  'delib' — toggles, one-shot actions, destructive things: the same fixed-
+ *            divisor accumulator at KNOB_DELIB, so an accidental brush cannot
+ *            fire. Deliberately 2x 'pick'; it has no canvas counterpart.
+ * Every knob site routes through ccKnobDelta or knobPick — no private
+ * thresholds. */
+const KNOB_ACCEL_FAST_MS = 50;    /* pinned against src/shared/knob_engine.mjs */
+const KNOB_ACCEL_MED_MS  = 150;
+const KNOB_STALE_MS      = 2000;
+const KNOB_PICK = 10, KNOB_DELIB = 20;
+
+/* Gap-based divisor, per knob. Mirrors knob_engine.mjs::tickDivisor, including
+ * its self-reset: a long pause makes the next turn a cold start rather than the
+ * continuation of a stale curve. */
+function knobDivisor(k, now) {
+    const last = S.knobAccelLast[k] || 0;
+    if (last === 0) return 1;
+    const gap = now > last ? now - last : 0;
+    if (gap > KNOB_STALE_MS) { S.knobAccelLast[k] = 0; S.knobAccelAcc[k] = 0; return 1; }
+    if (gap > KNOB_ACCEL_MED_MS)  return 16;
+    if (gap > KNOB_ACCEL_FAST_MS) return 8;
+    return 4;
+}
+
+/* Fixed-divisor accumulator for the discrete classes. Takes the batch MAGNITUDE
+ * like ccKnobDelta, so a fast spin pages through options at the speed of the
+ * turn while a slow one still needs `need` detents per step. */
 function knobPick(k, dir, need) {
-    if (dir !== S.knobLastDir[k]) { S.knobAccum[k] = 0; S.knobLastDir[k] = dir; }
-    S.knobAccum[k]++;
-    if (S.knobAccum[k] >= need) { S.knobAccum[k] = 0; return dir; }
-    return 0;
+    if (!dir) return 0;
+    if ((dir > 0) !== (S.knobLastDir[k] > 0)) { S.knobAccum[k] = 0; S.knobLastDir[k] = dir > 0 ? 1 : -1; }
+    S.knobAccum[k] += dir;
+    const steps = Math.trunc(S.knobAccum[k] / need);
+    if (steps === 0) return 0;
+    S.knobAccum[k] -= steps * need;
+    return steps;
 }
 
 /* BANKS knobDef -> response class (generic bank path). */
@@ -2569,22 +2618,22 @@ function knobClass(pm) {
 }
 
 function ccKnobDelta(d2, k) {
-    const sign = (d2 >= 1 && d2 <= 63) ? 1 : (d2 >= 65 && d2 <= 127) ? -1 : 0;
-    if (!sign) return 0;
+    /* decodeDelta, NOT a sign test: the value carries the whole frame's detent
+     * count and discarding it is the bug this replaced. */
+    const dir = decodeDelta(d2);
+    if (!dir) return 0;
     const now = Date.now();
-    const gap = now - (S.knobAccelLast[k] || 0);
+    const div = knobDivisor(k, now);
     S.knobAccelLast[k] = now;
-    if (sign !== S.knobAccelDir[k] || gap > 180) { S.knobAccelRun[k] = 0; S.knobAccelAcc[k] = 0; }
-    S.knobAccelDir[k] = sign;
-    S.knobAccelRun[k]++;
-    const run  = S.knobAccelRun[k];
-    const gain = run <= 12 ? 1 : run <= 24 ? 2 : run <= 36 ? 4 : 6;
-    const BASE = 2;   /* was 3 — 2026-07-18 feel pass: continuous knobs a bit faster */
-    S.knobAccelAcc[k] += gain;
-    const units = Math.floor(S.knobAccelAcc[k] / BASE);
+    /* A reversal drains through the accumulator rather than resetting it —
+     * knob_engine's anti-jitter rule, and the reason Math.trunc (toward zero)
+     * is correct here where Math.floor would bias negative turns. */
+    if ((dir > 0) !== (S.knobAccelDir[k] > 0)) S.knobAccelDir[k] = dir > 0 ? 1 : -1;
+    S.knobAccelAcc[k] += dir;
+    const units = Math.trunc(S.knobAccelAcc[k] / div);
     if (units === 0) return 0;
-    S.knobAccelAcc[k] -= units * BASE;
-    return sign * units;
+    S.knobAccelAcc[k] -= units * div;
+    return units;
 }
 
 function _onCC_stepedit(d1, d2) {
@@ -3309,7 +3358,11 @@ function _onCC_knobs(d1, d2) {
             if (dir !== S.knobLastDir[knobIdx]) { S.knobAccum[knobIdx] = 0; S.knobLastDir[knobIdx] = dir; }
             if (knobIdx === 0 || knobIdx === 1) {
                 /* K1 = LaneOct (±12 semitones, picker pace), K2 = LaneNote (cont accel) */
-                const delta = knobIdx === 0 ? knobPick(knobIdx, dir, KNOB_PICK) * 12
+                /* knobPick takes the batch MAGNITUDE (decodeDelta), not `dir` —
+                 * `dir` above is the SIGN, still used for the reset below and by
+                 * the one-way action knobs. A fast spin therefore pages octaves
+                 * at the speed of the turn. */
+                const delta = knobIdx === 0 ? knobPick(knobIdx, decodeDelta(d2), KNOB_PICK) * 12
                                             : ccKnobDelta(d2, knobIdx);
                 if (delta !== 0) {
                     const nv = Math.max(0, Math.min(127, S.drumLaneNote[t][lane] + delta));
@@ -3623,8 +3676,19 @@ function _onCC_knobs(d1, d2) {
              * (set_param coalescing forbids bursts). */
             let _cls = knobClass(pm);
             if (pm.dspKey === 'clock_shift') _cls = 'pick';
-            const _delta = _cls === 'cont' ? ccKnobDelta(d2, knobIdx)
-                         : knobPick(knobIdx, dir, _cls === 'delib' ? KNOB_DELIB : KNOB_PICK);
+            let _delta = _cls === 'cont' ? ccKnobDelta(d2, knobIdx)
+                       : knobPick(knobIdx, decodeDelta(d2), _cls === 'delib' ? KNOB_DELIB : KNOB_PICK);
+            /* ⚠ Two consumers cannot take a multi-step delta, so clamp AFTER the
+             * accumulator (the remainder is kept either way — clamping the input
+             * would silently slow the knob instead):
+             *   'delib'      — toggles and one-shot/destructive actions. Firing
+             *                  a confirm dialog twice from one flick is not a
+             *                  faster knob, it is a bug.
+             *   clock_shift  — its DSP key takes a ±1 DIRECTION, not an amount,
+             *                  and set_param coalescing forbids bursts. This is
+             *                  why it is forced to 'pick' just above. */
+            if (_delta !== 0 && (_cls === 'delib' || pm.dspKey === 'clock_shift'))
+                _delta = _delta > 0 ? 1 : -1;
             if (_delta !== 0) {
                 S.screenDirty = true;
                 if (pm.scope === 'action') {
