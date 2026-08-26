@@ -16679,8 +16679,20 @@ globalThis.onMidiMessageInternal = function(data) {
         hostMuteHeld = (d2 > 0);
     }
 
-    /* Debug: log all MIDI when in overtake mode to diagnose escape issues */
-    if (view === VIEWS.OVERTAKE_MODULE) {
+    /* Debug: log all MIDI when in overtake mode to diagnose escape issues.
+     *
+     * ⚠⚠ NOT for status < 0x80. Those are torn/stale reads of the unfiltered
+     * hardware MIDI_IN buffer — the publisher in schwung_shim.c discards them by
+     * the same test, so they never reach a tool and logging them describes
+     * nothing. They are also the overwhelming majority: measured 2026-08-26 on
+     * Josh's device, 18342 of 19281 lines (95%) in a sample were this one line
+     * with status=0, in a debug.log that had reached 712 MB.
+     *
+     * ⭑ This is a diagnostic in a HOT PATH with no rate limit, and dAVEBOx is
+     * ALWAYS in overtake — so it fired twice per MIDI event, every event, straight
+     * to disk, for the whole session. That is file I/O on the loop that has to
+     * drain the input ring, and the ring drops silently when full. */
+    if (view === VIEWS.OVERTAKE_MODULE && (status & 0x80)) {
         debugLog(`MIDI_IN: view=${view} status=${status} d1=${d1} d2=${d2} loaded=${overtakeModuleLoaded} callbacks=${!!overtakeModuleCallbacks}`);
     }
 
@@ -16808,8 +16820,12 @@ globalThis.onMidiMessageInternal = function(data) {
             }
         }
 
-        /* Debug: log key state */
-        debugLog(`OVERTAKE MIDI: status=${status} d1=${d1} d2=${d2} hostShift=${hostShiftHeld} volTouch=${hostVolumeKnobTouched}`);
+        /* Debug: log key state. Same status < 0x80 exclusion as MIDI_IN above,
+         * and for the same reason — this is the second of the two lines that
+         * were filling the log with packets no tool ever sees. */
+        if (status & 0x80) {
+            debugLog(`OVERTAKE MIDI: status=${status} d1=${d1} d2=${d2} hostShift=${hostShiftHeld} volTouch=${hostVolumeKnobTouched}`);
+        }
 
         /* HOST-LEVEL ESCAPE: Shift+Vol+Jog Click always exits overtake mode
          * This runs BEFORE passing MIDI to the module, ensuring escape always works */

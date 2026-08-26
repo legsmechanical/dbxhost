@@ -1554,9 +1554,31 @@ export function _tickImpl() {
         }
         /* The save is deferred off the release — a synchronous file write has
          * no business in a MIDI handler. */
+        /* ⚠⚠ NO explicit save here. engineSaveState() is shadow_save_state_now(),
+         * whose own log line calls it "flushed set state before exit" — it writes
+         * ALL EIGHT SLOTS, every FX bus and the chain config, synchronously, on
+         * the UI loop. Calling that after a volume tweak froze the loop for
+         * 771 ms, MEASURED on Josh's device 2026-08-26 against a median tick of
+         * 11-17 ms.
+         *
+         * ⭑ That one stall explains the whole chain we chased for two days: the
+         * freeze let the 64-slot input ring overflow, the overflow dropped the
+         * Shift RELEASE, and the stuck modifier left the track LEDs blinking —
+         * the "LED linger". The ring reserve and the stuck-Shift reconcile were
+         * both treating symptoms of this.
+         *
+         * The host already persists this correctly and incrementally: the write
+         * marks the slot dirty, and shadow_ui's autosave scheduler saves ONE unit
+         * after a quiet period ("a knob sweep is one edit, not 200"), with a
+         * deferral cap so an edit cannot starve. Bypassing that to force a full
+         * flush was never buying durability the scheduler did not already give.
+         *
+         * ⚠ tvDirty is still cleared here: it exists so the SAVE happens once per
+         * gesture rather than per detent, and dropping the flag keeps the rest of
+         * that bookkeeping honest. */
         if (S.tvSavePending) {
             S.tvSavePending = false;
-            if (S.tvDirty) { S.tvDirty = false; engineSaveState(); }
+            S.tvDirty = false;
         }
 
         /* Metro beat detection: checked every tick via dedicated get_param for minimal jitter */
