@@ -41,6 +41,7 @@
 #include "host/plugin_api_v1.h"
 #include "host/audio_fx_api_v2.h"
 #include "host/shadow_constants.h"
+#include "host/shadow_ui_midi_policy.h"
 #include "host/shadow_midi_inject_writer.h"
 #include "host/shadow_test_stream.h"
 #include "host/shadow_chain_types.h"
@@ -3103,6 +3104,14 @@ static uint64_t last_speech_time_ms = 0;  /* Rate limiting for TTS */
  * a wholesale memset on the consumer side could wipe events written
  * between the producer's slot-empty check and the consumer's clear,
  * dropping note-offs under burst (4-pad simultaneous release, etc.). */
+/* Ring-pressure telemetry. Single writer (the SPI callback), read by the
+ * background logger thread — the same discipline as the spi_timing counters, and
+ * for the same reason: a fprintf() on this thread is the bug we keep finding,
+ * never the instrument. `sticky` counts the drops that LATCH (a press or release
+ * nobody will resend); `yield` counts knob detents that stood aside for them. */
+static volatile uint32_t ui_midi_drop_sticky = 0;
+static volatile uint32_t ui_midi_drop_yield = 0;
+
 static inline void shadow_ui_midi_publish(uint8_t head, uint8_t status,
                                           uint8_t d1, uint8_t d2) {
     if (head == 0 || !shadow_ui_midi_shm || !shadow_control) return;
@@ -3113,7 +3122,14 @@ static inline void shadow_ui_midi_publish(uint8_t head, uint8_t status,
      * tools with status=0 events during co-run. SysEx CINs (0x04-0x07)
      * legitimately carry data bytes < 0x80, so they are NOT subject to this. */
     if ((head & 0x0F) >= 0x08 && !(status & 0x80)) return;
-    for (int slot = 0; slot < MIDI_BUFFER_SIZE; slot += 4) {
+    /* A knob detent may not take one of the last slots — those are held for
+     * events whose loss STICKS. See shadow_ui_midi_policy.h for why the two are
+     * not interchangeable. */
+    const int yields = shadow_ui_midi_event_yields(head, status, d1);
+    const int limit  = yields ? shadow_ui_midi_yield_limit(MIDI_BUFFER_SIZE)
+                              : MIDI_BUFFER_SIZE;
+
+    for (int slot = 0; slot < limit; slot += 4) {
         if (__atomic_load_n(&shadow_ui_midi_shm[slot], __ATOMIC_ACQUIRE) == 0) {
             shadow_ui_midi_shm[slot + 1] = status;
             shadow_ui_midi_shm[slot + 2] = d1;
@@ -3123,6 +3139,11 @@ static inline void shadow_ui_midi_publish(uint8_t head, uint8_t status,
             return;
         }
     }
+
+    /* Dropped. Count it by consequence, so the log distinguishes "the surface
+     * got busy" from "a release was lost and something is now stuck". */
+    if (yields) ui_midi_drop_yield++;
+    else        ui_midi_drop_sticky++;
 }
 
 /* LED queue constants and state — moved to shadow_led_queue.c */
@@ -8771,6 +8792,15 @@ static void *spi_timing_logger_thread(void *arg)
                 (unsigned long long)spi_snap.frame_ioctl_avg, (unsigned long long)spi_snap.frame_ioctl_max,
                 (unsigned long long)spi_snap.frame_post_avg, (unsigned long long)spi_snap.frame_post_max,
                 spi_snap.overrun_count);
+            /* Ring pressure on the shim -> shadow_ui MIDI ring. `sticky` is the
+             * one that matters: a press or release that never reached the tool,
+             * i.e. a latched modifier waiting to be healed. `yield` is knob
+             * detents that stood aside for it (shadow_ui_midi_policy.h) — those
+             * are the design working, not a fault. Cumulative since launch, so a
+             * flat pair across two lines means the last 5 s dropped nothing. */
+            unified_log("spi_timing", LOG_LEVEL_DEBUG,
+                "UI-MIDI ring drops: sticky=%u yield=%u",
+                ui_midi_drop_sticky, ui_midi_drop_yield);
             /* THE load line. `total` above is dominated by the blocking ioctl
              * and barely moves with load; this one is the work we actually do
              * and the only one worth judging headroom from. */

@@ -1,6 +1,29 @@
 /*
  * shadow_midi_coalesce.h — merge relative-encoder CCs before publishing them.
  *
+ * ⚠⚠ SCOPE, verified on the device 2026-08-26: this helper's ONE caller is
+ * shadow_forward_midi(), which publishes to SHM_SHADOW_MIDI ("MIDI to shadow
+ * DSP") — a segment NOTHING in the running system maps. `fuser` on a live
+ * device shows no process attached to /dev/shm/dbxhost-midi at all, and the
+ * only reader in the tree is examples/shadow_poc.c.
+ *
+ * The ring a tool actually reads is a DIFFERENT one: SHM_SHADOW_UI_MIDI, filled
+ * post-ioctl by schwung_shim.c::shadow_ui_midi_publish() from the UNFILTERED
+ * hardware buffer. Coalescing here therefore does not reduce that ring's
+ * pressure, and it cannot change how any knob feels — under overtake mode the
+ * buffer this path reads has already had every cable-0 surface event filtered
+ * out of it, so a knob detent never reaches here in the first place.
+ *
+ * ⚠ That matters historically: the "knob crawl" attributed to 3a98ec6b
+ * (2026-08-25) and "fixed" by 760d7fb5 cannot have been caused by either commit.
+ * Both touched only this dead path. The crawl is dAVEBOx's own ccKnobDelta()
+ * discarding the encoder magnitude, which predates both by a month.
+ *
+ * Left in place rather than deleted: the merge itself is correct and tested, and
+ * whether SHM_SHADOW_MIDI has any future is a separate decision. But do not
+ * reach for this helper expecting it to relieve ring pressure — the reserve in
+ * shadow_ui_midi_policy.h is what does that.
+ *
  * WHY: the tool process drains the forwarded-MIDI buffer only between JS
  * callbacks, through a 64-slot ring that DROPS SILENTLY when full. A knob turn
  * is the densest thing the control surface produces, and a dropped RELEASE
