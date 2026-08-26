@@ -2580,7 +2580,7 @@ function _onCC_side(d1, d2) {
 const KNOB_ACCEL_FAST_MS = 50;    /* pinned against src/shared/knob_engine.mjs */
 const KNOB_ACCEL_MED_MS  = 150;
 const KNOB_STALE_MS      = 2000;
-const KNOB_PICK = 10, KNOB_DELIB = 20;
+export const KNOB_PICK = 10, KNOB_DELIB = 20;
 
 /* Gap-based divisor, per knob. Mirrors knob_engine.mjs::tickDivisor, including
  * its self-reset: a long pause makes the next turn a cold start rather than the
@@ -2668,42 +2668,135 @@ function knobClass(pm) {
  * `get`/`set` stay per-entry because the JS-side mirrors genuinely differ (some
  * params shadow into bankParams, some into a per-lane array, Qnt into both).
  * Those are STORAGE, not feel, which is exactly the split worth making. */
+const drumPfx = (t, lane, name, v) =>
+    host_module_set_param('t' + t + '_l' + lane + '_pfx_set', name + ' ' + v);
+
 export const DRUM_NOTEFX_SITES = {
-    2: { pfx: 'velocity_offset',
+    2: { pfx: 'velocity_offset', meta: () => BANKS[1].knobs[2],
          get: (t, lane) => S.bankParams[t][1][1] | 0,
-         set: (t, lane, v) => { S.bankParams[t][1][1] = v; } },
-    3: { pfx: 'quantize',
+         set: (t, lane, v) => { S.bankParams[t][1][1] = v; drumPfx(t, lane, 'velocity_offset', v); } },
+    3: { pfx: 'quantize', meta: () => BANKS[1].knobs[3],
          get: (t, lane) => S.drumLaneQnt[t] | 0,
-         set: (t, lane, v) => { S.drumLaneQnt[t] = v; S.bankParams[t][1][2] = v; } },
-    4: { pfx: 'note_length_mode',
+         set: (t, lane, v) => { S.drumLaneQnt[t] = v; S.bankParams[t][1][2] = v;
+                                drumPfx(t, lane, 'quantize', v); } },
+    4: { pfx: 'note_length_mode', meta: () => BANKS[1].knobs[4],
          get: (t, lane) => S.drumLaneLenMode[t][lane] | 0,
-         set: (t, lane, v) => { S.drumLaneLenMode[t][lane] = v; } },
-    5: { pfx: 'gate_time',
+         set: (t, lane, v) => { S.drumLaneLenMode[t][lane] = v;
+                                drumPfx(t, lane, 'note_length_mode', v); } },
+    5: { pfx: 'gate_time', meta: () => BANKS[1].knobs[5],
          get: (t, lane) => S.bankParams[t][1][0] | 0,
-         set: (t, lane, v) => { S.bankParams[t][1][0] = v; } },
+         set: (t, lane, v) => { S.bankParams[t][1][0] = v; drumPfx(t, lane, 'gate_time', v); } },
 };
 
-/* Apply one drum NOTE FX knob turn. Returns true if this knob is table-driven,
- * so the caller can `return` — an unknown knob falls through to whatever
- * bespoke branch follows, rather than being silently swallowed. */
-function applyDrumNoteFxKnob(knobIdx, d2, t, lane) {
-    const site = DRUM_NOTEFX_SITES[knobIdx];
+/* ---- The remaining PURE sites, by bank ---------------------------------------
+ *
+ * ⚠ These banks publish STUB metadata on purpose (`_X`, `_XR`, `_XQ` in
+ * BANKS[0]/BANKS[7]): their labels and their "unset" defaults are drawn by
+ * custom render branches, so there is no real range to inherit the way the drum
+ * NOTE FX table inherits BANKS[1]. The range is therefore DECLARED here, and
+ * this table is its only home — not a second copy of something the metadata
+ * already knows. That distinction is why `meta` is optional on a site.
+ *
+ * Everything else is identical to the NOTE FX table: storage varies, feel does
+ * not. Each `cls` below reproduces exactly what its branch had hand-picked, so
+ * this is a move, not a retune. */
+export const DRUM_CONFIG_SITES = {          /* ALL LANES bank (drum, bank 7) */
+    0: { cls: 'pick', min: 0, max: 5,        /* Res — all-lane resolution */
+         get: (t) => S.bankParams[t][7][0] < 0 ? -1 : S.bankParams[t][7][0],
+         set: (t, lane, v) => {
+             S.bankParams[t][7][0] = v;
+             S.drumLaneTPS[t] = TPS_VALUES[v];
+             host_module_set_param('t' + t + '_all_lanes_clip_resolution', String(v));
+             S.pendingDrumResync = 2; S.pendingDrumResyncTrack = t;
+         } },
+    3: { cls: 'cont', min: 0, max: 100,      /* Qnt — quantize all lanes */
+         get: (t) => S.bankParams[t][7][3] < 0 ? 0 : S.bankParams[t][7][3],
+         set: (t, lane, v) => {
+             S.bankParams[t][7][3] = v; S.drumLaneQnt[t] = v; S.bankParams[t][1][2] = v;
+             host_module_set_param('t' + t + '_drum_lanes_qnt', String(v));
+         } },
+    5: { cls: 'pick', min: 0, max: 8,        /* InQ — per-track input quantize */
+         get: (t) => S.drumInpQuant[t] | 0,
+         set: (t, lane, v) => {
+             S.drumInpQuant[t] = v; S.bankParams[t][7][5] = v;
+             host_module_set_param('t' + t + '_diq', String(v));
+         } },
+    7: { cls: 'delib', min: 0, max: 1,       /* SyncRpt — bool, must resist a brush */
+         get: (t) => S.bankParams[t][7][7] | 0,
+         set: (t, lane, v) => {
+             S.bankParams[t][7][7] = v;
+             host_module_set_param('t' + t + '_drum_repeat_sync', String(v));
+         } },
+};
+
+export const DRUM_LANE_SITES = {            /* per-lane drum config bank (bank 0) */
+    4: { cls: 'pick', min: 0,                /* Eucl — Bjorklund hit count */
+         /* ⭑ A DYNAMIC ceiling: the hit count cannot exceed the lane's length.
+          * Supporting a function here is what let this site join the table at
+          * all — the alternative was leaving it bespoke over one expression. */
+         max: (t) => S.drumLaneLength[t],
+         get: (t, lane) => Math.min(S.drumLaneEuclidN[t][lane] | 0, S.drumLaneLength[t]),
+         set: (t, lane, v, prev) => {
+             /* Needs the PREVIOUS value: the DSP stamps a transition, not a
+              * level. That is why the applier hands `set` the old value too. */
+             host_module_set_param('t' + t + '_l' + lane + '_euclid_stamp',
+                                   prev + ' ' + v + ' ' + stepEntryVelocity(t, -1, true));
+             S.drumLaneEuclidN[t][lane] = v;
+             S.bankParams[t][0][4] = v;
+             S.pendingDrumLaneResync = 2; S.pendingDrumLaneResyncTrack = t;
+             S.pendingDrumLaneResyncLane = lane;
+         } },
+};
+
+/* Melodic CLIP K5 = InQ. The SAME param as DRUM_CONFIG_SITES[5] — same DSP key,
+ * same range, same pace — differing only in which mirror the bank overview
+ * reads. Declared beside its twin deliberately: this pairing is exactly the
+ * shape that drifted on the NOTE FX banks, and a reader who changes one will
+ * now see the other. */
+export const CLIP_MELODIC_SITES = {
+    4: { cls: 'pick', min: 0, max: 8,
+         get: (t) => S.drumInpQuant[t] | 0,
+         set: (t, lane, v) => {
+             S.drumInpQuant[t] = v; S.bankParams[t][0][4] = v;
+             host_module_set_param('t' + t + '_diq', String(v));
+         } },
+};
+
+/* Apply one TABLE-DRIVEN knob turn. Returns true if the knob is in the table, so
+ * the caller can `return` — an unknown knob falls through to whatever bespoke
+ * branch follows rather than being silently swallowed.
+ *
+ * A site declares only what genuinely varies:
+ *   meta   — () => a BANKS entry, when the bank publishes a real one. Range and
+ *            response class then come from there and CANNOT drift from the UI.
+ *   cls / min / max — the same three, declared inline, for banks whose metadata
+ *            is a deliberate stub (see DRUM_CONFIG_SITES). `max` may be a
+ *            function when the ceiling is dynamic.
+ *   get/set — where the value lives, and what applying it entails.
+ *
+ * Everything else — accumulation, magnitude, scaling, deceleration, clamping —
+ * happens here, once, for every site. That is the whole point: a branch can
+ * choose its storage, never its feel. */
+function applyTableKnob(site, knobIdx, d2, t, lane) {
     if (!site) return false;
-    const pm   = BANKS[1].knobs[knobIdx];
-    const cls  = knobClass(pm);
+    const pm  = site.meta ? site.meta() : site;
+    const min = typeof pm.min === 'function' ? pm.min(t, lane) : pm.min;
+    const max = typeof pm.max === 'function' ? pm.max(t, lane) : pm.max;
+    const cls = site.cls || knobClass(pm);
     const step = cls === 'cont'
-        ? ccKnobDelta(d2, knobIdx, bankStep(pm))
+        ? ccKnobDelta(d2, knobIdx, bankStep({ min, max }))
         : knobStep(knobIdx, d2, cls === 'delib' ? KNOB_DELIB : KNOB_PICK);
     if (step !== 0) {
         const cur = site.get(t, lane);
-        const nv  = Math.max(pm.min, Math.min(pm.max, cur + step));
-        if (nv !== cur) {
-            site.set(t, lane, nv);
-            host_module_set_param('t' + t + '_l' + lane + '_pfx_set', site.pfx + ' ' + nv);
-        }
+        const nv  = Math.max(min, Math.min(max, cur + step));
+        if (nv !== cur) site.set(t, lane, nv, cur);
         S.screenDirty = true;
     }
     return true;
+}
+
+function applyDrumNoteFxKnob(knobIdx, d2, t, lane) {
+    return applyTableKnob(DRUM_NOTEFX_SITES[knobIdx], knobIdx, d2, t, lane);
 }
 
 
@@ -3327,24 +3420,7 @@ function _onCC_knobs(d1, d2) {
                 }
                 return;
             }
-            if (knobIdx === 4) {
-                /* K5 = Eucl (Bjorklund hit count, sens=8) */
-                if (knobStep(knobIdx, d2, KNOB_PICK) !== 0) {
-                    const len  = S.drumLaneLength[t];
-                    const prev = Math.min(S.drumLaneEuclidN[t][lane] | 0, len);
-                    const nv   = Math.max(0, Math.min(len, prev + dir));
-                    if (nv !== prev) {
-                        const vel = stepEntryVelocity(t, -1, true);
-                        host_module_set_param('t' + t + '_l' + lane + '_euclid_stamp',
-                                              prev + ' ' + nv + ' ' + vel);
-                        S.drumLaneEuclidN[t][lane] = nv;
-                        S.bankParams[t][0][4] = nv;
-                        S.pendingDrumLaneResync = 2; S.pendingDrumLaneResyncTrack = t; S.pendingDrumLaneResyncLane = lane;
-                    }
-                    S.screenDirty = true;
-                }
-                return;
-            }
+            if (applyTableKnob(DRUM_LANE_SITES[knobIdx], knobIdx, d2, t, lane)) return;
             if (knobIdx === 6) {
                 /* K7 = Dir (per-lane playback direction, sens=16).
                  * AltMode flips this to Step / Audio playback style (sens=4). */
@@ -3393,21 +3469,8 @@ function _onCC_knobs(d1, d2) {
             const t   = S.activeTrack;
             const dir = (d2 >= 1 && d2 <= 63) ? 1 : -1;
             if (dir !== S.knobLastDir[knobIdx]) { S.knobAccum[knobIdx] = 0; S.knobLastDir[knobIdx] = dir; }
-            if (knobIdx === 0) {
-                /* K1 = Res: set resolution on all 32 lanes (absolute), sens=8 */
-                if (knobStep(knobIdx, d2, KNOB_PICK) !== 0) {
-                    const curIdx = S.bankParams[t][7][0] < 0 ? -1 : S.bankParams[t][7][0];
-                    const nv = Math.max(0, Math.min(5, curIdx + dir));
-                    if (nv !== curIdx) {
-                        S.bankParams[t][7][0] = nv;
-                        S.drumLaneTPS[t] = TPS_VALUES[nv];
-                        host_module_set_param('t' + t + '_all_lanes_clip_resolution', String(nv));
-                        S.pendingDrumResync = 2; S.pendingDrumResyncTrack = t;
-                    }
-                    S.screenDirty = true;
-                }
-                return;
-            }
+            /* Res · Qnt · InQ · SyncRpt — table-driven; see DRUM_CONFIG_SITES. */
+            if (applyTableKnob(DRUM_CONFIG_SITES[knobIdx], knobIdx, d2, t, lane)) return;
             if (knobIdx === 1) {
                 /* K2 = Stch: beat stretch all lanes, lock, sens=16 */
                 if (S.knobLocked[knobIdx]) return;
@@ -3437,22 +3500,6 @@ function _onCC_knobs(d1, d2) {
                 }
                 return;
             }
-            if (knobIdx === 3) {
-                /* K4 = Qnt: quantize all lanes 0-100, cont accel */
-                const _q = ccKnobDelta(d2, knobIdx);
-                if (_q !== 0) {
-                    const cur7q = S.bankParams[t][7][3] < 0 ? 0 : S.bankParams[t][7][3];
-                    const nv = Math.max(0, Math.min(100, cur7q + _q));
-                    if (nv !== cur7q) {
-                        S.bankParams[t][7][3] = nv;
-                        S.drumLaneQnt[t] = nv;
-                        S.bankParams[t][1][2] = nv;
-                        host_module_set_param('t' + t + '_drum_lanes_qnt', String(nv));
-                    }
-                    S.screenDirty = true;
-                }
-                return;
-            }
             if (knobIdx === 4) {
                 /* K5 = VelIn: track velocity override, cont accel */
                 const _v5 = ccKnobDelta(d2, knobIdx);
@@ -3461,19 +3508,6 @@ function _onCC_knobs(d1, d2) {
                 const nv = Math.max(0, Math.min(127, cur7v + _v5));
                 if (nv !== cur7v) applyTrackConfig(t, 'track_vel_override', nv);
                 S.screenDirty = true;
-                return;
-            }
-            if (knobIdx === 5) {
-                /* K6 = InQ: per-track drum input quantize, 9 values (0=Off..8=1/4T), sens=5 */
-                if (knobStep(knobIdx, d2, KNOB_PICK) !== 0) {
-                    const nv = Math.max(0, Math.min(8, S.drumInpQuant[t] + dir));
-                    if (nv !== S.drumInpQuant[t]) {
-                        S.drumInpQuant[t] = nv;
-                        S.bankParams[t][7][5] = nv;
-                        host_module_set_param('t' + t + '_diq', String(nv));
-                    }
-                    S.screenDirty = true;
-                }
                 return;
             }
             if (knobIdx === 6) {
@@ -3495,19 +3529,6 @@ function _onCC_knobs(d1, d2) {
                             S.bankParams[t][7][6] = nvDir;
                             host_module_set_param('t' + t + '_all_lanes_playback_dir', String(nvDir));
                         }
-                    }
-                    S.screenDirty = true;
-                }
-                return;
-            }
-            if (knobIdx === 7) {
-                /* K8 = SyncRpt: per-track drum repeat sync toggle, bool, sens=8 */
-                if (knobStep(knobIdx, d2, KNOB_DELIB) !== 0) {
-                    const cur7s = S.bankParams[t][7][7] | 0;
-                    const nv = Math.max(0, Math.min(1, cur7s + dir));
-                    if (nv !== cur7s) {
-                        S.bankParams[t][7][7] = nv;
-                        host_module_set_param('t' + t + '_drum_repeat_sync', String(nv));
                     }
                     S.screenDirty = true;
                 }
@@ -3740,19 +3761,9 @@ function _onCC_knobs(d1, d2) {
          * bankParams[t][0][4]. The DSP field is `tr->drum_inp_quant` —
          * historical name; now per-track-type-agnostic. */
         if (S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM && bank === 0 && knobIdx === 4) {
-            const t   = S.activeTrack;
-            const dir = (d2 >= 1 && d2 <= 63) ? 1 : -1;
-            if (dir !== S.knobLastDir[knobIdx]) { S.knobAccum[knobIdx] = 0; S.knobLastDir[knobIdx] = dir; }
-            if (knobStep(knobIdx, d2, KNOB_PICK) !== 0) {
-                const nv = Math.max(0, Math.min(8, S.drumInpQuant[t] + dir));
-                if (nv !== S.drumInpQuant[t]) {
-                    S.drumInpQuant[t] = nv;
-                    S.bankParams[t][0][4] = nv;
-                    host_module_set_param('t' + t + '_diq', String(nv));
-                }
-                S.screenDirty = true;
-            }
-            return;
+            /* Melodic CLIP K5 = InQ — the same param as the drum ALL LANES K6,
+             * declared beside it in CLIP_MELODIC_SITES so the pair cannot drift. */
+            if (applyTableKnob(CLIP_MELODIC_SITES[knobIdx], knobIdx, d2, S.activeTrack, 0)) return;
         }
         /* Conduct bank (CLIP bank 0 on a Conductor) K6 = CdLk lock toggle.
          * Single-fire per gesture (knobLocked), matching Responder/When.

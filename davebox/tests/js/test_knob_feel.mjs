@@ -68,7 +68,8 @@ await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
 const { PAD_MODE_MELODIC_SCALE, PAD_MODE_DRUM, BANKS } = await import('../../ui/ui_constants.mjs');
-const { DRUM_NOTEFX_SITES } = await import('../../ui/ui_input_cc.mjs');
+const { DRUM_NOTEFX_SITES, DRUM_CONFIG_SITES, DRUM_LANE_SITES, CLIP_MELODIC_SITES,
+        KNOB_PICK, KNOB_DELIB } = await import('../../ui/ui_input_cc.mjs');
 
 function ticks(n) { for (let i = 0; i < n; i++) tickmod._tickImpl(); }
 
@@ -505,6 +506,105 @@ step('no table entry points at a stub or blocked knob', () => {
         if (!pm) throw new Error(`K${idx + 1} has no metadata in BANKS[1]`);
         if (pm.scope === 'stub' || !pm.abbrev)
             throw new Error(`K${idx + 1} is declared in the table but is a stub in BANKS[1]`);
+    }
+});
+
+
+/* ---- The anti-drift invariant, across EVERY table --------------------------
+ * A site inherits its range from BANKS metadata, or declares its own because the
+ * bank publishes a deliberate stub. What it must never do is BOTH: a private
+ * copy sitting beside a metadata copy is exactly how the drum knobs drifted from
+ * the melodic ones twice, and neither copy looks wrong on its own.
+ *
+ * This iterates the tables rather than naming sites, so it covers whatever is
+ * declared later without being edited.
+ */
+const ALL_TABLES = {
+    DRUM_NOTEFX_SITES, DRUM_CONFIG_SITES, DRUM_LANE_SITES, CLIP_MELODIC_SITES,
+};
+
+step('a site inherits its range OR declares it — never both', () => {
+    for (const [name, table] of Object.entries(ALL_TABLES)) {
+        for (const [idx, site] of Object.entries(table)) {
+            const where = `${name}[${idx}]`;
+            if (site.meta) {
+                if (site.min !== undefined || site.max !== undefined)
+                    throw new Error(`${where} inherits metadata AND declares its own range — ` +
+                                    `that second copy is what drifts`);
+                const pm = site.meta();
+                if (!pm || typeof pm.min !== 'number' || typeof pm.max !== 'number')
+                    throw new Error(`${where} inherits from metadata that has no real range`);
+            } else {
+                if (site.min === undefined || site.max === undefined)
+                    throw new Error(`${where} declares no range and inherits none — nothing clamps it`);
+                if (!site.cls)
+                    throw new Error(`${where} has no metadata to derive a response class from, ` +
+                                    `and declares no cls`);
+            }
+        }
+    }
+});
+
+step('every site is complete: storage in, storage out, a real ceiling', () => {
+    let checked = 0;
+    for (const [name, table] of Object.entries(ALL_TABLES)) {
+        for (const [idx, site] of Object.entries(table)) {
+            const where = `${name}[${idx}]`;
+            if (typeof site.get !== 'function') throw new Error(`${where} has no get()`);
+            if (typeof site.set !== 'function') throw new Error(`${where} has no set()`);
+            const pm = site.meta ? site.meta() : site;
+            const max = typeof pm.max === 'function' ? pm.max(0, 0) : pm.max;
+            const min = typeof pm.min === 'function' ? pm.min(0, 0) : pm.min;
+            if (!(max > min))
+                throw new Error(`${where} has max ${max} <= min ${min} — the knob is dead`);
+            if (site.cls && ['cont', 'pick', 'delib'].indexOf(site.cls) < 0)
+                throw new Error(`${where} declares an unknown class "${site.cls}"`);
+            checked++;
+        }
+    }
+    /* ⚠ Guard against the whole loop being vacuous — an empty or renamed export
+     * would sail through every assertion above. */
+    if (checked < 9)
+        throw new Error(`only ${checked} sites enumerated; the tables have shrunk or an export was renamed`);
+});
+
+/* InQ is declared twice — drum ALL LANES K6 and melodic CLIP K5 — because the
+ * two banks mirror it into different places. Same param, same DSP key, so the
+ * parts that are NOT storage must agree. This is the pairing that drifted on the
+ * NOTE FX banks, asserted before it can happen here. */
+step('the two InQ declarations agree on everything but storage', () => {
+    const a = DRUM_CONFIG_SITES[5], b = CLIP_MELODIC_SITES[4];
+    if (!a || !b) throw new Error('one of the InQ twins is gone — the pairing is unasserted');
+    if (a.min !== b.min || a.max !== b.max)
+        throw new Error(`InQ ranges differ: drum ${a.min}..${a.max} vs melodic ${b.min}..${b.max}`);
+    if (a.cls !== b.cls)
+        throw new Error(`InQ response classes differ: drum "${a.cls}" vs melodic "${b.cls}"`);
+});
+
+
+/* A two-state control must RESIST a brush. 'delib' exists for exactly that —
+ * toggles, one-shots, destructive things — and the difference between it and
+ * 'pick' is invisible in any behavioural test that does not brush the knob.
+ *
+ * ⚠ Added because a mutation SURVIVED: downgrading the repeat-sync toggle from
+ * 'delib' to 'pick' passed every other assertion in this file. A knob that fires
+ * on a nudge is a real bug and nothing here could see it.
+ */
+step('a two-state toggle is deliberate, and deliberate means MORE travel', () => {
+    if (!(KNOB_DELIB > KNOB_PICK))
+        throw new Error(`KNOB_DELIB (${KNOB_DELIB}) must exceed KNOB_PICK (${KNOB_PICK}), ` +
+                        `or "deliberate" costs no more than a pick and means nothing`);
+    for (const [name, table] of Object.entries(ALL_TABLES)) {
+        for (const [idx, site] of Object.entries(table)) {
+            const pm = site.meta ? site.meta() : site;
+            const max = typeof pm.max === 'function' ? pm.max(0, 0) : pm.max;
+            const min = typeof pm.min === 'function' ? pm.min(0, 0) : pm.min;
+            if (max - min !== 1) continue;          /* not a toggle */
+            const cls = site.cls || 'derived-from-metadata';
+            if (cls !== 'delib')
+                throw new Error(`${name}[${idx}] is a two-state toggle but its class is "${cls}" — ` +
+                                `it will fire on an accidental brush`);
+        }
     }
 });
 
