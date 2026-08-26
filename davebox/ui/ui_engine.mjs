@@ -144,25 +144,13 @@ export const SLOT_LEVEL_MAX = 2;
  * Everything is expressed as a fraction of each param's own range, so one law
  * covers a 0..2 level and a 0..1 send without either feeling different. */
 export const KNOB_POSITIONS = 255;   /* canvaskit KIT_PARAM_MAX */
-export const KNOB_SENS      = 2;     /* canvaskit KIT_SENS — detents per step */
-
-/* canvaskit's `accumStep`, generalised for BATCHED counts.
- *
- * ⚠ The kit is called once per physical detent, so it fires at most one step.
- * davebox is not: `decodeDelta` hands us the shadow framework's accumulated
- * count, so a quick turn arrives as one CC carrying several detents. Firing a
- * single step per message would make a fast turn move LESS than a slow one.
- * We therefore drain the accumulator, which is the same law sampled coarsely.
- *
- * ⭑ The reversal reset is the part that makes it feel right, and it is kept
- * exactly: turning back does not first have to unwind the detents you already
- * put in, so a direction change responds on the very next detent. */
-export function knobAccumSteps(accum, delta, sens) {
-    if ((accum > 0 && delta < 0) || (accum < 0 && delta > 0)) accum = 0;
-    accum += delta;
-    const steps = (accum / sens) | 0;               /* trunc toward zero */
-    return { accum: accum - steps * sens, steps };
-}
+/* ⚠ KNOB_SENS (2) and knobAccumSteps() were REMOVED 2026-08-26. They were a
+ * THIRD knob law — a flat drain of two counts per position, no speed curve —
+ * and at KNOB_POSITIONS * 2 = 510 counts per sweep the mixer strips were 5.1x
+ * slower than the bank knobs beside them. The mixer now runs the shared
+ * ccKnobDelta law scaled by KNOB_POSITIONS / SWEEP_UNITS, which keeps all 255
+ * positions. Deleted rather than left in place: a dead law is what the next
+ * surface copies. */
 
 export const SESS_KNOB_MODES = [
     { key: 'volume', label: 'VOLUME', widget: 'vbar',   def: 1.0, max: SLOT_LEVEL_MAX,

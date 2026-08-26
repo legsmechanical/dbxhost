@@ -64,6 +64,7 @@ await import('../../ui/ui.js');                 /* installs onMidiMessageInterna
 const { S } = await import('../../ui/ui_state.mjs');
 const { NUM_TRACKS } = await import('../../ui/ui_constants.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
+const { SLOT_LEVEL_MAX, KNOB_POSITIONS } = await import('../../ui/ui_engine.mjs');
 
 /* Knob 1 = CC 71, one detent clockwise. */
 /* ⚠ A turn is TWO detents since the mixer knobs adopted canvaskit's feel
@@ -162,16 +163,63 @@ step('a Schwung-routed track writes its slot OUTPUT, not the synth level', () =>
         throw new Error('a chain level leaked onto a bus: ' + JSON.stringify(writes));
 });
 
-step('ONE detent moves nothing — the canvas knob law, two detents per step', () => {
+/* ⚠ REWRITTEN 2026-08-26. This step used to assert "ONE detent moves nothing —
+ * two detents per step", which pinned the flat `knobAccumSteps(.., KNOB_SENS)`
+ * law the mixer no longer uses. That law cost 255 * 2 = 510 counts for a full
+ * sweep while the bank knobs beside it were tuned to 100 — the strips were 5.1x
+ * slower than their neighbours. The old assertion was not wrong about the code;
+ * it was faithfully pinning the bug.
+ *
+ * The two properties below are what the law is FOR, so they are pinned instead
+ * of a step count: exact dialing at the slow end, and a human-sized sweep at the
+ * fast one. */
+step('a COLD detent moves exactly ONE position — exact dialing survives', () => {
     S.trackChannel[0] = 2;
     ticks(64);
+    /* Cold means "first motion after idle": knobDivisor returns 1 when there is
+     * no previous timestamp, and that branch is deliberately unscaled. Forcing
+     * it here rather than sleeping keeps the test deterministic. */
+    S.knobAccelLast[0] = 0;
+    S.knobAccelAcc[0] = 0;
     const before = S.sessVolLevel[0];
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 1]));
-    if (S.sessVolLevel[0] !== before)
-        throw new Error('a single detent moved the level: ' + before + ' -> ' + S.sessVolLevel[0]);
-    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 1]));
-    if (S.sessVolLevel[0] === before)
-        throw new Error('the second detent did not fire a step');
+    const moved = S.sessVolLevel[0] - before;
+    const onePos = SLOT_LEVEL_MAX / KNOB_POSITIONS;
+    if (Math.abs(moved - onePos) > onePos / 100)
+        throw new Error('a cold detent should move exactly one of ' + KNOB_POSITIONS +
+                        ' positions (' + onePos + '), moved ' + moved);
+});
+
+/* ⭑ THE ASSERTION IS A RANGE, not the tuned number. Pinning "a sweep costs
+ * exactly 100" would freeze a value Josh tunes by ear. The property that must
+ * never regress is that a sweep is a HUMAN GESTURE rather than four revolutions
+ * — so the bound that matters is the upper one, and it sits far below the 510
+ * this replaced. A control asserts the old law would FAIL it. */
+step('a full-speed sweep costs a human gesture, not four revolutions', () => {
+    S.trackChannel[0] = 2;
+    ticks(64);
+    S.knobAccelLast[0] = 0;
+    S.knobAccelAcc[0] = 0;
+    S.sessVolLevel[0] = 0;
+    let counts = 0;
+    while (S.sessVolLevel[0] < SLOT_LEVEL_MAX && counts < 2000) {
+        globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 1]));
+        counts++;
+    }
+    if (S.sessVolLevel[0] < SLOT_LEVEL_MAX)
+        throw new Error('the knob never reached full scale in ' + counts + ' counts');
+    if (counts > 200)
+        throw new Error('a full sweep cost ' + counts + ' encoder counts — that is the ' +
+                        '510-count law this replaced, not a human gesture');
+    if (counts < 40)
+        throw new Error('a full sweep cost only ' + counts + ' counts — too fast to ' +
+                        'place a value; the range scaling has overshot');
+    /* Control: the retired law would land at ~510 and fail the bound above, so
+     * the bound is doing work rather than passing on anything. */
+    const oldLawCounts = KNOB_POSITIONS * 2;
+    if (oldLawCounts <= 200)
+        throw new Error('control broke: the old 255x2 law no longer exceeds the bound, ' +
+                        'so this step would pass against the bug it exists to catch');
 });
 
 step('re-pointing the track at another Move instrument RE-SEEDS the level', () => {

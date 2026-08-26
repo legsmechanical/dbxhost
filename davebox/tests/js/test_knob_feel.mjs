@@ -21,11 +21,13 @@
  * events" is the property that was broken and the one that must never regress.
  * Under the old code those two were IDENTICAL, so this fails against it.
  *
- * ⚠ This covers the bank-param path (ccKnobDelta / knobPick). dAVEBOx has a
- * THIRD knob accumulator -- knobAccumSteps/KNOB_SENS, used by the session mixer
- * strips and sound mode's level -- which already reads the magnitude and is
- * tuned separately. test_session_level_knob covers that one. A green suite there
- * says nothing about this one; that is why this file exists.
+ * ⚠ This covers the bank-param path (ccKnobDelta / knobPick). The session mixer
+ * strips ran a THIRD law of their own until 2026-08-26 -- knobAccumSteps /
+ * KNOB_SENS, a flat drain costing 510 counts per sweep against this path's 100
+ * -- and they now share ccKnobDelta, scaled to positions. So the two paths are
+ * one law with two scalings, and test_session_level_knob drives the mixer end to
+ * end through a real CC. Neither file makes the other redundant: this one pins
+ * the CURVE, that one pins what a strip actually does with it.
  */
 
 let failed = 0;

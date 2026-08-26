@@ -655,9 +655,6 @@ export const S = {
     sessVolLastTurn: -1,                   /* tick of the last level change */
     sessVolLastKnob: -1,                   /* which knob turned last — the strip
                                             * whose NUMBER swaps to its VALUE */
-    sessKnobAccum: new Array(8).fill(0),   /* canvas-style detent accumulator,
-                                            * per knob; sign carries direction so
-                                            * a reversal can reset it */
     moveCoRunOrigin: null,      /* P8a 1d: where Move co-run was entered FROM ('sound' = the SYNTH row of that track's Move sound mode, so Menu returns there; 'track' = the track menu's Edit Synth..., where a plain close already lands). Recorded at ENTRY — sound mode is exited on the way in, so nothing is left to infer it from on return. */
     /* Shift+volume = ACTIVE TRACK volume (2026-08-24). Deltas accumulate in
      * the CC handler and land in ONE read-modify-write per tick; the level

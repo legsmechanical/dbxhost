@@ -15,7 +15,7 @@
  */
 
 import { SESS_KNOB_MODES, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
-         SLOT_LEVEL_MAX, KNOB_POSITIONS, KNOB_SENS, knobAccumSteps } from '../../ui/ui_engine.mjs';
+         SLOT_LEVEL_MAX, KNOB_POSITIONS } from '../../ui/ui_engine.mjs';
 
 let failed = 0;
 function ok(label) { console.log(`  ok   — ${label}`); }
@@ -55,29 +55,18 @@ for (let i = 1; i < 4; i++) eq(SESS_KNOB_MODES[i].max, 1.0, `${SESS_KNOB_MODES[i
 for (const m of SESS_KNOB_MODES)
     eq(Math.round(m.max / m.step), KNOB_POSITIONS, `${m.key}: ${KNOB_POSITIONS} positions across its range`);
 
-/* 4b. The accumulator — canvaskit's accumStep, generalised for batched counts.
- *     SENS detents buy one step; a partial turn moves nothing; and a REVERSAL
- *     resets rather than having to unwind, which is the part that makes it feel
- *     right under the finger. */
-eq(KNOB_SENS, 2, 'two detents per step, as canvaskit KIT_SENS');
-{
-    let a = knobAccumSteps(0, 1, 2);
-    eq(a.steps, 0, 'one detent of two fires nothing');
-    a = knobAccumSteps(a.accum, 1, 2);
-    eq(a.steps, 1, 'the second detent fires one step');
-    eq(a.accum, 0, '…and leaves nothing owed');
-    /* A batch must not collapse to one step, or a fast turn would move LESS
-     * than a slow one — davebox receives accumulated counts, canvaskit does not. */
-    a = knobAccumSteps(0, 8, 2);
-    eq(a.steps, 4, 'a batch of 8 detents fires 4 steps, not 1');
-    /* Reversal clears the pending detent instead of unwinding it. */
-    a = knobAccumSteps(0, 1, 2);
-    a = knobAccumSteps(a.accum, -1, 2);
-    eq(a.steps, 0, 'reversing after one detent fires nothing yet');
-    eq(a.accum, -1, '…and the accumulator flipped rather than cancelling to 0');
-    a = knobAccumSteps(0, -8, 2);
-    eq(a.steps, -4, 'negative batches step down symmetrically');
-}
+/* 4b. ⚠ The accumulator block that stood here is GONE (2026-08-26), with the law
+ *     it tested. It pinned `knobAccumSteps` + `KNOB_SENS = 2` — a flat two
+ *     counts per position with no speed curve — which cost KNOB_POSITIONS * 2 =
+ *     510 encoder counts for a full sweep while the bank knobs beside it were
+ *     tuned to 100. Every assertion in it passed; they were faithfully pinning a
+ *     mixer that was 5.1x slower than its neighbours.
+ *
+ *     The mixer now runs the shared ccKnobDelta law (see _sessionKnobParam),
+ *     scaled by KNOB_POSITIONS / SWEEP_UNITS so the 255 positions asserted just
+ *     above are all still reachable. The FEEL is covered where it can be driven
+ *     end to end through a real CC — test_session_level_knob — rather than here,
+ *     where only the pure helper was ever in reach.
 
 /* 5. Only pan snaps, and it snaps to CENTRE. A send snapping to its midpoint
  *    would be meaningless; a level snapping would fight the mix. */

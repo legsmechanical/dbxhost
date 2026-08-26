@@ -29,7 +29,7 @@ import {
 } from './ui_constants.mjs';
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay } from './ui_state.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
-         SESS_KNOB_MODES, KNOB_SENS, knobAccumSteps, engineVolBlock } from './ui_engine.mjs';
+         SESS_KNOB_MODES, KNOB_POSITIONS, engineVolBlock } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity, BANK_CYCLE_DRUM, CONDUCT_BANK_CYCLE,
          bankCycleForMode } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
@@ -3211,11 +3211,31 @@ function _sessionKnobParam(knobIdx, d2) {
     const mode = SESS_KNOB_MODES[S.sessKnobMode];
     const d = (d2 >= 1 && d2 <= 63) ? d2 : (d2 >= 65) ? d2 - 128 : 0;
     if (!d) return;
-    /* Canvas knob feel: SENS detents buy one of 255 positions. The accumulator
-     * is per knob so eight fingers on eight strips cannot steal each other's
-     * partial turns, and a direction reversal clears it (see knobAccumSteps). */
-    const acc = knobAccumSteps(S.sessKnobAccum[knobIdx] | 0, d, KNOB_SENS);
-    S.sessKnobAccum[knobIdx] = acc.accum;
+    /* The SAME law as the bank knobs, in POSITIONS instead of param units.
+     *
+     * ⚠ This used to be a third law of its own — `knobAccumSteps(.., KNOB_SENS)`,
+     * a flat two-counts-per-position drain with no speed curve. That cost
+     * KNOB_POSITIONS * KNOB_SENS = 510 counts for a full sweep, against the 100
+     * the bank knobs were tuned to on Josh's ear: the mixer strips were 5.1x
+     * slower than the knobs beside them. 510 is not a coincidence — it is the
+     * same ~508 that made the bank knobs "slow as hell" before `6ff275a0`, and
+     * it arrived here the same way, by copying canvaskit's CONTINUOUS-CELL
+     * default (min 0, max 255, step 1, sens 2) rather than what a real canvas
+     * param declares. [[mimic-means-read-the-inputs]]
+     *
+     * ⭑ Resolution is NOT the price of the fix. Scaling by
+     * KNOB_POSITIONS / SWEEP_UNITS keeps all 255 positions and makes a
+     * full-speed sweep cost ~SWEEP_UNITS counts; the fine bands still cap at one
+     * count per position, so a slow turn reaches a single 1/255 position exactly
+     * as before. What it ADDS is the deceleration curve, which the flat drain
+     * had no notion of.
+     *
+     * ⭑ Per-knob accumulator state now lives in the shared S.knobAccel* arrays,
+     * keyed by the same knob index — eight strips still cannot steal each
+     * other's partial turns, and a strip cannot be turned as a bank knob at the
+     * same time, so there is nothing for the two contexts to fight over. */
+    const steps = ccKnobDelta(d2, knobIdx, KNOB_POSITIONS / SWEEP_UNITS);
+    const acc = { steps };
     if (!acc.steps) {
         /* Partial detent: nothing moves, but the finger is clearly ON this
          * strip, so show its value. Otherwise the first touch of a slow turn
