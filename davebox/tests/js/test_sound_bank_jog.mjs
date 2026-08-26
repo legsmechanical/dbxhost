@@ -373,6 +373,19 @@ step('⭑ BACK lands on the bank you CAME FROM — same as the jog\'s left turn'
     if (snd.soundActive()) throw new Error('control: the top-edge left turn did not exit');
     if (S.activeBank !== 6)
         throw new Error('the jog exit landed on ' + S.activeBank + ', not the bank it came from');
+    /* ⭑ AND IT MUST ARM THE DISPLAY WINDOW, like every other bank change on the
+     * walk. Josh, on hardware 2026-08-26: "scrolling back from the top of the
+     * sound+config bank goes right to the bank before it and does not
+     * immediately show the picker overlay like it should."
+     * This exit was the ONE silent arrival on the whole jog walk — every other
+     * bank change calls armBankDisplay(), this branch returned early without it,
+     * so you landed on a page with nothing naming the bank you had reached.
+     * ⚠ The observable is bankSelectTick, which armBankDisplay stamps with the
+     * current tick; -1 is "no window". Asserting the OVERLAY rather than the
+     * bank is the point — landing on the right bank silently was the bug. */
+    if (S.bankSelectTick < 0)
+        throw new Error('the jog exit did not arm the bank display — it lands on the bank ' +
+                        'silently, with no picker overlay naming where you arrived');
     S.activeBank = 0;
 });
 

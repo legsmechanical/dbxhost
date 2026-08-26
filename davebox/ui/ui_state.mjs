@@ -691,6 +691,15 @@ export const S = {
      * from an earlier entry — the exact "banks land somewhere I did not leave
      * them" bug the crumb was invented to cure. */
     genReturn: null,            /* {track, wasActive, bank} | null */
+    /* ONE-SHOT: "the next jog release must not tear the bank window down".
+     * Set by the sound-mode top-edge exit, which is a real bank ARRIVAL made
+     * mid-turn — so by the time the finger lifts, standDownBankDisplay's
+     * same-input-pass guard has expired and the window it armed is killed.
+     * Every other bank change commits ON the release and is protected for free.
+     * ⚠ Set only while the jog is actually touched, so a release is guaranteed
+     * to follow and consume it; otherwise it would linger and swallow the next
+     * unrelated release's teardown. */
+    bankWindowKeepOnRelease: false,
     trackSoundOrigin: new Array(8).fill(-1),
     /* Bank picker (Shift+jog in track view, 2026-08-25). Shift+jog used to step
      * the active TRACK; that meaning moved to Shift + the bottom pad row, and

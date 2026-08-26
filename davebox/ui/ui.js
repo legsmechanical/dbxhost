@@ -365,7 +365,19 @@ function _jogTouchRelease() {
      * the owner declines a teardown from the same input pass — the bug that
      * bit three times is why that rule exists, and it makes this free. */
     if (S.bankPickerSel >= 0) applyBankPick();
-    standDownBankDisplay();
+    /* ⭑ ...and the same courtesy for an arrival that could NOT arm in this pass.
+     * The sound-mode top-edge left turn leaves the screen mid-TURN and lands on
+     * a real bank; its window is armed a tick or two before this release, so the
+     * same-pass rule above cannot protect it and the teardown below would make
+     * the arrival silent. Josh caught exactly that on hardware, 2026-08-26:
+     * "scrolling back from the top of the sound+config bank ... does not
+     * immediately show the picker overlay like it should." One-shot, cleared
+     * whether or not it fires. */
+    if (S.bankWindowKeepOnRelease) {
+        S.bankWindowKeepOnRelease = false;
+    } else {
+        standDownBankDisplay();
+    }
     forceRedraw();
 }
 
