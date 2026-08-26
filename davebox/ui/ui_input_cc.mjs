@@ -47,7 +47,8 @@ import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
 import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
-import { soundActive, soundExit, soundVolGestureEnd, soundOpenGenerator } from './ui_sound.mjs';
+import { soundActive, soundExit, soundVolGestureEnd, soundOpenGenerator,
+    soundAtBlockRoot } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
 import { applyTrackConfig, readBankParams, applyBankParam,
@@ -1356,7 +1357,23 @@ function _onCC_buttons(d1, d2) {
                  * sound is its Generator block; a Move track's sound belongs to
                  * Move, so the editor is co-run. An EXT/MIDI track has neither
                  * and says so rather than doing nothing. */
-                if (soundActive()) { soundExit(); forceRedraw(); }
+                /* ⚠ The closer does NOT run when sound mode is sitting on its
+                 * ROOT screen in track view. That is the one place closing is
+                 * the wrong answer: SOUND + CONFIG is the screen this gesture
+                 * would open FROM, so closing it spends the press going
+                 * backwards. Josh hit it immediately (2026-08-26): "the first
+                 * time you do shift+note/session it sends the bank back to the
+                 * first one and you have to do it again to get into the
+                 * instrument. it should just go right to the instrument."
+                 * `soundExit()` lands on BANK_DEFAULT, which IS "the first one".
+                 *
+                 * ⭑ Deliberately a ROOT test, not `!generatorOpen`: every screen
+                 * DEEPER than the picker keeps the one-press way out that the
+                 * 08-24 retirement created, and the toggle still closes from the
+                 * generator's own editor, so pressing twice still returns you
+                 * exactly where you started. */
+                const _soundRootHere = soundAtBlockRoot() && !S.sessionView;
+                if (soundActive() && !_soundRootHere) { soundExit(); forceRedraw(); }
                 else if (S.globalMenuOpen) { S.globalMenuOpen = false; forceRedraw(); }
                 else if (!S.sessionView) {
                     /* Track view only: co-run refuses in session view anyway, and

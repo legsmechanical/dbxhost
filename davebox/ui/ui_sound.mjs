@@ -681,6 +681,21 @@ export function soundKnobHudForTest() {
 }
 
 export function soundActive() { return S.active; }
+/* Sound mode is open ON ITS ROOT SCREEN — the block picker, i.e. what the bank
+ * walk calls SOUND + CONFIG — as opposed to being open somewhere deeper (a
+ * block editor, a preset list, slot settings).
+ *
+ * Exists for exactly one caller: Shift+Note/Session. That gesture is a toggle
+ * whose closer runs first, and sitting on SOUND + CONFIG made the closer eat the
+ * press — Josh, 2026-08-26: "the first time you do shift+note/session it sends
+ * the bank back to the first one and you have to do it again to get into the
+ * instrument. it should just go right to the instrument."
+ *
+ * ⭑ Root is the ONE depth where closing is not the useful answer, because the
+ * screen you are on is the one the gesture would otherwise open FROM. Every
+ * deeper screen keeps the one-press exit the 08-24 retirement created — which is
+ * why this is a root test and not `!generatorOpen`. */
+export function soundAtBlockRoot() { return S.active && S.view === VIEW_BLOCKS; }
 export function soundTrack() { return S.track; }
 export function soundSlot()  { return S.slot; }
 

@@ -330,13 +330,29 @@ step('⚠ Shift+Note/Session opens neither sound mode nor the session buses', ()
     const src = readFileSync('ui/ui_input_cc.mjs', 'utf8');
     const i = src.indexOf('if (d1 === MoveNoteSession)');
     if (i < 0) throw new Error('the Note/Session handler moved — re-anchor this pin');
-    const body = src.slice(i, i + 4000);
+    /* ⚠⚠ The window is bounded by the NEXT HANDLER, not by a character count.
+     * It used to be `slice(i, i + 4000)`, and on 2026-08-26 a comment added
+     * inside this handler pushed `soundExit()` to offset 3999 — one character
+     * past the edge — so the pin failed against a tree where the closer was
+     * present and working. A pin whose window is a magic number reports on how
+     * much PROSE it is looking at, not on the code.
+     * [[source-pins-must-read-code-not-prose]] */
+    const nextHandler = src.indexOf('if (d1 === MoveLoop', i);
+    if (nextHandler < 0)
+        throw new Error('cannot bound the Note/Session handler — the sibling anchor ' +
+                        '(MoveLoop) moved, so this pin no longer knows where it ends');
+    const body = src.slice(i, nextHandler);
     if (/pendingSoundEnterTrack\s*=/.test(body))
         throw new Error('Shift+Note opens sound mode again — the bank walk is the only door');
     if (/pendingBusMenu\s*=\s*true/.test(body))
         throw new Error('Shift+Note opens the session buses again');
     if (!/soundExit\(\)/.test(body))
         throw new Error('it no longer CLOSES either — that half was deliberately kept');
+    /* The 2026-08-26 root exception: the closer must be GATED, not unconditional,
+     * or SOUND + CONFIG eats the press that was meant to open the generator. */
+    if (!/soundAtBlockRoot\(\)/.test(body))
+        throw new Error('the closer is unconditional again — sitting on SOUND + CONFIG ' +
+                        'would spend the press closing the screen the gesture opens FROM');
 });
 
 process.exit(failed);

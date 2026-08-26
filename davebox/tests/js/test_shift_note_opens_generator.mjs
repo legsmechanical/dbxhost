@@ -108,6 +108,47 @@ step('...and pressing it again CLOSES — the one-press way out survives', () =>
         throw new Error('the gesture no longer closes — the way out from any depth is gone');
 });
 
+/* ── The ROOT exception (Josh, 2026-08-26) ────────────────────────────────
+ *
+ * "the first time you do shift+note/session it sends the bank back to the first
+ * one and you have to do it again to get into the instrument. it should just go
+ * right to the instrument."
+ *
+ * Sitting on SOUND + CONFIG — sound mode's ROOT screen, the block picker — the
+ * closer ran and `soundExit()` landed on BANK_DEFAULT, which is literally "the
+ * first one". The press was spent going backwards from the very screen the
+ * gesture opens FROM.
+ *
+ * ⭑ The exception is scoped to ROOT on purpose, so the two steps below are a
+ * PAIR: root must open, and anything deeper must still close. Testing only the
+ * first would pass an implementation that dropped the closer entirely, which is
+ * the property the 08-24 retirement created. */
+step('from SOUND + CONFIG (root) the press OPENS, it does not go back a bank', () => {
+    S.trackRoute[0] = 0;                 /* Schwung chain again */
+    sound.soundEnter(0, 0);              /* lands on the block picker = root */
+    ticks(4);
+    if (!sound.soundAtBlockRoot())
+        throw new Error('setup failed: not on the root screen, so this proves nothing');
+    shiftNote();
+    ticks(4);
+    if (!sound.soundActive())
+        throw new Error('the press CLOSED sound mode from root — that is the bug: it ' +
+                        'sends the bank back to the first one instead of opening');
+    if (sound.soundAtBlockRoot())
+        throw new Error('still on the picker — the press did nothing at all');
+});
+
+step('...but from DEEPER than root it still CLOSES — the way out survives', () => {
+    /* We are one level past root after the step above, which is exactly the
+     * depth the one-press exit exists for. */
+    if (sound.soundAtBlockRoot())
+        throw new Error('setup failed: still at root, so the closer is not under test');
+    shiftNote();
+    ticks(4);
+    if (sound.soundActive())
+        throw new Error('the one-press way out from depth is gone');
+});
+
 step('a MIDI-routed track opens nothing and says why', () => {
     S.trackRoute[0] = 2;                 /* MIDI out — no generator, no co-run */
     S.actionPopupEndTick = -1;
