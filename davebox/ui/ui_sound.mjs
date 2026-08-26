@@ -63,7 +63,7 @@ import {
     MV_BAR_Y,
     hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard,
 } from './ui_movy.mjs';
-import { bankCyclePos } from './ui_pure.mjs';
+import { bankCyclePos, bankCycleForMode } from './ui_pure.mjs';
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* Chain blocks in signal order, across the audio-FX blocks the host routes.
@@ -3657,6 +3657,23 @@ export function soundOnCC(d1, d2, decodeDelta) {
                  * Gated on jogTouched: only a real jog gesture gets a release
                  * to consume the flag. */
                 if (GS.jogTouched) GS.bankWindowKeepOnRelease = true;
+                /* ⭑⭑ AND BRING THE PICKER BACK — this is the behaviour
+                 * ui_input_cc's jog handler already documents and this branch
+                 * never delivered: "the picker comes back only on the left turn
+                 * off its top row (soundOnCC)". Landing on the bank silently was
+                 * only half the complaint; Josh, 2026-08-26: "goes right to
+                 * automation bank on key tracks without showing the picker
+                 * overlay."
+                 *
+                 * Opened AT the bank we just landed on, exactly as the track-view
+                 * turn opens "where the track actually IS", so the next detent
+                 * steps one from here and keeps walking the strip. The release
+                 * commits it like any other pick (a no-op when the selection has
+                 * not moved), so the gesture ends the way every bank change does. */
+                const _cyc = bankCycleForMode(GS.trackPadMode[GS.activeTrack]);
+                const _at  = _cyc.indexOf(GS.activeBank);
+                GS.bankPickerSel     = _at >= 0 ? _at : 0;
+                GS.bankPickerIdleTick = GS.tickCount;
                 forceRedraw();
                 return true;
             }

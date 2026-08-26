@@ -389,6 +389,40 @@ step('⭑ BACK lands on the bank you CAME FROM — same as the jog\'s left turn'
     S.activeBank = 0;
 });
 
+/* ⭑⭑ THE PICKER MUST COME BACK on the top-edge left turn — the behaviour
+ * ui_input_cc's own jog handler documents ("the picker comes back only on the
+ * left turn off its top row (soundOnCC)") and which that branch never delivered.
+ *
+ * Josh reported it twice, and the second report is why this step exists: the
+ * first fix armed the bank DISPLAY window, which made the arrival non-silent but
+ * still teleported him onto AUTOMATION with no list to keep scrolling. "goes
+ * right to automation bank on key tracks without showing the picker overlay."
+ *
+ * ⚠ Driven RAW, not through turn(): that helper commits the pick (click) as part
+ * of the gesture, so it would tear down the very overlay under test. The
+ * assertion is the MID-GESTURE state — finger still on the wheel. */
+step('⭑ the top-edge left turn REOPENS the bank picker, it does not teleport', () => {
+    reset(PAD_MODE_MELODIC_SCALE, 6);           /* a KEY track, entered from AUTOMATION */
+    right();
+    snd.soundTick();
+    toTop();
+    /* raw: touch, one left detent, tick — and STOP, before any commit */
+    note(9, 127);
+    send(14, 127);
+    globalThis.tick();
+    if (snd.soundActive())
+        throw new Error('control: the top-edge left turn did not leave sound mode');
+    if (S.bankPickerSel < 0)
+        throw new Error('no bank picker overlay after leaving — this is the teleport Josh ' +
+                        'reported: you land on the bank with no list to keep scrolling');
+    if (S.bankSelectTick < 0)
+        throw new Error('the display window is not armed either');
+    /* Opened AT where we landed, so the next detent steps ONE from here rather
+     * than from the top of the list — the same rule the track-view turn uses. */
+    note(9, 0);
+    globalThis.tick();
+});
+
 step('⭑ NOTE/SESSION is a LEAVE: the view toggle must not reset the track\'s bank', () => {
     /* Josh, 2026-08-25: "note/session should always jump to session view from
      * track view without resetting the track's current bank place. right now,
