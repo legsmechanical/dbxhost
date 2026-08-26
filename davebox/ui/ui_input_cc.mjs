@@ -2648,6 +2648,11 @@ function knobClass(pm) {
  * speed. Josh: "i can't do the full travel without breaking my wrist... and i'm
  * testing with delay level, which is only 0-127."
  *
+ * The MEASURED canvas figure is 80 — see below. It ships at 100: Josh, having
+ * felt 80, asked for "a tad slower", and the same move shrinks the fast-spin
+ * leap (a 0-127 param steps +9/+10 at 80, +7/+8 at 100) because both are the
+ * same quantity — value-per-count. Slower and smoother are not a trade here.
+ *
  * 80 is MEASURED FROM THE THING WE ARE MIMICKING, not guessed. A canvas float
  * param (freeverb room_size: min 0, max 1, step 0.05) is 20 steps across its
  * range, and knob_engine moves step/divisor per count — so a full canvas sweep
@@ -2658,7 +2663,7 @@ function knobClass(pm) {
  * asked for: a 0-5 param and a 0-400 param both cross in the same gesture,
  * because the value each count buys is derived from the range rather than being
  * a fixed 1. */
-const SWEEP_UNITS = 80;
+const SWEEP_UNITS = 100;
 
 /* The divisor the curve uses at normal turning speed. Everything is expressed
  * RELATIVE to it: at speed a count is worth a full unit, and easing off into
