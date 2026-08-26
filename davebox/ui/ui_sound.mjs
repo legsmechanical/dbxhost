@@ -1596,6 +1596,28 @@ export function soundEnterMove(track) {
  * the one moment worth persisting (saving is a synchronous file write). */
 export function soundVolGestureEnd() { if (S.active) flushVolumeSave(); }
 
+/* Open a track's GENERATOR editor in one press — sound mode, then straight into
+ * the generator's own canvas UI, without walking the block picker.
+ *
+ * ⭑ "Generator", not "instrument". A track's INSTRUMENT is its DESTINATION (the
+ * `Track to` row, TRACK_OWNS_ITS_INSTRUMENT.md); the thing with a canvas UI on a
+ * Schwung-routed track is the Generator block. Josh asked for "instrument edit"
+ * in the everyday sense — this is the row he means.
+ *
+ * ⚠ The open is QUEUED, not done here: openBlock() runs discovery, which reads
+ * params, and this is called from a MIDI handler. Same rule as every other
+ * pendingAction on this screen.
+ *
+ * Returns false when the track has no generator to open (an empty block), so the
+ * caller can say so rather than leaving the user on a picker they did not ask
+ * for. */
+export function soundOpenGenerator(track) {
+    soundEnter(track, slotIndex(track));
+    if (!engineLoadedModule(S.slot, 'synth')) return false;
+    S.pendingAction = { t: 'open', comp: 'synth' };
+    return true;
+}
+
 export function soundConsumeCoRunRequest() {
     const t = S.coRunRequest;
     S.coRunRequest = -1;

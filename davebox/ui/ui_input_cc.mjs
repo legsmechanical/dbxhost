@@ -46,8 +46,8 @@ import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
     setDrumLanePage } from './ui_drummodel.mjs';
 import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
-import { exitMoveNativeCoRun } from './ui_corun.mjs';
-import { soundActive, soundExit, soundVolGestureEnd } from './ui_sound.mjs';
+import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
+import { soundActive, soundExit, soundVolGestureEnd, soundOpenGenerator } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
 import { applyTrackConfig, readBankParams, applyBankParam,
@@ -1332,11 +1332,49 @@ function _onCC_buttons(d1, d2) {
                 return;
             }
             if (S.shiftHeld) {
-                /* Shift+Note/Session is a CLOSER now, not an opener — see the
-                 * retirement note below. It still shuts sound mode or the
-                 * global menu, and does nothing otherwise. */
+                /* Shift+Note/Session: CLOSE what is open, else OPEN the active
+                 * track's generator editor in one press (Josh, 2026-08-26:
+                 * "should jump STRAIGHT to either the generator's canvas UI ...
+                 * or Move co-run").
+                 *
+                 * ⭑ The closer comes FIRST and is unchanged. It is the one-press
+                 * way out from any depth, and the 08-24 retirement of the opener
+                 * is what made it that. Adding a destination must not cost the
+                 * exit — so the gesture is a toggle: open when nothing is open,
+                 * close when something is. Pressing twice returns you exactly
+                 * where you started.
+                 *
+                 * ⚠ That retirement said "no gesture may open a menu the module's
+                 * own UI already reaches", and this does NOT reopen that door:
+                 * the bank walk still reaches SOUND + CONFIG, and what this opens
+                 * is one level PAST it — the generator's own canvas, which the
+                 * bank walk reaches only via the picker. A shortcut to a leaf,
+                 * not a second door to the menu.
+                 *
+                 * The destination follows the track's ROUTE, because "edit this
+                 * track's instrument" means different things: a Schwung track's
+                 * sound is its Generator block; a Move track's sound belongs to
+                 * Move, so the editor is co-run. An EXT/MIDI track has neither
+                 * and says so rather than doing nothing. */
                 if (soundActive()) { soundExit(); forceRedraw(); }
                 else if (S.globalMenuOpen) { S.globalMenuOpen = false; forceRedraw(); }
+                else if (!S.sessionView) {
+                    /* Track view only: co-run refuses in session view anyway, and
+                     * session view's counterpart gesture opens the buses. */
+                    const _gt = S.activeTrack;
+                    if (S.trackRoute[_gt] === 1) {
+                        enterMoveNativeCoRun(_gt);
+                    } else if (S.trackRoute[_gt] === 2) {
+                        showActionPopup('MIDI TRACK', 'No generator to edit');
+                    } else if (!soundOpenGenerator(_gt)) {
+                        /* Sound mode is open on the block picker now — the
+                         * generator row is simply empty, which the picker shows.
+                         * Say why, so a one-press gesture that lands somewhere
+                         * unexpected explains itself. */
+                        showActionPopup('NO GENERATOR', 'Pick one to add it');
+                    }
+                    forceRedraw();
+                }
                 /* ⚠⚠ RETIRED 2026-08-24 (Josh): Shift+Note/Session no longer
                  * OPENS anything. Both destinations it used to reach are banks
                  * on the jog now — SOUND + CONFIG one past AUTOMATION in track
