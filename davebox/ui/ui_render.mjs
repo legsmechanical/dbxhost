@@ -362,9 +362,15 @@ function drawKitPage(name, cells, inverted) {
     if (touched) drawKitTouchedHeader(touched.name);
     else (inverted ? drawBankHeadingInverted : drawBankHeading)(name, false);
     drawKitCells(cells, t);
+    /* ⭑ NO value zoom on a bank page (Josh, 2026-08-26: "i've been meaning to
+     * retire that"). Turning a knob widget no longer throws a magnified copy of
+     * the cell over the middle of the screen — the cell itself already updates,
+     * and the header already swaps to the param's full name, so the zoom was
+     * covering six other params to repeat what two of them were saying.
+     * The ENUM/picker overlays stay: those show a scrolling list of options that
+     * is not on screen otherwise, which is a different job. */
     const _ovi = enumOverlayIdx(t);
     drawKitEnumOverlay(cells, _ovi);
-    drawKitValueOverlay(cells, _ovi);
 }
 
 /* Down-arrow affordance for banks that expose alt params. Always drawn in the
@@ -1912,9 +1918,10 @@ function drawUIBody() {
             /* merged Oct/Note box over the K1+K2 widget span — same read-out as
              * the melodic step editor: big note name, MIDI number alongside. */
             drawNoteBox(midiNoteName(_dlNote), String(_dlNote), _tch === 0 || _tch === 1);
+            /* Same retirement as drawKitPage above — this is the drum-lane
+             * flavour of the same bank, and the two must not disagree. */
             const _ovi2 = enumOverlayIdx(_tch);
             drawKitEnumOverlay(cells, _ovi2);
-            drawKitValueOverlay(cells, _ovi2);
         }
 
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 5) {
