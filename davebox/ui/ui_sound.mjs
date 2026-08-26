@@ -958,6 +958,10 @@ function clearBusContext() {
 export function soundExit(opts) {
     const _opts = (opts && typeof opts === 'object') ? opts : {};
     const _leaving = _opts.leaving === true;
+    /* Any exit at all spends the gesture crumb. A crumb that outlives its screen
+     * is how a return point goes stale and lands you somewhere you never were —
+     * see the note on genReturn in ui_state. */
+    GS.genReturn = null;
     /* Give the edit CCs back to Move FIRST. Everything below can throw or take a
      * slow path, and a stranded claim silently steals the user's native Undo. */
     reconcileEditCcClaim(true);
@@ -1626,6 +1630,38 @@ export function soundVolGestureEnd() { if (S.active) flushVolumeSave(); }
  * Returns false when the track has no generator to open (an empty block), so the
  * caller can say so rather than leaving the user on a picker they did not ask
  * for. */
+/* Return from a GESTURE-entered generator editor to wherever the gesture was
+ * pressed (Josh, 2026-08-26). Two answers, one rule — the return point is the
+ * place you pressed from:
+ *   pressed from a normal bank  -> LEAVE sound mode, land on that bank
+ *   pressed while already in it -> stay in sound mode, back on the picker
+ * ("always leaves sound mode entirely unless you were already in sound mode").
+ *
+ * ⚠ SCOPED TO THE GESTURE, deliberately. Josh ruled on 2026-08-25 that "back
+ * inside a bank should always go to the default bank" — that is SOUND + CONFIG
+ * behaving like every other bank, and it stays exactly as it was. This is a
+ * shortcut to a LEAF, so it retraces the shortcut; it is not the bank walk.
+ *
+ * Returns false when no gesture crumb is armed, so every ordinary Back and Menu
+ * falls through to the behaviour it has always had. */
+export function soundGestureReturn() {
+    const g = GS.genReturn;
+    if (!g || !S.active) return false;
+    if (g.track !== S.track) { GS.genReturn = null; return false; }
+    GS.genReturn = null;                      /* spent, whichever way it goes */
+    if (g.wasActive) {
+        S.view = VIEW_BLOCKS;                 /* back to the picker you pressed from */
+        S.pendingAction = { t: 'names' };
+        S.presetMsg = '';
+        S.dirty = true;
+    } else {
+        soundExit({ landOn: g.bank });        /* out, onto the bank you pressed from */
+    }
+    return true;
+}
+
+export function soundGestureArmed() { return !!GS.genReturn; }
+
 export function soundOpenGenerator(track) {
     soundEnter(track, slotIndex(track));
     if (!engineLoadedModule(S.slot, 'synth')) return false;
@@ -3953,8 +3989,16 @@ export function soundOnCC(d1, d2, decodeDelta) {
         } else if (S.view === VIEW_PRESET_SRC) {
             S.view = VIEW_EDIT;
         } else if (S.view === VIEW_EDIT || S.view === VIEW_BROWSE) {
-            S.view = VIEW_BLOCKS;
-            S.pendingAction = { t: 'names' };
+            /* A GESTURE-entered editor retraces the gesture instead of stepping
+             * up to the picker — but only at the editor's TOP level, which is
+             * here. Deeper screens (preset lists, the module menu, LFO/knob
+             * pages) are handled above and still step up ONE level each, or you
+             * could not back out of a preset list without being thrown all the
+             * way out of sound mode. */
+            if (!soundGestureReturn()) {
+                S.view = VIEW_BLOCKS;
+                S.pendingAction = { t: 'names' };
+            }
         } else if (S.busLevelEditing) {
             S.busLevelEditing = false;
         } else if (S.bus) {

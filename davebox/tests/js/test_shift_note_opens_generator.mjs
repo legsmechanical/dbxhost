@@ -66,7 +66,7 @@ const sound = await import('../../ui/ui_sound.mjs');
  * ones — importing it from there yields `undefined`, the CC never matches, and
  * every assertion below reports "the gesture did nothing" while testing nothing.
  * Caught by printing the constant when the first assertion failed. */
-const { MoveNoteSession } = await import('../../ui/ui_constants.mjs');
+const { MoveNoteSession, BANK_SOUND, BANK_DEFAULT } = await import('../../ui/ui_constants.mjs');
 const { MoveShift } = await import('/data/UserData/schwung/shared/constants.mjs');
 
 function ticks(n) { for (let i = 0; i < n; i++) tickmod._tickImpl(); }
@@ -171,6 +171,113 @@ step('session view is left alone', () => {
     if (sound.soundActive())
         throw new Error('the track-view opener fired in session view');
     S.sessionView = false;
+});
+
+/* ── The gesture RETURNS you where you pressed (Josh, 2026-08-26) ──────────
+ *
+ * "when in a sound editor from that menu, it should exit back to the place the
+ * user was when they did the gesture to enter it" — and, on the ambiguity:
+ * "always leaves sound mode entirely unless you were already in sound mode".
+ *
+ * Driven through the unshifted Note/Session (CC 50 = Move's Menu), which is the
+ * exit Josh asked for on Schwung tracks. The Back path shares the same
+ * soundGestureReturn() call, one level deeper.
+ *
+ * ⚠⚠ THE TWO CONTROLS AT THE END ARE THE POINT. This change is a narrow
+ * exception carved into TWO standing rulings — the 08-25 "unshifted Note/Session
+ * is not a closer" retirement, and the 08-25 "back inside a bank always goes to
+ * the DEFAULT bank" rule. An implementation that simply made the button a closer
+ * again would pass every positive assertion above while quietly reversing both. */
+function menuPress() {
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 127]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 0]));
+}
+
+step('pressed from a normal bank: the exit LEAVES sound mode, onto THAT bank', () => {
+    globalThis.init();
+    S.awaitingProjectSelect = false;
+    S.ledInitComplete = true;
+    S.sessionView = false;
+    S.activeTrack = 0;
+    S.trackRoute[0] = 0;
+    S.activeBank = 3;                       /* deliberately NOT the default */
+    ticks(8);
+    shiftNote();
+    ticks(4);
+    if (!sound.soundActive()) throw new Error('setup failed: the gesture did not open sound mode');
+    menuPress();
+    ticks(4);
+    if (sound.soundActive())
+        throw new Error('the exit did not leave sound mode');
+    if (S.activeBank !== 3)
+        throw new Error('landed on bank ' + S.activeBank + ', not the bank the gesture was ' +
+                        'pressed from (3) — that is the old default-bank close');
+});
+
+step('pressed from SOUND + CONFIG: the exit STAYS in sound mode, back on the picker', () => {
+    S.trackRoute[0] = 0;
+    sound.soundEnter(0, 0);                 /* already in sound mode, at root */
+    ticks(4);
+    if (!sound.soundAtBlockRoot()) throw new Error('setup failed: not at root');
+    shiftNote();
+    ticks(4);
+    menuPress();
+    ticks(4);
+    if (!sound.soundActive())
+        throw new Error('it left sound mode — but the press came FROM sound mode, so the ' +
+                        'return point is the picker, not a bank');
+    if (!sound.soundAtBlockRoot())
+        throw new Error('still not back on the picker');
+});
+
+/* CONTROL 1 — the 08-25 retirement survives for every OTHER entry. */
+step('⚠ control: with no gesture crumb, Menu is NOT a closer', () => {
+    globalThis.init();
+    S.awaitingProjectSelect = false;
+    S.ledInitComplete = true;
+    S.sessionView = false;
+    S.activeTrack = 0;
+    S.trackRoute[0] = 0;
+    ticks(8);
+    sound.soundEnter(0, 0);                 /* a BANK-WALK style entry: no crumb */
+    ticks(4);
+    if (!sound.soundActive()) throw new Error('setup failed: sound mode is not open');
+    menuPress();
+    ticks(4);
+    /* ⚠ The observable is the RECORDED bank, not soundActive(). With no crumb the
+     * press falls through to the view toggle, and tick's reconcile ends sound
+     * mode as a LEAVE — so soundActive() goes false either way and cannot tell a
+     * leave from a close. A LEAVE keeps the track recorded on SOUND + CONFIG
+     * (the screen is waiting when you return); a CLOSE resets it. Josh's 08-25
+     * words are exactly this: "without resetting the track's current bank place". */
+    if (S.trackActiveBank[0] !== BANK_SOUND)
+        throw new Error('the track stopped being recorded on SOUND + CONFIG (bank ' +
+                        S.trackActiveBank[0] + ') — Menu acted as a CLOSER without a gesture ' +
+                        'crumb, reversing the 08-25 retirement');
+});
+
+/* CONTROL 2 — the crumb cannot outlive its screen and strand a stale return. */
+step('⚠ control: leaving by any other route SPENDS the crumb', () => {
+    globalThis.init();
+    S.awaitingProjectSelect = false;
+    S.ledInitComplete = true;
+    S.sessionView = false;
+    S.activeTrack = 0;
+    S.trackRoute[0] = 0;
+    S.activeBank = 5;
+    ticks(8);
+    shiftNote();                            /* arms the crumb */
+    ticks(4);
+    sound.soundExit();                      /* ...but we leave another way */
+    ticks(4);
+    sound.soundEnter(0, 0);                 /* a fresh, crumb-less entry */
+    ticks(4);
+    menuPress();
+    ticks(4);
+    if (S.trackActiveBank[0] !== BANK_SOUND)
+        throw new Error('a STALE crumb from an earlier gesture drove this exit (landed on bank ' +
+                        S.trackActiveBank[0] + ') — that is the "banks land somewhere I did not ' +
+                        'leave them" bug the crumb exists to avoid');
 });
 
 if (failed) process.exit(1);

@@ -48,7 +48,7 @@ import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
 import { soundActive, soundExit, soundVolGestureEnd, soundOpenGenerator,
-    soundAtBlockRoot } from './ui_sound.mjs';
+    soundAtBlockRoot, soundGestureReturn } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
 import { applyTrackConfig, readBankParams, applyBankParam,
@@ -1373,6 +1373,18 @@ function _onCC_buttons(d1, d2) {
                  * generator's own editor, so pressing twice still returns you
                  * exactly where you started. */
                 const _soundRootHere = soundAtBlockRoot() && !S.sessionView;
+                /* Stamp WHERE WE ARE before opening anything, so the exit can
+                 * retrace it (Josh, 2026-08-26). Stamped here rather than read
+                 * from trackSoundOrigin because that crumb is only written when
+                 * ARRIVING from a non-SOUND bank — pressing from SOUND + CONFIG,
+                 * now the common path, writes nothing and would exit to a stale
+                 * origin. `wasActive` is the whole rule: "always leaves sound
+                 * mode entirely unless you were already in sound mode". */
+                if (!S.sessionView && !(soundActive() && !_soundRootHere)) {
+                    S.genReturn = { track: S.activeTrack,
+                                    wasActive: soundActive(),
+                                    bank: S.activeBank | 0 };
+                }
                 if (soundActive() && !_soundRootHere) { soundExit(); forceRedraw(); }
                 else if (S.globalMenuOpen) { S.globalMenuOpen = false; forceRedraw(); }
                 else if (!S.sessionView) {
@@ -1423,6 +1435,24 @@ function _onCC_buttons(d1, d2) {
              * the opener is the bank walk now. ⭑ Shift+Note/Session is still the
              * deliberate one-press way out from any depth, and still lands on the
              * default bank; the branch above is it. */
+            /* ⭑ NARROW EXCEPTION to the 08-25 retirement above, and the
+             * retirement's OWN reason is why it is allowed. It says the button
+             * stopped being a closer because "that reason expired when
+             * Shift+Note/Session stopped opening anything (08-24)". As of
+             * 2026-08-26 it OPENS the generator again — so the reason has
+             * un-expired, for exactly this door and no other.
+             *
+             * Josh, 2026-08-26, asked for the exit "only when the editor was
+             * entered by the gesture". soundGestureReturn() returns false unless
+             * a crumb is armed, so a bank-walk visit to SOUND + CONFIG still
+             * falls straight through to the view toggle, and his 08-25 rule
+             * ("always jump to session view ... without resetting the track's
+             * current bank place") is untouched everywhere else.
+             *
+             * ⚠ Placed BEFORE the toggle and AFTER the shift branch: this is the
+             * unshifted press, and it must not shadow Shift+Note/Session. */
+            } else if (soundGestureReturn()) {
+                forceRedraw();
             } else if (S.tapTempoOpen) {
                 closeTapTempo();
                 forceRedraw();

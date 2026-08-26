@@ -679,6 +679,18 @@ export const S = {
      * — where a plain left turn would have come from anyway), which is what a
      * track restored from the sidecar or arrived at by a track switch gets.
      * Session-only: the origin is a navigation crumb, not project state. */
+    /* Where a GESTURE-entered generator editor returns to (Josh, 2026-08-26:
+     * "it should exit back to the place the user was when they did the gesture
+     * to enter it"). Stamped at the press, consumed by the exit, cleared by any
+     * other way out so it can never go stale.
+     * ⚠⚠ Lives on davebox's GLOBAL state, NOT sound mode's own `S` — setting it
+     * there is silently inert. [[schwung-davebox-two-state-objects]]
+     * ⚠ It is NOT trackSoundOrigin: that crumb is only written when ARRIVING
+     * from a non-SOUND bank, so pressing the gesture while already on
+     * SOUND + CONFIG writes nothing and the exit would land on a stale origin
+     * from an earlier entry — the exact "banks land somewhere I did not leave
+     * them" bug the crumb was invented to cure. */
+    genReturn: null,            /* {track, wasActive, bank} | null */
     trackSoundOrigin: new Array(8).fill(-1),
     /* Bank picker (Shift+jog in track view, 2026-08-25). Shift+jog used to step
      * the active TRACK; that meaning moved to Shift + the bottom pad row, and
