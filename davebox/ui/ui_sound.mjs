@@ -59,7 +59,7 @@ import { discover, deriveSections, activeSection, filterVizFor,
 import { parseValue, stepValue, commitString, renderCellsForBank,
     formatValue } from './ui_cells.mjs';
 import {
-    drawKitBankPage, drawKitHeader, drawKitSectionPicker, drawKitList,
+    drawKitBankPage, drawKitHeader, drawKitSectionPicker, drawKitList, drawKitListOverlay,
     MV_BAR_Y,
     hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard,
 } from './ui_movy.mjs';
@@ -2152,10 +2152,10 @@ function renderKnobTarget() {
 }
 
 function renderKnobParam() {
-    clear_screen();
-    drawKitHeader('KNOB (' + (S.knobIdx + 1) + ') PARAM', false);
-    drawKitList(S.knobParams.map(p => p.label), S.knobParamIdx,
-        { emptyMsg: 'NO PARAMS' });
+    /* Over the TARGET picker you just came from, with your target highlighted —
+     * which is why losing the 'KNOB (n) PARAM' header costs nothing. */
+    drawPickerOverlay(renderKnobTarget, S.knobParams.map(p => p.label),
+                      S.knobParamIdx, 'NO PARAMS');
 }
 
 /* ---- knob HUD: touch orients, turn reveals ------------------------------
@@ -2631,11 +2631,10 @@ function renderLfoTarget() {
 }
 
 function renderLfoParam() {
-    clear_screen();
-    const comp = S.lfoComps[S.lfoCompIdx];
-    drawKitHeader('LFO (' + (S.lfoNum + 1) + ') ' + String(comp ? comp.key : '').toUpperCase(), false);
-    drawKitList(S.lfoParams.map(p => p.label), S.lfoParamIdx,
-        { emptyMsg: 'NO PARAMS' });
+    /* Mirrors the knob pair exactly: TARGET keeps the full screen (its rows open
+     * per-module submenus), PARAM floats over it. */
+    drawPickerOverlay(renderLfoTarget, S.lfoParams.map(p => p.label),
+                      S.lfoParamIdx, 'NO PARAMS');
 }
 
 function menuEnter() {
@@ -4421,10 +4420,41 @@ function blockLabel() {
     return BLOCKS[S.blockIdx].label;
 }
 
+/* ---- overlay PICKERS -------------------------------------------------------
+ *
+ * Josh's rule (2026-08-27): a list where you are only MAKING A SELECTION floats
+ * over the screen you came from, so you stay oriented; a list that leads to
+ * submenus keeps the full screen, because there you need the room.
+ *
+ * Ruled in, one by one: the module browser (Generator / FX 1-4), the knob PARAM
+ * picker, the LFO PARAM picker, and the MODULE-side preset list.
+ * Ruled OUT, with reasons: the knob and LFO TARGET pickers ("it contains
+ * submenus for each module"), the preset SOURCE menu (its rows open menus), and
+ * the USER preset list (Shift edits presets there, so it is not selection-only).
+ *
+ * ⭑ INPUT IS UNTOUCHED. Each of these keeps its own VIEW_ state and every
+ * handler it had — only the drawing changes. That is what makes the change
+ * cheap and reversible: Back, jog and click mean exactly what they meant.
+ *
+ * ⭑ The backdrop is the screen you came FROM, so the overlay answers "what am I
+ * choosing this for" with the thing itself instead of with a header — which is
+ * why dropping the picker headers is a gain rather than a loss.
+ * ⚠ Backdrops must be OUR OWN draws, never a hosted canvas: renderEdit hands the
+ * whole frame to the module (`if (S.hosted && renderHosted()) return;`), and
+ * compositing over a surface that paints everything itself is where this would
+ * flicker. Every backdrop below is one of our list screens. */
+const PICKER_MAX_W = 108;   /* 10px clear at each edge (Josh) */
+
+function drawPickerOverlay(drawBackdrop, options, sel, emptyMsg) {
+    drawBackdrop();
+    if (!options.length) { drawKitListOverlay([String(emptyMsg || 'EMPTY')], -1,
+                                              { tall: true, maxW: PICKER_MAX_W }); return; }
+    drawKitListOverlay(options, sel, { tall: true, maxW: PICKER_MAX_W });
+}
+
 function renderBrowse() {
-    clear_screen();
-    drawKitHeader(blockLabel() + ' - PICK', false);
-    drawKitList(S.browseList.map(m => String(m.name)), S.browseIdx, {});
+    /* Over the block picker, so you can see WHICH block you are filling. */
+    drawPickerOverlay(renderBlocks, S.browseList.map(m => String(m.name)), S.browseIdx);
 }
 
 /* ── hosting a module's OWN canvas UI ──────────────────────────────────────
@@ -4635,17 +4665,31 @@ function renderPresetList() {
  * running there is nothing to list yet, so show the progress instead of an
  * empty box. */
 function renderPresetBaked() {
-    clear_screen();
-    drawKitHeader(modLabel() + ' PRESETS', false);
-    if (S.bakedScan >= 0) {
-        centreText(26, 'READING NAMES');
-        centreText(40, S.bakedScan + ' / ' + S.bakedCount);
+    /* MODULE-side presets: picking is the only thing you can do here, so it is a
+     * selection overlay. The USER list is deliberately NOT — Shift edits presets
+     * there (Josh, 2026-08-27), which is more than a selection.
+     *
+     * ⚠ The SCAN and EMPTY states keep the full screen. They are not selections:
+     * one is progress with a running count, the other is a message. Squeezing
+     * either into a 5-row list box would say less in less space, and the scan's
+     * two lines have nowhere to go. */
+    if (S.bakedScan >= 0 || !S.bakedCount) {
+        clear_screen();
+        drawKitHeader(modLabel() + ' PRESETS', false);
+        if (S.bakedScan >= 0) {
+            centreText(26, 'READING NAMES');
+            centreText(40, S.bakedScan + ' / ' + S.bakedCount);
+        } else {
+            centreText(30, S.presetMsg || 'NO PRESETS');
+        }
         return;
     }
-    if (!S.bakedCount) { centreText(30, S.presetMsg || 'NO PRESETS'); return; }
     const rows = S.bakedNames.map((n, i) =>
         String(i + 1).padStart(3, ' ') + '  ' + (n || ('Preset ' + (i + 1))));
-    renderRows(rows, S.bakedIdx, '');
+    drawPickerOverlay(renderPresetSrc, rows, S.bakedIdx);
+    /* Transient feedback stays on top of the box, as it was on top of the list.
+     * ⚠ It overlaps the bottom row while it is up; it is a few frames of status
+     * after an action, not a thing you read while choosing. */
     if (S.presetMsg) centreText(58, S.presetMsg);
 }
 

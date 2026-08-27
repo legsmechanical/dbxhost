@@ -1237,10 +1237,34 @@ export function drawKitListOverlay(options, sel, opts) {
      * 3px row pad on each side, plus the 4px scrollbar gutter. */
     const o = opts || {};
     let natural = 0;
-    for (const opt of options) natural = Math.max(natural, hdrWidth(String(opt)));
-    const W = o.w || Math.max(MV_ZOOM_W, Math.min(SCREEN_W, natural + 12));
+    /* ⭑ STOCK SCHWUNG FONT (Josh, 2026-08-27: "use stock schwung font for the
+     * overlays") — the same font the menus took, so a picker floating over a
+     * menu is the same typeface as the menu under it.
+     * ⚠ Measured with text_width(), not hdrWidth(): the host font is
+     * PROPORTIONAL, so the kit's fixed-cell measurements would size the box
+     * wrong and truncate in the wrong place. */
+    for (const opt of options) natural = Math.max(natural, text_width(String(opt)));
+    /* ⭑ `maxW` caps the auto-size. Default SCREEN_W keeps the two original
+     * callers (the enum value picker, the bank picker) exactly as they were;
+     * the selection overlays pass a narrower cap so they sit inset from both
+     * edges and read as floating. */
+    const maxW = o.maxW || SCREEN_W;
+    const W = o.w || Math.max(MV_ZOOM_W, Math.min(maxW, natural + 12));
     const X = (o.x != null) ? o.x : Math.round((SCREEN_W - W) / 2);
-    const Y = MV_ZOOM_Y, H = MV_ZOOM_H;
+    /* ⚠⚠ `tall` is OPT-IN, and the default is not laziness — MV_ZOOM_H is
+     * SHARED with the turn-to-reveal value zoom so that a short enum picker and
+     * the zoom draw the SAME outline (see the auto-size note above). Growing
+     * this box unconditionally would break that pairing on a screen nobody asked
+     * to change.
+     *
+     * ⭑ The tall box grows DOWNWARD ONLY, and that is the whole available gain:
+     * a 6th row needs H >= 58, i.e. a top edge at y <= 6, which is inside the
+     * header band (rows 0-7). So 5 rows is the ceiling while the header stays
+     * visible, and raising the top buys nothing. Keeping the top at MV_ZOOM_Y
+     * leaves rows 8-13 showing the screen underneath, which is what makes it
+     * read as an overlay rather than as another page. */
+    const Y = MV_ZOOM_Y;
+    const H = o.tall ? (SCREEN_H_LATCH - 1 - Y) : MV_ZOOM_H;
     const cell = { options: options, sel: sel };
     fill_rect(X, Y, W, H, 0);
     rectOutline(X, Y, W, H, 1);
@@ -1259,12 +1283,12 @@ export function drawKitListOverlay(options, sel, opts) {
         if (idx >= n) break;
         const y = listTop + i * ROW_H;
         let label = String(cell.options[idx]);
-        while (label.length > 1 && hdrWidth(label) > availW) label = label.slice(0, -1);
+        while (label.length > 1 && text_width(label) > availW) label = label.slice(0, -1);
         if (idx === sel) {
             fill_rect(rowX, y, rowW, ROW_H, 1);
-            hdrPrint(rowX + 3, y + 1, label, 0);
+            print(rowX + 3, y + 1, label, 0);
         } else {
-            hdrPrint(rowX + 3, y + 1, label, 1);
+            print(rowX + 3, y + 1, label, 1);
         }
     }
     /* Scroll indicator: right-edge track + thumb, only when there's overflow. */
