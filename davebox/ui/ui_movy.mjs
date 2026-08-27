@@ -1237,13 +1237,20 @@ export function drawKitListOverlay(options, sel, opts) {
      * 3px row pad on each side, plus the 4px scrollbar gutter. */
     const o = opts || {};
     let natural = 0;
-    /* ⭑ STOCK SCHWUNG FONT (Josh, 2026-08-27: "use stock schwung font for the
-     * overlays") — the same font the menus took, so a picker floating over a
-     * menu is the same typeface as the menu under it.
-     * ⚠ Measured with text_width(), not hdrWidth(): the host font is
-     * PROPORTIONAL, so the kit's fixed-cell measurements would size the box
-     * wrong and truncate in the wrong place. */
-    for (const opt of options) natural = Math.max(natural, text_width(String(opt)));
+    /* ⭑ THE STOCK SCHWUNG FONT IS THE DEFAULT, and exactly ONE caller opts out.
+     * Josh, 2026-08-27: "hdr in pickers is only for banks."
+     *   · every overlay uses the stock font, so a picker looks like the menu it
+     *     floats over — the selection overlays and the enum value picker alike.
+     *   · the BANK picker passes `hdrFont`, because it previews BANK NAMES and a
+     *     bank's own header is always drawn in the header font, so the picker
+     *     matches the thing you are about to land on.
+     * ⚠ MEASURE AND DRAW MUST USE THE SAME FONT. The host font is proportional
+     * and the kit's are fixed-cell, so a mismatched pair sizes the box for one
+     * and truncates for the other — which is why these are ONE pair of locals
+     * rather than two independent choices. */
+    const _tw = o.hdrFont ? hdrWidth : ((t) => text_width(t));
+    const _tp = o.hdrFont ? hdrPrint : ((x, y, t, c) => print(x, y, t, c));
+    for (const opt of options) natural = Math.max(natural, _tw(String(opt)));
     /* ⭑ `maxW` caps the auto-size. Default SCREEN_W keeps the two original
      * callers (the enum value picker, the bank picker) exactly as they were;
      * the selection overlays pass a narrower cap so they sit inset from both
@@ -1283,12 +1290,12 @@ export function drawKitListOverlay(options, sel, opts) {
         if (idx >= n) break;
         const y = listTop + i * ROW_H;
         let label = String(cell.options[idx]);
-        while (label.length > 1 && text_width(label) > availW) label = label.slice(0, -1);
+        while (label.length > 1 && _tw(label) > availW) label = label.slice(0, -1);
         if (idx === sel) {
             fill_rect(rowX, y, rowW, ROW_H, 1);
-            print(rowX + 3, y + 1, label, 0);
+            _tp(rowX + 3, y + 1, label, 0);
         } else {
-            print(rowX + 3, y + 1, label, 1);
+            _tp(rowX + 3, y + 1, label, 1);
         }
     }
     /* Scroll indicator: right-edge track + thumb, only when there's overflow. */

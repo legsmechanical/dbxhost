@@ -976,8 +976,13 @@ function drawBankPicker() {
     /* Width is the overlay's own business now — it sizes to the longest label,
      * which is what makes 'SOUND + CONFIG' readable here and stops any enum
      * picker being cut elsewhere. */
+    /* ⭑ `hdrFont` — the ONE overlay that is not in the stock font. It previews
+     * BANK NAMES, and a bank's own header is always the header font, so the
+     * picker matches what you are about to land on (Josh, 2026-08-27:
+     * "hdr in pickers is only for banks"). */
     drawKitListOverlay(cyc.map((b) => bankDisplayName(S.trackPadMode[S.activeTrack], b)),
-                       Math.max(0, Math.min(cyc.length - 1, S.bankPickerSel)));
+                       Math.max(0, Math.min(cyc.length - 1, S.bankPickerSel)),
+                       { hdrFont: true });
 }
 
 /* The bank-card LATCH indicator: a 1px frame around the params, alternating

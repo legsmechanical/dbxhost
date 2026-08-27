@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import HFONT from '../../tools/host_font_5x7.json';
 /* The kit's list overlay sizes itself to its longest label (Josh, 2026-08-25).
  *
@@ -95,6 +96,17 @@ function render(options, sel) {
 
 const LONG = 'SOUND + CONFIG';
 
+/* ⭑⭑ BOTH FONT PATHS ARE PINNED, because measuring in one font while drawing in
+ * the other is this overlay's characteristic failure: the host font is
+ * PROPORTIONAL and the kit's are fixed-cell, so a mismatched pair sizes the box
+ * for one and truncates for the other — and the result still looks like a word,
+ * which is the bug this whole file exists for.
+ *
+ * DEFAULT = the stock Schwung font: every overlay matches the menu it floats
+ * over — the selection overlays and the enum value picker alike.
+ * `hdrFont` = the BANK picker ONLY. It previews BANK NAMES, and a bank's own
+ * header is always the header font, so the picker matches what you are about to
+ * land on (Josh, 2026-08-27: "hdr in pickers is only for banks"). */
 step('⭑ a long label renders in FULL, not cut to the old fixed box', () => {
     /* sel is the OTHER row, so LONG draws as plain text with no fill beneath. */
     render([LONG, 'CLIP'], 1);
@@ -112,6 +124,47 @@ step('⚠ control: that label really is wider than the old 64px box', () => {
     if (globalThis.text_width(LONG) + 12 <= kit.MV_ZOOM_W)
         throw new Error('the fixture label fits the default box — it cannot detect ' +
                         'a regression to the fixed width');
+});
+
+step('⭑ hdrFont (the BANK picker) draws AND measures in the header font', () => {
+    fb.fill(0);
+    kit.drawKitListOverlay([LONG, 'CLIP'], 1, { hdrFont: true });
+    const got = firstRowInk();
+    const want = kit.hdrWidth(LONG);
+    if (got < want - 1)
+        throw new Error('"' + LONG + '" drew ' + got + 'px but needs ' + want +
+                        'px in the header font — measured in one font, drawn in another');
+    /* ⚠ Control: the two fonts must actually DIFFER on this label, or the step
+     * above would pass while hdrFont silently drew the stock font. */
+    if (Math.abs(globalThis.text_width(LONG) - want) < 4)
+        throw new Error('the fixture is the same width in both fonts (' +
+                        globalThis.text_width(LONG) + ' vs ' + want + ') — this step ' +
+                        'cannot tell them apart, so pick a label that can');
+});
+
+/* ⚠⚠ AND THE BANK PICKER MUST ACTUALLY ASK FOR IT. The step above proves the
+ * hdrFont PATH works; it says nothing about whether the one caller that needs it
+ * passes it. Deleting `hdrFont: true` from ui_render left all 460 assertions
+ * green — the mechanism was pinned, the call site was not.
+ *
+ * Source-pinned because drawBankPicker needs a live track/bank cycle to drive,
+ * and the thing under test is one argument at one call site.
+ * ⚠ Bounded by the call's own closing paren, never a character count — a pin
+ * whose window is a magic number reports on how much prose sits inside it.
+ * [[source-pins-window-must-be-structural]] */
+step('⭑ the BANK picker call site passes hdrFont', () => {
+    const src = readFileSync('ui/ui_render.mjs', 'utf8');
+    const i = src.indexOf('drawKitListOverlay(');
+    if (i < 0)
+        throw new Error('no drawKitListOverlay call in ui_render — the bank picker moved, ' +
+                        'so this pin is blind and must be re-anchored');
+    const close = src.indexOf(');', i);
+    if (close < 0) throw new Error('cannot find the end of the bank picker call');
+    const call = src.slice(i, close);
+    if (!/hdrFont\s*:\s*true/.test(call))
+        throw new Error('the bank picker no longer passes hdrFont — it would draw bank ' +
+                        'names in the stock font while the bank header it previews uses ' +
+                        'the header font');
 });
 
 step('⭑ a SHORT enum keeps the kit footprint exactly — the box only GROWS', () => {
