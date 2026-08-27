@@ -122,6 +122,13 @@ step('Shift+tap on an OCCUPIED pad loads it immediately', () => {
     projectPadPickerTap(1);
     if (S.pendingProjectSwitch !== 1)
         throw new Error('Shift+tap did not request the switch; pending=' + S.pendingProjectSwitch);
+    /* ⚠ CONTROL for the create case below: a PRE-EXISTING project must keep using
+     * the select actuator. Josh verified this half on hardware too — "switching
+     * between pre-existing projects is fine" — so routing everything through a
+     * relaunch would be a regression, not a safer fix. */
+    if (S.pendingProjectRelaunch !== null)
+        throw new Error('a pre-existing project should NOT need a relaunch; Move already ' +
+                        'has it in its set list');
 });
 
 step('Shift+tap on an EMPTY pad CREATES it, then loads it', () => {
@@ -132,8 +139,21 @@ step('Shift+tap on an EMPTY pad CREATES it, then loads it', () => {
     projectPadPickerTap(2);
     if (!cmds.some((c) => c.indexOf('new-at 2') >= 0))
         throw new Error('no create was issued for the empty pad: ' + JSON.stringify(cmds));
-    if (S.pendingProjectSwitch !== 2)
-        throw new Error('created but did not load; pending=' + S.pendingProjectSwitch);
+    /* ⚠⚠ A RELAUNCH, not the select switch — and the difference is the whole bug
+     * this step now guards. Move enumerates its sets at LAUNCH, so a project
+     * created mid-session is NOT in the overview the select actuator drives: it
+     * walks to a pad Move believes is empty, loads nothing, and davebox ends up
+     * in the new project while Move still plays the OLD one's set. Move then
+     * saves the set it HAS open, so sound edits land in the wrong project.
+     * Found by Josh on hardware 2026-08-27 ("new project doesn't exist" in
+     * Move's overview) and confirmed by the contrast he ran: switching between
+     * PRE-EXISTING projects is fine, which is the control below. */
+    if (S.pendingProjectRelaunch !== 2)
+        throw new Error('a just-created project must switch by RELAUNCH (Move has never ' +
+                        'seen it); pendingRelaunch=' + S.pendingProjectRelaunch);
+    if (S.pendingProjectSwitch === 2)
+        throw new Error('it used the select actuator, which cannot reach a set Move ' +
+                        'enumerated before it existed');
 });
 
 step('a create that FAILS reports it and does not load', () => {

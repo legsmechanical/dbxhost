@@ -867,7 +867,22 @@ function _pppLoad(p, k) {
     closeProjectPadPicker();
     showActionPopup('OPENING', 'PROJECT');
     saveState();
-    S.pendingProjectSwitch = k;
+    /* ⚠⚠ A project CREATED THIS SESSION cannot be reached by the select
+     * actuator. Move enumerates its sets at LAUNCH, so a set made since then is
+     * not in the overview the actuator drives — it walks to a pad Move thinks is
+     * empty, nothing loads, and you end up nominally in the new project while
+     * Move is still playing the old one's set. Worse than cosmetic: Move saves
+     * the set it HAS open, so sound edits made "in" the new project land in the
+     * old one. Confirmed on hardware 2026-08-27.
+     * Those go through a Move RELAUNCH (project-cmd `switch`), which is the only
+     * thing that makes Move re-read the set list. */
+    if (S.projectsCreatedThisSession.indexOf(k) >= 0) S.pendingProjectRelaunch = k;
+    else S.pendingProjectSwitch = k;
+}
+
+/* Remember a create so the load after it knows to relaunch rather than select. */
+function _pppNoteCreated(k) {
+    if (S.projectsCreatedThisSession.indexOf(k) < 0) S.projectsCreatedThisSession.push(k);
 }
 
 function _pppStartRename(p, k) {
@@ -961,6 +976,7 @@ function _projectPadPickerClick_impl() {
         const c = p.confirmNew;
         if (c.sel === 0) {          /* Yes — create, then open its menu */
             host_system_cmd('sh ' + PROJECT_CMD + ' new-at ' + c.k);
+            _pppNoteCreated(c.k);
             const d = _pppRunList();
             if (d) _pppApplyList(p, d);
             if (!p.byIndex[c.k]) { p.confirmNew = null; showActionPopup('CREATE', 'FAILED'); return; }
@@ -1152,6 +1168,7 @@ function _projectPadPickerTap_impl(k) {
         _pppCloseOverlays(p);
         if (!proj) {
             host_system_cmd('sh ' + PROJECT_CMD + ' new-at ' + k);
+            _pppNoteCreated(k);
             const d = _pppRunList();
             if (d) _pppApplyList(p, d);
             if (!p.byIndex[k]) { showActionPopup('CREATE', 'FAILED'); return; }

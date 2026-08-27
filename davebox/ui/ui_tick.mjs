@@ -2134,6 +2134,22 @@ export function _tickImpl() {
         S.exitFarewell = 8;
         S.screenDirty = true;
         return;
+    } else if (S.pendingProjectRelaunch !== null) {
+        /* A project CREATED THIS SESSION: Move has never seen it, because it
+         * enumerates sets at LAUNCH. The select actuator would walk its overview
+         * to a pad Move believes is empty and load nothing, leaving davebox in
+         * the new project while Move still plays the old one's set — and Move
+         * saves the set it HAS open, so edits would land in the wrong project.
+         *
+         * project-cmd `switch` writes relaunch_song_index + relaunch_requested
+         * and TERMs Move; the launcher's supervisor applies the index after Move
+         * has exited and runs it again, which is the only path that makes Move
+         * re-read the set list. Same one-tick-after-the-save shape as the
+         * actuator switch below. */
+        const _prl = S.pendingProjectRelaunch;
+        S.pendingProjectRelaunch = null;
+        host_system_cmd('sh /data/UserData/dbx-host/scripts/project-cmd.sh switch ' + _prl);
+        return;
     } else if (S.pendingProjectSwitch !== null) {
         /* Pad-picker project switch, one tick after the deferred save. The
          * host gate runs as a HEADLESS ACTUATOR: arm with the pad pre-queued,
