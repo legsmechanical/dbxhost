@@ -252,7 +252,15 @@ step('⚠ the source still subtracts the qual from availW', () => {
      * shorter would make the step above vacuous while staying green.
      * ⚠ Bound to the assignment, not to a character count. */
     const src = readFileSync('ui/ui_movy.mjs', 'utf8');
-    const i = src.indexOf('const availW = rightEdge - 3');
+    /* ⚠⚠ Re-anchored 2026-08-27, TWICE. The label inset became `labelX` when the
+     * list gained box bounds, so the original literal broke; anchoring on
+     * `const availW = ` alone then found the WRONG ONE — drawKitListOverlay has
+     * an availW of its own and is defined FIRST in the file, so the pin read a
+     * different function's arithmetic and failed correct code. Scope to
+     * drawKitList before searching. [[source-pins-window-must-be-structural]] */
+    const fn = src.indexOf('export function drawKitList(');
+    if (fn < 0) throw new Error('drawKitList moved — re-anchor this pin');
+    const i = src.indexOf('const availW = ', fn);
     if (i < 0) throw new Error('the availW assignment moved — re-anchor this pin');
     const line = src.slice(i, src.indexOf('\n', i));
     if (!/-\s*qw/.test(line))

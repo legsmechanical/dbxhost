@@ -72,7 +72,12 @@ n=$(grep -c "w.int ? String(w.val) : w.val.toFixed(3)" ui/ui_sound.mjs || true)
 grep -q "rows.splice(i + 1, 0, { kind: 'div' });" ui/ui_sound.mjs \
     && ok "grouping rules are inserted as their own rows" \
     || bad "the grouping rules are no longer rows — a flag will be dropped by the cell mapper"
-grep -q "if (row.divider) { fill_rect(0, y + (rowH >> 1) - 1, fillW, 1, 1); continue; }" ui/ui_movy.mjs \
+# ⚠ Re-anchored 2026-08-27: this matched the literal `fill_rect(0, ...)` and the
+# box-aware refactor changed that 0 to the list's own left edge, with the divider
+# behaving identically. Per this file's own warning two checks below, pin the
+# MECHANISM — a 1px rule, full row width, centred in the band — and let the
+# origin expression move.
+grep -qE "if \(row\.divider\) \{ fill_rect\([A-Za-z0-9_]+, y \+ \(rowH >> 1\) - 1, fillW, 1, 1\); continue; \}" ui/ui_movy.mjs \
     && ok "drawKitList draws a rule row centred in its band" \
     || bad "drawKitList no longer renders a divider row"
 # ⚠ A real row is a cursor STOP unless something steps over it.

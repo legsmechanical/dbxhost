@@ -1467,7 +1467,9 @@ export function hudCard(title, valueText) {
  * rows: strings, or { label, value?, qual?, chevron? ('>'), editing?, hdr? }.
  *   `hdr` prints the label in the header font (caps chrome rows).
  *   `qual` is a small qualifier drawn just after the label — see the row loop.
- * sel: selected index. opts: { topY=11, rowH=10, visible (derived), emptyMsg }.
+ * sel: selected index. opts: { x=0, w=SCREEN_W, topY=11, rowH=10, visible
+ *   (derived), emptyMsg }. `x`/`w` bound the list horizontally so the same
+ *   renderer serves a full screen and an overlay box.
  * Pure: no state reads; returns the first visible index (for callers that
  * align auxiliary drawing with the window). */
 /* Clear between a label and its `qual`. 3px reads as "attached to the name"
@@ -1476,6 +1478,14 @@ export function hudCard(title, valueText) {
 const QUAL_GAP = 3;
 export function drawKitList(rows, sel, opts) {
     const o = opts || {};
+    /* ⭑ THE LIST'S HORIZONTAL BOUNDS. Defaults are the full screen, so every
+     * existing caller is byte-identical; pass `x`/`w` to render the same list
+     * inside an overlay box instead. Before this the right edge and the label
+     * inset were hard-coded to SCREEN_W and 3, which is the only reason this
+     * renderer could not be reused inside a box — the rows themselves never
+     * cared. Everything below is expressed relative to these two. */
+    const boxX = o.x != null ? o.x : 0;
+    const boxW = o.w != null ? o.w : SCREEN_W;
     const topY = o.topY != null ? o.topY : 11;
     const rowH = o.rowH != null ? o.rowH : 10;
     const n = rows.length;
@@ -1487,7 +1497,7 @@ export function drawKitList(rows, sel, opts) {
              * statement about the screen rather than a piece of prose. */
             const t = String(o.emptyMsg).toUpperCase();
             const w = o.emptyHdr ? hdrWidth(t) : mvWidth(t);
-            const x = Math.max(0, Math.round((SCREEN_W - w) / 2));
+            const x = boxX + Math.max(0, Math.round((boxW - w) / 2));
             const y = topY + Math.round(((64 - topY) - MV_LBL_H) / 2);
             if (o.emptyHdr) hdrPrint(x, y, t, 1); else mvPrint(x, y, t, 1);
         }
@@ -1504,8 +1514,9 @@ export function drawKitList(rows, sel, opts) {
     const start = none ? 0
         : Math.max(0, Math.min(s - Math.floor(visible / 2), n - visible));
     const hasScroll = n > visible;
-    const rightEdge = hasScroll ? SCREEN_W - 5 : SCREEN_W - 3;   /* value right-align x */
-    const fillW = hasScroll ? SCREEN_W - 4 : SCREEN_W;
+    const rightEdge = boxX + boxW - (hasScroll ? 5 : 3);   /* value right-align x */
+    const fillW = hasScroll ? boxW - 4 : boxW;
+    const labelX = boxX + 3;
     for (let i = 0; i < visible; i++) {
         const idx = start + i;
         if (idx >= n) break;
@@ -1525,7 +1536,7 @@ export function drawKitList(rows, sel, opts) {
          * ⚠ Callers must make these UNSELECTABLE — the cursor has to step over
          * them, or the list has stops on nothing. Centred in the band, width
          * follows fillW so it stays clear of the scroll indicator. */
-        if (row.divider) { fill_rect(0, y + (rowH >> 1) - 1, fillW, 1, 1); continue; }
+        if (row.divider) { fill_rect(boxX, y + (rowH >> 1) - 1, fillW, 1, 1); continue; }
         /* A STATUS line: centred, never selected, and occupying a full row.
          *
          * 1-bit has no dim, so "this is information, not a control" cannot be
@@ -1539,11 +1550,11 @@ export function drawKitList(rows, sel, opts) {
         if (row.note) {
             const t = String(row.note).toUpperCase();
             const nw = row.hdr === false ? mvWidth(t) : hdrWidth(t);
-            const nx = Math.max(0, Math.round((fillW - nw) / 2));
+            const nx = boxX + Math.max(0, Math.round((fillW - nw) / 2));
             if (row.hdr === false) mvPrint(nx, y + 1, t, 1); else hdrPrint(nx, y, t, 1);
             continue;
         }
-        if (on) fill_rect(0, y - 1, fillW, rowH, 1);
+        if (on) fill_rect(boxX, y - 1, fillW, rowH, 1);
         const ink = on ? 0 : 1;
         /* ---- UPPERCASE before measuring or printing ----
          *
@@ -1606,22 +1617,22 @@ export function drawKitList(rows, sel, opts) {
          * needs to sit next to the NAME has nowhere else to go. */
         const qual = row.qual ? String(row.qual).toUpperCase() : '';
         const qw = qual ? mvWidth(qual) + QUAL_GAP : 0;
-        const availW = rightEdge - 3 - (vw ? vw + 4 : 0) - qw;
+        const availW = rightEdge - labelX - (vw ? vw + 4 : 0) - qw;
         let labelEnd = 3;
         if (_hostLabel) {
             while (label.length > 1 && text_width(label) > availW) label = label.slice(0, -1);
             /* +1: the 7-row host glyph sits one lower than the 6-row header
              * glyph in the same band, so the baselines agree with the values. */
-            print(3, y + 1, label, ink);
-            labelEnd = 3 + text_width(label);
+            print(labelX, y + 1, label, ink);
+            labelEnd = labelX + text_width(label);
         } else if (row.hdr) {
             while (label.length > 1 && hdrWidth(label) > availW) label = label.slice(0, -1);
-            hdrPrint(3, y, label, ink);
-            labelEnd = 3 + hdrWidth(label);
+            hdrPrint(labelX, y, label, ink);
+            labelEnd = labelX + hdrWidth(label);
         } else {
             while (label.length > 1 && mvWidth(label) > availW) label = label.slice(0, -1);
-            mvPrint(3, y + 1, label, ink);
-            labelEnd = 3 + mvWidth(label);
+            mvPrint(labelX, y + 1, label, ink);
+            labelEnd = labelX + mvWidth(label);
         }
         if (qual) mvPrint(labelEnd + QUAL_GAP, y + 1, qual, ink);
         if (val) mvPrint(rightEdge - vw, y + 1, val, ink);
@@ -1630,8 +1641,8 @@ export function drawKitList(rows, sel, opts) {
         const trackH = visible * rowH;
         const thumbH = Math.max(3, Math.round(trackH * visible / n));
         const thumbY = topY - 1 + Math.round((trackH - thumbH) * start / Math.max(1, n - visible));
-        fill_rect(SCREEN_W - 2, topY - 1, 1, trackH, 1);
-        fill_rect(SCREEN_W - 3, thumbY, 2, thumbH, 1);
+        fill_rect(boxX + boxW - 2, topY - 1, 1, trackH, 1);
+        fill_rect(boxX + boxW - 3, thumbY, 2, thumbH, 1);
     }
     return start;
 }
