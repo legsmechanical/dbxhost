@@ -443,6 +443,9 @@ const S = {
     track: -1,
     slot: -1,
     view: VIEW_BLOCKS,
+    /* Header shown over the module browser when it was opened because the block
+     * was EMPTY, rather than by choosing to browse. '' = the ordinary case. */
+    browsePrompt: '',
 
     blockIdx: 1,                /* default to SYNTH, the common case */
     comp: 'synth',
@@ -695,6 +698,14 @@ export function soundActive() { return S.active; }
  * deeper screen keeps the one-press exit the 08-24 retirement created — which is
  * why this is a root test and not `!generatorOpen`. */
 export function soundAtBlockRoot() { return S.active && S.view === VIEW_BLOCKS; }
+/* For tests: the module browser's state. Exposed because the EMPTY-generator
+ * route is only observable as "which screen am I on and what does it say" —
+ * asserting the popup that used to stand in for it would now pass against a
+ * gesture that never opened anything. */
+export function soundBrowseStateForTest() {
+    return { browsing: S.active && S.view === VIEW_BROWSE,
+             prompt: S.browsePrompt, count: S.browseList.length };
+}
 export function soundTrack() { return S.track; }
 export function soundSlot()  { return S.slot; }
 
@@ -1673,7 +1684,22 @@ export function soundGestureArmed() { return !!GS.genReturn; }
 
 export function soundOpenGenerator(track) {
     soundEnter(track, slotIndex(track));
-    if (!engineLoadedModule(S.slot, 'synth')) return false;
+    if (!engineLoadedModule(S.slot, 'synth')) {
+        /* NOTHING LOADED: go straight to the module picker (Josh, 2026-08-27).
+         * It used to return false, and the caller dropped you on the block list
+         * with a popup saying to pick one — an instruction where the picker
+         * itself would do. The gesture means "edit this track's sound"; with no
+         * sound yet, choosing one IS the edit.
+         *
+         * ⭑ Wording: GENERATOR, not "instrument". A track's INSTRUMENT is its
+         * DESTINATION (the `Track to` row, TRACK_OWNS_ITS_INSTRUMENT.md); the
+         * sound module is the Generator, and the popup this replaces said
+         * NO GENERATOR too. Josh asked for "No instrument. Select:" in the
+         * everyday sense — this keeps the module's own vocabulary.
+         * ⚠ 111px in the header font against drawKitHeader's 124px budget. */
+        S.pendingAction = { t: 'browse', comp: 'synth', prompt: 'SELECT GENERATOR' };
+        return true;
+    }
     S.pendingAction = { t: 'open', comp: 'synth' };
     return true;
 }
@@ -2987,7 +3013,7 @@ function runAction(a) {
     else if (a.t === 'leavebus') leaveBus();
     else if (a.t === 'retarget') retargetOpen(a.picker);
     else if (a.t === 'open')    openBlock(a.comp);
-    else if (a.t === 'browse')  openBrowse(a.comp);
+    else if (a.t === 'browse')  openBrowse(a.comp, a.prompt);
     else if (a.t === 'load')    loadSelected();
     else if (a.t === 'presets') openPresets();
     else if (a.t === 'usrlist') openUserPresets();
@@ -3069,7 +3095,7 @@ function runDiscovery() {
 /* `idx` retargets the block first. Shift+click arrives from the block PICKER,
  * where S.comp still names whichever block was last opened — browsing without
  * this would offer modules for the wrong component and load into it. */
-function openBrowse(comp) {
+function openBrowse(comp, prompt) {
     if (comp) {
         S.comp = comp;
         const bi = BLOCKS.findIndex(b => b.comp === comp);
@@ -3084,6 +3110,7 @@ function openBrowse(comp) {
     const picked = buildBrowseList(found, engineLoadedModule(S.slot, S.comp));
     S.browseList = picked.list;
     S.browseIdx = picked.idx;
+    S.browsePrompt = prompt || '';
     S.view = VIEW_BROWSE;
     S.dirty = true;
     log('browse: ' + found.length + ' modules for ' + S.comp);
@@ -4453,8 +4480,15 @@ function drawPickerOverlay(drawBackdrop, options, sel, emptyMsg) {
 }
 
 function renderBrowse() {
-    /* Over the block picker, so you can see WHICH block you are filling. */
-    drawPickerOverlay(renderBlocks, S.browseList.map(m => String(m.name)), S.browseIdx);
+    /* Over the block picker, so you can see WHICH block you are filling.
+     * ⭑ When the browser was opened because the block was EMPTY, the backdrop's
+     * header is overdrawn to say so — the caption sits ABOVE the overlay because
+     * that band is the only space there is: the box starts at MV_ZOOM_Y (14) and
+     * rows 8-13 are too few for a line of 7px text without clipping the box. */
+    drawPickerOverlay(() => {
+        renderBlocks();
+        if (S.browsePrompt) drawKitHeader(S.browsePrompt, false);
+    }, S.browseList.map(m => String(m.name)), S.browseIdx);
 }
 
 /* ── hosting a module's OWN canvas UI ──────────────────────────────────────

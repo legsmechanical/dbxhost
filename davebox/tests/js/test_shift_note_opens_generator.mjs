@@ -284,6 +284,43 @@ step('⚠ control: leaving by any other route SPENDS the crumb', () => {
                         'leave them" bug the crumb exists to avoid');
 });
 
+/* ⭑ AN EMPTY GENERATOR OPENS THE PICKER (Josh, 2026-08-27). It used to drop you
+ * on the block list with a popup reading "NO GENERATOR / Pick one to add it" —
+ * an instruction standing in for the action. The gesture means "edit this
+ * track's sound"; with no sound yet, choosing one IS the edit.
+ *
+ * ⚠ The rig mocks a LOADED generator by default (`synth:module` -> 'nusaw'),
+ * which is the happy path every other step here needs. This one has to make the
+ * block genuinely empty, so it swaps that mock and puts it back — without which
+ * it would silently exercise the loaded path and pass while proving nothing.
+ * ⚠ LAST in the file: it leaves sound mode on a different screen, and mid-file
+ * it broke the MIDI-routed step below it.
+ * ⚠ The observable is the SCREEN, not a popup — asserting a popup would now pass
+ * against a gesture that opened nothing at all. */
+step('an EMPTY generator opens the module picker, captioned', () => {
+    const realGet = globalThis.shadow_get_param;
+    globalThis.shadow_get_param = () => '';        /* nothing loaded, any comp */
+    try {
+        globalThis.init();
+        S.awaitingProjectSelect = false;
+        S.ledInitComplete = true;
+        S.sessionView = false;
+        S.activeTrack = 0;
+        S.trackRoute[0] = 0;                       /* Schwung chain */
+        ticks(8);
+        shiftNote();
+        ticks(6);
+        const b = sound.soundBrowseStateForTest();
+        if (!b.browsing)
+            throw new Error('the gesture did not land on the module picker');
+        if (b.prompt !== 'SELECT GENERATOR')
+            throw new Error('no caption over the picker, got ' + JSON.stringify(b.prompt) +
+                            ' — nothing says why you are suddenly choosing a module');
+    } finally {
+        globalThis.shadow_get_param = realGet;
+    }
+});
+
 if (failed) process.exit(1);
 console.log('test_shift_note_opens_generator: PASS');
 }

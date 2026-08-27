@@ -1395,12 +1395,16 @@ function _onCC_buttons(d1, d2) {
                         enterMoveNativeCoRun(_gt);
                     } else if (S.trackRoute[_gt] === 2) {
                         showActionPopup('MIDI TRACK', 'No generator to edit');
-                    } else if (!soundOpenGenerator(_gt)) {
-                        /* Sound mode is open on the block picker now — the
-                         * generator row is simply empty, which the picker shows.
-                         * Say why, so a one-press gesture that lands somewhere
-                         * unexpected explains itself. */
-                        showActionPopup('NO GENERATOR', 'Pick one to add it');
+                    } else {
+                        /* ⭑ No popup any more, and no failure branch: an EMPTY
+                         * generator now opens the module picker itself (Josh,
+                         * 2026-08-27) with 'SELECT GENERATOR' over it. The old
+                         * 'NO GENERATOR / Pick one to add it' told you to do the
+                         * thing the picker does — an instruction standing in for
+                         * the action. soundOpenGenerator always succeeds now, so
+                         * a `!` branch here would be dead code pretending to
+                         * handle something. */
+                        soundOpenGenerator(_gt);
                     }
                     forceRedraw();
                 }
