@@ -15,6 +15,9 @@
 #     Settings.json cannot carry (see src/host/sa_master_volume.h).
 #   - test_spawn_command — the exit-status/PATH contract of the process
 #     launcher that replaced fork + execvp (see src/host/spawn_command.h).
+#   - test_stipple — the checkerboard parity rule behind stipple_rect: 50%
+#     coverage, complementary phases, a CHECKERBOARD rather than stripes (a
+#     row-parity bug passes the first two), and no seam across a call boundary.
 #
 # Usage: `make -C tests/host test`
 
@@ -30,7 +33,8 @@ TARGETS = $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_ui_midi_policy \
           $(BUILD_DIR)/test_midi_inject_writer \
           $(BUILD_DIR)/test_sa_master_volume \
-          $(BUILD_DIR)/test_spawn_command
+          $(BUILD_DIR)/test_spawn_command \
+          $(BUILD_DIR)/test_stipple
 
 .PHONY: all test clean
 

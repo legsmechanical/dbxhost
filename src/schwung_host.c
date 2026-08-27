@@ -25,6 +25,7 @@
 #include "lib/stb_truetype.h"
 
 #include "host/js_host_common.h"
+#include "host/stipple.h"
 #include "host/module_manager.h"
 #include "host/settings.h"
 #include "host/shadow_constants.h"
@@ -232,6 +233,25 @@ void fill_rect(int x, int y, int w, int h, int value) {
     for(int xi = x; xi < x+w; xi++) {
       set_pixel(xi, yi, value);
     }
+  }
+}
+
+/* Fill every other pixel of a rect in a checkerboard — a 50% screen-door, the
+ * 1-bit stand-in for a tint or a dim. `phase` (0/1) selects which parity is
+ * written, so two opposite-phase calls cover the rect completely.
+ *
+ * The parity rule lives in src/host/stipple.h — ONE owner, shared with the
+ * other JS context's copy in js_display.c, which has its own set_pixel and so
+ * its own loop.
+ *
+ * ⭑ A primitive rather than a JS loop because the display API has no pattern
+ * fill: a full-screen 50% knock-back is 4096 host calls done per-pixel from JS,
+ * against roughly 2400 for all the text on a busy screen. */
+void stipple_rect(int x, int y, int w, int h, int value, int phase) {
+  if(w <= 0 || h <= 0) return;
+  phase &= 1;
+  for(int yi = y; yi < y + h; yi++) {
+    for(int xi = stipple_row_start(x, yi, phase); xi < x + w; xi += 2) set_pixel(xi, yi, value);
   }
 }
 
@@ -972,6 +992,22 @@ static JSValue js_fill_rect(JSContext *ctx, JSValueConst this_val, int argc, JSV
     color = 1;
   }
   fill_rect(x,y,w,h,color);
+  return JS_UNDEFINED;
+}
+
+static JSValue js_stipple_rect(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+  if(argc < 4 || argc > 6) {
+    JS_ThrowTypeError(ctx, "stipple_rect() expects 4 to 6 arguments, got %d", argc);
+    return JS_EXCEPTION;
+  }
+  int x, y, w, h, color = 0, phase = 0;
+  if(JS_ToInt32(ctx, &x, argv[0])) return JS_EXCEPTION;
+  if(JS_ToInt32(ctx, &y, argv[1])) return JS_EXCEPTION;
+  if(JS_ToInt32(ctx, &w, argv[2])) return JS_EXCEPTION;
+  if(JS_ToInt32(ctx, &h, argv[3])) return JS_EXCEPTION;
+  if(argc >= 5 && JS_ToInt32(ctx, &color, argv[4])) return JS_EXCEPTION;
+  if(argc >= 6 && JS_ToInt32(ctx, &phase, argv[5])) return JS_EXCEPTION;
+  stipple_rect(x, y, w, h, color, phase);
   return JS_UNDEFINED;
 }
 
@@ -1855,6 +1891,9 @@ void init_javascript(JSRuntime **prt, JSContext **pctx)
 
     JSValue fill_rect_func = JS_NewCFunction(ctx, js_fill_rect, "fill_rect", 1);
     JS_SetPropertyStr(ctx, global_obj, "fill_rect", fill_rect_func);
+
+    JSValue stipple_rect_func = JS_NewCFunction(ctx, js_stipple_rect, "stipple_rect", 1);
+    JS_SetPropertyStr(ctx, global_obj, "stipple_rect", stipple_rect_func);
 
     JSValue fill_circle_func = JS_NewCFunction(ctx, js_fill_circle, "fill_circle", 1);
     JS_SetPropertyStr(ctx, global_obj, "fill_circle", fill_circle_func);

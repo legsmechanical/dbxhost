@@ -20,6 +20,7 @@
 #undef STB_TRUETYPE_IMPLEMENTATION
 
 #include "js_display.h"
+#include "stipple.h"
 
 #include "host/schwung_paths.h"
 /* Screen buffer - shared across all display functions */
@@ -75,6 +76,32 @@ void js_display_fill_rect(int x, int y, int w, int h, int value) {
     if (w <= 0 || h <= 0) return;
     for (int yi = y; yi < y + h; yi++) {
         for (int xi = x; xi < x + w; xi++) {
+            js_display_set_pixel(xi, yi, value);
+        }
+    }
+}
+
+/* Fill every other pixel of a rect in a checkerboard — a 50% screen-door, the
+ * 1-bit stand-in for a tint or a dim.
+ *
+ * `phase` selects which parity is written (0 or 1), so two calls with opposite
+ * phases cover the rect completely and a caller can align the pattern across
+ * adjacent rects.
+ *
+ * ⭑ Why this is a primitive rather than a JS loop: the display API has no
+ * pattern fill, so a full-screen 50% knock-back costs one host call per pixel —
+ * 4096 of them for 128x64, against roughly 2400 for all the text on a busy
+ * screen. As a binding it is a single call, and the inner loop is the same one
+ * `fill_rect` already runs. */
+void js_display_stipple_rect(int x, int y, int w, int h, int value, int phase) {
+    if (w <= 0 || h <= 0) return;
+    phase &= 1;
+    for (int yi = y; yi < y + h; yi++) {
+        /* The parity rule lives in stipple.h — ONE owner, because the other
+         * caller (src/schwung_host.c) has its own set_pixel and so its own
+         * loop, and two copies of this arithmetic agree only until one is
+         * fixed. */
+        for (int xi = stipple_row_start(x, yi, phase); xi < x + w; xi += 2) {
             js_display_set_pixel(xi, yi, value);
         }
     }
@@ -539,6 +566,20 @@ JSValue js_display_bind_fill_rect(JSContext *ctx, JSValueConst this_val, int arg
     return JS_UNDEFINED;
 }
 
+JSValue js_display_bind_stipple_rect(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 4) return JS_UNDEFINED;
+    int x, y, w, h, value = 0, phase = 0;
+    if (JS_ToInt32(ctx, &x, argv[0])) return JS_UNDEFINED;
+    if (JS_ToInt32(ctx, &y, argv[1])) return JS_UNDEFINED;
+    if (JS_ToInt32(ctx, &w, argv[2])) return JS_UNDEFINED;
+    if (JS_ToInt32(ctx, &h, argv[3])) return JS_UNDEFINED;
+    if (argc >= 5 && JS_ToInt32(ctx, &value, argv[4])) return JS_UNDEFINED;
+    if (argc >= 6 && JS_ToInt32(ctx, &phase, argv[5])) return JS_UNDEFINED;
+    js_display_stipple_rect(x, y, w, h, value, phase);
+    return JS_UNDEFINED;
+}
+
 JSValue js_display_bind_draw_line(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
     (void)this_val;
     if (argc < 4) return JS_UNDEFINED;
@@ -639,6 +680,8 @@ void js_display_register_bindings(JSContext *ctx, JSValue global_obj) {
         JS_NewCFunction(ctx, js_display_bind_draw_rect, "draw_rect", 5));
     JS_SetPropertyStr(ctx, global_obj, "fill_rect",
         JS_NewCFunction(ctx, js_display_bind_fill_rect, "fill_rect", 5));
+    JS_SetPropertyStr(ctx, global_obj, "stipple_rect",
+        JS_NewCFunction(ctx, js_display_bind_stipple_rect, "stipple_rect", 6));
     JS_SetPropertyStr(ctx, global_obj, "draw_line",
         JS_NewCFunction(ctx, js_display_bind_draw_line, "draw_line", 5));
     JS_SetPropertyStr(ctx, global_obj, "clear_screen",

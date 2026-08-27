@@ -44,10 +44,27 @@ print(x, y, text, color)          // Draw text at position (color: 0=black, 1=wh
 set_pixel(x, y, value)            // Set pixel at position (value: 0=black, 1=white)
 draw_rect(x, y, w, h, value)      // Draw rectangle outline
 fill_rect(x, y, w, h, value)      // Draw filled rectangle
+stipple_rect(x, y, w, h, value, phase)  // Fill every other pixel (50% checkerboard)
 text_width(text)                  // Get width of text string in pixels
 ```
 
 ### Display Object (Alternative API)
+
+**`stipple_rect(x, y, w, h, value = 0, phase = 0)`** — writes `value` to every
+other pixel of the rect in a checkerboard. A 1-bit display has no tint and no
+dim, so this is how a region is *knocked back*: stipple with `value = 0` and
+half the ink underneath is removed, which reads as "behind something" without
+erasing it.
+
+- `phase` (0 or 1) selects which half is written. Two calls with opposite phases
+  cover the rect completely, so a caller can knock a region back and paint the
+  complementary half a different value. Which half `phase = 0` means is
+  arbitrary and not guaranteed; only that the two phases differ.
+- Parity comes from absolute coordinates, so the pattern is continuous across
+  calls — stippling two adjacent rects shows no seam where they meet.
+- ⭑ Why it is a primitive: there is no pattern fill, so doing this from JS costs
+  one host call per pixel — 4096 for a full 128×64 screen, against roughly 2400
+  for all the text on a busy screen. As a binding it is one call.
 
 An object-oriented display API is also available:
 
