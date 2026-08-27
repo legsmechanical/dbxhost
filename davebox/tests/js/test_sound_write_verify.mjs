@@ -59,6 +59,10 @@ globalThis.host_vol_block = () => {};
 globalThis.host_edit_cc_block = () => {};
 globalThis.clear_screen = () => {};
 globalThis.print = () => {};
+/* Same host text subsystem as `print` above: proportional advance, so a
+ * caller measuring before it draws needs both. 6px/char matches the
+ * device atlas's widest cell + spacing — near enough for truncation. */
+globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
 globalThis.fill_rect = () => {};
 globalThis.draw_rect = () => {};
 globalThis.set_pixel = () => {};

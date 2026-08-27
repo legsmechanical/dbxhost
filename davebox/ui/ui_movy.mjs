@@ -1527,9 +1527,29 @@ export function drawKitList(rows, sel, opts) {
         let val = row.chevron ? '>' : (row.value != null ? String(row.value).toUpperCase() : '');
         if (row.editing && val) val = '[' + val + ']';
         const vw = val ? mvWidth(val) : 0;
-        let label = String(row.label || '').toUpperCase();
+        /* ⭑ hostLabels: draw the LEFT column in the STOCK SCHWUNG font (the
+         * host's own proportional 5x7 `print`), leaving the right-hand values on
+         * the small movy font and the header untouched. Opt-in per call — this
+         * list renderer is shared by a dozen screens and Josh is trying the look
+         * on ONE (sound + config top level, 2026-08-27).
+         *
+         * ⚠ Its own measurement, `text_width()`: the host font is PROPORTIONAL
+         * (advance = each glyph's ink width + 1), so hdrWidth/mvWidth — both of
+         * which assume this font's fixed cells — would mis-measure it and the
+         * truncation loop would cut in the wrong place.
+         * ⚠ `mixedCase` rides with it: the upper-casing below exists because
+         * BOTH davebox fonts are effectively caps-only. The stock font is not,
+         * so the reason does not apply to it. */
+        const _hostLabel = !!o.hostLabels && row.hdr;
+        let label = String(row.label || '');
+        if (!(_hostLabel && o.mixedCase)) label = label.toUpperCase();
         const availW = rightEdge - 3 - (vw ? vw + 4 : 0);
-        if (row.hdr) {
+        if (_hostLabel) {
+            while (label.length > 1 && text_width(label) > availW) label = label.slice(0, -1);
+            /* +1: the 7-row host glyph sits one lower than the 6-row header
+             * glyph in the same band, so the baselines agree with the values. */
+            print(3, y + 1, label, ink);
+        } else if (row.hdr) {
             while (label.length > 1 && hdrWidth(label) > availW) label = label.slice(0, -1);
             hdrPrint(3, y, label, ink);
         } else {
