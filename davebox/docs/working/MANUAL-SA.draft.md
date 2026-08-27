@@ -1203,7 +1203,9 @@ eight knobs are the **slot's own knob assignments**, the macros set up under
 you navigate it.
 
 **Touch a knob and it tells you what it is**: a card names the block and parameter
-it drives (`SYNTH` / `CUTOFF`), or says `UNASSIGNED`. **Turn it** and the card
+it drives (`SYNTH` / `CUTOFF`), or says `UNASSIGNED`. On the knob list itself the
+same mapping is written compactly — `Syn>cutoff`, `FX1>mix` — so the whole
+assignment fits beside the knob's own name. **Turn it** and the card
 shows the value as it moves. Let go and the card clears itself.
 
 **Shift + touch a knob** goes straight to assigning it — the target list for that

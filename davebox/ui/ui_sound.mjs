@@ -673,6 +673,10 @@ export function soundValueForTest(key) { return S.values[key]; }
  * assembled fresh on every open from live component probes, so this exercises
  * the real path rather than a copy of it. */
 export function soundKnobTargetsForTest() { return knobTargetList(); }
+/* The two display forms, so a test can pin them without a live slot. */
+export function compLabelsForTest(id, param) {
+    return { short: compShort(id), wide: compWide(id), pair: compParamLabel(id, param) };
+}
 export function soundLfoCompsForTest() { return lfoCompList(); }
 export function soundKnobHudForTest() {
     const i = S.touchedIdx;
@@ -2175,8 +2179,51 @@ function openKnobParams(target) {
     S.view = VIEW_KNOB_PARAM;
 }
 
+/* ⭑ A component's SHORT form, for anywhere a target and a param are shown
+ * together (Josh, 2026-08-27). `synth: cutoff` is 82px in the movy font against
+ * a value column that has ~54px on the KNOBS screen — so the row's own LABEL was
+ * being eaten to make room, and at the long end it truncated on the full screen
+ * as well as in a box. `Syn>cutoff` is 69px, and the `>` reads as "inside".
+ *
+ * ⚠⚠ DISPLAY ONLY. The wire format is unchanged and must stay `target:param`
+ * with the raw component id — `knob_<n>_set` is parsed by the chain DSP, and
+ * `lfo<n>:target` is a param value. Shortening either would write a component
+ * id that does not exist. This function is called from render paths only. */
+/* ⭑⭑ ONE table owns what a component is CALLED, in both forms it is shown in.
+ * They differ because the space does: the knob HUD gives a component a centred
+ * line of its own across a 116px card, while an inline value shares its row with
+ * a param name and a label. Two tables keyed on the same ids is a second source
+ * of truth — add `fx5` to one and the other keeps saying `FX5` by fallthrough,
+ * which is the shape of bug a table catches and only a SCAN would have found.
+ *   `wide`  — the HUD's own line, and anywhere a component is named alone.
+ *   `short` — inline, beside a param.
+ * ⚠ Unknown ids pass through rather than being mangled: a component this table
+ * has not heard of is better shown by its real id than by a guess. */
+const COMPONENT_NAMES = {
+    synth:    { wide: 'SYNTH',   short: 'Syn' },
+    fx1:      { wide: 'FX 1',    short: 'FX1' },
+    fx2:      { wide: 'FX 2',    short: 'FX2' },
+    fx3:      { wide: 'FX 3',    short: 'FX3' },
+    fx4:      { wide: 'FX 4',    short: 'FX4' },
+    midi_fx1: { wide: 'MIDI FX', short: 'MFX1' },
+    midi_fx2: { wide: 'MIDI FX 2', short: 'MFX2' },
+    lfo1:     { wide: 'LFO 1',   short: 'LFO1' },
+    lfo2:     { wide: 'LFO 2',   short: 'LFO2' },
+};
+function compShort(id) {
+    const e = COMPONENT_NAMES[id];
+    return e ? e.short : String(id || '');
+}
+function compWide(id) {
+    const e = COMPONENT_NAMES[id];
+    return e ? e.wide : String(id || '').toUpperCase();
+}
+function compParamLabel(target, param) {
+    return (target && param) ? compShort(target) + '>' + param : '';
+}
+
 function knobAsnLabel(a) {
-    return (a && a.target && a.param) ? a.target + ': ' + a.param : '(None)';
+    return (a && a.target && a.param) ? compParamLabel(a.target, a.param) : '(None)';
 }
 
 function commitKnobAssignment(target, param) {
@@ -2198,7 +2245,10 @@ function renderKnobs() {
     clear_screen();
     drawKitHeader(trackTitle('KNOBS'), false);
     drawKitList(S.knobAsn.map((a, i) =>
-        ({ label: 'Knob ' + (i + 1), hdr: true, value: knobAsnLabel(a) })),
+        /* `K1`..`K8`, not `Knob 1`: 13px against 34px, and the row's VALUE is the
+         * part carrying information. With the long label the assignment was
+         * eating into it — see compParamLabel. */
+        ({ label: 'K' + (i + 1), hdr: true, value: knobAsnLabel(a) })),
         S.knobIdx, {});
 }
 
@@ -2237,11 +2287,6 @@ function renderKnobParam() {
  * per tick: the assignment and the target's param metadata are cached per slot,
  * and the value is re-seeded once per touch. A SWEEP costs zero reads — see the
  * turn law below, which owns the value rather than reading it back. */
-
-const KNOB_TARGET_SHORT = {
-    synth: 'SYNTH', midi_fx1: 'MIDI FX',
-    fx1: 'FX 1', fx2: 'FX 2', fx3: 'FX 3', fx4: 'FX 4',
-};
 
 /* ── the turn law: movy's, applied in JS on an ABSOLUTE value ───────────────
  *
@@ -2502,7 +2547,7 @@ function drawKnobAsnHud() {
                 body.y + n * 11, t, 1);
     };
     if (!a || !a.target || !a.param) { line(0, 'UNASSIGNED'); return; }
-    line(0, KNOB_TARGET_SHORT[a.target] || a.target.toUpperCase());
+    line(0, compWide(a.target));
     /* The module's own display NAME once its metadata is in ("Room Size", not
      * `room_size`); the raw key until then, and for a param it does not
      * declare. */
@@ -2571,7 +2616,7 @@ function lfoDisplayValue(item) {
         case 'retrigger': return raw === '1' ? 'On' : 'Off';
         case 'target': {
             const t = S.lfoVals.target, p = S.lfoVals.target_param;
-            return (t && p) ? t + ':' + p : 'None';
+            return (t && p) ? compParamLabel(t, p) : 'None';
         }
         default: return raw;
     }
@@ -2659,7 +2704,7 @@ function renderLfo() {
     const t = S.lfoVals.target, p = S.lfoVals.target_param;
     const on = S.lfoVals.enabled === '1';
     let title = 'LFO (' + (S.lfoNum + 1) + ')';
-    if (on && t && p) title += ': ' + t + ':' + p;
+    if (on && t && p) title += ': ' + compParamLabel(t, p);
     else if (!on) title += ': OFF';
     drawKitHeader(title, false);
     drawKitList(lfoItems().map((item, idx) =>

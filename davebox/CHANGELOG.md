@@ -8,6 +8,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **Knob assignments read shorter, so they stop being cut off.** A knob's target
+  now shows as `Syn>cutoff` / `FX1>mix` rather than `synth: cutoff`, and the rows
+  are `K1`–`K8` rather than `Knob 1`–`Knob 8`. The old pair was long enough that
+  the row label was being trimmed to fit it, and the longest assignments were
+  truncated outright. The LFO title and target row use the same form.
 - **Picking a knob's target names the module, not the slot.** The list used to
   read `Synth: Noisemaker`; it now reads `Noisemaker`, with a `>` showing that
   the row opens that module's parameters. When the same module is loaded in two
