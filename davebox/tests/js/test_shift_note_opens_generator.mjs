@@ -313,9 +313,49 @@ step('an EMPTY generator opens the module picker, captioned', () => {
         const b = sound.soundBrowseStateForTest();
         if (!b.browsing)
             throw new Error('the gesture did not land on the module picker');
-        if (b.prompt !== 'SELECT GENERATOR')
+        if (b.prompt !== 'SELECT INSTRUMENT')
             throw new Error('no caption over the picker, got ' + JSON.stringify(b.prompt) +
                             ' — nothing says why you are suddenly choosing a module');
+    } finally {
+        globalThis.shadow_get_param = realGet;
+    }
+});
+
+/* ⭑ THE MERGE (Josh, 2026-08-27): choosing `Schwung` as the Instrument goes
+ * STRAIGHT to the module picker when the slot is empty. Picking an instrument
+ * and picking WHICH one is a single intent; before this you were left on the
+ * block list to notice the row was empty and open it yourself.
+ *
+ * ⚠ Driven through the real row + jog, not by calling the helper: the property
+ * is that the CHOICE leads there, and the browse is queued for AFTER the track
+ * has re-entered its new flavour. A test that called openBrowse directly would
+ * prove the picker exists, not that choosing Schwung reaches it. */
+step('choosing Schwung as the Instrument opens the module picker', () => {
+    const realGet = globalThis.shadow_get_param;
+    globalThis.shadow_get_param = () => '';        /* empty slot */
+    try {
+        globalThis.init();
+        S.awaitingProjectSelect = false;
+        S.ledInitComplete = true;
+        S.sessionView = false;
+        S.activeTrack = 0;
+        S.trackRoute[0] = 2;                       /* MIDI-routed: the screen is just the row */
+        S.trackChannel[0] = 1;
+        ticks(8);
+        sound.soundEnter(0, 0);
+        ticks(4);
+        const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
+        cc(3, 127); cc(3, 0);                      /* jog click: start editing the row */
+        ticks(1);
+        cc(14, 127);                               /* one step left: MIDI ch 1 -> Schwung */
+        ticks(1);
+        cc(3, 127); cc(3, 0);                      /* click again: commit */
+        ticks(10);                                 /* reflavour, then the queued browse */
+        const b = sound.soundBrowseStateForTest();
+        if (!b.browsing)
+            throw new Error('choosing Schwung did not open the module picker');
+        if (b.prompt !== 'SELECT INSTRUMENT')
+            throw new Error('picker opened without the caption, got ' + JSON.stringify(b.prompt));
     } finally {
         globalThis.shadow_get_param = realGet;
     }

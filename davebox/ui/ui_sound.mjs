@@ -38,7 +38,7 @@ import { armBankDisplay, S as GS } from './ui_state.mjs';
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
-import { instrOptions, fmtInstr, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV,
+import { instrOptions, fmtInstr, INSTR_SCHWUNG, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD } from './ui_constants.mjs';
 import { applyTrackConfig } from './ui_dsp_bridge.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -446,6 +446,7 @@ const S = {
     /* Header shown over the module browser when it was opened because the block
      * was EMPTY, rather than by choosing to browse. '' = the ordinary case. */
     browsePrompt: '',
+    browseAfterReflavour: false,   /* one-shot: see the reflavour action */
 
     blockIdx: 1,                /* default to SYNTH, the common case */
     comp: 'synth',
@@ -1691,13 +1692,12 @@ export function soundOpenGenerator(track) {
          * itself would do. The gesture means "edit this track's sound"; with no
          * sound yet, choosing one IS the edit.
          *
-         * ⭑ Wording: GENERATOR, not "instrument". A track's INSTRUMENT is its
-         * DESTINATION (the `Track to` row, TRACK_OWNS_ITS_INSTRUMENT.md); the
-         * sound module is the Generator, and the popup this replaces said
-         * NO GENERATOR too. Josh asked for "No instrument. Select:" in the
-         * everyday sense — this keeps the module's own vocabulary.
-         * ⚠ 111px in the header font against drawKitHeader's 124px budget. */
-        S.pendingAction = { t: 'browse', comp: 'synth', prompt: 'SELECT GENERATOR' };
+         * ⭑ Wording: INSTRUMENT since 2026-08-27. The rule that a track's
+         * INSTRUMENT is its DESTINATION still holds — the destination row simply
+         * carries the name now, so there is no longer a second thing competing
+         * for it. Before that rename this said GENERATOR, deliberately.
+         * ⚠ 118px in the header font against drawKitHeader's 124px budget. */
+        S.pendingAction = { t: 'browse', comp: 'synth', prompt: 'SELECT INSTRUMENT' };
         return true;
     }
     S.pendingAction = { t: 'open', comp: 'synth' };
@@ -1803,7 +1803,7 @@ function buildPickRows() {
              * not be re-routed from Track Control — the same gap the EXT case
              * had, in the other flavour. ⚠ Master/Send buses do NOT get it:
              * they are entered from the session FX list, not from a track. */
-            rows.push({ kind: 'trackto', label: 'Track to' });
+            rows.push({ kind: 'trackto', label: 'Instrument' });
             rows.push({ kind: 'movesynth', label: 'Generator', value: 'Move ' + S.bus.bus + ' >' });
         }
         for (const n of BUS_BLOCKS) {
@@ -1817,7 +1817,7 @@ function buildPickRows() {
             rows.push({ kind: 'buslevel', label: lv.label, spec: lv });
         }
     } else {
-        rows.push({ kind: 'trackto', label: 'Track to' });
+        rows.push({ kind: 'trackto', label: 'Instrument' });
         /* An EXT-routed track (MIDI out, or playing another track's instrument)
          * has no chain and no bus, so it has no sound to show and no mixer
          * position to set — every other row here would be backed by nothing.
@@ -3032,6 +3032,13 @@ function runAction(a) {
         const _t = S.track;
         if (GS.trackRoute[_t] === 1) soundEnterMove(_t);
         else { clearBusContext(); soundRetarget(_t, slotIndex(_t)); }
+        /* ...and if that choice was `Schwung` on an EMPTY slot, go straight on
+         * to the module picker. One-shot, and cleared whether or not it fires:
+         * a crumb that outlives its gesture opens a picker nobody asked for. */
+        const _wantBrowse = S.browseAfterReflavour;
+        S.browseAfterReflavour = false;
+        if (_wantBrowse && GS.trackRoute[_t] === 0 && !engineLoadedModule(S.slot, 'synth'))
+            S.pendingAction = { t: 'browse', comp: 'synth', prompt: 'SELECT INSTRUMENT' };
     }
     else if (a.t === 'slotcfg')  openSlotCfg(a.keep, a.which);
     else if (a.t === 'knobs')    openKnobEditor();
@@ -3871,6 +3878,14 @@ export function soundOnCC(d1, d2, decodeDelta) {
                  * has no sound to show), so it is the LAST thing done here and
                  * tick's track-follow settles what happens next. */
                 if (S.instrSel !== instrValueFor(S.track)) {
+                    /* ⭑ THE MERGE (Josh, 2026-08-27): choosing `Schwung` used to
+                     * leave you on the block list to notice the Generator row was
+                     * empty and open it yourself. Picking an instrument and
+                     * picking WHICH is one intent, so the module picker follows
+                     * immediately — the same overlay the empty-generator gesture
+                     * opens. Consumed by `reflavour`, because the browse has to
+                     * happen AFTER the track has re-entered its new flavour. */
+                    if (S.instrSel === INSTR_SCHWUNG) S.browseAfterReflavour = true;
                     applyInstrChoice(S.track, S.instrSel);
                     /* The screen must FOLLOW the new destination immediately —
                      * a track just switched to MIDI has no chain to show, and a
