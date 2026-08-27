@@ -355,6 +355,9 @@ function drawSnapYesNo(sel) {
     drawYesNoRow(sel);
 }
 
+/* ⚠ PICKER — opted OUT of the 2026-08-27 menu type rule at every drawKitList
+ * call below (`hostLabels: false`). Josh: "Do not make any changes to canvas
+ * kit, pickers or anything like that." Its labels keep the small movy font. */
 export function drawSnapshotPicker() {
     clear_screen();
     const p = S.snapshotPicker;
@@ -392,7 +395,7 @@ export function drawSnapshotPicker() {
     drawKitList(p.snaps.map(function(s) {
         return { label: (s.label || '') +
                  ((p.mode === 'load' && s.sv !== STATE_VERSION) ? ' (old)' : '') };
-    }), p.sel, { emptyMsg: 'No states' });
+    }), p.sel, { emptyMsg: 'No states', hostLabels: false });
 }
 
 /* CLEAR AUTOMATION modal — checkable AT / PB(disabled) / CC + a CLEAR action. */
@@ -1182,6 +1185,9 @@ function _projectPadPickerModifiers_impl() {
     if (dirty) S.screenDirty = true;
 }
 
+/* ⚠ PICKER — opted OUT of the 2026-08-27 menu type rule at every drawKitList
+ * call below (`hostLabels: false`), including the menu and confirms that live
+ * INSIDE it: it is one surface and half-converting it would look like a bug. */
 function _drawProjectPadPicker_impl() {
     const p = S.projectPadPicker;
     if (!p) { clear_screen(); return; }
@@ -1213,7 +1219,8 @@ function _drawProjectPadPicker_impl() {
          * screen that says RENAMING through a delete is worse than no screen. */
         drawKitBrandHeader();
         drawKitList([{ label: p.restarting, hdr: true },
-                     { note: 'Restarting' }, { note: 'the session...' }], -1, {});
+                     { note: 'Restarting' }, { note: 'the session...' }], -1,
+                    { hostLabels: false });
         return;
     }
 
@@ -1239,7 +1246,7 @@ function _drawProjectPadPicker_impl() {
                      { note: 'Tap the pad again' },
                      ...(p.deleteIdx === p.current
                          ? [{ note: 'This one is OPEN —' }, { note: 'session restarts' }]
-                         : [])], -1, {});
+                         : [])], -1, { hostLabels: false });
         return;
     }
     if (p.copySrcIdx >= 0) {
@@ -1247,7 +1254,7 @@ function _drawProjectPadPicker_impl() {
         drawKitBrandHeader();
         drawKitList([{ label: 'COPY ' + (sp ? sp.name : '?'), hdr: true },
                      { divider: true },
-                     { note: 'Tap an empty pad' }], -1, {});
+                     { note: 'Tap an empty pad' }], -1, { hostLabels: false });
         return;
     }
 
@@ -1264,7 +1271,7 @@ function _drawProjectPadPicker_impl() {
          * pad, which previews the colour live. `cp` stays for the guard. */
         void cp;
         drawKitList(PROJECT_COLORS.map(c => ({ label: c.name })),
-                    p.colorPick.sel, {});   /* small font, like the menu's actions */
+                    p.colorPick.sel, { hostLabels: false });   /* small font, like the menu's actions */
         return;
     }
 
@@ -1296,7 +1303,7 @@ function _drawProjectPadPicker_impl() {
                 return { label: r.label, chevron: true };
             return { label: r.label };
         }));
-        drawKitList(rows, p.menu.sel + 1 - (hasStatus ? 1 : 0), {});
+        drawKitList(rows, p.menu.sel + 1 - (hasStatus ? 1 : 0), { hostLabels: false });
         /* Full-width rule inside the name row's band (Josh, 2026-08-23 —
          * position at y=18, "should extend full screen width"). In-band and
          * safe: the name row is never selectable so no fill ever clips it,
@@ -1313,7 +1320,7 @@ function _drawProjectPadPicker_impl() {
      * is tapped. No gesture legend anywhere in here: copy and delete are
      * Move-native gestures the user already knows (Josh, 2026-08-15). */
     drawKitBrandHeader();
-    drawKitList([], -1, { emptyMsg: 'Select project', emptyHdr: true });
+    drawKitList([], -1, { emptyMsg: 'Select project', emptyHdr: true, hostLabels: false });
 }
 
 /* Fail-SAFE wrappers: see the banner above. */

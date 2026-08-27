@@ -4393,17 +4393,9 @@ function renderBlocks() {
         return { label: r.label, hdr: true,
                  value: (r.bypassed ? 'B ' : '') + String(r.name || '-').toUpperCase() };
     };
-    /* ⭑ THE FONT EXPERIMENT (Josh, 2026-08-27): "sound+config top-level as a
-     * test to see how it looks" — header unchanged, LEFT column in the stock
-     * Schwung font, right-hand values still the small movy font. Scoped to this
-     * one call on purpose; drawKitList is shared by a dozen screens.
-     * ⭑ mixedCase after seeing all three rendered ("go with mixed case"): the
-     * lowercase gives the left column a different texture from the all-caps
-     * values on the right, so the two columns read as LABEL vs VALUE instead of
-     * one wall of caps. The upper-casing everywhere else stays — it is there
-     * because both davebox fonts are effectively caps-only, which is a fact
-     * about THOSE fonts and not about this one. */
-    drawKitList(S.pickRows.map(_cell), S.pickRow, { hostLabels: true, mixedCase: true });
+    /* This screen was the TEST CASE for the menu type rule (2026-08-27); the
+     * rule is drawKitList's default now, so there is nothing to pass. */
+    drawKitList(S.pickRows.map(_cell), S.pickRow, {});   /* the menu type rule is the default now */
 }
 
 function renderBuses() {

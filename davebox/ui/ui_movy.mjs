@@ -1540,9 +1540,25 @@ export function drawKitList(rows, sel, opts) {
          * ⚠ `mixedCase` rides with it: the upper-casing below exists because
          * BOTH davebox fonts are effectively caps-only. The stock font is not,
          * so the reason does not apply to it. */
-        const _hostLabel = !!o.hostLabels && row.hdr;
+        /* ⭑⭑ THE MENU TYPE RULE (Josh, 2026-08-27): "Header is always HDRfont.
+         * Listings under header are always schwung stock. params, anything else
+         * to the right are always movy small."
+         *
+         * So this is the DEFAULT, not an opt-in — "always" means a list added
+         * next year inherits it without anyone remembering. The two PICKERS opt
+         * OUT by name (`hostLabels: false`); Josh: "Do not make any changes to
+         * canvas kit, pickers or anything like that."
+         *
+         * ⚠ NOT gated on `row.hdr`. That flag chose between the header font and
+         * the small font for a LABEL, and `hdr: false` appears nowhere in the
+         * tree — rows either ask for the header font or fall through to the
+         * small one. Both are listings, so both become stock; `hdr` now only
+         * steers the centred `note` rows above. Gating on it would have left
+         * every unflagged row in the small font and made the rule a coin-flip
+         * per row. */
+        const _hostLabel = o.hostLabels !== false;
         let label = String(row.label || '');
-        if (!(_hostLabel && o.mixedCase)) label = label.toUpperCase();
+        if (!(_hostLabel && o.mixedCase !== false)) label = label.toUpperCase();
         const availW = rightEdge - 3 - (vw ? vw + 4 : 0);
         if (_hostLabel) {
             while (label.length > 1 && text_width(label) > availW) label = label.slice(0, -1);
