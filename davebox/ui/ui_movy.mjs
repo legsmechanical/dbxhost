@@ -1464,11 +1464,16 @@ export function hudCard(title, valueText) {
  * on overflow, and the normative edit grammar: an editing row's value renders
  * in [brackets] (UI_LANGUAGE §6) — not a '*' marker.
  *
- * rows: strings, or { label, value?, chevron? ('>'), editing?, hdr? }.
+ * rows: strings, or { label, value?, qual?, chevron? ('>'), editing?, hdr? }.
  *   `hdr` prints the label in the header font (caps chrome rows).
+ *   `qual` is a small qualifier drawn just after the label — see the row loop.
  * sel: selected index. opts: { topY=11, rowH=10, visible (derived), emptyMsg }.
  * Pure: no state reads; returns the first visible index (for callers that
  * align auxiliary drawing with the window). */
+/* Clear between a label and its `qual`. 3px reads as "attached to the name"
+ * rather than as a second column — a full space (5px in the movy font) starts
+ * to look like a value. */
+const QUAL_GAP = 3;
 export function drawKitList(rows, sel, opts) {
     const o = opts || {};
     const topY = o.topY != null ? o.topY : 11;
@@ -1590,19 +1595,35 @@ export function drawKitList(rows, sel, opts) {
         const _hostLabel = o.hostLabels !== false;
         let label = String(row.label || '');
         if (!(_hostLabel && o.mixedCase !== false)) label = label.toUpperCase();
-        const availW = rightEdge - 3 - (vw ? vw + 4 : 0);
+        /* ⭑ `qual`: a DISAMBIGUATOR that rides with the label in the movy small
+         * font, so the name stays the listing font and the qualifier reads as
+         * secondary without needing brackets.
+         *
+         * ⚠ It is NOT a value. The right-hand column belongs to `value` /
+         * `chevron`, and a row can have both — a module row is "NAME  fx1  >".
+         * That is the whole reason this is not simply another `value`: a door
+         * already spends the right edge on its chevron, so a qualifier that
+         * needs to sit next to the NAME has nowhere else to go. */
+        const qual = row.qual ? String(row.qual).toUpperCase() : '';
+        const qw = qual ? mvWidth(qual) + QUAL_GAP : 0;
+        const availW = rightEdge - 3 - (vw ? vw + 4 : 0) - qw;
+        let labelEnd = 3;
         if (_hostLabel) {
             while (label.length > 1 && text_width(label) > availW) label = label.slice(0, -1);
             /* +1: the 7-row host glyph sits one lower than the 6-row header
              * glyph in the same band, so the baselines agree with the values. */
             print(3, y + 1, label, ink);
+            labelEnd = 3 + text_width(label);
         } else if (row.hdr) {
             while (label.length > 1 && hdrWidth(label) > availW) label = label.slice(0, -1);
             hdrPrint(3, y, label, ink);
+            labelEnd = 3 + hdrWidth(label);
         } else {
             while (label.length > 1 && mvWidth(label) > availW) label = label.slice(0, -1);
             mvPrint(3, y + 1, label, ink);
+            labelEnd = 3 + mvWidth(label);
         }
+        if (qual) mvPrint(labelEnd + QUAL_GAP, y + 1, qual, ink);
         if (val) mvPrint(rightEdge - vw, y + 1, val, ink);
     }
     if (hasScroll) {

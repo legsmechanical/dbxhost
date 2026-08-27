@@ -8,6 +8,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **Picking a knob's target names the module, not the slot.** The list used to
+  read `Synth: Noisemaker`; it now reads `Noisemaker`, with a `>` showing that
+  the row opens that module's parameters. When the same module is loaded in two
+  FX slots, the slot appears beside the name so the two rows can be told apart —
+  and only then. The LFO target list works the same way.
 - **Shift + Volume adjusts the active track's volume — everywhere.** Track
   View, Session View, and the sound editor all share one rule now: the Volume
   knob alone is always Move's master output (including in the sound editor,

@@ -669,6 +669,11 @@ export function soundInflightForTest() { return S.inflight; }
 export function soundHostedCtxForTest() { return hostedCtx(); }
 export function soundBusCountForTest() { return FX_BUSES.length; }
 export function soundValueForTest(key) { return S.values[key]; }
+/* The knob TARGET rows, built the way the picker builds them — the list is
+ * assembled fresh on every open from live component probes, so this exercises
+ * the real path rather than a copy of it. */
+export function soundKnobTargetsForTest() { return knobTargetList(); }
+export function soundLfoCompsForTest() { return lfoCompList(); }
 export function soundKnobHudForTest() {
     const i = S.touchedIdx;
     const a = i >= 0 ? S.knobAsn[i] : null;
@@ -2073,12 +2078,38 @@ function knobTargetList() {
         const mod = engineLoadedModule(S.slot, id);
         if (!mod) return;
         const name = engineGet(S.slot, id, 'name') || mod;
-        targets.push({ id, name: label + ': ' + name });
+        targets.push({ id, name: String(name), slot: label });
     };
     probe('midi_fx1', 'MIDI FX');
     probe('synth', 'Synth');
     for (let i = 1; i <= 4; i++) probe('fx' + i, 'FX' + i);
-    return targets;
+    return qualifyDuplicates(targets);
+}
+
+/* ⭑ The rows name the MODULE, not "<slot>: <module>" (Josh, 2026-08-27): the
+ * combined form is what made this screen read as something other than "pick the
+ * module", which is all it does.
+ *
+ * ⚠⚠ But the slot prefix was accidentally carrying DISAMBIGUATION. Nothing stops
+ * the same module being loaded in two FX slots — the probes above are
+ * independent — and two rows both saying "RRVerb-10" cannot be told apart.
+ * So the slot comes back ONLY where a name repeats, as a `qual` (movy small)
+ * rather than in the name itself: the qualifier appears exactly when it carries
+ * information, and the common case stays clean.
+ *
+ * Only fx1..fx4 can ever collide — synth and midi_fx1 are one each — but this
+ * counts names rather than assuming that, so adding a second MIDI FX slot later
+ * cannot silently reintroduce the ambiguity. */
+function qualifyDuplicates(rows) {
+    const seen = Object.create(null);
+    for (const r of rows) {
+        if (!r.slot) continue;
+        seen[r.name] = (seen[r.name] || 0) + 1;
+    }
+    for (const r of rows) {
+        if (r.slot && seen[r.name] > 1) r.qual = r.slot;
+    }
+    return rows;
 }
 
 function openKnobTargets() {
@@ -2174,7 +2205,12 @@ function renderKnobs() {
 function renderKnobTarget() {
     clear_screen();
     drawKitHeader('KNOB (' + (S.knobIdx + 1) + ') TARGET', false);
-    drawKitList(S.knobTargets.map(t => t.name), S.knobTargetIdx, {});
+    /* A module row OPENS the param picker and shows no value of its own, so it
+     * takes the chevron (§5.0: a chevron is a door). `(None)` is terminal — it
+     * clears the assignment — so it does not. */
+    drawKitList(S.knobTargets.map(t => ({ label: t.name, qual: t.qual,
+                                          chevron: !!t.id })),
+                S.knobTargetIdx, {});
 }
 
 function renderKnobParam() {
@@ -2564,13 +2600,19 @@ function lfoAdjust(item, delta) {
  * the davebox way — engineLoadedModule, not the host's *_module key shape. */
 function lfoCompList() {
     const comps = [];
+    /* Same shape as knobTargetList: the row names the MODULE, and the slot comes
+     * back as a `qual` only where a name repeats. Two MIDI FX slots exist here,
+     * so this list can collide in two families rather than one. */
     const probe = (key, label) => {
         const m = engineLoadedModule(S.slot, key);
-        if (m) comps.push({ key, label: label + ': ' + (engineGet(S.slot, key, 'name') || m) });
+        if (m) comps.push({ key, name: String(engineGet(S.slot, key, 'name') || m),
+                            slot: label });
     };
     probe('synth', 'Synth');
     for (let i = 1; i <= 4; i++) probe('fx' + i, 'FX ' + i);
     for (let i = 1; i <= 2; i++) probe('midi_fx' + i, 'MIDI FX ' + i);
+    qualifyDuplicates(comps);
+    for (const c of comps) c.label = c.name;
     comps.push({ key: 'lfo' + (S.lfoNum === 0 ? 2 : 1), label: 'LFO ' + (S.lfoNum === 0 ? 2 : 1) });
     comps.push({ key: '__clear__', label: '[Clear Target]' });
     return comps;
@@ -2653,7 +2695,12 @@ function renderLfo() {
 function renderLfoTarget() {
     clear_screen();
     drawKitHeader('LFO (' + (S.lfoNum + 1) + ') TARGET', false);
-    drawKitList(S.lfoComps.map(c => c.label), S.lfoCompIdx, {});
+    /* Every row here opens the param picker — the modules and the other LFO
+     * alike — so all of them are doors and take the chevron (§5.0).
+     * `[Clear Target]` is terminal: it commits and leaves. */
+    drawKitList(S.lfoComps.map(c => ({ label: c.label, qual: c.qual,
+                                       chevron: c.key !== '__clear__' })),
+                S.lfoCompIdx, {});
 }
 
 function renderLfoParam() {

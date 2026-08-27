@@ -1208,7 +1208,9 @@ shows the value as it moves. Let go and the card clears itself.
 
 **Shift + touch a knob** goes straight to assigning it — the target list for that
 knob, no menu-walking. Pick a block, pick a parameter, and you're back on the knob
-list with the mapping made.
+list with the mapping made. The block list names the modules themselves, with a
+`>` marking each one as a door into its parameters; if the same module is loaded
+in two FX slots, the slot is shown beside the name so you can tell them apart.
 
 Every knob sweeps its whole range in the same gesture, whatever the parameter's
 units — a filter cutoff and a 0.5-to-20-second reverb size take the same turn,

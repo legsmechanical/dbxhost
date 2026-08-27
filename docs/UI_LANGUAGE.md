@@ -189,12 +189,17 @@ host, `ui_dialogs.mjs` was 0 kit and 31 host. Nobody chose that.
 
 Corollaries, each of which was a real screen before the cohesion pass:
 
-- **Structure vs content decides the ROW FONT, not the chassis.** Inside
-  `drawKitList`, `hdr: true` gives a row the header font — use it for the app's
-  own rows (settings, actions, doors). Leave it off for names that come out of
-  data (module lists, preset names, project names, snapshot labels): the label
-  font fits about a third more characters, and truncating a name is worse than
-  truncating a word you chose.
+- **⚠ SUPERSEDED 2026-08-27 — the ROW FONT is no longer a per-row choice.**
+  The menu type rule (Josh: *"Header is always HDRfont. Listings under header are
+  always schwung stock. params, anything else to the right are always movy
+  small."*) made the stock font `drawKitList`'s DEFAULT for every label, so
+  `hdr: true` **no longer selects a label font at all** — it steers only the
+  centred `note` rows. The two PICKERS opt out by name (`hostLabels: false`),
+  which is the only path that still reaches the header-font branch.
+  *(What this bullet used to say: `hdr: true` gives a row the header font, use it
+  for the app's own rows and leave it off for names out of data. That advice
+  became a no-op the day the default changed; it is kept here because a row that
+  still passes `hdr: true` is not wrong, merely inert.)*
 - **A confirm or an info screen stays a dialog.** It already shares the filled-bar
   header and the one button family (§5), so it reads as the same app. Converting
   it to a list is churn that looks like progress.
@@ -204,6 +209,19 @@ Corollaries, each of which was a real screen before the cohesion pass:
 - **Do not invent a selection idiom.** Inverse video is it. A `< NAME >` value
   row and a `[x]` checkbox both existed here; the second actively collided with
   §6, where square brackets mean *being edited*.
+- **A row that opens something shows a chevron; a row that holds a value shows
+  the value.** `chevron` and `value` are mutually exclusive by construction, so
+  the right-hand column always answers exactly one question. A row that opens an
+  overlay AND has a value to show (an enum param, a knob's assignment) keeps the
+  value — the chevron is for doors with nothing else to say.
+- **⭑ QUALIFY ON COLLISION ONLY** (Josh, 2026-08-27). A list of things named by
+  DATA shows the bare name; a qualifier is added to a row **only when another row
+  in the same list carries the same name**, and it is a `qual` (movy small, beside
+  the name), never folded into the name itself. The knob/LFO target lists read
+  `Synth: Noisemaker` for months, which made them read as something other than
+  "pick the module" — but the prefix was silently doing disambiguation work,
+  because the same module can be loaded in two FX slots. Count the names; qualify
+  the duplicates; leave the rest alone.
 
 
 - **Menu list** — `drawMenuList` (`src/shared/menu_layout.mjs`). Host font, `LIST_TOP_Y = 15`,
@@ -211,10 +229,18 @@ Corollaries, each of which was a real screen before the cohesion pass:
   `LIST_VALUE_X = 92`. Selected row is inverse video with a `"> "` prefix (unselected: two
   spaces). Edit mode wraps the value in `[brackets]` and shifts it left to compensate. Long
   selected labels marquee. Scroll arrows top/bottom.
-- **Picker overlay** — `drawKitEnumOverlay`, in the shared 64×48 zoom box. Header-font rows,
-  inverse-video selection, right-edge scrollbar track + thumb when the list overflows. The same
-  component serves named enums *and* short numeric ranges: a `count`/`oct` cell synthesizes an
-  option list so browsing feels identical.
+- **Picker overlay** — `drawKitEnumOverlay` → `drawKitListOverlay`. Inverse-video selection,
+  right-edge scrollbar track + thumb when the list overflows. The same component serves named
+  enums *and* short numeric ranges: a `count`/`oct` cell synthesizes an option list so browsing
+  feels identical.
+  ⚠ **It is no longer a fixed 64×48 box** (changed 2026-08-25/27): the box **auto-sizes its width
+  to its longest label** and only ever GROWS from the zoom footprint, so a short enum still shares
+  its outline with the value zoom while `SOUND + CONFIG` is not cut to `SOUND +`. `maxW` caps it,
+  `tall` grows it downward for the selection overlays. Rows are the **stock** font by default;
+  `hdrFont` is the BANK picker alone, which previews bank names and so must match the header font
+  it is about to land on.
+  ⚠ **5 rows is the ceiling** for a tall box and the gain is all at the bottom: a 6th needs a top
+  edge at y ≤ 6, inside the header band.
 - **Section picker** — `drawKitSectionPicker`, full-screen, one row per section, same selection
   and scrollbar grammar.
 - **Dialogs** — buttons are **No left, Yes right**; selected is filled with black label,
@@ -239,6 +265,7 @@ a button.
   |---|---|
   | `hdr: true` | the row in the HEADER font (see §5.0) |
   | `value` | right-aligned, always the label font |
+  | `qual: '…'` | a small qualifier drawn just AFTER the label, in the movy font, subtracted from the label's own width. For a disambiguator that belongs to the NAME rather than to the right-hand column — a module row is `NAME  fx1  >`, so the right edge is already spent on the chevron. ⚠ Use it only where the qualifier carries information (see §5.0's *qualify on collision only*) |
   | `chevron: true` | a `>` in the value position — a door |
   | `editing: true` | wraps the value in `[brackets]`. ⚠ Only if the caller is not already bracketing it: `formatItemValue` does, and both together render `[[MINOR]]` |
   | `divider: true` | a rule on its own row. ⚠ Costs a whole row — worth it on a ~15-row screen, not on a 3-row one |
