@@ -214,6 +214,38 @@ step('⭑⭑ the LABEL truncates to make room for the qual', () => {
                         ' — availW is not accounting for it, so the two will overlap');
 });
 
+step('⭑⭑ the target renderers PASS the chevron and the qual', () => {
+    /* ⚠⚠ THE CALL SITE, not the mechanism. Everything above pins that
+     * drawKitList can draw a chevron and a qual — and all of it stayed green
+     * against a mutation that made renderKnobTarget pass `chevron: false`,
+     * because no assertion here ever reaches the renderer. A door with no
+     * chevron is a silent loss: the row still works, it just stops saying it
+     * opens anything. [[pin-the-call-site-not-just-the-chain]]
+     *
+     * Source-pinned because driving these renderers needs a live slot with
+     * loaded components and a view walked to the picker, and what is under test
+     * is two arguments at two call sites.
+     * ⚠ Bounded by the call's own closing paren — never a character count. */
+    const src = readFileSync('ui/ui_sound.mjs', 'utf8');
+    for (const [fn, marker] of [['renderKnobTarget', 'S.knobTargets.map'],
+                                ['renderLfoTarget', 'S.lfoComps.map']]) {
+        const at = src.indexOf('function ' + fn);
+        if (at < 0) throw new Error(`${fn} is gone — re-anchor this pin`);
+        const call = src.indexOf(marker, at);
+        if (call < 0) throw new Error(`${fn} no longer maps its rows through ${marker}`);
+        const end = src.indexOf('}))', call);
+        if (end < 0) throw new Error(`cannot find the end of ${fn}'s row map`);
+        const body = src.slice(call, end);
+        if (!/chevron:/.test(body))
+            throw new Error(`${fn} no longer sets a chevron — its doors stop saying they open`);
+        if (/chevron:\s*false/.test(body))
+            throw new Error(`${fn} hard-codes chevron: false`);
+        if (!/qual:/.test(body))
+            throw new Error(`${fn} no longer forwards qual — duplicates become indistinguishable ` +
+                            'on screen even though the list computed the qualifier');
+    }
+});
+
 step('⚠ the source still subtracts the qual from availW', () => {
     /* Source-pinned because the overlap it prevents is a PIXEL relationship
      * that only shows on a label long enough to collide — a fixture that drifts
