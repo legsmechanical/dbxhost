@@ -1216,6 +1216,88 @@ export function drawKitEnumOverlay(cells, touchedIdx) {
     drawKitListOverlay(cell.options, sel);
 }
 
+/* ── knocking the backdrop back, and saying where you are ──────────────────
+ *
+ * An overlay covers part of a screen, and on 1 bit there is no dim to say the
+ * rest is behind it. `drawKitBackdropDim` writes every other pixel black, which
+ * removes half the ink and reads as "still there, not in play".
+ *
+ * ⭑ ONE host call. The display API has no pattern fill, so doing this from JS
+ * costs a call per pixel — 4096 for a full screen against roughly 2400 for all
+ * the text on a busy one, i.e. it would more than triple a frame's drawing cost.
+ * `stipple_rect` exists for exactly this (see docs/API.md, src/host/stipple.h).
+ *
+ * ⚠ Call it AFTER the backdrop is drawn and BEFORE the overlay: it operates on
+ * whatever ink is already down, and anything drawn afterwards is untouched. */
+export function drawKitBackdropDim(x, y, w, h) {
+    stipple_rect(x != null ? x : 0, y != null ? y : 0,
+                 w != null ? w : SCREEN_W, h != null ? h : SCREEN_H_LATCH, 0, 0);
+}
+
+/* The breadcrumb bar: where you are, in the smallest type, over the header band.
+ *
+ * `parts` is the path TO the current screen — the screen you are ON is in front
+ * of you, so it is not a crumb. The FIRST part is PINNED and never dropped
+ * (Josh: "keep the track head - that's useful"); overflow drops whole crumbs
+ * from the HEAD of the remainder, and the gap is marked with an ellipsis that
+ * takes a separator of its own, so a shortened path reads as a path with a
+ * MISSING SEGMENT rather than as truncation.
+ *
+ * ⚠ The header font cannot be used here: `T3 > Sound Control` alone measures
+ * 125px against a 124px header limit. Movy small is what makes a path fit.
+ * ⚠ 2px of air each side of the chevron, not a space: a movy space advances 5px
+ * and each pixel of padding costs 6px across three separators, so a full space
+ * costs a whole crumb at depth. 2 is the widest that still fits the deepest
+ * real path. */
+const CRUMB_MAXW = 126, CRUMB_PAD = 4, CRUMB_H = 11, CRUMB_SEP = '>', CRUMB_SEP_PAD = 2;
+/* Three 1px dots on a 2px pitch = 5px of ink, against 7px for movy's own "...".
+ * Drawn rather than typed because U+2026 is not in a 5x7 ASCII atlas, and three
+ * typed dots are wider than the mark needs to be. */
+const CRUMB_ELL_W = 5;
+const crumbSepW = () => mvWidth(CRUMB_SEP) + CRUMB_SEP_PAD * 2;
+function crumbPieceW(p) { return p === null ? CRUMB_ELL_W : mvWidth(String(p).toUpperCase()); }
+function crumbRunW(pieces) {
+    let w = 0;
+    for (const p of pieces) w += crumbPieceW(p);
+    return w + Math.max(0, pieces.length - 1) * crumbSepW();
+}
+export function drawKitCrumbs(parts) {
+    const all = (parts || []).filter((p) => p != null && String(p) !== '');
+    if (!all.length) return;
+    const room = CRUMB_MAXW - 2 - CRUMB_PAD * 2;
+    const head = all[0];
+    let tail = all.slice(1);
+    let pieces = [head, ...tail];
+    /* ⚠ Test the WHOLE path with NO ellipsis first. Charging the marker's width
+     * before anything has been dropped makes a path that FITS lose a crumb. */
+    if (crumbRunW(pieces) > room) {
+        while (tail.length > 1 && crumbRunW([head, null, ...tail]) > room) tail = tail.slice(1);
+        pieces = [head, null, ...tail];
+    }
+    const w = crumbRunW(pieces) + 2 + CRUMB_PAD * 2;
+    const x = Math.round((SCREEN_W - w) / 2);
+    fill_rect(x, 0, w, CRUMB_H, 0);
+    fill_rect(x, 0, w, 1, 1); fill_rect(x, CRUMB_H - 1, w, 1, 1);
+    fill_rect(x, 0, 1, CRUMB_H, 1); fill_rect(x + w - 1, 0, 1, CRUMB_H, 1);
+    const textY = 2, dotY = textY + MV_LBL_H - 2;
+    let cx = x + 1 + CRUMB_PAD;
+    pieces.forEach((p, i) => {
+        if (i) {
+            cx += CRUMB_SEP_PAD;
+            mvPrint(cx, textY, CRUMB_SEP, 1);
+            cx += mvWidth(CRUMB_SEP) + CRUMB_SEP_PAD;
+        }
+        if (p === null) {
+            for (let d = 0; d < 3; d++) set_pixel(cx + d * 2, dotY, 1);
+            cx += CRUMB_ELL_W;
+        } else {
+            const t = String(p).toUpperCase();
+            mvPrint(cx, textY, t, 1);
+            cx += mvWidth(t);
+        }
+    });
+}
+
 /* The kit's centred list overlay: the box, the rows, the selection, and the
  * scroll indicator. Factored out of drawKitEnumOverlay so anything that needs
  * "pick one of these" looks identical to an enum picker without re-deriving the
