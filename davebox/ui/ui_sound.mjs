@@ -2945,7 +2945,14 @@ function renderLfo() {
      * ⚠ Rows drop from 4 to 3 to make room. The strip is the reason to be on
      * this screen at all — it is the only thing here that shows the LFO doing
      * something — so it keeps its place and the list gives way. */
-    const WAVE_H = 11;
+    /* ⚠ ASPECT RATIO, not width. The strip was one cycle across the box's whole
+     * width — 101px of span against 7px of height, **14:1**, which reads as a
+     * stretched smear rather than a shape (Josh: "far too stretched"). The
+     * full-screen original was two cycles across 125px at 13px tall = 4.8:1.
+     * THREE cycles inside the box is 34px each at 7px = 4.8:1 — the original
+     * proportions exactly, and it costs no height, so the list keeps its rows.
+     * More cycles is the free lever here; more height is not. */
+    const WAVE_H = 11, WAVE_CYCLES = 3;
     const rows = lfoItems().map((item, idx) =>
         ({ label: item.label, hdr: true, value: lfoDisplayValue(item),
            editing: idx === S.lfoIdx && S.lfoEditing }));
@@ -2962,9 +2969,8 @@ function renderLfo() {
     const baseY = bipolar ? Math.round((topY + botY) / 2) : botY;
     const amp = bipolar ? (botY - topY) / 2 : (botY - topY);
     for (let x = x0; x <= x0 + spanW; x += 2) set_pixel(x, baseY, 1);
-    /* ONE cycle across the strip (was two across the screen). */
     const yAt = (i) => {
-        const v = shapeSample(shape, (i / spanW) + phase);
+        const v = shapeSample(shape, (i / spanW) * WAVE_CYCLES + phase);
         return bipolar ? Math.round(baseY - v * amp)
                        : Math.round(botY - ((v + 1) / 2) * amp);
     };
