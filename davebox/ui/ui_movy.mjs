@@ -1253,10 +1253,17 @@ export function drawKitStackedList(depth, rows, sel, opts) {
         fill_rect(x, STACK_Y, STACK_W, h, 0);
         rectOutline(x, STACK_Y, STACK_W, h, 1);
     }
-    /* Only the top layer carries content. */
+    /* Only the top layer carries content.
+     * ⚠ rowH is the app's standard 10, NOT a tighter 9. The selection band runs
+     * from y-1 for rowH rows while a host glyph inks y+1..y+7, so at rowH 9 the
+     * band's bottom edge IS the glyph's bottom row — 2px of clear above and 0
+     * below, which reads as off-centre (Josh spotted it on device). At 10 it is
+     * 2 and 1, the same as every other list in the app. */
+    const rowH = o.rowH != null ? o.rowH : 10;
+    const listTop = STACK_Y + 6;
     drawKitList(rows, sel, {
         x: tx + 2, w: STACK_W - 4,
-        topY: STACK_Y + 6, rowH: o.rowH != null ? o.rowH : 9,
+        topY: listTop, rowH, h: (STACK_Y + h - 2) - listTop,
         emptyMsg: o.emptyMsg,
     });
 }
@@ -1630,8 +1637,14 @@ export function drawKitList(rows, sel, opts) {
         }
         return 0;
     }
+    /* ⚠ The row count is bounded by the BOX's bottom, not the screen's. Until
+     * this took `h`, a boxed list derived `visible` from the full 64px height
+     * and only fitted by coincidence — a shorter box would have drawn rows out
+     * through its own bottom edge onto whatever it covers. Default is the
+     * screen, so every full-screen caller is unchanged. */
+    const bottom = o.h != null ? topY + o.h : 64;
     const visible = o.visible != null ? o.visible
-                                      : Math.max(1, Math.floor((64 - topY - 1) / rowH));
+                                      : Math.max(1, Math.floor((bottom - topY - 1) / rowH));
     /* sel < 0 means NOTHING is selectable on this screen — a prompt whose only
      * inputs are a pad or Back, not a list you move a cursor through. Without
      * it the clamp turned -1 into 0 and highlighted the first row, which reads

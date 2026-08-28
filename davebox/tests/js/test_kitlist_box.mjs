@@ -169,6 +169,54 @@ step('⭑ an EMPTY list centres its message in the box', () => {
         throw new Error(`the message is not centred in the box (${left}px left, ${right}px right)`);
 });
 
+step('⭑⭑ the selection band leaves clear space BELOW the glyphs, not just above', () => {
+    /* Josh caught this on device: at rowH 9 the band runs y-1..y+7 while a host
+     * glyph inks y+1..y+7, so the band's bottom edge IS the glyph's bottom row —
+     * 2px clear above, 0 below, which reads as off-centre.
+     *
+     * ⚠ Measured on a real framebuffer, taking the LAST write per pixel. My
+     * first version scanned the raw call list for "rows with many lit pixels",
+     * which caught the overlay FRAME (also full width) and the box's blanking
+     * fill (zeros everywhere), and reported 0 clear on both sides of a band it
+     * had never actually found. */
+    const FB_W = 128, FB_H = 64;
+    const fb = new Int8Array(FB_W * FB_H).fill(-1);      /* -1 = never written */
+    const realSet = globalThis.set_pixel, realFill = globalThis.fill_rect;
+    const put = (x, y, v) => { if (x >= 0 && x < FB_W && y >= 0 && y < FB_H) fb[y * FB_W + x] = v ? 1 : 0; };
+    globalThis.set_pixel = (x, y, v) => put(x | 0, y | 0, v);
+    globalThis.fill_rect = (x, y, w, h, v) => {
+        for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) put(x + i, y + j, v);
+    };
+    const X = 12, BW = 100, TOP = 20, ROW_H = 10;
+    kit.drawKitList([{ label: 'Damping' }, { label: 'Dry' }], 0,
+                    { x: X, w: BW, topY: TOP, rowH: ROW_H });
+    globalThis.set_pixel = realSet; globalThis.fill_rect = realFill;
+
+    /* The band: rows inside the list's own x-range that are mostly WHITE. */
+    const rowLit = (y) => {
+        let n = 0;
+        for (let x = X; x < X + BW; x++) if (fb[y * FB_W + x] === 1) n++;
+        return n;
+    };
+    const band = [];
+    for (let y = TOP - 2; y < TOP + ROW_H + 2; y++) if (rowLit(y) > BW / 2) band.push(y);
+    if (band.length < ROW_H - 1)
+        throw new Error(`no selection band found (${band.length} white rows near the first row)`);
+    const bandTop = band[0], bandBot = band[band.length - 1];
+    /* The glyphs are drawn in ink 0 ON the white band, so they are HOLES. */
+    const holeRows = band.filter((y) => {
+        for (let x = X; x < X + BW; x++) if (fb[y * FB_W + x] === 0) return true;
+        return false;
+    });
+    if (!holeRows.length) throw new Error('no glyph holes in the band — the label did not draw');
+    const above = holeRows[0] - bandTop, below = bandBot - holeRows[holeRows.length - 1];
+    if (below < 1)
+        throw new Error(`the band's bottom edge touches the glyphs (${above}px clear above, ` +
+                        `${below} below) — this is the off-centre look Josh reported`);
+    if (Math.abs(above - below) > 1)
+        throw new Error(`the band is lopsided: ${above}px above, ${below}px below`);
+});
+
 console.log(failed ? '\nFAILED' : '\nOK');
 process.exit(failed);
 }
