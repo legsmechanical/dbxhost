@@ -86,13 +86,31 @@ function step(l, fn) {
     if (fn && fn.constructor && fn.constructor.name === 'AsyncFunction') throw new Error('async step');
     try { fn(); ok(l); } catch (e) { bad(l, e); }
 }
-/* The gesture as hardware sends it: Shift down, the button, Shift up. */
-function shiftNote() {
+/* The gesture as hardware sends it: Shift down, the button, Shift up.
+ *
+ * ⚠⚠ It RESOLVES ON THE RELEASE now (Josh, 2026-08-28), because tap and hold
+ * mean different things and only the duration separates them:
+ *   tap  -> the track's SOUND + CONFIG menu
+ *   hold -> straight to instrument edit, which is what the tap used to do
+ * `heldTicks` advances the clock between press and release, so a test can ask
+ * for either. Anything at or past BACK_HOLD_TICKS (42, ~450ms) is a hold —
+ * deliberately Back's threshold, not the ~200ms this button uses for its own
+ * momentary-view hold, which is short enough that a slow tap would land in the
+ * instrument editor by accident. */
+const HOLD_TICKS = 42;
+/* Sound mode's view enum — not exported; pinned here so a renumbering shows up
+ * as a failure rather than as comparing the wrong constants. */
+const VIEW_BLOCKS = 0;
+function shiftNote(heldTicks) {
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 127]));
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 127]));
+    if (heldTicks) S.tickCount += heldTicks;
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 0]));
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 0]));
 }
+/* The two meanings, named so the steps below read as the spec does. */
+const shiftNoteTap  = () => shiftNote(0);
+const shiftNoteHold = () => shiftNote(HOLD_TICKS + 2);
 
 step('setup: track view, track 1 on a Schwung chain', () => {
     globalThis.init();
@@ -105,66 +123,78 @@ step('setup: track view, track 1 on a Schwung chain', () => {
     if (sound.soundActive()) throw new Error('sound mode was already open before the gesture');
 });
 
-step('one press OPENS the track\'s sound', () => {
-    shiftNote();
+step('⭑ a TAP opens the track\'s SOUND + CONFIG menu', () => {
+    shiftNoteTap();
+    ticks(4);
+    if (!sound.soundActive()) throw new Error('the tap did not open sound mode');
+    if (sound.soundPickStateForTest().view !== VIEW_BLOCKS)
+        throw new Error('the tap landed on view ' + sound.soundPickStateForTest().view +
+                        ', not the menu — the bank\'s prompt is for arriving BY THE BANK');
+});
+
+step('⭑⭑ ...and tapping again does NOT close — the gesture is a DESTINATION', () => {
+    /* ⚠⚠ REVERSED 2026-08-28. It used to be a toggle: close what is open, else
+     * open. That needed a definition of "open", and the definition is where it
+     * went wrong — the root screen had to be carved out as an exception
+     * (08-26), and the bank respec would have needed a second exception for the
+     * prompt. Josh: forget the opener/closer spec; the gesture goes to the same
+     * place every time. Back is the only thing that closes, and it means one
+     * thing everywhere. */
+    shiftNoteTap();
     ticks(4);
     if (!sound.soundActive())
-        throw new Error('the gesture did not open sound mode');
+        throw new Error('the second tap CLOSED — the gesture is a destination now, not a toggle');
+    if (sound.soundPickStateForTest().view !== VIEW_BLOCKS)
+        throw new Error('the second tap moved off the menu: view ' +
+                        sound.soundPickStateForTest().view);
 });
 
-/* THE PROPERTY THE LAST RULING WAS ABOUT. */
-step('...and pressing it again CLOSES — the one-press way out survives', () => {
-    shiftNote();
+step('⭑ a tap from DEEP in the stack collapses back to the menu', () => {
+    /* This is what replaces the closer, and it is why losing it costs nothing:
+     * one press from any depth puts you on the menu, and one Back from there is
+     * out. Two presses to leave from anywhere, without having to know where you
+     * were. */
+    sound.soundSetViewForTest(13);            /* the knob PARAM picker, 4 boxes deep */
+    shiftNoteTap();
     ticks(4);
-    if (sound.soundActive())
-        throw new Error('the gesture no longer closes — the way out from any depth is gone');
+    if (sound.soundPickStateForTest().view !== VIEW_BLOCKS)
+        throw new Error('a tap from depth did not collapse to the menu: view ' +
+                        sound.soundPickStateForTest().view);
 });
 
-/* ── The ROOT exception (Josh, 2026-08-26) ────────────────────────────────
- *
- * "the first time you do shift+note/session it sends the bank back to the first
- * one and you have to do it again to get into the instrument. it should just go
- * right to the instrument."
- *
- * Sitting on SOUND + CONFIG — sound mode's ROOT screen, the block picker — the
- * closer ran and `soundExit()` landed on BANK_DEFAULT, which is literally "the
- * first one". The press was spent going backwards from the very screen the
- * gesture opens FROM.
- *
- * ⭑ The exception is scoped to ROOT on purpose, so the two steps below are a
- * PAIR: root must open, and anything deeper must still close. Testing only the
- * first would pass an implementation that dropped the closer entirely, which is
- * the property the 08-24 retirement created. */
-step('from SOUND + CONFIG (root) the press OPENS, it does not go back a bank', () => {
-    S.trackRoute[0] = 0;                 /* Schwung chain again */
-    sound.soundEnter(0, 0);              /* lands on the block picker = root */
-    ticks(4);
-    if (!sound.soundAtBlockRoot())
-        throw new Error('setup failed: not on the root screen, so this proves nothing');
-    shiftNote();
-    ticks(4);
-    if (!sound.soundActive())
-        throw new Error('the press CLOSED sound mode from root — that is the bug: it ' +
-                        'sends the bank back to the first one instead of opening');
-    if (sound.soundAtBlockRoot())
-        throw new Error('still on the picker — the press did nothing at all');
+step('⭑⭑ a HOLD goes straight to instrument edit', () => {
+    /* The old tap behaviour, now behind a deliberate hold. */
+    shiftNoteHold();
+    ticks(6);
+    const v = sound.soundPickStateForTest().view;
+    if (v === VIEW_BLOCKS)
+        throw new Error('the hold stopped at the menu — it should reach the instrument');
 });
 
-step('...but from DEEPER than root it still CLOSES — the way out survives', () => {
-    /* We are one level past root after the step above, which is exactly the
-     * depth the one-press exit exists for. */
-    if (sound.soundAtBlockRoot())
-        throw new Error('setup failed: still at root, so the closer is not under test');
-    shiftNote();
-    ticks(4);
-    if (sound.soundActive())
-        throw new Error('the one-press way out from depth is gone');
+step('⚠ CONTROL: the two lengths really do differ', () => {
+    /* Without this both assertions above could be passing on a build where the
+     * duration is ignored and everything lands in the same place. */
+    sound.soundExit(); ticks(4);
+    shiftNoteTap(); ticks(4);
+    const tapView = sound.soundPickStateForTest().view;
+    sound.soundExit(); ticks(4);
+    shiftNoteHold(); ticks(6);
+    const holdView = sound.soundPickStateForTest().view;
+    if (tapView === holdView)
+        throw new Error('tap and hold both landed on view ' + tapView +
+                        ' — the duration is being ignored');
 });
 
-step('a MIDI-routed track opens nothing and says why', () => {
+step('a MIDI-routed track opens nothing and says why — on the HOLD', () => {
+    /* ⚠ The HOLD is what reaches an instrument, so the hold is what has to
+     * refuse. A TAP opens SOUND + CONFIG for ANY route: a MIDI track has that
+     * menu, and it is exactly where you would change its routing. */
     S.trackRoute[0] = 2;                 /* MIDI out — no generator, no co-run */
+    /* ⚠ From a CLOSED state: a previous step may have left the menu open, and
+     * the hold refusing does not close it — nothing closes but Back now. */
+    sound.soundExit(); ticks(4);
     S.actionPopupEndTick = -1;
-    shiftNote();
+    shiftNoteHold();
     ticks(4);
     if (sound.soundActive())
         throw new Error('opened sound mode for a track that has no sound');
@@ -205,44 +235,19 @@ function menuPress() {
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 0]));
 }
 
-step('pressed from a normal bank: the exit LEAVES sound mode, onto THAT bank', () => {
-    globalThis.init();
-    S.awaitingProjectSelect = false;
-    S.ledInitComplete = true;
-    S.sessionView = false;
-    S.activeTrack = 0;
-    S.trackRoute[0] = 0;
-    S.activeBank = 3;                       /* deliberately NOT the default */
-    ticks(8);
-    shiftNote();
-    ticks(4);
-    if (!sound.soundActive()) throw new Error('setup failed: the gesture did not open sound mode');
-    menuPress();
-    ticks(4);
-    if (sound.soundActive())
-        throw new Error('the exit did not leave sound mode');
-    if (S.activeBank !== 3)
-        throw new Error('landed on bank ' + S.activeBank + ', not the bank the gesture was ' +
-                        'pressed from (3) — that is the old default-bank close');
-});
+/* ⚠⚠ TWO STEPS REMOVED 2026-08-28, and the machinery with them.
+ *
+ * They pinned where the gesture's CLOSER landed — onto the bank it was pressed
+ * from, via the `genReturn` crumb stamped at the press. The gesture no longer
+ * closes (it is a destination), so nothing stamps that crumb and there is no
+ * exit to place. Back does the leaving now, and where BACK lands is pinned in
+ * test_sound_bank_jog.
+ *
+ * ⚠ That leaves `genReturn` / `soundGestureReturn()` STAMPED BY NOBODY — dead
+ * code that still reads as live. Flagged for removal rather than deleted here,
+ * because it is also consulted by the unshifted Note/Session path and that
+ * deserves its own look. */
 
-step('pressed from SOUND + CONFIG: the exit STAYS in sound mode, back on the picker', () => {
-    S.trackRoute[0] = 0;
-    sound.soundEnter(0, 0);                 /* already in sound mode, at root */
-    ticks(4);
-    if (!sound.soundAtBlockRoot()) throw new Error('setup failed: not at root');
-    shiftNote();
-    ticks(4);
-    menuPress();
-    ticks(4);
-    if (!sound.soundActive())
-        throw new Error('it left sound mode — but the press came FROM sound mode, so the ' +
-                        'return point is the picker, not a bank');
-    if (!sound.soundAtBlockRoot())
-        throw new Error('still not back on the picker');
-});
-
-/* CONTROL 1 — the 08-25 retirement survives for every OTHER entry. */
 step('⚠ control: with no gesture crumb, Menu is NOT a closer', () => {
     globalThis.init();
     S.awaitingProjectSelect = false;
@@ -305,7 +310,7 @@ step('⚠ control: leaving by any other route SPENDS the crumb', () => {
  * it broke the MIDI-routed step below it.
  * ⚠ The observable is the SCREEN, not a popup — asserting a popup would now pass
  * against a gesture that opened nothing at all. */
-step('an EMPTY generator opens the module picker, captioned', () => {
+step('an EMPTY generator opens the module picker, captioned (on the HOLD)', () => {
     const realGet = globalThis.shadow_get_param;
     globalThis.shadow_get_param = () => '';        /* nothing loaded, any comp */
     try {
@@ -316,7 +321,7 @@ step('an EMPTY generator opens the module picker, captioned', () => {
         S.activeTrack = 0;
         S.trackRoute[0] = 0;                       /* Schwung chain */
         ticks(8);
-        shiftNote();
+        shiftNoteHold();
         ticks(6);
         const b = sound.soundBrowseStateForTest();
         if (!b.browsing)
@@ -353,11 +358,19 @@ step('choosing Schwung as the Instrument opens the module picker', () => {
         sound.soundEnter(0, 0);
         ticks(4);
         const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
-        cc(3, 127); cc(3, 0);                      /* jog click: start editing the row */
+        /* ⚠ Entry lands on the BANK'S PROMPT now, so the first click is the
+         * door into the menu — it is not the row. */
+        cc(3, 127); cc(3, 0); ticks(2);
+        /* ⚠ And the Instrument row opens a PICKER now rather than editing in
+         * place (the enum law), so this click opens the list and the one below
+         * commits the selection. The jog step between them is unchanged: the
+         * picker opens on the CURRENT value, and Schwung is one step before
+         * MIDI Ch 1 in instrOptions' order. */
+        cc(3, 127); cc(3, 0);                      /* open the Instrument picker */
         ticks(1);
-        cc(14, 127);                               /* one step left: MIDI ch 1 -> Schwung */
+        cc(14, 127);                               /* one step left: MIDI Ch 1 -> Schwung */
         ticks(1);
-        cc(3, 127); cc(3, 0);                      /* click again: commit */
+        cc(3, 127); cc(3, 0);                      /* commit */
         ticks(10);                                 /* reflavour, then the queued browse */
         const b = sound.soundBrowseStateForTest();
         if (!b.browsing)

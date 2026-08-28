@@ -151,16 +151,40 @@ step('⭑ melodic: right past AUTOMATION (6) enters SOUND + CONFIG', () => {
         throw new Error('the origin crumb was not kept: ' + S.trackSoundOrigin[2]);
 });
 
-step('⭑ ...and the next right turn walks the menu, not the banks', () => {
-    snd.soundTick();                   /* rows build on the tick after entry */
+step('⭑⭑ ...and the next right turn WALKS THE BANKS — the prompt is a bank', () => {
+    /* ⚠⚠ REVERSED 2026-08-28, and it is the point of the respec. The bank used
+     * to BE the menu, so the jog walked the menu's rows and this asserted
+     * exactly that. Josh made the bank a DOOR — it shows "click to enter" and
+     * the CLICK opens the menu — so the jog must behave as it does on every
+     * other bank, or the one bank you could never leave by turning the jog
+     * would be the bank whose whole job is being a door.
+     *
+     * Sound mode is still fully ACTIVE here: it owns the knobs and the HUD on
+     * this screen. It simply DECLINES the turn (soundOnCC returns false), which
+     * hands the CC back to davebox's own bank walk. */
+    snd.soundTick();
+    /* ⚠ LEFT, not right: SOUND + CONFIG is the LAST entry in the cycle, so a
+     * right turn correctly clamps and proves nothing. My first version of this
+     * step turned right and read the clamp as a swallowed jog. */
+    left();
+    if (S.activeBank !== 6)
+        throw new Error('the jog did not walk off the bank — still on ' + S.activeBank);
+});
+
+step('⚠ CONTROL: the CLICK is what opens the menu, and then the jog walks ROWS', () => {
+    /* The other half. Without this the step above passes on a build where the
+     * jog is declined because the menu is unreachable at all. */
+    reset(PAD_MODE_MELODIC_SCALE, 6);
+    right();                            /* onto the bank -> its prompt */
+    snd.soundTick();
+    send(3, 127); send(3, 0);           /* jog click — the prompt's door */
+    globalThis.tick(); snd.soundTick();
     const r0 = snd.soundPickStateForTest().row;
     right();
     const r1 = snd.soundPickStateForTest().row;
-    if (!snd.soundActive()) throw new Error('sound mode closed on a right turn');
-    if (r1 <= r0) throw new Error('cursor did not move down: ' + r0 + ' -> ' + r1);
-    if (S.activeBank !== BANK_SOUND) throw new Error('the identity was lost underneath: ' + S.activeBank);
-    if (S.trackActiveBank[2] !== BANK_SOUND) throw new Error('the recorded bank drifted: ' + S.trackActiveBank[2]);
-    if (S.trackSoundOrigin[2] !== 6) throw new Error('the origin crumb drifted: ' + S.trackSoundOrigin[2]);
+    if (r1 <= r0) throw new Error('inside the menu the cursor did not move: ' + r0 + ' -> ' + r1);
+    if (S.activeBank !== BANK_SOUND)
+        throw new Error('the identity was lost underneath: ' + S.activeBank);
 });
 
 step('⭑ left turns walk back up, and past the top row leave to the last clip bank', () => {
@@ -189,19 +213,35 @@ step('⚠ conductor: the cycle still ends at WHEN — no sound-mode bank', () =>
     if (S.activeBank !== BANK_WHEN) throw new Error('bank moved: ' + S.activeBank);
 });
 
-step('⚠ Shift+Note entry is unchanged: left at the top still exits (same door, same way out)', () => {
+step('⚠ a deferred entry still SHOWS, and the jog leaves by walking the cycle', () => {
     reset(PAD_MODE_MELODIC_SCALE, 3);
     S.pendingSoundEnterTrack = 2; globalThis.tick(); snd.soundTick();
     if (!snd.soundActive()) throw new Error('control: deferred entry did not open');
     /* This entry has NO jog behind it, so soundEnter itself must arm the
      * display window — without that the screen yields to the overview on the
-     * very first frame and Shift+Note appears to do nothing. (The jog entry
-     * path arms it at the CC site too, which masked this once.) */
-    if (!snd.soundRender()) throw new Error('Shift+Note entry did not show the screen');
-    toTop();
+     * very first frame and the entry appears to do nothing. (The jog entry path
+     * arms it at the CC site too, which masked this once.) */
+    if (!snd.soundRender()) throw new Error('the deferred entry did not show the screen');
+    /* ⚠⚠ REWRITTEN 2026-08-28. This used to walk the MENU to its top row and
+     * leave with one more left turn, landing on the ORIGIN bank — because the
+     * bank was the menu. The bank is a DOOR now: its prompt hands the jog
+     * straight to the bank walk, so leaving is the ordinary cycle step to
+     * AUTOMATION. Returning to the ORIGIN is BACK's job, asserted below. */
     left();
-    if (snd.soundActive()) throw new Error('left at the top did not exit');
-    if (S.activeBank !== 3) throw new Error('landed on the wrong bank: ' + S.activeBank);
+    if (S.activeBank !== 6)
+        throw new Error('the jog did not walk off the bank: ' + S.activeBank);
+});
+
+step('⭑ and BACK from the prompt returns to the bank you CAME FROM', () => {
+    /* The origin crumb still does its job — it just belongs to Back now rather
+     * than to a left turn off the menu's top row. */
+    reset(PAD_MODE_MELODIC_SCALE, 3);
+    S.pendingSoundEnterTrack = 2; globalThis.tick(); snd.soundTick();
+    if (!snd.soundActive()) throw new Error('control: deferred entry did not open');
+    send(51, 127); send(51, 0); globalThis.tick(); snd.soundTick();
+    if (snd.soundActive()) throw new Error('Back did not leave the prompt');
+    if (S.activeBank !== 3)
+        throw new Error('Back landed on the wrong bank: ' + S.activeBank);
 });
 
 step('⭑ AUTO-bank pad coloring stands down while SOUND + CONFIG is up', () => {
@@ -282,20 +322,23 @@ step('⭑ the TOP LEVEL keeps the banks\' display law: falls back to the overvie
     if (!snd.soundRender()) throw new Error('jog touch did not bring the screen back');
     jogTouch(false);
     if (snd.soundRender()) throw new Error('jog release did not yield immediately');
-    /* A turn re-opens the window (and still moves the cursor).
+    /* A turn re-opens the window.
      * ⚠ Asserted mid-gesture — touch and turn, NO release. The release stands
      * the window down by design (two lines up, this file proves it), so a
      * complete turn would open the window and close it again before the
-     * assertion ran. What is under test is the TURN. */
-    const r0 = snd.soundPickStateForTest().row;
+     * assertion ran. What is under test is the TURN.
+     * ⚠⚠ The cursor assertion is GONE (2026-08-28): on the bank's prompt the
+     * jog walks BANKS, so there is no cursor to move — that is the respec, and
+     * the step above pins it. What remains true, and is what this step is for,
+     * is that a turn re-opens the display window. */
     jogTouch(true);
     send(14, 1); globalThis.tick();
-    if (snd.soundPickStateForTest().row === r0) throw new Error('turn no longer moves the cursor');
     if (!snd.soundRender()) throw new Error('a turn did not re-open the display window');
     jogTouch(false);
-    /* Deeper levels never yield: open the row under the cursor via the real
-     * click, then check with the window closed. */
+    /* Deeper levels never yield: open the MENU through the prompt's door, then
+     * open a row, then check with the window closed. */
     snd.soundTick();
+    send(3, 127); send(3, 0); globalThis.tick(); snd.soundTick();   /* prompt -> menu */
     send(3, 127); snd.soundTick(); globalThis.tick();
     S.tickCount += 200; globalThis.tick();
     if (snd.soundPickStateForTest && snd.soundActive()) {

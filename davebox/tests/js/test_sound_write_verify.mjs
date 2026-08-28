@@ -96,6 +96,9 @@ GS.activeTrack = 4; GS.stateLoading = false; GS.bootSplashTicks = 0;
 
 function openSynth() {
     snd.soundEnter(4, 4); tick(4);
+    /* ⚠ Entry lands on the BANK'S PROMPT now (Josh, 2026-08-28: the bank is a
+     * door). These steps act on the menu. */
+    snd.soundShowMenu();
     const st = snd.soundPickStateForTest();
     const target = st.kinds.indexOf('block') + 1;   /* row 0 of blocks is MIDI FX (empty -> browser); +1 = the SYNTH */
     for (let g = 0; g <= st.kinds.length * 2; g++) {

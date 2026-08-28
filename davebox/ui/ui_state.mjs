@@ -584,6 +584,14 @@ export const S = {
      * stays a host-owned full-exit. backPressTick = tick of the current unresolved Back press
      * (-1 = none); backHoldFired = the hold already suspended, so the release must not also tap. */
     backPressTick: -1,
+    /* Shift+Note/Session: the tick of an unresolved press. The gesture resolves
+     * on RELEASE — tap opens the SOUND + CONFIG menu, hold goes to instrument
+     * edit — so the press only records when it happened. -1 = none pending. */
+    shiftNoteSessionTick: -1,
+    /* Set with pendingSoundEnterTrack when the ASK was for the menu rather than
+     * the bank: tick opens sound mode route-aware, then lands on the menu
+     * instead of the bank's prompt. */
+    pendingSoundEnterMenu: false,
     backHoldFired: false,
     pendingExport: false,          /* Ableton .ablbundle export — set by menu action, drained in tick() (get_param-safe) */
     pendingExportRun: false,       /* phase 2 of export: armed after EXPORTING popup renders, does the blocking work */

@@ -76,6 +76,9 @@ function step(label, fn) {
 step('setup: sound mode is active, nothing covering it', () => {
     S.sessionView = false;
     snd.soundEnter(0, 0);
+    /* ⚠ Sound mode ENTERS ON THE BANK'S PROMPT now (Josh, 2026-08-28: the bank
+     * is a door — "click to enter"), and the steps below act on the MENU. */
+    snd.soundShowMenu();
     if (!snd.soundActive()) throw new Error('sound mode did not enter');
     if (render.soundModeCovered()) throw new Error('nothing is open, yet sound mode reads as covered');
 });

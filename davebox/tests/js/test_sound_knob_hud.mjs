@@ -169,6 +169,13 @@ function enterTrack(t) {
     GS.activeTrack = t;
     snd.soundEnter(t, t);
     ticks(3);                                           /* land the entry action */
+    /* ⚠ Sound mode ENTERS ON THE BANK'S PROMPT now, not the menu (Josh,
+     * 2026-08-28: the bank is a door — "click to enter"). Every step below acts
+     * on the MENU, so the setup opens it.
+     * ⚠ AFTER the ticks, not before: the entry action is still in flight during
+     * them and lands on the prompt, so opening the menu first is undone by the
+     * very next tick. */
+    snd.soundShowMenu();
 }
 
 step('setup: sound mode on a Schwung track, at its menu (a non-EDIT screen)', () => {

@@ -190,7 +190,14 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
       VIEW_KNOBS = 11, VIEW_KNOB_TARGET = 12, VIEW_KNOB_PARAM = 13,
       VIEW_LFO = 14, VIEW_LFO_TARGET = 15, VIEW_LFO_PARAM = 16,
       /* One picker serving every enum row in sound mode — see openEnumPicker. */
-      VIEW_ENUM = 17;
+      VIEW_ENUM = 17,
+      /* ⭑ The SOUND + CONFIG BANK's own screen (Josh, 2026-08-28). The bank is
+       * a DOOR now, not the menu: landing on it offers to open the menu rather
+       * than opening it. But the bank still OWNS THE KNOBS — K1-K8 drive the
+       * slot's assignments here exactly as they did when the bank was the
+       * screen — so sound mode is fully ACTIVE on this view, and the knob HUD
+       * draws over it. Two states, not one: active-as-bank, and open-as-menu. */
+      VIEW_PROMPT = 18;
 
 /* Chain-patch file ops (save_patch / delete_patch) are DSP-side and async —
  * the file appears/vanishes a beat after the request. Re-read the list once
@@ -749,6 +756,17 @@ export function markSoundDirty() { S.dirty = true; }
 
 /* ---- lifecycle ---- */
 
+/* Show the MENU on an ALREADY-OPEN sound mode — the tap gesture's destination.
+ * From any depth: it collapses the whole stack back to the menu root, which is
+ * the one-press way out of a deep chain now that the gesture never closes.
+ * ⚠ Entry itself is NOT here: it is route-aware and deferred to the tick (a
+ * Move-routed track opens its bus, not a chain slot). */
+export function soundShowMenu() {
+    if (!S.active) return;
+    S.view = VIEW_BLOCKS;
+    S.dirty = true;
+}
+
 export function soundEnter(track, slot) {
     /* Track view only (Josh, 2026-08-08): the track flavour belongs to track
      * view; session view has its own entry (soundEnterBuses). Guard the
@@ -767,7 +785,12 @@ export function soundEnter(track, slot) {
     clearBusContext();
     S.track = track;
     S.slot = slot;
-    S.view = VIEW_BLOCKS;
+    /* ⭑ The BANK's screen, not the menu (Josh, 2026-08-28). Every path into
+     * here is the bank — the jog reaching SOUND + CONFIG, a track switch onto a
+     * track stored there, the tick reconcile, the co-run return — and the bank
+     * now OFFERS the menu rather than being it. `soundOpenMenu()` is the door
+     * for the gesture that asks for the menu by name. */
+    S.view = VIEW_PROMPT;
     /* ⚠ SYNC to the physical key, do not assume it is up. Clearing this on a
      * retarget made Shift+jog a ONE-SHOT: stepping a track retargets, the
      * retarget forgot Shift was still down, and the next turn was read as an
@@ -3939,6 +3962,15 @@ export function soundOnCC(d1, d2, decodeDelta) {
     }
 
     if (d1 === 14) {                                   /* jog turn */
+        /* ⭑⭑ THE PROMPT IS A BANK, so the jog WALKS (Josh, 2026-08-28). Sound
+         * mode is fully active here — it owns the knobs and the HUD — but it
+         * must DECLINE the turn, or the one bank you can never leave by turning
+         * the jog is the bank whose whole job is being a door. Declining hands
+         * the CC back to davebox's own handler, which walks the cycle and, with
+         * Shift, switches track — both without a second copy here.
+         * ⚠ The block below ends in an unconditional `return true`, so without
+         * this the prompt would swallow every turn. */
+        if (S.view === VIEW_PROMPT) return false;
         /* ---- Shift+jog = SWITCH TRACK, in the menu only ----
          *
          * Declining the CC is the whole implementation: davebox's own jog
@@ -4179,6 +4211,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
             }
             return true;
         }
+        if (S.view === VIEW_PROMPT) { S.view = VIEW_BLOCKS; S.dirty = true; return true; }
         if (S.view === VIEW_ENUM) { closeEnumPicker(true); return true; }
         if (S.view === VIEW_SLOTCFG) {
             const row = S.slotRows[S.slotCfgIdx];
@@ -4414,6 +4447,18 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * ⚠ Deliberately the tap only — the long-press suspend above stays
          * unclaimable, the same failsafe shape as the host's Shift+Back. */
         if (hostedBack()) return true;
+        if (S.view === VIEW_BLOCKS) {
+            /* Back out of the menu lands on the bank's own screen — which IS
+             * "the bank you came from" (the 08-26 law), now that the bank has a
+             * screen of its own rather than being the menu.
+             * ⚠ THIS BELONGS TO BACK. It was first written against an anchor
+             * that appears in BOTH the click and Back handlers and landed in
+             * the CLICK path, so opening a block from the menu went to the
+             * prompt instead. */
+            S.view = VIEW_PROMPT;
+            S.dirty = true;
+            return true;
+        }
         if (S.view === VIEW_ENUM) {
             /* Back ABANDONS. Committing on the way out would make an accidental
              * Back a silent edit, and the row you came from still shows the old
@@ -4743,6 +4788,23 @@ function overlayIdx() {
 
 function centreText(y, text) {
     mvPrint(Math.max(0, Math.round((128 - mvWidth(text)) / 2)), y, text, 1);
+}
+
+/* The bank's own screen: what this bank is, and how to open it.
+ *
+ * ⚠ It is NOT empty of function. The knobs are live here — the whole reason the
+ * bank still activates sound mode — and the knob HUD draws over this on touch,
+ * so a knob you turn still says what it is doing. The prompt is what fills the
+ * screen the rest of the time.
+ *
+ * The track number comes from S.track, not the active track: on this screen
+ * they are the same, but the sound mode's own notion is the one every other row
+ * on the way in uses. */
+function renderPrompt() {
+    clear_screen();
+    drawKitHeader('SOUND + CONFIG', false);
+    centreText(26, 'CLICK TO ENTER');
+    centreText(40, 'TRACK ' + (S.track + 1) + ' SOUND & CONFIG');
 }
 
 function renderBlocks() {
@@ -5197,13 +5259,19 @@ export function soundRender() {
             S.touchedIdx < 0 && !S.volTouched &&
             !GS.jogTouched && GS.bankSelectTick < 0)
         return false;
-    if (S.view === VIEW_BLOCKS && !soundIsGlobal() && !S.enterSession &&
+    /* ⭑ THE PROMPT OBEYS THE DISPLAY LAW TOO. It is the bank's own screen now,
+     * so it must stand down to the track overview exactly as the menu did when
+     * the bank WAS the menu — otherwise the one bank that never yields is the
+     * one whose whole job is being a bank. */
+    if ((S.view === VIEW_BLOCKS || S.view === VIEW_PROMPT) &&
+            !soundIsGlobal() && !S.enterSession &&
             !S.instrEditing && !S.busLevelEditing &&
             S.touchedIdx < 0 && !S.volTouched &&
             !(S.volShownUntil >= 0 && S.tickCount <= S.volShownUntil) &&
             !GS.jogTouched && GS.bankSelectTick < 0)
         return false;
-    if (S.view === VIEW_BLOCKS) renderBlocks();
+    if (S.view === VIEW_PROMPT) renderPrompt();
+    else if (S.view === VIEW_BLOCKS) renderBlocks();
     else if (S.view === VIEW_BROWSE) renderBrowse();
     else if (S.view === VIEW_PRESET_SRC) renderPresetSrc();
     else if (S.view === VIEW_PRESET_LIST) renderPresetList();

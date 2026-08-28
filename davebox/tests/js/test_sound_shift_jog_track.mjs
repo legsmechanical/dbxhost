@@ -95,6 +95,9 @@ step('setup: sound mode on a Schwung track, at its menu', () => {
     for (let t = 0; t < 8; t++) S.trackRoute[t] = 0;   /* all Schwung */
     S.activeTrack = 2;
     snd.soundEnter(2, 2);
+    /* ⚠ Entry lands on the BANK'S PROMPT now (Josh, 2026-08-28: the bank is a
+     * door). These steps act on the menu. */
+    snd.soundShowMenu();
     if (!snd.soundActive()) throw new Error('sound mode did not enter');
 });
 
@@ -127,6 +130,9 @@ step('⭑ it keeps stepping while Shift stays down (the one-shot bug)', () => {
      * that turns once passes. This one turns THREE times on one Shift. */
     S.activeTrack = 1;
     snd.soundEnter(1, 1);
+    /* ⚠ Entry lands on the BANK'S PROMPT now (Josh, 2026-08-28: the bank is a
+     * door). These steps act on the menu. */
+    snd.soundShowMenu();
     /* ⚠⚠ The follow lives in the `else` of `if (!S.ledInitComplete)`, so every
      * tick before LED init finishes is consumed by it and never reaches the
      * retarget. A third earlier version of this step ticked the RIGHT tick and
@@ -181,6 +187,9 @@ step('⭑ Shift+jog CLOSES sound mode — the new track keeps its OWN bank', () 
     S.activeTrack = 5;
     S.ledInitComplete = true;
     snd.soundEnterMove(5);
+    /* ⚠ Entry lands on the BANK'S PROMPT now (Josh, 2026-08-28: the bank is a
+     * door). These steps act on the menu. */
+    snd.soundShowMenu();
     if (!snd.soundActive()) throw new Error('control failed: sound mode did not open');
     if (S.activeBank !== 11)
         throw new Error('control failed: the bank identity was not taken (' + S.activeBank + ')');
@@ -403,11 +412,15 @@ step('⚠ off the menu (slot settings), Shift+jog is NOT the track switch', () =
      * second half can only pass because the view actually changed. */
     S.activeTrack = 2;
     snd.soundEnter(2, 2);
+    snd.soundShowMenu();
     shift(true); turn(); shift(false);
     if (S.activeTrack !== 3)
         throw new Error('control failed: Shift+jog is not switching in the menu');
     S.activeTrack = 2;
     snd.soundEnter(2, 2);
+    /* ⚠ The MENU, not the bank's prompt: this step navigates the menu's rows,
+     * and on the prompt the jog is declined so it walks banks instead. */
+    snd.soundShowMenu();
     snd.soundTick();                 /* rows are built on the tick after entry */
 
     /* Navigate deterministically to the Sound Control door and open it.

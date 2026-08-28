@@ -58,7 +58,7 @@ import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
 import { soundActive, soundEnter, soundEnterMove, soundEnterBuses, soundExit,
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
     soundEnteredInSession, soundConsumeLedDirty,
-    soundConsumeCoRunRequest } from './ui_sound.mjs';
+    soundConsumeCoRunRequest, soundShowMenu } from './ui_sound.mjs';
 import { enterMoveNativeCoRun } from './ui_corun.mjs';
 
 const BANK_DISPLAY_TICKS = 94;  /* ~1000ms at 94Hz device tick rate (was 392 = ~4.2s; constant was miscalibrated for 196Hz) */
@@ -1355,6 +1355,12 @@ export function _tickImpl() {
         if (S.pendingSoundEnterTrack >= 0) {
             const _st = S.pendingSoundEnterTrack;
             S.pendingSoundEnterTrack = -1;
+            /* ⚠ Cleared with the track, not after use: an entry that DECLINES
+             * below (wrong track, already open) would otherwise leave the flag
+             * armed for the next bank arrival, which would then open the menu
+             * when the bank should have shown its prompt. */
+            const _wantMenu = S.pendingSoundEnterMenu;
+            S.pendingSoundEnterMenu = false;
             const _silent = S.pendingSoundEnterSilent;
             S.pendingSoundEnterSilent = false;
             if (_st === S.activeTrack && !soundActive()) {
@@ -1363,6 +1369,11 @@ export function _tickImpl() {
                  * Slot is addressed directly per track — always resolvable. */
                 if (S.trackRoute[_st] === 1) soundEnterMove(_st);
                 else soundEnter(_st, schSlotForTrack(_st));
+                /* ⭑ The ASK decides the screen. Every route above lands on the
+                 * bank's prompt; a gesture that asked for the MENU by name gets
+                 * the menu. Consumed here so the route logic stays in one
+                 * place. */
+                if (_wantMenu) soundShowMenu();
                 /* A RETURN, not a gesture: the user switched tracks, they did
                  * not ask to see this screen. Both entry paths stamp the bank
                  * display window unconditionally (Shift+Note NEEDS that — see

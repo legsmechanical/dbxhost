@@ -109,6 +109,9 @@ step('Mute+click in sound mode bypasses WITHOUT muting the track', () => {
     /* Sound mode owns the surface; drive its CC entry point the way davebox does. */
     sound.soundEnter(0, 0);
     ticks(2);
+    /* ⚠ Sound mode ENTERS ON THE BANK'S PROMPT now (Josh, 2026-08-28: the bank
+     * is a door — "click to enter"), and the steps below act on the MENU. */
+    sound.soundShowMenu();
     const wasMuted = S.trackMuted[0];
 
     sound.soundOnCC(MUTE, 127, () => 0);            /* Mute down  */

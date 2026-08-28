@@ -49,7 +49,7 @@ import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
 import { soundActive, soundExit, soundVolGestureEnd, soundOpenGenerator,
-    soundAtBlockRoot, soundGestureReturn } from './ui_sound.mjs';
+    soundAtBlockRoot, soundGestureReturn, soundShowMenu } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
 import { applyTrackConfig, readBankParams, applyBankParam,
@@ -1320,6 +1320,62 @@ function _onCC_buttons(d1, d2) {
     /* Move's Menu button (CC 50) is in CORUN_KEEP_DEFAULT so the shim routes
      * it to us during co-run — which makes it the ONLY button dAVEBOx can put an
      * exit on that Move firmware does not need for itself. */
+/* Shift+Note/Session's action, extracted so it can run from the RELEASE rather
+ * than the press — which is what lets a TAP and a HOLD mean different things
+ * (Josh, 2026-08-28):
+ *   tap  -> the track's SOUND + CONFIG menu
+ *   hold -> straight to instrument edit, which is what the tap did before
+ *
+ * ⭑⭑ AND THE GESTURE IS A DESTINATION NOW, NEVER A TOGGLE. It used to close
+ * whatever was open and only open when nothing was — which needed a definition
+ * of "open", and that definition is where it went wrong: the root screen had to
+ * be carved out as an exception (08-26), and the respec would have needed a
+ * second exception for the prompt. A destination has no such edge: the same
+ * press means the same thing from any depth, and pressing it deep in a stack
+ * collapses you back to the menu in ONE press instead of four Backs. Back is
+ * the only thing that closes, and it means one thing everywhere.
+ *
+ * ⚠ The body below is the 08-26 gesture with its CLOSER removed and its
+ * destination switched. What survives unchanged is the ROUTE test: "edit this
+ * track's instrument" means the generator's canvas on a Schwung track, co-run
+ * on a Move one, and an EXT track has neither and says so. */
+function shiftNoteSessionAction(wantInstrument) {
+    if (S.sessionView) return;          /* session view has its own counterpart */
+    const _gt = S.activeTrack;
+    if (!wantInstrument) {
+        /* TAP — the menu, from wherever you are. Idempotent: already there and
+         * it simply stays there; deep in a stack and it collapses back to the
+         * menu in one press.
+         *
+         * ⚠⚠ ROUTE-AWARE ENTRY, and it must go through the SAME deferred door
+         * the bank uses. A Move-routed track's sound is its Move bus
+         * (soundEnterMove), not a chain slot — calling soundEnter directly here
+         * would open the wrong flavour, silently, for every Move track. Opening
+         * also READS the chain, which is why the bank defers it to the tick
+         * rather than doing it from the MIDI path. */
+        if (soundActive()) { soundShowMenu(); }
+        else {
+            S.pendingSoundEnterTrack = _gt;
+            S.pendingSoundEnterMenu  = true;
+        }
+        forceRedraw();
+        return;
+    }
+    /* HOLD — the instrument itself. */
+    if (S.trackRoute[_gt] === 1) {
+        enterMoveNativeCoRun(_gt);
+    } else if (S.trackRoute[_gt] === 2) {
+        showActionPopup('MIDI TRACK', 'No generator to edit');
+    } else {
+        /* An EMPTY generator opens the module picker itself (Josh, 2026-08-27)
+         * with 'SELECT GENERATOR' over it — soundOpenGenerator always succeeds,
+         * so there is no failure branch to write. */
+        soundOpenGenerator(_gt);
+    }
+    forceRedraw();
+}
+
+
     /* Note/Session view toggle: Shift+press = open global menu (Track View only);
      * tap = switch view; hold = session overview */
     if (d1 === MoveNoteSession) {
@@ -1356,128 +1412,12 @@ function _onCC_buttons(d1, d2) {
                 return;
             }
             if (S.shiftHeld) {
-                /* Shift+Note/Session: CLOSE what is open, else OPEN the active
-                 * track's generator editor in one press (Josh, 2026-08-26:
-                 * "should jump STRAIGHT to either the generator's canvas UI ...
-                 * or Move co-run").
-                 *
-                 * ⭑ The closer comes FIRST and is unchanged. It is the one-press
-                 * way out from any depth, and the 08-24 retirement of the opener
-                 * is what made it that. Adding a destination must not cost the
-                 * exit — so the gesture is a toggle: open when nothing is open,
-                 * close when something is. Pressing twice returns you exactly
-                 * where you started.
-                 *
-                 * ⚠ That retirement said "no gesture may open a menu the module's
-                 * own UI already reaches", and this does NOT reopen that door:
-                 * the bank walk still reaches SOUND + CONFIG, and what this opens
-                 * is one level PAST it — the generator's own canvas, which the
-                 * bank walk reaches only via the picker. A shortcut to a leaf,
-                 * not a second door to the menu.
-                 *
-                 * The destination follows the track's ROUTE, because "edit this
-                 * track's instrument" means different things: a Schwung track's
-                 * sound is its Generator block; a Move track's sound belongs to
-                 * Move, so the editor is co-run. An EXT/MIDI track has neither
-                 * and says so rather than doing nothing. */
-                /* ⚠ The closer does NOT run when sound mode is sitting on its
-                 * ROOT screen in track view. That is the one place closing is
-                 * the wrong answer: SOUND + CONFIG is the screen this gesture
-                 * would open FROM, so closing it spends the press going
-                 * backwards. Josh hit it immediately (2026-08-26): "the first
-                 * time you do shift+note/session it sends the bank back to the
-                 * first one and you have to do it again to get into the
-                 * instrument. it should just go right to the instrument."
-                 * `soundExit()` lands on BANK_DEFAULT, which IS "the first one".
-                 *
-                 * ⭑ Deliberately a ROOT test, not `!generatorOpen`: every screen
-                 * DEEPER than the picker keeps the one-press way out that the
-                 * 08-24 retirement created, and the toggle still closes from the
-                 * generator's own editor, so pressing twice still returns you
-                 * exactly where you started. */
-                const _soundRootHere = soundAtBlockRoot() && !S.sessionView;
-                /* Stamp WHERE WE ARE before opening anything, so the exit can
-                 * retrace it (Josh, 2026-08-26). Stamped here rather than read
-                 * from trackSoundOrigin because that crumb is only written when
-                 * ARRIVING from a non-SOUND bank — pressing from SOUND + CONFIG,
-                 * now the common path, writes nothing and would exit to a stale
-                 * origin. `wasActive` is the whole rule: "always leaves sound
-                 * mode entirely unless you were already in sound mode". */
-                if (!S.sessionView && !(soundActive() && !_soundRootHere)) {
-                    S.genReturn = { track: S.activeTrack,
-                                    wasActive: soundActive(),
-                                    bank: S.activeBank | 0 };
-                }
-                if (soundActive() && !_soundRootHere) { soundExit(); forceRedraw(); }
-                else if (S.globalMenuOpen) { S.globalMenuOpen = false; forceRedraw(); }
-                else if (!S.sessionView) {
-                    /* Track view only: co-run refuses in session view anyway, and
-                     * session view's counterpart gesture opens the buses. */
-                    const _gt = S.activeTrack;
-                    if (S.trackRoute[_gt] === 1) {
-                        enterMoveNativeCoRun(_gt);
-                    } else if (S.trackRoute[_gt] === 2) {
-                        showActionPopup('MIDI TRACK', 'No generator to edit');
-                    } else {
-                        /* ⭑ No popup any more, and no failure branch: an EMPTY
-                         * generator now opens the module picker itself (Josh,
-                         * 2026-08-27) with 'SELECT GENERATOR' over it. The old
-                         * 'NO GENERATOR / Pick one to add it' told you to do the
-                         * thing the picker does — an instruction standing in for
-                         * the action. soundOpenGenerator always succeeds now, so
-                         * a `!` branch here would be dead code pretending to
-                         * handle something. */
-                        soundOpenGenerator(_gt);
-                    }
-                    forceRedraw();
-                }
-                /* ⚠⚠ RETIRED 2026-08-24 (Josh): Shift+Note/Session no longer
-                 * OPENS anything. Both destinations it used to reach are banks
-                 * on the jog now — SOUND + CONFIG one past AUTOMATION in track
-                 * view, MASTER + SEND FX one past SEND B in session view — and
-                 * a second door to a bank is a gesture spent on nothing. The
-                 * bank walk is the only way in, which also makes it the only
-                 * way into co-run, as Josh asked.
-                 *
-                 * ⭑ The way OUT is deliberately KEPT (the soundExit branch
-                 * above): a gesture that can no longer open a screen can still
-                 * close one, and removing it would strand anyone whose muscle
-                 * memory reaches for it. */
-                /* ⚠ The EXT trap the old door had to dodge — refusing entry on
-                 * a MIDI-routed track would strand it with no way to route back
-                 * — is not gone, it MOVED: the bank walk is now the only way to
-                 * `Track to`, and it lets every route through, EXT included. */
-
-            /* ⚠⚠ RETIRED 2026-08-25 (Josh): the UNSHIFTED button is no longer a
-             * closer. "note/session should always jump to session view from
-             * track view without resetting the track's current bank place" — so
-             * it falls through to the view toggle below like it does on any
-             * other bank, and tick's reconcile ends sound mode as a LEAVE: the
-             * track stays recorded on SOUND + CONFIG and the screen is back when
-             * you return to track view.
-             *
-             * It was a closer because the button that OPENED the screen should
-             * also get you out of it in one press from any depth. That reason
-             * expired when Shift+Note/Session stopped opening anything (08-24) —
-             * the opener is the bank walk now. ⭑ Shift+Note/Session is still the
-             * deliberate one-press way out from any depth, and still lands on the
-             * default bank; the branch above is it. */
-            /* ⭑ NARROW EXCEPTION to the 08-25 retirement above, and the
-             * retirement's OWN reason is why it is allowed. It says the button
-             * stopped being a closer because "that reason expired when
-             * Shift+Note/Session stopped opening anything (08-24)". As of
-             * 2026-08-26 it OPENS the generator again — so the reason has
-             * un-expired, for exactly this door and no other.
-             *
-             * Josh, 2026-08-26, asked for the exit "only when the editor was
-             * entered by the gesture". soundGestureReturn() returns false unless
-             * a crumb is armed, so a bank-walk visit to SOUND + CONFIG still
-             * falls straight through to the view toggle, and his 08-25 rule
-             * ("always jump to session view ... without resetting the track's
-             * current bank place") is untouched everywhere else.
-             *
-             * ⚠ Placed BEFORE the toggle and AFTER the shift branch: this is the
-             * unshifted press, and it must not shadow Shift+Note/Session. */
+                /* ⭑ DEFERRED TO THE RELEASE. The gesture has two meanings now
+                 * and only its DURATION separates them, so the press records
+                 * when it happened and does nothing else. */
+                S.shiftNoteSessionTick = S.tickCount;
+                S.screenDirty = true;
+                return;
             } else if (soundGestureReturn()) {
                 forceRedraw();
             } else if (S.tapTempoOpen) {
@@ -1546,6 +1486,23 @@ function _onCC_buttons(d1, d2) {
                 S.screenDirty = true;
             }
         } else if (d2 === 0) {
+            /* ⭑ Shift+Note/Session resolves HERE, on the release, because only
+             * the duration separates its two meanings. Read the flag recorded at
+             * the PRESS, not S.shiftHeld now: letting go of Shift a moment
+             * before the button would otherwise turn a deliberate hold into a
+             * plain view toggle.
+             *
+             * ⚠ ~450ms (BACK_HOLD_TICKS), not the ~200ms this button already
+             * uses for its momentary-view hold. That threshold is tuned for a
+             * view flick; at 200ms a slightly slow tap would land you in the
+             * instrument editor, and these two destinations are far enough apart
+             * that the hold should feel deliberate. */
+            if (S.shiftNoteSessionTick >= 0) {
+                const _held = (S.tickCount - S.shiftNoteSessionTick) >= BACK_HOLD_TICKS;
+                S.shiftNoteSessionTick = -1;
+                shiftNoteSessionAction(_held);
+                return;
+            }
             if (S.noteSessionPressedTick >= 0 &&
                     (S.tickCount - S.noteSessionPressedTick) < NOTE_SESSION_HOLD_TICKS) {
                 /* Tap release: make permanent (don't switch back) */

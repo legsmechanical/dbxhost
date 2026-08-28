@@ -350,17 +350,24 @@ step('⚠ Shift+Note/Session opens neither sound mode nor the session buses', ()
         throw new Error('cannot bound the Note/Session handler — the sibling anchor ' +
                         '(MoveLoop) moved, so this pin no longer knows where it ends');
     const body = src.slice(i, nextHandler);
-    if (/pendingSoundEnterTrack\s*=/.test(body))
-        throw new Error('Shift+Note opens sound mode again — the bank walk is the only door');
     if (/pendingBusMenu\s*=\s*true/.test(body))
         throw new Error('Shift+Note opens the session buses again');
-    if (!/soundExit\(\)/.test(body))
-        throw new Error('it no longer CLOSES either — that half was deliberately kept');
-    /* The 2026-08-26 root exception: the closer must be GATED, not unconditional,
-     * or SOUND + CONFIG eats the press that was meant to open the generator. */
-    if (!/soundAtBlockRoot\(\)/.test(body))
-        throw new Error('the closer is unconditional again — sitting on SOUND + CONFIG ' +
-                        'would spend the press closing the screen the gesture opens FROM');
+    /* ⚠⚠ REWRITTEN 2026-08-28. This used to require `soundExit()` in the
+     * handler — the CLOSER — and a `soundAtBlockRoot()` gate on it. Both are
+     * gone by Josh's respec: the gesture is a DESTINATION now, never a toggle.
+     * It always goes to the same place, so there is no "is something open"
+     * question to answer and no root exception to carve out. Keeping the old
+     * assertions would have pinned a rule the design no longer has.
+     *
+     * What the handler must NOT do is act on the PRESS: tap and hold mean
+     * different things and only the duration separates them, so the press
+     * records a tick and the release decides. A handler that opened anything
+     * from the press would make every hold a tap. */
+    if (!/shiftNoteSessionTick\s*=\s*S\.tickCount/.test(body))
+        throw new Error('the press no longer records its tick — tap and hold cannot be told ' +
+                        'apart, so a hold would fire as a tap');
+    if (/soundExit\(\)/.test(body))
+        throw new Error('the closer is back: the gesture is a destination, not a toggle');
 });
 
 process.exit(failed);
