@@ -104,7 +104,12 @@ const VIEW_BLOCKS = 0;
 function shiftNote(heldTicks) {
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 127]));
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 127]));
-    if (heldTicks) S.tickCount += heldTicks;
+    /* ⚠⚠ The hold fires from the TICK, at the threshold — not from the release
+     * (Josh, 2026-08-28). So a held gesture must actually TICK while it is
+     * held: advancing the clock alone leaves checkShiftNoteHold unrun, and the
+     * release then reads as a tap. That is exactly what this helper did first,
+     * and it made the hold assertions fail against correct code. */
+    if (heldTicks) { S.tickCount += heldTicks; ticks(2); }
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 0]));
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 0]));
 }

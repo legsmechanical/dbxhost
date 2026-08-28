@@ -102,7 +102,19 @@ function step(label, fn) {
  * stays INSIDE sound mode. Entry lands on the GENERATOR row (the block you
  * most likely came to edit), not row 0, so "the top" is a place to reach, not
  * the place you start. */
+/* ⚠ Walks the MENU's cursor to its top row. It must therefore BE in the menu:
+ * on the bank's prompt a left turn walks BANKS and leaves sound mode, which is
+ * the respec, not a fault. Callers arriving by the bank open the door first —
+ * this does it for them so every call site does not have to remember. */
+function openMenuIfPrompt() {
+    if (!snd.soundActive()) return;
+    /* view 18 = the prompt; the click is its door. */
+    if (snd.soundPickStateForTest().view === 18) {
+        send(3, 127); send(3, 0); globalThis.tick(); snd.soundTick();
+    }
+}
 function toTop() {
+    openMenuIfPrompt();
     for (let guard = 0; guard < 16; guard++) {
         if (snd.soundPickStateForTest().row === 0) return;
         left();

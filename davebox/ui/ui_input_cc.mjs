@@ -1087,6 +1087,14 @@ export function applyBankPick() {
         return;
     }
     if (next === S.activeBank) { forceRedraw(); return; }
+    /* ⚠⚠ LEAVE sound mode when the walk lands on a different bank. While it is
+     * active it OWNS the bank identity and re-asserts BANK_SOUND on the next
+     * tick — so without this the jog appears to walk away and then snaps
+     * straight back to the prompt (Josh, on device). The old bank-walk exit
+     * lived in soundOnCC's left-turn-off-the-top-row branch; the prompt hands
+     * the jog back instead, so the exit has to live where the bank is actually
+     * committed. */
+    if (soundActive()) soundExit();
     S.activeBank = next;
     S.trackActiveBank[t] = next;
     if (next === 7) S.allLanesConfirmed = false;
@@ -1320,60 +1328,6 @@ function _onCC_buttons(d1, d2) {
     /* Move's Menu button (CC 50) is in CORUN_KEEP_DEFAULT so the shim routes
      * it to us during co-run — which makes it the ONLY button dAVEBOx can put an
      * exit on that Move firmware does not need for itself. */
-/* Shift+Note/Session's action, extracted so it can run from the RELEASE rather
- * than the press — which is what lets a TAP and a HOLD mean different things
- * (Josh, 2026-08-28):
- *   tap  -> the track's SOUND + CONFIG menu
- *   hold -> straight to instrument edit, which is what the tap did before
- *
- * ⭑⭑ AND THE GESTURE IS A DESTINATION NOW, NEVER A TOGGLE. It used to close
- * whatever was open and only open when nothing was — which needed a definition
- * of "open", and that definition is where it went wrong: the root screen had to
- * be carved out as an exception (08-26), and the respec would have needed a
- * second exception for the prompt. A destination has no such edge: the same
- * press means the same thing from any depth, and pressing it deep in a stack
- * collapses you back to the menu in ONE press instead of four Backs. Back is
- * the only thing that closes, and it means one thing everywhere.
- *
- * ⚠ The body below is the 08-26 gesture with its CLOSER removed and its
- * destination switched. What survives unchanged is the ROUTE test: "edit this
- * track's instrument" means the generator's canvas on a Schwung track, co-run
- * on a Move one, and an EXT track has neither and says so. */
-function shiftNoteSessionAction(wantInstrument) {
-    if (S.sessionView) return;          /* session view has its own counterpart */
-    const _gt = S.activeTrack;
-    if (!wantInstrument) {
-        /* TAP — the menu, from wherever you are. Idempotent: already there and
-         * it simply stays there; deep in a stack and it collapses back to the
-         * menu in one press.
-         *
-         * ⚠⚠ ROUTE-AWARE ENTRY, and it must go through the SAME deferred door
-         * the bank uses. A Move-routed track's sound is its Move bus
-         * (soundEnterMove), not a chain slot — calling soundEnter directly here
-         * would open the wrong flavour, silently, for every Move track. Opening
-         * also READS the chain, which is why the bank defers it to the tick
-         * rather than doing it from the MIDI path. */
-        if (soundActive()) { soundShowMenu(); }
-        else {
-            S.pendingSoundEnterTrack = _gt;
-            S.pendingSoundEnterMenu  = true;
-        }
-        forceRedraw();
-        return;
-    }
-    /* HOLD — the instrument itself. */
-    if (S.trackRoute[_gt] === 1) {
-        enterMoveNativeCoRun(_gt);
-    } else if (S.trackRoute[_gt] === 2) {
-        showActionPopup('MIDI TRACK', 'No generator to edit');
-    } else {
-        /* An EMPTY generator opens the module picker itself (Josh, 2026-08-27)
-         * with 'SELECT GENERATOR' over it — soundOpenGenerator always succeeds,
-         * so there is no failure branch to write. */
-        soundOpenGenerator(_gt);
-    }
-    forceRedraw();
-}
 
 
     /* Note/Session view toggle: Shift+press = open global menu (Track View only);
@@ -1498,9 +1452,11 @@ function shiftNoteSessionAction(wantInstrument) {
              * instrument editor, and these two destinations are far enough apart
              * that the hold should feel deliberate. */
             if (S.shiftNoteSessionTick >= 0) {
-                const _held = (S.tickCount - S.shiftNoteSessionTick) >= BACK_HOLD_TICKS;
+                /* Still pending, so the threshold was never crossed: a TAP.
+                 * checkShiftNoteHold clears the tick when it fires, which is
+                 * what makes the release after a hold a no-op. */
                 S.shiftNoteSessionTick = -1;
-                shiftNoteSessionAction(_held);
+                shiftNoteSessionAction(false);
                 return;
             }
             if (S.noteSessionPressedTick >= 0 &&
@@ -1920,6 +1876,80 @@ function _handleBack(d2) {
 
 /* Fire the HOLD-Back suspend once the press crosses BACK_HOLD_TICKS. Called every
  * tick. Clears backPressTick so the subsequent release doesn't also tap. */
+/* Shift+Note/Session's action, extracted so it can run from the RELEASE rather
+ * than the press — which is what lets a TAP and a HOLD mean different things
+ * (Josh, 2026-08-28):
+ *   tap  -> the track's SOUND + CONFIG menu
+ *   hold -> straight to instrument edit, which is what the tap did before
+ *
+ * ⭑⭑ AND THE GESTURE IS A DESTINATION NOW, NEVER A TOGGLE. It used to close
+ * whatever was open and only open when nothing was — which needed a definition
+ * of "open", and that definition is where it went wrong: the root screen had to
+ * be carved out as an exception (08-26), and the respec would have needed a
+ * second exception for the prompt. A destination has no such edge: the same
+ * press means the same thing from any depth, and pressing it deep in a stack
+ * collapses you back to the menu in ONE press instead of four Backs. Back is
+ * the only thing that closes, and it means one thing everywhere.
+ *
+ * ⚠ The body below is the 08-26 gesture with its CLOSER removed and its
+ * destination switched. What survives unchanged is the ROUTE test: "edit this
+ * track's instrument" means the generator's canvas on a Schwung track, co-run
+ * on a Move one, and an EXT track has neither and says so. */
+function shiftNoteSessionAction(wantInstrument) {
+if (S.sessionView) return;          /* session view has its own counterpart */
+const _gt = S.activeTrack;
+if (!wantInstrument) {
+    /* TAP — the menu, from wherever you are. Idempotent: already there and
+     * it simply stays there; deep in a stack and it collapses back to the
+     * menu in one press.
+     *
+     * ⚠⚠ ROUTE-AWARE ENTRY, and it must go through the SAME deferred door
+     * the bank uses. A Move-routed track's sound is its Move bus
+     * (soundEnterMove), not a chain slot — calling soundEnter directly here
+     * would open the wrong flavour, silently, for every Move track. Opening
+     * also READS the chain, which is why the bank defers it to the tick
+     * rather than doing it from the MIDI path. */
+    if (soundActive()) { soundShowMenu(); }
+    else {
+        S.pendingSoundEnterTrack = _gt;
+        S.pendingSoundEnterMenu  = true;
+    }
+    forceRedraw();
+    return;
+}
+/* HOLD — the instrument itself. */
+if (S.trackRoute[_gt] === 1) {
+    enterMoveNativeCoRun(_gt);
+} else if (S.trackRoute[_gt] === 2) {
+    showActionPopup('MIDI TRACK', 'No generator to edit');
+} else {
+    /* An EMPTY generator opens the module picker itself (Josh, 2026-08-27)
+     * with 'SELECT GENERATOR' over it — soundOpenGenerator always succeeds,
+     * so there is no failure branch to write. */
+    soundOpenGenerator(_gt);
+}
+forceRedraw();
+}
+
+/* ⭑ The Shift+Note/Session HOLD fires the moment it crosses the threshold, not
+ * on the release (Josh, 2026-08-28: "shift+hold needs to happen after hold
+ * duration, not release"). Same shape as checkBackHold below, and for the same
+ * reason: a hold you have to let go of before anything happens does not feel
+ * like a hold, it feels like a slow tap.
+ *
+ * The RELEASE then only has to notice the hold already fired — the tick is
+ * cleared here, so a release with nothing pending does nothing. */
+export function checkShiftNoteHold() {
+    if (S.shiftNoteSessionTick < 0) return;
+    /* Co-run owns this button while it is up (Menu is its way out), so abandon
+     * a pending hold rather than firing into it. */
+    if (S.moveCoRunTrack >= 0) { S.shiftNoteSessionTick = -1; return; }
+    if ((S.tickCount - S.shiftNoteSessionTick) >= BACK_HOLD_TICKS) {
+        S.shiftNoteSessionTick = -1;
+        shiftNoteSessionAction(true);          /* the instrument */
+    }
+}
+
 export function checkBackHold() {
     if (S.backPressTick < 0) return;
     /* Co-run started while Back was held: abandon the pending hold (co-run owns
