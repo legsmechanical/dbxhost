@@ -2290,6 +2290,23 @@ const VIEW_TREE = {
                           crumb: () => 'Target' },
     [VIEW_LFO_PARAM]:   { parent: VIEW_LFO_TARGET, float: true, backPure: true,
                           crumb: () => 'Comp' },
+    /* ⚠ VIEW_EDIT is tabled so the preset screens can NAME it in a crumb, but it
+     * does NOT float and is never drawn as a backdrop: `renderEdit` hands the
+     * whole frame to a hosted module canvas, and compositing over a surface that
+     * paints everything itself is where this would flicker (the spec's rule).
+     * renderInChain falls back to the blocks picker for it. */
+    [VIEW_EDIT]:        { parent: null,            float: false,
+                          crumb: () => modLabel() },
+    [VIEW_BROWSE]:      { parent: null,            float: true,
+                          crumb: () => 'Modules' },
+    [VIEW_PRESET_SRC]:  { parent: VIEW_EDIT,       float: true,
+                          crumb: () => 'Presets' },
+    [VIEW_PRESET_BAKED]:{ parent: VIEW_PRESET_SRC, float: true,
+                          crumb: () => 'Module' },
+    [VIEW_PATCHES]:     { parent: null,            float: true,
+                          crumb: () => 'Slot Presets' },
+    [VIEW_BUSES]:       { parent: null,            float: true,
+                          crumb: () => 'Session FX' },
 };
 
 /* The path TO the current screen: its ancestors, outermost first. The screen
@@ -2366,6 +2383,9 @@ function renderInChain(rows, sel, emptyMsg) {
      * not-a-list exception). Falling back to the blocks picker: it is the one
      * screen in sound mode that is always available. */
     const root = chainRootView();
+    /* ⚠⚠ VIEW_EDIT is deliberately NOT drawn here even though it is the root of
+     * the preset chain: it hands the frame to a hosted module canvas. The blocks
+     * picker stands in — the crumb still names the module you are editing. */
     if (root === VIEW_LFO) renderLfo();
     else renderBlocks();
     drawKitBackdropDim();
@@ -4649,10 +4669,8 @@ function renderBlocks() {
 }
 
 function renderBuses() {
-    clear_screen();
-    drawKitHeader('SESSION FX', false);
-    drawKitList(FX_BUSES.map(b => ({ label: b.title, hdr: true })),
-        S.busIdx, { topY: 16 });
+    renderInChain(FX_BUSES.map(b => ({ label: b.title, hdr: true, chevron: true })),
+                  S.busIdx);
 }
 
 /* What to CALL the block being edited.
@@ -4694,25 +4712,16 @@ function blockLabel() {
  * whole frame to the module (`if (S.hosted && renderHosted()) return;`), and
  * compositing over a surface that paints everything itself is where this would
  * flicker. Every backdrop below is one of our list screens. */
-const PICKER_MAX_W = 108;   /* 10px clear at each edge (Josh) */
-
-function drawPickerOverlay(drawBackdrop, options, sel, emptyMsg) {
-    drawBackdrop();
-    if (!options.length) { drawKitListOverlay([String(emptyMsg || 'EMPTY')], -1,
-                                              { tall: true, maxW: PICKER_MAX_W }); return; }
-    drawKitListOverlay(options, sel, { tall: true, maxW: PICKER_MAX_W });
-}
-
 function renderBrowse() {
     /* Over the block picker, so you can see WHICH block you are filling.
      * ⭑ When the browser was opened because the block was EMPTY, the backdrop's
      * header is overdrawn to say so — the caption sits ABOVE the overlay because
      * that band is the only space there is: the box starts at MV_ZOOM_Y (14) and
      * rows 8-13 are too few for a line of 7px text without clipping the box. */
-    drawPickerOverlay(() => {
-        renderBlocks();
-        if (S.browsePrompt) drawKitHeader(S.browsePrompt, false);
-    }, S.browseList.map(m => String(m.name)), S.browseIdx);
+    /* ⚠ The prompt (why the browser opened) rides the header band, which the
+     * crumb bar now owns — so an EMPTY-block browse says so in the crumb rather
+     * than over the backdrop. */
+    renderInChain(S.browseList.map(m => String(m.name)), S.browseIdx);
 }
 
 /* ── hosting a module's OWN canvas UI ──────────────────────────────────────
@@ -4882,9 +4891,7 @@ function renderRows(rows, sel, emptyMsg) {
 }
 
 function renderPresetSrc() {
-    clear_screen();
-    drawKitHeader(modLabel(), false);
-    renderRows(S.srcRows.map(r => r.label), S.presetSrcIdx, '');
+    renderInChain(S.srcRows.map(r => r.label), S.presetSrcIdx);
 }
 
 function renderChainPatches() {
@@ -4895,12 +4902,18 @@ function renderChainPatches() {
         drawDialogYesNoRow(S.patchConfirmIdx === 1);
         return;
     }
-    drawKitHeader(trackTitle('SLOT PRESETS'), false);
     /* '*' marks the slot's current patch — the one [Save] would overwrite. */
     const rows = ['[Save]', '[Save as…]'].concat(
         S.patchNames.map(n => (n === S.patchCur ? '*' : ' ') + n));
-    renderRows(rows, S.patchIdx, '');
-    if (S.patchMsg) centreText(58, S.patchMsg);
+    /* ⚠ A message keeps the FULL screen: it lives at y58, under where the box
+     * ends, so floating would simply hide it. §5.0's not-a-list exception. */
+    if (S.patchMsg) {
+        drawKitHeader(trackTitle('SLOT PRESETS'), false);
+        renderRows(rows, S.patchIdx, '');
+        centreText(58, S.patchMsg);
+        return;
+    }
+    renderInChain(rows, S.patchIdx);
 }
 
 function renderPresetList() {
@@ -4944,7 +4957,7 @@ function renderPresetBaked() {
     }
     const rows = S.bakedNames.map((n, i) =>
         String(i + 1).padStart(3, ' ') + '  ' + (n || ('Preset ' + (i + 1))));
-    drawPickerOverlay(renderPresetSrc, rows, S.bakedIdx);
+    renderInChain(rows, S.bakedIdx);
     /* Transient feedback stays on top of the box, as it was on top of the list.
      * ⚠ It overlaps the bottom row while it is up; it is a few frames of status
      * after an action, not a thing you read while choosing. */
