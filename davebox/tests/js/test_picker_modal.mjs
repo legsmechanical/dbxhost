@@ -38,6 +38,14 @@ globalThis.print = () => {};
  * device atlas's widest cell + spacing — near enough for truncation. */
 globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
 globalThis.fill_rect = () => {};
+/* ⚠ The REAL semantics, not a no-op: `stipple_rect` REMOVES half the ink of
+ * whatever is already drawn, so a rig that counts pixels must see that happen
+ * or its thresholds mean something different here than on the device. */
+globalThis.stipple_rect = (x, y, w, h, value, phase) => {
+    for (let yi = y; yi < y + h; yi++)
+        for (let xi = (((x + yi) & 1) === ((phase || 0) & 1)) ? x : x + 1; xi < x + w; xi += 2)
+            globalThis.set_pixel(xi, yi, value);
+};
 globalThis.set_pixel = () => {};
 globalThis.move_midi_internal_send = () => {};
 globalThis.set_led = () => {};

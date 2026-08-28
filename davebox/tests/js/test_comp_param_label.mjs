@@ -32,6 +32,14 @@ globalThis.shadow_send_midi_to_dsp = () => {};
 globalThis.set_pixel = () => {};
 globalThis.fill_rect = () => {};
 globalThis.draw_rect = () => {};
+/* ⚠ The REAL semantics, not a no-op: `stipple_rect` REMOVES half the ink of
+ * whatever is already drawn, so a rig that counts pixels must see that happen
+ * or its thresholds mean something different here than on the device. */
+globalThis.stipple_rect = (x, y, w, h, value, phase) => {
+    for (let yi = y; yi < y + h; yi++)
+        for (let xi = (((x + yi) & 1) === ((phase || 0) & 1)) ? x : x + 1; xi < x + w; xi += 2)
+            globalThis.set_pixel(xi, yi, value);
+};
 globalThis.clear_screen = () => {};
 globalThis.print = () => {};
 globalThis.pixel_print = () => {};

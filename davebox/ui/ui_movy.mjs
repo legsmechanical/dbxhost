@@ -1216,6 +1216,51 @@ export function drawKitEnumOverlay(cells, touchedIdx) {
     drawKitListOverlay(cell.options, sel);
 }
 
+/* ── the overlay STACK ─────────────────────────────────────────────────────
+ *
+ * A picker opened from a picker sits one step to the RIGHT of the one beneath
+ * it, and the ones underneath survive as a sliver on the left. Josh's geometry
+ * (2026-08-27), and it is the one that works: every layer keeps the FULL 108px
+ * width and the full height, so nothing narrows and nothing truncates however
+ * deep the stack goes.
+ *
+ * ⭑ The under-layers are drawn as EMPTY FRAMES. A 4px sliver shows an outline
+ * and black — never content — so the stack does not need to re-render the
+ * screens beneath it, which is what keeps this cheap: no ancestor renderer, no
+ * saved framebuffer, no per-layer state.
+ *
+ * ⚠ The step is 4px because the whole horizontal slack is 20px (128 - 108), and
+ * at 4px that is 6 distinct positions against a deepest real chain of 4. It is
+ * also below the 6px at which the layer beneath starts showing GLYPHS: a row's
+ * text begins at x+5.
+ *
+ * The stack stays centred while it fits in the left margin and then drifts
+ * right into the right margin, capped at the edge — so the top box is always
+ * whole, and the oldest slivers march off the left rather than squeezing it. */
+const STACK_STEP = 4, STACK_W = 108, STACK_Y = MV_ZOOM_Y;
+const stackTopX = (d) => Math.min(SCREEN_W - STACK_W,
+                                  10 + Math.max(0, d - 3) * STACK_STEP);
+
+export function drawKitStackedList(depth, rows, sel, opts) {
+    const o = opts || {};
+    const d = Math.max(1, depth | 0);
+    const h = SCREEN_H_LATCH - 1 - STACK_Y;
+    const tx = stackTopX(d);
+    for (let k = 0; k < d; k++) {
+        const x = tx - (d - 1 - k) * STACK_STEP;
+        /* Blank first: the box is opaque, and the dimmed screen behind it must
+         * not read through the rows. */
+        fill_rect(x, STACK_Y, STACK_W, h, 0);
+        rectOutline(x, STACK_Y, STACK_W, h, 1);
+    }
+    /* Only the top layer carries content. */
+    drawKitList(rows, sel, {
+        x: tx + 2, w: STACK_W - 4,
+        topY: STACK_Y + 6, rowH: o.rowH != null ? o.rowH : 9,
+        emptyMsg: o.emptyMsg,
+    });
+}
+
 /* ── knocking the backdrop back, and saying where you are ──────────────────
  *
  * An overlay covers part of a screen, and on 1 bit there is no dim to say the

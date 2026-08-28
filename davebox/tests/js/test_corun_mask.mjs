@@ -38,6 +38,14 @@ globalThis.shadow_get_param = () => ''; globalThis.shadow_set_param = () => 1;
 globalThis.host_vol_block = () => {}; globalThis.host_edit_cc_block = () => {};
 globalThis.clear_screen = () => {}; globalThis.print = () => {};
 globalThis.fill_rect = () => {}; globalThis.draw_rect = () => {}; globalThis.set_pixel = () => {};
+/* ⚠ The REAL semantics, not a no-op: `stipple_rect` REMOVES half the ink of
+ * whatever is already drawn, so a rig that counts pixels must see that happen
+ * or its thresholds mean something different here than on the device. */
+globalThis.stipple_rect = (x, y, w, h, value, phase) => {
+    for (let yi = y; yi < y + h; yi++)
+        for (let xi = (((x + yi) & 1) === ((phase || 0) & 1)) ? x : x + 1; xi < x + w; xi += 2)
+            globalThis.set_pixel(xi, yi, value);
+};
 globalThis.move_midi_internal_send = () => {}; globalThis.move_midi_external_send = () => {};
 globalThis.set_led = () => {};
 globalThis.host_ext_midi_remap_clear = () => {}; globalThis.host_ext_midi_remap_set = () => {};

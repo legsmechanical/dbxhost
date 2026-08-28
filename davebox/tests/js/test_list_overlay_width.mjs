@@ -22,6 +22,14 @@ let fb = new Uint8Array(W * H);
 const px = (x, y, v) => { x |= 0; y |= 0; if (x >= 0 && x < W && y >= 0 && y < H) fb[y * W + x] = v ? 1 : 0; };
 globalThis.set_pixel = px;
 globalThis.fill_rect = (x, y, w, h, v) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) px(x + i, y + j, v); };
+/* ⚠ The REAL semantics, not a no-op: `stipple_rect` REMOVES half the ink of
+ * whatever is already drawn, so a rig that counts pixels must see that happen
+ * or its thresholds mean something different here than on the device. */
+globalThis.stipple_rect = (x, y, w, h, value, phase) => {
+    for (let yi = y; yi < y + h; yi++)
+        for (let xi = (((x + yi) & 1) === ((phase || 0) & 1)) ? x : x + 1; xi < x + w; xi += 2)
+            globalThis.set_pixel(xi, yi, value);
+};
 
 /* ⚠⚠ THE REAL 5x7 ATLAS, not a fake. This file's whole method is to compare INK
  * drawn on the framebuffer against the font's own width function — so the two

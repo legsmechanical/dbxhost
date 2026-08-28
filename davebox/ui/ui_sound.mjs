@@ -60,6 +60,7 @@ import { parseValue, stepValue, commitString, renderCellsForBank,
     formatValue } from './ui_cells.mjs';
 import {
     drawKitBankPage, drawKitHeader, drawKitSectionPicker, drawKitList, drawKitListOverlay,
+    drawKitStackedList, drawKitBackdropDim, drawKitCrumbs,
     MV_BAR_Y,
     hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard,
 } from './ui_movy.mjs';
@@ -2302,22 +2303,44 @@ function renderKnobs() {
         S.knobIdx, {});
 }
 
+/* A screen that sits IN a chain: the root screen behind it, knocked back, with
+ * this screen's own box on top and the path named over the header.
+ *
+ * ⚠ `drawRoot` is the CHAIN'S ROOT, not the immediate parent — the layers
+ * between are drawn as empty slivers, so nothing needs to render them. Passing
+ * the parent instead would put its content on screen behind a box that already
+ * covers it, for nothing.
+ *
+ * ⚠⚠ The root must be one of OUR draws, never a hosted module canvas:
+ * `renderEdit` hands the whole frame to the module, and compositing over a
+ * surface that paints everything itself is where this would flicker. Every
+ * caller below is one of our own list screens. */
+function renderInChain(drawRoot, rows, sel, emptyMsg) {
+    drawRoot();
+    drawKitBackdropDim();
+    const path = soundViewPath();
+    drawKitStackedList(Math.max(1, path.length), rows, sel, { emptyMsg });
+    /* The track is the pinned head — you never lose which track you are in. */
+    drawKitCrumbs(['T' + (S.track + 1), ...path]);
+}
+
 function renderKnobTarget() {
-    clear_screen();
-    drawKitHeader('KNOB (' + (S.knobIdx + 1) + ') TARGET', false);
     /* A module row OPENS the param picker and shows no value of its own, so it
      * takes the chevron (§5.0: a chevron is a door). `(None)` is terminal — it
-     * clears the assignment — so it does not. */
-    drawKitList(S.knobTargets.map(t => ({ label: t.name, qual: t.qual,
-                                          chevron: !!t.id })),
-                S.knobTargetIdx, {});
+     * clears the assignment — so it does not.
+     * ⭑ The header is gone: the crumb bar says which knob you are assigning,
+     * which is all the header ever said. */
+    renderInChain(renderKnobs,
+                  S.knobTargets.map(t => ({ label: t.name, qual: t.qual,
+                                            chevron: !!t.id })),
+                  S.knobTargetIdx);
 }
 
 function renderKnobParam() {
-    /* Over the TARGET picker you just came from, with your target highlighted —
-     * which is why losing the 'KNOB (n) PARAM' header costs nothing. */
-    drawPickerOverlay(renderKnobTarget, S.knobParams.map(p => p.label),
-                      S.knobParamIdx, 'NO PARAMS');
+    /* One step deeper in the same chain — so the root is still the KNOBS screen
+     * and the TARGET picker beneath is a sliver, not a redraw. */
+    renderInChain(renderKnobs, S.knobParams.map(p => p.label),
+                  S.knobParamIdx, 'NO PARAMS');
 }
 
 /* ---- knob HUD: touch orients, turn reveals ------------------------------

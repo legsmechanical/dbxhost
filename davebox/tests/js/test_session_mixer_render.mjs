@@ -28,6 +28,14 @@ let fills = [], prints = [];
  * accused working code — the observable has to match the mechanism. */
 globalThis.fill_rect = (x, y, w, h) => { fills.push({ x, y, w, h }); };
 globalThis.draw_rect = () => {};
+/* ⚠ The REAL semantics, not a no-op: `stipple_rect` REMOVES half the ink of
+ * whatever is already drawn, so a rig that counts pixels must see that happen
+ * or its thresholds mean something different here than on the device. */
+globalThis.stipple_rect = (x, y, w, h, value, phase) => {
+    for (let yi = y; yi < y + h; yi++)
+        for (let xi = (((x + yi) & 1) === ((phase || 0) & 1)) ? x : x + 1; xi < x + w; xi += 2)
+            globalThis.set_pixel(xi, yi, value);
+};
 /* ⚠ The fader row labels are drawn with ui_movy's mvPrint, which puts ink down
  * one set_pixel at a time — the host `print` stub never sees them. Measuring
  * `prints` here reported "nothing drawn" for working code (the third time this
