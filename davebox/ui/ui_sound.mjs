@@ -673,6 +673,10 @@ export function soundValueForTest(key) { return S.values[key]; }
  * assembled fresh on every open from live component probes, so this exercises
  * the real path rather than a copy of it. */
 export function soundKnobTargetsForTest() { return knobTargetList(); }
+/* Drives the view directly so a Back edge can be exercised without walking the
+ * whole entry gesture. ⚠ Test-only: the real transitions go through the
+ * openers, which also seed the state each screen reads. */
+export function soundSetViewForTest(v) { S.view = v; }
 /* The two display forms, so a test can pin them without a live slot. */
 export function compLabelsForTest(id, param) {
     return { short: compShort(id), wide: compWide(id), pair: compParamLabel(id, param) };
@@ -2239,6 +2243,52 @@ function commitKnobAssignment(target, param) {
     if (target && param) queueChainWrite('knob_' + n + '_set', target + ':' + param);
     else queueChainWrite('knob_' + n + '_clear', '1');
     S.view = VIEW_KNOBS;
+}
+
+/* ── where a screen SITS in the tree ───────────────────────────────────────
+ *
+ * The Back handler already knew every one of these edges — as twenty branches
+ * each naming its own parent. That is fine while Back is the only thing that
+ * needs to know, and stops being fine the moment anything ELSE does: a
+ * breadcrumb has to name the path you took, and an overlay stack has to know
+ * how deep it is. Both would have to re-derive what the handler already
+ * encodes, and a second copy of a tree agrees with the first only until one
+ * of them is edited.
+ *
+ * So the PURE step-up edges are data, and Back reads this table for them.
+ *
+ * ⚠ Only the pure ones. Several Back branches do more than step up — they
+ * revert an audition, retrace an entry gesture, close an edit before leaving,
+ * or hand off through `pendingAction` — and those stay written out, because
+ * what they do is not "go to my parent". A table that pretended otherwise
+ * would be a tidier-looking lie.
+ *
+ * ⭑ `crumb` is what this screen is called in a breadcrumb, which is NOT its
+ * header: a header can spend the full width, a crumb shares 116px with the rest
+ * of the path. A function where the name depends on state. */
+const VIEW_TREE = {
+    [VIEW_KNOB_TARGET]: { parent: VIEW_KNOBS,       crumb: () => 'K' + (S.knobIdx + 1) },
+    [VIEW_KNOB_PARAM]:  { parent: VIEW_KNOB_TARGET, crumb: () => compShort(S.knobTarget) },
+    [VIEW_LFO_TARGET]:  { parent: VIEW_LFO,         crumb: () => 'Target' },
+    [VIEW_LFO_PARAM]:   { parent: VIEW_LFO_TARGET,  crumb: () => 'Comp' },
+    [VIEW_KNOBS]:       { parent: null,             crumb: () => 'Knobs' },
+    [VIEW_LFO]:         { parent: null,             crumb: () => 'LFO ' + (S.lfoNum + 1) },
+};
+
+/* The path TO the current screen: its ancestors, outermost first. The screen
+ * you are ON is in front of you and is not a crumb.
+ * ⚠ Guarded against a cycle rather than trusting the table — a self-parent
+ * would hang the render loop, which on this device means a dead UI and no
+ * error anywhere. */
+export function soundViewPath() {
+    const out = [];
+    let v = VIEW_TREE[S.view] ? VIEW_TREE[S.view].parent : null;
+    for (let guard = 0; v != null && guard < 8; guard++) {
+        const e = VIEW_TREE[v];
+        out.unshift(e ? e.crumb() : String(v));
+        v = e ? e.parent : null;
+    }
+    return out;
 }
 
 function renderKnobs() {
@@ -4142,17 +4192,16 @@ export function soundOnCC(d1, d2, decodeDelta) {
             /* Assignments were queued as they were made; nothing to flush.
              * The host autosave persists them (set_param marks the slot dirty). */
             S.pendingAction = { t: 'slotcfg', keep: true };
-        } else if (S.view === VIEW_KNOB_TARGET) {
-            S.view = VIEW_KNOBS;
-        } else if (S.view === VIEW_KNOB_PARAM) {
-            S.view = VIEW_KNOB_TARGET;
         } else if (S.view === VIEW_LFO) {
             if (S.lfoEditing) S.lfoEditing = false;
             else S.pendingAction = { t: 'slotcfg', keep: true };
-        } else if (S.view === VIEW_LFO_TARGET) {
-            S.view = VIEW_LFO;
-        } else if (S.view === VIEW_LFO_PARAM) {
-            S.view = VIEW_LFO_TARGET;
+        } else if (VIEW_TREE[S.view] && VIEW_TREE[S.view].parent != null) {
+            /* The pure step-ups, from VIEW_TREE. These were four branches doing
+             * exactly `S.view = <my parent>`; the table is now the one place
+             * that says so, and the breadcrumb reads the same edges.
+             * ⚠ Below VIEW_LFO deliberately: LFO has an edit state to close
+             * before it steps anywhere, so it is not a pure step-up. */
+            S.view = VIEW_TREE[S.view].parent;
         } else if (S.view === VIEW_PATCHES) {
             if (S.patchConfirm) S.patchConfirm = null;
             else { S.view = VIEW_BLOCKS; S.patchMsg = ''; }
