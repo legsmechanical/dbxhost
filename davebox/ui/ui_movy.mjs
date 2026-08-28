@@ -1241,6 +1241,15 @@ const STACK_STEP = 4, STACK_W = 108, STACK_Y = MV_ZOOM_Y;
 const stackTopX = (d) => Math.min(SCREEN_W - STACK_W,
                                   10 + Math.max(0, d - 3) * STACK_STEP);
 
+/* Where the top box of a stack of `depth` sits. Exported so a screen that draws
+ * INSIDE its own box — the LFO's waveform strip is the one — takes the geometry
+ * from the same place the box does, rather than keeping a second copy that
+ * drifts the first time the step or the width changes. */
+export function kitStackBox(depth) {
+    const d = Math.max(1, depth | 0);
+    return { x: stackTopX(d), y: STACK_Y, w: STACK_W, h: SCREEN_H_LATCH - 1 - STACK_Y };
+}
+
 export function drawKitStackedList(depth, rows, sel, opts) {
     const o = opts || {};
     const d = Math.max(1, depth | 0);
@@ -1261,9 +1270,14 @@ export function drawKitStackedList(depth, rows, sel, opts) {
      * 2 and 1, the same as every other list in the app. */
     const rowH = o.rowH != null ? o.rowH : 10;
     const listTop = STACK_Y + 6;
+    /* `footer` reserves space at the box's foot for a caller drawing its own
+     * thing there (the LFO's waveform). It comes off the list's height, so the
+     * rows can never run into it. */
     drawKitList(rows, sel, {
         x: tx + 2, w: STACK_W - 4,
-        topY: listTop, rowH, h: (STACK_Y + h - 2) - listTop,
+        topY: listTop, rowH,
+        h: (STACK_Y + h - 2) - listTop - (o.footer || 0),
+        visible: o.visible,
         emptyMsg: o.emptyMsg,
     });
 }

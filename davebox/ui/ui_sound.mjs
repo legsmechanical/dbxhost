@@ -60,7 +60,7 @@ import { parseValue, stepValue, commitString, renderCellsForBank,
     formatValue } from './ui_cells.mjs';
 import {
     drawKitBankPage, drawKitHeader, drawKitSectionPicker, drawKitList, drawKitListOverlay,
-    drawKitStackedList, drawKitBackdropDim, drawKitCrumbs,
+    drawKitStackedList, drawKitBackdropDim, drawKitCrumbs, kitStackBox,
     MV_BAR_Y,
     hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard,
 } from './ui_movy.mjs';
@@ -188,7 +188,9 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
       /* P7: the knob and LFO editors, absorbed from the host (they were
        * overlay services in P5). Sub-screens of slot settings. */
       VIEW_KNOBS = 11, VIEW_KNOB_TARGET = 12, VIEW_KNOB_PARAM = 13,
-      VIEW_LFO = 14, VIEW_LFO_TARGET = 15, VIEW_LFO_PARAM = 16;
+      VIEW_LFO = 14, VIEW_LFO_TARGET = 15, VIEW_LFO_PARAM = 16,
+      /* One picker serving every enum row in sound mode — see openEnumPicker. */
+      VIEW_ENUM = 17;
 
 /* Chain-patch file ops (save_patch / delete_patch) are DSP-side and async —
  * the file appears/vanishes a beat after the request. Re-read the list once
@@ -579,6 +581,10 @@ const S = {
     slotCfgIdx: 0,
     slotCfgVals: [],            /* live values, index-aligned with slotRows */
     slotCfgEditing: false,
+    /* The open enum picker: { label, options, sel, commit(i), from }. Null when
+     * none is open — its VIEW_TREE parent reads `from`, so this is also what
+     * says where Back goes. */
+    enumPick: null,
     slotCfgDirty: false,        /* something changed; save on leaving the screen */
     pendingSlotWrites: [],      /* slot-param writes, drained in tick */
 
@@ -2280,7 +2286,7 @@ const VIEW_TREE = {
     [VIEW_SLOTCFG]:     { parent: null,            float: true,
                           crumb: () => (S.cfgWhich === 'config' ? 'Config' : 'Sound') },
     [VIEW_KNOBS]:       { parent: VIEW_SLOTCFG,    float: true,  crumb: () => 'Knobs' },
-    [VIEW_LFO]:         { parent: VIEW_SLOTCFG,    float: false,
+    [VIEW_LFO]:         { parent: VIEW_SLOTCFG,    float: true,
                           crumb: () => 'LFO ' + (S.lfoNum + 1) },
     [VIEW_KNOB_TARGET]: { parent: VIEW_KNOBS,      float: true, backPure: true,
                           crumb: () => 'K' + (S.knobIdx + 1) },
@@ -2307,20 +2313,94 @@ const VIEW_TREE = {
                           crumb: () => 'Slot Presets' },
     [VIEW_BUSES]:       { parent: null,            float: true,
                           crumb: () => 'Session FX' },
+    [VIEW_ENUM]:        { parent: () => (S.enumPick ? S.enumPick.from : null),
+                          float: true, backPure: true,
+                          crumb: () => (S.enumPick ? S.enumPick.label : 'Value') },
 };
+
+/* Applying an Instrument choice. Extracted so the PICKER and the old
+ * step-through path commit through one implementation — two copies of a write
+ * that can retarget the screen is exactly the drift this tree keeps paying for.
+ * Reads `S.instrSel`, which both paths set. */
+function commitInstrChoice() {
+    if (S.instrSel !== instrValueFor(S.track)) {
+        /* ⭑ THE MERGE (Josh, 2026-08-27): choosing `Schwung` used to leave you
+         * on the block list to notice the Generator row was empty and open it
+         * yourself. Picking an instrument and picking WHICH is one intent, so
+         * the module picker follows immediately — the same overlay the
+         * empty-generator gesture opens. Consumed by `reflavour`, because the
+         * browse has to happen AFTER the track has re-entered its new flavour. */
+        if (S.instrSel === INSTR_SCHWUNG) S.browseAfterReflavour = true;
+        applyInstrChoice(S.track, S.instrSel);
+        /* The screen must FOLLOW the new destination immediately — a track just
+         * switched to MIDI has no chain to show, and a switch between Schwung
+         * and Move changes flavour entirely. tick's follow only fires when the
+         * TRACK changes, and it did not; without this you had to leave and
+         * re-enter to see the change. Deferred because re-entry reads params. */
+        S.pendingAction = { t: 'reflavour' };
+    }
+    S.dirty = true;
+}
+
+/* ── the enum picker ───────────────────────────────────────────────────────
+ *
+ * The spec's law: a menu item adjusting an ENUM opens a picker; a CONTINUOUS
+ * param is adjusted in place, because you do not need the list to know what a
+ * filter cutoff is doing. This is the one picker that serves all of them —
+ * slot config, the LFO, the instrument row — so a row only has to say what its
+ * options ARE, not how to present them.
+ *
+ * ⚠ TWO options stay in place. A picker to choose between On and Off is a
+ * screen to save one click, and §6 already says a two-state row toggles. The
+ * threshold matches drawKitEnumOverlay's existing `options.length <= 2`, which
+ * the canvas pickers have used since before any of this.
+ *
+ * `commit(i)` is the row's own setter, so the picker never needs to know what
+ * it is editing — which is what lets one picker serve three screens. */
+export function soundEnumPickable(options) { return !!options && options.length > 2; }
+function openEnumPicker(label, options, sel, commit) {
+    S.enumPick = { label, options, sel: Math.max(0, sel | 0), commit, from: S.view };
+    S.view = VIEW_ENUM;
+    S.dirty = true;
+}
+function closeEnumPicker(commitIt) {
+    const p = S.enumPick;
+    if (!p) return;
+    if (commitIt && p.commit) p.commit(p.sel);
+    S.view = p.from;
+    S.enumPick = null;
+    S.dirty = true;
+}
+function renderEnumPick() {
+    renderInChain(S.enumPick ? S.enumPick.options : [], S.enumPick ? S.enumPick.sel : 0);
+}
 
 /* The path TO the current screen: its ancestors, outermost first. The screen
  * you are ON is in front of you and is not a crumb.
  * ⚠ Guarded against a cycle rather than trusting the table — a self-parent
  * would hang the render loop, which on this device means a dead UI and no
  * error anywhere. */
+/* ⚠ `parent` may be a FUNCTION. Most screens sit at one place in the tree, but
+ * the enum picker's parent is wherever it was opened from — it serves every
+ * enum row in sound mode, so a static edge would be a lie. */
+function treeParent(v) {
+    const e = VIEW_TREE[v];
+    if (!e) return null;
+    return typeof e.parent === 'function' ? e.parent() : e.parent;
+}
+
 export function soundViewPath() {
     const out = [];
-    let v = VIEW_TREE[S.view] ? VIEW_TREE[S.view].parent : null;
+    let v = treeParent(S.view);
     for (let guard = 0; v != null && guard < 8; guard++) {
         const e = VIEW_TREE[v];
-        out.unshift(e ? e.crumb() : String(v));
-        v = e ? e.parent : null;
+        /* ⚠ An UNTABLED ancestor contributes NOTHING — it does not get its view
+         * NUMBER printed as a crumb. The blocks picker is the case: it is the
+         * root everything falls back to, and it has no name of its own worth
+         * showing, so the Instrument picker read "T3 > 0" on screen until this
+         * stopped stringifying the enum. */
+        if (e) out.unshift(e.crumb());
+        v = treeParent(v);
     }
     return out;
 }
@@ -2333,22 +2413,22 @@ export function soundViewPath() {
  * in sound mode that is always there. */
 export function soundStackDepth() {
     if (!VIEW_TREE[S.view] || !VIEW_TREE[S.view].float) return 0;
-    let d = 1, v = VIEW_TREE[S.view].parent;
+    let d = 1, v = treeParent(S.view);
     for (let guard = 0; v != null && guard < 8; guard++) {
         const e = VIEW_TREE[v];
         if (!e || !e.float) break;
-        d++; v = e.parent;
+        d++; v = treeParent(v);
     }
     return d;
 }
 
 /* The screen drawn UNDER the stack: the nearest ancestor that does not float. */
 function chainRootView() {
-    let v = VIEW_TREE[S.view] ? VIEW_TREE[S.view].parent : null;
+    let v = treeParent(S.view);
     for (let guard = 0; v != null && guard < 8; guard++) {
         const e = VIEW_TREE[v];
         if (!e || !e.float) return v;
-        v = e.parent;
+        v = treeParent(v);
     }
     return null;
 }
@@ -2376,7 +2456,7 @@ function renderKnobs() {
  * `renderEdit` hands the whole frame to the module, and compositing over a
  * surface that paints everything itself is where this would flicker. Every
  * caller below is one of our own list screens. */
-function renderInChain(rows, sel, emptyMsg) {
+function renderInChain(rows, sel, emptyMsg, opts) {
     /* The ROOT is the nearest ancestor that does not float — the blocks picker
      * for most chains, but the LFO screen for its own pickers, because the LFO
      * keeps its waveform strip and so stays a full screen (the spec's
@@ -2389,7 +2469,8 @@ function renderInChain(rows, sel, emptyMsg) {
     if (root === VIEW_LFO) renderLfo();
     else renderBlocks();
     drawKitBackdropDim();
-    drawKitStackedList(Math.max(1, soundStackDepth()), rows, sel, { emptyMsg });
+    drawKitStackedList(Math.max(1, soundStackDepth()), rows, sel,
+                       Object.assign({ emptyMsg }, opts || {}));
     /* The track is the pinned head — you never lose which track you are in. */
     drawKitCrumbs(['T' + (S.track + 1), ...soundViewPath()]);
 }
@@ -2763,6 +2844,20 @@ function lfoDisplayValue(item) {
     }
 }
 
+/* An LFO enum's value IS its index, stored as a string — so the picker's
+ * selection and the row's value are the same number, and these two helpers are
+ * the only place that has to know it. */
+function lfoRawIndex(item) {
+    const v = parseInt(S.lfoVals[item.key] || '0');
+    return (v >= 0 && v < item.options.length) ? v : 0;
+}
+function lfoSetIndex(item, i) {
+    const v = Math.max(0, Math.min(item.options.length - 1, i | 0));
+    if (String(v) === S.lfoVals[item.key]) return;
+    S.lfoVals[item.key] = String(v);
+    queueChainWrite(lfoKey(item.key), String(v));
+}
+
 function lfoAdjust(item, delta) {
     if (item.type === 'enum') {
         let v = parseInt(S.lfoVals[item.key] || '0') + delta;
@@ -2841,29 +2936,35 @@ function commitLfoTarget(compKey, paramKey) {
 }
 
 function renderLfo() {
-    clear_screen();
-    const t = S.lfoVals.target, p = S.lfoVals.target_param;
-    const on = S.lfoVals.enabled === '1';
-    let title = 'LFO (' + (S.lfoNum + 1) + ')';
-    if (on && t && p) title += ': ' + compParamLabel(t, p);
-    else if (!on) title += ': OFF';
-    drawKitHeader(title, false);
-    drawKitList(lfoItems().map((item, idx) =>
+    /* ⭑ Floats now (Josh, 2026-08-28). It was the spec's not-a-list exception
+     * because of the waveform strip — but the strip does not need the full
+     * width to say what shape is running, so it moves INSIDE the box and the
+     * screen stops being an exception. It shows ONE cycle rather than two: half
+     * the width, and a single cycle is what identifies a shape anyway.
+     *
+     * ⚠ Rows drop from 4 to 3 to make room. The strip is the reason to be on
+     * this screen at all — it is the only thing here that shows the LFO doing
+     * something — so it keeps its place and the list gives way. */
+    const WAVE_H = 11;
+    const rows = lfoItems().map((item, idx) =>
         ({ label: item.label, hdr: true, value: lfoDisplayValue(item),
-           editing: idx === S.lfoIdx && S.lfoEditing })),
-        S.lfoIdx, { rowH: 9, visible: 4 });
-    /* Live waveform strip under the list — the shape as the DSP will run it:
-     * two cycles, phase offset applied, dotted baseline (center when bipolar,
-     * floor when unipolar), bold dot at the start when retrigger is on. */
+           editing: idx === S.lfoIdx && S.lfoEditing }));
+    renderInChain(rows, S.lfoIdx, undefined, { visible: 3, footer: WAVE_H });
+
+    /* The strip, inside the box's foot. Geometry comes from the stack so the
+     * two cannot drift: drawKitStackedList reports where its box is. */
+    const box = kitStackBox(Math.max(1, soundStackDepth()));
     const shape = LFO_SHAPE_IDS[parseInt(S.lfoVals.shape) | 0] || 'sine';
     const bipolar = S.lfoVals.polarity === '1';
     const phase = parseFloat(S.lfoVals.phase_offset) || 0;
-    const topY = 49, botY = 62, x0 = 1, spanW = 125;
+    const botY = box.y + box.h - 3, topY = botY - (WAVE_H - 4);
+    const x0 = box.x + 3, spanW = box.w - 7;
     const baseY = bipolar ? Math.round((topY + botY) / 2) : botY;
     const amp = bipolar ? (botY - topY) / 2 : (botY - topY);
     for (let x = x0; x <= x0 + spanW; x += 2) set_pixel(x, baseY, 1);
+    /* ONE cycle across the strip (was two across the screen). */
     const yAt = (i) => {
-        const v = shapeSample(shape, (i / spanW) * 2 + phase);
+        const v = shapeSample(shape, (i / spanW) + phase);
         return bipolar ? Math.round(baseY - v * amp)
                        : Math.round(botY - ((v + 1) / 2) * amp);
     };
@@ -3951,6 +4052,9 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.knobIdx = listMove(NUM_KNOBS, S.knobIdx, delta);
         } else if (S.view === VIEW_KNOB_TARGET) {
             S.knobTargetIdx = listMove(S.knobTargets.length, S.knobTargetIdx, delta);
+        } else if (S.view === VIEW_ENUM) {
+            if (S.enumPick)
+                S.enumPick.sel = listMove(S.enumPick.options.length, S.enumPick.sel, delta);
         } else if (S.view === VIEW_KNOB_PARAM) {
             S.knobParamIdx = listMove(S.knobParams.length, S.knobParamIdx, delta);
         } else if (S.view === VIEW_LFO) {
@@ -4050,11 +4154,28 @@ export function soundOnCC(d1, d2, decodeDelta) {
             }
             return true;
         }
+        if (S.view === VIEW_ENUM) { closeEnumPicker(true); return true; }
         if (S.view === VIEW_SLOTCFG) {
             const row = S.slotRows[S.slotCfgIdx];
             if (row && row.sub) {
                 /* Native sub-editor. Opening reads params — tick only. */
                 S.pendingAction = { t: row.sub, lfo: row.lfo | 0 };
+            } else if (row && soundEnumPickable(row.opts)) {
+                /* ⭑ An enum of more than two opens the PICKER (the spec's law).
+                 * `fmt` is what the row's own value column shows, so the list
+                 * reads exactly like the value it is replacing — Keys / Drums /
+                 * Conduct, not 0 / 1 / 2.
+                 * ⚠ `commitOnClick` rows (Mode CONVERTS the track) are safe
+                 * here: the commit runs on the picker's click, once, which is
+                 * the same edge the old flow committed on. */
+                const idx = row.opts.indexOf(S.slotCfgVals[S.slotCfgIdx]);
+                openEnumPicker(row.label, row.opts.map(v => String(row.fmt(v))),
+                               idx < 0 ? 0 : idx,
+                               (i) => {
+                                   S.slotCfgVals[S.slotCfgIdx] = row.opts[i];
+                                   if (row.set) row.set(row.opts[i]);
+                                   S.slotCfgDirty = true;
+                               });
             } else if (row && row.commitOnClick && S.slotCfgEditing) {
                 /* Closing the edit IS the commit. */
                 S.slotCfgEditing = false;
@@ -4078,6 +4199,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
         else if (S.view === VIEW_LFO) {
             const item = lfoItems()[S.lfoIdx];
             if (item && item.type === 'action') S.pendingAction = { t: 'lfotarget' };
+            else if (item && item.type === 'enum' && soundEnumPickable(item.options)) {
+                /* Shape and the sync divisions are the long lists here; Enabled,
+                 * Mode, Sync and Retrigger are two-state and keep the toggle. */
+                const cur = lfoRawIndex(item);
+                openEnumPicker(item.label, item.options.slice(), cur,
+                               (i) => lfoSetIndex(item, i));
+            }
             else S.lfoEditing = !S.lfoEditing;
         }
         else if (S.view === VIEW_LFO_TARGET) {
@@ -4101,32 +4229,25 @@ export function soundOnCC(d1, d2, decodeDelta) {
                  * the row reads '-' and declines the edit, exactly as the global
                  * menu's row does. */
                 if (GS.trackPadMode[S.track] === PMC) { S.dirty = true; }
-                else { S.instrSel = instrValueFor(S.track); S.instrEditing = true; S.dirty = true; }
+                else {
+                    /* ⭑ Instrument is an ENUM — four families and up to 30-odd
+                     * entries — so it opens the PICKER rather than being ticked
+                     * through one detent at a time behind a `[value]`. The list
+                     * IS the thing you are choosing from; scrolling it blind
+                     * through a single row was the worst case of the old grammar
+                     * anywhere in the app. */
+                    const opts = instrOptions(GS.trackRoute, S.track);
+                    const cur = opts.indexOf(instrValueFor(S.track));
+                    openEnumPicker('Instrument', opts.map(o => String(fmtInstr(o))),
+                                   cur < 0 ? 0 : cur,
+                                   (i) => { S.instrSel = opts[i]; commitInstrChoice(); });
+                }
             } else {
                 S.instrEditing = false;
-                /* The write can retarget or close this very screen (an EXT route
-                 * has no sound to show), so it is the LAST thing done here and
-                 * tick's track-follow settles what happens next. */
-                if (S.instrSel !== instrValueFor(S.track)) {
-                    /* ⭑ THE MERGE (Josh, 2026-08-27): choosing `Schwung` used to
-                     * leave you on the block list to notice the Generator row was
-                     * empty and open it yourself. Picking an instrument and
-                     * picking WHICH is one intent, so the module picker follows
-                     * immediately — the same overlay the empty-generator gesture
-                     * opens. Consumed by `reflavour`, because the browse has to
-                     * happen AFTER the track has re-entered its new flavour. */
-                    if (S.instrSel === INSTR_SCHWUNG) S.browseAfterReflavour = true;
-                    applyInstrChoice(S.track, S.instrSel);
-                    /* The screen must FOLLOW the new destination immediately —
-                     * a track just switched to MIDI has no chain to show, and a
-                     * switch between Schwung and Move changes flavour entirely.
-                     * tick's follow only fires when the TRACK changes, and it
-                     * did not; without this you had to leave and re-enter to
-                     * see the change. Deferred because re-entry reads params. */
-                    S.pendingAction = { t: 'reflavour' };
-                }
-                S.dirty = true;
+                commitInstrChoice();
             }
+            S.dirty = true;
+            return true;
         }
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'buslevel') {
@@ -4268,6 +4389,14 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * ⚠ Deliberately the tap only — the long-press suspend above stays
          * unclaimable, the same failsafe shape as the host's Shift+Back. */
         if (hostedBack()) return true;
+        if (S.view === VIEW_ENUM) {
+            /* Back ABANDONS. Committing on the way out would make an accidental
+             * Back a silent edit, and the row you came from still shows the old
+             * value — you would not see what you had changed. */
+            closeEnumPicker(false);
+            S.dirty = true;
+            return true;
+        }
         if (S.view === VIEW_BLOCKS && S.instrEditing) {
             S.instrEditing = false;                 /* abandon, do not apply */
             S.dirty = true;
@@ -5063,6 +5192,7 @@ export function soundRender() {
     else if (S.view === VIEW_LFO) renderLfo();
     else if (S.view === VIEW_LFO_TARGET) renderLfoTarget();
     else if (S.view === VIEW_LFO_PARAM) renderLfoParam();
+    else if (S.view === VIEW_ENUM) renderEnumPick();
     else if (S.view === VIEW_PATCHES) renderChainPatches();
     else if (S.view === VIEW_BUSES) renderBuses();
     else renderEdit();

@@ -52,7 +52,7 @@ for (const fn of ['host_write_file', 'host_read_file', 'host_file_exists', 'host
 
 /* Sound mode's view enum — not exported, pinned here so a renumbering shows up
  * as a failure rather than as silently comparing the wrong constants. */
-const VIEW_SLOTCFG = 8,
+const VIEW_EDIT = 1, VIEW_PRESET_SRC = 3, VIEW_SLOTCFG = 8,
       VIEW_KNOBS = 11, VIEW_KNOB_TARGET = 12, VIEW_KNOB_PARAM = 13,
       VIEW_LFO = 14, VIEW_LFO_TARGET = 15, VIEW_LFO_PARAM = 16;
 
@@ -139,22 +139,38 @@ step('⭑ a ROOT screen has an empty path', () => {
 });
 
 step('⭑⭑ the STACK depth counts floating ancestors, stopping at a full screen', () => {
-    /* The spec's exception: a screen whose content is not a list stays full
-     * screen, and its children float over IT rather than over the root. LFO is
-     * that case — its live waveform strip sits where an overlay box would go.
-     * So the LFO pickers are a SHALLOW stack even though they are deep in the
-     * tree, and the knob pickers are a deep one. */
+    /* ⚠ Updated 2026-08-28: the LFO used to be the not-a-list EXCEPTION — its
+     * waveform strip sat where a box would go, so it kept the full screen and
+     * its pickers were a shallow stack. Josh's call: shrink the strip to one
+     * cycle and put it INSIDE the box. The exception is gone and both chains
+     * are now uniform.
+     *
+     * The `float: false` machinery is still exercised — by VIEW_EDIT, which is
+     * tabled for its crumb but never drawn as a backdrop because it hands the
+     * frame to a hosted module canvas. */
     setView(VIEW_KNOB_PARAM);
-    const deep = snd.soundStackDepth();
-    if (deep !== 4) throw new Error(`knob param stack is ${deep} boxes, expected 4`);
+    const knobs = snd.soundStackDepth();
+    if (knobs !== 4) throw new Error(`knob param stack is ${knobs} boxes, expected 4`);
     setView(VIEW_LFO_PARAM);
-    const shallow = snd.soundStackDepth();
-    if (shallow !== 2)
-        throw new Error(`LFO param stack is ${shallow} boxes, expected 2 — it should stop at the ` +
-                        'LFO screen, which does not float');
+    const lfo = snd.soundStackDepth();
+    if (lfo !== 4)
+        throw new Error(`LFO param stack is ${lfo} boxes, expected 4 — the LFO floats now, so ` +
+                        'its chain is the same depth as the knob chain');
     setView(VIEW_LFO);
-    if (snd.soundStackDepth() !== 0)
-        throw new Error('the LFO screen itself should not be a stack at all');
+    if (snd.soundStackDepth() !== 2)
+        throw new Error('the LFO screen is itself a 2-box stack (Sound Control, then LFO)');
+});
+
+step('⭑ a non-floating ancestor still stops the walk', () => {
+    /* VIEW_EDIT keeps float:false, so the preset chain rooted on it is measured
+     * from there rather than running all the way to the blocks picker. Without
+     * a case here, the whole float mechanism would be untested the moment the
+     * LFO stopped being the exception. */
+    setView(VIEW_PRESET_SRC);
+    const d = snd.soundStackDepth();
+    if (d !== 1)
+        throw new Error(`preset source is ${d} boxes, expected 1 — the walk should stop at ` +
+                        'VIEW_EDIT, which does not float');
 });
 
 step('⚠ an unknown view has an empty path rather than throwing', () => {
