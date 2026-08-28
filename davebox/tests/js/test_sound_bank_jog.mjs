@@ -335,10 +335,22 @@ step('⭑ the TOP LEVEL keeps the banks\' display law: falls back to the overvie
     send(14, 1); globalThis.tick();
     if (!snd.soundRender()) throw new Error('a turn did not re-open the display window');
     jogTouch(false);
-    /* Deeper levels never yield: open the MENU through the prompt's door, then
-     * open a row, then check with the window closed. */
+    /* ⭑⭑ THE MENU DOES NOT YIELD — Josh, 2026-08-28: "it's not a bank". The
+     * display law belongs to the bank, and after the respec the only thing here
+     * that IS one is the prompt. A menu you deliberately clicked into stays up
+     * until it is dismissed; it would be perverse for it to vanish because you
+     * stopped touching the jog.
+     * ⚠ This assertion is the whole reason the split exists, and nothing else
+     * would catch its loss: a menu that yields looks exactly like the old
+     * behaviour, which is what it WAS one commit ago. */
     snd.soundTick();
     send(3, 127); send(3, 0); globalThis.tick(); snd.soundTick();   /* prompt -> menu */
+    S.tickCount += 200; globalThis.tick();
+    if (S.bankSelectTick >= 0) throw new Error('control: the display window did not expire');
+    if (!snd.soundRender())
+        throw new Error('the MENU yielded to the overview — it is not a bank, it stays until ' +
+                        'dismissed');
+    /* And deeper still never yields either: open a row and re-check. */
     send(3, 127); snd.soundTick(); globalThis.tick();
     S.tickCount += 200; globalThis.tick();
     if (snd.soundPickStateForTest && snd.soundActive()) {

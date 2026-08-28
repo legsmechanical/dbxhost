@@ -909,13 +909,18 @@ export function soundRetarget(track, slot) {
      * synth canvas while the same switch off a Move bus landed on the picker.
      * Josh caught the asymmetry on hardware, 2026-08-11. Cross-flavour is
      * always the picker anyway — the rows are not the same rows. */
+    /* ⚠ A retarget collapses deep screens to the root — but if you were on the
+     * BANK'S PROMPT it must leave you there. Switching tracks is not asking for
+     * the menu, and promoting the prompt into it on every track step is the
+     * other half of the same bug. */
+    const wasPrompt = S.view === VIEW_PROMPT;
     const keepPlace = !leftMoveBus && S.view === VIEW_EDIT;
     if (leftMoveBus) {
         /* Leaving a Move bus: nothing about WHERE you were transfers, because
          * the rows aren't the same rows. Land on the new track's picker, on its
          * synth — not on an fx index that meant a bus insert a moment ago. */
         clearBusContext();
-        S.view = VIEW_BLOCKS;
+        S.view = wasPrompt ? VIEW_PROMPT : VIEW_BLOCKS;
         S.pickRow = 0;
         S.comp = 'synth';
         S.blockIdx = 1;
@@ -1656,7 +1661,13 @@ export function soundEnterMove(track) {
     S.busIdx = 0;
     S.busLevelEditing = false;
     S.busLevelDirty = false;
-    S.view = VIEW_BLOCKS;
+    /* ⭑ THE BANK'S PROMPT, exactly as soundEnter does. Both flavours arrive by
+     * the same door — the jog reaching SOUND + CONFIG, a track switch, the tick
+     * reconcile — so both must land on the same screen. Missing this here was
+     * the bug Josh hit on device: a MOVE-routed track walked straight into the
+     * full menu while a Schwung one stopped at the prompt, and the gesture,
+     * which enters through this same path, looked broken on Move tracks. */
+    S.view = VIEW_PROMPT;
     S.pickRow = 0;
     S.comp = '';                /* no chain component is in scope on a Move bus */
     /* Sync, never assume up — see the note in soundEnter. */
@@ -5259,11 +5270,19 @@ export function soundRender() {
             S.touchedIdx < 0 && !S.volTouched &&
             !GS.jogTouched && GS.bankSelectTick < 0)
         return false;
-    /* ⭑ THE PROMPT OBEYS THE DISPLAY LAW TOO. It is the bank's own screen now,
-     * so it must stand down to the track overview exactly as the menu did when
-     * the bank WAS the menu — otherwise the one bank that never yields is the
-     * one whose whole job is being a bank. */
-    if ((S.view === VIEW_BLOCKS || S.view === VIEW_PROMPT) &&
+    /* ⭑⭑ THE PROMPT YIELDS; THE MENU DOES NOT (Josh, 2026-08-28: "it's not a
+     * bank"). The display law belongs to BANKS — show while the jog is touched
+     * or the window is open, otherwise stand down to the track overview — and
+     * after the respec the only thing here that IS a bank is the prompt.
+     *
+     * The MENU is a screen you deliberately opened, so it stays up until it is
+     * dismissed. That is the whole distinction the respec drew: arriving on a
+     * bank is not the same as asking for a screen, and it would be perverse for
+     * a menu you clicked into to vanish because you stopped touching the jog.
+     * ⚠ Before the respec this test read VIEW_BLOCKS, correctly — the menu WAS
+     * the bank then. Moving it to the prompt is the same rule, re-pointed at
+     * the thing that now carries the bank's identity. */
+    if (S.view === VIEW_PROMPT &&
             !soundIsGlobal() && !S.enterSession &&
             !S.instrEditing && !S.busLevelEditing &&
             S.touchedIdx < 0 && !S.volTouched &&

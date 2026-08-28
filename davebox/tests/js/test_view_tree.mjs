@@ -52,7 +52,8 @@ for (const fn of ['host_write_file', 'host_read_file', 'host_file_exists', 'host
 
 /* Sound mode's view enum — not exported, pinned here so a renumbering shows up
  * as a failure rather than as silently comparing the wrong constants. */
-const VIEW_EDIT = 1, VIEW_PRESET_SRC = 3, VIEW_SLOTCFG = 8,
+const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_PRESET_SRC = 3, VIEW_SLOTCFG = 8,
+      VIEW_PROMPT = 18,
       VIEW_KNOBS = 11, VIEW_KNOB_TARGET = 12, VIEW_KNOB_PARAM = 13,
       VIEW_LFO = 14, VIEW_LFO_TARGET = 15, VIEW_LFO_PARAM = 16;
 
@@ -200,6 +201,31 @@ step('⚠ an unknown view has an empty path rather than throwing', () => {
      * would simply stop updating with nothing logged. */
     setView(0);
     if (snd.soundViewPath().length) throw new Error('an untabled view produced crumbs');
+});
+
+step('⭑⭑ BOTH entry flavours land on the bank\'s prompt, not the menu', () => {
+    /* ⚠⚠ Josh found this on device: a MOVE-routed track walked the jog straight
+     * into the full menu while a Schwung one stopped at the prompt, and the
+     * gesture — which enters through the same door — looked broken on Move
+     * tracks. `soundEnterMove` set the view itself and I had only changed
+     * `soundEnter`. Two entry points, one rule, and nothing but a test that
+     * exercises BOTH will catch the next one drifting. */
+    const view = () => snd.soundPickStateForTest().view;
+    snd.soundExit(); for (let i = 0; i < 3; i++) snd.soundTick();
+    for (let t = 0; t < 8; t++) GS.trackRoute[t] = 0;
+    snd.soundEnter(2, 2);
+    if (view() !== VIEW_PROMPT)
+        throw new Error('a Schwung track entered on view ' + view() + ', not the prompt');
+    snd.soundExit(); for (let i = 0; i < 3; i++) snd.soundTick();
+    for (let t = 0; t < 8; t++) GS.trackRoute[t] = 1;
+    snd.soundEnterMove(2);
+    if (view() !== VIEW_PROMPT)
+        throw new Error('a MOVE track entered on view ' + view() + ', not the prompt');
+    /* ⚠ CONTROL: the door still opens, or the two assertions above would pass
+     * on a build where the menu is simply unreachable. */
+    snd.soundShowMenu();
+    if (view() !== VIEW_BLOCKS)
+        throw new Error('the menu is unreachable from the prompt: view ' + view());
 });
 
 console.log(failed ? '\nFAILED' : '\nOK');
