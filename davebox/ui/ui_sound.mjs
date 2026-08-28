@@ -2284,7 +2284,13 @@ const VIEW_TREE = {
      *             header: a header can spend the full width, a crumb shares
      *             116px with the rest of the path. */
     [VIEW_SLOTCFG]:     { parent: null,            float: true,
-                          crumb: () => (S.cfgWhich === 'config' ? 'Config' : 'Sound') },
+                          /* ⚠ 'Snd', not 'Sound' — measured, not taste. At the
+                           * full word the knob-param path is 122px against a
+                           * 116px bar and the LFO-target path is 117px, i.e.
+                           * over by ONE pixel; both then drop a crumb. 'Snd'
+                           * saves 10px and both fit. 'Config' needs no such
+                           * help: its own paths are 78px at the deepest. */
+                          crumb: () => (S.cfgWhich === 'config' ? 'Config' : 'Snd') },
     [VIEW_KNOBS]:       { parent: VIEW_SLOTCFG,    float: true,  crumb: () => 'Knobs' },
     [VIEW_LFO]:         { parent: VIEW_SLOTCFG,    float: true,
                           crumb: () => 'LFO ' + (S.lfoNum + 1) },

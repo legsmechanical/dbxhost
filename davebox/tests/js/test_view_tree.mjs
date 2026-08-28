@@ -130,8 +130,8 @@ step('⭑⭑ the PATH names the ancestors, outermost first', () => {
      * were, because the converted screens had dropped their headers. */
     if (path.length !== 4)
         throw new Error(`expected 4 crumbs for KNOB_PARAM, got ${path.length}: ${JSON.stringify(path)}`);
-    if (path[0] !== 'Sound' || path[1] !== 'Knobs' || path[2] !== 'K1')
-        throw new Error(`the path reads ${JSON.stringify(path)}, expected Sound > Knobs > K1 > <param>`);
+    if (path[0] !== 'Snd' || path[1] !== 'Knobs' || path[2] !== 'K1')
+        throw new Error(`the path reads ${JSON.stringify(path)}, expected Snd > Knobs > K1 > <param>`);
 });
 
 step('⚠ every crumb is non-empty — an empty one silently drops the tail', () => {
@@ -154,7 +154,7 @@ step('⭑ a ROOT screen has an empty path', () => {
      * not a tabled view, it is the fallback root everything falls back to. */
     setView(VIEW_SLOTCFG);
     const path = snd.soundViewPath();
-    if (path.length !== 1 || path[0] !== 'Sound')
+    if (path.length !== 1 || path[0] !== 'Snd')
         throw new Error(`SLOTCFG should be its own single crumb, got ${JSON.stringify(path)}`);
 });
 
