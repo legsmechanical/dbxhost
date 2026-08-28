@@ -2022,16 +2022,14 @@ function drainSlotWrites() {
 }
 
 function renderSlotCfg() {
-    clear_screen();
-    drawKitHeader(trackTitle(S.cfgWhich === 'config' ? 'CONFIG' : 'SOUND CONTROL'), false);
     /* hdr: these are the track's OWN structure, so they take the header font
      * the top level uses. Without it the same component rendered them in the
      * thin label font and the submenu read as a different screen. */
-    drawKitList(S.slotRows.map((s, idx) => (s.sub
+    renderInChain(S.slotRows.map((s, idx) => (s.sub
         ? { label: s.label, hdr: true, chevron: true }
         : { label: s.label, hdr: true, value: s.fmt(S.slotCfgVals[idx]),
             editing: idx === S.slotCfgIdx && S.slotCfgEditing })),
-        S.slotCfgIdx, {});
+        S.slotCfgIdx);
 }
 
 /* ---- knob editor (P7 absorb) --------------------------------------------
@@ -2268,12 +2266,30 @@ function commitKnobAssignment(target, param) {
  * header: a header can spend the full width, a crumb shares 116px with the rest
  * of the path. A function where the name depends on state. */
 const VIEW_TREE = {
-    [VIEW_KNOB_TARGET]: { parent: VIEW_KNOBS,       crumb: () => 'K' + (S.knobIdx + 1) },
-    [VIEW_KNOB_PARAM]:  { parent: VIEW_KNOB_TARGET, crumb: () => compShort(S.knobTarget) },
-    [VIEW_LFO_TARGET]:  { parent: VIEW_LFO,         crumb: () => 'Target' },
-    [VIEW_LFO_PARAM]:   { parent: VIEW_LFO_TARGET,  crumb: () => 'Comp' },
-    [VIEW_KNOBS]:       { parent: null,             crumb: () => 'Knobs' },
-    [VIEW_LFO]:         { parent: null,             crumb: () => 'LFO ' + (S.lfoNum + 1) },
+    /* `float`   — this screen renders as an overlay box over its chain's root.
+     *             FALSE for a screen whose content is not a list: the spec's own
+     *             exception, and LFO is the case — its live waveform strip lives
+     *             at y49-62, which an overlay box would simply cover.
+     * `backPure` — Back may step to `parent` straight from this table. Only for
+     *             screens whose Back does NOTHING else; the rest keep their own
+     *             branch, because reverting an audition or re-opening a parent
+     *             with its state is not "go to my parent".
+     * `crumb`   — what this screen is called in a breadcrumb, which is not its
+     *             header: a header can spend the full width, a crumb shares
+     *             116px with the rest of the path. */
+    [VIEW_SLOTCFG]:     { parent: null,            float: true,
+                          crumb: () => (S.cfgWhich === 'config' ? 'Config' : 'Sound') },
+    [VIEW_KNOBS]:       { parent: VIEW_SLOTCFG,    float: true,  crumb: () => 'Knobs' },
+    [VIEW_LFO]:         { parent: VIEW_SLOTCFG,    float: false,
+                          crumb: () => 'LFO ' + (S.lfoNum + 1) },
+    [VIEW_KNOB_TARGET]: { parent: VIEW_KNOBS,      float: true, backPure: true,
+                          crumb: () => 'K' + (S.knobIdx + 1) },
+    [VIEW_KNOB_PARAM]:  { parent: VIEW_KNOB_TARGET, float: true, backPure: true,
+                          crumb: () => compShort(S.knobTarget) },
+    [VIEW_LFO_TARGET]:  { parent: VIEW_LFO,        float: true, backPure: true,
+                          crumb: () => 'Target' },
+    [VIEW_LFO_PARAM]:   { parent: VIEW_LFO_TARGET, float: true, backPure: true,
+                          crumb: () => 'Comp' },
 };
 
 /* The path TO the current screen: its ancestors, outermost first. The screen
@@ -2292,15 +2308,43 @@ export function soundViewPath() {
     return out;
 }
 
+/* How many boxes the stack draws: this screen plus every FLOATING ancestor up
+ * to (not including) the first one that does not float. That non-floating
+ * ancestor is the chain's ROOT — the screen drawn underneath and dimmed.
+ * ⚠ A screen whose nearest ancestors all float has no root in the table at all;
+ * the caller supplies the fallback (the blocks picker), which is the only screen
+ * in sound mode that is always there. */
+export function soundStackDepth() {
+    if (!VIEW_TREE[S.view] || !VIEW_TREE[S.view].float) return 0;
+    let d = 1, v = VIEW_TREE[S.view].parent;
+    for (let guard = 0; v != null && guard < 8; guard++) {
+        const e = VIEW_TREE[v];
+        if (!e || !e.float) break;
+        d++; v = e.parent;
+    }
+    return d;
+}
+
+/* The screen drawn UNDER the stack: the nearest ancestor that does not float. */
+function chainRootView() {
+    let v = VIEW_TREE[S.view] ? VIEW_TREE[S.view].parent : null;
+    for (let guard = 0; v != null && guard < 8; guard++) {
+        const e = VIEW_TREE[v];
+        if (!e || !e.float) return v;
+        v = e.parent;
+    }
+    return null;
+}
+
 function renderKnobs() {
-    clear_screen();
-    drawKitHeader(trackTitle('KNOBS'), false);
-    drawKitList(S.knobAsn.map((a, i) =>
+    /* Floats now: a submenu, and a plain list. The crumb says which track and
+     * that you are in Knobs, so the header it used to draw is redundant. */
+    renderInChain(S.knobAsn.map((a, i) =>
         /* `K1`..`K8`, not `Knob 1`: 13px against 34px, and the row's VALUE is the
          * part carrying information. With the long label the assignment was
          * eating into it — see compParamLabel. */
         ({ label: 'K' + (i + 1), hdr: true, value: knobAsnLabel(a) })),
-        S.knobIdx, {});
+        S.knobIdx);
 }
 
 /* A screen that sits IN a chain: the root screen behind it, knocked back, with
@@ -2315,13 +2359,19 @@ function renderKnobs() {
  * `renderEdit` hands the whole frame to the module, and compositing over a
  * surface that paints everything itself is where this would flicker. Every
  * caller below is one of our own list screens. */
-function renderInChain(drawRoot, rows, sel, emptyMsg) {
-    drawRoot();
+function renderInChain(rows, sel, emptyMsg) {
+    /* The ROOT is the nearest ancestor that does not float — the blocks picker
+     * for most chains, but the LFO screen for its own pickers, because the LFO
+     * keeps its waveform strip and so stays a full screen (the spec's
+     * not-a-list exception). Falling back to the blocks picker: it is the one
+     * screen in sound mode that is always available. */
+    const root = chainRootView();
+    if (root === VIEW_LFO) renderLfo();
+    else renderBlocks();
     drawKitBackdropDim();
-    const path = soundViewPath();
-    drawKitStackedList(Math.max(1, path.length), rows, sel, { emptyMsg });
+    drawKitStackedList(Math.max(1, soundStackDepth()), rows, sel, { emptyMsg });
     /* The track is the pinned head — you never lose which track you are in. */
-    drawKitCrumbs(['T' + (S.track + 1), ...path]);
+    drawKitCrumbs(['T' + (S.track + 1), ...soundViewPath()]);
 }
 
 function renderKnobTarget() {
@@ -2330,8 +2380,7 @@ function renderKnobTarget() {
      * clears the assignment — so it does not.
      * ⭑ The header is gone: the crumb bar says which knob you are assigning,
      * which is all the header ever said. */
-    renderInChain(renderKnobs,
-                  S.knobTargets.map(t => ({ label: t.name, qual: t.qual,
+    renderInChain(S.knobTargets.map(t => ({ label: t.name, qual: t.qual,
                                             chevron: !!t.id })),
                   S.knobTargetIdx);
 }
@@ -2339,8 +2388,7 @@ function renderKnobTarget() {
 function renderKnobParam() {
     /* One step deeper in the same chain — so the root is still the KNOBS screen
      * and the TARGET picker beneath is a sliver, not a redraw. */
-    renderInChain(renderKnobs, S.knobParams.map(p => p.label),
-                  S.knobParamIdx, 'NO PARAMS');
+    renderInChain(S.knobParams.map(p => p.label), S.knobParamIdx, 'NO PARAMS');
 }
 
 /* ---- knob HUD: touch orients, turn reveals ------------------------------
@@ -2811,21 +2859,18 @@ function renderLfo() {
 }
 
 function renderLfoTarget() {
-    clear_screen();
-    drawKitHeader('LFO (' + (S.lfoNum + 1) + ') TARGET', false);
     /* Every row here opens the param picker — the modules and the other LFO
      * alike — so all of them are doors and take the chevron (§5.0).
      * `[Clear Target]` is terminal: it commits and leaves. */
-    drawKitList(S.lfoComps.map(c => ({ label: c.label, qual: c.qual,
-                                       chevron: c.key !== '__clear__' })),
-                S.lfoCompIdx, {});
+    renderInChain(S.lfoComps.map(c => ({ label: c.label, qual: c.qual,
+                                         chevron: c.key !== '__clear__' })),
+                  S.lfoCompIdx);
 }
 
 function renderLfoParam() {
     /* Mirrors the knob pair exactly: TARGET keeps the full screen (its rows open
      * per-module submenus), PARAM floats over it. */
-    drawPickerOverlay(renderLfoTarget, S.lfoParams.map(p => p.label),
-                      S.lfoParamIdx, 'NO PARAMS');
+    renderInChain(S.lfoParams.map(p => p.label), S.lfoParamIdx, 'NO PARAMS');
 }
 
 function menuEnter() {
@@ -4218,7 +4263,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
         } else if (S.view === VIEW_LFO) {
             if (S.lfoEditing) S.lfoEditing = false;
             else S.pendingAction = { t: 'slotcfg', keep: true };
-        } else if (VIEW_TREE[S.view] && VIEW_TREE[S.view].parent != null) {
+        } else if (VIEW_TREE[S.view] && VIEW_TREE[S.view].backPure) {
             /* The pure step-ups, from VIEW_TREE. These were four branches doing
              * exactly `S.view = <my parent>`; the table is now the one place
              * that says so, and the breadcrumb reads the same edges.

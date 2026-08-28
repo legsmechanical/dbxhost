@@ -52,7 +52,8 @@ for (const fn of ['host_write_file', 'host_read_file', 'host_file_exists', 'host
 
 /* Sound mode's view enum — not exported, pinned here so a renumbering shows up
  * as a failure rather than as silently comparing the wrong constants. */
-const VIEW_KNOBS = 11, VIEW_KNOB_TARGET = 12, VIEW_KNOB_PARAM = 13,
+const VIEW_SLOTCFG = 8,
+      VIEW_KNOBS = 11, VIEW_KNOB_TARGET = 12, VIEW_KNOB_PARAM = 13,
       VIEW_LFO = 14, VIEW_LFO_TARGET = 15, VIEW_LFO_PARAM = 16;
 
 async function main() {
@@ -117,19 +118,43 @@ step('⭑ a whole chain walks all the way out, one press per level', () => {
 
 step('⭑⭑ the PATH names the ancestors, outermost first', () => {
     /* The breadcrumb reads the same edges Back does — that is the entire reason
-     * the table exists. The screen you are ON is not a crumb. */
+     * the table exists. The screen you are ON is not a crumb.
+     * ⚠ Updated when the tree GREW: Knobs sits inside Sound Control, so the
+     * knob chain is three deep, not two. The old expectation of two was correct
+     * for a table that stopped at Knobs. */
     setView(VIEW_KNOB_PARAM);
     const path = snd.soundViewPath();
-    if (path.length !== 2)
-        throw new Error(`expected 2 ancestors for KNOB_PARAM, got ${path.length}: ${JSON.stringify(path)}`);
-    if (path[0] !== 'Knobs')
-        throw new Error(`outermost crumb is "${path[0]}", expected "Knobs"`);
+    if (path.length !== 3)
+        throw new Error(`expected 3 ancestors for KNOB_PARAM, got ${path.length}: ${JSON.stringify(path)}`);
+    if (path[0] !== 'Sound' || path[1] !== 'Knobs')
+        throw new Error(`the path reads ${JSON.stringify(path)}, expected Sound > Knobs > K1`);
 });
 
 step('⭑ a ROOT screen has an empty path', () => {
-    setView(VIEW_KNOBS);
+    /* SLOTCFG is the top of the sound-mode tree: the blocks picker under it is
+     * not a tabled view, it is the fallback root everything falls back to. */
+    setView(VIEW_SLOTCFG);
     const path = snd.soundViewPath();
-    if (path.length) throw new Error(`KNOBS should have no ancestors, got ${JSON.stringify(path)}`);
+    if (path.length) throw new Error(`SLOTCFG should have no ancestors, got ${JSON.stringify(path)}`);
+});
+
+step('⭑⭑ the STACK depth counts floating ancestors, stopping at a full screen', () => {
+    /* The spec's exception: a screen whose content is not a list stays full
+     * screen, and its children float over IT rather than over the root. LFO is
+     * that case — its live waveform strip sits where an overlay box would go.
+     * So the LFO pickers are a SHALLOW stack even though they are deep in the
+     * tree, and the knob pickers are a deep one. */
+    setView(VIEW_KNOB_PARAM);
+    const deep = snd.soundStackDepth();
+    if (deep !== 4) throw new Error(`knob param stack is ${deep} boxes, expected 4`);
+    setView(VIEW_LFO_PARAM);
+    const shallow = snd.soundStackDepth();
+    if (shallow !== 2)
+        throw new Error(`LFO param stack is ${shallow} boxes, expected 2 — it should stop at the ` +
+                        'LFO screen, which does not float');
+    setView(VIEW_LFO);
+    if (snd.soundStackDepth() !== 0)
+        throw new Error('the LFO screen itself should not be a stack at all');
 });
 
 step('⚠ an unknown view has an empty path rather than throwing', () => {
