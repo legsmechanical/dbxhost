@@ -2291,7 +2291,11 @@ const VIEW_TREE = {
     [VIEW_KNOB_TARGET]: { parent: VIEW_KNOBS,      float: true, backPure: true,
                           crumb: () => 'K' + (S.knobIdx + 1) },
     [VIEW_KNOB_PARAM]:  { parent: VIEW_KNOB_TARGET, float: true, backPure: true,
-                          crumb: () => compShort(S.knobTarget) },
+                          /* ⚠ Falls back: the target is empty until one is
+                           * chosen, and now that the current screen IS the last
+                           * crumb, an empty one would silently drop the tail of
+                           * the path rather than merely look odd. */
+                          crumb: () => compShort(S.knobTarget) || 'Param' },
     [VIEW_LFO_TARGET]:  { parent: VIEW_LFO,        float: true, backPure: true,
                           crumb: () => 'Target' },
     [VIEW_LFO_PARAM]:   { parent: VIEW_LFO_TARGET, float: true, backPure: true,
@@ -2375,8 +2379,16 @@ function renderEnumPick() {
     renderInChain(S.enumPick ? S.enumPick.options : [], S.enumPick ? S.enumPick.sel : 0);
 }
 
-/* The path TO the current screen: its ancestors, outermost first. The screen
- * you are ON is in front of you and is not a crumb.
+/* The path, INCLUDING the screen you are on, outermost first.
+ *
+ * ⚠⚠ It used to stop at the ancestors, on the reasoning that the current screen
+ * is in front of you. That was wrong once the converted screens dropped their
+ * headers: nothing then named where you WERE. Knobs and LFO 1 both read
+ * "T3 > SOUND", and LFO 1 was indistinguishable from LFO 2 — Josh spotted it as
+ * "why don't the lfo crumbs follow the knobs?", and they did: the RULE was the
+ * problem, not the LFO's edges. Naming the current screen also makes the chains
+ * symmetric, since each then names its own subject at the same depth.
+ *
  * ⚠ Guarded against a cycle rather than trusting the table — a self-parent
  * would hang the render loop, which on this device means a dead UI and no
  * error anywhere. */
@@ -2390,7 +2402,8 @@ function treeParent(v) {
 }
 
 export function soundViewPath() {
-    const out = [];
+    const self = VIEW_TREE[S.view];
+    const out = self ? [self.crumb()] : [];
     let v = treeParent(S.view);
     for (let guard = 0; v != null && guard < 8; guard++) {
         const e = VIEW_TREE[v];

@@ -124,10 +124,29 @@ step('⭑⭑ the PATH names the ancestors, outermost first', () => {
      * for a table that stopped at Knobs. */
     setView(VIEW_KNOB_PARAM);
     const path = snd.soundViewPath();
-    if (path.length !== 3)
-        throw new Error(`expected 3 ancestors for KNOB_PARAM, got ${path.length}: ${JSON.stringify(path)}`);
-    if (path[0] !== 'Sound' || path[1] !== 'Knobs')
-        throw new Error(`the path reads ${JSON.stringify(path)}, expected Sound > Knobs > K1`);
+    /* ⚠ Updated 2026-08-28: the path INCLUDES the screen you are on (Josh:
+     * "screen you're on should be the last crumb across the board"). Before
+     * that, Knobs and LFO 1 both read "T3 > SOUND" and nothing named where you
+     * were, because the converted screens had dropped their headers. */
+    if (path.length !== 4)
+        throw new Error(`expected 4 crumbs for KNOB_PARAM, got ${path.length}: ${JSON.stringify(path)}`);
+    if (path[0] !== 'Sound' || path[1] !== 'Knobs' || path[2] !== 'K1')
+        throw new Error(`the path reads ${JSON.stringify(path)}, expected Sound > Knobs > K1 > <param>`);
+});
+
+step('⚠ every crumb is non-empty — an empty one silently drops the tail', () => {
+    /* A crumb is a FUNCTION of state, so one can come back empty before its
+     * state is set: KNOB_PARAM names its target, which is blank until a target
+     * is chosen. The bar filters empties, so the failure is invisible — the
+     * path just gets shorter than the screen you are on. */
+    for (const v of [VIEW_SLOTCFG, VIEW_KNOBS, VIEW_KNOB_TARGET, VIEW_KNOB_PARAM,
+                     VIEW_LFO, VIEW_LFO_TARGET, VIEW_LFO_PARAM]) {
+        setView(v);
+        const p = snd.soundViewPath();
+        const bad = p.findIndex((c) => !c || !String(c).trim());
+        if (bad >= 0)
+            throw new Error(`view ${v} produced an empty crumb at ${bad}: ${JSON.stringify(p)}`);
+    }
 });
 
 step('⭑ a ROOT screen has an empty path', () => {
@@ -135,7 +154,8 @@ step('⭑ a ROOT screen has an empty path', () => {
      * not a tabled view, it is the fallback root everything falls back to. */
     setView(VIEW_SLOTCFG);
     const path = snd.soundViewPath();
-    if (path.length) throw new Error(`SLOTCFG should have no ancestors, got ${JSON.stringify(path)}`);
+    if (path.length !== 1 || path[0] !== 'Sound')
+        throw new Error(`SLOTCFG should be its own single crumb, got ${JSON.stringify(path)}`);
 });
 
 step('⭑⭑ the STACK depth counts floating ancestors, stopping at a full screen', () => {
