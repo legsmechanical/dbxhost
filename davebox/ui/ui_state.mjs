@@ -449,6 +449,10 @@ export const S = {
     globalMenuItems: null,
     globalMenuState: null,
     globalMenuStack: null,
+    /* An open enum picker over the global menu: { label, options, sel, commit }.
+     * The global menu is FLAT — nothing ever pushes its stack — so this is the
+     * only thing that is ever layered over it. */
+    globalEnumPick: null,
     globalMenuBuiltForTrack: -1,
     bpmWasEditing: false,
     lastSentMenuEditValue: null,

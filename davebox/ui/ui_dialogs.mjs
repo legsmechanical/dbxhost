@@ -14,7 +14,8 @@ import { formatItemValue, isDivider } from '/data/UserData/schwung/shared/menu_i
 /* The KIT chassis. ui_movy is pure — no imports, no state — so pulling it in
  * here cannot cycle. See docs/UI_LANGUAGE.md: a list of the app's own structure
  * renders on the kit; the host chassis is for dialogs. */
-import { drawKitHeader, drawKitBrandHeader, drawKitList, fitHdr, hdrWidth } from './ui_movy.mjs';
+import { drawKitHeader, drawKitBrandHeader, drawKitList, fitHdr, hdrWidth,
+         drawKitStackedList, drawKitBackdropDim, drawKitCrumbs } from './ui_movy.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
     dropSnapshots, applySnapshotToLive, loadSelectedCurrentProject,
@@ -216,6 +217,54 @@ function drawExportDoneDialog() {
     drawOkButton(52);
 }
 
+/* ⭑ The global menu's enum picker.
+ *
+ * Same law as sound mode's: a row with more than two options opens a list
+ * rather than being ticked through behind `[brackets]`. This menu has the
+ * longest enums in the app — Scale is 14, MIDI channel 17 — so it is the worst
+ * case of the old grammar, and it is where a picker pays most.
+ *
+ * ⚠ It does NOT reuse sound mode's `openEnumPicker`: that one renders through
+ * `renderInChain`, which draws a sound-mode screen as its backdrop. Here the
+ * backdrop is this menu. Same law, same look, different chain — sharing the
+ * renderer would mean sharing the wrong root.
+ *
+ * The global menu is FLAT (nothing pushes `globalMenuStack`), so this picker is
+ * the only thing ever layered over it and the stack is always one box deep. */
+export function openGlobalEnumPick(item) {
+    const opts = item.options || [];
+    const cur = opts.indexOf(item.value != null ? item.value : item.get && item.get());
+    S.globalEnumPick = {
+        label: item.label || '',
+        options: opts.map(v => String(item.format ? item.format(v) : v)),
+        raw: opts,
+        sel: cur < 0 ? 0 : cur,
+        item,
+    };
+    S.screenDirty = true;
+}
+export function globalEnumPickable(item) {
+    return !!(item && item.options && item.options.length > 2);
+}
+export function closeGlobalEnumPick(commit) {
+    const p = S.globalEnumPick;
+    if (!p) return;
+    /* ⚠ Back ABANDONS, the same as sound mode's picker: committing on the way
+     * out turns an accidental Back into a silent edit. */
+    if (commit && p.item && p.item.set) p.item.set(p.raw[p.sel]);
+    S.globalEnumPick = null;
+    S.screenDirty = true;
+}
+function drawGlobalEnumPick() {
+    /* The menu itself is the backdrop — knocked back so the box reads as being
+     * over it — then one box, then the path. No track head (Josh): this menu is
+     * global, so a track crumb would be actively wrong. */
+    drawGlobalMenuList();
+    drawKitBackdropDim();
+    drawKitStackedList(1, S.globalEnumPick.options, S.globalEnumPick.sel, {});
+    drawKitCrumbs(['Global', S.globalEnumPick.label]);
+}
+
 export function drawGlobalMenu() {
     if (S.tapTempoOpen)        { drawTapTempoScreen();       return; }
     if (S.exportDoneDialog)    { drawExportDoneDialog();     return; }
@@ -225,6 +274,13 @@ export function drawGlobalMenu() {
     if (S.confirmConvertToConduct){ drawConvertToConductConfirm(); return; }
     if (S.menuInfoLines.length > 0){ drawMenuInfo(); return; }
     if (S.confirmExport || S.confirmExportCondPhase) { drawExportConfirm(); return; }
+    if (S.globalEnumPick) { drawGlobalEnumPick(); return; }
+    drawGlobalMenuList();
+}
+
+/* The menu's own list body, split out so the enum picker can draw it as its
+ * backdrop without re-running the dialog dispatch above. */
+function drawGlobalMenuList() {
     clear_screen();
     /* Always 'Global' now. This used to read 'Track N' for the first five rows,
      * back when the menu opened with a TRACK section — that section moved to

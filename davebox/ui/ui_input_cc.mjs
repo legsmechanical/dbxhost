@@ -39,7 +39,8 @@ import {
     snapshotPickerRotate, snapshotPickerClick, openClearAutoMenu,
     clearAutoMenuRotate, clearAutoMenuClick, showMenuInfo, closeConvertConfirm,
     closeProjectPadPicker, projectPadPickerModifiers,
-    projectPadPickerClick, projectPadPickerRotate, projectPadPickerBack
+    projectPadPickerClick, projectPadPickerRotate, projectPadPickerBack,
+    openGlobalEnumPick, closeGlobalEnumPick, globalEnumPickable
 } from './ui_dialogs.mjs';
 import { trackClipHasContent, sessionHasAnyContent } from './ui_scene.mjs';
 import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
@@ -455,6 +456,18 @@ function modalDialogUp() {
              * (2026-08-13) and the rules with it, into ui_dialogs'
              * requestTrackModeChange — so there is nothing to intercept. */
         }
+        /* ⭑ An enum of more than two opens the PICKER instead of an in-place
+         * edit — this menu holds the longest lists in the app (Scale is 14,
+         * MIDI channel 17). Intercepted BEFORE handleMenuInput, which is the
+         * host's shared editor and knows nothing about overlays. */
+        if (S.globalEnumPick) { closeGlobalEnumPick(true); S.screenDirty = true; return; }
+        {
+            const _e = (S.globalMenuState && S.globalMenuItems)
+                       ? S.globalMenuItems[S.globalMenuState.selectedIndex] : null;
+            if (globalEnumPickable(_e) && !S.globalMenuState.editing) {
+                openGlobalEnumPick(_e); return;
+            }
+        }
         handleMenuInput({
             cc: 3, value: d2,
             items: S.globalMenuItems, state: S.globalMenuState, stack: S.globalMenuStack,
@@ -775,7 +788,17 @@ function modalDialogUp() {
         }
         if ((S.globalMenuOpen || modalDialogUp()) && !S.shiftHeld) {
             if (S.globalMenuOpen) ensureGlobalMenuFresh();
-            if (S.exportDoneDialog) {
+            if (S.globalEnumPick) {
+                /* The picker owns the jog while it is up — CLAMPED at the ends,
+                 * the same as every other settings list (Josh, 2026-08-23). */
+                const delta = decodeDelta(d2);
+                if (delta !== 0) {
+                    const n = S.globalEnumPick.options.length;
+                    S.globalEnumPick.sel =
+                        Math.max(0, Math.min(n - 1, S.globalEnumPick.sel + delta));
+                    S.screenDirty = true;
+                }
+            } else if (S.exportDoneDialog) {
                 /* single OK button — jog does nothing */
             } else if (S.confirmClearSession) {
                 const delta = decodeDelta(d2);
@@ -1826,6 +1849,7 @@ function _backTap() {
         else closeSnapshotPicker();
         forceRedraw(); return;
     }
+    if (S.globalEnumPick) { closeGlobalEnumPick(false); forceRedraw(); return; }
     if (S.clearAutoMenu)  { S.clearAutoMenu = null; S.deleteTapArmed = false; forceRedraw(); return; }
     if (S.tempoSelectActive) {
         /* Keep the currently-auditioned tempo (same as a jog-click) and close. */
