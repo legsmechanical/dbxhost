@@ -217,6 +217,49 @@ step('⭑⭑ the selection band leaves clear space BELOW the glyphs, not just ab
         throw new Error(`the band is lopsided: ${above}px above, ${below}px below`);
 });
 
+step('⭑⭑ the STACKED overlay uses that row height — the call site, not the maths', () => {
+    /* ⚠⚠ The step above pins drawKitList's geometry at a rowH it passes in
+     * ITSELF, so it stayed green against a mutation putting the overlay back to
+     * the tight 9. Third time this session that a mechanism was pinned and its
+     * caller was not. Measure the band the STACK actually draws.
+     *
+     * The band is distinguishable from the box FRAME by where it starts: the
+     * frame spans the whole box from its left edge, the selection fill starts
+     * two pixels in. */
+    const FB_W = 128, FB_H = 64;
+    const fb = new Int8Array(FB_W * FB_H).fill(-1);
+    const realSet = globalThis.set_pixel, realFill = globalThis.fill_rect;
+    const put = (x, y, v) => { if (x >= 0 && x < FB_W && y >= 0 && y < FB_H) fb[y * FB_W + x] = v ? 1 : 0; };
+    globalThis.set_pixel = (x, y, v) => put(x | 0, y | 0, v);
+    globalThis.fill_rect = (x, y, w, h, v) => {
+        for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) put(x + i, y + j, v);
+    };
+    kit.drawKitStackedList(1, [{ label: 'Damping' }, { label: 'Dry' }, { label: 'Wet' }], 0, {});
+    globalThis.set_pixel = realSet; globalThis.fill_rect = realFill;
+
+    /* depth 1 puts the box at x=10 (the centred position). */
+    const BX = 10, BW2 = 108;
+    /* ⚠ NOT "is the box's left edge lit" — the frame draws that column on EVERY
+     * row, so that test called every row a frame row and found no band at all.
+     * The distinguishing column is the 1px gap between the frame and the fill:
+     * x = BX+1 stays black on a band row, x = BX+2 is where the fill starts. */
+    const litInside = (y) => {
+        let n = 0;
+        for (let x = BX + 2; x < BX + BW2 - 2; x++) if (fb[y * FB_W + x] === 1) n++;
+        return n;
+    };
+    const band = [];
+    for (let y = 0; y < FB_H; y++)
+        if (fb[y * FB_W + BX + 1] === 0 && litInside(y) > (BW2 - 4) / 2) band.push(y);
+    if (!band.length) throw new Error('the stacked overlay drew no selection band at all');
+    /* contiguous run */
+    let h = 1;
+    while (h < band.length && band[h] === band[h - 1] + 1) h++;
+    if (h !== 10)
+        throw new Error(`the stacked overlay's selection band is ${h}px tall, expected 10 — ` +
+                        'at 9 its bottom edge lands on the glyph bottoms');
+});
+
 console.log(failed ? '\nFAILED' : '\nOK');
 process.exit(failed);
 }
