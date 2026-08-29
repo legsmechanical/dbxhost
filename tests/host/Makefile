@@ -26,6 +26,12 @@ CFLAGS ?= -O2 -g -Wall -Wextra -Wno-unused-parameter -std=c11
 INCLUDES = -I../../src/host
 LDFLAGS = -lpthread
 
+# -MF puts the .d beside the TARGET, not beside the source. Without it a
+# multi-source recipe is fatal under clang ("cannot specify -o when generating
+# multiple output files") and, under gcc, scatters one .d per source next to
+# the sources — where `-include $(TARGETS:=.d)` below can never find them.
+DEPFLAGS = -MMD -MP -MF $@.d
+
 BUILD_DIR = ../../build/tests/host
 
 TARGETS = $(BUILD_DIR)/test_timespec_delta \
@@ -46,8 +52,8 @@ all: $(TARGETS)
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-# -MMD -MP emits a .d file per target listing the HEADERS it included, and the
-# -include below feeds those back to make.
+# $(DEPFLAGS) emits a .d file per target listing the HEADERS it included, and
+# the -include below feeds those back to make.
 #
 # ⚠⚠ Without this, editing a header-only unit does NOT rebuild its test: make
 # sees the .c unchanged and reuses the old binary, so the suite passes against
@@ -62,19 +68,31 @@ $(BUILD_DIR):
 # diagnosed as stale, and still reported SURVIVED until a bootstrap build had
 # generated the deps. If a mutation on a header-only unit survives, run
 # `make -C tests/host all` once and try again before believing it.
+#
+# ⚠⚠ Two more things the plain `-MMD -MP` form got wrong, both fixed by
+# DEPFLAGS above plus $(filter %.c,$^) in the multi-source recipes:
+#   - without -MF, gcc writes each .d NEXT TO ITS SOURCE, so a multi-source
+#     recipe's deps landed in src/host/ where -include can never see them:
+#     test_sa_master_volume and test_spawn_command had NO header tracking at
+#     all, and a green run meant nothing for either. Under clang the same
+#     recipe is fatal outright ("cannot specify -o when generating multiple
+#     output files"), which is how it was found.
+#   - -include pulls the .d's header list into $^, so a bare $^ then hands
+#     those .h files to the compiler as if they were sources. Compile only
+#     $(filter %.c,$^).
 $(BUILD_DIR)/%: %.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -MMD -MP $< -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 # Links the unit under test rather than re-declaring it: a test that copies the
 # implementation passes forever after the real one changes.
 $(BUILD_DIR)/test_sa_master_volume: test_sa_master_volume.c ../../src/host/sa_master_volume.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -MMD -MP $^ -o $@ $(LDFLAGS) -lm
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $(filter %.c,$^) -o $@ $(LDFLAGS) -lm
 
 $(BUILD_DIR)/test_spawn_command: test_spawn_command.c ../../src/host/spawn_command.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -MMD -MP $^ -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $(filter %.c,$^) -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_midi_in_compact: test_midi_in_compact.c ../../src/host/shadow_midi_filter.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -MMD -MP -MF $@.d $^ -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $(filter %.c,$^) -o $@ $(LDFLAGS)
 
 -include $(TARGETS:=.d)
 
