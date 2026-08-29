@@ -142,8 +142,9 @@ Descriptor kinds, and what each draws (`drawCellWidget` dispatch):
 | Kind | Shape | For |
 |---|---|---|
 | `arc` / `arcbip` | Arc knob, r7 — bipolar variant fills from centre | Continuous values |
-| `hbar` | Two-state bar | Toggles |
-| `vbar` | Vertical bar, bottom-up | Mix / level feel (`fader` cells) |
+| `pill` | Switch pill — ON fills the track and knocks the slug out | Toggles whose two states are literally off/on (§3.3) |
+| `hbar` | Two-state bar | ⚠ **No cell emits it.** Kept as a primitive; the split sends every two-state cell to `pill` or `enumsq` |
+| `vbar` | Fader — dashed rails, framed dithered column, notched head | Mix / level feel (`fader` cells) |
 | `enumsq` | Framed micro-font square | Named enums whose words won't fit the big font |
 | `valsq` | Frameless big numeric | Counts, octaves, note read-outs |
 | `frac` | Stacked fraction | Musical lengths (`1/16t`) |
@@ -151,8 +152,7 @@ Descriptor kinds, and what each draws (`drawCellWidget` dispatch):
 | `wavesq` | One-cycle waveform box | Wave-select cells |
 | `xbox` | Framed diagonal cross | "Nothing routed here" |
 | `action` | One-shot square | Triggers |
-| 🟠 `pill` | Switch pill — ON fills the track and knocks the slug out | **MOCKUP, unadopted** (§3.2) |
-| 🟠 `faderail` | Dashed rails + framed dithered column + head | **MOCKUP, unadopted** (§3.2) |
+| `faderail` | Alias of `vbar` | Renderer-only, so the two can be drawn side by side. No cell emits it |
 
 Spans override cells where a shape carries more meaning than eight separate knobs. All four are
 **DECLARED by the caller, never detected** — `drawKitCells(cells, touchedIdx, env, filt, eq, samp)`:
@@ -181,8 +181,12 @@ sets; the hairline it replaced ranked 7th–10th.
 
 - **Unipolar** graphs (filter) fill to the FLOOR; **bipolar** ones (EQ) fill to the CENTRE, so a cut
   fills downward. Filling to the floor on a bipolar graph detaches the shape from its own ink.
-- **Opt-in on the filter** (`filt.fill`), because that curve already ships on davebox bank pages and
-  turning it on by default would restyle a live screen nobody asked to change.
+- **On by default everywhere**, including the filter, since 2026-08-29. It shipped opt-in for one
+  commit so that the one curve already live on davebox bank pages could be judged from a render
+  first. `filt.fill: false` is the surviving escape hatch; nothing passes it.
+- ⚠ The fill goes **under** the stroke, and that is asserted as a pixel SUBSET rather than as an ink
+  count: reversed, the checker punches its lattice through the curve and the graph acquires holes
+  exactly where it is being read, which no count would notice.
 - ⚠ **No notched corners here**, though they are the house idiom for every box. A box's corners are
   a design decision; the corners of a filled curve are DATA — the left edge of a passband, the floor
   a release lands on — and rounding them off misrepresents the parameter.
@@ -214,13 +218,52 @@ drawn on the touched cell, where the strip is answering "what number is this".
 **Both are descriptor fields, and davebox sets neither today**, so every shipping cell renders
 identically. A bank that gains a modulation source needs a *value*, not a widget.
 
-🟠 **Unadopted mockups.** `pill` and `faderail` are drawn only by `tools/render_widgets.mjs`;
-nothing in `ui_cells.mjs` emits them. They are here to be judged as renders and **deleted if the
-answer is no** — do not quietly wire one in. The pill's argument is that the TRACK carries the state
-(ON fills it and knocks the slug out) so the two states differ by most of the widget's area; the
-fader's is that its interior lattice re-phases on a sub-row remainder, so a detent too small to move
-the bar still moves the texture — measured upstream at 44 distinct pictures per 127 steps against
-the plain bar's 12.
+### 3.3 ⭑⭑ Two states: PILL or BOX, and it is a rule, not a taste
+
+> A two-state cell takes the **switch pill** when **both** of its state names are in the boolean
+> vocabulary — `off on no yes 0 1 false true disabled enabled`, case-insensitive. Otherwise it takes
+> the **enum box**, the same framed micro-font square a five-option enum takes.
+
+`isBooleanPair()` in `ui_cells.mjs` is the one implementation, ported verbatim from upstream's
+`BOOL_OPTION` so the two surfaces cannot drift to different ideas of what a boolean is. Every
+two-state cell in the tree goes through it — the data-driven path (`toRenderCell`'s `tog`,
+`kitCellForKnob`'s `fmtBool`) and the hand-written ones (`toggleCell()` in `ui_render.mjs`) alike.
+There is no per-cell `kind` for an author to get right, deliberately: **the cell that gets it wrong
+is invisible** — a pill on a word pair still draws, still toggles, and just stops saying which word.
+
+- **Why the pill for a boolean.** It says its state with AREA: track filled versus track empty, slug
+  knocked out versus slug in ink. Legible across the room, and completely dumb — it carries "which
+  of two" and nothing else, which is all a boolean has.
+- **Why the box for words.** The word IS the information. This is the half of the split that fixes
+  something rather than restyling it: the two-state bar these cells used to take showed a fill
+  LEVEL, so Step/Audio, Mono/Poly and LP/HP all drew as "full" or "empty" and the word appeared only
+  while the knob was held. That is upstream's *"widget that tells you nothing"* exactly.
+- ⚠ **Half a pair is not a boolean.** `Off`/`Lock` is a toggle whose ON state is NAMED, and naming
+  it was a choice; it takes the box and keeps its name. Spell it `On` and it becomes a pill on its
+  own — that is the rule working, not a bug.
+- ⚠ **A pill must never animate.** Upstream removed both a 120ms slug slide and a 160ms fill after a
+  device report of "distracting": a switch is the control you flip most often and least
+  deliberately, and no calibration of a duration fixes a thing that should not be moving. Nothing is
+  lost — the two states already differ by most of the widget's area, so a flip is the loudest
+  possible change even between two frames.
+- ⚠ **The 2px slug inset is the floor, not a preference.** At 1px the slug is 8-connected to the
+  wall on its own row and the two merge: OFF stops reading as "a block parked at one end of a track"
+  and starts reading as "the left half of this box is thick" — the same picture at both seats, and
+  therefore no switch at all.
+- ACCEPTED COST: ON is a dark cell, so a page with several switches on is a row of black blocks.
+- ACCEPTED COST: a word longer than the square splits 4/4 (`AUDIO` → `AUDI`/`O`). That is `sqLines`'
+  existing rule for every named enum on the device, not something the split introduced; changing it
+  would move every enum square at once.
+
+**The fader** (`vbar`) is adopted at the **dispatch**, not by renaming the kind at each call site:
+the descriptor still says "this is a level, bottom-up", which is the caller's business, and what
+that looks like is `ui_movy`'s. That is the property Rule 0 exists for. Its argument over the plain
+bar is that the interior lattice re-phases on a sub-row remainder, so a detent too small to move the
+boundary still moves the texture — upstream measured 44 distinct pictures per 127 steps against the
+plain bar's 12. ⚠ This knowingly breaks the absolute-coordinate rule the fills follow; here the
+re-phasing IS the signal, and a rail plus a gap between adjacent cells leaves no seam for the
+mismatch to show at. `drawVBar` stays exported as the honest plain bar; nothing on a cell grid
+uses it.
 
 ## 4. Header and page bar
 
@@ -320,11 +363,13 @@ Corollaries, each of which was a real screen before the cohesion pass:
   and scrollbar grammar.
 - **Scrollbar** — right-edge rail + a solid 2px thumb, **no arrows**. The rail is the extent of the
   list and the thumb is where you are in it; an arrow says "there is more" a second time and reflows
-  the row it sits on as it appears and disappears. 🟠 A **dotted** rail (`drawKitList` opt
-  `dottedRail`) is mocked and **off by default**: drawing both rail and thumb solid makes the thumb
-  a thicker piece of the same object, so the eye has to measure widths to read a position — but
-  flipping the default changes every list in the app at once, so it waits on a look at the render.
-  ⚠ A list that fits draws no rail at all; the flag is inert there.
+  the row it sits on as it appears and disappears. The rail is **dotted** and the thumb is solid — drawing
+  both solid makes the thumb a thicker piece of the same object, so the eye has to measure widths to
+  read a position. Default for every `drawKitList` list since 2026-08-29; `dottedRail: false`
+  restores the solid rail and nothing passes it. ⚠ A list that fits draws no rail at all; the flag
+  is inert there, and a rail with nothing to say is worse than none. ⚠ `drawKitListOverlay` draws
+  its own rail and is still SOLID — a deliberate remaining inconsistency, not an oversight; it is a
+  one-line change whenever the picker is looked at.
 - **Dialogs** — buttons are **No left, Yes right**; selected is filled with black label,
   unselected is outlined with white label; `Back` = No, `Jog` = Yes.
 - **Text entry** — the kit does not draw a keyboard and neither should we. Open the host's
@@ -447,7 +492,7 @@ notes 0–9 knob capacitive touch · pads notes 68–99.
 **Touch orients, turn reveals, release commits.** A bare orienting touch must NOT open the picker
 overlay — only an actual turn does. This is the canonical grammar for every knob-driven overlay.
 
-🟠 **The PEEK is the offered variant, and it is off.** Upstream's knob grid raises an enum's option
+🚫 **The PEEK is VETOED and stays unwired** (Josh, 2026-08-29). It is the offered variant, and it is off. Upstream's knob grid raises an enum's option
 list on the turn and decays it after `MV_ENUM_PEEK_MS` (700ms) because it has no touch sensor to
 release. davebox does, so its list already stays up exactly as long as the finger does, and adopting
 the decay would *remove* a display that works — what it buys instead is uncovering the three
@@ -507,14 +552,16 @@ visually reconciled: both share the filled-bar header and the dialog buttons, an
 one a new screen takes. ⭑ The mcufont 5×5 is no longer used for any header; Global settings was
 its last such caller and moved to `drawKitHeader` on 2026-08-15.
 
-**Upstream param-pages parity (2026-08-29, PIXELS ON / BEHAVIOUR OFF):** the modulation dot, the
-label `~`, the ghost fill, the EQ curve, the sample track, the knob-ring ramp and the enum-peek
-timer are ported (§3.1, §3.2, §5, §7.1, §8); the switch pill, the fader column and the dotted
-scrollbar rail are 🟠 mocked and unadopted. **No knob feel, no gesture latch and no input path was
-touched** — `ui_discover.mjs` is untouched and every new look is opt-in through a descriptor field
-or a viz flag, so every existing screen renders pixel-identical. `tools/render_widgets.mjs` renders
-a before/after pair for each. Not ported: upstream's header/footer identity, its big-number face
-(font licence unverified — davebox keeps its 13pt), its page planner and its viz DETECTOR.
+**Upstream param-pages parity (2026-08-29, PIXELS ON / BEHAVIOUR OFF):** ported and **adopted** —
+the switch pill / enum box split (§3.3), the fader column (§3.3), the ghost fill on by default
+(§3.1), the dotted scrollbar rail (§5), the knob-ring ramp (§7.1). Ported and **dormant until a
+caller opts in** — the modulation dot and the label `~` (§3.2, no davebox cell has a modulation
+source), the EQ curve and the sample track (§3, declared spans nothing declares yet). Ported and
+**vetoed** — the enum-peek decay (§8, Josh: leave it unwired). **No knob feel, no gesture latch and
+no input path was touched**: `ui_discover.mjs` is untouched, and everything above is either a
+descriptor field, a viz flag or a widget swap. `tools/render_widgets.mjs` renders a before/after
+pair for each. Not ported: upstream's header/footer identity, its big-number face (font licence
+unverified — davebox keeps its 13pt), its page planner and its viz DETECTOR.
 
 **Canvaskit parity (P7):** `drawVBar` (a `fader` cell renders as the vertical bar, no longer
 falling through to `arc`), `hudCard`, and live waveform rendering (`shapeSample`, `drawWaveBox`,

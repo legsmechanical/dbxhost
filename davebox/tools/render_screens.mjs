@@ -12,12 +12,26 @@ import { mkdirSync } from 'node:fs';
 // so this script and tools/render_widgets.mjs cannot drift apart about what the
 // device draws. Imported BEFORE the ui/*.mjs dynamic imports below, which is
 // what installs set_pixel/fill_rect/print in time for them.
-import { W, H, resetFb, currentFb, writePng } from './render_fb.mjs';
+import { W, H, resetFb, currentFb, writePng, freezeClock } from './render_fb.mjs';
+
+/* ⚠⚠ THE MANUAL IS RENDERED ON A FROZEN CLOCK, and it has to be.
+ * drawKitPageBar blinks its active segment off Date.now()/375, so without this
+ * every run produces a different picture for six of these screens and the
+ * committed PNGs come back dirty for no reason — which is exactly how a real
+ * before/after check got eight false positives on 2026-08-29. Any instant
+ * would do; this one is fixed so that a regenerated manual differs only where
+ * the DRAWING changed. */
+freezeClock();
 
 // NOTE: globalThis.pixelPrint is the mcufont 5x5 (a davebox JS fn, NOT the host
 // 5x7 print) — wired to the real C.pixelPrint just after the ui_constants import.
 
 const kit = await import('../ui/ui_movy.mjs');
+/* ⚠ The REAL split, not a copy of it. kitCellForKnob below is a verbatim copy
+ * of ui_render's, and the one thing that must NOT be copied is the pill/bar
+ * rule — a second regex here is a second idea of what a boolean is, and the
+ * manual would document a widget the device does not draw. */
+const { isBooleanPair } = await import('../ui/ui_cells.mjs');
 const C = await import('../ui/ui_constants.mjs');   // real BANKS + fmt tables (via loader)
 const { BANKS } = C;
 globalThis.pixelPrint = C.pixelPrint;   // real mcufont 5x5 (used by Perf chips etc.)
@@ -54,7 +68,11 @@ function kitCellForKnob(knob, val) {
     const v = val | 0;
     const text = knob.fmt(v);
     const base = { label: knob.abbrev, name: knob.full, text };
-    if (knob.fmt === C.fmtBool) { base.kind = 'hbar'; base.norm = v ? 1 : 0; return base; }
+    if (knob.fmt === C.fmtBool) {
+        base.kind = isBooleanPair(C.fmtBool(1), C.fmtBool(0)) ? 'pill' : 'enumsq';
+        base.norm = v ? 1 : 0;
+        return base;
+    }
     if (knob.fmt === C.fmtLgto) { base.kind = 'action'; base.oneWay = true; return base; }
     if (knob.scope === 'action') { base.kind = 'action'; return base; }
     if (knob.fmt === C.fmtPlayDir) { base.kind = 'dirsq'; base.options = KIT_DIR_NAMES; base.sel = v; return base; }
@@ -111,7 +129,7 @@ const CUSTOM_KIT = [
             { kind: 'valsq', label: 'Eucld', name: 'Euclid Fill', text: '0' },
             { kind: 'blank', label: '' },
             { kind: 'dirsq', label: 'Dir', name: 'Playback Dir', text: 'Fwd', options: DIR, sel: 0 },
-            { kind: 'hbar', label: 'SeqFl', name: 'Seq Follow', text: 'ON', norm: 1 },
+            { kind: 'pill', label: 'SeqFl', name: 'Seq Follow', text: 'ON', norm: 1 },
         ],
     },
     {
@@ -124,7 +142,7 @@ const CUSTOM_KIT = [
             { kind: 'valsq', label: 'VelIn', name: 'Velocity Input', text: 'Live' },
             enumC('InQnt', 'Input Quantize', DIQ, 0),
             { kind: 'dirsq', label: 'Dir', name: 'Playback Dir', text: 'Fwd', options: DIR, sel: 0 },
-            { kind: 'hbar', label: 'RSync', name: 'Repeat Sync', text: 'ON', norm: 1 },
+            { kind: 'pill', label: 'RSync', name: 'Repeat Sync', text: 'ON', norm: 1 },
         ],
     },
     {

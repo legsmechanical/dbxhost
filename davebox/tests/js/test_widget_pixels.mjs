@@ -112,13 +112,23 @@ step('the dot is a five-pixel plus, inside the ring, at every angle', () => {
 
 /* -------------------------------------------------- 2. filter fill + EQ */
 
-step('the shipping filter curve is unchanged — the ghost fill is opt-in', () => {
+step('the filter fill is the DEFAULT, and fill:false still escapes it', () => {
+    /* Adopted 2026-08-29. The escape hatch is asserted as hard as the default,
+     * because it is the only thing that lets a future caller ask for the bare
+     * stroke — and an unexercised escape hatch is one that has already rotted. */
     const viz = { start: 0, cutoffNorm: 0.5, resoNorm: 0.4, mode: 'lp' };
-    const stroke = shot(() => draw(PAGE, { filt: viz }));
-    const explicitOff = shot(() => draw(PAGE, { filt: Object.assign({ fill: false }, viz) }));
-    const filled = shot(() => draw(PAGE, { filt: Object.assign({ fill: true }, viz) }));
-    assert(same(stroke, explicitOff), 'fill:false is not the default');
-    assert(ink(filled) > ink(stroke), 'fill:true added no mass');
+    const dflt = shot(() => draw(PAGE, { filt: viz }));
+    const on = shot(() => draw(PAGE, { filt: Object.assign({ fill: true }, viz) }));
+    const off = shot(() => draw(PAGE, { filt: Object.assign({ fill: false }, viz) }));
+    assert(same(dflt, on), 'the default is not the filled curve');
+    assert(ink(dflt) > ink(off), 'the default drew no more mass than fill:false');
+    /* ⚠ The fill must be UNDER the stroke: every pixel the bare stroke lights
+     * is still lit with the mass on. Reversed, the checker punches its lattice
+     * through the curve and the graph acquires holes exactly where it is being
+     * read. That is invisible in an ink count, which is why it is a subset
+     * test. */
+    for (let i = 0; i < off.length; i++)
+        assert(!off[i] || dflt[i], 'the fill punched a hole in the stroke');
 });
 
 step('the EQ curve draws nothing at all unless a bank declares one', () => {
@@ -264,15 +274,71 @@ step('MOCKUP kinds are reachable but nothing maps to them', () => {
     assert(ink(pill) > ink(pillOff) * 1.7,
            'ON carries only ' + (ink(pill) / ink(pillOff)).toFixed(2) + 'x the ink of OFF — the slug is carrying the state');
     assert(ink(shot(() => kit.drawFaderColumn(6, kit.MV_ROW0_Y, 0.5))) > 0, 'the fader drew nothing');
-    /* ⚠⚠ THE POINT OF ITEM 6: nothing in ui_cells emits these, so no shipping
-     * cell changes shape. If this ever fails, a mockup got adopted by accident. */
+    /* `faderail` stayed a renderer-only alias when the fader was adopted: a
+     * `fader` descriptor still says `vbar`, and the DISPATCH decides what that
+     * looks like. If ui_cells ever starts emitting the alias, the look has two
+     * homes and the next restyle will only reach one of them. */
     const KINDS = ['uni', 'bip', 'tog', 'enumc', 'len', 'dir', 'count', 'oct', 'file', 'fader'];
     for (const k of KINDS) {
         const rc = cells.toRenderCell({ key: 'k', kind: k, label: 'L', min: 0, max: 10, type: 'int',
                                         options: (k === 'enumc' ? ['A', 'B', 'C'] : null) }, 5, 'x');
-        assert(!rc || (rc.kind !== 'pill' && rc.kind !== 'faderail'),
-               'kind ' + k + ' now renders as a MOCKUP widget (' + (rc && rc.kind) + ')');
+        assert(!rc || rc.kind !== 'faderail',
+               'kind ' + k + ' now emits the renderer-only alias');
     }
+    /* A `fader` cell must still say `vbar` — the adoption is in the dispatch. */
+    const fader = cells.toRenderCell({ key: 'f', kind: 'fader', label: 'L', min: 0, max: 1, type: 'float' }, 0.5);
+    assert(fader.kind === 'vbar', 'a fader descriptor no longer says vbar (' + fader.kind + ')');
+    /* ...and `vbar` must DRAW as the fader column, not the plain bar. */
+    const cellFader = shot(() => draw([fader, null, null, null, null, null, null, null]));
+    const plainBar = shot(() => kit.drawVBar(6, kit.MV_ROW0_Y, 0.5));
+    let overlap = 0;
+    for (let i = 0; i < plainBar.length; i++) if (plainBar[i] && cellFader[i]) overlap++;
+    assert(overlap < ink(plainBar) * 0.9, 'a vbar cell still draws the plain bar');
+});
+
+/* ------------------------------------- the PILL / BAR / BOX split (adopted) */
+
+step('a two-state cell picks its widget from its OWN OPTIONS, by one rule', () => {
+    const tog = (options) => cells.toRenderCell(
+        { key: 'k', kind: 'tog', type: 'enum', label: 'L', min: 0, max: 1, step: 1, options }, 1);
+    /* Both halves in the boolean vocabulary -> PILL. Case-insensitive, because
+     * Track View spells its states 'ON' and 'off'. Digits count: a module that
+     * spells its toggle ["0","1"] means a boolean. */
+    for (const pair of [['Off', 'On'], ['ON', 'off'], ['No', 'Yes'], ['0', '1'],
+                        ['false', 'true'], ['Disabled', 'Enabled']]) {
+        assert(tog(pair).kind === 'pill', pair.join('/') + ' did not take the pill');
+    }
+    /* A pair of WORDS -> the enum BOX, which prints the word. Not the bar it
+     * used to take: that showed a fill level and nothing else, so Step/Audio
+     * read as "full" or "empty". */
+    for (const pair of [['Step', 'Audio'], ['Mono', 'Poly'], ['LP', 'HP'], ['Sine', 'Saw']]) {
+        assert(tog(pair).kind === 'enumsq', pair.join('/') + ' did not take the box');
+    }
+    /* ⚠ HALF A PAIR IS NOT A BOOLEAN. 'Off'/'Lock' is a toggle whose ON state
+     * is NAMED, and naming it was a choice the widget must not throw away. */
+    assert(tog(['Off', 'Lock']).kind === 'enumsq', 'half a boolean pair took the pill');
+    assert(tog(['Bypass', 'On']).kind === 'enumsq', 'half a boolean pair took the pill');
+    /* A box carries its options so the turn-to-reveal picker still works; a
+     * pill does not need them but must not have lost them either. */
+    assert(tog(['Step', 'Audio']).options.length === 2, 'the box lost its option list');
+    assert(tog(['Off', 'On']).sel === 1, 'the pill lost its selection');
+});
+
+step('the pill and the box actually LOOK different, and the box shows the word', () => {
+    const mk = (options, v) => cells.toRenderCell(
+        { key: 'k', kind: 'tog', type: 'enum', label: 'L', min: 0, max: 1, step: 1, options }, v);
+    const boolOn = shot(() => draw([mk(['Off', 'On'], 1), null, null, null, null, null, null, null]));
+    const boolOff = shot(() => draw([mk(['Off', 'On'], 0), null, null, null, null, null, null, null]));
+    assert(!same(boolOn, boolOff), 'the pill draws its two states identically');
+    /* The BOX must differ between its two states too — which the bar it
+     * replaced also did, but only as a fill level. Here the difference is the
+     * WORD, so the two frames differ inside the frame rather than by area. */
+    const wordA = shot(() => draw([mk(['Step', 'Audio'], 0), null, null, null, null, null, null, null]));
+    const wordB = shot(() => draw([mk(['Step', 'Audio'], 1), null, null, null, null, null, null, null]));
+    assert(!same(wordA, wordB), 'the box draws Step and Audio identically');
+    /* ⚠ And the box must not be the pill: if the split ever collapses, both
+     * branches still draw SOMETHING and only a comparison catches it. */
+    assert(!same(boolOn, wordB), 'the pill and the box render the same pixels');
 });
 
 step('the fader lattice re-phases where the bar cannot move', () => {
@@ -357,13 +423,13 @@ step('an unbound or degenerate bank knob normalises to null, not to zero', () =>
 
 /* -------------------------------------------------------- 8. scrollbar */
 
-step('the dotted rail is opt-in, and the thumb stays solid on top of it', () => {
+step('the dotted rail is the DEFAULT, and the thumb stays solid on top of it', () => {
     const ROWS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
-    const solid = shot(() => kit.drawKitList(ROWS, 3, {}));
-    const off = shot(() => kit.drawKitList(ROWS, 3, { dottedRail: false }));
+    const dflt = shot(() => kit.drawKitList(ROWS, 3, {}));
     const dotted = shot(() => kit.drawKitList(ROWS, 3, { dottedRail: true }));
-    assert(same(solid, off), 'dottedRail:false is not the default');
-    assert(!same(solid, dotted), 'dottedRail:true changed nothing');
+    const solid = shot(() => kit.drawKitList(ROWS, 3, { dottedRail: false }));
+    assert(same(dflt, dotted), 'the default is not the dotted rail');
+    assert(!same(solid, dotted), 'dottedRail:false changed nothing');
     /* ⚠ The RAIL thins, the THUMB does not — otherwise the thumb is just a
      * thicker piece of the same object and the eye has to measure widths to
      * read a position. Count both columns of the thumb, which is drawn over

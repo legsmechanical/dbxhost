@@ -1,6 +1,14 @@
 // tools/render_widgets.mjs — one offline PNG per widget in the 2026-08-29
 // style-port, so every one of them can be judged before it reaches hardware.
 //
+// Cases are prefixed `w` (the style-CALL renders Josh judged the port from) and
+// `a` (the ADOPTION renders: what the approved looks do to a live screen). An
+// `a` case's BEFORE is drawn through the primitive's own escape hatch — the
+// plain `drawVBar`, `filt.fill:false`, `dottedRail:false`, a literal `hbar`
+// kind — so the two frames come out of ONE process and one build, and the pair
+// is a genuine A/B rather than two runs of two trees that might differ in
+// something else as well.
+//
 // ⭑⭑ RENDERS ARE THE DELIVERABLE. The port is "pixels on, behaviour off": every
 // item here is either a look that an existing screen ADOPTS (in which case
 // there is a BEFORE and an AFTER pair, and the pair is the argument) or a
@@ -21,6 +29,7 @@ import { W, H, resetFb, currentFb, writePng, freezeClock } from './render_fb.mjs
 
 freezeClock();
 const kit = await import('../ui/ui_movy.mjs');
+const cellsMod = await import('../ui/ui_cells.mjs');
 /* ⚠ NOT wrapped in a catch. An import that fails here would silently drop the
  * knob-ring case from the output, and a render set with a case missing looks
  * exactly like a render set that ran — which is how item 7 nearly shipped
@@ -248,6 +257,78 @@ emit('w8-scrollbar-before', 'item 8 — the list scrollbar as it ships (solid ra
 emit('w8-scrollbar-after-dotted', 'item 8 MOCKUP — dotted rail, solid thumb, no arrows (opts.dottedRail)', () => {
     kit.drawKitHeader('EFFECTS', false);
     kit.drawKitList(LIST_ROWS, 3, { dottedRail: true });
+});
+
+/* ======================= ADOPTED (2026-08-29) ============================
+ *
+ * The four looks Josh approved, each as the pair that shows what changed on a
+ * surface the MANUAL renderer does not reach: sound mode's own banks (which are
+ * built from ui_cells, not from BANKS), the filter curve, and the kit list.
+ * The six changed manual screens are captured separately, from render_screens
+ * run against both trees.
+ */
+
+/* --- the pill / bar split, driven through the REAL ui_cells rule ---------
+ * ⭑ Built with toRenderCell rather than with literal descriptors, because the
+ * whole point of this pair is the SPLIT and a literal would be me asserting the
+ * answer instead of the code deciding it. */
+const togDesc = (key, label, options) => ({
+    key, label, short: label, kind: 'tog', type: 'enum',
+    min: 0, max: 1, step: 1, options,
+});
+const SPLIT_DESCS = [
+    [togDesc('sync', 'Sync', ['Off', 'On']), 1],
+    [togDesc('retrig', 'Retrg', ['Off', 'On']), 0],
+    [togDesc('legacy', 'Bypas', ['Disabled', 'Enabled']), 1],
+    [togDesc('raw', 'Raw', ['0', '1']), 1],
+    [togDesc('revstyle', 'Revrs', ['Step', 'Audio']), 1],
+    [togDesc('voice', 'Voice', ['Mono', 'Poly']), 1],
+    [togDesc('lock', 'CdLk', ['Off', 'Lock']), 1],
+    [togDesc('filt', 'Filt', ['LP', 'HP']), 0],
+];
+const splitCells = () => SPLIT_DESCS.map(([d, v]) => cellsMod.toRenderCell(d, v));
+emit('a1-toggles-after', 'ADOPTED — top row is off/on (PILL), bottom row is words (BAR). One rule, no per-cell taste',
+     () => page('TOGGLE SPLIT', splitCells()));
+emit('a1-toggles-before', 'before — every two-state cell was the same bar, and the word never showed',
+     () => page('TOGGLE SPLIT', splitCells().map((c) => Object.assign({}, c, { kind: 'hbar' }))));
+
+/* --- the fader column on a real level bank ------------------------------- */
+const LEVELS = [0.15, 0.42, 0.68, 0.95, 0.55, 0.30, 0.80, 1.00];
+const faderDesc = (i) => ({ key: 'lvl' + i, label: 'Lvl ' + (i + 1), short: 'Lvl' + (i + 1),
+                            kind: 'fader', type: 'float', min: 0, max: 1, step: 0.01 });
+const faderCells = () => LEVELS.map((v, i) => cellsMod.toRenderCell(faderDesc(i), v));
+emit('a2-fader-after', 'ADOPTED — a `fader` cell draws rails + framed column + head',
+     () => page('LEVELS', faderCells()));
+emit('a2-fader-before', 'before — the plain vertical bar (drawVBar, still exported)', () => {
+    kit.drawKitHeader('LEVELS', false);
+    kit.drawKitPageBar(2, 6);
+    const cs = faderCells();
+    for (let k = 0; k < 8; k++) {
+        const col = k % 4, rowY = k < 4 ? kit.MV_ROW0_Y : kit.MV_ROW1_Y;
+        const kx = col * kit.MV_CELL_W + Math.floor((kit.MV_CELL_W - kit.MV_KW) / 2);
+        kit.drawVBar(kx, rowY, cs[k].norm);
+        const t = cs[k].label;
+        kit.mvPrint(col * kit.MV_CELL_W + Math.round((kit.MV_CELL_W - kit.mvWidth(t)) / 2),
+                    (k < 4 ? kit.MV_LBL0_Y : kit.MV_LBL1_Y) + 1, t, 1);
+    }
+});
+
+/* --- the filter fill, now the default ----------------------------------- */
+emit('a3-filter-after', 'ADOPTED — the passband is MASS (filt.fill defaults on)',
+     () => page('FILTER', FILT_CELLS, { filt: FILT_VIZ }));
+emit('a3-filter-before', 'before — the bare stroke (filt.fill:false, the surviving escape hatch)',
+     () => page('FILTER', FILT_CELLS, { filt: Object.assign({ fill: false }, FILT_VIZ) }));
+
+/* --- the kit-list scrollbar ---------------------------------------------- */
+const LONG_LIST = ['REVERB', 'DELAY', 'CHORUS', 'PHASER', 'FLANGER', 'BITCRUSH',
+                   'SATURATE', 'COMPRESS', 'FILTER', 'EQ', 'GATE', 'WIDENER'];
+emit('a4-list-after', 'ADOPTED — dotted rail, solid thumb, no arrows (every kit list)', () => {
+    kit.drawKitHeader('EFFECTS', false);
+    kit.drawKitList(LONG_LIST, 4, {});
+});
+emit('a4-list-before', 'before — solid rail, so the thumb was a thicker piece of the same object', () => {
+    kit.drawKitHeader('EFFECTS', false);
+    kit.drawKitList(LONG_LIST, 4, { dottedRail: false });
 });
 
 console.log(`\nwrote ${n} widget render${n === 1 ? '' : 's'} to ${OUT}/`);
