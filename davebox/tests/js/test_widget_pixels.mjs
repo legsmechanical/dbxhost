@@ -452,6 +452,228 @@ step('a list that fits draws no rail at all, dotted or otherwise', () => {
            'a non-overflowing list drew a scrollbar');
 });
 
+/* ================= the 2026-08-29 second batch ========================== */
+
+const fonts = await import('../../ui/ui_fonts_pp.mjs');
+const animMod = await import('../../ui/ui_anim.mjs');
+
+step('the ported faces measure what upstream measures, and AUDIO no longer wraps', () => {
+    /* ⚠⚠ THE WHOLE POINT OF PORTING A TABLE IS THAT IT IS THE SAME TABLE. A
+     * transcription that renders "close enough" is a second face, and the two
+     * would drift the first time either was touched. Widths are the cheapest
+     * total check: a single wrong glyph row changes one, and every string in
+     * the product is laid out from them. */
+    assert(fonts.fontWidth4x5('AUDIO') === 21, 'the 4x5 face re-measured AUDIO');
+    assert(fonts.BIGNUM_H === 11, 'the big face is not 11 rows');
+    assert(fonts.TAMZEN_H === 7, 'the tamzen face is not 7 rows');
+    /* THE BUG THIS RETIRES: the old blind 4/4 slice rendered AUDIO as AUDI/O.
+     * 21px against a 24px interior fits whole. */
+    const fits = (t) => fonts.fontWidth4x5(t) <= 24;
+    assert(JSON.stringify(fonts.enumSquareLines('AUDIO', fits)) === '["AUDIO",""]',
+           'AUDIO still wraps');
+    /* ⚠ "Does it need to break AT ALL" is asked FIRST. POLY and I+II both fit
+     * whole and neither reads as itself once split. */
+    assert(fonts.enumSquareLines('POLY', fits)[1] === '', 'POLY was split');
+    assert(fonts.enumSquareLines('I+II', fits)[1] === '', 'I+II was split');
+    /* ⚠ A `+` INSIDE a word is a break opportunity and must stay VISIBLE — a
+     * blind slice turns I+II into "I+I"/"I", which is a DIFFERENT VALUE and
+     * indistinguishable from mode "I". Forced to break by a tiny budget. */
+    const tiny = () => false;
+    const pl = fonts.enumSquareLines('I+II', tiny);
+    assert(pl[0].indexOf('+') >= 0, 'the + was dropped from the break');
+    /* ⚠ `-` between word characters separates; a leading one does not, or
+     * "+-1" loses its minus entirely. */
+    assert(fonts.enumSquareLines('+-1', fits)[1] === '', '+-1 was split');
+    /* ⚠ 12 GLYPHS ONLY, and the caller must ask. Anything with a letter has to
+     * fall back or "C1 36" silently becomes "1 36". */
+    assert(fonts.bigNumCanDraw('-12') === true, 'the big face refused a number');
+    assert(fonts.bigNumCanDraw('E 3') === false, 'the big face claimed a note name');
+    assert(fonts.bigNumCanDraw('') === false, 'the big face claimed the empty string');
+});
+
+step('the enum square sizes to its VALUE, and the line count ignores the frame', () => {
+    const sq = (t) => shot(() => kit.drawEnumSquare(2, kit.MV_ROW0_Y, t));
+    assert(kit.enumSquareWidth('ON') < kit.enumSquareWidth('BANDPASS'),
+           'a short value takes the same width as a long one');
+    assert(kit.enumSquareWidth('BANDPASS') <= kit.MV_ENUM_W, 'the cap does not bind');
+    assert(kit.enumSquareWidth('I') >= kit.MV_ENUM_MIN_W, 'the floor does not bind');
+    assert(!same(sq('ON'), sq('BANDPASS')), 'two values drew the same box');
+});
+
+step('only the FRAME animates, and a value ARRIVING does not animate at all', () => {
+    /* ⚠⚠ THE FAILURE THIS PINS. The read cursor serves one key per tick, so a
+     * page spends its first ticks with values absent — rendered as "--", which
+     * has a perfectly ordinary width. Recorded as a first sighting, the real
+     * value then arrives as a TRANSITION and the whole page animates itself in
+     * from values nobody set. observeLanded is what refuses that, and it can
+     * only do it from the RAW value. */
+    const st = animMod.createAnimState();
+    const at = (t, txt, raw, store) =>
+        shot(() => kit.drawEnumSquare(2, kit.MV_ROW0_Y, txt, null, store, t, 'k', raw));
+
+    /* An unread key (raw undefined) records NOTHING and draws at natural width. */
+    const absent = at(0, '--', undefined, st);
+    const absentStatic = shot(() => kit.drawEnumSquare(2, kit.MV_ROW0_Y, '--'));
+    assert(same(absent, absentStatic), 'an unread value animated');
+
+    /* The real value ARRIVES: first sighting, stamped already-past. */
+    const arrive = at(0, 'BANDPASS', 'BANDPASS', st);
+    const arriveStatic = shot(() => kit.drawEnumSquare(2, kit.MV_ROW0_Y, 'BANDPASS'));
+    assert(same(arrive, arriveStatic), 'a value ARRIVING animated — that is not a change');
+
+    /* Now a genuine change, caught mid-flight. */
+    const mid = at(60, 'ON', 'ON', st);
+    const settled = shot(() => kit.drawEnumSquare(2, kit.MV_ROW0_Y, 'ON'));
+    assert(!same(mid, settled), 'a real change did not animate');
+    const done = at(60 + kit.MV_ENUM_ANIM_MS + 1, 'ON', 'ON', st);
+    assert(same(done, settled), 'the animation never settled');
+
+    /* ⚠ NO STORE => NOTHING MOVES, which is what keeps every existing caller
+     * byte-identical. */
+    assert(same(shot(() => kit.drawEnumSquare(2, kit.MV_ROW0_Y, 'ON', null, null, 999, 'k', 'ON')),
+                settled), 'a missing store still animated');
+});
+
+step('the button has three states, and two presses in flight do not merge', () => {
+    const now = 1000;
+    const idle = shot(() => kit.drawTriggerButton(6, kit.MV_ROW0_Y, kit.buttonPhase(0, now, false)));
+    const held = shot(() => kit.drawTriggerButton(6, kit.MV_ROW0_Y, kit.buttonPhase(0, now, true)));
+    const fired = shot(() => kit.drawTriggerButton(6, kit.MV_ROW0_Y, kit.buttonPhase(now - 40, now, false)));
+    assert(ink(held) > ink(idle), 'the held cap is not filled');
+    assert(!same(idle, fired), 'a fired button looks idle');
+    /* ⚠ ONE BURST PER PRESS STILL IN FLIGHT. Overwriting a single timestamp
+     * made a rapid second press swallow the first ring and restart from the
+     * centre — an animation glitch rather than two events. */
+    const one = kit.buttonPhase([now - 40], now, false);
+    const two = kit.buttonPhase([now - 40, now - 240], now, false);
+    assert(two.bursts.length === 2 && one.bursts.length === 1, 'the second press was swallowed');
+    /* An expired press contributes nothing, and a FUTURE stamp is ignored
+     * rather than producing a negative-progress ring. */
+    assert(kit.buttonPhase([now - kit.BTN_FLASH_MS - 1], now, false).bursts.length === 0,
+           'an expired press still burst');
+    assert(kit.buttonPhase([now + 50], now, false).bursts.length === 0,
+           'a future timestamp burst');
+    /* No `now` at all => idle. The draw path must never need a clock. */
+    assert(kit.buttonPhase([now], undefined, false).bursts.length === 0, 'a clockless phase fired');
+});
+
+step('the opaque box spells the tri-state, and the brackets are separate from the chevron', () => {
+    const box = (t) => shot(() => kit.drawOpaqueBox(0, kit.MV_ROW0_Y, t));
+    const val = box('KICK_01.WAV'), none = box('NONE'), unread = box('--');
+    assert(!same(val, none) && !same(none, unread) && !same(val, unread),
+           'two of the three states render identically');
+    /* ⚠ A PLACEHOLDER IS CENTRED, A VALUE IS SET LEFT — reported from the
+     * device as "not centered by the way". Compare the leftmost lit column of
+     * the TEXT area against the value's. */
+    const firstTextCol = (f) => {
+        for (let x = 4; x < kit.MV_CELL_W - 6; x++)
+            for (let y = kit.MV_ROW0_Y + 3; y < kit.MV_ROW0_Y + 12; y++)
+                if (f[y * W + x]) return x;
+        return -1;
+    };
+    assert(firstTextCol(none) > firstTextCol(val), 'NONE is not centred');
+    /* The door mark is drawn around the CELL, after the widget, so it is
+     * independent of what the widget is — a bracket over an ARC must work. */
+    const plainArc = shot(() => draw(PAGE));
+    const opensArc = shot(() => draw(PAGE.map((c, i) => (i === 0 ? Object.assign({}, c, { opens: true }) : c))));
+    assert(!same(plainArc, opensArc), 'the brackets did not draw over an arc cell');
+    /* ⚠ MUST STAY INSIDE THE WIDGET BAND — one row of overflow lands on the
+     * label strip and the brackets merge into it. */
+    for (let x = 0; x < W; x++)
+        assert(!opensArc[(kit.MV_LBL0_Y) * W + x] || plainArc[(kit.MV_LBL0_Y) * W + x],
+               'a bracket leaked onto the label strip');
+});
+
+step('ui_cells spells the file tri-state, and does not collapse empty into unread', () => {
+    const d = { key: 'sample_path', kind: 'file', type: 'file', label: 'Sample', min: 0, max: 0 };
+    assert(cells.toRenderCell(d, null, '/a/b/kick.wav').text === 'KICK.WAV', 'the basename was lost');
+    /* ⚠ THE BUG: `rawValue ? ... : "--"` collapsed '' into the unread case,
+     * because '' is falsy — so a slot with no file looked exactly like a slot
+     * whose name had not arrived. */
+    assert(cells.toRenderCell(d, null, '').text === 'NONE', 'an empty path read as unread');
+    assert(cells.toRenderCell(d, null, null).text === '--', 'an unread path read as empty');
+    assert(cells.toRenderCell(d, null, undefined).text === '--', 'undefined read as empty');
+    assert(cells.toRenderCell(d, null, '').kind === 'opaque', 'a file is not an opaque cell');
+    assert(cells.toRenderCell(d, null, '').opens === true, 'a file cell is not a door');
+});
+
+step('the waveform morphs between shapes, and never out of an unread one', () => {
+    const st = animMod.createAnimState();
+    const w = (shape, t, raw, store) =>
+        shot(() => kit.drawWaveBox(6, kit.MV_ROW0_Y, shape, store, t, 'w', raw));
+    const sineStatic = shot(() => kit.drawWaveBox(6, kit.MV_ROW0_Y, 'sine'));
+    const sawStatic = shot(() => kit.drawWaveBox(6, kit.MV_ROW0_Y, 'saw'));
+    /* An unread key records nothing and draws the plain shape. */
+    assert(same(w('sine', 0, undefined, st), sineStatic), 'an unread shape animated');
+    assert(same(w('sine', 0, 'sine', st), sineStatic), 'a shape ARRIVING animated');
+    /* ⚠ THE TRANSITION STARTS ON THE FRAME THE VALUE CHANGES, and at that
+     * instant t === 0, so the first `saw` frame draws the SINE. Sampling there
+     * would "prove" the morph works while actually showing it not having begun
+     * — which is the same frame a broken morph would produce. Start it, then
+     * sample HALFWAY. */
+    w('saw', 0, 'saw', st);
+    const mid = w('saw', 50, 'saw', st);
+    assert(!same(mid, sawStatic) && !same(mid, sineStatic), 'the morph produced no in-between');
+    assert(same(w('saw', kit.MV_WAVE_MORPH_MS + 1, 'saw', st), sawStatic),
+           'the morph never settled');
+    assert(same(w('saw', 0, 'saw', null), sawStatic), 'a missing store still morphed');
+});
+
+step('the footer reserves BACK before laying anything else out', () => {
+    /* ⚠⚠ THE FIT RULE, and the reason this is a primitive and not a loop. A
+     * naive left-to-right layout drops whatever does not fit — which on a
+     * narrow row is the LAST hint, and the last hint is BACK. A footer that
+     * silently drops the one hint telling you how to leave is worse than a
+     * footer with three hints on it. */
+    const many = [['JOG', 'PAGE'], ['CLK', 'MENU'], ['SHFT', 'ALT'], ['MUTE', 'BYPASS'],
+                  ['KNB', 'EDIT'], ['BACK', 'EXIT']];
+    const total = many.reduce((a, h) => a + kit.hintPairWidth(h[0], h[1]), 0);
+    assert(total > 128, 'the over-ask test does not actually over-ask (' + total + 'px)');
+    const drawn = shot(() => { const d = kit.drawKitHintRow(20, many); assert(d < many.length,
+        'nothing was dropped — the row was not over-asked'); });
+    /* BACK's pill must be present, hard against the right edge. */
+    const backW = kit.hintPairWidth('BACK', 'EXIT');
+    let lit = 0;
+    for (let y = 19; y < 19 + kit.MV_FOOTER_H; y++)
+        for (let x = 128 - backW; x < 128; x++) if (drawn[y * W + x]) lit++;
+    assert(lit > 10, 'BACK was dropped or is not at the right edge (' + lit + ' px)');
+    assert(kit.isBackHint(['Back', 'out']) && !kit.isBackHint(['CLK', 'MENU']),
+           'the back hint is not recognised case-insensitively');
+    assert(kit.drawKitHintRow(20, []) === 0 && kit.drawKitHintRow(20, null) === 0,
+           'an empty footer drew something');
+});
+
+step('the big-number cell uses the ported face, and FALLS BACK on a letter', () => {
+    /* Two different faces must produce two different pictures for the same
+     * cell; if the fallback silently stopped firing, a note name would lose its
+     * letters and still look like a number. */
+    const num = shot(() => kit.drawBigNum(0, kit.MV_ROW0_Y, '127'));
+    assert(ink(num) > 0, 'a plain number drew nothing');
+    const note = shot(() => kit.drawBigNum(0, kit.MV_ROW0_Y, 'E 3'));
+    assert(ink(note) > 0, 'a note name drew NOTHING — the fallback is gone');
+    /* The letter must actually be there: drawing only the digit would also be
+     * "> 0 ink". Compare against the digit alone. */
+    const digit = shot(() => kit.drawBigNum(0, kit.MV_ROW0_Y, '3'));
+    assert(ink(note) > ink(digit), 'the note name rendered as its digit alone');
+});
+
+step('the picker overlay carries the same dotted rail as the list beneath it', () => {
+    const OPTS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+    const ov = shot(() => kit.drawKitListOverlay(OPTS, 4));
+    /* Find the rail column: the overlay auto-sizes, so locate it from the box. */
+    let gaps = 0, run = 0;
+    for (let x = 0; x < W; x++) {
+        let colGaps = 0, colLit = 0, prev = 0;
+        for (let y = kit.MV_ZOOM_Y; y < kit.MV_ZOOM_Y + kit.MV_ZOOM_H; y++) {
+            const v = ov[y * W + x];
+            if (v) colLit++; else if (prev) colGaps++;
+            prev = v;
+        }
+        if (colLit > 8 && colGaps > 5) { gaps = colGaps; run = colLit; }
+    }
+    assert(gaps > 5 && run > 8, 'no dotted rail found in the overlay (gaps=' + gaps + ')');
+});
+
 console.log(failed ? '\nFAILED' : '\nAll widget-pixel checks passed.');
 process.exit(failed);
 }

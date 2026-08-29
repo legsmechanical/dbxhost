@@ -36,6 +36,7 @@ const cellsMod = await import('../ui/ui_cells.mjs');
  * unjudged. It needs the device-specifier loader (see render_loader.mjs); run
  * this script through it. */
 const leds = await import('../ui/ui_knob_leds.mjs');
+const anim = await import('../ui/ui_anim.mjs');
 
 const OUT = process.argv[2] || 'docs/working/img/widgets';
 mkdirSync(OUT, { recursive: true });
@@ -429,6 +430,154 @@ emit('arc-pointer-length', 'DECISION — 0.68r (shipped upstream, top) vs 0.85r 
         kit.drawModDotAt(cx, 46, R, Math.min(1, SWEEP[i] + 0.18));
     }
 
+});
+
+/* ================== THE 2026-08-29 SECOND BATCH (adopted) ================
+ *
+ * ⚠ EVERY ANIMATED CASE PASSES ITS OWN `now`, never Date.now(). That is the
+ * whole contract from ui_anim.mjs, and it is what makes a mid-flight frame
+ * RENDERABLE at all: an animation that read the clock could only ever be
+ * photographed at whatever instant the tool happened to run.
+ */
+
+/* --- item 2: the enum square ------------------------------------------- */
+const ENUM_WORDS = ['AUDIO', 'POLY', 'STEP', 'LOW PASS', 'I+II', 'SINE', 'BANDPASS', '1/16T'];
+const enumCells = () => ENUM_WORDS.map((w, i) => ({
+    kind: 'enumsq', label: 'P' + (i + 1), name: 'Param ' + (i + 1), text: w,
+    options: [w], sel: 0,
+}));
+emit('b2-enumsq-after', 'ADOPTED — box sized to its value, 4x5 face, notched. AUDIO fits on ONE line now',
+     () => page('ENUM SQUARES', enumCells()));
+/* The mid-flight frame the animation exists for. Two draws: the first records
+ * the old value, the second retargets and is caught 60ms into a 120ms move. */
+emit('b2-enumsq-anim-mid', 'ADOPTED — the frame resize caught mid-flight (t=60ms of 120ms). Only the FRAME travels; glyphs swap outright', () => {
+    const st = anim.createAnimState();
+    const narrow = ENUM_WORDS.map((w, i) => ({ kind: 'enumsq', label: 'P' + (i + 1),
+        name: 'P', text: 'ON', options: ['ON'], sel: 0, raw: 'ON' }));
+    /* First frame at t=0 records ON as a settled first sighting. */
+    resetFb();
+    page('ENUM SQUARES', narrow, { anim: st, nowMs: 0 });
+    /* Now the values change; 60ms later the boxes are half-grown. */
+    resetFb();
+    page('ENUM SQUARES', ENUM_WORDS.map((w, i) => ({ kind: 'enumsq', label: 'P' + (i + 1),
+        name: 'P', text: w, options: [w], sel: 0, raw: w })), { anim: st, nowMs: 60 });
+});
+
+/* --- item 3: the trigger button ---------------------------------------- */
+const ACT = (label, name) => ({ kind: 'action', label, name, text: '->' });
+emit('b3-button-after', 'ADOPTED — idle / held / fired+burst / late burst (the four phases, left to right)', () => {
+    kit.drawKitHeader('TRIGGERS', false);
+    const now = 1000;
+    const phases = [
+        kit.buttonPhase(0, now, false),          /* idle */
+        kit.buttonPhase(0, now, true),           /* held: cap filled */
+        kit.buttonPhase(now - 40, now, false),   /* just fired: pressed + burst */
+        kit.buttonPhase(now - 220, now, false),  /* burst still travelling */
+    ];
+    for (let i = 0; i < 4; i++) {
+        const kx = i * kit.MV_CELL_W + Math.floor((kit.MV_CELL_W - kit.MV_KW) / 2);
+        kit.drawTriggerButton(kx, kit.MV_ROW0_Y, phases[i]);
+    }
+    /* ⚠ TWO PRESSES IN FLIGHT AT ONCE — the case a single timestamp got wrong,
+     * swallowing the first ring and restarting from the centre. */
+    const kx2 = kit.MV_CELL_W + Math.floor((kit.MV_CELL_W - kit.MV_KW) / 2);
+    kit.drawTriggerButton(kx2, kit.MV_ROW1_Y, kit.buttonPhase([now - 40, now - 240], now, false));
+    kit.mvPrint(2, kit.MV_LBL1_Y + 1, 'DOUBLE TAP: TWO RINGS', 1);
+});
+emit('b3-button-before', 'before — the framed "< >" action square',
+     () => { kit.drawKitHeader('TRIGGERS', false);
+             for (let i = 0; i < 4; i++) {
+                 const kx = i * kit.MV_CELL_W + Math.floor((kit.MV_CELL_W - kit.MV_KW) / 2);
+                 kit.rectOutline(kx, kit.MV_ROW0_Y, kit.MV_KW, kit.MV_KH, 1);
+                 kit.mvPrint(kx + 4, kit.MV_ROW0_Y + 5, '< >', 1);
+             } });
+
+/* --- item 4: the opaque box tri-state ---------------------------------- */
+const fileDesc = { key: 'sample_path', kind: 'file', type: 'file', label: 'Sample', short: 'Smpl',
+                   min: 0, max: 0 };
+emit('b4-opaque-tristate', 'ADOPTED — a value / NONE / -- , and the brackets that say it OPENS something', () => {
+    const cells = [
+        cellsMod.toRenderCell(fileDesc, null, '/Samples/kick_01.wav'),
+        cellsMod.toRenderCell(fileDesc, null, ''),          /* NONE: nothing chosen */
+        cellsMod.toRenderCell(fileDesc, null, null),        /* --  : not answered  */
+        cellsMod.toRenderCell(fileDesc, null, '/a/very_long_sample_name.wav'),
+        null, null, null, null,
+    ];
+    page('SAMPLE', cells);
+});
+emit('b4-opaque-before', 'before — an enum square, and `` collapsed to the same "--" as an unread key', () => {
+    const mk = (t) => ({ kind: 'enumsq', label: 'SMPL', name: 'Sample', text: t, options: [t], sel: 0 });
+    page('SAMPLE', [mk('KICK_01.WAV'), mk('--'), mk('--'), mk('VERY_LONG'), null, null, null, null]);
+});
+
+/* --- item 5: the waveform morph ---------------------------------------- */
+emit('b5-wave-morph', 'ADOPTED — SINE to SAW at t=0 / 25 / 50 / 75 / 100ms of the 100ms morph', () => {
+    kit.drawKitHeader('WAVE MORPH', false);
+    const ts = [0, 25, 50, 75, 100];
+    for (let i = 0; i < 5; i++) {
+        const st = anim.createAnimState();
+        const kx = i * 25 + 2;
+        /* Settle on SINE, then retarget to SAW and catch it at ts[i]. */
+        resetFb === null;
+        kit.drawWaveBox(kx, kit.MV_ROW0_Y, 'sine', st, 0, 'w', 'sine');
+        kit.drawWaveBox(kx, kit.MV_ROW1_Y, 'saw', st, ts[i], 'w', 'saw');
+    }
+    kit.mvPrint(2, kit.MV_LBL0_Y + 1, 'TOP: SINE (SETTLED)', 1);
+    kit.mvPrint(2, kit.MV_LBL1_Y + 1, '0 / 25 / 50 / 75 / 100 MS', 1);
+});
+
+/* --- item 6: the overlay scrollbar ------------------------------------- */
+const OVL = ['SINE', 'TRIANGLE', 'SAW UP', 'SAW DOWN', 'SQUARE', 'S & H', 'SWISHY', 'NOISE'];
+emit('b6-overlay-scrollbar', 'ADOPTED — the picker overlay now carries the same dotted rail as the list under it', () => {
+    kit.drawKitHeader('LFO', false);
+    kit.drawKitList(LONG_LIST, 4, {});
+    kit.drawKitListOverlay(OVL, 2);
+});
+
+/* --- item 7: the footer hint row --------------------------------------- */
+emit('b7-footer-hints', 'ADOPTED — one primitive. TOP fits; BOTTOM is over-asked and BACK still survives', () => {
+    kit.drawKitHeader('FOOTER', false);
+    const y1 = 20, y2 = 44;
+    kit.drawKitHintRow(y1, [['JOG', 'PAGE'], ['CLK', 'MENU'], ['BACK', 'OUT']]);
+    kit.mvPrint(2, y1 + 10, '3 HINTS, ALL FIT', 1);
+    /* ⚠ THE FIT RULE: BACK's room is reserved FIRST, so the middles drop and
+     * the way out survives. A naive left-to-right loop drops exactly BACK. */
+    const drawn = kit.drawKitHintRow(y2, [['JOG', 'PAGE'], ['CLK', 'MENU'], ['SHFT', 'ALT'],
+                                          ['MUTE', 'BYPASS'], ['KNB', 'EDIT'], ['BACK', 'EXIT']]);
+    kit.mvPrint(2, y2 + 10, '6 ASKED, ' + drawn + ' DRAWN, BACK KEPT', 1);
+});
+
+/* --- item 8: the big-number face --------------------------------------- */
+emit('b8-bignum-after', 'ADOPTED — the ported face for numerics; davebox’s own font still serves NOTE NAMES', () => {
+    kit.drawKitHeader('BIG NUMBERS', false);
+    const vals = ['+2', '-12', '127', '0'];
+    for (let i = 0; i < 4; i++) kit.drawBigNum(i * kit.MV_CELL_W, kit.MV_ROW0_Y, vals[i]);
+    /* ⚠ THE FALLBACK, which is not optional: the ported table is 12 glyphs, so
+     * anything with a letter in it MUST take davebox's own big font. Drawing a
+     * missing glyph as nothing would turn "C1 36" into "1 36". */
+    const words = ['E 3', 'C1', '--', 'OFF'];
+    for (let i = 0; i < 4; i++) kit.drawBigNum(i * kit.MV_CELL_W, kit.MV_ROW1_Y, words[i]);
+    kit.mvPrint(2, kit.MV_LBL0_Y + 1, 'PORTED FACE', 1);
+    kit.mvPrint(2, kit.MV_LBL1_Y + 1, 'FALLBACK (HAS LETTERS)', 1);
+});
+
+/* --- item 9: MOCKUP, the header comparison ----------------------------- */
+const DELAY_CELLS = [
+    arc('Time', 'Delay Time', '3/16', 0.45), arc('Fdbk', 'Feedback', '62', 0.62),
+    { kind: 'enumsq', label: 'Mode', name: 'Mode', text: 'PING', options: ['PING'], sel: 0 },
+    arc('Mix', 'Dry / Wet', '38', 0.38),
+    arc('LoCut', 'Low Cut', '20', 0.2), arc('HiCut', 'High Cut', '80', 0.8),
+    { kind: 'pill', label: 'Sync', name: 'Sync', text: 'ON', norm: 1 },
+    { kind: 'pill', label: 'Frez', name: 'Freeze', text: 'OFF', norm: 0 },
+];
+emit('hdr-ours', 'MOCKUP A — davebox’s header today: filled bar, black text, page bar under it', () => {
+    kit.drawKitHeader('DELAY', false);
+    kit.drawKitPageBar(3, 6);
+    kit.drawKitCells(DELAY_CELLS, -1);
+});
+emit('hdr-parampages', 'MOCKUP B — param-pages: Tamzen breadcrumb left, page name right, plain ground', () => {
+    kit.drawKitHeaderParamPages('DAVEBOX / FX', 'DELAY');
+    kit.drawKitCells(DELAY_CELLS, -1);
 });
 
 console.log(`\nwrote ${n} widget render${n === 1 ? '' : 's'} to ${OUT}/`);
