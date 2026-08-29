@@ -1165,6 +1165,9 @@ export function applyShiftEdge(held) {
 
 function _onCC_buttons(d1, d2) {
     if (d1 === MoveShift) {
+        /* The real release is what un-spends it. A press cannot: the latch is
+         * set while the key is already down. */
+        if (d2 !== 127) S.shiftSpentUntilRelease = false;
         applyShiftEdge(d2 === 127);
     }
 
@@ -1946,6 +1949,18 @@ export function checkShiftNoteHold() {
     if (S.moveCoRunTrack >= 0) { S.shiftNoteSessionTick = -1; return; }
     if ((S.tickCount - S.shiftNoteSessionTick) >= BACK_HOLD_TICKS) {
         S.shiftNoteSessionTick = -1;
+        /* ⭑⭑ SPEND Shift before opening anything. The key is still physically
+         * down — the gesture fires at the threshold, not on release — so the
+         * editor this is about to open would see Shift held and come up with
+         * its own Shift overlay already on screen (Josh, on device).
+         *
+         * `applyShiftEdge(false)` first, so every consumer runs its release
+         * side-effects exactly as if the key had come up: the volume claim ends,
+         * the padmap is restored, the LEDs settle. The latch then keeps it that
+         * way until the real release, because the screens opened below RE-READ
+         * the physical key on entry ("sync, never assume up"). */
+        S.shiftSpentUntilRelease = true;
+        applyShiftEdge(false);
         shiftNoteSessionAction(true);          /* the instrument */
     }
 }

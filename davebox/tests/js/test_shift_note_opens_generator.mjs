@@ -176,6 +176,39 @@ step('⭑⭑ a HOLD goes straight to instrument edit', () => {
         throw new Error('the hold stopped at the menu — it should reach the instrument');
 });
 
+step('⭑⭑ the HOLD spends Shift, so what it opens does not also see it', () => {
+    /* ⚠⚠ Josh, on device: the hold fires at the THRESHOLD, with the key still
+     * physically down — so the editor it opened came up with its own Shift
+     * overlay already on screen. The gesture consumed the modifier; whatever it
+     * opens must not consume it a second time.
+     *
+     * ⚠ The screens opened here RE-READ the physical key on entry ("sync, never
+     * assume up"), which is why clearing the flag once is not enough and the
+     * latch has to survive until the real release. */
+    sound.soundExit(); ticks(4);
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 127]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 127]));
+    S.tickCount += HOLD_TICKS + 2; ticks(2);          /* the hold fires HERE */
+    if (S.shiftHeld)
+        throw new Error('Shift still reads as held after the hold fired — the screen it ' +
+                        'opened will come up with a Shift overlay');
+    if (!S.shiftSpentUntilRelease)
+        throw new Error('the latch was not set, so the next re-read of the physical key ' +
+                        'will resurrect Shift');
+    /* Still physically down: a further gesture must stay unshifted. */
+    if (S.shiftHeld) throw new Error('Shift came back while the key was still down');
+    /* The real release un-spends it. */
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 0]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 0]));
+    if (S.shiftSpentUntilRelease)
+        throw new Error('the release did not clear the latch — Shift would stay dead');
+    /* ⚠ CONTROL: a fresh press is honoured again, or the latch would have
+     * disabled Shift permanently and every assertion above would still pass. */
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 127]));
+    if (!S.shiftHeld) throw new Error('Shift is dead after the latch cleared');
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 0]));
+});
+
 step('⚠ CONTROL: the two lengths really do differ', () => {
     /* Without this both assertions above could be passing on a build where the
      * duration is ignored and everything lands in the same place. */
