@@ -2962,11 +2962,53 @@ function dismissWarning() {
 /* Initialize chain configs for all slots */
 function initChainConfigs() {
     chainConfigs = [];
+    chainConfigFresh = [];
     lastSlotModuleSignatures = [];
     for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
         chainConfigs.push(createEmptyChainConfig());
+        chainConfigFresh.push(false);
         lastSlotModuleSignatures.push("");
     }
+}
+
+/*
+ * Whether a slot's cached chain config is known to still describe the DSP.
+ *
+ * drawChainEdit used to call loadChainConfigFromSlot on EVERY FRAME, which is
+ * `3 + <chain length>` IPC round trips at ~2.8ms each — about 7 reads (~20ms)
+ * on this fork's 4-FX chain, against a 16.67ms frame, on the screen you pass
+ * through to reach every other one.
+ *
+ * A frame is the wrong cadence for a question whose answer only changes when
+ * somebody edits the chain. Two mechanisms keep the cache honest, and they are
+ * deliberately not the same one:
+ *
+ * - The user's own edits mark it stale HERE, at the point that writes the
+ *   model (applyComponentSelection is the only place in this file that
+ *   assigns chainConfigs[selectedSlot] outside the loader itself).
+ * - Everything else — a patch restore, a set load, the shim loading a slot
+ *   underneath us — is caught by the periodic refreshSlotModuleSignature,
+ *   which already reloads on a changed signature. That is the pre-existing
+ *   self-heal; this does not compete with it, it just stops asking the same
+ *   question sixty times a second in between.
+ *
+ * A signature cannot be the invalidator for the first kind, and neither can
+ * object identity: a picker swap mutates the config IN PLACE.
+ */
+let chainConfigFresh = [];
+
+/** The cached chain config is no longer known to match the DSP. */
+function invalidateChainConfig(slotIndex) {
+    if (slotIndex === undefined) chainConfigFresh = [];
+    else chainConfigFresh[slotIndex] = false;
+}
+
+/** The slot's chain config, reloading from the DSP only if it went stale. */
+function ensureChainConfigFresh(slotIndex) {
+    if (chainConfigFresh[slotIndex]) {
+        return chainConfigs[slotIndex] || createEmptyChainConfig();
+    }
+    return loadChainConfigFromSlot(slotIndex);
 }
 
 /* Load chain config from current patch info */
@@ -3004,6 +3046,9 @@ function loadChainConfigFromSlot(slotIndex) {
     if (newFx4 !== oldFx4) delete fxDisplayNameCache[`${slotIndex}:fx4`];
 
     chainConfigs[slotIndex] = cfg;
+    /* This IS the reload every other path invalidates towards, so the slot is
+     * clean by definition once it returns. */
+    chainConfigFresh[slotIndex] = true;
     return cfg;
 }
 
@@ -7672,6 +7717,10 @@ function applyComponentSelection() {
         cfg[comp.key] = null;
     }
     chainConfigs[selectedSlot] = cfg;
+    /* A swap MUTATES `cfg` in place and `None` writes null into it, so neither
+     * object identity nor the module signature can be what notices this. The
+     * model and the DSP disagree from here until something reloads. */
+    invalidateChainConfig(selectedSlot);
 
     /* Track explicit user-removal so autosave can bypass the boot-glitch
      * guard. Set when the slot is now fully empty; reset on any non-empty
@@ -13902,11 +13951,13 @@ function drawChainEdit() {
         : `${dirtyMark}Slot ${selectedSlot + 1}`;
     drawHeader(headerText);
 
-    /* Refresh chain config from DSP each render to ensure display matches actual state.
-     * Without this, the cached chainConfigs can be stale if the slot was loaded
-     * externally (e.g. patch restore) and the periodic signature refresh hasn't run yet. */
-    loadChainConfigFromSlot(selectedSlot);
-    const cfg = chainConfigs[selectedSlot] || createEmptyChainConfig();
+    /* The chain config, reloaded from the DSP only when something has made it
+     * stale — see chainConfigFresh. This was an unconditional reload per frame,
+     * `3 + <chain length>` IPC round trips at ~2.8ms, which is more than a
+     * whole frame budget. An external load (patch restore, the shim loading a
+     * slot) is caught by the periodic refreshSlotModuleSignature, which is
+     * what that reload was really standing in for. */
+    const cfg = ensureChainConfigFresh(selectedSlot);
     const chainSelected = selectedChainComponent === -1;
 
     /* Calculate box layout - 7 components, offset right to make room for slot indicators */
