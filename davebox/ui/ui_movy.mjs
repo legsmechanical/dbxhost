@@ -655,6 +655,109 @@ export function drawArcKnob(kx, ky, norm, bipolar) {
     drawArcKnobAt(kx + 10, ky + 7, 7, norm, bipolar);
 }
 
+/* ---- shared fill / curve treatment (upstream param-pages port) ------------
+ *
+ * Ported from schwung's src/shared/param_pages/{render_page,viz_draw}.mjs,
+ * themselves ports of schwung-movy's renderer geometry (MIT, (c) 2026
+ * megadake). Adapted from the injected-ctx contract onto davebox's bare draw
+ * globals; the geometry and the reasoning are upstream's.
+ *
+ * ⭑ THERE IS EXACTLY ONE `fillCurveMass` AND ITS CALLERS SHARE IT. The filter
+ * response, the EQ curve and the sample body are pictures of the maths; they
+ * are allowed to differ in SHAPE and must not differ in TREATMENT. Upstream
+ * enforced that by construction (one function, four callers) after a widget
+ * catalog in which `ghost-fill` won all four of its sets. Do not give one graph
+ * its own copy to tune.
+ *
+ * ⚠ CHECKER is 50%, the densest lattice at which a 1px stroke drawn on top of
+ * it stays visibly separate from its own fill. */
+export const MV_CHECKER = (x, y) => ((x + y) % 2) === 0;
+export const MV_DIAG_HEAVY = (x, y) => (((x + y) % 4) !== 0);
+
+/* Fill a rect through a pattern. Only ever SETS pixels — a dithered fill
+ * composites over what is beneath it rather than punching a hole in it. */
+export function fillDithered(x, y, w, h, pattern) {
+    for (let dy = 0; dy < h; dy++)
+        for (let dx = 0; dx < w; dx++)
+            if (pattern(x + dx, y + dy)) set_pixel(x + dx, y + dy, 1);
+}
+
+/* Dashed vertical rule — the fader's rails. */
+export function dashedVRule(x, y, h, dash, gap) {
+    const d = dash || 1, g = (gap == null) ? 1 : gap, cycle = d + g;
+    for (let i = 0; i < h; i++) if ((i % cycle) < d) set_pixel(x, y + i, 1);
+}
+
+/* Clear the four corners of a box — the house softening for every filled or
+ * framed shape on the grid. */
+export function notchCorners(x, y, w, h) {
+    set_pixel(x, y, 0);
+    set_pixel(x + w - 1, y, 0);
+    set_pixel(x, y + h - 1, 0);
+    set_pixel(x + w - 1, y + h - 1, 0);
+}
+
+/* Fill the mass of a column-defined curve through CHECKER, between the curve
+ * and its zero line.
+ *
+ *   yAt      (px) => y, the SAME closure the stroke is drawn from, so the fill
+ *            can never disagree with the line about where the curve is
+ *   baseY    the graph's zero row — the floor for a unipolar graph (filter),
+ *            the centre for a bipolar one (EQ, sample)
+ *   mirrorAt optional (px) => y for a graph symmetric about its zero line (the
+ *            sample body), so the mass spans crest to trough
+ *
+ * ⚠ Runs BEFORE the stroke at every call site. The stroke is solid and the fill
+ * is not, so drawing the fill second punches its lattice through the line. */
+export function fillCurveMass(x0, xEnd, yAt, baseY, topY, botY, mirrorAt) {
+    const clip = (y) => (y < topY ? topY : (y > botY ? botY : y));
+    for (let x = x0; x < xEnd; x++) {
+        const a = clip(yAt(x));
+        const b = clip(mirrorAt ? mirrorAt(x) : baseY);
+        const lo = a < b ? a : b, hi = a < b ? b : a;
+        for (let y = lo; y <= hi; y++) if (MV_CHECKER(x, y)) set_pixel(x, y, 1);
+    }
+}
+
+/* ---- modulation dot ------------------------------------------------------
+ *
+ * Where a modulated param actually IS right now, riding the arc, while the
+ * POINTER keeps showing the base you dialled in. Ported from param-pages'
+ * drawModDot; the reasoning is carried because it is not recoverable from the
+ * pixels:
+ *
+ * ⭑ Two values on one knob is the point. With the pointer chasing an LFO you
+ *   lose sight of what you set — and turning the knob edits the base, not what
+ *   you were watching.
+ * ⭑ DRAWN EVEN WHEN IT COINCIDES with the pointer. The mark's absence must mean
+ *   "nothing is modulating this", never "it happens to be at the base".
+ * ⚠ A FIVE-PIXEL PLUS, not a 2x2 block: an even-sized mark cannot be centred on
+ *   a pixel, so at the cardinal angles it rounds a whole pixel off its own
+ *   track. An odd mark centres exactly at every angle; a full 3x3 is a blob on
+ *   a knob this small, and one bare pixel is too faint against the ring.
+ * ⚠ INSIDE the ring, not on it — MV_MOD_DOT_INSET is the dot's half-width plus
+ *   a pixel of clearance, which is what stops it touching the ring at any angle
+ *   and breaking the circle's silhouette. */
+const MV_MOD_DOT_INSET = 2;
+
+export function drawModDotAt(cx, cy, r, norm) {
+    const n = norm < 0 ? 0 : (norm > 1 ? 1 : norm);
+    const rr = Math.max(1, r - MV_MOD_DOT_INSET);
+    const rad = (210 + n * 300) * Math.PI / 180;
+    const x = Math.round(cx + rr * Math.sin(rad));
+    const y = Math.round(cy - rr * Math.cos(rad));
+    set_pixel(x, y, 1);
+    set_pixel(x - 1, y, 1);
+    set_pixel(x + 1, y, 1);
+    set_pixel(x, y - 1, 1);
+    set_pixel(x, y + 1, 1);
+}
+
+/* Cell-sized modulation dot — same centre/radius as drawArcKnob. */
+export function drawModDot(kx, ky, norm) {
+    drawModDotAt(kx + 10, ky + 7, 7, norm);
+}
+
 /* Horizontal bar filling left->right (toggles / 2-state enums). */
 export function drawHBar(kx, ky, norm) {
     fill_rect(kx + 1, ky + 4, 18, 1, 1);
@@ -1048,6 +1151,16 @@ export function drawKitFilterCurve(rowY, viz) {
         const g = filtGainAt((px - x0) / spanW, mode, cutoff, reso, !!viz.steep);
         return Math.max(topY, Math.min(botY, Math.round(botY - g * h)));
     };
+    /* ⭑ GHOST FILL is OPT-IN (`viz.fill`), and the default is off because this
+     * curve already ships on davebox's own bank pages: turning it on for every
+     * existing caller would restyle a live screen nobody asked to change. A
+     * bank that wants the passband as MASS says so. See fillCurveMass — the
+     * treatment is shared with the EQ curve and the sample body, deliberately.
+     *
+     * Unipolar: the zero line is the floor, so this is literally the area under
+     * the curve. A column already on the floor fills nothing, which is what
+     * keeps a stopband empty rather than giving it a one-row lid. */
+    if (viz.fill) fillCurveMass(x0, x0 + spanW, yAt, botY, topY, botY);
     /* Skip runs lying flat on the bottom axis so the curve ends where it
      * reaches the floor rather than continuing along it. */
     let prevX = x0, prevY = yAt(x0);
@@ -1055,6 +1168,201 @@ export function drawKitFilterCurve(rowY, viz) {
         const y = yAt(px);
         if (prevY < botY || y < botY) plotLine(prevX, prevY, px, y, 1);
         prevX = px; prevY = y;
+    }
+}
+
+/* ---- EQ response curve -------------------------------------------------
+ *
+ * Ported from param-pages' viz_draw.mjs drawEq, itself schwung-movy's
+ * renderer/eq-curve.ts (MIT, (c) 2026 megadake). Three weighted bands summed
+ * into one signed curve about a dotted centre line: two shelves and a bell.
+ *
+ * ⭑ OPT-IN, LIKE THE ENVELOPE AND THE FILTER. Nothing detects an EQ — a bank
+ * declares `eq` and names the cells the graphic covers. davebox has no metadata
+ * to detect from and upstream's detector is engine-side; a renderer that
+ * guesses would restyle a page as a side effect of renaming a param.
+ *
+ * `viz` = { start, count (default 2), low, mid, high, fill } where the three
+ * gains are SIGNED -1..1 (each band's value normalised against its OWN declared
+ * range) and any of them may be omitted. Pure — layer C resolves the values. */
+const EQ_SHELF_LO = (u) => 1 / (1 + Math.exp((u - 0.28) * 11));
+const EQ_SHELF_HI = (u) => 1 / (1 + Math.exp((0.72 - u) * 11));
+const EQ_BELL_MID = (u) => Math.exp(-Math.pow((u - 0.5) / 0.20, 2));
+
+export function drawKitEqCurve(rowY, viz) {
+    const col = viz.start % 4;
+    const count = viz.count || 2;
+    const x0 = col * MV_CELL_W + 1;
+    const spanW = count * MV_CELL_W - 2;
+    const topY = rowY + 1, botY = rowY + MV_KH - 2;
+    const midY = Math.round((topY + botY) / 2);
+    const amp = (botY - topY) / 2;
+
+    dottedH(x0, x0 + spanW, midY);            /* 0 dB */
+
+    const clampS = (v) => (v == null ? 0 : (v < -1 ? -1 : (v > 1 ? 1 : v)));
+    const lo = clampS(viz.low), mid = clampS(viz.mid), hi = clampS(viz.high);
+    const gainAt = (u) => {
+        const v = lo * EQ_SHELF_LO(u) + mid * EQ_BELL_MID(u) + hi * EQ_SHELF_HI(u);
+        return v < -1 ? -1 : (v > 1 ? 1 : v);
+    };
+    const yAt = (px) => Math.round(midY - gainAt((px - x0) / spanW) * amp);
+
+    /* ⚠ BIPOLAR mass: the zero line is the CENTRE, so a cut fills downward and
+     * a boost upward. Filling to the floor instead would detach the shape from
+     * its own ink on every cut, which is the honest reading inverted. */
+    if (viz.fill) fillCurveMass(x0, x0 + spanW, yAt, midY, topY, botY);
+
+    let prevX = x0, prevY = yAt(x0);
+    for (let px = x0 + 1; px <= x0 + spanW; px++) {
+        const y = yAt(px);
+        plotLine(prevX, prevY, px, y, 1);
+        prevX = px; prevY = y;
+    }
+}
+
+/* ---- sample track ------------------------------------------------------
+ *
+ * Ported from param-pages' viz_draw.mjs drawSample (schwung-movy
+ * renderer/wav-form.ts, MIT (c) 2026 megadake). A mirrored waveform body with a
+ * playback cursor, loop brackets, granular spray fences and a base mark.
+ *
+ * ⚠⚠ REAL PEAKS OR NOTHING — and an EMPTY CELL WITH NO MARKERS DRAWS NOTHING AT
+ * ALL. Upstream shipped a synthetic `sin(t*PI) * (0.55 + 0.35*sin(t*23))`
+ * whenever peaks were missing and deleted it: a read that did not produce an
+ * answer must never produce a PICTURE. It cost a flagship granular module a
+ * picture of a sample that had never been loaded, reported from the device as
+ * "no sample was loaded, not sure why it was showing a waveform". davebox goes
+ * one step further than upstream's baseline-only fallback, because a davebox
+ * bank has no separate "NONE" cell to report the emptiness on unless the caller
+ * gives it one: with no peaks AND no markers this returns without a pixel, so
+ * the cells fall back to whatever the caller drew (or to nothing).
+ * ⚠ The FILE NAME is a separate cell. It is never written across the graphic —
+ * centred on a two-cell span it lands on the spray cell and reads as that
+ * param's value.
+ *
+ * `viz` = { start, count (default 2),
+ *           peaks: number[] 0..1 (per-column half-amplitude, already
+ *                  normalised — this file reads no files and does no I/O),
+ *           pos, basePos, spray, loopStart, loopEnd  (all 0..1, optional) }
+ */
+export function drawKitSampleSpan(rowY, viz) {
+    const col = viz.start % 4;
+    const count = viz.count || 2;
+    const x0 = col * MV_CELL_W + 1;
+    const w = count * MV_CELL_W - 2;
+    const topY = rowY + 1, botY = rowY + MV_KH - 2;
+    const midY = Math.round((topY + botY) / 2);
+    const amp = (botY - topY) / 2;
+
+    const pts = (viz.peaks && viz.peaks.length) ? viz.peaks : null;
+    const num = (v) => (typeof v === 'number' && isFinite(v))
+        ? (v < 0 ? 0 : (v > 1 ? 1 : v)) : undefined;
+    const pos = num(viz.pos), basePos = num(viz.basePos), spray = num(viz.spray);
+    const loopStart = num(viz.loopStart), loopEnd = num(viz.loopEnd);
+
+    /* ⚠ Nothing to say — say nothing. No frame, no baseline, no placeholder. */
+    if (!pts && pos === undefined && loopStart === undefined &&
+        loopEnd === undefined) return;
+
+    const halfAt = (i) => {
+        if (!pts) return 0;
+        const v = pts[Math.min(pts.length - 1, Math.max(0, i))];
+        const c = (typeof v === 'number' && isFinite(v)) ? (v < 0 ? 0 : (v > 1 ? 1 : v)) : 0;
+        return Math.round(c * amp);
+    };
+    const crestAt = (px) => midY - halfAt(px - x0);
+    const troughAt = (px) => midY + halfAt(px - x0);
+
+    if (pts) {
+        /* Same ghost fill as the filter and the EQ — one treatment, three
+         * graphs. The body is symmetric about the centre, so the mass spans
+         * crest to trough rather than down to a floor. */
+        fillCurveMass(x0, x0 + w, crestAt, midY, topY, botY, troughAt);
+        /* Both flanks stroked, as a step curve: at a steep transient adjacent
+         * columns differ by several rows, and a bare pixel each reads as a
+         * dotted outline rather than as the edge of a body. */
+        let py = crestAt(x0), qy = troughAt(x0);
+        for (let px = x0; px < x0 + w; px++) {
+            const cy = crestAt(px), ty = troughAt(px);
+            fill_rect(px, Math.min(py, cy), 1, Math.abs(cy - py) + 1, 1);
+            fill_rect(px, Math.min(qy, ty), 1, Math.abs(ty - qy) + 1, 1);
+            py = cy; qy = ty;
+        }
+    }
+
+    /* Column i covers frames [i/w, (i+1)/w), so a marker belongs in
+     * floor(p*w). The obvious round(p*(w-1)) disagrees for a quarter of all
+     * positions and lands a pixel off the column that will actually play. */
+    const colOf = (p) => Math.min(w - 1, Math.floor(p * w));
+
+    /* ⚠ LOOP BOUNDS FIRST, so the cursor draws on top of them — the cursor is
+     * the thing that moves and the thing you are looking for. Tips point INWARD,
+     * at the region that repeats: that is how a start is told from an end with
+     * no room for a label, and reversing it still draws two brackets and still
+     * satisfies any "are there brackets" check. */
+    const bracket = (p, opening) => {
+        if (p === undefined) return;
+        const bx = x0 + colOf(p);
+        fill_rect(bx, topY, 1, botY - topY + 1, 1);
+        const tipX = bx + (opening ? 1 : -1);
+        if (tipX >= x0 && tipX < x0 + w) {
+            fill_rect(tipX, topY, 1, 2, 1);
+            fill_rect(tipX, botY - 1, 1, 2, 1);
+        }
+    };
+    bracket(loopStart, true);
+    bracket(loopEnd, false);
+
+    /* GRANULAR SPREAD: the region grains are drawn from, as a dotted fence
+     * either side of the cursor. Dotted rather than solid so it reads as a
+     * boundary the cursor may wander past, not as a second cursor. Because the
+     * offset is symmetric, +-0.5 already reaches every frame — past that the
+     * fences stop at the file edges instead of implying a spread the DSP never
+     * applies. */
+    if (pos !== undefined && spray !== undefined && spray > 0) {
+        const wrap = (f) => f - Math.floor(f);
+        const full = spray >= 0.5;
+        for (const side of [-1, 1]) {
+            const at = full ? (side < 0 ? 0 : 1 - 1 / w) : wrap(pos + side * spray);
+            const fx = x0 + colOf(at);
+            const fh = halfAt(fx - x0);
+            for (let yy = topY; yy <= botY; yy++) {
+                if (((yy + fx) & 1) !== 0) continue;
+                /* ⚠ Inside the body the fence must be CUT, not added: a lit
+                 * pixel over a lit body is invisible. */
+                const inWave = yy >= midY - fh && yy <= midY + fh;
+                set_pixel(fx, yy, inWave ? 0 : 1);
+            }
+        }
+    }
+
+    /* THE BASE MARK: where the knob is SET, when a source is moving it. A span
+     * graphic COVERS its cells, so the modulation dot has no way onto the
+     * screen and the cursor alone would be a mark moving on its own. A COARSE
+     * dash — 2 on, 2 off — because it has to be told apart from the solid
+     * cursor and the fine spray dither; phased from topY, an ABSOLUTE
+     * coordinate, so it does not crawl as the base moves between columns. */
+    if (basePos !== undefined && pos !== undefined && colOf(basePos) !== colOf(pos)) {
+        const bi = colOf(basePos), bh = halfAt(bi), bx = x0 + bi;
+        for (let yy = topY; yy <= botY; yy++) {
+            if (((yy - topY) & 3) >= 2) continue;
+            const inWave = yy >= midY - bh && yy <= midY + bh;
+            set_pixel(bx, yy, inWave ? 0 : 1);
+        }
+    }
+
+    /* The cursor is the body's COMPLEMENT in its own column: the sample is
+     * cleared there and the space around it is lit. That inverts it over the
+     * waveform without ever reading the framebuffer back, and it is
+     * self-correcting — a tall bright line through a quiet passage, a dark
+     * notch cut into the body through a loud one. Either way it is the
+     * highest-contrast thing in the column. */
+    if (pos !== undefined) {
+        const mi = colOf(pos), h = halfAt(mi), mx = x0 + mi;
+        fill_rect(mx, midY - h, 1, 2 * h + 1, 0);
+        if (midY - h > topY) fill_rect(mx, topY, 1, (midY - h) - topY, 1);
+        if (midY + h < botY) fill_rect(mx, midY + h + 1, 1, botY - (midY + h), 1);
     }
 }
 
@@ -1135,13 +1443,138 @@ export function drawLfoWave(viz) {
     }
 }
 
+/* ---- MOCKUP widgets (style calls, not adopted) --------------------------
+ *
+ * ⭑⭑ NOTHING ROUTES TO THESE. `ui_cells.mjs` never emits `pill` or `faderail`,
+ * so no existing cell changes shape; they exist so the offline renderer can put
+ * them in front of Josh, per widget, before anything adopts them. Delete them
+ * if the answer is no — do NOT quietly wire one in.
+ *
+ * Both are ports of param-pages' SCH-50 winners (viz_draw.mjs drawSwitch
+ * `pill-inverted` and drawFader `outline-fill`), themselves descended from
+ * schwung-movy (MIT, (c) 2026 megadake). */
+
+/* THE SWITCH PILL. Two states, no animation.
+ *
+ * ⭑ THE TRACK CARRIES THE STATE, NOT THE SLUG. ON fills the whole track and
+ * knocks the slug out of it; OFF leaves an empty frame with a solid slug. So
+ * the two states differ by most of the widget's AREA rather than by where a 5px
+ * block sits, and the cell stays legible at a distance where a slug-only pill
+ * is a lozenge with a bump.
+ * ⚠ THE 2px INSET IS THE FLOOR, NOT A PREFERENCE. At 1px the slug is
+ * 8-connected to the wall on its own row and the two merge: OFF stops reading
+ * as "a block parked at one end of a track" and starts reading as "the left
+ * half of this box is thick" — the same picture at both seats, and therefore no
+ * switch at all. That defect had to be fixed once already upstream.
+ * ⚠ IT DOES NOT ANIMATE. Both the slug's 120ms slide and the 160ms fill were
+ * removed upstream after a device report of "distracting": a switch is the
+ * control you flip most often and least deliberately, and no calibration of a
+ * duration fixes a thing that should not be moving.
+ * ACCEPTED COST: ON is a dark cell, so a row of switches on is a row of blocks.
+ */
+const MV_PILL_H = 9, MV_SLUG_W = 5, MV_SLUG_H = 5, MV_SLUG_INSET = 2;
+
+export function drawSwitchPill(kx, ky, on) {
+    const w = 16;
+    const x = kx + Math.round((MV_KW - w) / 2);
+    const y = ky + Math.round((MV_KH - MV_PILL_H) / 2), h = MV_PILL_H;
+    const seat = on ? (x + w - MV_SLUG_INSET - MV_SLUG_W) : (x + MV_SLUG_INSET);
+    const sy = y + MV_SLUG_INSET;
+    if (on) {
+        fill_rect(x, y, w, h, 1);
+    } else {
+        fill_rect(x, y, w, 1, 1);
+        fill_rect(x, y + h - 1, w, 1, 1);
+        fill_rect(x, y, 1, h, 1);
+        fill_rect(x + w - 1, y, 1, h, 1);
+    }
+    notchCorners(x, y, w, h);
+    /* The slug takes the colour of the ground it stands on: a knockout on a
+     * filled track, ink on an empty one. */
+    fill_rect(seat, sy, MV_SLUG_W, MV_SLUG_H, on ? 0 : 1);
+    /* Its own corners, softened in whichever direction the ground demands —
+     * notchCorners CLEARS, which rounds a solid slug; a knockout needs the
+     * reverse or the hole is the only square-cornered shape on the page. */
+    for (const c of [[seat, sy], [seat + MV_SLUG_W - 1, sy],
+                     [seat, sy + MV_SLUG_H - 1], [seat + MV_SLUG_W - 1, sy + MV_SLUG_H - 1]])
+        set_pixel(c[0], c[1], on ? 1 : 0);
+}
+
+/* THE FADER: dashed rails, a framed column, a notched head.
+ *
+ * ⭑ THE INTERIOR LATTICE IS PHASED BY THE SUB-ROW REMAINDER, and that is the
+ * whole reason to prefer this to drawVBar. A 7px bar in a 13-row band gives a
+ * 128-step param about ten detents per row, so NINE IN TEN MOVE NOTHING —
+ * measured upstream at 12 distinct pictures out of 128. DIAG_HEAVY has a period
+ * of 4, so four phases sit between one row and the next and a detent too small
+ * to move the boundary still moves the texture: 44 of 127.
+ * ⚠ SUBTRACTED, not added, so a rising value shifts the lattice the way the
+ * boundary is heading. Adding it reads as the texture sliding DOWN while the
+ * bar grows up, which looks like a defect rather than a finer scale.
+ * ⚠ This KNOWINGLY breaks the absolute-coordinate rule the fills follow. Here
+ * the re-phasing IS the signal, and there is a rail and a gap between adjacent
+ * faders so there is no seam for the mismatch to show at.
+ *
+ * `baseNorm` (0..1, or omitted) is the fader's modulation base — two stubs
+ * OUTSIDE the rails, which is the only part of the cell nothing else draws in.
+ * A mark inside the column would have to fight the lattice, whose whole point
+ * is that it re-phases as the value moves. */
+export function drawFaderColumn(kx, ky, norm, baseNorm) {
+    const cx = kx + Math.round(MV_KW / 2);
+    const top = ky + 1, bot = ky + MV_KH - 2, h = bot - top;
+    const n = norm < 0 ? 0 : (norm > 1 ? 1 : (norm || 0));
+
+    dashedVRule(cx - 4, top, h + 1, 1, 1);
+    dashedVRule(cx + 4, top, h + 1, 1, 1);
+
+    const exact = n * h;
+    const phase = Math.floor((exact - Math.floor(exact)) * 4) % 4;
+    const pattern = (px, py) => ((((px + py - phase) % 4) + 4) % 4) !== 0;
+
+    const y = Math.round(bot - exact);
+    const bh = bot - y + 1, bx = cx - 3, bw = 7;
+    fill_rect(bx, y, bw, 1, 1);
+    fill_rect(bx, bot, bw, 1, 1);
+    fill_rect(bx, y, 1, bh, 1);
+    fill_rect(bx + bw - 1, y, 1, bh, 1);
+    /* At very low values there is no interior left, so it degrades to a 7x2 bar
+     * rather than to a frame with a hole punched in it — and the notch goes
+     * with it, because notching a 2-row box eats half of it. */
+    if (bh >= 3) {
+        fillDithered(bx + 1, y + 1, bw - 2, bh - 2, pattern);
+        notchCorners(bx, y, bw, bh);
+    }
+    if (typeof baseNorm === 'number' && isFinite(baseNorm)) {
+        const b = baseNorm < 0 ? 0 : (baseNorm > 1 ? 1 : baseNorm);
+        const byy = Math.round(bot - b * h);
+        if (byy >= top && byy <= bot) {
+            fill_rect(cx - 6, byy, 2, 1, 1);
+            fill_rect(cx + 5, byy, 2, 1, 1);
+        }
+    }
+}
+
 /* ---- grid ---- */
 
 function drawCellWidget(col, rowY, cell, touched) {
     const kx = col * MV_CELL_W + Math.floor((MV_CELL_W - MV_KW) / 2);
+    /* ⭑ THE MODULATION DOT IS A DESCRIPTOR FIELD, NOT A DETECTION. A cell whose
+     * caller never sets `modNorm` draws exactly the pixels it drew before — and
+     * davebox sets it nowhere today, so nothing on any shipping page moves.
+     * It is here so a bank that GAINS a modulation source needs a value, not a
+     * widget. Drawn even when it coincides with the pointer: the mark's absence
+     * has to mean "nothing is modulating this", never "it is at the base". */
+    const mod = (typeof cell.modNorm === 'number' && isFinite(cell.modNorm))
+        ? cell.modNorm : null;
     switch (cell.kind) {
-        case 'arc':    return drawArcKnob(kx, rowY, cell.norm || 0, false);
-        case 'arcbip': return drawArcKnob(kx, rowY, 0.5 + (cell.signed || 0) / 2, true);
+        case 'arc':
+            drawArcKnob(kx, rowY, cell.norm || 0, false);
+            if (mod !== null) drawModDot(kx, rowY, mod);
+            return;
+        case 'arcbip':
+            drawArcKnob(kx, rowY, 0.5 + (cell.signed || 0) / 2, true);
+            if (mod !== null) drawModDot(kx, rowY, mod);
+            return;
         case 'hbar':   return drawHBar(kx, rowY, cell.norm || 0);
         case 'enumsq': return drawEnumSquare(kx, rowY, cell.text, cell.sq);
         case 'frac':   return drawFracStack(col * MV_CELL_W, rowY, cell.text);
@@ -1152,14 +1585,34 @@ function drawCellWidget(col, rowY, cell, touched) {
         case 'vbar':   return drawVBar(kx, rowY, cell.norm || 0);
         case 'wavesq': return drawWaveBox(kx, rowY, cell.shape);
         case 'xbox':   return drawXBox(kx, rowY);
+        /* MOCKUP kinds — see the primitives above. ui_cells.mjs emits neither;
+         * only the offline renderer reaches them. */
+        case 'pill':   return drawSwitchPill(kx, rowY, !!cell.norm);
+        case 'faderail': return drawFaderColumn(kx, rowY, cell.norm || 0,
+                                                cell.modNorm);
         default:       return; /* blank */
     }
 }
 
 /* Label strip cell: the short NAME normally; while touched the cell inverts
  * and shows the live VALUE (movy's signature swap). */
+/* The label strip: the short NAME normally, the live VALUE while touched, and
+ * a THIRD state — a trailing `~` — while a source is moving the param.
+ *
+ * ⭑ The tilde rides the NAME, not the value. A modulated param's value is
+ * already moving on its own on the widget; what the strip has to say is WHY,
+ * and it has to say it in the one or two pixels a 32px cell has spare. The
+ * touched state is untouched: while your finger is on the knob the strip is
+ * answering "what number is this", and a modulation mark there would be
+ * competing with the answer.
+ * ⚠ Appended BEFORE the fit-to-cell trim, so a label long enough to be clipped
+ * loses a character rather than losing the tilde — the mark is the information
+ * the plain label does not already carry.
+ * ⚠ Opt-in by descriptor field (`modulated`). davebox sets it nowhere today, so
+ * every existing label strip renders identically. */
 function drawCellLabel(col, lblY, cell, touched) {
     let text = String(touched && cell.text != null ? cell.text : (cell.label || ''));
+    if (!touched && cell.modulated && text) text += '~';
     if (!text) return;
     while (text.length > 0 && mvWidth(text) > MV_CELL_W - 2) text = text.slice(0, -1);
     const tw = mvWidth(text);
@@ -1178,11 +1631,21 @@ function drawCellLabel(col, lblY, cell, touched) {
  * individual widgets to one envelope graphic drawn across the span. Their
  * LABEL strips still render, so A/D/S/R stay named and touch-swap to their
  * values as usual. Omitted by davebox, which has no env banks. */
-export function drawKitCells(cells, touchedIdx, env, filt) {
+export function drawKitCells(cells, touchedIdx, env, filt, eq, samp) {
+    /* ⭑ EVERY SPAN IS DECLARED, NONE IS DETECTED. env / filt / eq / samp all
+     * arrive from the caller with an explicit start (and count where it can
+     * vary); this file never sniffs a param name to decide a bank has an EQ.
+     * Upstream's detector is engine-side and metadata-corroborated, and there
+     * is no equivalent metadata here — a renderer that guessed would restyle a
+     * page as a side effect of renaming a knob. */
     const envFirst = env ? env.start : -1;
     const envLast = env ? env.start + env.count - 1 : -2;
     const filtFirst = filt ? filt.start : -1;
     const filtLast = filt ? filt.start + 1 : -2;   /* always a 2-cell span */
+    const eqFirst = eq ? eq.start : -1;
+    const eqLast = eq ? eq.start + (eq.count || 2) - 1 : -2;
+    const sampFirst = samp ? samp.start : -1;
+    const sampLast = samp ? samp.start + (samp.count || 2) - 1 : -2;
     for (let k = 0; k < 8; k++) {
         const cell = cells[k];
         if (!cell) continue;
@@ -1190,7 +1653,9 @@ export function drawKitCells(cells, touchedIdx, env, filt) {
         const rowY = k < 4 ? MV_ROW0_Y : MV_ROW1_Y;
         const lblY = k < 4 ? MV_LBL0_Y : MV_LBL1_Y;
         const covered = (k >= envFirst && k <= envLast) ||
-                        (k >= filtFirst && k <= filtLast);
+                        (k >= filtFirst && k <= filtLast) ||
+                        (k >= eqFirst && k <= eqLast) ||
+                        (k >= sampFirst && k <= sampLast);
         if (!covered) drawCellWidget(col, rowY, cell, k === touchedIdx);
         drawCellLabel(col, lblY, cell, k === touchedIdx);
     }
@@ -1199,6 +1664,12 @@ export function drawKitCells(cells, touchedIdx, env, filt) {
     }
     if (filt) {
         drawKitFilterCurve(filt.start < 4 ? MV_ROW0_Y : MV_ROW1_Y, filt);
+    }
+    if (eq) {
+        drawKitEqCurve(eq.start < 4 ? MV_ROW0_Y : MV_ROW1_Y, eq);
+    }
+    if (samp) {
+        drawKitSampleSpan(samp.start < 4 ? MV_ROW0_Y : MV_ROW1_Y, samp);
     }
 }
 
@@ -1214,6 +1685,27 @@ export function drawKitEnumOverlay(cells, touchedIdx) {
     const sel = cell.sel | 0;
     if (sel < 0) return; /* unset value ("--") — nothing to browse */
     drawKitListOverlay(cell.options, sel);
+}
+
+/* How long an enum peek stays up, in ms. Upstream's ENUM_PEEK_MS, carried
+ * verbatim so the two surfaces cannot drift to different numbers. */
+export const MV_ENUM_PEEK_MS = 700;
+
+/* Has the peek raised at `turnedAtMs` decayed by `nowMs`?
+ *
+ * PURE, and the timer lives in the caller — this file holds no state and reads
+ * no clock, which is what lets it load standalone in node. A caller that wants
+ * the peek passes `peekExpired: enumPeekExpired(S.lastTurnMs, Date.now())` to
+ * drawKitBankPage; one that does not passes nothing and keeps today's
+ * hold-to-show list.
+ *
+ * ⚠ A NULL `turnedAtMs` IS "NEVER TURNED", NOT "TURNED AT ZERO". Number(null)
+ * is 0, which against any real clock is expired — so a caller that had not yet
+ * recorded a turn would suppress the list forever. Refused explicitly. */
+export function enumPeekExpired(turnedAtMs, nowMs) {
+    if (typeof turnedAtMs !== 'number' || !isFinite(turnedAtMs)) return false;
+    if (typeof nowMs !== 'number' || !isFinite(nowMs)) return false;
+    return (nowMs - turnedAtMs) > MV_ENUM_PEEK_MS;
 }
 
 /* ── the overlay STACK ─────────────────────────────────────────────────────
@@ -1471,14 +1963,24 @@ export function drawKitBankPage(cells, opts) {
         if (opts.pageCount > 0) drawKitPageBar(opts.pageIdx | 0, opts.pageCount);
         if (opts.altArrowShow) drawKitAltArrow(SCREEN_W - 7, !opts.headerInvert, !!opts.altArrowOn, opts.altArrowHidden);
     }
-    drawKitCells(cells, t, opts.env, opts.filt);
+    drawKitCells(cells, t, opts.env, opts.filt, opts.eq, opts.samp);
     /* The option-list overlay covers the 3 cells away from the touched knob, so
      * it must NOT appear on a bare orienting touch — only once that knob is
      * actually TURNED (see enumOverlayIdx in ui_render.mjs). Callers pass the
      * turn-gated index separately; omitting it keeps the old touch-gated
      * behaviour for existing call sites. */
     const ov = (opts.overlayIdx != null) ? opts.overlayIdx : t;
-    drawKitEnumOverlay(cells, ov);
+    /* ⭑ THE PEEK: `peekExpired` takes the option list down while the knob is
+     * still held. Upstream raises the list on the TURN and decays it after
+     * ENUM_PEEK_MS because its grid has no touch sensor to release; davebox
+     * does, so its list already stays up exactly as long as the finger does and
+     * this is a DIFFERENT offer — uncovering the three neighbouring cells while
+     * you keep turning.
+     * ⚠⚠ OFF UNLESS A CALLER OPTS IN, and no davebox caller does. Adopting it
+     * unasked would REMOVE a display that currently works, which is not what
+     * "pixels on, behaviour off" buys. See enumPeekExpired() for the timer half;
+     * Josh judges it from the offline renders first. */
+    if (!opts.peekExpired) drawKitEnumOverlay(cells, ov);
 }
 
 /* Turn-to-reveal value zoom — the non-picker counterpart to drawKitEnumOverlay.
@@ -1795,7 +2297,24 @@ export function drawKitList(rows, sel, opts) {
         const trackH = visible * rowH;
         const thumbH = Math.max(3, Math.round(trackH * visible / n));
         const thumbY = topY - 1 + Math.round((trackH - thumbH) * start / Math.max(1, n - visible));
-        fill_rect(boxX + boxW - 2, topY - 1, 1, trackH, 1);
+        /* ⭑ THE RULE (upstream's, mocked here): a DOTTED rail with a SOLID
+         * thumb, and no arrows. The rail is the extent of the list and the
+         * thumb is where you are in it; drawing both solid makes the thumb a
+         * thicker piece of the same object, so the eye has to measure widths to
+         * read a position. Arrows say "there is more" twice — the rail already
+         * does, permanently, and an arrow that appears and disappears reflows
+         * the row it sits on.
+         * ⚠⚠ OPT-IN (`dottedRail`) BECAUSE IT CHANGES EVERY LIST AT ONCE. Sound
+         * mode's lists, the knob/LFO editors, global settings, the project
+         * screens, the snapshot picker and every picker overlay come through
+         * here. Josh judges the mockup render first; flipping the default is a
+         * one-word change once he has. */
+        if (o.dottedRail) {
+            for (let ry = topY - 1; ry < topY - 1 + trackH; ry += 2)
+                set_pixel(boxX + boxW - 2, ry, 1);
+        } else {
+            fill_rect(boxX + boxW - 2, topY - 1, 1, trackH, 1);
+        }
         fill_rect(boxX + boxW - 3, thumbY, 2, thumbH, 1);
     }
     return start;

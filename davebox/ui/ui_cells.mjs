@@ -7,7 +7,9 @@
  *
  * Render-cell shape expected by drawKitBankPage (see ui/ui_movy.mjs header):
  *   { kind: 'blank'|'arc'|'arcbip'|'hbar'|'vbar'|'enumsq'|'valsq'|'frac'|'dirsq',
- *     label, name, text, norm, signed, sq, options, sel }
+ *     label, name, text, norm, signed, sq, options, sel,
+ *     modNorm, modulated }   <- the modulation dot + the label's `~`, both
+ *                               off unless a caller passes a live value 
  */
 
 /* ---- value parsing -----------------------------------------------------
@@ -97,13 +99,32 @@ function basename(p) {
 
 /* ---- descriptor -> render cell ---- */
 
-export function toRenderCell(cell, value, rawValue) {
+/* `modValue` — the param's LIVE value while a source is moving it, in the same
+ * units as `value` (which stays the BASE, the number a knob turn edits).
+ *
+ * ⭑ THE DESCRIPTOR CARRIES A NUMBER, NOT A DECISION. Passing it lights two
+ * things in ui_movy: the modulation dot riding the arc, and the `~` on the
+ * label strip. Omitting it — which every davebox caller does today, because
+ * davebox has no per-cell modulation source — leaves both off and every cell
+ * renders exactly as before. That is the whole wiring: a bank that GAINS a
+ * source needs a value here, not a widget anywhere.
+ *
+ * ⚠ null IS NOT zero. `undefined`/`null`/`''` mean "no source", and a bare
+ * Number('') is 0 — which would confidently draw the dot pinned at the bottom
+ * of the range on every unmodulated cell on the page.
+ * ⚠ COINCIDENCE IS NOT ABSENCE. A source sitting exactly on the base still gets
+ * the dot and the tilde, so the marks mean "modulated", not "moving right
+ * now". */
+export function toRenderCell(cell, value, rawValue, modValue) {
     if (!cell || cell.kind === 'blank' || !cell.key) return null;
 
     const label = up(cell.short || cell.label || '');
     const name = up(cell.label || cell.key);
     const span = cell.max - cell.min;
     const norm = (value == null || span <= 0) ? 0 : (value - cell.min) / span;
+    const modulated = modValue != null && modValue !== '' && isFinite(Number(modValue));
+    const modNorm = (!modulated || span <= 0) ? null
+        : Math.max(0, Math.min(1, (Number(modValue) - cell.min) / span));
     const text = up(formatValue(cell, value));
     const sel = (cell.options && value != null) ? Math.round(value) : -1;
     /* Render-side option list for the picker overlay (hdrPrint). */
@@ -139,16 +160,16 @@ export function toRenderCell(cell, value, rawValue) {
             const centre = (cell.min + cell.max) / 2;
             const half = span / 2;
             const signed = (value == null || half <= 0) ? 0 : (value - centre) / half;
-            return { kind: 'arcbip', label, name, text, signed };
+            return { kind: 'arcbip', label, name, text, signed, modNorm, modulated };
         }
 
         case 'fader':
             /* Vertical bar, bottom-up — mix/level feel (canvaskit drawVBar). */
-            return { kind: 'vbar', label, name, text, norm };
+            return { kind: 'vbar', label, name, text, norm, modNorm, modulated };
 
         case 'uni':
         default:
-            return { kind: 'arc', label, name, text, norm };
+            return { kind: 'arc', label, name, text, norm, modNorm, modulated };
     }
 }
 
@@ -171,12 +192,13 @@ function numericSel(cell, value) {
 }
 
 /* Build the 8-cell render array for a bank. `values` is keyed by param key. */
-export function renderCellsForBank(bank, values, rawValues) {
+export function renderCellsForBank(bank, values, rawValues, modValues) {
     const out = [];
     for (let i = 0; i < 8; i++) {
         const cell = bank.cells[i];
         if (!cell || !cell.key) { out.push(null); continue; }
-        out.push(toRenderCell(cell, values[cell.key], rawValues && rawValues[cell.key]));
+        out.push(toRenderCell(cell, values[cell.key], rawValues && rawValues[cell.key],
+                              modValues && modValues[cell.key]));
     }
     return out;
 }
