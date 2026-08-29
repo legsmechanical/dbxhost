@@ -9,6 +9,7 @@ import {
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
 import { arpVelLevel } from './ui_pure.mjs';
+import { knobRingColor, knobRingNorm } from './ui_knob_leds.mjs';
 import {
     White, Red, Green, Blue, DarkBlue, LightGrey, DarkGrey, Cyan, PurpleBlue, VividYellow,
     DeepRed, DeepGreen, DeepMagenta, Mustard
@@ -872,10 +873,25 @@ export function updateTrackLEDs() {
                 ledVal = S.clipCCVal[_t6][_c6][k] >= 0 ? White : LED_OFF;
             }
         } else if (PARAM_LED_BANKS.indexOf(S.activeBank) >= 0) {
+            /* ⭑ THE RING RIDES THE VALUE (2026-08-29, ported from upstream's
+             * param-pages knob grid — see ui_knob_leds.mjs for the ramps and
+             * for why they are ordered by luminance rather than by name).
+             * Knobs 1-4 white, 5-8 amber, and a BOUND knob is never dark:
+             * colour 0 means "nothing here to turn".
+             *
+             * ⚠ This REPLACES a binary White-if-changed-from-default rule,
+             * which lit a freshly-opened bank at zero knobs and never said
+             * where anything sat. Output only — no input path reads it.
+             *
+             * ⚠ There is no "restore on leaving the bank" to write here: this
+             * loop recomputes all eight rings every frame from whatever bank is
+             * active, so leaving a param bank repaints them by construction.
+             * The shim-side restore edge (`shadow_restore_knob_leds`) exists for
+             * the OTHER direction — handing the surface back to Move on exit —
+             * and davebox owns the surface for its whole lifetime. */
             const pm = BANKS[S.activeBank].knobs[k];
-            if (pm && pm.abbrev && pm.scope !== 'stub') {
-                ledVal = (S.bankParams[S.activeTrack][S.activeBank][k] !== pm.def) ? White : LED_OFF;
-            }
+            ledVal = knobRingColor(
+                k, knobRingNorm(pm, S.bankParams[S.activeTrack][S.activeBank][k]));
         }
         if (S._forceKnobReemit) setButtonLED(71 + k, ledVal, true);
         else cachedSetButtonLED(71 + k, ledVal);
