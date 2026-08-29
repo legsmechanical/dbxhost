@@ -49,7 +49,8 @@ import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
 import { soundActive, soundExit, soundVolGestureEnd, soundOpenGenerator,
-    soundAtBlockRoot, soundGestureReturn, soundShowMenu } from './ui_sound.mjs';
+    soundAtBlockRoot, soundGestureReturn, soundShowMenu,
+    soundViewForTest } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
 import { applyTrackConfig, readBankParams, applyBankParam,
@@ -1917,7 +1918,26 @@ if (!wantInstrument) {
     forceRedraw();
     return;
 }
-/* HOLD — the instrument itself. */
+/* HOLD — the instrument itself.
+ *
+ * ⭑ STAMP WHERE WE ARE FIRST (Josh, 2026-08-29: "when exiting instrument
+ * editor entered from shift hold shortcut, it should go back to where you
+ * were, not necessarily the sound+config menu"). Back out of the editor then
+ * RETRACES the gesture instead of stepping up into a menu you may never have
+ * been on.
+ *
+ * ⚠ Stamped BEFORE anything opens, because opening is what changes the view
+ * this is recording. And `view` is carried, not just `wasActive`: after the
+ * respec "where you were" has three answers — a plain bank, the bank's PROMPT,
+ * or the menu — and the crumb has to tell the last two apart.
+ *
+ * ⚠ This crumb is the one the CLOSER used to stamp. Removing the closer left
+ * it written by nobody, which I flagged as dead; it was not dead, it was
+ * waiting for the gesture that needed it. */
+S.genReturn = { track: _gt,
+                wasActive: soundActive(),
+                view: soundActive() ? soundViewForTest() : -1,
+                bank: S.activeBank | 0 };
 if (S.trackRoute[_gt] === 1) {
     enterMoveNativeCoRun(_gt);
 } else if (S.trackRoute[_gt] === 2) {

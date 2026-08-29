@@ -766,6 +766,9 @@ export function markSoundDirty() { S.dirty = true; }
  * the one-press way out of a deep chain now that the gesture never closes.
  * ⚠ Entry itself is NOT here: it is route-aware and deferred to the tick (a
  * Move-routed track opens its bus, not a chain slot). */
+/* The current view, for a caller that needs to record where the user was. */
+export function soundViewForTest() { return S.view; }
+
 export function soundShowMenu() {
     if (!S.active) return;
     S.view = VIEW_BLOCKS;
@@ -1730,7 +1733,12 @@ export function soundGestureReturn() {
     if (g.track !== S.track) { GS.genReturn = null; return false; }
     GS.genReturn = null;                      /* spent, whichever way it goes */
     if (g.wasActive) {
-        S.view = VIEW_BLOCKS;                 /* back to the picker you pressed from */
+        /* ⭑ The SCREEN you pressed from, not just "the menu". After the respec
+         * the bank has a prompt of its own, and pressing the gesture there and
+         * being returned to the MENU would be a screen you were never on.
+         * Older crumbs carry no `view`; they mean the menu, which is what it
+         * always used to be. */
+        S.view = (g.view === VIEW_PROMPT) ? VIEW_PROMPT : VIEW_BLOCKS;
         S.pendingAction = { t: 'names' };
         S.presetMsg = '';
         S.dirty = true;

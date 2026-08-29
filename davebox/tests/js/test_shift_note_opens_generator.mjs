@@ -80,6 +80,7 @@ const sound = await import('../../ui/ui_sound.mjs');
  * Caught by printing the constant when the first assertion failed. */
 const { MoveNoteSession, BANK_SOUND, BANK_DEFAULT } = await import('../../ui/ui_constants.mjs');
 const { MoveShift } = await import('/data/UserData/schwung/shared/constants.mjs');
+const MoveBack = 51;   /* the Back button's CC */
 
 function ticks(n) { for (let i = 0; i < n; i++) tickmod._tickImpl(); }
 function step(l, fn) {
@@ -100,7 +101,7 @@ function step(l, fn) {
 const HOLD_TICKS = 42;
 /* Sound mode's view enum — not exported; pinned here so a renumbering shows up
  * as a failure rather than as comparing the wrong constants. */
-const VIEW_BLOCKS = 0;
+const VIEW_BLOCKS = 0, VIEW_PROMPT = 18;
 function shiftNote(heldTicks) {
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 127]));
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 127]));
@@ -211,6 +212,44 @@ step('⭑⭑ the HOLD spends Shift, so what it opens does not also see it', () =
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 0]));
 });
 
+step('⭑⭑ leaving the editor RETRACES the hold — back to where you were', () => {
+    /* Josh, 2026-08-29: "when exiting instrument editor entered from shift hold
+     * shortcut, it should go back to where you were, not necessarily the
+     * sound+config menu."
+     *
+     * ⚠ Three answers, not two. Before the respec "where you were" was either a
+     * bank or the menu; the bank now has a PROMPT of its own, and being returned
+     * to the menu from there is a screen you were never on. */
+    const view = () => sound.soundPickStateForTest().view;
+    const back = () => {
+        S.backHoldFired = false;
+        globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveBack, 127]));
+        globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveBack, 0]));
+        ticks(4);
+    };
+
+    /* from the PROMPT */
+    sound.soundExit(); ticks(4);
+    S.trackRoute[0] = 0;
+    sound.soundEnter(0, 0); ticks(2);
+    if (view() !== VIEW_PROMPT) throw new Error('setup: not on the prompt');
+    shiftNoteHold(); ticks(6);
+    if (view() === VIEW_PROMPT) throw new Error('setup: the hold did not leave the prompt');
+    back();
+    if (view() !== VIEW_PROMPT)
+        throw new Error('left the editor onto view ' + view() + ', not the PROMPT it was ' +
+                        'entered from');
+
+    /* from the MENU */
+    sound.soundShowMenu(); ticks(2);
+    if (view() !== VIEW_BLOCKS) throw new Error('setup: not on the menu');
+    shiftNoteHold(); ticks(6);
+    back();
+    if (view() !== VIEW_BLOCKS)
+        throw new Error('left the editor onto view ' + view() + ', not the MENU it was ' +
+                        'entered from');
+});
+
 step('⚠ CONTROL: the two lengths really do differ', () => {
     /* Without this both assertions above could be passing on a build where the
      * duration is ignored and everything lands in the same place. */
@@ -289,6 +328,12 @@ function menuPress() {
  * deserves its own look. */
 
 step('⚠ control: with no gesture crumb, Menu is NOT a closer', () => {
+    /* ⚠ Explicitly crumb-FREE. The HOLD stamps `genReturn` again as of
+     * 2026-08-29 (so the editor it opens can retrace), and an earlier step's
+     * crumb leaking in here would make the unshifted press spend it and close —
+     * which is the very thing this control exists to say does NOT happen
+     * without one. init() does not clear it. */
+    S.genReturn = null;
     globalThis.init();
     S.awaitingProjectSelect = false;
     S.ledInitComplete = true;
