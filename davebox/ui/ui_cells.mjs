@@ -7,7 +7,7 @@
  *
  * Render-cell shape expected by drawKitBankPage (see ui/ui_movy.mjs header):
  *   { kind: 'blank'|'arc'|'arcbip'|'hbar'|'pill'|'vbar'|'enumsq'|'valsq'
- *           |'frac'|'dirsq',
+ *           |'frac'|'dirsq'|'opaque',
  *     label, name, text, norm, signed, sq, options, sel,
  *     modNorm, modulated }   <- the modulation dot + the label's `~`, both
  *                               off unless a caller passes a live value 
@@ -214,8 +214,28 @@ export function toRenderCell(cell, value, rawValue, modValue) {
                      options: numericOptions(cell), sel: numericSel(cell, value) };
 
         case 'file':
-            return { kind: 'enumsq', label, name,
-                     text: rawValue ? up(basename(rawValue)) : '--', options: null, sel: -1 };
+            /* ⭑⭑ THE TRI-STATE IS SPELLED OUT, and this is the cell where
+             * collapsing it is most visible — a sample slot with no file used
+             * to look exactly like a sample slot whose name had not arrived
+             * yet. Both said "--".
+             *
+             *     a path      the basename
+             *     ''          NONE — nothing is chosen. A real reading.
+             *     null/undef  --   — the read has not answered. We do not know.
+             *
+             * ⚠ `rawValue === ''` ONLY means NONE. A failed read keeps "--",
+             * because "there is no file" is a fact about the module and we do
+             * not have it. The old `rawValue ? ... : '--'` collapsed both,
+             * because '' is falsy.
+             *
+             * `opaque` (not `enumsq`): a file is a value you cannot TURN, so it
+             * gets the chevron-broken box that says so. `opens` adds the corner
+             * brackets — the door mark is a separate statement from the
+             * chevron, which is the widget itself. */
+            return { kind: 'opaque', label, name,
+                     text: (rawValue === null || rawValue === undefined) ? '--'
+                         : (rawValue === '' ? 'NONE' : up(basename(rawValue))),
+                     options: null, sel: -1, opens: true };
 
         case 'bip': {
             const centre = (cell.min + cell.max) / 2;

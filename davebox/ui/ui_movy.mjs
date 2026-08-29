@@ -12,9 +12,19 @@
  * (c) 2026 megadake) via schwung-canvaskit; header font = "6x6 Pixel Font"
  * by asciimario (fontstruct.com/fontstructions/show/821131, CC BY-NC 3.0).
  *
+ * ⚠ THE TWO IMPORTS ARE PURE SIBLINGS, NOT AN EXCEPTION TO THE RULE. The rule
+ * this file lives by is that it loads STANDALONE IN NODE (no device-absolute
+ * specifiers, no state, no host globals at module scope) — which is what makes
+ * tools/preview_movy.mjs, tools/render_screens.mjs and tools/render_widgets.mjs
+ * possible. ui_fonts_pp.mjs is glyph data and ui_anim.mjs is a caller-owned
+ * store; both satisfy every part of that. See UI_LANGUAGE §0.
+ *
  * Cell descriptor (everything precomputed by the caller — no param reads):
  *   { kind:  'blank' | 'arc' | 'arcbip' | 'hbar' | 'pill' | 'vbar' | 'enumsq'
- *            | 'valsq' | 'frac',
+ *            | 'valsq' | 'frac' | 'opaque',
+ *            ('opaque' = a value you cannot TURN — a file, a path, a string:
+ *             a chevron-broken box showing the value's head, tri-stated
+ *             value / NONE / -- . `opens: true` adds the corner brackets),
  *            ('pill' = the switch pill, for a toggle whose two states are
  *             literally off/on; 'hbar' remains the two-state bar for a pair of
  *             WORDS — see isBooleanPair in ui_cells.mjs. 'vbar' draws the fader
@@ -31,6 +41,13 @@
  *     options / sel: enum option strings + selected index (enumsq overlay;
  *                    sel < 0 = unset, no overlay) }
  */
+
+import {
+    fontPrint4x5, fontWidth4x5, fit4x5, FONT4_HEIGHT, enumSquareLines,
+    fontPrintBigNum, fontWidthBigNum, bigNumCanDraw, BIGNUM_H,
+    fontPrintTamzen, fontWidthTamzen, TAMZEN_H,
+} from './ui_fonts_pp.mjs';
+import { observeLanded, easeOut, lerp } from './ui_anim.mjs';
 
 /* ---- layout (kit v27 vertical map, 128x64) ----
  * hdr 0-7 (text 1-6) | blank 8 | page bar 9 | gap 10-13 |
@@ -943,28 +960,227 @@ export function drawXBox(kx, ky) {
     plotLine(kx + b, ky + a, kx + a, ky + MV_KH - 1 - a, 1);
 }
 
-/* Two <=3-char 5x3 lines for the enum square. Single line when it fits;
- * musical rates split after the "n/m" group ("1/16T" -> "1/16" + "T"). */
-function sqLines(text) {
-    const t = String(text).toUpperCase();
-    if (pf3Width(t) <= MV_KW - 2) return [t, ''];
-    const m = t.match(/^(\d+\/\d+)(.+)$/);
-    if (m && pf3Width(m[1]) <= MV_KW - 2 && pf3Width(m[2]) <= MV_KW - 2) return [m[1], m[2]];
-    const parts = t.replace(/[_\-]/g, ' ').trim().split(/\s+/);
-    if (parts.length >= 2) return [parts[0].substring(0, 4), parts[1].substring(0, 4)];
-    return [t.substring(0, 4), t.substring(4, 8)];
-}
 
 /* Framed square with the enum value (1-2 micro-font lines, or `sq` label). */
-export function drawEnumSquare(kx, ky, text, sq) {
-    rectOutline(kx, ky, MV_KW, MV_KH, 1);
-    const lines = sq != null ? [String(sq), ''] : sqLines(text);
-    const inner = MV_KW - 2;
-    const totalH = lines[1].length > 0 ? 11 : 5;
-    const startY = ky + 1 + Math.floor((MV_KH - 2 - totalH) / 2);
-    pf3Print(kx + 1 + Math.floor((inner - pf3Width(lines[0])) / 2), startY, lines[0], 1);
-    if (lines[1].length > 0)
-        pf3Print(kx + 1 + Math.floor((inner - pf3Width(lines[1])) / 2), startY + 6, lines[1], 1);
+/* ---- the opaque box + the "opens something" brackets ---------------------
+ *
+ * Ported from render_page_movy.mjs drawOpaqueBox / drawBrackets.
+ *
+ * A cell for a value you cannot turn — a file path, a canvas, a string. It
+ * shows the value's head and a CHEVRON broken into its right edge.
+ *
+ * ⭑⭑ THE TRI-STATE IS SPELLED OUT, and collapsing it is the bug this widget
+ * exists to prevent:
+ *
+ *     a value      the basename, set LEFT
+ *     ''  NONE     nothing is chosen — a real reading about the module
+ *     null '--'    the read has not answered — we do not know
+ *
+ * Both used to say "--", which is the tri-state collapsed in the place it is
+ * most visible: a sample slot with no file looked exactly like a sample slot
+ * whose name had not arrived yet.
+ *
+ * ⭑ A PLACEHOLDER IS CENTRED; A VALUE IS SET LEFT. Left is right for a
+ * filename — it truncates from the tail, so the start is the part worth showing
+ * and a ragged right edge is the truncation being honest. NONE and -- are
+ * neither: the whole string is present, and set left they sit hard against the
+ * frame with a gap to the chevron, which reads as a value that failed to fill.
+ * Centred in the space BEFORE the chevron, not in the box.
+ *
+ * ⚠ "NONE", NOT "EMPTY", which is the word that was asked for and does not fit:
+ * measured in this box's own 4x5 face EMPTY is 23px against a 21px budget and
+ * renders as "EMPT" with the chevron jammed against it. NONE is 19px.
+ *
+ * ⚠ THE INSET AND THE BUDGET ARE ONE MEASUREMENT and must move together — the
+ * frame occupies column x and the chevron x+w-4..x+w-2, so x+3 with a budget of
+ * w-9 leaves 2px clear at each end. Do not narrow them for one string.
+ *
+ * ⚠ THE CHEVRON IS NOT A "THIS OPENS" MARK. It is the WIDGET for a cell with no
+ * value-shape to show. The brackets are the door mark, and they are a different
+ * statement — measured over upstream's fleet, corner brackets appeared on cells
+ * that are ALSO turnable ("the knob works, AND it opens") and the chevron on
+ * cells that are not ("there is no knob; only a door"). */
+export function drawOpaqueBox(cellX, ky, text) {
+    const x = cellX + 1, y = ky, w = MV_CELL_W - 2, h = MV_KH;
+    const gapY = y + ((h - 5) >> 1);
+    fill_rect(x, y, w, 1, 1);
+    fill_rect(x, y + h - 1, w, 1, 1);
+    fill_rect(x, y, 1, h, 1);
+    fill_rect(x + w - 1, y, 1, gapY - y, 1);
+    fill_rect(x + w - 1, gapY + 5, 1, y + h - (gapY + 5), 1);
+    notchCorners(x, y, w, h);
+
+    /* The chevron sits IN the gap, not beyond it — a mark outside the cell
+     * lands on the neighbouring column, and this grid does not repaint a
+     * neighbour when this cell changes. */
+    const ax = x + w - 4;
+    for (let i = 0; i < 3; i++) {
+        set_pixel(ax + i, gapY + i, 1);
+        set_pixel(ax + i, gapY + 4 - i, 1);
+    }
+
+    const budget = w - 9;
+    const raw = String(text == null ? '' : text).toUpperCase();
+    const t = fit4x5(raw, budget);
+    if (!t) return;
+    const placeholder = (raw === 'NONE' || raw === '--');
+    const tw = fontWidth4x5(t);
+    const tx = placeholder ? x + 3 + Math.max(0, Math.floor((budget - tw) / 2)) : x + 3;
+    fontPrint4x5(tx, ky + Math.floor((h - FONT4_HEIGHT) / 2), t, 1);
+}
+
+/* Corner brackets around an arbitrary rect: "you can go into this."
+ *
+ * ⭑ DRAWN AROUND THE CELL, AFTER THE WIDGET, so the mark is independent of what
+ * the widget IS — it reads the same over a box, over an arc knob, and over a
+ * span graphic that covers the cell. That is what makes it a grammar rather
+ * than a decoration on one widget type: every alternative tried upstream
+ * (dashed frame, dog-ear, chevron) attaches to a FRAME, and a divable param
+ * drawn as a waveform has not got one.
+ *
+ * REJECTED upstream: a "..." mark on the label — it collides with truncation,
+ * and worst exactly here, where the value shown IS truncated, so "SMP.." reads
+ * as a cut-off label. REJECTED: a box-with-arrow icon; at the ~8px of clear
+ * corner a 32px cell has, it does not resolve into a box and an arrow, it
+ * resolves into a smudge.
+ *
+ * ⚠ MUST stay inside the widget band. One row of overflow lands on the label
+ * strip and the brackets merge into it. */
+export const MV_BRACKET_LEN = 4;
+export function drawBrackets(x, y, w, h, len) {
+    const L = len || MV_BRACKET_LEN;
+    for (let i = 0; i < L; i++) {
+        set_pixel(x + i, y, 1);
+        set_pixel(x + w - 1 - i, y, 1);
+        set_pixel(x + i, y + h - 1, 1);
+        set_pixel(x + w - 1 - i, y + h - 1, 1);
+    }
+    for (let i = 0; i < L - 1; i++) {
+        set_pixel(x, y + i, 1);
+        set_pixel(x + w - 1, y + i, 1);
+        set_pixel(x, y + h - 1 - i, 1);
+        set_pixel(x + w - 1, y + h - 1 - i, 1);
+    }
+}
+
+/* ---- the enum square (param-pages `thin-frame`) --------------------------
+ *
+ * Ported from render_page_movy.mjs drawEnumSquare, itself schwung-movy
+ * renderer/knob.ts (MIT, (c) 2026 megadake).
+ *
+ * ⭑⭑ THE WIDTH IS THE VALUE'S, NOT THE CELL'S. The box sizes to the word it
+ * contains, floored at MV_ENUM_MIN_W and capped at MV_ENUM_W, and is centred in
+ * the slot the caller reserved — so a shrinking box closes in from both sides
+ * rather than sliding off its own cell.
+ *
+ * ⭑ THE SLOT IS 28 WIDE, NOT MV_KW's 20. That is upstream's proportion (28 in a
+ * 32px cell) and it is what retires davebox's old blind 4/4 slice: "AUDIO"
+ * measures 21px in the 4x5 face against a 24px interior, so it now fits on ONE
+ * LINE where it used to render as AUDI over O. Cells butt together at 32 with
+ * no gutter (§3), so a 28px box still leaves 2px of air each side.
+ *
+ * ⭑ A SINGLE LINE GETS 3px OF SIDE MARGIN, NOT 1. At 1px a word sits hard
+ * against its own frame and reads as cramped — reported from the device
+ * upstream. It costs nothing in use, because the box is already sized to its
+ * value and centred, so a narrow value has the room lying idle either side of
+ * it; and the cap enforces the degradation on its own rather than by a branch,
+ * so the margin fades 3px -> 1px -> none as the text grows and the widest
+ * values draw exactly as they would have. TWO-LINE values are excluded: a value
+ * only wraps because it did not fit on one line, so it is at the cap already.
+ *
+ * ⚠ THE MARGIN SURVIVES EVERY WIDTH, including mid-animation. It is not
+ * decoration — a bowl (O C G D) one pixel off the border touches it at a
+ * glance. The text budget is w-4 at whatever w currently is, measured per
+ * frame, which is also what makes a GROWING box safe: the text is served short
+ * for the few frames the frame is still narrow and completes as it arrives.
+ *
+ * ⚠ CENTRED IN THE INTERIOR (w-2), NOT IN THE BUDGET (w-4). Those are two
+ * different spans; centring in the budget puts every value two pixels left of
+ * centre — uniformly, which reads as a drawing mistake rather than a rounding
+ * one.
+ *
+ * ⚠ THE CORNERS ARE NOTCHED, which is the house idiom and the only part of this
+ * widget that is not upstream's. ACCEPTED COLLISION: the fader is also a
+ * notched framed box, so a page mixing faders with enums distinguishes them by
+ * CONTENT, not by silhouette. Taken deliberately upstream with the escape (a
+ * frameless square) available and declined.
+ */
+export const MV_ENUM_W = 28;
+export const MV_ENUM_MIN_W = 15;
+const MV_ENUM_TEXT_W = MV_ENUM_W - 4;
+const MV_ENUM_PAD_1LINE = 8;   /* 1px frame + 3px margin, both sides */
+const MV_ENUM_PAD_2LINE = 4;   /* 1px frame + 1px margin, both sides */
+export const MV_ENUM_ANIM_MS = 120;
+
+/* ⚠ THE LINE COUNT IS A FUNCTION OF THE VALUE ALONE — always measured against
+ * the FULL budget, never against whatever width the frame happens to be this
+ * frame. Measuring against the animating width would split "POLY" onto two
+ * lines for the few frames the box is narrower than its target and rejoin it on
+ * arrival, so a line count would flicker mid-flight on a value that has not
+ * changed since the swap. Only TRUNCATION knows the current width. */
+function enumNaturalLines(text) {
+    const pair = enumSquareLines(text, (t) => fontWidth4x5(t) <= MV_ENUM_TEXT_W);
+    return [fit4x5(pair[0], MV_ENUM_TEXT_W), fit4x5(pair[1], MV_ENUM_TEXT_W)];
+}
+
+/* How wide this value's square wants to be. A two-line value sizes to the WIDER
+ * of its lines; the narrower one is centred in the same interior. */
+export function enumSquareWidth(text) {
+    const L = enumNaturalLines(text);
+    const tw = Math.max(fontWidth4x5(L[0]), fontWidth4x5(L[1]));
+    const w = tw + (L[1] ? MV_ENUM_PAD_2LINE : MV_ENUM_PAD_1LINE);
+    return w < MV_ENUM_MIN_W ? MV_ENUM_MIN_W : (w > MV_ENUM_W ? MV_ENUM_W : w);
+}
+
+/* `slotX` is the left edge of the nominal MV_ENUM_W slot the caller centred in
+ * the cell; the narrower box is centred inside it.
+ *
+ * `anim`/`nowMs`/`animKey`/`raw` are OPTIONAL and TRAILING, and that ordering is
+ * the contract: without them the square draws at its natural width and NOTHING
+ * MOVES. The static sizing is the improvement; the motion is a by-product. A
+ * missing `anim` is the normal case, not an error — do not "fix" it by
+ * defaulting to a fresh store, which would make this stateful and every first
+ * frame animate.
+ *
+ * ⚠ ONLY THE FRAME TRAVELS; the glyphs swap outright. There is no between-state
+ * for a letterform at this size, so what animates is the one thing that has a
+ * continuum. */
+export function drawEnumSquare(slotX, ky, text, sq, anim, nowMs, animKey, raw) {
+    const shown = sq != null ? String(sq) : String(text == null ? '' : text);
+    const target = enumSquareWidth(shown);
+    const h = MV_KH;
+
+    let w = target;
+    if (anim && typeof nowMs === 'number' && animKey) {
+        /* ⚠ `raw` is the value BEHIND the text, and the text alone cannot stand
+         * in for it: an unread key renders as "--", a perfectly ordinary string
+         * with a perfectly ordinary width, so the box would grow out of it on
+         * ARRIVAL. See observeLanded — a value arriving is not a value
+         * changing. */
+        const a = observeLanded(anim, 'enumw:' + animKey, raw, target, nowMs, MV_ENUM_ANIM_MS);
+        if (a.moving && typeof a.from === 'number') {
+            w = Math.round(lerp(a.from, target, easeOut(a.t)));
+            if (w < MV_ENUM_MIN_W) w = MV_ENUM_MIN_W;
+            if (w > MV_ENUM_W) w = MV_ENUM_W;
+        }
+    }
+
+    const bx = slotX + Math.floor((MV_ENUM_W - w) / 2);
+    fill_rect(bx, ky, w, 1, 1);
+    fill_rect(bx, ky + h - 1, w, 1, 1);
+    fill_rect(bx, ky, 1, h, 1);
+    fill_rect(bx + w - 1, ky, 1, h, 1);
+    notchCorners(bx, ky, w, h);
+
+    const budget = w - 4;
+    const nat = enumNaturalLines(shown);
+    const line1 = fit4x5(nat[0], budget);
+    const line2 = fit4x5(nat[1], budget);
+    const totalH = line2.length > 0 ? 11 : FONT4_HEIGHT;
+    const startY = ky + 1 + Math.floor((h - 2 - totalH) / 2);
+    const tx = (lw) => bx + 1 + Math.floor(((w - 2) - lw) / 2);
+    fontPrint4x5(tx(fontWidth4x5(line1)), startY, line1, 1);
+    if (line2.length > 0) fontPrint4x5(tx(fontWidth4x5(line2)), startY + 6, line2, 1);
 }
 
 /* Musical length as a STACKED FRACTION — frameless, centred across the FULL
@@ -1010,11 +1226,110 @@ const SFX_GAP = 2;
  * While its knob is touched the VALUE takes over the box (mirroring the
  * label<->value swap). `oneWay` (Lgto-style destructive actions) stays "< >"
  * even while touched — there is no value to show. */
-export function drawActionSquare(kx, ky, text, oneWay, touched) {
-    rectOutline(kx, ky, MV_KW, MV_KH, 1);
-    const t = (touched && !oneWay) ? String(text) : '< >';
-    const w = pf3Width(t);
-    pf3Print(kx + 1 + Math.floor((MV_KW - 2 - w) / 2), ky + 1 + Math.floor((MV_KH - 2 - 5) / 2), t, 1);
+/* ---- the trigger button (param-pages drawButton) -------------------------
+ *
+ * Ported from render_page_movy.mjs. A raised physical button with a cap, sides
+ * and a base arc, which presses DOWN and throws a burst of impact stubs.
+ *
+ * ⭑ THREE STATES, and the middle one earns its keep: idle is a raised outline;
+ * SELECTED fills the cap; FIRED presses it down BTN_TRAVEL, shortens the sides
+ * and radiates stubs. The affordance has to be ON the control — a trigger has
+ * no value to read, so nothing else on the cell says it is pressable.
+ *
+ * ⚠⚠ THE FLASH IS DISPLAY ONLY. `phase` is computed by buttonPhase() from
+ * timestamps the caller already has; NOTHING here fires anything, and the port
+ * deliberately does not add a knob-turn trigger path. What makes the flash
+ * happen is the existing click, unchanged.
+ *
+ * ⚠ A PRESS DOES NOT CLEAR THE BURSTS ALREADY TRAVELLING. Overwriting a single
+ * timestamp made a rapid second press swallow the first ring and restart from
+ * the centre, which reads as an animation glitch rather than as two events. Every
+ * press still inside BTN_FLASH_MS keeps its own ring, and the cap is pressed if
+ * ANY of them is recent.
+ *
+ * ⚠ The fill and the outline are BOTH drawn on a highlighted cap, in that
+ * order. Filling alone left the rim a pixel short at the shallow top and
+ * bottom, so the disk looked like it was missing a line. */
+const BTN_RX = 7, BTN_RY = 3, BTN_DEPTH = 6, BTN_TRAVEL = 2;
+export const BTN_PRESS_MS = 120;
+export const BTN_FLASH_MS = 300;
+const BTN_RAYS = 8, BTN_RAY_GAP = 2, BTN_RAY_LEN = 2, BTN_RAY_TRAVEL = 4;
+
+function ellipseOutline(cx, cy, rx, ry, bottomOnly) {
+    const put = (x, y) => { if (!(bottomOnly && y < cy)) set_pixel(x, y, 1); };
+    for (let dx = -rx; dx <= rx; dx++) {
+        const dy = Math.round(ry * Math.sqrt(Math.max(0, 1 - Math.pow(dx / rx, 2))));
+        put(cx + dx, cy + dy); put(cx + dx, cy - dy);
+    }
+    for (let dy = -ry; dy <= ry; dy++) {
+        const dx = Math.round(rx * Math.sqrt(Math.max(0, 1 - Math.pow(dy / ry, 2))));
+        put(cx + dx, cy + dy); put(cx - dx, cy + dy);
+    }
+}
+
+function ellipseFill(cx, cy, rx, ry) {
+    for (let dy = -ry; dy <= ry; dy++) {
+        const w = Math.round(rx * Math.sqrt(Math.max(0, 1 - Math.pow(dy / ry, 2))));
+        if (w > 0) fill_rect(cx - w, cy + dy, w * 2 + 1, 1, 1);
+    }
+}
+
+/* Impact stubs, following the cap's ELLIPSE rather than a circle, so they sit
+ * an even gap off the rim instead of bunching at the flat top and bottom. */
+function buttonRays(cx, cy, progress) {
+    const out = BTN_RAY_GAP + Math.round(progress * BTN_RAY_TRAVEL);
+    for (let i = 0; i < BTN_RAYS; i++) {
+        const a = (Math.PI * 2 * i) / BTN_RAYS;
+        const ux = Math.cos(a), uy = Math.sin(a);
+        plotLine(Math.round(cx + ux * (BTN_RX + out)),
+                 Math.round(cy + uy * (BTN_RY + out)),
+                 Math.round(cx + ux * (BTN_RX + out + BTN_RAY_LEN)),
+                 Math.round(cy + uy * (BTN_RY + out + BTN_RAY_LEN)), 1);
+    }
+}
+
+/* Idle / highlighted / pressed, resolved from the press timestamps alone.
+ *
+ * PURE — `now` is passed in, never read. Accepts a bare number as well as a
+ * list, so a caller that has only ever stamped one time still works. */
+export function buttonPhase(fired, now, held) {
+    const stamps = Array.isArray(fired) ? fired : (fired > 0 ? [fired] : []);
+    const bursts = [];
+    let pressed = false;
+    if (typeof now === 'number') {
+        for (const t of stamps) {
+            const age = now - t;
+            if (age < 0 || age >= BTN_FLASH_MS) continue;
+            bursts.push(age / BTN_FLASH_MS);
+            if (age < BTN_PRESS_MS) pressed = true;
+        }
+    }
+    return { pressed, filled: !!held || bursts.length > 0, bursts };
+}
+
+/* `phase` omitted => idle, which is what every caller that has not opted into
+ * the flash gets. */
+export function drawTriggerButton(kx, ky, phase) {
+    const ph = phase || { pressed: false, filled: false, bursts: [] };
+    const cx = kx + Math.round(MV_KW / 2);
+    const travel = ph.pressed ? BTN_TRAVEL : 0;
+    const capY = ky + 1 + BTN_RY + travel;
+    const baseY = capY + BTN_DEPTH - travel;
+
+    ellipseOutline(cx, baseY, BTN_RX, BTN_RY, true);          /* base arc */
+    plotLine(cx - BTN_RX, capY, cx - BTN_RX, baseY, 1);       /* sides */
+    plotLine(cx + BTN_RX, capY, cx + BTN_RX, baseY, 1);
+    if (ph.filled) ellipseFill(cx, capY, BTN_RX, BTN_RY);
+    ellipseOutline(cx, capY, BTN_RX, BTN_RY, false);
+    for (const b of ph.bursts) buttonRays(cx, capY, b);
+}
+
+/* The action cell. ⚠ `oneWay` and `touched` are kept in the signature and are
+ * no longer read for the GLYPH — the button's own three states say everything
+ * the '< >' placeholder and the touched text swap used to. The label strip
+ * still carries the name and swaps to the value on touch, unchanged. */
+export function drawActionSquare(kx, ky, text, oneWay, touched, phase) {
+    drawTriggerButton(kx, ky, phase);
 }
 
 /* Playback-direction square: arrow glyphs per mode —
@@ -1040,8 +1355,32 @@ export function drawDirSquare(kx, ky, mode) {
  * margins the 20px widget box leaves, which is what buys the extra digits.
  * `cellX` is the cell's left edge, not the widget box's. Falls back to the
  * label font when the text is too wide (4+ digits) so it always fits. */
+/* ⭑ THE PARAM-PAGES FACE FIRST, DAVEBOX'S OWN AS THE FALLBACK — and the
+ * fallback is not optional. The ported table (ui_fonts_pp.mjs) is TWELVE
+ * GLYPHS: the digits, `+` and `-`, which is everything upstream's big-number
+ * cell can emit. davebox's `valsq` is wider than that — it draws note names
+ * ("E 3"), percentages, "--" and arbitrary short enum text — so the face is
+ * asked whether it can draw the WHOLE string before it is chosen. Drawing a
+ * missing glyph as nothing would silently turn "C1 36" into "1 36", which is a
+ * different value rather than a worse-looking one.
+ *
+ * ⚠ Josh accepted the provenance on 2026-08-29: movy rasterised this from an
+ * OTF it does not vendor, identified only as "Nokia". An earlier pass of this
+ * campaign declined the face on exactly that ground; it is in now, and
+ * ui_fonts_pp.mjs states what it is.
+ *
+ * The face is 11 rows, the same MV_BIG_H the davebox font uses, so the two sit
+ * on one baseline and a page mixing them does not shift. */
 export function drawBigNum(cellX, ky, text) {
     const t = String(text);
+    if (bigNumCanDraw(t)) {
+        const w = fontWidthBigNum(t);
+        if (w <= MV_CELL_W) {
+            fontPrintBigNum(cellX + Math.round((MV_CELL_W - w) / 2),
+                            ky + Math.floor((MV_KH - BIGNUM_H) / 2), t, 1);
+            return;
+        }
+    }
     const fit = bigFit(t, MV_CELL_W);
     if (fit) {
         bigPrint(cellX + Math.round((MV_CELL_W - fit.w) / 2),
@@ -1524,15 +1863,55 @@ export function shapeSample(shape, t) {
 
 /* Single-cell waveform box (wave-select cells): one cycle of the live shape
  * with a dotted center baseline, in place of an enum square. */
-export function drawWaveBox(kx, ky, shape) {
+export const MV_WAVE_MORPH_MS = 100;
+
+/* Single-cell waveform box: one cycle of the live shape with a dotted centre
+ * baseline, in place of an enum square.
+ *
+ * ⭑ THE MORPH LIVES INSIDE THE SAMPLE CLOSURE, blended before the curve is
+ * derived — port of viz_draw.mjs drawWaveCell. Everything about where the curve
+ * is comes from one closure, so blending at the SAMPLE keeps stroke and any
+ * fill in agreement for free; computing the morph a second time anywhere else
+ * breaks that silently, and only at intermediate frames, which is the hardest
+ * kind of wrong picture to notice.
+ *
+ * ⚠⚠ THE ANIMATION TOKEN IS TAGGED ("s2"), NEVER THE BARE NUMBER 2. observe()
+ * re-bases a NUMERIC value to where it visually sits when retargeted mid-flight
+ * — right for a box width, catastrophic for a shape id: a fast scroll hands
+ * back 2.4, shapeSample falls through its default at anything unrecognised, and
+ * the cell morphs out of a SINE that was never on screen. A non-numeric token
+ * makes the re-base return the previous shape untouched.
+ *
+ * ⚠ `raw` is the value off the wire, NOT the shape name: shapeSample defaults
+ * to a sine for anything it does not recognise, so an unread key resolves to a
+ * perfectly ordinary shape and a morph out of it looks exactly like a real one.
+ * See observeLanded — a value ARRIVING is not a value changing.
+ *
+ * With `anim`/`nowMs` omitted this draws byte-for-byte what it drew before. */
+export function drawWaveBox(kx, ky, shape, anim, nowMs, animKey, raw) {
     const x0 = kx + 1, spanW = MV_KW - 2;
     const topY = ky + 2, botY = ky + MV_KH - 3;
     const baseY = Math.round((topY + botY) / 2);
     const amp = (botY - topY) / 2;
+
+    let morphFrom = null, morphT = 1;
+    if (anim && typeof nowMs === 'number' && animKey) {
+        const tr = observeLanded(anim, 'wave:' + animKey, raw, 's' + String(shape),
+                                 nowMs, MV_WAVE_MORPH_MS);
+        if (tr.moving && typeof tr.from === 'string') {
+            const f = tr.from.slice(1);
+            if (f && f !== String(shape)) { morphFrom = f; morphT = easeOut(tr.t); }
+        }
+    }
+    const sampleAt = (ph) => {
+        const to = shapeSample(shape, ph);
+        return morphFrom === null ? to : lerp(shapeSample(morphFrom, ph), to, morphT);
+    };
+
     for (let x = x0; x <= x0 + spanW; x += 2) set_pixel(x, baseY, 1);
-    let px = x0, py = Math.round(baseY - shapeSample(shape, 0) * amp);
+    let px = x0, py = Math.round(baseY - sampleAt(0) * amp);
     for (let i = 1; i <= spanW; i++) {
-        const y = Math.round(baseY - shapeSample(shape, i / spanW) * amp);
+        const y = Math.round(baseY - sampleAt(i / spanW) * amp);
         plotLine(px, py, x0 + i, y, 1);
         px = x0 + i; py = y;
     }
@@ -1684,10 +2063,141 @@ export function drawFaderColumn(kx, ky, norm, baseNorm) {
     }
 }
 
+/* ---- the footer hint row (param-pages drawFooter) ------------------------
+ *
+ * Ported from render_page_movy.mjs. ONE primitive for every key-hint row, which
+ * is the point of the item: davebox draws footer affordances in at least one
+ * bespoke place (`_perfChip` in ui_render.mjs) and had no shared drawer at all.
+ *
+ * ⚠ THE VISUALS DIFFER FROM davebox's PERF CHIP, and they are not the same
+ * object, so nothing is being replaced by force:
+ *
+ *     _perfChip    a MODE INDICATOR — one word, filled when the mode is ON and
+ *                  outlined when it is off. mcufont 5x5, 9px tall, square
+ *                  corners, w = len*6+3.
+ *     hintRow      a KEY HINT — a PAIR (key, action). The key is inverted into
+ *                  a pill and the action is plain beside it, so the pair reads
+ *                  as one thing: without the pill a row of hints is an
+ *                  unparseable run, "JOG PAGE CLK MENU BACK EXIT". 4x5 face,
+ *                  7px tall, notched corners.
+ *
+ *   Measured difference for the same word: `HOLD` is 27px as a perf chip and
+ *   21px as a hint pill, and 9 rows against 7. They are legitimately different
+ *   controls saying different things, so the perf chips are LEFT ALONE and this
+ *   is the drawer every new hint row uses.
+ *
+ * ⭑⭑ THE FIT RULE IS THE REASON THIS IS A PRIMITIVE AND NOT A LOOP. BACK's room
+ * is RESERVED BEFORE anything else is laid out, so on a narrow row the MIDDLE
+ * hints lose the fight and BACK does not. A footer that silently drops the one
+ * hint telling you how to leave is worse than a footer with three hints on it,
+ * and a naive left-to-right loop drops exactly that one.
+ *
+ * ⚠ ALL FOUR corners are notched, the bottom pair included. They sit on the
+ * last row of the panel, and the ground a bottom corner reads against is the
+ * BEZEL — the panel is inset in plastic — so a notch there reads exactly as a
+ * notch against a dark row.
+ *
+ * ⚠ NO RULE ABOVE IT. Upstream's `no-rule` won its set: three clear rows and a
+ * row of inverted pills is unmistakably a different kind of thing, and a
+ * hairline across all 128 columns on a screen this dense is a tax.
+ */
+export const MV_HINT_PAD = 2, MV_HINT_GAP = 4;
+export const MV_FOOTER_H = FONT4_HEIGHT + 2;
+
+/* ⭑ THE CANON, so the row cannot drift into verb soup the way this tree's
+ * older text footer did. KEYS name the physical control and are fixed by the
+ * hardware, not by taste. ACTIONS are free EXCEPT after BACK, where the word
+ * says WHERE BACK GOES and the two are not synonyms:
+ *     EXIT  leaves this view entirely
+ *     OUT   rises one level, staying in the view
+ * Collapsing them would tell the user "back" does one thing when it does two,
+ * and that difference is the one thing they cannot see before pressing it. */
+export const MV_FOOTER_CANON = Object.freeze({
+    keys: Object.freeze(['JOG', 'CLK', 'BACK', 'SHFT', 'MUTE', 'KNB']),
+    backActions: Object.freeze(['EXIT', 'OUT']),
+});
+
+export function hintPairWidth(key, action) {
+    return fontWidth4x5(String(key).toUpperCase()) + MV_HINT_PAD + MV_HINT_GAP
+         + fontWidth4x5(String(action).toUpperCase()) + MV_HINT_GAP;
+}
+
+/** Is this hint the BACK affordance? The one hint with a fixed home. */
+export function isBackHint(h) {
+    return !!h && /^back$/i.test(String(h[0]).trim());
+}
+
+/* `hints` = [key, action] pairs, MOST IMPORTANT FIRST. Returns how many were
+ * drawn, so a caller can tell that it over-asked. */
+export function drawKitHintRow(y, hints) {
+    if (!hints || !hints.length) return 0;
+    const ty = y + Math.floor((MV_FOOTER_H - FONT4_HEIGHT) / 2);
+    const list = hints.filter(Boolean);
+    /* Exactly one back hint is pinned; a second stays an ordinary hint rather
+     * than fighting for the same x. */
+    let backIdx = -1;
+    for (let i = 0; i < list.length; i++) if (isBackHint(list[i])) { backIdx = i; break; }
+    const back = backIdx >= 0 ? list[backIdx] : null;
+    const flow = backIdx >= 0 ? list.filter((_, i) => i !== backIdx) : list;
+
+    const drawPair = (x, h) => {
+        const key = String(h[0]).toUpperCase(), action = String(h[1]).toUpperCase();
+        const kw = fontWidth4x5(key);
+        const pw = kw + MV_HINT_PAD * 2, ph = MV_FOOTER_H;
+        fill_rect(x, ty - 1, pw, ph, 1);
+        if (pw >= 3) notchCorners(x, ty - 1, pw, ph);
+        fontPrint4x5(x + MV_HINT_PAD, ty, key, 0);
+        fontPrint4x5(x + kw + MV_HINT_PAD + MV_HINT_GAP, ty, action, 1);
+    };
+
+    let drawn = 0;
+    const backW = back ? hintPairWidth(back[0], back[1]) : 0;
+    const backX = back ? SCREEN_W - backW : SCREEN_W;
+    const limit = back ? backX : SCREEN_W;
+    let x = 1;
+    for (const h of flow) {
+        const w = hintPairWidth(h[0], h[1]);
+        if (x + w > limit) break;             /* the fit rule: middles lose */
+        drawPair(x, h);
+        x += w;
+        drawn++;
+    }
+    if (back) { drawPair(Math.max(x, backX), back); drawn++; }
+    return drawn;
+}
+
+/* ---- MOCKUP: the param-pages header ------------------------------------
+ *
+ * ⚠⚠ DORMANT. Nothing calls this. It exists so tools/render_widgets.mjs can put
+ * upstream's header next to davebox's own for a side-by-side decision, and it
+ * must NOT be wired into any screen — davebox's filled-bar header is normative
+ * (UI_LANGUAGE §4) until Josh says otherwise.
+ *
+ * Upstream's is a Tamzen 6x12 breadcrumb set left with the page name right, on
+ * a plain (uninverted) ground — the opposite weight to davebox's inverted bar,
+ * which is exactly what makes the comparison worth rendering rather than
+ * describing. */
+export function drawKitHeaderParamPages(left, right) {
+    const l = String(left == null ? '' : left);
+    const r = String(right == null ? '' : right);
+    const rw = fontWidthTamzen(r);
+    fontPrintTamzen(2, 0, l, 1);
+    if (rw > 0) fontPrintTamzen(SCREEN_W - 2 - rw, 0, r, 1);
+    fill_rect(0, TAMZEN_H + 1, SCREEN_W, 1, 1);
+}
+
 /* ---- grid ---- */
 
-function drawCellWidget(col, rowY, cell, touched) {
+function drawCellWidget(col, rowY, cell, touched, anim, nowMs) {
     const kx = col * MV_CELL_W + Math.floor((MV_CELL_W - MV_KW) / 2);
+    /* ⭑ THE ENUM SQUARE HAS ITS OWN, WIDER SLOT (28 vs the 20px widget box), so
+     * it gets its own origin. Centred in the same 32px cell, so a page of mixed
+     * widgets still lines up on one axis. */
+    const ex = col * MV_CELL_W + Math.floor((MV_CELL_W - MV_ENUM_W) / 2);
+    /* An animation key must be STABLE for the cell and UNIQUE across the page.
+     * The column index is both; the param name is neither (two banks can share
+     * one, and an alt-mode swap changes it under a value that did not move). */
+    const ak = anim ? ('c' + col + (rowY < MV_ROW1_Y ? 'a' : 'b')) : null;
     /* ⭑ THE MODULATION DOT IS A DESCRIPTOR FIELD, NOT A DETECTION. A cell whose
      * caller never sets `modNorm` draws exactly the pixels it drew before — and
      * davebox sets it nowhere today, so nothing on any shipping page moves.
@@ -1706,11 +2216,13 @@ function drawCellWidget(col, rowY, cell, touched) {
             if (mod !== null) drawModDot(kx, rowY, mod);
             return;
         case 'hbar':   return drawHBar(kx, rowY, cell.norm || 0);
-        case 'enumsq': return drawEnumSquare(kx, rowY, cell.text, cell.sq);
+        case 'enumsq': return drawEnumSquare(ex, rowY, cell.text, cell.sq,
+                                            anim, nowMs, ak, cell.raw);
         case 'frac':   return drawFracStack(col * MV_CELL_W, rowY, cell.text);
         case 'valsq':  return drawBigNum(col * MV_CELL_W, rowY,
                                          cell.sq != null ? cell.sq : cell.text);
-        case 'action': return drawActionSquare(kx, rowY, cell.text, cell.oneWay, touched);
+        case 'action': return drawActionSquare(kx, rowY, cell.text, cell.oneWay, touched,
+                                              cell.btnPhase);
         case 'dirsq':  return drawDirSquare(kx, rowY, cell.sel | 0);
         /* ⭑ A `vbar` CELL DRAWS THE FADER COLUMN (Josh, 2026-08-29). Adopted at
          * the DISPATCH rather than by renaming the kind at each call site: the
@@ -1720,8 +2232,12 @@ function drawCellWidget(col, rowY, cell, touched) {
          * `drawVBar` stays exported and is still the honest plain bar for
          * anything that wants one; nothing on a cell grid does. */
         case 'vbar':   return drawFaderColumn(kx, rowY, cell.norm || 0, cell.modNorm);
-        case 'wavesq': return drawWaveBox(kx, rowY, cell.shape);
+        case 'wavesq': return drawWaveBox(kx, rowY, cell.shape, anim, nowMs, ak, cell.raw);
         case 'xbox':   return drawXBox(kx, rowY);
+        /* A value you cannot turn — a file, a path, a string. Spans the CELL,
+         * not the widget box, because its job is to show as much of a name as
+         * it can. */
+        case 'opaque': return drawOpaqueBox(col * MV_CELL_W, rowY, cell.text);
         /* ⭑ ADOPTED 2026-08-29 for PURE ON/OFF toggles only — see isBooleanPair
          * in ui_cells.mjs for the split, which is the rule and not a taste.
          * A two-state cell whose states are WORDS keeps the bar: the pill says
@@ -1772,7 +2288,7 @@ function drawCellLabel(col, lblY, cell, touched) {
  * individual widgets to one envelope graphic drawn across the span. Their
  * LABEL strips still render, so A/D/S/R stay named and touch-swap to their
  * values as usual. Omitted by davebox, which has no env banks. */
-export function drawKitCells(cells, touchedIdx, env, filt, eq, samp) {
+export function drawKitCells(cells, touchedIdx, env, filt, eq, samp, anim, nowMs) {
     /* ⭑ EVERY SPAN IS DECLARED, NONE IS DETECTED. env / filt / eq / samp all
      * arrive from the caller with an explicit start (and count where it can
      * vary); this file never sniffs a param name to decide a bank has an EQ.
@@ -1797,7 +2313,11 @@ export function drawKitCells(cells, touchedIdx, env, filt, eq, samp) {
                         (k >= filtFirst && k <= filtLast) ||
                         (k >= eqFirst && k <= eqLast) ||
                         (k >= sampFirst && k <= sampLast);
-        if (!covered) drawCellWidget(col, rowY, cell, k === touchedIdx);
+        if (!covered) drawCellWidget(col, rowY, cell, k === touchedIdx, anim, nowMs);
+        /* ⭑ THE DOOR MARK GOES ON LAST AND AROUND THE CELL, so it reads the
+         * same over a box, an arc, or a span graphic that covered this cell —
+         * which is why it is here and not inside any widget. */
+        if (cell.opens) drawBrackets(col * MV_CELL_W, rowY, MV_CELL_W, MV_KH);
         drawCellLabel(col, lblY, cell, k === touchedIdx);
     }
     if (env) {
@@ -2079,12 +2599,20 @@ export function drawKitListOverlay(options, sel, opts) {
             _tp(rowX + 3, y + 1, label, 1);
         }
     }
-    /* Scroll indicator: right-edge track + thumb, only when there's overflow. */
+    /* Scroll indicator: right-edge rail + thumb, only when there's overflow.
+     *
+     * ⭑ THE SAME RULE drawKitList follows since 2026-08-29 — DOTTED rail, SOLID
+     * thumb, no arrows (UI_LANGUAGE §5). This overlay drew its own solid rail
+     * for one commit, which was flagged then as a deliberate inconsistency
+     * waiting on a decision; the decision came. It matters more here than
+     * anywhere: a picker floats DIRECTLY OVER a kit list, so two rails a few
+     * pixels apart in different textures is the one place the mismatch is
+     * visible in a single glance. */
     if (hasScroll) {
         const trackH = VISIBLE * ROW_H;
         const thumbH = Math.max(3, Math.round(trackH * VISIBLE / n));
         const thumbY = listTop + Math.round((trackH - thumbH) * start / Math.max(1, n - VISIBLE));
-        fill_rect(X + W - 2, listTop, 1, trackH, 1);
+        for (let ry = listTop; ry < listTop + trackH; ry += 2) set_pixel(X + W - 2, ry, 1);
         fill_rect(X + W - 3, thumbY, 2, thumbH, 1);
     }
 }
@@ -2104,7 +2632,8 @@ export function drawKitBankPage(cells, opts) {
         if (opts.pageCount > 0) drawKitPageBar(opts.pageIdx | 0, opts.pageCount);
         if (opts.altArrowShow) drawKitAltArrow(SCREEN_W - 7, !opts.headerInvert, !!opts.altArrowOn, opts.altArrowHidden);
     }
-    drawKitCells(cells, t, opts.env, opts.filt, opts.eq, opts.samp);
+    drawKitCells(cells, t, opts.env, opts.filt, opts.eq, opts.samp,
+                 opts.anim, opts.nowMs);
     /* The option-list overlay covers the 3 cells away from the touched knob, so
      * it must NOT appear on a bare orienting touch — only once that knob is
      * actually TURNED (see enumOverlayIdx in ui_render.mjs). Callers pass the

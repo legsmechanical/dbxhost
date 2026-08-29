@@ -17,10 +17,25 @@ that describes an aspiration would just be a third idiom.
 **New and rebuilt screens compose from shared primitives. They do not call `set_pixel` /
 `fill_rect` / `print` directly.**
 
-`ui_movy.mjs` is the reference model: pure drawing, no imports, no state access, callers pass
+`ui_movy.mjs` is the reference model: pure drawing, no state access, callers pass
 precomputed cell descriptors — which is why it also loads standalone in node for the off-device
 previewer (`davebox/tools/preview_movy.mjs`) and the screen/widget renderers
 (`tools/render_screens.mjs`, `tools/render_widgets.mjs`, sharing `tools/render_fb.mjs`).
+
+⚠ **"No imports" is now "no DEVICE imports".** `ui_movy.mjs` imports exactly two pure siblings —
+`ui_fonts_pp.mjs` (glyph tables) and `ui_anim.mjs` (a caller-owned animation store). Neither has a
+device-absolute specifier, state, or a host global at module scope, so the property the rule exists
+for is intact. Anything else it imports must clear the same bar.
+
+⚠⚠ **ANIMATION TAKES TIME AS AN ARGUMENT. NO DRAW PATH READS THE CLOCK.** `ui_anim.mjs` is the
+store and `now` is always passed in. A widget calling `Date.now()` would make every offline render
+in `davebox/tools/` non-reproducible at once — see the warning below, which is the same failure
+already paid for once. ⚠ And **a value ARRIVING is not a value CHANGING**: reads land one key per
+tick, so a page spends its first ticks with values absent and rendered as placeholders ("--" has an
+ordinary width; shape 0 is an ordinary waveform). Recorded as a first sighting, the real value then
+arrives as a *transition* and the whole page animates itself in from values nobody set.
+`observeLanded` refuses that, and it can only do it from the **raw** value — every token a widget
+animates is derived, and every derivation is total.
 
 ⚠⚠ **AN OFFLINE RENDER IS NOT REPRODUCIBLE UNLESS YOU FREEZE THE CLOCK.** `drawKitPageBar` blinks
 its active segment off `Date.now()/375`, so the same page renders two different pictures depending
@@ -59,7 +74,10 @@ Caps-only is the default assumption. Three of the five fonts have no real lowerc
 | **Header** | `hdrPrint` / `hdrWidth` / `fitHdr` | 6×6 monospace, caps + digits | Header bar, overlay rows, section picker |
 | **Label** | `mvPrint` / `mvWidth` | 5px tall, proportional, −1px tracking | Cell label strips |
 | **Micro** | `pf3Print` / `pf3Width` | 5×3, force-uppercased | Enum squares — where words must fit a 20px box |
-| **Big numeric** | `bigPrint` / `bigWidth` / `bigFit` | `MV_BIG_H = 11` cap height, `BIG_GAP = 1`, condensed variant | Frameless numeric read-outs (`valsq`) |
+| **Big numeric (ported)** | `fontPrintBigNum` / `fontWidthBigNum` / `bigNumCanDraw` | 11 rows, 2px stems. **12 glyphs: `0-9 + -`** | `valsq`, whenever the value is purely numeric |
+| **Big numeric (davebox)** | `bigPrint` / `bigWidth` / `bigFit` | `MV_BIG_H = 11`, `BIG_GAP = 1`, condensed variant | The **fallback** for any `valsq` with a letter in it |
+| **4×5 label** | `fontPrint4x5` / `fontWidth4x5` / `fit4x5` | 5 rows, proportional (I is 1px, W is 5) | Enum squares, opaque boxes, footer hints |
+| **Tamzen 6×12** | `fontPrintTamzen` / `fontWidthTamzen` | 7 rows | 🟠 **Dormant** — the header mockup only (§4) |
 | **MCUFONT 5×5** | `pixelPrint` / `pixelPrintC` | 5×5 on a 6×6 grid | Dialog chrome in `ui_dialogs.mjs` |
 | **Host built-in** | `print` / `text_width` | nominally 5×7; `LIST_LINE_HEIGHT = 9` | The shared menu list |
 
@@ -105,6 +123,16 @@ and a screengrab confirms it on the device.
 (`bigFit`) — because a clipped number is a *wrong* number, while a clipped word is still readable.
 The one true `…` in the tree is `truncLabel()` in `ui_dialogs.mjs`; treat that as dialog-local.
 
+⚠⚠ **THE PORTED BIG FACE IS TWELVE GLYPHS, AND THE FALLBACK IS NOT OPTIONAL.** It carries the
+digits, `+` and `-` — everything upstream's big-number cell can emit — while davebox's `valsq` also
+draws note names (`E 3`), percentages and short enum text. `bigNumCanDraw()` must be asked about the
+WHOLE string before the face is chosen: drawing a missing glyph as nothing would silently turn
+`C1 36` into `1 36`, which is a different value rather than a worse-looking one.
+⚠ Provenance, stated rather than assumed: movy rasterised that table from an OTF it does not
+vendor, identified only as "Nokia". The bitmap is MIT via movy; the face it came from is not
+verified. Josh accepted this on 2026-08-29 — an earlier pass of the campaign had declined it on
+exactly this ground.
+
 ⚠ The header font is caps-only **except** for two hand-carved lowercase glyphs, `d` and `t`
 (`ui_movy.mjs:60-67`). They exist so musical suffixes read correctly: a capital `D` stripped of its
 diagonal reads as `0`, which turns `1/64d` into `1/640`. Do not "tidy" them away.
@@ -145,13 +173,14 @@ Descriptor kinds, and what each draws (`drawCellWidget` dispatch):
 | `pill` | Switch pill — ON fills the track and knocks the slug out | Toggles whose two states are literally off/on (§3.3) |
 | `hbar` | Two-state bar | ⚠ **No cell emits it.** Kept as a primitive; the split sends every two-state cell to `pill` or `enumsq` |
 | `vbar` | Fader — dashed rails, framed dithered column, notched head | Mix / level feel (`fader` cells) |
-| `enumsq` | Framed micro-font square | Named enums whose words won't fit the big font |
+| `enumsq` | Notched box **sized to its own value**, 4×5 face, one or two lines (§3.5) | Named enums, and two-state cells whose states are words |
+| `opaque` | Chevron-broken box, tri-stated *value / NONE / --* (§3.6) | A value you cannot turn — a file, a path, a string |
 | `valsq` | Frameless big numeric | Counts, octaves, note read-outs |
 | `frac` | Stacked fraction | Musical lengths (`1/16t`) |
 | `dirsq` | Direction arrows | Playback direction |
 | `wavesq` | One-cycle waveform box | Wave-select cells |
 | `xbox` | Framed diagonal cross | "Nothing routed here" |
-| `action` | One-shot square | Triggers |
+| `action` | A raised **button** that presses and throws a burst (§3.7) | Triggers |
 | `faderail` | Alias of `vbar` | Renderer-only, so the two can be drawn side by side. No cell emits it |
 
 Spans override cells where a shape carries more meaning than eight separate knobs. All four are
@@ -264,6 +293,101 @@ mod dot  r - 2                     the plus spans r-3 .. r-1
   reading "the source is at centre", and there is no room outside a ring that already reaches the
   box's top edge.
 
+### 3.5 The enum square
+
+`MV_ENUM_W = 28` (a wider slot than the 20px widget box, centred in the same 32px cell),
+`MV_ENUM_MIN_W = 15`, the 4×5 face, notched corners.
+
+- ⭑⭑ **The width is the VALUE's, not the cell's.** The box sizes to the word it holds and is
+  centred in its slot, so a shrinking box closes in from both sides rather than sliding off its
+  own cell.
+- ⭑ **This is what retired the `AUDI`/`O` wrap.** The old rule was a blind 4/4 character slice in a
+  3px face. `enumSquareLines` asks **"does this need to break at all"** *before* any rule about
+  where a break lands — running the placement rules unconditionally is how `POLY` became `POL`/`Y`
+  and `I+II` became `I+`/`II`, both of which fit whole and neither of which reads as itself split.
+  AUDIO measures 21px against a 24px interior and now fits on one line.
+- ⭑ **A single line gets 3px of side margin, not 1**; two-line values are excluded, being at the
+  cap already. The cap enforces the degradation on its own, so the margin fades 3px → 1px → none as
+  the text grows and the widest values draw exactly as they would have.
+- ⚠ **The margin survives every width, including mid-animation.** A bowl (O C G D) one pixel off
+  the border touches it at a glance. Budget is `w-4` at whatever `w` currently is, measured per
+  frame — which is also what makes a growing box safe.
+- ⚠ **Centred in the interior (`w-2`), not the budget (`w-4`)** — centring in the budget puts every
+  value two pixels left of centre, uniformly, which reads as a drawing mistake.
+- ⚠ **The line COUNT is a function of the value alone**, measured against the full budget, never
+  against the animating width — or a value that has not changed flickers between one and two lines
+  mid-flight.
+- **Animation (`MV_ENUM_ANIM_MS = 120`)**: only the FRAME travels; glyphs swap outright, there
+  being no between-state for a letterform at this size. `anim`/`nowMs` are optional and trailing —
+  **without them nothing moves**, which is what keeps every existing caller byte-identical.
+- ACCEPTED COLLISION: the fader is also a notched framed box, so the two are distinguished by
+  CONTENT rather than silhouette. Declined-alternative-and-kept upstream, not an oversight.
+- ACCEPTED: a word longer than the interior still splits 3+3.
+
+### 3.6 The opaque box — and the tri-state it exists to spell
+
+For a value you cannot **turn**: a file, a path, a string. A framed box with a **chevron broken
+into its right edge**, the value's head set in the 4×5 face.
+
+| state | shows | means |
+|---|---|---|
+| a path | the basename, **set left** | truncated from the tail, so the start is the part worth showing |
+| `''` | **NONE**, centred | nothing is chosen — a real reading about the module |
+| `null`/absent | **--**, centred | the read has not answered — we do not know |
+
+- ⭑⭑ **Both used to say `--`.** That is the tri-state collapsed in the place it is most visible: a
+  sample slot with no file looked exactly like a sample slot whose name had not arrived yet. In
+  `ui_cells.mjs` the bug was literally `rawValue ? … : '--'` — `''` is falsy.
+- ⭑ **A placeholder is centred; a value is set left.** Set left, `NONE` sits hard against the frame
+  with a gap to the chevron and reads as a value that failed to fill.
+- ⚠ **NONE, not EMPTY** — the word that was asked for and does not fit: 23px against a 21px budget,
+  rendering as `EMPT` with the chevron jammed against it.
+- ⚠ **The chevron is NOT a "this opens" mark.** It is the *widget* for a cell with no value-shape
+  to show. The door mark is the **corner brackets** (`opens: true`), drawn around the CELL after
+  the widget so they read the same over a box, an arc, or a span graphic — every alternative tried
+  attaches to a frame, and a divable param drawn as a waveform has not got one. They must stay
+  inside the widget band or they merge into the label strip.
+
+### 3.7 The trigger button
+
+A raised physical button: cap, sides, base arc. **Idle** is an outline, **selected** fills the cap,
+**fired** presses it down and radiates impact stubs.
+
+- ⭑ The affordance has to be ON the control — a trigger has no value to read, so nothing else on
+  the cell says it is pressable.
+- ⚠⚠ **The flash is display only.** `buttonPhase(fired, now, held)` is pure and resolves the state
+  from timestamps the caller already has. Nothing here fires anything, and **no knob-turn trigger
+  path was added**; what makes the flash happen is the existing click, unchanged.
+- ⚠ **A press does not clear the bursts already travelling** (`BTN_FLASH_MS = 300`,
+  `BTN_PRESS_MS = 120`). Overwriting a single timestamp made a rapid second press swallow the first
+  ring and restart from the centre — an animation glitch rather than two events.
+- ⚠ The fill and the outline are **both** drawn on a highlighted cap, in that order: filling alone
+  left the rim a pixel short at the shallow top and bottom.
+
+### 3.8 The footer hint row
+
+`drawKitHintRow(y, hints)` — `[key, action]` pairs, most important first. The KEY is inverted into
+a notched pill and the ACTION is plain beside it, so the pair reads as one thing; without the pill
+a row of hints is an unparseable run, *"JOG PAGE CLK MENU BACK EXIT"*.
+
+- ⭑⭑ **BACK's room is reserved BEFORE anything else is laid out**, so on a narrow row the MIDDLE
+  hints lose the fight. A naive left-to-right loop drops whatever does not fit — which is the last
+  hint, and the last hint is BACK. A footer that silently drops the one hint telling you how to
+  leave is worse than a footer with three hints on it.
+- **The canon** (`MV_FOOTER_CANON`): keys are `JOG · CLK · BACK · SHFT · MUTE · KNB`, fixed by the
+  hardware. Actions are free **except after BACK**, where the word says *where back goes* —
+  `EXIT` leaves the view entirely, `OUT` rises one level within it. Keeping both is deliberate:
+  collapsing them would say "back" does one thing when it does two, and that is the one thing the
+  user cannot see before pressing it.
+- ⚠ All four corners notched, bottom pair included — the panel is inset in plastic, so the ground a
+  bottom corner reads against is the bezel.
+- **No rule above it.** Three clear rows and a row of inverted pills is already unmistakably a
+  different kind of thing.
+- ⚠ **This does NOT replace `_perfChip`.** They are different objects: a perf chip is a *mode
+  indicator* (one word, filled when on), a hint is a *key pair*. Measured: `HOLD` is 27px × 9 rows
+  as a chip and 21px × 7 as a hint pill. The perf chips are left alone; this is the drawer every
+  new hint row uses.
+
 ### 3.3 ⭑⭑ Two states: PILL or BOX, and it is a rule, not a taste
 
 > A two-state cell takes the **switch pill** when **both** of its state names are in the boolean
@@ -325,6 +449,11 @@ uses it.
   segment blinks solid ↔ dotted.
 - **Status glyph**: a down-chevron top-right (`drawKitAltArrow`) means "this bank has alt params".
   It may itself blink. This is the whole glyph vocabulary — resist adding more.
+
+🟠 **An alternative header is MOCKED and dormant.** `drawKitHeaderParamPages(left, right)` draws
+upstream's version — a Tamzen breadcrumb set left, the page name right, on a plain (uninverted)
+ground, which is the opposite weight to davebox's filled bar. **Nothing calls it**; the filled bar
+above stays normative until Josh rules. Renders: `hdr-ours.png` / `hdr-parampages.png`.
 
 **HUD card** (P7): `hudCard(title, value)` in `ui_movy.mjs` is the reusable value-HUD frame —
 near-full-width card, header-font title left / value right over a rule, returns the body rect for
@@ -590,6 +719,8 @@ Honest status, so nobody mistakes the spec for the state of the tree.
 | `ui_render.mjs` | ✅ Grid/header chrome all movy-composed; the remaining direct drawing is the signature sequencer visuals (session overview, track rows, position bars, perf mode) — deliberately bespoke, ruled out of the polish pass |
 | `ui_sound.mjs` | ✅ All lists on `drawKitList`; confirms on the shared button row (P7) |
 | `ui_knob_leds.mjs` | ✅ The knob-ring rule, pure and testable — §7.1. First slice off the 🟡 below |
+| `ui_fonts_pp.mjs` | ✅ The three ported glyph tables. Pure data, no device imports |
+| `ui_anim.mjs` | ✅ The animation store. Time in, never read — §0 |
 | `ui_leds.mjs` / `ui_scene.mjs` | 🟡 Direct LED writes; the knob rings now delegate, the rest is still shared constants and no shared helpers |
 
 **Two font systems are in simultaneous use** — the movy fonts and the host's built-in `print()` —
@@ -599,8 +730,10 @@ one a new screen takes. ⭑ The mcufont 5×5 is no longer used for any header; G
 its last such caller and moved to `drawKitHeader` on 2026-08-15.
 
 **Upstream param-pages parity (2026-08-29, PIXELS ON / BEHAVIOUR OFF):** ported and **adopted** —
-the switch pill / enum box split (§3.3), the fader column (§3.3), the ghost fill on by default
-(§3.1), the dotted scrollbar rail (§5), the knob-ring ramp (§7.1). Ported and **dormant until a
+the arc geometry (§3.4), the switch pill / enum box split (§3.3), the fader column (§3.3), the
+ghost fill on by default (§3.1), the dotted scrollbar rail on lists *and* overlays (§5), the
+knob-ring ramp (§7.1), the enum square (§3.5), the opaque box tri-state (§3.6), the trigger button
+(§3.7), the footer hint row (§3.8), the waveform morph, and the big-number face (§2). Ported and **dormant until a
 caller opts in** — the modulation dot and the label `~` (§3.2, no davebox cell has a modulation
 source), the EQ curve and the sample track (§3, declared spans nothing declares yet). Ported and
 **vetoed** — the enum-peek decay (§8, Josh: leave it unwired). **No knob feel, no gesture latch and
