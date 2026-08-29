@@ -189,6 +189,28 @@ import {
     drawGlobalSettings as _drawGlobalSettings
 } from './shadow_ui_settings.mjs';
 
+/* ================= THE KNOB GRID (param pages) =========================
+ *
+ * The hosted-module parameter editor as eight knobs instead of a scrolling
+ * list. Adopted from upstream Schwung v1.0.0; the engine is in
+ * shared/param_pages/ and is pure, and shadow_ui_param_pages.mjs is the thin
+ * binding to this file. See docs/PARAM_PAGES.md.
+ *
+ * Which one you get is the Param View global setting (Display -> Param View),
+ * and the hierarchy editor below is still the other half of that answer --
+ * this fork adopted the grid WITHOUT retiring the list, unlike upstream. */
+import {
+    paramPagesEnabled, enterParamPages, exitParamPages, paramPagesActive,
+    tickParamPages, drawParamPages, handleParamPagesMidi,
+    paramPagesComponent, paramPagesSlot, clearParamPagesTouch,
+    PARAM_VIEW_LIST, PARAM_VIEW_KNOBS
+} from './shadow_ui_param_pages.mjs';
+/* Registers the QuickJS file IO wav_peaks.mjs streams a sample through. It
+ * names the `std`/`os` MODULES, which node has no idea about, so it is
+ * imported HERE -- shadow_ui.js is the one shadow file node never imports --
+ * and never from shadow_ui_param_pages.mjs, which the host tests do load. */
+import '/data/UserData/schwung/shared/param_pages/wav_io_qjs.mjs';
+
 import {
     NEUTRAL_CLAIMS as PRIMARY_NEUTRAL_CLAIMS,
     deriveClaims as primaryDeriveClaims,
@@ -374,6 +396,7 @@ const VIEWS = {
     COMPONENT_EDIT: "compedit",  // Edit component (presets, params) via Shift+Click
     MASTER_FX: "masterfx",    // Master FX selection
     HIERARCHY_EDITOR: "hierarch", // Hierarchy-based parameter editor
+    PARAM_PAGES: "parampages", // Knob-grid parameter view (Param View setting)
     CANVAS: "canvas",         // Full-screen canvas overlay/editor
     FILEPATH_BROWSER: "filepathbrowser", // Generic filepath picker for filepath params
     KNOB_EDITOR: "knobedit",  // Edit knob assignments for a slot
@@ -1525,6 +1548,8 @@ const GLOBAL_SETTINGS_SECTIONS = [
             { key: "display_mirror", label: "Mirror Display", type: "bool" },
             { key: "overlay_knobs", label: "Overlay Knobs", type: "enum",
               options: ["+Shift", "+Jog Touch", "Off", "Native"], values: [0, 1, 2, 3] },
+            { key: "param_view", label: "Param View", type: "enum",
+              options: ["List", "Knobs"], values: [0, 1] },
             { key: "pad_typing", label: "Pad Typing", type: "bool" },
             { key: "text_preview", label: "Text Preview", type: "bool" },
             { key: "midi_indicator_enabled", label: "MIDI Channel", type: "bool" }
@@ -6983,6 +7008,52 @@ function loadFilebrowserConfig() {
     } catch (e) {}
 }
 
+/* ==== Param View =========================================================
+ *
+ * WHICH parameter editor a hosted module opens into: the hierarchy LIST that
+ * has always been here, or the KNOB GRID adopted from upstream. Persisted in
+ * shadow_config.json alongside the other JS-only settings.
+ *
+ * Read out of band by shadow_ui_param_pages.mjs through the global below --
+ * the same shape as tts_get_enabled / shadow_get_shift_held, because that
+ * module is a leaf and must not import this file.
+ *
+ * Defaults to KNOBS. The grid is the point of the adoption; List is the
+ * fallback for anyone who wants the old screen (and is what the screen reader
+ * gets regardless -- see paramPagesEnabled). */
+/* A LITERAL, not PARAM_VIEW_KNOBS, and deliberately so: test_param_pages_wiring.sh
+ * and test_param_view_default.sh pin this number BY EXACT TEXT, so flipping the
+ * default is a CI failure someone has to look at rather than a silent change of
+ * which editor the whole fleet opens into. 1 is PARAM_VIEW_KNOBS. */
+let paramViewGlobal = 1;
+globalThis.param_view_get_mode = function() { return paramViewGlobal; };
+
+function saveParamViewConfig() {
+    try {
+        const configPath = HOST_STATE_ROOT + "/shadow_config.json";
+        let config = {};
+        try {
+            const content = host_read_file(configPath);
+            if (content) config = JSON.parse(content);
+        } catch (e) {}
+        config.param_view = paramViewGlobal;
+        host_write_file(configPath, JSON.stringify(config, null, 2));
+    } catch (e) {}
+}
+
+function loadParamViewConfig() {
+    try {
+        const configPath = HOST_STATE_ROOT + "/shadow_config.json";
+        const content = host_read_file(configPath);
+        if (!content) return;
+        const config = JSON.parse(content);
+        if (typeof config.param_view === "number") {
+            paramViewGlobal = config.param_view === PARAM_VIEW_KNOBS
+                ? PARAM_VIEW_KNOBS : PARAM_VIEW_LIST;
+        }
+    } catch (e) {}
+}
+
 function savePadTypingConfig() {
     try {
         const configPath = HOST_STATE_ROOT + "/shadow_config.json";
@@ -8702,12 +8773,121 @@ function enterHierarchyEditor(slotIndex, componentKey) {
  * changeHierPreset() early-returns and the loading-transition re-fetch is
  * guarded by `if (newHier)` — don't "fix" those guards to re-pull the
  * hierarchy unconditionally or it would clobber the synthesized one with null. */
+/*
+ * One-shot: skip the grid for the NEXT entry only.
+ *
+ * The grid hands a param it will not edit itself (a filepath, a canvas, a
+ * wav_position, a string) back to the list editor, and it does that by
+ * re-entering the list editor for the same component -- which is the very
+ * call the grid intercepts. Without this the hand-off would bounce straight
+ * back into the grid and the file browser would be unreachable.
+ *
+ * Cleared by the entry it suppresses, never by anything else, so it cannot
+ * leak into a later unrelated open.
+ */
+let suppressParamPagesOnce = false;
+
+/*
+ * The io the grid writes THROUGH for an ordinary chain component.
+ *
+ * FORK NOTE: minimal on purpose. Upstream's also supplies `trailingMenus`
+ * (My Presets / Module pages appended to the plan) and `runAction` (what Save
+ * or Swap does), which need the user-preset record store and the
+ * grid-opened-a-modal reconciler this fork does not have -- see the TODOs in
+ * docs/PARAM_PAGES.md. Without them the plan simply carries no trailing menu
+ * pages, which is a smaller page set, not a broken one.
+ *
+ * `null` is a valid answer and means "use the controller's defaults", which
+ * for a slot chain read/write straight through getSlotParam/setSlotParam.
+ */
+function componentParamPagesIo(slotIndex, componentKey) {
+    return null;
+}
+
+/*
+ * The three things that differ between chain editors, handed to the grid as
+ * DATA. FORK NOTE: null everywhere for now -- this pass wires the SLOT chain
+ * only, so the defaults (label "S<n>", moduleKey "<prefix>_module", Back to
+ * VIEWS.CHAIN_EDIT) are correct. Master FX opens through a different function
+ * in this fork and is not wired; when it is, this is where its label/moduleKey
+ * /returnView go, and it is deliberately the ONE place that knows there are
+ * two chain editors.
+ */
+function paramPagesChromeFor(componentKey) {
+    return null;
+}
+
+/*
+ * The grid could not draw this page kind (modes, child) -- or could not draw
+ * at all -- so fall back to the list editor for the component it was on.
+ *
+ * Called from the draw dispatchers, which is the only place that can know the
+ * grid declined: drawParamPages() returns false rather than leaving a blank
+ * screen.
+ */
+function enterHierarchyEditorFromParamPages() {
+    if (!paramPagesActive()) return false;
+    const slotIndex = paramPagesSlot();
+    const componentKey = paramPagesComponent();
+    exitParamPages();
+    suppressParamPagesOnce = true;
+    enterHierarchyEditor(slotIndex, componentKey);
+    return view === VIEWS.HIERARCHY_EDITOR;
+}
+
+/*
+ * Hand one param to the LIST editor's own screen.
+ *
+ * A filepath, canvas, wav_position or string param has an editor that only
+ * exists inside the hierarchy editor, and the grid deliberately does not
+ * reimplement it (see shadow_ui_param_pages.mjs). So leave the grid, open the
+ * list editor on the same component, and let the user finish there.
+ *
+ * FORK NOTE: upstream additionally re-finds the param inside the freshly
+ * planned hierarchy and opens ITS editor directly, restoring level and child
+ * index. That needs indexOfHierParam / findLevelListingParam plumbing this
+ * fork has not grown yet, so here you land on the component's list and pick
+ * the row -- one extra gesture, and never a dead end. TODO in
+ * docs/PARAM_PAGES.md.
+ */
+function openParamEditorFromGrid(slotIndex, fullKey, meta) {
+    const componentKey = paramPagesComponent();
+    clearParamPagesTouch();
+    exitParamPages();
+    suppressParamPagesOnce = true;
+    enterHierarchyEditor(slotIndex, componentKey);
+    needsRedraw = true;
+}
+
 function enterHierarchyEditorWith(slotIndex, componentKey, hierarchy) {
     if (!hierarchy) {
         /* No hierarchy - fall back to simple preset browser */
         enterComponentEditFallback(slotIndex, componentKey);
         return;
     }
+
+    /*
+     * THE KNOB GRID IS THE DEFAULT PARAMETER EDITOR.
+     *
+     * Same component, same declared contract, a different arrangement of it.
+     * paramPagesEnabled() is the whole of the decision -- Param View, and the
+     * screen reader, which always gets the list because a grid announces a
+     * page where a list announces a row.
+     *
+     * Placed here rather than in enterHierarchyEditor() above so a caller that
+     * injects a SYNTHESIZED hierarchy (co-run) reaches it too: the grid plans
+     * from ui_hierarchy + chain_params itself and does not need the object,
+     * but the fallback below does, and both entries must agree about which
+     * editor opens or the two paths drift.
+     */
+    if (paramPagesEnabled() && !suppressParamPagesOnce) {
+        enterParamPages(slotIndex, componentKey,
+                        getComponentParamPrefix(componentKey), null,
+                        componentParamPagesIo(slotIndex, componentKey),
+                        paramPagesChromeFor(componentKey));
+        return;
+    }
+    suppressParamPagesOnce = false;
 
     /* Dismiss any active overlay and clear pending knob state */
     hideOverlay();
@@ -11909,6 +12089,9 @@ function getMasterFxSettingValue(setting) {
         const mode = typeof overlay_knobs_get_mode === "function" ? overlay_knobs_get_mode() : 0;
         return ["+Shift", "+Jog Touch", "Off", "Native"][mode] || "+Shift";
     }
+    if (setting.key === "param_view") {
+        return paramViewGlobal === PARAM_VIEW_KNOBS ? "Knobs" : "List";
+    }
     if (setting.key === "display_mirror") {
         return (typeof display_mirror_get === "function" && display_mirror_get()) ? "On" : "Off";
     }
@@ -12032,6 +12215,14 @@ function adjustMasterFxSetting(setting, delta) {
             warningLines = wrapText("Replaces Mic and Line-in with ME + Move Audio", 18);
             warningActive = true;
         }
+        return;
+    }
+    if (setting.key === "param_view") {
+        paramViewGlobal = (paramViewGlobal === PARAM_VIEW_KNOBS)
+            ? PARAM_VIEW_LIST : PARAM_VIEW_KNOBS;
+        saveParamViewConfig();
+        announce(paramViewGlobal === PARAM_VIEW_KNOBS ? "Param View Knobs"
+                                                      : "Param View List");
         return;
     }
     if (setting.key === "overlay_knobs" && typeof overlay_knobs_set_mode === "function") {
@@ -15099,6 +15290,21 @@ function drawHelpDetail() {
     _ctx.getMasterFxSlotModule = (...args) => getMasterFxSlotModule(...args);
     _ctx.getMasterFxParam = (...args) => getMasterFxParam(...args);
     _ctx.getModuleAbbrev = (...args) => getModuleAbbrev(...args);
+    /* ---- the knob grid (shadow_ui_param_pages.mjs) ----
+     * Everything it needs from this file, and nothing it does not. The four
+     * upstream entries with no fork equivalent -- getModuleDisplayName,
+     * userPresetHeaderMark, runSlotAction, openEnumPicker -- are deliberately
+     * absent; each has a documented fallback in that module (the abbreviation,
+     * the module's own patch name, an inert menu row, and the list editor
+     * respectively). See docs/PARAM_PAGES.md. */
+    _ctx.evaluateVisibilityCondition = (...args) => evaluateVisibilityCondition(...args);
+    _ctx.isParamModulated = (slot, fullKey) => isHierarchyParamModulated(slot, fullKey);
+    _ctx.isMuteHeld = () => hostMuteHeld;
+    /* A view that paces its own redraws can ask for one. The global gate draws
+     * every other tick unless this is set, and a knob turn on the grid sets
+     * nothing else. */
+    _ctx.requestRedraw = () => { needsRedraw = true; };
+    _ctx.openParamEditor = (slot, fullKey, meta) => openParamEditorFromGrid(slot, fullKey, meta);
     _ctx.isTextEntryActive = () => isTextEntryActive();
     _ctx.drawTextEntry = () => drawTextEntry();
     _ctx.drawHelpDetail = () => drawHelpDetail();
@@ -15755,6 +15961,7 @@ globalThis.init = function() {
 
     /* Load auto-update preference */
     loadBrowserPreviewConfig();
+    loadParamViewConfig();
     loadPadTypingConfig();
     loadTextPreviewConfig();
     loadFilebrowserConfig();
@@ -15937,6 +16144,15 @@ function dispatchCoRunDraw() {
              * fallback that lets the user pick patches without the deep
              * module-specific editor — still useful, and keeps the tool alive. */
             drawComponentEdit();
+            break;
+        /* The grid draws PAGE_KNOBS and the page kinds the controller owns.
+         * A kind it deliberately does not own (modes, child) makes it return
+         * false, and the LIST editor -- which has those screens -- takes the
+         * component over for this frame. */
+        case VIEWS.PARAM_PAGES:
+            if (!drawParamPages()) {
+                if (enterHierarchyEditorFromParamPages()) drawHierarchyEditor();
+            }
             break;
         case VIEWS.HIERARCHY_EDITOR:     drawHierarchyEditor(); break;
         case VIEWS.CANVAS:               drawCanvasPreview(); break;
@@ -16474,6 +16690,20 @@ globalThis.tick = function() {
         }
     }
 
+    /*
+     * The knob grid's per-frame work: poll for a contract that changed under
+     * us, advance the staggered read cursor by exactly ONE param, and repaint
+     * the knob ring LEDs from values it already holds.
+     *
+     * BEFORE the REDRAW_INTERVAL gate below, and that ordering is the point.
+     * The gate draws every other tick unless `needsRedraw` is set, and a knob
+     * TURN does not set it -- measured upstream at 0.34 draws per tick, which
+     * is the "laggy knobs" report. tickParamPages asks for the redraw itself
+     * (ctx.requestRedraw) and paces its own draws, so the decision lives where
+     * the measurement does.
+     */
+    if (view === VIEWS.PARAM_PAGES) tickParamPages();
+
     redrawCounter++;
     /* Force redraw every frame when overlay is active (for VU meter + flash) */
     const overlayActive = overlayState && overlayState.type !== OVERLAY_NONE;
@@ -16614,6 +16844,15 @@ globalThis.tick = function() {
             } else {
                 /* Fall back to simple preset browser */
                 drawComponentEdit();
+            }
+            break;
+        /* The grid draws PAGE_KNOBS and the page kinds the controller owns.
+         * A kind it deliberately does not own (modes, child) makes it return
+         * false, and the LIST editor -- which has those screens -- takes the
+         * component over for this frame. */
+        case VIEWS.PARAM_PAGES:
+            if (!drawParamPages()) {
+                if (enterHierarchyEditorFromParamPages()) drawHierarchyEditor();
             }
             break;
         case VIEWS.HIERARCHY_EDITOR:
@@ -16989,6 +17228,22 @@ globalThis.onMidiMessageInternal = function(data) {
         if (handleTextEntryMidi(data)) {
             needsRedraw = true;
             return;  /* Consumed by text entry */
+        }
+    }
+
+    /*
+     * The knob grid owns every control while it is up: eight encoders, their
+     * touch sensors, the jog and Back. page_input.mjs decodes them and
+     * page_controller.mjs decides; this only routes.
+     *
+     * After text entry, because a Save keyboard sits OVER the grid without
+     * calling setView -- `view` is still PARAM_PAGES while you are typing, and
+     * the keys have to reach the keyboard.
+     */
+    if (view === VIEWS.PARAM_PAGES && paramPagesActive() && !isTextEntryActive()) {
+        if (handleParamPagesMidi(data)) {
+            needsRedraw = true;
+            return;
         }
     }
 

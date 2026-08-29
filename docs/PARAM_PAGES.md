@@ -1,5 +1,70 @@
 # Param Pages — the knob grid, its widgets and its gestures
 
+## ⚠ FORK ADAPTATION (dbxhost) — read this before anything below
+
+Everything after this section is **upstream Schwung v1.0.0's** document,
+imported with the library it describes (`charlesvestal/schwung`, e3d5bc8c).
+It is accurate about `src/shared/param_pages/`, which is upstream's code
+verbatim. It is **not** accurate about how this fork's shadow UI uses it. The
+differences, all deliberate:
+
+**The hierarchy LIST editor is still here, and Param View chooses between the
+two engines.** Upstream retired its list editor and made "List" a *layout*
+inside this engine (`LAYOUT_LIST`). This fork adopted the grid without
+retiring ~500 references of shipped, working list screen, so `param_view`
+means what it meant in upstream's earlier design and is answered in
+`paramPagesEnabled()`: **Knobs → the grid, List → the hierarchy editor.**
+`paramPagesLayout()` is therefore unconditional here.
+
+- Consequence: `LAYOUT_LIST` is imported and re-exported but unreachable from
+  this host. Reaching it needs this fork's `menu_layout.mjs` `drawMenuList` to
+  take an injectable draw ctx first (upstream's does; this fork's draws
+  through the device globals `print`/`fill_rect`). That is its own pass.
+- Consequence: the screen reader keeps getting the hierarchy editor, exactly
+  as upstream's `paramPagesEnabled()` intends, and for the same reason.
+
+**One chain editor is wired: the SLOT chain.** `enterHierarchyEditorWith` is
+the seam. Master FX opens through a different function in this fork and still
+goes to the list; `paramPagesChromeFor()` returns null and is the one place
+that would learn otherwise. The fork's chain is a fixed 4 blocks
+(`MOVE_FX_BLOCKS=4` plus fork-only fx3/fx4) — it deliberately does **not**
+have upstream's variable-length chain / 8-slot master FX rework.
+
+**The chain-editor knob CARD is not ported.** Everything the upstream document
+says about `knob_card.mjs` above is true of the file, which is present, and
+false of this fork's chain editor, which never raises it. Upstream's card is
+drawn over its variable-length chain DIAGRAM; this fork's `drawChainEdit` is a
+different screen. `test_knob_card.sh`, `test_chain_knob_card_reads.sh` and
+`test_chain_edit_read_budget.sh` were not imported for that reason.
+
+**Four host hooks upstream supplies do not exist here, each with a documented
+fallback in `shadow_ui_param_pages.mjs`:**
+
+| upstream `ctx` entry | this fork | what you get instead |
+|---|---|---|
+| `getModuleDisplayName` | absent | `getModuleAbbrev` — the header shows the abbreviation, not the full name |
+| `userPresetHeaderMark` | absent | the module's own patch name; no `*` dirty mark in the header |
+| `runSlotAction` | absent | a menu row that activates nothing (and no trailing menus are planned — see `componentParamPagesIo`) |
+| `openEnumPicker` | absent | an enum that wants a full list hands off to the hierarchy editor rather than raising `VIEWS.ENUM_PICKER` |
+
+**Two more fork gaps, both TODOs, both recorded in the code:**
+
+- `shadow_restore_knob_leds` — this fork's shim has no
+  `service_knob_led_restore`, so leaving the grid leaves Move's eight rings
+  DARK rather than restoring them. Written as `clearKnobLEDs()`, not as a
+  `typeof` probe: there is one host and one module here, so a probe that can
+  only ever be false is machinery this fork does not carry.
+- `openParamEditorFromGrid` lands you on the component's LIST, not on the
+  specific row. Upstream re-finds the param in the freshly planned hierarchy
+  and restores level and child index; that needs plumbing this fork has not
+  grown. One extra gesture, never a dead end.
+
+**`draw_circle` / `draw_arc` were ported into `src/host/js_display.c`** in the
+same pass, so the knob ring has its real one-crossing renderer and the draw
+context passes them straight rather than probing for them.
+
+---
+
 Split out of `CLAUDE.md`, which keeps a summary and points here.
 
 Covers `src/shared/param_pages/` (the page planner, widgets, knob engine,

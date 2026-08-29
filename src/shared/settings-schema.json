@@ -5,6 +5,8 @@
       { "key": "display_mirror", "label": "Mirror Display", "type": "bool" },
       { "key": "overlay_knobs", "label": "Overlay Knobs", "type": "enum",
         "options": ["+Shift", "+Jog Touch", "Off", "Native"], "values": [0, 1, 2, 3] },
+      { "key": "param_view", "label": "Param View", "type": "enum",
+        "options": ["List", "Knobs"], "values": [0, 1] },
       { "key": "pad_typing", "label": "Pad Typing", "type": "bool" },
       { "key": "text_preview", "label": "Text Preview", "type": "bool" },
       { "key": "midi_indicator_enabled", "label": "MIDI Channel Indicator", "type": "bool" }

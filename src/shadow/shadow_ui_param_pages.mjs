@@ -140,9 +140,31 @@ export const PARAM_VIEW_KNOBS = 1;
  * deliberate act with the whole fleet behind it (design §6), not a side effect
  * of splitting this seam.
  */
+/*
+ * ============================ FORK ADAPTATION ============================
+ *
+ * UPSTREAM: `param_view` is answered by paramPagesLayout() below, because
+ * upstream gave PAGE_KNOBS a list LAYOUT (LAYOUT_LIST) and retired its
+ * hierarchy editor -- so "List" became an arrangement INSIDE this engine and
+ * this function stopped looking at the setting.
+ *
+ * THIS FORK: the hierarchy list editor is still here, ~34 functions and ~500
+ * references of shipped, working screen, and this pass adopts the GRID
+ * without retiring it. So `param_view` means what it meant in upstream's
+ * earlier design and is answered HERE:
+ *
+ *     Knobs  ->  this engine (the grid)
+ *     List   ->  the fork's existing hierarchy editor
+ *
+ * That is why paramPagesLayout() below is now unconditional: by the time
+ * anything asks, the grid has already won the fork.
+ * =========================================================================
+ */
 export function paramPagesEnabled() {
     if (typeof tts_get_enabled === 'function' && tts_get_enabled()) return false;
-    return true;
+    const mode = typeof param_view_get_mode === 'function'
+        ? param_view_get_mode() : PARAM_VIEW_KNOBS;
+    return mode === PARAM_VIEW_KNOBS;
 }
 
 /**
@@ -181,11 +203,27 @@ export function paramPagesEnabled() {
  * the names of screens. Slot Settings and Master FX Settings deliberately do
  * NOT pin: their Volume, Mute and Solo genuinely are performance controls.
  */
+/*
+ * FORK ADAPTATION: always the grid.
+ *
+ * Both of upstream's other answers are unreachable here. TTS and
+ * `param_view: List` are settled one level up, in paramPagesEnabled(), and
+ * both of them route to the hierarchy editor rather than to a layout of this
+ * engine -- see the block above. A contract may still PIN a layout through
+ * its chrome, and that clause is kept because it costs nothing and is how a
+ * future synthesised contract (Global Settings, if it is ever absorbed) would
+ * ask for the list.
+ *
+ * LAYOUT_LIST is therefore imported and re-exported but not reachable from
+ * this host today. Leaving it wired is deliberate: it is the seam the
+ * hierarchy editor eventually retires through, and the drawMenuList it needs
+ * is the one fork file that would have to grow an injectable draw ctx first
+ * (upstream's menu_layout.mjs takes one; this fork's draws through the device
+ * globals). That is its own pass -- see docs/PARAM_PAGES.md.
+ */
 export function paramPagesLayout() {
     if (currentChrome && currentChrome.layout) return currentChrome.layout;
-    if (typeof tts_get_enabled === 'function' && tts_get_enabled()) return LAYOUT_LIST;
-    const mode = typeof param_view_get_mode === 'function' ? param_view_get_mode() : PARAM_VIEW_LIST;
-    return mode === PARAM_VIEW_KNOBS ? LAYOUT_MOVY : LAYOUT_LIST;
+    return LAYOUT_MOVY;
 }
 
 /**
@@ -333,8 +371,24 @@ export function exitParamPages() {
      * hardware no longer shows — the exact failure this module keeps its own
      * cache to avoid.
      */
-    if (typeof shadow_restore_knob_leds === "function") shadow_restore_knob_leds();
-    else clearKnobLEDs();   /* older shim: dark is still better than wrong */
+    /*
+     * FORK ADAPTATION: dark, not restored -- and it is a TODO, not a choice.
+     *
+     * Upstream probes for `shadow_restore_knob_leds`, a binding its shim grew
+     * alongside this view (service_knob_led_restore in shadow_led_queue.c,
+     * replaying Move's own last value for CC 71-78 out of the cache overtake
+     * already keeps). This fork's shim has neither the binding nor that
+     * cache, so the probe could only ever be false -- and a probe that can
+     * only be false is exactly the machinery this fork does not carry (one
+     * host, one module, shipped together). It is written as the truth
+     * instead.
+     *
+     * The cost is the reported symptom upstream fixed: leaving the grid into
+     * a Schwung track leaves Move's eight rings DARK, because Move writes a
+     * ring only when its value changes and none of them changed while we held
+     * them. TODO(fork): port service_knob_led_restore + the binding.
+     */
+    clearKnobLEDs();
     resetKnobLedCache();
     /* The shim is about to repaint the surface from Move's own cache, so the
      * shared cache in input_filter is now claiming colours the hardware will
@@ -1026,8 +1080,11 @@ export function drawParamPages() {
         {
             fillRect: fill_rect, print, textWidth: text_width, line: draw_line,
             fillCircle: fill_circle,
-            drawCircle: typeof draw_circle === "function" ? draw_circle : undefined,
-            drawArc: typeof draw_arc === "function" ? draw_arc : undefined,
+            /* FORK: passed straight, not probed. draw_circle / draw_arc were
+             * ported into this fork's src/host/js_display.c in the same
+             * commit that wired this view, so the binding always exists. */
+            drawCircle: draw_circle,
+            drawArc: draw_arc,
         },
         { title: headerTitle(), footer: footerHints() }
     ));
