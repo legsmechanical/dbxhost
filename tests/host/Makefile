@@ -36,7 +36,8 @@ TARGETS = $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_spawn_command \
           $(BUILD_DIR)/test_stipple \
           $(BUILD_DIR)/test_shadow_midi_out_capacity \
-          $(BUILD_DIR)/test_midi_in_compact
+          $(BUILD_DIR)/test_midi_in_compact \
+          $(BUILD_DIR)/test_master_fx_saved_state
 
 .PHONY: all test clean
 
