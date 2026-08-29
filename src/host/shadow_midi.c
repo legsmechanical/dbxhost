@@ -845,7 +845,7 @@ void shadow_dispatch_direct_external_midi(void)
      * partially consumes MIDI_IN and events at higher offsets may shift
      * down or persist across frames; we rely on the timestamp-keyed dedup
      * to skip duplicates regardless of where the event lives. */
-    for (int i = 0; i + 8 <= MIDI_BUFFER_SIZE; i += 8) {
+    for (int i = 0; i + 8 <= SHADOW_MIDI_IN_BYTES; i += 8) {
         uint8_t cin = in_src[i] & 0x0F;
         uint8_t cable = (in_src[i] >> 4) & 0x0F;
 
@@ -953,7 +953,7 @@ void shadow_dispatch_cable2_channeled_slots(void)
     uint8_t *in_src = *host_global_mmap_addr + MIDI_IN_OFFSET;
 
     /* 8-byte stride (USB-MIDI + timestamp); don't break on zero. */
-    for (int i = 0; i + 8 <= MIDI_BUFFER_SIZE; i += 8) {
+    for (int i = 0; i + 8 <= SHADOW_MIDI_IN_BYTES; i += 8) {
         uint8_t header = in_src[i];
         if (header == 0) continue;
 

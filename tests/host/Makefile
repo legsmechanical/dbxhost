@@ -35,7 +35,8 @@ TARGETS = $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_sa_master_volume \
           $(BUILD_DIR)/test_spawn_command \
           $(BUILD_DIR)/test_stipple \
-          $(BUILD_DIR)/test_shadow_midi_out_capacity
+          $(BUILD_DIR)/test_shadow_midi_out_capacity \
+          $(BUILD_DIR)/test_midi_in_compact
 
 .PHONY: all test clean
 
@@ -70,6 +71,9 @@ $(BUILD_DIR)/test_sa_master_volume: test_sa_master_volume.c ../../src/host/sa_ma
 
 $(BUILD_DIR)/test_spawn_command: test_spawn_command.c ../../src/host/spawn_command.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -MMD -MP $^ -o $@ $(LDFLAGS)
+
+$(BUILD_DIR)/test_midi_in_compact: test_midi_in_compact.c ../../src/host/shadow_midi_filter.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -MMD -MP -MF $@.d $^ -o $@ $(LDFLAGS)
 
 -include $(TARGETS:=.d)
 

@@ -8,6 +8,7 @@
 #include "shadow_constants.h"
 #include "shadow_chain_types.h"
 #include "plugin_api_v1.h"
+#include "shadow_midi_filter.h"   /* SHADOW_MIDI_IN_* geometry + compaction */
 
 /* ============================================================================
  * Move Hardware CC Constants
