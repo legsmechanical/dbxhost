@@ -1029,13 +1029,11 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
         const char *subkey = key + 9;
         /* Intercept module change to swap MIDI FX1 dynamically */
         if (strcmp(subkey, "module") == 0) {
-            /* Unload existing MIDI FX if any */
-            if (inst->midi_fx_count > 0) {
-                v2_unload_all_midi_fx(inst);
-            }
-            if (val && val[0] != '\0' && strcmp(val, "none") != 0) {
-                v2_load_midi_fx(inst, val);
-            }
+            /* The index is the SLOT, exactly as it is for "fxN:module".
+             * This used to unload EVERY MIDI FX first, on the rule that slot 1
+             * owned the whole list — so writing midi_fx1 destroyed midi_fx2.
+             * See v2_load_midi_fx_slot in chain_midi.c. */
+            v2_load_midi_fx_slot(inst, 0, val);
             inst->dirty = 1;
         } else if (inst->midi_fx_count > 0 && inst->midi_fx_plugins[0] && inst->midi_fx_instances[0]) {
             if (chain_mod_is_target_active(inst, "midi_fx1", subkey)) {
@@ -1055,10 +1053,10 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
         const char *subkey = key + 9;
         /* Intercept module change to swap MIDI FX2 dynamically */
         if (strcmp(subkey, "module") == 0) {
-            /* For slot 2, we'd need to unload just slot 2 - simplified for now */
-            if (val && val[0] != '\0' && strcmp(val, "none") != 0) {
-                v2_load_midi_fx(inst, val);
-            }
+            /* Slot-addressed. This used to call v2_load_midi_fx, which always
+             * APPENDED at midi_fx_count — so writing midi_fx2:module before
+             * midi_fx1 landed it in slot 0, breaking persisted chain order. */
+            v2_load_midi_fx_slot(inst, 1, val);
             inst->dirty = 1;
         } else if (inst->midi_fx_count > 1 && inst->midi_fx_plugins[1] && inst->midi_fx_instances[1]) {
             if (chain_mod_is_target_active(inst, "midi_fx2", subkey)) {
