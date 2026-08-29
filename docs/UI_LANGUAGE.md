@@ -19,7 +19,14 @@ that describes an aspiration would just be a third idiom.
 
 `ui_movy.mjs` is the reference model: pure drawing, no imports, no state access, callers pass
 precomputed cell descriptors — which is why it also loads standalone in node for the off-device
-previewer (`davebox/tools/preview_movy.mjs`). Anything built to that shape can be restyled once
+previewer (`davebox/tools/preview_movy.mjs`) and the screen/widget renderers
+(`tools/render_screens.mjs`, `tools/render_widgets.mjs`, sharing `tools/render_fb.mjs`).
+
+⚠⚠ **AN OFFLINE RENDER IS NOT REPRODUCIBLE UNLESS YOU FREEZE THE CLOCK.** `drawKitPageBar` blinks
+its active segment off `Date.now()/375`, so the same page renders two different pictures depending
+on when you ran it — and a before/after PNG diff taken without pinning it is pure noise. It has
+already reported eight manual screens as "changed" by a style port that changed none of them. Use
+`freezeClock()` from `render_fb.mjs`. Anything built to that shape can be restyled once
 and change everywhere. Anything that draws directly has to be found and edited by hand.
 
 Screens absorbed from the host get rebuilt against these primitives from day one. Structurally
@@ -136,16 +143,84 @@ Descriptor kinds, and what each draws (`drawCellWidget` dispatch):
 |---|---|---|
 | `arc` / `arcbip` | Arc knob, r7 — bipolar variant fills from centre | Continuous values |
 | `hbar` | Two-state bar | Toggles |
+| `vbar` | Vertical bar, bottom-up | Mix / level feel (`fader` cells) |
 | `enumsq` | Framed micro-font square | Named enums whose words won't fit the big font |
 | `valsq` | Frameless big numeric | Counts, octaves, note read-outs |
 | `frac` | Stacked fraction | Musical lengths (`1/16t`) |
 | `dirsq` | Direction arrows | Playback direction |
+| `wavesq` | One-cycle waveform box | Wave-select cells |
+| `xbox` | Framed diagonal cross | "Nothing routed here" |
 | `action` | One-shot square | Triggers |
+| 🟠 `pill` | Switch pill — ON fills the track and knocks the slug out | **MOCKUP, unadopted** (§3.2) |
+| 🟠 `faderail` | Dashed rails + framed dithered column + head | **MOCKUP, unadopted** (§3.2) |
 
-Spans override cells where a shape carries more meaning than eight separate knobs:
-`drawKitEnvelopeRow` (ADSR / AD / AR / ASR across a span, geometry derived from the span so a
-2-cell AD and a 4-cell ADSR both read correctly) and `drawKitFilterCurve` (LP/HP/BP/notch/peak/AP
-response across two cells).
+Spans override cells where a shape carries more meaning than eight separate knobs. All four are
+**DECLARED by the caller, never detected** — `drawKitCells(cells, touchedIdx, env, filt, eq, samp)`:
+
+| Span | Draws | Declared as |
+|---|---|---|
+| `env` | ADSR / AD / AR / ASR, geometry derived from the span so a 2-cell AD and a 4-cell ADSR both read correctly | `{ start, count, roles }` |
+| `filt` | LP/HP/BP/notch/peak/AP response across two cells | `{ start, cutoffNorm, resoNorm, mode, steep, fill }` |
+| `eq` | Two shelves + a bell summed about a dotted 0 dB line | `{ start, count, low, mid, high, fill }` |
+| `samp` | Mirrored sample body, playhead, loop brackets, spray fences, base mark | `{ start, count, peaks, pos, basePos, spray, loopStart, loopEnd }` |
+
+⚠ **No auto-detection, ever.** Upstream's viz resolver is engine-side and metadata-corroborated;
+davebox has no equivalent metadata, so a renderer that sniffed param names would restyle a page as
+a side effect of *renaming a knob*. A bank that wants a graphic says so.
+
+### 3.1 Ghost fill — one treatment, three graphs
+
+The filter response, the EQ curve and the sample body are pictures of the maths. They are allowed
+to differ in **shape** and must not differ in **treatment**, so there is exactly one
+`fillCurveMass()` and they all call it: a CHECKER (50%) mass between the curve and its zero line,
+drawn **before** the stroke (the stroke is solid, the fill is not — reverse them and the lattice
+punches through the line). The curve becomes an *area*, which is the reading a musician wants —
+how much of the note is loud, how much of the spectrum passes — rather than a boundary to integrate
+by eye. Upstream's widget catalog ran this against seven alternatives and it won all four of its
+sets; the hairline it replaced ranked 7th–10th.
+
+- **Unipolar** graphs (filter) fill to the FLOOR; **bipolar** ones (EQ) fill to the CENTRE, so a cut
+  fills downward. Filling to the floor on a bipolar graph detaches the shape from its own ink.
+- **Opt-in on the filter** (`filt.fill`), because that curve already ships on davebox bank pages and
+  turning it on by default would restyle a live screen nobody asked to change.
+- ⚠ **No notched corners here**, though they are the house idiom for every box. A box's corners are
+  a design decision; the corners of a filled curve are DATA — the left edge of a passband, the floor
+  a release lands on — and rounding them off misrepresents the parameter.
+- ACCEPTED COST: at a high sustain the mass covers most of a 13-row band, and twelve rows of checker
+  at true size reads as grey rather than texture. The page gets heavier.
+
+### 3.2 The modulation dot, the `~`, and what is still a mockup
+
+**Modulation dot** (`drawModDot`, cell field `modNorm`): the pointer keeps showing the BASE you
+dialled in; a separate five-pixel plus rides the LIVE value. Two values on one knob is the point —
+with the pointer chasing an LFO you lose sight of what you set, and turning the knob edits the base,
+not what you were watching.
+
+- ⚠ **Drawn even when it coincides with the pointer.** The mark's absence must mean "nothing is
+  modulating this", never "the source happens to be at the base right now".
+- ⚠ **A five-pixel plus, not a 2×2 block.** An even-sized mark cannot be centred on a pixel, so at
+  the cardinal angles it rounds a whole pixel off the track it is meant to be showing. A 3×3 is a
+  blob on an r7 knob; one bare pixel is too faint beside a 1px ring and a pointer.
+- ⚠ **Inside the ring, never on it** — one pixel of clearance at every angle, or the dot reads as
+  lumps growing out of the rim and merges with the ring at the shoulders.
+- A span graphic COVERS its cells, so the dot cannot reach them; `samp` carries the same information
+  as its own **base mark** (a coarse 2-on-2-off dash, told apart from the solid cursor and the fine
+  spray dither by its rhythm), and `faderail` as two stubs outside the rails.
+
+**Label third state** (`modulated`): a trailing `~` on the label strip. It rides the NAME, not the
+value — the widget is already showing the value moving; what the strip has to add is *why*. ⚠ Not
+drawn on the touched cell, where the strip is answering "what number is this".
+
+**Both are descriptor fields, and davebox sets neither today**, so every shipping cell renders
+identically. A bank that gains a modulation source needs a *value*, not a widget.
+
+🟠 **Unadopted mockups.** `pill` and `faderail` are drawn only by `tools/render_widgets.mjs`;
+nothing in `ui_cells.mjs` emits them. They are here to be judged as renders and **deleted if the
+answer is no** — do not quietly wire one in. The pill's argument is that the TRACK carries the state
+(ON fills it and knocks the slug out) so the two states differ by most of the widget's area; the
+fader's is that its interior lattice re-phases on a sub-row remainder, so a detent too small to move
+the bar still moves the texture — measured upstream at 44 distinct pictures per 127 steps against
+the plain bar's 12.
 
 ## 4. Header and page bar
 
@@ -243,6 +318,13 @@ Corollaries, each of which was a real screen before the cohesion pass:
   edge at y ≤ 6, inside the header band.
 - **Section picker** — `drawKitSectionPicker`, full-screen, one row per section, same selection
   and scrollbar grammar.
+- **Scrollbar** — right-edge rail + a solid 2px thumb, **no arrows**. The rail is the extent of the
+  list and the thumb is where you are in it; an arrow says "there is more" a second time and reflows
+  the row it sits on as it appears and disappears. 🟠 A **dotted** rail (`drawKitList` opt
+  `dottedRail`) is mocked and **off by default**: drawing both rail and thumb solid makes the thumb
+  a thicker piece of the same object, so the eye has to measure widths to read a position — but
+  flipping the default changes every list in the app at once, so it waits on a look at the render.
+  ⚠ A list that fits draws no rail at all; the flag is inert there.
 - **Dialogs** — buttons are **No left, Yes right**; selected is filled with black label,
   unselected is outlined with white label; `Back` = No, `Jog` = Yes.
 - **Text entry** — the kit does not draw a keyboard and neither should we. Open the host's
@@ -320,6 +402,40 @@ CC_GRADIENT_SCALARS     = [0.30, 0.60, 1.0]
 ⚠ **Only three white brightness levels are usable** (`CC_GRADIENT_SCALARS` = 0.30 / 0.60 / 1.0).
 The LEDs cannot resolve a finer ramp; a smooth gradient will read as noise.
 
+### 7.1 Knob indicator rings (CC 71–78)
+
+`ui_knob_leds.mjs` — pure, no state, no sends; `ui_leds.mjs` keeps the caching and the writes. On a
+param bank the rings ride the VALUE:
+
+| | |
+|---|---|
+| Knobs 1–4 | white ramp — `DarkGrey2 · DarkGrey3 · LightGrey · OffWhite · White` |
+| Knobs 5–8 | amber ramp — `DarkBrown · BurntSienna · Tan · BrightOrange` |
+| Unbound / unread | **colour 0**, and nothing else |
+
+- **The grid draws 8 params as two rows of four; the hardware is one row of eight.** Nothing on the
+  device says which encoder drives which drawn cell — the hue does.
+- ⚠ **The floor is not zero.** A bound knob stays lit however low its value, because the row identity
+  has to survive a parameter sitting at its minimum. Colour 0 is RESERVED for "nothing is bound
+  here": a dark ring is a ring that will do nothing if you turn it, and lighting an unread key at
+  the bottom of its ramp is a confident lie about where the value sits.
+- ⚠⚠ **The ramps are ordered by LUMINANCE, which is not the same as by name.** Upstream's first cut
+  picked amber constants by what they were called and got `#250E05 → #876700 → #491804 → #C93C00` —
+  the third step is DARKER than the second, so a sweep went dim, bright, dark, bright. Reported from
+  the device as "the LEDs work but the curve is off". A ramp is ONE hue's dark → dim → full; verify
+  a change against the hex in `constants.mjs`, never against the name.
+- ⚠ **The step thresholds are derived from the ramp, not written beside it.** Hard-coded thirds
+  against a 3-entry ramp silently left the last entries of a longer one unreachable.
+- ⚠ **CC 71–78 and nothing else.** The same CC carries encoder rotation IN and the ring colour OUT.
+  Notes 0–9 are the capacitive touch sensors, input only.
+- There is **no "restore on leaving the bank"** to write: the LED pass recomputes all eight rings
+  every frame from whatever bank is active, so leaving a param bank repaints them by construction.
+  The shim-side `shadow_restore_knob_leds` edge is for the other direction — handing the surface
+  back to Move — and davebox owns the surface for its whole lifetime.
+
+*(This replaced a binary white-if-changed-from-default rule, which lit a freshly-opened bank at zero
+knobs and could never say where anything sat.)*
+
 Batch LED writes: `LEDS_PER_FRAME = 8`. The output buffer holds ~64 packets and more than ~60 in
 one frame overflows.
 
@@ -330,6 +446,16 @@ notes 0–9 knob capacitive touch · pads notes 68–99.
 
 **Touch orients, turn reveals, release commits.** A bare orienting touch must NOT open the picker
 overlay — only an actual turn does. This is the canonical grammar for every knob-driven overlay.
+
+🟠 **The PEEK is the offered variant, and it is off.** Upstream's knob grid raises an enum's option
+list on the turn and decays it after `MV_ENUM_PEEK_MS` (700ms) because it has no touch sensor to
+release. davebox does, so its list already stays up exactly as long as the finger does, and adopting
+the decay would *remove* a display that works — what it buys instead is uncovering the three
+neighbouring cells while you keep turning. `enumPeekExpired(turnedAtMs, nowMs)` is pure (the timer
+lives in the caller, this file reads no clock) and `drawKitBankPage`'s `peekExpired` consumes it;
+no davebox caller passes either. ⚠ A never-turned knob has NOT expired — `Number(null)` is 0, which
+against any real clock is long past, and a caller that had not yet recorded a turn would suppress
+the list for ever.
 
 **Three response classes**, by how much travel a change should cost (values identical to
 canvaskit's, defined in `davebox/ui/ui_discover.mjs`):
@@ -372,13 +498,23 @@ Honest status, so nobody mistakes the spec for the state of the tree.
 | `ui_dialogs.mjs` | ✅ Delegates buttons to `menu_layout`; every LIST on the kit since 2026-08-15 (Global settings, project screens, snapshot picker, clear-automation). Confirms and info screens stay on the dialog chassis by §5.0 |
 | `ui_render.mjs` | ✅ Grid/header chrome all movy-composed; the remaining direct drawing is the signature sequencer visuals (session overview, track rows, position bars, perf mode) — deliberately bespoke, ruled out of the polish pass |
 | `ui_sound.mjs` | ✅ All lists on `drawKitList`; confirms on the shared button row (P7) |
-| `ui_leds.mjs` / `ui_scene.mjs` | 🟡 Direct LED writes; shared constants but no shared helpers |
+| `ui_knob_leds.mjs` | ✅ The knob-ring rule, pure and testable — §7.1. First slice off the 🟡 below |
+| `ui_leds.mjs` / `ui_scene.mjs` | 🟡 Direct LED writes; the knob rings now delegate, the rest is still shared constants and no shared helpers |
 
 **Two font systems are in simultaneous use** — the movy fonts and the host's built-in `print()` —
 because the movy grid and the dialog body are genuinely different jobs. That is tolerable and now
 visually reconciled: both share the filled-bar header and the dialog buttons, and §5.0 says which
 one a new screen takes. ⭑ The mcufont 5×5 is no longer used for any header; Global settings was
 its last such caller and moved to `drawKitHeader` on 2026-08-15.
+
+**Upstream param-pages parity (2026-08-29, PIXELS ON / BEHAVIOUR OFF):** the modulation dot, the
+label `~`, the ghost fill, the EQ curve, the sample track, the knob-ring ramp and the enum-peek
+timer are ported (§3.1, §3.2, §5, §7.1, §8); the switch pill, the fader column and the dotted
+scrollbar rail are 🟠 mocked and unadopted. **No knob feel, no gesture latch and no input path was
+touched** — `ui_discover.mjs` is untouched and every new look is opt-in through a descriptor field
+or a viz flag, so every existing screen renders pixel-identical. `tools/render_widgets.mjs` renders
+a before/after pair for each. Not ported: upstream's header/footer identity, its big-number face
+(font licence unverified — davebox keeps its 13pt), its page planner and its viz DETECTOR.
 
 **Canvaskit parity (P7):** `drawVBar` (a `fader` cell renders as the vertical bar, no longer
 falling through to `arc`), `hudCard`, and live waveform rendering (`shapeSample`, `drawWaveBox`,
