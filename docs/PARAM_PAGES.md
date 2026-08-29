@@ -66,6 +66,24 @@ fallback in `shadow_ui_param_pages.mjs`:**
 same pass, so the knob ring has its real one-crossing renderer and the draw
 context passes them straight rather than probing for them.
 
+**The `access` axis reached the LIST editor too, and went further than
+upstream's.** A knob turn in the hierarchy editor used to walk a momentary
+through its fire value and run the action. Upstream guards this on a declared
+`access: "write"`; measured on this fork's own fixture that would have caught
+**one** param in 100 modules and neither of the two the bug report names —
+magneto `clear` and euclidrum `rnd_preset` declare nothing at all. So
+`param_meta.mjs`'s momentary INFERENCE (a verb name plus two states, with the
+vetoes it learned from real false positives) was lifted out of
+`buildMetaIndex`'s closure into an exported `inferMomentary()`, and the list
+editor consults the same predicate the grid does. One definition, two
+surfaces, and an explicit `access` still wins over the guess in both.
+
+⚠ **Blast radius, measured:** 57 params across 14 modules become press-to-fire
+in the list editor that were latching switches before (forge alone has 13 —
+Rnd Kit, Copy A>B, Swap A/B). That is the grid's existing classification
+arriving on the other surface, not a new opinion, but it is a visible change
+to a shipped screen and has not been on hardware.
+
 ---
 
 Split out of `CLAUDE.md`, which keeps a summary and points here.

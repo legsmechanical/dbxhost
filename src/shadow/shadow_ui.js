@@ -24,7 +24,7 @@ import {
     MoveKnob1, MoveKnob2, MoveKnob3, MoveKnob4,
     MoveKnob5, MoveKnob6, MoveKnob7, MoveKnob8,
     MoveKnob1Touch, MoveKnob8Touch,  // Capacitive touch notes (0-7)
-    MidiNoteOn
+    MidiNoteOn, MidiNoteOff
 } from '/data/UserData/schwung/shared/constants.mjs';
 
 import {
@@ -37,6 +37,10 @@ import {
 } from '/data/UserData/schwung/shared/chain_ui_views.mjs';
 
 import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
+/* The ONE definition of "this two-state control is a momentary button", shared
+ * with the param-pages knob grid. See isTriggerParam below for why this file
+ * cannot settle the question from `access` alone. */
+import { inferMomentary } from '/data/UserData/schwung/shared/param_pages/param_meta.mjs';
 import { knobInit, knobTick, knobConfigFromMeta } from '/data/UserData/schwung/shared/knob_engine.mjs';
 import {
     formatParamValue as ufFormatParamValue,
@@ -1291,6 +1295,109 @@ const TRIGGER_ENUM_WINDOW_MS = 700;     // Pause longer than this to start a new
 let triggerEnumAccum = [0, 0, 0, 0, 0, 0, 0, 0];
 let triggerEnumLastMs = [0, 0, 0, 0, 0, 0, 0, 0];
 let triggerEnumLatched = [false, false, false, false, false, false, false, false];
+
+/*
+ * `access`, on the knob surfaces that are not the param-pages grid.
+ *
+ * The axis was implemented on the grid (param_meta.mjs sets readOnly /
+ * writeOnly, page_controller routes on them) and never reached this file, so
+ * a trigger is an ordinary enum everywhere else -- and "everywhere else" is
+ * wider than it looks. getKnobContext below serves the CHAIN EDITOR, MASTER
+ * FX and the hierarchy list editor alike, so all three turned a trigger by
+ * writing the value the turn walked onto: magneto's `clear` wipes the deck,
+ * euclidrum's `rnd_preset` randomises all eight lanes, from a knob nudge with
+ * no confirmation.
+ *
+ * ⚠ THIS IS NOT WHAT isTriggerEnumMeta BELOW ALREADY DOES, and the gap is the
+ * whole bug. That predicate matches ONE naming convention -- options exactly
+ * ["idle","trigger"] -- and the destructive params in the fleet do not use
+ * it: euclidrum declares ["—","Rnd!"] and says so with `access: "write"`.
+ * So the fork had a trigger guard that the actual triggers walked straight
+ * past. Both predicates are kept: `access` is the declared contract and is
+ * checked FIRST, the options-literal convention keeps working underneath it
+ * for modules that use it without declaring access.
+ *
+ * These read the raw declaration rather than param_meta's normalised form,
+ * which belongs to the grid and is not built here.
+ */
+function isTriggerParam(meta) {
+    if (!meta) return false;
+    const access = String(meta.access || "").toLowerCase();
+    /*
+     * An explicit declaration ALWAYS wins, in both directions -- including a
+     * module saying "readwrite" to mean "this is NOT a trigger". Same
+     * precedence param_meta.mjs applies; getting it backwards here would let
+     * a guess override an author.
+     */
+    if (access) return access === "write";
+    /*
+     * ⚠ AND THIS IS THE HALF UPSTREAM DOES NOT HAVE, because measured on this
+     * fork's own 100-module fixture the access-only guard would not have
+     * caught the bug it was written for.
+     *
+     *   tablor  preset_rnd   access: "write"          <- caught by the line above
+     *   magneto clear        ["Clear","Cleared"]      <- declares NOTHING
+     *   euclidrum rnd_preset ["—","Rnd!"]             <- declares NOTHING
+     *
+     * The two the report names are exactly the two that declare nothing, so
+     * stopping at `access` would have shipped a guard past the parameters it
+     * exists to guard. The grid already knew better -- param_meta.mjs infers a
+     * momentary from a VERB name plus two states, with the vetoes it learned
+     * from real false positives -- but that rule lived inside buildMetaIndex's
+     * closure and this file could not reach it. It is exported now, so the
+     * list editor and the grid answer this question from ONE definition
+     * instead of disagreeing about the same parameter.
+     */
+    return inferMomentary(meta);
+}
+function isReadoutParam(meta) {
+    return !!(meta && String(meta.access || "").toLowerCase() === "read");
+}
+
+/*
+ * The value that FIRES a trigger, in the format the module reports.
+ *
+ * Option 1, never a bare index unless the module is already speaking indices:
+ * euclidrum declares ["\u2014","Rnd!"] and fires on anything that is not the
+ * em-dash, so writing "1" as a number would be read as a name it does not
+ * know -- and writing "0" MEANS the em-dash, i.e. "do nothing", which is the
+ * write that destroys a kit.
+ */
+function triggerFireValue(meta, currentVal) {
+    const opts = (meta && Array.isArray(meta.options)) ? meta.options : null;
+    if (!opts || opts.length < 2) return null;
+    const usesIndex = opts.indexOf(currentVal) < 0 && !isNaN(parseInt(currentVal, 10));
+    return usesIndex ? "1" : opts[1];
+}
+
+/*
+ * How long the knob must be STILL before a trigger will fire again. Must stay
+ * equal to TRIGGER_KNOB_GESTURE_GAP_MS in page_controller.mjs -- the knob grid
+ * and this surface drive the same physical knob against the same parameter,
+ * and a user switching Param View must not find the encoder behaving
+ * differently. test_knob_surfaces_access.sh pins the two EQUAL by number.
+ *
+ * A LATCH, not a rate limit. "At most once per N ms" still fires eight times
+ * across a two-second spin. Every detent extends the gesture; only stillness
+ * ends it.
+ *
+ * Deliberately NOT applied to the jog click: one press is one gesture, and
+ * limiting that would be a bug.
+ *
+ * ⚠ NOT the same number as TRIGGER_ENUM_WINDOW_MS below, and deliberately so:
+ * that one belongs to the older ["idle","trigger"] convention, whose gesture
+ * is an ACCUMULATOR (turn far enough, in one direction, to arm) rather than a
+ * latch. Two different gestures, two different clocks. This one is the one
+ * shared with the grid.
+ */
+const TRIGGER_KNOB_GESTURE_GAP_MS = 270;
+
+/* Per-knob gesture stamp for the above. Keyed by knob AND by the parameter
+ * that knob was pointing at, so re-mapping a knob (a new component, a new
+ * page) cannot leave a stale gesture suppressing the first detent on a
+ * different trigger. */
+let triggerKnobLastMs = [0, 0, 0, 0, 0, 0, 0, 0];
+let triggerKnobLastKey = [null, null, null, null, null, null, null, null];
 
 function isTriggerEnumMeta(meta) {
     return !!(meta &&
@@ -10323,6 +10430,73 @@ function processPendingHierKnob() {
         }
     }
 
+    /*
+     * A TRIGGER fires on a detent, in either direction, ONCE PER GESTURE --
+     * see TRIGGER_KNOB_GESTURE_GAP_MS.
+     *
+     * Before this, a write-only param was an ordinary enum here and the turn
+     * WALKED THROUGH its fire value: magneto's `clear`, euclidrum's
+     * `rnd_preset`, run from a nudge with no confirmation. The fork's older
+     * isTriggerEnumMeta guard did not catch them -- it matches only the
+     * ["idle","trigger"] naming convention, and these declare their options
+     * as words and say what they are with `access`.
+     *
+     * The gesture LATCH is what makes firing-on-turn safe, and it is a
+     * KNOB-only concern: a click is one gesture per press and may repeat as
+     * fast as a finger can manage, while one flick of an encoder is a dozen
+     * detents and a trigger is by definition something that DOES a thing.
+     * Same constant and same either-direction rule as the knob grid
+     * (page_controller.mjs), because the same physical knob on the same
+     * parameter must not behave differently depending on which param view is
+     * on screen.
+     *
+     * BEFORE the value read below, which is the point: a guard that runs
+     * after the read is a guard the stepper has already got past.
+     */
+    if (isTriggerParam(ctx.meta)) {
+        const t = Date.now();
+        const last = triggerKnobLastMs[knobIndex] || 0;
+        const sameKey = triggerKnobLastKey[knobIndex] === ctx.fullKey;
+        /* The stamp is the last DETENT, not the last fire — every detent
+         * extends the gesture, so the clock only runs while the knob is still.
+         * Written before the early return for exactly that reason. */
+        const startsGesture = !sameKey || (t - last) >= TRIGGER_KNOB_GESTURE_GAP_MS;
+        triggerKnobLastMs[knobIndex] = t;
+        triggerKnobLastKey[knobIndex] = ctx.fullKey;
+        if (!startsGesture) return;
+        const fire = triggerFireValue(ctx.meta, getKnobCachedValue(knobIndex, ctx));
+        if (fire !== null) {
+            setSlotParam(ctx.slot, ctx.fullKey, fire);
+            /* Re-seed the cache from the device: a trigger is the one
+             * parameter whose value moves for a reason other than the knob,
+             * so a stale cache makes the next turn disagree about the
+             * reading. */
+            const after = getSlotParam(ctx.slot, ctx.fullKey);
+            knobValueCache[knobIndex] = after;
+            showOverlay(ctx.title, after || "");
+            needsRedraw = true;
+        }
+        return;
+    }
+
+    /*
+     * A readout has nothing to set, so a turn shows the reading and writes
+     * nothing. Before this it was writable, and a picker on it discarded the
+     * choice in silence -- the keydetect case.
+     *
+     * Show the VALUE, not a sentence about the parameter. Upstream shipped
+     * "Read only" here and had it reported straight back: "we show READ ONLY
+     * in the header, that doesnt make sense, it just is a static value". A
+     * readout exists to be READ.
+     */
+    if (isReadoutParam(ctx.meta)) {
+        const cached = getKnobCachedValue(knobIndex, ctx);
+        showOverlay(ctx.title,
+                    cached === null ? "" : formatParamForOverlay(cached, ctx.meta));
+        needsRedraw = true;
+        return;
+    }
+
     /* Get current value from cache (one-time IPC read, then local) */
     const currentVal = getKnobCachedValue(knobIndex, ctx);
     if (currentVal === null) return;
@@ -13338,6 +13512,35 @@ function handleSelect() {
                         needsRedraw = true;
                     } else if (!hierEditorEditMode && meta && meta.type === "filepath") {
                         openHierarchyFilepathBrowser(selectedKey, meta);
+                    /*
+                     * A TRIGGER is pushed, not opened. Clicking it FIRES it;
+                     * it must not enter edit mode, which on a two-option enum
+                     * hands the jog a way to walk onto the fire value -- the
+                     * same destructive write the knob turn above now guards,
+                     * reached from the other gesture.
+                     *
+                     * No gesture latch here, and that is deliberate: a click
+                     * is one gesture per press and may repeat as fast as a
+                     * finger can manage. A shared timer with the knob is how
+                     * "clicking twice quickly only fired once" gets
+                     * introduced.
+                     *
+                     * BEFORE the enum/edit fallthrough below, or it is dead
+                     * code.
+                     */
+                    } else if (!hierEditorEditMode && isTriggerParam(meta)) {
+                        const fullKey = buildHierarchyParamKey(selectedKey);
+                        const fire = triggerFireValue(meta,
+                                        getSlotParam(hierEditorSlot, fullKey));
+                        if (fire !== null) {
+                            setSlotParam(hierEditorSlot, fullKey, fire);
+                            needsRedraw = true;
+                        }
+                    /* A READOUT has nothing to set. Entering edit mode on one
+                     * gave the jog a value to change that the module would
+                     * discard in silence. */
+                    } else if (!hierEditorEditMode && isReadoutParam(meta)) {
+                        /* nothing to open, nothing to edit */
                     } else {
                         if (!hierEditorEditMode) {
                             if (beginHierarchyParamEdit(selectedKey)) {
@@ -17660,10 +17863,28 @@ globalThis.onMidiMessageInternal = function(data) {
     }
 
     /* Handle Note Off for knob release - clear pending knob state
-     * This ensures accumulated deltas are processed before next touch */
-    if ((status & 0xF0) === MidiNoteOn && d2 === 0) {
+     * This ensures accumulated deltas are processed before next touch
+     *
+     * BOTH note-off spellings. This matched only note-on-with-velocity-0, so
+     * a real 0x80 note-off left the knob believing it was still held --
+     * which, now that a release ends a trigger gesture below, would also
+     * leave the latch armed. */
+    if (((status & 0xF0) === MidiNoteOn && d2 === 0) ||
+        (status & 0xF0) === MidiNoteOff) {
         if (d1 >= MoveKnob1Touch && d1 <= MoveKnob8Touch) {
             const knobIndex = d1 - MoveKnob1Touch;
+            /*
+             * LETTING GO ENDS A TRIGGER GESTURE, immediately.
+             *
+             * TRIGGER_KNOB_GESTURE_GAP_MS is the fallback for a cap sensor
+             * that never registered; a release is the real boundary. Without
+             * this you fire, let go, take hold again, and the next detent is
+             * swallowed for up to 270ms -- which reads as a broken control
+             * rather than as a safety. Same rule as the knob grid
+             * (page_controller.mjs onKnobTouch).
+             */
+            triggerKnobLastMs[knobIndex] = 0;
+            triggerKnobLastKey[knobIndex] = null;
             /* Process hierarchy knob delta */
             if (pendingHierKnobIndex === knobIndex) {
                 processPendingHierKnob();
