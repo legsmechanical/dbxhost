@@ -66,6 +66,7 @@
 #include "host/shadow_led_queue.h"
 #include "host/shadow_state.h"
 #include "host/shadow_midi.h"
+#include "host/fx_midi_filter.h"
 #include "host/shadow_shm_util.h"
 
 /* Debug flags - set to 1 to enable various debug logging */
@@ -8440,8 +8441,14 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
 
                 /* Broadcast internal MIDI to ALL active slots for audio FX (e.g. ducker).
                  * FX_BROADCAST only forwards to audio FX, not synth/MIDI FX, so this
-                 * is safe even for the focused slot that received normal dispatch. */
-                if (d1 >= 10 && shadow_plugin_v2 && shadow_plugin_v2->on_midi) {
+                 * is safe even for the focused slot that received normal dispatch.
+                 *
+                 * PADS ONLY. This is Move's own surface (cable 0 is enforced at
+                 * the top of the loop), so a note number here is a physical
+                 * control, not a pitch — and the old `d1 >= 10` guard let step
+                 * buttons (16-31) and track buttons (40-43) through as if they
+                 * were played notes. See fx_midi_filter.h. */
+                if (move_surface_note_is_pad(d1) && shadow_plugin_v2 && shadow_plugin_v2->on_midi) {
                     for (int si = 0; si < SHADOW_CHAIN_INSTANCES; si++) {
                         if (!shadow_chain_slots[si].active || !shadow_chain_slots[si].instance)
                             continue;
@@ -8451,8 +8458,9 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                     }
                 }
 
-                /* Forward note events to master FX (e.g. ducker) */
-                if (d1 >= 10) {
+                /* Forward note events to master FX (e.g. ducker).
+                 * Pads only, for the reason given on the slot broadcast above. */
+                if (move_surface_note_is_pad(d1)) {
                     uint8_t msg[3] = { status, d1, d2 };
                     shadow_master_fx_forward_midi(msg, 3, MOVE_MIDI_SOURCE_INTERNAL);
                 }
