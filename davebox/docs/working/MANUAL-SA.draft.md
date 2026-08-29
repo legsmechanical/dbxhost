@@ -314,9 +314,12 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
 - **Click the jog, or let go of it**, to go to the selected bank. Clicking keeps
   your hand on the wheel, so the bank's page stays up while you look at it.
   **Back** closes the picker without choosing, as does **Shift + jog**.
-- **SOUND + CONFIG** — the track's sound editor (its instrument, effects, sound
-  control and config) — is the last entry in the list. Inside it the jog moves
-  through its own rows, and turning left past the top row brings the picker back.
+- **SOUND + CONFIG** — the way in to the track's sound editor (its instrument,
+  effects, sound control and config) — is the last entry in the list. It is a
+  **door rather than a screen**: landing on it offers *"click to enter"*, and
+  the click opens the editor. Turning the jog carries on through the banks as it
+  does anywhere else. The knobs still control the track's assignments while you
+  are on it, so a knob you turn there does what it always did.
   Conductor tracks don't have it.
 - **Click the jog** (with no picker open) switches a bank between its primary and
   alternate parameters (the labels change). A **down-arrow** in the header marks
@@ -1178,22 +1181,40 @@ stopped sends a MIDI panic on every channel.
 
 
 **SOUND + CONFIG** is where you edit a track's sound, and what it shows follows
-the track's route. It is a **bank** — one jog turn past the last
+the track's route. Its **door** is one jog turn past the last
 [parameter bank](#35-parameter-banks) — so you never have to leave the track's
-banks to reach it, and it is remembered per track like any other bank.
-**Shift + Note/Session** closes it from any depth in one press; the plain
-**Note/Session** button jumps to Session view as usual and leaves the track
-where it was, so coming back brings the screen with it. Playback carries on
-either way, and the pads and step buttons stay with the sequencer, so you can
-keep playing while you dial.
+banks to reach it, and the door is remembered per track like any other bank.
+Click to enter.
+
+Once open the editor **stays up until you leave it**: unlike a bank, it does not
+fall back to the track overview when you take your hand off the jog. **Back**
+steps out one level at a time and finally back to the door.
+
+**Shift + Note/Session** opens it from wherever you are — including from several
+levels deep inside it, which brings you back to the top in one press. **Hold**
+the same gesture instead and you go straight to the track's instrument; leaving
+the instrument returns you to whatever you pressed from. The plain
+**Note/Session** button jumps to Session view as usual and leaves the track where
+it was, so coming back brings the screen with it. Playback carries on either
+way, and the pads and step buttons stay with the sequencer, so you can keep
+playing while you dial.
+
+Menus inside the editor open as **overlays** — a box over the screen you came
+from, with a breadcrumb along the top naming where you are (`T3 > Snd > Knobs`).
+Opening one from another stacks them a step to the right, so the depth is
+visible. Any setting with more than two choices opens a **list to pick from**
+rather than being scrolled one value at a time; two-value settings still toggle,
+and levels and times are still adjusted by turning. Backing out of a picker
+leaves the setting as it was.
 
 **Schwung tracks** open dAVEBOx's own sound editor. It starts on the track's
 chain — MIDI FX, the synth, then **FX 1-4** — and the jog picks a block. Inside a
 block the knobs edit its parameters and the jog turns the pages; hold **Shift**
 while turning to jump between sections. Picking an **empty** block opens the
 module list, which is how you add an effect. **Back** steps out one level at a
-time, and closes the bank from its top level; **Shift + Note/Session** leaves
-outright from any depth.
+time, and closes the bank from its top level. **Shift + Note/Session** brings you
+back to the top of the sound editor from any depth in one press — and holding it
+goes to the instrument instead.
 
 ### The eight knobs outside a block
 
@@ -1510,7 +1531,7 @@ views (`#seq` / `#mix` / `#sound` in the address bar can be bookmarked).
 | Delete + Play | Deactivate clips (running) · panic (stopped) |
 | Undo / Shift + Undo | Undo / redo |
 | Note/Session (tap / hold) | Switch / peek view |
-| Shift + Note/Session | Edit this track's sound |
+| Shift + Note/Session (tap / hold) | This track's sound editor / straight to its instrument |
 | Shift + Step 2 | Settings menu |
 
 ### Drum track (additions)

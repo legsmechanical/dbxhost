@@ -8,6 +8,28 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features
+- **Menus open as overlays over the screen you came from.** A submenu — Sound
+  Control, Config, Knobs, the LFO, Session FX, Slot Presets, the module browser
+  — now floats in a box with the screen behind it dimmed, and a breadcrumb along
+  the top names where you are: `T3 > Snd > Knobs > K1`. Opening one from another
+  stacks them, each a step to the right, so you can see how deep you have gone
+  and back out one level at a time.
+- **Long lists open a picker instead of scrolling one value at a time.** Any
+  setting with more than two choices — Instrument, Mode, the LFO's Shape, and
+  Key, Scale and MIDI Channel in the global menu — now opens the list and lets
+  you choose from it. Two-value settings still toggle in place, and continuous
+  values (levels, times, cutoffs) are still adjusted by turning. Backing out of
+  a picker leaves the setting as it was.
+- **SOUND + CONFIG is a door on the bank walk, not the screen itself.** Jogging
+  onto it offers "click to enter"; the click opens the menu, and turning the jog
+  carries on through the banks as it does anywhere else. The knobs still control
+  the track's assignments while you are on it. Once open, the menu stays up
+  until you leave it — it no longer disappears when you stop touching the jog.
+- **Shift + Note/Session goes somewhere, rather than toggling.** A tap opens the
+  track's Sound + Config menu from wherever you are — including out of a menu
+  several levels deep, in one press. Holding it goes straight to the track's
+  instrument instead, and leaving the instrument returns you to whatever you
+  pressed from.
 - **Knob assignments read shorter, so they stop being cut off.** A knob's target
   now shows as `Syn>cutoff` / `FX1>mix` rather than `synth: cutoff`, and the rows
   are `K1`–`K8` rather than `Knob 1`–`Knob 8`. The old pair was long enough that
