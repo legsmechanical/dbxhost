@@ -13,7 +13,12 @@
  * by asciimario (fontstruct.com/fontstructions/show/821131, CC BY-NC 3.0).
  *
  * Cell descriptor (everything precomputed by the caller — no param reads):
- *   { kind:  'blank' | 'arc' | 'arcbip' | 'hbar' | 'vbar' | 'enumsq' | 'valsq' | 'frac',
+ *   { kind:  'blank' | 'arc' | 'arcbip' | 'hbar' | 'pill' | 'vbar' | 'enumsq'
+ *            | 'valsq' | 'frac',
+ *            ('pill' = the switch pill, for a toggle whose two states are
+ *             literally off/on; 'hbar' remains the two-state bar for a pair of
+ *             WORDS — see isBooleanPair in ui_cells.mjs. 'vbar' draws the fader
+ *             column since 2026-08-29),
  *            ('valsq' = numeric / note read-out: big font, frameless — see
  *             drawBigNum; 'enumsq' = the framed micro-font square for NAMED
  *             enums, whose words don't fit the big font),
@@ -1151,16 +1156,17 @@ export function drawKitFilterCurve(rowY, viz) {
         const g = filtGainAt((px - x0) / spanW, mode, cutoff, reso, !!viz.steep);
         return Math.max(topY, Math.min(botY, Math.round(botY - g * h)));
     };
-    /* ⭑ GHOST FILL is OPT-IN (`viz.fill`), and the default is off because this
-     * curve already ships on davebox's own bank pages: turning it on for every
-     * existing caller would restyle a live screen nobody asked to change. A
-     * bank that wants the passband as MASS says so. See fillCurveMass — the
-     * treatment is shared with the EQ curve and the sample body, deliberately.
+    /* ⭑ GHOST FILL IS THE DEFAULT (Josh, 2026-08-29). It shipped opt-in for one
+     * commit, purely so this curve — the only one of the three already live on
+     * davebox bank pages — could be judged from a render before it changed. It
+     * was, and the passband is now MASS. `fill: false` still opts out, so a
+     * caller that wants the bare stroke has a way to say so; nothing passes it.
+     * See fillCurveMass — one treatment, three graphs, deliberately.
      *
      * Unipolar: the zero line is the floor, so this is literally the area under
      * the curve. A column already on the floor fills nothing, which is what
      * keeps a stopband empty rather than giving it a one-row lid. */
-    if (viz.fill) fillCurveMass(x0, x0 + spanW, yAt, botY, topY, botY);
+    if (viz.fill !== false) fillCurveMass(x0, x0 + spanW, yAt, botY, topY, botY);
     /* Skip runs lying flat on the bottom axis so the curve ends where it
      * reaches the floor rather than continuing along it. */
     let prevX = x0, prevY = yAt(x0);
@@ -1582,12 +1588,23 @@ function drawCellWidget(col, rowY, cell, touched) {
                                          cell.sq != null ? cell.sq : cell.text);
         case 'action': return drawActionSquare(kx, rowY, cell.text, cell.oneWay, touched);
         case 'dirsq':  return drawDirSquare(kx, rowY, cell.sel | 0);
-        case 'vbar':   return drawVBar(kx, rowY, cell.norm || 0);
+        /* ⭑ A `vbar` CELL DRAWS THE FADER COLUMN (Josh, 2026-08-29). Adopted at
+         * the DISPATCH rather than by renaming the kind at each call site: the
+         * descriptor still says "this is a level, bottom-up", which is the
+         * caller's business, and what that looks like is this file's. That is
+         * the property Rule 0 exists for — restyle once, change everywhere.
+         * `drawVBar` stays exported and is still the honest plain bar for
+         * anything that wants one; nothing on a cell grid does. */
+        case 'vbar':   return drawFaderColumn(kx, rowY, cell.norm || 0, cell.modNorm);
         case 'wavesq': return drawWaveBox(kx, rowY, cell.shape);
         case 'xbox':   return drawXBox(kx, rowY);
-        /* MOCKUP kinds — see the primitives above. ui_cells.mjs emits neither;
-         * only the offline renderer reaches them. */
+        /* ⭑ ADOPTED 2026-08-29 for PURE ON/OFF toggles only — see isBooleanPair
+         * in ui_cells.mjs for the split, which is the rule and not a taste.
+         * A two-state cell whose states are WORDS keeps the bar: the pill says
+         * "on or off" with its area and cannot say "Step or Audio". */
         case 'pill':   return drawSwitchPill(kx, rowY, !!cell.norm);
+        /* Kept as an alias of `vbar` so the offline renderer can draw the two
+         * side by side. Nothing else emits it. */
         case 'faderail': return drawFaderColumn(kx, rowY, cell.norm || 0,
                                                 cell.modNorm);
         default:       return; /* blank */
@@ -2297,19 +2314,19 @@ export function drawKitList(rows, sel, opts) {
         const trackH = visible * rowH;
         const thumbH = Math.max(3, Math.round(trackH * visible / n));
         const thumbY = topY - 1 + Math.round((trackH - thumbH) * start / Math.max(1, n - visible));
-        /* ⭑ THE RULE (upstream's, mocked here): a DOTTED rail with a SOLID
-         * thumb, and no arrows. The rail is the extent of the list and the
-         * thumb is where you are in it; drawing both solid makes the thumb a
-         * thicker piece of the same object, so the eye has to measure widths to
-         * read a position. Arrows say "there is more" twice — the rail already
-         * does, permanently, and an arrow that appears and disappears reflows
-         * the row it sits on.
-         * ⚠⚠ OPT-IN (`dottedRail`) BECAUSE IT CHANGES EVERY LIST AT ONCE. Sound
-         * mode's lists, the knob/LFO editors, global settings, the project
-         * screens, the snapshot picker and every picker overlay come through
-         * here. Josh judges the mockup render first; flipping the default is a
-         * one-word change once he has. */
-        if (o.dottedRail) {
+        /* ⭑ THE RULE, and the DEFAULT since 2026-08-29: a DOTTED rail with a
+         * SOLID thumb, and no arrows. The rail is the extent of the list and
+         * the thumb is where you are in it; drawing both solid makes the thumb
+         * a thicker piece of the same object, so the eye has to measure widths
+         * to read a position. Arrows say "there is more" twice — the rail
+         * already does, permanently, and an arrow that appears and disappears
+         * reflows the row it sits on.
+         * ⚠ This is EVERY kit list at once: sound mode's lists, the knob/LFO
+         * editors, global settings, the project screens and the snapshot
+         * picker. `dottedRail: false` restores the solid rail; nothing passes
+         * it. ⚠ A list that FITS draws no rail at all — the flag is inert
+         * there, and a rail with nothing to say would be worse than none. */
+        if (o.dottedRail !== false) {
             for (let ry = topY - 1; ry < topY - 1 + trackH; ry += 2)
                 set_pixel(boxX + boxW - 2, ry, 1);
         } else {

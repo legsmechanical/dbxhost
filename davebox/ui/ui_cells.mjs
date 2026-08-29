@@ -6,7 +6,8 @@
  * and makes it survive the standalone port untouched.
  *
  * Render-cell shape expected by drawKitBankPage (see ui/ui_movy.mjs header):
- *   { kind: 'blank'|'arc'|'arcbip'|'hbar'|'vbar'|'enumsq'|'valsq'|'frac'|'dirsq',
+ *   { kind: 'blank'|'arc'|'arcbip'|'hbar'|'pill'|'vbar'|'enumsq'|'valsq'
+ *           |'frac'|'dirsq',
  *     label, name, text, norm, signed, sq, options, sel,
  *     modNorm, modulated }   <- the modulation dot + the label's `~`, both
  *                               off unless a caller passes a live value 
@@ -60,6 +61,49 @@ export function commitString(cell, value) {
     if (cell.type === 'enum' || cell.type === 'int') return String(Math.round(value));
     /* Trim float noise; the engine re-clamps anyway. */
     return String(Math.round(value * 10000) / 10000);
+}
+
+/* ---- the pill / bar split ----------------------------------------------
+ *
+ * ⭑⭑ WHICH TWO-STATE CELLS BECOME A SWITCH PILL, and it is a RULE rather than
+ * a per-cell taste — mechanical, so a new param decides itself and nobody has
+ * to remember.
+ *
+ * A pill says its state with AREA: the track filled is one state, the track
+ * empty is the other, and the slug is a knockout in the first and ink in the
+ * second. That is loud, readable across the room, and completely dumb — it
+ * carries "which of two" and nothing else. So it is right for a param whose two
+ * states ARE off and on, and wrong for one whose two states are WORDS, where
+ * the word IS the information: a pill on Reverse Style says "the second one"
+ * where the cell has to say "Audio".
+ *
+ * ⭑ SO A WORD PAIR GETS THE ENUM BOX, NOT THE BAR IT USED TO GET. This is the
+ * part of the split that fixes something rather than merely restyling it. The
+ * old two-state bar showed a FILL LEVEL for a pair of names — Step/Audio,
+ * Mono/Poly, LP/HP all drew as "bar full" or "bar empty" and the word appeared
+ * only while the knob was held. That is upstream's "widget that tells you
+ * nothing" exactly: it does not say what the other state is, and it does not
+ * say which one you are on. The box prints the word.
+ *
+ * Both members of the pair must be in the vocabulary. Half a pair is not a
+ * boolean — "Off"/"Lock" is a toggle whose ON state is NAMED, and naming it was
+ * a choice, so it takes the box and keeps its name.
+ *
+ * ⚠ Ported verbatim from upstream's BOOL_OPTION (src/shared/param_pages/viz.mjs)
+ * so the two surfaces cannot drift to different ideas of what a boolean is.
+ * Upstream needs the same rule for its knob FEEL as well as its picture, and
+ * says so on the export: "the feel and the picture must agree on what a boolean
+ * is". Here the feel is already settled in ui_discover (a <=2-option enum is
+ * SENS_DELIBERATE whatever it is called), so this is the picture only.
+ * ⚠ A pair of DIGITS counts: a module that spells its toggle ["0","1"] means a
+ * boolean, and drawing that as a bar labelled "1" is the widget that tells you
+ * nothing — it does not say what the other state is, or that there are only two.
+ */
+export const BOOL_OPTION = /^(off|on|no|yes|0|1|false|true|disabled|enabled)$/i;
+
+export function isBooleanPair(a, b) {
+    if (a == null || b == null) return false;
+    return BOOL_OPTION.test(String(a).trim()) && BOOL_OPTION.test(String(b).trim());
 }
 
 /* ---- display formatting ---- */
@@ -132,7 +176,24 @@ export function toRenderCell(cell, value, rawValue, modValue) {
 
     switch (cell.kind) {
         case 'tog':
-            return { kind: 'hbar', label, name, text, norm: value ? 1 : 0,
+            /* ⚠ `tog` is EVERY two-option enum, not only a declared boolean —
+             * ui_discover folds `type: 'enum'` with n <= 2 into it, so a
+             * Mono/Poly or a Step/Audio arrives here looking exactly like an
+             * Off/On. isBooleanPair is what tells them apart; without it the
+             * pill would swallow every two-choice param in every module and
+             * silently drop the word that names the choice. The options list is
+             * the authority, and it is ALWAYS present for a tog (the toggle
+             * branch of ui_discover synthesises ['Off','On'] when the module
+             * declares none). */
+            if (cell.options && cell.options.length === 2 &&
+                    !isBooleanPair(cell.options[0], cell.options[1])) {
+                /* A pair of WORDS: the framed micro-font square, same as any
+                 * other named enum. It is the same widget a 3-option enum gets,
+                 * which is right — "two named choices" and "five named choices"
+                 * differ in count, not in kind. */
+                return { kind: 'enumsq', label, name, text, options: opts, sel };
+            }
+            return { kind: 'pill', label, name, text, norm: value ? 1 : 0,
                      options: opts, sel };
 
         case 'enumc':

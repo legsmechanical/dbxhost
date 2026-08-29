@@ -33,6 +33,7 @@ import {
     drawClearAutoMenu, drawBakeSceneConfirm, drawXposeConfirm, drawBpmLine,
     drawProjectPadPicker
 } from './ui_dialogs.mjs';
+import { isBooleanPair } from './ui_cells.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
 import { bankCyclePos, bankCycleForMode, bankDisplayName } from './ui_pure.mjs';
 import { syncDrumRepeatState } from './ui_drummodel.mjs';
@@ -149,11 +150,37 @@ function drawConductToggleGrid(header, onFn) {
             cells.push({ kind: 'blank', label: 'Tr' + (i + 1) });
         } else {
             const on = !!onFn(i);
-            cells.push({ kind: 'hbar', norm: on ? 1 : 0, label: 'Tr' + (i + 1),
-                         name: 'Track ' + (i + 1), text: on ? 'ON' : 'off' });
+            cells.push(toggleCell('Tr' + (i + 1), 'Track ' + (i + 1), on, 'ON', 'off'));
         }
     }
     drawKitPage(header, cells, false);
+}
+
+/* A two-state cell, drawn by the SPLIT rather than by whoever wrote the literal.
+ *
+ * ⭑ Every hand-written toggle on this screen family goes through here, so the
+ * pill/bar decision is made once from the two strings the cell will actually
+ * show. Written as a helper the moment the pill was adopted, because the
+ * alternative was six literals each carrying a `kind` that an author had to get
+ * right — and the one that gets it wrong is invisible: a pill on a word pair
+ * still draws, still toggles, and just stops saying which word.
+ *
+ * See isBooleanPair in ui_cells.mjs for the rule and why both halves must
+ * qualify. Track View's toggles are the reason the vocabulary is case-insensitive
+ * — the Conductor grid spells its states 'ON' and 'off'.
+ */
+function toggleCell(label, name, on, onText, offText) {
+    if (!isBooleanPair(onText, offText)) {
+        /* A pair of WORDS takes the enum box, which PRINTS the word. The bar it
+         * used to take showed a fill level and nothing else, so Reverse Style
+         * read as "full" or "empty" and you had to hold the knob to find out
+         * whether that meant Step or Audio. `options`/`sel` come with it so the
+         * turn-to-reveal picker still works. */
+        return { kind: 'enumsq', label, name, text: on ? onText : offText,
+                 options: [offText, onText], sel: on ? 1 : 0 };
+    }
+    return { kind: 'pill', label, name, text: on ? onText : offText,
+             norm: on ? 1 : 0 };
 }
 
 /* Full-height dithered (checkerboard) bar — the "Thru" state in the step
@@ -540,7 +567,14 @@ function kitCellForKnob(knob, val) {
     const v = val | 0;
     const text = knob.fmt(v);
     const base = { label: knob.abbrev, name: knob.full, text };
-    if (knob.fmt === fmtBool) { base.kind = 'hbar'; base.norm = v ? 1 : 0; return base; }
+    /* fmtBool is literally ON/OFF, so it is the pill by the rule — but it is
+     * asked rather than assumed, so that renaming those two strings moves the
+     * widget with them instead of leaving a pill on a pair of words. */
+    if (knob.fmt === fmtBool) {
+        base.kind = isBooleanPair(fmtBool(1), fmtBool(0)) ? 'pill' : 'enumsq';
+        base.norm = v ? 1 : 0;
+        return base;
+    }
     if (knob.fmt === fmtLgto) { base.kind = 'action'; base.oneWay = true; return base; }
     /* relative one-shot actions (Stch, Shft): "< >" square whose box shows the
      * live value only while its knob is touched. (Octave Shift is NOT here — it
@@ -1833,12 +1867,11 @@ function drawUIBody() {
                 { kind: 'valsq', label: 'Eucld', name: 'Euclid Fill', text: String(eucN) },
                 { kind: 'blank', label: '' },
                 S.altMode
-                    ? { kind: 'hbar', label: 'Revrs', name: 'Reverse Style',
-                        text: fmtRevStyle(_dlRev), norm: _dlRev ? 1 : 0 }
+                    ? toggleCell('Revrs', 'Reverse Style', _dlRev,
+                                 fmtRevStyle(1), fmtRevStyle(0))
                     : { kind: 'dirsq', label: 'Dir', name: 'Playback Dir',
                         text: fmtPlayDir(_dlDir), options: KIT_DIR_NAMES, sel: _dlDir },
-                { kind: 'hbar', label: 'SeqFl', name: 'Seq Follow',
-                  text: fmtBool(sqfl), norm: sqfl ? 1 : 0 },
+                toggleCell('SeqFl', 'Seq Follow', sqfl, fmtBool(1), fmtBool(0)),
             ];
             /* Named by bankDisplayName, not spelled here — this literal and
              * the one below are how the picker and the header drifted apart. */
@@ -1877,12 +1910,12 @@ function drawUIBody() {
                 dv < 0 ? { kind: 'valsq', label: S.altMode ? 'Revrs' : 'Dir',
                            name: S.altMode ? 'Reverse Style' : 'Playback Dir', text: '--' }
                        : (S.altMode
-                            ? { kind: 'hbar', label: 'Revrs', name: 'Reverse Style',
-                                text: fmtRevStyle(dv), norm: dv ? 1 : 0 }
+                            ? toggleCell('Revrs', 'Reverse Style', dv,
+                                         fmtRevStyle(1), fmtRevStyle(0))
                             : { kind: 'dirsq', label: 'Dir', name: 'Playback Dir',
                                 text: fmtPlayDir(dv), options: KIT_DIR_NAMES, sel: dv }),
-                { kind: 'hbar', label: 'RSync', name: 'Repeat Sync',
-                  text: fmtBool(S.bankParams[t][7][7]), norm: S.bankParams[t][7][7] ? 1 : 0 },
+                toggleCell('RSync', 'Repeat Sync', S.bankParams[t][7][7],
+                           fmtBool(1), fmtBool(0)),
             ];
             /* blinking "ALL" prefix: the header font is fixed-advance, so a
              * space prefix keeps "LANES" steady */
@@ -2131,8 +2164,7 @@ function drawUIBody() {
               options: [0,1,2,3,4,5,6,7,8,9,10].map(fmtGateMod).map(_offDash), sel: vals[4] | 0 },
             { kind: 'arcbip', label: 'ClkFb', name: 'Clock Feedback', text: fmtSign(vals[5]),
               signed: Math.max(-1, Math.min(1, (vals[5] | 0) / 127)) },
-            { kind: 'hbar', label: 'Retrg', name: 'Retrig', text: fmtBool(vals[6]),
-              norm: vals[6] ? 1 : 0 },
+            toggleCell('Retrg', 'Retrig', vals[6], fmtBool(1), fmtBool(0)),
             { kind: 'blank', label: '' },
         ];
         drawKitPage(BANKS[3].name, cells, false);
@@ -2151,8 +2183,11 @@ function drawUIBody() {
                     S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT) {
                 const _cdc = S.trackActiveClip[S.activeTrack] | 0;
                 const _lk = S.condLock[_cdc] ? 1 : 0;
-                cells.push({ kind: 'hbar', label: 'CdLk', name: 'Conduct Lock',
-                             text: _lk ? 'Lock' : 'Off', norm: _lk });
+                /* ⚠ 'Lock'/'Off' is HALF a boolean pair, so this stays the bar
+                  * by the rule — the ON state is NAMED, and a pill would throw
+                  * the name away. Spell it 'On' and it becomes a pill on its
+                  * own; that is the decision, not an oversight. */
+                cells.push(toggleCell('CdLk', 'Conduct Lock', _lk, 'Lock', 'Off'));
                 continue;
             }
             /* Shift+K1 on DELAY bank (melodic): flips to delay_clock_fb.
@@ -2175,8 +2210,8 @@ function drawUIBody() {
             }
             if (_clipDirAlt) {
                 const _rv = S.clipPlaybackAudioReverse[S.activeTrack][effectiveClip(S.activeTrack)] | 0;
-                cells.push({ kind: 'hbar', label: 'Revrs', name: 'Reverse Style',
-                             text: fmtRevStyle(_rv), norm: _rv ? 1 : 0 });
+                cells.push(toggleCell('Revrs', 'Reverse Style', _rv,
+                                      fmtRevStyle(1), fmtRevStyle(0)));
                 continue;
             }
             const cell = kitCellForKnob(knobs[k], vals[k]);
