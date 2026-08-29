@@ -625,39 +625,159 @@ export function drawKitLatchBox(y, dashed) {
 
 /* ---- widgets (movy language, kit v27 metrics: 16px tall in 32px cells) ---- */
 
-function drawCircleBorder(cx, cy, r) {
-    let x = r, y = 0, err = 0;
-    while (x >= y) {
-        if (y === 0) {
-            /* cardinal extremes tucked to r-1 so the circle sits flush */
-            set_pixel(cx + x - 1, cy, 1); set_pixel(cx - x + 1, cy, 1);
-            set_pixel(cx, cy + x - 1, 1); set_pixel(cx, cy - x + 1, 1);
-        } else {
-            set_pixel(cx + x, cy + y, 1); set_pixel(cx + y, cy + x, 1);
-            set_pixel(cx - y, cy + x, 1); set_pixel(cx - x, cy + y, 1);
-            set_pixel(cx - x, cy - y, 1); set_pixel(cx - y, cy - x, 1);
-            set_pixel(cx + y, cy - x, 1); set_pixel(cx + x, cy - y, 1);
-        }
-        y++;
-        if (err <= 0) err += 2 * y + 1;
-        if (err > 0) { x--; err -= 2 * x + 1; }
+/* ---- the arc knob (param-pages geometry) ---------------------------------
+ *
+ * Ported from schwung's src/shared/param_pages/render_page_movy.mjs
+ * drawArcKnob, itself a port of schwung-movy renderer/knob.ts (MIT, (c) 2026
+ * megadake). Adapted from the injected-ctx contract onto davebox's draw globals
+ * and onto its own cell metrics; the angles, the proportions and the reasoning
+ * are upstream's.
+ *
+ * ⭑⭑ THE TRACK IS AN OPEN ARC AND THE POINTER FLOATS CLEAR OF BOTH ENDS.
+ * Both carry information a plain circle-plus-spoke does not:
+ *
+ *   - THE GAP MARKS THE ENDS OF TRAVEL. A full 360 ring under a pointer that
+ *     only sweeps 270 leaves 90 degrees of track the value can never reach, and
+ *     says the control WRAPS when it does not. (davebox's discrete kinds clamp
+ *     and never wrap — see UI_LANGUAGE §8 — so the old closed ring was actively
+ *     contradicting the input grammar.) The track reuses the pointer's own
+ *     numbers, so the two agree by construction.
+ *   - A POINTER WELDED FROM THE CENTRE TO THE RIM READS AS A CLOCK HAND, or as
+ *     a pie slice. A short stroke floating between the hub and four-fifths of
+ *     the radius reads as an indicator aimed at a scale.
+ *
+ * ⭑ THE FOUR ANGLES ARE NOT THE SAME PAIR TWICE:
+ *     track    230 / 260 sweep — open at the bottom.
+ *     pointer  225 / 270 sweep — travel bottoms out on the 225 diagonal, so a
+ *              pointer at either extreme sits on a clean 45-degree run rather
+ *              than on a rounding-dependent angle.
+ *   The 5-degree inset is deliberate, not a rounding artefact: at either
+ *   extreme the pointer aims just PAST the end of the track, into the gap, so
+ *   "fully closed" and "fully open" are visibly ENDS rather than merely the last
+ *   position before one.
+ *
+ * ⚠ THE POINTER TIP IS 0.68r, NOT MOVY'S 0.85r, and this is the one number
+ * where the brief for this port and its own named source disagree — the source
+ * wins, because 0.85 was tried and rejected upstream for two reasons that both
+ * still apply here:
+ *   · at 0.85 the tip is 6.8px from the centre against a track at 8 — one clear
+ *     pixel at best, and none at the shoulders where the rasteriser thickens the
+ *     ring. The marker merges with the rim and reads as a lump growing off it.
+ *   · MV_MOD_DOT_INSET puts the modulation dot's plus across r-3..r-1, i.e.
+ *     5..7. A 0.85r pointer runs STRAIGHT THROUGH that band; a 0.68r one stops
+ *     at its inner edge. So 0.85 would break the very dot this port is required
+ *     to keep working.
+ *   The cost is real and is upstream's own note: a shorter pointer is a smaller
+ *   marker, so the angle is carried by less ink across a page of eight. The
+ *   number is a named constant and the offline renderer draws BOTH, so it is
+ *   one edit to overrule.
+ *
+ * ⚠ NO `draw_arc`, THOUGH THIS FORK'S HOST BINDS ONE (js_display.c). One
+ * rasteriser, in JS, deliberately: this file must load standalone in node for
+ * the previewer and the two offline renderers, none of which have the C. A
+ * native path plus a JS stub is TWO rasterisers that have to agree pixel for
+ * pixel, and upstream's own comment records that exactly this gap — the
+ * headless harness only ever exercising the fallback — is how a visible circle
+ * defect survived review. A preview that disagrees with the OLED is worse than
+ * a slower one. Cost, at the measured 490ns per binding crossing: ~0.27ms for
+ * eight knobs against a whole-page budget of ~1.6ms, and no worse than the
+ * midpoint walk it replaces.
+ */
+export const MV_KNOB_R = 8;
+const ARC_START_DEG = 230, ARC_SWEEP_DEG = 260;
+const PTR_START_DEG = 225, PTR_SWEEP_DEG = 270;
+const PTR_INNER = 0.0, PTR_OUTER = 0.68;
+
+/* Where a normalised value points, in radians. ⭑ ONE function, because the
+ * POINTER and the MODULATION DOT must agree about it by construction: two
+ * copies is a knob whose dot sits somewhere its own pointer can never reach,
+ * and nothing on screen would say which of them was lying. */
+function knobAngleRad(norm) {
+    const n = norm < 0 ? 0 : (norm > 1 ? 1 : (norm || 0));
+    return (PTR_START_DEG + n * PTR_SWEEP_DEG) * Math.PI / 180;
+}
+
+/* ⚠ A DISTANCE-ROUNDED RING, NOT A MIDPOINT WALK, and not a difference of two
+ * filled discs. All three were tried upstream and the other two are visibly
+ * wrong at this size:
+ *   · the midpoint walk strands a lone pixel at each of the four compass
+ *     points, one row proud of the run behind it — a spike on the outside of
+ *     the circle. (The code this replaces papered over that by tucking the
+ *     cardinal extremes to r-1, which is a dent instead of a spike.)
+ *   · disc-minus-disc loses the pixel just inside each cardinal extreme and
+ *     strands the extreme one over the gap: four detached dots. No integer
+ *     radius escapes it.
+ * One pixel per ROW and one per COLUMN, unioned. A plain distance-rounded
+ * annulus is 1.41px wide at 45 degrees, which stacks into a blob at each
+ * shoulder; taking the two scans separately keeps it 1px everywhere. */
+function drawArcRing(cx, cy, r, startDeg, sweepDeg) {
+    const start = ((startDeg % 360) + 360) % 360;
+    const inSweep = (dx, dy) => {
+        if (sweepDeg >= 360) return true;
+        let a = Math.atan2(dx, -dy) * 180 / Math.PI;
+        if (a < 0) a += 360;
+        let d = a - start;
+        if (d < 0) d += 360;
+        return d <= sweepDeg;
+    };
+    const plot = (dx, dy) => { if (inSweep(dx, dy)) set_pixel(cx + dx, cy + dy, 1); };
+    for (let dy = -r; dy <= r; dy++) {
+        const dx = Math.round(Math.sqrt(r * r - dy * dy));
+        plot(dx, dy); if (dx !== 0) plot(-dx, dy);
+    }
+    for (let dx = -r; dx <= r; dx++) {
+        const dy = Math.round(Math.sqrt(r * r - dx * dx));
+        plot(dx, dy); if (dy !== 0) plot(dx, -dy);
     }
 }
 
-/* Arc knob at an explicit center + radius (the zoom overlay reuses this to draw
- * the exact same shape, just larger). */
+/* Arc knob at an explicit centre + radius (the zoom overlay reuses this to draw
+ * the exact same shape, just larger — so the zoom is a magnification and not a
+ * second widget).
+ *
+ * ⭑ THE BIPOLAR CENTRE TICK IS DAVEBOX'S OWN, ADAPTED — said plainly because
+ * the rest of this function is upstream's. render_page_movy has NO bipolar arc
+ * treatment at all: its arc takes a single 0..1 and a bipolar param is
+ * normalised into it like any other, so there was nothing to port. davebox
+ * draws a centre reference and should keep doing so — the meaning of a bipolar
+ * value is its DISTANCE FROM CENTRE, so centre has to look like centre.
+ *
+ * It lands better on the new geometry than on the old one: the pointer's travel
+ * is now symmetric about 12 o'clock (225 + 0.5*270 = 360), so the tick marks
+ * the true midpoint of travel rather than approximately it, which the old
+ * 210/300 sweep did not.
+ *
+ * ⚠ ACCEPTED: at exactly centre a modulation dot lands on the tick — the dot's
+ * band is r-3..r-1 and the tick occupies r-1..r-2 at that one angle. Left as
+ * is: the two coinciding IS the reading "the source is at the centre right
+ * now", and moving the tick outside the ring is impossible in a 16-row box
+ * whose ring already reaches the top edge. */
 export function drawArcKnobAt(cx, cy, r, norm, bipolar) {
-    drawCircleBorder(cx, cy, r);
-    if (bipolar) fill_rect(cx, cy - r + 1, 1, Math.max(2, Math.round(r / 3.5)), 1);
-    const rad = (210 + norm * 300) * Math.PI / 180;
-    const ex = Math.round(cx + (r - 1) * Math.sin(rad));
-    const ey = Math.round(cy - (r - 1) * Math.cos(rad));
-    plotLine(cx, cy, ex, ey, 1);
+    drawArcRing(cx, cy, r, ARC_START_DEG, ARC_SWEEP_DEG);
+    /* ⚠ THE TICK IS r/2 LONG, NOT r/3.5. The old ring's 2px stub was measured
+     * against a MIDPOINT-walked circle; on the distance-rounded one the column
+     * at 12 o'clock carries a single ring pixel while its neighbours carry one
+     * a row lower, so a 2px stub under it reads as the ring being locally
+     * thick rather than as a mark. Rendered at r=8 it was invisible. Half the
+     * radius protrudes far enough inward to read as a tick at both this size
+     * and the zoom overlay's r=12. */
+    if (bipolar) fill_rect(cx, cy - r + 1, 1, Math.max(2, Math.round(r / 2)), 1);
+    const rad = knobAngleRad(norm);
+    const sin = Math.sin(rad), cos = Math.cos(rad);
+    plotLine(Math.round(cx + r * PTR_INNER * sin), Math.round(cy - r * PTR_INNER * cos),
+             Math.round(cx + r * PTR_OUTER * sin), Math.round(cy - r * PTR_OUTER * cos), 1);
 }
 
-/* Arc knob: circle + pointer sweeping 300 degrees; bipolar adds a center tick. */
+/* Arc knob in a cell's 20x16 widget box.
+ *
+ * ⭑ r = 8, UP FROM 7, which is upstream's own proportion (its ring is the full
+ * width of a 16px box) applied to davebox's wider 20px one. The open bottom is
+ * what makes it fit: a CLOSED ring at r=8 needs 17 rows and the box is 16, but
+ * the arc's lowest drawn pixel sits at about 0.64r below centre, so the shape
+ * is 14 rows tall and clears the label strip. Opening the arc where the travel
+ * already ends spends that constraint on something that means one thing. */
 export function drawArcKnob(kx, ky, norm, bipolar) {
-    drawArcKnobAt(kx + 10, ky + 7, 7, norm, bipolar);
+    drawArcKnobAt(kx + Math.round(MV_KW / 2), ky + MV_KNOB_R, MV_KNOB_R, norm, bipolar);
 }
 
 /* ---- shared fill / curve treatment (upstream param-pages port) ------------
@@ -746,9 +866,13 @@ export function fillCurveMass(x0, xEnd, yAt, baseY, topY, botY, mirrorAt) {
 const MV_MOD_DOT_INSET = 2;
 
 export function drawModDotAt(cx, cy, r, norm) {
-    const n = norm < 0 ? 0 : (norm > 1 ? 1 : norm);
     const rr = Math.max(1, r - MV_MOD_DOT_INSET);
-    const rad = (210 + n * 300) * Math.PI / 180;
+    /* ⚠ THE SAME knobAngleRad THE POINTER USES. The dot and the pointer are two
+     * readings of one control, so a second copy of the sweep here would let the
+     * dot sit at an angle the pointer can never reach — and with the track now
+     * OPEN at the bottom, an out-of-sweep dot would float in the gap, outside
+     * the scale it is supposed to be riding. */
+    const rad = knobAngleRad(norm);
     const x = Math.round(cx + rr * Math.sin(rad));
     const y = Math.round(cy - rr * Math.cos(rad));
     set_pixel(x, y, 1);
@@ -760,7 +884,7 @@ export function drawModDotAt(cx, cy, r, norm) {
 
 /* Cell-sized modulation dot — same centre/radius as drawArcKnob. */
 export function drawModDot(kx, ky, norm) {
-    drawModDotAt(kx + 10, ky + 7, 7, norm);
+    drawModDotAt(kx + Math.round(MV_KW / 2), ky + MV_KNOB_R, MV_KNOB_R, norm);
 }
 
 /* Horizontal bar filling left->right (toggles / 2-state enums). */

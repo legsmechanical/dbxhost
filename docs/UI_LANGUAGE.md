@@ -141,7 +141,7 @@ Descriptor kinds, and what each draws (`drawCellWidget` dispatch):
 
 | Kind | Shape | For |
 |---|---|---|
-| `arc` / `arcbip` | Arc knob, r7 — bipolar variant fills from centre | Continuous values |
+| `arc` / `arcbip` | Arc knob, r8 — open track, floating pointer; bipolar adds a centre tick (§3.4) | Continuous values |
 | `pill` | Switch pill — ON fills the track and knocks the slug out | Toggles whose two states are literally off/on (§3.3) |
 | `hbar` | Two-state bar | ⚠ **No cell emits it.** Kept as a primitive; the split sends every two-state cell to `pill` or `enumsq` |
 | `vbar` | Fader — dashed rails, framed dithered column, notched head | Mix / level feel (`fader` cells) |
@@ -217,6 +217,52 @@ drawn on the touched cell, where the strip is answering "what number is this".
 
 **Both are descriptor fields, and davebox sets neither today**, so every shipping cell renders
 identically. A bank that gains a modulation source needs a *value*, not a widget.
+
+### 3.4 The arc knob
+
+`r = 8`, centred in the 20×16 widget box. Ported from param-pages' `drawArcKnob`.
+
+```
+track    230° start / 260° sweep   open at the bottom
+pointer  225° start / 270° sweep   hub out to 0.68r
+mod dot  r - 2                     the plus spans r-3 .. r-1
+```
+
+- ⭑⭑ **The track is an OPEN arc.** A full 360° ring under a pointer that only sweeps 270° leaves
+  90° of track the value can never reach, and says the control **wraps** — which davebox's discrete
+  kinds explicitly do not (§8 *clamp, never wrap*). The old closed ring was contradicting the input
+  grammar. The track reuses the pointer's own numbers, so the two agree by construction.
+- ⭑ **The pointer floats.** Welded centre-to-rim it reads as a clock hand or a pie slice; a short
+  stroke aimed outward reads as an indicator against a scale.
+- ⭑ **The 5° inset between pointer travel and track is deliberate.** At either extreme the pointer
+  aims just *past* the end of the track, into the gap, so "fully closed" and "fully open" are
+  visibly ends rather than the last position before one. The pointer bottoming out on the 225°
+  diagonal also puts both extremes on a clean 45° run rather than a rounding-dependent angle.
+- ⭑ **The gap is what makes r8 fit.** A closed ring at r8 needs 17 rows and the box is 16; the open
+  arc's lowest pixel sits ~0.64r below centre, so the shape is 14 rows tall.
+- ⚠ **The tip is 0.68r, not Movy's 0.85r.** At 0.85 the tip merges with the rim, and it runs
+  straight through the band the modulation dot occupies. Both were upstream's reasons for moving.
+- ⚠ **One angle function** (`knobAngleRad`) serves the pointer *and* the dot. Two copies is a knob
+  whose dot sits where its own pointer cannot reach — and with an open track, an out-of-sweep dot
+  floats in the gap, off the scale it is meant to be riding.
+- ⚠ **A distance-rounded ring, not a midpoint walk and not disc-minus-disc.** The midpoint walk
+  strands a lone pixel at each compass point (a spike); disc-minus-disc strands four detached dots.
+  One pixel per row and one per column, unioned — a plain distance-rounded annulus is 1.41px wide at
+  45° and blobs at the shoulders.
+- ⚠ **No `draw_arc`, though this fork's host binds one.** `ui_movy.mjs` must load standalone in node
+  for the previewer and the two offline renderers. A native path plus a JS stub is two rasterisers
+  that must agree pixel for pixel, and upstream records that exactly this gap is how a visible
+  circle defect survived review. One rasteriser; ~0.27ms for eight knobs at the measured 490ns per
+  crossing, no worse than the walk it replaces.
+- **The bipolar centre tick is davebox's own, adapted** — param-pages has no bipolar arc treatment,
+  its arc takes a single 0..1. A bipolar value means *distance from centre*, so centre must look
+  like centre. It lands better on the new geometry: travel is symmetric about 12 o'clock
+  (225 + 0.5×270 = 360), so the tick marks the true midpoint rather than approximately it.
+  ⚠ Length is **r/2**, not the old r/3.5 — that stub was measured against a midpoint-walked circle;
+  on the distance-rounded ring it reads as local thickening and at r8 it was simply invisible.
+  ⚠ ACCEPTED: at exactly centre the modulation dot lands on the tick. The two coinciding *is* the
+  reading "the source is at centre", and there is no room outside a ring that already reaches the
+  box's top edge.
 
 ### 3.3 ⭑⭑ Two states: PILL or BOX, and it is a rule, not a taste
 

@@ -331,4 +331,104 @@ emit('a4-list-before', 'before — solid rail, so the thumb was a thicker piece 
     kit.drawKitList(LONG_LIST, 4, { dottedRail: false });
 });
 
+/* ====================== ARC GEOMETRY (adopted 2026-08-29) ================
+ *
+ * The knob repaint. Every davebox arc changes, so the pair that matters is a
+ * SWEEP — a single frame cannot show what the ends of travel now look like,
+ * and the ends are the entire argument for an open track.
+ *
+ * ⚠ `legacyArc` below is a HISTORICAL REPLICA of the arc this replaced, kept
+ * in the RENDERER rather than left behind in ui_movy.mjs as dead code. It is a
+ * copy and copies drift — that is acceptable here and only here, because its
+ * one job is to be the BEFORE of a comparison taken now. Do not import it, do
+ * not fix it, and delete it once the renders have been judged.
+ */
+function legacyArc(cx, cy, r, norm, bipolar) {
+    /* midpoint walk with the cardinal extremes tucked to r-1 */
+    let x = r, y = 0, err = 0;
+    while (x >= y) {
+        if (y === 0) {
+            set_pixel(cx + x - 1, cy, 1); set_pixel(cx - x + 1, cy, 1);
+            set_pixel(cx, cy + x - 1, 1); set_pixel(cx, cy - x + 1, 1);
+        } else {
+            set_pixel(cx + x, cy + y, 1); set_pixel(cx + y, cy + x, 1);
+            set_pixel(cx - y, cy + x, 1); set_pixel(cx - x, cy + y, 1);
+            set_pixel(cx - x, cy - y, 1); set_pixel(cx - y, cy - x, 1);
+            set_pixel(cx + y, cy - x, 1); set_pixel(cx + x, cy - y, 1);
+        }
+        y++;
+        if (err <= 0) err += 2 * y + 1;
+        if (err > 0) { x--; err -= 2 * x + 1; }
+    }
+    if (bipolar) fill_rect(cx, cy - r + 1, 1, Math.max(2, Math.round(r / 3.5)), 1);
+    const rad = (210 + norm * 300) * Math.PI / 180;          /* the OLD sweep */
+    kit.plotLine(cx, cy, Math.round(cx + (r - 1) * Math.sin(rad)),
+                 Math.round(cy - (r - 1) * Math.cos(rad)), 1);
+}
+
+const SWEEP = [0, 0.25, 0.5, 0.75, 1];
+const cellKx = (col) => col * kit.MV_CELL_W + Math.floor((kit.MV_CELL_W - kit.MV_KW) / 2);
+const sweepLabels = (y) => SWEEP.forEach((v, i) => {
+    const t = String(v * 100 | 0) + '%';
+    kit.mvPrint(i * kit.MV_CELL_W / 1.25 + Math.round((25 - kit.mvWidth(t)) / 2), y, t, 1);
+});
+
+emit('arc-sweep-after', 'ADOPTED — open track, floating pointer, at 0/25/50/75/100%', () => {
+    kit.drawKitHeader('ARC  NEW', false);
+    for (let i = 0; i < 5; i++)
+        kit.drawArcKnobAt(14 + i * 25, 26, kit.MV_KNOB_R, SWEEP[i], false);
+    sweepLabels(38);
+    /* The same five with a modulation dot one step ahead, so the dot can be
+     * checked against the OPEN track: it must stay on the arc and never float
+     * in the gap. */
+    for (let i = 0; i < 5; i++) {
+        kit.drawArcKnobAt(14 + i * 25, 52, kit.MV_KNOB_R, SWEEP[i], false);
+        kit.drawModDotAt(14 + i * 25, 52, kit.MV_KNOB_R, Math.min(1, SWEEP[i] + 0.18));
+    }
+});
+emit('arc-sweep-before', 'before — closed ring, pointer welded hub-to-rim, 300-degree sweep', () => {
+    kit.drawKitHeader('ARC  OLD', false);
+    for (let i = 0; i < 5; i++) legacyArc(14 + i * 25, 26, 7, SWEEP[i], false);
+    sweepLabels(38);
+    for (let i = 0; i < 5; i++) legacyArc(14 + i * 25, 52, 7, SWEEP[i], false);
+});
+
+emit('arc-bipolar-after', 'ADOPTED — bipolar at -100/-50/0/+50/+100%. Centre tick is now the TRUE midpoint of travel', () => {
+    kit.drawKitHeader('ARCBIP  NEW', false);
+    for (let i = 0; i < 5; i++)
+        kit.drawArcKnobAt(14 + i * 25, 26, kit.MV_KNOB_R, SWEEP[i], true);
+    sweepLabels(38);
+    const t = 'TICK AT 12 = CENTRE';
+    kit.mvPrint(Math.round((128 - kit.mvWidth(t)) / 2), 48, t, 1);
+});
+emit('arc-bipolar-before', 'before — same five values on the old ring; the 300-degree sweep put centre off 12 o’clock', () => {
+    kit.drawKitHeader('ARCBIP  OLD', false);
+    for (let i = 0; i < 5; i++) legacyArc(14 + i * 25, 26, 7, SWEEP[i], true);
+    sweepLabels(38);
+});
+
+/* ⚠ THE ONE PLACE THE BRIEF AND ITS OWN NAMED SOURCE DISAGREE. The brief says
+ * a 0.85r pointer (Movy's original); render_page_movy.mjs ships 0.68r and
+ * documents why it moved. Rendered side by side so the call is Josh's and not
+ * mine — note the tip merging with the rim on the 0.85 row, and that it runs
+ * straight through the band the modulation dot occupies. */
+emit('arc-pointer-length', 'DECISION — 0.68r (shipped upstream, top) vs 0.85r (Movy’s original, bottom), both with a mod dot', () => {
+    kit.drawKitHeader('PTR 68 TOP / 85 BOT', false);
+    const R = kit.MV_KNOB_R;
+    for (let i = 0; i < 5; i++) {
+        const cx = 14 + i * 25;
+        kit.drawArcKnobAt(cx, 24, R, SWEEP[i], false);
+        kit.drawModDotAt(cx, 24, R, Math.min(1, SWEEP[i] + 0.18));
+        /* 0.85r drawn by hand on the SAME ring — the pointer angle is the
+         * documented 225 + n*270, replicated here only so the two rows differ
+         * in nothing but the tip radius. */
+        kit.drawArcKnobAt(cx, 46, R, SWEEP[i], false);
+        const rad = (225 + SWEEP[i] * 270) * Math.PI / 180;
+        kit.plotLine(cx, 46, Math.round(cx + R * 0.85 * Math.sin(rad)),
+                     Math.round(46 - R * 0.85 * Math.cos(rad)), 1);
+        kit.drawModDotAt(cx, 46, R, Math.min(1, SWEEP[i] + 0.18));
+    }
+
+});
+
 console.log(`\nwrote ${n} widget render${n === 1 ? '' : 's'} to ${OUT}/`);
