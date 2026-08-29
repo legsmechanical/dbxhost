@@ -168,7 +168,13 @@ void shadow_direct_set_param(uint8_t slot, const char *key, const char *value);
 #define shadow_master_fx (shadow_master_fx_slots[0].api)
 #define shadow_master_fx_instance (shadow_master_fx_slots[0].instance)
 #define shadow_master_fx_module (shadow_master_fx_slots[0].module_path)
-#define shadow_master_fx_capture (shadow_master_fx_slots[0].capture)
+/* There is deliberately no `shadow_master_fx_capture` here any more. It named
+ * position 0's capture rules, and shadow_midi.c cached a pointer to it at init
+ * — so a Master FX module that declared `capture` was heard only if it sat
+ * first. The fork loads a Master FX module into any of its 4 slots via
+ * shadow_master_fx_slot_load(), so this is live, not theoretical. Use
+ * shadow_master_fx_captures_note / _cc, which ask every loaded position, per
+ * event, from the live array. */
 
 /* MIDI out log file (for log_enabled check in shim) */
 extern FILE *shadow_midi_out_log;
@@ -309,6 +315,20 @@ int shadow_master_fx_slot_load_with_config(int slot, const char *dsp_path,
 int shadow_master_fx_load(const char *dsp_path);
 void shadow_master_fx_unload(void);
 void shadow_master_fx_forward_midi(const uint8_t *msg, int len, int source);
+
+/* Does ANY loaded Master FX position capture this note / CC?
+ *
+ * A UNION over positions, deliberately: capture belongs to the MODULE, not to
+ * the index it currently sits at. The predicate this replaced read position 0
+ * only (shadow_midi.c cached, at init, a raw pointer to
+ * shadow_master_fx_slots[0].capture), so a MIDI-triggered Master FX loaded
+ * into slot 1-3 never received MIDI at all.
+ *
+ * Evaluated from the live array on every event; nothing caches a pointer into
+ * it. Runs on the SPI callback: no allocation, no I/O, no locks — at most
+ * MASTER_FX_SLOTS pointer tests and one bit test. */
+int shadow_master_fx_captures_note(uint8_t note);
+int shadow_master_fx_captures_cc(uint8_t cc);
 
 /* --- Send FX --- */
 void shadow_send_fx_slot_unload(int bus, int slot);

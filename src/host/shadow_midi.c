@@ -165,9 +165,6 @@ static shadow_midi_dsp_t **host_shadow_midi_dsp_shm;
 static shadow_midi_inject_t **host_shadow_midi_inject_shm;
 static uint8_t *host_shadow_mailbox;
 
-/* Capture */
-static shadow_capture_rules_t *host_master_fx_capture;
-
 /* Idle tracking */
 static int *host_slot_idle;
 static int *host_slot_silence_frames;
@@ -195,7 +192,6 @@ void midi_routing_init(const midi_host_t *host)
     host_shadow_midi_dsp_shm = host->shadow_midi_dsp_shm;
     host_shadow_midi_inject_shm = host->shadow_midi_inject_shm;
     host_shadow_mailbox = host->shadow_mailbox;
-    host_master_fx_capture = host->master_fx_capture;
     host_slot_idle = host->slot_idle;
     host_slot_silence_frames = host->slot_silence_frames;
     host_slot_fx_idle = host->slot_fx_idle;
@@ -1189,19 +1185,47 @@ void shadow_forward_midi(void)
  * Capture rules lookup
  * ============================================================================ */
 
-/* Get capture rules for the focused slot (0-3 = chain, 4 = master FX) */
-const shadow_capture_rules_t *shadow_get_focused_capture(void)
+/* Does the focused target capture this control? (slots 0-3 = chain, 4 = Master FX)
+ *
+ * This used to hand back a shadow_capture_rules_t* and let the caller test the
+ * bit. For Master FX that pointer was cached at init from the host struct as
+ * a raw pointer to shadow_master_fx_slots[0].capture — so only POSITION 0's
+ * rules were ever consulted, and a MIDI-triggered Master FX module loaded into
+ * slot 1-3 never received MIDI.
+ *
+ * Capture belongs to the module, not to the index it happens to sit at.
+ * Asking per event, from the live array, is the only shape that stays correct
+ * across a load into any slot.
+ *
+ * Both call sites only ever asked "does the focused thing want this byte", so
+ * the API is the predicate rather than the rules. SPI-callback safe: a bounded
+ * loop over positions plus one bit test, no allocation, I/O or locks. */
+int shadow_focused_captures_note(uint8_t note)
 {
     shadow_control_t *shadow_control = *host_shadow_control;
-    if (!shadow_control) return NULL;
+    if (!shadow_control) return 0;
 
     int slot = shadow_control->ui_slot;
     if (slot == SHADOW_CHAIN_INSTANCES) {
-        /* Master FX is focused (slot 4) */
-        return host_master_fx_capture;
+        return shadow_master_fx_captures_note(note);
     }
     if (slot >= 0 && slot < SHADOW_CHAIN_INSTANCES) {
-        return &host_chain_slots[slot].capture;
+        return capture_has_note(&host_chain_slots[slot].capture, note);
     }
-    return NULL;
+    return 0;
+}
+
+int shadow_focused_captures_cc(uint8_t cc)
+{
+    shadow_control_t *shadow_control = *host_shadow_control;
+    if (!shadow_control) return 0;
+
+    int slot = shadow_control->ui_slot;
+    if (slot == SHADOW_CHAIN_INSTANCES) {
+        return shadow_master_fx_captures_cc(cc);
+    }
+    if (slot >= 0 && slot < SHADOW_CHAIN_INSTANCES) {
+        return capture_has_cc(&host_chain_slots[slot].capture, cc);
+    }
+    return 0;
 }
