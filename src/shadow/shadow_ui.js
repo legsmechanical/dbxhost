@@ -2121,6 +2121,32 @@ let hierEditorNavigateTo = "";        // level to navigate to after item selecti
 
 /* Filepath browser state (for chain_params type: filepath) */
 let filepathBrowserState = null;
+
+/* Knob-scroll accumulator for the filepath browser. The JOG stays 1:1 because
+ * a jog detent is a deliberate click, while a knob detent is a fraction of a
+ * twist. Reset when the browser opens. */
+let filepathBrowserKnobAccum = 0;
+const FILEPATH_BROWSER_KNOB_PER_STEP = 4;
+
+/* Move the browser's highlight by `delta` entries.
+ *
+ * Shared by the jog and the knob so the live-preview arm and the announcement
+ * cannot drift apart between the two inputs — a browser that scrolled on the
+ * knob but did not audition or speak would be a different bug in the same
+ * place. */
+function filepathBrowserJog(delta) {
+    if (!filepathBrowserState) return;
+    moveFilepathBrowserSelection(filepathBrowserState, delta);
+    const selected = filepathBrowserState.items[filepathBrowserState.selectedIndex];
+    if (filepathBrowserState.livePreviewEnabled && selected && selected.kind === "file" && selected.path) {
+        filepathBrowserState.previewPendingPath = selected.path;
+        filepathBrowserState.previewPendingTime = Date.now();
+    } else if (filepathBrowserState.livePreviewEnabled) {
+        filepathBrowserState.previewPendingPath = "";
+        filepathBrowserState.previewPendingTime = 0;
+    }
+    if (selected) announceMenuItem(selected.label || "File", "");
+}
 let filepathBrowserParamKey = "";
 let canvasParamKey = "";
 let canvasParamMeta = null;
@@ -9193,6 +9219,7 @@ function openHierarchyFilepathBrowser(key, meta) {
     filepathBrowserState.hooksOnCancel = hooks.onCancel;
     filepathBrowserState.hooksOnCommit = hooks.onCommit;
     filepathBrowserState.hookRestoreValues = {};
+    filepathBrowserKnobAccum = 0;
     applyFilepathHookActions(filepathBrowserState, filepathBrowserState.hooksOnOpen, { path: currentVal });
 
     refreshFilepathBrowser(filepathBrowserState, FILEPATH_BROWSER_FS);
@@ -12360,18 +12387,7 @@ function handleJog(delta) {
             /* Canvas animation is autonomous; jog is forwarded via onMidi hook. */
             break;
         case VIEWS.FILEPATH_BROWSER:
-            if (filepathBrowserState) {
-                moveFilepathBrowserSelection(filepathBrowserState, delta);
-                const selected = filepathBrowserState.items[filepathBrowserState.selectedIndex];
-                if (filepathBrowserState.livePreviewEnabled && selected && selected.kind === "file" && selected.path) {
-                    filepathBrowserState.previewPendingPath = selected.path;
-                    filepathBrowserState.previewPendingTime = Date.now();
-                } else if (filepathBrowserState.livePreviewEnabled) {
-                    filepathBrowserState.previewPendingPath = "";
-                    filepathBrowserState.previewPendingTime = 0;
-                }
-                if (selected) announceMenuItem(selected.label || "File", "");
-            }
+            filepathBrowserJog(delta);
             break;
         case VIEWS.KNOB_EDITOR:
             /* Navigate knob list (8 knobs) */
@@ -17306,6 +17322,24 @@ globalThis.onMidiMessageInternal = function(data) {
             const knobIndex = d1 - KNOB_CC_START;
             const delta = decodeDelta(d2);
 
+            /* The filepath browser is a full-screen list. Falling through
+             * wrote knob_N_adjust into the SELECTED SLOT's global knob mapping
+             * — a silent, unasked-for write behind a browser that covers the
+             * screen, whose only visible sign was a legacy "Knob 1" card
+             * sitting on top of the file list. Scroll the list instead. */
+            if (view === VIEWS.FILEPATH_BROWSER) {
+                filepathBrowserKnobAccum += delta;
+                while (filepathBrowserKnobAccum >= FILEPATH_BROWSER_KNOB_PER_STEP) {
+                    filepathBrowserKnobAccum -= FILEPATH_BROWSER_KNOB_PER_STEP;
+                    filepathBrowserJog(1);
+                }
+                while (filepathBrowserKnobAccum <= -FILEPATH_BROWSER_KNOB_PER_STEP) {
+                    filepathBrowserKnobAccum += FILEPATH_BROWSER_KNOB_PER_STEP;
+                    filepathBrowserJog(-1);
+                }
+                return;
+            }
+
             /* Use shared knob handler for hierarchy/chain editor contexts */
             if (adjustKnobAndShow(knobIndex, delta)) {
                 return;
@@ -17362,6 +17396,11 @@ globalThis.onMidiMessageInternal = function(data) {
                  * stale level mappings (like loop_mode). */
                 return;
             }
+
+            /* No knob card over the full-screen browser: it is a list, not a
+             * parameter surface, and the card that used to appear there named
+             * a mapping the turn was silently rewriting. */
+            if (view === VIEWS.FILEPATH_BROWSER) return;
 
             /* Use shared knob overlay for hierarchy/chain editor contexts */
             if (showKnobOverlay(knobIndex)) {
