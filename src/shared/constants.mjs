@@ -4,6 +4,16 @@
 
 /* Reference: https://github.com/Cycling74/rnbo.move.control (MIT)
  * See also: docs/reference/rnbo-move-control/NOTES.md, schwung_move.h
+ * PALETTE TABLE: replaced with upstream Schwung v1.0.0's (e3d5bc8c) on the
+ * param-pages adoption. COMMENT ONLY -- not one exported constant's numeric
+ * value moved. This fork's table was an older, partial reading of the same
+ * hardware palette: 92 of 128 indices, no dim/dark columns, and it called
+ * 122/123 duplicates of White/Light Grey. Upstream re-measured and they are
+ * not duplicates -- 122 is #CCCCCC and 123 is #404040, the two rungs a
+ * brightness ramp needs, which is exactly what param_pages/knob_leds.mjs
+ * WHITE_LEVELS climbs. Keeping the old table would have left the knob-LED
+ * ramp documented as going bright, dark, bright.
+
 ================================================================================
 RGB COLOR PALETTE (INDEXED 0–127)
 ================================================================================
@@ -11,107 +21,89 @@ RGB COLOR PALETTE (INDEXED 0–127)
 --- NEUTRALS / GREYS -----------------------------------------------------------
   0 : #000000  Black
 117 : #000000  Black (dup)
-124 : #1A1A1A  Dark Grey
-119 : #1A1A1A  Dark Grey (dup)
 118 : #595959  Light Grey
-121 : #595959  Light Grey (dup)
-123 : #595959  Light Grey (dup)
+119 : #1A1A1A  Dark Grey
 120 : #FFFFFF  White
-122 : #FFFFFF  White (dup)
+121 : #595959  Light Grey (dup)
+122 : #CCCCCC  White (dup)
+123 : #404040  Dark Grey (dup)
+124 : #141414  Dark Grey 2
 
---- REDS / PINKS / MAGENTAS ----------------------------------------------------
-  1 : #FF2424  Bright Red
+--- REDS / ORANGES / YELLOWS ---------------------------------------------------
+  1 : #FF4032  Bright Red              dim  65 #661914  dark  66 #210806
+  2 : #800400  Orange Red              dim  67 #460300  dark  68 #280000
+  3 : #C93C00  Bright Orange           dim  69 #5D1700  dark  70 #200D00
+  4 : #AC1F00  Tan / Muted Orange      dim  71 #470C00  dark  72 #1C0800
+  5 : #8C5018  Light Yellow            dim  73 #3B2B14  dark  74 #1C130A
+  6 : #491804  Ochre                   dim  75 #250E05  dark  76 #0D0602  
+  7 : #FADC3B  Vivid Yellow            dim  77 #645817  dark  78 #201C07
+  8 : #FFC516  Bright Yellow           dim  79 #664E08  dark  80 #211902
+  9 : #B6FF0E  Bright Lime             dim  81 #486605  dark  82 #172101
+
+--- GREENS / TEALS -------------------------------------------------------------
+ 10 : #79FF18  Dull Green              dim  83 #306609  dark  84 #0F2103
+ 11 : #34C216  Neon Green              dim  85 #144D08  dark  86 #061902
+ 12 : #4F8A04  Teal Green              dim  87 #1F3701  dark  88 #0A1100
+ 13 : #62FF55  Muted Teal              dim  89 #276622  dark  90 #0C210B
+ 14 : #297D53  Cyan-Teal               dim  91 #143E29  dark  92 #081910
+ 15 : #269E72  Teal-Cyan               dim  93 #004D36, dark  94 #00180E
+
+--- CYANS / AQUAS / BLUES ------------------------------------------------------
+ 16 : #31ADFF  Azure Blue              dim  95 #134566  dark  96 #061621
+ 17 : #3663FC  Royal Blue              dim  97 #152764  dark  98 #070C20
+ 18 : #1A34FF  Blue-Violet             dim  99 #0A1466  dark 100 #030621
+ 19 : #1C0CE6  Violet                  dim 101 #0B045C  dark 102 #03011D
+
+--- PURPLES / MAGENTAS / PINKS -------------------------------------------------
+ 20 : #153999  Electric Violet         dim 103 #0A1C4C  dark 104 #040B1E
+ 21 : #3937FF  Hot Magenta             dim 105 #161666  dark 106 #070721
+ 22 : #5722FF  Purple                  dim 107 #220D66  dark 108 #0B0421
+ 23 : #972BFF  Neon Pink               dim 109 #3C1166  dark 110 #130521
+ 24 : #852178  Rose                    dim 111 #350D30  dark 112 #11040F
+ 25 : #FF1032  Bright Pink             dim 113 #660614  dark 114 #210206
+ 26 : #FF2BD4  Light Magenta           dim 115 #661154  dark 116 #21051B
+
+--- SATURATION VARIANTS (27–35) ------------------------------------------------
  27 : #A63421  Rust Red
- 65 : #4D0B0B  Deep Red
- 66 : #1A0404  Very Dark Red
- 67 : #4D1204  Brick
- 20 : #8700FF  Electric Violet
- 21 : #E657E3  Hot Magenta
- 23 : #FF0099  Neon Pink
- 24 : #A14C5F  Rose
- 25 : #FF4DC4  Bright Pink
- 26 : #EB8BE1  Light Magenta
-104 : #0D001A  Deep Violet
-105 : #4D1D4C  Muted Violet
-107 : #33004D  Dark Purple
-109 : #4D002E  Deep Magenta
-111 : #4D242D  Dusty Rose
-113 : #4D173B  Mauve
-114 : #1A0814  Deep Wine
-115 : #4D2D49  Dusky Mauve
-116 : #1A0F18  Shadow Mauve
-
---- ORANGES / AMBERS / YELLOWS -------------------------------------------------
-  2 : #F23A0C  Orange Red
-  3 : #FF9900  Bright Orange
-  4 : #A68956  Tan / Muted Orange
-  5 : #EDF95A  Light Yellow
-  6 : #C19D08  Ochre
-  7 : #FFFF00  Vivid Yellow
  28 : #995628  Burnt Orange
  29 : #876700  Mustard
  30 : #90821F  Yellow-Green
- 73 : #4D491F  Dull Yellow
- 74 : #1A180A  Very Dark Yellow
- 75 : #403302  Brown-Yellow
- 76 : #1A1501  Deep Brown-Yellow
- 77 : #4D4D00  Olive
- 78 : #1A1A00  Dark Olive
-
---- GREENS / TEALS -------------------------------------------------------------
-  8 : #56BF13  Bright Green
-  9 : #2C8403  Forest Green
- 10 : #246B24  Dull Green
- 11 : #19FF30  Neon Green
- 12 : #159573  Teal Green
- 13 : #176B50  Muted Teal
- 14 : #00FFFF  Cyan
  31 : #4A8700  Lime
  32 : #007F12  Deep Green
+ 33 : #1853B2  Blue
+ 34 : #624BAD  Lilac
+ 35 : #733A67  Mauve
+
+--- PASTELS / LIGHT TONES (36–64) ----------------------------------------------
+ 36 : #F8BCAF  Pale Salmon
+ 37 : #FF9B76  Light Orange
+ 38 : #FFBF5F  Light Amber
+ 39 : #D9AF71  Sand
+ 40 : #FFF480  Light Yellow 2
+ 41 : #BFBA69  Pale Olive
+ 42 : #BCCC88  Pale Lime
  43 : #AEFF99  Pale Green
  44 : #7CDD9F  Mint Green
  45 : #89B47D  Olive Green
- 79 : #1C4007  Dull Green
- 80 : #0B1A03  Very Dark Green
- 81 : #113301  Dull Olive
- 83 : #113311  Dark Olive Green
- 85 : #0A4D0A  Dark Grass Green
- 87 : #073327  Dark Teal
- 89 : #104D39  Muted Sea Green
- 90 : #030D0A  Deep Teal
-
---- CYANS / AQUAS / BLUES ------------------------------------------------------
- 15 : #0074FC  Azure Blue
- 16 : #274FCC  Royal Blue
- 17 : #00448C  Navy
- 33 : #1853B2  Blue
  46 : #80F3FF  Pale Cyan
  47 : #7ACEFC  Sky Blue
  48 : #68A1D3  Light Blue
  49 : #858FC2  Muted Blue
  50 : #BBAAF2  Lavender Blue
- 93 : #00234D  Deep Blue
- 95 : #0C1940  Dark Blue
- 97 : #00254D  Cool Blue
- 99 : #231A4D  Indigo
-100 : #0C091A  Deep Indigo
-101 : #251E4D  Purple-Blue
-102 : #0C0A1A  Dark Indigo
-125 : #0000FF  Pure Blue
-
---- PURPLES / VIOLETS ---------------------------------------------------------
- 18 : #644AD9  Blue-Violet
- 19 : #4D3FA0  Violet
- 22 : #660099  Purple
- 34 : #624BAD  Lilac
- 35 : #733A67  Mauve
-106 : #1A0A19  Deep Plum
-108 : #11001A  Dark Violet
-110 : #1A000F  Wine Purple
-112 : #1A0C0F  Dark Rose
-115 : #4D2D49  Muted Violet (duplicate family)
- 20–26 : also span violet–pink boundary (see REDS)
-
+ 51 : #CDBBE4  Pale Lavender
+ 52 : #EF8BB0  Pale Pink
+ 53 : #859D8C  Pale Sea Green
+ 54 : #6B756E  Grey Green
+ 55 : #84909B  Grey Blue
+ 56 : #6A7075  Steel Grey
+ 57 : #88859D  Lavender Grey
+ 58 : #6C6A75  Dark Steel
+ 59 : #9D859C  Mauve Grey
+ 60 : #746A74  Warm Grey
+ 61 : #9C9D85  Olive Grey
+ 62 : #74756A  Sage Grey
+ 63 : #9D8484  Rose Grey
+ 64 : #756A6A  Brown Grey
 
 --- PRIMARY COLORS -------------------------------------------------------------
 125 : #0000FF  Blue
@@ -124,6 +116,16 @@ RGB COLOR PALETTE (INDEXED 0–127)
 export const Black = 0;
 export const DarkGrey = 124;
 export const LightGrey = 118;
+/* Imported from upstream v1.0.0 for the param_pages knob grid's LED ramp.
+ * Upstream splits the greys differently -- its DarkGrey is 119 and its
+ * DarkGrey2 is 124, which is THIS fork's DarkGrey. Both spellings are kept:
+ * the fork's own call sites say DarkGrey, the imported grid says DarkGrey2,
+ * and they are the same pad colour. DarkGrey3 (#404040) and OffWhite
+ * (#CCCCCC) fill the two gaps a brightness ramp needs -- see
+ * param_pages/knob_leds.mjs WHITE_LEVELS. */
+export const DarkGrey2 = 124;
+export const DarkGrey3 = 123;
+export const OffWhite = 122;
 export const White = 120;
 
 // --- REDS / PINKS / MAGENTAS ---
@@ -151,6 +153,12 @@ export const ShadowMauve = 116;
 // --- ORANGES / AMBERS / YELLOWS ---
 export const OrangeRed = 2;
 export const Bright = 3;
+/* Upstream's name for the same pad colour as `Bright` above, plus its two
+ * dim/dark partners. Imported for the param_pages knob grid, which names the
+ * whole 3/69/70 ramp. */
+export const BrightOrange = 3;
+export const BurntSienna = 69;
+export const DarkBrown = 70;
 export const Tan = 4;
 export const LightYellow = 5;
 export const Ochre = 6;
