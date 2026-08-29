@@ -7,8 +7,25 @@
 const DEVICE_PREFIX = '/data/UserData/schwung/';
 const STUB_SCHEME = 'device-stub:';
 
+/* ⭑ constants.mjs IS NOT STUBBED — it resolves to the REAL file in this repo.
+ *
+ * It is pure data with no imports of its own, so there is nothing to stub
+ * AROUND, and stubbing it was actively wrong for anything that reads a colour:
+ * the 0-stub answered every palette name with 0, which is the same value the
+ * LED rule reserves for "nothing is bound here". An offline check of a colour
+ * ramp against that stub reads as a flat, entirely dark ramp and cannot tell a
+ * correct one from an inverted one. It also had to enumerate export names by
+ * hand, so every new constant an importer wanted was a load error in a tool
+ * that had nothing to do with colours.
+ *
+ * ⚠ Only constants.mjs. The other shared modules DO touch the device (draw
+ * calls, MIDI sends) and keep their no-op stubs. */
+const REAL = { 'constants.mjs': new URL('../../src/shared/constants.mjs', import.meta.url).href };
+
 export async function resolve(specifier, context, nextResolve) {
     if (specifier.startsWith(DEVICE_PREFIX)) {
+        const file = specifier.split('/').pop();
+        if (REAL[file]) return { url: REAL[file], shortCircuit: true };
         return { url: STUB_SCHEME + specifier, shortCircuit: true };
     }
     return nextResolve(specifier, context);
