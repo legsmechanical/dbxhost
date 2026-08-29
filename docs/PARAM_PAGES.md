@@ -49,11 +49,14 @@ fallback in `shadow_ui_param_pages.mjs`:**
 
 **Two more fork gaps, both TODOs, both recorded in the code:**
 
-- `shadow_restore_knob_leds` — this fork's shim has no
-  `service_knob_led_restore`, so leaving the grid leaves Move's eight rings
-  DARK rather than restoring them. Written as `clearKnobLEDs()`, not as a
-  `typeof` probe: there is one host and one module here, so a probe that can
-  only ever be false is machinery this fork does not carry.
+- ~~`shadow_restore_knob_leds`~~ — **PORTED.** The shim now carries
+  `service_knob_led_restore` and the `restore_knob_leds` edge in
+  `shadow_control_t` (reusing the retired `shadow_ui_trigger` byte, so
+  `CONTROL_BUFFER_SIZE` and the SHM layout are untouched). Leaving the grid
+  replays Move's own last colours from the sysex LED cache. Note the field's
+  comment: the colour is NOT in `move_cc_led_state` — upstream's own struct
+  comment says it is and its implementation comment refutes that, which is the
+  bug that made the first version restore blank rings.
 - `openParamEditorFromGrid` lands you on the component's LIST, not on the
   specific row. Upstream re-finds the param in the freshly planned hierarchy
   and restores level and child index; that needs plumbing this fork has not

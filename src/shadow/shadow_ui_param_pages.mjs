@@ -372,23 +372,16 @@ export function exitParamPages() {
      * cache to avoid.
      */
     /*
-     * FORK ADAPTATION: dark, not restored -- and it is a TODO, not a choice.
+     * PORTED (was a fork TODO): the shim hands the rings back to Move.
      *
-     * Upstream probes for `shadow_restore_knob_leds`, a binding its shim grew
-     * alongside this view (service_knob_led_restore in shadow_led_queue.c,
-     * replaying Move's own last value for CC 71-78 out of the cache overtake
-     * already keeps). This fork's shim has neither the binding nor that
-     * cache, so the probe could only ever be false -- and a probe that can
-     * only be false is exactly the machinery this fork does not carry (one
-     * host, one module, shipped together). It is written as the truth
-     * instead.
-     *
-     * The cost is the reported symptom upstream fixed: leaving the grid into
-     * a Schwung track leaves Move's eight rings DARK, because Move writes a
-     * ring only when its value changes and none of them changed while we held
-     * them. TODO(fork): port service_knob_led_restore + the binding.
+     * `restore_knob_leds` is an EDGE in shadow_control_t; the shim consumes it
+     * in service_knob_led_restore() and replays Move's own last colours from
+     * the sysex LED cache -- the same whole-surface replay overtake exit
+     * already uses. Not a `typeof` probe: there is one host and one module,
+     * shipped together, so the binding is either in the tree or it is not, and
+     * it is.
      */
-    clearKnobLEDs();
+    shadow_restore_knob_leds();
     resetKnobLedCache();
     /* The shim is about to repaint the surface from Move's own cache, so the
      * shared cache in input_filter is now claiming colours the hardware will

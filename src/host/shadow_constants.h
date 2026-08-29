@@ -184,7 +184,37 @@ typedef struct shadow_control_t {
     volatile uint8_t pad_block;            /* 1=suppress pad notes (68-99) from reaching Move */
     volatile uint8_t suspend_overtake;  /* 1=suspend (skip exit hook), 0=normal exit */
     volatile uint8_t open_tool_cmd;     /* 0=none, 1=open tool (path in /data/UserData/schwung/open_tool_cmd.json) */
-    volatile uint8_t reserved_ui_trigger; /* was shadow_ui_trigger — RETIRED 2026-08-09 (jump-gesture families deleted); byte kept for layout */
+    /* 1 = hand the eight encoder-ring LEDs (CC 71-78) back to Move.
+     *
+     * The knob grid paints those rings to say which physical encoder drives
+     * which drawn cell. Leaving the grid used to turn them OFF, which is not
+     * the same as giving them back: come out of the grid into a Schwung track
+     * and Move's own eight rings stayed dark, because Move only writes an LED
+     * when its value changes and nothing had changed.
+     *
+     * Set by JS on leaving the grid (shadow_restore_knob_leds); the shim
+     * consumes it and clears it, so it is an EDGE and not a state.
+     *
+     * ⚠ THE COLOUR IS NOT IN move_cc_led_state. Upstream's comment on this
+     * field says the restore is "replay Move's own last value for those
+     * eight, which shadow_led_queue.c has been accumulating in
+     * move_cc_led_state all along" — that sentence is STALE, and the
+     * implementation comment above service_knob_led_restore() in
+     * shadow_led_queue.c is upstream refuting it in its own words: the CC
+     * packets are latch triggers and the colour lives in the sysex cache, so
+     * the first version of the fix restored a latch and every ring came back
+     * blank. The working restore is led_queue_restore_move_sysex_leds(), the
+     * same whole-surface replay overtake exit already uses. The stale
+     * sentence is not carried here.
+     *
+     * REUSES the retired shadow_ui_trigger byte (jump-gesture families,
+     * deleted 2026-08-09) rather than growing the struct, so CONTROL_BUFFER_SIZE
+     * and the SHM layout are untouched — the shim creates that SHM and
+     * shadow_ui maps it through the same macro, and this change cannot be
+     * tested on hardware from here. Same trick overtake_suppress_sysex used
+     * with the former reserved[1]. Verified no reader of the retired name
+     * remained anywhere in src/ or davebox/. */
+    volatile uint8_t restore_knob_leds;
     volatile uint8_t speaker_active;    /* 1=built-in speaker active (from CC 115 line-out detect) */
     volatile uint8_t line_in_connected; /* 1=line-in cable plugged (from CC 114 mic-in detect); 0=internal mic */
     volatile uint8_t sampler_source_request; /* 0=no request, 1=set Resample, 2=set Move Input. Shim resets to 0 after applying. */

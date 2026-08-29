@@ -580,6 +580,20 @@ static JSValue js_shadow_set_skip_led_clear(JSContext *ctx, JSValueConst this_va
     return JS_UNDEFINED;
 }
 
+/* shadow_restore_knob_leds() -> void
+ * Hand the eight encoder-ring LEDs (CC 71-78) back to Move.
+ *
+ * The knob grid paints those rings; turning them off on the way out is not the
+ * same as giving them back, because Move writes an LED only when its value
+ * changes. The shim replays Move's own last colour and clears the flag, so
+ * this is an edge -- call it once on leaving the grid. */
+static JSValue js_shadow_restore_knob_leds(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    (void)ctx; (void)this_val; (void)argc; (void)argv;
+    if (!shadow_control) return JS_UNDEFINED;
+    shadow_control->restore_knob_leds = 1;
+    return JS_UNDEFINED;
+}
+
 /* shadow_set_overtake_suppress_sysex(flag) -> void
  * Opt a full-overtake tool into stripping Move's cable-0 sysex (RGB pad/clip/
  * grid LEDs) so Move's running-sequencer repaints don't fight the tool's LEDs.
@@ -2671,6 +2685,7 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_overtake_mode", JS_NewCFunction(ctx, js_shadow_set_overtake_mode, "shadow_set_overtake_mode", 1));
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_skip_led_clear", JS_NewCFunction(ctx, js_shadow_set_skip_led_clear, "shadow_set_skip_led_clear", 1));
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_overtake_suppress_sysex", JS_NewCFunction(ctx, js_shadow_set_overtake_suppress_sysex, "shadow_set_overtake_suppress_sysex", 1));
+    JS_SetPropertyStr(ctx, global_obj, "shadow_restore_knob_leds", JS_NewCFunction(ctx, js_shadow_restore_knob_leds, "shadow_restore_knob_leds", 0));
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_suspend_overtake", JS_NewCFunction(ctx, js_shadow_set_suspend_overtake, "shadow_set_suspend_overtake", 1));
     JS_SetPropertyStr(ctx, global_obj, "shadow_get_suspend_overtake", JS_NewCFunction(ctx, js_shadow_get_suspend_overtake, "shadow_get_suspend_overtake", 0));
     JS_SetPropertyStr(ctx, global_obj, "shadow_consume_resume_last_tool", JS_NewCFunction(ctx, js_shadow_consume_resume_last_tool, "shadow_consume_resume_last_tool", 0));
