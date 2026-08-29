@@ -4647,9 +4647,28 @@ function generateSlotPresetName(slotIndex) {
  * round-trip race and return "" — silently dropping the save and losing
  * recent edits (diagnosed 2026-05-12). 3 retries adds up to ~400ms worst
  * case which is well under typical set-change duration. */
+/*
+ * A state read has THREE answers, and only retrying is right for one of them.
+ *
+ *   JSON/text  the component serialised its state
+ *   ""         the channel served us and the module declares no `state` key
+ *   null       the read did not complete (shadow_get_param returns JS_NULL on
+ *              a refused claim or a timeout)
+ *
+ * `if (state)` collapsed the last two, so a module that legitimately
+ * implements no `state` looked identical to a shim round-trip that timed out —
+ * and the caller's bail-to-protect-a-good-file then abandoned the WHOLE slot's
+ * autosave, including every other component in it. Silent by construction: the
+ * protection that fires is the one designed to leave a good file alone.
+ *
+ * Branch on the RAW value before testing it for truthiness, because "" and
+ * null are both falsy and by then the distinction is gone.
+ */
 function getSlotStateWithRetry(slotIndex, key) {
     let state = getSlotParam(slotIndex, key);
     if (state) return state;
+    /* Served, and the module has nothing here. Retrying cannot change that. */
+    if (state === "") return "";
     for (let attempt = 1; attempt <= 3; attempt++) {
         state = getSlotParam(slotIndex, key);
         if (state) {
@@ -4657,6 +4676,7 @@ function getSlotStateWithRetry(slotIndex, key) {
                      key + " succeeded on retry " + attempt);
             return state;
         }
+        if (state === "") return "";
     }
     return null;
 }
@@ -4697,11 +4717,16 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
                 /* State is not JSON (e.g. key=value pairs) — store as opaque string */
                 synthConfig = { state: stateJson };
             }
-        } else if (bailIfEmpty) {
-            /* State query timed out AND the module is unchanged — skip autosave
-             * to avoid clobbering a good file (synth would revert to defaults). */
+        } else if (stateJson === null && bailIfEmpty) {
+            /* The read FAILED (timeout / refused claim) AND the module is
+             * unchanged — skip autosave rather than clobber a good file, which
+             * would revert the synth to defaults.
+             *
+             * `=== null` is load-bearing: "" means the module declares no
+             * `state`, which is an answer, not a failure. Bailing on that
+             * abandoned the whole slot forever — see getSlotStateWithRetry. */
             debugLog("buildSlotPatchJson: slot " + slotIndex +
-                     " synth:state empty after retries — bailing (preserving existing slot_" +
+                     " synth:state read FAILED after retries — bailing (preserving existing slot_" +
                      slotIndex + ".json)");
             return null;
         }
@@ -4724,9 +4749,9 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
                 /* State is not JSON — store as opaque string */
                 midiFxConfig = { state: midiFxStateJson };
             }
-        } else if (bailIfEmpty) {
+        } else if (midiFxStateJson === null && bailIfEmpty) {
             debugLog("buildSlotPatchJson: slot " + slotIndex +
-                     " midi_fx1:state empty after retries — bailing (preserving existing slot_" +
+                     " midi_fx1:state read FAILED after retries — bailing (preserving existing slot_" +
                      slotIndex + ".json)");
             return null;
         }
@@ -4749,9 +4774,9 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
                 /* State is not JSON (e.g. key=value pairs) — store as opaque string */
                 fx1Config = { state: fx1StateJson };
             }
-        } else if (bailIfEmpty) {
+        } else if (fx1StateJson === null && bailIfEmpty) {
             debugLog("buildSlotPatchJson: slot " + slotIndex +
-                     " fx1:state empty after retries — bailing (preserving existing slot_" +
+                     " fx1:state read FAILED after retries — bailing (preserving existing slot_" +
                      slotIndex + ".json)");
             return null;
         }
@@ -4773,9 +4798,9 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
                 /* State is not JSON (e.g. key=value pairs) — store as opaque string */
                 fx2Config = { state: fx2StateJson };
             }
-        } else if (bailIfEmpty) {
+        } else if (fx2StateJson === null && bailIfEmpty) {
             debugLog("buildSlotPatchJson: slot " + slotIndex +
-                     " fx2:state empty after retries — bailing (preserving existing slot_" +
+                     " fx2:state read FAILED after retries — bailing (preserving existing slot_" +
                      slotIndex + ".json)");
             return null;
         }
@@ -4795,9 +4820,9 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
             } catch (e) {
                 fx3Config = { state: fx3StateJson };
             }
-        } else if (bailIfEmpty) {
+        } else if (fx3StateJson === null && bailIfEmpty) {
             debugLog("buildSlotPatchJson: slot " + slotIndex +
-                     " fx3:state empty after retries — bailing (preserving existing slot_" +
+                     " fx3:state read FAILED after retries — bailing (preserving existing slot_" +
                      slotIndex + ".json)");
             return null;
         }
@@ -4817,9 +4842,9 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
             } catch (e) {
                 fx4Config = { state: fx4StateJson };
             }
-        } else if (bailIfEmpty) {
+        } else if (fx4StateJson === null && bailIfEmpty) {
             debugLog("buildSlotPatchJson: slot " + slotIndex +
-                     " fx4:state empty after retries — bailing (preserving existing slot_" +
+                     " fx4:state read FAILED after retries — bailing (preserving existing slot_" +
                      slotIndex + ".json)");
             return null;
         }
