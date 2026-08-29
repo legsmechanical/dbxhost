@@ -3150,14 +3150,14 @@ static volatile uint32_t ui_midi_drop_yield = 0;
 
 static inline void shadow_ui_midi_publish(uint8_t head, uint8_t status,
                                           uint8_t d1, uint8_t d2) {
-    if (head == 0 || !shadow_ui_midi_shm || !shadow_control) return;
-    /* Drop misaligned/garbage VOICE-message slots. head = cable<<4 | CIN; a
-     * channel-voice (CIN 0x08-0x0E) or single-byte system (0x0F) message always
-     * carries a status byte >= 0x80, so a sub-0x80 byte there is a torn/stale
-     * read of the unfiltered hardware MIDI_IN buffer — observed flooding overtake
-     * tools with status=0 events during co-run. SysEx CINs (0x04-0x07)
-     * legitimately carry data bytes < 0x80, so they are NOT subject to this. */
-    if ((head & 0x0F) >= 0x08 && !(status & 0x80)) return;
+    if (!shadow_ui_midi_shm || !shadow_control) return;
+    /* Drop misaligned/garbage slots read out of the unfiltered hardware
+     * MIDI_IN buffer, INCLUDING an all-zero SysEx-CIN slot. The old guard here
+     * exempted CINs 0x04-0x07 outright, and overtake mode widens the forward
+     * scan to accept exactly that range — so a stale slot with a zeroed
+     * payload was dispatched into JS as status=0 d1=0 d2=0. See
+     * src/host/shadow_midi_filter.c. */
+    if (!shadow_midi_forwardable(head, status, d1, d2)) return;
     /* A knob detent may not take one of the last slots — those are held for
      * events whose loss STICKS. See shadow_ui_midi_policy.h for why the two are
      * not interchangeable. */

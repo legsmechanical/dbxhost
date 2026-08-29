@@ -8,6 +8,23 @@
 
 #include <stdint.h>
 
+/*
+ * May this raw MIDI_IN slot be forwarded to the shadow UI / an overtake tool?
+ *
+ * The hardware MIDI_IN buffer is never cleared wholesale, so consumed slots
+ * keep their stale bytes and are re-scanned every SPI frame.
+ *
+ * The guard this replaced covered only voice CINs (>= 0x08, status must be
+ * >= 0x80) and deliberately exempted SysEx CINs 0x04-0x07, whose data bytes
+ * are legitimately < 0x80. But overtake mode widens the forward scan to accept
+ * exactly that SysEx range, so a stale slot whose CIN nibble landed in
+ * 0x04-0x07 with a zeroed payload sailed straight through and was dispatched
+ * into JS as status=0 d1=0 d2=0 — upstream measured ~10/s, flooding overtake
+ * tools and the debug log. A real SysEx packet always carries at least one
+ * nonzero byte, so the all-zero case is rejected too.
+ */
+int shadow_midi_forwardable(uint8_t head, uint8_t status, uint8_t d1, uint8_t d2);
+
 /* MIDI_IN geometry.  31 events of 8 bytes (4-byte USB-MIDI + 4-byte XMOS
  * timestamp) = 248 bytes, and then the display-status word at +248.  NOT
  * MIDI_BUFFER_SIZE, which is 256 and runs one slot into that word. */

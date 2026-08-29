@@ -290,6 +290,30 @@ const HOST_STATE_ROOT = (typeof HOST_INSTALL_DIR === "string" && HOST_INSTALL_DI
     ? HOST_INSTALL_DIR : "/data/UserData/schwung";
 
 const CONFIG_PATH = HOST_STATE_ROOT + "/shadow_chain_config.json";
+
+/* Per-event MIDI tracing in overtake mode. OFF unless
+ * <HOST_STATE_ROOT>/overtake_midi_log_on exists.
+ *
+ * The two debugLog sites it gates emit a line each for every MIDI event while
+ * an overtake tool is up — under a knob sweep, hundreds of lines a second, as
+ * file I/O on the loop that has to drain the input ring (which drops silently
+ * when full). The fork already narrowed them to status >= 0x80; this turns
+ * them off entirely unless someone is actually looking.
+ *
+ * Probed once and cached; touch the file and restart shadow_ui to enable. */
+let overtakeMidiLogFlag;
+function overtakeMidiLogEnabled() {
+    if (overtakeMidiLogFlag === undefined) {
+        overtakeMidiLogFlag = false;
+        try {
+            if (typeof host_file_exists === "function") {
+                overtakeMidiLogFlag =
+                    !!host_file_exists(HOST_STATE_ROOT + "/overtake_midi_log_on");
+            }
+        } catch (e) { overtakeMidiLogFlag = false; }
+    }
+    return overtakeMidiLogFlag;
+}
 /* ⭑ Per-set state lives INSIDE the set's own directory (state co-location,
  * 2026-08-12): Sets/<uuid>/<SET_STATE_SUBDIR>/. Must agree with the C side's
  * PER_SET_STATE_SUBDIR (shadow_set_pages.h) — the shim reads at boot what this
@@ -16828,7 +16852,7 @@ globalThis.onMidiMessageInternal = function(data) {
      * ALWAYS in overtake — so it fired twice per MIDI event, every event, straight
      * to disk, for the whole session. That is file I/O on the loop that has to
      * drain the input ring, and the ring drops silently when full. */
-    if (view === VIEWS.OVERTAKE_MODULE && (status & 0x80)) {
+    if (overtakeMidiLogEnabled() && view === VIEWS.OVERTAKE_MODULE && (status & 0x80)) {
         debugLog(`MIDI_IN: view=${view} status=${status} d1=${d1} d2=${d2} loaded=${overtakeModuleLoaded} callbacks=${!!overtakeModuleCallbacks}`);
     }
 
@@ -16959,7 +16983,7 @@ globalThis.onMidiMessageInternal = function(data) {
         /* Debug: log key state. Same status < 0x80 exclusion as MIDI_IN above,
          * and for the same reason — this is the second of the two lines that
          * were filling the log with packets no tool ever sees. */
-        if (status & 0x80) {
+        if (overtakeMidiLogEnabled() && (status & 0x80)) {
             debugLog(`OVERTAKE MIDI: status=${status} d1=${d1} d2=${d2} hostShift=${hostShiftHeld} volTouch=${hostVolumeKnobTouched}`);
         }
 
