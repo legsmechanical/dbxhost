@@ -15750,8 +15750,27 @@ globalThis.init = function() {
                     if (chain && chain.synth && chain.synth.bypassed) {
                         setSlotParam(i, "synth:bypassed", "1");
                     }
-                    if (chain && Array.isArray(chain.midi_fx) && chain.midi_fx[0] && chain.midi_fx[0].bypassed) {
-                        setSlotParam(i, "midi_fx1:bypassed", "1");
+                    /*
+                     * BOTH lists, not just the first MIDI FX.
+                     *
+                     * This read `chain.midi_fx[0]` only — written when a chain
+                     * was one MIDI FX. It is two here (MAX_MIDI_FX = 2), so
+                     * bypass silently stopped being restored for midi_fx2: you
+                     * bypassed it, rebooted, and it came back live with the B
+                     * glyph gone. Nothing failed and nothing logged.
+                     *
+                     * The literals are the fork's caps (2 MIDI FX, 4 audio FX
+                     * = MOVE_FX_BLOCKS). There is no MAX_MIDI_FX / MAX_FX
+                     * constant on the JS side to bound them by; if that
+                     * changes, tests/host/test_slot_fx_blocks_matches_js.sh is
+                     * the pin that couples the two sides.
+                     */
+                    if (chain && Array.isArray(chain.midi_fx)) {
+                        for (let mf = 0; mf < chain.midi_fx.length && mf < 2; mf++) {
+                            if (chain.midi_fx[mf] && chain.midi_fx[mf].bypassed) {
+                                setSlotParam(i, `midi_fx${mf + 1}:bypassed`, "1");
+                            }
+                        }
                     }
                     if (chain && Array.isArray(chain.audio_fx)) {
                         for (let fx = 0; fx < chain.audio_fx.length && fx < 4; fx++) {
