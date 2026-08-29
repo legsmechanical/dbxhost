@@ -592,17 +592,6 @@ export const S = {
      * the bank: tick opens sound mode route-aware, then lands on the menu
      * instead of the bank's prompt. */
     pendingSoundEnterMenu: false,
-    /* ⭑ Shift is SPENT once a Shift+hold gesture has fired: the key is still
-     * physically down, but it has already been used, and whatever the hold
-     * opened must not also see it. Cleared on the physical release.
-     *
-     * ⚠ There WAS a Shift-release deferral for exactly this class of leak
-     * (removed in P8a 1b, see applyShiftEdge) — it existed because the gesture
-     * went straight into co-run with Shift still down. The hold reintroduced
-     * the problem in a new place, so the answer comes back in a smaller form:
-     * a latch every reader of the physical key consults, rather than a deferral
-     * of the release itself. */
-    shiftSpentUntilRelease: false,
     backHoldFired: false,
     pendingExport: false,          /* Ableton .ablbundle export — set by menu action, drained in tick() (get_param-safe) */
     pendingExportRun: false,       /* phase 2 of export: armed after EXPORTING popup renders, does the blocking work */

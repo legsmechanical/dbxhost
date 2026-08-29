@@ -192,9 +192,6 @@ step('⭑⭑ the HOLD spends Shift, so what it opens does not also see it', () =
     if (S.shiftHeld)
         throw new Error('Shift still reads as held after the hold fired — the screen it ' +
                         'opened will come up with a Shift overlay');
-    if (!S.shiftSpentUntilRelease)
-        throw new Error('the latch was not set, so the next re-read of the physical key ' +
-                        'will resurrect Shift');
     /* ⚠⚠ AND SOUND MODE'S OWN COPY, which is the one that matters. It re-reads
      * the physical key on entry, so the global being false is not enough — that
      * re-read is exactly what would hand Shift to the screen the hold just
@@ -204,15 +201,13 @@ step('⭑⭑ the HOLD spends Shift, so what it opens does not also see it', () =
         throw new Error("sound mode re-read the physical key and resurrected Shift — the " +
                         'screen the hold opened will see it held');
     if (S.shiftHeld) throw new Error('Shift came back while the key was still down');
-    /* The real release un-spends it. */
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 0]));
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 0]));
-    if (S.shiftSpentUntilRelease)
-        throw new Error('the release did not clear the latch — Shift would stay dead');
-    /* ⚠ CONTROL: a fresh press is honoured again, or the latch would have
-     * disabled Shift permanently and every assertion above would still pass. */
+    /* ⚠ CONTROL: a fresh press is honoured again, or "Shift reads as up" would
+     * be satisfied by a build where Shift is simply broken, and every assertion
+     * above would still pass. */
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 127]));
-    if (!S.shiftHeld) throw new Error('Shift is dead after the latch cleared');
+    if (!S.shiftHeld) throw new Error('Shift is dead — a fresh press is not honoured');
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 0]));
 });
 

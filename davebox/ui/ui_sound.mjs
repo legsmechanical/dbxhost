@@ -802,7 +802,7 @@ export function soundEnter(track, slot) {
      * unshifted jog that moved the cursor instead of the track. Shift is a
      * physical state — a stale copy is wrong, not safe. davebox tracks it
      * globally (soundOnCC passes the CC through for exactly that reason). */
-    S.shiftHeld = GS.shiftHeld === true && !GS.shiftSpentUntilRelease;
+    S.shiftHeld = GS.shiftHeld === true;
     S.touchedIdx = -1;
     S.turnedSinceTouch = false;
     resetKnobAsn();
@@ -937,7 +937,7 @@ export function soundRetarget(track, slot) {
      * unshifted jog that moved the cursor instead of the track. Shift is a
      * physical state — a stale copy is wrong, not safe. davebox tracks it
      * globally (soundOnCC passes the CC through for exactly that reason). */
-    S.shiftHeld = GS.shiftHeld === true && !GS.shiftSpentUntilRelease;
+    S.shiftHeld = GS.shiftHeld === true;
     S.touchedIdx = -1;
     S.turnedSinceTouch = false;
     resetKnobAsn();
@@ -1676,7 +1676,7 @@ export function soundEnterMove(track) {
     S.pickRow = 0;
     S.comp = '';                /* no chain component is in scope on a Move bus */
     /* Sync, never assume up — see the note in soundEnter. */
-    S.shiftHeld = GS.shiftHeld === true && !GS.shiftSpentUntilRelease;
+    S.shiftHeld = GS.shiftHeld === true;
     S.pendingWrites.length = 0;
     S.blockNames = [];
     S.pendingAction = { t: 'names' };

@@ -1165,9 +1165,6 @@ export function applyShiftEdge(held) {
 
 function _onCC_buttons(d1, d2) {
     if (d1 === MoveShift) {
-        /* The real release is what un-spends it. A press cannot: the latch is
-         * set while the key is already down. */
-        if (d2 !== 127) S.shiftSpentUntilRelease = false;
         applyShiftEdge(d2 === 127);
     }
 
@@ -1954,12 +1951,16 @@ export function checkShiftNoteHold() {
          * editor this is about to open would see Shift held and come up with
          * its own Shift overlay already on screen (Josh, on device).
          *
-         * `applyShiftEdge(false)` first, so every consumer runs its release
-         * side-effects exactly as if the key had come up: the volume claim ends,
-         * the padmap is restored, the LEDs settle. The latch then keeps it that
-         * way until the real release, because the screens opened below RE-READ
-         * the physical key on entry ("sync, never assume up"). */
-        S.shiftSpentUntilRelease = true;
+         * `applyShiftEdge(false)` is the whole fix: every consumer runs its
+         * release side-effects exactly as if the key had come up — the volume
+         * claim ends, the padmap is restored, the LEDs settle — and the screens
+         * opened below re-read a key that now reads UP.
+         *
+         * ⚠ It stays false without a latch, and that is worth knowing rather
+         * than guarding: tick's stuck-Shift heal only ever asserts RELEASED
+         * ("we do NOT assert Shift from the other direction"), so nothing can
+         * bring it back until a real press. I did add a latch here first; a
+         * mutation removing it survived, because it could never fire. */
         applyShiftEdge(false);
         shiftNoteSessionAction(true);          /* the instrument */
     }
