@@ -411,13 +411,30 @@ void shadow_clear_move_leds_if_overtake(void) {
     /* On transition out of overtake: normally restore from snapshot.
      * LEDs we captured get restored; unknowns get turned off.
      * Two passes to catch stragglers.
-     * If skip_led_clear was active at entry, LEDs have been passing through
-     * live so Move's current state is already on hardware — no restore needed.
-     * A suspend-keeps-JS tool may also set skip_led_clear immediately before
-     * dropping overtake_mode. That is a one-shot request to let Move repaint
-     * natively instead of replaying an incomplete entry snapshot. */
+     * If skip_led_clear was active at ENTRY, LEDs have been passing through
+     * live so Move's current state is already on hardware — no restore needed
+     * (that is snapshot_skip_restore, latched at entry, and it is the only
+     * thing skip_led_clear influences here).
+     * A suspend-keeps-JS tool may separately set native_repaint_on_exit
+     * immediately before dropping overtake_mode. That is a one-shot request
+     * to let Move repaint natively instead of replaying an incomplete entry
+     * snapshot — a different question from the entry claim, on its own byte. */
     if (prev_overtake_mode && !cur_overtake) {
-        int native_repaint = (ctrl && ctrl->skip_led_clear) ? 1 : 0;
+        /*
+         * THE ONE-SHOT BYTE, NEVER skip_led_clear.
+         *
+         * This read was `ctrl->skip_led_clear` when the native-repaint
+         * behaviour was backported (25f73f81), copying upstream, where that
+         * byte carries both meanings. In THIS fork skip_led_clear is a
+         * persistent claim davebox holds for a whole move_native co-run
+         * session, so reading it here turned every ordinary exit into a
+         * discard: davebox's queued pad writes were dropped and
+         * shadow_pending_*_color reset to -1, while its JS setLED cache still
+         * believed the writes had landed, so nothing ever repainted. Seen on
+         * hardware as project management with no pad LEDs, and a loaded
+         * project showing PM's stale pattern. See shadow_constants.h.
+         */
+        int native_repaint = (ctrl && ctrl->native_repaint_on_exit) ? 1 : 0;
         if (snapshot_valid && !snapshot_skip_restore && !native_repaint) {
             queue_hw_leds_restore();
             move_led_restore_pending = 1;
@@ -431,9 +448,15 @@ void shadow_clear_move_leds_if_overtake(void) {
              * and Shift-row icons. Keep Move's fresh output authoritative. */
             discard_pending_shadow_leds();
         }
-        /* skip_led_clear doubles as the exit repaint request. Consume it on
-         * the audio-side transition so JS cannot clear it too early. */
-        if (ctrl) ctrl->skip_led_clear = 0;
+        /* Consume the ONE-SHOT request on the audio-side transition, so JS
+         * cannot clear it too early and so it can never leak into the next
+         * exit. skip_led_clear is deliberately NOT touched: it is a standing
+         * claim owned by whoever set it, and clearing it here is what silently
+         * desynced the edge-triggered claim reconciler in
+         * shadow_ui_primary.mjs (`if (p[key] !== n[key])` never re-emits an
+         * op, so the entry-side pass-through claim stayed lost for the rest
+         * of the session). */
+        if (ctrl) ctrl->native_repaint_on_exit = 0;
         snapshot_skip_restore = 0;
         snapshot_valid = 0;
     }
