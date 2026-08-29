@@ -195,7 +195,14 @@ step('⭑⭑ the HOLD spends Shift, so what it opens does not also see it', () =
     if (!S.shiftSpentUntilRelease)
         throw new Error('the latch was not set, so the next re-read of the physical key ' +
                         'will resurrect Shift');
-    /* Still physically down: a further gesture must stay unshifted. */
+    /* ⚠⚠ AND SOUND MODE'S OWN COPY, which is the one that matters. It re-reads
+     * the physical key on entry, so the global being false is not enough — that
+     * re-read is exactly what would hand Shift to the screen the hold just
+     * opened. Asserting only the global let a mutation removing the mask
+     * survive. */
+    if (sound.soundPickStateForTest().shift)
+        throw new Error("sound mode re-read the physical key and resurrected Shift — the " +
+                        'screen the hold opened will see it held');
     if (S.shiftHeld) throw new Error('Shift came back while the key was still down');
     /* The real release un-spends it. */
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 0]));

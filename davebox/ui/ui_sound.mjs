@@ -669,7 +669,12 @@ function log(msg) {
  * to`'s edit and committing a destination — a test that both failed falsely and
  * (earlier) passed falsely. Exposes no mutation. */
 export function soundPickStateForTest() {
-    return { kinds: S.pickRows.map(r => r.kind), row: S.pickRow, view: S.view };
+    /* `shift` is sound mode's OWN copy of the key, re-read from the physical
+     * one on entry. Exposed because a gesture that SPENDS Shift has to be
+     * checked here, not on the global: the global is already false by then, and
+     * it is this re-read that would resurrect it. */
+    return { kinds: S.pickRows.map(r => r.kind), row: S.pickRow, view: S.view,
+             shift: S.shiftHeld };
 }
 
 /* Read-only view of the knob HUD's CONTENT decision, for tests. The card's text
