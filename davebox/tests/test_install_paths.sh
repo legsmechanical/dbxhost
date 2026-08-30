@@ -4,9 +4,16 @@
 # There are two install trees and the names collide, which is the whole trap:
 #
 #   /data/UserData/schwung/    the STOCK install. SHARED on purpose for
-#                              shared/*.mjs, modules/, presets/ — and, because
+#                              modules/, presets/, patches/ — and, because
 #                              modules are shared, it is also where davebox's
 #                              own per-set files live (set_state/<uuid>/seq8sa-*).
+#
+# ⚠⚠ shared/*.mjs IS THE EXCEPTION, AND IT IS NOT WHAT IT LOOKS LIKE. An import
+# of '/data/UserData/schwung/shared/constants.mjs' does NOT load the stock copy:
+# host REWRITES that prefix to SCHWUNG_INSTALL_DIR/shared/ at module-load time
+# (shadow_ui.c, schwung_module_loader). Under SA that is dbx-host/shared/, so
+# davebox already runs OUR copies. The literal names the MODULE CONTRACT — the
+# string every module hardcodes — not which tree serves it. Section 4 guards it.
 #   /data/UserData/dbx-host/   THIS build's private state. standalone/config.sh
 #                              names it: set_state, slot_state, active_set.txt,
 #                              shadow_chain_config.json, shadow_config.json.
@@ -74,6 +81,66 @@ if sed -n '/^if \[ "\$DO_DAVEBOX" = "1" \]/,/^fi/p' ../standalone/scripts/instal
     ok "install-sa.sh passes FORCE through to the davebox half"
 else
     bad "install-sa.sh does not pass FORCE to install_sound.sh (--force would deploy only the host half)"
+fi
+
+# 4. ⚠⚠ THE SHARED-IMPORT PREFIX MUST STAY CANONICAL, and this is the least
+#    obvious pin in the file, because the "obvious improvement" it blocks looks
+#    like a safety fix.
+#
+#    dAVEBOx SA runs under dbx-host and must never load the stock tree's
+#    shared/*.mjs. IT ALREADY DOESN'T: shadow_ui.c's schwung_module_loader
+#    rewrites the prefix /data/UserData/schwung/shared/ to
+#    SCHWUNG_INSTALL_DIR/shared/, and the SA host is built with
+#    SCHWUNG_INSTALL_DIR=$DBX_DIR (standalone/scripts/build-host.sh).
+#
+#    So "repointing" davebox's imports at /data/UserData/dbx-host/shared/ would
+#    be a REGRESSION, not a fix: the specifier would stop matching
+#    SHARED_IMPORT_CANONICAL, the rewrite would never fire, and the module would
+#    resolve ONE install location literally -- which is the exact coupling the
+#    rewrite exists to remove. It would keep working on today's install and
+#    break under any host built with a different SCHWUNG_INSTALL_DIR, silently.
+#    shadow_ui.c carries the same warning on the #define, for the same reason.
+#
+#    THE PROOF THAT THE REWRITE IS LIVE, so none of this is theory: davebox
+#    imports shared/session_state.mjs, and our shared/filepath_browser.mjs
+#    imports it too. That file has NEVER existed in stock schwung, at any
+#    version. If these resolved against the stock tree davebox could not save
+#    state and its file browser could not load. Both work on hardware.
+echo ""
+echo "shared-import prefix (the host rewrites it; do not 'fix' it):"
+CANON="/data/UserData/schwung/shared/"
+if grep -rn "UserData/dbx-host/shared/" ui/*.mjs ui/*.js >/dev/null 2>&1; then
+    bad "a davebox import names dbx-host/shared directly -- that BYPASSES the host rewrite"
+else
+    ok "no davebox import hardcodes dbx-host/shared"
+fi
+n_imports=$(grep -rho "$CANON[a-z_]*\.mjs" ui/*.mjs ui/*.js 2>/dev/null | sort -u | wc -l | tr -d ' ')
+if [ "$n_imports" -ge 8 ]; then
+    ok "davebox's $n_imports shared imports all use the canonical prefix"
+else
+    bad "only $n_imports canonical shared imports found -- did they get repointed?"
+fi
+# The rewrite is what MAKES the canonical prefix safe, so pin the rewrite too:
+# without it, the canonical prefix really would load the stock tree.
+if grep -q 'define SHARED_IMPORT_CANONICAL "/data/UserData/schwung/shared/"' ../src/shadow/shadow_ui.c; then
+    ok "the host still declares the canonical shared-import prefix"
+else
+    bad "shadow_ui.c no longer declares SHARED_IMPORT_CANONICAL -- the rewrite is gone"
+fi
+if grep -q 'SHARED_IMPORT_LOCAL     SCHWUNG_INSTALL_DIR "/shared/"' ../src/shadow/shadow_ui.c; then
+    ok "the rewrite still targets THIS install's shared/"
+else
+    bad "the shared-import rewrite no longer targets SCHWUNG_INSTALL_DIR"
+fi
+if grep -q 'JS_SetModuleLoaderFunc(rt, NULL, schwung_module_loader, NULL)' ../src/shadow/shadow_ui.c; then
+    ok "the rewriting module loader is still installed"
+else
+    bad "shadow_ui.c no longer installs schwung_module_loader -- shared imports fall back to stock"
+fi
+if grep -q 'SCHWUNG_INSTALL_DIR=' ../standalone/scripts/build-host.sh; then
+    ok "the SA host build sets SCHWUNG_INSTALL_DIR"
+else
+    bad "build-host.sh no longer sets SCHWUNG_INSTALL_DIR -- the rewrite would be a no-op"
 fi
 
 [ "$fail" -eq 0 ] && echo "PASS: paths point at the install tree that owns them" \

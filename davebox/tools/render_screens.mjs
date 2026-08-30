@@ -36,10 +36,27 @@ const C = await import('../ui/ui_constants.mjs');   // real BANKS + fmt tables (
 const { BANKS } = C;
 globalThis.pixelPrint = C.pixelPrint;   // real mcufont 5x5 (used by Perf chips etc.)
 
-// Real drawMenuHeader (host shared menu_layout.mjs is stubbed by the loader):
-// print(2,2,title) + full-width rule at y12. Used by confirm dialogs.
+// Replica of the REAL drawMenuHeader in src/shared/menu_layout.mjs, because the
+// loader stubs that module (its own import graph reaches text_scroll /
+// screen_reader / chain_ui_views, which is more of the host than this tool
+// should drag in).
+//
+// ⚠⚠ IT WAS STALE, AND IT RENDERED THE WRONG HOST. This replica reproduced
+// STOCK schwung's header — white text on black, with a rule under it — while
+// the device draws OURS: a FILLED white bar with BLACK text and no separate
+// rule (the bar's own bottom edge replaced it). davebox has been running our
+// copy all along, because the host rewrites the shared-import prefix into this
+// install's tree (see tests/test_install_paths.sh section 4), so every
+// dialog-confirm render in the manual has been showing a header the device
+// never draws. Fixed 2026-08-29; UI_LANGUAGE §4 has said this since P7.
+//
+// ⚠ A replica drifts. Keep it matching src/shared/menu_layout.mjs, and prefer
+// resolving the real module here the day its import graph gets cheap enough.
 const TITLE_Y = 2, TITLE_RULE_Y = 12;
-function drawMenuHeader(title) { globalThis.print(2, TITLE_Y, title, 1); fill_rect(0, TITLE_RULE_Y, W, 1, 1); }
+function drawMenuHeader(title) {
+    fill_rect(0, 0, W, TITLE_RULE_Y - 1, 1);
+    globalThis.print(2, TITLE_Y, title, 0);
+}
 // Dialog button primitives (copied from ui_dialogs.mjs — fill/outline + centred label).
 function drawDlgBtn(x, y, w, h, sel, label) {
     const lx = x + Math.round((w - label.length * 6) / 2);
