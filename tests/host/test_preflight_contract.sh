@@ -54,4 +54,22 @@ stub=$(command grep -n 'installing the launcher into stock' "$inst" | head -1 | 
 [ "$man" -gt "$stub" ] ||
   fail "the manifest is recorded BEFORE the launcher stub is installed (line $man vs $stub) — it would hash the outgoing stub and every launch would report a false positive"
 
+# ⚠ EVERY installer that writes an owned file must re-record, as its LAST step.
+# dAVEBOx SA is deployed by two, and a snapshot taken by only one is stale the
+# moment the other runs: a host deploy followed by a module deploy left ui.js
+# hashed as its previous build and every launch reported a false positive
+# (observed 2026-08-30, twice — once per installer).
+for writer in standalone/scripts/install-host.sh davebox/scripts/install_sound.sh; do
+  command grep -q 'record-manifest.sh' "$writer" ||
+    fail "$writer writes an owned file but never re-records the manifest — the \
+preflight would compare against a snapshot that predates this deploy"
+done
+
+# The owned list must have ONE source. install-host.sh writes it from config.sh;
+# record-manifest.sh reads that file rather than carrying its own copy.
+command grep -q "owned-dirs" standalone/scripts/record-manifest.sh ||
+  fail "record-manifest.sh does not read the owned list from .owned-dirs"
+command grep -q "owned-dirs" "$inst" ||
+  fail "install-host.sh does not write .owned-dirs — record-manifest.sh would fall back to a stale literal"
+
 echo "PASS: launch preflight contract intact"

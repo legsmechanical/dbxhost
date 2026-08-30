@@ -444,27 +444,13 @@ say "=== done ==="
 # swap immediately: the two module.json files were byte-identical, so only a
 # recorded hash could have seen it.
 #
-# Built ON THE DEVICE from what actually landed, not from build/ — that way a
-# half-finished or interrupted deploy is recorded as what it is, and the next
-# launch reports the discrepancy rather than trusting our intent.
+# ⚠ Runs LAST, after the launcher stub is installed — recording before it hashes
+# the OUTGOING stub and every launch reports a false positive.
+# ⚠ install_sound.sh calls the same script when IT finishes, because it writes an
+# owned file too and a snapshot from only one installer is stale immediately.
 say ""; say "--- recording the owned-file manifest (what the preflight checks)"
-$SSH "set -eu
-  cd '$DBX_DIR'
-  : > .owned-manifest.new
-  for own in $DBX_OWNED_MODULE_DIRS; do
-    [ -d \"modules/\$own\" ] || continue
-    find \"modules/\$own\" -type f -print | sort | while read -r f; do
-      printf '%s %s/%s\n' \"\$(md5sum \"\$f\" | cut -d' ' -f1)\" '$DBX_DIR' \"\$f\" >> .owned-manifest.new
-    done
-  done
-  # The launcher stub is the ONE file of ours in stock's tree; a stock update
-  # can replace or drop it, and then dAVEBOx is simply absent from the menu.
-  if [ -f '$STOCK_TOOLS/davebox-sa/standalone' ]; then
-    printf '%s %s\n' \"\$(md5sum '$STOCK_TOOLS/davebox-sa/standalone' | cut -d' ' -f1)\" '$STOCK_TOOLS/davebox-sa/standalone' >> .owned-manifest.new
-  fi
-  mv -f .owned-manifest.new .owned-manifest
-  echo \"      manifest: \$(wc -l < .owned-manifest) file(s) pinned\"
-"
+$SSH "printf '%s\n' '$DBX_OWNED_MODULE_DIRS' > '$DBX_DIR/.owned-dirs'"
+$SSH "DBX_DIR='$DBX_DIR' sh '$DBX_DIR/scripts/record-manifest.sh'"
 
 say "The host is on disk. It takes effect the next time you launch dAVEBOx SA"
 say "from stock Schwung's Tools menu — no restart needed here, because launching"

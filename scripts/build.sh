@@ -852,6 +852,10 @@ if [ -d ./standalone ]; then
     # reports loudly. Always exits 0 -- it reports, it never refuses a launch.
     cp ./standalone/scripts/preflight.sh ./build/scripts/
     chmod +x ./build/scripts/preflight.sh
+    # record-manifest.sh: the contract snapshot the preflight checks against.
+    # Called by EVERY installer that writes an owned file, as its last step.
+    cp ./standalone/scripts/record-manifest.sh ./build/scripts/
+    chmod +x ./build/scripts/record-manifest.sh
     chmod +x ./build/scripts/quiesce-stock.sh ./build/scripts/exit-to-stock.sh \
              ./build/scripts/set-swap.sh ./build/scripts/project-cmd.sh \
              ./build/scripts/select-list.sh ./build/scripts/select-hook.sh

@@ -96,6 +96,20 @@ ssh "${MOVE_USER}@${MOVE_HOST}" "mkdir -p ${INSTALL_DIR}"
 scp -r "dist/${MODULE_ID}"/* "${MOVE_USER}@${MOVE_HOST}:${INSTALL_DIR}/"
 echo "Installation complete: ${INSTALL_DIR}"
 
+# Re-record the owned-file manifest: we just replaced an owned file, and the
+# launch preflight compares against that snapshot. install-host.sh records it
+# too, but whichever installer runs LAST owns the truth -- without this, a
+# host deploy followed by a module deploy leaves the module hashed as its
+# previous build and every launch reports a false "changed since install".
+if ssh -o ConnectTimeout=5 "${MOVE_USER}@${MOVE_HOST}" \
+     "test -x /data/UserData/dbx-host/scripts/record-manifest.sh" 2>/dev/null; then
+    ssh -o ConnectTimeout=10 "${MOVE_USER}@${MOVE_HOST}" \
+        "DBX_DIR=/data/UserData/dbx-host sh /data/UserData/dbx-host/scripts/record-manifest.sh" || \
+        echo "WARNING: could not re-record the owned-file manifest"
+else
+    echo "note: no record-manifest.sh on the device yet (run install-host.sh once)"
+fi
+
 if [ "$DO_RESTART" = "1" ]; then
     # Same reload sequence as install.sh — shadow_ui only re-reads JS from disk
     # on a full stack restart, and a bare `systemctl restart move-launcher` is
