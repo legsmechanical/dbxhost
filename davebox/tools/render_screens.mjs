@@ -74,12 +74,30 @@ function _perfChip(x, y, label, active) {
 
 // ---- verbatim copy of ui_render.mjs cell mapping (pure; fmt refs come from C
 //      so `knob.fmt === C.fmtBool` identity holds against the real BANKS defs) ----
-const KIT_ENUM_FMTS = [C.fmtRes, C.fmtDiq, C.fmtPlayDir, C.fmtLen, C.fmtGateMod,
-                       C.fmtDly, C.fmtArpStyle, C.fmtArpRate, C.fmtArpSteps, C.fmtRevStyle];
+/* ⚠⚠ THREE LISTS, NOT ONE — mirroring ui_render.mjs exactly. This file used to
+ * lump all ten formatters into KIT_ENUM_FMTS, so the manual drew Res / Diq /
+ * Len / Gate / Dly / ArpRate as ENUM SQUARES where the device draws STACKED
+ * FRACTIONS and BIG READ-OUTS. Found by tests/js/test_cellkind_parity.mjs the
+ * day it was written; it had been wrong for a long time and nothing noticed,
+ * because a copy in a tool is a copy nothing runs. */
+const KIT_ENUM_FMTS = [C.fmtPlayDir, C.fmtArpStyle, C.fmtArpSteps, C.fmtRevStyle];
+/* True n/m fractions — resolutions, arp rates, gate rates, input quantize,
+ * delay times. Non-fraction members ("1bar", "--") fall through to the big
+ * read-out inside drawFracStack, so a set reads as one hierarchy. */
+const KIT_FRAC_FMTS = [C.fmtDly, C.fmtRes, C.fmtArpRate, C.fmtGateMod, C.fmtDiq];
+/* Numeric lengths that are NOT fractions — decimals and counts keep the big
+ * read-out; stacking a decimal makes no sense. */
+const KIT_RATE_FMTS = [C.fmtLen];
+/* An "off"/empty value reads as "--" in a big read-out: the word OFF competes
+ * with the numbers around it. Applies to the value AND its option list. */
+const _offDash = (x) => {
+    const t = x == null ? '' : String(x);
+    return (t === '' || t.toLowerCase() === 'off') ? '--' : t;
+};
 const KIT_DIR_NAMES = ['Forward', 'Backward', 'Ping Pong', 'Rev Ping Pong'];
 const KIT_ARP_STYLE_NAMES = ['Off', 'Up', 'Down', 'Up/Down', 'Down/Up',
                              'Converge', 'Diverge', 'Ordered', 'Random', 'Rnd Order'];
-function _discreteOpts(knob) { const o = []; for (let i = knob.min; i <= knob.max; i++) o.push(knob.fmt(i)); return o; }
+function _discreteOpts(knob) { const o = []; for (let i = knob.min; i <= knob.max; i++) o.push(_offDash(knob.fmt(i))); return o; }
 function kitCellForKnob(knob, val) {
     if (!knob || !knob.abbrev) return { kind: 'blank', label: '' };
     const v = val | 0;
@@ -91,8 +109,24 @@ function kitCellForKnob(knob, val) {
         return base;
     }
     if (knob.fmt === C.fmtLgto) { base.kind = 'action'; base.oneWay = true; return base; }
-    if (knob.scope === 'action') { base.kind = 'action'; return base; }
+    /* ⚠ MIRRORS ui_render's rule, which is `valsq` since 2026-08-29: only Lgto
+     * (above) is a real fire-action. Strch and Shift hold signed values, so a
+     * pushbutton is the wrong picture for them — see the long note at
+     * ui_render.mjs's copy of this branch for why they are not arcbip either.
+     * Pinned by tests/js/test_cellkind_parity.mjs, because this whole function
+     * is a COPY and a copy drifts. */
+    if (knob.scope === 'action') { base.kind = 'valsq'; return base; }
     if (knob.fmt === C.fmtPlayDir) { base.kind = 'dirsq'; base.options = KIT_DIR_NAMES; base.sel = v; return base; }
+    if (KIT_FRAC_FMTS.indexOf(knob.fmt) >= 0) {
+        base.kind = 'frac'; base.text = _offDash(text);
+        base.options = _discreteOpts(knob); base.sel = v - knob.min;
+        return base;
+    }
+    if (KIT_RATE_FMTS.indexOf(knob.fmt) >= 0) {
+        base.kind = 'valsq'; base.text = _offDash(text);
+        base.options = _discreteOpts(knob); base.sel = v - knob.min;
+        return base;
+    }
     if (KIT_ENUM_FMTS.indexOf(knob.fmt) >= 0) {
         base.kind = 'enumsq';
         if (knob.fmt === C.fmtArpStyle) base.options = KIT_ARP_STYLE_NAMES;
@@ -101,14 +135,14 @@ function kitCellForKnob(knob, val) {
         return base;
     }
     if (knob.min < 0) {
-        if (knob.max <= 24) { base.kind = 'valsq'; base.options = _discreteOpts(knob); base.sel = v - knob.min; return base; }
+        if (knob.max <= 24) { base.kind = 'valsq'; base.text = _offDash(text); base.options = _discreteOpts(knob); base.sel = v - knob.min; return base; }
         base.kind = 'arcbip';
         const halfR = Math.max(1, Math.max(knob.max, -knob.min));
         base.signed = Math.max(-1, Math.min(1, v / halfR));
         return base;
     }
-    if (knob.fmt === C.fmtPlain && knob.max <= 16) { base.kind = 'valsq'; base.options = _discreteOpts(knob); base.sel = v - knob.min; return base; }
-    if (knob.fmt === C.fmtPitchRnd) { base.kind = 'valsq'; base.options = _discreteOpts(knob); base.sel = v - knob.min; return base; }
+    if (knob.fmt === C.fmtPlain && knob.max <= 16) { base.kind = 'valsq'; base.text = _offDash(text); base.options = _discreteOpts(knob); base.sel = v - knob.min; return base; }
+    if (knob.fmt === C.fmtPitchRnd) { base.kind = 'valsq'; base.text = _offDash(text); base.options = _discreteOpts(knob); base.sel = v - knob.min; return base; }
     base.kind = 'arc';
     base.norm = Math.max(0, Math.min(1, (v - knob.min) / ((knob.max - knob.min) || 1)));
     return base;
