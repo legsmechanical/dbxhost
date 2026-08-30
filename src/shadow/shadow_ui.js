@@ -1232,6 +1232,21 @@ function activateLedQueue() {
             /* Non-LED messages (sysex, etc.) pass through immediately */
             return originalMidiInternalSend(arr);
         }
+        /* ACCEPTED. Callers treat the return value as "did this packet get
+         * queued", and input_filter's setLED/setButtonLED record the colour
+         * they just wrote ONLY when it did — a falsy answer makes them store
+         * -1 so the next draw re-emits.
+         *
+         * Returning undefined here therefore told every caller that every LED
+         * write had failed, which defeats that cache entirely: each painter
+         * re-queues every LED it touches on every frame. With a flush budget
+         * of LED_QUEUE_MAX_PER_TICK and an ascending key walk, a surface that
+         * repaints low notes each frame consumes the whole budget and the
+         * higher notes are never reached at all.
+         *
+         * Last-writer-wins queueing IS acceptance: the packet is held and will
+         * be sent. Say so. */
+        return true;
     };
 }
 
