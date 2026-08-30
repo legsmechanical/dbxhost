@@ -580,4 +580,38 @@ emit('hdr-parampages', 'MOCKUP B — param-pages: Tamzen breadcrumb left, page n
     kit.drawKitCells(DELAY_CELLS, -1);
 });
 
+/* =================== THE HINT ROW, per screen family ====================
+ *
+ * The manual renderer covers the track-view bank cards. Sound mode's editor is
+ * built from ui_cells and never reaches that tool, so its row is rendered here
+ * — and the two are deliberately DIFFERENT, because the gestures are.
+ */
+const SND_CELLS = [
+    arc('Cutf', 'Cutoff', '62', 0.62), arc('Reso', 'Resonance', '18', 0.18),
+    { kind: 'enumsq', label: 'Mode', name: 'Filter Mode', text: 'LP24', options: ['LP24'], sel: 0 },
+    arc('Env', 'Env Amount', '45', 0.45),
+    arc('Atk', 'Attack', '10', 0.10), arc('Dec', 'Decay', '40', 0.40),
+    arc('Sus', 'Sustain', '70', 0.70), arc('Rel', 'Release', '30', 0.30),
+];
+emit('ftr-sound-multisection', 'FOOTER — sound-mode editor, module WITH sections and presets',
+     () => page('FILTER', SND_CELLS, { pageIdx: 1, pageCount: 5,
+        footer: [['CLK', 'PRESET'], ['SHFT', 'SECT'], ['JOG', 'PAGE'], ['BACK', 'OUT']] }));
+/* ⚠ Both conditional hints gone: a single-section module has no Shift+jog
+ * section jump, and an EMPTY block has no presets to offer, so the click
+ * browses MODULES instead. The row shrinks rather than lying. */
+emit('ftr-sound-empty', 'FOOTER — same screen, single-section EMPTY block: SECT gone, CLK says BROWSE',
+     () => page('FILTER', SND_CELLS, { pageIdx: 0, pageCount: 1,
+        footer: [['CLK', 'BROWSE'], ['JOG', 'PAGE'], ['BACK', 'OUT']] }));
+/* The fit rule, on the row that actually over-asks in the product: a track-view
+ * card wants four pairs and the panel holds three. SHFT TRACK is the one that
+ * drops, and BACK survives because its room is reserved first. */
+emit('ftr-trackview-fit', 'FOOTER — track view asks for 4 pairs; SHFT drops, BACK keeps the right edge', () => {
+    kit.drawKitHeader('LIVE ARP', false);
+    kit.drawKitPageBar(5, 7);
+    kit.drawKitCells(SND_CELLS, -1);
+    const asked = [['JOG', 'BANK'], ['CLK', 'ALT'], ['SHFT', 'TRK'], ['BACK', 'OUT']];
+    const drawn = kit.drawKitHintRow(kit.MV_FOOTER_Y, asked);
+    console.log(`      (asked ${asked.length} pairs, drew ${drawn})`);
+});
+
 console.log(`\nwrote ${n} widget render${n === 1 ? '' : 's'} to ${OUT}/`);

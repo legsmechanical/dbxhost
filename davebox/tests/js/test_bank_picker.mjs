@@ -77,6 +77,11 @@ const { BANK_SOUND } = await import('../../ui/ui_constants.mjs');
 const { bankCycleForMode, bankDisplayName } = await import('../../ui/ui_pure.mjs');
 const { PAD_MODE_DRUM, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
+/* The vertical map, read rather than repeated: these assertions are about WHERE
+ * the latch frame is, and hardcoding its rows is how a test keeps passing
+ * against a page that has moved underneath it. */
+const { MV_FOOTER_Y } = await import('../../ui/ui_movy.mjs');
+const FRAME_TOP = 8, FRAME_BOT = MV_FOOTER_Y - 1;
 const render = await import('../../ui/ui_render.mjs');
 const kit = await import('../../ui/ui_movy.mjs');
 const { BANKS } = await import('../../ui/ui_constants.mjs');
@@ -469,10 +474,17 @@ step('⭑ the LATCH draws a frame around the params, and only when latched', () 
     /* The visible half of the latch. ⚠ Asserted on the FRAME EDGES rather than
      * "the screen changed": a card redraws for many reasons, and only the edges
      * are the indicator. */
+    /* ⚠ The frame's bottom edge is FRAME_BOT, not row 63. The footer took the
+     * bottom of the panel on 2026-08-29 and the frame now ends on the clear row
+     * above it — so scanning row 63 here would just be counting hint pills and
+     * calling them a latch. */
     const edgeInk = () => {
         let n = 0;
-        for (let x = 0; x < FBW; x++) { if (fb[8 * FBW + x]) n++; if (fb[63 * FBW + x]) n++; }
-        for (let y = 8; y <= 63; y++) { if (fb[y * FBW]) n++; if (fb[y * FBW + 127]) n++; }
+        for (let x = 0; x < FBW; x++) {
+            if (fb[FRAME_TOP * FBW + x]) n++;
+            if (fb[FRAME_BOT * FBW + x]) n++;
+        }
+        for (let y = FRAME_TOP; y <= FRAME_BOT; y++) { if (fb[y * FBW]) n++; if (fb[y * FBW + 127]) n++; }
         return n;
     };
     reset();
@@ -508,14 +520,19 @@ step('⚠ the latch frame does not sit ON the params', () => {
     S.bankSelectTick = S.tickCount;
     S.bankCardLatched = false;
     fb.fill(0); render.drawUI();
+    /* ⚠ The scan stops at FRAME_BOT. Below it is the HINT ROW, which is chrome
+     * OUTSIDE the frame by construction — its pills deliberately reach both the
+     * bottom scanline and the right edge, so including them would fail this on
+     * the one thing that is meant to be there. The assertion is unchanged in
+     * substance: nothing the CARD draws may touch the frame. */
     let lowest = -1;
-    for (let y = 0; y < 64; y++)
+    for (let y = 0; y <= FRAME_BOT; y++)
         for (let x = 0; x < FBW; x++)
             if (fb[y * FBW + x]) { lowest = y; break; }
-    if (lowest >= 63)
+    if (lowest >= FRAME_BOT)
         throw new Error('card content reaches row ' + lowest + ', where the frame ' +
                         'draws — they would overlap');
-    for (let y = 9; y < 63; y++)
+    for (let y = FRAME_TOP + 1; y < FRAME_BOT; y++)
         if (fb[y * FBW] || fb[y * FBW + 127])
             throw new Error('content touches column 0/127 at row ' + y + ' — the ' +
                             'frame edges would cut through it');

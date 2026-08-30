@@ -49,17 +49,62 @@ import {
 } from './ui_fonts_pp.mjs';
 import { observeLanded, easeOut, lerp } from './ui_anim.mjs';
 
-/* ---- layout (kit v27 vertical map, 128x64) ----
- * hdr 0-7 (text 1-6) | blank 8 | page bar 9 | gap 10-13 |
- * w0 14-29 | lbl0 30-36 | gap 37-40 | w1 41-56 | lbl1 57-63 */
+/* ---- layout: the vertical map, 128x64 ----------------------------------
+ *
+ * ⭑⭑ RE-CUT 2026-08-29 TO BUY THE FOOTER. This SUPERSEDES the canvaskit v27
+ * map, which had no room for one: its bottom label strip ran to row 63.
+ *
+ *   hdr    0-7    filled bar, 6-row glyph at y=1, one clear row each side
+ *   dark   8      ⚠ LOAD-BEARING. davebox's header is ALWAYS inverted, so
+ *                 without this row the page bar butts the filled band and the
+ *                 two merge into one thick smudge.
+ *   bar    9      page indicator
+ *   gap    10
+ *   w0     11-25  widget row 0            MV_ROW0_Y, MV_KH = 15
+ *   lbl0   26-32  label strip 0           MV_LBL0_Y, MV_LBL_H = 7
+ *   gap    33
+ *   w1     34-48  widget row 1            MV_ROW1_Y
+ *   lbl1   49-55  label strip 1           MV_LBL1_Y
+ *   clear  56
+ *   ftr    57-63  hint pills              MV_FOOTER_Y, MV_FOOTER_H = 7
+ *
+ * ⭑ THE GUTTERS ARE EQUAL (one row above each widget row). They were 4 and 2
+ * before, which is the kind of asymmetry nothing reads as deliberate — it
+ * reads as one row tight and one loose. One row rather than upstream's two,
+ * because davebox spends two more rows up top than upstream does: its header
+ * band is 8 (a 6-row glyph, not a 5-row one) and its bar needs the dark row
+ * above.
+ *
+ * ⭑ THE ROWS CAME FROM THE WIDGET BOX, 16 -> 15, WHICH IS FREE. A viz body
+ * occupies rowY+1..rowY+13 and a framed box is 15 tall, so 15 is all either
+ * ever needed — this is upstream's BOX_H exactly, and every widget in this
+ * file was already drawing inside it.
+ *
+ * ⚠⚠ THE LABEL BAND STAYS 7 AND MUST STAY ODD. It is the obvious place to
+ * find two more rows and it is the wrong one: 5 glyph rows centred in an EVEN
+ * band leave no clear row on one side, so a TOUCHED cell — which inverts the
+ * strip — has its letters running straight into the top edge of their own
+ * highlight and the whole strip reads as a smudge. Upstream cut it to 6, saw
+ * that on hardware, and put it back. 7 gives one clear row on each side.
+ *
+ * ⚠ MV_ZOOM_Y is deliberately NOT re-cut with the rest. It used to coincide
+ * with the widget-row top; it no longer does. The overlays it positions (the
+ * picker, the stacked list) are MODALS whose row capacity is tuned against
+ * this box, and moving them would change how many options fit — a separate
+ * decision from making room for a footer. */
 export const MV_HDR_H = 8;
 export const MV_BAR_Y = 9;
-/* ⭑ Shifted UP 2px on 2026-08-25, into the space the header rule used to take.
- * The kit body used to end at row 62, flush against the panel edge; the latch
- * frame needs the bottom row, and content touching a frame reads as clipped
- * even when it is not. Josh: reclaim that space and bump things up. */
-export const MV_ROW0_Y = 12, MV_LBL0_Y = 28, MV_ROW1_Y = 39, MV_LBL1_Y = 55;
-export const MV_CELL_W = 32, MV_KW = 20, MV_KH = 16, MV_LBL_H = 7;
+/* (The 2026-08-25 note that lived here — "shifted up 2px into the space the
+ * header rule used to take, because the latch frame needs the bottom row" — is
+ * SUPERSEDED. The bottom row now belongs to the footer, and the latch frame
+ * ends above it: see drawKitLatchBox.) */
+export const MV_ROW0_Y = 11, MV_LBL0_Y = 26, MV_ROW1_Y = 34, MV_LBL1_Y = 49;
+export const MV_CELL_W = 32, MV_KW = 20, MV_KH = 15, MV_LBL_H = 7;
+/* The hint row sits on the LAST SCANLINE, not one row up. The panel is inset in
+ * plastic, so a dark row at the bottom is not a margin — it is a margin on top
+ * of a margin, and the bezel is already the ground a bottom notch reads
+ * against. Same reason the header's band starts at row 0. */
+export const MV_FOOTER_Y = 57;
 /* Centered overlay box shared by the turn-to-reveal value zoom (ui_render) and
  * the picker list overlay below — same footprint so both read as one control. */
 export const MV_ZOOM_X = 32, MV_ZOOM_Y = 14, MV_ZOOM_W = 64, MV_ZOOM_H = 48;
@@ -628,7 +673,13 @@ export function rectOutline(x, y, w, h, fg) {
  * ⚠ Drawn LAST, over the cells: the frame is 1px on the outer edge of the
  * panel, and a widget that reaches the edge would otherwise punch holes in it. */
 export function drawKitLatchBox(y, dashed) {
-    const x = 0, w = SCREEN_W, h = SCREEN_H_LATCH - y;
+    /* ⚠ THE FRAME STOPS ABOVE THE FOOTER, not at the panel edge. It used to run
+     * to row 63 because that row was spare; it is the hint row now, and a frame
+     * drawn through the pills reads as corruption rather than as a latch. The
+     * bottom edge lands on the one clear row between the last label strip and
+     * the footer, so it encloses the PARAMS — which is what it is a frame
+     * around — and touches neither. */
+    const x = 0, w = SCREEN_W, h = MV_FOOTER_Y - y;
     if (!dashed) { rectOutline(x, y, w, h, 1); return; }
     for (let i = 0; i < w; i += 2) {
         set_pixel(x + i, y, 1);
@@ -2117,6 +2168,18 @@ export const MV_FOOTER_CANON = Object.freeze({
     backActions: Object.freeze(['EXIT', 'OUT']),
 });
 
+/* ⚠⚠ THE FLOW BUDGET IS 86px, NOT 128. BACK/OUT is 42px and its room is
+ * reserved first, so everything else competes for what is left — which in
+ * practice is TWO short pairs, or one long one. Measured:
+ *
+ *     JOG BANK 43 · JOG PAGE 43 · CLK ALT 37 · CLK STEP 42 · SHFT SECT 46
+ *     SHFT TRK 41 · SHFT TRACK 51 · CLK PRESET 52 · CLK PRESETS 57
+ *
+ * So a four-pair row is normal and the drop is not a failure — but the ORDER
+ * and the WORD LENGTH decide what survives, and both are the caller's. Put the
+ * gesture with no on-screen trace first, and keep the action to one short word:
+ * "PRESETS" costs 15px more than "PRESET" and takes a second hint down with it.
+ * Do not add a fifth pair expecting it to show. */
 export function hintPairWidth(key, action) {
     return fontWidth4x5(String(key).toUpperCase()) + MV_HINT_PAD + MV_HINT_GAP
          + fontWidth4x5(String(action).toUpperCase()) + MV_HINT_GAP;
@@ -2131,7 +2194,7 @@ export function isBackHint(h) {
  * drawn, so a caller can tell that it over-asked. */
 export function drawKitHintRow(y, hints) {
     if (!hints || !hints.length) return 0;
-    const ty = y + Math.floor((MV_FOOTER_H - FONT4_HEIGHT) / 2);
+    const ty = (y == null ? MV_FOOTER_Y : y) + Math.floor((MV_FOOTER_H - FONT4_HEIGHT) / 2);
     const list = hints.filter(Boolean);
     /* Exactly one back hint is pinned; a second stays an ordinary hint rather
      * than fighting for the same x. */
@@ -2267,18 +2330,56 @@ function drawCellWidget(col, rowY, cell, touched, anim, nowMs) {
  * the plain label does not already carry.
  * ⚠ Opt-in by descriptor field (`modulated`). davebox sets it nowhere today, so
  * every existing label strip renders identically. */
+/* The modulation mark, DRAWN rather than typed.
+ *
+ * ⚠⚠ IT WAS A '~' CHARACTER AND THE 4x5 FACE HAS NO TILDE. When the label strip
+ * moved to that face the mark silently stopped drawing — the glyph lookup
+ * returns null, the blitter advances and draws nothing, so the third state
+ * (UI_LANGUAGE §3.2) vanished with no error anywhere. Four pixels, the shape
+ * upstream's drawWaveMark uses, is not a font problem. */
+function drawWaveMark(x, y, on) {
+    set_pixel(x, y, on);
+    set_pixel(x + 2, y, on);
+    set_pixel(x + 1, y + 1, on);
+    set_pixel(x + 3, y + 1, on);
+}
+
 function drawCellLabel(col, lblY, cell, touched) {
-    let text = String(touched && cell.text != null ? cell.text : (cell.label || ''));
-    if (!touched && cell.modulated && text) text += '~';
+    /* ⚠⚠ UPPERCASE BEFORE MEASURING OR PRINTING. The 4x5 face is CAPS-ONLY —
+     * it has no lowercase glyphs at all, and a missing glyph is silent: it
+     * advances the cursor and draws nothing. A mixed-case abbrev like "Style"
+     * came out as "S" followed by four blank cells, and the blanks pushed the
+     * measured width past the budget so the trim ate the rest. Doing it HERE
+     * rather than at each call site is UI_LANGUAGE §2.1's rule, and it is a
+     * visual no-op for text that is already capitals. */
+    let text = String(touched && cell.text != null ? cell.text : (cell.label || '')).toUpperCase();
     if (!text) return;
-    while (text.length > 0 && mvWidth(text) > MV_CELL_W - 2) text = text.slice(0, -1);
-    const tw = mvWidth(text);
+    /* ⭑ THE 4x5 FACE, not the movy label font — this is what paid for the
+     * footer. Both are 5 rows tall, so the band did not change; what changed is
+     * that the 4x5 face is the one the enum square, the opaque box and the hint
+     * pills already use, so the page now has ONE small face instead of two.
+     * ⚠ Trim MEASURED, never by character count: the face is proportional
+     * (I is 1px, W is 5), so "six characters" is not a width. */
+    while (text.length > 0 && fontWidth4x5(text) > MV_CELL_W - 2) text = text.slice(0, -1);
+    const tw = fontWidth4x5(text);
     const tx = Math.round(col * MV_CELL_W + MV_CELL_W / 2 - tw / 2);
-    if (touched) {
+    /* One clear row above and below the glyphs inside the band — see MV_LBL_H,
+     * which is odd for exactly this. */
+    const ty = lblY + Math.floor((MV_LBL_H - FONT4_HEIGHT) / 2);
+    const inverted = !!touched;
+    if (inverted) {
         fill_rect(col * MV_CELL_W, lblY, MV_CELL_W, MV_LBL_H, 1);
-        mvPrint(tx, lblY + 1, text, 0);
+        fontPrint4x5(tx, ty, text, 0);
     } else {
-        mvPrint(tx, lblY + 1, text, 1);
+        fontPrint4x5(tx, ty, text, 1);
+    }
+    /* The third state rides the NAME, never the touched VALUE — while your
+     * finger is on the knob the strip is answering "what number is this", and a
+     * modulation mark there competes with the answer. Placed left of the run,
+     * clamped into the cell; polarity follows the ground it lands on. */
+    if (cell.modulated && !touched) {
+        const wx = Math.max(col * MV_CELL_W, tx - 6);
+        drawWaveMark(wx, ty + 1, inverted ? 0 : 1);
     }
 }
 
@@ -2342,10 +2443,11 @@ export function drawKitEnumOverlay(cells, touchedIdx) {
     /* Any cell carrying a discrete option list (named enum, direction, OR a
      * numeric value-box) uses the picker — they're the same thing, limited
      * values vs limited enums. */
-    if (!cell || !cell.options || cell.options.length <= 2) return;
-    const sel = cell.sel | 0;
-    if (sel < 0) return; /* unset value ("--") — nothing to browse */
-    drawKitListOverlay(cell.options, sel);
+    /* ⭑ ONE predicate, shared with the footer's stand-down test — see
+     * enumOverlayWouldDraw. Two copies would let the footer vanish under
+     * nothing, or survive under a picker, and both read as a rendering bug. */
+    if (!enumOverlayWouldDraw(cells, touchedIdx)) return;
+    drawKitListOverlay(cell.options, cell.sel | 0);
 }
 
 /* How long an enum peek stays up, in ms. Upstream's ENUM_PEEK_MS, carried
@@ -2639,6 +2741,19 @@ export function drawKitBankPage(cells, opts) {
      * actually TURNED (see enumOverlayIdx in ui_render.mjs). Callers pass the
      * turn-gated index separately; omitting it keeps the old touch-gated
      * behaviour for existing call sites. */
+    /* ⭑ THE HINT ROW, and it is the LAST thing before the overlay.
+     *
+     * ⚠⚠ SUPPRESSED WHILE A PICKER IS UP, and that is a design statement rather
+     * than a layout dodge. The option list is a MODAL: it owns the screen and
+     * states its own affordance (turn to browse, release to commit). It also
+     * covers only the middle of the panel, so a footer drawn under it survives
+     * as the two pills that happen to stick out either side — a half-eaten row
+     * of hints describing a gesture that is not the one in progress. Either
+     * none or all; none is correct here.
+     *
+     * `footer` is the caller's, per screen: this file has no idea what a bank
+     * responds to, and a hint invented here would be a promise the input code
+     * never made. See drawKitHintRow for the fit rule that keeps BACK. */
     const ov = (opts.overlayIdx != null) ? opts.overlayIdx : t;
     /* ⭑ THE PEEK: `peekExpired` takes the option list down while the knob is
      * still held. Upstream raises the list on the TURN and decays it after
@@ -2650,7 +2765,17 @@ export function drawKitBankPage(cells, opts) {
      * unasked would REMOVE a display that currently works, which is not what
      * "pixels on, behaviour off" buys. See enumPeekExpired() for the timer half;
      * Josh judges it from the offline renders first. */
+    const overlayUp = !opts.peekExpired && enumOverlayWouldDraw(cells, ov);
+    if (opts.footer && !overlayUp) drawKitHintRow(MV_FOOTER_Y, opts.footer);
     if (!opts.peekExpired) drawKitEnumOverlay(cells, ov);
+}
+
+/* Would drawKitEnumOverlay put something on screen for this cell? Asked so the
+ * footer can stand down BEFORE the overlay draws over it — and it IS
+ * drawKitEnumOverlay's own guard, called by both, so the two cannot drift. */
+export function enumOverlayWouldDraw(cells, idx) {
+    const cell = idx >= 0 ? cells[idx] : null;
+    return !!(cell && cell.options && cell.options.length > 2 && (cell.sel | 0) >= 0);
 }
 
 /* Turn-to-reveal value zoom — the non-picker counterpart to drawKitEnumOverlay.

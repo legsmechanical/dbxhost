@@ -5094,6 +5094,49 @@ function renderHosted() {
     }
 }
 
+/* The hint row for a MODULE EDITOR page. Different screen, different gestures —
+ * every pair below is soundOnCC's, not the track view's, and the two rows
+ * deliberately do not match:
+ *
+ *   JOG  PAGE     the jog walks S.bankIdx across this module's banks. It is
+ *                 PAGE and not BANK because in here a "bank" is one page of one
+ *                 module's params, where in the track view it is the whole
+ *                 card you are looking at. The word follows the thing.
+ *   SHFT SECT     Shift+jog jumps SECTIONS -- and only exists when the module
+ *                 HAS more than one (S.sections.length > 1), which is exactly
+ *                 the branch condition. A single-section module gets no hint,
+ *                 because Shift+jog there falls through to stepping the track.
+ *   CLK  PRESETS  jog click opens the preset browser. On an EMPTY block there
+ *                 are no presets to offer and the click browses MODULES
+ *                 instead, so the word changes with the destination
+ *                 (`S.moduleId ? presets : browse`).
+ *   BACK OUT      Back rises one level, out of the editor to the block picker.
+ *
+ * ⚠ MUTE+click bypasses a block, but only in VIEW_BLOCKS -- not here -- so it
+ * is not hinted here. Hinting a gesture one screen up is the same failure as
+ * inventing one.
+ * ⚠ Knob touch/turn edits the value under your finger. Not hinted: the eight
+ * knobs ARE the page, and a row of pills is for the gestures that are not
+ * self-evident. */
+function editHints() {
+    /* ⚠⚠ ORDERED BY WHAT HAS NO ON-SCREEN TRACE, which is NOT the same as the
+     * track view's order and is the one place these two rows deliberately
+     * disagree. The flow budget is 86px (see hintPairWidth) and CLK PRESET
+     * alone is 52, so this row shows ONE pair plus BACK. The one it shows must
+     * therefore be the one nothing else says:
+     *   · the PAGE BAR is already drawn above these cells and already
+     *     advertises that the jog walks pages, so JOG PAGE is the redundant
+     *     hint here — it goes last.
+     *   · the click and the Shift chord have no visual trace whatsoever.
+     * On the track view the jog opens a PICKER rather than stepping a page, so
+     * there it leads. */
+    const hints = [['CLK', S.moduleId ? 'PRESET' : 'BROWSE']];
+    if (S.sections.length > 1) hints.push(['SHFT', 'SECT']);
+    hints.push(['JOG', 'PAGE']);
+    hints.push(['BACK', 'OUT']);
+    return hints;
+}
+
 function renderEdit() {
     clear_screen();
     /* Hosted modules draw themselves, INCLUDING their own header and picker. */
@@ -5115,6 +5158,7 @@ function renderEdit() {
         overlayIdx: overlayIdx(),
         env: bank.env || null,
         filt: filterVizFor(bank, S.values),
+        footer: editHints(),
     });
     if (S.shiftHeld && S.sections.length > 1) {
         drawKitSectionPicker(S.sections, activeSection(S.sections, S.bankIdx));

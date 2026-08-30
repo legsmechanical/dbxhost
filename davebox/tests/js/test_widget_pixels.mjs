@@ -342,15 +342,47 @@ step('the pill and the box actually LOOK different, and the box shows the word',
 });
 
 step('the fader lattice re-phases where the bar cannot move', () => {
-    /* The whole argument for the fader over the vbar: on a 13-row band a
-     * 128-step param gets ~10 detents per row, so nine in ten move nothing.
-     * These two values round to the same boundary row and must still differ. */
-    const a = shot(() => kit.drawFaderColumn(6, kit.MV_ROW0_Y, 0.500));
-    const b = shot(() => kit.drawFaderColumn(6, kit.MV_ROW0_Y, 0.520));
+    /* The whole argument for the fader over the vbar: a 128-step param gets ~10
+     * detents per row of travel, so nine in ten move nothing.
+     *
+     * ⚠⚠ THE PAIR IS DERIVED, NOT WRITTEN DOWN. It was hardcoded (0.500/0.520)
+     * and went stale the moment the widget box changed 16 -> 15 to buy the
+     * footer: at the new band height both values land in the same DIAG_HEAVY
+     * phase, so the test failed while the feature was fine. A hardcoded pair
+     * here is a pin on the geometry pretending to be a pin on the fill.
+     *
+     * So: search for two values that share a boundary row and differ in phase,
+     * and FAIL IF NONE EXISTS — because that is the real regression (a band so
+     * short the sub-row phase cannot express anything), and a search that
+     * quietly finds nothing would report it as a pass. */
+    const h = kit.MV_KH - 3;                 /* drawFaderColumn: bot - top */
+    const phaseOf = (v) => Math.floor((v * h - Math.floor(v * h)) * 4) % 4;
+    let lo = -1, hi = -1;
+    for (let i = 1; i < 1000 && lo < 0; i++) {
+        const x = i / 1000;
+        for (let j = i + 1; j < 1000; j++) {
+            const y = j / 1000;
+            if (Math.round(x * h) !== Math.round(y * h)) continue;   /* same boundary */
+            if (Math.round(x * 12) !== Math.round(y * 12)) continue; /* vbar agrees too */
+            if (phaseOf(x) === phaseOf(y)) continue;                 /* but the phase moves */
+            /* ⚠ AND THE BAR MUST HAVE AN INTERIOR TO DITHER. Below ~3 rows the
+             * fader degrades to a solid 7x2 stub with no lattice at all
+             * (`bh >= 3` in drawFaderColumn), so the first pair the search
+             * found — 0.001 vs 0.021 — differed in phase and drew IDENTICAL
+             * pixels, which is the widget behaving correctly and the test
+             * asking the wrong question. */
+            if (Math.round(x * h) < 3) continue;
+            lo = x; hi = y; break;
+        }
+    }
+    assert(lo >= 0, 'no sub-row pair exists at MV_KH=' + kit.MV_KH +
+                    ' — the band is too short for the lattice to say anything');
+    const a = shot(() => kit.drawFaderColumn(6, kit.MV_ROW0_Y, lo));
+    const b = shot(() => kit.drawFaderColumn(6, kit.MV_ROW0_Y, hi));
     assert(!same(a, b), 'a sub-row detent changed no pixel — the phase is not wired');
-    const va = shot(() => kit.drawVBar(6, kit.MV_ROW0_Y, 0.500));
-    const vb = shot(() => kit.drawVBar(6, kit.MV_ROW0_Y, 0.520));
-    assert(same(va, vb), 'the vbar comparison is not actually sub-row — pick closer values');
+    const va = shot(() => kit.drawVBar(6, kit.MV_ROW0_Y, lo));
+    const vb = shot(() => kit.drawVBar(6, kit.MV_ROW0_Y, hi));
+    assert(same(va, vb), 'the vbar comparison is not actually sub-row (' + lo + '/' + hi + ')');
 });
 
 /* ------------------------------------------------------ 7. knob ring LEDs */

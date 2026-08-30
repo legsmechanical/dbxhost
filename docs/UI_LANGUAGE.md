@@ -72,7 +72,8 @@ Caps-only is the default assumption. Three of the five fonts have no real lowerc
 | Font | Print / measure | Metrics | Use |
 |---|---|---|---|
 | **Header** | `hdrPrint` / `hdrWidth` / `fitHdr` | 6×6 monospace, caps + digits | Header bar, overlay rows, section picker |
-| **Label** | `mvPrint` / `mvWidth` | 5px tall, proportional, −1px tracking | Cell label strips |
+| **Label** | `mvPrint` / `mvWidth` | 5px tall, proportional, −1px tracking | Free text on movy screens |
+| **4×5 label** | `fontPrint4x5` / `fontWidth4x5` / `fit4x5` | 5 rows, proportional (I is 1px, W is 5), **CAPS ONLY** | Cell label strips (§3), enum squares, opaque boxes, hint pills |
 | **Micro** | `pf3Print` / `pf3Width` | 5×3, force-uppercased | Enum squares — where words must fit a 20px box |
 | **Big numeric (ported)** | `fontPrintBigNum` / `fontWidthBigNum` / `bigNumCanDraw` | 11 rows, 2px stems. **12 glyphs: `0-9 + -`** | `valsq`, whenever the value is purely numeric |
 | **Big numeric (davebox)** | `bigPrint` / `bigWidth` / `bigFit` | `MV_BIG_H = 11`, `BIG_GAP = 1`, condensed variant | The **fallback** for any `valsq` with a letter in it |
@@ -142,16 +143,43 @@ diagonal reads as `0`, which turns `1/64d` into `1/640`. Do not "tidy" them away
 The parameter-page chassis: **4 columns × 2 rows = 8 cells**, one per hardware knob (CC 71–78).
 
 ```
-hdr  0-7   (text at y=1)      MV_HDR_H = 8
-blank 8
-bar   9    page indicator     MV_BAR_Y = 9
-gap  10-13
-w0   14-29 widgets row 0      MV_ROW0_Y = 14
-lbl0 30-36 labels row 0       MV_LBL0_Y = 30, MV_LBL_H = 7
-gap  37-40
-w1   41-56 widgets row 1      MV_ROW1_Y = 41
-lbl1 57-63 labels row 1       MV_LBL1_Y = 57
+hdr   0-7   filled bar, 6-row glyph at y=1     MV_HDR_H = 8
+dark  8     ⚠ load-bearing, see below
+bar   9     page indicator                     MV_BAR_Y = 9
+gap  10
+w0   11-25  widgets row 0                      MV_ROW0_Y = 11, MV_KH = 15
+lbl0 26-32  labels row 0                       MV_LBL0_Y = 26, MV_LBL_H = 7
+gap  33
+w1   34-48  widgets row 1                      MV_ROW1_Y = 34
+lbl1 49-55  labels row 1                       MV_LBL1_Y = 49
+clear 56
+ftr  57-63  hint pills                         MV_FOOTER_Y = 57, MV_FOOTER_H = 7
 ```
+
+⭑⭑ **RE-CUT 2026-08-29 TO BUY THE FOOTER, and this SUPERSEDES the canvaskit v27 map** — which had
+no room for one: its bottom label strip ran to row 63. There is one vertical map, and it is this.
+*(The retired v27 numbers, for reading old commits: `MV_ROW0_Y = 14`, `MV_LBL0_Y = 30`,
+`MV_ROW1_Y = 41`, `MV_LBL1_Y = 57`, `MV_KH = 16`, and no footer.)*
+
+- **The rows came from the WIDGET BOX, 16 → 15, which is free.** A viz body occupies
+  `rowY+1..rowY+13` and a framed box is 15 tall, so 15 is all either ever needed — it is upstream's
+  `BOX_H` exactly, and every widget here was already drawing inside it.
+- ⚠⚠ **The label band stays 7 and MUST stay odd.** It is the obvious place to find two more rows
+  and it is the wrong one: 5 glyph rows centred in an *even* band leave no clear row on one side,
+  so a TOUCHED cell — which inverts the strip — has its letters running into the top edge of their
+  own highlight and the whole strip reads as a smudge. Upstream cut it to 6, saw that on hardware,
+  and put it back.
+- **The gutters are now EQUAL** (one row above each widget row). They were 4 and 2, which is the
+  kind of asymmetry nothing reads as deliberate — it read as one row tight and one loose. One row
+  rather than upstream's two, because davebox spends two more rows up top: its header band is 8 (a
+  6-row glyph, not a 5-row one) and its bar needs the dark row above it.
+- ⚠ **Row 8 is load-bearing.** davebox's header is *always* inverted, so without a dark row the
+  page bar butts the filled band and the two merge into one thick smudge.
+- ⚠ **`MV_ZOOM_Y` was deliberately NOT re-cut.** It used to coincide with the widget-row top; it no
+  longer does. The overlays it positions are modals whose row capacity is tuned against that box,
+  and moving them changes how many options fit — a separate decision from making room for a footer.
+- ⚠ **The latch frame ends at `MV_FOOTER_Y - 1`,** not at the panel edge. It encloses the *params*,
+  which is what it is a frame around; drawn through the pills it reads as corruption.
 
 - `MV_CELL_W = 32` → 4 × 32 = 128, **no horizontal gutter**. Columns butt together.
 - Widget box `MV_KW = 20` × `MV_KH = 16`, centred in the cell.
@@ -160,8 +188,10 @@ lbl1 57-63 labels row 1       MV_LBL1_Y = 57
   — a centred 64×48 box starting exactly at the widget-row top, so the value zoom and the picker
   list read as one control rather than two different panels.
 
-These metrics are pixel-identical to canvaskit v27's documented vertical map. **Do not re-derive
-them per screen**; import the constants.
+⚠ These metrics were pixel-identical to canvaskit v27's vertical map until the 2026-08-29 re-cut
+above; they are not any more, and v27 is no longer the reference. **Do not re-derive them per
+screen** — import the constants, which is also what keeps a test from pinning a row number that
+has moved.
 
 ### Widgets
 
@@ -240,12 +270,58 @@ not what you were watching.
   as its own **base mark** (a coarse 2-on-2-off dash, told apart from the solid cursor and the fine
   spray dither by its rhythm), and `faderail` as two stubs outside the rails.
 
-**Label third state** (`modulated`): a trailing `~` on the label strip. It rides the NAME, not the
-value — the widget is already showing the value moving; what the strip has to add is *why*. ⚠ Not
-drawn on the touched cell, where the strip is answering "what number is this".
+**Label third state** (`modulated`): a four-pixel wave mark left of the label run. It rides the
+NAME, not the value — the widget is already showing the value moving; what the strip has to add is
+*why*. ⚠ Not drawn on the touched cell, where the strip is answering "what number is this".
+⚠⚠ It was a literal `~` character until 2026-08-29, and **the 4×5 face has no tilde** — when the
+label strip moved to that face the glyph lookup started returning null, the blitter advanced and
+drew nothing, and the third state vanished with no error anywhere. Four pixels is not a font
+problem. The same trap applies to the strip itself: that face is **caps-only**, so `drawCellLabel`
+uppercases before measuring or printing (§2.1's rule) — a mixed-case abbrev rendered as its first
+letter followed by blanks, and the blanks pushed the measured width past the budget so the trim ate
+the rest.
 
 **Both are descriptor fields, and davebox sets neither today**, so every shipping cell renders
 identically. A bank that gains a modulation source needs a *value*, not a widget.
+
+### 3.3.1 The hint row — every knob-bank page carries one
+
+`drawKitHintRow(MV_FOOTER_Y, hints)` on the bottom seven rows. This is the gap Josh named: stock's
+module param pages all carry a footer and davebox's own bank cards did not.
+
+**Who gets one:** the track-view bank cards (`drawKitPage`, including the three Conductor grids)
+and sound mode's module editor. **Who does not, in this pass:** the step editor, perf views,
+dialogs, the session mixer, REPEAT GROOVE and the AUTO bank — they are not knob-bank pages.
+
+⚠⚠ **THE FLOW BUDGET IS 86px, NOT 128.** `BACK/OUT` is 42px and its room is reserved *first*, so
+everything else competes for the remainder — in practice two short pairs, or one long one. A
+four-pair row is therefore normal and the drop is not a failure; but the **order** and the **word
+length** decide what survives, and both belong to the caller.
+
+| pair | px | pair | px |
+|---|---|---|---|
+| `JOG BANK` / `JOG PAGE` | 43 | `SHFT TRK` | 41 |
+| `CLK ALT` | 37 | `SHFT SECT` | 46 |
+| `CLK STEP` | 42 | `SHFT TRACK` | 51 |
+| `CLK PRESET` | 52 | `CLK PRESETS` | 57 |
+
+- ⭑⭑ **Every pair names a gesture the input code actually implements**, and the conditional ones
+  are conditional because the *gesture* is: `CLK STEP` only on melodic banks 4/5, `CLK ALT` only
+  where `bankHasAltParams`, `SHFT SECT` only where the module has more than one section, and
+  `CLK PRESET` becomes `CLK BROWSE` on an empty block because that is what the click then does.
+  **Never hint a gesture that does not exist** — and never hint one belonging to another screen.
+- ⭑ **Order by what has no on-screen trace**, which is why the two rows differ. In sound mode the
+  page bar already advertises that the jog walks pages, so `JOG PAGE` goes *last* there; on a track
+  card the jog opens a *picker* rather than stepping a page, and it leads.
+- **Not hinted, deliberately:** Delete+jog (bank resets), Shift+Delete+jog, Shift+jog-click (latch),
+  Mute+click (a VIEW_BLOCKS gesture, one screen up). Destructive or modal-adjacent chords, and a
+  hint the fit rule must drop is worse than one never offered.
+- ⚠ **Suppressed under a picker overlay.** The option list is a modal that states its own
+  affordance and covers only the middle of the panel, so a footer drawn under it survives as the
+  pills that stick out either side — a half-eaten row describing a gesture that is not the one in
+  progress. `enumOverlayWouldDraw()` is the shared predicate, called by both the overlay and the
+  stand-down, so the two cannot drift.
+- See §3.8 for the pill's own drawing rules and the BACK-reservation mechanism.
 
 ### 3.4 The arc knob
 
@@ -733,7 +809,8 @@ its last such caller and moved to `drawKitHeader` on 2026-08-15.
 the arc geometry (§3.4), the switch pill / enum box split (§3.3), the fader column (§3.3), the
 ghost fill on by default (§3.1), the dotted scrollbar rail on lists *and* overlays (§5), the
 knob-ring ramp (§7.1), the enum square (§3.5), the opaque box tri-state (§3.6), the trigger button
-(§3.7), the footer hint row (§3.8), the waveform morph, and the big-number face (§2). Ported and **dormant until a
+(§3.7), the footer hint row (§3.8) — now ON every knob-bank page (§3.3.1), which re-cut the vertical map
+(§3) — the waveform morph, and the big-number face (§2). Ported and **dormant until a
 caller opts in** — the modulation dot and the label `~` (§3.2, no davebox cell has a modulation
 source), the EQ curve and the sample track (§3, declared spans nothing declares yet). Ported and
 **vetoed** — the enum-peek decay (§8, Josh: leave it unwired). **No knob feel, no gesture latch and

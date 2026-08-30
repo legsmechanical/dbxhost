@@ -122,13 +122,26 @@ const bankCells = (bank, overrides = {}) =>
 // ---- screen catalog ----
 // Generic bank pages: {bank, section, over?, touchedIdx?, altArrowShow?}.
 // header always = BANKS[bank].name, inverted=false (matches drawKitPage on device).
+/* ⭑ THE HINT ROWS ARE THE ONES ui_render.bankPageHints WOULD BUILD for this
+ * bank, spelled out here because this tool drives the draw layer directly and
+ * never runs the state machine that derives them. Keep them in step with
+ * bankPageHints — a manual page promising a gesture the device does not offer
+ * is worse than one with no footer at all.
+ *   CLK STEPS  banks 4/5 on a MELODIC track (the Arp-Steps interval overlay)
+ *   CLK ALT    a bank that HAS alt params (the two with altArrowShow here)
+ *   no CLK     a bank with neither */
+const F_JOG = ['JOG', 'BANK'], F_SHFT = ['SHFT', 'TRK'], F_BACK = ['BACK', 'OUT'];
+const hintsAlt   = [F_JOG, ['CLK', 'ALT'],   F_SHFT, F_BACK];
+const hintsSteps = [F_JOG, ['CLK', 'STEP'], F_SHFT, F_BACK];
+const hintsPlain = [F_JOG, F_SHFT, F_BACK];
+
 const BANK_SCREENS = [
-    { file: 'bank-clip',      bank: 0, section: '9.1 CLIP bank',      over: { 0: 1, 6: 2 }, altArrowShow: true },
-    { file: 'bank-notefx',    bank: 1, section: '10.1 NOTE FX bank',  over: { 0: 1, 1: 7, 2: -23, 3: 50 }, touchedIdx: 2 },
-    { file: 'bank-harmony',   bank: 2, section: '10.2 HARMONY bank',  over: { 0: 1, 1: 7, 2: 12, 3: -5 } },
-    { file: 'bank-delay',     bank: 3, section: '10.3 DELAY bank',    over: { 0: 10, 2: 4, 4: 12, 7: 3 } },
-    { file: 'bank-seqarp',    bank: 4, section: '10.4 SEQ ARP bank',  over: { 0: 1, 1: 3, 2: 1 } },
-    { file: 'bank-livearp',   bank: 5, section: '10.5 LIVE ARP bank', over: { 0: 1, 1: 2, 2: 2 }, altArrowShow: true },
+    { file: 'bank-clip',      bank: 0, section: '9.1 CLIP bank',      over: { 0: 1, 6: 2 }, altArrowShow: true, footer: hintsAlt },
+    { file: 'bank-notefx',    bank: 1, section: '10.1 NOTE FX bank',  over: { 0: 1, 1: 7, 2: -23, 3: 50 }, touchedIdx: 2, footer: hintsPlain },
+    { file: 'bank-harmony',   bank: 2, section: '10.2 HARMONY bank',  over: { 0: 1, 1: 7, 2: 12, 3: -5 }, footer: hintsPlain },
+    { file: 'bank-delay',     bank: 3, section: '10.3 DELAY bank',    over: { 0: 10, 2: 4, 4: 12, 7: 3 }, footer: hintsPlain },
+    { file: 'bank-seqarp',    bank: 4, section: '10.4 SEQ ARP bank',  over: { 0: 1, 1: 3, 2: 1 }, footer: hintsSteps },
+    { file: 'bank-livearp',   bank: 5, section: '10.5 LIVE ARP bank', over: { 0: 1, 1: 2, 2: 2 }, altArrowShow: true, footer: hintsAlt },
 ];
 
 // Custom cell grids (drawn via drawKitBankPage but not from BANKS knobs).
@@ -138,6 +151,7 @@ const DIQ = ['Off','1/64','1/32','1/16','1/16T','1/8','1/8T','1/4','1/4T'];
 const CUSTOM_KIT = [
     {
         file: 'bank-drumlane', section: '9.2 DRUM LANE bank', header: 'DRUM LANE',
+        footer: hintsAlt,
         cells: [
             enumC('Res', 'Resolution', RES, 1),
             { kind: 'action', label: 'Strch', name: 'Beat Stretch', text: '1x' },
@@ -151,6 +165,7 @@ const CUSTOM_KIT = [
     },
     {
         file: 'bank-alllanes', section: '9.3 ALL LANES bank', header: 'ALL LANES',
+        footer: hintsAlt,
         cells: [
             { kind: 'valsq', label: 'Res', name: 'Resolution', text: '--' },
             { kind: 'action', label: 'Strch', name: 'Beat Stretch', text: '1x' },
@@ -164,6 +179,7 @@ const CUSTOM_KIT = [
     },
     {
         file: 'bank-conductor-octave', section: '8.3 Conductor banks (C-OCTAVE)', header: 'C-OCTAVE',
+        footer: hintsPlain,
         cells: [
             { kind: 'valsq', label: 'Tr1', name: 'Track 1', text: '+1' },
             { kind: 'blank', label: 'Cndct' },
@@ -347,12 +363,14 @@ for (const s of BANK_SCREENS) {
         const cells = bankCells(s.bank, s.over || {});
         const pos = { pageIdx: s.bank, pageCount: 7 };
         kit.drawKitBankPage(cells, { headerText: BANKS[s.bank].name, ...pos,
-            touchedIdx: s.touchedIdx ?? -1, altArrowShow: !!s.altArrowShow });
+            touchedIdx: s.touchedIdx ?? -1, altArrowShow: !!s.altArrowShow,
+            footer: s.footer });
     });
 }
 for (const s of CUSTOM_KIT) {
     emit(s.file, s.section, s.header, () =>
-        kit.drawKitBankPage(s.cells, { headerText: s.header, pageIdx: 0, pageCount: 6, touchedIdx: -1, ...(s.opts || {}) }));
+        kit.drawKitBankPage(s.cells, { headerText: s.header, pageIdx: 0, pageCount: 6, touchedIdx: -1,
+                                       footer: s.footer, ...(s.opts || {}) }));
 }
 for (const s of CUSTOM_DRAW) emit(s.file, s.section, 'custom draw', s.draw);
 console.log(`\nwrote ${n} screen${n === 1 ? '' : 's'} to ${OUT}/`);

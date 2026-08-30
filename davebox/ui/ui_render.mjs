@@ -24,7 +24,8 @@ import {
     drawVFader, mvPrint, mvWidth, rectOutline,
     drawLevelCard,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
-    MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H
+    MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
+    drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
@@ -121,7 +122,7 @@ function drawBankHeadingInverted(name, showTrack) {
  * at rowY+12; cell i is filled and rendered inverted when S.knobTouched === i —
  * same idiom as the drum-lane / ALL-LANES overviews). valFn(trackIdx) -> short
  * string. The Conductor's own track cell shows inertLabel instead of a value. */
-function drawConductTrackGrid(header, valFn, inertLabel) {
+function drawConductTrackGrid(header, valFn, inertLabel, footer) {
     /* Canvaskit grid: one value square per track, Tr# label strips, touched
      * cell swaps its label to the value and the header to "TRACK N". */
     const cells = [];
@@ -134,14 +135,14 @@ function drawConductTrackGrid(header, valFn, inertLabel) {
                          name: 'Track ' + (i + 1), text: String(valFn(i)) });
         }
     }
-    drawKitPage(header, cells, false);
+    drawKitPage(header, cells, false, footer);
 }
 
 /* Conductor RESPONDER grid: per-track TOGGLE bar (like the DELAY Retrig toggle)
  * showing each track's responder on/off state instead of an ON/off value box.
  * The Conductor's own cell and drum tracks (which never respond) stay blank —
  * distinct from an "off" track, which shows an empty framed bar. */
-function drawConductToggleGrid(header, onFn) {
+function drawConductToggleGrid(header, onFn, footer) {
     const cells = [];
     for (let i = 0; i < 8; i++) {
         if (i === S.activeTrack) {
@@ -153,7 +154,7 @@ function drawConductToggleGrid(header, onFn) {
             cells.push(toggleCell('Tr' + (i + 1), 'Track ' + (i + 1), on, 'ON', 'off'));
         }
     }
-    drawKitPage(header, cells, false);
+    drawKitPage(header, cells, false, footer);
 }
 
 /* A two-state cell, drawn by the SPLIT rather than by whoever wrote the literal.
@@ -383,7 +384,51 @@ function drawSessionFaderRow(cells, mode) {
 /* Shared canvaskit page entry: touched non-blank cell inverts the header to
  * its full param name (label strip below swaps to the value); resting state
  * goes through the standard heading helpers (C- blink, page bar, alt arrow). */
-function drawKitPage(name, cells, inverted) {
+/* The hint row for a TRACK-VIEW bank card.
+ *
+ * ⭑⭑ EVERY PAIR NAMES A GESTURE THE INPUT CODE ACTUALLY IMPLEMENTS, and the
+ * two conditional ones are conditional because the gesture is:
+ *
+ *   JOG  BANK    unshifted jog turn opens and scrolls the bank picker
+ *                (_onCC_jog, MoveMainKnob branch). Always live.
+ *   CLK  STEPS   plain jog click toggles the Arp-Steps interval overlay --
+ *                MELODIC tracks only, banks 4 and 5, which is exactly how the
+ *                handler is gated.
+ *   CLK  ALT     otherwise, plain jog click toggles sticky alt-param mode --
+ *                but ONLY on a bank that HAS alt params (bankHasAltParams).
+ *                On a bank without them the click falls through and does
+ *                nothing, so there is no hint to give.
+ *   SHFT TRACK   Shift+jog steps the active track 0-7, in every view.
+ *   BACK OUT     a Back TAP rises one level: it clears alt mode, then the
+ *                latch/bank display, then leaves the card. OUT and not EXIT --
+ *                see MV_FOOTER_CANON, where the two are deliberately different
+ *                words for different destinations.
+ *
+ * ⚠ THE WORDS ARE CUT TO THE 86px FLOW BUDGET (see hintPairWidth). JOG BANK +
+ * CLK ALT is 80 and both show; CLK STEP is 42 where "STEPS" is 47, and at 47
+ * the pair before it is the one that disappears. SHFT TRK never fits and is
+ * kept anyway — it is true, it is last before BACK, and a row that grows later
+ * should not need re-deriving.
+ *
+ * ⚠ NOT HINTED, deliberately, though they exist: Delete+jog (bank resets),
+ * Shift+Delete+jog, Shift+jog-click (latch). They are destructive or
+ * modal-adjacent chords, the row holds three pairs before BACK claims the
+ * right edge, and a hint that has to be dropped by the fit rule is worse than
+ * one never offered. Most-important-first is the ordering contract; these are
+ * not the most important three.
+ *
+ * ⚠ The row is CHROME. Nothing here reads or changes input state. */
+function bankPageHints(bank) {
+    const hints = [['JOG', 'BANK']];
+    const drum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
+    if (!drum && (bank === 4 || bank === 5)) hints.push(['CLK', 'STEP']);
+    else if (bankHasAltParams(S.activeTrack, bank)) hints.push(['CLK', 'ALT']);
+    hints.push(['SHFT', 'TRK']);
+    hints.push(['BACK', 'OUT']);
+    return hints;
+}
+
+function drawKitPage(name, cells, inverted, footer) {
     const t = S.knobTouched;
     const touched = t >= 0 && cells[t] && cells[t].name ? cells[t] : null;
     if (touched) drawKitTouchedHeader(touched.name);
@@ -397,6 +442,10 @@ function drawKitPage(name, cells, inverted) {
      * The ENUM/picker overlays stay: those show a scrolling list of options that
      * is not on screen otherwise, which is a different job. */
     const _ovi = enumOverlayIdx(t);
+    /* Stand the hints down under the picker — it is a modal that states its own
+     * affordance, and a half-covered hint row is worse than none. See
+     * drawKitBankPage, which makes the same call for the same reason. */
+    if (footer && !enumOverlayWouldDraw(cells, _ovi)) drawKitHintRow(MV_FOOTER_Y, footer);
     drawKitEnumOverlay(cells, _ovi);
 }
 
@@ -1830,11 +1879,12 @@ function drawUIBody() {
         const _ch = bankHeaderName(S.activeTrack, bank);
         if (bank === BANK_RESPONDER) {
             const _cc = S.trackActiveClip[S.activeTrack] | 0;
-            drawConductToggleGrid(_ch, function(k){ return S.condResp[_cc][k]; });
+            drawConductToggleGrid(_ch, function(k){ return S.condResp[_cc][k]; },
+                                  bankPageHints(bank));
         } else if (bank === BANK_OCTAVE) {
-            drawConductTrackGrid(_ch, function(k){ if (S.trackPadMode[k] === PAD_MODE_DRUM) return '--'; const o = S.condOct[S.trackActiveClip[S.activeTrack] | 0][k]; return o === 0 ? '--' : (o > 0 ? '+' + o : '' + o); }, 'Cndct');
+            drawConductTrackGrid(_ch, function(k){ if (S.trackPadMode[k] === PAD_MODE_DRUM) return '--'; const o = S.condOct[S.trackActiveClip[S.activeTrack] | 0][k]; return o === 0 ? '--' : (o > 0 ? '+' + o : '' + o); }, 'Cndct', bankPageHints(bank));
         } else { /* BANK_WHEN */
-            drawConductTrackGrid(_ch, function(k){ return S.trackPadMode[k] === PAD_MODE_DRUM ? '--' : (S.condWhen[S.trackActiveClip[S.activeTrack] | 0][k] ? 'Now' : 'Next'); }, 'Cndct');
+            drawConductTrackGrid(_ch, function(k){ return S.trackPadMode[k] === PAD_MODE_DRUM ? '--' : (S.condWhen[S.trackActiveClip[S.activeTrack] | 0][k] ? 'Now' : 'Next'); }, 'Cndct', bankPageHints(bank));
         }
         return;
     }
@@ -1875,7 +1925,7 @@ function drawUIBody() {
             ];
             /* Named by bankDisplayName, not spelled here — this literal and
              * the one below are how the picker and the header drifted apart. */
-            drawKitPage(bankHeaderName(S.activeTrack, 0), cells, false);
+            drawKitPage(bankHeaderName(S.activeTrack, 0), cells, false, bankPageHints(0));
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 7 && !S.allLanesConfirmed) {
             /* ALL LANES confirmation screen */
             drawKitHeader((Math.floor(S.tickCount / 24) % 2 === 0 ? 'ALL' : '   ') + ' LANES', false);
@@ -1919,7 +1969,8 @@ function drawUIBody() {
             ];
             /* blinking "ALL" prefix: the header font is fixed-advance, so a
              * space prefix keeps "LANES" steady */
-            drawKitPage((Math.floor(S.tickCount / 24) % 2 === 0 ? 'ALL' : '   ') + ' LANES', cells, false);
+            drawKitPage((Math.floor(S.tickCount / 24) % 2 === 0 ? 'ALL' : '   ') + ' LANES', cells, false,
+                        bankPageHints(7));
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 1) {
         /* Drum NOTE/NOTEFX bank: K1=Gate K2=Vel K3=Qnt */
         /* Drum NOTE FX: K1+K2=Oct/Note (merged), K3=Vel, K4=Qnt, K5=Len(placeholder), K6=Gate */
@@ -2146,7 +2197,7 @@ function drawUIBody() {
             }
             cells.push(kitCellForKnob(knobs[k], vals[k]));
         }
-        drawKitPage(BANKS[1].name, cells, false);
+        drawKitPage(BANKS[1].name, cells, false, bankPageHints(1));
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 3) {
         /* Drum MIDI DLY: K1-K4 same as melodic, K5=Gate, K6=Clk, K7=Retrg, K8 empty.
          * Drum has no Pfb (no per-lane pitch) and no Rnd (no random pitch fb),
@@ -2167,7 +2218,7 @@ function drawUIBody() {
             toggleCell('Retrg', 'Retrig', vals[6], fmtBool(1), fmtBool(0)),
             { kind: 'blank', label: '' },
         ];
-        drawKitPage(BANKS[3].name, cells, false);
+        drawKitPage(BANKS[3].name, cells, false, bankPageHints(3));
 
         } else {
         /* Bank overview — canvaskit grid (widgets + label strips + touch swap) */
@@ -2221,7 +2272,7 @@ function drawUIBody() {
             }
             cells.push(cell);
         }
-        drawKitPage(bankHeaderName(S.activeTrack, bank), cells, false);
+        drawKitPage(bankHeaderName(S.activeTrack, bank), cells, false, bankPageHints(bank));
         }
 
     } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
