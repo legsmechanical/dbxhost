@@ -520,34 +520,50 @@ setsid --wait bash -c '
   rm -f "$DBX_DIR/fresh_session"
   # Leave no standing open-tool command behind for the stock host to act on.
   rm -f /data/UserData/schwung/open_tool_cmd.json
-  $DBX_DIR/bin/davebox-heal --resume-launcher
-
-  # WAIT for stock Move to actually be back before this script exits, because
-  # OUR EXIT IS WHAT STARTS THE RACE. The caller — stock launch-standalone.sh —
-  # does a 0.5 s sleep, then pidof MoveOriginal, and nohup-starts a SECOND
-  # /opt/move/Move when it does not see one. Resuming the unit above is
-  # asynchronous and systemd needs longer than half a second, so that check
-  # usually looked into a gap and started a duplicate. The duplicate wins the
-  # race to claim com.ableton.move, the real Move never registers the name, and
-  # every later saveSongIfDirty comes back NoReply: an edit made in stock right
-  # before launching dAVEBOx is silently not saved. Measured 2026-08-25 from the
-  # launch log, 3 skipped saves in 90.
+  # WHO BRINGS MOVE BACK depends on which caller we have, and getting this wrong
+  # is what produced the OLED freak-out after every exit.
   #
-  # NOTE the caller lives in the STOCK tree, which we do not touch. So the fix
-  # is to make its own guard TRUE: hold here until MoveOriginal is up and it
-  # takes the "Move already running -- skipping restart" branch. Bounded, and
-  # giving up leaves exactly the behaviour we have today, never worse.
-  _wait=0
-  while [ "$_wait" -lt 75 ]; do
-    if pidof MoveOriginal >/dev/null 2>&1; then
-      echo "stock Move is back after $((_wait * 200)) ms -- caller will skip its restart"
-      break
+  # THE PROBLEM. Stock v1.0.0 launch-standalone.sh restarts Move
+  # UNCONDITIONALLY when we return -- the pidof guard it used to have is gone.
+  # If we ALSO resume move-launcher, two Moves come up. One has to go, and
+  # removing one is not free: it starts alone and is already deep in boot by the
+  # time the second appears, so it ignores SIGTERM and has to be forced -- and a
+  # hard kill reads as a CRASH, which is exactly the "Move crashed" dialog and
+  # the rapid OLED alternation Josh saw. There is no timing fix: the duplicate
+  # cannot be identified as a duplicate until the second one exists.
+  #
+  # So DO NOT CREATE THE SECOND ONE. When the caller is going to restart Move,
+  # let its Move be the one and leave the unit stopped. /opt/move/Move is the
+  # Schwung entrypoint wrapper, so that Move comes back WITH Schwung -- it is a
+  # full stock session, not a bare Move.
+  #
+  # ⚠ THE COST, stated plainly: that Move is not under move-launcher.service, so
+  # systemd will not restart it if it dies. This is the same position the stock
+  # standalone flow leaves the device in on v1.0.0, it lasts until the next
+  # davebox launch (which pauses and re-pauses the unit anyway) or the next
+  # reboot, and it is strictly better than a crash dialog on every exit.
+  #
+  # On a caller that DOES guard its restart (stock through 2026-08-16, and
+  # upstream if the guard returns) nothing here changes: we resume the unit and
+  # hold until Move is up, so the callers own guard sees it and skips -- which
+  # is what that wait was always for.
+  if command grep -q "already running" /data/UserData/schwung/launch-standalone.sh 2>/dev/null; then
+    echo "caller guards its Move restart -- resuming the watchdog and holding until Move is up"
+    $DBX_DIR/bin/davebox-heal --resume-launcher
+    _wait=0
+    while [ "$_wait" -lt 75 ]; do
+      if pidof MoveOriginal >/dev/null 2>&1; then
+        echo "stock Move is back after $((_wait * 200)) ms -- caller will skip its restart"
+        break
+      fi
+      sleep 0.2
+      _wait=$((_wait + 1))
+    done
+    if [ "$_wait" -ge 75 ]; then
+      echo "WARNING: stock Move did not return within 15s -- the caller starts one, and it may squat com.ableton.move"
     fi
-    sleep 0.2
-    _wait=$((_wait + 1))
-  done
-  if [ "$_wait" -ge 75 ]; then
-    echo "WARNING: stock Move did not return within 15s -- the caller starts one, and it may squat com.ableton.move"
+  else
+    echo "caller restarts Move unconditionally -- leaving the watchdog paused so only ITS Move comes back"
   fi
 
   # Stock v1.0.0 restarts Move UNCONDITIONALLY when we return (its pidof guard
