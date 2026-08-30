@@ -398,7 +398,6 @@ function drawSessionFaderRow(cells, mode) {
  *                but ONLY on a bank that HAS alt params (bankHasAltParams).
  *                On a bank without them the click falls through and does
  *                nothing, so there is no hint to give.
- *   SHFT TRACK   Shift+jog steps the active track 0-7, in every view.
  *   BACK OUT     a Back TAP rises one level: it clears alt mode, then the
  *                latch/bank display, then leaves the card. OUT and not EXIT --
  *                see MV_FOOTER_CANON, where the two are deliberately different
@@ -406,9 +405,13 @@ function drawSessionFaderRow(cells, mode) {
  *
  * ⚠ THE WORDS ARE CUT TO THE 86px FLOW BUDGET (see hintPairWidth). JOG BANK +
  * CLK ALT is 80 and both show; CLK STEP is 42 where "STEPS" is 47, and at 47
- * the pair before it is the one that disappears. SHFT TRK never fits and is
- * kept anyway — it is true, it is last before BACK, and a row that grows later
- * should not need re-deriving.
+ * the pair before it is the one that disappears.
+ *
+ * ⭑ SHFT TRK WAS DROPPED 2026-08-30 (Josh): Shift+jog steps the active track in
+ * EVERY view, so it is a property of the instrument rather than of this page,
+ * and the footer is for what is true HERE. It never fit the budget anyway. Its
+ * removal is also what buys the page-specific pairs room to survive the fit
+ * rule.
  *
  * ⚠ NOT HINTED, deliberately, though they exist: Delete+jog (bank resets),
  * Shift+Delete+jog, Shift+jog-click (latch). They are destructive or

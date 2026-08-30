@@ -575,9 +575,18 @@ emit('hdr-ours', 'MOCKUP A — davebox’s header today: filled bar, black text,
     kit.drawKitPageBar(3, 6);
     kit.drawKitCells(DELAY_CELLS, -1);
 });
-emit('hdr-parampages', 'MOCKUP B — param-pages: Tamzen breadcrumb left, page name right, plain ground', () => {
-    kit.drawKitHeaderParamPages('DAVEBOX / FX', 'DELAY');
+emit('hdr-parampages', 'MOCKUP B — param-pages: font4x5 breadcrumb left, page name right, plain ground', () => {
+    kit.drawKitHeaderParamPages('DAVEBOX / FX', 'DELAY', false);
     kit.drawKitCells(DELAY_CELLS, -1);
+});
+
+emit('hdr-parampages-inverted', 'MOCKUP B, INVERTED — the same resting breadcrumb, band filled like davebox\u2019s', () => {
+    kit.drawKitHeaderParamPages('DAVEBOX / FX', 'DELAY', true);
+    kit.drawKitCells(DELAY_CELLS, -1);
+});
+emit('hdr-parampages-touched', 'MOCKUP B, TOUCHED — the band inverts and carries the knob\u2019s FULL name + value', () => {
+    kit.drawKitHeaderParamPages('DELAY TIME', '340 ms', true);
+    kit.drawKitCells(DELAY_CELLS, 0);
 });
 
 /* =================== THE HINT ROW, per screen family ====================

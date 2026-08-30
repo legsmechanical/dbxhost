@@ -164,10 +164,15 @@ const bankCells = (bank, overrides = {}) =>
  *   CLK STEPS  banks 4/5 on a MELODIC track (the Arp-Steps interval overlay)
  *   CLK ALT    a bank that HAS alt params (the two with altArrowShow here)
  *   no CLK     a bank with neither */
-const F_JOG = ['JOG', 'BANK'], F_SHFT = ['SHFT', 'TRK'], F_BACK = ['BACK', 'OUT'];
-const hintsAlt   = [F_JOG, ['CLK', 'ALT'],   F_SHFT, F_BACK];
-const hintsSteps = [F_JOG, ['CLK', 'STEP'], F_SHFT, F_BACK];
-const hintsPlain = [F_JOG, F_SHFT, F_BACK];
+/* ⚠ THIS LIST IS A COPY of bankPageHints() in ui/ui_render.mjs, and nothing
+ * pins the two together — SHFT/TRK was removed from the device on 2026-08-30
+ * and survived HERE, so the regenerated manual still showed a hint the
+ * instrument no longer gives. Keep them in step by hand until a parity test
+ * exists (test_cellkind_parity.mjs is the pattern for one). */
+const F_JOG = ['JOG', 'BANK'], F_BACK = ['BACK', 'OUT'];
+const hintsAlt   = [F_JOG, ['CLK', 'ALT'],  F_BACK];
+const hintsSteps = [F_JOG, ['CLK', 'STEP'], F_BACK];
+const hintsPlain = [F_JOG, F_BACK];
 
 const BANK_SCREENS = [
     { file: 'bank-clip',      bank: 0, section: '9.1 CLIP bank',      over: { 0: 1, 6: 2 }, altArrowShow: true, footer: hintsAlt },

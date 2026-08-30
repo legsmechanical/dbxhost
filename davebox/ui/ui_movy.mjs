@@ -54,12 +54,20 @@ import { observeLanded, easeOut, lerp } from './ui_anim.mjs';
  * ⭑⭑ RE-CUT 2026-08-29 TO BUY THE FOOTER. This SUPERSEDES the canvaskit v27
  * map, which had no room for one: its bottom label strip ran to row 63.
  *
- *   hdr    0-7    filled bar, 6-row glyph at y=1, one clear row each side
- *   dark   8      ⚠ LOAD-BEARING. davebox's header is ALWAYS inverted, so
+ *   hdr    0-6    filled bar, 5-row glyph at y=1, one clear row each side
+ *                 ⭑ RE-CUT 2026-08-30 (Josh): the title moved from the 6-row
+ *                 header face to font4x5, so the band is 7 rather than 8. Same
+ *                 look, one row cheaper, and it matches the face upstream's
+ *                 param-pages header uses for the same job.
+ *   dark   7      ⚠ LOAD-BEARING. davebox's header is ALWAYS inverted, so
  *                 without this row the page bar butts the filled band and the
  *                 two merge into one thick smudge.
- *   bar    9      page indicator
- *   gap    10
+ *   bar    8      page indicator
+ *   gap    9-10   ⭑ the row the shorter band freed. It goes HERE rather than
+ *                 into a widget row: the doc below explains the gutters are one
+ *                 row only because davebox spent two more rows up top than
+ *                 upstream, and this gives one of them back — to the gap the
+ *                 page bar sits in, where nothing below has to move.
  *   w0     11-25  widget row 0            MV_ROW0_Y, MV_KH = 15
  *   lbl0   26-32  label strip 0           MV_LBL0_Y, MV_LBL_H = 7
  *   gap    33
@@ -92,8 +100,14 @@ import { observeLanded, easeOut, lerp } from './ui_anim.mjs';
  * picker, the stacked list) are MODALS whose row capacity is tuned against
  * this box, and moving them would change how many options fit — a separate
  * decision from making room for a footer. */
-export const MV_HDR_H = 8;
-export const MV_BAR_Y = 9;
+export const MV_HDR_H = 7;
+export const MV_BAR_Y = 8;
+/* ⚠ THE BRAND HEADER KEEPS THE 6-ROW FACE AND ITS 8-ROW BAND. font4x5 is
+ * UPPERCASE-ONLY (see CHARS4 in ui_fonts_pp.mjs), and the wordmark IS its
+ * minuscules — "dAVEBOx" is the mark, not a title. A 6-row glyph at y=1 needs
+ * an 8-row band to keep a clear row below it, which is what stops the letters
+ * running into the bottom edge of their own highlight. */
+export const MV_BRAND_HDR_H = 8;
 /* (The 2026-08-25 note that lived here — "shifted up 2px into the space the
  * header rule used to take, because the latch frame needs the bottom row" — is
  * SUPERSEDED. The bottom row now belongs to the footer, and the latch frame
@@ -1468,12 +1482,12 @@ export function drawKitHeader(text, invert, maxW) {
      * page draws the alt-param arrow at x=121 INSIDE this band, so trimming to
      * the full width lets a long title slide under it (Josh spotted the
      * omission). Callers that share the band pass their real budget. */
-    const t = fitHdr(String(text).toUpperCase(), maxW || (SCREEN_W - 4));
+    const t = fit4x5(String(text).toUpperCase(), maxW || (SCREEN_W - 4));
     if (invert) {
-        hdrPrint(2, 1, t, 1);
+        fontPrint4x5(2, 1, t, 1);
     } else {
         fill_rect(0, 0, SCREEN_W, MV_HDR_H, 1);
-        hdrPrint(2, 1, t, 0);
+        fontPrint4x5(2, 1, t, 0);
     }
 }
 
@@ -1481,8 +1495,8 @@ export function drawKitHeader(text, invert, maxW) {
  * white — the state flip is the touch feedback; the label strip below shows
  * the VALUE. No page bar in this state. */
 export function drawKitTouchedHeader(name) {
-    const t = fitHdr(name, SCREEN_W - 4);
-    hdrPrint(Math.max(2, Math.round((SCREEN_W - hdrWidth(t)) / 2)), 1, t, 1);
+    const t = fit4x5(String(name).toUpperCase(), SCREEN_W - 4);
+    fontPrint4x5(Math.max(2, Math.round((SCREEN_W - fontWidth4x5(t)) / 2)), 1, t, 1);
     fill_rect(0, MV_BAR_Y, SCREEN_W, 1, 1);   /* same rule as the resting header */
 }
 
@@ -1491,7 +1505,7 @@ export function drawKitTouchedHeader(name) {
  * whose minuscules are the mark (the font carries true 'd' and 'x' for it). */
 export function drawKitBrandHeader() {
     const t = 'dAVEBOx';
-    fill_rect(0, 0, SCREEN_W, MV_HDR_H, 1);
+    fill_rect(0, 0, SCREEN_W, MV_BRAND_HDR_H, 1);
     hdrPrint(Math.max(2, Math.round((SCREEN_W - hdrWidth(t)) / 2)), 1, t, 0);
 }
 
@@ -2272,13 +2286,45 @@ export function drawKitHintRow(y, hints) {
  * a plain (uninverted) ground — the opposite weight to davebox's inverted bar,
  * which is exactly what makes the comparison worth rendering rather than
  * describing. */
-export function drawKitHeaderParamPages(left, right) {
-    const l = String(left == null ? '' : left);
-    const r = String(right == null ? '' : right);
-    const rw = fontWidthTamzen(r);
-    fontPrintTamzen(2, 0, l, 1);
-    if (rw > 0) fontPrintTamzen(SCREEN_W - 2 - rw, 0, r, 1);
-    fill_rect(0, TAMZEN_H + 1, SCREEN_W, 1, 1);
+/* The param-pages header, drawn as upstream actually draws it.
+ *
+ * ⚠⚠ THE FIRST VERSION OF THIS MOCKUP WAS WRONG AND FLATTERED THE WRONG THING.
+ * It set both sides in Tamzen 6x12 — double the height of the real face, and
+ * specifically the face upstream TRIED AND REJECTED: Tamzen advances by its ink
+ * width so adjacent glyphs touch, and the header string overflowed 124px of
+ * usable width at 129, where font4x5 measures the same string at 106. Josh
+ * spotted it from the render ("doesn't param-pages use a smaller font?").
+ *
+ * The real thing: font4x5, a 5-row glyph at y=1 inside a 7-row band, one clear
+ * row above and one below. Both clear rows are load-bearing for the INVERTED
+ * state — touched, the band fills solid and the glyphs are knocked out of it,
+ * and a glyph flush to either edge bleeds its ink into the boundary.
+ *
+ * The split is MEASURED, not fixed: the right side is laid out first and the
+ * left takes the remainder, with a floor so a long page name cannot squeeze the
+ * title to nothing. A fixed 55/60 split summed to 115% and the two sides drew
+ * through each other.
+ *
+ * Mockup only — nothing calls it. See docs/UI_LANGUAGE.md. */
+export function drawKitHeaderParamPages(left, right, inverted) {
+    const H = 7, GAP = 4, MIN_LEFT = Math.floor(SCREEN_W * 0.55);
+    const l = String(left == null ? '' : left).toUpperCase();
+    const r = String(right == null ? '' : right).toUpperCase();
+    if (inverted) {
+        fill_rect(0, 0, SCREEN_W, H, 1);
+        /* the same 1px notch every other filled shape wears — TOP TWO ONLY,
+         * because the band is the top EDGE of the screen, not a floating shape */
+        fill_rect(0, 0, 1, 1, 0);
+        fill_rect(SCREEN_W - 1, 0, 1, 1, 0);
+    }
+    const ink = inverted ? 0 : 1;
+    const rw = Math.min(fontWidth4x5(r), SCREEN_W - 4 - MIN_LEFT);
+    const rt = fit4x5(r, rw);
+    const rtw = fontWidth4x5(rt);
+    const lt = fit4x5(l, SCREEN_W - 4 - rtw - GAP);
+    fontPrint4x5(2, 1, lt, ink);
+    if (rtw > 0) fontPrint4x5(SCREEN_W - 2 - rtw, 1, rt, ink);
+    if (!inverted) fill_rect(0, H, SCREEN_W, 1, 1);
 }
 
 /* ---- grid ---- */
