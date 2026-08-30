@@ -37,11 +37,14 @@ arrives as a *transition* and the whole page animates itself in from values nobo
 `observeLanded` refuses that, and it can only do it from the **raw** value — every token a widget
 animates is derived, and every derivation is total.
 
-⚠⚠ **AN OFFLINE RENDER IS NOT REPRODUCIBLE UNLESS YOU FREEZE THE CLOCK.** `drawKitPageBar` blinks
-its active segment off `Date.now()/375`, so the same page renders two different pictures depending
-on when you ran it — and a before/after PNG diff taken without pinning it is pure noise. It has
-already reported eight manual screens as "changed" by a style port that changed none of them. Use
-`freezeClock()` from `render_fb.mjs`. Anything built to that shape can be restyled once
+⚠⚠ **AN OFFLINE RENDER IS NOT REPRODUCIBLE UNLESS YOU FREEZE THE CLOCK.** A time-dependent
+renderer makes the same page produce two different pictures depending on when you ran it, and a
+before/after PNG diff taken without pinning it is pure noise — that reported eight manual screens as
+"changed" by a style port that changed none of them. Use `freezeClock()` from `render_fb.mjs`.
+⭑ `drawKitPageBar` was the worst offender and no longer blinks (2026-08-30 — the current segment is
+double height instead), so the remaining reader is the latch frame. Keep freezing: the rule is
+about the class, and a renderer that starts reading the clock again must not silently rot the
+manual. Anything built to that shape can be restyled once
 and change everywhere. Anything that draws directly has to be found and edited by hand.
 
 Screens absorbed from the host get rebuilt against these primitives from day one. Structurally

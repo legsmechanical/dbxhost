@@ -59,21 +59,26 @@ import { observeLanded, easeOut, lerp } from './ui_anim.mjs';
  *                 header face to font4x5, so the band is 7 rather than 8. Same
  *                 look, one row cheaper, and it matches the face upstream's
  *                 param-pages header uses for the same job.
- *   dark   7      ⚠ LOAD-BEARING. davebox's header is ALWAYS inverted, so
+ *   bar    7-8    page indicator, TOUCHING the band (MV_BAR_Y)
+ *                 ⭑ THE DARK ROW ABOVE IT IS GONE (Josh, 2026-08-30). It was
+ *                 called load-bearing here — "the header is ALWAYS inverted, so
  *                 without this row the page bar butts the filled band and the
- *                 two merge into one thick smudge.
- *   bar    8      page indicator
- *   gap    9-10   ⭑ the row the shorter band freed. It goes HERE rather than
- *                 into a widget row: the doc below explains the gutters are one
- *                 row only because davebox spent two more rows up top than
- *                 upstream, and this gives one of them back — to the gap the
- *                 page bar sits in, where nothing below has to move.
- *   w0     11-25  widget row 0            MV_ROW0_Y, MV_KH = 15
- *   lbl0   26-32  label strip 0           MV_LBL0_Y, MV_LBL_H = 7
- *   gap    33
- *   w1     34-48  widget row 1            MV_ROW1_Y
- *   lbl1   49-55  label strip 1           MV_LBL1_Y
- *   clear  56
+ *                 two merge into one thick smudge" — and that was written when
+ *                 the bar was a row of equal-height segments, which does read as
+ *                 a thickening of the band. It is no longer: the current segment
+ *                 is double height and the rest are single, so the bar has its
+ *                 own shape and reads as an indicator sitting under the band
+ *                 rather than as more band. Upstream reaches the same place from
+ *                 the other side — BAR_Y === HEADER_H, "no separator row".
+ *   gap    9      one clear row, as under any other band
+ *   w0     10-24  widget row 0            MV_ROW0_Y, MV_KH = 15
+ *   lbl0   25-31  label strip 0           MV_LBL0_Y, MV_LBL_H = 7
+ *   gap    32
+ *   w1     33-47  widget row 1            MV_ROW1_Y
+ *   lbl1   48-54  label strip 1           MV_LBL1_Y
+ *   clear  55-56  ⭑ TWO clear rows above the footer now, not one — the row the
+ *                 grid gave back by moving up. That is the separation upstream
+ *                 relies on instead of a rule, and it is why ours could go.
  *   ftr    57-63  hint pills              MV_FOOTER_Y, MV_FOOTER_H = 7
  *
  * ⭑ THE GUTTERS ARE EQUAL (one row above each widget row). They were 4 and 2
@@ -101,7 +106,7 @@ import { observeLanded, easeOut, lerp } from './ui_anim.mjs';
  * this box, and moving them would change how many options fit — a separate
  * decision from making room for a footer. */
 export const MV_HDR_H = 7;
-export const MV_BAR_Y = 8;
+export const MV_BAR_Y = 7;
 /* ⚠ THE BRAND HEADER KEEPS THE 6-ROW FACE AND ITS 8-ROW BAND. font4x5 is
  * UPPERCASE-ONLY (see CHARS4 in ui_fonts_pp.mjs), and the wordmark IS its
  * minuscules — "dAVEBOx" is the mark, not a title. A 6-row glyph at y=1 needs
@@ -112,7 +117,7 @@ export const MV_BRAND_HDR_H = 8;
  * header rule used to take, because the latch frame needs the bottom row" — is
  * SUPERSEDED. The bottom row now belongs to the footer, and the latch frame
  * ends above it: see drawKitLatchBox.) */
-export const MV_ROW0_Y = 11, MV_LBL0_Y = 26, MV_ROW1_Y = 34, MV_LBL1_Y = 49;
+export const MV_ROW0_Y = 10, MV_LBL0_Y = 25, MV_ROW1_Y = 33, MV_LBL1_Y = 48;
 export const MV_CELL_W = 32, MV_KW = 20, MV_KH = 15, MV_LBL_H = 7;
 /* The hint row sits on the LAST SCANLINE, not one row up. The panel is inset in
  * plastic, so a dark row at the bottom is not a margin — it is a margin on top
@@ -1525,18 +1530,31 @@ export function drawKitBrandHeader() {
  * The segmented bar is NOT retired — module param PAGES still scroll, and there
  * it means what it says. */
 
+/* ⭑ THE CURRENT SEGMENT IS DOUBLE HEIGHT — param-pages' drawBankBar idiom,
+ * adopted 2026-08-30 (Josh: "can we do the bank indicator row same as page
+ * param").
+ *
+ * It replaces a BLINK. The active segment used to alternate solid <-> dotted at
+ * ~1.3 Hz, which is motion spent on a value that is not changing: the current
+ * page is a fact, and a fact does not need to flash to be read. Height says it
+ * statically, and the row stops competing for the eye with the things on the
+ * page that ARE moving.
+ *
+ * ⚠ THE SECOND ROW IS THE ONE THE HEADER RE-CUT FREED. font4x5 took the band
+ * from 8 to 7, and the segment grows DOWN into that row — so the bar still
+ * starts at MV_BAR_Y, the dark row above it is untouched, and nothing below
+ * moves. Without that re-cut this would have cost a row somewhere else.
+ *
+ * ⚠ NO TIME DEPENDENCE ANY MORE. This was one of the two renderers that read
+ * Date.now(), which is why render_fb.freezeClock() exists; the other is the
+ * latch frame. Losing it here makes every bank-card render deterministic. */
 export function drawKitPageBar(idx, count) {
     if (count <= 1) { fill_rect(0, MV_BAR_Y, SCREEN_W, 1, 1); return; }
-    const blinkOn = Math.floor(Date.now() / 375) % 2 === 0;
     const usable = SCREEN_W - (count - 1);
     const base = Math.floor(usable / count), rem = usable % count;
     for (let b = 0, sx = 0; b < count; b++) {
         const sw = base + (b < rem ? 1 : 0);
-        if (b !== idx || blinkOn) {
-            fill_rect(sx, MV_BAR_Y, sw, 1, 1);
-        } else {
-            for (let x = sx; x < sx + sw; x += 2) set_pixel(x, MV_BAR_Y, 1);
-        }
+        fill_rect(sx, MV_BAR_Y, sw, b === idx ? 2 : 1, 1);
         sx += sw + 1;
     }
 }

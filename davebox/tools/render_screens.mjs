@@ -15,10 +15,11 @@ import { mkdirSync } from 'node:fs';
 import { W, H, resetFb, currentFb, writePng, freezeClock } from './render_fb.mjs';
 
 /* ⚠⚠ THE MANUAL IS RENDERED ON A FROZEN CLOCK, and it has to be.
- * drawKitPageBar blinks its active segment off Date.now()/375, so without this
- * every run produces a different picture for six of these screens and the
+ * A time-dependent renderer makes every run produce a different picture and the
  * committed PNGs come back dirty for no reason — which is exactly how a real
- * before/after check got eight false positives on 2026-08-29. Any instant
+ * before/after check got eight false positives on 2026-08-29.
+ * ⭑ drawKitPageBar was that renderer and no longer blinks (2026-08-30); the
+ * latch frame still reads the clock, so this stays. Any instant
  * would do; this one is fixed so that a regenerated manual differs only where
  * the DRAWING changed. */
 freezeClock();
