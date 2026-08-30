@@ -190,7 +190,7 @@ say ""; say "--- reading the device's symlinks (shared with stock — never over
 # directory. Too dangerous to depend on the interpreter being modern.
 LINKS="$($SSH "find '$DBX_DIR' -maxdepth 1 -type l -printf '%f\n'" 2>/dev/null || true)"
 if [ -z "$LINKS" ]; then
-    echo "ERROR: found no symlinks in $DBX_DIR — expected at least modules/presets/patches." >&2
+    echo "ERROR: found no symlinks in $DBX_DIR — expected at least presets/patches." >&2
     echo "       Refusing rather than risk flattening shared directories." >&2
     exit 1
 fi
@@ -234,6 +234,12 @@ $SSH "mkdir -p '$STAGE'"
 # as the old loop skipped them.
 RSYNC_EXCLUDES=()
 for l in $LINKS; do RSYNC_EXCLUDES+=("--exclude=/$l"); done
+# ⚠ modules/ is NOT a top-level symlink any more (see DBX_OWNED_MODULE_DIRS in
+# config.sh), so it is no longer excluded by the loop above — and build/ HAS a
+# modules/ of its own. Without this the payload would replace the per-category
+# symlinks with the build's copies, silently un-sharing the user's whole module
+# library. The dedicated step below is the only thing allowed to write there.
+RSYNC_EXCLUDES+=("--exclude=/modules")
 tries=0
 until rsync -r --partial --delete --timeout=30 "${RSYNC_EXCLUDES[@]}" \
         "$REPO_ROOT/build/" "${MOVE_USER}@${MOVE_HOST}:$STAGE/"; do
@@ -319,7 +325,74 @@ $SSH "set -eu
       *)   mkdir -p \"\$name\" ;;  # dirs must exist for the C side's loaders
     esac
   done
+  # modules/: a REAL directory this install owns. Every stock category is
+  # symlinked (so the user's content and stock's updates are shared), EXCEPT the
+  # ones we ship ourselves, which must be OUR build. See the DBX_OWNED_MODULE_DIRS
+  # comment in config.sh for the regression that made this necessary — a stock
+  # v1.0.0 update replaced the chain DSP under a bare symlink and every slot in
+  # every project read as empty, with no error anywhere and identical module.json.
+  if [ -L modules ]; then rm modules; echo '      un-linked: modules (was a bare symlink into stock)'; fi
+  mkdir -p modules
+  # A category is SPLIT when it contains an owned module (\"tools/x\"); it is
+  # WHOLLY OURS when named outright (\"chain\"). Anything else is one symlink.
+  for cat in \$(cd \"\$STOCK/modules\" 2>/dev/null && ls -1); do
+    whole=0; split=0
+    for own in $DBX_OWNED_MODULE_DIRS; do
+      [ \"\$cat\" = \"\$own\" ] && whole=1
+      case \"\$own\" in \"\$cat\"/*) split=1 ;; esac
+    done
+    if [ \"\$whole\" = 1 ]; then
+      [ -L \"modules/\$cat\" ] && rm \"modules/\$cat\"
+      mkdir -p \"modules/\$cat\"
+      echo \"      ours (whole): modules/\$cat\"
+      continue
+    fi
+    if [ \"\$split\" = 1 ]; then
+      # Real dir: one symlink per stock entry, our own copies placed after.
+      [ -L \"modules/\$cat\" ] && rm \"modules/\$cat\"
+      mkdir -p \"modules/\$cat\"
+      for ent in \$(cd \"\$STOCK/modules/\$cat\" 2>/dev/null && ls -1); do
+        isown=0
+        for own in $DBX_OWNED_MODULE_DIRS; do
+          [ \"\$cat/\$ent\" = \"\$own\" ] && isown=1
+        done
+        [ \"\$isown\" = 1 ] && continue
+        t=\"\$STOCK/modules/\$cat/\$ent\"
+        if [ -L \"modules/\$cat/\$ent\" ] && [ \"\$(readlink \"modules/\$cat/\$ent\")\" = \"\$t\" ]; then continue; fi
+        rm -rf \"modules/\$cat/\$ent\"
+        ln -s \"\$t\" \"modules/\$cat/\$ent\"
+      done
+      echo \"      split (stock linked, ours real): modules/\$cat\"
+      continue
+    fi
+    target=\"\$STOCK/modules/\$cat\"
+    if [ -L \"modules/\$cat\" ] && [ \"\$(readlink \"modules/\$cat\")\" = \"\$target\" ]; then continue; fi
+    rm -rf \"modules/\$cat\"
+    ln -s \"\$target\" \"modules/\$cat\"
+    echo \"      linked (shared): modules/\$cat\"
+  done
+  for own in $DBX_OWNED_MODULE_DIRS; do
+    if [ -L \"modules/\$own\" ]; then rm \"modules/\$own\"; fi
+    mkdir -p \"modules/\$own\"
+    echo \"      ours (pinned): modules/\$own\"
+  done
 "
+
+# Our own module categories, deployed from THIS build — never from the stock tree.
+say ""; say "--- installing the module categories this host owns"
+for own in $DBX_OWNED_MODULE_DIRS; do
+    # Some owned modules are produced by their OWN installer (davebox-sound comes
+    # from davebox/scripts/install_sound.sh, which builds its DSP and bundles its
+    # UI). The directory is still created above so the category is split; only the
+    # payload comes from elsewhere. Skipping loudly beats deploying an empty dir.
+    if [ ! -d "$REPO_ROOT/build/modules/$own" ]; then
+        say "      skipped (built by its own installer): modules/$own"
+        continue
+    fi
+    rsync -a --delete "$REPO_ROOT/build/modules/$own/" \
+        "${MOVE_USER}@${MOVE_HOST}:$DBX_DIR/modules/$own/"
+    say "      deployed: modules/$own"
+done
 
 # ⚠ Prove the payload did not eat the setuid helper before relying on it. An
 # earlier version of this script replaced bin/ wholesale and deleted

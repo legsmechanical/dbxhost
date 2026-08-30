@@ -74,8 +74,11 @@ printf '%s' "$refuse_body" | grep -q 'set-swap.sh" exit' ||
 
 # Single-quote ban: only the setsid open/close (and pre-block comments) may
 # carry one. Count quotes INSIDE the block body.
-open=$(body_line "setsid bash -c '")
-close=$(grep -n "^' &" "$ls" | head -1 | cut -d: -f1)
+open=$(body_line "setsid --wait bash -c '")
+# ⚠ The body now BLOCKS: it closes on a bare quote with no trailing `&` (see
+# test_launch_supervisor_body.sh for why that is load-bearing). Take the LAST
+# such line, since the opener is not one and nothing may follow the closer.
+close=$(grep -n "^'$" "$ls" | tail -1 | cut -d: -f1)
 [ -n "$open" ] && [ -n "$close" ] || fail "setsid block delimiters not found"
 inner=$(sed -n "$((open+1)),$((close-1))p" "$ls" | grep -c "'" || true)
 [ "$inner" = "0" ] || fail "$inner single quote(s) inside the setsid block body"

@@ -30,7 +30,14 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-INSTALL_DIR="/data/UserData/schwung/modules/tools/${MODULE_ID}"
+# ⚠ THE OWNED TREE, not the stock one. dAVEBOx SA is loaded only by dbx-host, so
+# living under /data/UserData/schwung means a stock update can overwrite or drop
+# it — which is exactly how stock v1.0.0 replaced modules/chain/dsp.so underneath
+# us on 2026-08-30 and left every slot reading "EMPTY". See DBX_OWNED_MODULE_DIRS
+# in standalone/config.sh; install-host.sh creates the split category, and the
+# host scans its OWN modules/tools (shadow_ui_tools.mjs), where stock's tools are
+# still visible as symlinks.
+INSTALL_DIR="/data/UserData/dbx-host/modules/tools/${MODULE_ID}"
 
 [ "$DO_BUILD" = "1" ] && bash scripts/build_sound.sh
 

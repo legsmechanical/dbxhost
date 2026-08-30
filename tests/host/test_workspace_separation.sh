@@ -34,8 +34,54 @@ done
 # shellcheck disable=SC1090
 . "$cfg"
 
-[ "${DBX_SHARED_LINKS:-}" = "modules presets patches" ] ||
+[ "${DBX_SHARED_LINKS:-}" = "presets patches" ] ||
   fail "DBX_SHARED_LINKS drifted: '${DBX_SHARED_LINKS:-}'"
+
+# ⚠ `modules` MUST NOT be back in that list. A bare symlink into the stock tree
+# is how a stock v1.0.0 update replaced modules/chain/dsp.so underneath dAVEBOx
+# (2026-08-30): upstream's chain does not answer the fork's colon readback
+# (`synth:module`), so shadow_get_param returned empty, discovery took its
+# silent early return, and every slot in every project rendered "EMPTY / CLICK
+# TO PICK" with the state files perfectly intact. The two module.json files are
+# BYTE-IDENTICAL, version string included, so nothing else can catch this.
+case " ${DBX_SHARED_LINKS:-} " in
+  *" modules "*) fail "modules is back in DBX_SHARED_LINKS — a stock update would \
+again replace the chain DSP that dAVEBOx runs" ;;
+esac
+[ "${DBX_OWNED_MODULE_DIRS:-}" = "chain tools/davebox-sound" ] ||
+  fail "DBX_OWNED_MODULE_DIRS drifted: '${DBX_OWNED_MODULE_DIRS:-}'"
+
+# davebox-sound must be installed into the OWNED tree, never stock's.
+command grep -q 'INSTALL_DIR="/data/UserData/dbx-host/modules/tools/\${MODULE_ID}"' \
+  davebox/scripts/install_sound.sh ||
+  fail "install_sound.sh does not target the owned modules tree — a stock update \
+could overwrite or drop dAVEBOx SA the way v1.0.0 replaced the chain DSP"
+
+# ...and the host must SCAN its own tools dir, or owning it achieves nothing.
+command grep -q 'HOST_INSTALL_DIR' src/shadow/shadow_ui_tools.mjs ||
+  fail "scanForToolModules no longer composes TOOLS_DIR from the install dir — a \
+secondary install would scan the DEFAULT install's tools and silently miss its own"
+command grep -q '"/data/UserData/schwung/modules/tools"' src/shadow/shadow_ui_tools.mjs &&
+  fail "scanForToolModules still hardcodes the stock tools path"
+
+# The installer must (a) not let the payload write modules/, and (b) deploy the
+# owned categories from OUR build.
+command grep -q -- '--exclude=/modules' "$inst" ||
+  fail "install-host.sh does not exclude /modules from the payload rsync — the \
+build's own modules/ would replace the per-category symlinks and un-share the \
+user's module library"
+# Anchored on the TRANSFER, not merely on the string appearing somewhere: the
+# guard above it names the same path, so a looser match stays green while the
+# rsync source is pointed elsewhere (found by mutation).
+command grep -qE 'rsync .*"\$REPO_ROOT/build/modules/\$own/"' "$inst" ||
+  fail "install-host.sh does not rsync DBX_OWNED_MODULE_DIRS from build/modules \
+— the pinned category would not actually be deployed from this build"
+
+# The premise: the fork's chain is what implements the colon readback. If this
+# moves, the pin above is still right but someone should re-derive why.
+command grep -q 'synth:module' src/modules/chain/dsp/chain_host.c ||
+  fail "the fork's chain DSP no longer carries the synth:module readback — \
+re-examine whether dbx-host still needs to own modules/chain"
 [ "${DBX_PRIVATE_STATE:-}" = "slot_state active_set.txt shadow_chain_config.json shadow_config.json" ] ||
   fail "DBX_PRIVATE_STATE drifted: '${DBX_PRIVATE_STATE:-}'"
 

@@ -842,6 +842,12 @@ if [ -d ./standalone ]; then
     # in src/shadow/shadow_ui.js for the file contract).
     cp ./standalone/scripts/select-list.sh ./build/scripts/
     cp ./standalone/scripts/select-hook.sh ./build/scripts/
+    # reap-duplicate-move.sh: run detached from launch.sh on the way OUT, to
+    # remove the second Move that stock's launch-standalone.sh starts on top of
+    # the supervised one (its pidof guard is gone as of stock v1.0.0). Never
+    # leaves zero Moves running -- see the safety rule in the script.
+    cp ./standalone/scripts/reap-duplicate-move.sh ./build/scripts/
+    chmod +x ./build/scripts/reap-duplicate-move.sh
     chmod +x ./build/scripts/quiesce-stock.sh ./build/scripts/exit-to-stock.sh \
              ./build/scripts/set-swap.sh ./build/scripts/project-cmd.sh \
              ./build/scripts/select-list.sh ./build/scripts/select-hook.sh

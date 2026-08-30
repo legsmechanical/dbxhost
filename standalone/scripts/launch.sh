@@ -2,10 +2,30 @@
 # davebox host launcher.
 #
 # Invoked by the Schwung Tools menu as a standalone module binary. A module
-# declaring "standalone": true is run through the host's launch-standalone.sh,
-# which hands us the stock stack ALIVE (it stopped pre-killing it 2026-08-15 —
-# the teardown is ours, so the quiesce below can save stock state and freeze
-# the surface first) and which restarts stock Move when we exit.
+# declaring "standalone": true is run through the host's launch-standalone.sh.
+#
+# ⚠⚠ DO NOT WRITE ASSUMPTIONS ABOUT THAT SCRIPT INTO THIS ONE. Its behaviour has
+# flipped twice under us, both times silently, and it lives in the stock tree
+# which we do not modify and which stock updates rewrite:
+#
+#   through 2026-08-15   pre-killed the stack, restarted Move unconditionally
+#   2026-08-16           stopped pre-killing; restart guarded by pidof
+#   v1.0.0 (2026-08-29)  pre-kills AGAIN, and the pidof guard is GONE
+#
+# This script used to say "it hands us the stock stack ALIVE (it stopped
+# pre-killing it 2026-08-15)" and was built around that. When v1.0.0 landed, the
+# stack was already dead when we ran, the SIGSTOP freeze no longer held the
+# surface, and — because we returned in 4 ms — stock started a Move that booted
+# into its native set picker on top of our launch. So:
+#
+#   * we BLOCK until the session ends (setsid --wait). That is the contract the
+#     stock script actually documents, "Run standalone binary (blocks until
+#     exit)", so it cannot start a Move while we are running whichever variant
+#     is installed.
+#   * quiesce tolerates the stack being alive OR already gone.
+#   * on the way out, reap-duplicate-move.sh removes the Move stock starts on
+#     top of the supervised one, since we cannot remove its unconditional
+#     restart.
 #
 # What this does: bring Move back up under the DAVEBOX Schwung build instead of
 # the stock one. The official install is never modified — it stays on disk
@@ -14,7 +34,7 @@
 #
 # Requires the one-time privileged install (scripts/install-privileged.sh).
 
-setsid bash -c '
+setsid --wait bash -c '
   DBX_DIR=/data/UserData/dbx-host
   LOG=$DBX_DIR/launch.log
   exec >>"$LOG" 2>&1
@@ -90,14 +110,32 @@ setsid bash -c '
   rm -f "$DBX_DIR/standalone_active"
 
 
-  # Ask stock Schwung to save and exit first. Killing shadow_ui loses host
-  # state: its main loop saves only when it sees should_exit, and nothing else
-  # flushes on the way out. The stock stack is ALIVE here (launch-standalone.sh
-  # stopped pre-killing it, 2026-08-15) so the save is real, and quiesce also
-  # freezes MoveOriginal (SIGSTOP) so native Move cannot repaint the surface
-  # once shadow_ui goes -- the panel and LEDs hold the stock menu until our
-  # splash. Best-effort -- if it does not go, the kill below still does.
-  sh "$DBX_DIR/scripts/quiesce-stock.sh"
+  # OBSERVE the stack rather than assuming it, because which variant of
+  # launch-standalone.sh is installed decides what we inherit (see the header).
+  #
+  #   ALIVE  -- quiesce first: shadow_ui saves host state only when it sees
+  #             should_exit, and quiesce also SIGSTOPs MoveOriginal so native
+  #             Move cannot repaint the surface once shadow_ui goes. The panel
+  #             and LEDs then hold the stock menu until our splash.
+  #   DEAD   -- stock pre-killed it. There is nothing to save and nothing to
+  #             freeze, and move-launcher.service will RESPAWN the whole stack
+  #             under us (Restart=on-failure) while we are still setting up --
+  #             which boots native Move onto its set picker on top of our
+  #             launch. So stand the watchdog down FIRST, before anything else,
+  #             and let the sweep below clear whatever it already respawned.
+  #
+  # ⚠ The watchdog stand-down normally lives BELOW the sweep (moved there
+  # 2026-08-15) precisely because stopping the unit TERMs its whole cgroup and
+  # would kill shadow_ui before it saved. That reasoning only holds while
+  # shadow_ui is ALIVE, which is why this branch is safe: there is no shadow_ui.
+  if pidof MoveOriginal >/dev/null 2>&1 || pidof shadow_ui >/dev/null 2>&1; then
+    echo "entry: stock stack is alive -- quiesce then tear down"
+    sh "$DBX_DIR/scripts/quiesce-stock.sh"
+  else
+    echo "entry: stock stack already gone (caller pre-killed it) -- pausing the watchdog before it respawns"
+    $DBX_DIR/bin/davebox-heal --pause-launcher || \
+      echo "WARNING: could not pause move-launcher early; a respawn may flash native Move"
+  fi
 
   # The one and only teardown of the stock stack (launch-standalone.sh no
   # longer pre-kills it). The frozen MoveOriginal ignores the TERM phase and
@@ -450,4 +488,13 @@ setsid bash -c '
   if [ "$_wait" -ge 75 ]; then
     echo "WARNING: stock Move did not return within 15s -- the caller starts one, and it may squat com.ableton.move"
   fi
-' &
+
+  # Stock v1.0.0 restarts Move UNCONDITIONALLY when we return (its pidof guard
+  # is gone), which duplicates the supervised Move we just brought back and
+  # races it for the com.ableton.move name. We cannot edit the stock tree, so
+  # reap the duplicate instead. Detached, because it must outlive this script:
+  # the Move it reaps is not started until AFTER we return.
+  # ⚠ The reaper only ever acts when it sees MORE THAN ONE Move and always keeps
+  # one, so a stock variant that does NOT restart is simply a no-op for it.
+  setsid sh "$DBX_DIR/scripts/reap-duplicate-move.sh" "$LOG" 30 >/dev/null 2>&1 &
+'

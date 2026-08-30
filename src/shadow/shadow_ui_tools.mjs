@@ -49,7 +49,16 @@ function getToolProcessingRatio() {
  * (open_tool_cmd, boot-into-a-tool) passes true so a hidden tool can still be
  * opened by explicit request. Default false keeps the menu unchanged. */
 export function scanForToolModules(includeHidden) {
-    const TOOLS_DIR = "/data/UserData/schwung/modules/tools";
+    /* Composed from THIS build's install dir, never a literal. A secondary
+     * install (different SCHWUNG_INSTALL_DIR) otherwise scans the default
+     * install's tools while running everything else from its own tree — and
+     * because a missing tool is simply a tool that does not appear, the failure
+     * is silent. Same reasoning as HOST_STATE_ROOT in shadow_ui.js.
+     *
+     * For the default install this resolves to exactly the previous literal, so
+     * stock behaviour is unchanged. */
+    const TOOLS_DIR = ((typeof HOST_INSTALL_DIR === "string" && HOST_INSTALL_DIR)
+        ? HOST_INSTALL_DIR : "/data/UserData/schwung") + "/modules/tools";
     const result = [];
     const { debugLog } = ctx;
 

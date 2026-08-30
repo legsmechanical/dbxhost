@@ -75,7 +75,41 @@ DBX_SESSION_LOCK=/dev/shm/.dbxhost-session.lock
 # install-host.sh enforces both on every deploy (creates missing links,
 # converts a leftover link in the private list to a real dir/file). Pinned by
 # tests/host/test_workspace_separation.sh.
-DBX_SHARED_LINKS="modules presets patches"
+DBX_SHARED_LINKS="presets patches"
+
+# ⚠ `modules` USED TO BE IN THAT LIST. It cannot be, and the reason is a
+# hardware regression (2026-08-30): a stock update to v1.0.0 replaced
+# modules/chain/dsp.so, and because $DBX_DIR/modules was a bare symlink into
+# the stock tree, dAVEBOx immediately started running UPSTREAM's chain.
+#
+# That directory is not CONTENT, it is CODE, and one piece of it is ours. The
+# fork's chain answers the COLON readback (`synth:module`, added in P6 and
+# symmetric with the write); upstream's does not, and has no reason to — we
+# opted out of its variable-length-chain model. So every
+# shadow_get_param(slot, "synth:module") came back empty, the module discovery
+# bailed on its silent early return, and every slot in every project rendered
+# "EMPTY / CLICK TO PICK" while the underlying state was perfectly intact.
+# Nothing warned: the two module.json files are BYTE-IDENTICAL, version string
+# included.
+#
+# So `modules` is now a REAL directory this install owns, holding one symlink
+# per stock category (content we genuinely share, and want stock's updates to)
+# and a REAL copy of the categories we ship ourselves. Categories are linked
+# dynamically from whatever stock has, so a category added upstream later is
+# picked up rather than silently missing.
+# Entries are either a whole CATEGORY ("chain") or a single module inside one
+# ("tools/davebox-sound"). A category containing an owned module becomes a real
+# directory holding a symlink per stock entry plus our real copy, so stock's own
+# modules stay shared and keep receiving stock's updates.
+#
+# `tools/davebox-sound` is ours and only ever loaded by THIS host, so there is no
+# reason for it to live in a tree a stock update rewrites.
+#
+# ⚠ `tools/davebox-sa` is deliberately NOT here and CANNOT be: it is the entry in
+# stock's Tools menu, so it has to exist in stock's own tree to be launchable at
+# all. It is the single unavoidable thing we place there — which is exactly why
+# the preflight checks it is still ours.
+DBX_OWNED_MODULE_DIRS="chain tools/davebox-sound"
 # (set_state left this list in Phase C of the state-co-location plan: per-set
 # state lives inside each project's set dir now, so no such root is created.
 # A leftover $DBX_DIR/set_state from an older build is inert.)

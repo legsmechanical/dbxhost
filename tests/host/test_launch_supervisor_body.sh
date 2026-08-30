@@ -30,8 +30,17 @@ check() { # desc cond...
 
 echo "test_launch_supervisor_body"
 
-start=$(grep -n "^setsid bash -c '$" "$LAUNCH" | head -1 | cut -d: -f1)
-end=$(grep -n "^' &$" "$LAUNCH" | head -1 | cut -d: -f1)
+# ⚠ The launcher BLOCKS (`setsid --wait`, closing quote on its own line, no
+# trailing `&`). That is load-bearing, not cosmetic: stock's launch-standalone.sh
+# documents "Run standalone binary (blocks until exit)" and, since stock v1.0.0,
+# starts a Move UNCONDITIONALLY the moment the binary returns. Returning
+# immediately therefore booted native Move on top of our launch.
+grep -q "^setsid --wait bash -c '$" "$LAUNCH" ||
+  { echo "FAIL: the launcher does not block (setsid --wait) — stock will start a Move on top of the session" >&2; exit 1; }
+grep -q "^' &$" "$LAUNCH" &&
+  { echo "FAIL: the launcher body is still backgrounded — it must block" >&2; exit 1; }
+start=$(grep -n "^setsid --wait bash -c '$" "$LAUNCH" | head -1 | cut -d: -f1)
+end=$(grep -n "^'$" "$LAUNCH" | tail -1 | cut -d: -f1)
 check "the supervisor body is delimited as expected" \
     bash -c "[ -n '$start' ] && [ -n '$end' ] && [ '$start' -lt '$end' ]"
 
