@@ -25,7 +25,7 @@ import {
     drawLevelCard,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
-    drawKitHintRow, drawKitFooterRule, enumOverlayWouldDraw, MV_FOOTER_Y
+    drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
@@ -423,7 +423,6 @@ function bankPageHints(bank) {
     const drum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
     if (!drum && (bank === 4 || bank === 5)) hints.push(['CLK', 'STEP']);
     else if (bankHasAltParams(S.activeTrack, bank)) hints.push(['CLK', 'ALT']);
-    hints.push(['SHFT', 'TRK']);
     hints.push(['BACK', 'OUT']);
     return hints;
 }
@@ -446,7 +445,6 @@ function drawKitPage(name, cells, inverted, footer) {
      * affordance, and a half-covered hint row is worse than none. See
      * drawKitBankPage, which makes the same call for the same reason. */
     if (footer && !enumOverlayWouldDraw(cells, _ovi)) {
-        drawKitFooterRule();
         drawKitHintRow(MV_FOOTER_Y, footer);
     }
     drawKitEnumOverlay(cells, _ovi);

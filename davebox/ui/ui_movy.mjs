@@ -2165,33 +2165,27 @@ export function drawFaderColumn(kx, ky, norm, baseNorm) {
 export const MV_HINT_PAD = 2, MV_HINT_GAP = 4;
 export const MV_FOOTER_H = FONT4_HEIGHT + 2;
 
-/* ---- the footer RULE ----------------------------------------------------
+/* ---- the footer RULE: RETIRED (Josh, 2026-08-30) -------------------------
  *
- * A 1px hairline across all 128 columns, on the one clear row between the last
- * label strip and the pills.
+ * There is no hairline above the footer any more. It was added 2026-08-29 on
+ * the argument that davebox's vertical map is tighter than upstream's, so the
+ * clear rows upstream relies on as a separator do not exist here — and that a
+ * touched (inverted) label strip sitting one row above a row of solid white
+ * pills would read as a single block.
  *
- * ⚠⚠ THIS IS A DAVEBOX DECISION, NOT A PORT — and the record matters because
- * the port went the other way. Upstream HAD this rule and DELETED it (SCH-50
- * `no-rule`, "THE RULE IS GONE"): its reasoning was that "the three clear rows
- * between the last label band and the pills are now the only separator, and on
- * a screen this dense that is a real proposition". Its RULE_Y survives only as
- * the top of the band the footer owns, not as a row anything draws.
+ * Josh looked at it on the device and does not want it. That is the whole
+ * reason; it is a taste call about his own instrument, and it outranks the
+ * argument above. Upstream reached the same place independently (SCH-50
+ * `no-rule`, "THE RULE IS GONE"), so the two stacks now agree.
  *
- * ⭑ THAT ARGUMENT DOES NOT TRANSFER, WHICH IS WHY JOSH IS RIGHT TO ASK FOR IT.
- * It rests on THREE clear rows, and davebox's map is tighter: the label band's
- * own bottom row (55) plus row 56 is TWO, and the first of those disappears the
- * moment a knob is touched, because the inverted strip fills the whole band.
- * At a touch there is exactly ONE row between a solid white label strip and a
- * row of solid white pills, and without a rule those read as one block.
+ * MV_RULE_Y survives as the TOP OF THE BAND THE FOOTER OWNS — it is still the
+ * boundary the layout is measured against — but nothing draws on it. Keeping
+ * the constant is deliberate: the row is spoken for either way, and a later
+ * widget that treats 56 as free would collide with the pill band below.
  *
- * ⚠ ROW 56 IS THE ONLY ROW AVAILABLE. 49..55 belongs to the label band (and is
- * filled edge to edge when touched); 57..63 is the pill band, whose fill starts
- * on its first row. Anything else collides. */
+ * ⚠ ROW 56 IS STILL RESERVED. 49..55 is the label band (filled edge to edge
+ * when touched); 57..63 is the pill band. */
 export const MV_RULE_Y = MV_FOOTER_Y - 1;
-
-export function drawKitFooterRule() {
-    fill_rect(0, MV_RULE_Y, SCREEN_W, 1, 1);
-}
 
 /* ⭑ THE CANON, so the row cannot drift into verb soup the way this tree's
  * older text footer did. KEYS name the physical control and are fixed by the
@@ -2804,7 +2798,7 @@ export function drawKitBankPage(cells, opts) {
      * "pixels on, behaviour off" buys. See enumPeekExpired() for the timer half;
      * Josh judges it from the offline renders first. */
     const overlayUp = !opts.peekExpired && enumOverlayWouldDraw(cells, ov);
-    if (opts.footer && !overlayUp) { drawKitFooterRule(); drawKitHintRow(MV_FOOTER_Y, opts.footer); }
+    if (opts.footer && !overlayUp) drawKitHintRow(MV_FOOTER_Y, opts.footer);
     if (!opts.peekExpired) drawKitEnumOverlay(cells, ov);
 }
 

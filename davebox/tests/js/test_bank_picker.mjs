@@ -484,15 +484,18 @@ step('⭑ the LATCH draws a frame around the params, and only when latched', () 
     const edgeInk = () => {
         let n = 0;
         for (let x = 0; x < FBW; x++) if (fb[FRAME_TOP * FBW + x]) n++;
-        /* ⚠ Stops ABOVE the rule row: FRAME_BOT === MV_RULE_Y, so its first and
-         * last pixels are the RULE's, not the frame's, and counting them
-         * reported a two-pixel "frame" on every unlatched card. */
+        /* ⚠ Stops ABOVE FRAME_BOT (=== MV_RULE_Y), so the side counts stay
+         * comparable between the two phases and the bottom edge is measured on
+         * its own below. */
         for (let y = FRAME_TOP; y < MV_RULE_Y; y++) { if (fb[y * FBW]) n++; if (fb[y * FBW + 127]) n++; }
         return n;
     };
-    /* The rule is chrome and must be there in BOTH states — that is the half of
-     * the old bottom-row check that still means something. */
-    const ruleInk = () => { let n = 0; for (let x = 0; x < FBW; x++) if (fb[MV_RULE_Y * FBW + x]) n++; return n; };
+    /* Ink on the frame's BOTTOM EDGE row.
+     * ⚠ This used to also assert a footer RULE lived here in both states. The
+     * rule was RETIRED 2026-08-30 (Josh, on the device — see the note in
+     * ui_movy.mjs), so the row now carries the latch frame and nothing else,
+     * and an unlatched card is legitimately empty here. */
+    const bottomEdgeInk = () => { let n = 0; for (let x = 0; x < FBW; x++) if (fb[MV_RULE_Y * FBW + x]) n++; return n; };
     reset();
     S.activeBank = 1;
     S.bankSelectTick = S.tickCount;
@@ -501,26 +504,29 @@ step('⭑ the LATCH draws a frame around the params, and only when latched', () 
         throw new Error('an UNLATCHED card already draws a frame — the indicator ' +
                         'would mean nothing');
 
-    if (ruleInk() < 100)
-        throw new Error('the footer rule is missing on an unlatched card (' + ruleInk() + 'px)');
+    if (bottomEdgeInk() !== 0)
+        throw new Error('an UNLATCHED card draws ink on the frame row (' +
+                        bottomEdgeInk() + 'px) — the footer rule is retired, so ' +
+                        'nothing but the latch frame may draw there');
 
     S.bankCardLatched = true;
     S.tickCount = 0;  fb.fill(0); render.drawUI();
     const solid = edgeInk();
-    const solidRule = ruleInk();
+    const solidRule = bottomEdgeInk();
     S.tickCount = 24; fb.fill(0); render.drawUI();
     const dashed = edgeInk();
-    /* ⚠⚠ THE DASHED PHASE MUST STILL READ AS DASHED ON THE SHARED ROW. The
-     * frame's bottom edge is drawn over the solid rule, so a dashed edge that
-     * only SET ink would leave the rule showing through every gap and that edge
-     * would look solid in both phases — the animation dying on one edge with
-     * nothing to say so. drawKitLatchBox knocks its gaps out for exactly this;
-     * assert the result rather than trusting it. */
-    const dashedRule = ruleInk();
+    /* ⚠⚠ THE DASHED PHASE MUST READ AS DASHED ON THE BOTTOM EDGE TOO. When a
+     * solid footer rule still shared this row, a dashed edge that only SET ink
+     * left the rule showing through every gap and looked solid in both phases —
+     * the animation dying on one edge with nothing to say so. drawKitLatchBox
+     * knocks its gaps out for exactly that reason. The rule is gone, but the
+     * knock-out is still what makes the phases differ here, so keep asserting
+     * the result rather than trusting it. */
+    const dashedRule = bottomEdgeInk();
     if (!(dashedRule < solidRule))
-        throw new Error('the latch frame\'s bottom edge does not read as dashed over the ' +
-                        'footer rule (' + solidRule + ' vs ' + dashedRule + ') — it is ' +
-                        'adding ink instead of knocking gaps out');
+        throw new Error('the latch frame\'s bottom edge does not read as dashed (' +
+                        solidRule + ' vs ' + dashedRule + ') — it is not knocking ' +
+                        'its gaps out');
     if (!solid || !dashed) throw new Error('the latch frame did not draw: ' +
                                            JSON.stringify({ solid, dashed }));
     /* ⭑ It alternates SOLID <-> SEGMENTED rather than blinking out: a frame that
