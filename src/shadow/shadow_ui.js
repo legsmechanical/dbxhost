@@ -3851,7 +3851,7 @@ function exitOvertakeMode() {
     for (let k = 0; k < NUM_KNOBS; k++) overtakeKnobDelta[k] = 0;
     overtakeJogDelta = 0;
 
-    /* NOTE: the C-side consumes native_repaint_on_exit when it observes the
+    /* NOTE: the C-side restores its LED snapshot when it observes the
      * overtake_mode transition, so JS must not clear that byte in the same
      * tick. skip_led_clear is NOT consumed and is not touched here -- it is a
      * standing claim owned by whoever set it. */
@@ -3935,16 +3935,22 @@ function suspendOvertakeMode() {
          * note layouts and the Shift row, so replaying it here leaves the grid
          * dark or stale.
          *
-         * ⚠ ITS OWN BYTE, not skip_led_clear. This asked for the repaint by
-         * raising skip_led_clear when the behaviour was backported, and in
-         * this fork skip_led_clear is a standing CLAIM davebox's
-         * primary-services layer holds for a whole move_native session -- so
-         * the audio side read every ordinary exit as a repaint request and
-         * discarded davebox's queued pad writes. Hardware regression; see
-         * shadow_constants.h. The C side consumes native_repaint_on_exit
-         * after mode reaches 0, so do not clear it here. */
+         * ⚠ NEVER RAISE skip_led_clear TO MEAN "repaint on exit". A backport did
+         * exactly that, and in this fork skip_led_clear is a standing CLAIM
+         * davebox's primary-services layer holds for a whole move_native
+         * session -- so the audio side read every ordinary exit as a repaint
+         * request and discarded davebox's queued pad writes. Hardware
+         * regression; see shadow_constants.h. */
         if (typeof shadow_set_overtake_mode === "function") {
-            shadow_set_native_repaint_on_exit(1);
+            /* ⚠ NOTHING IS ASKED FOR HERE, and that is the point. Dropping
+             * overtake_mode lets the audio side restore its entry LED snapshot,
+             * which is what puts Move's own pads back.
+             *
+             * A backport briefly made this path request a "native repaint"
+             * instead, discarding the snapshot on upstream's premise that Move
+             * redraws the surface itself. It does not, on this path: the pads
+             * kept davebox's colours after every hold-Back suspend. The request
+             * and its machinery were removed outright. */
             shadow_set_overtake_mode(0);
         }
         /* Clear the opt-in sysex suppression so it never leaks to the next tool. */
@@ -4134,7 +4140,7 @@ function exitToolOvertake() {
     for (let k = 0; k < NUM_KNOBS; k++) overtakeKnobDelta[k] = 0;
     overtakeJogDelta = 0;
 
-    /* Disable overtake mode. The C-side consumes native_repaint_on_exit when
+    /* Disable overtake mode. The C-side restores its LED snapshot when
      * it observes this transition; clearing that byte here would race the
      * audio thread. skip_led_clear is a standing claim and is left alone. */
     if (!toolNonOvertake && typeof shadow_set_overtake_mode === "function") {
@@ -4172,7 +4178,7 @@ function hideToolOvertake() {
     overtakeJogDelta = 0;
 
     /* Exit overtake mode — restore Move's LEDs and input. The C-side consumes
-     * native_repaint_on_exit when it observes this transition; skip_led_clear
+     * its LED snapshot when it observes this transition; skip_led_clear
      * is a standing claim and is left alone. */
     if (!toolNonOvertake && typeof shadow_set_overtake_mode === "function") {
         shadow_set_overtake_mode(0);
@@ -4204,7 +4210,7 @@ function completeOvertakeExit() {
         shadow_set_overtake_mode(0);
     }
 
-    /* The C-side consumes native_repaint_on_exit when it observes the
+    /* The C-side restores its LED snapshot when it observes the
      * transition. Do not clear that byte here: JS and the audio thread run
      * independently. skip_led_clear is a standing claim and is left alone. */
 

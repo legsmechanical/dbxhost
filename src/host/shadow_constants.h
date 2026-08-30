@@ -178,9 +178,9 @@ typedef struct shadow_control_t {
      *
      * A PERSISTENT CLAIM, held for as long as the surface wants pass-through
      * (davebox's move_native co-run holds it for the whole session). It is
-     * never consumed by the C side -- the exit-time "let Move repaint" request
-     * is native_repaint_on_exit below, and overloading this byte with that
-     * meaning was a hardware regression. See that field. */
+     * never consumed by the C side. Overloading it with an exit-time "let Move
+     * repaint" meaning was a hardware regression (25f73f81); that request has
+     * since been removed entirely -- see the reserved byte below. */
     volatile uint8_t skip_led_clear;
     volatile uint8_t move_ui_mode;       /* Move's UI mode: 0=unknown, 1=session, 2=note, 3=set_overview */
     volatile uint8_t sampler_cmd;        /* 0=none, 1=start (path in file), 2=stop */
@@ -188,52 +188,21 @@ typedef struct shadow_control_t {
     volatile uint8_t mute_move_audio;   /* 1=zero Move's audio output (for silent clip switching) */
     volatile uint8_t sampler_ext_stop;  /* 1=sampler ignores MIDI Stop, only explicit stop works */
     volatile uint8_t wake_slots;       /* 1=clear all slot idle flags (auto-clears after read) */
-    /* 1 = ONE-SHOT: on the next overtake->0 transition, throw away the entry
-     * LED snapshot AND every queued framework LED write, and let Move repaint
-     * its own surface. Consumed (cleared) by the audio side at that
-     * transition, so JS must set it immediately before dropping the mode and
-     * must not clear it afterwards.
+    /* RESERVED. Was native_repaint_on_exit (backport 25f73f81), itself reusing
+     * the retired skipback_require_volume byte. That request told the audio
+     * side to DISCARD its LED snapshot on the overtake->0 transition, on
+     * upstream's premise that Move repaints the surface itself.
      *
-     * ⚠⚠ THIS IS NOT skip_led_clear, AND CONFLATING THE TWO WAS A HARDWARE
-     * REGRESSION. The backport that introduced the native-repaint behaviour
-     * (25f73f81) overloaded skip_led_clear to carry both meanings, which is
-     * what upstream does. It cannot work in this fork, because the two words
-     * mean different things here:
+     * ⭑ THE PREMISE DOES NOT HOLD HERE. Device-confirmed 2026-08-30: after a
+     * hold-Back suspend the OLED went native correctly and THE PADS STILL SHOWED
+     * DAVEBOX, because the discard is exactly "do not repaint" and Move never
+     * does on this path. The request was removed, which left the byte, the C
+     * branch and the JS binding with no caller, and Josh called the revert.
      *
-     *   skip_led_clear      a PERSISTENT CLAIM. davebox's primary-services
-     *                       layer sets it for the whole move_native co-run
-     *                       session (PRIMARY_SERVICES.move_native claims
-     *                       skip_led_clear: 1) so Move's own LED writes pass
-     *                       through live. Project management runs on exactly
-     *                       that claim.
-     *   this byte           a ONE-SHOT REQUEST about a single exit.
-     *
-     * With one byte for both, every overtake->0 transition during a davebox
-     * session read the standing claim as an exit request: it discarded
-     * davebox's queued pad writes and reset shadow_pending_*_color to -1,
-     * while davebox's JS setLED cache (stock-tree input_filter, which caches
-     * unconditionally) went on believing those writes had landed -- so no
-     * repaint ever came. Observed on hardware as project management showing
-     * no pad LEDs at all, and a loaded project showing PM's stale pattern
-     * inside davebox.
-     *
-     * There was a second failure hiding behind it. The claim reconciler
-     * (shadow_ui_primary.mjs) is EDGE-TRIGGERED -- `if (p[key] !== n[key])`
-     * -- so once the audio side consumed the byte, the JS claim model still
-     * read 1, no op was ever re-emitted, and the ENTRY-side pass-through
-     * claim was silently lost for the rest of the session too.
-     *
-     * Keep them separate. skip_led_clear is never consumed by the C side.
-     *
-     * REUSES the retired skipback_require_volume byte (RETIRED 2026-08-09,
-     * skipback fixed on Shift+Vol+Capture) rather than growing the struct, so
-     * CONTROL_BUFFER_SIZE and the SHM layout are untouched -- the shim creates
-     * that SHM and shadow_ui maps it through the same macro. Verified no
-     * reader of the retired name remained in src/, davebox/, standalone/ or
-     * tests/. shadow_control_size_check below is what proves the layout did
-     * not move. (Same discipline restore_knob_leds used with the retired
-     * shadow_ui_trigger byte; they are DIFFERENT bytes -- do not merge them.) */
-    volatile uint8_t native_repaint_on_exit;
+     * Kept as a reserved byte so CONTROL_BUFFER_SIZE and the SHM layout are
+     * untouched -- the shim creates that SHM and shadow_ui maps it through the
+     * same macro, and shadow_control_size_check below is what proves it. */
+    volatile uint8_t reserved_was_native_repaint_on_exit;
     volatile uint8_t preview_cmd;          /* 0=none, 1=play (path in file), 2=stop */
     volatile uint8_t pad_block;            /* 1=suppress pad notes (68-99) from reaching Move */
     volatile uint8_t suspend_overtake;  /* 1=suspend (skip exit hook), 0=normal exit */

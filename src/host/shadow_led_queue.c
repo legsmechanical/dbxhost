@@ -117,7 +117,6 @@ static int move_led_pass_count = 0;  /* how many clear/restore passes remain */
 static int prev_overtake_mode = 0;
 
 /* Defined alongside the Move sysex cache near the end of this file. */
-static void cancel_move_sysex_restore_and_thaw(void);
 
 /* ============================================================================
  * Hardware LED indices — only target LEDs that physically exist on Move.
@@ -271,22 +270,6 @@ static void queue_hw_leds_restore(void) {
     }
 }
 
-/* A suspend-keeps-JS tool can explicitly hand LED ownership back to Move.
- * In that path, replaying any queued tool LEDs after the mode transition would
- * immediately overwrite Move's native note-layout repaint. Drop every pending
- * framework write and thaw the pre-overtake sysex cache instead. */
-static void discard_pending_shadow_leds(void) {
-    shadow_init_led_queue();
-    for (int i = 0; i < 128; i++) {
-        shadow_pending_note_color[i] = -1;
-        shadow_pending_cc_color[i] = -1;
-    }
-    raw_queue_tail = raw_queue_head;
-    move_led_restore_pending = 0;
-    move_led_clear_pending = 0;
-    move_led_pass_count = 0;
-    cancel_move_sysex_restore_and_thaw();
-}
 
 /*
  * Hand the encoder rings back to Move.
@@ -415,10 +398,10 @@ void shadow_clear_move_leds_if_overtake(void) {
      * live so Move's current state is already on hardware — no restore needed
      * (that is snapshot_skip_restore, latched at entry, and it is the only
      * thing skip_led_clear influences here).
-     * A suspend-keeps-JS tool may separately set native_repaint_on_exit
-     * immediately before dropping overtake_mode. That is a one-shot request
-     * to let Move repaint natively instead of replaying an incomplete entry
-     * snapshot — a different question from the entry claim, on its own byte. */
+     * There is no longer any way to ASK for the snapshot to be skipped at exit.
+     * A native-repaint request existed briefly (25f73f81) and was removed: on
+     * this fork's suspend path nothing repaints the pads afterwards, so the
+     * discard simply left davebox's colours on the hardware. */
     if (prev_overtake_mode && !cur_overtake) {
         /*
          * THE ONE-SHOT BYTE, NEVER skip_led_clear.
@@ -434,8 +417,7 @@ void shadow_clear_move_leds_if_overtake(void) {
          * hardware as project management with no pad LEDs, and a loaded
          * project showing PM's stale pattern. See shadow_constants.h.
          */
-        int native_repaint = (ctrl && ctrl->native_repaint_on_exit) ? 1 : 0;
-        if (snapshot_valid && !snapshot_skip_restore && !native_repaint) {
+        if (snapshot_valid && !snapshot_skip_restore) {
             queue_hw_leds_restore();
             move_led_restore_pending = 1;
             move_led_clear_pending = 0;
@@ -443,20 +425,14 @@ void shadow_clear_move_leds_if_overtake(void) {
             /* Also restore Move-firmware-side sysex RGB commands so track row
              * and other RGB LEDs get their pre-overtake colors back. */
             led_queue_restore_move_sysex_leds();
-        } else if (native_repaint && !snapshot_skip_restore) {
-            /* The entry snapshot can be incomplete for dynamic note layouts
-             * and Shift-row icons. Keep Move's fresh output authoritative. */
-            discard_pending_shadow_leds();
         }
-        /* Consume the ONE-SHOT request on the audio-side transition, so JS
-         * cannot clear it too early and so it can never leak into the next
-         * exit. skip_led_clear is deliberately NOT touched: it is a standing
-         * claim owned by whoever set it, and clearing it here is what silently
-         * desynced the edge-triggered claim reconciler in
-         * shadow_ui_primary.mjs (`if (p[key] !== n[key])` never re-emits an
-         * op, so the entry-side pass-through claim stayed lost for the rest
-         * of the session). */
-        if (ctrl) ctrl->native_repaint_on_exit = 0;
+        /* ⚠ skip_led_clear is deliberately NOT touched here: it is a standing
+         * claim owned by whoever set it, and clearing it from the audio side is
+         * what silently desynced the edge-triggered claim reconciler in
+         * shadow_ui_primary.mjs (`if (p[key] !== n[key])` never re-emits an op,
+         * so the entry-side pass-through claim stayed lost for the rest of the
+         * session). Nothing is consumed on this transition any more -- the
+         * native-repaint one-shot that used to be is gone. */
         snapshot_skip_restore = 0;
         snapshot_valid = 0;
     }
@@ -1234,13 +1210,6 @@ void led_queue_freeze_move_sysex_cache(void) {
     move_sysex_cache_frozen = 1;
 }
 
-static void cancel_move_sysex_restore_and_thaw(void) {
-    move_sysex_restore_pending = 0;
-    move_sysex_restore_subcmd = 0;
-    move_sysex_restore_index = 0;
-    move_sysex_restore_pass = 0;
-    move_sysex_cache_frozen = 0;
-}
 
 int led_queue_move_sysex_restore_pending(void) {
     return move_sysex_restore_pending;

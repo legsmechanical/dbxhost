@@ -95,34 +95,6 @@ static void test_default_exit_still_restores_snapshot(void) {
     CHECK(restored_shift_row, "ordinary overtake exit restores cached Shift-row icon");
 }
 
-static void test_native_repaint_discards_snapshot_and_tool_queue(void) {
-    begin_host();
-    capture_native_then_enter_overtake();
-
-    /* Simulate one last Mono LED write waiting in the host queue. */
-    shadow_queue_led(0x09, 0x90, 68, 99);
-
-    /* JS sets this before mode=0 and leaves it for the audio thread. */
-    control.native_repaint_on_exit = 1;
-    control.overtake_mode = 0;
-    empty_frame();
-    shadow_clear_move_leds_if_overtake();
-
-    CHECK(control.native_repaint_on_exit == 0,
-          "audio-side exit transition consumes the native repaint request");
-
-    for (int i = 0; i < 12; i++) {
-        empty_frame();
-        shadow_flush_pending_leds();
-        CHECK(!packet_present(0x90, 68, 17),
-              "native repaint exit does not replay entry snapshot");
-        CHECK(!packet_present(0x90, 68, 99),
-              "native repaint exit drops queued tool LED writes");
-        CHECK(!packet_present(0xB0, 16, 5),
-              "native repaint exit does not replay stale Shift-row icon");
-    }
-}
-
 /*
  * THE REGRESSION. A standing skip_led_clear claim is NOT an exit request.
  *
@@ -140,7 +112,6 @@ static void test_standing_claim_is_not_an_exit_request(void) {
      * co-run wants Move's own LED writes to pass through live). */
     control.skip_led_clear = 1;
     /* No exit request: this is a claim, not a one-shot. */
-    control.native_repaint_on_exit = 0;
 
     control.overtake_mode = 0;
     empty_frame();
@@ -162,11 +133,9 @@ static void test_standing_claim_is_not_an_exit_request(void) {
 /*
  * And the RGB restore is still ARMED. This is the half the device actually
  * showed: project management's pads are Move-firmware RGB, replayed from the
- * sysex cache, and discard_pending_shadow_leds() cancels that replay and thaws
- * the cache. With the claim misread as an exit request the replay never ran,
- * so the pads stayed dark -- and davebox's JS setLED cache (stock-tree
- * input_filter, which caches unconditionally) believed its writes had landed,
- * so nothing repainted them either.
+ * sysex cache. With a standing claim misread as an exit request the replay
+ * never ran, so the pads stayed dark -- and davebox's JS setLED cache believed
+ * its writes had landed, so nothing repainted them either.
  *
  * Asserted on the ARMING rather than on emitted packets: the two paths differ
  * in exactly one observable here, and a queued NOTE write is not it --
@@ -179,7 +148,6 @@ static void test_standing_claim_keeps_the_rgb_restore_armed(void) {
     capture_native_then_enter_overtake();
 
     control.skip_led_clear = 1;
-    control.native_repaint_on_exit = 0;
 
     control.overtake_mode = 0;
     empty_frame();
@@ -189,44 +157,10 @@ static void test_standing_claim_keeps_the_rgb_restore_armed(void) {
           "a standing claim leaves the Move sysex RGB restore armed");
 }
 
-/*
- * The two bytes are independent: a genuine one-shot request still discards
- * even while the claim is up, and it consumes ONLY its own byte.
- */
-static void test_one_shot_works_alongside_the_claim(void) {
-    begin_host();
-    capture_native_then_enter_overtake();
-
-    control.skip_led_clear = 1;          /* claim up */
-    control.native_repaint_on_exit = 1;  /* and a real exit request */
-    shadow_queue_led(0x09, 0x90, 68, 99);
-
-    control.overtake_mode = 0;
-    empty_frame();
-    shadow_clear_move_leds_if_overtake();
-
-    CHECK(control.native_repaint_on_exit == 0, "the one-shot is consumed");
-    CHECK(control.skip_led_clear == 1, "the claim is left alone");
-    /* The NEGATIVE of the assertion above: a real request does cancel the RGB
-     * replay. Without this pair, a build that simply never armed the restore
-     * would satisfy one of them. */
-    CHECK(led_queue_move_sysex_restore_pending() == 0,
-          "an explicit repaint request cancels the Move sysex RGB restore");
-
-    for (int i = 0; i < 12; i++) {
-        empty_frame();
-        shadow_flush_pending_leds();
-        CHECK(!packet_present(0x90, 68, 99),
-              "an explicit repaint request still drops queued tool LED writes");
-    }
-}
-
 int main(void) {
     test_default_exit_still_restores_snapshot();
-    test_native_repaint_discards_snapshot_and_tool_queue();
     test_standing_claim_is_not_an_exit_request();
     test_standing_claim_keeps_the_rgb_restore_armed();
-    test_one_shot_works_alongside_the_claim();
     if (fails) {
         fprintf(stderr, "%d check(s) failed\n", fails);
         return 1;

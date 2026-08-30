@@ -572,9 +572,11 @@ static JSValue js_shadow_consume_resume_last_tool(JSContext *ctx, JSValueConst t
  * CLAIM — set it while you want pass-through, clear it when you are done. It
  * is not consumed by the C side.
  *
- * ⚠ This is NOT how you ask for a native repaint on the way OUT. That is
- * shadow_set_native_repaint_on_exit below; overloading this one carried a
- * hardware regression. See shadow_constants.h.
+ * ⚠ It is NOT an exit-time "let Move repaint" request either. Overloading it
+ * with that meaning carried a hardware regression, and the separate one-shot
+ * that replaced it has since been removed outright — nothing repaints the pads
+ * after a suspend, so skipping the restore just left stale colours on the
+ * hardware. See shadow_constants.h.
  */
 static JSValue js_shadow_set_skip_led_clear(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
     (void)this_val;
@@ -582,22 +584,6 @@ static JSValue js_shadow_set_skip_led_clear(JSContext *ctx, JSValueConst this_va
     int32_t flag = 0;
     JS_ToInt32(ctx, &flag, argv[0]);
     shadow_control->skip_led_clear = flag ? 1 : 0;
-    return JS_UNDEFINED;
-}
-
-/* shadow_set_native_repaint_on_exit(flag) -> void
- * ONE-SHOT: ask the audio-side overtake->0 transition to throw away the entry
- * LED snapshot and every queued framework LED write, and let Move repaint its
- * own surface. Set it immediately BEFORE shadow_set_overtake_mode(0) and do
- * not clear it afterwards — the audio side consumes it when it observes the
- * transition, and clearing it from JS races that thread.
- */
-static JSValue js_shadow_set_native_repaint_on_exit(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
-    (void)this_val;
-    if (!shadow_control || argc < 1) return JS_UNDEFINED;
-    int32_t flag = 0;
-    JS_ToInt32(ctx, &flag, argv[0]);
-    shadow_control->native_repaint_on_exit = flag ? 1 : 0;
     return JS_UNDEFINED;
 }
 
@@ -2705,7 +2691,6 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     JS_SetPropertyStr(ctx, global_obj, "shadow_get_move_ui_mode", JS_NewCFunction(ctx, js_shadow_get_move_ui_mode, "shadow_get_move_ui_mode", 0));
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_overtake_mode", JS_NewCFunction(ctx, js_shadow_set_overtake_mode, "shadow_set_overtake_mode", 1));
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_skip_led_clear", JS_NewCFunction(ctx, js_shadow_set_skip_led_clear, "shadow_set_skip_led_clear", 1));
-    JS_SetPropertyStr(ctx, global_obj, "shadow_set_native_repaint_on_exit", JS_NewCFunction(ctx, js_shadow_set_native_repaint_on_exit, "shadow_set_native_repaint_on_exit", 1));
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_overtake_suppress_sysex", JS_NewCFunction(ctx, js_shadow_set_overtake_suppress_sysex, "shadow_set_overtake_suppress_sysex", 1));
     JS_SetPropertyStr(ctx, global_obj, "shadow_restore_knob_leds", JS_NewCFunction(ctx, js_shadow_restore_knob_leds, "shadow_restore_knob_leds", 0));
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_suspend_overtake", JS_NewCFunction(ctx, js_shadow_set_suspend_overtake, "shadow_set_suspend_overtake", 1));
