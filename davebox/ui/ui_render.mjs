@@ -25,7 +25,7 @@ import {
     drawLevelCard,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
-    drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y
+    drawKitHintRow, drawKitFooterRule, enumOverlayWouldDraw, MV_FOOTER_Y
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
@@ -445,7 +445,10 @@ function drawKitPage(name, cells, inverted, footer) {
     /* Stand the hints down under the picker — it is a modal that states its own
      * affordance, and a half-covered hint row is worse than none. See
      * drawKitBankPage, which makes the same call for the same reason. */
-    if (footer && !enumOverlayWouldDraw(cells, _ovi)) drawKitHintRow(MV_FOOTER_Y, footer);
+    if (footer && !enumOverlayWouldDraw(cells, _ovi)) {
+        drawKitFooterRule();
+        drawKitHintRow(MV_FOOTER_Y, footer);
+    }
     drawKitEnumOverlay(cells, _ovi);
 }
 
@@ -625,10 +628,34 @@ function kitCellForKnob(knob, val) {
         return base;
     }
     if (knob.fmt === fmtLgto) { base.kind = 'action'; base.oneWay = true; return base; }
-    /* relative one-shot actions (Stch, Shft): "< >" square whose box shows the
-     * live value only while its knob is touched. (Octave Shift is NOT here — it
-     * holds an absolute value, so it uses a persistent value box below.) */
-    if (knob.scope === 'action') { base.kind = 'action'; return base; }
+    /* ⭑⭑ THE BUTTON IS FOR FIRE-ACTIONS ONLY, and `scope: 'action'` is not that
+     * test. Three params carry that scope and exactly ONE is a trigger:
+     *
+     *   Lgto   fmtLgto() returns '->' unconditionally — no value, one-shot,
+     *          oneWay. A real button, and it keeps the button (above).
+     *   Strch  its cell holds the last TURN DIRECTION (-1 / 0 / +1, reset to 0
+     *          at rest by ui_dsp_bridge) and reads '/2' | '1x' | 'x2'.
+     *   Shift  an ACCUMULATING signed counter (`+= dir`), reads '+0' | '-3'.
+     *
+     * The last two are signed VALUES, and a pushbutton is the wrong picture for
+     * them (Josh, 2026-08-29: "stretch and shift don't make sense as trigger
+     * button widgets bc they're bipolar"). A button says "press me and
+     * something happens"; these say "here is where you have got to".
+     *
+     * ⚠ NOT arcbip, though they ARE bipolar. An arc needs a RANGE to point
+     * along and these declare min = max = 0 — the value is a running total the
+     * DSP owns, not a position on a scale, so there is nothing to normalise
+     * against and an arc would be inventing bounds. The signed big number shows
+     * the number and claims nothing about limits, which is what is true.
+     *
+     * ⚠ The value is now PERSISTENT, where the old "< >" square revealed it
+     * only while the knob was touched. That was the point of the old widget and
+     * it is what made these read as buttons; showing it is the change.
+     * (Octave Shift was already a value box below, for the same reason.)
+     *
+     * ⚠ NOTHING ABOUT THE GESTURE CHANGES — same scope, same sensitivity, same
+     * lock, handler untouched. This is the DRAWING only. */
+    if (knob.scope === 'action') { base.kind = 'valsq'; return base; }
     if (knob.fmt === fmtPlayDir) {
         base.kind = 'dirsq';
         base.options = KIT_DIR_NAMES;
@@ -1908,9 +1935,9 @@ function drawUIBody() {
                 { kind: 'frac', label: S.altMode ? 'Zoom' : 'Res',
                   name: S.altMode ? 'Zoom' : 'Resolution', text: fmtRes(tpsIdx),
                   options: [0,1,2,3,4,5].map(fmtRes), sel: tpsIdx },
-                { kind: 'action', label: 'Strch', name: 'Beat Stretch',
+                { kind: 'valsq', label: 'Strch', name: 'Beat Stretch',
                   text: fmtStretch(S.bankParams[t][0][1]) },
-                { kind: 'action', label: S.altMode ? 'Nudge' : 'Shift',
+                { kind: 'valsq', label: S.altMode ? 'Nudge' : 'Shift',
                   name: S.altMode ? 'Nudge' : 'Clock Shift',
                   text: fmtSign(S.bankParams[t][0][2]) },
                 { kind: 'action', oneWay: true, label: 'Lgto', name: 'Apply Legato', text: '->' },
@@ -1945,9 +1972,9 @@ function drawUIBody() {
                 rv < 0 ? { kind: 'frac', label: 'Res', name: 'Resolution', text: '--' }
                        : { kind: 'frac', label: 'Res', name: 'Resolution', text: fmtRes(rv),
                            options: [0,1,2,3,4,5].map(fmtRes), sel: rv },
-                { kind: 'action', label: 'Strch', name: 'Beat Stretch',
+                { kind: 'valsq', label: 'Strch', name: 'Beat Stretch',
                   text: fmtStretch(S.bankParams[t][7][1]) },
-                { kind: 'action', label: S.altMode ? 'Nudge' : 'Shift',
+                { kind: 'valsq', label: S.altMode ? 'Nudge' : 'Shift',
                   name: S.altMode ? 'Nudge' : 'Clock Shift',
                   text: fmtSign(S.bankParams[t][7][2]) },
                 qv <= 0 ? { kind: 'valsq', label: 'Quant', name: 'Quantize', text: '--' }

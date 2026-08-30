@@ -80,7 +80,7 @@ const snd = await import('../../ui/ui_sound.mjs');
 /* The vertical map, read rather than repeated: these assertions are about WHERE
  * the latch frame is, and hardcoding its rows is how a test keeps passing
  * against a page that has moved underneath it. */
-const { MV_FOOTER_Y } = await import('../../ui/ui_movy.mjs');
+const { MV_FOOTER_Y, MV_RULE_Y } = await import('../../ui/ui_movy.mjs');
 const FRAME_TOP = 8, FRAME_BOT = MV_FOOTER_Y - 1;
 const render = await import('../../ui/ui_render.mjs');
 const kit = await import('../../ui/ui_movy.mjs');
@@ -474,19 +474,25 @@ step('⭑ the LATCH draws a frame around the params, and only when latched', () 
     /* The visible half of the latch. ⚠ Asserted on the FRAME EDGES rather than
      * "the screen changed": a card redraws for many reasons, and only the edges
      * are the indicator. */
-    /* ⚠ The frame's bottom edge is FRAME_BOT, not row 63. The footer took the
-     * bottom of the panel on 2026-08-29 and the frame now ends on the clear row
-     * above it — so scanning row 63 here would just be counting hint pills and
-     * calling them a latch. */
+    /* ⚠⚠ THE BOTTOM EDGE IS NO LONGER PART OF THE LATCH'S IDENTITY. It lands on
+     * MV_RULE_Y, and since 2026-08-29 the footer rule draws a solid hairline
+     * there on EVERY bank page — so counting that row would report a frame on
+     * an unlatched card and this assertion would fail on the rule doing its
+     * job. The frame is identified by its TOP row and its two SIDE columns,
+     * which nothing else draws; the shared bottom row gets its own checks
+     * below, so nothing is dropped, only moved. */
     const edgeInk = () => {
         let n = 0;
-        for (let x = 0; x < FBW; x++) {
-            if (fb[FRAME_TOP * FBW + x]) n++;
-            if (fb[FRAME_BOT * FBW + x]) n++;
-        }
-        for (let y = FRAME_TOP; y <= FRAME_BOT; y++) { if (fb[y * FBW]) n++; if (fb[y * FBW + 127]) n++; }
+        for (let x = 0; x < FBW; x++) if (fb[FRAME_TOP * FBW + x]) n++;
+        /* ⚠ Stops ABOVE the rule row: FRAME_BOT === MV_RULE_Y, so its first and
+         * last pixels are the RULE's, not the frame's, and counting them
+         * reported a two-pixel "frame" on every unlatched card. */
+        for (let y = FRAME_TOP; y < MV_RULE_Y; y++) { if (fb[y * FBW]) n++; if (fb[y * FBW + 127]) n++; }
         return n;
     };
+    /* The rule is chrome and must be there in BOTH states — that is the half of
+     * the old bottom-row check that still means something. */
+    const ruleInk = () => { let n = 0; for (let x = 0; x < FBW; x++) if (fb[MV_RULE_Y * FBW + x]) n++; return n; };
     reset();
     S.activeBank = 1;
     S.bankSelectTick = S.tickCount;
@@ -495,11 +501,26 @@ step('⭑ the LATCH draws a frame around the params, and only when latched', () 
         throw new Error('an UNLATCHED card already draws a frame — the indicator ' +
                         'would mean nothing');
 
+    if (ruleInk() < 100)
+        throw new Error('the footer rule is missing on an unlatched card (' + ruleInk() + 'px)');
+
     S.bankCardLatched = true;
     S.tickCount = 0;  fb.fill(0); render.drawUI();
     const solid = edgeInk();
+    const solidRule = ruleInk();
     S.tickCount = 24; fb.fill(0); render.drawUI();
     const dashed = edgeInk();
+    /* ⚠⚠ THE DASHED PHASE MUST STILL READ AS DASHED ON THE SHARED ROW. The
+     * frame's bottom edge is drawn over the solid rule, so a dashed edge that
+     * only SET ink would leave the rule showing through every gap and that edge
+     * would look solid in both phases — the animation dying on one edge with
+     * nothing to say so. drawKitLatchBox knocks its gaps out for exactly this;
+     * assert the result rather than trusting it. */
+    const dashedRule = ruleInk();
+    if (!(dashedRule < solidRule))
+        throw new Error('the latch frame\'s bottom edge does not read as dashed over the ' +
+                        'footer rule (' + solidRule + ' vs ' + dashedRule + ') — it is ' +
+                        'adding ink instead of knocking gaps out');
     if (!solid || !dashed) throw new Error('the latch frame did not draw: ' +
                                            JSON.stringify({ solid, dashed }));
     /* ⭑ It alternates SOLID <-> SEGMENTED rather than blinking out: a frame that
@@ -520,19 +541,19 @@ step('⚠ the latch frame does not sit ON the params', () => {
     S.bankSelectTick = S.tickCount;
     S.bankCardLatched = false;
     fb.fill(0); render.drawUI();
-    /* ⚠ The scan stops at FRAME_BOT. Below it is the HINT ROW, which is chrome
-     * OUTSIDE the frame by construction — its pills deliberately reach both the
-     * bottom scanline and the right edge, so including them would fail this on
-     * the one thing that is meant to be there. The assertion is unchanged in
-     * substance: nothing the CARD draws may touch the frame. */
+    /* ⚠ The scan stops ABOVE the rule row. Below it is chrome — the rule itself
+     * and then the hint pills, which deliberately reach the bottom scanline and
+     * the right edge — so including either would fail this on the things that
+     * are meant to be there. The assertion is unchanged in substance: nothing
+     * the CARD draws may touch the frame. */
     let lowest = -1;
-    for (let y = 0; y <= FRAME_BOT; y++)
+    for (let y = 0; y < MV_RULE_Y; y++)
         for (let x = 0; x < FBW; x++)
             if (fb[y * FBW + x]) { lowest = y; break; }
-    if (lowest >= FRAME_BOT)
+    if (lowest >= MV_RULE_Y)
         throw new Error('card content reaches row ' + lowest + ', where the frame ' +
                         'draws — they would overlap');
-    for (let y = FRAME_TOP + 1; y < FRAME_BOT; y++)
+    for (let y = FRAME_TOP + 1; y < MV_RULE_Y; y++)
         if (fb[y * FBW] || fb[y * FBW + 127])
             throw new Error('content touches column 0/127 at row ' + y + ' — the ' +
                             'frame edges would cut through it');

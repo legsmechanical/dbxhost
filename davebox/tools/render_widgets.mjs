@@ -614,4 +614,32 @@ emit('ftr-trackview-fit', 'FOOTER — track view asks for 4 pairs; SHFT drops, B
     console.log(`      (asked ${asked.length} pairs, drew ${drawn})`);
 });
 
+/* ================ THE FOOTER RULE vs THE LATCH FRAME ====================
+ *
+ * The one collision worth seeing: the latch frame's bottom edge lands on
+ * MV_RULE_Y, the same row the rule draws on. Rendered in all three states
+ * because the middle one is the whole reason drawKitLatchBox knocks its gaps
+ * out — over a solid rule, a dashed edge that only ADDS ink is indistinguishable
+ * from a solid one, and the latch's animation would die on that edge silently.
+ */
+const LATCH_CELLS = [
+    arc('Cutf', 'Cutoff', '62', 0.62), arc('Reso', 'Resonance', '18', 0.18),
+    { kind: 'enumsq', label: 'Mode', name: 'Mode', text: 'LP24', options: ['LP24'], sel: 0 },
+    arc('Env', 'Env Amt', '45', 0.45),
+    arc('Atk', 'Attack', '10', 0.10), arc('Dec', 'Decay', '40', 0.40),
+    { kind: 'valsq', label: 'Strch', name: 'Beat Stretch', text: '1x' },
+    { kind: 'valsq', label: 'Shift', name: 'Clock Shift', text: '+0' },
+];
+const LATCH_FOOTER = [['JOG', 'BANK'], ['CLK', 'ALT'], ['SHFT', 'TRK'], ['BACK', 'OUT']];
+const latchPage = (dashed, latched) => {
+    page('DRUM LANE', LATCH_CELLS, { footer: LATCH_FOOTER });
+    if (latched) kit.drawKitLatchBox(8, dashed);
+};
+emit('r2-rule-unlatched', 'ADOPTED — the footer rule on an ordinary card (row 56, full width)',
+     () => latchPage(false, false));
+emit('r2-rule-latch-solid', 'the latch frame SOLID phase — its bottom edge lands on the rule row',
+     () => latchPage(false, true));
+emit('r2-rule-latch-dashed', 'the latch frame DASHED phase — it KNOCKS OUT its gaps, so it still reads as dashed over the solid rule',
+     () => latchPage(true, true));
+
 console.log(`\nwrote ${n} widget render${n === 1 ? '' : 's'} to ${OUT}/`);

@@ -37,8 +37,8 @@ function frame(name, cells, opts) {
 /* 1 — CLIP bank, resting */
 frame('CLIP (melodic, resting)', [
     { ...enumCell('Res', 'Resolution', RES, 1), pick: { n: 6, sel: 1 } },
-    { kind: 'action', label: 'Strch', name: 'Beat Stretch', text: '1x' },
-    { kind: 'action', label: 'Shift', name: 'Clock Shift', text: '+0' },
+    { kind: 'valsq', label: 'Strch', name: 'Beat Stretch', text: '1x' },
+    { kind: 'valsq', label: 'Shift', name: 'Clock Shift', text: '+0' },
     { kind: 'action', oneWay: true, label: 'Lgto', name: 'Apply Legato', text: '->' },
     { ...enumCell('InQnt', 'Input Quantize', DIQ, 3), pick: { n: 9, sel: 3 } },
     { kind: 'blank', label: '' },

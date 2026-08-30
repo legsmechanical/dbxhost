@@ -154,8 +154,8 @@ const CUSTOM_KIT = [
         footer: hintsAlt,
         cells: [
             enumC('Res', 'Resolution', RES, 1),
-            { kind: 'action', label: 'Strch', name: 'Beat Stretch', text: '1x' },
-            { kind: 'action', label: 'Shift', name: 'Clock Shift', text: '+0' },
+            { kind: 'valsq', label: 'Strch', name: 'Beat Stretch', text: '1x' },
+            { kind: 'valsq', label: 'Shift', name: 'Clock Shift', text: '+0' },
             { kind: 'action', oneWay: true, label: 'Lgto', name: 'Apply Legato', text: '->' },
             { kind: 'valsq', label: 'Eucld', name: 'Euclid Fill', text: '0' },
             { kind: 'blank', label: '' },
@@ -168,8 +168,8 @@ const CUSTOM_KIT = [
         footer: hintsAlt,
         cells: [
             { kind: 'valsq', label: 'Res', name: 'Resolution', text: '--' },
-            { kind: 'action', label: 'Strch', name: 'Beat Stretch', text: '1x' },
-            { kind: 'action', label: 'Shift', name: 'Clock Shift', text: '+0' },
+            { kind: 'valsq', label: 'Strch', name: 'Beat Stretch', text: '1x' },
+            { kind: 'valsq', label: 'Shift', name: 'Clock Shift', text: '+0' },
             { kind: 'valsq', label: 'Quant', name: 'Quantize', text: '--' },
             { kind: 'valsq', label: 'VelIn', name: 'Velocity Input', text: 'Live' },
             enumC('InQnt', 'Input Quantize', DIQ, 0),

@@ -152,7 +152,7 @@ lbl0 26-32  labels row 0                       MV_LBL0_Y = 26, MV_LBL_H = 7
 gap  33
 w1   34-48  widgets row 1                      MV_ROW1_Y = 34
 lbl1 49-55  labels row 1                       MV_LBL1_Y = 49
-clear 56
+rule  56    footer separator                   MV_RULE_Y = 56
 ftr  57-63  hint pills                         MV_FOOTER_Y = 57, MV_FOOTER_H = 7
 ```
 
@@ -179,7 +179,8 @@ no room for one: its bottom label strip ran to row 63. There is one vertical map
   longer does. The overlays it positions are modals whose row capacity is tuned against that box,
   and moving them changes how many options fit — a separate decision from making room for a footer.
 - ⚠ **The latch frame ends at `MV_FOOTER_Y - 1`,** not at the panel edge. It encloses the *params*,
-  which is what it is a frame around; drawn through the pills it reads as corruption.
+  which is what it is a frame around; drawn through the pills it reads as corruption. That row is
+  `MV_RULE_Y`, so the frame's bottom edge and the rule **share it** — see §3.3.2.
 
 - `MV_CELL_W = 32` → 4 × 32 = 128, **no horizontal gutter**. Columns butt together.
 - Widget box `MV_KW = 20` × `MV_KH = 16`, centred in the cell.
@@ -210,7 +211,7 @@ Descriptor kinds, and what each draws (`drawCellWidget` dispatch):
 | `dirsq` | Direction arrows | Playback direction |
 | `wavesq` | One-cycle waveform box | Wave-select cells |
 | `xbox` | Framed diagonal cross | "Nothing routed here" |
-| `action` | A raised **button** that presses and throws a burst (§3.7) | Triggers |
+| `action` | A raised **button** that presses and throws a burst (§3.7) | **True fire-actions only** — see §3.7 |
 | `faderail` | Alias of `vbar` | Renderer-only, so the two can be drawn side by side. No cell emits it |
 
 Spans override cells where a shape carries more meaning than eight separate knobs. All four are
@@ -323,6 +324,32 @@ length** decide what survives, and both belong to the caller.
   stand-down, so the two cannot drift.
 - See §3.8 for the pill's own drawing rules and the BACK-reservation mechanism.
 
+### 3.3.2 The footer rule
+
+A 1px hairline across all 128 columns at `MV_RULE_Y` (56), drawn with the hint row and suppressed
+with it under a picker overlay.
+
+⚠⚠ **THIS IS A DAVEBOX DECISION, NOT A PORT, AND THE PORT WENT THE OTHER WAY.** Upstream *had* this
+rule and **deleted** it (SCH-50 `no-rule`: *"THE RULE IS GONE"*); its `RULE_Y` survives only as the
+top of the band the footer owns, not as a row anything draws. Our footer adoption matched upstream
+exactly — the rule was never dropped, it was never there.
+
+⭑ **Upstream's argument does not transfer, which is why asking for it here is right.** It rests on
+*three* clear rows between the last label band and the pills. davebox's map is tighter: the label
+band's own bottom row (55) plus row 56 is **two**, and the first of those disappears the moment a
+knob is touched, because the inverted strip fills the whole band. At a touch there is exactly **one**
+row between a solid white label strip and a row of solid white pills, and without a rule those read
+as one block.
+
+- ⚠ **Row 56 is the only row available.** 49–55 belongs to the label band (and is filled edge to
+  edge when touched); 57–63 is the pill band, whose fill starts on its first row.
+- ⚠⚠ **The latch frame's bottom edge lands on the same row**, so `drawKitLatchBox`'s dashed phase
+  **knocks its gaps out** (writes 0) rather than merely skipping them. A dashed edge that only
+  *adds* ink leaves the rule showing through every gap: the bottom edge reads solid in both phases
+  and the latch's solid↔segmented animation dies on that edge with nothing to say so. Knocking out
+  is also the file's existing idiom for a mark on filled ground, and it makes the frame correct over
+  any ground rather than only over black.
+
 ### 3.4 The arc knob
 
 `r = 8`, centred in the 20×16 widget box. Ported from param-pages' `drawArcKnob`.
@@ -431,6 +458,24 @@ A raised physical button: cap, sides, base arc. **Idle** is an outline, **select
 
 - ⭑ The affordance has to be ON the control — a trigger has no value to read, so nothing else on
   the cell says it is pressable.
+- ⚠⚠ **A BUTTON IS FOR FIRE-ACTIONS ONLY, and `scope: 'action'` is not that test.** Three params
+  carry that scope and exactly one is a trigger:
+
+  | param | what its cell holds | widget |
+  |---|---|---|
+  | **Lgto** | nothing — `fmtLgto()` returns `->` unconditionally, one-shot, `oneWay` | **button** |
+  | **Strch** | the last turn DIRECTION (−1 / 0 / +1, reset to 0 at rest), read `/2` · `1x` · `x2` | `valsq` |
+  | **Shift** (Nudge in alt) | an accumulating signed counter (`+= dir`), read `+0` · `-3` | `valsq` |
+
+  The last two are signed **values**, and a pushbutton is the wrong picture for them (Josh: *"stretch
+  and shift don't make sense as trigger button widgets bc they're bipolar"*). A button says "press me
+  and something happens"; these say "here is where you have got to".
+- ⚠ **They are bipolar but NOT `arcbip`.** An arc needs a **range** to point along, and these declare
+  `min = max = 0` — the value is a running total the DSP owns, not a position on a scale. There is
+  nothing to normalise against, so an arc would be inventing bounds. The signed big number shows the
+  number and claims nothing about limits, which is what is true.
+- The value is now **persistent**, where the old `< >` square revealed it only while the knob was
+  held. That was the point of the old widget and it is what made these read as buttons.
 - ⚠⚠ **The flash is display only.** `buttonPhase(fired, now, held)` is pure and resolves the state
   from timestamps the caller already has. Nothing here fires anything, and **no knob-turn trigger
   path was added**; what makes the flash happen is the existing click, unchanged.

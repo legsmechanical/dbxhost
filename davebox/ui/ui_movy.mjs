@@ -672,6 +672,14 @@ export function rectOutline(x, y, w, h, fg) {
  *
  * ⚠ Drawn LAST, over the cells: the frame is 1px on the outer edge of the
  * panel, and a widget that reaches the edge would otherwise punch holes in it. */
+/* ⚠⚠ THE DASHED PHASE CLEARS ITS GAPS, it does not merely skip them. The frame's
+ * bottom edge lands on MV_RULE_Y, so from 2026-08-29 there is a solid hairline
+ * underneath it: a dashed edge that only SETS ink leaves the rule showing
+ * through every gap, the bottom edge reads solid in both phases, and the latch's
+ * whole solid-vs-segmented animation dies on that edge with nothing to say so.
+ * Knocking out is also the file's existing idiom for a mark on filled ground —
+ * the switch slug, notchCorners, the envelope's section markers — and it makes
+ * the frame correct over ANY ground rather than only over black. */
 export function drawKitLatchBox(y, dashed) {
     /* ⚠ THE FRAME STOPS ABOVE THE FOOTER, not at the panel edge. It used to run
      * to row 63 because that row was spare; it is the hint row now, and a frame
@@ -681,13 +689,15 @@ export function drawKitLatchBox(y, dashed) {
      * around — and touches neither. */
     const x = 0, w = SCREEN_W, h = MV_FOOTER_Y - y;
     if (!dashed) { rectOutline(x, y, w, h, 1); return; }
-    for (let i = 0; i < w; i += 2) {
-        set_pixel(x + i, y, 1);
-        set_pixel(x + i, y + h - 1, 1);
+    for (let i = 0; i < w; i++) {
+        const on = (i % 2) === 0 ? 1 : 0;
+        set_pixel(x + i, y, on);
+        set_pixel(x + i, y + h - 1, on);
     }
-    for (let j = 0; j < h; j += 2) {
-        set_pixel(x, y + j, 1);
-        set_pixel(x + w - 1, y + j, 1);
+    for (let j = 0; j < h; j++) {
+        const on = (j % 2) === 0 ? 1 : 0;
+        set_pixel(x, y + j, on);
+        set_pixel(x + w - 1, y + j, on);
     }
 }
 
@@ -2155,6 +2165,34 @@ export function drawFaderColumn(kx, ky, norm, baseNorm) {
 export const MV_HINT_PAD = 2, MV_HINT_GAP = 4;
 export const MV_FOOTER_H = FONT4_HEIGHT + 2;
 
+/* ---- the footer RULE ----------------------------------------------------
+ *
+ * A 1px hairline across all 128 columns, on the one clear row between the last
+ * label strip and the pills.
+ *
+ * ⚠⚠ THIS IS A DAVEBOX DECISION, NOT A PORT — and the record matters because
+ * the port went the other way. Upstream HAD this rule and DELETED it (SCH-50
+ * `no-rule`, "THE RULE IS GONE"): its reasoning was that "the three clear rows
+ * between the last label band and the pills are now the only separator, and on
+ * a screen this dense that is a real proposition". Its RULE_Y survives only as
+ * the top of the band the footer owns, not as a row anything draws.
+ *
+ * ⭑ THAT ARGUMENT DOES NOT TRANSFER, WHICH IS WHY JOSH IS RIGHT TO ASK FOR IT.
+ * It rests on THREE clear rows, and davebox's map is tighter: the label band's
+ * own bottom row (55) plus row 56 is TWO, and the first of those disappears the
+ * moment a knob is touched, because the inverted strip fills the whole band.
+ * At a touch there is exactly ONE row between a solid white label strip and a
+ * row of solid white pills, and without a rule those read as one block.
+ *
+ * ⚠ ROW 56 IS THE ONLY ROW AVAILABLE. 49..55 belongs to the label band (and is
+ * filled edge to edge when touched); 57..63 is the pill band, whose fill starts
+ * on its first row. Anything else collides. */
+export const MV_RULE_Y = MV_FOOTER_Y - 1;
+
+export function drawKitFooterRule() {
+    fill_rect(0, MV_RULE_Y, SCREEN_W, 1, 1);
+}
+
 /* ⭑ THE CANON, so the row cannot drift into verb soup the way this tree's
  * older text footer did. KEYS name the physical control and are fixed by the
  * hardware, not by taste. ACTIONS are free EXCEPT after BACK, where the word
@@ -2766,7 +2804,7 @@ export function drawKitBankPage(cells, opts) {
      * "pixels on, behaviour off" buys. See enumPeekExpired() for the timer half;
      * Josh judges it from the offline renders first. */
     const overlayUp = !opts.peekExpired && enumOverlayWouldDraw(cells, ov);
-    if (opts.footer && !overlayUp) drawKitHintRow(MV_FOOTER_Y, opts.footer);
+    if (opts.footer && !overlayUp) { drawKitFooterRule(); drawKitHintRow(MV_FOOTER_Y, opts.footer); }
     if (!opts.peekExpired) drawKitEnumOverlay(cells, ov);
 }
 
