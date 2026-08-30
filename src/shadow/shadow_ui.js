@@ -858,6 +858,22 @@ let splashTick = 0;
  * (boot_tool.json) — a stray splash.hex on an ordinary install can never
  * rebrand stock Schwung's splash. */
 let customSplash = undefined;   /* undefined = not probed; null = none */
+let customSplashArt = null;     /* the rotating artwork shown BEFORE the text */
+
+/* 128x64 1-bpp, 2048 hex chars, MSB-first. Returns null on anything unusable —
+ * a short read, a truncated file, a stray byte — so a bad asset degrades to the
+ * built-in splash instead of drawing garbage. */
+function splashBitsFrom(path) {
+    const hex = (host_read_file(path) || "").trim();
+    if (hex.length < 2048) return null;
+    const bits = new Uint8Array(1024);
+    for (let i = 0; i < 1024; i++) {
+        const b = parseInt(hex.substr(i * 2, 2), 16);
+        if (isNaN(b)) return null;
+        bits[i] = b;
+    }
+    return bits;
+}
 let customSplashCaption = "";
 function ensureCustomSplash() {
     if (customSplash !== undefined) return;
@@ -880,15 +896,45 @@ function ensureCustomSplash() {
             file = "/splash.hex"; captioned = true;
             if (!host_file_exists(HOST_STATE_ROOT + file)) return;
         }
-        const hex = (host_read_file(HOST_STATE_ROOT + file) || "").trim();
-        if (hex.length < 2048) return;
-        const bits = new Uint8Array(1024);
-        for (let i = 0; i < 1024; i++) {
-            const b = parseInt(hex.substr(i * 2, 2), 16);
-            if (isNaN(b)) return;
-            bits[i] = b;
-        }
+        const bits = splashBitsFrom(HOST_STATE_ROOT + file);
+        if (!bits) return;
         customSplash = bits;
+
+        /* ⭑ THE ARTWORK, restored to OUR splash 2026-08-30.
+         *
+         * The rotating splash-N.hex artwork used to be the INSTANT frame,
+         * painted into the STOCK display by quiesce-stock.sh the moment the
+         * tool was picked — which is why the text screen above deliberately
+         * replaced it rather than repeating it.
+         *
+         * That only ever worked while stock's stack was ALIVE to composite the
+         * frame. Stock v1.0.0 pre-kills it before we run, so there is nothing
+         * left to draw with and the artwork simply stopped appearing (Josh:
+         * "everything else on the load path works great except the davebox
+         * splash is missing"). /dev/shm/schwung-display does not even exist by
+         * then — our own sweep wipes the namespace.
+         *
+         * So the sequence is rebuilt HERE, where it depends on nothing outside
+         * this host: artwork first, then the text screen, exactly the two
+         * stages that were there before. Rotation still happens per launch.
+         *
+         * Probed by name rather than listed: this file has no readdir binding,
+         * and a fixed small pool costs ten host_file_exists calls once. */
+        const pool = [];
+        for (let i = 0; i < 10; i++) {
+            if (host_file_exists(HOST_STATE_ROOT + "/splash-" + i + ".hex")) {
+                pool.push("/splash-" + i + ".hex");
+            }
+        }
+        if (pool.length) {
+            const pick = pool[Math.min(pool.length - 1,
+                                       Math.floor(Math.random() * pool.length))];
+            customSplashArt = splashBitsFrom(HOST_STATE_ROOT + pick);
+            debugLog("splash: artwork " + pick + " (" + pool.length + " in pool)" +
+                     (customSplashArt ? "" : " — UNREADABLE, text screen only"));
+        } else {
+            debugLog("splash: no splash-N.hex artwork found — text screen only");
+        }
         /* The text screen already CONTAINS the version, so a caption band over
          * it would print it twice, in a different font, on top of itself. */
         customSplashCaption = captioned
@@ -901,9 +947,9 @@ function ensureCustomSplash() {
 /* Draw the launcher splash: run-length fill_rect blit (same approach as the
  * hosted module's own splash renderer — far fewer host calls than per-pixel
  * set_pixel) + the caption in a cleared band along the bottom. */
-function drawCustomSplash() {
+function drawCustomSplash(bitsOverride, captionOverride) {
     clear_screen();
-    const bits = customSplash;
+    const bits = bitsOverride || customSplash;
     for (let y = 0; y < 64; y++) {
         let runStart = -1;
         const rowOff = y * 16;
@@ -918,9 +964,10 @@ function drawCustomSplash() {
         }
         if (runStart >= 0) fill_rect(runStart, y, 128 - runStart, 1, 1);
     }
-    if (customSplashCaption) {
+    const caption = captionOverride === undefined ? customSplashCaption : captionOverride;
+    if (caption) {
         fill_rect(0, 55, 128, 9, 0);
-        const t = truncateText(customSplashCaption, 21);
+        const t = truncateText(caption, 21);
         print(Math.max(0, Math.floor((128 - t.length * 6) / 2)), 56, t, 1);
     }
 }
@@ -992,6 +1039,12 @@ const SPLASH_RELEASE_TICKS = 5;
 const SPLASH_HOLD_TICKS = 79;  /* ~1.8s hold after hit */
 const SPLASH_TOTAL_TICKS = SPLASH_PRE_HOLD_TICKS + SPLASH_TENSION_TICKS +
     SPLASH_RELEASE_TICKS + SPLASH_HOLD_TICKS;
+
+/* How long the rotating artwork holds before the text screen takes over. It
+ * used to be shown by quiesce-stock.sh from the instant the tool was picked,
+ * so it had the whole teardown to itself; here it shares the boot splash, and
+ * roughly the first third reads the same way without delaying the session. */
+const SPLASH_ART_TICKS = Math.floor(SPLASH_TOTAL_TICKS / 3);
 
 const SPLASH_CIRCLE_PATH = "/data/UserData/schwung/host/logo-circle.png";
 const SPLASH_LOGO_PATH = "/data/UserData/schwung/host/logo-text.png";
@@ -16528,8 +16581,16 @@ globalThis.tick = function() {
             }
         } else {
             ensureCustomSplash();
-            if (customSplash) drawCustomSplash();
-            else drawSplashScreen();
+            /* Artwork for the opening beat, then the text screen — the two
+             * stages the launch always had. The artwork carries no caption:
+             * it is a picture, and the version belongs on the text screen. */
+            if (customSplashArt && splashTick < SPLASH_ART_TICKS) {
+                drawCustomSplash(customSplashArt, "");
+            } else if (customSplash) {
+                drawCustomSplash();
+            } else {
+                drawSplashScreen();
+            }
             return;
         }
     }
