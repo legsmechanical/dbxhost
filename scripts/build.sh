@@ -381,10 +381,9 @@ fi
 if needs_rebuild build/shadow/shadow_ui \
     src/shadow/shadow_ui.c src/host/js_display.c src/host/unified_log.c \
     src/host/js_host_common.c src/host/shadow_shm_util.c src/host/file_atomic.c src/host/spawn_command.c src/host/spawn_command.h \
-    src/host/schwung_trace.c src/host/shadow_midi_spill.c \
+    src/host/schwung_trace.c \
     src/host/js_display.h src/host/shadow_constants.h src/host/unified_log.h \
     src/host/js_host_common.h src/host/shadow_shm_util.h src/host/schwung_trace.h \
-    src/host/shadow_midi_spill.h \
     src/host/file_atomic.h; then
     echo "Building Shadow UI..."
     "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 \
@@ -396,7 +395,6 @@ if needs_rebuild build/shadow/shadow_ui \
         src/host/shadow_shm_util.c \
         src/host/file_atomic.c \
         src/host/schwung_trace.c \
-        src/host/shadow_midi_spill.c \
         -o build/shadow/shadow_ui \
         -Isrc -Isrc/lib -Isrc/host \
         -Ilibs/quickjs/quickjs-2025-04-26 \
