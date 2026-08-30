@@ -503,5 +503,5 @@ setsid --wait bash -c '
   # the Move it reaps is not started until AFTER we return.
   # ⚠ The reaper only ever acts when it sees MORE THAN ONE Move and always keeps
   # one, so a stock variant that does NOT restart is simply a no-op for it.
-  setsid sh "$DBX_DIR/scripts/reap-duplicate-move.sh" "$LOG" 30 >/dev/null 2>&1 &
+  setsid sh "$DBX_DIR/scripts/reap-duplicate-move.sh" "$LOG" 150 >/dev/null 2>&1 &
 '

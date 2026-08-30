@@ -23,13 +23,27 @@
 # /etc/init.d/move, where nothing would match and a cgroup-only rule would kill
 # the ONLY Move and strand the device with no UI.
 #
+# ⚠⚠ SIGTERM, NEVER SIGKILL AS THE FIRST MOVE. A hard kill is indistinguishable
+# from a crash: Ableton's crash handler files a report and the surviving Move
+# comes up on "Move crashed / press wheel to continue". Observed on hardware
+# 2026-08-30 -- the OLED then alternated rapidly between that dialog and the
+# native set display, because the dialog and the live Move were both drawing.
+# The duplicate is an ordinary process being asked to go away, so ask nicely and
+# only escalate if it refuses.
+#
+# ⚠ AND ACT FAST. The same run killed a duplicate SIX SECONDS in, by which point
+# it had registered its D-Bus services and started loading a set -- so even a
+# clean shutdown is disruptive. Poll hard, and take it out while it is still
+# starting up rather than after it has taken the surface.
+#
 # Preference order for the survivor:
 #   1. the one under move-launcher.service (definitely the supervised one)
 #   2. otherwise the OLDEST by start time (ours came up first; the duplicate is
 #      started ~0.5 s after we return)
 
 LOG="${1:-/data/UserData/dbx-host/launch.log}"
-DEADLINE="${2:-30}"
+DEADLINE="${2:-150}"   # iterations, not seconds -- see INTERVAL
+INTERVAL=0.2
 
 log() { printf "%s reap: %s\n" "$(date +%H:%M:%S)" "$*" >> "$LOG" 2>/dev/null; }
 
@@ -61,11 +75,24 @@ while [ "$elapsed" -lt "$DEADLINE" ]; do
         fi
         for p in $pids; do
             [ "$p" = "$keep" ] && continue
-            log "killing duplicate Move $p (keeping $keep)"
-            kill -9 "$p" 2>/dev/null || true
+            log "asking duplicate Move $p to exit (keeping $keep)"
+            kill -TERM "$p" 2>/dev/null || true
+            # Give it a moment to go on its own. Escalating immediately would be
+            # the same hard kill under a different name.
+            waited=0
+            while [ "$waited" -lt 20 ] && [ -d "/proc/$p" ]; do
+                sleep 0.1
+                waited=$((waited + 1))
+            done
+            if [ -d "/proc/$p" ]; then
+                log "duplicate Move $p ignored SIGTERM after 2s -- forcing"
+                kill -9 "$p" 2>/dev/null || true
+            fi
         done
     fi
 
-    sleep 1
+    # Poll hard: the duplicate is started ~0.5 s after we return and the goal is
+    # to catch it before it opens the display, not after.
+    sleep "$INTERVAL"
     elapsed=$((elapsed + 1))
 done
