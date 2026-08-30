@@ -40,6 +40,13 @@ setsid --wait bash -c '
   exec >>"$LOG" 2>&1
   echo "=== davebox host launch $(date) ==="
 
+  # Phase timestamps. The launch is a sequence of steps whose costs are not
+  # obvious from reading it, and "the splash takes a while" is not a question
+  # anyone can answer without them -- the only timestamps this log carried came
+  # from quiesce and the reaper, which write their own.
+  ts() { echo "$(date +%H:%M:%S.%2N) phase: $*"; }
+  ts "launcher entered"
+
   # Close ALL inherited FDs 3+ — we inherit the SPI device from our parent, and
   # holding it open would keep the device busy for the host we are starting.
   i=3
@@ -142,7 +149,13 @@ setsid --wait bash -c '
   # session, so its findings sit immediately above the launch they describe.
   # ⚠ It ALWAYS exits 0: it reports, it never refuses. A degraded session the
   # user can work in beats a correct one that will not start.
-  DBX_DIR="$DBX_DIR" sh "$DBX_DIR/scripts/preflight.sh" "$LOG" || true
+  # ⚠ BACKGROUNDED, and that is the point. It md5s every owned file, so it costs
+  # real time on this hardware -- and it sits in front of the SPLASH, where the
+  # user is watching nothing happen. Nothing in the launch depends on its result
+  # (it reports, it never refuses), so there is no reason for it to be on the
+  # critical path. Its findings land in this log a moment later.
+  ts "preflight (background)"
+  ( DBX_DIR="$DBX_DIR" sh "$DBX_DIR/scripts/preflight.sh" "$LOG" || true ) &
 
   # The one and only teardown of the stock stack (launch-standalone.sh no
   # longer pre-kills it). The frozen MoveOriginal ignores the TERM phase and
@@ -155,15 +168,53 @@ setsid --wait bash -c '
   # (NOTE for editors: this whole session body is ONE single-quoted bash -c
   # string -- a bare apostrophe anywhere in it, even in a comment, ends the
   # string and the script stops parsing.)
-  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber schwung-manager display-server; do
+  SWEEP_NAMES="MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber schwung-manager display-server"
+  # ⭑ ASK ONCE before walking the list. Each per-name pidof is a process spawn,
+  # and on this hardware nine of them cost real time -- in front of the splash,
+  # where the user is watching nothing happen. When stock has already pre-killed
+  # the stack (the v1.0.0 path) there is usually nothing here at all, so the
+  # common case now costs ONE spawn instead of nine. The per-name walk is kept
+  # for the case where there IS something, because its log line names what it
+  # killed and that has been worth having.
+  if pidof $SWEEP_NAMES >/dev/null 2>&1; then
+  for name in $SWEEP_NAMES; do
     pids=$(pidof $name 2>/dev/null || true)
     if [ -n "$pids" ]; then echo "TERM $name $pids"; kill $pids 2>/dev/null || true; fi
   done
-  sleep 1
-  for name in MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber schwung-manager display-server; do
+  fi
+  # ⭑ WAIT FOR THEM TO GO, do not sleep a flat second. This was `sleep 1`
+  # unconditionally, which cost a full second on EVERY launch -- including the
+  # now-common case where stock has already pre-killed the stack and the only
+  # things here are our own sidecars, which exit immediately. That second sits
+  # in front of the splash, where the user is watching nothing happen. The
+  # ceiling is unchanged, so a process that will not die is still given exactly
+  # as long as it always was.
+  # ⚠ ONE pidof call for the whole list, not one per name. The first version of
+  # this loop asked per-name -- nine process spawns per iteration, up to twenty
+  # iterations -- and measured SLOWER than the flat `sleep 1` it replaced (2.2 s
+  # of sweep on device). pidof takes multiple names and answers for all of them
+  # in a single spawn.
+  # ⚠ WAIT ONLY FOR THE ONES THAT ACTUALLY SHUT DOWN ON TERM. The grace period
+  # exists for shadow_ui, whose main loop saves host state when it sees
+  # should_exit, and for Move. The sidecars below do NOT handle SIGTERM at all
+  # and only ever die on the KILL pass -- so waiting for them burned the FULL
+  # budget on every launch (measured on device: swept=40, the ceiling, ~1.4 s,
+  # sitting directly in front of the splash) to achieve nothing. They are
+  # stateless: link-subscriber re-attaches, display-server serves the browser
+  # mirror, schwung-manager is a web server. Nothing is lost by killing them.
+  _swept=0
+  while [ "$_swept" -lt 40 ]; do
+    pidof MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui >/dev/null 2>&1 || break
+    sleep 0.025
+    _swept=$((_swept + 1))
+  done
+  ts "processes gone (swept=$_swept)"
+  if pidof $SWEEP_NAMES >/dev/null 2>&1; then
+  for name in $SWEEP_NAMES; do
     pids=$(pidof $name 2>/dev/null || true)
     if [ -n "$pids" ]; then echo "KILL $name $pids"; kill -9 $pids 2>/dev/null || true; fi
   done
+  fi
   # Reap ORPHANED crash handlers. XCrashpadHandler outlives the Move that
   # started it -- it is reparented to init and sits there forever, one per
   # swept Move, and it is not in the name list above because killing a LIVE
@@ -179,7 +230,8 @@ setsid --wait bash -c '
     if [ "$_pp" = "1" ]; then echo "reap orphan XCrashpadHandler $_cp"; kill -9 $_cp 2>/dev/null || true; fi
   done
   rm -f /data/UserData/schwung/schwung-manager.pid
-  sleep 0.5
+  ts "stack swept"
+  sleep 0.1
 
   # Stand the watchdog down NOW, tight behind the sweep. move-launcher.service
   # is systemd-supervised with Restart=on-failure, so the MoveLauncher kill
@@ -277,6 +329,7 @@ setsid --wait bash -c '
       echo "WARNING: Move mixer normalize failed — continuing"
   fi
 
+  ts "workspace ready"
   # Mirror the shim for THIS build into /usr/lib (setuid) first. We run as
   # ableton and cannot write /usr/lib; davebox-heal is setuid-root and hardcodes
   # both paths. Refusing to launch on failure is deliberate: without a valid
@@ -339,6 +392,7 @@ setsid --wait bash -c '
     # happen while STOCK still owns the surface, which is leg 1 in
     # quiesce-stock.sh; from the freeze onward the strip is what keeps the pads
     # dark, because there is nothing left to repaint them.)
+    ts "starting Move"
     echo "run LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal"
     env LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal
     if [ -f "$DBX_DIR/relaunch_requested" ]; then
