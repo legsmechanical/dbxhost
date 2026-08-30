@@ -30,6 +30,7 @@
 #include "host/shadow_shm_util.h"
 #include "host/js_host_common.h"
 #include "host/shadow_midi_inject_writer.h"
+#include "host/shadow_midi_spill.h"
 #include "../host/unified_log.h"
 #include "host/schwung_trace.h"
 #include "host/surface_trace.h"   /* Phase 2: JS-side OTLP spans (js.tick, param.get) */
@@ -1110,10 +1111,24 @@ static JSValue js_shadow_get_param(JSContext *ctx, JSValueConst this_val, int ar
 
 /* === MIDI output functions for overtake modules === */
 
-/* Packets discarded because the shadow-UI MIDI-out SHM buffer was full when
- * the caller wrote. Was silently zero-information before: the write returned
- * success either way. See js_shadow_midi_send. */
+/* Packets discarded because BOTH the SHM window and the spill ring were full.
+ * With the ring in place this is a pathological case, not an ordinary burst.
+ * See js_shadow_midi_send. */
 static long shadow_midi_out_drops = 0;
+
+/* The spill ring lives in src/host/shadow_midi_spill.c — see that file for the
+ * measured burst that made it necessary, and for why the HOST rather than the
+ * module has to absorb it. It is a separate translation unit so the host tests
+ * can drive the real ordering logic instead of a replica of it. */
+
+static void shadow_midi_out_pump(void) {
+    if (!shadow_midi_out) return;
+    if (shadow_midi_spill_drain(shadow_midi_out) > 0) {
+        /* Only signal when something moved: `ready` is what wakes the shim's
+         * consume, and bumping it for nothing is a wasted pass. */
+        shadow_midi_out->ready++;
+    }
+}
 
 
 /* Common implementation for sending MIDI via shared memory */
@@ -1131,6 +1146,10 @@ static JSValue js_shadow_midi_send(int cable, JSContext *ctx, JSValueConst this_
     JS_ToInt32(ctx, &len, len_val);
     JS_FreeValue(ctx, len_val);
 
+    /* Make room first: anything already spilled must go out AHEAD of what we
+     * are about to write, or this call's packets overtake it. */
+    shadow_midi_spill_drain(shadow_midi_out);
+
     /* Process 4 bytes at a time (USB-MIDI packet format) */
     int dropped = 0;
     for (int i = 0; i < len; i += 4) {
@@ -1147,27 +1166,31 @@ static JSValue js_shadow_midi_send(int cable, JSContext *ctx, JSValueConst this_
         /* Override cable number in CIN byte */
         packet[0] = (packet[0] & 0x0F) | (cable << 4);
 
-        /* Find space in buffer and write */
-        int write_offset = shadow_midi_out->write_idx;
-        if (write_offset + 4 <= SHADOW_MIDI_OUT_BUFFER_SIZE) {
-            memcpy(&shadow_midi_out->buffer[write_offset], packet, 4);
-            shadow_midi_out->write_idx = (uint16_t)(write_offset + 4);
-        } else {
-            dropped++;
-        }
+        /* Window first, then spill, FIFO — the rule and the reason are in
+         * shadow_midi_spill.c. A 0 here means the RING is full too, which is
+         * the only genuine refusal left. */
+        if (!shadow_midi_send_packet(shadow_midi_out, packet)) dropped++;
     }
 
     /* Signal shim that data is ready */
     shadow_midi_out->ready++;
 
-    /* A write that discards and reports success is how an LED goes permanently
+    /*
+     * A write that discards and reports success is how an LED goes permanently
      * wrong: input_filter's setLED records the colour it believes the hardware
      * now shows and suppresses the next identical repaint, so a packet lost
-     * here is never retried. Report the failure so the caller can decline to
-     * cache it, and count it so "sometimes drops LEDs" is a number rather than
-     * a feeling. Logging here is safe — shadow_ui is a separate SCHED_OTHER
-     * process, not the SPI callback — but it is rate-limited so a flood cannot
-     * turn a dropped LED into a dropped audio block. */
+     * here is never retried. That is why the refusal semantics are kept.
+     *
+     * They are now reserved for the SPILL RING being exhausted, which should
+     * not happen — an ordinary burst is absorbed. A full SHM window is no
+     * longer a failure and is no longer reported as one: reporting it WAS the
+     * regression, because the module ignores the return value anyway and the
+     * packets were simply gone.
+     *
+     * Logging here is safe — shadow_ui is a separate SCHED_OTHER process, not
+     * the SPI callback — but it is rate-limited so a flood cannot turn a
+     * dropped LED into a dropped audio block.
+     */
     if (dropped) {
         shadow_midi_out_drops += dropped;
         static time_t last_report = 0;
@@ -1175,10 +1198,11 @@ static JSValue js_shadow_midi_send(int cable, JSContext *ctx, JSValueConst this_
         if (now != last_report) {
             last_report = now;
             unified_log("shadow_ui", LOG_LEVEL_DEBUG,
-                        "shadow MIDI out: buffer full, dropped %d packet(s) "
-                        "(%ld total) - more than %d bytes queued in one flush",
+                        "shadow MIDI out: SPILL RING EXHAUSTED, dropped %d packet(s) "
+                        "(%ld total); ring is %d bytes, peak use %d - a burst this "
+                        "large is a bug upstream of here, not a full window",
                         dropped, shadow_midi_out_drops,
-                        SHADOW_MIDI_OUT_BUFFER_SIZE);
+                        SHADOW_MIDI_SPILL_SIZE, shadow_midi_spill_peak());
         }
         return JS_FALSE;
     }
@@ -2983,6 +3007,19 @@ int main(int argc, char *argv[]) {
          * host_trace_end fills all JS_TRACE_MAX_OPEN slots in ~16 ticks, after
          * which every host_trace_begin (from any module) silently returns 0. */
         for (int i = 0; i < JS_TRACE_MAX_OPEN; i++) js_trace_open[i] = 0;
+
+        /*
+         * Refill the SHM window from the spill ring as the shim drains it.
+         *
+         * AFTER the tick, so this frame's own sends are already in, and every
+         * frame regardless of whether JS sent anything — the shim resets
+         * write_idx to 0 in shadow_inject_ui_midi_out() whenever `ready`
+         * moves, and without a pump here a burst absorbed during one tick
+         * would sit in the ring until the next send happened along. At the
+         * overtake tick rate (~500 Hz) davebox's 470-packet launch burst
+         * clears in four passes, i.e. under 10 ms.
+         */
+        shadow_midi_out_pump();
 
         refresh_counter++;
         /* Poll the trace touch-file off the hot loop (~once/sec at 60 Hz). */

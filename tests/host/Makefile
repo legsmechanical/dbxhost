@@ -96,6 +96,13 @@ $(BUILD_DIR)/test_spawn_command: test_spawn_command.c ../../src/host/spawn_comma
 $(BUILD_DIR)/test_midi_in_compact: test_midi_in_compact.c ../../src/host/shadow_midi_filter.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $(filter %.c,$^) -o $@ $(LDFLAGS)
 
+# Links the spill ring for the same reason the two above link their units: the
+# burst/ordering case drives the REAL shadow_midi_send_packet, not a copy of
+# it. shadow_ui.c cannot be linked into a test (QuickJS, SPI, the world),
+# which is exactly why the ring is its own translation unit.
+$(BUILD_DIR)/test_shadow_midi_out_capacity: test_shadow_midi_out_capacity.c ../../src/host/shadow_midi_spill.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $(filter %.c,$^) -o $@ $(LDFLAGS)
+
 # shadow_led_queue.c reaches unified_log.h -> "host/schwung_paths.h", so it
 # needs src/ on the include path as well as src/host (the fork's headers are
 # split that way; upstream's are not).
