@@ -31,6 +31,8 @@ REPO_ROOT="$(cd "$HERE/.." && pwd)"
 . "$HERE/config.sh"
 
 MOVE_HOST="${MOVE_HOST:-move.local}"
+# The one directory of ours inside the stock tree: it IS the Tools-menu entry.
+STOCK_TOOLS="/data/UserData/schwung/modules/tools"
 MOVE_USER="${MOVE_USER:-ableton}"
 DO_BUILD=1; DO_MODULE=1; FORCE=0
 
@@ -394,6 +396,7 @@ for own in $DBX_OWNED_MODULE_DIRS; do
     say "      deployed: modules/$own"
 done
 
+
 # ⚠ Prove the payload did not eat the setuid helper before relying on it. An
 # earlier version of this script replaced bin/ wholesale and deleted
 # davebox-heal; the failure then surfaced as a confusing "No such file" from the
@@ -434,6 +437,35 @@ fi
 
 say ""
 say "=== done ==="
+
+# CONTRACT SNAPSHOT. Record what the owned files are RIGHT NOW, so the launch
+# preflight can tell "still ours" from "a stock update overwrote it" without
+# having to guess. This is the piece that would have named the v1.0.0 chain-DSP
+# swap immediately: the two module.json files were byte-identical, so only a
+# recorded hash could have seen it.
+#
+# Built ON THE DEVICE from what actually landed, not from build/ — that way a
+# half-finished or interrupted deploy is recorded as what it is, and the next
+# launch reports the discrepancy rather than trusting our intent.
+say ""; say "--- recording the owned-file manifest (what the preflight checks)"
+$SSH "set -eu
+  cd '$DBX_DIR'
+  : > .owned-manifest.new
+  for own in $DBX_OWNED_MODULE_DIRS; do
+    [ -d \"modules/\$own\" ] || continue
+    find \"modules/\$own\" -type f -print | sort | while read -r f; do
+      printf '%s %s/%s\n' \"\$(md5sum \"\$f\" | cut -d' ' -f1)\" '$DBX_DIR' \"\$f\" >> .owned-manifest.new
+    done
+  done
+  # The launcher stub is the ONE file of ours in stock's tree; a stock update
+  # can replace or drop it, and then dAVEBOx is simply absent from the menu.
+  if [ -f '$STOCK_TOOLS/davebox-sa/standalone' ]; then
+    printf '%s %s\n' \"\$(md5sum '$STOCK_TOOLS/davebox-sa/standalone' | cut -d' ' -f1)\" '$STOCK_TOOLS/davebox-sa/standalone' >> .owned-manifest.new
+  fi
+  mv -f .owned-manifest.new .owned-manifest
+  echo \"      manifest: \$(wc -l < .owned-manifest) file(s) pinned\"
+"
+
 say "The host is on disk. It takes effect the next time you launch dAVEBOx SA"
 say "from stock Schwung's Tools menu — no restart needed here, because launching"
 say "the session is what starts this build."

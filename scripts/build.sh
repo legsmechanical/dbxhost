@@ -848,6 +848,10 @@ if [ -d ./standalone ]; then
     # leaves zero Moves running -- see the safety rule in the script.
     cp ./standalone/scripts/reap-duplicate-move.sh ./build/scripts/
     chmod +x ./build/scripts/reap-duplicate-move.sh
+    # preflight.sh: asserts every seam we have on the STOCK tree at launch and
+    # reports loudly. Always exits 0 -- it reports, it never refuses a launch.
+    cp ./standalone/scripts/preflight.sh ./build/scripts/
+    chmod +x ./build/scripts/preflight.sh
     chmod +x ./build/scripts/quiesce-stock.sh ./build/scripts/exit-to-stock.sh \
              ./build/scripts/set-swap.sh ./build/scripts/project-cmd.sh \
              ./build/scripts/select-list.sh ./build/scripts/select-hook.sh

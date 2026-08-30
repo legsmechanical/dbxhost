@@ -137,6 +137,13 @@ setsid --wait bash -c '
       echo "WARNING: could not pause move-launcher early; a respawn may flash native Move"
   fi
 
+  # Check every seam we have on the stock tree and say so in this log. Runs
+  # here, after the entry branch has settled the stack and before we build the
+  # session, so its findings sit immediately above the launch they describe.
+  # ⚠ It ALWAYS exits 0: it reports, it never refuses. A degraded session the
+  # user can work in beats a correct one that will not start.
+  DBX_DIR="$DBX_DIR" sh "$DBX_DIR/scripts/preflight.sh" "$LOG" || true
+
   # The one and only teardown of the stock stack (launch-standalone.sh no
   # longer pre-kills it). The frozen MoveOriginal ignores the TERM phase and
   # dies on the KILL phase -- that is expected, not a leak.

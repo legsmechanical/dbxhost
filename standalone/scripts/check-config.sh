@@ -125,6 +125,13 @@ check "build-host.sh exports Go shm prefix" "$HERE/scripts/build-host.sh" "SCHWU
 check "build.sh stamps manager shm prefix"  "$HERE/../scripts/build.sh" "-X main.shmPrefix=\${SCHWUNG_SHM_PREFIX"
 check "manager default prefix is STOCK"     "$HERE/../schwung-manager/shmconfig.go" "var shmPrefix = \"/schwung-\""
 
+# preflight.sh runs on the DEVICE from $DBX_DIR/scripts and cannot source
+# config.sh, so it carries its own copy of the owned-module list as a fallback
+# default. Pin the two together: a category added to config.sh but not here
+# would simply never be checked, and the check going quiet is exactly the
+# failure mode the preflight exists to prevent.
+check "preflight owned-module list" "$HERE/scripts/preflight.sh" "${DBX_OWNED_MODULE_DIRS:-chain tools/davebox-sound}"
+
 if [ "$fail" != "0" ]; then
     echo "config drift — fix the file above, or config.sh if the new value is intended" >&2
     exit 1
