@@ -96,6 +96,30 @@ step('⚠ unchanged: STOPPED still arms through the count-in, never t_recording'
     if (S.recordArmed) throw new Error('still armed after count-in cancel');
 });
 
+step('⭐ a COUNT-IN take keeps the page-end stop — instant out belongs only to an instant in', () => {
+    /* Josh, device pass: recording armed from STOPPED must still wait for
+     * the bar to deactivate; only a punch-in (armed while already playing)
+     * punches out instantly. State as the count-in leaves it: armed, not
+     * counting, transport now running, adaptive, recordArmedLive false. */
+    sets.length = 0;
+    S.playing = true; S.recordArmed = true; S.recordCountingIn = false;
+    S.recordArmedTrack = 2; S.recordArmedLive = false;
+    S.clipNonEmpty[2][0] = false; S.clipAdaptiveMode[2][0] = true;
+    S.clipLength[2][0] = 16; S.trackCurrentStep[2] = 3;    /* mid-page */
+    cc(MoveRec, 127); cc(MoveRec, 0);
+    if (!S.recordScheduledStop) throw new Error('no scheduled stop armed');
+    if (S.recordStopNow) throw new Error('count-in take punched out instantly');
+    globalThis.tick();
+    if (of('t2_c0_length').length) throw new Error('length locked mid-page — did not wait for the edge');
+    if (!S.recordArmed) throw new Error('disarmed early');
+    S.trackCurrentStep[2] = 15;                             /* the page edge arrives */
+    globalThis.tick();
+    if (!of('t2_c0_length').length) throw new Error('length not locked at the page edge');
+    globalThis.tick();
+    if (!of('t2_recording').some(([,v]) => v === '0')) throw new Error('no disarm after the lock');
+    if (S.recordArmed) throw new Error('still armed');
+});
+
 step('⚠ unchanged: a FIXED clip (non-empty) punches in without entering adaptive mode', () => {
     sets.length = 0;
     S.playing = true; S.clipNonEmpty[2][0] = true;

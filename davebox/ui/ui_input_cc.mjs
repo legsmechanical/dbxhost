@@ -2218,7 +2218,9 @@ function _onCC_transport(d1, d2) {
                 const _recStp  = _recDrum ? S.drumCurrentStep[_recT] : S.trackCurrentStep[_recT];
                 S.recordScheduledStop       = true;
                 S.recordScheduledStopTarget = (Math.floor(_recStp / 16) + 1) * 16;
-                S.recordStopNow             = true;
+                /* Instant OUT belongs only to an instant IN. A take armed
+                 * from stopped (count-in) keeps the old page-end stop. */
+                S.recordStopNow             = S.recordArmedLive;
             } else {
                 disarmRecord();
             }
@@ -2246,6 +2248,7 @@ function _onCC_transport(d1, d2) {
              * maintained mirror (audit js-input-3). */
             const bpm = (S.bpmMirror > 0 && isFinite(S.bpmMirror)) ? S.bpmMirror : 120;
             S.recordArmed         = true;
+            S.recordArmedLive     = false;      /* count-in take: page-end stop */
             S.recordCountingIn    = true;
             S.recordArmedTrack    = S.activeTrack;
             S.countInStartTick    = S.tickCount;
@@ -2275,6 +2278,7 @@ function _onCC_transport(d1, d2) {
                 ? (!S.drumClipNonEmpty[_at][_ac] && !S.drumLaneLengthManuallySet[_at])
                 : (!S.clipNonEmpty[_at][_ac] && !S.clipLengthManuallySet[_at][_ac]);
             S.recordArmed       = true;
+            S.recordArmedLive   = true;         /* punch-in: instant disarm too */
             S.recordCountingIn  = false;
             S.recordArmedTrack  = _at;
             S.recordPendingPage = false;

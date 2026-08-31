@@ -63,6 +63,9 @@ the section into a versioned heading at release time.
   `Tr<n>` prefix, since they can hold the screen with no track row in sight.
 
 ### Fixes
+- **A count-in take stops at the bar again.** Recording armed from stopped
+  keeps the wait-for-the-page-edge stop; the instant punch out now applies
+  only when recording was punched in during playback.
 - **Record is a punch during playback.** Pressing Record while the transport
   runs starts recording the moment you press — no more waiting for the next
   bar — and pressing it again stops it just as immediately. Recording from

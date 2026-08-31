@@ -806,6 +806,12 @@ export const S = {
     /* one-shot: the pending scheduled stop fires on the next tick (punch-out)
      * instead of waiting for the page boundary */
     recordStopNow: false,
+    /* true only when recording was armed WHILE the transport was already
+     * running -- the punch-in case. Decides the disarm flavour: a punch-in
+     * disarms instantly; a count-in take keeps the page-end stop (Josh,
+     * 2026-08-31 device pass: instant in/out is only for when recording is
+     * pressed after transport is already running). */
+    recordArmedLive: false,
     recordScheduledStopTarget: -1,
     pendingScheduledDisarm: false,
     pendingPrerollNote: null,       /* drum only: { track, lane, laneNote, vel, pressedAtTick, countInStart } */
