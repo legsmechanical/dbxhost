@@ -52,6 +52,9 @@ the section into a versioned heading at release time.
   `Tr<n>` prefix, since they can hold the screen with no track row in sight.
 
 ### Fixes
+- **Touching a knob in the module editor highlights its parameter again.** The
+  header names the param the moment your finger rests on the knob, before any
+  turn — the pre-1.0 behaviour, restored.
 - **Sequencing controls actually work while editing a Move synth.** During
   Move co-run, Play, Record, Sample and Loop were silently going to Move
   instead of the sequencer (a stale constant), and Shift belonged to Move

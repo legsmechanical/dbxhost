@@ -525,6 +525,29 @@ step('⚠ inside a module EDITOR the card stays away — the knobs edit cells th
     touch(0, false);
 });
 
+step('⭐ in the module editor TOUCH claims the header — the note reaches the binding', () => {
+    /* The stock editor takes knob touch as a NOTE (page_input: 0x90/0x80 on
+     * notes 0-7 -> onKnobTouch), and the press is what inverts the header.
+     * davebox's soundOnNote used to keep the note to itself, so the header
+     * only inverted once a TURN claimed it (Josh, 2026-08-31). The observable
+     * is the INVERSION BAND — drawHeader fills the full 128px width at y=0
+     * only when touched — not captured text, which no stub here can read. */
+    if (snd.soundPickStateForTest().view !== VIEW_EDIT)
+        throw new Error('setup: not in the module editor');
+    const hdrBand = () => fills.some((f) =>
+        f.x === 0 && f.y === 0 && f.w === 128 && f.h >= 5 && f.v === 1);
+    /* ⚠ Control: untouched, the band must be ABSENT — otherwise the presence
+     * check below can pass with touch handling broken outright. */
+    draw();
+    if (hdrBand()) throw new Error('control failed: header band present untouched');
+    touch(0, true);
+    draw();
+    if (!hdrBand()) throw new Error('touch alone did not claim the header — the note never reached the binding');
+    touch(0, false);
+    draw();
+    if (hdrBand()) throw new Error('release did not clear the header claim');
+});
+
 step('⚠ on a BUS the card stays away — a bus forwards no knob at all', () => {
     /* ⭑ POSITIVE CONTROL first, at this exact state: without it this step would
      * pass just as well if touch handling were broken outright. */

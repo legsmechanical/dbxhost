@@ -4962,6 +4962,15 @@ export function soundOnNote(status, d1, d2) {
      * own, re-arming a press the note already resolved. */
     hostedNote(status, d1, d2);
 
+    /* The stock editor takes knob touch as the NOTE it is — page_input decodes
+     * 0x90/0x80 on notes 0-7 into onKnobTouch, and that press is what claims
+     * the header (a resting finger names the param before any turn). Without
+     * this forward only the TURN path ever claimed it, so labels highlighted
+     * on turn but not on touch (Josh, 2026-08-31; pre-1.0 behaviour restored).
+     * Forwarded, not consumed — davebox's own touch bookkeeping below still
+     * runs, the same doctrine as hostedNote above. */
+    if (ppOn) handleParamPagesMidi([status, d1, d2]);
+
     const on = (status === 0x90 && d2 >= 64);
 
     /* Touch orients — and Shift+touch goes straight to the assignment.
