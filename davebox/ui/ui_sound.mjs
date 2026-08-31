@@ -5235,7 +5235,7 @@ function pageGroups() {
  * tick is how the input ring overflows and drops MIDI RELEASES
  * ([[schwung-blocked-tick-drops-midi-releases]]) — the 771 ms stall that
  * stranded the LEDs was exactly this shape. */
-const PP_EDITOR = false;
+const PP_EDITOR = true;
 
 let ppOn = false;
 /* ⭑ THE DIVE-OUT LATCH, and it mirrors the host's `suppressParamPagesOnce`
