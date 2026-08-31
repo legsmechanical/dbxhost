@@ -53,9 +53,41 @@ supervised() {
     grep -q "move-launcher.service" "/proc/$1/cgroup" 2>/dev/null
 }
 
+ppid_of() { awk '{print $4}' "/proc/$1/stat" 2>/dev/null || echo 0; }
+
+# ⚠⚠ A MOVE'S OWN CHILD IS NOT A SECOND MOVE, and counting it as one is how this
+# script came to kill the running instrument.
+#
+# Observed on device 2026-08-31: a healthy stack shows TWO MoveOriginal pids —
+# the application (21 threads) and a forked helper of its own (2 threads, the
+# parent's fds inherited, SPI among them). BOTH sit in move-launcher.service's
+# cgroup, so supervised() cannot tell them apart: whichever `pidof` happened to
+# list first was kept and the other was killed. When that was the application,
+# the supervisor restarted it, this loop saw two again, and killed again —
+# 6819 -> 6906 -> 6964 -> 7048 -> 7201 in thirteen seconds, escalating to
+# SIGKILL. ⚠ And a force-killed Move READS AS A CRASH: Ableton files a report
+# and the next boot tells the user Move crashed
+# ([[sigkill-on-move-reads-as-a-crash]]). Reported as "move native crashes
+# shortly after reloading from davebox exit".
+#
+# So an INSTANCE is a Move whose parent is not itself a Move. Descendants belong
+# to the instance above them and are never candidates.
+instances() {
+    _all="$1"
+    for _p in $_all; do
+        _pp=$(ppid_of "$_p")
+        _child=0
+        for _q in $_all; do
+            [ "$_q" = "$_p" ] && continue
+            [ "$_pp" = "$_q" ] && { _child=1; break; }
+        done
+        [ "$_child" = "0" ] && printf '%s ' "$_p"
+    done
+}
+
 elapsed=0
 while [ "$elapsed" -lt "$DEADLINE" ]; do
-    pids=$(pidof Move MoveOriginal 2>/dev/null)
+    pids=$(instances "$(pidof Move MoveOriginal 2>/dev/null)")
     count=0
     for p in $pids; do count=$((count + 1)); done
 
