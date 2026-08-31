@@ -3359,13 +3359,29 @@ function saveBakedCache(key, fp, names) {
 }
 
 function openBaked() {
+    if (!S.presetSpec) return;
+    ensureBakedNames();
+    S.view = VIEW_PRESET_BAKED;
+    S.presetMsg = '';
+    captureOriginal();
+}
+
+/* Resolve the module's preset NAMES: memory cache, else disk cache, else arm
+ * the scan. Split out of openBaked() 2026-08-31 so the module editor's Presets
+ * page can show the same list from the same cache — ONE owner for a decision
+ * that is easy to get subtly different (which fingerprint counts as a hit, when
+ * the index is restored, when a partial list is allowed to persist).
+ *
+ * ⚠⚠ THE SCAN IS AUDIBLE. Each step WRITES the preset index and reads the name
+ * back, so the module really does load every preset as it walks — that is the
+ * whole reason the names are cached at all, and why nothing here runs on a jog
+ * past a page. The index is restored when the walk completes; a walk abandoned
+ * half way persists nothing. */
+function ensureBakedNames() {
     const sp = S.presetSpec;
     if (!sp) return;
     S.bakedCount = parseInt(engineGet(S.slot, S.comp, sp.countKey) || '0', 10) || 0;
     S.bakedIdx = parseInt(engineGet(S.slot, S.comp, sp.listKey) || '0', 10) || 0;
-    S.view = VIEW_PRESET_BAKED;
-    S.presetMsg = '';
-    captureOriginal();
 
     const key = S.moduleId + '|' + S.comp + '|' + S.bakedCount;
     let via = 'scanning';
@@ -3393,6 +3409,12 @@ function openBaked() {
         }
     }
     log('baked: ' + S.bakedCount + ' via ' + sp.listKey + ' (' + via + ')');
+}
+
+/* Are the module's preset names complete and current? */
+function bakedNamesReady() {
+    return !!S.presetSpec && S.bakedScan < 0 && S.bakedCount > 0 &&
+           S.bakedNames.length === S.bakedCount;
 }
 
 /* One slice of the prescan. Runs from soundTick only.
@@ -4748,6 +4770,10 @@ export function soundTick() {
     ppSync();
     if (ppOn) {
         tickParamPages();
+        /* ⚠ AND THE PRESET WALK STILL STEPS. It runs from this tick and nowhere
+         * else, so without this the Presets page would arm a scan that never
+         * advanced — a list that stays empty forever with nothing logged. */
+        if (S.bakedScan >= 0) stepBakedScan();
         /* ⚠⚠ THE LEDGER STILL DRAINS. davebox's bank model is not what is on
          * screen, but its WRITE PATH is: the vendored editor's setParam goes
          * through queueWrite, so returning before this would queue every edit
@@ -5418,6 +5444,25 @@ function ppIo() {
                 ] },
             ];
         },
+        /* ⭐ THE PRESETS PAGE SHOWS THE LIST once davebox knows the names
+         * (Josh, 2026-08-31). It is a DISPLAY change only — the library keeps
+         * using the level's own index and count, so the jog walks presets
+         * exactly as before.
+         *
+         * ⚠⚠ NOTHING HERE SCANS ON ARRIVAL. Reading the names means loading
+         * every preset in turn, audibly; jogging past this page must never do
+         * that. So a cold cache returns null and the page stays as it is, and
+         * the walk starts only on ENTERED — a deliberate click into the page,
+         * which is the same gesture that opens davebox's own preset screen. */
+        presetNames: (page, o) => {
+            if (!S.presetSpec) return null;
+            if (bakedNamesReady()) return S.bakedNames;
+            /* Entered and we have nothing: resolve caches, and arm the walk
+             * only if both are cold. Cheap and idempotent when warm. */
+            if (o && o.entered && S.bakedScan < 0) ensureBakedNames();
+            return bakedNamesReady() ? S.bakedNames : null;
+        },
+
         /* ⭑ Each action LEAVES the grid for a davebox screen, which is why every
          * one of them exits the editor first: these screens own the display, and
          * the reconcile in ppSync would otherwise re-enter the grid on the next

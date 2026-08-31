@@ -515,6 +515,25 @@ export function createController(io = {}) {
      * invitation to handle one of them wrong.
      */
     const formatValue = io.formatValue || null;
+    /*
+     * Optional: the NAMES of a preset level's entries, so its page can show the
+     * list instead of only the one you are on.
+     *
+     *   presetNames(page, { entered, index, count }) -> string[] | null
+     *
+     * ⚠⚠ WHY THIS IS INJECTED AND NOT READ HERE. A preset level publishes a
+     * COUNT and a NAME for the CURRENT index — there is no list to read. Getting
+     * the rest means writing the index and reading the name back, once per
+     * preset, which is slow AND audible: the module actually loads each preset
+     * as you walk it. That is why this page has always shown just the current
+     * one, and it is not a display decision the library can reverse on its own.
+     *
+     * A host that has paid for that walk once and cached it can hand the names
+     * over and get a list for free; one that has not returns null and keeps the
+     * single-name page. `entered` is passed so a host can start such a walk on a
+     * deliberate click and never on a jog past the page.
+     */
+    const presetNames = io.presetNames || null;
     const now = io.now || (() => Date.now());
     /* Graphics default on; a caller can pass `enableViz: false` to keep the
      * plain grid (a tool that wants every cell individually addressable), and
@@ -3503,10 +3522,27 @@ export function createController(io = {}) {
                 const prect = { x: MENU_FRAME_X, y: MENU_FRAME_Y,
                                 w: MENU_FRAME_W, h: pbottom - MENU_FRAME_Y - MENU_FRAME_BOTTOM_INSET };
                 const pst = presetState(mp) || {};
-                drawPresetBody(ctx, prect, {
-                    name: pst.name, index: pst.index, count: pst.count,
-                    entered: menuEntered(),
-                });
+                /* ⭑ THE LIST IS A DISPLAY CHANGE, NOT A SECOND MODE. The state
+                 * is the same one the single-name page uses — the level's index
+                 * and count — so the jog still walks presets exactly as before
+                 * and there is no new write path. All that differs is whether
+                 * the neighbours are drawn. Rendered through the same
+                 * drawPageChromeList every other list on the device uses, so a
+                 * preset list looks like a list rather than like this page. */
+                const pnames = presetNames
+                    ? presetNames(mp, { entered: menuEntered(),
+                                        index: pst.index | 0, count: pst.count | 0 })
+                    : null;
+                if (Array.isArray(pnames) && pnames.length) {
+                    drawPageChromeList(ctx, prect,
+                        pnames.map((n, i) => ({ name: n || `Preset ${i + 1}` })),
+                        pst.index | 0, { editMode: menuEntered() });
+                } else {
+                    drawPresetBody(ctx, prect, {
+                        name: pst.name, index: pst.index, count: pst.count,
+                        entered: menuEntered(),
+                    });
+                }
                 /* Inert: it wears the same brackets a divable cell and an
                  * un-entered menu wear, because it is the same offer. */
                 if (!menuEntered()) {
