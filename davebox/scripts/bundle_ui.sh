@@ -19,6 +19,42 @@ fi
 
 mkdir -p dist/davebox
 
+# ---------------------------------------------------------------------------
+# THE MODULE EDITOR IS VENDORED, AND davebox OWNS THE COPY (2026-08-31)
+#
+# Josh, in one breath, and all four constraints matter:
+#   "i want davebox module editing to be the same as stock module editing.
+#    i don't want to change anything outside of module editing.
+#    i want davebox module editing to be something it owns so that future
+#    upstream updates don't break things. but i also want to be able to easily
+#    pull any module editor updates into davebox if they're desirable."
+#
+# So `davebox/ui/vendor/` is a COMMITTED copy of the host's binding, not a
+# build-time regeneration. Regenerating from src/shadow/ on every build would
+# have satisfied "the same as stock" and broken "updates don't break things" —
+# an upstream change to that file would silently change davebox's editor with
+# no diff, no review and no way to decline it. Freezing the copy is what makes
+# it OURS — and keeping it VERBATIM is what keeps a future update cheap: taking
+# one is a copy plus a diff review, never a merge. (No update script yet, by
+# request; the architecture is what preserves the option, not tooling.)
+#
+# What the bundle does with it: esbuild inlines the vendored file and its
+# relative ctx import, while its `/data/UserData/schwung/shared/*` imports stay
+# external and ride the module loader's prefix rewrite to THIS install — the
+# same route every other davebox shared import takes.
+#
+# ⚠⚠ NEVER import `/data/UserData/schwung/shadow/...` at runtime instead. The
+# loader rewrites ONLY the shared/ prefix (SHARED_IMPORT_CANONICAL in
+# src/shadow/shadow_ui.c), so a shadow/ import executes the STOCK TREE — the
+# dependency that let a v1.0.0 update replace a chain DSP under us on
+# 2026-08-30 — and it would hand davebox the same module INSTANCE the host
+# already imported, sharing its singleton controller and host-wired ctx.
+if [ ! -f "$PROJECT_DIR/ui/vendor/shadow_ui_param_pages.mjs" ]; then
+    echo "ERROR: ui/vendor/shadow_ui_param_pages.mjs is missing — it is a" >&2
+    echo "       COMMITTED copy of src/shadow/shadow_ui_param_pages.mjs." >&2
+    exit 1
+fi
+
 echo "Bundling UI..."
 # 'os' is a QuickJS built-in MODULE resolved on the device (ui_engine.mjs scans
 # the module tree with os.readdir) — must stay external or esbuild pulls in
