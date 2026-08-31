@@ -96,8 +96,13 @@ function bankHeadingPrefix() {
     return 'Tr' + (S.activeTrack + 1) + ' - ';
 }
 
-function drawBankHeading(name, showTrack) {
-    const pfx = bankHeadingPrefix();
+function drawBankHeading(name, showTrack, bareHdr) {
+    /* bareHdr: the resting track overview draws the TRACK ROW, which already
+     * names the active track, so its header drops the Tr<n> prefix (Josh,
+     * 2026-08-31: "it's redundant — you can see active track on the track
+     * number row"). Bank cards keep it: a latched card holds the screen with
+     * no track row in sight, which is why the prefix exists (2026-08-25). */
+    const pfx = bareHdr ? '' : bankHeadingPrefix();
     /* Conductor banks: blink ONLY the "C-" prefix (phase driven in the tick
      * loop); the header font is fixed-advance so the name stays steady. */
     if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT &&
@@ -112,8 +117,8 @@ function drawBankHeading(name, showTrack) {
 /* Vestigial: secondary banks (LIVE ARP / AUTOMATION / REPEAT GROOVE) now use
  * the same filled black-on-white header as everything else (Josh's call,
  * 2026-07-18). Kept so call sites stay stable. */
-function drawBankHeadingInverted(name, showTrack) {
-    drawBankHeading(name, showTrack);
+function drawBankHeadingInverted(name, showTrack, bareHdr) {
+    drawBankHeading(name, showTrack, bareHdr);
 }
 
 /* Conductor bank render: standard white bank header + a 2x4 (2 rows x 4 cols)
@@ -2330,7 +2335,7 @@ function drawUIBody() {
         const bankName  = S.activeBank === 7
             ? (Math.floor(S.tickCount / 24) % 2 === 0 ? 'ALL' : '   ') + ' LANES'
             : _bnStatic;
-        (S.activeBank === 5 || S.activeBank === 6 ? drawBankHeadingInverted : drawBankHeading)(bankName, false);
+        (S.activeBank === 5 || S.activeBank === 6 ? drawBankHeadingInverted : drawBankHeading)(bankName, false, true);
         /* info row sits at y=12 — 2px clear of the header rule on row 9 */
         pixelPrint(4, 12, bankGroup + '  Pad:' + name + oct + ' (' + note + ')', 1);
         const laneBit = 1 << lane;
@@ -2366,7 +2371,7 @@ function drawUIBody() {
         const keyScl  = NOTE_KEYS[S.padKey] + ' ' + (SCALE_DISPLAY[S.padScale] || '?');
         const CHAR_W  = 6;
         const keySclX = 128 - 4 - keyScl.length * CHAR_W;
-        (S.activeBank === 5 || S.activeBank === 6 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(S.activeTrack, S.activeBank) + recTag, false);
+        (S.activeBank === 5 || S.activeBank === 6 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(S.activeTrack, S.activeBank) + recTag, false, true);
         /* info row sits at y=12 — 2px clear of the header rule on row 9 */
         pixelPrint(4, 12, octStr, 1);
         if (S.bankParams[S.activeTrack][5][0]) {

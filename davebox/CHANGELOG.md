@@ -47,6 +47,10 @@ the section into a versioned heading at release time.
   it the active track's level. The level is saved when Shift is released. A
   MIDI-routed track sends standard MIDI volume (CC 7) on its channel.
 
+- **The track overview header no longer repeats the track number.** The track
+  row on that screen already shows which track is active; bank cards keep the
+  `Tr<n>` prefix, since they can hold the screen with no track row in sight.
+
 ### Fixes
 - **Sequencing controls actually work while editing a Move synth.** During
   Move co-run, Play, Record, Sample and Loop were silently going to Move
