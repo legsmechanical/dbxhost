@@ -1272,6 +1272,13 @@ export function restoreUiSidecar(applyDefaultsNow) {
     if (host_file_exists(uiSp)) {
         try { us = JSON.parse(host_read_file(uiSp)); } catch (e) {}
     }
+    /* The preset-record map is REPLACED WHOLESALE on every restore — both
+     * branches, before either runs. It is keyed by position (slot:comp), not
+     * by set, so anything short of a full replacement lets the previous
+     * project's records ride into this one on matching keys — the exact leak
+     * upstream documents on its own copy of this map, and what this map did
+     * here for as long as it was session-lived. */
+    S.presetRec = Object.create(null);
     if (us && us.v >= 1) {
         if (typeof us.at === 'number' && us.at >= 0 && us.at < NUM_TRACKS)
             S.activeTrack = us.at;
@@ -1377,6 +1384,26 @@ export function restoreUiSidecar(applyDefaultsNow) {
         if (Array.isArray(us.pchr)) {
             for (let _t = 0; _t < NUM_TRACKS; _t++)
                 S.padLayoutChromatic[_t] = !!us.pchr[_t];
+        }
+        /* User-preset records (additive on v:9, like pchr). name+path are what
+         * Save/Delete act on, so an entry missing either is not a record;
+         * hash/mod degrade gracefully (no hash → never dirty per the shared
+         * isModified rule; no mod → the accessor's staleness check passes).
+         * ⚠ Only shape is validated here — whether the record still matches
+         * the module actually in the slot is checked LAZILY at ui_sound's
+         * accessor, because module identity seeds async and restore-time is
+         * too early to ask. */
+        if (us.upr && typeof us.upr === 'object') {
+            for (const _k in us.upr) {
+                const _r = us.upr[_k];
+                if (!_r || typeof _r.name !== 'string' || !_r.name ||
+                    typeof _r.path !== 'string' || !_r.path) continue;
+                S.presetRec[_k] = {
+                    name: _r.name, path: _r.path,
+                    hash: (typeof _r.hash === 'string') ? _r.hash : null,
+                    mod:  (typeof _r.mod === 'string') ? _r.mod : ''
+                };
+            }
         }
     } else {
         S.scaleAware   = 1;

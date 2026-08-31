@@ -564,6 +564,14 @@ export const S = {
     _recNoteOffs: [],
     currentSetUuid: '',
     currentSetName: '',
+    /* Which USER PRESET each sound-mode component is on — {name, path, hash,
+     * mod} keyed 'slot:comp' (ui_sound's presetRecKey). Persisted in the UI
+     * sidecar (`upr`) and REPLACED WHOLESALE by restoreUiSidecar, so a project
+     * switch cannot leak one project's records onto another's slots — the map
+     * is keyed by position, not by set, which is exactly the leak upstream
+     * documents on its own copy. Written through ui_sound's setPresetRecord,
+     * never directly. */
+    presetRec: Object.create(null),
     lastDspInstanceId: '',
     pendingSetLoad: false,
     pendingDspSync: 0,

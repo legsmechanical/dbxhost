@@ -207,7 +207,14 @@ export function writeSidecar() {
         to: S.trackOctave.slice(),
         tab: S.trackActiveBank.slice(),
         am: S.trackAtMode.slice(),
-        pchr: S.padLayoutChromatic.map(function(b) { return b ? 1 : 0; })
+        pchr: S.padLayoutChromatic.map(function(b) { return b ? 1 : 0; }),
+        /* Which user preset each sound-mode component is on (ui_sound's
+         * record, live in S.presetRec) — {name, path, hash, mod} keyed
+         * 'slot:comp'. Additive field on v:9, like pchr: absent in older
+         * sidecars → no records, which is exactly what session-lived meant.
+         * Serialized as held; entries only ever enter through setPresetRecord,
+         * so there is nothing to filter here. */
+        upr: S.presetRec
         }));
 }
 

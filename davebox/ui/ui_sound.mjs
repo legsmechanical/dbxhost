@@ -89,6 +89,12 @@ import { createParamPagesBinding }
 import { ctx as ppCtx, installPpCtx } from './pp_ctx.mjs';
 import { evaluateVisibility }
     from '/data/UserData/schwung/shared/param_pages/visibility.mjs';
+/* The preset record's dirty test — SHARED with the host's editor (upstream
+ * grew this module for exactly this bookkeeping), so the `*` means the same
+ * thing on both. hashState makes a record persistable where the old full-blob
+ * copy was not; isModified carries the rule that an unknown read is NOT a `*`. */
+import { hashState, isModified }
+    from '/data/UserData/schwung/shared/param_pages/current_preset.mjs';
 
 /* ⚠ Created at module load, and it reads NOTHING from ppCtx yet — the binding
  * only ever touches ctx inside function bodies, which is what lets davebox fill
@@ -1296,28 +1302,66 @@ function openBlock(comp) {
  * an answer to "on what?": Save overwrites it, Delete removes it, and the Preset
  * row NAMES it.
  *
- * ⭑ `blob` is the state as it was when the preset was loaded or saved, so
- * "modified since" is a string compare against the live state rather than a file
+ * ⭑ `hash` is the state as it was when the preset was loaded or saved, so
+ * "modified since" is a hash compare against the live state rather than a file
  * read — the same thing stock's `*` means. Keyed by slot AND component: the same
  * module in two slots is two independent answers.
  *
- * ⚠ SESSION-LIVED, deliberately, and this is the one place davebox is thinner
- * than stock: stock persists its record, so a relaunch still knows. Here the row
- * reads "(none)" again after a relaunch even though the sound is unchanged.
- * Persisting it needs a store davebox does not have yet; written down rather
- * than papered over. */
-const PRESET_REC = Object.create(null);
+ * ⭑ PERSISTED since 2026-08-31: the record rides the UI sidecar (`upr` in
+ * ui_persistence's writeSidecar), which is already the per-project file that
+ * survives a relaunch — davebox's answer to stock riding slot_N.json. The live
+ * map is GS.presetRec so the sidecar owns it wholesale: restoreUiSidecar
+ * REPLACES it on every project load, which also closes the leak this map had
+ * while session-lived — keyed by position, not by set, a project switch kept
+ * the old project's records attached to the new project's slots.
+ *
+ * ⭑ `hash` (shared current_preset.mjs, FNV-1a over the blob) replaced the full
+ * `blob` the record used to carry — a hash can live in the sidecar, a blob
+ * cannot. Same discipline as before on what gets hashed: the read-back from
+ * the device, never the string we wrote, because a module is free to normalise
+ * state on the way in. And isModified inherits the shared module's rule that
+ * an UNKNOWN never becomes a `*` — the old string compare here read a FAILED
+ * engineGetState (null) as "modified", which was a lie.
+ *
+ * ⚠ `mod` is checked LAZILY, at the accessor: a sidecar can be older than the
+ * slot it describes (the module swapped by anything that is not this editor),
+ * and restore-time is too early to ask — module identity seeds async, and a
+ * one-shot decision gated on async state must WAIT for the state (the
+ * custom-panels race). The accessor runs when the editor is OPEN on the
+ * component, when S.moduleId is real. */
 const presetRecKey = () => S.slot + ':' + S.comp;
-function presetRecord() { return PRESET_REC[presetRecKey()] || null; }
+function presetRecord() {
+    const r = GS.presetRec[presetRecKey()] || null;
+    if (r && r.mod && S.moduleId && r.mod !== S.moduleId) {
+        /* Stale: the slot holds a different module than the record was made
+         * against. Drop it — a record must never offer another module's file
+         * as this module's Save/Delete target. */
+        setPresetRecord(null);
+        return null;
+    }
+    return r;
+}
 function setPresetRecord(rec) {
-    if (rec) PRESET_REC[presetRecKey()] = rec;
-    else delete PRESET_REC[presetRecKey()];
+    if (rec) GS.presetRec[presetRecKey()] = rec;
+    else delete GS.presetRec[presetRecKey()];
+    /* Records change on explicit, rare gestures (load/save/delete/module
+     * pick), so each one is worth a synchronous sidecar write — the guards in
+     * writeSidecar cover the mid-switch windows. */
+    writeSidecar();
+}
+/* Test hook: point the record accessors at a (slot, comp, module) and hand
+ * them over — the guard in presetRecord (stale `mod` drops the record) can
+ * only be proven to fire through the accessor itself, and a guard never
+ * exercised is a bug report, not a guard. */
+export function soundPresetRecForTest(slot, comp, moduleId) {
+    S.slot = slot; S.comp = comp; S.moduleId = moduleId;
+    return { get: presetRecord, set: setPresetRecord };
 }
 /* Has the sound moved since it was loaded or saved? */
 function presetDirty() {
     const r = presetRecord();
     if (!r) return false;
-    return engineGetState(S.slot, S.comp) !== r.blob;
+    return isModified(r, engineGetState(S.slot, S.comp));
 }
 /* What the Preset row shows: the name, marked when modified — stock's `*`. */
 function presetRowValue() {
@@ -1388,8 +1432,8 @@ function loadUserPreset() {
     const p = S.userPresets[S.userIdx - 1];
     /* The sound IS this preset now — remember which, so Save/Delete have a
      * target and the Preset row has a name. */
-    if (p) setPresetRecord({ name: p.name, path: p.path,
-                             blob: engineGetState(S.slot, S.comp) });
+    if (p) setPresetRecord({ name: p.name, path: p.path, mod: S.moduleId,
+                             hash: hashState(engineGetState(S.slot, S.comp)) });
     S.origState = null;
     S.presetMsg = '';
     S.pendingDiscover = 4;      /* a preset moves every param */
@@ -1434,7 +1478,7 @@ function saveUserPreset(rawName) {
     S.userIdx = (i >= 0) ? i + 1 : SAVE_ROW;
     /* What was just saved IS the live sound, so there is nothing to revert to. */
     S.origState = null;
-    setPresetRecord({ name, path, blob: stateJson });
+    setPresetRecord({ name, path, mod: S.moduleId, hash: hashState(stateJson) });
 }
 
 /* Overwrite the preset this component is on, in place and under its own name —
@@ -1453,7 +1497,8 @@ function overwriteUserPreset() {
     }));
     S.presetMsg = ok ? 'SAVED' : 'SAVE FAILED';
     if (!ok) return;
-    setPresetRecord({ name: r.name, path: r.path, blob: stateJson });
+    setPresetRecord({ name: r.name, path: r.path, mod: S.moduleId,
+                      hash: hashState(stateJson) });
     S.origState = null;
     S.userPresets = engineListUserPresets(S.moduleId);
 }
