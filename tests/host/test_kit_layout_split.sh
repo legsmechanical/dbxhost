@@ -136,9 +136,24 @@ row that is"
 # The manual renderer reimplements the device's draw calls, so it has to select
 # too — it is the surface that has silently diverged twice already.
 rs=davebox/tools/render_screens.mjs
-command grep -q "kitUseLayout('bank')" <<<"$(nocomments < "$rs")" ||
-  fail "$rs does not select the 'bank' layout for the bank screens — the MANUAL
-would document those cards with sound mode's row map"
+# ⚠⚠ ANCHORED IN emit(), WHICH IS THE ONE OWNER. This file renders its screens
+# from several loops, and the selection used to sit inside each of them — so the
+# property had two owners and deleting either left the other satisfying a
+# file-wide grep. Found by mutation 2026-08-31; the fix was to collapse the
+# decision into emit() rather than to write a cleverer test.
+emitfn=$(awk '/^const emit = \(/,/^};/' "$rs" | nocomments)
+[ -n "$emitfn" ] || fail "$rs: emit() is gone — this test no longer measures the renderer"
+command grep -q "kitUseLayout(" <<<"$emitfn" ||
+  fail "$rs: emit() does not select a layout. Every screen it renders draws with
+whichever map the PREVIOUS screen left — the MANUAL would document bank cards
+with sound mode's row map, which it has already done once (2026-08-30)."
+# ...and NOWHERE ELSE. One owner cannot be half-removed; two can, which is how
+# the 2026-08-31 mutation survived: the selection sat in each render loop, so
+# deleting one left the other satisfying a file-wide grep.
+uses=$(nocomments < "$rs" | command grep -c "kitUseLayout(" || true)
+[ "$uses" = "1" ] ||
+  fail "$rs selects a layout in $uses place(s). It must be exactly ONE — inside
+emit() — with the layout passed as its argument."
 
 # It must be the FIRST thing each does: a draw call above it uses the old map.
 for pair in "drawKitPage:$render:bank"; do

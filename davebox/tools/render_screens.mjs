@@ -388,10 +388,22 @@ const OUT = 'docs/working/img';
 mkdirSync(OUT, { recursive: true });
 const only = process.argv[2];
 let n = 0;
-const emit = (file, section, name, drawFn) => {
+/* ⭑⭑ THE LAYOUT IS SELECTED HERE, ONCE, FOR EVERY SCREEN — not in each loop.
+ * The kit's row map, header style and widget width are module state that
+ * kitUseLayout() swaps, so a screen that does not select draws with whichever
+ * map the previous screen left: right on one frame, wrong on the next, nothing
+ * logged. Two loops below used to select for themselves, which meant the
+ * property had TWO owners and deleting either left the other passing a
+ * file-wide check (found by mutation, 2026-08-31). One owner cannot be half
+ * removed. `layout` defaults to 'bank' because every screen this file renders
+ * is a track-view bank card; a sound-mode screen would pass 'sound' and would
+ * then also have to widen tests/host/test_render_screens_parity.sh, which
+ * currently relies on there being no sound surface here. */
+const emit = (file, section, name, drawFn, layout = 'bank') => {
     if (only && file !== only) return;
     if (!only && file.startsWith('_')) return;   // dev-only artifacts (e.g. _fonttest) unless named
     resetFb();
+    kit.kitUseLayout(layout);
     drawFn();
     writePng(currentFb(), `${OUT}/${file}.png`);
     console.log(`  ${(file + '.png').padEnd(30)} ${section} — ${name}`);
@@ -399,11 +411,11 @@ const emit = (file, section, name, drawFn) => {
 };
 for (const s of BANK_SCREENS) {
     emit(s.file, s.section, BANKS[s.bank].name, () => {
-        /* ⚠ BANK's map. This renderer draws the track-view bank cards through
-         * drawKitBankPage, which is the SHARED chassis — the device reaches
-         * them through drawKitPage instead. Without this the manual would
-         * render them with sound mode's row map. */
-        kit.kitUseLayout('bank');
+        /* ⚠ BANK's map — selected by emit() above, once for every screen. This
+         * renderer draws the track-view bank cards through drawKitBankPage,
+         * which is the SHARED chassis; the device reaches them through
+         * drawKitPage instead. Without the selection the manual would render
+         * them with sound mode's row map. */
         const cells = bankCells(s.bank, s.over || {});
         /* ⚠⚠ NO pageIdx/pageCount. The track-view bank cards draw NO position
          * indicator (see drawKitPage in ui/ui_render.mjs) and this renderer used
@@ -429,14 +441,10 @@ for (const s of CUSTOM_KIT) {
      * not draw one on. It is the SAME divergence that was fixed for BANK_SCREENS
      * one loop up, in the same file, on 2026-08-30 — and it survived because the
      * fix was applied to the screens being looked at rather than to the class.
-     * Pinned now by tests/host/test_render_screens_parity.sh.
-     * ⭑ BANK's map, explicitly: these draw through the SHARED chassis, whose
-     * bindings are module state. */
-    emit(s.file, s.section, s.header, () => {
-        kit.kitUseLayout('bank');
+     * Pinned now by tests/host/test_render_screens_parity.sh. */
+    emit(s.file, s.section, s.header, () =>
         kit.drawKitBankPage(s.cells, { headerText: s.header, touchedIdx: -1,
-                                       footer: s.footer, ...(s.opts || {}) });
-    });
+                                       footer: s.footer, ...(s.opts || {}) }));
 }
 for (const s of CUSTOM_DRAW) emit(s.file, s.section, 'custom draw', s.draw);
 console.log(`\nwrote ${n} screen${n === 1 ? '' : 's'} to ${OUT}/`);
