@@ -113,7 +113,7 @@ import { observeLanded, easeOut, lerp } from './ui_anim.mjs';
  * this box, and moving them would change how many options fit — a separate
  * decision from making room for a footer. */
 export const MV_HDR_H = 7;
-export const MV_BAR_Y = 8;
+export const MV_BAR_Y = 7;   /* the active bank's descender, directly under the band */
 /* ⚠ THE BRAND HEADER KEEPS THE 6-ROW FACE AND ITS 8-ROW BAND. font4x5 is
  * UPPERCASE-ONLY (see CHARS4 in ui_fonts_pp.mjs), and the wordmark IS its
  * minuscules — "dAVEBOx" is the mark, not a title. A 6-row glyph at y=1 needs
@@ -1537,32 +1537,41 @@ export function drawKitBrandHeader() {
  * The segmented bar is NOT retired — module param PAGES still scroll, and there
  * it means what it says. */
 
-/* ⭑ THE CURRENT SEGMENT IS DOUBLE HEIGHT — param-pages' drawBankBar idiom,
- * adopted 2026-08-30 (Josh: "can we do the bank indicator row same as page
- * param").
+/* THE BANK INDICATOR IS PART OF THE HEADER, NOT A ROW UNDER IT (Josh, 2026-08-30).
  *
- * It replaces a BLINK. The active segment used to alternate solid <-> dotted at
- * ~1.3 Hz, which is motion spent on a value that is not changing: the current
- * page is a fact, and a fact does not need to flash to be read. Height says it
- * statically, and the row stops competing for the eye with the things on the
- * page that ARE moving.
+ * "ours should read as the bottom of the header having small notches to indicate
+ * banks, with the space in between notches for the active bank having another
+ * pixel or whatever dropping down from it."
  *
- * ⚠ THE SECOND ROW IS THE ONE THE HEADER RE-CUT FREED. font4x5 took the band
- * from 8 to 7, and the segment grows DOWN into that row — so the bar still
- * starts at MV_BAR_Y, the dark row above it is untouched, and nothing below
- * moves. Without that re-cut this would have cost a row somewhere else.
+ * So the band is the indicator: dark NOTCHES are knocked out of its bottom edge
+ * at the bank boundaries, and the active bank grows a 1px DESCENDER below the
+ * band across its own span. Nothing is drawn on a row of its own.
  *
- * ⚠ NO TIME DEPENDENCE ANY MORE. This was one of the two renderers that read
- * Date.now(), which is why render_fb.freezeClock() exists; the other is the
- * latch frame. Losing it here makes every bank-card render deterministic. */
+ * ⚠⚠ THIS IS THE THIRD SHAPE, and the two before it failed for the same reason:
+ * a row of WHITE segments under an ALWAYS-INVERTED header is invisible, because
+ * white-on-white against the band simply becomes the band. Measured: band rows
+ * at ~128 ink, then the segment row at 123 — indistinguishable. Adding a
+ * separator row above it made the bar legible as a bar but still read as a
+ * second stripe rather than as part of the header. Cutting INTO the band is what
+ * makes it read, because a notch is dark and the band is not.
+ *
+ * ⭑ Consequence worth keeping: there is no MV_BAR_Y band to reserve any more.
+ * The notches live on the band's own bottom row and the descender on the single
+ * row below it.
+ *
+ * Called AFTER drawKitHeader — it knocks pixels out of what that drew. */
 export function drawKitPageBar(idx, count) {
-    if (count <= 1) { fill_rect(0, MV_BAR_Y, SCREEN_W, 1, 1); return; }
+    if (count <= 1) return;
     const usable = SCREEN_W - (count - 1);
     const base = Math.floor(usable / count), rem = usable % count;
     for (let b = 0, sx = 0; b < count; b++) {
         const sw = base + (b < rem ? 1 : 0);
-        fill_rect(sx, MV_BAR_Y, sw, b === idx ? 2 : 1, 1);
-        sx += sw + 1;
+        /* the active bank drops a pixel out of the band, across its own span */
+        if (b === idx) fill_rect(sx, MV_BAR_Y, sw, 1, 1);
+        sx += sw;
+        /* the boundary notch: 2 rows of dark cut up into the band, so it is
+         * visible against a solid white edge rather than a 1px hairline */
+        if (b < count - 1) { fill_rect(sx, MV_HDR_H - 2, 1, 2, 0); sx += 1; }
     }
 }
 
