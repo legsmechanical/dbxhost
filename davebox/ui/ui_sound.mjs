@@ -96,7 +96,7 @@ import { evaluateVisibility }
 const PP = createParamPagesBinding(ppCtx);
 const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         handleParamPagesMidi, paramPagesActive, paramPagesChildIndex,
-        clearParamPagesTouch } = PP;
+        clearParamPagesTouch, currentParamPage } = PP;
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* Chain blocks in signal order, across the audio-FX blocks the host routes.
@@ -5295,6 +5295,20 @@ function ppOwnsView() {
     return S.view === VIEW_ENUM && S.enumPick && S.enumPick.from === VIEW_EDIT;
 }
 
+/* The page you were on when you left, so a preset errand returns you there
+ * rather than to page 1 of a module you were nine pages into. Upstream restores
+ * by NAME for the same reason — after a rebuild every index has moved. */
+let ppRestorePage = null;      /* { slot, comp, name } */
+
+/* ⚠ THE PAGE NAME IS ONLY MEANINGFUL FOR THE COMPONENT IT CAME FROM. Restoring
+ * "Filter 2" into a different module is at best a miss and at worst a silent
+ * landing somewhere you did not ask for, so the crumb carries its own address
+ * and is ignored unless it matches. */
+function ppRestoreFor(slot, comp) {
+    const r = ppRestorePage;
+    return (r && r.slot === slot && r.comp === comp) ? r.name : null;
+}
+
 function ppSync() {
     if (ppSuppressOnce && S.view === VIEW_EDIT) {
         /* Consumed on arrival, not on departure: the dive target IS VIEW_EDIT,
@@ -5305,7 +5319,7 @@ function ppSync() {
     }
     const want = ppApplies() && (S.view === VIEW_EDIT || (ppOn && ppOwnsView()));
     if (want && !ppOn) {
-        enterParamPages(S.slot, S.comp, S.comp, null, null, {
+        enterParamPages(S.slot, S.comp, S.comp, ppRestoreFor(S.slot, S.comp), ppIo(), {
             label: modLabel(),
             /* Back leaves the editor for the block picker — davebox's own
              * destination, unchanged from what renderEdit's footer promises. */
@@ -5315,10 +5329,81 @@ function ppSync() {
         ppOn = true;
         S.dirty = true;
     } else if (!want && ppOn) {
+        /* Remembered BEFORE the exit — the page is the controller's, and it is
+         * gone once the controller is. */
+        const pg = currentParamPage();
+        ppRestorePage = (pg && pg.name) ? { slot: S.slot, comp: S.comp, name: pg.name } : null;
         exitParamPages();
         ppOn = false;
         S.dirty = true;
     }
+}
+
+/* ⭐ THE PAGES AT THE END OF THE WALK — and the reason they are not optional.
+ *
+ * ⚠⚠ THE REGRESSION THEY FIX. davebox's own editor put its preset menu on the
+ * JOG CLICK ("CLK PRESET" in its footer): user presets, the module's own baked
+ * presets, the Module Menu, Swap Module. In this editor the jog click is the
+ * SECTION PICKER, so that entire menu became unreachable the moment the editor
+ * changed — not one missing page, a whole branch of davebox with no door.
+ * Josh, from the device: "looks like my presets and maybe some other pages are
+ * missing." They were.
+ *
+ * ⭑ THE SHAPE IS UPSTREAM'S. Stock appends exactly this — a "My Presets" page
+ * and a "Module" page — through the same `io.trailingMenus` hook
+ * (componentTrailingMenus in stock's shadow_ui.js), so jogging to the end of a
+ * module's pages is where presets live. davebox reaches its OWN screens from
+ * those rows rather than reimplementing a browser, which is the same move its
+ * openParamEditor makes.
+ *
+ * ⚠ `io`, NOT `ctx`. These are per-entry, per-consumer hooks — the binding
+ * spreads them over the ctx defaults — so supplying them is the extension point
+ * working as designed, not davebox diverging from the host's context.
+ *
+ * ⚠ WHAT davebox CANNOT SHOW YET, stated rather than faked: stock's Preset row
+ * reads back WHICH user preset is loaded, and hides Save/Delete when none is.
+ * davebox keeps no such record — nothing tracks the loaded preset per
+ * slot+component — so the row opens davebox's preset hub instead of naming a
+ * preset, and the destructive rows live inside that hub where they already have
+ * a target. Adding the record is its own piece of work. */
+function ppIo() {
+    return {
+        trailingMenus: () => {
+            if (!S.moduleId) return [];      /* nothing loaded to preset or swap */
+            return [
+                { name: 'My Presets', entries: [
+                    { label: 'Presets', action: 'up_load' },
+                    { label: 'Save As', action: 'up_save_as' },
+                ] },
+                { name: 'Module', entries: [
+                    { label: 'Swap Module', action: 'swap_module' },
+                ] },
+            ];
+        },
+        /* ⭑ Each action LEAVES the grid for a davebox screen, which is why every
+         * one of them exits the editor first: these screens own the display, and
+         * the reconcile in ppSync would otherwise re-enter the grid on the next
+         * tick and take the screen straight back. Same latch openParamEditor
+         * uses, and the same one stock's own hand-off uses. */
+        runAction: (action) => {
+            /* ⚠⚠ NO SUPPRESSION LATCH HERE, unlike openParamEditor — and the
+             * difference is where you come back to. A dive-out for an
+             * un-turnable param is meant to LAND in davebox's own editor and
+             * stay there; a preset errand is meant to return you to the grid you
+             * left. Arming the latch would have dropped you into the old editor
+             * on the way back, silently, once per errand.
+             *
+             * Nothing needs to exit the grid explicitly either: these screens
+             * set S.view, so ppSync sees the view move away and tears the editor
+             * down on the next tick — one owner for that decision, as always. */
+            clearParamPagesTouch();
+            if (action === 'up_load') openPresets();
+            else if (action === 'up_save_as') startSaveFlow();
+            else if (action === 'swap_module') openBrowse(S.comp);
+            else log('pp: unknown menu action ' + action);
+            S.dirty = true;
+        },
+    };
 }
 
 /* Installed once, at module load. The host fills its ctx from shadow_ui.js at
