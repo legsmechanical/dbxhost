@@ -1,9 +1,3 @@
-/* VENDORED from src/shadow/shadow_ui_param_pages.mjs — DO NOT EDIT.
- * davebox carries this copy so it gets its own instance of the binding's
- * module-level state (the host's is a singleton) and so no module import ever
- * resolves into the STOCK tree. It is NOT a fork: the test fails if it drifts
- * from src/shadow/shadow_ui_param_pages.mjs in either direction.
- * Edit davebox/ui/pp_ctx.mjs instead. */
 /*
  * Shadow UI — Param Pages (the knob-grid parameter view).
  *
@@ -28,11 +22,9 @@
  *     grids.
  *
  * State accessors come from the shared `ctx` (populated by shadow_ui.js); see
- * shadow_ui_ctx.mjs. As with the other view modules, only touch ctx.* inside
  * function bodies, never at top level.
  */
 
-import { ctx } from './shadow_ui_ctx.mjs';
 import { createController, CONTRACT_SETTLE_MS, LAYOUT_LIST } from '/data/UserData/schwung/shared/param_pages/page_controller.mjs';
 /* Re-exported so a contract can PIN its layout in the chrome it already hands
  * over (see paramPagesLayout). Global Settings does; slot and Master FX
@@ -63,6 +55,38 @@ import { drawEnumList } from '/data/UserData/schwung/shared/param_pages/enum_lis
 import { flipsOnClick, isTurnable } from '/data/UserData/schwung/shared/param_pages/param_meta.mjs';
 import { announce } from '/data/UserData/schwung/shared/screen_reader.mjs';
 import { log, isLoggingEnabled } from '/data/UserData/schwung/shared/logger.mjs';
+
+/* ===========================================================================
+ * ⭐⭐ A FACTORY, NOT A SINGLETON (2026-08-31).
+ *
+ * This file was `src/shadow/shadow_ui_param_pages.mjs`: one module-level
+ * controller, closed over one host `ctx` imported from the shadow tree. That
+ * shape had exactly one consumer by construction, which is why dAVEBOx first
+ * carried a frozen COPY of it — a copy that then had to be defended with a
+ * stamp, a hand-edit detector and a skew check, all to simulate being the same
+ * file.
+ *
+ * It is the same file now. `createParamPagesBinding(ctx)` closes the fourteen
+ * pieces of module state over ONE caller's host context, so the shadow UI and
+ * dAVEBOx each get their own instance of the editor rather than fighting over
+ * a singleton — and one improvement to the editor reaches both in one commit.
+ *
+ * ⭑ THIS IS WHAT THE LIBRARY ALWAYS ASKED FOR. README rule 4 is "No
+ * module-level state — a tool has four tracks x five components live at once",
+ * and rule 3 is that the caller routes its own input. The binding was the one
+ * piece of param_pages that broke its own contract; the tool consumer the
+ * README anticipates could not exist while it did.
+ *
+ * ⚠ It lives in shared/ for a load-bearing reason: the QuickJS module loader
+ * rewrites ONLY the `/data/UserData/schwung/shared/` prefix
+ * (SHARED_IMPORT_CANONICAL, src/shadow/shadow_ui.c), so this is the only place
+ * a MODULE can import it from and still get THIS install's copy. From
+ * `shadow/` a module would execute the stock tree.
+ *
+ * Behaviour is unchanged from the singleton version — the body below is that
+ * file verbatim, minus its `export` keywords and its ctx import.
+ * ======================================================================== */
+export function createParamPagesBinding(ctx) {
 
 /* The live controller, or null when the view is not open. One at a time: the
  * grid always shows a single component, and rebuilding on entry is cheap. */
@@ -126,8 +150,8 @@ function shiftIsHeld() {
 }
 
 /** Param View setting values. */
-export const PARAM_VIEW_LIST = 0;
-export const PARAM_VIEW_KNOBS = 1;
+const PARAM_VIEW_LIST = 0;
+const PARAM_VIEW_KNOBS = 1;
 
 /**
  * Whether the page chrome may run at all.
@@ -166,7 +190,7 @@ export const PARAM_VIEW_KNOBS = 1;
  * anything asks, the grid has already won the fork.
  * =========================================================================
  */
-export function paramPagesEnabled() {
+function paramPagesEnabled() {
     if (typeof tts_get_enabled === 'function' && tts_get_enabled()) return false;
     const mode = typeof param_view_get_mode === 'function'
         ? param_view_get_mode() : PARAM_VIEW_KNOBS;
@@ -227,7 +251,7 @@ export function paramPagesEnabled() {
  * (upstream's menu_layout.mjs takes one; this fork's draws through the device
  * globals). That is its own pass -- see docs/PARAM_PAGES.md.
  */
-export function paramPagesLayout() {
+function paramPagesLayout() {
     if (currentChrome && currentChrome.layout) return currentChrome.layout;
     return LAYOUT_MOVY;
 }
@@ -266,7 +290,7 @@ export function paramPagesLayout() {
  *   it (Global Settings); it is called instead of setView on Back.
  *   Omitted means the slot-chain defaults.
  */
-export function enterParamPages(slot, component, prefix, restorePageName, io, chrome, restoreOpts) {
+function enterParamPages(slot, component, prefix, restorePageName, io, chrome, restoreOpts) {
     currentSlot = slot;
     currentComponent = component;
     currentPrefix = prefix || component;
@@ -354,7 +378,7 @@ export function enterParamPages(slot, component, prefix, restorePageName, io, ch
     ctx.setView(ctx.VIEWS.PARAM_PAGES);
 }
 
-export function exitParamPages() {
+function exitParamPages() {
     /*
      * GIVE THE RINGS BACK, DO NOT JUST TURN THEM OFF.
      *
@@ -408,29 +432,29 @@ export function exitParamPages() {
 /* Close the menu on the page that is up, without leaving the page. Save acts
  * in place -- it never navigates -- so it has no return path to carry the
  * "you are finished here" disposition. This is that disposition. */
-export function paramPagesExitMenu() {
+function paramPagesExitMenu() {
     if (controller && typeof controller.exitMenu === 'function') controller.exitMenu();
 }
-export function paramPagesRefreshTrailing() {
+function paramPagesRefreshTrailing() {
     if (controller) controller.refreshTrailing();
 }
 
-export function paramPagesActive() {
+function paramPagesActive() {
     return controller !== null;
 }
 
 /** Which component the grid is pointed at, for handing back to the list. */
-export function paramPagesComponent() {
+function paramPagesComponent() {
     return currentComponent;
 }
 
 /** Which slot the grid is pointed at, for handing back to the list. */
-export function paramPagesSlot() {
+function paramPagesSlot() {
     return currentSlot;
 }
 
 /** The page the grid is on, so the host can decide whether it draws it. */
-export function currentParamPage() {
+function currentParamPage() {
     return controller ? controller.page : null;
 }
 
@@ -442,7 +466,7 @@ export function currentParamPage() {
  * module owns the answer through child_index_param anyway. Same defect as the
  * duplicate picker pages: a second control for a fact that already has one.
  */
-export function paramPagesChildIndex(level) {
+function paramPagesChildIndex(level) {
     if (!controller || !level) return -1;
     return (typeof controller.childIndexOf === "function")
         ? controller.childIndexOf(level) : -1;
@@ -453,7 +477,7 @@ export function paramPagesChildIndex(level) {
  * finishing an async ROM or sample load republishes a larger tree) and advances
  * the staggered read cursor by exactly one param.
  */
-export function tickParamPages() {
+function tickParamPages() {
     if (!controller) return;
 
     /* Only re-plan on the loading->ready edge; re-planning every frame would
@@ -934,7 +958,7 @@ function footerHints() {
  * the framebuffer. It is built HERE and used by the one draw call, so what is
  * asserted is what is drawn rather than a second copy of the rule.
  */
-export function headerTitle() {
+function headerTitle() {
     /* Cached: this was a synchronous round trip on EVERY draw (1.4 of the
      * grid's 7.1 reads per tick, measured on device) to render a two-letter
      * abbreviation that cannot change without going back through
@@ -993,7 +1017,7 @@ export function headerTitle() {
     return `${label} > ${name}`;
 }
 
-export function drawParamPages() {
+function drawParamPages() {
     if (!controller) return false;
     /* The section picker is drawn over whatever page you were on, including a
      * non-grid one, so it is checked before the page kind. */
@@ -1137,7 +1161,7 @@ let _midiWindowStart = 0, _midiCount = 0, _knobTurnCount = 0;
  * Every decision here is in page_input.mjs; this routes the result and performs
  * the two things the controller cannot do for itself.
  */
-export function handleParamPagesMidi(data) {
+function handleParamPagesMidi(data) {
     if (!controller) return false;
 
     const nowMsProbe = Date.now();
@@ -1273,7 +1297,7 @@ export function handleParamPagesMidi(data) {
 }
 
 /** Read the page aloud — the gesture that stands in for a glance. */
-export function announceParamPageContents() {
+function announceParamPageContents() {
     if (controller) controller.announceContents();
 }
 
@@ -1285,21 +1309,21 @@ export function announceParamPageContents() {
  * goes to whatever screen took over and never reaches the grid — so the cell
  * stayed highlighted for good. Holding Target and clicking it is exactly that.
  */
-export function clearParamPagesTouch() {
+function clearParamPagesTouch() {
     if (controller && typeof controller.clearTouch === 'function') controller.clearTouch();
 }
 
 /** The section picker, for anything that wants to drive it from outside. */
-export function paramPagesJumpIndex() {
+function paramPagesJumpIndex() {
     return controller ? controller.groupIndex() : [];
 }
 
-export function paramPagesGoTo(index) {
+function paramPagesGoTo(index) {
     if (controller) controller.goToPage(index);
 }
 
 /** True while values are revealed (shift held). */
-export function paramPagesRevealing() {
+function paramPagesRevealing() {
     return !!(controller && controller.state.revealValues);
 }
 
@@ -1311,7 +1335,7 @@ export function paramPagesRevealing() {
  * footer is set in font4x5, which draws glyphs as fillRect pixels, so a
  * recording print() sees nothing at all.
  */
-export function paramPagesFooterHints() {
+function paramPagesFooterHints() {
     return footerHints();
 }
 
@@ -1332,11 +1356,40 @@ export function paramPagesFooterHints() {
  *
  * Constant, so it takes no controller and works from both entry points.
  */
-export function enumPickerFooterHints() {
+function enumPickerFooterHints() {
     return orderedHints({ jog: "SEL", click: "SET", extra: [["BACK", "EXIT"]] });
 }
 
 /** True while the section picker is over the grid. */
-export function paramPagesPickerOpen() {
+function paramPagesPickerOpen() {
     return !!(controller && controller.pickerOpen);
+}
+
+    return {
+        PARAM_VIEW_KNOBS,
+        PARAM_VIEW_LIST,
+        announceParamPageContents,
+        clearParamPagesTouch,
+        currentParamPage,
+        drawParamPages,
+        enterParamPages,
+        enumPickerFooterHints,
+        exitParamPages,
+        handleParamPagesMidi,
+        headerTitle,
+        paramPagesActive,
+        paramPagesChildIndex,
+        paramPagesComponent,
+        paramPagesEnabled,
+        paramPagesExitMenu,
+        paramPagesFooterHints,
+        paramPagesGoTo,
+        paramPagesJumpIndex,
+        paramPagesLayout,
+        paramPagesPickerOpen,
+        paramPagesRefreshTrailing,
+        paramPagesRevealing,
+        paramPagesSlot,
+        tickParamPages,
+    };
 }

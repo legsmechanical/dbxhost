@@ -30,92 +30,55 @@ nocomments() {
       print line }'
 }
 
-binding=src/shadow/shadow_ui_param_pages.mjs
 bundler=davebox/scripts/bundle_ui.sh
 adapter=davebox/ui/pp_ctx.mjs
-for f in "$binding" "$bundler" "$adapter"; do [ -f "$f" ] || fail "$f missing"; done
+ctxsrc=src/shadow/shadow_ui_param_pages.mjs
+for f in "$bundler" "$adapter"; do [ -f "$f" ] || fail "$f missing"; done
 
-# --- 1. davebox OWNS THE COPY: COMMITTED, AND NEVER HAND-EDITED ------------
+# --- 1. THE EDITOR IS ONE FILE WITH TWO INSTANCES, NOT TWO FILES -------------
 #
-# Josh, 2026-08-31: "i want davebox module editing to be something it owns so
-# that future upstream updates don't break things. but i also want to be able to
-# easily pull any module editor updates into davebox if they're desirable."
+# ⭐ davebox and the shadow UI run the SAME editor. Not a copy kept in step by a
+# hash, which is what this was until 2026-08-31 — a frozen vendored copy plus a
+# stamp, a hand-edit detector and a skew check, machinery whose entire job was
+# to simulate being the same file inside a repo that is ONE deliverable.
 #
-# Those pull opposite ways. The copy is COMMITTED so an upstream rework cannot
-# change davebox's editor underneath it — regenerating at build time would have
-# been the same code with no diff, no review and no way to decline. And it is
-# never hand-edited, because the instant it is, "davebox's module editor IS
-# stock's module editor" stops being true, nothing reconciles it again, and
-# pulling a future update turns from a copy into a merge.
-vendor=davebox/ui/vendor/shadow_ui_param_pages.mjs
-stamp=davebox/ui/vendor/VENDORED
-[ -f "$vendor" ] || fail "$vendor missing — it is a COMMITTED copy of $binding"
-git ls-files --error-unmatch "$vendor" >/dev/null 2>&1 ||
-  fail "$vendor is NOT COMMITTED. davebox must own this copy: an uncommitted or
-generated one changes with the host, which is what 'updates don't break things'
-forbids."
-[ -f "$stamp" ] || fail "$stamp missing — the copy has no recorded provenance,
-so nothing can tell whether it is the host's file or something someone edited"
+# What replaced it: shared/param_pages/binding_movy.mjs is a FACTORY, and each
+# consumer creates its own instance over its own host context.
+binding=src/shared/param_pages/binding_movy.mjs
+[ -f "$binding" ] || fail "$binding missing — the shared editor factory is gone"
+grep -q "^export function createParamPagesBinding" "$binding" ||
+  fail "$binding no longer exports createParamPagesBinding"
+ok "the editor is a factory in shared/, importable by host and module alike"
 
-# Hand-edit detector. The stamp records the sha256 of the SOURCE the copy was
-# taken from; the copy is that file plus a 4-line header. Compare bodies.
-want=$(grep '^sha256:' "$stamp" | awk '{print $2}')
-# ⚠ STRIP THE HEADER BY ITS SHAPE, NOT BY A LINE COUNT. It was `tail -n +5`,
-# which silently became wrong the moment the header gained two lines — and a
-# body hash computed from the wrong offset reports a HAND-EDIT that never
-# happened, which is a check crying wolf about its own arithmetic.
-# ⚠ Match the header's CLOSING LINE by the `*/` it contains, not by `^ */`:
-# that line reads " * Edit davebox/ui/pp_ctx.mjs instead. */", so an anchored
-# pattern never matched, sed's unmatched end address deleted to EOF, and the
-# check reported a HAND-EDIT that never happened. A pin crying wolf about its
-# own arithmetic is worse than no pin.
-got=$(sed '1,/\*\//d' "$vendor" | shasum -a 256 | cut -d' ' -f1)
-[ -n "$want" ] || fail "$stamp records no sha256"
-[ "$want" = "$got" ] ||
-  fail "$vendor does not match the source it records in $stamp.
-Either it was HAND-EDITED — which it must never be; davebox's half of the seam
-is ui/pp_ctx.mjs — or the header shape changed and this check needs updating.
-  recorded: $want
-  actual:   $got"
-ok "the vendored binding is committed, and byte-identical to its recorded source"
-
-# ⭐⭐ ...AND IN SYNC WITH THE HOST'S CURRENT FILE. The check above only proves
-# the copy has not been hand-edited; it compares against the sha the stamp
-# recorded AT VENDORING TIME, so the host's file could move underneath it and
-# every test would stay green while "davebox's editor IS the host's editor"
-# quietly became false.
-#
-# ⚠⚠ THAT IS INTRA-REPO VERSION SKEW, in a repo whose founding rule is ONE
-# deliverable, ONE version — the rule P2/P4b spent two phases and 378 deleted
-# capability probes enforcing. A frozen copy inside a single repo manufactures
-# exactly the skew that model exists to abolish, and a stamp-only check
-# certifies it as healthy. So SYNC IS THE DEFAULT STATE and divergence must be
-# deliberate, dated and visible — the inverse of a stamp you can forget.
-host_now=$(shasum -a 256 "$binding" | cut -d' ' -f1)
-if [ "$want" != "$host_now" ]; then
-  if [ -f davebox/ui/vendor/DIVERGED ]; then
-    ok "vendor is behind the host's binding, and davebox/ui/vendor/DIVERGED says why (deliberate)"
-  else
-    fail "the host's binding has MOVED and davebox is still running the old one.
-  vendored: $want
-  host now: $host_now
-davebox's module editor is no longer the host's — silently, with every test
-green. Re-vendor:
-  copy $binding over the body of $vendor (keeping its header comment); refresh
-  davebox/ui/vendor/VENDORED's sha256 from $binding, review the diff, commit.
-If the divergence is DELIBERATE, write davebox/ui/vendor/DIVERGED saying what
-davebox needs that the host's current binding does not do, and dated."
-  fi
+# ⚠⚠ AND IT MUST HOLD NO MODULE-LEVEL MUTABLE STATE. That is the whole reason it
+# is a factory: the binding used to keep fourteen `let`s closed over ONE host
+# ctx, so it had exactly one consumer by construction. param_pages/README.md
+# rule 4 says it outright — "No module-level state — a tool has four tracks x
+# five components live at once" — and the binding was the one piece of the
+# library breaking its own contract. A single `let` back at module scope and the
+# two consumers silently share a controller again.
+# ⚠ MEASURED ON THE REGION ABOVE THE FACTORY, not by indentation. The factory's
+# body is deliberately left at its original indentation so it stays a clean diff
+# against upstream's file — so `^let` matches INSIDE it too, and an
+# indentation-based check fails the correct tree. (It did, first run.)
+leaked=$(nocomments < "$binding" | sed -n '1,/^export function createParamPagesBinding/p' \
+         | grep -nE "^let |^var " || true)
+if [ -n "$leaked" ]; then
+  echo "$leaked" >&2
+  fail "$binding has module-level mutable state (above). It is a FACTORY: that
+state belongs inside createParamPagesBinding, or the shadow UI and davebox share
+one controller and fight over it."
 fi
+ok "the factory leaks no module-level state — each consumer gets its own"
 
-# ⭑ AND THAT IS THE WHOLE UPDATE STORY. Taking a future upstream change is
-# `cp src/shadow/shadow_ui_param_pages.mjs` over the copy, refresh VENDORED,
-# review the diff, commit — no machinery, because the copy being VERBATIM is
-# what keeps it that cheap. There is deliberately no update script yet
-# (Josh, 2026-08-31: "i don't need a script for all that now... i just want to
-# make sure our architecture makes it possible to do it without major surgery
-# if we choose to"). This check is what protects that option: the day the copy
-# is hand-edited, updating stops being a copy and becomes a merge.
+# Both consumers create their own, and neither reaches for the other's.
+host_shim=src/shadow/shadow_ui_param_pages.mjs
+[ -f "$host_shim" ] || fail "$host_shim missing — the shadow UI's instance is gone"
+grep -q "createParamPagesBinding(ctx)" <<<"$(nocomments < "$host_shim")" ||
+  fail "$host_shim no longer creates the shadow UI's own instance"
+grep -q "createParamPagesBinding(" <<<"$(nocomments < davebox/ui/ui_sound.mjs)" ||
+  fail "davebox no longer creates its own instance of the editor"
+ok "host and davebox each create their own instance of the one editor"
 
 # --- 2. NOTHING IMPORTS OUT OF THE shadow/ TREE AT RUNTIME ------------------
 #
@@ -143,7 +106,7 @@ ok "no davebox source imports the shadow/ tree at runtime"
 # teaches the reader to ignore its output.
 members=$(nocomments < "$binding" | grep -v "^\s*import\|from ['\"]" \
           | grep -oE "ctx\.[A-Za-z_][A-Za-z0-9_]*" | sed 's/^ctx\.//' | sort -u)
-[ -n "$members" ] || fail "read no ctx members out of $binding — the binding's
+[ -n "$members" ] || fail "read no ctx members out of $binding — the factory's
 shape changed and this check is now blind"
 
 # The adapter declares its contract as DATA — PP_CTX_MEMBERS (answered) and
@@ -257,4 +220,4 @@ may never exceed upstream."
 done
 ok "davebox answers exactly the members the host answers, and omits exactly the ones it omits"
 
-echo "PASS: davebox runs the host's own param-pages binding, and the seam is honest"
+echo "PASS: one editor, two instances, and the seam is honest"

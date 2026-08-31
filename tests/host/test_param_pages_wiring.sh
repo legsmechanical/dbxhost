@@ -63,15 +63,24 @@ cp src/shadow/shadow_ui.js "$TMP/shadow_ui.mjs"
 if ! node --check "$TMP/shadow_ui.mjs" 2>"$TMP/err"; then
   echo "FAIL: shadow_ui.js does not parse:"; cat "$TMP/err"; exit 1
 fi
-cp src/shadow/shadow_ui_param_pages.mjs "$TMP/view.mjs"
-if ! node --check "$TMP/view.mjs" 2>"$TMP/err"; then
-  echo "FAIL: shadow_ui_param_pages.mjs does not parse:"; cat "$TMP/err"; exit 1
-fi
+for f in src/shadow/shadow_ui_param_pages.mjs src/shared/param_pages/binding_movy.mjs; do
+  cp "$f" "$TMP/view.mjs"
+  if ! node --check "$TMP/view.mjs" 2>"$TMP/err"; then
+    echo "FAIL: $f does not parse:"; cat "$TMP/err"; exit 1
+  fi
+done
 
 node -e '
 const fs = require("fs");
 const s = fs.readFileSync("src/shadow/shadow_ui.js", "utf8");
-const v = fs.readFileSync("src/shadow/shadow_ui_param_pages.mjs", "utf8");
+/* ⚠ THE EDITOR BODY MOVED (2026-08-31). shadow_ui_param_pages.mjs is now a thin
+ * shim that instantiates shared/param_pages/binding_movy.mjs — the same code,
+ * made a factory so davebox gets its own instance instead of carrying a frozen
+ * copy. Assertions about editor INTERNALS read the factory; the ones about how
+ * shadow_ui.js wires to it still read shadow_ui.js.
+ * NOTE: no apostrophes in this block — it lives inside a single-quoted node -e
+ * script, and one closes the shell string. Learned the hard way, just now. */
+const v = fs.readFileSync("src/shared/param_pages/binding_movy.mjs", "utf8");
 const fail = (m) => { console.log("FAIL: " + m); process.exit(1); };
 const want = (re, what, src) => { if (!(re).test(src || s)) fail(what); };
 

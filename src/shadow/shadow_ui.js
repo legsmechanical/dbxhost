@@ -209,6 +209,11 @@ import {
     paramPagesComponent, paramPagesSlot, clearParamPagesTouch,
     PARAM_VIEW_LIST, PARAM_VIEW_KNOBS
 } from './shadow_ui_param_pages.mjs';
+/* One definition of the `visible_if` rule and its value helpers, shared with
+ * every other consumer of the param-pages library — see visibility.mjs. */
+import { evaluateVisibility, parseMetaBool, parseMetaNumber,
+         compareConditionValue, normalizeVisibilityConditionKey }
+    from '/data/UserData/schwung/shared/param_pages/visibility.mjs';
 /* Registers the QuickJS file IO wav_peaks.mjs streams a sample through. It
  * names the `std`/`os` MODULES, which node has no idea about, so it is
  * imported HERE -- shadow_ui.js is the one shadow file node never imports --
@@ -2374,17 +2379,7 @@ let wavDurationCache = {};
 let wavPositionWaveformCache = { signature: "", path: "", points: [], error: "" };
 let wavPositionWaveformErrorSignature = "";
 
-function parseMetaBool(value) {
-    if (value === true || value === 1) return true;
-    if (value === false || value === 0 || value === null || value === undefined) return false;
-    const v = String(value).trim().toLowerCase();
-    return v === "1" || v === "true" || v === "on" || v === "yes";
-}
 
-function parseMetaNumber(value, fallback) {
-    const num = Number(value);
-    return Number.isFinite(num) ? num : fallback;
-}
 
 function getMetaOption(meta, key, fallback) {
     if (!meta || typeof meta !== "object") return fallback;
@@ -2619,72 +2614,22 @@ function formatCanvasDisplayValue(rawValue, meta) {
     return num.toFixed(2);
 }
 
-function normalizeVisibilityConditionKey(componentPrefix, levelDef, childIndex, rawKey) {
-    if (!rawKey) return "";
-    if (rawKey.includes(":")) return rawKey;
-    if (!componentPrefix) return rawKey;
-    if (levelDef && levelDef.child_prefix && childIndex >= 0) {
-        if (rawKey.startsWith(levelDef.child_prefix)) {
-            return `${componentPrefix}:${rawKey}`;
-        }
-        return `${componentPrefix}:${levelDef.child_prefix}${childIndex}_${rawKey}`;
-    }
-    return `${componentPrefix}:${rawKey}`;
-}
 
-function compareConditionValue(actualRaw, expectedRaw) {
-    if (typeof expectedRaw === "boolean") {
-        return parseMetaBool(actualRaw) === expectedRaw;
-    }
-    if (typeof expectedRaw === "number") {
-        const num = Number(actualRaw);
-        return Number.isFinite(num) && num === expectedRaw;
-    }
-    return String(actualRaw) === String(expectedRaw);
-}
 
+/* ⭐ THE RULE MOVED TO shared/param_pages/visibility.mjs (2026-08-31), and this
+ * is now the shadow UI binding its own reads to it. It was duplicated in
+ * dAVEBOx for a session because a module cannot import from `shadow/`; the fix
+ * was to move the decision somewhere both consumers reach, not to keep two
+ * copies honest with a test.
+ *
+ * The four helpers this file still uses elsewhere (parseMetaBool and friends)
+ * come from there too now, so there is exactly one definition of each. */
 function evaluateVisibilityConditionForContext(slot, componentPrefix, condition, levelDef, childIndex) {
-    if (!condition || typeof condition !== "object") return true;
-    const conditionParam = condition.param || condition.key || condition.param_key;
-    if (!conditionParam) return true;
-
-    const fullKey = normalizeVisibilityConditionKey(componentPrefix, levelDef, childIndex, String(conditionParam));
-    const rawValue = getSlotParam(slot, fullKey);
-    if (rawValue === null || rawValue === undefined) return true; // fail-open
-
-    if (condition.equals !== undefined) {
-        return compareConditionValue(rawValue, condition.equals);
-    }
-    if (condition.not_equals !== undefined) {
-        return !compareConditionValue(rawValue, condition.not_equals);
-    }
-    if (condition.gt !== undefined || condition.greater_than !== undefined || condition.greater !== undefined) {
-        const threshold = parseMetaNumber(
-            condition.gt !== undefined ? condition.gt :
-                (condition.greater_than !== undefined ? condition.greater_than : condition.greater),
-            null
-        );
-        const current = Number(rawValue);
-        return Number.isFinite(current) && Number.isFinite(threshold) && current > threshold;
-    }
-    if (condition.lt !== undefined || condition.smaller_than !== undefined || condition.smaller !== undefined) {
-        const threshold = parseMetaNumber(
-            condition.lt !== undefined ? condition.lt :
-                (condition.smaller_than !== undefined ? condition.smaller_than : condition.smaller),
-            null
-        );
-        const current = Number(rawValue);
-        return Number.isFinite(current) && Number.isFinite(threshold) && current < threshold;
-    }
-    if (condition.truthy !== undefined) {
-        return parseMetaBool(condition.truthy) ? parseMetaBool(rawValue) : !parseMetaBool(rawValue);
-    }
-    if (condition.falsey !== undefined || condition.falsy !== undefined) {
-        const flag = condition.falsey !== undefined ? condition.falsey : condition.falsy;
-        return parseMetaBool(flag) ? !parseMetaBool(rawValue) : parseMetaBool(rawValue);
-    }
-
-    return parseMetaBool(rawValue);
+    return evaluateVisibility({
+        prefix: componentPrefix,
+        getParam: (fullKey) => getSlotParam(slot, fullKey),
+        childIndexOf: () => childIndex,
+    }, condition, levelDef);
 }
 
 function evaluateVisibilityCondition(condition, levelDef) {

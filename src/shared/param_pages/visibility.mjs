@@ -1,25 +1,24 @@
-/* pp_visible.mjs — `visible_if` evaluation for the module editor.
+/* visibility.mjs — `visible_if` evaluation, shared by every consumer.
  *
- * ⚠⚠ THIS IS A PORT, AND IT IS THE ONLY ONE IN THE MODULE EDITOR. Everything
- * else davebox shows in that editor is the host's own code, vendored or shared.
- * This is here because the host's evaluator lives in `src/shadow/shadow_ui.js`
- * (not in `shared/`), along with all four of its helpers — so there is nothing
- * to import, and a module cannot reach into the shadow tree at runtime without
- * executing the STOCK install (see scripts/bundle_ui.sh).
+ * A level or a param can declare `visible_if`, and a module uses it to fold away
+ * controls that do not apply in its current mode. Evaluate it wrong and the
+ * editor shows everything at once; skip it and you show controls the module
+ * deliberately hides.
  *
- * ⭐ WHY IT MATTERS: unanswered, the page planner shows EVERYTHING, so davebox
- * would display parameters stock deliberately HIDES — a module's hierarchy uses
- * `visible_if` to fold away controls that do not apply in the current mode, and
- * without this they all appear at once. That is not a cosmetic difference.
+ * ⭐ WHY IT LIVES HERE. This was a PORT in davebox (`ui/pp_visible.mjs`) for one
+ * session, because the host's evaluator sat in `src/shadow/shadow_ui.js` where
+ * no module can import it — and a copy of a decision rule is the drift shape
+ * this repo has paid for more than once (a hand-copied renderer four times, a
+ * cell classifier twice). dbxhost is dAVEBOx's own host and may be changed to
+ * suit it, so the rule moved to the one place both consumers can reach instead.
  *
- * ⚠ A PORT SILENTLY ROTS. `tests/host/test_pp_visible_matches_host.sh` pins the
- * behaviour of every branch below against the host's own functions, read out of
- * shadow_ui.js's CODE. If the host's rules change, that test fails rather than
- * this file quietly disagreeing with the editor it feeds.
+ * ⚠ IT TAKES ITS READS INJECTED (`io.getParam`, `io.prefix`, `io.childIndexOf`)
+ * rather than importing any state. That is param_pages/README.md rules 1 and 4 —
+ * no param I/O, no module-level state — and it is what lets the shadow UI
+ * evaluate against its hierarchy-editor cursor while dAVEBOx evaluates against
+ * the page controller's, from the same code.
  *
- * Ported verbatim in behaviour from shadow_ui.js:
- *   evaluateVisibilityConditionForContext, normalizeVisibilityConditionKey,
- *   compareConditionValue, parseMetaNumber, parseMetaBool
+ * ⭑ Generic and upstreamable: nothing here names a consumer.
  */
 
 /* ⚠ FAIL-OPEN IS THE HOST'S RULE, not a convenience. A condition naming a param

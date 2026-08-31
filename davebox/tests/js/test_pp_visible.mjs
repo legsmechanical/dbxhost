@@ -1,19 +1,20 @@
-/* tests/js/test_pp_visible.mjs — davebox's `visible_if` evaluator must decide
- * every case the host's does.
+/* tests/js/test_pp_visible.mjs — the `visible_if` rule, exercised case by case.
  *
- * ⚠⚠ WHY THIS EXISTS. ui/pp_visible.mjs is the ONLY port in the module editor:
- * everything else is the host's own code, shared or vendored. The host's
- * evaluator lives in src/shadow/shadow_ui.js, which a module cannot import, so
- * this one is a copy — and a copy silently rots. This repo has watched a
- * hand-copied renderer diverge four times and a cell classifier twice.
+ * ⚠ IT PINS BEHAVIOUR, NOT TEXT. A text comparison fails on a reformat and
+ * passes on a logic change, which is exactly backwards. The cases below are read
+ * off the rule's branches — every operator and every spelling of it, both
+ * polarities of truthy/falsey, the child_prefix key rules, and the fail-open
+ * rule that decides what happens when a condition names a param we cannot read.
  *
- * ⚠ It pins BEHAVIOUR, case by case, not the text of the function: a text
- * comparison would fail on a reformat and pass on a logic change, which is
- * exactly backwards. The cases below are read off the host's branches — every
- * operator it supports, both polarities, and the fail-open rule.
+ * ⭑ It was written to defend a PORT: davebox carried its own copy of this rule
+ * for one session, because the host's version sat in shadow_ui.js where no
+ * module can import it. The rule now lives in shared/param_pages/visibility.mjs
+ * with ONE definition and two consumers, so this no longer guards a copy — it
+ * guards the rule itself, which is the better job for it.
  */
 import { evaluateVisibility, parseMetaBool, compareConditionValue,
-         normalizeVisibilityConditionKey } from '../../ui/pp_visible.mjs';
+         normalizeVisibilityConditionKey }
+    from '/data/UserData/schwung/shared/param_pages/visibility.mjs';
 
 let failed = 0;
 const ok  = (l) => console.log(`  ok   — ${l}`);

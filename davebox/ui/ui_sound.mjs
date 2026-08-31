@@ -67,18 +67,36 @@ import {
     hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard,
 } from './ui_movy.mjs';
 import { bankCyclePos, bankCycleForMode } from './ui_pure.mjs';
-/* ⭐ THE MODULE EDITOR IS STOCK'S. This is the host's own binding, vendored
- * verbatim into davebox/ui/vendor/ (see scripts/bundle_ui.sh), running over the
- * shared param_pages engine imported unmodified — so the pages, widgets, knob
- * feel, page kinds, menus and layouts are stock's code, not a resemblance.
- * davebox's whole half of the seam is ui/pp_ctx.mjs. */
-import { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
-         handleParamPagesMidi, paramPagesActive }
-    from './vendor/shadow_ui_param_pages.mjs';
-import { installPpCtx } from './pp_ctx.mjs';
-import { evaluateVisibility } from './pp_visible.mjs';
-import { paramPagesChildIndex, clearParamPagesTouch }
-    from './vendor/shadow_ui_param_pages.mjs';
+/* ⭐⭐ THE MODULE EDITOR IS THE HOST'S, AND NOW LITERALLY THE SAME FILE.
+ *
+ * `createParamPagesBinding` is the editor the shadow UI runs; davebox creates
+ * its OWN instance over its own host context. Not a copy, not a port, not a
+ * resemblance — one file in shared/, two instances, so an improvement to the
+ * editor reaches the host and davebox in a single commit.
+ *
+ * ⭑ It took a host change to get here, and that is the point rather than a
+ * compromise: dbxhost is davebox's own host (workspace CLAUDE.md — "there is no
+ * conceptual separation between what davebox needs and what the host can
+ * provide. What we need the host to do, we change"). The editor was a singleton
+ * in shadow/, reachable by no module, so davebox first carried a frozen COPY
+ * defended by a stamp, a hand-edit detector and a skew check — machinery whose
+ * whole job was to simulate being the same file. Making the host's binding a
+ * factory in shared/ deleted all of it.
+ *
+ * davebox's half of the seam is ui/pp_ctx.mjs, and nothing else. */
+import { createParamPagesBinding }
+    from '/data/UserData/schwung/shared/param_pages/binding_movy.mjs';
+import { ctx as ppCtx, installPpCtx } from './pp_ctx.mjs';
+import { evaluateVisibility }
+    from '/data/UserData/schwung/shared/param_pages/visibility.mjs';
+
+/* ⚠ Created at module load, and it reads NOTHING from ppCtx yet — the binding
+ * only ever touches ctx inside function bodies, which is what lets davebox fill
+ * it below without an import cycle. Same rule the shadow UI relies on. */
+const PP = createParamPagesBinding(ppCtx);
+const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
+        handleParamPagesMidi, paramPagesActive, paramPagesChildIndex,
+        clearParamPagesTouch } = PP;
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* Chain blocks in signal order, across the audio-FX blocks the host routes.
