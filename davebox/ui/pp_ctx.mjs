@@ -116,53 +116,44 @@ export function installPpCtx(members) {
  * ======================================================================== */
 
 /* The contract as DATA, not prose — every member the binding reads, split into
- * the ones davebox answers and the ones it knowingly does not.
+ * the ones davebox answers and the ones it deliberately does NOT.
  *
  * ⚠⚠ WHY THIS IS DATA. Almost every read in the binding is
  * `typeof === 'function'` guarded, so a member davebox forgets is not an error:
  * the editor silently drops whatever that member does, and the drop looks like
  * a design choice. A list in a COMMENT cannot be checked, and this repo has
  * twice shipped a source pin that passed because it was reading prose rather
- * than code. tests/host/test_param_pages_vendor.sh reads THESE arrays and the
- * binding's own code, and fails if they disagree.
- *
- * A member moves from GAPS to MEMBERS when ui_sound.mjs actually installs it. */
+ * than code. tests/host/test_param_pages_vendor.sh reads THESE arrays, the
+ * binding's own code, AND what ui_sound actually installs, and fails if any two
+ * disagree. */
 export const PP_CTX_MEMBERS = [
     'getSlotParam', 'setSlotParam', 'isMuteHeld', 'requestRedraw',
-    'setView', 'VIEWS', 'getModuleDisplayName', 'getModuleAbbrev',
+    'setView', 'VIEWS', 'getModuleAbbrev',
+    'evaluateVisibilityCondition', 'isParamModulated', 'openParamEditor',
 ];
 
-/* 🔴 Deliberately unanswered, each for a stated reason. Every one of these is a
- * way davebox's editor is CURRENTLY not the same as stock's, which is why they
- * are enumerated rather than discovered later on the device. */
-export const PP_CTX_GAPS = [
-    /* `visible_if`. The host's evaluator is shadow_ui.js:2646-2700 and all four
-     * of its helpers (parseMetaBool / parseMetaNumber / compareConditionValue /
-     * normalizeVisibilityConditionKey) are host-only — none is in shared/ — so
-     * this is the one member that must be a PORT rather than a wire-up. Until
-     * it lands the controller shows everything, so davebox displays params
-     * stock HIDES. */
-    'evaluateVisibilityCondition',
-    /* A param the grid will not turn (filepath / canvas / wav_position /
-     * string) hands off to a fullscreen editor. davebox has file and text
-     * screens to point this at. */
-    'openParamEditor',
-    /* The fullscreen enum list. Drawable with the shared enum_list.mjs; commit
-     * goes back through the controller so the grid stays alive underneath. */
-    'openEnumPicker',
-    /* What a PAGE_MENU entry's action does (Save / Delete / knob mapping).
-     * ⭑ The fork host does not supply this either, so stock-on-this-build has
-     * the same gap — matching it is matching stock. */
-    'runSlotAction',
-    /* The modulation dot and the label's `~`. davebox has the RENDER side
-     * (ui_cells' modulated/modNorm) but no live per-param modulation state on
-     * this surface — renderCellsForBank is called without modValues today — so
-     * answering would mean inventing one. Left open deliberately: unanswered,
-     * the grid draws no mod marks, which is exactly what davebox's own editor
-     * does today. It is still a difference from stock, hence listed. */
-    'isParamModulated',
-    /* The header's "this is a user preset" mark. ⭑ The fork host does not
-     * supply it either, so stock-on-this-build has the same gap — matching it
-     * IS matching stock here. */
+/* ⭐⭐ DELIBERATELY ABSENT — because THE HOST OMITS THEM TOO, and davebox is
+ * supposed to be no different from stock rather than politely better than it.
+ *
+ * shadow_ui.js says so in as many words, at the block that fills its own ctx:
+ *   "The four upstream entries with no fork equivalent — getModuleDisplayName,
+ *    userPresetHeaderMark, runSlotAction, openEnumPicker — are deliberately
+ *    absent; each has a documented fallback in that module (the abbreviation,
+ *    the module's own patch name, an inert menu row, and the list editor
+ *    respectively)."
+ *
+ * ⚠ Supplying any of these would make davebox's editor differ from stock's on
+ * this build — in the nicer direction, which is still a difference and still a
+ * surprise. If the host ever grows one, davebox should grow it in the same pass.
+ *
+ * ⭑ Note what the fourth one costs and where it is paid: with openEnumPicker
+ * absent, clicking a long option list falls through to openParamEditor — which
+ * davebox answers by handing the component to its OWN editor, exactly as the
+ * host hands it to the hierarchy list editor. The option list is reachable;
+ * it is reached the way stock reaches it. */
+export const PP_CTX_ABSENT = [
+    'getModuleDisplayName',
     'userPresetHeaderMark',
+    'runSlotAction',
+    'openEnumPicker',
 ];

@@ -109,13 +109,14 @@ members=$(nocomments < "$binding" | grep -v "^\s*import\|from ['\"]" \
 shape changed and this check is now blind"
 
 # The adapter declares its contract as DATA — PP_CTX_MEMBERS (answered) and
-# PP_CTX_GAPS (knowingly not answered) — so this reads arrays, never prose.
+# PP_CTX_ABSENT (deliberately not answered, BECAUSE THE HOST OMITS THEM TOO) —
+# so this reads arrays, never prose.
 # ⚠ A comment claiming a member is handled is not a member being handled; this
 # repo has twice shipped a pin that passed by matching prose.
 arrays=$(nocomments < "$adapter" \
-         | sed -n '/PP_CTX_MEMBERS *= *\[/,/\]/p;/PP_CTX_GAPS *= *\[/,/\]/p' \
+         | sed -n '/PP_CTX_MEMBERS *= *\[/,/\]/p;/PP_CTX_ABSENT *= *\[/,/\]/p' \
          | grep -oE "'[A-Za-z_][A-Za-z0-9_]*'" | tr -d "'" | sort -u)
-[ -n "$arrays" ] || fail "$adapter declares no PP_CTX_MEMBERS / PP_CTX_GAPS —
+[ -n "$arrays" ] || fail "$adapter declares no PP_CTX_MEMBERS / PP_CTX_ABSENT —
 the contract stopped being machine-readable and this check is now blind"
 
 missing=""
@@ -125,8 +126,8 @@ done
 if [ -n "$missing" ]; then
   fail "the binding reads ctx member(s) the adapter neither answers nor names as
 a gap:$missing
-Add each to PP_CTX_MEMBERS (if ui_sound installs it) or PP_CTX_GAPS (with the
-reason) in $adapter.
+Add each to PP_CTX_MEMBERS (if ui_sound installs it) or PP_CTX_ABSENT (with the
+reason, which must be that the HOST omits it too — see shadow_ui.js).
 ⚠ These reads are mostly \`typeof === 'function'\` guarded, so the editor will
 NOT error — it will silently drop whatever that member does, and the drop will
 look like a design choice."
@@ -140,11 +141,11 @@ for a in $arrays; do
 done
 [ -z "$stale" ] || fail "$adapter declares member(s) the binding never reads:$stale"
 
-ok "the adapter accounts for all $(wc -w <<<"$members" | tr -d ' ') ctx members ($(wc -w <<<"$(nocomments < "$adapter" | sed -n '/PP_CTX_GAPS *= *\[/,/\]/p' | grep -oE "'[A-Za-z_][A-Za-z0-9_]*'" | tr -d "'")" | tr -d ' ') named as open gaps)"
+ok "the adapter accounts for all $(wc -w <<<"$members" | tr -d ' ') ctx members ($(wc -w <<<"$(nocomments < "$adapter" | sed -n '/PP_CTX_ABSENT *= *\[/,/\]/p' | grep -oE "'[A-Za-z_][A-Za-z0-9_]*'" | tr -d "'")" | tr -d ' ') deliberately absent, as on the host)"
 
 # --- 4. THE DECLARED CONTRACT MATCHES WHAT IS ACTUALLY INSTALLED -----------
 #
-# PP_CTX_MEMBERS/PP_CTX_GAPS are only worth checking against the binding if they
+# PP_CTX_MEMBERS/PP_CTX_ABSENT are only worth checking against the binding if they
 # also describe reality. Without this, the arrays are a WISH: a member could be
 # listed as answered while ui_sound installs nothing, and the binding's
 # `typeof === 'function'` guard would swallow it silently — a behaviour missing
@@ -163,17 +164,54 @@ for m in $declared; do
   grep -qx "$m" <<<"$installed" ||
     fail "PP_CTX_MEMBERS claims '$m' is answered, but $wiring never installs it.
 The binding's read is guarded, so the editor will NOT error — it will quietly
-drop whatever '$m' does. Either install it, or move it to PP_CTX_GAPS."
+drop whatever '$m' does. Either install it, or move it to PP_CTX_ABSENT."
 done
 
-gaps=$(nocomments < "$adapter" | sed -n '/PP_CTX_GAPS *= *\[/,/\]/p' \
+gaps=$(nocomments < "$adapter" | sed -n '/PP_CTX_ABSENT *= *\[/,/\]/p' \
        | grep -oE "'[A-Za-z_][A-Za-z0-9_]*'" | tr -d "'" | sort -u)
 for g in $gaps; do
   grep -qx "$g" <<<"$installed" &&
-    fail "'$g' is listed in PP_CTX_GAPS but $wiring DOES install it — the gap
-list is stale, and a reader trusting it will think the editor is missing a
-behaviour it actually has"
+    fail "'$g' is listed in PP_CTX_ABSENT but $wiring DOES install it. Either the
+list is stale, or davebox has started supplying something the HOST does not —
+which makes its editor differ from stock's, in the nicer direction but still a
+difference. Check shadow_ui.js before adding it."
 done
 ok "everything declared answered is installed, and every gap really is one"
+
+# --- 5. davebox ANSWERS EXACTLY WHAT THE HOST ANSWERS -----------------------
+#
+# ⭐⭐ THIS IS THE CHECK THAT MAKES "no different from stock" MECHANICAL rather
+# than a claim in a commit message. For every ctx member the binding reads, the
+# question is not "did davebox implement it" but "does davebox's answer MATCH
+# THE HOST'S" — and both directions are failures:
+#
+#   host supplies it, davebox does not  ->  the editor silently drops a
+#       behaviour stock has (the reads are `typeof`-guarded, so no error)
+#   host omits it, davebox supplies it  ->  davebox's editor is BETTER than
+#       stock's, which is still a difference and still a surprise
+#
+# The host's own answer is DERIVED from shadow_ui.js, never restated here, so
+# the day the host grows or drops one this fails instead of drifting.
+host=src/shadow/shadow_ui.js
+[ -f "$host" ] || fail "$host missing"
+host_src=$(nocomments < "$host")
+
+for m in $members; do
+  if grep -qE "_ctx\.$m *=|Object\.defineProperty\(_ctx, *'$m'" <<<"$host_src"; then
+    grep -qx "$m" <<<"$declared" ||
+      fail "the HOST supplies ctx.$m but davebox lists it as absent. Stock's
+editor has that behaviour and davebox's would not — and the binding's read is
+guarded, so it fails silently rather than loudly. Implement it in $wiring and
+move it to PP_CTX_MEMBERS."
+  else
+    grep -qx "$m" <<<"$gaps" ||
+      fail "davebox supplies ctx.$m but the HOST does not. That makes davebox's
+module editor differ from stock's — in the nicer direction, which is still a
+difference. shadow_ui.js documents these omissions and their fallbacks; if you
+genuinely want to exceed stock here, say so deliberately rather than by
+accident."
+  fi
+done
+ok "davebox answers exactly the members the host answers, and omits exactly the ones it omits"
 
 echo "PASS: davebox runs the host's own param-pages binding, and the seam is honest"

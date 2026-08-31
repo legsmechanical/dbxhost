@@ -30,6 +30,21 @@ function step(label, fn) {
 /* ---- fake chain engine over the shadow bindings ---- */
 const ENGINE = {
     'synth:module': 'nusaw', 'synth:name': 'NuSaw',
+    /* ⚠⚠ EMPTY STRING, NOT ABSENT, AND THE DIFFERENCE IS THE WHOLE POINT. The
+     * module editor reads this contract three ways and only two of them say
+     * anything about the module: JSON = "here is my tree", "" = "I declare
+     * none, use chain_params", and null/absent = "the READ FAILED, we know
+     * nothing" — on which the editor deliberately holds the screen and retries
+     * rather than planning pages from a failure (the bug that once put
+     * granny's sample_path on knob 1).
+     *
+     * This fixture answered nothing here, so under the vendored editor the
+     * contract read as FAILED: the grid held, planned no pages, and swallowed
+     * every knob turn — which looked exactly like "the write path is broken"
+     * and is why two assertions below failed the day the editor was wired.
+     * `''` is the honest fixture: a real module with no hierarchy, whose pages
+     * come from chain_params. */
+    'synth:ui_hierarchy': '',
     'synth:chain_params': JSON.stringify([
         { key: 'cutoff', name: 'Cutoff', type: 'float', min: 0, max: 1, step: 0.01 },
         { key: 'shape', name: 'Shape', type: 'enum', options: ['Saw', 'Square', 'Tri'] },
@@ -117,6 +132,28 @@ function openSynth() {
     click(); tick(8);           /* discovery runs on the tick */
 }
 
+/* ⚠⚠ SCOPED TO davebox's OWN EDITOR, deliberately and loudly.
+ *
+ * The LEDGER is this rig's subject and it is covered under BOTH editors — the
+ * healthy-turn step above passes either way, because the vendored editor writes
+ * through queueWrite like everything else. These two steps are different: they
+ * measure davebox's own OPTIMISTIC VALUE (soundValueForTest) and its own forced
+ * poll, and the vendored editor replaces both — it owns the value while a knob
+ * is held, and davebox's poll does not run underneath it. Asserting them with
+ * that editor on would be asserting that machinery which is not running still
+ * behaves, which is how a test starts passing for the wrong reason.
+ *
+ * ⭑ They are SKIPPED, not deleted, and they say so: davebox's own editor is
+ * still the shipped one, and this is the only coverage its lost-write recovery
+ * has. When the swap completes and that editor goes, these go with it. */
+function ownEditorStep(label, fn) {
+    if (snd.soundPpEditorForTest()) {
+        console.log(`  skip — ${label} (davebox's own editor is not the active one)`);
+        return;
+    }
+    step(label, fn);
+}
+
 step('setup: the synth block opens with real banks', () => {
     openSynth();
     if (snd.soundValueForTest('cutoff') == null)
@@ -134,7 +171,7 @@ step('healthy engine: a turn drains, confirms, and the ledger EMPTIES', () => {
         throw new Error('confirmed write stuck in the ledger');
 });
 
-step('⭑ a LOST write is rewritten until the engine matches', () => {
+ownEditorStep('⭑ a LOST write is rewritten until the engine matches', () => {
     const before = ENGINE['synth:cutoff'];
     setCalls = [];
     dropNextSets = 2;           /* the drain write AND the first rewrite die */
@@ -151,7 +188,7 @@ step('⭑ a LOST write is rewritten until the engine matches', () => {
         throw new Error('ledger did not settle after the rewrite landed');
 });
 
-step('⭑ a FORCED poll must NOT snap the optimistic value back while in flight', () => {
+ownEditorStep('⭑ a FORCED poll must NOT snap the optimistic value back while in flight', () => {
     /* The idle poll (every 24 ticks) rarely lands inside the verify window —
      * the one that bites is the FORCED poll, armed by a bank jog on ANY tick.
      * Hold the engine stale across it, then let the verifier heal. */

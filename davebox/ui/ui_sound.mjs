@@ -76,6 +76,9 @@ import { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
          handleParamPagesMidi, paramPagesActive }
     from './vendor/shadow_ui_param_pages.mjs';
 import { installPpCtx } from './pp_ctx.mjs';
+import { evaluateVisibility } from './pp_visible.mjs';
+import { paramPagesChildIndex, clearParamPagesTouch }
+    from './vendor/shadow_ui_param_pages.mjs';
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* Chain blocks in signal order, across the audio-FX blocks the host routes.
@@ -779,6 +782,12 @@ export function markSoundDirty() { S.dirty = true; }
  * Move-routed track opens its bus, not a chain slot). */
 /* The current view, for a caller that needs to record where the user was. */
 export function soundViewForTest() { return S.view; }
+/* Which module editor is live. Exported for the RIGS, not for the UI: two
+ * assertions in test_sound_write_verify measure davebox's OWN optimistic value
+ * and its own poll, machinery the vendored editor replaces wholesale. A rig
+ * that cannot tell which editor is running would either contort itself to
+ * satisfy both or quietly stop measuring anything. */
+export function soundPpEditorForTest() { return PP_EDITOR; }
 
 export function soundShowMenu() {
     if (!S.active) return;
@@ -5229,6 +5238,13 @@ function pageGroups() {
 const PP_EDITOR = false;
 
 let ppOn = false;
+/* ⭑ THE DIVE-OUT LATCH, and it mirrors the host's `suppressParamPagesOnce`
+ * exactly. A param the grid will not turn hands off to davebox's own editor —
+ * which is the SAME view the grid would otherwise claim, so without this the
+ * reconcile below would re-enter the grid on the very next tick and the dive
+ * would bounce straight back. Cleared by the entry it suppresses, never by
+ * anything else, so it cannot leak into a later unrelated open. */
+let ppSuppressOnce = false;
 
 /* Where the editor applies. NOT a Move bus (no ui_hierarchy / chain_params to
  * plan from — that is requirement 1's "to the extent there aren't conflicts"),
@@ -5253,8 +5269,23 @@ function ppBare(fullKey) {
 /* Reconciled in ONE place rather than at the five sites that set VIEW_EDIT: the
  * editor's lifetime is a function of what is on screen, and a reconcile cannot
  * be forgotten by a new call site the way five enter() calls can. */
+/* Screens the EDITOR opened and will come back from. While one is up the
+ * controller must stay alive: it owns the page position, the staggered read
+ * cursor and the enum commit path, and tearing it down to rebuild it on return
+ * would land you on page 1 of a module you were nine pages into. */
+function ppOwnsView() {
+    return S.view === VIEW_ENUM && S.enumPick && S.enumPick.from === VIEW_EDIT;
+}
+
 function ppSync() {
-    const want = ppApplies() && S.view === VIEW_EDIT;
+    if (ppSuppressOnce && S.view === VIEW_EDIT) {
+        /* Consumed on arrival, not on departure: the dive target IS VIEW_EDIT,
+         * so the first tick back here is the one that must not re-enter. */
+        ppSuppressOnce = false;
+        if (ppOn) { exitParamPages(); ppOn = false; S.dirty = true; }
+        return;
+    }
+    const want = ppApplies() && (S.view === VIEW_EDIT || (ppOn && ppOwnsView()));
     if (want && !ppOn) {
         enterParamPages(S.slot, S.comp, S.comp, null, null, {
             label: modLabel(),
@@ -5306,10 +5337,59 @@ installPpCtx({
     VIEWS: { PARAM_PAGES: VIEW_EDIT, CHAIN_EDIT: VIEW_BLOCKS },
     setView: (v) => { if (v !== S.view) { S.view = v; S.dirty = true; } },
 
-    /* The header's module name. davebox shows the module id here today and the
-     * binding falls back from display name to abbrev, so both answer the same. */
-    getModuleDisplayName: (ref) => String(ref || '').toUpperCase(),
+    /* ⚠ ABBREV ONLY, and that is deliberate. The host supplies getModuleAbbrev
+     * and NOT getModuleDisplayName (shadow_ui.js, "the four upstream entries
+     * with no fork equivalent ... are deliberately absent"), so the binding
+     * falls back from one to the other. Supplying both would make davebox's
+     * header differ from stock's — in the nicer direction, but differ. */
     getModuleAbbrev: (ref) => String(ref || '').toUpperCase(),
+
+    /* `visible_if`. Ported, because the host's evaluator and all four of its
+     * helpers live in shadow_ui.js rather than shared/ — see pp_visible.mjs.
+     * Unanswered, the planner shows EVERYTHING, so davebox would display
+     * controls a module folds away in its current mode. */
+    evaluateVisibilityCondition: (condition, levelDef) => evaluateVisibility({
+        prefix: S.comp,
+        getParam: (fullKey) => engineGetChainParam(S.slot, fullKey),
+        childIndexOf: (lvl) => paramPagesChildIndex(lvl),
+    }, condition, levelDef),
+
+    /* The modulation dot and the label's `~`. Same two-step read the host does:
+     * ask the target whether it is modulated, and for targets that do not
+     * implement `:modulated`, infer it by comparing the live value against its
+     * `:base`. ⚠ A missing `:base` means NOT modulated, never "assume yes" —
+     * the mark has to mean something. */
+    isParamModulated: (slot, fullKey) => {
+        const flag = engineGetChainParam(slot, fullKey + ':modulated');
+        if (flag === '1') return true;
+        if (flag === '0') return false;
+        const base = engineGetChainParam(slot, fullKey + ':base');
+        if (base === null || base === undefined || base === '') return false;
+        const live = engineGetChainParam(slot, fullKey);
+        return live !== null && live !== undefined && live !== base;
+    },
+
+    /* A param the grid will not turn — filepath, canvas, wav_position, string,
+     * and (because openEnumPicker is deliberately absent, as on the host) a
+     * long enum list too.
+     *
+     * ⭑ THE HOST DOES NOT OPEN A PER-KEY EDITOR HERE EITHER. Its
+     * openParamEditorFromGrid exits the grid and enters the HIERARCHY LIST
+     * editor for the whole component, which is where its file browser, text
+     * entry and option list live. davebox's exact counterpart is its OWN
+     * editor: the bank model, with openFileBrowser, startTextEdit and
+     * openEnumPicker already wired into it. So the dive is the same shape —
+     * hand the component to the editor that has the screens — rather than a
+     * second set of editors built for the grid. */
+    openParamEditor: (slot, fullKey, meta) => {
+        clearParamPagesTouch();
+        exitParamPages();
+        ppOn = false;
+        ppSuppressOnce = true;
+        S.pendingDiscover = 1;      /* davebox's own editor needs its banks */
+        S.view = VIEW_EDIT;
+        S.dirty = true;
+    },
 });
 
 function renderEdit() {
