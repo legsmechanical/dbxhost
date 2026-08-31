@@ -87,10 +87,17 @@ fi
 # map. If it ever becomes an opt again, this pin has to grow a comparison.
 grep -q "hdr: 'filled'" "$movy" || fail "$movy: the 'bank' layout no longer declares hdr: 'filled'"
 grep -q "hdr: 'split'"  "$movy" || fail "$movy: the 'sound' layout no longer declares hdr: 'split'"
-grep -q "kitHeaderStyle()" "$movy" ||
+# ⚠ ANCHORED INSIDE drawKitBankPage, not file-wide. Caught by mutation
+# 2026-08-31: swapping the call for `kitLayout() === 'sound'` left the exported
+# kitHeaderStyle() in the file, so a file-wide grep passed while the chassis had
+# stopped asking the layout and started hard-coding one surface's name.
+chassis=$(body "$movy" drawKitBankPage)
+[ -n "$chassis" ] || fail "$movy: drawKitBankPage is gone"
+grep -q "kitHeaderStyle()" <<<"$chassis" ||
   fail "$movy: drawKitBankPage no longer picks its header from the layout — if the
-header became a per-call option, the renderer can now pass one that disagrees
-with the device, which is the whole class this file exists for"
+header became a per-call option, or the chassis started naming one surface, the
+renderer can now pass one that disagrees with the device, which is the whole
+class this file exists for"
 grep -qE "headerStyle\s*:|hdrStyle\s*:" "$rs" &&
   fail "$rs chooses a header style. It must not: the style follows kitUseLayout()."
 ok "the header style follows the layout — the renderer cannot pick a different one"

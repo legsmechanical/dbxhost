@@ -66,7 +66,10 @@ done
 # Declared is not assigned: a key can sit in KIT_LAYOUTS while kitUseLayout
 # never reads it, and the binding then keeps whatever it was initialised to on
 # BOTH surfaces — a silent no-op that looks exactly like "the two maps agree".
-usefn=$(awk '/^export function kitUseLayout\(/,/^}/' "$movy")
+# ⚠ COMMENTS STRIPPED FIRST. Caught by mutation 2026-08-31: commenting the
+# assignment out left `/* MV_KW = L.kw; */` in the body and the grep still
+# matched, so the check passed against a binding that was no longer swapped.
+usefn=$(awk '/^export function kitUseLayout\(/,/^}/' "$movy" | sed 's|/\*[^*]*\*/||g')
 for c in MV_HDR_H MV_BAR_Y MV_ROW0_Y MV_LBL0_Y MV_ROW1_Y MV_LBL1_Y MV_KW; do
   command grep -qE "\b$c\s*=" <<<"$usefn" ||
     fail "kitUseLayout() never assigns $c — it is exported \`let\` and declared in
@@ -94,6 +97,19 @@ sound=davebox/ui/ui_sound.mjs
 [ -f "$sound" ] || fail "$sound missing"
 command grep -q "kitUseLayout('sound')" "$sound" ||
   fail "sound mode does not select the 'sound' layout before drawing its param pages"
+
+# ⚠⚠ AND THE OTHER SURFACE IN THAT FILE. renderBlocks() is the SOUND + CONFIG
+# root — a BANK-cycle screen wearing the filled header — and it CLEARS the
+# page-bar row. Since 2026-08-31 the two maps put that row in different places
+# (7 vs 8), so without selecting it wipes whichever row the param editor left
+# behind. Caught by mutation: file-wide greps for kitUseLayout are satisfied by
+# renderEdit's call and say nothing about this one.
+blockfn=$(awk '/^function renderBlocks\(/,/^}/' "$sound")
+[ -n "$blockfn" ] || fail "renderBlocks is gone — this test no longer measures that surface"
+command grep -q "kitUseLayout('bank')" <<<"$blockfn" ||
+  fail "renderBlocks (SOUND + CONFIG root) does not select the 'bank' layout, but
+it reads MV_BAR_Y to clear the page-bar row — and the two maps disagree on which
+row that is"
 
 # The manual renderer reimplements the device's draw calls, so it has to select
 # too — it is the surface that has silently diverged twice already.
