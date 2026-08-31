@@ -1,7 +1,8 @@
 # Changelog
 
 All notable changes to dAVEBOx are documented here.
-- **Two more Daves join the pool.** Welcome, GILMOUR and DAVID NO — 33 to collect.
+- **Three more Daves join the pool.** Welcome, GILMOUR, DAVID NO, and the
+  rare DAVIE JAMES DIO — 34 to collect.
 - **Dave Box: the card view.** Each Dave now shows his name in big caps with
   his number and rarity beneath — and the portrait slowly pans up and down
   behind the label, so the whole image gets its moment.
