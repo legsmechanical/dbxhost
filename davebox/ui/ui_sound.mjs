@@ -1111,7 +1111,7 @@ export function soundExit(opts) {
     /* ⚠ The editor's navigation crumbs die with the session. A stale one would
      * swallow a Back or retrace to a screen from a previous visit — the failure
      * this whole pass was about, arriving by a different door. */
-    ppAteBackPress = false; ppDivedOut = false; ppFromGrid = false;
+    ppAteBackPress = false; ppDivedOut = false; ppErrandView = null;
     ppSuppressOnce = false; ppRestorePage = null;
     if (S.busLevelDirty) engineSaveState();
     S.active = false;
@@ -2651,6 +2651,21 @@ function renderKnobs() {
  * surface that paints everything itself is where this would flicker. Every
  * caller below is one of our own list screens. */
 function renderInChain(rows, sel, emptyMsg, opts) {
+    /* ⭐ A SCREEN THE MODULE EDITOR OPENED DRAWS AS A FULL SCREEN, like stock's.
+     *
+     * davebox floats a selection-only list over the screen you came from — Josh's
+     * 2026-08-27 ruling, and right for the TRACK VIEW, where the thing behind it
+     * is the bank you are choosing for. It is wrong here: stock's swap list and
+     * preset browser are full screens, and the editor is supposed to be no
+     * different from stock. Floating one over the BLOCK PICKER also shows a
+     * backdrop you did not come through, since the editor cannot be the backdrop
+     * (it hands the frame to the grid).
+     *
+     * ⚠ The track-view path is untouched — same function, different arrival. */
+    if (ppErrandView !== null && S.view === ppErrandView) {
+        drawKitList(rows, sel, Object.assign({ emptyMsg }, opts || {}));
+        return;
+    }
     /* The ROOT is the nearest ancestor that does not float — the blocks picker
      * for most chains, but the LFO screen for its own pickers, because the LFO
      * keeps its waveform strip and so stays a full screen (the spec's
@@ -4748,6 +4763,19 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * ⚠ Deliberately the tap only — the long-press suspend above stays
          * unclaimable, the same failsafe shape as the host's Shift+Back. */
         if (hostedBack()) return true;
+        /* ⭐ ANY SCREEN THE EDITOR OPENED BACKS INTO THE EDITOR. Ahead of the
+         * per-view branches below, because those step up davebox's OWN tree —
+         * which is not the tree you walked when you arrived from a module page.
+         * Cleanup still belongs to the view: leaving a preset browser
+         * un-committed undoes the audition, exactly as it does on davebox's own
+         * path. */
+        if (ppErrandView !== null && S.view === ppErrandView) {
+            if (S.view === VIEW_PRESET_LIST || S.view === VIEW_PRESET_BAKED) revertOriginal();
+            ppErrandView = null;
+            S.view = VIEW_EDIT;
+            S.dirty = true;
+            return true;
+        }
         /* ⭑ A DIVE-OUT COMES BACK. An un-turnable param (filepath, string, a
          * long option list) hands the whole component to davebox's own editor,
          * exactly as stock hands it to the hierarchy list editor. Back from
@@ -4820,14 +4848,10 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * with a sound and you leave with it. Load is what makes a preview
              * permanent (it drops origState). */
             revertOriginal();
-            /* ⭑ RETRACE, don't step up a tree you did not walk. Reached from the
-             * module editor's My Presets row, the SOURCE menu is a screen you
-             * never came through — stopping there on the way out is the same
-             * wrong-destination complaint as the rest of this pass. davebox
-             * already uses this law elsewhere (trackSoundOrigin, the gesture
-             * return); this is the crumb for the grid. */
-            if (ppFromGrid) { ppFromGrid = false; S.view = VIEW_EDIT; }
-            else S.view = VIEW_PRESET_SRC;
+            /* Reached from davebox's own source menu, this steps back up to it.
+             * Reached from the module editor, the branch near the top of Back
+             * has already returned you there. */
+            S.view = VIEW_PRESET_SRC;
         } else if (S.view === VIEW_PRESET_SRC) {
             S.view = VIEW_EDIT;
         } else if (S.view === VIEW_EDIT || S.view === VIEW_BROWSE) {
@@ -5496,9 +5520,19 @@ let ppAteBackPress = false;
 /* We left the grid for davebox's own editor via openParamEditor, so Back there
  * returns to the grid rather than out of module edit. */
 let ppDivedOut = false;
-/* A preset browser opened from the editor's My Presets row, so Back returns to
- * the grid rather than to davebox's source menu. */
-let ppFromGrid = false;
+/* ⭐⭐ THE SCREEN THE MODULE EDITOR SENT YOU TO, if any.
+ *
+ * ONE crumb for every one of them, not one per screen. Josh has said it as many
+ * ways as it can be said — "the editor should follow stock", "no different than
+ * stock" — and stock's rule is simply that a screen you reached FROM the editor
+ * belongs to the editor: Back steps back into it, and it draws as a full screen
+ * the way stock's do.
+ *
+ * ⚠ I fixed the preset list with a crumb of its own and was about to add a
+ * second for the module browser. That is how this ends up being reported screen
+ * by screen: the rule is general, so the crumb is general. Anything the editor
+ * opens sets this, and both the Back path and the renderer read it. */
+let ppErrandView = null;
 
 /* Does the editor currently have a layer of its own for Back to close — an open
  * picker, or a menu/preset page you have entered? Only then does Back belong to
@@ -5692,7 +5726,7 @@ function ppIo() {
              * different job, and landing on it from this row is the wrong
              * destination. Josh: "pressing presets puts you into the earlier
              * davebox overlay menu. that's not right." */
-            if (action === 'up_load') { ppFromGrid = true; openUserPresets(); }
+            if (action === 'up_load') { openUserPresets(); ppErrandView = S.view; }
             /* ⭑ Save and Delete act IN PLACE and never navigate, so they leave
              * you on the page — stock closes its menu behind Save for the same
              * reason: the changed row is visible on the page you are left
@@ -5701,7 +5735,7 @@ function ppIo() {
             else if (action === 'up_delete') { deleteRecordedPreset(); ppRefreshPresets(); }
             else if (action === 'remove_module') applyModulePick({ id: '', name: '[ none ]' });
             else if (action === 'up_save_as') startSaveFlow();
-            else if (action === 'swap_module') openBrowse(S.comp);
+            else if (action === 'swap_module') { openBrowse(S.comp); ppErrandView = S.view; }
             else log('pp: unknown menu action ' + action);
             S.dirty = true;
         },
