@@ -2663,6 +2663,13 @@ function renderInChain(rows, sel, emptyMsg, opts) {
      *
      * ⚠ The track-view path is untouched — same function, different arrival. */
     if (ppErrandView !== null && S.view === ppErrandView) {
+        /* ⚠⚠ CLEAR FIRST. Nothing else does on this path: every render function
+         * in soundRender owns its own clear, and the overlay path below got one
+         * for free from renderBlocks() drawing the backdrop. Returning early
+         * without one leaves the module editor's pixels underneath and the list
+         * prints straight over them — reported from the device as "swap module
+         * menu is printing directly overtop of the editor page". */
+        clear_screen();
         drawKitList(rows, sel, Object.assign({ emptyMsg }, opts || {}));
         return;
     }
