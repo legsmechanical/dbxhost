@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+- **A new splash pool — 31 Daves.** The launch artwork rotates through a fully
+  recurated set; every launch greets you with a different Dave.
 ### Features
 - **Menus open as overlays over the screen you came from.** A submenu — Sound
   Control, Config, Knobs, the LFO, Session FX, Slot Presets, the module browser
