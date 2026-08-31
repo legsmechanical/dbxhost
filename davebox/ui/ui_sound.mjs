@@ -96,7 +96,7 @@ import { evaluateVisibility }
 const PP = createParamPagesBinding(ppCtx);
 const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         handleParamPagesMidi, paramPagesActive, paramPagesChildIndex,
-        clearParamPagesTouch, currentParamPage } = PP;
+        clearParamPagesTouch, currentParamPage, paramPagesRefreshTrailing } = PP;
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* Chain blocks in signal order, across the audio-FX blocks the host routes.
@@ -1360,6 +1360,10 @@ function deleteUserPreset() {
     S.presetMsg = ok ? 'DELETED' : 'DELETE FAILED';
     S.userPresets = engineListUserPresets(S.moduleId);
     if (S.userIdx > S.userPresets.length) S.userIdx = S.userPresets.length;
+    /* The My Presets page is built from this list, so it has to be rebuilt with
+     * it — otherwise the grid keeps offering a preset that is no longer there
+     * and loading it reads a deleted file. */
+    if (ppOn) paramPagesRefreshTrailing();
 }
 
 /* Save NEVER overwrites — a name collision gets a number, matching the host so
@@ -3469,7 +3473,7 @@ function runAction(a) {
     else if (a.t === 'usrload') loadUserPreset();
     else if (a.t === 'usrdel')  deleteUserPreset();
     else if (a.t === 'usrsave') startSaveFlow();
-    else if (a.t === 'usrsavedo') saveUserPreset(a.name);
+    else if (a.t === 'usrsavedo') { saveUserPreset(a.name); ppRefreshPresets(); }
     else if (a.t === 'bakedset') commitBaked();
     else if (a.t === 'menu')     openMenu();
     else if (a.t === 'menuload') refreshMenuRows();
@@ -5319,6 +5323,7 @@ function ppSync() {
     }
     const want = ppApplies() && (S.view === VIEW_EDIT || (ppOn && ppOwnsView()));
     if (want && !ppOn) {
+        ppRefreshPresets();          /* the list the My Presets page is built from */
         enterParamPages(S.slot, S.comp, S.comp, ppRestoreFor(S.slot, S.comp), ppIo(), {
             label: modLabel(),
             /* Back leaves the editor for the block picker — davebox's own
@@ -5337,6 +5342,17 @@ function ppSync() {
         ppOn = false;
         S.dirty = true;
     }
+}
+
+/* Re-read the user presets and rebuild the trailing pages from them.
+ *
+ * ⚠ THE DISK SCAN LIVES HERE AND NOWHERE ELSE. trailingMenus() runs on every
+ * plan and every refresh, so scanning inside it would put a directory read on a
+ * path the controller walks routinely. Called on entry, and after anything that
+ * changes what is on disk. */
+function ppRefreshPresets() {
+    S.userPresets = S.moduleId ? engineListUserPresets(S.moduleId) : [];
+    if (ppOn) paramPagesRefreshTrailing();
 }
 
 /* ⭐ THE PAGES AT THE END OF THE WALK — and the reason they are not optional.
@@ -5370,11 +5386,33 @@ function ppIo() {
     return {
         trailingMenus: () => {
             if (!S.moduleId) return [];      /* nothing loaded to preset or swap */
+            /* ⭐ THE PRESETS THEMSELVES, ONE ROW EACH (Josh, 2026-08-31: "i want
+             * to modify the preset page so it shows a list of presets rather
+             * than just the current one").
+             *
+             * ⭑ This is a page, not a door to a browser. A menu page IS a
+             * scrolling list with a cursor — the library draws it through the
+             * same drawMenuList every other list on the device uses — so the
+             * presets can live on the page you jogged to instead of behind one
+             * more click. Stock shows the CURRENT preset large and makes you
+             * open a browser for the rest; this is deliberately not that.
+             *
+             * ⚠ READ FROM THE CACHE, NEVER THE DISK, HERE. engineListUserPresets
+             * scans a directory and this runs on every plan and every trailing
+             * refresh. S.userPresets is filled when the editor opens and after a
+             * save or delete — see ppRefreshPresets. */
+            const rows = (S.userPresets || []).map((p, i) => ({
+                label: p.name,
+                action: 'up_load:' + i,
+            }));
+            /* The errands go last, after the things you are choosing between —
+             * the same reason a module's own menu page sits after its knobs. */
+            rows.push({ label: 'Save As...', action: 'up_save_as' });
+            /* Delete and the module's own baked presets live in davebox's hub,
+             * which already has them and already has a target for a delete. */
+            rows.push({ label: 'More...', action: 'up_more' });
             return [
-                { name: 'My Presets', entries: [
-                    { label: 'Presets', action: 'up_load' },
-                    { label: 'Save As', action: 'up_save_as' },
-                ] },
+                { name: 'My Presets', entries: rows },
                 { name: 'Module', entries: [
                     { label: 'Swap Module', action: 'swap_module' },
                 ] },
@@ -5397,8 +5435,20 @@ function ppIo() {
              * set S.view, so ppSync sees the view move away and tears the editor
              * down on the next tick — one owner for that decision, as always. */
             clearParamPagesTouch();
-            if (action === 'up_load') openPresets();
+            if (action && action.indexOf('up_load:') === 0) {
+                /* ⭑ STAYS ON THE GRID. applyUserPreset takes a 1-BASED index
+                 * (it reads S.userPresets[i - 1]), and loading is the end of the
+                 * errand — you want to be looking at the sound you just chose,
+                 * not at the list you chose it from. So this is the one action
+                 * that does NOT move S.view, and the editor is never torn down.
+                 * ⚠ A preset moves every param; the controller re-reads on its
+                 * own staggered cursor, so the page catches up over the next few
+                 * ticks rather than instantly. */
+                const idx = parseInt(action.slice(8), 10);
+                if (applyUserPreset(idx + 1)) S.presetMsg = '';
+            }
             else if (action === 'up_save_as') startSaveFlow();
+            else if (action === 'up_more') openPresets();
             else if (action === 'swap_module') openBrowse(S.comp);
             else log('pp: unknown menu action ' + action);
             S.dirty = true;
