@@ -1,7 +1,9 @@
 /* VENDORED from src/shadow/shadow_ui_param_pages.mjs — DO NOT EDIT.
- * davebox OWNS this copy: it is frozen until scripts/vendor_param_pages.sh
- * --update is run deliberately, so an upstream change cannot alter the
- * module editor underneath us. Edit davebox/ui/pp_ctx.mjs instead. */
+ * davebox carries this copy so it gets its own instance of the binding's
+ * module-level state (the host's is a singleton) and so no module import ever
+ * resolves into the STOCK tree. It is NOT a fork: the test fails if it drifts
+ * from src/shadow/shadow_ui_param_pages.mjs in either direction.
+ * Edit davebox/ui/pp_ctx.mjs instead. */
 /*
  * Shadow UI — Param Pages (the knob-grid parameter view).
  *

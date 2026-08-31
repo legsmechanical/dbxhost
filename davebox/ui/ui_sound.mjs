@@ -26,7 +26,7 @@ import {
     engineLoadModule, engineLoadedModule, engineGetState, engineSetState,
     engineListUserPresets, engineReadUserPreset,
     engineGetSlotParam, engineSetSlotParam, engineSaveState,
-    engineGetChainParam, engineSetChainParam,
+    engineGetChainParam, engineSetChainParam, engineModuleAbbrev,
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
     slotIndex, moveBusForChannel, moveBusComp, moveBusPrefix,
 } from './ui_engine.mjs';
@@ -5308,7 +5308,7 @@ function ppSync() {
  * they only have to exist by the time the editor is entered.
  * ⚠⚠ The member list is not ours to choose — it is whatever the vendored
  * binding reads, and test_param_pages_vendor.sh fails if this and
- * pp_ctx.mjs's PP_CTX_MEMBERS / PP_CTX_GAPS stop agreeing with it. */
+ * pp_ctx.mjs's PP_CTX_MEMBERS / PP_CTX_ABSENT stop agreeing with it. */
 installPpCtx({
     /* Bare key straight through: engineGetChainParam does no key building, and
      * the binding's keys are already full. */
@@ -5337,12 +5337,17 @@ installPpCtx({
     VIEWS: { PARAM_PAGES: VIEW_EDIT, CHAIN_EDIT: VIEW_BLOCKS },
     setView: (v) => { if (v !== S.view) { S.view = v; S.dirty = true; } },
 
-    /* ⚠ ABBREV ONLY, and that is deliberate. The host supplies getModuleAbbrev
-     * and NOT getModuleDisplayName (shadow_ui.js, "the four upstream entries
+    /* ⚠ ABBREV ONLY, and that is deliberate. This host supplies getModuleAbbrev
+     * and NOT getModuleDisplayName (shadow_ui.js: "the four upstream entries
      * with no fork equivalent ... are deliberately absent"), so the binding
-     * falls back from one to the other. Supplying both would make davebox's
-     * header differ from stock's — in the nicer direction, but differ. */
-    getModuleAbbrev: (ref) => String(ref || '').toUpperCase(),
+     * falls back from one to the other. Answering both would put a different
+     * string in davebox's header than in the host's.
+     * ⭑ AND THE STRING ITSELF MUST MATCH, not just the member. This was
+     * `String(ref).toUpperCase()` — a placeholder that renders a header stock
+     * never renders, in the one place the integration claims there is no
+     * difference. engineModuleAbbrev is the host's own rule: the module's
+     * declared `abbrev`, else its first two characters uppercased. */
+    getModuleAbbrev: (ref) => engineModuleAbbrev(ref),
 
     /* `visible_if`. Ported, because the host's evaluator and all four of its
      * helpers live in shadow_ui.js rather than shared/ — see pp_visible.mjs.

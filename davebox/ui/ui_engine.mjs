@@ -400,6 +400,29 @@ export function engineSetMany(slot, comp, pairs) {
 
 /* ---- module lifecycle ---- */
 
+/* The abbreviation a module declares, by the host's rule — `abbrev` from its
+ * module.json, else the first two characters uppercased, else "--".
+ *
+ * ⚠ THIS IS THE HOST'S RULE, COPIED DELIBERATELY (shadow_ui.js getModuleAbbrev).
+ * davebox's module editor is the host's, and its header asks for this string;
+ * answering with something davebox invented — `moduleId.toUpperCase()` was the
+ * placeholder — renders a header stock would not render, which is a difference
+ * in the one place the whole integration claims there is none.
+ *
+ * ⭑ Cached on first scan of each category, like the host's own
+ * moduleAbbrevCache, because the header asks once per redraw. */
+const MODULE_ABBREV = {};
+export function engineNoteModuleAbbrevs(list) {
+    for (const m of (list || [])) {
+        if (m && m.id && m.abbrev) MODULE_ABBREV[String(m.id).toLowerCase()] = m.abbrev;
+    }
+}
+export function engineModuleAbbrev(moduleId) {
+    if (!moduleId) return '--';
+    const lower = String(moduleId).toLowerCase();
+    return MODULE_ABBREV[lower] || String(moduleId).substring(0, 2).toUpperCase();
+}
+
 export function engineLoadedModule(slot, comp) {
     return shadow_get_param(slot, moduleReadKey(comp)) || '';
 }
@@ -432,12 +455,20 @@ export function engineListModules(comp) {
                 result.push({
                     id:   json.id || entry,
                     name: json.name || entry,
+                    /* ⭑ The module's OWN two-or-three letter mark, which is what
+                     * the host's header shows and therefore what davebox's
+                     * module editor must show to read the same. Carried from
+                     * the scan because that is the only place module.json is
+                     * open; the fallback (first two chars, uppercased) is the
+                     * host's own, in getModuleAbbrev. */
+                    abbrev: json.abbrev || '',
                     path: dir + '/' + entry + '/' + (json.dsp || 'dsp.so'),
                 });
             } catch (e) { /* skip unreadable/!json module dirs */ }
         }
     } catch (e) { /* missing category dir = no modules of this type */ }
     result.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    engineNoteModuleAbbrevs(result);   /* the header's mark, learned at the scan */
     return result;
 }
 

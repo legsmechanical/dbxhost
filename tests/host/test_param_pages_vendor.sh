@@ -49,7 +49,7 @@ for f in "$binding" "$bundler" "$adapter"; do [ -f "$f" ] || fail "$f missing"; 
 # pulling a future update turns from a copy into a merge.
 vendor=davebox/ui/vendor/shadow_ui_param_pages.mjs
 stamp=davebox/ui/vendor/VENDORED
-[ -f "$vendor" ] || fail "$vendor missing — run davebox/scripts/vendor_param_pages.sh --update"
+[ -f "$vendor" ] || fail "$vendor missing — it is a COMMITTED copy of $binding"
 git ls-files --error-unmatch "$vendor" >/dev/null 2>&1 ||
   fail "$vendor is NOT COMMITTED. davebox must own this copy: an uncommitted or
 generated one changes with the host, which is what 'updates don't break things'
@@ -60,7 +60,16 @@ so nothing can tell whether it is the host's file or something someone edited"
 # Hand-edit detector. The stamp records the sha256 of the SOURCE the copy was
 # taken from; the copy is that file plus a 4-line header. Compare bodies.
 want=$(grep '^sha256:' "$stamp" | awk '{print $2}')
-got=$(tail -n +5 "$vendor" | shasum -a 256 | cut -d' ' -f1)
+# ⚠ STRIP THE HEADER BY ITS SHAPE, NOT BY A LINE COUNT. It was `tail -n +5`,
+# which silently became wrong the moment the header gained two lines — and a
+# body hash computed from the wrong offset reports a HAND-EDIT that never
+# happened, which is a check crying wolf about its own arithmetic.
+# ⚠ Match the header's CLOSING LINE by the `*/` it contains, not by `^ */`:
+# that line reads " * Edit davebox/ui/pp_ctx.mjs instead. */", so an anchored
+# pattern never matched, sed's unmatched end address deleted to EOF, and the
+# check reported a HAND-EDIT that never happened. A pin crying wolf about its
+# own arithmetic is worse than no pin.
+got=$(sed '1,/\*\//d' "$vendor" | shasum -a 256 | cut -d' ' -f1)
 [ -n "$want" ] || fail "$stamp records no sha256"
 [ "$want" = "$got" ] ||
   fail "$vendor does not match the source it records in $stamp.
@@ -69,6 +78,35 @@ is ui/pp_ctx.mjs — or the header shape changed and this check needs updating.
   recorded: $want
   actual:   $got"
 ok "the vendored binding is committed, and byte-identical to its recorded source"
+
+# ⭐⭐ ...AND IN SYNC WITH THE HOST'S CURRENT FILE. The check above only proves
+# the copy has not been hand-edited; it compares against the sha the stamp
+# recorded AT VENDORING TIME, so the host's file could move underneath it and
+# every test would stay green while "davebox's editor IS the host's editor"
+# quietly became false.
+#
+# ⚠⚠ THAT IS INTRA-REPO VERSION SKEW, in a repo whose founding rule is ONE
+# deliverable, ONE version — the rule P2/P4b spent two phases and 378 deleted
+# capability probes enforcing. A frozen copy inside a single repo manufactures
+# exactly the skew that model exists to abolish, and a stamp-only check
+# certifies it as healthy. So SYNC IS THE DEFAULT STATE and divergence must be
+# deliberate, dated and visible — the inverse of a stamp you can forget.
+host_now=$(shasum -a 256 "$binding" | cut -d' ' -f1)
+if [ "$want" != "$host_now" ]; then
+  if [ -f davebox/ui/vendor/DIVERGED ]; then
+    ok "vendor is behind the host's binding, and davebox/ui/vendor/DIVERGED says why (deliberate)"
+  else
+    fail "the host's binding has MOVED and davebox is still running the old one.
+  vendored: $want
+  host now: $host_now
+davebox's module editor is no longer the host's — silently, with every test
+green. Re-vendor:
+  copy $binding over the body of $vendor (keeping its header comment); refresh
+  davebox/ui/vendor/VENDORED's sha256 from $binding, review the diff, commit.
+If the divergence is DELIBERATE, write davebox/ui/vendor/DIVERGED saying what
+davebox needs that the host's current binding does not do, and dated."
+  fi
+fi
 
 # ⭑ AND THAT IS THE WHOLE UPDATE STORY. Taking a future upstream change is
 # `cp src/shadow/shadow_ui_param_pages.mjs` over the copy, refresh VENDORED,
@@ -205,11 +243,16 @@ guarded, so it fails silently rather than loudly. Implement it in $wiring and
 move it to PP_CTX_MEMBERS."
   else
     grep -qx "$m" <<<"$gaps" ||
-      fail "davebox supplies ctx.$m but the HOST does not. That makes davebox's
-module editor differ from stock's — in the nicer direction, which is still a
-difference. shadow_ui.js documents these omissions and their fallbacks; if you
-genuinely want to exceed stock here, say so deliberately rather than by
-accident."
+      fail "davebox supplies ctx.$m but this host does not — the two have drifted.
+⭐ THE REMEDY IS USUALLY TO GROW THE HOST, NOT TO DROP IT FROM davebox.
+dbxhost is davebox's own host, maintained on a separate track precisely to serve
+what davebox needs (workspace CLAUDE.md: \"there is no conceptual separation
+between what davebox needs and what the host can provide. What we need the host
+to do, we change\"). So supply it in shadow_ui.js's ctx block IN THE SAME COMMIT
+and this check passes from the other side.
+⚠ What this check exists to stop is ACCIDENTAL divergence — the two halves of one
+deliverable disagreeing without anyone deciding. It is not a rule that davebox
+may never exceed upstream."
   fi
 done
 ok "davebox answers exactly the members the host answers, and omits exactly the ones it omits"
