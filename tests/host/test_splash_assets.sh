@@ -91,6 +91,9 @@ grep -q 'splash-pool\.tsv' standalone/scripts/pick-splash.py \
 grep -q 'pick-splash\.py' scripts/build.sh \
     && ok "...and build.sh ships the dealer" \
     || bad "pick-splash.py never reaches the device — quiesce would fall back forever"
+grep -q 'splash-pool\.tsv' scripts/build.sh \
+    && ok "...and build.sh ships the pool manifest" \
+    || bad "splash-pool.tsv never reaches the device — both dealers fall back, nothing records"
 # The pool manifest: one row per frame, weights sane, DAVIES rarest.
 pool=standalone/assets/splash-pool.tsv
 frames=$(ls standalone/assets/splash-[0-9]*.hex | wc -l | tr -d ' ')

@@ -879,6 +879,11 @@ if [ -d ./standalone ]; then
     # tests/host/test_splash_assets.sh fails if you forget.
     if [ -f ./standalone/assets/splash.hex ]; then
         cp ./standalone/assets/splash.hex ./build/splash.hex
+        # splash-pool.tsv: the weighted-pool manifest BOTH dealers read
+        # (pick-splash.py, ensureCustomSplash). Without it each falls back to
+        # a uniform pick and records NOTHING — the Dave Box goes silently
+        # inert, which is exactly the shape flag-off code fails in.
+        [ -f ./standalone/assets/splash-pool.tsv ] &&             cp ./standalone/assets/splash-pool.tsv ./build/splash-pool.tsv
         for _sp in ./standalone/assets/splash-*.hex; do
             [ -f "$_sp" ] && cp "$_sp" "./build/$(basename "$_sp")"
         done
