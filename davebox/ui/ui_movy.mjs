@@ -59,19 +59,26 @@ import { observeLanded, easeOut, lerp } from './ui_anim.mjs';
  *                 header face to font4x5, so the band is 7 rather than 8. Same
  *                 look, one row cheaper, and it matches the face upstream's
  *                 param-pages header uses for the same job.
- *   bar    7-8    page indicator, TOUCHING the band (MV_BAR_Y)
- *                 ⭑ THE DARK ROW ABOVE IT IS GONE (Josh, 2026-08-30). It was
- *                 called load-bearing here — "the header is ALWAYS inverted, so
- *                 without this row the page bar butts the filled band and the
- *                 two merge into one thick smudge" — and that was written when
- *                 the bar was a row of equal-height segments, which does read as
- *                 a thickening of the band. It is no longer: the current segment
- *                 is double height and the rest are single, so the bar has its
- *                 own shape and reads as an indicator sitting under the band
- *                 rather than as more band. Upstream reaches the same place from
- *                 the other side — BAR_Y === HEADER_H, "no separator row".
- *   gap    9      one clear row, as under any other band
+ *   dark   7      ⚠⚠ LOAD-BEARING, AND THIS WAS PROVEN THE HARD WAY. The row was
+ *                 removed on 2026-08-30 on the argument that the bar now has a
+ *                 shape of its own (double-height current segment) and so could
+ *                 meet the band the way upstream's does. WRONG, and Josh saw it
+ *                 on the device immediately: "i don't see an indicator row at
+ *                 all now". Measured from a render — band rows 0-6 at ~128 ink,
+ *                 then row 7 at 123 — the SINGLE-height segments are white
+ *                 against a white band and simply become part of it. Only the
+ *                 current segment's second row protrudes, which reads as a notch
+ *                 on the band, not as an indicator.
+ *                 ⭑ Upstream can do without this row because ITS header is a
+ *                 plain ground at rest; davebox's is ALWAYS inverted. The
+ *                 original note here said exactly that, and it was right.
+ *   bar    8-9    page indicator            MV_BAR_Y; current segment 2px
  *   w0     10-24  widget row 0            MV_ROW0_Y, MV_KH = 15
+ *                 ⭑ NO GAP ROW between the bar and the widgets: the row Josh
+ *                 gained by lifting the grid is spent on the separator above,
+ *                 which is the one that has to exist. The bar is thin and
+ *                 mostly empty, so the widgets below it have all the air they
+ *                 need without a dedicated row.
  *   lbl0   25-31  label strip 0           MV_LBL0_Y, MV_LBL_H = 7
  *   gap    32
  *   w1     33-47  widget row 1            MV_ROW1_Y
@@ -106,7 +113,7 @@ import { observeLanded, easeOut, lerp } from './ui_anim.mjs';
  * this box, and moving them would change how many options fit — a separate
  * decision from making room for a footer. */
 export const MV_HDR_H = 7;
-export const MV_BAR_Y = 7;
+export const MV_BAR_Y = 8;
 /* ⚠ THE BRAND HEADER KEEPS THE 6-ROW FACE AND ITS 8-ROW BAND. font4x5 is
  * UPPERCASE-ONLY (see CHARS4 in ui_fonts_pp.mjs), and the wordmark IS its
  * minuscules — "dAVEBOx" is the mark, not a title. A 6-row glyph at y=1 needs
