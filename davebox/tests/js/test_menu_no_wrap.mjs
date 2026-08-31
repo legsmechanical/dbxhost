@@ -119,20 +119,22 @@ step('session mixer banks (real dispatch): the mode list clamps both ways', () =
     S.globalMenuOpen = false;
     S.sessionView = true;
     S.shiftHeld = false;
+    S.sessMixerLatched = true;   /* the walk only runs on the OPEN page (2026-09-01) */
     S.sessKnobMode = 1;
     cc(14, 1);
     if (S.sessKnobMode !== 2)
         throw new Error('control failed: an interior step did not move (' + S.sessKnobMode + ')');
 
-    S.sessKnobMode = 3;                       /* SEND B, the last mode */
+    S.sessKnobMode = 4;                       /* the FX GATEWAY, the last stop now */
     cc(14, 1);
-    if (S.sessKnobMode !== 3)
-        throw new Error('wrapped past SEND B to mode ' + S.sessKnobMode);
+    if (S.sessKnobMode !== 4)
+        throw new Error('wrapped past the gateway to mode ' + S.sessKnobMode);
 
     S.sessKnobMode = 0;                       /* VOLUME, the first */
     cc(14, 127);                              /* -1 detent */
     if (S.sessKnobMode !== 0)
         throw new Error('wrapped below VOLUME to mode ' + S.sessKnobMode);
+    S.sessMixerLatched = false;
     S.sessionView = false;
 });
 
@@ -150,6 +152,7 @@ step('⚠ a CLAMPED mixer turn must not discard the level cache (the flicker)', 
     S.globalMenuOpen = false;
     S.sessionView = true;
     S.shiftHeld = false;
+    S.sessMixerLatched = true;   /* the walk only runs on the OPEN page (2026-09-01) */
 
     S.sessKnobMode = 1;
     S.sessVolLevel.fill(0.5);
@@ -157,7 +160,7 @@ step('⚠ a CLAMPED mixer turn must not discard the level cache (the flicker)', 
     if (S.sessVolLevel[0] !== -1)
         throw new Error('control failed: a real mode change no longer re-reads the levels');
 
-    S.sessKnobMode = 3;                       /* SEND B, clamped */
+    S.sessKnobMode = 4;                       /* the GATEWAY: the end of the walk now */
     S.sessVolLevel.fill(0.5);
     cc(14, 1);
     if (S.sessVolLevel.some((v) => v === -1))

@@ -45,7 +45,7 @@ import {
     bankHasAltParams, altIndicatorActive
 } from './ui_leds.mjs';
 import { soundRender, soundActive, soundIsGlobal,
-         soundEnteredInSession, soundFxBusLabels } from './ui_sound.mjs';
+         soundEnteredInSession } from './ui_sound.mjs';
 import { drawMenuHeader } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* ------------------------------------------------------------------ */
@@ -276,6 +276,15 @@ function drawStepEditKitPage(title, cells, noteBox) {
  * track sitting at zero, which draws an empty widget. */
 function drawSessionMixerPage() {
     const mode = SESS_KNOB_MODES[S.sessKnobMode];
+    /* The gateway renders the SOUND + CONFIG door idiom: a prompt, not a
+     * grid — the click is the entry, the knobs are inert. */
+    if (mode.widget === 'gateway') {
+        clear_screen();
+        drawKitHeader(mode.label, false);
+        pixelPrintC(64, 26, 'CLICK TO ENTER', 1);
+        pixelPrintC(64, 40, 'MASTER & SEND FX', 1);
+        return;
+    }
     const cells = [];
     for (let t = 0; t < NUM_TRACKS; t++) {
         const label = 'Tr' + (t + 1);
@@ -1341,12 +1350,6 @@ function drawUIBody() {
          * popups still show once the finger lifts and the window closes. */
         if (sessMixerVisible()) {
             drawSessionMixerPage();
-            /* The Master / Send FX overlay floats over the mixer (Josh,
-             * 2026-08-31): jog-click on the shown page opens it, click again
-             * enters the picked bus, Back closes it. Stock font, the
-             * selection-overlay grammar of 08-27. */
-            if (S.sessFxOverlaySel >= 0)
-                drawKitListOverlay(soundFxBusLabels(), S.sessFxOverlaySel, {});
             return;
         }
         if (S.actionPopupEndTick >= 0) {

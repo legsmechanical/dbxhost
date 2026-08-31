@@ -668,11 +668,10 @@ export const S = {
      * channel can be received by SEVERAL slots (layering, or a slot set to
      * "All"), and all of them move together. -1 = not yet resolved/read. */
     sessKnobMode: 0,
-    /* Front 2, session half (Josh, 2026-08-31): the mixer page latched by the
-     * plain jog click (Back dismisses), and the Master/Send FX overlay's
-     * cursor (-1 closed) opened by a further click on the latched page. */
-    sessMixerLatched: false,
-    sessFxOverlaySel: -1,                        /* 0=Volume, 1=Pan, 2=Send A, 3=Send B */
+    /* Front 2, session half (Josh, 2026-08-31/09-01): the mixer page latched
+     * by the plain jog click; Back dismisses. The FX door is the GATEWAY mode
+     * at the end of the walk (SESS_KNOB_MODES 'fx'), not extra state. */
+    sessMixerLatched: false,                        /* 0=Volume, 1=Pan, 2=Send A, 3=Send B */
     sessVolSlots: new Array(8).fill(-1),   /* bitmask of matching slots */
     /* A MOVE-routed track's level is not a slot's at all: it is the fader of the
      * Move FX bus its instrument returns on, the same value sound mode's VOLUME

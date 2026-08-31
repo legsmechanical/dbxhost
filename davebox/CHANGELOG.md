@@ -19,10 +19,12 @@ the section into a versioned heading at release time.
 - **A new splash pool — 31 Daves.** The launch artwork rotates through a fully
   recurated set; every launch greets you with a different Dave.
 ### Features
-- **Session view speaks the same click language.** A jog click latches the
-  mixer page; another click floats the Master / Send A / Send B list over it,
-  and clicking a pick opens that bus. Back walks it all the way out. The old
-  "turn past Send B" door and the jog-touch flash are retired.
+- **Session view speaks the same click language.** A jog click opens the
+  mixer page and keeps it on screen; the jog then walks Volume, Pan, the two
+  sends, and — at the end of the walk — **SESSION FX**, a click-to-enter door
+  to Master and the Sends, just like SOUND + CONFIG on a track. Back walks it
+  all the way out. The jog is quiet on both overviews until you click in, and
+  the jog-touch flash is retired.
 - **Click the jog to open a bank, Back to leave.** From the track overview,
   a jog click now opens the bank display and keeps it on screen; Back returns
   to the overview. Touching the jog no longer flashes the bank up, and

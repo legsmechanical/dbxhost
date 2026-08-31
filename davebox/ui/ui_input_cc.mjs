@@ -50,7 +50,7 @@ import { effectiveClip, forceRedraw, invalidateLEDCache,
 import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
 import { soundActive, soundExit, soundVolGestureEnd, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
-    soundViewForTest, soundEnterBusDirect, soundFxBusLabels } from './ui_sound.mjs';
+    soundViewForTest, soundEnterBuses } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
 /* ⚠ one-way: ui_render never imports this module (checked 2026-08-31) —
@@ -610,12 +610,12 @@ function modalDialogUp() {
      * enters the picked bus. Back walks it back (see _backTap). */
     if (d1 === 3 && d2 === 127 && !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld &&
             S.sessionView && !soundActive()) {
-        if (S.sessFxOverlaySel >= 0) {
-            const _bi = S.sessFxOverlaySel;
-            S.sessFxOverlaySel = -1;
-            soundEnterBusDirect(_bi);
-        } else if (sessMixerVisible()) {
-            S.sessFxOverlaySel = 0;
+        if (sessMixerVisible()) {
+            /* ⭑ THE GATEWAY (Josh, 2026-09-01): the FX door is a click-to-
+             * confirm BANK at the end of the walk — the SOUND + CONFIG idiom —
+             * never a click on the other banks, which stays a no-op. */
+            if (SESS_KNOB_MODES[S.sessKnobMode].widget === 'gateway')
+                soundEnterBuses();
         } else {
             S.sessMixerLatched = true;
             armBankDisplay();
@@ -940,14 +940,11 @@ function modalDialogUp() {
                         S.seqLastClip = -1;
                         forceRedraw();
                     }
-                } else if (S.sessionView && S.sessFxOverlaySel >= 0) {
-                    /* The FX overlay owns the jog while open — clamp, the
-                     * list law. */
-                    const _fn = soundFxBusLabels().length;
-                    S.sessFxOverlaySel = Math.max(0, Math.min(_fn - 1,
-                        S.sessFxOverlaySel + (delta > 0 ? 1 : -1)));
-                    S.screenDirty = true;
-                } else if (S.sessionView) {
+                } else if (S.sessionView && sessMixerVisible()) {
+                    /* ⚠ GATED ON THE MIXER PAGE BEING OPEN (Josh, 2026-09-01:
+                     * "same should be true of session view banks") — from the
+                     * resting session overview the turn does NOTHING; click
+                     * first. Same visibility owner as the session click gate. */
                     /* Clamp, never wrap (Josh, 2026-08-24) — hard stop at
                      * VOLUME and at SEND B. Same law the settings enums and the
                      * Instrument picker took on 08-23: a list of choices has two
@@ -1047,7 +1044,14 @@ function modalDialogUp() {
                         forceRedraw();
                     }
                     }
-                } else {
+                } else if (S.bankPickerSel >= 0 || bankCardVisible()) {
+                    /* ⚠ GATED ON THE BANK VIEW BEING OPEN (Josh, 2026-09-01:
+                     * "turn shouldn't change banks either. that should only be
+                     * available after you press [the jog] to enter the bank
+                     * view") — from the resting overview the unshifted turn
+                     * does NOTHING; click first. Same visibility owner as the
+                     * click gate. An already-open picker keeps the jog even as
+                     * the transient window under it expires. */
                     /* ⭑⭑ THE UNSHIFTED JOG IS THE BANK PICKER (Josh, 2026-08-25).
                      *
                      * It used to WALK the banks one detent at a time, applying
@@ -1756,7 +1760,7 @@ export function backTapWouldAct() {
         return !S.awaitingProjectSelect;
     }
     if (S.daveBox) return true;
-    if (S.sessFxOverlaySel >= 0 || S.sessMixerLatched) return true;
+    if (S.sessMixerLatched) return true;
     if (S.snapshotPicker || S.clearAutoMenu || S.tempoSelectActive ||
         S.mergeNoticePending || S.mergeCountingIn ||
         S.pendingMergePlacement || S.mergeSoloPlacement >= 0 ||
@@ -1776,12 +1780,6 @@ function _backTap() {
     if (S.confirmStateWipe) return;
 
     /* 1. Transient dialogs / pickers / modes (one open at a time). */
-    if (S.sessFxOverlaySel >= 0) {
-        /* Close the FX overlay, stay on the mixer page beneath it. */
-        S.sessFxOverlaySel = -1;
-        forceRedraw();
-        return;
-    }
     if (S.sessMixerLatched) {
         S.sessMixerLatched = false;
         standDownBankDisplay(true);
@@ -3372,6 +3370,7 @@ function _sessionKnobParam(knobIdx, d2) {
     const lvl = S.sessVolLevel[knobIdx];
     if (lvl < 0) return;
     const mode = SESS_KNOB_MODES[S.sessKnobMode];
+    if (mode.widget === 'gateway') return;      /* the door has no knobs */
     const d = (d2 >= 1 && d2 <= 63) ? d2 : (d2 >= 65) ? d2 - 128 : 0;
     if (!d) return;
     /* The SAME law as the bank knobs, in each mode's OWN UNITS.
@@ -4187,7 +4186,6 @@ function _switchViewCleanup() {
      * a view switch dismisses both (same as Back), or the next visit to
      * session view would reopen a screen nobody asked for. */
     S.sessMixerLatched = false;
-    S.sessFxOverlaySel = -1;
     S.heldStepBtn        = -1;
     S.heldStep           = -1;
     S.heldStepNotes      = [];

@@ -1959,23 +1959,6 @@ export function soundConsumeCoRunRequest() {
  * you land back on the view you actually navigated to. */
 export function soundEnteredInSession() { return S.enterSession; }
 
-/* The session FX overlay's rows — derived from FX_BUSES so a build without
- * Send FX shows exactly the buses it has. */
-export function soundFxBusLabels() {
-    return FX_BUSES.map((b) => b.title);
-}
-
-/* The overlay's direct door (Josh, 2026-08-31): enter bus i as if picked from
- * the session FX list — through soundEnterBuses' state, so the ONE-DOOR law
- * holds (leaveBus still lands on VIEW_BUSES, Back walks out the same way). */
-export function soundEnterBusDirect(i) {
-    const bus = FX_BUSES[i];
-    if (!bus) return;
-    soundEnterBuses();
-    S.busIdx = i;
-    enterBus(bus);
-}
-
 export function soundEnterBuses() {
     /* Flush any pending level save for the track we came from (the knob
      * itself is Move's unless Shift is held — nothing to hand back). */

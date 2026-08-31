@@ -123,44 +123,41 @@ step('control: the transient window still reveals (only TOUCH-reveal retired)', 
     if (!bankCardVisible()) throw new Error('the transient window stopped revealing — too much was retired');
 });
 
-step('⭐ SESSION mirrors the grammar: click latches the mixer, click again overlays the FX list', () => {
-    rest(); S.sessionView = true; S.sessMixerLatched = false; S.sessFxOverlaySel = -1;
+step('⭐ SESSION mirrors the grammar: click latches the mixer; the FX door is a GATEWAY bank', () => {
+    /* Josh, 2026-09-01: master/send FX is never a click on a mixer bank — it
+     * is a click-to-confirm bank at the end of the walk, the SOUND + CONFIG
+     * idiom. And the walk itself only runs once the page is open. */
+    rest(); S.sessionView = true; S.sessMixerLatched = false;
+    cc(14, 1);
+    if (S.sessKnobMode !== 0) throw new Error('a turn from the session overview walked the modes');
     click();
     if (!S.sessMixerLatched) throw new Error('session click did not latch the mixer');
-    click();
-    if (S.sessFxOverlaySel !== 0) throw new Error('second click did not open the FX overlay');
+    click();                                     /* click on VOLUME: a no-op */
+    if (sndMod.soundActive()) throw new Error('a click on a mixer bank opened the FX list');
+    if (!S.sessMixerLatched) throw new Error('the no-op click broke the latch');
+    for (let i = 0; i < 4; i++) cc(14, 1);       /* walk to the gateway */
+    if (S.sessKnobMode !== 4) throw new Error('the walk did not reach the gateway: ' + S.sessKnobMode);
     cc(14, 1);
-    if (S.sessFxOverlaySel !== 1) throw new Error('jog did not move the overlay cursor');
-    cc(14, 1); cc(14, 1);
-    if (S.sessFxOverlaySel !== 2) throw new Error('overlay cursor did not clamp at the last bus');
-    cc(51, 127); cc(51, 0);                      /* Back: close overlay only */
-    if (S.sessFxOverlaySel >= 0) throw new Error('Back did not close the overlay');
-    if (!S.sessMixerLatched) throw new Error('Back closed the mixer with the overlay');
-    cc(51, 127); cc(51, 0);                      /* Back again: dismiss the mixer */
-    if (S.sessMixerLatched) throw new Error('second Back did not dismiss the mixer');
+    if (S.sessKnobMode !== 4) throw new Error('the walk went past the gateway');
+    click();                                     /* the confirm */
+    if (!sndMod.soundActive()) throw new Error('the gateway click did not enter the FX list');
+    if (!sndMod.soundIsGlobal()) throw new Error('the gateway did not land in a global bus context');
+    sndMod.soundExit();
+    cc(14, 65);                                  /* left turn off the gateway */
+    if (S.sessKnobMode !== 3) throw new Error('a left turn did not walk back to SEND B');
+    cc(51, 127); cc(51, 0);                      /* Back dismisses the mixer */
+    if (S.sessMixerLatched) throw new Error('Back did not dismiss the mixer');
     S.sessionView = false;
 });
 
-step('⭐ committing the overlay enters that bus\'s editor', () => {
+step('the gateway has no knobs — a knob turn there is inert', () => {
     rest(); S.sessionView = true;
-    click(); click();                            /* latch, overlay */
-    cc(14, 1);                                   /* Send A */
-    click();                                     /* commit */
-    if (S.sessFxOverlaySel >= 0) throw new Error('overlay stayed open past the commit');
-    const snd = sndMod;
-    if (!snd.soundActive()) throw new Error('the pick did not enter sound mode');
-    if (!snd.soundIsGlobal()) throw new Error('the pick did not land in a global bus context');
-    snd.soundExit();
-    S.sessionView = false;
-});
-
-step('the turn past SEND B clamps — the old FX-list door is retired', () => {
-    rest(); S.sessionView = true; S.sessKnobMode = 3;   /* SEND B */
-    S.bankSelectTick = S.tickCount;                     /* page shown */
-    cc(14, 1);                                          /* one more right turn */
-    if (S.sessKnobMode !== 3) throw new Error('mode walked past SEND B');
-    if (globalThis.__busMenuOpened) throw new Error('the retired door opened');
-    if (sndMod.soundActive()) throw new Error('the turn entered sound mode');
+    click();
+    S.sessKnobMode = 4; S.sessVolLevel[0] = 0.5; S.sessVolSlots[0] = 1;
+    sets.length = 0;
+    cc(71, 3);                                   /* knob 1 turn */
+    if (sets.length) throw new Error('a knob wrote through the gateway: ' + JSON.stringify(sets));
+    cc(51, 127); cc(51, 0);
     S.sessionView = false;
 });
 

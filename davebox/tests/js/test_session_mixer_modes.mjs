@@ -22,10 +22,13 @@ function ok(label) { console.log(`  ok   — ${label}`); }
 function bad(label, e) { console.error(`  FAIL — ${label}: ${e}`); failed = 1; }
 function eq(a, b, label) { (a === b) ? ok(label) : bad(label, `expected ${b}, got ${a}`); }
 
-/* 1. Exactly four modes, in the order the jog cycles them. */
-eq(SESS_KNOB_MODES.length, 4, 'four mixer modes');
-eq(SESS_KNOB_MODES.map(m => m.key).join(','), 'volume,pan,send_a,send_b',
-   'mode order is volume, pan, send_a, send_b');
+/* 1. Four knob modes plus the FX GATEWAY (Josh, 2026-09-01), in jog order.
+ *    The gateway is a DOOR, not a knob bank — every knob-law pin below skips
+ *    it by widget, which is also how the code keys its inertness. */
+eq(SESS_KNOB_MODES.length, 5, 'four mixer modes + the FX gateway');
+eq(SESS_KNOB_MODES.map(m => m.key).join(','), 'volume,pan,send_a,send_b,fx',
+   'mode order is volume, pan, send_a, send_b, fx');
+eq(SESS_KNOB_MODES[4].widget, 'gateway', 'the last stop is the gateway');
 
 /* 2. The derived arrays are DERIVED — not hand-mirrored. Same length, same
  *    order, element-for-element. This is the pin that fails if someone
@@ -53,7 +56,8 @@ eq(SESS_KNOB_MODES[3].widget, 'arc',    'send B draws as a plain arc');
 eq(SESS_KNOB_MODES[0].max, SLOT_LEVEL_MAX, 'volume max is the shared level ceiling');
 for (let i = 1; i < 4; i++) eq(SESS_KNOB_MODES[i].max, 1.0, `${SESS_KNOB_MODES[i].key} max is 1.0`);
 for (const m of SESS_KNOB_MODES)
-    eq(Math.round(m.max / m.step), m.units, `${m.key}: ${m.units} units across its range`);
+    if (m.widget !== 'gateway')
+        eq(Math.round(m.max / m.step), m.units, `${m.key}: ${m.units} units across its range`);
 
 /* ⭑⭑ THE UNIT MUST BE VISIBLE — this is the whole point of the 2026-08-26 change.
  * Josh: "is there a way to make all the knobs feel the same and still allow fine
@@ -66,6 +70,7 @@ for (const m of SESS_KNOB_MODES)
  * Asserted by DRIVING each formatter, not by comparing the numbers: a unit that
  * rounds away in `fmt` is exactly the bug, and only fmt can reveal it. */
 for (const m of SESS_KNOB_MODES) {
+    if (m.widget === 'gateway') continue;   /* the door has no knobs, no unit */
     const mid = m.max / 2;
     if (m.fmt(mid) === m.fmt(mid + m.step))
         throw new Error(`${m.key}: one unit (${m.step}) does not change the readout ` +

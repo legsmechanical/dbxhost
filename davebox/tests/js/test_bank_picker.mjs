@@ -118,6 +118,9 @@ function reset() {
 
 step('⭑ a jog turn opens the picker and does NOT change the bank yet', () => {
     reset();
+    /* The picker lives INSIDE the bank view now (Josh, 2026-09-01: a turn
+     * from the overview does nothing) — enter it as the click would. */
+    S.bankCardLatched = true;
     touch(true); jog(1); globalThis.tick();
     if (S.bankPickerSel < 0) throw new Error('the picker did not open on the turn');
     if (S.activeBank !== 0)
@@ -127,6 +130,9 @@ step('⭑ a jog turn opens the picker and does NOT change the bank yet', () => {
 
 step('⭑ the CLICK commits the selection', () => {
     reset();
+    /* The picker lives INSIDE the bank view now (Josh, 2026-09-01: a turn
+     * from the overview does nothing) — enter it as the click would. */
+    S.bankCardLatched = true;
     const cyc = bankCycleForMode(0);
     touch(true); jog(1); jog(1); globalThis.tick();
     const want = cyc[S.bankPickerSel];
@@ -235,6 +241,7 @@ step('⭑ Shift+jog DROPS an open picker — and does not commit it', () => {
      * list up while it scrolls underneath is a lie about what the jog is doing;
      * committing it would apply a pick the user walked away from. */
     reset();
+    S.bankCardLatched = true;   /* the picker lives inside the bank view now */
     const bankBefore = S.activeBank;
     touch(true); jog(1); globalThis.tick();          /* picker open, browsing */
     if (S.bankPickerSel < 0) throw new Error('control: the picker did not open');
@@ -350,6 +357,7 @@ step('⭑ plain jog CLICK from the overview latches the bank card; Back unlatche
 
 step('⭑ a drum track offers ITS cycle, not the melodic one', () => {
     reset();
+    S.bankCardLatched = true;   /* the picker lives inside the bank view now */
     S.trackPadMode[2] = 1;                            /* PAD_MODE_DRUM */
     const cyc = bankCycleForMode(1);
     touch(true); jog(1); globalThis.tick();

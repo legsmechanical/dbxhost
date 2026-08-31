@@ -307,10 +307,12 @@ picks which bank. Which banks exist depends on the track type; they are covered
 in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
 [Automation](#11-automation).
 
-- **Turn the jog** to open the **bank picker** — a list of this track's banks by
-  name, over whatever page you were on. Keep turning to move the selection.
-  Nothing changes until you choose, so you can browse past a bank without
-  landing on it.
+- **Click the jog** on the track overview to open the **bank view** — the
+  current bank's page, held on screen. From there, **turn the jog** to open the
+  **bank picker** — a list of this track's banks by name, over the page. Keep
+  turning to move the selection. Nothing changes until you choose, so you can
+  browse past a bank without landing on it. (On the overview itself the jog is
+  quiet — click first.)
 - **Click the jog, or let go of it**, to go to the selected bank. Clicking keeps
   your hand on the wheel, so the bank's page stays up while you look at it.
   **Back** closes the picker without choosing, as does **Shift + jog**.

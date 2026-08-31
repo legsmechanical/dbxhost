@@ -213,6 +213,14 @@ export const SESS_KNOB_MODES = [
     { key: 'send_b', label: 'SEND B', widget: 'arc',    def: 0.0, max: 1.0,
       units: 100,
       fmt: (v) => Math.round(v * 100) + '%' },
+    /* ⭑ THE GATEWAY (Josh, 2026-09-01): the last stop on the session walk is
+     * a door, not a knob bank — the session-FX twin of SOUND + CONFIG sitting
+     * one past AUTOMATION in track view. Jogging onto it shows CLICK TO ENTER;
+     * the click opens the Master/Send FX list; a left turn walks back to
+     * SEND B. `widget: 'gateway'` is what every consumer keys on — the knobs
+     * are INERT here and the render is the prompt card. */
+    { key: 'fx', label: 'SESSION FX', widget: 'gateway', def: 0, max: 0,
+      units: 0, fmt: () => '' },
 ];
 /* One step = one of THIS mode's own units. Derived from the declaration, never
  * written per mode, so a mode cannot drift to a different feel — and the unit is

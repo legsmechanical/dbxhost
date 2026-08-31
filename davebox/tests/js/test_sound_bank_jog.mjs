@@ -133,6 +133,9 @@ function reset(mode, bank) {
     S.activeTrack = 2;
     S.trackPadMode[2] = mode;
     S.activeBank = bank; S.trackActiveBank[2] = bank;
+    /* Josh, 2026-09-01: the jog only drives banks INSIDE the bank view — this
+     * file's domain — so every step enters it the way the click would. */
+    S.bankCardLatched = true;
     /* LED paths read bankParams, which init() builds on-device only */
     if (!S.bankParams)
         S.bankParams = Array.from({ length: 8 }, () =>
@@ -320,6 +323,8 @@ step('⭑ the TOP LEVEL keeps the banks\' display law: falls back to the overvie
     const jogTouch   = (on) => globalThis.onMidiMessageInternal(new Uint8Array([on ? 0x90 : 0x80, 9, on ? 127 : 0]));
     reset(PAD_MODE_MELODIC_SCALE, 6);
     right();                             /* enter SOUND + CONFIG */
+    S.bankCardLatched = false;           /* this step is about the WINDOW law —
+                                          * the reset's latch would hold it open */
     if (!snd.soundActive()) throw new Error('did not enter');
     snd.soundTick();
     if (!snd.soundRender()) throw new Error('screen not shown inside the entry window');
@@ -642,6 +647,8 @@ function sessReset() {
     S.sessionView = true;
     S.sessKnobMode = 0;
     S.knobTouched = -1; S.jogTouched = false; S.bankSelectTick = -1;
+    S.sessMixerLatched = true;   /* same ruling, session flavour */
+    S.bankCardLatched = false;
     S.touchedIdx = -1;
 }
 
@@ -652,15 +659,17 @@ step('control: the session mixer walk is live (VOLUME -> PAN)', () => {
     if (snd.soundActive()) throw new Error('opened the FX list from the middle of the mixer');
 });
 
-step('⭑ right past the LAST mixer mode CLAMPS — the FX door is the click overlay now', () => {
-    /* The turn-past-Send-B door RETIRED 2026-08-31 (Front 2): the Master/Send
-     * FX list is reached by the jog CLICK's overlay on the mixer page. The
-     * jog now clamps at SEND B like any list. */
+step('⭑ right past SEND B lands on the GATEWAY bank — and does NOT enter', () => {
+    /* The auto-entering turn door retired (2026-08-31); the FX door is now a
+     * click-to-confirm GATEWAY bank at the end of the walk (Josh, 2026-09-01)
+     * — the SOUND + CONFIG idiom. The turn only ARRIVES; the click enters. */
     sessReset();
-    S.sessKnobMode = 3;                       /* SEND B, the last one */
+    S.sessKnobMode = 3;                       /* SEND B */
     right();
-    if (snd.soundActive()) throw new Error('the retired turn door opened the FX list');
-    if (S.sessKnobMode !== 3) throw new Error('the mixer position moved: ' + S.sessKnobMode);
+    if (snd.soundActive()) throw new Error('arriving on the gateway entered the FX list');
+    if (S.sessKnobMode !== 4) throw new Error('did not land on the gateway: ' + S.sessKnobMode);
+    right();
+    if (S.sessKnobMode !== 4) throw new Error('walked past the gateway');
 });
 
 step('⭑ the list, once OPEN, still steps back out to the mixer at its top row', () => {
