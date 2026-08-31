@@ -60,6 +60,7 @@ import { parseValue, stepValue, commitString, renderCellsForBank,
     formatValue } from './ui_cells.mjs';
 import {
     drawKitBankPage, drawKitHeader, drawKitSectionPicker, drawKitList, drawKitListOverlay,
+    kitUseLayout,
     drawKitStackedList, drawKitBackdropDim, drawKitCrumbs, kitStackBox,
     MV_BAR_Y,
     hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard,
@@ -5149,6 +5150,8 @@ function renderEdit() {
     }
     const bank = S.banks[S.bankIdx];
     const cells = renderCellsForBank(bank, S.values, S.rawValues);
+    /* SOUND's map — these are module PARAM PAGES, which carry the page bar. */
+    kitUseLayout('sound');
     drawKitBankPage(cells, {
         headerText: String(bank.name || '').toUpperCase(),
         headerInvert: false,

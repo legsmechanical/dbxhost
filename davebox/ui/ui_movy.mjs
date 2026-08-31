@@ -100,8 +100,33 @@ import { observeLanded, easeOut, lerp } from './ui_anim.mjs';
  * picker, the stacked list) are MODALS whose row capacity is tuned against
  * this box, and moving them would change how many options fit — a separate
  * decision from making room for a footer. */
-export const MV_HDR_H = 7;
-export const MV_BAR_Y = 8;
+/* ============================================================================
+ * TWO SURFACES, TWO ROW MAPS (Josh, 2026-08-30: "i want to branch off the
+ * davebox bank UI from the sound mode UI so they can each be distinct").
+ *
+ * The knob-grid chassis is shared by two screens that are NOT the same screen:
+ *
+ *   BANK   davebox's own track-view bank cards. No position strip — the jog
+ *          opens a named picker, so the card says the bank in words.
+ *   SOUND  sound mode's module PARAM PAGES, which do scroll, and whose page bar
+ *          therefore means what it says.
+ *
+ * They shared one map until now, so every geometry change had to be right for
+ * both at once — and the bank cards could not use the rows the missing page bar
+ * frees. Splitting them is what lets each move on its own.
+ *
+ * ⚠ THESE ARE `let`, NOT `const`, AND THAT IS LOAD-BEARING. ESM exports are live
+ * bindings, so every importer sees the swap with no call-site changes — the
+ * alternative was threading a layout object through ~100 internal uses. The cost
+ * is module state, and it is bounded the only way it can be: kitUseLayout() is
+ * called at the TOP OF EACH SURFACE'S ENTRY POINT (drawKitPage in ui_render for
+ * BANK, drawKitBankPage below for SOUND), the draw path is synchronous and draws
+ * one page per frame, and test_kit_layout_split pins both call sites so a new
+ * surface cannot forget.
+ * ⭑ Values here are the BANK map; kitUseLayout swaps them. Anything that must
+ * NOT vary by surface stays `const` below. */
+export let MV_HDR_H = 7;
+export let MV_BAR_Y = 8;
 /* ⚠ THE BRAND HEADER KEEPS THE 6-ROW FACE AND ITS 8-ROW BAND. font4x5 is
  * UPPERCASE-ONLY (see CHARS4 in ui_fonts_pp.mjs), and the wordmark IS its
  * minuscules — "dAVEBOx" is the mark, not a title. A 6-row glyph at y=1 needs
@@ -112,7 +137,29 @@ export const MV_BRAND_HDR_H = 8;
  * header rule used to take, because the latch frame needs the bottom row" — is
  * SUPERSEDED. The bottom row now belongs to the footer, and the latch frame
  * ends above it: see drawKitLatchBox.) */
-export const MV_ROW0_Y = 10, MV_LBL0_Y = 25, MV_ROW1_Y = 33, MV_LBL1_Y = 48;
+export let MV_ROW0_Y = 9, MV_LBL0_Y = 24, MV_ROW1_Y = 32, MV_LBL1_Y = 47;
+
+/* The two maps. BANK gains the row SOUND spends on its page bar: with no strip
+ * to clear, the grid starts one row higher and the footer gets a third clear row
+ * above it. SOUND is exactly what both surfaces used before the split, so that
+ * screen is unchanged by it. */
+const KIT_LAYOUTS = {
+    bank:  { hdrH: 7, barY: 8, row0Y:  9, lbl0Y: 24, row1Y: 32, lbl1Y: 47 },
+    sound: { hdrH: 7, barY: 8, row0Y: 10, lbl0Y: 25, row1Y: 33, lbl1Y: 48 },
+};
+let kitLayoutName = 'bank';
+
+/* Select the row map for the surface about to draw. Call it FIRST, before any
+ * other kit draw call — everything below reads these bindings. */
+export function kitUseLayout(name) {
+    const L = KIT_LAYOUTS[name];
+    if (!L) return;
+    kitLayoutName = name;
+    MV_HDR_H = L.hdrH; MV_BAR_Y = L.barY;
+    MV_ROW0_Y = L.row0Y; MV_LBL0_Y = L.lbl0Y;
+    MV_ROW1_Y = L.row1Y; MV_LBL1_Y = L.lbl1Y;
+}
+export function kitLayout() { return kitLayoutName; }
 export const MV_CELL_W = 32, MV_KW = 20, MV_KH = 15, MV_LBL_H = 7;
 /* The hint row sits on the LAST SCANLINE, not one row up. The panel is inset in
  * plastic, so a dark row at the bottom is not a margin — it is a margin on top
@@ -2814,6 +2861,12 @@ export function drawKitListOverlay(options, sel, opts) {
  *         touchedIdx, altArrowShow, altArrowOn, altArrowHidden (blink phase) }
  * Touched non-blank cell with a `name` swaps the header to the inverted
  * centered param name and suppresses the page bar. */
+/* ⚠ THIS FUNCTION DOES NOT CHOOSE A LAYOUT, deliberately. It is SHARED — sound
+ * mode draws its param pages with it, and tools/render_screens.mjs draws the
+ * manual's BANK cards with it too (the manual reimplements the device's draw
+ * calls by hand). Forcing 'sound' here made the manual render bank cards with
+ * sound's row map, which is the same documentation-diverges-from-device trap
+ * that has already bitten twice today. The CALLER selects. */
 export function drawKitBankPage(cells, opts) {
     const t = opts.touchedIdx != null ? opts.touchedIdx : -1;
     const touched = t >= 0 && cells[t] && cells[t].name ? cells[t] : null;

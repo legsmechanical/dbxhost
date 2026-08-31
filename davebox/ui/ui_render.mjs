@@ -20,6 +20,7 @@ import {
 } from './ui_constants.mjs';
 import {
     drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitAltArrow, drawKitLatchBox,
+    kitUseLayout,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
     drawVFader, mvPrint, mvWidth, rectOutline,
     drawLevelCard,
@@ -431,6 +432,10 @@ function bankPageHints(bank) {
 }
 
 function drawKitPage(name, cells, inverted, footer) {
+    /* BANK's map: this is davebox's own track-view bank card, which has no page
+     * strip and so starts its grid a row higher. Must be first — every kit draw
+     * call below reads the layout bindings. */
+    kitUseLayout('bank');
     const t = S.knobTouched;
     const touched = t >= 0 && cells[t] && cells[t].name ? cells[t] : null;
     if (touched) drawKitTouchedHeader(touched.name);

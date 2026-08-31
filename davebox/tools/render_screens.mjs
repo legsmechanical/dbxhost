@@ -400,6 +400,11 @@ const emit = (file, section, name, drawFn) => {
 };
 for (const s of BANK_SCREENS) {
     emit(s.file, s.section, BANKS[s.bank].name, () => {
+        /* ⚠ BANK's map. This renderer draws the track-view bank cards through
+         * drawKitBankPage, which is the SHARED chassis — the device reaches
+         * them through drawKitPage instead. Without this the manual would
+         * render them with sound mode's row map. */
+        kit.kitUseLayout('bank');
         const cells = bankCells(s.bank, s.over || {});
         /* ⚠⚠ NO pageIdx/pageCount. The track-view bank cards draw NO position
          * indicator (see drawKitPage in ui/ui_render.mjs) and this renderer used
