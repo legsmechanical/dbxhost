@@ -29,6 +29,28 @@ cd "$(dirname "$0")/../.."
 fail() { echo "FAIL: $*" >&2; exit 1; }
 ok()   { echo "  ok   — $*"; }
 
+# ⚠⚠ COMMENTS MUST BE STRIPPED BEFORE ANY "does this code call X" GREP.
+# Caught three times by mutation on 2026-08-31: commenting a call out leaves its
+# text in the file, so `grep -q "kitUseLayout('bank')"` matches
+# `/* kitUseLayout('bank'); */` and the check passes against a surface that no
+# longer selects anything. A commented-out call is the EXACT shape of the
+# regression these pins exist for, so a pin that cannot see it is decoration.
+# Drops whole-line and trailing // comments and everything inside /* ... */,
+# including multi-line blocks.
+nocomments() {
+  awk '
+    { line = "" ; i = 1
+      while (i <= length($0)) {
+        c = substr($0, i, 2)
+        if (inblk) { if (c == "*/") { inblk = 0; i += 2 } else i++ ; continue }
+        if (c == "/*") { inblk = 1; i += 2; continue }
+        if (c == "//") break
+        line = line substr($0, i, 1); i++
+      }
+      print line }'
+}
+
+
 render=davebox/ui/ui_render.mjs
 sound=davebox/ui/ui_sound.mjs
 movy=davebox/ui/ui_movy.mjs
@@ -46,7 +68,7 @@ body() { # body <file> <function-name>
       depth += n - m
       if (seen && depth <= 0) exit
       if (n > 0) seen = 1
-    }' "$1"
+    }' "$1" | nocomments
 }
 
 # --- 1. THE PAGE BAR: does the device's BANK surface draw one? ---------------

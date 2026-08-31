@@ -16,6 +16,28 @@ cd "$(dirname "$0")/../.."
 # So: every entry point must select, and the two must not drift apart.
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
+
+# ⚠⚠ COMMENTS MUST BE STRIPPED BEFORE ANY "does this code call X" GREP.
+# Caught three times by mutation on 2026-08-31: commenting a call out leaves its
+# text in the file, so `grep -q "kitUseLayout('bank')"` matches
+# `/* kitUseLayout('bank'); */` and the check passes against a surface that no
+# longer selects anything. A commented-out call is the EXACT shape of the
+# regression these pins exist for, so a pin that cannot see it is decoration.
+# Drops whole-line and trailing // comments and everything inside /* ... */,
+# including multi-line blocks.
+nocomments() {
+  awk '
+    { line = "" ; i = 1
+      while (i <= length($0)) {
+        c = substr($0, i, 2)
+        if (inblk) { if (c == "*/") { inblk = 0; i += 2 } else i++ ; continue }
+        if (c == "/*") { inblk = 1; i += 2; continue }
+        if (c == "//") break
+        line = line substr($0, i, 1); i++
+      }
+      print line }'
+}
+
 movy=davebox/ui/ui_movy.mjs
 render=davebox/ui/ui_render.mjs
 
@@ -69,7 +91,7 @@ done
 # ⚠ COMMENTS STRIPPED FIRST. Caught by mutation 2026-08-31: commenting the
 # assignment out left `/* MV_KW = L.kw; */` in the body and the grep still
 # matched, so the check passed against a binding that was no longer swapped.
-usefn=$(awk '/^export function kitUseLayout\(/,/^}/' "$movy" | sed 's|/\*[^*]*\*/||g')
+usefn=$(awk '/^export function kitUseLayout\(/,/^}/' "$movy" | nocomments)
 for c in MV_HDR_H MV_BAR_Y MV_ROW0_Y MV_LBL0_Y MV_ROW1_Y MV_LBL1_Y MV_KW; do
   command grep -qE "\b$c\s*=" <<<"$usefn" ||
     fail "kitUseLayout() never assigns $c — it is exported \`let\` and declared in
@@ -80,7 +102,7 @@ done
 #
 # Anchored inside each function, not file-wide: a call anywhere else would
 # satisfy a count while the entry itself drew with a stale map.
-bankfn=$(awk '/^function drawKitPage\(/,/^}/' "$render")
+bankfn=$(awk '/^function drawKitPage\(/,/^}/' "$render" | nocomments)
 [ -n "$bankfn" ] || fail "drawKitPage is gone — this test no longer measures the bank surface"
 command grep -q "kitUseLayout('bank')" <<<"$bankfn" ||
   fail "drawKitPage (the track-view bank card) does not select the 'bank' layout"
@@ -95,7 +117,7 @@ onto the other. The caller selects."
 
 sound=davebox/ui/ui_sound.mjs
 [ -f "$sound" ] || fail "$sound missing"
-command grep -q "kitUseLayout('sound')" "$sound" ||
+command grep -q "kitUseLayout('sound')" <<<"$(nocomments < "$sound")" ||
   fail "sound mode does not select the 'sound' layout before drawing its param pages"
 
 # ⚠⚠ AND THE OTHER SURFACE IN THAT FILE. renderBlocks() is the SOUND + CONFIG
@@ -104,7 +126,7 @@ command grep -q "kitUseLayout('sound')" "$sound" ||
 # (7 vs 8), so without selecting it wipes whichever row the param editor left
 # behind. Caught by mutation: file-wide greps for kitUseLayout are satisfied by
 # renderEdit's call and say nothing about this one.
-blockfn=$(awk '/^function renderBlocks\(/,/^}/' "$sound")
+blockfn=$(awk '/^function renderBlocks\(/,/^}/' "$sound" | nocomments)
 [ -n "$blockfn" ] || fail "renderBlocks is gone — this test no longer measures that surface"
 command grep -q "kitUseLayout('bank')" <<<"$blockfn" ||
   fail "renderBlocks (SOUND + CONFIG root) does not select the 'bank' layout, but
@@ -114,7 +136,7 @@ row that is"
 # The manual renderer reimplements the device's draw calls, so it has to select
 # too — it is the surface that has silently diverged twice already.
 rs=davebox/tools/render_screens.mjs
-command grep -q "kitUseLayout('bank')" "$rs" ||
+command grep -q "kitUseLayout('bank')" <<<"$(nocomments < "$rs")" ||
   fail "$rs does not select the 'bank' layout for the bank screens — the MANUAL
 would document those cards with sound mode's row map"
 
