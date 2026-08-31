@@ -96,7 +96,8 @@ import { evaluateVisibility }
 const PP = createParamPagesBinding(ppCtx);
 const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         handleParamPagesMidi, paramPagesActive, paramPagesChildIndex,
-        clearParamPagesTouch, currentParamPage } = PP;
+        clearParamPagesTouch, currentParamPage,
+        paramPagesPickerOpen, paramPagesMenuEntered } = PP;
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* Chain blocks in signal order, across the audio-FX blocks the host routes.
