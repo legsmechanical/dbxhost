@@ -23,7 +23,7 @@
 #     exit)", so it cannot start a Move while we are running whichever variant
 #     is installed.
 #   * quiesce tolerates the stack being alive OR already gone.
-#   * on the way out, reap-duplicate-move.sh removes the Move stock starts on
+#   * on the way out, the branch near the end decides whose Move comes back —
 #     top of the supervised one, since we cannot remove its unconditional
 #     restart.
 #
@@ -566,12 +566,28 @@ setsid --wait bash -c '
     echo "caller restarts Move unconditionally -- leaving the watchdog paused so only ITS Move comes back"
   fi
 
-  # Stock v1.0.0 restarts Move UNCONDITIONALLY when we return (its pidof guard
-  # is gone), which duplicates the supervised Move we just brought back and
-  # races it for the com.ableton.move name. We cannot edit the stock tree, so
-  # reap the duplicate instead. Detached, because it must outlive this script:
-  # the Move it reaps is not started until AFTER we return.
-  # ⚠ The reaper only ever acts when it sees MORE THAN ONE Move and always keeps
-  # one, so a stock variant that does NOT restart is simply a no-op for it.
-  setsid sh "$DBX_DIR/scripts/reap-duplicate-move.sh" "$LOG" 150 >/dev/null 2>&1 &
+  # ⚠⚠ NOTHING REAPS A DUPLICATE HERE ANY MORE, and that is the whole point of
+  # the branch above. A reaper ran here until 2026-08-31 — a leftover of the
+  # approach that 5b9334d7 REPLACED, still carrying its own superseded argument
+  # ("we cannot edit the stock tree, so reap the duplicate instead") two lines
+  # below the code that made it unnecessary.
+  #
+  # Why reaping cannot work, so it is not reinvented: the duplicate starts
+  # ALONE and is deep in boot before the second Move appears, so it cannot be
+  # identified early — there is no timing fix. And killing it is worse than
+  # useless: a hard kill on a Move is INDISTINGUISHABLE FROM A CRASH, so
+  # Ableton files a report and the next boot tells the user Move crashed
+  # (see the sigkill-on-move-reads-as-a-crash note).
+  #
+  # Left running, it also had a second failure nobody had seen: a healthy Move
+  # forks a HELPER of itself — 2 threads against the application 21, the parent
+  # fds inherited, both inside the move-launcher cgroup. The reaper counted that
+  # helper as a duplicate and killed whichever of the pair pidof did not list
+  # first, sometimes the application. The supervisor restarted it, the reaper
+  # saw two again, and it looped: five kills in thirteen seconds, escalating to
+  # SIGKILL each time. Reported from the device as "move native crashes shortly
+  # after reloading from davebox exit".
+  #
+  # The answer is the one above: DO NOT CREATE THE SECOND MOVE.
+  # ⚠ NO APOSTROPHES IN THIS BLOCK — see the warning at the top of the body.
 '

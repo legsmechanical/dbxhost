@@ -842,12 +842,6 @@ if [ -d ./standalone ]; then
     # in src/shadow/shadow_ui.js for the file contract).
     cp ./standalone/scripts/select-list.sh ./build/scripts/
     cp ./standalone/scripts/select-hook.sh ./build/scripts/
-    # reap-duplicate-move.sh: run detached from launch.sh on the way OUT, to
-    # remove the second Move that stock's launch-standalone.sh starts on top of
-    # the supervised one (its pidof guard is gone as of stock v1.0.0). Never
-    # leaves zero Moves running -- see the safety rule in the script.
-    cp ./standalone/scripts/reap-duplicate-move.sh ./build/scripts/
-    chmod +x ./build/scripts/reap-duplicate-move.sh
     # preflight.sh: asserts every seam we have on the STOCK tree at launch and
     # reports loudly. Always exits 0 -- it reports, it never refuses a launch.
     cp ./standalone/scripts/preflight.sh ./build/scripts/
