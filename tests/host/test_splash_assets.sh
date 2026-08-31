@@ -101,9 +101,14 @@ rows=$(wc -l < "$pool" | tr -d ' ')
 [ "$rows" = "$frames" ] \
     && ok "splash-pool.tsv covers all $frames frames" \
     || bad "splash-pool.tsv has $rows rows for $frames frames"
-awk -F'\t' '$4=="DAVIES"{d=$3} $4!="DAVIES"{if(min==""||$3<min)min=$3} END{exit !(d!="" && d<min)}' "$pool" \
-    && ok "DAVIES is strictly the rarest in the emitted pool" \
-    || bad "DAVIES is not the rarest Dave in splash-pool.tsv"
+# Tier law: weights are exactly the four tier values; DAVIES is the rare
+# (0.3); anything at the ultra weight (0.1) is strictly rarer than him.
+awk -F'\t' '{ if ($3!=1 && $3!=0.5 && $3!=0.3 && $3!=0.1) exit 1 }' "$pool" \
+    && ok "every weight is a known tier (1 / 0.5 / 0.3 / 0.1)" \
+    || bad "a weight outside the tier set leaked into splash-pool.tsv"
+awk -F'\t' '$4=="DAVIES"{d=$3} END{exit !(d==0.3)}' "$pool" \
+    && ok "DAVIES holds the rare tier" \
+    || bad "DAVIES is not at the rare weight in splash-pool.tsv"
 # The host-side dealer (pre-kill branch) reads the same pool — the old
 # for-i<10 literal capped a 31-frame pool at ten and must not return.
 grep -q 'splash-pool\.tsv' src/shadow/shadow_ui.js \

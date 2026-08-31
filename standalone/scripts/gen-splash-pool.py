@@ -16,9 +16,10 @@ THE ONE STEP for adding a Dave (Josh, 2026-08-31):
   4. commit all three; tests/host/test_splash_assets.sh pins the sync
 
 Rarity -> pick weight (the Dave Box gacha): common 1.0, uncommon 0.5,
-rare 0.3. With 30 commons + 1 rare that puts DAVIES at ~1 in 101 launches —
-Josh's "~1 in 100" ruling. Weights live HERE so the manifest stays editorial
-(a word, not a float).
+rare 0.3, ultra 0.1. Rare puts DAVIES at ~1 in 100 (Josh's ruling); ultra
+(Josh, 2026-08-31: "ULTRA RARE", for DAVIE JAMES DIO) lands around ~1 in 325
+at a 34-Dave pool. Weights live HERE so the manifest stays editorial (a
+word, not a float).
 
 Ordering in the emitted pool is dave_num ascending, so splash-<i>.hex indices
 stay aligned with collection order. Frame INDEX is build-local; dave_num is
@@ -32,7 +33,7 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 DAVES = os.path.join(REPO, 'daves')
 OUT = os.path.join(REPO, 'davebox', 'ui', 'ui_splash.mjs')
 
-WEIGHTS = {'common': 1.0, 'uncommon': 0.5, 'rare': 0.3}
+WEIGHTS = {'common': 1.0, 'uncommon': 0.5, 'rare': 0.3, 'ultra': 0.1}
 
 rows = [l.rstrip('\n').split('\t') for l in open(os.path.join(DAVES, 'manifest.tsv'))]
 hdr, data = rows[0], rows[1:]
