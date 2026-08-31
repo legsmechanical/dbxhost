@@ -1,6 +1,7 @@
 # Changelog
 
 All notable changes to dAVEBOx are documented here.
+- **A 32nd Dave joins the pool.** Welcome, GILMOUR.
 - **Dave Box: the card view.** Each Dave now shows his name in big caps with
   his number and rarity beneath — and the portrait slowly pans up and down
   behind the label, so the whole image gets its moment.

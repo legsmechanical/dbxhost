@@ -76,8 +76,11 @@ step('the album lists collected Daves in permanent order, junk and dupes tolerat
         metas.push(daves.daveBoxMeta()); names.push(daves.daveBoxName());
         daves.daveBoxRotate(1);
     }
-    const wantM = ['< DAVE 1/31 \u00b7 COMMON >', '< DAVE 3/31 \u00b7 COMMON >',
-                   '< DAVE 21/31 \u00b7 RARE >'];
+    /* The total is the POOL's size, not a constant — adding a Dave is the
+     * designed case and must not fail this pin. */
+    const T = splash.SPLASH_COUNT;
+    const wantM = ['< DAVE 1/' + T + ' \u00b7 COMMON >', '< DAVE 3/' + T + ' \u00b7 COMMON >',
+                   '< DAVE 21/' + T + ' \u00b7 RARE >'];
     if (JSON.stringify(metas) !== JSON.stringify(wantM)) throw new Error(JSON.stringify(metas));
     if (names[2] !== 'DAVIES') throw new Error('name line wrong: ' + JSON.stringify(names));
     if (daves.daveBoxMeta() !== wantM[0]) throw new Error('did not wrap forward');
