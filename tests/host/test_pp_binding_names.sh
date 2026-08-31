@@ -64,5 +64,25 @@ for d in $destructured; do grep -qx "$d" <<<"$returned" || absent="$absent $d"; 
 [ -z "$absent" ] && ok "every destructured name is returned by the factory" \
   || bad "destructured but NOT returned by the factory:$absent"
 
+# --- and every pp* helper davebox calls must EXIST ---------------------------
+#
+# ⚠⚠ THE SAME BUG, ONE LAYER DOWN. Minutes after fixing two missing destructured
+# names I called ppRefreshPresets(), which an unrelated revert had deleted — a
+# ReferenceError on a menu row, swallowed exactly the same way. `node --check`
+# cannot see it: an undefined function is valid syntax until it runs.
+pp_called=$(grep -oE "\bpp[A-Z][A-Za-z0-9_]*\(" <<<"$src" | tr -d '(' | sort -u)
+pp_defined=$(grep -oE "^(function|const|let|var) +pp[A-Z][A-Za-z0-9_]*" <<<"$src" \
+             | awk '{print $2}' | sort -u)
+undef=""
+for c in $pp_called; do
+  grep -qx "$c" <<<"$pp_defined" && continue
+  grep -qx "$c" <<<"$destructured" && continue
+  undef="$undef $c"
+done
+[ -z "$undef" ] && ok "every pp* helper davebox calls is defined or destructured" \
+  || bad "called but NEVER DEFINED:$undef
+A ReferenceError the moment that row or gesture is used, swallowed by the input
+path. node --check cannot see it — an undefined call is valid syntax."
+
 [ "$fail" = 0 ] && echo "PASS: davebox and the editor factory agree on names" || echo "FAIL"
 exit $fail

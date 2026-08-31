@@ -97,7 +97,8 @@ const PP = createParamPagesBinding(ppCtx);
 const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         handleParamPagesMidi, paramPagesActive, paramPagesChildIndex,
         clearParamPagesTouch, currentParamPage,
-        paramPagesPickerOpen, paramPagesMenuEntered } = PP;
+        paramPagesPickerOpen, paramPagesMenuEntered,
+        paramPagesRefreshTrailing } = PP;
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* Chain blocks in signal order, across the audio-FX blocks the host routes.
@@ -1289,6 +1290,42 @@ function openBlock(comp) {
  * editing a sound, "click" means "give me another sound for this thing", and
  * swapping the module out from under yourself is the rarer, more destructive
  * move. That one moved to Shift+click on the block picker. */
+/* ⭐ WHICH USER PRESET THIS COMPONENT IS ON — the thing davebox never tracked,
+ * and the reason its My Presets page could only offer "Presets" and "Save As".
+ * Stock's page is Preset / Save / Save As / Delete, and three of those four need
+ * an answer to "on what?": Save overwrites it, Delete removes it, and the Preset
+ * row NAMES it.
+ *
+ * ⭑ `blob` is the state as it was when the preset was loaded or saved, so
+ * "modified since" is a string compare against the live state rather than a file
+ * read — the same thing stock's `*` means. Keyed by slot AND component: the same
+ * module in two slots is two independent answers.
+ *
+ * ⚠ SESSION-LIVED, deliberately, and this is the one place davebox is thinner
+ * than stock: stock persists its record, so a relaunch still knows. Here the row
+ * reads "(none)" again after a relaunch even though the sound is unchanged.
+ * Persisting it needs a store davebox does not have yet; written down rather
+ * than papered over. */
+const PRESET_REC = Object.create(null);
+const presetRecKey = () => S.slot + ':' + S.comp;
+function presetRecord() { return PRESET_REC[presetRecKey()] || null; }
+function setPresetRecord(rec) {
+    if (rec) PRESET_REC[presetRecKey()] = rec;
+    else delete PRESET_REC[presetRecKey()];
+}
+/* Has the sound moved since it was loaded or saved? */
+function presetDirty() {
+    const r = presetRecord();
+    if (!r) return false;
+    return engineGetState(S.slot, S.comp) !== r.blob;
+}
+/* What the Preset row shows: the name, marked when modified — stock's `*`. */
+function presetRowValue() {
+    const r = presetRecord();
+    if (!r) return '(none)';
+    return (presetDirty() ? '* ' : '') + r.name;
+}
+
 function openPresets() {
     S.presetMsg = '';
     /* Built fresh each time: the baked row only exists for modules that publish
@@ -1348,6 +1385,11 @@ function applyUserPreset(listIdx) {
  * dropped so a later Back can't resurrect it. */
 function loadUserPreset() {
     if (!applyUserPreset(S.userIdx)) return;
+    const p = S.userPresets[S.userIdx - 1];
+    /* The sound IS this preset now — remember which, so Save/Delete have a
+     * target and the Preset row has a name. */
+    if (p) setPresetRecord({ name: p.name, path: p.path,
+                             blob: engineGetState(S.slot, S.comp) });
     S.origState = null;
     S.presetMsg = '';
     S.pendingDiscover = 4;      /* a preset moves every param */
@@ -1392,6 +1434,41 @@ function saveUserPreset(rawName) {
     S.userIdx = (i >= 0) ? i + 1 : SAVE_ROW;
     /* What was just saved IS the live sound, so there is nothing to revert to. */
     S.origState = null;
+    setPresetRecord({ name, path, blob: stateJson });
+}
+
+/* Overwrite the preset this component is on, in place and under its own name —
+ * stock's Save, as against Save As. ⚠ davebox's saveUserPreset deliberately
+ * NEVER overwrites (uniqueName/uniquePath: a collision gets a number), which is
+ * right for Save As and is exactly what Save must not do. */
+function overwriteUserPreset() {
+    const r = presetRecord();
+    if (!r) { S.presetMsg = 'NO PRESET'; return; }
+    const stateJson = engineGetState(S.slot, S.comp);
+    if (!stateJson) { S.presetMsg = 'NO STATE'; return; }
+    let state;
+    try { state = JSON.parse(stateJson); } catch (e) { state = stateJson; }
+    const ok = host_write_file(r.path, JSON.stringify({
+        name: r.name, module: S.moduleId, version: 1, state,
+    }));
+    S.presetMsg = ok ? 'SAVED' : 'SAVE FAILED';
+    if (!ok) return;
+    setPresetRecord({ name: r.name, path: r.path, blob: stateJson });
+    S.origState = null;
+    S.userPresets = engineListUserPresets(S.moduleId);
+}
+
+/* Delete the preset this component is on. */
+function deleteRecordedPreset() {
+    const r = presetRecord();
+    if (!r) { S.presetMsg = 'NO PRESET'; return; }
+    let ok = false;
+    try { ok = (os.remove(r.path) === 0); } catch (e) { ok = false; }
+    S.presetMsg = ok ? 'DELETED' : 'DELETE FAILED';
+    if (!ok) return;
+    /* The sound stays; only the file it came from is gone. */
+    setPresetRecord(null);
+    S.userPresets = engineListUserPresets(S.moduleId);
 }
 
 /* The on-screen keyboard is a shared host component with a host-agnostic
@@ -3602,6 +3679,17 @@ function openBrowse(comp, prompt) {
 function loadSelected() {
     const mod = S.browseList[S.browseIdx];
     if (!mod) return;
+    applyModulePick(mod);
+}
+
+/* Apply a module choice — including the `[ none ]` row, which is how a module is
+ * REMOVED. Split out of loadSelected 2026-08-31 so the editor's "Remove Module"
+ * row IS this path rather than a copy of it: stock makes the same point about
+ * its own remove_module ("IS applyChainComponentPick's None path, not a copy").
+ * Two copies of a module swap is two places to forget pendingDiscover, the bank
+ * reset, or the livePress hand-off. */
+function applyModulePick(mod) {
+    if (!mod) return;
     /* ⚠ A BUS component's `:module` takes a DSP PATH; a chain slot's takes a
      * module id. Same key, different currency — loading a bus by id silently
      * does nothing, which is the kind of failure you debug for an hour. */
@@ -3614,6 +3702,8 @@ function loadSelected() {
     S.padVouch = false;
     S.view = mod.id ? VIEW_EDIT : VIEW_BLOCKS;
     refreshBlockNames();
+    /* A different module cannot be "on" the old module's preset. */
+    setPresetRecord(null);
     S.dirty = true;
 }
 
@@ -5494,6 +5584,16 @@ function ppSync() {
     }
 }
 
+/* Re-read the user presets and rebuild the trailing pages from them.
+ *
+ * ⚠ THE DISK SCAN LIVES HERE AND NOWHERE ELSE. trailingMenus() runs on every
+ * plan and every refresh, so scanning inside it would put a directory read on a
+ * path the controller walks routinely. */
+function ppRefreshPresets() {
+    S.userPresets = S.moduleId ? engineListUserPresets(S.moduleId) : [];
+    if (ppOn) paramPagesRefreshTrailing();
+}
+
 /* ⭐ THE PAGES AT THE END OF THE WALK — and the reason they are not optional.
  *
  * ⚠⚠ THE REGRESSION THEY FIX. davebox's own editor put its preset menu on the
@@ -5526,12 +5626,26 @@ function ppIo() {
         trailingMenus: () => {
             if (!S.moduleId) return [];      /* nothing loaded to preset or swap */
             return [
-                { name: 'My Presets', entries: [
-                    { label: 'Presets', action: 'up_load' },
-                    { label: 'Save As', action: 'up_save_as' },
-                ] },
+                /* ⭑ STOCK'S FOUR ROWS, in stock's order (photographed from a
+                 * stock session: Preset / Save / Save As / Delete, with the
+                 * loaded preset named beside the first and marked `*` when the
+                 * sound has moved since). Save and Delete both target the
+                 * preset you are ON, so they appear only when there is one —
+                 * the same always-or-hasPreset filter stock applies. Save As is
+                 * unconditional: it goes to the keyboard either way. */
+                { name: 'My Presets', entries: (function () {
+                    const rows = [{ label: 'Preset', value: presetRowValue(),
+                                    action: 'up_load' }];
+                    if (presetRecord()) rows.push({ label: 'Save', action: 'up_save' });
+                    rows.push({ label: 'Save As', action: 'up_save_as' });
+                    if (presetRecord()) rows.push({ label: 'Delete', action: 'up_delete' });
+                    return rows;
+                })() },
                 { name: 'Module', entries: [
                     { label: 'Swap Module', action: 'swap_module' },
+                    /* ⭑ REMOVE IS THE `[ none ]` PICK, reached through the same
+                     * applyModulePick — not a second way to clear a slot. */
+                    { label: 'Remove Module', action: 'remove_module' },
                 ] },
             ];
         },
@@ -5579,6 +5693,13 @@ function ppIo() {
              * destination. Josh: "pressing presets puts you into the earlier
              * davebox overlay menu. that's not right." */
             if (action === 'up_load') { ppFromGrid = true; openUserPresets(); }
+            /* ⭑ Save and Delete act IN PLACE and never navigate, so they leave
+             * you on the page — stock closes its menu behind Save for the same
+             * reason: the changed row is visible on the page you are left
+             * looking at. */
+            else if (action === 'up_save') { overwriteUserPreset(); ppRefreshPresets(); }
+            else if (action === 'up_delete') { deleteRecordedPreset(); ppRefreshPresets(); }
+            else if (action === 'remove_module') applyModulePick({ id: '', name: '[ none ]' });
             else if (action === 'up_save_as') startSaveFlow();
             else if (action === 'swap_module') openBrowse(S.comp);
             else log('pp: unknown menu action ' + action);
