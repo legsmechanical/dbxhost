@@ -663,12 +663,16 @@ export const S = {
      * file is on disk by then, so the copy-into-snapshot runs in tick().
      * { id, label } (id reused = overwrite). */
     pendingSnapshotCopy: null,
-    pendingBusMenu: false,      /* Shift+Note/Session in SESSION view: open the session-wide FX list (Master / Send A / Send B) — deferred to tick because opening reads the chain */
     /* Session View: the 8 param knobs drive the LEVEL of the Schwung slot(s)
      * each track plays through (knob N -> track N). Per-track because a track's
      * channel can be received by SEVERAL slots (layering, or a slot set to
      * "All"), and all of them move together. -1 = not yet resolved/read. */
-    sessKnobMode: 0,                        /* 0=Volume, 1=Pan, 2=Send A, 3=Send B */
+    sessKnobMode: 0,
+    /* Front 2, session half (Josh, 2026-08-31): the mixer page latched by the
+     * plain jog click (Back dismisses), and the Master/Send FX overlay's
+     * cursor (-1 closed) opened by a further click on the latched page. */
+    sessMixerLatched: false,
+    sessFxOverlaySel: -1,                        /* 0=Volume, 1=Pan, 2=Send A, 3=Send B */
     sessVolSlots: new Array(8).fill(-1),   /* bitmask of matching slots */
     /* A MOVE-routed track's level is not a slot's at all: it is the fader of the
      * Move FX bus its instrument returns on, the same value sound mode's VOLUME

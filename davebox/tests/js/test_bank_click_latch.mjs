@@ -40,6 +40,7 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const { bankCardVisible } = await import('../../ui/ui_render.mjs');
+const sndMod = await import('../../ui/ui_sound.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashTicks = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 2;
@@ -120,6 +121,47 @@ step('control: the transient window still reveals (only TOUCH-reveal retired)', 
     rest(); S.activeBank = 1;
     S.bankSelectTick = S.tickCount;              /* a committed pick arms this */
     if (!bankCardVisible()) throw new Error('the transient window stopped revealing — too much was retired');
+});
+
+step('⭐ SESSION mirrors the grammar: click latches the mixer, click again overlays the FX list', () => {
+    rest(); S.sessionView = true; S.sessMixerLatched = false; S.sessFxOverlaySel = -1;
+    click();
+    if (!S.sessMixerLatched) throw new Error('session click did not latch the mixer');
+    click();
+    if (S.sessFxOverlaySel !== 0) throw new Error('second click did not open the FX overlay');
+    cc(14, 1);
+    if (S.sessFxOverlaySel !== 1) throw new Error('jog did not move the overlay cursor');
+    cc(14, 1); cc(14, 1);
+    if (S.sessFxOverlaySel !== 2) throw new Error('overlay cursor did not clamp at the last bus');
+    cc(51, 127); cc(51, 0);                      /* Back: close overlay only */
+    if (S.sessFxOverlaySel >= 0) throw new Error('Back did not close the overlay');
+    if (!S.sessMixerLatched) throw new Error('Back closed the mixer with the overlay');
+    cc(51, 127); cc(51, 0);                      /* Back again: dismiss the mixer */
+    if (S.sessMixerLatched) throw new Error('second Back did not dismiss the mixer');
+    S.sessionView = false;
+});
+
+step('⭐ committing the overlay enters that bus\'s editor', () => {
+    rest(); S.sessionView = true;
+    click(); click();                            /* latch, overlay */
+    cc(14, 1);                                   /* Send A */
+    click();                                     /* commit */
+    if (S.sessFxOverlaySel >= 0) throw new Error('overlay stayed open past the commit');
+    const snd = sndMod;
+    if (!snd.soundActive()) throw new Error('the pick did not enter sound mode');
+    if (!snd.soundIsGlobal()) throw new Error('the pick did not land in a global bus context');
+    snd.soundExit();
+    S.sessionView = false;
+});
+
+step('the turn past SEND B clamps — the old FX-list door is retired', () => {
+    rest(); S.sessionView = true; S.sessKnobMode = 3;   /* SEND B */
+    S.bankSelectTick = S.tickCount;                     /* page shown */
+    cc(14, 1);                                          /* one more right turn */
+    if (S.sessKnobMode !== 3) throw new Error('mode walked past SEND B');
+    if (globalThis.__busMenuOpened) throw new Error('the retired door opened');
+    if (sndMod.soundActive()) throw new Error('the turn entered sound mode');
+    S.sessionView = false;
 });
 
 process.exit(failed);

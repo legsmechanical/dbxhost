@@ -45,7 +45,7 @@ import {
     bankHasAltParams, altIndicatorActive
 } from './ui_leds.mjs';
 import { soundRender, soundActive, soundIsGlobal,
-         soundEnteredInSession } from './ui_sound.mjs';
+         soundEnteredInSession, soundFxBusLabels } from './ui_sound.mjs';
 import { drawMenuHeader } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* ------------------------------------------------------------------ */
@@ -1071,6 +1071,16 @@ export function bankDisplayHeld() {
     return !!(S.bankCardLatched || S.bankSelectTick >= 0);
 }
 
+/* ⭑ ONE OWNER for "the session mixer page is what session view shows":
+ * the session latch, the transient window, or a touched knob. ⚠ TOUCH-REVEAL
+ * ON THE JOG IS RETIRED HERE TOO (Josh's 'mirror track view' ruling) —
+ * S.jogTouched deliberately absent; the KNOB touch stays, it is the mixer's
+ * own edit surface. Render and the session click gate both read this. */
+export function sessMixerVisible() {
+    return !!(S.sessionView &&
+              (S.sessMixerLatched || S.bankSelectTick >= 0 || S.knobTouched >= 0));
+}
+
 /* Is the BANK CARD what track view is showing right now (vs the resting
  * overview)? Mirrors the card branch in drawUI: held window, a touched knob,
  * sticky alt-params, or the drum ALL-LANES confirm screen. The plain
@@ -1329,8 +1339,14 @@ function drawUIBody() {
          * Deliberately ABOVE the popup branch: the page is the richer read-out
          * (eight tracks vs one), so while a knob is held it should win. Other
          * popups still show once the finger lifts and the window closes. */
-        if (S.knobTouched >= 0 || S.jogTouched || S.bankSelectTick >= 0) {
+        if (sessMixerVisible()) {
             drawSessionMixerPage();
+            /* The Master / Send FX overlay floats over the mixer (Josh,
+             * 2026-08-31): jog-click on the shown page opens it, click again
+             * enters the picked bus, Back closes it. Stock font, the
+             * selection-overlay grammar of 08-27. */
+            if (S.sessFxOverlaySel >= 0)
+                drawKitListOverlay(soundFxBusLabels(), S.sessFxOverlaySel, {});
             return;
         }
         if (S.actionPopupEndTick >= 0) {

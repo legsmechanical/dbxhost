@@ -95,10 +95,12 @@ for (let m = 0; m < SESS_KNOB_MODES.length; m++) {
     const name = SESS_KNOB_MODES[m].key;
     S.sessKnobMode = m;
     for (const [what, set] of [
-        ['jog touch',   () => { S.knobTouched = -1; S.jogTouched = true;  S.bankSelectTick = -1; }],
-        ['knob touch',  () => { S.knobTouched = 2;  S.jogTouched = false; S.bankSelectTick = -1; }],
-        ['timeout',     () => { S.knobTouched = -1; S.jogTouched = false; S.bankSelectTick = 1;  }],
-        ['blank track', () => { S.knobTouched = 5;  S.jogTouched = true;  S.bankSelectTick = -1; }],
+        /* ⚠ jog-TOUCH reveal is RETIRED (2026-08-31) — the states that show
+         * the page are the click LATCH, a touched knob, and the window. */
+        ['latched',     () => { S.knobTouched = -1; S.sessMixerLatched = true;  S.bankSelectTick = -1; }],
+        ['knob touch',  () => { S.knobTouched = 2;  S.sessMixerLatched = false; S.bankSelectTick = -1; }],
+        ['timeout',     () => { S.knobTouched = -1; S.sessMixerLatched = false; S.bankSelectTick = 1;  }],
+        ['blank track', () => { S.knobTouched = 5;  S.sessMixerLatched = false; S.bankSelectTick = -1; }],
     ]) {
         set();
         try { draw(); ok(`${name}: renders on ${what}`); }
@@ -109,7 +111,7 @@ for (let m = 0; m < SESS_KNOB_MODES.length; m++) {
 /* 2. The fader row draws one strip per track that HAS a mixer position, and
  *    none for the two that do not. drawVFader outlines its channel, so counting
  *    outline calls counts strips. */
-S.sessKnobMode = 0; S.knobTouched = -1; S.jogTouched = true; S.bankSelectTick = -1;
+S.sessKnobMode = 0; S.knobTouched = -1; S.sessMixerLatched = true; S.bankSelectTick = -1;
 draw();
 /* A fader channel's top edge is the one fill of width 8 at y=TOP(14) — one per
  * strip, and nothing else on this screen has that signature. */
@@ -135,7 +137,7 @@ if (!prints.includes('SOMETHING')) ok('a held knob shows the mixer page, not a q
 else bad('a held knob shows the mixer page, not a queued popup', 'popup drew over it');
 
 /* 5. …and the popup still gets its turn once nothing is touched. */
-S.knobTouched = -1; S.jogTouched = false; S.bankSelectTick = -1;
+S.knobTouched = -1; S.jogTouched = false; S.bankSelectTick = -1; S.sessMixerLatched = false;
 draw();
 if (prints.includes('SOMETHING')) ok('with nothing touched, ordinary popups still draw');
 else bad('with nothing touched, ordinary popups still draw', 'popup was swallowed');

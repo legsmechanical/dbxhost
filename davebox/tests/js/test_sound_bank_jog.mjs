@@ -652,20 +652,23 @@ step('control: the session mixer walk is live (VOLUME -> PAN)', () => {
     if (snd.soundActive()) throw new Error('opened the FX list from the middle of the mixer');
 });
 
-step('⭑ right past the LAST mixer mode opens the session FX list', () => {
+step('⭑ right past the LAST mixer mode CLAMPS — the FX door is the click overlay now', () => {
+    /* The turn-past-Send-B door RETIRED 2026-08-31 (Front 2): the Master/Send
+     * FX list is reached by the jog CLICK's overlay on the mixer page. The
+     * jog now clamps at SEND B like any list. */
     sessReset();
     S.sessKnobMode = 3;                       /* SEND B, the last one */
     right();
-    if (!snd.soundActive()) throw new Error('the FX list did not open');
-    if (!snd.soundIsGlobal()) throw new Error('opened a TRACK sound, not the session buses');
-    if (!snd.soundEnteredInSession()) throw new Error('not marked as entered from session view');
-    /* sessKnobMode stays put — it is where the left turn back out lands, the
-     * same way activeBank stays on the last clip bank in track view. */
+    if (snd.soundActive()) throw new Error('the retired turn door opened the FX list');
     if (S.sessKnobMode !== 3) throw new Error('the mixer position moved: ' + S.sessKnobMode);
 });
 
-step('⭑ ...and a left turn at its TOP ROW steps back out to the mixer', () => {
-    /* The half that makes it a bank rather than a destination. */
+step('⭑ the list, once OPEN, still steps back out to the mixer at its top row', () => {
+    /* The list screen survives (leaveBus lands there; the overlay commits
+     * through it) — opened directly now that the turn door is gone. */
+    sessReset();
+    S.sessKnobMode = 3;
+    snd.soundEnterBuses();
     if (!snd.soundActive()) throw new Error('control: the list is not open');
     left();
     if (snd.soundActive()) throw new Error('the top row did not step back out');
@@ -678,7 +681,7 @@ step('⚠ a left turn BELOW the top row moves the cursor, it does not exit', () 
      * and not simply "any left turn". Needs more than one bus to be meaningful,
      * which HAS_SEND_FX gives us; skip honestly if the build has only Master. */
     sessReset();
-    S.sessKnobMode = 3; right();
+    S.sessKnobMode = 3; snd.soundEnterBuses();
     if (!snd.soundActive()) throw new Error('control: list did not open');
     const _n = snd.soundBusCountForTest();
     if (_n < 2) { ok('   (skipped: this build has one bus, no interior row to test)'); return; }
@@ -692,7 +695,7 @@ step('⚠ a left turn BELOW the top row moves the cursor, it does not exit', () 
 
 step('⭑ the FX list obeys the banks DISPLAY LAW (stands down to the overview)', () => {
     sessReset();
-    S.sessKnobMode = 3; right();
+    S.sessKnobMode = 3; snd.soundEnterBuses();
     if (!snd.soundActive()) throw new Error('control: list did not open');
     /* Entry leaves the window open, so it DRAWS — the positive control. */
     S.bankSelectTick = S.tickCount; S.jogTouched = false; S.touchedIdx = -1;

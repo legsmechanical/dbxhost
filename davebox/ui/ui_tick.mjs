@@ -56,7 +56,7 @@ import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
          SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS } from './ui_engine.mjs';
-import { soundActive, soundEnter, soundEnterMove, soundEnterBuses, soundExit,
+import { soundActive, soundEnter, soundEnterMove, soundExit,
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
     soundEnteredInSession, soundConsumeLedDirty,
     soundConsumeCoRunRequest, soundShowMenu } from './ui_sound.mjs';
@@ -1309,10 +1309,6 @@ export function _tickImpl() {
          * copied across — the rig calls the engine straight from its MIDI
          * handler, and a sequencer cannot. Placed after pollDSP() and before
          * the LED/draw block, so its dirty flag reaches this tick's draw. */
-        if (S.pendingBusMenu) {
-            S.pendingBusMenu = false;
-            if (!soundActive()) soundEnterBuses();
-        }
         /* Bank-picker SETTLE fallback — it ABANDONS.
          *
          * The gesture normally ends when you let go of the jog wheel. But a

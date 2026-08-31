@@ -50,13 +50,13 @@ import { effectiveClip, forceRedraw, invalidateLEDCache,
 import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
 import { soundActive, soundExit, soundVolGestureEnd, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
-    soundViewForTest } from './ui_sound.mjs';
+    soundViewForTest, soundEnterBusDirect, soundFxBusLabels } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
 /* ⚠ one-way: ui_render never imports this module (checked 2026-08-31) —
  * the visibility predicate must be the render's own or the click gate and
  * the screen can disagree. */
-import { bankCardVisible } from './ui_render.mjs';
+import { bankCardVisible, sessMixerVisible } from './ui_render.mjs';
 import { closeDaveBox } from './ui_daves.mjs';
 import { applyTrackConfig, readBankParams, applyBankParam,
     refreshPerClipBankParams, resyncDrumTrack,
@@ -604,6 +604,26 @@ function modalDialogUp() {
         }
         return;
     }
+    /* ⭑⭑ SESSION VIEW mirrors the track grammar (Josh, 2026-08-31, Front 2):
+     * plain jog click from the session overview latches the MIXER PAGE; on
+     * the shown page it opens the Master/Send FX overlay; on the overlay it
+     * enters the picked bus. Back walks it back (see _backTap). */
+    if (d1 === 3 && d2 === 127 && !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld &&
+            S.sessionView && !soundActive()) {
+        if (S.sessFxOverlaySel >= 0) {
+            const _bi = S.sessFxOverlaySel;
+            S.sessFxOverlaySel = -1;
+            soundEnterBusDirect(_bi);
+        } else if (sessMixerVisible()) {
+            S.sessFxOverlaySel = 0;
+        } else {
+            S.sessMixerLatched = true;
+            armBankDisplay();
+        }
+        S.screenDirty = true;
+        forceRedraw();
+        return;
+    }
     /* ⭑⭑ PLAIN JOG CLICK FROM THE OVERVIEW OPENS THE PERSISTENT BANK DISPLAY
      * (Josh, 2026-08-31 — the Front-2 bank-access revision). The latch that
      * lived on Shift+jog-click since 08-25 moves to the plain click, CONTEXT-
@@ -920,6 +940,13 @@ function modalDialogUp() {
                         S.seqLastClip = -1;
                         forceRedraw();
                     }
+                } else if (S.sessionView && S.sessFxOverlaySel >= 0) {
+                    /* The FX overlay owns the jog while open — clamp, the
+                     * list law. */
+                    const _fn = soundFxBusLabels().length;
+                    S.sessFxOverlaySel = Math.max(0, Math.min(_fn - 1,
+                        S.sessFxOverlaySel + (delta > 0 ? 1 : -1)));
+                    S.screenDirty = true;
                 } else if (S.sessionView) {
                     /* Clamp, never wrap (Josh, 2026-08-24) — hard stop at
                      * VOLUME and at SEND B. Same law the settings enums and the
@@ -938,20 +965,11 @@ function modalDialogUp() {
                      * because every turn used to change the mode, which is
                      * exactly when discarding the cache is the right thing. */
                     if (S.sessKnobMode !== _skPrev) _sessInvalidateAllLevels();
-                    /* MASTER + SEND FX: one step PAST the last mixer mode is the
-                     * session's own FX list, reached by the same jog that walks
-                     * the mixer modes — the session-view twin of SOUND + CONFIG
-                     * sitting one past AUTOMATION (Josh, 2026-08-24). The list's
-                     * cursor clamps at its first row and a further left turn
-                     * there steps back out to the mixer (soundOnCC), so the jog
-                     * reads as ONE strip: VOLUME … SEND B · FX · (its rows…).
-                     * Entry is the SAME door Shift+Note/Session uses, deferred
-                     * to the tick because opening reads the chain — nothing is
-                     * duplicated. `sessKnobMode` stays on SEND B, which is where
-                     * the left turn back out lands. */
-                    else if (delta > 0 && !soundActive()) {
-                        S.pendingBusMenu = true;
-                    }
+                    /* ⚠ The turn-past-Send-B door to the FX list RETIRED
+                     * (Josh, 2026-08-31): the Master/Send FX overlay on the
+                     * jog CLICK is the door now, so the jog clamps at SEND B
+                     * like any list. Shift+Note/Session still opens the full
+                     * list screen. */
                     /* No popup: turning the jog while touching it now reveals
                      * the mixer page itself, which already names the mode in its
                      * header and shows all 8 tracks in it. A popup here would
@@ -1738,6 +1756,7 @@ export function backTapWouldAct() {
         return !S.awaitingProjectSelect;
     }
     if (S.daveBox) return true;
+    if (S.sessFxOverlaySel >= 0 || S.sessMixerLatched) return true;
     if (S.snapshotPicker || S.clearAutoMenu || S.tempoSelectActive ||
         S.mergeNoticePending || S.mergeCountingIn ||
         S.pendingMergePlacement || S.mergeSoloPlacement >= 0 ||
@@ -1757,6 +1776,18 @@ function _backTap() {
     if (S.confirmStateWipe) return;
 
     /* 1. Transient dialogs / pickers / modes (one open at a time). */
+    if (S.sessFxOverlaySel >= 0) {
+        /* Close the FX overlay, stay on the mixer page beneath it. */
+        S.sessFxOverlaySel = -1;
+        forceRedraw();
+        return;
+    }
+    if (S.sessMixerLatched) {
+        S.sessMixerLatched = false;
+        standDownBankDisplay(true);
+        forceRedraw();
+        return;
+    }
     if (S.daveBox) {
         /* Back leaves the album for the menu it was opened from. */
         closeDaveBox();
@@ -4152,6 +4183,11 @@ function _onCC_knobs(d1, d2) {
 }
 
 function _switchViewCleanup() {
+    /* The session mixer latch and its FX overlay are session-view furniture —
+     * a view switch dismisses both (same as Back), or the next visit to
+     * session view would reopen a screen nobody asked for. */
+    S.sessMixerLatched = false;
+    S.sessFxOverlaySel = -1;
     S.heldStepBtn        = -1;
     S.heldStep           = -1;
     S.heldStepNotes      = [];
