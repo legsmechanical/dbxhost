@@ -1007,13 +1007,19 @@ function headerTitle() {
      * number — and the module's identity is already visible in the chain
      * editor you came from. Falls back to the abbreviation until the read
      * cursor has picked the name up, and for modules with no presets. */
+    /* "MFX", never "S1", on the master bus: it is ADDRESSED at IPC slot 0 by
+     * convention and is not instrument slot 1. */
+    const label = (currentChrome && currentChrome.label) || `S${currentSlot + 1}`;
+    /* A host may prefer the header to keep naming the MODULE rather than the
+     * patch (ctx.headerPresetName === false): a sequencer host whose chain
+     * editor is not the screen you came from has nowhere else naming it.
+     * Default-on — absent or any other value keeps the patch-name behaviour. */
+    if (ctx.headerPresetName === false)
+        return `${label} > ${_abbrevCache}`;
     const userMark = (typeof ctx.userPresetHeaderMark === 'function')
         ? ctx.userPresetHeaderMark(currentSlot, currentComponent) : null;
     const name = userMark ? `${userMark.dirty ? '* ' : ''}${userMark.name}`
         : (controller && controller.presetName) || _abbrevCache;
-    /* "MFX", never "S1", on the master bus: it is ADDRESSED at IPC slot 0 by
-     * convention and is not instrument slot 1. */
-    const label = (currentChrome && currentChrome.label) || `S${currentSlot + 1}`;
     return `${label} > ${name}`;
 }
 

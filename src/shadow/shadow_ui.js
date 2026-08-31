@@ -15554,6 +15554,11 @@ function drawHelpDetail() {
      * the module's own patch name, an inert menu row, and the list editor
      * respectively). See docs/PARAM_PAGES.md. */
     _ctx.evaluateVisibilityCondition = (...args) => evaluateVisibilityCondition(...args);
+    /* The header keeps the PATCH name here — the chain editor you came through
+     * already named the module. davebox answers false (its entry paths never
+     * show a chain editor); stated explicitly on both sides so the seam pin
+     * sees a decision, not drift. */
+    _ctx.headerPresetName = true;
     _ctx.isParamModulated = (slot, fullKey) => isHierarchyParamModulated(slot, fullKey);
     _ctx.isMuteHeld = () => hostMuteHeld;
     /* A view that paces its own redraws can ask for one. The global gate draws

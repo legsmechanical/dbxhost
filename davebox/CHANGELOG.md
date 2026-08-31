@@ -52,6 +52,8 @@ the section into a versioned heading at release time.
   `Tr<n>` prefix, since they can hold the screen with no track row in sight.
 
 ### Fixes
+- **The module editor's header names the module, not the preset.** The
+  breadcrumb reads `S1 > NUSAW` again instead of the loaded patch name.
 - **Touching a knob in the module editor highlights its parameter again.** The
   header names the param the moment your finger rests on the knob, before any
   turn — the pre-1.0 behaviour, restored.

@@ -5810,6 +5810,13 @@ function ppIo() {
  * binding reads, and test_param_pages_vendor.sh fails if this and
  * pp_ctx.mjs's PP_CTX_MEMBERS / PP_CTX_ABSENT stop agreeing with it. */
 installPpCtx({
+    /* The header names the MODULE, not the patch (Josh, 2026-08-31: no preset
+     * name in the editor breadcrumb). Stock keeps the patch name because its
+     * chain editor — which names the module — is the screen you came from;
+     * davebox's entry paths are its own, so the module name has nowhere else
+     * to live. Generic opt-out, default-on in the binding. */
+    headerPresetName: false,
+
     /* Bare key straight through: engineGetChainParam does no key building, and
      * the binding's keys are already full. */
     getSlotParam: (slot, key) => engineGetChainParam(slot, key),

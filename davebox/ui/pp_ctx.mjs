@@ -113,6 +113,13 @@ export function installPpCtx(members) {
  *
  *   userPresetHeaderMark(slot, component) -> string|null
  *       The header's "this is a user preset" mark. Fork host does not supply it.
+ *
+ *   headerPresetName -> boolean
+ *       false = the breadcrumb keeps the module abbreviation instead of the
+ *       patch name. davebox sets false — a deliberate, Josh-ruled divergence
+ *       from stock (2026-08-31: "don't show preset name on editor header
+ *       breadcrumbs"): stock's chain editor names the module on the way in,
+ *       davebox's entry paths never do. Default-on in the binding.
  * ======================================================================== */
 
 /* The contract as DATA, not prose — every member the binding reads, split into
@@ -130,6 +137,7 @@ export const PP_CTX_MEMBERS = [
     'getSlotParam', 'setSlotParam', 'isMuteHeld', 'requestRedraw',
     'setView', 'VIEWS', 'getModuleAbbrev',
     'evaluateVisibilityCondition', 'isParamModulated', 'openParamEditor',
+    'headerPresetName',
 ];
 
 /* ⭐⭐ DELIBERATELY ABSENT — because THE HOST OMITS THEM TOO, and davebox is
