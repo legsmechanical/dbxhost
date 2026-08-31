@@ -128,9 +128,8 @@ export function installPpCtx(members) {
  *
  * A member moves from GAPS to MEMBERS when ui_sound.mjs actually installs it. */
 export const PP_CTX_MEMBERS = [
-    'getSlotParam', 'setSlotParam', 'isParamModulated', 'isMuteHeld',
-    'requestRedraw', 'setView', 'VIEWS', 'getModuleDisplayName', 'getModuleAbbrev',
-    'userPresetHeaderMark',
+    'getSlotParam', 'setSlotParam', 'isMuteHeld', 'requestRedraw',
+    'setView', 'VIEWS', 'getModuleDisplayName', 'getModuleAbbrev',
 ];
 
 /* 🔴 Deliberately unanswered, each for a stated reason. Every one of these is a
@@ -155,4 +154,15 @@ export const PP_CTX_GAPS = [
      * ⭑ The fork host does not supply this either, so stock-on-this-build has
      * the same gap — matching it is matching stock. */
     'runSlotAction',
+    /* The modulation dot and the label's `~`. davebox has the RENDER side
+     * (ui_cells' modulated/modNorm) but no live per-param modulation state on
+     * this surface — renderCellsForBank is called without modValues today — so
+     * answering would mean inventing one. Left open deliberately: unanswered,
+     * the grid draws no mod marks, which is exactly what davebox's own editor
+     * does today. It is still a difference from stock, hence listed. */
+    'isParamModulated',
+    /* The header's "this is a user preset" mark. ⭑ The fork host does not
+     * supply it either, so stock-on-this-build has the same gap — matching it
+     * IS matching stock here. */
+    'userPresetHeaderMark',
 ];

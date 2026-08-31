@@ -67,6 +67,15 @@ import {
     hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard,
 } from './ui_movy.mjs';
 import { bankCyclePos, bankCycleForMode } from './ui_pure.mjs';
+/* ⭐ THE MODULE EDITOR IS STOCK'S. This is the host's own binding, vendored
+ * verbatim into davebox/ui/vendor/ (see scripts/bundle_ui.sh), running over the
+ * shared param_pages engine imported unmodified — so the pages, widgets, knob
+ * feel, page kinds, menus and layouts are stock's code, not a resemblance.
+ * davebox's whole half of the seam is ui/pp_ctx.mjs. */
+import { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
+         handleParamPagesMidi, paramPagesActive }
+    from './vendor/shadow_ui_param_pages.mjs';
+import { installPpCtx } from './pp_ctx.mjs';
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* Chain blocks in signal order, across the audio-FX blocks the host routes.
@@ -1063,6 +1072,13 @@ export function soundExit(opts) {
      * entries could never be checked. Accepted residual risk of the
      * fire-and-forget mailbox on the way out. */
     S.inflight.length = 0;
+    /* ⚠ The editor must be told, not just stopped being drawn: its exit is
+     * where the knob-ring LEDs are handed back (shadow_restore_knob_leds +
+     * both LED cache invalidations). Leaving sound mode without it strands the
+     * rings lit — the same class as the 08-26 linger, which was a missed
+     * teardown rather than a painter bug. Asked of the BINDING, not of ppOn: if
+     * the two ever disagree the binding's answer is the one that owns the LEDs. */
+    if (ppOn || paramPagesActive()) { exitParamPages(); ppOn = false; }
     if (S.busLevelDirty) engineSaveState();
     S.active = false;
     /* CLOSING hands the bank back; LEAVING keeps it. On a close the track stops
@@ -3930,6 +3946,15 @@ export function soundOnCC(d1, d2, decodeDelta) {
 
     if (hostedTakes(d1, d2)) { S.dirty = true; return true; }
 
+    /* ⚠ AFTER the hosted check and BEFORE davebox's own handling, but the two
+     * modifier CCs below are read FIRST and always fall through: the binding
+     * asks davebox for Shift and Mute through ctx (precision mode, and
+     * Mute+touch = reset to default), so swallowing them here would leave both
+     * gestures dead inside the editor while davebox lost track of them too. */
+    if (ppOn && d1 !== 49 && d1 !== 88) {
+        if (handleParamPagesMidi([0xB0, d1, d2])) { S.dirty = true; return true; }
+    }
+
     if (d1 === 49) {                                   /* shift */
         const held = d2 >= 64;
         if (held !== S.shiftHeld) { S.shiftHeld = held; S.dirty = true; }
@@ -4667,6 +4692,11 @@ export function soundTick() {
 
     if (isTextEntryActive()) { tickTextEntry(); return; }
 
+    /* ⭑ AHEAD of discovery: when the editor is on, davebox's own bank model is
+     * not what is being drawn, and running both would pay for two contracts. */
+    ppSync();
+    if (ppOn) { tickParamPages(); return; }
+
     if (S.pendingDiscover > 0 && --S.pendingDiscover === 0) runDiscovery();
 
     /* Prescan owns the tick while it runs: it is already at the SHM budget, and
@@ -5155,6 +5185,111 @@ function pageGroups() {
     return out;
 }
 
+/* ===========================================================================
+ * THE MODULE EDITOR — stock's, wired to davebox's views
+ *
+ * Josh, 2026-08-31: "when i'm in davebox's module editing interface i want it
+ * to be no different than when i'm in stock's module editing interface."
+ *
+ * What davebox contributes is ONLY the wiring: which slot/component is being
+ * edited, where the values come from, where Back goes. Everything you see and
+ * touch inside is the vendored binding's.
+ *
+ * ⚠ OFF BY DEFAULT while it is wired. davebox's own editor (renderEdit below)
+ * is still the shipped one; flipping PP_EDITOR swaps them, and both paths stay
+ * whole so a device pass can A/B them. This is not a permanent switch — it
+ * comes out with ui_discover's bank model when the swap is made.
+ * ⭐ Before removing the flag: MEASURE THE TICK on device. The controller
+ * staggers to ~1 get_param per tick, but an entry rebuild bursts, and a blocked
+ * tick is how the input ring overflows and drops MIDI RELEASES
+ * ([[schwung-blocked-tick-drops-midi-releases]]) — the 771 ms stall that
+ * stranded the LEDs was exactly this shape. */
+const PP_EDITOR = false;
+
+let ppOn = false;
+
+/* Where the editor applies. NOT a Move bus (no ui_hierarchy / chain_params to
+ * plan from — that is requirement 1's "to the extent there aren't conflicts"),
+ * and not a module drawing its OWN canvas, which already owns the whole frame. */
+function ppApplies() {
+    return PP_EDITOR && S.active && !S.bus && S.slot >= 0 && !S.hosted && !!S.moduleId;
+}
+
+/* ⚠ THE PREFIX IS S.comp, AND THAT IS LOAD-BEARING. The binding hands the io
+ * FULL keys (`${prefix}:${param}`) — including its own `${prefix}:is_loading`
+ * probe. Passing S.comp makes every key exactly what davebox already addresses
+ * with engineGet(slot, comp, key), so the split below is exact rather than a
+ * guess. ⚠ Do NOT split on the first ':' instead: a component key can itself
+ * contain one (`send_fx:a`), so the only safe split is stripping the prefix we
+ * chose. */
+function ppBare(fullKey) {
+    const p = S.comp + ':';
+    const k = String(fullKey);
+    return k.startsWith(p) ? k.slice(p.length) : null;
+}
+
+/* Reconciled in ONE place rather than at the five sites that set VIEW_EDIT: the
+ * editor's lifetime is a function of what is on screen, and a reconcile cannot
+ * be forgotten by a new call site the way five enter() calls can. */
+function ppSync() {
+    const want = ppApplies() && S.view === VIEW_EDIT;
+    if (want && !ppOn) {
+        enterParamPages(S.slot, S.comp, S.comp, null, null, {
+            label: modLabel(),
+            /* Back leaves the editor for the block picker — davebox's own
+             * destination, unchanged from what renderEdit's footer promises. */
+            returnView: VIEW_BLOCKS,
+            onExit: () => { ppOn = false; },
+        });
+        ppOn = true;
+        S.dirty = true;
+    } else if (!want && ppOn) {
+        exitParamPages();
+        ppOn = false;
+        S.dirty = true;
+    }
+}
+
+/* Installed once, at module load. The host fills its ctx from shadow_ui.js at
+ * init for the same reason: the binding reads these INSIDE function bodies, so
+ * they only have to exist by the time the editor is entered.
+ * ⚠⚠ The member list is not ours to choose — it is whatever the vendored
+ * binding reads, and test_param_pages_vendor.sh fails if this and
+ * pp_ctx.mjs's PP_CTX_MEMBERS / PP_CTX_GAPS stop agreeing with it. */
+installPpCtx({
+    /* Bare key straight through: engineGetChainParam does no key building, and
+     * the binding's keys are already full. */
+    getSlotParam: (slot, key) => engineGetChainParam(slot, key),
+
+    /* ⚠⚠ NOT engineSet. engineSet is the raw fire-and-forget shadow_set_param:
+     * in overtake the host has ~8 ms of mailbox patience and then STOMPS an
+     * unconsumed request, so a write vanishes with nothing logged. Sound mode's
+     * answer is the verify-and-rewrite ledger (`a71cd569`) — a write is not
+     * done until a read confirms it — and the grid has to enter it or its edits
+     * will disappear exactly the way sound mode's did. queueWrite also
+     * coalesces by key, so a sweep costs one write per drain rather than one
+     * per detent. */
+    setSlotParam: (slot, key, value) => {
+        const k = ppBare(key);
+        if (k === null) { log('pp: unprefixed write ignored: ' + key); return; }
+        queueWrite(k, String(value));
+    },
+
+    isMuteHeld: () => S.muteHeld,
+    requestRedraw: () => { S.dirty = true; },
+
+    /* ⚠ davebox's OWN views, never the host's. The binding calls setView on
+     * entry and again on exit; pointing those at the host's setter would yank
+     * the screen out of overtake mid-session. */
+    VIEWS: { PARAM_PAGES: VIEW_EDIT, CHAIN_EDIT: VIEW_BLOCKS },
+    setView: (v) => { if (v !== S.view) { S.view = v; S.dirty = true; } },
+
+    /* The header's module name. davebox shows the module id here today and the
+     * binding falls back from display name to abbrev, so both answer the same. */
+    getModuleDisplayName: (ref) => String(ref || '').toUpperCase(),
+    getModuleAbbrev: (ref) => String(ref || '').toUpperCase(),
+});
+
 function renderEdit() {
     clear_screen();
     /* Hosted modules draw themselves, INCLUDING their own header and picker. */
@@ -5397,6 +5532,12 @@ export function soundRender() {
     else if (S.view === VIEW_ENUM) renderEnumPick();
     else if (S.view === VIEW_PATCHES) renderChainPatches();
     else if (S.view === VIEW_BUSES) renderBuses();
+    /* The editor draws the whole frame itself, header and footer included —
+     * clear_screen() is its own first call, exactly as on the host. Falling
+     * through to renderEdit when it declines is deliberate: it returns false
+     * for a page kind it does not draw, and davebox's own editor is still the
+     * shipped one behind PP_EDITOR. */
+    else if (ppOn && drawParamPages()) { /* stock's editor drew it */ }
     else renderEdit();
     /* The level readout wins: it is the same box in the same place, and the
      * volume knob is a deliberate second gesture on top of this one. */

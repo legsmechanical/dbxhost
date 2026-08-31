@@ -142,4 +142,38 @@ done
 
 ok "the adapter accounts for all $(wc -w <<<"$members" | tr -d ' ') ctx members ($(wc -w <<<"$(nocomments < "$adapter" | sed -n '/PP_CTX_GAPS *= *\[/,/\]/p' | grep -oE "'[A-Za-z_][A-Za-z0-9_]*'" | tr -d "'")" | tr -d ' ') named as open gaps)"
 
+# --- 4. THE DECLARED CONTRACT MATCHES WHAT IS ACTUALLY INSTALLED -----------
+#
+# PP_CTX_MEMBERS/PP_CTX_GAPS are only worth checking against the binding if they
+# also describe reality. Without this, the arrays are a WISH: a member could be
+# listed as answered while ui_sound installs nothing, and the binding's
+# `typeof === 'function'` guard would swallow it silently — a behaviour missing
+# from the editor with a test cheerfully reporting the contract is complete.
+wiring=davebox/ui/ui_sound.mjs
+[ -f "$wiring" ] || fail "$wiring missing"
+install=$(nocomments < "$wiring" | awk '/installPpCtx\(\{/,/^\}\);/')
+[ -n "$install" ] || fail "$wiring no longer calls installPpCtx({...}) — the
+editor has no host context at all, so every guarded read silently falls back"
+installed=$(grep -oE "^\s+[A-Za-z_][A-Za-z0-9_]*:" <<<"$install" | tr -d ' :' | sort -u)
+
+declared=$(nocomments < "$adapter" | sed -n '/PP_CTX_MEMBERS *= *\[/,/\]/p' \
+           | grep -oE "'[A-Za-z_][A-Za-z0-9_]*'" | tr -d "'" | sort -u)
+
+for m in $declared; do
+  grep -qx "$m" <<<"$installed" ||
+    fail "PP_CTX_MEMBERS claims '$m' is answered, but $wiring never installs it.
+The binding's read is guarded, so the editor will NOT error — it will quietly
+drop whatever '$m' does. Either install it, or move it to PP_CTX_GAPS."
+done
+
+gaps=$(nocomments < "$adapter" | sed -n '/PP_CTX_GAPS *= *\[/,/\]/p' \
+       | grep -oE "'[A-Za-z_][A-Za-z0-9_]*'" | tr -d "'" | sort -u)
+for g in $gaps; do
+  grep -qx "$g" <<<"$installed" &&
+    fail "'$g' is listed in PP_CTX_GAPS but $wiring DOES install it — the gap
+list is stale, and a reader trusting it will think the editor is missing a
+behaviour it actually has"
+done
+ok "everything declared answered is installed, and every gap really is one"
+
 echo "PASS: davebox runs the host's own param-pages binding, and the seam is honest"

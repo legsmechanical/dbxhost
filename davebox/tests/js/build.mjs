@@ -23,8 +23,15 @@ const stubPlugin = {
         // tree — one repo, one deliverable, so the file the device serves is
         // right here. This is what lets a test import ui modules that pull in
         // menu_layout/text_entry/input_filter (e.g. the picker boot test).
+        // ⚠ THE SUBPATH IS KEPT, NOT BASENAME'D. It was basename() until
+        // 2026-08-31, which FLATTENS a shared PACKAGE: `shared/param_pages/
+        // page_controller.mjs` resolved to `src/shared/page_controller.mjs`,
+        // which does not exist, and the whole JS suite failed to bundle the
+        // moment davebox imported the module editor. Nothing had noticed
+        // because every shared import davebox had until then was a flat file.
         build.onResolve({ filter: /^\/data\/UserData\/schwung\/shared\// }, (args) => ({
-            path: path.join(repoRoot, '../src/shared', path.basename(args.path)),
+            path: path.join(repoRoot, '../src/shared',
+                            args.path.replace('/data/UserData/schwung/shared/', '')),
         }));
         // QuickJS built-ins. A shared module may import `std` (session_state
         // probes the session lock through it); Node has no such module, so the
