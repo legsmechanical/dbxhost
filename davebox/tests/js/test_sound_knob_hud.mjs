@@ -122,6 +122,15 @@ for (const fn of ['host_write_file', 'host_read_file', 'host_file_exists', 'host
     globalThis[fn] = () => (fn.indexOf('read') >= 0 || fn.indexOf('get') >= 0 ? '' : 0);
 
 async function main() {
+/* ⚠ davebox's module editor is the HOST'S OWN binding (ui/vendor/), so sound
+ * mode's exit path now reaches host bindings this rig never needed —
+ * shadow_restore_knob_leds among them, on the LED teardown. Declared here
+ * rather than injected into every bundle: tests/js/build.mjs refuses blanket
+ * stubbing on purpose, because a missing binding throws inside tick() and the
+ * rig would then pass against a tick that stopped on line one. */
+const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
+stubParamPagesDevice();
+
 const { S: GS } = await import('../../ui/ui_state.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 

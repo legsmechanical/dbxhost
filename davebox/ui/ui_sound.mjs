@@ -3668,6 +3668,26 @@ function verifyInflight() {
     w.tick = S.tickCount;
 }
 
+/* Drain a bounded number of queued writes. Each drained write enters the
+ * in-flight ledger — it is not DONE until verifyInflight reads it back.
+ *
+ * ⭑ ONE OWNER, and that is the point of it being a function. The tick has two
+ * paths through it now — davebox's own editor and the vendored one — and the
+ * ledger has to drain on BOTH: the vendored editor writes THROUGH queueWrite
+ * (see installPpCtx), so a path that skipped this would queue every edit and
+ * land none of them. Copying the loop into the second path would have been two
+ * owners of the same invariant, which is how the drain gets fixed in one place
+ * and stays broken in the other. */
+function drainAndVerifyWrites() {
+    for (let n = 0; n < WRITES_PER_TICK && S.pendingWrites.length; n++) {
+        const w = S.pendingWrites.shift();
+        engineSet(w.slot, w.comp, w.key, w.val);
+        trackInflight(w.slot, w.comp, w.key, w.val);
+    }
+    verifyInflight();
+    drainSlotWrites();
+}
+
 /* Queue rather than write. Coalesces by key so a fast sweep costs one write per
  * key per drain instead of one per detent. */
 /* `comp` defaults to the block being edited; the block PICKER passes one
@@ -4695,7 +4715,17 @@ export function soundTick() {
     /* ⭑ AHEAD of discovery: when the editor is on, davebox's own bank model is
      * not what is being drawn, and running both would pay for two contracts. */
     ppSync();
-    if (ppOn) { tickParamPages(); return; }
+    if (ppOn) {
+        tickParamPages();
+        /* ⚠⚠ THE LEDGER STILL DRAINS. davebox's bank model is not what is on
+         * screen, but its WRITE PATH is: the vendored editor's setParam goes
+         * through queueWrite, so returning before this would queue every edit
+         * the grid makes and land none of them — writes that look accepted, a
+         * screen that shows them, and nothing reaching the DSP. Caught by
+         * test_sound_write_verify, which failed the moment the flag went on. */
+        drainAndVerifyWrites();
+        return;
+    }
 
     if (S.pendingDiscover > 0 && --S.pendingDiscover === 0) runDiscovery();
 
@@ -4763,15 +4793,7 @@ export function soundTick() {
         }
     }
 
-    /* Drain a bounded number of queued writes. Each drained write enters the
-     * in-flight ledger — it is not DONE until verifyInflight reads it back. */
-    for (let n = 0; n < WRITES_PER_TICK && S.pendingWrites.length; n++) {
-        const w = S.pendingWrites.shift();
-        engineSet(w.slot, w.comp, w.key, w.val);
-        trackInflight(w.slot, w.comp, w.key, w.val);
-    }
-    verifyInflight();
-    drainSlotWrites();
+    drainAndVerifyWrites();
     drainForcedPoll();
 
     if (S.volPending) {
