@@ -279,10 +279,13 @@ function drawSessionMixerPage() {
     /* The gateway renders the SOUND + CONFIG door idiom: a prompt, not a
      * grid — the click is the entry, the knobs are inert. */
     if (mode.widget === 'gateway') {
+        /* The SOUND + CONFIG door's exact dress (renderPrompt, ui_sound.mjs):
+         * kit header + the movy small face, same rows — Josh, 2026-09-01:
+         * "should use same font as sound+config entry bank on track view". */
         clear_screen();
         drawKitHeader(mode.label, false);
-        pixelPrintC(64, 26, 'CLICK TO ENTER', 1);
-        pixelPrintC(64, 40, 'MASTER & SEND FX', 1);
+        mvPrint(Math.max(0, Math.round((128 - mvWidth('CLICK TO ENTER')) / 2)), 26, 'CLICK TO ENTER', 1);
+        mvPrint(Math.max(0, Math.round((128 - mvWidth('MASTER & SEND FX')) / 2)), 40, 'MASTER & SEND FX', 1);
         return;
     }
     const cells = [];
