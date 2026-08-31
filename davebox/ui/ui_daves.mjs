@@ -27,10 +27,13 @@ import { forceRedraw } from './ui_leds.mjs';
  * footer so the whole image can be seen") ──
  *
  * The frame is 64px, the window above the footer is 46px, so 18px of travel
- * shows every row. The loop: hold at the top, glide down a pixel at a time,
- * hold at the bottom, glide back — a return glide rather than a snap, because
- * a 1-bit panel makes a snap read as a glitch. Browsing to another Dave
- * restarts at the top. Timings in ticks (~94 Hz). */
+ * shows every row. The loop: glide down a pixel at a time, hold at the
+ * bottom, glide back, hold at the top — a return glide rather than a snap,
+ * because a 1-bit panel makes a snap read as a glitch. It starts moving THE
+ * MOMENT the card shows (Josh, device pass 2026-08-31: "it shouldn't wait
+ * to scroll... just slow immediate up and down bounce" — the holds belong at
+ * the extremes it REACHES, not at the start). Browsing to another Dave
+ * restarts at the top, also already moving. Timings in ticks (~94 Hz). */
 export const DAVE_FOOTER_H = 18;
 export const DAVE_SCAN_MAX = DAVE_FOOTER_H;          /* 64 - (64 - 18) */
 const SCAN_HOLD_TICKS = 90;                          /* ~1 s at each end */
@@ -67,7 +70,7 @@ export function openDaveBox() {
         showActionPopup('DAVE BOX', 'No Daves yet');
         return false;
     }
-    S.daveBox = { list: list, idx: 0, yOff: 0, dir: 1, holdT: SCAN_HOLD_TICKS, stepT: 0 };
+    S.daveBox = { list: list, idx: 0, yOff: 0, dir: 1, holdT: 0, stepT: 0 };
     S.globalMenuOpen = false;
     forceRedraw();
     return true;
@@ -83,8 +86,8 @@ export function daveBoxRotate(delta) {
     if (!d || !delta) return;
     const n = d.list.length;
     d.idx = ((d.idx + (delta > 0 ? 1 : -1)) % n + n) % n;
-    /* A fresh Dave scans from the top. */
-    d.yOff = 0; d.dir = 1; d.holdT = SCAN_HOLD_TICKS; d.stepT = 0;
+    /* A fresh Dave scans from the top — and is already moving. */
+    d.yOff = 0; d.dir = 1; d.holdT = 0; d.stepT = 0;
     forceRedraw();
 }
 

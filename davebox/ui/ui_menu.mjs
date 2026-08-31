@@ -9,7 +9,7 @@
  */
 
 import {
-    createValue, createEnum, createToggle, createAction
+    createValue, createEnum, createToggle, createAction, createDivider
 } from '/data/UserData/schwung/shared/menu_items.mjs';
 
 import {
@@ -206,11 +206,6 @@ function buildGlobalMenuItems() {
         createAction('Projects...', function() {
             openProjectPadPicker();
         }),
-        /* The DAVE BOX — the album for the launch-splash gacha. Every Dave
-         * the user has ever been dealt at launch, jog-driven. ui_daves.mjs. */
-        createAction('Dave Box', function() {
-            openDaveBox();     /* closes the menu itself when it opens */
-        }),
         createAction('Clear Sess', function() {
             S.confirmClearSession = true;
             S.confirmClearSel     = 1;
@@ -247,6 +242,13 @@ function buildGlobalMenuItems() {
              * later so the save actually lands. */
             S.pendingExitAfterSave = true;     /* drained one tick after save fires */
             S.globalMenuOpen = false;
+        }),
+        /* ── the easter egg lives past the exit rows, behind its own rule
+         * (Josh, device pass 2026-08-31): the album for the launch-splash
+         * gacha — every Dave ever dealt, jog-driven. ui_daves.mjs. */
+        createDivider(),
+        createAction('Open the Dave Box', function() {
+            openDaveBox();     /* closes the menu itself when it opens */
         }),
     ].filter(Boolean);   /* drops the host-gated entries when absent */
 }

@@ -96,6 +96,10 @@ step('⭐ the SCAN loops top to bottom and back, and the WHOLE image gets its tu
     seenFileContent = '1\n';
     if (!daves.openDaveBox()) throw new Error('did not open');
     if (S.daveBox.yOff !== 0) throw new Error('did not start at the top');
+    /* ⭑ IMMEDIATE: no opening hold — the first glide step lands within one
+     * step period (Josh: "it shouldn't wait to scroll"). */
+    for (let t = 0; t < 12; t++) daves.daveBoxTick();
+    if (S.daveBox.yOff !== 1) throw new Error('the scan waited to start (yOff=' + S.daveBox.yOff + ')');
     const offs = new Set();
     for (let t = 0; t < 1400; t++) { daves.daveBoxTick(); offs.add(S.daveBox.yOff); }
     for (let o = 0; o <= daves.DAVE_SCAN_MAX; o++)
@@ -154,14 +158,18 @@ step('the footer band OVERLAYS the image: cleared 18px band, name + meta pixels 
     daves.closeDaveBox();
 });
 
-step('the global settings menu carries the Dave Box door — and it opens the album', () => {
+step('"Open the Dave Box" is the LAST menu row, behind a divider — and it opens the album', () => {
     seenFileContent = '1\n';
     menuMod.openGlobalMenu();
     if (!S.globalMenuOpen) throw new Error('menu did not open');
-    const item = (S.globalMenuItems || []).find((it) => it && it.label === 'Dave Box');
-    if (!item) throw new Error('no Dave Box item: ' +
-        JSON.stringify((S.globalMenuItems || []).map((it) => it && it.label)));
-    item.onAction();
+    const items = S.globalMenuItems || [];
+    const last = items[items.length - 1];
+    if (!last || last.label !== 'Open the Dave Box')
+        throw new Error('last row is ' + JSON.stringify(last && last.label) + ', not the Dave Box');
+    const before = items[items.length - 2];
+    if (!before || before.type !== 'divider')
+        throw new Error('no divider ahead of the Dave Box row (got ' + JSON.stringify(before && before.type) + ')');
+    last.onAction();
     if (!S.daveBox) throw new Error('the door did not open the album');
     if (S.globalMenuOpen) throw new Error('opening the album left the menu up');
     daves.closeDaveBox();
