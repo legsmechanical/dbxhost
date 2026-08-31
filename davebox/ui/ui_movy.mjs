@@ -54,34 +54,40 @@ import { observeLanded, easeOut, lerp } from './ui_anim.mjs';
  * ⭑⭑ RE-CUT 2026-08-29 TO BUY THE FOOTER. This SUPERSEDES the canvaskit v27
  * map, which had no room for one: its bottom label strip ran to row 63.
  *
- *   hdr    0-6    filled bar, 5-row glyph at y=1, one clear row each side
- *                 ⭑ RE-CUT 2026-08-30 (Josh): the title moved from the 6-row
- *                 header face to font4x5, so the band is 7 rather than 8. Same
- *                 look, one row cheaper, and it matches the face upstream's
- *                 param-pages header uses for the same job.
- *   dark   7      ⚠ LOAD-BEARING for the bar below: davebox's header is ALWAYS
- *                 inverted, so a white segment row touching the filled band
- *                 just becomes the band. Proven on device 2026-08-30 — the bar
- *                 was drawing at 123 ink and read as nothing at all.
- *   bar    8      page indicator, MODULE PARAM PAGES ONLY (MV_BAR_Y). The
- *                 track-view bank cards draw nothing here; see drawKitPageBar.
- *   gap    9
- *   w0     10-24  widget row 0            MV_ROW0_Y, MV_KH = 15
- *   lbl0   25-31  label strip 0           MV_LBL0_Y, MV_LBL_H = 7
- *   gap    32
- *   w1     33-47  widget row 1            MV_ROW1_Y
- *   lbl1   48-54  label strip 1           MV_LBL1_Y
- *   clear  55-56  ⭑ TWO clear rows above the footer now, not one — the row the
- *                 grid gave back by moving up. That is the separation upstream
- *                 relies on instead of a rule, and it is why ours could go.
- *   ftr    57-63  hint pills              MV_FOOTER_Y, MV_FOOTER_H = 7
+ * ⭑⭑ TWO MAPS SINCE 2026-08-30, AND THEY NOW DIVERGE UP TOP (2026-08-31).
+ * The row a surface spends on chrome is decided by its HEADER STYLE, so the two
+ * are one decision, taken in KIT_LAYOUTS below — see the note there.
  *
- * ⭑ THE GUTTERS ARE EQUAL (one row above each widget row). They were 4 and 2
- * before, which is the kind of asymmetry nothing reads as deliberate — it
- * reads as one row tight and one loose. One row rather than upstream's two,
- * because davebox spends two more rows up top than upstream does: its header
- * band is 8 (a 6-row glyph, not a 5-row one) and its bar needs the dark row
- * above.
+ *   row   BANK (filled header)          SOUND (split header, = param-pages)
+ *   ---   --------------------------    ---------------------------------
+ *   0-6   hdr, FILLED bar               hdr, PLAIN ground (fills on touch)
+ *   7     dark ⚠ LOAD-BEARING           bar   page indicator (MV_BAR_Y)
+ *   8     bar  (unused: no indicator)   dark
+ *   9     w0   9-23                     w0    9-23
+ *   24    lbl0 24-30                    lbl0  24-30
+ *   31    gap                           gap
+ *   32    w1   32-46                    w1    33-47
+ *   47    lbl1 47-53                    lbl1  48-54
+ *         clear 54-56                   clear 55-56
+ *   57-63 ftr   hint pills              ftr   hint pills   MV_FOOTER_Y
+ *
+ * ⚠ THE DARK ROW IS WHY THEY DIFFER AT ALL. A filled header is a white band, so
+ * a white bar segment touching it just BECOMES the band — proven on device
+ * 2026-08-30, where the bar drew at 123 ink and read as nothing. The bank cards
+ * pay that row and get nothing for it (they draw no indicator); sound mode's
+ * split header is plain at rest, so its bar can sit flush at row 7 and the row
+ * goes back into the grid. That is the whole of upstream's extra breathing
+ * room, and adopting the header is what bought it.
+ *
+ * ⭑ RE-CUT 2026-08-30 (Josh): the title moved from the 6-row header face to
+ * font4x5, so the band is 7 rather than 8 — same look, one row cheaper, and it
+ * matches the face upstream's param-pages header uses for the same job.
+ *
+ * ⭑ THE GUTTERS ARE EQUAL on the BANK map (one row above each widget row). They
+ * were 4 and 2 before, which is the kind of asymmetry nothing reads as
+ * deliberate. SOUND takes upstream's rhythm verbatim instead — one row above w0
+ * and one above w1, at upstream's own offsets — because it is 1:1 with
+ * param-pages by ruling, not by coincidence.
  *
  * ⭑ THE ROWS CAME FROM THE WIDGET BOX, 16 -> 15, WHICH IS FREE. A viz body
  * occupies rowY+1..rowY+13 and a framed box is 15 tall, so 15 is all either
@@ -143,9 +149,20 @@ export let MV_ROW0_Y = 9, MV_LBL0_Y = 24, MV_ROW1_Y = 32, MV_LBL1_Y = 47;
  * to clear, the grid starts one row higher and the footer gets a third clear row
  * above it. SOUND is exactly what both surfaces used before the split, so that
  * screen is unchanged by it. */
+/* ⭑⭑ THE HEADER STYLE IS PART OF THE MAP, not a per-call option (2026-08-31).
+ * It has to be: the row map DEPENDS on it. `filled` needs the dark row above
+ * the bar (a white segment touching a filled band just becomes the band —
+ * proven on device 2026-08-30), `split` does not, and that one row is the whole
+ * difference between the two row maps below. Making it an argument would let a
+ * caller pair a split header with the filled map, which draws a bar in a row
+ * the header already owns and reads as nothing.
+ * ⭑ It also closes a live divergence: tools/render_screens.mjs reaches the bank
+ * cards through drawKitBankPage where the device reaches them through
+ * drawKitPage, and every opt it passes is a CLAIM about what the device passes.
+ * One fewer claim is one fewer thing for it to get wrong. */
 const KIT_LAYOUTS = {
-    bank:  { hdrH: 7, barY: 8, row0Y:  9, lbl0Y: 24, row1Y: 32, lbl1Y: 47 },
-    sound: { hdrH: 7, barY: 8, row0Y: 10, lbl0Y: 25, row1Y: 33, lbl1Y: 48 },
+    bank:  { hdrH: 7, barY: 8, row0Y: 9, lbl0Y: 24, row1Y: 32, lbl1Y: 47, kw: 20, hdr: 'filled' },
+    sound: { hdrH: 7, barY: 7, row0Y: 9, lbl0Y: 24, row1Y: 33, lbl1Y: 48, kw: 17, hdr: 'split'  },
 };
 let kitLayoutName = 'bank';
 
@@ -158,9 +175,19 @@ export function kitUseLayout(name) {
     MV_HDR_H = L.hdrH; MV_BAR_Y = L.barY;
     MV_ROW0_Y = L.row0Y; MV_LBL0_Y = L.lbl0Y;
     MV_ROW1_Y = L.row1Y; MV_LBL1_Y = L.lbl1Y;
+    MV_KW = L.kw;
 }
 export function kitLayout() { return kitLayoutName; }
-export const MV_CELL_W = 32, MV_KW = 20, MV_KH = 15, MV_LBL_H = 7;
+export function kitHeaderStyle() { return KIT_LAYOUTS[kitLayoutName].hdr; }
+/* ⚠ MV_KW IS PER-SURFACE (Josh 2026-08-31: adopt param-pages' 17 for the module
+ * editor). Sound mode takes upstream's 17; the BANK cards keep davebox's 20,
+ * which is a screen Josh ruled on separately (`d03bf3b3`) and which this task
+ * was not about. It only moves the FRAMED widgets — the knob ring is KNOB_R 8
+ * centred in the 32px cell either way (kx+10 at KW 20, kx+9 at KW 17, both
+ * landing within a pixel of the cell's true centre), and the enum square has
+ * always had its own 28px slot, which is already upstream's number. */
+export let MV_KW = 20;
+export const MV_CELL_W = 32, MV_KH = 15, MV_LBL_H = 7;
 /* The hint row sits on the LAST SCANLINE, not one row up. The panel is inset in
  * plastic, so a dark row at the bottom is not a margin — it is a margin on top
  * of a margin, and the bezel is already the ground a bottom notch reads
@@ -1584,19 +1611,67 @@ export function drawKitBrandHeader() {
  * picker, so the card already says which bank you are on in words; a position
  * strip repeats that in a form you have to count. Do not re-add it without him
  * asking. */
-export function drawKitPageBar(idx, count) {
-    if (count <= 1) { fill_rect(0, MV_BAR_Y, SCREEN_W, 1, 1); return; }
-    const blinkOn = Math.floor(Date.now() / 375) % 2 === 0;
-    const usable = SCREEN_W - (count - 1);
-    const base = Math.floor(usable / count), rem = usable % count;
-    for (let b = 0, sx = 0; b < count; b++) {
-        const sw = base + (b < rem ? 1 : 0);
-        if (b !== idx || blinkOn) {
-            fill_rect(sx, MV_BAR_Y, sw, 1, 1);
-        } else {
-            for (let x = sx; x < sx + sw; x += 2) set_pixel(x, MV_BAR_Y, 1);
-        }
-        sx += sw + 1;
+/* ⭐ UPSTREAM'S SHAPE SINCE 2026-08-31 — a verbatim port of param-pages'
+ * drawBankBar (src/shared/param_pages/render_page_movy.mjs), taken with the
+ * header under the same 1:1 ruling. Three things changed and each is upstream's
+ * answer to something ours did worse:
+ *
+ * ① THE CURRENT PAGE IS DOUBLE HEIGHT, not blinking. A blink is a poor position
+ *    marker — you cannot read it in the half of its cycle where it is dotted,
+ *    and it costs a redraw cadence to animate. Height says the same thing
+ *    statically, and it is the reason the bar can sit flush under a plain header
+ *    at all: the 2px segment is the only thing on the row that needs to be
+ *    noticed.
+ * ② SEPARATORS CARRY THE SECTION STRUCTURE. `groups` is one section id per page;
+ *    pages inside a section sit flush and a 1px gap marks where the next begins,
+ *    so the bar reads as a map of the module rather than an undifferentiated row
+ *    of ticks. Ours paid a separator between EVERY pair, which is both less
+ *    information and more width.
+ * ③ COUNT <= 1 DRAWS NOTHING. Ours drew a full-width rule, which under the split
+ *    header would put a line across the row the bar owns on every single-page
+ *    module. Upstream leaves rows MV_BAR_Y..MV_BAR_Y+1 clear and lets the gap do
+ *    the separating.
+ *
+ * The remainder is spread across SEGMENTS (never into the gaps) so no two differ
+ * by more than a pixel; a gap is a separator and is therefore 1px or nothing.
+ *
+ * ⚠ THE TRACK-VIEW BANK CARDS STILL HAVE NO INDICATOR AT ALL. That was tried
+ * three ways in one sitting — segments under the band, segments with a separator
+ * row, notches cut into the band's edge — and Josh ended it: "let's just get rid
+ * of the indicator row altogether." The jog opens a NAMED bank picker, so the
+ * card already says which bank you are on in words. Do not re-add it without him
+ * asking. This function is sound mode's, and sound mode's only. */
+export function drawKitPageBar(idx, count, groups) {
+    if (count <= 1) return;
+
+    if (count > SCREEN_W) {
+        fill_rect(0, MV_BAR_Y, SCREEN_W, 1, 1);
+        const x = Math.min(SCREEN_W - 1, Math.floor(idx * SCREEN_W / count));
+        fill_rect(x, MV_BAR_Y, 1, 2, 1);
+        return;
+    }
+
+    const gap = new Array(count).fill(0);
+    const useGroups = !!groups && groups.length === count;
+    const bounds = [];
+    for (let b = 1; b < count; b++) {
+        if (!useGroups || groups[b] !== groups[b - 1]) bounds.push(b);
+    }
+    /* Separators are the first thing to go when the width runs out — a visible
+     * PAGE matters more than a visible boundary. */
+    const keep = Math.min(bounds.length, Math.max(0, SCREEN_W - count));
+    for (let i = 0; i < keep; i++) gap[bounds[Math.floor(i * bounds.length / keep)]] = 1;
+
+    const area = SCREEN_W - keep;
+    const edge = (b) => Math.floor(b * area / count);
+
+    let x = 0;
+    for (let b = 0; b < count; b++) {
+        x += gap[b];
+        const segW = edge(b + 1) - edge(b);
+        const h = b === idx ? 2 : 1;
+        if (segW > 0) fill_rect(x, MV_BAR_Y, segW, h, 1);
+        x += segW;
     }
 }
 
@@ -2334,18 +2409,27 @@ export function drawKitHintRow(y, hints) {
     return drawn;
 }
 
-/* ---- MOCKUP: the param-pages header ------------------------------------
+/* ---- the SPLIT header (param-pages') --------------------------------------
  *
- * ⚠⚠ DORMANT. Nothing calls this. It exists so tools/render_widgets.mjs can put
- * upstream's header next to davebox's own for a side-by-side decision, and it
- * must NOT be wired into any screen — davebox's filled-bar header is normative
- * (UI_LANGUAGE §4) until Josh says otherwise.
+ * ⭐ NORMATIVE FOR SOUND MODE since 2026-08-31 (Josh: "i want module editor ui
+ * to be 1:1 with param pages ui"). It was a dormant mockup until then, drawn
+ * only so tools/render_widgets.mjs could put upstream's header next to
+ * davebox's for the decision; the decision went to upstream's. The BANK cards
+ * keep davebox's filled bar — see KIT_LAYOUTS, which is where the two are
+ * chosen, because the row map below the header depends on which one draws.
  *
- * Upstream's is a Tamzen 6x12 breadcrumb set left with the page name right, on
- * a plain (uninverted) ground — the opposite weight to davebox's inverted bar,
- * which is exactly what makes the comparison worth rendering rather than
- * describing. */
-/* The param-pages header, drawn as upstream actually draws it.
+ * Two sides on a PLAIN ground at rest — a title left, a page name right — and
+ * the band FILLS on touch with the glyphs knocked out of it. That is the
+ * opposite weight to davebox's bar, and it is what makes the touched state read
+ * as a state change rather than as a different screen.
+ *
+ * ⚠ TOUCHED, IT CARRIES THE PARAM NAME **AND** ITS VALUE — that is upstream's
+ * whole reason for having room on this band, and it is why an abbreviated cell
+ * label is affordable at all. davebox's own touched header showed the name
+ * centred and nothing else; the value only ever appeared in the label strip.
+ * The strip still swaps (drawCellLabel), so touched now says the value twice —
+ * once in full on the band, once under the knob it belongs to. Upstream does
+ * exactly that.
  *
  * ⚠⚠ THE FIRST VERSION OF THIS MOCKUP WAS WRONG AND FLATTERED THE WRONG THING.
  * It set both sides in Tamzen 6x12 — double the height of the real face, and
@@ -2359,31 +2443,48 @@ export function drawKitHintRow(y, hints) {
  * state — touched, the band fills solid and the glyphs are knocked out of it,
  * and a glyph flush to either edge bleeds its ink into the boundary.
  *
- * The split is MEASURED, not fixed: the right side is laid out first and the
- * left takes the remainder, with a floor so a long page name cannot squeeze the
- * title to nothing. A fixed 55/60 split summed to 115% and the two sides drew
- * through each other.
+ * ⚠ THE SPLIT IS MEASURED, NOT FIXED, and this now follows upstream's
+ * arithmetic step for step (render_page_movy.mjs drawHeader). The right side is
+ * fitted FIRST into 60% of the width, and only if that leaves the left below
+ * MV_HDR_MIN_LEFT is it re-fitted to the remainder — so a short page name (the
+ * usual case) hands the whole rest of the bar to the title instead of the left
+ * being capped at 55% while a third of the band sits empty. The earlier mockup
+ * capped the right side unconditionally, which is the behaviour upstream
+ * replaced. A FIXED 55/60 split, which is what both had before that, sums to
+ * 115% and draws the two sides through each other.
  *
- * Mockup only — nothing calls it. See docs/UI_LANGUAGE.md. */
+ * ⚠ NO RULE UNDERNEATH. The mockup drew one at row MV_HDR_H when uninverted;
+ * upstream draws nothing there — that row is the page BAR's, and a module with
+ * one page simply has two clear rows before the grid. Keeping the rule would
+ * have put a line under the band on every single-page module and then drawn the
+ * bar on top of it.
+ *
+ * See docs/UI_LANGUAGE.md §4. */
+export const MV_HDR_GAP = 4;
+/* The title's floor: upstream's old fixed 55%, so the worst case is what
+ * shipped there. */
+export const MV_HDR_MIN_LEFT = Math.floor(SCREEN_W * 0.55);
+
 export function drawKitHeaderParamPages(left, right, inverted) {
-    const H = 7, GAP = 4, MIN_LEFT = Math.floor(SCREEN_W * 0.55);
     const l = String(left == null ? '' : left).toUpperCase();
-    const r = String(right == null ? '' : right).toUpperCase();
+    const rIn = String(right == null ? '' : right).toUpperCase();
     if (inverted) {
-        fill_rect(0, 0, SCREEN_W, H, 1);
+        fill_rect(0, 0, SCREEN_W, MV_HDR_H, 1);
         /* the same 1px notch every other filled shape wears — TOP TWO ONLY,
          * because the band is the top EDGE of the screen, not a floating shape */
         fill_rect(0, 0, 1, 1, 0);
         fill_rect(SCREEN_W - 1, 0, 1, 1, 0);
     }
     const ink = inverted ? 0 : 1;
-    const rw = Math.min(fontWidth4x5(r), SCREEN_W - 4 - MIN_LEFT);
-    const rt = fit4x5(r, rw);
-    const rtw = fontWidth4x5(rt);
-    const lt = fit4x5(l, SCREEN_W - 4 - rtw - GAP);
+    let r = rIn ? fit4x5(rIn, Math.floor(SCREEN_W * 0.6)) : '';
+    let rw = r ? fontWidth4x5(r) : 0;
+    if (rw && SCREEN_W - 4 - rw - MV_HDR_GAP < MV_HDR_MIN_LEFT) {
+        r = fit4x5(rIn, Math.max(0, SCREEN_W - 4 - MV_HDR_MIN_LEFT - MV_HDR_GAP));
+        rw = r ? fontWidth4x5(r) : 0;
+    }
+    const lt = fit4x5(l, SCREEN_W - 4 - (rw ? rw + MV_HDR_GAP : 0));
     fontPrint4x5(2, 1, lt, ink);
-    if (rtw > 0) fontPrint4x5(SCREEN_W - 2 - rtw, 1, rt, ink);
-    if (!inverted) fill_rect(0, H, SCREEN_W, 1, 1);
+    if (rw) fontPrint4x5(SCREEN_W - rw - 2, 1, r, ink);
 }
 
 /* ---- grid ---- */
@@ -2870,11 +2971,27 @@ export function drawKitListOverlay(options, sel, opts) {
 export function drawKitBankPage(cells, opts) {
     const t = opts.touchedIdx != null ? opts.touchedIdx : -1;
     const touched = t >= 0 && cells[t] && cells[t].name ? cells[t] : null;
-    if (touched) {
+    /* ⭑⭑ THE HEADER FOLLOWS THE LAYOUT, never an opt. See KIT_LAYOUTS: the row
+     * map and the header style are ONE decision, because `filled` spends a dark
+     * row that `split` does not. A caller cannot pair them wrongly. */
+    if (kitHeaderStyle() === 'split') {
+        /* Upstream's grammar (renderPageMovy): touched, the band inverts and
+         * carries the param's FULL NAME left and its VALUE right — this is the
+         * surface with room, and it is the answer to a cell label being
+         * abbreviated. Resting, it is the screen title left and the page name
+         * right. `cell.text` is the same value string the label strip swaps to.
+         *
+         * ⭑ THE BAR DRAWS IN BOTH STATES, which the filled path cannot do: it
+         * sits at row MV_HDR_H, immediately under a band that is plain at rest,
+         * so it is legible without the dark row the filled header needs. */
+        if (touched) drawKitHeaderParamPages(touched.name, touched.text, true);
+        else         drawKitHeaderParamPages(opts.headerText, opts.headerRight, false);
+        if (opts.pageCount > 0) drawKitPageBar(opts.pageIdx | 0, opts.pageCount, opts.pageGroups);
+    } else if (touched) {
         drawKitTouchedHeader(touched.name);
     } else {
         drawKitHeader(opts.headerText, opts.headerInvert);
-        if (opts.pageCount > 0) drawKitPageBar(opts.pageIdx | 0, opts.pageCount);
+        if (opts.pageCount > 0) drawKitPageBar(opts.pageIdx | 0, opts.pageCount, opts.pageGroups);
         if (opts.altArrowShow) drawKitAltArrow(SCREEN_W - 7, !opts.headerInvert, !!opts.altArrowOn, opts.altArrowHidden);
     }
     drawKitCells(cells, t, opts.env, opts.filt, opts.eq, opts.samp,

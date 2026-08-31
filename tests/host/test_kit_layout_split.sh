@@ -33,11 +33,44 @@ sound=$(command grep -oE "^\s+sound:\s+\{[^}]*\}" "$movy")
   fail "the bank and sound layouts are IDENTICAL — the split buys nothing, and a
 surface that forgets to select would never be caught by looking at the screen"
 
+# --- the header style travels WITH the row map, or the pair can be split -----
+#
+# ⚠⚠ 2026-08-31: the two maps stopped differing only in rows. `filled` spends a
+# dark row so a white bar segment is not swallowed by a white band; `split` does
+# not, and that one row IS the difference between the two grids. If the style
+# ever became a per-call argument again, a caller could pair a split header with
+# the filled map — a bar drawn in a row the header already owns, reading as
+# nothing, which is precisely the bug that cost three redesigns on 2026-08-30.
+grep -q "hdr: 'filled'" "$movy" || fail "the 'bank' layout no longer declares hdr: 'filled'"
+grep -q "hdr: 'split'"  "$movy" || fail "the 'sound' layout no longer declares hdr: 'split'"
+grep -q "export function kitHeaderStyle()" "$movy" ||
+  fail "kitHeaderStyle() is gone — the header no longer follows the layout"
+grep -q "kitHeaderStyle()" <<<"$(awk '/^export function drawKitBankPage\(/,/^}/' "$movy")" ||
+  fail "drawKitBankPage no longer picks its header from the layout. It must: the
+header and the row map are ONE decision (see KIT_LAYOUTS), and a per-call header
+lets a caller pair one with the other's grid"
+grep -qE "headerStyle\s*[:=]|hdrStyle\s*[:=]" "$movy" &&
+  fail "a per-call header-style option has appeared. The style belongs to the
+LAYOUT — see the comment above KIT_LAYOUTS for why."
+
 # --- the bindings are `let`, or the swap silently does nothing ---------------
-for c in MV_HDR_H MV_BAR_Y MV_ROW0_Y MV_LBL0_Y MV_ROW1_Y MV_LBL1_Y; do
+# MV_KW joined them on 2026-08-31 (Josh: sound mode takes param-pages' 17, the
+# bank cards keep davebox's 20), and it is the one most easily lost: it sat in a
+# `const` line with MV_CELL_W/MV_KH/MV_LBL_H, which are still shared.
+for c in MV_HDR_H MV_BAR_Y MV_ROW0_Y MV_LBL0_Y MV_ROW1_Y MV_LBL1_Y MV_KW; do
   command grep -qE "^export let .*\b$c\b" "$movy" ||
     fail "$c is not an exported \`let\` — kitUseLayout cannot swap it, and every
 importer would keep the value it captured at load"
+done
+
+# Declared is not assigned: a key can sit in KIT_LAYOUTS while kitUseLayout
+# never reads it, and the binding then keeps whatever it was initialised to on
+# BOTH surfaces — a silent no-op that looks exactly like "the two maps agree".
+usefn=$(awk '/^export function kitUseLayout\(/,/^}/' "$movy")
+for c in MV_HDR_H MV_BAR_Y MV_ROW0_Y MV_LBL0_Y MV_ROW1_Y MV_LBL1_Y MV_KW; do
+  command grep -qE "\b$c\s*=" <<<"$usefn" ||
+    fail "kitUseLayout() never assigns $c — it is exported \`let\` and declared in
+the maps, so this reads as split while both surfaces keep one value"
 done
 
 # --- BOTH entry points select, before drawing -------------------------------

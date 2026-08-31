@@ -59,7 +59,8 @@ import { discover, deriveSections, activeSection, filterVizFor,
 import { parseValue, stepValue, commitString, renderCellsForBank,
     formatValue } from './ui_cells.mjs';
 import {
-    drawKitBankPage, drawKitHeader, drawKitSectionPicker, drawKitList, drawKitListOverlay,
+    drawKitBankPage, drawKitHeader, drawKitHeaderParamPages,
+    drawKitSectionPicker, drawKitList, drawKitListOverlay,
     kitUseLayout,
     drawKitStackedList, drawKitBackdropDim, drawKitCrumbs, kitStackBox,
     MV_BAR_Y,
@@ -4834,6 +4835,12 @@ function renderPrompt() {
 
 function renderBlocks() {
     clear_screen();
+    /* ⚠ BANK's map, explicitly. This screen is the last segment of the jog's
+     * BANK cycle and wears the filled header, not sound mode's split one — and
+     * since 2026-08-31 the two maps put the bar on different rows (7 vs 8), so
+     * the clear below cleared the wrong row whenever the param editor had drawn
+     * last. Selecting is not optional on any surface that reads a binding. */
+    kitUseLayout('bank');
     /* A Move bus IS a track's screen, so it takes the track header too — the
      * Generator row already says which Move instrument. Only the GLOBAL buses
      * (Master/Send FX) keep their own title; they are not a track.
@@ -5138,25 +5145,48 @@ function editHints() {
     return hints;
 }
 
+/* One section id per BANK, in bank order — the page bar's separator map.
+ * Derived from the same S.sections the Shift picker uses, so the bar and the
+ * picker can never describe different structure. */
+function pageGroups() {
+    if (!S.sections || S.sections.length < 2) return null;
+    const out = new Array(S.banks.length);
+    for (let i = 0; i < S.banks.length; i++) out[i] = activeSection(S.sections, i);
+    return out;
+}
+
 function renderEdit() {
     clear_screen();
     /* Hosted modules draw themselves, INCLUDING their own header and picker. */
     if (S.hosted && renderHosted()) return;
+    /* SOUND's map — module PARAM PAGES: the split header, its page bar, and the
+     * row map that follows from them. Selected FIRST, before any kit draw call,
+     * including on the empty branch below: the bindings are module state and a
+     * surface that forgets to select draws with whichever map ran last. */
+    kitUseLayout('sound');
     if (!S.banks.length) {
-        drawKitHeader(blockLabel(), false);
+        drawKitHeaderParamPages(blockLabel(), '', false);
         centreText(28, S.moduleId ? 'NO PARAMS' : 'EMPTY');
         centreText(40, S.moduleId ? 'CLICK FOR PRESETS' : 'CLICK TO PICK');
         return;
     }
     const bank = S.banks[S.bankIdx];
     const cells = renderCellsForBank(bank, S.values, S.rawValues);
-    /* SOUND's map — these are module PARAM PAGES, which carry the page bar. */
-    kitUseLayout('sound');
     drawKitBankPage(cells, {
-        headerText: String(bank.name || '').toUpperCase(),
-        headerInvert: false,
+        /* ⭑ UPSTREAM'S SPLIT (renderPageMovy): the MODULE left, the PAGE right.
+         * The module name is constant and you already know it; the page name is
+         * what changes as the jog walks, so it is what you are reading — which
+         * is why the right side is fitted first and the left takes what is left.
+         * This screen previously showed the page name alone and never named the
+         * module it belonged to. */
+        headerText: modLabel(),
+        headerRight: String(bank.name || '').toUpperCase(),
         pageIdx: S.bankIdx,
         pageCount: S.banks.length,
+        /* One SECTION id per page, so the bar's separators carry the structure
+         * Shift+jog steps through — pages of a section sit flush, a 1px gap
+         * marks the next. Same data drawKitSectionPicker uses. */
+        pageGroups: pageGroups(),
         touchedIdx: S.touchedIdx,
         overlayIdx: overlayIdx(),
         env: bank.env || null,

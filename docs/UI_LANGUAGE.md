@@ -560,23 +560,71 @@ uses it.
 
 ## 4. Header and page bar
 
-- **Resting header** (`drawKitHeader`): filled white bar, **black** text, left-aligned at (2,1),
+⭐⭐ **THERE ARE TWO HEADERS, AND THE SURFACE DOES NOT CHOOSE — ITS LAYOUT DOES** (Josh,
+2026-08-31: *"i want module editor ui to be 1:1 with param pages ui to the extent that there
+aren't any conflicts"*). `KIT_LAYOUTS` in `ui_movy.mjs` declares a row map **and** a header style
+together, and `kitUseLayout()` selects both at once. They are one decision because the row map
+**depends** on the header: a filled band needs a dark row under it before a white bar segment can
+be seen against it, and a plain band does not. Pinned by `tests/host/test_kit_layout_split.sh`.
+
+| | **BANK** — track-view bank cards | **SOUND** — module param pages |
+|---|---|---|
+| header | `filled` — `drawKitHeader` | `split` — `drawKitHeaderParamPages` |
+| page bar | none (deliberate, below) | row 7, flush under the band |
+| grid | rows 9-23 / 32-46 | rows 9-23 / 33-47 (= param-pages) |
+| widget box `MV_KW` | 20 | 17 (= param-pages) |
+
+### 4.1 The FILLED header — bank cards
+
+- **Resting** (`drawKitHeader`): filled white bar, **black** text, left-aligned at (2,1),
   ALL CAPS. The `invert` flag gives the secondary-bank variant (white-on-black). ⚠ These colours
-  are inverted relative to canvaskit v27 — davebox's flavour, Josh's call. Normative here.
-- **Touched header** (`drawKitTouchedHeader`): the bar drops out and the **full param name**
+  are inverted relative to canvaskit v27 — davebox's flavour, Josh's call.
+- **Touched** (`drawKitTouchedHeader`): the bar drops out and the **full param name**
   renders centred in white, with a 1px rule at `MV_BAR_Y`. The state flip *is* the touch feedback.
   The label strip below simultaneously swaps from name to **value** — movy's signature swap.
-  No page bar in this state.
-- **Page bar** (`drawKitPageBar`, row 9, resting only): one segment per bank, 1px dividers, widths
-  evenly divided with the rounding remainder spread across the leading segments. The active
-  segment blinks solid ↔ dotted.
+- **No page bar, ever.** Tried three ways in one sitting (segments under the band, segments with a
+  separator row, notches cut into the band) and ended by Josh: *"let's just get rid of the
+  indicator row altogether."* The jog opens a **named** bank picker, so the card already says which
+  bank you are on in words. Do not re-add without him asking.
 - **Status glyph**: a down-chevron top-right (`drawKitAltArrow`) means "this bank has alt params".
   It may itself blink. This is the whole glyph vocabulary — resist adding more.
 
-🟠 **An alternative header is MOCKED and dormant.** `drawKitHeaderParamPages(left, right)` draws
-upstream's version — a Tamzen breadcrumb set left, the page name right, on a plain (uninverted)
-ground, which is the opposite weight to davebox's filled bar. **Nothing calls it**; the filled bar
-above stays normative until Josh rules. Renders: `hdr-ours.png` / `hdr-parampages.png`.
+### 4.2 The SPLIT header — sound mode's module editor (param-pages, 1:1)
+
+⭐ **Normative for sound mode since 2026-08-31.** `drawKitHeaderParamPages(left, right, inverted)`
+was a dormant mockup drawn only so `tools/render_widgets.mjs` could put upstream's header beside
+ours for the decision. The decision went to upstream's.
+
+- **Resting**: a **plain** (uninverted) ground carrying the **module** left and the **page** right,
+  both font4x5, 5-row glyphs at y=1 in a 7-row band. The split is **measured**: the right side is
+  fitted into 60% of the width first, and only re-fitted if that would push the left below
+  `MV_HDR_MIN_LEFT` (55%). A fixed 55/60 split sums to 115% and draws the two sides through each
+  other. ⭑ This screen previously showed the page name alone and never named its module.
+- **Touched**: the band **fills** and the glyphs knock out of it, carrying the param's **full name**
+  left and its **value** right. That is upstream's whole reason for having room on this band, and
+  it is what makes an abbreviated cell label affordable. The label strip below still swaps to the
+  value as well — so touched says the value twice, once in full and once under the knob. Upstream
+  does exactly that.
+- ⚠ **Both clear rows in the band are load-bearing.** Inverted, a glyph flush to either edge runs
+  its ink into the boundary and the highlight bleeds into the border.
+- ⚠ **No rule underneath.** Row `MV_HDR_H` belongs to the page bar; a single-page module simply has
+  two clear rows before the grid.
+- **Page bar** (`drawKitPageBar`, row 7, drawn in **both** states): one segment per page, the
+  current one **double height** — not blinking; a blink is unreadable in half its cycle and costs a
+  redraw cadence. Separators carry **section** structure: pages of one section sit flush, a 1px gap
+  marks the next, so the bar reads as a map of the module. The remainder is spread across segments,
+  never into gaps. `count <= 1` draws nothing.
+
+### 4.3 What is deliberately NOT 1:1
+
+- 🔴 **Knob feel and gesture latches.** No knob-engine port, no 2-way flip, no trigger latch. Josh
+  unified the feel on 2026-08-26 (`6ff275a0`); `test_knob_curve_matches_host.sh` pins it. This is
+  the exception most likely to be broken by reading "1:1" literally.
+- 🔴 **Peek decay.** Upstream's 700 ms decay exists because their grid has no touch sensor;
+  davebox's touch-held list is strictly better. Primitive built and dormant.
+- 🔴 **Variable-length chains.** param-pages' editor assumes a chain that grows; we are pinned at
+  `MOVE_FX_BLOCKS=4` + fx3/fx4, so the **knob card is unported**. Structural — a true 1:1 needs the
+  FX-parity work, deferred on the board.
 
 **HUD card** (P7): `hudCard(title, value)` in `ui_movy.mjs` is the reusable value-HUD frame —
 near-full-width card, header-font title left / value right over a rule, returns the body rect for
