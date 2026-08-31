@@ -1,6 +1,9 @@
 # Changelog
 
 All notable changes to dAVEBOx are documented here.
+- **Dave Box: the card view.** Each Dave now shows his name in big caps with
+  his number and rarity beneath — and the portrait slowly pans up and down
+  behind the label, so the whole image gets its moment.
 - **The Dave Box.** Every launch deals you one random Dave as the splash —
   some are rarer than others — and every Dave you've ever been dealt lives in
   a jog-driven album under Settings > Dave Box, each with his permanent

@@ -28,6 +28,7 @@ import {
 } from './ui_constants.mjs';
 
 import { S, standDownBankDisplay } from './ui_state.mjs';
+import { daveBoxTick } from './ui_daves.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
 import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, readActiveSet,
     commitSnapshot } from './ui_persistence.mjs';
@@ -1945,6 +1946,10 @@ export function _tickImpl() {
                 S.screenDirty = true;
             }
         }
+
+        /* Dave Box scan: the album's vertical pan is tick-driven, like the
+         * blink below — the draw path only paints what the tick advanced. */
+        if (S.daveBox) daveBoxTick();
 
         /* ALL LANES blink: mark dirty when "ALL" blink toggles (bank header + loop-held overlay) */
         if (S.activeBank === 7 && S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {

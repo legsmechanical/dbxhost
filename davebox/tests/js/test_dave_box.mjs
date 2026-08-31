@@ -71,17 +71,40 @@ step('pool sanity: 31 daves, unique permanent numbers, DAVIES is the rare one', 
 step('the album lists collected Daves in permanent order, junk and dupes tolerated', () => {
     seenFileContent = '3\n21\ngarbage\n\n1\n21\n999\n';
     if (!daves.openDaveBox()) throw new Error('did not open');
-    const labels = [];
+    const metas = [], names = [];
     for (let i = 0; i < S.daveBox.list.length; i++) {
-        labels.push(daves.daveBoxLabel());
+        metas.push(daves.daveBoxMeta()); names.push(daves.daveBoxName());
         daves.daveBoxRotate(1);
     }
-    const want = ['< Dave 1 of 31 >', '< Dave 3 of 31 >', '< Dave 21 of 31 >'];
-    if (JSON.stringify(labels) !== JSON.stringify(want))
-        throw new Error(JSON.stringify(labels));
-    if (daves.daveBoxLabel() !== '< Dave 1 of 31 >') throw new Error('did not wrap forward');
+    const wantM = ['< DAVE 1/31 \u00b7 COMMON >', '< DAVE 3/31 \u00b7 COMMON >',
+                   '< DAVE 21/31 \u00b7 RARE >'];
+    if (JSON.stringify(metas) !== JSON.stringify(wantM)) throw new Error(JSON.stringify(metas));
+    if (names[2] !== 'DAVIES') throw new Error('name line wrong: ' + JSON.stringify(names));
+    if (daves.daveBoxMeta() !== wantM[0]) throw new Error('did not wrap forward');
     daves.daveBoxRotate(-1);
-    if (daves.daveBoxLabel() !== '< Dave 21 of 31 >') throw new Error('did not wrap backward');
+    if (daves.daveBoxMeta() !== wantM[2]) throw new Error('did not wrap backward');
+    daves.closeDaveBox();
+});
+
+step('⭐ the SCAN loops top to bottom and back, and the WHOLE image gets its turn', () => {
+    /* Josh, 2026-08-31: the footer obscured too much — the frame pans behind
+     * it so every row is eventually visible. Coverage is the claim, so the
+     * assertion is the SET of offsets, not the waveform. */
+    seenFileContent = '1\n';
+    if (!daves.openDaveBox()) throw new Error('did not open');
+    if (S.daveBox.yOff !== 0) throw new Error('did not start at the top');
+    const offs = new Set();
+    for (let t = 0; t < 1400; t++) { daves.daveBoxTick(); offs.add(S.daveBox.yOff); }
+    for (let o = 0; o <= daves.DAVE_SCAN_MAX; o++)
+        if (!offs.has(o)) throw new Error('offset ' + o + ' never reached — rows stay hidden');
+    if (Math.max(...offs) > daves.DAVE_SCAN_MAX || Math.min(...offs) < 0)
+        throw new Error('scan escaped its range');
+    /* browsing restarts the scan at the top */
+    for (let t = 0; t < 400; t++) daves.daveBoxTick();
+    if (S.daveBox.yOff === 0) { /* may legitimately be 0 mid-loop; force off-top */ }
+    while (S.daveBox.yOff === 0) daves.daveBoxTick();
+    daves.daveBoxRotate(1);
+    if (S.daveBox.yOff !== 0) throw new Error('a fresh Dave did not start at the top');
     daves.closeDaveBox();
 });
 
@@ -99,25 +122,32 @@ step('⚠ MODAL through the real dispatch: pads swallowed, jog browses, Back ret
      * needs no live clip: the set_param stream. */
     sets.length = 0;
     note(36, 127); note(36, 0);
-    const before = daves.daveBoxLabel();
+    const before = daves.daveBoxMeta();
     if (S.daveBox === null) throw new Error('a pad press closed the album');
     cc(14, 1);                                    /* jog +1 */
-    if (daves.daveBoxLabel() === before) throw new Error('jog did not browse');
+    if (daves.daveBoxMeta() === before) throw new Error('jog did not browse');
     cc(51, 127); cc(51, 0);                       /* Back tap */
     if (S.daveBox) throw new Error('Back did not close the album');
     if (!S.globalMenuOpen) throw new Error('Back did not return to the global menu');
     S.globalMenuOpen = false;
 });
 
-step('the footer band OVERLAYS the image: cleared band at y=55, label pixels over it', () => {
+step('the footer band OVERLAYS the image: cleared 18px band, name + meta pixels over it', () => {
     seenFileContent = '1\n';
     daves.openDaveBox();
     fills = []; px = [];
     daves.drawDaveBox();
-    if (!fills.some((f) => f.x === 0 && f.y === 55 && f.w === 128 && f.h === 9 && f.v === 0))
-        throw new Error('no cleared footer band');
-    if (!px.some((p) => p.y >= 56 && p.y <= 63)) throw new Error('no label pixels in the band');
-    if (!fills.some((f) => f.v === 1 && f.y < 55)) throw new Error('no image ink above the band');
+    if (!fills.some((f) => f.x === 0 && f.y === 46 && f.w === 128 && f.h === 18 && f.v === 0))
+        throw new Error('no cleared footer band at y=46 h=18');
+    if (!px.some((p) => p.y >= 47 && p.y <= 63)) throw new Error('no label pixels in the band');
+    if (!fills.some((f) => f.v === 1 && f.y < 46)) throw new Error('no image ink above the band');
+    /* ⚠ the scan must never paint image rows INTO the band — draw at max
+     * offset and require the band's clear to come after any image ink there */
+    S.daveBox.yOff = daves.DAVE_SCAN_MAX;
+    fills = []; px = [];
+    daves.drawDaveBox();
+    const bandClear = fills.findIndex((f) => f.y === 46 && f.h === 18 && f.v === 0);
+    if (bandClear < 0) throw new Error('no band clear at max offset');
     daves.closeDaveBox();
 });
 
