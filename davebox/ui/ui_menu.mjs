@@ -247,7 +247,7 @@ function buildGlobalMenuItems() {
          * (Josh, device pass 2026-08-31): the album for the launch-splash
          * gacha — every Dave ever dealt, jog-driven. ui_daves.mjs. */
         createDivider(),
-        createAction('Open the Dave Box', function() {
+        createAction('Open Your Dave Box', function() {
             openDaveBox();     /* closes the menu itself when it opens */
         }),
     ].filter(Boolean);   /* drops the host-gated entries when absent */

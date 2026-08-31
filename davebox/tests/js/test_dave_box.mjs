@@ -158,13 +158,13 @@ step('the footer band OVERLAYS the image: cleared 18px band, name + meta pixels 
     daves.closeDaveBox();
 });
 
-step('"Open the Dave Box" is the LAST menu row, behind a divider — and it opens the album', () => {
+step('"Open Your Dave Box" is the LAST menu row, behind a divider — and it opens the album', () => {
     seenFileContent = '1\n';
     menuMod.openGlobalMenu();
     if (!S.globalMenuOpen) throw new Error('menu did not open');
     const items = S.globalMenuItems || [];
     const last = items[items.length - 1];
-    if (!last || last.label !== 'Open the Dave Box')
+    if (!last || last.label !== 'Open Your Dave Box')
         throw new Error('last row is ' + JSON.stringify(last && last.label) + ', not the Dave Box');
     const before = items[items.length - 2];
     if (!before || before.type !== 'divider')
