@@ -2,6 +2,10 @@
 """gen-splash-pool.py — regenerate davebox/ui/ui_splash.mjs from daves/.
 
 THE ONE STEP for adding a Dave (Josh, 2026-08-31):
+  0. from a photo? tools/dave-maker/ converts it (Josh's portable maker,
+     also installed as the move-dave-maker skill):
+       python3 tools/dave-maker/scripts/make_move_dave.py IN.jpg NAME.png
+     Read tools/dave-maker/SKILL.md + references/tuning.md before tuning.
   1. drop the 128x64 1-bit PNG into daves/ — THE FILENAME IS THE DAVE'S NAME.
      A repeat of an existing Dave (a different image of the same name) is
      saved as "<NAME> 2.png", "<NAME> 3.png", ... — the first keeps the bare

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Move Dave Maker"
+  short_description: "Make 1-bit Ableton Move portrait splash screens"
+  default_prompt: "Use $move-dave-maker to convert this portrait into a clear 128x64 1-bit Move splash screen."
+policy:
+  allow_implicit_invocation: true
