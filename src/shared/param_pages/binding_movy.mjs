@@ -1010,12 +1010,15 @@ function headerTitle() {
     /* "MFX", never "S1", on the master bus: it is ADDRESSED at IPC slot 0 by
      * convention and is not instrument slot 1. */
     const label = (currentChrome && currentChrome.label) || `S${currentSlot + 1}`;
-    /* A host may prefer the header to keep naming the MODULE rather than the
-     * patch (ctx.headerPresetName === false): a sequencer host whose chain
-     * editor is not the screen you came from has nowhere else naming it.
+    /* A host may opt the patch name out of the header entirely
+     * (ctx.headerPresetName === false): the title is then the chrome LABEL
+     * alone — such a host puts the module's name in the label itself
+     * (davebox's is modLabel()). The first cut returned `label > abbrev`,
+     * which on that host rendered the module twice ("NUSAW > NU") and read
+     * as a stray patch name from the device (Josh, 2026-08-31).
      * Default-on — absent or any other value keeps the patch-name behaviour. */
     if (ctx.headerPresetName === false)
-        return `${label} > ${_abbrevCache}`;
+        return label;
     const userMark = (typeof ctx.userPresetHeaderMark === 'function')
         ? ctx.userPresetHeaderMark(currentSlot, currentComponent) : null;
     const name = userMark ? `${userMark.dirty ? '* ' : ''}${userMark.name}`

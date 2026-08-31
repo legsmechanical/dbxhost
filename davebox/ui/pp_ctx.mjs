@@ -115,11 +115,12 @@ export function installPpCtx(members) {
  *       The header's "this is a user preset" mark. Fork host does not supply it.
  *
  *   headerPresetName -> boolean
- *       false = the breadcrumb keeps the module abbreviation instead of the
- *       patch name. davebox sets false — a deliberate, Josh-ruled divergence
- *       from stock (2026-08-31: "don't show preset name on editor header
- *       breadcrumbs"): stock's chain editor names the module on the way in,
- *       davebox's entry paths never do. Default-on in the binding.
+ *       false = the header title is the chrome LABEL alone (davebox's label
+ *       is modLabel(), the module) — no patch name, and no abbreviation
+ *       either: the first cut appended the abbrev and rendered the module
+ *       twice. A deliberate, Josh-ruled divergence from stock (2026-08-31:
+ *       "don't show preset name on editor header breadcrumbs"). Default-on
+ *       in the binding.
  * ======================================================================== */
 
 /* The contract as DATA, not prose — every member the binding reads, split into

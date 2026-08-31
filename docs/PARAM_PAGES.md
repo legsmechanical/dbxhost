@@ -47,11 +47,11 @@ fallback in `shadow_ui_param_pages.mjs`:**
 | `runSlotAction` | absent | a menu row that activates nothing (and no trailing menus are planned — see `componentParamPagesIo`) |
 | `openEnumPicker` | absent | an enum that wants a full list hands off to the hierarchy editor rather than raising `VIEWS.ENUM_PICKER` |
 
-**Header name opt-out:** a consumer may set `ctx.headerPresetName = false` to keep the
-module abbreviation in the header instead of the patch name (`S1 > NUSAW` rather than
-`S1 > Init *`). Default-on: absent or any other value keeps the patch-name behaviour, so no
-existing consumer changes. dAVEBOx sets it — its entry paths never show a chain editor that
-would otherwise name the module.
+**Header name opt-out:** a consumer may set `ctx.headerPresetName = false` to drop the
+patch name from the header title: the title becomes the chrome label alone (`NUSAW` rather
+than `NUSAW > Init *`) — a consumer opting out should put the module's name in the label.
+Default-on: absent or any other value keeps the patch-name behaviour, so no existing
+consumer changes. dAVEBOx sets it; its chrome label is the module name.
 
 **Two more fork gaps, both TODOs, both recorded in the code:**
 
