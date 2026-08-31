@@ -924,14 +924,38 @@ function ensureCustomSplash() {
          * stages that were there before. Rotation still happens per launch.
          *
          * Probed by name rather than listed: this file has no readdir binding,
-         * and a fixed small pool costs ten host_file_exists calls once. */
+         * and a fixed small pool costs ten host_file_exists calls once.
+         *
+         * ⭑ STAGE-1 HANDOFF (2026-08-31): on the branch where the stock stack
+         * is ALIVE at entry, quiesce-stock.sh still paints the artwork into
+         * the stock display the instant the tool is picked — and this stage
+         * then rolled its OWN face on top, so the user watched the artwork
+         * CHANGE mid-launch (Josh: "a DIFFERENT splash shows"). quiesce leaves
+         * a timestamped marker naming what it painted; a fresh one means the
+         * artwork has already been on screen for the whole entry gap, so this
+         * stage is SKIPPED and the boot splash is the text screen alone —
+         * repeating the same picture "said nothing" (Josh, 2026-08-24).
+         * Consumed by overwriting empty (no delete binding here); a marker
+         * older than 120 s is a crashed launch's leftover and is ignored. */
+        let stage1Done = false;
+        const handoff = HOST_STATE_ROOT + "/splash-stage1.txt";
+        if (host_file_exists(handoff)) {
+            const parts = (host_read_file(handoff) || "").trim().split(" ");
+            const ts = parseInt(parts[0], 10);
+            if (!isNaN(ts) && Math.abs(Date.now() / 1000 - ts) < 120) {
+                stage1Done = true;
+                debugLog("splash: stage-1 artwork already shown (" +
+                         (parts[1] || "?") + ") — text screen only");
+            }
+            host_write_file(handoff, "");   /* consume, one launch only */
+        }
         const pool = [];
         for (let i = 0; i < 10; i++) {
             if (host_file_exists(HOST_STATE_ROOT + "/splash-" + i + ".hex")) {
                 pool.push("/splash-" + i + ".hex");
             }
         }
-        if (pool.length) {
+        if (!stage1Done && pool.length) {
             const pick = pool[Math.min(pool.length - 1,
                                        Math.floor(Math.random() * pool.length))];
             customSplashArt = splashBitsFrom(HOST_STATE_ROOT + pick);

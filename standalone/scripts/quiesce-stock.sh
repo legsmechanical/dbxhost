@@ -118,6 +118,19 @@ print(p if os.path.isfile(p) else "")')
         export SPLASH_PICK
     fi
     [ -n "$SPLASH_PICK" ] || return 0
+    # ⭑ THE STAGE-1 HANDOFF (2026-08-31). The standalone host's own boot splash
+    # also carries an artwork stage (ensureCustomSplash, shadow_ui.js) — added
+    # for the branch where stock PRE-KILLS the stack and this paint never runs.
+    # On THIS branch it does run, and without the handoff the host rolled its
+    # own independent face: the user watched the artwork CHANGE mid-launch
+    # (Josh, 2026-08-31: "a DIFFERENT splash shows"). The marker says "stage 1
+    # already showed the artwork"; the host consumes it and goes straight to
+    # the text screen — the original 08-24 design, where repeating the same
+    # picture "said nothing". Timestamped so a stale marker from a crashed
+    # launch cannot suppress the artwork forever; the host ignores one older
+    # than 120 s.
+    printf '%s %s\n' "$(date +%s)" "$SPLASH_PICK" \
+        > /data/UserData/dbx-host/splash-stage1.txt 2>/dev/null || true
     python3 - <<'PY' && say "splash painted into stock display ($SPLASH_PICK)"
 import mmap, os
 pick = os.environ.get("SPLASH_PICK", "")

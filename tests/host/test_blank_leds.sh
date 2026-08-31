@@ -47,17 +47,21 @@ PY
 
 # --- 2. frames fit the ring's uint8 write_idx ------------------------------
 # ⭑ The constraint that makes this non-obvious: the consumer snapshots a
-# ONE-BYTE write_idx, so a frame over 252 bytes corrupts the header rather than
-# just dropping. 92 messages is 368 bytes — it MUST be split.
-python3 - "$S" <<'PY' && ok "the payload is split into frames the ring can address (<=252 bytes)" \
-                      || bad "a frame exceeds 252 bytes — this would tear the ring header"
+# The ring's write_idx is uint16 since the v1.0.0 widening (layout pinned by
+# test_blank_leds_layout.sh), so a frame may use the whole 512-byte buffer —
+# but never MORE than MAX_FRAME, and never split mid-message. The old 252-byte
+# ceiling was the uint8 era and is gone with it.
+python3 - "$S" <<'PY' && ok "frames fit MAX_FRAME (<= buffer) and split on message boundaries" \
+                      || bad "a frame exceeds MAX_FRAME or splits mid-message"
 import importlib.util, sys
 spec = importlib.util.spec_from_file_location("b", sys.argv[1])
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 cs = m.chunks(m.messages())
-assert len(cs) > 1, "payload was not split at all — it is larger than one frame"
+assert m.MAX_FRAME <= m.BUF_SIZE, "MAX_FRAME exceeds the buffer"
+assert m.MAX_FRAME % 4 == 0, "MAX_FRAME is not a whole number of messages"
+assert sum(len(c) for c in cs) == len(m.messages()), "chunking lost bytes"
 for c in cs:
-    assert len(c) <= 252, len(c)
+    assert len(c) <= m.MAX_FRAME, len(c)
     assert len(c) % 4 == 0, "a frame was split mid-message"
 sys.exit(0)
 PY
