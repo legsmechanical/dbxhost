@@ -800,6 +800,9 @@ export const S = {
     clipLengthManuallySet: Array.from({length: 8}, () => new Array(16).fill(false)),
     drumLaneLengthManuallySet: new Array(8).fill(false),
     recordScheduledStop: false,
+    /* one-shot: the pending scheduled stop fires on the next tick (punch-out)
+     * instead of waiting for the page boundary */
+    recordStopNow: false,
     recordScheduledStopTarget: -1,
     pendingScheduledDisarm: false,
     pendingPrerollNote: null,       /* drum only: { track, lane, laneNote, vel, pressedAtTick, countInStart } */

@@ -54,6 +54,7 @@ export function disarmRecord() {
     }
     S.recordScheduledStop       = false;
     S.recordScheduledStopTarget = -1;
+    S.recordStopNow             = false;
     S.pendingScheduledDisarm    = false;
     if (_wasCountingIn) {
         /* Count-in active: only cancel is needed; sending _recording 0 would coalesce it away */

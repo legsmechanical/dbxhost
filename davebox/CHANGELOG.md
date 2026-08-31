@@ -52,6 +52,11 @@ the section into a versioned heading at release time.
   `Tr<n>` prefix, since they can hold the screen with no track row in sight.
 
 ### Fixes
+- **Record is a punch during playback.** Pressing Record while the transport
+  runs starts recording the moment you press — no more waiting for the next
+  bar — and pressing it again stops it just as immediately. Recording from
+  stopped keeps its count-in, and an empty clip still sizes itself in whole
+  pages.
 - **The module editor's header names the module, not the preset.** The
   breadcrumb reads `S1 > NUSAW` again instead of the loaded patch name.
 - **Touching a knob in the module editor highlights its parameter again.** The

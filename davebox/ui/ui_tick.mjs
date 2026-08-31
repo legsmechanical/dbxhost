@@ -2080,9 +2080,12 @@ export function _tickImpl() {
                 S.pendingScheduledDisarm = false;
                 disarmRecord();
             } else if (S.recordScheduledStop) {
-                /* Tick 1: lock clip length at page boundary; disarm deferred to next tick */
+                /* Tick 1: lock clip length; disarm deferred to next tick.
+                 * recordStopNow (punch-out) fires the lock on THIS tick; the
+                 * page-boundary wait remains for any path still scheduling. */
                 const _sStp = _arDrum ? S.drumCurrentStep[_art] : S.trackCurrentStep[_art];
-                if (_sStp >= 0 && _sStp >= S.recordScheduledStopTarget - 1) {
+                if (S.recordStopNow || (_sStp >= 0 && _sStp >= S.recordScheduledStopTarget - 1)) {
+                    S.recordStopNow = false;
                     const _lockLen = S.recordScheduledStopTarget;
                     if (_arDrum) {
                         S.drumLaneLength[_art] = _lockLen;

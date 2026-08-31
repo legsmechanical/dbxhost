@@ -510,8 +510,11 @@ Press **Record** to play notes into the active clip in real time.
 | Transport | What happens |
 |---|---|
 | Stopped | A 1-bar count-in, then recording and playback start together |
-| Playing a fixed-length clip | Records from the current position |
-| Playing an empty clip | Arms, and starts at the next bar — Record blinks until then |
+| Playing | Records immediately, from wherever the playhead is |
+
+While playing, Record is a punch: press to drop in, press again to drop out —
+both take effect the moment you press. An empty clip still sizes itself in
+whole pages as you record.
 
 Recording adds to what's there; it never erases. For a clean take, clear the clip
 first (**Delete + side button**), which also frees its length so the take sizes

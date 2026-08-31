@@ -2197,11 +2197,20 @@ function _onCC_transport(d1, d2) {
             const _recT  = S.recordArmedTrack >= 0 ? S.recordArmedTrack : S.activeTrack;
             const _recAc = S.trackActiveClip[_recT];
             if (S.clipAdaptiveMode[_recT][_recAc] && !S.recordScheduledStop && S.playing) {
-                /* Schedule stop at end of current page */
+                /* Punch OUT — immediately (Josh, 2026-08-31: pressing record
+                 * again during playback deactivates at once; it used to wait
+                 * for the end of the page). The page-multiple length is kept:
+                 * the clip is still locked to the page the playhead is in,
+                 * only the recording stops NOW instead of at its edge. The
+                 * lock + disarm still ride two ticks (set_param coalescing —
+                 * two writes in one buffer lose one), which recordStopNow
+                 * makes fire on the very next tick rather than at the page
+                 * boundary. */
                 const _recDrum = S.trackPadMode[_recT] === PAD_MODE_DRUM;
                 const _recStp  = _recDrum ? S.drumCurrentStep[_recT] : S.trackCurrentStep[_recT];
                 S.recordScheduledStop       = true;
                 S.recordScheduledStopTarget = (Math.floor(_recStp / 16) + 1) * 16;
+                S.recordStopNow             = true;
             } else {
                 disarmRecord();
             }
@@ -2241,15 +2250,17 @@ function _onCC_transport(d1, d2) {
             setButtonLED(MoveRec, Red);
             /* Adaptive mode: entered when count-in finishes (transport start edge in tick) */
         } else {
-            /* Playing → arm with no count-in. Two paths by mode:
-             *   Adaptive (empty clip + length not manually set): defer DSP
-             *     recording=1 to next bar boundary AND reset playhead to
-             *     loop_start at fire time (next page becomes new step 0,
-             *     avoiding an empty leading page). Record LED blinks until
-             *     DSP fires. JS sends recording=2.
-             *   Fixed (clip exists / length locked): record immediately at
-             *     the current step — the existing clip grid is the meaningful
-             *     frame. JS sends recording=1 (legacy). No blink. */
+            /* Playing → punch IN, immediately (Josh, 2026-08-31: record
+             * during playback activates at once — you record from wherever
+             * the playhead is). This retires the adaptive-arm DEFER (the old
+             * recording=2: wait for the bar boundary + reset the playhead to
+             * loop_start), which traded immediacy for a clean page start.
+             * Adaptive LENGTH is untouched and orthogonal: an empty clip
+             * still enters clipAdaptiveMode, so it grows by pages while you
+             * record and locks to a page multiple at stop.
+             * ⚠ The DSP still honours rv==2 (unreachable from here now) —
+             * kept so a bar-quantized arm can come back as a choice without
+             * re-plumbing; delete it only with its own reachability pass. */
             const _at = S.activeTrack, _ac = S.trackActiveClip[_at];
             const _isDrum = S.trackPadMode[_at] === PAD_MODE_DRUM;
             const _adaptive = _isDrum
@@ -2258,10 +2269,10 @@ function _onCC_transport(d1, d2) {
             S.recordArmed       = true;
             S.recordCountingIn  = false;
             S.recordArmedTrack  = _at;
-            S.recordPendingPage = _adaptive;
+            S.recordPendingPage = false;
             if (_adaptive) S.clipAdaptiveMode[_at][_ac] = true;
             setButtonLED(MoveRec, Red);
-            host_module_set_param('t' + _at + '_recording', _adaptive ? '2' : '1');
+            host_module_set_param('t' + _at + '_recording', '1');
             S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
         }
         } /* end arming else (direction-gated) */
