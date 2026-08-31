@@ -433,8 +433,23 @@ function bankPageHints(bank) {
 function drawKitPage(name, cells, inverted, footer) {
     const t = S.knobTouched;
     const touched = t >= 0 && cells[t] && cells[t].name ? cells[t] : null;
-    if (touched) drawKitTouchedHeader(touched.name);
-    else (inverted ? drawBankHeadingInverted : drawBankHeading)(name, false);
+    if (touched) {
+        drawKitTouchedHeader(touched.name);
+    } else {
+        (inverted ? drawBankHeadingInverted : drawBankHeading)(name, false);
+        /* ⭑ THE BANK INDICATOR, wired 2026-08-30 (Josh). bankCyclePos() has
+         * returned {idx, count} "for the header position strip" all along and
+         * this file already imported it — nothing ever called it, so the strip
+         * existed everywhere except on the screen it names. It was drawn in the
+         * MANUAL, because tools/render_screens.mjs draws it independently, which
+         * is how it went unnoticed: the documentation showed an indicator the
+         * instrument did not have.
+         *
+         * Not on the touched header: that state replaces the whole band with the
+         * param name, and the spec says no page bar there. */
+        const pos = bankCyclePos();
+        if (pos.count > 1) drawKitPageBar(pos.idx, pos.count);
+    }
     drawKitCells(cells, t);
     /* ⭑ NO value zoom on a bank page (Josh, 2026-08-26: "i've been meaning to
      * retire that"). Turning a knob widget no longer throws a magnified copy of

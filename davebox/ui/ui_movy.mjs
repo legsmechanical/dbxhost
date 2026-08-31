@@ -1569,9 +1569,13 @@ export function drawKitPageBar(idx, count) {
         /* the active bank drops a pixel out of the band, across its own span */
         if (b === idx) fill_rect(sx, MV_BAR_Y, sw, 1, 1);
         sx += sw;
-        /* the boundary notch: 2 rows of dark cut up into the band, so it is
-         * visible against a solid white edge rather than a 1px hairline */
-        if (b < count - 1) { fill_rect(sx, MV_HDR_H - 2, 1, 2, 0); sx += 1; }
+        /* The boundary notch: ONE row, on the band's bottom row.
+         * ⚠ It cannot be two. The band is 7 rows and the font4x5 title occupies
+         * rows 1-5, so row 6 is the only clear row in it — a 2-row notch cuts
+         * into row 5 and takes bites out of the title's glyphs. Found by
+         * test_bank_picker's header comparison, which is exactly the sort of
+         * collision a render is too small to show. */
+        if (b < count - 1) { fill_rect(sx, MV_HDR_H - 1, 1, 1, 0); sx += 1; }
     }
 }
 
