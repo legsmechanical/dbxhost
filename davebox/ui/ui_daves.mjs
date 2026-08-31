@@ -36,7 +36,10 @@ import { forceRedraw } from './ui_leds.mjs';
  * restarts at the top, also already moving. Timings in ticks (~94 Hz). */
 export const DAVE_FOOTER_H = 18;
 export const DAVE_SCAN_MAX = DAVE_FOOTER_H;          /* 64 - (64 - 18) */
-const SCAN_HOLD_TICKS = 90;                          /* ~1 s at each end */
+/* No hold anywhere — a continuous slow bounce (Josh corrected the first
+ * ruling: "the bounce SHOULDN'T hold at top/bottom"). Kept as a knob so a
+ * future hold is one number, not machinery. */
+const SCAN_HOLD_TICKS = 0;
 const SCAN_STEP_TICKS = 12;                          /* ~128 ms per pixel */
 
 const SEEN_PATH = '/data/UserData/dbx-host/daves-seen.txt';
