@@ -4021,6 +4021,41 @@ export function soundOnCC(d1, d2, decodeDelta) {
      * Mute+touch = reset to default), so swallowing them here would leave both
      * gestures dead inside the editor while davebox lost track of them too. */
     if (ppOn && d1 !== 49 && d1 !== 88) {
+        /* ⭐⭐ ONE DETENT PER CALL — feed the editor what STOCK feeds it.
+         *
+         * ⚠⚠ THE SHAPES DIFFER, AND THAT IS THE WHOLE BUG. The shim hands the
+         * shadow UI encoder CCs ONE DETENT AT A TIME. A TOOL gets one batched
+         * message per knob per frame carrying that frame's WHOLE detent count —
+         * davebox's own knob code says so in as many words, and the probe caught
+         * a single message reading d2=46. Handing that straight to the shared
+         * engine is giving stock's code an input shape stock never produces.
+         *
+         * So davebox expands the batch instead of the engine learning about it.
+         * The engine then sees exactly the stream it sees under stock, and the
+         * feel is identical BY CONSTRUCTION rather than by tuning — no second
+         * knob law to keep in step, and nothing to re-tune when upstream
+         * retunes theirs. (Josh: "why not just do it the way stock does it?")
+         *
+         * ⚠ Deliberately NOT fixed in knob_engine: making it scale by the
+         * magnitude would look equivalent and is not. Its acceleration reads the
+         * GAP BETWEEN CALLS, so one fat call and N thin ones are different
+         * inputs to it however the amount is scaled — and the divisor
+         * accumulator (int params, ENUM_DELTA_DIV) is written per detent too.
+         *
+         * ⚠ CAPPED. decodeDelta only spans ±63, and a runaway loop here is a
+         * frozen UI on a device where that means no audio controls. */
+        if (d1 >= 71 && d1 <= 78) {
+            const n = decodeDelta(d2);
+            if (n === 0) return false;
+            const unit = n > 0 ? 1 : 127;            /* +1 / -1, re-encoded */
+            const count = Math.min(Math.abs(n), 63);
+            let took = false;
+            for (let i = 0; i < count; i++) {
+                if (handleParamPagesMidi([0xB0, d1, unit])) took = true;
+            }
+            if (took) { S.dirty = true; return true; }
+            return false;
+        }
         if (handleParamPagesMidi([0xB0, d1, d2])) { S.dirty = true; return true; }
     }
 
