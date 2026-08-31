@@ -16,7 +16,7 @@
 // point — Josh picks per widget, and the primitive is deleted if the answer is
 // no). Nothing here is wired into a shipping screen by being drawn here.
 //
-// ⚠ THE CLOCK IS FROZEN. The latch frame animates off
+// ⚠ THE CLOCK IS FROZEN. drawKitPageBar blinks its active segment off
 // Date.now(), so two runs of the same case produce two different PNGs and any
 // diff between a before and an after is noise. Discovered the hard way while
 // checking this port for regressions: eight "changed" manual screens, all of

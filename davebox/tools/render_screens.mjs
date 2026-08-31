@@ -18,8 +18,8 @@ import { W, H, resetFb, currentFb, writePng, freezeClock } from './render_fb.mjs
  * A time-dependent renderer makes every run produce a different picture and the
  * committed PNGs come back dirty for no reason — which is exactly how a real
  * before/after check got eight false positives on 2026-08-29.
- * ⭑ drawKitPageBar was that renderer and no longer blinks (2026-08-30); the
- * latch frame still reads the clock, so this stays. Any instant
+ * drawKitPageBar blinks its active segment off Date.now()/375 and the latch
+ * frame animates, so this stays. Any instant
  * would do; this one is fixed so that a regenerated manual differs only where
  * the DRAWING changed. */
 freezeClock();
@@ -401,8 +401,16 @@ const emit = (file, section, name, drawFn) => {
 for (const s of BANK_SCREENS) {
     emit(s.file, s.section, BANKS[s.bank].name, () => {
         const cells = bankCells(s.bank, s.over || {});
-        const pos = { pageIdx: s.bank, pageCount: 7 };
-        kit.drawKitBankPage(cells, { headerText: BANKS[s.bank].name, ...pos,
+        /* ⚠⚠ NO pageIdx/pageCount. The track-view bank cards draw NO position
+         * indicator (see drawKitPage in ui/ui_render.mjs) and this renderer used
+         * to pass a count anyway, so the MANUAL showed a bar the instrument does
+         * not draw. That divergence survived a whole redesign of the bar —
+         * three shapes were tried and checked against renders that were lying —
+         * and it is the second time this file has documented a device behaviour
+         * that does not exist (SHFT/TRK was the first, same day).
+         * ⭑ This renderer duplicates the device's draw calls by hand. Every
+         * option it passes is a claim about what the device passes. */
+        kit.drawKitBankPage(cells, { headerText: BANKS[s.bank].name,
             touchedIdx: s.touchedIdx ?? -1, altArrowShow: !!s.altArrowShow,
             footer: s.footer });
     });

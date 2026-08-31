@@ -74,7 +74,7 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const { BANK_SOUND } = await import('../../ui/ui_constants.mjs');
-const { bankCycleForMode, bankDisplayName, bankCyclePos } = await import('../../ui/ui_pure.mjs');
+const { bankCycleForMode, bankDisplayName } = await import('../../ui/ui_pure.mjs');
 const { PAD_MODE_DRUM, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 /* The vertical map, read rather than repeated: these assertions are about WHERE
@@ -267,12 +267,6 @@ step('⭑ the bank card names its TRACK, so a latched card still says where you 
 
     fb.fill(0);
     kit.drawKitHeader('Tr5 - ' + BANKS[1].name, false, 117);
-    /* ⭑ The reference carries the BANK INDICATOR too, because the header does:
-     * the notches are knocked out of the band's bottom row and the active bank
-     * drops a pixel below it (2026-08-30). Without this the comparison fails on
-     * chrome rather than on the text it is here to check. */
-    const _p = bankCyclePos();
-    if (_p.count > 1) kit.drawKitPageBar(_p.idx, _p.count);
     const want = fb.slice(0, FBW * 8);
 
     /* ⚠ Text region only: the header's RIGHT edge carries the page-position bar
@@ -288,38 +282,25 @@ step('⭑ the bank card names its TRACK, so a latched card still says where you 
         }
 });
 
-step('⭑ a bank card draws a bank DESCENDER under the header, never a rule', () => {
-    /* The full-width rule went when the jog became a picker — the header is a
-     * filled white bar, so it separates itself — and it must not come back.
-     * What IS allowed there since 2026-08-30 is the bank indicator's descender:
-     * the active bank drops a pixel below the band across ITS OWN span only.
-     *
-     * ⚠ Measured, not eyeballed. A rule and a descender look near identical in
-     * a render, because row 7 sits under the header bar and the eye reads any
-     * ink there as a line — which is precisely why the original of this test
-     * existed. The discriminator is WIDTH: a rule spans the screen, a descender
-     * is one segment. */
+step('⭑ a bank card draws NO rule under the header', () => {
+    /* The segmented bank indicator went when the jog became a picker, and Josh
+     * then took the line itself: the header is a filled white bar, so it
+     * separates itself.
+     * ⚠ RE-CONFIRMED 2026-08-30 after an indicator was added and removed again
+     * in one sitting ("let's just get rid of the indicator row altogether").
+     * This row must stay empty on a bank card.
+     * ⚠ Measured, not eyeballed — with and without the rule the screen looks
+     * near identical in a render, because row 7 is the bottom of the header bar
+     * and the eye reads that as the line. */
     reset();
     S.activeBank = 1;
     S.bankSelectTick = S.tickCount;
     fb.fill(0);
     render.drawUI();
-    let ink = 0, runs = 0, prev = 0;
-    for (let x = 0; x < FBW; x++) {
-        const on = fb[kit.MV_BAR_Y * FBW + x] ? 1 : 0;
-        ink += on;
-        if (on && !prev) runs++;
-        prev = on;
-    }
-    if (ink === 0)
-        throw new Error('row ' + kit.MV_BAR_Y + ' is empty — the active bank is not ' +
-                        'dropping its descender, so the indicator is invisible');
-    if (ink >= FBW - 2)
-        throw new Error('row ' + kit.MV_BAR_Y + ' has ' + ink + 'px of ink — that is a ' +
-                        'full-width RULE under the header again, not a bank descender');
-    if (runs !== 1)
-        throw new Error('row ' + kit.MV_BAR_Y + ' has ' + runs + ' separate runs — the ' +
-                        'descender marks ONE bank, so it must be a single span');
+    let ink = 0;
+    for (let x = 0; x < FBW; x++) if (fb[kit.MV_BAR_Y * FBW + x]) ink++;
+    if (ink) throw new Error('row ' + kit.MV_BAR_Y + ' has ' + ink + 'px of ink — ' +
+                             'something is drawing a rule under the header again');
 });
 
 step('⚠ control: the same comparison FAILS without the prefix', () => {

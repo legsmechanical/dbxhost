@@ -59,26 +59,14 @@ import { observeLanded, easeOut, lerp } from './ui_anim.mjs';
  *                 header face to font4x5, so the band is 7 rather than 8. Same
  *                 look, one row cheaper, and it matches the face upstream's
  *                 param-pages header uses for the same job.
- *   dark   7      ⚠⚠ LOAD-BEARING, AND THIS WAS PROVEN THE HARD WAY. The row was
- *                 removed on 2026-08-30 on the argument that the bar now has a
- *                 shape of its own (double-height current segment) and so could
- *                 meet the band the way upstream's does. WRONG, and Josh saw it
- *                 on the device immediately: "i don't see an indicator row at
- *                 all now". Measured from a render — band rows 0-6 at ~128 ink,
- *                 then row 7 at 123 — the SINGLE-height segments are white
- *                 against a white band and simply become part of it. Only the
- *                 current segment's second row protrudes, which reads as a notch
- *                 on the band, not as an indicator.
- *                 ⭑ Upstream can do without this row because ITS header is a
- *                 plain ground at rest; davebox's is ALWAYS inverted. The
- *                 original note here said exactly that, and it was right.
- *   bar    8-9    page indicator            MV_BAR_Y; current segment 2px
+ *   dark   7      ⚠ LOAD-BEARING for the bar below: davebox's header is ALWAYS
+ *                 inverted, so a white segment row touching the filled band
+ *                 just becomes the band. Proven on device 2026-08-30 — the bar
+ *                 was drawing at 123 ink and read as nothing at all.
+ *   bar    8      page indicator, MODULE PARAM PAGES ONLY (MV_BAR_Y). The
+ *                 track-view bank cards draw nothing here; see drawKitPageBar.
+ *   gap    9
  *   w0     10-24  widget row 0            MV_ROW0_Y, MV_KH = 15
- *                 ⭑ NO GAP ROW between the bar and the widgets: the row Josh
- *                 gained by lifting the grid is spent on the separator above,
- *                 which is the one that has to exist. The bar is thin and
- *                 mostly empty, so the widgets below it have all the air they
- *                 need without a dedicated row.
  *   lbl0   25-31  label strip 0           MV_LBL0_Y, MV_LBL_H = 7
  *   gap    32
  *   w1     33-47  widget row 1            MV_ROW1_Y
@@ -113,7 +101,7 @@ import { observeLanded, easeOut, lerp } from './ui_anim.mjs';
  * this box, and moving them would change how many options fit — a separate
  * decision from making room for a footer. */
 export const MV_HDR_H = 7;
-export const MV_BAR_Y = 7;   /* the active bank's descender, directly under the band */
+export const MV_BAR_Y = 8;
 /* ⚠ THE BRAND HEADER KEEPS THE 6-ROW FACE AND ITS 8-ROW BAND. font4x5 is
  * UPPERCASE-ONLY (see CHARS4 in ui_fonts_pp.mjs), and the wordmark IS its
  * minuscules — "dAVEBOx" is the mark, not a title. A 6-row glyph at y=1 needs
@@ -1537,45 +1525,31 @@ export function drawKitBrandHeader() {
  * The segmented bar is NOT retired — module param PAGES still scroll, and there
  * it means what it says. */
 
-/* THE BANK INDICATOR IS PART OF THE HEADER, NOT A ROW UNDER IT (Josh, 2026-08-30).
+/* The page-position bar for MODULE PARAM PAGES — sound mode's editor, which is
+ * the only caller. Restored verbatim 2026-08-30 after the bank-indicator
+ * experiment was abandoned (below); this screen was never the thing under
+ * discussion and had no reason to change with it.
  *
- * "ours should read as the bottom of the header having small notches to indicate
- * banks, with the space in between notches for the active bank having another
- * pixel or whatever dropping down from it."
- *
- * So the band is the indicator: dark NOTCHES are knocked out of its bottom edge
- * at the bank boundaries, and the active bank grows a 1px DESCENDER below the
- * band across its own span. Nothing is drawn on a row of its own.
- *
- * ⚠⚠ THIS IS THE THIRD SHAPE, and the two before it failed for the same reason:
- * a row of WHITE segments under an ALWAYS-INVERTED header is invisible, because
- * white-on-white against the band simply becomes the band. Measured: band rows
- * at ~128 ink, then the segment row at 123 — indistinguishable. Adding a
- * separator row above it made the bar legible as a bar but still read as a
- * second stripe rather than as part of the header. Cutting INTO the band is what
- * makes it read, because a notch is dark and the band is not.
- *
- * ⭑ Consequence worth keeping: there is no MV_BAR_Y band to reserve any more.
- * The notches live on the band's own bottom row and the descender on the single
- * row below it.
- *
- * Called AFTER drawKitHeader — it knocks pixels out of what that drew. */
+ * ⚠ THE TRACK-VIEW BANK CARDS DELIBERATELY HAVE NO INDICATOR. That was tried
+ * three ways in one sitting — segments under the band, segments with a
+ * separator row, notches cut into the band's edge — and Josh ended it: "let's
+ * just get rid of the indicator row altogether." The jog opens a NAMED bank
+ * picker, so the card already says which bank you are on in words; a position
+ * strip repeats that in a form you have to count. Do not re-add it without him
+ * asking. */
 export function drawKitPageBar(idx, count) {
-    if (count <= 1) return;
+    if (count <= 1) { fill_rect(0, MV_BAR_Y, SCREEN_W, 1, 1); return; }
+    const blinkOn = Math.floor(Date.now() / 375) % 2 === 0;
     const usable = SCREEN_W - (count - 1);
     const base = Math.floor(usable / count), rem = usable % count;
     for (let b = 0, sx = 0; b < count; b++) {
         const sw = base + (b < rem ? 1 : 0);
-        /* the active bank drops a pixel out of the band, across its own span */
-        if (b === idx) fill_rect(sx, MV_BAR_Y, sw, 1, 1);
-        sx += sw;
-        /* The boundary notch: ONE row, on the band's bottom row.
-         * ⚠ It cannot be two. The band is 7 rows and the font4x5 title occupies
-         * rows 1-5, so row 6 is the only clear row in it — a 2-row notch cuts
-         * into row 5 and takes bites out of the title's glyphs. Found by
-         * test_bank_picker's header comparison, which is exactly the sort of
-         * collision a render is too small to show. */
-        if (b < count - 1) { fill_rect(sx, MV_HDR_H - 1, 1, 1, 0); sx += 1; }
+        if (b !== idx || blinkOn) {
+            fill_rect(sx, MV_BAR_Y, sw, 1, 1);
+        } else {
+            for (let x = sx; x < sx + sw; x += 2) set_pixel(x, MV_BAR_Y, 1);
+        }
+        sx += sw + 1;
     }
 }
 

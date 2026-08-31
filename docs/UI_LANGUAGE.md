@@ -41,10 +41,9 @@ animates is derived, and every derivation is total.
 renderer makes the same page produce two different pictures depending on when you ran it, and a
 before/after PNG diff taken without pinning it is pure noise — that reported eight manual screens as
 "changed" by a style port that changed none of them. Use `freezeClock()` from `render_fb.mjs`.
-⭑ `drawKitPageBar` was the worst offender and no longer blinks (2026-08-30 — the current segment is
-double height instead), so the remaining reader is the latch frame. Keep freezing: the rule is
-about the class, and a renderer that starts reading the clock again must not silently rot the
-manual. Anything built to that shape can be restyled once
+The two readers are `drawKitPageBar` (its active segment blinks off `Date.now()/375`) and the latch
+frame. The rule is about the class, not those two: a renderer that starts reading the clock must not
+silently rot the manual. Anything built to that shape can be restyled once
 and change everywhere. Anything that draws directly has to be found and edited by hand.
 
 Screens absorbed from the host get rebuilt against these primitives from day one. Structurally

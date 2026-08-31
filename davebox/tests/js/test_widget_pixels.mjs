@@ -44,8 +44,8 @@ globalThis.text_width = (t) => String(t).length * 6;
 
 /* ⭑ THE CLOCK IS FROZEN. A time-dependent renderer makes two renders of the
  * same page differ by when they ran, which would make every before/after
- * equality here flap. drawKitPageBar used to be one (it blinked at ~1.3 Hz) and
- * is now static; the latch frame still reads the clock. */
+ * equality here flap. drawKitPageBar blinks at ~1.3 Hz and the latch frame
+ * animates. */
 const FROZEN = 1756400000000;
 Date.now = () => FROZEN;
 
