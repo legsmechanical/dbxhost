@@ -325,11 +325,12 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   alternate parameters (the labels change). A **down-arrow** in the header marks
   any bank that has alternates, and blinks while the alternates are showing.
 - **Shift + jog** steps through the **tracks**, not the banks.
-- The bank page falls back to the track overview after a moment. **Touch the jog**
-  to bring it back — or **Shift + click the jog** to **latch** it, and it stays
-  until you unlatch. A flashing frame around the parameters shows the latch is
-  on, and the header names the track (`Tr4 - CLIP`) so you always know where you
-  are.
+- The bank page falls back to the track overview after a moment. **Click the
+  jog** from the overview to bring it back **latched** — it stays on screen
+  until you press **Back**. A flashing frame around the parameters shows the
+  latch is on, and the header names the track (`Tr4 - CLIP`) so you always know
+  where you are. While the bank page is up, clicking the jog does what that
+  bank uses the click for (alternate parameters, the Arp Steps editor).
 - **Back** dismisses whatever is on screen — it unlatches and returns to the
   track overview. It never changes which bank you are on.
 - **Each track remembers the bank it was on** — SOUND + CONFIG included. Scroll

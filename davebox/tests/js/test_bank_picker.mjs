@@ -318,11 +318,16 @@ step('⚠ control: the same comparison FAILS without the prefix', () => {
                               'comparison above cannot detect a missing prefix');
 });
 
-step('⭑ Shift + jog CLICK latches the bank card; Back unlatches and dismisses', () => {
+step('⭑ plain jog CLICK from the overview latches the bank card; Back unlatches and dismisses', () => {
+    /* The latch moved from Shift+click to the plain click, context-gated on
+     * the resting overview (Josh, 2026-08-31 — Front 2). The rest of this
+     * step is unchanged: renderer honours the latch past the window's expiry,
+     * Back dismisses without moving the bank. Gesture-grammar detail lives in
+     * test_bank_click_latch.mjs. */
     reset();
-    turn(1);                                          /* land on a bank */
-    shift(true); cc(3, 127); cc(3, 0); globalThis.tick(); shift(false);
-    if (!S.bankCardLatched) throw new Error('Shift+click did not latch');
+    S.tickCount += 500; globalThis.tick();            /* let the window lapse: overview up */
+    cc(3, 127); cc(3, 0); globalThis.tick();
+    if (!S.bankCardLatched) throw new Error('plain click from the overview did not latch');
     S.tickCount += 500; globalThis.tick();
     /* ⚠ The window itself is EXPECTED to expire — the latch is a separate
      * reason to hold the screen, not a freeze on the timer. Asserting the

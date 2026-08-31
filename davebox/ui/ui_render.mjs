@@ -1064,6 +1064,27 @@ function drawPositionBar(t) {
  * `soundRender()` call, and the two MUST stay in step — a flag added there and
  * not here re-opens exactly this bug. `tests/test_sound_mode_overlay_gate.sh`
  * pins that correspondence by diffing the two flag sets. */
+/* ⭑ ONE OWNER for "the bank display is held open": the latch, or the
+ * transient window. The render's inTimeout and the jog-click's context gate
+ * both read THIS, so they cannot disagree about what is on screen. */
+export function bankDisplayHeld() {
+    return !!(S.bankCardLatched || S.bankSelectTick >= 0);
+}
+
+/* Is the BANK CARD what track view is showing right now (vs the resting
+ * overview)? Mirrors the card branch in drawUI: held window, a touched knob,
+ * sticky alt-params, or the drum ALL-LANES confirm screen. The plain
+ * jog-click's context gate (Josh, 2026-08-31: click from the OVERVIEW opens
+ * the persistent display; on a visible card it keeps its per-bank meanings)
+ * reads this instead of re-deriving the branch. */
+export function bankCardVisible() {
+    if (S.sessionView) return false;
+    if (bankDisplayHeld() || S.knobTouched >= 0) return true;
+    if (S.altMode && bankHasAltParams(S.activeTrack, S.activeBank)) return true;
+    return S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM &&
+           S.activeBank === 7 && !S.allLanesConfirmed;
+}
+
 export function soundModeCovered() {
     return !!(S.sessionOverlayHeld || S.snapshotPicker || S.daveBox ||
         S.projectPadPicker || S.clearAutoMenu || S.pendingSceneBakePicker ||
@@ -1385,11 +1406,16 @@ function drawUIBody() {
 
     /* Track View — priority display state machine */
     const bank      = S.activeBank;
-    /* ⭑ The LATCH (Shift + jog click) is a third way to be "in" the bank
-     * display, and it does not expire — that is the whole point of it. Folded
-     * into the ONE predicate every screen reads rather than added at each
-     * screen, so a bank that forgot to check it cannot exist. */
-    const inTimeout = S.bankCardLatched || S.bankSelectTick >= 0 || S.jogTouched;
+    /* ⭑ The LATCH (now the plain jog click, Josh 2026-08-31; Shift+click
+     * 2026-08-25 before that) is a way to be "in" the bank display that does
+     * not expire — that is the whole point of it. Folded into the ONE
+     * predicate every screen reads rather than added at each screen, so a
+     * bank that forgot to check it cannot exist.
+     * ⚠ TOUCH-REVEAL IS RETIRED (Josh, 2026-08-31: "do away with touch jog to
+     * reveal davebox banks") — S.jogTouched deliberately absent here. The jog
+     * turn still opens the PICKER while touched, and a commit still arms the
+     * transient window; only the bare resting touch stopped revealing. */
+    const inTimeout = bankDisplayHeld();
 
     /* Compress-limit override: highest priority for ~1500ms after a blocked compress */
     if (S.stretchBlockedEndTick >= 0) {

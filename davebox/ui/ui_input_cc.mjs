@@ -53,6 +53,10 @@ import { soundActive, soundExit, soundVolGestureEnd, soundOpenGenerator,
     soundViewForTest } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
+/* ⚠ one-way: ui_render never imports this module (checked 2026-08-31) —
+ * the visibility predicate must be the render's own or the click gate and
+ * the screen can disagree. */
+import { bankCardVisible } from './ui_render.mjs';
 import { closeDaveBox } from './ui_daves.mjs';
 import { applyTrackConfig, readBankParams, applyBankParam,
     refreshPerClipBankParams, resyncDrumTrack,
@@ -600,6 +604,22 @@ function modalDialogUp() {
         }
         return;
     }
+    /* ⭑⭑ PLAIN JOG CLICK FROM THE OVERVIEW OPENS THE PERSISTENT BANK DISPLAY
+     * (Josh, 2026-08-31 — the Front-2 bank-access revision). The latch that
+     * lived on Shift+jog-click since 08-25 moves to the plain click, CONTEXT-
+     * GATED: only when the resting track overview is what's on screen. Once a
+     * bank card is visible the click keeps its per-bank meanings below
+     * (arp-interval toggle, alt-params, ALL LANES confirm). Back dismisses —
+     * the existing latch teardown. bankCardVisible() is the render's own
+     * predicate, so the gate and the screen cannot disagree. */
+    if (d1 === 3 && d2 === 127 && !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld &&
+            !S.sessionView && !soundActive() && S.bankPickerSel < 0 && !bankCardVisible()) {
+        S.bankCardLatched = true;
+        armBankDisplay();
+        S.screenDirty = true;
+        forceRedraw();
+        return;
+    }
     /* Plain jog click on SEQ ARP (bank 4) or TARP (bank 5) in Track View toggles
      * the Arp Steps interval-edit overlay: knobs K1-K8 become per-step scale-degree
      * offsets (±24), pad grid is the persistent step-vel level editor. Auto-clears
@@ -614,26 +634,14 @@ function modalDialogUp() {
         forceRedraw();
         return;
     }
-    /* ⭑ Shift + jog click: LATCH the bank card (Josh, 2026-08-25). Latched, the
-     * bank page holds the screen instead of falling back to the track overview.
-     *
-     * ⚠ On Shift, not on the plain click, for two reasons: the plain click is
-     * the ALT-PARAM toggle and is used constantly mid-edit, and Shift+knob —
-     * the other candidate for alt-params — is already the fine step-velocity
-     * page on the Arp Steps bank. Alt-params also USED to live on Shift+knob
-     * and were deliberately moved here; moving them back would undo that and
-     * collide with the step editor.
-     *
-     * Track view only: the fall-back this defeats is a track-view screen. */
+    /* Shift + jog click: RETIRED as a gesture (Josh, 2026-08-31 — its latch
+     * job moved to the plain click above; ruled "nothing" until something
+     * needs it). What survives is the abandon: Shift means the chord was not
+     * about picking a bank, so an open picker closes uncommitted, exactly as
+     * Shift+jog abandons it. */
     if (d1 === 3 && d2 === 127 && S.shiftHeld && !S.sessionView && !soundActive()) {
-        /* Shift means the gesture is not about picking a bank, so an open
-         * picker is abandoned here exactly as Shift+jog abandons it — never
-         * committed by a chord that was reaching for something else. */
         if (S.bankPickerSel >= 0) { S.bankPickerSel = -1; S.bankPickerIdleTick = -1; }
-        S.bankCardLatched = !S.bankCardLatched;
-        if (S.bankCardLatched) armBankDisplay();
         S.screenDirty = true;
-        forceRedraw();
         return;
     }
 
