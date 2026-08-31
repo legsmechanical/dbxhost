@@ -1365,6 +1365,21 @@ function paramPagesPickerOpen() {
     return !!(controller && controller.pickerOpen);
 }
 
+/* Has a menu/preset/items page been ENTERED — i.e. does the editor own a layer
+ * that Back should close before anything else acts?
+ *
+ * ⭑ Exported for a HOST THAT ALSO OWNS A BACK. The editor treats Back as
+ * one-layer-at-a-time (picker, then entered menu, then leave the view), and a
+ * host embedding it may reasonably want the third step for itself — dAVEBOx
+ * retraces to wherever the gesture that opened the editor was pressed, which
+ * this module's own exit cannot know. Without a way to ask, such a host has to
+ * choose between losing its retrace and acting twice on one press. Mirrors
+ * paramPagesPickerOpen for the other layer. */
+function paramPagesMenuEntered() {
+    return !!(controller && typeof controller.menuEntered === 'function'
+              && controller.menuEntered());
+}
+
     return {
         PARAM_VIEW_KNOBS,
         PARAM_VIEW_LIST,
@@ -1387,6 +1402,7 @@ function paramPagesPickerOpen() {
         paramPagesJumpIndex,
         paramPagesLayout,
         paramPagesPickerOpen,
+        paramPagesMenuEntered,
         paramPagesRefreshTrailing,
         paramPagesRevealing,
         paramPagesSlot,

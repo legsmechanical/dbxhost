@@ -1106,6 +1106,11 @@ export function soundExit(opts) {
      * teardown rather than a painter bug. Asked of the BINDING, not of ppOn: if
      * the two ever disagree the binding's answer is the one that owns the LEDs. */
     if (ppOn || paramPagesActive()) { exitParamPages(); ppOn = false; }
+    /* ⚠ The editor's navigation crumbs die with the session. A stale one would
+     * swallow a Back or retrace to a screen from a previous visit — the failure
+     * this whole pass was about, arriving by a different door. */
+    ppAteBackPress = false; ppDivedOut = false; ppFromGrid = false;
+    ppSuppressOnce = false; ppRestorePage = null;
     if (S.busLevelDirty) engineSaveState();
     S.active = false;
     /* CLOSING hands the bank back; LEAVING keeps it. On a close the track stops
@@ -4056,7 +4061,36 @@ export function soundOnCC(d1, d2, decodeDelta) {
             if (took) { S.dirty = true; return true; }
             return false;
         }
-        if (handleParamPagesMidi([0xB0, d1, d2])) { S.dirty = true; return true; }
+        /* ⚠⚠ BACK IS SPLIT DELIBERATELY, and getting it wrong broke a shipped
+         * gesture the first time I tried.
+         *
+         * The editor treats Back as one-layer-at-a-time: close the picker, then
+         * step out of an entered menu, THEN leave the view. The first two are
+         * its own layers and it must own them. The third is not its decision
+         * here — davebox knows where leaving the editor goes, including the
+         * gesture retrace ("a gesture-entered editor returns to where the
+         * gesture was pressed"), which the editor's own exit would bypass by
+         * going straight to chrome.returnView.
+         *
+         * So: hand Back to the editor ONLY while it has a layer to close. When
+         * it has none, davebox's own Back runs, on the RELEASE, as it always
+         * has. Anything else either loses the retrace or acts twice.
+         *
+         * ⚠ And Back is decided on opposite EDGES by the two — the editor on the
+         * press, davebox on the release — so a press the editor took must have
+         * its release swallowed, or one tap does both. */
+        if (d1 === 51) {
+            if (d2 >= 64 && ppHasLayer()) {
+                handleParamPagesMidi([0xB0, d1, d2]);
+                ppAteBackPress = true;
+                S.dirty = true;
+                return true;
+            }
+            /* No layer: fall through to davebox's own Back below. */
+        } else if (handleParamPagesMidi([0xB0, d1, d2])) {
+            S.dirty = true;
+            return true;
+        }
     }
 
     if (d1 === 49) {                                   /* shift */
@@ -4590,6 +4624,27 @@ export function soundOnCC(d1, d2, decodeDelta) {
         return true;
     }
 
+    /* ⚠⚠ THE EDITOR AND davebox DISAGREED ABOUT WHICH EDGE BACK IS, AND BOTH
+     * ACTED. The module editor decides on the PRESS (page_input: BACK_CC with
+     * d2 > 0); davebox moved its own navigation to the RELEASE deliberately,
+     * because that is where a tap is told apart from the long-press suspend. So
+     * one tap did BOTH — the editor stepped out of an entered menu, and then
+     * davebox's navigation left module edit underneath it.
+     *
+     * Josh, from the device: "when the preset list is active and being
+     * scrolled, pressing back kicks you out of module edit. it should just send
+     * you back to the bank."
+     *
+     * ⭑ ONE OWNER PER TAP. If the editor took the press, davebox swallows the
+     * matching release and does nothing else with it — including when the
+     * editor's answer was to leave the editor, which it does itself. */
+    if (ppAteBackPress && d1 === 51 && d2 < 64) {
+        ppAteBackPress = false;
+        GS.backPressTick = -1;
+        GS.backHoldFired = false;
+        return true;
+    }
+
     if (d1 === 51 && d2 < 64) {                        /* back RELEASE = tap */
         const wasHold = GS.backHoldFired;
         GS.backPressTick = -1;
@@ -4602,6 +4657,20 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * ⚠ Deliberately the tap only — the long-press suspend above stays
          * unclaimable, the same failsafe shape as the host's Shift+Back. */
         if (hostedBack()) return true;
+        /* ⭑ A DIVE-OUT COMES BACK. An un-turnable param (filepath, string, a
+         * long option list) hands the whole component to davebox's own editor,
+         * exactly as stock hands it to the hierarchy list editor. Back from
+         * there means "done with that param", so it returns to the GRID you
+         * dived from — not out of module edit, which is where davebox's own
+         * Back would take you and which reads as losing your place.
+         * Josh: "same thing happens after you click to enter the hierarchy menu
+         * editor." */
+        if (ppDivedOut && S.view === VIEW_EDIT) {
+            ppDivedOut = false;
+            ppSuppressOnce = false;      /* let the reconcile re-enter the grid */
+            S.dirty = true;
+            return true;
+        }
         if (S.view === VIEW_BLOCKS) {
             /* Back out of the menu lands on the bank's own screen — which IS
              * "the bank you came from" (the 08-26 law), now that the bank has a
@@ -4660,7 +4729,14 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * with a sound and you leave with it. Load is what makes a preview
              * permanent (it drops origState). */
             revertOriginal();
-            S.view = VIEW_PRESET_SRC;
+            /* ⭑ RETRACE, don't step up a tree you did not walk. Reached from the
+             * module editor's My Presets row, the SOURCE menu is a screen you
+             * never came through — stopping there on the way out is the same
+             * wrong-destination complaint as the rest of this pass. davebox
+             * already uses this law elsewhere (trackSoundOrigin, the gesture
+             * return); this is the crumb for the grid. */
+            if (ppFromGrid) { ppFromGrid = false; S.view = VIEW_EDIT; }
+            else S.view = VIEW_PRESET_SRC;
         } else if (S.view === VIEW_PRESET_SRC) {
             S.view = VIEW_EDIT;
         } else if (S.view === VIEW_EDIT || S.view === VIEW_BROWSE) {
@@ -5324,6 +5400,23 @@ let ppOn = false;
  * would bounce straight back. Cleared by the entry it suppresses, never by
  * anything else, so it cannot leak into a later unrelated open. */
 let ppSuppressOnce = false;
+/* A Back PRESS the editor consumed, whose RELEASE davebox must not act on. */
+let ppAteBackPress = false;
+/* We left the grid for davebox's own editor via openParamEditor, so Back there
+ * returns to the grid rather than out of module edit. */
+let ppDivedOut = false;
+/* A preset browser opened from the editor's My Presets row, so Back returns to
+ * the grid rather than to davebox's source menu. */
+let ppFromGrid = false;
+
+/* Does the editor currently have a layer of its own for Back to close — an open
+ * picker, or a menu/preset page you have entered? Only then does Back belong to
+ * it; otherwise leaving is davebox's decision. */
+function ppHasLayer() {
+    if (!ppOn) return false;
+    if (paramPagesPickerOpen()) return true;
+    return paramPagesMenuEntered();
+}
 
 /* Where the editor applies. NOT a Move bus (no ui_hierarchy / chain_params to
  * plan from — that is requirement 1's "to the extent there aren't conflicts"),
@@ -5477,7 +5570,14 @@ function ppIo() {
              * set S.view, so ppSync sees the view move away and tears the editor
              * down on the next tick — one owner for that decision, as always. */
             clearParamPagesTouch();
-            if (action === 'up_load') openPresets();
+            /* ⭑ THE BROWSER, NOT davebox's HUB. Stock's up_load calls
+             * enterPresetBrowser — a list of the user's presets. openPresets()
+             * is davebox's older SOURCE menu (User Presets / Module Presets /
+             * Module Menu / Swap Module), which is a different screen with a
+             * different job, and landing on it from this row is the wrong
+             * destination. Josh: "pressing presets puts you into the earlier
+             * davebox overlay menu. that's not right." */
+            if (action === 'up_load') { ppFromGrid = true; openUserPresets(); }
             else if (action === 'up_save_as') startSaveFlow();
             else if (action === 'swap_module') openBrowse(S.comp);
             else log('pp: unknown menu action ' + action);
@@ -5574,6 +5674,7 @@ installPpCtx({
         exitParamPages();
         ppOn = false;
         ppSuppressOnce = true;
+        ppDivedOut = true;
         S.pendingDiscover = 1;      /* davebox's own editor needs its banks */
         S.view = VIEW_EDIT;
         S.dirty = true;
