@@ -230,7 +230,6 @@ const CUSTOM_KIT = [
             { kind: 'valsq', label: 'Tr7', name: 'Track 7', text: '+3' },
             { kind: 'valsq', label: 'Tr8', name: 'Track 8', text: '--' },
         ],
-        opts: { pageIdx: 3, pageCount: 5 },
     },
 ];
 
@@ -421,9 +420,23 @@ for (const s of BANK_SCREENS) {
     });
 }
 for (const s of CUSTOM_KIT) {
-    emit(s.file, s.section, s.header, () =>
-        kit.drawKitBankPage(s.cells, { headerText: s.header, pageIdx: 0, pageCount: 6, touchedIdx: -1,
-                                       footer: s.footer, ...(s.opts || {}) }));
+    /* ⚠⚠ THE FOURTH DIVERGENCE OF THIS FILE, found 2026-08-31 and fixed here.
+     * These are TRACK-VIEW BANK CARDS — drum lane, all lanes, the conductor
+     * banks — and the device draws them through drawKitPage, which draws NO
+     * page indicator at all. This loop passed `pageIdx: 0, pageCount: 6` to
+     * every one of them (and the conductor screen overrode it with 3 of 5), so
+     * the manual documented a position bar on three pages the instrument does
+     * not draw one on. It is the SAME divergence that was fixed for BANK_SCREENS
+     * one loop up, in the same file, on 2026-08-30 — and it survived because the
+     * fix was applied to the screens being looked at rather than to the class.
+     * Pinned now by tests/host/test_render_screens_parity.sh.
+     * ⭑ BANK's map, explicitly: these draw through the SHARED chassis, whose
+     * bindings are module state. */
+    emit(s.file, s.section, s.header, () => {
+        kit.kitUseLayout('bank');
+        kit.drawKitBankPage(s.cells, { headerText: s.header, touchedIdx: -1,
+                                       footer: s.footer, ...(s.opts || {}) });
+    });
 }
 for (const s of CUSTOM_DRAW) emit(s.file, s.section, 'custom draw', s.draw);
 console.log(`\nwrote ${n} screen${n === 1 ? '' : 's'} to ${OUT}/`);
