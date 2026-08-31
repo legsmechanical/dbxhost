@@ -949,17 +949,59 @@ function ensureCustomSplash() {
             }
             host_write_file(handoff, "");   /* consume, one launch only */
         }
+        /* The pool comes from splash-pool.tsv (index, dave_num, weight, name
+         * per row — emitted by make-splashes.mjs), and the pick is WEIGHTED:
+         * the Dave Box pack-opening (Josh, 2026-08-31) — totally random with
+         * repeats, rare Daves marginally rarer. The dealt Dave's PERMANENT
+         * number is recorded into daves-seen.txt, the device-global collection
+         * the module's Dave Box album reads. Same law as pick-splash.py on the
+         * quiesce branch — only one of the two ever deals per launch
+         * (stage1Done gates this one).
+         *
+         * ⚠ The old scan here was `for i < 10`, a literal from the 10-frame
+         * era — with a 31-frame pool it silently dealt only the first ten.
+         * The tsv is the pool's own statement of its size; the fallback scans
+         * until the first missing file instead of to a constant. */
         const pool = [];
-        for (let i = 0; i < 10; i++) {
-            if (host_file_exists(HOST_STATE_ROOT + "/splash-" + i + ".hex")) {
-                pool.push("/splash-" + i + ".hex");
+        const poolTsv = host_file_exists(HOST_STATE_ROOT + "/splash-pool.tsv")
+            ? (host_read_file(HOST_STATE_ROOT + "/splash-pool.tsv") || "") : "";
+        if (poolTsv) {
+            const lines = poolTsv.split("\n");
+            for (let i = 0; i < lines.length; i++) {
+                const f = lines[i].split("\t");
+                if (f.length < 3) continue;
+                const path = "/splash-" + f[0] + ".hex";
+                const w = parseFloat(f[2]);
+                if (isFinite(w) && w > 0 && host_file_exists(HOST_STATE_ROOT + path))
+                    pool.push({ path: path, num: f[1], w: w });
             }
+        } else {
+            for (let i = 0; host_file_exists(HOST_STATE_ROOT + "/splash-" + i + ".hex"); i++)
+                pool.push({ path: "/splash-" + i + ".hex", num: null, w: 1 });
         }
         if (!stage1Done && pool.length) {
-            const pick = pool[Math.min(pool.length - 1,
-                                       Math.floor(Math.random() * pool.length))];
-            customSplashArt = splashBitsFrom(HOST_STATE_ROOT + pick);
-            debugLog("splash: artwork " + pick + " (" + pool.length + " in pool)" +
+            let total = 0;
+            for (let i = 0; i < pool.length; i++) total += pool[i].w;
+            let r = Math.random() * total;
+            let pick = pool[pool.length - 1];
+            for (let i = 0; i < pool.length; i++) {
+                r -= pool[i].w;
+                if (r < 0) { pick = pool[i]; break; }
+            }
+            customSplashArt = splashBitsFrom(HOST_STATE_ROOT + pick.path);
+            if (customSplashArt && pick.num !== null) {
+                /* Record the deal. Dedup on write; a failure never blocks the
+                 * splash — worst case the album misses one until the next deal
+                 * of the same Dave. */
+                try {
+                    const seenPath = HOST_STATE_ROOT + "/daves-seen.txt";
+                    const seen = host_file_exists(seenPath)
+                        ? (host_read_file(seenPath) || "") : "";
+                    if (seen.split("\n").indexOf(pick.num) < 0)
+                        host_write_file(seenPath, seen + pick.num + "\n");
+                } catch (e) { /* collection is best-effort */ }
+            }
+            debugLog("splash: artwork " + pick.path + " (" + pool.length + " in pool)" +
                      (customSplashArt ? "" : " — UNREADABLE, text screen only"));
         } else {
             debugLog("splash: no splash-N.hex artwork found — text screen only");

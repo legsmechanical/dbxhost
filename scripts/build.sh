@@ -829,6 +829,11 @@ if [ -d ./standalone ]; then
     # while STOCK still owns the surface — the only window where the write
     # survives (our own shim strips cable-0 LED writes for the whole boot).
     cp ./standalone/scripts/blank-leds.py ./build/scripts/
+    # pick-splash.py: the weighted splash pick + Dave Box collection record.
+    # A runtime dependency of quiesce-stock.sh (and the fallback picker for
+    # ensureCustomSplash's pool read is splash-pool.tsv, deployed with the
+    # assets above).
+    cp ./standalone/scripts/pick-splash.py ./build/scripts/
     chmod +x ./build/scripts/blank-leds.py
     # set-swap.sh: the Design-B project-library swap engine — a runtime
     # dependency of launch.sh (session entry/exit) and of the blessed

@@ -110,11 +110,12 @@ paint_splash() {
     # and the user watched it change. The choice is made once here, in the
     # shell, and reused; rotation is between launches, which is the whole idea.
     if [ -z "${SPLASH_PICK:-}" ]; then
-        SPLASH_PICK=$(python3 -c '
-import glob, os, random
-f = sorted(glob.glob("/data/UserData/dbx-host/splash-*.hex"))
-p = random.choice(f) if f else "/data/UserData/dbx-host/splash.hex"
-print(p if os.path.isfile(p) else "")')
+        # ⭑ THE DAVE BOX PACK-OPENING (Josh, 2026-08-31): pick-splash.py does a
+        # rarity-WEIGHTED pick over splash-pool.tsv and records the dealt
+        # Dave's permanent number into daves-seen.txt — the collection the
+        # module's Dave Box album shows. Falls back to the old uniform pick
+        # (recording nothing) if the pool manifest is missing.
+        SPLASH_PICK=$(python3 /data/UserData/dbx-host/scripts/pick-splash.py 2>/dev/null || true)
         export SPLASH_PICK
     fi
     [ -n "$SPLASH_PICK" ] || return 0

@@ -1,6 +1,10 @@
 # Changelog
 
 All notable changes to dAVEBOx are documented here.
+- **The Dave Box.** Every launch deals you one random Dave as the splash —
+  some are rarer than others — and every Dave you've ever been dealt lives in
+  a jog-driven album under Settings > Dave Box, each with his permanent
+  number. Collect all 31.
 
 Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 `[Unreleased]` as user-facing changes land; `scripts/cut_release.sh` finalizes

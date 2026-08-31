@@ -799,6 +799,9 @@ export const S = {
     clipAdaptiveMode: Array.from({length: 8}, () => new Array(16).fill(false)),
     clipLengthManuallySet: Array.from({length: 8}, () => new Array(16).fill(false)),
     drumLaneLengthManuallySet: new Array(8).fill(false),
+    /* DAVE BOX album (ui_daves.mjs): null closed, else { list, idx } —
+     * list = frame indices of collected Daves, album order. */
+    daveBox: null,
     recordScheduledStop: false,
     /* one-shot: the pending scheduled stop fires on the next tick (punch-out)
      * instead of waiting for the page boundary */

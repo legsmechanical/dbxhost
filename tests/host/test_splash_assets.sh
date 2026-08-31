@@ -77,9 +77,38 @@ grep -q 'splash-\*\.hex' scripts/build.sh \
 grep -q 'splash2\.hex' scripts/build.sh \
     && ok "build.sh ships the text screen" \
     || bad "build.sh does not copy splash2.hex"
-grep -q 'splash-\*\.hex' standalone/scripts/quiesce-stock.sh \
-    && ok "the instant splash picks from the rotating set" \
-    || bad "quiesce-stock still paints the single splash.hex — no rotation"
+# The rotation moved into pick-splash.py (the Dave Box dealer, 2026-08-31):
+# quiesce must call it, and the dealer itself must do the weighted pool pick
+# and record the deal. Pinning both ends — quiesce calling a dealer that no
+# longer rotates would pass a quiesce-only grep.
+grep -q 'pick-splash\.py' standalone/scripts/quiesce-stock.sh \
+    && ok "the instant splash is dealt by pick-splash.py" \
+    || bad "quiesce-stock no longer calls the dealer — no rotation"
+grep -q 'splash-pool\.tsv' standalone/scripts/pick-splash.py \
+    && grep -q 'daves-seen\.txt\|SEEN' standalone/scripts/pick-splash.py \
+    && ok "...and the dealer reads the weighted pool and records the deal" \
+    || bad "pick-splash.py lost the pool read or the collection record"
+grep -q 'pick-splash\.py' scripts/build.sh \
+    && ok "...and build.sh ships the dealer" \
+    || bad "pick-splash.py never reaches the device — quiesce would fall back forever"
+# The pool manifest: one row per frame, weights sane, DAVIES rarest.
+pool=standalone/assets/splash-pool.tsv
+frames=$(ls standalone/assets/splash-[0-9]*.hex | wc -l | tr -d ' ')
+rows=$(wc -l < "$pool" | tr -d ' ')
+[ "$rows" = "$frames" ] \
+    && ok "splash-pool.tsv covers all $frames frames" \
+    || bad "splash-pool.tsv has $rows rows for $frames frames"
+awk -F'\t' '$4=="DAVIES"{d=$3} $4!="DAVIES"{if(min==""||$3<min)min=$3} END{exit !(d!="" && d<min)}' "$pool" \
+    && ok "DAVIES is strictly the rarest in the emitted pool" \
+    || bad "DAVIES is not the rarest Dave in splash-pool.tsv"
+# The host-side dealer (pre-kill branch) reads the same pool — the old
+# for-i<10 literal capped a 31-frame pool at ten and must not return.
+grep -q 'splash-pool\.tsv' src/shadow/shadow_ui.js \
+    && ok "ensureCustomSplash reads the pool manifest" \
+    || bad "shadow_ui.js no longer reads splash-pool.tsv"
+grep -q 'i < 10; i++' src/shadow/shadow_ui.js \
+    && bad "the 10-frame scan cap is back in shadow_ui.js" \
+    || ok "...and the 10-frame scan cap is gone"
 # ⚠⚠ ONE frame per LAUNCH, not one per CALL. paint_splash runs TWICE on every
 # route (directly, then again inside freeze_move to re-assert after the save).
 # The first version picked inside the python each time, so the second paint

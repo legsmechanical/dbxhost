@@ -75,4 +75,11 @@ for (const frame of splash.SPLASH_FRAMES) {
  * still reads, and one file costs nothing. */
 writeFileSync(join(OUT, 'splash.hex'),
               readFileSync(join(OUT, 'splash-0.hex'), 'utf8'));
-console.log(`splashes: ${n} artwork frames + splash2.hex (${CAP})`);
+
+/* The POOL MANIFEST — what the launch-side pickers (pick-splash.py, and
+ * ensureCustomSplash in shadow_ui.js) read to do a WEIGHTED pick and record
+ * the dealt Dave's permanent number into the collection file. One row per
+ * frame, index-aligned with splash-N.hex: index, dave_num, weight, name. */
+writeFileSync(join(OUT, 'splash-pool.tsv'),
+    splash.DAVES.map((d, i) => `${i}\t${d.n}\t${d.w}\t${d.name}`).join('\n') + '\n');
+console.log(`splashes: ${n} artwork frames + splash2.hex + splash-pool.tsv (${CAP})`);

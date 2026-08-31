@@ -23,6 +23,7 @@ import {
 import { NOTE_KEYS, SCALE_NAMES } from './ui_constants.mjs';
 
 import { S } from './ui_state.mjs';
+import { openDaveBox } from './ui_daves.mjs';
 import { saveState, showActionPopup, loadSnapshotManifest } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { forceRedraw } from './ui_leds.mjs';
@@ -204,6 +205,11 @@ function buildGlobalMenuItems() {
          * the entry is always present. */
         createAction('Projects...', function() {
             openProjectPadPicker();
+        }),
+        /* The DAVE BOX — the album for the launch-splash gacha. Every Dave
+         * the user has ever been dealt at launch, jog-driven. ui_daves.mjs. */
+        createAction('Dave Box', function() {
+            openDaveBox();     /* closes the menu itself when it opens */
         }),
         createAction('Clear Sess', function() {
             S.confirmClearSession = true;

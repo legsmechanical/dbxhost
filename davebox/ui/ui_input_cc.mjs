@@ -52,7 +52,8 @@ import { soundActive, soundExit, soundVolGestureEnd, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
-import { ensureGlobalMenuFresh } from './ui_menu.mjs';
+import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
+import { closeDaveBox } from './ui_daves.mjs';
 import { applyTrackConfig, readBankParams, applyBankParam,
     refreshPerClipBankParams, resyncDrumTrack,
     unlatchAllTracks, queueLiveNoteOff } from './ui_dsp_bridge.mjs';
@@ -1728,6 +1729,7 @@ export function backTapWouldAct() {
         if (_p.menu || _p.colorPick || _p.confirmNew) return true;
         return !S.awaitingProjectSelect;
     }
+    if (S.daveBox) return true;
     if (S.snapshotPicker || S.clearAutoMenu || S.tempoSelectActive ||
         S.mergeNoticePending || S.mergeCountingIn ||
         S.pendingMergePlacement || S.mergeSoloPlacement >= 0 ||
@@ -1747,6 +1749,12 @@ function _backTap() {
     if (S.confirmStateWipe) return;
 
     /* 1. Transient dialogs / pickers / modes (one open at a time). */
+    if (S.daveBox) {
+        /* Back leaves the album for the menu it was opened from. */
+        closeDaveBox();
+        openGlobalMenu();
+        return;
+    }
     if (S.projectPadPicker) {
         /* Peel an open overlay (color -> menu -> grid) first. */
         if (projectPadPickerBack()) return;

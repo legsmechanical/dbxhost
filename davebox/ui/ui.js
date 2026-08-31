@@ -35,6 +35,7 @@ import { S } from './ui_state.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
 import { showActionPopup, readActiveSet, resolveSetLoadDecision } from './ui_persistence.mjs';
+import { daveBoxRotate } from './ui_daves.mjs';
 import {
     closeClearAutoMenu, projectPickerTextEntryMidi,
     projectPadPickerTap, projectPadPickerRotate, projectPadPickerClick
@@ -446,6 +447,26 @@ function _onMidiInternalImpl(data) {
             else if (d1 === MoveCopy)   { S.copyHeld   = d2 === 127;
                                           if (!S.copyHeld) S.copySrc = null; return; }
             else return;                  /* every other button: swallowed */
+        }
+    }
+
+    /* DAVE BOX album: modal like the pickers — jog browses, Back (falls
+     * through) closes, everything else is swallowed so a blind pad press
+     * cannot edit steps under a slideshow. Shift/Delete keep their state
+     * tracked, same as the project picker above. */
+    if (S.daveBox) {
+        const hi = status & 0xF0;
+        if (hi === 0x90 || hi === 0x80) return;
+        if (status === 0xB0) {
+            if (d1 === MoveBack) { /* falls through to the normal dispatch */ }
+            else if (d1 === MoveMainKnob) {
+                const _dd = decodeDelta(d2);
+                if (_dd) daveBoxRotate(_dd);
+                return;
+            }
+            else if (d1 === MoveShift)  { S.shiftHeld  = d2 === 127; return; }
+            else if (d1 === MoveDelete) { S.deleteHeld = d2 === 127; return; }
+            else return;
         }
     }
 

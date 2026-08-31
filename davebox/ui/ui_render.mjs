@@ -7,6 +7,7 @@
  */
 
 import { S, PERF_FACTORY_PRESETS } from './ui_state.mjs';
+import { drawDaveBox } from './ui_daves.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
 import { SESS_KNOB_MODES } from './ui_engine.mjs';
 import {
@@ -1064,7 +1065,7 @@ function drawPositionBar(t) {
  * not here re-opens exactly this bug. `tests/test_sound_mode_overlay_gate.sh`
  * pins that correspondence by diffing the two flag sets. */
 export function soundModeCovered() {
-    return !!(S.sessionOverlayHeld || S.snapshotPicker ||
+    return !!(S.sessionOverlayHeld || S.snapshotPicker || S.daveBox ||
         S.projectPadPicker || S.clearAutoMenu || S.pendingSceneBakePicker ||
         S.mergePlacing || S.mergeNoticePending || S.pendingMergePlacement ||
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
@@ -1189,6 +1190,7 @@ function drawUIBody() {
     S._altPrevBank  = S.activeBank;
     S._altPrevTrack = S.activeTrack;
     if (S.sessionOverlayHeld) { drawSessionOverview(); return; }
+    if (S.daveBox) { drawDaveBox(); return; }
     if (S.snapshotPicker) { drawSnapshotPicker(); return; }
     if (S.projectPadPicker) { drawProjectPadPicker(); return; }
     if (S.clearAutoMenu) { drawClearAutoMenu(); return; }
