@@ -19,6 +19,10 @@ the section into a versioned heading at release time.
 - **A new splash pool — 31 Daves.** The launch artwork rotates through a fully
   recurated set; every launch greets you with a different Dave.
 ### Features
+- **Click the jog to open a bank, Back to leave.** From the track overview,
+  a jog click now opens the bank display and keeps it on screen; Back returns
+  to the overview. Touching the jog no longer flashes the bank up, and
+  Shift+click is retired — one gesture in, one gesture out.
 - **Menus open as overlays over the screen you came from.** A submenu — Sound
   Control, Config, Knobs, the LFO, Session FX, Slot Presets, the module browser
   — now floats in a box with the screen behind it dimmed, and a breadcrumb along
