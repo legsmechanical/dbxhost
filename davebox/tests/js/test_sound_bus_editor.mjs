@@ -228,6 +228,31 @@ step('⚠ CONTROL: a MOVE bus is still excluded — scoping, not impossibility',
         throw new Error('ppApplies() is true on a Move bus');
 });
 
+step('⭐⭐ SAVE AS from the grid actually SAVES — pendingAction must drain while the editor is up', () => {
+    /* Josh, from the device: "user presets don't seem to be saving."
+     *
+     * startSaveFlow() queues `{t:'usrsavedo'}` on S.pendingAction and the
+     * keyboard's confirm returns to the grid. But soundTick's `if (ppOn) {…
+     * return; }` sits ABOVE the pendingAction drain, and that block rescues
+     * only the baked scan and the write ledger — so with the grid up the action
+     * is stranded forever: the keyboard takes the name, closes, and NOTHING
+     * happens. No file, no error message.
+     *
+     * ⚠ NOT a bus bug — the grid has owned track FX since it shipped, so this
+     * broke Save As everywhere. The bus change only widened where it bites.
+     *
+     * Pinned at the mechanism (an action queued under the grid gets consumed),
+     * because that is the thing that was silently untrue. */
+    enterMasterFxBlock();
+    if (!pp().on) throw new Error('rig: the grid is not up, so this proves nothing');
+    writes.length = 0;
+    snd.soundQueueActionForTest({ t: 'usrsavedo', name: 'AdvisorTest' });
+    ticks(6);
+    if (snd.soundPendingActionForTest())
+        throw new Error('the action is STILL queued after 6 ticks — stranded behind the ' +
+                        'ppOn early-return, which is why Save As writes nothing');
+});
+
 if (swallowed !== null) { console.error('  FAIL — a SWALLOWED exception reached the jserr log:\n' + swallowed); failed = 1; }
 process.exit(failed);
 }

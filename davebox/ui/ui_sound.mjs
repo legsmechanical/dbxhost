@@ -732,6 +732,8 @@ export function soundInflightForTest() { return S.inflight; }
  * kit module, minus the fixture. */
 export function soundHostedCtxForTest() { return hostedCtx(); }
 export function soundBusCountForTest() { return FX_BUSES.length; }
+export function soundPendingActionForTest() { return S.pendingAction; }
+export function soundQueueActionForTest(a) { S.pendingAction = a; }
 /* The param-pages editor's live state: whether it took the screen, and the page
  * the jog is on. Pins the OUTCOME (which pages exist) rather than ppApplies()'s
  * boolean — a gate can be right while the plan it produces is wrong. */
@@ -5078,6 +5080,22 @@ export function soundTick() {
          * screen that shows them, and nothing reaching the DSP. Caught by
          * test_sound_write_verify, which failed the moment the flag went on. */
         drainAndVerifyWrites();
+        /* ⚠⚠ AND SO DOES pendingAction — the third thing this early return
+         * stranded. Josh, from the device: "user presets don't seem to be
+         * saving." startSaveFlow() queues {t:'usrsavedo'} and the keyboard
+         * returns to the GRID, so the drain below was never reached: the name
+         * was accepted, the keyboard closed, and nothing happened — no file and
+         * no error, because the failing step never ran to report one.
+         * ⚠ Not a bus bug. The grid has owned track FX since it shipped, so
+         * Save As has been silently inert there too.
+         * Same `!pendingWrites.length` guard as the drain below, for the same
+         * reason: an action stacked on a write drain doubles the tick's SHM
+         * cost exactly when the sequencer can least absorb it. */
+        if (S.pendingAction && !S.pendingWrites.length) {
+            const a = S.pendingAction;
+            S.pendingAction = null;
+            runAction(a);
+        }
         return;
     }
 
