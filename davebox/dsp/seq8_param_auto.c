@@ -722,6 +722,11 @@ static void pa_record_tick(seq8_instance_t *inst, int track, int clip,
             uint16_t s = (uint16_t)(snap > 0xFFFFu - cell ? 0xFFFFu - cell : snap);
             pa_clear_range(e, s, (uint16_t)(s + cell - 1));
             if (!pa_set_point(e, s, l->val)) inst->pa_store_full = 1;
+            /* A recording is a sweep, and a sweep sampled every half step and
+             * held is a 16-steps-a-second staircase on a filter. So what the
+             * hand recorded plays back SMOOTH: interpolated between the cells
+             * at tick rate. Locks stay stepped — that is their meaning. */
+            e->flags |= PA_FLAG_SMOOTH;
             /* The parameter IS at the live value — the editor set it — so
              * playback need not re-send it when the hand comes off. */
             e->last_sent = l->val; e->last_sent_valid = 1;

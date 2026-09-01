@@ -143,7 +143,7 @@ wire units — only JS has the `chain_params` metadata that defines them.
 | `tN_pa_active` | `"<clip> <target> <0\|1>"` | Mute + knob: deactivate **without** deleting |
 | `tN_pa_smooth` | `"<clip> <target> <0\|1>"` | stepped hold (default) vs linear interpolation |
 | `tN_pa_loop` | `"<clip> <target> <len> <off> <res>"` | per-parameter loop window + resolution. **Inert in v1** — nothing writes it; it exists so restoring polymetric automation later is UI work, not a storage change |
-| `tN_pa_live` | `"<target> <val>"` | a knob under a hand moved to `<val>` (the track's ACTIVE clip). **The DSP decides what that means** from its own flags: Record on + transport running = written along the playhead one cell (half a step) at a time, overwriting, until release; otherwise an **override** — playback leaves the target alone. Either way playback never pushes a live target (touch wins) |
+| `tN_pa_live` | `"<target> <val>"` | a knob under a hand moved to `<val>` (the track's ACTIVE clip). **The DSP decides what that means** from its own flags: Record on + transport running = written along the playhead one cell (half a step) at a time, overwriting, until release, and the entry is marked **smooth** (a half-step hold is an audible staircase on a sweep; locks stay stepped); otherwise an **override** — playback leaves the target alone. Either way playback never pushes a live target (touch wins) |
 | `tN_pa_live_end` | `"<target>"` | the hand is off: the target returns to playback, which **re-asserts** its value (override-resume) |
 
 **Ownership.** One target, one track: the first track to automate a target owns it until its

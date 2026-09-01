@@ -315,6 +315,7 @@ int main(void) {
         pa_record_tick(in, 0, 0, 40, 24);                 /* cell 36..47 */
         pa_entry_t *e = &in->pa_entries[0];
         HX_ASSERT(e->count == 3, "one point per cell along the playhead (the original + two cells)");
+        HX_ASSERT(e->flags & PA_FLAG_SMOOTH, "⚠ a RECORDED entry plays back smooth — half-step holds are an audible staircase");
         HX_ASSERT(e->points[1].tick == 24 && e->points[1].val == 5000, "the first cell holds the value at its start");
         HX_ASSERT(e->points[2].tick == 36 && e->points[2].val == 5500, "the next cell the newer value");
         pa_record_tick(in, 0, 0, 26, 24);                 /* loop wrapped: overwrite cell 24 */
