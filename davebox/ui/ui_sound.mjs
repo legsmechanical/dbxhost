@@ -2541,7 +2541,8 @@ const VIEW_TREE = {
                           crumb: () => 'Module' },
     [VIEW_PATCHES]:     { parent: null,            float: true,
                           crumb: () => 'Slot Presets' },
-    [VIEW_BUSES]:       { parent: null,            float: true,
+    [VIEW_BUSES]:       { parent: null,
+                          /* full screen since 2026-09-01 — the S+C menu's dress */
                           crumb: () => 'Session FX' },
     [VIEW_ENUM]:        { parent: () => (S.enumPick ? S.enumPick.from : null),
                           float: true, backPure: true,
@@ -5276,8 +5277,15 @@ function renderBlocks() {
 }
 
 function renderBuses() {
-    renderInChain(FX_BUSES.map(b => ({ label: b.title, hdr: true, chevron: true })),
-                  S.busIdx);
+    /* A FULL SCREEN, exactly the SOUND + CONFIG menu's dress (Josh,
+     * 2026-09-01: "master send fx interface should be a menu just like
+     * sound-config's, not a pop-up overlay on top of the bank card") — kit
+     * header + kit list, no backdrop, no float. Its rows lead into bus
+     * editors, which is the 08-27 criterion for a full screen anyway. */
+    clear_screen();
+    drawKitHeader('SESSION FX', false);
+    drawKitList(FX_BUSES.map(b => ({ label: b.title, hdr: true, chevron: true })),
+                S.busIdx, {});
 }
 
 /* What to CALL the block being edited.
