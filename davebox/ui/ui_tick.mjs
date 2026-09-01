@@ -1214,7 +1214,10 @@ export function _tickImpl() {
         automationTick();
         /* The two conditions only the DSP can see, on the slow cadence: neither
          * is per-tick news and each clears on read. */
-        if ((S.tickCount % POLL_INTERVAL) === 0) automationPollWarnings();
+        if ((S.tickCount % POLL_INTERVAL) === 0) {
+            const lines = automationPollWarnings();
+            if (lines) showActionPopup(...lines);
+        }
 
         /* SESSION VIEW track levels: knob N drives track N's level.
          *

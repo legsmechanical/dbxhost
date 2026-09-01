@@ -47,7 +47,8 @@ import { instrOptions, fmtInstr, INSTR_SCHWUNG, fmtVelOverride, BANK_SOUND, BANK
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD } from './ui_constants.mjs';
 import { applyTrackConfig } from './ui_dsp_bridge.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
-import { forceRedraw } from './ui_leds.mjs';
+import { forceRedraw, effectiveClip } from './ui_leds.mjs';
+import { automationParamEdit, automationParamTouch } from './ui_automation.mjs';
 import { writeSidecar } from './ui_persistence.mjs';
 import { requestTrackModeChange } from './ui_dialogs.mjs';
 import {
@@ -5852,6 +5853,14 @@ function ppRefreshPresets() {
  * a target. Adding the record is its own piece of work. */
 function ppIo() {
     return {
+        /* Automation hears every knob edit and touch in the chain editor —
+         * the ONE owner of what that means (record, lock, override) is
+         * ui_automation.mjs. The target is "<slot>:<comp>:<key>", and the
+         * controller's fullKey is already "<comp>:<key>". */
+        onParamEdit: (fullKey, wire, prevWire, meta) =>
+            automationParamEdit(S.track, effectiveClip(S.track), S.slot, fullKey, wire, prevWire),
+        onParamTouch: (fullKey, down) =>
+            automationParamTouch(S.track, effectiveClip(S.track), S.slot, fullKey, down),
         trailingMenus: () => {
             if (!S.moduleId) return [];      /* nothing loaded to preset or swap */
             return [

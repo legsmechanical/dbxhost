@@ -1314,6 +1314,14 @@ typedef struct {
      * keeps its single producer. Bit t = track t; clip index alongside. */
     uint8_t    pa_release_mask;
     uint8_t    pa_release_clip[NUM_TRACKS];
+    /* Writer lock — see pa_lock. The SPI thread spins for it (the audio thread
+     * holds it for one point write); the audio thread only TRIES it. */
+    uint8_t    pa_wlock;
+    /* Targets under a hand, per track. See pa_live_t. */
+    pa_live_t  pa_live[NUM_TRACKS][PA_LIVE_MAX];
+    /* A write was refused because another track owns the target: owner+1,
+     * reported and cleared on read. */
+    uint8_t    pa_owner_conflict;
 
     /* Result of last all_lanes_beat_stretch: 0=none, 1=ok, -1=blocked */
     int all_lanes_stretch_result;
@@ -6597,6 +6605,28 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
      * count — one round trip for the whole project, because a per-entry read
      * would cost an SPI frame each. Format, one entry per line:
      *   "<track> <clip> <flags> <count> <target>" */
+    /* pa_owner <target>: the track that owns this target (has automation on
+     * it in any clip), or -1. The UI asks before a track's first write to a
+     * target; the store refuses anyway (pa_owner_conflict). */
+    if (!strncmp(key, "pa_owner ", 9)) {
+        int o = -1;
+        if (inst) {
+            const char *t = key + 9;
+            for (int i = 0; i < PA_MAX_TARGETS && o < 0; i++)
+                if (inst->pa_targets[i][0] && !strcmp(inst->pa_targets[i], t))
+                    o = pa_owner_of(inst, i);
+        }
+        return snprintf(out, out_len, "%d", o);
+    }
+
+    /* pa_owner_conflict: a write was refused because another track owns the
+     * target — that track's index + 1, or 0. Clears on read. */
+    if (!strcmp(key, "pa_owner_conflict")) {
+        int v = inst ? (int)inst->pa_owner_conflict : 0;
+        if (inst) inst->pa_owner_conflict = 0;
+        return snprintf(out, out_len, "%d", v);
+    }
+
     if (!strcmp(key, "pa_list")) {
         int n = 0;
         /* Terminate up front: a project with no automation must hand back an
@@ -6606,6 +6636,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
          * answer and conclude nothing had changed. */
         if (out_len > 0) out[0] = '\0';
         if (!inst) return 0;
+        pa_lock(inst);                      /* the latch may be writing */
         for (int i = 0; i < PA_MAX_ENTRIES; i++) {
             pa_entry_t *e = &inst->pa_entries[i];
             if (!e->used || !e->count) continue;
@@ -6621,6 +6652,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
             }
             n += w;
         }
+        pa_unlock(inst);
         return n;
     }
 

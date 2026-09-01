@@ -41,6 +41,10 @@
 #define PA_RING_SLOTS      256   /* staged (target, value) changes awaiting the JS push; > 8 tracks x PA_TICK_MAX_STAGE x a few ticks */
 #define PA_TICK_MAX_STAGE   16   /* changes one tick may stage — see pa_playback_scan */
 
+#define PA_LIVE_MAX          8   /* targets one track can have under a hand at once */
+#define PA_LIVE_RECORD       1   /* the knob is writing along the playhead */
+#define PA_LIVE_OVERRIDE     2   /* the knob is overriding; automation resumes on release */
+
 #define PA_FLAG_ACTIVE     0x01  /* cleared by Mute+knob: kept, but not played */
 #define PA_FLAG_SMOOTH     0x02  /* linear interpolation instead of stepped hold */
 
@@ -55,6 +59,18 @@ typedef struct {
     uint16_t target;
     uint16_t val;
 } pa_change_t;
+
+/* A target currently under a hand on one track. Written on the SPI thread
+ * (pa_live / pa_live_end), read on the audio thread: the playback scan skips a
+ * live target — touch wins — and, in RECORD mode, the latch writes `val` along
+ * the playhead one cell at a time. last_snap is audio-thread owned. */
+typedef struct {
+    uint8_t  used;
+    uint8_t  mode;               /* PA_LIVE_RECORD / PA_LIVE_OVERRIDE */
+    uint16_t target;             /* interned target id */
+    uint16_t val;                /* the live value, 0..PA_VAL_MAX */
+    uint32_t last_snap;          /* last cell written (RECORD); 0xFFFFFFFF = none */
+} pa_live_t;
 
 typedef struct {
     uint8_t  used;

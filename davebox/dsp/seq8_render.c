@@ -1004,6 +1004,9 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                  * nothing and discards any pass a concurrent edit overlapped. */
                 pa_playback_scan(inst, tr, t, (int)tr->active_clip, _ct,
                                  _winlen, pa_emit_midi);
+                /* And the knobs under a hand while Record is on: written along
+                 * the same playhead, one cell at a time. */
+                pa_record_tick(inst, t, (int)tr->active_clip, _ct, _tps);
 
                 /* Latch recording: overwrite each latched lane along the playhead
                  * with the current live value (one point per 1/32 cell, clearing

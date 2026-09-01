@@ -143,12 +143,22 @@ wire units — only JS has the `chain_params` metadata that defines them.
 | `tN_pa_active` | `"<clip> <target> <0\|1>"` | Mute + knob: deactivate **without** deleting |
 | `tN_pa_smooth` | `"<clip> <target> <0\|1>"` | stepped hold (default) vs linear interpolation |
 | `tN_pa_loop` | `"<clip> <target> <len> <off> <res>"` | per-parameter loop window + resolution. **Inert in v1** — nothing writes it; it exists so restoring polymetric automation later is UI work, not a storage change |
+| `tN_pa_live` | `"<target> <val>"` | a knob under a hand moved to `<val>` (the track's ACTIVE clip). **The DSP decides what that means** from its own flags: Record on + transport running = written along the playhead one cell (half a step) at a time, overwriting, until release; otherwise an **override** — playback leaves the target alone. Either way playback never pushes a live target (touch wins) |
+| `tN_pa_live_end` | `"<target>"` | the hand is off: the target returns to playback, which **re-asserts** its value (override-resume) |
+
+**Ownership.** One target, one track: the first track to automate a target owns it until its
+automation is gone from every clip. `pa_set`/`pa_set2`/`pa_live` from another track are
+**refused** and reported through `pa_owner_conflict`. (The UI cannot ask first — a knob edit
+runs in the MIDI handler, where `get_param` is banned — so the refusal IS the check, and the
+popup follows on the next poll.)
 
 | get key | returns |
 |---|---|
 | `pa_list` | one line per entry: `"<track> <clip> <flags> <count> <target>"` — the whole project in ONE read, because a per-entry read costs an SPI frame each |
 | `pa_dirty` | automation changed since the last save |
 | `pa_store_full` | a write (or a load) was refused for want of room; **reading clears it** |
+| `pa_owner <target>` | the track that owns `<target>` (has automation on it in any clip), or `-1` |
+| `pa_owner_conflict` | a write was refused because another track owns the target: that track + 1, or 0; **reading clears it** |
 
 Flags: `1` active, `2` smooth (so `3` = active+smooth).
 

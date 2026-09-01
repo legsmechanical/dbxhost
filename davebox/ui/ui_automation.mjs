@@ -64,6 +64,7 @@ export function automationResetCaches() {
     metaCache = new Map();
     anyAutomation = false;
     stopGrace = 0;
+    gestures = new Map();
 }
 
 /* Value metadata is per (slot, component) and lives as long as the module in
@@ -169,6 +170,7 @@ function pushTarget(target, norm) {
  * goes next tick — with only its newest value, since a superseded one is not
  * worth a round-trip. */
 export function automationTick() {
+    gesturesTick();
     /* Nothing to drain unless this project has automation AND the transport is
      * running: staging only happens on a playing clip. Both are already-known
      * flags, so the common case costs nothing at all. */
@@ -200,6 +202,10 @@ export function automationTick() {
     for (const [target, val] of pending) {
         if (n >= PUSH_PER_TICK) break;
         pending.delete(target);
+        /* Touch wins: a target under a hand is not pushed. The DSP stops
+         * staging it too; this catches what was staged just before the touch.
+         * On release the DSP re-asserts, so nothing is lost. */
+        if (gestures.has(target)) continue;
         const r = pushTarget(target, val);
         if (r === 'skip') continue;
         n++;                                   /* a timed-out write cost its round-trip too */
@@ -215,13 +221,152 @@ export function automationTick() {
 }
 
 /* Diagnostics the DSP can only report, surfaced where a person can see them.
- * Both clear on read, so each new occurrence is reported once. */
+ * All clear on read, so each new occurrence is reported once. Returns popup
+ * lines for the one a person must act on, or null — the caller owns the
+ * popup, so this module stays free of the screen. */
 export function automationPollWarnings() {
     if (host_module_get_param('pa_store_full') === '1')
         console.log('[dbx] automation store full — a write was refused');
     if (host_module_get_param('pa_ring_dropped') === '1')
         console.log('[dbx] automation queue overflowed — a staged value was dropped');
+    const owner = parseInt(host_module_get_param('pa_owner_conflict') || '0', 10);
+    if (owner > 0) return ['Already automated', 'by track ' + owner];
+    return null;
 }
+
+/* ------------------------------------------------------------------ */
+/* THE WRITE SIDE — record, p-lock, override                            */
+/*                                                                      */
+/* Fed by the chain editor's two host hooks (io.onParamEdit and         */
+/* io.onParamTouch, bound in ui_sound.mjs). The grammar is the spec's:  */
+/*                                                                      */
+/*   a step held + a turn      = a p-lock on that step (playing or not) */
+/*   playing, Record on, turn  = recorded along the playhead until the  */
+/*                               hand comes off                         */
+/*   playing, Record off, turn = an override; automation resumes on     */
+/*                               release                                */
+/*   stopped, no step held     = just a knob turn                       */
+/*                                                                      */
+/* The DSP holds the authority on "recording": JS sends the live value  */
+/* (tN_pa_live) and the DSP's own recording/playing flags decide whether */
+/* it is written along the playhead or merely overrides. JS decides the */
+/* rest: the resting value (from the edit BEFORE the first one), the    */
+/* one undo checkpoint per gesture, and the lock writes.                */
+/*                                                                      */
+/* ⚠ Everything here runs from the MIDI handler, where get_param        */
+/* silently returns null and a set_param must be queued — every write   */
+/* goes through the same deferred queue step record uses.               */
+
+/* Idle ticks after which a gesture that never got a touch-down is ended
+ * on its own. A capacitive sensor can miss a touch; without this the target
+ * would stay "live" and its automation would never resume. */
+const SYNTHETIC_GESTURE_IDLE_TICKS = 25;    /* ~270 ms, the controller's own gap */
+
+/* target -> gesture state */
+let gestures = new Map();
+
+function queueSet(key, val) { S.pendingDefaultSetParams.push({ key, val }); }
+
+/* The parameter's wire string -> 14-bit normalized. The inverse of wireValue. */
+function normValue(slot, comp, key, wire) {
+    const p = componentMeta(slot, comp)[key];
+    let v = parseFloat(wire);
+    if (isNaN(v)) v = 0;
+    let t;
+    if (p && p.type === 'enum' && Array.isArray(p.options) && p.options.length > 1) {
+        t = v / (p.options.length - 1);
+    } else if (p) {
+        const min = (typeof p.min === 'number') ? p.min : 0;
+        const max = (typeof p.max === 'number') ? p.max : 1;
+        t = (max > min) ? (v - min) / (max - min) : 0;
+    } else {
+        t = v;                                     /* assume 0..1 */
+    }
+    return Math.round(Math.max(0, Math.min(1, t)) * 16383);
+}
+
+function splitFullKey(fullKey) {
+    const i = fullKey.indexOf(':');
+    return i < 0 ? [fullKey, ''] : [fullKey.slice(0, i), fullKey.slice(i + 1)];
+}
+
+function gestureFor(target, track, clip, synthetic) {
+    let g = gestures.get(target);
+    if (!g) {
+        g = { track, clip, rest: false, ckpt: false, live: false, synthetic, idle: 0 };
+        gestures.set(target, g);
+    }
+    return g;
+}
+
+/* Once per gesture: the resting value is what the parameter held BEFORE the
+ * first edit — that is what a stop or a clear puts back. The DSP keeps the
+ * first one it hears, so a second send is harmless but a round-trip. */
+function ensureRest(g, target, prevNorm) {
+    if (g.rest) return;
+    g.rest = true;
+    queueSet('t' + g.track + '_pa_rest', g.clip + ' ' + target + ' ' + prevNorm);
+}
+
+/* Once per gesture: the undo unit, same shape as step record's session. */
+function ensureCheckpoint(g) {
+    if (g.ckpt) return;
+    g.ckpt = true;
+    queueSet('t' + g.track + '_c' + g.clip + '_undo_checkpoint', '1');
+}
+
+export function automationParamTouch(track, clip, slot, fullKey, down) {
+    const target = slot + ':' + fullKey;
+    if (down) { gestureFor(target, track, clip, false); return; }
+    const g = gestures.get(target);
+    if (!g) return;
+    if (g.live) queueSet('t' + g.track + '_pa_live_end', target);
+    gestures.delete(target);
+}
+
+export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) {
+    const target = slot + ':' + fullKey;
+    const [comp, key] = splitFullKey(fullKey);
+    const g = gestureFor(target, track, clip, true);
+    g.idle = 0;
+    const norm = normValue(slot, comp, key, wire);
+
+    /* A held step wins over everything: the turn writes that step, playing or
+     * not. Stepped hold means the lock lasts until the next point. */
+    if (S.heldStep >= 0) {
+        const tps = (S.clipTPS[track] && S.clipTPS[track][clip]) || 24;
+        const from = S.heldStep * tps, to = from + tps - 1;
+        ensureRest(g, target, normValue(slot, comp, key, prevWire));
+        ensureCheckpoint(g);
+        queueSet('t' + track + '_pa_set2', clip + ' ' + target + ' ' + from + ' ' + to + ' ' + norm);
+        automationNoteWrite();
+        return;
+    }
+
+    if (!S.playing) return;                       /* a plain knob turn */
+
+    /* Playing: the DSP decides record vs override from its own flags. What JS
+     * must do either way is name the resting value, and — when this is going
+     * to be recorded — book the one undo for the gesture. */
+    ensureRest(g, target, normValue(slot, comp, key, prevWire));
+    if (S.recordArmed) { ensureCheckpoint(g); automationNoteWrite(); }
+    g.live = true;
+    queueSet('t' + track + '_pa_live', target + ' ' + norm);
+}
+
+/* Per tick, from automationTick: end gestures that never had a touch and
+ * have gone quiet. */
+function gesturesTick() {
+    if (!gestures.size) return;
+    for (const [target, g] of gestures) {
+        if (!g.synthetic) continue;
+        if (++g.idle < SYNTHETIC_GESTURE_IDLE_TICKS) continue;
+        if (g.live) queueSet('t' + g.track + '_pa_live_end', target);
+        gestures.delete(target);
+    }
+}
+
+export function automationGestureCountForTest() { return gestures.size; }
 
 /* For tests. */
 export function automationPendingSizeForTest() { return pending.size; }

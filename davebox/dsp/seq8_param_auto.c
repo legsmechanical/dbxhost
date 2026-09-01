@@ -43,6 +43,30 @@ static uint32_t pa_read_seq(const seq8_instance_t *inst) {
     return __atomic_load_n(&inst->pa_seq, __ATOMIC_ACQUIRE);
 }
 
+/* The WRITER lock. The seqlock above protects the audio-thread READER from
+ * the SPI-thread writer; it does nothing between two writers, and recording
+ * makes the audio thread one (the latch writes a point per cell along the
+ * playhead — it is the only thread that knows the tick). So:
+ *   - the SPI thread takes pa_lock for every store access, reads included
+ *     (a serialize walking points while the latch memmoves them is a torn
+ *     file), and spins for it — the audio thread holds it for microseconds;
+ *   - the audio thread TRIES it and, refused, leaves the cell for the next
+ *     tick (its last_snap does not advance, so the cell is not lost). It never
+ *     spins: this is the SPI callback path. */
+static void pa_lock(seq8_instance_t *inst) {
+    uint8_t z = 0;
+    while (!__atomic_compare_exchange_n(&inst->pa_wlock, &z, 1, 0,
+                                        __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) z = 0;
+}
+static int pa_trylock(seq8_instance_t *inst) {
+    uint8_t z = 0;
+    return __atomic_compare_exchange_n(&inst->pa_wlock, &z, 1, 0,
+                                       __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
+}
+static void pa_unlock(seq8_instance_t *inst) {
+    __atomic_store_n(&inst->pa_wlock, 0, __ATOMIC_RELEASE);
+}
+
 /* The reader's closing sample. An acquire LOAD only orders what follows it;
  * the data loads before it may still be in flight on ARM when it completes,
  * so the fence is what makes "same count after" mean "same data". */
@@ -213,9 +237,12 @@ static void pa_reset_all_locked(seq8_instance_t *inst) {
 }
 
 static void pa_reset_all(seq8_instance_t *inst) {
+    pa_lock(inst);
     pa_write_begin(inst);
     pa_reset_all_locked(inst);
+    memset(inst->pa_live, 0, sizeof(inst->pa_live));
     pa_write_end(inst);
+    pa_unlock(inst);
 }
 
 /* ------------------------------------------------------------------ */
@@ -227,6 +254,7 @@ static void pa_reset_all(seq8_instance_t *inst) {
  * one and leaving it behind strands automation on a clip with no notes. */
 static void pa_copy_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc) {
     if (st == dt && sc == dc) return;
+    pa_lock(inst);
     pa_write_begin(inst);
     pa_clear_track_clip(inst, dt, dc);
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
@@ -242,15 +270,18 @@ static void pa_copy_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc) 
          * excludes it — the copy cannot feed on itself. */
     }
     pa_write_end(inst);
+    pa_unlock(inst);
     pa_mark_dirty(inst);
 }
 
 static void pa_move_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc) {
     if (st == dt && sc == dc) return;
     pa_copy_clip(inst, st, sc, dt, dc);
+    pa_lock(inst);
     pa_write_begin(inst);
     pa_clear_track_clip(inst, st, sc);
     pa_write_end(inst);
+    pa_unlock(inst);
     pa_mark_dirty(inst);
 }
 
@@ -273,12 +304,14 @@ static void pa_undo_capture(seq8_instance_t *inst, pa_entry_t *dst, uint8_t *cou
                             uint8_t *partial, int t, int c) {
     int n = 0;
     *partial = 0;
+    pa_lock(inst);                       /* a reader, but the latch may be writing */
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
         pa_entry_t *e = &inst->pa_entries[i];
         if (!e->used || e->track != t || e->clip != c) continue;
         if (n >= PA_UNDO_ENTRIES) { *partial = 1; break; }
         dst[n++] = *e;
     }
+    pa_unlock(inst);
     *count = (uint8_t)(*partial ? 0 : n);
 }
 
@@ -291,6 +324,7 @@ static int pa_undo_any_partial(const uint8_t *partial, int count) {
 static void pa_undo_restore(seq8_instance_t *inst, const pa_entry_t *src, uint8_t count,
                             uint8_t partial, int t, int c) {
     if (partial) return;                 /* see above: none, rather than some */
+    pa_lock(inst);
     pa_write_begin(inst);
     pa_clear_track_clip(inst, t, c);
     for (int i = 0; i < count; i++) {
@@ -302,6 +336,7 @@ static void pa_undo_restore(seq8_instance_t *inst, const pa_entry_t *src, uint8_
         n->last_sent_valid = 0;   /* snapshot-time "sent" says nothing about now */
     }
     pa_write_end(inst);
+    pa_unlock(inst);
     pa_mark_dirty(inst);
 }
 
@@ -449,7 +484,13 @@ static void pa_json_str(const char *obj, const char *end, const char *key,
 }
 
 
+static void pa_serialize_locked(seq8_instance_t *inst, FILE *fp);
 static void pa_serialize(seq8_instance_t *inst, FILE *fp) {
+    pa_lock(inst);                       /* the latch may be moving points */
+    pa_serialize_locked(inst, fp);
+    pa_unlock(inst);
+}
+static void pa_serialize_locked(seq8_instance_t *inst, FILE *fp) {
     int any = 0;
     for (int i = 0; i < PA_MAX_ENTRIES && !any; i++)
         if (inst->pa_entries[i].used && inst->pa_entries[i].count) any = 1;
@@ -484,9 +525,12 @@ static void pa_parse(seq8_instance_t *inst, const char *buf, size_t blen) {
     /* The whole parse runs under the seqlock: a project can load while the
      * transport is running, and the audio thread would otherwise scan entries
      * as they are being filled in. */
+    pa_lock(inst);
     pa_write_begin(inst);
     pa_parse_locked(inst, buf, blen);
+    memset(inst->pa_live, 0, sizeof(inst->pa_live));
     pa_write_end(inst);
+    pa_unlock(inst);
 }
 
 static void pa_parse_locked(seq8_instance_t *inst, const char *buf, size_t blen) {
@@ -568,6 +612,128 @@ static void pa_parse_locked(seq8_instance_t *inst, const char *buf, size_t blen)
 }
 
 /* ------------------------------------------------------------------ */
+/* Ownership                                                            */
+/*                                                                      */
+/* One target, one track. Two tracks automating the same parameter      */
+/* would fight over it every tick and spend the push budget doing it,   */
+/* so the first track to automate a target owns it until that           */
+/* automation is gone from every clip. The UI asks before it writes;    */
+/* the store refuses anyway and says who owns it.                       */
+
+/* Track owning `target` (any clip), or -1. */
+static int pa_owner_of(const seq8_instance_t *inst, int target) {
+    if (target < 0) return -1;
+    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+        const pa_entry_t *e = &inst->pa_entries[i];
+        if (e->used && e->target == target) return (int)e->track;
+    }
+    return -1;
+}
+
+/* 1 if `track` may write `target`; 0 (and the conflict flagged) otherwise. */
+static int pa_may_write(seq8_instance_t *inst, int track, int target) {
+    int o = pa_owner_of(inst, target);
+    if (o < 0 || o == track) return 1;
+    inst->pa_owner_conflict = (uint8_t)(o + 1);
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Live targets — a knob under a hand                                   */
+
+static pa_live_t *pa_live_find(seq8_instance_t *inst, int track, int target) {
+    for (int k = 0; k < PA_LIVE_MAX; k++) {
+        pa_live_t *l = &inst->pa_live[track][k];
+        if (l->used && l->target == target) return l;
+    }
+    return NULL;
+}
+
+/* Is `target` under a hand on `track`? Audio-thread read; a torn read here
+ * costs at most one tick of the wrong answer. */
+static int pa_live_has(const seq8_instance_t *inst, int track, int target) {
+    for (int k = 0; k < PA_LIVE_MAX; k++) {
+        const pa_live_t *l = &inst->pa_live[track][k];
+        if (l->used && l->target == target) return 1;
+    }
+    return 0;
+}
+
+/* SPI thread. A knob turned while touched: the value it now holds, and
+ * whether that is being RECORDED (Record on, transport running — the DSP's
+ * own flags, which are the authority) or merely overriding. The mode is
+ * decided on the first turn of a touch and kept until release. */
+static void pa_live_set(seq8_instance_t *inst, seq8_track_t *tr, int track,
+                        int target, uint16_t val) {
+    if (target < 0) return;
+    pa_live_t *l = pa_live_find(inst, track, target);
+    if (!l) {
+        for (int k = 0; k < PA_LIVE_MAX; k++) {
+            if (inst->pa_live[track][k].used) continue;
+            l = &inst->pa_live[track][k];
+            memset(l, 0, sizeof(*l));
+            l->target    = (uint16_t)target;
+            l->last_snap = 0xFFFFFFFFu;
+            l->mode      = (tr->recording && inst->playing) ? PA_LIVE_RECORD : PA_LIVE_OVERRIDE;
+            /* Publish the target before `used`, so the audio thread never
+             * sees a used slot with a stale target. */
+            __atomic_store_n(&l->used, 1, __ATOMIC_RELEASE);
+            break;
+        }
+        if (!l) return;                       /* more than PA_LIVE_MAX hands */
+    }
+    l->val = val;
+}
+
+/* SPI thread. The hand is off: the target goes back to playback, and playback
+ * must re-assert rather than trust what it last sent — that is the
+ * override-resume rule, and for a recording it re-syncs to what was written. */
+static void pa_live_end(seq8_instance_t *inst, int track, int clip, int target) {
+    pa_live_t *l = pa_live_find(inst, track, target);
+    if (l) __atomic_store_n(&l->used, 0, __ATOMIC_RELEASE);
+    pa_entry_t *e = pa_find(inst, track, clip, target);
+    if (e) e->last_sent_valid = 0;
+}
+
+/* AUDIO THREAD, once per tick per playing track. Every RECORD-mode live
+ * target writes its value at the current cell of the clip's playhead,
+ * replacing whatever the cell held — overwrite recording, the way the CC
+ * lanes did it. A cell is half a step (12 ticks at the default 24), which is
+ * the store's density budget: 256 steps of cells fit an entry exactly.
+ *
+ * Takes the writer lock with TRYLOCK: refused (the SPI thread is mid-edit),
+ * the cell is simply tried again next tick — last_snap only advances on a
+ * write. Nothing here allocates or blocks. */
+static void pa_record_tick(seq8_instance_t *inst, int track, int clip,
+                           uint32_t ct, uint32_t tps) {
+    uint32_t cell = tps / 2; if (cell < 6) cell = 6;
+    uint32_t snap = (ct / cell) * cell;
+    for (int k = 0; k < PA_LIVE_MAX; k++) {
+        pa_live_t *l = &inst->pa_live[track][k];
+        if (!__atomic_load_n(&l->used, __ATOMIC_ACQUIRE) || l->mode != PA_LIVE_RECORD) continue;
+        if (l->last_snap == snap) continue;
+        uint16_t tgt = l->target;
+        if (tgt >= PA_MAX_TARGETS) continue;
+        if (!pa_trylock(inst)) return;            /* next tick */
+        pa_write_begin(inst);
+        pa_entry_t *e = pa_get(inst, track, clip, (int)tgt);
+        if (!e) inst->pa_store_full = 1;
+        else {
+            uint16_t s = (uint16_t)(snap > 0xFFFFu - cell ? 0xFFFFu - cell : snap);
+            pa_clear_range(e, s, (uint16_t)(s + cell - 1));
+            if (!pa_set_point(e, s, l->val)) inst->pa_store_full = 1;
+            /* The parameter IS at the live value — the editor set it — so
+             * playback need not re-send it when the hand comes off. */
+            e->last_sent = l->val; e->last_sent_valid = 1;
+            l->last_snap = snap;
+            inst->pa_dirty = 1; inst->state_dirty = 1;
+        }
+        pa_write_end(inst);
+        pa_unlock(inst);
+    }
+}
+
+/* ------------------------------------------------------------------ */
 /* Playback (AUDIO THREAD)                                              */
 /*                                                                      */
 /* Called once per tick per playing track. Evaluates every active entry */
@@ -621,6 +787,7 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
         if (count > PA_ENTRY_POINTS) continue;
         uint16_t tgt = e->target;
         if (tgt >= PA_MAX_TARGETS) continue;
+        if (pa_live_has(inst, track, tgt)) continue;          /* touch wins */
 
         uint16_t v;
         if (!pa_eval(e, pa_entry_tick(e, ct, clip_ticks), &v)) continue;

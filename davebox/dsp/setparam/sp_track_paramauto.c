@@ -4,7 +4,9 @@
  * compile or lint this file on its own.
  *
  * Covers: pa_set, pa_set2, pa_clear_key, pa_clear_step, pa_clear, pa_active,
- * pa_smooth, pa_rest, pa_loop.
+ * pa_smooth, pa_rest, pa_loop, pa_live, pa_live_end.
+ *
+ * The dispatcher holds the writer lock and the seqlock around this handler.
  *
  * ⚠ Contract: this handler CONSUMES every key whose sub-op begins "pa_",
  * returning 1 even for one it does not recognise. sp_track_misc.c, dispatched
@@ -20,6 +22,7 @@
  * metadata that defines them. */
 static int sp_track_paramauto(sp_ctx_t *cx) {
     seq8_instance_t *inst = cx->inst;
+    seq8_track_t *tr = cx->tr;
     const char *val = cx->val;
     int tidx = cx->tidx;
     const char *sub = cx->sub;
@@ -63,9 +66,11 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         PA_SKIP_SPACE(p); PA_UINT(p, v);
         if (clip < 0 || clip >= NUM_CLIPS) return 1;
         int id = pa_target_id(inst, tgt);
+        if (!pa_may_write(inst, tidx, id)) return 1;
         pa_entry_t *e = pa_get(inst, tidx, clip, id);
         if (!e) { inst->pa_store_full = 1; return 1; }
         if (!pa_set_point(e, (uint16_t)tick, (uint16_t)v)) inst->pa_store_full = 1;
+        e->last_sent_valid = 0;   /* the knob that wrote this also moved the live value */
         pa_mark_dirty(inst);
         return 1;
     }
@@ -82,11 +87,38 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         PA_SKIP_SPACE(p); PA_UINT(p, v);
         if (clip < 0 || clip >= NUM_CLIPS || to < from) return 1;
         int id = pa_target_id(inst, tgt);
+        if (!pa_may_write(inst, tidx, id)) return 1;
         pa_entry_t *e = pa_get(inst, tidx, clip, id);
         if (!e) { inst->pa_store_full = 1; return 1; }
         pa_clear_range(e, (uint16_t)from, (uint16_t)to);
         if (!pa_set_point(e, (uint16_t)from, (uint16_t)v)) inst->pa_store_full = 1;
+        e->last_sent_valid = 0;   /* see pa_set */
         pa_mark_dirty(inst);
+        return 1;
+    }
+
+    /* pa_live: "<target> <value>" — a knob under a hand moved to <value>. The
+     * store decides what that means from its own flags: recording, it is
+     * written along the playhead until release; otherwise it overrides, and
+     * playback resumes on release. Addresses the track's ACTIVE clip, because
+     * the playhead is there. */
+    if (!strcmp(sub, "pa_live")) {
+        int v = 0;
+        PA_TARGET(p, tgt);
+        PA_SKIP_SPACE(p); PA_UINT(p, v);
+        int id = pa_target_id(inst, tgt);
+        if (id < 0) { inst->pa_store_full = 1; return 1; }
+        if (!pa_may_write(inst, tidx, id)) return 1;
+        if (v > PA_VAL_MAX) v = PA_VAL_MAX;
+        pa_live_set(inst, tr, tidx, id, (uint16_t)v);
+        return 1;
+    }
+
+    /* pa_live_end: "<target>" — the hand is off. */
+    if (!strcmp(sub, "pa_live_end")) {
+        PA_TARGET(p, tgt);
+        int id = pa_target_id(inst, tgt);
+        if (id >= 0) pa_live_end(inst, tidx, (int)tr->active_clip, id);
         return 1;
     }
 

@@ -1209,9 +1209,11 @@ static void set_param(void *instance, const char *key, const char *val) {
          * bracketed by construction. The audio thread reads the same store —
          * see pa_write_begin. */
         if (sub[0] == 'p' && sub[1] == 'a' && sub[2] == '_') {
-            pa_write_begin(inst);
+            pa_lock(inst);                 /* vs the audio thread's latch writer */
+            pa_write_begin(inst);          /* vs the audio thread's reader */
             int _pa_done = sp_track_paramauto(&cx);
             pa_write_end(inst);
+            pa_unlock(inst);
             if (_pa_done) return;
         }
 

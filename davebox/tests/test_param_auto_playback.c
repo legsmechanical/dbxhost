@@ -279,6 +279,67 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ---- a knob under a hand: recorded, or overriding ------------------ */
+    {
+        /* tN_pa_live is the live value of a touched knob. With Record on and
+         * the transport running the DSP writes it along the playhead, one cell
+         * per half step, replacing what the cell held; otherwise it is an
+         * override: playback leaves the target alone until the hand comes off,
+         * then re-asserts. The DSP's own flags decide which — JS only reports. */
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+        seq8_track_t *tr = &in->tracks[0];
+
+        /* OVERRIDE: not recording. */
+        pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
+        in->playing = 1;
+        hx_set_param(h, "t0_pa_live", "1:fx1:cutoff 3000");
+        pa_playback_scan(in, tr, 0, 0, 0, 384, NULL);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(lines(buf) == 0, "a live target is NOT staged by playback — touch wins");
+        pa_record_tick(in, 0, 0, 0, 24);
+        HX_ASSERT(in->pa_entries[0].count == 1 && in->pa_entries[0].points[0].val == 9000,
+                  "and with Record off, nothing is written");
+        hx_set_param(h, "t0_pa_live_end", "1:fx1:cutoff");
+        pa_playback_scan(in, tr, 0, 0, 0, 384, NULL);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff 9000"), "on release playback RE-ASSERTS the automation value");
+        OK("⚠ override: playback yields to the hand and resumes on release");
+
+        /* RECORD: Record on, transport running. */
+        tr->recording = 1;
+        hx_set_param(h, "t0_pa_live", "1:fx1:cutoff 5000");
+        pa_record_tick(in, 0, 0, 30, 24);                 /* cell 24..35 */
+        pa_record_tick(in, 0, 0, 33, 24);                 /* same cell: no second point */
+        hx_set_param(h, "t0_pa_live", "1:fx1:cutoff 5500");
+        pa_record_tick(in, 0, 0, 40, 24);                 /* cell 36..47 */
+        pa_entry_t *e = &in->pa_entries[0];
+        HX_ASSERT(e->count == 3, "one point per cell along the playhead (the original + two cells)");
+        HX_ASSERT(e->points[1].tick == 24 && e->points[1].val == 5000, "the first cell holds the value at its start");
+        HX_ASSERT(e->points[2].tick == 36 && e->points[2].val == 5500, "the next cell the newer value");
+        pa_record_tick(in, 0, 0, 26, 24);                 /* loop wrapped: overwrite cell 24 */
+        HX_ASSERT(e->count == 3 && e->points[1].val == 5500, "coming round again OVERWRITES the cell");
+        pa_playback_scan(in, tr, 0, 0, 30, 384, NULL);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(lines(buf) == 0, "while recording, playback does not fight the hand");
+        hx_set_param(h, "t0_pa_live_end", "1:fx1:cutoff");
+        pa_record_tick(in, 0, 0, 60, 24);
+        HX_ASSERT(e->count == 3, "after release nothing more is written");
+        OK("⚠ record: the live value is written one cell at a time, overwriting, until release");
+
+        /* The writer lock: the SPI thread mid-edit means the cell waits. */
+        tr->recording = 1;
+        hx_set_param(h, "t0_pa_live", "1:fx1:cutoff 100");
+        pa_lock(in);
+        pa_record_tick(in, 0, 0, 72, 24);
+        HX_ASSERT(e->count == 3, "with the SPI thread holding the store, the audio thread writes NOTHING");
+        pa_unlock(in);
+        pa_record_tick(in, 0, 0, 74, 24);
+        HX_ASSERT(e->count == 4 && e->points[3].tick == 72, "and the same cell is written on the next tick — not lost");
+        OK("⚠ two writers, one store: the audio thread tries the lock and never spins");
+        hx_destroy(h);
+    }
+
     /* ---- a write in flight is never read torn ------------------------ */
     {
         /* The store is written on the SPI thread and read here on the audio

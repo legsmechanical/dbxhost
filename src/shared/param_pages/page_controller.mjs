@@ -496,6 +496,23 @@ export function createController(io = {}) {
      * defaults to "no" for callers that have no modulation. */
     const isModulated = io.isModulated || (() => false);
     /*
+     * Optional: a host that RECORDS parameter edits (automation, undo
+     * journals, p-locks) needs to hear about them at the moment the value
+     * changes, not at the throttled setParam — SETPARAM_THROTTLE_MS would
+     * staircase a fast sweep into 50 Hz steps in the recording. Both default
+     * to nothing; a host that does not record never pays for them.
+     *
+     *   onParamEdit(fullKey, wire, prevWire, meta)  every value change, in
+     *       order, before the (possibly throttled) write. prevWire is the
+     *       value the parameter held before this edit — the "resting" value
+     *       a recorder wants for the first edit of a gesture.
+     *   onParamTouch(fullKey, down)  the knob's capacitive touch and release,
+     *       resolved to the parameter under it. A release is the end of a
+     *       gesture; a touch with no parameter under it fires nothing.
+     */
+    const onParamEdit  = io.onParamEdit  || null;
+    const onParamTouch = io.onParamTouch || null;
+    /*
      * Optional: how the HOST wants a value read on a given surface.
      *
      *   formatValue(fullKey, raw, surface) -> string | null
@@ -2819,6 +2836,8 @@ export function createController(io = {}) {
             s.peek = null;
         }
 
+        /* The edit hook fires HERE, on every change — see io.onParamEdit. */
+        if (onParamEdit) onParamEdit(fullKey(key), wire, s.values[key], meta);
         s.values[key] = wire;
         s.settleUntil[key] = s.tickCount + SETTLE_TICKS;
         /* Throttled — see SETPARAM_THROTTLE_MS. A miss is never lost: it is
@@ -3037,6 +3056,9 @@ export function createController(io = {}) {
                 s.lastWriteMs[key] = now();
                 delete s.pendingWrite[key];
             }
+            /* After the flush: a recorder hearing "released" must be able to
+             * assume the last value has already been written. */
+            if (onParamTouch && key) onParamTouch(fullKey(key), false);
             return;
         }
         if (s.touchOrder.indexOf(slot) < 0) s.touchOrder.push(slot);
@@ -3045,6 +3067,7 @@ export function createController(io = {}) {
         const key = keyAt(slot);
         const meta = metaAt(slot);
         const dec = s.decorations ? s.decorations[slot] : null;
+        if (onParamTouch && key) onParamTouch(fullKey(key), true);
         /* Whatever the header is about to show is what gets spoken — a routing
          * read out as "fx1" is no more use by ear than it is by eye. */
         let spoken = key ? s.values[key] : null;

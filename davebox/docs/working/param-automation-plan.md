@@ -130,9 +130,18 @@ slot-routing extension** (generic, own commit, docs); cc:/at emission + rest re-
 stop; clip-switch re-anchor (seq8_render.c:662-772); touch-wins suppression. Device rate
 measurement gates the budget number.
 
-**P3 — Write paths.** Held-step SET rework; ui_automation.mjs; onParamEdit hook + binding;
-record gate (S.recordArmed && S.playing); p-locks incl. multi-step; override-resume;
-one-undo-session; owner arbitration UI.
+**P3 — Write paths.** ✅ SHIPPED 2026-09-02 (chain-editor knobs): `io.onParamEdit` /
+`io.onParamTouch` host hooks (docs/PARAM_PAGES.md) bound in ui_sound.mjs; ui_automation.mjs
+owns the grammar (held step = lock via `pa_set2`; playing = `pa_live`, the DSP's own
+recording/playing flags decide record vs override; release = `pa_live_end` → resume); rest
+from the edit BEFORE the first; one `undo_checkpoint` per gesture; touch wins on the push
+side; ownership enforced in the store (`pa_owner_conflict` → popup on the next poll, because
+get_param is banned in the MIDI handler). The audio thread is now a store WRITER (the latch)
+— a CAS writer lock (`pa_lock`/`pa_trylock`) excludes it from the SPI thread; it never spins.
+⏳ OWED: **multi-step hold** — S.heldStep is a scalar and a second pad press while held is
+already gate-drag (step-record grammar); locking several steps at once needs a ruling on that
+collision before the hold state becomes a set. Bus levels and the MIDI Out device write
+paths come with P4/P5.
 
 **P4 — Gestures + display.** Mute+knob deactivate (restores rest); hold-Mute LED paint
 (replaces ui_leds.mjs:867 branch); Delete+knob clear (restores rest, verified write);

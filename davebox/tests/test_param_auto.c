@@ -128,17 +128,42 @@ int main(void) {
         OK("the target table reports when it is full, and the flag clears on read");
         hx_destroy(h);
 
-        /* The ENTRY pool: ONE target automated across many (track, clip) pairs,
-         * so the target table stays small and the pool is what runs out. */
+        /* The ENTRY pool: ONE target per track automated in every clip, so
+         * the target table stays small and the pool is what runs out. (One
+         * target across tracks is not allowed — see ownership below.) */
         h = hx_create(NULL);
         for (int t = 0; t < NUM_TRACKS; t++)
-            for (int c = 0; c < NUM_CLIPS; c++)
-                pa_set(h, t, c, "0:fx1:cutoff", 0, 100);   /* 8 x 16 = 128 entries */
+            for (int c = 0; c < NUM_CLIPS; c++) {
+                snprintf(tgt, sizeof(tgt), "%d:fx1:cutoff", t);
+                pa_set(h, t, c, tgt, 0, 100);              /* 8 x 16 = 128 entries */
+            }
         hx_get_param(h, "pa_store_full", full, sizeof(full));
         HX_ASSERT(full[0] == '0', "128 entries must FIT — the pool is 160");
         pa_list(h, buf, sizeof(buf));
         HX_ASSERT(list_count(buf) == NUM_TRACKS * NUM_CLIPS, "all of them present");
         OK("one parameter automated in every clip of every track fits");
+        hx_destroy(h);
+
+        /* OWNERSHIP: a target belongs to the first track that automates it.
+         * Two tracks driving one parameter would fight every tick and spend
+         * the push budget doing it. The store refuses and names the owner. */
+        h = hx_create(NULL);
+        pa_set(h, 2, 0, "1:fx1:cutoff", 0, 100);
+        hx_get_param(h, "pa_owner 1:fx1:cutoff", buf, sizeof(buf));
+        HX_ASSERT(!strcmp(buf, "2"), "pa_owner names the track that automated it first");
+        hx_get_param(h, "pa_owner 1:fx1:nothing", buf, sizeof(buf));
+        HX_ASSERT(!strcmp(buf, "-1"), "an unautomated target has no owner");
+        pa_set(h, 5, 3, "1:fx1:cutoff", 0, 200);            /* another track tries */
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(list_count(buf) == 1 && strstr(buf, "2 0 "), "the second track's write is REFUSED");
+        hx_get_param(h, "pa_owner_conflict", buf, sizeof(buf));
+        HX_ASSERT(!strcmp(buf, "3"), "and reported as owner+1 (track 2 -> 3)");
+        hx_get_param(h, "pa_owner_conflict", buf, sizeof(buf));
+        HX_ASSERT(!strcmp(buf, "0"), "the report clears on read");
+        pa_set(h, 2, 7, "1:fx1:cutoff", 0, 300);            /* the owner, another clip */
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(list_count(buf) == 2, "the owner may automate it in any clip");
+        OK("⚠ one target, one track: a second track's write is refused and the owner named");
         hx_destroy(h);
 
         /* The POINT cap within one entry. */

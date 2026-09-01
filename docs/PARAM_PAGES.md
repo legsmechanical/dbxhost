@@ -750,6 +750,27 @@ A **readout** (`access: "read"`) still refuses the turn: there is nothing to
 set. Both guards must precede the enum stepper's value read, which is asserted
 as a line ORDER.
 
+### A host that RECORDS edits hears them at the value-change site
+
+Two opt-in `io` hooks on `createController`, both default-off so a host that does not
+record pays nothing:
+
+- **`onParamEdit(fullKey, wire, prevWire, meta)`** fires on **every** value change, in order,
+  before the write. It is deliberately not the `setParam` call: that one is throttled
+  (`SETPARAM_THROTTLE_MS`), and a recorder fed from it would turn a fast sweep into a 50 Hz
+  staircase. `prevWire` is the value the parameter held before this edit — the first edit of
+  a gesture is where a recorder captures the resting value, and it needs the value *before*
+  the hand moved it.
+- **`onParamTouch(fullKey, down)`** is the knob's capacitive touch, resolved to the parameter
+  under it. A release fires **after** the controller's release-time flush, so a recorder
+  hearing `down === false` may assume the last value has already been written. A touch on a
+  knob with no parameter under it fires nothing.
+
+What a host does with them is its own business — a sequencer records automation from the
+first, and uses the second to know when a gesture ends (Move's rule: recorded automation
+resumes when the hand comes off). The controller does not know, and does not need to know,
+which mode the host is in.
+
 ### Knob ring LEDs, and giving them back
 
 `knob_leds.mjs` paints CC 71-78 — knobs 1-4 white, 5-8 amber, brightness
