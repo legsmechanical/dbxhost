@@ -39,7 +39,7 @@ import { armBankDisplay, standDownBankDisplay, S as GS } from './ui_state.mjs';
  * safe because both sides only call the binding inside function bodies, never
  * at module-init time — the same contract the ui_record ↔ ui_dsp_bridge cycle
  * documents. bankCardVisible is the ONE owner of card visibility. */
-import { bankCardVisible } from './ui_render.mjs';
+import { bankCardVisible, sessMixerVisible } from './ui_render.mjs';
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
@@ -3662,7 +3662,13 @@ function runAction(a) {
     else if (a.t === 'usrload') loadUserPreset();
     else if (a.t === 'usrdel')  deleteUserPreset();
     else if (a.t === 'usrsave') startSaveFlow();
-    else if (a.t === 'usrsavedo') saveUserPreset(a.name);
+    /* ⚠ REFRESH AFTER THE SAVE, like its siblings. Josh, 2026-09-02: "the name
+     * of the current preset doesn't update after you do a save as." Save As is
+     * the only preset action that lands via pendingAction (the keyboard defers
+     * it), and it was the only one not followed by ppRefreshPresets — up_save
+     * and up_delete both call it inline. saveUserPreset DOES set the record;
+     * nothing rebuilt the trailing page that displays it. */
+    else if (a.t === 'usrsavedo') { saveUserPreset(a.name); ppRefreshPresets(); }
     else if (a.t === 'bakedset') commitBaked();
     else if (a.t === 'menu')     openMenu();
     else if (a.t === 'menuload') refreshMenuRows();
@@ -6179,14 +6185,24 @@ export function soundRender() {
      * other bank. Held gestures keep it up: an in-progress row edit, the knob
      * card (S.touchedIdx), the volume gesture and its readout window. Track
      * flavour only — the session buses are not banks and never yield. */
-    /* The session FX LIST obeys the same law, for the same reason: since
-     * 2026-08-24 it is the bank one past SEND B, so it shows while the jog is
-     * touched or the display window is open and otherwise stands down to the
-     * session overview. Its own rows (inside a bus) never yield — deeper
-     * screens are work in progress, exactly as in the track flavour. */
+    /* ⭑⭑ THE ONE LAW, SESSION FLAVOUR (Josh, 2026-09-02: "the weird jog touch
+     * and click fall-through we fixed on track banks is still happening on
+     * session banks"). The session FX list is the bank one past SEND B, so it
+     * obeys the same law as the track card — and its one owner is
+     * sessMixerVisible() (the session latch, or the mixer's knob peek).
+     *
+     * ⚠ THIS BRANCH WAS MISSED BY THE 2026-09-01 AUDIT. Its track twin below
+     * was migrated onto bankCardVisible(); this one kept the RETIRED display
+     * drivers (GS.jogTouched, the transient bankSelectTick window), which is
+     * both halves of the bug he re-reported:
+     *   - the list hid at rest even with bank mode ON (the latch survives
+     *     soundEnterBuses), and touching the jog brought it back — the peek;
+     *   - sound mode stays ACTIVE behind a stand-down, so the session click
+     *     gate's `!soundActive()` was false and the click fell through.
+     * Held gestures still keep it up; its own rows (inside a bus) never yield. */
     if (S.view === VIEW_BUSES && S.enterSession &&
             S.touchedIdx < 0 && !S.volTouched &&
-            !GS.jogTouched && GS.bankSelectTick < 0)
+            !sessMixerVisible())
         return false;
     /* ⭑⭑ THE PROMPT YIELDS; THE MENU DOES NOT (Josh, 2026-08-28: "it's not a
      * bank"). The display law belongs to BANKS — show while the jog is touched

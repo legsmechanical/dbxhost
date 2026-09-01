@@ -146,6 +146,26 @@ const BUS_FX = {
     ]),
     'master_fx:fx1:room_size': '4.0',
     'master_fx:fx1:mix': '0.35',
+    /* A non-empty state, or saveUserPreset bails with 'NO STATE' before it ever
+     * records the preset — the save path needs something to write. */
+    'master_fx:fx1:state': '{"room_size":4,"mix":0.35}',
+    /* ⚠ A real ui_hierarchy, not chain_params alone: the controller's
+     * refreshTrailing() BAILS when it has no hierarchy ("nothing this component
+     * declared to rebuild against"), so a chain_params-only fixture cannot
+     * exercise the trailing-page rebuild at all — the test would report the bug
+     * fixed or unfixed identically. Shape per docs/MODULES.md. */
+    'master_fx:fx1:ui_hierarchy': JSON.stringify({
+        levels: {
+            root: {
+                name: 'RRVerb',
+                params: [
+                    { key: 'room_size', name: 'Room Size', type: 'float', min: 0.5, max: 20 },
+                    { key: 'mix', name: 'Mix', type: 'float', min: 0, max: 1 },
+                ],
+                knobs: ['room_size', 'mix'],
+            },
+        },
+    }),
 };
 Object.assign(ASSIGN, BUS_FX);
 
@@ -251,6 +271,42 @@ step('⭐⭐ SAVE AS from the grid actually SAVES — pendingAction must drain w
     if (snd.soundPendingActionForTest())
         throw new Error('the action is STILL queued after 6 ticks — stranded behind the ' +
                         'ppOn early-return, which is why Save As writes nothing');
+});
+
+step('⭐ SAVE AS updates the shown preset NAME — the page must rebuild, not just the record', () => {
+    /* Josh, 2026-09-02: "the name of the current preset doesn't update after you
+     * do a save as." Save As is the ONLY preset action that lands via
+     * pendingAction (the keyboard defers it), and it was the only one not
+     * followed by ppRefreshPresets — up_save and up_delete both call it inline.
+     * saveUserPreset DID set the record; nothing rebuilt the trailing page that
+     * displays it, so the row kept the old name.
+     *
+     * Pinned at what the user SEES (the row's value), not at the record — the
+     * record was already correct while the screen was wrong. */
+    enterMasterFxBlock();
+    if (!pp().on) throw new Error('rig: the grid is not up');
+    const NAME = 'AdvisorTake';
+    snd.soundQueueActionForTest({ t: 'usrsavedo', name: NAME });
+    ticks(6);
+    if (snd.soundPendingActionForTest()) throw new Error('the save action never drained');
+
+    /* Walk to the My Presets page and read its Preset row. */
+    let found = null, guard = 0;
+    for (;;) {
+        const p = pp().page;
+        if (p && p.name === 'My Presets') { found = p; break; }
+        if (++guard > 40) break;
+        const before = p && p.name;
+        cc(14, 1); ticks(2);
+        if ((pp().page && pp().page.name) === before) break;
+    }
+    if (!found) throw new Error('rig: never reached the My Presets page');
+    const rows = found.entries || found.items || [];
+    const row = rows.find(r => r && (r.label === 'Preset'));
+    if (!row) throw new Error('no Preset row on the My Presets page: ' + JSON.stringify(rows).slice(0, 200));
+    if (String(row.value || '').indexOf(NAME) < 0)
+        throw new Error('the Preset row still shows "' + row.value + '" after saving "' + NAME +
+                        '" — the page was not rebuilt');
 });
 
 if (swallowed !== null) { console.error('  FAIL — a SWALLOWED exception reached the jserr log:\n' + swallowed); failed = 1; }

@@ -736,24 +736,54 @@ step('⚠ a left turn BELOW the top row moves the cursor, it does not exit', () 
     if (snd.soundActive()) throw new Error('the top row did not step back out');
 });
 
-step('⭑ the FX list obeys the banks DISPLAY LAW (stands down to the overview)', () => {
+step('⭑⭑ THE ONE LAW, SESSION FLAVOUR: the FX list obeys the LATCH, never the jog touch', () => {
+    /* ⚠⚠ REWRITTEN 2026-09-02. This step used to assert the PRE-one-law
+     * behaviour — "a jog touch brings it straight back" — which is exactly what
+     * Josh re-reported from the device: "the weird jog touch and click
+     * fall-through we fixed on track banks is still happening on session
+     * banks." The 09-01 audit migrated the TRACK branch onto bankCardVisible()
+     * and left this one reading the retired drivers; this test is why it was
+     * never noticed. Its owner is sessMixerVisible().
+     *
+     * Both halves of the bug live here: hiding the list at rest while bank mode
+     * is ON is the peek, and it also leaves sound mode ACTIVE behind a stood-down
+     * screen, which is what defeats the session click gate's `!soundActive()`
+     * and makes the click fall through. */
     sessReset();
-    S.sessKnobMode = 3; snd.soundEnterBuses();
+    S.sessKnobMode = 3;
+    S.sessMixerLatched = true;                    /* bank mode, session flavour */
+    S.knobTouched = -1;
+    snd.soundEnterBuses();
     if (!snd.soundActive()) throw new Error('control: list did not open');
-    /* Entry leaves the window open, so it DRAWS — the positive control. */
-    S.bankSelectTick = S.tickCount; S.jogTouched = false; S.touchedIdx = -1;
-    if (snd.soundRender() !== true)
-        throw new Error('control failed: the list does not draw even with the window open');
-    /* Window shut and nothing touched: it must yield so drawUI falls through to
-     * the session overview, exactly as a clip bank does in track view. */
+    if (!S.sessMixerLatched)
+        throw new Error('control: entering the buses dropped the latch, so this proves nothing');
+    /* Bank mode ON and NOTHING touched: it draws. No jog touch involved. */
     S.bankSelectTick = -1; S.jogTouched = false; S.touchedIdx = -1; S.volTouched = false;
-    if (snd.soundRender() !== false)
-        throw new Error('the FX list held the screen with no gesture and no window — ' +
-                        'it covers the session overview');
-    /* ...and a jog touch brings it straight back. */
-    S.jogTouched = true;
     if (snd.soundRender() !== true)
-        throw new Error('a jog touch did not bring the list back');
+        throw new Error('the FX list stood down while bank mode was ON — it is the bank you ' +
+                        'walked to, and hiding it is what makes the click fall through');
+    /* Bank mode OFF: it yields, so drawUI falls through to the session overview. */
+    S.sessMixerLatched = false;
+    if (snd.soundRender() !== false)
+        throw new Error('the FX list held the screen outside bank mode — it covers the ' +
+                        'session overview');
+    if (!snd.soundActive()) throw new Error('yielding must not EXIT sound mode');
+    /* ⭑ The RETIRED drivers must bring back nothing. */
+    S.jogTouched = true;
+    if (snd.soundRender() !== false)
+        throw new Error('JOG TOUCH revealed the session FX list — the retired driver, and ' +
+                        "the peek Josh reported");
+    S.jogTouched = false;
+    S.bankSelectTick = S.tickCount;
+    if (snd.soundRender() !== false)
+        throw new Error('the transient window revealed the session FX list — retired driver');
+    S.bankSelectTick = -1;
+    /* ...and the mixer's own KNOB peek is a real driver, as in track view. */
+    S.knobTouched = 0;
+    if (snd.soundRender() !== true)
+        throw new Error('the knob peek did not show the list — it is the session owner\'s ' +
+                        'other half');
+    S.knobTouched = -1;
     snd.soundExit(); S.jogTouched = false; S.sessionView = false;
 });
 
