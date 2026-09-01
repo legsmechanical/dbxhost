@@ -3658,8 +3658,13 @@ void shadow_inprocess_handle_param_request(void) {
         return;
     }
 
-    /* Handle overtake DSP params - delegate to shim */
-    if (strncmp(shadow_param->key, "overtake_dsp:", 13) == 0) {
+    /* Handle overtake DSP params - delegate to shim. "chain:" is the bulk SET
+     * addressed to a chain slot (shim_handle_param_bulk_chain); it carries no
+     * slot prefix of its own, so without this line it would fall through to
+     * the generic slot path below, be ignored there, and still be answered —
+     * a caller cannot tell a landed bulk write from a dropped one. */
+    if (strncmp(shadow_param->key, "overtake_dsp:", 13) == 0 ||
+        strcmp(shadow_param->key, "chain:") == 0) {
         if (host.handle_param_special && host.handle_param_special(req_type, req_id)) {
             shadow_param_publish_response(req_id);
             return;
