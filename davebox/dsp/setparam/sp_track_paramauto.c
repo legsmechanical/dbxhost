@@ -30,7 +30,16 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
      * clip unless the key carried one. Parsing helpers are hand-rolled to match
      * the file family's style — no sscanf. */
     #define PA_SKIP_SPACE(p) do { while (*(p) == ' ') (p)++; } while (0)
-    #define PA_UINT(p, out) do { (out) = 0; while (*(p) >= '0' && *(p) <= '9') { (out) = (out) * 10 + (*(p) - '0'); (p)++; } } while (0)
+    /* Saturating: a long digit run must not overflow into a negative or
+     * wrapped value that then passes the range checks below. Values arrive from
+     * JS, but a set_param key is reachable from the remote UI too. */
+    #define PA_UINT(p, out) do { \
+        (out) = 0; \
+        while (*(p) >= '0' && *(p) <= '9') { \
+            if ((out) < 1000000) (out) = (out) * 10 + (*(p) - '0'); \
+            (p)++; \
+        } \
+    } while (0)
 
     /* Read a target token: everything up to the next space. */
     #define PA_TARGET(p, buf) do { \

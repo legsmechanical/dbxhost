@@ -1161,6 +1161,12 @@ typedef struct {
      * Row cut+paste needs 8 src + 8 dst = 16 slots. */
 #define UNDO_MAX_CLIPS (NUM_TRACKS * 2)
     clip_t  undo_clips[UNDO_MAX_CLIPS];
+    /* Per-parameter automation for the same clips. See pa_undo_capture:
+     * a clip with more automated parameters than a slot holds is marked
+     * partial and restored not at all, rather than partially. */
+    pa_entry_t undo_pa[UNDO_MAX_CLIPS][PA_UNDO_ENTRIES];
+    uint8_t    undo_pa_count[UNDO_MAX_CLIPS];
+    uint8_t    undo_pa_partial[UNDO_MAX_CLIPS];
     cc_auto_t undo_auto_cc[UNDO_MAX_CLIPS];
     at_auto_t undo_auto_at[UNDO_MAX_CLIPS];
     uint8_t undo_clip_tracks[UNDO_MAX_CLIPS];
@@ -1168,6 +1174,9 @@ typedef struct {
     uint8_t undo_clip_count;
     uint8_t undo_valid;
     clip_t  redo_clips[UNDO_MAX_CLIPS];
+    pa_entry_t redo_pa[UNDO_MAX_CLIPS][PA_UNDO_ENTRIES];
+    uint8_t    redo_pa_count[UNDO_MAX_CLIPS];
+    uint8_t    redo_pa_partial[UNDO_MAX_CLIPS];
     cc_auto_t redo_auto_cc[UNDO_MAX_CLIPS];
     at_auto_t redo_auto_at[UNDO_MAX_CLIPS];
     uint8_t redo_clip_tracks[UNDO_MAX_CLIPS];
@@ -1554,6 +1563,12 @@ static void seq8_ilog(seq8_instance_t *inst, const char *msg) {
 static void pa_serialize(seq8_instance_t *inst, FILE *fp);
 static void pa_parse(seq8_instance_t *inst, const char *buf, size_t blen);
 static void pa_reset_all(seq8_instance_t *inst);
+static void pa_copy_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc);
+static void pa_move_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc);
+static void pa_undo_capture(seq8_instance_t *inst, pa_entry_t *dst, uint8_t *count,
+                            uint8_t *partial, int t, int c);
+static void pa_undo_restore(seq8_instance_t *inst, const pa_entry_t *src, uint8_t count,
+                            uint8_t partial, int t, int c);
 
 #include "seq8_state.c"
 
@@ -5231,6 +5246,8 @@ static void undo_begin_single(seq8_instance_t *inst, int t, int c) {
     inst->undo_clip_indices[0] = (uint8_t)c;
     memcpy(&inst->undo_clips[0], &inst->tracks[t].clips[c], sizeof(clip_t));
     memcpy(&inst->undo_auto_cc[0], &inst->tracks[t].clip_cc_auto[c], sizeof(cc_auto_t));
+    pa_undo_capture(inst, inst->undo_pa[0], &inst->undo_pa_count[0],
+                    &inst->undo_pa_partial[0], t, c);
     memcpy(&inst->undo_auto_at[0], &inst->tracks[t].clip_at_auto[c], sizeof(at_auto_t));
     inst->undo_valid = 1;
     inst->redo_valid = 0;
@@ -5332,6 +5349,8 @@ static void undo_begin_row(seq8_instance_t *inst, int row_c) {
         inst->undo_clip_indices[t] = (uint8_t)row_c;
         memcpy(&inst->undo_clips[t], &inst->tracks[t].clips[row_c], sizeof(clip_t));
         memcpy(&inst->undo_auto_cc[t], &inst->tracks[t].clip_cc_auto[row_c], sizeof(cc_auto_t));
+        pa_undo_capture(inst, inst->undo_pa[t], &inst->undo_pa_count[t],
+                        &inst->undo_pa_partial[t], t, row_c);
         memcpy(&inst->undo_auto_at[t], &inst->tracks[t].clip_at_auto[row_c], sizeof(at_auto_t));
     }
     inst->undo_valid = 1;
@@ -5350,11 +5369,15 @@ static void undo_begin_clip_pair(seq8_instance_t *inst, int srcT, int srcC, int 
     inst->undo_clip_indices[0] = (uint8_t)srcC;
     memcpy(&inst->undo_clips[0], &inst->tracks[srcT].clips[srcC], sizeof(clip_t));
     memcpy(&inst->undo_auto_cc[0], &inst->tracks[srcT].clip_cc_auto[srcC], sizeof(cc_auto_t));
+    pa_undo_capture(inst, inst->undo_pa[0], &inst->undo_pa_count[0],
+                    &inst->undo_pa_partial[0], srcT, srcC);
     memcpy(&inst->undo_auto_at[0], &inst->tracks[srcT].clip_at_auto[srcC], sizeof(at_auto_t));
     inst->undo_clip_tracks[1]  = (uint8_t)dstT;
     inst->undo_clip_indices[1] = (uint8_t)dstC;
     memcpy(&inst->undo_clips[1], &inst->tracks[dstT].clips[dstC], sizeof(clip_t));
     memcpy(&inst->undo_auto_cc[1], &inst->tracks[dstT].clip_cc_auto[dstC], sizeof(cc_auto_t));
+    pa_undo_capture(inst, inst->undo_pa[1], &inst->undo_pa_count[1],
+                    &inst->undo_pa_partial[1], dstT, dstC);
     memcpy(&inst->undo_auto_at[1], &inst->tracks[dstT].clip_at_auto[dstC], sizeof(at_auto_t));
     inst->undo_valid = 1;
     inst->redo_valid = 0;
@@ -5370,11 +5393,15 @@ static void undo_begin_row_pair(seq8_instance_t *inst, int srcRow, int dstRow) {
         inst->undo_clip_indices[t] = (uint8_t)srcRow;
         memcpy(&inst->undo_clips[t], &inst->tracks[t].clips[srcRow], sizeof(clip_t));
         memcpy(&inst->undo_auto_cc[t], &inst->tracks[t].clip_cc_auto[srcRow], sizeof(cc_auto_t));
+        pa_undo_capture(inst, inst->undo_pa[t], &inst->undo_pa_count[t],
+                        &inst->undo_pa_partial[t], t, srcRow);
         memcpy(&inst->undo_auto_at[t], &inst->tracks[t].clip_at_auto[srcRow], sizeof(at_auto_t));
         inst->undo_clip_tracks[t + NUM_TRACKS]  = (uint8_t)t;
         inst->undo_clip_indices[t + NUM_TRACKS] = (uint8_t)dstRow;
         memcpy(&inst->undo_clips[t + NUM_TRACKS], &inst->tracks[t].clips[dstRow], sizeof(clip_t));
         memcpy(&inst->undo_auto_cc[t + NUM_TRACKS], &inst->tracks[t].clip_cc_auto[dstRow], sizeof(cc_auto_t));
+        pa_undo_capture(inst, inst->undo_pa[t + NUM_TRACKS], &inst->undo_pa_count[t + NUM_TRACKS],
+                        &inst->undo_pa_partial[t + NUM_TRACKS], t, dstRow);
         memcpy(&inst->undo_auto_at[t + NUM_TRACKS], &inst->tracks[t].clip_at_auto[dstRow], sizeof(at_auto_t));
     }
     inst->undo_valid = 1;
@@ -5398,6 +5425,8 @@ static void undo_begin_scene_bake(seq8_instance_t *inst, int clip) {
             inst->undo_clip_indices[mc] = (uint8_t)clip;
             memcpy(&inst->undo_clips[mc], &inst->tracks[t].clips[clip], sizeof(clip_t));
             memcpy(&inst->undo_auto_cc[mc], &inst->tracks[t].clip_cc_auto[clip], sizeof(cc_auto_t));
+            pa_undo_capture(inst, inst->undo_pa[mc], &inst->undo_pa_count[mc],
+                            &inst->undo_pa_partial[mc], t, clip);
             memcpy(&inst->undo_auto_at[mc], &inst->tracks[t].clip_at_auto[clip], sizeof(at_auto_t));
             mc++;
         }

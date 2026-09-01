@@ -117,6 +117,85 @@ static void pa_reset_all(seq8_instance_t *inst) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Clip operations — automation travels with the clip it belongs to     */
+
+/* Replace the destination clip's automation with a copy of the source's.
+ * A clip's automation is part of the clip: copying one and leaving the
+ * automation behind gives the copy someone else's parameter moves, and cutting
+ * one and leaving it behind strands automation on a clip with no notes. */
+static void pa_copy_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc) {
+    if (st == dt && sc == dc) return;
+    pa_clear_track_clip(inst, dt, dc);
+    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+        pa_entry_t *e = &inst->pa_entries[i];
+        if (!e->used || e->track != st || e->clip != sc) continue;
+        pa_entry_t *n = pa_get(inst, dt, dc, e->target);
+        if (!n) { inst->pa_store_full = 1; break; }   /* pool exhausted: say so */
+        *n = *e;                                      /* points, flags, rest, window */
+        n->track = (uint8_t)dt;
+        n->clip  = (uint8_t)dc;
+        /* A new entry allocated here carries track dt, so the loop's own filter
+         * excludes it — the copy cannot feed on itself. */
+    }
+    pa_mark_dirty(inst);
+}
+
+static void pa_move_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc) {
+    if (st == dt && sc == dc) return;
+    pa_copy_clip(inst, st, sc, dt, dc);
+    pa_clear_track_clip(inst, st, sc);
+    pa_mark_dirty(inst);
+}
+
+/* ------------------------------------------------------------------ */
+/* Undo snapshots                                                       */
+/*                                                                      */
+/* Undo already snapshots a clip's notes and its old-style automation.   */
+/* Without automation here, undoing a cut would restore the notes and    */
+/* leave the automation destroyed — the destructive half of the          */
+/* operation would be the half that could not be taken back.             */
+/*                                                                      */
+/* A slot holds up to PA_UNDO_ENTRIES automated parameters for one clip. */
+/* A clip carrying more than that is not partially captured: the slot is */
+/* marked as not covering automation, and the restore then leaves        */
+/* automation alone rather than reinstating some of it and dropping the  */
+/* rest. Restoring a subset is worse than restoring none, because it     */
+/* looks like it worked.                                                 */
+
+static void pa_undo_capture(seq8_instance_t *inst, pa_entry_t *dst, uint8_t *count,
+                            uint8_t *partial, int t, int c) {
+    int n = 0;
+    *partial = 0;
+    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+        pa_entry_t *e = &inst->pa_entries[i];
+        if (!e->used || e->track != t || e->clip != c) continue;
+        if (n >= PA_UNDO_ENTRIES) { *partial = 1; break; }
+        dst[n++] = *e;
+    }
+    *count = (uint8_t)(*partial ? 0 : n);
+}
+
+/* True when any slot in this operation could not be captured whole. */
+static int pa_undo_any_partial(const uint8_t *partial, int count) {
+    for (int i = 0; i < count; i++) if (partial[i]) return 1;
+    return 0;
+}
+
+static void pa_undo_restore(seq8_instance_t *inst, const pa_entry_t *src, uint8_t count,
+                            uint8_t partial, int t, int c) {
+    if (partial) return;                 /* see above: none, rather than some */
+    pa_clear_track_clip(inst, t, c);
+    for (int i = 0; i < count; i++) {
+        pa_entry_t *n = pa_get(inst, t, c, src[i].target);
+        if (!n) { inst->pa_store_full = 1; break; }
+        *n = src[i];
+        n->track = (uint8_t)t;
+        n->clip  = (uint8_t)c;
+    }
+    pa_mark_dirty(inst);
+}
+
+/* ------------------------------------------------------------------ */
 /* Point writes                                                        */
 
 /* Insert or replace the point at `tick`, keeping points sorted. Returns 1 on
@@ -232,7 +311,10 @@ static int pa_json_int(const char *obj, const char *end, const char *key, int de
         if (p < end && *p == '-') { neg = 1; p++; }
         if (p >= end || *p < '0' || *p > '9') return def;
         int v = 0;
-        while (p < end && *p >= '0' && *p <= '9') v = v * 10 + (*p++ - '0');
+        while (p < end && *p >= '0' && *p <= '9') {
+            if (v < 1000000) v = v * 10 + (*p - '0');   /* saturate, never wrap */
+            p++;
+        }
         return neg ? -v : v;
     }
     return def;
@@ -332,11 +414,17 @@ static void pa_parse(seq8_instance_t *inst, const char *buf, size_t blen) {
                     while (pp < end && *pp && *pp != '"') {
                         unsigned tick = 0, val = 0;
                         if (*pp < '0' || *pp > '9') break;
-                        while (pp < end && *pp >= '0' && *pp <= '9') tick = tick * 10 + (unsigned)(*pp++ - '0');
+                        while (pp < end && *pp >= '0' && *pp <= '9') {
+                            if (tick < 1000000u) tick = tick * 10 + (unsigned)(*pp - '0');
+                            pp++;                       /* saturate, never wrap */
+                        }
                         if (pp >= end || *pp != ':') break;
                         pp++;
                         if (pp >= end || *pp < '0' || *pp > '9') break;
-                        while (pp < end && *pp >= '0' && *pp <= '9') val = val * 10 + (unsigned)(*pp++ - '0');
+                        while (pp < end && *pp >= '0' && *pp <= '9') {
+                            if (val < 1000000u) val = val * 10 + (unsigned)(*pp - '0');
+                            pp++;
+                        }
                         /* Written in order, so append rather than pay the
                          * insertion search per point. */
                         if (e->count < PA_ENTRY_POINTS) {

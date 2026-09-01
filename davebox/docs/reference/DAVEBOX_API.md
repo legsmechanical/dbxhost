@@ -115,6 +115,57 @@ Pinned by `tests/test_track_digest.c` (every line byte-identical to the individu
 `tests/js/test_track_digest_sync.mjs` (the round trips actually collapse, the mirrors land, the map
 is released).
 
+## Per-parameter automation keys (`tN_pa_*`)
+
+Front 3's automation store — `dsp/seq8_param_auto.{h,c}`, handler
+`dsp/setparam/sp_track_paramauto.c`. An entry is a **(track, clip, target)** triple; there are no
+lanes and no fixed knob count.
+
+**The target** is an opaque string owned by JS: `"<slot>:<comp>:<key>"` for a chain parameter,
+`"bus:<n>:<field>"` for a bus level, `"cc:<n>"` / `"at"` for the MIDI Out device. The DSP
+interprets only the `cc:`/`at` forms — the ones it can emit itself.
+⚠ **Charset is enforced**: `A-Z a-z 0-9 : _ . -` only, and under `PA_TARGET_LEN` (40). A target
+carrying `"` or `}` would truncate its JSON object in the state file and take the parse of *every*
+entry with it, so it is refused at the door rather than escaped later. A **space ends the target**
+(the key format is space-separated), it does not invalidate it.
+
+**Values are 14-bit normalized** (0..16383). JS owns the mapping to and from a parameter's real
+wire units — only JS has the `chain_params` metadata that defines them.
+
+| set key | value | meaning |
+|---|---|---|
+| `tN_pa_set` | `"<clip> <target> <tick> <val>"` | write one point (a p-lock, or one sample of a recording) |
+| `tN_pa_set2` | `"<clip> <target> <from> <to> <val>"` | flat span, replacing what was in it (multi-step lock) |
+| `tN_pa_rest` | `"<clip> <target> <val>"` | the value the parameter held before automation; **recorded once**, later writes ignored |
+| `tN_pa_clear_key` | `"<clip> <target>"` | Delete + knob: all of one parameter's automation in the clip |
+| `tN_pa_clear_step` | `"<clip> <from> <to>"` | Delete + step: every parameter's points in that span |
+| `tN_pa_clear` | `"<clip>"` | the whole clip's automation |
+| `tN_pa_active` | `"<clip> <target> <0\|1>"` | Mute + knob: deactivate **without** deleting |
+| `tN_pa_smooth` | `"<clip> <target> <0\|1>"` | stepped hold (default) vs linear interpolation |
+| `tN_pa_loop` | `"<clip> <target> <len> <off> <res>"` | per-parameter loop window + resolution. **Inert in v1** — nothing writes it; it exists so restoring polymetric automation later is UI work, not a storage change |
+
+| get key | returns |
+|---|---|
+| `pa_list` | one line per entry: `"<track> <clip> <flags> <count> <target>"` — the whole project in ONE read, because a per-entry read costs an SPI frame each |
+| `pa_dirty` | automation changed since the last save |
+| `pa_store_full` | a write (or a load) was refused for want of room; **reading clears it** |
+
+Flags: `1` active, `2` smooth (so `3` = active+smooth).
+
+⚠⚠ **The handler consumes every `pa_` sub-op, known or not.** `sp_track_misc` is dispatched after
+it and ends in an unconditional `pfx_set` + remote-UI rev bump, so falling through would not ignore
+an unknown key.
+
+**Persistence** is the `"pa"` section of the project's one state file (`"pav"` its version), sparse
+— absent when a project has no automation, which is why this needed no state version bump.
+Automation travels with its clip through `clip_copy`/`clip_cut`/`row_copy`/`row_cut` and is covered
+by undo. ⚠ A clip with more than `PA_UNDO_ENTRIES` (16) automated parameters cannot be captured in
+an undo slot; automation is then restored for **no** clip in that operation rather than some.
+
+**Limits** (all reported through `pa_store_full`, never silent): `PA_MAX_ENTRIES` 160 automated
+(track, clip, target) triples · `PA_ENTRY_POINTS` 512 points per entry · `PA_MAX_TARGETS` 64
+distinct parameters project-wide.
+
 ## Drum Lane Keys
 
 All operate on active clip's lane L of track N.

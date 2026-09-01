@@ -37,6 +37,7 @@
 #define PA_TARGET_LEN       40   /* "<slot>:<comp>:<key>" — longest real key seen is well under */
 #define PA_VAL_MAX       16383   /* values are 14-bit normalized; JS maps to/from wire units */
 #define PA_VAL_UNSET     0xFFFF
+#define PA_UNDO_ENTRIES     16   /* automated params per clip an undo slot can hold */
 
 #define PA_FLAG_ACTIVE     0x01  /* cleared by Mute+knob: kept, but not played */
 #define PA_FLAG_SMOOTH     0x02  /* linear interpolation instead of stepped hold */
