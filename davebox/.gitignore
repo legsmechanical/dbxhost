@@ -68,10 +68,11 @@ notes/
 # Local planning scratch
 docs/plans/
 
-# Claude Code agent files — local-only, kept out of the public repo (Josh 2026-06-25).
-# `CLAUDE.md` (no leading slash) matches both ./CLAUDE.md and dsp/CLAUDE.md at any depth.
-# docs/superpowers/ = the Claude-Code plans + specs corpus.
-CLAUDE.md
+# CLAUDE.md files are TRACKED since 2026-09-01 (Josh's call): the 06-25 ignore
+# kept them out of the public LEGACY repo; dbxhost is public with its root
+# CLAUDE.md tracked, and local-only module guidance already vanished once (the
+# P1 subtree merge dropped it for six days).
+# docs/superpowers/ = the Claude-Code plans + specs corpus — still local-only.
 docs/superpowers/
 
 # brainstorming visual-companion artifacts
