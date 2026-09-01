@@ -11,31 +11,82 @@
  *
  * The budget is the whole design, and it comes from measurement rather than
  * argument. On device (OTLP, 2026-09-02): a parameter round-trip is 2852 us at
- * p50, a tick is about 10.6 ms, and js.tick p95 is already 37 ms. So a push is
- * a quarter of a tick, and the drain read is another. Two pushes per tick is
- * the ceiling that leaves the tick anything to work with.
+ * p50 whatever it carries, a tick is about 10.6 ms, and js.tick p95 is already
+ * 37 ms. So nothing here crosses per parameter: see THE TRANSPORT below.
  */
 
 import { S } from './ui_state.mjs';
+import { POLL_INTERVAL } from './ui_constants.mjs';
 /* The move_fx: prefix has exactly one builder, and a source invariant pins
  * that (tests/test_move_fx_prefix_owner.sh). Build it here and the suite fails
  * — correctly: two builders are two things to keep in step. */
 import { moveBusComp } from './ui_engine.mjs';
 
-/* Pushes per tick. See the note above: this is 2, not 8, because each one
- * costs ~2.9 ms of a ~10.6 ms tick. */
-const PUSH_PER_TICK = 2;
+/* ------------------------------------------------------------------ */
+/* THE TRANSPORT — everything crosses in BULK                           */
+/*                                                                      */
+/* A round-trip is an SPI frame (~2.9 ms) whatever it carries, and the  */
+/* tick is ~10.6 ms with js.tick already at 6.9 ms p50. Per-parameter   */
+/* round-trips were tried first and cost the device its playhead: three */
+/* of them a tick, and the step display stalled while the tick waited.  */
+/* So each direction crosses ONCE a tick:                               */
+/*   - the drain is one bulk GET (pa_pending + the three warning flags) */
+/*   - the module writes (rest, checkpoint, lock, live, release) are    */
+/*     one bulk SET to the DSP, in order, live values coalesced         */
+/*   - the pushes are one bulk SET per chain slot ("chain:" — the host  */
+/*     lands each pair where shadow_set_param would)                    */
+/* All of it blocking and ordered; the mailbox never sees two of ours   */
+/* in flight, so nothing is stomped. Fire-and-forget stays banned here. */
 
-/* Blocking write timeout. Fire-and-forget cannot be used here: in overtake the
- * mailbox holds ONE request, and a write left unconsumed for 8 ms is stomped by
- * the next — recorded as sent, never re-sent, because the DSP diffs against
- * what it staged. A stomped automation value is a parameter stuck at the wrong
- * setting until it happens to change again. */
-const WRITE_TIMEOUT_MS = 40;
+/* SHADOW_BULK_MAX_ITEMS is 64 = 32 key/value pairs per request. */
+const BULK_MAX_PAIRS = 32;
+/* Chain-slot push requests per tick. One per slot with pending values;
+ * a third slot waits a tick. */
+const PUSH_REQUESTS_PER_TICK = 2;
 
-/* target -> pending wire value. A map, not a queue: if a parameter moves twice
- * before we reach it, only the newer value has any worth. */
+function bulkEncode(items) {
+    let s = items.length + '\n';
+    for (const it of items) s += it.length + '\n' + it;      /* ASCII: length == bytes */
+    return s;
+}
+function bulkDecode(blob) {
+    const out = [];
+    if (!blob) return out;
+    let nl = blob.indexOf('\n');
+    if (nl < 0) return out;
+    const n = parseInt(blob.slice(0, nl), 10) || 0;
+    let p = nl + 1;
+    for (let i = 0; i < n; i++) {
+        const e = blob.indexOf('\n', p);
+        if (e < 0) break;
+        const len = parseInt(blob.slice(p, e), 10) || 0;
+        p = e + 1;
+        out.push(blob.slice(p, p + len));
+        p += len;
+    }
+    return out;
+}
+function bulkPairs(pairs) {
+    const items = [];
+    for (const [k, v] of pairs) { items.push(k); items.push(v); }
+    return bulkEncode(items);
+}
+
+/* target -> pending 14-bit value. A map, not a queue: if a parameter moves
+ * twice before we reach it, only the newer value has any worth. */
 let pending = new Map();
+/* Writes to the DSP, in order: [key, val]. Flushed as one bulk SET a tick.
+ * A live value for a target that already has one queued REPLACES it in place
+ * — a knob turned twice in a tick is one write, at the newer value. */
+let moduleWrites = [];
+let liveSlot = new Map();          /* "<track> <target>" -> index into moduleWrites */
+/* The DSP-side flags come back with every drain; polled on their own only
+ * when nothing has drained lately. */
+let lastFlags = null;
+let lastDrainTick = -1000;
+/* After a gesture that may or may not have recorded anything, ask the DSP
+ * once whether the project has automation, so the drain gate is exact again. */
+let presenceStale = false;
 /* "<slot>:<comp>" -> { key: {min,max,step,type,options} }, one fetch each. */
 let metaCache = new Map();
 
@@ -65,6 +116,11 @@ export function automationResetCaches() {
     anyAutomation = false;
     stopGrace = 0;
     gestures = new Map();
+    moduleWrites = [];
+    liveSlot = new Map();
+    lastFlags = null;
+    lastDrainTick = -1000;
+    presenceStale = false;
 }
 
 /* Value metadata is per (slot, component) and lives as long as the module in
@@ -130,47 +186,112 @@ function wireValue(slot, comp, key, norm) {
     return String(Math.round(q * 1e6) / 1e6);
 }
 
-/* "<slot>:<comp>:<key>" -> a write. Bus levels ("bus:<n>:<field>") are the
- * other shape; anything else is ignored rather than guessed at.
- *
- * Returns 'sent', 'failed' (the blocking write timed out — the caller MUST
- * keep the value, because the DSP has already recorded it as sent and will
- * never stage it again), or 'skip' (not a shape we write).
- *
- * No capability gate on shadow_set_param_timeout: one host, one module,
- * shipped together — the binding exists. A gate here would also have hidden a
- * fallback onto the fire-and-forget path, which is exactly the write that
- * cannot be used for automation. */
-function pushTarget(target, norm) {
+/* "<slot>:<comp>:<key>" -> { slot, key, val } in the parameter's own units.
+ * Bus levels ("bus:<n>:<field>") are the other shape; anything else is null
+ * rather than guessed at. */
+function pushPair(target, norm) {
     let m = target.split(':');
     if (m.length >= 3 && m[0] !== 'bus') {
         const slot = parseInt(m[0], 10);
         const comp = m[1];
         const key  = m.slice(2).join(':');
-        if (isNaN(slot)) return 'skip';
-        const val = wireValue(slot, comp, key, norm);
-        /* Blocking: see WRITE_TIMEOUT_MS. */
-        return shadow_set_param_timeout(slot, comp + ':' + key, val, WRITE_TIMEOUT_MS)
-            ? 'sent' : 'failed';
+        if (isNaN(slot)) return null;
+        return { slot, key: comp + ':' + key, val: wireValue(slot, comp, key, norm) };
     }
     if (m.length >= 3 && m[0] === 'bus') {
         const bus = parseInt(m[1], 10);
         const field = m.slice(2).join(':');
-        if (isNaN(bus)) return 'skip';
+        if (isNaN(bus)) return null;
         const t = Math.max(0, Math.min(16383, norm)) / 16383;
-        const val = String(Math.round(t * 1e4) / 1e4);
-        return shadow_set_param_timeout(0, moveBusComp(bus) + ':' + field, val, WRITE_TIMEOUT_MS)
-            ? 'sent' : 'failed';
+        return { slot: 0, key: moveBusComp(bus) + ':' + field, val: String(Math.round(t * 1e4) / 1e4) };
     }
-    return 'skip';
+    return null;
 }
 
-/* Called once per tick. One read to drain whatever the DSP staged, then at
- * most PUSH_PER_TICK writes. What is not pushed this tick stays pending and
- * goes next tick — with only its newest value, since a superseded one is not
- * worth a round-trip. */
+/* The drain: ONE bulk GET carrying the staged values and the three flags the
+ * DSP can only report. */
+const DRAIN_KEYS = ['pa_pending', 'pa_store_full', 'pa_ring_dropped', 'pa_owner_conflict'];
+const FLAG_KEYS  = DRAIN_KEYS.slice(1);
+
+function takeFlags(vals, offset) {
+    const f = { full: vals[offset] === '1', dropped: vals[offset + 1] === '1',
+                owner: parseInt(vals[offset + 2] || '0', 10) || 0 };
+    /* Sticky until reported: a flag seen on one drain and reported on a later
+     * poll must not be lost to a drain in between. */
+    if (!lastFlags) lastFlags = f;
+    else { lastFlags.full = lastFlags.full || f.full; lastFlags.dropped = lastFlags.dropped || f.dropped;
+           if (f.owner) lastFlags.owner = f.owner; }
+}
+
+function drain() {
+    const vals = bulkDecode(host_module_get_params(bulkEncode(DRAIN_KEYS)));
+    lastDrainTick = S.tickCount;
+    if (vals.length < 4) return;
+    takeFlags(vals, 1);
+    const raw = vals[0];
+    if (!raw || !raw.length) return;
+    for (const line of raw.split('\n')) {
+        if (!line.length) continue;
+        const sp = line.lastIndexOf(' ');
+        if (sp <= 0) continue;
+        const target = line.slice(0, sp);
+        const val = parseInt(line.slice(sp + 1), 10);
+        if (isNaN(val)) continue;
+        pending.set(target, val);       /* newest wins */
+    }
+}
+
+/* The module writes: one bulk SET, in order. A request the host refused
+ * (timed out) is kept whole at the front for the next tick. */
+function flushModuleWrites() {
+    if (!moduleWrites.length) return;
+    const batch = moduleWrites.slice(0, BULK_MAX_PAIRS);
+    const ok = host_module_set_params(bulkPairs(batch));
+    if (!ok) return;                         /* try again next tick, same order */
+    moduleWrites = moduleWrites.slice(batch.length);
+    liveSlot = new Map();                    /* indices are stale either way */
+    for (let i = 0; i < moduleWrites.length; i++)
+        if (moduleWrites[i][2]) liveSlot.set(moduleWrites[i][2], i);
+}
+
+/* The pushes: pending values grouped by slot, one bulk SET per slot, at most
+ * PUSH_REQUESTS_PER_TICK slots a tick. What does not go stays pending with
+ * only its newest value. */
+function pushPending() {
+    if (!pending.size) return;
+    const bySlot = new Map();               /* slot -> [[key,val,target,norm]...] */
+    for (const [target, norm] of pending) {
+        if (gestures.has(target)) { pending.delete(target); continue; }   /* touch wins */
+        const p = pushPair(target, norm);
+        if (!p) { pending.delete(target); continue; }
+        let arr = bySlot.get(p.slot);
+        if (!arr) { arr = []; bySlot.set(p.slot, arr); }
+        if (arr.length >= BULK_MAX_PAIRS) continue;      /* this slot's next request, next tick */
+        arr.push([p.key, p.val, target, norm]);
+    }
+    let requests = 0;
+    for (const [slot, arr] of bySlot) {
+        if (requests >= PUSH_REQUESTS_PER_TICK) break;
+        requests++;
+        for (const e of arr) pending.delete(e[2]);
+        const ok = shadow_set_params(slot, 'chain:', bulkPairs(arr.map(e => [e[0], e[1]])));
+        /* Refused (timed out): the DSP has recorded these as sent and will not
+         * stage them again, so they must stay with us. Nothing newer can have
+         * arrived since the delete — new values only land in the drain. */
+        if (!ok) for (const e of arr) pending.set(e[2], e[3]);
+    }
+}
+
+/* Called once per tick, in this order: gestures age; the module hears what
+ * the hand did (one write); the DSP's staged values are drained (one read);
+ * the chain slots get them (one write per slot). */
 export function automationTick() {
     gesturesTick();
+    flushModuleWrites();
+    if (presenceStale && !gestures.size && !moduleWrites.length) {
+        presenceStale = false;
+        automationRefreshPresence();
+    }
     /* Nothing to drain unless this project has automation AND the transport is
      * running: staging only happens on a playing clip. Both are already-known
      * flags, so the common case costs nothing at all. */
@@ -183,41 +304,8 @@ export function automationTick() {
     else if (stopGrace > 0) stopGrace--;
     else if (!pending.size) return;
 
-    const raw = host_module_get_param('pa_pending');
-    if (raw && raw.length) {
-        for (const line of raw.split('\n')) {
-            if (!line.length) continue;
-            const sp = line.lastIndexOf(' ');
-            if (sp <= 0) continue;
-            const target = line.slice(0, sp);
-            const val = parseInt(line.slice(sp + 1), 10);
-            if (isNaN(val)) continue;
-            pending.set(target, val);       /* newest wins */
-        }
-    }
-
-    if (!pending.size) return;
-    let n = 0;
-    const failed = [];
-    for (const [target, val] of pending) {
-        if (n >= PUSH_PER_TICK) break;
-        pending.delete(target);
-        /* Touch wins: a target under a hand is not pushed. The DSP stops
-         * staging it too; this catches what was staged just before the touch.
-         * On release the DSP re-asserts, so nothing is lost. */
-        if (gestures.has(target)) continue;
-        const r = pushTarget(target, val);
-        if (r === 'skip') continue;
-        n++;                                   /* a timed-out write cost its round-trip too */
-        if (r === 'failed') failed.push([target, val]);
-    }
-    /* Timed out: keep them, for the NEXT tick. Re-inserted after the loop, not
-     * inside it — a Map hands an entry added mid-iteration straight back to
-     * the iterator, and a write that just spent 40 ms timing out is not
-     * improved by being tried again in the same millisecond. Nothing newer for
-     * these targets can have arrived since the delete: new values only land in
-     * the drain above. */
-    for (const [target, val] of failed) pending.set(target, val);
+    drain();
+    pushPending();
 }
 
 /* Diagnostics the DSP can only report, surfaced where a person can see them.
@@ -225,12 +313,21 @@ export function automationTick() {
  * lines for the one a person must act on, or null — the caller owns the
  * popup, so this module stays free of the screen. */
 export function automationPollWarnings() {
-    if (host_module_get_param('pa_store_full') === '1')
-        console.log('[dbx] automation store full — a write was refused');
-    if (host_module_get_param('pa_ring_dropped') === '1')
-        console.log('[dbx] automation queue overflowed — a staged value was dropped');
-    const owner = parseInt(host_module_get_param('pa_owner_conflict') || '0', 10);
-    if (owner > 0) return ['Already automated', 'by track ' + owner];
+    /* The drain already carried the flags this poll window; otherwise one
+     * bulk GET for the three of them — not three round-trips. And none at all
+     * for a project that has no automation and no hand on a knob: the flags
+     * can only be raised by a write or a load, both of which are visible here. */
+    const active = anyAutomation || gestures.size || moduleWrites.length || presenceStale;
+    if (active && S.tickCount - lastDrainTick >= POLL_INTERVAL) {
+        const vals = bulkDecode(host_module_get_params(bulkEncode(FLAG_KEYS)));
+        if (vals.length >= 3) takeFlags(vals, 0);
+    }
+    const f = lastFlags;
+    lastFlags = null;
+    if (!f) return null;
+    if (f.full)    console.log('[dbx] automation store full — a write was refused');
+    if (f.dropped) console.log('[dbx] automation queue overflowed — a staged value was dropped');
+    if (f.owner > 0) return ['Already automated', 'by track ' + f.owner];
     return null;
 }
 
@@ -254,8 +351,11 @@ export function automationPollWarnings() {
 /* one undo checkpoint per gesture, and the lock writes.                */
 /*                                                                      */
 /* ⚠ Everything here runs from the MIDI handler, where get_param        */
-/* silently returns null and a set_param must be queued — every write   */
-/* goes through the same deferred queue step record uses.               */
+/* silently returns null and a set_param cannot be made — so writes are */
+/* buffered and go out as ONE bulk SET on the next tick (see the        */
+/* transport note at the top). NOT the one-per-tick deferred queue step */
+/* record uses: a recording is dozens of edits a second, and that queue */
+/* delivered the release seconds after the hand let go.                 */
 
 /* Idle ticks after which a gesture that never got a touch-down is ended
  * on its own. A capacitive sensor can miss a touch; without this the target
@@ -265,7 +365,19 @@ const SYNTHETIC_GESTURE_IDLE_TICKS = 25;    /* ~270 ms, the controller's own gap
 /* target -> gesture state */
 let gestures = new Map();
 
-function queueSet(key, val) { S.pendingDefaultSetParams.push({ key, val }); }
+/* Ordered module write. `coalesce` names a slot a later write may replace in
+ * place (a live value for one target); everything else appends. */
+function queueSet(key, val, coalesce) {
+    if (coalesce) {
+        const at = liveSlot.get(coalesce);
+        if (at !== undefined && moduleWrites[at] && moduleWrites[at][0] === key) {
+            moduleWrites[at][1] = val;
+            return;
+        }
+        liveSlot.set(coalesce, moduleWrites.length);
+    }
+    moduleWrites.push([key, val, coalesce || null]);
+}
 
 /* The parameter's wire string -> 14-bit normalized. The inverse of wireValue. */
 function normValue(slot, comp, key, wire) {
@@ -320,7 +432,11 @@ export function automationParamTouch(track, clip, slot, fullKey, down) {
     if (down) { gestureFor(target, track, clip, false); return; }
     const g = gestures.get(target);
     if (!g) return;
-    if (g.live) queueSet('t' + g.track + '_pa_live_end', target);
+    endGesture(target, g);
+}
+
+function endGesture(target, g) {
+    if (g.live) { queueSet('t' + g.track + '_pa_live_end', target); presenceStale = true; }
     gestures.delete(target);
 }
 
@@ -349,9 +465,14 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
      * must do either way is name the resting value, and — when this is going
      * to be recorded — book the one undo for the gesture. */
     ensureRest(g, target, normValue(slot, comp, key, prevWire));
-    if (S.recordArmed) { ensureCheckpoint(g); automationNoteWrite(); }
+    if (S.recordArmed) ensureCheckpoint(g);
+    /* The DSP may be recording whatever our Record mirror says, so the drain
+     * gate opens now and is corrected by one presence read when the gesture
+     * ends (endGesture) — a wrong "no automation" here would leave a fresh
+     * recording silent until the next project sync. */
+    automationNoteWrite();
     g.live = true;
-    queueSet('t' + track + '_pa_live', target + ' ' + norm);
+    queueSet('t' + track + '_pa_live', target + ' ' + norm, track + ' ' + target);
 }
 
 /* Per tick, from automationTick: end gestures that never had a touch and
@@ -361,8 +482,7 @@ function gesturesTick() {
     for (const [target, g] of gestures) {
         if (!g.synthetic) continue;
         if (++g.idle < SYNTHETIC_GESTURE_IDLE_TICKS) continue;
-        if (g.live) queueSet('t' + g.track + '_pa_live_end', target);
-        gestures.delete(target);
+        endGesture(target, g);
     }
 }
 
@@ -370,3 +490,4 @@ export function automationGestureCountForTest() { return gestures.size; }
 
 /* For tests. */
 export function automationPendingSizeForTest() { return pending.size; }
+export function automationModuleWriteCountForTest() { return moduleWrites.length; }

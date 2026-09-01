@@ -3,21 +3,41 @@
  * The DSP stages the values it cannot write itself; this module drains them
  * and pushes them at a rate the tick can actually afford. Both halves of that
  * sentence are load-bearing and both are pinned here: what gets written, and
- * how much of it per tick.
+ * how it crosses.
  *
- * The budget is not a taste question. Measured on device (OTLP, 2026-09-02): a
- * parameter round-trip is 2852 us at p50 against a ~10.6 ms tick, with js.tick
- * p95 already at 37 ms. Pushing everything staged in one tick would spend the
- * frame several times over. */
+ * How it crosses is the whole design. A round-trip is an SPI frame (~2.9 ms,
+ * measured) whatever it carries, against a ~10.6 ms tick with js.tick already
+ * at 6.9 ms p50. So the drain is ONE bulk read, and the pushes are ONE bulk
+ * write per chain slot — never one round-trip per parameter, which stalled
+ * the playhead on device. */
 
 let staged = '';                 /* what the DSP is currently offering */
-const writes = [];               /* every parameter write that reached the host */
+let flags = ['0', '0', '0'];     /* pa_store_full, pa_ring_dropped, pa_owner_conflict */
+const writes = [];               /* every parameter write that reached a chain slot */
+const requests = [];             /* every bulk request, in order */
+let refuse = 0;                  /* bulk SETs to refuse (simulate timeout) */
 
-globalThis.host_module_get_param = (key) => {
-    if (key === 'pa_pending') { const r = staged; staged = ''; return r; }
-    if (key === 'pa_store_full' || key === 'pa_ring_dropped') return '0';
-    return '';
+function enc(items) { let s = items.length + '\n'; for (const it of items) s += it.length + '\n' + it; return s; }
+function dec(blob) {
+    const out = []; if (!blob) return out;
+    let nl = blob.indexOf('\n'); const n = parseInt(blob.slice(0, nl), 10) || 0; let p = nl + 1;
+    for (let i = 0; i < n; i++) { const e = blob.indexOf('\n', p); const len = parseInt(blob.slice(p, e), 10) || 0; p = e + 1; out.push(blob.slice(p, p + len)); p += len; }
+    return out;
+}
+let reads = 0;
+globalThis.host_module_get_params = (blob) => {
+    const keys = dec(blob);
+    requests.push({ kind: 'get', keys });
+    return enc(keys.map(k => {
+        if (k === 'pa_pending') { reads++; const r = staged; staged = ''; return r; }
+        if (k === 'pa_store_full') return flags[0];
+        if (k === 'pa_ring_dropped') return flags[1];
+        if (k === 'pa_owner_conflict') return flags[2];
+        return '';
+    }));
 };
+globalThis.host_module_get_param = (key) => (key === 'pa_list' ? '' : '0');
+globalThis.host_module_set_params = (blob) => { requests.push({ kind: 'modset', pairs: dec(blob) }); return true; };
 globalThis.shadow_get_param = (slot, key) => {
     if (key.endsWith(':chain_params'))
         return JSON.stringify([
@@ -27,20 +47,20 @@ globalThis.shadow_get_param = (slot, key) => {
         ]);
     return '';
 };
-globalThis.shadow_set_param_timeout = (slot, key, val, ms) => {
-    writes.push({ slot, key, val, ms });
-    return 1;
+globalThis.shadow_set_params = (slot, marker, blob) => {
+    const items = dec(blob);
+    requests.push({ kind: 'set', slot, marker, n: items.length / 2 });
+    if (refuse > 0) { refuse--; return null; }
+    for (let i = 0; i + 1 < items.length; i += 2) writes.push({ slot, key: items[i], val: items[i + 1] });
+    return true;
 };
-globalThis.shadow_set_param = (slot, key, val) => {
-    writes.push({ slot, key, val, ms: 0, fireAndForget: true });
-    return 1;
-};
+let fireAndForget = 0;
+globalThis.shadow_set_param = () => { fireAndForget++; return true; };
+globalThis.shadow_set_param_timeout = () => { fireAndForget++; return true; };
 
-/* Static, not `await import`: the bundler's output format has no top-level
- * await. Safe here because ui_automation.mjs touches no host global at import
- * time — only inside its functions, which run after the stubs above are set. */
 import { automationTick, automationResetCaches, automationPendingSizeForTest,
-         automationRefreshPresence, automationNoteWrite, automationPresentForTest }
+         automationRefreshPresence, automationNoteWrite, automationPresentForTest,
+         automationPollWarnings }
     from '../../ui/ui_automation.mjs';
 import { S } from '../../ui/ui_state.mjs';
 
@@ -49,141 +69,137 @@ const check = (cond, msg) => {
     if (cond) { console.log('  ok   — ' + msg); ok++; }
     else { console.log('  FAIL — ' + msg); bad++; }
 };
+const fresh = () => { writes.length = 0; requests.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true; S.tickCount = 100; };
+const tick = () => { S.tickCount++; automationTick(); };
 
 /* ---- the drain is GATED, and that gate is the point -------------------- */
 {
-    /* Draining costs a get_param — 2852 us on device, a quarter of a tick. A
-     * project with no automation must not pay it, on any tick, ever. */
-    writes.length = 0; automationResetCaches();
-    let reads = 0;
-    const realGet = globalThis.host_module_get_param;
-    globalThis.host_module_get_param = (k) => { if (k === 'pa_pending') reads++; return realGet(k); };
-
-    S.playing = true;
+    writes.length = 0; requests.length = 0; automationResetCaches();
+    reads = 0; S.playing = true;
     staged = '0:fx1:cutoff 8000';
-    for (let i = 0; i < 20; i++) automationTick();
+    for (let i = 0; i < 20; i++) tick();
     check(reads === 0, '⚠ a project with NO automation never reads the queue — not once in 20 ticks');
     check(writes.length === 0, 'and writes nothing');
 
-    /* Once the project is known to have some, it drains. */
-    staged = '0:fx1:cutoff 8000';
-    globalThis.host_module_get_param = (k) => {
-        if (k === 'pa_pending') { reads++; const r = staged; staged = ''; return r; }
-        if (k === 'pa_list') return '0 0 1 1 0:fx1:cutoff\n';
-        return '0';
-    };
+    globalThis.host_module_get_param = (k) => (k === 'pa_list' ? '0 0 1 1 0:fx1:cutoff\n' : '0');
     automationRefreshPresence();
     check(automationPresentForTest(), 'a project that HAS automation is detected on load');
-    automationTick();
+    tick();
     check(reads > 0 && writes.length === 1, 'and then the queue is drained and pushed');
+    globalThis.host_module_get_param = (key) => (key === 'pa_list' ? '' : '0');
 
-    /* Stopped transport. ⚠ The stop EDGE stages: the DSP puts every driven
-     * parameter's RESTING value in the queue when the transport stops, and
-     * S.playing is a mirror that flips before this runs. So the drain keeps
-     * going for a few ticks past the edge — and only then goes quiet. */
     writes.length = 0;
     S.playing = false;
-    staged = '0:fx1:cutoff 4000';               /* the rest, staged on the stop edge */
-    automationTick();
+    staged = '0:fx1:cutoff 4000';
+    tick();
     check(writes.length === 1 && writes[0].key === 'fx1:cutoff',
           '⚠ the resting value staged on the STOP edge is pushed — a drain gated on S.playing alone loses it');
-    for (let i = 0; i < 10; i++) automationTick();
+    for (let i = 0; i < 10; i++) tick();
     const before = reads;
-    for (let i = 0; i < 10; i++) automationTick();
+    for (let i = 0; i < 10; i++) tick();
     check(reads === before, 'once the grace after the edge is spent, a stopped transport does not poll');
-    globalThis.host_module_get_param = realGet;
 }
 
-/* ---- a timed-out write is kept, not lost -------------------------------- */
+/* ---- ONE round-trip per direction ------------------------------------- */
 {
-    writes.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true;
-    /* The DSP records a value as SENT the moment it stages it, and never stages
-     * it again until it changes. So a push that times out is the same permanent
-     * loss as a stomped fire-and-forget write — unless JS keeps it. */
-    const realSet = globalThis.shadow_set_param_timeout;
-    let fail = 1;
-    globalThis.shadow_set_param_timeout = (slot, key, val, ms) => {
-        writes.push({ slot, key, val, ms });
-        if (fail > 0) { fail--; return false; }
-        return true;
-    };
-    staged = '0:fx1:cutoff 8000';
-    automationTick();
-    check(writes.length === 1 && automationPendingSizeForTest() === 1,
-          '⚠ a write that TIMED OUT stays pending — the DSP will not re-stage it');
-    automationTick();
-    check(writes.length === 2 && automationPendingSizeForTest() === 0,
-          'and is retried on the next tick');
-    globalThis.shadow_set_param_timeout = realSet;
-}
-
-/* ---- the write budget ------------------------------------------------- */
-{
-    writes.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true;
+    fresh();
     staged = ['0:fx1:cutoff 8000', '0:fx1:octave 16383', '0:fx1:mode 8191',
-              '1:synth:cutoff 100', '2:fx2:cutoff 200'].join('\n');
-    automationTick();
-    check(writes.length === 2, 'a tick pushes at most its budget (2), not everything staged');
-    check(automationPendingSizeForTest() === 3, 'the rest stay pending — staged is not lost');
-
-    automationTick();
-    check(writes.length === 4, 'the next tick pushes the next two');
-    automationTick();
-    automationTick();
-    check(automationPendingSizeForTest() === 0, 'all five arrive within a few ticks');
+              '0:synth:cutoff 100', '0:fx2:cutoff 200'].join('\n');
+    tick();
+    const gets = requests.filter(r => r.kind === 'get');
+    const sets = requests.filter(r => r.kind === 'set');
+    check(gets.length === 1, '⚠ the drain is ONE bulk read a tick');
+    check(gets[0].keys.length === 4 && gets[0].keys[0] === 'pa_pending', 'and it carries the DSP flags along, so they cost no read of their own');
+    check(sets.length === 1 && sets[0].slot === 0 && sets[0].marker === 'chain:' && sets[0].n === 5,
+          '⚠ five parameters on one slot cross in ONE bulk write to that slot');
     check(writes.length === 5, 'and each was written exactly once');
+    check(fireAndForget === 0, '⚠ nothing goes through the per-parameter paths, blocking or not');
+}
+
+/* ---- slots are requests; the budget is requests per tick ---------------- */
+{
+    fresh();
+    staged = ['0:fx1:cutoff 8000', '1:fx1:cutoff 100', '2:fx1:cutoff 200'].join('\n');
+    tick();
+    let sets = requests.filter(r => r.kind === 'set');
+    check(sets.length === 2, 'three slots pending: two requests this tick (the budget)');
+    check(automationPendingSizeForTest() === 1, 'the third slot stays pending — not lost');
+    tick();
+    sets = requests.filter(r => r.kind === 'set');
+    check(sets.length === 3 && writes.length === 3, 'and goes next tick');
 }
 
 /* ---- a superseded value is never written ------------------------------ */
 {
-    writes.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true;
-    /* The same parameter moving twice before we reach it: only the newer value
-     * is worth a round-trip, and the older one is not merely redundant — it
-     * would be WRONG, arriving after the value that replaced it. */
+    fresh();
     staged = '0:fx1:cutoff 1000\n0:fx1:cutoff 16383';
-    automationTick();
+    tick();
     check(writes.length === 1, 'one write for a parameter staged twice');
     check(writes[0].val === '1', 'and it carries the NEWER value (16383/16383 -> max 1)');
 }
 
 /* ---- values reach the parameter in its own units ---------------------- */
 {
-    writes.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true;
+    fresh();
     staged = '0:fx1:cutoff 8191';           /* half of 14-bit */
-    automationTick();
+    tick();
     check(writes[0].key === 'fx1:cutoff', 'the key is component-qualified');
     check(writes[0].slot === 0, 'and addressed to the right slot');
     check(Math.abs(parseFloat(writes[0].val) - 0.5) < 0.02,
           'a float parameter gets a value in ITS range, not the raw 14-bit number');
 
-    writes.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true;
+    fresh();
     staged = '0:fx1:octave 0\n0:fx1:octave 16383';
-    automationTick();
+    tick();
     check(writes[0].val === '2', 'an int parameter is rounded to its max (-2..2)');
 
-    writes.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true;
+    fresh();
     staged = '0:fx1:mode 16383';
-    automationTick();
+    tick();
     check(writes[0].val === '2', 'an enum becomes an INDEX, not a fraction');
 }
 
-/* ---- the write must never be fire-and-forget -------------------------- */
+/* ---- a refused (timed-out) request is kept, not lost -------------------- */
 {
-    writes.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true;
-    staged = '0:fx1:cutoff 4000';
-    automationTick();
-    check(writes[0].ms > 0 && !writes[0].fireAndForget,
-          '⚠ automation writes BLOCK — a fire-and-forget write can be stomped and never re-sent');
+    fresh();
+    /* The DSP records a value as SENT the moment it stages it, and never stages
+     * it again until it changes. So a request that times out is a permanent
+     * loss — unless JS keeps it. */
+    refuse = 1;
+    staged = '0:fx1:cutoff 8000\n0:fx1:mode 0';
+    tick();
+    check(writes.length === 0 && automationPendingSizeForTest() === 2,
+          '⚠ a request that TIMED OUT keeps every value it carried pending');
+    tick();
+    check(writes.length === 2 && automationPendingSizeForTest() === 0, 'and they go next tick');
+}
+
+/* ---- the flags: reported once, never lost between drain and poll -------- */
+{
+    fresh();
+    flags = ['1', '0', '3'];
+    staged = '';
+    tick();                                  /* drain carries the flags */
+    flags = ['0', '0', '0'];
+    const lines = automationPollWarnings();
+    check(lines && lines[1] === 'by track 3', 'an owner conflict seen by the DRAIN is reported by the poll');
+    check(automationPollWarnings() === null, 'and only once');
+    /* Nothing draining (stopped, quiet): the poll reads the flags itself, in one request. */
+    S.playing = false; for (let i = 0; i < 8; i++) tick();   /* 3 grace drains, then quiet */
+    requests.length = 0;
+    flags = ['0', '1', '0'];
+    automationPollWarnings();
+    const g = requests.filter(r => r.kind === 'get');
+    check(g.length === 1 && g[0].keys.length === 3, 'when nothing has drained lately, the poll reads the three flags in ONE request');
 }
 
 /* ---- a malformed line cannot take the tick down ----------------------- */
 {
-    writes.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true;
+    fresh();
     staged = 'garbage\n\n0:fx1:cutoff notanumber\nbus:1:volume 8191\n0:fx1:cutoff 500';
-    automationTick(); automationTick();
+    tick(); tick();
     check(writes.some(w => w.key === 'fx1:cutoff'), 'the good lines still push');
     check(writes.some(w => w.key.startsWith('move_fx:1:')), 'a bus level routes to its bus');
-    check(bad === 0 || true, 'malformed lines are skipped rather than throwing');
 }
 
 console.log(bad === 0

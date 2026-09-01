@@ -316,6 +316,14 @@ host_close_service(result)     // -> bool; pop + onServiceReturn(id, result)
 // Shadow control / state queries (shadow_ui only)
 shadow_get_param(slot, key) / shadow_set_param(slot, key, val)
 shadow_set_param_timeout(ms)
+shadow_set_params(slot, "chain:", blob)   // ONE round-trip writing many params of
+                                          // chain slot `slot`; blob = "<n>\n" then
+                                          // n items of "<len>\n<bytes>", alternating
+                                          // key, value (n even, n <= 64). Each pair
+                                          // lands where shadow_set_param would. Ordered,
+                                          // blocking; returns true, or null on timeout.
+                                          // (The "overtake_dsp:" marker is the same
+                                          // format aimed at the overtake DSP.)
 shadow_get_slots() / shadow_set_focused_slot(slot)
 shadow_get_selected_slot() / shadow_get_ui_slot()
 shadow_get_display_mode() / shadow_set_display_overlay(mode)

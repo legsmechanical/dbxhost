@@ -71,13 +71,14 @@ seq8.c:5673); chain/bus params are evaluated DSP-side and PUSHED by JS. The tran
 - **Drain via ONE global get**: a module-defined global GET key (`pa_pending`) is fine —
   the silent-drop trap is set_param-only (state_full proves the get path). rev 1's per-track
   `tN_pa_pending` = 8 × 2.9 ms/tick — over the tick period on its own.
-- **Push via the bulk param API, extended**: `shadow_set_params` (shadow_ui.c:981-990,
-  shim src/schwung_shim.c:4154) is one blocking ORDERED round-trip — no stomp window — but
-  `shim_handle_param_bulk` currently ignores the slot arg and routes only to the overtake DSP.
-  **Host change (generic, opt-in, docs in same commit): route bulk entries by slot to chain
-  slots.** Until it lands, `shadow_set_param_timeout` (force-blocking) + explicit per-tick
-  write budget (≤3 writes/tick, round-robin by staleness). The fire-and-forget path is
-  BANNED for automation: a stomped write diffs as sent and never re-sends
+- **Push via the bulk param API** ✅ (2026-09-02, after the per-parameter version stalled the
+  playhead on device): `shadow_set_params(slot, "chain:", blob)` — a host extension, generic,
+  documented in docs/API.md — lands each pair where `shadow_set_param` would, in ONE ordered
+  blocking round-trip per slot. The drain is one bulk GET carrying the flags; the module
+  writes (rest/checkpoint/lock/live/release) are one bulk SET, live values coalesced per
+  tick. ⚠ The one-per-tick `pendingDefaultSetParams` queue must never carry automation: a
+  recording is dozens of edits a second. The fire-and-forget path is BANNED for automation:
+  a stomped write diffs as sent and never re-sends
   [[schwung-shadow-set-param-fire-and-forget-loss]].
 - **Touch wins**: pushes are suppressed for a target under an active knob touch (override-
   resume requires it; also prevents the co-run editor's readback fighting the knob).

@@ -4303,12 +4303,57 @@ static void snap_worker_start(void) {
     pthread_detach(tid);
 }
 
+/* BULK_SET addressed to a CHAIN SLOT (key marker "chain:", slot = ->slot).
+ *
+ * The overtake bulk above reaches only the overtake DSP. A UI that drives
+ * many chain parameters at once — automation, a macro, a scene recall — has
+ * otherwise one round-trip per parameter, and a round-trip is an SPI frame
+ * (~3 ms) whatever the work inside it. This is the same payload format as the
+ * overtake BULK_SET; each pair goes through shadow_direct_set_param, i.e.
+ * exactly where a single shadow_set_param(slot, key, value) would land
+ * (slot-level params, master/send FX and the chain plugin alike). Ordered,
+ * one consume, no stomp window between pairs. GET is not offered here —
+ * chain readback has its own paths, and a bulk GET across slots would need
+ * a per-item slot the format does not carry. */
+static void shim_handle_param_bulk_chain(void) {
+    uint8_t slot = shadow_param->slot;
+    const char *p   = shadow_param->value;
+    const char *end = shadow_param->value + SHADOW_PARAM_VALUE_LEN;
+    int count = 0; { int any = 0;
+        while (p < end && *p >= '0' && *p <= '9') { count = count*10 + (*p-'0'); p++; any = 1; }
+        if (!any || p >= end || *p != '\n') { shadow_param->error = 22; shadow_param->result_len = -1; return; }
+        p++;
+    }
+    if (count < 0 || count > SHADOW_BULK_MAX_ITEMS || (count & 1)) {
+        shadow_param->error = 22; shadow_param->result_len = -1; return;
+    }
+    char keybuf[SHADOW_PARAM_KEY_LEN];
+    for (int i = 0; i + 1 < count; i += 2) {
+        int klen = 0, vlen = 0;
+        const char *k = bulk_next(&p, end, &klen);
+        const char *v = k ? bulk_next(&p, end, &vlen) : NULL;
+        if (!v) break;
+        if (klen <= 0 || klen >= (int)sizeof keybuf) continue;
+        memcpy(keybuf, k, (size_t)klen); keybuf[klen] = '\0';
+        if (vlen >= SHADOW_PARAM_VALUE_LEN) continue;
+        memcpy(s_bulk_val, v, (size_t)vlen); s_bulk_val[vlen] = '\0';
+        shadow_direct_set_param(slot, keybuf, s_bulk_val);
+    }
+    shadow_param->error = 0; shadow_param->result_len = 0;
+}
+
 /* Callback for chain_mgmt: handle shim-specific param prefixes.
  * Reads/writes shadow_param->key/value/error/result_len directly.
  * Returns 1 if handled, 0 if not. */
 static int shim_handle_param_special(uint8_t req_type, uint32_t req_id) {
     (void)req_id;
     const char *key = shadow_param->key;
+
+    /* chain: — a BULK_SET for the chain slot named by ->slot. */
+    if (req_type == 4 && strcmp(key, "chain:") == 0) {
+        shim_handle_param_bulk_chain();
+        return 1;
+    }
 
     /* overtake_dsp:<sub_key> */
     if (strncmp(key, "overtake_dsp:", 13) == 0) {

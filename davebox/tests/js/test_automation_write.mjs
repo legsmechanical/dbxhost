@@ -5,13 +5,32 @@
  * step + a turn is a p-lock; playing with Record on records; playing with
  * Record off overrides and resumes on release; stopped is just a knob. The
  * DSP decides record-vs-override from its own flags, so what is pinned here
- * is what JS SENDS, in what order, and once per what. */
+ * is what JS SENDS, in what order, once per what — and that it all crosses
+ * as ONE bulk write a tick, live values coalesced. */
 
-const sets = [];                          /* every deferred set_param, in order */
+const sets = [];                          /* every module write that crossed, in order */
+const requests = [];
+let refuse = 0;
+function enc(items) { let s = items.length + '\n'; for (const it of items) s += it.length + '\n' + it; return s; }
+function dec(blob) {
+    const out = []; if (!blob) return out;
+    let nl = blob.indexOf('\n'); const n = parseInt(blob.slice(0, nl), 10) || 0; let p = nl + 1;
+    for (let i = 0; i < n; i++) { const e = blob.indexOf('\n', p); const len = parseInt(blob.slice(p, e), 10) || 0; p = e + 1; out.push(blob.slice(p, p + len)); p += len; }
+    return out;
+}
 let staged = '';
-globalThis.host_module_get_param = (key) => {
-    if (key === 'pa_pending') { const r = staged; staged = ''; return r; }
+let presenceReads = 0;
+globalThis.host_module_get_params = (blob) => enc(dec(blob).map(k => {
+    if (k === 'pa_pending') { const r = staged; staged = ''; return r; }
     return '0';
+}));
+globalThis.host_module_get_param = (key) => { if (key === 'pa_list') { presenceReads++; return ''; } return '0'; };
+globalThis.host_module_set_params = (blob) => {
+    const items = dec(blob);
+    requests.push(items.length / 2);
+    if (refuse > 0) { refuse--; return null; }
+    for (let i = 0; i + 1 < items.length; i += 2) sets.push(items[i] + '=' + items[i + 1]);
+    return true;
 };
 globalThis.shadow_get_param = (slot, key) => {
     if (key.endsWith(':chain_params'))
@@ -23,10 +42,15 @@ globalThis.shadow_get_param = (slot, key) => {
     return '';
 };
 const writes = [];
-globalThis.shadow_set_param_timeout = (slot, key, val, ms) => { writes.push({ slot, key, val }); return true; };
+globalThis.shadow_set_params = (slot, marker, blob) => {
+    const items = dec(blob);
+    for (let i = 0; i + 1 < items.length; i += 2) writes.push({ slot, key: items[i], val: items[i + 1] });
+    return true;
+};
 
 import { automationParamEdit, automationParamTouch, automationTick, automationResetCaches,
-         automationNoteWrite, automationGestureCountForTest, automationPendingSizeForTest }
+         automationNoteWrite, automationGestureCountForTest, automationPendingSizeForTest,
+         automationModuleWriteCountForTest, automationPresentForTest }
     from '../../ui/ui_automation.mjs';
 import { S } from '../../ui/ui_state.mjs';
 
@@ -37,12 +61,12 @@ const check = (cond, msg) => {
 };
 function reset(o) {
     automationResetCaches();
-    S.pendingDefaultSetParams.length = 0;
-    S.heldStep = -1; S.playing = false; S.recordArmed = false;
+    sets.length = 0; requests.length = 0; writes.length = 0;
+    S.heldStep = -1; S.playing = false; S.recordArmed = false; S.tickCount = 100;
     S.clipTPS[0][0] = 24;
     Object.assign(S, o || {});
 }
-const drained = () => S.pendingDefaultSetParams.map(x => x.key + '=' + x.val);
+const tick = () => { S.tickCount++; automationTick(); };
 const T = 0, C = 0, SLOT = 1;
 
 /* ---- stopped, nothing held: a knob is a knob ---------------------------- */
@@ -51,7 +75,8 @@ const T = 0, C = 0, SLOT = 1;
     automationParamTouch(T, C, SLOT, 'fx1:cutoff', true);
     automationParamEdit(T, C, SLOT, 'fx1:cutoff', '0.5', '0.25');
     automationParamTouch(T, C, SLOT, 'fx1:cutoff', false);
-    check(drained().length === 0, 'stopped with no step held: NOTHING is written to the store');
+    tick();
+    check(sets.length === 0 && requests.length === 0, 'stopped with no step held: NOTHING is written, no request made');
     check(automationGestureCountForTest() === 0, 'and the gesture is gone on release');
 }
 
@@ -60,25 +85,29 @@ const T = 0, C = 0, SLOT = 1;
     reset({ heldStep: 3 });
     automationParamTouch(T, C, SLOT, 'fx1:cutoff', true);
     automationParamEdit(T, C, SLOT, 'fx1:cutoff', '0.5', '0.25');
-    const d = drained();
-    check(d[0] === 't0_pa_rest=0 1:fx1:cutoff 4096',
+    check(sets.length === 0 && automationModuleWriteCountForTest() === 3,
+          'from the MIDI handler nothing crosses yet — it is buffered for the tick');
+    tick();
+    check(requests.length === 1 && requests[0] === 3, '⚠ ...and crosses as ONE bulk write');
+    check(sets[0] === 't0_pa_rest=0 1:fx1:cutoff 4096',
           '⚠ the resting value is the value BEFORE the first edit (0.25 -> 4096), not the new one');
-    check(d[1] === 't0_c0_undo_checkpoint=1', 'one undo checkpoint opens the gesture');
-    check(d[2] === 't0_pa_set2=0 1:fx1:cutoff 72 95 8192',
+    check(sets[1] === 't0_c0_undo_checkpoint=1', 'one undo checkpoint opens the gesture');
+    check(sets[2] === 't0_pa_set2=0 1:fx1:cutoff 72 95 8192',
           'the lock covers the held step in clip ticks (step 3 x 24 = 72..95) at the NEW value');
     automationParamEdit(T, C, SLOT, 'fx1:cutoff', '0.75', '0.5');
-    const d2 = drained();
-    check(d2.length === 4 && d2[3] === 't0_pa_set2=0 1:fx1:cutoff 72 95 12287',
+    tick();
+    check(sets.length === 4 && sets[3] === 't0_pa_set2=0 1:fx1:cutoff 72 95 12287',
           'a second turn in the same gesture writes the lock again — no second rest, no second checkpoint');
     automationParamTouch(T, C, SLOT, 'fx1:cutoff', false);
-    check(drained().length === 4, 'releasing after a lock sends no live_end — nothing was live');
+    tick();
+    check(sets.length === 4, 'releasing after a lock sends no live_end — nothing was live');
 
-    /* A lock while PLAYING is still a lock (Move: hold a step during playback). */
     reset({ heldStep: 0, playing: true, recordArmed: true });
     automationParamEdit(T, C, SLOT, 'fx1:octave', '2', '0');
-    check(drained().some(x => x.startsWith('t0_pa_set2=0 1:fx1:octave 0 23 16383')),
+    tick();
+    check(sets.some(x => x.startsWith('t0_pa_set2=0 1:fx1:octave 0 23 16383')),
           'held step during playback: the lock, not a live record (int 2 of -2..2 -> 16383)');
-    check(!drained().some(x => x.startsWith('t0_pa_live')), 'and nothing goes live');
+    check(!sets.some(x => x.startsWith('t0_pa_live')), 'and nothing goes live');
 }
 
 /* ---- playing: live, and the DSP decides record vs override ------------- */
@@ -86,23 +115,44 @@ const T = 0, C = 0, SLOT = 1;
     reset({ playing: true, recordArmed: false });
     automationParamTouch(T, C, SLOT, 'fx1:mode', true);
     automationParamEdit(T, C, SLOT, 'fx1:mode', '2', '1');
-    let d = drained();
-    check(d[0] === 't0_pa_rest=0 1:fx1:mode 8192', 'rest first (enum index 1 of 3 -> 8192)');
-    check(d[1] === 't0_pa_live=1:fx1:mode 16383', 'then the live value (enum index 2 -> max)');
-    check(d.length === 2, '⚠ Record OFF: no undo checkpoint — an override changes nothing that undo could restore');
+    tick();
+    check(sets[0] === 't0_pa_rest=0 1:fx1:mode 8192', 'rest first (enum index 1 of 3 -> 8192)');
+    check(sets[1] === 't0_pa_live=1:fx1:mode 16383', 'then the live value (enum index 2 -> max)');
+    check(sets.length === 2, '⚠ Record OFF: no undo checkpoint — an override changes nothing that undo could restore');
+    /* Three detents in one tick: one live write, the newest value. */
     automationParamEdit(T, C, SLOT, 'fx1:mode', '0', '2');
-    check(drained().length === 3 && drained()[2] === 't0_pa_live=1:fx1:mode 0', 'every turn re-sends the live value');
+    automationParamEdit(T, C, SLOT, 'fx1:mode', '1', '0');
+    automationParamEdit(T, C, SLOT, 'fx1:mode', '0', '1');
+    tick();
+    check(sets.length === 3 && sets[2] === 't0_pa_live=1:fx1:mode 0',
+          '⚠ three detents in a tick are ONE live write, at the newest value — never a backlog');
+    check(automationPresentForTest(), 'the drain gate opened the moment something went live');
     automationParamTouch(T, C, SLOT, 'fx1:mode', false);
-    check(drained()[3] === 't0_pa_live_end=1:fx1:mode', '⚠ release ends the live target — that is what makes automation RESUME');
+    tick();
+    check(sets[3] === 't0_pa_live_end=1:fx1:mode', '⚠ release ends the live target on the NEXT tick — that is what makes automation RESUME');
+    check(presenceReads === 1, 'and the gesture end asks the DSP ONCE whether anything was actually recorded');
 
     reset({ playing: true, recordArmed: true });
     automationParamTouch(T, C, SLOT, 'fx1:cutoff', true);
     automationParamEdit(T, C, SLOT, 'fx1:cutoff', '0.5', '0.25');
-    d = drained();
-    check(d[1] === 't0_c0_undo_checkpoint=1' && d[2] === 't0_pa_live=1:fx1:cutoff 8192',
+    tick();
+    check(sets[1] === 't0_c0_undo_checkpoint=1' && sets[2] === 't0_pa_live=1:fx1:cutoff 8192',
           'Record ON: the checkpoint is booked before the first live value');
     automationParamEdit(T, C, SLOT, 'fx1:cutoff', '0.6', '0.5');
-    check(drained().filter(x => x.includes('undo_checkpoint')).length === 1, 'ONE checkpoint per gesture');
+    tick();
+    check(sets.filter(x => x.includes('undo_checkpoint')).length === 1, 'ONE checkpoint per gesture');
+}
+
+/* ---- a refused module write is retried whole, in order ----------------- */
+{
+    reset({ playing: true, recordArmed: true });
+    automationParamEdit(T, C, SLOT, 'fx1:cutoff', '0.5', '0.25');
+    refuse = 1;
+    tick();
+    check(sets.length === 0 && automationModuleWriteCountForTest() === 3, 'a refused bulk write keeps everything it carried');
+    tick();
+    check(sets.length === 3 && sets[0].startsWith('t0_pa_rest') && sets[2].startsWith('t0_pa_live'),
+          'and it goes next tick, same order');
 }
 
 /* ---- touch wins: a target under a hand is not pushed -------------------- */
@@ -111,7 +161,7 @@ const T = 0, C = 0, SLOT = 1;
     automationNoteWrite();
     automationParamTouch(T, C, SLOT, 'fx1:cutoff', true);
     staged = '1:fx1:cutoff 4000\n1:fx1:octave 100';
-    automationTick();
+    tick();
     check(writes.length === 1 && writes[0].key === 'fx1:octave',
           '⚠ the touched parameter is NOT pushed while the hand is on it; the other still is');
     check(automationPendingSizeForTest() === 0, 'and the suppressed value is dropped, not kept (the DSP re-asserts on release)');
@@ -120,12 +170,11 @@ const T = 0, C = 0, SLOT = 1;
 /* ---- a gesture with no touch-down ends on its own ----------------------- */
 {
     reset({ playing: true });
-    writes.length = 0;
     automationParamEdit(T, C, SLOT, 'fx1:cutoff', '0.5', '0.25');   /* no touch seen: sensor missed */
     check(automationGestureCountForTest() === 1, 'a turn without a touch still opens a gesture');
-    for (let i = 0; i < 30; i++) automationTick();
+    for (let i = 0; i < 30; i++) tick();
     check(automationGestureCountForTest() === 0, '⚠ ...and it ends after ~270 ms of stillness');
-    check(drained().some(x => x === 't0_pa_live_end=1:fx1:cutoff'),
+    check(sets.some(x => x === 't0_pa_live_end=1:fx1:cutoff'),
           'with a live_end, so automation resumes even when the touch sensor missed');
 }
 
