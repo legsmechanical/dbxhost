@@ -5,6 +5,76 @@
  */
 
 /* ------------------------------------------------------------------ */
+/* Crossing the thread boundary                                         */
+/*                                                                      */
+/* The store is written on the SPI thread (set_param) and read on the    */
+/* AUDIO thread (the playback scan below). Nothing else in this file is  */
+/* synchronized, so a write that moves points — pa_set_point's insert,   */
+/* pa_clear_range's compaction, freeing an entry — can be in progress    */
+/* while the reader is walking the same arrays.                          */
+/*                                                                      */
+/* A store-wide seqlock covers it. A writer marks the store busy, edits, */
+/* then marks it settled; the reader samples the counter before and      */
+/* after its pass and THROWS ITS WHOLE PASS AWAY if the two disagree.    */
+/* Skipping automation for one tick is inaudible — a tick is about 5 ms  */
+/* at 192 Hz and edits happen at the rate a person turns a knob — while  */
+/* acting on a torn read would send a parameter to a value that was      */
+/* never written.                                                        */
+/*                                                                      */
+/* The reader must also survive reading garbage, since it may read       */
+/* mid-write and only discover that afterwards: every count and index it */
+/* takes from the store is clamped before use, so a torn value can waste */
+/* a pass but can never read out of bounds.                              */
+
+static void pa_write_begin(seq8_instance_t *inst) {
+    __atomic_add_fetch(&inst->pa_seq, 1, __ATOMIC_RELEASE);   /* odd: busy */
+}
+
+static void pa_write_end(seq8_instance_t *inst) {
+    __atomic_add_fetch(&inst->pa_seq, 1, __ATOMIC_RELEASE);   /* even: settled */
+}
+
+static uint32_t pa_read_seq(const seq8_instance_t *inst) {
+    return __atomic_load_n(&inst->pa_seq, __ATOMIC_ACQUIRE);
+}
+
+/* ------------------------------------------------------------------ */
+/* The staged-change ring (audio thread -> SPI thread)                  */
+/*                                                                      */
+/* A module DSP cannot set another chain slot's parameters — the host    */
+/* API it is given carries MIDI and nothing else. So for every target    */
+/* except the MIDI ones, playback computes the value and leaves it here  */
+/* for JS to push. Single producer, single consumer, no locks.           */
+/*                                                                      */
+/* Overflow drops the OLDEST: a stale automation value has no worth next */
+/* to a fresh one for the same parameter, and blocking the audio thread  */
+/* to preserve it would be the wrong trade. It is recorded so the        */
+/* condition is visible rather than guessed at.                          */
+
+static void pa_ring_push(seq8_instance_t *inst, uint16_t target, uint16_t val) {
+    uint32_t head = __atomic_load_n(&inst->pa_ring_head, __ATOMIC_RELAXED);
+    uint32_t tail = __atomic_load_n(&inst->pa_ring_tail, __ATOMIC_ACQUIRE);
+    if (head - tail >= PA_RING_SLOTS) {
+        /* Full: retire the oldest so the newest always lands. */
+        __atomic_store_n(&inst->pa_ring_tail, tail + 1, __ATOMIC_RELEASE);
+        inst->pa_ring_dropped = 1;
+    }
+    inst->pa_ring[head % PA_RING_SLOTS].target = target;
+    inst->pa_ring[head % PA_RING_SLOTS].val    = val;
+    __atomic_store_n(&inst->pa_ring_head, head + 1, __ATOMIC_RELEASE);
+}
+
+/* Consumer side. Returns 1 and fills *out while anything is queued. */
+static int pa_ring_pop(seq8_instance_t *inst, pa_change_t *out) {
+    uint32_t tail = __atomic_load_n(&inst->pa_ring_tail, __ATOMIC_RELAXED);
+    uint32_t head = __atomic_load_n(&inst->pa_ring_head, __ATOMIC_ACQUIRE);
+    if (tail == head) return 0;
+    *out = inst->pa_ring[tail % PA_RING_SLOTS];
+    __atomic_store_n(&inst->pa_ring_tail, tail + 1, __ATOMIC_RELEASE);
+    return 1;
+}
+
+/* ------------------------------------------------------------------ */
 /* Target interning                                                    */
 
 /* A target is written verbatim into a JSON string in the state file and read
@@ -111,8 +181,10 @@ static void pa_clear_track_clip(seq8_instance_t *inst, int track, int clip) {
 }
 
 static void pa_reset_all(seq8_instance_t *inst) {
+    pa_write_begin(inst);
     memset(inst->pa_entries, 0, sizeof(inst->pa_entries));
     memset(inst->pa_targets, 0, sizeof(inst->pa_targets));
+    pa_write_end(inst);
     inst->pa_dirty = 0;
 }
 
@@ -125,6 +197,7 @@ static void pa_reset_all(seq8_instance_t *inst) {
  * one and leaving it behind strands automation on a clip with no notes. */
 static void pa_copy_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc) {
     if (st == dt && sc == dc) return;
+    pa_write_begin(inst);
     pa_clear_track_clip(inst, dt, dc);
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
         pa_entry_t *e = &inst->pa_entries[i];
@@ -137,13 +210,16 @@ static void pa_copy_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc) 
         /* A new entry allocated here carries track dt, so the loop's own filter
          * excludes it — the copy cannot feed on itself. */
     }
+    pa_write_end(inst);
     pa_mark_dirty(inst);
 }
 
 static void pa_move_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc) {
     if (st == dt && sc == dc) return;
     pa_copy_clip(inst, st, sc, dt, dc);
+    pa_write_begin(inst);
     pa_clear_track_clip(inst, st, sc);
+    pa_write_end(inst);
     pa_mark_dirty(inst);
 }
 
@@ -184,6 +260,7 @@ static int pa_undo_any_partial(const uint8_t *partial, int count) {
 static void pa_undo_restore(seq8_instance_t *inst, const pa_entry_t *src, uint8_t count,
                             uint8_t partial, int t, int c) {
     if (partial) return;                 /* see above: none, rather than some */
+    pa_write_begin(inst);
     pa_clear_track_clip(inst, t, c);
     for (int i = 0; i < count; i++) {
         pa_entry_t *n = pa_get(inst, t, c, src[i].target);
@@ -192,6 +269,7 @@ static void pa_undo_restore(seq8_instance_t *inst, const pa_entry_t *src, uint8_
         n->track = (uint8_t)t;
         n->clip  = (uint8_t)c;
     }
+    pa_write_end(inst);
     pa_mark_dirty(inst);
 }
 
@@ -444,4 +522,99 @@ static void pa_parse(seq8_instance_t *inst, const char *buf, size_t blen) {
         if (p >= doc_end || *p != '{') break;
     }
     inst->pa_dirty = 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Playback (AUDIO THREAD)                                              */
+/*                                                                      */
+/* Called once per tick per playing track. Evaluates every active entry */
+/* for that (track, clip) and, where the value has moved, either emits   */
+/* it directly — the MIDI targets, which the DSP can send itself — or    */
+/* stages it for JS to push.                                            */
+/*                                                                      */
+/* ⚠ Nothing here may allocate, log, or block: this is the SPI callback  */
+/* path. The whole pass is written into locals and only committed once   */
+/* the seqlock confirms no write overlapped it.                          */
+
+/* Emit callback for the MIDI targets. Supplied by the caller so this file
+ * stays independent of the pfx runtime's internals. */
+typedef void (*pa_midi_emit_fn)(seq8_track_t *tr, int cc, uint8_t val);
+
+static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
+                             int clip, uint32_t ct, uint32_t clip_ticks,
+                             pa_midi_emit_fn emit) {
+    uint32_t seq0 = pa_read_seq(inst);
+    if (seq0 & 1u) return;                   /* a write is in flight; next tick */
+
+    /* Staged into locals first — see the note above. */
+    struct { uint16_t target; uint16_t val; uint8_t midi; int cc; } out[PA_TICK_MAX_STAGE];
+    int nout = 0;
+
+    for (int i = 0; i < PA_MAX_ENTRIES && nout < PA_TICK_MAX_STAGE; i++) {
+        const pa_entry_t *e = &inst->pa_entries[i];
+        if (!e->used || e->track != track || e->clip != clip) continue;
+        if (!(e->flags & PA_FLAG_ACTIVE)) continue;
+
+        /* Clamp everything taken from the store: this may be a torn read that
+         * only the seqlock check at the end will reveal. */
+        uint16_t count = e->count;
+        if (count > PA_ENTRY_POINTS) continue;
+        uint16_t tgt = e->target;
+        if (tgt >= PA_MAX_TARGETS) continue;
+
+        uint16_t v;
+        if (!pa_eval(e, pa_entry_tick(e, ct, clip_ticks), &v)) continue;
+        if (e->last_sent_valid && e->last_sent == v) continue;   /* unchanged */
+
+        int cc = 0;
+        int midi = pa_target_is_midi(inst->pa_targets[tgt], &cc);
+        out[nout].target = tgt;
+        out[nout].val    = v;
+        out[nout].midi   = (uint8_t)midi;
+        out[nout].cc     = cc;
+        nout++;
+    }
+
+    /* Did anything move underneath us? Then this pass saw a store that never
+     * existed as a whole — drop it rather than act on it. */
+    if (pa_read_seq(inst) != seq0) return;
+
+    for (int i = 0; i < nout; i++) {
+        /* last_sent is written from the audio thread only, and read by it;
+         * a concurrent store write can only reset it to zero on a fresh entry,
+         * which costs one redundant resend. */
+        for (int j = 0; j < PA_MAX_ENTRIES; j++) {
+            pa_entry_t *e = &inst->pa_entries[j];
+            if (!e->used || e->track != track || e->clip != clip) continue;
+            if (e->target != out[i].target) continue;
+            e->last_sent       = out[i].val;
+            e->last_sent_valid = 1;
+            break;
+        }
+        if (out[i].midi) {
+            /* 14-bit normalized down to the 7 bits MIDI carries. */
+            if (emit) emit(tr, out[i].cc, (uint8_t)((out[i].val * 127u) / PA_VAL_MAX));
+        } else {
+            pa_ring_push(inst, out[i].target, out[i].val);
+        }
+    }
+}
+
+/* Transport stopped, or the clip changed: every parameter automation was
+ * driving goes back to the value it held before automation touched it.
+ * Without this a parameter is simply abandoned wherever the playhead left it —
+ * and for a chain parameter that value is what the slot then persists. */
+static void pa_release_track(seq8_instance_t *inst, int track, int clip) {
+    uint32_t seq0 = pa_read_seq(inst);
+    if (seq0 & 1u) return;
+    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+        pa_entry_t *e = &inst->pa_entries[i];
+        if (!e->used || e->track != track || e->clip != clip) continue;
+        if (e->rest == PA_VAL_UNSET) { e->last_sent_valid = 0; continue; }
+        uint16_t tgt = e->target;
+        if (tgt >= PA_MAX_TARGETS) continue;
+        e->last_sent_valid = 0;
+        if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
+            pa_ring_push(inst, tgt, e->rest);
+    }
 }

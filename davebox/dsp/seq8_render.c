@@ -994,6 +994,14 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                         cc_emit(tr, _kp, _sv);
                     }
                 }
+                /* Per-parameter automation (Front 3). Same playhead the CC lanes
+                 * use, so both timelines agree; it reads its own store and
+                 * either emits the MIDI targets itself or stages the rest for
+                 * JS. pa_playback_scan is audio-thread safe — it allocates
+                 * nothing and discards any pass a concurrent edit overlapped. */
+                pa_playback_scan(inst, tr, t, (int)tr->active_clip, _ct,
+                                 _winlen, pa_emit_midi);
+
                 /* Latch recording: overwrite each latched lane along the playhead
                  * with the current live value (one point per 1/32 cell, clearing
                  * whatever was there). Continues even when the knob isn't moving,

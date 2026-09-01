@@ -1302,6 +1302,13 @@ typedef struct {
     char       pa_targets[PA_MAX_TARGETS][PA_TARGET_LEN];
     uint8_t    pa_dirty;          /* automation changed since the last save */
     uint8_t    pa_store_full;     /* a write was refused; JS reports it and clears */
+    /* Store-wide seqlock: odd while a write is in flight. See pa_write_begin. */
+    uint32_t   pa_seq;
+    /* Staged changes the DSP cannot write itself, audio thread -> SPI thread. */
+    pa_change_t pa_ring[PA_RING_SLOTS];
+    uint32_t   pa_ring_head;
+    uint32_t   pa_ring_tail;
+    uint8_t    pa_ring_dropped;   /* the ring overflowed; reported and cleared on read */
 
     /* Result of last all_lanes_beat_stretch: 0=none, 1=ok, -1=blocked */
     int all_lanes_stretch_result;
@@ -5728,6 +5735,18 @@ static int at_auto_eval(const at_auto_t *a, int lane, uint32_t t, int *defined) 
 /* Emit a continuous-modulation value for knob k on track tr, branching on
  * the per-knob type: CC -> 0xB0 cc_assign[k] v; aftertouch -> 0xD0 v (2-byte,
  * pfx_emit's USB-MIDI CIN = status>>4 = 0xD already encodes the length). */
+/* The emit side of per-parameter automation's MIDI targets ("cc:<n>" and
+ * "at"). Separate from cc_emit, which is addressed by knob index through the
+ * lane system's own assignment table: an automation entry names its CC
+ * directly, and aftertouch arrives as cc = -1. */
+static void pa_emit_midi(seq8_track_t *tr, int cc, uint8_t v) {
+    uint8_t ch = tr->channel & 0x0F;
+    if (cc < 0)
+        pfx_send(&tr->pfx, (uint8_t)(0xD0 | ch), v, 0);       /* channel pressure */
+    else if (cc <= 127)
+        pfx_send(&tr->pfx, (uint8_t)(0xB0 | ch), (uint8_t)cc, v);
+}
+
 static void cc_emit(seq8_track_t *tr, int k, uint8_t v) {
     uint8_t ch = tr->channel & 0x0F;
     if (tr->cc_type[k] == 2)
@@ -6511,6 +6530,47 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
     if (!strcmp(key, "pa_store_full")) {
         int v = inst ? (int)inst->pa_store_full : 0;
         if (inst) inst->pa_store_full = 0;
+        return snprintf(out, out_len, "%d", v);
+    }
+
+    /* pa_pending: the automation values JS must push, drained in one read.
+     *
+     * ONE global key, not one per track: a round-trip measured 2852 us on
+     * device against a ~10.6 ms tick, so eight per-track reads would cost more
+     * than two ticks before a single parameter moved.
+     *
+     * Format, one per line: "<target> <value>" with the value 14-bit
+     * normalized — JS maps it to the parameter's wire units, since only JS has
+     * the metadata that defines them. Draining is destructive: what is read
+     * here is gone from the ring. */
+    if (!strcmp(key, "pa_pending")) {
+        int n = 0;
+        if (out_len > 0) out[0] = '\0';
+        if (!inst) return 0;
+        pa_change_t ch;
+        while (pa_ring_pop(inst, &ch)) {
+            if (ch.target >= PA_MAX_TARGETS) continue;
+            int w = snprintf(out + n, (size_t)(out_len - n), "%s %u\n",
+                             inst->pa_targets[ch.target], (unsigned)ch.val);
+            if (w < 0 || n + w >= out_len) {
+                /* Out of room: put it back so nothing is lost, and let the next
+                 * poll take it. Trimming the partial line keeps the reader's
+                 * string honest. */
+                out[n] = '\0';
+                pa_ring_push(inst, ch.target, ch.val);
+                break;
+            }
+            n += w;
+        }
+        return n;
+    }
+
+    /* pa_ring_dropped: the staged-change ring overflowed, so some automation
+     * value was retired before JS could push it. Visible rather than guessed
+     * at; cleared on read. */
+    if (!strcmp(key, "pa_ring_dropped")) {
+        int v = inst ? (int)inst->pa_ring_dropped : 0;
+        if (inst) inst->pa_ring_dropped = 0;
         return snprintf(out, out_len, "%d", v);
     }
 

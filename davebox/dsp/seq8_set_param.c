@@ -389,6 +389,11 @@ static void ext_transport_stop(seq8_instance_t *inst) {
             }
             _tr->cc_auto_last_sent[_k] = 0xFF;
         }
+        /* Per-parameter automation goes back to rest on the same edge. A
+         * chain parameter that automation was driving is otherwise abandoned
+         * wherever the playhead stopped — and the slot then PERSISTS that
+         * value as if the user had dialled it. */
+        pa_release_track(inst, t, (int)_tr->active_clip);
     }
 }
 
@@ -1195,8 +1200,18 @@ static void set_param(void *instance, const char *key, const char *val) {
          * mutating cx on fall-through), so cx is current. */
         /* Per-parameter automation (Front 3). Dispatched before the sibling
          * tN_ handlers and, critically, before sp_track_misc's unconditional
-         * pfx_set tail: it consumes every "pa_" sub-op, known or not. */
-        if (sp_track_paramauto(&cx)) return;
+         * pfx_set tail: it consumes every "pa_" sub-op, known or not.
+         *
+         * The seqlock is taken HERE rather than inside the handler so that a
+         * key added later cannot forget it: every write to the store is
+         * bracketed by construction. The audio thread reads the same store —
+         * see pa_write_begin. */
+        if (sub[0] == 'p' && sub[1] == 'a' && sub[2] == '_') {
+            pa_write_begin(inst);
+            int _pa_done = sp_track_paramauto(&cx);
+            pa_write_end(inst);
+            if (_pa_done) return;
+        }
 
         if (sp_track_ccauto(&cx)) return;
 

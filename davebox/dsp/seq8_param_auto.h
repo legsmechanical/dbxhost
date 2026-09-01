@@ -38,6 +38,8 @@
 #define PA_VAL_MAX       16383   /* values are 14-bit normalized; JS maps to/from wire units */
 #define PA_VAL_UNSET     0xFFFF
 #define PA_UNDO_ENTRIES     16   /* automated params per clip an undo slot can hold */
+#define PA_RING_SLOTS       64   /* staged (target, value) changes awaiting the JS push */
+#define PA_TICK_MAX_STAGE   16   /* changes one tick may stage — see pa_playback_scan */
 
 #define PA_FLAG_ACTIVE     0x01  /* cleared by Mute+knob: kept, but not played */
 #define PA_FLAG_SMOOTH     0x02  /* linear interpolation instead of stepped hold */
@@ -46,6 +48,13 @@ typedef struct {
     uint16_t tick;               /* clip-relative tick; a 256-step clip at 24 tps fits u16 */
     uint16_t val;                /* 0..PA_VAL_MAX */
 } pa_point_t;
+
+/* One staged change: a parameter the DSP cannot write itself, and the value it
+ * should now hold. Produced on the audio thread, consumed on the SPI thread. */
+typedef struct {
+    uint16_t target;
+    uint16_t val;
+} pa_change_t;
 
 typedef struct {
     uint8_t  used;
@@ -63,6 +72,11 @@ typedef struct {
     uint16_t loop_len;
     uint16_t loop_off;
     uint16_t resolution;
+    /* Last value playback sent, so an unchanged parameter is not re-pushed
+     * every tick — at ~2.9 ms a push, that is the difference between a
+     * working feature and a stalled one. Audio-thread owned. */
+    uint16_t last_sent;
+    uint8_t  last_sent_valid;
     pa_point_t points[PA_ENTRY_POINTS];
 } pa_entry_t;
 
