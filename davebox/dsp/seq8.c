@@ -6283,7 +6283,23 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         }
         inst->state_dirty = 0;
         size_t _len = strlen(inst->state_buf);
-        if (_len >= (size_t)out_len) _len = (size_t)(out_len - 1);
+        if (_len >= (size_t)out_len) {
+            /* The blob does not fit the CALLER's buffer. Truncating here is
+             * silent data loss: JS writes whatever it receives straight to the
+             * project file, and readers parse with strstr, so a cut blob loads
+             * as a smaller project with no error anywhere. The transport is the
+             * binding limit, not state_buf — under SA, host_module_get_param
+             * routes through shadow_get_param, whose value field is
+             * SHADOW_PARAM_VALUE_LEN (65536), while state_buf is 131072. A
+             * project between those two sizes serialized fine and arrived cut.
+             * Take the same escape the >state_buf overflow above takes: write
+             * the file synchronously ourselves and hand JS an empty string,
+             * which it treats as "nothing to save". */
+            seq8_ilog(inst, "state_full: exceeds caller buffer, falling back to file write");
+            seq8_save_state(inst);
+            out[0] = '\0';
+            return 0;
+        }
         memcpy(out, inst->state_buf, _len);
         out[_len] = '\0';
         return (int)_len;

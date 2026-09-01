@@ -45,6 +45,10 @@ the section into a versioned heading at release time.
   gesture already jumped straight to a track's sound editor in Track view; in
   Session view it now jumps to the session's own effects, from wherever you are.
 ### Fixes (pending)
+- **Very large projects could lose music when saved.** A project past a certain
+  size was cut short on its way out of the sequencer and written to disk
+  truncated — it reopened quietly missing notes, with nothing reported. Such a
+  project is now written straight to its file instead, complete.
 - **The session FX list follows the same display law as track banks.** It stays
   up while the session bank view is open instead of hiding until you touch the
   jog — and a jog click no longer falls through it.
