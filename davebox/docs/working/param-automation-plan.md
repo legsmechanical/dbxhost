@@ -65,7 +65,9 @@ seq8.c:5673); chain/bus params are evaluated DSP-side and PUSHED by JS. The tran
   val at declared-step granularity, JS re-checks wire equality before pushing.)
 - **Staged-change ring**: preallocated SPSC, producer = audio thread, consumer = SPI-thread
   get_param; `__atomic` release/acquire head/tail (shadow_ui.c:966-971 pattern); overflow =
-  drop-oldest + sticky flag; no logging [[schwung-davebox-rt-logging-footgun]].
+  drop-NEWEST + sticky flag (drop-oldest would have the producer writing the consumer's
+  index — review 09-02); ONE producer, so a transport stop from the SPI thread REQUESTS the
+  release and the audio thread performs it; no logging [[schwung-davebox-rt-logging-footgun]].
 - **Drain via ONE global get**: a module-defined global GET key (`pa_pending`) is fine —
   the silent-drop trap is set_param-only (state_full proves the get path). rev 1's per-track
   `tN_pa_pending` = 8 × 2.9 ms/tick — over the tick period on its own.

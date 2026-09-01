@@ -52,10 +52,28 @@ let metaCache = new Map();
  * this module). Nothing else can produce an entry. */
 let anyAutomation = false;
 
+/* Ticks left to keep draining after the transport stops. The DSP stages the
+ * RESTING values on the stop edge, and S.playing is a mirror that pollDSP
+ * clears — before this runs, on the same tick — so a drain gated on the mirror
+ * alone misses the very thing the stop produced. See automationTick. */
+let stopGrace = 0;
+const STOP_GRACE_TICKS = 3;
+
 export function automationResetCaches() {
     pending = new Map();
     metaCache = new Map();
     anyAutomation = false;
+    stopGrace = 0;
+}
+
+/* Value metadata is per (slot, component) and lives as long as the module in
+ * that slot does. Swapping the module — or loading a project, which can swap
+ * every slot — must throw it away, or the next push maps into the OLD
+ * module's range. No slot given = all of it. */
+export function automationInvalidateMeta(slot) {
+    if (slot === undefined || slot === null) { metaCache = new Map(); return; }
+    const pfx = String(slot) + ':';
+    for (const k of Array.from(metaCache.keys())) if (k.startsWith(pfx)) metaCache.delete(k);
 }
 
 /* Called once when a project's contents arrive from the DSP — NOT per tick.
@@ -112,33 +130,38 @@ function wireValue(slot, comp, key, norm) {
 }
 
 /* "<slot>:<comp>:<key>" -> a write. Bus levels ("bus:<n>:<field>") are the
- * other shape; anything else is ignored rather than guessed at. */
+ * other shape; anything else is ignored rather than guessed at.
+ *
+ * Returns 'sent', 'failed' (the blocking write timed out — the caller MUST
+ * keep the value, because the DSP has already recorded it as sent and will
+ * never stage it again), or 'skip' (not a shape we write).
+ *
+ * No capability gate on shadow_set_param_timeout: one host, one module,
+ * shipped together — the binding exists. A gate here would also have hidden a
+ * fallback onto the fire-and-forget path, which is exactly the write that
+ * cannot be used for automation. */
 function pushTarget(target, norm) {
     let m = target.split(':');
     if (m.length >= 3 && m[0] !== 'bus') {
         const slot = parseInt(m[0], 10);
         const comp = m[1];
         const key  = m.slice(2).join(':');
-        if (isNaN(slot)) return false;
+        if (isNaN(slot)) return 'skip';
         const val = wireValue(slot, comp, key, norm);
         /* Blocking: see WRITE_TIMEOUT_MS. */
-        if (typeof shadow_set_param_timeout === 'function')
-            shadow_set_param_timeout(slot, comp + ':' + key, val, WRITE_TIMEOUT_MS);
-        else
-            shadow_set_param(slot, comp + ':' + key, val);
-        return true;
+        return shadow_set_param_timeout(slot, comp + ':' + key, val, WRITE_TIMEOUT_MS)
+            ? 'sent' : 'failed';
     }
     if (m.length >= 3 && m[0] === 'bus') {
         const bus = parseInt(m[1], 10);
         const field = m.slice(2).join(':');
-        if (isNaN(bus)) return false;
+        if (isNaN(bus)) return 'skip';
         const t = Math.max(0, Math.min(16383, norm)) / 16383;
         const val = String(Math.round(t * 1e4) / 1e4);
-        if (typeof shadow_set_param_timeout === 'function')
-            shadow_set_param_timeout(0, moveBusComp(bus) + ':' + field, val, WRITE_TIMEOUT_MS);
-        return true;
+        return shadow_set_param_timeout(0, moveBusComp(bus) + ':' + field, val, WRITE_TIMEOUT_MS)
+            ? 'sent' : 'failed';
     }
-    return false;
+    return 'skip';
 }
 
 /* Called once per tick. One read to drain whatever the DSP staged, then at
@@ -150,7 +173,13 @@ export function automationTick() {
      * running: staging only happens on a playing clip. Both are already-known
      * flags, so the common case costs nothing at all. */
     if (!anyAutomation) { if (pending.size) pending.clear(); return; }
-    if (!S.playing && !pending.size) return;
+    /* The stop EDGE stages too — the resting values — and S.playing has
+     * already flipped by the time this sees it. Keep draining for a few ticks
+     * past the edge so what the stop produced is pushed, not left in the ring
+     * for the next Play to find. */
+    if (S.playing) stopGrace = STOP_GRACE_TICKS;
+    else if (stopGrace > 0) stopGrace--;
+    else if (!pending.size) return;
 
     const raw = host_module_get_param('pa_pending');
     if (raw && raw.length) {
@@ -167,11 +196,22 @@ export function automationTick() {
 
     if (!pending.size) return;
     let n = 0;
+    const failed = [];
     for (const [target, val] of pending) {
         if (n >= PUSH_PER_TICK) break;
         pending.delete(target);
-        if (pushTarget(target, val)) n++;
+        const r = pushTarget(target, val);
+        if (r === 'skip') continue;
+        n++;                                   /* a timed-out write cost its round-trip too */
+        if (r === 'failed') failed.push([target, val]);
     }
+    /* Timed out: keep them, for the NEXT tick. Re-inserted after the loop, not
+     * inside it — a Map hands an entry added mid-iteration straight back to
+     * the iterator, and a write that just spent 40 ms timing out is not
+     * improved by being tried again in the same millisecond. Nothing newer for
+     * these targets can have arrived since the delete: new values only land in
+     * the drain above. */
+    for (const [target, val] of failed) pending.set(target, val);
 }
 
 /* Diagnostics the DSP can only report, surfaced where a person can see them.

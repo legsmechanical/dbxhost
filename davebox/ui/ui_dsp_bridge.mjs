@@ -25,7 +25,7 @@
 import {
     setButtonLED
 } from '/data/UserData/schwung/shared/input_filter.mjs';
-import { automationRefreshPresence } from './ui_automation.mjs';
+import { automationRefreshPresence, automationInvalidateMeta } from './ui_automation.mjs';
 
 import {
     NUM_TRACKS, NUM_CLIPS, NUM_STEPS, DRUM_LANES,
@@ -1551,6 +1551,7 @@ export function syncClipsFromDsp() {
     /* Automation presence: asked ONCE here, when a project's contents arrive,
      * rather than per tick. See ui_automation.mjs — the per-tick drain is gated
      * on it, and a get_param is a quarter of a tick. */
+    automationInvalidateMeta();      /* a project load can swap every slot's module */
     automationRefreshPresence();
 }
 

@@ -177,11 +177,105 @@ int main(void) {
         HX_ASSERT(dropped[0] == '1', "overflow is REPORTED");
         hx_get_param(h, "pa_ring_dropped", dropped, sizeof(dropped));
         HX_ASSERT(dropped[0] == '0', "and the flag clears on read");
-        OK("the staged queue drops oldest under pressure, and says so");
+        OK("the staged queue drops the newest under pressure, and says so");
 
         int n = pending(h, buf, sizeof(buf));
         HX_ASSERT(n == 0 || buf[n - 1] == '\n', "the drain never ends mid-line");
         OK("a drain never ends mid-line");
+        hx_destroy(h);
+    }
+
+    /* ---- a stop from the SPI thread does not touch the ring ----------- */
+    {
+        /* The transport stops from whichever thread saw the gesture, but the
+         * ring has ONE producer: the audio thread. A stop REQUESTS the release
+         * and the next render block performs it. Two producers would race on
+         * the head and lose or tear an entry — exactly under the stop, when
+         * the values being staged are the ones that put parameters back. */
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+        hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
+        pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
+        pa_playback_scan(in, &in->tracks[0], 0, 0, 0, 384, NULL);
+        pending(h, buf, sizeof(buf));
+
+        pa_release_request(in, 0, 0);             /* what ext_transport_stop does */
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(lines(buf) == 0, "a request alone stages nothing — the SPI thread never produces");
+        pa_release_service(in);                   /* what the next render block does */
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff 2000"), "the audio thread serves it: rest staged");
+        pa_release_service(in);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(lines(buf) == 0, "and a served request is spent");
+        OK("⚠ a transport stop REQUESTS the release; only the audio thread feeds the ring");
+
+        /* A deactivated entry was not driving its parameter, so Stop must not
+         * move it: the value there is the user's own. */
+        hx_set_param(h, "t0_pa_active", "0 1:fx1:cutoff 0");
+        pa_release_request(in, 0, 0);
+        pa_release_service(in);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(lines(buf) == 0, "a DEACTIVATED entry is not re-asserted to rest on stop");
+        OK("stop leaves a deactivated parameter where the user put it");
+        hx_destroy(h);
+    }
+
+    /* ---- the per-tick cap rotates: nothing is starved ------------------ */
+    {
+        /* Under Smooth every ramping entry changes EVERY tick. If the scan
+         * always started at index 0 and stopped at its cap, the entries past
+         * the cap would never be reached while the first ones kept moving —
+         * silently, forever. The scan resumes where it was cut off. */
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+        char tgt[32], key[32], v[64];
+        const int N = PA_TICK_MAX_STAGE + 4;
+        for (int i = 0; i < N; i++) {
+            snprintf(tgt, sizeof(tgt), "1:fx1:s%d", i);
+            pa_set(h, 0, 0, tgt, 0, 0);
+            pa_set(h, 0, 0, tgt, 6000, 16383);
+            snprintf(key, sizeof(key), "t0_pa_smooth");
+            snprintf(v, sizeof(v), "0 %s 1", tgt);
+            hx_set_param(h, key, v);
+        }
+        int seen[PA_TICK_MAX_STAGE + 4] = {0};
+        for (uint32_t ct = 1; ct <= 4; ct++) {          /* every entry moves every tick */
+            pa_playback_scan(in, &in->tracks[0], 0, 0, ct, 6144, NULL);
+            pending(h, buf, sizeof(buf));
+            for (int i = 0; i < N; i++) {
+                snprintf(tgt, sizeof(tgt), "1:fx1:s%d ", i);
+                if (strstr(buf, tgt)) seen[i] = 1;
+            }
+        }
+        int all = 1;
+        for (int i = 0; i < N; i++) if (!seen[i]) all = 0;
+        HX_ASSERT(all, "with more ramping entries than the cap, EVERY one is staged within a few ticks");
+        OK("⚠ the capped scan rotates — a 17th Smooth entry is not starved forever");
+        hx_destroy(h);
+    }
+
+    /* ---- a drain that runs out of room leaves the rest IN ORDER -------- */
+    {
+        /* The reader keeps the LAST value it sees per target. So an entry that
+         * did not fit must stay at the front of the queue, not be pushed back
+         * behind newer values for the same target — that would hand the reader
+         * the older value last. */
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+        pa_set(h, 0, 0, "1:fx1:cutoff", 0, 1000);          /* interns the target */
+        pa_playback_scan(in, &in->tracks[0], 0, 0, 0, 384, NULL);
+        pending(h, buf, sizeof(buf));
+        int tgt_id = in->pa_entries[0].target;
+        pa_ring_push(in, (uint16_t)tgt_id, 1);
+        pa_ring_push(in, (uint16_t)tgt_id, 2);
+        pa_ring_push(in, (uint16_t)tgt_id, 3);
+        char small[20];                                   /* room for ONE "1:fx1:cutoff N\n" */
+        int n = pending(h, small, sizeof(small));
+        HX_ASSERT(n > 0 && strstr(small, "cutoff 1\n") && !strstr(small, "cutoff 2"), "a small drain takes the first only");
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "cutoff 2\n1:fx1:cutoff 3\n"), "the next drain gets the rest, still in order");
+        OK("⚠ what does not fit stays at the FRONT — the newest value still arrives last");
         hx_destroy(h);
     }
 

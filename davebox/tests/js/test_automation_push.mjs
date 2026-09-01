@@ -77,12 +77,44 @@ const check = (cond, msg) => {
     automationTick();
     check(reads > 0 && writes.length === 1, 'and then the queue is drained and pushed');
 
-    /* Stopped transport: nothing is being staged, so nothing is read. */
-    const before = reads;
+    /* Stopped transport. ⚠ The stop EDGE stages: the DSP puts every driven
+     * parameter's RESTING value in the queue when the transport stops, and
+     * S.playing is a mirror that flips before this runs. So the drain keeps
+     * going for a few ticks past the edge — and only then goes quiet. */
+    writes.length = 0;
     S.playing = false;
+    staged = '0:fx1:cutoff 4000';               /* the rest, staged on the stop edge */
+    automationTick();
+    check(writes.length === 1 && writes[0].key === 'fx1:cutoff',
+          '⚠ the resting value staged on the STOP edge is pushed — a drain gated on S.playing alone loses it');
     for (let i = 0; i < 10; i++) automationTick();
-    check(reads === before, 'a stopped transport does not poll the queue either');
+    const before = reads;
+    for (let i = 0; i < 10; i++) automationTick();
+    check(reads === before, 'once the grace after the edge is spent, a stopped transport does not poll');
     globalThis.host_module_get_param = realGet;
+}
+
+/* ---- a timed-out write is kept, not lost -------------------------------- */
+{
+    writes.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true;
+    /* The DSP records a value as SENT the moment it stages it, and never stages
+     * it again until it changes. So a push that times out is the same permanent
+     * loss as a stomped fire-and-forget write — unless JS keeps it. */
+    const realSet = globalThis.shadow_set_param_timeout;
+    let fail = 1;
+    globalThis.shadow_set_param_timeout = (slot, key, val, ms) => {
+        writes.push({ slot, key, val, ms });
+        if (fail > 0) { fail--; return false; }
+        return true;
+    };
+    staged = '0:fx1:cutoff 8000';
+    automationTick();
+    check(writes.length === 1 && automationPendingSizeForTest() === 1,
+          '⚠ a write that TIMED OUT stays pending — the DSP will not re-stage it');
+    automationTick();
+    check(writes.length === 2 && automationPendingSizeForTest() === 0,
+          'and is retried on the next tick');
+    globalThis.shadow_set_param_timeout = realSet;
 }
 
 /* ---- the write budget ------------------------------------------------- */

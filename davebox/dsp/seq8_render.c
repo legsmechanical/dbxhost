@@ -224,6 +224,9 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
 
     /* Clock-follow housekeeping: staleness, MovePlay inject drain, start timeout. */
     seq8_clock_follow_tick(inst, frames);
+    /* Transport-stop automation releases, requested from either thread and
+     * done here so the staging ring keeps its one producer. */
+    pa_release_service(inst);
 
     /* Clock OUT transport edges (0xFA/0xFC). Emitted once per block from the
      * audio thread (single producer for the shim ext ring) on the db transport

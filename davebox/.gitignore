@@ -77,3 +77,6 @@ docs/superpowers/
 
 # brainstorming visual-companion artifacts
 .superpowers/
+
+# Local ARM test binaries (built for the device; never shipped, never committed)
+arm-tests/

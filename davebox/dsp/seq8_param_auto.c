@@ -27,7 +27,12 @@
 /* a pass but can never read out of bounds.                              */
 
 static void pa_write_begin(seq8_instance_t *inst) {
-    __atomic_add_fetch(&inst->pa_seq, 1, __ATOMIC_RELEASE);   /* odd: busy */
+    /* ACQ_REL, not RELEASE: release alone lets the data stores that follow
+     * become visible BEFORE the counter goes odd, and a reader that samples
+     * an even count, reads half-written points and samples the same even
+     * count again has been handed a torn store with a clean receipt. The
+     * acquire half pins the data stores after the increment. */
+    __atomic_add_fetch(&inst->pa_seq, 1, __ATOMIC_ACQ_REL);   /* odd: busy */
 }
 
 static void pa_write_end(seq8_instance_t *inst) {
@@ -35,6 +40,14 @@ static void pa_write_end(seq8_instance_t *inst) {
 }
 
 static uint32_t pa_read_seq(const seq8_instance_t *inst) {
+    return __atomic_load_n(&inst->pa_seq, __ATOMIC_ACQUIRE);
+}
+
+/* The reader's closing sample. An acquire LOAD only orders what follows it;
+ * the data loads before it may still be in flight on ARM when it completes,
+ * so the fence is what makes "same count after" mean "same data". */
+static uint32_t pa_read_seq_after(const seq8_instance_t *inst) {
+    __atomic_thread_fence(__ATOMIC_ACQUIRE);
     return __atomic_load_n(&inst->pa_seq, __ATOMIC_ACQUIRE);
 }
 
@@ -46,32 +59,44 @@ static uint32_t pa_read_seq(const seq8_instance_t *inst) {
 /* except the MIDI ones, playback computes the value and leaves it here  */
 /* for JS to push. Single producer, single consumer, no locks.           */
 /*                                                                      */
-/* Overflow drops the OLDEST: a stale automation value has no worth next */
-/* to a fresh one for the same parameter, and blocking the audio thread  */
-/* to preserve it would be the wrong trade. It is recorded so the        */
-/* condition is visible rather than guessed at.                          */
+/* ⚠ ONE producer: the audio thread. Only it may call pa_ring_push — not    */
+/* the SPI thread's transport-stop (that asks via pa_release_request and  */
+/* the audio thread does the pushing on its next block), and not the      */
+/* consumer (it PEEKS and pops only what it has room for). A second       */
+/* producer races on head; a producer touching tail races the consumer.  */
+/*                                                                        */
+/* Overflow drops the NEWEST. Dropping the oldest would mean the producer */
+/* writing the consumer's index, which is the race above; and with the    */
+/* ring sized for several ticks of the scan's own budget, overflow means  */
+/* JS has not drained for a long time, at which point the fresh value is  */
+/* no better than the stale one. It is recorded so the condition is       */
+/* visible rather than guessed at.                                        */
 
 static void pa_ring_push(seq8_instance_t *inst, uint16_t target, uint16_t val) {
     uint32_t head = __atomic_load_n(&inst->pa_ring_head, __ATOMIC_RELAXED);
     uint32_t tail = __atomic_load_n(&inst->pa_ring_tail, __ATOMIC_ACQUIRE);
-    if (head - tail >= PA_RING_SLOTS) {
-        /* Full: retire the oldest so the newest always lands. */
-        __atomic_store_n(&inst->pa_ring_tail, tail + 1, __ATOMIC_RELEASE);
-        inst->pa_ring_dropped = 1;
-    }
+    if (head - tail >= PA_RING_SLOTS) { inst->pa_ring_dropped = 1; return; }
     inst->pa_ring[head % PA_RING_SLOTS].target = target;
     inst->pa_ring[head % PA_RING_SLOTS].val    = val;
     __atomic_store_n(&inst->pa_ring_head, head + 1, __ATOMIC_RELEASE);
 }
 
-/* Consumer side. Returns 1 and fills *out while anything is queued. */
-static int pa_ring_pop(seq8_instance_t *inst, pa_change_t *out) {
+/* Consumer side. Peek returns 1 and fills *out while anything is queued;
+ * pop then retires it. Split so a consumer that turns out to have no room
+ * for the entry can leave it where it is, in order — pushing it back would
+ * put an OLDER value behind the newer ones for the same target, and the
+ * reader that coalesces by target would keep the wrong one. */
+static int pa_ring_peek(seq8_instance_t *inst, pa_change_t *out) {
     uint32_t tail = __atomic_load_n(&inst->pa_ring_tail, __ATOMIC_RELAXED);
     uint32_t head = __atomic_load_n(&inst->pa_ring_head, __ATOMIC_ACQUIRE);
     if (tail == head) return 0;
     *out = inst->pa_ring[tail % PA_RING_SLOTS];
-    __atomic_store_n(&inst->pa_ring_tail, tail + 1, __ATOMIC_RELEASE);
     return 1;
+}
+
+static void pa_ring_pop(seq8_instance_t *inst) {
+    uint32_t tail = __atomic_load_n(&inst->pa_ring_tail, __ATOMIC_RELAXED);
+    __atomic_store_n(&inst->pa_ring_tail, tail + 1, __ATOMIC_RELEASE);
 }
 
 /* ------------------------------------------------------------------ */
@@ -180,12 +205,17 @@ static void pa_clear_track_clip(seq8_instance_t *inst, int track, int clip) {
     }
 }
 
-static void pa_reset_all(seq8_instance_t *inst) {
-    pa_write_begin(inst);
+/* Caller holds the seqlock. */
+static void pa_reset_all_locked(seq8_instance_t *inst) {
     memset(inst->pa_entries, 0, sizeof(inst->pa_entries));
     memset(inst->pa_targets, 0, sizeof(inst->pa_targets));
-    pa_write_end(inst);
     inst->pa_dirty = 0;
+}
+
+static void pa_reset_all(seq8_instance_t *inst) {
+    pa_write_begin(inst);
+    pa_reset_all_locked(inst);
+    pa_write_end(inst);
 }
 
 /* ------------------------------------------------------------------ */
@@ -207,6 +237,7 @@ static void pa_copy_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc) 
         *n = *e;                                      /* points, flags, rest, window */
         n->track = (uint8_t)dt;
         n->clip  = (uint8_t)dc;
+        n->last_sent_valid = 0;   /* the SOURCE was sent; this copy's target may sit anywhere */
         /* A new entry allocated here carries track dt, so the loop's own filter
          * excludes it — the copy cannot feed on itself. */
     }
@@ -268,6 +299,7 @@ static void pa_undo_restore(seq8_instance_t *inst, const pa_entry_t *src, uint8_
         *n = src[i];
         n->track = (uint8_t)t;
         n->clip  = (uint8_t)c;
+        n->last_sent_valid = 0;   /* snapshot-time "sent" says nothing about now */
     }
     pa_write_end(inst);
     pa_mark_dirty(inst);
@@ -373,6 +405,8 @@ static uint32_t pa_entry_tick(const pa_entry_t *e, uint32_t ct, uint32_t clip_ti
 
 #define PA_SECTION_VERSION 1
 
+static void pa_parse_locked(seq8_instance_t *inst, const char *buf, size_t blen);
+
 /* Bounded JSON readers. The shared json_get_int searches from a pointer to the
  * end of the document, which is right for a flat key but wrong inside an array
  * of objects: an entry that omits a sparse key would find the NEXT entry's copy
@@ -447,7 +481,16 @@ static void pa_serialize(seq8_instance_t *inst, FILE *fp) {
  * loading a project without automation clears the previous project's rather
  * than inheriting it. */
 static void pa_parse(seq8_instance_t *inst, const char *buf, size_t blen) {
-    pa_reset_all(inst);
+    /* The whole parse runs under the seqlock: a project can load while the
+     * transport is running, and the audio thread would otherwise scan entries
+     * as they are being filled in. */
+    pa_write_begin(inst);
+    pa_parse_locked(inst, buf, blen);
+    pa_write_end(inst);
+}
+
+static void pa_parse_locked(seq8_instance_t *inst, const char *buf, size_t blen) {
+    pa_reset_all_locked(inst);
     if (!buf) return;
     const char *sec = strstr(buf, "\"pa\":[");
     if (!sec) return;
@@ -559,7 +602,15 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
     struct { uint16_t target; uint16_t val; uint8_t midi; int cc; } out[PA_TICK_MAX_STAGE];
     int nout = 0;
 
-    for (int i = 0; i < PA_MAX_ENTRIES && nout < PA_TICK_MAX_STAGE; i++) {
+    /* Round-robin start. The per-tick cap must not always favour the low
+     * indices: under Smooth every ramping entry changes EVERY tick, so a
+     * (track, clip) with more of them than the cap would otherwise never reach
+     * the ones past it. Each pass starts where the last one was cut off. */
+    int start = (int)(inst->pa_scan_rot % PA_MAX_ENTRIES);
+    int cut = -1;
+    for (int k = 0; k < PA_MAX_ENTRIES; k++) {
+        int i = (start + k) % PA_MAX_ENTRIES;
+        if (nout >= PA_TICK_MAX_STAGE) { cut = i; break; }
         const pa_entry_t *e = &inst->pa_entries[i];
         if (!e->used || e->track != track || e->clip != clip) continue;
         if (!(e->flags & PA_FLAG_ACTIVE)) continue;
@@ -577,12 +628,18 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
 
         int cc = 0;
         int midi = pa_target_is_midi(inst->pa_targets[tgt], &cc);
+        /* A MIDI target leaves as 7 bits: a 14-bit change that lands on the
+         * same 7-bit value is not a change on the wire. Under Smooth that is
+         * most of them. */
+        if (midi && e->last_sent_valid &&
+            (e->last_sent * 127u) / PA_VAL_MAX == (v * 127u) / PA_VAL_MAX) continue;
         out[nout].target = tgt;
         out[nout].val    = v;
         out[nout].midi   = (uint8_t)midi;
         out[nout].cc     = cc;
         nout++;
     }
+    if (cut >= 0) inst->pa_scan_rot = (uint16_t)cut;
 
 #ifdef SEQ8_TESTING
     if (pa_test_midscan_hook) pa_test_midscan_hook(inst);
@@ -592,7 +649,7 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
      * existed as a whole — drop it rather than act on it. ⚠ This catches a
      * write that both started and finished during the pass; the check at the
      * top only catches one still in flight. */
-    if (pa_read_seq(inst) != seq0) return;
+    if (pa_read_seq_after(inst) != seq0) return;
 
     for (int i = 0; i < nout; i++) {
         /* last_sent is written from the audio thread only, and read by it;
@@ -619,17 +676,42 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
  * driving goes back to the value it held before automation touched it.
  * Without this a parameter is simply abandoned wherever the playhead left it —
  * and for a chain parameter that value is what the slot then persists. */
+/* AUDIO THREAD ONLY — it pushes on the ring. Anyone else asks with
+ * pa_release_request and the next render block does it. */
 static void pa_release_track(seq8_instance_t *inst, int track, int clip) {
     uint32_t seq0 = pa_read_seq(inst);
-    if (seq0 & 1u) return;
+    if (seq0 & 1u) {                        /* a write is in flight: retry next block */
+        inst->pa_release_clip[track] = (uint8_t)clip;
+        __atomic_or_fetch(&inst->pa_release_mask, (uint8_t)(1u << track), __ATOMIC_RELEASE);
+        return;
+    }
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
         pa_entry_t *e = &inst->pa_entries[i];
         if (!e->used || e->track != track || e->clip != clip) continue;
-        if (e->rest == PA_VAL_UNSET) { e->last_sent_valid = 0; continue; }
+        e->last_sent_valid = 0;
+        /* A deactivated entry was not driving the parameter, so it has nothing
+         * to give back — the value there is whatever the user set by hand, and
+         * Stop must not undo that. */
+        if (!(e->flags & PA_FLAG_ACTIVE)) continue;
+        if (e->rest == PA_VAL_UNSET) continue;
         uint16_t tgt = e->target;
         if (tgt >= PA_MAX_TARGETS) continue;
-        e->last_sent_valid = 0;
         if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
             pa_ring_push(inst, tgt, e->rest);
     }
+}
+
+/* The transport stops from either thread (a button on the SPI thread, a stale
+ * clock on the audio thread). Both leave a request here and the audio thread
+ * serves it at the top of its next block, so the ring keeps its one producer. */
+static void pa_release_request(seq8_instance_t *inst, int track, int clip) {
+    inst->pa_release_clip[track] = (uint8_t)clip;
+    __atomic_or_fetch(&inst->pa_release_mask, (uint8_t)(1u << track), __ATOMIC_RELEASE);
+}
+
+static void pa_release_service(seq8_instance_t *inst) {
+    uint8_t mask = __atomic_exchange_n(&inst->pa_release_mask, 0, __ATOMIC_ACQ_REL);
+    if (!mask) return;
+    for (int t = 0; t < NUM_TRACKS; t++)
+        if (mask & (1u << t)) pa_release_track(inst, t, (int)inst->pa_release_clip[t]);
 }

@@ -23,6 +23,7 @@
  * flags, LFO slots) this rig has no use for.
  */
 
+import { automationInvalidateMeta } from './ui_automation.mjs';
 import { engineDescribe, engineLoadKitStructure, engineLoadedModule,
          engineHostsOwnUi } from './ui_engine.mjs';
 
@@ -1095,6 +1096,10 @@ export function activeSection(sections, bankIdx) {
  * which discovery path produced the layout — useful when a module lays out
  * badly and you need to know whether to blame the hierarchy or the fallback. */
 export function discover(slot, comp) {
+    /* Discovery runs when a slot's module is (re)loaded: whatever automation
+     * cached about this slot's parameter ranges is now about a module that
+     * may no longer be there. */
+    automationInvalidateMeta(slot);
     const { chainParams, hierarchy, diag } = engineDescribe(slot, comp);
 
     /* chain_params is the AUTHORITY for value metadata. ui_hierarchy only

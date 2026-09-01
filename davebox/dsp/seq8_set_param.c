@@ -392,8 +392,10 @@ static void ext_transport_stop(seq8_instance_t *inst) {
         /* Per-parameter automation goes back to rest on the same edge. A
          * chain parameter that automation was driving is otherwise abandoned
          * wherever the playhead stopped — and the slot then PERSISTS that
-         * value as if the user had dialled it. */
-        pa_release_track(inst, t, (int)_tr->active_clip);
+         * value as if the user had dialled it. Requested, not done: this runs
+         * on whichever thread stopped the transport, and only the audio
+         * thread may feed the staging ring. */
+        pa_release_request(inst, t, (int)_tr->active_clip);
     }
 }
 

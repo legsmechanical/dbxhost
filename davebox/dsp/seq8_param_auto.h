@@ -34,11 +34,11 @@
 #define PA_MAX_ENTRIES     160   /* automated (track, clip, target) triples in a project */
 #define PA_ENTRY_POINTS    512   /* points per entry: 16 bars at 1/32, or a dense recorded sweep */
 #define PA_MAX_TARGETS      64   /* distinct parameters automated anywhere in the project */
-#define PA_TARGET_LEN       40   /* "<slot>:<comp>:<key>" — longest real key seen is well under */
+#define PA_TARGET_LEN       64   /* "<slot>:<comp>:<key>" — longest real target seen is 37 (a JV-880 nvram key) */
 #define PA_VAL_MAX       16383   /* values are 14-bit normalized; JS maps to/from wire units */
 #define PA_VAL_UNSET     0xFFFF
 #define PA_UNDO_ENTRIES     16   /* automated params per clip an undo slot can hold */
-#define PA_RING_SLOTS       64   /* staged (target, value) changes awaiting the JS push */
+#define PA_RING_SLOTS      256   /* staged (target, value) changes awaiting the JS push; > 8 tracks x PA_TICK_MAX_STAGE x a few ticks */
 #define PA_TICK_MAX_STAGE   16   /* changes one tick may stage — see pa_playback_scan */
 
 #define PA_FLAG_ACTIVE     0x01  /* cleared by Mute+knob: kept, but not played */

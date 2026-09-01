@@ -1309,6 +1309,11 @@ typedef struct {
     uint32_t   pa_ring_head;
     uint32_t   pa_ring_tail;
     uint8_t    pa_ring_dropped;   /* the ring overflowed; reported and cleared on read */
+    uint16_t   pa_scan_rot;       /* where the capped playback scan resumes — see pa_playback_scan */
+    /* Transport-stop release requests, served on the audio thread so the ring
+     * keeps its single producer. Bit t = track t; clip index alongside. */
+    uint8_t    pa_release_mask;
+    uint8_t    pa_release_clip[NUM_TRACKS];
 
     /* Result of last all_lanes_beat_stretch: 0=none, 1=ok, -1=blocked */
     int all_lanes_stretch_result;
@@ -6376,7 +6381,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
             }
             inst->state_buf[_pos] = '\0';
             inst->state_snap_len = (uint32_t)_pos;
-            inst->state_dirty = 0;
+            /* NOT marked clean here: that happens when the LAST chunk is
+             * served (below). Clearing at chunk 0 meant a fetch that failed
+             * part-way lost the save until the next edit — the caller's retry
+             * would find nothing dirty and get an empty chunk 0. */
         }
 
         uint32_t chunk = (uint32_t)(out_len > 0 ? out_len - 1 : 0);
@@ -6387,6 +6395,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         if (n > chunk) n = chunk;
         memcpy(out, inst->state_buf + off, n);
         out[n] = '\0';
+        /* The caller has now read to the end: the snapshot is delivered, so
+         * the state is clean as of chunk 0's serialization. An edit that landed
+         * mid-fetch has already re-dirtied it and rides the next save. */
+        if (off + n >= inst->state_snap_len) inst->state_dirty = 0;
         return (int)n;
     }
 
@@ -6548,19 +6560,21 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         if (out_len > 0) out[0] = '\0';
         if (!inst) return 0;
         pa_change_t ch;
-        while (pa_ring_pop(inst, &ch)) {
-            if (ch.target >= PA_MAX_TARGETS) continue;
+        while (pa_ring_peek(inst, &ch)) {
+            if (ch.target >= PA_MAX_TARGETS) { pa_ring_pop(inst); continue; }
             int w = snprintf(out + n, (size_t)(out_len - n), "%s %u\n",
                              inst->pa_targets[ch.target], (unsigned)ch.val);
             if (w < 0 || n + w >= out_len) {
-                /* Out of room: put it back so nothing is lost, and let the next
-                 * poll take it. Trimming the partial line keeps the reader's
+                /* Out of room: leave it in the ring, IN PLACE, for the next
+                 * poll. (Pushing it back would queue this older value behind
+                 * the newer ones for the same target, and the reader keeps the
+                 * last it sees.) Trimming the partial line keeps the reader's
                  * string honest. */
                 out[n] = '\0';
-                pa_ring_push(inst, ch.target, ch.val);
                 break;
             }
             n += w;
+            pa_ring_pop(inst);
         }
         return n;
     }
