@@ -540,6 +540,15 @@ static void pa_parse(seq8_instance_t *inst, const char *buf, size_t blen) {
  * stays independent of the pfx runtime's internals. */
 typedef void (*pa_midi_emit_fn)(seq8_track_t *tr, int cc, uint8_t val);
 
+#ifdef SEQ8_TESTING
+/* Test seam. The end-of-pass seqlock check catches a write that STARTS AND
+ * FINISHES while the pass is reading — which single-threaded code cannot
+ * produce, so without this hook that check is unreachable from a test and a
+ * mutation removing it survives. Set by a test to run a write mid-pass; NULL
+ * and absent from the shipped build. */
+void (*pa_test_midscan_hook)(seq8_instance_t *inst) = 0;
+#endif
+
 static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
                              int clip, uint32_t ct, uint32_t clip_ticks,
                              pa_midi_emit_fn emit) {
@@ -575,8 +584,14 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
         nout++;
     }
 
+#ifdef SEQ8_TESTING
+    if (pa_test_midscan_hook) pa_test_midscan_hook(inst);
+#endif
+
     /* Did anything move underneath us? Then this pass saw a store that never
-     * existed as a whole — drop it rather than act on it. */
+     * existed as a whole — drop it rather than act on it. ⚠ This catches a
+     * write that both started and finished during the pass; the check at the
+     * top only catches one still in flight. */
     if (pa_read_seq(inst) != seq0) return;
 
     for (int i = 0; i < nout; i++) {

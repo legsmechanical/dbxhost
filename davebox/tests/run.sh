@@ -7,7 +7,11 @@ CC="${CC:-clang}"
 # _GNU_SOURCE: seq8.c uses fmemopen (state_full serialization), which glibc
 # hides under strict -std=c11 without a feature macro — macOS clang exposes it
 # regardless, so this only ever failed in Linux CI, not locally.
-FLAGS="-std=c11 -D_GNU_SOURCE -Idsp -Itests/harness -Wall -Wno-unused-function -g"
+# SEQ8_TESTING: compiles the test-only seams (currently pa_test_midscan_hook,
+# which lets a test run a store write in the middle of an audio-thread pass —
+# a race single-threaded code cannot otherwise produce). The logic under test
+# is identical either way; the shipped build has no hook.
+FLAGS="-std=c11 -D_GNU_SOURCE -DSEQ8_TESTING -Idsp -Itests/harness -Wall -Wno-unused-function -g"
 OUT="/tmp/davebox-tests"
 mkdir -p "$OUT"
 

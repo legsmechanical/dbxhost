@@ -24,6 +24,12 @@ static int pending(hx_t *h, char *buf, int len) {
     return hx_get_param(h, "pa_pending", buf, len);
 }
 
+/* Runs as if another thread had completed a store edit during the pass. */
+static void pa_midscan_write(seq8_instance_t *inst) {
+    pa_write_begin(inst);
+    pa_write_end(inst);
+}
+
 static int lines(const char *s) {
     int n = 0;
     for (const char *p = s; *p; p++) if (*p == '\n') n++;
@@ -199,6 +205,32 @@ int main(void) {
         pending(h, buf, sizeof(buf));
         HX_ASSERT(strstr(buf, "1:fx1:cutoff 7000"), "and the next tick works normally");
         OK("⚠ a pass overlapping a write is discarded, not acted on");
+        hx_destroy(h);
+    }
+
+    /* ---- a write that lands MID-PASS is caught too ------------------ */
+    {
+        /* The check at the top of the scan catches a write still in flight.
+         * This one catches a write that starts AND finishes while the pass is
+         * reading — the pass then holds a mixture of before and after, which is
+         * a store state that never existed. Only reachable through the test
+         * hook: single-threaded code cannot otherwise produce the race. */
+        extern void (*pa_test_midscan_hook)(seq8_instance_t *inst);
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+        pa_set(h, 0, 0, "1:fx1:cutoff", 0, 7000);
+
+        pa_test_midscan_hook = pa_midscan_write;
+        pa_playback_scan(in, &in->tracks[0], 0, 0, 0, 384, NULL);
+        pa_test_midscan_hook = 0;
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(lines(buf) == 0, "a pass with a completed write inside it stages NOTHING");
+        OK("⚠ a write that begins and ends mid-pass invalidates the pass");
+
+        pa_playback_scan(in, &in->tracks[0], 0, 0, 0, 384, NULL);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff 7000"), "the next pass is clean");
+        OK("and the following pass proceeds normally");
         hx_destroy(h);
     }
 
