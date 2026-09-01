@@ -55,7 +55,7 @@ import { checkBackHold, checkShiftNoteHold, backTapWouldAct, applyShiftEdge } fr
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
-         SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS } from './ui_engine.mjs';
+         SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { soundActive, soundEnter, soundEnterMove, soundExit,
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
     soundEnteredInSession, soundConsumeLedDirty,
@@ -1222,7 +1222,10 @@ export function _tickImpl() {
          *
          * Writes are synchronous SHM round-trips, so they stay budgeted here in
          * tick rather than in the MIDI handler. */
-        if (S.sessionView && (S.tickCount % POLL_INTERVAL) === 0) {
+        if (S.sessionView && (S.tickCount % POLL_INTERVAL) === 0 &&
+                SESS_KNOB_MODES[S.sessKnobMode].widget !== 'gateway') {
+            /* The gateway has no per-track value — polling it would burn SHM
+             * round-trips filling the cache from a key nobody serves. */
             const _modeKey = SESS_KNOB_KEYS[S.sessKnobMode];
             const _modeDef = SESS_KNOB_DEFAULTS[S.sessKnobMode];
             schSlotMasksAllTracks(_sessMaskScratch);

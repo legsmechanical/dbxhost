@@ -200,17 +200,17 @@ export const SESS_KNOB_MODES = [
      * right for pan and the sends and WRONG here, on hardware — a fader wants
      * travel where a pan wants reach. 510 is the pre-2026-08-26 feel he asked to
      * keep, measured at 511 counts. */
-    { key: 'volume', label: 'VOLUME', widget: 'vbar',   def: 1.0, max: SLOT_LEVEL_MAX,
+    { key: 'volume', label: 'VOLUME', short: 'Vol', widget: 'vbar',   def: 1.0, max: SLOT_LEVEL_MAX,
       units: 200, sweep: 510,
       fmt: (v) => v.toFixed(2) + 'x' },
-    { key: 'pan',    label: 'PAN',    widget: 'arcbip', def: 0.5, max: 1.0,
+    { key: 'pan',    label: 'PAN',    short: 'Pan', widget: 'arcbip', def: 0.5, max: 1.0,
       units: 200,
       fmt: (v) => { const pct = Math.round((v - 0.5) * 200); return pct === 0 ? 'C' : pct < 0 ? Math.abs(pct) + 'L' : pct + 'R'; },
       snap: 0.5, snapZone: 0.02 },
-    { key: 'send_a', label: 'SEND A', widget: 'arc',    def: 0.0, max: 1.0,
+    { key: 'send_a', label: 'SEND A', short: 'SndA', widget: 'arc',    def: 0.0, max: 1.0,
       units: 100,
       fmt: (v) => Math.round(v * 100) + '%' },
-    { key: 'send_b', label: 'SEND B', widget: 'arc',    def: 0.0, max: 1.0,
+    { key: 'send_b', label: 'SEND B', short: 'SndB', widget: 'arc',    def: 0.0, max: 1.0,
       units: 100,
       fmt: (v) => Math.round(v * 100) + '%' },
     /* ⭑ THE GATEWAY (Josh, 2026-09-01): the last stop on the session walk is
@@ -219,7 +219,7 @@ export const SESS_KNOB_MODES = [
      * the click opens the Master/Send FX list; a left turn walks back to
      * SEND B. `widget: 'gateway'` is what every consumer keys on — the knobs
      * are INERT here and the render is the prompt card. */
-    { key: 'fx', label: 'SESSION FX', widget: 'gateway', def: 0, max: 0,
+    { key: 'fx', label: 'SESSION FX', short: 'FX', widget: 'gateway', def: 0, max: 0,
       units: 0, fmt: () => '' },
 ];
 /* One step = one of THIS mode's own units. Derived from the declaration, never

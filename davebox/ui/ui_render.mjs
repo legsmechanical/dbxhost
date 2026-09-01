@@ -527,14 +527,13 @@ function drawMetroIndicator() {
         fill_rect(tx + tw + 2, 23, 2, 2, 1); /* right dot */
     }
     if (S.sessionView) {
-        const modeNames = ['Vol', 'Pan', 'SndA', 'SndB'];
-        /* ...and 'FX' for the bank one past SEND B. sessKnobMode deliberately
-         * stays on SEND B while the FX list is up (that is where a left turn
-         * back out lands), so the position has to be read from the screen
-         * itself or the indicator would claim SEND B while the jog is
-         * somewhere else — which is the whole reason this label exists. */
-        const ml = (soundActive() && soundIsGlobal() && soundEnteredInSession())
-                 ? 'FX' : modeNames[S.sessKnobMode];
+        /* ⚠ Was a parallel 4-entry literal — the gateway made sessKnobMode
+         * reach 4, modeNames[4].length threw, and the WHOLE session draw died
+         * right after this indicator (Josh, on device 2026-09-01: 'an
+         * incomplete session view... only the count-in indicator'). Read the
+         * mode table itself, the one owner; the gateway carries 'FX'. */
+        const _sm = SESS_KNOB_MODES[S.sessKnobMode];
+        const ml = (_sm && _sm.short) || 'Vol';
         const mx = 128 - ml.length * 6;
         pixelPrint(mx, 22, ml, 1);
     }

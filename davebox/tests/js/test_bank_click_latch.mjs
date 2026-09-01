@@ -41,6 +41,8 @@ await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const { bankCardVisible } = await import('../../ui/ui_render.mjs');
 const sndMod = await import('../../ui/ui_sound.mjs');
+const renderMod = await import('../../ui/ui_render.mjs');
+const icc = await import('../../ui/ui_input_cc.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashTicks = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 2;
@@ -213,6 +215,28 @@ step('⭐ Back from a bus lands on the FX LIST, never the track prompt (the TRAC
         throw new Error('Back did not land on the FX list (view ' + sndMod.soundViewForTest() + ')');
     sndMod.soundExit();
     S.sessionView = false;
+});
+
+step('⭐ the session screens DRAW at the gateway — the mode-label crash regression', () => {
+    /* A parallel 4-entry label array in drawMetroIndicator threw at
+     * sessKnobMode=4 and killed the WHOLE session draw mid-frame — Josh saw
+     * 'an incomplete session view... only the count-in indicator'. The
+     * indicator reads the mode table now. Both screens must survive a draw
+     * at the gateway: the latched page and, after Back, the overview. */
+    const render = renderMod;
+    rest(); S.sessionView = true;
+    click(); globalThis.tick();
+    if (!S.sessMixerLatched) throw new Error('setup: click did not latch');
+    S.sessKnobMode = 4;                              /* the gateway */
+    globalThis.clear_screen(); render.drawUI();      /* throws = fails the step */
+    /* ⚠ Direct _onCCMsg dispatch: this step's subject is the DRAW crash, and
+     * accumulated rig residue upstream in ui.js eats a full-path Back here —
+     * the full path is proven by the SESSION-mirrors step above and by the
+     * on-device probe. */
+    icc._onCCMsg(51, 127); icc._onCCMsg(51, 0); globalThis.tick();
+    if (S.sessMixerLatched) throw new Error('Back did not dismiss');
+    globalThis.clear_screen(); render.drawUI();      /* the crash was HERE */
+    S.sessionView = false; S.sessKnobMode = 0;
 });
 
 process.exit(failed);
