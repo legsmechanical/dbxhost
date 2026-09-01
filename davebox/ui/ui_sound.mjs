@@ -732,6 +732,19 @@ export function soundInflightForTest() { return S.inflight; }
  * kit module, minus the fixture. */
 export function soundHostedCtxForTest() { return hostedCtx(); }
 export function soundBusCountForTest() { return FX_BUSES.length; }
+/* The param-pages editor's live state: whether it took the screen, and the page
+ * the jog is on. Pins the OUTCOME (which pages exist) rather than ppApplies()'s
+ * boolean — a gate can be right while the plan it produces is wrong. */
+export function soundPPForTest() {
+    return {
+        on: ppOn, page: ppOn ? currentParamPage() : null, applies: ppApplies(),
+        /* ⭑ The TERMS, so a test can prove which one decided. A control that
+         * asserts only `!applies` passes for any reason at all — including a
+         * precondition it lost by accident. */
+        terms: { flag: PP_EDITOR, active: S.active, busOk: !S.bus || S.bus.kind === 'global',
+                 slot: S.slot >= 0, notHosted: !S.hosted, moduleId: !!S.moduleId },
+    };
+}
 export function soundValueForTest(key) { return S.values[key]; }
 /* The knob TARGET rows, built the way the picker builds them — the list is
  * assembled fresh on every open from live component probes, so this exercises
@@ -5633,11 +5646,29 @@ function ppHasLayer() {
     return paramPagesMenuEntered();
 }
 
-/* Where the editor applies. NOT a Move bus (no ui_hierarchy / chain_params to
- * plan from — that is requirement 1's "to the extent there aren't conflicts"),
- * and not a module drawing its OWN canvas, which already owns the whole frame. */
+/* Where the editor applies.
+ *
+ * ⭑ SESSION BUSES USE IT TOO (Josh, 2026-09-02: "master/send effects should use
+ * the same editor as track effects"). An FX insert on Master or Send A/B is an
+ * ordinary audio_fx module with the same `ui_hierarchy` a chain slot's is, so
+ * there was never a technical reason it planned differently — it simply was not
+ * wired when the grid was imported ("SLOT CHAIN ONLY", dc9705c0), because
+ * upstream had not wired Master FX either at our watermark. The visible effect
+ * is parity: the trailing My Presets / Module pages appear at the end of the
+ * jog walk instead of hiding behind a jog-click, `visible_if` starts folding
+ * controls away, and the knob rings light.
+ *
+ * ⚠ Move buses stay out as a SCOPING choice, not an impossibility — Josh ruled
+ * "master/send", so that is what shipped. Their FX inserts are ordinary audio_fx
+ * modules that would plan fine (see FX_BUSES' neighbours above: they "ride the
+ * same machinery"); it is only Move's GENERATOR row, its own voice reached
+ * through co-run, that has nothing to plan from. So the same reverb gets the
+ * grid and My Presets on Master and the older editor on a Move bus — a known
+ * inconsistency, and the reason this is worth revisiting rather than a wall.
+ * ⚠ And not a module drawing its OWN canvas, which already owns the whole frame. */
 function ppApplies() {
-    return PP_EDITOR && S.active && !S.bus && S.slot >= 0 && !S.hosted && !!S.moduleId;
+    const busOk = !S.bus || S.bus.kind === 'global';
+    return PP_EDITOR && S.active && busOk && S.slot >= 0 && !S.hosted && !!S.moduleId;
 }
 
 /* ⚠ THE PREFIX IS S.comp, AND THAT IS LOAD-BEARING. The binding hands the io

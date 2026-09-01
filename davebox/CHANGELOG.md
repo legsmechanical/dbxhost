@@ -38,6 +38,11 @@ the section into a versioned heading at release time.
   still steps out one level at a time. On the overview it means switch/peek
   view exactly as before.
 ### Fixes (pending)
+- **Master and Send FX effects use the same editor as track effects.** They now
+  open the labelled knob grid, and the **My Presets** and **Module** pages sit at
+  the end of the jog walk where you'd expect them instead of hiding behind a
+  jog-click. Controls a module hides in its current mode are folded away there
+  too, and the knob rings light. Move FX inserts are unchanged.
 - **Record leaves step recording.** Pressing Record during a step-record take
   now simply ends the take, instead of also arming a normal recording
   underneath it. Shift+Sample is declined while a take is open, so a Live
