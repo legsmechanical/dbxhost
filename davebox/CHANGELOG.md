@@ -17,6 +17,8 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Three more Daves join the pool.** Welcome CROSBY, CRONENBERG, and the
+  uncommon BANNER — don't stare into his eyes too long. 37 to collect.
 - **Step recording.** Shift+Record with the transport stopped opens SH-101
   style step entry on melodic tracks: pads write the blinking white cursor
   step (chords too — hold several pads), `>` rests or, with pads held, ties
