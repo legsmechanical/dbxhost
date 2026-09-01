@@ -1561,7 +1561,7 @@ views (`#seq` / `#mix` / `#sound` in the address bar can be bookmarked).
 | Delete + Play | Deactivate clips (running) · panic (stopped) |
 | Undo / Shift + Undo | Undo / redo |
 | Note/Session (tap / hold) | On an overview: switch / peek view — anywhere else: return to the overview |
-| Shift + Note/Session (tap / hold) | This track's sound editor / straight to its instrument |
+| Shift + Note/Session (tap / hold) | This track's sound editor / straight to its instrument — in Session view, the Master/Send FX list |
 | Shift + Step 2 | Settings menu |
 
 ### Drum track (additions)

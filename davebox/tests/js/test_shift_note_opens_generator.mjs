@@ -293,13 +293,22 @@ step('a MIDI-routed track opens nothing and says why — on the HOLD', () => {
 
 /* Session view has its own meaning for this gesture (the buses); the opener is
  * track-view only, and co-run refuses in session view anyway. */
-step('session view is left alone', () => {
+step('session view does not get the TRACK opener (it gets its own — see the step above)', () => {
+    /* ⚠ REWRITTEN 2026-09-02. This used to assert the gesture did NOTHING in
+     * session view. Josh ruled it a destination there too ("shift+menu in
+     * session view should jump to master/send effects menu"), so what must
+     * still hold is narrower: it must not open a TRACK's sound flavour. */
     S.sessionView = true;
+    if (sound.soundActive()) sound.soundExit();
+    S.sessMixerLatched = false;
     ticks(2);
     shiftNote();
     ticks(4);
-    if (sound.soundActive())
+    if (sound.soundActive() && !sound.soundIsGlobal())
         throw new Error('the track-view opener fired in session view');
+    if (!sound.soundActive())
+        throw new Error('session view now HAS a counterpart and it did not fire');
+    sound.soundExit(); S.sessMixerLatched = false;
     S.sessionView = false;
 });
 
@@ -335,6 +344,79 @@ function menuPress() {
  * code that still reads as live. Flagged for removal rather than deleted here,
  * because it is also consulted by the unshifted Note/Session path and that
  * deserves its own look. */
+
+step('⭐ SESSION VIEW: Shift+Menu jumps to the MASTER/SEND FX list — and it must be VISIBLE', () => {
+    /* Josh, 2026-09-02: "shift+menu in session view should jump to master/send
+     * effects menu." The track flavour opens THIS TRACK's sound menu; the
+     * session's counterpart is its own device list. Before this the gesture
+     * returned outright in session view ("session view has its own
+     * counterpart" — there wasn't one).
+     *
+     * ⚠⚠ THE HALF THAT WOULD SHIP BROKEN: since the session FX list became
+     * owned by sessMixerVisible(), opening it WITHOUT latching bank mode makes
+     * it stand down on the very next render — the screen would not change, the
+     * gesture would look dead, and sound mode would sit active underneath
+     * defeating the click gate. Asserting soundActive() alone would MISS that
+     * entirely, so this asserts the list actually DRAWS. */
+    S.genReturn = null;
+    globalThis.init();
+    S.awaitingProjectSelect = false;
+    S.ledInitComplete = true;
+    if (sound.soundActive()) sound.soundExit();
+    S.sessionView = true;
+    S.sessMixerLatched = false;          /* at rest, nothing latched */
+    S.knobTouched = -1;
+    S.touchedIdx = -1; S.volTouched = false;
+    S.jogTouched = false; S.bankSelectTick = -1;
+    ticks(4);
+
+    shiftNoteTap();
+    ticks(2);
+    if (!sound.soundActive())
+        throw new Error('Shift+Menu did nothing in session view');
+    if (!sound.soundIsGlobal())
+        throw new Error('it opened a TRACK flavour in session view, not the session buses');
+    if (!S.sessMixerLatched)
+        throw new Error('bank mode was not latched — the list will stand down on the next ' +
+                        'render and the gesture will look dead');
+    if (sound.soundRender() !== true)
+        throw new Error('the FX list opened INVISIBLY — soundActive() is true but nothing draws');
+
+    /* Idempotent, exactly like the track flavour: pressed again from inside a
+     * bus it collapses back to the list rather than toggling off.
+     * ⚠ ACTUALLY GO INTO A BUS — an earlier version of this step re-pressed
+     * from the LIST and only claimed otherwise in its comment, which is how it
+     * missed the stale-level-edit defect below. */
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 3, 127]));   /* click: enter MASTER FX */
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 3, 0]));
+    ticks(3);
+    /* VIEW_BUSES = 9 is the list; entering a bus lands on VIEW_BLOCKS = 0. */
+    if (sound.soundViewForTest() !== 0)
+        throw new Error('rig: the click did not enter a bus (view ' +
+                        sound.soundViewForTest() + ')');
+    /* ⚠ And with a LEVEL EDIT live: a collapse must end it, exactly as leaveBus
+     * does. Left set, sound mode's Back chain tests busLevelEditing BEFORE
+     * VIEW_BUSES and spends the next press clearing a stale flag — a dead Back. */
+    /* ⚠ Through sound mode's OWN accessor: busLevelEditing is on its private S,
+     * and setting it via ui_state writes a DIFFERENT object (two objects called
+     * S) — the assertion would then pin nothing at all. */
+    sound.soundBusLevelEditingForTest(true);
+    shiftNoteTap();
+    ticks(2);
+    if (!sound.soundActive() || !sound.soundIsGlobal())
+        throw new Error('a second press toggled the list off instead of collapsing to it');
+    if (sound.soundBusLevelEditingForTest())
+        throw new Error('the collapse left a live level edit armed — the next Back is a dead press');
+    if (sound.soundRender() !== true) throw new Error('the list stopped drawing after a re-press');
+
+    /* The HOLD has no session counterpart and must not invent one. */
+    sound.soundExit(); S.sessMixerLatched = false;
+    shiftNoteHold();
+    ticks(2);
+    if (sound.soundActive())
+        throw new Error('the HOLD opened something in session view — it has no counterpart');
+    S.sessionView = false;
+});
 
 step('⚠ control: with no gesture crumb, Menu is NOT a closer', () => {
     /* ⚠ Explicitly crumb-FREE. The HOLD stamps `genReturn` again as of

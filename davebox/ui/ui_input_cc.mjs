@@ -2101,7 +2101,32 @@ function _handleBack(d2) {
  * track's instrument" means the generator's canvas on a Schwung track, co-run
  * on a Move one, and an EXT track has neither and says so. */
 function shiftNoteSessionAction(wantInstrument) {
-if (S.sessionView) return;          /* session view has its own counterpart */
+if (S.sessionView) {
+    /* ⭑ SESSION VIEW: the same gesture, pointed at the session's own devices
+     * (Josh, 2026-09-02: "shift+menu in session view should jump to
+     * master/send effects menu"). The track flavour opens THIS TRACK's sound
+     * menu; session view's counterpart is the MASTER / SEND FX list, which is
+     * the session's device list. Idempotent the same way: already there and it
+     * stays, inside a bus and it collapses back to the list in one press —
+     * soundEnterBuses resets the view and clears S.bus, which IS that collapse.
+     *
+     * ⚠⚠ LATCH BANK MODE, or this opens INVISIBLY. Since the session FX list
+     * became owned by sessMixerVisible() (the one law, session flavour), a list
+     * opened without the latch stands down on the very next render — the screen
+     * would not change and the gesture would look dead, while sound mode sat
+     * active underneath defeating the click gate. The click path never hit this
+     * because it enters FROM the latched mixer page.
+     *
+     * ⚠ The HOLD (wantInstrument) has no session counterpart — there is no one
+     * instrument to jump to — so it stays a no-op rather than inventing a
+     * destination. */
+    if (wantInstrument) return;
+    /* ⭑ The latch is soundEnterBuses' own job (it is the ONE door into this
+     * list, and the jog-click door needs it just as much) — not repeated here. */
+    soundEnterBuses();
+    forceRedraw();
+    return;
+}
 const _gt = S.activeTrack;
 if (!wantInstrument) {
     /* TAP — the menu, from wherever you are. Idempotent: already there and

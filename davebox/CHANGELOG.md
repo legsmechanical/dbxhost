@@ -37,7 +37,16 @@ the section into a versioned heading at release time.
   you back to the overview of the view you're in, however deep you were. Back
   still steps out one level at a time. On the overview it means switch/peek
   view exactly as before.
+### Features (pending, cont. 2)
+- **Shift + Note/Session in Session view opens the Master/Send FX list.** The
+  gesture already jumped straight to a track's sound editor in Track view; in
+  Session view it now jumps to the session's own effects, from wherever you are.
 ### Fixes (pending)
+- **The session FX list follows the same display law as track banks.** It stays
+  up while the session bank view is open instead of hiding until you touch the
+  jog — and a jog click no longer falls through it.
+- **Save As updates the preset name on screen.** The new name now shows straight
+  away instead of keeping the previous one.
 - **Master and Send FX effects use the same editor as track effects.** They now
   open the labelled knob grid, and the **My Presets** and **Module** pages sit at
   the end of the jog walk where you'd expect them instead of hiding behind a

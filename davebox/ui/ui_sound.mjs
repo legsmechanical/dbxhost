@@ -732,6 +732,13 @@ export function soundInflightForTest() { return S.inflight; }
  * kit module, minus the fixture. */
 export function soundHostedCtxForTest() { return hostedCtx(); }
 export function soundBusCountForTest() { return FX_BUSES.length; }
+/* ⚠ busLevelEditing lives on sound mode's OWN S, not the global one — a rig
+ * that sets it through ui_state is writing a different object entirely (the
+ * two-objects-called-S trap) and pins nothing. */
+export function soundBusLevelEditingForTest(v) {
+    if (v !== undefined) S.busLevelEditing = !!v;
+    return S.busLevelEditing;
+}
 export function soundPendingActionForTest() { return S.pendingAction; }
 export function soundQueueActionForTest(a) { S.pendingAction = a; }
 /* The param-pages editor's live state: whether it took the screen, and the page
@@ -1983,6 +1990,25 @@ export function soundEnterBuses() {
     /* Flush any pending level save for the track we came from (the knob
      * itself is Move's unless Shift is held — nothing to hand back). */
     releaseVolume();
+    /* ⚠ A live BUS LEVEL edit is over — mirror leaveBus. Both doors into this
+     * list are an entry or a collapse, never a continuation, and leaving the
+     * flag set makes the next Back a DEAD PRESS: sound mode's Back chain tests
+     * busLevelEditing before VIEW_BUSES, so it silently spends the press
+     * clearing a stale flag. The dirty level is queued here rather than at
+     * soundExit, so it is not carried further than the edit it belongs to. */
+    S.busLevelEditing = false;
+    if (S.busLevelDirty) { S.busLevelDirty = false; S.pendingAction = { t: 'slotsave' }; }
+    /* ⚠⚠ BANK MODE IS PART OF OPENING THIS LIST — the ONE place that knows it,
+     * because both doors need it and two owners would drift. Since the list's
+     * visibility became sessMixerVisible()'s (the one law, session flavour), a
+     * list opened without the latch STANDS DOWN on the very next render: open,
+     * invisible, and with sound mode active underneath defeating the session
+     * click gate's !soundActive().
+     * ⚠ The jog-click door hits this too, not just the Shift+Menu gesture —
+     * sessMixerVisible() is the latch OR the mixer's knob PEEK, so walking to
+     * the gateway under a peek and clicking opens the list unlatched, and
+     * releasing the knob hides it. */
+    GS.sessMixerLatched = true;
     S.active = true;
     S.enterSession = true;      /* called from SESSION view */
     S.bus = null;
