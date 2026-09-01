@@ -582,11 +582,18 @@ static void seq8_load_state(seq8_instance_t *inst) {
 
     /* Version gate: only v=36 accepted. Clear Session sentinel (v=0) is silently
      * wiped. Genuine old-format files (v>0 && v!=36) defer deletion behind a JS
-     * confirm dialog — flag is set on first encounter, consumed on re-entry. */
+     * confirm dialog — flag is set on first encounter, consumed on re-entry.
+     *
+     * ⚠ Every exit from here is a load that did NOT happen, so the automation
+     * the instance is holding belongs to whatever was loaded BEFORE. Clearing
+     * it is not tidiness: without this, Clear Session wipes the notes and the
+     * automation plays on over an empty project, and the next save writes it
+     * back into the cleared file. */
     {
         int sv = json_get_int(buf, "v", -1);
         if (sv != 36) {
             free(buf);
+            pa_reset_all(inst);
             if (sv > 0 && !inst->state_version_mismatch) {
                 inst->state_version_mismatch = 1;
                 seq8_ilog(inst, "SEQ8 state: version mismatch, awaiting JS confirm");

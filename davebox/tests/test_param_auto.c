@@ -1,10 +1,10 @@
 /* tests/test_param_auto.c — the per-parameter automation store (Front 3, P1).
  *
- * Covers the store's contract: writes land, stepped-hold is the default and
- * smooth interpolates, the clear gestures reach exactly what they should, a
- * full store REPORTS rather than dropping silently, and automation persists to
- * its own file beside the project — including the uuid guard that stops one
- * project's automation being applied to another. */
+ * Covers the store's contract: writes land, the clear gestures reach exactly
+ * what they should, a full store REPORTS rather than dropping silently, and
+ * automation persists as a section of the project's one state file — surviving
+ * a reload, and absent when the project has none. (The curve model is
+ * test_param_auto_eval.c.) */
 #include "harness.h"
 #include <string.h>
 #include <stdio.h>
@@ -109,24 +109,143 @@ int main(void) {
         hx_destroy(h);
     }
 
-    /* ---- a full store must SAY so ----------------------------------- */
+    /* ---- every limit must SAY so, not drop silently ------------------ */
     {
+        char full[8];
+        /* The TARGET table (distinct parameters project-wide) fills first at
+         * PA_MAX_TARGETS — which is why an earlier version of this test, that
+         * only wrote distinct targets, never reached the other two limits. */
         hx_t *h = hx_create(NULL);
         char tgt[32];
-        /* One entry per (clip, target) — fill past the entry pool. */
-        for (int i = 0; i < 400; i++) {
+        for (int i = 0; i < PA_MAX_TARGETS + 8; i++) {
             snprintf(tgt, sizeof(tgt), "0:fx1:p%d", i);
             pa_set(h, 0, 0, tgt, 0, 100);
         }
-        char full[8];
         hx_get_param(h, "pa_store_full", full, sizeof(full));
-        HX_ASSERT(full[0] == '1', "overflowing the store must be reported");
-        OK("a refused write is REPORTED, never silently dropped");
-
+        HX_ASSERT(full[0] == '1', "running out of distinct targets must be reported");
         hx_get_param(h, "pa_store_full", full, sizeof(full));
         HX_ASSERT(full[0] == '0', "reading the flag clears it");
-        OK("the full flag clears on read, so it reports each new occurrence");
+        OK("the target table reports when it is full, and the flag clears on read");
         hx_destroy(h);
+
+        /* The ENTRY pool: ONE target automated across many (track, clip) pairs,
+         * so the target table stays small and the pool is what runs out. */
+        h = hx_create(NULL);
+        for (int t = 0; t < NUM_TRACKS; t++)
+            for (int c = 0; c < NUM_CLIPS; c++)
+                pa_set(h, t, c, "0:fx1:cutoff", 0, 100);   /* 8 x 16 = 128 entries */
+        hx_get_param(h, "pa_store_full", full, sizeof(full));
+        HX_ASSERT(full[0] == '0', "128 entries must FIT — the pool is 160");
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(list_count(buf) == NUM_TRACKS * NUM_CLIPS, "all of them present");
+        OK("one parameter automated in every clip of every track fits");
+        hx_destroy(h);
+
+        /* The POINT cap within one entry. */
+        h = hx_create(NULL);
+        for (int i = 0; i < PA_ENTRY_POINTS + 16; i++)
+            pa_set(h, 0, 0, "cc:74", i, 1000 + i);
+        hx_get_param(h, "pa_store_full", full, sizeof(full));
+        HX_ASSERT(full[0] == '1', "running past an entry's point cap must be reported");
+        OK("a recording that outgrows one parameter's point cap is REPORTED");
+        hx_destroy(h);
+    }
+
+    /* ---- a target that would break the file is refused at the door ---- */
+    {
+        /* A target is written verbatim into a JSON string. One containing a
+         * quote or a brace truncates the object, and the parse of the WHOLE
+         * section then fails — losing every automation in the project, not just
+         * this entry. Demonstrated before the fix: two such entries stored fine
+         * and the reload came back completely empty. */
+        hx_t *h = hx_create(NULL);
+        pa_set(h, 0, 0, "0:fx1:cu}t", 0, 100);
+        pa_set(h, 0, 0, "a\"b", 0, 100);
+        pa_set(h, 0, 0, "back\\slash", 0, 100);
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(list_count(buf) == 0, "a target that cannot survive the file is not stored");
+        pa_set(h, 0, 0, "0:fx1:cutoff", 0, 100);
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(list_count(buf) == 1, "an ordinary target still works");
+        /* A space is NOT in that class: the key format is space-separated, so
+         * the parser ends the target there and "has space" arrives as "has" —
+         * a legal target, stored as one. */
+        pa_set(h, 0, 0, "has space", 0, 100);
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(list_count(buf) == 2 && strstr(buf, " has\n"), "a space ends the target, it does not poison it");
+        OK("⚠ a target carrying JSON metacharacters is REFUSED, not stored and later lost");
+        hx_destroy(h);
+    }
+
+    /* ---- an automation edit is a STATE edit -------------------------- */
+    {
+        /* Automation lives in the state file, so a write must mark the state
+         * dirty or the deferred save never runs and the work survives only a
+         * clean suspend — lost on a crash or a kill. */
+        hx_t *h = hx_create(NULL);
+        char dirty[8], sink[4096];
+        hx_get_param(h, "state_full", sink, sizeof(sink));      /* consume dirty */
+        hx_get_param(h, "state_dirty", dirty, sizeof(dirty));
+        HX_ASSERT(dirty[0] == '0', "clean to start");
+        pa_set(h, 0, 0, "cc:74", 0, 5000);
+        hx_get_param(h, "state_dirty", dirty, sizeof(dirty));
+        HX_ASSERT(dirty[0] == '1', "an automation write must dirty the state");
+        OK("⚠ an automation edit marks the state dirty — otherwise it never autosaves");
+        hx_destroy(h);
+    }
+
+    /* ---- the project lifecycle --------------------------------------- */
+    {
+        char dir[128], state[192], cmd[256];
+        snprintf(dir, sizeof(dir), "/tmp/hx_pl_%d", (int)getpid());
+        snprintf(cmd, sizeof(cmd), "mkdir -p %s", dir);
+        if (system(cmd)) { printf("FAIL: mkdir\n"); return 1; }
+        snprintf(state, sizeof(state), "%s/seq8sa-state.json", dir);
+
+        /* Clear Session writes the {"v":0} sentinel. Automation must go with
+         * the notes — it used to survive, because it lived in a second file
+         * that the sentinel knew nothing about. */
+        FILE *f = fopen(state, "w"); HX_ASSERT(f, "fixture"); fprintf(f, "{\"v\":0}"); fclose(f);
+        hx_t *h = hx_create(NULL);
+        pa_set(h, 0, 0, "cc:74", 0, 5000);
+        { seq8_instance_t *in = (seq8_instance_t *)h->inst;
+          strncpy(in->state_path, state, sizeof(in->state_path) - 1);
+          seq8_load_state(in); }
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(list_count(buf) == 0, "Clear Session clears automation too");
+        OK("⚠ Clear Session takes the automation with it");
+        hx_destroy(h);
+
+        /* An incompatible state version: the notes are not loaded, so the
+         * automation must not be either. */
+        f = fopen(state, "w"); HX_ASSERT(f, "fixture");
+        fprintf(f, "{\"v\":30,\"pa\":[{\"t\":0,\"c\":0,\"k\":\"cc:9\",\"f\":1,\"p\":\"0:99;\"}]}");
+        fclose(f);
+        h = hx_create(NULL);
+        { seq8_instance_t *in = (seq8_instance_t *)h->inst;
+          strncpy(in->state_path, state, sizeof(in->state_path) - 1);
+          seq8_load_state(in); }
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(list_count(buf) == 0, "no automation from a state we refused to load");
+        OK("⚠ an incompatible project brings no automation with it");
+        hx_destroy(h);
+
+        /* An unknown SECTION version is left alone rather than parsed by this
+         * version's rules, which would produce plausible garbage. */
+        f = fopen(state, "w"); HX_ASSERT(f, "fixture");
+        fprintf(f, "{\"v\":36,\"pav\":99,\"pa\":[{\"t\":0,\"c\":0,\"k\":\"cc:9\",\"f\":1,\"p\":\"0:99;\"}]}");
+        fclose(f);
+        h = hx_create(NULL);
+        { seq8_instance_t *in = (seq8_instance_t *)h->inst;
+          strncpy(in->state_path, state, sizeof(in->state_path) - 1);
+          seq8_load_state(in); }
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(list_count(buf) == 0, "a newer automation format is skipped, not misread");
+        OK("an unknown automation section version is skipped rather than misparsed");
+        hx_destroy(h);
+
+        snprintf(cmd, sizeof(cmd), "rm -rf %s", dir);
+        if (system(cmd)) { /* best effort */ }
     }
 
     /* ---- persistence: a section of the ONE project file -------------- */

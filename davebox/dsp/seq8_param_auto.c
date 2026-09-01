@@ -7,8 +7,28 @@
 /* ------------------------------------------------------------------ */
 /* Target interning                                                    */
 
+/* A target is written verbatim into a JSON string in the state file and read
+ * back by a scan that ends at the first '"' or '}'. So a target carrying either
+ * does not merely corrupt its own entry — it truncates the object and the
+ * PARSE OF THE WHOLE SECTION fails, losing every automation in the project.
+ * Targets come from JS as arbitrary bytes, so they are validated here, at the
+ * one door into the store, rather than trusted and escaped later. */
+static int pa_target_valid(const char *t) {
+    int n = 0;
+    for (const char *p = t; *p; p++, n++) {
+        if (n >= PA_TARGET_LEN - 1) return 0;          /* would be truncated */
+        char c = *p;
+        int ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                 (c >= '0' && c <= '9') ||
+                 c == ':' || c == '_' || c == '.' || c == '-';
+        if (!ok) return 0;
+    }
+    return n > 0;
+}
+
 static int pa_target_id(seq8_instance_t *inst, const char *target) {
     if (!target || !*target) return -1;
+    if (!pa_target_valid(target)) return -1;
     for (int i = 0; i < PA_MAX_TARGETS; i++) {
         if (!inst->pa_targets[i][0]) continue;
         if (!strcmp(inst->pa_targets[i], target)) return i;
@@ -68,6 +88,15 @@ static pa_entry_t *pa_get(seq8_instance_t *inst, int track, int clip, int target
         return e;
     }
     return NULL;
+}
+
+/* Automation is a section of the project state file, so an automation edit is
+ * a STATE edit: it must set state_dirty or the deferred save never runs and the
+ * work survives only a clean suspend. pa_dirty is kept as the finer-grained
+ * signal for JS. */
+static void pa_mark_dirty(seq8_instance_t *inst) {
+    inst->pa_dirty    = 1;
+    inst->state_dirty = 1;
 }
 
 static void pa_entry_free(pa_entry_t *e) {
@@ -262,6 +291,12 @@ static void pa_parse(seq8_instance_t *inst, const char *buf, size_t blen) {
     if (!buf) return;
     const char *sec = strstr(buf, "\"pa\":[");
     if (!sec) return;
+    /* Section version. An unknown one is left alone rather than parsed as this
+     * one: reading a newer format with older rules produces plausible-looking
+     * garbage, which is worse than no automation. Nothing is deleted — the file
+     * belongs to whoever wrote it. */
+    { int sv = json_get_int(buf, "pav", 1);
+      if (sv != PA_SECTION_VERSION) return; }
     const char *p = sec + 6;
     const char *doc_end = buf + blen;
 
@@ -280,6 +315,11 @@ static void pa_parse(seq8_instance_t *inst, const char *buf, size_t blen) {
 
         if (track >= 0 && track < NUM_TRACKS && clip >= 0 && clip < NUM_CLIPS && tgt[0]) {
             pa_entry_t *e = pa_get(inst, track, clip, pa_target_id(inst, tgt));
+            /* Out of entries or targets while LOADING: the project holds more
+             * automation than this build can. Report it — dropping silently
+             * would look like the automation was never there, and the next save
+             * would make that permanent. */
+            if (!e) inst->pa_store_full = 1;
             if (e) {
                 e->flags      = (uint8_t)flags;
                 e->rest       = (rest >= 0) ? (uint16_t)rest : PA_VAL_UNSET;

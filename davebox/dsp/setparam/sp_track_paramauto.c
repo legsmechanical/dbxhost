@@ -57,7 +57,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         pa_entry_t *e = pa_get(inst, tidx, clip, id);
         if (!e) { inst->pa_store_full = 1; return 1; }
         if (!pa_set_point(e, (uint16_t)tick, (uint16_t)v)) inst->pa_store_full = 1;
-        inst->pa_dirty = 1;
+        pa_mark_dirty(inst);
         return 1;
     }
 
@@ -77,7 +77,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         if (!e) { inst->pa_store_full = 1; return 1; }
         pa_clear_range(e, (uint16_t)from, (uint16_t)to);
         if (!pa_set_point(e, (uint16_t)from, (uint16_t)v)) inst->pa_store_full = 1;
-        inst->pa_dirty = 1;
+        pa_mark_dirty(inst);
         return 1;
     }
 
@@ -93,7 +93,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         if (clip < 0 || clip >= NUM_CLIPS) return 1;
         pa_entry_t *e = pa_get(inst, tidx, clip, pa_target_id(inst, tgt));
         if (!e) { inst->pa_store_full = 1; return 1; }
-        if (e->rest == PA_VAL_UNSET) { e->rest = (uint16_t)v; inst->pa_dirty = 1; }
+        if (e->rest == PA_VAL_UNSET) { e->rest = (uint16_t)v; pa_mark_dirty(inst); }
         return 1;
     }
 
@@ -105,7 +105,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         PA_TARGET(p, tgt);
         if (clip < 0 || clip >= NUM_CLIPS) return 1;
         pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_id(inst, tgt));
-        if (e) { pa_entry_free(e); inst->pa_dirty = 1; }
+        if (e) { pa_entry_free(e); pa_mark_dirty(inst); }
         return 1;
     }
 
@@ -124,7 +124,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
             pa_clear_range(e, (uint16_t)from, (uint16_t)to);
             if (!e->count) pa_entry_free(e);
         }
-        inst->pa_dirty = 1;
+        pa_mark_dirty(inst);
         return 1;
     }
 
@@ -134,7 +134,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         PA_SKIP_SPACE(p); PA_UINT(p, clip);
         if (clip < 0 || clip >= NUM_CLIPS) return 1;
         pa_clear_track_clip(inst, tidx, clip);
-        inst->pa_dirty = 1;
+        pa_mark_dirty(inst);
         return 1;
     }
 
@@ -149,7 +149,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_id(inst, tgt));
         if (e) {
             if (on) e->flags |= PA_FLAG_ACTIVE; else e->flags &= (uint8_t)~PA_FLAG_ACTIVE;
-            inst->pa_dirty = 1;
+            pa_mark_dirty(inst);
         }
         return 1;
     }
@@ -164,7 +164,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_id(inst, tgt));
         if (e) {
             if (on) e->flags |= PA_FLAG_SMOOTH; else e->flags &= (uint8_t)~PA_FLAG_SMOOTH;
-            inst->pa_dirty = 1;
+            pa_mark_dirty(inst);
         }
         return 1;
     }
@@ -187,7 +187,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
             e->loop_len   = (uint16_t)len;
             e->loop_off   = (uint16_t)off;
             e->resolution = (uint16_t)res;
-            inst->pa_dirty = 1;
+            pa_mark_dirty(inst);
         }
         return 1;
     }

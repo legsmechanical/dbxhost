@@ -1553,6 +1553,7 @@ static void seq8_ilog(seq8_instance_t *inst, const char *msg) {
  * declared above, while the serializer below needs these). */
 static void pa_serialize(seq8_instance_t *inst, FILE *fp);
 static void pa_parse(seq8_instance_t *inst, const char *buf, size_t blen);
+static void pa_reset_all(seq8_instance_t *inst);
 
 #include "seq8_state.c"
 
@@ -6508,7 +6509,13 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
             int w = snprintf(out + n, (size_t)(out_len - n), "%d %d %d %d %s\n",
                              (int)e->track, (int)e->clip, (int)e->flags,
                              (int)e->count, inst->pa_targets[e->target]);
-            if (w < 0 || n + w >= out_len) break;   /* never a torn last line */
+            if (w < 0 || n + w >= out_len) {
+                /* snprintf has already written a truncated line; cut it back
+                 * off, or a C-string reader sees a torn entry past the length
+                 * we return. */
+                out[n] = '\0';
+                break;
+            }
             n += w;
         }
         return n;
