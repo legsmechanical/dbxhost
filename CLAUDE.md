@@ -401,7 +401,7 @@ Chain host (`modules/chain/dsp/chain_host.c` — lifecycle/set+get_param/render;
 
 ### Recording / capture
 
-Audio capture is shim-side: the Quantized Sampler (Shift+Sample) and Skipback
+Audio capture is shim-side: the Quantized Sampler (Shift+Vol+Sample) and Skipback
 (Shift+Capture) — see Shadow Mode below. (The old chain-host CC 118 recording
 was deleted in the 2026-06 cleanup; it was only reachable through the
 unreachable v1 plugin path.)
@@ -427,8 +427,11 @@ every route including external. Its global menu is global settings only. What re
   hands-on). The Shift+Vol variant stays gone. Step 13's icon lights while Shift is held
   (outside overtake). Inside a live standalone session, standalone LAUNCHER entries are hidden
   from the Tools menu — the session they launch is the current one.
-- **Shift+Sample** — Quantized Sampler (arms during an overtake session too — the old
-  `!shadow_display_mode` gate that killed it under SA is fixed).
+- **Shift+Vol+Sample** — Quantized Sampler (arms during an overtake session too — the old
+  `!shadow_display_mode` gate that killed it under SA is fixed). ⚠ Volume touch REQUIRED
+  since 2026-09-01: bare Shift+Sample belongs to the primary module (davebox's Live Merge)
+  — the same shape as Skipback's chord. Once the sampler is ENGAGED, bare Shift+Sample
+  still resumes/cancels/force-stops it.
 - **Shift+Vol+Capture** — Skipback. ⚠ Volume touch REQUIRED: bare Shift+Capture belongs to
   the primary module (davebox uses it for discard-captured-input, Move parity).
 - **Shift+Vol+Jog Click** — exit overtake · **Shift+Vol+Back** — suspend overtake.
@@ -453,7 +456,7 @@ Mute (CC 88) is passed through to Move firmware (even while shadow UI is shown) 
 
 ### Quantized Sampler
 
-Shift+Sample. Source: resample (incl. Schwung synths) or Move Input. Duration in bars (or until stopped); uses MIDI clock, falls back to project tempo. Starts on note event or play. Saved to `Samples/Schwung/Resampler/YYYY-MM-DD/`.
+Shift+Vol+Sample (volume-knob touch required; bare Shift+Sample is the primary module's). Source: resample (incl. Schwung synths) or Move Input. Duration in bars (or until stopped); uses MIDI clock, falls back to project tempo. Starts on note event or play. Saved to `Samples/Schwung/Resampler/YYYY-MM-DD/`.
 
 ### Feedback Protection
 

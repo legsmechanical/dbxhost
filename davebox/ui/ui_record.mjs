@@ -8,12 +8,14 @@
  */
 
 import {
-    MoveRec, LED_OFF, PAD_MODE_DRUM, TAP_TEMPO_RESET_MS
+    MoveRec, LED_OFF, PAD_MODE_DRUM, PAD_MODE_CONDUCT, TAP_TEMPO_RESET_MS
 } from './ui_constants.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { S } from './ui_state.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
-import { invalidateLEDCache } from './ui_leds.mjs';
+import { invalidateLEDCache, effectiveClip, forceRedraw } from './ui_leds.mjs';
+import { clipHasContent } from './ui_pure.mjs';
+import { showActionPopup } from './ui_persistence.mjs';
 /* Intentional ES-module cycle with ui_dsp_bridge.mjs (it imports disarmRecord
  * from here) — safe because both sides reference the cycled bindings only
  * inside function bodies, never at module-init time. Keep it that way. */
@@ -228,4 +230,198 @@ export function extNoteOffAll() {
         if (info.recording) recordNoteOff(pitch, true);
     }
     extHeldNotes.clear();
+}
+
+/* ===================== STEP RECORD (SH-101 style) =====================
+ * Shift+Record with the transport STOPPED on a melodic/MIDI track (Josh's
+ * Front-4 ruling, 2026-09-01). Pads write the step under the CURSOR and still
+ * sound as previews; a chord accumulates while any pad is held and the cursor
+ * advances when the last pad is released. '>' with pads held is a TIE (the
+ * entry grows a step); '>' bare is a rest (cursor forward); '<' steps the
+ * cursor BACK and erases what THIS SESSION wrote at the step it lands on —
+ * never pre-existing notes (the journal below is the session's memory). The
+ * cursor CLAMPS at the clip's last step (Josh: no wrap, no auto-extend).
+ *
+ * ONE OWNER: every state transition lives here — enter/exit, pad press and
+ * release, and both arrows. Callers (ui_input_cc, ui_input_pads, ui_editops,
+ * ui_tick) dispatch in; none of them write S.stepRec* directly.
+ *
+ * UNDO: the whole session is ONE undo/redo unit. stepRecEnter queues
+ * tN_cC_undo_checkpoint (a clip snapshot); the entry ops used here (_add,
+ * _gate, _toggle) deliberately take no snapshot of their own, so the next
+ * undo_restore returns the clip to the moment the session began. ⚠ Never use
+ * _clear from this path — it snapshots, and would shrink the undo unit to
+ * whatever followed it.
+ *
+ * ⚠ All writes ride S.pendingDefaultSetParams (one per tick): set_param
+ * coalesces per audio buffer on the on-device path, and this handler runs
+ * from onMidiMessage. get_param is unavailable here for the same reason —
+ * everything below reads the JS mirrors (S.clipSteps / clipLength / pages). */
+
+/* Gate ticks are RAW 24-per-step units at render (seq8.c step_gate), and a
+ * fresh step's gate is 12 — half a step. A tie keeps that shape: full steps
+ * for the tied span, the default half-step tail on the last. These two
+ * literals MIRROR seq8.c's TICKS_PER_STEP / GATE_TICKS and are pinned against
+ * the header by the step-record test — a silent drift here is the
+ * copied-C-constant trap. */
+const STEP_REC_RAW_TPS      = 24;
+const STEP_REC_GATE_DEFAULT = 12;
+const _srGateFor = (chordLen) => (chordLen - 1) * STEP_REC_RAW_TPS + STEP_REC_GATE_DEFAULT;
+
+const _srKey = (t, ac, step, op) => 't' + t + '_c' + ac + '_step_' + step + '_' + op;
+function _srQueue(key, val) { S.pendingDefaultSetParams.push({ key, val: String(val) }); }
+function _srLen(t, ac) { return Math.max(1, S.clipLength[t][ac] | 0); }
+function _srFollowPage(t, cursor) {
+    const pg = cursor >> 4;
+    if (S.trackCurrentPage[t] !== pg) { S.trackCurrentPage[t] = pg; }
+}
+
+export function stepRecEligible() {
+    return !S.playing && !S.sessionView &&
+        S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM &&
+        S.trackPadMode[S.activeTrack] !== PAD_MODE_CONDUCT;
+}
+
+export function stepRecEnter() {
+    const t = S.activeTrack, ac = effectiveClip(t);
+    S.stepRecActive    = true;
+    S.stepRecCursor    = Math.min((S.trackCurrentPage[t] | 0) * 16, _srLen(t, ac) - 1);
+    S.stepRecWroteStep = -1;
+    S.stepRecChordLen  = 1;
+    S.stepRecDidWrite  = false;
+    S.stepRecHeld.clear();
+    S.stepRecJournal.clear();
+    /* The session's ONE undo snapshot — see the banner. */
+    _srQueue('t' + t + '_c' + ac + '_undo_checkpoint', '1');
+    showActionPopup('STEP REC', 'Pads write steps.', '> rest/tie, < erase.');
+    invalidateLEDCache();
+    forceRedraw();
+}
+
+export function stepRecExit() {
+    if (!S.stepRecActive) return;
+    S.stepRecActive    = false;
+    S.stepRecWroteStep = -1;
+    S.stepRecChordLen  = 1;
+    S.stepRecHeld.clear();
+    S.stepRecJournal.clear();
+    invalidateLEDCache();
+    forceRedraw();
+}
+
+export function stepRecPadPress(pitch, vel) {
+    const t = S.activeTrack, ac = effectiveClip(t);
+    if (S.stepRecHeld.size === 0) {
+        S.stepRecWroteStep = S.stepRecCursor;
+        S.stepRecChordLen  = 1;
+    }
+    const ws = S.stepRecWroteStep;
+    if (!S.stepRecJournal.has(ws)) {
+        S.stepRecJournal.set(ws, {
+            added: [],
+            hadBefore: (S.clipSteps[t][ac][ws] | 0) === 1,
+            chordLen: 1,
+        });
+    }
+    const entry = S.stepRecJournal.get(ws);
+    S.stepRecHeld.add(pitch);
+    if (entry.added.indexOf(pitch) < 0) {
+        /* _add is add-only and dedupes DSP-side too; one op per press keeps
+         * each write atomic against coalescing. */
+        _srQueue(_srKey(t, ac, ws, 'add'), pitch + ' 0 ' + vel);
+        entry.added.push(pitch);
+        /* Mirrors, so LEDs/screen agree before the queue drains. */
+        S.clipSteps[t][ac][ws] = 1;
+        S.clipNonEmpty[t][ac] = true;
+        if (!S.stepRecDidWrite) {
+            S.stepRecDidWrite = true;
+            S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+        }
+    }
+    invalidateLEDCache();
+    forceRedraw();
+}
+
+export function stepRecPadRelease(pitch) {
+    S.stepRecHeld.delete(pitch);
+    if (S.stepRecHeld.size > 0 || S.stepRecWroteStep < 0) return;
+    /* Last pad up: the entry commits and the cursor advances past it
+     * (idempotent with any ties that already moved it). CLAMP at the end. */
+    const t = S.activeTrack, ac = effectiveClip(t);
+    S.stepRecCursor = Math.min(S.stepRecWroteStep + S.stepRecChordLen, _srLen(t, ac) - 1);
+    S.stepRecWroteStep = -1;
+    S.stepRecChordLen  = 1;
+    _srFollowPage(t, S.stepRecCursor);
+    invalidateLEDCache();
+    forceRedraw();
+}
+
+/* dir: +1 = '>', -1 = '<'. */
+export function stepRecArrow(dir) {
+    const t = S.activeTrack, ac = effectiveClip(t);
+    const len = _srLen(t, ac);
+    if (dir > 0) {
+        if (S.stepRecHeld.size > 0 && S.stepRecWroteStep >= 0) {
+            /* TIE: the held entry grows one step (clamped to the clip end). */
+            if (S.stepRecWroteStep + S.stepRecChordLen <= len - 1) {
+                S.stepRecChordLen++;
+                const entry = S.stepRecJournal.get(S.stepRecWroteStep);
+                if (entry) entry.chordLen = S.stepRecChordLen;
+                _srQueue(_srKey(t, ac, S.stepRecWroteStep, 'gate'),
+                         _srGateFor(S.stepRecChordLen));
+            }
+            S.stepRecCursor = Math.min(S.stepRecWroteStep + S.stepRecChordLen, len - 1);
+        } else {
+            /* REST: the cursor moves on, writing nothing. */
+            S.stepRecCursor = Math.min(S.stepRecCursor + 1, len - 1);
+        }
+    } else {
+        if (S.stepRecHeld.size > 0 && S.stepRecWroteStep >= 0) {
+            /* '<' mid-hold un-ties one step — the exact inverse of '>'. */
+            if (S.stepRecChordLen > 1) {
+                S.stepRecChordLen--;
+                const entry = S.stepRecJournal.get(S.stepRecWroteStep);
+                if (entry) entry.chordLen = S.stepRecChordLen;
+                _srQueue(_srKey(t, ac, S.stepRecWroteStep, 'gate'),
+                         _srGateFor(S.stepRecChordLen));
+                S.stepRecCursor = Math.min(S.stepRecWroteStep + S.stepRecChordLen, len - 1);
+            }
+        } else if (S.stepRecCursor > 0) {
+            /* DESTRUCTIVE BACKSTEP (Josh, 2026-09-01): move back one step and
+             * erase what THIS SESSION recorded there, as it goes. */
+            const p = S.stepRecCursor - 1;
+            /* A tied entry un-ties from its tail first, one step per press —
+             * each '<' exactly undoes one '>'. */
+            let tied = null;
+            for (const [ws, e] of S.stepRecJournal) {
+                if (e.chordLen > 1 && ws + e.chordLen - 1 === p) { tied = [ws, e]; break; }
+            }
+            if (tied) {
+                const [ws, e] = tied;
+                e.chordLen--;
+                _srQueue(_srKey(t, ac, ws, 'gate'), _srGateFor(e.chordLen));
+            } else if (S.stepRecJournal.has(p)) {
+                const e = S.stepRecJournal.get(p);
+                /* Gate back to default FIRST — _gate refuses on an empty step,
+                 * so it must land while the notes are still there. (A
+                 * pre-existing custom gate on an overdubbed step is not
+                 * restored — the journal has no gate history; accepted, and
+                 * the session-level undo still recovers it.) */
+                if (e.chordLen > 1)
+                    _srQueue(_srKey(t, ac, p, 'gate'), STEP_REC_GATE_DEFAULT);
+                for (const n of e.added)
+                    _srQueue(_srKey(t, ac, p, 'toggle'), String(n));
+                S.stepRecJournal.delete(p);
+                if (!e.hadBefore) {
+                    S.clipSteps[t][ac][p] = 0;
+                    if (S.clipNonEmpty[t][ac])
+                        S.clipNonEmpty[t][ac] = clipHasContent(t, ac);
+                }
+            }
+            S.stepRecCursor = p;
+        }
+    }
+    _srFollowPage(t, S.stepRecCursor);
+    invalidateLEDCache();
+    forceRedraw();
 }

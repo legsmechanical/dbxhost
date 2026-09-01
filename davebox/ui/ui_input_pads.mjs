@@ -31,7 +31,8 @@ import { applyBankParam, applyTrackConfig, readBankParams,
  * Sound mode needs to know a pad press was LIVE — see soundVouchLivePress. */
 import { soundVouchLivePress } from './ui_sound.mjs';
 import { handoffRecordingToTrack, recordNoteOn, recordNoteOff,
-    openTapTempo, registerTapTempo, extNoteOffAll } from './ui_record.mjs';
+    openTapTempo, registerTapTempo, extNoteOffAll,
+    stepRecPadPress, stepRecPadRelease } from './ui_record.mjs';
 import { setTrackMute, setTrackSolo, clearClip, hardResetClip, copyClip, cutClip,
     copyDrumLane, cutDrumLane, copyDrumClip, cutDrumClip, copyStep, cutStep, clearStep,
     showModePopup, allLanesGate, doDoubleFill, doLaneDoubleFill,
@@ -537,6 +538,10 @@ function _onPadPressTrackView(status, d1, d2) {
              * is aiming at a step, not at a sound, and moving the editor under
              * it would be a surprise rather than a shortcut. */
             soundVouchLivePress(S.activeTrack, pitch);
+            /* STEP RECORD: the pad still previews (above), and also writes at
+             * the cursor. ui_record owns the entry/advance state machine. */
+            if (S.stepRecActive)
+                stepRecPadPress(pitch, stepEntryVelocity(S.activeTrack, effectiveVelocity(d2), false));
             /* Record capture: queue into _recNoteOns regardless of count-in
              * state. Flush is gated on !S.recordCountingIn so events accumulate
              * during count-in and drain at the count-in→recording transition.
@@ -1785,6 +1790,10 @@ export function _onPadRelease(status, d1, d2) {
                 liveSendNote(t, 0x80, pitch, 0);
         }
         padPressTick[padIdx] = -1;
+        /* STEP RECORD: the last release commits the chord and advances. */
+        if (S.stepRecActive && !S.sessionView &&
+                S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM)
+            stepRecPadRelease(pitch);
         if (S.recordArmed) {
             const _t = S.activeTrack;
             if (S.trackPadMode[_t] === PAD_MODE_DRUM) {

@@ -16,6 +16,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Features (pending)
+- **Step recording.** Shift+Record with the transport stopped opens SH-101
+  style step entry on melodic tracks: pads write the blinking white cursor
+  step (chords too — hold several pads), `>` rests or, with pads held, ties
+  the note longer; `<` steps back and erases what you just entered. Back,
+  Play, or Shift+Record again leaves. One undo takes back the whole take.
+- **Live Merge moved to Shift+Sample.** Shift+Record now belongs to step
+  recording; the merge flow is unchanged from the notice onward. The
+  Quantized Sampler moved with it: hold Shift and touch the volume knob,
+  then press Sample.
 - **A new splash pool — 31 Daves.** The launch artwork rotates through a fully
   recurated set; every launch greets you with a different Dave.
 ### Features

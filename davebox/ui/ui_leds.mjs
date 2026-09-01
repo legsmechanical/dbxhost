@@ -317,10 +317,17 @@ export function updateStepLEDs() {
     const len    = S.clipLength[S.activeTrack][ac];
     const lsBase = S.clipLoopStart[S.activeTrack][ac] | 0;
     const winEnd = lsBase + len;
+    /* STEP RECORD cursor: the step waiting for input blinks WHITE (Josh,
+     * 2026-09-01), alternating with the step's underlying state so content
+     * under the cursor stays readable. Transport is stopped in this mode, so
+     * it never fights the playhead white. */
+    const _srCursorOn = S.stepRecActive && (Math.floor(S.tickCount / 12) % 2 === 0);
     for (let i = 0; i < 16; i++) {
         const absStep = base + i;
         let color;
-        if (absStep < lsBase || absStep >= winEnd) {
+        if (S.stepRecActive && absStep === S.stepRecCursor && _srCursorOn) {
+            color = White;
+        } else if (absStep < lsBase || absStep >= winEnd) {
             color = DarkGrey;
         } else if (S.playing && absStep === cs) {
             color = White;

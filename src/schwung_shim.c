@@ -7665,9 +7665,12 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                  *   Shift+Vol+Jog Click (exit) / Shift+Vol+Back (suspend)
                  *   Shift+Vol+Capture (skipback — bare Shift+Capture belongs
                  *   to the overtake module)
-                 *   the Quantized Sampler's controls: Shift+Sample (arm/
-                 *   resume/cancel), Sample while engaged (stop), and jog/
-                 *   jog-click/Back while its fullscreen menu is up. */
+                 *   the Quantized Sampler's controls: Shift+Vol+Sample (arm;
+                 *   bare Shift+Sample resumes/cancels only once ENGAGED —
+                 *   idle it passes to the primary module), Sample while
+                 *   engaged (stop), and jog/jog-click/Back while its
+                 *   fullscreen menu is up. CC 118 stays in this exempt list
+                 *   under bare Shift so the intercept can decline it there. */
                 {
                     int sampler_engaged = (sampler_state != SAMPLER_IDLE);
                     if (overtake_active &&
@@ -7808,8 +7811,15 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
 
                 /* Sample/Record button (CC 118) - sampler intercept */
                 if (d1 == CC_RECORD && d2 > 0) {
-                    if (shadow_shift_held) {
-                        /* Shift+Sample: arm/resume/cancel/force-stop.
+                    /* ⭑ The ARM chord is Shift+VOL+Sample (2026-09-01): bare
+                     * Shift+Sample belongs to the primary module now, so an
+                     * IDLE sampler ignores it and the event passes through
+                     * unconsumed. Once ENGAGED the sampler owns the button —
+                     * resume/cancel/force-stop stay on bare Shift+Sample,
+                     * matching Skipback's Shift+Vol+Capture entry shape. */
+                    if (shadow_shift_held &&
+                        (shadow_volume_knob_touched || sampler_state != SAMPLER_IDLE)) {
+                        /* Shift(+Vol)+Sample: arm/resume/cancel/force-stop.
                          * Arm is allowed while an overtake module owns the
                          * display (the sampler draws over it) — the old
                          * !shadow_display_mode gate silently killed the

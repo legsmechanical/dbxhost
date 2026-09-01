@@ -815,6 +815,20 @@ export const S = {
      * 2026-08-31 device pass: instant in/out is only for when recording is
      * pressed after transport is already running). */
     recordArmedLive: false,
+    /* ---- STEP RECORD (SH-101 style; Shift+Record, transport stopped) ----
+     * ui_record.mjs owns every transition (stepRecEnter/Exit/PadPress/
+     * PadRelease/Left/Right) — nothing else writes these.
+     * Cursor is an ABSOLUTE step. While pads are held the chord accumulates at
+     * stepRecWroteStep; '>' held = tie (gate grows a step), all-released
+     * advances. stepRecJournal maps wroteStep → what THIS session added there,
+     * so '<' can erase session data only, never pre-existing notes. */
+    stepRecActive: false,
+    stepRecCursor: 0,
+    stepRecWroteStep: -1,
+    stepRecChordLen: 1,
+    stepRecHeld: new Set(),          /* pitches currently held (this entry) */
+    stepRecJournal: new Map(),       /* wroteStep → {added:[pitch], hadBefore, chordLen} */
+    stepRecDidWrite: false,          /* first write flips undoAvailable once */
     recordScheduledStopTarget: -1,
     pendingScheduledDisarm: false,
     pendingPrerollNote: null,       /* drum only: { track, lane, laneNote, vel, pressedAtTick, countInStart } */

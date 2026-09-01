@@ -521,6 +521,23 @@ on step 1. You can switch tracks mid-take — recording follows the active track
 Recording runs in the **Forward** [playback direction](#91-clip-bank). A clip set
 to another direction offers to bake itself to Forward first.
 
+### Step recording
+
+With the transport **stopped** on a melodic track, **Shift + Record** opens step
+entry, classic hardware-sequencer style. The Record button turns white and one
+step blinks white — that's the cursor, waiting for input.
+
+- **Play a pad** (or several together for a chord) — the notes land on the cursor
+  step, and when you let go the cursor moves to the next step.
+- **> with pads held** ties the note a step longer; each press extends it.
+- **> alone** is a rest — the cursor moves on, writing nothing.
+- **<** steps back and **erases what you entered there this session** — your own
+  correction key. Notes that were already in the clip stay.
+- The cursor stops at the clip's last step; it never wraps.
+
+Leave with **Shift + Record**, **Back**, or just press **Play** to hear it.
+One **undo** takes back the entire step-recording session in one go.
+
 ## 6.5 Capture
 
 dAVEBOx is always listening. Everything you play on the pads while a track is not
@@ -1323,7 +1340,7 @@ its transposition into each responding clip.
 **Live Merge** records the actual output of your tracks — arps, delays, knob rides
 and all — into plain clips.
 
-Arm it with **Shift + Record** from a stopped transport; a notice reads "Rec to
+Arm it with **Shift + Sample** from a stopped transport; a notice reads "Rec to
 start, Back to cancel." Press **Record** to begin. It plays a 1-bar count-in, then
 captures a clean take from the top. The view you arm from sets the scope:
 
@@ -1521,9 +1538,9 @@ views (`#seq` / `#mix` / `#sound` in the address bar can be bookmarked).
 | Shift + jog / Shift + bottom pad | Switch tracks |
 | Loop (hold) / Loop + jog | Loop view / clip length |
 | Play / Shift + Play / Loop + Play | Start-stop / restart / restart at page |
-| Record / Shift + Record | Record / Live Merge |
+| Record / Shift + Record | Record / step record |
 | Capture / Shift + Capture | Keep / clear buffered play |
-| Sample | Bake |
+| Sample / Shift + Sample | Bake / Live Merge |
 | Mute / Shift + Mute / Delete + Mute | Mute / solo / clear all |
 | Delete + step / side | Clear step / clip |
 | Shift + Delete + side / jog click | Reset clip / effects |

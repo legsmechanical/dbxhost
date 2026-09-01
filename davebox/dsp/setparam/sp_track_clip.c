@@ -114,6 +114,17 @@ static int sp_track_clip(sp_ctx_t *cx) {
             return 1;
         }
 
+        if (!strcmp(p, "_undo_checkpoint")) {
+            /* tN_cC_undo_checkpoint — snapshot this clip as the undo unit for a
+             * SESSION of edits that follows. The per-step entry ops (_toggle,
+             * _add, _gate) deliberately take no snapshot of their own, so one
+             * checkpoint here makes an entire step-record session (or any
+             * multi-op gesture that adopts it) a single undo/redo unit: the
+             * next undo_restore returns the clip to this moment. */
+            undo_begin_single(inst, tidx, cidx);
+            return 1;
+        }
+
         if (!strncmp(p, "_step_", 6)) {
             const char *q = p + 6;
             int sidx = 0;

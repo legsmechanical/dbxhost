@@ -19,7 +19,7 @@
             "",
             "Shift+Step 13:",
             " Tools menu",
-            "Shift+Sample:",
+            "Shift+Vol+Sample:",
             " quantized sampler",
             "",
             "Overlay Knobs:",
@@ -253,7 +253,7 @@
           "title": "Recording",
           "lines": [
             "Quantized Sampler",
-            "(Shift+Sample):",
+            "(Shift+Vol+Sample):",
             "",
             "Choose source:",
             " Resample or",

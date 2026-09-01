@@ -49,7 +49,7 @@ import { pollDSP,
     syncClipsFromDsp, syncClipsTargeted, syncMuteSoloFromDsp, restoreUiSidecar,
     liveSendNote, _drainLiveNotes,
     pendingDrumNoteOffs, _drumRecNoteOns, _drumRecNoteOffs } from './ui_dsp_bridge.mjs';
-import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes } from './ui_record.mjs';
+import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes, stepRecExit } from './ui_record.mjs';
 import { xposeCancelPreview } from './ui_xpose.mjs';
 import { checkBackHold, checkShiftNoteHold, backTapWouldAct, applyShiftEdge } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
@@ -1767,6 +1767,11 @@ export function _tickImpl() {
             S.cachedSceneAnyPlaying[_i] = sceneAnyPlaying(_i);
         }
 
+        /* STEP RECORD ends when the transport runs, whatever started it —
+         * the Play button exits in its own handler; this belt catches the
+         * remote UI, Link, and any DSP-side start. */
+        if (S.stepRecActive && S.playing) stepRecExit();
+
         /* Transport LEDs */
         setButtonLED(MovePlay, S.playing ? Green : LED_OFF);
         if (S.moveCoRunTrack >= 0) {
@@ -1775,6 +1780,10 @@ export function _tickImpl() {
              * (passes through under skip_led_clear). Force OFF every POLL_INTERVAL
              * so our blanking re-asserts over that layer instead of being eaten. */
             setButtonLED(MoveRec, LED_OFF, (S.tickCount % POLL_INTERVAL) === 0);
+        } else if (S.stepRecActive) {
+            /* Step record: solid WHITE — red belongs to live recording, and
+             * the cursor's white blink on the step row matches it. */
+            setButtonLED(MoveRec, White);
         } else if (S.recordScheduledStop || S.recordPendingPage) {
             /* recordScheduledStop = waiting for end-of-page to stop; recordPendingPage =
              * waiting for next page boundary for DSP to flip recording=1. Both blink. */
@@ -1784,7 +1793,7 @@ export function _tickImpl() {
              * count-in: flash red to draw the eye to the Record button. */
             setButtonLED(MoveRec, Math.floor(S.tickCount / 12) % 2 === 0 ? Red : LED_OFF);
         } else if (S.dspMergeState === 2 || S.dspMergeState === 3) {
-            /* Live Merge capturing (Shift+Rec): green. */
+            /* Live Merge capturing (Shift+Sample): green. */
             setButtonLED(MoveRec, Green);
         } else if (S.dspMergeState === 1) {
             /* Live Merge armed, waiting for the bar boundary: red. */

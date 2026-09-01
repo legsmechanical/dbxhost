@@ -13,6 +13,7 @@ import {
 } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
 import { soundActive, soundExit, soundIsGlobal } from './ui_sound.mjs';
+import { stepRecExit } from './ui_record.mjs';
 import { clipHasContent } from './ui_pure.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { effectiveClip, invalidateLEDCache, forceRedraw } from './ui_leds.mjs';
@@ -475,6 +476,10 @@ export function clearRow(rowIdx) {
  * Existing post-switch validity checks (e.g. drum-track hidden banks → 0)
  * still apply to the loaded value. Use at every site that assigns S.activeTrack. */
 export function _switchActiveTrack(newT) {
+    /* A step-record session is bound to the track it was opened on — the
+     * cursor, journal and checkpoint are all per-clip. Any track switch ends
+     * it (the ONE owner is ui_record; this is a dispatch, not a writer). */
+    stepRecExit();
     /* A track switch LEAVES sound mode — every route, no exceptions (Josh,
      * 2026-08-24). SOUND + CONFIG is a BANK and a bank is per-track, so the new
      * track lands on ITS bank; and because the bank RECORDS ITSELF in

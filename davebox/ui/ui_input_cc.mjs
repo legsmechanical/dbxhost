@@ -62,7 +62,8 @@ import { applyTrackConfig, readBankParams, applyBankParam,
     refreshPerClipBankParams, resyncDrumTrack,
     unlatchAllTracks, queueLiveNoteOff } from './ui_dsp_bridge.mjs';
 import { disarmRecord, handoffRecordingToTrack,
-    closeTapTempo, extNoteOffAll } from './ui_record.mjs';
+    closeTapTempo, extNoteOffAll,
+    stepRecEligible, stepRecEnter, stepRecExit, stepRecArrow } from './ui_record.mjs';
 import { sceneBakeHasConductor, commitSceneBake, anyMelodicClipHasContent,
     xposeCancelPreview, xposeCommit } from './ui_xpose.mjs';
 import { setTrackMute, setTrackSolo, clearAllMuteSolo,
@@ -1739,6 +1740,7 @@ export function backTapWouldAct() {
         return !S.awaitingProjectSelect;
     }
     if (S.daveBox) return true;
+    if (S.stepRecActive) return true;
     if (S.sessMixerLatched) return true;
     if (S.snapshotPicker || S.clearAutoMenu || S.tempoSelectActive ||
         S.mergeNoticePending || S.mergeCountingIn ||
@@ -1759,6 +1761,10 @@ function _backTap() {
     if (S.confirmStateWipe) return;
 
     /* 1. Transient dialogs / pickers / modes (one open at a time). */
+    if (S.stepRecActive) {
+        stepRecExit();
+        return;
+    }
     if (S.sessMixerLatched) {
         S.sessMixerLatched = false;
         standDownBankDisplay(true);
@@ -2085,6 +2091,9 @@ function _onCC_transport(d1, d2) {
 
     /* Play: toggle transport; Shift+Play = restart transport; Delete+Play = deactivate_all; Mute+Play = toggle metro */
     if (d1 === MovePlay && d2 === 127) {
+        /* Play ends a step-record session (Josh's exit ruling) and then means
+         * what it always means — no swallowed press. */
+        stepRecExit();
         if (S.deleteHeld) {
             if (!S.playing) {
                 /* Stopped: panic clears will_relaunch + all clip state atomically for all tracks. */
@@ -2144,30 +2153,36 @@ function _onCC_transport(d1, d2) {
     }
 
     /* Record button (CC 86): toggle arm/disarm */
-    /* Shift+Record: Live Merge arm/stop (moved off Sample — Sample is now
-     * bake-only, Capture is capture-only). View decides the scope:
+    /* Shift+SAMPLE: Live Merge arm/stop (Josh's Front-4 chord shuffle,
+     * 2026-08-31: live merge → Shift+Sample, quantized sampler →
+     * Shift+Vol+Sample, freeing Shift+Record for step input). The shim only
+     * consumes CC 118 under Shift when the volume knob is touched (its
+     * sampler chord) or the sampler is engaged, so bare Shift+Sample reaches
+     * us. View decides the scope:
      *   Session View → classic all-8-tracks capture; destination scene row
      *     picked post-stop via the placement dialog.
      *   Track View   → SINGLE-CLIP merge: only the active track's output is
      *     captured (DSP merge_arm "tN" solo mode) and on stop it commits
      *     straight into that track's focused clip — no placement dialog.
      * Merge state shows on the Record LED (red armed, green capturing). */
-    /* Rec (Shift or plain) while the merge count-in is running → CANCEL the
-     * merge (nothing is captured; back to idle). Must precede the notice/stop
-     * checks below so a mid-count-in press aborts rather than stops. */
-    if (d1 === MoveRec && d2 === 127 && S.mergeCountingIn) {
+    /* Rec (plain) or the Shift+Sample chord itself while the merge count-in is
+     * running → CANCEL the merge (nothing is captured; back to idle). Must
+     * precede the notice/stop checks below so a mid-count-in press aborts
+     * rather than stops. */
+    if ((d1 === MoveRec || (d1 === MoveSample && S.shiftHeld)) &&
+            d2 === 127 && S.mergeCountingIn) {
         _cancelMergeCountIn();
         return;
     }
-    if (d1 === MoveRec && d2 === 127 && S.shiftHeld) {
+    if (d1 === MoveSample && d2 === 127 && S.shiftHeld) {
         if (S.dspMergeState !== 0) {
             /* Active capture → stop it (finalizes; opens placement). */
             S.pendingDefaultSetParams.push({ key: 'merge_stop', val: '1' });
             /* LED stays green until DSP finalizes at page boundary. */
         } else if (S.mergeNoticePending) {
-            /* Notice already up → ignore repeat Shift+Rec. */
+            /* Notice already up → ignore repeat Shift+Sample. */
         } else if (!S.playing) {
-            /* Shift+Rec no longer starts the merge directly — it raises a NOTICE.
+            /* Shift+Sample does not start the merge directly — it raises a NOTICE.
              * The user then presses plain Rec to begin the count-in, or Back to
              * cancel. (Live Merge is a stopped-transport op; ignored if playing.) */
             S.mergeNoticePending     = true;
@@ -2204,6 +2219,21 @@ function _onCC_transport(d1, d2) {
         }
         S.pendingMergeArm     = true;
         S.actionPopupEndTick  = S.tickCount + 280;
+        return;
+    }
+    /* Shift+RECORD: STEP RECORD (SH-101 style; Josh's Front-4 ruling) —
+     * the chord Live Merge vacated. Toggle: press again to leave. Only from
+     * the resting state of a melodic/MIDI track with the transport stopped;
+     * an ineligible press says why instead of dying silently. */
+    if (d1 === MoveRec && d2 === 127 && S.shiftHeld) {
+        if (S.stepRecActive) { stepRecExit(); return; }
+        if (S.dspMergeState !== 0 || S.mergeNoticePending || S.recordArmed) return;
+        if (!stepRecEligible()) {
+            showActionPopup('STEP REC', S.playing ? 'Stop transport first.'
+                                                  : 'Melodic tracks only.');
+            return;
+        }
+        stepRecEnter();
         return;
     }
     /* Plain Record while a Live Merge is armed/capturing STOPS the merge
@@ -2327,9 +2357,14 @@ function _onCC_transport(d1, d2) {
      * capture-only; Live Merge moved to Shift+Record. Sample-held + scene row
      * still opens scene bake directly (Sample is also a modifier — flagged
      * via sampleUsedAsModifier). */
-    if (d1 === MoveSample && d2 === 0 && !S.shiftHeld) {
+    if (d1 === MoveSample && d2 === 0) {
+        /* ⚠ Bake only if the PRESS was tracked as a plain press. A Shift+Sample
+         * press (the Live Merge chord above) never sets sampleHeld, so its
+         * release must not bake — including the shift-released-first ordering,
+         * where the release itself arrives unshifted. */
+        const _sampleWasHeld = S.sampleHeld;
         S.sampleHeld = false;
-        if (!S.sampleUsedAsModifier) {
+        if (_sampleWasHeld && !S.shiftHeld && !S.sampleUsedAsModifier) {
             if (S.sessionView) {
                 S.pendingSceneBakePicker = true;
                 S.screenDirty = true;
@@ -2379,6 +2414,14 @@ function _onCC_transport(d1, d2) {
      * step-edit nav never lands on a page that won't play. */
     if ((d1 === MoveLeft || d1 === MoveRight) && d2 === 127 && !S.sessionView) {
         var _t_lr = S.activeTrack;
+        /* STEP RECORD owns the arrows while its session is open: '>' is
+         * rest (bare) or tie (pads held); '<' un-ties or backsteps, erasing
+         * this session's data as it goes. Paging happens as a side effect of
+         * the cursor's page-follow, so the arrows never double-page here. */
+        if (S.stepRecActive) {
+            stepRecArrow(d1 === MoveRight ? 1 : -1);
+            return;
+        }
         if (S.loopHeld && S.activeBank === 6) {
             var RES_TPS = [12, 24, 48, 96, 384];
             var _ac_lr = effectiveClip(_t_lr);
@@ -4169,6 +4212,7 @@ function _switchViewCleanup() {
      * to it, and the next click re-opens exactly where you were. */
     S.sessMixerLatched = false;
     S.bankCardLatched  = false;
+    stepRecExit();
     standDownBankDisplay(true);
     S.heldStepBtn        = -1;
     S.heldStep           = -1;
@@ -4223,7 +4267,8 @@ export function _onCCMsg(d1, d2) {
      * only Rec (start the count-in) and Back (cancel) do anything; every other
      * button/knob is swallowed, press + release. Shift passes so its held state
      * stays accurate for the plain-Rec start. */
-    if (S.mergeNoticePending && d1 !== MoveRec && d1 !== MoveBack && d1 !== MoveShift) {
+    if (S.mergeNoticePending && d1 !== MoveRec && d1 !== MoveBack && d1 !== MoveShift &&
+            d1 !== MoveSample /* the chord that raised it — its RELEASE must not dismiss */) {
         return;
     }
     /* Scene-bake picker: "any other btn cancels". The picking controls are

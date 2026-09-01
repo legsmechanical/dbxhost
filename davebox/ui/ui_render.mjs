@@ -1264,8 +1264,8 @@ function drawUIBody() {
         return;
     }
     if (S.mergeNoticePending) {
-        /* Shift+Rec raised this notice; it does NOT start the merge. Plain Rec
-         * begins the count-in, Back cancels. */
+        /* Shift+Sample raised this notice; it does NOT start the merge. Plain
+         * Rec begins the count-in, Back cancels. */
         clear_screen();
         drawMenuHeader('LIVE MERGE');
         print(4, 20, S.mergeNoticeSingleTrack < 0 ? 'Capture all 8.'
