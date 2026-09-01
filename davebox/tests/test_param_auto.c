@@ -183,21 +183,25 @@ int main(void) {
     /* ---- the dispatcher contract ------------------------------------ */
     {
         /* An UNKNOWN pa_ key must be CONSUMED, not passed on. sp_track_misc is
-         * dispatched after this handler and ends in an unconditional pfx_set,
-         * so falling through would not ignore the key — it would apply it to
-         * the play-effects chain. The observable: a stray pa_ key must not
-         * change a pfx parameter. (sp_track_ccauto has exactly this bug today;
-         * it dies with the lane system, and this pins that we did not inherit
-         * it.) */
+         * dispatched after this handler and its tail is unconditional: it hands
+         * the sub-op to pfx_set AND bumps the remote-UI revision. For a name
+         * beginning "pa_" the pfx_set itself is inert (nothing matches), so the
+         * REV BUMP is the observable consequence — a stray key would announce a
+         * content change to the browser that never happened, costing a resync.
+         * That is what this pins; the pfx_set half only bites a sub-op whose
+         * name collides with a play-effects parameter, which is why an earlier
+         * version of this check passed against a handler that did fall
+         * through. */
         hx_t *h = hx_create(NULL);
-        char before[64] = {0}, after[64] = {0};
-        hx_get_param(h, "t0_c0_pfx_snapshot", before, sizeof(before));
+        char rev_before[32] = {0}, rev_after[32] = {0};
+        hx_get_param(h, "rui_rev", rev_before, sizeof(rev_before));
         hx_set_param(h, "t0_pa_nonsense", "0 0:fx1:x 1 1");
-        hx_get_param(h, "t0_c0_pfx_snapshot", after, sizeof(after));
-        HX_ASSERT(!strcmp(before, after), "an unknown pa_ key must not reach the pfx catch-all");
+        hx_get_param(h, "rui_rev", rev_after, sizeof(rev_after));
+        HX_ASSERT(!strcmp(rev_before, rev_after),
+                  "an unknown pa_ key must not fall through to the catch-all's rev bump");
         pa_list(h, buf, sizeof(buf));
         HX_ASSERT(list_count(buf) == 0, "and must not create an entry either");
-        OK("⚠ an unrecognised pa_ key is CONSUMED — the trap sp_track_ccauto still falls into");
+        OK("⚠ an unrecognised pa_ key is CONSUMED, not passed to the pfx catch-all");
         hx_destroy(h);
     }
 
