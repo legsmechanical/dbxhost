@@ -194,11 +194,15 @@ pad per project, 32 slots:
   wired the way dAVEBOx needs (instrument tracks on channels 1–4, MIDI out
   off), from the same template as Project 1 on first launch. It doesn't
   open until you choose Load.
+- **Shift + tap loads it *now*** — the one-gesture shortcut past the menu.
+  On an empty pad it creates the project first and opens it in the same
+  press.
 - **Copy:** hold Copy, tap the project, then tap an empty pad. Release
   cancels. A copy is a snapshot, colors and all.
 - **Delete:** hold Delete, tap the project, tap it again to confirm (it
-  blinks red in between). Release cancels. The open project can't be
-  deleted — switch away first.
+  blinks red in between). Release cancels. Deleting the project you're *in*
+  works too — the session restarts in place (a few seconds) and comes back
+  in the lowest remaining project, or at the picker if it was the last one.
 - **Back** steps out (color → the project's screen → closed); **Shift + Back**
   leaves dAVEBOx SA entirely, as always.
 
