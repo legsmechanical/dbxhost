@@ -1,9 +1,9 @@
 # Param Automation (Front 3) — ONE automation system
 
-**Status: RULED in the large (Josh, 2026-09-01) — full unification, option A. The behavioural
-spec is Josh's (native Move cannot be driven by an agent; the manual + his rulings are the
-source). Open residue in §6. Not implementation-ready until §6 closes or its proposals are
-adopted by default.**
+**Status: RULED and IMPLEMENTATION-READY (Josh, 2026-09-02) — full unification, option A.
+§6 residue closed: 6.1 bank 6 = read-only OVERVIEW; 6.5 bake/export INCLUDED in v1; 6.6 = 8 CCs
++ Aftertouch; 6.2/6.3/6.4 proposals adopted as defaults. The behavioural spec is Josh's (native
+Move cannot be driven by an agent; the manual + his rulings are the source).**
 
 Sources: Move manual §14.2–14.3 (pp. 86–90, 2025-07-25 edition) · Josh's rulings 2026-09-01 ·
 davebox MANUAL-SA §11 (the AUTO bank) + the lane machinery in `ui_input_cc.mjs` / `seq8.c`.
@@ -23,8 +23,8 @@ judged a convoluted UX (Josh). The unification:
   chassis: its knobs ARE the track's CC assignments (pick `CC0–127`) plus **Aftertouch**.
   Automating a CC to external gear is byte-for-byte the same gesture as automating a filter
   cutoff.
-- **The AUTO bank (bank 6) RETIRES as a mode.** Whether its slot survives as a read-only
-  automation OVERVIEW (graph of what's automated on the track) is open — §6.1.
+- **The AUTO bank (bank 6) RETIRES as a mode.** ⭑RULED (2026-09-02): its slot survives as a
+  **read-only automation OVERVIEW** — graphs of what's automated on the track, no editing.
 - **Resting values come free**: the un-automated knob position IS the resting value; the
   separate lane concept is gone.
 - ⭑RULED **No migration, no backward compatibility** — the lane system (incl. `Sch`
@@ -72,26 +72,32 @@ hand-placed locks — exactly when the choice is wanted.
 
 ## 5. What retiring the lanes costs (accepted, with recall options)
 
-1. **Per-lane independent loops + resolution/zoom** (polymetric sweeps). Recallable later
-   as a per-param loop-length property; not v1.
-2. **The bank-6 graph card** — §6.1 decides whether an overview view replaces it.
+1. **Per-lane independent loops + resolution/zoom** (polymetric sweeps). ⭑RULED
+   (Josh, 2026-09-02): he wants this back eventually. NOT by keeping old lane code dormant
+   (dormant code re-arms latent bugs) — instead the NEW store carries optional per-param
+   `loop window (length, offset)` + `resolution` fields from day one, sparse-serialized,
+   defaulting to "follow the clip", and the evaluator wraps on that field. v1 surfaces no
+   UI for them; lighting them up later is UI-only, no storage migration.
+2. **The bank-6 graph card** — replaced by the read-only OVERVIEW (§6.1 ruled).
 3. **The remote UI's lane editor** — re-pointed at the new store (or dropped from v1 and
    re-scoped; the rui surface is a follow-up either way).
 
-## 6. Open residue (❓ — small; proposals stand as defaults if unanswered)
+## 6. Residue — CLOSED (Josh, 2026-09-02)
 
-1. **Bank 6's slot**: retire outright, or keep as a read-only automation OVERVIEW (graphs
-   of the track's automated params)? (Option A vs B from the discussion.)
-2. **The Smooth toggle's surface.** Proposal: knob touched + jog-click toggles
+1. **Bank 6's slot**: ⭑RULED — **keep as a read-only automation OVERVIEW** (graphs of the
+   track's automated params; no editing there).
+2. **The Smooth toggle's surface**: default adopted — knob touched + jog-click toggles
    Stepped/Smooth for that param in this clip (popup confirms).
-3. **Delete+step reach**: proposal — Delete+step clears every param's lock at that step
-   (one gesture, everything automated there), alongside its existing note-clear meaning.
-4. **Capture retro-buffer** for editor knobs (knob moves captured like notes, Move §14.3):
-   proposed phase 2.
-5. **Bake/Export inclusion** of param automation: v1 scope call.
-6. **MIDI Out device shape**: how many CC knobs per track (8 like the old lanes? 16?),
-   and where assignment lives (the device's own config page, mirroring the old assign
-   mode). Engineering proposal at implementation time.
+3. **Delete+step reach**: default adopted — Delete+step clears every param's lock at that
+   step (one gesture, everything automated there), alongside its existing note-clear meaning.
+4. **Capture retro-buffer** for editor knobs: phase 2 (default adopted).
+5. **Bake/Export**: ⭑RULED (refined 2026-09-02) — **the two paths are SEPARATE**. BAKE
+   (Print, result stays in davebox): full inclusion — every automation entry survives, with
+   length-pinning when the bake unrolls the clip. EXPORT (→ Ableton Live, MIDI): CC/AT
+   entries render into the file; chain-param entries are omitted (no MIDI representation —
+   they mean nothing to Live without the chain).
+6. **MIDI Out device shape**: ⭑RULED — **8 CC knobs + Aftertouch** per track; assignment
+   (pick CC0–127) lives on the device's own config page.
 
 ## 7. Engineering notes (non-blocking)
 
