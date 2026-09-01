@@ -544,9 +544,22 @@ step('⭑ NOTE/SESSION is a LEAVE: the view toggle must not reset the track\'s b
     right();                                   /* into SOUND + CONFIG */
     if (!snd.soundActive()) throw new Error('control: did not enter sound mode');
 
-    noteSession();                             /* -> session view */
+    /* ⚠⚠ REWRITTEN by Josh's ESCAPE LAW (2026-09-02): from a non-overview state
+     * the button no longer switches views at all — it returns you to the
+     * overview of the view you are IN. So the FIRST press leaves sound mode and
+     * stays in track view; the SECOND, now at rest, is the view switch this
+     * step was originally written around. The 08-25 substance is untouched and
+     * is still what this step exists to prove: neither press may RESET the
+     * track's bank place. (That is why the escape leaves with {leaving:true}.) */
+    noteSession();                             /* escape -> track overview */
+    if (S.sessionView) throw new Error('the escape switched views instead of going home');
+    if (snd.soundActive()) throw new Error('the escape did not leave sound mode');
+    if (S.trackActiveBank[2] !== BANK_SOUND)
+        throw new Error('the ESCAPE reset the bank to ' + S.trackActiveBank[2] +
+                        (S.trackActiveBank[2] === 0 ? " — Josh's report" : ''));
+
+    noteSession();                             /* now at rest -> session view */
     if (!S.sessionView) throw new Error('control: did not switch to session view');
-    if (snd.soundActive()) throw new Error('the screen survived the view change');
     if (S.trackActiveBank[2] !== BANK_SOUND)
         throw new Error('the view change RESET the bank to ' + S.trackActiveBank[2] +
                         (S.trackActiveBank[2] === 0 ? " — Josh's report" : ''));

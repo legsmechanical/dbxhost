@@ -180,17 +180,25 @@ step('⭐ a VIEW SWITCH leaves the bank view — each view opens on its overview
     /* Josh, 2026-09-01: "leaving the bank view on session or track should
      * make it so you start back on track/session overview oled." The
      * remembered bank survives; only the display law resets. */
+    /* ⚠ Josh's ESCAPE LAW (2026-09-02) put a press in front of each switch: a
+     * latched bank view is NOT an overview, so the first press goes home and
+     * the second switches. The property this step exists for is unchanged —
+     * a latch never survives, and the remembered bank does. */
     rest(); S.activeBank = 1;
     click();                                     /* latch the track bank view */
     if (!S.bankCardLatched) throw new Error('setup: no latch');
-    cc(50, 127); cc(50, 0);                      /* Note/Session tap -> session view */
+    cc(50, 127); cc(50, 0);                      /* escape -> track overview */
+    if (S.sessionView) throw new Error('the escape switched views instead of going home');
+    if (S.bankCardLatched) throw new Error('the escape did not drop the track latch');
+    cc(50, 127); cc(50, 0);                      /* now at rest -> session view */
     if (!S.sessionView) throw new Error('setup: did not switch to session view');
-    if (S.bankCardLatched) throw new Error('the track latch survived the switch');
     click();                                     /* latch the session mixer */
     if (!S.sessMixerLatched) throw new Error('setup: session click did not latch');
+    cc(50, 127); cc(50, 0);                      /* escape -> session overview */
+    if (!S.sessionView) throw new Error('the escape left session view instead of going home');
+    if (S.sessMixerLatched) throw new Error('the escape did not drop the session latch');
     cc(50, 127); cc(50, 0);                      /* back to track view */
     if (S.sessionView) throw new Error('setup: did not switch back');
-    if (S.sessMixerLatched) throw new Error('the session latch survived the switch');
     if (bankCardVisible()) throw new Error('track view did not open on its overview');
     if (S.activeBank !== 1) throw new Error('the remembered bank was lost: ' + S.activeBank);
 });

@@ -27,8 +27,18 @@ function step(label, fn) {
 
 const sets = [];
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
-globalThis.host_file_exists = () => false; globalThis.host_write_file = () => true;
+globalThis.host_file_exists = () => false; 
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;
+/* ⚠⚠ TRIPWIRE: the entry-point wrapper SWALLOWS errors (captureError in ui.js),
+ * writing them to seq8-jserr.log — which a stubbed host_write_file drops on the
+ * floor. A tick or MIDI dispatch that died on line one then looks exactly like a
+ * clean pass, so every "and it survives a tick" assertion below would be vacuous.
+ * Fail the run instead: any jserr write is a swallowed exception. */
+let swallowed = null;
+globalThis.host_write_file = (path, body) => {
+    if (String(path).indexOf('jserr') >= 0 && swallowed === null) swallowed = String(body).slice(0, 900);
+    return true;
+};
 globalThis.host_module_set_param = (k, v) => { sets.push([k, v]); };
 globalThis.host_module_get_param = () => ''; globalThis.shadow_get_param = () => '';
 globalThis.shadow_set_param = () => 1; globalThis.host_vol_block = () => {};
@@ -255,6 +265,13 @@ step('⭐ every exit route ends the session: Back, Play, track switch, view swit
     const enter = () => { rest(); rec.stepRecEnter(); };
     enter(); cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
     if (S.stepRecActive) throw new Error('Back did not exit');
+    /* ⭐ Bare RECORD leaves the session and must NOT also arm real-time
+     * recording (Josh's ruling) — it used to fall through to the arm/punch
+     * block and do exactly that, with the session still open underneath. */
+    enter(); cc(C.MoveRec, 127); cc(C.MoveRec, 0);
+    if (S.stepRecActive) throw new Error('bare Record did not exit');
+    if (S.recordArmed) throw new Error('bare Record armed real-time recording instead of only exiting');
+    if (S.recordCountingIn) throw new Error('bare Record started a count-in instead of only exiting');
     enter(); cc(HC.MovePlay, 127);
     if (S.stepRecActive) throw new Error('Play did not exit');
     if (!sets.some(([k]) => k === 'transport') &&
@@ -267,6 +284,26 @@ step('⭐ every exit route ends the session: Back, Play, track switch, view swit
     enter(); S.playing = true; globalThis.tick();
     if (S.stepRecActive) throw new Error('the tick belt did not exit on a running transport');
     S.playing = false;
+    rest();
+});
+
+step('⭐ Shift+SAMPLE is DECLINED over an open session — no merge can open under step record', () => {
+    /* The mirror of the entry gate. Step record runs with the transport
+     * STOPPED, which is exactly the condition that raises the Live Merge
+     * notice — so without a gate here the notice goes up over the session,
+     * a plain Rec then reaches the notice block ABOVE the step-record exit
+     * gate, and a merge count-in runs while pads still write steps. Same
+     * defect class as the bare-Record fall-through, reached through Sample. */
+    rest(); rec.stepRecEnter();
+    if (!S.stepRecActive) throw new Error('rig: no session open');
+    S.shiftHeld = true; cc(C.MoveSample, 127); cc(C.MoveSample, 0); S.shiftHeld = false;
+    if (S.mergeNoticePending)
+        throw new Error('Shift+Sample raised the merge notice over an open session');
+    if (!S.stepRecActive) throw new Error('Shift+Sample ended the session instead of declining');
+    /* and the follow-up Rec must still be the session exit, not a count-in */
+    cc(C.MoveRec, 127); cc(C.MoveRec, 0);
+    if (S.mergeCountingIn) throw new Error('a merge count-in started under the session');
+    if (S.stepRecActive) throw new Error('Record did not exit the session');
     rest();
 });
 
@@ -339,6 +376,7 @@ step('⭐ the gate literals MIRROR seq8.c — the copied-C-constant pin', () => 
                         ' vs JS ' + jTps[1] + '/' + jGate[1]);
 });
 
+if (swallowed !== null) { console.error('  FAIL — a SWALLOWED exception reached the jserr log:\n' + swallowed); failed = 1; }
 process.exit(failed);
 }
 main().catch((e) => { console.error(e && e.stack ? e.stack : e); process.exit(1); });

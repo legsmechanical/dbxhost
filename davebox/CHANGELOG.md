@@ -31,6 +31,19 @@ the section into a versioned heading at release time.
   then press Sample.
 - **A new splash pool — 31 Daves.** The launch artwork rotates through a fully
   recurated set; every launch greets you with a different Dave.
+### Features (pending, cont.)
+- **Note/Session is the way out.** From anywhere that isn't a plain overview —
+  a bank view, a menu, the sound editor, a dialog, a picker — one press takes
+  you back to the overview of the view you're in, however deep you were. Back
+  still steps out one level at a time. On the overview it means switch/peek
+  view exactly as before.
+### Fixes (pending)
+- **Record leaves step recording.** Pressing Record during a step-record take
+  now simply ends the take, instead of also arming a normal recording
+  underneath it. Shift+Sample is declined while a take is open, so a Live
+  Merge can no longer start under one either.
+- **Key and Scale stick.** Changing either from the Settings menu now takes
+  effect — picking a value used to preview it and then quietly snap back.
 ### Features
 - **The bank walk is direct.** Inside the bank view the jog steps straight
   through the banks — no picker list, no waiting to commit. The latch border

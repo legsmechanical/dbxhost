@@ -97,9 +97,17 @@ step('picker opens; DSP pad dispatch mutes (pads stop sounding the instrument)',
     if (!dm._padDispatchMutedNow()) throw new Error('padmap not muted with the picker open');
 });
 
-step('⭑ Note/Session is swallowed while the picker is open', () => {
+step('⭑ Note/Session ESCAPES the picker — and does not flip the view (2026-09-02 law)', () => {
+    /* ⚠ CHANGED by Josh's escape law: this used to assert the press was
+     * SWALLOWED. A mid-session picker is a state you can be stuck in, so
+     * Note/Session now closes it and lands on the overview. What must NOT
+     * happen — then and now — is the view flipping underneath it. */
     cc(50, 127); cc(50, 0);
-    if (S.sessionView) throw new Error('the view flipped under the picker');
+    if (S.sessionView) throw new Error('the view flipped instead of escaping');
+    if (S.projectPadPicker) throw new Error('the picker survived the escape');
+    /* re-open for the modal-behaviour steps below */
+    dlg.openProjectPadPicker();
+    if (!S.projectPadPicker) throw new Error('rig: the picker did not re-open');
 });
 
 step('⭑ jog drives the PICKER, not the bank walk', () => {

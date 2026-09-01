@@ -83,6 +83,39 @@ const STRETCH_BLOCKED_TICKS = 141;  /* ~1500ms at 94Hz (was 294, calibrated for 
 const NOTE_SESSION_HOLD_TICKS = 19;  /* ~200ms at 94Hz, matching STEP_HOLD_TICKS (was 40 @196Hz — a ~300ms hold misread as tap, latching momentary views) */
 const BACK_HOLD_TICKS = 42;          /* ~450ms at 94Hz — a deliberate long-press on Back = suspend from anywhere (vs a short tap = back out one UI level) */
 
+/* ⭑ ONE owner of "finish a Key/Scale pick". Their menu `set()` is a live
+ * PREVIEW, never the commit — the commit is xposeCommit, and reaching it is
+ * what makes a pick stick. Both edit flavours land here: the in-place enum
+ * edit, and the PICKER overlay, which is how Key/Scale are actually edited
+ * (>2 options ⇒ globalEnumPickable). The picker used to close through
+ * item.set() alone, so the pick armed a preview and nothing else; the tick's
+ * stranded-preview heal then dropped it and the row snapped back — Josh:
+ * "changing scale from the global menu isn't sticking".
+ * ⚠ The confirm branch must LEAVE `editing` true: that heal (ui_tick, the
+ * `_onKeyScale` test) cancels a confirmXpose whose menu row is not in an
+ * edit, so a dialog raised from the picker would die on the next tick. */
+function _finishKeyScaleEdit(label, ev) {
+    const candK = label === 'Key'   ? ev : S.padKey;
+    const candS = label === 'Scale' ? ev : S.padScale;
+    const _clearEdit = () => {
+        S.globalMenuState.editing = false; S.globalMenuState.editValue = null;
+        S.lastSentMenuEditValue = null; S.bpmWasEditing = false;
+    };
+    if (candK === S.padKey && candS === S.padScale) {
+        xposeCancelPreview();
+        _clearEdit();
+    } else if (anyMelodicClipHasContent()) {
+        S.confirmXpose = true; S.confirmXposeSel = 0;
+        S.confirmXposeKey = candK; S.confirmXposeScale = candS;
+        /* keep editing + preview armed under the dialog (see banner) */
+        S.globalMenuState.editing = true; S.globalMenuState.editValue = ev;
+    } else {
+        xposeCommit(candK, candS);
+        _clearEdit();
+    }
+    S.screenDirty = true;
+}
+
 function _onCC_jog(d1, d2) {
     if (S.shiftTrackLEDActive) { S.shiftTrackLEDActive = false; S.screenDirty = true; }
     /* ⭑⭑ BANK PICKER: the click is the ONLY thing that applies a bank (Josh,
@@ -432,23 +465,8 @@ function modalDialogUp() {
             const _it = (S.globalMenuState && S.globalMenuItems)
                         ? S.globalMenuItems[S.globalMenuState.selectedIndex] : null;
             if (_it && S.globalMenuState.editing && (_it.label === 'Key' || _it.label === 'Scale')) {
-                const ev    = S.globalMenuState.editValue !== null ? S.globalMenuState.editValue : _it.get();
-                const candK = _it.label === 'Key'   ? ev : S.padKey;
-                const candS = _it.label === 'Scale' ? ev : S.padScale;
-                if (candK === S.padKey && candS === S.padScale) {
-                    xposeCancelPreview();
-                    S.globalMenuState.editing = false; S.globalMenuState.editValue = null;
-                    S.lastSentMenuEditValue = null; S.bpmWasEditing = false;
-                } else if (anyMelodicClipHasContent()) {
-                    S.confirmXpose = true; S.confirmXposeSel = 0;
-                    S.confirmXposeKey = candK; S.confirmXposeScale = candS;
-                    /* keep editing + preview armed under the dialog */
-                } else {
-                    xposeCommit(candK, candS);
-                    S.globalMenuState.editing = false; S.globalMenuState.editValue = null;
-                    S.lastSentMenuEditValue = null; S.bpmWasEditing = false;
-                }
-                S.screenDirty = true;
+                _finishKeyScaleEdit(_it.label,
+                    S.globalMenuState.editValue !== null ? S.globalMenuState.editValue : _it.get());
                 return;
             }
         }
@@ -467,7 +485,23 @@ function modalDialogUp() {
          * edit — this menu holds the longest lists in the app (Scale is 14,
          * MIDI channel 17). Intercepted BEFORE handleMenuInput, which is the
          * host's shared editor and knows nothing about overlays. */
-        if (S.globalEnumPick) { closeGlobalEnumPick(true); S.screenDirty = true; return; }
+        if (S.globalEnumPick) {
+            /* Key/Scale need the finisher, not just the close: their set() is
+             * only a preview (see _finishKeyScaleEdit). Close FIRST so the
+             * confirm dialog is not drawn under the overlay. */
+            const _pk = S.globalEnumPick;
+            const _pl = _pk.item && _pk.item.label;
+            const _pv = _pk.raw[_pk.sel];
+            const _ks = (_pl === 'Key' || _pl === 'Scale');
+            /* ⚠ commit=false for Key/Scale: their set() is xposePreviewSet, which
+             * writes t0_xpose_prev DIRECTLY — from this onMidiMessage context it
+             * can be coalesced away (computePadNoteMap pushes a padmap in the
+             * same buffer). The finisher owns the commit, and the tick's preview
+             * driver re-sends the preview from tick context. */
+            closeGlobalEnumPick(!_ks);
+            if (_ks) { _finishKeyScaleEdit(_pl, _pv); return; }
+            S.screenDirty = true; return;
+        }
         {
             const _e = (S.globalMenuState && S.globalMenuItems)
                        ? S.globalMenuItems[S.globalMenuState.selectedIndex] : null;
@@ -1375,87 +1409,43 @@ function _onCC_buttons(d1, d2) {
              * pollDSP picks up target=NONE on the next frame and runs
              * exitMoveNativeCoRun() for the JS cleanup.
              * No Menu intercept needed here. */
-            if (S.snapshotPicker) {
-                /* Back out of a confirm to the list, else close the picker. */
-                if (S.snapshotPicker.confirm) S.snapshotPicker.confirm = null;
-                else closeSnapshotPicker();
-                forceRedraw();
-                return;
-            }
             if (S.shiftHeld) {
                 /* ⭑ DEFERRED TO THE RELEASE. The gesture has two meanings now
                  * and only its DURATION separates them, so the press records
-                 * when it happened and does nothing else. */
+                 * when it happened and does nothing else.
+                 * ⚠ This MUST stay ahead of the escape below: Shift+Note/Session
+                 * is an OPENER that works from anywhere, so an escape running
+                 * first would break it from every off-overview state. */
                 S.shiftNoteSessionTick = S.tickCount;
                 S.screenDirty = true;
                 return;
-            } else if (soundGestureReturn()) {
-                forceRedraw();
-            } else if (S.tapTempoOpen) {
-                closeTapTempo();
-                forceRedraw();
-            } else if (S.confirmStateWipe) {
-                S.confirmStateWipe = false;
-                removeFlagsWrap();
-                clearAllLEDs();
-                host_exit_module();
-                forceRedraw();
-            } else if (S.bpmMoveInfo) {
-                S.bpmMoveInfo = false;
-                forceRedraw();
-            } else if (S.recordBlockedDialog) {
-                S.recordBlockedDialog = false;
-                forceRedraw();
-            } else if (S.confirmLgto) {
-                S.confirmLgto = false;
-                forceRedraw();
-            } else if (S.confirmBake) {
-                S.confirmBake          = false;
-                S.confirmBakeWrapPhase = false;
-                forceRedraw();
-            } else if (S.globalMenuOpen && S.confirmClearSession) {
-                S.confirmClearSession = false;
-                forceRedraw();
-            } else if (S.globalMenuOpen && S.confirmSaveState) {
-                S.confirmSaveState = false;
-                forceRedraw();
-            } else if (S.globalMenuOpen && S.confirmConvertToDrum) {
-                closeConvertConfirm();
-                forceRedraw();
-            } else if (S.globalMenuOpen && S.confirmConvertToConduct) {
-                closeConvertConfirm();
-                forceRedraw();
-            } else if (S.globalMenuOpen && S.menuInfoLines.length > 0) {
-                S.menuInfoLines = [];
-                forceRedraw();
-            } else if (S.globalMenuOpen && S.exportDoneDialog) {
-                S.exportDoneDialog = false;
-                S.globalMenuOpen   = false;
-                forceRedraw();
-            } else if (S.globalMenuOpen && S.confirmExportCondPhase) {
-                S.confirmExportCondPhase = false;   /* Back from cond stage aborts export */
-                forceRedraw();
-            } else if (S.globalMenuOpen && S.confirmExport) {
-                S.confirmExport = false;
-                forceRedraw();
-            } else if (S.globalMenuOpen) {
-                S.globalMenuOpen = false;
-                S.lastSentMenuEditValue = null;
-                forceRedraw();
-            } else if (S.stepIntervalMode && !S.sessionView) {
-                /* Arp Steps overlay: Note/Session exits the overlay without switching view. */
-                S.stepIntervalMode = false;
-                computePadNoteMap();
-                forceRedraw();
-            } else {
-                /* Switch immediately (like Loop entering perf); tap vs hold resolved on release */
-                S.noteSessionPressedTick = S.tickCount;
-                S.sessionViewMomentary   = true;
-                S.sessionView            = !S.sessionView;
-                _switchViewCleanup();
-                invalidateLEDCache();
-                S.screenDirty = true;
             }
+            /* ⭑⭑ THE LAW (Josh, 2026-09-02): Note/Session RETURNS YOU TO THE
+             * OVERVIEW; where there is no overview to return to yet, it does
+             * nothing. Its old grammar — tap switches view, hold peeks — is
+             * constrained to the overview screens, which is the only place
+             * "switch view" is the button's obvious meaning.
+             *
+             * ⚠ ONE PRESS, not a Back: from three menus deep this lands on the
+             * overview, while Back keeps its level-by-level law. The two are
+             * deliberately different verbs. */
+            if (noOverviewYet()) return;
+            if (!atOverview()) {
+                returnToOverview();
+                /* Swallow the release: it would otherwise reach the tap/hold
+                 * logic below and flip the view straight back out of the
+                 * overview we just landed on. */
+                S._modalSwallowCC = MoveNoteSession;
+                return;
+            }
+            /* At the overview: the old grammar, untouched. Switch immediately
+             * (like Loop entering perf); tap vs hold resolved on release. */
+            S.noteSessionPressedTick = S.tickCount;
+            S.sessionViewMomentary   = true;
+            S.sessionView            = !S.sessionView;
+            _switchViewCleanup();
+            invalidateLEDCache();
+            S.screenDirty = true;
         } else if (d2 === 0) {
             /* ⭑ Shift+Note/Session resolves HERE, on the release, because only
              * the duration separates its two meanings. Read the flag recorded at
@@ -1760,6 +1750,173 @@ export function backTapWouldAct() {
            (S.activeBank === 7 && S.allLanesConfirmed) || S.activeBank !== 0;
 }
 
+/* ⭑⭑ THE NOTE/SESSION LAW (Josh, 2026-09-02).
+ *
+ *   "Note/Session returns you to the OVERVIEW; where there is no overview to
+ *    return to yet, it does nothing."
+ *
+ * These two functions are that law. `noOverviewYet()` names the boot-time
+ * modals that have nothing behind them; `atOverview()` decides whether the
+ * button means "go home" or keeps its old grammar (tap switches view, hold
+ * peeks), which is now constrained to the overview screens.
+ *
+ * ⚠⚠ THIS IS THE THIRD PARALLEL TEARDOWN LIST in this file — `_backTap`
+ * (level-by-level) and `_switchViewCleanup` (view residue) are the others, and
+ * they WILL drift. `test_note_session_overview.mjs` pins them against each
+ * other: every state `backTapWouldAct` reads must appear here or in an explicit
+ * carve-out. Add a screen, add it in all three places.
+ *
+ * ⚠ Deliberately NOT built by looping `_backTap` until home: Back inside sound
+ * mode never reaches `_backTap` at all (soundOnCC consumes CC 51 in ui.js's
+ * dispatch), so a loop would spin at a no-progress fixpoint with the sound
+ * screen still open — and re-firing per-level side effects designed for single
+ * steps is its own hazard. */
+function noOverviewYet() {
+    /* The incompatible-state confirm must be ANSWERED (its "No" exits the
+     * module, preserving the file) and the startup picker IS the session until
+     * a project is chosen. Back declines on both for the same reason.
+     * ⚠ Note/Session used to exit the module from the state-wipe confirm; Josh
+     * ruled that out 2026-09-02 — a button meaning "go home" must not quit. */
+    return !!(S.confirmStateWipe || (S.projectPadPicker && S.awaitingProjectSelect));
+}
+
+export function atOverview() {
+    if (noOverviewYet()) return false;
+    /* ⚠ NOT bankCardVisible()/sessMixerVisible(): those include the KNOB-TOUCH
+     * PEEK, and a peek is not a screen you are "in" — treating it as
+     * off-overview would turn a tap during a knob hold into a dead swallow.
+     * Persistent state only. */
+    if (soundActive() || S.moveCoRunTrack >= 0)                     return false;
+    if (S.stepRecActive)                                            return false;
+    if (S.globalMenuOpen || S.daveBox || S.projectPadPicker)        return false;
+    if (S.snapshotPicker || S.globalEnumPick || S.clearAutoMenu)    return false;
+    if (S.tapTempoOpen || S.tempoSelectActive)                      return false;
+    if (S.mergeNoticePending || S.mergeCountingIn ||
+        S.pendingMergePlacement || S.mergeSoloPlacement >= 0)       return false;
+    if (S.capturePlaceTrack >= 0 || S.pendingSceneBakePicker)       return false;
+    if (S.confirmBakeScene || S.confirmBakeDrumLoopOpen ||
+        S.confirmXpose || S.confirmLgto || S.confirmBake ||
+        S.recordBlockedDialog || S.bpmMoveInfo)                     return false;
+    if (S.bankCardLatched || S.sessMixerLatched)                    return false;
+    if (S.sessionView) return !S.perfViewLocked;
+    return !(S.stepIntervalMode || S.altMode ||
+             (S.activeBank === 7 && S.allLanesConfirmed));
+}
+
+/* Tear every layer down in ONE pass and land on the current view's overview.
+ * ⚠ Never touches S.sessionView — the law returns you to the overview of the
+ * view you are IN; switching is the button's other meaning, and only from rest. */
+function returnToOverview() {
+    /* ⭑ CO-RUN CARVE-OUT (Josh ruled 2026-09-02, keeping today's behaviour):
+     * leaving co-run returns you where you came in from, which may be a sound
+     * screen rather than the overview — exitMoveNativeCoRun re-arms
+     * pendingSoundEnterTrack for a 'sound' origin and the tick consumes it. A
+     * second press then escapes that screen under the normal law. */
+    if (S.moveCoRunTrack >= 0) { exitMoveNativeCoRun(); forceRedraw(); return; }
+
+    /* 1. Transient dialogs, pickers and captures. No early returns: this is a
+     *    one-press escape, so everything open closes at once. */
+    if (S.snapshotPicker) { S.snapshotPicker.confirm = null; closeSnapshotPicker(); }
+    if (S.globalEnumPick) closeGlobalEnumPick(false);          /* abandon, never commit */
+    if (S.clearAutoMenu)  { S.clearAutoMenu = null; S.deleteTapArmed = false; }
+    if (S.tempoSelectActive) {
+        /* Keep the auditioned tempo, exactly as Back and the jog-click do. */
+        host_module_set_param('t' + S.tempoSelectTrack + '_capture_confirm', '');
+        S.tempoSelectActive = false;
+    }
+    /* One merge_cancel however many merge states are up — the DSP takes one. */
+    let _cancelMerge = false;
+    if (S.mergeNoticePending) S.mergeNoticePending = false;
+    if (S.mergeCountingIn) {
+        S.mergeCountingIn = false; S.mergeSingleTrack = -1; S.pendingMergeArm = false;
+        S.actionPopupEndTick = -1;
+        setButtonLED(MoveRec, S.recordArmed ? Red : LED_OFF);
+        _cancelMerge = true;
+    }
+    if (S.pendingMergePlacement || S.mergeSoloPlacement >= 0) {
+        S.pendingMergePlacement = false; S.mergeSoloPlacement = -1;
+        _cancelMerge = true;
+    }
+    if (_cancelMerge) S.pendingDefaultSetParams.push({ key: 'merge_cancel', val: '1' });
+    if (S.capturePlaceTrack >= 0)  S.capturePlaceTrack = -1;
+    if (S.pendingSceneBakePicker)  S.pendingSceneBakePicker = false;
+    if (S.confirmBakeScene)        { S.confirmBakeScene = false; S.confirmBakeSceneCondPhase = false; }
+    if (S.confirmBakeDrumLoopOpen) S.confirmBakeDrumLoopOpen = false;
+    if (S.confirmXpose) {
+        /* ⚠ Cancel the PREVIEW and disarm the edit, or a live transpose is left
+         * running and the row keeps a candidate the user never confirmed. */
+        xposeCancelPreview(); S.confirmXpose = false;
+        if (S.globalMenuState) { S.globalMenuState.editing = false; S.globalMenuState.editValue = null; }
+        S.lastSentMenuEditValue = null; S.bpmWasEditing = false;
+    }
+    if (S.confirmLgto)         S.confirmLgto = false;
+    if (S.confirmBake)         { S.confirmBake = false; S.confirmBakeWrapPhase = false; }
+    if (S.recordBlockedDialog) S.recordBlockedDialog = false;
+    if (S.bpmMoveInfo)         S.bpmMoveInfo = false;
+    if (S.tapTempoOpen)        closeTapTempo();
+    /* ⚠ closeDaveBox WITHOUT the openGlobalMenu Back pairs it with — Back peels
+     * back to the menu it came from; this goes home. */
+    if (S.daveBox)             closeDaveBox();
+    if (S.projectPadPicker)    closeProjectPadPicker();   /* startup case handled by noOverviewYet */
+
+    /* 2. The global menu and every confirm nested in it, all at once. */
+    if (S.globalMenuOpen) {
+        S.confirmClearSession = false; S.confirmSaveState = false;
+        if (S.confirmConvertToDrum || S.confirmConvertToConduct) closeConvertConfirm();
+        S.menuInfoLines = []; S.exportDoneDialog = false;
+        S.confirmExportCondPhase = false; S.confirmExport = false;
+        S.globalMenuOpen = false; S.lastSentMenuEditValue = null;
+    }
+
+    /* 3. Sound mode — a LEAVE, not a close. `{leaving:true}` keeps the track
+     *    RECORDED on SOUND + CONFIG, so returning to it returns here; a plain
+     *    soundExit() would reset the track's bank place, which Josh retired on
+     *    2026-08-25 ("without resetting the track's current bank place") and
+     *    `test_shift_note_opens_generator` pins. It is also what this same
+     *    button's other meaning already does — `_switchViewCleanup` leaves the
+     *    bank view while the remembered bank stays put — so both halves of
+     *    Note/Session agree about bank memory.
+     *    ⚠ The one thing `leaving` skips is the global-bus resync, so do it
+     *    here: escaping a Master/Send FX bus (track −1) can leave the live
+     *    mirror reading BANK_SOUND for a track that is NOT recorded there, and
+     *    that track's screen would then not come back. Resync from the RECORD,
+     *    never by picking a default — a genuine BANK_SOUND memory must survive. */
+    if (soundActive()) {
+        soundExit({ leaving: true });
+        if (S.activeBank === BANK_SOUND &&
+            (S.trackActiveBank[S.activeTrack] | 0) !== BANK_SOUND)
+            S.activeBank = S.trackActiveBank[S.activeTrack] | 0;
+    }
+    stepRecExit();
+
+    /* 4. Perf lock (session view's own non-overview state). */
+    if (S.perfViewLocked || S.perfStack.length > 0) {
+        S.perfViewLocked    = false;
+        S.loopHeld          = false;
+        S.loopJogActive     = false;
+        S.perfStack         = [];
+        S.perfStickyLengths = new Set();
+        S.perfHoldPadHeld   = false;
+        S.perfModsHeld      = 0;
+        sendPerfMods();
+        host_module_set_param('looper_stop', '1');
+    }
+
+    /* 5. View residue. */
+    S.stepIntervalMode  = false;
+    S.altMode           = false;
+    S.allLanesConfirmed = false;
+    S.bankCardLatched   = false;
+    S.sessMixerLatched  = false;
+    standDownBankDisplay(true);
+    S.jogTouched        = false;
+
+    /* Several of the above own the pad map (arp overlay, picker mutes). */
+    computePadNoteMap();
+    invalidateLEDCache();
+    forceRedraw();
+}
+
 function _backTap() {
     /* Boot-time decision modals (incompatible-state wipe, set-inherit picker):
      * leave to their own jog-click flow; Back must not act underneath them. */
@@ -1825,7 +1982,19 @@ function _backTap() {
     if (S.pendingSceneBakePicker)  { S.pendingSceneBakePicker = false; forceRedraw(); return; }
     if (S.confirmBakeScene)        { S.confirmBakeScene = false; S.confirmBakeSceneCondPhase = false; forceRedraw(); return; }
     if (S.confirmBakeDrumLoopOpen) { S.confirmBakeDrumLoopOpen = false; forceRedraw(); return; }
-    if (S.confirmXpose)            { xposeCancelPreview(); S.confirmXpose = false; forceRedraw(); return; }
+    /* ⚠ Clear the EDIT with the dialog. A cancelled confirm must not leave the
+     * row in an edit the user never started — it would show the candidate they
+     * just cancelled, and the next jog-click would re-raise the same confirm
+     * through the Key/Scale interceptor. Load-bearing since the picker became
+     * the way Key/Scale are edited: the confirm branch arms `editing` on
+     * purpose (the heal reads it), so only this branch can disarm it. */
+    if (S.confirmXpose)            { xposeCancelPreview(); S.confirmXpose = false;
+                                     if (S.globalMenuState) {
+                                         S.globalMenuState.editing = false;
+                                         S.globalMenuState.editValue = null;
+                                     }
+                                     S.lastSentMenuEditValue = null; S.bpmWasEditing = false;
+                                     forceRedraw(); return; }
     if (S.confirmLgto)             { S.confirmLgto = false; forceRedraw(); return; }
     if (S.confirmBake)             { S.confirmBake = false; S.confirmBakeWrapPhase = false; forceRedraw(); return; }
     if (S.recordBlockedDialog)     { S.recordBlockedDialog = false; forceRedraw(); return; }
@@ -2180,6 +2349,18 @@ function _onCC_transport(d1, d2) {
         return;
     }
     if (d1 === MoveSample && d2 === 127 && S.shiftHeld) {
+        /* ⚠ Not over an open STEP RECORD session. Step record runs with the
+         * transport STOPPED — exactly the condition that raises the notice —
+         * so without this the notice goes up over the session, plain Rec then
+         * hits the notice block ABOVE the step-record gate below, and a merge
+         * count-in runs while pads still write steps. Same defect class as the
+         * bare-Record fall-through this pass fixes, reached through Sample.
+         * Declining (rather than exiting for them) keeps the two modes
+         * symmetric: step-record entry already refuses while a merge is up. */
+        if (S.stepRecActive) {
+            showActionPopup('LIVE MERGE', 'Leave step record first.');
+            return;
+        }
         if (S.dspMergeState !== 0) {
             /* Active capture → stop it (finalizes; opens placement). */
             S.pendingDefaultSetParams.push({ key: 'merge_stop', val: '1' });
@@ -2226,12 +2407,24 @@ function _onCC_transport(d1, d2) {
         S.actionPopupEndTick  = S.tickCount + 280;
         return;
     }
+    /* RECORD while a STEP RECORD session is open: leave it, shifted or not
+     * (Josh's ruling). Bare Record used to fall through to the arm/punch
+     * block below and start real-time recording with the session still open
+     * underneath. This gate is the ONE owner of "Record leaves step record".
+     * ⚠ It cannot simply be moved above the merge blocks: a merge count-in
+     * already in flight must still cancel on Rec. The invariant that keeps
+     * that safe is that no merge can BEGIN over a session — enforced at the
+     * Shift+Sample door above and at this block's own entry gate below, not
+     * by ordering here. */
+    if (d1 === MoveRec && d2 === 127 && S.stepRecActive) {
+        stepRecExit();
+        return;
+    }
     /* Shift+RECORD: STEP RECORD (SH-101 style; Josh's Front-4 ruling) —
      * the chord Live Merge vacated. Toggle: press again to leave. Only from
      * the resting state of a melodic/MIDI track with the transport stopped;
      * an ineligible press says why instead of dying silently. */
     if (d1 === MoveRec && d2 === 127 && S.shiftHeld) {
-        if (S.stepRecActive) { stepRecExit(); return; }
         /* ⚠ Not from behind another screen: sound mode never consumes CC 86
          * and soundModeCovered()'s modal set draws over everything, so without
          * these two gates a session could open INVISIBLY — pads then write
@@ -2239,7 +2432,11 @@ function _onCC_transport(d1, d2) {
          * checkpoint is burned (review finding, verified both ways). Silent
          * decline: a popup would be as hidden as the session. */
         if (soundActive() || soundModeCovered()) return;
-        if (S.dspMergeState !== 0 || S.mergeNoticePending || S.recordArmed) return;
+        /* ⚠ dspMergeState is a pollDSP MIRROR of a queued merge_arm (one-per-tick
+         * drain + roundtrip), so it reads 0 for several ticks after a count-in
+         * starts — the count-in flags are the only timely evidence. */
+        if (S.dspMergeState !== 0 || S.mergeNoticePending || S.recordArmed ||
+            S.mergeCountingIn || S.pendingMergeArm) return;
         if (!stepRecEligible()) {
             showActionPopup('STEP REC', S.playing ? 'Stop transport first.'
                                                   : 'Melodic tracks only.');
@@ -4280,6 +4477,7 @@ export function _onCCMsg(d1, d2) {
      * button/knob is swallowed, press + release. Shift passes so its held state
      * stays accurate for the plain-Rec start. */
     if (S.mergeNoticePending && d1 !== MoveRec && d1 !== MoveBack && d1 !== MoveShift &&
+            d1 !== MoveNoteSession /* the escape law: it must reach the handler */ &&
             !(d1 === MoveSample && S.shiftHeld) /* the raising CHORD (and its
             shift-held release) must not dismiss — but a PLAIN Sample tap is
             swallowed like every other button: letting it through stacked a
@@ -4297,7 +4495,10 @@ export function _onCCMsg(d1, d2) {
         const _nonBtn = (d1 >= 71 && d1 <= 78) || (d1 >= 102 && d1 <= 109)
             || d1 === MoveMainKnob || d1 === MoveMainTouch
             || d1 === MoveMainButton || d1 === 79 || d1 === MoveShift;
-        if (!_pick && !_nonBtn) {
+        /* ⚠ Note/Session is exempt: it must reach the escape, which closes this
+         * picker along with anything else open. Dismissing it here too would
+         * make the law's behaviour depend on which owner ran first. */
+        if (!_pick && !_nonBtn && d1 !== MoveNoteSession) {
             S.pendingSceneBakePicker = false;
             S._modalSwallowCC = d1;
             forceRedraw();

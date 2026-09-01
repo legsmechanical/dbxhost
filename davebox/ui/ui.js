@@ -433,6 +433,11 @@ function _onMidiInternalImpl(data) {
         }
         if (status === 0xB0) {
             if (d1 === MoveBack) { /* falls through to the normal dispatch */ }
+            /* ⭐ Note/Session falls through too (Josh's escape law, 2026-09-02):
+             * it must reach the handler to go home. The STARTUP case — nothing
+             * loaded behind the picker — is declined there by noOverviewYet(),
+             * not swallowed here, so the law has ONE owner. */
+            else if (d1 === MoveNoteSession) { /* falls through */ }
             else if (d1 === MoveMainKnob) {
                 const _pd = decodeDelta(d2);
                 if (_pd) projectPadPickerRotate(_pd);
@@ -459,6 +464,7 @@ function _onMidiInternalImpl(data) {
         if (hi === 0x90 || hi === 0x80) return;
         if (status === 0xB0) {
             if (d1 === MoveBack) { /* falls through to the normal dispatch */ }
+            else if (d1 === MoveNoteSession) { /* falls through — the escape law */ }
             else if (d1 === MoveMainKnob) {
                 const _dd = decodeDelta(d2);
                 if (_dd) daveBoxRotate(_dd);
@@ -507,12 +513,16 @@ function _onMidiInternalImpl(data) {
      * CC 14 rotate, → _onCC_jog / MoveMainKnob). Exits without changing anything:
      * Note/Session (the menu button), or tapping Delete again. */
     if (S.clearAutoMenu) {
-        if ((status & 0xF0) === 0xB0 && d2 === 127 &&
-                (d1 === MoveNoteSession || d1 === MoveDelete)) {
+        /* ⚠ Note/Session no longer closes it HERE — it falls through to the
+         * escape, which closes this and anything else open in one pass. Closing
+         * one level here would disagree with the law the moment a dialog sat
+         * over the menu. Tapping Delete again still closes it. */
+        if ((status & 0xF0) === 0xB0 && d2 === 127 && d1 === MoveDelete) {
             closeClearAutoMenu();
             return;
         }
-        const _ccMenu = (status & 0xF0) === 0xB0 && (d1 === 3 || d1 === MoveMainKnob);
+        const _ccMenu = (status & 0xF0) === 0xB0 &&
+            (d1 === 3 || d1 === MoveMainKnob || d1 === MoveNoteSession);
         if (!_ccMenu) return;
     }
 

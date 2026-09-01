@@ -289,8 +289,14 @@ external gear — see [Routing & Sync](#144-clock-follow).
 
 ## 3.3 Switching views
 
-Tap **Note/Session** to switch between Track View and Session View; hold it to
-peek at the other view without leaving.
+From the overview of either view, tap **Note/Session** to switch between Track
+View and Session View; hold it to peek at the other view without leaving.
+
+**Anywhere else, Note/Session is the way out.** From a bank view, a menu, the
+sound editor, a dialog, a picker — one press returns you to the overview of the
+view you're in, however deep you were. Back still steps out one level at a time;
+Note/Session goes all the way home in one press. Once you're on the overview it
+means "switch view" again.
 
 ## 3.4 Selecting a track
 
@@ -539,8 +545,11 @@ step blinks white — that's the cursor, waiting for input.
   correction key. Notes that were already in the clip stay.
 - The cursor stops at the clip's last step; it never wraps.
 
-Leave with **Shift + Record**, **Back**, or just press **Play** to hear it.
-One **undo** takes back the entire step-recording session in one go.
+Leave with **Shift + Record**, **Record**, **Back**, or just press **Play** to
+hear it. One **undo** takes back the entire step-recording session in one go.
+
+> Live Merge and the Quantized Sampler are unavailable while step entry is open —
+> leave it first.
 
 ## 6.5 Capture
 
@@ -1214,9 +1223,9 @@ steps out one level at a time and finally back to the door.
 **Shift + Note/Session** opens it from wherever you are — including from several
 levels deep inside it, which brings you back to the top in one press. **Hold**
 the same gesture instead and you go straight to the track's instrument; leaving
-the instrument returns you to whatever you pressed from. The plain
-**Note/Session** button jumps to Session view as usual and leaves the track where
-it was, so coming back brings the screen with it. Playback carries on either
+the instrument returns you to whatever you pressed from — **Back** does that
+retrace. The plain **Note/Session** button returns you to the track overview and
+leaves the track recorded where it was, so coming back brings the screen with it. Playback carries on either
 way, and the pads and step buttons stay with the sequencer, so you can keep
 playing while you dial.
 
@@ -1551,7 +1560,7 @@ views (`#seq` / `#mix` / `#sound` in the address bar can be bookmarked).
 | Delete + jog click | Reset bank |
 | Delete + Play | Deactivate clips (running) · panic (stopped) |
 | Undo / Shift + Undo | Undo / redo |
-| Note/Session (tap / hold) | Switch / peek view |
+| Note/Session (tap / hold) | On an overview: switch / peek view — anywhere else: return to the overview |
 | Shift + Note/Session (tap / hold) | This track's sound editor / straight to its instrument |
 | Shift + Step 2 | Settings menu |
 
