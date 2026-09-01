@@ -111,8 +111,10 @@ globalThis.text_width = (t) => String(t).length * 6;
  * and a stubbed writer drops them — a tick that died on line one then looks
  * exactly like a clean pass. Fail the run instead. */
 let swallowed = null;
+const filesWritten = [];
 globalThis.host_write_file = (path, body) => {
     if (String(path).indexOf('jserr') >= 0 && swallowed === null) swallowed = String(body).slice(0, 900);
+    else filesWritten.push(String(path));
     return true;
 };
 for (const fn of ['host_read_file', 'host_file_exists', 'host_ensure_dir',
@@ -307,6 +309,66 @@ step('⭐ SAVE AS updates the shown preset NAME — the page must rebuild, not j
     if (String(row.value || '').indexOf(NAME) < 0)
         throw new Error('the Preset row still shows "' + row.value + '" after saving "' + NAME +
                         '" — the page was not rebuilt');
+});
+
+step('⭐⭐ a module SWAP from inside the grid re-runs DISCOVERY — or presets file under the OLD module', () => {
+    /* The FOURTH thing stranded behind soundTick's `if (ppOn) { … return; }`.
+     * applyModulePick sets pendingDiscover and returns to VIEW_EDIT; ppSync
+     * re-enters the grid on the next tick, and the countdown below that early
+     * return never decrements — so runDiscovery never runs and S.moduleId keeps
+     * naming the module you swapped AWAY from.
+     *
+     * ⚠ This one does not merely do nothing, which is what makes it the worst
+     * of the four: saveUserPreset builds its directory from S.moduleId, so
+     * Save As writes the NEW module's state into the OLD module's preset folder
+     * under its name. Silent, and only discovered later when the list is full of
+     * presets that load into nothing sensible. */
+    enterMasterFxBlock();
+    if (!pp().on) throw new Error('rig: the grid is not up');
+    if (snd.soundModuleIdForTest() !== 'rrverb')
+        throw new Error('rig: expected rrverb, got ' + snd.soundModuleIdForTest());
+
+    /* Swap the module underneath, exactly as applyModulePick leaves things. */
+    ASSIGN['master_fx:fx1:module'] = 'cloudseed';
+    ASSIGN['master_fx:fx1:chain_params'] = JSON.stringify([
+        { key: 'size', name: 'Size', type: 'float', min: 0, max: 1, step: 0.01 },
+    ]);
+    ASSIGN['master_fx:fx1:ui_hierarchy'] = JSON.stringify({
+        levels: { root: { name: 'CloudSeed',
+                          params: [{ key: 'size', name: 'Size', type: 'float', min: 0, max: 1 }],
+                          knobs: ['size'] } },
+    });
+    snd.soundQueueDiscoverForTest(6);
+    ticks(10);
+
+    if (snd.soundModuleIdForTest() !== 'cloudseed')
+        throw new Error('discovery never ran: the editor still believes "' +
+                        snd.soundModuleIdForTest() + '" is loaded — Save As would file the new ' +
+                        "module's sound under it");
+    /* The editor must come BACK, re-planned for the new module — dropping it
+     * without ppSync re-entering would trade one bug for a blank screen. */
+    if (!pp().on)
+        throw new Error('the editor did not re-enter after the swap');
+    /* ⭑ And the PLAN must be the new module's, not just the id. The controller
+     * re-plans only on an `is_loading` falling edge, which a module that does
+     * not implement it never gives — so without dropping the editor the grid
+     * keeps showing the OLD module's knobs, writing to keys that no longer
+     * exist. The page's `keys` is the discriminator. */
+    const planKeys = (pp().page && pp().page.keys) || [];
+    if (planKeys.indexOf('size') < 0 || planKeys.indexOf('room_size') >= 0)
+        throw new Error('the grid still shows the OLD plan after the swap: ' +
+                        JSON.stringify(planKeys));
+
+    /* ⭑ AND THE DAMAGE ITSELF: a save now must land in the NEW module's folder.
+     * This is what the user actually loses — the id assertion above is the
+     * mechanism, this is the consequence. */
+    filesWritten.length = 0;
+    snd.soundQueueActionForTest({ t: 'usrsavedo', name: 'AfterSwap' });
+    ticks(6);
+    const preset = filesWritten.find(f => f.indexOf('/presets/') >= 0);
+    if (!preset) throw new Error('the save wrote no preset file at all: ' + JSON.stringify(filesWritten));
+    if (preset.indexOf('/cloudseed/') < 0)
+        throw new Error('the preset was filed under the WRONG module: ' + preset);
 });
 
 if (swallowed !== null) { console.error('  FAIL — a SWALLOWED exception reached the jserr log:\n' + swallowed); failed = 1; }

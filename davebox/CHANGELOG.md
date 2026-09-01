@@ -45,6 +45,10 @@ the section into a versioned heading at release time.
 - **The session FX list follows the same display law as track banks.** It stays
   up while the session bank view is open instead of hiding until you touch the
   jog — and a jog click no longer falls through it.
+- **Swapping a module in the editor now takes effect properly.** The editor kept
+  believing the previous module was loaded, so its name and preset list were
+  wrong — and a Save As filed the new sound under the *old* module's name. The
+  knob pages now rebuild for the module you actually swapped in.
 - **Save As updates the preset name on screen.** The new name now shows straight
   away instead of keeping the previous one.
 - **Master and Send FX effects use the same editor as track effects.** They now

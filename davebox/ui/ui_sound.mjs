@@ -732,6 +732,10 @@ export function soundInflightForTest() { return S.inflight; }
  * kit module, minus the fixture. */
 export function soundHostedCtxForTest() { return hostedCtx(); }
 export function soundBusCountForTest() { return FX_BUSES.length; }
+/* What the editor believes is loaded. Stale after a swap is the whole bug the
+ * pendingDiscover rescue fixes, and it is not visible through any other export. */
+export function soundModuleIdForTest() { return S.moduleId; }
+export function soundQueueDiscoverForTest(n) { S.pendingDiscover = n | 0; }
 /* ⚠ busLevelEditing lives on sound mode's OWN S, not the global one — a rig
  * that sets it through ui_state is writing a different object entirely (the
  * two-objects-called-S trap) and pins nothing. */
@@ -5127,6 +5131,26 @@ export function soundTick() {
             const a = S.pendingAction;
             S.pendingAction = null;
             runAction(a);
+        }
+        /* ⚠⚠ AND DISCOVERY — the FOURTH thing this early return stranded, and
+         * the only one that writes something WRONG rather than doing nothing.
+         * A module swapped from inside the grid (applyModulePick sets
+         * pendingDiscover, then returns to VIEW_EDIT, and ppSync re-enters the
+         * grid on the next tick) never re-scanned, so S.moduleId kept naming
+         * the module that LEFT — and saveUserPreset builds its directory from
+         * S.moduleId, so Save As filed the new module's state under the old
+         * module's name and folder. Silent, and only visible much later.
+         *
+         * ⭑ Then DROP THE EDITOR: the plan on screen belongs to the module that
+         * left. There is no re-plan entry point on the binding, and the
+         * controller only re-plans on an `is_loading` falling edge — which a
+         * module that does not implement it never gives. Exiting hands the job
+         * to ppSync, which re-enters next tick against the NEW module (or does
+         * not, if it turned out to be `hosted` — S.hosted is discovery's answer
+         * too, and it was equally stale). */
+        if (S.pendingDiscover > 0 && --S.pendingDiscover === 0) {
+            runDiscovery();
+            if (ppOn) { exitParamPages(); ppOn = false; S.dirty = true; }
         }
         return;
     }
