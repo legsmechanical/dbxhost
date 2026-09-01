@@ -4182,10 +4182,15 @@ function _onCC_knobs(d1, d2) {
 }
 
 function _switchViewCleanup() {
-    /* The session mixer latch and its FX overlay are session-view furniture —
-     * a view switch dismisses both (same as Back), or the next visit to
-     * session view would reopen a screen nobody asked for. */
+    /* ⭑ LEAVING A VIEW LEAVES ITS BANK VIEW (Josh, 2026-09-01: "leaving the
+     * bank view on session or track should make it so you start back on
+     * track/session overview") — a view switch dismisses BOTH latches and the
+     * transient window, same as Back, so each view always OPENS on its
+     * overview. The remembered bank itself is untouched: the knobs stay keyed
+     * to it, and the next click re-opens exactly where you were. */
     S.sessMixerLatched = false;
+    S.bankCardLatched  = false;
+    standDownBankDisplay(true);
     S.heldStepBtn        = -1;
     S.heldStep           = -1;
     S.heldStepNotes      = [];

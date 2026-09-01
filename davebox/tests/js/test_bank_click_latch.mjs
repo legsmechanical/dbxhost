@@ -161,6 +161,47 @@ step('the gateway has no knobs — a knob turn there is inert', () => {
     S.sessionView = false;
 });
 
+step('⭐ a VIEW SWITCH leaves the bank view — each view opens on its overview', () => {
+    /* Josh, 2026-09-01: "leaving the bank view on session or track should
+     * make it so you start back on track/session overview oled." The
+     * remembered bank survives; only the display law resets. */
+    rest(); S.activeBank = 1;
+    click();                                     /* latch the track bank view */
+    if (!S.bankCardLatched) throw new Error('setup: no latch');
+    cc(50, 127); cc(50, 0);                      /* Note/Session tap -> session view */
+    if (!S.sessionView) throw new Error('setup: did not switch to session view');
+    if (S.bankCardLatched) throw new Error('the track latch survived the switch');
+    click();                                     /* latch the session mixer */
+    if (!S.sessMixerLatched) throw new Error('setup: session click did not latch');
+    cc(50, 127); cc(50, 0);                      /* back to track view */
+    if (S.sessionView) throw new Error('setup: did not switch back');
+    if (S.sessMixerLatched) throw new Error('the session latch survived the switch');
+    if (bankCardVisible()) throw new Error('track view did not open on its overview');
+    if (S.activeBank !== 1) throw new Error('the remembered bank was lost: ' + S.activeBank);
+});
+
+step('⭐ Back from a bus lands on the FX LIST, never the track prompt (the TRACK 0 bug)', () => {
+    /* Josh, on device minutes after the gateway shipped: gateway -> Master ->
+     * Back rendered "CLICK TO ENTER TRACK 0 SOUND & CONFIG" — the TRACK door
+     * with S.track = -1. A bus must Back into the session FX list. */
+    rest(); S.sessionView = true;
+    click();                                     /* latch the mixer */
+    S.sessKnobMode = 4;
+    click();                                     /* the gateway: FX list opens */
+    if (!sndMod.soundActive()) throw new Error('setup: list did not open');
+    cc(3, 127); cc(3, 0);                        /* pick MASTER (row 0) */
+    for (let i = 0; i < 4; i++) sndMod.soundTick();   /* the pick defers to tick */
+    if (sndMod.soundViewForTest && sndMod.soundViewForTest() === 9)
+        throw new Error('setup: the pick did not enter the bus (view 9)');
+    cc(51, 127); cc(51, 0);                      /* Back */
+    if (!sndMod.soundActive()) throw new Error('Back exited sound mode instead of the list');
+    if (!sndMod.soundIsGlobal()) throw new Error('Back left the global context');
+    if (sndMod.soundViewForTest && sndMod.soundViewForTest() !== 9)
+        throw new Error('Back did not land on the FX list (view ' + sndMod.soundViewForTest() + ')');
+    sndMod.soundExit();
+    S.sessionView = false;
+});
+
 process.exit(failed);
 }
 main().catch((e) => { console.error(e && e.stack ? e.stack : e); process.exit(1); });

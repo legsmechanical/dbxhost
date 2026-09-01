@@ -4843,6 +4843,17 @@ export function soundOnCC(d1, d2, decodeDelta) {
             return true;
         }
         if (S.view === VIEW_BLOCKS) {
+            /* ⚠ A BUS FIRST. The prompt below is the TRACK door — a session
+             * bus has no track, and walking a Master FX Back into it rendered
+             * "CLICK TO ENTER TRACK 0 SOUND & CONFIG" (S.track is -1 there;
+             * Josh, on device, 2026-09-01, minutes after the gateway shipped).
+             * A bus Backs into the session FX list through leaveBus — the one
+             * door — which also handles the Move-track flavour's exit. */
+            if (S.bus) {
+                leaveBus();
+                S.dirty = true;
+                return true;
+            }
             /* Back out of the menu lands on the bank's own screen — which IS
              * "the bank you came from" (the 08-26 law), now that the bank has a
              * screen of its own rather than being the menu.
