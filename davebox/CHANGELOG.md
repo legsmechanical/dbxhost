@@ -17,6 +17,9 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Eight more Daves join the pool.** Welcome SEDARIS, CARRADINE, HUDDLESTON,
+  WAKELING, FAUSTINO, JOHANSEN, BROCKIE and FROST — three of them uncommon.
+  47 to collect.
 - **Five more Daves join the pool.** Welcome CROSBY, CRONENBERG, STEWART,
   the uncommon NIVEN, and the uncommon BANNER — don't stare into his eyes
   too long. 39 to collect.
