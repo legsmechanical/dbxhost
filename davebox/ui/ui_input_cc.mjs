@@ -1044,50 +1044,29 @@ function modalDialogUp() {
                         forceRedraw();
                     }
                     }
-                } else if (S.bankPickerSel >= 0 || bankCardVisible()) {
-                    /* ⚠ GATED ON THE BANK VIEW BEING OPEN (Josh, 2026-09-01:
-                     * "turn shouldn't change banks either. that should only be
-                     * available after you press [the jog] to enter the bank
-                     * view") — from the resting overview the unshifted turn
-                     * does NOTHING; click first. Same visibility owner as the
-                     * click gate. An already-open picker keeps the jog even as
-                     * the transient window under it expires. */
-                    /* ⭑⭑ THE UNSHIFTED JOG IS THE BANK PICKER (Josh, 2026-08-25).
-                     *
-                     * It used to WALK the banks one detent at a time, applying
-                     * each step as it passed. Now the first turn opens the kit's
-                     * list overlay ON TOP of the page you were already on, the
-                     * turns move a selection, and NOTHING is applied until the
-                     * gesture ends — you see where you are going instead of
-                     * arriving somewhere and reading the header.
-                     *
-                     * Not applying in passing is the point, not a detail: the
-                     * old walk read a bank's params on every step and ENTERED
-                     * sound mode the moment it reached SOUND + CONFIG, so a
-                     * scroll across the strip did all of that on the way.
-                     *
-                     * ⚠ The page underneath deliberately does not change while
-                     * browsing — the picker is an overlay over the card it was
-                     * entered on (Josh), which is what makes "cancel by not
-                     * committing" legible.
-                     *
-                     * Commit is the release of the jog TOUCH (ui.js) — you have
-                     * to be touching the wheel to turn it, so the gesture has a
-                     * natural end. Sound mode is excluded here: inside it the
-                     * jog belongs to that screen, and the picker comes back only
-                     * on the left turn off its top row (soundOnCC). */
+                } else if (bankCardVisible()) {
+                    /* ⭑⭑ THE TURN WALKS THE BANKS DIRECTLY (Josh, 2026-09-01:
+                     * "no more overlay on jog turn. turn moves through banks
+                     * directly") — the 08-25 picker overlay retires. Safe to
+                     * walk now because SOUND + CONFIG is a DOOR: landing on it
+                     * shows the prompt card, never the menu, so a walk across
+                     * the strip reads params and nothing else. Gated on the
+                     * bank view being open (2026-09-01: the overview's jog is
+                     * quiet); clamped at both ends like every list.
+                     * applyBankPick is the ONE commit path — the deferred
+                     * BANK_SOUND entry, the sound-mode exit on walk-away, the
+                     * param refresh and the sidecar all live there. */
                     const cyc = bankCycleFor(S.activeTrack);
-                    if (S.bankPickerSel < 0) {
-                        /* Open where the track actually IS, so the first detent
-                         * moves one step from here rather than from the top of
-                         * the list. */
-                        const at = cyc.indexOf(S.activeBank);
-                        S.bankPickerSel = at >= 0 ? at : 0;
+                    const at = cyc.indexOf(S.activeBank);
+                    const next = Math.max(0, Math.min(cyc.length - 1,
+                        (at < 0 ? 0 : at) + delta));
+                    if (next !== at) {
+                        S.bankPickerSel = next;
+                        applyBankPick();
+                    } else {
+                        armBankDisplay();   /* a clamped turn still refreshes the window */
+                        forceRedraw();
                     }
-                    S.bankPickerSel = Math.max(0, Math.min(cyc.length - 1, S.bankPickerSel + delta));
-                    S.bankPickerIdleTick = S.tickCount;
-                    armBankDisplay();
-                    forceRedraw();
                 }
             }
         }

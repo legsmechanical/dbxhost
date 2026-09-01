@@ -4387,64 +4387,14 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.instrSel = opts[Math.max(0, Math.min(opts.length - 1, cur + (delta > 0 ? 1 : -1)))];
         } else if (S.view === VIEW_BLOCKS) {
             const next = pickStep(delta);
-            /* This screen is also the SOUND + CONFIG bank — the one past the
-             * last clip bank on the jog (ui_input_cc's bank walk). So a left
-             * turn that cannot move the cursor any further up leaves the
-             * screen the way it was entered: back onto the bank the jog came
-             * from (trackSoundOrigin), which is a walk along the strip, not a
-             * close. Back and jog-click keep their meanings; only the clamped
-             * top edge gains one.
-             * ⚠ The line that used to sit here — "Back is the close, and it
-             * lands on the track's DEFAULT bank" — is STALE: Josh retired the
-             * default-bank close on 2026-08-26, so a close now lands on the
-             * bank you came from too. The jog and Back agree; this branch is
-             * about WHEN the top edge leaves, not where it lands.
-             * ⚠ Track flavour only. The session buses (Master/Send FX) are
-             * entered from the session FX list, not from a bank, so for them
-             * the top edge stays a clamp. */
-            if (next === S.pickRow && delta < 0 && !soundIsGlobal() && !S.enterSession) {
-                soundExit({ landOn: soundOriginBank(S.track) });
-                /* ⚠ ARM THE DISPLAY WINDOW, exactly as every other bank change
-                 * does. Landing on a bank without it is the one silent arrival
-                 * on the whole jog walk: the page appears with no picker overlay
-                 * naming what you just landed on, so a walk that started on a
-                 * bank card ends without one. Josh caught it on hardware
-                 * (2026-08-26): "scrolling back from the top of the sound+config
-                 * bank goes right to the bank before it and does not immediately
-                 * show the picker overlay like it should."
-                 * ⭑ AFTER soundExit, not before: the exit is what actually moves
-                 * the bank, and arming first would stamp a window against the
-                 * bank we are leaving. */
-                armBankDisplay();
-                /* ⚠⚠ ...and the window must SURVIVE the finger lifting. This
-                 * arrival happens mid-TURN, so by the time _jogTouchRelease
-                 * runs, standDownBankDisplay's "declines a teardown from the
-                 * same input pass" guard has expired and it kills the window.
-                 * Every other bank change commits ON the release and is
-                 * protected for free; this one cannot be, so it says so.
-                 * Gated on jogTouched: only a real jog gesture gets a release
-                 * to consume the flag. */
-                if (GS.jogTouched) GS.bankWindowKeepOnRelease = true;
-                /* ⭑⭑ AND BRING THE PICKER BACK — this is the behaviour
-                 * ui_input_cc's jog handler already documents and this branch
-                 * never delivered: "the picker comes back only on the left turn
-                 * off its top row (soundOnCC)". Landing on the bank silently was
-                 * only half the complaint; Josh, 2026-08-26: "goes right to
-                 * automation bank on key tracks without showing the picker
-                 * overlay."
-                 *
-                 * Opened AT the bank we just landed on, exactly as the track-view
-                 * turn opens "where the track actually IS", so the next detent
-                 * steps one from here and keeps walking the strip. The release
-                 * commits it like any other pick (a no-op when the selection has
-                 * not moved), so the gesture ends the way every bank change does. */
-                const _cyc = bankCycleForMode(GS.trackPadMode[GS.activeTrack]);
-                const _at  = _cyc.indexOf(GS.activeBank);
-                GS.bankPickerSel     = _at >= 0 ? _at : 0;
-                GS.bankPickerIdleTick = GS.tickCount;
-                forceRedraw();
-                return true;
-            }
+            /* ⚠ THE TOP EDGE IS A CLAMP NOW (Josh, 2026-09-01: "when in
+             * sound+config MENU, scrolling past the top should no longer jump
+             * to the previous card. that menu is now exited by pressing back,
+             * which lands you on the sound+config card"). The 08-26 top-edge
+             * walk-out — soundExit({landOn: origin}) + re-arming the window +
+             * re-opening the picker — is retired with the picker itself: the
+             * jog walks banks directly OUTSIDE the menu, and Back is the one
+             * way out of it (VIEW_BLOCKS -> VIEW_PROMPT, the card). */
             S.pickRow = next;
             /* Each turn re-opens the display window, as a bank change does on
              * the clip banks — without this the screen would fall back mid-

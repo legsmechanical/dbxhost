@@ -116,147 +116,53 @@ function reset() {
         Array.from({ length: 12 }, () => new Array(8).fill(0)));
 }
 
-step('⭑ a jog turn opens the picker and does NOT change the bank yet', () => {
-    reset();
-    /* The picker lives INSIDE the bank view now (Josh, 2026-09-01: a turn
-     * from the overview does nothing) — enter it as the click would. */
-    S.bankCardLatched = true;
-    touch(true); jog(1); globalThis.tick();
-    if (S.bankPickerSel < 0) throw new Error('the picker did not open on the turn');
-    if (S.activeBank !== 0)
-        throw new Error('the bank changed to ' + S.activeBank + ' while browsing');
-    touch(false); globalThis.tick();
-});
+/* ── the DIRECT WALK (Josh, 2026-09-01) ──────────────────────────────────
+ * The 08-25 picker overlay is RETIRED: inside the bank view the jog moves
+ * through the banks directly, one detent per bank, clamped at both ends.
+ * Safe now because SOUND + CONFIG is a DOOR — landing on it shows the prompt
+ * card, never the menu. The steps below replace the whole picker suite
+ * (open/commit-on-click/commit-on-release/timeout/abandon): there is no
+ * picker to open, commit, or abandon any more. */
 
-step('⭑ the CLICK commits the selection', () => {
+step('⭑ the turn WALKS the banks directly — one detent, one bank, no overlay', () => {
     reset();
-    /* The picker lives INSIDE the bank view now (Josh, 2026-09-01: a turn
-     * from the overview does nothing) — enter it as the click would. */
-    S.bankCardLatched = true;
+    S.bankCardLatched = true;              /* the walk lives inside the bank view */
     const cyc = bankCycleForMode(0);
-    touch(true); jog(1); jog(1); globalThis.tick();
-    const want = cyc[S.bankPickerSel];
-    if (S.activeBank === want) throw new Error('control: it applied before the click');
-    click();
-    if (S.activeBank !== want) throw new Error('landed on ' + S.activeBank + ', expected ' + want);
-    if (S.trackActiveBank[2] !== want)
+    jog(1); globalThis.tick();
+    if (S.bankPickerSel >= 0) throw new Error('an overlay opened — the picker is retired');
+    if (S.activeBank !== cyc[1])
+        throw new Error('one detent landed on ' + S.activeBank + ', expected ' + cyc[1]);
+    if (S.trackActiveBank[2] !== cyc[1])
         throw new Error('the per-track record did not follow: ' + S.trackActiveBank[2]);
-    if (S.bankPickerSel >= 0) throw new Error('the picker stayed open after the click');
-    touch(false); globalThis.tick();
+    if (S.bankSelectTick < 0) throw new Error('the walked-to bank has no display window');
 });
 
-step('⭑ letting go ALSO commits — the other natural end of the gesture', () => {
+step('⭑ ...and clamps at the first bank', () => {
     reset();
+    S.bankCardLatched = true;
+    jog(-1); globalThis.tick();
+    if (S.activeBank !== 0) throw new Error('walked below the first bank: ' + S.activeBank);
+});
+
+step('⭑ walking onto SOUND + CONFIG lands the DOOR; walking off it leaves', () => {
+    reset();
+    S.bankCardLatched = true;
     const cyc = bankCycleForMode(0);
-    touch(true); jog(1); jog(1); globalThis.tick();
-    const want = cyc[S.bankPickerSel];
-    if (S.activeBank === want) throw new Error('control: it applied before the release');
-    touch(false); globalThis.tick();
-    if (S.activeBank !== want)
-        throw new Error('the release did not commit: landed on ' + S.activeBank);
-    if (S.bankPickerSel >= 0) throw new Error('the picker stayed open after the release');
+    for (let i = 0; i < cyc.length - 1; i++) { jog(1); }
+    globalThis.tick(); globalThis.tick();          /* the entry defers to tick */
+    if (!snd.soundActive()) throw new Error('the walk did not open the door');
+    jog(-1); globalThis.tick();
+    if (snd.soundActive()) throw new Error('walking off the door did not leave sound mode');
+    if (S.activeBank !== cyc[cyc.length - 2])
+        throw new Error('did not land on the neighbour bank: ' + S.activeBank);
 });
 
-step('⭑ the picked bank LINGERS after a release-commit', () => {
-    /* ⚠ The release's own teardown stands the display window down, and it runs
-     * AFTER the commit armed it — the bug that bit three times. It is the
-     * OWNER that declines a same-pass teardown, not this path, which is why
-     * adding release-commit back needed no new guard. */
+step('⚠ SHIFT+jog steps the TRACK — the walk is the unshifted turn', () => {
     reset();
-    touch(true); jog(1); globalThis.tick();
-    touch(false); globalThis.tick();
-    if (S.bankSelectTick < 0)
-        throw new Error('the picked bank has no display window — the release wiped ' +
-                        'what its own commit had just armed');
-});
-
-step('⚠ a click then its release does NOT apply twice', () => {
-    /* Both gestures commit, so the ordinary case fires both. The click closes
-     * the picker, so the release finds nothing — but if it did not, the second
-     * apply would land on a selection index into a stale cycle. */
-    reset();
-    const cyc = bankCycleForMode(0);
-    touch(true); jog(1); globalThis.tick();
-    const want = cyc[S.bankPickerSel];
-    click();
-    if (S.bankPickerSel >= 0) throw new Error('control: the click left the picker open');
-    touch(false); globalThis.tick();
-    if (S.activeBank !== want)
-        throw new Error('the bank moved again on the release: ' + S.activeBank);
-});
-
-step('⭑ the picked bank stays on screen — you are still touching the wheel', () => {
-    /* The ergonomic point of committing on the click: you never let go, so the
-     * card is up under your finger instead of needing a re-touch to look at. */
-    reset();
-    touch(true); jog(1); globalThis.tick();
-    click();
-    if (S.bankSelectTick < 0) throw new Error('the picked bank has no display window');
-    if (!S.jogTouched) throw new Error('the click ended the touch — the card will drop');
-    touch(false); globalThis.tick();
-});
-
-step('⭑ picking SOUND + CONFIG enters it, and keeps its display window', () => {
-    reset();
-    const cyc = bankCycleForMode(0);
-    touch(true);
-    for (let i = 0; i < cyc.length; i++) jog(1);      /* to the end = SOUND + CONFIG */
-    globalThis.tick();
-    if (cyc[S.bankPickerSel] !== BANK_SOUND) throw new Error('control: not on SOUND + CONFIG');
-    if (snd.soundActive()) throw new Error('it entered while merely scrolling past');
-    click();
-    if (!snd.soundActive()) throw new Error('the click did not open the screen');
-    touch(false);
-    if (S.bankSelectTick < 0)
-        throw new Error('the deferred entry lost its display window');
-    snd.soundExit();
-});
-
-step('⚠ a touchless turn settles CLOSED, and applies nothing', () => {
-    /* The capacitive read can miss a flick and the remote UI has no wheel, so a
-     * picker with no way to close would swallow the jog forever. ⚠ It closes
-     * without choosing: a timeout is the one caller that fires with nobody
-     * asking, and committing there meant a forgotten picker changed your bank. */
-    reset();
-    const before = S.activeBank;
-    jog(1); globalThis.tick();                        /* no touch at all */
-    if (S.bankPickerSel < 0) throw new Error('control: the picker did not open');
-    S.tickCount += 500; globalThis.tick();
-    if (S.bankPickerSel >= 0) throw new Error('the picker never settled — it is stranded');
-    if (S.activeBank !== before)
-        throw new Error('the timeout APPLIED a bank (' + S.activeBank + ') — only the ' +
-                        'click may do that');
-});
-
-step('⚠ SHIFT+jog steps the TRACK again — the picker is the unshifted turn', () => {
-    reset();
+    S.bankCardLatched = true;
     shift(true); jog(1); globalThis.tick();
-    if (S.bankPickerSel >= 0) throw new Error('Shift+jog opened the picker');
     if (S.activeTrack !== 3) throw new Error('the track did not step: ' + S.activeTrack);
     shift(false); globalThis.tick();
-});
-
-step('⭑ Shift+jog DROPS an open picker — and does not commit it', () => {
-    /* Pressing Shift means the wheel is choosing a TRACK now. Leaving the bank
-     * list up while it scrolls underneath is a lie about what the jog is doing;
-     * committing it would apply a pick the user walked away from. */
-    reset();
-    S.bankCardLatched = true;   /* the picker lives inside the bank view now */
-    const bankBefore = S.activeBank;
-    touch(true); jog(1); globalThis.tick();          /* picker open, browsing */
-    if (S.bankPickerSel < 0) throw new Error('control: the picker did not open');
-    shift(true); jog(1); globalThis.tick();
-    if (S.bankPickerSel >= 0)
-        throw new Error('the picker survived under a track switch');
-    if (S.activeBank !== bankBefore)
-        throw new Error('dropping the picker COMMITTED it — the bank moved to ' +
-                        S.activeBank);
-    if (S.activeTrack !== 3) throw new Error('the track did not step: ' + S.activeTrack);
-    shift(false); touch(false); globalThis.tick();
-    /* ⚠ The release commits an OPEN picker, so this also proves the drop really
-     * closed it — an abandoned pick must not be resurrected by letting go. */
-    if (S.activeBank !== bankBefore)
-        throw new Error('the release resurrected the abandoned pick: ' + S.activeBank);
 });
 
 step('⭑ the bank card names its TRACK, so a latched card still says where you are', () => {
@@ -355,14 +261,14 @@ step('⭑ plain jog CLICK from the overview latches the bank card; Back unlatche
                         'screen now, it does not change where you are');
 });
 
-step('⭑ a drum track offers ITS cycle, not the melodic one', () => {
+step('⭑ a drum track WALKS its own cycle, not the melodic one', () => {
     reset();
-    S.bankCardLatched = true;   /* the picker lives inside the bank view now */
+    S.bankCardLatched = true;
     S.trackPadMode[2] = 1;                            /* PAD_MODE_DRUM */
     const cyc = bankCycleForMode(1);
-    touch(true); jog(1); globalThis.tick();
-    const want = cyc[S.bankPickerSel];
-    click(); touch(false); globalThis.tick();
+    /* One detent from wherever bank 0 sits in the DRUM order. */
+    const want = cyc[cyc.indexOf(0) + 1];
+    jog(1); globalThis.tick();
     if (S.activeBank !== want)
         throw new Error('landed on ' + S.activeBank + ', not the drum cycle step ' + want);
     S.trackPadMode[2] = 0;
@@ -486,74 +392,27 @@ step('⚠ ...and the render calls that function rather than naming banks itself'
         throw new Error('the render names banks itself again:\n  ' + strays.join('\n  '));
 });
 
-step('⭑ the LATCH draws a frame around the params, and only when latched', () => {
-    /* The visible half of the latch. ⚠ Asserted on the FRAME EDGES rather than
-     * "the screen changed": a card redraws for many reasons, and only the edges
-     * are the indicator. */
-    /* ⚠⚠ THE BOTTOM EDGE IS NO LONGER PART OF THE LATCH'S IDENTITY. It lands on
-     * MV_RULE_Y, and since 2026-08-29 the footer rule draws a solid hairline
-     * there on EVERY bank page — so counting that row would report a frame on
-     * an unlatched card and this assertion would fail on the rule doing its
-     * job. The frame is identified by its TOP row and its two SIDE columns,
-     * which nothing else draws; the shared bottom row gets its own checks
-     * below, so nothing is dropped, only moved. */
-    const edgeInk = () => {
-        let n = 0;
-        for (let x = 0; x < FBW; x++) if (fb[FRAME_TOP * FBW + x]) n++;
-        /* ⚠ Stops ABOVE FRAME_BOT (=== MV_RULE_Y), so the side counts stay
-         * comparable between the two phases and the bottom edge is measured on
-         * its own below. */
-        for (let y = FRAME_TOP; y < MV_RULE_Y; y++) { if (fb[y * FBW]) n++; if (fb[y * FBW + 127]) n++; }
-        return n;
-    };
-    /* Ink on the frame's BOTTOM EDGE row.
-     * ⚠ This used to also assert a footer RULE lived here in both states. The
-     * rule was RETIRED 2026-08-30 (Josh, on the device — see the note in
-     * ui_movy.mjs), so the row now carries the latch frame and nothing else,
-     * and an unlatched card is legitimately empty here. */
-    const bottomEdgeInk = () => { let n = 0; for (let x = 0; x < FBW; x++) if (fb[MV_RULE_Y * FBW + x]) n++; return n; };
+step('⭑ the latch frame is RETIRED — a latched card draws exactly like a windowed one', () => {
+    /* Josh, 2026-09-01: "since banks are always persistent now, we don't need
+     * the bank border anymore." The strongest pin is EQUALITY: render the same
+     * card latched and merely windowed, and the framebuffers must match — any
+     * frame, any blink, any leftover edge shows up as a diff. Both blink
+     * phases, so a phase-gated frame cannot hide. */
     reset();
     S.activeBank = 1;
-    S.bankSelectTick = S.tickCount;
-    fb.fill(0); render.drawUI();
-    if (edgeInk() !== 0)
-        throw new Error('an UNLATCHED card already draws a frame — the indicator ' +
-                        'would mean nothing');
-
-    if (bottomEdgeInk() !== 0)
-        throw new Error('an UNLATCHED card draws ink on the frame row (' +
-                        bottomEdgeInk() + 'px) — the footer rule is retired, so ' +
-                        'nothing but the latch frame may draw there');
-
-    S.bankCardLatched = true;
-    S.tickCount = 0;  fb.fill(0); render.drawUI();
-    const solid = edgeInk();
-    const solidRule = bottomEdgeInk();
-    S.tickCount = 24; fb.fill(0); render.drawUI();
-    const dashed = edgeInk();
-    /* ⚠⚠ THE DASHED PHASE MUST READ AS DASHED ON THE BOTTOM EDGE TOO. When a
-     * solid footer rule still shared this row, a dashed edge that only SET ink
-     * left the rule showing through every gap and looked solid in both phases —
-     * the animation dying on one edge with nothing to say so. drawKitLatchBox
-     * knocks its gaps out for exactly that reason. The rule is gone, but the
-     * knock-out is still what makes the phases differ here, so keep asserting
-     * the result rather than trusting it. */
-    const dashedRule = bottomEdgeInk();
-    if (!(dashedRule < solidRule))
-        throw new Error('the latch frame\'s bottom edge does not read as dashed (' +
-                        solidRule + ' vs ' + dashedRule + ') — it is not knocking ' +
-                        'its gaps out');
-    if (!solid || !dashed) throw new Error('the latch frame did not draw: ' +
-                                           JSON.stringify({ solid, dashed }));
-    /* ⭑ It alternates SOLID <-> SEGMENTED rather than blinking out: a frame that
-     * vanishes makes the page twitch. So both phases have ink, and the dashed
-     * one has meaningfully less. */
-    if (dashed >= solid)
-        throw new Error('the two phases are not solid vs segmented (' + solid +
-                        ' vs ' + dashed + ') — it is not animating, or it blinks out');
+    for (const t of [0, 24]) {
+        S.bankCardLatched = false; S.bankSelectTick = 1; S.tickCount = t;
+        fb.fill(0); render.drawUI();
+        const windowed = fb.slice();
+        S.bankCardLatched = true; S.bankSelectTick = -1; S.tickCount = t;
+        fb.fill(0); render.drawUI();
+        for (let i = 0; i < fb.length; i++)
+            if (fb[i] !== windowed[i])
+                throw new Error('latched and windowed cards differ at px ' + i +
+                                ' (tick ' + t + ') — a latch indicator is back');
+    }
     S.bankCardLatched = false;
 });
-
 step('⚠ the latch frame does not sit ON the params', () => {
     /* The body was shifted up into the reclaimed rule space so the frame has a
      * row of its own. Measured, because a frame touching the labels looks

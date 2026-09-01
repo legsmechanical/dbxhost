@@ -202,10 +202,21 @@ step('⚠ CONTROL: the CLICK is what opens the menu, and then the jog walks ROWS
         throw new Error('the identity was lost underneath: ' + S.activeBank);
 });
 
-step('⭑ left turns walk back up, and past the top row leave to the last clip bank', () => {
+step('⭑ the MENU top edge CLAMPS; Back exits to the CARD; the card walks out', () => {
+    /* Josh, 2026-09-01: "scrolling past the top should no longer jump to the
+     * previous card. that menu is now exited by pressing back, which lands
+     * you on the sound+config card." The card then hands the jog back to the
+     * bank walk, so a left there leaves the way any bank does. */
     toTop();
     left();
-    if (snd.soundActive()) throw new Error('left turn at the top did not exit');
+    if (!snd.soundActive()) throw new Error('the menu top edge EXITED — it must clamp now');
+    if (snd.soundPickStateForTest().row !== 0) throw new Error('the clamp moved the cursor');
+    send(51, 127); send(51, 0); globalThis.tick();     /* Back */
+    if (!snd.soundActive()) throw new Error('Back left sound mode — it must land on the card');
+    if (snd.soundViewForTest() !== 18)                 /* VIEW_PROMPT */
+        throw new Error('Back did not land on the card (view ' + snd.soundViewForTest() + ')');
+    left(); globalThis.tick();
+    if (snd.soundActive()) throw new Error('the card did not walk out on a left turn');
     if (S.activeBank !== 6) throw new Error('did not land on AUTOMATION: ' + S.activeBank);
     left();
     if (S.activeBank !== 5) throw new Error('bank walk did not resume leftward: ' + S.activeBank);
@@ -215,9 +226,9 @@ step('⭑ drum: right past CC PARAM (the end of BANK_CYCLE_DRUM) enters too', ()
     reset(PAD_MODE_DRUM, 6);
     right();
     if (!snd.soundActive()) throw new Error('sound mode did not open on a drum track');
-    snd.soundTick(); toTop();
-    left();
-    if (snd.soundActive()) throw new Error('left at the top did not exit on a drum track');
+    snd.soundTick();
+    left(); globalThis.tick();                         /* the CARD walks out */
+    if (snd.soundActive()) throw new Error('the card did not walk out on a drum track');
     if (S.activeBank !== 6) throw new Error('did not land on CC PARAM: ' + S.activeBank);
 });
 
@@ -307,7 +318,7 @@ step('⭑ AUTO-bank pad coloring stands down while SOUND + CONFIG is up', () => 
         throw new Error('AUTO root grey still painted under sound mode: ' + inSound.join(','));
     if (!inSound.some(c => c === tCol))
         throw new Error('default track-color roots missing under sound mode: ' + inSound.join(','));
-    snd.soundTick(); toTop(); left();   /* back out onto AUTO */
+    snd.soundTick(); left(); globalThis.tick();   /* the card walks back onto AUTO */
     if (snd.soundActive()) throw new Error('did not exit');
     const back = padColors();
     if (!back.some(c => c === 118))
@@ -448,13 +459,13 @@ step('⭑ BACK lands on the bank you CAME FROM — same as the jog\'s left turn'
     if (S.trackActiveBank[2] !== 6)
         throw new Error('the recorded bank did not follow Back: ' + S.trackActiveBank[2]);
 
-    /* ...and the jog agrees, which is now the point rather than the contrast. */
+    /* ...and the jog agrees, which is now the point rather than the contrast.
+     * The jog's exit lives on the CARD now (the menu clamps, 2026-09-01). */
     reset(PAD_MODE_MELODIC_SCALE, 6);
     right();
     snd.soundTick();
-    toTop();
-    left();
-    if (snd.soundActive()) throw new Error('control: the top-edge left turn did not exit');
+    left(); globalThis.tick();
+    if (snd.soundActive()) throw new Error('control: the card\'s left turn did not exit');
     if (S.activeBank !== 6)
         throw new Error('the jog exit landed on ' + S.activeBank + ', not the bank it came from');
     /* ⭑ AND IT MUST ARM THE DISPLAY WINDOW, like every other bank change on the
@@ -485,24 +496,23 @@ step('⭑ BACK lands on the bank you CAME FROM — same as the jog\'s left turn'
  * ⚠ Driven RAW, not through turn(): that helper commits the pick (click) as part
  * of the gesture, so it would tear down the very overlay under test. The
  * assertion is the MID-GESTURE state — finger still on the wheel. */
-step('⭑ the top-edge left turn REOPENS the bank picker, it does not teleport', () => {
+step('⭑ leaving by the card\'s walk arms the window — and NO overlay opens', () => {
+    /* The picker overlay is RETIRED (2026-09-01: the turn walks directly), so
+     * the old "reopen the picker on the way out" behaviour inverts: leaving
+     * must arm the display window (never a silent arrival — Josh, 2026-08-26)
+     * and must NOT leave any overlay state behind. */
     reset(PAD_MODE_MELODIC_SCALE, 6);           /* a KEY track, entered from AUTOMATION */
     right();
     snd.soundTick();
-    toTop();
-    /* raw: touch, one left detent, tick — and STOP, before any commit */
     note(9, 127);
     send(14, 127);
     globalThis.tick();
     if (snd.soundActive())
-        throw new Error('control: the top-edge left turn did not leave sound mode');
-    if (S.bankPickerSel < 0)
-        throw new Error('no bank picker overlay after leaving — this is the teleport Josh ' +
-                        'reported: you land on the bank with no list to keep scrolling');
+        throw new Error('control: the card\'s left turn did not leave sound mode');
+    if (S.bankPickerSel >= 0)
+        throw new Error('a picker overlay opened on the way out — it is retired');
     if (S.bankSelectTick < 0)
-        throw new Error('the display window is not armed either');
-    /* Opened AT where we landed, so the next detent steps ONE from here rather
-     * than from the top of the list — the same rule the track-view turn uses. */
+        throw new Error('the display window is not armed — a silent arrival');
     note(9, 0);
     globalThis.tick();
 });

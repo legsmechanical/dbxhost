@@ -19,6 +19,10 @@ the section into a versioned heading at release time.
 - **A new splash pool — 31 Daves.** The launch artwork rotates through a fully
   recurated set; every launch greets you with a different Dave.
 ### Features
+- **The bank walk is direct.** Inside the bank view the jog steps straight
+  through the banks — no picker list, no waiting to commit. The latch border
+  is gone (a held bank view is just how banks work now), and the sound
+  editor's menu is left with Back, landing on its card.
 - **Session view speaks the same click language.** A jog click opens the
   mixer page and keeps it on screen; the jog then walks Volume, Pan, the two
   sends, and — at the end of the walk — **SESSION FX**, a click-to-enter door

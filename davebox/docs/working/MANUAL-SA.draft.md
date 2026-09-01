@@ -308,31 +308,25 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
 [Automation](#11-automation).
 
 - **Click the jog** on the track overview to open the **bank view** — the
-  current bank's page, held on screen. From there, **turn the jog** to open the
-  **bank picker** — a list of this track's banks by name, over the page. Keep
-  turning to move the selection. Nothing changes until you choose, so you can
-  browse past a bank without landing on it. (On the overview itself the jog is
-  quiet — click first.)
-- **Click the jog, or let go of it**, to go to the selected bank. Clicking keeps
-  your hand on the wheel, so the bank's page stays up while you look at it.
-  **Back** closes the picker without choosing, as does **Shift + jog**.
+  current bank's page, held on screen. From there, **turn the jog** to move
+  through the banks directly, one step per detent. (On the overview itself the
+  jog is quiet — click first.)
 - **SOUND + CONFIG** — the way in to the track's sound editor (its instrument,
   effects, sound control and config) — is the last entry in the list. It is a
   **door rather than a screen**: landing on it offers *"click to enter"*, and
-  the click opens the editor. Turning the jog carries on through the banks as it
-  does anywhere else. The knobs still control the track's assignments while you
+  the click opens the editor. Inside the editor, **Back** steps out to this
+  card, and turning the jog on the card carries on through the banks as it does
+  anywhere else. The knobs still control the track's assignments while you
   are on it, so a knob you turn there does what it always did.
   Conductor tracks don't have it.
 - **Click the jog** (with no picker open) switches a bank between its primary and
   alternate parameters (the labels change). A **down-arrow** in the header marks
   any bank that has alternates, and blinks while the alternates are showing.
 - **Shift + jog** steps through the **tracks**, not the banks.
-- The bank page falls back to the track overview after a moment. **Click the
-  jog** from the overview to bring it back **latched** — it stays on screen
-  until you press **Back**. A flashing frame around the parameters shows the
-  latch is on, and the header names the track (`Tr4 - CLIP`) so you always know
-  where you are. While the bank page is up, clicking the jog does what that
-  bank uses the click for (alternate parameters, the Arp Steps editor).
+- The bank view stays up until you press **Back**; the header names the track
+  (`Tr4 - CLIP`) so you always know where you are. While it is up, clicking the
+  jog does what that bank uses the click for (alternate parameters, the Arp
+  Steps editor).
 - **Back** dismisses whatever is on screen — it unlatches and returns to the
   track overview. It never changes which bank you are on.
 - **Each track remembers the bank it was on** — SOUND + CONFIG included. Scroll

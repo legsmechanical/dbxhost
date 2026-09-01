@@ -1165,9 +1165,11 @@ function drawBankPicker() {
  * Only where a bank CARD is what is on screen: not in session view, and not in
  * sound mode, which owns the whole panel and is not a card to frame. */
 function drawBankLatchBox() {
-    if (!S.bankCardLatched || S.sessionView || soundActive()) return;
-    const dashed = Math.floor(S.tickCount / 24) % 2 === 1;
-    drawKitLatchBox(LATCH_BOX_Y, dashed);
+    /* RETIRED (Josh, 2026-09-01: "since banks are always persistent now, we
+     * don't need the bank border anymore") — with the click-latch the normal
+     * state, a frame marking it marked everything. Kept as a stub so the
+     * drawUI seam and this rationale survive; delete outright when the dust
+     * settles. */
 }
 
 export function drawUI() {
