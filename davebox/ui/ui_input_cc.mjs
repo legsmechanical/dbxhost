@@ -56,7 +56,7 @@ import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
 /* ⚠ one-way: ui_render never imports this module (checked 2026-08-31) —
  * the visibility predicate must be the render's own or the click gate and
  * the screen can disagree. */
-import { bankCardVisible, sessMixerVisible } from './ui_render.mjs';
+import { bankCardVisible, sessMixerVisible, soundModeCovered } from './ui_render.mjs';
 import { closeDaveBox } from './ui_daves.mjs';
 import { applyTrackConfig, readBankParams, applyBankParam,
     refreshPerClipBankParams, resyncDrumTrack,
@@ -633,6 +633,11 @@ function modalDialogUp() {
      * (arp-interval toggle, alt-params, ALL LANES confirm). Back dismisses —
      * the existing latch teardown. bankCardVisible() is the render's own
      * predicate, so the gate and the screen cannot disagree. */
+    /* ⚠ During a knob-touch PEEK the card is visible, so this gate declines
+     * and the click falls to the per-bank meanings below — and on a bank with
+     * none, the click is a deliberate NO-OP (pinned in test_bank_click_latch):
+     * a hand resting on a knob must not latch bank mode
+     * by brushing the jog. Flagged for the hardware pass if it feels wrong. */
     if (d1 === 3 && d2 === 127 && !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld &&
             !S.sessionView && !soundActive() && S.bankPickerSel < 0 && !bankCardVisible()) {
         S.bankCardLatched = true;
@@ -2227,6 +2232,13 @@ function _onCC_transport(d1, d2) {
      * an ineligible press says why instead of dying silently. */
     if (d1 === MoveRec && d2 === 127 && S.shiftHeld) {
         if (S.stepRecActive) { stepRecExit(); return; }
+        /* ⚠ Not from behind another screen: sound mode never consumes CC 86
+         * and soundModeCovered()'s modal set draws over everything, so without
+         * these two gates a session could open INVISIBLY — pads then write
+         * real steps while the user answers a dialog, and the one undo
+         * checkpoint is burned (review finding, verified both ways). Silent
+         * decline: a popup would be as hidden as the session. */
+        if (soundActive() || soundModeCovered()) return;
         if (S.dspMergeState !== 0 || S.mergeNoticePending || S.recordArmed) return;
         if (!stepRecEligible()) {
             showActionPopup('STEP REC', S.playing ? 'Stop transport first.'
@@ -4268,7 +4280,11 @@ export function _onCCMsg(d1, d2) {
      * button/knob is swallowed, press + release. Shift passes so its held state
      * stays accurate for the plain-Rec start. */
     if (S.mergeNoticePending && d1 !== MoveRec && d1 !== MoveBack && d1 !== MoveShift &&
-            d1 !== MoveSample /* the chord that raised it — its RELEASE must not dismiss */) {
+            !(d1 === MoveSample && S.shiftHeld) /* the raising CHORD (and its
+            shift-held release) must not dismiss — but a PLAIN Sample tap is
+            swallowed like every other button: letting it through stacked a
+            bake dialog under (track view) or over (session view) the notice
+            (review finding) */) {
         return;
     }
     /* Scene-bake picker: "any other btn cancels". The picking controls are

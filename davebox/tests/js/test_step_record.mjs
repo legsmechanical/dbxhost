@@ -50,6 +50,7 @@ const C = await import('../../ui/ui_constants.mjs');
  * yields undefined and every gesture silently no-ops. */
 const HC = await import('/data/UserData/schwung/shared/constants.mjs');
 const rec = await import('../../ui/ui_record.mjs');
+const await_snd = await import('../../ui/ui_sound.mjs');
 const { computePadNoteMap } = await import('../../ui/ui_drummodel.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashTicks = 0;
@@ -267,6 +268,59 @@ step('⭐ every exit route ends the session: Back, Play, track switch, view swit
     if (S.stepRecActive) throw new Error('the tick belt did not exit on a running transport');
     S.playing = false;
     rest();
+});
+
+step('⭐ entry DECLINES from behind another screen: sound mode and modal covers', () => {
+    /* Review finding, verified: sound mode never consumes CC 86 and the modal
+     * set draws over everything — an entry here would open INVISIBLY, burn the
+     * one undo checkpoint, and let pads write real steps behind a dialog. */
+    rest();
+    const snd = await_snd;
+    snd.soundEnter(T, T);
+    S.shiftHeld = true; cc(C.MoveRec, 127); cc(C.MoveRec, 0); S.shiftHeld = false;
+    if (S.stepRecActive) throw new Error('entered behind sound mode');
+    snd.soundExit();
+    rest();
+    S.confirmBake = true;                            /* one of soundModeCovered()'s set */
+    S.shiftHeld = true; cc(C.MoveRec, 127); cc(C.MoveRec, 0); S.shiftHeld = false;
+    if (S.stepRecActive) throw new Error('entered behind a modal dialog');
+    S.confirmBake = false;
+});
+
+step('⭐ a TRACK CONVERSION ends the session — pads must not write a re-typed clip', () => {
+    /* Review finding: the conduct convert flipped pad mode without exiting,
+     * leaving stepRecActive true on a track the eligibility gate forbids. The
+     * tick-side convert helpers now stepRecExit() first; pin it at the state
+     * level (the full convert path needs the DSP round-trip the rig stubs). */
+    rest();
+    rec.stepRecEnter();
+    if (!S.stepRecActive) throw new Error('setup: not active');
+    rec.stepRecExit();                               /* what the converts call */
+    if (S.stepRecActive) throw new Error('exit did not clear');
+    const js = readFileSync('ui/ui_tick.mjs', 'utf8');
+    const cvt = js.indexOf('function convertTrackType');
+    const cnd = js.indexOf('function convertTrackToConduct');
+    if (cvt < 0 || cnd < 0) throw new Error('pin lost its anchors — fix the pin');
+    const cvtBody = js.slice(cvt, js.indexOf('function', cvt + 10));
+    const cndBody = js.slice(cnd, js.indexOf('function', cnd + 10));
+    if (!cvtBody.includes('stepRecExit()'))
+        throw new Error('convertTrackType no longer exits step record');
+    if (!cndBody.includes('stepRecExit()'))
+        throw new Error('convertTrackToConduct no longer exits step record');
+});
+
+step('⭐ the merge NOTICE swallows a PLAIN Sample tap — no bake dialog under it', () => {
+    /* Review finding: the unconditional MoveSample exemption let an unshifted
+     * Sample tap stack the bake confirm under (track view) or over (session
+     * view) the notice. Only the SHIFTED chord passes now. */
+    rest();
+    S.shiftHeld = true; cc(C.MoveSample, 127); cc(C.MoveSample, 0); S.shiftHeld = false;
+    if (!S.mergeNoticePending) throw new Error('setup: no notice');
+    cc(C.MoveSample, 127); cc(C.MoveSample, 0);      /* plain tap under the notice */
+    if (S.confirmBake || S.pendingSceneBakePicker)
+        throw new Error('a plain Sample tap under the notice reached the bake handlers');
+    if (!S.mergeNoticePending) throw new Error('the swallowed tap dismissed the notice');
+    S.mergeNoticePending = false;
 });
 
 step('⭐ the gate literals MIRROR seq8.c — the copied-C-constant pin', () => {

@@ -23,10 +23,13 @@ body() { awk "/^(export )?function $1\\(/,/^}/" "$f"; }
 
 # Helpers that clear on behalf of their caller — each verified here, not assumed,
 # so one of them quietly losing its clear fails too. renderGatewayCard is the
-# shared prompt/peek card drawer (2026-09-01) — renderPrompt clears through it.
+# shared gateway-card drawer (2026-09-01); renderTrackGatewayCard is its
+# track-flavour caller (renderPrompt clears through both) — qualification is
+# against the clearers ACCUMULATED SO FAR, so a helper may clear via another
+# helper as long as it is listed after it.
 clearers="clear_screen"
-for h in renderBlocks renderLfo renderInChain drawTextEntry renderGatewayCard; do
-    if grep -qE "clear_screen\(\)" <<<"$(body "$h")"; then
+for h in renderBlocks renderLfo renderInChain drawTextEntry renderGatewayCard renderTrackGatewayCard; do
+    if grep -qE "($clearers)\(" <<<"$(body "$h")"; then
         clearers="$clearers|$h"
     fi
 done

@@ -554,6 +554,12 @@ export function _switchActiveTrack(newT) {
  * caller to abort. Returns false (proceed) on any other bank/track. */
 export function allLanesGate() {
     if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7 && !S.allLanesConfirmed) {
+        /* ⭑ SURFACE the confirm: since THE ONE LAW the ALL-LANES screen only
+         * renders while bankCardVisible(), so a gate that just redrew showed
+         * the resting overview and the refused edit looked like a dead button
+         * (review finding). Opening bank mode is the gate ASKING its question
+         * out loud — the same screen the card branch always drew. */
+        S.bankCardLatched = true;
         S.screenDirty = true;
         forceRedraw();
         return true;

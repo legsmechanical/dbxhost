@@ -99,6 +99,11 @@ function trackHasAnyData(t) {
 }
 
 function convertTrackType(t, toDrum) {
+    /* A conversion re-types the very clip a step-record session is writing —
+     * end the session first, exactly as a track SWITCH does (review finding:
+     * the conduct path left stepRecActive true on a track the eligibility
+     * gate forbids, and pad writes kept landing). */
+    stepRecExit();
     host_module_set_param('t' + t + (toDrum ? '_convert_to_drum' : '_convert_to_melodic'), '1');
     S.trackPadMode[t] = toDrum ? PAD_MODE_DRUM : PAD_MODE_MELODIC_SCALE;
     /* Resync inline (this runs in tick(), so get_param works): the first get
@@ -128,6 +133,7 @@ function convertTrackType(t, toDrum) {
  * We optimistically flip the local mode, then verify the role next tick via
  * pendingConductReadback to detect (and revert) a refusal. */
 function convertTrackToConduct(t) {
+    stepRecExit();   /* same rule as convertTrackType — see its note */
     const prevMode = S.trackPadMode[t];
     host_module_set_param('t' + t + '_convert_to_conduct', '1');
     S.trackPadMode[t] = PAD_MODE_CONDUCT;

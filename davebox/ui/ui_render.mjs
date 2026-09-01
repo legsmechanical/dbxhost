@@ -20,7 +20,7 @@ import {
     fmtDly, fmtArpStyle, fmtArpSteps, fmtDiq, fmtPlain, fmtLgto, fmtPitchRnd
 } from './ui_constants.mjs';
 import {
-    drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitAltArrow, drawKitLatchBox,
+    drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitAltArrow,
     kitUseLayout,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
     drawVFader, mvPrint, mvWidth, rectOutline,
@@ -44,8 +44,7 @@ import {
     effectiveClip,
     bankHasAltParams, altIndicatorActive
 } from './ui_leds.mjs';
-import { soundRender, soundActive, soundIsGlobal,
-         soundEnteredInSession, renderGatewayCard } from './ui_sound.mjs';
+import { soundRender, renderGatewayCard, renderTrackGatewayCard } from './ui_sound.mjs';
 import { drawMenuHeader } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* ------------------------------------------------------------------ */
@@ -88,10 +87,6 @@ function drawBankHeaderRight(showTrack, hdrFilled) {
  * and it failed the Conductor's 'C-RESPONDER' by exactly one pixel. */
 const BANK_HDR_TEXT_W = 118;
 
-/* Top of the latch frame: the row the header rule used to draw on. Reclaiming
- * it is why the rule went (Josh, 2026-08-25) — the frame sits in that space
- * instead of stealing a row from the params. */
-const LATCH_BOX_Y = 8;
 
 function bankHeadingPrefix() {
     return 'Tr' + (S.activeTrack + 1) + ' - ';
@@ -279,13 +274,11 @@ function drawSessionMixerPage() {
     /* The gateway renders the SOUND + CONFIG door idiom: a prompt, not a
      * grid — the click is the entry, the knobs are inert. */
     if (mode.widget === 'gateway') {
-        /* The SOUND + CONFIG door's exact dress (renderPrompt, ui_sound.mjs):
-         * kit header + the movy small face, same rows — Josh, 2026-09-01:
-         * "should use same font as sound+config entry bank on track view". */
-        clear_screen();
-        drawKitHeader(mode.label, false);
-        mvPrint(Math.max(0, Math.round((128 - mvWidth('CLICK TO ENTER')) / 2)), 26, 'CLICK TO ENTER', 1);
-        mvPrint(Math.max(0, Math.round((128 - mvWidth('MASTER & SEND FX')) / 2)), 40, 'MASTER & SEND FX', 1);
+        /* The SOUND + CONFIG door's exact dress, through the ONE drawer
+         * (Josh, 2026-09-01: "should use same font as sound+config entry bank
+         * on track view") — a hand-drawn copy here is how the two doors would
+         * drift apart. */
+        renderGatewayCard(mode.label, 'MASTER & SEND FX');
         return;
     }
     const cells = [];
@@ -1075,13 +1068,6 @@ function drawPositionBar(t) {
  * `soundRender()` call, and the two MUST stay in step — a flag added there and
  * not here re-opens exactly this bug. `tests/test_sound_mode_overlay_gate.sh`
  * pins that correspondence by diffing the two flag sets. */
-/* ⭑ ONE OWNER for "the bank display is held open": the latch, or the
- * transient window. The render's inTimeout and the jog-click's context gate
- * both read THIS, so they cannot disagree about what is on screen. */
-export function bankDisplayHeld() {
-    return !!S.bankCardLatched;
-}
-
 /* ⭑ ONE OWNER for "the session mixer page is what session view shows":
  * the session latch, the transient window, or a touched knob. ⚠ TOUCH-REVEAL
  * ON THE JOG IS RETIRED HERE TOO (Josh's 'mirror track view' ruling) —
@@ -1093,11 +1079,9 @@ export function sessMixerVisible() {
 }
 
 /* Is the BANK CARD what track view is showing right now (vs the resting
- * overview)? Mirrors the card branch in drawUI: held window, a touched knob,
- * sticky alt-params, or the drum ALL-LANES confirm screen. The plain
- * jog-click's context gate (Josh, 2026-08-31: click from the OVERVIEW opens
- * the persistent display; on a visible card it keeps its per-bank meanings)
- * reads this instead of re-deriving the branch. */
+ * overview)? The plain jog-click's context gate (Josh, 2026-08-31: click from
+ * the OVERVIEW opens the persistent display; on a visible card it keeps its
+ * per-bank meanings) reads this instead of re-deriving the branch. */
 /* ⭑⭑ ONE LAW (Josh, 2026-09-01): THE BANK CARD IS VISIBLE IFF BANK MODE IS
  * ON. Nothing else shows it — not a knob touch, not the old transient
  * bankSelectTick window (a dozen actions arm it, and cards appearing outside
@@ -2002,7 +1986,7 @@ function drawUIBody() {
          * soundRender above. Without this, BANKS[11]'s stub knobs drew a blank
          * eight-cell kit page. */
         if (bank === BANK_SOUND) {
-            renderGatewayCard(S.activeTrack);
+            renderTrackGatewayCard(S.activeTrack);
             return;
         }
         const isDrumLaneBank = (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 0);

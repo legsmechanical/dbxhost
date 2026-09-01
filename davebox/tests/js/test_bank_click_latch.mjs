@@ -328,6 +328,18 @@ step('⭐ Back from the SESSION FX LIST lands the gateway card, still in bank mo
     S.sessionView = false; S.sessKnobMode = 0; rest();
 });
 
+step('⭐ a jog click DURING a knob peek is a deliberate no-op on a bank with no click meaning', () => {
+    /* A hand resting on a knob must not latch bank mode by brushing the jog
+     * (review finding: this was unspecified). Bank 2 (melodic) has no
+     * alt-params and no per-bank click meaning. */
+    rest(); S.activeBank = 2;
+    S.knobTouched = 3;                               /* the peek */
+    if (!bankCardVisible()) throw new Error('control: peek not visible');
+    click();
+    if (S.bankCardLatched) throw new Error('a peek click latched bank mode');
+    S.knobTouched = -1;
+});
+
 process.exit(failed);
 }
 main().catch((e) => { console.error(e && e.stack ? e.stack : e); process.exit(1); });

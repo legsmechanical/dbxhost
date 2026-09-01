@@ -5219,24 +5219,32 @@ function centreText(y, text) {
  * The track number comes from S.track, not the active track: on this screen
  * they are the same, but the sound mode's own notion is the one every other row
  * on the way in uses. */
-/* ⭑ ONE DRAWER for the gateway card, exported: the prompt view draws it while
- * sound mode is open, and ui_render draws it for the knob-touch PEEK of a track
- * remembered on SOUND + CONFIG — the mode is closed at rest (Josh, 2026-09-01,
- * THE ONE LAW), so the peek cannot go through renderPrompt, and a second
- * hand-drawn copy is how cards drift apart. */
-export function renderGatewayCard(track) {
+/* ⭑ ONE DRAWER for every gateway card, exported and generalized: the prompt
+ * view draws it while sound mode is open, ui_render draws it for the
+ * knob-touch PEEK of a track remembered on SOUND + CONFIG (the mode is closed
+ * at rest — Josh, 2026-09-01, THE ONE LAW — so the peek cannot go through
+ * renderPrompt), and the session view's SESSION FX door wears it too. A
+ * second hand-drawn copy is how cards drift apart (review finding: the
+ * session door had grown exactly that). */
+export function renderGatewayCard(title, line2) {
     clear_screen();
-    /* ⚠ BANK's map, explicitly — this card is a bank card and is now reached
-     * from two callers with different prior layouts. Selecting is not optional
+    /* ⚠ BANK's map, explicitly — this card is a bank card and is reached
+     * from callers with different prior layouts. Selecting is not optional
      * on any surface that reads a binding (see renderBlocks). */
     kitUseLayout('bank');
-    drawKitHeader('SOUND + CONFIG', false);
+    drawKitHeader(title, false);
     centreText(26, 'CLICK TO ENTER');
-    centreText(40, 'TRACK ' + (track + 1) + ' SOUND & CONFIG');
+    centreText(40, line2);
+}
+
+/* The track flavour's card — both renderPrompt and the peek draw THIS, so the
+ * strings live once. */
+export function renderTrackGatewayCard(track) {
+    renderGatewayCard('SOUND + CONFIG', 'TRACK ' + (track + 1) + ' SOUND & CONFIG');
 }
 
 function renderPrompt() {
-    renderGatewayCard(S.track);
+    renderTrackGatewayCard(S.track);
 }
 
 function renderBlocks() {
