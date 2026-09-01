@@ -328,6 +328,20 @@ int main(void) {
         HX_ASSERT(e->count == 3, "after release nothing more is written");
         OK("⚠ record: the live value is written one cell at a time, overwriting, until release");
 
+        /* HOLD: a lock being dialled. Playback leaves the target alone and
+         * nothing is recorded — even with Record on and the transport running. */
+        tr->recording = 1; in->playing = 1;
+        hx_set_param(h, "t0_pa_hold", "1:fx1:cutoff");
+        pa_playback_scan(in, tr, 0, 0, 30, 384, NULL);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(lines(buf) == 0, "a HELD target is not staged by playback");
+        int before_hold = e->count;
+        pa_record_tick(in, 0, 0, 100, 24);
+        HX_ASSERT(e->count == before_hold, "⚠ and a hold records NOTHING even while Record is on");
+        hx_set_param(h, "t0_pa_live_end", "1:fx1:cutoff");
+        OK("⚠ hold: playback and the recorder both keep their hands off a lock being dialled");
+        tr->recording = 0;
+
         /* The writer lock: the SPI thread mid-edit means the cell waits. */
         tr->recording = 1;
         hx_set_param(h, "t0_pa_live", "1:fx1:cutoff 100");

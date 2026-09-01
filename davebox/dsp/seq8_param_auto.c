@@ -664,7 +664,7 @@ static int pa_live_has(const seq8_instance_t *inst, int track, int target) {
  * own flags, which are the authority) or merely overriding. The mode is
  * decided on the first turn of a touch and kept until release. */
 static void pa_live_set(seq8_instance_t *inst, seq8_track_t *tr, int track,
-                        int target, uint16_t val) {
+                        int target, uint16_t val, int hold_only) {
     if (target < 0) return;
     pa_live_t *l = pa_live_find(inst, track, target);
     if (!l) {
@@ -674,7 +674,11 @@ static void pa_live_set(seq8_instance_t *inst, seq8_track_t *tr, int track,
             memset(l, 0, sizeof(*l));
             l->target    = (uint16_t)target;
             l->last_snap = 0xFFFFFFFFu;
-            l->mode      = (tr->recording && inst->playing) ? PA_LIVE_RECORD : PA_LIVE_OVERRIDE;
+            /* A HOLD (a step held while the knob turns: a lock being dialled)
+             * is never a recording, whatever Record says — the lock is the
+             * write. It only keeps playback's hands off the target. */
+            l->mode      = (!hold_only && tr->recording && inst->playing)
+                           ? PA_LIVE_RECORD : PA_LIVE_OVERRIDE;
             /* Publish the target before `used`, so the audio thread never
              * sees a used slot with a stale target. */
             __atomic_store_n(&l->used, 1, __ATOMIC_RELEASE);

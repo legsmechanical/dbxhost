@@ -4,7 +4,7 @@
  * compile or lint this file on its own.
  *
  * Covers: pa_set, pa_set2, pa_clear_key, pa_clear_step, pa_clear, pa_active,
- * pa_smooth, pa_rest, pa_loop, pa_live, pa_live_end.
+ * pa_smooth, pa_rest, pa_loop, pa_live, pa_hold, pa_live_end.
  *
  * The dispatcher holds the writer lock and the seqlock around this handler.
  *
@@ -110,7 +110,20 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         if (id < 0) { inst->pa_store_full = 1; return 1; }
         if (!pa_may_write(inst, tidx, id)) return 1;
         if (v > PA_VAL_MAX) v = PA_VAL_MAX;
-        pa_live_set(inst, tr, tidx, id, (uint16_t)v);
+        pa_live_set(inst, tr, tidx, id, (uint16_t)v, 0);
+        return 1;
+    }
+
+    /* pa_hold: "<target>" — a hand is on the knob dialling a LOCK. Playback
+     * leaves the target alone until pa_live_end, and nothing is recorded:
+     * the lock write is the whole of what the gesture means. Without this
+     * the playhead keeps re-asserting the automation value underneath the
+     * hand — the value jumps away mid-dial. */
+    if (!strcmp(sub, "pa_hold")) {
+        PA_TARGET(p, tgt);
+        int id = pa_target_id(inst, tgt);
+        if (id < 0) { inst->pa_store_full = 1; return 1; }
+        pa_live_set(inst, tr, tidx, id, 0, 1);
         return 1;
     }
 

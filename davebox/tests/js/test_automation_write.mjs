@@ -61,7 +61,7 @@ const check = (cond, msg) => {
 };
 function reset(o) {
     automationResetCaches();
-    sets.length = 0; requests.length = 0; writes.length = 0;
+    sets.length = 0; requests.length = 0; writes.length = 0; presenceReads = 0;
     S.heldStep = -1; S.playing = false; S.recordArmed = false; S.tickCount = 100;
     S.clipTPS[0][0] = 24;
     Object.assign(S, o || {});
@@ -85,22 +85,26 @@ const T = 0, C = 0, SLOT = 1;
     reset({ heldStep: 3 });
     automationParamTouch(T, C, SLOT, 'fx1:cutoff', true);
     automationParamEdit(T, C, SLOT, 'fx1:cutoff', '0.5', '0.25');
-    check(sets.length === 0 && automationModuleWriteCountForTest() === 3,
+    check(sets.length === 0 && automationModuleWriteCountForTest() === 4,
           'from the MIDI handler nothing crosses yet — it is buffered for the tick');
     tick();
-    check(requests.length === 1 && requests[0] === 3, '⚠ ...and crosses as ONE bulk write');
+    check(requests.length === 1 && requests[0] === 4, '⚠ ...and crosses as ONE bulk write');
     check(sets[0] === 't0_pa_rest=0 1:fx1:cutoff 4096',
           '⚠ the resting value is the value BEFORE the first edit (0.25 -> 4096), not the new one');
     check(sets[1] === 't0_c0_undo_checkpoint=1', 'one undo checkpoint opens the gesture');
-    check(sets[2] === 't0_pa_set2=0 1:fx1:cutoff 72 95 8192',
+    check(sets[2] === 't0_pa_hold=1:fx1:cutoff', 'the target is held while the lock is dialled');
+    check(sets[3] === 't0_pa_set2=0 1:fx1:cutoff 72 95 8192',
           'the lock covers the held step in clip ticks (step 3 x 24 = 72..95) at the NEW value');
     automationParamEdit(T, C, SLOT, 'fx1:cutoff', '0.75', '0.5');
     tick();
-    check(sets.length === 4 && sets[3] === 't0_pa_set2=0 1:fx1:cutoff 72 95 12287',
-          'a second turn in the same gesture writes the lock again — no second rest, no second checkpoint');
+    check(sets.length === 5 && sets[4] === 't0_pa_set2=0 1:fx1:cutoff 72 95 12287',
+          'a second turn in the same gesture writes the lock again — no second rest, no second checkpoint, no second hold');
     automationParamTouch(T, C, SLOT, 'fx1:cutoff', false);
     tick();
-    check(sets.length === 4, 'releasing after a lock sends no live_end — nothing was live');
+    check(sets.length === 5, 'a touch release while the step is still held ends nothing');
+    S.heldStep = -1;
+    tick();
+    check(sets.length === 6 && sets[5] === 't0_pa_live_end=1:fx1:cutoff', 'the step coming up releases the hold');
 
     reset({ heldStep: 0, playing: true, recordArmed: true });
     automationParamEdit(T, C, SLOT, 'fx1:octave', '2', '0');
@@ -108,6 +112,29 @@ const T = 0, C = 0, SLOT = 1;
     check(sets.some(x => x.startsWith('t0_pa_set2=0 1:fx1:octave 0 23 16383')),
           'held step during playback: the lock, not a live record (int 2 of -2..2 -> 16383)');
     check(!sets.some(x => x.startsWith('t0_pa_live')), 'and nothing goes live');
+}
+
+/* ---- a lock is held by the STEP, and playback keeps off it ------------- */
+{
+    reset({ heldStep: 2, playing: true });
+    automationNoteWrite();
+    /* No touch-down: while a pad is held the editor may never see one. */
+    automationParamEdit(T, C, SLOT, 'fx1:cutoff', '0.5', '0.25');
+    tick();
+    check(sets.some(x => x === 't0_pa_hold=1:fx1:cutoff'), '⚠ dialling a lock tells the DSP to HOLD the target');
+    check(sets.indexOf('t0_pa_hold=1:fx1:cutoff') < sets.findIndex(x => x.startsWith('t0_pa_set2')), 'before the lock write');
+    for (let i = 0; i < 40; i++) tick();                       /* a long pause mid-dial */
+    check(automationGestureCountForTest() === 1, '⚠ the gesture does NOT expire while the step is held — even with no touch');
+    staged = '1:fx1:cutoff 9000';
+    tick();
+    check(writes.length === 0, 'and playback is not pushed under the hand');
+    automationParamTouch(T, C, SLOT, 'fx1:cutoff', false);   /* a stray release */
+    tick();
+    check(automationGestureCountForTest() === 1, 'a touch release does not end it either — the step does');
+    S.heldStep = -1;
+    tick();
+    check(automationGestureCountForTest() === 0 && sets.some(x => x === 't0_pa_live_end=1:fx1:cutoff'),
+          '⚠ the step coming up ends the gesture and hands the target back to playback');
 }
 
 /* ---- playing: live, and the DSP decides record vs override ------------- */

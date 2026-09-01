@@ -405,7 +405,7 @@ function splitFullKey(fullKey) {
 function gestureFor(target, track, clip, synthetic) {
     let g = gestures.get(target);
     if (!g) {
-        g = { track, clip, rest: false, ckpt: false, live: false, synthetic, idle: 0 };
+        g = { track, clip, rest: false, ckpt: false, live: false, lock: false, synthetic, idle: 0 };
         gestures.set(target, g);
     }
     return g;
@@ -432,6 +432,7 @@ export function automationParamTouch(track, clip, slot, fullKey, down) {
     if (down) { gestureFor(target, track, clip, false); return; }
     const g = gestures.get(target);
     if (!g) return;
+    if (g.lock && S.heldStep >= 0) return;      /* the step holds it, not the touch */
     endGesture(target, g);
 }
 
@@ -454,6 +455,13 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
         const from = S.heldStep * tps, to = from + tps - 1;
         ensureRest(g, target, normValue(slot, comp, key, prevWire));
         ensureCheckpoint(g);
+        /* Playback keeps its hands off the target while the lock is being
+         * dialled (the DSP stops staging it; JS stops pushing it), and the
+         * gesture lives as long as the STEP is held — see gesturesTick. A
+         * knob-touch may never reach the editor while a pad is down, so the
+         * step is the hand here, not the touch sensor. */
+        if (!g.live) { g.live = true; queueSet('t' + track + '_pa_hold', target); }
+        g.lock = true;
         queueSet('t' + track + '_pa_set2', clip + ' ' + target + ' ' + from + ' ' + to + ' ' + norm);
         automationNoteWrite();
         return;
@@ -480,6 +488,13 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
 function gesturesTick() {
     if (!gestures.size) return;
     for (const [target, g] of gestures) {
+        /* A lock gesture is held by the STEP: alive while it is down, over the
+         * tick it comes up — whatever the touch sensor said. */
+        if (g.lock) {
+            if (S.heldStep >= 0) { g.idle = 0; continue; }
+            endGesture(target, g);
+            continue;
+        }
         if (!g.synthetic) continue;
         if (++g.idle < SYNTHETIC_GESTURE_IDLE_TICKS) continue;
         endGesture(target, g);
