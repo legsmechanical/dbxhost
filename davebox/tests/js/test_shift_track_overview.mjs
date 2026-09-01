@@ -101,15 +101,22 @@ function step(label, fn) {
     try { fn(); ok(label); } catch (e) { bad(label, e); }
 }
 
-step('⭑ CONTROL: idle on AUTOMATION, the graph holds the screen (no track row)', () => {
-    S.shiftHeld = false;
+step('⭑ idle on AUTOMATION now rests on the OVERVIEW — the graph is an in-mode screen', () => {
+    /* Rewritten 2026-09-01 (the one law): the always-on idle graph is what
+     * Josh could not back out of on device. Outside bank mode, bank 6 idles
+     * on the overview like every bank; the graph shows latched. */
+    S.shiftHeld = false; S.bankCardLatched = false;
+    draw();
+    if (!trackRowDrawn())
+        throw new Error('idle bank 6 did not rest on the track overview');
+    S.bankCardLatched = true;
     draw();
     if (trackRowDrawn())
-        throw new Error('control failed: the automation graph is not up, so the ' +
-                        'Shift assertion below could pass for the wrong reason');
+        throw new Error('bank mode on AUTOMATION did not show the graph');
 });
 
 step('⭑ Shift held: AUTOMATION stands down and the TRACK OVERVIEW draws', () => {
+    S.bankCardLatched = true;                  /* the graph is up (in mode) */
     S.shiftHeld = true;
     draw();
     if (!trackRowDrawn())
@@ -133,7 +140,7 @@ step('⚠ a Shift+KNOB gesture still gets the bank overview, not the track row',
 });
 
 step('⚠ Shift released: the graph comes straight back', () => {
-    S.shiftHeld = false;
+    S.shiftHeld = false;                        /* still latched from above */
     draw();
     if (trackRowDrawn())
         throw new Error('the graph did not return on the Shift release — the ' +
@@ -145,6 +152,7 @@ step('⭑ a NORMAL bank was already correct — same gesture, same answer', () =
      * already rests on the overview and Shift changes nothing. If this ever
      * fails, the fix above has leaked out of bank 6. */
     S.activeBank = 1;
+    S.bankCardLatched = false;                 /* out of bank mode */
     S.shiftHeld = false; draw();
     const idle = trackRowDrawn();
     S.shiftHeld = true;  draw();

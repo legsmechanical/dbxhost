@@ -173,7 +173,7 @@ step('⭑ the bank card names its TRACK, so a latched card still says where you 
     reset();
     S.activeTrack = 4;
     S.activeBank = 1;                                 /* NOTE FX */
-    S.bankSelectTick = S.tickCount;                   /* card up, not the overview */
+    S.bankCardLatched = true;   /* one law: only bank mode shows the card */                   /* card up, not the overview */
     fb.fill(0);
     render.drawUI();
     const got = fb.slice(0, FBW * 8);                 /* the 8px header band */
@@ -207,7 +207,7 @@ step('⭑ a bank card draws NO rule under the header', () => {
      * and the eye reads that as the line. */
     reset();
     S.activeBank = 1;
-    S.bankSelectTick = S.tickCount;
+    S.bankCardLatched = true;   /* one law: only bank mode shows the card */
     fb.fill(0);
     render.drawUI();
     let ink = 0;
@@ -400,17 +400,17 @@ step('⭑ the latch frame is RETIRED — a latched card draws exactly like a win
      * phases, so a phase-gated frame cannot hide. */
     reset();
     S.activeBank = 1;
-    for (const t of [0, 24]) {
-        S.bankCardLatched = false; S.bankSelectTick = 1; S.tickCount = t;
-        fb.fill(0); render.drawUI();
-        const windowed = fb.slice();
-        S.bankCardLatched = true; S.bankSelectTick = -1; S.tickCount = t;
-        fb.fill(0); render.drawUI();
-        for (let i = 0; i < fb.length; i++)
-            if (fb[i] !== windowed[i])
-                throw new Error('latched and windowed cards differ at px ' + i +
-                                ' (tick ' + t + ') — a latch indicator is back');
-    }
+    /* Under the one law only the latch shows the card at all, so the
+     * equality is across BLINK PHASES of the latched card itself: any
+     * phase-gated indicator shows up as a diff. */
+    S.bankCardLatched = true; S.bankSelectTick = -1;
+    S.tickCount = 0;  fb.fill(0); render.drawUI();
+    const phase0 = fb.slice();
+    S.tickCount = 24; fb.fill(0); render.drawUI();
+    for (let i = 0; i < fb.length; i++)
+        if (fb[i] !== phase0[i])
+            throw new Error('the latched card differs across blink phases at px ' + i +
+                            ' — a blinking latch indicator is back');
     S.bankCardLatched = false;
 });
 step('⚠ the latch frame does not sit ON the params', () => {
@@ -419,7 +419,7 @@ step('⚠ the latch frame does not sit ON the params', () => {
      * identical to one clipping them — I misread it as clipping twice. */
     reset();
     S.activeBank = 1;
-    S.bankSelectTick = S.tickCount;
+    S.bankCardLatched = true;   /* one law: only bank mode shows the card */
     S.bankCardLatched = false;
     fb.fill(0); render.drawUI();
     /* ⚠ The scan stops ABOVE the rule row. Below it is chrome — the rule itself

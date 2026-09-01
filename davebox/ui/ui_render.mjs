@@ -1080,7 +1080,7 @@ function drawPositionBar(t) {
  * transient window. The render's inTimeout and the jog-click's context gate
  * both read THIS, so they cannot disagree about what is on screen. */
 export function bankDisplayHeld() {
-    return !!(S.bankCardLatched || S.bankSelectTick >= 0);
+    return !!S.bankCardLatched;
 }
 
 /* ⭑ ONE OWNER for "the session mixer page is what session view shows":
@@ -1089,8 +1089,8 @@ export function bankDisplayHeld() {
  * S.jogTouched deliberately absent; the KNOB touch stays, it is the mixer's
  * own edit surface. Render and the session click gate both read this. */
 export function sessMixerVisible() {
-    return !!(S.sessionView &&
-              (S.sessMixerLatched || S.bankSelectTick >= 0 || S.knobTouched >= 0));
+    /* Same one law as track view: bank mode, or the knob-touch peek. */
+    return !!(S.sessionView && (S.sessMixerLatched || S.knobTouched >= 0));
 }
 
 /* Is the BANK CARD what track view is showing right now (vs the resting
@@ -1099,12 +1099,21 @@ export function sessMixerVisible() {
  * jog-click's context gate (Josh, 2026-08-31: click from the OVERVIEW opens
  * the persistent display; on a visible card it keeps its per-bank meanings)
  * reads this instead of re-deriving the branch. */
+/* ⭑⭑ ONE LAW (Josh, 2026-09-01): THE BANK CARD IS VISIBLE IFF BANK MODE IS
+ * ON. Nothing else shows it — not a knob touch, not the old transient
+ * bankSelectTick window (a dozen actions arm it, and cards appearing outside
+ * the mode is exactly what made the click look broken on device), not a
+ * timeout decay. bankSelectTick lives on only as plumbing other features
+ * stamp; it no longer drives this screen. */
 export function bankCardVisible() {
+    /* ...plus ONE peek (Josh: "knob touches are the ONLY other thing that
+     * shows the card... it just peeks the active one until knob is
+     * released"). And Shift stands the card down UNLESS a knob is held —
+     * Shift is the track-switch modifier and the overview is its read-out
+     * (Josh, 2026-08-24); a Shift+knob gesture keeps the peek. */
     if (S.sessionView) return false;
-    if (bankDisplayHeld() || S.knobTouched >= 0) return true;
-    if (S.altMode && bankHasAltParams(S.activeTrack, S.activeBank)) return true;
-    return S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM &&
-           S.activeBank === 7 && !S.allLanesConfirmed;
+    if (S.shiftHeld && S.knobTouched < 0) return false;
+    return !!S.bankCardLatched || S.knobTouched >= 0;
 }
 
 export function soundModeCovered() {
@@ -1439,7 +1448,7 @@ function drawUIBody() {
      * reveal davebox banks") — S.jogTouched deliberately absent here. The jog
      * turn still opens the PICKER while touched, and a commit still arms the
      * transient window; only the bare resting touch stopped revealing. */
-    const inTimeout = bankDisplayHeld();
+    const inTimeout = bankCardVisible();
 
     /* Compress-limit override: highest priority for ~1500ms after a blocked compress */
     if (S.stretchBlockedEndTick >= 0) {
@@ -1829,19 +1838,19 @@ function drawUIBody() {
         return;
     }
 
-    /* Auto bank idle display: lane info + automation graph + progress bar.
+    /* Auto bank display: lane info + automation graph + progress bar.
      * (While SOUND + CONFIG is up, activeBank is BANK_SOUND — not 6 — so the
      * fallback overview takes the default branches by construction.)
      *
-     * ⚠ Stands down while SHIFT is held (Josh, 2026-08-24). Shift in track view
-     * is the track-SWITCH modifier, and every other bank already yields to the
-     * track overview for it — the Shift edges clear jogTouched/bankSelectTick
-     * (see the MoveShift handler in ui_input_cc), which is exactly the flags
-     * `inTimeout` reads. This screen is PERSISTENT, so it never saw that clear
-     * and kept the graph up over the one read-out the gesture exists to show:
-     * which track you have landed on. A Shift+knob gesture is unaffected — a
-     * touched knob already takes the bank overview branch above this one. */
-    if (bank === 6 && !S.loopHeld && S.knobTouched < 0 && !inTimeout && !S.shiftHeld) {
+     * ⚠ NO LONGER PERSISTENT (Josh, 2026-09-01, the one law: a bank is
+     * visually active only in bank mode or under a knob-touch peek). The old
+     * always-on idle graph is what he could not back out of on device —
+     * landing on AUTOMATION kept the graph up with Back unable to move the
+     * bank. The graph is now bank 6's IN-MODE screen: latched shows it, a
+     * touched knob swaps to the knob card (the branch above), Shift still
+     * stands it down for the track-switch read-out (Josh, 2026-08-24), and
+     * idle falls to the overview like every other bank. */
+    if (bank === 6 && S.bankCardLatched && !S.loopHeld && S.knobTouched < 0 && !S.shiftHeld) {
         var _gt = S.activeTrack;
         var _gac = effectiveClip(_gt);
         var _gLane = S.ccActiveLane[_gt];
@@ -1971,7 +1980,7 @@ function drawUIBody() {
      * the Conduct bank. Gated on PAD_MODE_CONDUCT so it never affects melodic/drum. */
     if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT &&
             (bank === BANK_RESPONDER || bank === BANK_OCTAVE || bank === BANK_WHEN) &&
-            (S.knobTouched >= 0 || inTimeout)) {
+            bankCardVisible()) {
         const _ch = bankHeaderName(S.activeTrack, bank);
         if (bank === BANK_RESPONDER) {
             const _cc = S.trackActiveClip[S.activeTrack] | 0;
@@ -1985,9 +1994,7 @@ function drawUIBody() {
         return;
     }
 
-    if (bank >= 0 && (S.knobTouched >= 0 || inTimeout ||
-            (S.altMode && bankHasAltParams(S.activeTrack, bank)) ||
-            (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 7 && !S.allLanesConfirmed))) {
+    if (bank >= 0 && bankCardVisible()) {
         const isDrumLaneBank = (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 0);
         if (isDrumLaneBank) {
             /* DRUM LANE bank overview: mirrors CLIP bank at lane level */

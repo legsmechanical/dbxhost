@@ -34,7 +34,7 @@ import {
  * under a different name deliberately — the two are easy to confuse, and
  * confusing them is exactly what broke the bypass gesture. Used only for the
  * Back long-press, which davebox owns module-wide. */
-import { armBankDisplay, S as GS } from './ui_state.mjs';
+import { armBankDisplay, standDownBankDisplay, S as GS } from './ui_state.mjs';
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
@@ -4887,7 +4887,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
         } else if (S.view === VIEW_BUSES) {
             soundExit();
         } else {
+            /* The prompt (and any stray top-level screen): Back is OUT — of
+             * sound mode AND of bank mode (Josh, 2026-09-01: "pressing back
+             * from any of those banks exits bank mode"). The jog's walk-off
+             * keeps the mode; only Back ends it. */
             soundExit();
+            GS.bankCardLatched = false;
+            standDownBankDisplay(true);
         }
         S.presetMsg = '';
         S.dirty = true;

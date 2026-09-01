@@ -117,10 +117,23 @@ step('⭐ the bare jog TOUCH no longer reveals the card', () => {
     note(9, 0);
 });
 
-step('control: the transient window still reveals (only TOUCH-reveal retired)', () => {
+step('⭐ the ONE LAW: bank mode shows the card; a knob touch PEEKS it; nothing else', () => {
+    /* Josh, 2026-09-01: "every track bank should be visually active only
+     * after clicking jog wheel... knob touches are the ONLY other thing that
+     * shows the card — it just peeks the active one until knob is released."
+     * The old transient bankSelectTick window is gone as a display driver;
+     * it is what made cards appear outside the mode and the click read as a
+     * fall-through. */
     rest(); S.activeBank = 1;
-    S.bankSelectTick = S.tickCount;              /* a committed pick arms this */
-    if (!bankCardVisible()) throw new Error('the transient window stopped revealing — too much was retired');
+    S.bankSelectTick = S.tickCount;
+    if (bankCardVisible()) throw new Error('the transient window revealed the card — only mode or peek may');
+    S.bankSelectTick = -1; S.knobTouched = 3;
+    if (!bankCardVisible()) throw new Error('a knob touch did not PEEK the card');
+    S.knobTouched = -1;
+    if (bankCardVisible()) throw new Error('the peek outlived the touch');
+    S.bankCardLatched = true;
+    if (!bankCardVisible()) throw new Error('bank mode itself does not show the card');
+    S.bankCardLatched = false;
 });
 
 step('⭐ SESSION mirrors the grammar: click latches the mixer; the FX door is a GATEWAY bank', () => {
