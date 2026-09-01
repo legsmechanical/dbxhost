@@ -32,8 +32,13 @@ static int sp_globals_state(sp_ctx_t *cx) {
 
     if (!strcmp(key, "save")) {
         inst->xpose_preview_active = 0;  /* defensive: never persist/leave a preview stuck on suspend */
-        if (!inst->state_version_mismatch)
+        if (!inst->state_version_mismatch) {
             seq8_save_state(inst);
+            /* Automation is a second file in the project directory and must
+             * travel with the first through every save path, or a suspend
+             * persists the notes and loses the automation. */
+            pa_save(inst);
+        }
         return 1;
     }
 
@@ -48,6 +53,11 @@ static int sp_globals_state(sp_ctx_t *cx) {
         /* A raw path carries no set identity — clear rather than leave the
          * previous set's uuid answering for a file it does not describe. */
         inst->state_uuid[0] = '\0';
+        /* The project we point at just changed, so its automation follows.
+         * pa_load resets the store before reading, so pointing at a project
+         * with no auto file leaves no automation rather than the previous
+         * project's. */
+        pa_load(inst);
         seq8_ilog(inst, inst->state_path);
         return 1;
     }
@@ -212,6 +222,11 @@ static int sp_globals_state(sp_ctx_t *cx) {
             }
         }
         seq8_load_state(inst);
+        /* Same file, same moment: a project's automation is loaded with it.
+         * pa_load resets the store first, so a project with no auto file
+         * (every project predating this, and every one without automation)
+         * correctly ends up with none rather than inheriting the last one's. */
+        pa_load(inst);
         /* Whole-set content swap (incl. Clear Session via v=0 file): the
          * BROWSER must re-pull or it keeps showing the old set. CONTENT-ONLY
          * bump — the device JS initiated this load and runs its own

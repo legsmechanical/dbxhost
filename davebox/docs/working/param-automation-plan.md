@@ -8,16 +8,25 @@ verdict REDESIGN on the store (§0.1) and transport (§0.2); record seam (§0.3)
 
 ### 0.1 The store (DSP, per track × clip) — REDESIGNED
 
-- **The real budget is 64 KB for the WHOLE state**: `state_full` returns through
-  `shadow_get_param` whose value buffer is `SHADOW_PARAM_VALUE_LEN = 65536`
-  (src/host/shadow_constants.h); seq8.c:6285-6287 silently truncates at out_len — the 131072
-  `state_buf` never protects the deliverable. (dsp/CLAUDE.md's 64 KB figure was right;
-  rev 1 called it stale — wrong.) Readers strstr-parse, so overflow = silently smaller project
-  [[schwung-atomic-write-inode-is-the-only-pin]].
-- **Global point budget, not per-clip caps**: `PA_TOTAL_POINTS` (order 4000-6000 — set from a
-  P1 MEASUREMENT of current worst-case state size, not reasoning) enforced at write time with a
-  user-visible "AUTOMATION FULL"; per-entry soft cap + record-time decimation
-  (cc_auto_decimate precedent seq8.c:5472) shape the spend.
+- **⭑RULED (Josh, 2026-09-02): automation lives in its OWN FILE**,
+  `Sets/<uuid>/dAVEBOx/<prefix>-auto.json`, DSP-written by the same non-RT deferred-save
+  machinery as the main state. Why: the main state's ceiling is the TRANSPORT, not the
+  serializer — under SA `host_module_get_param('state_full')` routes through
+  `shadow_get_param`, value field `SHADOW_PARAM_VALUE_LEN` = 65536 (shadow_ui.js:4339;
+  ⚠ `char buf[16384]` at schwung_host.c:1462 is the LEGACY menu-host binding, a decoy) — and
+  **P0b measurement (2026-09-02) showed a heavy-but-ordinary project already spends 62.5 KB of
+  that 65.5 KB.** There was never a budget to ration. (That measurement also found and fixed a
+  live silent-truncation data-loss bug — `43892d66`.) A second file keeps the storage model
+  intact ([[schwung-state-colocation-model]]): one dir per project, copy still a copytree,
+  delete still one rmtree.
+  ⚠ It obeys every rule the main state does: **crash-atomic write** (temp + fsync + rename,
+  [[schwung-atomic-write-inode-is-the-only-pin]]), never written from the audio thread, and
+  **loaded/cleared in lockstep with the project** (state_load, Clear Session sentinel, uuid
+  mismatch, awaiting_select). The failure to design against is a stale auto file beside a fresh
+  project: the file carries the project uuid + a serial, and a mismatch DISCARDS it rather than
+  applying stale automation.
+  ⭑ Freed by this: no transport-forced global cap and no "AUTOMATION FULL" popup in v1 (keep a
+  generous sanity cap against runaway growth); points are bounded by resident memory, not wire.
 - **Preallocated point-block pool at create_instance** — fixed block list, hand out blocks,
   NEVER malloc/realloc on the SPI thread (set_param runs at FIFO 90; the sp_globals_edit
   callocs are an accepted legacy tradeoff, not a license). rev 1's "at_auto_t
@@ -99,11 +108,11 @@ page for assignment; keys `tN_pa_cc_assign`; live turns send immediately, playba
 
 ## 1. Phases
 
-**P0 (new) — spikes + measurement.** (a) Throwaway `setDecorations` call + a knob-LED paint
-on device — prove the two unproven seams before building around them (+ clear decorations on
-page change: nothing resets s.decorations today — first-caller owns it). (b) Measure current
-worst-case `state_full` size on a real heavy project → set PA_TOTAL_POINTS. (c) Rate-check
-blocking writes/tick on device.
+**P0 — spikes + measurement.** (b) ✅ DONE 2026-09-02 — the finding retired the rationing
+design and produced a separate shipped FIX (`43892d66`). (a) OWED, needs device: throwaway
+`setDecorations` call + a knob-LED paint, proving the two unproven seams before building on
+them (and clear decorations on page change — nothing resets `s.decorations` today; first
+caller owns it). (c) OWED, needs device: rate-check blocking writes per tick.
 
 **P1 — DSP store + keys + state.** Pool, interned targets, rests, entries;
 `sp_track_paramauto.c` — **returns 1 on `pa_` prefix match even for unknown sub-ops**
@@ -111,8 +120,9 @@ blocking writes/tick on device.
 bug today — dies in P8; fix the dsp/CLAUDE.md sentence claiming otherwise). Keys: `tN_pa_set`,
 `tN_pa_set2`, `tN_pa_clear_key`, `tN_pa_clear_step`, `tN_pa_clear`, `tN_pa_active`,
 `tN_pa_smooth`, `tN_pa_cc_assign` (all tN_ — no new globals on the SET side). GETs: global
-`pa_pending`, `tN_pa_list`, points readers via bulk. State v36→37 (list EVERY pin site:
-seq8_state.c:583, both CLAUDE.mds, JS mismatch dialog); copy/cut payload; undo block
+`pa_pending`, `tN_pa_list`, points readers via bulk. The auto file carries its OWN version, so
+the main state's v36 does NOT bump: a project without an auto file simply has no automation —
+that is the no-migration story, for free; copy/cut payload; undo block
 snapshots. C tests: roundtrip, undo, pool exhaustion, budget, clear, copy-carry.
 
 **P2 — Playback.** Evaluator + ring + global drain + budgeted blocking push; **host bulk
@@ -150,5 +160,7 @@ CHANGELOG Removed.
 ## 2. Standing risks
 - Write budget vs. dense multi-param automation: the budget + staleness round-robin degrades
   gracefully (params update late, never lost); manual documents "control-rate".
-- State budget: AUTOMATION FULL is user-visible, never silent truncation.
+- The auto file is a SECOND file in a model built on one: every project lifecycle path
+  (create / copy / delete / clear / load / uuid-mismatch) must handle it or automation leaks
+  between projects. Enumerate and test each in P1.
 - The seams proven in P0 before anything is built on them.

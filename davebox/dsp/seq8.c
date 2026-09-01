@@ -277,6 +277,8 @@ static const uint8_t DRUM_INQ_TICKS[9] = { 0, 6, 12, 24, 16, 48, 32, 96, 64 };
 /* Default CC assignments for CC PARAM bank knobs K1-K8 */
 static const uint8_t CC_ASSIGN_DEFAULT[8] = { 7, 74, 71, 73, 72, 91, 93, 10 };
 
+#include "seq8_param_auto.h"
+
 #define CC_AUTO_MAX_POINTS 1024
 #define CC_TOUCH_GRACE_BLOCKS 8  /* blocks (~46ms) to suppress automation after a live knob turn */
 
@@ -1271,6 +1273,16 @@ typedef struct {
     /* Deferred save: JS polls state_full get_param; audio thread only sets state_dirty */
     char    state_buf[131072];
     uint8_t state_dirty;
+
+    /* Per-parameter automation (Front 3). Resident pool — see
+     * seq8_param_auto.c for the model. Kept in its OWN file beside the
+     * project rather than inside state_full, whose ceiling is the 64 KB
+     * param transport that a heavy project already nearly fills. */
+    pa_entry_t pa_entries[PA_MAX_ENTRIES];
+    char       pa_targets[PA_MAX_TARGETS][PA_TARGET_LEN];
+    uint8_t    pa_dirty;          /* automation changed since last auto-file write */
+    uint8_t    pa_store_full;     /* a write was refused; JS reports it and clears */
+    char       pa_buf[131072];    /* serialization scratch for the auto file */
 
     /* Result of last all_lanes_beat_stretch: 0=none, 1=ok, -1=blocked */
     int all_lanes_stretch_result;
@@ -4378,6 +4390,11 @@ fail:
     inst->metro_wav_fd = -1;
 }
 
+/* Per-parameter automation lives in seq8_param_auto.c, included below with the
+ * other cold-path files; the instance lifecycle above it needs these two. */
+static void pa_load(seq8_instance_t *inst);
+static void pa_save(seq8_instance_t *inst);
+
 static void *create_instance(const char *module_dir, const char *json_defaults) {
     (void)json_defaults;
 
@@ -4534,8 +4551,10 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
             if (c != EOF) inst->awaiting_select = 1;
         }
     }
-    if (!inst->awaiting_select)
+    if (!inst->awaiting_select) {
         seq8_load_state(inst);
+        pa_load(inst);
+    }
 
     /* Default track 0 to drum mode if no tracks loaded as drum.
      * Matches the JS first-run default (restoreUiSidecar else branch).
@@ -4571,8 +4590,10 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
 static void destroy_instance(void *instance) {
     seq8_instance_t *inst = (seq8_instance_t *)instance;
     if (!inst) return;
-    if (!inst->state_version_mismatch)
+    if (!inst->state_version_mismatch) {
         seq8_save_state(inst);
+        pa_save(inst);
+    }
     int t;
     for (t = 0; t < NUM_TRACKS; t++) {
         inst->tracks[t].pfx.event_count = 0;
@@ -5688,6 +5709,7 @@ static void cc_emit(seq8_track_t *tr, int k, uint8_t v) {
  * and silently breaks the gate. Do NOT "tidy" the spacing. */
 #include "seq8_bake.c"
 #include "seq8_convert.c"
+#include "seq8_param_auto.c"
 static void reset_all_loop_cycles(seq8_instance_t *inst);
 
 #include "seq8_set_param.c"
@@ -6380,6 +6402,48 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
      * rather than re-deriving from the marker file and risking a split brain. */
     if (!strcmp(key, "awaiting_select"))
         return snprintf(out, out_len, "%d", inst ? (int)inst->awaiting_select : 0);
+    /* ---- Per-parameter automation readback (Front 3) ----------------- */
+
+    /* pa_store_full: a write was refused because the store is full. JS reads
+     * this to tell the user, because the alternative — a recording that is
+     * quietly not being kept — is the worst outcome available. Reading it
+     * clears it. */
+    if (!strcmp(key, "pa_store_full")) {
+        int v = inst ? (int)inst->pa_store_full : 0;
+        if (inst) inst->pa_store_full = 0;
+        return snprintf(out, out_len, "%d", v);
+    }
+
+    /* pa_dirty: automation changed since the last auto-file write. JS polls it
+     * and asks for a save, the same shape as state_dirty. */
+    if (!strcmp(key, "pa_dirty"))
+        return snprintf(out, out_len, "%d", inst ? (int)inst->pa_dirty : 0);
+
+    /* pa_list: every automated (track, clip, target) with its flags and point
+     * count — one round trip for the whole project, because a per-entry read
+     * would cost an SPI frame each. Format, one entry per line:
+     *   "<track> <clip> <flags> <count> <target>" */
+    if (!strcmp(key, "pa_list")) {
+        int n = 0;
+        /* Terminate up front: a project with no automation must hand back an
+         * empty STRING, not leave the caller's buffer holding whatever was in
+         * it. A reader that trusts the return length is fine either way, but
+         * one that treats out as a C string would otherwise see the previous
+         * answer and conclude nothing had changed. */
+        if (out_len > 0) out[0] = '\0';
+        if (!inst) return 0;
+        for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+            pa_entry_t *e = &inst->pa_entries[i];
+            if (!e->used || !e->count) continue;
+            int w = snprintf(out + n, (size_t)(out_len - n), "%d %d %d %d %s\n",
+                             (int)e->track, (int)e->clip, (int)e->flags,
+                             (int)e->count, inst->pa_targets[e->target]);
+            if (w < 0 || n + w >= out_len) break;   /* never a torn last line */
+            n += w;
+        }
+        return n;
+    }
+
     if (!strcmp(key, "state_uuid")) {
         /* The stored field, set wherever state_path is set. ⚠ Never parse the
          * uuid back out of state_path — the old strstr("/set_state/") getter

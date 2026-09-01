@@ -1061,6 +1061,7 @@ typedef struct {
  * clip_in_reverse_motion, live_note_on, live_note_off, ...) are already
  * visible. All are dispatched from the tN_ block inside set_param. */
 #include "setparam/sp_track_config.c"
+#include "setparam/sp_track_paramauto.c"
 #include "setparam/sp_track_ccauto.c"
 #include "setparam/sp_track_drum.c"
 #include "setparam/sp_track_clip.c"
@@ -1192,6 +1193,11 @@ static void set_param(void *instance, const char *key, const char *val) {
          * group 2), dispatched here reusing the existing cx. sp_track_clip and
          * sp_track_config2 are handlers dispatched above (both return 0 without
          * mutating cx on fall-through), so cx is current. */
+        /* Per-parameter automation (Front 3). Dispatched before the sibling
+         * tN_ handlers and, critically, before sp_track_misc's unconditional
+         * pfx_set tail: it consumes every "pa_" sub-op, known or not. */
+        if (sp_track_paramauto(&cx)) return;
+
         if (sp_track_ccauto(&cx)) return;
 
         /* tN_lL_* drum lane setters -- now a file-scope handler (phase 4B

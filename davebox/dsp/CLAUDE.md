@@ -23,6 +23,11 @@ fixed positions. There are no extern declarations between them and **none compil
 | `seq8_convert.c` | 306 | track-type conversion (melodic ↔ drum ↔ conduct) |
 | `seq8_set_param.c` | 1248 | `sp_ctx_t` + the dispatcher shell; branch bodies live in `dsp/setparam/` |
 | `seq8_render.c` | 1146 | `render_block` (audio-callback driver) + master-clock seam helpers |
+| `seq8_param_auto.c` | ~330 | per-parameter automation: store ops, evaluation, its own project file |
+
+⚠ `seq8_param_auto.h` is the one **header** in this family: the instance struct embeds the
+automation pool, so the types must be visible before it while the functions need the instance
+type. It is included up with the constants, the `.c` down with the cold-path includes.
 
 ⚠ **`pfx_*` symbols live in BOTH places** — the pfx runtime (`pfx_send`/`emit`/`note_on`/`off`) and
 the event queue (`pfx_q_insert`/`fire`, swing) stay in the core. Likewise **TRACK ARP (`tarp_*`)
@@ -65,12 +70,21 @@ assign `tidx`/`tr`/`sub` onto `cx`, 9 `tN_` dispatches).
   self-guarded block (e.g. `sp_track_drum`'s `if (sub[0]=='l' && digit)`) **and** a later handler
   has a catch-all (`sp_track_misc`'s unconditional `pfx_set`), the handler must `return 1` on
   guard-match even for an unknown sub-op — `return 0` only when the guard itself fails. Otherwise
-  an unknown `tN_lL_*` key falls through and the catch-all mis-handles it. `sp_track_config` and
-  `sp_track_ccauto` return 0 on no-match precisely because they have no catch-all downstream.
+  an unknown `tN_lL_*` key falls through and the catch-all mis-handles it.
+  ⚠⚠ **CORRECTION (2026-09-02): this file used to end that rule with "`sp_track_config` and
+  `sp_track_ccauto` return 0 on no-match precisely because they have no catch-all downstream."
+  That is FALSE, and it is the kind of false that reads as reassurance.** Both are dispatched
+  *before* `sp_track_misc` (`seq8_set_param.c` ~1195 vs ~1246), so the catch-all IS downstream of
+  them and an unknown `tN_cc_*` key is mis-handled as a play-effects parameter rather than
+  ignored. Latent today (nothing sends such a key) and it dies with the lane system in Front 3's
+  P8 — but **a new prefixed handler must consume its whole prefix**: `sp_track_paramauto` returns
+  1 for any `pa_` sub-op, known or not, and `test_param_auto.c` pins that a stray `pa_` key
+  changes no pfx parameter.
 - **Where a new key goes:** new global keys → the matching `sp_globals_*` file (they sit before the
   `tN_` guard); new `tN_` keys → the matching `sp_track_*` file, and **always before**
   `sp_track_misc.c`'s `pfx_set` catch-all tail, which returns unconditionally and would silently
-  swallow anything placed after it. ⚠ The root gotcha still applies — the host silently drops NEW
+  swallow anything placed after it.
+  ⚠ The root gotcha still applies — the host silently drops NEW
   *global* `set_param` keys, so prefer `tN_`-prefixed ones.
 - **Asymmetric braces:** `sp_track_config.c` OPENS the `tN_` block and declares `tidx`/`sub`/`tr`;
   `sp_track_misc.c` CLOSES both the block and `set_param` (the final two braces live in-segment).
