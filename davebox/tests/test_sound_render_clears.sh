@@ -19,12 +19,13 @@ bad() { echo "  FAIL — $1"; fail=1; }
 f=ui/ui_sound.mjs
 [ -f "$f" ] || { echo "FAIL: $f missing"; exit 1; }
 
-body() { awk "/^function $1\\(/,/^}/" "$f"; }
+body() { awk "/^(export )?function $1\\(/,/^}/" "$f"; }
 
 # Helpers that clear on behalf of their caller — each verified here, not assumed,
-# so one of them quietly losing its clear fails too.
+# so one of them quietly losing its clear fails too. renderGatewayCard is the
+# shared prompt/peek card drawer (2026-09-01) — renderPrompt clears through it.
 clearers="clear_screen"
-for h in renderBlocks renderLfo renderInChain drawTextEntry; do
+for h in renderBlocks renderLfo renderInChain drawTextEntry renderGatewayCard; do
     if grep -qE "clear_screen\(\)" <<<"$(body "$h")"; then
         clearers="$clearers|$h"
     fi

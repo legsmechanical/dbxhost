@@ -261,6 +261,11 @@ step('⭑ ...but the track REMEMBERS it: leave and come back and SOUND + CONFIG 
     S.ledInitComplete = true;
     snd.soundEnter(2, 2);
     if (S.activeBank !== BANK_SOUND) throw new Error('control: identity not taken');
+    /* ⭑ IN BANK MODE for the whole scroll: since THE ONE LAW (2026-09-01) the
+     * screen only re-opens on a switch while the bank view is open — at rest a
+     * remembered SOUND + CONFIG shows the overview like every other bank. The
+     * rest flavour is asserted at the end of this step. */
+    S.bankCardLatched = true;
 
     shift(true);
     turn(); globalThis.tick();                 /* 2 -> 3: closes, per the rule above */
@@ -286,6 +291,23 @@ step('⭑ ...but the track REMEMBERS it: leave and come back and SOUND + CONFIG 
         throw new Error('the return opened the bank display window (tick ' + _stamp +
                         ') — the screen pops up over the track overview mid-switch');
     snd.soundExit();
+
+    /* ⭑⭑ AND AT REST the same return keeps the screen CLOSED (the one law):
+     * the bank is still remembered, but the overview is what shows — holding
+     * sound mode open here is what defeated the jog click's !soundActive()
+     * gate (the S+C-as-active-bank bug). */
+    S.bankCardLatched = false;
+    S.trackActiveBank[2] = BANK_SOUND;
+    S.activeTrack = 3; S.activeBank = 1;
+    shift(true);
+    send(14, 127); globalThis.tick();          /* 3 -> 2, at rest */
+    shift(false);
+    globalThis.tick();
+    if (S.activeTrack !== 2) throw new Error('control: did not step back to 2 at rest');
+    if (S.activeBank !== BANK_SOUND)
+        throw new Error('rest return forgot the bank: ' + S.activeBank);
+    if (snd.soundActive())
+        throw new Error('rest return re-opened the screen — the one law says overview');
 });
 
 step('⚠ a track CLOSED deliberately does not come back on SOUND + CONFIG', () => {
@@ -357,6 +379,8 @@ step('⭑ Shift+PAD means exactly what Shift+jog means — one rule, every route
     S.ledInitComplete = true;
     snd.soundEnter(2, 2);
     if (S.activeBank !== BANK_SOUND) throw new Error('control: identity not taken');
+    S.bankCardLatched = true;                  /* bank mode: the return re-opens
+                                                * only here (the one law) */
 
     shift(true);
     padSelect(4); globalThis.tick();
@@ -379,6 +403,7 @@ step('⭑ Shift+PAD means exactly what Shift+jog means — one rule, every route
     if (_stamp >= 0)
         throw new Error('the return opened the bank display window (tick ' + _stamp + ')');
     snd.soundExit();
+    S.bankCardLatched = false;
     S.activeBank = 0;
 });
 

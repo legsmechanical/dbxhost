@@ -325,44 +325,46 @@ step('⭑ AUTO-bank pad coloring stands down while SOUND + CONFIG is up', () => 
         throw new Error('AUTO grey palette did not return after exit: ' + back.join(','));
 });
 
-step('⭑ the TOP LEVEL keeps the banks\' display law: falls back to the overview', () => {
-    /* Same flags the clip banks read: the screen shows while the jog is
-     * touched or the bank-display window is open, and yields to the track
-     * overview otherwise — sound mode stays ACTIVE underneath. Every branch
-     * here fails silently (a screen that never yields just looks like the
-     * old behaviour; one that never comes back looks broken only on device). */
+step('⭑⭑ the TOP LEVEL keeps THE ONE LAW: bank mode or knob peek, never otherwise', () => {
+    /* The prompt IS the SOUND + CONFIG card, so it obeys the one law (Josh,
+     * 2026-09-01): visible iff bank mode is on or a knob peeks. The retired
+     * drivers — jog touch, the transient bankSelectTick window — must NOT
+     * bring it back; they were the "jog touch peeks the card" half of the
+     * S+C-as-active-bank bug. Sound mode stays ACTIVE underneath a stand-down.
+     * Every branch here fails silently on device (a card that never yields
+     * just looks like the old behaviour). */
     const jogTouch   = (on) => globalThis.onMidiMessageInternal(new Uint8Array([on ? 0x90 : 0x80, 9, on ? 127 : 0]));
     reset(PAD_MODE_MELODIC_SCALE, 6);
-    right();                             /* enter SOUND + CONFIG */
-    S.bankCardLatched = false;           /* this step is about the WINDOW law —
-                                          * the reset's latch would hold it open */
+    right();                             /* enter SOUND + CONFIG, in bank mode */
     if (!snd.soundActive()) throw new Error('did not enter');
     snd.soundTick();
-    if (!snd.soundRender()) throw new Error('screen not shown inside the entry window');
-    /* Window expires: the banks\' own timeout clears bankSelectTick in tick. */
-    S.tickCount += 200; globalThis.tick();
-    if (S.bankSelectTick >= 0) throw new Error('control: display window did not expire');
-    if (snd.soundRender()) throw new Error('top level did not yield to the overview after the window');
+    if (!S.bankCardLatched) throw new Error('control: not in bank mode after the walk');
+    if (!snd.soundRender()) throw new Error('card not shown in bank mode');
+    /* Bank mode down: the card yields to the overview — and stays down however
+     * long the retired window would have run. */
+    S.bankCardLatched = false;
+    if (snd.soundRender()) throw new Error('card shown outside bank mode');
     if (!snd.soundActive()) throw new Error('yielding must not EXIT sound mode');
-    /* Touch the jog: the screen comes back; release: it yields at once. */
+    S.tickCount += 200; globalThis.tick();
+    if (snd.soundRender()) throw new Error('card came back with no driver at all');
+    /* Jog touch is a RETIRED display driver: it must show nothing. */
     jogTouch(true);
     if (!S.jogTouched) throw new Error('control: jog touch not tracked');
-    if (!snd.soundRender()) throw new Error('jog touch did not bring the screen back');
+    if (snd.soundRender()) throw new Error('jog touch showed the card — retired driver');
     jogTouch(false);
-    if (snd.soundRender()) throw new Error('jog release did not yield immediately');
-    /* A turn re-opens the window.
-     * ⚠ Asserted mid-gesture — touch and turn, NO release. The release stands
-     * the window down by design (two lines up, this file proves it), so a
-     * complete turn would open the window and close it again before the
-     * assertion ran. What is under test is the TURN.
-     * ⚠⚠ The cursor assertion is GONE (2026-08-28): on the bank's prompt the
-     * jog walks BANKS, so there is no cursor to move — that is the respec, and
-     * the step above pins it. What remains true, and is what this step is for,
-     * is that a turn re-opens the display window. */
-    jogTouch(true);
-    send(14, 1); globalThis.tick();
-    if (!snd.soundRender()) throw new Error('a turn did not re-open the display window');
-    jogTouch(false);
+    /* The transient window (armed by a dozen actions) is retired as a display
+     * driver too: arm it directly and the card must stay down. */
+    S.bankSelectTick = S.tickCount;
+    if (snd.soundRender()) throw new Error('bankSelectTick showed the card — retired driver');
+    S.bankSelectTick = -1;
+    /* A knob touch PEEKS the card; release stands it down. */
+    S.knobTouched = 0;
+    if (!snd.soundRender()) throw new Error('knob touch did not peek the card');
+    S.knobTouched = -1;
+    if (snd.soundRender()) throw new Error('knob release did not stand the peek down');
+    /* Back in bank mode for the menu half below. */
+    S.bankCardLatched = true;
+    if (!snd.soundRender()) throw new Error('card did not return with bank mode');
     /* ⭑⭑ THE MENU DOES NOT YIELD — Josh, 2026-08-28: "it's not a bank". The
      * display law belongs to the bank, and after the respec the only thing here
      * that IS one is the prompt. A menu you deliberately clicked into stays up
@@ -552,12 +554,21 @@ step('⭑ NOTE/SESSION is a LEAVE: the view toggle must not reset the track\'s b
     S.bankSelectTick = -1;
     noteSession();                             /* -> back to track view */
     if (S.sessionView) throw new Error('control: did not switch back to track view');
-    if (!snd.soundActive())
-        throw new Error('the track came back to track view without its screen');
+    /* ⭑⭑ THE ONE LAW (Josh, 2026-09-01) rewrote the second half of this step:
+     * a view switch dismisses bank mode, so the return lands AT REST — the
+     * screen must NOT re-open there (holding it open is what defeated the jog
+     * click's !soundActive() gate). LEAVE vs CLOSE still holds: the bank stays
+     * RECORDED, and bank mode re-opens exactly where you left it. */
+    if (snd.soundActive())
+        throw new Error('the screen re-opened at rest — the one law says overview');
     if (S.activeBank !== BANK_SOUND) throw new Error('came back on bank ' + S.activeBank);
-    if (S.bankSelectTick >= 0)
-        throw new Error('the return opened the bank display window (tick ' + S.bankSelectTick + ')');
+    send(3, 127); send(3, 0);                  /* jog click: bank mode */
+    globalThis.tick(); globalThis.tick();      /* invariant queues, then resolves */
+    if (!S.bankCardLatched) throw new Error('the click did not latch bank mode');
+    if (!snd.soundActive())
+        throw new Error('bank mode did not re-open the recorded SOUND + CONFIG');
     snd.soundExit();
+    S.bankCardLatched = false;
     S.activeBank = 0;
 
     /* ...and an ORDINARY bank survives the same round trip, which it always did

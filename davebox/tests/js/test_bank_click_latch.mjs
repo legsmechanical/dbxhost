@@ -239,6 +239,95 @@ step('⭐ the session screens DRAW at the gateway — the mode-label crash regre
     S.sessionView = false; S.sessKnobMode = 0;
 });
 
+step('⭐⭐ S+C AS THE REMEMBERED BANK, at rest: overview, quiet jog touch, and the click LATCHES', () => {
+    /* The reported bug (Josh, on device, 2026-09-01): with SOUND + CONFIG as
+     * the track's remembered bank, "jog touch peeks and click falls through to
+     * the bank". Mechanism: the unscoped tick invariant held sound mode open
+     * at rest, so soundActive() defeated the click gate, and soundRender's
+     * prompt still read the retired jog-touch/window drivers. The one law:
+     * at rest the overview shows, jog touch shows NOTHING, and the click
+     * opens bank mode on the gateway card. */
+    rest();
+    S.trackActiveBank[2] = 11; S.activeBank = 11;    /* BANK_SOUND */
+    globalThis.tick(); globalThis.tick();
+    if (sndMod.soundActive())
+        throw new Error('the invariant re-opened sound mode AT REST — soundActive() true at idle');
+    if (bankCardVisible()) throw new Error('card visible at rest');
+    S.jogTouched = true;
+    if (bankCardVisible() || sndMod.soundRender())
+        throw new Error('jog touch showed the card — retired driver');
+    S.jogTouched = false;
+    click(); globalThis.tick(); globalThis.tick();   /* latch; invariant opens the gateway */
+    if (!S.bankCardLatched) throw new Error('click fell through — bank mode did not latch');
+    if (!sndMod.soundActive())
+        throw new Error('bank mode did not open the remembered SOUND + CONFIG gateway');
+    if (!sndMod.soundRender()) throw new Error('gateway card not drawn in bank mode');
+    sndMod.soundExit(); rest(); S.trackActiveBank[2] = 0; S.activeBank = 0;
+});
+
+step('⭐⭐ MOVE-TRACK PARITY: same click, same Back law as a Schwung track', () => {
+    /* The Front-2 gates were written on Schwung tracks (the brief's second
+     * open bug). Same walk on a Move-routed track: click latches, the gateway
+     * opens the MOVE flavour, click enters the menu, and Back steps menu ->
+     * gateway card -> overview — never straight out. Before the Back-law fix,
+     * a Move track's menu-top Back went through leaveBus's soundExit and threw
+     * you out of sound AND bank mode where a Schwung track stepped to the card. */
+    rest();
+    S.trackRoute[2] = 1;                             /* Move-routed */
+    S.trackActiveBank[2] = 11; S.activeBank = 11;
+    globalThis.tick(); globalThis.tick();
+    if (sndMod.soundActive()) throw new Error('move flavour open at rest — one law violated');
+    click(); globalThis.tick(); globalThis.tick();
+    if (!S.bankCardLatched || !sndMod.soundActive())
+        throw new Error('click did not open the gateway on a Move track');
+    click(); globalThis.tick();                      /* gateway card -> menu */
+    cc(51, 127); cc(51, 0); globalThis.tick();       /* menu top -> gateway card */
+    if (!sndMod.soundActive())
+        throw new Error('menu-top Back EXITED sound mode on a Move track — the divergence');
+    if (!S.bankCardLatched) throw new Error('menu-top Back dropped bank mode');
+    if (!sndMod.soundRender()) throw new Error('the gateway card is not what Back landed on');
+    cc(51, 127); cc(51, 0); globalThis.tick();       /* card -> overview, mode down */
+    if (sndMod.soundActive()) throw new Error('Back from the card did not close the gateway');
+    if (S.bankCardLatched) throw new Error('Back from the card did not exit bank mode');
+    S.trackRoute[2] = 0; rest(); S.trackActiveBank[2] = 0; S.activeBank = 0;
+});
+
+step('⭐ a menu entered OUTSIDE bank mode Backs out of sound mode — no invisible prompt', () => {
+    /* The Shift+Note destination gesture opens the menu with no card above it.
+     * Its top-level Back must leave sound mode entirely: stepping to the
+     * prompt instead would park soundActive() true behind the overview (the
+     * one law hides the card there) and re-arm the click-falls-through bug. */
+    rest();
+    sndMod.soundEnter(2, 2); sndMod.soundShowMenu();
+    if (!sndMod.soundActive()) throw new Error('setup: gesture menu did not open');
+    if (S.bankCardLatched) throw new Error('setup: gesture entry latched bank mode');
+    cc(51, 127); cc(51, 0); globalThis.tick();
+    if (sndMod.soundActive())
+        throw new Error('menu-top Back outside bank mode left sound mode open (invisible prompt)');
+    rest(); S.activeBank = 0; S.trackActiveBank[2] = 0;
+});
+
+step('⭐ Back from the SESSION FX LIST lands the gateway card, still in bank mode', () => {
+    /* The Back law, session flavour (the brief\'s CHECK item): the gateway
+     * click is the one door into the bus list, so its Back must land back on
+     * the gateway CARD — session view with the mixer latch still on and the
+     * knob mode still the gateway — never the resting overview. */
+    rest(); S.sessionView = true;
+    click(); globalThis.tick();                      /* latch the mixer page */
+    if (!S.sessMixerLatched) throw new Error('setup: click did not latch');
+    S.sessKnobMode = 4;                              /* walk to the gateway */
+    click(); globalThis.tick();                      /* enter the FX list */
+    if (!sndMod.soundActive()) throw new Error('setup: gateway click did not open the FX list');
+    /* Full-path Back: sound mode's own hook must consume it (direct _onCCMsg
+     * would bypass soundOnCC and prove nothing about the list's Back). */
+    cc(51, 127); cc(51, 0); globalThis.tick();
+    if (sndMod.soundActive()) throw new Error('Back did not leave the FX list');
+    if (!S.sessMixerLatched)
+        throw new Error('Back dropped bank mode — landed the overview, not the gateway card');
+    if (S.sessKnobMode !== 4) throw new Error('Back walked off the gateway (mode ' + S.sessKnobMode + ')');
+    S.sessionView = false; S.sessKnobMode = 0; rest();
+});
+
 process.exit(failed);
 }
 main().catch((e) => { console.error(e && e.stack ? e.stack : e); process.exit(1); });

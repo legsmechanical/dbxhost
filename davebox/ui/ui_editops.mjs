@@ -507,16 +507,21 @@ export function _switchActiveTrack(newT) {
     S.trackActiveBank[S.activeTrack] = S.activeBank;
     S.activeTrack = newT | 0;
     S.activeBank = S.trackActiveBank[S.activeTrack] | 0;
-    /* A track recorded on SOUND + CONFIG needs its SCREEN re-opened: BANKS[11]
-     * is a stub, so the bank number alone draws the overview and nothing else.
+    /* IN BANK MODE ONLY: a track recorded on SOUND + CONFIG needs its gateway
+     * card re-opened — sound mode standing at its prompt (BANKS[11] is a stub,
+     * so the bank number alone draws nothing). At rest the bank arrives and
+     * the overview shows, like every other bank (Josh, 2026-09-01, THE ONE
+     * LAW) — holding the screen open at rest is what defeated the jog click's
+     * `!soundActive()` gate. Same latch scope as ui_tick's invariant, which
+     * would queue this itself a tick later; queued here too so the card never
+     * shows a one-tick overview flash mid-switch.
      * Queued rather than opened here:
      * entry drives shadow_get/set_param traffic that must run on the tick
      * budget, which is what pendingSoundEnterTrack exists for — and tick's
      * handler already declines when sound mode is still open, so the routes
      * that FOLLOW the track (Shift+pad, launchers, remote UI) are unaffected.
-     * SILENT: arriving is not a bank gesture, so the display window stays shut
-     * and the screen behaves like any other bank — touch the jog to see it. */
-    if (S.activeBank === BANK_SOUND) {
+     * SILENT: arriving is not a bank gesture, so the display window stays shut. */
+    if (S.activeBank === BANK_SOUND && S.bankCardLatched) {
         S.pendingSoundEnterTrack = S.activeTrack;
         S.pendingSoundEnterSilent = true;
     }

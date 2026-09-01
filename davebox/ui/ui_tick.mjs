@@ -1334,19 +1334,25 @@ export function _tickImpl() {
             S.screenDirty = true;
         }
 
-        /* ⭑ THE INVARIANT: in track view, activeBank === BANK_SOUND MEANS the
-         * screen is open. SOUND + CONFIG records itself in trackActiveBank like
-         * every other bank (Josh, 2026-08-25), so the bank can arrive without
-         * the screen — from a sidecar load, from a load that landed in session
-         * view and then switched, from any future writer of the bank. BANKS[11]
-         * is a stub, so the number alone draws the overview and nothing else:
-         * the bank IS the screen, and this is the one place that makes it true
-         * rather than each of those routes remembering to.
+        /* ⭑ THE INVARIANT, scoped to BANK MODE: with the bank view open,
+         * activeBank === BANK_SOUND MEANS the gateway card is the screen —
+         * sound mode standing at its prompt. The bank can arrive without the
+         * screen (a sidecar load, a track switch, any future writer), and
+         * BANKS[11] is a stub, so this is the one place that opens it rather
+         * than each of those routes remembering to.
+         *
+         * ⚠ AT REST it must NOT fire (Josh, 2026-09-01, THE ONE LAW): a track
+         * remembered on SOUND + CONFIG shows the resting overview like every
+         * other bank. The unscoped version held sound mode open at rest, which
+         * made soundActive() true at what looked like idle — the jog click's
+         * `!soundActive()` gate then never latched bank mode and clicks fell
+         * through into sound-mode handling (the S+C-as-active-bank bug).
          *
          * SILENT — arriving is not a bank gesture. ⚠ Conductor tracks never
          * take this bank (takeBankIdentity skips them); the pad-mode check keeps
          * a hand-edited sidecar from opening a screen they have no row for. */
         if (!S.sessionView && !soundActive() && S.activeBank === BANK_SOUND
+                && S.bankCardLatched
                 && S.pendingSoundEnterTrack < 0 && S.moveCoRunTrack < 0
                 && !S.awaitingProjectSelect
                 && S.trackPadMode[S.activeTrack] !== PAD_MODE_CONDUCT) {

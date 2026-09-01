@@ -11,7 +11,7 @@ import { drawDaveBox } from './ui_daves.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
 import { SESS_KNOB_MODES } from './ui_engine.mjs';
 import {
-    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN,
+    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
     POLL_INTERVAL, SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
     col4, col5, pixelPrint, pixelPrintC,
@@ -45,7 +45,7 @@ import {
     bankHasAltParams, altIndicatorActive
 } from './ui_leds.mjs';
 import { soundRender, soundActive, soundIsGlobal,
-         soundEnteredInSession } from './ui_sound.mjs';
+         soundEnteredInSession, renderGatewayCard } from './ui_sound.mjs';
 import { drawMenuHeader } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* ------------------------------------------------------------------ */
@@ -1994,6 +1994,17 @@ function drawUIBody() {
     }
 
     if (bank >= 0 && bankCardVisible()) {
+        /* SOUND + CONFIG's card is the GATEWAY prompt. Reached here only while
+         * sound mode is CLOSED — the knob-touch PEEK of a track remembered on
+         * this bank at rest (the mode no longer holds the screen open there;
+         * Josh, 2026-09-01, THE ONE LAW), and the one-tick gap before a queued
+         * entry resolves. Open sound mode never gets this far: drawUI routed to
+         * soundRender above. Without this, BANKS[11]'s stub knobs drew a blank
+         * eight-cell kit page. */
+        if (bank === BANK_SOUND) {
+            renderGatewayCard(S.activeTrack);
+            return;
+        }
         const isDrumLaneBank = (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 0);
         if (isDrumLaneBank) {
             /* DRUM LANE bank overview: mirrors CLIP bank at lane level */

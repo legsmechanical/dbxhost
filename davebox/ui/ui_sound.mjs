@@ -35,6 +35,11 @@ import {
  * confusing them is exactly what broke the bypass gesture. Used only for the
  * Back long-press, which davebox owns module-wide. */
 import { armBankDisplay, standDownBankDisplay, S as GS } from './ui_state.mjs';
+/* ⚠ Deliberate import cycle with ui_render (it imports soundRender from here);
+ * safe because both sides only call the binding inside function bodies, never
+ * at module-init time — the same contract the ui_record ↔ ui_dsp_bridge cycle
+ * documents. bankCardVisible is the ONE owner of card visibility. */
+import { bankCardVisible } from './ui_render.mjs';
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
@@ -4794,25 +4799,47 @@ export function soundOnCC(d1, d2, decodeDelta) {
             return true;
         }
         if (S.view === VIEW_BLOCKS) {
-            /* ⚠ A BUS FIRST. The prompt below is the TRACK door — a session
-             * bus has no track, and walking a Master FX Back into it rendered
-             * "CLICK TO ENTER TRACK 0 SOUND & CONFIG" (S.track is -1 there;
-             * Josh, on device, 2026-09-01, minutes after the gateway shipped).
-             * A bus Backs into the session FX list through leaveBus — the one
-             * door — which also handles the Move-track flavour's exit. */
-            if (S.bus) {
+            /* ⚠ A SESSION BUS FIRST. The prompt below is the TRACK door — a
+             * session bus has no track, and walking a Master FX Back into it
+             * rendered "CLICK TO ENTER TRACK 0 SOUND & CONFIG" (S.track is -1
+             * there; Josh, on device, 2026-09-01, minutes after the gateway
+             * shipped). Master/Send Backs into the session FX list through
+             * leaveBus — the one door. ⚠ A MOVE bus does NOT take this branch:
+             * it is a TRACK's menu wearing the bus dress, so it follows the
+             * track rule below. Routing it through leaveBus (whose move branch
+             * is soundExit) threw a Move track out of sound AND bank mode at
+             * the menu top while a Schwung track stepped to the card — the
+             * Move-track divergence (Josh, 2026-09-01). */
+            if (S.bus && S.bus.kind !== 'move') {
                 leaveBus();
                 S.dirty = true;
                 return true;
             }
-            /* Back out of the menu lands on the bank's own screen — which IS
-             * "the bank you came from" (the 08-26 law), now that the bank has a
-             * screen of its own rather than being the menu.
+            /* ⭐ THE BACK LAW (Josh, 2026-09-01): in a gateway-entered menu,
+             * Back steps the menu structure level by level, and the TOP step —
+             * this one — lands on the GATEWAY CARD, never the overview. Bank
+             * mode only, because the card exists only there (THE ONE LAW): a
+             * menu opened outside bank mode (the Shift+Note destination
+             * gesture) has no card above it, so its top step leaves sound mode
+             * for the resting overview — parking the invisible prompt there
+             * instead would hold soundActive() true behind the overview and
+             * re-arm the click-falls-through bug.
              * ⚠ THIS BELONGS TO BACK. It was first written against an anchor
              * that appears in BOTH the click and Back handlers and landed in
              * the CLICK path, so opening a block from the menu went to the
              * prompt instead. */
-            S.view = VIEW_PROMPT;
+            if (GS.bankCardLatched) {
+                if (S.bus) {
+                    /* Move flavour: the card keeps its bus context — same
+                     * level-edit flush leaveBus does on the way up. */
+                    S.busLevelEditing = false;
+                    if (S.busLevelDirty) { S.busLevelDirty = false; S.pendingAction = { t: 'slotsave' }; }
+                }
+                S.view = VIEW_PROMPT;
+            } else {
+                soundExit();
+                standDownBankDisplay(true);
+            }
             S.dirty = true;
             return true;
         }
@@ -4881,9 +4908,15 @@ export function soundOnCC(d1, d2, decodeDelta) {
             }
         } else if (S.busLevelEditing) {
             S.busLevelEditing = false;
-        } else if (S.bus) {
+        } else if (S.bus && S.view !== VIEW_PROMPT) {
             /* One level up is wherever the bus was entered FROM — the track's
-             * picker, or the session-wide bus list. leaveBus knows which. */
+             * picker, or the session-wide bus list. leaveBus knows which.
+             * ⚠ NOT the prompt: a MOVE flavour stands at the gateway card WITH
+             * its bus context set, and this catch-all swallowed its Back into
+             * leaveBus's soundExit — sound mode closed but bank mode stayed
+             * latched, so a Move track's card could not Back to the overview
+             * while a Schwung one (bus-less prompt) could. The final else is
+             * the card's one exit, both flavours. */
             S.pendingAction = { t: 'leavebus' };
         } else if (S.view === VIEW_BUSES) {
             soundExit();
@@ -5186,11 +5219,24 @@ function centreText(y, text) {
  * The track number comes from S.track, not the active track: on this screen
  * they are the same, but the sound mode's own notion is the one every other row
  * on the way in uses. */
-function renderPrompt() {
+/* ⭑ ONE DRAWER for the gateway card, exported: the prompt view draws it while
+ * sound mode is open, and ui_render draws it for the knob-touch PEEK of a track
+ * remembered on SOUND + CONFIG — the mode is closed at rest (Josh, 2026-09-01,
+ * THE ONE LAW), so the peek cannot go through renderPrompt, and a second
+ * hand-drawn copy is how cards drift apart. */
+export function renderGatewayCard(track) {
     clear_screen();
+    /* ⚠ BANK's map, explicitly — this card is a bank card and is now reached
+     * from two callers with different prior layouts. Selecting is not optional
+     * on any surface that reads a binding (see renderBlocks). */
+    kitUseLayout('bank');
     drawKitHeader('SOUND + CONFIG', false);
     centreText(26, 'CLICK TO ENTER');
-    centreText(40, 'TRACK ' + (S.track + 1) + ' SOUND & CONFIG');
+    centreText(40, 'TRACK ' + (track + 1) + ' SOUND & CONFIG');
+}
+
+function renderPrompt() {
+    renderGatewayCard(S.track);
 }
 
 function renderBlocks() {
@@ -6097,12 +6143,18 @@ export function soundRender() {
      * ⚠ Before the respec this test read VIEW_BLOCKS, correctly — the menu WAS
      * the bank then. Moving it to the prompt is the same rule, re-pointed at
      * the thing that now carries the bank's identity. */
+    /* ⭑⭑ THE ONE LAW owns this too (Josh, 2026-09-01): the card — and the
+     * prompt IS the SOUND + CONFIG card — shows iff bank mode is on or a knob
+     * peeks. bankCardVisible() is the render's one owner of that answer; the
+     * old reads here (GS.jogTouched, the transient bankSelectTick window) were
+     * exactly the retired display drivers, and they were the "jog touch peeks
+     * the card" half of the S+C-as-active-bank bug. */
     if (S.view === VIEW_PROMPT &&
             !soundIsGlobal() && !S.enterSession &&
             !S.instrEditing && !S.busLevelEditing &&
             S.touchedIdx < 0 && !S.volTouched &&
             !(S.volShownUntil >= 0 && S.tickCount <= S.volShownUntil) &&
-            !GS.jogTouched && GS.bankSelectTick < 0)
+            !bankCardVisible())
         return false;
     if (S.view === VIEW_PROMPT) renderPrompt();
     else if (S.view === VIEW_BLOCKS) renderBlocks();
