@@ -162,31 +162,36 @@ static uint32_t pa_entry_tick(const pa_entry_t *e, uint32_t ct, uint32_t clip_ti
 }
 
 /* ------------------------------------------------------------------ */
-/* Persistence — automation lives in its OWN file beside the project    */
+/* Persistence — a SECTION of the project's one state file              */
 /*                                                                      */
-/* Not inside state_full: that blob reaches JS through the shadow param  */
-/* transport, whose value field is 64 KB, and a heavy project already    */
-/* spends ~62 KB of it. Automation would have had a few hundred points   */
-/* to share across the whole song. A second file in the project's own    */
-/* directory costs nothing structurally — the storage model is one       */
-/* directory per project, so a copy is still a copytree and a delete     */
-/* still one rmtree.                                                     */
+/* Automation is written inside seq8_do_serialize and read back inside   */
+/* seq8_load_state, under the "pa" key. It is not a second file: a       */
+/* project is one file, and two would have to be kept in lockstep across */
+/* create, copy, delete, clear and load — five chances for a project's   */
+/* notes and its automation to disagree about which project they belong  */
+/* to.                                                                   */
 /*                                                                      */
-/* Identity is the LOCATION, exactly as it is for the state file, which   */
-/* records no uuid either. An earlier draft stamped the project uuid into */
-/* the file and refused a mismatch — which would have discarded the       */
-/* automation of every COPIED project, since a copy is a copytree and     */
-/* carries the source's uuid. The two files must agree about what makes   */
-/* a project, and the state file's answer is "the directory it is in".    */
+/* What made a second file tempting was the READBACK leg: the blob       */
+/* reaches JS through the shadow parameter transport, whose value field  */
+/* is 64 KB, and a heavy project already spends most of that. The answer  */
+/* is to fix the leg rather than route around it — get_param serves the  */
+/* state in chunks (see "state_chunk_" in seq8.c), so the ceiling is per  */
+/* chunk instead of per project, for notes as much as automation.        */
+/*                                                                      */
+/* Format: "pa" maps to an array of entries, each                        */
+/*   {"t":track,"c":clip,"k":target,"f":flags,"r":rest,"p":"tick:val;…"} */
+/* with the loop window (ll/lo/rs) omitted while it is unset, which in   */
+/* v1 is always. Absent "pa" means a project with no automation, which   */
+/* is also every project written before this existed — that is the whole */
+/* of the migration story, and it needs no version bump.                 */
 
-#define PA_FILE_VERSION 1
-
+#define PA_SECTION_VERSION 1
 
 /* Bounded JSON readers. The shared json_get_int searches from a pointer to the
- * end of the buffer, which is right for a flat document but wrong here: an
- * entry that omits a sparse key would find the NEXT entry's copy of it and
- * silently inherit another parameter's loop window. These stop at the object's
- * closing brace. */
+ * end of the document, which is right for a flat key but wrong inside an array
+ * of objects: an entry that omits a sparse key would find the NEXT entry's copy
+ * of it and silently inherit another parameter's loop window. These stop at the
+ * object's closing brace. */
 static int pa_json_int(const char *obj, const char *end, const char *key, int def) {
     char pat[24];
     int n = snprintf(pat, sizeof(pat), "\"%s\":", key);
@@ -195,10 +200,10 @@ static int pa_json_int(const char *obj, const char *end, const char *key, int de
         if (strncmp(p, pat, (size_t)n)) continue;
         p += n;
         int neg = 0;
-        if (*p == '-') { neg = 1; p++; }
-        if (*p < '0' || *p > '9') return def;
+        if (p < end && *p == '-') { neg = 1; p++; }
+        if (p >= end || *p < '0' || *p > '9') return def;
         int v = 0;
-        while (*p >= '0' && *p <= '9' && p < end) v = v * 10 + (*p++ - '0');
+        while (p < end && *p >= '0' && *p <= '9') v = v * 10 + (*p++ - '0');
         return neg ? -v : v;
     }
     return def;
@@ -214,32 +219,20 @@ static void pa_json_str(const char *obj, const char *end, const char *key,
         if (strncmp(p, pat, (size_t)n)) continue;
         p += n;
         size_t i = 0;
-        while (*p && *p != '"' && p < end && i + 1 < out_len) out[i++] = *p++;
+        while (p < end && *p && *p != '"' && i + 1 < out_len) out[i++] = *p++;
         out[i] = '\0';
         return;
     }
 }
 
-static void pa_state_path(seq8_instance_t *inst, char *out, size_t out_len) {
-    /* Sibling of the state file: same directory, same lifecycle. Derived from
-     * state_path rather than rebuilt from the uuid, so the two can never point
-     * at different projects. */
-    const char *sp = inst->state_path;
-    const char *suffix = "-state.json";
-    size_t sl = strlen(sp), xl = strlen(suffix);
-    if (sl > xl && !strcmp(sp + sl - xl, suffix)) {
-        size_t stem = sl - xl;
-        if (stem + strlen("-auto.json") < out_len) {
-            memcpy(out, sp, stem);
-            strcpy(out + stem, "-auto.json");
-            return;
-        }
-    }
-    snprintf(out, out_len, "%s.auto", sp);
-}
 
 static void pa_serialize(seq8_instance_t *inst, FILE *fp) {
-    fprintf(fp, "{\"v\":%d,\"e\":[", PA_FILE_VERSION);
+    int any = 0;
+    for (int i = 0; i < PA_MAX_ENTRIES && !any; i++)
+        if (inst->pa_entries[i].used && inst->pa_entries[i].count) any = 1;
+    if (!any) return;            /* sparse: no automation writes no key at all */
+
+    fprintf(fp, ",\"pav\":%d,\"pa\":[", PA_SECTION_VERSION);
     int first = 1;
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
         pa_entry_t *e = &inst->pa_entries[i];
@@ -249,8 +242,6 @@ static void pa_serialize(seq8_instance_t *inst, FILE *fp) {
         fprintf(fp, "{\"t\":%d,\"c\":%d,\"k\":\"%s\",\"f\":%d",
                 (int)e->track, (int)e->clip, inst->pa_targets[e->target], (int)e->flags);
         if (e->rest != PA_VAL_UNSET) fprintf(fp, ",\"r\":%d", (int)e->rest);
-        /* Sparse: the loop window is absent for every entry that follows the
-         * clip, which in v1 is all of them. */
         if (e->loop_len)   fprintf(fp, ",\"ll\":%d", (int)e->loop_len);
         if (e->loop_off)   fprintf(fp, ",\"lo\":%d", (int)e->loop_off);
         if (e->resolution) fprintf(fp, ",\"rs\":%d", (int)e->resolution);
@@ -259,64 +250,26 @@ static void pa_serialize(seq8_instance_t *inst, FILE *fp) {
             fprintf(fp, "%u:%u;", (unsigned)e->points[j].tick, (unsigned)e->points[j].val);
         fprintf(fp, "\"}");
     }
-    fprintf(fp, "]}");
+    fprintf(fp, "]");
 }
 
-static void pa_save(seq8_instance_t *inst) {
-    if (inst->awaiting_select) return;
-    char path[sizeof(inst->state_path) + 16];
-    pa_state_path(inst, path, sizeof(path));
-
-    /* Nothing automated: remove the file rather than leaving an empty one, so
-     * a project with no automation has no auto file at all — which is also
-     * what every project that predates this feature looks like. */
-    int any = 0;
-    for (int i = 0; i < PA_MAX_ENTRIES && !any; i++)
-        if (inst->pa_entries[i].used && inst->pa_entries[i].count) any = 1;
-    if (!any) { remove(path); inst->pa_dirty = 0; return; }
-
-    ensure_parent_dir(path);
-    char tmp_path[sizeof(path) + 8];
-    int _n = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
-    if (_n < 0 || (size_t)_n >= sizeof(tmp_path)) return;
-    FILE *fp = fopen(tmp_path, "w");
-    if (!fp) return;
-    pa_serialize(inst, fp);
-    int ok = (fflush(fp) == 0) && (fsync(fileno(fp)) == 0);
-    if (fclose(fp) != 0) ok = 0;
-    if (!ok || rename(tmp_path, path) != 0) { remove(tmp_path); return; }
-    inst->pa_dirty = 0;
-}
-
-static void pa_load(seq8_instance_t *inst) {
+/* Parse the "pa" section out of a loaded state blob. `buf` is the whole
+ * NUL-terminated document; `blen` its length. Always resets the store first, so
+ * loading a project without automation clears the previous project's rather
+ * than inheriting it. */
+static void pa_parse(seq8_instance_t *inst, const char *buf, size_t blen) {
     pa_reset_all(inst);
-    char path[sizeof(inst->state_path) + 16];
-    pa_state_path(inst, path, sizeof(path));
-    FILE *fp = fopen(path, "r");
-    if (!fp) return;                       /* no automation — a normal project */
-    fseek(fp, 0, SEEK_END);
-    long fsz = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-    if (fsz <= 0) { fclose(fp); remove(path); return; }
-    char *buf = (char *)malloc((size_t)fsz + 1);
-    if (!buf) { fclose(fp); return; }
-    size_t n = fread(buf, 1, (size_t)fsz, fp);
-    fclose(fp);
-    if (!n) { free(buf); remove(path); return; }
-    buf[n] = '\0';
+    if (!buf) return;
+    const char *sec = strstr(buf, "\"pa\":[");
+    if (!sec) return;
+    const char *p = sec + 6;
+    const char *doc_end = buf + blen;
 
-    if (json_get_int(buf, "v", -1) != PA_FILE_VERSION) { free(buf); remove(path); return; }
-
-    /* Entries. Hand-parsed in the same style as the main loader: find each
-     * object, read its fields, then walk the point string. */
-    const char *p = strstr(buf, "\"e\":[");
-    if (!p) { free(buf); return; }
-    p += 5;
-    while (*p) {
+    while (p < doc_end && *p) {
         const char *obj = strchr(p, '{');
-        if (!obj) break;
+        if (!obj || obj >= doc_end) break;
         const char *end = strchr(obj, '}');
-        if (!end) break;
+        if (!end || end >= doc_end) break;
 
         int track = pa_json_int(obj, end, "t", -1);
         int clip  = pa_json_int(obj, end, "c", -1);
@@ -336,28 +289,31 @@ static void pa_load(seq8_instance_t *inst) {
                 const char *pp = strstr(obj, "\"p\":\"");
                 if (pp && pp < end) {
                     pp += 5;
-                    while (*pp && *pp != '"') {
+                    while (pp < end && *pp && *pp != '"') {
                         unsigned tick = 0, val = 0;
-                        while (*pp >= '0' && *pp <= '9') tick = tick * 10 + (unsigned)(*pp++ - '0');
-                        if (*pp != ':') break;
+                        if (*pp < '0' || *pp > '9') break;
+                        while (pp < end && *pp >= '0' && *pp <= '9') tick = tick * 10 + (unsigned)(*pp++ - '0');
+                        if (pp >= end || *pp != ':') break;
                         pp++;
-                        while (*pp >= '0' && *pp <= '9') val = val * 10 + (unsigned)(*pp++ - '0');
-                        /* Points are written in order, so append directly rather
-                         * than paying pa_set_point's insertion search per point. */
+                        if (pp >= end || *pp < '0' || *pp > '9') break;
+                        while (pp < end && *pp >= '0' && *pp <= '9') val = val * 10 + (unsigned)(*pp++ - '0');
+                        /* Written in order, so append rather than pay the
+                         * insertion search per point. */
                         if (e->count < PA_ENTRY_POINTS) {
-                            e->points[e->count].tick = (uint16_t)tick;
+                            e->points[e->count].tick = (uint16_t)(tick > 0xFFFF ? 0xFFFF : tick);
                             e->points[e->count].val  = (uint16_t)(val > PA_VAL_MAX ? PA_VAL_MAX : val);
                             e->count++;
                         }
-                        if (*pp == ';') pp++;
+                        if (pp < end && *pp == ';') pp++;
                     }
                 }
                 if (!e->count) pa_entry_free(e);
             }
         }
         p = end + 1;
-        if (*p == ']' || !strchr(p, '{')) break;
+        /* The array ends at the first ']' that follows an object. */
+        while (p < doc_end && (*p == ' ' || *p == ',')) p++;
+        if (p >= doc_end || *p != '{') break;
     }
-    free(buf);
     inst->pa_dirty = 0;
 }

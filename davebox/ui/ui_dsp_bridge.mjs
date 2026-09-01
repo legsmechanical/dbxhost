@@ -286,6 +286,36 @@ function localAutomationResync() {
 /* pollDSP — the one legal get_param reader (runs from tick)           */
 /* ------------------------------------------------------------------ */
 
+/* Pull the DSP's serialized state across as many get_param reads as it takes.
+ *
+ * Chunk 0 makes the snapshot and every later chunk is served from it, so the
+ * pieces are always one consistent version of the project even if an edit
+ * lands mid-fetch. An empty chunk ends the run. The DSP also reports the
+ * snapshot length, and a mismatch means the blob is INCOMPLETE — better to
+ * write nothing and try again on the next poll than to write a prefix, which
+ * is exactly the failure this replaced (a cut blob parses as a valid, smaller
+ * project).
+ *
+ * Cost: one extra round-trip per 32 KB, on save only — a few milliseconds
+ * occasionally, against a ceiling that silently ate projects. */
+function fetchStateChunked() {
+    let out = '';
+    /* Bound the loop: a project cannot legitimately need this many chunks, and
+     * an unbounded loop here would hang the tick if the DSP ever kept serving. */
+    for (let i = 0; i < 16; i++) {
+        const part = host_module_get_param('state_chunk_' + i);
+        if (!part || !part.length) break;
+        out += part;
+    }
+    if (!out.length) return '';
+    const want = parseInt(host_module_get_param('state_snap_len') || '0', 10);
+    if (!want || out.length !== want) {
+        console.log('[dbx] state fetch incomplete: got ' + out.length + ' of ' + want + ' — not writing');
+        return '';
+    }
+    return out;
+}
+
 export function pollDSP() {
     /* bpm mirror — MIDI handlers can't get_param (silently null there), so
      * anything transport-side that needs tempo reads S.bpmMirror instead
@@ -791,10 +821,17 @@ export function pollDSP() {
         }
     }
 
-    /* Deferred DSP state save: fetch state_full (DSP serializes only when dirty).
+    /* Deferred DSP state save: pull the state in CHUNKS (the DSP serializes
+     * once, on chunk 0, only when dirty) and write the assembled blob.
      * NEVER while awaiting a selection — the DSP holds defaults, so this would
      * write an empty state over the boot project's file and destroy it. The DSP
-     * also refuses to serve state_full in that condition; both belts stay.
+     * also refuses to serve chunk 0 in that condition; both belts stay.
+     *
+     * ⚠ Chunked because a single get_param crosses the shadow parameter
+     * transport, whose value buffer is 64 KB, and a full project of notes alone
+     * approaches that before automation is counted. The old single-shot fetch
+     * silently TRUNCATED there and this function wrote the cut blob straight to
+     * disk, where it reloaded as a quietly smaller project.
      *
      * ⚠ The DESTINATION comes from the DSP, not from S.currentSetUuid.
      * state_full serialises whatever is in `inst` RIGHT NOW, so the only correct
@@ -814,7 +851,7 @@ export function pollDSP() {
             !S.pendingSetLoad && S.pendingDspSync === 0) {
         const _dspUuid = (host_module_get_param('state_uuid') || '');
         if (_dspUuid && _dspUuid === S.currentSetUuid) {
-            const _st = host_module_get_param('state_full');
+            const _st = fetchStateChunked();
             if (_st && _st.length > 2) {
                 host_ensure_dir(uuidToStatePath(_dspUuid).replace(/\/[^\/]+$/, ''));
                 host_write_file(uuidToStatePath(_dspUuid), _st);

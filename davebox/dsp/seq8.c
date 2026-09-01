@@ -105,6 +105,12 @@
 #endif
 
 #define SEQ8_LOG_PATH           "/data/UserData/schwung/" SEQ8_STATE_PREFIX ".log"
+/* Chunk size for the chunked state readback. Must leave room for the caller's
+ * NUL inside the shadow parameter transport (SHADOW_PARAM_VALUE_LEN, 64 KB);
+ * kept well under it so a smaller caller buffer is the binding limit instead
+ * and the protocol does not depend on the transport's exact size. */
+#define SEQ8_STATE_CHUNK_MAX 32768u
+
 #define SEQ8_STATE_PATH_FALLBACK "/data/UserData/schwung/" SEQ8_STATE_PREFIX "-state.json"
 #define SEQ8_SET_STATE_FMT      SEQ8_SET_STATE_ROOT "/%s/" SEQ8_SET_DBX_SUBDIR "/" SEQ8_STATE_PREFIX "-state.json"
 #define SEQ8_SET_UISTATE_FMT    SEQ8_SET_STATE_ROOT "/%s/" SEQ8_SET_DBX_SUBDIR "/" SEQ8_STATE_PREFIX "-ui-state.json"
@@ -1270,19 +1276,23 @@ typedef struct {
     uint16_t perf_note_on_count;         /* total note-ons in loop (for ramp gate divisor) */
     uint16_t perf_current_event_idx;     /* set before each perf_apply() call (shuffle lookup) */
     uint8_t  perf_shuffle_pitches[LOOPER_MAX_EVENTS]; /* pitch permutation built at cycle start */
-    /* Deferred save: JS polls state_full get_param; audio thread only sets state_dirty */
-    char    state_buf[131072];
+    /* Deferred save: JS pulls the blob in chunks (state_chunk_N); the audio
+     * thread only ever sets state_dirty. Sized for a full project INCLUDING
+     * its automation — the serializer refuses rather than truncates if this is
+     * ever exceeded, and the chunked readback means the transport no longer
+     * caps it. */
+    char    state_buf[262144];
     uint8_t state_dirty;
+    uint32_t state_snap_len;      /* bytes of state_buf held by the current chunked snapshot */
 
     /* Per-parameter automation (Front 3). Resident pool — see
-     * seq8_param_auto.c for the model. Kept in its OWN file beside the
-     * project rather than inside state_full, whose ceiling is the 64 KB
-     * param transport that a heavy project already nearly fills. */
+     * seq8_param_auto.c for the model. Serialized as a section of the one
+     * project state file; the 64 KB param transport that used to cap that
+     * file is now chunked (see "state_chunk_" in get_param). */
     pa_entry_t pa_entries[PA_MAX_ENTRIES];
     char       pa_targets[PA_MAX_TARGETS][PA_TARGET_LEN];
-    uint8_t    pa_dirty;          /* automation changed since last auto-file write */
+    uint8_t    pa_dirty;          /* automation changed since the last save */
     uint8_t    pa_store_full;     /* a write was refused; JS reports it and clears */
-    char       pa_buf[131072];    /* serialization scratch for the auto file */
 
     /* Result of last all_lanes_beat_stretch: 0=none, 1=ok, -1=blocked */
     int all_lanes_stretch_result;
@@ -1537,6 +1547,12 @@ static void seq8_ilog(seq8_instance_t *inst, const char *msg) {
 #ifndef SEQ8_DEBUG_PROBES
 #define SEQ8_DEBUG_PROBES 0
 #endif
+
+/* Per-parameter automation is a SECTION of the state file, but its code lives
+ * in seq8_param_auto.c further down (it needs the instance type, which is
+ * declared above, while the serializer below needs these). */
+static void pa_serialize(seq8_instance_t *inst, FILE *fp);
+static void pa_parse(seq8_instance_t *inst, const char *buf, size_t blen);
 
 #include "seq8_state.c"
 
@@ -4390,11 +4406,6 @@ fail:
     inst->metro_wav_fd = -1;
 }
 
-/* Per-parameter automation lives in seq8_param_auto.c, included below with the
- * other cold-path files; the instance lifecycle above it needs these two. */
-static void pa_load(seq8_instance_t *inst);
-static void pa_save(seq8_instance_t *inst);
-
 static void *create_instance(const char *module_dir, const char *json_defaults) {
     (void)json_defaults;
 
@@ -4551,10 +4562,8 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
             if (c != EOF) inst->awaiting_select = 1;
         }
     }
-    if (!inst->awaiting_select) {
+    if (!inst->awaiting_select)
         seq8_load_state(inst);
-        pa_load(inst);
-    }
 
     /* Default track 0 to drum mode if no tracks loaded as drum.
      * Matches the JS first-run default (restoreUiSidecar else branch).
@@ -4590,10 +4599,8 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
 static void destroy_instance(void *instance) {
     seq8_instance_t *inst = (seq8_instance_t *)instance;
     if (!inst) return;
-    if (!inst->state_version_mismatch) {
+    if (!inst->state_version_mismatch)
         seq8_save_state(inst);
-        pa_save(inst);
-    }
     int t;
     for (t = 0; t < NUM_TRACKS; t++) {
         inst->tracks[t].pfx.event_count = 0;
@@ -6275,6 +6282,69 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
          * both halves, as it already did for SEQ8_STATE_PREFIX. */
         return snprintf(out, out_len, "%s", DAVEBOX_MODULE_ID);
     }
+
+    /* state_chunk_<n>: the project state in transport-sized pieces.
+     *
+     * The whole blob cannot be handed over in one get_param — under SA the
+     * value crosses the shadow parameter transport, whose buffer is 64 KB,
+     * and a full project of notes alone approaches that before automation is
+     * counted. Truncating there is silent data loss (the reader parses with
+     * strstr and a cut blob loads as a smaller project), so instead the caller
+     * asks for chunk 0, 1, 2 … until it gets an empty one, and concatenates.
+     *
+     * Chunk 0 serializes ONCE into state_buf and records the length; later
+     * chunks are served from that same snapshot, so an edit arriving mid-fetch
+     * cannot splice two different versions of the project together. It marks
+     * the state clean at chunk 0 for the same reason state_full does — a
+     * concurrent edit re-dirties it and is picked up by the next save. */
+    if (!strncmp(key, "state_chunk_", 12)) {
+        int idx = 0;
+        for (const char *d = key + 12; *d >= '0' && *d <= '9'; d++) idx = idx * 10 + (*d - '0');
+        if (out_len > 0) out[0] = '\0';
+        if (!inst) return 0;
+
+        if (idx == 0) {
+            /* Same refusals as state_full: nothing loaded, or a state we must
+             * not overwrite the file with. */
+            if (!inst->state_dirty || inst->state_version_mismatch || inst->awaiting_select) {
+                inst->state_snap_len = 0;
+                return 0;
+            }
+            inst->state_snap_len = 0;
+            FILE *_fp = fmemopen(inst->state_buf, sizeof(inst->state_buf) - 1, "w");
+            if (!_fp) return 0;
+            seq8_do_serialize(inst, _fp);
+            long _pos = ftell(_fp);
+            fclose(_fp);
+            if (_pos < 0 || _pos >= (long)(sizeof(inst->state_buf) - 1)) {
+                /* Refuse rather than serve a prefix. state_buf is sized for a
+                 * full project including automation, so this means something
+                 * has grown past what the format anticipated — the store's own
+                 * caps should have prevented it. */
+                seq8_ilog(inst, "state_chunk: serialization exceeded state_buf; refusing");
+                inst->state_buf[0] = '\0';
+                return 0;
+            }
+            inst->state_buf[_pos] = '\0';
+            inst->state_snap_len = (uint32_t)_pos;
+            inst->state_dirty = 0;
+        }
+
+        uint32_t chunk = (uint32_t)(out_len > 0 ? out_len - 1 : 0);
+        if (chunk > SEQ8_STATE_CHUNK_MAX) chunk = SEQ8_STATE_CHUNK_MAX;
+        uint32_t off = (uint32_t)idx * chunk;
+        if (!chunk || off >= inst->state_snap_len) return 0;   /* past the end: done */
+        uint32_t n = inst->state_snap_len - off;
+        if (n > chunk) n = chunk;
+        memcpy(out, inst->state_buf + off, n);
+        out[n] = '\0';
+        return (int)n;
+    }
+
+    /* state_snap_len: the length of the snapshot chunk 0 produced, so a caller
+     * can check it reassembled all of it rather than trusting the loop. */
+    if (!strcmp(key, "state_snap_len"))
+        return snprintf(out, out_len, "%u", inst ? inst->state_snap_len : 0u);
 
     if (!strcmp(key, "state_full")) {
         /* Only return a payload when state is dirty. Returning the cached

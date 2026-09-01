@@ -528,6 +528,10 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
     if (inst->swing_res != 0)  fprintf(fp, ",\"_swr\":%d", (int)inst->swing_res);
     if (inst->clock_follow_on)  fprintf(fp, ",\"_cf\":%d", (int)inst->clock_follow_on);
     if (inst->clock_send_on)    fprintf(fp, ",\"_cs\":%d", (int)inst->clock_send_on);
+    /* Per-parameter automation. Sparse: a project with none writes no key, so
+     * it reads back identically to every project written before automation
+     * existed — which is why this needs no version bump and no migration. */
+    pa_serialize(inst, fp);
     fprintf(fp, "}");
 }
 
@@ -1253,6 +1257,9 @@ static void seq8_load_state(seq8_instance_t *inst) {
     /* Clock OUT toggle persists; emission is suppressed while following and never
      * auto-starts on load (gated on transport actually running in render). */
     inst->clock_send_on = (uint8_t)(json_get_int(buf, "_cs", 0) ? 1 : 0);
+    /* Automation. Resets the store first, so a project without a "pa" section
+     * ends up with no automation rather than inheriting the last project's. */
+    pa_parse(inst, buf, n);
     free(buf);
     /* Build step arrays from loaded notes[] for display/edit compat */
     for (t = 0; t < NUM_TRACKS; t++)

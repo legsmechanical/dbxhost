@@ -129,7 +129,7 @@ int main(void) {
         hx_destroy(h);
     }
 
-    /* ---- persistence: its own file, and the uuid guard --------------- */
+    /* ---- persistence: a section of the ONE project file -------------- */
     {
         char dir[128], state[192], autof[192];
         snprintf(dir, sizeof(dir), "/tmp/hx_pa_%d", (int)getpid());
@@ -145,34 +145,48 @@ int main(void) {
         hx_set_param(h, "t2_pa_smooth", "5 1:synth:filter 1");
         hx_set_param(h, "save", "1");
 
-        FILE *fp = fopen(autof, "r");
-        HX_ASSERT(fp, "automation must be written to its OWN file, beside the state");
-        char fbuf[4096] = {0};
+        FILE *fp = fopen(state, "r");
+        HX_ASSERT(fp, "state file written");
+        char fbuf[65536] = {0};
         size_t got = fread(fbuf, 1, sizeof(fbuf) - 1, fp);
         fclose(fp);
-        HX_ASSERT(got > 0, "auto file not empty");
-        HX_ASSERT(strstr(fbuf, "1:synth:filter"), "target recorded");
+        HX_ASSERT(got > 0, "state file not empty");
+        HX_ASSERT(strstr(fbuf, "1:synth:filter"), "automation is IN the project state file");
         HX_ASSERT(strstr(fbuf, "12:7777;"), "point recorded");
-        OK("automation persists to <project>-auto.json, not into the 64KB state blob");
+        HX_ASSERT(!fopen(autof, "r"), "and NOT in a second file beside it");
+        OK("automation is a section of the one project file, not a sidecar");
 
-        /* Reload the project: automation comes back with it. */
+        /* Reload: it comes back with the project, in one load. */
         hx_destroy(h);
         h = hx_create(NULL);
-        hx_set_param(h, "state_path", state);
+        {   /* Load the way test_state_roundtrip does: point the instance at the
+             * file and load. (The state_load KEY rebuilds the path from a uuid
+             * under the device's own root, which a test cannot write to.) */
+            seq8_instance_t *in2 = (seq8_instance_t *)h->inst;
+            strncpy(in2->state_path, state, sizeof(in2->state_path) - 1);
+            seq8_load_state(in2);
+        }
         pa_list(h, buf, sizeof(buf));
         HX_ASSERT(strstr(buf, "2 5 3 1 1:synth:filter"), "entry, flags (active|smooth) and count restored");
         OK("it reloads with the project, flags and all");
 
-        /* Pointing at a project directory with no auto file must leave the
-         * store EMPTY, not inherit the last project's automation — the load
-         * resets before it reads. */
+        /* A project with no automation must leave the store EMPTY rather than
+         * inheriting the previous project's. */
         hx_destroy(h);
         h = hx_create(NULL);
-        pa_set(h, 0, 0, "cc:9", 0, 1);        /* something to be replaced */
-        snprintf(state, sizeof(state), "%s/other-state.json", dir);
-        hx_set_param(h, "state_path", state);
+        pa_set(h, 0, 0, "cc:9", 0, 1);
+        char plain[192];
+        snprintf(plain, sizeof(plain), "%s/other-state.json", dir);
+        FILE *pf = fopen(plain, "w");
+        HX_ASSERT(pf, "fixture");
+        fprintf(pf, "{\"v\":36,\"playing\":0}");
+        fclose(pf);
+        {   seq8_instance_t *in3 = (seq8_instance_t *)h->inst;
+            strncpy(in3->state_path, plain, sizeof(in3->state_path) - 1);
+            seq8_load_state(in3);
+        }
         pa_list(h, buf, sizeof(buf));
-        HX_ASSERT(list_count(buf) == 0, "a project with no auto file has NO automation");
+        HX_ASSERT(list_count(buf) == 0, "a project with no automation has NONE");
         OK("⚠ loading a project without automation clears the last one's, never inherits it");
 
         snprintf(cmd, sizeof(cmd), "rm -rf %s", dir);
