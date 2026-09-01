@@ -29,6 +29,7 @@ import {
 
 import { S, standDownBankDisplay } from './ui_state.mjs';
 import { daveBoxTick } from './ui_daves.mjs';
+import { automationTick, automationPollWarnings } from './ui_automation.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
 import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, readActiveSet,
     commitSnapshot } from './ui_persistence.mjs';
@@ -1203,6 +1204,17 @@ export function _tickImpl() {
         }
 
         if ((S.tickCount % POLL_INTERVAL) === 0) { pollDSP(); S.screenDirty = true; }
+
+        /* Per-parameter automation: drain what the DSP staged and push what it
+         * cannot write itself. EVERY tick, not on the POLL_INTERVAL cadence —
+         * automation is a value the user hears, and running it at the poll rate
+         * would quantise every parameter move to that interval. It costs one
+         * read only when something is staged, and its own write budget caps the
+         * rest (see ui_automation.mjs). */
+        automationTick();
+        /* The two conditions only the DSP can see, on the slow cadence: neither
+         * is per-tick news and each clears on read. */
+        if ((S.tickCount % POLL_INTERVAL) === 0) automationPollWarnings();
 
         /* SESSION VIEW track levels: knob N drives track N's level.
          *
