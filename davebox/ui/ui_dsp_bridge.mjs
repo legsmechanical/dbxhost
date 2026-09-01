@@ -299,17 +299,31 @@ function localAutomationResync() {
  * Cost: one extra round-trip per 32 KB, on save only — a few milliseconds
  * occasionally, against a ceiling that silently ate projects. */
 function fetchStateChunked() {
-    let out = '';
-    /* Bound the loop: a project cannot legitimately need this many chunks, and
-     * an unbounded loop here would hang the tick if the DSP ever kept serving. */
-    for (let i = 0; i < 16; i++) {
+    const first = host_module_get_param('state_chunk_0');
+    if (!first || !first.length) return '';        /* not dirty, or refused */
+
+    /* The snapshot length drives the loop, so a project that fits in one chunk
+     * costs TWO round-trips rather than three — asking for a chunk past the end
+     * just to see it come back empty is a wasted one.
+     *
+     * ⚠ That is not a micro-optimisation here: a round-trip measured 2852 us on
+     * device (p50, `param.get`) against a ~10.6 ms tick, and js.tick p95 is
+     * already 37 ms. Every avoidable round-trip is a third of a tick. */
+    const want = parseInt(host_module_get_param('state_snap_len') || '0', 10);
+    if (!want) return '';
+
+    let out = first;
+    /* Bounded: a project cannot legitimately need this many chunks, and an
+     * unbounded loop would hang the tick if the DSP ever kept serving. */
+    for (let i = 1; out.length < want && i < 16; i++) {
         const part = host_module_get_param('state_chunk_' + i);
         if (!part || !part.length) break;
         out += part;
     }
-    if (!out.length) return '';
-    const want = parseInt(host_module_get_param('state_snap_len') || '0', 10);
-    if (!want || out.length !== want) {
+
+    if (out.length !== want) {
+        /* Write nothing rather than a prefix: a cut blob parses as a valid,
+         * smaller project. The next poll retries. */
         console.log('[dbx] state fetch incomplete: got ' + out.length + ' of ' + want + ' — not writing');
         return '';
     }
