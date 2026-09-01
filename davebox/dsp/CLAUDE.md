@@ -75,11 +75,15 @@ assign `tidx`/`tr`/`sub` onto `cx`, 9 `tN_` dispatches).
   `sp_track_ccauto` return 0 on no-match precisely because they have no catch-all downstream."
   That is FALSE, and it is the kind of false that reads as reassurance.** Both are dispatched
   *before* `sp_track_misc` (`seq8_set_param.c` ~1195 vs ~1246), so the catch-all IS downstream of
-  them and an unknown `tN_cc_*` key is mis-handled as a play-effects parameter rather than
-  ignored. Latent today (nothing sends such a key) and it dies with the lane system in Front 3's
-  P8 — but **a new prefixed handler must consume its whole prefix**: `sp_track_paramauto` returns
-  1 for any `pa_` sub-op, known or not, and `test_param_auto.c` pins that a stray `pa_` key
-  changes no pfx parameter.
+  them. What falling through actually costs, measured: `pfx_set` is inert for a sub-op that
+  matches no play-effects parameter (so the damage needs a NAME COLLISION), but the tail's other
+  half is unconditional — it bumps the remote-UI revision, announcing a content change that never
+  happened. Latent today and it dies with the lane system in Front 3's P8 — but **a new prefixed
+  handler must consume its whole prefix**: `sp_track_paramauto` returns 1 for any `pa_` sub-op,
+  known or not.
+  ⭑ Pinning this needs care. `test_param_auto.c`'s first attempt asserted the pfx params were
+  unchanged and **passed against a handler mutated to fall through**, because no `pa_` name
+  collides; it now asserts on the rev bump, and `tools/mutate.sh` catches it.
 - **Where a new key goes:** new global keys → the matching `sp_globals_*` file (they sit before the
   `tN_` guard); new `tN_` keys → the matching `sp_track_*` file, and **always before**
   `sp_track_misc.c`'s `pfx_set` catch-all tail, which returns unconditionally and would silently
