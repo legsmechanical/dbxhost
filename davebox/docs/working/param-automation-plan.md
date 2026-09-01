@@ -8,25 +8,23 @@ verdict REDESIGN on the store (§0.1) and transport (§0.2); record seam (§0.3)
 
 ### 0.1 The store (DSP, per track × clip) — REDESIGNED
 
-- **⭑RULED (Josh, 2026-09-02): automation lives in its OWN FILE**,
-  `Sets/<uuid>/dAVEBOx/<prefix>-auto.json`, DSP-written by the same non-RT deferred-save
-  machinery as the main state. Why: the main state's ceiling is the TRANSPORT, not the
-  serializer — under SA `host_module_get_param('state_full')` routes through
-  `shadow_get_param`, value field `SHADOW_PARAM_VALUE_LEN` = 65536 (shadow_ui.js:4339;
-  ⚠ `char buf[16384]` at schwung_host.c:1462 is the LEGACY menu-host binding, a decoy) — and
-  **P0b measurement (2026-09-02) showed a heavy-but-ordinary project already spends 62.5 KB of
-  that 65.5 KB.** There was never a budget to ration. (That measurement also found and fixed a
-  live silent-truncation data-loss bug — `43892d66`.) A second file keeps the storage model
-  intact ([[schwung-state-colocation-model]]): one dir per project, copy still a copytree,
-  delete still one rmtree.
-  ⚠ It obeys every rule the main state does: **crash-atomic write** (temp + fsync + rename,
-  [[schwung-atomic-write-inode-is-the-only-pin]]), never written from the audio thread, and
-  **loaded/cleared in lockstep with the project** (state_load, Clear Session sentinel, uuid
-  mismatch, awaiting_select). The failure to design against is a stale auto file beside a fresh
-  project: the file carries the project uuid + a serial, and a mismatch DISCARDS it rather than
-  applying stale automation.
-  ⭑ Freed by this: no transport-forced global cap and no "AUTOMATION FULL" popup in v1 (keep a
-  generous sanity cap against runaway growth); points are bounded by resident memory, not wire.
+- **⭑RULED (Josh, 2026-09-02, revised the same day): automation is a SECTION of the ONE
+  project state file** (`"pa"`), not a sidecar. The first ruling was a separate
+  `<prefix>-auto.json`, taken because the state blob's ceiling is the shadow parameter
+  TRANSPORT (`SHADOW_PARAM_VALUE_LEN` = 65536) and P0b measured a heavy project already
+  spending 62.5 KB of it. Josh's question — *"is there no way to route them differently and
+  unify after the fact?"* — is the better answer: **fix the leg instead of routing around it.**
+  `get_param` now serves `state_chunk_<n>` and JS reassembles, so the ceiling is per chunk, for
+  notes as much as automation. Shipped `e63ab099`.
+  ⭑ What this buys beyond tidiness: ONE lifecycle. A second file would have to be kept in
+  lockstep across create / copy / delete / clear / load — five chances for a project's notes and
+  its automation to disagree about which project they belong to. It also removed the ceiling for
+  notes alone, which was already close enough to bite ([[schwung-state-transport-64k-ceiling]]).
+  ⚠ Snapshot-once is the load-bearing rule: chunk 0 serializes and later chunks are served from
+  that buffer, or an edit mid-fetch splices two versions of a project together. Pinned by
+  mutation.
+  ⭑ No migration and no version bump: the section is absent when a project has no automation,
+  which is exactly what every project written before this looks like.
 - **Preallocated point-block pool at create_instance** — fixed block list, hand out blocks,
   NEVER malloc/realloc on the SPI thread (set_param runs at FIFO 90; the sp_globals_edit
   callocs are an accepted legacy tradeoff, not a license). rev 1's "at_auto_t

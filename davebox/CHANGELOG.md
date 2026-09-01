@@ -47,8 +47,10 @@ the section into a versioned heading at release time.
 ### Fixes (pending)
 - **Very large projects could lose music when saved.** A project past a certain
   size was cut short on its way out of the sequencer and written to disk
-  truncated — it reopened quietly missing notes, with nothing reported. Such a
-  project is now written straight to its file instead, complete.
+  truncated — it reopened quietly missing notes, with nothing reported. Projects
+  are now saved in pieces and reassembled, so a project of any size is written
+  whole; if a save can't be completed, nothing is overwritten and it is retried
+  rather than a partial one being kept.
 - **The session FX list follows the same display law as track banks.** It stays
   up while the session bank view is open instead of hiding until you touch the
   jog — and a jog click no longer falls through it.

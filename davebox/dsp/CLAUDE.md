@@ -173,6 +173,10 @@ bumping.
 
 Note format: `tick:pitch:vel:gate;`
 
+Per-parameter automation: the sparse **`"pa"`** array (`{t,c,k,f,r,ll,lo,rs,p}` per entry, points
+as `tick:val;`), written by `pa_serialize` and read by `pa_parse` in `seq8_param_auto.c`. Absent
+when a project has no automation — which is what makes it need no version bump.
+
 Per-clip / per-drum-lane loop window: `t%dc%d_ls` (melodic), `t%dc%dl%d_ls` (drum) — sparse, omitted
 when `loop_start == 0`. Playback wraps inside `[loop_start, loop_start+length)`; pattern data
 outside the window is preserved.
@@ -207,9 +211,24 @@ Paths indexing by `drum_current_step[lane]` (`drum_record_note_on`, `drum_repeat
 
 Handlers set `inst->state_dirty = 1` — **no file I/O on the audio thread.**
 
-JS `pollDSP()` calls `get_param("state_full")` every `POLL_INTERVAL` ticks. When dirty, the DSP
-serializes via `fmemopen` into `inst->state_buf[65536]` and JS writes it with `host_write_file`
-(~2 ms). Overflow (>63 KB) falls back to a synchronous write with a log warning.
+JS `pollDSP()` pulls the blob in **chunks** every `POLL_INTERVAL` ticks — `state_chunk_0`,
+`_1`, … until an empty one — and writes the assembled string with `host_write_file` (~2 ms).
+Chunk 0 serializes via `fmemopen` into `inst->state_buf` (**262144**) and records
+`state_snap_len`; later chunks are served from that same snapshot, so an edit landing mid-fetch
+cannot splice two versions of a project together. JS compares the total against
+`state_snap_len` and writes **nothing** on a mismatch.
+
+⚠⚠ **Why chunked, and the trap it closes.** A single `get_param` crosses the shadow parameter
+transport, whose value buffer is `SHADOW_PARAM_VALUE_LEN` = **65536** — *not* the size of
+`state_buf`. The old single-shot fetch clamped to the caller's buffer with no log and no error,
+so a project between 64 KB and 128 KB arrived cut **mid-note** and JS wrote that to disk; readers
+`strstr`-parse, so it reloaded as a silently smaller project. Measured 2026-09-02: a
+90,818-byte project came back as exactly 65,535 bytes. ⭑ And the ceiling was already close —
+notes alone across every clip is ~62.5 KB. `state_full` survives for other callers and now
+**refuses rather than truncating**.
+
+⚠ The number to remember is the **transport's**, not the buffer's. `state_buf` has never been the
+binding limit, and reading its size as the budget is how this stayed invisible.
 
 The suspend path (`set_param("save")`) calls `seq8_save_state` synchronously — the host may kill JS
 before an async write completes.
