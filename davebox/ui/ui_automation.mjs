@@ -39,10 +39,37 @@ let pending = new Map();
 /* "<slot>:<comp>" -> { key: {min,max,step,type,options} }, one fetch each. */
 let metaCache = new Map();
 
+/* Does this project have ANY automation?
+ *
+ * ⚠ This gate is the difference between a feature and a tax on every session.
+ * Draining costs a get_param — 2852 us measured, a quarter of a tick — and
+ * without this it would be paid on EVERY tick of EVERY session, whether or not
+ * a single parameter is automated, against a tick already overrunning at p95.
+ *
+ * It is exact rather than a guess: automation can only come into being two
+ * ways, and both are visible here. A project brings it in when it loads (the
+ * DSP is asked once, on the sync), and JS creates it (every write goes through
+ * this module). Nothing else can produce an entry. */
+let anyAutomation = false;
+
 export function automationResetCaches() {
     pending = new Map();
     metaCache = new Map();
+    anyAutomation = false;
 }
+
+/* Called once when a project's contents arrive from the DSP — NOT per tick.
+ * One round-trip per project load, against one per tick if we guessed. */
+export function automationRefreshPresence() {
+    const list = host_module_get_param('pa_list');
+    anyAutomation = !!(list && list.length);
+}
+
+/* Every automation write goes through JS, so JS always knows when the first
+ * one appears; P3's record and lock paths call this. */
+export function automationNoteWrite() { anyAutomation = true; }
+
+export function automationPresentForTest() { return anyAutomation; }
 
 /* chain_params for one component, fetched once. Costs a round-trip the first
  * time a parameter on that component is automated, then nothing. */
@@ -119,6 +146,12 @@ function pushTarget(target, norm) {
  * goes next tick — with only its newest value, since a superseded one is not
  * worth a round-trip. */
 export function automationTick() {
+    /* Nothing to drain unless this project has automation AND the transport is
+     * running: staging only happens on a playing clip. Both are already-known
+     * flags, so the common case costs nothing at all. */
+    if (!anyAutomation) { if (pending.size) pending.clear(); return; }
+    if (!S.playing && !pending.size) return;
+
     const raw = host_module_get_param('pa_pending');
     if (raw && raw.length) {
         for (const line of raw.split('\n')) {

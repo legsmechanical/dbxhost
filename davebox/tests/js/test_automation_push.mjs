@@ -39,8 +39,10 @@ globalThis.shadow_set_param = (slot, key, val) => {
 /* Static, not `await import`: the bundler's output format has no top-level
  * await. Safe here because ui_automation.mjs touches no host global at import
  * time — only inside its functions, which run after the stubs above are set. */
-import { automationTick, automationResetCaches, automationPendingSizeForTest }
+import { automationTick, automationResetCaches, automationPendingSizeForTest,
+         automationRefreshPresence, automationNoteWrite, automationPresentForTest }
     from '../../ui/ui_automation.mjs';
+import { S } from '../../ui/ui_state.mjs';
 
 let ok = 0, bad = 0;
 const check = (cond, msg) => {
@@ -48,9 +50,44 @@ const check = (cond, msg) => {
     else { console.log('  FAIL — ' + msg); bad++; }
 };
 
+/* ---- the drain is GATED, and that gate is the point -------------------- */
+{
+    /* Draining costs a get_param — 2852 us on device, a quarter of a tick. A
+     * project with no automation must not pay it, on any tick, ever. */
+    writes.length = 0; automationResetCaches();
+    let reads = 0;
+    const realGet = globalThis.host_module_get_param;
+    globalThis.host_module_get_param = (k) => { if (k === 'pa_pending') reads++; return realGet(k); };
+
+    S.playing = true;
+    staged = '0:fx1:cutoff 8000';
+    for (let i = 0; i < 20; i++) automationTick();
+    check(reads === 0, '⚠ a project with NO automation never reads the queue — not once in 20 ticks');
+    check(writes.length === 0, 'and writes nothing');
+
+    /* Once the project is known to have some, it drains. */
+    staged = '0:fx1:cutoff 8000';
+    globalThis.host_module_get_param = (k) => {
+        if (k === 'pa_pending') { reads++; const r = staged; staged = ''; return r; }
+        if (k === 'pa_list') return '0 0 1 1 0:fx1:cutoff\n';
+        return '0';
+    };
+    automationRefreshPresence();
+    check(automationPresentForTest(), 'a project that HAS automation is detected on load');
+    automationTick();
+    check(reads > 0 && writes.length === 1, 'and then the queue is drained and pushed');
+
+    /* Stopped transport: nothing is being staged, so nothing is read. */
+    const before = reads;
+    S.playing = false;
+    for (let i = 0; i < 10; i++) automationTick();
+    check(reads === before, 'a stopped transport does not poll the queue either');
+    globalThis.host_module_get_param = realGet;
+}
+
 /* ---- the write budget ------------------------------------------------- */
 {
-    writes.length = 0; automationResetCaches();
+    writes.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true;
     staged = ['0:fx1:cutoff 8000', '0:fx1:octave 16383', '0:fx1:mode 8191',
               '1:synth:cutoff 100', '2:fx2:cutoff 200'].join('\n');
     automationTick();
@@ -67,7 +104,7 @@ const check = (cond, msg) => {
 
 /* ---- a superseded value is never written ------------------------------ */
 {
-    writes.length = 0; automationResetCaches();
+    writes.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true;
     /* The same parameter moving twice before we reach it: only the newer value
      * is worth a round-trip, and the older one is not merely redundant — it
      * would be WRONG, arriving after the value that replaced it. */
@@ -79,7 +116,7 @@ const check = (cond, msg) => {
 
 /* ---- values reach the parameter in its own units ---------------------- */
 {
-    writes.length = 0; automationResetCaches();
+    writes.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true;
     staged = '0:fx1:cutoff 8191';           /* half of 14-bit */
     automationTick();
     check(writes[0].key === 'fx1:cutoff', 'the key is component-qualified');
@@ -87,12 +124,12 @@ const check = (cond, msg) => {
     check(Math.abs(parseFloat(writes[0].val) - 0.5) < 0.02,
           'a float parameter gets a value in ITS range, not the raw 14-bit number');
 
-    writes.length = 0; automationResetCaches();
+    writes.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true;
     staged = '0:fx1:octave 0\n0:fx1:octave 16383';
     automationTick();
     check(writes[0].val === '2', 'an int parameter is rounded to its max (-2..2)');
 
-    writes.length = 0; automationResetCaches();
+    writes.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true;
     staged = '0:fx1:mode 16383';
     automationTick();
     check(writes[0].val === '2', 'an enum becomes an INDEX, not a fraction');
@@ -100,7 +137,7 @@ const check = (cond, msg) => {
 
 /* ---- the write must never be fire-and-forget -------------------------- */
 {
-    writes.length = 0; automationResetCaches();
+    writes.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true;
     staged = '0:fx1:cutoff 4000';
     automationTick();
     check(writes[0].ms > 0 && !writes[0].fireAndForget,
@@ -109,7 +146,7 @@ const check = (cond, msg) => {
 
 /* ---- a malformed line cannot take the tick down ----------------------- */
 {
-    writes.length = 0; automationResetCaches();
+    writes.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true;
     staged = 'garbage\n\n0:fx1:cutoff notanumber\nbus:1:volume 8191\n0:fx1:cutoff 500';
     automationTick(); automationTick();
     check(writes.some(w => w.key === 'fx1:cutoff'), 'the good lines still push');
