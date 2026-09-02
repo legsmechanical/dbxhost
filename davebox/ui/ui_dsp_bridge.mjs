@@ -25,7 +25,7 @@
 import {
     setButtonLED
 } from '/data/UserData/schwung/shared/input_filter.mjs';
-import { automationRefreshPresence, automationInvalidateMeta, bulkEncode, bulkDecode } from './ui_automation.mjs';
+import { automationRefreshPresence, automationInvalidateMeta, automationWantsDrain, bulkEncode, bulkDecode } from './ui_automation.mjs';
 
 import {
     NUM_TRACKS, NUM_CLIPS, NUM_STEPS, DRUM_LANES, POLL_INTERVAL,
@@ -358,6 +358,8 @@ export function tickPrefetch() {
     if (S.metronomeOn > 0) keys.push('metro_beat_count');
     const lt = S.activeTrack;
     keys.push('t' + lt + '_tarp_on', 't' + lt + '_tarp_latch');
+    /* The automation drain rides this read while it is needed. */
+    if (automationWantsDrain()) keys.push('pa_pending', 'pa_store_full', 'pa_ring_dropped', 'pa_owner_conflict');
     if ((S.tickCount % POLL_INTERVAL) === 0) {
         for (const k of POLL_KEYS) keys.push(k);
         if (S.activeBank === 6) keys.push('t' + lt + '_c' + effectiveClip(lt) + '_at_has');
@@ -369,6 +371,8 @@ export function tickPrefetch() {
 }
 /* A read that answers from this tick's prefetch when it can. */
 export function dget(k) { return _pre.has(k) ? _pre.get(k) : host_module_get_param(k); }
+/* True if this tick's prefetch carried `k`. */
+export function tickWants(k) { return _pre.has(k); }
 /* Ticks of quiet before a save while stopped; ~1 s at the ~94 Hz tick. */
 const SAVE_QUIET_TICKS = 94;
 

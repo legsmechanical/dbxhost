@@ -1038,6 +1038,30 @@ static JSValue js_shadow_take_dirty_fx_buses(JSContext *ctx, JSValueConst this_v
  * Gets a parameter from the chain instance for the given slot.
  * Returns the value as a string, or null on error.
  */
+/* See the note at the param.get span. Keyed names are capped so the trace
+ * name table (TRACE_MAX_NAMES) is never exhausted by parameter keys; beyond the
+ * cap every read is the plain "param.get". */
+#define PARAM_GET_SPAN_NAMES_MAX 160
+static uint32_t js_param_get_span_begin(const char *key) {
+    if (!atomic_load_explicit(&schwung_trace_on, memory_order_relaxed)) return 0;
+    static int s_named = 0;
+    static uint32_t s_plain = 0;
+    if (!s_plain) s_plain = schwung_trace_intern("param.get");
+    if (!key || s_named >= PARAM_GET_SPAN_NAMES_MAX) return schwung_trace_begin(s_plain);
+    char nm[96];
+    int n = snprintf(nm, sizeof nm, "param.get ");
+    for (const char *p = key; *p && n < (int)sizeof nm - 1; p++) {
+        if (*p >= '0' && *p <= '9') { if (nm[n - 1] != '#') nm[n++] = '#'; }
+        else nm[n++] = *p;
+    }
+    nm[n] = '\0';
+    /* intern_copy dedups; count only what it may have added. */
+    uint32_t id = schwung_trace_intern_copy(nm);
+    if (id <= 1) return schwung_trace_begin(s_plain);        /* table full */
+    s_named++;
+    return schwung_trace_begin(id);
+}
+
 static JSValue js_shadow_get_param(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
     (void)this_val;
     if (!shadow_param || argc < 2) return JS_NULL;
@@ -1052,8 +1076,16 @@ static JSValue js_shadow_get_param(JSContext *ctx, JSValueConst this_val, int ar
     /* Span the synchronous round-trip (busy-wait to the shim, serviced once per
      * SPI frame). Correlates on the timeline with the shim's param.serve span —
      * this is the "where does the tick time go" measurement. Closes on every
-     * return below via cleanup. */
-    TRACE_SCOPE("param.get");
+     * return below via cleanup.
+     *
+     * Named by the KEY'S SHAPE ("param.get overtake_dsp:t#_c#_steps"): a
+     * trace says how many round-trips a tick made, and without the key it
+     * cannot say which — the question every tick-cost investigation ends on.
+     * Digits collapse so a per-track key is one name; the name table is
+     * bounded, so past a budget the span falls back to the plain name. Costs
+     * nothing when tracing is off. */
+    trace_handle_t _pg_span __attribute__((cleanup(schwung_trace__cleanup))) =
+        js_param_get_span_begin(key);
 
     if (!shadow_param_wait_idle(SHADOW_PARAM_DEFAULT_TIMEOUT_MS)) {
         JS_FreeCString(ctx, key);

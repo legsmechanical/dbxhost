@@ -53,6 +53,7 @@ import { automationParamEdit, automationParamTouch, automationTick, automationRe
          automationModuleWriteCountForTest, automationPresentForTest }
     from '../../ui/ui_automation.mjs';
 import { S } from '../../ui/ui_state.mjs';
+import { tickPrefetch } from '../../ui/ui_dsp_bridge.mjs';
 
 let ok = 0, bad = 0;
 const check = (cond, msg) => {
@@ -66,7 +67,7 @@ function reset(o) {
     S.clipTPS[0][0] = 24;
     Object.assign(S, o || {});
 }
-const tick = () => { S.tickCount++; automationTick(); };
+const tick = () => { S.tickCount++; tickPrefetch(); automationTick(); };
 const T = 0, C = 0, SLOT = 1;
 
 /* ---- stopped, nothing held: a knob is a knob ---------------------------- */

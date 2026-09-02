@@ -52,6 +52,10 @@ collector or import directly into Tempo/Jaeger.
 
 ## What gets traced
 
+⭑ **`param.get` spans are named by the key's shape** — `param.get overtake_dsp:t#_c#_steps`,
+digits collapsed — so a trace answers WHICH reads a tick made, not only how many (up to a
+bounded number of distinct shapes; past it the plain `param.get`). Match on the prefix.
+
 **Shim** (`schwung-shim`), per SPI frame:
 
 - `spi.pre` / `spi.post` — roots (one trace each per frame); the two halves of

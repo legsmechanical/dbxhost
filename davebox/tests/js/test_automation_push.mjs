@@ -67,6 +67,7 @@ import { automationTick, automationResetCaches, automationPendingSizeForTest,
          automationPollWarnings }
     from '../../ui/ui_automation.mjs';
 import { S } from '../../ui/ui_state.mjs';
+import { tickPrefetch } from '../../ui/ui_dsp_bridge.mjs';   /* the drain rides the tick's one read */
 
 let ok = 0, bad = 0;
 const check = (cond, msg) => {
@@ -74,7 +75,7 @@ const check = (cond, msg) => {
     else { console.log('  FAIL — ' + msg); bad++; }
 };
 const fresh = () => { writes.length = 0; requests.length = 0; automationResetCaches(); automationNoteWrite(); S.playing = true; S.tickCount = 100; };
-const tick = () => { S.tickCount++; automationTick(); };
+const tick = () => { S.tickCount++; tickPrefetch(); automationTick(); };
 
 /* ---- the drain is GATED, and that gate is the point -------------------- */
 {
@@ -112,8 +113,9 @@ const tick = () => { S.tickCount++; automationTick(); };
     tick();
     const gets = requests.filter(r => r.kind === 'get');
     const sets = requests.filter(r => r.kind === 'set');
-    check(gets.length === 1, '⚠ the drain is ONE bulk read a tick');
-    check(gets[0].keys.length === 4 && gets[0].keys[0] === 'pa_pending', 'and it carries the DSP flags along, so they cost no read of their own');
+    check(gets.length === 1, '⚠ the drain is ONE bulk read a tick — the tick\'s own prefetch');
+    check(['pa_pending', 'pa_store_full', 'pa_ring_dropped', 'pa_owner_conflict'].every(k => gets[0].keys.includes(k)),
+          'and it carries the DSP flags along, so they cost no read of their own');
     check(sets.length === 1 && sets[0].slot === 0 && sets[0].marker === 'chain:' && sets[0].n === 5,
           '⚠ five parameters on one slot cross in ONE bulk write to that slot');
     check(writes.length === 5, 'and each was written exactly once');

@@ -21,6 +21,8 @@ import { POLL_INTERVAL } from './ui_constants.mjs';
  * that (tests/test_move_fx_prefix_owner.sh). Build it here and the suite fails
  * — correctly: two builders are two things to keep in step. */
 import { moveBusComp } from './ui_engine.mjs';
+/* The tick's prefetch (a cycle with ui_dsp_bridge, used only inside functions). */
+import { dget } from './ui_dsp_bridge.mjs';
 
 /* ------------------------------------------------------------------ */
 /* THE TRANSPORT — everything crosses in BULK                           */
@@ -282,10 +284,20 @@ function takeFlags(vals, offset) {
            if (f.owner) lastFlags.owner = f.owner; }
 }
 
+/* Does the tick's prefetch need to carry the drain keys this tick? Asked by
+ * tickPrefetch before it reads, so the drain rides the tick's ONE round-trip
+ * instead of making its own. */
+export function automationWantsDrain() {
+    if (!anyAutomation) return false;
+    return S.playing || stopGrace > 0 || pending.size > 0;
+}
+
 function drain() {
-    const vals = bulkDecode(host_module_get_params(bulkEncode(DRAIN_KEYS)));
+    /* The prefetch carried them (automationWantsDrain said so); dget answers
+     * from it. If it did not — a caller outside the tick — dget reads them. */
+    const vals = DRAIN_KEYS.map(dget);
     lastDrainTick = S.tickCount;
-    if (vals.length < 4) return;
+    if (vals.some(v => v === null || v === undefined)) return;
     takeFlags(vals, 1);
     const raw = vals[0];
     if (!raw || !raw.length) return;
