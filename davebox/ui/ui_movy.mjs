@@ -3009,7 +3009,7 @@ export function drawKitBankPage(cells, opts) {
     } else if (touched) {
         drawKitTouchedHeader(touched.name);
     } else {
-        drawKitHeader(opts.headerText, opts.headerInvert);
+        drawKitHeader(opts.headerText, opts.headerInvert, opts.headerMaxW);
         if (opts.pageCount > 0) drawKitPageBar(opts.pageIdx | 0, opts.pageCount, opts.pageGroups);
         if (opts.altArrowShow) drawKitAltArrow(SCREEN_W - 7, !opts.headerInvert, !!opts.altArrowOn, opts.altArrowHidden);
     }

@@ -85,10 +85,12 @@ function drawBankHeaderRight(showTrack, hdrFilled) {
  * at x=119 and leaves column 120 clear. ⚠ Derived from the two positions, not a
  * margin picked by eye — the first value here was 117 from an invented 2px gap,
  * and it failed the Conductor's 'C-RESPONDER' by exactly one pixel. */
-const BANK_HDR_TEXT_W = 118;
+export const BANK_HDR_TEXT_W = 118;
 
 
-function bankHeadingPrefix() {
+/* Exported: every bank card names its track first — the STEP, SOUND + CONFIG
+ * and MACROS pages included (Josh, 2026-09-03: "just like pre-existing ones"). */
+export function bankHeadingPrefix() {
     return 'Tr' + (S.activeTrack + 1) + ' - ';
 }
 
@@ -98,16 +100,20 @@ function drawBankHeading(name, showTrack, bareHdr) {
      * 2026-08-31: "it's redundant — you can see active track on the track
      * number row"). Bank cards keep it: a latched card holds the screen with
      * no track row in sight, which is why the prefix exists (2026-08-25). */
-    const pfx = bareHdr ? '' : bankHeadingPrefix();
-    /* Conductor banks: blink ONLY the "C-" prefix (phase driven in the tick
-     * loop); the header font is fixed-advance so the name stays steady. */
-    if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT &&
-            name.charAt(0) === 'C' && name.charAt(1) === '-') {
-        drawKitHeader(pfx + (S._altBlinkPhase !== 1 ? 'C-' : '  ') + name.slice(2), false, BANK_HDR_TEXT_W);
-    } else {
-        drawKitHeader(pfx + name, false, BANK_HDR_TEXT_W);
-    }
+    drawKitHeader(bankHeadingText(name, bareHdr), false, BANK_HDR_TEXT_W);
     drawBankHeaderRight(showTrack, true);
+}
+/* The heading STRING: prefix + name, with the Conductor's "C-" blink (phase
+ * driven in the tick loop; the header font is fixed-advance so the name stays
+ * steady). Split out so a page that must NOT draw the alt arrow (the STEP
+ * page: the reveal is pinned pixel-equal to the bank's own frame, and the
+ * arrow belongs to the bank underneath) can draw the same text. */
+function bankHeadingText(name, bareHdr) {
+    const pfx = bareHdr ? '' : bankHeadingPrefix();
+    if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT &&
+            name.charAt(0) === 'C' && name.charAt(1) === '-')
+        return pfx + (S._altBlinkPhase !== 1 ? 'C-' : '  ') + name.slice(2);
+    return pfx + name;
 }
 
 /* Vestigial: secondary banks (LIVE ARP / AUTOMATION / REPEAT GROOVE) now use
@@ -259,7 +265,9 @@ function drawStepEditKitPage(title, cells, noteBox, footer) {
     if (touched) {
         drawKitTouchedHeader(touched.name);
     } else {
-        drawKitHeader(title, false);
+        /* The bank heading, prefix and Conductor blink included — `title` is
+         * the bank's plain name; the Conductor's C- form comes from the walk. */
+        drawKitHeader(bankHeadingText(bankDisplayName(S.trackPadMode[S.activeTrack], BANK_STEP), false), false, BANK_HDR_TEXT_W);
         fill_rect(0, 9, 128, 1, 1);   /* solid rule (no bank context here) */
     }
     if (!cells) {

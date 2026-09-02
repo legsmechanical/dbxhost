@@ -40,7 +40,7 @@ import { nowMs } from './ui_clock.mjs';
  * safe because both sides only call the binding inside function bodies, never
  * at module-init time — the same contract the ui_record ↔ ui_dsp_bridge cycle
  * documents. bankCardVisible is the ONE owner of card visibility. */
-import { bankCardVisible, sessMixerVisible } from './ui_render.mjs';
+import { bankCardVisible, sessMixerVisible, bankHeadingPrefix, BANK_HDR_TEXT_W } from './ui_render.mjs';
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
@@ -3402,7 +3402,7 @@ function renderMacros() {
     clear_screen();
     kitUseLayout('bank');
     drawKitBankPage(macroCells(S.track, true), {
-        headerText: 'MACROS', headerInvert: false,
+        headerText: bankHeadingPrefix() + 'MACROS', headerInvert: false, headerMaxW: BANK_HDR_TEXT_W,
         touchedIdx: S.touchedIdx,
         footer: macroCardHints(),
     });
@@ -3414,7 +3414,7 @@ export function renderMacrosPeek(track) {
     kitUseLayout('bank');
     const live = S.active && S.track === track;
     drawKitBankPage(macroCells(track, live), {
-        headerText: 'MACROS', headerInvert: false,
+        headerText: bankHeadingPrefix() + 'MACROS', headerInvert: false, headerMaxW: BANK_HDR_TEXT_W,
         touchedIdx: live ? S.touchedIdx : -1,
         footer: macroCardHints(),
     });
@@ -5789,8 +5789,10 @@ function renderPrompt() {
      * automation circles, and the door in the footer. */
     clear_screen();
     kitUseLayout('bank');
+    /* ⚠ 'SOUND+CFG': with the track prefix the full name is 139px against the
+     * 118px band (measured) — the same budget that made SEQUENCE ARP SEQ ARP. */
     drawKitBankPage(levelCells(), {
-        headerText: 'SOUND + CONFIG', headerInvert: false,
+        headerText: bankHeadingPrefix() + 'SOUND+CFG', headerInvert: false, headerMaxW: BANK_HDR_TEXT_W,
         touchedIdx: S.touchedIdx,
         footer: levelCardHints(),
     });
