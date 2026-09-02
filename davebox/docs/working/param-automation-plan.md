@@ -172,7 +172,11 @@ Proposed build order once lifted (drafted for Josh's review, 2026-09-02 night):
 4. **AUTOMATION bank** (replaces bank 6): the list card, the menu (delete, mute, smooth, loop
    length/resolution, clear clip; AT lanes as rows), Delete+jog-click shortcut, undo per
    action; the Smooth click leaves the module editor; "hold a step, see the locks".
-5. **Step grammar (c)**: a hold creates nothing; the Note knob on an empty held step creates.
+5. **The held step, one law (⭑RULED 2026-09-02 midday, spec §3)**: a hold creates nothing (a
+   pad press while held does); the step editor becomes the STEP bank (`--` with no step held);
+   a held step redirects the on-screen knobs to that step everywhere; hold + JOG right reveals
+   the STEP bank, jog left returns, two positions, no cycling; step edit is never the default. ⚠ Pulled FORWARD to
+   build next (Josh, midday): it is what makes an empty-step p-lock a pure automation point.
 6. **P5 MIDI Out device** (Schwung + MIDI routes only), then **P7 bake/export**, then **P8**.
 
 **P5 — MIDI Out device** (§0.4).

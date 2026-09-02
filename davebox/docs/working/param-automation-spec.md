@@ -85,8 +85,38 @@ exact shape — see the board).
   picks its target without leaving the bank (the one place the Shift+touch assign flow
   survives). "Go to the parameter" from the AUTOMATION menu: only if it is easy. No "writing"
   ring colour while recording (declined).
-- **Hold on an empty step (c)**: a hold creates nothing; turning the NOTE knob on an empty held
-  step creates the note at that pitch; the other step knobs do nothing there.
+- **Hold on an empty step (c)** ⭑RULED (Josh, 2026-09-02 midday, supersedes the Note-knob
+  line): **a hold never creates a note; pressing a note pad while the step is held creates
+  it.** (The "Note knob on an empty held step" idea had no surface: in the chain editor a held
+  step keeps the editor on screen and its knobs, so no Note knob is ever visible there.)
+- **THE HELD STEP, ONE LAW EVERYWHERE** ⭑RULED (Josh, 2026-09-02 midday — "I don't want to
+  split behavior anywhere"): **a held step redirects the on-screen knobs to that step.** In
+  the module editor (and on MACROS) that writes p-locks. The step editor's own values (Note,
+  Oct, Leng, Vel, Nudg, Iter, Prob, Ratch) **become a BANK — the STEP bank — alongside the
+  other davebox banks**; on it a held step with a note shows and edits that step's values, and
+  with no step held (or an empty step held) the knobs read `--`. Banks whose knobs are track
+  settings decline the held step (nothing to write per step). **Step edit is never the
+  default view.** Shortcut ⭑RULED (Josh, 2026-09-02, revised from Left/Right to the JOG —
+  "the generalized gesture to switch between alternate views"): **while holding a step, a jog
+  turn right reveals the STEP bank; a jog turn left returns to where you were. Two positions,
+  no cycling** — further right turns at the STEP bank do nothing, further left turns at the
+  origin do nothing. While a step is held the jog's usual walk (banks on a card, pages in the
+  editor) is suspended; release to page, then hold again. Shift+jog (track switch / section
+  jump) is declined while a step is held. Jog-click keeps its meanings. The STEP bank is also
+  in the ordinary bank walk, reading `--` with no step held.
+  ⭑RULED (Josh, 2026-09-02 afternoon, from `held-step-review.md` §6): **a REVEALED STEP bank
+  is transient — releasing the step returns to where you were** (a walked-to STEP bank stays);
+  **one undo unit per hold session** on the STEP bank; **drum: a velocity-zone pad while
+  holding an empty step creates the hit at that velocity**; **arrows keep paging while a step
+  is held** (extending a note past the page is intended; gate-drag already measures in absolute
+  steps — the review's "page-relative bug" claim was retracted); **any knob or jog turn while a step is down
+  promotes the press to a hold** on every bank (a tap on a filled step clears it, so a fast
+  press-turn-release must never read as a tap); **bank 6's old held-step CC editor is gated
+  off when the STEP bank lands** (no exception until P8); **conductor tracks get the STEP
+  bank**; footer hints re-label the jog slot `JOG STEP` while held / `JOG BACK` on a revealed
+  STEP bank, per the canon — no new chrome. The "NO NOTE — play a pad first" flash retires.
+  ⚠ The manual's "hold several steps to edit them together" has never been true (the second
+  press is gate-drag) — corrected with this front.
   **Multi-step hold (a)**: single-step locks only; gate-drag keeps the second press.
   **Macro targets on a MIDI track (a)**: the MIDI Out device's eight CCs + aftertouch, and the
   bus levels — the CC NUMBER is assigned on the device, in one place.

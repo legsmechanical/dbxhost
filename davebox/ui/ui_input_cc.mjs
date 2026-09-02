@@ -3381,6 +3381,20 @@ function ccKnobDelta(d2, k, stepScale) {
 }
 
 function _onCC_stepedit(d1, d2) {
+    /* ⭑ Any knob turn while a step is DOWN promotes the press to a HOLD — on
+     * every bank, before anything else decides what the turn means. A tap on a
+     * filled step CLEARS it (release inside ~200 ms), so a fast press-turn-
+     * release must never read as a tap: the user meant "edit this step", not
+     * "delete it". The editor's lock path has done this since P3 (it sets
+     * stepHoldPromote from automationParamEdit); this is the same promotion
+     * for the step editor and every other bank. The tick consumes the flag,
+     * closes the tap window and reads the step's values — so the FIRST detent
+     * is spent on the promotion and the next one edits (spec §2, the held
+     * step, "promote-on-first-turn"). */
+    if (S.heldStep >= 0 && S.heldStepBtn >= 0 && d1 >= 71 && d1 <= 78 &&
+            S.stepBtnPressedTick[S.heldStepBtn] >= 0) {
+        S.stepHoldPromote = true;
+    }
     /* CC step-edit: bank 6 + held step — all 8 knobs write CC automation at step's tick */
     if (S.heldStep >= 0 && S.activeBank === 6 && d1 >= 71 && d1 <= 78) {
         const _kIdx = d1 - 71;
