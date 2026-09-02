@@ -38,6 +38,7 @@
 
 /* Shared memory layout for publisher audio */
 extern "C" {
+#include "link_peer_name.h"
 #include "link_audio.h"
 }
 
@@ -264,7 +265,7 @@ int main()
         std::lock_guard<std::mutex> lock(g_pending_mu);
         g_pending_channels.clear();
         for (const auto& ch : channels) {
-            if (ch.peerName.find("Move") != std::string::npos) {
+            if (link_peer_is_move(ch.peerName.c_str())) {
                 g_pending_channels.push_back({ch.id, ch.peerName, ch.name});
             }
         }
@@ -385,7 +386,7 @@ int main()
                  * every write (would_overrun == produced, max_avail == 0)
                  * confirming no consumer. Dropping the subscription removes
                  * ~20% of Move's Link publish load. */
-                if (pc.peerName == "Move" && pc.name == "Main") {
+                if (link_peer_is_move(pc.peerName.c_str()) && pc.name == "Main") {
                     LOG_INFO(LINK_SUB_LOG_SOURCE,
                              "skipping Move/Main (no consumer)");
                     continue;
@@ -402,8 +403,13 @@ int main()
                  * for audio tracks (which Move 2.0 sets can have a mix of).
                  * The leading digit identifies the track and is enough to
                  * pick the slot regardless of the suffix. */
+                /* ⚠ The peer NAME is matched by link_peer_is_move, never by
+                 * equality: a Move that renamed itself "Move-2" at boot used to
+                 * pass discovery (substring) and fail HERE (exact), so every
+                 * channel was subscribed and none reached the ring — the mix
+                 * never rebuilt and the Move bus strips were inert (2026-09-02). */
                 int slot_idx = -1;
-                if (pc.peerName == "Move" && pc.name.size() >= 2) {
+                if (link_peer_is_move(pc.peerName.c_str()) && pc.name.size() >= 2) {
                     char d = pc.name[0];
                     if (d >= '1' && d <= '4' && pc.name[1] == '-') {
                         slot_idx = d - '1';

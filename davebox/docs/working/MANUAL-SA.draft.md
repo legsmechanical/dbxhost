@@ -328,7 +328,7 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   card, and turning the jog on the card carries on through the banks as it does
   anywhere else. The knobs still control the track's assignments while you
   are on it, so a knob you turn there does what it always did.
-  Conductor tracks don't have it.
+  Conductor tracks don't have it. Its knobs are the track's levels — Volume, Pan, Send A, Send B and, on a Schwung track, Module Level — and they record and lock like any other parameter.
 - **Click the jog** (with no picker open) switches a bank between its primary and
   alternate parameters (the labels change). A **down-arrow** in the header marks
   any bank that has alternates, and blinks while the alternates are showing.
