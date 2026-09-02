@@ -81,6 +81,19 @@ const T = 0, C = 0, SLOT = 1;
     check(automationGestureCountForTest() === 0, 'and the gesture is gone on release');
 }
 
+/* ---- stopped, the parameter IS automated: the knob moves the rest ------- */
+{
+    reset();
+    automationNoteWrite();                                   /* this project has automation */
+    automationParamTouch(T, C, SLOT, 'fx1:cutoff', true);
+    automationParamEdit(T, C, SLOT, 'fx1:cutoff', '0.5', '0.25');
+    automationParamTouch(T, C, SLOT, 'fx1:cutoff', false);
+    tick();
+    check(sets.length === 1 && sets[0] === 't0_pa_rest_move=0 1:fx1:cutoff 8192',
+          '⚠ stopped with automation present: the turn MOVES the resting value to the NEW position (0.5 -> 8192), nothing else');
+    check(automationGestureCountForTest() === 0, 'and the gesture is gone on release');
+}
+
 /* ---- a held step + a turn = a p-lock ------------------------------------ */
 {
     reset({ heldStep: 3 });

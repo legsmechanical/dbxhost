@@ -160,6 +160,17 @@ static int pa_target_id(seq8_instance_t *inst, const char *target) {
     return -1;   /* target table full */
 }
 
+/* Find only — never allocates a target slot. For a write that must not create
+ * anything (a knob turned while stopped, which is automation only if it
+ * already was). */
+static int pa_target_lookup(const seq8_instance_t *inst, const char *target) {
+    if (!target || !*target) return -1;
+    for (int i = 0; i < PA_MAX_TARGETS; i++) {
+        if (inst->pa_targets[i][0] && !strcmp(inst->pa_targets[i], target)) return i;
+    }
+    return -1;
+}
+
 /* A target string the DSP can emit itself: "cc:<n>" or "at". Everything else
  * is staged for JS. Returns 1 and sets *cc (0..127, or -1 for aftertouch). */
 static int pa_target_is_midi(const char *t, int *cc) {

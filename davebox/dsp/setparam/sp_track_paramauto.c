@@ -4,7 +4,7 @@
  * compile or lint this file on its own.
  *
  * Covers: pa_set, pa_set2, pa_clear_key, pa_clear_step, pa_clear, pa_active,
- * pa_smooth, pa_rest, pa_loop, pa_live, pa_hold, pa_live_end.
+ * pa_smooth, pa_rest, pa_rest_move, pa_loop, pa_live, pa_hold, pa_live_end.
  *
  * The dispatcher holds the writer lock and the seqlock around this handler.
  *
@@ -148,6 +148,27 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         pa_entry_t *e = pa_get(inst, tidx, clip, pa_target_id(inst, tgt));
         if (!e) { inst->pa_store_full = 1; return 1; }
         if (e->rest == PA_VAL_UNSET) { e->rest = (uint16_t)v; pa_mark_dirty(inst); }
+        return 1;
+    }
+
+    /* pa_rest_move: "<clip> <target> <value>" — the knob turned while the
+     * parameter is NOT being driven (transport stopped, or the entry
+     * deactivated). The un-automated knob position IS the resting value, so
+     * it follows the hand: Stop then restores what the user last set, not
+     * what they set before the automation first existed. Creates nothing —
+     * a parameter with no automation has no rest to move — and is ignored
+     * while the entry drives, or Stop would restore whatever the automation
+     * last played. */
+    if (!strcmp(sub, "pa_rest_move")) {
+        int clip = 0, v = 0;
+        PA_SKIP_SPACE(p); PA_UINT(p, clip);
+        PA_TARGET(p, tgt);
+        PA_SKIP_SPACE(p); PA_UINT(p, v);
+        if (clip < 0 || clip >= NUM_CLIPS) return 1;
+        pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_lookup(inst, tgt));
+        if (!e || !e->count) return 1;
+        if (inst->playing && (e->flags & PA_FLAG_ACTIVE)) return 1;
+        if (e->rest != (uint16_t)v) { e->rest = (uint16_t)v; pa_mark_dirty(inst); }
         return 1;
     }
 

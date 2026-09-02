@@ -105,6 +105,39 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ---- the rest follows the knob while nothing drives it ----------- */
+    {
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+        hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
+        pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
+        in->playing = 0;
+        hx_set_param(h, "t0_pa_rest_move", "0 1:fx1:cutoff 3000");
+        pa_release_track(in, 0, 0);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff 3000"), "stopped: the knob moved the rest, Stop restores the NEW position");
+        in->playing = 1;
+        hx_set_param(h, "t0_pa_rest_move", "0 1:fx1:cutoff 4000");
+        pa_release_track(in, 0, 0);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff 3000") && !strstr(buf, "4000"),
+                  "⚠ playing with the entry active: ignored, or Stop would restore what automation last played");
+        int before = 0;
+        for (int i = 0; i < PA_MAX_ENTRIES; i++) before += in->pa_entries[i].used;
+        int tgts_before = 0;
+        for (int i = 0; i < PA_MAX_TARGETS; i++) tgts_before += (in->pa_targets[i][0] != 0);
+        in->playing = 0;
+        hx_set_param(h, "t0_pa_rest_move", "0 1:fx1:resonance 5000");
+        int after = 0;
+        for (int i = 0; i < PA_MAX_ENTRIES; i++) after += in->pa_entries[i].used;
+        int tgts_after = 0;
+        for (int i = 0; i < PA_MAX_TARGETS; i++) tgts_after += (in->pa_targets[i][0] != 0);
+        HX_ASSERT(before == after && tgts_before == tgts_after,
+                  "⚠ a parameter with no automation: nothing created — no entry, no target slot");
+        OK("the resting value follows a knob turned while stopped; never while driven; creates nothing");
+        hx_destroy(h);
+    }
+
     /* ---- release to rest -------------------------------------------- */
     {
         /* Playback WRITES real parameters, and for a chain parameter the slot

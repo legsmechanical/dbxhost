@@ -418,7 +418,8 @@ export function automationPollWarnings() {
 /*                               hand comes off                         */
 /*   playing, Record off, turn = an override; automation resumes on     */
 /*                               release                                */
-/*   stopped, no step held     = just a knob turn                       */
+/*   stopped, no step held     = just a knob turn — and, if the param  */
+/*                               is automated, its new resting value    */
 /*                                                                      */
 /* The DSP holds the authority on "recording": JS sends the live value  */
 /* (tN_pa_live) and the DSP's own recording/playing flags decide whether */
@@ -549,7 +550,15 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
         return;
     }
 
-    if (!S.playing) return;                       /* a plain knob turn */
+    if (!S.playing) {
+        /* A plain knob turn — but if this parameter has automation, the knob
+         * is now its RESTING value: what Stop restores and what the file
+         * keeps. Without this the stopped-time edit lived until the next
+         * Play and was then thrown away by the next Stop. The DSP ignores it
+         * for a parameter with no automation (and creates nothing). */
+        if (anyAutomation) queueSet('t' + track + '_pa_rest_move', clip + ' ' + target + ' ' + norm);
+        return;
+    }
 
     /* Playing: the DSP decides record vs override from its own flags. What JS
      * must do either way is name the resting value, and — when this is going
