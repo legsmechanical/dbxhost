@@ -144,11 +144,15 @@ already gate-drag (step-record grammar); locking several steps at once needs a r
 collision before the hold state becomes a set. Bus levels and the MIDI Out device write
 paths come with P4/P5.
 
-**P4 — Gestures + display.** Mute+knob deactivate (restores rest); hold-Mute LED paint
-(replaces ui_leds.mjs:867 branch); Delete+knob clear (restores rest, verified write);
-Delete+step clears all locks at step; circles via decorations (shared grid) + `locked` cell
-field through drawKitBankPage (ui_movy.mjs:2971); Smooth toggle (knob-touch + jog-click +
-popup).
+**P4 — Gestures + display.** ✅ SHIPPED 2026-09-02 (`e1993d32`), chain editor: Mute+touch
+deactivate/reactivate (rest at once via the entry's `release` byte, staged by the audio
+thread); Delete+touch clear (entry RETIRED, keeps its rest); hold-Mute paints the rings
+(unlit/red/white) via `paramPagesFullKeyAt` + `paramPagesRepaintKnobs` (new binding exports);
+Delete+step clears locks on every bank; touched float + jog-click toggles Smooth (popup); the
+circle rides the tri-state `io.isModulated` ("auto"/"auto-off") in the movy renderer — NOT
+`decorations`, which the movy renderer never had. JS keeps a per-(track,clip,target) cache
+from one `pa_list` read. ⏳ Not in P4: the bank-6 overview (P6), bus-level gestures (their
+knobs are davebox's own, not the editor's).
 
 **P5 — MIDI Out device** (§0.4).
 

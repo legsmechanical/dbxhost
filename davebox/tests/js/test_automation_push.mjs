@@ -38,7 +38,11 @@ globalThis.host_module_get_params = (blob) => {
 };
 globalThis.host_module_get_param = (key) => (key === 'pa_list' ? '' : '0');
 globalThis.host_module_set_params = (blob) => { requests.push({ kind: 'modset', pairs: dec(blob) }); return true; };
+const metaAsked = [];
 globalThis.shadow_get_param = (slot, key) => {
+    if (key.endsWith(':chain_params')) metaAsked.push(key);
+    if (key === 'move_fx:2:fx3:chain_params')
+        return JSON.stringify([{ key: 'mix', type: 'float', min: 0, max: 100, step: 1 }]);
     if (key.endsWith(':chain_params'))
         return JSON.stringify([
             { key: 'cutoff', type: 'float', min: 0, max: 1, step: 0.01 },
@@ -191,6 +195,16 @@ const tick = () => { S.tickCount++; automationTick(); };
     automationPollWarnings();
     const g = requests.filter(r => r.kind === 'get');
     check(g.length === 1 && g[0].keys.length === 3, 'when nothing has drained lately, the poll reads the three flags in ONE request');
+}
+
+/* ---- a Move-bus FX block: the component has colons of its own ---------- */
+{
+    fresh();
+    staged = '0:move_fx:2:fx3:mix 8191';
+    tick();
+    check(writes[0].slot === 0 && writes[0].key === 'move_fx:2:fx3:mix', 'the write key keeps the whole block prefix');
+    check(metaAsked.includes('move_fx:2:fx3:chain_params'), '⚠ the metadata is asked of the BLOCK, not of "move_fx"');
+    check(writes[0].val === '50', 'and the value maps into the block\'s own range (0..100)');
 }
 
 /* ---- a malformed line cannot take the tick down ----------------------- */

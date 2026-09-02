@@ -228,9 +228,13 @@ function wireValue(slot, comp, key, norm) {
 function pushPair(target, norm) {
     let m = target.split(':');
     if (m.length >= 3 && m[0] !== 'bus') {
+        /* The component is everything between the slot and the LAST colon: a
+         * bus block is "move_fx:2:fx3", a send block "send_fx:a:fx1" — the
+         * metadata lives at "<component>:chain_params", and a key never
+         * carries a colon (child prefixes use "_"). */
         const slot = parseInt(m[0], 10);
-        const comp = m[1];
-        const key  = m.slice(2).join(':');
+        const comp = m.slice(1, -1).join(':');
+        const key  = m[m.length - 1];
         if (isNaN(slot)) return null;
         return { slot, key: comp + ':' + key, val: wireValue(slot, comp, key, norm) };
     }
@@ -434,7 +438,7 @@ function normValue(slot, comp, key, wire) {
 }
 
 function splitFullKey(fullKey) {
-    const i = fullKey.indexOf(':');
+    const i = fullKey.lastIndexOf(':');          /* see pushPair: the key has no colon */
     return i < 0 ? [fullKey, ''] : [fullKey.slice(0, i), fullKey.slice(i + 1)];
 }
 
