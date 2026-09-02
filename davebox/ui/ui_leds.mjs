@@ -853,7 +853,7 @@ export function updateTrackLEDs() {
             const _isMuted = S.trackMuted[k];
             const _isSoloed = S.trackSoloed[k];
             if (_isSoloed) {
-                ledVal = (S.tickCount & 16) ? _tc : LED_OFF;
+                ledVal = (Math.floor(S.clockMs / 150) % 2) ? _tc : LED_OFF;
             } else if (_isMuted) {
                 ledVal = LED_OFF;
             } else {

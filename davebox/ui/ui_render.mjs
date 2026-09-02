@@ -2446,7 +2446,7 @@ function drawUIBody() {
         if (S.drumLaneSolo[t] & laneBit) {
             pixelPrint(128 - 4 - 6 * 6, 22, 'SOLOED', 1);
         } else if (S.drumLaneMute[t] & laneBit) {
-            if (Math.floor(S.tickCount / 50) % 2 === 0)
+            if (Math.floor(S.clockMs / 300) % 2 === 0)
                 pixelPrint(128 - 4 - 5 * 6, 22, 'MUTED', 1);
         }
         drawMetroIndicator();
