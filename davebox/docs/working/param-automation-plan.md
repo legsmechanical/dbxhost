@@ -165,10 +165,16 @@ Proposed build order once lifted (drafted for Josh's review, 2026-09-02 night):
 2. ✅ **BUILT 2026-09-02** — **SOUND + CONFIG bank knobs** (K1 Volume / K2 Pan / K3 Send A / K4 Send B / K5 Module
    Level on a chain slot) — kit bank page fed into the automation owner; the gateway click
    unchanged. Circles on the kit cells; hold-Mute paint.
-3. **MACROS bank** — ⚠ OWED HERE: re-pin the knob TRAVEL LAW (range sets the step, int floor, enum 4 detents/step, reversal resets — `armKnobValue`) on the MACROS surface; `tests/js/test_sound_knob_hud.mjs` carried those pins on the list screens and was retired when the levels took those knobs (2026-09-02). Needs the one generic host feature (a param-page composed by the host:
-   absolute keys from several components, inline metadata); the assignment picker grows level
-   and MIDI targets; Shift+touch quick-assign lives here; the sound menu's list-screen knob
-   forwarding and Sound Control → Knobs retire.
+3. ✅ **BUILT 2026-09-02** — **MACROS bank** (`BANK_MACROS = 13`, sound mode's SECOND bank
+   identity: `isSoundBank()`, `soundSetBank()`, `VIEW_MACROS`; the walk between SOUND + CONFIG
+   and MACROS is a screen switch inside one open mode). Built on the KIT BANK PAGE like its
+   neighbour, with `makeCell` widgets and the travel law — the "host-composed param-page"
+   feature was NOT needed and stays unbuilt. The store is davebox-owned and typed
+   (`GS.trackMacros`, sidecar `mac`; kinds `chain` / `level`, a `bank` kind reserved for
+   Josh's davebox-bank-knob idea); the chain's knob_N store migrates once. The travel-law pins
+   are RE-PINNED in `tests/js/test_macros_bank.mjs` (range step, int floor, enum 4/step,
+   reversal reset, zero reads per sweep, magnitude kept). Shift+touch quick-assign; Levels as a
+   target; Sound Control → Knobs and the knob HUD retired. ⏳ MIDI targets wait for P5.
 4. **AUTOMATION bank** (replaces bank 6): the list card, the menu (delete, mute, smooth, loop
    length/resolution, clear clip; AT lanes as rows), Delete+jog-click shortcut, undo per
    action; the Smooth click leaves the module editor; "hold a step, see the locks".

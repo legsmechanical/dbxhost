@@ -22,7 +22,7 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
     BANK_PICKER_SETTLE_TICKS,
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
-    BANK_SOUND,
+    BANK_SOUND, BANK_MACROS, isSoundBank,
     POLL_INTERVAL,
     CC_GRADIENT_BASE, CC_GRADIENT_LEVELS, CC_GRADIENT_SCALARS
 } from './ui_constants.mjs';
@@ -62,7 +62,7 @@ import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
 import { soundActive, soundEnter, soundEnterMove, soundExit,
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
     soundEnteredInSession, soundConsumeLedDirty,
-    soundConsumeCoRunRequest, soundShowMenu } from './ui_sound.mjs';
+    soundConsumeCoRunRequest, soundShowMenu, soundSetBank } from './ui_sound.mjs';
 import { enterMoveNativeCoRun } from './ui_corun.mjs';
 
 const BANK_DISPLAY_MS = 1000;
@@ -1380,13 +1380,14 @@ export function _tickImpl() {
          * SILENT — arriving is not a bank gesture. ⚠ Conductor tracks never
          * take this bank (takeBankIdentity skips them); the pad-mode check keeps
          * a hand-edited sidecar from opening a screen they have no row for. */
-        if (!S.sessionView && !soundActive() && S.activeBank === BANK_SOUND
+        if (!S.sessionView && !soundActive() && isSoundBank(S.activeBank)
                 && S.bankCardLatched
                 && S.pendingSoundEnterTrack < 0 && S.moveCoRunTrack < 0
                 && !S.awaitingProjectSelect
                 && S.trackPadMode[S.activeTrack] !== PAD_MODE_CONDUCT) {
             S.pendingSoundEnterTrack = S.activeTrack;
             S.pendingSoundEnterSilent = true;
+            S.pendingSoundEnterMacros = (S.activeBank === BANK_MACROS);
         }
         if (S.pendingSoundEnterTrack >= 0) {
             const _st = S.pendingSoundEnterTrack;
@@ -1399,6 +1400,8 @@ export function _tickImpl() {
             S.pendingSoundEnterMenu = false;
             const _silent = S.pendingSoundEnterSilent;
             S.pendingSoundEnterSilent = false;
+            const _macros = S.pendingSoundEnterMacros;
+            S.pendingSoundEnterMacros = false;
             if (_st === S.activeTrack && !soundActive()) {
                 /* The ROUTE picks the flavour: a Move-routed track's sound is
                  * its Move instrument bus, a Schwung-routed one's is its chain.
@@ -1410,6 +1413,9 @@ export function _tickImpl() {
                  * the menu. Consumed here so the route logic stays in one
                  * place. */
                 if (_wantMenu) soundShowMenu();
+                /* The bank named MACROS: the same entry, landing on its page
+                 * (the second identity of sound mode — see BANK_MACROS). */
+                else if (_macros) soundSetBank(BANK_MACROS);
                 /* A RETURN, not a gesture: the user switched tracks, they did
                  * not ask to see this screen. Both entry paths stamp the bank
                  * display window unconditionally (Shift+Note NEEDS that — see

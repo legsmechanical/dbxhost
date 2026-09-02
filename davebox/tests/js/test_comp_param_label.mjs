@@ -129,12 +129,15 @@ step('⭑⭑ the WIRE format still carries the RAW component id', () => {
      * by the chain DSP; shortening it writes a component that does not exist and
      * the knob silently stops working.
      * Source-pinned at the call site, bounded by the statement's own end. */
+    /* ⚠ Re-anchored 2026-09-02: the assignment is davebox's MACRO STORE now
+     * (commitKnobAssignment writes {kind:'chain', comp, key}); the comp is
+     * what macroFullKey joins into the engine key, so the same rule holds. */
     const src = readFileSync('ui/ui_sound.mjs', 'utf8');
-    const i = src.indexOf("queueChainWrite('knob_' + n + '_set'");
-    if (i < 0) throw new Error('the knob assignment write moved — re-anchor this pin');
+    const i = src.indexOf("m = { kind: 'chain', comp: target, key: param }");
+    if (i < 0) throw new Error('the knob assignment store write moved — re-anchor this pin');
     const stmt = src.slice(i, src.indexOf(';', i));
-    if (!/target \+ ':' \+ param/.test(stmt))
-        throw new Error(`the knob write no longer sends "target:param": ${stmt}`);
+    if (!/comp: target, key: param/.test(stmt))
+        throw new Error(`the store no longer keeps the raw target: ${stmt}`);
     if (/compShort|compParamLabel|COMPONENT_NAMES/.test(stmt))
         throw new Error('the DISPLAY shortening reached the WIRE format — this writes a ' +
                         'component id the DSP has never heard of, and fails silently');

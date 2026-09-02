@@ -17,6 +17,14 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **The MACROS bank.** One step past SOUND + CONFIG on the jog: eight knobs
+  you assign to any parameter of the track's sound — a synth or effect
+  parameter, or a level — drawn with the module editor's own widgets. A macro
+  *is* its parameter: it records, locks, mutes and clears like the parameter
+  itself, and the module editor shows the change. Click the jog for the
+  assignment list, or Shift + touch a knob to assign just that one. The
+  assignments belong to the project; the old Sound Control → Knobs list is
+  gone, and its mappings are carried over the first time you open the bank.
 - **Timing is in milliseconds now.** The splash, the popups and flashes, the
   LED blinks and the hold gestures were counted in screen ticks, so when the
   sequencer got faster they all shortened. They are clocked now, and retuned:

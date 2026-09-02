@@ -329,6 +329,15 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   anywhere else. The knobs still control the track's assignments while you
   are on it, so a knob you turn there does what it always did.
   Conductor tracks don't have it. Its knobs are the track's levels — Volume, Pan, Send A, Send B and, on a Schwung track, Module Level — and they record and lock like any other parameter.
+- **MACROS** follows SOUND + CONFIG: eight knobs you assign yourself, to any
+  parameter of the track's sound — a synth or effect parameter, or one of the
+  levels. A macro *is* the parameter it points at: turn it and the module
+  editor shows the change, record it and it records as that parameter, hold a
+  step and it locks that step. **Click the jog** for the assignment list
+  (`K1`..`K8`, each naming its target), or **Shift + touch a knob** to assign
+  that knob without leaving the page. A knob with no target reads `--`; a
+  target that no longer exists (the module was swapped) reads UNASSIGNED.
+  Conductor tracks don't have it either.
 - **Click the jog** (with no picker open) switches a bank between its primary and
   alternate parameters (the labels change). A **down-arrow** in the header marks
   any bank that has alternates, and blinks while the alternates are showing.
@@ -1262,21 +1271,25 @@ goes to the instrument instead.
 ### The eight knobs outside a block
 
 While you're on the chain list — or any of the sound editor's other screens — the
-eight knobs are the **slot's own knob assignments**, the macros set up under
-**Sound Control → Knobs…**. They stay live there so you can play the sound while
-you navigate it.
+eight knobs are the track's **levels** (Volume, Pan, Send A, Send B, Module
+Level), exactly as on the SOUND + CONFIG card. They stay live there so you can
+balance the sound while you navigate it.
 
-**Touch a knob and it tells you what it is**: a card names the block and parameter
-it drives (`SYNTH` / `CUTOFF`), or says `UNASSIGNED`. On the knob list itself the
-same mapping is written compactly — `Syn>cutoff`, `FX1>mix` — so the whole
-assignment fits beside the knob's own name. **Turn it** and the card
-shows the value as it moves. Let go and the card clears itself.
+### The MACROS bank
 
-**Shift + touch a knob** goes straight to assigning it — the target list for that
-knob, no menu-walking. Pick a block, pick a parameter, and you're back on the knob
-list with the mapping made. The block list names the modules themselves, with a
-`>` marking each one as a door into its parameters; if the same module is loaded
-in two FX slots, the slot is shown beside the name so you can tell them apart.
+The knob assignments live on their own bank, **MACROS**, one step past
+SOUND + CONFIG on the jog. Each of the eight cells names its target and shows
+its value with the same widget the module editor uses — a dial, a big number,
+a list square, a fader for a level — so the page reads like any other bank.
+
+**Click the jog** for the assignment list: `K1`..`K8`, each with its mapping
+written compactly — `Syn>cutoff`, `FX1>mix`, `Lvl>Volume`. Pick a knob, pick a
+block (or **Levels**), pick a parameter, and you're back on the list with the
+mapping made. The block list names the modules themselves, with a `>` marking
+each one as a door into its parameters; if the same module is loaded in two FX
+slots, the slot is shown beside the name so you can tell them apart.
+**Shift + touch a knob** goes straight to assigning that knob — no menu-walking —
+and lands you back on the page.
 
 Every knob sweeps its whole range in the same gesture, whatever the parameter's
 units — a filter cutoff and a 0.5-to-20-second reverb size take the same turn,
@@ -1285,6 +1298,13 @@ further, in proportion, and changing direction takes effect on the next click
 rather than unwinding what you just did. Whole-number parameters keep their own
 steps — an eight-voice count is two clicks a voice — and picking from a list
 takes four clicks each, so a sleeve can't change your waveform.
+
+A macro is not a copy of its parameter; it *is* the parameter. Turn it while
+recording and the parameter records; turn it while holding a step and that step
+takes a lock; Mute + touch and Delete + touch do what they do on any automated
+knob. The assignments belong to the project (they travel with it), and a
+project made before this bank had one inherits the knob mappings it had set
+under Sound Control.
 
 > **Four insert effects is a dAVEBOx SA feature.** Official Schwung routes two, so
 > running dAVEBOx as an ordinary tool shows **FX 1-2** only. The editor asks the

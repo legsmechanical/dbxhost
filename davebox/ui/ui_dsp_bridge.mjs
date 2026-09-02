@@ -29,7 +29,7 @@ import { automationRefreshPresence, automationInvalidateMeta, automationWantsDra
 
 import {
     NUM_TRACKS, NUM_CLIPS, NUM_STEPS, DRUM_LANES, POLL_INTERVAL,
-    TPS_VALUES, BANKS, PAD_MODE_DRUM, BANK_SOUND,
+    TPS_VALUES, BANKS, PAD_MODE_DRUM, BANK_SOUND, isSoundBank,
     INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK,
     MoveRec, LED_OFF, parseActionRaw
 } from './ui_constants.mjs';
@@ -1484,7 +1484,7 @@ export function restoreUiSidecar(applyDefaultsNow) {
                  * somewhere you did not leave, which is the symptom this whole
                  * change is about. Anything else still falls back to 0. */
                 S.trackActiveBank[_t] = (typeof _b === 'number' &&
-                    ((_b >= 0 && _b <= 7) || _b === BANK_SOUND)) ? (_b | 0) : 0;
+                    ((_b >= 0 && _b <= 7) || isSoundBank(_b))) ? (_b | 0) : 0;
             }
             /* Sync live mirror to the restored active track. Subsequent
              * post-restore validity checks (e.g. hide bank 7 on melodic) still
@@ -1509,6 +1509,27 @@ export function restoreUiSidecar(applyDefaultsNow) {
         if (Array.isArray(us.pchr)) {
             for (let _t = 0; _t < NUM_TRACKS; _t++)
                 S.padLayoutChromatic[_t] = !!us.pchr[_t];
+        }
+        /* The macro store (additive on v:9). Shape-validated per entry: a
+         * target is {kind:'chain', comp, key} or {kind:'level', key}; anything
+         * else reads as unassigned. A track absent or null stays UNSEEDED
+         * (null), so ui_sound migrates the chain's knob_N assignments once. */
+        for (let _t = 0; _t < NUM_TRACKS; _t++) S.trackMacros[_t] = null;
+        if (Array.isArray(us.mac)) {
+            for (let _t = 0; _t < NUM_TRACKS; _t++) {
+                const _m = us.mac[_t];
+                if (!Array.isArray(_m)) continue;
+                const _out = new Array(8).fill(null);
+                for (let _k = 0; _k < 8; _k++) {
+                    const _e = _m[_k];
+                    if (!_e || typeof _e !== 'object' || typeof _e.key !== 'string' || !_e.key) continue;
+                    if (_e.kind === 'chain' && typeof _e.comp === 'string' && _e.comp)
+                        _out[_k] = { kind: 'chain', comp: _e.comp, key: _e.key };
+                    else if (_e.kind === 'level')
+                        _out[_k] = { kind: 'level', key: _e.key };
+                }
+                S.trackMacros[_t] = _out;
+            }
         }
         /* User-preset records (additive on v:9, like pchr). name+path are what
          * Save/Delete act on, so an entry missing either is not a record;

@@ -209,6 +209,10 @@ export function writeSidecar() {
         tab: S.trackActiveBank.slice(),
         am: S.trackAtMode.slice(),
         pchr: S.padLayoutChromatic.map(function(b) { return b ? 1 : 0; }),
+        /* The macro store, per track: eight typed targets or null (see
+         * ui_state.trackMacros). Additive on v:9: absent → unseeded, and
+         * ui_sound migrates the chain's own knob_N assignments on first use. */
+        mac: S.trackMacros.map(function(m) { return m ? m.slice() : null; }),
         /* Which user preset each sound-mode component is on (ui_sound's
          * record, live in S.presetRec) — {name, path, hash, mod} keyed
          * 'slot:comp'. Additive field on v:9, like pchr: absent in older

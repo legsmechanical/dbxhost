@@ -273,7 +273,7 @@ export function disambiguateLabels(cells, maxLen) {
 
 /* ---- param -> cell descriptor ------------------------------------------ */
 
-function makeCell(key, meta) {
+export function makeCell(key, meta) {
     const label = String(meta.name || meta.label || key);
     const type = meta.type || 'float';
 

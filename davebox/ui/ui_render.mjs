@@ -11,7 +11,7 @@ import { drawDaveBox } from './ui_daves.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
 import { SESS_KNOB_MODES } from './ui_engine.mjs';
 import {
-    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP,
+    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
     POLL_INTERVAL, SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
     col4, col5, pixelPrint, pixelPrintC,
@@ -44,7 +44,7 @@ import {
     effectiveClip,
     bankHasAltParams, altIndicatorActive
 } from './ui_leds.mjs';
-import { soundRender, renderGatewayCard, renderTrackGatewayCard } from './ui_sound.mjs';
+import { soundRender, renderGatewayCard, renderTrackGatewayCard, renderMacrosPeek } from './ui_sound.mjs';
 import { drawMenuHeader } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* ------------------------------------------------------------------ */
@@ -2031,6 +2031,12 @@ function drawUIBody() {
          * eight-cell kit page. */
         if (bank === BANK_SOUND) {
             renderTrackGatewayCard(S.activeTrack);
+            return;
+        }
+        /* MACROS at rest, same gap: the page from the store, values as last
+         * seen (sound mode owns the reads; a peek pays for none). */
+        if (bank === BANK_MACROS) {
+            renderMacrosPeek(S.activeTrack);
             return;
         }
         if (bank === BANK_STEP) {

@@ -81,8 +81,9 @@ function holdStep5() { note(STEP(5), 127); S.tickCount += 25; globalThis.tick();
 step('the STEP bank exists and sits just before SOUND + CONFIG on the melodic and drum walks, last on a Conductor', () => {
     assert(BANKS[BANK_STEP] && BANKS[BANK_STEP].name === 'STEP', 'BANKS[BANK_STEP] is STEP');
     const mel = bankCycleForMode(0), drum = bankCycleForMode(PAD_MODE_DRUM), con = bankCycleForMode(PAD_MODE_CONDUCT);
-    assert(mel[mel.length - 2] === BANK_STEP && mel[mel.length - 1] === BANK_SOUND, 'melodic: … STEP, SOUND');
-    assert(drum[drum.length - 2] === BANK_STEP && drum[drum.length - 1] === BANK_SOUND, 'drum: … STEP, SOUND');
+    /* … STEP, SOUND + CONFIG, MACROS (MACROS joined the walk 2026-09-02, after SOUND + CONFIG). */
+    assert(mel[mel.length - 3] === BANK_STEP && mel[mel.length - 2] === BANK_SOUND, 'melodic: … STEP, SOUND, MACROS');
+    assert(drum[drum.length - 3] === BANK_STEP && drum[drum.length - 2] === BANK_SOUND, 'drum: … STEP, SOUND, MACROS');
     assert(con[con.length - 1] === BANK_STEP, 'conductor: … STEP');
     assert(BANK_SOUND_PREV === BANK_STEP, 'the top-edge left turn from SOUND + CONFIG lands on STEP');
     assert(bankDisplayName(0, BANK_STEP) === 'STEP' && bankDisplayName(PAD_MODE_CONDUCT, BANK_STEP) === 'C-STEP', 'named like every bank');

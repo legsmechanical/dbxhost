@@ -131,8 +131,10 @@ step('⭑⭑ the PATH names the ancestors, outermost first', () => {
      * were, because the converted screens had dropped their headers. */
     if (path.length !== 4)
         throw new Error(`expected 4 crumbs for KNOB_PARAM, got ${path.length}: ${JSON.stringify(path)}`);
-    if (path[0] !== 'Snd' || path[1] !== 'Knobs' || path[2] !== 'K1')
-        throw new Error(`the path reads ${JSON.stringify(path)}, expected Snd > Knobs > K1 > <param>`);
+    /* ⚠ Updated 2026-09-02: the knob chain moved from Sound Control to the
+     * MACROS bank (spec §2) — its root is the MACROS page. */
+    if (path[0] !== 'Macros' || path[1] !== 'Knobs' || path[2] !== 'K1')
+        throw new Error(`the path reads ${JSON.stringify(path)}, expected Macros > Knobs > K1 > <param>`);
 });
 
 step('⚠ every crumb is non-empty — an empty one silently drops the tail', () => {
@@ -171,12 +173,14 @@ step('⭑⭑ the STACK depth counts floating ancestors, stopping at a full scree
      * frame to a hosted module canvas. */
     setView(VIEW_KNOB_PARAM);
     const knobs = snd.soundStackDepth();
-    if (knobs !== 4) throw new Error(`knob param stack is ${knobs} boxes, expected 4`);
+    /* 3 since 2026-09-02: the chain's root is the MACROS page, a full screen
+     * (float: false) — Knobs > K1 > Param float over it. */
+    if (knobs !== 3) throw new Error(`knob param stack is ${knobs} boxes, expected 3`);
     setView(VIEW_LFO_PARAM);
     const lfo = snd.soundStackDepth();
     if (lfo !== 4)
-        throw new Error(`LFO param stack is ${lfo} boxes, expected 4 — the LFO floats now, so ` +
-                        'its chain is the same depth as the knob chain');
+        throw new Error(`LFO param stack is ${lfo} boxes, expected 4 — the LFO floats over ` +
+                        'Sound Control, which floats over the blocks picker');
     setView(VIEW_LFO);
     if (snd.soundStackDepth() !== 2)
         throw new Error('the LFO screen is itself a 2-box stack (Sound Control, then LFO)');

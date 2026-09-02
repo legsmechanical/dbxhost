@@ -22,7 +22,7 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS,
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, STEP_REVEAL_DEBOUNCE_MS,
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool
@@ -49,7 +49,7 @@ import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
 import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
-import { soundActive, soundExit, soundVolGestureEnd, soundOpenGenerator,
+import { soundActive, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, soundEnterBuses } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
@@ -1098,7 +1098,13 @@ function modalDialogUp() {
                      * BANK_SOUND entry, the sound-mode exit on walk-away, the
                      * param refresh and the sidecar all live there. */
                     const cyc = bankCycleFor(S.activeTrack);
-                    const at = cyc.indexOf(S.activeBank);
+                    /* ⚠ A queued sound-mode entry IS the current position: the
+                     * live mirror only takes the bank when the entry lands (a
+                     * tick later), and a second detent before that must walk
+                     * on from the queued stop, not re-select it. */
+                    const cur = (S.pendingSoundEnterTrack === S.activeTrack)
+                        ? (S.pendingSoundEnterMacros ? BANK_MACROS : BANK_SOUND) : S.activeBank;
+                    const at = cyc.indexOf(cur);
                     const next = Math.max(0, Math.min(cyc.length - 1,
                         (at < 0 ? 0 : at) + delta));
                     if (next !== at) {
@@ -1128,11 +1134,19 @@ export function applyBankPick() {
     S.bankPickerSel = -1;
     if (idx < 0 || idx >= cyc.length) return;
     const next = cyc[idx];
-    if (next === BANK_SOUND) {
+    /* SOUND + CONFIG and MACROS are the two bank identities of SOUND MODE.
+     * Closed: queue the entry, naming which of the two to land on. Open: the
+     * mode switches screens in place — the walk between them never tears the
+     * mode down (soundSetBank records the new identity). */
+    if (isSoundBank(next)) {
         if (!soundActive()) {
             S.globalMenuOpen = false;
             S.lastSentMenuEditValue = null;
             S.pendingSoundEnterTrack = t;
+            S.pendingSoundEnterMacros = (next === BANK_MACROS);
+            armBankDisplay();
+        } else if (next !== S.activeBank) {
+            soundSetBank(next);
             armBankDisplay();
         }
         S.screenDirty = true;
@@ -1885,8 +1899,8 @@ function returnToOverview() {
      *    never by picking a default — a genuine BANK_SOUND memory must survive. */
     if (soundActive()) {
         soundExit({ leaving: true });
-        if (S.activeBank === BANK_SOUND &&
-            (S.trackActiveBank[S.activeTrack] | 0) !== BANK_SOUND)
+        if (isSoundBank(S.activeBank) &&
+            !isSoundBank(S.trackActiveBank[S.activeTrack] | 0))
             S.activeBank = S.trackActiveBank[S.activeTrack] | 0;
     }
     stepRecExit();

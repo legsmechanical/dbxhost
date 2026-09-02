@@ -13,7 +13,7 @@
 
 import { S } from './ui_state.mjs';
 import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, NUM_STEPS, BANKS,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP } from './ui_constants.mjs';
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS } from './ui_constants.mjs';
 
 /* Live pad note input — isomorphic 4ths diatonic layout.
  * EXPORTED for ui.js's computePadNoteMap (impure, moves in Phase 5) — do not
@@ -81,8 +81,9 @@ export function bankCycleForMode(padMode) {
     /* STEP sits after the clip banks on every walk — just before SOUND + CONFIG
      * where there is one, last on a Conductor (spec §2, 2026-09-02). */
     if (padMode === PAD_MODE_CONDUCT) return CONDUCT_BANK_CYCLE.concat([BANK_STEP]);
-    if (padMode === PAD_MODE_DRUM)    return BANK_CYCLE_DRUM.concat([BANK_STEP, BANK_SOUND]);
-    return [0, 1, 2, 3, 4, 5, 6, BANK_STEP, BANK_SOUND];
+    /* MACROS follows SOUND + CONFIG (spec §2): … → SOUND + CONFIG → MACROS. */
+    if (padMode === PAD_MODE_DRUM)    return BANK_CYCLE_DRUM.concat([BANK_STEP, BANK_SOUND, BANK_MACROS]);
+    return [0, 1, 2, 3, 4, 5, 6, BANK_STEP, BANK_SOUND, BANK_MACROS];
 }
 
 /* Bank position in the jog-cycle order, for the header position strip. Melodic

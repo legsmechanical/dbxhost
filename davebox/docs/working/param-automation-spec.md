@@ -55,7 +55,15 @@ exact shape — see the board).
 
 ⭑RULED (Josh, 2026-09-02, pre-P5 planning) **Two new banks; bank order in the jog walk:
 … → SOUND + CONFIG → MACROS → AUTOMATION.**
-- **MACROS**: eight assignable parameters from anywhere on the track's chain (Schwung route),
+- **MACROS** ✅ BUILT 2026-09-02 (see the plan, item 3 — built on the kit bank page like its
+  neighbour SOUND + CONFIG, with the module editor's widget vocabulary via `makeCell` and
+  this file's knob travel law, NOT as a page of the host's param-pages engine: no host change,
+  and the bank matches the banks beside it; the engine-page form stays available if the
+  editor-identical widgets are wanted. The store is davebox's own, typed per target — a target
+  need not live in a chain (a Move bus's levels), and Josh's 2026-09-02 idea of davebox BANK
+  KNOBS as macro targets is a further kind of the same switch, live but not automatable until
+  the automation store learns it. The chain's knob_N store is read once as a migration.)
+  Eight assignable parameters from anywhere on the track's chain (Schwung route),
   or any valid MIDI message / bus level / other automatable parameter (Move and MIDI routes).
   Their widgets and metadata ARE the module editor's — the bank is a page of the same
   param-pages engine, composed by davebox (absolute keys, inline metadata), so editing and

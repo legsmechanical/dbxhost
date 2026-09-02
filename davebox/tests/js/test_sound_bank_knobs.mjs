@@ -212,7 +212,7 @@ step('⚠ the knob-assignment forwarding is RETIRED here: K1 never writes synth:
     writes = [];
     touch(0, true); ticks(2); turnBy(0, 4); ticks(1); touch(0, false); ticks(1);
     assert(!wrote('synth:cutoff').length, 'no synth:cutoff write');
-    assert(!snd.soundKnobHudForTest().shown, 'no HUD card');
+    assert(!snd.soundMacrosForTest().active, 'the knobs are not the macros here (that is the MACROS bank)');
 });
 step('⚠ a level turn goes through the AUTOMATION OWNER: with a step held it is a p-lock on <slot>:slot:volume', () => {
     modSets.length = 0;

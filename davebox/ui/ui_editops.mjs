@@ -9,7 +9,7 @@
 import {
     NUM_TRACKS, NUM_STEPS, DRUM_LANES,
     PAD_MODE_DRUM, PAD_MODE_CONDUCT, BANKS, ACTION_POPUP_MS,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_MACROS, isSoundBank
 } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -543,9 +543,10 @@ export function _switchActiveTrack(newT) {
      * handler already declines when sound mode is still open, so the routes
      * that FOLLOW the track (Shift+pad, launchers, remote UI) are unaffected.
      * SILENT: arriving is not a bank gesture, so the display window stays shut. */
-    if (S.activeBank === BANK_SOUND && S.bankCardLatched) {
+    if (isSoundBank(S.activeBank) && S.bankCardLatched) {
         S.pendingSoundEnterTrack = S.activeTrack;
         S.pendingSoundEnterSilent = true;
+        S.pendingSoundEnterMacros = (S.activeBank === BANK_MACROS);
     }
     if (S.activeBank === 7) S.allLanesConfirmed = false;
     /* Focused-clip-by-default: ONLY while transport is running — entering a track

@@ -438,6 +438,14 @@ export const BANKS = [
      * ui_render's step page owns the cells; the entry exists so generic
      * BANKS[S.activeBank] readers stay safe. Never the default view. */
     { name: 'STEP', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
+    /* 13 — MACROS (BANK_MACROS) — eight assignable parameters from anywhere
+     * on the track's sound (spec §2, Josh 2026-09-02): a chain component's
+     * param or a mixer level, each an ordinary automatable parameter, so a
+     * macro IS its target — no macro lane, the module editor reflects it.
+     * Sits after SOUND + CONFIG on the walk and is a second bank identity of
+     * SOUND MODE (ui_sound owns the screen, the knobs and the store); stubs
+     * here so generic BANKS[S.activeBank] readers stay safe. */
+    { name: 'MACROS', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
 ];
 
 /* Conductor bank indices. Bank 0 (CLIP) is reused as the "Conduct" bank. */
@@ -455,6 +463,12 @@ export const BANK_SOUND = 11;
 /* The STEP bank: the step editor as a bank, sitting just before SOUND + CONFIG
  * on every jog walk (and last on a Conductor's). See BANKS[12]. */
 export const BANK_STEP = 12;
+/* The MACROS bank: sound mode's SECOND bank identity (see BANKS[13]). Sound
+ * mode is on exactly one of {BANK_SOUND, BANK_MACROS} while open — `isSoundBank`
+ * is the one predicate every identity site reads, so a third can be added in
+ * one place. Last on the melodic and drum walks; a Conductor has neither. */
+export const BANK_MACROS = 13;
+export function isSoundBank(b) { return b === BANK_SOUND || b === BANK_MACROS; }
 
 /* The track's DEFAULT bank — CLIP on a melodic track, DRUM LANE on a drum one,
  * CONDUCT on a Conductor. All three are index 0: the bank a track is on when a

@@ -765,6 +765,16 @@ export const S = {
      * unrelated release's teardown. */
     bankWindowKeepOnRelease: false,
     trackSoundOrigin: new Array(8).fill(-1),
+    /* THE MACRO STORE (spec §2, 2026-09-02): per track, eight targets or null.
+     * A target is a typed record — { kind: 'chain', comp, key } for a parameter
+     * of a chain component (a Move bus's insert FX included: comp is the full
+     * `move_fx:N:fxK`), { kind: 'level', key } for a mixer level. davebox owns
+     * it (project state, sidecar `mac`) rather than the chain DSP's own
+     * knob_N store, because a target need not live in a chain at all — a
+     * Move track's levels have no chain, and a davebox bank knob (a kind
+     * Josh floated 2026-09-02) never will. `null` per track = never seeded:
+     * ui_sound migrates the chain's knob_N assignments on first use. */
+    trackMacros: new Array(8).fill(null),
     /* Bank picker (Shift+jog in track view, 2026-08-25). Shift+jog used to step
      * the active TRACK; that meaning moved to Shift + the bottom pad row, and
      * the jog now browses the current track's banks in the kit's list overlay.
@@ -791,6 +801,7 @@ export const S = {
 
 
     pendingSoundEnterSilent: false, /* the queued entry is a RETURN, not a gesture — do not open the bank display window */
+    pendingSoundEnterMacros: false, /* the queued entry lands on the MACROS page, not the SOUND + CONFIG prompt */
     pendingSoundEnterTrack: -1, /* Sound mode entry queued from the Shift-release dispatch or the track menu. Entry's shadow_get/set_param traffic must run on the tick budget — hence the deferral. */
     pendingUndoSync: 0,
     pendingDefaultSetParams: [],

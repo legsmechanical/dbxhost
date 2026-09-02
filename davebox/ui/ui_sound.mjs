@@ -44,7 +44,7 @@ import { bankCardVisible, sessMixerVisible } from './ui_render.mjs';
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
-import { instrOptions, fmtInstr, INSTR_SCHWUNG, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV,
+import { instrOptions, fmtInstr, INSTR_SCHWUNG, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD } from './ui_constants.mjs';
 import { applyTrackConfig } from './ui_dsp_bridge.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -66,9 +66,9 @@ import {
 } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 import { discover, deriveSections, activeSection, filterVizFor,
     menuRows, menuCell, levelCommits, childSpec, modeRows, livePressSpec,
-    inferGuessedMeta, moduleIdOf, buildBrowseList } from './ui_discover.mjs';
+    inferGuessedMeta, moduleIdOf, buildBrowseList, makeCell } from './ui_discover.mjs';
 import { parseValue, stepValue, commitString, renderCellsForBank,
-    formatValue } from './ui_cells.mjs';
+    formatValue, toRenderCell } from './ui_cells.mjs';
 import {
     drawKitBankPage, drawKitHeader, drawKitHeaderParamPages,
     drawKitSectionPicker, drawKitList, drawKitListOverlay,
@@ -248,7 +248,13 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
        * slot's assignments here exactly as they did when the bank was the
        * screen — so sound mode is fully ACTIVE on this view, and the knob HUD
        * draws over it. Two states, not one: active-as-bank, and open-as-menu. */
-      VIEW_PROMPT = 18;
+      VIEW_PROMPT = 18,
+      /* ⭑ The MACROS BANK's page (spec §2, Josh 2026-09-02): sound mode's
+       * SECOND bank identity. Eight assignable parameters, each an ordinary
+       * automatable one — see the MACROS section below. Sound mode is fully
+       * active here as on the prompt; the jog walks banks, the click opens
+       * the assign list, and the knobs are the macros. */
+      VIEW_MACROS = 19;
 
 /* Chain-patch file ops (save_patch / delete_patch) are DSP-side and async —
  * the file appears/vanishes a beat after the request. Re-read the list once
@@ -410,8 +416,9 @@ function configRows(t) {
     return rows;
 }
 
+/* ⚠ The `Knobs` row is GONE (spec §2, 2026-09-02): the chain's per-knob
+ * assignment layer is the MACROS bank now — jog-click there opens the list. */
 const SOUND_CONTROL = [
-    { key: 'knobs', label: 'Knobs',  sub: 'knobs' },
     { key: 'lfo1',  label: 'LFO 1',  sub: 'lfo', lfo: 0 },
     { key: 'lfo2',  label: 'LFO 2',  sub: 'lfo', lfo: 1 },
 ];
@@ -662,19 +669,22 @@ const S = {
     knobParamIdx: 0,
     knobTarget: '',             /* target chosen in the picker */
 
-    /* Knob HUD (outside a module editor the eight knobs drive the slot's knob
-     * ASSIGNMENTS, and nothing on screen said so). Lifetime is S.touchedIdx —
-     * the physical touch plus tick's existing decay — never a second timer.
-     * The VALUE is owned here and written absolutely, so a sweep costs no
-     * reads at all; see the turn law above knobCellFor. */
-    knobMeta: {},               /* target id -> chain_params array, cached per slot */
-    asnLoadFor: -1,             /* knob being loaded/edited; -1 = none */
-    asnStage: 0,                /* 0 assignment, 1 metadata, 2 value, 3 loaded */
-    asnCell: null,              /* editable cell for asnCellFor */
-    asnCellFor: -1,
-    asnValNum: null,            /* authoritative local value, optimistic on turn */
-    asnLastDir: 0,              /* for the reversal reset */
-    asnRevealed: false,         /* the value is hidden until the knob MOVES */
+    /* MACROS (spec §2): the page's own caches. Metadata per component is
+     * S.knobMeta (per slot); cells and values per knob below, seeded in tick
+     * and owned optimistically on a turn — see macroTick and the turn law. */
+    knobMeta: {},               /* comp -> chain_params array, cached per slot */
+    macCells: [null, null, null, null, null, null, null, null],
+    macVals:  [null, null, null, null, null, null, null, null],
+    macLastDir: [0, 0, 0, 0, 0, 0, 0, 0],   /* for the reversal reset */
+    macSeededFor: '',           /* slot/bus/track the caches belong to */
+    macPoll: 0,                 /* round-robin re-read cursor */
+    macPollTick: 0,
+    macReadsThisTick: 0,
+    macMigrateFor: -1,          /* track whose chain knob store is being walked */
+    macMigrateK: 0,
+    macMigrateTmp: null,
+    bankHome: BANK_SOUND,       /* which bank identity the open mode carries */
+    asnQuick: false,            /* opened by Shift+touch: the commit lands on the page */
 
     /* LFO editor (P7 absorb): lfoN:* slot params, values cached at open and
      * kept current optimistically on edit (reads are SHM round-trips). */
@@ -782,6 +792,7 @@ export function soundValueForTest(key) { return S.values[key]; }
  * assembled fresh on every open from live component probes, so this exercises
  * the real path rather than a copy of it. */
 export function soundKnobTargetsForTest() { return knobTargetList(); }
+export function soundKnobParamsForTest() { return S.knobParams; }
 /* Drives the view directly so a Back edge can be exercised without walking the
  * whole entry gesture. ⚠ Test-only: the real transitions go through the
  * openers, which also seed the state each screen reads. */
@@ -791,17 +802,12 @@ export function compLabelsForTest(id, param) {
     return { short: compShort(id), wide: compWide(id), pair: compParamLabel(id, param) };
 }
 export function soundLfoCompsForTest() { return lfoCompList(); }
-export function soundKnobHudForTest() {
-    const i = S.touchedIdx;
-    const a = i >= 0 ? S.knobAsn[i] : null;
+export function soundMacrosForTest() {
     return {
-        shown: i >= 0 && knobHudContext(),
-        knob: i,
-        target: a ? a.target : null,
-        param: a ? a.param : null,
-        value: fmtAsnValue(i),
-        cursor: S.knobIdx,          /* where the assign flow is pointed */
-        cell: (S.asnCellFor === i && S.asnCell) ? S.asnCell : null,
+        active: macrosActive(), view: S.view, bankHome: S.bankHome,
+        store: macroStore().slice(), cells: S.macCells.slice(), vals: S.macVals.slice(),
+        accum: S.knobAccum.slice(), cursor: S.knobIdx, quick: S.asnQuick,
+        drawn: macroCells(S.track, true),
     };
 }
 
@@ -968,15 +974,35 @@ function flushForRetarget() {
  * used to carry implicitly; it now has its own store, trackSoundOrigin.
  * Conductor tracks keep their own bank: they have no sound bank in the cycle,
  * and their screens key on banks 0/8/9/10. */
-function takeBankIdentity(track) {
+function takeBankIdentity(track, bank) {
     if (GS.trackPadMode[track] === PMC) return;
+    const b = isSoundBank(bank) ? bank : BANK_SOUND;
     /* Remember where we came from BEFORE overwriting the live mirror, and only
-     * on a genuine arrival — a retarget onto a track already on this bank must
-     * not overwrite its origin with BANK_SOUND. */
-    if (GS.activeBank !== BANK_SOUND && GS.trackActiveBank[track] !== BANK_SOUND)
+     * on a genuine arrival — a retarget onto a track already on one of this
+     * mode's banks must not overwrite its origin with that bank. */
+    if (!isSoundBank(GS.activeBank) && !isSoundBank(GS.trackActiveBank[track]))
         GS.trackSoundOrigin[track] = GS.activeBank | 0;
-    GS.activeBank = BANK_SOUND;
-    GS.trackActiveBank[track] = BANK_SOUND;
+    S.bankHome = b;
+    GS.activeBank = b;
+    GS.trackActiveBank[track] = b;
+}
+
+/* ⭑ Sound mode's SECOND identity (spec §2): SOUND + CONFIG and MACROS are two
+ * stops on the bank walk carried by ONE open mode. Arriving at either while
+ * the mode is open changes the screen and the recorded bank, never the mode —
+ * the walk between them is a screen switch, and the exit restore, the track
+ * switch and the sidecar read whichever is recorded. Closed, the walk queues
+ * an entry that lands here (ui_tick consumes pendingSoundEnterMacros). */
+export function soundSetBank(bank) {
+    if (!S.active || soundIsGlobal() || S.track < 0 || !isSoundBank(bank)) return;
+    if (GS.trackPadMode[S.track] === PMC) return;
+    if (bank === BANK_MACROS) { S.view = VIEW_MACROS; S.asnQuick = false; }
+    else if (S.bankHome === BANK_MACROS || S.view === VIEW_MACROS) S.view = VIEW_PROMPT;
+    S.bankHome = bank;
+    GS.activeBank = bank;
+    GS.trackActiveBank[S.track] = bank;
+    S.touchedIdx = -1;
+    S.dirty = true;
 }
 
 /* Where the JOG's top-edge left turn lands: the bank this track was entered
@@ -985,12 +1011,12 @@ function takeBankIdentity(track) {
  * the jog reads this. A CLOSE (Back and friends) goes to the DEFAULT bank. */
 function soundOriginBank(track) {
     const o = GS.trackSoundOrigin[track];
-    return (typeof o === 'number' && o >= 0 && o !== BANK_SOUND) ? (o | 0) : BANK_SOUND_PREV;
+    return (typeof o === 'number' && o >= 0 && !isSoundBank(o)) ? (o | 0) : BANK_SOUND_PREV;
 }
 
 export function soundRetarget(track, slot) {
     flushForRetarget();
-    takeBankIdentity(track);
+    takeBankIdentity(track, S.bankHome);
 
     S.track = track;
     /* A SESSION bus is global — following the active track must not drag its
@@ -1017,14 +1043,14 @@ export function soundRetarget(track, slot) {
      * BANK'S PROMPT it must leave you there. Switching tracks is not asking for
      * the menu, and promoting the prompt into it on every track step is the
      * other half of the same bug. */
-    const wasPrompt = S.view === VIEW_PROMPT;
+    const wasPrompt = S.view === VIEW_PROMPT, wasMacros = S.view === VIEW_MACROS;
     const keepPlace = !leftMoveBus && S.view === VIEW_EDIT;
     if (leftMoveBus) {
         /* Leaving a Move bus: nothing about WHERE you were transfers, because
          * the rows aren't the same rows. Land on the new track's picker, on its
          * synth — not on an fx index that meant a bus insert a moment ago. */
         clearBusContext();
-        S.view = wasPrompt ? VIEW_PROMPT : VIEW_BLOCKS;
+        S.view = wasMacros ? VIEW_MACROS : wasPrompt ? VIEW_PROMPT : VIEW_BLOCKS;
         S.pickRow = 0;
         S.comp = 'synth';
         S.blockIdx = 1;
@@ -1184,9 +1210,9 @@ export function soundExit(opts) {
          * to invent a bank. See the docblock above for why BANK_DEFAULT is gone. */
         const _back = (typeof _opts.landOn === 'number') ? (_opts.landOn | 0)
                                                          : soundOriginBank(S.track);
-        if (GS.trackActiveBank[S.track] === BANK_SOUND)
+        if (isSoundBank(GS.trackActiveBank[S.track]))
             GS.trackActiveBank[S.track] = _back;
-        if (GS.activeBank === BANK_SOUND && S.track === GS.activeTrack)
+        if (isSoundBank(GS.activeBank) && S.track === GS.activeTrack)
             GS.activeBank = _back;
         GS.trackSoundOrigin[S.track] = -1;
     }
@@ -1197,8 +1223,9 @@ export function soundExit(opts) {
      * truth, and the tick invariant re-opens its screen the moment track view
      * is showing. Forcing a default here instead would leave the live mirror
      * disagreeing with the record — the track's screen would not come back. */
-    if (GS.activeBank === BANK_SOUND && !_leaving)
+    if (isSoundBank(GS.activeBank) && !_leaving)
         GS.activeBank = GS.trackActiveBank[GS.activeTrack] | 0;
+    S.bankHome = BANK_SOUND;
     clearBusContext();
     S.pendingAction = null;
     S.pendingDiscover = 0;
@@ -1300,13 +1327,13 @@ function levelKnobSpec(idx) {
  * editor — the bank card, the block list, the settings — for a track (a global
  * bus has no track and keeps its own rows). */
 function levelsActive() {
-    return !!(S.active && S.view !== VIEW_EDIT && !soundIsGlobal());
+    return !!(S.active && S.view !== VIEW_EDIT && !soundIsGlobal() && !macrosActive());
 }
 function levelFullKey(idx) { return levelComp() + ':' + LEVEL_KNOB_SPECS[idx].key; }
 function levelSeedKey() { return S.slot + '/' + (S.bus ? S.bus.id : 'slot'); }
 /* Tick only: reads the engine. Once per context. */
 function levelSeedIfNeeded() {
-    if (!levelsActive()) return;
+    if (!levelsActive() && !macrosActive()) return;   /* a level MACRO shares the cache */
     const k = levelSeedKey();
     if (S.levelSeededFor === k) return;
     const comp = levelComp();
@@ -2472,17 +2499,23 @@ function readKnobAsn(i) {
 function resetKnobAsn() {
     S.knobAsn = [null, null, null, null, null, null, null, null];
     S.knobMeta = {};
-    S.asnLoadFor = -1;
-    S.asnStage = 0;
-    S.asnCell = null;
-    S.asnCellFor = -1;
-    S.asnValNum = null;
-    S.asnLastDir = 0;
-    S.asnRevealed = false;
+    S.macSeededFor = '';
+    for (let i = 0; i < 8; i++) { S.macVals[i] = null; S.macCells[i] = null; S.knobAccum[i] = 0; S.macLastDir[i] = 0; }
+    S.macMigrateFor = -1; S.macMigrateTmp = null;
+}
+
+/* The assign list's row shape, from a macro target. `level` is a pseudo-target
+ * id on these screens only — never a component the engine knows. */
+const LEVEL_TARGET = 'level';
+function asnFromMacro(m) {
+    if (!m) return { target: '', param: '' };
+    if (m.kind === 'level') return { target: LEVEL_TARGET, param: m.key };
+    return { target: m.comp, param: m.key };
 }
 
 function openKnobEditor() {
-    for (let i = 0; i < NUM_KNOBS; i++) S.knobAsn[i] = readKnobAsn(i);
+    const store = macroStore();
+    for (let i = 0; i < NUM_KNOBS; i++) S.knobAsn[i] = asnFromMacro(store[i]);
     S.knobIdx = 0;
     S.view = VIEW_KNOBS;
 }
@@ -2499,10 +2532,19 @@ function knobTargetList() {
         const name = engineGet(S.slot, id, 'name') || mod;
         targets.push({ id, name: String(name), slot: label });
     };
-    probe('midi_fx1', 'MIDI FX');
-    probe('synth', 'Synth');
-    for (let i = 1; i <= 4; i++) probe('fx' + i, 'FX' + i);
-    return qualifyDuplicates(targets);
+    if (S.bus) {
+        /* A Move bus: its insert FX are the components (`move_fx:N:fxK`). */
+        for (const n of BUS_BLOCKS) probe(S.bus.prefix + 'fx' + n, 'FX' + n);
+    } else {
+        probe('midi_fx1', 'MIDI FX');
+        probe('synth', 'Synth');
+        for (let i = 1; i <= 4; i++) probe('fx' + i, 'FX' + i);
+    }
+    const rows = qualifyDuplicates(targets);
+    /* The mixer levels: a target KIND of their own (spec §2 — "the assignment
+     * picker grows level … targets"). Last, after the modules. */
+    rows.push({ id: LEVEL_TARGET, name: 'Levels' });
+    return rows;
 }
 
 /* ⭑ The rows name the MODULE, not "<slot>: <module>" (Josh, 2026-08-27): the
@@ -2545,6 +2587,11 @@ function openKnobTargets() {
  * chain_params, then the legacy hardcoded fallback. */
 function knobParamList(target) {
     const params = [];
+    if (target === LEVEL_TARGET) {
+        for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++)
+            if (levelKnobSpec(i)) params.push({ key: LEVEL_KNOB_SPECS[i].key, label: LEVEL_KNOB_SPECS[i].name });
+        return params;
+    }
     const push = (key, label) => {
         if (key && !params.find(p => p.key === key)) params.push({ key, label: label || key });
     };
@@ -2625,16 +2672,24 @@ const COMPONENT_NAMES = {
     lfo1:     { wide: 'LFO 1',   short: 'LFO1' },
     lfo2:     { wide: 'LFO 2',   short: 'LFO2' },
 };
+/* A Move bus's insert FX carry the bus prefix (`move_fx:2:fx1`); the table is
+ * keyed on the bare component, and the bus is already the screen's context. */
+function compBare(id) { return String(id || '').replace(/^move_fx:\d+:/, ''); }
 function compShort(id) {
-    const e = COMPONENT_NAMES[id];
-    return e ? e.short : String(id || '');
+    const e = COMPONENT_NAMES[compBare(id)];
+    return e ? e.short : compBare(id);
 }
 function compWide(id) {
-    const e = COMPONENT_NAMES[id];
-    return e ? e.wide : String(id || '').toUpperCase();
+    const e = COMPONENT_NAMES[compBare(id)];
+    return e ? e.wide : compBare(id).toUpperCase();
 }
 function compParamLabel(target, param) {
-    return (target && param) ? compShort(target) + '>' + param : '';
+    if (!target || !param) return '';
+    if (target === LEVEL_TARGET) {
+        const m = LEVEL_KNOB_SPECS.find(x => x.key === param);
+        return 'Lvl>' + (m ? m.name : param);
+    }
+    return compShort(target) + '>' + param;
 }
 
 function knobAsnLabel(a) {
@@ -2642,18 +2697,22 @@ function knobAsnLabel(a) {
 }
 
 function commitKnobAssignment(target, param) {
-    const n = S.knobIdx + 1;
-    S.knobAsn[S.knobIdx] = { target: target || '', param: param || '' };
-    /* The cell and the value belonged to the OLD param — a number from a
-     * different control, and a step law derived from a different range. Force
-     * the whole load to re-run rather than clearing the pieces one by one. */
-    if (S.asnCellFor === S.knobIdx) {
-        S.asnCell = null; S.asnCellFor = -1; S.asnValNum = null;
-    }
-    if (S.asnLoadFor === S.knobIdx) S.asnStage = 0;
-    if (target && param) queueChainWrite('knob_' + n + '_set', target + ':' + param);
-    else queueChainWrite('knob_' + n + '_clear', '1');
-    S.view = VIEW_KNOBS;
+    const i = S.knobIdx, t = S.track;
+    if (t < 0) return;
+    const store = GS.trackMacros[t] || (GS.trackMacros[t] = new Array(8).fill(null));
+    let m = null;
+    if (target === LEVEL_TARGET && param) m = { kind: 'level', key: param };
+    else if (target && param) m = { kind: 'chain', comp: target, key: param };
+    store[i] = m;
+    S.knobAsn[i] = asnFromMacro(m);
+    /* The cell and the value belonged to the OLD target — a number from a
+     * different control, and a step law derived from a different range. The
+     * tick re-seeds both. */
+    S.macCells[i] = null; S.macVals[i] = null; S.knobAccum[i] = 0; S.macLastDir[i] = 0;
+    writeSidecar();
+    /* Quick assign (Shift+touch) lands back on the PAGE; the list flow, on the list. */
+    S.view = S.asnQuick ? VIEW_MACROS : VIEW_KNOBS;
+    S.asnQuick = false;
 }
 
 /* ── where a screen SITS in the tree ───────────────────────────────────────
@@ -2697,7 +2756,9 @@ const VIEW_TREE = {
                            * saves 10px and both fit. 'Config' needs no such
                            * help: its own paths are 78px at the deepest. */
                           crumb: () => (S.cfgWhich === 'config' ? 'Config' : 'Snd') },
-    [VIEW_KNOBS]:       { parent: VIEW_SLOTCFG,    float: true,  crumb: () => 'Knobs' },
+    /* The MACROS page is a root: its assign screens float over it. */
+    [VIEW_MACROS]:      { parent: null,            float: false, crumb: () => 'Macros' },
+    [VIEW_KNOBS]:       { parent: VIEW_MACROS,     float: true,  crumb: () => 'Knobs' },
     [VIEW_LFO]:         { parent: VIEW_SLOTCFG,    float: true,
                           crumb: () => 'LFO ' + (S.lfoNum + 1) },
     [VIEW_KNOB_TARGET]: { parent: VIEW_KNOBS,      float: true, backPure: true,
@@ -2915,6 +2976,7 @@ function renderInChain(rows, sel, emptyMsg, opts) {
      * the preset chain: it hands the frame to a hosted module canvas. The blocks
      * picker stands in — the crumb still names the module you are editing. */
     if (root === VIEW_LFO) renderLfo();
+    else if (root === VIEW_MACROS) renderMacros();
     else renderBlocks();
     drawKitBackdropDim();
     drawKitStackedList(Math.max(1, soundStackDepth()), rows, sel,
@@ -2940,23 +3002,96 @@ function renderKnobParam() {
     renderInChain(S.knobParams.map(p => p.label), S.knobParamIdx, 'NO PARAMS');
 }
 
-/* ---- knob HUD: touch orients, turn reveals ------------------------------
+/* ---- MACROS: the bank of eight assignable parameters (spec §2) ----------
  *
- * Outside a module's editor the eight physical knobs drive the SLOT's knob
- * assignments (see the CC 71-78 branch in soundOnCC), and until now nothing on
- * screen said which knob was which — you turned one and watched the sound.
- * Josh's 08-10 spec: touch names the assignment, turn shows its value, and
- * Shift+touch jumps to that knob's assign flow.
+ * ⭑RULED (Josh, 2026-09-02): eight assignable parameters from anywhere on the
+ * track's sound — a chain component's param (a Move bus's insert FX likewise)
+ * or a mixer level — each an ORDINARY automatable parameter, so a macro IS its
+ * target: editing and automating a macro is editing and automating the
+ * underlying parameter, no macro lane, and the module editor reflects it
+ * because it is the same parameter. Jog-click opens the assign list (the
+ * chain's knob-assign menu, moved here from Sound Control → Knobs, which is
+ * gone); Shift + touch a knob picks THAT knob's target without leaving the
+ * bank; Mute/Delete + touch are the automation gestures every knob has.
  *
- * ⚠⚠ The gate below is deliberately the SAME predicate as the turn-forwarding
- * branch (`!S.bus && S.slot >= 0`, view !== VIEW_EDIT): the HUD describes what
- * the knob actually does, so the two must not be able to disagree. A bus
- * context has no slot to address and forwards nothing — hence nothing to name.
+ * THE STORE is davebox's (GS.trackMacros, sidecar `mac`) — see ui_state for
+ * why not the chain DSP's own knob_N mappings: a target need not live in a
+ * chain at all. The chain store is read ONCE, as a migration, for a track that
+ * has never been seeded; it is never written again. (A whole-chain patch
+ * therefore no longer carries knob assignments under SA.)
  *
- * ⚠ Every read here is a ~2.9 ms SHM round trip, so they all run from tick, one
- * per tick: the assignment and the target's param metadata are cached per slot,
- * and the value is re-seeded once per touch. A SWEEP costs zero reads — see the
- * turn law below, which owns the value rather than reading it back. */
+ * TARGET KINDS — one switch, in macroFullKey / macroCellFor / macroTurn:
+ *   chain  { comp, key }   a chain param; comp is `synth`/`fx1`.. on a chain
+ *                          slot, `move_fx:N:fxK` on a Move bus
+ *   level  { key }         a mixer level (LEVEL_KNOB_SPECS): shares the levels'
+ *                          own value cache and write path
+ *   (a davebox BANK KNOB is a kind this switch can grow — Josh floated it
+ *    2026-09-02; it would be a live control but not automatable until the
+ *    automation store learns that target)
+ *
+ * READS happen in tick only, spread: one chain_params per component (cached
+ * per slot in S.knobMeta), one value per macro at seed, then ONE round-robin
+ * re-read per tick (every 8th while stopped) so a value moving under
+ * automation or a module's own UI is seen — the touched knob is skipped, it
+ * owns its value optimistically. A SWEEP costs zero reads: the value is owned
+ * here and written absolutely (the turn law below). */
+
+const MACRO_VIEWS = [VIEW_MACROS, VIEW_KNOBS, VIEW_KNOB_TARGET, VIEW_KNOB_PARAM];
+/* Where the eight knobs ARE the macros: the page, and the assign screens that
+ * float over it (so you hear what you are assigning). Never a global bus. */
+function macrosActive() {
+    return !!(S.active && !soundIsGlobal() && S.track >= 0 && MACRO_VIEWS.indexOf(S.view) >= 0);
+}
+const EMPTY_MACROS = Object.freeze([null, null, null, null, null, null, null, null]);
+/* The track's eight targets; an unseeded track reads as empty (tick migrates). */
+function macroStore(track) {
+    const t = (track == null) ? S.track : track;
+    return (t >= 0 && GS.trackMacros[t]) || EMPTY_MACROS;
+}
+function macroTarget(i, track) { return macroStore(track)[i] || null; }
+function macroLevelIdx(m) { return LEVEL_KNOB_SPECS.findIndex(x => x.key === m.key); }
+/* A level target that exists on this route (Module Level is chain-only). */
+function macroLevelSpec(m) {
+    const li = macroLevelIdx(m);
+    return li >= 0 ? levelKnobSpec(li) : null;
+}
+/* `<comp>:<key>` — the automation owner's fullKey, and the editor's. */
+function macroFullKey(m) {
+    if (m.kind === 'level') return levelComp() + ':' + m.key;
+    return m.comp + ':' + m.key;
+}
+/* A knob the page can address: assigned, and (a level) present on this route. */
+function macroLive(m) { return !!(m && (m.kind !== 'level' || macroLevelSpec(m))); }
+const MACRO_UNTURNABLE = { file: 1, text: 1, opaque: 1 };
+
+/* ── THE MIGRATION: the chain's knob_N store, read once per track ─────────
+ * Two knobs (four reads) per tick; the store is committed whole when the walk
+ * completes and persisted, so it never runs again for this track. A Move bus
+ * or a MIDI track has no chain store: seeded empty at once. Returns true while
+ * still walking. */
+function macroMigrateTick() {
+    const t = S.track;
+    if (t < 0 || GS.trackMacros[t]) return false;
+    if (S.bus || GS.trackRoute[t] !== 0) {
+        GS.trackMacros[t] = [null, null, null, null, null, null, null, null];
+        writeSidecar();
+        return false;
+    }
+    if (S.macMigrateFor !== t) {
+        S.macMigrateFor = t; S.macMigrateK = 0;
+        S.macMigrateTmp = [null, null, null, null, null, null, null, null];
+    }
+    for (let n = 0; n < 2 && S.macMigrateK < 8; n++, S.macMigrateK++) {
+        const a = readKnobAsn(S.macMigrateK);
+        if (a.target && a.param) S.macMigrateTmp[S.macMigrateK] = { kind: 'chain', comp: a.target, key: a.param };
+    }
+    if (S.macMigrateK < 8) return true;
+    GS.trackMacros[t] = S.macMigrateTmp;
+    S.macMigrateFor = -1; S.macMigrateTmp = null;
+    writeSidecar();
+    S.dirty = true;
+    return false;
+}
 
 /* ── the turn law: movy's, applied in JS on an ABSOLUTE value ───────────────
  *
@@ -2974,25 +3109,20 @@ function renderKnobParam() {
  *  3. **The DSP's base step is the param's DECLARED step**, so a param
  *     declaring 0.1 over 0..1 has ten positions and nothing can recover them.
  *
- * So the value is owned here instead, and written absolutely. The DSP's own
+ * So the value is owned here and written absolutely. The DSP's own
  * `knob_mappings[].current_value` accumulator goes unused as a result — nothing
- * reads it under SA (`knob_N_value` has no caller in this tree), and it is
- * re-seeded from the live plugin on every state restore, a path whose comment
- * already anticipates exactly this ("may be stale if params were changed via
- * module UI"). ⚠ If a relative-CC writer for these knobs ever comes back, the
- * two accumulators will disagree and the knob will jump on the first turn.
+ * reads it under SA. ⚠ If a relative-CC writer for these knobs ever comes
+ * back, the two accumulators will disagree and the knob will jump on the
+ * first turn.
  *
  * The law is RANGE NORMALISATION: the per-detent step is a fraction of the
  * param's own range, so every knob sweeps in the same number of detents
  * whatever its units — a wide range (reso 0.5..20) does not crawl and a narrow
- * one is not hair-trigger.
- *
- * ⭑ movy (`MIN_STEP_RANGE_FRAC` = 1% of range) and canvaskit (255 positions
- * across the range, N detents each) are the SAME law at different resolutions,
- * which is worth saying plainly because carrying both vocabularies invited two
- * knob feels on one device. Expressed below in canvaskit's terms, because that
+ * one is not hair-trigger. movy (`MIN_STEP_RANGE_FRAC` = 1% of range) and
+ * canvaskit (255 positions across the range, N detents each) are the SAME law
+ * at different resolutions; expressed below in canvaskit's terms, because that
  * is what the block editor and the session mixer already use — so all three
- * knob surfaces now match. */
+ * knob surfaces match. Pinned by tests/js/test_macros_bank.mjs. */
 
 /* ── KNOB TRAVEL — the dial, per param type ────────────────────────────────
  *
@@ -3023,210 +3153,211 @@ const KNOB_TRAVEL = {
     enum: { positions: 0, sens: 4 },
 };
 
-/* Build the editable cell for an assignment, from the target's chain_params.
- * Same cell shape the block editor's knobs use, so stepValue / commitString /
- * formatValue all apply unchanged — including enum option names in the
- * read-out and the engine-facing commit-by-index rule. */
-function knobCellFor(target, param) {
-    const meta = S.knobMeta[target];
-    const m = meta ? meta.find(p => p && p.key === param) : null;
-    const opts = (m && Array.isArray(m.options) && m.options.length) ? m.options : null;
-    const type = opts ? 'enum' : ((m && m.type) || 'float');
-    /* The fallback is the DSP's own for a param it has no info for: a plain
-     * 0..1 float. Guessing wider would make an unknown knob hair-trigger. */
-    let min = (m && isFinite(m.min)) ? m.min : 0;
-    let max = (m && isFinite(m.max)) ? m.max : 1;
-    if (opts) { min = 0; max = opts.length - 1; }
-    const span = max - min;
+/* The editable cell for a chain macro: makeCell (ui_discover) gives it the
+ * bank editor's widget vocabulary and its short label from the target's
+ * chain_params entry; the TRAVEL is this file's law (above), laid over the
+ * discover defaults — so a macro knob feels like the levels and the session
+ * mixer. `null` while the component's metadata has not been read;
+ * `{ vanished: true }` when the target is not among the params the component
+ * now exposes (module swapped) — drawn UNASSIGNED, never as a blank knob. */
+function macroCellFor(m) {
+    const meta = S.knobMeta[m.comp];
+    if (!meta) return null;
+    const p = meta.find(q => q && q.key === m.key);
+    if (!p) return { vanished: true };
+    const cell = makeCell(m.key, p);
+    if (MACRO_UNTURNABLE[cell.kind]) return cell;      /* shown, never turned */
+    const type = cell.options ? 'enum' : (cell.type === 'int' ? 'int' : 'float');
     const travel = KNOB_TRAVEL[type] || KNOB_TRAVEL.float;
-    const sens = travel.sens;
-    let step;
-    if (type === 'enum') {
-        step = 1;                   /* the options are the positions */
-    } else {
+    const span = cell.max - cell.min;
+    if (type === 'enum') cell.step = 1;                /* the options are the positions */
+    else {
         const rangeStep = (span > 0 && travel.positions) ? span / travel.positions : 0;
-        const declared = (m && isFinite(m.step) && m.step > 0) ? m.step : 0;
+        const declared = (isFinite(p.step) && p.step > 0) ? Number(p.step) : 0;
         /* float: normalise OUTRIGHT — the declared step is what costs the
          * resolution. int: the declared step is a FLOOR, or a 1..8 voice count
          * would move by 0.03 and never change. */
-        step = (type === 'int') ? Math.max(declared || 1, rangeStep)
-                                : (rangeStep || declared || 0.01);
+        cell.step = (type === 'int') ? Math.max(declared || 1, rangeStep)
+                                     : (rangeStep || declared || 0.01);
     }
-    return { key: param, name: (m && (m.name || m.label)) || '', type,
-             min, max, step, sens, options: opts };
-}
-
-/* ⚠⚠ TWO predicates, and the card's is a strict SUBSET of the writer's — never
- * two independent conditions. If the card could be up where the knob does not
- * write, or vice versa, it would name a control the knob is not driving.
- *
- * Where the eight knobs drive the slot's assignments at all. (In VIEW_EDIT they
- * edit the open block's own cells instead; a bus has no slot to address.) */
-function knobDrivesSlot() {
-    /* RETIRED 2026-09-02 (spec §2): the levels own the knobs on every
-     * non-editor screen; the assignment layer (and its HUD, and Shift+touch
-     * quick-assign) moves to the MACROS bank. Kept as a function so the HUD
-     * and assign paths stay readable until MACROS lands, then they go. */
-    return false;
-}
-
-/* ...and where the card that names them may appear. The assign screens ARE the
- * assignment, spelled out in full, so a card there would cover the list it
- * duplicates — but the knobs still WRITE there, so you can hear what you are
- * assigning. */
-function knobHudContext() {
-    if (!knobDrivesSlot()) return false;
-    if (S.view === VIEW_KNOBS || S.view === VIEW_KNOB_TARGET ||
-        S.view === VIEW_KNOB_PARAM) return false;
-    return !isTextEntryActive();
-}
-
-/* A knob was touched or turned: show the card, and queue the one read that
- * fills it if this slot's assignment has never been read. */
-function armKnobHud(idx, reseed) {
-    S.touchedIdx = idx;
-    S.touchedTick = nowMs();
-    S.dirty = true;
-    /* ⚠ NOT queued on S.pendingAction: that queue is latest-wins navigation, so
-     * a touch arriving behind a pending screen change would drop its load and
-     * the card would read UNASSIGNED for a knob that is assigned — with no
-     * second chance, because the cache would still say "unread" only after the
-     * touch that would have re-armed it. Its own field, drained every tick.
-     *
-     * ⭑ Armed unconditionally; what it COSTS is decided in one place, in the
-     * tick. Testing the caches here too would be belt-and-braces that also has
-     * to be right, against values that can change before the tick runs
-     * (openKnobEditor reads all eight assignments). */
-    if (idx !== S.asnLoadFor) {
-        S.asnLoadFor = idx;
-        S.asnStage = 0;
-        S.knobAccum[idx] = 0;
-        S.asnLastDir = 0;
-        S.asnRevealed = false;
-    } else if (reseed && S.asnStage >= 3) {
-        /* Same knob, TOUCHED again: keep the assignment and metadata, re-seed
-         * the VALUE. Something else may have moved it since (an LFO, a preset
-         * recall), and a card that opens on a stale number is worse than one
-         * that opens a tick late.
-         *
-         * ⚠⚠ TOUCH ONLY — never a turn. A turn also arms the card, and
-         * re-seeding there would read the engine back mid-sweep and overwrite
-         * the optimistic value we just computed, with a number that lags the
-         * write still sitting in the queue. The knob would stutter backwards
-         * under the hand. (Caught by the zero-reads-per-sweep assertion, which
-         * measured the re-seed as a round trip.) */
-        S.asnStage = 2;
-    }
-}
-
-/* One read per tick, in dependency order — the assignment names the target, the
- * target's chain_params describe the param, the param has a value. Spread
- * because each is a blocking ~2.9 ms round trip and this runs inside a
- * sequencer's tick; the card fills in over ~3 ticks (~32 ms), which is not
- * perceptible, whereas one 9 ms tick is. */
-function tickKnobAsn() {
-    const k = S.asnLoadFor;
-    if (k < 0) return;
-    const a = S.knobAsn[k];
-
-    if (S.asnStage === 0) {
-        S.asnStage = 1;
-        if (a === null) { S.knobAsn[k] = readKnobAsn(k); S.dirty = true; return; }
-    }
-    const asn = S.knobAsn[k];
-    if (!asn || !asn.target || !asn.param) {   /* unassigned: nothing to load */
-        S.asnStage = 3; S.asnCellFor = -1; S.asnValNum = null; S.knobAccum[k] = 0;
-        return;
-    }
-    if (S.asnStage === 1) {
-        S.asnStage = 2;
-        if (!S.knobMeta[asn.target]) {
-            let list = [];
-            try { list = JSON.parse(engineGet(S.slot, asn.target, 'chain_params') || '[]') || []; }
-            catch (e) { list = []; }
-            S.knobMeta[asn.target] = list;
-            S.dirty = true;
-            return;
-        }
-    }
-    if (S.asnStage === 2) {
-        S.asnStage = 3;
-        S.asnCell = knobCellFor(asn.target, asn.param);
-        S.asnCellFor = k;
-        S.asnValNum = parseValue(S.asnCell, engineGet(S.slot, asn.target, asn.param));
-        S.dirty = true;
-        return;
-    }
-
-    /* Loaded. Drain whatever detents arrived — including any from while the
-     * reads above were still in flight, which is why they ACCUMULATE rather
-     * than being applied at the handler. */
-    const sens = S.asnCell.sens || 1;
-    let steps = 0;
-    while (S.knobAccum[k] >= sens) { steps++; S.knobAccum[k] -= sens; }
-    while (S.knobAccum[k] <= -sens) { steps--; S.knobAccum[k] += sens; }
-    if (!steps) return;
-    const cur = (S.asnValNum == null) ? S.asnCell.min : S.asnValNum;
-    const next = stepValue(S.asnCell, cur, steps);
-    if (next === cur) return;
-    S.asnValNum = next;                          /* optimistic, drawn now */
-    queueWrite(S.asnCell.key, commitString(S.asnCell, next), asn.target);
-    S.dirty = true;
+    cell.sens = travel.sens;
+    return cell;
 }
 
 /* A turn, in DETENTS. Accumulated rather than written here: this is the MIDI
  * handler, the value may not be seeded yet, and a sweep must coalesce into one
- * write per tick rather than one per event. */
-function armKnobValue(idx, delta) {
-    if (idx !== S.asnLoadFor) return;            /* armKnobHud owns the switch */
-    /* ⚠ Raw DETENTS accumulate here; the tick converts them to steps, because
-     * only the tick knows the cell and therefore the sens. Converting here
-     * would apply sens 1 to every detent that arrived before the metadata
-     * landed — the first flick of a turn, silently at the wrong law. */
-    /* ⭑ TOUCH ORIENTS, TURN REVEALS (UI_LANGUAGE, and Josh's spec). The value
-     * is now seeded on touch because the turn law needs a base to add to — but
-     * it stays hidden until the knob actually moves, or a bare orienting touch
-     * would answer a question that was not asked. */
-    S.asnRevealed = true;
+ * write per tick rather than one per event. Only the tick knows the cell and
+ * therefore the sens — converting here would apply sens 1 to every detent that
+ * arrived before the metadata landed. A LEVEL macro is the level's own knob. */
+function macroTurn(idx, delta) {
+    const m = macroTarget(idx);
+    if (!m) return;
+    if (m.kind === 'level') {
+        const li = macroLevelIdx(m);
+        if (li >= 0 && levelKnobSpec(li)) onLevelTurn(li, delta);
+        return;
+    }
     const dir = delta > 0 ? 1 : -1;
     /* Direction reversal RESETS the accumulator rather than unwinding it — the
      * canvaskit rule, and the part that makes a knob feel right. */
-    if (dir !== S.asnLastDir) { S.knobAccum[idx] = 0; S.asnLastDir = dir; }
+    if (dir !== S.macLastDir[idx]) { S.knobAccum[idx] = 0; S.macLastDir[idx] = dir; }
     S.knobAccum[idx] += delta;
 }
 
-/* The read-out comes from the cell, so an enum reads as its option NAME and a
- * float rounds by its span — the same rules the block editor's values follow.
- * ⭑ It is the value we OWN, not a read-back, so it updates on the frame the
- * detent arrives instead of trailing a round trip. */
-function fmtAsnValue(i) {
-    if (!S.asnRevealed) return '';               /* touch orients; turn reveals */
-    if (S.asnCellFor !== i || !S.asnCell || S.asnValNum == null) return '';
-    const t = formatValue(S.asnCell, S.asnValNum);
-    return (t && t.length > 10) ? t.slice(0, 10) : t;
+const MACRO_READS_PER_TICK = 2;
+const MACRO_POLL_EVERY_STOPPED = 8;
+/* Tick only: the migration, the seed (metadata then value, in knob order, two
+ * round trips a tick), the turn law's drain, and the re-read. */
+function macroTick() {
+    if (!macrosActive()) return;
+    if (macroMigrateTick()) return;
+    const store = macroStore();
+    const seedKey = S.slot + '/' + (S.bus ? S.bus.id : 'slot') + '/' + S.track;
+    if (S.macSeededFor !== seedKey) {
+        S.macSeededFor = seedKey;
+        for (let i = 0; i < 8; i++) { S.macVals[i] = null; S.macCells[i] = null; S.knobAccum[i] = 0; S.macLastDir[i] = 0; }
+    }
+    let reads = 0;
+    for (let i = 0; i < 8 && reads < MACRO_READS_PER_TICK; i++) {
+        const m = store[i];
+        if (!m || m.kind !== 'chain') continue;
+        if (!S.knobMeta[m.comp]) {
+            let list = [];
+            try { list = JSON.parse(engineGet(S.slot, m.comp, 'chain_params') || '[]') || []; }
+            catch (e) { list = []; }
+            S.knobMeta[m.comp] = Array.isArray(list) ? list : [];
+            reads++; S.dirty = true;
+        }
+        if (!S.macCells[i]) S.macCells[i] = macroCellFor(m);
+        const cell = S.macCells[i];
+        if (cell && !cell.vanished && S.macVals[i] == null && reads < MACRO_READS_PER_TICK) {
+            S.macVals[i] = parseValue(cell, engineGet(S.slot, m.comp, m.key));
+            reads++; S.dirty = true;
+        }
+    }
+    /* Loaded knobs drain whatever detents arrived — including any from while
+     * the reads above were still in flight, which is why they ACCUMULATE. */
+    for (let i = 0; i < 8; i++) {
+        if (!S.knobAccum[i]) continue;
+        const m = store[i], cell = S.macCells[i];
+        if (!m || m.kind !== 'chain' || !cell || cell.vanished || S.macVals[i] == null) continue;
+        if (MACRO_UNTURNABLE[cell.kind]) { S.knobAccum[i] = 0; continue; }
+        const sens = cell.sens || 1;
+        let steps = 0;
+        while (S.knobAccum[i] >= sens) { steps++; S.knobAccum[i] -= sens; }
+        while (S.knobAccum[i] <= -sens) { steps--; S.knobAccum[i] += sens; }
+        if (!steps) continue;
+        const cur = S.macVals[i];
+        const next = stepValue(cell, cur, steps);
+        if (next === cur) continue;
+        S.macVals[i] = next;                             /* optimistic, drawn now */
+        const wire = commitString(cell, next), prevWire = commitString(cell, cur);
+        queueWrite(m.key, wire, m.comp);
+        /* The ONE owner of what a knob edit means — record, lock, override —
+         * is ui_automation; a macro is its target, so it goes there exactly as
+         * an editor knob does (held step = a lock, Record = a take). */
+        automationParamEdit(S.track, effectiveClip(S.track), S.slot, macroFullKey(m), wire, prevWire);
+        S.dirty = true;
+    }
+    S.macReadsThisTick = reads;
+}
+/* One round-robin re-read while the page is up: every tick when the transport
+ * runs (automation moves values), every 8th at rest. AFTER the write drain, so
+ * a read never overtakes the turn it is reading back; the touched knob and any
+ * knob with detents in flight keep their own value — a read-back mid-sweep
+ * would stutter the knob backwards under the hand. */
+function macroPollTick() {
+    if (!macrosActive() || S.view !== VIEW_MACROS) return;
+    const store = macroStore();
+    if (S.macReadsThisTick || S.pendingWrites.length) return;
+    S.macPollTick++;
+    if (!GS.playing && (S.macPollTick % MACRO_POLL_EVERY_STOPPED)) return;
+    for (let n = 0; n < 8; n++) {
+        const i = (S.macPoll + n) % 8;
+        const m = store[i], cell = S.macCells[i];
+        if (!m || m.kind !== 'chain' || !cell || cell.vanished || S.macVals[i] == null) continue;
+        if (i === S.touchedIdx || S.knobAccum[i]) continue;
+        const v = parseValue(cell, engineGet(S.slot, m.comp, m.key));
+        if (v !== S.macVals[i]) { S.macVals[i] = v; S.dirty = true; }
+        S.macPoll = i + 1;
+        break;
+    }
 }
 
-function drawKnobAsnHud() {
-    const i = S.touchedIdx;
-    const a = S.knobAsn[i];
-    const val = fmtAsnValue(i);
-    const body = hudCard('KNOB ' + (i + 1), val || null);
-    /* Two lines rather than one "SYNTH: CUTOFF": the body is 112px of label
-     * font and a long param key would be truncated exactly where it stops being
-     * identifiable. Unread reads as UNASSIGNED for one frame at most — the read
-     * is queued by the same touch that opened this card. */
-    const line = (n, txt) => {
-        const t = String(txt);
-        mvPrint(Math.max(body.x, body.x + Math.round((body.w - mvWidth(t)) / 2)),
-                body.y + n * 11, t, 1);
-    };
-    if (!a || !a.target || !a.param) { line(0, 'UNASSIGNED'); return; }
-    line(0, compWide(a.target));
-    /* The module's own display NAME once its metadata is in ("Room Size", not
-     * `room_size`); the raw key until then, and for a param it does not
-     * declare. */
-    const nm = (S.asnCellFor === i && S.asnCell && S.asnCell.name) || a.param;
-    line(1, String(nm).toUpperCase());
+/* The knob's automation target on the current non-editor page — a level on
+ * SOUND + CONFIG, a macro on MACROS — for the ring paint under Mute/Delete. */
+function pageKnobFullKey(k) {
+    if (macrosActive()) { const m = macroTarget(k); return macroLive(m) ? macroFullKey(m) : null; }
+    return levelKnobSpec(k) ? levelFullKey(k) : null;
+}
+
+const upper = (x) => String(x == null ? '' : x).toUpperCase();
+/* The page's eight cells. `live` = sound mode is open on this track and its
+ * caches are the values; otherwise (the rest peek) the layout with `--`. An
+ * unassigned or vanished macro reads UNASSIGNED in the touched header and `--`
+ * in the cell — a labelled cell, never a blank knob (spec §2). */
+function macroCells(track, live) {
+    const t = track, c = effectiveClip(t);
+    const store = macroStore(t);
+    const cells = [];
+    for (let i = 0; i < 8; i++) {
+        const m = store[i];
+        const k = 'K' + (i + 1);
+        const unassigned = (label) => ({ kind: 'valsq', label: label || k, name: k + ' UNASSIGNED', text: '--' });
+        if (!m) { cells.push(unassigned()); continue; }
+        let cell;
+        if (m.kind === 'level') {
+            const li = macroLevelIdx(m);
+            const spec = li >= 0 ? (live ? levelKnobSpec(li) : LEVEL_KNOB_SPECS[li]) : null;
+            if (!spec) { cells.push(unassigned()); continue; }
+            const v = live ? S.levelVals[li] : null;
+            cell = { label: spec.label, name: spec.name, text: v == null ? '--' : spec.fmt(v) };
+            if (spec.widget === 'arcbip') { cell.kind = 'arcbip'; cell.signed = v == null ? 0 : Math.max(-1, Math.min(1, (v - 0.5) * 2)); }
+            else { cell.kind = spec.widget; cell.norm = v == null ? 0 : Math.max(0, Math.min(1, v / spec.max)); }
+        } else {
+            const ec = live ? S.macCells[i] : null;
+            if (ec && ec.vanished) { cells.push(unassigned()); continue; }
+            const v = live ? S.macVals[i] : null;
+            if (!ec || v == null) {
+                cell = { kind: 'valsq', label: ec ? upper(ec.short) : k,
+                         name: ec ? upper(ec.label) : k, text: '--' };
+            } else {
+                cell = toRenderCell(ec, v);
+            }
+        }
+        if (live && macroLive(m)) {
+            const st = automationStateFor(t, c, S.slot + ':' + macroFullKey(m));
+            if (st) cell.auto = st.active ? 'auto' : 'auto-off';
+        }
+        cells.push(cell);
+    }
+    return cells;
+}
+function macroCardHints() {
+    /* The click opens the assign list; the jog walks banks — or, with a step
+     * held, reveals its page (spec §2). */
+    const jog = GS.heldStep >= 0 ? ['JOG', 'STEP'] : ['JOG', 'BANK'];
+    return [['CLK', 'ASSIGN'], jog, ['BACK', 'OUT']];
+}
+function renderMacros() {
+    clear_screen();
+    kitUseLayout('bank');
+    drawKitBankPage(macroCells(S.track, true), {
+        headerText: 'MACROS', headerInvert: false,
+        touchedIdx: S.touchedIdx,
+        footer: macroCardHints(),
+    });
+}
+/* The rest peek of a track remembered on MACROS (ui_render's card gate, sound
+ * mode closed): the page from the store, no reads. */
+export function renderMacrosPeek(track) {
+    clear_screen();
+    kitUseLayout('bank');
+    drawKitBankPage(macroCells(track, S.active && S.track === track), {
+        headerText: 'MACROS', headerInvert: false,
+        touchedIdx: -1,
+        footer: macroCardHints(),
+    });
 }
 
 /* ---- LFO editor (P7 absorb) ---------------------------------------------
@@ -3859,7 +3990,7 @@ function runAction(a) {
     }
     else if (a.t === 'slotcfg')  openSlotCfg(a.keep, a.which);
     else if (a.t === 'knobs')    openKnobEditor();
-    else if (a.t === 'knobasn')  { openKnobEditor(); S.knobIdx = a.knob; openKnobTargets(); }
+    else if (a.t === 'knobasn')  { openKnobEditor(); S.knobIdx = a.knob; S.asnQuick = !!a.quick; openKnobTargets(); }
     else if (a.t === 'knobtarget') openKnobTargets();
     else if (a.t === 'knobparam')  openKnobParams(a.target);
     else if (a.t === 'lfo')      openLfoEditor(a.lfo | 0);
@@ -4507,26 +4638,20 @@ export function soundOnCC(d1, d2, decodeDelta) {
             if (delta) onKnobTurn(d1 - 71, delta);
             return true;
         }
-        /* Outside the module editor the knobs are THE LEVELS (spec §2, Josh
-         * 2026-09-02) — on the bank card and on every non-editor screen of a
-         * track. K6-K8 are unassigned and swallowed. The chain's knob-
-         * ASSIGNMENT forwarding that owned these knobs here before moves to
-         * the MACROS bank; knobDrivesSlot() is retired (returns false). */
+        /* On the MACROS page (and its assign screens) the knobs are THE
+         * MACROS (spec §2); on every other non-editor screen of a track they
+         * are THE LEVELS. The two predicates are exclusive by construction
+         * (levelsActive excludes macrosActive). K6-K8 on the levels, and an
+         * unassigned macro, are swallowed. */
+        if (macrosActive()) {
+            const delta = decodeDelta(d2);
+            if (delta) macroTurn(d1 - 71, delta);
+            return true;
+        }
         if (levelsActive()) {
             const delta = decodeDelta(d2);
             if (delta) onLevelTurn(d1 - 71, delta);
             return true;
-        }
-        if (knobDrivesSlot()) {
-            const delta = decodeDelta(d2);
-            if (delta) {
-                /* Armed even with no preceding touch (an injected CC, or a hand
-                 * already resting on the knob when the screen opened) — a turn
-                 * is at least as strong a statement of intent as a touch, and
-                 * the card is where the value has to appear. */
-                armKnobHud(d1 - 71, false);   /* a turn never re-seeds */
-                armKnobValue(d1 - 71, delta);
-            }
         }
         return true;
     }
@@ -4540,7 +4665,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * Shift, switches track — both without a second copy here.
          * ⚠ The block below ends in an unconditional `return true`, so without
          * this the prompt would swallow every turn. */
-        if (S.view === VIEW_PROMPT) return false;
+        if (S.view === VIEW_PROMPT || S.view === VIEW_MACROS) return false;
         /* ---- Shift+jog = SWITCH TRACK, in the menu only ----
          *
          * Declining the CC is the whole implementation: davebox's own jog
@@ -4732,6 +4857,9 @@ export function soundOnCC(d1, d2, decodeDelta) {
             return true;
         }
         if (S.view === VIEW_PROMPT) { S.view = VIEW_BLOCKS; S.dirty = true; return true; }
+        /* MACROS: the click opens the assign list, which floats over the page
+         * (no engine reads — the list is the store). */
+        if (S.view === VIEW_MACROS) { S.asnQuick = false; openKnobEditor(); S.dirty = true; return true; }
         if (S.view === VIEW_ENUM) { closeEnumPicker(true); return true; }
         if (S.view === VIEW_SLOTCFG) {
             const row = S.slotRows[S.slotCfgIdx];
@@ -5015,6 +5143,17 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.dirty = true;
             return true;
         }
+        if (S.view === VIEW_MACROS) {
+            /* The MACROS card: Back is OUT — of sound mode AND of bank mode,
+             * exactly as from the SOUND + CONFIG prompt (the trailing branch
+             * below). The exit hands the track's bank to its origin. */
+            soundExit();
+            GS.bankCardLatched = false;
+            standDownBankDisplay(true);
+            S.presetMsg = '';
+            S.dirty = true;
+            return true;
+        }
         if (S.view === VIEW_BLOCKS) {
             /* ⚠ A SESSION BUS FIRST. The prompt below is the TRACK door — a
              * session bus has no track, and walking a Master FX Back into it
@@ -5077,9 +5216,10 @@ export function soundOnCC(d1, d2, decodeDelta) {
             if (S.slotCfgEditing) S.slotCfgEditing = false;   /* leave edit first */
             else closeSlotCfg();
         } else if (S.view === VIEW_KNOBS) {
-            /* Assignments were queued as they were made; nothing to flush.
-             * The host autosave persists them (set_param marks the slot dirty). */
-            S.pendingAction = { t: 'slotcfg', keep: true };
+            /* The list floats over the MACROS page; Back returns to it. The
+             * store was written at each commit (sidecar), nothing to flush. */
+            S.view = VIEW_MACROS;
+            S.asnQuick = false;
         } else if (S.view === VIEW_LFO) {
             if (S.lfoEditing) S.lfoEditing = false;
             else S.pendingAction = { t: 'slotcfg', keep: true };
@@ -5201,13 +5341,36 @@ export function soundOnNote(status, d1, d2) {
      * ⭑ The assign route goes through openKnobEditor (all eight assignments)
      * rather than the one knob it needs, because committing lands you on the
      * KNOBS list — which would otherwise render seven unread rows as "(None)". */
-    if (on && knobHudContext()) {
-        if (S.shiftHeld) {
-            S.pendingAction = { t: 'knobasn', knob: d1 };
+    if (macrosActive()) {
+        if (on && S.shiftHeld) {
+            /* QUICK ASSIGN (spec §2): Shift + touch picks THIS knob's target
+             * without leaving the bank — the one place the Shift+touch assign
+             * flow survives. Tick-run: the target list probes components. */
+            S.pendingAction = { t: 'knobasn', knob: d1, quick: true };
             S.dirty = true;
             return true;
         }
-        armKnobHud(d1, true);
+        /* A MACRO's touch is an automation gesture, exactly as an editor
+         * knob's: Delete+touch clears, Mute+touch deactivates/reactivates
+         * (and marks the Mute a modifier), and the touch itself opens/closes
+         * the gesture the drain and the override-resume ride on. */
+        const m = macroTarget(d1);
+        if (macroLive(m)) {
+            const t = S.track, c = effectiveClip(t), fk = macroFullKey(m), target = S.slot + ':' + fk;
+            if (on) {
+                if (S.deleteHeld) {
+                    if (automationClearKey(t, c, target)) showActionPopup('AUTOMATION', 'CLEARED');
+                } else if (S.muteHeld) {
+                    GS.muteUsedAsModifier = true;
+                    const r = automationToggleActive(t, c, target);
+                    if (r !== null) showActionPopup('AUTOMATION', r ? 'ON' : 'OFF');
+                }
+            } else if (m.kind === 'level') {
+                flushLevelSave();
+            }
+            automationParamTouch(t, c, S.slot, fk, on);
+        }
+        S.dirty = true;
     }
     /* A LEVEL knob's touch is an automation gesture, exactly as an editor
      * knob's (spec §3): Delete+touch clears its automation in the clip,
@@ -5296,11 +5459,12 @@ export function soundTick() {
      * the five that exist here, unlit where nothing is automated; K6-K8 unlit.
      * On release the rings go back to unlit — nothing else paints them on
      * these screens (the editor's own repaint runs in its block below). */
-    if ((S.muteHeld || S.deleteHeld) && levelsActive()) {
+    if ((S.muteHeld || S.deleteHeld) && (levelsActive() || macrosActive())) {
         S.autoLedPaint = true;
         const t = S.track, c = effectiveClip(t);
         for (let k = 0; k < 8; k++) {
-            const st = levelKnobSpec(k) ? automationStateFor(t, c, S.slot + ':' + levelFullKey(k)) : null;
+            const fk = pageKnobFullKey(k);
+            const st = fk ? automationStateFor(t, c, S.slot + ':' + fk) : null;
             setButtonLED(MoveKnob1 + k, st ? (st.active ? Red : White) : 0, true);
         }
     } else if (S.autoLedPaint && !ppOn) {
@@ -5443,6 +5607,10 @@ export function soundTick() {
         }
     }
 
+    /* The macros' seed and turn law: queue their writes BEFORE the drain, so a
+     * turn reaches the engine in the tick it arrived — the same latency as a
+     * level knob. */
+    macroTick();
     drainAndVerifyWrites();
     drainForcedPoll();
 
@@ -5473,8 +5641,9 @@ export function soundTick() {
     tickChainPatches();
 
     /* After the write drain, so a read never overtakes the turn it is reading
-     * back, and after pendingAction so the assignment is cached first. */
-    if (!S.pendingWrites.length) tickKnobAsn();
+     * back. (The seed and the turn law ran BEFORE the drain — macroTick — so a
+     * turn's write lands in the same tick, as a level's does.) */
+    macroPollTick();
 
     if (S.needsPoll && !S.pendingWrites.length) {
         S.needsPoll = false;
@@ -6545,7 +6714,7 @@ export function soundRender() {
      * old reads here (GS.jogTouched, the transient bankSelectTick window) were
      * exactly the retired display drivers, and they were the "jog touch peeks
      * the card" half of the S+C-as-active-bank bug. */
-    if (S.view === VIEW_PROMPT &&
+    if ((S.view === VIEW_PROMPT || S.view === VIEW_MACROS) &&
             !soundIsGlobal() && !S.enterSession &&
             !S.instrEditing && !S.busLevelEditing &&
             S.touchedIdx < 0 && !S.volTouched &&
@@ -6553,6 +6722,7 @@ export function soundRender() {
             !bankCardVisible())
         return false;
     if (S.view === VIEW_PROMPT) renderPrompt();
+    else if (S.view === VIEW_MACROS) renderMacros();
     else if (S.view === VIEW_BLOCKS) renderBlocks();
     else if (S.view === VIEW_BROWSE) renderBrowse();
     else if (S.view === VIEW_PRESET_SRC) renderPresetSrc();
@@ -6580,6 +6750,5 @@ export function soundRender() {
     /* The level readout wins: it is the same box in the same place, and the
      * volume knob is a deliberate second gesture on top of this one. */
     if (S.volShownUntil >= 0 && S.tickCount <= S.volShownUntil) drawVolReadout();
-    else if (S.touchedIdx >= 0 && knobHudContext()) drawKnobAsnHud();
     return true;
 }

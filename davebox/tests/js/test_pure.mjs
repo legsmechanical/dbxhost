@@ -15,7 +15,7 @@ import { drumPadToLane, drumPadToVelZone, drumVelZoneToVelocity,
          _clipIsEmpty, clipHasContent,
          bankCyclePos, scaleNudgeNote } from '../../ui/ui_pure.mjs';
 import { PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-         BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP } from '../../ui/ui_constants.mjs';
+         BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS } from '../../ui/ui_constants.mjs';
 
 let failed = 0;
 function eq(got, want, label) {
@@ -111,27 +111,31 @@ eq(_clipIsEmpty(1, 2), false, '_clipIsEmpty drum non-empty');
 S.activeTrack = 0;
 S.trackPadMode[0] = 0;
 S.activeBank = 3;
-eqObj(bankCyclePos(), { idx: 3, count: 9 }, 'bankCyclePos melodic mid');
+eqObj(bankCyclePos(), { idx: 3, count: 10 }, 'bankCyclePos melodic mid');
 S.activeBank = 9;                          /* not on the walk -> 0 */
-eqObj(bankCyclePos(), { idx: 0, count: 9 }, 'bankCyclePos melodic not-in-cycle');
+eqObj(bankCyclePos(), { idx: 0, count: 10 }, 'bankCyclePos melodic not-in-cycle');
 S.activeBank = -2;                         /* not on the walk -> 0 */
-eqObj(bankCyclePos(), { idx: 0, count: 9 }, 'bankCyclePos melodic clamp-low');
+eqObj(bankCyclePos(), { idx: 0, count: 10 }, 'bankCyclePos melodic clamp-low');
 S.activeBank = BANK_STEP;                  /* STEP sits just before SOUND + CONFIG */
-eqObj(bankCyclePos(), { idx: 7, count: 9 }, 'bankCyclePos melodic STEP bank');
+eqObj(bankCyclePos(), { idx: 7, count: 10 }, 'bankCyclePos melodic STEP bank');
 S.activeBank = BANK_SOUND;                 /* sound mode's identity -> last segment */
-eqObj(bankCyclePos(), { idx: 8, count: 9 }, 'bankCyclePos melodic sound bank');
+eqObj(bankCyclePos(), { idx: 8, count: 10 }, 'bankCyclePos melodic sound bank');
+S.activeBank = BANK_MACROS;                /* MACROS follows SOUND + CONFIG — the last segment */
+eqObj(bankCyclePos(), { idx: 9, count: 10 }, 'bankCyclePos melodic MACROS bank');
 /* Drum branch: indexOf into [7,0,1,3,5,6] */
 S.trackPadMode[0] = PAD_MODE_DRUM;
 S.activeBank = 7;                          /* indexOf(7) = 0 */
-eqObj(bankCyclePos(), { idx: 0, count: 8 }, 'bankCyclePos drum bank7');
+eqObj(bankCyclePos(), { idx: 0, count: 9 }, 'bankCyclePos drum bank7');
 S.activeBank = 6;                          /* indexOf(6) = 5 */
-eqObj(bankCyclePos(), { idx: 5, count: 8 }, 'bankCyclePos drum bank6');
+eqObj(bankCyclePos(), { idx: 5, count: 9 }, 'bankCyclePos drum bank6');
 S.activeBank = 2;                          /* indexOf(2) = -1 -> idx 0 */
-eqObj(bankCyclePos(), { idx: 0, count: 8 }, 'bankCyclePos drum not-in-cycle');
+eqObj(bankCyclePos(), { idx: 0, count: 9 }, 'bankCyclePos drum not-in-cycle');
 S.activeBank = BANK_SOUND;
-eqObj(bankCyclePos(), { idx: 7, count: 8 }, 'bankCyclePos drum sound bank');
+eqObj(bankCyclePos(), { idx: 7, count: 9 }, 'bankCyclePos drum sound bank');
 S.activeBank = BANK_STEP;
-eqObj(bankCyclePos(), { idx: 6, count: 8 }, 'bankCyclePos drum STEP bank');
+eqObj(bankCyclePos(), { idx: 6, count: 9 }, 'bankCyclePos drum STEP bank');
+S.activeBank = BANK_MACROS;
+eqObj(bankCyclePos(), { idx: 8, count: 9 }, 'bankCyclePos drum MACROS bank');
 
 /* -- bankCyclePos() conductor branch (fix: bankCyclePos drift, phase 5b) --
  * A Conductor track jog-cycles 5 banks (see _onCC_jog / CONDUCT_BANK_CYCLE in
