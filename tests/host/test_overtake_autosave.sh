@@ -50,8 +50,9 @@ rg -q 'isOvertakeActive && typeof shadow_take_dirty_slots' "$js" \
 rg -q 'autosaveCounter' "$js" \
   && fail "$js resurrected the interval autosave — the dirty-driven path is the only mid-session save (flash write amplification otherwise)"
 
-# 4. Starvation guard: a continuous writer must still get saved.
-rg -q 'autosaveDirtyAge >= AUTOSAVE_INTERVAL' "$js" \
+# 4. Starvation guard: a continuous writer must still get saved — and the cap
+#    is a DURATION, not a tick count (see test_autosave_timing_and_hold.sh).
+rg -q 'nowMs - autosaveDirtySince >= AUTOSAVE_MAX_DEFER_MS' "$js" \
   || fail "$js lost the deferral cap — a writer firing every tick would never be saved, silently restoring the original bug"
 
 # 5. The save must be staggered (one slot per tick), not a whole flush in-frame.

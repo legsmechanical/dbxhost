@@ -380,6 +380,14 @@ export function tickWants(k) { return _pre.has(k); }
 /* Ticks of quiet before a save while stopped; ~1 s at the ~94 Hz tick. */
 const SAVE_QUIET_TICKS = 94;
 
+/* Whether the host's autosave is currently held for the transport (edge-tracked). */
+let autosaveHeld = false;
+export function autosaveHoldFollow(playing) {
+    if (playing === autosaveHeld) return;
+    autosaveHeld = playing;
+    host_autosave_hold(playing);
+}
+
 export function pollDSP() {
     const pget = dget;                          /* this tick's prefetch, else a round-trip */
     /* bpm mirror — MIDI handlers can't get_param (silently null there), so
@@ -528,6 +536,11 @@ export function pollDSP() {
     const v = snap.split(' ');
     if (v.length < 53) return;
     S.playing = (v[0] === '1');
+    /* The host's mid-session slot autosave holds while the transport runs —
+     * the same law as the project save (spec §2): a save is a serialization
+     * on the SPI thread, and playback is when that thread is the constraint.
+     * Edge only: the host keeps the flag, and a call a tick is a wasted tick. */
+    autosaveHoldFollow(S.playing);
     for (let t = 0; t < NUM_TRACKS; t++) {
         const newStep = parseInt(v[1 + t], 10) | 0;
         S.trackCurrentStep[t] = newStep;

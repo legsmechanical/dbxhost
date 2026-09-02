@@ -366,7 +366,13 @@ function perSetStateDir(uuid) {
 const PATCH_DIR = "/data/UserData/schwung/patches";
 const SLOT_STATE_DIR_DEFAULT = HOST_STATE_ROOT + "/slot_state";
 let activeSlotStateDir = SLOT_STATE_DIR_DEFAULT;
-const AUTOSAVE_INTERVAL = 300;  /* ~10 seconds at 30fps */
+/* Autosave timing is in MILLISECONDS, never ticks: the overtake loop runs
+ * up to ~500 Hz against the classic UI's ~60, so a tick count is a different
+ * duration in every mode — a "10 s" cap counted in ticks was ~2 s under an
+ * overtake tool, and a per-tick writer then cost a full slot serialization
+ * on the SPI thread every 2 s (a 300 ms UI stall, visible as the playhead
+ * sticking on one step). */
+const AUTOSAVE_MAX_DEFER_MS = 10000;  /* a dirty unit never waits longer than this */
 /* Overtake autosave: ticks of quiet before a dirty slot is written. Long enough
  * that a continuous knob sweep collapses into one save (flash write
  * amplification is the risk here, not CPU), short enough that a user who edits
@@ -378,11 +384,14 @@ const AUTOSAVE_INTERVAL = 300;  /* ~10 seconds at 30fps */
  * regardless of change) is gone — it was flash write amplification with no
  * added safety once the savers preserve files on a timed-out read and the
  * transition flushes (set change, suspend, exit) still walk everything. */
-const AUTOSAVE_DIRTY_QUIET_TICKS = 90;  /* ~3 s */
+const AUTOSAVE_QUIET_MS = 3000;
 /* Wait before re-attempting a save that could not read the DSP's state because
  * the param mailbox was busy. Short enough to catch the next lull, long enough
  * that a continuously-busy tool is not queried every single tick. */
-const AUTOSAVE_DIRTY_RETRY_TICKS = 30;  /* ~1 s */
+const AUTOSAVE_RETRY_MS = 1000;
+/* After a set change, leave the freshly-written slot files alone while the
+ * DSP settles. */
+const AUTOSAVE_SUPPRESS_MS = 5000;
 const DEFAULT_SLOTS = [
     { channel: 1, name: "" },
     { channel: 2, name: "" },
@@ -821,14 +830,20 @@ let selectedPatch = 0;
 let view = VIEWS.TOOLS;   /* parked; the SLOTS root view died in P5 */
 let needsRedraw = true;
 let refreshCounter = 0;
-let autosaveSuppressUntil = 0;  /* suppress autosave after set change */
+let autosaveSuppressUntil = 0;  /* Date.now() ms; suppress autosave after set change */
 /* Dirty-driven autosave (see tick()). Pending slot/bus bitmasks + a
  * quiet-period countdown, so a knob sweep coalesces into ONE save instead of
  * hundreds. */
 let autosaveDirtySlots = 0;
 let autosaveDirtyBuses = 0;
-let autosaveDirtyQuiet = 0;
-let autosaveDirtyAge = 0;   /* ticks a unit has waited — caps the deferral */
+let autosaveNotBefore = 0;  /* Date.now() ms: the quiet period / retry back-off */
+let autosaveDirtySince = 0; /* Date.now() ms the oldest unsaved edit landed; 0 = clean */
+/* A module may HOLD the mid-session autosave (host_autosave_hold) — a
+ * sequencer while its transport runs, for instance, so a save never lands
+ * on the SPI thread mid-performance. Honoured absolutely while set: the
+ * module owns the trade, and the transition flushes (set change, suspend,
+ * exit) still walk everything. Cleared when the module unloads. */
+let autosaveHold = false;
 /* Mirrors the bus bit layout in shadow_ui.c (shadow_mark_fx_bus_dirty). The FX
  * buses all live at slot 0 and differ only by key namespace, so they need their
  * own mask rather than riding the slot one. */
@@ -3847,6 +3862,8 @@ function exitOvertakeMode() {
 
     /* Unload overtake DSP if loaded */
     unloadOvertakeDsp();
+    autosaveHold = false;
+    delete globalThis.host_autosave_hold;
     delete globalThis.host_module_set_param;
     delete globalThis.host_module_set_param_blocking;
     delete globalThis.host_module_get_param;
@@ -4380,6 +4397,13 @@ function loadOvertakeModule(moduleInfo, skipOvertake) {
                 return shadow_set_params(0, "overtake_dsp:", blob);
             }
             return false;
+        };
+        /* host_autosave_hold(on): while on, the host's mid-session slot/bus
+         * autosave is deferred (edits stay marked; the transition flushes
+         * still run). For a module whose performance must not share the SPI
+         * thread with a slot serialization. Cleared on unload. */
+        globalThis.host_autosave_hold = function(on) {
+            autosaveHold = !!on;
         };
         globalThis.host_exit_module = function() {
             debugLog("host_exit_module called by overtake module");
@@ -5411,7 +5435,7 @@ function saveOneDirtyUnit() {
             } else {
                 /* Back off briefly so a busy mailbox is not hammered every
                  * tick; the bit stays set, so nothing is lost. */
-                autosaveDirtyQuiet = AUTOSAVE_DIRTY_RETRY_TICKS;
+                autosaveNotBefore = Date.now() + AUTOSAVE_RETRY_MS;
                 debugLog("autosave: slot " + slot +
                          " not persisted (mailbox busy) — retrying");
             }
@@ -5430,7 +5454,7 @@ function saveOneDirtyUnit() {
             autosaveDirtyBuses &= ~FXBUS_DIRTY_MASTER;
             debugLog("autosave: master fx written");
         } else {
-            autosaveDirtyQuiet = AUTOSAVE_DIRTY_RETRY_TICKS;
+            autosaveNotBefore = Date.now() + AUTOSAVE_RETRY_MS;
             debugLog("autosave: master fx not persisted (mailbox busy) — retrying");
         }
         return;
@@ -5440,7 +5464,7 @@ function saveOneDirtyUnit() {
             autosaveDirtyBuses &= ~FXBUS_DIRTY_SEND_A;
             debugLog("autosave: send fx a written");
         } else {
-            autosaveDirtyQuiet = AUTOSAVE_DIRTY_RETRY_TICKS;
+            autosaveNotBefore = Date.now() + AUTOSAVE_RETRY_MS;
         }
         return;
     }
@@ -5449,7 +5473,7 @@ function saveOneDirtyUnit() {
             autosaveDirtyBuses &= ~FXBUS_DIRTY_SEND_B;
             debugLog("autosave: send fx b written");
         } else {
-            autosaveDirtyQuiet = AUTOSAVE_DIRTY_RETRY_TICKS;
+            autosaveNotBefore = Date.now() + AUTOSAVE_RETRY_MS;
         }
         return;
     }
@@ -5460,7 +5484,7 @@ function saveOneDirtyUnit() {
                 autosaveDirtyBuses &= ~bit;
                 debugLog("autosave: move fx bus " + m + " written");
             } else {
-                autosaveDirtyQuiet = AUTOSAVE_DIRTY_RETRY_TICKS;
+                autosaveNotBefore = Date.now() + AUTOSAVE_RETRY_MS;
             }
             return;
         }
@@ -14836,7 +14860,7 @@ function processSetChangedFlag() {
 
             /* Suppress autosave briefly so async DSP settling doesn't
              * overwrite the freshly-written slot files */
-            autosaveSuppressUntil = 150; /* ~5 seconds at 30fps */
+            autosaveSuppressUntil = Date.now() + AUTOSAVE_SUPPRESS_MS;
 
             /* 7. Reload master FX modules from per-set state files.
              * This restore is always about the MASTER bus. Two things must be
@@ -16871,34 +16895,36 @@ globalThis.tick = function() {
      * that survive the switch are deliberately NOT cleared: the save
      * re-reads live state, so the worst case is one redundant but correct
      * write into the new set, whereas clearing could drop a real edit. */
-    if (autosaveSuppressUntil > 0) {
-        autosaveSuppressUntil--;
-    } else {
-        if (typeof shadow_take_dirty_slots === "function") {
+    {
+        const nowMs = Date.now();
+        if (nowMs >= autosaveSuppressUntil &&
+            typeof shadow_take_dirty_slots === "function") {
             const justDirtied = shadow_take_dirty_slots();
             const busDirtied = (typeof shadow_take_dirty_fx_buses === "function")
                 ? shadow_take_dirty_fx_buses() : 0;
             if (justDirtied || busDirtied) {
+                if (!autosaveDirtySlots && !autosaveDirtyBuses) autosaveDirtySince = nowMs;
                 autosaveDirtySlots |= justDirtied;
                 autosaveDirtyBuses |= busDirtied;
                 /* Restart the quiet period: a knob sweep is one edit, not 200. */
-                autosaveDirtyQuiet = AUTOSAVE_DIRTY_QUIET_TICKS;
+                autosaveNotBefore = nowMs + AUTOSAVE_QUIET_MS;
             }
             if (autosaveDirtySlots || autosaveDirtyBuses) {
-                if (autosaveDirtyQuiet > 0) autosaveDirtyQuiet--;
-                autosaveDirtyAge++;
                 /* A writer that fires every tick would hold the quiet period
                  * open forever, so cap the deferral (timeout-skip guard).
                  * Starvation here would silently lose the edit on a crash. */
-                const ready = (autosaveDirtyQuiet === 0) ||
-                              (autosaveDirtyAge >= AUTOSAVE_INTERVAL);
+                const ready = (nowMs >= autosaveNotBefore) ||
+                              (nowMs - autosaveDirtySince >= AUTOSAVE_MAX_DEFER_MS);
                 /* Leave the bits set through a preset audition — autosaveAllSlots
                  * refuses to persist an uncommitted preview, so clearing them
-                 * here would drop the edit instead of deferring it. */
-                if (ready && !isPresetPreviewActive()) {
+                 * here would drop the edit instead of deferring it. The hold
+                 * defers the same way: bits stay set, nothing is lost. */
+                if (ready && !autosaveHold && !isPresetPreviewActive()) {
                     saveOneDirtyUnit();
-                    autosaveDirtyAge = 0;
+                    autosaveDirtySince = nowMs;
                 }
+            } else {
+                autosaveDirtySince = 0;
             }
         }
     }

@@ -51,9 +51,9 @@ globalThis.shadow_get_param = (slot, key) => {
         ]);
     return '';
 };
-globalThis.shadow_set_params = (slot, marker, blob) => {
+globalThis.shadow_set_params = (slot, marker, blob, transient) => {
     const items = dec(blob);
-    requests.push({ kind: 'set', slot, marker, n: items.length / 2 });
+    requests.push({ kind: 'set', slot, marker, n: items.length / 2, transient });
     if (refuse > 0) { refuse--; return null; }
     for (let i = 0; i + 1 < items.length; i += 2) writes.push({ slot, key: items[i], val: items[i + 1] });
     return true;
@@ -119,6 +119,8 @@ const tick = () => { S.tickCount++; tickPrefetch(); automationTick(); };
     check(sets.length === 1 && sets[0].slot === 0 && sets[0].marker === 'chain:' && sets[0].n === 5,
           '⚠ five parameters on one slot cross in ONE bulk write to that slot');
     check(writes.length === 5, 'and each was written exactly once');
+    check(sets[0].transient === true,
+          '⚠ the push is TRANSIENT — playback, not an edit; a plain SET re-dirties the slot and the host autosaves it at its cap for the whole performance');
     check(fireAndForget === 0, '⚠ nothing goes through the per-parameter paths, blocking or not');
 }
 

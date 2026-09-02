@@ -14,3 +14,6 @@ globalThis.host_module_get_params = (blob) => enc(dec(blob).map((k) => {
     const v = (typeof g === 'function') ? g(k) : null;
     return (v === null || v === undefined) ? '' : String(v);
 }));
+
+/* The host's autosave hold: a no-op here; the edge is pinned by its own test. */
+if (typeof globalThis.host_autosave_hold !== 'function') globalThis.host_autosave_hold = () => {};

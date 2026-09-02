@@ -807,8 +807,18 @@ static void shadow_mark_fx_bus_dirty(const char *key) {
     }
 }
 
+/* Does a write to `key` edit persisted slot state? The overtake DSP is the
+ * tool's own instrument, persisted by the tool: its "overtake_dsp:" keys are
+ * addressed at slot 0 only because the mailbox needs a slot, and marking slot
+ * 0 dirty for them autosaves a chain that did not change — once per deferral
+ * cap for as long as the tool keeps writing, each save a full serialization
+ * of the slot on the SPI thread. */
+static int shadow_param_key_dirties(const char *key) {
+    return key == NULL || strncmp(key, "overtake_dsp:", 13) != 0;
+}
+
 static int shadow_set_param_common(int slot, const char *key, const char *value, int timeout_ms, int force_blocking) {
-    if (slot >= 0 && slot < 32) {
+    if (slot >= 0 && slot < 32 && shadow_param_key_dirties(key)) {
         g_slot_param_dirty_mask |= (1u << slot);
     }
     shadow_mark_fx_bus_dirty(key);
@@ -929,6 +939,12 @@ static JSValue shadow_param_bulk_js(JSContext *ctx, int argc, JSValueConst *argv
     int slot = 0;
     if (JS_ToInt32(ctx, &slot, argv[0])) return JS_NULL;
     if (slot < 0 || slot >= SHADOW_UI_SLOTS) return JS_NULL;
+    /* Optional 4th arg: transient. A transient SET is a value the caller
+     * does not want persisted — playback (automation, a modulation ramp),
+     * not an edit — so it leaves the autosave dirty bits alone. Default
+     * false: an ordinary bulk SET, a `<prefix>:state` restore included,
+     * marks dirty exactly as before. */
+    int transient = (argc >= 4) ? JS_ToBool(ctx, argv[3]) : 0;
     const char *key = JS_ToCString(ctx, argv[1]);
     if (!key) return JS_NULL;
     size_t vlen = 0;
@@ -954,8 +970,9 @@ static JSValue shadow_param_bulk_js(JSContext *ctx, int argc, JSValueConst *argv
      *
      * Reads the key back out of shared memory, NOT the JS string: `key` was
      * released above and using it here would be a use-after-free. */
-    if (req_type == 4) {
-        if (slot < 32) g_slot_param_dirty_mask |= (1u << slot);
+    if (req_type == 4 && !transient) {
+        if (slot < 32 && shadow_param_key_dirties(shadow_param->key))
+            g_slot_param_dirty_mask |= (1u << slot);
         shadow_mark_fx_bus_dirty(shadow_param->key);
     }
 
@@ -2738,7 +2755,7 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_param_timeout", JS_NewCFunction(ctx, js_shadow_set_param_timeout, "shadow_set_param_timeout", 4));
     JS_SetPropertyStr(ctx, global_obj, "shadow_get_param", JS_NewCFunction(ctx, js_shadow_get_param, "shadow_get_param", 2));
     JS_SetPropertyStr(ctx, global_obj, "shadow_get_params", JS_NewCFunction(ctx, js_shadow_get_params, "shadow_get_params", 3));
-    JS_SetPropertyStr(ctx, global_obj, "shadow_set_params", JS_NewCFunction(ctx, js_shadow_set_params, "shadow_set_params", 3));
+    JS_SetPropertyStr(ctx, global_obj, "shadow_set_params", JS_NewCFunction(ctx, js_shadow_set_params, "shadow_set_params", 4));
     JS_SetPropertyStr(ctx, global_obj, "shadow_take_dirty_slots", JS_NewCFunction(ctx, js_shadow_take_dirty_slots, "shadow_take_dirty_slots", 0));
     JS_SetPropertyStr(ctx, global_obj, "shadow_take_dirty_fx_buses", JS_NewCFunction(ctx, js_shadow_take_dirty_fx_buses, "shadow_take_dirty_fx_buses", 0));
 

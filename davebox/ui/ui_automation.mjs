@@ -345,7 +345,12 @@ function pushPending() {
         if (requests >= PUSH_REQUESTS_PER_TICK) break;
         requests++;
         for (const e of arr) pending.delete(e[2]);
-        const ok = shadow_set_params(slot, 'chain:', bulkPairs(arr.map(e => [e[0], e[1]])));
+        /* TRANSIENT: playback values, not edits. Without the flag every push
+         * re-dirtied the slot, and the host's autosave then serialized the
+         * whole slot on the SPI thread at its deferral cap for as long as
+         * the transport ran (a 300 ms stall, the playhead sticking on one
+         * step) — and wrote the mid-sweep value to disk as the resting one. */
+        const ok = shadow_set_params(slot, 'chain:', bulkPairs(arr.map(e => [e[0], e[1]])), true);
         /* Refused (timed out): the DSP has recorded these as sent and will not
          * stage them again, so they must stay with us. Nothing newer can have
          * arrived since the delete — new values only land in the drain. */

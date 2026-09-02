@@ -302,6 +302,13 @@ host_edit_cc_block(bool)      // [FORK-ONLY] Claim Undo (56) / Copy (60) / Delet
                               // current state, so calling it every tick spams the
                               // shim. Release still reaches the consumer that got the
                               // press even if the claim is dropped in between.
+host_autosave_hold(on)        // While on, the host DEFERS its mid-session slot/bus
+                              // autosave (edits stay marked and are written once the
+                              // hold lifts; set change / suspend / exit still flush
+                              // everything). For a module whose performance must not
+                              // share the SPI thread with a slot serialization — e.g.
+                              // hold while the transport runs. Call on the EDGE, not
+                              // every tick. Cleared when the module unloads.
 host_preview_play(path)       // Play a WAV preview through Move's speakers
 host_preview_stop()
 host_send_screenreader(text)  // Same as host_announce_screenreader
@@ -316,7 +323,8 @@ host_close_service(result)     // -> bool; pop + onServiceReturn(id, result)
 // Shadow control / state queries (shadow_ui only)
 shadow_get_param(slot, key) / shadow_set_param(slot, key, val)
 shadow_set_param_timeout(ms)
-shadow_set_params(slot, "chain:", blob)   // ONE round-trip writing many params of
+shadow_set_params(slot, "chain:", blob[, transient])
+                                          // ONE round-trip writing many params of
                                           // chain slot `slot`; blob = "<n>\n" then
                                           // n items of "<len>\n<bytes>", alternating
                                           // key, value (n even, n <= 64). Each pair
@@ -324,6 +332,15 @@ shadow_set_params(slot, "chain:", blob)   // ONE round-trip writing many params 
                                           // blocking; returns true, or null on timeout.
                                           // (The "overtake_dsp:" marker is the same
                                           // format aimed at the overtake DSP.)
+                                          // `transient` (default false): the values are
+                                          // playback, not an edit — the write leaves the
+                                          // host's autosave dirty bits alone. Use it for
+                                          // anything a sequencer or modulator pushes
+                                          // continuously; an ordinary SET (a :state
+                                          // restore, a knob) must NOT pass it.
+                                          // Writes with an "overtake_dsp:" key never
+                                          // dirty a slot: the tool's DSP is the tool's
+                                          // to persist.
 shadow_get_slots() / shadow_set_focused_slot(slot)
 shadow_get_selected_slot() / shadow_get_ui_slot()
 shadow_get_display_mode() / shadow_set_display_overlay(mode)
