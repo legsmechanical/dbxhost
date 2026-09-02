@@ -65,7 +65,9 @@ exact shape — see the board).
   the automation store learns it — ⭑RULED + BUILT 2026-09-03: Josh's numbered keep-list
   (`BANK_MACRO_ALLOW` in ui_sound: Playback Dir; NOTE FX minus Len mode; HARMONY; DELAY incl.
   the Shift+K1 Clock Feedback; SEQ ARP / LIVE ARP minus Steps mode; ALL LANES Dir), per pad
-  mode, written by the bank's own path (`applyBankParam`). ⏳ Josh's future ask: SEVERAL
+  mode, written by the bank's own path (`applyBankParam`). ⭑ 2026-09-03 late: bank params are
+  AUTOMATION TARGETS — `seq:<track>:<dspKey>`, ranges in `SEQ_AUTO_TARGETS`; the DSP stages
+  them like chain params and JS applies through the bank's own write path (one writer). ⏳ Josh's future ask: SEVERAL
   parameters on ONE macro with per-target min/max (a macro as a mapping, not a pointer). The chain's knob_N store is read once as a migration AND
   mirrored on every commit — Josh 2026-09-03: a whole-chain patch carries the assignments, and
   a patch load merges them back. ⭑RULED 2026-09-03: the knobs are the macros AT REST too (a

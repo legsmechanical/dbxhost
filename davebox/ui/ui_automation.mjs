@@ -16,7 +16,7 @@
  */
 
 import { S } from './ui_state.mjs';
-import { POLL_INTERVAL } from './ui_constants.mjs';
+import { POLL_INTERVAL, SEQ_AUTO_TARGETS, BANK_SHORT } from './ui_constants.mjs';
 /* The move_fx: prefix has exactly one builder, and a source invariant pins
  * that (tests/test_move_fx_prefix_owner.sh). Build it here and the suite fails
  * — correctly: two builders are two things to keep in step. */
@@ -196,6 +196,11 @@ export function automationTargetLabel(target) {
     const t = String(target || '');
     if (t === 'at') return 'Aftertouch';
     if (t.indexOf('cc:') === 0) return 'CC ' + t.slice(3);
+    if (t.indexOf('seq:') === 0) {
+        const key = t.split(':')[2];
+        const st = SEQ_AUTO_TARGETS[key];
+        return st ? (BANK_SHORT[st.bank] || 'Bank') + '>' + st.label : t;
+    }
     const i = t.indexOf(':');
     if (i < 0) return t;
     const slot = parseInt(t.slice(0, i), 10);
@@ -244,6 +249,9 @@ function isLevelComponent(comp) {
  * time a parameter on that component is automated, then nothing. The mixer
  * components never round-trip: their metadata is LEVEL_META. */
 function componentMeta(slot, comp) {
+    /* A SEQUENCER target ("seq:<track>:<key>"): davebox's own bank knobs;
+     * their ranges are declared in SEQ_AUTO_TARGETS, never fetched. */
+    if (slot === 'seq') return SEQ_AUTO_TARGETS;
     const id = slot + ':' + comp;
     let m = metaCache.get(id);
     if (m) return m;
@@ -287,6 +295,13 @@ function wireValue(slot, comp, key, norm) {
  * rather than guessed at. */
 function pushPair(target, norm) {
     let m = target.split(':');
+    if (m.length === 3 && m[0] === 'seq') {
+        /* A sequencer param: applied by davebox itself (seqApplier), through
+         * the bank's own write path — not a chain SET. */
+        const track = parseInt(m[1], 10);
+        if (isNaN(track) || !SEQ_AUTO_TARGETS[m[2]]) return null;
+        return { slot: 'seq', track, key: m[2], val: wireValue('seq', m[1], m[2], norm), seq: true };
+    }
     if (m.length >= 3 && m[0] !== 'bus') {
         /* The component is everything between the slot and the LAST colon: a
          * bus block is "move_fx:2:fx3", a send block "send_fx:a:fx1" — the
@@ -307,6 +322,11 @@ function pushPair(target, norm) {
     }
     return null;
 }
+
+/* Who applies a staged SEQUENCER value: davebox's bank-param writer
+ * (ui_sound registers it) — (track, key, intValue). */
+let seqApplier = null;
+export function automationRegisterSeqApply(fn) { seqApplier = fn; }
 
 /* The drain: ONE bulk GET carrying the staged values and the three flags the
  * DSP can only report. */
@@ -374,6 +394,13 @@ function pushPending() {
         if (gestures.has(target)) { pending.delete(target); continue; }   /* touch wins */
         const p = pushPair(target, norm);
         if (!p) { pending.delete(target); continue; }
+        if (p.seq) {
+            /* Applied at once, in JS: a bank param write is one set_param
+             * with its own side effects and mirrors (applyBankParam). */
+            pending.delete(target);
+            if (seqApplier) seqApplier(p.track, p.key, parseInt(p.val, 10));
+            continue;
+        }
         let arr = bySlot.get(p.slot);
         if (!arr) { arr = []; bySlot.set(p.slot, arr); }
         if (arr.length >= BULK_MAX_PAIRS) continue;      /* this slot's next request, next tick */

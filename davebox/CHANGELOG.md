@@ -19,9 +19,8 @@ the section into a versioned heading at release time.
 ### Features (pending)
 - **The MACROS bank.** One step past SOUND + CONFIG on the jog: eight knobs
   you assign to any parameter of the track's sound — a synth or effect
-  parameter, a level, or one of dAVEBOx's own bank knobs (a bank-knob macro
-  is a live control, not recordable) — drawn with the module editor's own
-  widgets. A macro
+  parameter, a level, or one of dAVEBOx's own bank knobs — drawn with the
+  module editor's own widgets. A macro
   *is* its parameter: it records, locks, mutes and clears like the parameter
   itself, and the module editor shows the change. Click the jog for the
   assignment list, or Shift + touch a knob to assign just that one. On a
@@ -36,6 +35,10 @@ the section into a versioned heading at release time.
   lane from /16 to ×16, its loop following) — or Clear clip.
   Delete + click on the card clears the clip. Every operation is one undo.
   Smooth/Stepped moved here from the module editor.
+- **dAVEBOx's own bank settings are automatable.** Gate Time, the delay
+  settings, the arp settings and the rest of the bank knobs offered as macro
+  targets now record, lock, mute and clear like any parameter, and the
+  AUTOMATION list names them.
 - **Back keeps the bank.** Back on the SOUND + CONFIG or MACROS card leaves
   bank mode without changing which bank the track is on; the knobs keep
   working from the overview. Their knob rings light by value like every

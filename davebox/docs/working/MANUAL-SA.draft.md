@@ -1322,10 +1322,9 @@ takes four clicks each, so a sleeve can't change your waveform.
 A macro is not a copy of its parameter; it *is* the parameter. Turn it while
 recording and the parameter records; turn it while holding a step and that step
 takes a lock; Mute + touch and Delete + touch do what they do on any automated
-knob. The exception is a **bank knob** macro: it moves the bank's setting
-exactly as the bank's own knob does, but it does not record or lock (bank
-settings are not automatable), and it belongs to the track type — a NOTE FX
-macro reads UNASSIGNED on a drum track. The assignments belong to the project (they travel with it) and to the
+knob. A **bank knob** macro moves the bank's setting exactly as the bank's own
+knob does, records and locks like any other, and belongs to the track type —
+a NOTE FX macro reads UNASSIGNED on a drum track. The assignments belong to the project (they travel with it) and to the
 track's chain patches (a saved patch carries them; loading one brings them
 back), and a project made before this bank had one inherits the knob mappings
 it had set under Sound Control.

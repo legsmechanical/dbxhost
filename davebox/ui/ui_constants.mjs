@@ -522,6 +522,55 @@ export const TAP_TEMPO_FLASH_MS = 96;
 export const TAP_TEMPO_RESET_MS    = 2000; /* inactivity reset threshold */
 export const PARAM_LED_BANKS = [1, 2, 3, 4, 5];
 
+/* ---- davebox's own bank knobs as MACRO targets and AUTOMATION targets -----
+ *
+ * The allow-list IS the ruling (Josh's numbered keep-list, 2026-09-03). A bank
+ * knob macro is `{kind:'bank', bank, k[, alt]}`; its AUTOMATION target is
+ * `seq:<track>:<key>` where key is the DSP's own param key (the bank knob's
+ * dspKey; the two custom knobs name theirs). The store keeps the value 14-bit
+ * normalised over the knob's declared range; the DSP stages every `seq:`
+ * change for JS (as it does a chain param), and JS applies it through the
+ * bank's own write path — ONE writer for sequencer params, side effects and
+ * mirrors included. SEQ_AUTO_TARGETS is that table: key -> range + where. */
+export const BANK_MACRO_ALLOW = [
+    { bank: 0, k: 6 },                                              /* Playback Dir */
+    { bank: 1, k: 0 }, { bank: 1, k: 1 }, { bank: 1, k: 2 }, { bank: 1, k: 3 },
+    { bank: 1, k: 5 }, { bank: 1, k: 7 },                           /* NOTE FX (no Len mode) */
+    { bank: 2, k: 0 }, { bank: 2, k: 1 }, { bank: 2, k: 2 }, { bank: 2, k: 3 },
+    { bank: 3, k: 0 }, { bank: 3, k: 1 }, { bank: 3, k: 2 }, { bank: 3, k: 3 },
+    { bank: 3, k: 4 }, { bank: 3, k: 5 }, { bank: 3, k: 6 }, { bank: 3, k: 7 },
+    { bank: 3, k: 0, alt: 'clkfb' },                                /* Clock Feedback */
+    { bank: 4, k: 0 }, { bank: 4, k: 1 }, { bank: 4, k: 2 }, { bank: 4, k: 3 },
+    { bank: 4, k: 5 }, { bank: 4, k: 6 },                           /* SEQ ARP (no Steps mode) */
+    { bank: 5, k: 0 }, { bank: 5, k: 1 }, { bank: 5, k: 2 }, { bank: 5, k: 3 },
+    { bank: 5, k: 5 }, { bank: 5, k: 6 }, { bank: 5, k: 7 },        /* LIVE ARP (no Steps mode) */
+    { bank: 7, k: 6 },                                              /* All-lane Playback Dir */
+];
+export const BANK_SHORT = { 0: 'Clip', 1: 'NFX', 2: 'Harm', 3: 'Dly', 4: 'SArp', 5: 'LArp', 7: 'Lanes' };
+export const SEQ_AUTO_TARGETS = (() => {
+    const out = {};
+    for (const e of BANK_MACRO_ALLOW) {
+        let key, min, max, label;
+        if (e.alt === 'clkfb') { key = 'delay_clock_fb'; min = -100; max = 100; label = 'Clock Feedback'; }
+        else if (e.bank === 7 && e.k === 6) { key = 'all_lanes_playback_dir'; min = 0; max = 3; label = 'All Lanes Dir'; }
+        else {
+            const pm = BANKS[e.bank].knobs[e.k];
+            if (!pm || !pm.dspKey) continue;
+            key = pm.dspKey; min = pm.min; max = pm.max; label = pm.full;
+        }
+        out[key] = { key, bank: e.bank, k: e.k, alt: e.alt || null, min, max, label, type: 'int' };
+    }
+    return out;
+})();
+/* The DSP key a bank macro automates as, or null when it is not on the list. */
+export function seqAutoKeyFor(bank, k, alt) {
+    for (const key in SEQ_AUTO_TARGETS) {
+        const t = SEQ_AUTO_TARGETS[key];
+        if (t.bank === bank && t.k === k && (t.alt || null) === (alt || null)) return key;
+    }
+    return null;
+}
+
 export const PAD_MODE_DRUM = 1;
 export const PAD_MODE_MELODIC_SCALE = 0;
 export const PAD_MODE_CONDUCT = 2;

@@ -461,9 +461,27 @@ step('⭑ a davebox BANK KNOB as a target: K7 → NOTE FX → Gate Time; the tur
     GS.heldStep = -1; GS.heldStepBtn = -1; GS.heldStepNotes = [];
     assert(GS.bankParams[2][1][5] > 100, 'the bank value moved, got ' + GS.bankParams[2][1][5]);
     assert(hostSets.some(x => x.startsWith('t2_noteFX_gate=')), 'written by the bank\'s own path, got ' + JSON.stringify(hostSets));
-    assert(!modSets.some(x => x.includes('pa_set2')), 'a held step takes NO lock from a bank macro (not a store target)');
+    /* ⭑ A bank param IS an automation target (2026-09-03, `seq:<track>:<key>`):
+     * the held step takes a LOCK on it, like a chain knob. */
+    const lock = modSets.find(x => x.startsWith('t2_pa_set2=') && x.includes(' seq:2:noteFX_gate '));
+    assert(lock, 'a lock on seq:2:noteFX_gate, got ' + JSON.stringify(modSets.slice(0, 6)));
     ticks(1);
     assert(lastWrite('knob_7_clear') === '1', 'no chain form: mirrored as CLEAR');
+});
+step('⭑ PLAYBACK of a seq: target lands through the bank\'s own write path — the DSP stages, JS applies, the mirror follows', () => {
+    hostSets.length = 0;
+    const prevGet = globalThis.host_module_get_param;
+    /* Gate Time 0..400: 8191/16383 ≈ 0.5 → 200. */
+    globalThis.host_module_get_param = (k) => (k === 'pa_pending' ? 'seq:2:noteFX_gate 8191\n' : k === 'pa_list' ? '2 0 1 4 seq:2:noteFX_gate 0 0\n' : prevGet(k));
+    auto.automationRefreshPresence();
+    GS.playing = true;
+    ticks(4);
+    GS.playing = false;
+    globalThis.host_module_get_param = prevGet;
+    assert(hostSets.some(x => x === 't2_noteFX_gate=200'), 'applied as t2_noteFX_gate=200, got ' + JSON.stringify(hostSets));
+    assert(GS.bankParams[2][1][5] === 200, 'the JS mirror followed, got ' + GS.bankParams[2][1][5]);
+    assert(M().drawn[6].auto === 'auto', 'the macro cell shows the automation circle');
+    auto.automationRefreshPresence();
 });
 step('⭑ the allow-list is the ruling: NOTE FX offers Gate Time but not Note Length (mode); CLIP offers only Playback Dir', () => {
     snd.soundQueueActionForTest({ t: 'knobparam', target: 'bank:1' }); ticks(1);

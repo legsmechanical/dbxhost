@@ -45,12 +45,13 @@ import { bankCardVisible, sessMixerVisible, bankHeadingPrefix, BANK_HDR_TEXT_W }
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
 import { instrOptions, fmtInstr, INSTR_SCHWUNG, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
+         BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD } from './ui_constants.mjs';
 import { applyTrackConfig, applyBankParam, readBankParams } from './ui_dsp_bridge.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
-import { automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
+import { automationRegisterSeqApply, automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
          automationClearKey } from './ui_automation.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { MoveKnob1, Red, White } from '/data/UserData/schwung/shared/constants.mjs';
@@ -3162,6 +3163,19 @@ function macroFullKey(m) {
     if (m.kind === 'level') return levelComp() + ':' + m.key;
     return m.comp + ':' + m.key;
 }
+/* A macro's AUTOMATION target string — the store's own key. A chain or level
+ * macro is `<slot>:<comp>:<key>`; a bank macro is `seq:<track>:<dspKey>`. */
+function macroAutoTarget(m, track) {
+    const t = (track == null) ? S.track : track;
+    if (m.kind === 'bank') { const key = seqAutoKeyFor(m.bank, m.k, m.alt); return key ? 'seq:' + t + ':' + key : null; }
+    return S.slot + ':' + macroFullKey(m);
+}
+/* ...and the (slot, fullKey) pair the owner's gesture API takes for it. */
+function macroAutoRef(m, track) {
+    const t = (track == null) ? S.track : track;
+    if (m.kind === 'bank') { const key = seqAutoKeyFor(m.bank, m.k, m.alt); return key ? { slot: 'seq', fullKey: t + ':' + key } : null; }
+    return { slot: S.slot, fullKey: macroFullKey(m) };
+}
 /* A knob the page can address: assigned, and present on this route / pad mode. */
 function macroLive(m) {
     if (!m) return false;
@@ -3181,21 +3195,6 @@ function macroLive(m) {
  * chain target. Two entries have no generic knob: DELAY's Clock Feedback is
  * the Shift+K1 alternate (S.delayClockFb), and the ALL LANES direction is a
  * custom knob (bankParams[t][7][6], -1 = unset). */
-const BANK_MACRO_ALLOW = [
-    { bank: 0, k: 6 },                                              /* Playback Dir */
-    { bank: 1, k: 0 }, { bank: 1, k: 1 }, { bank: 1, k: 2 }, { bank: 1, k: 3 },
-    { bank: 1, k: 5 }, { bank: 1, k: 7 },                           /* NOTE FX (no Len mode) */
-    { bank: 2, k: 0 }, { bank: 2, k: 1 }, { bank: 2, k: 2 }, { bank: 2, k: 3 },
-    { bank: 3, k: 0 }, { bank: 3, k: 1 }, { bank: 3, k: 2 }, { bank: 3, k: 3 },
-    { bank: 3, k: 4 }, { bank: 3, k: 5 }, { bank: 3, k: 6 }, { bank: 3, k: 7 },
-    { bank: 3, k: 0, alt: 'clkfb' },                                /* Clock Feedback */
-    { bank: 4, k: 0 }, { bank: 4, k: 1 }, { bank: 4, k: 2 }, { bank: 4, k: 3 },
-    { bank: 4, k: 5 }, { bank: 4, k: 6 },                           /* SEQ ARP (no Steps mode) */
-    { bank: 5, k: 0 }, { bank: 5, k: 1 }, { bank: 5, k: 2 }, { bank: 5, k: 3 },
-    { bank: 5, k: 5 }, { bank: 5, k: 6 }, { bank: 5, k: 7 },        /* LIVE ARP (no Steps mode) */
-    { bank: 7, k: 6 },                                              /* All-lane Playback Dir */
-];
-const BANK_SHORT = { 0: 'Clip', 1: 'NFX', 2: 'Harm', 3: 'Dly', 4: 'SArp', 5: 'LArp', 7: 'Lanes' };
 function bankMacroOnMode(bank, padMode) {
     if (padMode === PMC) return false;
     if (bank === 7) return padMode === PMD;
@@ -3224,8 +3223,8 @@ function bankMacroValue(m, track) {
 }
 /* The write: the same path the bank's own knob takes, so the bank page, the
  * DSP and the macro cannot disagree. */
-function bankMacroWrite(m, nv) {
-    const t = S.track;
+function bankMacroWrite(m, nv) { bankMacroWriteFor(S.track, m, nv); }
+function bankMacroWriteFor(t, m, nv) {
     if (m.alt === 'clkfb') {
         GS.delayClockFb[t] = nv;
         host_module_set_param('t' + t + '_delay_clock_fb', String(nv));
@@ -3239,6 +3238,21 @@ function bankMacroWrite(m, nv) {
     }
     GS.screenDirty = true;
 }
+/* PLAYBACK of a `seq:` target (and its rest on stop, and a lock): the owner
+ * hands us (track, key, value); the write is the bank knob's own. Registered
+ * once; runs from the owner's tick whether or not sound mode is open. */
+automationRegisterSeqApply((track, key, val) => {
+    const st = SEQ_AUTO_TARGETS[key];
+    if (!st || track < 0 || track > 7 || !isFinite(val)) return false;
+    const nv = Math.max(st.min, Math.min(st.max, val | 0));
+    const m = { kind: 'bank', bank: st.bank, k: st.k };
+    if (st.alt) m.alt = st.alt;
+    if (!bankMacroOnMode(m.bank, GS.trackPadMode[track])) return false;   /* off-mode: nothing to write */
+    if (bankMacroValue(m, track) === nv) return true;
+    bankMacroWriteFor(track, m, nv);
+    return true;
+});
+
 /* The travel for a bank int: whole steps only (a bank value IS an integer),
  * range-normalised to ~255 positions with the declared step as a floor;
  * detents per step from the bank's own feel (a list or toggle keeps its
@@ -3486,7 +3500,14 @@ function macroTick() {
             if (!steps) continue;
             const cur = bankMacroValue(m);
             const nv = Math.max(meta.min, Math.min(meta.max, cur + steps * tr.step));
-            if (nv !== cur) { bankMacroWrite(m, nv); S.dirty = true; }
+            if (nv !== cur) {
+                bankMacroWrite(m, nv);
+                /* A bank param is an automation target too (seq:<t>:<key>):
+                 * the owner decides lock / take / plain, as for a chain knob. */
+                const ref = macroAutoRef(m);
+                if (ref) automationParamEdit(S.track, effectiveClip(S.track), ref.slot, ref.fullKey, String(nv), String(cur));
+                S.dirty = true;
+            }
             continue;
         }
         if (!m || m.kind !== 'chain' || !cell || cell.vanished || S.macVals[i] == null) continue;
@@ -3549,9 +3570,9 @@ function macroPollTick() {
 
 /* The knob's automation target on the current non-editor page — a level on
  * SOUND + CONFIG, a macro on MACROS — for the ring paint under Mute/Delete. */
-function pageKnobFullKey(k) {
-    if (macrosActive()) { const m = macroTarget(k); return (macroLive(m) && m.kind !== 'bank') ? macroFullKey(m) : null; }
-    return levelPageSpec(k) ? levelFullKey(k) : null;
+function pageKnobTarget(k) {
+    if (macrosActive()) { const m = macroTarget(k); return macroLive(m) ? macroAutoTarget(m) : null; }
+    return levelPageSpec(k) ? S.slot + ':' + levelFullKey(k) : null;
 }
 
 const upper = (x) => String(x == null ? '' : x).toUpperCase();
@@ -3580,8 +3601,7 @@ function macroCells(track, live) {
         } else if (m.kind === 'bank') {
             const meta = bankMacroMeta(m, t);
             if (!meta) { cells.push(unassigned()); continue; }
-            cells.push(bankMacroCell(m, meta, bankMacroValue(m, t)));
-            continue;                                   /* no automation circle: not a store target */
+            cell = bankMacroCell(m, meta, bankMacroValue(m, t));
         } else {
             const ec = live ? S.macCells[i] : null;
             if (ec && ec.vanished) { cells.push(unassigned()); continue; }
@@ -3594,7 +3614,8 @@ function macroCells(track, live) {
             }
         }
         if (live && macroLive(m)) {
-            const st = automationStateFor(t, c, S.slot + ':' + macroFullKey(m));
+            const tg = macroAutoTarget(m, t);
+            const st = tg ? automationStateFor(t, c, tg) : null;
             if (st) cell.auto = st.active ? 'auto' : 'auto-off';
         }
         cells.push(cell);
@@ -5626,8 +5647,9 @@ export function soundOnNote(status, d1, d2) {
          * (and marks the Mute a modifier), and the touch itself opens/closes
          * the gesture the drain and the override-resume ride on. */
         const m = macroTarget(d1);
-        if (macroLive(m) && m.kind !== 'bank') {      /* a bank macro is a live control only */
-            const t = S.track, c = effectiveClip(t), fk = macroFullKey(m), target = S.slot + ':' + fk;
+        const ref = macroLive(m) ? macroAutoRef(m) : null;
+        if (ref) {
+            const t = S.track, c = effectiveClip(t), fk = ref.fullKey, target = ref.slot + ':' + fk;
             if (on) {
                 if (S.deleteHeld) {
                     if (automationClearKey(t, c, target)) showActionPopup('AUTOMATION', 'CLEARED');
@@ -5639,7 +5661,7 @@ export function soundOnNote(status, d1, d2) {
             } else if (m.kind === 'level') {
                 flushLevelSave();
             }
-            automationParamTouch(t, c, S.slot, fk, on);
+            automationParamTouch(t, c, ref.slot, fk, on);
         }
         S.dirty = true;
     }
@@ -5734,8 +5756,8 @@ export function soundTick() {
         S.autoLedPaint = true;
         const t = S.track, c = effectiveClip(t);
         for (let k = 0; k < 8; k++) {
-            const fk = pageKnobFullKey(k);
-            const st = fk ? automationStateFor(t, c, S.slot + ':' + fk) : null;
+            const tg = pageKnobTarget(k);
+            const st = tg ? automationStateFor(t, c, tg) : null;
             setButtonLED(MoveKnob1 + k, st ? (st.active ? Red : White) : 0, true);
         }
     } else if (S.autoLedPaint && !ppOn) {
