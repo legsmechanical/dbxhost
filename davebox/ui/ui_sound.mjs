@@ -44,9 +44,9 @@ import { bankCardVisible, sessMixerVisible, bankHeadingPrefix, BANK_HDR_TEXT_W }
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
-import { instrOptions, fmtInstr, INSTR_SCHWUNG, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank,
+import { instrOptions, fmtInstr, INSTR_SCHWUNG, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD } from './ui_constants.mjs';
-import { applyTrackConfig } from './ui_dsp_bridge.mjs';
+import { applyTrackConfig, applyBankParam, readBankParams } from './ui_dsp_bridge.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
@@ -683,6 +683,7 @@ const S = {
     macMigrateK: 0,
     macMigrateTmp: null,
     macMergeWanted: false,      /* re-run the chain-store merge (a patch loaded) */
+    macBanksRead: false,        /* bank targets' values re-read this seed */
     bankHome: BANK_SOUND,       /* which bank identity the open mode carries */
     asnQuick: false,            /* opened by Shift+touch: the commit lands on the page */
 
@@ -2544,7 +2545,20 @@ const LEVEL_TARGET = 'level';
 function asnFromMacro(m) {
     if (!m) return { target: '', param: '' };
     if (m.kind === 'level') return { target: LEVEL_TARGET, param: m.key };
+    if (m.kind === 'bank') return { target: 'bank:' + m.bank, param: 'k' + m.k + (m.alt ? ':' + m.alt : '') };
     return { target: m.comp, param: m.key };
+}
+
+/* The assign screens' row form back to a bank target; null unless allow-listed. */
+function bankMacroFromAsn(target, param) {
+    const bank = parseInt(String(target).slice(5), 10);
+    const mm = /^k(\d+)(?::(\w+))?$/.exec(String(param || ''));
+    if (!isFinite(bank) || !mm) return null;
+    const k = parseInt(mm[1], 10), alt = mm[2] || null;
+    if (!bankMacroAllowed(bank, k, alt)) return null;
+    const m = { kind: 'bank', bank, k };
+    if (alt) m.alt = alt;
+    return m;
 }
 
 function openKnobEditor() {
@@ -2575,8 +2589,16 @@ function knobTargetList() {
         for (let i = 1; i <= 4; i++) probe('fx' + i, 'FX' + i);
     }
     const rows = qualifyDuplicates(targets);
-    /* The mixer levels: a target KIND of their own (spec §2 — "the assignment
-     * picker grows level … targets"). Last, after the modules. */
+    /* davebox's own BANKS (the allow-listed knobs), for this pad mode, then
+     * the mixer levels: target KINDS of their own (spec §2; Josh 2026-09-03). */
+    if (S.track >= 0) {
+        const seen = {};
+        for (const e of BANK_MACRO_ALLOW) {
+            if (seen[e.bank] || !bankMacroOnMode(e.bank, GS.trackPadMode[S.track])) continue;
+            seen[e.bank] = true;
+            rows.push({ id: 'bank:' + e.bank, name: BANKS[e.bank].name });
+        }
+    }
     rows.push({ id: LEVEL_TARGET, name: 'Levels' });
     return rows;
 }
@@ -2624,6 +2646,15 @@ function knobParamList(target) {
     if (target === LEVEL_TARGET) {
         for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++)
             if (levelKnobSpec(i)) params.push({ key: LEVEL_KNOB_SPECS[i].key, label: LEVEL_KNOB_SPECS[i].name });
+        return params;
+    }
+    if (target.indexOf('bank:') === 0) {
+        const bank = parseInt(target.slice(5), 10);
+        for (const e of BANK_MACRO_ALLOW) {
+            if (e.bank !== bank) continue;
+            const meta = bankMacroMeta({ kind: 'bank', bank: e.bank, k: e.k, alt: e.alt });
+            if (meta) params.push({ key: 'k' + e.k + (e.alt ? ':' + e.alt : ''), label: meta.full });
+        }
         return params;
     }
     const push = (key, label) => {
@@ -2723,6 +2754,11 @@ function compParamLabel(target, param) {
         const m = LEVEL_KNOB_SPECS.find(x => x.key === param);
         return 'Lvl>' + (m ? m.name : param);
     }
+    if (target.indexOf('bank:') === 0) {
+        const m = bankMacroFromAsn(target, param);
+        const meta = m ? bankMacroMeta(m) : null;
+        return (BANK_SHORT[m ? m.bank : -1] || 'Bank') + '>' + (meta ? meta.full : param);
+    }
     return compShort(target) + '>' + param;
 }
 
@@ -2736,6 +2772,7 @@ function commitKnobAssignment(target, param) {
     const store = GS.trackMacros[t] || (GS.trackMacros[t] = new Array(8).fill(null));
     let m = null;
     if (target === LEVEL_TARGET && param) m = { kind: 'level', key: param };
+    else if (target && target.indexOf('bank:') === 0) m = bankMacroFromAsn(target, param);
     else if (target && param) m = { kind: 'chain', comp: target, key: param };
     store[i] = m;
     S.knobAsn[i] = asnFromMacro(m);
@@ -3095,8 +3132,102 @@ function macroFullKey(m) {
     if (m.kind === 'level') return levelComp() + ':' + m.key;
     return m.comp + ':' + m.key;
 }
-/* A knob the page can address: assigned, and (a level) present on this route. */
-function macroLive(m) { return !!(m && (m.kind !== 'level' || macroLevelSpec(m))); }
+/* A knob the page can address: assigned, and present on this route / pad mode. */
+function macroLive(m) {
+    if (!m) return false;
+    if (m.kind === 'level') return !!macroLevelSpec(m);
+    if (m.kind === 'bank') return !!bankMacroMeta(m);
+    return true;
+}
+
+/* ── BANK-KNOB TARGETS (Josh, 2026-09-03: "keep these", by number) ──────────
+ * davebox's own bank knobs as macro targets — the allow-list below IS the
+ * ruling; anything not on it (the destructive one-shots, Steps Mode, the
+ * quantize actions, Resolution) is not offered. A bank macro is a LIVE
+ * control and shows on the page, but it does not record, lock, mute or
+ * clear: the automation store has no target for sequencer params (yet).
+ * Its bank belongs to a pad mode: melodic for CLIP..SEQ ARP, both for LIVE
+ * ARP, drum for ALL LANES — off-mode it reads UNASSIGNED, like a vanished
+ * chain target. Two entries have no generic knob: DELAY's Clock Feedback is
+ * the Shift+K1 alternate (S.delayClockFb), and the ALL LANES direction is a
+ * custom knob (bankParams[t][7][6], -1 = unset). */
+const BANK_MACRO_ALLOW = [
+    { bank: 0, k: 6 },                                              /* Playback Dir */
+    { bank: 1, k: 0 }, { bank: 1, k: 1 }, { bank: 1, k: 2 }, { bank: 1, k: 3 },
+    { bank: 1, k: 5 }, { bank: 1, k: 7 },                           /* NOTE FX (no Len mode) */
+    { bank: 2, k: 0 }, { bank: 2, k: 1 }, { bank: 2, k: 2 }, { bank: 2, k: 3 },
+    { bank: 3, k: 0 }, { bank: 3, k: 1 }, { bank: 3, k: 2 }, { bank: 3, k: 3 },
+    { bank: 3, k: 4 }, { bank: 3, k: 5 }, { bank: 3, k: 6 }, { bank: 3, k: 7 },
+    { bank: 3, k: 0, alt: 'clkfb' },                                /* Clock Feedback */
+    { bank: 4, k: 0 }, { bank: 4, k: 1 }, { bank: 4, k: 2 }, { bank: 4, k: 3 },
+    { bank: 4, k: 5 }, { bank: 4, k: 6 },                           /* SEQ ARP (no Steps mode) */
+    { bank: 5, k: 0 }, { bank: 5, k: 1 }, { bank: 5, k: 2 }, { bank: 5, k: 3 },
+    { bank: 5, k: 5 }, { bank: 5, k: 6 }, { bank: 5, k: 7 },        /* LIVE ARP (no Steps mode) */
+    { bank: 7, k: 6 },                                              /* All-lane Playback Dir */
+];
+const BANK_SHORT = { 0: 'Clip', 1: 'NFX', 2: 'Harm', 3: 'Dly', 4: 'SArp', 5: 'LArp', 7: 'Lanes' };
+function bankMacroOnMode(bank, padMode) {
+    if (padMode === PMC) return false;
+    if (bank === 7) return padMode === PMD;
+    if (bank === 5) return true;
+    return padMode !== PMD;
+}
+/* The knob's descriptor for a bank target — abbrev/full/min/max/fmt/sens —
+ * or null when the bank is not on this track's pad mode. */
+function bankMacroMeta(m, track) {
+    const t = (track == null) ? S.track : track;
+    if (t < 0 || !bankMacroOnMode(m.bank, GS.trackPadMode[t])) return null;
+    if (m.alt === 'clkfb') return { abbrev: 'ClkFb', full: 'Clock Feedback', min: -100, max: 100, fmt: fmtSign, sens: 1 };
+    if (m.bank === 7 && m.k === 6) return { abbrev: 'Dir', full: 'All Lanes Dir', min: 0, max: 3, fmt: fmtPlayDir, sens: 16 };
+    const pm = BANKS[m.bank] && BANKS[m.bank].knobs[m.k];
+    if (!pm || pm.scope === 'stub' || !pm.abbrev) return null;
+    return pm;
+}
+function bankMacroAllowed(bank, k, alt) {
+    return BANK_MACRO_ALLOW.some(e => e.bank === bank && e.k === k && (e.alt || null) === (alt || null));
+}
+function bankMacroValue(m, track) {
+    const t = (track == null) ? S.track : track;
+    if (m.alt === 'clkfb') return GS.delayClockFb[t] | 0;
+    const v = GS.bankParams[t] && GS.bankParams[t][m.bank] ? GS.bankParams[t][m.bank][m.k] : 0;
+    return (m.bank === 7 && v < 0) ? 0 : (v | 0);
+}
+/* The write: the same path the bank's own knob takes, so the bank page, the
+ * DSP and the macro cannot disagree. */
+function bankMacroWrite(m, nv) {
+    const t = S.track;
+    if (m.alt === 'clkfb') {
+        GS.delayClockFb[t] = nv;
+        host_module_set_param('t' + t + '_delay_clock_fb', String(nv));
+    } else if (m.bank === 7 && m.k === 6) {
+        GS.bankParams[t][7][6] = nv;
+        host_module_set_param('t' + t + '_all_lanes_playback_dir', String(nv));
+    } else {
+        GS.bankParams[t][m.bank][m.k] = nv;
+        applyBankParam(t, m.bank, m.k, nv);
+        if (m.bank === 5 && m.k === 0 && nv !== 0) GS.lastTarpStyle[t] = nv;
+    }
+    GS.screenDirty = true;
+}
+/* The travel for a bank int: whole steps only (a bank value IS an integer),
+ * range-normalised to ~255 positions with the declared step as a floor;
+ * detents per step from the bank's own feel (a list or toggle keeps its
+ * deliberate 8/16), the continuous ones the chain law's 2. */
+function bankMacroTravel(meta) {
+    const span = meta.max - meta.min;
+    const step = Math.max(1, Math.round(span / KNOB_TRAVEL.int.positions));
+    const sens = (meta.sens && meta.sens > 1) ? meta.sens : KNOB_TRAVEL.int.sens;
+    return { step, sens };
+}
+function bankMacroCell(m, meta, v) {
+    const span = meta.max - meta.min;
+    const cell = { label: meta.abbrev, name: meta.full, text: String(meta.fmt ? meta.fmt(v) : v).toUpperCase() };
+    if (span <= 1) { cell.kind = 'pill'; cell.norm = v ? 1 : 0; }
+    else if (span <= 16) { cell.kind = 'valsq'; }
+    else if (meta.min < 0) { cell.kind = 'arcbip'; cell.signed = Math.max(-1, Math.min(1, (v - (meta.min + meta.max) / 2) / (span / 2))); }
+    else { cell.kind = 'arc'; cell.norm = Math.max(0, Math.min(1, (v - meta.min) / span)); }
+    return cell;
+}
 const MACRO_UNTURNABLE = { file: 1, text: 1, opaque: 1 };
 
 /* ── THE CHAIN STORE IS A MIRROR (Josh, 2026-09-03: "put it back") ─────────
@@ -3108,7 +3239,7 @@ const MACRO_UNTURNABLE = { file: 1, text: 1, opaque: 1 };
  * the merge keeps it when the chain slot is empty. */
 function macroMirrorToChain(i, m) {
     if (S.bus || S.track < 0 || GS.trackRoute[S.track] !== 0) return;
-    if (m && m.kind === 'chain') queueChainWrite('knob_' + (i + 1) + '_set', m.comp + ':' + m.key);
+    if (m && m.kind === 'chain') queueChainWrite('knob_' + (i + 1) + '_set', m.comp + ':' + m.key);   /* level/bank: no chain form */
     else queueChainWrite('knob_' + (i + 1) + '_clear', '1');
 }
 
@@ -3132,7 +3263,7 @@ function macroMigrateTick() {
     }
     if (S.macMigrateFor !== t) {
         S.macMigrateFor = t; S.macMigrateK = 0;
-        S.macMigrateTmp = seeded ? GS.trackMacros[t].map(m => (m && m.kind === 'level') ? m : null)
+        S.macMigrateTmp = seeded ? GS.trackMacros[t].map(m => (m && m.kind !== 'chain') ? m : null)
                                  : [null, null, null, null, null, null, null, null];
     }
     for (let n = 0; n < 2 && S.macMigrateK < 8; n++, S.macMigrateK++) {
@@ -3256,6 +3387,8 @@ function macroTurn(idx, delta) {
         if (li >= 0 && levelKnobSpec(li)) onLevelTurn(li, delta);
         return;
     }
+    /* A bank macro: detents accumulate as for a chain param (its drain is in
+     * macroTick, with the bank's own write path). */
     const dir = delta > 0 ? 1 : -1;
     /* Direction reversal RESETS the accumulator rather than unwinding it — the
      * canvaskit rule, and the part that makes a knob feel right. */
@@ -3274,9 +3407,21 @@ function macroTick() {
     const seedKey = S.slot + '/' + (S.bus ? S.bus.id : 'slot') + '/' + S.track;
     if (S.macSeededFor !== seedKey) {
         S.macSeededFor = seedKey;
+        S.macBanksRead = false;
         for (let i = 0; i < 8; i++) { S.macVals[i] = null; S.macCells[i] = null; S.knobAccum[i] = 0; S.macLastDir[i] = 0; }
     }
     let reads = 0;
+    /* Bank targets: the bank's values re-read once per seed (readBankParams
+     * is a round trip per bank), then live off davebox's own mirrors. */
+    if (!S.macBanksRead) {
+        S.macBanksRead = true;
+        const done = {};
+        for (const m of store) {
+            if (!m || m.kind !== 'bank' || done[m.bank] || !bankMacroMeta(m)) continue;
+            done[m.bank] = true;
+            readBankParams(S.track, m.bank);
+        }
+    }
     for (let i = 0; i < 8 && reads < MACRO_READS_PER_TICK; i++) {
         const m = store[i];
         if (!m || m.kind !== 'chain') continue;
@@ -3299,6 +3444,19 @@ function macroTick() {
     for (let i = 0; i < 8; i++) {
         if (!S.knobAccum[i]) continue;
         const m = store[i], cell = S.macCells[i];
+        if (m && m.kind === 'bank') {
+            const meta = bankMacroMeta(m);
+            if (!meta) { S.knobAccum[i] = 0; continue; }
+            const tr = bankMacroTravel(meta);
+            let steps = 0;
+            while (S.knobAccum[i] >= tr.sens) { steps++; S.knobAccum[i] -= tr.sens; }
+            while (S.knobAccum[i] <= -tr.sens) { steps--; S.knobAccum[i] += tr.sens; }
+            if (!steps) continue;
+            const cur = bankMacroValue(m);
+            const nv = Math.max(meta.min, Math.min(meta.max, cur + steps * tr.step));
+            if (nv !== cur) { bankMacroWrite(m, nv); S.dirty = true; }
+            continue;
+        }
         if (!m || m.kind !== 'chain' || !cell || cell.vanished || S.macVals[i] == null) continue;
         if (MACRO_UNTURNABLE[cell.kind]) { S.knobAccum[i] = 0; continue; }
         const sens = cell.sens || 1;
@@ -3346,7 +3504,7 @@ function macroPollTick() {
 /* The knob's automation target on the current non-editor page — a level on
  * SOUND + CONFIG, a macro on MACROS — for the ring paint under Mute/Delete. */
 function pageKnobFullKey(k) {
-    if (macrosActive()) { const m = macroTarget(k); return macroLive(m) ? macroFullKey(m) : null; }
+    if (macrosActive()) { const m = macroTarget(k); return (macroLive(m) && m.kind !== 'bank') ? macroFullKey(m) : null; }
     return levelPageSpec(k) ? levelFullKey(k) : null;
 }
 
@@ -3373,6 +3531,11 @@ function macroCells(track, live) {
             cell = { label: spec.label, name: spec.name, text: v == null ? '--' : spec.fmt(v) };
             if (spec.widget === 'arcbip') { cell.kind = 'arcbip'; cell.signed = v == null ? 0 : Math.max(-1, Math.min(1, (v - 0.5) * 2)); }
             else { cell.kind = spec.widget; cell.norm = v == null ? 0 : Math.max(0, Math.min(1, v / spec.max)); }
+        } else if (m.kind === 'bank') {
+            const meta = bankMacroMeta(m, t);
+            if (!meta) { cells.push(unassigned()); continue; }
+            cells.push(bankMacroCell(m, meta, bankMacroValue(m, t)));
+            continue;                                   /* no automation circle: not a store target */
         } else {
             const ec = live ? S.macCells[i] : null;
             if (ec && ec.vanished) { cells.push(unassigned()); continue; }
@@ -5416,7 +5579,7 @@ export function soundOnNote(status, d1, d2) {
          * (and marks the Mute a modifier), and the touch itself opens/closes
          * the gesture the drain and the override-resume ride on. */
         const m = macroTarget(d1);
-        if (macroLive(m)) {
+        if (macroLive(m) && m.kind !== 'bank') {      /* a bank macro is a live control only */
             const t = S.track, c = effectiveClip(t), fk = macroFullKey(m), target = S.slot + ':' + fk;
             if (on) {
                 if (S.deleteHeld) {

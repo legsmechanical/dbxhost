@@ -330,8 +330,10 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   are on it, so a knob you turn there does what it always did.
   Conductor tracks don't have it. Its knobs are the track's levels — Volume, Pan, Send A, Send B — and they record and lock like any other parameter; the bottom row of the card is the door.
 - **MACROS** follows SOUND + CONFIG: eight knobs you assign yourself, to any
-  parameter of the track's sound — a synth or effect parameter, or one of the
-  levels. A macro *is* the parameter it points at: turn it and the module
+  parameter of the track's sound — a synth or effect parameter, one of the
+  levels, or one of dAVEBOx's own bank knobs (Playback Direction, the NOTE FX,
+  HARMONY and DELAY settings, the arp settings, and on a drum track the
+  all-lane direction). A macro *is* the parameter it points at: turn it and the module
   editor shows the change, record it and it records as that parameter, hold a
   step and it locks that step. **Click the jog** for the assignment list
   (`K1`..`K8`, each naming its target), or **Shift + touch a knob** to assign
@@ -1284,9 +1286,9 @@ its value with the same widget the module editor uses — a dial, a big number,
 a list square, a fader for a level — so the page reads like any other bank.
 
 **Click the jog** for the assignment list: `K1`..`K8`, each with its mapping
-written compactly — `Syn>cutoff`, `FX1>mix`, `Lvl>Volume`. Pick a knob, pick a
-block (or **Levels**), pick a parameter, and you're back on the list with the
-mapping made. The block list names the modules themselves, with a `>` marking
+written compactly — `Syn>cutoff`, `FX1>mix`, `Lvl>Volume`, `NFX>Gate Time`.
+Pick a knob, pick a block (or a **bank**, or **Levels**), pick a parameter, and
+you're back on the list with the mapping made. The block list names the modules themselves, with a `>` marking
 each one as a door into its parameters; if the same module is loaded in two FX
 slots, the slot is shown beside the name so you can tell them apart.
 **Shift + touch a knob** goes straight to assigning that knob — no menu-walking —
@@ -1303,7 +1305,10 @@ takes four clicks each, so a sleeve can't change your waveform.
 A macro is not a copy of its parameter; it *is* the parameter. Turn it while
 recording and the parameter records; turn it while holding a step and that step
 takes a lock; Mute + touch and Delete + touch do what they do on any automated
-knob. The assignments belong to the project (they travel with it) and to the
+knob. The exception is a **bank knob** macro: it moves the bank's setting
+exactly as the bank's own knob does, but it does not record or lock (bank
+settings are not automatable), and it belongs to the track type — a NOTE FX
+macro reads UNASSIGNED on a drum track. The assignments belong to the project (they travel with it) and to the
 track's chain patches (a saved patch carries them; loading one brings them
 back), and a project made before this bank had one inherits the knob mappings
 it had set under Sound Control.

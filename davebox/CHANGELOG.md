@@ -19,7 +19,9 @@ the section into a versioned heading at release time.
 ### Features (pending)
 - **The MACROS bank.** One step past SOUND + CONFIG on the jog: eight knobs
   you assign to any parameter of the track's sound — a synth or effect
-  parameter, or a level — drawn with the module editor's own widgets. A macro
+  parameter, a level, or one of dAVEBOx's own bank knobs (a bank-knob macro
+  is a live control, not recordable) — drawn with the module editor's own
+  widgets. A macro
   *is* its parameter: it records, locks, mutes and clears like the parameter
   itself, and the module editor shows the change. Click the jog for the
   assignment list, or Shift + touch a knob to assign just that one. On a

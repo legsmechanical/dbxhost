@@ -175,6 +175,10 @@ Proposed build order once lifted (drafted for Josh's review, 2026-09-02 night):
    are RE-PINNED in `tests/js/test_macros_bank.mjs` (range step, int floor, enum 4/step,
    reversal reset, zero reads per sweep, magnitude kept). Shift+touch quick-assign; Levels as a
    target; Sound Control → Knobs and the knob HUD retired. ⏳ MIDI targets wait for P5.
+   ✅ 2026-09-03 (Josh's pass): chain-store MIRROR + patch-load merge; macros work AT REST
+   (`soundOpen` vs `soundActive`); Module Level off the S+C card; `Tr<n> - ` on the new cards;
+   BANK-KNOB targets by Josh's numbered list. ⏳ FUTURE (Josh): multi-target macros with
+   per-target min/max ranges.
 4. **AUTOMATION bank** (replaces bank 6): the list card, the menu (delete, mute, smooth, loop
    length/resolution, clear clip; AT lanes as rows), Delete+jog-click shortcut, undo per
    action; the Smooth click leaves the module editor; "hold a step, see the locks".

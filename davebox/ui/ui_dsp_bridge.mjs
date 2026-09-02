@@ -1522,11 +1522,16 @@ export function restoreUiSidecar(applyDefaultsNow) {
                 const _out = new Array(8).fill(null);
                 for (let _k = 0; _k < 8; _k++) {
                     const _e = _m[_k];
-                    if (!_e || typeof _e !== 'object' || typeof _e.key !== 'string' || !_e.key) continue;
+                    if (!_e || typeof _e !== 'object') continue;
+                    if (_e.kind !== 'bank' && (typeof _e.key !== 'string' || !_e.key)) continue;
                     if (_e.kind === 'chain' && typeof _e.comp === 'string' && _e.comp)
                         _out[_k] = { kind: 'chain', comp: _e.comp, key: _e.key };
                     else if (_e.kind === 'level')
                         _out[_k] = { kind: 'level', key: _e.key };
+                    else if (_e.kind === 'bank' && typeof _e.bank === 'number' && typeof _e.k === 'number') {
+                        _out[_k] = { kind: 'bank', bank: _e.bank | 0, k: _e.k | 0 };
+                        if (typeof _e.alt === 'string' && _e.alt) _out[_k].alt = _e.alt;
+                    }
                 }
                 S.trackMacros[_t] = _out;
             }

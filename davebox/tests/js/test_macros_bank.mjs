@@ -433,6 +433,51 @@ step('⚠ a VANISHED target (module swapped: the param is gone from chain_params
     ASSIGN['fx2:chain_params'] = saved;
 });
 
+/* ---- BANK-KNOB targets (Josh's numbered keep-list, 2026-09-03) ------------- */
+const hostSets = [];
+globalThis.host_module_set_param = (k, v) => { hostSets.push(k + '=' + v); return 0; };
+step('⭑ a davebox BANK KNOB as a target: K7 → NOTE FX → Gate Time; the turn takes the bank\'s own write path, no automation', () => {
+    snd.soundSetViewForTest(VIEW_MACROS);
+    /* ui.js builds this at boot; this rig drives sound mode directly. */
+    if (!GS.bankParams) GS.bankParams = Array.from({ length: 8 }, () => Array.from({ length: BANKS.length }, () => new Array(8).fill(0)));
+    GS.bankParams[2][1][5] = 100;
+    assignVia(6, 'NOTE FX', 'Gate Time');
+    back(); ticks(3);
+    const st = GS.trackMacros[2][6];
+    assert(st && st.kind === 'bank' && st.bank === 1 && st.k === 5, 'K7 = bank 1 k5, got ' + JSON.stringify(st));
+    const d = M().drawn[6];
+    assert(d.kind === 'arc' && d.label === 'Gate' && d.name === 'Gate Time', 'drawn as the bank knob, got ' + JSON.stringify(d));
+    assert(!d.auto, 'no automation circle');
+    hostSets.length = 0; modSets.length = 0;
+    GS.heldStep = 3; GS.heldStepBtn = 3; GS.heldStepNotes = [60];
+    touch(6, true); turnBy(6, 4); ticks(2); touch(6, false);
+    GS.heldStep = -1; GS.heldStepBtn = -1; GS.heldStepNotes = [];
+    assert(GS.bankParams[2][1][5] > 100, 'the bank value moved, got ' + GS.bankParams[2][1][5]);
+    assert(hostSets.some(x => x.startsWith('t2_noteFX_gate=')), 'written by the bank\'s own path, got ' + JSON.stringify(hostSets));
+    assert(!modSets.some(x => x.includes('pa_set2')), 'a held step takes NO lock from a bank macro (not a store target)');
+    ticks(1);
+    assert(lastWrite('knob_7_clear') === '1', 'no chain form: mirrored as CLEAR');
+});
+step('⭑ the allow-list is the ruling: NOTE FX offers Gate Time but not Note Length (mode); CLIP offers only Playback Dir', () => {
+    snd.soundQueueActionForTest({ t: 'knobparam', target: 'bank:1' }); ticks(1);
+    const nfx = snd.soundKnobParamsForTest().map(p => p.label);
+    assert(nfx.indexOf('Gate Time') >= 0 && nfx.indexOf('Note Length') < 0, 'NOTE FX rows, got ' + JSON.stringify(nfx));
+    snd.soundQueueActionForTest({ t: 'knobparam', target: 'bank:0' }); ticks(1);
+    const clip = snd.soundKnobParamsForTest().map(p => p.label);
+    assert(clip.length === 1 && clip[0] === 'Playback Dir', 'CLIP rows, got ' + JSON.stringify(clip));
+    snd.soundQueueActionForTest({ t: 'knobparam', target: 'bank:3' }); ticks(1);
+    assert(snd.soundKnobParamsForTest().some(p => p.label === 'Clock Feedback'), 'DELAY offers the Shift+K1 Clock Feedback');
+    snd.soundSetViewForTest(VIEW_MACROS);
+});
+step('⭑ a bank target belongs to a PAD MODE: on a drum track NOTE FX is not offered, ALL LANES is, and the NOTE FX macro reads UNASSIGNED', () => {
+    GS.trackPadMode[2] = PAD_MODE_DRUM;
+    const names = snd.soundKnobTargetsForTest().map(t => t.name);
+    assert(names.indexOf('NOTE FX') < 0 && names.indexOf('ALL LANES') >= 0 && names.indexOf('LIVE ARP') >= 0, 'drum targets, got ' + JSON.stringify(names));
+    const d = M().drawn[6];
+    assert(/UNASSIGNED/.test(d.name) && d.text === '--', 'off-mode bank macro reads UNASSIGNED, got ' + JSON.stringify(d));
+    GS.trackPadMode[2] = 0;
+});
+
 /* ---- the walk, Back, the rest peek --------------------------------------- */
 step('the jog is DECLINED on MACROS (the walk owns it); the click opens the list; Back from the page CLOSES sound mode to the origin bank', () => {
     snd.soundExit(); GS.activeTrack = 2; GS.activeBank = BANK_STEP; GS.trackActiveBank[2] = BANK_STEP;
