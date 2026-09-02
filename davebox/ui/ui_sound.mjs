@@ -4341,12 +4341,15 @@ export function soundOnCC(d1, d2, decodeDelta) {
      * keeps its own copy for everything outside sound mode. */
     if (d1 === 88) {
         S.muteHeld = d2 >= 64;
-        if (!S.muteHeld && S.autoLedPaint) { S.autoLedPaint = false; paramPagesRepaintKnobs(); }
+        if (!S.muteHeld && !S.deleteHeld && S.autoLedPaint) { S.autoLedPaint = false; paramPagesRepaintKnobs(); }
         return false;
     }
-    /* Delete, tracked here for the same reason as Mute. Passed through. */
+    /* Delete, tracked here for the same reason as Mute. Passed through. It
+     * paints the rings too (what Delete+touch would clear), so the release
+     * hands them back the same way. */
     if (d1 === 119) {
         S.deleteHeld = d2 >= 64;
+        if (!S.deleteHeld && !S.muteHeld && S.autoLedPaint) { S.autoLedPaint = false; paramPagesRepaintKnobs(); }
         return false;
     }
 
@@ -5132,11 +5135,13 @@ export function soundTick() {
     ppSync();
     if (ppOn) {
         tickParamPages();
-        /* Holding Mute paints the rings with automation status (spec §3):
-         * unlit = none, red = active, white = deactivated. Every tick while
-         * held — the engine's own change-only writes would otherwise win back
-         * a ring the moment its value moved. Handed back on release. */
-        if (S.muteHeld && S.view === VIEW_EDIT) {
+        /* Holding Mute — or Delete (Josh, 2026-09-02: you should see what a
+         * Delete+touch would clear) — paints the rings with automation status
+         * (spec §3): unlit = none, red = active, white = deactivated. Every
+         * tick while held — the engine's own change-only writes would
+         * otherwise win back a ring the moment its value moved. Handed back
+         * on release. */
+        if ((S.muteHeld || S.deleteHeld) && S.view === VIEW_EDIT) {
             S.autoLedPaint = true;
             const t = S.track, c = effectiveClip(t);
             for (let k = 0; k < 8; k++) {
@@ -5912,6 +5917,13 @@ function ppIo() {
                 if (S.deleteHeld) {
                     if (automationClearKey(t, c, target)) showActionPopup('AUTOMATION', 'CLEARED');
                 } else if (S.muteHeld) {
+                    /* ⚠⚠ Tell DAVEBOX the Mute was a MODIFIER — on ITS state
+                     * object (GS), exactly as Mute+click does above. davebox
+                     * acts on the Mute RELEASE and mutes the track unless this
+                     * is set: Josh, 2026-09-02, "mute seems to fall through to
+                     * the track too". Set on the touch, whether or not the
+                     * parameter had automation to toggle. */
+                    GS.muteUsedAsModifier = true;
                     const on = automationToggleActive(t, c, target);
                     if (on !== null) showActionPopup('AUTOMATION', on ? 'ON' : 'OFF');
                 }

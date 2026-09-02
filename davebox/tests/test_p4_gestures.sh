@@ -11,6 +11,6 @@ grep -q "else if (S.muteHeld) {" $S && grep -q "automationToggleActive(t, c, tar
 grep -q "return st.active ? 'auto' : 'auto-off';" $S || f "the label mark must be the tri-state automation circle before the module's tilde"
 grep -q "automationSmoothable(S.slot, S.touchedFullKey)" $S || f "knob touched + jog click toggles Smooth only on a smoothable (float) parameter"
 grep -q "setButtonLED(MoveKnob1 + k, st ? (st.active ? Red : White) : 0, true);" $S || f "Mute held paints the rings: unlit none / red active / white deactivated"
-grep -c "paramPagesRepaintKnobs();" $S | grep -q "^2$" || f "the rings are handed back on Mute release AND when the paint condition ends (two sites)"
+grep -c "paramPagesRepaintKnobs();" $S | grep -q "^3$" || f "the rings are handed back on Mute release, on Delete release, AND when the paint condition ends (three sites)"
 grep -q "automationClearStep(_t, _ac, _abs);" ui/ui_input_pads.mjs || f "Delete+step must clear every parameter's lock at the step, on every bank"
 echo "PASS: P4 gestures are wired where the spec puts them"
