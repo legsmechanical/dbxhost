@@ -13,7 +13,7 @@
 
 import { S } from './ui_state.mjs';
 import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, NUM_STEPS, BANKS,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND } from './ui_constants.mjs';
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP } from './ui_constants.mjs';
 
 /* Live pad note input — isomorphic 4ths diatonic layout.
  * EXPORTED for ui.js's computePadNoteMap (impure, moves in Phase 5) — do not
@@ -78,9 +78,11 @@ export function bankDisplayName(padMode, bank) {
  * ⚠ Pure: takes the pad MODE, not a track index, so ui_render and ui_input_cc
  * can both call it without either importing the other. */
 export function bankCycleForMode(padMode) {
-    if (padMode === PAD_MODE_CONDUCT) return CONDUCT_BANK_CYCLE.slice();
-    if (padMode === PAD_MODE_DRUM)    return BANK_CYCLE_DRUM.concat([BANK_SOUND]);
-    return [0, 1, 2, 3, 4, 5, 6, BANK_SOUND];
+    /* STEP sits after the clip banks on every walk — just before SOUND + CONFIG
+     * where there is one, last on a Conductor (spec §2, 2026-09-02). */
+    if (padMode === PAD_MODE_CONDUCT) return CONDUCT_BANK_CYCLE.concat([BANK_STEP]);
+    if (padMode === PAD_MODE_DRUM)    return BANK_CYCLE_DRUM.concat([BANK_STEP, BANK_SOUND]);
+    return [0, 1, 2, 3, 4, 5, 6, BANK_STEP, BANK_SOUND];
 }
 
 /* Bank position in the jog-cycle order, for the header position strip. Melodic
@@ -88,24 +90,13 @@ export function bankCycleForMode(padMode) {
  * conductor banks cycle in CONDUCT_BANK_CYCLE order. Returns {idx, count} for
  * the active track's chain — mirrors the jog nav in _onCC_jog. */
 export function bankCyclePos() {
-    /* +1 on the melodic and drum counts: the jog's last stop is the SOUND +
-     * CONFIG screen (sound mode as a bank, 2026-08-23), so the bar shows one
-     * more segment than there are clip banks. Its own screen draws that last
-     * segment active (ui_sound renderBlocks); on the clip banks the idx never
-     * reaches it, which is exactly right — you are not there. Conductor tracks
-     * have no sound bank, so their count stays the cycle's own. */
-    if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
-        if (S.activeBank === BANK_SOUND)
-            return { idx: BANK_CYCLE_DRUM.length, count: BANK_CYCLE_DRUM.length + 1 };
-        const i = BANK_CYCLE_DRUM.indexOf(S.activeBank);
-        return { idx: i < 0 ? 0 : i, count: BANK_CYCLE_DRUM.length + 1 };
-    }
-    if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT) {
-        const i = CONDUCT_BANK_CYCLE.indexOf(S.activeBank);
-        return { idx: i < 0 ? 0 : i, count: CONDUCT_BANK_CYCLE.length };
-    }
-    if (S.activeBank === BANK_SOUND) return { idx: 7, count: 8 };
-    return { idx: Math.max(0, Math.min(6, S.activeBank)), count: 8 };
+    /* ONE source: the same walk the jog uses. idx = the bank's position in it,
+     * count = its length (SOUND + CONFIG is a stop like any other, and its own
+     * screen draws that segment active). A bank not on this track's walk
+     * reads as position 0 — there is nothing truer to say. */
+    const cyc = bankCycleForMode(S.trackPadMode[S.activeTrack]);
+    const i = cyc.indexOf(S.activeBank);
+    return { idx: i < 0 ? 0 : i, count: cyc.length };
 }
 
 /* Step-edit pitch nudge: move note up/down to next in-scale pitch.

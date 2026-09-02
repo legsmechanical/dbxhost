@@ -22,7 +22,7 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS,
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND,
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP,
     TICK_HZ, STEP_ITER_LIST,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool
@@ -3380,6 +3380,9 @@ function ccKnobDelta(d2, k, stepScale) {
     return units;
 }
 
+/* The old AUTO-bank (6) held-step CC editor. Off since 2026-09-02; gone with P8. */
+const LANE_STEP_EDITOR_LIVE = false;
+
 function _onCC_stepedit(d1, d2) {
     /* ⭑ Any knob turn while a step is DOWN promotes the press to a HOLD — on
      * every bank, before anything else decides what the turn means. A tap on a
@@ -3395,8 +3398,12 @@ function _onCC_stepedit(d1, d2) {
             S.stepBtnPressedTick[S.heldStepBtn] >= 0) {
         S.stepHoldPromote = true;
     }
-    /* CC step-edit: bank 6 + held step — all 8 knobs write CC automation at step's tick */
-    if (S.heldStep >= 0 && S.activeBank === 6 && d1 >= 71 && d1 <= 78) {
+    /* CC step-edit: bank 6 + held step — all 8 knobs write CC automation at step's tick.
+     * ⚠ GATED OFF 2026-09-02 (spec §2): a held step redirects the on-screen
+     * knobs to that step on the STEP bank and in the module editor, and
+     * nowhere else — bank 6 was the one surviving exception. The lane system
+     * this served is deleted in P8; until then the branch stays, unreachable. */
+    if (LANE_STEP_EDITOR_LIVE && S.heldStep >= 0 && S.activeBank === 6 && d1 >= 71 && d1 <= 78) {
         const _kIdx = d1 - 71;
         const _acc  = ccKnobDelta(d2, _kIdx);  /* run-length acceleration */
         if (_acc === 0) return;
@@ -3441,7 +3448,7 @@ function _onCC_stepedit(d1, d2) {
      * Bank-gated off the AUTO bank (6): there the held-step + knob edits CC
      * automation (the CC step editor above), mirroring the melodic NOTE editor. */
     if (S.heldStep >= 0 && S.heldStepNotes.length > 0 && d1 >= 71 && d1 <= 78 &&
-            S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank !== 6) {
+            S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === BANK_STEP) {
         const knobIdx = d1 - 71;
         const dir     = (d2 >= 1 && d2 <= 63) ? 1 : -1;
         const t       = S.activeTrack;
@@ -3512,7 +3519,7 @@ function _onCC_stepedit(d1, d2) {
         return;
     }
     /* Melodic step edit: K1 Note, K2 Oct, K3 Leng, K4 Vel, K5 Nudg, K6 Iter, K7 Prob, K8 Ratch */
-    if (S.heldStep >= 0 && S.heldStepNotes.length > 0 && d1 >= 71 && d1 <= 78 && S.activeBank !== 6) {
+    if (S.heldStep >= 0 && S.heldStepNotes.length > 0 && d1 >= 71 && d1 <= 78 && S.activeBank === BANK_STEP) {
         const knobIdx = d1 - 71;
         const dir     = (d2 >= 1 && d2 <= 63) ? 1 : -1;
         const t       = S.activeTrack;

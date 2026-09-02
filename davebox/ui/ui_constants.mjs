@@ -430,6 +430,14 @@ export const BANKS = [
      * bank the jog came from. All stubs: ui_sound owns the knobs there. The
      * entry exists so generic BANKS[S.activeBank] readers stay safe. */
     { name: 'SOUND + CONFIG', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
+    /* 12 — STEP (BANK_STEP) — the step editor AS a bank (Josh, 2026-09-02,
+     * spec §2 "the held step, one law"): its knobs are Note/Oct/Leng/Vel/
+     * Nudg/Iter/Prob/Ratch (drum: Leng/Vel/Nudg/-/Iter/Prob/Ratch/-), and they
+     * act on the HELD step — with no step held (or an empty one) every cell
+     * reads `--`. All stubs here: ui_input_cc's step editor owns the knobs and
+     * ui_render's step page owns the cells; the entry exists so generic
+     * BANKS[S.activeBank] readers stay safe. Never the default view. */
+    { name: 'STEP', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
 ];
 
 /* Conductor bank indices. Bank 0 (CLIP) is reused as the "Conduct" bank. */
@@ -444,18 +452,21 @@ export const BANK_RESPONDER = 8, BANK_OCTAVE = 9, BANK_WHEN = 10;
  * sync sites guarded against writing it; the guards are gone, and the "bank to
  * come back to" half they were carrying now lives in S.trackSoundOrigin. */
 export const BANK_SOUND = 11;
+/* The STEP bank: the step editor as a bank, sitting just before SOUND + CONFIG
+ * on every jog walk (and last on a Conductor's). See BANKS[12]. */
+export const BANK_STEP = 12;
 
 /* The track's DEFAULT bank — CLIP on a melodic track, DRUM LANE on a drum one,
  * CONDUCT on a Conductor. All three are index 0: the bank a track is on when a
  * session is first created, and where Back lands from any other bank. */
 export const BANK_DEFAULT = 0;
 
-/* The bank immediately BEFORE SOUND + CONFIG on the jog — AUTOMATION, which is
- * both the melodic walk's last stop and the last entry of BANK_CYCLE_DRUM (CC
- * PARAM). Where the top-edge left turn lands when no origin was remembered:
- * a track restored from the sidecar on SOUND + CONFIG, or arrived at by a
- * track switch. Keep in lockstep with the two cycles. */
-export const BANK_SOUND_PREV = 6;
+/* The bank immediately BEFORE SOUND + CONFIG on the jog — STEP since
+ * 2026-09-02 (bankCycleForMode appends it after the clip banks on both the
+ * melodic and the drum walk). Where the top-edge left turn lands when no
+ * origin was remembered: a track restored from the sidecar on SOUND + CONFIG,
+ * or arrived at by a track switch. Keep in lockstep with bankCycleForMode. */
+export const BANK_SOUND_PREV = BANK_STEP;
 
 /* JS tick rate on device (~94 Hz measured). Older constants were calibrated
  * against a mistaken 196 Hz assumption — derive new timings from this. */

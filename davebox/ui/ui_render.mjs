@@ -11,7 +11,7 @@ import { drawDaveBox } from './ui_daves.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
 import { SESS_KNOB_MODES } from './ui_engine.mjs';
 import {
-    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND,
+    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
     POLL_INTERVAL, SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
     col4, col5, pixelPrint, pixelPrintC,
@@ -235,6 +235,20 @@ function drawNoteBox(name, sub, invert) {
  * header (touched knob swaps in the param name), kit grid, enum overlay on
  * top. `noteBox` (melodic) draws the merged Oct/Note box over the K1+K2
  * widget span; cells === null renders the empty-step notice. */
+/* The STEP bank at rest: the mode's step-edit layout with every value `--`. */
+function stepBankIdleCells(drum) {
+    const dash = (label, name, kind) => ({ kind: kind || 'valsq', label, name, text: '--' });
+    if (drum) {
+        return [dash('Leng', 'Length'), dash('Vel', 'Velocity', 'arc'), dash('Nudg', 'Nudge', 'arcbip'),
+                { kind: 'blank', label: '' }, dash('Iter', 'Iteration'), dash('Prob', 'Probability', 'arc'),
+                dash('Ratch', 'Ratchet'), { kind: 'blank', label: '' }];
+    }
+    return [{ kind: 'blank', label: 'Note', name: 'Note', bigText: '--' },
+            { kind: 'blank', label: 'Oct',  name: 'Note', bigText: '--' },
+            dash('Leng', 'Length'), dash('Vel', 'Velocity', 'arc'), dash('Nudg', 'Nudge', 'arcbip'),
+            dash('Iter', 'Iteration'), dash('Prob', 'Probability', 'arc'), dash('Ratch', 'Ratchet')];
+}
+
 function drawStepEditKitPage(title, cells, noteBox) {
     const t = S.knobTouched;
     const touched = cells && t >= 0 && cells[t] && cells[t].name ? cells[t] : null;
@@ -245,7 +259,10 @@ function drawStepEditKitPage(title, cells, noteBox) {
         fill_rect(0, 9, 128, 1, 1);   /* solid rule (no bank context here) */
     }
     if (!cells) {
-        mvPrint(4, 30, 'Empty step', 1);
+        /* An empty step (or no step held): every knob reads `--` — spec §2, the
+         * STEP bank. The layout is the mode's own, so the cells say what the
+         * knobs WOULD edit. */
+        drawKitCells(stepBankIdleCells(S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM), -1);
         return;
     }
     drawKitCells(cells, t);
@@ -1488,8 +1505,12 @@ function drawUIBody() {
         return;
     }
 
-    /* Step edit: show assigned notes and step identity */
-    if (S.heldStep >= 0) {
+    /* Step edit: show assigned notes and step identity — ON THE STEP BANK ONLY
+     * (spec §2, 2026-09-02): a held step never changes the screen anywhere
+     * else; the on-screen knobs are simply redirected to it (the editor and
+     * MACROS lock, the other banks decline). Bank 6's held-step CC view is
+     * gated off with the rest of that editor (P8 deletes it). */
+    if (S.heldStep >= 0 && S.activeBank === BANK_STEP) {
         if (S.activeBank === 6) {
             /* CC bank step-hold: compact graph + knob values */
             var _t6s = S.activeTrack, _ac6s = effectiveClip(_t6s);
@@ -1987,6 +2008,13 @@ function drawUIBody() {
          * eight-cell kit page. */
         if (bank === BANK_SOUND) {
             renderTrackGatewayCard(S.activeTrack);
+            return;
+        }
+        if (bank === BANK_STEP) {
+            /* STEP with nothing held: the layout, every cell `--`. A held step
+             * with a note is drawn by the step-edit block above, before the
+             * card gate — a held step is the reason for being here. */
+            drawStepEditKitPage(BANKS[BANK_STEP].name, null, null);
             return;
         }
         const isDrumLaneBank = (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 0);

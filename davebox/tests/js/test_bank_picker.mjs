@@ -362,11 +362,11 @@ step('⭑⭑ each track type shows ITS OWN bank names, in the picker and the hea
      * deleting the bank-5 alias straight through. The expectations have to come
      * from outside the code under test. */
     const EXPECT = {
-        0: { 0: 'CLIP', 1: 'NOTE FX', 5: 'LIVE ARP', 6: 'AUTOMATION' },
+        0: { 0: 'CLIP', 1: 'NOTE FX', 5: 'LIVE ARP', 6: 'AUTOMATION', 12: 'STEP' },
         [PAD_MODE_DRUM]:    { 0: 'DRUM LANE', 1: 'NOTE FX', 5: 'RPT GROOVE',
-                              6: 'AUTOMATION', 7: 'ALL LANES' },
+                              6: 'AUTOMATION', 7: 'ALL LANES', 12: 'STEP' },
         [PAD_MODE_CONDUCT]: { 0: 'C-CONDUCT', 1: 'C-NOTE FX', 8: 'C-RESPONDER',
-                              9: 'C-OCTAVE', 10: 'C-WHEN' },
+                              9: 'C-OCTAVE', 10: 'C-WHEN', 12: 'C-STEP' },
     };
     for (const mode of Object.keys(EXPECT)) {
         for (const bank of Object.keys(EXPECT[mode])) {
