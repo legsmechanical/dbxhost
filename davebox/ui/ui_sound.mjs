@@ -686,6 +686,7 @@ const S = {
     macMergeWanted: false,      /* re-run the chain-store merge (a patch loaded) */
     macBanksRead: false,        /* bank targets' values re-read this seed */
     macTurnMs: [0, 0, 0, 0, 0, 0, 0, 0],   /* last turn per knob, for the poll's hand rule */
+    levelPoll: 0,               /* the SOUND + CONFIG card's round-robin re-read cursor */
     bankHome: BANK_SOUND,       /* which bank identity the open mode carries */
     asnQuick: false,            /* opened by Shift+touch: the commit lands on the page */
 
@@ -1397,6 +1398,33 @@ function onLevelTurn(idx, delta) {
     S.levelDirtySave = true;
     automationParamEdit(S.track, effectiveClip(S.track), S.slot, levelFullKey(idx), v.toFixed(3), prev.toFixed(3));
     S.dirty = true;
+}
+/* Re-read ONE level from the engine into the cache (the automation moves
+ * it under playback). False when unchanged or not on this route. */
+function levelPollOne(li) {
+    const m = levelKnobSpec(li);
+    if (!m) return false;
+    const comp = levelComp();
+    const raw = parseFloat(comp === 'slot' ? engineGetSlotParam(S.slot, m.key) : engineGet(S.slot, comp, m.key));
+    if (!isFinite(raw) || raw < 0) return false;
+    const v = Math.round(raw * 1000) / 1000;
+    if (v === S.levelVals[li]) return false;
+    S.levelVals[li] = v;
+    return true;
+}
+/* The SOUND + CONFIG card's levels under playback: one re-read per tick,
+ * round-robin, the knob under the hand excepted — so an automated level's
+ * fader moves like a macro's does. Only while the transport runs and the
+ * card is the screen (the page draws nothing else that changes). */
+function levelPollTick() {
+    if (!levelsActive() || S.view !== VIEW_PROMPT || !GS.playing || S.levelPending) return;
+    for (let n = 0; n < LEVEL_KNOB_SPECS.length; n++) {
+        const li = (S.levelPoll + n) % LEVEL_KNOB_SPECS.length;
+        if (!levelPageSpec(li) || li === S.touchedIdx) continue;
+        if (levelPollOne(li)) S.dirty = true;
+        S.levelPoll = li + 1;
+        break;
+    }
 }
 /* Tick: the writes, then keep any on-screen level row in step. */
 function drainLevelWrites() {
@@ -3384,6 +3412,7 @@ function macroCellFor(m) {
 function macroTurn(idx, delta) {
     const m = macroTarget(idx);
     if (!m) return;
+    S.macTurnMs[idx] = nowMs();
     if (m.kind === 'level') {
         const li = macroLevelIdx(m);
         if (li >= 0 && levelKnobSpec(li)) onLevelTurn(li, delta);
@@ -3391,7 +3420,6 @@ function macroTurn(idx, delta) {
     }
     /* A bank macro: detents accumulate as for a chain param (its drain is in
      * macroTick, with the bank's own write path). */
-    S.macTurnMs[idx] = nowMs();
     const dir = delta > 0 ? 1 : -1;
     /* Direction reversal RESETS the accumulator rather than unwinding it — the
      * canvaskit rule, and the part that makes a knob feel right. */
@@ -3496,6 +3524,15 @@ function macroPollTick() {
     for (let n = 0; n < 8; n++) {
         const i = (S.macPoll + n) % 8;
         const m = store[i], cell = S.macCells[i];
+        /* A LEVEL macro re-reads the level's own cache (Josh, 2026-09-03: a
+         * bus-pan macro "records and plays back but the widget never moves"
+         * — the levels were seeded once and never re-read). */
+        if (m && m.kind === 'level') {
+            if (i === S.touchedIdx || (S.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
+            if (levelPollOne(macroLevelIdx(m))) S.dirty = true;
+            S.macPoll = i + 1;
+            break;
+        }
         if (!m || m.kind !== 'chain' || !cell || cell.vanished || S.macVals[i] == null) continue;
         /* ⚠ Skip a knob under the HAND (touched, or turned within the last
          * moment) — NOT one with a leftover sub-step remainder in its
@@ -5850,6 +5887,7 @@ export function soundTick() {
 
     levelSeedIfNeeded();
     drainLevelWrites();
+    levelPollTick();
     if (S.volPending) {
         S.volPending = false;
         writeVolLevel(S.slot, S.volLevel);

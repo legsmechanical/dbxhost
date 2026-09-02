@@ -416,6 +416,13 @@ step('a LEVEL macro is the level\'s own knob: K6 writes slot:volume by the level
     assert(lastWrite('slot:volume') === (1 + 10 * STEP_VOL).toFixed(3), 'slot:volume, got ' + lastWrite('slot:volume'));
     assert(M().drawn[5].kind === 'vbar' && M().drawn[5].label === 'Vol', 'fader cell, got ' + JSON.stringify(M().drawn[5]));
 });
+step('⭑ a LEVEL macro FOLLOWS the engine under playback (a bus-pan macro "never moved"): the poll re-reads the level', () => {
+    GS.playing = true;
+    ASSIGN['slot:volume'] = '0.250';
+    ticks(12);
+    GS.playing = false;
+    assert(M().drawn[5].text !== undefined && M().drawn[5].norm < 0.2, 'K6 followed the engine to 0.25, got ' + JSON.stringify(M().drawn[5]));
+});
 step('⚠ on MACROS the knobs are NOT the levels: an unassigned K2 turn writes nothing (no slot:pan)', () => {
     writes = [];
     turnBy(1, 10); ticks(2);
