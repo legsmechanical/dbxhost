@@ -65,6 +65,22 @@ export function clearAllMuteSolo() {
 }
 
 /* Clear all notes from a step and deactivate it (atomic DSP write). */
+/* ONE undo unit per held-step session (spec §2, Josh 2026-09-02). Called
+ * ahead of every write a hold makes — the knobs on the STEP bank, a pad
+ * press while held, gate-drag, a note-in — and it fires ONCE per hold: the
+ * DSP snapshots the clip (drum: every lane of the active drum clip), and the
+ * step ops that follow take no snapshot of their own, so Undo removes "what I
+ * did to that step", not one detent of it. Same shape as step record. */
+export function stepHoldCheckpoint(t) {
+    if (S.stepHoldCkpt || S.heldStep < 0) return;
+    S.stepHoldCkpt = true;
+    if (S.trackPadMode[t] === PAD_MODE_DRUM)
+        host_module_set_param('t' + t + '_drum_undo_checkpoint', '1');
+    else
+        host_module_set_param('t' + t + '_c' + effectiveClip(t) + '_undo_checkpoint', '1');
+    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+}
+
 export function clearStep(t, ac, absIdx) {
     S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 't' + t + '_c' + ac + '_step_' + absIdx + '_clear', val: '1', _local: true });

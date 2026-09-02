@@ -70,7 +70,7 @@ import { setTrackMute, setTrackSolo, clearAllMuteSolo,
     clearClip, hardResetClip, copyClip, cutClip, copyRow, cutRow,
     copyDrumClip, cutDrumClip, clearRow,
     _switchActiveTrack, allLanesGate,
-    resetFxBanks, resetTarp, resetSingleFxBank, applyConductGridKnob } from './ui_editops.mjs';
+    resetFxBanks, resetTarp, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint } from './ui_editops.mjs';
 import { _resolveLoopGesture } from './ui_input_pads.mjs';
 
 /* View lock: double-tap Loop keeps Perf Mode alive after Loop is released.
@@ -3473,6 +3473,7 @@ function _onCC_stepedit(d1, d2) {
     if (S.heldStep >= 0 && S.heldStepNotes.length > 0 && d1 >= 71 && d1 <= 78 &&
             S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && (S.activeBank === BANK_STEP || S.stepReveal)) {
         const knobIdx = d1 - 71;
+        stepHoldCheckpoint(S.activeTrack);
         const dir     = (d2 >= 1 && d2 <= 63) ? 1 : -1;
         const t       = S.activeTrack;
         const lane    = S.activeDrumLane[t];
@@ -3544,6 +3545,7 @@ function _onCC_stepedit(d1, d2) {
     /* Melodic step edit: K1 Note, K2 Oct, K3 Leng, K4 Vel, K5 Nudg, K6 Iter, K7 Prob, K8 Ratch */
     if (S.heldStep >= 0 && S.heldStepNotes.length > 0 && d1 >= 71 && d1 <= 78 && (S.activeBank === BANK_STEP || S.stepReveal)) {
         const knobIdx = d1 - 71;
+        stepHoldCheckpoint(S.activeTrack);
         const dir     = (d2 >= 1 && d2 <= 63) ? 1 : -1;
         const t       = S.activeTrack;
         const ac      = effectiveClip(t);

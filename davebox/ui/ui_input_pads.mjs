@@ -37,7 +37,7 @@ import { handoffRecordingToTrack, recordNoteOn, recordNoteOff,
 import { setTrackMute, setTrackSolo, clearClip, hardResetClip, copyClip, cutClip,
     copyDrumLane, cutDrumLane, copyDrumClip, cutDrumClip, copyStep, cutStep, clearStep,
     showModePopup, allLanesGate, doDoubleFill, doLaneDoubleFill,
-    _switchActiveTrack } from './ui_editops.mjs';
+    _switchActiveTrack, stepHoldCheckpoint } from './ui_editops.mjs';
 
 /* Performance Mode state. Session View + Loop held → pad grid shows Perf Mode.
  * S.perfStack: currently-held R0 length pads (same stack semantics as old looper
@@ -315,6 +315,7 @@ function _onPadPressTrackView(status, d1, d2) {
                 S.liveActiveNotes.add(laneNote);
                 if (S.heldStep >= 0 && S.heldStepNotes.length > 0) {
                     /* Active vel-pad press while step held → zone wins (beats VelIn) */
+                    stepHoldCheckpoint(t);
                     const _heldWriteVel = stepEntryVelocity(t, zoneVel, true);
                     S.stepEditVel = _heldWriteVel;
                     host_module_set_param('t' + t + '_l' + lane_vp + '_step_' + S.heldStep + '_vel', String(_heldWriteVel));
@@ -326,6 +327,7 @@ function _onPadPressTrackView(status, d1, d2) {
                      * lanes, not pitches). The press is thereby a hold: close
                      * the tap window so the release cannot toggle it again. */
                     const _newVel = stepEntryVelocity(t, zoneVel, true);
+                    stepHoldCheckpoint(t);
                     host_module_set_param('t' + t + '_l' + lane_vp + '_step_' + S.heldStep + '_toggle', String(_newVel));
                     S.drumLaneSteps[t][lane_vp][S.heldStep] = '1';
                     S.drumLaneHasNotes[t][lane_vp] = true;
@@ -483,6 +485,7 @@ function _onPadPressTrackView(status, d1, d2) {
             const _pitchRaw = S.padNoteMap[padIdx] + S.trackOctave[S.activeTrack] * 12;
             if (_pitchRaw < 0 || _pitchRaw > 127) return; /* OOB after track-octave shift */
             const pitch = _pitchRaw;
+            stepHoldCheckpoint(S.activeTrack);
             host_module_set_param('t' + S.activeTrack + '_c' + ac + '_step_' + S.heldStep + '_toggle', pitch + ' ' + stepEntryVelocity(S.activeTrack, effectiveVelocity(d2), false));
             /* ⭑ A pad press while a step is down is an EDIT of that step — it
              * promotes the press to a hold (closes the tap window), so the
@@ -1344,6 +1347,7 @@ export function _onStepButtons(d1, d2) {
         S.stepBtnPressedTick[idx] = S.tickCount;
         if (S.heldStep < 0) {
             S.heldStepBtn = idx;
+            S.stepHoldCkpt = false;
             S.heldStep    = absStep;
             const cur   = S.drumLaneSteps[t][lane][absStep];
             if (cur !== '0') {
@@ -1403,6 +1407,7 @@ export function _onStepButtons(d1, d2) {
                     ? tappedStep - S.heldStep + 1
                     : len - S.heldStep + tappedStep + 1;
                 const newGate = Math.max(1, Math.min(dist * tps, 65535));
+                stepHoldCheckpoint(t);
                 host_module_set_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_gate', String(newGate));
                 S.stepEditGate = newGate;
                 forceRedraw();
@@ -1416,6 +1421,7 @@ export function _onStepButtons(d1, d2) {
             const ac_p   = effectiveClip(S.activeTrack);
             const absP   = S.trackCurrentPage[S.activeTrack] * 16 + idx;
             S.heldStepBtn  = idx;
+            S.stepHoldCkpt = false;
             S.heldStep     = absP;
             const pref_p = 't' + S.activeTrack + '_c' + ac_p + '_step_' + absP;
             /* get_param returns null in MIDI context — use clipSteps mirror to detect
@@ -1510,6 +1516,7 @@ export function _onStepButtons(d1, d2) {
                 const spanGate = dist * tps;
                 const newGate = Math.max(1, Math.min(
                     S.stepEditGate >= spanGate ? (dist - 1) * tps : spanGate, 65535));
+                stepHoldCheckpoint(S.activeTrack);
                 host_module_set_param('t' + S.activeTrack + '_c' + ac_tap + '_step_' + S.heldStep + '_gate', String(newGate));
                 S.stepEditGate = newGate;
                 forceRedraw();

@@ -455,6 +455,17 @@ static int sp_track_drum2(sp_ctx_t *cx) {
         return 1;
     }
 
+    if (!strcmp(sub, "drum_undo_checkpoint")) {
+        /* tN_drum_undo_checkpoint — the drum reading of tN_cC_undo_checkpoint:
+         * snapshot every lane of the active drum clip as the undo unit for a
+         * SESSION of per-step edits that follows (a held step's Vel, Leng,
+         * ... on the STEP bank, or the hit a pad creates while it is held).
+         * The lane step ops (_toggle, _vel, _gate, ...) take no snapshot of
+         * their own, so the hold is ONE undo. */
+        undo_begin_drum_clip(inst, tidx, (int)tr->active_clip);
+        return 1;
+    }
+
     if (!strcmp(sub, "all_lanes_length")) {
         /* tN_all_lanes_length "steps" — set clip length on all 32 drum lanes.
          * Per-lane clamp respects each lane's own loop_start; re-anchor to

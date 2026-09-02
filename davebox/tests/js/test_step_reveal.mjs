@@ -14,6 +14,11 @@ function assert(c, m) { if (!c) throw new Error(m); }
 const sets = [];
 const fb = new Uint8Array(128 * 64);
 const fbHash = () => { let h = 0; for (let i = 0; i < fb.length; i++) h = (h * 31 + fb[i]) >>> 0; return h; };
+/* The frame in two parts: the BODY (above the footer row) and the FOOTER (the
+ * hint row), so a pin can say "the body is identical and the hints changed". */
+let FOOTER_Y = 64;
+const bodyHash = () => { let h = 0; for (let i = 0; i < FOOTER_Y * 128; i++) h = (h * 31 + fb[i]) >>> 0; return h; };
+const footHash = () => { let h = 0; for (let i = FOOTER_Y * 128; i < fb.length; i++) h = (h * 31 + fb[i]) >>> 0; return h; };
 const px = (x, y, c) => { if (x >= 0 && x < 128 && y >= 0 && y < 64) fb[y * 128 + x] = c ? 1 : 0; };
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false; globalThis.host_write_file = () => true;
@@ -44,6 +49,7 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const { BANKS, BANK_STEP, BANK_SOUND } = await import('../../ui/ui_constants.mjs');
+FOOTER_Y = (await import('../../ui/ui_movy.mjs')).MV_FOOTER_Y - 1;
 const snd = await import('../../ui/ui_sound.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashTicks = 0;
@@ -74,24 +80,29 @@ function fresh(bank) {
 }
 function holdStep5() { note(STEP(5), 127); S.tickCount += 25; globalThis.tick(); }
 function frameAt(tick) { const keep = S.tickCount; S.tickCount = tick; S.screenDirty = true; globalThis.tick(); const h = fbHash(); S.tickCount = keep; return h; }
+function partsAt(tick) { const keep = S.tickCount; S.tickCount = tick; S.screenDirty = true; globalThis.tick(); const r = { body: bodyHash(), foot: footHash() }; S.tickCount = keep; return r; }
 function release() { note(STEP(5), 0); globalThis.tick(); }
 
 step('⚠ NOTE FX + held step: jog RIGHT reveals the step page (the frame the STEP bank itself would draw); LEFT returns to the very same frame', () => {
     fresh(BANK_STEP); holdStep5();
     const REF = 5000;
-    const stepBankHeld = frameAt(REF);
+    const stepBankHeld = partsAt(REF);
     release();
     fresh(1); holdStep5();
-    const origin = frameAt(REF);
-    assert(origin !== stepBankHeld, 'control: the NOTE FX card and the step page differ');
+    const origin = partsAt(REF);
+    assert(origin.body !== stepBankHeld.body, 'control: the NOTE FX card and the step page differ');
     right();
     assert(S.stepReveal === true, 'revealed');
-    assert(frameAt(REF) === stepBankHeld, '⚠ the reveal IS the STEP bank\'s page for that step');
+    const revealed = partsAt(REF);
+    assert(revealed.body === stepBankHeld.body, '⚠ the reveal IS the STEP bank\'s page for that step (body)');
+    assert(revealed.foot !== stepBankHeld.foot, 'and its footer says JOG BACK, which the STEP bank\'s own page does not');
     right();
-    assert(S.stepReveal === true && frameAt(REF) === stepBankHeld, 'a second right turn changes nothing (no cycling)');
+    const again = partsAt(REF);
+    assert(S.stepReveal === true && again.body === revealed.body && again.foot === revealed.foot, 'a second right turn changes nothing (no cycling)');
     left();
     assert(S.stepReveal === false, 'returned');
-    assert(frameAt(REF) === origin, '⚠ back on the exact frame you left');
+    const back = partsAt(REF);
+    assert(back.body === origin.body && back.foot === origin.foot, '⚠ back on the exact frame you left');
     left();
     assert(S.stepReveal === false && S.activeBank === 1, 'a second left turn changes nothing — no bank walk under a hold');
     release();

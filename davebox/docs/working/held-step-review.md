@@ -1,6 +1,6 @@
 # The held step — design review before the spec is final
 
-**Status: REVIEW for Josh's rulings (2026-09-02).** Reviewed against three sources: the
+**Status: RULED and BUILT (2026-09-02) — §6 decisions 1–3, 5–8 as recommended, 4 reversed (arrows keep paging; no bug). Kept as the design record.** Reviewed against three sources: the
 automation spec §2/§3 as ruled today, `MANUAL-SA.md` §6.1–6.3 (the documented grammar), and
 the Move manual's own step editing and per-step automation (native parity), plus a line-level
 inventory of everything a held step does in the code today (`ui_input_pads.mjs`,

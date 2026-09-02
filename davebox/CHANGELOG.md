@@ -17,6 +17,20 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **The STEP bank.** Note editing is now a bank of its own — the last clip
+  bank on the jog, just before SOUND + CONFIG. Hold a step there and the
+  knobs are that step's Note, Oct, Leng, Vel, Nudg, Iter, Prob and Ratch;
+  with no step held the bank reads `--`. One hold is one undo.
+- **Hold a step, jog right.** From any screen, holding a step and turning the
+  jog right reveals that step's page on top of what you were doing; turn left
+  or let go to return. The footer says `JOG STEP` while a step is held.
+- **Holding a step never adds a note.** An empty step stays empty until you
+  press a pad while holding it (on a drum track, a velocity pad). Tapping an
+  empty step still places the last note you played.
+- **A held step keeps the screen you are on.** Holding a step no longer swaps
+  the display for the step editor: on the module editor the knobs write
+  parameter locks, on the STEP bank they edit the note, elsewhere they do
+  nothing. A quick press-turn-release now edits the step instead of deleting it.
 - **Eight more Daves join the pool.** Welcome SEDARIS, CARRADINE, HUDDLESTON,
   WAKELING, FAUSTINO, JOHANSEN, BROCKIE and FROST — three of them uncommon.
   47 to collect.

@@ -14,6 +14,11 @@ const sets = [];
 /* A 128x64 framebuffer, so a screen can be compared with another screen. */
 const fb = new Uint8Array(128 * 64);
 const fbHash = () => { let h = 0; for (let i = 0; i < fb.length; i++) h = (h * 31 + fb[i]) >>> 0; return h; };
+/* The frame in two parts: the BODY (above the footer row) and the FOOTER (the
+ * hint row), so a pin can say "the body is identical and the hints changed". */
+let FOOTER_Y = 64;
+const bodyHash = () => { let h = 0; for (let i = 0; i < FOOTER_Y * 128; i++) h = (h * 31 + fb[i]) >>> 0; return h; };
+const footHash = () => { let h = 0; for (let i = FOOTER_Y * 128; i < fb.length; i++) h = (h * 31 + fb[i]) >>> 0; return h; };
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false; globalThis.host_write_file = () => true;
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;
@@ -44,6 +49,7 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const { BANKS, BANK_STEP, BANK_SOUND, BANK_SOUND_PREV, PAD_MODE_DRUM, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
+FOOTER_Y = (await import('../../ui/ui_movy.mjs')).MV_FOOTER_Y - 1;
 const { bankCycleForMode, bankDisplayName } = await import('../../ui/ui_pure.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashTicks = 0;
@@ -89,6 +95,15 @@ step('⚠ on the STEP bank a held step\'s knobs edit THAT step (K4 Vel writes _s
     assert(S.heldStepNotes.length === 1, 'held with notes');
     cc(74, 1); cc(74, 1);
     assert(sets.some(x => x.startsWith('t0_c0_step_5_vel=')), 'velocity written to step 5, got ' + JSON.stringify(sets));
+    /* ONE undo per hold: the checkpoint lands once, before the first write, and
+     * a third turn adds no second one. */
+    cc(74, 1);
+    const ck = sets.filter(x => x === 't0_c0_undo_checkpoint=1');
+    assert(ck.length === 1, '⚠ exactly ONE undo checkpoint for the hold, got ' + ck.length);
+    assert(sets.indexOf('t0_c0_undo_checkpoint=1') < sets.findIndex(x => x.startsWith('t0_c0_step_5_vel=')), 'and it precedes the first write');
+    note(STEP(5), 0); globalThis.tick();
+    sets.length = 0; holdStep5(); cc(74, 1);
+    assert(sets.filter(x => x === 't0_c0_undo_checkpoint=1').length === 1, 'a NEW hold takes a new checkpoint');
     note(STEP(5), 0); globalThis.tick();
 });
 step('⚠ on another bank (NOTE FX) the same gesture writes NOTHING to the step — the bank declines', () => {
@@ -112,13 +127,15 @@ step('⚠ bank 6\'s old held-step CC editor is OFF: a held step + knob writes no
  * header cannot fake a difference: the hold is established, then the clock
  * is set back to the reference tick before the frame is drawn. */
 function frameAt(tick) { const keep = S.tickCount; S.tickCount = tick; S.screenDirty = true; globalThis.tick(); const h = fbHash(); S.tickCount = keep; return h; }
+function partsAt(tick) { const keep = S.tickCount; S.tickCount = tick; S.screenDirty = true; globalThis.tick(); const r = { body: bodyHash(), foot: footHash() }; S.tickCount = keep; return r; }
 step('⚠ a held step does NOT change the screen on another bank (NOTE FX card, pixel-identical)', () => {
     fresh(1); S.bankCardLatched = true;
     const ref = S.tickCount + 50;
-    const before = frameAt(ref);
+    const before = partsAt(ref);
     holdStep5();
-    const during = frameAt(ref);
-    assert(before === during, 'the NOTE FX card is pixel-identical with the step held');
+    const during = partsAt(ref);
+    assert(before.body === during.body, 'the NOTE FX card BODY is pixel-identical with the step held');
+    assert(before.foot !== during.foot, '⚠ ...and the footer changed: the jog now reveals (JOG STEP), and the hint says so');
     note(STEP(5), 0); globalThis.tick();
 });
 step('⚠ on the STEP bank the held step IS the screen: the frame changes when a step is held', () => {

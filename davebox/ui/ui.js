@@ -44,7 +44,7 @@ import { MoveShift } from '/data/UserData/schwung/shared/constants.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { effectiveClip, invalidateLEDCache, trackColor, forceRedraw, installFlagsWrap, buildLedInitQueue } from './ui_leds.mjs';
 import { initPrimarySurface } from './ui_corun.mjs';
-import { setTrackMute, setTrackSolo } from './ui_editops.mjs';
+import { setTrackMute, setTrackSolo, stepHoldCheckpoint } from './ui_editops.mjs';
 import { applyTrackConfig,
     refreshSeqNotesIfCurrent,
     syncClipsFromDsp, syncMuteSoloFromDsp, restoreUiSidecar,
@@ -794,6 +794,7 @@ function _onMidiExternalImpl(data) {
             /* Additive, like a pad: a hold never creates a note, so there is no
              * auto-assigned note to replace any more (spec §2). The note-in is
              * an edit of the held step — promote the press to a hold. */
+            stepHoldCheckpoint(t);
             host_module_set_param('t' + t + '_c' + ac + '_step_' + S.heldStep + '_toggle', d1 + ' ' + vel);
             if (S.heldStepBtn >= 0) S.stepBtnPressedTick[S.heldStepBtn] = -1;
             S.stepWasHeld = true;

@@ -5694,6 +5694,10 @@ function editHints() {
      *   · the click and the Shift chord have no visual trace whatsoever.
      * On the track view the jog opens a PICKER rather than stepping a page, so
      * there it leads. */
+    /* ⭑ A HELD STEP changes what the jog does (spec §2): it REVEALS the step's
+     * page instead of paging — and that has no on-screen trace, so the pair
+     * leads. JOG PAGE, which the hold suspends, is not shown. */
+    if (GS.heldStep >= 0) return [['JOG', 'STEP'], ['BACK', 'OUT']];
     const hints = [['CLK', S.moduleId ? 'PRESET' : 'BROWSE']];
     if (S.sections.length > 1) hints.push(['SHFT', 'SECT']);
     hints.push(['JOG', 'PAGE']);

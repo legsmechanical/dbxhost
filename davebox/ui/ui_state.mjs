@@ -378,6 +378,9 @@ export const S = {
      * cycling. */
     stepReveal: false,
     stepRevealJogTick: -1000,
+    /* ONE UNDO PER HOLD (spec §2): the first edit of a held step takes the
+     * clip's undo checkpoint; every edit until the release rides it. */
+    stepHoldCkpt: false,
     /* The deferred-save rule (pollDSP): the tick of the last hardware input,
      * and a one-shot "save at the next poll" raised at the Record-off edge. */
     lastInputTick: 0,

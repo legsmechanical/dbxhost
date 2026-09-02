@@ -249,7 +249,7 @@ function stepBankIdleCells(drum) {
             dash('Iter', 'Iteration'), dash('Prob', 'Probability', 'arc'), dash('Ratch', 'Ratchet')];
 }
 
-function drawStepEditKitPage(title, cells, noteBox) {
+function drawStepEditKitPage(title, cells, noteBox, footer) {
     /* The bank card's map, set explicitly: this page is drawn from two places
      * (the STEP bank, and the reveal over any screen) and must look the same
      * from both — the kit's layout binding is whatever the LAST draw chose. */
@@ -267,6 +267,7 @@ function drawStepEditKitPage(title, cells, noteBox) {
          * STEP bank. The layout is the mode's own, so the cells say what the
          * knobs WOULD edit. */
         drawKitCells(stepBankIdleCells(S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM), -1);
+        if (footer) drawKitHintRow(MV_FOOTER_Y, footer);
         return;
     }
     drawKitCells(cells, t);
@@ -274,6 +275,7 @@ function drawStepEditKitPage(title, cells, noteBox) {
     const _ovi = enumOverlayIdx(t);
     drawKitEnumOverlay(cells, _ovi);
     drawKitValueOverlay(cells, _ovi);
+    if (footer && !enumOverlayWouldDraw(cells, _ovi)) drawKitHintRow(MV_FOOTER_Y, footer);
 }
 
 /* Session-view MIXER page: the selected mixer mode across ALL EIGHT tracks, in
@@ -455,7 +457,12 @@ function drawSessionFaderRow(cells, mode) {
  *
  * ⚠ The row is CHROME. Nothing here reads or changes input state. */
 function bankPageHints(bank) {
-    const hints = [['JOG', 'BANK']];
+    /* ⭑ While a step is HELD the jog means something else (spec §2): on any
+     * other bank a right turn REVEALS the step's page — so the pair says so,
+     * in the same slot, and JOG BANK (which the hold suspends) is not shown.
+     * On the STEP bank itself the jog does nothing under a hold: no pair. */
+    const held = S.heldStep >= 0;
+    const hints = held ? (bank === BANK_STEP ? [] : [['JOG', 'STEP']]) : [['JOG', 'BANK']];
     const drum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
     if (!drum && (bank === 4 || bank === 5)) hints.push(['CLK', 'STEP']);
     else if (bankHasAltParams(S.activeTrack, bank)) hints.push(['CLK', 'ALT']);
@@ -1197,6 +1204,9 @@ export function drawUI() {
  * (S.stepReveal, hold + jog right). Returns true when it drew the frame. */
 function drawHeldStepPage() {
     if (S.heldStep < 0) return false;
+    /* The footer says what the jog does HERE: on the reveal it goes back; on
+     * the STEP bank under a hold it does nothing (bankPageHints drops the pair). */
+    const _footer = (S.stepReveal && S.activeBank !== BANK_STEP) ? [['JOG', 'BACK']] : bankPageHints(BANK_STEP);
         if (S.activeBank === 6) {
             /* CC bank step-hold: compact graph + knob values */
             var _t6s = S.activeTrack, _ac6s = effectiveClip(_t6s);
@@ -1332,9 +1342,9 @@ function drawHeldStepPage() {
                       options: ['--', '2', '3', '4'], sel: S.stepEditRatch <= 1 ? 0 : S.stepEditRatch - 1 },
                     { kind: 'blank', label: '' },
                 ];
-                drawStepEditKitPage(_stepTitle, cells, null);
+                drawStepEditKitPage(_stepTitle, cells, null, _footer);
             } else {
-                drawStepEditKitPage(_stepTitle, null, null);
+                drawStepEditKitPage(_stepTitle, null, null, _footer);
             }
             return true;
         }
@@ -1372,10 +1382,10 @@ function drawHeldStepPage() {
                   text: S.stepEditRatch <= 1 ? '--' : String(S.stepEditRatch),
                   options: ['--', '2', '3', '4'], sel: S.stepEditRatch <= 1 ? 0 : S.stepEditRatch - 1 },
             ];
-            drawStepEditKitPage(_stepTitle, cells, { name: noteName, sub: noteSub });
+            drawStepEditKitPage(_stepTitle, cells, { name: noteName, sub: noteSub }, _footer);
             return true;
         } else if (S.stepWasEmpty) {
-            drawStepEditKitPage(_stepTitle, null, null);
+            drawStepEditKitPage(_stepTitle, null, null, _footer);
             return true;
         }
         /* non-empty step, notes still loading at hold threshold — fall through to bank/header */
@@ -2027,7 +2037,7 @@ function drawUIBody() {
             /* STEP with nothing held: the layout, every cell `--`. A held step
              * with a note is drawn by the step-edit block above, before the
              * card gate — a held step is the reason for being here. */
-            drawStepEditKitPage(BANKS[BANK_STEP].name, null, null);
+            drawStepEditKitPage(BANKS[BANK_STEP].name, null, null, bankPageHints(BANK_STEP));
             return;
         }
         const isDrumLaneBank = (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 0);

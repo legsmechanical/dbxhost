@@ -94,6 +94,8 @@ step('⚠ a pad press while the empty step is held CREATES the note at that pitc
     note(PAD(padIdx), 100);
     const w = sets.find(x => x.startsWith('t0_c0_step_3_toggle='));
     assert(w && w.startsWith('t0_c0_step_3_toggle=' + pitch + ' '), 'the pad wrote the note, got ' + w);
+    assert(sets.indexOf('t0_c0_undo_checkpoint=1') >= 0 && sets.indexOf('t0_c0_undo_checkpoint=1') < sets.indexOf(w),
+           'the creation took the hold\'s ONE undo checkpoint first');
     assert(S.heldStepNotes.length === 1 && S.heldStepNotes[0] === pitch, 'heldStepNotes follows');
     note(PAD(padIdx), 0); note(STEP(3), 0); globalThis.tick();
     assert(sets.filter(x => x.startsWith('t0_c0_step_3_')).length === 1, 'release added nothing more');
@@ -131,6 +133,8 @@ step('⚠ a velocity-zone pad while holding the empty drum step CREATES the hit 
     note(PAD(4), 100);                                  /* right half, row 0, zone 0 */
     const w = sets.find(x => x.startsWith('t0_l0_step_3_toggle='));
     assert(w, 'the hit was created, got ' + JSON.stringify(sets));
+    assert(sets.indexOf('t0_drum_undo_checkpoint=1') >= 0 && sets.indexOf('t0_drum_undo_checkpoint=1') < sets.indexOf(w),
+           'the drum checkpoint (every lane of the clip) came first');
     assert(S.heldStepNotes.length === 1, 'and the hold now has the hit');
     assert(S.drumLaneSteps[T][0][3] === '1', 'mirror follows');
     note(PAD(4), 0); note(STEP(3), 0); globalThis.tick();
