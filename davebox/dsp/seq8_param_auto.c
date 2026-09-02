@@ -222,6 +222,20 @@ static void pa_entry_free(pa_entry_t *e) {
     if (e) memset(e, 0, sizeof(*e));
 }
 
+/* Empty an entry's points but keep it — as a "zombie" that holds the rest
+ * value and asks the audio thread to put the parameter back there. Nothing
+ * lists, plays or serializes an entry with no points, so the only trace it
+ * leaves is that a later automation of the same target already knows its
+ * rest. Freeing it outright would strand the parameter wherever the last
+ * automation value left it, with no record of where "back" is. */
+static void pa_entry_retire(pa_entry_t *e) {
+    if (!e) return;
+    e->count = 0;
+    e->loop_len = e->loop_off = e->resolution = 0;
+    e->last_sent_valid = 0;
+    __atomic_store_n(&e->release, 1, __ATOMIC_RELEASE);
+}
+
 static void pa_clear_track_clip(seq8_instance_t *inst, int track, int clip) {
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
         pa_entry_t *e = &inst->pa_entries[i];
@@ -865,6 +879,7 @@ static void pa_release_track(seq8_instance_t *inst, int track, int clip) {
         pa_entry_t *e = &inst->pa_entries[i];
         if (!e->used || e->track != track || e->clip != clip) continue;
         e->last_sent_valid = 0;
+        if (!e->count) continue;                 /* a retired entry drives nothing */
         /* A deactivated entry was not driving the parameter, so it has nothing
          * to give back — the value there is whatever the user set by hand, and
          * Stop must not undo that. */
@@ -886,6 +901,19 @@ static void pa_release_request(seq8_instance_t *inst, int track, int clip) {
 }
 
 static void pa_release_service(seq8_instance_t *inst) {
+    /* Per-entry releases: a deactivated or cleared parameter goes back to
+     * rest now, whether or not the transport runs. */
+    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+        pa_entry_t *e = &inst->pa_entries[i];
+        if (!__atomic_load_n(&e->release, __ATOMIC_ACQUIRE)) continue;
+        __atomic_exchange_n(&e->release, 0, __ATOMIC_ACQ_REL);
+        if (!e->used) continue;
+        uint16_t tgt = e->target;
+        if (tgt >= PA_MAX_TARGETS || e->rest == PA_VAL_UNSET) continue;
+        e->last_sent_valid = 0;
+        if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
+            pa_ring_push(inst, tgt, e->rest);
+    }
     uint8_t mask = __atomic_exchange_n(&inst->pa_release_mask, 0, __ATOMIC_ACQ_REL);
     if (!mask) return;
     for (int t = 0; t < NUM_TRACKS; t++)

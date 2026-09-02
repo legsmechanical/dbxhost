@@ -13,6 +13,7 @@ import {
     NO_NOTE_FLASH_TICKS
 } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
+import { automationClearStep } from './ui_automation.mjs';
 import { drumPadToLane, drumPadToVelZone, drumVelZoneToVelocity, _clipIsEmpty,
     clipHasContent, effectiveVelocity, stepEntryVelocity,
     ARP_VEL_CANON, arpVelLevel, VEL_THRU } from './ui_pure.mjs';
@@ -1202,7 +1203,14 @@ export function _onStepButtons(d1, d2) {
         /* other S.copySrc kinds: swallow — don't mix copy types */
     } else if (S.deleteHeld) {
         /* Delete + step button (Track View): clear all notes from that step.
-         * On the CC bank (melodic), instead clear all knobs' points in the step. */
+         * On the CC bank (melodic), instead clear all knobs' points in the step.
+         * And, on every bank alike, every parameter's automation LOCK at that
+         * step (spec §6.3) — automation is per clip, not per bank. */
+        {
+            const _t = S.activeTrack, _ac = effectiveClip(_t);
+            const _abs = (S.trackPadMode[_t] === PAD_MODE_DRUM ? S.drumStepPage[_t] : S.trackCurrentPage[_t]) * 16 + idx;
+            automationClearStep(_t, _ac, _abs);
+        }
         if (S.activeBank === 6) {
             var t = S.activeTrack, ac = effectiveClip(t);
             var absIdx = S.trackCurrentPage[t] * 16 + idx;

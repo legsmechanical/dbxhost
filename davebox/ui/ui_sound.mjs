@@ -48,7 +48,11 @@ import { instrOptions, fmtInstr, INSTR_SCHWUNG, fmtVelOverride, BANK_SOUND, BANK
 import { applyTrackConfig } from './ui_dsp_bridge.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
-import { automationParamEdit, automationParamTouch } from './ui_automation.mjs';
+import { automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
+         automationClearKey, automationToggleSmooth, automationSmoothable } from './ui_automation.mjs';
+import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
+import { MoveKnob1, Red, White } from '/data/UserData/schwung/shared/constants.mjs';
+import { showActionPopup } from './ui_persistence.mjs';
 import { writeSidecar } from './ui_persistence.mjs';
 import { requestTrackModeChange } from './ui_dialogs.mjs';
 import {
@@ -110,7 +114,7 @@ const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         handleParamPagesMidi, paramPagesActive, paramPagesChildIndex,
         clearParamPagesTouch, currentParamPage,
         paramPagesPickerOpen, paramPagesMenuEntered,
-        paramPagesRefreshTrailing } = PP;
+        paramPagesRefreshTrailing, paramPagesFullKeyAt, paramPagesRepaintKnobs } = PP;
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* Chain blocks in signal order, across the audio-FX blocks the host routes.
@@ -609,7 +613,10 @@ const S = {
     needsPoll: false,           /* forced re-read owed (bank change) */
     blockNames: [],             /* loaded module id per block, for the picker */
     blockBypass: [],            /* 1 = that block is bypassed (host `<comp>:bypassed`) */
-    muteHeld: false,            /* tracked HERE: the global one is a different S */
+    muteHeld: false,
+    deleteHeld: false,
+    autoLedPaint: false,      /* the knob rings are showing automation status (Mute held) */
+    touchedFullKey: null,     /* the parameter under the touched knob, from the editor's hook */            /* tracked HERE: the global one is a different S */
     enterSession: false,        /* the VIEW this screen was called from; leaving it ends us */
     bus: null,                  /* null = editing a TRACK's slot; else a bus descriptor
                                  * (FX_BUSES entry, or a Move bus from moveBusFor) */
@@ -4295,6 +4302,19 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * ⚠ And Back is decided on opposite EDGES by the two — the editor on the
          * press, davebox on the release — so a press the editor took must have
          * its release swallowed, or one tap does both. */
+        /* Knob touched + jog click on an AUTOMATED parameter: stepped hold vs
+         * smooth for this parameter in this clip (spec §6.2). Only where
+         * interpolation means something — a float; an enum or an int keeps
+         * the editor's own click. Everything else falls through to the editor. */
+        if (d1 === 3 && d2 >= 64 && S.touchedFullKey) {
+            const t = S.track, c = effectiveClip(t), target = S.slot + ':' + S.touchedFullKey;
+            if (automationStateFor(t, c, target) && automationSmoothable(S.slot, S.touchedFullKey)) {
+                const on = automationToggleSmooth(t, c, target);
+                showActionPopup('AUTOMATION', on ? 'SMOOTH' : 'STEPPED');
+                S.dirty = true;
+                return true;
+            }
+        }
         if (d1 === 51) {
             if (d2 >= 64 && ppHasLayer()) {
                 handleParamPagesMidi([0xB0, d1, d2]);
@@ -4321,6 +4341,12 @@ export function soundOnCC(d1, d2, decodeDelta) {
      * keeps its own copy for everything outside sound mode. */
     if (d1 === 88) {
         S.muteHeld = d2 >= 64;
+        if (!S.muteHeld && S.autoLedPaint) { S.autoLedPaint = false; paramPagesRepaintKnobs(); }
+        return false;
+    }
+    /* Delete, tracked here for the same reason as Mute. Passed through. */
+    if (d1 === 119) {
+        S.deleteHeld = d2 >= 64;
         return false;
     }
 
@@ -5106,6 +5132,22 @@ export function soundTick() {
     ppSync();
     if (ppOn) {
         tickParamPages();
+        /* Holding Mute paints the rings with automation status (spec §3):
+         * unlit = none, red = active, white = deactivated. Every tick while
+         * held — the engine's own change-only writes would otherwise win back
+         * a ring the moment its value moved. Handed back on release. */
+        if (S.muteHeld && S.view === VIEW_EDIT) {
+            S.autoLedPaint = true;
+            const t = S.track, c = effectiveClip(t);
+            for (let k = 0; k < 8; k++) {
+                const fk = paramPagesFullKeyAt(k);
+                const st = fk ? automationStateFor(t, c, S.slot + ':' + fk) : null;
+                setButtonLED(MoveKnob1 + k, st ? (st.active ? Red : White) : 0, true);
+            }
+        } else if (S.autoLedPaint) {
+            S.autoLedPaint = false;
+            paramPagesRepaintKnobs();
+        }
         /* ⚠ AND THE PRESET WALK STILL STEPS. It runs from this tick and nowhere
          * else, so without this the Presets page would arm a scan that never
          * advanced — a list that stays empty forever with nothing logged. */
@@ -5859,8 +5901,30 @@ function ppIo() {
          * controller's fullKey is already "<comp>:<key>". */
         onParamEdit: (fullKey, wire, prevWire, meta) =>
             automationParamEdit(S.track, effectiveClip(S.track), S.slot, fullKey, wire, prevWire),
-        onParamTouch: (fullKey, down) =>
-            automationParamTouch(S.track, effectiveClip(S.track), S.slot, fullKey, down),
+        onParamTouch: (fullKey, down) => {
+            S.touchedFullKey = down ? fullKey : null;
+            /* Mute + touch: automation off/on for this parameter (kept, not
+             * played; back to rest). Delete + touch: all of its automation in
+             * the clip, gone. Both decided on the PRESS, on the parameter the
+             * editor resolved under the knob. */
+            if (down) {
+                const t = S.track, c = effectiveClip(t), target = S.slot + ':' + fullKey;
+                if (S.deleteHeld) {
+                    if (automationClearKey(t, c, target)) showActionPopup('AUTOMATION', 'CLEARED');
+                } else if (S.muteHeld) {
+                    const on = automationToggleActive(t, c, target);
+                    if (on !== null) showActionPopup('AUTOMATION', on ? 'ON' : 'OFF');
+                }
+            }
+            automationParamTouch(S.track, effectiveClip(S.track), S.slot, fullKey, down);
+        },
+        /* The label mark: this host's own automation first (circle), then the
+         * module's modulation sources (tilde), which is what the default asks. */
+        isModulated: (fullKey) => {
+            const st = automationStateFor(S.track, effectiveClip(S.track), S.slot + ':' + fullKey);
+            if (st) return st.active ? 'auto' : 'auto-off';
+            return ppCtx.isParamModulated(S.slot, fullKey);
+        },
         trailingMenus: () => {
             if (!S.moduleId) return [];      /* nothing loaded to preset or swap */
             return [

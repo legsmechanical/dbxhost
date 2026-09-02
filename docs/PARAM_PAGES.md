@@ -750,6 +750,21 @@ A **readout** (`access: "read"`) still refuses the turn: there is nothing to
 set. Both guards must precede the enum stepper's value read, which is asserted
 as a line ORDER.
 
+### A host with its own per-parameter state: the automation mark, the knob under a knob, the rings
+
+- **`io.isModulated(fullKey)` is tri-state.** `true` draws the modulation tilde as before;
+  the strings `"auto"` and `"auto-off"` draw a **circle** in the tilde's place — filled for
+  active automation, empty for automation that exists but is deactivated. The engine keeps
+  the value as returned and never calls the hook during a draw (same cache as before).
+- **`paramPagesFullKeyAt(slot)`** names the parameter under physical knob `slot` on the
+  current page, prefix and child resolved — exactly what `setParam` would be called with —
+  so a host can look up its own state for each of the eight knobs without re-deriving the
+  page's child prefix.
+- **`paramPagesRepaintKnobs()`** hands the knob rings back after a host painted them itself
+  (a status paint while a modifier is held): the engine forgets what it last sent and repaints
+  all eight on its next tick. Its writes are change-only, so without this the host's colours
+  would stand until the values moved.
+
 ### A host that RECORDS edits hears them at the value-change site
 
 Two opt-in `io` hooks on `createController`, both default-off so a host that does not

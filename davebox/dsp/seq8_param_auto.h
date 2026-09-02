@@ -93,6 +93,11 @@ typedef struct {
      * working feature and a stalled one. Audio-thread owned. */
     uint16_t last_sent;
     uint8_t  last_sent_valid;
+    /* Set on the SPI thread when the parameter must go back to rest NOW
+     * (deactivated, cleared): the audio thread — the ring's one producer —
+     * stages the rest on its next block and clears this. Its own byte, not a
+     * flag bit, so the two threads never read-modify-write the same byte. */
+    uint8_t  release;
     pa_point_t points[PA_ENTRY_POINTS];
 } pa_entry_t;
 

@@ -472,6 +472,21 @@ function paramPagesChildIndex(level) {
         ? controller.childIndexOf(level) : -1;
 }
 
+/** The full parameter key under physical knob `slot` on the current page,
+ *  or null. See controller.fullKeyAt. */
+function paramPagesFullKeyAt(slot) {
+    return (controller && typeof controller.fullKeyAt === "function")
+        ? controller.fullKeyAt(slot) : null;
+}
+
+/** A host that painted the knob rings itself for a moment (a status paint
+ *  while a modifier is held) hands them back with this: the engine forgets
+ *  what it last sent and repaints all eight on its next tick. Without it the
+ *  engine's change-only writes leave the host's colours standing. */
+function paramPagesRepaintKnobs() {
+    resetKnobLedCache();
+}
+
 /**
  * Once per frame. Polls for a contract that changed underneath us (a module
  * finishing an async ROM or sample load republishes a larger tree) and advances
@@ -1407,6 +1422,8 @@ function paramPagesMenuEntered() {
         paramPagesEnabled,
         paramPagesExitMenu,
         paramPagesFooterHints,
+        paramPagesFullKeyAt,
+        paramPagesRepaintKnobs,
         paramPagesGoTo,
         paramPagesJumpIndex,
         paramPagesLayout,

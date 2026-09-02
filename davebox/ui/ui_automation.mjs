@@ -121,6 +121,8 @@ export function automationResetCaches() {
     lastFlags = null;
     lastDrainTick = -1000;
     presenceStale = false;
+    listStale = false;
+    stateByKey = new Map();
 }
 
 /* Value metadata is per (slot, component) and lives as long as the module in
@@ -133,12 +135,46 @@ export function automationInvalidateMeta(slot) {
     for (const k of Array.from(metaCache.keys())) if (k.startsWith(pfx)) metaCache.delete(k);
 }
 
+/* What is automated, per "<track> <clip> <target>": { flags, count }. Fed by
+ * pa_list — ONE read for the whole project — on load, after a gesture ends
+ * and after every edit that changes it; read by the display (circles, the
+ * hold-Mute LED paint) and by the gestures that need to know whether a
+ * parameter is automated before acting. */
+let stateByKey = new Map();
+const stateKey = (track, clip, target) => track + ' ' + clip + ' ' + target;
+
+function parseList(list) {
+    stateByKey = new Map();
+    if (!list) return;
+    for (const line of list.split('\n')) {
+        if (!line.length) continue;
+        const f = line.split(' ');
+        if (f.length < 5) continue;
+        stateByKey.set(stateKey(f[0], f[1], f.slice(4).join(' ')),
+                       { flags: parseInt(f[2], 10) | 0, count: parseInt(f[3], 10) | 0 });
+    }
+}
+
 /* Called once when a project's contents arrive from the DSP — NOT per tick.
  * One round-trip per project load, against one per tick if we guessed. */
 export function automationRefreshPresence() {
     const list = host_module_get_param('pa_list');
     anyAutomation = !!(list && list.length);
+    parseList(list);
 }
+
+/* null = not automated; else { active, smooth, count }. */
+export function automationStateFor(track, clip, target) {
+    const s = stateByKey.get(stateKey(track, clip, target));
+    if (!s || !s.count) return null;
+    return { active: !!(s.flags & 1), smooth: !!(s.flags & 2), count: s.count };
+}
+
+/* A write the DSP answers with a staged value (a rest on deactivate/clear):
+ * keep draining for a moment even if the transport is stopped, and re-read
+ * the list once the write has crossed. */
+let listStale = false;
+function expectStaged() { stopGrace = STOP_GRACE_TICKS; listStale = true; }
 
 /* Every automation write goes through JS, so JS always knows when the first
  * one appears; P3's record and lock paths call this. */
@@ -288,8 +324,8 @@ function pushPending() {
 export function automationTick() {
     gesturesTick();
     flushModuleWrites();
-    if (presenceStale && !gestures.size && !moduleWrites.length) {
-        presenceStale = false;
+    if ((presenceStale || listStale) && !gestures.size && !moduleWrites.length) {
+        presenceStale = false; listStale = false;
         automationRefreshPresence();
     }
     /* Nothing to drain unless this project has automation AND the transport is
@@ -487,6 +523,61 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
     automationNoteWrite();
     g.live = true;
     queueSet('t' + track + '_pa_live', target + ' ' + norm, track + ' ' + target);
+}
+
+/* ---- the P4 gestures: every one a module write, every one through here ---- */
+
+/* Mute + knob: keep the automation, stop playing it (the parameter goes back
+ * to rest), or the reverse. Returns the new state, or null if nothing is
+ * automated there. */
+export function automationToggleActive(track, clip, target) {
+    const s = automationStateFor(track, clip, target);
+    if (!s) return null;
+    const on = !s.active;
+    queueSet('t' + track + '_pa_active', clip + ' ' + target + ' ' + (on ? 1 : 0));
+    const cur = stateByKey.get(stateKey(track, clip, target));
+    if (cur) cur.flags = on ? (cur.flags | 1) : (cur.flags & ~1);
+    expectStaged();
+    return on;
+}
+
+/* Delete + knob: all of one parameter's automation in the clip, locks and
+ * recorded alike; the parameter goes back to rest. */
+export function automationClearKey(track, clip, target) {
+    if (!automationStateFor(track, clip, target)) return false;
+    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    queueSet('t' + track + '_pa_clear_key', clip + ' ' + target);
+    stateByKey.delete(stateKey(track, clip, target));
+    expectStaged();
+    return true;
+}
+
+/* Delete + step: every parameter's points in that step. */
+export function automationClearStep(track, clip, step) {
+    const tps = (S.clipTPS[track] && S.clipTPS[track][clip]) || 24;
+    const from = step * tps, to = from + tps - 1;
+    queueSet('t' + track + '_pa_clear_step', clip + ' ' + from + ' ' + to);
+    expectStaged();
+}
+
+/* Smooth means something only where interpolation does: a float. An enum
+ * under a ramp would step through options it was never given, an int through
+ * values the module rounds anyway. */
+export function automationSmoothable(slot, fullKey) {
+    const [comp, key] = splitFullKey(fullKey);
+    const p = componentMeta(slot, comp)[key];
+    return !p || p.type === 'float' || p.type === undefined;
+}
+
+/* Knob touched + jog click: stepped hold vs linear, per parameter per clip. */
+export function automationToggleSmooth(track, clip, target) {
+    const s = automationStateFor(track, clip, target);
+    if (!s) return null;
+    const on = !s.smooth;
+    queueSet('t' + track + '_pa_smooth', clip + ' ' + target + ' ' + (on ? 1 : 0));
+    const cur = stateByKey.get(stateKey(track, clip, target));
+    if (cur) cur.flags = on ? (cur.flags | 2) : (cur.flags & ~2);
+    return on;
 }
 
 /* Per tick, from automationTick: end gestures that never had a touch and

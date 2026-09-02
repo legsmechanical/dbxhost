@@ -213,6 +213,9 @@ int main(void) {
         /* A deactivated entry was not driving its parameter, so Stop must not
          * move it: the value there is the user's own. */
         hx_set_param(h, "t0_pa_active", "0 1:fx1:cutoff 0");
+        pa_release_service(in);                   /* the deactivate itself rests it, once */
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff 2000"), "deactivating rests the parameter");
         pa_release_request(in, 0, 0);
         pa_release_service(in);
         pending(h, buf, sizeof(buf));
@@ -276,6 +279,64 @@ int main(void) {
         pending(h, buf, sizeof(buf));
         HX_ASSERT(strstr(buf, "cutoff 2\n1:fx1:cutoff 3\n"), "the next drain gets the rest, still in order");
         OK("⚠ what does not fit stays at the FRONT — the newest value still arrives last");
+        hx_destroy(h);
+    }
+
+    /* ---- deactivate / clear put the parameter back to REST, now --------- */
+    {
+        /* Mute+knob (deactivate) and Delete+knob (clear) both leave a
+         * parameter that automation was driving; it must go back to where it
+         * was before automation touched it — whether or not the transport is
+         * running, and staged by the audio thread, the ring's one producer. */
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+        hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
+        pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
+        pa_playback_scan(in, &in->tracks[0], 0, 0, 0, 384, NULL);
+        pending(h, buf, sizeof(buf));
+
+        hx_set_param(h, "t0_pa_active", "0 1:fx1:cutoff 0");   /* deactivate, transport irrelevant */
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(lines(buf) == 0, "the SPI thread stages nothing itself");
+        pa_release_service(in);                                 /* the next render block */
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff 2000"), "deactivating puts the parameter back to REST");
+        pa_release_service(in);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(lines(buf) == 0, "once");
+        hx_set_param(h, "t0_pa_active", "0 1:fx1:cutoff 1");
+        pa_playback_scan(in, &in->tracks[0], 0, 0, 0, 384, NULL);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff 9000"), "re-activating: playback re-asserts the automation value");
+        OK("⚠ Mute+knob: back to rest at once; on again: playback re-asserts");
+
+        hx_set_param(h, "t0_pa_clear_key", "0 1:fx1:cutoff");  /* Delete+knob */
+        pa_release_service(in);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff 2000"), "clearing puts the parameter back to REST too");
+        hx_get_param(h, "pa_list", buf, sizeof(buf));
+        HX_ASSERT(lines(buf) == 0, "and the automation is gone from the list");
+        pa_playback_scan(in, &in->tracks[0], 0, 0, 0, 384, NULL);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(lines(buf) == 0, "and playback has nothing to play");
+        /* The rest survives the clear: automating the same target again
+         * knows where "back" is without being told. */
+        pa_set(h, 0, 0, "1:fx1:cutoff", 0, 5000);
+        hx_set_param(h, "t0_pa_clear_key", "0 1:fx1:cutoff");
+        pa_release_service(in);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff 2000"), "the rest outlives a clear");
+        OK("⚠ Delete+knob: gone from playback and the list, parameter back to rest, rest remembered");
+
+        /* Delete+step emptying an entry retires it the same way. */
+        pa_set(h, 0, 0, "1:fx1:cutoff", 24, 7000);
+        pa_playback_scan(in, &in->tracks[0], 0, 0, 24, 384, NULL);
+        pending(h, buf, sizeof(buf));
+        hx_set_param(h, "t0_pa_clear_step", "0 24 47");
+        pa_release_service(in);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff 2000"), "Delete+step that empties an entry: back to rest");
+        OK("Delete+step on the last point behaves like a clear");
         hx_destroy(h);
     }
 

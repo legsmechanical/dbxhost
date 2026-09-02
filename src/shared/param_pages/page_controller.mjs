@@ -8,7 +8,10 @@
  *   getParam(fullKey)        -> string|null
  *   setParam(fullKey, value) -> void
  *   announce(text)           -> void          (optional)
- *   isModulated(fullKey)     -> boolean       (optional)
+ *   isModulated(fullKey)     -> false | true | "auto" | "auto-off"  (optional)
+ *                               true = a modulation source drives it (tilde);
+ *                               "auto" / "auto-off" = the host's own automation,
+ *                               active / deactivated (filled / empty circle)
  *   now()                    -> ms            (optional, injectable clock)
  *
  * What is left for the real binding is genuinely thin: route MIDI to the
@@ -1804,7 +1807,9 @@ export function createController(io = {}) {
          *
          * On the cursor it costs one read per tick and the whole page is
          * current within `stops` ticks — under 0.2s, for a tick mark. */
-        s.modCache[key] = !!isModulated(fullKey(key));
+        /* Kept as returned: a boolean draws the tilde, "auto"/"auto-off" the
+         * automation circle — see io.isModulated. */
+        { const m = isModulated(fullKey(key)); s.modCache[key] = (typeof m === "string") ? m : !!m; }
 
         /* For a modulated key the plain key returns the EFFECTIVE value — what
          * the source is currently driving it to — and that belongs to the dot.
@@ -3805,7 +3810,7 @@ export function createController(io = {}) {
         /** This key's modulation flag as of the last time the cursor reached
          *  it. Read-only view of the cache the renderer uses — the injected
          *  isModulated is deliberately NOT called during a draw. */
-        isModulatedCached: (key) => !!s.modCache[key],
+        isModulatedCached: (key) => s.modCache[key] || false,
         /** Which instance of `level` is focused, zero-based. The editor
          *  hand-off needs it: without it the editor re-asks which child,
          *  when the grid already knows. */
@@ -3817,6 +3822,12 @@ export function createController(io = {}) {
         get contractUnresolved() { return s.contractUnresolved; },
         get triggerFiredAt() { return s.triggerFiredAt; },
         keyAt, metaAt, diveTargetAt,
+        /** The FULL key (prefix and child resolved) under physical knob `slot`
+         *  on the current page, or null — what setParam would be called with.
+         *  A host that keeps its own state per parameter (automation, locks)
+         *  needs to name the parameter under each knob without re-deriving
+         *  the page's child prefix. */
+        fullKeyAt: (slot) => { const k = keyAt(slot); return k ? fullKey(k) : null; },
         jumpIndex: () => jumpIndex(s.pages),
         groupIndex: () => groupIndex(s.pages),
     };

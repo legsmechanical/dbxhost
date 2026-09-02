@@ -2044,6 +2044,17 @@ export function drawKnobWidget(ctx, g, col, rowY, meta, raw, modRaw, liveRaw, ce
     }
 }
 
+/* The automation mark: a circle where the tilde goes. Filled = active
+ * automation, empty = automation present but deactivated. Same 4x4 footprint
+ * as the tilde so it lands on the same pixels and obeys the same polarity. */
+function drawAutoMark(ctx, x, y, on, filled) {
+    ctx.fillRect(x + 1, y, 2, 1, on);
+    ctx.fillRect(x, y + 1, 1, 2, on);
+    ctx.fillRect(x + 3, y + 1, 1, 2, on);
+    ctx.fillRect(x + 1, y + 3, 2, 1, on);
+    if (filled) ctx.fillRect(x + 1, y + 1, 2, 2, on);
+}
+
 /* schwung-movy renderer/label.ts drawWaveMark (the modulation tilde), ported. */
 function drawWaveMark(ctx, x, y, on) {
     ctx.fillRect(x, y, 1, 1, on);
@@ -2145,7 +2156,10 @@ export function drawLabelCell(ctx, g, col, lblY, label, displayValue, showValue,
          * Pinned by the held-and-modulated case in tests/host/test_param_pages_movy.sh.
          */
         const onStrip = strip && wx >= tx - 1;
-        drawWaveMark(ctx, wx, lblY + 1, onStrip ? 0 : 1);
+        if (modulated === "auto" || modulated === "auto-off")
+            drawAutoMark(ctx, wx, lblY + 1, onStrip ? 0 : 1, modulated === "auto");
+        else
+            drawWaveMark(ctx, wx, lblY + 1, onStrip ? 0 : 1);
     }
 }
 
@@ -2464,7 +2478,7 @@ export function drawKnobRow(ctx, o, row, rowY, lblY, geom) {
             (cellText === null || cellText === undefined) ? displayValue(raw, meta) : String(cellText),
             g.cellW - 2);
         drawLabelCell(ctx, g, col, lblY, label, display, isTouched, isTouched,
-                      modulated ? !!modulated(key) : false);
+                      modulated ? (modulated(key) || false) : false);
     }
 }
 
