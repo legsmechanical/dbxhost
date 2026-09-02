@@ -194,13 +194,13 @@ step('⚠ K1 Volume: n detents = n steps of SLOT_LEVEL_MAX/200, written ONCE per
     turnBy(0, -10); ticks(1);
     assert(lastWrite('slot:volume') === '1.000', 'back to 1.000');
 });
-step('K2 Pan (1/200 per detent), K3/K4 sends (1/100), K5 Module Level: each to its own slot: key', () => {
+step('K2 Pan (1/200 per detent), K3/K4 sends (1/100): each to its own slot: key — and K5 Module Level is OFF the page (a macro target only, Josh 2026-09-03)', () => {
     writes = [];
     turnBy(1, -20); turnBy(2, 50); turnBy(3, 25); turnBy(4, 10); ticks(1);
     assert(lastWrite('slot:pan') === (0.5 - 20 * STEP_PAN).toFixed(3), 'pan, got ' + lastWrite('slot:pan'));
     assert(lastWrite('slot:send_a') === (50 * STEP_SEND).toFixed(3), 'send a, got ' + lastWrite('slot:send_a'));
     assert(lastWrite('slot:send_b') === (25 * STEP_SEND).toFixed(3), 'send b, got ' + lastWrite('slot:send_b'));
-    assert(lastWrite('slot:synth_volume') === (1 + 10 * STEP_VOL).toFixed(3), 'module level, got ' + lastWrite('slot:synth_volume'));
+    assert(lastWrite('slot:synth_volume') === null, 'K5 writes nothing on the page, got ' + lastWrite('slot:synth_volume'));
 });
 step('⚠ K6-K8 are unassigned: swallowed, nothing written, nothing forwarded to a knob assignment', () => {
     writes = []; dspMidi = [];

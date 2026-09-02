@@ -328,7 +328,7 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   card, and turning the jog on the card carries on through the banks as it does
   anywhere else. The knobs still control the track's assignments while you
   are on it, so a knob you turn there does what it always did.
-  Conductor tracks don't have it. Its knobs are the track's levels — Volume, Pan, Send A, Send B and, on a Schwung track, Module Level — and they record and lock like any other parameter.
+  Conductor tracks don't have it. Its knobs are the track's levels — Volume, Pan, Send A, Send B — and they record and lock like any other parameter; the bottom row of the card is the door.
 - **MACROS** follows SOUND + CONFIG: eight knobs you assign yourself, to any
   parameter of the track's sound — a synth or effect parameter, or one of the
   levels. A macro *is* the parameter it points at: turn it and the module
@@ -337,7 +337,8 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   (`K1`..`K8`, each naming its target), or **Shift + touch a knob** to assign
   that knob without leaving the page. A knob with no target reads `--`; a
   target that no longer exists (the module was swapped) reads UNASSIGNED.
-  Conductor tracks don't have it either.
+  On a track left on MACROS the knobs are the macros from the track overview
+  too, and touching one peeks the page. Conductor tracks don't have it either.
 - **Click the jog** (with no picker open) switches a bank between its primary and
   alternate parameters (the labels change). A **down-arrow** in the header marks
   any bank that has alternates, and blinks while the alternates are showing.
@@ -1271,8 +1272,8 @@ goes to the instrument instead.
 ### The eight knobs outside a block
 
 While you're on the chain list — or any of the sound editor's other screens — the
-eight knobs are the track's **levels** (Volume, Pan, Send A, Send B, Module
-Level), exactly as on the SOUND + CONFIG card. They stay live there so you can
+eight knobs are the track's **levels** (Volume, Pan, Send A, Send B), exactly
+as on the SOUND + CONFIG card. Module Level is reachable as a macro target. They stay live there so you can
 balance the sound while you navigate it.
 
 ### The MACROS bank
@@ -1302,9 +1303,10 @@ takes four clicks each, so a sleeve can't change your waveform.
 A macro is not a copy of its parameter; it *is* the parameter. Turn it while
 recording and the parameter records; turn it while holding a step and that step
 takes a lock; Mute + touch and Delete + touch do what they do on any automated
-knob. The assignments belong to the project (they travel with it), and a
-project made before this bank had one inherits the knob mappings it had set
-under Sound Control.
+knob. The assignments belong to the project (they travel with it) and to the
+track's chain patches (a saved patch carries them; loading one brings them
+back), and a project made before this bank had one inherits the knob mappings
+it had set under Sound Control.
 
 > **Four insert effects is a dAVEBOx SA feature.** Official Schwung routes two, so
 > running dAVEBOx as an ordinary tool shows **FX 1-2** only. The editor asks the

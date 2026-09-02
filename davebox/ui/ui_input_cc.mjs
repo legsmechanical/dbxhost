@@ -49,7 +49,7 @@ import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
 import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
-import { soundActive, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator,
+import { soundActive, soundOpen, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, soundEnterBuses } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
@@ -1139,7 +1139,7 @@ export function applyBankPick() {
      * mode switches screens in place — the walk between them never tears the
      * mode down (soundSetBank records the new identity). */
     if (isSoundBank(next)) {
-        if (!soundActive()) {
+        if (!soundOpen()) {
             S.globalMenuOpen = false;
             S.lastSentMenuEditValue = null;
             S.pendingSoundEnterTrack = t;
@@ -1160,7 +1160,7 @@ export function applyBankPick() {
      * lived in soundOnCC's left-turn-off-the-top-row branch; the prompt hands
      * the jog back instead, so the exit has to live where the bank is actually
      * committed. */
-    if (soundActive()) soundExit();
+    if (soundOpen()) soundExit();
     S.activeBank = next;
     S.trackActiveBank[t] = next;
     if (next === 7) S.allLanesConfirmed = false;
@@ -1712,7 +1712,7 @@ function _suspendModule() {
     /* Sound mode is not persisted (its state is a live view onto the chain, not
      * session data). Leaving it active across a suspend means resuming into a
      * bank page whose values were read before the set changed. */
-    if (soundActive()) soundExit();
+    if (soundOpen()) soundExit();
     saveState();                    /* sets pendingSuspendSave */
     S.pendingSuspendManaged = true; /* drained one tick after save fires → host_suspend_overtake */
 }
@@ -1897,7 +1897,7 @@ function returnToOverview() {
      *    mirror reading BANK_SOUND for a track that is NOT recorded there, and
      *    that track's screen would then not come back. Resync from the RECORD,
      *    never by picking a default — a genuine BANK_SOUND memory must survive. */
-    if (soundActive()) {
+    if (soundOpen()) {
         soundExit({ leaving: true });
         if (isSoundBank(S.activeBank) &&
             !isSoundBank(S.trackActiveBank[S.activeTrack] | 0))
@@ -2081,7 +2081,7 @@ function _backTap() {
 function _handleBack(d2) {
     if (d2 === 127) {
         if (S.shiftHeld) {
-            if (soundActive()) soundExit();
+            if (soundOpen()) soundExit();
             saveState();
             S.pendingHideAfterSave = true;
             return;
@@ -2155,7 +2155,7 @@ if (!wantInstrument) {
      * would open the wrong flavour, silently, for every Move track. Opening
      * also READS the chain, which is why the bank defers it to the tick
      * rather than doing it from the MIDI path. */
-    if (soundActive()) { soundShowMenu(); }
+    if (soundOpen()) { soundShowMenu(); }
     else {
         S.pendingSoundEnterTrack = _gt;
         S.pendingSoundEnterMenu  = true;
@@ -2180,8 +2180,8 @@ if (!wantInstrument) {
  * it written by nobody, which I flagged as dead; it was not dead, it was
  * waiting for the gesture that needed it. */
 S.genReturn = { track: _gt,
-                wasActive: soundActive(),
-                view: soundActive() ? soundViewForTest() : -1,
+                wasActive: soundOpen(),
+                view: soundOpen() ? soundViewForTest() : -1,
                 bank: S.activeBank | 0 };
 if (S.trackRoute[_gt] === 1) {
     enterMoveNativeCoRun(_gt);

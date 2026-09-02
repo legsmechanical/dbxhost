@@ -57,7 +57,7 @@ import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons } from './
 import { applyBankPick, heldStepJog } from './ui_input_cc.mjs';
 import { standDownBankDisplay } from './ui_state.mjs';
 import { _onCCMsg } from './ui_input_cc.mjs';
-import { soundActive, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw } from './ui_sound.mjs';
+import { soundActive, soundOpen, soundResting, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw } from './ui_sound.mjs';
 import { soundModeCovered } from './ui_render.mjs';
 import { _tickImpl, applyExtMidiRemap, requestSessionExit } from './ui_tick.mjs';
 
@@ -174,7 +174,7 @@ globalThis.init = function () {
     S.moveCoRunTrack = -1;
     /* Same reasoning for sound mode: init() re-runs in the SAME runtime on
      * resume, so ui_sound.mjs's module-scope state survives. Start closed. */
-    if (soundActive()) soundExit();
+    if (soundOpen()) soundExit();
     S.pendingSoundEnterTrack = -1;
     /* Register as the session's primary surface. Every ownership claim —
      * including sysex suppression — is DERIVED by the host from our
@@ -559,10 +559,18 @@ function _onMidiInternalImpl(data) {
      * the editor) and of the bank walk, and it swallows Shift+jog too. */
     if (status === 0xB0 && d1 === MoveMainKnob && S.heldStep >= 0 && heldStepJog(d2)) return;
     const _soundSteers = soundActive() && !soundModeCovered();
+    /* ⭑ RESTING on MACROS (sound mode open, unlatched — see soundResting):
+     * ONLY the eight knobs and their touches reach sound mode, so the macros
+     * work on the overview like any bank's knobs; the jog, Back and the rest
+     * stay davebox's (the click latches bank mode, as on every bank). A touch
+     * is forwarded but NOT consumed: davebox's own touch bookkeeping below is
+     * what arms the knob-touch PEEK of the page. */
+    const _restKnob = !_soundSteers && soundOpen() && soundResting() && !soundModeCovered();
     if (_soundSteers && soundOnMidiRaw(data)) return;
     if (_soundSteers && soundOnNote(status, d1, d2)) return;
-    if (status === 0xB0 && _soundSteers && !(d1 === MoveBack && S.shiftHeld) &&
-            soundOnCC(d1, d2, decodeDelta)) return;
+    if (_restKnob && ((status & 0xF0) === 0x90 || (status & 0xF0) === 0x80) && d1 <= 7) soundOnNote(status, d1, d2);
+    if (status === 0xB0 && (_soundSteers || (_restKnob && d1 >= 71 && d1 <= 78)) &&
+            !(d1 === MoveBack && S.shiftHeld) && soundOnCC(d1, d2, decodeDelta)) return;
 
     /* Knob touch (notes 0-7). MoveKnob1-8Touch = notes 0-7.
      * Hardware: d2=127 = touch on; d2 in 0-63 (via 0x90 or 0x80) = touch off.

@@ -22,9 +22,14 @@ the section into a versioned heading at release time.
   parameter, or a level — drawn with the module editor's own widgets. A macro
   *is* its parameter: it records, locks, mutes and clears like the parameter
   itself, and the module editor shows the change. Click the jog for the
-  assignment list, or Shift + touch a knob to assign just that one. The
-  assignments belong to the project; the old Sound Control → Knobs list is
-  gone, and its mappings are carried over the first time you open the bank.
+  assignment list, or Shift + touch a knob to assign just that one. On a
+  track left on MACROS the knobs work from the track overview too, and a
+  touch peeks the page. The assignments belong to the project and to chain
+  patches; the old Sound Control → Knobs list is gone, and its mappings are
+  carried over the first time you open the bank.
+- **Module Level left the SOUND + CONFIG card.** The card's knobs are
+  Volume, Pan, Send A and Send B; its bottom row is the door. Module Level
+  is a macro target.
 - **Timing is in milliseconds now.** The splash, the popups and flashes, the
   LED blinks and the hold gestures were counted in screen ticks, so when the
   sequencer got faster they all shortened. They are clocked now, and retuned:

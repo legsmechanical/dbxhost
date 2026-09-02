@@ -59,7 +59,7 @@ import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
          SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS, SESS_KNOB_MODES } from './ui_engine.mjs';
-import { soundActive, soundEnter, soundEnterMove, soundExit,
+import { soundActive, soundOpen, soundResting, soundEnter, soundEnterMove, soundExit,
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
     soundEnteredInSession, soundConsumeLedDirty,
     soundConsumeCoRunRequest, soundShowMenu, soundSetBank } from './ui_sound.mjs';
@@ -1380,8 +1380,11 @@ export function _tickImpl() {
          * SILENT — arriving is not a bank gesture. ⚠ Conductor tracks never
          * take this bank (takeBankIdentity skips them); the pad-mode check keeps
          * a hand-edited sidecar from opening a screen they have no row for. */
-        if (!S.sessionView && !soundActive() && isSoundBank(S.activeBank)
-                && S.bankCardLatched
+        /* ⭑ MACROS opens AT REST too (unlatched — soundResting): its knobs
+         * must work on the overview like any bank's. SOUND + CONFIG keeps
+         * the bank-mode scope (its prompt at rest was the 09-01 bug). */
+        if (!S.sessionView && !soundOpen()
+                && (S.activeBank === BANK_MACROS || (S.activeBank === BANK_SOUND && S.bankCardLatched))
                 && S.pendingSoundEnterTrack < 0 && S.moveCoRunTrack < 0
                 && !S.awaitingProjectSelect
                 && S.trackPadMode[S.activeTrack] !== PAD_MODE_CONDUCT) {
@@ -1402,7 +1405,7 @@ export function _tickImpl() {
             S.pendingSoundEnterSilent = false;
             const _macros = S.pendingSoundEnterMacros;
             S.pendingSoundEnterMacros = false;
-            if (_st === S.activeTrack && !soundActive()) {
+            if (_st === S.activeTrack && !soundOpen()) {
                 /* The ROUTE picks the flavour: a Move-routed track's sound is
                  * its Move instrument bus, a Schwung-routed one's is its chain.
                  * Slot is addressed directly per track — always resolvable. */
@@ -1467,7 +1470,7 @@ export function _tickImpl() {
          * from the global menu, and the two are mutually exclusive), so it
          * needs no check of its own beyond the follow's — verified, not
          * assumed, 2026-07-29. */
-        if (soundActive()) {
+        if (soundOpen()) {
             /* Sound mode and the bus screen are called from INSIDE a view, and
              * the view owns them: Shift+Note/Session opens the buses in session
              * view and the track's sound in track view. So leaving the view you

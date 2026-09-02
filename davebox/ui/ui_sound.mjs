@@ -75,8 +75,7 @@ import {
     kitUseLayout,
     drawKitStackedList, drawKitBackdropDim, drawKitCrumbs, kitStackBox,
     MV_BAR_Y,
-    hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard,
-} from './ui_movy.mjs';
+    hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard, MV_ROW1_Y } from './ui_movy.mjs';
 import { bankCyclePos, bankCycleForMode } from './ui_pure.mjs';
 /* ⭐⭐ THE MODULE EDITOR IS THE HOST'S, AND NOW LITERALLY THE SAME FILE.
  *
@@ -683,6 +682,7 @@ const S = {
     macMigrateFor: -1,          /* track whose chain knob store is being walked */
     macMigrateK: 0,
     macMigrateTmp: null,
+    macMergeWanted: false,      /* re-run the chain-store merge (a patch loaded) */
     bankHome: BANK_SOUND,       /* which bank identity the open mode carries */
     asnQuick: false,            /* opened by Shift+touch: the commit lands on the page */
 
@@ -793,6 +793,7 @@ export function soundValueForTest(key) { return S.values[key]; }
  * the real path rather than a copy of it. */
 export function soundKnobTargetsForTest() { return knobTargetList(); }
 export function soundKnobParamsForTest() { return S.knobParams; }
+export function soundMacroMergeForTest() { macroMergeAfterPatch(); }
 /* Drives the view directly so a Back edge can be exercised without walking the
  * whole entry gesture. ⚠ Test-only: the real transitions go through the
  * openers, which also seed the state each screen reads. */
@@ -811,7 +812,27 @@ export function soundMacrosForTest() {
     };
 }
 
-export function soundActive() { return S.active; }
+/* ⭑ TWO PREDICATES (2026-09-03, Josh: "on the overview page the knobs don't
+ * do anything"). A track on MACROS keeps sound mode OPEN at rest — the tick
+ * invariant opens it unlatched — so the eight knobs are the macros on the
+ * overview as any bank's knobs are, and a knob touch PEEKS the live page. But
+ * davebox must keep treating that rest as "no sound screen is up": the jog
+ * click latches bank mode, Note/Session is at the overview, step record can
+ * start. So:
+ *   soundOpen()   — the raw state: the mode exists (tick, reconcile, exits,
+ *                   the knob steering in ui.js).
+ *   soundActive() — a sound SCREEN is up and steers input: open and not
+ *                   resting. Every davebox gate that asks "am I behind sound
+ *                   mode?" reads this one.
+ * The 09-01 bug this is written against: holding the SOUND + CONFIG prompt
+ * open at rest made soundActive() true at idle and the click never latched.
+ * Rest is MACROS-only and invisible by construction (soundRender declines the
+ * page while the card is not visible). */
+export function soundOpen() { return S.active; }
+export function soundResting() {
+    return !!(S.active && S.view === VIEW_MACROS && !soundIsGlobal() && !GS.bankCardLatched);
+}
+export function soundActive() { return S.active && !soundResting(); }
 /* Sound mode is open ON ITS ROOT SCREEN — the block picker, i.e. what the bank
  * walk calls SOUND + CONFIG — as opposed to being open somewhere deeper (a
  * block editor, a preset list, slot settings).
@@ -873,6 +894,10 @@ export function soundPpEditorForTest() { return PP_EDITOR; }
 
 export function soundShowMenu() {
     if (!S.active) return;
+    /* The menu is SOUND + CONFIG's: asked for from the MACROS identity (the
+     * Shift+Note gesture on a track resting there), the bank switches first
+     * so Back out of the menu lands on the card the menu belongs to. */
+    if (S.bankHome === BANK_MACROS) soundSetBank(BANK_SOUND);
     S.view = VIEW_BLOCKS;
     S.dirty = true;
 }
@@ -1307,7 +1332,9 @@ const LEVEL_KNOB_SPECS = [
     { key: 'pan',          label: 'Pan',  name: 'Pan',          widget: 'arcbip', def: 0.5, max: 1.0,            units: 200, fmt: PAN_FMT },
     { key: 'send_a',       label: 'SndA', name: 'Send A',       widget: 'arc',    def: 0.0, max: 1.0,            units: 100, fmt: PCT_FMT },
     { key: 'send_b',       label: 'SndB', name: 'Send B',       widget: 'arc',    def: 0.0, max: 1.0,            units: 100, fmt: PCT_FMT },
-    { key: 'synth_volume', label: 'ModL', name: 'Module Level', widget: 'vbar',   def: 1.0, max: SLOT_LEVEL_MAX, units: 200, fmt: GAIN_FMT, slotOnly: true },
+    /* ⚠ OFF THE PAGE (Josh, 2026-09-03): a macro target only. K5 on the
+     * SOUND + CONFIG card is blank, and the bottom row carries the door. */
+    { key: 'synth_volume', label: 'ModL', name: 'Module Level', widget: 'vbar',   def: 1.0, max: SLOT_LEVEL_MAX, units: 200, fmt: GAIN_FMT, slotOnly: true, macroOnly: true },
 ];
 for (const m of LEVEL_KNOB_SPECS) m.step = m.max / m.units;
 
@@ -1322,6 +1349,12 @@ function levelKnobSpec(idx) {
     if (!m) return null;
     if (m.slotOnly && levelComp() !== 'slot') return null;
     return m;
+}
+/* The levels ON THE PAGE (the SOUND + CONFIG card and the menu screens): the
+ * four that are not macro-only. */
+function levelPageSpec(idx) {
+    const m = levelKnobSpec(idx);
+    return (m && !m.macroOnly) ? m : null;
 }
 /* The knobs are the levels on every sound-mode screen that is NOT the module
  * editor — the bank card, the block list, the settings — for a track (a global
@@ -1390,7 +1423,7 @@ function levelCells() {
     const t = S.track, c = effectiveClip(t);
     const cells = [];
     for (let i = 0; i < 8; i++) {
-        const m = levelKnobSpec(i);
+        const m = levelPageSpec(i);
         if (!m) { cells.push({ kind: 'blank', label: '' }); continue; }
         const v = S.levelVals[i];
         const st = automationStateFor(t, c, S.slot + ':' + levelFullKey(i));
@@ -1761,6 +1794,7 @@ function doChainPatchLoad(index) {
     if (!host_patch_load(S.slot, index)) { S.patchMsg = 'LOAD FAILED'; return; }
     S.patchCur = S.patchNames[index] || '';
     S.patchMsg = '';
+    macroMergeAfterPatch();       /* the patch's knob mappings become the macros */
     /* A patch swaps every module in the chain — land back on the overview
      * with the block names re-read, looking at what just loaded. */
     S.view = VIEW_BLOCKS;
@@ -2705,6 +2739,7 @@ function commitKnobAssignment(target, param) {
     else if (target && param) m = { kind: 'chain', comp: target, key: param };
     store[i] = m;
     S.knobAsn[i] = asnFromMacro(m);
+    macroMirrorToChain(i, m);
     /* The cell and the value belonged to the OLD target — a number from a
      * different control, and a step law derived from a different range. The
      * tick re-seeds both. */
@@ -3017,8 +3052,8 @@ function renderKnobParam() {
  * THE STORE is davebox's (GS.trackMacros, sidecar `mac`) — see ui_state for
  * why not the chain DSP's own knob_N mappings: a target need not live in a
  * chain at all. The chain store is read ONCE, as a migration, for a track that
- * has never been seeded; it is never written again. (A whole-chain patch
- * therefore no longer carries knob assignments under SA.)
+ * has never been seeded — and MIRRORED back on every commit, so a whole-chain
+ * patch carries the assignments and a patch load merges them back.
  *
  * TARGET KINDS — one switch, in macroFullKey / macroCellFor / macroTurn:
  *   chain  { comp, key }   a chain param; comp is `synth`/`fx1`.. on a chain
@@ -3064,22 +3099,41 @@ function macroFullKey(m) {
 function macroLive(m) { return !!(m && (m.kind !== 'level' || macroLevelSpec(m))); }
 const MACRO_UNTURNABLE = { file: 1, text: 1, opaque: 1 };
 
-/* ── THE MIGRATION: the chain's knob_N store, read once per track ─────────
- * Two knobs (four reads) per tick; the store is committed whole when the walk
- * completes and persisted, so it never runs again for this track. A Move bus
- * or a MIDI track has no chain store: seeded empty at once. Returns true while
- * still walking. */
+/* ── THE CHAIN STORE IS A MIRROR (Josh, 2026-09-03: "put it back") ─────────
+ * davebox's store is the owner; the chain DSP's knob_N mappings are written
+ * as a MIRROR of every chain-kind macro on a chain slot, so a whole-chain
+ * PATCH carries the assignments (the host's patch serializer keeps them) —
+ * and a patch LOAD reads them back through the same merge the first-visit
+ * migration uses. A level macro has no chain form: mirrored as CLEAR, and
+ * the merge keeps it when the chain slot is empty. */
+function macroMirrorToChain(i, m) {
+    if (S.bus || S.track < 0 || GS.trackRoute[S.track] !== 0) return;
+    if (m && m.kind === 'chain') queueChainWrite('knob_' + (i + 1) + '_set', m.comp + ':' + m.key);
+    else queueChainWrite('knob_' + (i + 1) + '_clear', '1');
+}
+
+/* ── THE MERGE from the chain store: first visit, and after a patch load ──
+ * Two knobs (four reads) per tick; committed whole when the walk completes
+ * and persisted, so the first-visit migration never runs again for this
+ * track. Rule per knob: a chain-store assignment WINS; an empty chain slot
+ * keeps a level macro (the chain cannot express one) and clears a chain one.
+ * A Move bus or a MIDI track has no chain store: seeded empty at once.
+ * Returns true while still walking. `S.macMergeWanted` asks for a re-run on
+ * a seeded track (the patch-load path). */
 function macroMigrateTick() {
     const t = S.track;
-    if (t < 0 || GS.trackMacros[t]) return false;
+    if (t < 0) return false;
+    const seeded = !!GS.trackMacros[t];
+    if (seeded && !S.macMergeWanted) return false;
     if (S.bus || GS.trackRoute[t] !== 0) {
-        GS.trackMacros[t] = [null, null, null, null, null, null, null, null];
-        writeSidecar();
+        S.macMergeWanted = false;
+        if (!seeded) { GS.trackMacros[t] = [null, null, null, null, null, null, null, null]; writeSidecar(); }
         return false;
     }
     if (S.macMigrateFor !== t) {
         S.macMigrateFor = t; S.macMigrateK = 0;
-        S.macMigrateTmp = [null, null, null, null, null, null, null, null];
+        S.macMigrateTmp = seeded ? GS.trackMacros[t].map(m => (m && m.kind === 'level') ? m : null)
+                                 : [null, null, null, null, null, null, null, null];
     }
     for (let n = 0; n < 2 && S.macMigrateK < 8; n++, S.macMigrateK++) {
         const a = readKnobAsn(S.macMigrateK);
@@ -3087,11 +3141,16 @@ function macroMigrateTick() {
     }
     if (S.macMigrateK < 8) return true;
     GS.trackMacros[t] = S.macMigrateTmp;
-    S.macMigrateFor = -1; S.macMigrateTmp = null;
+    S.macMigrateFor = -1; S.macMigrateTmp = null; S.macMergeWanted = false;
+    S.macSeededFor = '';                                /* cells and values re-seed */
     writeSidecar();
     S.dirty = true;
     return false;
 }
+/* A whole-chain patch just loaded: its knob mappings are the truth for the
+ * chain-kind macros. Runs from the tick, spread, the next time the macros
+ * are looked at. */
+function macroMergeAfterPatch() { S.macMergeWanted = true; S.macMigrateFor = -1; }
 
 /* ── the turn law: movy's, applied in JS on an ABSOLUTE value ───────────────
  *
@@ -3210,7 +3269,7 @@ const MACRO_POLL_EVERY_STOPPED = 8;
  * round trips a tick), the turn law's drain, and the re-read. */
 function macroTick() {
     if (!macrosActive()) return;
-    if (macroMigrateTick()) return;
+    if (macroMigrateTick()) return;                   /* first visit, or a patch just loaded */
     const store = macroStore();
     const seedKey = S.slot + '/' + (S.bus ? S.bus.id : 'slot') + '/' + S.track;
     if (S.macSeededFor !== seedKey) {
@@ -3288,7 +3347,7 @@ function macroPollTick() {
  * SOUND + CONFIG, a macro on MACROS — for the ring paint under Mute/Delete. */
 function pageKnobFullKey(k) {
     if (macrosActive()) { const m = macroTarget(k); return macroLive(m) ? macroFullKey(m) : null; }
-    return levelKnobSpec(k) ? levelFullKey(k) : null;
+    return levelPageSpec(k) ? levelFullKey(k) : null;
 }
 
 const upper = (x) => String(x == null ? '' : x).toUpperCase();
@@ -3353,9 +3412,10 @@ function renderMacros() {
 export function renderMacrosPeek(track) {
     clear_screen();
     kitUseLayout('bank');
-    drawKitBankPage(macroCells(track, S.active && S.track === track), {
+    const live = S.active && S.track === track;
+    drawKitBankPage(macroCells(track, live), {
         headerText: 'MACROS', headerInvert: false,
-        touchedIdx: -1,
+        touchedIdx: live ? S.touchedIdx : -1,
         footer: macroCardHints(),
     });
 }
@@ -4650,7 +4710,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
         }
         if (levelsActive()) {
             const delta = decodeDelta(d2);
-            if (delta) onLevelTurn(d1 - 71, delta);
+            if (delta && levelPageSpec(d1 - 71)) onLevelTurn(d1 - 71, delta);
             return true;
         }
         return true;
@@ -5347,6 +5407,7 @@ export function soundOnNote(status, d1, d2) {
              * without leaving the bank — the one place the Shift+touch assign
              * flow survives. Tick-run: the target list probes components. */
             S.pendingAction = { t: 'knobasn', knob: d1, quick: true };
+            GS.bankCardLatched = true;      /* from the overview: the page shows after the pick */
             S.dirty = true;
             return true;
         }
@@ -5378,7 +5439,7 @@ export function soundOnNote(status, d1, d2) {
      * davebox's state object, so the release does not mute the track), and
      * the touch itself opens/closes the gesture the drain and the override-
      * resume ride on. The release also persists what the hand changed. */
-    if (levelsActive() && levelKnobSpec(d1)) {
+    if (levelsActive() && levelPageSpec(d1)) {
         const t = S.track, c = effectiveClip(t), target = S.slot + ':' + levelFullKey(d1);
         if (on) {
             if (S.deleteHeld) {
@@ -5733,6 +5794,11 @@ function renderPrompt() {
         touchedIdx: S.touchedIdx,
         footer: levelCardHints(),
     });
+    /* The bottom row is empty (Module Level left the page, 2026-09-03), and
+     * the card is a DOOR: the row says so (Josh: "reinstate 'Click for track
+     * [n] sound & config'"). */
+    centreText(MV_ROW1_Y + 2, 'CLICK TO ENTER');
+    centreText(MV_ROW1_Y + 12, 'TRACK ' + (S.track + 1) + ' SOUND & CONFIG');
 }
 
 function renderBlocks() {

@@ -315,6 +315,10 @@ step('the jog-click assign flow: K4 → Synth → Voices; the commit lands on th
     assert(st && st.kind === 'chain' && st.comp === 'synth' && st.key === 'voices', 'K4 = synth:voices, got ' + JSON.stringify(st));
     const mac = lastMac();
     assert(mac && mac[2][3] && mac[2][3].key === 'voices', 'persisted');
+    /* ⭑ MIRRORED into the chain's knob store (Josh, 2026-09-03: a whole-chain
+     * patch carries the assignments). */
+    ticks(1);
+    assert(lastWrite('knob_4_set') === 'synth:voices', 'knob_4_set mirrored, got ' + lastWrite('knob_4_set'));
     back();
     assert(snd.soundViewForTest() === VIEW_MACROS, 'Back from the list returns to MACROS, view ' + snd.soundViewForTest());
     ticks(3);
@@ -389,6 +393,21 @@ step('⭑ QUICK ASSIGN: Shift + touch K6 opens ITS target picker; Levels → Vol
     assert(snd.soundViewForTest() === VIEW_MACROS, 'quick assign returns to the page, view ' + snd.soundViewForTest());
     const st = GS.trackMacros[2][5];
     assert(st && st.kind === 'level' && st.key === 'volume', 'K6 = level volume, got ' + JSON.stringify(st));
+    ticks(1);
+    assert(lastWrite('knob_6_clear') === '1', 'a level macro has no chain form: mirrored as CLEAR');
+});
+step('⭑ a PATCH LOAD merges the chain store back: chain slots win, an empty chain slot keeps a level macro', () => {
+    /* The patch brought knob 1 → fx2:room_size and cleared knob 4; knob 6 (a
+     * level macro) has no chain form and must survive. */
+    ASSIGN['knob_1_target'] = 'fx2'; ASSIGN['knob_1_param'] = 'room_size';
+    ASSIGN['knob_4_target'] = ''; ASSIGN['knob_4_param'] = '';
+    snd.soundMacroMergeForTest();
+    ticks(6);
+    const st = GS.trackMacros[2];
+    assert(st[0] && st[0].comp === 'fx2' && st[0].key === 'room_size', 'K1 follows the patch, got ' + JSON.stringify(st[0]));
+    assert(st[3] === null, 'K4 cleared by the patch, got ' + JSON.stringify(st[3]));
+    assert(st[5] && st[5].kind === 'level' && st[5].key === 'volume', 'K6 level macro kept, got ' + JSON.stringify(st[5]));
+    ASSIGN['knob_1_target'] = 'synth'; ASSIGN['knob_1_param'] = 'cutoff';
 });
 step('a LEVEL macro is the level\'s own knob: K6 writes slot:volume by the levels\' step and draws the fader', () => {
     ticks(3);
@@ -431,7 +450,13 @@ step('soundSetBank walks MACROS ↔ SOUND + CONFIG in place: the mode stays open
     snd.soundEnter(2, 2); ticks(3);
     assert(snd.soundViewForTest() === VIEW_PROMPT && GS.activeBank === BANK_SOUND, 'on the prompt');
     snd.soundSetBank(BANK_MACROS);
-    assert(snd.soundActive() && snd.soundViewForTest() === VIEW_MACROS && GS.activeBank === BANK_MACROS, 'to MACROS');
+    assert(snd.soundOpen() && snd.soundViewForTest() === VIEW_MACROS && GS.activeBank === BANK_MACROS, 'to MACROS');
+    /* ⭑ REST: on MACROS with bank mode unlatched the mode is OPEN but not
+     * ACTIVE — davebox's gates read it as "no sound screen is up". */
+    GS.bankCardLatched = false;
+    assert(snd.soundResting() && !snd.soundActive(), 'resting: open, not active');
+    GS.bankCardLatched = true;
+    assert(!snd.soundResting() && snd.soundActive(), 'latched: active');
     snd.soundSetBank(BANK_SOUND);
     assert(snd.soundActive() && snd.soundViewForTest() === VIEW_PROMPT && GS.activeBank === BANK_SOUND && GS.trackActiveBank[2] === BANK_SOUND, 'back to the door');
 });
@@ -466,7 +491,7 @@ step('⚠ RETIRED: Sound Control has no Knobs row; the old HUD/forwarding machin
     const src = readFileSync('ui/ui_sound.mjs', 'utf8');
     const sc = src.slice(src.indexOf('const SOUND_CONTROL = ['), src.indexOf('];', src.indexOf('const SOUND_CONTROL = [')));
     assert(!/knobs/.test(sc), 'no Knobs row in SOUND_CONTROL');
-    for (const name of ['knobDrivesSlot', 'armKnobValue', 'tickKnobAsn', 'knobHudContext', 'drawKnobAsnHud', "queueChainWrite('knob_"])
+    for (const name of ['knobDrivesSlot', 'armKnobValue', 'tickKnobAsn', 'knobHudContext', 'drawKnobAsnHud'])
         assert(src.indexOf(name) < 0, name + ' is gone');
     assert(/function macroTick\(/.test(src) && /const KNOB_TRAVEL = \{/.test(src), 'the macro tick and the travel law exist');
 });
