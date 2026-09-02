@@ -1,4 +1,5 @@
-/* tests/js/test_bank_click_latch.mjs — the Front-2 bank-access revision
+
+import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's single-read stub *//* tests/js/test_bank_click_latch.mjs — the Front-2 bank-access revision
  * (Josh, 2026-08-31), end to end through the real dispatch:
  *
  *   - plain jog CLICK from the resting overview opens the PERSISTENT bank

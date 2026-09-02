@@ -1,4 +1,5 @@
-/* tests/js/test_sound_shift_jog_track.mjs — Shift+jog switches TRACK from
+
+import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's single-read stub *//* tests/js/test_sound_shift_jog_track.mjs — Shift+jog switches TRACK from
  * sound mode's menu, and only from there.
  *
  * Josh, specifying the sound-menu consolidation: Shift+jog stays the track

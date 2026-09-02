@@ -154,6 +154,27 @@ circle rides the tri-state `io.isModulated` ("auto"/"auto-off") in the movy rend
 from one `pa_list` read. ⏳ Not in P4: the bank-6 overview (P6), bus-level gestures (their
 knobs are davebox's own, not the editor's).
 
+**⏸ HOLD (Josh, 2026-09-02 evening): nothing below builds until the automation UI is designed
+as one thing — the rulings so far are in the spec §2 (two new banks MACROS → AUTOMATION after
+SOUND + CONFIG; Smooth in the AUTOMATION menu only; no MIDI Out device on a Move track; the
+assignment layer moves to MACROS; "a hold never creates a note"; the save rule).**
+
+Proposed build order once lifted (drafted for Josh's review, 2026-09-02 night):
+1. **Measure + budget** — an idle trace is done (poll folded, `bf9f3f40`); the playback and
+   recording traces need Josh at the device. Gate: `js.tick` p95 under ~20 ms.
+2. **SOUND + CONFIG bank knobs** (K1 Volume / K2 Pan / K3 Send A / K4 Send B / K5 Module
+   Level on a chain slot) — kit bank page fed into the automation owner; the gateway click
+   unchanged. Circles on the kit cells; hold-Mute paint.
+3. **MACROS bank** — needs the one generic host feature (a param-page composed by the host:
+   absolute keys from several components, inline metadata); the assignment picker grows level
+   and MIDI targets; Shift+touch quick-assign lives here; the sound menu's list-screen knob
+   forwarding and Sound Control → Knobs retire.
+4. **AUTOMATION bank** (replaces bank 6): the list card, the menu (delete, mute, smooth, loop
+   length/resolution, clear clip; AT lanes as rows), Delete+jog-click shortcut, undo per
+   action; the Smooth click leaves the module editor; "hold a step, see the locks".
+5. **Step grammar (c)**: a hold creates nothing; the Note knob on an empty held step creates.
+6. **P5 MIDI Out device** (Schwung + MIDI routes only), then **P7 bake/export**, then **P8**.
+
 **P5 — MIDI Out device** (§0.4).
 
 **P6 — Bank 6 → read-only overview.** Replace the latched screen (gate ui_render.mjs:1836,

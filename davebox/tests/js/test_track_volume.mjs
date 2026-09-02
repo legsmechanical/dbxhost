@@ -1,4 +1,5 @@
-/* tests/js/test_track_volume.mjs — Shift+volume = ACTIVE TRACK volume, in
+
+import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's single-read stub *//* tests/js/test_track_volume.mjs — Shift+volume = ACTIVE TRACK volume, in
  * every view; plain volume = Move's native main output (Josh, 2026-08-24:
  * "volume to control main output and shift+volume to control active track
  * volume. should apply across all modes").

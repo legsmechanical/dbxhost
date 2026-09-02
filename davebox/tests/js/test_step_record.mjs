@@ -16,6 +16,7 @@
  *     here against the C source so a drift fails loudly (the copied-C-constant
  *     trap). */
 
+import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's single-read stub */
 import { readFileSync } from 'fs';
 
 let failed = 0;

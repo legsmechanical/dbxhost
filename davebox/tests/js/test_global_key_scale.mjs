@@ -1,4 +1,5 @@
-/* tests/js/test_global_key_scale.mjs — a Key/Scale pick from the global menu
+
+import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's single-read stub *//* tests/js/test_global_key_scale.mjs — a Key/Scale pick from the global menu
  * COMMITS (Josh, 2026-09-01: "changing scale from the global menu isn't
  * sticking").
  *

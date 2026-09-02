@@ -28,6 +28,7 @@ import {
 } from './ui_constants.mjs';
 
 import { S, standDownBankDisplay } from './ui_state.mjs';
+import { tickPrefetch, dget } from './ui_dsp_bridge.mjs';
 import { daveBoxTick } from './ui_daves.mjs';
 import { automationTick, automationPollWarnings } from './ui_automation.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
@@ -364,6 +365,7 @@ export function _tickImpl() {
     }
 
     S.tickCount++;
+    tickPrefetch();                              /* the tick's one read — see ui_dsp_bridge */
     if (S.bootSplashTicks > 0) S.bootSplashTicks--;
     checkBackHold();   /* self-managed Back: fire suspend once a held Back crosses the long-press threshold */
     checkShiftNoteHold();  /* Shift+Note/Session: the HOLD fires at the threshold, not on release */
@@ -1622,7 +1624,7 @@ export function _tickImpl() {
 
         /* Metro beat detection: checked every tick via dedicated get_param for minimal jitter */
         if (S.metronomeOn > 0) {
-            const _mbcRaw = host_module_get_param('metro_beat_count');
+            const _mbcRaw = dget('metro_beat_count');
             if (_mbcRaw !== null && _mbcRaw !== undefined) {
                 const _mbc = parseInt(_mbcRaw, 10) | 0;
                 if (_mbc !== S.metroPrevBeat) {
@@ -1850,8 +1852,8 @@ export function _tickImpl() {
             let _tarpBlinkActive = false;
             let _tarpBlinkOn = false;
             if (!(S.sessionView && S.perfViewLocked) && !_rptLatched) {
-                const _tarpOn = parseInt(host_module_get_param('t' + _lt + '_tarp_on'), 10) === 1;
-                const _tarpLatch = parseInt(host_module_get_param('t' + _lt + '_tarp_latch'), 10) === 1;
+                const _tarpOn = parseInt(dget('t' + _lt + '_tarp_on'), 10) === 1;
+                const _tarpLatch = parseInt(dget('t' + _lt + '_tarp_latch'), 10) === 1;
                 if (_tarpOn && _tarpLatch) {
                     const _fc = parseInt(host_module_get_param('t' + _lt + '_tarp_fc'), 10) || 0;
                     _tarpBlinkActive = true;

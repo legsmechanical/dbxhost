@@ -28,7 +28,7 @@ import {
 import { automationRefreshPresence, automationInvalidateMeta, bulkEncode, bulkDecode } from './ui_automation.mjs';
 
 import {
-    NUM_TRACKS, NUM_CLIPS, NUM_STEPS, DRUM_LANES,
+    NUM_TRACKS, NUM_CLIPS, NUM_STEPS, DRUM_LANES, POLL_INTERVAL,
     TPS_VALUES, BANKS, PAD_MODE_DRUM, BANK_SOUND,
     INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK,
     MoveRec, LED_OFF, parseActionRaw
@@ -343,21 +343,37 @@ function fetchStateChunked() {
  * same key (both "" for an empty value). */
 const POLL_KEYS = ['bpm', 'rui_rev', 'clock_follow_on', 'clock_send_on', 'clock_follow_fallback',
                    'capture_pending', 'capture_info', 'state_snapshot', 'state_uuid'];
-function pollPrefetch() {
-    const keys = POLL_KEYS.slice();
-    if (S.activeBank === 6) keys.push('t' + S.activeTrack + '_c' + effectiveClip(S.activeTrack) + '_at_has');
-    if (S.recordArmed && S.recordArmedTrack >= 0) keys.push('t' + S.recordArmedTrack + '_recording_pending_page');
+
+/* THE TICK'S ONE READ. Rebuilt every tick at the top of _tickImpl, before
+ * anything reads: the keys the tick wants every tick (the metronome's beat
+ * count while it is on, the active track's arp state for the LED blink), and
+ * on a poll tick the poll's standing keys too. Measured before this existed
+ * (probe, 2026-09-02): three single reads EVERY tick at idle on top of the
+ * poll — the tick's whole budget spent on round-trips. Keys not in the map
+ * still read on their own through dget(), so a caller cannot be wrong, only
+ * slower. The map holds THIS tick's answers only. */
+let _pre = new Map();
+export function tickPrefetch() {
+    const keys = [];
+    if (S.metronomeOn > 0) keys.push('metro_beat_count');
+    const lt = S.activeTrack;
+    keys.push('t' + lt + '_tarp_on', 't' + lt + '_tarp_latch');
+    if ((S.tickCount % POLL_INTERVAL) === 0) {
+        for (const k of POLL_KEYS) keys.push(k);
+        if (S.activeBank === 6) keys.push('t' + lt + '_c' + effectiveClip(lt) + '_at_has');
+        if (S.recordArmed && S.recordArmedTrack >= 0) keys.push('t' + S.recordArmedTrack + '_recording_pending_page');
+    }
     const vals = bulkDecode(host_module_get_params(bulkEncode(keys)));
-    const m = new Map();
-    if (vals.length === keys.length) for (let i = 0; i < keys.length; i++) m.set(keys[i], vals[i]);
-    return m;                                   /* empty on failure: every read falls back */
+    _pre = new Map();
+    if (vals.length === keys.length) for (let i = 0; i < keys.length; i++) _pre.set(keys[i], vals[i]);
 }
+/* A read that answers from this tick's prefetch when it can. */
+export function dget(k) { return _pre.has(k) ? _pre.get(k) : host_module_get_param(k); }
 /* Ticks of quiet before a save while stopped; ~1 s at the ~94 Hz tick. */
 const SAVE_QUIET_TICKS = 94;
 
 export function pollDSP() {
-    const _pre = pollPrefetch();
-    const pget = (k) => (_pre.has(k) ? _pre.get(k) : host_module_get_param(k));
+    const pget = dget;                          /* this tick's prefetch, else a round-trip */
     /* bpm mirror — MIDI handlers can't get_param (silently null there), so
      * anything transport-side that needs tempo reads S.bpmMirror instead
      * (audit js-input-3: count-in cadence fell back to 120 BPM). */

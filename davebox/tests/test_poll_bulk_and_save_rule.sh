@@ -6,7 +6,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 f() { echo "FAIL: $*"; exit 1; }
 D=ui/ui_dsp_bridge.mjs
-grep -q "host_module_get_params(bulkEncode(keys))" $D || f "pollDSP must prefetch its standing keys in one bulk read"
+grep -q "host_module_get_params(bulkEncode(keys))" $D || f "the tick must prefetch in one bulk read"
+grep -q "tickPrefetch();" ui/ui_tick.mjs || f "_tickImpl must run the prefetch at the top of every tick"
+grep -q "dget('metro_beat_count')" ui/ui_tick.mjs || f "the metronome's per-tick read must ride the prefetch"
+grep -q "dget('t' + _lt + '_tarp_on')" ui/ui_tick.mjs || f "the arp LED's per-tick reads must ride the prefetch"
 for k in bpm rui_rev clock_follow_on clock_send_on clock_follow_fallback capture_pending capture_info state_snapshot state_uuid; do
   grep -q "'$k'" $D || f "standing key $k missing from the prefetch"
 done

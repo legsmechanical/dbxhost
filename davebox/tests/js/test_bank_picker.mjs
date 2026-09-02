@@ -68,6 +68,7 @@ globalThis.host_ext_midi_remap_clear = () => {};
 globalThis.host_ext_midi_remap_set = () => {};
 globalThis.host_ext_midi_remap_enable = () => {};
 
+import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's single-read stub */
 import { readFileSync } from 'node:fs';
 
 async function main() {
