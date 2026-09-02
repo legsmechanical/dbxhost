@@ -18,9 +18,10 @@
  */
 
 import { S, conductorTrackIdx } from './ui_state.mjs';
+import { nowMs } from './ui_clock.mjs';
 import { slotIndex, DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
-import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_TICKS, PAD_MODE_CONDUCT } from './ui_constants.mjs';
+import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_MS, PAD_MODE_CONDUCT } from './ui_constants.mjs';
 
 /* Our own module directory — where build.sh/build_sound.sh put pack.py and the
  * JSON templates. It MUST follow the build's module id: SA ships as
@@ -254,7 +255,7 @@ function resolveTrack(t, ctx) {
  * read (it's the one popup users hit by accident mid-jam). */
 function showStopTransportNotice() {
     showActionPopup('STOP TRANSPORT', 'FOR EXPORT');
-    S.actionPopupEndTick = S.tickCount + ACTION_POPUP_TICKS * 2;
+    S.actionPopupEndTick = nowMs() + ACTION_POPUP_MS * 2;
 }
 
 /* ---- Song.abl authoring -------------------------------------------------- */

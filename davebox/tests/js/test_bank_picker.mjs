@@ -108,7 +108,7 @@ const turn  = (d) => { touch(true); jog(d); globalThis.tick(); click(); touch(fa
 
 function reset() {
     S.sessionView = false; S.globalMenuOpen = false;
-    S.ledInitComplete = true; S.stateLoading = false; S.bootSplashTicks = 0;
+    S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
     S.awaitingProjectSelect = false; S.loopHeld = false; S.shiftHeld = false;
     S.bankPickerSel = -1; S.bankPickerIdleTick = -1; S.bankCardLatched = false;
     S.activeTrack = 2; S.activeBank = 0;

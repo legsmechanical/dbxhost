@@ -71,7 +71,7 @@ if (S.bankParams === null)
 /* ⚠ Clear the BOOT gate, or drawUI paints "LOADING" and returns — every
  * assertion below would then measure the splash. (The mixer render test paid
  * for this one already.) */
-S.stateLoading = false; S.bootSplashTicks = 0; S.awaitingProjectSelect = false;
+S.stateLoading = false; S.bootSplashMs = 0; S.awaitingProjectSelect = false;
 S.sessionView = false;
 S.globalMenuOpen = false;
 S.actionPopupEndTick = -1;

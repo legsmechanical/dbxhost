@@ -52,7 +52,7 @@ const { BANKS, BANK_STEP, BANK_SOUND } = await import('../../ui/ui_constants.mjs
 FOOTER_Y = (await import('../../ui/ui_movy.mjs')).MV_FOOTER_Y - 1;
 const snd = await import('../../ui/ui_sound.mjs');
 
-S.ledInitComplete = true; S.stateLoading = false; S.bootSplashTicks = 0;
+S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 0;
 for (let i = 0; i < 8; i++) { S.trackRoute[i] = 0; S.trackChannel[i] = 1; }
 S.bankParams = Array.from({ length: 8 }, () => Array.from({ length: BANKS.length }, () => new Array(8).fill(0)));

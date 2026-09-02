@@ -59,12 +59,13 @@ globalThis.host_ext_midi_remap_enable = () => {};
 async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
+S.clockFollowTicks = true;   /* time in tests is driven by S.tickCount (ui_clock) */
 const leds_mod = await import('../../ui/ui_leds.mjs');
 const { TRACK_PAD_BASE } = await import('../../ui/ui_constants.mjs');
 const { trackColor, trackDimColor } = leds_mod;
 
 S.sessionView = false; S.ledInitComplete = true;
-S.stateLoading = false; S.bootSplashTicks = 0; S.awaitingProjectSelect = false;
+S.stateLoading = false; S.bootSplashMs = 0; S.awaitingProjectSelect = false;
 S.activeTrack = 2;
 S.shiftHeld = true; S.shiftTrackLEDActive = true;
 if (!S.bankParams) S.bankParams = Array.from({ length: 8 }, () =>
@@ -72,7 +73,7 @@ if (!S.bankParams) S.bankParams = Array.from({ length: 8 }, () =>
 
 /* Drive both blink phases: the rate is 24 ticks, phase = floor(tick/24) % 2. */
 function rowAt(tick) {
-    S.tickCount = tick;
+    S.tickCount = tick; S.clockMs = Math.round(tick * 10.6);   /* the painter reads the tick's clock (test cadence) */
     leds_mod.invalidateLEDCache();
     leds_mod.updateTrackLEDs();
     const out = [];

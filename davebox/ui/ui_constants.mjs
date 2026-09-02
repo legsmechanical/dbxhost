@@ -29,7 +29,7 @@ export const MoveMainKnob        = 14;  /* jog wheel rotate (CC) */
 export const LED_OFF             = 0;
 export const LED_STEP_ACTIVE     = 36;
 export const LED_STEP_CURSOR     = 127;
-export const SCENE_BTN_FLASH_TICKS = 40;
+export const SCENE_BTN_FLASH_MS = 425;
 export const LEDS_PER_FRAME      = 8;
 export const NUM_TRACKS          = 8;
 export const NUM_CLIPS           = 16;
@@ -472,7 +472,7 @@ export const BANK_SOUND_PREV = BANK_STEP;
  * against a mistaken 196 Hz assumption — derive new timings from this. */
 export const TICK_HZ = 94;
 
-export const ACTION_POPUP_TICKS = 49; /* ~520ms at 94Hz */
+export const ACTION_POPUP_MS = 520;
 /* Bank picker: how long an untouched selection sits before it commits itself.
  * ~1.3s at 94Hz — long enough that it never pre-empts someone deciding, short
  * enough that a picker opened by a touchless turn does not feel stuck. It is a
@@ -494,9 +494,9 @@ export const CC_GRADIENT_LEVELS      = 3;
 export const CC_GRADIENT_SCALARS     = [0.30, 0.60, 1.0];
 /* Hold a step + jog: right REVEALS the STEP bank, left RETURNS; a second detent
  * inside this window is the same flick, not a second instruction. */
-export const STEP_REVEAL_DEBOUNCE_TICKS = 14;  /* ~150 ms at 94 Hz */
-export const NO_NOTE_FLASH_TICKS = 56;     /* ~600ms at 94Hz (was 118 @196Hz) */
-export const TAP_TEMPO_FLASH_TICKS = 9;    /* ~96ms at 94Hz */
+export const STEP_REVEAL_DEBOUNCE_MS = 150;
+export const NO_NOTE_FLASH_MS = 600;
+export const TAP_TEMPO_FLASH_MS = 96;
 export const TAP_TEMPO_RESET_MS    = 2000; /* inactivity reset threshold */
 export const PARAM_LED_BANKS = [1, 2, 3, 4, 5];
 

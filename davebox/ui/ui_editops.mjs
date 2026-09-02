@@ -8,10 +8,11 @@
 
 import {
     NUM_TRACKS, NUM_STEPS, DRUM_LANES,
-    PAD_MODE_DRUM, PAD_MODE_CONDUCT, BANKS, ACTION_POPUP_TICKS,
+    PAD_MODE_DRUM, PAD_MODE_CONDUCT, BANKS, ACTION_POPUP_MS,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND
 } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
+import { nowMs } from './ui_clock.mjs';
 import { soundActive, soundExit, soundIsGlobal } from './ui_sound.mjs';
 import { stepRecExit } from './ui_record.mjs';
 import { clipHasContent } from './ui_pure.mjs';
@@ -92,7 +93,7 @@ export function clearStep(t, ac, absIdx) {
 export function showModePopup(title, items, activeIdx) {
     S.actionPopupLines     = [title, ...items];
     S.actionPopupHighlight = activeIdx + 1;
-    S.actionPopupEndTick   = S.tickCount + ACTION_POPUP_TICKS;
+    S.actionPopupEndTick   = nowMs() + ACTION_POPUP_MS;
     S.screenDirty = true;
 }
 

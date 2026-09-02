@@ -16,7 +16,7 @@ done
 # Inside pollDSP no direct single read remains — every read goes through pget (the fallback).
 awk '/^export function pollDSP\(\)/,/^}/' $D | grep -q "host_module_get_param(" && f "pollDSP still makes a direct single read — route it through pget()"
 grep -q "const _saveAllowed = S.saveNowOnce ||" $D || f "the save gate must honour the Record-off one-shot"
-grep -q "(!S.playing && (S.tickCount - S.lastInputTick) >= SAVE_QUIET_TICKS)" $D || f "the save gate must require stopped + quiet"
+grep -q "(!S.playing && (S.clockMs - S.lastInputTick) >= SAVE_QUIET_MS)" $D || f "the save gate must require stopped + quiet (a DURATION in ms, never ticks)"
 grep -q "S.saveNowOnce          = true;" ui/ui_record.mjs || f "disarmRecord must raise the one-shot save"
-grep -q "S.lastInputTick = S.tickCount;" ui/ui.js || f "the MIDI handler must stamp the quiet clock"
+grep -q "S.lastInputTick = nowMs();" ui/ui.js || f "the MIDI handler must stamp the quiet clock"
 echo "PASS: the poll is one bulk read; the save waits for stop, quiet, or the end of a take"

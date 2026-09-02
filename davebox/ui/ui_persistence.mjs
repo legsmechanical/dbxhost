@@ -1,5 +1,6 @@
 import { S, CC_ASSIGN_DEFAULTS } from './ui_state.mjs';
-import { NUM_TRACKS, NUM_CLIPS, DRUM_LANES, BANKS, ACTION_POPUP_TICKS,
+import { nowMs } from './ui_clock.mjs';
+import { NUM_TRACKS, NUM_CLIPS, DRUM_LANES, BANKS, ACTION_POPUP_MS,
          VOL_CARD_TICKS } from './ui_constants.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 
@@ -156,7 +157,7 @@ export function showActionPopup(...lines) {
     S.actionPopupGauge = -1;
     S.actionPopupGaugeMark = -1;
     S.actionPopupLines   = lines;
-    S.actionPopupEndTick = S.tickCount + ACTION_POPUP_TICKS;
+    S.actionPopupEndTick = nowMs() + ACTION_POPUP_MS;
     S.screenDirty = true;
 }
 

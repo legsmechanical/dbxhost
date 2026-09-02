@@ -75,7 +75,7 @@ function step(label, fn) {
 }
 
 S.ledInitComplete = true;
-S.stateLoading = false; S.bootSplashTicks = 0; S.awaitingProjectSelect = false;
+S.stateLoading = false; S.bootSplashMs = 0; S.awaitingProjectSelect = false;
 S.sessionView = false; S.activeTrack = 2; S.activeBank = 0;
 if (!S.bankParams)
     S.bankParams = Array.from({ length: 8 }, () =>

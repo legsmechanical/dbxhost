@@ -45,7 +45,7 @@ const sndMod = await import('../../ui/ui_sound.mjs');
 const renderMod = await import('../../ui/ui_render.mjs');
 const icc = await import('../../ui/ui_input_cc.mjs');
 
-S.ledInitComplete = true; S.stateLoading = false; S.bootSplashTicks = 0;
+S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 2;
 for (let i = 0; i < 8; i++) { S.trackRoute[i] = 0; S.trackChannel[i] = 1; }
 S.bankParams = Array.from({ length: 8 }, () =>

@@ -10,9 +10,10 @@
 import {
     NUM_TRACKS, TRACK_PAD_BASE, DRUM_LANES,
     PAD_MODE_DRUM, PAD_MODE_CONDUCT, BANKS,
-    NO_NOTE_FLASH_TICKS
+    NO_NOTE_FLASH_MS
 } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
+import { nowMs } from './ui_clock.mjs';
 import { automationClearStep } from './ui_automation.mjs';
 import { drumPadToLane, drumPadToVelZone, drumVelZoneToVelocity, _clipIsEmpty,
     clipHasContent, effectiveVelocity, stepEntryVelocity,
@@ -56,12 +57,12 @@ const PERF_MOD_FULL_NAMES = [
  * S.perfRecalledSlot: which slot is active (-1 = none); preset bits are
  * copied into S.perfModsToggled on recall so mod pads can toggle them off.
  * Factory presets populate slots 0-7 (steps 1-8) at init. */
-const PERF_MOD_POPUP_TICKS = 47; /* ~500ms at 94Hz (was 80, assuming ~160 ticks/s) */
+const PERF_MOD_POPUP_MS = 500;
 
 /* Per-pad pitch sent at note-on — ensures matching note-off even if map changes mid-hold. */
 const padPitch = new Array(32).fill(-1);
 const padPressTick = new Array(32).fill(-1);  /* tick when each pad was pressed, for drum tap-vs-hold detection */
-const DRUM_TAP_TICKS = 10;  /* ~30ms — taps shorter than this suppress the release note-off */
+const DRUM_TAP_MS = 106;   /* taps shorter than this suppress the release note-off (10 ticks at the old 94 Hz) */
 
 function _onPadPressTrackView(status, d1, d2) {
 
@@ -311,7 +312,7 @@ function _onPadPressTrackView(status, d1, d2) {
                 liveSendNote(t, 0x90, laneNote, zoneVel, true);
                 soundVouchLivePress(t, laneNote);
                 padPitch[padIdx] = laneNote;
-                padPressTick[padIdx] = S.tickCount;
+                padPressTick[padIdx] = nowMs();
                 S.liveActiveNotes.add(laneNote);
                 if (S.heldStep >= 0 && S.heldStepNotes.length > 0) {
                     /* Active vel-pad press while step held → zone wins (beats VelIn) */
@@ -444,7 +445,7 @@ function _onPadPressTrackView(status, d1, d2) {
                     liveSendNote(t, 0x90, laneNote, vel);
                     soundVouchLivePress(t, laneNote);
                     padPitch[padIdx] = laneNote;
-                    padPressTick[padIdx] = S.tickCount;
+                    padPressTick[padIdx] = nowMs();
                     S.liveActiveNotes.add(laneNote);
                     /* Record step hit if armed */
                     if (S.recordArmed && !S.recordCountingIn && t === S.recordArmedTrack) {
@@ -748,7 +749,7 @@ export function _onPadPress(status, d1, d2) {
                         S.perfModsHeld |= bit;
                     }
                     S.perfModPopupName    = PERF_MOD_FULL_NAMES[modIdx] || '';
-                    S.perfModPopupEndTick = S.tickCount + PERF_MOD_POPUP_TICKS;
+                    S.perfModPopupEndTick = nowMs() + PERF_MOD_POPUP_MS;
                     sendPerfMods();
                 }
             }
@@ -1132,7 +1133,7 @@ export function _onStepButtons(d1, d2) {
     /* Perf Mode: step buttons are preset snapshot slots — defer to release for
      * tap/hold decision. */
     if (S.sessionView && (S.loopHeld || S.perfViewLocked)) {
-        S.stepBtnPressedTick[idx] = S.tickCount;
+        S.stepBtnPressedTick[idx] = nowMs();
         S.sessionStepHeld         = idx;
         S.sessionStepHeldCtx      = 1;  /* perf */
         return;
@@ -1161,7 +1162,7 @@ export function _onStepButtons(d1, d2) {
         }
         if (S.muteHeld) {
             /* All 16 step buttons are snapshot slots — defer to release for tap/hold decision. */
-            S.stepBtnPressedTick[idx] = S.tickCount;
+            S.stepBtnPressedTick[idx] = nowMs();
             S.sessionStepHeld         = idx;
             S.sessionStepHeldCtx      = 2;  /* mute */
             return;
@@ -1344,7 +1345,7 @@ export function _onStepButtons(d1, d2) {
         const t       = S.activeTrack;
         const lane    = S.activeDrumLane[t];
         const absStep = S.drumStepPage[t] * 16 + idx;
-        S.stepBtnPressedTick[idx] = S.tickCount;
+        S.stepBtnPressedTick[idx] = nowMs();
         if (S.heldStep < 0) {
             S.heldStepBtn = idx;
             S.stepHoldCkpt = false;
@@ -1416,7 +1417,7 @@ export function _onStepButtons(d1, d2) {
     } else if (!S.shiftHeld) {
         /* Record press time for tap detection on release.
          * Enter step edit immediately — tap vs hold decided on release. */
-        S.stepBtnPressedTick[idx] = S.tickCount;
+        S.stepBtnPressedTick[idx] = nowMs();
         if (S.heldStep < 0) {
             const ac_p   = effectiveClip(S.activeTrack);
             const absP   = S.trackCurrentPage[S.activeTrack] * 16 + idx;
@@ -1720,7 +1721,7 @@ export function _onPadRelease(status, d1, d2) {
                         S.clipNonEmpty[S.activeTrack][ac_t] = true;
                         refreshSeqNotesIfCurrent(S.activeTrack, ac_t, absIdx);
                     } else {
-                        S.noNoteFlashEndTick = S.tickCount + NO_NOTE_FLASH_TICKS;
+                        S.noNoteFlashEndTick = nowMs() + NO_NOTE_FLASH_MS;
                         S.screenDirty = true;
                     }
                 } else {
@@ -1822,7 +1823,7 @@ export function _onPadRelease(status, d1, d2) {
         if (!S.sessionView) {
             const t = S.activeTrack;
             if (S.trackPadMode[t] === PAD_MODE_DRUM &&
-                    (S.tickCount - padPressTick[padIdx]) < DRUM_TAP_TICKS)
+                    (nowMs() - padPressTick[padIdx]) < DRUM_TAP_MS)
                 pendingDrumNoteOffs[t].push(pitch);
             else
                 liveSendNote(t, 0x80, pitch, 0);

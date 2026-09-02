@@ -30,9 +30,18 @@ import { CHAIN_SLOTS } from './ui_engine.mjs';
  * `force` is for the two places that genuinely mean "no window": Back
  * dismissing the screen, and the SILENT re-entry, whose whole purpose is to
  * arrive without the display window opening. */
+/* THE ONE CLOCK for UI timing (see ui_clock.mjs for the reasoning): ms, never
+ * ticks — the tick rate is whatever the tick's cost allows. Tests drive time
+ * by bumping S.tickCount; with S.clockFollowTicks the clock follows at the old
+ * device cadence so "tickCount += 25" still crosses a 200 ms threshold. */
+export const TICK_MS_FOR_TESTS = 10.6;
+export function nowMs() {
+    return S.clockFollowTicks ? Math.round(S.tickCount * TICK_MS_FOR_TESTS) : Date.now();
+}
+
 export function armBankDisplay() {
-    S.bankSelectTick = S.tickCount;
-    S.bankDisplayArmedTick = S.tickCount;
+    S.bankSelectTick = nowMs();              /* the window is a DURATION (ms) */
+    S.bankDisplayArmedTick = S.tickCount;    /* "armed this pass" is a tick identity */
 }
 
 export function standDownBankDisplay(force) {
@@ -370,6 +379,9 @@ export const S = {
      * check, so the release cannot tap-toggle the note a lock was just
      * written on. */
     stepHoldPromote: false,
+    /* THE CLOCK (ui_clock.mjs): ms at the top of this tick, and the test switch. */
+    clockMs: 0,
+    clockFollowTicks: false,
     /* THE REVEAL (spec §2): while a step is held, a jog turn right shows the
      * STEP bank's page for that step on top of whatever screen was up — the
      * editor, a bank card, the overview — and a turn left (or the release)
@@ -600,7 +612,7 @@ export const S = {
      * full module re-launch via Shift+Back). Back-suspend → resume keeps the
      * existing module process and JS state, so the counter stays at 0 and
      * the splash does NOT re-show on resume. Decremented in tick(). */
-    bootSplashTicks: 188,
+    bootSplashMs: 2000,        /* ms of splash left; counted down by the tick's clock */
     pendingSuspendSave: false,
     pendingExitAfterSave: false,   /* drained one tick after pendingSuspendSave fires; calls host_exit_module */
     exitFarewell: 0,               /* >0: EXITING screen up, counting down to the teardown cmd; -1: cmd fired, tick frozen */

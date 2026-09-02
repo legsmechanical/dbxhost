@@ -378,7 +378,7 @@ export function dget(k) { return _pre.has(k) ? _pre.get(k) : host_module_get_par
 /* True if this tick's prefetch carried `k`. */
 export function tickWants(k) { return _pre.has(k); }
 /* Ticks of quiet before a save while stopped; ~1 s at the ~94 Hz tick. */
-const SAVE_QUIET_TICKS = 94;
+const SAVE_QUIET_MS = 1000;   /* one second of hardware quiet while stopped (spec §2) */
 
 /* Whether the host's autosave is currently held for the transport (edge-tracked). */
 let autosaveHeld = false;
@@ -770,7 +770,7 @@ export function pollDSP() {
 
     /* Transport transitions */
     if (!S.playingPrev && S.playing) {
-        S.transportStartTick = S.tickCount;
+        S.transportStartTick = S.clockMs;
         /* Focused-clip-by-default on transport start: only the clip the user
          * is currently *viewing* in Track View auto-launches. Session View
          * launches whatever is already queued — explicit launch by the user.
@@ -933,7 +933,7 @@ export function pollDSP() {
      * The DSP keeps its dirty flag until a save completes, so waiting loses
      * nothing; quit, suspend and project switch save on their own paths. */
     const _saveAllowed = S.saveNowOnce ||
-        (!S.playing && (S.tickCount - S.lastInputTick) >= SAVE_QUIET_TICKS);
+        (!S.playing && (S.clockMs - S.lastInputTick) >= SAVE_QUIET_MS);
     if (_saveAllowed && S.currentSetUuid && !S.awaitingProjectSelect &&
             !S.pendingSetLoad && S.pendingDspSync === 0) {
         S.saveNowOnce = false;

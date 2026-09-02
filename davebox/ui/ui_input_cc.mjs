@@ -22,12 +22,13 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS,
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, STEP_REVEAL_DEBOUNCE_TICKS,
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool
 } from './ui_constants.mjs';
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay } from './ui_state.mjs';
+import { nowMs } from './ui_clock.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity, BANK_CYCLE_DRUM, CONDUCT_BANK_CYCLE,
@@ -75,13 +76,13 @@ import { _resolveLoopGesture } from './ui_input_pads.mjs';
 
 /* View lock: double-tap Loop keeps Perf Mode alive after Loop is released.
  * Single tap while locked → unlock + stop loop. */
-const LOOP_TAP_TICKS  = 40;
+const LOOP_TAP_MS  = 425;
 
-const STRETCH_BLOCKED_TICKS = 141;  /* ~1500ms at 94Hz (was 294, calibrated for the mistaken 196Hz) */
+const STRETCH_BLOCKED_MS = 1500;
 
 /* Session overview overlay (hold CC 50) */
-const NOTE_SESSION_HOLD_TICKS = 19;  /* ~200ms at 94Hz, matching STEP_HOLD_TICKS (was 40 @196Hz — a ~300ms hold misread as tap, latching momentary views) */
-const BACK_HOLD_TICKS = 42;          /* ~450ms at 94Hz — a deliberate long-press on Back = suspend from anywhere (vs a short tap = back out one UI level) */
+const NOTE_SESSION_HOLD_MS = 120;    /* matching STEP_HOLD_MS */
+const BACK_HOLD_MS = 450;            /* a deliberate long-press on Back = suspend from anywhere (vs a short tap = back out one UI level) */
 
 /* ⭑ ONE owner of "finish a Key/Scale pick". Their menu `set()` is a live
  * PREVIEW, never the commit — the commit is xposeCommit, and reaching it is
@@ -1040,7 +1041,7 @@ function modalDialogUp() {
                             /* Show OOB step view in both modes — navigate to boundary page
                              * so the step-level OOB greying renders. */
                             S.loopJogActive = true;
-                            S.loopJogLastTick = S.tickCount;
+                            S.loopJogLastTick = nowMs();
                             S.drumStepPage[_t] = _maxPage;
                             if (S.activeBank === 7) {
                                 host_module_set_param('t' + _t + '_all_lanes_length', String(_nv));
@@ -1062,7 +1063,7 @@ function modalDialogUp() {
                         if (_nv !== _cur) {
                             S.ccLaneLength[_t][_ac][_ccL] = _nv;
                             S.loopJogActive = true;
-                            S.loopJogLastTick = S.tickCount;
+                            S.loopJogLastTick = nowMs();
                             var _ls = S.ccLaneLoopStart[_t][_ac][_ccL] | 0;
                             S.trackCurrentPage[_t] = Math.max(0, Math.floor((_ls + _nv - 1) / 16));
                             host_module_set_param('t' + _t + '_c' + _ac + '_k' + _ccL + '_cc_lane_length', String(_nv));
@@ -1077,7 +1078,7 @@ function modalDialogUp() {
                         S.clipLengthManuallySet[_t][_ac] = true;
                         /* Show OOB step view: navigate to boundary page (window-aware) */
                         S.loopJogActive = true;
-                        S.loopJogLastTick = S.tickCount;
+                        S.loopJogLastTick = nowMs();
                         const _ls = S.clipLoopStart[_t][_ac] | 0;
                         S.trackCurrentPage[_t] = Math.max(0, Math.floor((_ls + _nv - 1) / 16));
                         host_module_set_param('t' + _t + '_clip_length', String(_nv));
@@ -1416,7 +1417,7 @@ function _onCC_buttons(d1, d2) {
                  * ⚠ This MUST stay ahead of the escape below: Shift+Note/Session
                  * is an OPENER that works from anywhere, so an escape running
                  * first would break it from every off-overview state. */
-                S.shiftNoteSessionTick = S.tickCount;
+                S.shiftNoteSessionTick = nowMs();
                 S.screenDirty = true;
                 return;
             }
@@ -1440,7 +1441,7 @@ function _onCC_buttons(d1, d2) {
             }
             /* At the overview: the old grammar, untouched. Switch immediately
              * (like Loop entering perf); tap vs hold resolved on release. */
-            S.noteSessionPressedTick = S.tickCount;
+            S.noteSessionPressedTick = nowMs();
             S.sessionViewMomentary   = true;
             S.sessionView            = !S.sessionView;
             _switchViewCleanup();
@@ -1467,7 +1468,7 @@ function _onCC_buttons(d1, d2) {
                 return;
             }
             if (S.noteSessionPressedTick >= 0 &&
-                    (S.tickCount - S.noteSessionPressedTick) < NOTE_SESSION_HOLD_TICKS) {
+                    (nowMs() - S.noteSessionPressedTick) < NOTE_SESSION_HOLD_MS) {
                 /* Tap release: make permanent (don't switch back) */
                 S.sessionViewMomentary = false;
             } else if (S.sessionViewMomentary) {
@@ -1493,13 +1494,13 @@ function _onCC_buttons(d1, d2) {
                 forceRedraw();
                 return;
             }
-            S.loopPressTick = S.tickCount;
+            S.loopPressTick = nowMs();
             S.loopHeld      = true;
             forceRedraw();
             return;
         }
-        const heldDuration = S.tickCount - S.loopPressTick;
-        const wasTap       = heldDuration < LOOP_TAP_TICKS;
+        const heldDuration = nowMs() - S.loopPressTick;
+        const wasTap       = heldDuration < LOOP_TAP_MS;
 
         if (S.perfViewLocked) {
             /* Locked + tap → unlock + stop. */
@@ -1563,7 +1564,7 @@ function _onCC_buttons(d1, d2) {
         if (S.loopHeld) {
             /* Latch or clear drum repeat on the active track */
             const _lrt = S.activeTrack;
-            S.loopPressTick = S.tickCount;
+            S.loopPressTick = nowMs();
             /* Tap-loop-alone unlatch eligibility (drum tracks only). Snapshot
              * "no fresh physical pad press" at press time so the release path
              * can distinguish a true alone-tap from a tap-while-latching
@@ -1670,7 +1671,7 @@ function _onCC_buttons(d1, d2) {
              * Eligibility was snapshotted at press (no pads/lanes held + drum
              * track). A long hold disqualifies (treated like a gesture timeout). */
             if (S.loopTapUnlatchTrack >= 0 &&
-                (S.tickCount - S.loopPressTick) < LOOP_TAP_TICKS) {
+                (nowMs() - S.loopPressTick) < LOOP_TAP_MS) {
                 const _ut = S.loopTapUnlatchTrack;
                 if (S.drumRepeatLatched[_ut]) {
                     S.drumRepeatLatched[_ut] = false;
@@ -2071,7 +2072,7 @@ function _handleBack(d2) {
             S.pendingHideAfterSave = true;
             return;
         }
-        S.backPressTick = S.tickCount;
+        S.backPressTick = nowMs();
         S.backHoldFired = false;
     } else if (d2 === 0) {
         if (S.backPressTick >= 0 && !S.backHoldFired) _backTap();
@@ -2194,7 +2195,7 @@ export function checkShiftNoteHold() {
     /* Co-run owns this button while it is up (Menu is its way out), so abandon
      * a pending hold rather than firing into it. */
     if (S.moveCoRunTrack >= 0) { S.shiftNoteSessionTick = -1; return; }
-    if ((S.tickCount - S.shiftNoteSessionTick) >= BACK_HOLD_TICKS) {
+    if ((S.clockMs - S.shiftNoteSessionTick) >= BACK_HOLD_MS) {
         S.shiftNoteSessionTick = -1;
         /* ⭑⭑ SPEND Shift before opening anything. The key is still physically
          * down — the gesture fires at the threshold, not on release — so the
@@ -2223,7 +2224,7 @@ export function checkBackHold() {
     if (S.moveCoRunTrack >= 0) {
         S.backPressTick = -1; S.backHoldFired = false; return;
     }
-    if ((S.tickCount - S.backPressTick) >= BACK_HOLD_TICKS) {
+    if ((S.clockMs - S.backPressTick) >= BACK_HOLD_MS) {
         S.backHoldFired = true;
         S.backPressTick = -1;
         _suspendModule();
@@ -2417,8 +2418,8 @@ function _onCC_transport(d1, d2) {
         }
         const _bpm = (S.bpmMirror > 0 && isFinite(S.bpmMirror)) ? S.bpmMirror : 120;
         S.mergeCountingIn      = true;
-        S.countInBeatStartTick = S.tickCount;
-        S.countInQuarterTicks  = Math.round(TICK_HZ * 60 / _bpm);
+        S.countInBeatStartTick = nowMs();
+        S.countInQuarterTicks = 60000 / _bpm;          /* a quarter note, in ms (the name is historical) */
         const _solo = S.mergeNoticeSingleTrack;
         if (_solo < 0) {
             S.mergeSingleTrack = -1;
@@ -2430,7 +2431,7 @@ function _onCC_transport(d1, d2) {
             showActionPopup('LIVE MERGE', 'Count-in, then', 'this track.', 'Rec to stop.');
         }
         S.pendingMergeArm     = true;
-        S.actionPopupEndTick  = S.tickCount + 280;
+        S.actionPopupEndTick  = nowMs() + 3000;
         return;
     }
     /* RECORD while a STEP RECORD session is open: leave it, shifted or not
@@ -2533,8 +2534,8 @@ function _onCC_transport(d1, d2) {
             S.recordCountingIn    = true;
             S.recordArmedTrack    = S.activeTrack;
             S.countInStartTick    = S.tickCount;
-            S.countInBeatStartTick = S.tickCount;
-            S.countInQuarterTicks = Math.round(TICK_HZ * 60 / bpm);
+            S.countInBeatStartTick = nowMs();
+            S.countInQuarterTicks = 60000 / bpm;          /* a quarter note, in ms (the name is historical) */
             S.pendingPrerollNotes       = [];
             S.pendingPrerollToggleQueue = [];
             host_module_set_param('record_count_in', String(S.activeTrack));
@@ -2938,7 +2939,7 @@ function _onCC_side(d1, d2) {
             if (scooped > 0) showActionPopup('CAPTURED', 'TO ROW ' + (clipIdx + 1));
             else             showActionPopup('NOTHING', 'TO CAPTURE');
         } else if (S.sessionView) {
-            S.sceneBtnFlashTick[idx] = S.tickCount;
+            S.sceneBtnFlashTick[idx] = nowMs();
             /* Shift+side-button forces next-bar boundary launch regardless of
              * global launch_quant. Plain press honors launch_quant as before. */
             const _scKey = S.shiftHeld ? 'launch_scene_quant' : 'launch_scene';
@@ -3399,10 +3400,10 @@ export function heldStepJog(d2) {
     if (S.shiftHeld) return true;                 /* Shift+jog is declined while a step is held */
     const delta = decodeDelta(d2);
     if (delta === 0) return true;
-    if (S.tickCount - S.stepRevealJogTick < STEP_REVEAL_DEBOUNCE_TICKS) return true;
+    if (nowMs() - S.stepRevealJogTick < STEP_REVEAL_DEBOUNCE_MS) return true;
     if (S.activeBank === BANK_STEP) return true;
-    if (delta > 0 && !S.stepReveal) { S.stepReveal = true;  S.stepRevealJogTick = S.tickCount; forceRedraw(); }
-    else if (delta < 0 && S.stepReveal) { S.stepReveal = false; S.stepRevealJogTick = S.tickCount; forceRedraw(); }
+    if (delta > 0 && !S.stepReveal) { S.stepReveal = true;  S.stepRevealJogTick = nowMs(); forceRedraw(); }
+    else if (delta < 0 && S.stepReveal) { S.stepReveal = false; S.stepRevealJogTick = nowMs(); forceRedraw(); }
     return true;
 }
 
@@ -3433,7 +3434,7 @@ function _onCC_stepedit(d1, d2) {
         const _t    = S.activeTrack;
         const _ac   = effectiveClip(_t);
         S.knobTouched          = _kIdx;
-        S.knobTurnedTick[_kIdx] = S.tickCount;
+        S.knobTurnedTick[_kIdx] = nowMs();
         S.ccActiveLane[_t]      = _kIdx;
         S.screenDirty  = true;
         var _laneTps = S.ccLaneTps[_t][_ac][_kIdx];
@@ -3478,7 +3479,7 @@ function _onCC_stepedit(d1, d2) {
         const t       = S.activeTrack;
         const lane    = S.activeDrumLane[t];
         S.knobTouched          = knobIdx;
-        S.knobTurnedTick[knobIdx] = S.tickCount;
+        S.knobTurnedTick[knobIdx] = nowMs();
         S.screenDirty = true;
         if (knobIdx === 3 || knobIdx === 7) return;
         if (knobIdx === 0) {
@@ -3551,7 +3552,7 @@ function _onCC_stepedit(d1, d2) {
         const ac      = effectiveClip(t);
         const pfx     = 't' + t + '_c' + ac + '_step_' + S.heldStep;
         S.knobTouched          = knobIdx;
-        S.knobTurnedTick[knobIdx] = S.tickCount;
+        S.knobTurnedTick[knobIdx] = nowMs();
         S.screenDirty   = true;
         if (knobIdx === 0) {
             /* K1 Note: shift each note ±1 scale degree (or ±1 semitone if scale-aware off), sens=10 */
@@ -3704,7 +3705,7 @@ function _sessionKnobParam(knobIdx, d2) {
          * strip, so show its value. Otherwise the first touch of a slow turn
          * reads as a dead knob. */
         S.sessVolLastKnob = knobIdx;
-        S.sessVolLastTurn = S.tickCount;
+        S.sessVolLastTurn = nowMs();
         armBankDisplay();
         forceRedraw();
         return;
@@ -3722,7 +3723,7 @@ function _sessionKnobParam(knobIdx, d2) {
     S.sessVolLevel[knobIdx] = v;
     S.sessVolPending[knobIdx] = true;
     S.sessVolSaveOwed = true;
-    S.sessVolLastTurn = S.tickCount;
+    S.sessVolLastTurn = nowMs();
     S.sessVolLastKnob = knobIdx;       /* this strip's number swaps to its value */
     /* The MIXER PAGE is the read-out now — all 8 tracks in this mode, with the
      * turned knob's cell highlighted and its value in the header. A gauge popup
@@ -3747,7 +3748,7 @@ function _onCC_knobs(d1, d2) {
         if (S.globalMenuOpen || S.tapTempoOpen || S.confirmBake || S.confirmClearSession || S.confirmConvertToDrum || S.confirmConvertToConduct || S.menuInfoLines.length > 0 || S.confirmExport || S.exportDoneDialog || S.recordBlockedDialog || S.confirmStateWipe || S.bpmMoveInfo) return;
         const knobIdx = d1 - 71;
         S.knobTouched          = knobIdx;
-        S.knobTurnedTick[knobIdx] = S.tickCount;
+        S.knobTurnedTick[knobIdx] = nowMs();
         S.screenDirty = true;
 
         /* SESSION VIEW: knob N is track N's Schwung slot level.
@@ -3900,7 +3901,7 @@ function _onCC_knobs(d1, d2) {
                     S.knobLocked[knobIdx] = true;
                     const blocked = host_module_get_param('t' + t + '_beat_stretch_blocked') === '1';
                     if (dir === -1 && blocked) {
-                        S.stretchBlockedEndTick = S.tickCount + STRETCH_BLOCKED_TICKS;
+                        S.stretchBlockedEndTick = nowMs() + STRETCH_BLOCKED_MS;
                     } else {
                         S.drumLaneLength[t] = dir === 1 ? len * 2 : Math.floor(len / 2);
                         const maxPage = Math.max(0, Math.ceil(S.drumLaneLength[t] / 16) - 1);
@@ -4361,7 +4362,7 @@ function _onCC_knobs(d1, d2) {
                             S.knobLocked[knobIdx] = true;
                             /* For compress: check if DSP blocked due to step collision */
                             if (dir === -1 && host_module_get_param('t' + t + '_beat_stretch_blocked') === '1') {
-                                S.stretchBlockedEndTick = S.tickCount + STRETCH_BLOCKED_TICKS;
+                                S.stretchBlockedEndTick = nowMs() + STRETCH_BLOCKED_MS;
                             } else {
                                 /* Mirror DSP step rewrite in JS S.clipSteps */
                                 const steps = S.clipSteps[t][ac];

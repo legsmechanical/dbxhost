@@ -42,7 +42,7 @@ await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const { computePadNoteMap } = await import('../../ui/ui_drummodel.mjs');
 
-S.ledInitComplete = true; S.stateLoading = false; S.bootSplashTicks = 0;
+S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 0;
 for (let i = 0; i < 8; i++) { S.trackRoute[i] = 0; S.trackChannel[i] = 1; }
 S.bankParams = Array.from({ length: 8 }, () => Array.from({ length: 12 }, () => new Array(8).fill(0)));

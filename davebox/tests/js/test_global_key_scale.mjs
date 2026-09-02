@@ -78,7 +78,7 @@ function openOn(label) {
     if (!S.bankParams)
         S.bankParams = Array.from({ length: 8 }, () =>
             Array.from({ length: 8 }, () => new Array(16).fill(0)));
-    S.ledInitComplete = true; S.stateLoading = false; S.bootSplashTicks = 0;
+    S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
     S.awaitingProjectSelect = false; S.sessionView = false; S.shiftHeld = false;
     S.globalEnumPick = null; S.confirmXpose = false;
     S.xposePrevKey = null; S.xposePrevScale = null;

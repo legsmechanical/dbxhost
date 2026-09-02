@@ -62,6 +62,8 @@ globalThis.stipple_rect = (x, y, w, h, value, phase) => {
  * before any ui module body runs. (Same shape as test_picker_boot.mjs.) */
 async function main() {
 const { S } = await import('../../ui/ui_state.mjs');
+const { nowMs } = await import('../../ui/ui_clock.mjs');
+S.clockFollowTicks = true;   /* time in tests is driven by S.tickCount (ui_clock) */
 const { updateSessionLEDs } = await import('../../ui/ui_leds.mjs');
 const { PROJECT_COLORS } = await import('../../ui/ui_dialogs.mjs');
 const { White } = await import('/data/UserData/schwung/shared/constants.mjs');
@@ -86,7 +88,7 @@ function mkPicker(currentIdx, selectedIdx) {
     };
 }
 /* blink is (S.tickCount % 30) < 15 */
-function paintAt(tick) { S.tickCount = tick; updateSessionLEDs(); }
+function paintAt(tick) { S.tickCount = tick; S.clockMs = nowMs(); updateSessionLEDs(); }   /* the painter reads the tick's clock */
 
 S.ledInitComplete = true;
 
@@ -94,7 +96,7 @@ S.ledInitComplete = true;
 S.projectPadPicker = mkPicker(/*current*/1, /*selected*/0);
 paintAt(0);                                  /* blink phase ON */
 const onSel = pad(0), onCur = pad(1), onOther = pad(2);
-paintAt(20);                                 /* blink phase OFF */
+paintAt(10);                                 /* blink phase OFF: 10 ticks = 106 ms, the off half of the 190 ms blink */
 const offSel = pad(0), offCur = pad(1), offOther = pad(2);
 
 eq('selected pad shows its own colour on the blink', onSel, GREEN);
@@ -118,7 +120,7 @@ eq('an ordinary project does not blink', offOther, RED);
 /* ---- current and selected on the SAME pad (the common case on open) ---- */
 S.projectPadPicker = mkPicker(/*current*/1, /*selected*/1);
 paintAt(0);  const onBoth = pad(1);
-paintAt(20); const offBoth = pad(1);
+paintAt(10); const offBoth = pad(1);        /* 106 ms: the off half */
 eq('both-on-one-pad shows White on the blink', onBoth, White);
 eq('both-on-one-pad shows its own colour off the blink', offBoth, BLUE);
 (onBoth !== offBoth)

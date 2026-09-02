@@ -35,6 +35,7 @@ import {
  * confusing them is exactly what broke the bypass gesture. Used only for the
  * Back long-press, which davebox owns module-wide. */
 import { armBankDisplay, standDownBankDisplay, S as GS } from './ui_state.mjs';
+import { nowMs } from './ui_clock.mjs';
 /* ⚠ Deliberate import cycle with ui_render (it imports soundRender from here);
  * safe because both sides only call the binding inside function bodies, never
  * at module-init time — the same contract the ui_record ↔ ui_dsp_bridge cycle
@@ -496,7 +497,7 @@ const WRITES_PER_TICK = 2;      /* bound the per-tick SHM cost */
  * readback genuinely disagrees would otherwise be rewritten forever). */
 const INFLIGHT_CONFIRM_TICKS = 2;   /* let the mailbox serve before reading */
 const INFLIGHT_TRIES = 3;
-const TOUCH_HOLD_TICKS = 45;
+const TOUCH_HOLD_MS = 480;
 
 const S = {
     active: false,
@@ -3084,7 +3085,7 @@ function knobHudContext() {
  * fills it if this slot's assignment has never been read. */
 function armKnobHud(idx, reseed) {
     S.touchedIdx = idx;
-    S.touchedTick = S.tickCount;
+    S.touchedTick = nowMs();
     S.dirty = true;
     /* ⚠ NOT queued on S.pendingAction: that queue is latest-wins navigation, so
      * a touch arriving behind a pending screen change would drop its load and
@@ -4290,7 +4291,7 @@ function onKnobTurn(knobIdx, delta) {
     while (S.knobAccum[knobIdx] <= -sens) { steps--; S.knobAccum[knobIdx] += sens; }
 
     S.touchedIdx = knobIdx;
-    S.touchedTick = S.tickCount;
+    S.touchedTick = nowMs();
     S.turnedSinceTouch = true;
     S.dirty = true;
     if (!steps) return;
@@ -4949,7 +4950,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
      * calls soundExit() itself — and move sound mode's own navigation to the
      * RELEASE, which is where a tap is decided anyway. */
     if (d1 === 51 && d2 >= 64) {
-        GS.backPressTick = GS.tickCount;
+        GS.backPressTick = nowMs();
         GS.backHoldFired = false;
         return true;
     }
@@ -5234,7 +5235,7 @@ export function soundOnNote(status, d1, d2) {
     const next = on ? d1 : -1;
     if (next !== S.touchedIdx) {
         S.touchedIdx = next;
-        S.touchedTick = S.tickCount;
+        S.touchedTick = nowMs();
         S.touchHeld = on;
         S.turnedSinceTouch = false;
         S.dirty = true;
@@ -5481,7 +5482,7 @@ export function soundTick() {
     }
 
     if (S.touchedIdx >= 0 && !S.touchHeld &&
-        S.tickCount - S.touchedTick > TOUCH_HOLD_TICKS) {
+        GS.clockMs - S.touchedTick > TOUCH_HOLD_MS) {
         S.touchedIdx = -1;
         S.dirty = true;
     }

@@ -363,8 +363,8 @@ step('⚠ Shift+Note/Session opens neither sound mode nor the session buses', ()
      * different things and only the duration separates them, so the press
      * records a tick and the release decides. A handler that opened anything
      * from the press would make every hold a tap. */
-    if (!/shiftNoteSessionTick\s*=\s*S\.tickCount/.test(body))
-        throw new Error('the press no longer records its tick — tap and hold cannot be told ' +
+    if (!/shiftNoteSessionTick\s*=\s*nowMs\(\)/.test(body))
+        throw new Error('the press no longer records its time (ms off ui_clock) — tap and hold cannot be told ' +
                         'apart, so a hold would fire as a tap');
     if (/soundExit\(\)/.test(body))
         throw new Error('the closer is back: the gesture is a destination, not a toggle');

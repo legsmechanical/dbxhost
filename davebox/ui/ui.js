@@ -32,6 +32,7 @@ import {
 } from './ui_constants.mjs';
 
 import { S } from './ui_state.mjs';
+import { nowMs } from './ui_clock.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
 import { showActionPopup, readActiveSet, resolveSetLoadDecision } from './ui_persistence.mjs';
@@ -240,7 +241,7 @@ globalThis.init = function () {
      * launcher splash (dbxhost splash.hex contract) and the host's
      * "Loading <project>" screen — playing our own on top reads as two
      * products. State loads (S.stateLoading) still show the artwork. */
-    S.bootSplashTicks = 0;
+    S.bootSplashMs = 0;
 
     /* Detect set mismatch: compare active_set.txt UUID with what the DSP currently has loaded.
      * Works regardless of JS context lifetime — no cross-init state needed.
@@ -383,7 +384,7 @@ function _jogTouchRelease() {
 }
 
 function _onMidiInternalImpl(data) {
-    S.lastInputTick = S.tickCount;             /* the save rule's "quiet" clock */
+    S.lastInputTick = nowMs();                 /* the save rule's "quiet" clock */
     const status = data[0] | 0;
     const d1     = (data[1] ?? 0) | 0;
     const d2     = (data[2] ?? 0) | 0;

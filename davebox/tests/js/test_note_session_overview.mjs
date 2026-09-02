@@ -53,6 +53,7 @@ globalThis.host_exit_module = () => { exitCalls++; };
 async function main() {
 await import('../../ui/ui.js');
 const { S }   = await import('../../ui/ui_state.mjs');
+S.clockFollowTicks = true;   /* time in tests is driven by S.tickCount (ui_clock) */
 const cc_mod  = await import('../../ui/ui_input_cc.mjs');
 const snd     = await import('../../ui/ui_sound.mjs');
 const rec     = await import('../../ui/ui_record.mjs');
@@ -65,7 +66,7 @@ function rest() {
     if (!S.bankParams)
         S.bankParams = Array.from({ length: 8 }, () =>
             Array.from({ length: 8 }, () => new Array(16).fill(0)));
-    S.ledInitComplete = true; S.stateLoading = false; S.bootSplashTicks = 0;
+    S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
     S.awaitingProjectSelect = false; S.confirmStateWipe = false;
     S.sessionView = false; S.shiftHeld = false; S.activeBank = 0;
     S._modalSwallowCC = -1;

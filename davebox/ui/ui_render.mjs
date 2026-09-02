@@ -840,7 +840,7 @@ function drawSessionOverview() {
 /* Track-number row: active track has a box (1px border + 1px pad around number).
  * Muted = inverted. Soloed = blink. */
 function drawTrackRow(y) {
-    const soloBlinkOn = Math.floor(S.tickCount / 24) % 2 === 0;
+    const soloBlinkOn = Math.floor(S.clockMs / 150) % 2 === 0;
     for (let _t = 0; _t < NUM_TRACKS; _t++) {
         const cx = _t * 16 + 5;
         const bx = _t * 16 + 3;
@@ -909,7 +909,7 @@ function drawPerfModeOled() {
     print(4, 3, title, 0);
 
     /* ── Body (y 14-49): action popup → mod popup → mods list ── */
-    if (S.actionPopupEndTick >= 0 && S.tickCount <= S.actionPopupEndTick && S.actionPopupLines.length > 0) {
+    if (S.actionPopupEndTick >= 0 && S.clockMs <= S.actionPopupEndTick && S.actionPopupLines.length > 0) {
         const _n = S.actionPopupLines.length;
         if (_n >= 4) {
             print(4, 14, S.actionPopupLines[0], 1);
@@ -926,7 +926,7 @@ function drawPerfModeOled() {
         } else {
             print(4, 26, S.actionPopupLines[0], 1);
         }
-    } else if (S.perfModPopupEndTick >= 0 && S.tickCount <= S.perfModPopupEndTick && S.perfModPopupName) {
+    } else if (S.perfModPopupEndTick >= 0 && S.clockMs <= S.perfModPopupEndTick && S.perfModPopupName) {
         const px = Math.floor((128 - S.perfModPopupName.length * 6) / 2);
         print(px < 0 ? 0 : px, 26, S.perfModPopupName, 1);
     } else {
@@ -1543,7 +1543,7 @@ function drawUIBody() {
      * earlier and still wins the moment it opens.
      * NOT done by setting stateLoading: the picker's open condition in tick()
      * requires !stateLoading, so that would deadlock it closed. */
-    if (S.stateLoading || S.bootSplashTicks > 0 ||
+    if (S.stateLoading || S.bootSplashMs > 0 ||
             (S.awaitingProjectSelect && !S.projectPadPicker)) {
         /* Loading screen (v3): plain text, no artwork. The dAVEBOx splash
          * bitmap moved UP a level — it is the HOST session splash now
@@ -1740,7 +1740,7 @@ function drawUIBody() {
             const t   = S.activeTrack;
             const len = S.drumLaneLength[t];
             if (S.activeBank === 7) {
-                const _allBlink = Math.floor(S.tickCount / 24) % 2 === 0;
+                const _allBlink = Math.floor(S.clockMs / 150) % 2 === 0;
                 const _l1 = 'Clip length-' + (_allBlink ? 'ALL' : '   ') + ' lanes';
                 print(Math.floor((128 - 21 * 6) / 2), 4, _l1, 1);
             } else {
@@ -2076,7 +2076,7 @@ function drawUIBody() {
             drawKitPage(bankHeaderName(S.activeTrack, 0), cells, false, bankPageHints(0));
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 7 && !S.allLanesConfirmed) {
             /* ALL LANES confirmation screen */
-            drawKitHeader((Math.floor(S.tickCount / 24) % 2 === 0 ? 'ALL' : '   ') + ' LANES', false);
+            drawKitHeader((Math.floor(S.clockMs / 150) % 2 === 0 ? 'ALL' : '   ') + ' LANES', false);
             print(10, 18, 'Edits will affect', 1);
             print(10, 28, 'all lanes. Proceed?', 1);
             fill_rect(40, 44, 48, 16, 1);
@@ -2117,7 +2117,7 @@ function drawUIBody() {
             ];
             /* blinking "ALL" prefix: the header font is fixed-advance, so a
              * space prefix keeps "LANES" steady */
-            drawKitPage((Math.floor(S.tickCount / 24) % 2 === 0 ? 'ALL' : '   ') + ' LANES', cells, false,
+            drawKitPage((Math.floor(S.clockMs / 150) % 2 === 0 ? 'ALL' : '   ') + ' LANES', cells, false,
                         bankPageHints(7));
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 1) {
         /* Drum NOTE/NOTEFX bank: K1=Gate K2=Vel K3=Qnt */
@@ -2437,7 +2437,7 @@ function drawUIBody() {
          * stays local: it is this header's animation, not part of the name. */
         const _bnStatic = bankHeaderName(t, S.activeBank);
         const bankName  = S.activeBank === 7
-            ? (Math.floor(S.tickCount / 24) % 2 === 0 ? 'ALL' : '   ') + ' LANES'
+            ? (Math.floor(S.clockMs / 150) % 2 === 0 ? 'ALL' : '   ') + ' LANES'
             : _bnStatic;
         (S.activeBank === 5 || S.activeBank === 6 ? drawBankHeadingInverted : drawBankHeading)(bankName, false, true);
         /* info row sits at y=12 — 2px clear of the header rule on row 9 */

@@ -128,7 +128,7 @@ function reset(mode, bank) {
     if (snd.soundActive()) snd.soundExit();
     S.sessionView = false; S.globalMenuOpen = false;
     S.ledInitComplete = true;          /* the deferred entry lives past LED init */
-    S.stateLoading = false; S.bootSplashTicks = 0; S.awaitingProjectSelect = false;
+    S.stateLoading = false; S.bootSplashMs = 0; S.awaitingProjectSelect = false;
     S.loopHeld = false; S.shiftHeld = false;
     for (let t = 0; t < 8; t++) S.trackRoute[t] = 0;
     S.activeTrack = 2;
@@ -640,7 +640,7 @@ step('⭑⭑ THE FIX, end to end: a track left on SOUND + CONFIG comes back on i
     /* ...and the SCREEN follows on the tick, silently — arriving by load is not
      * a bank gesture, so the display window must stay shut. */
     S.bankSelectTick = -1;
-    S.ledInitComplete = true; S.stateLoading = false; S.bootSplashTicks = 0;
+    S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
     globalThis.tick();
     if (!snd.soundActive())
         throw new Error('the bank came back but the screen did not — BANKS[11] draws nothing');
@@ -678,7 +678,7 @@ function sessReset() {
     if (snd.soundActive()) snd.soundExit();
     S.globalMenuOpen = false;
     S.ledInitComplete = true;
-    S.stateLoading = false; S.bootSplashTicks = 0; S.awaitingProjectSelect = false;
+    S.stateLoading = false; S.bootSplashMs = 0; S.awaitingProjectSelect = false;
     S.loopHeld = false; S.shiftHeld = false; S.perfViewLocked = false;
     S.sessionView = true;
     S.sessKnobMode = 0;

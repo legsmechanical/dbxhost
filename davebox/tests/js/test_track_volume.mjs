@@ -74,7 +74,7 @@ const shift = (on) => cc(49, on ? 127 : 0);
 const vol   = (d) => cc(79, d > 0 ? d : 128 + d);   /* signed 7-bit delta */
 
 S.ledInitComplete = true;
-S.stateLoading = false; S.bootSplashTicks = 0; S.awaitingProjectSelect = false;
+S.stateLoading = false; S.bootSplashMs = 0; S.awaitingProjectSelect = false;
 S.sessionView = false; S.activeTrack = 2;
 for (let i = 0; i < 8; i++) { S.trackRoute[i] = 0; S.trackChannel[i] = 1; }
 /* init() builds bankParams on-device only; session-view tick stages read it */

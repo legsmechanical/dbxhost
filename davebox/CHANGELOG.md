@@ -17,6 +17,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Timing is in milliseconds now.** The splash, the popups and flashes, the
+  LED blinks and the hold gestures were counted in screen ticks, so when the
+  sequencer got faster they all shortened. They are clocked now, and retuned:
+  a step or Note/Session press counts as a hold after 120 ms (it was 200),
+  and blinks pulse every 150 ms (they were about 250).
 - **SOUND + CONFIG is a knob bank.** On its card and on the sound menu's
   screens (outside a module editor) the knobs are the track's levels: Volume,
   Pan, Send A, Send B and, on a Schwung track, Module Level. They record and

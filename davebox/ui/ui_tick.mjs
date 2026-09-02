@@ -20,14 +20,15 @@ import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter
 import {
     MoveNoteSession, MoveUndo, MoveLoop, MoveCopy, MoveRec, MoveCapture, MoveSample,
     LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
-    ACTION_POPUP_TICKS, BANK_PICKER_SETTLE_TICKS,
+    BANK_PICKER_SETTLE_TICKS,
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND,
-    POLL_INTERVAL, NO_NOTE_FLASH_TICKS,
+    POLL_INTERVAL,
     CC_GRADIENT_BASE, CC_GRADIENT_LEVELS, CC_GRADIENT_SCALARS
 } from './ui_constants.mjs';
 
 import { S, standDownBankDisplay } from './ui_state.mjs';
+import { nowMs } from './ui_clock.mjs';
 import { tickPrefetch, dget } from './ui_dsp_bridge.mjs';
 import { daveBoxTick } from './ui_daves.mjs';
 import { automationTick, automationPollWarnings } from './ui_automation.mjs';
@@ -64,11 +65,11 @@ import { soundActive, soundEnter, soundEnterMove, soundExit,
     soundConsumeCoRunRequest, soundShowMenu } from './ui_sound.mjs';
 import { enterMoveNativeCoRun } from './ui_corun.mjs';
 
-const BANK_DISPLAY_TICKS = 94;  /* ~1000ms at 94Hz device tick rate (was 392 = ~4.2s; constant was miscalibrated for 196Hz) */
-const KNOB_TURN_HIGHLIGHT_TICKS = 56;             /* ~600ms at 94Hz — highlight after turn without touch (was 120 @196Hz) */
-const STEP_HOLD_TICKS      = 19;   /* ~200ms at ~94Hz (device actual): below = tap, at/above = hold */
-const STEP_SAVE_HOLD_TICKS = 70;   /* ~750ms at 94Hz */
-const STEP_SAVE_FLASH_TICKS = 40;  /* ~200ms double-blink on step button LEDs after save */
+const BANK_DISPLAY_MS = 1000;
+const KNOB_TURN_HIGHLIGHT_MS = 600;               /* highlight after turn without touch */
+const STEP_HOLD_MS       = 120;  /* below = tap, at/above = hold (ms off ui_clock, never ticks). Josh 2026-09-02: shorter than the old 200 ms, longer than the accidental ~55 */
+const STEP_SAVE_HOLD_MS  = 750;
+const STEP_SAVE_FLASH_MS = 425;  /* double-blink on step button LEDs after save */
 /* How long a select HANDOFF may be in flight before the SELECT-BEFORE-LOAD
  * watchdog is allowed to treat the session as stranded again. ~15s at the 94Hz
  * device tick. The handoff itself measured ~6.5s on hardware (arm -> walk Move
@@ -80,7 +81,7 @@ const SELECT_HANDOFF_TICKS = 1400;
  * chain state is written. Comfortably longer than the gaps inside one turn
  * (encoder messages come in bursts), short enough that a save always lands well
  * before a user could act on the result. */
-const SESSVOL_SAVE_IDLE_TICKS = 47;
+const SESSVOL_SAVE_IDLE_MS = 500;
 /* Reused across polls — this runs every POLL_INTERVAL ticks and a fresh array
  * each time is garbage the tick doesn't need to make. */
 const _sessMaskScratch = new Array(8).fill(0);
@@ -365,8 +366,13 @@ export function _tickImpl() {
     }
 
     S.tickCount++;
+    {   /* THE CLOCK: one reading per tick; every UI duration is ms off it. */
+        const _prevMs = S.clockMs;
+        S.clockMs = nowMs();
+        const _dtMs = _prevMs > 0 ? Math.max(0, S.clockMs - _prevMs) : 0;
+        if (S.bootSplashMs > 0) S.bootSplashMs = Math.max(0, S.bootSplashMs - _dtMs);
+    }
     tickPrefetch();                              /* the tick's one read — see ui_dsp_bridge */
-    if (S.bootSplashTicks > 0) S.bootSplashTicks--;
     checkBackHold();   /* self-managed Back: fire suspend once a held Back crosses the long-press threshold */
     checkShiftNoteHold();  /* Shift+Note/Session: the HOLD fires at the threshold, not on release */
 
@@ -1136,16 +1142,16 @@ export function _tickImpl() {
          * this window — freezing the window here as well made two mechanisms for
          * one behaviour, and a mutation that deleted either was invisible
          * because the other still held the screen. One reason, one place. */
-        if (S.bankSelectTick >= 0 && (S.tickCount - S.bankSelectTick) >= BANK_DISPLAY_TICKS) {
+        if (S.bankSelectTick >= 0 && (S.clockMs - S.bankSelectTick) >= BANK_DISPLAY_MS) {
             standDownBankDisplay();
             S.screenDirty = true;
         }
         /* Overlay expiry: clear timer here so drawUI() can gate on flag alone */
-        if (S.stretchBlockedEndTick >= 0 && S.tickCount >= S.stretchBlockedEndTick) {
+        if (S.stretchBlockedEndTick >= 0 && S.clockMs >= S.stretchBlockedEndTick) {
             S.stretchBlockedEndTick = -1;
             S.screenDirty = true;
         }
-        if (S.actionPopupEndTick >= 0 && S.tickCount >= S.actionPopupEndTick) {
+        if (S.actionPopupEndTick >= 0 && S.clockMs >= S.actionPopupEndTick) {
             S.actionPopupEndTick = -1;
             S.screenDirty = true;
         }
@@ -1154,22 +1160,22 @@ export function _tickImpl() {
          * actually on the knob, the highlight (and enum overlay) must persist
          * until the touch is released, so skip the timeout in that case. */
         if (S.knobTouched >= 0 && S.knobPhysIdx < 0 && S.knobTurnedTick[S.knobTouched] >= 0 &&
-                (S.tickCount - S.knobTurnedTick[S.knobTouched]) >= KNOB_TURN_HIGHLIGHT_TICKS) {
+                (S.clockMs - S.knobTurnedTick[S.knobTouched]) >= KNOB_TURN_HIGHLIGHT_MS) {
             S.knobTouched = -1;
             S.screenDirty = true;
         }
-        if (S.noNoteFlashEndTick >= 0 && S.tickCount >= S.noNoteFlashEndTick) {
+        if (S.noNoteFlashEndTick >= 0 && S.clockMs >= S.noNoteFlashEndTick) {
             S.noNoteFlashEndTick = -1;
             S.screenDirty = true;
         }
-        if (S.stepSaveFlashEndTick >= 0 && S.tickCount >= S.stepSaveFlashEndTick) {
+        if (S.stepSaveFlashEndTick >= 0 && S.clockMs >= S.stepSaveFlashEndTick) {
             S.stepSaveFlashEndTick   = -1;
             S.stepSaveFlashStartTick = -1;
         }
         /* Session view hold-to-save: fire exactly when threshold reached, not on release */
         if (S.sessionStepHeld >= 0) {
             const _ssh = S.sessionStepHeld;
-            if (S.tickCount - S.stepBtnPressedTick[_ssh] >= STEP_SAVE_HOLD_TICKS) {
+            if (S.clockMs - S.stepBtnPressedTick[_ssh] >= STEP_SAVE_HOLD_MS) {
                 const _ctx = S.sessionStepHeldCtx;
                 S.sessionStepHeld    = -1;
                 S.sessionStepHeldCtx = 0;
@@ -1199,8 +1205,8 @@ export function _tickImpl() {
                     host_module_set_param('snap_save', _ssh + ' ' + mStr + ' ' + sStr + ' ' + dStr);
                     showActionPopup('MUTE STATE', 'SAVED');
                 }
-                S.stepSaveFlashStartTick = S.tickCount;
-                S.stepSaveFlashEndTick   = S.tickCount + STEP_SAVE_FLASH_TICKS;
+                S.stepSaveFlashStartTick = S.clockMs;
+                S.stepSaveFlashEndTick   = S.clockMs + STEP_SAVE_FLASH_MS;
                 forceRedraw();
             }
         }
@@ -1315,7 +1321,7 @@ export function _tickImpl() {
              * inside one gesture, short enough that letting go and pulling the
              * battery still keeps the move. */
             if (S.sessVolSaveOwed && !_wrote && !S.sessVolPending.some(Boolean) &&
-                ((S.tickCount - S.sessVolLastTurn) >= SESSVOL_SAVE_IDLE_TICKS ||
+                ((S.clockMs - S.sessVolLastTurn) >= SESSVOL_SAVE_IDLE_MS ||
                  S.pendingSuspendSave)) {
                 S.sessVolSaveOwed = false;
                 engineSaveState();
@@ -1638,7 +1644,7 @@ export function _tickImpl() {
         /* Step hold threshold: once elapsed, close the tap window so release won't toggle.
          * Also auto-assign empty step now so knobs work immediately in step edit. */
         if (S.heldStep >= 0 && S.heldStepBtn >= 0 && S.stepBtnPressedTick[S.heldStepBtn] >= 0 &&
-                ((S.tickCount - S.stepBtnPressedTick[S.heldStepBtn]) >= STEP_HOLD_TICKS ||
+                ((S.clockMs - S.stepBtnPressedTick[S.heldStepBtn]) >= STEP_HOLD_MS ||
                  S.stepHoldPromote)) {           /* a lock was dialled: that IS a hold */
             S.stepHoldPromote = false;
             S.stepBtnPressedTick[S.heldStepBtn] = -1;
@@ -1783,11 +1789,11 @@ export function _tickImpl() {
         } else if (S.recordScheduledStop || S.recordPendingPage) {
             /* recordScheduledStop = waiting for end-of-page to stop; recordPendingPage =
              * waiting for next page boundary for DSP to flip recording=1. Both blink. */
-            setButtonLED(MoveRec, Math.floor(S.tickCount / 8) % 2 === 0 ? Red : LED_OFF);
+            setButtonLED(MoveRec, Math.floor(S.clockMs / 50) % 2 === 0 ? Red : LED_OFF);
         } else if (S.mergeNoticePending) {
             /* Live Merge NOTICE up, waiting for you to press Rec to start the
              * count-in: flash red to draw the eye to the Record button. */
-            setButtonLED(MoveRec, Math.floor(S.tickCount / 12) % 2 === 0 ? Red : LED_OFF);
+            setButtonLED(MoveRec, Math.floor(S.clockMs / 75) % 2 === 0 ? Red : LED_OFF);
         } else if (S.dspMergeState === 2 || S.dspMergeState === 3) {
             /* Live Merge capturing (Shift+Sample): green. */
             setButtonLED(MoveRec, Green);
@@ -1852,12 +1858,12 @@ export function _tickImpl() {
          * ambient otherwise. Blinking on stopped+non-empty (a no-op) misled. */
         setButtonLED(MoveCapture,
             S.captureArmed
-                ? ((Math.floor(S.tickCount / 24) % 2) ? White : LED_OFF)
+                ? ((Math.floor(S.clockMs / 150) % 2) ? White : LED_OFF)
                 : DarkGrey);
         {
             const _muted      = S.trackMuted[S.activeTrack];
             const _soloed     = S.trackSoloed[S.activeTrack];
-            const _muteBlink  = Math.floor(S.tickCount / 24) % 2;
+            const _muteBlink  = Math.floor(S.clockMs / 150) % 2;
             setButtonLED(MoveMute, _muted ? 124 : (_soloed ? (_muteBlink ? 124 : 0) : 16));
         }
         /* Contextual button LEDs: dim available indicator (16) on actionable buttons. */
@@ -1877,14 +1883,14 @@ export function _tickImpl() {
              * POLL_INTERVAL to override Move firmware's pass-through writes,
              * which is why it is a force rather than a plain set. */
             setButtonLED(MoveNoteSession,
-                         (Math.floor(S.tickCount / 24) % 2) ? White : LED_OFF,
+                         (Math.floor(S.clockMs / 150) % 2) ? White : LED_OFF,
                          (S.tickCount % POLL_INTERVAL) === 0);
         } else if (S.globalMenuOpen) {
             /* Menu open: steady-lit (no blink) — Back exits the menu now, so the
              * button doesn't need to flash to advertise itself as the exit. */
             setButtonLED(MoveNoteSession, White);
         } else if (S.tapTempoOpen) {
-            const _exitBlink = (Math.floor(S.tickCount / 24) % 2) ? 16 : LED_OFF;
+            const _exitBlink = (Math.floor(S.clockMs / 150) % 2) ? 16 : LED_OFF;
             setButtonLED(MoveNoteSession, _exitBlink);
         }
         setButtonLED(MoveUndo,        16);
@@ -1897,12 +1903,12 @@ export function _tickImpl() {
         /* Shift-flash: buttons with a Shift-modified function blink 16/OFF while Shift is held.
          * Sample uses DarkGrey/OFF since index 16 (RoyalBlue) shows wrong on that button. */
         if (S.shiftHeld) {
-            const _sf  = (Math.floor(S.tickCount / 24) % 2) ? 16 : LED_OFF;
+            const _sf  = (Math.floor(S.clockMs / 150) % 2) ? 16 : LED_OFF;
             setButtonLED(MoveNoteSession, _sf);
             /* Shift+Rec = Live Merge; blink Rec only while merge is idle (an
              * active merge already owns the LED with its red/green state). */
             if (S.dspMergeState === 0 && !S.recordArmed)
-                setButtonLED(MoveRec, (Math.floor(S.tickCount / 24) % 2) ? Red : LED_OFF);
+                setButtonLED(MoveRec, (Math.floor(S.clockMs / 150) % 2) ? Red : LED_OFF);
             setButtonLED(MoveUndo,        _sf);
             setButtonLED(MoveCopy,        _sf);
             if (S.sessionView)  setButtonLED(MoveLoop, _sf);
@@ -1915,8 +1921,8 @@ export function _tickImpl() {
             else updateSceneMapLEDs();
             /* Scene-merge count-in flash overrides the scene grid for the lead-in bar. */
             if (S.mergeCountingIn && S.countInQuarterTicks > 0) {
-                const elapsed  = S.tickCount - S.countInBeatStartTick;
-                const flashOn  = (elapsed % S.countInQuarterTicks) < (S.countInQuarterTicks >> 3);
+                const elapsed  = S.clockMs - S.countInBeatStartTick;
+                const flashOn  = (elapsed % S.countInQuarterTicks) < (S.countInQuarterTicks / 8);
                 const flashClr = flashOn ? White : LED_OFF;
                 for (let _i = 0; _i < 16; _i++) setLED(16 + _i, flashClr);
             }
@@ -1925,8 +1931,8 @@ export function _tickImpl() {
             /* Count-in flash: blink all step buttons white at quarter-note rate
              * (recording count-in, or a Track-View solo-merge count-in). */
             if (((S.recordArmed && S.recordCountingIn) || S.mergeCountingIn) && S.countInQuarterTicks > 0) {
-                const elapsed  = S.tickCount - S.countInBeatStartTick;
-                const flashOn  = (elapsed % S.countInQuarterTicks) < (S.countInQuarterTicks >> 3);
+                const elapsed  = S.clockMs - S.countInBeatStartTick;
+                const flashOn  = (elapsed % S.countInQuarterTicks) < (S.countInQuarterTicks / 8);
                 const flashClr = flashOn ? White : LED_OFF;
                 for (let _i = 0; _i < 16; _i++) setLED(16 + _i, flashClr);
             }
@@ -1943,7 +1949,7 @@ export function _tickImpl() {
 
         /* Solo blink: mark dirty when blink toggles and any track is soloed */
         if (S.trackSoloed.some(function(s) { return s; })) {
-            const _sb = Math.floor(S.tickCount / 24) % 2;
+            const _sb = Math.floor(S.clockMs / 150) % 2;
             if (_sb !== S.lastSoloBlink) { S.lastSoloBlink = _sb; S.screenDirty = true; }
         } else {
             S.lastSoloBlink = null;
@@ -1951,7 +1957,7 @@ export function _tickImpl() {
 
         /* Loop jog OOB view: revert to pages view after ~500ms of inactivity */
         if (S.loopJogActive && S.loopHeld && S.loopJogLastTick !== undefined) {
-            if ((S.tickCount - S.loopJogLastTick) > 70) {
+            if ((S.clockMs - S.loopJogLastTick) > 750) {
                 S.loopJogActive = false;
                 S.screenDirty = true;
             }
@@ -1963,7 +1969,7 @@ export function _tickImpl() {
 
         /* ALL LANES blink: mark dirty when "ALL" blink toggles (bank header + loop-held overlay) */
         if (S.activeBank === 7 && S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
-            const _ab = Math.floor(S.tickCount / 24) % 2;
+            const _ab = Math.floor(S.clockMs / 150) % 2;
             if (_ab !== S.lastAllLanesBlink) { S.lastAllLanesBlink = _ab; S.screenDirty = true; }
         } else {
             S.lastAllLanesBlink = null;
@@ -2021,10 +2027,9 @@ export function _tickImpl() {
             const pr = S.pendingPrerollNote;
             const _prLive = S.liveActiveNotes.has(pr.laneNote);
             if (pr.isDrum) {
-                const tps = S.drumLaneTPS[pr.track] || 24;
-                const elapsed = S.tickCount - S.transportStartTick;
+                const elapsed = S.clockMs - S.transportStartTick;
                 /* Wait for note released AND one step elapsed (skip first loop pass to avoid double-trigger) */
-                if (!_prLive && elapsed >= tps) {
+                if (!_prLive && elapsed >= 15000 / Math.max(20, S.bpm || 120)) {
                     S.pendingPrerollNote = null;
                     const _ls = S.drumLaneLoopStart[pr.track] | 0;
                     if (S.drumLaneSteps[pr.track][pr.lane][_ls] === '0') {
@@ -2054,10 +2059,9 @@ export function _tickImpl() {
                 S.pendingPrerollGate        = null;
             } else {
             const _prLive = pns.some(function(n) { return S.liveActiveNotes.has(n.pitch); });
-            const tps = (S.clipTPS[pr.track] && S.clipTPS[pr.track][pr.clip]) || 24;
-            const elapsed = S.tickCount - S.transportStartTick;
-            /* Wait for all chord notes released AND one step elapsed */
-            if (!_prLive && elapsed >= tps) {
+            const elapsed = S.clockMs - S.transportStartTick;
+            /* Wait for all chord notes released AND one step elapsed (a 16th at tempo) */
+            if (!_prLive && elapsed >= 15000 / Math.max(20, S.bpm || 120)) {
                 S.pendingPrerollNotes = [];
                 const _ls = S.clipLoopStart[pr.track][pr.clip] | 0;
                 if (S.clipSteps[pr.track][pr.clip][_ls] === 0) {
@@ -2237,7 +2241,7 @@ export function _tickImpl() {
      * (most alt banks) and stepIntervalMode (Arp Steps overlay on melodic 4/5). */
     if (altIndicatorActive(S.activeTrack, S.activeBank) ||
             (!S.sessionView && S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT)) {
-        const _ph = Math.floor(S.tickCount / 24) % 2;
+        const _ph = Math.floor(S.clockMs / 150) % 2;
         if (_ph !== S._altBlinkPhase) { S._altBlinkPhase = _ph; S.screenDirty = true; }
     }
     if (S.screenDirty && !isSuspended) { S.screenDirty = false; drawUI(); }

@@ -116,7 +116,7 @@ const tick = (n) => { for (let i = 0; i < n; i++) snd.soundTick(); };
 
 GS.sessionView = false;
 for (let i = 0; i < 8; i++) GS.trackRoute[i] = 0;
-GS.activeTrack = 4; GS.stateLoading = false; GS.bootSplashTicks = 0;
+GS.activeTrack = 4; GS.stateLoading = false; GS.bootSplashMs = 0;
 
 function openSynth() {
     snd.soundEnter(4, 4); tick(4);

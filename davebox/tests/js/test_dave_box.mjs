@@ -47,7 +47,7 @@ const daves = await import('../../ui/ui_daves.mjs');
 const splash = await import('../../ui/ui_splash.mjs');
 const menuMod = await import('../../ui/ui_menu.mjs');
 
-S.ledInitComplete = true; S.stateLoading = false; S.bootSplashTicks = 0;
+S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 2;
 for (let i = 0; i < 8; i++) { S.trackRoute[i] = 0; S.trackChannel[i] = 1; }
 S.bankParams = Array.from({ length: 8 }, () =>

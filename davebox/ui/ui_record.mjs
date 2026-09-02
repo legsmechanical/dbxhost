@@ -12,6 +12,7 @@ import {
 } from './ui_constants.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { S } from './ui_state.mjs';
+import { nowMs } from './ui_clock.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { invalidateLEDCache, effectiveClip, forceRedraw } from './ui_leds.mjs';
 import { clipHasContent } from './ui_pure.mjs';
@@ -177,7 +178,7 @@ export function registerTapTempo(padNote) {
             host_module_set_param('bpm', String(S.tapTempoBpm));
         }
     }
-    S.tapTempoFlashTick = S.tickCount;
+    S.tapTempoFlashTick = nowMs();
     S.tapTempoFlashPad  = padNote;
     S.screenDirty = true;
 }

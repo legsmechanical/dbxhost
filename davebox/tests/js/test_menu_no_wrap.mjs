@@ -89,7 +89,7 @@ step('menu_nav: an interior step still moves (clamp is not a freeze)', () => {
 
 step('global menu (real dispatch): enum edit clamps both ways', () => {
     S.ledInitComplete = true;
-    S.stateLoading = false; S.bootSplashTicks = 0; S.awaitingProjectSelect = false;
+    S.stateLoading = false; S.bootSplashMs = 0; S.awaitingProjectSelect = false;
     S.sessionView = false;
     S.globalMenuOpen = true;
     S.globalMenuItems = [{ type: 'enum', options: ['X', 'Y', 'Z'], label: 'T' }];

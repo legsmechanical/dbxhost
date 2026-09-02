@@ -81,11 +81,11 @@ S.trackRoute    = [1, 1, 0, 0, 2, 0, 0, 0];   /* 1=Move, 0=Schwung, 2=EXT */
 S.sessVolLevel  = [1.0, 0.5, 2.0, 0.0, 0.9, -1, 0.25, 1.5];
 S.actionPopupEndTick = -1;
 /* ⚠ Clear the BOOT gate. A fresh state is mid-launch — stateLoading /
- * bootSplashTicks / awaitingProjectSelect make drawUI paint "LOADING" and
+ * bootSplashMs / awaitingProjectSelect make drawUI paint "LOADING" and
  * return, so every assertion below would measure the splash and quietly pass or
  * fail for the wrong reason. (It did: the first run of this test reported "0
  * faders" and accused working code.) */
-S.stateLoading = false; S.bootSplashTicks = 0; S.awaitingProjectSelect = false;
+S.stateLoading = false; S.bootSplashMs = 0; S.awaitingProjectSelect = false;
 
 function draw() { globalThis.clear_screen(); render.drawUI(); }
 

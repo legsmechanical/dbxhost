@@ -1,9 +1,9 @@
 import { S } from './ui_state.mjs';
 import {
     NUM_STEPS, NUM_TRACKS, LED_OFF, LEDS_PER_FRAME,
-    TRACK_COLORS, TRACK_DIM_COLORS, TRACK_PAD_BASE, SCENE_BTN_FLASH_TICKS,
+    TRACK_COLORS, TRACK_DIM_COLORS, TRACK_PAD_BASE, SCENE_BTN_FLASH_MS,
     PAD_MODE_DRUM, BANKS,
-    POLL_INTERVAL, TAP_TEMPO_FLASH_TICKS, PARAM_LED_BANKS,
+    POLL_INTERVAL, TAP_TEMPO_FLASH_MS, PARAM_LED_BANKS,
     SEQ8_NAV_FLAGS
 } from './ui_constants.mjs';
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
@@ -88,7 +88,7 @@ export function updateStepLEDs() {
             !(S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7 && !S.allLanesConfirmed)) {
         const t = S.activeTrack;
         const tCol = trackColor(t);
-        const pulsOn = S.playing ? S.flashSixteenth : (Math.floor(S.tickCount / 24) % 2);
+        const pulsOn = S.playing ? S.flashSixteenth : (Math.floor(S.clockMs / 150) % 2);
         const gestureHeldPage = (S.loopGestureStart >= 0 && S.loopGestureTrack === t) ? S.loopGestureStart : -1;
         if (S.trackPadMode[t] === PAD_MODE_DRUM && S.activeBank !== 6) {
             const lane = S.activeDrumLane[t];
@@ -233,7 +233,7 @@ export function updateStepLEDs() {
         /* Copy-source blink: step-to-step copy waiting for destination (drum lane) */
         if (S.copyHeld && S.copySrc && (S.copySrc.kind === 'step' || S.copySrc.kind === 'cut_step') && Math.floor(S.copySrc.absStep / 16) === page) {
             const btnIdx = S.copySrc.absStep % 16;
-            setLED(16 + btnIdx, (Math.floor(S.tickCount / 24) % 2) ? White : LED_OFF);
+            setLED(16 + btnIdx, (Math.floor(S.clockMs / 150) % 2) ? White : LED_OFF);
         }
         return;
     }
@@ -285,7 +285,7 @@ export function updateStepLEDs() {
             }
             S.ccGradKey = key;
         }
-        const _blip = (S.tickCount % 47) < 4;
+        const _blip = (S.clockMs % 300) < 25;
         const baseCC = pg * 16;
         for (let i = 0; i < 16; i++) {
             const absStep = baseCC + i;
@@ -321,7 +321,7 @@ export function updateStepLEDs() {
      * 2026-09-01), alternating with the step's underlying state so content
      * under the cursor stays readable. Transport is stopped in this mode, so
      * it never fights the playhead white. */
-    const _srCursorOn = S.stepRecActive && (Math.floor(S.tickCount / 12) % 2 === 0);
+    const _srCursorOn = S.stepRecActive && (Math.floor(S.clockMs / 75) % 2 === 0);
     for (let i = 0; i < 16; i++) {
         const absStep = base + i;
         let color;
@@ -373,7 +373,7 @@ export function updateStepLEDs() {
     /* Copy-source blink: step-to-step copy waiting for destination */
     if (S.copyHeld && S.copySrc && (S.copySrc.kind === 'step' || S.copySrc.kind === 'cut_step') && Math.floor(S.copySrc.absStep / 16) === page) {
         const btnIdx = S.copySrc.absStep % 16;
-        setLED(16 + btnIdx, (Math.floor(S.tickCount / 24) % 2) ? White : LED_OFF);
+        setLED(16 + btnIdx, (Math.floor(S.clockMs / 150) % 2) ? White : LED_OFF);
     }
 
 }
@@ -390,7 +390,7 @@ function paintProjectPickerLEDs() {
     if (!p) return false;
     /* Rename keyboard owns the pads while open — do not fight it. */
     if (p.renameActive) return true;
-    const blink = (S.tickCount % 30) < 15;
+    const blink = (S.clockMs % 190) < 95;
     const menuK = p.menu ? p.menu.k : (p.confirmNew ? p.confirmNew.k : -1);
     for (let i = 0; i < 32; i++) {
         let color = LED_OFF;
@@ -437,7 +437,7 @@ export function updateSessionLEDs() {
         for (let i = 0; i < 32; i++) {
             const note  = TRACK_PAD_BASE + i;
             const flash = S.tapTempoFlashTick >= 0 &&
-                          S.tickCount - S.tapTempoFlashTick < TAP_TEMPO_FLASH_TICKS;
+                          S.clockMs - S.tapTempoFlashTick < TAP_TEMPO_FLASH_MS;
             cachedSetLED(note, flash ? DarkBlue : DarkGrey);
         }
         return;
@@ -476,7 +476,7 @@ export function updateSessionLEDs() {
                 const isSrcClip     = (S.copySrc.kind === 'clip'      || S.copySrc.kind === 'cut_clip')      && S.copySrc.track === t && S.copySrc.clip === sceneIdx;
                 const isSrcRow      = (S.copySrc.kind === 'row'       || S.copySrc.kind === 'cut_row')       && S.copySrc.row === sceneIdx;
                 const isSrcDrumClip = (S.copySrc.kind === 'drum_clip' || S.copySrc.kind === 'cut_drum_clip') && S.copySrc.track === t && S.copySrc.clip === sceneIdx;
-                if (isSrcClip || isSrcRow || isSrcDrumClip) color = (Math.floor(S.tickCount / 24) % 2) ? White : LED_OFF;
+                if (isSrcClip || isSrcRow || isSrcDrumClip) color = (Math.floor(S.clockMs / 150) % 2) ? White : LED_OFF;
             }
             /* Single-clip merge / capture placement: blink the track's EMPTY
              * clips (the viable destinations); leave every other clip at its
@@ -484,7 +484,7 @@ export function updateSessionLEDs() {
             const _placeTrack = S.mergeSoloPlacement >= 0 ? S.mergeSoloPlacement
                               : S.capturePlaceTrack >= 0  ? S.capturePlaceTrack : -1;
             if (_placeTrack >= 0 && t === _placeTrack && !hasContent)
-                color = (Math.floor(S.tickCount / 24) % 2) ? LightGrey : LED_OFF;
+                color = (Math.floor(S.clockMs / 150) % 2) ? LightGrey : LED_OFF;
             cachedSetLED(note, color);
         }
     }
@@ -565,7 +565,7 @@ export function updateTrackLEDs() {
         for (let i = 0; i < 32; i++) {
             const note  = TRACK_PAD_BASE + i;
             const flash = S.tapTempoFlashTick >= 0 &&
-                          S.tickCount - S.tapTempoFlashTick < TAP_TEMPO_FLASH_TICKS;
+                          S.clockMs - S.tapTempoFlashTick < TAP_TEMPO_FLASH_MS;
             cachedSetLED(note, flash ? DarkBlue : DarkGrey);
         }
         return;
@@ -701,7 +701,7 @@ export function updateTrackLEDs() {
                     /* Copy source blink */
                     if (S.copySrc && (S.copySrc.kind === 'drum_lane' || S.copySrc.kind === 'cut_drum_lane') &&
                             S.copySrc.track === t && S.copySrc.lane === lane) {
-                        color = (Math.floor(S.tickCount / 24) % 2) ? White : LED_OFF;
+                        color = (Math.floor(S.clockMs / 150) % 2) ? White : LED_OFF;
                     }
                     /* Persistent latch highlight: Rpt1 + Rpt2 latched lanes
                      * stay Cyan regardless of current drumPerformMode (mirrors
@@ -811,14 +811,14 @@ export function updateTrackLEDs() {
         const sceneIdx = S.sceneRow + row;
         let color;
         if (S.sessionView) {
-            const sincePress = S.sceneBtnFlashTick[idx] >= 0 ? (S.tickCount - S.sceneBtnFlashTick[idx]) : 999;
-            color = sincePress < SCENE_BTN_FLASH_TICKS ? White : LED_OFF;
+            const sincePress = S.sceneBtnFlashTick[idx] >= 0 ? (S.clockMs - S.sceneBtnFlashTick[idx]) : 99999;
+            color = sincePress < SCENE_BTN_FLASH_MS ? White : LED_OFF;
         } else {
             const t         = S.activeTrack;
             const focused   = effectiveClip(t);
             const isFocused = sceneIdx === focused;
             const isPlaying = S.trackClipPlaying[t] && S.trackActiveClip[t] === sceneIdx;
-            const slowPulse = Math.floor(S.tickCount / 98) % 2;
+            const slowPulse = Math.floor(S.clockMs / 600) % 2;
             const isWillRelaunch = S.trackWillRelaunch[t] && S.trackActiveClip[t] === sceneIdx;
             if (isPlaying) {
                 color = S.flashEighth ? trackColor(t) : trackDimColor(t);
@@ -837,7 +837,7 @@ export function updateTrackLEDs() {
             const isSrcRow      = (S.copySrc.kind === 'row'       || S.copySrc.kind === 'cut_row')       && S.copySrc.row === sceneIdx;
             const isSrcClip     = (S.copySrc.kind === 'clip'      || S.copySrc.kind === 'cut_clip')      && S.copySrc.track === S.activeTrack && S.copySrc.clip === sceneIdx;
             const isSrcDrumClip = (S.copySrc.kind === 'drum_clip' || S.copySrc.kind === 'cut_drum_clip') && S.copySrc.track === S.activeTrack && S.copySrc.clip === sceneIdx;
-            if (isSrcRow || isSrcClip || isSrcDrumClip) color = (Math.floor(S.tickCount / 24) % 2) ? White : LED_OFF;
+            if (isSrcRow || isSrcClip || isSrcDrumClip) color = (Math.floor(S.clockMs / 150) % 2) ? White : LED_OFF;
         }
         cachedSetButtonLED(40 + idx, color);
     }
@@ -920,7 +920,7 @@ export function updateTrackLEDs() {
      * which — the colour is the whole point of the hint, and half the duty cycle
      * was spending it on nothing. */
     if (!S.sessionView && S.shiftHeld && S.shiftTrackLEDActive) {
-        const _ttPhase = (Math.floor(S.tickCount / 24) % 2) === 1;
+        const _ttPhase = (Math.floor(S.clockMs / 150) % 2) === 1;
         for (let i = 0; i < NUM_TRACKS; i++) {
             const color = (i === S.activeTrack)
                 ? trackColor(i)
@@ -930,10 +930,10 @@ export function updateTrackLEDs() {
     }
 
     /* Hold-save double-blink: override step button LEDs in any view */
-    if (S.stepSaveFlashEndTick >= 0 && S.tickCount < S.stepSaveFlashEndTick &&
+    if (S.stepSaveFlashEndTick >= 0 && S.clockMs < S.stepSaveFlashEndTick &&
             S.stepSaveFlashStartTick >= 0) {
-        const elapsed = S.tickCount - S.stepSaveFlashStartTick;
-        if (Math.floor(elapsed / 10) % 2 === 0) {
+        const elapsed = S.clockMs - S.stepSaveFlashStartTick;
+        if (Math.floor(elapsed / 106) % 2 === 0) {
             for (let i = 0; i < 16; i++) setLED(16 + i, White);
         }
     }
