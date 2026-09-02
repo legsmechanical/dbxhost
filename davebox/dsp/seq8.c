@@ -2215,6 +2215,25 @@ static void pfx_q_fire(play_fx_t *fx, uint64_t now) {
     if (g_inst) g_inst->in_queue_drain = 0;
 }
 
+/* Drop a track's queued events, but SEND the note-offs among them first.
+ *
+ * A note-off whose gate has not elapsed is not sent by pfx_note_off — it is
+ * queued for the gate's end. So a stop (or a route switch) that silences
+ * the track and then simply empties the queue throws away the very note-off
+ * that silencing produced, and the synth holds the note forever. ROUTE_MOVE
+ * avoids this by rescheduling the queue to fire from render_block (Move
+ * voices need that); the other routes deliver immediately, so the offs go
+ * now, direct to the output (pfx_emit: no arp/looper hooks, refcount-gated
+ * like any other off), and everything else in the queue is discarded. */
+static void pfx_q_drop_keep_offs(play_fx_t *fx) {
+    for (int i = 0; i < fx->event_count; i++) {
+        uint8_t st = fx->events[i].msg[0] & 0xF0;
+        if (st == 0x80 || (st == 0x90 && fx->events[i].msg[2] == 0))
+            pfx_emit(fx, fx->events[i].msg[0], fx->events[i].msg[1], fx->events[i].msg[2]);
+    }
+    fx->event_count = 0;
+}
+
 #include "seq8_tonality.c"
 
 /* Reference R = root pitch-class at MIDI octave 4 (eff key + 60). Set the live

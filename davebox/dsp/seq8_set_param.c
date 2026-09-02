@@ -20,7 +20,7 @@ static void silence_track_from_set_param(seq8_instance_t *inst, seq8_track_t *tr
             fx->events[ei].fire_at = fx->sample_counter;
         memset(fx->active_notes, 0, sizeof(fx->active_notes));
     } else {
-        fx->event_count = 0;
+        pfx_q_drop_keep_offs(fx);       /* the queued note-offs go NOW */
         memset(fx->active_notes, 0, sizeof(fx->active_notes));
     }
 }
@@ -353,7 +353,10 @@ static void ext_transport_stop(seq8_instance_t *inst) {
                 fx->events[ei].fire_at = fx->sample_counter;
             memset(fx->active_notes, 0, sizeof(fx->active_notes));
         } else {
-            fx->event_count = 0;
+            /* Chain / external: a note whose gate is still running has its
+             * note-off QUEUED, not sent — dropping the queue here left the
+             * synth holding it (stop mid-gate on a chain synth = hung note). */
+            pfx_q_drop_keep_offs(fx);
             memset(fx->active_notes, 0, sizeof(fx->active_notes));
         }
         inst->tracks[t].clips[inst->tracks[t].active_clip].clock_shift_pos = 0;
