@@ -122,6 +122,7 @@ const T = 0, C = 0, SLOT = 1;
     automationParamEdit(T, C, SLOT, 'fx1:cutoff', '0.5', '0.25');
     tick();
     check(sets.some(x => x === 't0_pa_hold=1:fx1:cutoff'), '⚠ dialling a lock tells the DSP to HOLD the target');
+    check(S.stepHoldPromote === true, '⚠ and promotes the step press to a HOLD, so a fast release cannot tap-toggle the note');
     check(sets.indexOf('t0_pa_hold=1:fx1:cutoff') < sets.findIndex(x => x.startsWith('t0_pa_set2')), 'before the lock write');
     for (let i = 0; i < 40; i++) tick();                       /* a long pause mid-dial */
     check(automationGestureCountForTest() === 1, '⚠ the gesture does NOT expire while the step is held — even with no touch');

@@ -1636,7 +1636,9 @@ export function _tickImpl() {
         /* Step hold threshold: once elapsed, close the tap window so release won't toggle.
          * Also auto-assign empty step now so knobs work immediately in step edit. */
         if (S.heldStep >= 0 && S.heldStepBtn >= 0 && S.stepBtnPressedTick[S.heldStepBtn] >= 0 &&
-                (S.tickCount - S.stepBtnPressedTick[S.heldStepBtn]) >= STEP_HOLD_TICKS) {
+                ((S.tickCount - S.stepBtnPressedTick[S.heldStepBtn]) >= STEP_HOLD_TICKS ||
+                 S.stepHoldPromote)) {           /* a lock was dialled: that IS a hold */
+            S.stepHoldPromote = false;
             S.stepBtnPressedTick[S.heldStepBtn] = -1;
             S.stepWasHeld = true;
             if (S.activeBank === 6) {

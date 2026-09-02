@@ -365,6 +365,11 @@ export const S = {
     heldStepNotes: [],
     stepWasEmpty: false,
     stepWasHeld: false,
+    /* A knob edit while a step is pressed is a HOLD, however fast it came: set
+     * by ui_automation's lock write, consumed by the tick's hold-threshold
+     * check, so the release cannot tap-toggle the note a lock was just
+     * written on. */
+    stepHoldPromote: false,
     stepEditVel: 100,
     stepEditGate: 12,
     stepEditNudge: 0,

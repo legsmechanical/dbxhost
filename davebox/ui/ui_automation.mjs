@@ -462,6 +462,12 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
          * step is the hand here, not the touch sensor. */
         if (!g.live) { g.live = true; queueSet('t' + track + '_pa_hold', target); }
         g.lock = true;
+        /* Turning a knob on a pressed step makes it a HOLD, however quickly the
+         * finger came back up — otherwise a fast press-turn-release writes the
+         * lock and then the release tap-toggles the note it was written on. The
+         * tick's hold-threshold check consumes this and does the rest (closes
+         * the tap window, auto-assigns an empty step's note). */
+        S.stepHoldPromote = true;
         queueSet('t' + track + '_pa_set2', clip + ' ' + target + ' ' + from + ' ' + to + ' ' + norm);
         automationNoteWrite();
         return;
