@@ -535,7 +535,7 @@ export function _tickImpl() {
         S.shiftHeld = false; S.deleteHeld = false; S.muteHeld = false;
         S.copyHeld  = false; S.loopHeld  = false; S.loopJogActive = false;
         S.captureHeld = false; S.shiftTrackLEDActive = false;
-        S.heldStep  = -1;    S.heldStepBtn = -1; S.heldStepNotes = [];
+        S.heldStep  = -1;    S.heldStepBtn = -1; S.heldStepNotes = []; S.stepReveal = false;
         S.stepWasEmpty = false; S.stepWasHeld = false;
         /* Sysex suppression needs no re-assert here: the host reset its
          * applied-claims snapshot on suspend, so the first reconcile after
@@ -749,7 +749,7 @@ export function _tickImpl() {
         S.pendingSetLoad = false;
         S.stateLoading = true;
         disarmRecord();
-        S.heldStep = -1; S.heldStepBtn = -1; S.heldStepNotes = []; S.stepWasEmpty = false; S.stepWasHeld = false;
+        S.heldStep = -1; S.heldStepBtn = -1; S.heldStepNotes = []; S.stepWasEmpty = false; S.stepWasHeld = false; S.stepReveal = false;
         S.seqActiveNotes.clear(); S.seqLastStep = -1; S.seqLastClip = -1;
         S.pendingDspSync = 5;
         host_module_set_param('state_load', S.currentSetUuid || '');

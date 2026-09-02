@@ -609,7 +609,7 @@ export function pollDSP() {
                  * an existing module cycle). Clear the Track-View step-hold
                  * state that shouldn't leak into Session View. */
                 S.sessionView     = true;
-                S.heldStep        = -1; S.heldStepBtn = -1;
+                S.heldStep        = -1; S.heldStepBtn = -1; S.stepReveal = false;
                 S.heldStepNotes   = []; S.stepWasEmpty = false;
                 S.stepWasHeld     = false;
                 S.sessionStepHeld = -1; S.sessionStepHeldCtx = 0;

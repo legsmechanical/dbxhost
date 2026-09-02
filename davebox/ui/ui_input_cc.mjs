@@ -22,7 +22,7 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS,
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP,
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, STEP_REVEAL_DEBOUNCE_TICKS,
     TICK_HZ, STEP_ITER_LIST,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool
@@ -1361,7 +1361,7 @@ function _onCC_buttons(d1, d2) {
                     S.capturePlaceTrack = _ct;
                     if (!S.sessionView) {
                         S.sessionView     = true;
-                        S.heldStep        = -1; S.heldStepBtn = -1;
+                        S.heldStep        = -1; S.heldStepBtn = -1; S.stepReveal = false;
                         S.heldStepNotes   = []; S.stepWasEmpty = false;
                         S.stepWasHeld     = false;
                         S.sessionStepHeld = -1; S.sessionStepHeldCtx = 0;
@@ -1651,6 +1651,7 @@ function _onCC_buttons(d1, d2) {
             }
             S.heldStepBtn        = -1;
             S.heldStep           = -1;
+            S.stepReveal         = false;
             S.heldStepNotes      = [];
             S.stepWasEmpty       = false;
             S.stepWasHeld        = false;
@@ -3383,6 +3384,28 @@ function ccKnobDelta(d2, k, stepScale) {
 /* The old AUTO-bank (6) held-step CC editor. Off since 2026-09-02; gone with P8. */
 const LANE_STEP_EDITOR_LIVE = false;
 
+/* Hold a step + jog turn (spec §2, Josh 2026-09-02): RIGHT reveals the STEP
+ * bank's page for the held step, LEFT returns to where you were. Two
+ * positions, no cycling — extra right turns at the reveal and extra left
+ * turns at the origin do nothing. Called from ui.js AHEAD of sound mode and
+ * of the bank walk, so while a step is held the jog belongs to this and to
+ * nothing else (Shift+jog included: no track switch mid-hold). A jog turn
+ * while a step is down is an edit gesture, so it promotes the press to a
+ * hold like a knob turn does. Already ON the STEP bank there is nothing to
+ * reveal or return to: both directions do nothing. */
+export function heldStepJog(d2) {
+    if (S.heldStep < 0) return false;
+    if (S.heldStepBtn >= 0 && S.stepBtnPressedTick[S.heldStepBtn] >= 0) S.stepHoldPromote = true;
+    if (S.shiftHeld) return true;                 /* Shift+jog is declined while a step is held */
+    const delta = decodeDelta(d2);
+    if (delta === 0) return true;
+    if (S.tickCount - S.stepRevealJogTick < STEP_REVEAL_DEBOUNCE_TICKS) return true;
+    if (S.activeBank === BANK_STEP) return true;
+    if (delta > 0 && !S.stepReveal) { S.stepReveal = true;  S.stepRevealJogTick = S.tickCount; forceRedraw(); }
+    else if (delta < 0 && S.stepReveal) { S.stepReveal = false; S.stepRevealJogTick = S.tickCount; forceRedraw(); }
+    return true;
+}
+
 function _onCC_stepedit(d1, d2) {
     /* ⭑ Any knob turn while a step is DOWN promotes the press to a HOLD — on
      * every bank, before anything else decides what the turn means. A tap on a
@@ -3448,7 +3471,7 @@ function _onCC_stepedit(d1, d2) {
      * Bank-gated off the AUTO bank (6): there the held-step + knob edits CC
      * automation (the CC step editor above), mirroring the melodic NOTE editor. */
     if (S.heldStep >= 0 && S.heldStepNotes.length > 0 && d1 >= 71 && d1 <= 78 &&
-            S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === BANK_STEP) {
+            S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && (S.activeBank === BANK_STEP || S.stepReveal)) {
         const knobIdx = d1 - 71;
         const dir     = (d2 >= 1 && d2 <= 63) ? 1 : -1;
         const t       = S.activeTrack;
@@ -3519,7 +3542,7 @@ function _onCC_stepedit(d1, d2) {
         return;
     }
     /* Melodic step edit: K1 Note, K2 Oct, K3 Leng, K4 Vel, K5 Nudg, K6 Iter, K7 Prob, K8 Ratch */
-    if (S.heldStep >= 0 && S.heldStepNotes.length > 0 && d1 >= 71 && d1 <= 78 && S.activeBank === BANK_STEP) {
+    if (S.heldStep >= 0 && S.heldStepNotes.length > 0 && d1 >= 71 && d1 <= 78 && (S.activeBank === BANK_STEP || S.stepReveal)) {
         const knobIdx = d1 - 71;
         const dir     = (d2 >= 1 && d2 <= 63) ? 1 : -1;
         const t       = S.activeTrack;
@@ -4471,6 +4494,7 @@ function _switchViewCleanup() {
     standDownBankDisplay(true);
     S.heldStepBtn        = -1;
     S.heldStep           = -1;
+    S.stepReveal         = false;
     S.heldStepNotes      = [];
     S.stepWasEmpty       = false;
     S.stepWasHeld        = false;

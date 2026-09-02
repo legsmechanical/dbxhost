@@ -53,7 +53,7 @@ import { applyTrackConfig,
 import { recordNoteOn, recordNoteOff,
     extHeldNotes, extCountInCapture } from './ui_record.mjs';
 import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons } from './ui_input_pads.mjs';
-import { applyBankPick } from './ui_input_cc.mjs';
+import { applyBankPick, heldStepJog } from './ui_input_cc.mjs';
 import { standDownBankDisplay } from './ui_state.mjs';
 import { _onCCMsg } from './ui_input_cc.mjs';
 import { soundActive, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw } from './ui_sound.mjs';
@@ -553,6 +553,10 @@ function _onMidiInternalImpl(data) {
      * stop steering. Otherwise the overlay is visible but input-dead — the
      * global menu opened from sound mode drew and did nothing, because sound
      * mode ate the jog. */
+    /* ⭑ HOLD A STEP + JOG belongs to the step (spec §2): right reveals the
+     * STEP bank's page, left returns. Ahead of sound mode (which would page
+     * the editor) and of the bank walk, and it swallows Shift+jog too. */
+    if (status === 0xB0 && d1 === MoveMainKnob && S.heldStep >= 0 && heldStepJog(d2)) return;
     const _soundSteers = soundActive() && !soundModeCovered();
     if (_soundSteers && soundOnMidiRaw(data)) return;
     if (_soundSteers && soundOnNote(status, d1, d2)) return;

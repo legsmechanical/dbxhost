@@ -1744,6 +1744,7 @@ export function _onPadRelease(status, d1, d2) {
             } /* end melodic branch */
             /* Always exit step edit on release of the held button */
             S.heldStepBtn   = -1;
+            S.stepReveal    = false;
             S.heldStep      = -1;
             S.heldStepNotes = [];
             S.stepWasEmpty  = false;

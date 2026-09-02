@@ -370,6 +370,14 @@ export const S = {
      * check, so the release cannot tap-toggle the note a lock was just
      * written on. */
     stepHoldPromote: false,
+    /* THE REVEAL (spec §2): while a step is held, a jog turn right shows the
+     * STEP bank's page for that step on top of whatever screen was up — the
+     * editor, a bank card, the overview — and a turn left (or the release)
+     * takes it away. It is an OVERLAY, not a bank change: nothing about the
+     * origin is touched, so nothing has to be restored. Two positions, no
+     * cycling. */
+    stepReveal: false,
+    stepRevealJogTick: -1000,
     /* The deferred-save rule (pollDSP): the tick of the last hardware input,
      * and a one-shot "save at the next poll" raised at the Record-off edge. */
     lastInputTick: 0,

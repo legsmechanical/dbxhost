@@ -492,6 +492,9 @@ export const CC_GRADIENT_LEVELS      = 3;
  * The LEDs can't resolve many white brightness steps, so we use just 3
  * widely-separated levels: dim / mid / full. */
 export const CC_GRADIENT_SCALARS     = [0.30, 0.60, 1.0];
+/* Hold a step + jog: right REVEALS the STEP bank, left RETURNS; a second detent
+ * inside this window is the same flick, not a second instruction. */
+export const STEP_REVEAL_DEBOUNCE_TICKS = 14;  /* ~150 ms at 94 Hz */
 export const NO_NOTE_FLASH_TICKS = 56;     /* ~600ms at 94Hz (was 118 @196Hz) */
 export const TAP_TEMPO_FLASH_TICKS = 9;    /* ~96ms at 94Hz */
 export const TAP_TEMPO_RESET_MS    = 2000; /* inactivity reset threshold */

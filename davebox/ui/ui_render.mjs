@@ -250,6 +250,10 @@ function stepBankIdleCells(drum) {
 }
 
 function drawStepEditKitPage(title, cells, noteBox) {
+    /* The bank card's map, set explicitly: this page is drawn from two places
+     * (the STEP bank, and the reveal over any screen) and must look the same
+     * from both — the kit's layout binding is whatever the LAST draw chose. */
+    kitUseLayout('bank');
     const t = S.knobTouched;
     const touched = cells && t >= 0 && cells[t] && cells[t].name ? cells[t] : null;
     if (touched) {
@@ -1117,7 +1121,7 @@ export function bankCardVisible() {
 }
 
 export function soundModeCovered() {
-    return !!(S.sessionOverlayHeld || S.snapshotPicker || S.daveBox ||
+    return !!(S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox ||
         S.projectPadPicker || S.clearAutoMenu || S.pendingSceneBakePicker ||
         S.mergePlacing || S.mergeNoticePending || S.pendingMergePlacement ||
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
@@ -1186,6 +1190,197 @@ export function drawUI() {
     drawBankLatchBox();
     drawTrackVolCard();
     drawBankPicker();
+}
+
+/* The held step's page: the STEP bank's layout with THAT step's values. Drawn
+ * (a) on the STEP bank whenever a step is held and (b) anywhere as THE REVEAL
+ * (S.stepReveal, hold + jog right). Returns true when it drew the frame. */
+function drawHeldStepPage() {
+    if (S.heldStep < 0) return false;
+        if (S.activeBank === 6) {
+            /* CC bank step-hold: compact graph + knob values */
+            var _t6s = S.activeTrack, _ac6s = effectiveClip(_t6s);
+            var _gLane6 = S.ccActiveLane[_t6s];
+            var _gEffLen6 = S.ccLaneLength[_t6s][_ac6s][_gLane6] || S.clipLength[_t6s][_ac6s];
+            var _gLTps6 = S.ccLaneTps[_t6s][_ac6s][_gLane6] || (S.clipTPS[_t6s][_ac6s] || 24);
+            /* Compact graph (12px) just above progress bar */
+            var _sgBarY = 60, _sgBarH = 3;
+            var _sgH = 12, _sgY = _sgBarY - _sgH - 2;
+            var _sgPages = Math.ceil(_gEffLen6 / 16);
+            var _sgKey = 'sg_' + _t6s + '_' + _ac6s + '_' + _gLane6 + '_' + _gEffLen6;
+            if (_sgKey !== S.ccGraphOvKey || (S.tickCount % POLL_INTERVAL) === 0) {
+                S.ccGraphOvData = [];
+                for (var _sgp = 0; _sgp < _sgPages; _sgp++) {
+                    var _sgRaw = host_module_get_param('t' + _t6s + '_c' + _ac6s + '_ccsv_' + _gLane6 + '_' + _sgp);
+                    if (_sgRaw) {
+                        var _sgParts = _sgRaw.split(' ');
+                        for (var _sgs = 0; _sgs < 16 && _sgp * 16 + _sgs < _gEffLen6; _sgs++)
+                            S.ccGraphOvData.push(_sgs < _sgParts.length ? parseInt(_sgParts[_sgs], 10) : 255);
+                    }
+                }
+                S.ccGraphOvKey = _sgKey;
+            }
+            fill_rect(0, _sgY, 128, 1, 1);
+            fill_rect(0, _sgY + _sgH - 1, 128, 1, 1);
+            fill_rect(0, _sgY, 1, _sgH, 1);
+            fill_rect(127, _sgY, 1, _sgH, 1);
+            var _sgDLen = S.ccGraphOvData.length || 1;
+            var _sgDrawY = _sgY + 2, _sgDrawH = _sgH - 4;
+            var _sgPrevPy = -1;
+            for (var _sgc = 1; _sgc < 127; _sgc++) {
+                var _sgIdx = Math.floor(_sgc * _sgDLen / 128);
+                var _sgv = _sgIdx < S.ccGraphOvData.length ? S.ccGraphOvData[_sgIdx] : -1;
+                if (_sgv >= 0 && _sgv <= 127) {
+                    var _sgpy = _sgDrawY + _sgDrawH - 1 - Math.round(_sgv * (_sgDrawH - 1) / 127);
+                    if (_sgPrevPy >= 0 && _sgPrevPy !== _sgpy) {
+                        var _sgyMin = Math.min(_sgPrevPy, _sgpy);
+                        var _sgyMax = Math.max(_sgPrevPy, _sgpy);
+                        fill_rect(_sgc, _sgyMin, 1, _sgyMax - _sgyMin + 1, 1);
+                    } else {
+                        fill_rect(_sgc, _sgpy, 1, 1, 1);
+                    }
+                    _sgPrevPy = _sgpy;
+                } else {
+                    _sgPrevPy = -1;
+                }
+            }
+            /* Step position indicator on graph — white vertical line */
+            var _sgSx = Math.min(126, Math.max(1, Math.floor(S.heldStep * 126 / _sgDLen) + 1));
+            fill_rect(_sgSx, _sgY + 1, 1, _sgH - 2, 1);
+            /* Step header: MCU font, white on black, separator line */
+            pixelPrint(1, 1, 'Step ' + (S.heldStep + 1), 1);
+            var _pnLbl = '';
+            var _pnK = S.knobTouched >= 0 ? S.knobTouched : _gLane6;
+            if (S.trackCCType[_t6s][_pnK] === 2)
+                _pnLbl = S.schLabel[_t6s][_pnK] || ('Sch' + S.trackCCAssign[_t6s][_pnK]);
+            if (_pnLbl) pixelPrint(128 - _pnLbl.length * 6 - 1, 1, _pnLbl, 1);
+            fill_rect(0, 7, 128, 1, 1);
+            /* 8 knobs in 2 rows of 4 (standard font) */
+            for (var _k6 = 0; _k6 < 8; _k6++) {
+                var _col6 = _k6 % 4, _row6 = Math.floor(_k6 / 4);
+                var _x6 = 4 + _col6 * 31, _y6 = 11 + _row6 * 18;
+                var _hi6 = (S.knobTouched === _k6) || (S.ccActiveLane[_t6s] === _k6);
+                if (_hi6) fill_rect(_x6 - 1, _y6 - 1, 29, 18, 1);
+                var _lbl6 = S.trackCCType[_t6s][_k6] === 2 ? ('Sch' + S.trackCCAssign[_t6s][_k6])
+                          : S.trackCCType[_t6s][_k6] === 1 ? 'AT'
+                          : (S.trackCCAssign[_t6s][_k6] > 0 ? 'C' + S.trackCCAssign[_t6s][_k6] : '--');
+                var _vs6;
+                if (S.ccStepEditSet[_k6]) {
+                    _vs6 = String(S.ccStepEditVal[_k6]);
+                } else {
+                    var _cv6 = S.ccStepEditComputed[_k6];
+                    _vs6 = (_cv6 >= 0 && _cv6 <= 127) ? '(' + _cv6 + ')' : '--';
+                }
+                print(_x6, _y6, col4(_lbl6), _hi6 ? 0 : 1);
+                print(_x6, _y6 + 9, col5(_vs6), _hi6 ? 0 : 1);
+            }
+            /* Progress bar */
+            var _sgWP = Math.max(1, Math.ceil(_gEffLen6 / 16));
+            var _sgVP = Math.max(0, Math.min(S.trackCurrentPage[_t6s], _sgWP - 1));
+            var _sgSG = 1, _sgSW = Math.max(2, Math.floor((120 - (_sgWP - 1) * _sgSG) / _sgWP));
+            var _sgPP = -1;
+            if (S.playing) {
+                var _sgProg = (S.masterPos % (_gEffLen6 * _gLTps6)) / (_gEffLen6 * _gLTps6);
+                _sgPP = Math.floor(_sgProg * _sgWP);
+            }
+            for (var _sgPg = 0; _sgPg < _sgWP; _sgPg++) {
+                var _sgx = 4 + _sgPg * (_sgSW + _sgSG);
+                if (_sgPg === _sgVP) fill_rect(_sgx, _sgBarY, _sgSW, _sgBarH, 1);
+                else if (_sgPg === _sgPP) {
+                    fill_rect(_sgx, _sgBarY, _sgSW, 1, 1);
+                    fill_rect(_sgx, _sgBarY + _sgBarH - 1, _sgSW, 1, 1);
+                    fill_rect(_sgx, _sgBarY, 1, _sgBarH, 1);
+                    fill_rect(_sgx + _sgSW - 1, _sgBarY, 1, _sgBarH, 1);
+                } else fill_rect(_sgx, _sgBarY + _sgBarH - 1, _sgSW, 1, 1);
+            }
+            if (S.playing) {
+                var _sgBW = _sgWP * (_sgSW + _sgSG) - _sgSG;
+                var _sgDX = 4 + Math.floor(_sgProg * _sgBW);
+                var _sgVS = 4 + _sgVP * (_sgSW + _sgSG);
+                fill_rect(_sgDX, _sgBarY, 1, _sgBarH, (_sgDX >= _sgVS && _sgDX < _sgVS + _sgSW) ? 0 : 1);
+            }
+            return true;
+        } else {
+        /* Canvaskit step editors (drum + melodic). The kit fonts don't map
+         * the formatters' em dash — normalize to "--". */
+        const _dash = (s) => s === '—' ? '--' : s;
+        const _stepTitle = 'Step ' + (S.heldStep + 1);
+        if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
+            /* Drum step edit: K1 Leng, K2 Vel, K3 Nudg, K5 Iter, K6 Prob, K7 Ratch. */
+            const t = S.activeTrack;
+            if (S.heldStepNotes.length > 0) {
+                const tps   = S.drumLaneTPS[t] || 24;
+                const _gateSteps = S.stepEditGate / tps;
+                const cells = [
+                    { kind: 'valsq', label: 'Leng', name: 'Length',
+                      text: fmtStepLen(_gateSteps) },
+                    { kind: 'arc', label: 'Vel', name: 'Velocity', text: String(S.stepEditVel),
+                      norm: Math.max(0, Math.min(1, S.stepEditVel / 127)) },
+                    { kind: 'arcbip', label: 'Nudg', name: 'Nudge',
+                      text: (S.stepEditNudge >= 0 ? '+' : '') + S.stepEditNudge,
+                      signed: Math.max(-1, Math.min(1, S.stepEditNudge / Math.max(1, tps - 1))) },
+                    { kind: 'blank', label: '' },
+                    { kind: 'valsq', label: 'Iter', name: 'Iteration',
+                      text: _dash(formatStepIter(S.stepEditIter)),
+                      options: STEP_ITER_LIST.map((v) => _dash(formatStepIter(v))),
+                      sel: Math.max(0, STEP_ITER_LIST.indexOf(S.stepEditIter)) },
+                    { kind: 'arc', label: 'Prob', name: 'Probability',
+                      text: (S.stepEditRand === 0 ? 100 : S.stepEditRand) + '%',
+                      norm: (S.stepEditRand === 0 ? 100 : S.stepEditRand) / 100 },
+                    { kind: 'valsq', label: 'Ratch', name: 'Ratchet',
+                      text: S.stepEditRatch <= 1 ? '--' : String(S.stepEditRatch),
+                      options: ['--', '2', '3', '4'], sel: S.stepEditRatch <= 1 ? 0 : S.stepEditRatch - 1 },
+                    { kind: 'blank', label: '' },
+                ];
+                drawStepEditKitPage(_stepTitle, cells, null);
+            } else {
+                drawStepEditKitPage(_stepTitle, null, null);
+            }
+            return true;
+        }
+        const ac        = effectiveClip(S.activeTrack);
+        if (S.heldStepNotes.length > 0) {
+            /* Melodic step edit: K1 Note + K2 Oct share the merged note box
+             * (same idiom as the drum NOTE FX lane box); K3 Leng, K4 Vel,
+             * K5 Nudg, K6 Iter, K7 Prob, K8 Ratch. */
+            const root = S.heldStepNotes[0];
+            const noteName = midiNoteName(root);
+            /* extra notes on the step ride alongside the name as "+2" */
+            const noteSub = S.heldStepNotes.length > 1
+                ? '+' + (S.heldStepNotes.length - 1) : '';
+            const noteLabel = noteSub ? noteName + noteSub : noteName;
+            const tps = S.clipTPS[S.activeTrack][ac] || 24;
+            const _gateSteps = S.stepEditGate / tps;
+            const cells = [
+                { kind: 'blank', label: 'Note', name: 'Note', bigText: noteLabel },
+                { kind: 'blank', label: 'Oct',  name: 'Note', bigText: noteLabel },
+                { kind: 'valsq', label: 'Leng', name: 'Length',
+                  text: fmtStepLen(_gateSteps) },
+                { kind: 'arc', label: 'Vel', name: 'Velocity', text: String(S.stepEditVel),
+                  norm: Math.max(0, Math.min(1, S.stepEditVel / 127)) },
+                { kind: 'arcbip', label: 'Nudg', name: 'Nudge',
+                  text: (S.stepEditNudge >= 0 ? '+' : '') + S.stepEditNudge,
+                  signed: Math.max(-1, Math.min(1, S.stepEditNudge / Math.max(1, tps - 1))) },
+                { kind: 'valsq', label: 'Iter', name: 'Iteration',
+                  text: _dash(formatStepIter(S.stepEditIter)),
+                  options: STEP_ITER_LIST.map((v) => _dash(formatStepIter(v))),
+                  sel: Math.max(0, STEP_ITER_LIST.indexOf(S.stepEditIter)) },
+                { kind: 'arc', label: 'Prob', name: 'Probability',
+                  text: (S.stepEditRand === 0 ? 100 : S.stepEditRand) + '%',
+                  norm: (S.stepEditRand === 0 ? 100 : S.stepEditRand) / 100 },
+                { kind: 'valsq', label: 'Ratch', name: 'Ratchet',
+                  text: S.stepEditRatch <= 1 ? '--' : String(S.stepEditRatch),
+                  options: ['--', '2', '3', '4'], sel: S.stepEditRatch <= 1 ? 0 : S.stepEditRatch - 1 },
+            ];
+            drawStepEditKitPage(_stepTitle, cells, { name: noteName, sub: noteSub });
+            return true;
+        } else if (S.stepWasEmpty) {
+            drawStepEditKitPage(_stepTitle, null, null);
+            return true;
+        }
+        /* non-empty step, notes still loading at hold threshold — fall through to bank/header */
+    } /* end else (non-bank-6 step edit) */
+    return false;
 }
 
 function drawUIBody() {
@@ -1325,6 +1520,10 @@ function drawUIBody() {
      * a picker — wins over it. It used to be the first check and painted over
      * all of them. Sound mode isn't dismissed by those; it just stops drawing
      * and comes back when they close. */
+    /* ⭑ THE REVEAL (spec §2): hold a step, jog right — the STEP bank's page
+     * for that step, on top of whatever was up, sound mode included (it is
+     * covered, see soundModeCovered). Jog left or the release removes it. */
+    if (S.stepReveal) { clear_screen(); if (drawHeldStepPage()) return; }
     if (soundRender()) return;
     /* awaitingProjectSelect keeps the loading screen up for the gap between
      * init and the picker opening (LED init has to finish first). Without it
@@ -1505,196 +1704,10 @@ function drawUIBody() {
         return;
     }
 
-    /* Step edit: show assigned notes and step identity — ON THE STEP BANK ONLY
-     * (spec §2, 2026-09-02): a held step never changes the screen anywhere
-     * else; the on-screen knobs are simply redirected to it (the editor and
-     * MACROS lock, the other banks decline). Bank 6's held-step CC view is
-     * gated off with the rest of that editor (P8 deletes it). */
-    if (S.heldStep >= 0 && S.activeBank === BANK_STEP) {
-        if (S.activeBank === 6) {
-            /* CC bank step-hold: compact graph + knob values */
-            var _t6s = S.activeTrack, _ac6s = effectiveClip(_t6s);
-            var _gLane6 = S.ccActiveLane[_t6s];
-            var _gEffLen6 = S.ccLaneLength[_t6s][_ac6s][_gLane6] || S.clipLength[_t6s][_ac6s];
-            var _gLTps6 = S.ccLaneTps[_t6s][_ac6s][_gLane6] || (S.clipTPS[_t6s][_ac6s] || 24);
-            /* Compact graph (12px) just above progress bar */
-            var _sgBarY = 60, _sgBarH = 3;
-            var _sgH = 12, _sgY = _sgBarY - _sgH - 2;
-            var _sgPages = Math.ceil(_gEffLen6 / 16);
-            var _sgKey = 'sg_' + _t6s + '_' + _ac6s + '_' + _gLane6 + '_' + _gEffLen6;
-            if (_sgKey !== S.ccGraphOvKey || (S.tickCount % POLL_INTERVAL) === 0) {
-                S.ccGraphOvData = [];
-                for (var _sgp = 0; _sgp < _sgPages; _sgp++) {
-                    var _sgRaw = host_module_get_param('t' + _t6s + '_c' + _ac6s + '_ccsv_' + _gLane6 + '_' + _sgp);
-                    if (_sgRaw) {
-                        var _sgParts = _sgRaw.split(' ');
-                        for (var _sgs = 0; _sgs < 16 && _sgp * 16 + _sgs < _gEffLen6; _sgs++)
-                            S.ccGraphOvData.push(_sgs < _sgParts.length ? parseInt(_sgParts[_sgs], 10) : 255);
-                    }
-                }
-                S.ccGraphOvKey = _sgKey;
-            }
-            fill_rect(0, _sgY, 128, 1, 1);
-            fill_rect(0, _sgY + _sgH - 1, 128, 1, 1);
-            fill_rect(0, _sgY, 1, _sgH, 1);
-            fill_rect(127, _sgY, 1, _sgH, 1);
-            var _sgDLen = S.ccGraphOvData.length || 1;
-            var _sgDrawY = _sgY + 2, _sgDrawH = _sgH - 4;
-            var _sgPrevPy = -1;
-            for (var _sgc = 1; _sgc < 127; _sgc++) {
-                var _sgIdx = Math.floor(_sgc * _sgDLen / 128);
-                var _sgv = _sgIdx < S.ccGraphOvData.length ? S.ccGraphOvData[_sgIdx] : -1;
-                if (_sgv >= 0 && _sgv <= 127) {
-                    var _sgpy = _sgDrawY + _sgDrawH - 1 - Math.round(_sgv * (_sgDrawH - 1) / 127);
-                    if (_sgPrevPy >= 0 && _sgPrevPy !== _sgpy) {
-                        var _sgyMin = Math.min(_sgPrevPy, _sgpy);
-                        var _sgyMax = Math.max(_sgPrevPy, _sgpy);
-                        fill_rect(_sgc, _sgyMin, 1, _sgyMax - _sgyMin + 1, 1);
-                    } else {
-                        fill_rect(_sgc, _sgpy, 1, 1, 1);
-                    }
-                    _sgPrevPy = _sgpy;
-                } else {
-                    _sgPrevPy = -1;
-                }
-            }
-            /* Step position indicator on graph — white vertical line */
-            var _sgSx = Math.min(126, Math.max(1, Math.floor(S.heldStep * 126 / _sgDLen) + 1));
-            fill_rect(_sgSx, _sgY + 1, 1, _sgH - 2, 1);
-            /* Step header: MCU font, white on black, separator line */
-            pixelPrint(1, 1, 'Step ' + (S.heldStep + 1), 1);
-            var _pnLbl = '';
-            var _pnK = S.knobTouched >= 0 ? S.knobTouched : _gLane6;
-            if (S.trackCCType[_t6s][_pnK] === 2)
-                _pnLbl = S.schLabel[_t6s][_pnK] || ('Sch' + S.trackCCAssign[_t6s][_pnK]);
-            if (_pnLbl) pixelPrint(128 - _pnLbl.length * 6 - 1, 1, _pnLbl, 1);
-            fill_rect(0, 7, 128, 1, 1);
-            /* 8 knobs in 2 rows of 4 (standard font) */
-            for (var _k6 = 0; _k6 < 8; _k6++) {
-                var _col6 = _k6 % 4, _row6 = Math.floor(_k6 / 4);
-                var _x6 = 4 + _col6 * 31, _y6 = 11 + _row6 * 18;
-                var _hi6 = (S.knobTouched === _k6) || (S.ccActiveLane[_t6s] === _k6);
-                if (_hi6) fill_rect(_x6 - 1, _y6 - 1, 29, 18, 1);
-                var _lbl6 = S.trackCCType[_t6s][_k6] === 2 ? ('Sch' + S.trackCCAssign[_t6s][_k6])
-                          : S.trackCCType[_t6s][_k6] === 1 ? 'AT'
-                          : (S.trackCCAssign[_t6s][_k6] > 0 ? 'C' + S.trackCCAssign[_t6s][_k6] : '--');
-                var _vs6;
-                if (S.ccStepEditSet[_k6]) {
-                    _vs6 = String(S.ccStepEditVal[_k6]);
-                } else {
-                    var _cv6 = S.ccStepEditComputed[_k6];
-                    _vs6 = (_cv6 >= 0 && _cv6 <= 127) ? '(' + _cv6 + ')' : '--';
-                }
-                print(_x6, _y6, col4(_lbl6), _hi6 ? 0 : 1);
-                print(_x6, _y6 + 9, col5(_vs6), _hi6 ? 0 : 1);
-            }
-            /* Progress bar */
-            var _sgWP = Math.max(1, Math.ceil(_gEffLen6 / 16));
-            var _sgVP = Math.max(0, Math.min(S.trackCurrentPage[_t6s], _sgWP - 1));
-            var _sgSG = 1, _sgSW = Math.max(2, Math.floor((120 - (_sgWP - 1) * _sgSG) / _sgWP));
-            var _sgPP = -1;
-            if (S.playing) {
-                var _sgProg = (S.masterPos % (_gEffLen6 * _gLTps6)) / (_gEffLen6 * _gLTps6);
-                _sgPP = Math.floor(_sgProg * _sgWP);
-            }
-            for (var _sgPg = 0; _sgPg < _sgWP; _sgPg++) {
-                var _sgx = 4 + _sgPg * (_sgSW + _sgSG);
-                if (_sgPg === _sgVP) fill_rect(_sgx, _sgBarY, _sgSW, _sgBarH, 1);
-                else if (_sgPg === _sgPP) {
-                    fill_rect(_sgx, _sgBarY, _sgSW, 1, 1);
-                    fill_rect(_sgx, _sgBarY + _sgBarH - 1, _sgSW, 1, 1);
-                    fill_rect(_sgx, _sgBarY, 1, _sgBarH, 1);
-                    fill_rect(_sgx + _sgSW - 1, _sgBarY, 1, _sgBarH, 1);
-                } else fill_rect(_sgx, _sgBarY + _sgBarH - 1, _sgSW, 1, 1);
-            }
-            if (S.playing) {
-                var _sgBW = _sgWP * (_sgSW + _sgSG) - _sgSG;
-                var _sgDX = 4 + Math.floor(_sgProg * _sgBW);
-                var _sgVS = 4 + _sgVP * (_sgSW + _sgSG);
-                fill_rect(_sgDX, _sgBarY, 1, _sgBarH, (_sgDX >= _sgVS && _sgDX < _sgVS + _sgSW) ? 0 : 1);
-            }
-            return;
-        } else {
-        /* Canvaskit step editors (drum + melodic). The kit fonts don't map
-         * the formatters' em dash — normalize to "--". */
-        const _dash = (s) => s === '—' ? '--' : s;
-        const _stepTitle = 'Step ' + (S.heldStep + 1);
-        if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
-            /* Drum step edit: K1 Leng, K2 Vel, K3 Nudg, K5 Iter, K6 Prob, K7 Ratch. */
-            const t = S.activeTrack;
-            if (S.heldStepNotes.length > 0) {
-                const tps   = S.drumLaneTPS[t] || 24;
-                const _gateSteps = S.stepEditGate / tps;
-                const cells = [
-                    { kind: 'valsq', label: 'Leng', name: 'Length',
-                      text: fmtStepLen(_gateSteps) },
-                    { kind: 'arc', label: 'Vel', name: 'Velocity', text: String(S.stepEditVel),
-                      norm: Math.max(0, Math.min(1, S.stepEditVel / 127)) },
-                    { kind: 'arcbip', label: 'Nudg', name: 'Nudge',
-                      text: (S.stepEditNudge >= 0 ? '+' : '') + S.stepEditNudge,
-                      signed: Math.max(-1, Math.min(1, S.stepEditNudge / Math.max(1, tps - 1))) },
-                    { kind: 'blank', label: '' },
-                    { kind: 'valsq', label: 'Iter', name: 'Iteration',
-                      text: _dash(formatStepIter(S.stepEditIter)),
-                      options: STEP_ITER_LIST.map((v) => _dash(formatStepIter(v))),
-                      sel: Math.max(0, STEP_ITER_LIST.indexOf(S.stepEditIter)) },
-                    { kind: 'arc', label: 'Prob', name: 'Probability',
-                      text: (S.stepEditRand === 0 ? 100 : S.stepEditRand) + '%',
-                      norm: (S.stepEditRand === 0 ? 100 : S.stepEditRand) / 100 },
-                    { kind: 'valsq', label: 'Ratch', name: 'Ratchet',
-                      text: S.stepEditRatch <= 1 ? '--' : String(S.stepEditRatch),
-                      options: ['--', '2', '3', '4'], sel: S.stepEditRatch <= 1 ? 0 : S.stepEditRatch - 1 },
-                    { kind: 'blank', label: '' },
-                ];
-                drawStepEditKitPage(_stepTitle, cells, null);
-            } else {
-                drawStepEditKitPage(_stepTitle, null, null);
-            }
-            return;
-        }
-        const ac        = effectiveClip(S.activeTrack);
-        if (S.heldStepNotes.length > 0) {
-            /* Melodic step edit: K1 Note + K2 Oct share the merged note box
-             * (same idiom as the drum NOTE FX lane box); K3 Leng, K4 Vel,
-             * K5 Nudg, K6 Iter, K7 Prob, K8 Ratch. */
-            const root = S.heldStepNotes[0];
-            const noteName = midiNoteName(root);
-            /* extra notes on the step ride alongside the name as "+2" */
-            const noteSub = S.heldStepNotes.length > 1
-                ? '+' + (S.heldStepNotes.length - 1) : '';
-            const noteLabel = noteSub ? noteName + noteSub : noteName;
-            const tps = S.clipTPS[S.activeTrack][ac] || 24;
-            const _gateSteps = S.stepEditGate / tps;
-            const cells = [
-                { kind: 'blank', label: 'Note', name: 'Note', bigText: noteLabel },
-                { kind: 'blank', label: 'Oct',  name: 'Note', bigText: noteLabel },
-                { kind: 'valsq', label: 'Leng', name: 'Length',
-                  text: fmtStepLen(_gateSteps) },
-                { kind: 'arc', label: 'Vel', name: 'Velocity', text: String(S.stepEditVel),
-                  norm: Math.max(0, Math.min(1, S.stepEditVel / 127)) },
-                { kind: 'arcbip', label: 'Nudg', name: 'Nudge',
-                  text: (S.stepEditNudge >= 0 ? '+' : '') + S.stepEditNudge,
-                  signed: Math.max(-1, Math.min(1, S.stepEditNudge / Math.max(1, tps - 1))) },
-                { kind: 'valsq', label: 'Iter', name: 'Iteration',
-                  text: _dash(formatStepIter(S.stepEditIter)),
-                  options: STEP_ITER_LIST.map((v) => _dash(formatStepIter(v))),
-                  sel: Math.max(0, STEP_ITER_LIST.indexOf(S.stepEditIter)) },
-                { kind: 'arc', label: 'Prob', name: 'Probability',
-                  text: (S.stepEditRand === 0 ? 100 : S.stepEditRand) + '%',
-                  norm: (S.stepEditRand === 0 ? 100 : S.stepEditRand) / 100 },
-                { kind: 'valsq', label: 'Ratch', name: 'Ratchet',
-                  text: S.stepEditRatch <= 1 ? '--' : String(S.stepEditRatch),
-                  options: ['--', '2', '3', '4'], sel: S.stepEditRatch <= 1 ? 0 : S.stepEditRatch - 1 },
-            ];
-            drawStepEditKitPage(_stepTitle, cells, { name: noteName, sub: noteSub });
-            return;
-        } else if (S.stepWasEmpty) {
-            drawStepEditKitPage(_stepTitle, null, null);
-            return;
-        }
-        /* non-empty step, notes still loading at hold threshold — fall through to bank/header */
-    } /* end else (non-bank-6 step edit) */
-    }
+    /* Step edit — ON THE STEP BANK (spec §2, 2026-09-02): a held step is the
+     * screen there; everywhere else it changes nothing (the reveal excepted,
+     * drawn above sound mode below). */
+    if (S.heldStep >= 0 && S.activeBank === BANK_STEP && drawHeldStepPage()) return;
 
     /* Loop view: own priority state so screen is fully cleared first. Suppressed
      * on the unconfirmed drum ALL LANES bank so holding Loop surfaces the confirm
