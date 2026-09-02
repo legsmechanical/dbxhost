@@ -139,6 +139,22 @@ step('Smooth/Stepped is an op HERE (floats only): cutoff offers it, voices (int)
     click(); ticks(2);
     assert(!sets.some(x => x.startsWith('t0_pa_loop=')), 'the click writes nothing more');
     assert(!menu().ops, 'ops closed by the click');
+    /* RATE (Josh, 2026-09-03: /16 to x16): same shape as Loop; the loop length is kept. */
+    menu().sel = ci; click(); ticks(1);
+    const ri = menu().ops.rows.findIndex(o => o.op === 'rate');
+    assert(ri >= 0 && menu().ops.rows[ri].value === 'x1', 'Rate row reads x1 by default, got ' + JSON.stringify(menu().ops.rows[ri]));
+    for (let i = 0; i < ri; i++) cc(14, 1);
+    click(); ticks(1);
+    assert(menu().rateEdit === true, 'Rate: click edits');
+    sets.length = 0;
+    cc(14, 2); ticks(2);                                  /* x1 -> x4 */
+    assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 192 0 7'), 'x4 (code 7) with the 8-step loop kept, got ' + JSON.stringify(sets));
+    cc(14, 127); cc(14, 127); cc(14, 127); cc(14, 127); cc(14, 127); cc(14, 127); ticks(2);   /* down to /4 */
+    assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 192 0 3'), '/4 (code 3), got ' + JSON.stringify(sets));
+    cc(14, 127); cc(14, 127); cc(14, 127); ticks(1);
+    assert(menu().rateVal === 1, 'clamps at /16, got ' + menu().rateVal);
+    back(); ticks(1); assert(!menu().rateEdit && menu().ops, 'Back leaves the edit, ops stay');
+    back(); ticks(1);
     const vi = ab.autoBankRows(T, C).findIndex(r => r.label === 'Syn>Voices');
     if (vi >= 0) { menu().sel = vi; click(); ticks(1); ops = menu().ops.rows.map(o => o.op); assert(ops.indexOf('smooth') < 0, 'an int offers no Smooth'); back(); ticks(1); }
 });

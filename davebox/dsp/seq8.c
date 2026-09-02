@@ -876,6 +876,12 @@ typedef struct {
     uint8_t   cc_auto_cur_val[8];
     /* block_count when each knob was last live-turned during recording (0 = never) */
     uint32_t  cc_auto_touch_frame[8];
+    /* Param automation's LANE CLOCK (audio-thread owned): how many times the
+     * active clip's playhead has wrapped since play, and the last clip tick
+     * seen — so an entry with a RATE below x1 spans several clip cycles (a
+     * lane at /2 plays over two). See pa_entry_tick. */
+    uint32_t  pa_cycle;
+    uint32_t  pa_last_ct;
     /* Live CC value per knob — set on knob turn while record-armed; the latch
      * writes this along the playhead (see cc_latched below). */
     uint8_t   cc_live_val[8];
@@ -6623,8 +6629,8 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
     /* pa_list: every automated (track, clip, target) with its flags and point
      * count — one round trip for the whole project, because a per-entry read
      * would cost an SPI frame each. Format, one entry per line:
-     *   "<track> <clip> <flags> <count> <target> <loop_len>"
-     * (loop_len appended 2026-09-03 for the AUTOMATION bank's Loop row; a
+     *   "<track> <clip> <flags> <count> <target> <loop_len> <resolution>"
+     * (loop_len and the rate code appended 2026-09-03 for the AUTOMATION bank; a
      * target never contains a space, so a reader that stops at the target is
      * unaffected). */
     /* pa_owner <target>: the track that owns this target (has automation on
@@ -6662,10 +6668,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         for (int i = 0; i < PA_MAX_ENTRIES; i++) {
             pa_entry_t *e = &inst->pa_entries[i];
             if (!e->used || !e->count) continue;
-            int w = snprintf(out + n, (size_t)(out_len - n), "%d %d %d %d %s %d\n",
+            int w = snprintf(out + n, (size_t)(out_len - n), "%d %d %d %d %s %d %d\n",
                              (int)e->track, (int)e->clip, (int)e->flags,
                              (int)e->count, inst->pa_targets[e->target],
-                             (int)e->loop_len);
+                             (int)e->loop_len, (int)e->resolution);
             if (w < 0 || n + w >= out_len) {
                 /* snprintf has already written a truncated line; cut it back
                  * off, or a C-string reader sees a torn entry past the length

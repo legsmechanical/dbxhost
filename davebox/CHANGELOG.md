@@ -32,7 +32,8 @@ the section into a versioned heading at release time.
 - **The AUTOMATION bank.** The last bank on the jog, replacing the old AUTO
   bank: a list of everything automated in the current clip with its state.
   Click the jog for the menu, pick a row for its operations — Delete, Mute,
-  Smooth or Stepped, Loop (a parameter's own loop length) — or Clear clip.
+  Smooth or Stepped, Loop (a parameter's own loop length), Rate (play the
+  lane from /16 to ×16, its loop following) — or Clear clip.
   Delete + click on the card clears the clip. Every operation is one undo.
   Smooth/Stepped moved here from the module editor.
 - **Back keeps the bank.** Back on the SOUND + CONFIG or MACROS card leaves

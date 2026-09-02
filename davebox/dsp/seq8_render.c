@@ -1006,7 +1006,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                                  _winlen, pa_emit_midi);
                 /* And the knobs under a hand while Record is on: written along
                  * the same playhead, one cell at a time. */
-                pa_record_tick(inst, t, (int)tr->active_clip, _ct, _tps);
+                pa_record_tick(inst, tr, t, (int)tr->active_clip, _ct, _tps, _winlen);
 
                 /* Latch recording: overwrite each latched lane along the playhead
                  * with the current live value (one point per 1/32 cell, clearing

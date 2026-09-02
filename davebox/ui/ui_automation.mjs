@@ -156,7 +156,7 @@ function parseList(list) {
          * never contains a space (the DSP reads it as one token). */
         stateByKey.set(stateKey(f[0], f[1], f[4]),
                        { flags: parseInt(f[2], 10) | 0, count: parseInt(f[3], 10) | 0,
-                         loop: parseInt(f[5], 10) | 0 });
+                         loop: parseInt(f[5], 10) | 0, res: parseInt(f[6], 10) | 0 });
     }
 }
 
@@ -172,7 +172,7 @@ export function automationRefreshPresence() {
 export function automationStateFor(track, clip, target) {
     const s = stateByKey.get(stateKey(track, clip, target));
     if (!s || !s.count) return null;
-    return { active: !!(s.flags & 1), smooth: !!(s.flags & 2), count: s.count, loop: s.loop | 0 };
+    return { active: !!(s.flags & 1), smooth: !!(s.flags & 2), count: s.count, loop: s.loop | 0, res: s.res | 0 };
 }
 /* Every automated target of one clip — the AUTOMATION bank's list. */
 export function automationEntriesFor(track, clip) {
@@ -181,7 +181,7 @@ export function automationEntriesFor(track, clip) {
     for (const [k, s] of stateByKey) {
         if (k.indexOf(pfx) !== 0 || !s.count) continue;
         out.push({ target: k.slice(pfx.length), active: !!(s.flags & 1), smooth: !!(s.flags & 2),
-                   count: s.count, loop: s.loop | 0 });
+                   count: s.count, loop: s.loop | 0, res: s.res | 0 });
     }
     return out;
 }
@@ -678,9 +678,24 @@ export function automationSetLoop(track, clip, target, loopTicks, checkpoint) {
     if (!s) return false;
     const len = Math.max(0, loopTicks | 0);
     if (checkpoint !== false) queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
-    queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' ' + len + ' 0 0');
+    queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' ' + len + ' 0 ' + (s.res | 0));
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.loop = len;
+    return true;
+}
+/* The AUTOMATION bank's Rate row: the lane's playback rate as a CODE, 1 (/16)
+ * … 5 (x1) … 9 (x16); 0 = unset = x1. Rides pa_loop's third field, with the
+ * entry's own loop length kept. */
+export const AUTOMATION_RATES = ['/16', '/8', '/4', '/2', 'x1', 'x2', 'x4', 'x8', 'x16'];
+export function automationRateText(code) { return AUTOMATION_RATES[(code >= 1 && code <= 9 ? code : 5) - 1]; }
+export function automationSetRate(track, clip, target, code, checkpoint) {
+    const s = automationStateFor(track, clip, target);
+    if (!s) return false;
+    const c = Math.max(1, Math.min(9, code | 0));
+    if (checkpoint !== false) queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' ' + (s.loop | 0) + ' 0 ' + c);
+    const cur = stateByKey.get(stateKey(track, clip, target));
+    if (cur) cur.res = c;
     return true;
 }
 /* The AUTOMATION bank's Clear clip: every parameter's automation in the clip,

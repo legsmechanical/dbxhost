@@ -431,12 +431,35 @@ static int pa_eval(const pa_entry_t *e, uint32_t ct, uint16_t *out) {
  * an entry carrying its own loop window wraps inside that window instead.
  * loop_len == 0 (every entry in v1) means "follow the clip" and returns ct
  * unchanged, so this costs one compare until the feature is surfaced. */
-static uint32_t pa_entry_tick(const pa_entry_t *e, uint32_t ct, uint32_t clip_ticks) {
-    if (!e || !e->loop_len) return ct;
-    uint32_t win = (uint32_t)e->loop_len;
-    if (win > clip_ticks && clip_ticks) win = clip_ticks;
-    if (!win) return ct;
-    return (uint32_t)e->loop_off + (ct % win);
+/* THE RATE (Josh, 2026-09-03: "automation can be sped up or slowed down,
+ * loop length adjusting accordingly", /16 to x16). `resolution` is a CODE:
+ * 0 = unset (x1, the v1 files), else 1..9 = 2^(code-5): 1 = /16 … 5 = x1 …
+ * 9 = x16. The lane clock is the clip clock scaled by it; the window is in
+ * LANE ticks (loop_len, or the clip's length), so a lane at /2 spans two
+ * clip cycles and one at x2 loops twice per clip — which is why the clock
+ * needs the CYCLE count and not only the wrapped clip tick. */
+#define PA_RATE_UNITY 5
+static void pa_rate(uint16_t code, uint32_t *mul, uint32_t *div) {
+    int c = (code >= 1 && code <= 9) ? (int)code : PA_RATE_UNITY;
+    *mul = c >= PA_RATE_UNITY ? (1u << (c - PA_RATE_UNITY)) : 1u;
+    *div = c <  PA_RATE_UNITY ? (1u << (PA_RATE_UNITY - c)) : 1u;
+}
+static uint32_t pa_entry_tick(const pa_entry_t *e, uint32_t ct, uint32_t clip_ticks, uint32_t cycle) {
+    if (!e) return ct;
+    if (!e->resolution) {
+        /* v1 semantics, byte for byte: no rate, the window inside the clip. */
+        if (!e->loop_len) return ct;
+        uint32_t win = (uint32_t)e->loop_len;
+        if (win > clip_ticks && clip_ticks) win = clip_ticks;
+        if (!win) return ct;
+        return (uint32_t)e->loop_off + (ct % win);
+    }
+    uint32_t mul, div;
+    pa_rate(e->resolution, &mul, &div);
+    uint64_t abs_lane = ((uint64_t)cycle * clip_ticks + ct) * mul / div;
+    uint32_t win = e->loop_len ? (uint32_t)e->loop_len : clip_ticks;
+    if (!win) return (uint32_t)abs_lane;
+    return (uint32_t)e->loop_off + (uint32_t)(abs_lane % win);
 }
 
 /* ------------------------------------------------------------------ */
@@ -743,19 +766,21 @@ static void pa_live_end(seq8_instance_t *inst, int track, int clip, int target) 
  * Takes the writer lock with TRYLOCK: refused (the SPI thread is mid-edit),
  * the cell is simply tried again next tick — last_snap only advances on a
  * write. Nothing here allocates or blocks. */
-static void pa_record_tick(seq8_instance_t *inst, int track, int clip,
-                           uint32_t ct, uint32_t tps) {
+static void pa_record_tick(seq8_instance_t *inst, seq8_track_t *tr, int track, int clip,
+                           uint32_t ct, uint32_t tps, uint32_t clip_ticks) {
     uint32_t cell = tps / 2; if (cell < 6) cell = 6;
-    uint32_t snap = (ct / cell) * cell;
     for (int k = 0; k < PA_LIVE_MAX; k++) {
         pa_live_t *l = &inst->pa_live[track][k];
         if (!__atomic_load_n(&l->used, __ATOMIC_ACQUIRE) || l->mode != PA_LIVE_RECORD) continue;
-        if (l->last_snap == snap) continue;
         uint16_t tgt = l->target;
         if (tgt >= PA_MAX_TARGETS) continue;
         if (!pa_trylock(inst)) return;            /* next tick */
         pa_write_begin(inst);
         pa_entry_t *e = pa_get(inst, track, clip, (int)tgt);
+        /* Recorded along the LANE clock, so a lane with a rate plays back what
+         * the hand did at the speed it was heard. */
+        uint32_t snap = e ? (pa_entry_tick(e, ct, clip_ticks, tr->pa_cycle) / cell) * cell : 0;
+        if (e && l->last_snap == snap) { pa_write_end(inst); pa_unlock(inst); continue; }
         if (!e) inst->pa_store_full = 1;
         else {
             uint16_t s = (uint16_t)(snap > 0xFFFFu - cell ? 0xFFFFu - cell : snap);
@@ -805,6 +830,9 @@ void (*pa_test_midscan_hook)(seq8_instance_t *inst) = 0;
 static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
                              int clip, uint32_t ct, uint32_t clip_ticks,
                              pa_midi_emit_fn emit) {
+    /* The lane clock's cycle count: the clip tick wrapped since last tick. */
+    if (ct < tr->pa_last_ct) tr->pa_cycle++;
+    tr->pa_last_ct = ct;
     uint32_t seq0 = pa_read_seq(inst);
     if (seq0 & 1u) return;                   /* a write is in flight; next tick */
 
@@ -834,7 +862,7 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
         if (pa_live_has(inst, track, tgt)) continue;          /* touch wins */
 
         uint16_t v;
-        if (!pa_eval(e, pa_entry_tick(e, ct, clip_ticks), &v)) continue;
+        if (!pa_eval(e, pa_entry_tick(e, ct, clip_ticks, tr->pa_cycle), &v)) continue;
         if (e->last_sent_valid && e->last_sent == v) continue;   /* unchanged */
 
         int cc = 0;

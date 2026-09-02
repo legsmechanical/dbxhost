@@ -347,7 +347,10 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   here. **Click the jog** for the menu: turn to a row and click for its
   operations — Delete, Mute or Unmute, Smooth or Stepped (on parameters that
   can ramp), and Loop, which gives that parameter its own loop length in steps
-  (CLIP = follow the clip) and applies as you turn. The last row is **Clear
+  (CLIP = follow the clip) and applies as you turn, and Rate, which plays the
+  lane faster or slower — /16 to ×16 in powers of two — with its loop
+  stretching or shrinking to match (a lane at /2 spans two clip cycles, one
+  at ×2 loops twice per clip). The last row is **Clear
   clip**; **Delete + click** on the card does the same. Every operation is one
   undo. **Back** closes one layer at a time. Conductor tracks don't have it.
 - **Back on the SOUND + CONFIG or MACROS card** leaves bank mode and nothing

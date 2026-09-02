@@ -79,13 +79,35 @@ int main(void) {
      * evaluator already honours it, so restoring per-parameter polymetric
      * automation later is UI work rather than a storage or playback change. */
     { pa_entry_t w; memset(&w, 0, sizeof(w)); w.used = 1; w.flags = PA_FLAG_ACTIVE;
-      HX_ASSERT(pa_entry_tick(&w, 500, 384) == 500, "loop_len 0 means follow the clip");
+      HX_ASSERT(pa_entry_tick(&w, 500, 384, 0) == 500, "loop_len 0 means follow the clip");
       w.loop_len = 96;
-      HX_ASSERT(pa_entry_tick(&w, 100, 384) == 4,   "a shorter window wraps inside itself");
-      HX_ASSERT(pa_entry_tick(&w, 192, 384) == 0,   "and wraps again");
+      HX_ASSERT(pa_entry_tick(&w, 100, 384, 0) == 4,   "a shorter window wraps inside itself");
+      HX_ASSERT(pa_entry_tick(&w, 192, 384, 0) == 0,   "and wraps again");
       w.loop_off = 24;
-      HX_ASSERT(pa_entry_tick(&w, 100, 384) == 28,  "the offset moves the window");
+      HX_ASSERT(pa_entry_tick(&w, 100, 384, 0) == 28,  "the offset moves the window");
       OK("the per-parameter loop window is already honoured, and inert while unset"); }
+
+    /* THE RATE (2026-09-03): resolution is a code, 5 = x1, each step a power of
+     * two, /16 (1) to x16 (9). The lane clock is the clip clock scaled, the
+     * window in lane ticks — so a slow lane spans several clip cycles (the
+     * cycle count is what carries it past the wrapped clip tick). */
+    { pa_entry_t w; memset(&w, 0, sizeof(w)); w.used = 1; w.flags = PA_FLAG_ACTIVE;
+      w.resolution = 5;
+      HX_ASSERT(pa_entry_tick(&w, 100, 384, 0) == 100, "x1 with no window is the clip tick");
+      HX_ASSERT(pa_entry_tick(&w, 100, 384, 3) == 100, "…on every cycle");
+      w.resolution = 6;                                   /* x2 */
+      HX_ASSERT(pa_entry_tick(&w, 100, 384, 0) == 200, "x2: the lane runs twice as fast");
+      HX_ASSERT(pa_entry_tick(&w, 200, 384, 0) == 16,  "…and loops twice per clip (400 % 384)");
+      w.resolution = 4;                                   /* /2 */
+      HX_ASSERT(pa_entry_tick(&w, 100, 384, 0) == 50,  "/2: half speed");
+      HX_ASSERT(pa_entry_tick(&w, 100, 384, 1) == 242, "/2: the SECOND clip cycle plays the lane's second half (484 % 384)");
+      w.resolution = 1;                                   /* /16 */
+      HX_ASSERT(pa_entry_tick(&w, 0, 384, 15) == (15u * 384u / 16u) % 384u, "/16 spans sixteen clip cycles");
+      w.resolution = 9;                                   /* x16 */
+      HX_ASSERT(pa_entry_tick(&w, 24, 384, 0) == 0,    "x16: 24 ticks in is one full lane (384) — wrapped to 0");
+      w.resolution = 6; w.loop_len = 96; w.loop_off = 0;
+      HX_ASSERT(pa_entry_tick(&w, 100, 384, 0) == 8,   "x2 with a 96-tick window: 200 % 96");
+      OK("the rate scales the lane clock, /16..x16, and the window follows in lane ticks"); }
 
     printf("PASS: test_param_auto_eval (%d checks)\n", ok_count);
     return 0;

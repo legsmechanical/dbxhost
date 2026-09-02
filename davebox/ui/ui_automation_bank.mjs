@@ -32,7 +32,7 @@ import { BANK_AUTOMATION } from './ui_constants.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey,
          automationToggleActive, automationToggleSmooth, automationSmoothable,
-         automationSetLoop, automationClearClip } from './ui_automation.mjs';
+         automationSetLoop, automationSetRate, automationRateText, automationClearClip } from './ui_automation.mjs';
 import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
          drawBrackets, kitUseLayout, MV_FOOTER_Y } from './ui_movy.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -48,7 +48,7 @@ function st() {
     return S.autoBank;
 }
 export function autoBankReset() {
-    if (S.autoBank) { S.autoBank.menu = false; S.autoBank.ops = null; S.autoBank.loopEdit = false; }
+    if (S.autoBank) { S.autoBank.menu = false; S.autoBank.ops = null; S.autoBank.loopEdit = false; S.autoBank.rateEdit = false; }
 }
 export function autoBankMenuOpen() { return !!(S.autoBank && (S.autoBank.menu || S.autoBank.ops)); }
 
@@ -58,7 +58,7 @@ export function autoBankRows(track, clip) {
     const rows = [];
     for (const e of automationEntriesFor(track, clip)) {
         rows.push({ kind: 'entry', target: e.target, label: automationTargetLabel(e.target),
-                    active: e.active, smooth: e.smooth, count: e.count, loop: e.loop });
+                    active: e.active, smooth: e.smooth, count: e.count, loop: e.loop, res: e.res });
     }
     rows.sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
     if (S.clipAtHas[track] && S.clipAtHas[track][clip]) rows.push({ kind: 'at', label: 'Aftertouch (pads)' });
@@ -86,6 +86,7 @@ function opsFor(track, clip, r) {
     if (isFinite(slot) && automationSmoothable(slot, fullKey))
         ops.push({ op: 'smooth', label: r.smooth ? 'Stepped' : 'Smooth' });
     ops.push({ op: 'loop', label: 'Loop', value: loopText(rowLoopSteps(track, clip, r)) });
+    ops.push({ op: 'rate', label: 'Rate', value: automationRateText(r.res) });
     return ops;
 }
 
@@ -109,11 +110,13 @@ export function drawAutomationBankBody() {
     if (a.ops) {
         const ors = a.ops.rows.map((o, i) => ({
             label: o.label,
-            value: o.op === 'loop' ? (a.loopEdit && i === a.ops.sel ? '<' + loopText(a.loopVal) + '>' : o.value) : undefined,
+            value: (o.op === 'loop' || o.op === 'rate')
+                ? ((a.loopEdit || a.rateEdit) && i === a.ops.sel ? '<' + o.value + '>' : o.value) : undefined,
         }));
         drawKitBackdropDim(0, LIST_TOP, 128, MV_FOOTER_Y - LIST_TOP);
         drawKitStackedList(1, ors, a.ops.sel, {});
         hints = a.loopEdit ? [['JOG', 'LEN'], ['CLK', 'DONE'], ['BACK', 'DONE']]
+              : a.rateEdit ? [['JOG', 'RATE'], ['CLK', 'DONE'], ['BACK', 'DONE']]
                            : [['CLK', 'DO'], ['JOG', 'OP'], ['BACK', 'LIST']];
     } else if (a.menu) {
         hints = [['CLK', 'OPS'], ['JOG', 'ROW'], ['BACK', 'CARD']];
@@ -134,7 +137,7 @@ export function autoBankClick() {
     if (a.sel >= rows.length) { autoBankClearClip(); return; }      /* the Clear clip row */
     const r = rows[a.sel];
     a.ops = { rows: opsFor(t, c, r), sel: 0, row: r };
-    a.loopEdit = false;
+    a.loopEdit = false; a.rateEdit = false;
 }
 function runOp(t, c, a) {
     const o = a.ops.rows[a.ops.sel], r = a.ops.row;
@@ -145,6 +148,12 @@ function runOp(t, c, a) {
          * click — or Back — just leaves it. One checkpoint per edit session. */
         if (!a.loopEdit) { a.loopEdit = true; a.loopVal = rowLoopSteps(t, c, r); a.loopCkpt = false; return; }
         a.loopEdit = false; a.ops = null;
+        return;
+    }
+    if (o.op === 'rate') {
+        /* Same shape as Loop: click to edit, every turn applies, click/Back leaves. */
+        if (!a.rateEdit) { a.rateEdit = true; a.rateVal = (r.res >= 1 && r.res <= 9) ? r.res : 5; a.rateCkpt = false; return; }
+        a.rateEdit = false; a.ops = null;
         return;
     }
     if (r.kind === 'at') {
@@ -174,6 +183,18 @@ export function autoBankJog(delta) {
     if (!a.menu && !a.ops) return false;
     const t = S.activeTrack, c = effectiveClip(t);
     if (a.ops) {
+        if (a.rateEdit) {
+            const nv = Math.max(1, Math.min(9, a.rateVal + delta));
+            if (nv !== a.rateVal) {
+                a.rateVal = nv;
+                automationSetRate(t, c, a.ops.row.target, nv, !a.rateCkpt);
+                a.rateCkpt = true;
+                a.ops.row.res = nv;
+                const rr = a.ops.rows.find(x => x.op === 'rate');
+                if (rr) rr.value = automationRateText(nv);
+            }
+            return true;
+        }
         if (a.loopEdit) {
             const max = (S.clipLength[t] && S.clipLength[t][c]) || 16;
             const nv = Math.max(0, Math.min(max, a.loopVal + delta));
@@ -200,6 +221,7 @@ export function autoBankJog(delta) {
 export function autoBankBack() {
     const a = st();
     if (a.loopEdit) { a.loopEdit = false; return true; }
+    if (a.rateEdit) { a.rateEdit = false; return true; }
     if (a.ops) { a.ops = null; return true; }
     if (a.menu) { a.menu = false; return true; }
     return false;

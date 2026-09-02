@@ -188,6 +188,10 @@ Proposed build order once lifted (drafted for Josh's review, 2026-09-02 night):
    after the target. Smooth/Stepped LEFT the module editor. ⏳ NOT surfaced: resolution
    (stored, no playback effect — `pa_entry_tick` reads loop_len/off only); "go to the
    parameter"; "hold a step, see the locks" on this card (the list has no values).
+   ✅ 2026-09-03 evening: RATE built (Josh: "/16 to x16") — `resolution` is a code 1..9
+   (5 = x1; 0 = unset = x1), the lane clock is the clip clock scaled with a per-track CYCLE
+   count so slow lanes span several clip cycles; recording snaps along the lane clock; `pa_list`
+   carries it; a Rate row beside Loop, applying on every turn.
 5. ✅ **BUILT 2026-09-02** (`099ae47b` promote, `19be8fe0` hold-never-creates, `ac30c22a` STEP bank, `798ff3dc` reveal, + hints/undo/manual) — **The held step, one law (⭑RULED 2026-09-02 midday, spec §3)**: a hold creates nothing (a
    pad press while held does); the step editor becomes the STEP bank (`--` with no step held);
    a held step redirects the on-screen knobs to that step everywhere; hold + JOG right reveals
