@@ -94,3 +94,40 @@ export function knobRingNorm(knob, value) {
     const n = (Number(value) - knob.min) / span;
     return n < 0 ? 0 : (n > 1 ? 1 : n);
 }
+
+
+/* ---- rings for the KIT-PAGE banks (STEP, SOUND + CONFIG, MACROS) --------
+ *
+ * Those banks draw their eight cells themselves (ui_render, ui_sound), so the
+ * rings read the SAME cells: a provider per bank, registered at module init
+ * (a registry, because ui_leds must not import either of them — both import
+ * ui_leds). A cell's norm: arc/vbar/pill → norm, arcbip → the signed value
+ * re-centred, a list (valsq/enumsq with options) → sel over its span; a cell
+ * with nothing to say (blank, `--`, a text-only value) is null → unlit.
+ * `auto` on a cell (an ACTIVE automation) asks for the BLINK (Josh,
+ * 2026-09-03: "blink any knob that has automation"). */
+const ringCellProviders = {};
+export function registerRingCells(bank, fn) { ringCellProviders[bank] = fn; }
+export function ringCellsFor(bank) {
+    const fn = ringCellProviders[bank];
+    if (!fn) return null;
+    try { return fn() || null; } catch (e) { return null; }
+}
+export function ringNormOfCell(cell) {
+    if (!cell || cell.kind === 'blank') return null;
+    if (cell.text === '--' && !cell.options) return null;
+    switch (cell.kind) {
+        case 'arc': case 'vbar': case 'faderail': case 'hbar':
+            return (typeof cell.norm === 'number') ? Math.max(0, Math.min(1, cell.norm)) : null;
+        case 'pill':
+            return cell.norm ? 1 : 0;
+        case 'arcbip':
+            return (typeof cell.signed === 'number') ? Math.max(0, Math.min(1, (cell.signed + 1) / 2)) : null;
+        case 'valsq': case 'enumsq': case 'frac': case 'dirsq':
+            if (cell.options && cell.options.length > 1 && typeof cell.sel === 'number' && cell.sel >= 0)
+                return Math.max(0, Math.min(1, cell.sel / (cell.options.length - 1)));
+            return null;
+        default:
+            return null;
+    }
+}

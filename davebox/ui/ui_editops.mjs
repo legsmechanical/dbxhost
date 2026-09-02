@@ -543,7 +543,7 @@ export function _switchActiveTrack(newT) {
      * handler already declines when sound mode is still open, so the routes
      * that FOLLOW the track (Shift+pad, launchers, remote UI) are unaffected.
      * SILENT: arriving is not a bank gesture, so the display window stays shut. */
-    if (S.activeBank === BANK_MACROS || (S.activeBank === BANK_SOUND && S.bankCardLatched)) {
+    if (isSoundBank(S.activeBank)) {
         S.pendingSoundEnterTrack = S.activeTrack;
         S.pendingSoundEnterSilent = true;
         S.pendingSoundEnterMacros = (S.activeBank === BANK_MACROS);

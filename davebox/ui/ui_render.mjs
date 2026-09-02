@@ -46,6 +46,7 @@ import {
 } from './ui_leds.mjs';
 import { soundRender, renderGatewayCard, renderTrackGatewayCard, renderMacrosPeek } from './ui_sound.mjs';
 import { drawAutomationBankBody } from './ui_automation_bank.mjs';
+import { registerRingCells } from './ui_knob_leds.mjs';
 import { drawMenuHeader } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* ------------------------------------------------------------------ */
@@ -1211,6 +1212,69 @@ export function drawUI() {
 /* The held step's page: the STEP bank's layout with THAT step's values. Drawn
  * (a) on the STEP bank whenever a step is held and (b) anywhere as THE REVEAL
  * (S.stepReveal, hold + jog right). Returns true when it drew the frame. */
+/* The held step's eight cells — the STEP bank's page AND its knob rings read
+ * these (registerRingCells below), so the two cannot disagree. null when no
+ * step with notes is held. */
+export function heldStepCells() {
+    if (S.heldStep < 0 || !S.heldStepNotes.length) return null;
+    const _dash = (s) => s === '—' ? '--' : s;
+    const t = S.activeTrack;
+    if (S.trackPadMode[t] === PAD_MODE_DRUM) {
+        const tps   = S.drumLaneTPS[t] || 24;
+        const _gateSteps = S.stepEditGate / tps;
+        return [
+                { kind: 'valsq', label: 'Leng', name: 'Length',
+                  text: fmtStepLen(_gateSteps) },
+                { kind: 'arc', label: 'Vel', name: 'Velocity', text: String(S.stepEditVel),
+                  norm: Math.max(0, Math.min(1, S.stepEditVel / 127)) },
+                { kind: 'arcbip', label: 'Nudg', name: 'Nudge',
+                  text: (S.stepEditNudge >= 0 ? '+' : '') + S.stepEditNudge,
+                  signed: Math.max(-1, Math.min(1, S.stepEditNudge / Math.max(1, tps - 1))) },
+                { kind: 'blank', label: '' },
+                { kind: 'valsq', label: 'Iter', name: 'Iteration',
+                  text: _dash(formatStepIter(S.stepEditIter)),
+                  options: STEP_ITER_LIST.map((v) => _dash(formatStepIter(v))),
+                  sel: Math.max(0, STEP_ITER_LIST.indexOf(S.stepEditIter)) },
+                { kind: 'arc', label: 'Prob', name: 'Probability',
+                  text: (S.stepEditRand === 0 ? 100 : S.stepEditRand) + '%',
+                  norm: (S.stepEditRand === 0 ? 100 : S.stepEditRand) / 100 },
+                { kind: 'valsq', label: 'Ratch', name: 'Ratchet',
+                  text: S.stepEditRatch <= 1 ? '--' : String(S.stepEditRatch),
+                  options: ['--', '2', '3', '4'], sel: S.stepEditRatch <= 1 ? 0 : S.stepEditRatch - 1 },
+                { kind: 'blank', label: '' },
+            ];
+    }
+    const ac = effectiveClip(t);
+    const root = S.heldStepNotes[0];
+    const noteName = midiNoteName(root);
+    const noteSub = S.heldStepNotes.length > 1 ? '+' + (S.heldStepNotes.length - 1) : '';
+    const noteLabel = noteSub ? noteName + noteSub : noteName;
+    const tps = S.clipTPS[t][ac] || 24;
+    const _gateSteps = S.stepEditGate / tps;
+    return [
+        { kind: 'blank', label: 'Note', name: 'Note', bigText: noteLabel },
+        { kind: 'blank', label: 'Oct',  name: 'Note', bigText: noteLabel },
+        { kind: 'valsq', label: 'Leng', name: 'Length',
+          text: fmtStepLen(_gateSteps) },
+        { kind: 'arc', label: 'Vel', name: 'Velocity', text: String(S.stepEditVel),
+          norm: Math.max(0, Math.min(1, S.stepEditVel / 127)) },
+        { kind: 'arcbip', label: 'Nudg', name: 'Nudge',
+          text: (S.stepEditNudge >= 0 ? '+' : '') + S.stepEditNudge,
+          signed: Math.max(-1, Math.min(1, S.stepEditNudge / Math.max(1, tps - 1))) },
+        { kind: 'valsq', label: 'Iter', name: 'Iteration',
+          text: _dash(formatStepIter(S.stepEditIter)),
+          options: STEP_ITER_LIST.map((v) => _dash(formatStepIter(v))),
+          sel: Math.max(0, STEP_ITER_LIST.indexOf(S.stepEditIter)) },
+        { kind: 'arc', label: 'Prob', name: 'Probability',
+          text: (S.stepEditRand === 0 ? 100 : S.stepEditRand) + '%',
+          norm: (S.stepEditRand === 0 ? 100 : S.stepEditRand) / 100 },
+        { kind: 'valsq', label: 'Ratch', name: 'Ratchet',
+          text: S.stepEditRatch <= 1 ? '--' : String(S.stepEditRatch),
+          options: ['--', '2', '3', '4'], sel: S.stepEditRatch <= 1 ? 0 : S.stepEditRatch - 1 },
+    ];
+}
+registerRingCells(BANK_STEP, heldStepCells);
+
 function drawHeldStepPage() {
     if (S.heldStep < 0) return false;
     /* The footer says what the jog does HERE: on the reveal it goes back; on
@@ -1330,27 +1394,7 @@ function drawHeldStepPage() {
             if (S.heldStepNotes.length > 0) {
                 const tps   = S.drumLaneTPS[t] || 24;
                 const _gateSteps = S.stepEditGate / tps;
-                const cells = [
-                    { kind: 'valsq', label: 'Leng', name: 'Length',
-                      text: fmtStepLen(_gateSteps) },
-                    { kind: 'arc', label: 'Vel', name: 'Velocity', text: String(S.stepEditVel),
-                      norm: Math.max(0, Math.min(1, S.stepEditVel / 127)) },
-                    { kind: 'arcbip', label: 'Nudg', name: 'Nudge',
-                      text: (S.stepEditNudge >= 0 ? '+' : '') + S.stepEditNudge,
-                      signed: Math.max(-1, Math.min(1, S.stepEditNudge / Math.max(1, tps - 1))) },
-                    { kind: 'blank', label: '' },
-                    { kind: 'valsq', label: 'Iter', name: 'Iteration',
-                      text: _dash(formatStepIter(S.stepEditIter)),
-                      options: STEP_ITER_LIST.map((v) => _dash(formatStepIter(v))),
-                      sel: Math.max(0, STEP_ITER_LIST.indexOf(S.stepEditIter)) },
-                    { kind: 'arc', label: 'Prob', name: 'Probability',
-                      text: (S.stepEditRand === 0 ? 100 : S.stepEditRand) + '%',
-                      norm: (S.stepEditRand === 0 ? 100 : S.stepEditRand) / 100 },
-                    { kind: 'valsq', label: 'Ratch', name: 'Ratchet',
-                      text: S.stepEditRatch <= 1 ? '--' : String(S.stepEditRatch),
-                      options: ['--', '2', '3', '4'], sel: S.stepEditRatch <= 1 ? 0 : S.stepEditRatch - 1 },
-                    { kind: 'blank', label: '' },
-                ];
+                const cells = heldStepCells();
                 drawStepEditKitPage(_stepTitle, cells, null, _footer);
             } else {
                 drawStepEditKitPage(_stepTitle, null, null, _footer);
@@ -1370,27 +1414,7 @@ function drawHeldStepPage() {
             const noteLabel = noteSub ? noteName + noteSub : noteName;
             const tps = S.clipTPS[S.activeTrack][ac] || 24;
             const _gateSteps = S.stepEditGate / tps;
-            const cells = [
-                { kind: 'blank', label: 'Note', name: 'Note', bigText: noteLabel },
-                { kind: 'blank', label: 'Oct',  name: 'Note', bigText: noteLabel },
-                { kind: 'valsq', label: 'Leng', name: 'Length',
-                  text: fmtStepLen(_gateSteps) },
-                { kind: 'arc', label: 'Vel', name: 'Velocity', text: String(S.stepEditVel),
-                  norm: Math.max(0, Math.min(1, S.stepEditVel / 127)) },
-                { kind: 'arcbip', label: 'Nudg', name: 'Nudge',
-                  text: (S.stepEditNudge >= 0 ? '+' : '') + S.stepEditNudge,
-                  signed: Math.max(-1, Math.min(1, S.stepEditNudge / Math.max(1, tps - 1))) },
-                { kind: 'valsq', label: 'Iter', name: 'Iteration',
-                  text: _dash(formatStepIter(S.stepEditIter)),
-                  options: STEP_ITER_LIST.map((v) => _dash(formatStepIter(v))),
-                  sel: Math.max(0, STEP_ITER_LIST.indexOf(S.stepEditIter)) },
-                { kind: 'arc', label: 'Prob', name: 'Probability',
-                  text: (S.stepEditRand === 0 ? 100 : S.stepEditRand) + '%',
-                  norm: (S.stepEditRand === 0 ? 100 : S.stepEditRand) / 100 },
-                { kind: 'valsq', label: 'Ratch', name: 'Ratchet',
-                  text: S.stepEditRatch <= 1 ? '--' : String(S.stepEditRatch),
-                  options: ['--', '2', '3', '4'], sel: S.stepEditRatch <= 1 ? 0 : S.stepEditRatch - 1 },
-            ];
+            const cells = heldStepCells();
             drawStepEditKitPage(_stepTitle, cells, { name: noteName, sub: noteSub }, _footer);
             return true;
         } else if (S.stepWasEmpty) {

@@ -710,6 +710,16 @@ static void pa_live_set(seq8_instance_t *inst, seq8_track_t *tr, int track,
             break;
         }
         if (!l) return;                       /* more than PA_LIVE_MAX hands */
+    } else if (!hold_only) {
+        /* An existing hand: Record may have been PUNCHED in or out under it
+         * (Josh, 2026-09-03: "live recording seems flakey when punching in
+         * and out during playback"). The mode was decided once, at the first
+         * turn, so a sweep that began before Record went on never recorded,
+         * and one that began before Record went off kept writing. Re-decide
+         * per write; a flip to RECORD restarts the snap so the first cell is
+         * written where the hand is now, not back-filled from the old one. */
+        uint8_t want = (tr->recording && inst->playing) ? PA_LIVE_RECORD : PA_LIVE_OVERRIDE;
+        if (want != l->mode) { l->mode = want; l->last_snap = 0xFFFFFFFFu; }
     }
     l->val = val;
 }

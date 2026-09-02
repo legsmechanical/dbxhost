@@ -47,6 +47,7 @@ import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
 import { instrOptions, fmtInstr, INSTR_SCHWUNG, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD } from './ui_constants.mjs';
 import { applyTrackConfig, applyBankParam, readBankParams } from './ui_dsp_bridge.mjs';
+import { registerRingCells } from './ui_knob_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
@@ -684,6 +685,7 @@ const S = {
     macMigrateTmp: null,
     macMergeWanted: false,      /* re-run the chain-store merge (a patch loaded) */
     macBanksRead: false,        /* bank targets' values re-read this seed */
+    macTurnMs: [0, 0, 0, 0, 0, 0, 0, 0],   /* last turn per knob, for the poll's hand rule */
     bankHome: BANK_SOUND,       /* which bank identity the open mode carries */
     asnQuick: false,            /* opened by Shift+touch: the commit lands on the page */
 
@@ -831,7 +833,7 @@ export function soundMacrosForTest() {
  * page while the card is not visible). */
 export function soundOpen() { return S.active; }
 export function soundResting() {
-    return !!(S.active && S.view === VIEW_MACROS && !soundIsGlobal() && !GS.bankCardLatched);
+    return !!(S.active && (S.view === VIEW_MACROS || S.view === VIEW_PROMPT) && !soundIsGlobal() && !GS.bankCardLatched);
 }
 export function soundActive() { return S.active && !soundResting(); }
 /* Sound mode is open ON ITS ROOT SCREEN — the block picker, i.e. what the bank
@@ -3389,6 +3391,7 @@ function macroTurn(idx, delta) {
     }
     /* A bank macro: detents accumulate as for a chain param (its drain is in
      * macroTick, with the bank's own write path). */
+    S.macTurnMs[idx] = nowMs();
     const dir = delta > 0 ? 1 : -1;
     /* Direction reversal RESETS the accumulator rather than unwinding it — the
      * canvaskit rule, and the part that makes a knob feel right. */
@@ -3397,6 +3400,7 @@ function macroTurn(idx, delta) {
 }
 
 const MACRO_READS_PER_TICK = 2;
+const MACRO_HAND_MS = 300;             /* a turned knob owns its value this long */
 const MACRO_POLL_EVERY_STOPPED = 8;
 /* Tick only: the migration, the seed (metadata then value, in knob order, two
  * round trips a tick), the turn law's drain, and the re-read. */
@@ -3493,7 +3497,12 @@ function macroPollTick() {
         const i = (S.macPoll + n) % 8;
         const m = store[i], cell = S.macCells[i];
         if (!m || m.kind !== 'chain' || !cell || cell.vanished || S.macVals[i] == null) continue;
-        if (i === S.touchedIdx || S.knobAccum[i]) continue;
+        /* ⚠ Skip a knob under the HAND (touched, or turned within the last
+         * moment) — NOT one with a leftover sub-step remainder in its
+         * accumulator: that remainder never clears on its own, and skipping
+         * on it silenced every knob but the first once turned (Josh,
+         * 2026-09-03: "only the 1st macro widget is visualizing"). */
+        if (i === S.touchedIdx || (S.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
         const v = parseValue(cell, engineGet(S.slot, m.comp, m.key));
         if (v !== S.macVals[i]) { S.macVals[i] = v; S.dirty = true; }
         S.macPoll = i + 1;
@@ -3572,6 +3581,13 @@ function renderMacros() {
 }
 /* The rest peek of a track remembered on MACROS (ui_render's card gate, sound
  * mode closed): the page from the store, no reads. */
+/* The rings for the two kit-page banks sound mode owns: the same cells the
+ * page draws (see ui_knob_leds registerRingCells). Only while the mode is
+ * open on this track — including RESTING, which is the whole point: the
+ * knobs work on the overview, so the rings say where they sit. */
+registerRingCells(BANK_MACROS, () => (S.active && !soundIsGlobal() && S.track === GS.activeTrack && S.track >= 0) ? macroCells(S.track, true) : null);
+registerRingCells(BANK_SOUND, () => (S.active && !soundIsGlobal() && S.track === GS.activeTrack && S.track >= 0 && S.view !== VIEW_EDIT) ? levelCells() : null);
+
 export function renderMacrosPeek(track) {
     clear_screen();
     kitUseLayout('bank');
@@ -5356,13 +5372,17 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.dirty = true;
             return true;
         }
-        if (S.view === VIEW_MACROS) {
-            /* The MACROS card: Back is OUT — of sound mode AND of bank mode,
-             * exactly as from the SOUND + CONFIG prompt (the trailing branch
-             * below). The exit hands the track's bank to its origin. */
-            soundExit();
+        if (S.view === VIEW_MACROS || S.view === VIEW_PROMPT) {
+            /* THE CARDS (MACROS, SOUND + CONFIG): Back is out of BANK MODE and
+             * nothing else — "Back never changes which bank you are on" (the
+             * manual; Josh 2026-09-03: leaving these banks put the knobs on a
+             * different bank). The mode stays open, RESTING: the overview
+             * shows, the knobs are still the macros / the levels, a touch
+             * peeks the card. (Before: soundExit handed the bank to its
+             * origin crumb, which read as the knobs changing mode.) */
             GS.bankCardLatched = false;
             standDownBankDisplay(true);
+            S.touchedIdx = -1;
             S.presetMsg = '';
             S.dirty = true;
             return true;

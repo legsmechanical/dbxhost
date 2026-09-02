@@ -261,16 +261,19 @@ step('⚠ a deferred entry still SHOWS, and the jog leaves by walking the cycle'
         throw new Error('the jog did not walk off the bank: ' + S.activeBank);
 });
 
-step('⭑ and BACK from the prompt returns to the bank you CAME FROM', () => {
-    /* The origin crumb still does its job — it just belongs to Back now rather
-     * than to a left turn off the menu's top row. */
+step('⭑ and BACK from the prompt leaves BANK MODE and keeps the bank (2026-09-03: "Back never changes which bank you are on")', () => {
+    /* ⚠ Rewritten 2026-09-03. Back used to hand the bank to its origin crumb,
+     * which Josh saw as the knobs changing mode on the way out. Now Back only
+     * unlatches: the track stays on SOUND + CONFIG, the mode stays open
+     * RESTING (the overview shows, the knobs are the levels). */
     reset(PAD_MODE_MELODIC_SCALE, 3);
     S.pendingSoundEnterTrack = 2; globalThis.tick(); snd.soundTick();
     if (!snd.soundActive()) throw new Error('control: deferred entry did not open');
     send(51, 127); send(51, 0); globalThis.tick(); snd.soundTick();
-    if (snd.soundActive()) throw new Error('Back did not leave the prompt');
-    if (S.activeBank !== 3)
-        throw new Error('Back landed on the wrong bank: ' + S.activeBank);
+    if (S.bankCardLatched) throw new Error('Back did not leave bank mode');
+    if (!snd.soundOpen() || snd.soundActive()) throw new Error('the mode should stay open, RESTING');
+    if (S.activeBank !== BANK_SOUND)
+        throw new Error('Back changed the bank: ' + S.activeBank);
 });
 
 step('⚠ RETIRED 2026-09-03: the old AUTO bank 6 is OFF the walk (the AUTOMATION bank replaces it), so its grey pad coloring cannot be reached from the jog', () => {
@@ -297,7 +300,7 @@ step('⭑⭑ the TOP LEVEL keeps THE ONE LAW: bank mode or knob peek, never othe
      * long the retired window would have run. */
     S.bankCardLatched = false;
     if (snd.soundRender()) throw new Error('card shown outside bank mode');
-    if (!snd.soundActive()) throw new Error('yielding must not EXIT sound mode');
+    if (!snd.soundOpen()) throw new Error('yielding must not EXIT sound mode');
     S.tickCount += 200; globalThis.tick();
     if (snd.soundRender()) throw new Error('card came back with no driver at all');
     /* Jog touch is a RETIRED display driver: it must show nothing. */
@@ -406,13 +409,11 @@ step('⭑ BACK lands on the bank you CAME FROM — same as the jog\'s left turn'
     right();                                   /* enter from STEP (the bank before it) */
     if (!snd.soundActive()) throw new Error('control: did not enter sound mode');
     send(51, 127); send(51, 0); globalThis.tick();
-    if (snd.soundActive()) throw new Error('Back did not close SOUND + CONFIG');
-    if (S.activeBank !== BANK_STEP)
-        throw new Error('Back landed on ' + S.activeBank + ', not STEP — the bank it ' +
-                        'was entered from' + (S.activeBank === 0 ? '; 0 is the RETIRED ' +
-                        'default-bank close' : ''));
-    if (S.trackActiveBank[2] !== BANK_STEP)
-        throw new Error('the recorded bank did not follow Back: ' + S.trackActiveBank[2]);
+    /* ⚠ 2026-09-03: Back KEEPS the bank (unlatches; the mode rests). The
+     * jog's left turn is the way to the bank you came from. */
+    if (S.bankCardLatched) throw new Error('Back did not leave bank mode');
+    if (S.activeBank !== BANK_SOUND || S.trackActiveBank[2] !== BANK_SOUND)
+        throw new Error('Back changed the bank: ' + S.activeBank + '/' + S.trackActiveBank[2]);
 
     /* ...and the jog agrees, which is now the point rather than the contrast.
      * The jog's exit lives on the CARD now (the menu clamps, 2026-09-01). */
@@ -720,7 +721,7 @@ step('⭑⭑ THE ONE LAW, SESSION FLAVOUR: the FX list obeys the LATCH, never th
     if (snd.soundRender() !== false)
         throw new Error('the FX list held the screen outside bank mode — it covers the ' +
                         'session overview');
-    if (!snd.soundActive()) throw new Error('yielding must not EXIT sound mode');
+    if (!snd.soundOpen()) throw new Error('yielding must not EXIT sound mode');
     /* ⭑ The RETIRED drivers must bring back nothing. */
     S.jogTouched = true;
     if (snd.soundRender() !== false)

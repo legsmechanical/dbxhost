@@ -9,7 +9,7 @@ import {
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
 import { arpVelLevel } from './ui_pure.mjs';
-import { knobRingColor, knobRingNorm } from './ui_knob_leds.mjs';
+import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell } from './ui_knob_leds.mjs';
 import {
     White, Red, Green, Blue, DarkBlue, LightGrey, DarkGrey, Cyan, PurpleBlue, VividYellow,
     DeepRed, DeepGreen, DeepMagenta, Mustard
@@ -879,6 +879,17 @@ export function updateTrackLEDs() {
             } else {
                 ledVal = S.clipCCVal[_t6][_c6][k] >= 0 ? White : LED_OFF;
             }
+        } else if (ringCellsFor(S.activeBank)) {
+            /* The kit-page banks (STEP, SOUND + CONFIG, MACROS): the ring
+             * rides the SAME cell the page draws — same ramps as the param
+             * banks below — and an ACTIVE automation blinks it (Josh,
+             * 2026-09-03: "the knob rings on the new banks need the same
+             * treatment as the others"). Computed once per frame. */
+            if (k === 0) S._ringCells = ringCellsFor(S.activeBank);
+            const cell = S._ringCells ? S._ringCells[k] : null;
+            const nv = ringNormOfCell(cell);
+            ledVal = knobRingColor(k, nv);
+            if (cell && cell.auto === 'auto' && (Math.floor(S.clockMs / 440) % 2)) ledVal = LED_OFF;
         } else if (PARAM_LED_BANKS.indexOf(S.activeBank) >= 0) {
             /* ⭑ THE RING RIDES THE VALUE (2026-08-29, ported from upstream's
              * param-pages knob grid — see ui_knob_leds.mjs for the ramps and

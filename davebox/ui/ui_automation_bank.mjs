@@ -113,7 +113,7 @@ export function drawAutomationBankBody() {
         }));
         drawKitBackdropDim(0, LIST_TOP, 128, MV_FOOTER_Y - LIST_TOP);
         drawKitStackedList(1, ors, a.ops.sel, {});
-        hints = a.loopEdit ? [['JOG', 'LEN'], ['CLK', 'SET'], ['BACK', 'CANCEL']]
+        hints = a.loopEdit ? [['JOG', 'LEN'], ['CLK', 'DONE'], ['BACK', 'DONE']]
                            : [['CLK', 'DO'], ['JOG', 'OP'], ['BACK', 'LIST']];
     } else if (a.menu) {
         hints = [['CLK', 'OPS'], ['JOG', 'ROW'], ['BACK', 'CARD']];
@@ -140,10 +140,10 @@ function runOp(t, c, a) {
     const o = a.ops.rows[a.ops.sel], r = a.ops.row;
     if (!o) return;
     if (o.op === 'loop') {
-        if (!a.loopEdit) { a.loopEdit = true; a.loopVal = rowLoopSteps(t, c, r); return; }
-        const tps = (S.clipTPS[t] && S.clipTPS[t][c]) || 24;
-        automationSetLoop(t, c, r.target, a.loopVal > 0 ? a.loopVal * tps : 0);
-        showActionPopup('LOOP', loopText(a.loopVal));
+        /* Click enters the edit; every turn APPLIES (Josh, 2026-09-03: "take
+         * effect on value change rather than confirmation click"); the next
+         * click — or Back — just leaves it. One checkpoint per edit session. */
+        if (!a.loopEdit) { a.loopEdit = true; a.loopVal = rowLoopSteps(t, c, r); a.loopCkpt = false; return; }
         a.loopEdit = false; a.ops = null;
         return;
     }
@@ -176,7 +176,16 @@ export function autoBankJog(delta) {
     if (a.ops) {
         if (a.loopEdit) {
             const max = (S.clipLength[t] && S.clipLength[t][c]) || 16;
-            a.loopVal = Math.max(0, Math.min(max, a.loopVal + delta));
+            const nv = Math.max(0, Math.min(max, a.loopVal + delta));
+            if (nv !== a.loopVal) {
+                a.loopVal = nv;
+                const tps = (S.clipTPS[t] && S.clipTPS[t][c]) || 24;
+                automationSetLoop(t, c, a.ops.row.target, nv > 0 ? nv * tps : 0, !a.loopCkpt);
+                a.loopCkpt = true;
+                a.ops.row.loop = nv > 0 ? nv * tps : 0;
+                const lr = a.ops.rows.find(x => x.op === 'loop');
+                if (lr) lr.value = loopText(nv);
+            }
         } else {
             a.ops.sel = Math.max(0, Math.min(a.ops.rows.length - 1, a.ops.sel + delta));
         }

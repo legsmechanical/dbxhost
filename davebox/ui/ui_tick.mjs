@@ -1380,11 +1380,11 @@ export function _tickImpl() {
          * SILENT — arriving is not a bank gesture. ⚠ Conductor tracks never
          * take this bank (takeBankIdentity skips them); the pad-mode check keeps
          * a hand-edited sidecar from opening a screen they have no row for. */
-        /* ⭑ MACROS opens AT REST too (unlatched — soundResting): its knobs
-         * must work on the overview like any bank's. SOUND + CONFIG keeps
-         * the bank-mode scope (its prompt at rest was the 09-01 bug). */
-        if (!S.sessionView && !soundOpen()
-                && (S.activeBank === BANK_MACROS || (S.activeBank === BANK_SOUND && S.bankCardLatched))
+        /* ⭑ BOTH sound banks open AT REST (unlatched — soundResting, 2026-09-03):
+         * their knobs (the macros, the levels) work on the overview like any
+         * bank's, and Back never changes the bank. The 09-01 bug was the
+         * prompt being open AND active at rest; resting is not active. */
+        if (!S.sessionView && !soundOpen() && isSoundBank(S.activeBank)
                 && S.pendingSoundEnterTrack < 0 && S.moveCoRunTrack < 0
                 && !S.awaitingProjectSelect
                 && S.trackPadMode[S.activeTrack] !== PAD_MODE_CONDUCT) {

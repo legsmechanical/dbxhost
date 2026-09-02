@@ -435,7 +435,7 @@ step('⚠ control: with no gesture crumb, Menu is NOT a closer', () => {
     ticks(8);
     sound.soundEnter(0, 0);                 /* a BANK-WALK style entry: no crumb */
     ticks(4);
-    if (!sound.soundActive()) throw new Error('setup failed: sound mode is not open');
+    if (!sound.soundOpen()) throw new Error('setup failed: sound mode is not open');
     menuPress();
     ticks(4);
     /* ⚠ The observable is the RECORDED bank, not soundActive(). With no crumb the
@@ -533,6 +533,7 @@ step('choosing Schwung as the Instrument opens the module picker', () => {
         S.trackChannel[0] = 1;
         ticks(8);
         sound.soundEnter(0, 0);
+        S.bankCardLatched = true;                  /* the card is the door only in bank mode (resting = overview, 2026-09-03) */
         ticks(4);
         const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
         /* ⚠ Entry lands on the BANK'S PROMPT now, so the first click is the

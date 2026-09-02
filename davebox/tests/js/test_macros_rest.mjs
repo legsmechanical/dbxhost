@@ -108,10 +108,10 @@ step('⭑ the jog CLICK at rest LATCHES bank mode (as on any bank) — it does n
     cc(51, 127); cc(51, 0); ticks(1);
     assert(!S.bankCardLatched, 'Back from the page leaves bank mode');
 });
-step('after Back the track is off MACROS (the exit hands the bank to its origin) and sound mode stays closed', () => {
+step('after Back the track STAYS on MACROS and the mode rests again (Back never changes the bank)', () => {
     ticks(3);
-    assert(!snd.soundOpen(), 'closed');
-    assert(S.activeBank !== BANK_MACROS, 'landed elsewhere: ' + S.activeBank);
+    assert(snd.soundOpen() && snd.soundResting(), 'open, resting');
+    assert(S.activeBank === BANK_MACROS, 'still MACROS: ' + S.activeBank);
 });
 step('a track switch onto a MACROS track re-opens the rest state silently', () => {
     S.trackActiveBank[1] = BANK_MACROS; S.trackMacros[1] = null;

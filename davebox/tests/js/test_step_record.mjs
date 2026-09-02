@@ -315,8 +315,10 @@ step('⭐ entry DECLINES from behind another screen: sound mode and modal covers
     rest();
     const snd = await_snd;
     snd.soundEnter(T, T);
+    S.bankCardLatched = true;                 /* a CARD up; an unlatched prompt is RESTING = the overview (2026-09-03) */
     S.shiftHeld = true; cc(C.MoveRec, 127); cc(C.MoveRec, 0); S.shiftHeld = false;
     if (S.stepRecActive) throw new Error('entered behind sound mode');
+    S.bankCardLatched = false;
     snd.soundExit();
     rest();
     S.confirmBake = true;                            /* one of soundModeCovered()'s set */

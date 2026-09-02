@@ -69,7 +69,7 @@ for (let i = 0; i < 8; i++) GS.trackRoute[i] = 0;      /* all Schwung tracks */
 GS.activeTrack = 2;
 snd.soundEnter(2, 2);
 for (let i = 0; i < 3; i++) snd.soundTick && snd.soundTick();
-if (!snd.soundActive()) throw new Error('setup: sound mode did not enter — the rig cannot drive Back');
+if (!snd.soundOpen()) throw new Error('setup: sound mode did not enter — the rig cannot drive Back');
 
 const view = () => snd.soundPickStateForTest().view;
 const setView = (v) => { snd.soundSetViewForTest(v); };

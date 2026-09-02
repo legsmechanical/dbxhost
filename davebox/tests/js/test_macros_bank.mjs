@@ -479,7 +479,7 @@ step('⭑ a bank target belongs to a PAD MODE: on a drum track NOTE FX is not of
 });
 
 /* ---- the walk, Back, the rest peek --------------------------------------- */
-step('the jog is DECLINED on MACROS (the walk owns it); the click opens the list; Back from the page CLOSES sound mode to the origin bank', () => {
+step('the jog is DECLINED on MACROS (the walk owns it); the click opens the list; Back from the page leaves bank mode and KEEPS the bank', () => {
     snd.soundExit(); GS.activeTrack = 2; GS.activeBank = BANK_STEP; GS.trackActiveBank[2] = BANK_STEP;
     snd.soundEnter(2, 2); ticks(3); snd.soundSetBank(BANK_MACROS); ticks(2);
     assert(jog(1) === false && jog(-1) === false, 'jog declined');
@@ -487,9 +487,9 @@ step('the jog is DECLINED on MACROS (the walk owns it); the click opens the list
     back(); assert(snd.soundViewForTest() === VIEW_MACROS, 'Back to the page');
     GS.bankCardLatched = true;
     back();
-    assert(!snd.soundActive(), 'Back from MACROS closes sound mode');
-    assert(GS.activeBank === BANK_STEP && GS.trackActiveBank[2] === BANK_STEP, 'landed on the origin bank, got ' + GS.activeBank);
-    assert(!GS.bankCardLatched, 'and leaves bank mode');
+    assert(!GS.bankCardLatched, 'leaves bank mode');
+    assert(snd.soundOpen() && snd.soundResting() && !snd.soundActive(), 'the mode stays open, resting');
+    assert(GS.activeBank === BANK_MACROS && GS.trackActiveBank[2] === BANK_MACROS, 'Back never changes the bank, got ' + GS.activeBank);
 });
 step('soundSetBank walks MACROS ↔ SOUND + CONFIG in place: the mode stays open, the screen and the record switch', () => {
     snd.soundEnter(2, 2); ticks(3);

@@ -347,9 +347,14 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   here. **Click the jog** for the menu: turn to a row and click for its
   operations — Delete, Mute or Unmute, Smooth or Stepped (on parameters that
   can ramp), and Loop, which gives that parameter its own loop length in steps
-  (CLIP = follow the clip). The last row is **Clear clip**; **Delete + click**
-  on the card does the same. Every operation is one undo. **Back** closes one
-  layer at a time. Conductor tracks don't have it.
+  (CLIP = follow the clip) and applies as you turn. The last row is **Clear
+  clip**; **Delete + click** on the card does the same. Every operation is one
+  undo. **Back** closes one layer at a time. Conductor tracks don't have it.
+- **Back on the SOUND + CONFIG or MACROS card** leaves bank mode and nothing
+  else: the track stays on that bank, its knobs keep working from the
+  overview (the levels, or the macros), and a knob touch peeks the card. The
+  knob rings on these banks show each knob's value like every other bank, and
+  a knob whose parameter is automated in this clip blinks.
 - **Click the jog** (with no picker open) switches a bank between its primary and
   alternate parameters (the labels change). A **down-arrow** in the header marks
   any bank that has alternates, and blinks while the alternates are showing.

@@ -129,12 +129,16 @@ step('Smooth/Stepped is an op HERE (floats only): cutoff offers it, voices (int)
     for (let i = 0; i < li; i++) cc(14, 1);
     click(); ticks(1);
     assert(menu().loopEdit === true, 'Loop row: click edits');
-    cc(14, 4); cc(14, 4); ticks(1);
+    sets.length = 0;
+    cc(14, 4); cc(14, 4); ticks(2);
     assert(menu().loopVal === 8, 'jog sets steps, got ' + menu().loopVal);
+    /* ⭑ Applies on every change (Josh, 2026-09-03), ONE checkpoint per edit session. */
+    assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 192 0 0'), '8 steps × 24 ticks, got ' + JSON.stringify(sets));
+    assert(sets.filter(x => x.startsWith('t0_c0_undo_checkpoint=')).length === 1, 'one checkpoint for the session');
     sets.length = 0;
     click(); ticks(2);
-    assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 192 0 0'), '8 steps × 24 ticks, got ' + JSON.stringify(sets));
-    assert(!menu().ops, 'ops closed after the set');
+    assert(!sets.some(x => x.startsWith('t0_pa_loop=')), 'the click writes nothing more');
+    assert(!menu().ops, 'ops closed by the click');
     const vi = ab.autoBankRows(T, C).findIndex(r => r.label === 'Syn>Voices');
     if (vi >= 0) { menu().sel = vi; click(); ticks(1); ops = menu().ops.rows.map(o => o.op); assert(ops.indexOf('smooth') < 0, 'an int offers no Smooth'); back(); ticks(1); }
 });

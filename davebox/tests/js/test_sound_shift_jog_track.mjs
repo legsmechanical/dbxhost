@@ -191,7 +191,7 @@ step('⭑ Shift+jog CLOSES sound mode — the new track keeps its OWN bank', () 
     /* ⚠ Entry lands on the BANK'S PROMPT now (Josh, 2026-08-28: the bank is a
      * door). These steps act on the menu. */
     snd.soundShowMenu();
-    if (!snd.soundActive()) throw new Error('control failed: sound mode did not open');
+    if (!snd.soundOpen()) throw new Error('control failed: sound mode did not open');
     if (S.activeBank !== 11)
         throw new Error('control failed: the bank identity was not taken (' + S.activeBank + ')');
 
@@ -229,11 +229,11 @@ step('⚠ a CLAMPED Shift+jog must NOT close sound mode (nothing moved)', () => 
      * not happen — and it is the easy way to write this fix wrong. */
     S.activeTrack = 7;
     snd.soundEnter(7, 7);
-    if (!snd.soundActive()) throw new Error('control failed: sound mode did not open');
+    if (!snd.soundOpen()) throw new Error('control failed: sound mode did not open');
     shift(true); turn(); globalThis.tick(); shift(false);
     if (S.activeTrack !== 7)
         throw new Error('the clamp broke: stepped to ' + S.activeTrack);
-    if (!snd.soundActive())
+    if (!snd.soundOpen())                      /* an unlatched prompt is RESTING: open, not active (2026-09-03) */
         throw new Error('a clamped turn closed sound mode');
     snd.soundExit();
     S.activeTrack = 2; S.activeBank = 0;

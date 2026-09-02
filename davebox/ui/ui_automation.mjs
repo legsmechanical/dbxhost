@@ -673,11 +673,11 @@ export function automationToggleSmooth(track, clip, target) {
 /* The AUTOMATION bank's Loop row: an entry's own loop window, in clip TICKS
  * (0 = follow the clip). Offset stays 0 and resolution is not surfaced —
  * pa_entry_tick reads loop_len/loop_off only. */
-export function automationSetLoop(track, clip, target, loopTicks) {
+export function automationSetLoop(track, clip, target, loopTicks, checkpoint) {
     const s = automationStateFor(track, clip, target);
     if (!s) return false;
     const len = Math.max(0, loopTicks | 0);
-    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    if (checkpoint !== false) queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
     queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' ' + len + ' 0 0');
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.loop = len;

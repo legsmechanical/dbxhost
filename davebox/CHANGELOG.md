@@ -35,6 +35,11 @@ the section into a versioned heading at release time.
   Smooth or Stepped, Loop (a parameter's own loop length) — or Clear clip.
   Delete + click on the card clears the clip. Every operation is one undo.
   Smooth/Stepped moved here from the module editor.
+- **Back keeps the bank.** Back on the SOUND + CONFIG or MACROS card leaves
+  bank mode without changing which bank the track is on; the knobs keep
+  working from the overview. Their knob rings light by value like every
+  other bank, and a knob with automation in the clip blinks.
+- **Punching Record in or out under a moving knob now takes effect at once.**
 - **Module Level left the SOUND + CONFIG card.** The card's knobs are
   Volume, Pan, Send A and Send B; its bottom row is the door. Module Level
   is a macro target.

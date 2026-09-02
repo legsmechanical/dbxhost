@@ -229,7 +229,7 @@ step('⚠ CONTROL: a MOVE bus is still excluded — scoping, not impossibility',
     snd.soundExit();
     snd.soundEnterMove(3);
     ticks(4);
-    if (!snd.soundActive()) throw new Error('rig: sound mode did not open on the Move track');
+    if (!snd.soundOpen()) throw new Error('rig: sound mode did not open on the Move track');
     /* ⚠⚠ ASSERT THE OTHER TERMS FIRST. `!applies` alone is not a control — it is
      * true for six different reasons, and this step only reaches the gate
      * because S.moduleId happens to survive soundExit() (only soundRetarget and

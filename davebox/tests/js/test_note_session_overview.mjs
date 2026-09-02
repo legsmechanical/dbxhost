@@ -111,7 +111,9 @@ const STATES = [
     ['the arp-steps overlay',     () => { S.stepIntervalMode = true; }],
     ['an alt view',               () => { S.altMode = true; }],
     ['step recording',            () => { rec.stepRecEnter(); }],
-    ['sound mode',                () => { snd.soundEnter(S.activeTrack, 0); }],
+    /* An open CARD is off-overview only in bank mode; unlatched, an open
+     * prompt is RESTING = the overview (2026-09-03). */
+    ['sound mode',                () => { S.bankCardLatched = true; snd.soundEnter(S.activeTrack, 0); }],
 ];
 
 step('⭐ ONE PRESS returns to the overview from every non-overview state', () => {
