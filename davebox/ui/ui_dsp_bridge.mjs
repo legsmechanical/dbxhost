@@ -360,9 +360,13 @@ export function tickPrefetch() {
     keys.push('t' + lt + '_tarp_on', 't' + lt + '_tarp_latch');
     /* The automation drain rides this read while it is needed. */
     if (automationWantsDrain()) keys.push('pa_pending', 'pa_store_full', 'pa_ring_dropped', 'pa_owner_conflict');
+    /* The pad-map reconcile (every 5th tick, ui_tick) rides it too. */
+    if ((S.tickCount % 5) === 0) keys.push('pad_dispatch_muted', 'pad_note_map_0');
     if ((S.tickCount % POLL_INTERVAL) === 0) {
         for (const k of POLL_KEYS) keys.push(k);
         if (S.activeBank === 6) keys.push('t' + lt + '_c' + effectiveClip(lt) + '_at_has');
+        /* A drum track's lane playhead is read every poll (pollDSP). */
+        if (S.trackPadMode[lt] === PAD_MODE_DRUM) keys.push('t' + lt + '_l' + S.activeDrumLane[lt] + '_current_step');
         if (S.recordArmed && S.recordArmedTrack >= 0) keys.push('t' + S.recordArmedTrack + '_recording_pending_page');
     }
     const vals = bulkDecode(host_module_get_params(bulkEncode(keys)));

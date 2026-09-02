@@ -456,13 +456,13 @@ export function _tickImpl() {
          * (which retriggers computePadNoteMap). Worst-case stuck pad
          * duration is now ~50ms instead of indefinite. */
         if ((S.tickCount % 5) === 0) {
-            const _dspM = host_module_get_param('pad_dispatch_muted');
+            const _dspM = dget('pad_dispatch_muted');
             if (_dspM !== null && _dspM !== undefined) {
                 const _dspMi = parseInt(_dspM, 10);
                 const _jsM = _muted ? 1 : 0;
                 if (_dspMi !== _jsM) computePadNoteMap();
             }
-            const _dspMap0 = host_module_get_param('pad_note_map_0');
+            const _dspMap0 = dget('pad_note_map_0');
             if (_dspMap0 !== null && _dspMap0 !== undefined) {
                 const _dspMap0i = parseInt(_dspMap0, 10);
                 const _jsMap0 = _muted && S.sessionView ? 0xFF
