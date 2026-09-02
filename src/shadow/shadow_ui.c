@@ -1042,9 +1042,10 @@ static JSValue js_shadow_take_dirty_fx_buses(JSContext *ctx, JSValueConst this_v
  * name table (TRACE_MAX_NAMES) is never exhausted by parameter keys; beyond the
  * cap every read is the plain "param.get". */
 #define PARAM_GET_SPAN_NAMES_MAX 160
-static uint32_t js_param_get_span_begin(const char *key) {
-    if (!atomic_load_explicit(&schwung_trace_on, memory_order_relaxed)) return 0;
-    static int s_named = 0;
+static trace_handle_t js_param_get_span_begin(const char *key) {
+    if (!atomic_load_explicit(&schwung_trace_on, memory_order_relaxed)) return (trace_handle_t){0};
+    static int s_named = 0;                  /* DISTINCT keyed names so far */
+    static uint32_t s_max_id = 0;            /* ids are handed out in order: a new one is > all before */
     static uint32_t s_plain = 0;
     if (!s_plain) s_plain = schwung_trace_intern("param.get");
     if (!key || s_named >= PARAM_GET_SPAN_NAMES_MAX) return schwung_trace_begin(s_plain);
@@ -1058,7 +1059,7 @@ static uint32_t js_param_get_span_begin(const char *key) {
     /* intern_copy dedups; count only what it may have added. */
     uint32_t id = schwung_trace_intern_copy(nm);
     if (id <= 1) return schwung_trace_begin(s_plain);        /* table full */
-    s_named++;
+    if (id > s_max_id) { s_max_id = id; s_named++; }         /* a NEW name, not a repeat */
     return schwung_trace_begin(id);
 }
 

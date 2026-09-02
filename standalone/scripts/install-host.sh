@@ -96,7 +96,18 @@ fi
 # --- build -----------------------------------------------------------------
 if [ "$DO_BUILD" = "1" ]; then
     say ""; say "--- building host"
-    "$HERE/scripts/build-host.sh"
+    # ⚠ A COMPILE ERROR LEAVES THE PREVIOUS ARTIFACT IN PLACE, and build.sh exits 0
+    # regardless (see below) — so the existence check after this cannot tell a
+    # fresh binary from last week's. On 2026-09-02 a shadow_ui.c type error shipped
+    # the OLD shadow_ui with an md5 that "matched" the local build, because both
+    # were the stale file. Read the compiler's own words instead.
+    build_log="$(mktemp)"
+    "$HERE/scripts/build-host.sh" 2>&1 | tee "$build_log" || true
+    if grep -Eq '(^|[^[:alnum:]_])error:|undefined reference to|\*\*\* \[.*\] Error [0-9]+' "$build_log"; then
+        echo "ERROR: the host build reported a compiler/linker error (above) — nothing deployed" >&2
+        rm -f "$build_log"; exit 1
+    fi
+    rm -f "$build_log"
     say ""; say "--- building $DBX_HEAL_NAME"
     "$HERE/scripts/build-heal.sh"
 fi
