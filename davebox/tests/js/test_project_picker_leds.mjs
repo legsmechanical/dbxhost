@@ -96,7 +96,7 @@ S.ledInitComplete = true;
 S.projectPadPicker = mkPicker(/*current*/1, /*selected*/0);
 paintAt(0);                                  /* blink phase ON */
 const onSel = pad(0), onCur = pad(1), onOther = pad(2);
-paintAt(10);                                 /* blink phase OFF: 10 ticks = 106 ms, the off half of the 190 ms blink */
+paintAt(30);                                 /* blink phase OFF: 30 ticks = 318 ms, the off half of the 400 ms blink */
 const offSel = pad(0), offCur = pad(1), offOther = pad(2);
 
 eq('selected pad shows its own colour on the blink', onSel, GREEN);
@@ -120,7 +120,7 @@ eq('an ordinary project does not blink', offOther, RED);
 /* ---- current and selected on the SAME pad (the common case on open) ---- */
 S.projectPadPicker = mkPicker(/*current*/1, /*selected*/1);
 paintAt(0);  const onBoth = pad(1);
-paintAt(10); const offBoth = pad(1);        /* 106 ms: the off half */
+paintAt(30); const offBoth = pad(1);        /* 318 ms: the off half */
 eq('both-on-one-pad shows White on the blink', onBoth, White);
 eq('both-on-one-pad shows its own colour off the blink', offBoth, BLUE);
 (onBoth !== offBoth)

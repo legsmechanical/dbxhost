@@ -1789,11 +1789,11 @@ export function _tickImpl() {
         } else if (S.recordScheduledStop || S.recordPendingPage) {
             /* recordScheduledStop = waiting for end-of-page to stop; recordPendingPage =
              * waiting for next page boundary for DSP to flip recording=1. Both blink. */
-            setButtonLED(MoveRec, Math.floor(S.clockMs / 50) % 2 === 0 ? Red : LED_OFF);
+            setButtonLED(MoveRec, Math.floor(S.clockMs / 75) % 2 === 0 ? Red : LED_OFF);
         } else if (S.mergeNoticePending) {
             /* Live Merge NOTICE up, waiting for you to press Rec to start the
              * count-in: flash red to draw the eye to the Record button. */
-            setButtonLED(MoveRec, Math.floor(S.clockMs / 75) % 2 === 0 ? Red : LED_OFF);
+            setButtonLED(MoveRec, Math.floor(S.clockMs / 110) % 2 === 0 ? Red : LED_OFF);
         } else if (S.dspMergeState === 2 || S.dspMergeState === 3) {
             /* Live Merge capturing (Shift+Sample): green. */
             setButtonLED(MoveRec, Green);
@@ -1858,12 +1858,12 @@ export function _tickImpl() {
          * ambient otherwise. Blinking on stopped+non-empty (a no-op) misled. */
         setButtonLED(MoveCapture,
             S.captureArmed
-                ? ((Math.floor(S.clockMs / 150) % 2) ? White : LED_OFF)
+                ? ((Math.floor(S.clockMs / 220) % 2) ? White : LED_OFF)
                 : DarkGrey);
         {
             const _muted      = S.trackMuted[S.activeTrack];
             const _soloed     = S.trackSoloed[S.activeTrack];
-            const _muteBlink  = Math.floor(S.clockMs / 150) % 2;
+            const _muteBlink  = Math.floor(S.clockMs / 220) % 2;
             setButtonLED(MoveMute, _muted ? 124 : (_soloed ? (_muteBlink ? 124 : 0) : 16));
         }
         /* Contextual button LEDs: dim available indicator (16) on actionable buttons. */
@@ -1883,14 +1883,14 @@ export function _tickImpl() {
              * POLL_INTERVAL to override Move firmware's pass-through writes,
              * which is why it is a force rather than a plain set. */
             setButtonLED(MoveNoteSession,
-                         (Math.floor(S.clockMs / 150) % 2) ? White : LED_OFF,
+                         (Math.floor(S.clockMs / 220) % 2) ? White : LED_OFF,
                          (S.tickCount % POLL_INTERVAL) === 0);
         } else if (S.globalMenuOpen) {
             /* Menu open: steady-lit (no blink) — Back exits the menu now, so the
              * button doesn't need to flash to advertise itself as the exit. */
             setButtonLED(MoveNoteSession, White);
         } else if (S.tapTempoOpen) {
-            const _exitBlink = (Math.floor(S.clockMs / 150) % 2) ? 16 : LED_OFF;
+            const _exitBlink = (Math.floor(S.clockMs / 220) % 2) ? 16 : LED_OFF;
             setButtonLED(MoveNoteSession, _exitBlink);
         }
         setButtonLED(MoveUndo,        16);
@@ -1903,12 +1903,12 @@ export function _tickImpl() {
         /* Shift-flash: buttons with a Shift-modified function blink 16/OFF while Shift is held.
          * Sample uses DarkGrey/OFF since index 16 (RoyalBlue) shows wrong on that button. */
         if (S.shiftHeld) {
-            const _sf  = (Math.floor(S.clockMs / 150) % 2) ? 16 : LED_OFF;
+            const _sf  = (Math.floor(S.clockMs / 220) % 2) ? 16 : LED_OFF;
             setButtonLED(MoveNoteSession, _sf);
             /* Shift+Rec = Live Merge; blink Rec only while merge is idle (an
              * active merge already owns the LED with its red/green state). */
             if (S.dspMergeState === 0 && !S.recordArmed)
-                setButtonLED(MoveRec, (Math.floor(S.clockMs / 150) % 2) ? Red : LED_OFF);
+                setButtonLED(MoveRec, (Math.floor(S.clockMs / 220) % 2) ? Red : LED_OFF);
             setButtonLED(MoveUndo,        _sf);
             setButtonLED(MoveCopy,        _sf);
             if (S.sessionView)  setButtonLED(MoveLoop, _sf);
@@ -1949,7 +1949,7 @@ export function _tickImpl() {
 
         /* Solo blink: mark dirty when blink toggles and any track is soloed */
         if (S.trackSoloed.some(function(s) { return s; })) {
-            const _sb = Math.floor(S.clockMs / 150) % 2;
+            const _sb = Math.floor(S.clockMs / 220) % 2;
             if (_sb !== S.lastSoloBlink) { S.lastSoloBlink = _sb; S.screenDirty = true; }
         } else {
             S.lastSoloBlink = null;
@@ -1969,7 +1969,7 @@ export function _tickImpl() {
 
         /* ALL LANES blink: mark dirty when "ALL" blink toggles (bank header + loop-held overlay) */
         if (S.activeBank === 7 && S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
-            const _ab = Math.floor(S.clockMs / 150) % 2;
+            const _ab = Math.floor(S.clockMs / 220) % 2;
             if (_ab !== S.lastAllLanesBlink) { S.lastAllLanesBlink = _ab; S.screenDirty = true; }
         } else {
             S.lastAllLanesBlink = null;
@@ -2241,7 +2241,7 @@ export function _tickImpl() {
      * (most alt banks) and stepIntervalMode (Arp Steps overlay on melodic 4/5). */
     if (altIndicatorActive(S.activeTrack, S.activeBank) ||
             (!S.sessionView && S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT)) {
-        const _ph = Math.floor(S.clockMs / 150) % 2;
+        const _ph = Math.floor(S.clockMs / 220) % 2;
         if (_ph !== S._altBlinkPhase) { S._altBlinkPhase = _ph; S.screenDirty = true; }
     }
     if (S.screenDirty && !isSuspended) { S.screenDirty = false; drawUI(); }
