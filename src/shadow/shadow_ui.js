@@ -3306,6 +3306,7 @@ function refreshSlotModuleSignature(slotIndex) {
     const signature = getSlotModuleSignature(slotIndex);
     if (signature !== lastSlotModuleSignatures[slotIndex]) {
         lastSlotModuleSignatures[slotIndex] = signature;
+        invalidateFeedbackModuleCache();
         loadChainConfigFromSlot(slotIndex);
         invalidateKnobContextCache();
         needsRedraw = true;
@@ -3450,10 +3451,30 @@ function isLineInConsumerModule(moduleId) {
     return v;
 }
 
+/* The slots' synth module ids, for the feedback guard. A round-trip each, and
+ * the guard used to ask all eight every pass — measured on device (keyed
+ * OTLP trace, 2026-09-02): ~130 reads a second at idle, the largest single
+ * read left in the tick, for an answer that changes only when a module is
+ * swapped. Refreshed at most every couple of seconds, and at once when a
+ * slot's module signature changes (refreshSlotModuleSignature). */
+const FEEDBACK_MODULE_CACHE_MS = 2000;
+let _feedbackModuleCache = null;
+let _feedbackModuleCacheAt = 0;
+function feedbackSlotModuleId(slot) {
+    const now = Date.now();
+    if (!_feedbackModuleCache || now - _feedbackModuleCacheAt > FEEDBACK_MODULE_CACHE_MS) {
+        _feedbackModuleCache = [];
+        for (let s = 0; s < SHADOW_UI_SLOTS; s++) _feedbackModuleCache[s] = getSlotParam(s, "synth_module");
+        _feedbackModuleCacheAt = now;
+    }
+    return _feedbackModuleCache[slot];
+}
+function invalidateFeedbackModuleCache() { _feedbackModuleCache = null; }
+
 function reconcileFeedbackHolds() {
     const risk = bootFeedbackRisk();
     for (let slot = 0; slot < SHADOW_UI_SLOTS; slot++) {
-        const moduleId = getSlotParam(slot, "synth_module");
+        const moduleId = feedbackSlotModuleId(slot);
         if (!isLineInConsumerModule(moduleId)) {
             /* Not a line-in slot — drop any stale guard state. */
             feedbackEpisode[slot] = false;
