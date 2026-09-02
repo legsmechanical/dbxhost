@@ -787,11 +787,12 @@ function _onMidiExternalImpl(data) {
         }
         if (S.heldStep >= 0 && !S.shiftHeld && !S.sessionView) {
             const ac = effectiveClip(t);
-            /* Replace auto-assigned note if step was empty on hold; otherwise additive */
-            if (S.stepWasEmpty && S.heldStepNotes.length > 0)
-                host_module_set_param('t' + t + '_c' + ac + '_step_' + S.heldStep + '_set_notes', String(d1));
-                else
-                    host_module_set_param('t' + t + '_c' + ac + '_step_' + S.heldStep + '_toggle', d1 + ' ' + vel);
+            /* Additive, like a pad: a hold never creates a note, so there is no
+             * auto-assigned note to replace any more (spec §2). The note-in is
+             * an edit of the held step — promote the press to a hold. */
+            host_module_set_param('t' + t + '_c' + ac + '_step_' + S.heldStep + '_toggle', d1 + ' ' + vel);
+            if (S.heldStepBtn >= 0) S.stepBtnPressedTick[S.heldStepBtn] = -1;
+            S.stepWasHeld = true;
             const raw = host_module_get_param('t' + t + '_c' + ac + '_step_' + S.heldStep + '_notes');
             S.heldStepNotes = (raw && raw.trim().length > 0)
                 ? raw.trim().split(' ').map(Number).filter(function(n) { return n >= 0 && n <= 127; })

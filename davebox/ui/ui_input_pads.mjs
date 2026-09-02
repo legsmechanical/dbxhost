@@ -319,6 +319,22 @@ function _onPadPressTrackView(status, d1, d2) {
                     S.stepEditVel = _heldWriteVel;
                     host_module_set_param('t' + t + '_l' + lane_vp + '_step_' + S.heldStep + '_vel', String(_heldWriteVel));
                     S.stepBtnPressedTick[S.heldStepBtn] = -1;
+                } else if (S.heldStep >= 0 && S.stepWasEmpty && !S.shiftHeld) {
+                    /* ⭑ An EMPTY held drum step + a velocity pad CREATES the hit at
+                     * that velocity (spec §2: "a hold never creates; a pad press
+                     * while held does" — the drum reading, since the pads are
+                     * lanes, not pitches). The press is thereby a hold: close
+                     * the tap window so the release cannot toggle it again. */
+                    const _newVel = stepEntryVelocity(t, zoneVel, true);
+                    host_module_set_param('t' + t + '_l' + lane_vp + '_step_' + S.heldStep + '_toggle', String(_newVel));
+                    S.drumLaneSteps[t][lane_vp][S.heldStep] = '1';
+                    S.drumLaneHasNotes[t][lane_vp] = true;
+                    S.heldStepNotes = [laneNote];
+                    S.stepEditVel   = _newVel;
+                    S.stepEditGate  = S.drumLaneTPS[t] || 24;
+                    S.stepWasEmpty  = false;
+                    S.stepWasHeld   = true;
+                    S.stepBtnPressedTick[S.heldStepBtn] = -1;
                 }
                 /* Record hit at zone velocity if armed */
                 if (S.recordArmed && !S.recordCountingIn && t === S.recordArmedTrack) {
@@ -468,6 +484,12 @@ function _onPadPressTrackView(status, d1, d2) {
             if (_pitchRaw < 0 || _pitchRaw > 127) return; /* OOB after track-octave shift */
             const pitch = _pitchRaw;
             host_module_set_param('t' + S.activeTrack + '_c' + ac + '_step_' + S.heldStep + '_toggle', pitch + ' ' + stepEntryVelocity(S.activeTrack, effectiveVelocity(d2), false));
+            /* ⭑ A pad press while a step is down is an EDIT of that step — it
+             * promotes the press to a hold (closes the tap window), so the
+             * release cannot tap-assign the last note over it, or clear it. On
+             * an empty step this press IS the creation (spec §2). */
+            S.stepBtnPressedTick[S.heldStepBtn] = -1;
+            S.stepWasHeld = true;
             /* Read back authoritative note list */
             const raw = host_module_get_param('t' + S.activeTrack + '_c' + ac + '_step_' + S.heldStep + '_notes');
             S.heldStepNotes = (raw && raw.trim().length > 0)

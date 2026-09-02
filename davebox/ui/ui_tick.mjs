@@ -1665,27 +1665,12 @@ export function _tickImpl() {
                 }
                 S.screenDirty = true;
             } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
-                /* Drum: auto-assign empty step so knobs work immediately */
-                if (S.stepWasEmpty && S.heldStepNotes.length === 0) {
-                    const t    = S.activeTrack;
-                    const lane = S.activeDrumLane[t];
-                    host_module_set_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_toggle', String(S.stepEditVel));
-                    S.drumLaneSteps[t][lane][S.heldStep] = '1';
-                    S.drumLaneHasNotes[t][lane] = true;
-                    S.heldStepNotes = [S.drumLaneNote[t][lane]];
-                    const rv = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_vel');
-                    const rg = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_gate');
-                    const rn = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_nudge');
-                    const ri = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_iter');
-                    const rr = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_rand');
-                    const rx = host_module_get_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_ratch');
-                    S.stepEditVel   = rv !== null ? parseInt(rv, 10) : S.stepEditVel;
-                    S.stepEditGate  = rg !== null ? parseInt(rg, 10) : (S.drumLaneTPS[t] || 24);
-                    S.stepEditNudge = rn !== null ? parseInt(rn, 10) : 0;
-                    S.stepEditIter  = ri !== null ? parseInt(ri, 10) : 0;
-                    S.stepEditRand  = rr !== null ? parseInt(rr, 10) : 0;
-                    S.stepEditRatch = rx !== null ? parseInt(rx, 10) : 0;
-                } else if (S.drumHeldReadPending) {
+                /* ⭑ A HOLD NEVER CREATES (spec §2, Josh 2026-09-02): an empty
+                 * drum step held past the threshold stays empty — heldStepNotes
+                 * stays [], the knobs read `--`. A velocity-zone pad pressed
+                 * while it is held creates the hit (ui_input_pads). The
+                 * auto-assign that used to live here is gone. */
+                if (S.drumHeldReadPending) {
                     /* Occupied drum step: the press handler couldn't read the
                      * step's real vel/gate/nudge/iter/rand/ratch (get_param
                      * null in MIDI context) — read them now from tick context
@@ -1730,27 +1715,13 @@ export function _tickImpl() {
                 S.stepEditRatch = rx2 !== null ? parseInt(rx2, 10) : 0;
                 S.screenDirty = true;
             } else if (S.stepWasEmpty && S.heldStepNotes.length === 0) {
-                /* Empty melodic step held past threshold: auto-activate with
-                 * lastPlayedNote so step edit knobs work in one gesture (mirrors
-                 * the drum-mode auto-assign above and the tap-empty path at
-                 * ~L8589). If no lastPlayedNote, fall back to no-note flash. */
-                if (S.activeBank === 6) {
-                    /* CC bank: no note auto-assign */
-                } else if (S.lastPlayedNote >= 0) {
-                    const ac_he       = effectiveClip(S.activeTrack);
-                    const assignNote  = S.lastPlayedNote;
-                    const assignVel   = stepEntryVelocity(S.activeTrack, -1, false);
-                    host_module_set_param('t' + S.activeTrack + '_c' + ac_he + '_step_' + S.heldStep + '_toggle',
-                                          assignNote + ' ' + assignVel);
-                    S.clipSteps[S.activeTrack][ac_he][S.heldStep] = 1;
-                    S.clipNonEmpty[S.activeTrack][ac_he] = true;
-                    S.heldStepNotes = [assignNote];
-                    S.stepEditVel   = assignVel;
-                    S.stepWasEmpty  = false;
-                    refreshSeqNotesIfCurrent(S.activeTrack, ac_he, S.heldStep);
-                } else {
-                    S.noNoteFlashEndTick = S.tickCount + NO_NOTE_FLASH_TICKS;
-                }
+                /* ⭑ A HOLD NEVER CREATES (spec §2, Josh 2026-09-02): an empty
+                 * melodic step held past the threshold stays empty. A pad
+                 * pressed while it is held creates the note (ui_input_pads,
+                 * the step-first chord path). The lastPlayedNote auto-assign
+                 * and its "NO NOTE" fallback that lived here are gone; the tap
+                 * on an empty step still places the last note (release path).
+                 * Nothing to do but mark the hold as such. */
                 S.screenDirty = true;
             }
         }

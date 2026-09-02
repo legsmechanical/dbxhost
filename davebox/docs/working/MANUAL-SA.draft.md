@@ -456,7 +456,7 @@ buttons**:
 |---|---|
 | Tap an empty step | Places the last note you played, at velocity 100 |
 | Tap a filled step | Clears it |
-| Hold a step | Opens [note edit](#63-editing-notes) (an empty step is filled first) |
+| Hold a step | Opens [note edit](#63-editing-notes). An empty step stays empty until you press a pad while holding it |
 | Tap several steps together | Toggles each |
 | **Copy + step → another step** | Copy the step's notes (same clip) |
 | **Delete + step** | Clear the step |
@@ -481,8 +481,9 @@ A step holds up to **eight notes**. Build a chord two ways:
 
 <img src="img/step-editor.png" width="384" alt="Note edit screen: a note box on the left, then knobs for length, velocity, nudge, and per-step conditions">
 
-Hold a step to edit its notes. Edits apply to every note in the step; hold several
-steps to edit them together. While holding a step, **+ / −** moves the octave
+Hold a step to edit its notes. Edits apply to every note in the step. While holding
+a step, tap a second step to set the note length up to it (gate-drag); the arrows
+still page, so a note can be stretched past the current page. While holding a step, **+ / −** moves the octave
 range so you can reach higher or lower notes.
 
 | Knob | On screen | Adjusts |
