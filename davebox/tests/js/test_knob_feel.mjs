@@ -1,4 +1,5 @@
-/* tests/js/test_knob_feel.mjs — the bank-param knobs must read the batch
+
+import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's single-read stub *//* tests/js/test_knob_feel.mjs — the bank-param knobs must read the batch
  * MAGNITUDE, not just its sign.
  *
  * Josh, 2026-08-25, on hardware: dAVEBOx's bank knobs feel "slow as hell" while

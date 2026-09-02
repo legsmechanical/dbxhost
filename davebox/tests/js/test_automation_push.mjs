@@ -207,6 +207,20 @@ const tick = () => { S.tickCount++; automationTick(); };
     check(writes[0].val === '50', 'and the value maps into the block\'s own range (0..100)');
 }
 
+/* ---- mixer levels: host strip state, ranges declared, no round-trip ------ */
+{
+    fresh();
+    metaAsked.length = 0;
+    staged = '0:move_fx:2:volume 4095\n3:slot:pan 8191\n3:slot:send_a 16383\n3:slot:synth_volume 4095';
+    tick();
+    const byKey = Object.fromEntries(writes.map(w => [w.slot + '/' + w.key, w.val]));
+    check(byKey['0/move_fx:2:volume'] === '1', 'a bus Volume maps into its 0..4 gain (4095/16383 -> 1, unity)');
+    check(byKey['3/slot:pan'] === '0.5', 'a slot Pan into 0..1 (centre)');
+    check(byKey['3/slot:send_a'] === '1', 'a send into 0..1');
+    check(byKey['3/slot:synth_volume'] === '1', 'Module Level into its 0..4 gain');
+    check(metaAsked.length === 0, '⚠ none of them asked the host for chain_params — the levels publish none');
+}
+
 /* ---- a malformed line cannot take the tick down ----------------------- */
 {
     fresh();

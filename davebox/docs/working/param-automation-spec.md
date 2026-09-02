@@ -38,10 +38,66 @@ automation inherits it:
 | Route | Devices in the editor | Automatable |
 |---|---|---|
 | Schwung | chain synth + FX blocks + MIDI Out | everything |
-| Move | Move synth (a co-run DOOR, not params) + Schwung-side bus insert FX (≤4) + bus levels + MIDI Out (AT) | the FX, levels, MIDI Out — **never the Move synth itself** (no param API; parity with today — CC lanes couldn't reach it either) |
+| Move | Move synth (a co-run DOOR, not params) + Schwung-side bus insert FX (≤4) + bus levels | the FX and the levels — **never the Move synth itself** (no param API; parity with today — CC lanes couldn't reach it either). ⭑RULED 2026-09-02: **no MIDI Out device on a Move track** — Move's instruments take notes and aftertouch only, and pad-pressure recording already produces the aftertouch |
 | EXT/MIDI | MIDI Out only | all of it — the CC panel becomes the track's instrument surface |
 
 The Move-synth row is a door; doors don't get circles.
+
+⭑RULED (Josh, 2026-09-02) **The SOUND + CONFIG bank is a real knob bank, and its knobs are the
+track's mixer levels**: K1 Volume, K2 Pan, K3 Send A, K4 Send B, K5 Module Level (chain slot
+only), K6–K8 unassigned — both routes alike, on the bank page AND on the sound menu's
+non-editor screens. Jog-click still enters the menu. They are ordinary automatable
+parameters (`slot:` / `move_fx:N:` keys). **The chain's per-knob assignment layer leaves the
+sound menu's list screens** (Sound Control → Knobs, the Shift+touch assign flow, the knob
+card) and moves to its own bank, MACROS (below). ⭑ The step grammar is ONE model in every
+mode: **a hold never creates a note; a tap or an explicit edit does** (ruling pending on the
+exact shape — see the board).
+
+⭑RULED (Josh, 2026-09-02, pre-P5 planning) **Two new banks; bank order in the jog walk:
+… → SOUND + CONFIG → MACROS → AUTOMATION.**
+- **MACROS**: eight assignable parameters from anywhere on the track's chain (Schwung route),
+  or any valid MIDI message / bus level / other automatable parameter (Move and MIDI routes).
+  Their widgets and metadata ARE the module editor's — the bank is a page of the same
+  param-pages engine, composed by davebox (absolute keys, inline metadata), so editing and
+  automating a macro IS editing and automating the underlying parameter: no macro lane, and
+  the module editor reflects it because it is the same parameter. Jog-click opens the chain
+  knob-assign menu (existing). Purpose: whole-chain manipulation in performance, and quick
+  access to the parameters most often automated.
+- **AUTOMATION** (replaces the old AUTO bank 6 outright): the bank card is a LIST of the
+  parameters automated in the current clip, framed with the module editor's bracketed-corner
+  cell to say "press jog to interact"; **the eight knobs are a no-op on the card.** Jog-click
+  enters the menu; clicking an automated parameter offers its operations: delete, mute
+  (deactivate), Smooth/Stepped (⭑ moves HERE from knob-touch + jog-click in the module editor),
+  loop length and resolution (the store already carries `loop_len`/`loop_off`/`resolution`),
+  and whatever else a lane needs.
+
+⭑RULED (Josh, 2026-09-02, pre-P5 planning) **Adopted from the review of the above:**
+- The AUTOMATION list shows EVERY kind of automation in the clip — pad-pressure (AT) lanes
+  included, as rows of their own kind — so it is the one place that answers "what is
+  automated here". Its edits (delete, mute, smooth, loop) each take an undo checkpoint.
+- A macro whose target vanished (module swapped) shows as UNASSIGNED on the bank, never as a
+  blank knob. Macros on a MIDI track wait for the MIDI Out device (P5).
+- **Step copy/cut carries NOTE data only** — locks stay with the step (Josh). Clip and row
+  copy carry automation, as built.
+- **Hold a step, see the locks**: while a step is held, the module editor and MACROS show each
+  parameter's value AT THAT STEP. **Clear the clip**: a menu action, with Delete + jog-click on
+  the AUTOMATION card as its shortcut. **Quick assign on MACROS**: Shift + touch a macro knob
+  picks its target without leaving the bank (the one place the Shift+touch assign flow
+  survives). "Go to the parameter" from the AUTOMATION menu: only if it is easy. No "writing"
+  ring colour while recording (declined).
+- **Hold on an empty step (c)**: a hold creates nothing; turning the NOTE knob on an empty held
+  step creates the note at that pitch; the other step knobs do nothing there.
+  **Multi-step hold (a)**: single-step locks only; gate-drag keeps the second press.
+  **Macro targets on a MIDI track (a)**: the MIDI Out device's eight CCs + aftertouch, and the
+  bus levels — the CC NUMBER is assigned on the device, in one place.
+
+⭑RULED (Josh, 2026-09-02) **The deferred save never runs while the transport plays** —
+except at the Record-off edge (the end of a take). It runs on transport stop, after one second
+of quiet while stopped (a knob turned while stopped dirties the project per detent), and on
+quit, suspend and project switch as today. Rationale: a save is a serialization on the SPI
+thread plus a file write with fsync on the JS thread; during a recorded sweep the old rule
+fired one every poll, on a tick that is already the system's constraint. The chunked fetch
+keeps the dirty flag set until a save completes, so waiting loses nothing.
 
 ## 3. The grammar (all ⭑RULED)
 

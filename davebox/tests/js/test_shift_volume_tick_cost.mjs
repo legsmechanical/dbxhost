@@ -1,4 +1,5 @@
-/* tests/js/test_shift_volume_tick_cost.mjs — WHAT does the Shift+volume gesture
+
+import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's single-read stub *//* tests/js/test_shift_volume_tick_cost.mjs — WHAT does the Shift+volume gesture
  * cost the tick?
  *
  * Josh, 2026-08-25: the track-select pad LEDs linger ~0.5 s after Shift is

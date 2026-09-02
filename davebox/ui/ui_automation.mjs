@@ -44,12 +44,12 @@ const BULK_MAX_PAIRS = 32;
  * a third slot waits a tick. */
 const PUSH_REQUESTS_PER_TICK = 2;
 
-function bulkEncode(items) {
+export function bulkEncode(items) {
     let s = items.length + '\n';
     for (const it of items) s += it.length + '\n' + it;      /* ASCII: length == bytes */
     return s;
 }
-function bulkDecode(blob) {
+export function bulkDecode(blob) {
     const out = [];
     if (!blob) return out;
     let nl = blob.indexOf('\n');
@@ -182,12 +182,31 @@ export function automationNoteWrite() { anyAutomation = true; }
 
 export function automationPresentForTest() { return anyAutomation; }
 
+/* The mixer levels publish no chain_params — they are host strip state, not
+ * a module's parameters — so their ranges are declared here, once, in the
+ * host's own units: a slot or bus Volume is a 0..4 gain (unity 1), Pan 0..1
+ * (centre 0.5), the sends 0..1, Module Level a 0..4 gain like Volume. These
+ * are the SOUND + CONFIG bank's knobs (Josh, 2026-09-02), and the same keys
+ * the host routes for `slot:` and `move_fx:N:`. */
+const LEVEL_META = {
+    volume:       { key: 'volume',       type: 'float', min: 0, max: 4, step: 0.01 },
+    pan:          { key: 'pan',          type: 'float', min: 0, max: 1, step: 0.01 },
+    send_a:       { key: 'send_a',       type: 'float', min: 0, max: 1, step: 0.01 },
+    send_b:       { key: 'send_b',       type: 'float', min: 0, max: 1, step: 0.01 },
+    synth_volume: { key: 'synth_volume', type: 'float', min: 0, max: 4, step: 0.01 },
+};
+function isLevelComponent(comp) {
+    return comp === 'slot' || /^move_fx:[0-9]+$/.test(comp);
+}
+
 /* chain_params for one component, fetched once. Costs a round-trip the first
- * time a parameter on that component is automated, then nothing. */
+ * time a parameter on that component is automated, then nothing. The mixer
+ * components never round-trip: their metadata is LEVEL_META. */
 function componentMeta(slot, comp) {
     const id = slot + ':' + comp;
     let m = metaCache.get(id);
     if (m) return m;
+    if (isLevelComponent(comp)) { metaCache.set(id, LEVEL_META); return LEVEL_META; }
     m = {};
     try {
         const raw = shadow_get_param(slot, comp + ':chain_params');

@@ -32,6 +32,7 @@ export function disarmRecord() {
     const t = S.recordArmedTrack;
     const _wasCountingIn   = S.recordCountingIn;
     S.recordArmed          = false;
+    S.saveNowOnce          = true;             /* the end of a take: the one save allowed while playing */
     S.recordPendingPage    = false;
     S.recordCountingIn     = false;
     S.recordArmedTrack     = -1;

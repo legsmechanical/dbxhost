@@ -370,6 +370,10 @@ export const S = {
      * check, so the release cannot tap-toggle the note a lock was just
      * written on. */
     stepHoldPromote: false,
+    /* The deferred-save rule (pollDSP): the tick of the last hardware input,
+     * and a one-shot "save at the next poll" raised at the Record-off edge. */
+    lastInputTick: 0,
+    saveNowOnce: false,
     stepEditVel: 100,
     stepEditGate: 12,
     stepEditNudge: 0,

@@ -1,4 +1,5 @@
-/* tests/js/test_shift_note_opens_generator.mjs — Shift+Note/Session opens the
+
+import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's single-read stub *//* tests/js/test_shift_note_opens_generator.mjs — Shift+Note/Session opens the
  * active track's generator editor in one press, and still CLOSES what is open.
  *
  * Josh, 2026-08-26: "Track view: Shift+Note/Session should jump STRAIGHT to

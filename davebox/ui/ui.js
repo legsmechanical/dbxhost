@@ -383,6 +383,7 @@ function _jogTouchRelease() {
 }
 
 function _onMidiInternalImpl(data) {
+    S.lastInputTick = S.tickCount;             /* the save rule's "quiet" clock */
     const status = data[0] | 0;
     const d1     = (data[1] ?? 0) | 0;
     const d2     = (data[2] ?? 0) | 0;

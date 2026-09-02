@@ -1,4 +1,5 @@
-/* tests/js/test_sound_mute_bypass.mjs — Mute+click on SOUND + CONFIG bypasses
+
+import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's single-read stub *//* tests/js/test_sound_mute_bypass.mjs — Mute+click on SOUND + CONFIG bypasses
  * the focused block and does NOT also mute the track.
  *
  * Josh, 2026-08-26: "Mute+jog-click on SOUND + CONFIG falls through to track

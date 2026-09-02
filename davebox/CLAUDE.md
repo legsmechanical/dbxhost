@@ -185,7 +185,10 @@ The same path fires on resume when the set changed while suspended.
 
 UI sidecar (`seq8sa-ui-state.json`) v=8 — per-track active bank, per-track octave, Euclid memory,
 drum vel-zone arm; written on suspend / Quit / Shift+Back, wiped on Clear Session. Deferred save:
-handlers set `inst->state_dirty = 1` and JS `pollDSP()` writes via `host_write_file` when dirty.
+handlers set `inst->state_dirty = 1` and JS `pollDSP()` writes via `host_write_file` when dirty —
+⭑ but **never while the transport plays** (except at the Record-off edge), and only after a
+second of quiet while stopped (Josh, 2026-09-02; the DSP holds the dirty flag until a save
+completes, so nothing is lost by waiting).
 
 ⚠⚠ **Every state write must be crash-atomic** (temp + fsync + rename). Readers parse with `strstr`,
 so a torn file loads as a silently SMALLER project, and only an **inode change** proves temp+rename

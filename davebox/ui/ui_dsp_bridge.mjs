@@ -25,7 +25,7 @@
 import {
     setButtonLED
 } from '/data/UserData/schwung/shared/input_filter.mjs';
-import { automationRefreshPresence, automationInvalidateMeta } from './ui_automation.mjs';
+import { automationRefreshPresence, automationInvalidateMeta, bulkEncode, bulkDecode } from './ui_automation.mjs';
 
 import {
     NUM_TRACKS, NUM_CLIPS, NUM_STEPS, DRUM_LANES,
@@ -331,11 +331,37 @@ function fetchStateChunked() {
     return out;
 }
 
+/* The poll's standing reads, fetched in ONE round-trip.
+ *
+ * A round-trip is an SPI frame (~2.9 ms) whatever it carries, and this poll
+ * made nine of them every fourth tick before it read anything conditional —
+ * measured on device (OTLP, 2026-09-02): 303 reads a second at idle, and the
+ * poll tick at 57 ms against a ~10.6 ms period. One bulk read carries them
+ * all. Every read below goes through pget(): a key in the prefetch answers
+ * from it; any other key still makes its own round-trip, so nothing changes
+ * meaning — a single read and a bulk read return the same string for the
+ * same key (both "" for an empty value). */
+const POLL_KEYS = ['bpm', 'rui_rev', 'clock_follow_on', 'clock_send_on', 'clock_follow_fallback',
+                   'capture_pending', 'capture_info', 'state_snapshot', 'state_uuid'];
+function pollPrefetch() {
+    const keys = POLL_KEYS.slice();
+    if (S.activeBank === 6) keys.push('t' + S.activeTrack + '_c' + effectiveClip(S.activeTrack) + '_at_has');
+    if (S.recordArmed && S.recordArmedTrack >= 0) keys.push('t' + S.recordArmedTrack + '_recording_pending_page');
+    const vals = bulkDecode(host_module_get_params(bulkEncode(keys)));
+    const m = new Map();
+    if (vals.length === keys.length) for (let i = 0; i < keys.length; i++) m.set(keys[i], vals[i]);
+    return m;                                   /* empty on failure: every read falls back */
+}
+/* Ticks of quiet before a save while stopped; ~1 s at the ~94 Hz tick. */
+const SAVE_QUIET_TICKS = 94;
+
 export function pollDSP() {
+    const _pre = pollPrefetch();
+    const pget = (k) => (_pre.has(k) ? _pre.get(k) : host_module_get_param(k));
     /* bpm mirror — MIDI handlers can't get_param (silently null there), so
      * anything transport-side that needs tempo reads S.bpmMirror instead
      * (audit js-input-3: count-in cadence fell back to 120 BPM). */
-    const _bv = parseFloat(host_module_get_param('bpm'));
+    const _bv = parseFloat(pget('bpm'));
     if (_bv > 0 && isFinite(_bv)) S.bpmMirror = _bv;
     /* Framework co-run closes (the shim's Back handler) are reconciled by
      * the HOST from SHM and reported through onServiceReturn — one return
@@ -359,7 +385,7 @@ export function pollDSP() {
      * unparseable (overflow, mixed drum+melodic, or a poll/edit race) falls back
      * to a full sync inside syncClipsTargeted. */
     {
-        const _rr = host_module_get_param('rui_rev');
+        const _rr = pget('rui_rev');
         if (_rr !== null && _rr !== undefined) {
             const _rev = parseInt(_rr, 10) | 0;
             if (S.lastRemoteRev === undefined) {
@@ -375,10 +401,10 @@ export function pollDSP() {
                      * automation fields the editop couldn't fill in JS, for just
                      * the clips we touched. Steps/length/tps stay as the editop
                      * set them (more correct than a re-read — preserves tie steps). */
-                    host_module_get_param('rui_dirty');
+                    pget('rui_dirty');
                     localAutomationResync();
                 } else {
-                    syncClipsTargeted(host_module_get_param('rui_dirty'));
+                    syncClipsTargeted(pget('rui_dirty'));
                 }
                 S.screenDirty = true;
             }
@@ -387,27 +413,27 @@ export function pollDSP() {
     /* Keep the AUTOMATION-bank AT indicator live (it appears as you record). */
     if (S.activeBank === 6) {
         const _at = S.activeTrack, _ac = effectiveClip(_at);
-        const _ah = host_module_get_param('t' + _at + '_c' + _ac + '_at_has');
+        const _ah = pget('t' + _at + '_c' + _ac + '_at_has');
         if (_ah !== null) S.clipAtHas[_at][_ac] = (parseInt(_ah, 10) === 1);
     }
     /* Clock-follow: keep the UI's view of follow mode + Move's transport live so
      * BPM shows EXT and Tap Tempo is gated. Cheap single get_param per poll. */
     {
-        const _cs = host_module_get_param('clock_follow_on');
+        const _cs = pget('clock_follow_on');
         if (_cs !== null) S.clockFollowOn = (_cs === '1');
         /* Clock Out: stored preference; sync UI from DSP (reflects saved _cs on
          * state load). Emission itself is gated DSP-side on free-running. */
-        const _co = host_module_get_param('clock_send_on');
+        const _co = pget('clock_send_on');
         if (_co !== null) S.clockSendOn = (_co === '1');
         /* Clock-Follow start fell back to the solo clock (Move never started after
          * the Link-sync wait) — DSP raises a one-shot; warn the user briefly. */
-        if (host_module_get_param('clock_follow_fallback') === '1')
+        if (pget('clock_follow_fallback') === '1')
             showActionPopup('CLOCK FOLLOW', "Move didn't start", 'Last-known tempo');
     }
     /* Retrospective capture: mirror the buffered-input count (lights the
      * Capture LED via the tick LED pass; gates tap = capture-vs-bake). */
     {
-        const _cp = host_module_get_param('capture_pending');
+        const _cp = pget('capture_pending');
         if (_cp !== null) {
             const _n = parseInt(_cp, 10) | 0;
             if ((_n > 0) !== (S.capturePending > 0)) S.screenDirty = true;
@@ -419,7 +445,7 @@ export function pollDSP() {
         S.captureArmed = S.capturePending > 0;
         /* Watch capture_info for a commit + mirror the selector state. Format:
          * "seq stopped len select_active select_idx count warp v0 v1 ...". */
-        const _ci = host_module_get_param('capture_info');
+        const _ci = pget('capture_info');
         if (_ci) {
             const _p    = _ci.split(' ');
             const _seq  = parseInt(_p[0], 10) | 0;
@@ -473,7 +499,7 @@ export function pollDSP() {
             }
         }
     }
-    const snap = host_module_get_param('state_snapshot');
+    const snap = pget('state_snapshot');
     if (!snap) return;
     const v = snap.split(' ');
     if (v.length < 53) return;
@@ -597,7 +623,7 @@ export function pollDSP() {
     /* Drum playhead: poll active lane's current step for active drum track */
     if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
         const _dl = S.activeDrumLane[S.activeTrack];
-        const _dcRaw = host_module_get_param('t' + S.activeTrack + '_l' + _dl + '_current_step');
+        const _dcRaw = pget('t' + S.activeTrack + '_l' + _dl + '_current_step');
         if (_dcRaw !== null) {
             const _newDcs = parseInt(_dcRaw, 10) | 0;
             if (_newDcs !== S.drumCurrentStep[S.activeTrack]) {
@@ -620,7 +646,7 @@ export function pollDSP() {
         if (S.drumLaneMute[S.activeTrack]) S.screenDirty = true;
         /* Drum pad flash + S.seqActiveNotes: poll which lanes are hitting (single bitmask call) */
         if (S.playing && S.trackClipPlaying[S.activeTrack]) {
-            const _maskRaw = host_module_get_param('t' + S.activeTrack + '_drum_active_lanes');
+            const _maskRaw = pget('t' + S.activeTrack + '_drum_active_lanes');
             if (_maskRaw !== null) {
                 const _mask = parseInt(_maskRaw, 10) | 0;
                 S.seqActiveNotes.clear(); /* refresh per poll; stale entries block external recording */
@@ -643,7 +669,7 @@ export function pollDSP() {
         const _tLatch = (S.bankParams[_tat][5][7] | 0) !== 0 &&
                         (S.bankParams[_tat][5][0] | 0) !== 0;
         if (_tLatch) {
-            const _hRaw = host_module_get_param('t' + _tat + '_tarp_held');
+            const _hRaw = pget('t' + _tat + '_tarp_held');
             const _set = S.tarpHeldNotes[_tat];
             _set.clear();
             if (_hRaw) {
@@ -687,7 +713,7 @@ export function pollDSP() {
     /* Record-arm pending page boundary: DSP defers recording=1 to next bar.
      * Clear S.recordPendingPage once DSP has fired (recording_pending_page=0). */
     if (S.recordPendingPage && S.recordArmedTrack >= 0) {
-        const _rpp = host_module_get_param('t' + S.recordArmedTrack + '_recording_pending_page');
+        const _rpp = pget('t' + S.recordArmedTrack + '_recording_pending_page');
         if (_rpp === '0') S.recordPendingPage = false;
     }
 
@@ -760,7 +786,7 @@ export function pollDSP() {
     if ((S.recordArmed && S.playing) || S.heldStep >= 0) {
         const rt = S.activeTrack;
         const rac = effectiveClip(rt);
-        const bulk = host_module_get_param('t' + rt + '_c' + rac + '_steps');
+        const bulk = pget('t' + rt + '_c' + rac + '_steps');
         if (bulk && bulk.length >= NUM_STEPS) {
             for (let rs = 0; rs < NUM_STEPS; rs++)
                 S.clipSteps[rt][rac][rs] = bulk[rs] === '1' ? 1 : (bulk[rs] === '2' ? 2 : 0);
@@ -785,7 +811,7 @@ export function pollDSP() {
         let prevStillSounding = false;
         if (!newHasNote && S.seqActiveNotes.size > 0 &&
                 S.seqNoteOnClipTick >= 0 && S.seqNoteGateTicks > 0 && ac === S.seqLastClip) {
-            const ctChk = host_module_get_param('t' + t + '_current_clip_tick');
+            const ctChk = pget('t' + t + '_current_clip_tick');
             if (ctChk !== null && ctChk !== undefined) {
                 const ctv      = parseInt(ctChk, 10) | 0;
                 const clipTks  = S.clipLength[t][ac] * (S.clipTPS[t][ac] || 24);
@@ -802,15 +828,15 @@ export function pollDSP() {
             S.seqActiveNotes.clear();
             S.seqNoteOnClipTick = -1;
             S.seqNoteGateTicks  = 0;
-            const raw = host_module_get_param('t' + t + '_c' + ac + '_step_' + cs + '_notes');
+            const raw = pget('t' + t + '_c' + ac + '_step_' + cs + '_notes');
             if (raw && raw.trim().length > 0) {
                 raw.trim().split(' ').forEach(function(sn) {
                     const pitch = parseInt(sn, 10);
                     if (pitch >= 0 && pitch <= 127) S.seqActiveNotes.add(pitch);
                 });
             }
-            const ctStr = host_module_get_param('t' + t + '_current_clip_tick');
-            const gStr  = host_module_get_param('t' + t + '_c' + ac + '_step_' + cs + '_gate');
+            const ctStr = pget('t' + t + '_current_clip_tick');
+            const gStr  = pget('t' + t + '_c' + ac + '_step_' + cs + '_gate');
             if (ctStr !== null && ctStr !== undefined) S.seqNoteOnClipTick = parseInt(ctStr, 10) | 0;
             if (gStr  !== null && gStr  !== undefined) S.seqNoteGateTicks  = parseInt(gStr,  10) | 0;
         } else if (!prevStillSounding) {
@@ -821,7 +847,7 @@ export function pollDSP() {
         }
         /* else: prevStillSounding — keep old notes + gate tracking across empty step */
     } else if (S.seqActiveNotes.size > 0 && S.seqNoteOnClipTick >= 0 && S.seqNoteGateTicks > 0) {
-        const ctStr = host_module_get_param('t' + t + '_current_clip_tick');
+        const ctStr = pget('t' + t + '_current_clip_tick');
         if (ctStr !== null && ctStr !== undefined) {
             const ct = parseInt(ctStr, 10) | 0;
             const clipTicks = S.clipLength[t][ac] * (S.clipTPS[t][ac] || 24);
@@ -862,9 +888,19 @@ export function pollDSP() {
      * state_path is assigned in the same set_param that resets the instance, so
      * state_uuid flips exactly when the memory becomes the new project's: it is
      * the authority, and requiring agreement closes the window from both ends. */
-    if (S.currentSetUuid && !S.awaitingProjectSelect &&
+    /* ⭑RULED (Josh, 2026-09-02): the deferred save never runs while the
+     * transport plays — except at the Record-off edge, the end of a take —
+     * and while stopped it waits for a second of quiet. A save is a
+     * serialization on the SPI thread plus a file write with fsync on this
+     * thread, and during a recorded sweep the old rule fired one every poll.
+     * The DSP keeps its dirty flag until a save completes, so waiting loses
+     * nothing; quit, suspend and project switch save on their own paths. */
+    const _saveAllowed = S.saveNowOnce ||
+        (!S.playing && (S.tickCount - S.lastInputTick) >= SAVE_QUIET_TICKS);
+    if (_saveAllowed && S.currentSetUuid && !S.awaitingProjectSelect &&
             !S.pendingSetLoad && S.pendingDspSync === 0) {
-        const _dspUuid = (host_module_get_param('state_uuid') || '');
+        S.saveNowOnce = false;
+        const _dspUuid = (pget('state_uuid') || '');
         if (_dspUuid && _dspUuid === S.currentSetUuid) {
             const _st = fetchStateChunked();
             if (_st && _st.length > 2) {

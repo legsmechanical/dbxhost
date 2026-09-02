@@ -1,4 +1,5 @@
-/* tests/js/test_session_level_knob.mjs — prove, through the REAL knob dispatch,
+
+import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's single-read stub *//* tests/js/test_session_level_knob.mjs — prove, through the REAL knob dispatch,
  * that a track's session-view level knob reaches whichever mixer position that
  * track occupies: a Schwung chain slot OR a Move FX bus.
  *

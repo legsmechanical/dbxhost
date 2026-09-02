@@ -1,4 +1,5 @@
-/* tests/js/test_record_punch.mjs — record is a PUNCH during playback
+
+import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's single-read stub *//* tests/js/test_record_punch.mjs — record is a PUNCH during playback
  * (Josh, 2026-08-31): pressing Record while the transport is running arms
  * IMMEDIATELY (no wait for the bar), and pressing it again stops IMMEDIATELY
  * (no wait for the page edge). Every other path — stopped → count-in, the

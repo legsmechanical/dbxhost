@@ -1,4 +1,5 @@
-/* tests/js/test_sound_bank_jog.mjs — SOUND + CONFIG is the bank past the last
+
+import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's single-read stub *//* tests/js/test_sound_bank_jog.mjs — SOUND + CONFIG is the bank past the last
  * clip bank on the jog.
  *
  * Josh, 2026-08-23: "add a new bank to all tracks that mirrors the track editor
