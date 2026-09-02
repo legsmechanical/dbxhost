@@ -17,6 +17,12 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **SOUND + CONFIG is a knob bank.** On its card and on the sound menu's
+  screens (outside a module editor) the knobs are the track's levels: Volume,
+  Pan, Send A, Send B and, on a Schwung track, Module Level. They record and
+  lock like any parameter, and a circle by the value shows automation. The
+  knob-assignment layer that used to sit on those screens is moving to its own
+  MACROS bank.
 - **The STEP bank.** Note editing is now a bank of its own — the last clip
   bank on the jog, just before SOUND + CONFIG. Hold a step there and the
   knobs are that step's Note, Oct, Leng, Vel, Nudg, Iter, Prob and Ratch;

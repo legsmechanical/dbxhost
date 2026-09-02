@@ -162,10 +162,10 @@ assignment layer moves to MACROS; "a hold never creates a note"; the save rule).
 Proposed build order once lifted (drafted for Josh's review, 2026-09-02 night):
 1. **Measure + budget** — an idle trace is done (poll folded, `bf9f3f40`); the playback and
    recording traces need Josh at the device. Gate: `js.tick` p95 under ~20 ms.
-2. **SOUND + CONFIG bank knobs** (K1 Volume / K2 Pan / K3 Send A / K4 Send B / K5 Module
+2. ✅ **BUILT 2026-09-02** — **SOUND + CONFIG bank knobs** (K1 Volume / K2 Pan / K3 Send A / K4 Send B / K5 Module
    Level on a chain slot) — kit bank page fed into the automation owner; the gateway click
    unchanged. Circles on the kit cells; hold-Mute paint.
-3. **MACROS bank** — needs the one generic host feature (a param-page composed by the host:
+3. **MACROS bank** — ⚠ OWED HERE: re-pin the knob TRAVEL LAW (range sets the step, int floor, enum 4 detents/step, reversal resets — `armKnobValue`) on the MACROS surface; `tests/js/test_sound_knob_hud.mjs` carried those pins on the list screens and was retired when the levels took those knobs (2026-09-02). Needs the one generic host feature (a param-page composed by the host:
    absolute keys from several components, inline metadata); the assignment picker grows level
    and MIDI targets; Shift+touch quick-assign lives here; the sound menu's list-screen knob
    forwarding and Sound Control → Knobs retire.

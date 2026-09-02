@@ -2489,7 +2489,26 @@ export function drawKitHeaderParamPages(left, right, inverted) {
 
 /* ---- grid ---- */
 
+/* ⭑ THE AUTOMATION MARK (param-automation spec §3): a filled circle by a value
+ * = active automation on that parameter, an empty circle = deactivated. The
+ * movy param-page renderer draws it from `isModulated`; kit cells carry it as
+ * a descriptor field, `auto: 'auto' | 'auto-off'`, and a cell whose caller
+ * never sets it draws exactly the pixels it drew before. Top-right of the
+ * widget box, any kind. */
+function drawAutoMark(col, rowY, filled) {
+    const cx = col * MV_CELL_W + MV_CELL_W - 4, cy = rowY + 2;
+    set_pixel(cx - 1, cy - 2, 1); set_pixel(cx, cy - 2, 1); set_pixel(cx + 1, cy - 2, 1);
+    set_pixel(cx - 2, cy - 1, 1); set_pixel(cx + 2, cy - 1, 1);
+    set_pixel(cx - 2, cy,     1); set_pixel(cx + 2, cy,     1);
+    set_pixel(cx - 2, cy + 1, 1); set_pixel(cx + 2, cy + 1, 1);
+    set_pixel(cx - 1, cy + 2, 1); set_pixel(cx, cy + 2, 1); set_pixel(cx + 1, cy + 2, 1);
+    if (filled) {
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) set_pixel(cx + dx, cy + dy, 1);
+    }
+}
+
 function drawCellWidget(col, rowY, cell, touched, anim, nowMs) {
+    if (cell.auto === 'auto' || cell.auto === 'auto-off') drawAutoMark(col, rowY, cell.auto === 'auto');
     const kx = col * MV_CELL_W + Math.floor((MV_CELL_W - MV_KW) / 2);
     /* ⭑ THE ENUM SQUARE HAS ITS OWN, WIDER SLOT (28 vs the 20px widget box), so
      * it gets its own origin. Centred in the same 32px cell, so a page of mixed

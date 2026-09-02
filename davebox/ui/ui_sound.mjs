@@ -710,6 +710,16 @@ const S = {
     volTouched: false,
     volDirtySave: false,   /* level changed since the last persist */
     volPending: false,     /* level write owed to the engine (drained in tick) */
+    /* THE SOUND + CONFIG BANK'S KNOBS (spec §2, Josh 2026-09-02): K1 Volume,
+     * K2 Pan, K3 Send A, K4 Send B, K5 Module Level (chain slot only) — the
+     * track's mixer levels, live on the bank card AND on the menu's non-editor
+     * screens. Values are cached here (a knob turn runs in the MIDI handler,
+     * where the engine cannot be read), seeded once per context in the tick,
+     * written coalesced per tick, persisted once when the hand lifts. */
+    levelVals: [1, 0.5, 0, 0, 1],
+    levelSeededFor: '',    /* "<slot>/<bus id>" the cache was seeded for */
+    levelPending: 0,       /* bitmask of level knobs owed to the engine */
+    levelDirtySave: false,
 };
 
 function log(msg) {
@@ -1254,6 +1264,123 @@ function refreshBlockNames() {
  * branch still consumed the turn and wrote the SLOT level key against S.slot,
  * which a Move bus pins to 0 — so turning the knob moved a DIFFERENT track's
  * chain level, while Move (claim released) moved its master underneath. */
+/* ---- the SOUND + CONFIG bank's knobs: the mixer levels ---------------------
+ *
+ * ⭑RULED (Josh, 2026-09-02): the bank is a real knob bank and its knobs are
+ * the track's levels — both routes alike — on the bank page and on the sound
+ * menu's non-editor screens; the jog-click still enters the menu. They are
+ * ordinary automatable parameters (`slot:` / `move_fx:N:` keys), so a turn
+ * goes through the automation owner exactly as an editor knob does: a held
+ * step makes it a lock, Record makes it a take, a plain turn is a plain turn.
+ * The chain's per-knob ASSIGNMENT layer that used to own these knobs on the
+ * list screens moves to the MACROS bank (next in the plan). */
+const LEVEL_KNOB_SPECS = [
+    { key: 'volume',       label: 'Vol',  name: 'Volume',       widget: 'vbar',   def: 1.0, max: SLOT_LEVEL_MAX, units: 200, fmt: GAIN_FMT },
+    { key: 'pan',          label: 'Pan',  name: 'Pan',          widget: 'arcbip', def: 0.5, max: 1.0,            units: 200, fmt: PAN_FMT },
+    { key: 'send_a',       label: 'SndA', name: 'Send A',       widget: 'arc',    def: 0.0, max: 1.0,            units: 100, fmt: PCT_FMT },
+    { key: 'send_b',       label: 'SndB', name: 'Send B',       widget: 'arc',    def: 0.0, max: 1.0,            units: 100, fmt: PCT_FMT },
+    { key: 'synth_volume', label: 'ModL', name: 'Module Level', widget: 'vbar',   def: 1.0, max: SLOT_LEVEL_MAX, units: 200, fmt: GAIN_FMT, slotOnly: true },
+];
+for (const m of LEVEL_KNOB_SPECS) m.step = m.max / m.units;
+
+/* Where the levels live for the current context: a chain slot addresses
+ * `slot:<key>`, a Move bus `move_fx:N:<key>` (no Module Level there). */
+function levelComp() {
+    if (S.bus && S.bus.kind === 'move') return S.bus.prefix.slice(0, -1);
+    return 'slot';
+}
+function levelKnobSpec(idx) {
+    const m = LEVEL_KNOB_SPECS[idx];
+    if (!m) return null;
+    if (m.slotOnly && levelComp() !== 'slot') return null;
+    return m;
+}
+/* The knobs are the levels on every sound-mode screen that is NOT the module
+ * editor — the bank card, the block list, the settings — for a track (a global
+ * bus has no track and keeps its own rows). */
+function levelsActive() {
+    return !!(S.active && S.view !== VIEW_EDIT && !soundIsGlobal());
+}
+function levelFullKey(idx) { return levelComp() + ':' + LEVEL_KNOB_SPECS[idx].key; }
+function levelSeedKey() { return S.slot + '/' + (S.bus ? S.bus.id : 'slot'); }
+/* Tick only: reads the engine. Once per context. */
+function levelSeedIfNeeded() {
+    if (!levelsActive()) return;
+    const k = levelSeedKey();
+    if (S.levelSeededFor === k) return;
+    const comp = levelComp();
+    for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++) {
+        const m = levelKnobSpec(i);
+        if (!m) { S.levelVals[i] = LEVEL_KNOB_SPECS[i].def; continue; }
+        const raw = parseFloat(comp === 'slot' ? engineGetSlotParam(S.slot, m.key) : engineGet(S.slot, comp, m.key));
+        S.levelVals[i] = (isFinite(raw) && raw >= 0) ? raw : m.def;
+    }
+    S.levelSeededFor = k;
+    S.levelPending = 0;
+}
+/* MIDI handler: cache + queue + the automation owner. */
+function onLevelTurn(idx, delta) {
+    const m = levelKnobSpec(idx);
+    if (!m) return;
+    const prev = S.levelVals[idx];
+    let v = prev + delta * m.step;
+    if (v < 0) v = 0;
+    if (v > m.max) v = m.max;
+    v = Math.round(v * 1000) / 1000;
+    if (v === prev) return;
+    S.levelVals[idx] = v;
+    S.levelPending |= (1 << idx);
+    S.levelDirtySave = true;
+    automationParamEdit(S.track, effectiveClip(S.track), S.slot, levelFullKey(idx), v.toFixed(3), prev.toFixed(3));
+    S.dirty = true;
+}
+/* Tick: the writes, then keep any on-screen level row in step. */
+function drainLevelWrites() {
+    if (!S.levelPending) return;
+    const comp = levelComp();
+    for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++) {
+        if (!(S.levelPending & (1 << i))) continue;
+        const m = LEVEL_KNOB_SPECS[i];
+        const v = S.levelVals[i].toFixed(3);
+        if (comp === 'slot') engineSetSlotParam(S.slot, m.key, v);
+        else engineSet(S.slot, comp, m.key, v);
+        const row = S.pickRows.find(r => r.kind === 'buslevel' && r.spec && r.spec.key === m.key);
+        if (row) row.val = S.levelVals[i];
+    }
+    S.levelPending = 0;
+    S.dirty = true;
+}
+function flushLevelSave() {
+    if (!S.levelDirtySave) return;
+    S.levelDirtySave = false;
+    engineSaveState();
+}
+/* The bank card's cells: the five levels with their values and, when the
+ * parameter is automated in this clip, the circle (filled = active, empty =
+ * deactivated). K6-K8 are unassigned. */
+function levelCells() {
+    const t = S.track, c = effectiveClip(t);
+    const cells = [];
+    for (let i = 0; i < 8; i++) {
+        const m = levelKnobSpec(i);
+        if (!m) { cells.push({ kind: 'blank', label: '' }); continue; }
+        const v = S.levelVals[i];
+        const st = automationStateFor(t, c, S.slot + ':' + levelFullKey(i));
+        const cell = { label: m.label, name: m.name, text: m.fmt(v) };
+        if (m.widget === 'arcbip') { cell.kind = 'arcbip'; cell.signed = Math.max(-1, Math.min(1, (v - 0.5) * 2)); }
+        else { cell.kind = m.widget; cell.norm = Math.max(0, Math.min(1, v / m.max)); }
+        if (st) cell.auto = st.active ? 'auto' : 'auto-off';
+        cells.push(cell);
+    }
+    return cells;
+}
+function levelCardHints() {
+    /* The click is the door (no on-screen trace, so it leads); the jog walks
+     * banks — or, with a step held, reveals its page (spec §2). */
+    const jog = GS.heldStep >= 0 ? ['JOG', 'STEP'] : ['JOG', 'BANK'];
+    return [['CLK', 'MENU'], jog, ['BACK', 'OUT']];
+}
+
 function volTarget() {
     if (S.bus && S.bus.kind === 'move') {
         return { comp: S.bus.prefix.slice(0, -1), key: 'volume' };
@@ -2935,7 +3062,11 @@ function knobCellFor(target, param) {
  * Where the eight knobs drive the slot's assignments at all. (In VIEW_EDIT they
  * edit the open block's own cells instead; a bus has no slot to address.) */
 function knobDrivesSlot() {
-    return !!(S.active && S.view !== VIEW_EDIT && !S.bus && S.slot >= 0);
+    /* RETIRED 2026-09-02 (spec §2): the levels own the knobs on every
+     * non-editor screen; the assignment layer (and its HUD, and Shift+touch
+     * quick-assign) moves to the MACROS bank. Kept as a function so the HUD
+     * and assign paths stay readable until MACROS lands, then they go. */
+    return false;
 }
 
 /* ...and where the card that names them may appear. The assign screens ARE the
@@ -4375,12 +4506,16 @@ export function soundOnCC(d1, d2, decodeDelta) {
             if (delta) onKnobTurn(d1 - 71, delta);
             return true;
         }
-        /* Outside the module editor, the physical knobs drive the slot's
-         * knob-mapping ASSIGNMENTS (Knobs... in slot settings). The value is
-         * owned and written HERE, absolutely, under movy's step law — see the
-         * turn law above knobCellFor for why forwarding a relative CC to the
-         * chain DSP cost both resolution and feel. Bus contexts have no slot
-         * to address, so they neither write nor show a card. */
+        /* Outside the module editor the knobs are THE LEVELS (spec §2, Josh
+         * 2026-09-02) — on the bank card and on every non-editor screen of a
+         * track. K6-K8 are unassigned and swallowed. The chain's knob-
+         * ASSIGNMENT forwarding that owned these knobs here before moves to
+         * the MACROS bank; knobDrivesSlot() is retired (returns false). */
+        if (levelsActive()) {
+            const delta = decodeDelta(d2);
+            if (delta) onLevelTurn(d1 - 71, delta);
+            return true;
+        }
         if (knobDrivesSlot()) {
             const delta = decodeDelta(d2);
             if (delta) {
@@ -5073,6 +5208,28 @@ export function soundOnNote(status, d1, d2) {
         }
         armKnobHud(d1, true);
     }
+    /* A LEVEL knob's touch is an automation gesture, exactly as an editor
+     * knob's (spec §3): Delete+touch clears its automation in the clip,
+     * Mute+touch deactivates/reactivates (and marks the Mute a modifier on
+     * davebox's state object, so the release does not mute the track), and
+     * the touch itself opens/closes the gesture the drain and the override-
+     * resume ride on. The release also persists what the hand changed. */
+    if (levelsActive() && levelKnobSpec(d1)) {
+        const t = S.track, c = effectiveClip(t), target = S.slot + ':' + levelFullKey(d1);
+        if (on) {
+            if (S.deleteHeld) {
+                if (automationClearKey(t, c, target)) showActionPopup('AUTOMATION', 'CLEARED');
+            } else if (S.muteHeld) {
+                GS.muteUsedAsModifier = true;
+                const r = automationToggleActive(t, c, target);
+                if (r !== null) showActionPopup('AUTOMATION', r ? 'ON' : 'OFF');
+            }
+        } else {
+            flushLevelSave();
+        }
+        automationParamTouch(t, c, S.slot, levelFullKey(d1), on);
+        S.dirty = true;
+    }
 
     const next = on ? d1 : -1;
     if (next !== S.touchedIdx) {
@@ -5133,6 +5290,22 @@ export function soundTick() {
     /* ⭑ AHEAD of discovery: when the editor is on, davebox's own bank model is
      * not what is being drawn, and running both would pay for two contracts. */
     ppSync();
+    /* Hold-Mute / Delete paint on the LEVEL knobs (spec §2) — on the bank card
+     * and every non-editor screen, so it lives OUTSIDE the editor's ppOn block:
+     * the five that exist here, unlit where nothing is automated; K6-K8 unlit.
+     * On release the rings go back to unlit — nothing else paints them on
+     * these screens (the editor's own repaint runs in its block below). */
+    if ((S.muteHeld || S.deleteHeld) && levelsActive()) {
+        S.autoLedPaint = true;
+        const t = S.track, c = effectiveClip(t);
+        for (let k = 0; k < 8; k++) {
+            const st = levelKnobSpec(k) ? automationStateFor(t, c, S.slot + ':' + levelFullKey(k)) : null;
+            setButtonLED(MoveKnob1 + k, st ? (st.active ? Red : White) : 0, true);
+        }
+    } else if (S.autoLedPaint && !ppOn) {
+        S.autoLedPaint = false;
+        for (let k = 0; k < 8; k++) setButtonLED(MoveKnob1 + k, 0, true);
+    }
     if (ppOn) {
         tickParamPages();
         /* Holding Mute — or Delete (Josh, 2026-09-02: you should see what a
@@ -5272,6 +5445,8 @@ export function soundTick() {
     drainAndVerifyWrites();
     drainForcedPoll();
 
+    levelSeedIfNeeded();
+    drainLevelWrites();
     if (S.volPending) {
         S.volPending = false;
         writeVolLevel(S.slot, S.volLevel);
@@ -5379,7 +5554,15 @@ export function renderTrackGatewayCard(track) {
 }
 
 function renderPrompt() {
-    renderTrackGatewayCard(S.track);
+    /* The bank card IS a knob page now (spec §2): the five levels, the
+     * automation circles, and the door in the footer. */
+    clear_screen();
+    kitUseLayout('bank');
+    drawKitBankPage(levelCells(), {
+        headerText: 'SOUND + CONFIG', headerInvert: false,
+        touchedIdx: S.touchedIdx,
+        footer: levelCardHints(),
+    });
 }
 
 function renderBlocks() {
