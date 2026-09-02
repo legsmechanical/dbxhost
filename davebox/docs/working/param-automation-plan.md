@@ -179,9 +179,15 @@ Proposed build order once lifted (drafted for Josh's review, 2026-09-02 night):
    (`soundOpen` vs `soundActive`); Module Level off the S+C card; `Tr<n> - ` on the new cards;
    BANK-KNOB targets by Josh's numbered list. ⏳ FUTURE (Josh): multi-target macros with
    per-target min/max ranges.
-4. **AUTOMATION bank** (replaces bank 6): the list card, the menu (delete, mute, smooth, loop
-   length/resolution, clear clip; AT lanes as rows), Delete+jog-click shortcut, undo per
-   action; the Smooth click leaves the module editor; "hold a step, see the locks".
+4. ✅ **BUILT 2026-09-03** — **AUTOMATION bank** (`BANK_AUTOMATION = 14`, `ui_automation_bank.mjs`):
+   last on the walk after MACROS; the old bank 6 is OFF the walk (its code stays for P8; a
+   stored 6 restores as 14). The list card (bracketed corners), the menu (cursor + Clear clip),
+   per-row ops (Delete / Mute / Smooth–Stepped on floats / Loop in steps → `pa_loop` ticks),
+   Delete + click = Clear clip, undo checkpoint per op (`automationToggleActive/Smooth` take
+   one now too), the AT lane as a row (Delete via `_at_clear`); `pa_list` carries `loop_len`
+   after the target. Smooth/Stepped LEFT the module editor. ⏳ NOT surfaced: resolution
+   (stored, no playback effect — `pa_entry_tick` reads loop_len/off only); "go to the
+   parameter"; "hold a step, see the locks" on this card (the list has no values).
 5. ✅ **BUILT 2026-09-02** (`099ae47b` promote, `19be8fe0` hold-never-creates, `ac30c22a` STEP bank, `798ff3dc` reveal, + hints/undo/manual) — **The held step, one law (⭑RULED 2026-09-02 midday, spec §3)**: a hold creates nothing (a
    pad press while held does); the step editor becomes the STEP bank (`--` with no step held);
    a held step redirects the on-screen knobs to that step everywhere; hold + JOG right reveals

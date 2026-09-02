@@ -152,8 +152,11 @@ function parseList(list) {
         if (!line.length) continue;
         const f = line.split(' ');
         if (f.length < 5) continue;
-        stateByKey.set(stateKey(f[0], f[1], f.slice(4).join(' ')),
-                       { flags: parseInt(f[2], 10) | 0, count: parseInt(f[3], 10) | 0 });
+        /* "<track> <clip> <flags> <count> <target> [<loop_len>]" — a target
+         * never contains a space (the DSP reads it as one token). */
+        stateByKey.set(stateKey(f[0], f[1], f[4]),
+                       { flags: parseInt(f[2], 10) | 0, count: parseInt(f[3], 10) | 0,
+                         loop: parseInt(f[5], 10) | 0 });
     }
 }
 
@@ -165,11 +168,47 @@ export function automationRefreshPresence() {
     parseList(list);
 }
 
-/* null = not automated; else { active, smooth, count }. */
+/* null = not automated; else { active, smooth, count, loop }. */
 export function automationStateFor(track, clip, target) {
     const s = stateByKey.get(stateKey(track, clip, target));
     if (!s || !s.count) return null;
-    return { active: !!(s.flags & 1), smooth: !!(s.flags & 2), count: s.count };
+    return { active: !!(s.flags & 1), smooth: !!(s.flags & 2), count: s.count, loop: s.loop | 0 };
+}
+/* Every automated target of one clip — the AUTOMATION bank's list. */
+export function automationEntriesFor(track, clip) {
+    const out = [];
+    const pfx = track + ' ' + clip + ' ';
+    for (const [k, s] of stateByKey) {
+        if (k.indexOf(pfx) !== 0 || !s.count) continue;
+        out.push({ target: k.slice(pfx.length), active: !!(s.flags & 1), smooth: !!(s.flags & 2),
+                   count: s.count, loop: s.loop | 0 });
+    }
+    return out;
+}
+/* What a target is CALLED on the AUTOMATION list: `Syn>Cutoff`, `FX2>Room
+ * Size`, `Lvl>Volume`, `CC 74`, `Aftertouch`. The component's short form is
+ * the sound menu's own (one table there, one here, both keyed on the bare id;
+ * a Move bus's `move_fx:N:` prefix is the screen's context and is dropped). */
+const COMP_SHORT = { synth: 'Syn', fx1: 'FX1', fx2: 'FX2', fx3: 'FX3', fx4: 'FX4',
+                     midi_fx1: 'MFX1', midi_fx2: 'MFX2', slot: 'Lvl' };
+const LEVEL_NAMES = { volume: 'Volume', pan: 'Pan', send_a: 'Send A', send_b: 'Send B', synth_volume: 'Module Level' };
+export function automationTargetLabel(target) {
+    const t = String(target || '');
+    if (t === 'at') return 'Aftertouch';
+    if (t.indexOf('cc:') === 0) return 'CC ' + t.slice(3);
+    const i = t.indexOf(':');
+    if (i < 0) return t;
+    const slot = parseInt(t.slice(0, i), 10);
+    const [comp, key] = splitFullKey(t.slice(i + 1));
+    let bare = comp.replace(/^move_fx:\d+:?/, '');
+    if (bare === '') bare = 'slot';
+    const short = COMP_SHORT[bare] || bare.toUpperCase();
+    let name = LEVEL_NAMES[key];
+    if (!name && isFinite(slot)) {
+        const p = componentMeta(slot, comp)[key];
+        name = p && (p.name || p.label);
+    }
+    return short + '>' + (name || key);
 }
 
 /* A write the DSP answers with a staged value (a rest on deactivate/clear):
@@ -583,6 +622,7 @@ export function automationToggleActive(track, clip, target) {
     const s = automationStateFor(track, clip, target);
     if (!s) return null;
     const on = !s.active;
+    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');   /* every edit is an undo unit */
     queueSet('t' + track + '_pa_active', clip + ' ' + target + ' ' + (on ? 1 : 0));
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.flags = on ? (cur.flags | 1) : (cur.flags & ~1);
@@ -623,10 +663,36 @@ export function automationToggleSmooth(track, clip, target) {
     const s = automationStateFor(track, clip, target);
     if (!s) return null;
     const on = !s.smooth;
+    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
     queueSet('t' + track + '_pa_smooth', clip + ' ' + target + ' ' + (on ? 1 : 0));
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.flags = on ? (cur.flags | 2) : (cur.flags & ~2);
     return on;
+}
+
+/* The AUTOMATION bank's Loop row: an entry's own loop window, in clip TICKS
+ * (0 = follow the clip). Offset stays 0 and resolution is not surfaced —
+ * pa_entry_tick reads loop_len/loop_off only. */
+export function automationSetLoop(track, clip, target, loopTicks) {
+    const s = automationStateFor(track, clip, target);
+    if (!s) return false;
+    const len = Math.max(0, loopTicks | 0);
+    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' ' + len + ' 0 0');
+    const cur = stateByKey.get(stateKey(track, clip, target));
+    if (cur) cur.loop = len;
+    return true;
+}
+/* The AUTOMATION bank's Clear clip: every parameter's automation in the clip,
+ * everything back to rest. */
+export function automationClearClip(track, clip) {
+    const entries = automationEntriesFor(track, clip);
+    if (!entries.length) return false;
+    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    queueSet('t' + track + '_pa_clear', String(clip));
+    for (const e of entries) stateByKey.delete(stateKey(track, clip, e.target));
+    expectStaged();
+    return true;
 }
 
 /* Per tick, from automationTick: end gestures that never had a touch and

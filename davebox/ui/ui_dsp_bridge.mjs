@@ -29,7 +29,7 @@ import { automationRefreshPresence, automationInvalidateMeta, automationWantsDra
 
 import {
     NUM_TRACKS, NUM_CLIPS, NUM_STEPS, DRUM_LANES, POLL_INTERVAL,
-    TPS_VALUES, BANKS, PAD_MODE_DRUM, BANK_SOUND, isSoundBank,
+    TPS_VALUES, BANKS, PAD_MODE_DRUM, BANK_SOUND, isSoundBank, BANK_AUTOMATION,
     INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK,
     MoveRec, LED_OFF, parseActionRaw
 } from './ui_constants.mjs';
@@ -1483,8 +1483,11 @@ export function restoreUiSidecar(applyDefaultsNow) {
                  * silently turned a persisted 11 into 0 — a load that lands you
                  * somewhere you did not leave, which is the symptom this whole
                  * change is about. Anything else still falls back to 0. */
-                S.trackActiveBank[_t] = (typeof _b === 'number' &&
-                    ((_b >= 0 && _b <= 7) || isSoundBank(_b))) ? (_b | 0) : 0;
+                /* Bank 6 (the old AUTO) left the walk 2026-09-03: a track
+                 * stored there comes back on the AUTOMATION bank. */
+                S.trackActiveBank[_t] = (typeof _b !== 'number') ? 0
+                    : (_b === 6) ? BANK_AUTOMATION
+                    : ((_b >= 0 && _b <= 7) || isSoundBank(_b) || _b === BANK_AUTOMATION) ? (_b | 0) : 0;
             }
             /* Sync live mirror to the restored active track. Subsequent
              * post-restore validity checks (e.g. hide bank 7 on melodic) still

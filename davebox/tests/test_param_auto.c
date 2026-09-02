@@ -197,7 +197,7 @@ int main(void) {
          * a legal target, stored as one. */
         pa_set(h, 0, 0, "has space", 0, 100);
         pa_list(h, buf, sizeof(buf));
-        HX_ASSERT(list_count(buf) == 2 && strstr(buf, " has\n"), "a space ends the target, it does not poison it");
+        HX_ASSERT(list_count(buf) == 2 && strstr(buf, " has 0\n"), "a space ends the target, it does not poison it (the loop_len field follows it)");
         OK("⚠ a target carrying JSON metacharacters is REFUSED, not stored and later lost");
         hx_destroy(h);
     }

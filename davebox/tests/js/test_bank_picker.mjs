@@ -74,7 +74,7 @@ import { readFileSync } from 'node:fs';
 async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
-const { BANK_SOUND, BANK_MACROS } = await import('../../ui/ui_constants.mjs');
+const { BANK_SOUND, BANK_MACROS, BANK_AUTOMATION } = await import('../../ui/ui_constants.mjs');
 const { bankCycleForMode, bankDisplayName } = await import('../../ui/ui_pure.mjs');
 const { PAD_MODE_DRUM, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
@@ -149,8 +149,8 @@ step('⭑ walking onto SOUND + CONFIG lands the DOOR; on to MACROS is a screen s
     reset();
     S.bankCardLatched = true;
     const cyc = bankCycleForMode(0);
-    /* Up to SOUND + CONFIG (second to last since MACROS joined, 2026-09-02). */
-    for (let i = 0; i < cyc.length - 2; i++) { jog(1); }
+    /* Up to SOUND + CONFIG. */
+    for (let i = 0; i < cyc.indexOf(BANK_SOUND); i++) { jog(1); }
     globalThis.tick(); globalThis.tick();          /* the entry defers to tick */
     if (!snd.soundActive()) throw new Error('the walk did not open the door');
     if (S.activeBank !== BANK_SOUND) throw new Error('not on SOUND + CONFIG: ' + S.activeBank);
@@ -159,15 +159,18 @@ step('⭑ walking onto SOUND + CONFIG lands the DOOR; on to MACROS is a screen s
     if (!snd.soundActive()) throw new Error('walking onto MACROS closed sound mode');
     if (S.activeBank !== BANK_MACROS || S.trackActiveBank[2] !== BANK_MACROS)
         throw new Error('MACROS did not record itself: ' + S.activeBank + '/' + S.trackActiveBank[2]);
+    /* On to AUTOMATION (last since 2026-09-03): sound mode leaves; back left it re-opens on MACROS. */
     jog(1); globalThis.tick();
-    if (S.activeBank !== BANK_MACROS) throw new Error('the walk did not clamp at MACROS: ' + S.activeBank);
+    if (S.activeBank !== BANK_AUTOMATION || snd.soundActive()) throw new Error('MACROS -> AUTOMATION should leave sound mode: ' + S.activeBank);
+    jog(-1); globalThis.tick(); globalThis.tick();
+    if (S.activeBank !== BANK_MACROS || !snd.soundActive()) throw new Error('AUTOMATION -> MACROS should re-open on the page: ' + S.activeBank);
     /* Back to the door, still open; then off it, closed. */
     jog(-1); globalThis.tick();
     if (!snd.soundActive() || S.activeBank !== BANK_SOUND)
         throw new Error('MACROS -> SOUND + CONFIG should keep the mode open on the door: ' + S.activeBank);
     jog(-1); globalThis.tick();
     if (snd.soundActive()) throw new Error('walking off the door did not leave sound mode');
-    if (S.activeBank !== cyc[cyc.length - 3])
+    if (S.activeBank !== cyc[cyc.indexOf(BANK_SOUND) - 1])
         throw new Error('did not land on the neighbour bank: ' + S.activeBank);
 });
 
@@ -175,7 +178,7 @@ step('⭑ two detents before the tick: the queued door counts as the position (S
     reset();
     S.bankCardLatched = true;
     const cyc = bankCycleForMode(0);
-    for (let i = 0; i < cyc.length - 1; i++) { jog(1); }   /* no tick between */
+    for (let i = 0; i < cyc.indexOf(BANK_MACROS); i++) { jog(1); }   /* no tick between */
     globalThis.tick(); globalThis.tick();
     if (!snd.soundActive()) throw new Error('the walk did not open sound mode');
     if (S.activeBank !== BANK_MACROS)

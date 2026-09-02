@@ -6623,7 +6623,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
     /* pa_list: every automated (track, clip, target) with its flags and point
      * count — one round trip for the whole project, because a per-entry read
      * would cost an SPI frame each. Format, one entry per line:
-     *   "<track> <clip> <flags> <count> <target>" */
+     *   "<track> <clip> <flags> <count> <target> <loop_len>"
+     * (loop_len appended 2026-09-03 for the AUTOMATION bank's Loop row; a
+     * target never contains a space, so a reader that stops at the target is
+     * unaffected). */
     /* pa_owner <target>: the track that owns this target (has automation on
      * it in any clip), or -1. The UI asks before a track's first write to a
      * target; the store refuses anyway (pa_owner_conflict). */
@@ -6659,9 +6662,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         for (int i = 0; i < PA_MAX_ENTRIES; i++) {
             pa_entry_t *e = &inst->pa_entries[i];
             if (!e->used || !e->count) continue;
-            int w = snprintf(out + n, (size_t)(out_len - n), "%d %d %d %d %s\n",
+            int w = snprintf(out + n, (size_t)(out_len - n), "%d %d %d %d %s %d\n",
                              (int)e->track, (int)e->clip, (int)e->flags,
-                             (int)e->count, inst->pa_targets[e->target]);
+                             (int)e->count, inst->pa_targets[e->target],
+                             (int)e->loop_len);
             if (w < 0 || n + w >= out_len) {
                 /* snprintf has already written a truncated line; cut it back
                  * off, or a C-string reader sees a torn entry past the length

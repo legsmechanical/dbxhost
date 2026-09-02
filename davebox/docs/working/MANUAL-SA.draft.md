@@ -341,6 +341,15 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   target that no longer exists (the module was swapped) reads UNASSIGNED.
   On a track left on MACROS the knobs are the macros from the track overview
   too, and touching one peeks the page. Conductor tracks don't have it either.
+- **AUTOMATION** is the last bank: a list of everything automated in the
+  current clip — synth and effect parameters, levels, and the pads' aftertouch
+  — each with its state (ON, OFF, or SMTH for smooth). The knobs do nothing
+  here. **Click the jog** for the menu: turn to a row and click for its
+  operations — Delete, Mute or Unmute, Smooth or Stepped (on parameters that
+  can ramp), and Loop, which gives that parameter its own loop length in steps
+  (CLIP = follow the clip). The last row is **Clear clip**; **Delete + click**
+  on the card does the same. Every operation is one undo. **Back** closes one
+  layer at a time. Conductor tracks don't have it.
 - **Click the jog** (with no picker open) switches a bank between its primary and
   alternate parameters (the labels change). A **down-arrow** in the header marks
   any bank that has alternates, and blinks while the alternates are showing.

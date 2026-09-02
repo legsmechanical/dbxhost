@@ -775,6 +775,8 @@ export const S = {
      * Josh floated 2026-09-02) never will. `null` per track = never seeded:
      * ui_sound migrates the chain's knob_N assignments on first use. */
     trackMacros: new Array(8).fill(null),
+    /* The AUTOMATION bank's menu state (ui_automation_bank owns it; null = the plain card). */
+    autoBank: null,
     /* Bank picker (Shift+jog in track view, 2026-08-25). Shift+jog used to step
      * the active TRACK; that meaning moved to Shift + the bottom pad row, and
      * the jog now browses the current track's banks in the kit's list overlay.

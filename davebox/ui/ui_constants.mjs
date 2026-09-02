@@ -446,6 +446,12 @@ export const BANKS = [
      * SOUND MODE (ui_sound owns the screen, the knobs and the store); stubs
      * here so generic BANKS[S.activeBank] readers stay safe. */
     { name: 'MACROS', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
+    /* 14 — AUTOMATION (BANK_AUTOMATION) — the LIST of what is automated in
+     * the current clip, with its menu (spec §2, Josh 2026-09-02). Replaces
+     * the old AUTO bank 6 on the walk (bank 6's code stays until the P8
+     * sweep and is no longer reachable). The knobs are a NO-OP on the card:
+     * stubs, and ui_automation_bank owns the screen and the jog. */
+    { name: 'AUTOMATION', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
 ];
 
 /* Conductor bank indices. Bank 0 (CLIP) is reused as the "Conduct" bank. */
@@ -468,6 +474,8 @@ export const BANK_STEP = 12;
  * is the one predicate every identity site reads, so a third can be added in
  * one place. Last on the melodic and drum walks; a Conductor has neither. */
 export const BANK_MACROS = 13;
+/* The AUTOMATION bank: last on the melodic and drum walks, after MACROS. See BANKS[14]. */
+export const BANK_AUTOMATION = 14;
 export function isSoundBank(b) { return b === BANK_SOUND || b === BANK_MACROS; }
 
 /* The track's DEFAULT bank — CLIP on a melodic track, DRUM LANE on a drum one,

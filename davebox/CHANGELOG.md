@@ -29,6 +29,12 @@ the section into a versioned heading at release time.
   touch peeks the page. The assignments belong to the project and to chain
   patches; the old Sound Control → Knobs list is gone, and its mappings are
   carried over the first time you open the bank.
+- **The AUTOMATION bank.** The last bank on the jog, replacing the old AUTO
+  bank: a list of everything automated in the current clip with its state.
+  Click the jog for the menu, pick a row for its operations — Delete, Mute,
+  Smooth or Stepped, Loop (a parameter's own loop length) — or Clear clip.
+  Delete + click on the card clears the clip. Every operation is one undo.
+  Smooth/Stepped moved here from the module editor.
 - **Module Level left the SOUND + CONFIG card.** The card's knobs are
   Volume, Pan, Send A and Send B; its bottom row is the door. Module Level
   is a macro target.

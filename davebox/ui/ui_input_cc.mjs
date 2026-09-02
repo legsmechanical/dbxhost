@@ -22,7 +22,7 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS,
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool
@@ -49,6 +49,7 @@ import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
 import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
+import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen } from './ui_automation_bank.mjs';
 import { soundActive, soundOpen, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, soundEnterBuses } from './ui_sound.mjs';
@@ -163,6 +164,17 @@ function _onCC_jog(d1, d2) {
     /* CLEAR AUTOMATION modal: jog click toggles a row / executes CLEAR. */
     if (d1 === 3 && d2 === 127 && S.clearAutoMenu) {
         clearAutoMenuClick();
+        return;
+    }
+    /* THE AUTOMATION BANK (latched): the click enters its menu / runs the
+     * selected op; Delete + click is the CLEAR CLIP shortcut (spec §2).
+     * Ahead of the generic Delete + click (which resets the bank's params)
+     * and of the alt-param toggle; no modal above is open at this point. */
+    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && S.moveCoRunTrack < 0 &&
+            S.activeBank === BANK_AUTOMATION && S.bankCardLatched) {
+        if (S.deleteHeld) autoBankClearClip(); else autoBankClick();
+        S.screenDirty = true;
+        forceRedraw();
         return;
     }
     /* Scene bake confirm: two-phase jog flow — loop count, then wrap yes/no. */
@@ -1085,6 +1097,13 @@ function modalDialogUp() {
                         forceRedraw();
                     }
                     }
+                } else if (S.activeBank === BANK_AUTOMATION && S.bankCardLatched && autoBankMenuOpen()) {
+                    /* The AUTOMATION menu owns the jog while it is open: the
+                     * cursor, the ops, the loop value. The walk resumes when
+                     * Back closes it. */
+                    autoBankJog(delta);
+                    S.screenDirty = true;
+                    forceRedraw();
                 } else if (bankCardVisible()) {
                     /* ⭑⭑ THE TURN WALKS THE BANKS DIRECTLY (Josh, 2026-09-01:
                      * "no more overlay on jog turn. turn moves through banks
@@ -1153,6 +1172,7 @@ export function applyBankPick() {
         return;
     }
     if (next === S.activeBank) { forceRedraw(); return; }
+    autoBankReset();                          /* the AUTOMATION menu does not survive a walk */
     /* ⚠⚠ LEAVE sound mode when the walk lands on a different bank. While it is
      * active it OWNS the bank identity and re-asserts BANK_SOUND on the next
      * tick — so without this the jog appears to walk away and then snaps
@@ -1973,6 +1993,11 @@ function _backTap() {
     }
     if (S.globalEnumPick) { closeGlobalEnumPick(false); forceRedraw(); return; }
     if (S.clearAutoMenu)  { S.clearAutoMenu = null; S.deleteTapArmed = false; forceRedraw(); return; }
+    /* The AUTOMATION bank's layers (ops → menu → card) close one per press;
+     * with none open, Back is davebox's own (out of bank mode). */
+    if (S.activeBank === BANK_AUTOMATION && S.bankCardLatched && !S.sessionView && autoBankBack()) {
+        S.screenDirty = true; forceRedraw(); return;
+    }
     if (S.tempoSelectActive) {
         /* Keep the currently-auditioned tempo (same as a jog-click) and close. */
         host_module_set_param('t' + S.tempoSelectTrack + '_capture_confirm', '');
@@ -4507,6 +4532,7 @@ function _switchViewCleanup() {
      * to it, and the next click re-opens exactly where you were. */
     S.sessMixerLatched = false;
     S.bankCardLatched  = false;
+    autoBankReset();
     stepRecExit();
     standDownBankDisplay(true);
     S.heldStepBtn        = -1;

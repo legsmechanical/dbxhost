@@ -11,7 +11,7 @@ import { drawDaveBox } from './ui_daves.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
 import { SESS_KNOB_MODES } from './ui_engine.mjs';
 import {
-    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS,
+    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
     POLL_INTERVAL, SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
     col4, col5, pixelPrint, pixelPrintC,
@@ -45,6 +45,7 @@ import {
     bankHasAltParams, altIndicatorActive
 } from './ui_leds.mjs';
 import { soundRender, renderGatewayCard, renderTrackGatewayCard, renderMacrosPeek } from './ui_sound.mjs';
+import { drawAutomationBankBody } from './ui_automation_bank.mjs';
 import { drawMenuHeader } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* ------------------------------------------------------------------ */
@@ -2045,6 +2046,14 @@ function drawUIBody() {
          * seen (sound mode owns the reads; a peek pays for none). */
         if (bank === BANK_MACROS) {
             renderMacrosPeek(S.activeTrack);
+            return;
+        }
+        /* AUTOMATION: the list of what is automated in this clip, its menu
+         * and its ops (ui_automation_bank). The heading is a bank heading. */
+        if (bank === BANK_AUTOMATION) {
+            clear_screen();
+            drawBankHeading(bankDisplayName(S.trackPadMode[S.activeTrack], BANK_AUTOMATION), false, false);
+            drawAutomationBankBody();
             return;
         }
         if (bank === BANK_STEP) {

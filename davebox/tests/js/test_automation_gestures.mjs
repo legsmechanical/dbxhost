@@ -45,7 +45,8 @@ check(automationStateFor(2, 1, '4:synth:cutoff').active === false, 'the cache fo
 list = '2 1 0 8 4:synth:cutoff\n2 1 3 3 4:synth:resonance\n5 0 0 2 5:fx1:mix\n';
 listReads = 0;
 tick(); tick(); tick();
-check(sets[0] === 't2_pa_active=1 4:synth:cutoff 0', 'and writes pa_active 0');
+check(sets[0] === 't2_c1_undo_checkpoint=1', 'every edit is an undo unit: the checkpoint precedes it (2026-09-03)');
+check(sets[1] === 't2_pa_active=1 4:synth:cutoff 0', 'and writes pa_active 0');
 check(listReads === 1, '⚠ the list is re-read ONCE after the write crossed (the DSP is the authority)');
 check(automationStateFor(2, 1, '4:synth:cutoff').active === false, 'and agrees');
 check(automationToggleActive(2, 0, '4:synth:cutoff') === null, 'nothing automated there: no write, null');
@@ -72,7 +73,7 @@ list = '2 1 1 8 4:synth:cutoff\n';
 automationRefreshPresence();
 check(automationToggleSmooth(2, 1, '4:synth:cutoff') === true, 'stepped -> smooth');
 tick();
-check(sets[0] === 't2_pa_smooth=1 4:synth:cutoff 1', 'writes pa_smooth 1');
+check(sets[0] === 't2_c1_undo_checkpoint=1' && sets[1] === 't2_pa_smooth=1 4:synth:cutoff 1', 'writes the checkpoint, then pa_smooth 1');
 check(automationStateFor(2, 1, '4:synth:cutoff').smooth === true, 'and the cache follows');
 check(automationToggleSmooth(2, 1, '4:synth:cutoff') === false, 'and back');
 

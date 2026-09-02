@@ -66,6 +66,7 @@ const ledsMod = await import('../../ui/ui_leds.mjs');
 const ifMod = await import('/data/UserData/schwung/shared/input_filter.mjs');
 const persistMod = await import('../../ui/ui_persistence.mjs');
 const bridgeMod = await import('../../ui/ui_dsp_bridge.mjs');
+const pureMod = await import('../../ui/ui_pure.mjs');
 const { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, BANK_WHEN, BANK_SOUND, BANK_STEP } = constsMod;
 
 const send  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
@@ -220,7 +221,8 @@ step('⭑ the MENU top edge CLAMPS; Back exits to the CARD; the card walks out',
     if (snd.soundActive()) throw new Error('the card did not walk out on a left turn');
     if (S.activeBank !== BANK_STEP) throw new Error('did not land on STEP (the bank before SOUND + CONFIG): ' + S.activeBank);
     left();
-    if (S.activeBank !== 6) throw new Error('bank walk did not resume leftward onto AUTOMATION: ' + S.activeBank);
+    /* 5 (LIVE ARP) since 2026-09-03: the old AUTO bank 6 left the walk; AUTOMATION is last, after MACROS. */
+    if (S.activeBank !== 5) throw new Error('bank walk did not resume leftward onto LIVE ARP: ' + S.activeBank);
 });
 
 step('⭑ drum: right past STEP (after the end of BANK_CYCLE_DRUM) enters too', () => {
@@ -271,60 +273,9 @@ step('⭑ and BACK from the prompt returns to the bank you CAME FROM', () => {
         throw new Error('Back landed on the wrong bank: ' + S.activeBank);
 });
 
-step('⭑ AUTO-bank pad coloring stands down while SOUND + CONFIG is up', () => {
-    /* The AUTO bank paints the melodic pads grey (palette 118 root / 124
-     * non-root). Sound mode leaves S.activeBank on the bank it was entered
-     * from — which can be AUTO — but the pads stay with the SEQUENCER there,
-     * so they must wear their default clip coloring. The gate is
-     * ui_leds' autoBankLeds() reading the S.soundOpen mirror; both halves
-     * fail silently (a stale mirror or a missed site just leaves grey pads).
-     * Captured at the wire: setLED emits [0x09, 0x90, note, color]. */
-    const { updateTrackLEDs, invalidateLEDCache } = ledsMod;
-    const { clearAllLEDs } = ifMod;   /* resets input_filter's send cache too */
-    const { TRACK_PAD_BASE } = constsMod;
-    const padColors = () => {
-        const seen = {};
-        clearAllLEDs();               /* before the capture arms — its own
-                                       * note-offs are not pad paint */
-        globalThis.move_midi_internal_send = (b) => {
-            if (b && b[1] === 0x90 && b[2] >= TRACK_PAD_BASE && b[2] < TRACK_PAD_BASE + 32)
-                seen[b[2]] = b[3];
-        };               /* both caches — ui_leds' AND input_filter's;
-                                       * ticks during earlier steps already primed
-                                       * them, and a primed cache eats the repaint */
-        invalidateLEDCache();
-        updateTrackLEDs();
-        globalThis.move_midi_internal_send = () => {};
-        return Object.values(seen);
-    };
-    /* ⚠ DarkGrey === 124 === the AUTO non-root grey, so the non-root pads are
-     * IDENTICAL in both states. The tell is the ROOT pads: AUTO paints them
-     * 118 (LightGrey), the default coloring paints them trackColor(t). A real
-     * pad map is needed or every pad is non-root and both states read all-124. */
-    reset(PAD_MODE_MELODIC_SCALE, 6);
-    computePadNoteMap();
-    const tCol = ledsMod.trackColor(2);
-    if (tCol === 118) throw new Error('fixture: trackColor(2) is LightGrey — pick another track');
-    const grey = padColors();
-    if (!grey.length) throw new Error('control: no pad LEDs painted at all');
-    if (!grey.some(c => c === 118))
-        throw new Error('control: AUTO bank painted no LightGrey root pads (' + grey.join(',') + ')');
-    if (grey.some(c => c === tCol))
-        throw new Error('control: AUTO bank painted track-color pads');
-    right(); right();                   /* enter SOUND + CONFIG from AUTO, via STEP */
-    if (!snd.soundActive()) throw new Error('did not enter sound mode');
-    const inSound = padColors();
-    if (!inSound.length) throw new Error('no pad LEDs painted in sound mode');
-    if (inSound.some(c => c === 118))
-        throw new Error('AUTO root grey still painted under sound mode: ' + inSound.join(','));
-    if (!inSound.some(c => c === tCol))
-        throw new Error('default track-color roots missing under sound mode: ' + inSound.join(','));
-    snd.soundTick(); left(); globalThis.tick();   /* the card walks back onto STEP */
-    if (snd.soundActive()) throw new Error('did not exit');
-    left(); globalThis.tick();                    /* ...and one more onto AUTO */
-    const back = padColors();
-    if (!back.some(c => c === 118))
-        throw new Error('AUTO grey palette did not return after exit: ' + back.join(','));
+step('⚠ RETIRED 2026-09-03: the old AUTO bank 6 is OFF the walk (the AUTOMATION bank replaces it), so its grey pad coloring cannot be reached from the jog', () => {
+    const { bankCycleForMode } = pureMod;
+    if (bankCycleForMode(PAD_MODE_MELODIC_SCALE).indexOf(6) >= 0) throw new Error('bank 6 is back on the walk');
 });
 
 step('⭑⭑ the TOP LEVEL keeps THE ONE LAW: bank mode or knob peek, never otherwise', () => {

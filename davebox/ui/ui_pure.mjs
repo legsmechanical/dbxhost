@@ -13,7 +13,7 @@
 
 import { S } from './ui_state.mjs';
 import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, NUM_STEPS, BANKS,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS } from './ui_constants.mjs';
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION } from './ui_constants.mjs';
 
 /* Live pad note input — isomorphic 4ths diatonic layout.
  * EXPORTED for ui.js's computePadNoteMap (impure, moves in Phase 5) — do not
@@ -35,7 +35,9 @@ export const SCALE_INTERVALS = [
     [0, 2, 3, 5, 6, 8, 9, 11],     /* 13 Diminished      */
 ];
 
-export const BANK_CYCLE_DRUM = [7, 0, 1, 3, 5, 6];
+/* ⚠ Bank 6 (the old AUTO) LEFT the walk 2026-09-03: the AUTOMATION bank
+ * (BANK_AUTOMATION) replaces it, after MACROS, on every walk. */
+export const BANK_CYCLE_DRUM = [7, 0, 1, 3, 5];
 
 /* Conductor cycles 5 banks: Conduct(0=CLIP) → NOTE FX(1) → Responder → Octave
  * → When. Single source of truth for both the jog nav (_onCC_jog) and the
@@ -81,9 +83,9 @@ export function bankCycleForMode(padMode) {
     /* STEP sits after the clip banks on every walk — just before SOUND + CONFIG
      * where there is one, last on a Conductor (spec §2, 2026-09-02). */
     if (padMode === PAD_MODE_CONDUCT) return CONDUCT_BANK_CYCLE.concat([BANK_STEP]);
-    /* MACROS follows SOUND + CONFIG (spec §2): … → SOUND + CONFIG → MACROS. */
-    if (padMode === PAD_MODE_DRUM)    return BANK_CYCLE_DRUM.concat([BANK_STEP, BANK_SOUND, BANK_MACROS]);
-    return [0, 1, 2, 3, 4, 5, 6, BANK_STEP, BANK_SOUND, BANK_MACROS];
+    /* … → STEP → SOUND + CONFIG → MACROS → AUTOMATION (spec §2). */
+    if (padMode === PAD_MODE_DRUM)    return BANK_CYCLE_DRUM.concat([BANK_STEP, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION]);
+    return [0, 1, 2, 3, 4, 5, BANK_STEP, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION];
 }
 
 /* Bank position in the jog-cycle order, for the header position strip. Melodic

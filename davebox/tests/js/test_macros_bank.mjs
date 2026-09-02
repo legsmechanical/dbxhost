@@ -196,8 +196,8 @@ step('MACROS is bank 13, isSoundBank covers both identities, and it follows SOUN
     assert(BANKS[BANK_MACROS] && BANKS[BANK_MACROS].name === 'MACROS', 'BANKS[13] is MACROS');
     assert(isSoundBank(BANK_SOUND) && isSoundBank(BANK_MACROS) && !isSoundBank(BANK_STEP) && !isSoundBank(0), 'isSoundBank');
     const mel = bankCycleForMode(0), drum = bankCycleForMode(PAD_MODE_DRUM), con = bankCycleForMode(PAD_MODE_CONDUCT);
-    assert(mel[mel.length - 2] === BANK_SOUND && mel[mel.length - 1] === BANK_MACROS, 'melodic: … SOUND, MACROS');
-    assert(drum[drum.length - 2] === BANK_SOUND && drum[drum.length - 1] === BANK_MACROS, 'drum: … SOUND, MACROS');
+    assert(mel.indexOf(BANK_MACROS) === mel.indexOf(BANK_SOUND) + 1, 'melodic: … SOUND, MACROS');
+    assert(drum.indexOf(BANK_MACROS) === drum.indexOf(BANK_SOUND) + 1, 'drum: … SOUND, MACROS');
     assert(con.indexOf(BANK_MACROS) < 0 && con.indexOf(BANK_SOUND) < 0, 'conductor: no sound banks');
 });
 

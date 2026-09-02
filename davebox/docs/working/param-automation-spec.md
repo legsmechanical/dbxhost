@@ -80,7 +80,9 @@ exact shape — see the board).
   the module editor reflects it because it is the same parameter. Jog-click opens the chain
   knob-assign menu (existing). Purpose: whole-chain manipulation in performance, and quick
   access to the parameters most often automated.
-- **AUTOMATION** (replaces the old AUTO bank 6 outright): the bank card is a LIST of the
+- **AUTOMATION** ✅ BUILT 2026-09-03 (plan item 4; `ui_automation_bank.mjs`; bank 14, last on
+  the walk, bank 6 off it; resolution not surfaced — no playback effect yet). The bank card
+  is a LIST of the
   parameters automated in the current clip, framed with the module editor's bracketed-corner
   cell to say "press jog to interact"; **the eight knobs are a no-op on the card.** Jog-click
   enters the menu; clicking an automated parameter offers its operations: delete, mute

@@ -50,7 +50,7 @@ import { applyTrackConfig, applyBankParam, readBankParams } from './ui_dsp_bridg
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
-         automationClearKey, automationToggleSmooth, automationSmoothable } from './ui_automation.mjs';
+         automationClearKey } from './ui_automation.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { MoveKnob1, Red, White } from '/data/UserData/schwung/shared/constants.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -4788,19 +4788,9 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * ⚠ And Back is decided on opposite EDGES by the two — the editor on the
          * press, davebox on the release — so a press the editor took must have
          * its release swallowed, or one tap does both. */
-        /* Knob touched + jog click on an AUTOMATED parameter: stepped hold vs
-         * smooth for this parameter in this clip (spec §6.2). Only where
-         * interpolation means something — a float; an enum or an int keeps
-         * the editor's own click. Everything else falls through to the editor. */
-        if (d1 === 3 && d2 >= 64 && S.touchedFullKey) {
-            const t = S.track, c = effectiveClip(t), target = S.slot + ':' + S.touchedFullKey;
-            if (automationStateFor(t, c, target) && automationSmoothable(S.slot, S.touchedFullKey)) {
-                const on = automationToggleSmooth(t, c, target);
-                showActionPopup('AUTOMATION', on ? 'SMOOTH' : 'STEPPED');
-                S.dirty = true;
-                return true;
-            }
-        }
+        /* Smooth/Stepped LEFT the editor (spec §2, 2026-09-03): it is an
+         * operation on the AUTOMATION bank's list now, so the knob-touch +
+         * jog-click here is the editor's own click again. */
         if (d1 === 51) {
             if (d2 >= 64 && ppHasLayer()) {
                 handleParamPagesMidi([0xB0, d1, d2]);
