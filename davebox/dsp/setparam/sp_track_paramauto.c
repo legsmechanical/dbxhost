@@ -12,10 +12,10 @@
  * returning 1 even for one it does not recognise. sp_track_misc.c, dispatched
  * after it, ends in an unconditional pfx_set catch-all — so falling through on
  * an unknown pa_ key would not be ignored, it would be MIS-HANDLED as a play-
- * effects parameter. (sp_track_ccauto has this bug today: it returns 0 on
- * no-match and its header claims that is safe because nothing downstream has a
- * catch-all. Something downstream does. That code is deleted with the lane
- * system; do not copy its shape.)
+ * effects parameter. (The deleted sp_track_ccauto had exactly this bug: it
+ * returned 0 on no-match and its header claimed that was safe because nothing
+ * downstream had a catch-all. Something downstream does. Do not copy that
+ * shape.)
  *
  * Values are 14-bit normalized (0..PA_VAL_MAX); JS owns the mapping to and
  * from a parameter's real wire units, because only JS has the chain_params

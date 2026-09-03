@@ -115,11 +115,11 @@ step('⚠ on another bank (NOTE FX) the same gesture writes NOTHING to the step 
     assert(S.activeBank === 1, 'and the bank did not change under the hold');
     note(STEP(5), 0); globalThis.tick();
 });
-step('⚠ bank 6\'s old held-step CC editor is OFF: a held step + knob writes no cc_auto', () => {
+step('⚠ the retired bank 6 writes NOTHING under a held step (P8 left its index a stub)', () => {
     fresh(6);
     holdStep5();
     cc(71, 1); cc(71, 1);
-    assert(!sets.some(x => x.includes('cc_auto')), 'no cc_auto write, got ' + JSON.stringify(sets));
+    assert(sets.length === 0, 'a retired bank writes nothing, got ' + JSON.stringify(sets));
     note(STEP(5), 0); globalThis.tick();
 });
 

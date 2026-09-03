@@ -776,7 +776,7 @@ export const S = {
      * cheap automation-only re-read below), never the FULL sync. See ui_editops.mjs /
      * pollDSP. */
     localRevSuppressUntil: -1,   /* tickCount through which a rui_rev bump is OUR own edit */
-    localEditTouched: [],        /* [{t,c}] melodic clips whose automation mirror the editop couldn't fill locally; drained by pollDSP's local-rev path (cc_auto_bits/cc_rest/at_has only — steps/len/tps are already correct from the editop) */
+    localEditTouched: [],        /* [{t,c}] melodic clips whose automation mirror the editop couldn't fill locally; drained by pollDSP's local-rev path (at_has only — steps/len/tps are already correct from the editop) */
     pendingStepsReread: 0,
     pendingStepsRereadTrack: 0,
     pendingStepsRereadClip: 0,

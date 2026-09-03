@@ -43,8 +43,6 @@ const TRACK_KEYS = {
     tarp_sll: () => 0,
     tarp_sv: () => 100,
     drum_r2rt: () => 24,
-    cc_assigns: () => '1 2 3 4 5 6 7 8',
-    cc_types: () => '0 0 0 0 0 0 0 0',
     delay_clock_fb: () => 0,
     drum_meta: () => new Array(32).fill('0 16 0 24').join('|'),
     'lgto_apply_factor': () => 0,
@@ -83,11 +81,8 @@ const CLIP_KEYS = {
     length: (t, c) => ((t === 0 && c === 1) ? 12 : 16),
     loop_start: (t, c) => ((t === 0 && c === 1) ? 4 : 0),
     tps: () => 24,
-    cc_lane_loops: () => new Array(32).fill(0).join(' '),
     pfx_snapshot: () => new Array(24).fill(0).join(' '),
-    cc_auto_bits: () => 0,
     at_has: () => 0,
-    cc_rest: () => new Array(8).fill(255).join(' '),
     drum_has_content: () => 0,
 };
 

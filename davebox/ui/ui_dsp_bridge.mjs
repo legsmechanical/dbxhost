@@ -254,7 +254,7 @@ export function resetPerClipBankParamsToDefault(t) {
     S.screenDirty = true;
 }
 
-/* Re-read ONLY the per-clip automation mirror (cc_auto_bits / cc_rest / at_has)
+/* Re-read ONLY the per-clip automation mirror (at_has)
  * for the melodic clips a local editop touched. Used by pollDSP's local-rev path
  * in place of the DSP FULL-digest self-resync: copy/cut/clear/row editops set
  * steps/length/tps/loop/nonEmpty in JS themselves, but cannot know the resulting

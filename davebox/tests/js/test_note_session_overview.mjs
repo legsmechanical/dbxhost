@@ -80,7 +80,7 @@ function rest() {
     S.bankCardLatched = false; S.sessMixerLatched = false;
     S.perfViewLocked = false; S.perfStack = [];
     S.globalMenuOpen = false; S.daveBox = false; S.projectPadPicker = null;
-    S.snapshotPicker = null; S.globalEnumPick = null; S.clearAutoMenu = null;
+    S.snapshotPicker = null; S.globalEnumPick = null;
     S.tapTempoOpen = false; S.tempoSelectActive = false;
     S.mergeNoticePending = false; S.mergeCountingIn = false;
     S.pendingMergePlacement = false; S.mergeSoloPlacement = -1;
