@@ -153,8 +153,17 @@ step('⭑ the KNOBS rows are K1..K8 and carry the assignment as their value', ()
     const body = src.slice(at, end);
     if (!/label: 'K' \+ \(i \+ 1\)/.test(body))
         throw new Error('the KNOBS rows are no longer labelled K1..K8');
-    if (!/value: knobAsnLabel\(a\)/.test(body))
+    /* ⭑ Re-anchored 2026-09-05: the row VALUE now goes through knobRowLabel,
+     * because a MAPPED knob (several legs, or a ranged one) cannot say what it
+     * is in one target's name. The pin therefore has to check both hops, or a
+     * formatter that stopped being called would still pass. */
+    if (!/value: knobRowLabel\(i, a\)/.test(body))
         throw new Error('the KNOBS rows no longer show the assignment');
+    const ka = src.indexOf('function knobRowLabel');
+    if (ka < 0) throw new Error('knobRowLabel is gone — re-anchor this pin');
+    const kbody = src.slice(ka, src.indexOf('\n}', ka));
+    if (!/return knobAsnLabel\(a\);/.test(kbody))
+        throw new Error('a PLAIN macro no longer falls through to knobAsnLabel — the formatter is unreachable');
 });
 
 step('⭑ the LFO title and target row use the same short form', () => {

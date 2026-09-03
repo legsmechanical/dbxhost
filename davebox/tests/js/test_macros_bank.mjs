@@ -811,6 +811,144 @@ step('⭑ Delete + touch a mapped knob clears EVERY leg\'s lane, not just the fi
     GS.trackMacros[2][0] = null; GS.trackMacros[2][2] = null;
 });
 
+/* ---- THE LEG LIST: where a mapping is actually built --------------------- */
+/* Josh retired Shift+touch on the grounds that "we can handle anything we need
+ * from the assignment menu" (2026-09-05), so this list is the ONLY way a macro
+ * gains a second target or a range. Everything below drives it by hand. */
+const VIEW_KNOBLEGS = 20;
+const legRows = () => snd.soundKnobLegRowsForTest();
+const S_setLegRow = (n) => snd.soundSetLegRowForTest(n);
+const legRowLabels = () => legRows().map(r => r.label + '=' + r.value);
+
+step('⭑ THE DOOR RULE on the K-list: an EMPTY knob goes straight to choosing, an ASSIGNED one is ENTERED', () => {
+    enterTrack(2);
+    snd.soundSetBank(BANK_MACROS); ticks(5);
+    GS.trackMacros[2][4] = null;                       /* K5: empty */
+    GS.trackMacros[2][0] = { v: 0.5, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0, hi: 1 }] };
+    click();                                            /* page -> K-list */
+    assert(snd.soundViewForTest() === VIEW_KNOBS, 'K-list, view ' + snd.soundViewForTest());
+    for (let i = 0; i < 4; i++) jog(1);                 /* to K5, the empty one */
+    click(); ticks(1);
+    assert(snd.soundViewForTest() === 12, 'an EMPTY knob opens the target picker directly, view ' + snd.soundViewForTest());
+    back(); ticks(1);
+    for (let i = 0; i < 4; i++) jog(-1);                /* back to K1, the assigned one */
+    click(); ticks(1);
+    assert(snd.soundViewForTest() === VIEW_KNOBLEGS, 'an ASSIGNED knob ENTERS its legs, view ' + snd.soundViewForTest());
+});
+step('⭑ the leg list shows each leg with its Lo and Hi, then `+ Add target`', () => {
+    const rows = legRows();
+    assert(rows.length === 4, 'one leg = 3 rows + add, got ' + JSON.stringify(legRowLabels()));
+    assert(rows[0].kind === 'leg' && /Syn>cutoff/.test(rows[0].value), 'the leg names its target, got ' + rows[0].value);
+    assert(rows[1].kind === 'lo' && rows[1].value === '0%', 'Lo, got ' + rows[1].value);
+    assert(rows[2].kind === 'hi' && rows[2].value === '100%', 'Hi, got ' + rows[2].value);
+    assert(rows[3].kind === 'add' && rows[3].label === '+ Add target', 'the add row, got ' + rows[3].label);
+});
+step('⭑⭑ `+ Add target` ADDS a leg — it does not replace the first (the thing Shift+touch could never do)', () => {
+    for (let i = 0; i < 3; i++) jog(1);                 /* onto + Add target */
+    click(); ticks(1);
+    assert(snd.soundViewForTest() === 12, 'the target picker, view ' + snd.soundViewForTest());
+    const targets = snd.soundKnobTargetsForTest();
+    const ti = targets.findIndex(t => t.name === 'Levels');
+    for (let i = 0; i < ti; i++) jog(1);
+    click(); ticks(1);
+    const rows = snd.soundKnobParamsForTest();
+    const pi = rows.findIndex(p => p.label === 'Volume');
+    for (let i = 0; i < pi; i++) jog(1);
+    click(); ticks(1);
+    const legs = legsOf(GS.trackMacros[2][0]);
+    assert(legs.length === 2, '⭑ TWO legs now, got ' + JSON.stringify(legs));
+    assert(legs[0].kind === 'chain' && legs[0].key === 'cutoff', 'the first leg is untouched');
+    assert(legs[1].kind === 'level' && legs[1].key === 'volume', 'the second is the one just picked');
+    assert(legs[1].lo === 0 && legs[1].hi === 1, 'a new leg starts at whole range');
+    assert(snd.soundViewForTest() === VIEW_KNOBLEGS, 'and the commit lands back on the LEG list, view ' + snd.soundViewForTest());
+    assert(legRows().length === 7, 'two legs = 6 rows + add, got ' + JSON.stringify(legRowLabels()));
+});
+step('⭑ a Lo row: click to edit, jog to move — and the TARGET does not move (Josh §6.2)', () => {
+    /* Cursor to leg 2's Lo (rows: leg,lo,hi, leg,lo,hi, add -> index 4). */
+    S_setLegRow(4);
+    assert(legRows()[4].kind === 'lo', 'on leg 2 Lo, got ' + legRows()[4].kind);
+    writes = [];
+    click();                                            /* enter the edit */
+    for (let i = 0; i < 20; i++) jog(1);                /* +20% */
+    const legs = legsOf(GS.trackMacros[2][0]);
+    assert(Math.abs(legs[1].lo - 0.20) < 0.001, 'Lo moved to 20%, got ' + legs[1].lo);
+    assert(legRows()[4].value === '20%', 'and the row says so, got ' + legRows()[4].value);
+    ticks(2);
+    assert(!writes.some(w => w.key === 'slot:volume'),
+           '⭑ the TARGET did not move — a range takes effect on the NEXT turn, got ' + JSON.stringify(writes));
+    back();                                             /* leave the edit */
+    for (let i = 0; i < 10; i++) jog(1);
+    assert(Math.abs(legsOf(GS.trackMacros[2][0])[1].lo - 0.20) < 0.001, 'Back left the edit: the jog is the cursor again');
+});
+step('⭑ an INVERTED range can be dialled in: Hi below Lo is allowed, the two bounds are independent (§6.4)', () => {
+    S_setLegRow(5);                                     /* leg 2's Hi */
+    assert(legRows()[5].kind === 'hi', 'on Hi, got ' + legRows()[5].kind);
+    click();
+    for (let i = 0; i < 95; i++) jog(-1);               /* 100% -> 5%, well under Lo's 20% */
+    const legs = legsOf(GS.trackMacros[2][0]);
+    assert(Math.abs(legs[1].hi - 0.05) < 0.001, 'Hi went to 5%, got ' + legs[1].hi);
+    assert(legs[1].lo > legs[1].hi, '⭑ lo > hi is ACCEPTED, not clamped away — got ' + legs[1].lo + '..' + legs[1].hi);
+    back();
+});
+step('⭑ a plain click on a leg RE-POINTS it and KEEPS its range', () => {
+    S_setLegRow(3);                                     /* leg 2 */
+    assert(legRows()[3].kind === 'leg', 'on the leg row, got ' + legRows()[3].kind);
+    click(); ticks(1);
+    const targets = snd.soundKnobTargetsForTest();
+    const ti = targets.findIndex(t => t.name === 'nusaw');
+    assert(ti >= 0, 'the synth offered, got ' + JSON.stringify(targets.map(t => t.name)));
+    /* ⚠ The picker opens ON THE LEG'S OWN target, so walk from where the
+     * cursor actually is — a fixed count from the top lands somewhere else. */
+    assert(targets[snd.soundKnobTargetIdxForTest()].name === 'Levels',
+           'the picker opened on LEG 2\'s target, not leg 1\'s — got ' + targets[snd.soundKnobTargetIdxForTest()].name);
+    for (let i = snd.soundKnobTargetIdxForTest(); i > ti; i--) jog(-1);
+    click(); ticks(1);
+    const ps = snd.soundKnobParamsForTest();
+    const pi = ps.findIndex(p => p.label === 'Voices');
+    assert(pi >= 0, 'Voices offered, got ' + JSON.stringify(ps.map(p => p.label)));
+    for (let i = snd.soundKnobParamIdxForTest(); i < pi; i++) jog(1);
+    click(); ticks(1);
+    const legs = legsOf(GS.trackMacros[2][0]);
+    assert(legs.length === 2, 'still two legs, got ' + legs.length);
+    assert(legs[1].kind === 'chain' && legs[1].key === 'voices', 'leg 2 re-pointed, got ' + JSON.stringify(legs[1]));
+    assert(Math.abs(legs[1].lo - 0.20) < 0.001 && Math.abs(legs[1].hi - 0.05) < 0.001,
+           '⭑ and KEPT its 20..5% range — a range belongs to the KNOB, got ' + legs[1].lo + '..' + legs[1].hi);
+});
+step('⭑ Shift + click a leg REMOVES it; removing the last leg leaves the knob UNASSIGNED', () => {
+    S_setLegRow(3);
+    shift(true); click(); shift(false); ticks(1);
+    const legs = legsOf(GS.trackMacros[2][0]);
+    assert(legs.length === 1 && legs[0].key === 'cutoff', 'leg 2 gone, leg 1 kept, got ' + JSON.stringify(legs));
+    assert(legRows().length === 4, 'the list shrank, got ' + JSON.stringify(legRowLabels()));
+    S_setLegRow(0);
+    shift(true); click(); shift(false); ticks(1);
+    assert(GS.trackMacros[2][0] === null, 'the last leg removed leaves the slot null, got ' + JSON.stringify(GS.trackMacros[2][0]));
+    ticks(2);
+    assert(M().drawn[0].text === '--', 'and the page reads `--` again, got ' + JSON.stringify(M().drawn[0]));
+});
+step('⭑ the K-list row says what a mapped knob DRIVES, and a plain one still names its target', () => {
+    GS.trackMacros[2][0] = { v: 0.5, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0, hi: 1 }] };
+    GS.trackMacros[2][1] = { v: 0.5, legs: [
+        { kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.2, hi: 0.8 },
+        { kind: 'level', key: 'volume', lo: 0, hi: 1 },
+    ]};
+    ticks(3);
+    /* Through the real path: the K-list rebuilds knobAsn when it opens, which
+     * is where the row's fallback label comes from. */
+    snd.soundSetViewForTest(VIEW_MACROS);
+    click();
+    assert(snd.soundViewForTest() === VIEW_KNOBS, 'on the K-list, view ' + snd.soundViewForTest());
+    const src = readFileSync('ui/ui_sound.mjs', 'utf8');
+    assert(/function knobRowLabel/.test(src), 'knobRowLabel exists');
+    /* Read it through the function the screen uses, not by drawing pixels. */
+    assert(snd.soundKnobRowLabelForTest(0) === 'Syn>cutoff',
+           'a PLAIN knob still names its target, got ' + snd.soundKnobRowLabelForTest(0));
+    const mapped = snd.soundKnobRowLabelForTest(1);
+    assert(/\+1/.test(mapped) && /~$/.test(mapped),
+           'a MAPPED knob says the count and that a range is set, got ' + mapped);
+    GS.trackMacros[2][0] = null; GS.trackMacros[2][1] = null;
+});
+
 /* ---- retirements ----------------------------------------------------------- */
 step('⚠ RETIRED: Sound Control has no Knobs row; the old HUD/forwarding machinery and the chain-store knob writes are gone', () => {
     const src = readFileSync('ui/ui_sound.mjs', 'utf8');

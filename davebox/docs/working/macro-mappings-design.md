@@ -1,7 +1,8 @@
 # Macro mappings — several targets on one knob, each with a range
 
-**Status: RULED (Josh, 2026-09-05) — §6 is now a list of RULINGS, not questions. Building in
-§7's order.** Josh's ask (2026-09-03, with the bank-param keep-list):
+**Status: BUILT (2026-09-05) — §7 steps 1-3 are in: the store's legs, the mapped turn, and the
+leg list. §6 is RULINGS, not questions. Step 4 is a no-op (ruling A needed no automation change);
+what remains is step 5's manual pass and the two OPEN items at the foot of §5.** Josh's ask (2026-09-03, with the bank-param keep-list):
 *"something for the future that may be worth keeping in mind: I eventually want to be able to
 assign multiple parameters to a single macro knob and constrain their min and max values."*
 
@@ -90,8 +91,10 @@ What A costs, stated so it is not rediscovered as a bug:
   route in and out of a mapping — legs, ranges, labels and removal all live there. ⚠ This is the
   ASSIGN gesture only: Shift + TURN on a pitch-bend macro still LATCHES the bend (`pbShiftTurned`),
   which is a value gesture, not an assignment one, and is untouched.
-- **Label.** A multi-leg slot needs a name; proposal: auto (`Cutoff+1`, first leg + count)
-  with the text-entry keyboard behind the row for a custom one. Persisted in the sidecar.
+- **Label.** ✅ AUTO is built (`Cutoff+1`, first leg's short name + the count; the K-list row
+  adds `~` when any leg is ranged). ⏳ OPEN: the **custom** label behind a text-entry row is not
+  built — it needs a keyboard screen and Josh has not asked for one. The auto label has been
+  legible in every case so far.
 - **Rings** (`registerRingCells`): `v` for multi-leg, the target's norm for one-leg — the same
   rule as the widget.
 

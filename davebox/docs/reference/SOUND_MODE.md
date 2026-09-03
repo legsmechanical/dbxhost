@@ -222,6 +222,21 @@ CC 71-78 branch). Until 2026-08-14 nothing on screen named that mapping.
   assignment list is the only route in, and a commit always lands back on it.
   (Shift + *turn* on a pitch-bend macro still latches the bend — a value
   gesture, not an assign one.)
+- **The assign list is two levels** since 2026-09-05, because a macro slot is a
+  MAPPING (`{v, legs:[leg,…]}`, a leg being a typed target plus `lo`/`hi`):
+  `VIEW_KNOBS` lists `K1`..`K8`, and `VIEW_KNOBLEGS` lists ONE knob's legs with
+  a Lo and Hi row under each, then `+ Add target`. ⭑ Which one a click opens is
+  Josh's own **door rule** from 09-04 (the Instrument row): a knob with a choice
+  already made is ENTERED, an empty one goes straight to the target picker — so
+  first assignment costs exactly what it always did.
+  - Click a leg = re-point it (KEEPING its range); Shift+click = remove it;
+    the last leg removed leaves the slot null.
+  - Click Lo/Hi = enter the edit, jog moves it 1% a detent, Back leaves it.
+    ⚠ NO preview write: a range takes effect on the next TURN (Josh §6.2).
+  - ⚠ `openKnobTargets` seeds its cursor from **the leg being re-pointed**, not
+    from `S.knobAsn` (which is always leg 0) — seeding from leg 0 opened leg 3's
+    picker on leg 1's component, and a wrong row reads as a wrong answer, not
+    an error.
 
 ⚠⚠ **The card's gate is the SAME predicate as the turn-forwarding branch** —
 non-EDIT view, `!S.bus && S.slot >= 0`, minus the assign screens themselves.

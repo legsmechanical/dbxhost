@@ -256,7 +256,14 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
        * automatable one — see the MACROS section below. Sound mode is fully
        * active here as on the prompt; the jog walks banks, the click opens
        * the assign list, and the knobs are the macros. */
-      VIEW_MACROS = 19;
+      VIEW_MACROS = 19,
+      /* ⭑ ONE KNOB'S LEGS (2026-09-05, macro mappings). A macro slot is a
+       * MAPPING now, so the K-list needs somewhere to show what a knob
+       * actually drives — each leg, its range, and `+ Add target`. Josh's
+       * own 09-04 door language decides when it opens: a knob with a choice
+       * already made is ENTERED by a click, an empty one goes straight to
+       * choosing, exactly as the Instrument row does. */
+      VIEW_KNOBLEGS = 20;
 
 /* Chain-patch file ops (save_patch / delete_patch) are DSP-side and async —
  * the file appears/vanishes a beat after the request. Re-read the list once
@@ -694,6 +701,12 @@ const S = {
     macMergeWanted: false,      /* re-run the chain-store merge (a patch loaded) */
     macBanksRead: false,        /* bank targets' values re-read this seed */
     macTurnMs: [0, 0, 0, 0, 0, 0, 0, 0],   /* last turn per knob, for the poll's hand rule */
+    /* The LEG list (VIEW_KNOBLEGS): the cursor over its rows, which leg the
+     * target picker is about to write (-1 = APPEND a new one), and whether a
+     * Lo/Hi row is being turned. */
+    knobLegRow: 0,
+    knobLegIdx: -1,
+    knobLegEditing: false,
     levelPoll: 0,               /* the SOUND + CONFIG card's round-robin re-read cursor */
     midiValsDirty: false,       /* a MIDI knob moved: sidecar write owed (on release) */
     pbShiftTurned: false,       /* this touch turned the bend with Shift: latch on release */
@@ -2693,6 +2706,88 @@ function bankMacroFromAsn(target, param) {
     return m;
 }
 
+/* ── THE LEG LIST (VIEW_KNOBLEGS, design §5) ───────────────────────────────
+ * "No new screen: the list gets deeper, not wider." One knob's mapping, as
+ * rows — each leg followed by its two range rows, then `+ Add target`:
+ *
+ *     Cutoff        Syn>Cutoff        <- click re-points it, Shift+click removes
+ *       Lo                  20%       <- click to edit, jog to move
+ *       Hi                  80%
+ *     Room Size     FX2>Room Size
+ *       Lo                   0%
+ *       Hi                 100%
+ *     + Add target
+ *
+ * ⚠ Editing Lo/Hi does NOT move the target (Josh's §6.2 ruling: a range takes
+ * effect on the NEXT turn of the knob). So there is deliberately no preview
+ * write here — the numbers are the feedback. */
+function knobLegRows() {
+    const mp = macroMapping(S.knobIdx);
+    const legs = macroLegs(mp);
+    const rows = [];
+    for (let j = 0; j < legs.length; j++) {
+        const leg = legs[j];
+        const a = asnFromMacro(leg);
+        rows.push({ kind: 'leg', leg: j, label: legShortName(leg), hdr: true, value: knobAsnLabel(a) });
+        rows.push({ kind: 'lo', leg: j, label: ' Lo', value: Math.round(leg.lo * 100) + '%' });
+        rows.push({ kind: 'hi', leg: j, label: ' Hi', value: Math.round(leg.hi * 100) + '%' });
+    }
+    rows.push({ kind: 'add', label: '+ Add target', value: '' });
+    return rows;
+}
+export function soundKnobLegRowsForTest() { return knobLegRows(); }
+export function soundKnobRowLabelForTest(i) { return knobRowLabel(i, S.knobAsn[i]); }
+/* The leg-list cursor, so a rig can put it on a row without counting jogs
+ * through a list whose length it is also asserting. */
+export function soundSetLegRowForTest(n) { S.knobLegRow = n | 0; S.knobLegEditing = false; }
+function openKnobLegs() {
+    S.knobLegRow = 0; S.knobLegEditing = false;
+    S.view = VIEW_KNOBLEGS;
+}
+/* Move a leg's Lo or Hi by `delta` hundredths, clamped to 0..1. ⭑ lo > hi is
+ * allowed and is the INVERTED leg (Josh §6.4), so the two bounds never push
+ * each other around — they are independent. */
+const LEG_RANGE_STEP = 0.01;
+function knobLegRangeTurn(row, delta) {
+    const mp = macroMapping(S.knobIdx);
+    const leg = macroLegs(mp)[row.leg];
+    if (!leg) return;
+    const was = leg[row.kind];
+    const nv = Math.max(0, Math.min(1, Math.round((was + delta * LEG_RANGE_STEP) * 100) / 100));
+    if (nv === was) return;
+    leg[row.kind] = nv;
+    /* The mapping's shape changed, so the cells the turn law uses must be
+     * rebuilt — and `v` is kept, which is what makes a range edit not move
+     * the knob either. */
+    S.macLegCells[S.knobIdx] = null; S.macLegVals[S.knobIdx] = null;
+    S.macCells[S.knobIdx] = null; S.macVals[S.knobIdx] = null;
+    writeSidecar();
+    S.dirty = true;
+}
+/* Drop one leg. An empty mapping is null — the knob reads UNASSIGNED again. */
+function knobLegRemove(j) {
+    const t = S.track, mp = macroMapping(S.knobIdx);
+    const legs = macroLegs(mp).slice();
+    if (j < 0 || j >= legs.length) return;
+    legs.splice(j, 1);
+    GS.trackMacros[t][S.knobIdx] = legs.length ? { v: mp.v, legs } : null;
+    S.knobAsn[S.knobIdx] = asnFromMacro(macroLeg0(GS.trackMacros[t][S.knobIdx]));
+    macroMirrorToChain(S.knobIdx, GS.trackMacros[t][S.knobIdx]);
+    S.macCells[S.knobIdx] = null; S.macVals[S.knobIdx] = null;
+    S.macLegCells[S.knobIdx] = null; S.macLegVals[S.knobIdx] = null;
+    S.knobAccum[S.knobIdx] = 0; S.macLastDir[S.knobIdx] = 0;
+    writeSidecar();
+    if (S.knobLegRow >= knobLegRows().length) S.knobLegRow = knobLegRows().length - 1;
+    S.dirty = true;
+}
+function renderKnobLegs() {
+    renderInChain(knobLegRows().map((r, i) => ({
+        label: r.label, hdr: !!r.hdr,
+        /* The row being turned says so, the way slot settings do. */
+        value: (S.knobLegEditing && i === S.knobLegRow) ? '[' + r.value + ']' : r.value,
+    })), S.knobLegRow);
+}
+
 function openKnobEditor() {
     const store = macroStore();
     for (let i = 0; i < NUM_KNOBS; i++) S.knobAsn[i] = asnFromMacro(macroLeg0(store[i]));
@@ -2768,12 +2863,22 @@ function qualifyDuplicates(rows) {
 
 function openKnobTargets() {
     S.knobTargets = knobTargetList();
-    /* Seed the cursor on the current assignment's target. */
-    const cur = S.knobAsn[S.knobIdx];
+    /* Seed the cursor on the current assignment's target. ⚠ On the LEG list
+     * that is the leg BEING RE-POINTED, not leg 0 — seeding from S.knobAsn
+     * (which is always leg 0) opened leg 3's picker on leg 1's component, and
+     * the wrong row is not an error, just a wrong answer. `+ Add target`
+     * (knobLegIdx -1) has no current target and starts at the top. */
+    const legs = macroLegs(macroMapping(S.knobIdx));
+    const leg = (S.knobLegIdx >= 0 && S.knobLegIdx < legs.length) ? legs[S.knobLegIdx] : null;
+    const cur = leg ? asnFromMacro(leg) : (S.knobLegIdx === -1 ? null : S.knobAsn[S.knobIdx]);
     const at = cur ? S.knobTargets.findIndex(t => t.id === cur.target) : -1;
     S.knobTargetIdx = at >= 0 ? at : 0;
     S.view = VIEW_KNOB_TARGET;
 }
+/* The target picker's cursor — a rig walking it needs to know where it
+ * STARTED, since the seed above depends on the leg. */
+export function soundKnobTargetIdxForTest() { return S.knobTargetIdx; }
+export function soundKnobParamIdxForTest() { return S.knobParamIdx; }
 
 /* Knob-mappable params for a target — the host's getKnobParamsForTarget:
  * every knobs[]/params[] entry across the ui_hierarchy levels, then
@@ -2912,7 +3017,25 @@ function compParamLabel(target, param) {
 function knobAsnLabel(a) {
     return (a && a.target && a.param) ? compParamLabel(a.target, a.param) : '(None)';
 }
+/* What K<n> reads on the assign list. One whole-range leg is its target's own
+ * name, exactly as before; anything else says the shape instead — the first
+ * leg's short name, `+n` for the others, `~` when a range is set. */
+function knobRowLabel(i, a) {
+    const mp = macroMapping(i);
+    const legs = macroLegs(mp);
+    if (legs.length <= 1 && !macroMapped(mp)) return knobAsnLabel(a);
+    const extra = legs.length > 1 ? ' +' + (legs.length - 1) : '';
+    const ranged = legs.some(l => l.lo !== 0 || l.hi !== 1) ? '~' : '';
+    return legShortName(legs[0]) + extra + ranged;
+}
 
+/* Commit the picked target into the leg the picker was opened FOR
+ * (`S.knobLegIdx`; -1 = a NEW leg, appended at whole range). `(None)` on an
+ * existing leg removes it, and on a knob with no legs is simply a clear.
+ *
+ * ⭑ Re-pointing a leg KEEPS its lo/hi. A range is part of the KNOB's shape —
+ * how far this knob pushes whatever is on the other end — not a property of
+ * the parameter, so swapping the parameter must not silently reset it. */
 function commitKnobAssignment(target, param) {
     const i = S.knobIdx, t = S.track;
     if (t < 0) return;
@@ -2922,10 +3045,19 @@ function commitKnobAssignment(target, param) {
     else if ((target === 'midicc' || target === 'midi') && midiTargetIsMidi(param)) m = { kind: 'midi', target: param };
     else if (target && target.indexOf('bank:') === 0) m = bankMacroFromAsn(target, param);
     else if (target && param) m = { kind: 'chain', comp: target, key: param };
-    /* The list still assigns ONE target; it becomes that mapping's only leg,
-     * at whole range. Legs and ranges are edited on the list (§5), never here. */
-    store[i] = makeMapping(m);
-    S.knobAsn[i] = asnFromMacro(m);
+
+    const legs = macroLegs(store[i]).slice();
+    const j = S.knobLegIdx;
+    if (!m) {
+        if (j >= 0 && j < legs.length) legs.splice(j, 1);      /* (None) on a leg: remove it */
+        else legs.length = 0;                                  /* (None) on the whole knob */
+    } else if (j >= 0 && j < legs.length) {
+        legs[j] = Object.assign({}, m, { lo: legs[j].lo, hi: legs[j].hi });
+    } else {
+        legs.push(Object.assign({ lo: 0, hi: 1 }, m));
+    }
+    store[i] = legs.length ? { v: store[i] ? store[i].v : null, legs } : null;
+    S.knobAsn[i] = asnFromMacro(macroLeg0(store[i]));
     macroMirrorToChain(i, store[i]);
     /* The cell and the value belonged to the OLD target — a number from a
      * different control, and a step law derived from a different range. The
@@ -2933,8 +3065,13 @@ function commitKnobAssignment(target, param) {
     S.macCells[i] = null; S.macVals[i] = null; S.macLegCells[i] = null; S.macLegVals[i] = null; S.knobAccum[i] = 0; S.macLastDir[i] = 0;
     writeSidecar();
     /* The assignment list is the ONE route in (Josh, 2026-09-05: Shift+touch
-     * quick-assign retired), so a commit always lands back on the list. */
-    S.view = VIEW_KNOBS;
+     * quick-assign retired), so a commit lands back on the list it came from:
+     * the LEG list when the knob has legs to show, the K-list otherwise. */
+    S.knobLegIdx = -1;
+    if (macroLegs(store[i]).length > 1 || (store[i] && macroMapped(store[i]))) {
+        S.knobLegRow = Math.min(S.knobLegRow, knobLegRows().length - 1);
+        S.view = VIEW_KNOBLEGS;
+    } else S.view = VIEW_KNOBS;
 }
 
 /* ── where a screen SITS in the tree ───────────────────────────────────────
@@ -2983,6 +3120,8 @@ const VIEW_TREE = {
     [VIEW_KNOBS]:       { parent: VIEW_MACROS,     float: true,  crumb: () => 'Knobs' },
     [VIEW_LFO]:         { parent: VIEW_SLOTCFG,    float: true,
                           crumb: () => 'LFO ' + (S.lfoNum + 1) },
+    [VIEW_KNOBLEGS]:    { parent: VIEW_KNOBS,      float: true,
+                          crumb: () => 'K' + (S.knobIdx + 1) },
     [VIEW_KNOB_TARGET]: { parent: VIEW_KNOBS,      float: true, backPure: true,
                           crumb: () => 'K' + (S.knobIdx + 1) },
     [VIEW_KNOB_PARAM]:  { parent: VIEW_KNOB_TARGET, float: true, backPure: true,
@@ -3184,8 +3323,10 @@ function renderKnobs() {
     renderInChain(S.knobAsn.map((a, i) =>
         /* `K1`..`K8`, not `Knob 1`: 13px against 34px, and the row's VALUE is the
          * part carrying information. With the long label the assignment was
-         * eating into it — see compParamLabel. */
-        ({ label: 'K' + (i + 1), hdr: true, value: knobAsnLabel(a) })),
+         * eating into it — see compParamLabel.
+         * ⭑ A MAPPED knob cannot say what it is in one target's name, so it
+         * says what it DRIVES: `Cutoff +2`. Click enters and shows the legs. */
+        ({ label: 'K' + (i + 1), hdr: true, value: knobRowLabel(i, a) })),
         S.knobIdx);
 }
 
@@ -3295,7 +3436,7 @@ function renderKnobParam() {
  * owns its value optimistically. A SWEEP costs zero reads: the value is owned
  * here and written absolutely (the turn law below). */
 
-const MACRO_VIEWS = [VIEW_MACROS, VIEW_KNOBS, VIEW_KNOB_TARGET, VIEW_KNOB_PARAM];
+const MACRO_VIEWS = [VIEW_MACROS, VIEW_KNOBS, VIEW_KNOBLEGS, VIEW_KNOB_TARGET, VIEW_KNOB_PARAM];
 /* Where the eight knobs ARE the macros: the page, and the assign screens that
  * float over it (so you hear what you are assigning). Never a global bus. */
 function macrosActive() {
@@ -5575,6 +5716,12 @@ export function soundOnCC(d1, d2, decodeDelta) {
             slotCfgStep(delta);
         } else if (S.view === VIEW_KNOBS) {
             S.knobIdx = listMove(NUM_KNOBS, S.knobIdx, delta);
+        } else if (S.view === VIEW_KNOBLEGS) {
+            const rows = knobLegRows();
+            /* While a Lo/Hi row is being EDITED the jog is the value, not the
+             * cursor — the slot-settings idiom, so nothing new to learn. */
+            if (S.knobLegEditing) knobLegRangeTurn(rows[S.knobLegRow], delta);
+            else S.knobLegRow = listMove(rows.length, S.knobLegRow, delta);
         } else if (S.view === VIEW_KNOB_TARGET) {
             S.knobTargetIdx = listMove(S.knobTargets.length, S.knobTargetIdx, delta);
         } else if (S.view === VIEW_ENUM) {
@@ -5713,7 +5860,25 @@ export function soundOnCC(d1, d2, decodeDelta) {
             }
         }
         else if (S.view === VIEW_KNOBS) {
-            S.pendingAction = { t: 'knobtarget' };   /* probes components — tick only */
+            /* ⭑ THE DOOR RULE, Josh's own from 09-04 (the Instrument row): a
+             * knob with a choice already made is ENTERED — its legs and their
+             * ranges — while an empty one goes straight to choosing, which
+             * keeps first assignment exactly as long as it has always been. */
+            if (macroLegs(macroMapping(S.knobIdx)).length) openKnobLegs();
+            else { S.knobLegIdx = -1; S.pendingAction = { t: 'knobtarget' }; }   /* probes components — tick only */
+        }
+        else if (S.view === VIEW_KNOBLEGS) {
+            const rows = knobLegRows(), row = rows[S.knobLegRow];
+            if (!row) { /* nothing */ }
+            else if (row.kind === 'add') { S.knobLegIdx = -1; S.pendingAction = { t: 'knobtarget' }; }
+            else if (row.kind === 'leg') {
+                /* Shift+click REMOVES the leg; a plain click re-points it,
+                 * keeping its range (a range belongs to the knob's shape, not
+                 * to whichever parameter is on the other end of it). */
+                if (S.shiftHeld) knobLegRemove(row.leg);
+                else { S.knobLegIdx = row.leg; S.pendingAction = { t: 'knobtarget' }; }
+            }
+            else S.knobLegEditing = !S.knobLegEditing;
         }
         else if (S.view === VIEW_KNOB_TARGET) {
             const t = S.knobTargets[S.knobTargetIdx];
@@ -6040,6 +6205,11 @@ export function soundOnCC(d1, d2, decodeDelta) {
         if (S.view === VIEW_SLOTCFG) {
             if (S.slotCfgEditing) S.slotCfgEditing = false;   /* leave edit first */
             else closeSlotCfg();
+        } else if (S.view === VIEW_KNOBLEGS) {
+            /* Leave the range edit first, then the leg list — the same
+             * two-stage Back slot settings has. */
+            if (S.knobLegEditing) S.knobLegEditing = false;
+            else S.view = VIEW_KNOBS;
         } else if (S.view === VIEW_KNOBS) {
             /* The list floats over the MACROS page; Back returns to it. The
              * store was written at each commit (sidecar), nothing to flush. */
@@ -7642,6 +7812,7 @@ export function soundRender() {
     else if (S.view === VIEW_FILE) renderFile();
     else if (S.view === VIEW_SLOTCFG) renderSlotCfg();
     else if (S.view === VIEW_KNOBS) renderKnobs();
+    else if (S.view === VIEW_KNOBLEGS) renderKnobLegs();
     else if (S.view === VIEW_KNOB_TARGET) renderKnobTarget();
     else if (S.view === VIEW_KNOB_PARAM) renderKnobParam();
     else if (S.view === VIEW_LFO) renderLfo();

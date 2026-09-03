@@ -347,7 +347,8 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   editor shows the change, record it and it records as that parameter, hold a
   step and it locks that step. **Click the jog** for the assignment list
   (`K1`..`K8`, each naming its target) — that list is where every mapping is
-  made and changed. A knob with no target reads `--`; a
+  made and changed, and where a knob can be given **more than one target, each
+  with its own range**. A knob with no target reads `--`; a
   target that no longer exists (the module was swapped) reads UNASSIGNED.
   On a track left on MACROS the knobs are the macros from the track overview
   too, and touching one peeks the page. Conductor tracks don't have it either.
@@ -1331,10 +1332,53 @@ a list square, a fader for a level — so the page reads like any other bank.
 
 **Click the jog** for the assignment list: `K1`..`K8`, each with its mapping
 written compactly — `Syn>cutoff`, `FX1>mix`, `Lvl>Volume`, `NFX>Gate Time`.
-Pick a knob, pick a block (or a **bank**, or **Levels**), pick a parameter, and
-you're back on the list with the mapping made. The block list names the modules themselves, with a `>` marking
-each one as a door into its parameters; if the same module is loaded in two FX
-slots, the slot is shown beside the name so you can tell them apart.
+On a knob you haven't assigned yet, clicking goes straight to choosing: pick a
+block (or a **bank**, or **Levels**), pick a parameter, and you're back on the
+list with the mapping made. The block list names the modules themselves, with a
+`>` marking each one as a door into its parameters; if the same module is loaded
+in two FX slots, the slot is shown beside the name so you can tell them apart.
+
+### One knob, several parameters
+
+Once a knob has a target, clicking it **opens** it instead — a short list of
+everything that knob drives, each entry followed by its **Lo** and **Hi**:
+
+```
+Cutoff        Syn>cutoff
+  Lo                  0%
+  Hi                100%
++ Add target
+```
+
+**`+ Add target`** puts another parameter on the same knob; there's no limit
+worth naming, and each one keeps its own range. **Click** an entry to point it
+somewhere else — it keeps the range you gave it, because the range belongs to
+the knob, not to whatever is on the other end. **Shift + click** removes it;
+remove the last one and the knob is unassigned again.
+
+**Lo** and **Hi** are how far that parameter travels as the knob goes from
+bottom to top, as a percentage of its own range. Click one, turn the jog, click
+again (or press Back) when you're done. Setting **Hi below Lo** is allowed and
+useful: that parameter runs *backwards*, so one knob can open a filter while
+it closes a reverb. For a parameter that picks from a list, Lo and Hi choose a
+span of the list — a knob can sweep three waveforms out of eight.
+
+Nothing moves while you set a range: it takes effect the next time you turn the
+knob.
+
+Once a knob drives more than one thing — or drives one thing through a range —
+it stops showing that parameter's own dial and shows **its own position** as a
+percentage, labelled with the first target and how many others ride with it
+(`Cutf+2`). It has to: two parameters can disagree, and there is no one number
+that is "the knob's value" other than where you left it. That also means the
+knob doesn't follow automation playback the way a single-target macro does —
+recorded automation still moves the parameters, but the knob stays where your
+hand left it, so the next turn picks up from there.
+
+Recording works on the parameters, not the knob: sweep a three-target macro
+while recording and you get three lanes, one per parameter, each of which you
+can edit, smooth or clear on its own. Delete + touch the knob clears all of
+them at once, and Mute + touch switches them all off together.
 Every knob sweeps its whole range in the same gesture, whatever the parameter's
 units — a filter cutoff and a 0.5-to-20-second reverb size take the same turn,
 and it's the same turn a fader takes in the session mixer. Turning faster moves
