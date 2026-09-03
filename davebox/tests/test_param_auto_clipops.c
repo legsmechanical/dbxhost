@@ -116,6 +116,27 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* A copy ACROSS TRACKS re-points chain, level and seq: targets at the
+     * destination track (its slot IS its index); MIDI targets pass through.
+     * (2026-09-03: a clip copied 5 -> 6 kept driving track 5's cutoff.) */
+    {
+        hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_c1_step_0_toggle", "60 100");
+        pa_set(h, 0, 1, "0:synth:cutoff", 24, 100);
+        pa_set(h, 0, 1, "0:slot:pan", 24, 100);
+        pa_set(h, 0, 1, "seq:0:noteFX_gate", 24, 100);
+        pa_set(h, 0, 1, "cc:74", 24, 100);
+        hx_set_param(h, "clip_copy", "0 1 3 2");
+        HX_ASSERT(has(h, 3, 2, " 3:synth:cutoff"), "chain target re-pointed at track 3's slot");
+        HX_ASSERT(has(h, 3, 2, " 3:slot:pan"), "level target re-pointed");
+        HX_ASSERT(has(h, 3, 2, "seq:3:noteFX_gate"), "seq: target re-pointed");
+        HX_ASSERT(has(h, 3, 2, "cc:74"), "a MIDI target names no track and passes through");
+        HX_ASSERT(!has(h, 3, 2, " 0:synth:cutoff"), "the destination holds no stranger");
+        HX_ASSERT(has(h, 0, 1, " 0:synth:cutoff"), "the source is untouched");
+        OK("a cross-track clip copy re-points its automation at the destination track");
+        hx_destroy(h);
+    }
+
     printf("PASS: test_param_auto_clipops (%d checks)\n", ok_count);
     return 0;
 }

@@ -277,6 +277,29 @@ static void pa_reset_all(seq8_instance_t *inst) {
  * A clip's automation is part of the clip: copying one and leaving the
  * automation behind gives the copy someone else's parameter moves, and cutting
  * one and leaving it behind strands automation on a clip with no notes. */
+/* A target carried ACROSS TRACKS is re-pointed at the destination track's own
+ * instrument (Josh, 2026-09-03: a clip copied from track 5 to track 6 played
+ * track 5's cutoff from track 6, and the AUTOMATION list showed the stranger).
+ * A track's chain slot IS its index under SA (slotIndex(t) == t), so
+ * "<st>:…" becomes "<dt>:…" and "seq:<st>:…" becomes "seq:<dt>:…"; MIDI
+ * targets (cc:, at) and bus targets name no track and pass through. Returns
+ * the destination target id, or -1 when the table is full. */
+static int pa_target_retrack(seq8_instance_t *inst, int target, int st, int dt) {
+    if (st == dt || target < 0 || target >= PA_MAX_TARGETS) return target;
+    const char *src = inst->pa_targets[target];
+    char buf[PA_TARGET_LEN];
+    char pre[16], seqpre[24];
+    snprintf(pre, sizeof pre, "%d:", st);
+    snprintf(seqpre, sizeof seqpre, "seq:%d:", st);
+    if (!strncmp(src, seqpre, strlen(seqpre)))
+        snprintf(buf, sizeof buf, "seq:%d:%s", dt, src + strlen(seqpre));
+    else if (!strncmp(src, pre, strlen(pre)) && src[strlen(pre)] && src[strlen(pre)] != ':')
+        snprintf(buf, sizeof buf, "%d:%s", dt, src + strlen(pre));
+    else
+        return target;
+    return pa_target_id(inst, buf);
+}
+
 static void pa_copy_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc) {
     if (st == dt && sc == dc) return;
     pa_lock(inst);
@@ -285,11 +308,14 @@ static void pa_copy_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc) 
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
         pa_entry_t *e = &inst->pa_entries[i];
         if (!e->used || e->track != st || e->clip != sc) continue;
-        pa_entry_t *n = pa_get(inst, dt, dc, e->target);
+        int tgt = pa_target_retrack(inst, e->target, st, dt);
+        if (tgt < 0) { inst->pa_store_full = 1; break; }
+        pa_entry_t *n = pa_get(inst, dt, dc, tgt);
         if (!n) { inst->pa_store_full = 1; break; }   /* pool exhausted: say so */
         *n = *e;                                      /* points, flags, rest, window */
-        n->track = (uint8_t)dt;
-        n->clip  = (uint8_t)dc;
+        n->track  = (uint8_t)dt;
+        n->clip   = (uint8_t)dc;
+        n->target = (uint16_t)tgt;                    /* re-pointed across tracks */
         n->last_sent_valid = 0;   /* the SOURCE was sent; this copy's target may sit anywhere */
         /* A new entry allocated here carries track dt, so the loop's own filter
          * excludes it — the copy cannot feed on itself. */
