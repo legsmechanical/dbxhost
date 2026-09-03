@@ -121,6 +121,15 @@ the section into a versioned heading at release time.
 - **Shift + Note/Session in Session view opens the Master/Send FX list.** The
   gesture already jumped straight to a track's sound editor in Track view; in
   Session view it now jumps to the session's own effects, from wherever you are.
+### Removed (pending)
+- **The old CC-lane automation (the AUTO bank) and its browser band editor are
+  gone; automation is the parameter store.** The eight fixed CC lanes, their
+  assign mode, resting values, per-lane loops and the CLEAR AUTOMATION menu
+  have been deleted, along with the CC curve editor in the browser. Everything
+  they did now lives on the parameters themselves: turn any knob while
+  recording, hold a step to lock it, and manage the lot from the AUTOMATION
+  bank. Aftertouch from the pads is unchanged and still records.
+
 ### Fixes (pending)
 - **Very large projects could lose music when saved.** A project past a certain
   size was cut short on its way out of the sequencer and written to disk
