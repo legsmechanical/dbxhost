@@ -220,6 +220,26 @@ const zoomish2 = fills.filter((f) => f.w >= 40 && f.h >= 14 && f.y < 40);
 if (zoomish2.length === 0) ok('send A draws no zoom-box pop-up');
 else bad('send A draws no zoom-box pop-up', `${zoomish2.length} box-like fills`);
 
+/* 8. A track ROUTED TO ANOTHER TRACK is visibly INERT, not merely absent
+ *    (2026-09-04, the routed-track disabled-states check). Its column carries
+ *    a drawn cross and NO fader; the fader count must not move. Control: the
+ *    same track with no destination (plain MIDI out) draws its CC 7 fader. */
+S.knobTouched = -1; S.sessMixerLatched = true; S.bankSelectTick = -1; S.sessKnobMode = 0;
+S.trackRoute[6] = 2; S.trackMidiTo[6] = 3; S.sessVolSlots[6] = 0; S.sessVolBus[6] = 0; S.sessVolLevel[6] = 0.5;
+draw();
+const fadersRouted = countFaders();
+const colX0 = Math.round(6 * 16) + 4, colX1 = colX0 + 8;
+const crossInk = px.filter((p) => p.x >= colX0 && p.x < colX1 && p.y > 26 && p.y < 42).length;
+if (crossInk >= 12) ok('a track routed to another track draws an inert cross in its column');
+else bad('a track routed to another track draws an inert cross in its column', `only ${crossInk} pixels in the column body`);
+S.sessKnobMode = 1; draw();          /* the arc grid takes the same cell as an X box */
+S.sessKnobMode = 0;
+S.trackMidiTo[6] = 0; S.sessVolLevel[6] = 0.5;
+draw();
+if (countFaders() === fadersRouted + 1) ok('control: the same track with no destination draws its CC 7 fader instead');
+else bad('control: the same track with no destination draws its CC 7 fader instead', `${fadersRouted} -> ${countFaders()}`);
+S.trackRoute[6] = 0; S.trackMidiTo[6] = 0;
+
 if (failed) process.exit(1);
 console.log('test_session_mixer_render: PASS');
 }

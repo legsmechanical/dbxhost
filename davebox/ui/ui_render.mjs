@@ -23,7 +23,7 @@ import {
     drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitAltArrow,
     kitUseLayout,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
-    drawVFader, mvPrint, mvWidth, rectOutline,
+    drawVFader, mvPrint, mvWidth, rectOutline, plotLine,
     drawLevelCard,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
@@ -334,6 +334,16 @@ function drawSessionMixerPage() {
         const hasPos = (S.sessVolBus[t] > 0) || isMidi ||
                        (S.trackRoute[t] === 0 && (S.sessVolSlots[t] | 0) !== 0);
         const v = S.sessVolLevel[t];
+        /* ⭑ A track ROUTED TO ANOTHER TRACK is INERT here BY DESIGN — its audio
+         * is the destination's, so the destination's strip is its strip. That
+         * is a different fact from "no position yet" (a Schwung track with no
+         * slot), which stays blank: an X box says "nothing to mix HERE, on
+         * purpose" (2026-09-04, the routed-track disabled-states check). */
+        const _dest = S.trackRoute[t] === 2 ? (S.trackMidiTo[t] | 0) : 0;
+        if (!hasPos && _dest > 0) {
+            cells.push({ kind: 'xbox', label, name: 'TRACK ' + (t + 1) + ' > TRACK ' + _dest, text: 'ROUTED' });
+            continue;
+        }
         if (!hasPos || !(v >= 0)) { cells.push({ kind: 'blank', label }); continue; }
         /* A MIDI track's volume reads as its CC value (0..127), not a gain. */
         const cell = { label, name: 'TRACK ' + (t + 1) + ' ' + mode.label,
@@ -414,9 +424,16 @@ function drawSessionFaderRow(cells, mode) {
         const c = cells[i];
         const cx = Math.round(i * COLW);
         const fx = cx + Math.round((COLW - FW) / 2);
-        if (c.kind !== 'blank')
+        if (c.kind === 'xbox') {
+            /* The routed track's inert mark: a cross where its fader would
+             * stand, drawn (not framed) so it cannot be read as a fader at
+             * zero — see drawSessionMixerPage. */
+            const xa = fx + 1, xb = fx + FW - 2, ya = TOP + 12, yb = BOT - 12;
+            plotLine(xa, ya, xb, yb, 1);
+            plotLine(xb, ya, xa, yb, 1);
+        } else if (c.kind !== 'blank')
             drawVFader(fx, TOP, FW, BOT - TOP, c.norm || 0, unity);
-        if (valueLive && lk === i && c.kind !== 'blank') continue;  /* drawn last */
+        if (valueLive && lk === i && c.kind !== 'blank' && c.kind !== 'xbox') continue;  /* drawn last */
         const lbl = String(i + 1);
         const lw = mvWidth(lbl);
         const lx = cx + Math.round((COLW - lw) / 2);

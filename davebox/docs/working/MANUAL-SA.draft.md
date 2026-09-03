@@ -329,6 +329,8 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   automatable too — they are the same parameters as the SOUND + CONFIG card's:
   turn one while recording and it records into that track's clip, the strip
   shows the circle and follows during playback, and Delete + touch clears it.
+  A track that plays another track's instrument has no strip of its own — its
+  sound is the destination's — so its column shows a cross instead of a fader.
 - **SOUND + CONFIG** — the way in to the track's sound editor (its instrument,
   effects, sound control and config) — is the last entry in the list. It is a
   **door rather than a screen**: landing on it offers *"click to enter"*, and

@@ -122,6 +122,8 @@ the section into a versioned heading at release time.
   gesture already jumped straight to a track's sound editor in Track view; in
   Session view it now jumps to the session's own effects, from wherever you are.
 ### Fixes (pending)
+- **A track routed to another track shows a cross on the session mixer.** Its
+  column used to be simply empty, which read the same as "not set up yet".
 - **Loading a project stops the one you are leaving.** The outgoing project
   used to keep playing behind the Loading screen, and a note could be left
   hanging on a Schwung synth across the switch. Load now stops the transport
