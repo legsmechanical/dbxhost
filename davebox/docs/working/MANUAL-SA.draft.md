@@ -1324,7 +1324,9 @@ recording and the parameter records; turn it while holding a step and that step
 takes a lock; Mute + touch and Delete + touch do what they do on any automated
 knob. A **bank knob** macro moves the bank's setting exactly as the bank's own
 knob does, records and locks like any other, and belongs to the track type —
-a NOTE FX macro reads UNASSIGNED on a drum track. The assignments belong to the project (they travel with it) and to the
+a NOTE FX macro reads UNASSIGNED on a drum track. The bank's own page shows
+the same automation: the dot on the cell, Mute + touch and Delete + touch on
+the knob, a blinking ring, and a held step plus a turn locks it there too. The assignments belong to the project (they travel with it) and to the
 track's chain patches (a saved patch carries them; loading one brings them
 back), and a project made before this bank had one inherits the knob mappings
 it had set under Sound Control.

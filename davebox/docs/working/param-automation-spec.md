@@ -112,7 +112,9 @@ exact shape — see the board).
   step keeps the editor on screen and its knobs, so no Note knob is ever visible there.)
 - **THE HELD STEP, ONE LAW EVERYWHERE** ⭑RULED (Josh, 2026-09-02 midday — "I don't want to
   split behavior anywhere"): **a held step redirects the on-screen knobs to that step.** In
-  the module editor (and on MACROS) that writes p-locks. The step editor's own values (Note,
+  the module editor (and on MACROS) that writes p-locks — ⭑ and on a BANK CARD too, for a knob
+  that is an automation target (2026-09-03, with `seq:` targets); the other bank knobs still
+  decline. The step editor's own values (Note,
   Oct, Leng, Vel, Nudg, Iter, Prob, Ratch) **become a BANK — the STEP bank — alongside the
   other davebox banks**; on it a held step with a note shows and edits that step's values, and
   with no step held (or an empty step held) the knobs read `--`. Banks whose knobs are track
