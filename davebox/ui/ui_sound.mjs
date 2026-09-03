@@ -44,7 +44,7 @@ import { bankCardVisible, sessMixerVisible, bankHeadingPrefix, BANK_HDR_TEXT_W }
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
-import { instrOptions, fmtInstr, INSTR_SCHWUNG, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
+import { instrOptions, instrPickerRows, fmtInstr, INSTR_SCHWUNG, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
          BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD } from './ui_constants.mjs';
@@ -516,7 +516,7 @@ const S = {
     /* Header shown over the module browser when it was opened because the block
      * was EMPTY, rather than by choosing to browse. '' = the ordinary case. */
     browsePrompt: '',
-    browseAfterReflavour: false,   /* one-shot: see the reflavour action */
+    genAfterReflavour: null,       /* one-shot: a generator picked for a track that had to become Schwung first (see the reflavour action) */
 
     blockIdx: 1,                /* default to SYNTH, the common case */
     comp: 'synth',
@@ -1297,6 +1297,13 @@ function refreshBlockNames() {
             const passThrough = !r.spec.toggle &&
                                 r.spec.key !== 'send_a' && r.spec.key !== 'send_b';
             r.val = isFinite(raw) ? raw : (passThrough ? 1 : 0);
+            continue;
+        }
+        if (r.kind === 'trackto') {
+            /* The generator's id, read HERE so the row can show it without a
+             * round-trip per frame. Only a Schwung track has one. */
+            r.gen = (!S.bus && GS.trackRoute[S.track] === 0)
+                ? moduleIdOf(engineLoadedModule(S.slot, 'synth')) : '';
             continue;
         }
         if (r.kind !== 'block') continue;
@@ -2270,7 +2277,7 @@ export function soundOpenGenerator(track) {
          * carries the name now, so there is no longer a second thing competing
          * for it. Before that rename this said GENERATOR, deliberately.
          * ⚠ 118px in the header font against drawKitHeader's 124px budget. */
-        S.pendingAction = { t: 'browse', comp: 'synth', prompt: 'SELECT INSTRUMENT' };
+        S.pendingAction = { t: 'instrpick' };   /* ONE picker (2026-09-04): the generators live in the Instrument list */
         return true;
     }
     S.pendingAction = { t: 'open', comp: 'synth' };
@@ -2396,7 +2403,6 @@ function buildPickRows() {
              * had, in the other flavour. ⚠ Master/Send buses do NOT get it:
              * they are entered from the session FX list, not from a track. */
             rows.push({ kind: 'trackto', label: 'Instrument' });
-            rows.push({ kind: 'movesynth', label: 'Generator', value: 'Move ' + S.bus.bus + ' >' });
         }
         for (const n of BUS_BLOCKS) {
             rows.push({ kind: 'block', comp: S.bus.prefix + 'fx' + n, label: 'FX ' + n });
@@ -2424,7 +2430,11 @@ function buildPickRows() {
          * to route it back. Track Control stays open on these tracks precisely
          * so that is reachable (see the follow in ui_tick). */
         if (GS.trackRoute[S.track] === 2) { S.pickRows = rows; S.pickRow = 0; return; }
+        /* ⭑ No Generator row (Josh, 2026-09-04): the INSTRUMENT row is the
+         * generator's door now — click enters it, Shift+click picks another —
+         * exactly the block row's own grammar, on the row that names it. */
         for (const i of S.blockRows) {
+            if (BLOCKS[i].comp === 'synth') continue;
             rows.push({ kind: 'block', comp: BLOCKS[i].comp, label: BLOCKS[i].label, blockIdx: i });
         }
         /* The slot's LEVELS, inline and immediately after the chain — the same
@@ -3000,15 +3010,48 @@ const VIEW_TREE = {
  * step-through path commit through one implementation — two copies of a write
  * that can retarget the screen is exactly the drift this tree keeps paying for.
  * Reads `S.instrSel`, which both paths set. */
+/* ⭑ THE INSTRUMENT PICKER (Josh, 2026-09-04): ONE list — Move 1-4, every
+ * Schwung generator by name, MIDI Ch 1-16, the tracks you may follow — with a
+ * divider between the groups. Choosing a generator IS choosing Schwung: the
+ * track becomes a Schwung track if it was not one, and the module loads. The
+ * cursor opens on what the track has now. */
+let genScanForTest = null;      /* tests: the module scan is an empty filesystem off-device */
+export function soundSetGeneratorScanForTest(fn) { genScanForTest = fn; }
+export function soundEnumPickForTest() { return (S.view === VIEW_ENUM && S.enumPick) ? { label: S.enumPick.label, options: S.enumPick.options.slice(), sel: S.enumPick.sel } : null; }
+function openInstrPicker() {
+    const gens = genScanForTest ? genScanForTest() : engineListModules(specKeyFor('synth'));
+    const rows = instrPickerRows(GS.trackRoute, S.track, gens);
+    const curV = instrValueFor(S.track);
+    const curGen = GS.trackRoute[S.track] === 0 ? moduleIdOf(engineLoadedModule(S.slot, 'synth')) : '';
+    let cur = rows.findIndex(r => !r.divider && (r.gen ? r.gen.id === curGen : r.v === curV));
+    if (cur < 0) cur = rows.findIndex(r => !r.divider);
+    openEnumPicker('Instrument', rows.map(r => r.divider ? { divider: true } : r.label),
+                   cur < 0 ? 0 : cur, (i) => commitInstrPick(rows[i]));
+}
+function commitInstrPick(r) {
+    if (!r || r.divider) return;
+    if (r.gen) {
+        if (GS.trackRoute[S.track] === 0) {
+            /* Already a Schwung track: the one you have re-selected just opens
+             * (a reload would throw its state away); another one loads. */
+            if (moduleIdOf(engineLoadedModule(S.slot, 'synth')) === r.gen.id) S.pendingAction = { t: 'open', comp: 'synth' };
+            else { S.comp = 'synth'; applyModulePick(r.gen); }
+        } else {
+            /* A Move/MIDI track first becomes Schwung (reflavour rebuilds the
+             * screen around the slot), THEN the generator loads into it. */
+            S.genAfterReflavour = r.gen;
+            S.instrSel = INSTR_SCHWUNG;
+            commitInstrChoice();
+        }
+        S.dirty = true;
+        return;
+    }
+    S.instrSel = r.v;
+    commitInstrChoice();
+}
+
 function commitInstrChoice() {
     if (S.instrSel !== instrValueFor(S.track)) {
-        /* ⭑ THE MERGE (Josh, 2026-08-27): choosing `Schwung` used to leave you
-         * on the block list to notice the Generator row was empty and open it
-         * yourself. Picking an instrument and picking WHICH is one intent, so
-         * the module picker follows immediately — the same overlay the
-         * empty-generator gesture opens. Consumed by `reflavour`, because the
-         * browse has to happen AFTER the track has re-entered its new flavour. */
-        if (S.instrSel === INSTR_SCHWUNG) S.browseAfterReflavour = true;
         applyInstrChoice(S.track, S.instrSel);
         /* The screen must FOLLOW the new destination immediately — a track just
          * switched to MIDI has no chain to show, and a switch between Schwung
@@ -4445,6 +4488,7 @@ function runAction(a) {
     else if (a.t === 'retarget') retargetOpen(a.picker);
     else if (a.t === 'open')    openBlock(a.comp);
     else if (a.t === 'browse')  openBrowse(a.comp, a.prompt);
+    else if (a.t === 'instrpick') openInstrPicker();
     else if (a.t === 'load')    loadSelected();
     else if (a.t === 'presets') openPresets();
     else if (a.t === 'usrlist') openUserPresets();
@@ -4469,13 +4513,13 @@ function runAction(a) {
         const _t = S.track;
         if (GS.trackRoute[_t] === 1) soundEnterMove(_t);
         else { clearBusContext(); soundRetarget(_t, slotIndex(_t)); }
-        /* ...and if that choice was `Schwung` on an EMPTY slot, go straight on
-         * to the module picker. One-shot, and cleared whether or not it fires:
-         * a crumb that outlives its gesture opens a picker nobody asked for. */
-        const _wantBrowse = S.browseAfterReflavour;
-        S.browseAfterReflavour = false;
-        if (_wantBrowse && GS.trackRoute[_t] === 0 && !engineLoadedModule(S.slot, 'synth'))
-            S.pendingAction = { t: 'browse', comp: 'synth', prompt: 'SELECT INSTRUMENT' };
+        /* ...and the generator picked from the Instrument list loads into the
+         * slot the track now has. One-shot, and cleared whether or not it
+         * fires: a crumb that outlives its gesture loads a module nobody asked
+         * for. */
+        const _gen = S.genAfterReflavour;
+        S.genAfterReflavour = null;
+        if (_gen && GS.trackRoute[_t] === 0) { S.comp = 'synth'; applyModulePick(_gen); }
     }
     else if (a.t === 'slotcfg')  openSlotCfg(a.keep, a.which);
     else if (a.t === 'knobs')    openKnobEditor();
@@ -4935,6 +4979,22 @@ function onKnobTurn(knobIdx, delta) {
     queueWrite(cell.key, commitString(cell, next));
 }
 
+/* The enum picker's move: a divider row is a real row (the grid stays a grid)
+ * but never a stop — same contract as pickStep. Clamped at both ends. */
+function enumStep(p, delta) {
+    const opts = p.options, n = opts.length;
+    if (!n) return 0;
+    const dir = delta > 0 ? 1 : -1;
+    let i = p.sel;
+    for (let k = 0; k < n; k++) {
+        const j = i + dir;
+        if (j < 0 || j >= n) return i;
+        i = j;
+        if (!(opts[i] && opts[i].divider)) return i;
+    }
+    return p.sel;
+}
+
 function listMove(len, idx, delta) {
     if (!len) return 0;
     return Math.max(0, Math.min(len - 1, idx + (delta > 0 ? 1 : -1)));
@@ -5243,8 +5303,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
         } else if (S.view === VIEW_KNOB_TARGET) {
             S.knobTargetIdx = listMove(S.knobTargets.length, S.knobTargetIdx, delta);
         } else if (S.view === VIEW_ENUM) {
-            if (S.enumPick)
-                S.enumPick.sel = listMove(S.enumPick.options.length, S.enumPick.sel, delta);
+            if (S.enumPick) S.enumPick.sel = enumStep(S.enumPick, delta);
         } else if (S.view === VIEW_KNOB_PARAM) {
             S.knobParamIdx = listMove(S.knobParams.length, S.knobParamIdx, delta);
         } else if (S.view === VIEW_LFO) {
@@ -5424,17 +5483,22 @@ export function soundOnCC(d1, d2, decodeDelta) {
                  * menu's row does. */
                 if (GS.trackPadMode[S.track] === PMC) { S.dirty = true; }
                 else {
-                    /* ⭑ Instrument is an ENUM — four families and up to 30-odd
-                     * entries — so it opens the PICKER rather than being ticked
-                     * through one detent at a time behind a `[value]`. The list
-                     * IS the thing you are choosing from; scrolling it blind
-                     * through a single row was the worst case of the old grammar
-                     * anywhere in the app. */
-                    const opts = instrOptions(GS.trackRoute, S.track);
-                    const cur = opts.indexOf(instrValueFor(S.track));
-                    openEnumPicker('Instrument', opts.map(o => String(fmtInstr(o))),
-                                   cur < 0 ? 0 : cur,
-                                   (i) => { S.instrSel = opts[i]; commitInstrChoice(); });
+                    /* ⭑ THE DOOR (Josh, 2026-09-04): once an instrument is
+                     * chosen, a click ENTERS it — a Schwung generator's editor,
+                     * Move's own editor through co-run — and Shift+click opens
+                     * the PICKER to change it. The Generator row used to carry
+                     * exactly this grammar; the Instrument row inherits it with
+                     * the row. A MIDI channel or a followed track has nothing to
+                     * enter, so the plain click is a NO-OP there (Josh: "for
+                     * consistency" — click never picks once a choice is made).
+                     * The one exception is a Schwung track with no generator
+                     * yet: no choice has been made, so the click is the picker. */
+                    const route = GS.trackRoute[S.track];
+                    const gen = route === 0 ? (S.pickRows[S.pickRow].gen || '') : '';
+                    if (S.shiftHeld || (route === 0 && !gen)) openInstrPicker();
+                    else if (route === 0) S.pendingAction = { t: 'open', comp: 'synth' };
+                    else if (route === 1) S.coRunRequest = S.bus ? S.bus.track : S.track;
+                    /* route 2: nothing to enter, nothing happens */
                 }
             } else {
                 S.instrEditing = false;
@@ -5461,12 +5525,6 @@ export function soundOnCC(d1, d2, decodeDelta) {
             } else {
                 S.busLevelEditing = !S.busLevelEditing;
             }
-        }
-        /* Move's own instrument editor. Not a module browser: Move owns that
-         * voice and there is nothing of ours to load into it. */
-        else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
-                 S.pickRows[S.pickRow].kind === 'movesynth') {
-            S.coRunRequest = S.bus ? S.bus.track : -1;
         }
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'settings') {
@@ -6331,12 +6389,19 @@ function renderBlocks() {
         }
         if (r.kind === 'trackto') {
             const v = S.instrEditing ? S.instrSel : instrValueFor(S.track);
-            const txt = GS.trackPadMode[S.track] === PMC ? '-' : fmtInstr(v);
+            const route = GS.trackRoute[S.track];
+            /* A Schwung track names its GENERATOR (the door it opens); a Move
+             * track its Move instrument; MIDI its channel or track. The ` >`
+             * rides in the value like the old Move Generator row's did —
+             * chevron and value are exclusive in drawKitList. */
+            let txt = GS.trackPadMode[S.track] === PMC ? '-'
+                    : (route === 0 && !S.instrEditing) ? (r.gen ? r.gen + ' >' : 'Schwung')
+                    : (route === 1 && !S.instrEditing) ? fmtInstr(v) + ' >'
+                    : fmtInstr(v);
             return { label: r.label, hdr: true,
                      value: S.instrEditing ? '[' + txt + ']' : txt };
         }
         if (r.kind === 'div') return { divider: true };
-        if (r.kind === 'movesynth') return { label: r.label, hdr: true, value: r.value };
         /* Doors get the chevron drawKitList draws for a sub-row. They used to
          * fall through to the bare branch below, which sets neither value nor
          * chevron, so nothing on screen said they opened anything.

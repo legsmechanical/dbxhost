@@ -487,9 +487,13 @@ step('⚠ control: leaving by any other route SPENDS the crumb', () => {
  * it broke the MIDI-routed step below it.
  * ⚠ The observable is the SCREEN, not a popup — asserting a popup would now pass
  * against a gesture that opened nothing at all. */
-step('an EMPTY generator opens the module picker, captioned (on the HOLD)', () => {
+step('an EMPTY generator opens the INSTRUMENT picker (on the HOLD) — one picker, the generators in it', () => {
+    /* 2026-09-04: the module browser is no longer a screen of its own for the
+     * generator — the Instrument list carries every Schwung generator as a
+     * group, so "choose a sound" lands there. */
     const realGet = globalThis.shadow_get_param;
     globalThis.shadow_get_param = () => '';        /* nothing loaded, any comp */
+    sound.soundSetGeneratorScanForTest(() => [{ id: 'nusaw', name: 'NuSaw', path: '' }]);
     try {
         globalThis.init();
         S.awaitingProjectSelect = false;
@@ -500,14 +504,18 @@ step('an EMPTY generator opens the module picker, captioned (on the HOLD)', () =
         ticks(8);
         shiftNoteHold();
         ticks(6);
-        const b = sound.soundBrowseStateForTest();
-        if (!b.browsing)
-            throw new Error('the gesture did not land on the module picker');
-        if (b.prompt !== 'SELECT INSTRUMENT')
-            throw new Error('no caption over the picker, got ' + JSON.stringify(b.prompt) +
-                            ' — nothing says why you are suddenly choosing a module');
+        if (sound.soundBrowseStateForTest().browsing)
+            throw new Error('the gesture opened the old module browser, not the Instrument picker');
+        const p = sound.soundEnumPickForTest();
+        if (!p || p.label !== 'Instrument')
+            throw new Error('the gesture did not land on the Instrument picker: ' + JSON.stringify(p));
+        if (!p.options.some((o) => o === 'NuSaw'))
+            throw new Error('the picker does not list the generator: ' + JSON.stringify(p.options));
+        if (!p.options.some((o) => o && o.divider))
+            throw new Error('the groups are not divided');
     } finally {
         globalThis.shadow_get_param = realGet;
+        sound.soundSetGeneratorScanForTest(null);
     }
 });
 
@@ -520,9 +528,14 @@ step('an EMPTY generator opens the module picker, captioned (on the HOLD)', () =
  * is that the CHOICE leads there, and the browse is queued for AFTER the track
  * has re-entered its new flavour. A test that called openBrowse directly would
  * prove the picker exists, not that choosing Schwung reaches it. */
-step('choosing Schwung as the Instrument opens the module picker', () => {
-    const realGet = globalThis.shadow_get_param;
+step('choosing a GENERATOR as the Instrument makes the track Schwung and loads it', () => {
+    /* 2026-09-04 (Josh): "generator would fall off and everything would go
+     * into the instrument menu" — so the choice IS the load, no second picker. */
+    const realGet = globalThis.shadow_get_param, realSet = globalThis.shadow_set_param;
     globalThis.shadow_get_param = () => '';        /* empty slot */
+    const sets = [];
+    globalThis.shadow_set_param = (slot, k, v) => { sets.push(k + '=' + v); return 1; };
+    sound.soundSetGeneratorScanForTest(() => [{ id: 'nusaw', name: 'NuSaw', path: '' }]);
     try {
         globalThis.init();
         S.awaitingProjectSelect = false;
@@ -539,24 +552,36 @@ step('choosing Schwung as the Instrument opens the module picker', () => {
         /* ⚠ Entry lands on the BANK'S PROMPT now, so the first click is the
          * door into the menu — it is not the row. */
         cc(3, 127); cc(3, 0); ticks(2);
-        /* ⚠ And the Instrument row opens a PICKER now rather than editing in
-         * place (the enum law), so this click opens the list and the one below
-         * commits the selection. The jog step between them is unchanged: the
-         * picker opens on the CURRENT value, and Schwung is one step before
-         * MIDI Ch 1 in instrOptions' order. */
-        cc(3, 127); cc(3, 0);                      /* open the Instrument picker */
+        /* A MIDI track has nothing to enter, so a PLAIN click is a no-op
+         * (Josh, 2026-09-04: consistency — click never picks once a choice is
+         * made); Shift+click opens the picker. It opens on the CURRENT value
+         * (MIDI Ch 1); one step left crosses the divider onto the generator
+         * group's only entry. */
+        cc(3, 127); cc(3, 0); ticks(1);            /* CONTROL: plain click does nothing */
+        if (sound.soundEnumPickForTest())
+            throw new Error('a plain click on a MIDI destination opened the picker');
+        cc(49, 127); cc(3, 127); cc(3, 0); cc(49, 0);   /* Shift+click: the picker */
         ticks(1);
-        cc(14, 127);                               /* one step left: MIDI Ch 1 -> Schwung */
+        const p0 = sound.soundEnumPickForTest();
+        if (!p0 || p0.options[p0.sel] !== 'MIDI Ch 1')
+            throw new Error('the picker did not open on the current value: ' + JSON.stringify(p0 && p0.options[p0.sel]));
+        cc(14, 127);                               /* one step left: over the divider onto NuSaw */
         ticks(1);
+        const p1 = sound.soundEnumPickForTest();
+        if (!p1 || p1.options[p1.sel] !== 'NuSaw')
+            throw new Error('one step left did not land on the generator (dividers must not be stops): ' + JSON.stringify(p1 && p1.options[p1.sel]));
         cc(3, 127); cc(3, 0);                      /* commit */
-        ticks(10);                                 /* reflavour, then the queued browse */
-        const b = sound.soundBrowseStateForTest();
-        if (!b.browsing)
-            throw new Error('choosing Schwung did not open the module picker');
-        if (b.prompt !== 'SELECT INSTRUMENT')
-            throw new Error('picker opened without the caption, got ' + JSON.stringify(b.prompt));
+        ticks(10);                                 /* reflavour, then the load */
+        if (S.trackRoute[0] !== 0)
+            throw new Error('the track did not become a Schwung track: route ' + S.trackRoute[0]);
+        if (!sets.some((s) => s === 'synth:module=nusaw'))
+            throw new Error('the generator was not loaded into the slot: ' + JSON.stringify(sets));
+        if (sound.soundBrowseStateForTest().browsing)
+            throw new Error('the old module browser opened as well');
     } finally {
         globalThis.shadow_get_param = realGet;
+        globalThis.shadow_set_param = realSet;
+        sound.soundSetGeneratorScanForTest(null);
     }
 });
 

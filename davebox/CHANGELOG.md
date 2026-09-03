@@ -17,6 +17,12 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **One Instrument row, one picker.** The Generator row is gone from the
+  sound menu. The Instrument row names what the track plays; click enters
+  its editor (a Schwung generator's pages, or Move's own editor; nothing on a
+  MIDI destination), Shift + click opens the picker. The picker lists Move 1-4, every Schwung generator
+  by name, MIDI channels 1-16 and the tracks you can follow, in four groups
+  with a line between them — choosing a generator loads it straight away.
 - **The MACROS bank.** One step past SOUND + CONFIG on the jog: eight knobs
   you assign to any parameter of the track's sound — a synth or effect
   parameter, a level, or one of dAVEBOx's own bank knobs — drawn with the

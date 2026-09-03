@@ -124,7 +124,7 @@ function openSynth() {
      * door). These steps act on the menu. */
     snd.soundShowMenu();
     const st = snd.soundPickStateForTest();
-    const target = st.kinds.indexOf('block') + 1;   /* row 0 of blocks is MIDI FX (empty -> browser); +1 = the SYNTH */
+    const target = st.kinds.indexOf('trackto');     /* the INSTRUMENT row is the generator's door (2026-09-04); the Generator row is gone */
     for (let g = 0; g <= st.kinds.length * 2; g++) {
         if (snd.soundPickStateForTest().row === target) break;
         jog(snd.soundPickStateForTest().row < target ? 1 : -1);

@@ -151,10 +151,10 @@ step('5. SOUND + CONFIG cards (the block list)', () => {
 
 step('6. the MODULE EDITOR (param pages on)', () => {
     /* Instrument row is 0; the Generator block is the next row. Jog to it and click. */
-    /* The cursor carries over between entries, so walk it to the GENERATOR
-     * row by component (the first 'block' row is the MIDI FX). */
-    const gen = snd.soundPickStateForTest().comps.indexOf('synth');
-    if (gen < 0) throw new Error('rig: no synth row in ' + JSON.stringify(snd.soundPickStateForTest().comps));
+    /* The cursor carries over between entries, so walk it to the INSTRUMENT
+     * row — the generator's door since 2026-09-04 (click enters the editor). */
+    const gen = snd.soundPickStateForTest().kinds.indexOf('trackto');
+    if (gen < 0) throw new Error('rig: no Instrument row in ' + JSON.stringify(snd.soundPickStateForTest().kinds));
     for (let g = 0; g < 20 && snd.soundPickStateForTest().row !== gen; g++) {
         cc(14, snd.soundPickStateForTest().row > gen ? 127 : 1); ticks(1);
     }
@@ -179,7 +179,7 @@ step('8. the enum picker over a card', () => {
     if (snd.soundViewForTest() === 18) { cc(3, 127); cc(3, 0); ticks(3); }   /* → the list */
     if (snd.soundViewForTest() !== 0) throw new Error('rig: not on the list, view ' + snd.soundViewForTest());
     for (let g = 0; g < 20 && snd.soundPickStateForTest().row !== 0; g++) { cc(14, 127); ticks(1); }
-    cc(3, 127); cc(3, 0); ticks(3);                /* click the Instrument row → the picker */
+    shift(true); cc(3, 127); cc(3, 0); shift(false); ticks(3);   /* Shift+click the Instrument row → the picker */
     if (snd.soundViewForTest() !== 17) throw new Error('rig: picker not open, view ' + snd.soundViewForTest());
     assertGesture('enum picker', 'slot:volume', T);
     cc(51, 127); cc(51, 0); ticks(2);

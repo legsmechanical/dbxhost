@@ -163,6 +163,27 @@ export function instrOptions(routes, self) {
     return out;
 }
 
+/* The Instrument PICKER's rows (Josh, 2026-09-04): Move 1-4 | every Schwung
+ * generator by name | MIDI Ch 1-16 | the tracks this track may follow, each
+ * group behind a divider. A generator row carries its module (`gen`), the
+ * others their INSTR value (`v`). The track rule is instrOptions' — a MIDI
+ * track may not follow a MIDI track, and never itself — so cycles stay
+ * unrepresentable here too. */
+export function instrPickerRows(routes, self, gens) {
+    const rows = [];
+    for (let m = 0; m <= INSTR_MOVE_MAX; m++) rows.push({ v: m, label: fmtInstr(m) });
+    rows.push({ divider: true });
+    for (const g of (gens || [])) rows.push({ gen: g, label: String(g.name || g.id) });
+    if (gens && gens.length) rows.push({ divider: true });
+    for (let ch = 0; ch < 16; ch++) rows.push({ v: INSTR_MIDI_CH + ch, label: fmtInstr(INSTR_MIDI_CH + ch) });
+    const tracks = instrOptions(routes, self).filter(v => v >= INSTR_TRACK);
+    if (tracks.length) {
+        rows.push({ divider: true });
+        for (const v of tracks) rows.push({ v, label: fmtInstr(v) });
+    }
+    return rows;
+}
+
 export function fmtPlain(v)  { return String(v); }
 export function fmtNA()      { return '-'; }
 export function fmtArpStyle(v) { return ['Off','Up','Dn','U/D','D/U','Cnv','Div','Ord','Rnd','RnO'][v] || 'Off'; }

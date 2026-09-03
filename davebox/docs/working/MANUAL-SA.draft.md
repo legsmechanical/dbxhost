@@ -1296,10 +1296,18 @@ and levels and times are still adjusted by turning. Backing out of a picker
 leaves the setting as it was.
 
 **Schwung tracks** open dAVEBOx's own sound editor. It starts on the track's
-chain — MIDI FX, the synth, then **FX 1-4** — and the jog picks a block. Inside a
+chain — the **Instrument** row, then MIDI FX and **FX 1-4** — and the jog picks
+a row. The Instrument row names the track's generator (or its Move instrument,
+MIDI channel or followed track); **click** it to enter the generator's editor
+(or Move's, on a Move instrument), **Shift + click** to change the instrument.
+A MIDI channel or a followed track has nothing to enter, so a plain click does
+nothing there; on a track with no generator yet the click opens the picker. That picker is one list in four
+groups with a line between them: Move 1-4, every Schwung generator by name, MIDI
+channels 1-16, and the tracks this one may follow. Choosing a generator makes
+the track a Schwung track and loads it in one step. Inside a
 block the knobs edit its parameters and the jog turns the pages; hold **Shift**
-while turning to jump between sections. Picking an **empty** block opens the
-module list, which is how you add an effect. **Back** steps out one level at a
+while turning to jump between sections. Picking an **empty** effect block opens
+the module list, which is how you add an effect. **Back** steps out one level at a
 time, and closes the bank from its top level. **Shift + Note/Session** brings you
 back to the top of the sound editor from any depth in one press — and holding it
 goes to the instrument instead.
