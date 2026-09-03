@@ -174,26 +174,51 @@ claim about the format ([[verify-the-premise-not-just-the-test]]). The lesson is
 schema's capability is not observable from the corpus we happen to hold.** Stop theorising about
 it and test the reader.
 
-## 5c. ⭐ RULED (Josh, 2026-09-05) — the export names MIDI PARAMS ONLY
+## 5c. ⭐ RULED (Josh, 2026-09-05) — MIDI params, **and the mixer**
 
 > *"the export only needs to name midi params. bc davebox doesn't automate move devices directly
 > and live doesn't support schwung modules. midi envelopes are the only thing that CAN carry
 > over."*
+> …then: *"mixer level levels, pan, and send levels should also carry and be based on the dbxhost
+> bus levels."*
 
-This closes the "which targets export" question **permanently**, and by construction rather than
-by preference:
+The test is **does the target exist in Live**, and it settles every kind:
 
 | davebox target kind | exports? | why |
 |---|---|---|
-| `cc:<n>` / `at` / `pb` | ✅ **the whole scope** | a MIDI message means the same thing in Live |
-| `chain` (a module param) | 🚫 never | **Live has no Schwung modules** — there is no destination |
-| `level` (mixer) | 🚫 never | same: not a Move/Live device parameter davebox drives |
-| `bank` (`seq:`) | 🚫 never | davebox's own sequencer params; nothing in Live to receive them |
+| `cc:<n>` / `at` / `pb` | ✅ | a MIDI message means the same thing in Live |
+| `level` → volume, pan, send A, send B | ✅ | **the track MIXER is standard Ableton, not a Schwung module** — `track.mixer` is `{pan, volume, sends, …}` and Live models it as a device (`mTrackMixerDevice`). Source of values: the **dbxhost bus levels** (Josh) |
+| `level` → **Module Level** (`synth_volume`) | 🚫 probably not | it is the module's own output gain INSIDE a Schwung chain, and there is no Schwung module in Live. ❓ The one `level` kind Josh's ruling does not obviously cover — worth confirming |
+| `chain` (a module param) | 🚫 never | Live has no Schwung modules; no destination exists |
+| `bank` (`seq:`) | 🚫 never | davebox's own sequencer params; nothing in Live receives them |
 
-⭑ This **vindicates `param-automation-plan.md` P7** ("cc:/at entries render … chain-param entries
-omitted (no MIDI representation)"). The plan was right, and 5b's proposed inversion was wrong for
-a second reason I had not even reached: not merely that the bundle is not Move-bounded, but that
-chain params have **no target in Live at all**. Do not re-propose exporting them.
+⭑ This vindicates `param-automation-plan.md` P7 on chain params, and 5b's proposed inversion
+stays retracted. But P7's wording ("cc:/at entries render…") is now **too narrow** — it never
+mentioned the mixer, which is the second half of the scope.
+
+### ⚠⚠ Three consequences of the mixer half, none of them optional
+
+**1. SENDS CANNOT CARRY UNTIL THE EXPORT CREATES RETURN TRACKS.** Today it deliberately does not:
+`ui_export.mjs:414` writes `returnTracks: []`, and `:219` sets `mixer.sends = []` with the comment
+*"returnTracks is []"*. Live asserts the two agree —
+`track.trackMixerDevice().component<FSends>().sends().size() == numReturnTracks`. So Send A / Send
+B automation has **nowhere to land** until the export grows two return tracks and gives every
+track two send entries. That is a prerequisite in the EXPORT, not part of the automation work, and
+it should be scheduled as its own step.
+
+**2. THE VOLUME VALUE SPACE IS NOT KNOWN, ONLY COPIED.** `defaultMixer()` hardcodes
+`volume: 0.6137250661849976` with no comment and no traceable origin (`git log -S` finds nothing).
+It is plainly NOT dB, and 0.6137 is a suspiciously specific normalised value — so some earlier
+work established it empirically and did not write down what it means. davebox's own levels are a
+LINEAR GAIN (`SLOT_LEVEL_MAX`, 1.0 = unity), so an automation curve needs gain → this space, and
+that mapping is very unlikely to be linear.
+⚠ **Do not guess it.** Determine it: write two static exports at known davebox gains, open both
+in Live, and read the resulting fader values. Guessing a curve here yields automation that plays
+back at the wrong level everywhere — and quietly, since nothing errors.
+
+**3. PAN NEEDS A CENTRE CONVERSION.** Song.abl's `mixer.pan` is `0.0` at centre (so presumably
+−1…+1); davebox's pan is `0…1` with `0.5` centre. Map accordingly, and verify the sign — an
+inverted pan automation is not obvious by ear on a mono-ish source.
 
 ## 5d. The one remaining unknown, and it is now small
 
@@ -206,10 +231,17 @@ about inventing names; it is about whether the CLIP-level container accepts the 
 
 The candidate set is small and enumerable:
 
+MIDI:
 1. `"parameterId": "PitchBend"` — the note-vocabulary string
 2. `"parameterId": 11` — a bare CC number
 3. `"parameterId": "11"` — the same as a string
 4. `"parameterId": "Pressure"` — for `at`
+
+Mixer (the same question, different vocabulary — the mixer is a device, so its parameter names are
+the candidates):
+5. `"parameterId": "volume"` / `"pan"` — the `track.mixer` JSON keys verbatim
+6. `"parameterId": "Volume"` / `"Pan"` — Live's own parameter-name casing
+7. a send: whatever names a send slot once return tracks exist (blocked on consequence 1)
 
 **The probe:** write one bundle per variant, Josh double-clicks each, and Live's own log names the
 outcome — `Unknown id` / `Object has wrong type` / `Parse error at offset` / `Couldn't open song`
