@@ -1,5 +1,29 @@
 # Export: where automation can live in a Move Song.abl
 
+> 🔴🔴 **REFRAMED 2026-09-05 by Josh, and this supersedes most of what follows.** Three
+> clarifications: **(1)** there is no path or expectation for Live-set INPUT — ignore it
+> entirely (the Live→Move analysis below was answering a question nobody asked). **(2)**
+> *"davebox can write whatever it wants into a live set it creates for export — the issue is
+> whether live can read it appropriately."* **(3)** Live reads clip-level automation for all
+> standard MIDI messages.
+>
+> ⇒ **The question is not "what does Move write", it is "what does Live accept" — and the
+> reference `.als` is therefore a complete SPEC, not merely a goal.** It is self-describing:
+> the MIDI track declares `<MidiControllers>` with **131** `ControllerTargets.<n> Id="…"`
+> entries; a `<ClipEnvelope>`'s `<EnvelopeTarget><PointeeId>` names one of those ids; events are
+> `FloatEvent Time/Value` with times in BEATS. `<NextPointeeId>` at the document head means **we
+> own the id space** — davebox assigns the ids itself. Measured from the file: index **0** is
+> PITCH BEND (values −8192…8191) and the automated CC sits at index **13** (values 0…127).
+>
+> ❓ **OPEN, for Josh:** (a) is `.ablbundle` a REQUIREMENT or just how the export got built? If
+> Live is the consumer, writing `.als` directly removes the last unknown — the tradeoff is that a
+> bundle carries samples/kits inside it while a `.als` references them by path, so drum-kit
+> export may depend on the bundling. (b) WHICH CC was automated in the reference? That single
+> fact pins the whole index→message mapping and davebox can then emit any CC or bend lane.
+>
+> ⚠ Everything below about `Song.abl` remains ACCURATE but is only relevant if the answer to (a)
+> is "the bundle is required".
+
 > 🔴 **CORRECTED 2026-09-05, same day, by Josh: *"are you saying alsbundle files require
 > automation to tied to notes?"* — NO, and §5 originally implied it. Move RECORDS PARAMETER
 > AUTOMATION NATIVELY** (Move manual: select a device in Device View, press Record, turn an
