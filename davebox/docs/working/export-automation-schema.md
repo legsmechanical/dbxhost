@@ -352,7 +352,59 @@ leaves SOME trace before reading silence as success.
   name a MIDI message directly — try `parameterId` against a reserved id, and separately test the
   per-note `automations` route, which is known to work.
 
-## 6. The shape of the work once §5e is answered
+## 5f. ✅ PROBE RESULTS (2026-09-05, run by Josh in Live 12.3.2)
+
+Four bundles, each a copy of `roundtrip.ablbundle` with one change (`~/Desktop/dbx-probes/`).
+
+| probe | result |
+|---|---|
+| **P0** unmodified repack | ✅ opens fine — the base and my repackaging are sound |
+| **P3** envelope → nonexistent id | ✅ **`"Error loading document: Unknown id"`** — the CONTROL FIRED |
+| **P1** static pan `+50 / −50 / +1 / −1` | ✅ as predicted |
+| **P2** `mixer.volume` = `{value, id}` + envelope | ✅ **WORKS** |
+
+⭐⭐ **P3 is what makes the rest trustworthy.** A broken envelope produces a visible error, so P2
+opening cleanly is a real positive rather than an unread file
+([[a-check-that-cries-wolf-is-worse-than-none]]). ⚠ Note the error is a DIALOG, not a log line —
+Live's `Log.txt` gained 577 lines across the four imports and none of them mention the bundles,
+`Unknown id`, or an envelope. **Do not verify future probes by reading the log; read the screen.**
+
+### What this establishes
+
+1. ⭐ **MIXER AUTOMATION WORKS.** `track.mixer.volume` accepts the `{value, id}` treatment and a
+   clip envelope drives it. So the id mechanism is **generic** — it is "stamp `{value, id}` on an
+   automatable leaf", NOT "device parameters only", which is what every sample had led me to
+   assume. Volume, pan and (once the return tracks exist) sends are all buildable now.
+2. ⭐ **TRACK PAN IS −50 … +50** — `±50` reads hard over, `±1` reads nearly centred. So davebox's
+   `0…1` pan with `0.5` centre maps as `(pan − 0.5) × 100`, and the sign is confirmed as
+   left-negative.
+3. Combined with §5e.3, the mixer half of the ruled scope (§5c) is **fully specified**: dB for
+   volume over −70…+6, −50…+50 for pan, the `{value, id}` + envelope mechanism for both.
+
+## 5g. ❓ MIDI is the ONLY thing left, and it may not be expressible
+
+The id mechanism needs a **leaf to stamp**. The mixer had one (`mixer.volume`). A MIDI message
+does not: the sampled schema's entire track- and clip-level vocabulary is
+`clipSlots, color, devices, isNoteRepeatOn, isSelected, kind, midiInputMode, midiOutputEndpoint,
+mixer, name, noteRepeatArpeggio, noteRepeatRate, uiOctaveIndex` and
+`color, envelopes, grooveId, isEnabled, isPlaying, name, notes, region, stepEditorScrollPosition`.
+Nothing there is a CC, a bend or a pressure value. ⚠ genson-inferred, so not proof — but unlike
+the mixer there is nothing to even *try*.
+
+⭑ **And the format's own answer to "automate MIDI" appears to be per-note `automations`** —
+keyed `PitchBend`, `Pressure`, and CC numbers, populated in real Move files, with `Invalid CC
+number` / `Duplicate CC number` among Live's own reader errors. That is not a workaround for a
+limitation I invented earlier; it is how `.abl` represents MIDI automation.
+
+**Josh's call, and it is a real trade:**
+1. **Ship the mixer half only.** Volume/pan/sends automation carries; `cc:`/`at`/`pb` do not.
+   Honest, small, and available immediately.
+2. **Add per-note `automations` for the MIDI kinds.** ⚠ A clip-level lane must be sliced per note
+   and re-based to each note's start, and automation falling BETWEEN notes is dropped. Whether
+   that is musically acceptable is his judgement, not mine.
+3. **Both.**
+
+## 6. The shape of the work (§5e answered; only the §5g ruling outstanding)
 
 1. Allocate `id`s document-wide while authoring `Song.abl` (a counter starting at 2), stamping
    each automated parameter object as it is written.
