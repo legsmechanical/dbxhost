@@ -312,10 +312,27 @@ mixer, and **neither has an example**:
    position written into a field that wanted dB. **The fix is one line: `volume: 0.0`.** Small,
    but it is wrong today and it is now explainable rather than mysterious.
 
-4. **❓ PAN is still un-measured.** Set 23 has every track at `pan: 0.0` (centre). davebox's pan
-   is `0…1` with `0.5` centre, so the likely mapping is `(pan − 0.5) × 2` into −1…+1 — but that
-   is inference, and the sign is exactly the sort of thing that is not obvious by ear.
-   ⭑ Settled the same cheap way: one track panned hard LEFT and another hard RIGHT in any set.
+4. **❓ TRACK PAN cannot be measured from a Move set at all** — Josh: *"i don't think move does
+   pan… we need to get that from live 12 set spec."* No Move set will ever carry a non-zero track
+   pan, so the Set 23 trick that solved volume cannot work here.
+
+   ⚠ **And drum-rack PAD pan does NOT transfer** (Josh: *"pad pan is totally different from track
+   pans"*). The corpus does contain non-zero pad pans — `Set 38.ablbundle` has −32.81, −8.50,
+   +5.00, +31.12 on drum-rack chain mixers — but they are a different control, and the JSON key
+   and the genson-inferred shape being identical is NOT evidence that the scale is. Recorded here
+   only so nobody "discovers" them later and assumes they answer track pan.
+
+   ⭑ **What the corpus DOES establish is the pattern:** `Song.abl` uses **display / engineering
+   units, not normalised ones** — proven by volume being dB rather than a 0…1 fader position.
+   Live displays track pan as `50L`…`50R`, so track pan is *probably* **−50…+50** (and the pad
+   values, all within ±50, are at least consistent). **Hypothesis, not a finding.**
+
+   ⇒ **Pan goes on the PROBE list**, not the measurement list: since we own the writer, write an
+   export with a track pan at a candidate extreme, open it in Live, and read what the pan control
+   shows. That is definitive, and it is the same double-click loop as the other open questions.
+   davebox's own pan is `0…1` with `0.5` centre, so the mapping is `(pan − 0.5) × 2 × FULL`
+   once `FULL` is known — and the SIGN needs confirming too, since an inverted pan automation is
+   not obvious by ear.
 
 ### The probe, now with well-founded candidates instead of guesses
 
