@@ -35,6 +35,10 @@ the section into a versioned heading at release time.
   lane from /16 to ×16, its loop following) — or Clear clip.
   Delete + click on the card clears the clip. Every operation is one undo.
   Smooth/Stepped moved here from the module editor.
+- **The jog walks banks under the overviews.** On the track overview and the
+  session overview an unmodified turn moves through the banks (or the mixer
+  modes) underneath: the header or indicator follows, the knobs follow, and a
+  click lands on that bank.
 - **MIDI is a macro target.** Any track can put Aftertouch or Pitch Bend on a
   macro; a MIDI track can put any CC on one, with the standard names shown.
   They record, lock, mute and clear like any parameter. Pitch bend springs

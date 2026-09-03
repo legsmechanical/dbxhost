@@ -317,10 +317,13 @@ picks which bank. Which banks exist depends on the track type; they are covered
 in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
 [Automation](#11-automation).
 
-- **Click the jog** on the track overview to open the **bank view** — the
-  current bank's page, held on screen. From there, **turn the jog** to move
-  through the banks directly, one step per detent. (On the overview itself the
-  jog is quiet — click first.)
+- **Turn the jog** on the track overview to move through the banks underneath
+  it, one step per detent: the header names the bank, the knobs follow it, and
+  nothing opens. **Click the jog** to open the **bank view** — that bank's
+  page, held on screen — and keep turning to walk from there. The same is true
+  of session view: the jog walks the mixer's Volume, Pan, Send A, Send B and
+  the Master & Send FX door underneath the overview, the indicator at the top
+  right follows, and the click opens the page.
 - **SOUND + CONFIG** — the way in to the track's sound editor (its instrument,
   effects, sound control and config) — is the last entry in the list. It is a
   **door rather than a screen**: landing on it offers *"click to enter"*, and

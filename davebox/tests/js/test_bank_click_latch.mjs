@@ -43,6 +43,7 @@ const { S } = await import('../../ui/ui_state.mjs');
 const { bankCardVisible } = await import('../../ui/ui_render.mjs');
 const sndMod = await import('../../ui/ui_sound.mjs');
 const renderMod = await import('../../ui/ui_render.mjs');
+const pureMod = await import('../../ui/ui_pure.mjs');
 const icc = await import('../../ui/ui_input_cc.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
@@ -144,8 +145,13 @@ step('⭐ SESSION mirrors the grammar: click latches the mixer; the FX door is a
      * is a click-to-confirm bank at the end of the walk, the SOUND + CONFIG
      * idiom. And the walk itself only runs once the page is open. */
     rest(); S.sessionView = true; S.sessMixerLatched = false;
+    /* ⭑ 2026-09-04 (Josh): the turn WALKS THE MODE UNDER THE OVERVIEW too —
+     * the record moves, the indicator follows, nothing latches. */
     cc(14, 1);
-    if (S.sessKnobMode !== 0) throw new Error('a turn from the session overview walked the modes');
+    if (S.sessKnobMode !== 1) throw new Error('a turn from the session overview should walk the mode underneath: ' + S.sessKnobMode);
+    if (S.sessMixerLatched) throw new Error('the rest walk must not latch the mixer');
+    cc(14, 127);
+    if (S.sessKnobMode !== 0) throw new Error('and back');
     click();
     if (!S.sessMixerLatched) throw new Error('session click did not latch the mixer');
     click();                                     /* click on VOLUME: a no-op */
@@ -246,6 +252,27 @@ step('⭐ the session screens DRAW at the gateway — the mode-label crash regre
     if (S.sessMixerLatched) throw new Error('Back did not dismiss');
     globalThis.clear_screen(); render.drawUI();      /* the crash was HERE */
     S.sessionView = false; S.sessKnobMode = 0;
+});
+
+step('⭑ THE WALK UNDER THE TRACK OVERVIEW (Josh, 2026-09-04): a turn at rest moves the RECORDED bank, no card opens, the click then latches ON it; onto SOUND + CONFIG it opens RESTING', () => {
+    rest(); sndMod.soundExit();                    /* an earlier step left a sound menu open; the jog is its there */
+    S.sessionView = false; S.bankCardLatched = false; S.knobTouched = -1;
+    S.activeTrack = 2; S.activeBank = 1; S.trackActiveBank[2] = 1;
+    cc(14, 1); globalThis.tick();
+    if (S.activeBank !== 2 || S.trackActiveBank[2] !== 2) throw new Error('the rest walk did not move the bank: ' + S.activeBank);
+    if (S.bankCardLatched || renderMod.bankCardVisible()) throw new Error('a card opened under the rest walk');
+    cc(3, 127); cc(3, 0); globalThis.tick();
+    if (!S.bankCardLatched || S.activeBank !== 2) throw new Error('the click did not latch ON the walked-to bank: ' + S.activeBank + ' latched=' + S.bankCardLatched);
+    S.bankCardLatched = false;
+    /* walk to SOUND + CONFIG at rest: resting entry, no card */
+    const cyc = pureMod.bankCycleForMode(0);
+    S.activeBank = cyc[cyc.indexOf(11) - 1]; S.trackActiveBank[2] = S.activeBank;   /* 11 = BANK_SOUND */
+    cc(14, 1); globalThis.tick(); globalThis.tick();
+    if (S.activeBank !== 11) throw new Error('did not walk onto SOUND + CONFIG at rest: ' + S.activeBank);
+    if (!sndMod.soundOpen() || sndMod.soundActive()) throw new Error('the sound bank should open RESTING (open, not active)');
+    if (renderMod.bankCardVisible()) throw new Error('the card must not show at rest');
+    cc(14, 127); globalThis.tick();
+    if (sndMod.soundOpen()) throw new Error('walking off at rest did not close the resting mode');
 });
 
 step('⭐⭐ S+C AS THE REMEMBERED BANK, at rest: overview, quiet jog touch, and the click LATCHES', () => {

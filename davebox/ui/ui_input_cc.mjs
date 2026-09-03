@@ -1113,29 +1113,30 @@ function modalDialogUp() {
                      * directly") — the 08-25 picker overlay retires. Safe to
                      * walk now because SOUND + CONFIG is a DOOR: landing on it
                      * shows the prompt card, never the menu, so a walk across
-                     * the strip reads params and nothing else. Gated on the
-                     * bank view being open (2026-09-01: the overview's jog is
-                     * quiet); clamped at both ends like every list.
-                     * applyBankPick is the ONE commit path — the deferred
-                     * BANK_SOUND entry, the sound-mode exit on walk-away, the
-                     * param refresh and the sidecar all live there. */
-                    const cyc = bankCycleFor(S.activeTrack);
-                    /* ⚠ A queued sound-mode entry IS the current position: the
-                     * live mirror only takes the bank when the entry lands (a
-                     * tick later), and a second detent before that must walk
-                     * on from the queued stop, not re-select it. */
-                    const cur = (S.pendingSoundEnterTrack === S.activeTrack)
-                        ? (S.pendingSoundEnterMacros ? BANK_MACROS : BANK_SOUND) : S.activeBank;
-                    const at = cyc.indexOf(cur);
-                    const next = Math.max(0, Math.min(cyc.length - 1,
-                        (at < 0 ? 0 : at) + delta));
-                    if (next !== at) {
-                        S.bankPickerSel = next;
-                        applyBankPick();
-                    } else {
-                        armBankDisplay();   /* a clamped turn still refreshes the window */
-                        forceRedraw();
-                    }
+                     * the strip reads params and nothing else. Clamped at both
+                     * ends like every list. applyBankPick is the ONE commit
+                     * path — the deferred BANK_SOUND entry, the sound-mode exit
+                     * on walk-away, the param refresh and the sidecar all live
+                     * there. */
+                    walkBanks(delta, false);
+                } else if (!S.sessionView && S.moveCoRunTrack < 0) {
+                    /* ⭑ THE WALK UNDER THE OVERVIEW (Josh, 2026-09-04): at rest
+                     * the same turn walks the RECORDED bank underneath — the
+                     * overview stays (THE ONE LAW: no card without bank mode or
+                     * a peek), its header names the new bank, the knobs follow
+                     * it, and a click latches bank mode ON it. A sound bank
+                     * opens RESTING (silent entry). No display window is armed:
+                     * nothing is shown that was not showing. */
+                    walkBanks(delta, true);
+                } else if (S.sessionView && !S.perfViewLocked && S.moveCoRunTrack < 0) {
+                    /* ...and the session twin: the mixer MODE walks under the
+                     * session overview; its mode indicator (the short name at
+                     * the top right, ui_render) follows. */
+                    const _prev = S.sessKnobMode;
+                    S.sessKnobMode = Math.max(0, Math.min(SESS_KNOB_MODES.length - 1,
+                                                          S.sessKnobMode + (delta > 0 ? 1 : -1)));
+                    if (S.sessKnobMode !== _prev) _sessInvalidateAllLevels();
+                    forceRedraw();
                 }
             }
         }
@@ -1156,10 +1157,33 @@ function seqAutoEdit(track, bank, k, altMode, nv, cur) {
     automationParamEdit(track, effectiveClip(track), 'seq', tg.slice(4), String(nv), String(cur));
 }
 
+/* One detent of the bank walk, in bank mode (`rest` false: the card follows,
+ * the display window is armed) or under the overview (`rest` true: nothing
+ * opens — the record moves, the header and knobs follow). */
+function walkBanks(delta, rest) {
+    const cyc = bankCycleFor(S.activeTrack);
+    /* ⚠ A queued sound-mode entry IS the current position: the live mirror
+     * only takes the bank when the entry lands (a tick later), and a second
+     * detent before that must walk on from the queued stop, not re-select it. */
+    const cur = (S.pendingSoundEnterTrack === S.activeTrack)
+        ? (S.pendingSoundEnterMacros ? BANK_MACROS : BANK_SOUND) : S.activeBank;
+    const at = cyc.indexOf(cur);
+    const next = Math.max(0, Math.min(cyc.length - 1, (at < 0 ? 0 : at) + delta));
+    if (next !== at) {
+        S.bankPickerSel = next;
+        applyBankPick(rest);
+    } else if (!rest) {
+        armBankDisplay();   /* a clamped turn still refreshes the window */
+        forceRedraw();
+    }
+}
+
 /* Commit the picker's selection: the same work an unshifted jog step does when
  * it lands on that bank, including the deferred entry for SOUND + CONFIG (the
- * screen has to be re-entered — BANKS[11] draws nothing on its own). */
-export function applyBankPick() {
+ * screen has to be re-entered — BANKS[11] draws nothing on its own).
+ * `rest`: the walk under the overview — no display window, a SILENT sound
+ * entry (it opens resting; the card is not shown). */
+export function applyBankPick(rest) {
     const t = S.activeTrack;
     const cyc = bankCycleFor(t);
     const idx = S.bankPickerSel;
@@ -1176,10 +1200,10 @@ export function applyBankPick() {
             S.lastSentMenuEditValue = null;
             S.pendingSoundEnterTrack = t;
             S.pendingSoundEnterMacros = (next === BANK_MACROS);
-            armBankDisplay();
+            if (rest) S.pendingSoundEnterSilent = true; else armBankDisplay();
         } else if (next !== S.activeBank) {
             soundSetBank(next);
-            armBankDisplay();
+            if (!rest) armBankDisplay();
         }
         S.screenDirty = true;
         return;
@@ -1199,7 +1223,7 @@ export function applyBankPick() {
     if (next === 7) S.allLanesConfirmed = false;
     if (next === 6) S.schLabelFetchLane = 0;
     readBankParams(t, next);
-    armBankDisplay();
+    if (!rest) armBankDisplay();
     writeSidecar();
     forceRedraw();
 }
