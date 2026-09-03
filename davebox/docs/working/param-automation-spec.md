@@ -152,7 +152,7 @@ thread plus a file write with fsync on the JS thread; during a recorded sweep th
 fired one every poll, on a tick that is already the system's constraint. The chunked fetch
 keeps the dirty flag set until a save completes, so waiting loses nothing.
 
-## 2b. MIDI — ⭑RULED (Josh, 2026-09-03 late): NO MIDI Out device; MIDI is a target family
+## 2b. MIDI — ⭑RULED (Josh, 2026-09-03 late): NO MIDI Out device; MIDI is a target family — ✅ BUILT 2026-09-04
 
 Supersedes §6 item 6 (the "8 CC knobs + Aftertouch device"). "The MIDI control we're looking
 for can be slotted into what we've already created."

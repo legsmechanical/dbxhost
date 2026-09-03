@@ -341,6 +341,13 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   target that no longer exists (the module was swapped) reads UNASSIGNED.
   On a track left on MACROS the knobs are the macros from the track overview
   too, and touching one peeks the page. Conductor tracks don't have it either.
+- On a **MIDI track**, SOUND + CONFIG is the standard-controller card:
+  Expression (CC 11), Pan (CC 10), Mod wheel (CC 1), Sustain (CC 64, a switch)
+  on the top row, and the current clip's **Program**, **Bank MSB** and **Bank
+  LSB** on the bottom (`--` = unset; sent when the clip launches and when you
+  change them). The menu is behind the click as always. In session view a MIDI
+  track's Volume is CC 7 and its Pan is CC 10; its knobs do nothing on the
+  Send A and Send B pages.
 - **AUTOMATION** is the last bank: a list of everything automated in the
   current clip — synth and effect parameters, levels, and the pads' aftertouch
   — each with its state (ON, OFF, or SMTH for smooth). The knobs do nothing
@@ -1326,7 +1333,18 @@ knob. A **bank knob** macro moves the bank's setting exactly as the bank's own
 knob does, records and locks like any other, and belongs to the track type —
 a NOTE FX macro reads UNASSIGNED on a drum track. The bank's own page shows
 the same automation: the dot on the cell, Mute + touch and Delete + touch on
-the knob, a blinking ring, and a held step plus a turn locks it there too. The assignments belong to the project (they travel with it) and to the
+the knob, a blinking ring, and a held step plus a turn locks it there too.
+
+**MIDI targets.** Every track can point a macro at **Aftertouch** or **Pitch
+Bend** (pick **MIDI** in the target list); a MIDI track can also point one at
+any **MIDI CC** (pick **MIDI CC**, then the number — the standard names are
+shown). They record, lock, mute and clear like any parameter, and the
+AUTOMATION list names them. Pitch bend is a bipolar dial that **springs back
+to centre** when you let go of the knob, on a short curve (recorded, if you are
+recording); **Shift + turn** latches it, and the next plain touch-and-release
+lets it spring. A CC's value is remembered per track across relaunches.
+
+The assignments belong to the project (they travel with it) and to the
 track's chain patches (a saved patch carries them; loading one brings them
 back), and a project made before this bank had one inherits the knob mappings
 it had set under Sound Control.

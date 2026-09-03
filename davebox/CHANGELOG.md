@@ -35,6 +35,13 @@ the section into a versioned heading at release time.
   lane from /16 to ×16, its loop following) — or Clear clip.
   Delete + click on the card clears the clip. Every operation is one undo.
   Smooth/Stepped moved here from the module editor.
+- **MIDI is a macro target.** Any track can put Aftertouch or Pitch Bend on a
+  macro; a MIDI track can put any CC on one, with the standard names shown.
+  They record, lock, mute and clear like any parameter. Pitch bend springs
+  back to centre when you let go, and Shift + turn latches it. A MIDI track's
+  SOUND + CONFIG card is Expression, Pan, Mod, Sustain and the clip's Program
+  and Bank; its session strip is CC 7 and CC 10. Pad pressure now records as
+  channel aftertouch in the automation store.
 - **dAVEBOx's own bank settings are automatable.** Gate Time, the delay
   settings, the arp settings and the rest of the bank knobs offered as macro
   targets now record, lock, mute and clear like any parameter, and the

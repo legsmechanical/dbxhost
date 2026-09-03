@@ -199,7 +199,10 @@ Proposed build order once lifted (drafted for Josh's review, 2026-09-02 night):
    build next (Josh, midday): it is what makes an empty-step p-lock a pure automation point.
 6. **P5 MIDI Out device** (Schwung + MIDI routes only), then **P7 bake/export**, then **P8**.
 
-**P5 — MIDI Out device** (§0.4).
+**P5 — MIDI Out device** (§0.4). ⚠ SUPERSEDED by spec §2b (Josh, 2026-09-03: no device; MIDI is a
+target family) — ✅ BUILT 2026-09-04: `pb` target + 14-bit emit, `tN_pa_midi_out`, per-clip Program/Bank,
+channel AT → the store; the `midi` macro kind (cc on MIDI tracks; at/pb everywhere), the MIDI
+track's SOUND + CONFIG card, the session strip as CC 7/10, the pitch-bend spring + Shift latch.
 
 **P6 — Bank 6 → read-only overview.** Replace the latched screen (gate ui_render.mjs:1836,
 block :1822-1955; non-latched fallthrough is :2189); readback rides the bulk GET (never
