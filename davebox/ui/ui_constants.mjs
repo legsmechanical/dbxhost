@@ -570,6 +570,50 @@ export function seqAutoTargetForKnob(track, bank, k, altMode) {
     const key = seqAutoKeyFor(bank, k, alt);
     return key ? 'seq:' + track + ':' + key : null;
 }
+/* ---- THE MIDI TARGET FAMILY (⭑RULED Josh 2026-09-03, spec §2b) -------------
+ * No MIDI Out device: MIDI is a target family. `cc:<n>` on MIDI tracks only;
+ * `at` (channel aftertouch) and `pb` (pitch bend) on every track type. The
+ * DSP emits them itself (pa_emit_midi); a knob turn sends now through
+ * `tN_pa_midi_out`. Values: 7-bit for cc/at, the store's 14 bits for pb
+ * (centre 8192 = rest). Standard names where GM has one. */
+export const MIDI_CC_NAMES = {
+    0: 'Bank MSB', 1: 'Mod Wheel', 2: 'Breath', 5: 'Porta Time', 7: 'Volume', 10: 'Pan',
+    11: 'Expression', 32: 'Bank LSB', 64: 'Sustain', 65: 'Portamento', 66: 'Sostenuto',
+    67: 'Soft', 71: 'Resonance', 72: 'Release', 73: 'Attack', 74: 'Cutoff', 75: 'Decay',
+    76: 'Vib Rate', 77: 'Vib Depth', 78: 'Vib Delay', 91: 'Reverb', 93: 'Chorus',
+    120: 'All Sound Off', 121: 'Reset Ctrls', 123: 'All Notes Off',
+};
+const MIDI_CC_SHORT = { 1: 'Mod', 7: 'Vol', 10: 'Pan', 11: 'Expr', 64: 'Sust', 71: 'Reso',
+                        74: 'Cutf', 91: 'Rev', 93: 'Chor', 0: 'BkMSB', 32: 'BkLSB', 2: 'Brth' };
+export const PB_CENTRE = 8192;
+export function midiTargetIsMidi(t) { return t === 'at' || t === 'pb' || /^cc:\d+$/.test(String(t || '')); }
+export function midiTargetCC(t) { const m = /^cc:(\d+)$/.exec(String(t || '')); return m ? (parseInt(m[1], 10) | 0) : -1; }
+/* Full name for a list: "CC 74 Cutoff", "Aftertouch", "Pitch Bend". */
+export function midiTargetName(t) {
+    if (t === 'at') return 'Aftertouch';
+    if (t === 'pb') return 'Pitch Bend';
+    const n = midiTargetCC(t);
+    return n < 0 ? String(t) : ('CC ' + n + (MIDI_CC_NAMES[n] ? ' ' + MIDI_CC_NAMES[n] : ''));
+}
+/* Cell label (≤5 chars): the short standard name, else CC<n>; AT; Bend. */
+export function midiTargetShort(t) {
+    if (t === 'at') return 'AT';
+    if (t === 'pb') return 'Bend';
+    const n = midiTargetCC(t);
+    return n < 0 ? '?' : (MIDI_CC_SHORT[n] || ('CC' + n));
+}
+export function midiTargetMax(t) { return t === 'pb' ? 16383 : 127; }
+/* A MIDI knob's value before anyone touched it: the wire's conventions. */
+export function midiTargetDefault(t) {
+    if (t === 'pb') return PB_CENTRE;
+    const n = midiTargetCC(t);
+    if (n === 7) return 100;
+    if (n === 10) return 64;
+    if (n === 11) return 127;
+    return 0;
+}
+/* The wire value as the store's 14 bits. */
+export function midiTargetTo14(t, v) { return t === 'pb' ? (v | 0) : Math.round(((v | 0) * 16383) / 127); }
 /* The DSP key a bank macro automates as, or null when it is not on the list. */
 export function seqAutoKeyFor(bank, k, alt) {
     for (const key in SEQ_AUTO_TARGETS) {

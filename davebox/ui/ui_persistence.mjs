@@ -213,6 +213,10 @@ export function writeSidecar() {
          * ui_state.trackMacros). Additive on v:9: absent → unseeded, and
          * ui_sound migrates the chain's own knob_N assignments on first use. */
         mac: S.trackMacros.map(function(m) { return m ? m.slice() : null; }),
+        /* The MIDI knob values per track (target -> value) and the per-clip
+         * Program / Bank triples; additive on v:9 (spec §2b, 2026-09-03). */
+        mcv: S.trackMidiVals.map(function(m) { return Object.assign({}, m); }),
+        cpg: S.clipProgram.map(function(c) { return c.map(function(p) { return p.slice(); }); }),
         /* Which user preset each sound-mode component is on (ui_sound's
          * record, live in S.presetRec) — {name, path, hash, mod} keyed
          * 'slot:comp'. Additive field on v:9, like pchr: absent in older

@@ -118,12 +118,17 @@ draw();
  * strip, and nothing else on this screen has that signature. */
 const countFaders = () => fills.filter((f) => f.w === 8 && f.h === 1 && f.y === 14).length;
 const faderCount = countFaders();
-if (faderCount === 6) ok('volume row draws 6 faders — one per track with a mixer position');
-else bad('volume row draws 6 faders', `drew ${faderCount} (tracks 5=EXT and 6=no-level must be blank)`);
+/* 7 since 2026-09-03 (spec §2b): a MIDI (EXT) track HAS a volume strip — CC 7 —
+ * so track 5 draws; only track 6 (no mixer position) stays blank. */
+if (faderCount === 7) ok('volume row draws 7 faders — one per track with a mixer position (the MIDI track\'s is CC 7)');
+else bad('volume row draws 7 faders', `drew ${faderCount} (track 6=no-level must be blank; the EXT track draws its CC 7)`);
 
 /* 3. …and that this is really position-driven: give the EXT track a position
  *    and the count must rise. Without this, "6" could be any constant. */
 S.trackRoute[4] = 0; S.sessVolSlots[4] = 4; S.sessVolLevel[4] = 0.7;
+/* ⚠ Track 5 was the EXT track and already drew (CC 7); the control below needs a
+ * track that was BLANK — track 6 gains a position instead. */
+S.trackRoute[5] = 0; S.sessVolSlots[5] = 4; S.sessVolLevel[5] = 0.7;
 draw();
 if (countFaders() === faderCount + 1) ok('a track gaining a mixer position gains a fader');
 else bad('a track gaining a mixer position gains a fader', `${faderCount} -> ${countFaders()}`);

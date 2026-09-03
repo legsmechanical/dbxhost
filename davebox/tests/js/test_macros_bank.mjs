@@ -146,7 +146,7 @@ const shift = (on) => cc(49, on ? 127 : 0);
 const draw  = () => { globalThis.clear_screen(); snd.soundRender(); };
 /* Ticks are where every engine read happens — nothing about this feature is
  * observable without running them. */
-const ticks = (n) => { for (let i = 0; i < n; i++) { snd.soundTick(); bridge.tickPrefetch(); auto.automationTick(); } };
+const ticks = (n) => { for (let i = 0; i < n; i++) { GS.clockMs = (GS.clockMs || 0) + 10.6; snd.soundTick(); bridge.tickPrefetch(); auto.automationTick(); } };   /* the clock advances as ui_tick's would */
 
 function enterTrack(t) {
     GS.sessionView = false;
@@ -501,6 +501,70 @@ step('⭑ a bank target belongs to a PAD MODE: on a drum track NOTE FX is not of
     const d = M().drawn[6];
     assert(/UNASSIGNED/.test(d.name) && d.text === '--', 'off-mode bank macro reads UNASSIGNED, got ' + JSON.stringify(d));
     GS.trackPadMode[2] = 0;
+});
+
+/* ---- THE MIDI KIND (spec §2b, 2026-09-03): cc on a MIDI track, at/pb everywhere -- */
+step('⭑ on a MIDI track the picker offers MIDI CC and MIDI (Aftertouch / Pitch Bend), no modules, no Levels; a Schwung track gets MIDI too', () => {
+    snd.soundExit(); GS.trackRoute[6] = 2; GS.trackChannel[6] = 3; GS.activeTrack = 6; GS.trackMacros[6] = null;
+    snd.soundEnter(6, 6); ticks(3); snd.soundSetBank(BANK_MACROS); ticks(3);
+    const names = snd.soundKnobTargetsForTest().map(t => t.name);
+    assert(names.indexOf('MIDI CC') >= 0 && names.indexOf('MIDI') >= 0, 'MIDI targets, got ' + JSON.stringify(names));
+    assert(names.indexOf('Levels') < 0 && names.indexOf('nusaw') < 0, 'no chain rows on a MIDI track');
+    snd.soundQueueActionForTest({ t: 'knobparam', target: 'midicc' }); ticks(1);
+    const rows = snd.soundKnobParamsForTest();
+    assert(rows.length === 128 && rows[74].label === 'CC 74 Cutoff' && rows[7].label === 'CC 7 Volume', 'the 128 CCs with their names, got ' + JSON.stringify(rows.slice(73, 76)));
+    snd.soundQueueActionForTest({ t: 'knobparam', target: 'midi' }); ticks(1);
+    assert(snd.soundKnobParamsForTest().map(p => p.label).join(',') === 'Aftertouch,Pitch Bend', 'MIDI: at, pb');
+    snd.soundSetViewForTest(VIEW_MACROS);
+});
+step('⭑ a CC macro: the turn sends NOW through the DSP (tN_pa_midi_out, 14 bits) and the owner hears a raw cc:74 target; the value persists', () => {
+    hostSets.length = 0; modSets.length = 0; sidecars = [];
+    GS.trackMidiVals[6] = {};
+    assignVia(0, 'MIDI CC', 'CC 74 Cutoff');
+    back(); ticks(2);
+    assert(GS.trackMacros[6][0].kind === 'midi' && GS.trackMacros[6][0].target === 'cc:74', 'K1 = cc:74');
+    const d = M().drawn[0];
+    assert(d.kind === 'arc' && d.label === 'Cutf' && d.text === '0', 'drawn as a CC dial, got ' + JSON.stringify(d));
+    GS.playing = true; auto.automationNoteWrite();
+    touch(0, true); turnBy(0, 20); ticks(2);           /* 10 units */
+    assert(hostSets.some(x => x === 't6_pa_midi_out=cc:74 ' + Math.round(10 * 16383 / 127)), 'sent 10 as 14 bits, got ' + JSON.stringify(hostSets.filter(x => x.indexOf('midi_out') >= 0)));
+    assert(modSets.some(x => x.startsWith('t6_pa_live=cc:74 ')), 'the owner heard the raw target (pa_live), got ' + JSON.stringify(modSets.slice(0, 6)));
+    touch(0, false); ticks(3); GS.playing = false;
+    assert(GS.trackMidiVals[6]['cc:74'] === 10, 'value kept');
+    const mac = lastMac();
+    assert(sidecars.length && JSON.parse(sidecars[sidecars.length - 1].body).mcv[6]['cc:74'] === 10, 'persisted in the sidecar on release');
+});
+step('⭑ PITCH BEND springs back to centre on release (ease-out, sent at tick rate); Shift + turn LATCHES', () => {
+    hostSets.length = 0;
+    assignVia(1, 'MIDI', 'Pitch Bend');
+    back(); ticks(2);
+    assert(M().drawn[1].kind === 'arcbip' && M().drawn[1].text === '0%', 'a bipolar dial at centre, got ' + JSON.stringify(M().drawn[1]));
+    touch(1, true); turnBy(1, 20); ticks(2);           /* +10 steps of 64 */
+    assert(GS.trackMidiVals[6]['pb'] === 8192 + 640, 'bent, got ' + GS.trackMidiVals[6]['pb']);
+    touch(1, false);
+    assert(GS.pbSpring && GS.pbSpring.from === 8192 + 640, 'the spring is armed on release');
+    ticks(30);                                          /* > 200 ms at the test cadence */
+    assert(GS.trackMidiVals[6]['pb'] === 8192 && !GS.pbSpring, 'back at centre, got ' + GS.trackMidiVals[6]['pb']);
+    assert(hostSets.filter(x => x.startsWith('t6_pa_midi_out=pb ')).length >= 3, 'the return was sent along a curve, not jumped');
+    /* Shift + turn: latched */
+    shift(true); touch(1, true); turnBy(1, 20); ticks(2); touch(1, false); shift(false); ticks(30);
+    assert(GS.trackMidiVals[6]['pb'] === 8192 + 640 && GS.pbLatched[6] === true, 'latched, no spring: ' + GS.trackMidiVals[6]['pb']);
+    /* the next plain touch-release springs it */
+    touch(1, true); touch(1, false); ticks(30);
+    assert(GS.trackMidiVals[6]['pb'] === 8192 && GS.pbLatched[6] === false, 'released by a plain touch');
+});
+step('⭑ the MIDI track\'s SOUND + CONFIG card: Expr / Pan / Mod / Sustain (a switch) and the clip\'s Program / Bank; Program writes tN_cC_program', () => {
+    snd.soundSetBank(BANK_SOUND); ticks(2);
+    const cells = snd.soundLevelCellsForTest();
+    assert(cells[0].label === 'Expr' && cells[1].kind === 'arcbip' && cells[3].kind === 'pill' && cells[4].label === 'Prog' && cells[4].text === '--', 'the card, got ' + JSON.stringify(cells.map(c => c.label + ':' + c.kind + ':' + c.text)));
+    hostSets.length = 0;
+    turnBy(3, 1); ticks(1);
+    assert(GS.trackMidiVals[6]['cc:64'] === 127 && hostSets.some(x => x === 't6_pa_midi_out=cc:64 16383'), 'Sustain switched ON');
+    turnBy(4, 6); ticks(1);
+    assert(GS.clipProgram[6][GS.trackActiveClip[6]][0] === 5 && hostSets.some(x => x === 't6_c' + GS.trackActiveClip[6] + '_program=5'), 'Program 5 written to the clip, got ' + JSON.stringify(hostSets));
+    turnBy(1, -10); ticks(1);
+    assert(GS.trackMidiVals[6]['cc:10'] === 54, 'Pan CC 10 from its 64 default');
+    snd.soundExit(); GS.trackRoute[6] = 0; GS.activeTrack = 2;
 });
 
 /* ---- the walk, Back, the rest peek --------------------------------------- */

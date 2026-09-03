@@ -777,6 +777,17 @@ export const S = {
     trackMacros: new Array(8).fill(null),
     /* The AUTOMATION bank's menu state (ui_automation_bank owns it; null = the plain card). */
     autoBank: null,
+    /* THE MIDI KNOB VALUES (spec §2b): per track, target -> last value sent
+     * (7-bit for cc:<n> / at, 14-bit for pb). CCs have no readback, so this
+     * is the knob's truth across relaunches (sidecar `mcv`). */
+    trackMidiVals: Array.from({ length: 8 }, () => ({})),
+    /* Per-clip Program / Bank MSB / Bank LSB (-1 = unset), the JS mirror of the
+     * DSP's fields (sidecar `cpg`); the DSP sends them on launch. */
+    clipProgram: Array.from({ length: 8 }, () => Array.from({ length: 16 }, () => [-1, -1, -1])),
+    /* Pitch bend: latched (Shift + turn) per track — no spring on release; and
+     * the spring in flight { track, from, t0 } or null. */
+    pbLatched: new Array(8).fill(false),
+    pbSpring: null,
     /* Bank picker (Shift+jog in track view, 2026-08-25). Shift+jog used to step
      * the active TRACK; that meaning moved to Shift + the bottom pad row, and
      * the jog now browses the current track's banks in the kit's list overlay.

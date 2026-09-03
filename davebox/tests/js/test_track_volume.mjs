@@ -39,7 +39,8 @@ globalThis.host_file_exists = () => false;
 globalThis.host_write_file = () => true;
 globalThis.host_ensure_dir = () => true;
 globalThis.host_remove_dir = () => true;
-globalThis.host_module_set_param = () => {};
+let modSets = [];
+globalThis.host_module_set_param = (k, v) => { modSets.push(k + '=' + v); };
 globalThis.host_module_get_param = () => '';
 globalThis.host_edit_cc_block = () => {};
 globalThis.clear_screen = () => {};
@@ -268,25 +269,31 @@ step('⭑ ...and OUTSIDE co-run the very same gesture is the active track again'
 
 step('⭑ a MIDI track sends CC 7 on its channel (standard MIDI volume)', () => {
     S.trackRoute[2] = 2; S.trackChannel[2] = 5;
-    setCalls = []; extSends = [];
+    setCalls = []; extSends = []; modSets = [];
+    S.trackMidiVals[2] = {};
     shift(true); vol(3); globalThis.tick(); shift(false); globalThis.tick();
     if (volWrites().length) throw new Error('EXT track wrote an engine level');
-    const cc7 = extSends.filter(p => p[1] === (0xB0 | 4) && p[2] === 7);
-    if (cc7.length !== 1) throw new Error('CC7 sends: ' + JSON.stringify(extSends));
-    if (cc7[0][3] !== 103) throw new Error('expected 100+3=103, sent ' + cc7[0][3]);
+    /* ⚠ 2026-09-03 (spec §2b): CC 7 goes out through the DSP's MIDI target
+     * path (tN_pa_midi_out, the store's 14 bits), from davebox's ONE MIDI knob
+     * value — shared with the session strip and a macro — not straight to
+     * the port from here. 103/127 → 13287. */
+    const cc7 = modSets.filter(x => x.startsWith('t2_pa_midi_out=cc:7 '));
+    if (cc7.length !== 1) throw new Error('CC7 sends: ' + JSON.stringify(modSets));
+    if (cc7[0] !== 't2_pa_midi_out=cc:7 13287') throw new Error('expected 100+3=103 (round(103*16383/127) = 13287), sent ' + cc7[0]);
+    if (S.trackMidiVals[2]['cc:7'] !== 103) throw new Error('the shared value did not follow: ' + JSON.stringify(S.trackMidiVals[2]));
     /* clamp: spin far past the top */
-    extSends = [];
+    modSets = [];
     shift(true); for (let i = 0; i < 8; i++) vol(9); globalThis.tick(); shift(false); globalThis.tick();
-    const last = extSends.filter(p => p[2] === 7).pop();
-    if (!last || last[3] !== 127) throw new Error('no clamp at 127: ' + JSON.stringify(last));
+    const last = modSets.filter(x => x.startsWith('t2_pa_midi_out=cc:7 ')).pop();
+    if (!last || last !== 't2_pa_midi_out=cc:7 16383') throw new Error('no clamp at 127: ' + JSON.stringify(last));
     S.trackRoute[2] = 0; S.trackChannel[2] = 1;
 });
 
 step('⚠ a MIDI-to-Track follower says NO VOLUME (its output never reaches the port)', () => {
     S.trackRoute[2] = 2; S.trackMidiTo[2] = 3;
-    extSends = [];
+    extSends = []; modSets = [];
     shift(true); vol(1); globalThis.tick(); shift(false); globalThis.tick();
-    if (extSends.some(p => p[2] === 7)) throw new Error('follower sent CC7');
+    if (modSets.some(x => x.indexOf('pa_midi_out=cc:7') >= 0)) throw new Error('follower sent CC7');
     if (!S.actionPopupLines.some(l => /NO VOLUME/.test(l)))
         throw new Error('no popup: ' + JSON.stringify(S.actionPopupLines));
     S.trackRoute[2] = 0; S.trackMidiTo[2] = 0;

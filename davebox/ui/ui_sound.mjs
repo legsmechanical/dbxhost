@@ -46,6 +46,7 @@ import { bankCardVisible, sessMixerVisible, bankHeadingPrefix, BANK_HDR_TEXT_W }
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
 import { instrOptions, fmtInstr, INSTR_SCHWUNG, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
          BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS,
+         midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD } from './ui_constants.mjs';
 import { applyTrackConfig, applyBankParam, readBankParams } from './ui_dsp_bridge.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
@@ -688,6 +689,8 @@ const S = {
     macBanksRead: false,        /* bank targets' values re-read this seed */
     macTurnMs: [0, 0, 0, 0, 0, 0, 0, 0],   /* last turn per knob, for the poll's hand rule */
     levelPoll: 0,               /* the SOUND + CONFIG card's round-robin re-read cursor */
+    midiValsDirty: false,       /* a MIDI knob moved: sidecar write owed (on release) */
+    pbShiftTurned: false,       /* this touch turned the bend with Shift: latch on release */
     bankHome: BANK_SOUND,       /* which bank identity the open mode carries */
     asnQuick: false,            /* opened by Shift+touch: the commit lands on the page */
 
@@ -798,6 +801,7 @@ export function soundValueForTest(key) { return S.values[key]; }
  * the real path rather than a copy of it. */
 export function soundKnobTargetsForTest() { return knobTargetList(); }
 export function soundKnobParamsForTest() { return S.knobParams; }
+export function soundLevelCellsForTest() { return midiTrack() ? midiMixCells() : levelCells(); }
 export function soundMacroMergeForTest() { macroMergeAfterPatch(); }
 /* Drives the view directly so a Back edge can be exercised without walking the
  * whole entry gesture. ⚠ Test-only: the real transitions go through the
@@ -1365,7 +1369,74 @@ function levelPageSpec(idx) {
  * editor — the bank card, the block list, the settings — for a track (a global
  * bus has no track and keeps its own rows). */
 function levelsActive() {
-    return !!(S.active && S.view !== VIEW_EDIT && !soundIsGlobal() && !macrosActive());
+    return !!(S.active && S.view !== VIEW_EDIT && !soundIsGlobal() && !macrosActive() && !midiTrack());
+}
+
+/* ── A MIDI TRACK'S SOUND + CONFIG CARD (spec §2b): the standard controllers
+ * and the clip's Program / Bank. No chain, no levels. K1 Expression, K2 Pan,
+ * K3 Mod, K4 Sustain (a switch); K5 Program, K6 Bank MSB, K7 Bank LSB — per
+ * CLIP, `--` = unset, sent on launch and when changed (tN_cC_program…). The
+ * CC knobs are automation targets like a macro's. */
+const MIDI_MIX_SPECS = [
+    { target: 'cc:11', label: 'Expr',  name: 'Expression' },
+    { target: 'cc:10', label: 'Pan',   name: 'Pan', widget: 'arcbip' },
+    { target: 'cc:1',  label: 'Mod',   name: 'Mod Wheel' },
+    { target: 'cc:64', label: 'Sust',  name: 'Sustain', widget: 'pill' },
+    { clip: 0, key: 'program',  label: 'Prog',  name: 'Program' },
+    { clip: 1, key: 'bank_msb', label: 'BkMSB', name: 'Bank MSB' },
+    { clip: 2, key: 'bank_lsb', label: 'BkLSB', name: 'Bank LSB' },
+    null,
+];
+function midiTrack() { return !!(S.active && !soundIsGlobal() && S.track >= 0 && GS.trackRoute[S.track] === 2); }
+function midiMixActive() { return midiTrack() && S.view !== VIEW_EDIT && !macrosActive(); }
+function midiCellFor(target, v, spec) {
+    const cell = { label: (spec && spec.label) || midiTargetShort(target),
+                   name: ((spec && spec.name) || midiTargetName(target)).toUpperCase(),
+                   text: target === 'pb' ? pbText(v) : String(v) };
+    const w = spec && spec.widget;
+    if (target === 'pb') { cell.kind = 'arcbip'; cell.signed = Math.max(-1, Math.min(1, (v - PB_CENTRE) / PB_CENTRE)); }
+    else if (w === 'pill') { cell.kind = 'pill'; cell.norm = v >= 64 ? 1 : 0; cell.text = v >= 64 ? 'ON' : 'OFF'; }
+    else if (w === 'arcbip') { cell.kind = 'arcbip'; cell.signed = Math.max(-1, Math.min(1, (v - 64) / 64)); }
+    else { cell.kind = 'arc'; cell.norm = Math.max(0, Math.min(1, v / 127)); }
+    return cell;
+}
+function midiMixCells() {
+    const t = S.track, c = effectiveClip(t);
+    const cells = [];
+    for (let i = 0; i < 8; i++) {
+        const sp = MIDI_MIX_SPECS[i];
+        if (!sp) { cells.push({ kind: 'blank', label: '' }); continue; }
+        if (sp.target) {
+            const cell = midiCellFor(sp.target, midiVal(t, sp.target), sp);
+            const st = automationStateFor(t, c, sp.target);
+            if (st) cell.auto = st.active ? 'auto' : 'auto-off';
+            cells.push(cell);
+        } else {
+            const p = GS.clipProgram[t][c][sp.clip];
+            cells.push({ kind: 'valsq', label: sp.label, name: sp.name.toUpperCase(), text: p < 0 ? '--' : String(p) });
+        }
+    }
+    return cells;
+}
+function onMidiMixTurn(idx, delta) {
+    const sp = MIDI_MIX_SPECS[idx];
+    if (!sp) return;
+    const t = S.track, c = effectiveClip(t);
+    if (sp.target) {
+        const cur = midiVal(t, sp.target);
+        let nv;
+        if (sp.widget === 'pill') nv = delta > 0 ? 127 : 0;          /* a switch */
+        else nv = Math.max(0, Math.min(127, cur + delta));
+        if (nv !== cur) { midiSendValue(t, sp.target, nv, cur, true); S.dirty = true; }
+        return;
+    }
+    const cur = GS.clipProgram[t][c][sp.clip];
+    const nv = Math.max(-1, Math.min(127, cur + delta));
+    if (nv === cur) return;
+    GS.clipProgram[t][c][sp.clip] = nv;
+    host_module_set_param('t' + t + '_c' + c + '_' + sp.key, String(nv));
+    S.midiValsDirty = true;
+    S.dirty = true;
 }
 function levelFullKey(idx) { return levelComp() + ':' + LEVEL_KNOB_SPECS[idx].key; }
 function levelSeedKey() { return S.slot + '/' + (S.bus ? S.bus.id : 'slot'); }
@@ -2577,6 +2648,7 @@ function asnFromMacro(m) {
     if (!m) return { target: '', param: '' };
     if (m.kind === 'level') return { target: LEVEL_TARGET, param: m.key };
     if (m.kind === 'bank') return { target: 'bank:' + m.bank, param: 'k' + m.k + (m.alt ? ':' + m.alt : '') };
+    if (m.kind === 'midi') return { target: midiTargetCC(m.target) >= 0 ? 'midicc' : 'midi', param: m.target };
     return { target: m.comp, param: m.key };
 }
 
@@ -2611,15 +2683,20 @@ function knobTargetList() {
         const name = engineGet(S.slot, id, 'name') || mod;
         targets.push({ id, name: String(name), slot: label });
     };
+    const midiTrack = S.track >= 0 && GS.trackRoute[S.track] === 2;
     if (S.bus) {
         /* A Move bus: its insert FX are the components (`move_fx:N:fxK`). */
         for (const n of BUS_BLOCKS) probe(S.bus.prefix + 'fx' + n, 'FX' + n);
-    } else {
+    } else if (!midiTrack) {
         probe('midi_fx1', 'MIDI FX');
         probe('synth', 'Synth');
         for (let i = 1; i <= 4; i++) probe('fx' + i, 'FX' + i);
     }
     const rows = qualifyDuplicates(targets);
+    /* THE MIDI TARGETS (spec §2b): CC on a MIDI track; aftertouch and pitch
+     * bend on every track. */
+    if (midiTrack) rows.push({ id: 'midicc', name: 'MIDI CC' });
+    rows.push({ id: 'midi', name: 'MIDI' });
     /* davebox's own BANKS (the allow-listed knobs), for this pad mode, then
      * the mixer levels: target KINDS of their own (spec §2; Josh 2026-09-03). */
     if (S.track >= 0) {
@@ -2630,7 +2707,7 @@ function knobTargetList() {
             rows.push({ id: 'bank:' + e.bank, name: BANKS[e.bank].name });
         }
     }
-    rows.push({ id: LEVEL_TARGET, name: 'Levels' });
+    if (!midiTrack) rows.push({ id: LEVEL_TARGET, name: 'Levels' });   /* a MIDI track has no chain */
     return rows;
 }
 
@@ -2677,6 +2754,15 @@ function knobParamList(target) {
     if (target === LEVEL_TARGET) {
         for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++)
             if (levelKnobSpec(i)) params.push({ key: LEVEL_KNOB_SPECS[i].key, label: LEVEL_KNOB_SPECS[i].name });
+        return params;
+    }
+    if (target === 'midicc') {
+        for (let n = 0; n < 128; n++) params.push({ key: 'cc:' + n, label: midiTargetName('cc:' + n) });
+        return params;
+    }
+    if (target === 'midi') {
+        params.push({ key: 'at', label: 'Aftertouch' });
+        params.push({ key: 'pb', label: 'Pitch Bend' });
         return params;
     }
     if (target.indexOf('bank:') === 0) {
@@ -2790,6 +2876,7 @@ function compParamLabel(target, param) {
         const meta = m ? bankMacroMeta(m) : null;
         return (BANK_SHORT[m ? m.bank : -1] || 'Bank') + '>' + (meta ? meta.full : param);
     }
+    if (target === 'midicc' || target === 'midi') return 'MIDI>' + midiTargetName(param);
     return compShort(target) + '>' + param;
 }
 
@@ -2803,6 +2890,7 @@ function commitKnobAssignment(target, param) {
     const store = GS.trackMacros[t] || (GS.trackMacros[t] = new Array(8).fill(null));
     let m = null;
     if (target === LEVEL_TARGET && param) m = { kind: 'level', key: param };
+    else if ((target === 'midicc' || target === 'midi') && midiTargetIsMidi(param)) m = { kind: 'midi', target: param };
     else if (target && target.indexOf('bank:') === 0) m = bankMacroFromAsn(target, param);
     else if (target && param) m = { kind: 'chain', comp: target, key: param };
     store[i] = m;
@@ -3163,17 +3251,68 @@ function macroFullKey(m) {
     if (m.kind === 'level') return levelComp() + ':' + m.key;
     return m.comp + ':' + m.key;
 }
+/* ── THE MIDI KIND (spec §2b, 2026-09-03): `{kind:'midi', target}` with target
+ * `cc:<n>` (MIDI tracks only) / `at` / `pb` (every route). The value is
+ * davebox's (GS.trackMidiVals — no readback on the wire); a turn sends NOW
+ * through tN_pa_midi_out and is heard by the owner as a raw-target edit. */
+export function midiVal(t, target) {
+    const v = GS.trackMidiVals[t] && GS.trackMidiVals[t][target];
+    return (typeof v === 'number') ? v : midiTargetDefault(target);
+}
+function midiTargetOnRoute(target, t) {
+    if (midiTargetCC(target) >= 0) return GS.trackRoute[t] === 2;
+    return midiTargetIsMidi(target);
+}
+/* Send a MIDI knob's value now and remember it; `edit` also tells the owner
+ * (lock / take / rest), which every knob on a bank does. */
+export function midiSendValue(t, target, nv, cur, edit) {
+    const max = midiTargetMax(target);
+    nv = Math.max(0, Math.min(max, nv | 0));
+    if (!GS.trackMidiVals[t]) GS.trackMidiVals[t] = {};
+    GS.trackMidiVals[t][target] = nv;
+    host_module_set_param('t' + t + '_pa_midi_out', target + ' ' + midiTargetTo14(target, nv));
+    if (edit) automationParamEdit(t, effectiveClip(t), 'midi', target, String(nv), String(cur == null ? nv : cur));
+    S.midiValsDirty = true;
+    GS.screenDirty = true;
+}
+function pbText(v) { const p = Math.round(((v - PB_CENTRE) / PB_CENTRE) * 100); return (p > 0 ? '+' : '') + p + '%'; }
+const PB_SPRING_MS = 200;
+/* The pitch-bend SPRING (Josh: "snap back automatically on a reasonable
+ * curve"): from the release value to centre over PB_SPRING_MS, ease-out
+ * cubic, sent at tick rate — and recorded if Record is on, as a wheel's
+ * return would be. Shift + turn LATCHES (pbLatched): no spring until the next
+ * plain touch-release. Runs from soundTick, resting included. */
+function pbSpringTick() {
+    const sp = GS.pbSpring;
+    if (!sp) return;
+    const k = Math.min(1, (GS.clockMs - sp.t0) / PB_SPRING_MS);
+    const e = 1 - Math.pow(1 - k, 3);
+    const nv = Math.round(sp.from + (PB_CENTRE - sp.from) * e);
+    const cur = midiVal(sp.track, 'pb');
+    if (nv !== cur) midiSendValue(sp.track, 'pb', nv, cur, true);
+    if (k >= 1) GS.pbSpring = null;
+}
+function pbRelease(t) {
+    if (S.pbShiftTurned) { GS.pbLatched[t] = true; S.pbShiftTurned = false; return; }
+    GS.pbLatched[t] = false;
+    const cur = midiVal(t, 'pb');
+    if (cur !== PB_CENTRE) GS.pbSpring = { track: t, from: cur, t0: GS.clockMs };
+}
+
 /* A macro's AUTOMATION target string — the store's own key. A chain or level
- * macro is `<slot>:<comp>:<key>`; a bank macro is `seq:<track>:<dspKey>`. */
+ * macro is `<slot>:<comp>:<key>`; a bank macro is `seq:<track>:<dspKey>`; a
+ * MIDI macro is its raw target. */
 function macroAutoTarget(m, track) {
     const t = (track == null) ? S.track : track;
     if (m.kind === 'bank') { const key = seqAutoKeyFor(m.bank, m.k, m.alt); return key ? 'seq:' + t + ':' + key : null; }
+    if (m.kind === 'midi') return m.target;
     return S.slot + ':' + macroFullKey(m);
 }
 /* ...and the (slot, fullKey) pair the owner's gesture API takes for it. */
 function macroAutoRef(m, track) {
     const t = (track == null) ? S.track : track;
     if (m.kind === 'bank') { const key = seqAutoKeyFor(m.bank, m.k, m.alt); return key ? { slot: 'seq', fullKey: t + ':' + key } : null; }
+    if (m.kind === 'midi') return { slot: 'midi', fullKey: m.target };
     return { slot: S.slot, fullKey: macroFullKey(m) };
 }
 /* A knob the page can address: assigned, and present on this route / pad mode. */
@@ -3181,6 +3320,7 @@ function macroLive(m) {
     if (!m) return false;
     if (m.kind === 'level') return !!macroLevelSpec(m);
     if (m.kind === 'bank') return !!bankMacroMeta(m);
+    if (m.kind === 'midi') return midiTargetOnRoute(m.target, S.track);
     return true;
 }
 
@@ -3450,6 +3590,7 @@ function macroTurn(idx, delta) {
     const m = macroTarget(idx);
     if (!m) return;
     S.macTurnMs[idx] = nowMs();
+    if (m.kind === 'midi' && m.target === 'pb' && S.shiftHeld) S.pbShiftTurned = true;
     if (m.kind === 'level') {
         const li = macroLevelIdx(m);
         if (li >= 0 && levelKnobSpec(li)) onLevelTurn(li, delta);
@@ -3513,6 +3654,21 @@ function macroTick() {
     for (let i = 0; i < 8; i++) {
         if (!S.knobAccum[i]) continue;
         const m = store[i], cell = S.macCells[i];
+        if (m && m.kind === 'midi') {
+            if (!midiTargetOnRoute(m.target, S.track)) { S.knobAccum[i] = 0; continue; }
+            /* cc/at: one unit per two detents (a 7-bit sweep in ~254); pb: the
+             * 14-bit span at the chain law's 255 positions. */
+            const step = m.target === 'pb' ? 64 : 1, sens = 2;
+            let steps = 0;
+            while (S.knobAccum[i] >= sens) { steps++; S.knobAccum[i] -= sens; }
+            while (S.knobAccum[i] <= -sens) { steps--; S.knobAccum[i] += sens; }
+            if (!steps) continue;
+            if (m.target === 'pb') GS.pbSpring = null;        /* the hand owns it again */
+            const cur = midiVal(S.track, m.target);
+            const nv = Math.max(0, Math.min(midiTargetMax(m.target), cur + steps * step));
+            if (nv !== cur) { midiSendValue(S.track, m.target, nv, cur, true); S.dirty = true; }
+            continue;
+        }
         if (m && m.kind === 'bank') {
             const meta = bankMacroMeta(m);
             if (!meta) { S.knobAccum[i] = 0; continue; }
@@ -3595,6 +3751,7 @@ function macroPollTick() {
  * SOUND + CONFIG, a macro on MACROS — for the ring paint under Mute/Delete. */
 function pageKnobTarget(k) {
     if (macrosActive()) { const m = macroTarget(k); return macroLive(m) ? macroAutoTarget(m) : null; }
+    if (midiMixActive()) return (MIDI_MIX_SPECS[k] && MIDI_MIX_SPECS[k].target) || null;
     return levelPageSpec(k) ? S.slot + ':' + levelFullKey(k) : null;
 }
 
@@ -3625,6 +3782,9 @@ function macroCells(track, live) {
             const meta = bankMacroMeta(m, t);
             if (!meta) { cells.push(unassigned()); continue; }
             cell = bankMacroCell(m, meta, bankMacroValue(m, t));
+        } else if (m.kind === 'midi') {
+            if (!midiTargetOnRoute(m.target, t)) { cells.push(unassigned()); continue; }
+            cell = midiCellFor(m.target, midiVal(t, m.target));
         } else {
             const ec = live ? S.macCells[i] : null;
             if (ec && ec.vanished) { cells.push(unassigned()); continue; }
@@ -3667,7 +3827,7 @@ function renderMacros() {
  * open on this track — including RESTING, which is the whole point: the
  * knobs work on the overview, so the rings say where they sit. */
 registerRingCells(BANK_MACROS, () => (S.active && !soundIsGlobal() && S.track === GS.activeTrack && S.track >= 0) ? macroCells(S.track, true) : null);
-registerRingCells(BANK_SOUND, () => (S.active && !soundIsGlobal() && S.track === GS.activeTrack && S.track >= 0 && S.view !== VIEW_EDIT) ? levelCells() : null);
+registerRingCells(BANK_SOUND, () => (S.active && !soundIsGlobal() && S.track === GS.activeTrack && S.track >= 0 && S.view !== VIEW_EDIT) ? (midiTrack() ? midiMixCells() : levelCells()) : null);
 
 export function renderMacrosPeek(track) {
     clear_screen();
@@ -4958,6 +5118,11 @@ export function soundOnCC(d1, d2, decodeDelta) {
             if (delta) macroTurn(d1 - 71, delta);
             return true;
         }
+        if (midiMixActive()) {
+            const delta = decodeDelta(d2);
+            if (delta) onMidiMixTurn(d1 - 71, delta);
+            return true;
+        }
         if (levelsActive()) {
             const delta = decodeDelta(d2);
             if (delta && levelPageSpec(d1 - 71)) onLevelTurn(d1 - 71, delta);
@@ -5672,7 +5837,12 @@ export function soundOnNote(status, d1, d2) {
         const m = macroTarget(d1);
         const ref = macroLive(m) ? macroAutoRef(m) : null;
         if (ref) {
-            const t = S.track, c = effectiveClip(t), fk = ref.fullKey, target = ref.slot + ':' + fk;
+            const t = S.track, c = effectiveClip(t), fk = ref.fullKey, target = ref.slot === 'midi' ? fk : ref.slot + ':' + fk;
+            if (m.kind === 'midi' && m.target === 'pb') {
+                if (on) { GS.pbSpring = null; S.pbShiftTurned = false; }   /* the hand takes over */
+                else pbRelease(t);
+            }
+            if (!on && S.midiValsDirty) { S.midiValsDirty = false; writeSidecar(); }
             if (on) {
                 if (S.deleteHeld) {
                     if (automationClearKey(t, c, target)) showActionPopup('AUTOMATION', 'CLEARED');
@@ -5694,6 +5864,21 @@ export function soundOnNote(status, d1, d2) {
      * davebox's state object, so the release does not mute the track), and
      * the touch itself opens/closes the gesture the drain and the override-
      * resume ride on. The release also persists what the hand changed. */
+    /* A MIDI card's CC knob: the same automation gestures as a macro's. */
+    if (midiMixActive() && MIDI_MIX_SPECS[d1] && MIDI_MIX_SPECS[d1].target) {
+        const t = S.track, c = effectiveClip(t), target = MIDI_MIX_SPECS[d1].target;
+        if (on) {
+            if (S.deleteHeld) {
+                if (automationClearKey(t, c, target)) showActionPopup('AUTOMATION', 'CLEARED');
+            } else if (S.muteHeld) {
+                GS.muteUsedAsModifier = true;
+                const r = automationToggleActive(t, c, target);
+                if (r !== null) showActionPopup('AUTOMATION', r ? 'ON' : 'OFF');
+            }
+        } else if (S.midiValsDirty) { S.midiValsDirty = false; writeSidecar(); }
+        automationParamTouch(t, c, 'midi', target, on);
+        S.dirty = true;
+    }
     if (levelsActive() && levelPageSpec(d1)) {
         const t = S.track, c = effectiveClip(t), target = S.slot + ':' + levelFullKey(d1);
         if (on) {
@@ -5775,7 +5960,7 @@ export function soundTick() {
      * the five that exist here, unlit where nothing is automated; K6-K8 unlit.
      * On release the rings go back to unlit — nothing else paints them on
      * these screens (the editor's own repaint runs in its block below). */
-    if ((S.muteHeld || S.deleteHeld) && (levelsActive() || macrosActive())) {
+    if ((S.muteHeld || S.deleteHeld) && (levelsActive() || macrosActive() || midiMixActive())) {
         S.autoLedPaint = true;
         const t = S.track, c = effectiveClip(t);
         for (let k = 0; k < 8; k++) {
@@ -5927,6 +6112,7 @@ export function soundTick() {
      * turn reaches the engine in the tick it arrived — the same latency as a
      * level knob. */
     macroTick();
+    pbSpringTick();
     drainAndVerifyWrites();
     drainForcedPoll();
 
@@ -6045,6 +6231,16 @@ function renderPrompt() {
      * automation circles, and the door in the footer. */
     clear_screen();
     kitUseLayout('bank');
+    if (midiTrack()) {
+        /* A MIDI track: the standard controllers and the clip's Program /
+         * Bank; the door is the footer's CLK MENU (spec §2b). */
+        drawKitBankPage(midiMixCells(), {
+            headerText: bankHeadingPrefix() + 'SOUND+CFG', headerInvert: false, headerMaxW: BANK_HDR_TEXT_W,
+            touchedIdx: S.touchedIdx,
+            footer: levelCardHints(),
+        });
+        return;
+    }
     /* ⚠ 'SOUND+CFG': with the track prefix the full name is 139px against the
      * 118px band (measured) — the same budget that made SEQUENCE ARP SEQ ARP. */
     drawKitBankPage(levelCells(), {

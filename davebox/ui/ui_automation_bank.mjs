@@ -28,7 +28,7 @@
  * (one chain_params read per component, ever). */
 
 import { S } from './ui_state.mjs';
-import { BANK_AUTOMATION } from './ui_constants.mjs';
+import { BANK_AUTOMATION, midiTargetIsMidi } from './ui_constants.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey,
          automationToggleActive, automationToggleSmooth, automationSmoothable,
@@ -83,7 +83,7 @@ function opsFor(track, clip, r) {
                  { op: 'active', label: r.active ? 'Mute' : 'Unmute' }];
     const i = r.target.indexOf(':');
     const slot = parseInt(r.target.slice(0, i), 10), fullKey = r.target.slice(i + 1);
-    if (isFinite(slot) && automationSmoothable(slot, fullKey))
+    if (midiTargetIsMidi(r.target) || (isFinite(slot) && automationSmoothable(slot, fullKey)))
         ops.push({ op: 'smooth', label: r.smooth ? 'Stepped' : 'Smooth' });
     ops.push({ op: 'loop', label: 'Loop', value: loopText(rowLoopSteps(track, clip, r)) });
     ops.push({ op: 'rate', label: 'Rate', value: automationRateText(r.res) });

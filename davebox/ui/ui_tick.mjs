@@ -62,7 +62,7 @@ import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
 import { soundActive, soundOpen, soundResting, soundEnter, soundEnterMove, soundExit,
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
     soundEnteredInSession, soundConsumeLedDirty,
-    soundConsumeCoRunRequest, soundShowMenu, soundSetBank } from './ui_sound.mjs';
+    soundConsumeCoRunRequest, soundShowMenu, soundSetBank, midiVal, midiSendValue } from './ui_sound.mjs';
 import { enterMoveNativeCoRun } from './ui_corun.mjs';
 
 const BANK_DISPLAY_MS = 1000;
@@ -1273,6 +1273,16 @@ export function _tickImpl() {
                     }
                     continue;
                 }
+                if (S.trackRoute[_t] === 2) {
+                    /* A MIDI track: its strip is CC 7 / CC 10 from davebox's own
+                     * MIDI knob values, in the mode's units (spec §2b). */
+                    S.sessVolSlots[_t] = 0;
+                    if (!(S.trackMidiTo[_t] | 0) && (_modeKey === 'volume' || _modeKey === 'pan') && S.sessVolLevel[_t] < 0) {
+                        const _cc = midiVal(_t, _modeKey === 'volume' ? 'cc:7' : 'cc:10');
+                        S.sessVolLevel[_t] = (_cc / 127) * SESS_KNOB_MODES[S.sessKnobMode].max;
+                    }
+                    continue;
+                }
                 if (S.trackRoute[_t] !== 0) { S.sessVolSlots[_t] = 0; continue; }
                 const _m = _sessMaskScratch[_t];
                 S.sessVolSlots[_t] = _m;
@@ -1294,6 +1304,11 @@ export function _tickImpl() {
                 const _bus = S.sessVolBus[_t] | 0;
                 if (_bus > 0) {
                     engineSet(0, moveBusComp(_bus), _wKey, _v);
+                } else if (S.trackRoute[_t] === 2) {
+                    const _mx = SESS_KNOB_MODES[S.sessKnobMode].max || 1;
+                    const _cc = Math.round((S.sessVolLevel[_t] / _mx) * 127);
+                    const _tg = _wKey === 'volume' ? 'cc:7' : 'cc:10';
+                    if (_cc !== midiVal(_t, _tg)) midiSendValue(_t, _tg, _cc, midiVal(_t, _tg), false);
                 } else {
                     const _m = S.sessVolSlots[_t] | 0;
                     for (let _s = 0; _s < CHAIN_SLOTS; _s++) {
@@ -1568,14 +1583,13 @@ export function _tickImpl() {
                 if ((S.trackMidiTo[_tvT] | 0) > 0) {
                     if (!S.tvExtWarned) { S.tvExtWarned = true; showActionPopup('MIDI FOLLOWER', 'NO VOLUME'); }
                 } else {
-                    let _cc = (S.tvExtCC7[_tvT] | 0) + _tvD;
+                    /* ONE value for CC 7 (spec §2b): the session strip, the
+                     * macro and this gesture share davebox's MIDI knob store. */
+                    const _c0 = midiVal(_tvT, 'cc:7');
+                    let _cc = _c0 + _tvD;
                     if (_cc < 0) _cc = 0;
                     if (_cc > 127) _cc = 127;
-                    if (_cc !== S.tvExtCC7[_tvT]) {
-                        S.tvExtCC7[_tvT] = _cc;
-                        const _st = 0xB0 | ((S.trackChannel[_tvT] - 1) & 0x0F);
-                        move_midi_external_send([0x0B, _st, 7, _cc]);
-                    }
+                    if (_cc !== _c0) midiSendValue(_tvT, 'cc:7', _cc, _c0, false);
                     /* Same card, MIDI's own unit: CC 7 is 0-127, not a 0-2x
                      * level, and the bar shows the proportion either way. */
                     if (S.moveCoRunTrack < 0)

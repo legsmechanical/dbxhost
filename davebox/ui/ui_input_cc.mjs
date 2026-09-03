@@ -3718,13 +3718,20 @@ function _sessInvalidateAllLevels() {
 
 function _sessionKnobParam(knobIdx, d2) {
     if (knobIdx >= NUM_TRACKS) return;
+    const mode = SESS_KNOB_MODES[S.sessKnobMode];
     if (S.sessVolBus[knobIdx] <= 0) {
-        if (S.trackRoute[knobIdx] !== 0) return;
-        if (S.sessVolSlots[knobIdx] === 0) return;
+        /* A MIDI track: Volume = CC 7, Pan = CC 10 (spec §2b); the sends are a
+         * NO-OP for it, and a MIDI-to-track follower reaches no port. */
+        if (S.trackRoute[knobIdx] === 2) {
+            if ((S.trackMidiTo[knobIdx] | 0) > 0) return;
+            if (mode.key !== 'volume' && mode.key !== 'pan') return;
+        } else {
+            if (S.trackRoute[knobIdx] !== 0) return;
+            if (S.sessVolSlots[knobIdx] === 0) return;
+        }
     }
     const lvl = S.sessVolLevel[knobIdx];
     if (lvl < 0) return;
-    const mode = SESS_KNOB_MODES[S.sessKnobMode];
     if (mode.widget === 'gateway') return;      /* the door has no knobs */
     const d = (d2 >= 1 && d2 <= 63) ? d2 : (d2 >= 65) ? d2 - 128 : 0;
     if (!d) return;

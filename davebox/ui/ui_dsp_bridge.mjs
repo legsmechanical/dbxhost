@@ -1526,7 +1526,7 @@ export function restoreUiSidecar(applyDefaultsNow) {
                 for (let _k = 0; _k < 8; _k++) {
                     const _e = _m[_k];
                     if (!_e || typeof _e !== 'object') continue;
-                    if (_e.kind !== 'bank' && (typeof _e.key !== 'string' || !_e.key)) continue;
+                    if (_e.kind !== 'bank' && _e.kind !== 'midi' && (typeof _e.key !== 'string' || !_e.key)) continue;
                     if (_e.kind === 'chain' && typeof _e.comp === 'string' && _e.comp)
                         _out[_k] = { kind: 'chain', comp: _e.comp, key: _e.key };
                     else if (_e.kind === 'level')
@@ -1535,8 +1535,27 @@ export function restoreUiSidecar(applyDefaultsNow) {
                         _out[_k] = { kind: 'bank', bank: _e.bank | 0, k: _e.k | 0 };
                         if (typeof _e.alt === 'string' && _e.alt) _out[_k].alt = _e.alt;
                     }
+                    else if (_e.kind === 'midi' && typeof _e.target === 'string' && /^(cc:\d+|at|pb)$/.test(_e.target))
+                        _out[_k] = { kind: 'midi', target: _e.target };
                 }
                 S.trackMacros[_t] = _out;
+            }
+        }
+        /* The MIDI knob values and the per-clip Program / Bank (additive on v:9). */
+        for (let _t = 0; _t < NUM_TRACKS; _t++) {
+            S.trackMidiVals[_t] = {};
+            const _mv = Array.isArray(us.mcv) ? us.mcv[_t] : null;
+            if (_mv && typeof _mv === 'object') {
+                for (const _k in _mv) {
+                    const _v = _mv[_k];
+                    if (typeof _v === 'number' && isFinite(_v) && /^(cc:\d+|at|pb)$/.test(_k))
+                        S.trackMidiVals[_t][_k] = Math.max(0, Math.min(_k === 'pb' ? 16383 : 127, _v | 0));
+                }
+            }
+            const _cp = Array.isArray(us.cpg) ? us.cpg[_t] : null;
+            for (let _c = 0; _c < 16; _c++) {
+                const _p = _cp && Array.isArray(_cp[_c]) ? _cp[_c] : null;
+                S.clipProgram[_t][_c] = [0, 1, 2].map(i => (_p && typeof _p[i] === 'number') ? Math.max(-1, Math.min(127, _p[i] | 0)) : -1);
             }
         }
         /* User-preset records (additive on v:9, like pchr). name+path are what

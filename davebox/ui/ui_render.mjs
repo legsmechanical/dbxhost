@@ -328,12 +328,16 @@ function drawSessionMixerPage() {
     const cells = [];
     for (let t = 0; t < NUM_TRACKS; t++) {
         const label = 'Tr' + (t + 1);
-        const hasPos = (S.sessVolBus[t] > 0) ||
+        const isMidi = S.trackRoute[t] === 2 && !(S.trackMidiTo[t] | 0) &&
+                       (mode.key === 'volume' || mode.key === 'pan');
+        const hasPos = (S.sessVolBus[t] > 0) || isMidi ||
                        (S.trackRoute[t] === 0 && (S.sessVolSlots[t] | 0) !== 0);
         const v = S.sessVolLevel[t];
         if (!hasPos || !(v >= 0)) { cells.push({ kind: 'blank', label }); continue; }
+        /* A MIDI track's volume reads as its CC value (0..127), not a gain. */
         const cell = { label, name: 'TRACK ' + (t + 1) + ' ' + mode.label,
-                       text: String(mode.fmt(v)).toUpperCase() };
+                       text: (isMidi && mode.key === 'volume') ? String(Math.round((v / mode.max) * 127))
+                                                              : String(mode.fmt(v)).toUpperCase() };
         if (mode.widget === 'arcbip') {
             /* -1..+1 around centre, which is what the bipolar arc draws from. */
             cell.kind = 'arcbip';

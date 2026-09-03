@@ -16,7 +16,7 @@
  */
 
 import { S } from './ui_state.mjs';
-import { POLL_INTERVAL, SEQ_AUTO_TARGETS, BANK_SHORT } from './ui_constants.mjs';
+import { POLL_INTERVAL, SEQ_AUTO_TARGETS, BANK_SHORT, midiTargetIsMidi, midiTargetName, midiTargetTo14 } from './ui_constants.mjs';
 /* The move_fx: prefix has exactly one builder, and a source invariant pins
  * that (tests/test_move_fx_prefix_owner.sh). Build it here and the suite fails
  * — correctly: two builders are two things to keep in step. */
@@ -194,8 +194,7 @@ const COMP_SHORT = { synth: 'Syn', fx1: 'FX1', fx2: 'FX2', fx3: 'FX3', fx4: 'FX4
 const LEVEL_NAMES = { volume: 'Volume', pan: 'Pan', send_a: 'Send A', send_b: 'Send B', synth_volume: 'Module Level' };
 export function automationTargetLabel(target) {
     const t = String(target || '');
-    if (t === 'at') return 'Aftertouch';
-    if (t.indexOf('cc:') === 0) return 'CC ' + t.slice(3);
+    if (midiTargetIsMidi(t)) return midiTargetName(t);
     if (t.indexOf('seq:') === 0) {
         const key = t.split(':')[2];
         const st = SEQ_AUTO_TARGETS[key];
@@ -570,8 +569,18 @@ function ensureCheckpoint(g) {
     queueSet('t' + g.track + '_c' + g.clip + '_undo_checkpoint', '1');
 }
 
+/* The store's target for a (slot, fullKey) pair: a MIDI target is RAW —
+ * "cc:74" / "at" / "pb", no slot prefix (the DSP emits it on the track's
+ * route); every other target is "<slot>:<fullKey>". `slot === 'midi'`. */
+function targetOf(slot, fullKey) { return slot === 'midi' ? fullKey : slot + ':' + fullKey; }
+/* A MIDI wire value -> the store's 14 bits (7-bit CC/AT scaled; pb whole). */
+function midiNorm(target, wire) {
+    const v = parseFloat(wire);
+    return midiTargetTo14(target, isNaN(v) ? 0 : v);
+}
+
 export function automationParamTouch(track, clip, slot, fullKey, down) {
-    const target = slot + ':' + fullKey;
+    const target = targetOf(slot, fullKey);
     if (down) { gestureFor(target, track, clip, false); return; }
     const g = gestures.get(target);
     if (!g) return;
@@ -585,18 +594,20 @@ function endGesture(target, g) {
 }
 
 export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) {
-    const target = slot + ':' + fullKey;
+    const target = targetOf(slot, fullKey);
     const [comp, key] = splitFullKey(fullKey);
     const g = gestureFor(target, track, clip, true);
     g.idle = 0;
-    const norm = normValue(slot, comp, key, wire);
+    const isMidi = slot === 'midi';
+    const norm = isMidi ? midiNorm(target, wire) : normValue(slot, comp, key, wire);
+    const prevNorm = () => (isMidi ? midiNorm(target, prevWire) : normValue(slot, comp, key, prevWire));
 
     /* A held step wins over everything: the turn writes that step, playing or
      * not. Stepped hold means the lock lasts until the next point. */
     if (S.heldStep >= 0) {
         const tps = (S.clipTPS[track] && S.clipTPS[track][clip]) || 24;
         const from = S.heldStep * tps, to = from + tps - 1;
-        ensureRest(g, target, normValue(slot, comp, key, prevWire));
+        ensureRest(g, target, prevNorm());
         ensureCheckpoint(g);
         /* Playback keeps its hands off the target while the lock is being
          * dialled (the DSP stops staging it; JS stops pushing it), and the
@@ -629,7 +640,7 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
     /* Playing: the DSP decides record vs override from its own flags. What JS
      * must do either way is name the resting value, and — when this is going
      * to be recorded — book the one undo for the gesture. */
-    ensureRest(g, target, normValue(slot, comp, key, prevWire));
+    ensureRest(g, target, prevNorm());
     if (S.recordArmed) ensureCheckpoint(g);
     /* The DSP may be recording whatever our Record mirror says, so the drain
      * gate opens now and is corrected by one presence read when the gesture
@@ -680,6 +691,7 @@ export function automationClearStep(track, clip, step) {
  * under a ramp would step through options it was never given, an int through
  * values the module rounds anyway. */
 export function automationSmoothable(slot, fullKey) {
+    if (slot === 'midi' || midiTargetIsMidi(fullKey)) return true;   /* a controller sweep ramps */
     const [comp, key] = splitFullKey(fullKey);
     const p = componentMeta(slot, comp)[key];
     return !p || p.type === 'float' || p.type === undefined;
