@@ -77,8 +77,6 @@ export const PERF_FACTORY_PRESETS = [
     { name: 'Lift',     mods: (1<<2)|(1<<10)|(1<<15) },   /* Sc↑ + Cresc + RmpG */
 ];
 
-export const CC_ASSIGN_DEFAULTS = [7, 74, 71, 73, 72, 91, 93, 10];
-
 export const S = {
     swingAmt: 0,
     swingRes: 0,
@@ -331,34 +329,8 @@ export const S = {
     screenDirty: true,
     lastBlinkOn: null,
     bankParams: null,  /* set in ui.js after BANKS is defined */
-    trackCCAssign: Array.from({length: 8}, () => CC_ASSIGN_DEFAULTS.slice()),
-    /* Per-knob continuous-modulation type: 0 = CC, 1 = Channel Pressure (aftertouch), 2 = Sch (chain knob). Per-track. */
-    trackCCType: Array.from({length: 8}, () => new Array(8).fill(0)),
-    /* Sch label cache: per-track per-lane param name string, null = not fetched. */
-    schLabel: Array.from({length: 8}, () => new Array(8).fill(null)),
-    /* Sch label fetch cursor: -1 = idle, 0-7 = fetching lane N next tick. */
-    schLabelFetchLane: -1,
-    /* Per-clip resting value ("clip CC") per knob; -1 = "—" (unset, send nothing). */
-    clipCCVal: Array.from({length: 8}, () => Array.from({length: 16}, () => new Array(8).fill(-1))),
-    trackCCAutoBits: Array.from({length: 8}, () => new Array(16).fill(0)),
     /* Per-clip "has recorded aftertouch automation" (AUTOMATION-bank indicator). */
     clipAtHas: Array.from({length: 8}, () => new Array(16).fill(false)),
-    trackCCLiveVal: Array.from({length: 8}, () => new Array(8).fill(-1)),
-    /* Active CC lane (last-touched knob) per track — persistent, drives the
-     * step-LED gradient and the always-highlighted overview cell. */
-    ccActiveLane: new Array(8).fill(0),
-    ccLaneLoopStart: Array.from({length: 8}, function() {
-        return Array.from({length: 16}, function() { return new Array(8).fill(0); });
-    }),
-    ccLaneLength: Array.from({length: 8}, function() {
-        return Array.from({length: 16}, function() { return new Array(8).fill(0); });
-    }),
-    ccLaneTps: Array.from({length: 8}, function() {
-        return Array.from({length: 16}, function() { return new Array(8).fill(0); });
-    }),
-    ccLaneResTps: Array.from({length: 8}, function() {
-        return Array.from({length: 16}, function() { return new Array(8).fill(0); });
-    }),
     /* CC-knob acceleration (fractional accumulator + run-based gain): per knob,
      * last turn time, direction, consecutive-detent run, and the sub-unit
      * accumulator. */
@@ -366,9 +338,6 @@ export const S = {
     knobAccelDir:  new Array(8).fill(0),
     knobAccelRun:  new Array(8).fill(0),
     knobAccelAcc:  new Array(8).fill(0),
-    /* Clip index needing a CC auto-bits/rest re-read on next tick (-1 = none).
-     * Set from MIDI handlers where get_param returns null (e.g. Delete+step). */
-    pendingCCBitsRefresh: -1,
     heldStepBtn: -1,
     heldStep: -1,
     heldStepNotes: [],
@@ -407,21 +376,6 @@ export const S = {
     stepEditIter: 0,
     stepEditRand: 0,
     stepEditRatch: 0,
-    ccStepEditVal: new Array(8).fill(0),
-    /* Per-knob: does the held step have a recorded point? (drives "—" vs value) */
-    ccStepEditSet: new Array(8).fill(false),
-    /* Per-knob: computed output value at the held step (-1 = "—"); what plays there. */
-    ccStepEditComputed: new Array(8).fill(-1),
-    ccStepEditActive: false,
-    /* CC-bank step-LED gradient: cached active-lane output values for the page
-     * (255 = "—"), the cache key (track/clip/lane/page), and which track's 6
-     * gradient palette entries are currently loaded. */
-    ccGradVals: new Array(16).fill(255),
-    ccGradHasBP: new Array(16).fill(false),
-    ccGradKey: '',
-    ccGraphOvData: [],
-    ccGraphOvKey: '',
-    ccGradPaletteTrack: -1,
     stepBtnPressedTick: new Array(16).fill(-1),
     lastPlayedNote: -1,
     lastPadVelocity: 100,
@@ -685,12 +639,6 @@ export const S = {
      * projects is fine"). These go through a Move RELAUNCH instead. */
     projectsCreatedThisSession: [],
     pendingProjectRelaunch: null,
-    /* CLEAR AUTOMATION modal (Delete-tap on the AUTO bank). null = closed; else
-     * { sel, at, cc } — sel 0..3 (AT/PB/CC/CLEAR), at/cc = checked-to-clear. */
-    clearAutoMenu: null,
-    /* Armed on Delete-press in the AUTO bank; any other input disarms it. A clean
-     * Delete tap (still armed at release) opens the CLEAR AUTOMATION menu. */
-    deleteTapArmed: false,
     /* Set one tick after a snapshot Save fires the DSP 'save'; the live state
      * file is on disk by then, so the copy-into-snapshot runs in tick().
      * { id, label } (id reused = overwrite). */
@@ -726,7 +674,6 @@ export const S = {
      * elsewhere between gestures is re-read, never assumed. */
     tvDeltaAcc: 0, tvSeeded: false, tvTrack: -1, tvLevel: 1,
     tvDirty: false, tvSavePending: false, tvExtWarned: false,
-    tvExtCC7: new Array(8).fill(100), /* per-track MIDI volume (CC 7) last sent; session-local — receivers keep their own state, we just remember where the knob left off */
     /* Shift+Volume's level card, shown as an OVERLAY over whatever screen is up
      * (Josh, 2026-08-24). Not an actionPopup: popups are two lines of text and
      * defer to held gestures, and this has to read as the same control sound

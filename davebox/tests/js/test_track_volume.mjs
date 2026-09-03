@@ -177,8 +177,8 @@ step('⚠ a MIDI track shows the same card in MIDI units (CC 7 is 0-127)', () =>
     /* ⚠ Restores what it touches. The CC 7 value is session-local state that a
      * LATER step asserts an exact number against — leaving this turn in it made
      * that step fail by one, which is a test-ordering bug pretending to be a
-     * regression. */
-    const _cc0 = S.tvExtCC7[2];
+     * regression. It lives in S.trackMidiVals since P8 retired S.tvExtCC7. */
+    const _cc0 = Object.assign({}, S.trackMidiVals[2]);
     S.tvCardUntil = -1;
     S.trackRoute[2] = 2;
     S.trackMidiTo[2] = 0;
@@ -189,7 +189,7 @@ step('⚠ a MIDI track shows the same card in MIDI units (CC 7 is 0-127)', () =>
         throw new Error('MIDI card should read "Tr <n>  CC7 ...", got: ' + S.tvCardText);
     shift(false);
     S.trackRoute[2] = 0;
-    S.tvExtCC7[2] = _cc0;
+    S.trackMidiVals[2] = _cc0;
     S.tvSeeded = false;
 });
 

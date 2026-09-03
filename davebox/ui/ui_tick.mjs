@@ -24,7 +24,6 @@ import {
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND, BANK_MACROS, isSoundBank,
     POLL_INTERVAL,
-    CC_GRADIENT_BASE, CC_GRADIENT_LEVELS, CC_GRADIENT_SCALARS
 } from './ui_constants.mjs';
 
 import { S, standDownBankDisplay } from './ui_state.mjs';
@@ -658,88 +657,6 @@ export function _tickImpl() {
         if (pendingDrumNoteOffs[_t].length === 0) continue;
         const offs = pendingDrumNoteOffs[_t].splice(0);
         for (const pitch of offs) liveSendNote(_t, 0x80, pitch, 0);
-    }
-
-    /* Clear CC step-edit active flag once the step is released */
-    if (S.ccStepEditActive && S.heldStep < 0)
-        S.ccStepEditActive = false;
-
-    /* Deferred CC auto-bits/rest re-read (set from MIDI handlers where get_param
-     * is null, e.g. Delete+step whole-step clear). */
-    if (S.pendingCCBitsRefresh >= 0) {
-        const _rt = S.activeTrack, _rc = S.pendingCCBitsRefresh;
-        S.pendingCCBitsRefresh = -1;
-        const _bits = host_module_get_param('t' + _rt + '_c' + _rc + '_cc_auto_bits');
-        if (_bits !== null) S.trackCCAutoBits[_rt][_rc] = parseInt(_bits, 10) || 0;
-        const _rest = host_module_get_param('t' + _rt + '_c' + _rc + '_cc_rest');
-        if (_rest) {
-            const _rp = _rest.split(' ');
-            for (let _k = 0; _k < 8; _k++) {
-                const _rv = parseInt(_rp[_k], 10);
-                S.clipCCVal[_rt][_rc][_k] = (_rv >= 0 && _rv <= 127) ? _rv : -1;
-            }
-        }
-        invalidateLEDCache();
-    }
-
-    /* Poll the defined output value at the playhead per knob (255 = "—") for the
-     * realtime display + knob-LED feedback while the CC bank is visible & playing. */
-    if (S.activeBank === 6 && S.playing && !S.sessionView && !S.ccStepEditActive) {
-        const _lv = host_module_get_param('t' + S.activeTrack + '_cc_cur_vals');
-        if (_lv) {
-            const _lp = _lv.split(' ');
-            for (let _k = 0; _k < 8 && _k < _lp.length; _k++) {
-                const _v = parseInt(_lp[_k], 10);
-                S.trackCCLiveVal[S.activeTrack][_k] = (_v >= 0 && _v <= 127) ? _v : -1;
-            }
-        }
-    }
-
-    /* Sch (chain knob) automation routing: poll cc_auto_cur_val for every
-     * playing track that has Sch lanes, and push values to chain slots via
-     * shadow_set_param. Runs regardless of active bank. */
-    /* Sch label fetch: one shadow_get_param per tick to avoid blocking.
-     * Triggered on bank-6 entry; fetches param name for each Sch lane. */
-    if (S.schLabelFetchLane >= 0 && S.schLabelFetchLane < 8) {
-        const _ft = S.activeTrack;
-        const _fk = S.schLabelFetchLane;
-        S.schLabelFetchLane++;
-        if (S.trackCCType[_ft][_fk] === 2) {
-            const _slot = schSlotForTrack(_ft);
-            const _name = shadow_get_param(_slot, 'knob_' + S.trackCCAssign[_ft][_fk] + '_param');
-            S.schLabel[_ft][_fk] = _name || null;
-        }
-        if (S.schLabelFetchLane >= 8) S.schLabelFetchLane = -1;
-        S.screenDirty = true;
-    }
-
-    /* CC-bank step-LED gradient palette: 6 white brightness levels (the playhead
-     * uses the track color instead). Written on bank-6 entry / track switch
-     * (not per frame); the step LEDs themselves are driven in updateStepLEDs. */
-    if (S.activeBank === 6 && !S.sessionView &&
-            S.ccGradPaletteTrack !== S.activeTrack) {
-        S.ccGradPaletteTrack = S.activeTrack;
-        for (let _l = 0; _l < CC_GRADIENT_LEVELS; _l++) {
-            const _w = Math.round(255 * CC_GRADIENT_SCALARS[_l]);
-            setPaletteEntryRGB(CC_GRADIENT_BASE + _l, _w, _w, _w);
-        }
-        reapplyPalette();
-        setButtonLED(MovePlay,   S.playing ? Green : LED_OFF, true);
-        /* Rec carries Live Merge state (Shift+Rec): red armed, green capturing.
-         * CAPTURED (4 — capture stopped, awaiting placement) reverts to OFF so
-         * both Play and Rec go dark when the merge ends. */
-        setButtonLED(MoveRec,    (S.recordArmed || S.recordScheduledStop) ? Red
-                                 : (S.dspMergeState === 2 || S.dspMergeState === 3) ? Green
-                                 : S.dspMergeState === 1 ? Red : LED_OFF, true);
-        setButtonLED(MoveSample, DarkGrey, true);
-        setButtonLED(MoveBack,
-            (S.moveCoRunTrack < 0 && backTapWouldAct())
-                ? White : LED_OFF, true);
-        /* reapplyPalette reset the buttonCache — force-resend the 8 knob LEDs
-         * next render (their stopped-state named colors would otherwise be
-         * silently dropped) and the step LEDs. */
-        S._forceKnobReemit = true;
-        invalidateLEDCache();
     }
 
     /* Phase 1 / Bundle 2C-Rpt1: pendingRepeatLane queue removed. Lane swap
@@ -1677,28 +1594,7 @@ export function _tickImpl() {
             S.stepHoldPromote = false;
             S.stepBtnPressedTick[S.heldStepBtn] = -1;
             S.stepWasHeld = true;
-            if (S.activeBank === 6) {
-                /* CC step-edit: seed from the recorded point at this step (or "—"),
-                 * plus the computed output value the lane produces there. The first
-                 * knob-turn writes from the recorded point if set; otherwise it starts
-                 * from the step's interpolated value (what the lane already outputs
-                 * there), so inserting a new breakpoint continues the existing curve
-                 * instead of jumping to 0. Falls back to clip resting value, else 0. */
-                const _t6 = S.activeTrack, _c6 = effectiveClip(_t6);
-                const _info = host_module_get_param('t' + _t6 + '_c' + _c6 + '_ccstepinfo_' + S.heldStep);
-                const _ip = _info ? _info.split(' ') : [];
-                for (let _ck = 0; _ck < 8; _ck++) {
-                    const _pv = _ip.length > _ck     ? parseInt(_ip[_ck], 10)     : -1;
-                    const _cv = _ip.length > _ck + 8 ? parseInt(_ip[_ck + 8], 10) : -1;
-                    S.ccStepEditSet[_ck]      = _pv >= 0;
-                    S.ccStepEditComputed[_ck] = (_cv >= 0 && _cv <= 127) ? _cv : -1;
-                    const _rest = S.clipCCVal[_t6][_c6][_ck];
-                    S.ccStepEditVal[_ck] = _pv >= 0 ? _pv
-                        : (_cv >= 0 && _cv <= 127 ? _cv
-                           : (_rest >= 0 ? _rest : 0));
-                }
-                S.screenDirty = true;
-            } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
+            if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
                 /* ⭑ A HOLD NEVER CREATES (spec §2, Josh 2026-09-02): an empty
                  * drum step held past the threshold stays empty — heldStepNotes
                  * stays [], the knobs read `--`. A velocity-zone pad pressed

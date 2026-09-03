@@ -100,7 +100,6 @@ const STATES = [
     ['the global menu',           () => { S.globalMenuOpen = true; }],
     ['the Dave Box album',        () => { S.daveBox = true; }],
     ['the snapshot picker',       () => { S.snapshotPicker = { confirm: null }; }],
-    ['the clear-automation menu', () => { S.clearAutoMenu = { t: 0 }; }],
     ['the tap-tempo screen',      () => { S.tapTempoOpen = true; }],
     ['a live-merge notice',       () => { S.mergeNoticePending = true; }],
     ['a merge count-in',          () => { S.mergeCountingIn = true; }],

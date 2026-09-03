@@ -37,8 +37,8 @@ import { saveState, writeSidecar, doClearSession, showActionPopup,
          showActionPopupGauge } from './ui_persistence.mjs';
 import {
     openSaveSnapshot, closeSnapshotPicker,
-    snapshotPickerRotate, snapshotPickerClick, openClearAutoMenu,
-    clearAutoMenuRotate, clearAutoMenuClick, showMenuInfo, closeConvertConfirm,
+    snapshotPickerRotate, snapshotPickerClick,
+    showMenuInfo, closeConvertConfirm,
     closeProjectPadPicker, projectPadPickerModifiers,
     projectPadPickerClick, projectPadPickerRotate, projectPadPickerBack,
     openGlobalEnumPick, closeGlobalEnumPick, globalEnumPickable
@@ -163,11 +163,6 @@ function _onCC_jog(d1, d2) {
     /* Snapshot picker: jog click resolves a confirm or arms one. */
     if (d1 === 3 && d2 === 127 && S.snapshotPicker) {
         snapshotPickerClick();
-        return;
-    }
-    /* CLEAR AUTOMATION modal: jog click toggles a row / executes CLEAR. */
-    if (d1 === 3 && d2 === 127 && S.clearAutoMenu) {
-        clearAutoMenuClick();
         return;
     }
     /* THE AUTOMATION BANK (latched): the click enters its menu / runs the
@@ -560,13 +555,9 @@ function modalDialogUp() {
                 const pm = BANKS[4].knobs[k];
                 if (pm) S.bankParams[_arpTrack][4][k] = pm.def;
             }
-            /* Bank reset also clears ALL automation (CC + AT, + PB later) for the clip. */
+            /* Bank reset also clears the clip's aftertouch automation. */
             const _ac2 = effectiveClip(_arpTrack);
-            S.trackCCAutoBits[_arpTrack][_ac2] = 0;
-            S.trackCCLiveVal[_arpTrack] = new Array(8).fill(-1);
-            S.clipCCVal[_arpTrack][_ac2] = new Array(8).fill(-1);
             S.clipAtHas[_arpTrack][_ac2] = false;
-            S.pendingDefaultSetParams.push({ key: 't' + _arpTrack + '_cc_auto_clear', val: String(_ac2) });
             S.pendingDefaultSetParams.push({ key: 't' + _arpTrack + '_c' + _ac2 + '_at_clear', val: '1' });
             S.undoSeqArpSnapshot = { track: _arpTrack, params: _arpParams };
             const _mac = effectiveClip(_arpTrack);
@@ -582,28 +573,6 @@ function modalDialogUp() {
         return;
     }
     if (d1 === 3 && d2 === 127 && S.deleteHeld && !S.sessionView) {
-        /* CC PARAM bank (bank 6): Delete+jog clears all CC automation for the
-         * active clip. This branch must run regardless of pad mode or drum
-         * perform mode — previously it was nested inside the melodic branch,
-         * so on a drum track in Rpt mode it was silently shadowed by the
-         * repeat-groove reset path. */
-        if (S.activeBank === 6) {
-            /* AUTOMATION bank: Delete+jog clears ALL automation types for the
-             * active clip (CC + AT, and PB once implemented). */
-            const _t = S.activeTrack, _c = effectiveClip(_t);
-            S.trackCCAutoBits[_t][_c] = 0;
-            S.trackCCLiveVal[_t] = new Array(8).fill(-1);
-            /* Reset the resting values too → "—" (cc_auto_clear clears both
-             * automation and rest_val DSP-side). */
-            S.clipCCVal[_t][_c] = new Array(8).fill(-1);
-            S.clipAtHas[_t][_c] = false;
-            /* Defer clear pushes — synchronous from jog handler coalesces. */
-            S.pendingDefaultSetParams.push({ key: 't' + _t + '_cc_auto_clear', val: String(_c) });
-            S.pendingDefaultSetParams.push({ key: 't' + _t + '_c' + _c + '_at_clear', val: '1' });
-            showActionPopup('AUTOMATION', 'CLEAR');
-            invalidateLEDCache();
-            return;
-        }
         if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
             if (S.drumPerformMode[S.activeTrack] > 0) {
                 /* Rpt/Rpt2 mode: Delete+jog = reset current lane groove params */
@@ -791,10 +760,6 @@ function modalDialogUp() {
 
         if (S.snapshotPicker) {
             snapshotPickerRotate(decodeDelta(d2));
-            return;
-        }
-        if (S.clearAutoMenu) {
-            clearAutoMenuRotate(decodeDelta(d2));
             return;
         }
         if (S.confirmBakeScene) {
@@ -1066,25 +1031,6 @@ function modalDialogUp() {
                             }
                             forceRedraw();
                         }
-                    } else if (S.activeBank === 6) {
-                        var _ac = effectiveClip(_t);
-                        var _ccL = S.ccActiveLane[_t];
-                        var _cur = S.ccLaneLength[_t][_ac][_ccL];
-                        if (_cur === 0) {
-                            var _cTps = S.clipTPS[_t][_ac] || 24;
-                            var _lTps = S.ccLaneTps[_t][_ac][_ccL] || _cTps;
-                            _cur = Math.max(1, Math.round(S.clipLength[_t][_ac] * _cTps / _lTps));
-                        }
-                        var _nv  = Math.max(1, Math.min(256, _cur + delta));
-                        if (_nv !== _cur) {
-                            S.ccLaneLength[_t][_ac][_ccL] = _nv;
-                            S.loopJogActive = true;
-                            S.loopJogLastTick = nowMs();
-                            var _ls = S.ccLaneLoopStart[_t][_ac][_ccL] | 0;
-                            S.trackCurrentPage[_t] = Math.max(0, Math.floor((_ls + _nv - 1) / 16));
-                            host_module_set_param('t' + _t + '_c' + _ac + '_k' + _ccL + '_cc_lane_length', String(_nv));
-                            forceRedraw();
-                        }
                     } else {
                     const _ac = effectiveClip(_t);
                     const _cur = S.clipLength[_t][_ac];
@@ -1222,7 +1168,6 @@ export function applyBankPick(rest) {
     S.activeBank = next;
     S.trackActiveBank[t] = next;
     if (next === 7) S.allLanesConfirmed = false;
-    if (next === 6) S.schLabelFetchLane = 0;
     readBankParams(t, next);
     if (!rest) armBankDisplay();
     writeSidecar();
@@ -1299,30 +1244,6 @@ function _onCC_buttons(d1, d2) {
 
     if (d1 === MoveDelete) {
         S.deleteHeld = d2 === 127;
-        /* Loop+Delete on auto bank: reset active lane's loop params */
-        if (d2 === 127 && S.loopHeld && S.activeBank === 6 && !S.sessionView) {
-            var _rdt = S.activeTrack, _rdac = effectiveClip(_rdt), _rdl = S.ccActiveLane[_rdt];
-            S.ccLaneLoopStart[_rdt][_rdac][_rdl] = 0;
-            S.ccLaneLength[_rdt][_rdac][_rdl] = 0;
-            S.ccLaneTps[_rdt][_rdac][_rdl] = 0;
-            S.ccLaneResTps[_rdt][_rdac][_rdl] = 0;
-            S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
-            S.pendingDefaultSetParams.push({ key: 't' + _rdt + '_c' + _rdac + '_k' + _rdl + '_cc_lane_reset', val: '1' });
-            showActionPopup('LANE LOOP', 'RESET');
-            forceRedraw();
-            computePadNoteMap();
-            return;
-        }
-        /* AUTO-bank Delete-tap → CLEAR AUTOMATION menu. Arm on press (melodic
-         * AUTO bank only); a clean release (nothing happened while held, see the
-         * disqualify check at the top of this handler) opens the menu. */
-        if (d2 === 127) {
-            S.deleteTapArmed = (S.activeBank === 6 && !S.sessionView &&
-                                !S.clearAutoMenu);
-        } else if (S.deleteTapArmed) {
-            S.deleteTapArmed = false;
-            openClearAutoMenu();
-        }
         /* delete_held now rides as the 34th token in the tN_padmap payload
          * (computePadNoteMap), so it shares the tick-based self-heal and
          * avoids the onMidiMessage coalescing risk the old separate
@@ -1652,20 +1573,6 @@ function _onCC_buttons(d1, d2) {
                 S.liveActiveNotes.size === 0) {
                 S.loopTapUnlatchTrack = _lrt;
             }
-            /* Delete+Loop on auto bank: reset active lane's loop/res/zoom to clip defaults */
-            if (S.deleteHeld && S.activeBank === 6) {
-                var _rac = effectiveClip(_lrt);
-                var _rl = S.ccActiveLane[_lrt];
-                S.ccLaneLoopStart[_lrt][_rac][_rl] = 0;
-                S.ccLaneLength[_lrt][_rac][_rl] = 0;
-                S.ccLaneTps[_lrt][_rac][_rl] = 0;
-                S.ccLaneResTps[_lrt][_rac][_rl] = 0;
-                S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
-                S.pendingDefaultSetParams.push({ key: 't' + _lrt + '_c' + _rac + '_k' + _rl + '_cc_lane_reset', val: '1' });
-                showActionPopup('LANE LOOP', 'RESET');
-                forceRedraw();
-                return;
-            }
             /* Delete+Loop: unconditionally stop active drum repeat latch */
             if (S.deleteHeld && S.trackPadMode[_lrt] === PAD_MODE_DRUM) {
                 if (S.drumPerformMode[_lrt] === 1 && S.drumRepeatLatched[_lrt]) {
@@ -1811,7 +1718,7 @@ export function backTapWouldAct() {
     if (S.daveBox) return true;
     if (S.stepRecActive) return true;
     if (S.sessMixerLatched) return true;
-    if (S.snapshotPicker || S.clearAutoMenu || S.tempoSelectActive ||
+    if (S.snapshotPicker || S.tempoSelectActive ||
         S.mergeNoticePending || S.mergeCountingIn ||
         S.pendingMergePlacement || S.mergeSoloPlacement >= 0 ||
         S.capturePlaceTrack >= 0 || S.pendingSceneBakePicker ||
@@ -1863,7 +1770,7 @@ export function atOverview() {
     if (soundActive() || S.moveCoRunTrack >= 0)                     return false;
     if (S.stepRecActive)                                            return false;
     if (S.globalMenuOpen || S.daveBox || S.projectPadPicker)        return false;
-    if (S.snapshotPicker || S.globalEnumPick || S.clearAutoMenu)    return false;
+    if (S.snapshotPicker || S.globalEnumPick)                       return false;
     if (S.tapTempoOpen || S.tempoSelectActive)                      return false;
     if (S.mergeNoticePending || S.mergeCountingIn ||
         S.pendingMergePlacement || S.mergeSoloPlacement >= 0)       return false;
@@ -1892,7 +1799,6 @@ function returnToOverview() {
      *    one-press escape, so everything open closes at once. */
     if (S.snapshotPicker) { S.snapshotPicker.confirm = null; closeSnapshotPicker(); }
     if (S.globalEnumPick) closeGlobalEnumPick(false);          /* abandon, never commit */
-    if (S.clearAutoMenu)  { S.clearAutoMenu = null; S.deleteTapArmed = false; }
     if (S.tempoSelectActive) {
         /* Keep the auditioned tempo, exactly as Back and the jog-click do. */
         host_module_set_param('t' + S.tempoSelectTrack + '_capture_confirm', '');
@@ -2030,7 +1936,6 @@ function _backTap() {
         forceRedraw(); return;
     }
     if (S.globalEnumPick) { closeGlobalEnumPick(false); forceRedraw(); return; }
-    if (S.clearAutoMenu)  { S.clearAutoMenu = null; S.deleteTapArmed = false; forceRedraw(); return; }
     /* The AUTOMATION bank's layers (ops → menu → card) close one per press;
      * with none open, Back is davebox's own (out of bank mode). */
     if (S.activeBank === BANK_AUTOMATION && S.bankCardLatched && !S.sessionView && autoBankBack()) {
@@ -2735,23 +2640,7 @@ function _onCC_transport(d1, d2) {
             stepRecArrow(d1 === MoveRight ? 1 : -1);
             return;
         }
-        if (S.loopHeld && S.activeBank === 6) {
-            var RES_TPS = [12, 24, 48, 96, 384];
-            var _ac_lr = effectiveClip(_t_lr);
-            var _ccL_lr = S.ccActiveLane[_t_lr];
-            var _dispTpsLr = S.ccLaneTps[_t_lr][_ac_lr][_ccL_lr] || (S.clipTPS[_t_lr][_ac_lr] || 24);
-            var _curTps = S.ccLaneResTps[_t_lr][_ac_lr][_ccL_lr] || _dispTpsLr;
-            var _ci = RES_TPS.indexOf(_curTps);
-            if (_ci < 0) _ci = 1;
-            if (d1 === MoveLeft && _ci > 0) _ci--;
-            else if (d1 === MoveRight && _ci < RES_TPS.length - 1) _ci++;
-            S.ccLaneResTps[_t_lr][_ac_lr][_ccL_lr] = RES_TPS[_ci];
-            host_module_set_param('t' + _t_lr + '_c' + _ac_lr + '_k' + _ccL_lr + '_cc_lane_res_tps',
-                                  String(RES_TPS[_ci]));
-            forceRedraw();
-            return;
-        }
-        if (S.trackPadMode[_t_lr] === PAD_MODE_DRUM && S.activeBank !== 6) {
+        if (S.trackPadMode[_t_lr] === PAD_MODE_DRUM) {
             var lsBase = S.drumLaneLoopStart[_t_lr] | 0;
             var startPage = lsBase >> 4;
             var lastPage  = startPage + Math.max(1, Math.ceil(S.drumLaneLength[_t_lr] / 16)) - 1;
@@ -2761,21 +2650,9 @@ function _onCC_transport(d1, d2) {
                 S.drumStepPage[_t_lr] = Math.min(lastPage, S.drumStepPage[_t_lr] + 1);
         } else {
             var ac = effectiveClip(_t_lr);
-            var lsBase, startPage, lastPage;
-            if (S.activeBank === 6) {
-                var _ccL2 = S.ccActiveLane[_t_lr];
-                var _llen = S.ccLaneLength[_t_lr][ac][_ccL2];
-                if (_llen > 0) {
-                    lsBase = S.ccLaneLoopStart[_t_lr][ac][_ccL2] | 0;
-                    startPage = lsBase >> 4;
-                    lastPage = startPage + Math.max(1, Math.ceil(_llen / 16)) - 1;
-                }
-            }
-            if (lastPage === undefined) {
-                lsBase = S.clipLoopStart[_t_lr][ac] | 0;
-                startPage = lsBase >> 4;
-                lastPage = startPage + Math.max(1, Math.ceil(S.clipLength[_t_lr][ac] / 16)) - 1;
-            }
+            var lsBase = S.clipLoopStart[_t_lr][ac] | 0;
+            var startPage = lsBase >> 4;
+            var lastPage = startPage + Math.max(1, Math.ceil(S.clipLength[_t_lr][ac] / 16)) - 1;
             if (d1 === MoveLeft)
                 S.trackCurrentPage[_t_lr] = Math.max(startPage, S.trackCurrentPage[_t_lr] - 1);
             else
@@ -2793,43 +2670,6 @@ function _onCC_transport(d1, d2) {
     /* Up/Down: scene group nav in Session View or while overview held; octave shift in Track View */
     if (d1 === MoveDown && d2 === 127 && (S.sessionView || S.sessionOverlayHeld) && S.sceneRow < NUM_CLIPS - 4) { S.sceneRow = Math.min(NUM_CLIPS - 4, S.sceneRow + 1); forceRedraw(); }
     if (d1 === MoveUp   && d2 === 127 && (S.sessionView || S.sessionOverlayHeld) && S.sceneRow > 0)              { S.sceneRow = Math.max(0, S.sceneRow - 1);              forceRedraw(); }
-    if ((d1 === MoveUp || d1 === MoveDown) && d2 > 0 && !S.sessionView && !S.sessionOverlayHeld &&
-            S.loopHeld && S.activeBank === 6) {
-        var RES_TPS = [12, 24, 48, 96, 384];
-        var _zt = S.activeTrack, _zac = effectiveClip(_zt), _zL = S.ccActiveLane[_zt];
-        var _zOldTps = S.ccLaneTps[_zt][_zac][_zL] || (S.clipTPS[_zt][_zac] || 24);
-        var _zci = RES_TPS.indexOf(_zOldTps);
-        if (_zci < 0) _zci = 1;
-        if (d1 === MoveDown && _zci > 0) _zci--;
-        else if (d1 === MoveUp && _zci < RES_TPS.length - 1) _zci++;
-        var _zNewTps = RES_TPS[_zci];
-        if (_zNewTps !== _zOldTps) {
-            var _zOldLen = S.ccLaneLength[_zt][_zac][_zL] || S.clipLength[_zt][_zac];
-            var _zOldTicks = _zOldLen * _zOldTps;
-            var _zNewLen = Math.ceil(_zOldTicks / _zNewTps);
-            if (_zNewLen <= 256) {
-                S.ccLaneTps[_zt][_zac][_zL] = _zNewTps;
-                S.ccLaneLength[_zt][_zac][_zL] = _zNewLen;
-                var _zOldRes = S.ccLaneResTps[_zt][_zac][_zL];
-                if (_zOldRes > 0) {
-                    var _zNewRes = Math.round(_zOldRes * _zNewTps / _zOldTps);
-                    var _zResValid = RES_TPS.indexOf(_zNewRes) >= 0;
-                    S.ccLaneResTps[_zt][_zac][_zL] = _zResValid ? _zNewRes : 0;
-                }
-                var _zPre = 't' + _zt + '_c' + _zac + '_k' + _zL;
-                S.pendingDefaultSetParams.push({ key: _zPre + '_cc_lane_tps', val: String(_zNewTps) });
-                S.pendingDefaultSetParams.push({ key: _zPre + '_cc_loop_set',
-                    val: String(((S.ccLaneLoopStart[_zt][_zac][_zL] | 0) << 16) | (_zNewLen & 0xFFFF)) });
-                if (_zOldRes > 0)
-                    S.pendingDefaultSetParams.push({ key: _zPre + '_cc_lane_res_tps',
-                        val: String(S.ccLaneResTps[_zt][_zac][_zL]) });
-                var _zMaxPage = Math.max(0, Math.ceil(_zNewLen / 16) - 1);
-                if (S.trackCurrentPage[_zt] > _zMaxPage) S.trackCurrentPage[_zt] = _zMaxPage;
-                forceRedraw();
-            }
-        }
-        return;
-    }
     if (d1 === MoveUp   && d2 > 0 && !S.sessionView && !S.sessionOverlayHeld) {
         if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
             setDrumLanePage(S.activeTrack, 1);
@@ -3459,9 +3299,6 @@ function ccKnobDelta(d2, k, stepScale) {
     return units;
 }
 
-/* The old AUTO-bank (6) held-step CC editor. Off since 2026-09-02; gone with P8. */
-const LANE_STEP_EDITOR_LIVE = false;
-
 /* Hold a step + jog turn (spec §2, Josh 2026-09-02): RIGHT reveals the STEP
  * bank's page for the held step, LEFT returns to where you were. Two
  * positions, no cycling — extra right turns at the reveal and extra left
@@ -3499,55 +3336,7 @@ function _onCC_stepedit(d1, d2) {
             S.stepBtnPressedTick[S.heldStepBtn] >= 0) {
         S.stepHoldPromote = true;
     }
-    /* CC step-edit: bank 6 + held step — all 8 knobs write CC automation at step's tick.
-     * ⚠ GATED OFF 2026-09-02 (spec §2): a held step redirects the on-screen
-     * knobs to that step on the STEP bank and in the module editor, and
-     * nowhere else — bank 6 was the one surviving exception. The lane system
-     * this served is deleted in P8; until then the branch stays, unreachable. */
-    if (LANE_STEP_EDITOR_LIVE && S.heldStep >= 0 && S.activeBank === 6 && d1 >= 71 && d1 <= 78) {
-        const _kIdx = d1 - 71;
-        const _acc  = ccKnobDelta(d2, _kIdx);  /* run-length acceleration */
-        if (_acc === 0) return;
-        const _t    = S.activeTrack;
-        const _ac   = effectiveClip(_t);
-        S.knobTouched          = _kIdx;
-        S.knobTurnedTick[_kIdx] = nowMs();
-        S.ccActiveLane[_t]      = _kIdx;
-        S.screenDirty  = true;
-        var _laneTps = S.ccLaneTps[_t][_ac][_kIdx];
-        const _tps   = (_laneTps > 0) ? _laneTps : (S.clipTPS[_t][_ac] || 24);
-        const _tick  = S.heldStep * _tps;
-        const _hold  = Math.min(65535, _tick + _tps - 1);
-        /* New point at an unset step: the value is seeded at the interpolated value
-         * (computed at step-hold time), and this turn's delta is applied immediately,
-         * so EITHER direction creates the point and sets it above OR below the
-         * interpolated value on the first turn. From a set step, down past 0 clears
-         * it back to "—" (and Delete+step clears a step outright). */
-        if (!S.ccStepEditSet[_kIdx]) {
-            S.ccStepEditSet[_kIdx] = true;
-            const _nv0 = S.ccStepEditVal[_kIdx] + _acc;
-            S.ccStepEditVal[_kIdx] = Math.max(0, Math.min(127, _nv0));
-        } else {
-            const _nv = S.ccStepEditVal[_kIdx] + _acc;
-            if (_nv < 0) {
-                /* down past 0 → "—": drop this knob's point(s) in the step window */
-                S.ccStepEditSet[_kIdx] = false;
-                host_module_set_param('t' + _t + '_cc_auto_clear_range',
-                    _ac + ' ' + _kIdx + ' ' + _tick + ' ' + _hold);
-                /* refresh the auto bit (knob may still have points elsewhere) */
-                return;
-            }
-            S.ccStepEditVal[_kIdx] = Math.min(127, _nv);
-        }
-        host_module_set_param('t' + _t + '_cc_auto_set2',
-            _ac + ' ' + _kIdx + ' ' + _tick + ' ' + _hold + ' ' + S.ccStepEditVal[_kIdx]);
-        S.trackCCAutoBits[_t][_ac] |= (1 << _kIdx);
-        return;
-    }
-
-    /* Drum step edit: K1 Leng, K2 Vel, K3 Nudg, K4 —, K5 Iter, K6 Prob, K7 Ratch, K8 —.
-     * Bank-gated off the AUTO bank (6): there the held-step + knob edits CC
-     * automation (the CC step editor above), mirroring the melodic NOTE editor. */
+    /* Drum step edit: K1 Leng, K2 Vel, K3 Nudg, K4 —, K5 Iter, K6 Prob, K7 Ratch, K8 —. */
     if (S.heldStep >= 0 && S.heldStepNotes.length > 0 && d1 >= 71 && d1 <= 78 &&
             S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && (S.activeBank === BANK_STEP || S.stepReveal)) {
         const knobIdx = d1 - 71;
@@ -4233,114 +4022,6 @@ function _onCC_knobs(d1, d2) {
                 }
                 S.screenDirty = true;
             }
-            return;
-        }
-        /* CC PARAM bank (bank 6): see notes/cc-automation-redesign.md §5/§8.
-         * Shift+turn = pick type (AT) / CC number; normal turn = set the clip's
-         * resting value, record automation (armed), or audition (automated+playing);
-         * Delete+turn = clear the knob's automation + resting value → "—". */
-        if (bank === 6) {
-            const t  = S.activeTrack;
-            const ac = effectiveClip(t);
-            const _setp = (k, v) => { host_module_set_param("t" + t + "_" + k, v); };
-            /* Active lane = last-touched knob; persistent (no timeout). */
-            S.ccActiveLane[t] = knobIdx;
-            const dir = (d2 >= 1 && d2 <= 63) ? 1 : -1;
-            if (dir !== S.knobLastDir[knobIdx]) { S.knobAccum[knobIdx] = 0; S.knobLastDir[knobIdx] = dir; }
-
-            /* alt mode: type/number ladder — Sch1..Sch8 (type 2) ↔ AT (type 1) ↔ CC0..CC127 (type 0).
-             * Sch (chain knob) only available when patched Schwung is present.
-             * Unified position: CC0..127 = 0..127, AT = -1, Sch1 = -2, Sch2 = -3, ..., Sch8 = -9.
-             * When type=2, trackCCAssign holds the chain knob number (1-8). */
-            if (S.altMode) {
-                /* ⚠ The accumulator advance moved INSIDE this branch. It used to
-                 * run for both paths, but only alt mode reads it — the plain path
-                 * goes through ccKnobDelta, which keeps its own state. Advancing
-                 * it unconditionally meant turning in plain mode silently primed
-                 * the alt ladder. */
-                if (knobStep(knobIdx, d2, KNOB_PICK) !== 0) {
-                    const cur = (S.trackCCType[t][knobIdx] === 2) ? -(S.trackCCAssign[t][knobIdx] + 1)
-                              : (S.trackCCType[t][knobIdx] === 1) ? -1
-                              : S.trackCCAssign[t][knobIdx];
-                    const minVal = -9;
-                    const nx  = Math.max(minVal, Math.min(127, cur + dir));
-                    if (nx <= -2) {
-                        const schKnob = -(nx + 1);
-                        S.trackCCType[t][knobIdx] = 2;
-                        S.trackCCAssign[t][knobIdx] = schKnob;
-                        S.schLabel[t][knobIdx] = null;
-                        _setp('cc_type_assign', knobIdx + ' 2 ' + schKnob);
-                    } else if (nx === -1) {
-                        S.trackCCType[t][knobIdx] = 1;
-                        _setp('cc_type_assign', knobIdx + ' 1 ' + S.trackCCAssign[t][knobIdx]);
-                    } else {
-                        S.trackCCType[t][knobIdx] = 0;
-                        S.trackCCAssign[t][knobIdx] = nx;
-                        _setp('cc_type_assign', knobIdx + ' 0 ' + nx);
-                    }
-                    S.screenDirty = true;
-                }
-                return;
-            }
-
-            /* Held step: the step editor (_onCC_stepedit) is the sole writer. */
-            if (S.heldStep >= 0) return;  /* held step → CC step editor owns it (drum + melodic) */
-
-            /* Delete+turn: clear this knob's automation AND resting value → "—". */
-            if (S.deleteHeld) {
-                S.trackCCAutoBits[t][ac] &= ~(1 << knobIdx);
-                S.trackCCLiveVal[t][knobIdx] = -1;
-                S.clipCCVal[t][ac][knobIdx]  = -1;
-                _setp('cc_auto_clear_k', ac + ' ' + knobIdx);
-                showActionPopup('CC', 'CLEAR');
-                invalidateLEDCache();
-                return;
-            }
-
-            /* Normal turn: run-length acceleration (first few clicks ±1, sustained turning ramps up). */
-            const accel = ccKnobDelta(d2, knobIdx);
-            if (accel === 0) return;
-            /* Gate the record path on S.playing rather than !S.recordCountingIn:
-             * recordCountingIn only clears when pollDSP catches the count-in 1->0
-             * edge (~every POLL_INTERVAL), so for up to ~43ms after the count-in
-             * downbeat a knob turn would be misrouted to cc_rest and never engage
-             * the DSP latch. S.playing is 0 for the whole count-in and flips to 1
-             * atomically with tr->recording at fire, so it tracks the real arm. */
-            const armed   = S.recordArmed && S.recordArmedTrack === t && S.playing;
-            const hasAuto = (S.trackCCAutoBits[t][ac] >> knobIdx) & 1;
-
-            if (armed) {
-                /* Record automation. */
-                const base = (S.trackCCLiveVal[t][knobIdx] >= 0) ? S.trackCCLiveVal[t][knobIdx]
-                           : (S.clipCCVal[t][ac][knobIdx] >= 0 ? S.clipCCVal[t][ac][knobIdx] : 0);
-                const nv = Math.max(0, Math.min(127, base + accel));
-                S.trackCCLiveVal[t][knobIdx] = nv;
-                _setp('cc_send', knobIdx + ' ' + nv);
-                S.trackCCAutoBits[t][ac] |= (1 << knobIdx);
-                S.screenDirty = true;
-                return;
-            }
-            if (S.playing && hasAuto) {
-                /* Automated lane, playing, not armed: transient live audition only. */
-                const base = (S.trackCCLiveVal[t][knobIdx] >= 0) ? S.trackCCLiveVal[t][knobIdx] : 0;
-                const nv = Math.max(0, Math.min(127, base + accel));
-                S.trackCCLiveVal[t][knobIdx] = nv;
-                _setp('cc_send', knobIdx + ' ' + nv);
-                S.screenDirty = true;
-                return;
-            }
-            /* Stopped, or playing on an un-automated lane: set the clip resting value.
-             * "—" floor: crossing below 0 → "—"; from "—" the first up-step lands on 0. */
-            const cur = S.clipCCVal[t][ac][knobIdx];
-            let nv;
-            if (cur < 0) nv = (accel > 0) ? (accel - 1) : -1;
-            else        { nv = cur + accel; if (nv < 0) nv = -1; }
-            nv = Math.max(-1, Math.min(127, nv));
-            if (nv === cur) return;
-            S.clipCCVal[t][ac][knobIdx]  = nv;
-            S.trackCCLiveVal[t][knobIdx] = nv;
-            _setp('cc_rest', ac + ' ' + knobIdx + ' ' + (nv < 0 ? 255 : nv));
-            S.screenDirty = true;
             return;
         }
         /* Alt+K8 on NOTE FX (bank 1) or DELAY (bank 3), melodic: cycle random algorithm (Pure/Gaus/Walk) */
