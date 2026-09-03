@@ -333,6 +333,7 @@ static void ext_transport_start(seq8_instance_t *inst) {
         }
     }
     inst->playing = 1;
+    PA_LANE_CLOCK_RESET_ALL(inst);
 }
 
 /* Silence/finalize all tracks, panic, and set playing=0. Mirrors the

@@ -142,6 +142,7 @@ static int sp_globals_transport(sp_ctx_t *cx) {
                 }
             }
             inst->playing = 1;
+            PA_LANE_CLOCK_RESET_ALL(inst);
             seq8_ilog(inst, "SEQ8 transport: restart");
         } else if (!strncmp(val, "restart_at:", 11)) {
             /* Loop+Play: restart with active track's clip starting at page*16.
@@ -298,6 +299,7 @@ static int sp_globals_transport(sp_ctx_t *cx) {
                 }
             }
             inst->playing = 1;
+            PA_LANE_CLOCK_RESET_ALL(inst);
             {
                 char _lpbuf[128];
                 snprintf(_lpbuf, sizeof(_lpbuf),

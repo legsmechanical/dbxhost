@@ -403,6 +403,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                     }
                 }
                 inst->playing = 1;
+                PA_LANE_CLOCK_RESET_ALL(inst);
                 if (inst->count_in_merge) {
                     /* Live Merge count-in: do NOT arm recording. The will_relaunch
                      * clips launched in the loop above are now playing; merge_state
@@ -414,6 +415,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                     memset(inst->tracks[inst->count_in_track].drum_last_rec_step, 0xFF,
                            sizeof(inst->tracks[inst->count_in_track].drum_last_rec_step));
                     inst->tracks[inst->count_in_track].clip_playing = 1;
+                    PA_LANE_CLOCK_RESET(&inst->tracks[inst->count_in_track]);
                 }
             }
         }
@@ -673,6 +675,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                     tr->active_clip  = (uint8_t)tr->queued_clip;
                     tr->queued_clip  = -1;
                     tr->clip_playing = 1;
+                    PA_LANE_CLOCK_RESET(tr);
                     /* Clear any lingering recording-suppressor flags on the
                      * newly-active clip. Without this, notes recorded in a
                      * prior session that never saw a loop wrap (because the
@@ -744,6 +747,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                         tr->active_clip  = (uint8_t)tr->queued_clip;
                         tr->queued_clip  = -1;
                         tr->clip_playing = 1;
+                        PA_LANE_CLOCK_RESET(tr);
                         /* Clear lingering recording-suppressor flags on the
                          * newly-launched clip — see queued-launch path above. */
                         if (tr->pad_mode == PAD_MODE_DRUM && tr->drum_clips[tr->active_clip]) {

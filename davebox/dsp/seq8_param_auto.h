@@ -40,6 +40,12 @@
 #define PA_UNDO_ENTRIES     16   /* automated params per clip an undo slot can hold */
 #define PA_RING_SLOTS      256   /* staged (target, value) changes awaiting the JS push; > 8 tracks x PA_TICK_MAX_STAGE x a few ticks */
 #define PA_TICK_MAX_STAGE   16   /* changes one tick may stage — see pa_playback_scan */
+/* The lane clock RESETS ON PLAY (Josh, 2026-09-03: "reset on play"): a lane
+ * slower than x1 spans several clip cycles, and the clip and its lanes must
+ * start together — at every transport start (all tracks) and every clip
+ * launch (that track). Two fields, one macro, so no site can reset half. */
+#define PA_LANE_CLOCK_RESET(tr) do { (tr)->pa_cycle = 0; (tr)->pa_last_ct = 0; } while (0)
+#define PA_LANE_CLOCK_RESET_ALL(inst) do { for (int _pt = 0; _pt < NUM_TRACKS; _pt++) PA_LANE_CLOCK_RESET(&(inst)->tracks[_pt]); } while (0)
 
 #define PA_LIVE_MAX          8   /* targets one track can have under a hand at once */
 #define PA_LIVE_RECORD       1   /* the knob is writing along the playhead */
