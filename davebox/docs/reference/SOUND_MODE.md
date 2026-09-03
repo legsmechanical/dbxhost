@@ -222,6 +222,21 @@ CC 71-78 branch). Until 2026-08-14 nothing on screen named that mapping.
   assignment list is the only route in, and a commit always lands back on it.
   (Shift + *turn* on a pitch-bend macro still latches the bend — a value
   gesture, not an assign one.)
+- ⭑⭑ **THE LINE IS "SEVERAL TARGETS", NOT "HAS A RANGE"** (Josh, 2026-09-05). `macroMulti(mp)`
+  is `legs.length > 1` and NOTHING else:
+  - **one leg, ranged or not** = the PLAIN path plus a clamp (`legClamp`/`legSteps`/`legBounds`).
+    It stores no `v`, keeps the target's own step and sens, polls and draws as it always did, and
+    therefore FOLLOWS playback. ⚠ Driving it through a 0..1 knob position instead would STALL an
+    int or enum outright — 255 positions across eight voices, every detent eaten by rounding
+    ([[schwung-canvaskit-continuous-cell-default-is-the-slow-law]]). Predictable by arithmetic.
+  - **several legs** = `v` is the authority; the poll follows the ANCHOR (first addressable leg),
+    ⚠⚠ re-deriving ONLY when the anchor moved to a value we did not write (`macAnchorVal`) —
+    every poll would reset `v` to the anchor's grid and a slow turn on a coarse anchor would
+    never advance.
+- ⚠⚠ **Both cache sets hang off `macShape[i]`**, a per-knob signature of the mapping's shape
+  checked each tick. The store can change WITHOUT the commit that clears caches — a project load
+  replaces `GS.trackMacros` wholesale — and a stale cell is not an error: the knob just stops
+  writing, silently.
 - **The assign list is two levels** since 2026-09-05, because a macro slot is a
   MAPPING (`{v, legs:[leg,…]}`, a leg being a typed target plus `lo`/`hi`):
   `VIEW_KNOBS` lists `K1`..`K8`, and `VIEW_KNOBLEGS` lists ONE knob's legs with

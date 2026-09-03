@@ -1366,14 +1366,22 @@ span of the list — a knob can sweep three waveforms out of eight.
 Nothing moves while you set a range: it takes effect the next time you turn the
 knob.
 
-Once a knob drives more than one thing — or drives one thing through a range —
-it stops showing that parameter's own dial and shows **its own position** as a
-percentage, labelled with the first target and how many others ride with it
-(`Cutf+2`). It has to: two parameters can disagree, and there is no one number
-that is "the knob's value" other than where you left it. That also means the
-knob doesn't follow automation playback the way a single-target macro does —
-recorded automation still moves the parameters, but the knob stays where your
-hand left it, so the next turn picks up from there.
+A knob with a range on a single target still behaves like that target: it shows
+that parameter's own dial, moves in that parameter's own steps — two clicks a
+voice, four clicks a waveform — and follows automation playback like any other
+macro. The range only decides how far it can go.
+
+Once a knob drives **more than one** thing it can't show any one parameter's
+dial, so it shows **its own position** as a percentage, labelled with the first
+target and how many others ride with it (`Cutf+2`). During playback it follows
+the first target it can reach, which is the right answer whenever you recorded
+the macro as one gesture — all its parameters came from the same knob position.
+
+The one thing to know: if you record automation for one of those parameters
+*separately*, the next time you turn the macro it pulls that parameter back
+into line with the others. One knob can only be in one place. Also, a
+list-style parameter sharing a knob with a smooth one changes in bigger jumps
+than it would on its own — that's the cost of sharing.
 
 Recording works on the parameters, not the knob: sweep a three-target macro
 while recording and you get three lanes, one per parameter, each of which you

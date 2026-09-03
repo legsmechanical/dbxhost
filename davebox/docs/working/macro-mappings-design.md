@@ -32,6 +32,9 @@ GS.trackMacros[t][k] = {
 
 - `lo`/`hi` are fractions of the target's own range, so a leg is portable across targets with
   different units, and `lo > hi` is an INVERTED leg (turn up, cutoff goes down) for free.
+- ⭑ `v` is only ever used by a **multi-target** mapping. A one-target mapping — ranged or not —
+  is the plain path plus a clamp on the value, which is what keeps an int at two detents a voice
+  instead of spreading 255 knob positions across eight values.
 - A leg's output is `lo + v·(hi − lo)` in the target's units, rounded to its step; an enum leg
   quantises the same way the travel law does today.
 - A ONE-leg mapping with `lo=0, hi=1` behaves exactly like today's macro, so the migration
@@ -49,11 +52,17 @@ decisions:
    one-leg mapping keeps that (unchanged look); a multi-leg mapping draws a plain `arc` of `v`
    with the label the user gave the slot (or `M1`..`M8`), and the touched header reads
    `<label>  <v as %>`.
-2. **What the poll does.** Today the widget follows the target when something ELSE moves it
-   (automation, the module editor, an LFO). A multi-leg `v` cannot be inferred back from its
-   targets (two legs may disagree), so `v` is authoritative and the poll skips multi-leg slots.
-   ⚠ This is the same trap as the 09-03 "only the first widget animates" bug in reverse — the
-   rule must be written down in the poll, not discovered.
+2. **What the poll does.** ⭑ CORRECTED 2026-09-05 (Josh: *"and the pickup fix would apply only
+   to multi destination macro knobs?"*). The line is **several targets**, not "has a range":
+   - **One target, ranged or not** — there is nothing to disagree with, so the widget follows the
+     target exactly as it always did. Such a slot is the PLAIN path plus a clamp and stores no
+     `v` at all (see §4).
+   - **Several targets** — `v` is authoritative and follows the **anchor**, the first addressable
+     leg. Legs can disagree, but a recorded macro sweep wrote them all from one `v`, so in the
+     case that actually happens the anchor is the right answer.
+   ⚠⚠ The re-derive must run ONLY when the anchor moved to a value we did not write — every poll
+   would snap `v` back to the anchor's own grid between detents, and a slow turn on a coarse
+   anchor would never advance.
 3. **What automation records — see §4.**
 
 ## 4. Automation identity — RULED: record the LEGS (A)
@@ -71,12 +80,17 @@ What A costs, stated so it is not rediscovered as a bug:
 - **A range is BAKED into the lane at record time.** A lane recorded through `lo..hi` plays back
   the range's output — correct — but re-ranging the leg later does not re-shape data already
   recorded. Only new turns use the new range.
-- **⚠ A multi-leg macro's knob does not follow playback, so the first turn after playback
-  JUMPS.** `v` is authoritative and the poll skips multi-leg slots (§3.2), so automation moving
-  the legs' targets leaves `v` where the hand left it; the next turn writes
-  `lo + v·(hi − lo)` from that stale `v`. A one-leg mapping is unaffected — it keeps today's
-  path, where the poll holds the value current. No soft-takeover is built; that would be a
-  separate ruling.
+- ~~A multi-leg macro's knob does not follow playback, so the first turn after playback JUMPS.~~
+  **RESOLVED 2026-09-05.** Move's knobs are endless encoders, so there was never a pickup
+  *flavour* to choose — the whole problem was a stale stored position. A one-target mapping keeps
+  no position (§3.2) and a multi-target one follows its anchor, so nothing jumps.
+  ⚠ **The residual, and it is inherent to A, not a gap:** on a multi-target knob, if you
+  automate a NON-anchor leg separately, the first turn pulls it back into line with the anchor.
+  One knob imposes one position on everything it drives. Recorded macro sweeps never hit this —
+  every leg came from the same `v`.
+  ⚠ Also inherent: an int or enum leg riding a multi-target knob only changes every ~255/N
+  detents. That is the price of sharing one knob with a float, and it is why a SINGLE ranged leg
+  is deliberately NOT driven this way.
 
 ## 5. Surface
 
