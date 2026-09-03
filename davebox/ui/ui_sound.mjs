@@ -1142,8 +1142,7 @@ export function soundRetarget(track, slot) {
     S.previewIdx = -1;
     S.previewDelay = 0;
     S.confirmDel = false;
-    S.bakedCacheKey = '';
-    S.bakedScan = -1;
+    dropBakedNames();
     S.fileState = null;
     S.menuStack = [];
     S.menuKey = null;
@@ -4777,8 +4776,7 @@ function commitItem(row) {
          * is keyed by module|comp|count, none of which a bank switch changes,
          * so without this you keep browsing the previous bank's names against
          * the new bank's sounds. Drop it and let the next open rescan. */
-        S.bakedCacheKey = '';
-        S.bakedNames = [];
+        dropBakedNames();
         const target = row.navigateTo;
         if (target && S.levels && S.levels[target]) {
             const at = S.menuStack.findIndex(e => e.levelKey === target);
@@ -4977,8 +4975,10 @@ function ensureBakedNames() {
     const key = S.moduleId + '|' + S.comp + '|' + S.bakedCount;
     let via = 'scanning';
     if (key === S.bakedCacheKey && S.bakedNames.length === S.bakedCount) {
-        /* Warm in memory. Selecting any dynamic item drops this, so a bank
-         * switch cannot land here — which is what earns skipping the sampling. */
+        /* Warm in memory. Selecting any dynamic item drops this (dropBakedNames,
+         * from BOTH pickers — davebox's menu and the grid's select_param write),
+         * so a bank switch cannot land here — which is what earns skipping the
+         * sampling. */
         S.bakedScan = -1;
         via = 'memory';
     } else {
@@ -5002,10 +5002,40 @@ function ensureBakedNames() {
     log('baked: ' + S.bakedCount + ' via ' + sp.listKey + ' (' + via + ')');
 }
 
-/* Are the module's preset names complete and current? */
+/* Are the module's preset names complete and current?
+ *
+ * ⚠⚠ "Current" means THIS module's, in THIS slot: the key must match, not just
+ * the length. Without that check, obxd's 128 names survived a track switch (the
+ * retarget cleared the KEY but not the list) and a module swap (runDiscovery
+ * touches none of this), and minijv opened on obxd's preset list — Josh,
+ * 2026-09-03: "when i loaded mini-jv on a new track IT was showing the obxd
+ * preset list". Length alone cannot tell two 128-preset sets apart. */
 function bakedNamesReady() {
     return !!S.presetSpec && S.bakedScan < 0 && S.bakedCount > 0 &&
-           S.bakedNames.length === S.bakedCount;
+           S.bakedNames.length === S.bakedCount &&
+           S.bakedCacheKey === S.moduleId + '|' + S.comp + '|' + S.bakedCount;
+}
+
+/* Forget the in-memory names. ONE owner for every "the set behind the list is
+ * not the set we walked" moment: a bank pick from either picker, a retarget, a
+ * swap. The disk cache is untouched — it is keyed by fingerprint, so the next
+ * ensureBakedNames re-identifies the set and reads the right file back. */
+/* Is this bare key some level's select_param — the write that REPLACES the
+ * preset set (obxd's fxb bank, dexed's cartridge)? */
+function isSelectParamKey(k) {
+    if (!k || !S.levels) return false;
+    for (const lk of Object.keys(S.levels)) {
+        const lv = S.levels[lk];
+        if (lv && lv.items_param && lv.select_param === k) return true;
+    }
+    return false;
+}
+
+function dropBakedNames() {
+    S.bakedCacheKey = '';
+    S.bakedNames = [];
+    S.bakedCount = 0;
+    S.bakedScan = -1;
 }
 
 /* One slice of the prescan. Runs from soundTick only.
@@ -7607,8 +7637,18 @@ function ppIo() {
             if (!S.presetSpec) return null;
             if (bakedNamesReady()) return S.bakedNames;
             /* Entered and we have nothing: resolve caches, and arm the walk
-             * only if both are cold. Cheap and idempotent when warm. */
-            if (o && o.entered && S.bakedScan < 0) ensureBakedNames();
+             * only if both are cold. Cheap and idempotent when warm.
+             *
+             * ⚠⚠ NOT WHILE A WRITE IS IN FLIGHT. A bank pick on the grid
+             * queues `bank_index` through setSlotParam and lands you here, on
+             * Presets, entered, in the same gesture — before the drain. The
+             * fingerprint below writes the preset index DIRECTLY (engineSet),
+             * so run now it would sample the OLD bank and file its names under
+             * the new pick, and a raw write racing the module's bank load can
+             * be stomped by the host's ~8 ms mailbox patience. A few ticks of
+             * the single-name body is the price; the list follows. */
+            if (o && o.entered && S.bakedScan < 0 &&
+                !S.pendingWrites.length && !S.inflight.length) ensureBakedNames();
             return bakedNamesReady() ? S.bakedNames : null;
         },
 
@@ -7681,6 +7721,14 @@ installPpCtx({
     setSlotParam: (slot, key, value) => {
         const k = ppBare(key);
         if (k === null) { log('pp: unprefixed write ignored: ' + key); return; }
+        /* ⚠⚠ A SELECT_PARAM WRITE IS A BANK SWITCH. The grid's items page
+         * commits through this hook, not through davebox's commitItem(row),
+         * so the cache drop that lives there never ran for it: obxd's bank
+         * page changed the sounds and the Presets page kept the old bank's
+         * names (Josh, 2026-09-03). select_param ONLY — the browser's jog
+         * writes list_param through here too, and dropping on that would
+         * rescan per detent. */
+        if (isSelectParamKey(k)) dropBakedNames();
         queueWrite(k, String(value));
     },
 
