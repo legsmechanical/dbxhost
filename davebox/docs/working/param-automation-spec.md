@@ -152,6 +152,34 @@ thread plus a file write with fsync on the JS thread; during a recorded sweep th
 fired one every poll, on a tick that is already the system's constraint. The chunked fetch
 keeps the dirty flag set until a save completes, so waiting loses nothing.
 
+## 2b. MIDI — ⭑RULED (Josh, 2026-09-03 late): NO MIDI Out device; MIDI is a target family
+
+Supersedes §6 item 6 (the "8 CC knobs + Aftertouch device"). "The MIDI control we're looking
+for can be slotted into what we've already created."
+
+- **Target family** `cc:<n>` / `at` / `pb`, emitted by the DSP itself on the track's route. A
+  macro kind `midi`. **CC** on MIDI tracks only; **aftertouch and pitch bend on every track
+  type** (Schwung modules and Move both take them). Poly aftertouch stays a pad thing, no lane.
+- **Pitch bend** is the store's native unit (14-bit): a bipolar dial, centre = rest;
+  **springs back to centre on release** (~200 ms ease-out, sent at control rate, recorded if
+  Record is on); **Shift + turn latches** (no spring until the next plain touch-release).
+  Only bend springs.
+- **A MIDI track's SOUND + CONFIG card**: K1 Expression (CC 11), K2 Pan (CC 10), K3 Mod (CC 1),
+  K4 Sustain (CC 64, a switch); bottom row **Program / Bank MSB / Bank LSB** — PER CLIP
+  (`--` = unset), sent on clip launch and when changed, not lanes. No door text: `CLK MENU` in
+  the footer. The menu: channel, route, and the config rows.
+- **Session strip on a MIDI track**: Volume = CC 7, Pan = CC 10; the Send A / Send B pages are
+  a NO-OP for a MIDI track's knobs.
+- **Resting values**: CCs have no readback — davebox owns and persists each MIDI knob's value
+  per track (sidecar); the automation store's rest covers automated ones.
+- **Sustain and other switches** send 0/127 and stay stepped.
+- **Move tracks**: aftertouch and pitch bend only, no CC (per the earlier ruling).
+- **Pad-pressure recording moves onto the `at` target** (channel aftertouch); the old AT
+  lane retires with it. ⚠ Build note: the old lane also held PER-PITCH poly-AT lanes; those
+  have no one-target form — poly recording stays on the old lane until P8 rules (a `pat:<n>`
+  target family would be the store's shape for it).
+- Inbound CC → macro learn: later.
+
 ## 3. The grammar (all ⭑RULED)
 
 - **Write gate**: automation is written only while **Record is on** and the transport plays

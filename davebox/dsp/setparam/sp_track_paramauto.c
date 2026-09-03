@@ -204,6 +204,16 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
     }
 
     /* pa_clear: "<clip>" — every parameter's automation in the clip. */
+    /* pa_midi_out: "<target> <val14>" — a MIDI target's value sent NOW (a
+     * macro or mix knob turned; the store is not involved). CC / at / pb. */
+    if (!strcmp(sub, "pa_midi_out")) {
+        int v = 0, cc = 0;
+        PA_TARGET(p, tgt);
+        PA_SKIP_SPACE(p); PA_UINT(p, v);
+        if (!pa_target_is_midi(tgt, &cc)) return 1;
+        pa_emit_midi(tr, cc, (uint16_t)(v < 0 ? 0 : v > 16383 ? 16383 : v));
+        return 1;
+    }
     if (!strcmp(sub, "pa_clear")) {
         int clip = 0;
         PA_SKIP_SPACE(p); PA_UINT(p, clip);

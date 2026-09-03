@@ -645,6 +645,9 @@ typedef struct {
     /* Pingpong runtime direction: +1 ascending, -1 descending. Initialized on
      * clip launch / transport start from playback_dir. Not persisted. */
     int8_t   pp_dir_state;
+    /* Program change / bank select for THIS clip (2026-09-03): -1 = unset.
+     * Sent on launch (clip_send_program) and when set (tN_cC_program …). */
+    int16_t  program, bank_msb, bank_lsb;
 } clip_t;
 
 /* ------------------------------------------------------------------ */
@@ -3936,6 +3939,7 @@ static inline void melodic_anchor_playhead(seq8_instance_t *inst,
 
 static void clip_init(clip_t *cl) {
     int s;
+    cl->program = cl->bank_msb = cl->bank_lsb = -1;   /* unset: nothing sent */
     cl->length         = SEQ_STEPS_DEFAULT;
     cl->loop_start     = 0;
     cl->active         = 0;
@@ -5777,12 +5781,28 @@ static int at_auto_eval(const at_auto_t *a, int lane, uint32_t t, int *defined) 
  * "at"). Separate from cc_emit, which is addressed by knob index through the
  * lane system's own assignment table: an automation entry names its CC
  * directly, and aftertouch arrives as cc = -1. */
-static void pa_emit_midi(seq8_track_t *tr, int cc, uint8_t v) {
+/* `v` is the store's 14-bit value (0..PA_VAL_MAX): pitch bend goes out whole
+ * (LSB, MSB), CC and channel pressure as its top 7 bits. */
+static void pa_emit_midi(seq8_track_t *tr, int cc, uint16_t v) {
     uint8_t ch = tr->channel & 0x0F;
+    if (v > 16383) v = 16383;
+    if (cc == -2) {
+        pfx_send(&tr->pfx, (uint8_t)(0xE0 | ch), (uint8_t)(v & 0x7F), (uint8_t)(v >> 7));
+        return;
+    }
+    uint8_t v7 = (uint8_t)((v * 127u) / 16383u);
     if (cc < 0)
-        pfx_send(&tr->pfx, (uint8_t)(0xD0 | ch), v, 0);       /* channel pressure */
+        pfx_send(&tr->pfx, (uint8_t)(0xD0 | ch), v7, 0);       /* channel pressure */
     else if (cc <= 127)
-        pfx_send(&tr->pfx, (uint8_t)(0xB0 | ch), (uint8_t)cc, v);
+        pfx_send(&tr->pfx, (uint8_t)(0xB0 | ch), (uint8_t)cc, v7);
+}
+/* A clip's Program / Bank (per clip, 2026-09-03): sent when the clip launches
+ * and when set. -1 = unset = nothing sent. Bank before program, MSB then LSB. */
+static void clip_send_program(seq8_track_t *tr, const clip_t *cl) {
+    uint8_t ch = tr->channel & 0x0F;
+    if (cl->bank_msb >= 0) pfx_send(&tr->pfx, (uint8_t)(0xB0 | ch), 0,  (uint8_t)cl->bank_msb);
+    if (cl->bank_lsb >= 0) pfx_send(&tr->pfx, (uint8_t)(0xB0 | ch), 32, (uint8_t)cl->bank_lsb);
+    if (cl->program  >= 0) pfx_send(&tr->pfx, (uint8_t)(0xC0 | ch), (uint8_t)cl->program, 0);
 }
 
 static void cc_emit(seq8_track_t *tr, int k, uint8_t v) {

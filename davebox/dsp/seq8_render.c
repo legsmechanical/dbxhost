@@ -416,6 +416,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                            sizeof(inst->tracks[inst->count_in_track].drum_last_rec_step));
                     inst->tracks[inst->count_in_track].clip_playing = 1;
                     PA_LANE_CLOCK_RESET(&inst->tracks[inst->count_in_track]);
+                    clip_send_program(&inst->tracks[inst->count_in_track], &inst->tracks[inst->count_in_track].clips[inst->tracks[inst->count_in_track].active_clip]);
                 }
             }
         }
@@ -676,6 +677,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                     tr->queued_clip  = -1;
                     tr->clip_playing = 1;
                     PA_LANE_CLOCK_RESET(tr);
+                    clip_send_program(tr, &tr->clips[tr->active_clip]);
                     /* Clear any lingering recording-suppressor flags on the
                      * newly-active clip. Without this, notes recorded in a
                      * prior session that never saw a loop wrap (because the
@@ -748,6 +750,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                         tr->queued_clip  = -1;
                         tr->clip_playing = 1;
                         PA_LANE_CLOCK_RESET(tr);
+                        clip_send_program(tr, &tr->clips[tr->active_clip]);
                         /* Clear lingering recording-suppressor flags on the
                          * newly-launched clip — see queued-launch path above. */
                         if (tr->pad_mode == PAD_MODE_DRUM && tr->drum_clips[tr->active_clip]) {

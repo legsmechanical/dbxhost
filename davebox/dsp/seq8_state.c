@@ -202,6 +202,10 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
             /* Playback direction (v=35); sparse: 0=Forward = default, omitted. */
             if (cl->playback_dir != 0)
                 fprintf(fp, ",\"t%dc%d_pd\":%d", t, c, (int)cl->playback_dir);
+            /* Program / Bank (2026-09-03): sparse, -1 = unset = omitted. */
+            if (cl->program  >= 0) fprintf(fp, ",\"t%dc%d_pg\":%d", t, c, (int)cl->program);
+            if (cl->bank_msb >= 0) fprintf(fp, ",\"t%dc%d_bm\":%d", t, c, (int)cl->bank_msb);
+            if (cl->bank_lsb >= 0) fprintf(fp, ",\"t%dc%d_bl\":%d", t, c, (int)cl->bank_lsb);
             /* Playback style: 0=Step (default, omitted), 1=Audio. */
             if (cl->playback_audio_reverse != 0)
                 fprintf(fp, ",\"t%dc%d_par\":%d", t, c, (int)cl->playback_audio_reverse);
@@ -676,6 +680,12 @@ static void seq8_load_state(seq8_instance_t *inst) {
             /* Playback direction (v=35); default 0=Forward when sparse-absent. */
             snprintf(key, sizeof(key), "t%dc%d_pd", t, c);
             cl->playback_dir = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 3);
+            snprintf(key, sizeof(key), "t%dc%d_pg", t, c);
+            cl->program  = (int16_t)clamp_i(json_get_int(buf, key, -1), -1, 127);
+            snprintf(key, sizeof(key), "t%dc%d_bm", t, c);
+            cl->bank_msb = (int16_t)clamp_i(json_get_int(buf, key, -1), -1, 127);
+            snprintf(key, sizeof(key), "t%dc%d_bl", t, c);
+            cl->bank_lsb = (int16_t)clamp_i(json_get_int(buf, key, -1), -1, 127);
             cl->pp_dir_state = initial_pp_dir(cl->playback_dir);
             snprintf(key, sizeof(key), "t%dc%d_par", t, c);
             cl->playback_audio_reverse = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 1);

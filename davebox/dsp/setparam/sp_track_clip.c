@@ -439,6 +439,19 @@ static int sp_track_clip(sp_ctx_t *cx) {
         }
         /* tN_cC_dir "0..3": per-clip playback direction (remote UI). Unlike the
          * active-clip tN_clip_playback_dir sub, this targets the named clip. */
+        /* tN_cC_program / _bank_msb / _bank_lsb "-1..127": per-clip Program
+         * change and Bank select (2026-09-03). -1 unsets. Sent now when this
+         * is the active clip, and on every launch of it. */
+        if (!strcmp(p, "_program") || !strcmp(p, "_bank_msb") || !strcmp(p, "_bank_lsb")) {
+            int v = clamp_i(my_atoi(val), -1, 127);
+            if (p[1] == 'p') cl->program = (int16_t)v;
+            else if (p[6] == 'm') cl->bank_msb = (int16_t)v;
+            else cl->bank_lsb = (int16_t)v;
+            if (cidx == (int)tr->active_clip) clip_send_program(tr, cl);
+            rui_mark(inst, tidx, cidx);
+            inst->state_dirty = 1;
+            return 1;
+        }
         if (!strcmp(p, "_dir")) {
             cl->playback_dir = (uint8_t)clamp_i(my_atoi(val), 0, 3);
             cl->pp_dir_state = initial_pp_dir(cl->playback_dir);

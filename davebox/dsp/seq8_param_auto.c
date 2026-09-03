@@ -171,11 +171,16 @@ static int pa_target_lookup(const seq8_instance_t *inst, const char *target) {
     return -1;
 }
 
-/* A target string the DSP can emit itself: "cc:<n>" or "at". Everything else
- * is staged for JS. Returns 1 and sets *cc (0..127, or -1 for aftertouch). */
+/* A target string the DSP can emit itself: "cc:<n>", "at" or "pb" (pitch
+ * bend, 2026-09-03 — the store's 14 bits ARE the wire's). Everything else is
+ * staged for JS. Returns 1 and sets *cc (0..127, PA_CC_AT for aftertouch,
+ * PA_CC_PB for pitch bend). */
+#define PA_CC_AT (-1)
+#define PA_CC_PB (-2)
 static int pa_target_is_midi(const char *t, int *cc) {
     if (!t) return 0;
-    if (t[0] == 'a' && t[1] == 't' && t[2] == '\0') { if (cc) *cc = -1; return 1; }
+    if (t[0] == 'a' && t[1] == 't' && t[2] == '\0') { if (cc) *cc = PA_CC_AT; return 1; }
+    if (t[0] == 'p' && t[1] == 'b' && t[2] == '\0') { if (cc) *cc = PA_CC_PB; return 1; }
     if (t[0] == 'c' && t[1] == 'c' && t[2] == ':') {
         int n = 0, any = 0;
         for (const char *p = t + 3; *p >= '0' && *p <= '9'; p++) { n = n * 10 + (*p - '0'); any = 1; }
@@ -845,7 +850,9 @@ static void pa_record_tick(seq8_instance_t *inst, seq8_track_t *tr, int track, i
 
 /* Emit callback for the MIDI targets. Supplied by the caller so this file
  * stays independent of the pfx runtime's internals. */
-typedef void (*pa_midi_emit_fn)(seq8_track_t *tr, int cc, uint8_t val);
+/* `val` is the store's 14-bit value; the emitter narrows it for CC and
+ * aftertouch and sends it whole for pitch bend. */
+typedef void (*pa_midi_emit_fn)(seq8_track_t *tr, int cc, uint16_t val);
 
 #ifdef SEQ8_TESTING
 /* Test seam. The end-of-pass seqlock check catches a write that STARTS AND
@@ -899,7 +906,7 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
         /* A MIDI target leaves as 7 bits: a 14-bit change that lands on the
          * same 7-bit value is not a change on the wire. Under Smooth that is
          * most of them. */
-        if (midi && e->last_sent_valid &&
+        if (midi && cc != PA_CC_PB && e->last_sent_valid &&
             (e->last_sent * 127u) / PA_VAL_MAX == (v * 127u) / PA_VAL_MAX) continue;
         out[nout].target = tgt;
         out[nout].val    = v;
@@ -932,12 +939,35 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
             break;
         }
         if (out[i].midi) {
-            /* 14-bit normalized down to the 7 bits MIDI carries. */
-            if (emit) emit(tr, out[i].cc, (uint8_t)((out[i].val * 127u) / PA_VAL_MAX));
+            if (emit) emit(tr, out[i].cc, out[i].val);   /* the emitter narrows */
         } else {
             pa_ring_push(inst, out[i].target, out[i].val);
         }
     }
+}
+
+/* SPI THREAD: write one value at one cell of a target's lane — the recorder's
+ * shape (clear the cell, set the point), for a value that arrives as a
+ * set_param rather than through the audio thread's live hands: the pads'
+ * channel aftertouch (sp_track_live). Takes the writer lock. */
+static void pa_write_cell(seq8_instance_t *inst, int track, int clip, const char *target,
+                          uint32_t tick, uint32_t cell, uint16_t val) {
+    int id = pa_target_id(inst, target);
+    if (id < 0) return;
+    pa_lock(inst);
+    pa_write_begin(inst);
+    pa_entry_t *e = pa_get(inst, track, clip, id);
+    if (!e) inst->pa_store_full = 1;
+    else {
+        uint32_t snap = (tick / cell) * cell;
+        uint16_t s = (uint16_t)(snap > 0xFFFFu - cell ? 0xFFFFu - cell : snap);
+        pa_clear_range(e, s, (uint16_t)(s + cell - 1));
+        if (!pa_set_point(e, s, val)) inst->pa_store_full = 1;
+        e->flags |= PA_FLAG_SMOOTH;                /* a pressure sweep, like a knob's */
+        inst->pa_dirty = 1; inst->state_dirty = 1;
+    }
+    pa_write_end(inst);
+    pa_unlock(inst);
 }
 
 /* Transport stopped, or the clip changed: every parameter automation was

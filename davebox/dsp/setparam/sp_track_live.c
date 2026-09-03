@@ -119,8 +119,26 @@ static int sp_track_live(sp_ctx_t *cx) {
          * The live send above runs regardless, so AT is monitored during the
          * count-in (recording=0 then); capture starts at recording proper.
          * Snap to 1/32 (matches CC); lane keyed by pitch (poly) / 255 (chan). */
-        if (tr->recording) {
-            uint8_t  key  = (mode == 2) ? AT_LANE_CHAN : (uint8_t)clamp_i(pitch, 0, 127);
+        if (tr->recording && mode == 2) {
+            /* CHANNEL aftertouch records into the PARAM AUTOMATION store as the
+             * `at` target (2026-09-03): one lane with everything the store
+             * gives — the AUTOMATION list, mute/delete, rate, the macro. The
+             * cell is the recorder's (half a step). Poly AT keeps its lanes. */
+            clip_t *_pacl = &tr->clips[tr->active_clip];
+            uint32_t _tps = _pacl->ticks_per_step ? _pacl->ticks_per_step : 24;
+            uint32_t _cell = _tps / 2; if (_cell < 6) _cell = 6;
+            uint32_t _rec = tr->current_clip_tick;
+            if (tr->pad_mode == PAD_MODE_DRUM) {
+                uint32_t _wl = (uint32_t)_pacl->length * _pacl->ticks_per_step;
+                uint32_t _abs = (uint32_t)inst->global_tick * (uint32_t)TICKS_PER_STEP
+                              + (uint32_t)inst->master_tick_in_step;
+                _rec = (uint32_t)_pacl->loop_start * _pacl->ticks_per_step + (_wl ? (_abs % _wl) : 0);
+            }
+            int _pv = clamp_i(press, 0, 127);
+            pa_write_cell(inst, tidx, (int)tr->active_clip, "at", _rec, _cell,
+                          (uint16_t)((_pv * 16383) / 127));
+        } else if (tr->recording) {
+            uint8_t  key  = (uint8_t)clamp_i(pitch, 0, 127);
             /* Drum tracks freeze tr->current_clip_tick (only per-lane playheads
              * advance), so derive the record tick from the master clock wrapped
              * to the clip window — AT automation is track-level, not lane-aware. */
