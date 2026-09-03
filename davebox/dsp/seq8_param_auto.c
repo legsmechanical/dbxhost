@@ -777,9 +777,12 @@ static void pa_record_tick(seq8_instance_t *inst, seq8_track_t *tr, int track, i
         if (!pa_trylock(inst)) return;            /* next tick */
         pa_write_begin(inst);
         pa_entry_t *e = pa_get(inst, track, clip, (int)tgt);
-        /* Recorded along the LANE clock, so a lane with a rate plays back what
-         * the hand did at the speed it was heard. */
-        uint32_t snap = e ? (pa_entry_tick(e, ct, clip_ticks, tr->pa_cycle) / cell) * cell : 0;
+        /* ⚠ Recorded in CLIP time, whatever the lane's rate: the lane is
+         * always the x1 reference and Rate is a PLAYBACK transform of the
+         * whole cycle (Josh, 2026-09-03 — recording along the sped-up lane
+         * clock made page 2 of a sweep overwrite page 1). */
+        uint32_t snap = (ct / cell) * cell;
+        (void)clip_ticks; (void)tr;
         if (e && l->last_snap == snap) { pa_write_end(inst); pa_unlock(inst); continue; }
         if (!e) inst->pa_store_full = 1;
         else {
