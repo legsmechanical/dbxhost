@@ -209,11 +209,17 @@ step('⭑ on the NOTE FX card: Mute + touch mutes Gate Time\'s automation (Mute 
     cc(76, 2); ticks(2);
     assert(S.bankParams[T][1][5] > 100, 'the bank value moved, got ' + S.bankParams[T][1][5]);
     assert(sets.some(x => x.startsWith('t0_pa_rest_move=0 seq:0:noteFX_gate ')), 'the stopped turn moved the rest, got ' + JSON.stringify(sets.slice(0, 8)));
+    /* ⭑ and a HELD STEP + turn LOCKS it from the card too (Josh, 2026-09-03:
+     * the knob is an automation target; Resolution and friends still decline). */
     sets.length = 0;
     S.heldStep = 3; S.heldStepBtn = 3; S.heldStepNotes = [60];
-    cc(76, 2); ticks(2);
+    cc(76, 1); ticks(2);
+    assert(sets.some(x => x.startsWith('t0_pa_set2=') && x.includes(' seq:0:noteFX_gate ')), 'a lock from the card, got ' + JSON.stringify(sets.slice(0, 8)));
+    sets.length = 0;
+    S.activeBank = 0; cc(71, 1); ticks(2);                   /* CLIP K1 Resolution: not a target */
+    assert(!sets.some(x => x.startsWith('t0_pa_set2=')), 'Resolution still declines the hold');
+    S.activeBank = 1;
     S.heldStep = -1; S.heldStepBtn = -1; S.heldStepNotes = [];
-    assert(!sets.some(x => x.startsWith('t0_pa_set2=')), 'a held step is declined on a track-setting bank: no lock from the card');
     /* Delete + touch clears */
     sets.length = 0;
     cc(119, 127);

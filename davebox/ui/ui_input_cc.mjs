@@ -52,6 +52,7 @@ import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
 import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen } from './ui_automation_bank.mjs';
 import { automationParamEdit } from './ui_automation.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
+import { bankKnobLockTurn } from './ui_sound.mjs';
 import { soundActive, soundOpen, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, soundEnterBuses } from './ui_sound.mjs';
@@ -3795,7 +3796,17 @@ function _onCC_knobs(d1, d2) {
      * pm.lock = true: fire once then block until touch release (S.knobLocked). */
     if (d1 >= 71 && d1 <= 78) {
         /* Exclusive overlays — knob turns have no visible effect and should be swallowed. */
-        if (S.heldStep >= 0) return;
+        /* A HELD STEP: a knob that is an automation target LOCKS at that step
+         * (Josh, 2026-09-03 — the bank knob and the macro pointing at it are
+         * one parameter); any other bank knob still declines the hold, as
+         * the held-step law says (nothing per-step to write). */
+        if (S.heldStep >= 0) {
+            if (!S.sessionView) {
+                const _d = decodeDelta(d2);
+                if (_d) bankKnobLockTurn(S.activeTrack, S.activeBank, d1 - 71, S.altMode, _d);
+            }
+            return;
+        }
         if (S.globalMenuOpen || S.tapTempoOpen || S.confirmBake || S.confirmClearSession || S.confirmConvertToDrum || S.confirmConvertToConduct || S.menuInfoLines.length > 0 || S.confirmExport || S.exportDoneDialog || S.recordBlockedDialog || S.confirmStateWipe || S.bpmMoveInfo) return;
         const knobIdx = d1 - 71;
         S.knobTouched          = knobIdx;

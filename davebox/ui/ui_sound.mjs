@@ -3253,6 +3253,29 @@ automationRegisterSeqApply((track, key, val) => {
     return true;
 });
 
+/* A bank card's knob turned UNDER A HELD STEP (Josh, 2026-09-03: "a held step
+ * plus a turn locks the knob if it is an automation target"): one whole step
+ * per detent — deliberate, no accumulation — written live through the bank's
+ * own path and heard by the owner as the step's lock. False when the knob is
+ * not a target on this pad mode (the caller then declines, as before). */
+export function bankKnobLockTurn(track, bank, k, altMode, delta) {
+    const alt = (altMode && bank === 3 && k === 0) ? 'clkfb' : null;
+    const key = seqAutoKeyFor(bank, k, alt);
+    if (!key) return false;
+    const m = { kind: 'bank', bank, k };
+    if (alt) m.alt = alt;
+    const meta = bankMacroMeta(m, track);
+    if (!meta) return false;
+    const tr = bankMacroTravel(meta);
+    const cur = bankMacroValue(m, track);
+    const nv = Math.max(meta.min, Math.min(meta.max, cur + (delta > 0 ? 1 : -1) * tr.step));
+    if (nv === cur) return true;
+    bankMacroWriteFor(track, m, nv);
+    automationParamEdit(track, effectiveClip(track), 'seq', track + ':' + key, String(nv), String(cur));
+    GS.screenDirty = true;
+    return true;
+}
+
 /* The travel for a bank int: whole steps only (a bank value IS an integer),
  * range-normalised to ~255 positions with the declared step as a floor;
  * detents per step from the bank's own feel (a list or toggle keeps its
