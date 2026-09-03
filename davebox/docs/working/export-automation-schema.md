@@ -480,6 +480,49 @@ because factory content is left as a library reference. So:
   with project-relative paths — a second pipeline beside `pack.py`'s `collectSamples`, which
   already does exactly this job for the `.abl` route.
 
+### 🔴 P7 RESULT — per-note automation is MPE, so `.abl` is ruled out ENTIRELY
+
+`P7_pernote_pb_cc11.ablbundle`: the P0 base with every note on track 1 given
+`automations: {"PitchBend": […], "11": […]}`, note-relative times within each note's duration.
+
+| what happened | reading |
+|---|---|
+| **CC 11 did not appear at all** | a CC number is not accepted as a per-note key here |
+| **PitchBend appeared — as MPE MODULATION**, its clip lane EMPTY | the data landed as PER-NOTE EXPRESSION, not as a channel-level bend or a CC lane |
+
+⇒ **Per-note automation is MPE per-note expression.** It cannot produce outbound CC 11 or
+channel pitch bend to external gear — which is the whole point of davebox's MIDI targets. So it is
+not a fallback; it is a different feature.
+
+## 🚫 `.abl` CANNOT CARRY davebox's MIDI AUTOMATION — three tests, not one inference
+
+1. **Clip envelopes reject MIDI** — P4 (two guessed key names) and P6 (the P0 base, isolated, in
+   the reference set's own language) both "Unknown id".
+2. **Per-note automation is MPE**, not CC — P7 above.
+3. **CC numbers are not accepted as per-note keys** — P7 above.
+
+…against a working error control (P3) and a working positive (P2, mixer automation). This one is
+not absence-reasoning.
+
+## ⭐ CORRECTION: `.als` IS AUTHORABLE — the device roster is FINITE
+
+Josh: *"i don't understand why we can't author it."* He was right; §7's original claim
+("reimplementing Live's importer") was wrong, and wrong in a familiar way — reasoning from *the
+output file is 1.14 MB* to *the input space is unbounded*. They are different things.
+
+**Every device `kind` across every Move bundle on this machine — the complete roster:**
+
+```
+drumCell  instrumentRack  drumRack  audioEffectRack
+drift  wavetable  melodicSampler
+chorus  reverb  delay  saturator  phaser  channelEq  compressor  limiter
+```
+
+Fifteen kinds, **all of them native Live devices**. So the work is a bounded mapping table, one
+entry per kind, each obtainable by saving a Live set containing that device and reading its XML —
+tedious and finite, not open-ended. ⭑ And it **stages**: Drift alone covers every Schwung track,
+since those already get Drift dummies today.
+
 ### The three honest options
 
 1. ⭐ **Test per-note automation first — it was never actually tried.** Every probe so far
@@ -497,7 +540,25 @@ because factory content is left as a library reference. So:
 3. **Ship the mixer half now** (fully specified, §5f) and leave MIDI. Already ruled once; may be
    re-ruled given what the pivot costs.
 
-🚫 **What is NOT on the list: davebox writing `.als` directly.** Not because it is unpleasant, but
-because it means owning Move→Live device translation forever.
+### ⭐ RECOMMENDED: davebox writes `.als` — staged
+
+Now that `.abl` is ruled out for MIDI and the roster is known to be finite, this is the route.
+
+1. **Structure first, Drift only.** Tracks, clips, notes, mixer, `MidiControllers` +
+   `ClipEnvelope`s, every track a Drift dummy. This alone gives a WORKING MIDI-automation export
+   for Schwung tracks, which is most of the point. Josh's reference file is the complete spec for
+   every part of it.
+2. **Drum racks next** — the big one, since it carries the user's kit. `drumCell` → Live drum
+   branch + `FileRef`. The reference contains a real translated example to copy.
+3. **The remaining instruments and effects**, one at a time, each behind the same table.
+4. **Samples:** factory content as `RelativePathType 6` User-Library-relative refs (resolves on
+   any machine with the ABL Assets pack); user-recorded samples copied into a Project folder with
+   project-relative refs. `collectSamples` already locates them for the `.abl` route.
+5. Output becomes a `.als` + Project folder instead of an `.ablbundle`. ❓ Whether that REPLACES
+   the bundle export or sits beside it is Josh's call — the bundle is the only artifact that can
+   go back to Move/Note, though export has always been one-way to Live.
+
+⚠ **A device kind not yet in the table must degrade to a Drift dummy, not break the export** —
+and say so in the manual, because a new Move firmware device will eventually hit it.
 
 Related: `param-automation-plan.md` §P7, `ui_export.mjs`, `dsp/seq8_bake.c:228-459` and `:926`.
