@@ -155,34 +155,51 @@ is pulled straight off the device, no Move Manager needed:
 That one file shows `clip.envelopes` in use and what `parameterId` refers to, which is the whole
 question the deferral was about.
 
-## 5b. ⚠⚠ The plan's assumption may be exactly BACKWARDS
+## 5b. 🚫 RETRACTED — "the bundle is bounded by what Move can do" is FALSE
 
-`param-automation-plan.md` P7 says: *"cc:/at entries render … chain-param entries omitted (no
-MIDI representation)."* That was written from a MIDI point of view — CC is expressible on the
-wire, a chain param is not.
+This section previously argued that because Move's own automation is device-parameter automation,
+a MIDI message might have no clip-level target in `Song.abl`. **Josh killed it with better
+evidence than the argument had:**
 
-But the bundle is a MOVE SET, and Move's own automation is **device-parameter** automation. So in
-`Song.abl` the reverse may hold:
+> *"we've already established that ablbundle sets can contain more than move could provide on its
+> own bc we're putting 8 tracks into them and move only has 4. the implication is the ablbundle
+> set IS an abl set as far as ableton is concerned."*
 
-- **A chain/device parameter is exactly what `clip.envelopes` is FOR** — Move records device
-  automation itself, so this container is its native home. These may export cleanly.
-- **A MIDI message (`cc:`, `at`, `pb`) may have no clip-level target at all** — Move has no
-  concept of automating outbound MIDI; the only MIDI-message vocabulary found anywhere in Live's
-  importer strings (`PitchBend`, `Pressure`, CC numbers) sits with the **per-note** block, not
-  with `envelopes`.
+davebox already writes **8 tracks** into a bundle when Move itself holds 4, and Live reads it. So
+`Song.abl` is a general Ableton set format, and **what Move can author says nothing about what the
+format can express.** The only constraint is Live's READER.
 
-⚠ This is a HYPOTHESIS, not a finding — it is exactly the inference-from-absence that already
-went wrong once here. The Move-recorded example above tests it directly: if the envelope it
-produces names a device parameter, that half is confirmed, and whether a MIDI target can appear
-at all becomes the one remaining question.
+⚠⚠ That is now TWICE in one session that reasoning from "I have no example of X" produced a false
+claim about the format ([[verify-the-premise-not-just-the-test]]). The lesson is specific: **the
+schema's capability is not observable from the corpus we happen to hold.** Stop theorising about
+it and test the reader.
 
-**If MIDI messages genuinely cannot be clip envelopes in a bundle, the honest options are:**
-1. Export chain-param automation as clip envelopes (the reverse of the plan) and omit `cc:`/`at`/
-   `pb` — stating the limitation in the manual.
-2. Fall back to per-note `automations` for the MIDI kinds, accepting that a clip-level lane gets
-   sliced per note and that automation between notes is dropped. ⚠ Needs a ruling from Josh; he
-   has not agreed to this, only to its existence being a fact.
-3. Both: envelopes for parameters, per-note for MIDI.
+### What is left, and it is one question
+
+**What can `parameterId` name?** The best available reading — still an inference, flagged as one:
+in this schema Ableton use "id" to mean a **parameter NAME string**. `deviceData.modulations` is
+keyed by names (`Voice_Filter1_Frequency`) and its error string is *"duplicate modulation target
+ids"*. So `parameterId` is probably that same name, and *"Unknown id"* means a name the device
+does not have.
+
+Whether a MIDI message (`cc:11`, `at`, `pb`) can be such a name is exactly what is unknown.
+
+### ⭐ The way to settle it: test Live's reader, do not theorise
+
+1. Write a candidate `Song.abl` with a `clip.envelopes` entry — one variant per guess at
+   `parameterId` (a device parameter name; a MIDI-message name; a numeric id).
+2. Josh opens the bundle in Live (double-click).
+3. **Read Live's log**, which names the failure precisely rather than leaving a silent nothing:
+   `~/Library/Preferences/Ableton/Live 12.3.2/Log.txt`. The reader's own error strings are
+   `Unknown id`, `Object has wrong type`, `Parse error at offset {}: {}` and
+   `Couldn't open song '{}', error: {}` — so a rejected envelope is DIAGNOSABLE, and a silent
+   pass with no envelope visible is itself a distinct result.
+   ⚠ Checked 2026-09-05: the current log has no `ablbundle`/`song.abl` lines, so a control is
+   needed — confirm a KNOWN-GOOD bundle import produces some log trace before trusting the
+   absence of an error as success ([[a-check-that-cries-wolf-is-worse-than-none]]).
+
+This loop costs Josh one double-click per variant and answers the question with evidence instead
+of a fourth theory.
 
 ## 6. If it turns out to be (A), the shape of the work
 
