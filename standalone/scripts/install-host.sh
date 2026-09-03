@@ -30,7 +30,7 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
 . "$HERE/config.sh"
 
-MOVE_HOST="${MOVE_HOST:-move.local}"
+. "$(dirname "$0")/move-host.sh"; dbx_resolve_move_host || true   # cache → move.local → move-2.local, IPv4
 # The one directory of ours inside the stock tree: it IS the Tools-menu entry.
 STOCK_TOOLS="/data/UserData/schwung/modules/tools"
 MOVE_USER="${MOVE_USER:-ableton}"

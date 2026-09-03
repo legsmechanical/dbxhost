@@ -10,8 +10,10 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
 
 MODULE_ID="davebox-sound"
-MOVE_HOST="${MOVE_HOST:-move.local}"
 MOVE_USER="${MOVE_USER:-ableton}"
+# The address, not the name (the device renamed itself "Move-2" on 2026-09-02):
+# cache → move.local → move-2.local, IPv4 only. `--host` / MOVE_HOST win.
+. "$(dirname "$0")/../../standalone/scripts/move-host.sh"
 MOVE_ROOT_USER="${MOVE_ROOT_USER:-root}"
 DO_RESTART=1
 DO_BUILD=1
@@ -24,7 +26,7 @@ while [ $# -gt 0 ]; do
         --no-restart)  DO_RESTART=0; shift ;;
         --no-build)    DO_BUILD=0;   shift ;;
         -h|--help)
-            echo "Usage: $0 [--host <hostname>] [--no-restart] [--no-build]"
+            echo "Usage: $0 [--host <hostname>] [--no-restart] [--no-build]"   # host: default = cache → move.local → move-2.local
             exit 0 ;;
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
@@ -46,6 +48,7 @@ if [ ! -f "dist/${MODULE_ID}/dsp.so" ]; then
     exit 1
 fi
 
+dbx_resolve_move_host || true
 echo "Checking connection to ${MOVE_HOST}..."
 if ! ssh -o ConnectTimeout=5 "${MOVE_USER}@${MOVE_HOST}" true 2>/dev/null; then
     echo "Error: Cannot reach ${MOVE_HOST}"

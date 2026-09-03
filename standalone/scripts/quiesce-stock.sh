@@ -198,11 +198,23 @@ save_song() {
             --dest=com.ableton.move "$@" 2>&1
     }
     t0=$(date +%s%N 2>/dev/null || echo 0)
-    if ! _dbus 800 /com/ableton/move/browser org.freedesktop.DBus.Peer.Ping >/dev/null 2>&1; then
-        t1=$(date +%s%N 2>/dev/null || echo 0)
-        say "saveSongIfDirty SKIPPED — Move not answering D-Bus ($(( (t1 - t0) / 1000000 )) ms ping)"
-        return 0
-    fi
+    # ⭑ Three pings, not one (2026-09-04): the deaf Move is the nohup-restart
+    # RACE in stock's own launcher (a second MoveOriginal claiming the D-Bus
+    # name first), which resolves within a moment on most launches — measured
+    # ~3% of launches skipped the save with a single ping. Two short retries
+    # cost nothing on a healthy launch (the first ping answers) and at most
+    # ~1.8 s on a deaf one, against the stock edit the save would lose.
+    _pings=0
+    until _dbus 800 /com/ableton/move/browser org.freedesktop.DBus.Peer.Ping >/dev/null 2>&1; do
+        _pings=$((_pings + 1))
+        if [ "$_pings" -ge 3 ]; then
+            t1=$(date +%s%N 2>/dev/null || echo 0)
+            say "saveSongIfDirty SKIPPED — Move not answering D-Bus ($(( (t1 - t0) / 1000000 )) ms, 3 pings)"
+            return 0
+        fi
+        sleep 0.5
+    done
+    [ "$_pings" -gt 0 ] && say "saveSongIfDirty: Move answered D-Bus on ping $((_pings + 1))"
     out=$(_dbus 4000 /com/ableton/move/browser com.ableton.move.Browser.saveSongIfDirty string:)
     rc=$?
     t1=$(date +%s%N 2>/dev/null || echo 0)

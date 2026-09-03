@@ -38,8 +38,10 @@ REPO_ROOT="$(cd "$HERE/.." && pwd)"               # dbxhost/
 DAVEBOX="$REPO_ROOT/davebox"
 . "$HERE/config.sh"
 
-MOVE_HOST="${MOVE_HOST:-move.local}"
 MOVE_USER="${MOVE_USER:-ableton}"
+# The address, not the name: cache → move.local → move-2.local, IPv4 only
+# (see move-host.sh). An explicit MOVE_HOST is left alone.
+. "$(dirname "$0")/move-host.sh"; dbx_resolve_move_host || true
 DO_BUILD=1; DO_HOST=1; DO_DAVEBOX=1; DO_LAUNCHER=1; FORCE=0; RESTART_STOCK=0
 
 while [ $# -gt 0 ]; do

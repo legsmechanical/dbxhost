@@ -16,7 +16,9 @@
 
 set -euo pipefail
 
+. "$(dirname "$0")/move-host.sh"; dbx_resolve_move_host || true
 HOST="${MOVE_HOST:-ableton@move.local}"
+case "$HOST" in *@*) ;; *) HOST="ableton@$HOST" ;; esac
 STOCK_TOOLS="/data/UserData/schwung/modules/tools"
 MODULE_ID="davebox-sa"
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
