@@ -2477,7 +2477,12 @@ function buildPickRows() {
     S.pickRows = rows;
     /* Keep the cursor on the component it was on — the row INDEX shifts when a
      * host lacks fx3/4, and a bus context has different rows entirely. */
-    const at = rows.findIndex(r => r.kind === 'block' && r.comp === S.comp);
+    /* ⭑ The generator has no block row since 2026-09-04 — its component
+     * lands on the INSTRUMENT row, which is its door (Josh: "it landed on the
+     * generator item. now it needs to land on instrument"). */
+    const at = S.comp === 'synth'
+        ? rows.findIndex(r => r.kind === 'trackto')
+        : rows.findIndex(r => r.kind === 'block' && r.comp === S.comp);
     if (at >= 0) S.pickRow = at;
     if (S.pickRow >= rows.length) S.pickRow = 0;
     /* Never rest on a rule. */

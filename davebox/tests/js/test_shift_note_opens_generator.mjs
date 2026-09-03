@@ -146,6 +146,11 @@ step('⭑ a TAP opens the track\'s SOUND + CONFIG menu', () => {
     if (sound.soundPickStateForTest().view !== VIEW_BLOCKS)
         throw new Error('the tap landed on view ' + sound.soundPickStateForTest().view +
                         ', not the menu — the bank\'s prompt is for arriving BY THE BANK');
+    /* ...and on the INSTRUMENT row (Josh, 2026-09-04): it used to land on the
+     * Generator item, and the Instrument row is that item now. */
+    const st = sound.soundPickStateForTest();
+    if (st.kinds[st.row] !== 'trackto')
+        throw new Error('the tap landed on row ' + st.row + ' (' + st.kinds[st.row] + '), not Instrument');
 });
 
 step('⭑⭑ ...and tapping again does NOT close — the gesture is a DESTINATION', () => {
