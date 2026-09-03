@@ -232,51 +232,88 @@ back at the wrong level everywhere — and quietly, since nothing errors.
 −1…+1); davebox's pan is `0…1` with `0.5` centre. Map accordingly, and verify the sign — an
 inverted pan automation is not obvious by ear on a mono-ish source.
 
-## 5d. The one remaining unknown, and it is now small
+## 5d. ✅ THE CLIP-ENVELOPE FORMAT IS SOLVED (2026-09-05)
 
-**Can a `clip.envelopes` entry's `parameterId` name a MIDI message?**
+**Source: [`charlesvestal/extending-move`](https://github.com/charlesvestal/extending-move)** — the
+Schwung author's own Move tooling. It ships **real example sets that contain automation**
+(`examples/Sets/automation.abl`, `multi-automations.abl`) and a schema
+(`static/schemas/abl_set_schema.json`). Josh's nudge — *"the ableton 12 live set spec is almost
+certainly documented in full somewhere online"* — is what found it; I had hit one dead URL and
+jumped straight to reverse-engineering Live's binary.
 
-⭑ Encouraging, and it is evidence not inference: **`Song.abl` already has a MIDI-message
-vocabulary** — per-note `automations` uses exactly `PitchBend`, `Pressure` and CC numbers
-("Invalid CC number", "Duplicate CC number" are the reader's own error strings). So this is not
-about inventing names; it is about whether the CLIP-level container accepts the same ones.
+⚠⚠ **THE SCHEMA IS INFERRED, NOT AUTHORITATIVE.** `utility-scripts/generate_additional_schemas.py`
+builds it with **`genson`** from sample files. So **its silences prove nothing** — "track volume is
+a number" only means no sample had it otherwise. Use the EXAMPLE FILES as evidence and the schema
+as a map, never the reverse. (This is the third time in one session that an absence nearly became
+a claim; see [[verify-the-premise-not-just-the-test]].)
 
-The candidate set is small and enumerable:
+### Confirmed from the example files themselves
 
-MIDI:
-1. `"parameterId": "PitchBend"` — the note-vocabulary string
-2. `"parameterId": 11` — a bare CC number
-3. `"parameterId": "11"` — the same as a string
-4. `"parameterId": "Pressure"` — for `at`
+```jsonc
+// a clip:
+"envelopes": [
+  { "parameterId": 2,                     // int, REQUIRED
+    "breakpoints": [ {"time": 0.0364, "value": 1}, … ],   // REQUIRED
+    "region": null }                      // REQUIRED, and null
+]
 
-Mixer (the same question, different vocabulary — the mixer is a device, so its parameter names are
-the candidates):
-5. `"parameterId": "volume"` / `"pan"` — the `track.mixer` JSON keys verbatim
-6. `"parameterId": "Volume"` / `"Pan"` — Live's own parameter-name casing
-7. a send: whatever names a send slot once return tracks exist (blocked on consequence 1)
+// the parameter it points at — automation turns a parameter into an object with an `id`:
+"parameters": {
+  "Voice_Transpose": { "value": 0, "id": 2 }              // minimal automated form
+  "Macro0": { "value": 127.0, "presetValue": 33.0, "customName": "Filter Freq", "id": 7 }
+  "Macro1": { "value": 25.0, "customName": "Filter Reso" } // NOT automated: no id
+}
+```
 
-**The probe:** write one bundle per variant, Josh double-clicks each, and Live's own log names the
-outcome — `Unknown id` / `Object has wrong type` / `Parse error at offset` / `Couldn't open song`
-at `~/Library/Preferences/Ableton/Live 12.3.2/Log.txt`.
-⚠ Run a CONTROL first: confirm a known-good bundle import leaves SOME trace in that log, because
-as of 2026-09-05 it contains no `ablbundle`/`song.abl` lines at all — otherwise "no error" is
-indistinguishable from "not read" ([[a-check-that-cries-wolf-is-worse-than-none]]).
+- **`parameterId` is an integer**, not a name — and it is a **document-wide, sequentially
+  allocated id space**. Observed 2…9 running CONTINUOUSLY ACROSS TRACKS (track 0 used 2-6, track 1
+  used 7-9). 0 and 1 appear reserved (`grooves[].id` is 1). ⇒ davebox must allocate ids globally
+  across the whole export, not per track.
+- **`value` + `id` is enough** on the parameter; `presetValue` / `customName` are optional.
+- **Breakpoint `time` is CLIP-RELATIVE BEATS** — 0.036…3.94 against a clip `region` of 0→4.
+  ⚠ Note this DIFFERS from per-note `automations`, whose times are note-relative (§3). Two
+  containers, two time bases.
+- `breakpoints` may repeat a time to make a step (two points at 0.0364 with values 1 then 2).
 
-**If clip level rejects all four**, the fallback is per-note `automations`, which demonstrably
-carries these exact messages — at the cost of slicing a clip-level lane per note and dropping
-what falls between notes. ⚠ That would need a ruling from Josh; he has not agreed to it.
+## 5e. What is still open — and it is now only the two davebox actually needs
 
-## 6. The shape of the work once §5d is answered
+Everything above is device-parameter automation. davebox's ruled scope (§5c) is MIDI and the
+mixer, and **neither has an example**:
 
-1. `render_melodic_clip`'s scratch format (`EXPORT_RENDER_PATH`) carries `tick pitch …` per note.
-   Check whether it already has a field that could carry per-note automation before adding one.
-2. Slice each `cc:`/`at`/`pb` lane by note extent; re-base times to the note's start; drop or
-   clamp points falling between notes (a ruling is owed on which).
-3. Emit `automations` on each note in `ui_export.mjs`'s note builder, keyed `Pressure` / the CC
-   number / `PitchBend`.
-4. Value ranges from the reference: bend −8192…8191, CC 0…127.
-5. The oracle for values is the reference `.als`; the oracle for ACCEPTANCE is Live opening the
-   bundle without complaint (`Unknown id`, `Invalid CC number`, `Object has wrong type` are its
-   own error strings — worth grepping the Live log after a test import).
+1. **❓ MIXER (volume / pan / sends).** Can `track.mixer.volume` take the same `{value, id}`
+   treatment and be an envelope target? No sample shows it, and the genson schema's "number" is
+   NOT evidence either way. ⚠ Josh's *"pretty sure move doesn't allow mixer volume automation"* is
+   about Move's UI — and by his own 8-tracks argument, Move's UI limits do not bound the format.
+2. **❓ MIDI (`cc:` / `at` / `pb`).** No device parameter exists to hang an id on. `Song.abl`
+   does have a MIDI vocabulary, but at NOTE level (`PitchBend`, `Pressure`, CC numbers).
+3. **⚠ THE VOLUME VALUE SPACE, still unresolved and now stranger.** Charles's example track has
+   `mixer.volume: 0.0`; davebox's export hardcodes `0.6137250661849976`. Both cannot be "the
+   default". Determine it, do not guess (see §5c consequence 2).
+
+### The probe, now with well-founded candidates instead of guesses
+
+Write one bundle per candidate, Josh double-clicks, read Live's log
+(`~/Library/Preferences/Ableton/Live 12.3.2/Log.txt`) for `Unknown id` /
+`Object has wrong type` / `Parse error at offset` / `Couldn't open song`.
+⚠ Control first: that log shows no bundle-import lines today, so confirm a known-good import
+leaves SOME trace before reading silence as success.
+
+- **Mixer:** `"volume": {"value": 0.0, "id": N}` on the track mixer + an envelope with
+  `parameterId: N`. If Live accepts it, the mixer half is done.
+- **MIDI:** the same trick has nowhere to attach, so the candidates are whether an envelope may
+  name a MIDI message directly — try `parameterId` against a reserved id, and separately test the
+  per-note `automations` route, which is known to work.
+
+## 6. The shape of the work once §5e is answered
+
+1. Allocate `id`s document-wide while authoring `Song.abl` (a counter starting at 2), stamping
+   each automated parameter object as it is written.
+2. Emit `clip.envelopes` per clip with `parameterId`, `breakpoints`, `region: null`.
+3. Convert davebox lane times to CLIP-RELATIVE BEATS; convert values into each target's own space
+   (⚠ the volume curve is the unknown — §5e.3; pan needs the centre/sign conversion).
+4. Add the two empty return tracks and two send entries per track (§5c consequence 1) — this is
+   its own step and unblocks STATIC send levels too.
+5. Omit chain params, bank params and Module Level entirely (§5c) — by construction, not as a
+   limitation to apologise for. Say so in the manual.
 
 Related: `param-automation-plan.md` §P7, `ui_export.mjs`, `dsp/seq8_bake.c:228-459` and `:926`.
