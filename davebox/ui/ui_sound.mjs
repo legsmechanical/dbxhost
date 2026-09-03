@@ -755,8 +755,8 @@ export function soundPickStateForTest() {
      * one on entry. Exposed because a gesture that SPENDS Shift has to be
      * checked here, not on the global: the global is already false by then, and
      * it is this re-read that would resurrect it. */
-    return { kinds: S.pickRows.map(r => r.kind), row: S.pickRow, view: S.view,
-             shift: S.shiftHeld };
+    return { kinds: S.pickRows.map(r => r.kind), comps: S.pickRows.map(r => r.comp || null),
+             row: S.pickRow, view: S.view, shift: S.shiftHeld };
 }
 
 /* Read-only view of the knob HUD's CONTENT decision, for tests. The card's text
@@ -807,6 +807,8 @@ export function soundMacroMergeForTest() { macroMergeAfterPatch(); }
  * whole entry gesture. ⚠ Test-only: the real transitions go through the
  * openers, which also seed the state each screen reads. */
 export function soundSetViewForTest(v) { S.view = v; }
+/* A fake hosted canvas, for pinning what a hosted module may and may not take. */
+export function soundSetHostedForTest(h) { S.hosted = h; }
 /* The two display forms, so a test can pin them without a live slot. */
 export function compLabelsForTest(id, param) {
     return { short: compShort(id), wide: compWide(id), pair: compParamLabel(id, param) };
@@ -4976,7 +4978,11 @@ function hostedNote(status, d1, d2) {
 
 function hostedTakes(d1, d2) {
     if (!S.hosted || S.view !== VIEW_EDIT) return false;
-    if (d1 === 49 || d1 === 88) return false;
+    /* Shift, Mute — and the VOLUME knob (2026-09-04): Shift+Volume is the
+     * active track's level EVERYWHERE, and a hosted canvas that answers true
+     * to every CC would eat it in the editor alone. Pinned by
+     * test_shift_volume_everywhere. */
+    if (d1 === 49 || d1 === 88 || d1 === 79) return false;
     if (typeof S.hosted.onMidi !== 'function') return false;
     try {
         return S.hosted.onMidi(hostedCtx(), { data: [0xB0, d1, d2] }) === true;
