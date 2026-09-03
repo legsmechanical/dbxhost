@@ -27,6 +27,7 @@ import {
     engineListUserPresets, engineReadUserPreset,
     engineGetSlotParam, engineSetSlotParam, engineSaveState,
     engineGetChainParam, engineSetChainParam, engineModuleAbbrev,
+    engineLoadCardScript,
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
     slotIndex, moveBusForChannel, moveBusComp, moveBusPrefix,
 } from './ui_engine.mjs';
@@ -7719,6 +7720,20 @@ installPpCtx({
      * implement `:modulated`, infer it by comparing the live value against its
      * `:base`. ⚠ A missing `:base` means NOT modulated, never "assume yes" —
      * the mark has to mean something. */
+    /*
+     * A parameter may declare a card its MODULE draws while the knob is turned
+     * — for a value that only means something as a picture. The grid cannot
+     * read a file, so it asks us; we resolve it against the loaded module.
+     *
+     * ⚠ Answered here rather than declared absent, deliberately. This is where
+     * these modules are actually played, so a card that worked on the stock
+     * host and silently did nothing inside dAVEBOx would be the worse half of
+     * the feature — and a `typeof`-guarded read drops it with no error at all.
+     */
+    loadCardScript: (slot, component, scriptPath, exportRef) =>
+        engineLoadCardScript(component, engineLoadedModule(slot, component),
+                             scriptPath, exportRef),
+
     isParamModulated: (slot, fullKey) => {
         const flag = engineGetChainParam(slot, fullKey + ':modulated');
         if (flag === '1') return true;

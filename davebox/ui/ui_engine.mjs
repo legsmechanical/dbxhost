@@ -553,6 +553,55 @@ function moduleDirFor(comp, moduleId) {
     return '';
 }
 
+/*
+ * A module-supplied CARD DRAWER for one parameter, or null.
+ *
+ * The knob grid lets a parameter name a drawer that paints a small card over
+ * the page while its knob is turned — for values that only mean something as a
+ * picture. Resolving the script needs the module`s directory and the host
+ * loader, so the grid asks its consumer and we answer here.
+ *
+ * ⚠ THE SAME SHARED-GLOBALS HAZARD as engineLoadKitStructure above, plus one
+ * more name: the card`s own export is arbitrary, so it is saved and restored
+ * too. Evaluating a module script into the shared globalThis is how davebox
+ * would stop ticking.
+ *
+ * ⚠ Called from the GESTURE, never the draw — page_controller warms it on
+ * touch and caches the answer, including a null. shadow_load_ui_module has no
+ * cache, so a load per frame would evaluate the script sixty times a second.
+ */
+export function engineLoadCardScript(comp, moduleId, scriptRef, exportRef) {
+    if (!scriptRef || !exportRef) return null;
+    const dir = moduleDirFor(comp, moduleId);
+    if (!dir) return null;
+    const path = scriptRef.startsWith('/') ? scriptRef : dir + '/' + scriptRef;
+    if (!host_file_exists(path)) return null;
+
+    const G = globalThis;
+    const NAMES = ['init', 'tick', 'onMidiMessageInternal', 'onMidiMessageExternal',
+                   exportRef];
+    const had = {}, saved = {};
+    for (const n of NAMES) {
+        had[n] = Object.prototype.hasOwnProperty.call(G, n);
+        saved[n] = G[n];
+    }
+
+    let out = null;
+    try {
+        if (shadow_load_ui_module(path)) {
+            const fn = G[exportRef];
+            if (typeof fn === 'function') out = fn;
+        }
+    } catch (e) {
+        out = null;
+    } finally {
+        for (const n of NAMES) {
+            if (had[n]) G[n] = saved[n]; else { try { delete G[n]; } catch (e) {} }
+        }
+    }
+    return out;
+}
+
 export function engineLoadKitStructure(comp, moduleId) {
     const dir = moduleDirFor(comp, moduleId);
     if (!dir) return null;

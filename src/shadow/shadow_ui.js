@@ -11784,6 +11784,26 @@ function resolveCanvasScriptPath(meta) {
     };
 }
 
+/*
+ * A CARD script's path, resolved against the loaded module.
+ *
+ * The same join resolveCanvasScriptPath makes, without the canvas`s spelling
+ * variants: a card names one file and one export, and the fragment has already
+ * been split off by the controller. Returns "" when the module declares a file
+ * it did not ship, which the caller reads as "no card" — a missing file is a
+ * module bug, not a reason to fail a page.
+ */
+function resolveCardScriptPath(scriptRef) {
+    if (!scriptRef) return "";
+    if (scriptRef.startsWith("/")) {
+        return moduleFileExists(scriptRef) ? scriptRef : "";
+    }
+    const moduleDir = getModuleBasePath(getHierarchyActiveModuleId());
+    if (!moduleDir) return "";
+    const scriptPath = `${moduleDir}/${scriptRef}`;
+    return moduleFileExists(scriptPath) ? scriptPath : "";
+}
+
 function loadCanvasOverlayScript(scriptPath, overlayRef) {
     if (!scriptPath || typeof shadow_load_ui_module !== "function") {
         return { overlay: null, error: "canvas script unavailable" };
@@ -15647,6 +15667,27 @@ function drawHelpDetail() {
      * sees a decision, not drift. */
     _ctx.headerPresetName = true;
     _ctx.isParamModulated = (slot, fullKey) => isHierarchyParamModulated(slot, fullKey);
+    /*
+     * Load a module-supplied CARD DRAWER, for a parameter that declared one.
+     *
+     * The library cannot read a file and must not try, so this is injected the
+     * same way isParamModulated is. It resolves the script against the module
+     * that is actually loaded — the same base path the fullscreen canvas uses —
+     * and returns the named export, or null.
+     *
+     * ⚠ CALLED FROM THE GESTURE, NEVER FROM THE DRAW. page_controller warms it
+     * on touch and on turn and caches the answer, including a null. There is no
+     * module script resident while the grid is up and shadow_load_ui_module
+     * has no cache of its own, so a load from the draw path would evaluate the
+     * script on every frame of a knob turn.
+     */
+    _ctx.loadCardScript = (slot, component, scriptPath, exportRef) => {
+        if (!scriptPath || !exportRef) return null;
+        const loaded = loadCanvasOverlayScript(
+            resolveCardScriptPath(scriptPath), exportRef);
+        const fn = loaded && loaded.overlay;
+        return typeof fn === 'function' ? fn : null;
+    };
     _ctx.isMuteHeld = () => hostMuteHeld;
     /* A view that paces its own redraws can ask for one. The global gate draws
      * every other tick unless this is set, and a knob turn on the grid sets

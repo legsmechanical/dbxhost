@@ -139,6 +139,11 @@ export const PP_CTX_MEMBERS = [
     'setView', 'VIEWS', 'getModuleAbbrev',
     'evaluateVisibilityCondition', 'isParamModulated', 'openParamEditor',
     'headerPresetName',
+    /* A parameter's module-supplied card drawer. Answered, not absent: the host
+     * answers it too, and this is where these modules are actually played — a
+     * card that worked on stock and silently did nothing here would be the
+     * worse half of the feature. */
+    'loadCardScript',
 ];
 
 /* ⭐⭐ DELIBERATELY ABSENT — because THE HOST OMITS THEM TOO, and davebox is
