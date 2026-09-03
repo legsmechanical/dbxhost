@@ -1,5 +1,15 @@
 # A track owns its instrument — spec
 
+> **Addendum 2026-09-04 (Josh's re-spec of the Instrument row, built `8facd19b`..`1fa3dc8e`):**
+> the sound menu has NO Generator row. The **Instrument** row names what the track plays
+> (generator id / Move N / MIDI Ch N / Track N; `--` with no generator) and is the DOOR: click
+> enters (generator editor, or Move's via co-run), Shift+click opens the picker; on a MIDI
+> channel or a followed track a plain click is a no-op; with no generator the click is the
+> picker. The picker is ONE list — Move 1-4 | every Schwung generator | MIDI Ch 1-16 | tracks —
+> with dividers; choosing a generator loads it (reflavouring to Schwung first if needed). The
+> track rule below (no following a MIDI track, never yourself) is unchanged. A hint band pops
+> over the menu's foot on Instrument/FX rows: CLK EDIT · SHFT CHANGE.
+
 Status: **BUILT and finger-verified** (Josh, 2026-08-11) — steps 1, 2a, 2b, the
 `tN_slot` retirement and step 3 are all shipped and checked on hardware. Originally proposed the
 same day. Supersedes the P8-2 ruling of the same day
