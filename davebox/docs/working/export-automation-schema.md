@@ -198,13 +198,23 @@ mentioned the mixer, which is the second half of the scope.
 
 ### ⚠⚠ Three consequences of the mixer half, none of them optional
 
-**1. SENDS CANNOT CARRY UNTIL THE EXPORT CREATES RETURN TRACKS.** Today it deliberately does not:
-`ui_export.mjs:414` writes `returnTracks: []`, and `:219` sets `mixer.sends = []` with the comment
-*"returnTracks is []"*. Live asserts the two agree —
-`track.trackMixerDevice().component<FSends>().sends().size() == numReturnTracks`. So Send A / Send
-B automation has **nowhere to land** until the export grows two return tracks and gives every
-track two send entries. That is a prerequisite in the EXPORT, not part of the automation work, and
-it should be scheduled as its own step.
+**1. ⭐ RULED (Josh): THE EXPORT MUST CARRY TWO EMPTY RETURN TRACKS** — *"an exported set needs
+to carry to empty return tracks so that the 2 sends populate in each track."* He reached this
+independently and it is the same conclusion the schema forces.
+
+Today the export deliberately does the opposite: `ui_export.mjs:414` writes `returnTracks: []`,
+and `:219` sets `mixer.sends = []` with the comment *"returnTracks is []"*. Live asserts the two
+agree — `track.trackMixerDevice().component<FSends>().sends().size() == numReturnTracks` — so
+Send A / Send B have nowhere to land until this changes. **A prerequisite step in the EXPORT, and
+it stands on its own regardless of automation**: even the static send levels cannot round-trip
+without it.
+
+⚠ **"Empty" may still need a device.** The export already carries a Dummy Drift on every regular
+track because *"Live rejects a track with no device"* (`ui_export.mjs` header). Whether a RETURN
+track is subject to the same rule is untested — if it is, the two returns need a device each, and
+the natural choice is whatever Move's own reverb/delay returns use so the sends land somewhere
+musically sensible rather than into silence. ❓ Worth deciding with Josh: two bare returns, or
+returns carrying Move's stock reverb + delay.
 
 **2. THE VOLUME VALUE SPACE IS NOT KNOWN, ONLY COPIED.** `defaultMixer()` hardcodes
 `volume: 0.6137250661849976` with no comment and no traceable origin (`git log -S` finds nothing).
