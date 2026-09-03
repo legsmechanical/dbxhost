@@ -462,46 +462,6 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
           }
       }
     }
-    /* Per-track CC PARAM bank: CC assignments + per-knob type (sparse) */
-    { int _t2, _k;
-      for (_t2 = 0; _t2 < NUM_TRACKS; _t2++)
-          for (_k = 0; _k < 8; _k++) {
-              if (inst->tracks[_t2].cc_assign[_k] != CC_ASSIGN_DEFAULT[_k])
-                  fprintf(fp, ",\"t%dcca%d\":%d", _t2, _k, (int)inst->tracks[_t2].cc_assign[_k]);
-              if (inst->tracks[_t2].cc_type[_k] != 0)
-                  fprintf(fp, ",\"t%dcct%d\":%d", _t2, _k, (int)inst->tracks[_t2].cc_type[_k]);
-          }
-    }
-    /* CC automation (melodic clips, sparse per track/clip/knob) + resting value */
-    { int _ta, _ca2, _ka, _ia;
-      for (_ta = 0; _ta < NUM_TRACKS; _ta++)
-          for (_ca2 = 0; _ca2 < NUM_CLIPS; _ca2++) {
-              const cc_auto_t *_cca = &inst->tracks[_ta].clip_cc_auto[_ca2];
-              for (_ka = 0; _ka < 8; _ka++) {
-                  if (_cca->rest_val[_ka] != 0xFF)
-                      fprintf(fp, ",\"t%dc%dcr%d\":%d", _ta, _ca2, _ka,
-                              (int)_cca->rest_val[_ka]);
-                  if (_cca->count[_ka] == 0) continue;
-                  fprintf(fp, ",\"t%dc%dck%d\":\"", _ta, _ca2, _ka);
-                  for (_ia = 0; _ia < (int)_cca->count[_ka]; _ia++)
-                      fprintf(fp, "%d:%d;",
-                              (int)_cca->ticks[_ka][_ia], (int)_cca->vals[_ka][_ia]);
-                  fputc('"', fp);
-              }
-              for (_ka = 0; _ka < 8; _ka++) {
-                  if (_cca->lane_length[_ka] > 0)
-                      fprintf(fp, ",\"t%dc%dccl%d\":%d", _ta, _ca2, _ka,
-                              (int)(((uint32_t)_cca->lane_loop_start[_ka] << 16)
-                                    | _cca->lane_length[_ka]));
-                  if (_cca->lane_tps[_ka] > 0)
-                      fprintf(fp, ",\"t%dc%dcct%d\":%d", _ta, _ca2, _ka,
-                              (int)_cca->lane_tps[_ka]);
-                  if (_cca->lane_res_tps[_ka] > 0)
-                      fprintf(fp, ",\"t%dc%dccrt%d\":%d", _ta, _ca2, _ka,
-                              (int)_cca->lane_res_tps[_ka]);
-              }
-          }
-    }
     /* Pad-pressure aftertouch automation (melodic clips, sparse per track/clip/lane).
      * Value = "<pitch>|<tick>:<val>;..." — pitch 0-127 poly, 255 channel-wide. */
     { int _ta, _ca2, _la, _ia;
@@ -874,79 +834,6 @@ static void seq8_load_state(seq8_instance_t *inst) {
     for (t = 0; t < NUM_TRACKS; t++) {
         snprintf(key, sizeof(key), "t%d_tr", t);
         inst->tracks[t].transpose = (int8_t)clamp_i(json_get_int(buf, key, 0), -24, 24);
-    }
-    /* CC PARAM bank: CC assignments + per-knob type (sparse; missing = default) */
-    { int _k;
-      for (t = 0; t < NUM_TRACKS; t++)
-          for (_k = 0; _k < 8; _k++) {
-              snprintf(key, sizeof(key), "t%dcca%d", t, _k);
-              inst->tracks[t].cc_assign[_k] = (uint8_t)clamp_i(
-                  json_get_int(buf, key, CC_ASSIGN_DEFAULT[_k]), 0, 127);
-              snprintf(key, sizeof(key), "t%dcct%d", t, _k);
-              inst->tracks[t].cc_type[_k] = (uint8_t)clamp_i(
-                  json_get_int(buf, key, 0), 0, 2);
-          }
-    }
-    /* CC automation (melodic clips, sparse) + per-clip resting value */
-    { int _ta, _ca2, _ka;
-      char _srch[48];
-      for (_ta = 0; _ta < NUM_TRACKS; _ta++)
-          for (_ca2 = 0; _ca2 < NUM_CLIPS; _ca2++) {
-              cc_auto_t *_cca = &inst->tracks[_ta].clip_cc_auto[_ca2];
-              for (_ka = 0; _ka < 8; _ka++) {
-                  { char _rk[24];
-                    snprintf(_rk, sizeof(_rk), "t%dc%dcr%d", _ta, _ca2, _ka);
-                    _cca->rest_val[_ka] = (uint8_t)clamp_i(
-                        json_get_int(buf, _rk, 0xFF), 0, 0xFF); }
-                  snprintf(_srch, sizeof(_srch), "\"t%dc%dck%d\":\"", _ta, _ca2, _ka);
-                  const char *_qp = strstr(buf, _srch);
-                  if (!_qp) continue;
-                  _qp += strlen(_srch);
-                  while (*_qp && *_qp != '"'
-                         && _cca->count[_ka] < CC_AUTO_MAX_POINTS) {
-                      int _tv = 0, _vv = 0;
-                      while (*_qp >= '0' && *_qp <= '9')
-                          _tv = _tv * 10 + (*_qp++ - '0');
-                      if (*_qp != ':') {
-                          while (*_qp && *_qp != ';' && *_qp != '"') _qp++;
-                          if (*_qp == ';') _qp++;
-                          continue;
-                      }
-                      _qp++;
-                      while (*_qp >= '0' && *_qp <= '9')
-                          _vv = _vv * 10 + (*_qp++ - '0');
-                      if (*_qp == ';') _qp++;
-                      uint16_t _idx = _cca->count[_ka]++;
-                      _cca->ticks[_ka][_idx] = (uint16_t)clamp_i(_tv, 0, 65535);
-                      _cca->vals[_ka][_idx]  = (uint8_t)clamp_i(_vv, 0, 127);
-                  }
-              }
-              for (_ka = 0; _ka < 8; _ka++) {
-                  char _lk[24];
-                  snprintf(_lk, sizeof(_lk), "t%dc%dccl%d", _ta, _ca2, _ka);
-                  int _lv = json_get_int(buf, _lk, 0);
-                  if (_lv > 0) {
-                      _cca->lane_loop_start[_ka] = (uint16_t)(((uint32_t)_lv >> 16) & 0xFFFF);
-                      _cca->lane_length[_ka] = (uint16_t)(_lv & 0xFFFF);
-                  }
-                  snprintf(_lk, sizeof(_lk), "t%dc%dcct%d", _ta, _ca2, _ka);
-                  int _tv = json_get_int(buf, _lk, 0);
-                  if (_tv > 0) {
-                      int vi, valid = 0;
-                      for (vi = 0; vi < 6; vi++)
-                          if (_tv == (int)TPS_VALUES[vi]) { valid = 1; break; }
-                      _cca->lane_tps[_ka] = valid ? (uint16_t)_tv : 0;
-                  }
-                  snprintf(_lk, sizeof(_lk), "t%dc%dccrt%d", _ta, _ca2, _ka);
-                  int _rtv = json_get_int(buf, _lk, 0);
-                  if (_rtv > 0) {
-                      int vi, valid = 0;
-                      for (vi = 0; vi < 6; vi++)
-                          if (_rtv == (int)TPS_VALUES[vi]) { valid = 1; break; }
-                      _cca->lane_res_tps[_ka] = valid ? (uint16_t)_rtv : 0;
-                  }
-              }
-          }
     }
     /* Pad-pressure aftertouch automation (melodic clips, sparse per lane slot).
      * Value = "<pitch>|<tick>:<val>;...". Lanes were cleared above. */

@@ -10,7 +10,6 @@
  *  2. Playing overdub: notes played while the transport runs land in the
  *     focused clip at their heard positions; clip length unchanged.
  *  3. Transport edges clear the ring (Move parity).
- *  4. CC-bank knob turns are captured and committed as cc_auto points.
  *  5. Armed input is NOT captured (record path owns it).
  *  6. Stopped capture (drum): pad hits land in the matching drum lane.
  */
@@ -200,25 +199,6 @@ int main(void) {
     tap(h, 1, 62, 100, 20, 20);
     HX_ASSERT(capture_pending_for_track(inst, 1) == 1,
               "gap dropped the old note; only the new one is buffered");
-    hx_destroy(h);
-
-    /* ---- 4. CC knob capture (stopped) ---- */
-    h = hx_create(NULL);
-    HX_ASSERT(h, "create failed");
-    inst = I(h);
-    hx_render(h, 4);
-    tap(h, 1, 60, 100, 40, 132);   /* a note so the take has a start + span */
-    hx_set_param(h, "t1_cc_send", "2 30");
-    hx_render(h, 86);
-    hx_set_param(h, "t1_cc_send", "2 90");
-    hx_render(h, 86);
-    tap(h, 1, 64, 100, 40, 132);
-    hx_set_param(h, "t1_capture_commit", "0");
-    HX_ASSERT(inst->tracks[1].clip_cc_auto[0].count[2] == 2,
-              "2 automation points on knob 2");
-    HX_ASSERT(inst->tracks[1].clip_cc_auto[0].vals[2][0] == 30 &&
-              inst->tracks[1].clip_cc_auto[0].vals[2][1] == 90,
-              "automation values preserved in order");
     hx_destroy(h);
 
     /* ---- 5. Armed input is not captured ---- */

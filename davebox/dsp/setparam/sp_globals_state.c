@@ -130,16 +130,11 @@ static int sp_globals_state(sp_ctx_t *cx) {
                 } }
                 for (c2 = 0; c2 < NUM_CLIPS; c2++)
                     clip_init(&tr2->clips[c2]);
-                /* CC automation isn't part of clip_t — reset it explicitly so
-                 * points don't accumulate (loader appends) and rest_val
-                 * defaults back to "—" across set switches. */
-                for (c2 = 0; c2 < NUM_CLIPS; c2++)
-                    cc_auto_reset(&tr2->clip_cc_auto[c2]);
+                /* AT automation isn't part of clip_t — reset it explicitly so
+                 * points don't accumulate (the loader appends) across set
+                 * switches. */
                 for (c2 = 0; c2 < NUM_CLIPS; c2++)
                     at_auto_reset(&tr2->clip_at_auto[c2]);
-                memset(tr2->cc_type, 0, 8);
-                memset(tr2->cc_auto_last_sent, 0xFF, 8);
-                memset(tr2->cc_auto_cur_val, 0xFF, 8);
                 memset(tr2->at_last_sent, 0xFF, AT_MAX_LANES);
                 drum_clips_reset(tr2);  /* clear-and-keep: snapshot may read concurrently */
                 drum_track_init(tr2, t2);
@@ -157,7 +152,6 @@ static int sp_globals_state(sp_ctx_t *cx) {
                  * flag not touched by tarp_init_defaults; clear explicitly. */
                 tarp_init_defaults(tr2);
                 tr2->tarp_physical = 0;
-                memcpy(tr2->cc_assign, CC_ASSIGN_DEFAULT, 8);
                 tr2->track_vel_override = 0;
                 tr2->drum_inp_quant     = 0;
                 tr2->drum_repeat_sync   = 1;

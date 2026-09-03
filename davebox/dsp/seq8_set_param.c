@@ -323,8 +323,7 @@ static void ext_transport_start(seq8_instance_t *inst) {
             }
         }
         memset(_tr->drum_tick_in_step, 0, sizeof(_tr->drum_tick_in_step));
-        /* Re-assert CC + aftertouch automation at the playhead on (re)start. */
-        memset(_tr->cc_auto_last_sent, 0xFF, 8);
+        /* Re-assert aftertouch automation at the playhead on (re)start. */
         memset(_tr->at_last_sent, 0xFF, AT_MAX_LANES);
         if (_tr->will_relaunch) {
             _tr->clip_playing      = 1;
@@ -383,23 +382,13 @@ static void ext_transport_stop(seq8_instance_t *inst) {
     inst->solo_tick_accum  = 0;
     send_panic(inst);
     for (t = 0; t < NUM_TRACKS; t++) {
-        seq8_track_t *_tr = &inst->tracks[t];
-        cc_auto_t *_ca = &_tr->clip_cc_auto[_tr->active_clip];
-        int _k;
-        for (_k = 0; _k < 8; _k++) {
-            if (_ca->rest_val[_k] != 0xFF) {
-                cc_emit(_tr, _k, _ca->rest_val[_k]);
-                _tr->cc_auto_cur_val[_k] = _ca->rest_val[_k];
-            }
-            _tr->cc_auto_last_sent[_k] = 0xFF;
-        }
-        /* Per-parameter automation goes back to rest on the same edge. A
+        /* Per-parameter automation goes back to rest on the transport-stop edge. A
          * chain parameter that automation was driving is otherwise abandoned
          * wherever the playhead stopped — and the slot then PERSISTS that
          * value as if the user had dialled it. Requested, not done: this runs
          * on whichever thread stopped the transport, and only the audio
          * thread may feed the staging ring. */
-        pa_release_request(inst, t, (int)_tr->active_clip);
+        pa_release_request(inst, t, (int)inst->tracks[t].active_clip);
     }
 }
 
@@ -668,11 +657,9 @@ static int capture_write_take(seq8_instance_t *inst, int tidx, int clip,
             tr->drum_clips[clip]->lanes[l].clip.ticks_per_step = tps;
         }
     }
-    cc_auto_reset(&tr->clip_cc_auto[clip]);
 
     static uint8_t off_used[CAP_MAX_EVENTS];
     memset(off_used, 0, (size_t)inst->cap_take_count);
-    uint8_t  cc_touched = 0;
     uint32_t span_end   = 1;
     int      wrote = 0, i;
     for (i = 0; i < (int)inst->cap_take_count; i++) {
@@ -680,13 +667,7 @@ static int capture_write_take(seq8_instance_t *inst, int tidx, int clip,
         uint32_t ct = (uint32_t)((double)(ev->frame - inst->cap_take_first) / fpt + 0.5);
         /* Warp fine: drop events scaled past the end of the last bar. */
         if (warp && ct >= loop_ticks) continue;
-        if (ev->type == CAP_EV_CC) {
-            cc_auto_set_point(&tr->clip_cc_auto[clip], ev->a,
-                              (uint16_t)(ct <= 65534 ? ct : 65534), ev->b);
-            cc_touched |= (uint8_t)(1u << (ev->a & 7));
-            if (ct + 1 > span_end) span_end = ct + 1;
-            wrote = 1;
-        } else if (ev->type == CAP_EV_NOTE_ON) {
+        if (ev->type == CAP_EV_NOTE_ON) {
             int j = cap_take_find_off(inst, i, ev->a, off_used);
             uint32_t gate = (j >= 0)
                 ? (uint32_t)((double)(inst->cap_take[j].frame - ev->frame) / fpt + 0.5)
@@ -737,14 +718,6 @@ static int capture_write_take(seq8_instance_t *inst, int tidx, int clip,
             if (lc->note_count > 0) clip_build_steps_from_notes(lc);
         }
     }
-    if (cc_touched) {
-        int k;
-        for (k = 0; k < 8; k++) {
-            if (!(cc_touched & (1u << k))) continue;
-            cc_auto_decimate(&tr->clip_cc_auto[clip], k);
-            tr->cc_auto_last_sent[k] = 0xFF;
-        }
-    }
     if (!warp) capture_apply_bpm(inst, bpm);   /* warp keeps the session tempo */
     inst->state_dirty = 1;
     rui_mark(inst, tidx, clip);
@@ -785,7 +758,6 @@ static int capture_commit(seq8_instance_t *inst, int tidx, int clip) {
     uint16_t tps = mcl->ticks_per_step ? mcl->ticks_per_step : TICKS_PER_STEP;
     uint32_t ws  = (uint32_t)mcl->loop_start * tps;
     uint32_t wl  = (uint32_t)mcl->length * tps;
-    uint8_t  cc_touched = 0;
     int      wrote = 0;
     int      i;
 
@@ -826,16 +798,7 @@ static int capture_commit(seq8_instance_t *inst, int tidx, int clip) {
         for (i = 0; i < (int)inst->cap_count; i++) {
             const cap_ev_t *ev = &inst->cap_ring[(inst->cap_head + i) % CAP_MAX_EVENTS];
             if (ev->track != (uint8_t)tidx) continue;
-            if (ev->type == CAP_EV_CC) {
-                uint32_t ct = fresh
-                    ? first_ct + (ev->abs_tick - first_abs)
-                    : ws + (wl ? (ev->abs_tick % wl) : 0);
-                cc_auto_set_point(&tr->clip_cc_auto[clip], ev->a,
-                                  (uint16_t)(ct <= 65534 ? ct : 65534), ev->b);
-                cc_touched |= (uint8_t)(1u << (ev->a & 7));
-                if (ct + 1 > span_end) span_end = ct + 1;
-                wrote = 1;
-            } else if (ev->type == CAP_EV_NOTE_ON) {
+            if (ev->type == CAP_EV_NOTE_ON) {
                 int j = cap_find_off(inst, tidx, i, ev->a, off_used);
                 uint32_t end_abs = (j >= 0)
                     ? inst->cap_ring[(inst->cap_head + j) % CAP_MAX_EVENTS].abs_tick
@@ -902,14 +865,6 @@ static int capture_commit(seq8_instance_t *inst, int tidx, int clip) {
             for (l = 0; l < DRUM_LANES; l++) {
                 clip_t *lc = &tr->drum_clips[clip]->lanes[l].clip;
                 if (lc->note_count > 0) clip_build_steps_from_notes(lc);
-            }
-        }
-        if (cc_touched) {
-            int k;
-            for (k = 0; k < 8; k++) {
-                if (!(cc_touched & (1u << k))) continue;
-                cc_auto_decimate(&tr->clip_cc_auto[clip], k);
-                if (clip == (int)tr->active_clip) tr->cc_auto_last_sent[k] = 0xFF;
             }
         }
         inst->cap_commit_seq++;
@@ -1060,11 +1015,10 @@ typedef struct {
  * Included at FILE scope
  * here (not mid-function) so each can be a real static fn; placed just before
  * set_param so the file-scope helpers they call (build_xpose_lut,
- * silence_muted_tracks, pfx_sync_from_clip; cc_emit, cc_auto_set_point,
- * cc_auto_clear_range, cc_auto_reset, undo_begin_single; drum_clips_alloc,
+ * silence_muted_tracks, pfx_sync_from_clip; undo_begin_single; drum_clips_alloc,
  * drum_pfx_set, drum_lane_note_off_imm, apply_legato_to_clip,
  * bjorklund_positions; clip_note_apply_op, clip_note_finalize,
- * clip_build_steps_from_notes, clip_migrate_to_notes, cc_auto_eval,
+ * clip_build_steps_from_notes, clip_migrate_to_notes,
  * at_auto_reset; convert_track_melodic_to_drum, convert_track_drum_to_melodic,
  * convert_track_to_conduct, drum_clips_free, tarp_silence, tarp_drop_latched,
  * arp_silence, arp_init_defaults; undo_begin_drum_clip, finalize_pending_notes,
@@ -1073,7 +1027,6 @@ typedef struct {
  * visible. All are dispatched from the tN_ block inside set_param. */
 #include "setparam/sp_track_config.c"
 #include "setparam/sp_track_paramauto.c"
-#include "setparam/sp_track_ccauto.c"
 #include "setparam/sp_track_drum.c"
 #include "setparam/sp_track_clip.c"
 #include "setparam/sp_track_config2.c"
@@ -1162,8 +1115,8 @@ static void set_param(void *instance, const char *key, const char *val) {
      * braces live at the sp_track_misc dispatch site (they used to live inside
      * that segment). All nine sp_track_* files are now real static fns
      * (phase 4B, included at file scope above, dispatched below):
-     * sp_track_config (group 1), sp_track_ccauto (group 2),
-     * sp_track_drum (group 3), sp_track_clip (group 4),
+     * sp_track_config (group 1), sp_track_drum (group 3),
+     * sp_track_clip (group 4),
      * sp_track_config2 (group 5), sp_track_record (group 6),
      * sp_track_live (group 7), sp_track_drum2 (group 8),
      * sp_track_misc (group 9, the terminal catch-all). */
@@ -1200,10 +1153,6 @@ static void set_param(void *instance, const char *key, const char *val) {
          * so cx is current. */
         if (sp_track_config2(&cx)) return;
 
-        /* CC PARAM bank set_params -- now a file-scope handler (phase 4B
-         * group 2), dispatched here reusing the existing cx. sp_track_clip and
-         * sp_track_config2 are handlers dispatched above (both return 0 without
-         * mutating cx on fall-through), so cx is current. */
         /* Per-parameter automation (Front 3). Dispatched before the sibling
          * tN_ handlers and, critically, before sp_track_misc's unconditional
          * pfx_set tail: it consumes every "pa_" sub-op, known or not.
@@ -1221,25 +1170,22 @@ static void set_param(void *instance, const char *key, const char *val) {
             if (_pa_done) return;
         }
 
-        if (sp_track_ccauto(&cx)) return;
-
         /* tN_lL_* drum lane setters -- now a file-scope handler (phase 4B
          * group 3), dispatched here reusing the existing cx. The handler
          * self-checks sub[0]=='l' + digit and returns 0 when it isn't a lane
          * key; a lane key that matched but hit no sub-op is CONSUMED (returns
-         * 1) so it never leaks to the pfx catch-all. sp_track_clip,
-         * sp_track_config2, and sp_track_ccauto are all handlers dispatched
-         * above that return 0 without mutating cx on fall-through, so cx is
-         * current. */
+         * 1) so it never leaks to the pfx catch-all. sp_track_clip and
+         * sp_track_config2 are handlers dispatched above that return 0 without
+         * mutating cx on fall-through, so cx is current. */
         if (sp_track_drum(&cx)) return;
 
         /* tN_recording / record_note_on / record_note_off -- now a file-scope
          * handler (phase 4B group 6), dispatched here reusing the existing cx.
          * Non-guarded run of strcmp branches like sp_track_config: returns 1 on
          * match, 0 to fall through to the sibling tN_ handlers. sp_track_clip,
-         * sp_track_config2, sp_track_ccauto, and sp_track_drum are all handlers
-         * dispatched above that return 0 without mutating cx on fall-through,
-         * so cx is current. */
+         * sp_track_config2 and sp_track_drum are all handlers dispatched above
+         * that return 0 without mutating cx on fall-through, so cx is
+         * current. */
         if (sp_track_record(&cx)) return;
 
         /* tN_ drum config / all-lanes transforms / drum-repeat+repeat2 /

@@ -734,18 +734,6 @@ static void bake_clip(seq8_instance_t *inst, int t, int c, int loops, int wrap,
 
     /* Write results back; clip_init also clears pfx_params + resets playback_dir
      * to Forward (direction is now "frozen" into the note positions). */
-    /* Pin CC-automation cadence BEFORE the length change: lanes inheriting the
-     * clip length (lane_length==0) would stretch/underrun across the unrolled
-     * clip; pinning them to the pre-bake length keeps the note<->automation
-     * alignment the user heard. (AT lanes have no per-lane length — they
-     * hold their last value across the extension; documented limitation.) */
-    if (new_length != cl->length) {
-        cc_auto_t *_ca = &tr->clip_cc_auto[c];
-        int _k;
-        for (_k = 0; _k < 8; _k++)
-            if (_ca->count[_k] > 0 && _ca->lane_length[_k] == 0)
-                _ca->lane_length[_k] = cl->length;
-    }
     clip_init(cl);
     cl->ticks_per_step = tps;
     cl->length         = new_length;

@@ -48,27 +48,6 @@ int main(void) {
     }
     hx_destroy(h);
 
-    /* ---- D3: loop-unroll bake pins inherit-length CC lanes to the pre-bake
-     * clip length so automation keeps its cadence. */
-    h = hx_create(NULL);
-    inst = (seq8_instance_t *)h->inst;
-    hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
-    {
-        cc_auto_t *ca = &inst->tracks[1].clip_cc_auto[0];
-        ca->count[2] = 1; ca->ticks[2][0] = 0; ca->vals[2][0] = 90;
-        ca->lane_length[2] = 0;               /* inherit clip length */
-        ca->count[5] = 0; ca->lane_length[5] = 0;   /* empty lane: untouched */
-    }
-    hx_set_param(h, "bake", "1 0 0 2 0 0");   /* loops=2 -> 32 steps */
-    {
-        clip_t *cl = &inst->tracks[1].clips[0];
-        cc_auto_t *ca = &inst->tracks[1].clip_cc_auto[0];
-        HX_ASSERT(cl->length == 32, "D3: bake did not unroll to 32 steps");
-        HX_ASSERT(ca->lane_length[2] == 16, "D3: active CC lane not pinned to pre-bake length");
-        HX_ASSERT(ca->lane_length[5] == 0, "D3: empty CC lane should stay inherit");
-    }
-    hx_destroy(h);
-
     /* ---- D5 + echo-gate parity: scale-aware delay feedback.
      * C major, primary 60 (C), HARMZ +2 degrees -> copy 64 (E), fb_note +1
      * degree. Live: delta = st(60,+1)-60 = +2 semitones applied to BOTH
@@ -103,6 +82,6 @@ int main(void) {
     }
     hx_destroy(h);
 
-    printf("PASS: bake_parity (D1 retrigger, D3 cc-lane pin, D5 primary-delta, D6 zero-gate)\n");
+    printf("PASS: bake_parity (D1 retrigger, D5 primary-delta, D6 zero-gate)\n");
     return 0;
 }

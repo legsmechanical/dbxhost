@@ -280,30 +280,10 @@ static const uint16_t DRUM_REPEAT_RATE_TICKS[8] = { 12, 24, 48, 96, 8, 16, 32, 6
  * Index 0=Off, 1=1/64, 2=1/32, 3=1/16, 4=1/16T, 5=1/8, 6=1/8T, 7=1/4, 8=1/4T */
 static const uint8_t DRUM_INQ_TICKS[9] = { 0, 6, 12, 24, 16, 48, 32, 96, 64 };
 
-/* Default CC assignments for CC PARAM bank knobs K1-K8 */
-static const uint8_t CC_ASSIGN_DEFAULT[8] = { 7, 74, 71, 73, 72, 91, 93, 10 };
-
 #include "seq8_param_auto.h"
 
-#define CC_AUTO_MAX_POINTS 1024
-#define CC_TOUCH_GRACE_BLOCKS 8  /* blocks (~46ms) to suppress automation after a live knob turn */
-
-/* Per-clip CC automation: up to CC_AUTO_MAX_POINTS sorted {tick, val} points per knob.
- * Playback interpolates linearly between adjacent points (see cc_auto_eval).
- * rest_val[k] = per-clip resting value (0..127), or 0xFF = unset ("—", send nothing). */
-typedef struct {
-    uint16_t count[8];   /* points per knob; uint16 so the 1024 cap fits (was uint8 → silent overflow) */
-    uint16_t ticks[8][CC_AUTO_MAX_POINTS];
-    uint8_t  vals[8][CC_AUTO_MAX_POINTS];
-    uint8_t  rest_val[8];
-    uint16_t lane_loop_start[8]; /* per-lane loop start in steps; 0 = default */
-    uint16_t lane_length[8];     /* per-lane loop length in steps; 0 = inherit clip */
-    uint16_t lane_tps[8];        /* per-lane zoom ticks_per_step (display grid); 0 = inherit clip tps */
-    uint16_t lane_res_tps[8];    /* per-lane playback speed tps; 0 = inherit lane_tps/clip tps */
-} cc_auto_t;
-
 /* Per-clip pad-pressure (aftertouch) automation. Interpolated breakpoints like
- * cc_auto, but lanes are keyed by pitch (poly) rather than fixed knobs:
+ * per-clip breakpoints, keyed by pitch (poly) rather than by fixed knob:
  * pitch[lane] = 0..127 poly note, 255 = channel-wide, 254 = free slot.
  * 1/32-snapped on record, linear-interpolated + hold on playback. */
 #define AT_MAX_LANES   12     /* max distinct AT pitches per clip (poly) */
@@ -319,7 +299,7 @@ typedef struct {
 
 /* Retrospective Capture (Move-style Capture MIDI): a rolling ring of live
  * input events (pad/ext notes + CC-bank knob turns) recorded while the track
- * is NOT armed. Commit turns the buffer into clip notes / cc_auto points
+ * is NOT armed. Commit turns the buffer into clip notes
  * (tN_capture_commit); the ring clears on transport edges, explicit clear
  * (tN_capture_clear), and commit. Transient — never serialized. Events carry
  * three time bases so commit can map them whether transport was running
@@ -859,45 +839,18 @@ typedef struct {
     /* Pending sync flags (runtime, not persisted): repeat waits for InQ boundary */
     uint8_t  drum_repeat_pending;
     uint32_t drum_repeat2_pending;  /* bitmask: bit l = lane l pending InQ sync */
-    /* CC PARAM bank (bank 6): per-track CC assignments for 8 knobs (persisted) */
-    uint8_t  cc_assign[8];
-    /* Per-knob continuous-modulation type: 0 = CC, 1 = Channel Pressure (aftertouch).
-     * Per-track (persisted). cc_assign[k] is only used for type CC. */
-    uint8_t  cc_type[8];
-    /* Per-clip CC automation (melodic clips; persisted) */
-    cc_auto_t clip_cc_auto[NUM_CLIPS];
     /* Per-clip pad-pressure aftertouch automation (melodic clips; persisted) */
     at_auto_t clip_at_auto[NUM_CLIPS];
     /* Last AT value sent per lane slot during playback; 0xFF = force resend.
      * Indexed by lane slot of the currently-playing clip; reset on play + clip change. */
     uint8_t   at_last_sent[AT_MAX_LANES];
     uint8_t   at_last_clip;   /* active_clip the at_last_sent[] cache reflects */
-    /* Last CC value sent per knob during automation playback; 0xFF = force resend */
-    uint8_t   cc_auto_last_sent[8];
-    /* Defined output value at the playhead per knob (for the realtime display);
-     * 0xFF = "—" (nothing defined here). Updated every tick in the playback path. */
-    uint8_t   cc_auto_cur_val[8];
-    /* block_count when each knob was last live-turned during recording (0 = never) */
-    uint32_t  cc_auto_touch_frame[8];
     /* Param automation's LANE CLOCK (audio-thread owned): how many times the
      * active clip's playhead has wrapped since play, and the last clip tick
      * seen — so an entry with a RATE below x1 spans several clip cycles (a
      * lane at /2 plays over two). See pa_entry_tick. */
     uint32_t  pa_cycle;
     uint32_t  pa_last_ct;
-    /* Live CC value per knob — set on knob turn while record-armed; the latch
-     * writes this along the playhead (see cc_latched below). */
-    uint8_t   cc_live_val[8];
-    /* CC latch recording: a knob latches on first turn while record-armed and
-     * thereafter overwrites the lane along the playhead with cc_live_val (one
-     * point per 1/32) until recording stops. cc_latched = bitmask of latched
-     * knobs; cc_latch_last_snap = last 1/32 tick written per knob; cc_prev_ct =
-     * previous clip tick (loop-wrap detect for decimation); cc_was_recording =
-     * previous-block recording flag (recording 1->0 edge → finalize+decimate). */
-    uint8_t   cc_latched;
-    uint8_t   cc_was_recording;
-    uint32_t  cc_prev_ct;
-    uint32_t  cc_latch_last_snap[8];
     /* Last poly-AT pressure value received via tN_live_at. Replayed on every
      * arp/TARP step so new voices spawn with the pressure currently being
      * applied (without this, holding pressure steady means no AT stream and
@@ -923,7 +876,6 @@ typedef struct {
     uint8_t  rui_sel_track;   /* 0..NUM_TRACKS-1 */
     uint8_t  rui_sel_clip;    /* 0..NUM_CLIPS-1 */
     int16_t  rui_sel_lane;    /* -1 melodic, 0..DRUM_LANES-1 drum */
-    int8_t   rui_cc_focus;   /* knob 0..7 whose CC breakpoints emit in rui_cc; -1 = none */
     uint32_t rui_rev;         /* monotonic edit counter (REMOTE-edit signal for the
                                * on-device JS: a bump makes it re-read rui_dirty
                                * clips — never bumped by local recording, see
@@ -1176,7 +1128,6 @@ typedef struct {
     pa_entry_t undo_pa[UNDO_MAX_CLIPS][PA_UNDO_ENTRIES];
     uint8_t    undo_pa_count[UNDO_MAX_CLIPS];
     uint8_t    undo_pa_partial[UNDO_MAX_CLIPS];
-    cc_auto_t undo_auto_cc[UNDO_MAX_CLIPS];
     at_auto_t undo_auto_at[UNDO_MAX_CLIPS];
     uint8_t undo_clip_tracks[UNDO_MAX_CLIPS];
     uint8_t undo_clip_indices[UNDO_MAX_CLIPS];
@@ -1186,7 +1137,6 @@ typedef struct {
     pa_entry_t redo_pa[UNDO_MAX_CLIPS][PA_UNDO_ENTRIES];
     uint8_t    redo_pa_count[UNDO_MAX_CLIPS];
     uint8_t    redo_pa_partial[UNDO_MAX_CLIPS];
-    cc_auto_t redo_auto_cc[UNDO_MAX_CLIPS];
     at_auto_t redo_auto_at[UNDO_MAX_CLIPS];
     uint8_t redo_clip_tracks[UNDO_MAX_CLIPS];
     uint8_t redo_clip_indices[UNDO_MAX_CLIPS];
@@ -4483,7 +4433,6 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
     inst->log_fp         = fopen(SEQ8_LOG_PATH, "a");
 
     inst->rui_sel_lane  = -1;  /* remote-UI: melodic by default (calloc zeros the rest) */
-    inst->rui_cc_focus  = -1;  /* no CC lane focused initially */
 
     inst->pad_key      = 9;   /* A */
     inst->pad_scale    = 1;   /* Minor */
@@ -4561,16 +4510,6 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
         tarp_init_defaults(&inst->tracks[t]);
         drum_repeat_init_defaults(&inst->tracks[t]);
         inst->tracks[t].drum_repeat_sync = 1;
-        { int _k; for (_k = 0; _k < 8; _k++) inst->tracks[t].cc_assign[_k] = CC_ASSIGN_DEFAULT[_k]; }
-        memset(inst->tracks[t].cc_type, 0, 8);
-        memset(inst->tracks[t].cc_auto_last_sent, 0xFF, 8);
-        memset(inst->tracks[t].cc_auto_cur_val, 0xFF, 8);
-        inst->tracks[t].cc_latched       = 0;
-        inst->tracks[t].cc_was_recording = 0;
-        inst->tracks[t].cc_prev_ct       = 0;
-        memset(inst->tracks[t].cc_latch_last_snap, 0xFF, sizeof(inst->tracks[t].cc_latch_last_snap));
-        for (c = 0; c < NUM_CLIPS; c++)
-            memset(inst->tracks[t].clip_cc_auto[c].rest_val, 0xFF, 8);
         /* AT automation: free all lanes (pitch=254; a zeroed pitch would alias
          * note 0). at_last_clip=0xFF forces a playback cache reset on first tick. */
         for (c = 0; c < NUM_CLIPS; c++)
@@ -5294,7 +5233,6 @@ static void undo_begin_single(seq8_instance_t *inst, int t, int c) {
     inst->undo_clip_tracks[0]  = (uint8_t)t;
     inst->undo_clip_indices[0] = (uint8_t)c;
     memcpy(&inst->undo_clips[0], &inst->tracks[t].clips[c], sizeof(clip_t));
-    memcpy(&inst->undo_auto_cc[0], &inst->tracks[t].clip_cc_auto[c], sizeof(cc_auto_t));
     pa_undo_capture(inst, inst->undo_pa[0], &inst->undo_pa_count[0],
                     &inst->undo_pa_partial[0], t, c);
     memcpy(&inst->undo_auto_at[0], &inst->tracks[t].clip_at_auto[c], sizeof(at_auto_t));
@@ -5397,7 +5335,6 @@ static void undo_begin_row(seq8_instance_t *inst, int row_c) {
         inst->undo_clip_tracks[t]  = (uint8_t)t;
         inst->undo_clip_indices[t] = (uint8_t)row_c;
         memcpy(&inst->undo_clips[t], &inst->tracks[t].clips[row_c], sizeof(clip_t));
-        memcpy(&inst->undo_auto_cc[t], &inst->tracks[t].clip_cc_auto[row_c], sizeof(cc_auto_t));
         pa_undo_capture(inst, inst->undo_pa[t], &inst->undo_pa_count[t],
                         &inst->undo_pa_partial[t], t, row_c);
         memcpy(&inst->undo_auto_at[t], &inst->tracks[t].clip_at_auto[row_c], sizeof(at_auto_t));
@@ -5417,14 +5354,12 @@ static void undo_begin_clip_pair(seq8_instance_t *inst, int srcT, int srcC, int 
     inst->undo_clip_tracks[0]  = (uint8_t)srcT;
     inst->undo_clip_indices[0] = (uint8_t)srcC;
     memcpy(&inst->undo_clips[0], &inst->tracks[srcT].clips[srcC], sizeof(clip_t));
-    memcpy(&inst->undo_auto_cc[0], &inst->tracks[srcT].clip_cc_auto[srcC], sizeof(cc_auto_t));
     pa_undo_capture(inst, inst->undo_pa[0], &inst->undo_pa_count[0],
                     &inst->undo_pa_partial[0], srcT, srcC);
     memcpy(&inst->undo_auto_at[0], &inst->tracks[srcT].clip_at_auto[srcC], sizeof(at_auto_t));
     inst->undo_clip_tracks[1]  = (uint8_t)dstT;
     inst->undo_clip_indices[1] = (uint8_t)dstC;
     memcpy(&inst->undo_clips[1], &inst->tracks[dstT].clips[dstC], sizeof(clip_t));
-    memcpy(&inst->undo_auto_cc[1], &inst->tracks[dstT].clip_cc_auto[dstC], sizeof(cc_auto_t));
     pa_undo_capture(inst, inst->undo_pa[1], &inst->undo_pa_count[1],
                     &inst->undo_pa_partial[1], dstT, dstC);
     memcpy(&inst->undo_auto_at[1], &inst->tracks[dstT].clip_at_auto[dstC], sizeof(at_auto_t));
@@ -5441,14 +5376,12 @@ static void undo_begin_row_pair(seq8_instance_t *inst, int srcRow, int dstRow) {
         inst->undo_clip_tracks[t]  = (uint8_t)t;
         inst->undo_clip_indices[t] = (uint8_t)srcRow;
         memcpy(&inst->undo_clips[t], &inst->tracks[t].clips[srcRow], sizeof(clip_t));
-        memcpy(&inst->undo_auto_cc[t], &inst->tracks[t].clip_cc_auto[srcRow], sizeof(cc_auto_t));
         pa_undo_capture(inst, inst->undo_pa[t], &inst->undo_pa_count[t],
                         &inst->undo_pa_partial[t], t, srcRow);
         memcpy(&inst->undo_auto_at[t], &inst->tracks[t].clip_at_auto[srcRow], sizeof(at_auto_t));
         inst->undo_clip_tracks[t + NUM_TRACKS]  = (uint8_t)t;
         inst->undo_clip_indices[t + NUM_TRACKS] = (uint8_t)dstRow;
         memcpy(&inst->undo_clips[t + NUM_TRACKS], &inst->tracks[t].clips[dstRow], sizeof(clip_t));
-        memcpy(&inst->undo_auto_cc[t + NUM_TRACKS], &inst->tracks[t].clip_cc_auto[dstRow], sizeof(cc_auto_t));
         pa_undo_capture(inst, inst->undo_pa[t + NUM_TRACKS], &inst->undo_pa_count[t + NUM_TRACKS],
                         &inst->undo_pa_partial[t + NUM_TRACKS], t, dstRow);
         memcpy(&inst->undo_auto_at[t + NUM_TRACKS], &inst->tracks[t].clip_at_auto[dstRow], sizeof(at_auto_t));
@@ -5473,7 +5406,6 @@ static void undo_begin_scene_bake(seq8_instance_t *inst, int clip) {
             inst->undo_clip_tracks[mc]  = (uint8_t)t;
             inst->undo_clip_indices[mc] = (uint8_t)clip;
             memcpy(&inst->undo_clips[mc], &inst->tracks[t].clips[clip], sizeof(clip_t));
-            memcpy(&inst->undo_auto_cc[mc], &inst->tracks[t].clip_cc_auto[clip], sizeof(cc_auto_t));
             pa_undo_capture(inst, inst->undo_pa[mc], &inst->undo_pa_count[mc],
                             &inst->undo_pa_partial[mc], t, clip);
             memcpy(&inst->undo_auto_at[mc], &inst->tracks[t].clip_at_auto[clip], sizeof(at_auto_t));
@@ -5547,163 +5479,6 @@ static void apply_clip_restore(seq8_instance_t *inst,
     }
 }
 
-/* Full reset of a cc_auto_t: drops all points AND clears resting values to
- * "—" (0xFF). Use instead of memset(...,0,...) — a raw zero would leave
- * rest_val[]=0, which means "rest = 0", not "unset". */
-static void cc_auto_reset(cc_auto_t *a) {
-    memset(a, 0, sizeof(cc_auto_t));
-    memset(a->rest_val, 0xFF, 8);
-}
-
-/* Drop all automation points for knob k in [t1,t2] (inclusive). Keeps points
- * outside the range and the resting value. Used by step-edit to make a clean
- * flat hold and by single-step clears. */
-static void cc_auto_clear_range(cc_auto_t *a, int k, uint16_t t1, uint16_t t2) {
-    int n = (int)a->count[k], r = 0, w = 0;
-    for (r = 0; r < n; r++) {
-        uint16_t tk = a->ticks[k][r];
-        if (tk >= t1 && tk <= t2) continue;   /* drop */
-        a->ticks[k][w] = a->ticks[k][r];
-        a->vals[k][w]  = a->vals[k][r];
-        w++;
-    }
-    a->count[k] = (uint16_t)w;
-}
-
-/* Lossless collinear decimation of lane k: drop any interior point whose value
- * equals what cc_auto_eval would interpolate between its kept neighbors at its
- * tick. Uses eval's exact two-step integer math so the value AT each surviving
- * breakpoint is provably unchanged. Flat runs collapse to their endpoints; a
- * straight ramp collapses to its endpoints; curved gestures keep their shape.
- * Endpoints (first/last) are always kept. O(n). */
-static void cc_auto_decimate(cc_auto_t *a, int k) {
-    int n = (int)a->count[k];
-    if (n < 3) return;
-    int w = 1;   /* keep point 0 */
-    int i;
-    for (i = 1; i < n - 1; i++) {
-        int t0 = a->ticks[k][w - 1], v0 = a->vals[k][w - 1];
-        int t2 = a->ticks[k][i + 1], v2 = a->vals[k][i + 1];
-        int ti = a->ticks[k][i],     vi = a->vals[k][i];
-        int sp = t2 - t0, interp;
-        if (sp <= 0) interp = v2;
-        else { int fr = (ti - t0) * 127 / sp; interp = clamp_i(v0 + (v2 - v0) * fr / 127, 0, 127); }
-        if (vi == interp) continue;   /* redundant — drop point i */
-        a->ticks[k][w] = a->ticks[k][i];
-        a->vals[k][w]  = a->vals[k][i];
-        w++;
-    }
-    a->ticks[k][w] = a->ticks[k][n - 1];   /* keep last */
-    a->vals[k][w]  = a->vals[k][n - 1];
-    w++;
-    a->count[k] = (uint16_t)w;
-}
-
-/* Finalize a track's CC latch state: decimate every latched lane of the active
- * clip, then clear all latch tracking. Called on the recording 1->0 edge (any
- * stop path) and idempotent. */
-static void cc_finalize_latch(seq8_track_t *tr) {
-    if (tr->cc_latched) {
-        cc_auto_t *a = &tr->clip_cc_auto[tr->active_clip];
-        int k;
-        for (k = 0; k < 8; k++)
-            if ((tr->cc_latched >> k) & 1) cc_auto_decimate(a, k);
-    }
-    tr->cc_latched = 0;
-    tr->cc_prev_ct = 0;
-    memset(tr->cc_latch_last_snap, 0xFF, sizeof(tr->cc_latch_last_snap));
-}
-
-/* Insert or update a sorted automation point for knob k in cc_auto_t a.
- * If a point at this tick already exists its value is overwritten.
- * Drops silently when the array is full. */
-static void cc_auto_set_point(cc_auto_t *a, int k, uint16_t tick, uint8_t val) {
-    int i, n = (int)a->count[k];
-    for (i = 0; i < n; i++) {
-        if (a->ticks[k][i] == tick) { a->vals[k][i] = val; return; }
-    }
-    if (n >= CC_AUTO_MAX_POINTS) return;
-    int ins = n;
-    for (i = 0; i < n; i++) {
-        if (a->ticks[k][i] > tick) { ins = i; break; }
-    }
-    for (i = n; i > ins; i--) {
-        a->ticks[k][i] = a->ticks[k][i - 1];
-        a->vals[k][i]  = a->vals[k][i - 1];
-    }
-    a->ticks[k][ins] = tick;
-    a->vals[k][ins]  = val;
-    a->count[k]++;
-}
-
-/* Evaluate the output value of lane k at clip tick t, given the loop window
- * [ws, we) in ticks. Implements the playback model:
- *   - inside a run (between/at recorded points): linear interpolation;
- *   - head (before first point) / tail (after last point) / empty lane:
- *       resting value set -> ramp to the loop-boundary anchor (closed curve
- *       that resets each cycle); unset ("—") -> undefined (send nothing).
- * The anchor at the loop boundary is the value of a real point at/before ws
- * if one exists, otherwise the resting value.
- * Returns 0..127, or -1 when nothing is defined here (sets *defined=0). */
-/* Wrap a clip-absolute tick into a per-lane loop window. */
-static inline uint32_t cc_lane_wrap_tick(uint32_t ct, uint32_t lws, uint32_t llen_ticks) {
-    if (ct >= lws) return lws + ((ct - lws) % llen_ticks);
-    uint32_t d = (lws - ct) % llen_ticks;
-    return d == 0 ? lws : lws + llen_ticks - d;
-}
-
-static int cc_auto_eval(const cc_auto_t *a, int k, uint32_t t,
-                        uint32_t ws, uint32_t we, int *defined) {
-    int n = (int)a->count[k];
-    uint8_t rest = a->rest_val[k];
-    int rest_set = (rest != 0xFF);
-    if (defined) *defined = 1;
-    if (n == 0) {
-        if (rest_set) return rest;
-        if (defined) *defined = 0;
-        return -1;
-    }
-    /* Window-aware scan: only consider points in [ws, we) for lo/hi */
-    int lo = -1, hi = -1, fi = -1, i;
-    for (i = 0; i < n; i++) {
-        uint16_t tk = a->ticks[k][i];
-        if (tk < (uint16_t)ws || tk >= (uint16_t)we) continue;
-        if (fi == -1) fi = i;
-        if (tk <= (uint16_t)t) lo = i;
-        else if (hi == -1) { hi = i; }
-    }
-    /* Anchor: latest point at or before ws, else resting value */
-    int anchor = rest_set ? (int)rest : -1;
-    for (i = 0; i < n && a->ticks[k][i] <= (uint16_t)ws; i++)
-        anchor = (int)a->vals[k][i];
-    if (lo == -1) {
-        /* HEAD: before the first in-window point */
-        if (anchor < 0) { if (defined) *defined = 0; return -1; }
-        if (fi == -1) return anchor;
-        uint32_t fT = a->ticks[k][fi];
-        if (fT <= ws || t <= ws) return (fT <= ws) ? (int)a->vals[k][fi] : anchor;
-        int sp = (int)(fT - ws);
-        int fr = (int)(t - ws) * 127 / sp;
-        return clamp_i(anchor + ((int)a->vals[k][fi] - anchor) * fr / 127, 0, 127);
-    } else if (hi == -1) {
-        /* TAIL: after the last in-window point */
-        if (anchor < 0) { if (defined) *defined = 0; return -1; }
-        uint32_t lT = a->ticks[k][lo];
-        if (lT >= we || t >= we) return (lT >= we) ? (int)a->vals[k][lo] : anchor;
-        int sp = (int)(we - lT);
-        int fr = (int)(t - lT) * 127 / sp;
-        return clamp_i((int)a->vals[k][lo] + (anchor - (int)a->vals[k][lo]) * fr / 127, 0, 127);
-    } else {
-        /* INSIDE a run: interpolate lo..hi */
-        int t0 = a->ticks[k][lo], t1 = a->ticks[k][hi];
-        int v0 = a->vals[k][lo],  v1 = a->vals[k][hi];
-        int sp = t1 - t0;
-        if (sp <= 0) return v1;
-        int fr = (int)(t - (uint32_t)t0) * 127 / sp;
-        return clamp_i(v0 + (v1 - v0) * fr / 127, 0, 127);
-    }
-}
-
 /* ---- Pad-pressure aftertouch automation (at_auto_t) ---- */
 
 /* Reset: drop all lanes (free slots = AT_LANE_FREE, counts 0). */
@@ -5774,13 +5549,9 @@ static int at_auto_eval(const at_auto_t *a, int lane, uint32_t t, int *defined) 
     return clamp_i(v0 + (v1 - v0) * fr / 127, 0, 127);
 }
 
-/* Emit a continuous-modulation value for knob k on track tr, branching on
- * the per-knob type: CC -> 0xB0 cc_assign[k] v; aftertouch -> 0xD0 v (2-byte,
- * pfx_emit's USB-MIDI CIN = status>>4 = 0xD already encodes the length). */
 /* The emit side of per-parameter automation's MIDI targets ("cc:<n>" and
- * "at"). Separate from cc_emit, which is addressed by knob index through the
- * lane system's own assignment table: an automation entry names its CC
- * directly, and aftertouch arrives as cc = -1. */
+ * "at"): an automation entry names its CC directly, and aftertouch arrives as
+ * cc = -1. */
 /* `v` is the store's 14-bit value (0..PA_VAL_MAX): pitch bend goes out whole
  * (LSB, MSB), CC and channel pressure as its top 7 bits. */
 static void pa_emit_midi(seq8_track_t *tr, int cc, uint16_t v) {
@@ -5803,16 +5574,6 @@ static void clip_send_program(seq8_track_t *tr, const clip_t *cl) {
     if (cl->bank_msb >= 0) pfx_send(&tr->pfx, (uint8_t)(0xB0 | ch), 0,  (uint8_t)cl->bank_msb);
     if (cl->bank_lsb >= 0) pfx_send(&tr->pfx, (uint8_t)(0xB0 | ch), 32, (uint8_t)cl->bank_lsb);
     if (cl->program  >= 0) pfx_send(&tr->pfx, (uint8_t)(0xC0 | ch), (uint8_t)cl->program, 0);
-}
-
-static void cc_emit(seq8_track_t *tr, int k, uint8_t v) {
-    uint8_t ch = tr->channel & 0x0F;
-    if (tr->cc_type[k] == 2)
-        pfx_send(&tr->pfx, (uint8_t)(0xB0 | ch), (uint8_t)(101 + tr->cc_assign[k]), v);
-    else if (tr->cc_type[k] == 1)
-        pfx_send(&tr->pfx, (uint8_t)(0xD0 | ch), v, 0);
-    else
-        pfx_send(&tr->pfx, (uint8_t)(0xB0 | ch), tr->cc_assign[k], v);
 }
 
 /* LOAD-BEARING SPACING: the blank-line layout around these cold-path includes
@@ -6027,8 +5788,8 @@ static int seq8_remote_snapshot(seq8_instance_t *inst, char *out, int out_len) {
     int n = 0;  /* cursor; snprintf returns intended length, so guard each append */
     #define APP(...) do { if (n < out_len) n += snprintf(out + n, out_len - n, __VA_ARGS__); } while (0)
 
-    /* Tail headroom (bytes). The variable-length fields (rui_dnotes, rui_notes,
-     * rui_cc) can in a pathological session exceed the 64 KB buffer; if they
+    /* Tail headroom (bytes). The variable-length fields (rui_dnotes, rui_notes)
+     * can in a pathological session exceed the 64 KB buffer; if they
      * truncate mid-token the closing quote+brace never get written, the JSON is
      * invalid, and the manager drops the whole snapshot silently — bricking the
      * remote editor for that clip until it is thinned on-device. Every unbounded
@@ -6120,22 +5881,6 @@ static int seq8_remote_snapshot(seq8_instance_t *inst, char *out, int out_len) {
     } else {
         APP(",\"rui_lane\":\"\"");
     }
-
-    /* rui_ccmeta: per knob "assign,type,hasdata,rest,curval,ls,len,tps,restps" x8.
-     * Emitted for melodic AND drum tracks (engine evaluates clip_cc_auto for both);
-     * keyed by cc_clip (selected clip melodic, active clip drum). */
-    APP(",\"rui_ccmeta\":\"");
-    {
-        cc_auto_t *ca = &tr->clip_cc_auto[cc_clip];
-        for (int k = 0; k < 8; k++) {
-            APP("%s%d,%d,%d,%d,%d,%d,%d,%d,%d", k ? ";" : "",
-                (int)tr->cc_assign[k], (int)tr->cc_type[k],
-                ca->count[k] > 0 ? 1 : 0, (int)ca->rest_val[k], (int)tr->cc_auto_cur_val[k],
-                (int)ca->lane_loop_start[k], (int)ca->lane_length[k],
-                (int)ca->lane_tps[k], (int)ca->lane_res_tps[k]);
-        }
-    }
-    APP("\"");
 
     /* per-step trig conditions (sparse "s:iter:rand:ratch:nudge;") for the step
      * strip. rui_steps = selected MELODIC clip; rui_dsteps = selected drum LANE
@@ -6248,29 +5993,8 @@ static int seq8_remote_snapshot(seq8_instance_t *inst, char *out, int out_len) {
         APP("\"");
     }
 
-    /* rui_cc: breakpoints "k|tick:val,tick:val" for the focused knob only.
-     * Emitted LAST — after the structural fields (index/cond/dlanes) and the
-     * note content — so an over-large focused CC lane (up to CC_AUTO_MAX_POINTS)
-     * can only ever starve ITSELF, never the session grid or notes. The point
-     * loop stops before the final closers so the JSON always closes cleanly. */
-    APP(",\"rui_cc\":\"");
-    if (inst->rui_cc_focus >= 0 && inst->rui_cc_focus < 8) {
-        int k = inst->rui_cc_focus;
-        cc_auto_t *ca = &tr->clip_cc_auto[cc_clip];
-        APP("%d|", k);
-        for (int i = 0; i < (int)ca->count[k]; i++) {
-            /* Reserve the full tail headroom (not a bare few bytes): the max
-             * point token here is ",65535:127" (10 B) and the closing "}
-             * plus the optional ,"rui_trunc":1 (~14 B) must all still fit —
-             * an unterminated snapshot is silently dropped by the manager. */
-            if (n >= out_len - RUI_TAIL_RESERVE) { trunc = 1; break; }
-            APP("%s%d:%d", i ? "," : "", (int)ca->ticks[k][i], (int)ca->vals[k][i]);
-        }
-    }
-    APP("\"");
-
     /* Truncation indicator: 1 if ANY variable-length loop (rui_dnotes /
-     * rui_notes / rui_cc) stopped early on its budget guard, so the browser can
+     * rui_notes) stopped early on its budget guard, so the browser can
      * badge "some notes hidden". Emitted UNCONDITIONALLY (0 when clean): the
      * browser merges snapshot fields into a sticky per-key cache, so an
      * absent-when-clean key would leave a stale 1 behind after the clip is
@@ -6817,7 +6541,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                 "active_clip", "pad_octave", "transpose", "channel", "diq", "midi_to",
                 "pad_mode", "route", "track_looper", "track_vel_override",
                 "tarp_si", "tarp_sll", "tarp_sv", "drum_r2rt",
-                "cc_assigns", "cc_types", "delay_clock_fb", "drum_meta",
+                "delay_clock_fb", "drum_meta",
                 /* The knob banks. These are the bulk of a track's readback —
                  * 28 keys x 8 tracks = 224 requests, which was 0.65 s of the
                  * frozen tick on its own. */
@@ -6851,8 +6575,8 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                 "tarp_latch",
             };
             static const char *CLIP_KEYS[] = {
-                "steps", "length", "loop_start", "tps", "cc_lane_loops",
-                "pfx_snapshot", "cc_auto_bits", "at_has", "cc_rest",
+                "steps", "length", "loop_start", "tps",
+                "pfx_snapshot", "at_has",
                 "drum_has_content",
             };
             char fkey[64];
@@ -6882,32 +6606,6 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
             return pos;
         }
 
-        if (!strcmp(sub, "cc_assigns"))
-            return snprintf(out, out_len, "%d %d %d %d %d %d %d %d",
-                (int)tr->cc_assign[0], (int)tr->cc_assign[1],
-                (int)tr->cc_assign[2], (int)tr->cc_assign[3],
-                (int)tr->cc_assign[4], (int)tr->cc_assign[5],
-                (int)tr->cc_assign[6], (int)tr->cc_assign[7]);
-        if (!strcmp(sub, "cc_live_vals"))
-            /* Returns cc_auto_last_sent[0..7]; 255 = automation hasn't fired yet */
-            return snprintf(out, out_len, "%d %d %d %d %d %d %d %d",
-                (int)tr->cc_auto_last_sent[0], (int)tr->cc_auto_last_sent[1],
-                (int)tr->cc_auto_last_sent[2], (int)tr->cc_auto_last_sent[3],
-                (int)tr->cc_auto_last_sent[4], (int)tr->cc_auto_last_sent[5],
-                (int)tr->cc_auto_last_sent[6], (int)tr->cc_auto_last_sent[7]);
-        if (!strcmp(sub, "cc_cur_vals"))
-            /* Defined output value at the playhead per knob; 255 = "—". */
-            return snprintf(out, out_len, "%d %d %d %d %d %d %d %d",
-                (int)tr->cc_auto_cur_val[0], (int)tr->cc_auto_cur_val[1],
-                (int)tr->cc_auto_cur_val[2], (int)tr->cc_auto_cur_val[3],
-                (int)tr->cc_auto_cur_val[4], (int)tr->cc_auto_cur_val[5],
-                (int)tr->cc_auto_cur_val[6], (int)tr->cc_auto_cur_val[7]);
-        if (!strcmp(sub, "cc_types"))
-            return snprintf(out, out_len, "%d %d %d %d %d %d %d %d",
-                (int)tr->cc_type[0], (int)tr->cc_type[1],
-                (int)tr->cc_type[2], (int)tr->cc_type[3],
-                (int)tr->cc_type[4], (int)tr->cc_type[5],
-                (int)tr->cc_type[6], (int)tr->cc_type[7]);
         if (!strcmp(sub, "current_step"))
             return snprintf(out, out_len, "%d", (int)tr->current_step);
         if (!strcmp(sub, "recording_pending_page"))
@@ -7397,138 +7095,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                 /* Drums: one realign cycle = the whole LCM clip → brace = full span. */
                 return snprintf(out, out_len, "%u %d %u", (unsigned)span, pcount, (unsigned)span);
             }
-            if (!strncmp(p, "_cc_auto_bits", 13)) {
-                int _bits = 0, _kb;
-                cc_auto_t *_ca = &tr->clip_cc_auto[cidx];
-                for (_kb = 0; _kb < 8; _kb++)
-                    if (_ca->count[_kb] > 0) _bits |= (1 << _kb);
-                return snprintf(out, out_len, "%d", _bits);
-            }
             if (!strcmp(p, "_at_has")) {
                 /* 1 if this clip has any recorded pad-pressure aftertouch, else 0. */
                 return snprintf(out, out_len, "%d",
                     at_auto_has_data(&tr->clip_at_auto[cidx]) ? 1 : 0);
-            }
-            if (!strcmp(p, "_cc_rest")) {
-                /* Resting value per knob (255 = "—"). */
-                cc_auto_t *_ca = &tr->clip_cc_auto[cidx];
-                return snprintf(out, out_len, "%d %d %d %d %d %d %d %d",
-                    (int)_ca->rest_val[0], (int)_ca->rest_val[1],
-                    (int)_ca->rest_val[2], (int)_ca->rest_val[3],
-                    (int)_ca->rest_val[4], (int)_ca->rest_val[5],
-                    (int)_ca->rest_val[6], (int)_ca->rest_val[7]);
-            }
-            if (!strcmp(p, "_cc_lane_loops")) {
-                cc_auto_t *_ca = &tr->clip_cc_auto[cidx];
-                int _pos = 0, _k2;
-                for (_k2 = 0; _k2 < 8; _k2++)
-                    _pos += snprintf(out + _pos, (size_t)(out_len - _pos),
-                        _k2 ? " %d %d %d %d" : "%d %d %d %d",
-                        (int)_ca->lane_loop_start[_k2],
-                        (int)_ca->lane_length[_k2],
-                        (int)_ca->lane_tps[_k2],
-                        (int)_ca->lane_res_tps[_k2]);
-                return _pos;
-            }
-            if (!strncmp(p, "_ccstepinfo_", 12)) {
-                /* "_ccstepinfo_<sidx>" → 16 values for the held step:
-                 *   [0..7]  recorded point value in the step window, -1 if none;
-                 *   [8..15] computed output value at the step, -1 if "—". */
-                const char *_q = p + 12;
-                int _sidx = 0;
-                while (*_q >= '0' && *_q <= '9') { _sidx = _sidx * 10 + (*_q++ - '0'); }
-                cc_auto_t *_ca = &tr->clip_cc_auto[cidx];
-                uint32_t _tps = cl->ticks_per_step;
-                uint32_t _ws  = (uint32_t)cl->loop_start * _tps;
-                uint32_t _we  = (uint32_t)(cl->loop_start + cl->length) * _tps;
-                int _pos = 0, _k2;
-                for (_k2 = 0; _k2 < 8; _k2++) {
-                    uint32_t _ktps = (_ca->lane_tps[_k2] > 0)
-                                   ? _ca->lane_tps[_k2] : _tps;
-                    uint32_t _t1 = (uint32_t)_sidx * _ktps;
-                    uint32_t _t2 = _t1 + (_ktps ? _ktps - 1 : 0);
-                    int _pv = -1, _ip;
-                    for (_ip = 0; _ip < (int)_ca->count[_k2]; _ip++) {
-                        uint16_t _tk = _ca->ticks[_k2][_ip];
-                        if (_tk >= (uint16_t)_t1 && _tk <= (uint16_t)_t2) { _pv = _ca->vals[_k2][_ip]; break; }
-                    }
-                    _pos += snprintf(out + _pos, (size_t)(out_len - _pos), _k2 ? " %d" : "%d", _pv);
-                }
-                for (_k2 = 0; _k2 < 8; _k2++) {
-                    uint32_t _ktps2 = (_ca->lane_tps[_k2] > 0)
-                                    ? _ca->lane_tps[_k2] : _tps;
-                    uint32_t _et = (uint32_t)_sidx * _ktps2;
-                    uint32_t _ews = _ws, _ewe = _we;
-                    if (_ca->lane_length[_k2] > 0 || _ca->lane_tps[_k2] > 0) {
-                        uint32_t _elen = _ca->lane_length[_k2] > 0
-                                       ? _ca->lane_length[_k2] : cl->length;
-                        _ews = (uint32_t)_ca->lane_loop_start[_k2] * _ktps2;
-                        uint32_t _dlen = (uint32_t)_elen * _ktps2;
-                        _ewe = _ews + _dlen;
-                        if (_et >= _ewe) _et = _ews + ((_et - _ews) % _dlen);
-                    }
-                    int _def, _ov = cc_auto_eval(_ca, _k2, _et, _ews, _ewe, &_def);
-                    _pos += snprintf(out + _pos, (size_t)(out_len - _pos), " %d", _def ? _ov : -1);
-                }
-                return _pos;
-            }
-            if (!strncmp(p, "_ccsv_", 6)) {
-                /* "_ccsv_<k>_<page>" → 16 computed output values for knob k
-                 * across the 16 steps of the page (255 = "—"). LED gradient. */
-                const char *_q = p + 6;
-                int _k2 = 0, _pg = 0;
-                while (*_q >= '0' && *_q <= '9') { _k2 = _k2 * 10 + (*_q++ - '0'); }
-                if (*_q == '_') _q++;
-                while (*_q >= '0' && *_q <= '9') { _pg = _pg * 10 + (*_q++ - '0'); }
-                if (_k2 < 0 || _k2 > 7) return -1;
-                cc_auto_t *_ca = &tr->clip_cc_auto[cidx];
-                uint32_t _tps = cl->ticks_per_step;
-                uint32_t _ws  = (uint32_t)cl->loop_start * _tps;
-                uint32_t _we  = (uint32_t)(cl->loop_start + cl->length) * _tps;
-                uint32_t _ews = _ws, _ewe = _we;
-                uint32_t _dlen = 0;
-                uint32_t _step_tps = (_ca->lane_tps[_k2] > 0)
-                                   ? _ca->lane_tps[_k2] : _tps;
-                if (_ca->lane_length[_k2] > 0) {
-                    _ews = (uint32_t)_ca->lane_loop_start[_k2] * _step_tps;
-                    _dlen = (uint32_t)_ca->lane_length[_k2] * _step_tps;
-                    _ewe = _ews + _dlen;
-                }
-                int _pos = 0, _s;
-                for (_s = 0; _s < 16; _s++) {
-                    uint32_t _t = (uint32_t)(_pg * 16 + _s) * _step_tps;
-                    if (_dlen > 0) _t = cc_lane_wrap_tick(_t, _ews, _dlen);
-                    int _def, _ov = cc_auto_eval(_ca, _k2, _t, _ews, _ewe, &_def);
-                    _pos += snprintf(out + _pos, (size_t)(out_len - _pos),
-                                     _s ? " %d" : "%d", _def ? _ov : 255);
-                }
-                return _pos;
-            }
-            if (!strncmp(p, "_ccbp_", 6)) {
-                /* "_ccbp_<k>_<page>" → 16 flags: 1 if a real breakpoint exists
-                 * in that step's tick window, 0 if interpolated/resting/empty. */
-                const char *_q = p + 6;
-                int _k2 = 0, _pg = 0;
-                while (*_q >= '0' && *_q <= '9') { _k2 = _k2 * 10 + (*_q++ - '0'); }
-                if (*_q == '_') _q++;
-                while (*_q >= '0' && *_q <= '9') { _pg = _pg * 10 + (*_q++ - '0'); }
-                if (_k2 < 0 || _k2 > 7) return -1;
-                cc_auto_t *_ca = &tr->clip_cc_auto[cidx];
-                uint32_t _ktps = (_ca->lane_tps[_k2] > 0)
-                               ? _ca->lane_tps[_k2] : cl->ticks_per_step;
-                int _pos = 0, _s;
-                for (_s = 0; _s < 16; _s++) {
-                    uint32_t _t1 = (uint32_t)(_pg * 16 + _s) * _ktps;
-                    uint32_t _t2 = _t1 + (_ktps ? _ktps - 1 : 0);
-                    int _has = 0, _ip;
-                    for (_ip = 0; _ip < (int)_ca->count[_k2]; _ip++) {
-                        uint16_t _tk = _ca->ticks[_k2][_ip];
-                        if (_tk >= (uint16_t)_t1 && _tk <= (uint16_t)_t2) { _has = 1; break; }
-                    }
-                    _pos += snprintf(out + _pos, (size_t)(out_len - _pos),
-                                     _s ? " %d" : "%d", _has);
-                }
-                return _pos;
             }
             if (!strncmp(p, "_pfx_snapshot", 13)) {
                 clip_pfx_params_t *cp = &cl->pfx_params;

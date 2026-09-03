@@ -78,39 +78,6 @@ static void test_module_id_probe(void) {
     hx_destroy(h);
 }
 
-static void test_snapshot_ccmeta_present(void) {
-    hx_t *h = hx_create(NULL);
-    HX_ASSERT(h != NULL, "hx_create returned NULL");
-    /* track 1 melodic; assign knob 0 -> CC 11, write breakpoints, select clip 0 */
-    hx_set_param(h, "t1_cc_type_assign", "0 0 11");      /* knob0 type CC, cc#11 */
-    hx_set_param(h, "t1_cc_auto_set", "0 0 0 64");       /* clip0 knob0 tick0 val64 */
-    hx_set_param(h, "t1_cc_auto_set", "0 0 48 100");     /* clip0 knob0 tick48 val100 */
-    hx_set_param(h, "t1_c0_ruisel", "");
-    char buf[16384];
-    int len = hx_get_param(h, "state", buf, (int)sizeof(buf));
-    HX_ASSERT(len > 0, "no state");
-    HX_ASSERT(strstr(buf, "\"rui_ccmeta\":\"") != NULL, "missing rui_ccmeta");
-    HX_ASSERT(strstr(buf, "\"rui_ccmeta\":\"11,0,1,") != NULL, "knob0 meta wrong");
-    HX_ASSERT(strstr(buf, "\"rui_cc\":\"\"") != NULL, "rui_cc should be empty when unfocused");
-    hx_destroy(h);
-}
-
-static void test_snapshot_cc_focus_emits_breakpoints(void) {
-    hx_t *h = hx_create(NULL);
-    HX_ASSERT(h != NULL, "hx_create returned NULL");
-    hx_set_param(h, "t1_cc_auto_set", "0 0 0 64");
-    hx_set_param(h, "t1_cc_auto_set", "0 0 48 100");
-    hx_set_param(h, "t1_c0_ruisel", "");
-    hx_set_param(h, "t1_c0_cc_focus", "0");             /* focus knob 0 */
-    char buf[16384];
-    hx_get_param(h, "state", buf, (int)sizeof(buf));
-    HX_ASSERT(strstr(buf, "\"rui_cc\":\"0|0:64,48:100\"") != NULL, "focused breakpoints wrong");
-    hx_set_param(h, "t1_c0_cc_focus", "-1");
-    hx_get_param(h, "state", buf, (int)sizeof(buf));
-    HX_ASSERT(strstr(buf, "\"rui_cc\":\"\"") != NULL, "rui_cc should clear on focus -1");
-    hx_destroy(h);
-}
-
 /* A DRUM track with notes must light its clip's has-bit in rui_index, so the
  * session grid doesn't show populated drum clips as empty. Before the fix the
  * has-bits scanned only trk->clips[] (melodic), so drum tracks emitted all 0s. */
@@ -135,32 +102,6 @@ static void test_snapshot_drum_clip_has_bit(void) {
     int colons = 0;
     while (*p && colons < 4) { if (*p == ':') colons++; p++; }
     HX_ASSERT(*p == '1', "drum clip 0 with a note must set its rui_index has-bit");
-    hx_destroy(h);
-}
-
-/* CC automation must surface in the snapshot on DRUM tracks too — the engine
- * already evaluates clip_cc_auto for drums (indexed by active_clip). Before the
- * fix rui_ccmeta + rui_cc were gated !drum, hiding all drum CC automation. */
-static void test_snapshot_drum_cc_automation(void) {
-    hx_t *h = hx_create(NULL);
-    HX_ASSERT(h != NULL, "hx_create returned NULL");
-    seq8_instance_t *inst = (seq8_instance_t *)h->inst;
-    seq8_track_t *tr = &inst->tracks[0];
-    hx_set_param(h, "t0_l0_clip_length", "16");           /* track 0 -> drum */
-    HX_ASSERT(tr->pad_mode == PAD_MODE_DRUM, "track 0 should be drum");
-    /* knob 0 -> CC 74; write breakpoints into the active clip's automation (clip 0) */
-    hx_set_param(h, "t0_cc_type_assign", "0 0 74");        /* knob0 type CC, cc#74 */
-    hx_set_param(h, "t0_cc_auto_set", "0 0 0 64");         /* clip0 knob0 tick0 val64 */
-    hx_set_param(h, "t0_cc_auto_set", "0 0 48 100");       /* clip0 knob0 tick48 val100 */
-    hx_set_param(h, "t0_c0_ruisel", "");
-    hx_set_param(h, "t0_c0_cc_focus", "0");                /* focus knob 0 */
-    char buf[16384];
-    int len = hx_get_param(h, "state", buf, (int)sizeof(buf));
-    HX_ASSERT(len > 0, "no state");
-    HX_ASSERT(strstr(buf, "\"rui_ccmeta\":\"74,0,1,") != NULL,
-              "drum track knob0 ccmeta should expose cc#74 type0 hasdata1");
-    HX_ASSERT(strstr(buf, "\"rui_cc\":\"0|0:64,48:100\"") != NULL,
-              "drum track focused breakpoints should emit");
     hx_destroy(h);
 }
 
@@ -284,14 +225,11 @@ int main(void) {
     test_snapshot_selection_switches_clip();
     test_snapshot_empty_clip_has_index();
     test_module_id_probe();
-    test_snapshot_ccmeta_present();
-    test_snapshot_cc_focus_emits_breakpoints();
     test_snapshot_drum_clip_has_bit();
-    test_snapshot_drum_cc_automation();
     test_snapshot_cond_present();
     test_snapshot_cond_none();
     test_snapshot_index_mute_solo();
     test_playhead_devms_field();
-    printf("PASS: remote snapshot (notes round-trip, selection switch, empty index, module_id probe, ccmeta, cc_focus, rui_cond, mute/solo, devms)\n");
+    printf("PASS: remote snapshot (notes round-trip, selection switch, empty index, module_id probe, rui_cond, mute/solo, devms)\n");
     return 0;
 }
