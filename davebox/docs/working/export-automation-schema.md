@@ -286,9 +286,36 @@ mixer, and **neither has an example**:
    about Move's UI — and by his own 8-tracks argument, Move's UI limits do not bound the format.
 2. **❓ MIDI (`cc:` / `at` / `pb`).** No device parameter exists to hang an id on. `Song.abl`
    does have a MIDI vocabulary, but at NOTE level (`PitchBend`, `Pressure`, CC numbers).
-3. **⚠ THE VOLUME VALUE SPACE, still unresolved and now stranger.** Charles's example track has
-   `mixer.volume: 0.0`; davebox's export hardcodes `0.6137250661849976`. Both cannot be "the
-   default". Determine it, do not guess (see §5c consequence 2).
+3. ✅ **THE VOLUME VALUE SPACE IS SOLVED — it is DECIBELS.** Measured, not inferred: Josh set
+   track 1 to minimum and track 2 to maximum in **Set 23** on the Move, and its `Song.abl` reads
+
+   | track | `mixer.volume` |
+   |---|---|
+   | 1 (minimum) | **−70.0** |
+   | 2 (maximum) | **+6.0** |
+   | untouched | **0.0** |
+
+   So `mixer.volume` is **dB over −70…+6, with 0.0 = unity** — Ableton's own fader range, −70
+   standing in for −∞. Corroborated three ways: Set 23's untouched tracks, Charles's example
+   tracks, and the master track all read `0.0`.
+
+   ⭑ **davebox's own range maps almost exactly.** `SLOT_LEVEL_MAX = 2`, so its linear gain
+   0…2.0 covers −∞…**+6.02 dB** against Move's +6.0. The conversion is therefore:
+
+   ```js
+   const dB = (gain <= 0) ? -70 : Math.max(-70, Math.min(6, 20 * Math.log10(gain)));
+   ```
+
+   🐞 **AND THIS EXPOSES A BUG IN THE SHIPPING EXPORT.** `defaultMixer()` writes
+   `volume: 0.6137250661849976` on every track — which in a dB field is **+0.61 dB**, not unity.
+   Every exported track comes out fractionally loud. The value looks like a normalised 0…1 fader
+   position written into a field that wanted dB. **The fix is one line: `volume: 0.0`.** Small,
+   but it is wrong today and it is now explainable rather than mysterious.
+
+4. **❓ PAN is still un-measured.** Set 23 has every track at `pan: 0.0` (centre). davebox's pan
+   is `0…1` with `0.5` centre, so the likely mapping is `(pan − 0.5) × 2` into −1…+1 — but that
+   is inference, and the sign is exactly the sort of thing that is not obvious by ear.
+   ⭑ Settled the same cheap way: one track panned hard LEFT and another hard RIGHT in any set.
 
 ### The probe, now with well-founded candidates instead of guesses
 
