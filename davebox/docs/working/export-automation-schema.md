@@ -188,7 +188,7 @@ The test is **does the target exist in Live**, and it settles every kind:
 |---|---|---|
 | `cc:<n>` / `at` / `pb` | ✅ | a MIDI message means the same thing in Live |
 | `level` → volume, pan, send A, send B | ✅ | **the track MIXER is standard Ableton, not a Schwung module** — `track.mixer` is `{pan, volume, sends, …}` and Live models it as a device (`mTrackMixerDevice`). Source of values: the **dbxhost bus levels** (Josh) |
-| `level` → **Module Level** (`synth_volume`) | 🚫 probably not | it is the module's own output gain INSIDE a Schwung chain, and there is no Schwung module in Live. ❓ The one `level` kind Josh's ruling does not obviously cover — worth confirming |
+| `level` → **Module Level** (`synth_volume`) | 🚫 **RULED OUT (Josh): "don't carry module level"** | it is the module's own output gain INSIDE a Schwung chain, and there is no Schwung module in Live |
 | `chain` (a module param) | 🚫 never | Live has no Schwung modules; no destination exists |
 | `bank` (`seq:`) | 🚫 never | davebox's own sequencer params; nothing in Live receives them |
 
@@ -209,12 +209,14 @@ Send A / Send B have nowhere to land until this changes. **A prerequisite step i
 it stands on its own regardless of automation**: even the static send levels cannot round-trip
 without it.
 
-⚠ **"Empty" may still need a device.** The export already carries a Dummy Drift on every regular
-track because *"Live rejects a track with no device"* (`ui_export.mjs` header). Whether a RETURN
-track is subject to the same rule is untested — if it is, the two returns need a device each, and
-the natural choice is whatever Move's own reverb/delay returns use so the sends land somewhere
-musically sensible rather than into silence. ❓ Worth deciding with Josh: two bare returns, or
-returns carrying Move's stock reverb + delay.
+⭐ **RULED (Josh): EMPTY returns** — bare, no devices. So the sends land in silence by design;
+the point is that the send LEVELS and their automation round-trip, and the user adds whatever
+effect they want on the other end.
+⚠ One technical risk this leaves standing: the export carries a Dummy Drift on every regular
+track because *"Live rejects a track with no device"* (`ui_export.mjs` header), and whether a
+RETURN track is subject to the same rule is untested. If an import ever fails after the returns
+are added, **that is the first suspect** — the fix would be a dummy device on each return, not a
+change to this ruling.
 
 **2. THE VOLUME VALUE SPACE IS NOT KNOWN, ONLY COPIED.** `defaultMixer()` hardcodes
 `volume: 0.6137250661849976` with no comment and no traceable origin (`git log -S` finds nothing).
