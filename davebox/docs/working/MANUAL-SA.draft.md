@@ -1302,8 +1302,9 @@ MIDI channel or followed track); **click** it to enter the generator's editor
 (or Move's, on a Move instrument), **Shift + click** to change the instrument.
 A MIDI channel or a followed track has nothing to enter, so a plain click does
 nothing there; a track with no generator yet reads `--`, and the click opens
-the picker. The footer says what the click and the Shift chord do on the row
-you are on — the same hint band the bank cards wear. That picker is one list in four
+the picker. On the Instrument and effect rows a hint band pops over the foot of
+the menu saying what the click and the Shift chord do — the same band the bank
+cards wear. That picker is one list in four
 groups with a line between them: Move 1-4, every Schwung generator by name, MIDI
 channels 1-16, and the tracks this one may follow. Choosing a generator makes
 the track a Schwung track and loads it in one step. Inside a

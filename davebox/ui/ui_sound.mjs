@@ -6431,11 +6431,17 @@ function renderBlocks() {
      * rule is drawKitList's default now, so there is nothing to pass.
      * ⭑ The FOOTER (Josh, 2026-09-04): the same pill band the bank cards wear,
      * saying what the click and the Shift chord do on the row you are on —
-     * the two gestures with no on-screen trace. The band is RESERVED on every
-     * row (one list row fewer) so the list does not resize under the cursor;
-     * rows with nothing to say leave it clear. */
-    drawKitList(S.pickRows.map(_cell), S.pickRow, { h: MV_FOOTER_Y - 1 - 11 });
-    drawKitHintRow(MV_FOOTER_Y, menuRowHints(S.pickRows[S.pickRow]));
+     * the two gestures with no on-screen trace. It POPS OVER the menu's foot
+     * on the rows that carry the grammar (Josh: "pop up over the menu at the
+     * bottom on items where it's relevant") — the list keeps all five rows,
+     * and the band takes the bottom of the fifth only while the cursor is on
+     * such a row. Three clear rows above the pills, the canon's spacing. */
+    drawKitList(S.pickRows.map(_cell), S.pickRow, {});
+    const hints = menuRowHints(S.pickRows[S.pickRow]);
+    if (hints.length) {
+        fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0);
+        drawKitHintRow(MV_FOOTER_Y, hints);
+    }
 }
 
 /* The sound menu's footer hints for ONE row — the decision, apart from the
@@ -6451,6 +6457,7 @@ function menuRowHints(r) {
         return [['CLK', 'EDIT'], ['SHFT', 'CHANGE']];
     }
     if (r.kind === 'block') return r.name ? [['CLK', 'EDIT'], ['SHFT', 'CHANGE']] : [['CLK', 'ADD']];
+    /* Doors, levels, dividers: no pop-up — the row shows what it does. */
     return [];
 }
 export function soundMenuHintsForTest() { return menuRowHints(S.pickRows[S.pickRow]); }
