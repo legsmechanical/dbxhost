@@ -174,34 +174,55 @@ claim about the format ([[verify-the-premise-not-just-the-test]]). The lesson is
 schema's capability is not observable from the corpus we happen to hold.** Stop theorising about
 it and test the reader.
 
-### What is left, and it is one question
+## 5c. ⭐ RULED (Josh, 2026-09-05) — the export names MIDI PARAMS ONLY
 
-**What can `parameterId` name?** The best available reading — still an inference, flagged as one:
-in this schema Ableton use "id" to mean a **parameter NAME string**. `deviceData.modulations` is
-keyed by names (`Voice_Filter1_Frequency`) and its error string is *"duplicate modulation target
-ids"*. So `parameterId` is probably that same name, and *"Unknown id"* means a name the device
-does not have.
+> *"the export only needs to name midi params. bc davebox doesn't automate move devices directly
+> and live doesn't support schwung modules. midi envelopes are the only thing that CAN carry
+> over."*
 
-Whether a MIDI message (`cc:11`, `at`, `pb`) can be such a name is exactly what is unknown.
+This closes the "which targets export" question **permanently**, and by construction rather than
+by preference:
 
-### ⭐ The way to settle it: test Live's reader, do not theorise
+| davebox target kind | exports? | why |
+|---|---|---|
+| `cc:<n>` / `at` / `pb` | ✅ **the whole scope** | a MIDI message means the same thing in Live |
+| `chain` (a module param) | 🚫 never | **Live has no Schwung modules** — there is no destination |
+| `level` (mixer) | 🚫 never | same: not a Move/Live device parameter davebox drives |
+| `bank` (`seq:`) | 🚫 never | davebox's own sequencer params; nothing in Live to receive them |
 
-1. Write a candidate `Song.abl` with a `clip.envelopes` entry — one variant per guess at
-   `parameterId` (a device parameter name; a MIDI-message name; a numeric id).
-2. Josh opens the bundle in Live (double-click).
-3. **Read Live's log**, which names the failure precisely rather than leaving a silent nothing:
-   `~/Library/Preferences/Ableton/Live 12.3.2/Log.txt`. The reader's own error strings are
-   `Unknown id`, `Object has wrong type`, `Parse error at offset {}: {}` and
-   `Couldn't open song '{}', error: {}` — so a rejected envelope is DIAGNOSABLE, and a silent
-   pass with no envelope visible is itself a distinct result.
-   ⚠ Checked 2026-09-05: the current log has no `ablbundle`/`song.abl` lines, so a control is
-   needed — confirm a KNOWN-GOOD bundle import produces some log trace before trusting the
-   absence of an error as success ([[a-check-that-cries-wolf-is-worse-than-none]]).
+⭑ This **vindicates `param-automation-plan.md` P7** ("cc:/at entries render … chain-param entries
+omitted (no MIDI representation)"). The plan was right, and 5b's proposed inversion was wrong for
+a second reason I had not even reached: not merely that the bundle is not Move-bounded, but that
+chain params have **no target in Live at all**. Do not re-propose exporting them.
 
-This loop costs Josh one double-click per variant and answers the question with evidence instead
-of a fourth theory.
+## 5d. The one remaining unknown, and it is now small
 
-## 6. If it turns out to be (A), the shape of the work
+**Can a `clip.envelopes` entry's `parameterId` name a MIDI message?**
+
+⭑ Encouraging, and it is evidence not inference: **`Song.abl` already has a MIDI-message
+vocabulary** — per-note `automations` uses exactly `PitchBend`, `Pressure` and CC numbers
+("Invalid CC number", "Duplicate CC number" are the reader's own error strings). So this is not
+about inventing names; it is about whether the CLIP-level container accepts the same ones.
+
+The candidate set is small and enumerable:
+
+1. `"parameterId": "PitchBend"` — the note-vocabulary string
+2. `"parameterId": 11` — a bare CC number
+3. `"parameterId": "11"` — the same as a string
+4. `"parameterId": "Pressure"` — for `at`
+
+**The probe:** write one bundle per variant, Josh double-clicks each, and Live's own log names the
+outcome — `Unknown id` / `Object has wrong type` / `Parse error at offset` / `Couldn't open song`
+at `~/Library/Preferences/Ableton/Live 12.3.2/Log.txt`.
+⚠ Run a CONTROL first: confirm a known-good bundle import leaves SOME trace in that log, because
+as of 2026-09-05 it contains no `ablbundle`/`song.abl` lines at all — otherwise "no error" is
+indistinguishable from "not read" ([[a-check-that-cries-wolf-is-worse-than-none]]).
+
+**If clip level rejects all four**, the fallback is per-note `automations`, which demonstrably
+carries these exact messages — at the cost of slicing a clip-level lane per note and dropping
+what falls between notes. ⚠ That would need a ruling from Josh; he has not agreed to it.
+
+## 6. The shape of the work once §5d is answered
 
 1. `render_melodic_clip`'s scratch format (`EXPORT_RENDER_PATH`) carries `tick pitch …` per note.
    Check whether it already has a field that could carry per-note automation before adding one.
