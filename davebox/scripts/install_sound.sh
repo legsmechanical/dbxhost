@@ -13,7 +13,7 @@ MODULE_ID="davebox-sound"
 MOVE_USER="${MOVE_USER:-ableton}"
 # The address, not the name (the device renamed itself "Move-2" on 2026-09-02):
 # cache → move.local → move-2.local, IPv4 only. `--host` / MOVE_HOST win.
-. "$(dirname "$0")/../../standalone/scripts/move-host.sh"
+. "$SCRIPT_DIR/../../standalone/scripts/move-host.sh"
 MOVE_ROOT_USER="${MOVE_ROOT_USER:-root}"
 DO_RESTART=1
 DO_BUILD=1
