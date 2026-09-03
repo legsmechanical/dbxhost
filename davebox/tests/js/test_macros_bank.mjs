@@ -176,6 +176,7 @@ globalThis.shadow_save_state_now = () => 1;
 const bridge = await import('../../ui/ui_dsp_bridge.mjs');
 const { SLOT_LEVEL_MAX } = await import('../../ui/ui_engine.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
+const ledsMod = await import('../../ui/ui_leds.mjs');
 const STEP_VOL = SLOT_LEVEL_MAX / 200, STEP_PAN = 1 / 200, STEP_SEND = 1 / 100;
 const { BANKS, BANK_SOUND, BANK_STEP, BANK_MACROS, isSoundBank, PAD_MODE_DRUM, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
 const { bankCycleForMode } = await import('../../ui/ui_pure.mjs');
@@ -667,6 +668,147 @@ step('a Move-routed track: the store seeds EMPTY at once (no knob_N reads), Leve
     const rows = snd.soundKnobParamsForTest();
     assert(rows.length === 4 && !rows.some(p => p.label === 'Module Level'), 'four bus levels, got ' + JSON.stringify(rows.map(p => p.label)));
     snd.soundExit();
+});
+
+/* ⚠ This rig has no DSP, so a freshly-recorded lane is NOT in the owner's
+ * state map (that is fed by `pa_list` from the DSP). What IS observable is
+ * the write the owner emits — `t2_pa_live=<slot>:<fullKey> …` — so that is
+ * what these steps read, the way the p-lock step above reads `pa_set2`. */
+const liveTargets = () => modSets.filter(x => /^t2_pa_live=/.test(x))
+                                 .map(x => x.slice('t2_pa_live='.length).split(' ')[0]);
+/* Seed the owner's state map the way the DSP would, so a CLEAR has something
+ * to clear (automationClearKey is a no-op on an unknown target). */
+const seedLanes = (...targets) => {
+    const prevGet = globalThis.host_module_get_param;
+    const clip = ledsMod.effectiveClip(2);
+    globalThis.host_module_get_param = (k) => (k === 'pa_list'
+        ? targets.map(t => '2 ' + clip + ' 1 4 ' + t + ' 0 0').join('\n') + '\n' : prevGet(k));
+    auto.automationRefreshPresence();
+    globalThis.host_module_get_param = prevGet;
+};
+
+/* ---- THE MAPPED KNOB: several legs on one macro, each with a range -------- */
+/* Nothing on the surface builds these yet (the list gets legs next), so each
+ * mapping is seeded directly. What is pinned here is the TURN LAW and Josh's
+ * ruling A: a mapped turn writes every leg through its own range and records
+ * every leg on its OWN lane — there is no macro lane. */
+step('⭑ a RANGED one-leg macro: the knob sweeps only lo..hi of the target, not its whole range', () => {
+    enterTrack(2);
+    snd.soundSetBank(BANK_MACROS); ticks(4);
+    /* cutoff is 0..1; this leg is 0.2..0.6, so a knob at the top must land on
+     * 0.6 and at the bottom on 0.2 — never 1.0 or 0. */
+    GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.2, hi: 0.6 }] };
+    writes = []; ticks(4);
+    assert(GS.trackMacros[2][0].v != null, 'v seeded from the target, got ' + GS.trackMacros[2][0].v);
+    turnBy(0, 900); ticks(2);                                  /* far past the top */
+    assert(GS.trackMacros[2][0].v === 1, 'the knob pins at the top, got ' + GS.trackMacros[2][0].v);
+    assert(Math.abs(parseFloat(lastWrite('synth:cutoff')) - 0.6) < 0.01,
+           'the TARGET stops at hi=0.6, got ' + lastWrite('synth:cutoff'));
+    turnBy(0, -900); ticks(2);
+    assert(Math.abs(parseFloat(lastWrite('synth:cutoff')) - 0.2) < 0.01,
+           'and at lo=0.2, got ' + lastWrite('synth:cutoff'));
+});
+step('⭑ an INVERTED leg (lo > hi): turning the knob UP moves the target DOWN (Josh §6.4)', () => {
+    GS.trackMacros[2][0] = { v: 0.5, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.9, hi: 0.1 }] };
+    writes = []; ticks(3);
+    turnBy(0, 900); ticks(2);
+    const top = parseFloat(lastWrite('synth:cutoff'));
+    assert(Math.abs(top - 0.1) < 0.01, 'knob at the TOP = hi = 0.1, got ' + top);
+    writes = [];
+    turnBy(0, -900); ticks(2);
+    const bot = parseFloat(lastWrite('synth:cutoff'));
+    assert(Math.abs(bot - 0.9) < 0.01, 'knob at the BOTTOM = lo = 0.9, got ' + bot);
+});
+step('⭑⭑ THREE legs on one knob: ONE turn writes all three through their own ranges', () => {
+    GS.trackMacros[2][0] = { v: 0, legs: [
+        { kind: 'chain', comp: 'synth', key: 'cutoff',    lo: 0,   hi: 1 },
+        { kind: 'chain', comp: 'fx2',   key: 'room_size', lo: 0.5, hi: 1 },   /* 10.25 .. 20 */
+        { kind: 'level', key: 'volume',                   lo: 0,   hi: 1 },
+    ]};
+    writes = []; ticks(4);
+    turnBy(0, 900); ticks(3);
+    assert(Math.abs(parseFloat(lastWrite('synth:cutoff')) - 1) < 0.02, 'leg 1 at its top, got ' + lastWrite('synth:cutoff'));
+    assert(Math.abs(parseFloat(lastWrite('fx2:room_size')) - 20) < 0.2, 'leg 2 at ITS top (20), got ' + lastWrite('fx2:room_size'));
+    assert(Math.abs(parseFloat(lastWrite('slot:volume')) - SLOT_LEVEL_MAX) < 0.01, 'leg 3 (the level) at its top, got ' + lastWrite('slot:volume'));
+    /* ⭑ And PART way, which is where a range either works or is ignored.
+     * ⚠ One CC event carries at most 63 detents here (the relative decoder
+     * folds 64..127 to negatives), so a quarter turn is 63 detents = 31 steps
+     * — v ≈ 0.247. Leg 2's range is 0.5..1 OF 0.5..20, so it must land at
+     * 0.5 + (0.5 + 0.247·0.5)·19.5 ≈ 12.7. If the range were IGNORED it would
+     * be at 0.247 of 0.5..20 ≈ 5.3 — that is the discrimination. */
+    GS.trackMacros[2][0].v = 0; writes = [];
+    turnBy(0, 63); ticks(3);
+    const v = GS.trackMacros[2][0].v, rs = parseFloat(lastWrite('fx2:room_size'));
+    const want = 0.5 + (0.5 + v * 0.5) * 19.5;
+    assert(Math.abs(rs - want) < 0.3, 'leg 2 lands inside ITS range (' + want.toFixed(1) + '), got ' + rs);
+    assert(rs > 10, '…and nowhere near where an ignored range would put it (~5.3), got ' + rs);
+});
+step('⭑⭑ RULING A: a mapped turn records EVERY leg on its own lane — there is no macro lane', () => {
+    GS.playing = true; auto.automationNoteWrite();
+    GS.trackMacros[2][0] = { v: 0.1, legs: [
+        { kind: 'chain', comp: 'synth', key: 'cutoff',    lo: 0, hi: 1 },
+        { kind: 'chain', comp: 'fx2',   key: 'room_size', lo: 0, hi: 1 },
+    ]};
+    ticks(4);
+    modSets.length = 0;
+    touch(0, true); turnBy(0, 40); ticks(3); touch(0, false); ticks(2);
+    const tgs = liveTargets();
+    assert(tgs.some(k => /synth:cutoff$/.test(k)), 'leg 1 records on its own lane, got ' + JSON.stringify(tgs));
+    assert(tgs.some(k => /fx2:room_size$/.test(k)), 'leg 2 records on its own lane, got ' + JSON.stringify(tgs));
+    assert(!tgs.some(k => /^mac:/.test(k)), '⭑ and there is NO mac: lane — ruling A');
+    GS.playing = false;
+});
+step('⚠ the POLL SKIPS a mapped knob: automation moving a leg does NOT move the knob (design §3.2)', () => {
+    GS.trackMacros[2][0] = { v: 0.25, legs: [
+        { kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0, hi: 1 },
+        { kind: 'level', key: 'volume', lo: 0, hi: 1 },
+    ]};
+    ticks(4);
+    const before = GS.trackMacros[2][0].v;
+    ASSIGN['synth:cutoff'] = '0.95';                 /* as automation or a module UI would */
+    GS.playing = true; ticks(12); GS.playing = false;
+    assert(GS.trackMacros[2][0].v === before,
+           '⭑ v is the AUTHORITY and did not follow the target, got ' + GS.trackMacros[2][0].v + ' was ' + before);
+    /* ⚠ Positive control: a PLAIN macro on the same page still follows, so the
+     * skip above is the mapped rule and not a dead poll. */
+    GS.trackMacros[2][2] = { v: null, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0, hi: 1 }] };
+    ticks(6);
+    ASSIGN['synth:cutoff'] = '0.10';
+    GS.playing = true; ticks(16); GS.playing = false;
+    assert(Math.abs(M().vals[2] - 0.10) < 0.001, 'control: a PLAIN macro DOES follow, got ' + M().vals[2]);
+});
+step('⭑ a mapped knob draws as its own arc, labelled by its first leg + the count', () => {
+    GS.trackMacros[2][0] = { v: 0.5, legs: [
+        { kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.2, hi: 0.8 },
+        { kind: 'level', key: 'volume', lo: 0, hi: 1 },
+    ]};
+    ticks(4);
+    const d = M().drawn[0];
+    assert(d.kind === 'arc', 'an arc, not the target\'s own widget — got ' + d.kind);
+    assert(Math.abs(d.norm - 0.5) < 0.001, 'drawn at v, got ' + d.norm);
+    assert(d.text === '50%', 'reads as a percentage of the KNOB, got ' + d.text);
+    assert(/\+1$/.test(d.label), 'labelled with the leg count, got ' + d.label);
+});
+step('⭑ Delete + touch a mapped knob clears EVERY leg\'s lane, not just the first', () => {
+    GS.playing = true; auto.automationNoteWrite();
+    GS.trackMacros[2][0] = { v: 0.2, legs: [
+        { kind: 'chain', comp: 'synth', key: 'cutoff',    lo: 0, hi: 1 },
+        { kind: 'chain', comp: 'fx2',   key: 'room_size', lo: 0, hi: 1 },
+    ]};
+    ticks(4);
+    GS.playing = false;
+    seedLanes('2:synth:cutoff', '2:fx2:room_size');
+    const clip = ledsMod.effectiveClip(2);
+    assert(auto.automationStateFor(2, clip, '2:synth:cutoff'), 'precondition: leg 1 has a lane');
+    assert(auto.automationStateFor(2, clip, '2:fx2:room_size'), 'precondition: leg 2 has a lane');
+    modSets.length = 0;
+    cc(119, 127);                                      /* Delete held (sound mode tracks CC 119) */
+    touch(0, true); ticks(1); touch(0, false); cc(119, 0); ticks(1);
+    const cleared = modSets.filter(x => /^t2_pa_clear_key=/.test(x));
+    assert(cleared.some(x => /synth:cutoff$/.test(x)), 'leg 1 cleared, got ' + JSON.stringify(cleared));
+    assert(cleared.some(x => /fx2:room_size$/.test(x)), '⭑ leg 2 cleared TOO — one gesture, every lane, got ' + JSON.stringify(cleared));
+    assert(!auto.automationStateFor(2, clip, '2:fx2:room_size'), 'and the owner forgot the second lane too');
+    GS.trackMacros[2][0] = null; GS.trackMacros[2][2] = null;
 });
 
 /* ---- retirements ----------------------------------------------------------- */
