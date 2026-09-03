@@ -201,6 +201,14 @@ step('MACROS is bank 13, isSoundBank covers both identities, and it follows SOUN
     assert(con.indexOf(BANK_MACROS) < 0 && con.indexOf(BANK_SOUND) < 0, 'conductor: no sound banks');
 });
 
+/* ⭑ A store slot is a MAPPING — `{v, legs:[leg,…]}` (2026-09-05). These two
+ * read its FIRST LEG, which is the target. Only the shape assertions below go
+ * through them; every BEHAVIOURAL assertion in this file (writes, views,
+ * cells, `drawn`, automation, reads) is untouched by the reshape — that is
+ * what makes this file the one-leg parity control. */
+const leg0 = (mp) => (mp && mp.legs && mp.legs[0]) || null;
+const legsOf = (mp) => (mp && mp.legs) || [];
+
 /* ---- entry, identity, migration ------------------------------------------ */
 step('setup: sound mode on a Schwung track; soundSetBank(MACROS) lands the page and RECORDS the bank', () => {
     reads = []; writes = []; sidecars = [];
@@ -220,11 +228,13 @@ step('⚠ MIGRATION: the chain\'s knob_N store is read ONCE (spread over ticks) 
     ticks(4);
     const st = GS.trackMacros[2];
     assert(Array.isArray(st) && st.length === 8, 'store committed');
-    assert(st[0] && st[0].kind === 'chain' && st[0].comp === 'synth' && st[0].key === 'cutoff', 'K1 = synth:cutoff, got ' + JSON.stringify(st[0]));
+    const l0 = leg0(st[0]);
+    assert(l0 && l0.kind === 'chain' && l0.comp === 'synth' && l0.key === 'cutoff', 'K1 = synth:cutoff, got ' + JSON.stringify(st[0]));
+    assert(l0.lo === 0 && l0.hi === 1 && legsOf(st[0]).length === 1, 'migrated as ONE whole-range leg, got ' + JSON.stringify(st[0]));
     assert(st[1] === null, 'K2 unassigned');
-    assert(st[2] && st[2].comp === 'fx2' && st[2].key === 'room_size', 'K3 = fx2:room_size');
+    assert(leg0(st[2]) && leg0(st[2]).comp === 'fx2' && leg0(st[2]).key === 'room_size', 'K3 = fx2:room_size');
     const mac = lastMac();
-    assert(mac && mac[2] && mac[2][0] && mac[2][0].key === 'cutoff', 'sidecar carries mac[2][0], got ' + JSON.stringify(mac && mac[2]));
+    assert(mac && mac[2] && leg0(mac[2][0]) && leg0(mac[2][0]).key === 'cutoff', 'sidecar carries mac[2][0], got ' + JSON.stringify(mac && mac[2]));
     ticks(5);
     assert(reads.filter(k => k === 'knob_1_target').length === 1, 'and never read again');
 });
@@ -311,10 +321,10 @@ step('the jog-click assign flow: K4 → Synth → Voices; the commit lands on th
     sidecars = [];
     assignVia(3, 'nusaw', 'Voices');
     assert(snd.soundViewForTest() === VIEW_KNOBS, 'commit lands on the list, view ' + snd.soundViewForTest());
-    const st = GS.trackMacros[2][3];
-    assert(st && st.kind === 'chain' && st.comp === 'synth' && st.key === 'voices', 'K4 = synth:voices, got ' + JSON.stringify(st));
+    const st = leg0(GS.trackMacros[2][3]);
+    assert(st && st.kind === 'chain' && st.comp === 'synth' && st.key === 'voices', 'K4 = synth:voices, got ' + JSON.stringify(GS.trackMacros[2][3]));
     const mac = lastMac();
-    assert(mac && mac[2][3] && mac[2][3].key === 'voices', 'persisted');
+    assert(mac && leg0(mac[2][3]) && leg0(mac[2][3]).key === 'voices', 'persisted');
     /* ⭑ MIRRORED into the chain's knob store (Josh, 2026-09-03: a whole-chain
      * patch carries the assignments). */
     ticks(1);
@@ -388,8 +398,8 @@ step('the LIST route is the one way in: K6 → Levels → Volume, and the commit
     assignVia(5, 'Levels', 'Volume');
     assert(snd.soundViewForTest() === VIEW_KNOBS,
            'a commit always returns to the list now, view ' + snd.soundViewForTest());
-    const st = GS.trackMacros[2][5];
-    assert(st && st.kind === 'level' && st.key === 'volume', 'K6 = level volume, got ' + JSON.stringify(st));
+    const st = leg0(GS.trackMacros[2][5]);
+    assert(st && st.kind === 'level' && st.key === 'volume', 'K6 = level volume, got ' + JSON.stringify(GS.trackMacros[2][5]));
     ticks(1);
     assert(lastWrite('knob_6_clear') === '1', 'a level macro has no chain form: mirrored as CLEAR');
     back(); assert(snd.soundViewForTest() === VIEW_MACROS, 'Back returns to the page');
@@ -402,10 +412,51 @@ step('⭑ a PATCH LOAD merges the chain store back: chain slots win, an empty ch
     snd.soundMacroMergeForTest();
     ticks(6);
     const st = GS.trackMacros[2];
-    assert(st[0] && st[0].comp === 'fx2' && st[0].key === 'room_size', 'K1 follows the patch, got ' + JSON.stringify(st[0]));
+    assert(leg0(st[0]) && leg0(st[0]).comp === 'fx2' && leg0(st[0]).key === 'room_size', 'K1 follows the patch, got ' + JSON.stringify(st[0]));
     assert(st[3] === null, 'K4 cleared by the patch, got ' + JSON.stringify(st[3]));
-    assert(st[5] && st[5].kind === 'level' && st[5].key === 'volume', 'K6 level macro kept, got ' + JSON.stringify(st[5]));
+    assert(leg0(st[5]) && leg0(st[5]).kind === 'level' && leg0(st[5]).key === 'volume', 'K6 level macro kept, got ' + JSON.stringify(st[5]));
     ASSIGN['knob_1_target'] = 'synth'; ASSIGN['knob_1_param'] = 'cutoff';
+});
+step('⭑ a PATCH LOAD against a MULTI-LEG mapping re-points the FIRST CHAIN LEG and keeps its RANGE + the other legs', () => {
+    /* Nothing on the surface builds a second leg yet, so the mapping is seeded
+     * here — this pins the RULING (2026-09-05) that the chain store, which has
+     * one target per knob, may only ever re-point the leg it can express. If
+     * it instead replaced the mapping, a patch load would silently delete
+     * every leg and every range the user set. */
+    GS.trackMacros[2][1] = { v: 0.4, legs: [
+        { kind: 'level', key: 'volume', lo: 0, hi: 1 },                   /* no chain form */
+        { kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.2, hi: 0.8 },
+        { kind: 'midi', target: 'at', lo: 0, hi: 1 },
+    ]};
+    ASSIGN['knob_2_target'] = 'fx2'; ASSIGN['knob_2_param'] = 'room_size';
+    snd.soundMacroMergeForTest();
+    ticks(6);
+    const L = legsOf(GS.trackMacros[2][1]);
+    assert(L.length === 3, 'all three legs survive a patch load, got ' + JSON.stringify(L));
+    assert(L[0].kind === 'level' && L[2].kind === 'midi', 'the non-chain legs are untouched, in place');
+    assert(L[1].kind === 'chain' && L[1].comp === 'fx2' && L[1].key === 'room_size',
+           'the FIRST chain leg follows the patch, got ' + JSON.stringify(L[1]));
+    assert(L[1].lo === 0.2 && L[1].hi === 0.8, '⭑ and KEEPS its range — a patch carries a target, never a range');
+    assert(GS.trackMacros[2][1].v === 0.4, 'the knob position survives too');
+});
+step('⭑ …and an EMPTY chain slot drops only the chain leg; a mapping with no chain leg GAINS one at the front', () => {
+    ASSIGN['knob_2_target'] = ''; ASSIGN['knob_2_param'] = '';
+    snd.soundMacroMergeForTest();
+    ticks(6);
+    const L = legsOf(GS.trackMacros[2][1]);
+    assert(L.length === 2 && L[0].kind === 'level' && L[1].kind === 'midi',
+           'the chain leg went, the rest stayed, got ' + JSON.stringify(L));
+    /* Now the reverse: the same mapping has no chain leg, and the patch has one. */
+    ASSIGN['knob_2_target'] = 'synth'; ASSIGN['knob_2_param'] = 'voices';
+    snd.soundMacroMergeForTest();
+    ticks(6);
+    const M2 = legsOf(GS.trackMacros[2][1]);
+    assert(M2.length === 3 && M2[0].kind === 'chain' && M2[0].key === 'voices',
+           'the patch target is PREPENDED as a whole-range leg, got ' + JSON.stringify(M2));
+    assert(M2[0].lo === 0 && M2[0].hi === 1, '…at whole range');
+    assert(M2[1].kind === 'level' && M2[2].kind === 'midi', 'and the old legs follow it');
+    GS.trackMacros[2][1] = null;
+    ASSIGN['knob_2_target'] = ''; ASSIGN['knob_2_param'] = '';
 });
 step('a LEVEL macro is the level\'s own knob: K6 writes slot:volume by the levels\' step and draws the fader', () => {
     ticks(3);
@@ -448,8 +499,8 @@ step('⭑ a davebox BANK KNOB as a target: K7 → NOTE FX → Gate Time; the tur
     GS.bankParams[2][1][5] = 100;
     assignVia(6, 'NOTE FX', 'Gate Time');
     back(); ticks(3);
-    const st = GS.trackMacros[2][6];
-    assert(st && st.kind === 'bank' && st.bank === 1 && st.k === 5, 'K7 = bank 1 k5, got ' + JSON.stringify(st));
+    const st = leg0(GS.trackMacros[2][6]);
+    assert(st && st.kind === 'bank' && st.bank === 1 && st.k === 5, 'K7 = bank 1 k5, got ' + JSON.stringify(GS.trackMacros[2][6]));
     const d = M().drawn[6];
     assert(d.kind === 'arc' && d.label === 'Gate' && d.name === 'Gate Time', 'drawn as the bank knob, got ' + JSON.stringify(d));
     assert(!d.auto, 'no automation circle');
@@ -520,7 +571,7 @@ step('⭑ a CC macro: the turn sends NOW through the DSP (tN_pa_midi_out, 14 bit
     GS.trackMidiVals[6] = {};
     assignVia(0, 'MIDI CC', 'CC 74 Cutoff');
     back(); ticks(2);
-    assert(GS.trackMacros[6][0].kind === 'midi' && GS.trackMacros[6][0].target === 'cc:74', 'K1 = cc:74');
+    assert(leg0(GS.trackMacros[6][0]).kind === 'midi' && leg0(GS.trackMacros[6][0]).target === 'cc:74', 'K1 = cc:74');
     const d = M().drawn[0];
     assert(d.kind === 'arc' && d.label === 'Cutf' && d.text === '0', 'drawn as a CC dial, got ' + JSON.stringify(d));
     GS.playing = true; auto.automationNoteWrite();

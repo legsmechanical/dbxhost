@@ -209,9 +209,12 @@ export function writeSidecar() {
         tab: S.trackActiveBank.slice(),
         am: S.trackAtMode.slice(),
         pchr: S.padLayoutChromatic.map(function(b) { return b ? 1 : 0; }),
-        /* The macro store, per track: eight typed targets or null (see
-         * ui_state.trackMacros). Additive on v:9: absent → unseeded, and
-         * ui_sound migrates the chain's own knob_N assignments on first use. */
+        /* The macro store, per track: eight MAPPINGS or null (see
+         * ui_state.trackMacros) — `{v, legs:[leg,…]}`, a leg being a typed
+         * target plus lo/hi. Additive on v:9: absent → unseeded, and ui_sound
+         * migrates the chain's own knob_N assignments on first use. ⚠ Written
+         * in the CURRENT shape only; the reader still accepts the pre-09-05
+         * flat one, so an older sidecar loads and is rewritten reshaped. */
         mac: S.trackMacros.map(function(m) { return m ? m.slice() : null; }),
         /* The MIDI knob values per track (target -> value) and the per-clip
          * Program / Bank triples; additive on v:9 (spec §2b, 2026-09-03). */

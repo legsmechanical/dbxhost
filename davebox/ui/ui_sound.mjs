@@ -2689,7 +2689,7 @@ function bankMacroFromAsn(target, param) {
 
 function openKnobEditor() {
     const store = macroStore();
-    for (let i = 0; i < NUM_KNOBS; i++) S.knobAsn[i] = asnFromMacro(store[i]);
+    for (let i = 0; i < NUM_KNOBS; i++) S.knobAsn[i] = asnFromMacro(macroLeg0(store[i]));
     S.knobIdx = 0;
     S.view = VIEW_KNOBS;
 }
@@ -2916,9 +2916,11 @@ function commitKnobAssignment(target, param) {
     else if ((target === 'midicc' || target === 'midi') && midiTargetIsMidi(param)) m = { kind: 'midi', target: param };
     else if (target && target.indexOf('bank:') === 0) m = bankMacroFromAsn(target, param);
     else if (target && param) m = { kind: 'chain', comp: target, key: param };
-    store[i] = m;
+    /* The list still assigns ONE target; it becomes that mapping's only leg,
+     * at whole range. Legs and ranges are edited on the list (§5), never here. */
+    store[i] = makeMapping(m);
     S.knobAsn[i] = asnFromMacro(m);
-    macroMirrorToChain(i, m);
+    macroMirrorToChain(i, store[i]);
     /* The cell and the value belonged to the OLD target — a number from a
      * different control, and a step law derived from a different range. The
      * tick re-seeds both. */
@@ -3299,7 +3301,33 @@ function macroStore(track) {
     const t = (track == null) ? S.track : track;
     return (t >= 0 && GS.trackMacros[t]) || EMPTY_MACROS;
 }
-function macroTarget(i, track) { return macroStore(track)[i] || null; }
+/* ── A MACRO IS A MAPPING, NOT A POINTER (2026-09-05) ──────────────────────
+ * A slot is `{ v, legs: [ leg, … ] }`. A LEG is exactly the typed target
+ * record this file has always used — chain / level / bank / midi — plus
+ * `lo`/`hi`, fractions of the TARGET's own range, so a leg is portable across
+ * targets with different units and `lo > hi` is an INVERTED leg for free.
+ * `v` is the KNOB's own 0..1 position and means nothing yet: a ONE-leg
+ * lo=0/hi=1 mapping takes the path it always took (the target's own value in
+ * `S.macVals`, the travel law, the poll), which is what makes the reshape
+ * invisible — nothing in this commit creates a second leg or a range.
+ *
+ * ⭑ `macroTarget(i)` still answers THE TARGET (leg 0), which is why every
+ * consumer of a macro's IDENTITY — the automation owner, the cells, the card
+ * hints, the ring paint, the touch gestures — is untouched by the reshape.
+ * `macroMapping(i)` is the whole record, and only the store's own owners
+ * (the commit, the mirror, the chain merge, the sidecar) reach for it. */
+const EMPTY_LEGS = Object.freeze([]);
+function macroMapping(i, track) { return macroStore(track)[i] || null; }
+function macroLeg0(mp) { return (mp && mp.legs && mp.legs[0]) || null; }
+function macroLegs(mp) { return (mp && mp.legs) || EMPTY_LEGS; }
+/* Wrap a bare typed target as a whole-range one-leg mapping. */
+function makeMapping(leg) {
+    return leg ? { v: null, legs: [Object.assign({ lo: 0, hi: 1 }, leg)] } : null;
+}
+/* Where a mapping's chain form lives: the FIRST chain-kind leg, or -1. It is
+ * the leg the chain store mirrors and the leg a patch load re-points. */
+function macroChainLegIdx(mp) { return macroLegs(mp).findIndex(l => l && l.kind === 'chain'); }
+function macroTarget(i, track) { return macroLeg0(macroMapping(i, track)); }
 function macroLevelIdx(m) { return LEVEL_KNOB_SPECS.findIndex(x => x.key === m.key); }
 /* A level target that exists on this route (Module Level is chain-only). */
 function macroLevelSpec(m) {
@@ -3503,10 +3531,13 @@ const MACRO_UNTURNABLE = { file: 1, text: 1, opaque: 1 };
  * PATCH carries the assignments (the host's patch serializer keeps them) —
  * and a patch LOAD reads them back through the same merge the first-visit
  * migration uses. A level macro has no chain form: mirrored as CLEAR, and
- * the merge keeps it when the chain slot is empty. */
-function macroMirrorToChain(i, m) {
+ * the merge keeps it when the chain slot is empty.
+ * ⭑ A mapping mirrors its FIRST CHAIN-KIND LEG — the patch format has one
+ * target per knob, so a leg's range and every other leg stay in the sidecar. */
+function macroMirrorToChain(i, mp) {
     if (S.bus || S.track < 0 || GS.trackRoute[S.track] !== 0) return;
-    if (m && m.kind === 'chain') queueChainWrite('knob_' + (i + 1) + '_set', m.comp + ':' + m.key);   /* level/bank: no chain form */
+    const ci = macroChainLegIdx(mp), leg = ci >= 0 ? mp.legs[ci] : null;
+    if (leg) queueChainWrite('knob_' + (i + 1) + '_set', leg.comp + ':' + leg.key);   /* level/bank: no chain form */
     else queueChainWrite('knob_' + (i + 1) + '_clear', '1');
 }
 
@@ -3515,9 +3546,31 @@ function macroMirrorToChain(i, m) {
  * and persisted, so the first-visit migration never runs again for this
  * track. Rule per knob: a chain-store assignment WINS; an empty chain slot
  * keeps a level macro (the chain cannot express one) and clears a chain one.
+ * ⭑ With legs (2026-09-05): the chain store re-points the mapping's FIRST
+ * CHAIN-KIND LEG and keeps that leg's RANGE and every other leg; a mapping
+ * with no chain leg gains one at the front; an empty chain slot drops the
+ * chain leg and leaves the rest (an empty mapping becomes null). A one-leg
+ * mapping is therefore exactly the old behaviour.
  * A Move bus or a MIDI track has no chain store: seeded empty at once.
  * Returns true while still walking. `S.macMergeWanted` asks for a re-run on
  * a seeded track (the patch-load path). */
+/* Drop the mapping's first chain leg (the chain slot is empty); null when
+ * that was its only leg. Never mutates the stored mapping. */
+function macroDropChainLeg(mp) {
+    const ci = macroChainLegIdx(mp);
+    if (ci < 0) return mp || null;
+    const legs = mp.legs.slice(); legs.splice(ci, 1);
+    return legs.length ? { v: mp.v, legs } : null;
+}
+/* Re-point the mapping's first chain leg at `leg`, KEEPING its lo/hi; a
+ * mapping with no chain leg gains one at the front, at whole range. */
+function macroSetChainLeg(mp, leg) {
+    if (!mp || !macroLegs(mp).length) return makeMapping(leg);
+    const legs = mp.legs.slice(), ci = macroChainLegIdx(mp);
+    if (ci >= 0) legs[ci] = Object.assign({}, leg, { lo: legs[ci].lo, hi: legs[ci].hi });
+    else legs.unshift(Object.assign({ lo: 0, hi: 1 }, leg));
+    return { v: mp.v, legs };
+}
 function macroMigrateTick() {
     const t = S.track;
     if (t < 0) return false;
@@ -3530,12 +3583,15 @@ function macroMigrateTick() {
     }
     if (S.macMigrateFor !== t) {
         S.macMigrateFor = t; S.macMigrateK = 0;
-        S.macMigrateTmp = seeded ? GS.trackMacros[t].map(m => (m && m.kind !== 'chain') ? m : null)
+        S.macMigrateTmp = seeded ? GS.trackMacros[t].map(mp => macroDropChainLeg(mp))
                                  : [null, null, null, null, null, null, null, null];
     }
     for (let n = 0; n < 2 && S.macMigrateK < 8; n++, S.macMigrateK++) {
         const a = readKnobAsn(S.macMigrateK);
-        if (a.target && a.param) S.macMigrateTmp[S.macMigrateK] = { kind: 'chain', comp: a.target, key: a.param };
+        if (a.target && a.param)
+            S.macMigrateTmp[S.macMigrateK] =
+                macroSetChainLeg(GS.trackMacros[t] ? GS.trackMacros[t][S.macMigrateK] : null,
+                                 { kind: 'chain', comp: a.target, key: a.param });
     }
     if (S.macMigrateK < 8) return true;
     GS.trackMacros[t] = S.macMigrateTmp;
@@ -3686,14 +3742,15 @@ function macroTick() {
     if (!S.macBanksRead) {
         S.macBanksRead = true;
         const done = {};
-        for (const m of store) {
+        for (const mp of store) {
+            const m = macroLeg0(mp);
             if (!m || m.kind !== 'bank' || done[m.bank] || !bankMacroMeta(m)) continue;
             done[m.bank] = true;
             readBankParams(S.track, m.bank);
         }
     }
     for (let i = 0; i < 8 && reads < MACRO_READS_PER_TICK; i++) {
-        const m = store[i];
+        const m = macroLeg0(store[i]);
         if (!m || m.kind !== 'chain') continue;
         if (!S.knobMeta[m.comp]) {
             let list = [];
@@ -3713,7 +3770,7 @@ function macroTick() {
      * the reads above were still in flight, which is why they ACCUMULATE. */
     for (let i = 0; i < 8; i++) {
         if (!S.knobAccum[i]) continue;
-        const m = store[i], cell = S.macCells[i];
+        const m = macroLeg0(store[i]), cell = S.macCells[i];
         if (m && m.kind === 'midi') {
             if (!midiTargetOnRoute(m.target, S.track)) { S.knobAccum[i] = 0; continue; }
             /* cc/at: one unit per two detents (a 7-bit sweep in ~254); pb: the
@@ -3783,7 +3840,7 @@ function macroPollTick() {
     if (!GS.playing && (S.macPollTick % MACRO_POLL_EVERY_STOPPED)) return;
     for (let n = 0; n < 8; n++) {
         const i = (S.macPoll + n) % 8;
-        const m = store[i], cell = S.macCells[i];
+        const m = macroLeg0(store[i]), cell = S.macCells[i];
         /* A LEVEL macro re-reads the level's own cache (Josh, 2026-09-03: a
          * bus-pan macro "records and plays back but the widget never moves"
          * — the levels were seeded once and never re-read). */
@@ -3825,7 +3882,7 @@ function macroCells(track, live) {
     const store = macroStore(t);
     const cells = [];
     for (let i = 0; i < 8; i++) {
-        const m = store[i];
+        const m = macroLeg0(store[i]);
         const k = 'K' + (i + 1);
         const unassigned = (label) => ({ kind: 'valsq', label: label || k, name: k + ' UNASSIGNED', text: '--' });
         if (!m) { cells.push(unassigned()); continue; }

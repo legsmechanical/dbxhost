@@ -78,7 +78,8 @@ step('a track remembered on MACROS, at rest (bank mode unlatched): sound mode OP
     assert(!snd.soundActive(), 'not active — davebox gates read it as closed');
     assert(S.activeBank === BANK_MACROS && S.trackActiveBank[T] === BANK_MACROS, 'the bank stays MACROS');
     const st = S.trackMacros[T];
-    assert(st && st[0] && st[0].key === 'cutoff', 'the store migrated at rest, got ' + JSON.stringify(st));
+    const l0 = st && st[0] && st[0].legs && st[0].legs[0];
+    assert(l0 && l0.key === 'cutoff', 'the store migrated at rest, got ' + JSON.stringify(st));
 });
 step('⭑ on the overview the knobs ARE the macros: K1 writes synth:cutoff', () => {
     writes = [];

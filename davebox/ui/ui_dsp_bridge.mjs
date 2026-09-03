@@ -1450,10 +1450,39 @@ export function restoreUiSidecar(applyDefaultsNow) {
             for (let _t = 0; _t < NUM_TRACKS; _t++)
                 S.padLayoutChromatic[_t] = !!us.pchr[_t];
         }
-        /* The macro store (additive on v:9). Shape-validated per entry: a
-         * target is {kind:'chain', comp, key} or {kind:'level', key}; anything
-         * else reads as unassigned. A track absent or null stays UNSEEDED
-         * (null), so ui_sound migrates the chain's knob_N assignments once. */
+        /* The macro store (additive on v:9). A slot is a MAPPING —
+         * `{v, legs:[leg,…]}` — and a LEG is the typed target record plus
+         * `lo`/`hi` (2026-09-05). ⭑ The OLD flat shape (the target record
+         * itself, no wrapper) is still read and wrapped as a one-leg
+         * whole-range mapping, so a sidecar written before today loads with
+         * every macro exactly where it was; there is no version bump and no
+         * migration pass, because reading IS the migration.
+         * Shape-validated per leg: anything that is not a target this file
+         * recognises reads as unassigned, and a mapping with no surviving leg
+         * is null. A track absent or null stays UNSEEDED (null), so ui_sound
+         * migrates the chain's knob_N assignments once. */
+        const _leg = function(_e) {
+            if (!_e || typeof _e !== 'object') return null;
+            if (_e.kind !== 'bank' && _e.kind !== 'midi' && (typeof _e.key !== 'string' || !_e.key)) return null;
+            let _l = null;
+            if (_e.kind === 'chain' && typeof _e.comp === 'string' && _e.comp)
+                _l = { kind: 'chain', comp: _e.comp, key: _e.key };
+            else if (_e.kind === 'level')
+                _l = { kind: 'level', key: _e.key };
+            else if (_e.kind === 'bank' && typeof _e.bank === 'number' && typeof _e.k === 'number') {
+                _l = { kind: 'bank', bank: _e.bank | 0, k: _e.k | 0 };
+                if (typeof _e.alt === 'string' && _e.alt) _l.alt = _e.alt;
+            }
+            else if (_e.kind === 'midi' && typeof _e.target === 'string' && /^(cc:\d+|at|pb)$/.test(_e.target))
+                _l = { kind: 'midi', target: _e.target };
+            if (!_l) return null;
+            /* A range is a pair of 0..1 fractions; lo > hi is a legitimate
+             * INVERTED leg (Josh, 2026-09-05), so only the BOUNDS are checked.
+             * Absent or unreadable → whole range, which is the old shape. */
+            const _n = (x, d) => (typeof x === 'number' && isFinite(x)) ? Math.max(0, Math.min(1, x)) : d;
+            _l.lo = _n(_e.lo, 0); _l.hi = _n(_e.hi, 1);
+            return _l;
+        };
         for (let _t = 0; _t < NUM_TRACKS; _t++) S.trackMacros[_t] = null;
         if (Array.isArray(us.mac)) {
             for (let _t = 0; _t < NUM_TRACKS; _t++) {
@@ -1463,17 +1492,11 @@ export function restoreUiSidecar(applyDefaultsNow) {
                 for (let _k = 0; _k < 8; _k++) {
                     const _e = _m[_k];
                     if (!_e || typeof _e !== 'object') continue;
-                    if (_e.kind !== 'bank' && _e.kind !== 'midi' && (typeof _e.key !== 'string' || !_e.key)) continue;
-                    if (_e.kind === 'chain' && typeof _e.comp === 'string' && _e.comp)
-                        _out[_k] = { kind: 'chain', comp: _e.comp, key: _e.key };
-                    else if (_e.kind === 'level')
-                        _out[_k] = { kind: 'level', key: _e.key };
-                    else if (_e.kind === 'bank' && typeof _e.bank === 'number' && typeof _e.k === 'number') {
-                        _out[_k] = { kind: 'bank', bank: _e.bank | 0, k: _e.k | 0 };
-                        if (typeof _e.alt === 'string' && _e.alt) _out[_k].alt = _e.alt;
-                    }
-                    else if (_e.kind === 'midi' && typeof _e.target === 'string' && /^(cc:\d+|at|pb)$/.test(_e.target))
-                        _out[_k] = { kind: 'midi', target: _e.target };
+                    const _legs = Array.isArray(_e.legs) ? _e.legs.map(_leg).filter(Boolean)
+                                                         : [_leg(_e)].filter(Boolean);   /* the old flat shape */
+                    if (!_legs.length) continue;
+                    const _v = (typeof _e.v === 'number' && isFinite(_e.v)) ? Math.max(0, Math.min(1, _e.v)) : null;
+                    _out[_k] = { v: _v, legs: _legs };
                 }
                 S.trackMacros[_t] = _out;
             }
