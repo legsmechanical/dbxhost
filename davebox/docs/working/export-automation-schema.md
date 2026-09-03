@@ -15,14 +15,19 @@
 > own the id space** — davebox assigns the ids itself. Measured from the file: index **0** is
 > PITCH BEND (values −8192…8191) and the automated CC sits at index **13** (values 0…127).
 >
-> ❓ **OPEN, for Josh:** (a) is `.ablbundle` a REQUIREMENT or just how the export got built? If
-> Live is the consumer, writing `.als` directly removes the last unknown — the tradeoff is that a
-> bundle carries samples/kits inside it while a `.als` references them by path, so drum-kit
-> export may depend on the bundling. (b) WHICH CC was automated in the reference? That single
-> fact pins the whole index→message mapping and davebox can then emit any CC or bend lane.
->
-> ⚠ Everything below about `Song.abl` remains ACCURATE but is only relevant if the answer to (a)
-> is "the bundle is required".
+> ✅ **BOTH ANSWERED by Josh, 2026-09-05:**
+> **(a) `.ablbundle` is REQUIRED** — *"needs to be the ablbundle to ensure move devices and
+> samples inside it load properly."* So writing a `.als` is OUT, and everything below about
+> `Song.abl` is the live path, not a fallback. The `.als` analysis stays as REFERENCE ONLY: it
+> documents what Josh wants to SEE in Live, and nothing more.
+> **(b) The reference automates PITCH BEND and CC 11.** With the count that pins the whole
+> `ControllerTargets` mapping arithmetically: CC 11 sits at index **13**, so the offset is 2, and
+> with 131 entries (indices 0–130) the layout is
+> `0` = pitch bend · `1` = ? · `2 + N` = **CC N** (N = 0…127, indices 2–129) · `130` = ?
+> ⚠ Indices 1 and 130 are the two non-CC slots and are UNCONFIRMED — likely channel pressure
+> (which davebox's `at` target needs) and program change, in some order. One more reference with
+> aftertouch automated would settle it. ⭑ This is `.als`-side knowledge, so it only matters if we
+> ever verify Live's rendering by hand; it is NOT what the bundle needs.
 
 > 🔴 **CORRECTED 2026-09-05, same day, by Josh: *"are you saying alsbundle files require
 > automation to tied to notes?"* — NO, and §5 originally implied it. Move RECORDS PARAMETER
@@ -150,9 +155,34 @@ is pulled straight off the device, no Move Manager needed:
 That one file shows `clip.envelopes` in use and what `parameterId` refers to, which is the whole
 question the deferral was about.
 
-**❓ Then one narrower question remains:** whether an envelope target can be a MIDI CC / pitch
-bend, or only a device parameter. The example above will probably answer that too — and if it is
-device-parameters-only, (A) becomes the fallback for `cc:`/`at`/`pb` rather than the plan.
+## 5b. ⚠⚠ The plan's assumption may be exactly BACKWARDS
+
+`param-automation-plan.md` P7 says: *"cc:/at entries render … chain-param entries omitted (no
+MIDI representation)."* That was written from a MIDI point of view — CC is expressible on the
+wire, a chain param is not.
+
+But the bundle is a MOVE SET, and Move's own automation is **device-parameter** automation. So in
+`Song.abl` the reverse may hold:
+
+- **A chain/device parameter is exactly what `clip.envelopes` is FOR** — Move records device
+  automation itself, so this container is its native home. These may export cleanly.
+- **A MIDI message (`cc:`, `at`, `pb`) may have no clip-level target at all** — Move has no
+  concept of automating outbound MIDI; the only MIDI-message vocabulary found anywhere in Live's
+  importer strings (`PitchBend`, `Pressure`, CC numbers) sits with the **per-note** block, not
+  with `envelopes`.
+
+⚠ This is a HYPOTHESIS, not a finding — it is exactly the inference-from-absence that already
+went wrong once here. The Move-recorded example above tests it directly: if the envelope it
+produces names a device parameter, that half is confirmed, and whether a MIDI target can appear
+at all becomes the one remaining question.
+
+**If MIDI messages genuinely cannot be clip envelopes in a bundle, the honest options are:**
+1. Export chain-param automation as clip envelopes (the reverse of the plan) and omit `cc:`/`at`/
+   `pb` — stating the limitation in the manual.
+2. Fall back to per-note `automations` for the MIDI kinds, accepting that a clip-level lane gets
+   sliced per note and that automation between notes is dropped. ⚠ Needs a ruling from Josh; he
+   has not agreed to this, only to its existence being a fact.
+3. Both: envelopes for parameters, per-note for MIDI.
 
 ## 6. If it turns out to be (A), the shape of the work
 
