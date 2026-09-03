@@ -36,6 +36,8 @@ import { nowMs } from './ui_clock.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
 import { showActionPopup, readActiveSet, resolveSetLoadDecision } from './ui_persistence.mjs';
+import { automationParamTouch, automationClearKey, automationToggleActive } from './ui_automation.mjs';
+import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { daveBoxRotate } from './ui_daves.mjs';
 import {
     closeClearAutoMenu, projectPickerTextEntryMidi,
@@ -580,6 +582,26 @@ function _onMidiInternalImpl(data) {
             if (d2 === 127) {
                 if (d1 <= 7 && S.activeBank >= 0) {
                     S.knobTouched = d1; S.knobPhysIdx = d1; S.knobTurnedTick[d1] = -1; S.screenDirty = true;
+                    /* A bank knob on the seq: list is an automation target:
+                     * Delete + touch clears its automation, Mute + touch mutes
+                     * it (and marks the Mute a modifier), and the touch opens
+                     * the gesture — exactly as a macro's or an editor knob's
+                     * (Josh, 2026-09-03: "show the actual destination param as
+                     * automated for deleting, muting, the dot"). */
+                    if (!S.sessionView) {
+                        const _tg = seqAutoTargetForKnob(S.activeTrack, S.activeBank, d1, S.altMode);
+                        if (_tg) {
+                            const _t = S.activeTrack, _c = effectiveClip(_t);
+                            if (S.deleteHeld) {
+                                if (automationClearKey(_t, _c, _tg)) showActionPopup('AUTOMATION', 'CLEARED');
+                            } else if (S.muteHeld) {
+                                S.muteUsedAsModifier = true;
+                                const _r = automationToggleActive(_t, _c, _tg);
+                                if (_r !== null) showActionPopup('AUTOMATION', _r ? 'ON' : 'OFF');
+                            }
+                            automationParamTouch(_t, _c, 'seq', _tg.slice(4), true);
+                        }
+                    }
                     if (S.sessionView && S.muteHeld) {
                         if (S.shiftHeld) setTrackSolo(d1, !S.trackSoloed[d1]);
                         else             setTrackMute(d1, !S.trackMuted[d1]);
@@ -616,6 +638,10 @@ function _onMidiInternalImpl(data) {
                 if (d1 === MoveMainTouch && !S.globalMenuOpen && !S.shiftHeld) { S.jogTouched = true; forceRedraw(); }
             } else if (d2 < 64) {
                 if (d1 <= 7) {
+                    if (!S.sessionView && S.activeBank >= 0) {
+                        const _tg = seqAutoTargetForKnob(S.activeTrack, S.activeBank, d1, S.altMode);
+                        if (_tg) automationParamTouch(S.activeTrack, effectiveClip(S.activeTrack), 'seq', _tg.slice(4), false);
+                    }
                     if (S.activeBank >= 0 && BANKS[S.activeBank].knobs[d1]) {
                         const relPm = BANKS[S.activeBank].knobs[d1];
                         if (relPm.dspKey === 'nudge') {

@@ -43,6 +43,7 @@ globalThis.host_write_file = () => true;
 globalThis.host_ensure_dir = () => true;
 globalThis.host_remove_dir = () => true;
 globalThis.host_module_set_param = (k, v) => { writes.push(k + '=' + v); };
+globalThis.host_module_set_params = () => true;   /* the bank knob's turn now reaches the automation owner (2026-09-03) */
 globalThis.host_module_get_param = () => '';
 globalThis.shadow_get_param = () => '';
 globalThis.shadow_set_param = () => {};

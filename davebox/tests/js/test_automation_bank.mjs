@@ -55,6 +55,7 @@ const { bankCycleForMode } = await import('../../ui/ui_pure.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
 const ab = await import('../../ui/ui_automation_bank.mjs');
 const render = await import('../../ui/ui_render.mjs');
+const snd = await import('../../ui/ui_sound.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 0;
@@ -181,6 +182,45 @@ step('while the menu is open the jog is the menu\'s (no walk); after Back the wa
     cc(14, 127); ticks(2);                               /* now the walk: left to MACROS */
     assert(S.activeBank === BANK_MACROS, 'walked to MACROS: ' + S.activeBank);
     assert(!ab.autoBankMenuOpen(), 'no menu state survives the walk');
+});
+
+/* ---- the BANK CARD knows its knobs are automated (Josh, 2026-09-03) ------- */
+step('⭑ on the NOTE FX card: Mute + touch mutes Gate Time\'s automation (Mute is a modifier), Delete + touch clears it, a turn with a held step LOCKS it', () => {
+    LIST = '0 0 1 4 seq:0:noteFX_gate 0 0\n';
+    auto.automationRefreshPresence();
+    /* The previous step left sound mode open (resting on MACROS); a real walk
+     * off that bank exits it. The rig sets the bank directly, so exit here. */
+    snd.soundExit();
+    S.bankCardLatched = false; S.activeBank = 1; S.trackActiveBank[T] = 1; S.altMode = false;
+    S.bankParams[T][1][5] = 100;
+    sets.length = 0; S.muteUsedAsModifier = false;
+    cc(88, 127);                                   /* Mute down */
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 5, 127]));   /* touch K6 */
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, 5, 0]));
+    cc(88, 0); ticks(2);
+    assert(S.muteUsedAsModifier === true, 'Mute was a modifier');
+    assert(sets.some(x => x === 't0_pa_active=0 seq:0:noteFX_gate 0'), 'muted, got ' + JSON.stringify(sets));
+    /* the turn: the bank's own knob goes through the owner too. A held step is
+     * DECLINED on a track-setting bank (the held-step law; the lock is the
+     * macro's), so a stopped turn is the plain case: with automation present
+     * it moves the RESTING value. */
+    sets.length = 0;
+    S.playing = false; S.clipTPS[T][C] = 24; S.knobLocked.fill(false);   /* soft takeover: unlocked */
+    cc(76, 2); ticks(2);
+    assert(S.bankParams[T][1][5] > 100, 'the bank value moved, got ' + S.bankParams[T][1][5]);
+    assert(sets.some(x => x.startsWith('t0_pa_rest_move=0 seq:0:noteFX_gate ')), 'the stopped turn moved the rest, got ' + JSON.stringify(sets.slice(0, 8)));
+    sets.length = 0;
+    S.heldStep = 3; S.heldStepBtn = 3; S.heldStepNotes = [60];
+    cc(76, 2); ticks(2);
+    S.heldStep = -1; S.heldStepBtn = -1; S.heldStepNotes = [];
+    assert(!sets.some(x => x.startsWith('t0_pa_set2=')), 'a held step is declined on a track-setting bank: no lock from the card');
+    /* Delete + touch clears */
+    sets.length = 0;
+    cc(119, 127);
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 5, 127]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, 5, 0]));
+    cc(119, 0); ticks(2);
+    assert(sets.some(x => x === 't0_pa_clear_key=0 seq:0:noteFX_gate'), 'cleared, got ' + JSON.stringify(sets));
 });
 
 if (failed) { console.log('FAIL: automation bank'); process.exit(1); }

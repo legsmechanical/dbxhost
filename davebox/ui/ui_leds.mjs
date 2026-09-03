@@ -10,6 +10,8 @@ import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
 import { arpVelLevel } from './ui_pure.mjs';
 import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell } from './ui_knob_leds.mjs';
+import { automationStateFor } from './ui_automation.mjs';
+import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import {
     White, Red, Green, Blue, DarkBlue, LightGrey, DarkGrey, Cyan, PurpleBlue, VividYellow,
     DeepRed, DeepGreen, DeepMagenta, Mustard
@@ -910,6 +912,14 @@ export function updateTrackLEDs() {
             const pm = BANKS[S.activeBank].knobs[k];
             ledVal = knobRingColor(
                 k, knobRingNorm(pm, S.bankParams[S.activeTrack][S.activeBank][k]));
+            /* A knob on the seq: list with automation in this clip: under Mute
+             * or Delete the ring says the STATE (red active / white muted /
+             * unlit none), as on every other page; otherwise an ACTIVE one
+             * blinks (2026-09-03). */
+            const _tg = seqAutoTargetForKnob(S.activeTrack, S.activeBank, k, S.altMode);
+            const _st = _tg ? automationStateFor(S.activeTrack, effectiveClip(S.activeTrack), _tg) : null;
+            if (S.muteHeld || S.deleteHeld) ledVal = _st ? (_st.active ? Red : White) : LED_OFF;
+            else if (_st && _st.active && (Math.floor(S.clockMs / 440) % 2)) ledVal = LED_OFF;
         }
         if (S._forceKnobReemit) setButtonLED(71 + k, ledVal, true);
         else cachedSetButtonLED(71 + k, ledVal);

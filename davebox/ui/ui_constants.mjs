@@ -562,6 +562,14 @@ export const SEQ_AUTO_TARGETS = (() => {
     }
     return out;
 })();
+/* The automation TARGET of a bank card's knob k on `track` — "seq:<t>:<key>"
+ * — or null when that knob is not on the list. `altMode` names the Shift+K1
+ * Clock Feedback alternate on DELAY. The all-lane direction is bank 7 K7. */
+export function seqAutoTargetForKnob(track, bank, k, altMode) {
+    const alt = (altMode && bank === 3 && k === 0) ? 'clkfb' : null;
+    const key = seqAutoKeyFor(bank, k, alt);
+    return key ? 'seq:' + track + ':' + key : null;
+}
 /* The DSP key a bank macro automates as, or null when it is not on the list. */
 export function seqAutoKeyFor(bank, k, alt) {
     for (const key in SEQ_AUTO_TARGETS) {

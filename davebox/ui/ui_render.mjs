@@ -46,6 +46,8 @@ import {
 } from './ui_leds.mjs';
 import { soundRender, renderGatewayCard, renderTrackGatewayCard, renderMacrosPeek } from './ui_sound.mjs';
 import { drawAutomationBankBody } from './ui_automation_bank.mjs';
+import { automationStateFor } from './ui_automation.mjs';
+import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { drawMenuHeader } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
@@ -94,6 +96,15 @@ export const BANK_HDR_TEXT_W = 118;
  * and MACROS pages included (Josh, 2026-09-03: "just like pre-existing ones"). */
 export function bankHeadingPrefix() {
     return 'Tr' + (S.activeTrack + 1) + ' - ';
+}
+
+/* The automation circle on a bank card's cell, for a knob on the seq: list. */
+function markSeqAuto(cell, bank, k, altMode) {
+    const t = S.activeTrack;
+    const tg = seqAutoTargetForKnob(t, bank, k, altMode);
+    if (!tg) return;
+    const st = automationStateFor(t, effectiveClip(t), tg);
+    if (st) cell.auto = st.active ? 'auto' : 'auto-off';
 }
 
 function drawBankHeading(name, showTrack, bareHdr) {
@@ -2450,8 +2461,10 @@ function drawUIBody() {
             }
             if (_delayShiftClkF) {
                 const _cv = S.delayClockFb[S.activeTrack] | 0;
-                cells.push({ kind: 'arcbip', label: 'ClkFb', name: 'Clock Feedback',
-                             text: fmtSign(_cv), signed: Math.max(-1, Math.min(1, _cv / 127)) });
+                const _cc = { kind: 'arcbip', label: 'ClkFb', name: 'Clock Feedback',
+                              text: fmtSign(_cv), signed: Math.max(-1, Math.min(1, _cv / 127)) };
+                markSeqAuto(_cc, bank, k, true);
+                cells.push(_cc);
                 continue;
             }
             if (_clipDirAlt) {
@@ -2465,6 +2478,9 @@ function drawUIBody() {
                 if      (knobs[k].dspKey === 'clock_shift')     { cell.label = 'Nudge'; cell.name = 'Nudge'; }
                 else if (knobs[k].dspKey === 'clip_resolution') { cell.label = 'Zoom'; cell.name = 'Zoom'; }
             }
+            /* The bank knob IS the parameter a macro can point at, so its
+             * automation shows HERE too (Josh, 2026-09-03): the circle. */
+            markSeqAuto(cell, bank, k, false);
             cells.push(cell);
         }
         drawKitPage(bankHeaderName(S.activeTrack, bank), cells, false, bankPageHints(bank));

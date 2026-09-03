@@ -50,6 +50,8 @@ import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
 import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen } from './ui_automation_bank.mjs';
+import { automationParamEdit } from './ui_automation.mjs';
+import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { soundActive, soundOpen, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, soundEnterBuses } from './ui_sound.mjs';
@@ -1142,6 +1144,16 @@ function modalDialogUp() {
 }
 
 const bankCycleFor = (track) => bankCycleForMode(S.trackPadMode[track]);
+
+/* A bank knob's turn, heard by the automation owner as its seq: target — a
+ * held step locks it, Record takes it, a plain turn is a plain turn — exactly
+ * as the macro pointing at the same parameter (Josh, 2026-09-03). No-op for a
+ * knob that is not on the list. */
+function seqAutoEdit(track, bank, k, altMode, nv, cur) {
+    const tg = seqAutoTargetForKnob(track, bank, k, altMode);
+    if (!tg) return;
+    automationParamEdit(track, effectiveClip(track), 'seq', tg.slice(4), String(nv), String(cur));
+}
 
 /* Commit the picker's selection: the same work an unshifted jog step does when
  * it lands on that bank, including the deferred entry for SOUND + CONFIG (the
@@ -4089,6 +4101,7 @@ function _onCC_knobs(d1, d2) {
                         if (nvDir !== curDir) {
                             S.bankParams[t][7][6] = nvDir;
                             host_module_set_param('t' + t + '_all_lanes_playback_dir', String(nvDir));
+                            seqAutoEdit(t, 7, 6, false, nvDir, curDir < 0 ? 0 : curDir);
                         }
                     }
                     S.screenDirty = true;
@@ -4309,8 +4322,10 @@ function _onCC_knobs(d1, d2) {
             if (_q !== 0) {
                 const nv = Math.max(-100, Math.min(100, (S.delayClockFb[t] | 0) + _q));
                 if (nv !== S.delayClockFb[t]) {
+                    const _cur = S.delayClockFb[t] | 0;
                     S.delayClockFb[t] = nv;
                     host_module_set_param('t' + t + '_delay_clock_fb', String(nv));
+                    seqAutoEdit(t, 3, 0, true, nv, _cur);
                 }
                 S.screenDirty = true;
             }
@@ -4515,6 +4530,7 @@ function _onCC_knobs(d1, d2) {
                             applyBankParam(S.activeTrack, bank, knobIdx, nv);
                             if (bank === 5 && knobIdx === 0 && nv !== 0)
                                 S.lastTarpStyle[S.activeTrack] = nv;
+                            seqAutoEdit(S.activeTrack, bank, knobIdx, false, nv, cur);
                         }
                     }
                 }
