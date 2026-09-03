@@ -319,8 +319,12 @@ mixer, and **neither has an example**:
    ⚠ **And drum-rack PAD pan does NOT transfer** (Josh: *"pad pan is totally different from track
    pans"*). The corpus does contain non-zero pad pans — `Set 38.ablbundle` has −32.81, −8.50,
    +5.00, +31.12 on drum-rack chain mixers — but they are a different control, and the JSON key
-   and the genson-inferred shape being identical is NOT evidence that the scale is. Recorded here
-   only so nobody "discovers" them later and assumes they answer track pan.
+   and the genson-inferred shape being identical is NOT evidence that the scale is.
+
+   ⭑ And pad pan is **not work at all** (Josh): *"we already carry over the entire drum device
+   chain anyway, so that's not the issue"* — the drum rack is copied verbatim into the export, so
+   pad pan rides along inside it. These values are recorded only so nobody "discovers" them later
+   and mistakes them for the track-pan answer.
 
    ⭑ **What the corpus DOES establish is the pattern:** `Song.abl` uses **display / engineering
    units, not normalised ones** — proven by volume being dB rather than a 0…1 fader position.
