@@ -34,6 +34,7 @@ globalThis.host_write_file = () => true;
 globalThis.host_ensure_dir = () => true;
 globalThis.host_remove_dir = () => true;
 globalThis.host_module_set_param = () => {};
+globalThis.host_module_set_params = () => true;   /* the strip's turn reaches the automation owner (2026-09-04) */
 globalThis.host_module_get_param = () => '';
 globalThis.shadow_get_param = (slot, key) => {
     reads.push(key);

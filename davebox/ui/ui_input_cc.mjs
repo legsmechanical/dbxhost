@@ -51,6 +51,7 @@ import { effectiveClip, forceRedraw, invalidateLEDCache,
 import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
 import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen } from './ui_automation_bank.mjs';
 import { automationParamEdit } from './ui_automation.mjs';
+import { sessStripTargets } from './ui_engine.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { bankKnobLockTurn } from './ui_sound.mjs';
 import { soundActive, soundOpen, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator,
@@ -3805,6 +3806,21 @@ function _sessionKnobParam(knobIdx, d2) {
     if (v === lvl) return;
     S.sessVolLevel[knobIdx] = v;
     S.sessVolPending[knobIdx] = true;
+    /* The strip is an automation gesture too (Josh, 2026-09-04): the owner
+     * hears the level in the parameter's own units — a chain slot's or a Move
+     * bus's level as written, a MIDI track's as its CC value. */
+    {
+        const _clip = effectiveClip(knobIdx);
+        for (const tg of sessStripTargets(S, knobIdx, mode.key)) {
+            if (tg.slot === 'midi') {
+                const _mx = mode.max || 1;
+                automationParamEdit(knobIdx, _clip, 'midi', tg.fullKey,
+                                    String(Math.round((v / _mx) * 127)), String(Math.round((lvl / _mx) * 127)));
+            } else {
+                automationParamEdit(knobIdx, _clip, tg.slot, tg.fullKey, v.toFixed(3), lvl.toFixed(3));
+            }
+        }
+    }
     S.sessVolSaveOwed = true;
     S.sessVolLastTurn = nowMs();
     S.sessVolLastKnob = knobIdx;       /* this strip's number swaps to its value */

@@ -38,6 +38,7 @@ import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
 import { showActionPopup, readActiveSet, resolveSetLoadDecision } from './ui_persistence.mjs';
 import { automationParamTouch, automationClearKey, automationToggleActive } from './ui_automation.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
+import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { daveBoxRotate } from './ui_daves.mjs';
 import {
     closeClearAutoMenu, projectPickerTextEntryMidi,
@@ -602,6 +603,20 @@ function _onMidiInternalImpl(data) {
                             automationParamTouch(_t, _c, 'seq', _tg.slice(4), true);
                         }
                     }
+                    /* The session strip's automation gestures (2026-09-04):
+                     * Delete + touch clears the strip's automation in the
+                     * track's clip; the touch itself opens the gesture. Mute +
+                     * touch keeps its session meaning (mute / solo the track). */
+                    if (S.sessionView) {
+                        const _mode = SESS_KNOB_MODES[S.sessKnobMode];
+                        if (_mode && _mode.widget !== 'gateway') {
+                            const _c = effectiveClip(d1);
+                            for (const tg of sessStripTargets(S, d1, _mode.key)) {
+                                if (S.deleteHeld && automationClearKey(d1, _c, tg.target)) showActionPopup('AUTOMATION', 'CLEARED');
+                                automationParamTouch(d1, _c, tg.slot, tg.fullKey, true);
+                            }
+                        }
+                    }
                     if (S.sessionView && S.muteHeld) {
                         if (S.shiftHeld) setTrackSolo(d1, !S.trackSoloed[d1]);
                         else             setTrackMute(d1, !S.trackMuted[d1]);
@@ -638,6 +653,12 @@ function _onMidiInternalImpl(data) {
                 if (d1 === MoveMainTouch && !S.globalMenuOpen && !S.shiftHeld) { S.jogTouched = true; forceRedraw(); }
             } else if (d2 < 64) {
                 if (d1 <= 7) {
+                    if (S.sessionView) {
+                        const _mode = SESS_KNOB_MODES[S.sessKnobMode];
+                        if (_mode && _mode.widget !== 'gateway')
+                            for (const tg of sessStripTargets(S, d1, _mode.key))
+                                automationParamTouch(d1, effectiveClip(d1), tg.slot, tg.fullKey, false);
+                    }
                     if (!S.sessionView && S.activeBank >= 0) {
                         const _tg = seqAutoTargetForKnob(S.activeTrack, S.activeBank, d1, S.altMode);
                         if (_tg) automationParamTouch(S.activeTrack, effectiveClip(S.activeTrack), 'seq', _tg.slice(4), false);

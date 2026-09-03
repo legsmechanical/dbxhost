@@ -323,7 +323,10 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   page, held on screen — and keep turning to walk from there. The same is true
   of session view: the jog walks the mixer's Volume, Pan, Send A, Send B and
   the Master & Send FX door underneath the overview, the indicator at the top
-  right follows, and the click opens the page.
+  right follows, and the click opens the page. The mixer's knobs are
+  automatable too — they are the same parameters as the SOUND + CONFIG card's:
+  turn one while recording and it records into that track's clip, the strip
+  shows the circle and follows during playback, and Delete + touch clears it.
 - **SOUND + CONFIG** — the way in to the track's sound editor (its instrument,
   effects, sound control and config) — is the last entry in the list. It is a
   **door rather than a screen**: landing on it offers *"click to enter"*, and

@@ -229,6 +229,26 @@ step('⭑ on the NOTE FX card: Mute + touch mutes Gate Time\'s automation (Mute 
     assert(sets.some(x => x === 't0_pa_clear_key=0 seq:0:noteFX_gate'), 'cleared, got ' + JSON.stringify(sets));
 });
 
+/* ---- the SESSION STRIP is automatable (Josh, 2026-09-04) ------------------ */
+step('⭑ a session strip turn goes through the owner: playing → pa_live on <slot>:slot:volume; Delete + touch clears it', () => {
+    snd.soundExit();
+    S.sessionView = true; S.sessMixerLatched = false; S.sessKnobMode = 0;
+    S.trackRoute[0] = 0; S.sessVolBus[0] = 0; S.sessVolSlots[0] = 1; S.sessVolLevel[0] = 1.0;
+    S.knobLocked.fill(false);
+    LIST = ''; auto.automationRefreshPresence(); auto.automationNoteWrite();
+    S.playing = true; sets.length = 0;
+    cc(71, 4); ticks(2);
+    assert(sets.some(x => x.startsWith('t0_pa_live=0:slot:volume ')), 'the strip turn is a live edit on 0:slot:volume, got ' + JSON.stringify(sets.slice(0, 6)));
+    S.playing = false;
+    LIST = '0 0 1 4 0:slot:volume 0 0\n'; auto.automationRefreshPresence(); sets.length = 0;
+    cc(119, 127);
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 0, 127]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, 0, 0]));
+    cc(119, 0); ticks(2);
+    assert(sets.some(x => x === 't0_pa_clear_key=0 0:slot:volume'), 'Delete + touch cleared the strip\'s automation, got ' + JSON.stringify(sets));
+    S.sessionView = false;
+});
+
 if (failed) { console.log('FAIL: automation bank'); process.exit(1); }
 console.log('PASS: the AUTOMATION bank — the list, the menu, the ops, Clear clip');
 }

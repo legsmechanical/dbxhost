@@ -365,6 +365,33 @@ export function moveBusForChannel(ch) {
     return n < 1 ? 1 : (n > MOVE_BUSES ? MOVE_BUSES : n);
 }
 /* The component half of a bus key, for engineGet/engineSet(0, comp, key). */
+/* THE SESSION STRIP'S AUTOMATION TARGETS (Josh, 2026-09-04: "make session
+ * view mix params automatable"): the same parameters SOUND + CONFIG automates.
+ * Returns [{slot, fullKey, target}] — a Move bus's `move_fx:N:<key>` on slot 0,
+ * a MIDI track's `cc:7` / `cc:10` (raw, slot 'midi'), or every chain slot of
+ * a Schwung track (`<s>:slot:<key>` per slot in its mask). Empty when the
+ * strip has no position in this mode. */
+export function sessStripTargets(S, t, key) {
+    const out = [];
+    const bus = S.sessVolBus[t] | 0;
+    if (bus > 0) {
+        const fk = moveBusComp(bus) + ':' + key;
+        out.push({ slot: 0, fullKey: fk, target: '0:' + fk });
+        return out;
+    }
+    if (S.trackRoute[t] === 2) {
+        if ((S.trackMidiTo[t] | 0) > 0) return out;
+        const tg = key === 'volume' ? 'cc:7' : key === 'pan' ? 'cc:10' : null;
+        if (tg) out.push({ slot: 'midi', fullKey: tg, target: tg });
+        return out;
+    }
+    if (S.trackRoute[t] !== 0) return out;
+    const m = S.sessVolSlots[t] | 0;
+    for (let s = 0; s < CHAIN_SLOTS; s++)
+        if (m & (1 << s)) out.push({ slot: s, fullKey: 'slot:' + key, target: s + ':slot:' + key });
+    return out;
+}
+
 export function moveBusComp(bus) {
     return 'move_fx:' + bus;
 }

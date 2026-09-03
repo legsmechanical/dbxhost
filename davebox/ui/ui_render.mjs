@@ -48,6 +48,7 @@ import { soundRender, renderGatewayCard, renderTrackGatewayCard, renderMacrosPee
 import { drawAutomationBankBody } from './ui_automation_bank.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
+import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { drawMenuHeader } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
@@ -338,6 +339,13 @@ function drawSessionMixerPage() {
         const cell = { label, name: 'TRACK ' + (t + 1) + ' ' + mode.label,
                        text: (isMidi && mode.key === 'volume') ? String(Math.round((v / mode.max) * 127))
                                                               : String(mode.fmt(v)).toUpperCase() };
+        /* The strip is automatable (2026-09-04): the circle, from the first
+         * of its targets (a multi-slot track's slots move together). */
+        const _tgs = sessStripTargets(S, t, mode.key);
+        if (_tgs.length) {
+            const st = automationStateFor(t, effectiveClip(t), _tgs[0].target);
+            if (st) cell.auto = st.active ? 'auto' : 'auto-off';
+        }
         if (mode.widget === 'arcbip') {
             /* -1..+1 around centre, which is what the bipolar arc draws from. */
             cell.kind = 'arcbip';

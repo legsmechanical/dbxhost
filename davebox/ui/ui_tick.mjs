@@ -46,7 +46,7 @@ import { effectiveClip, updateStepLEDs, updateSessionLEDs, updateTrackLEDs, flas
     buildLedInitQueue, drainLedInit } from './ui_leds.mjs';
 import { schSlotForTrack, schSlotsForTrack, schSlotMasksAllTracks } from './ui_corun.mjs';
 import { pollPendingExport } from './ui_export.mjs';
-import { drawUI } from './ui_render.mjs';
+import { drawUI, sessMixerVisible } from './ui_render.mjs';
 import { pollDSP,
     refreshPerClipBankParams, refreshDrumLaneBankParams, refreshSeqNotesIfCurrent,
     syncClipsFromDsp, syncClipsTargeted, syncMuteSoloFromDsp, restoreUiSidecar,
@@ -1265,9 +1265,14 @@ export function _tickImpl() {
                     S.sessVolBus[_t] = _bus;
                     S.sessVolLevel[_t] = -1;
                 }
+                /* Under PLAYBACK the visible page re-reads (automation moves
+                 * the levels), the knob under the hand excepted — one read
+                 * per track per poll interval, only while the page shows. */
+                const _follow = S.playing && sessMixerVisible() && !S.sessVolPending[_t] &&
+                                !(S.sessVolLastKnob === _t && (nowMs() - S.sessVolLastTurn) < 300);
                 if (_bus) {
                     S.sessVolSlots[_t] = 0;
-                    if (S.sessVolLevel[_t] < 0) {
+                    if (S.sessVolLevel[_t] < 0 || _follow) {
                         const _raw = parseFloat(engineGet(0, moveBusComp(_bus), _modeKey));
                         S.sessVolLevel[_t] = isFinite(_raw) && _raw >= 0 ? _raw : _modeDef;
                     }
@@ -1286,7 +1291,7 @@ export function _tickImpl() {
                 if (S.trackRoute[_t] !== 0) { S.sessVolSlots[_t] = 0; continue; }
                 const _m = _sessMaskScratch[_t];
                 S.sessVolSlots[_t] = _m;
-                if (_m !== 0 && S.sessVolLevel[_t] < 0) {
+                if (_m !== 0 && (S.sessVolLevel[_t] < 0 || _follow)) {
                     let _s0 = 0;
                     while (_s0 < CHAIN_SLOTS && !(_m & (1 << _s0))) _s0++;
                     const _raw = parseFloat(engineGetSlotParam(_s0, _modeKey));
@@ -1308,7 +1313,7 @@ export function _tickImpl() {
                     const _mx = SESS_KNOB_MODES[S.sessKnobMode].max || 1;
                     const _cc = Math.round((S.sessVolLevel[_t] / _mx) * 127);
                     const _tg = _wKey === 'volume' ? 'cc:7' : 'cc:10';
-                    if (_cc !== midiVal(_t, _tg)) midiSendValue(_t, _tg, _cc, midiVal(_t, _tg), false);
+                    if (_cc !== midiVal(_t, _tg)) midiSendValue(_t, _tg, _cc, midiVal(_t, _tg), false);   /* the owner heard it at the turn */
                 } else {
                     const _m = S.sessVolSlots[_t] | 0;
                     for (let _s = 0; _s < CHAIN_SLOTS; _s++) {

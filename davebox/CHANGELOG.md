@@ -35,6 +35,10 @@ the section into a versioned heading at release time.
   lane from /16 to ×16, its loop following) — or Clear clip.
   Delete + click on the card clears the clip. Every operation is one undo.
   Smooth/Stepped moved here from the module editor.
+- **The session mixer is automatable.** Turning a strip's knob while
+  recording records that track's level, pan or send into its clip; a held
+  automation shows the circle on the strip and the strip follows it during
+  playback; Delete + touch clears it. Mute + touch still mutes the track.
 - **The jog walks banks under the overviews.** On the track overview and the
   session overview an unmodified turn moves through the banks (or the mixer
   modes) underneath: the header or indicator follows, the knobs follow, and a
