@@ -2075,7 +2075,20 @@ static void pfx_emit(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
  * Each route gets exactly one sweep — one representative pfx per route. */
 static void send_panic(seq8_instance_t *inst) {
     play_fx_t *route_pfx[3] = { NULL, NULL, NULL };
-    int t, ch, n;
+    /* The Schwung route by SLOT: a panic must reach every chain slot that a
+     * track plays into, not the first track's slot only (the sweep used to
+     * pick ONE representative per route — a second slot never got it). */
+    play_fx_t *slot_pfx[SEQ8_CHAIN_SLOTS] = { 0 };
+    uint8_t    slot_hot[SEQ8_CHAIN_SLOTS] = { 0 };   /* a note is (or was) sounding there */
+    int t, ch, n, s;
+    /* Which chain slots have anything sounding, BEFORE the refcounts are
+     * zeroed: those get the full sweep; a silent slot costs nothing. */
+    for (t = 0; t < NUM_TRACKS; t++) {
+        play_fx_t *fx = &inst->tracks[t].pfx;
+        midi_dest_t d = midi_dest_resolve(fx->route, fx->slot, fx->midi_to);
+        if (!d.emit || d.route != ROUTE_SCHWUNG || d.slot >= SEQ8_CHAIN_SLOTS) continue;
+        for (n = 0; n < 128; n++) if (fx->pitch_refcount[n]) { slot_hot[d.slot] = 1; break; }
+    }
     /* Zero every track's output-pitch refcount so the panic sweep's note-offs
      * (which decrement) don't go negative and so the next note-ons fire fresh. */
     for (t = 0; t < NUM_TRACKS; t++) {
@@ -2102,9 +2115,16 @@ static void send_panic(seq8_instance_t *inst) {
         midi_dest_t d = midi_dest_resolve(fx->route, fx->slot, fx->midi_to);
         if (d.emit && d.route < 3 && !route_pfx[d.route])
             route_pfx[d.route] = fx;
+        if (d.emit && d.route == ROUTE_SCHWUNG && d.slot < SEQ8_CHAIN_SLOTS && !slot_pfx[d.slot])
+            slot_pfx[d.slot] = fx;
     }
-    if (route_pfx[ROUTE_SCHWUNG]) {
-        play_fx_t *fx = route_pfx[ROUTE_SCHWUNG];
+    /* The route's representative always sweeps (the old behaviour, so a stuck
+     * note the refcounts never saw still dies); every OTHER slot only when it
+     * had something sounding — eight full sweeps would be 16k messages. */
+    for (s = 0; s < SEQ8_CHAIN_SLOTS; s++) {
+        play_fx_t *fx = slot_pfx[s];
+        if (!fx) continue;
+        if (fx != route_pfx[ROUTE_SCHWUNG] && !slot_hot[s]) continue;
         for (ch = 0; ch < 16; ch++)
             for (n = 0; n < 128; n++)
                 pfx_send(fx, (uint8_t)(0x80 | ch), (uint8_t)n, 0);

@@ -5979,6 +5979,20 @@ export function soundTick() {
         S.autoLedPaint = false;
         for (let k = 0; k < 8; k++) setButtonLED(MoveKnob1 + k, 0, true);
     }
+    /* Shift+Volume's write, BEFORE the editor's early return below (Josh,
+     * 2026-09-02: "shift+volume doesn't change the level in the module editor
+     * — overlay shows and works"): it lived after the return, so in VIEW_EDIT
+     * the overlay moved and the level never reached the engine — the fourth
+     * queue stranded by that return [[schwung-tick-early-return-strands-deferred-work]]. */
+    if (S.volPending) {
+        S.volPending = false;
+        writeVolLevel(S.slot, S.volLevel);
+        /* Keep the on-screen VOLUME row in step — on a Move bus the knob and the
+         * row are two controls on ONE value, and a stale row is a lie you can
+         * see. (refreshBlockNames only re-reads on entry.) */
+        const _vr = S.pickRows.find(r => r.kind === 'buslevel' && r.spec.key === 'volume');
+        if (_vr) _vr.val = S.volLevel;
+    }
     if (ppOn) {
         tickParamPages();
         /* Holding Mute — or Delete (Josh, 2026-09-02: you should see what a
@@ -6126,15 +6140,6 @@ export function soundTick() {
     levelSeedIfNeeded();
     drainLevelWrites();
     levelPollTick();
-    if (S.volPending) {
-        S.volPending = false;
-        writeVolLevel(S.slot, S.volLevel);
-        /* Keep the on-screen VOLUME row in step — on a Move bus the knob and the
-         * row are two controls on ONE value, and a stale row is a lie you can
-         * see. (refreshBlockNames only re-reads on entry.) */
-        const _vr = S.pickRows.find(r => r.kind === 'buslevel' && r.spec.key === 'volume');
-        if (_vr) _vr.val = S.volLevel;
-    }
 
     /* One heavy job per tick, and never on top of pending writes: a discovery
      * pass or a browser scan is the most expensive thing this module does, and

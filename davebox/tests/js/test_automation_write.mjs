@@ -67,7 +67,7 @@ function reset(o) {
     S.clipTPS[0][0] = 24;
     Object.assign(S, o || {});
 }
-const tick = () => { S.tickCount++; tickPrefetch(); automationTick(); };
+const tick = () => { S.tickCount++; S.clockMs = (S.clockMs || 0) + 10.6; tickPrefetch(); automationTick(); };   /* the clock advances as ui_tick's would (the idle gap is in ms since 2026-09-04) */
 const T = 0, C = 0, SLOT = 1;
 
 /* ---- stopped, nothing held: a knob is a knob ---------------------------- */

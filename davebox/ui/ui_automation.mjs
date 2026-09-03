@@ -502,7 +502,11 @@ export function automationPollWarnings() {
 /* Idle ticks after which a gesture that never got a touch-down is ended
  * on its own. A capacitive sensor can miss a touch; without this the target
  * would stay "live" and its automation would never resume. */
-const SYNTHETIC_GESTURE_IDLE_TICKS = 25;    /* ~270 ms, the controller's own gap */
+/* A gesture with no touch (an injected CC, a hand already on the knob) ends
+ * when its edits go quiet for this long — the controller's own gap. In
+ * MILLISECONDS off the one clock (2026-09-04; it was 25 ticks = ~270 ms at the
+ * old tick rate and ~70 ms after the speed-up). */
+const SYNTHETIC_GESTURE_IDLE_MS = 270;
 
 /* target -> gesture state */
 let gestures = new Map();
@@ -547,7 +551,7 @@ function splitFullKey(fullKey) {
 function gestureFor(target, track, clip, synthetic) {
     let g = gestures.get(target);
     if (!g) {
-        g = { track, clip, rest: false, ckpt: false, live: false, lock: false, synthetic, idle: 0 };
+        g = { track, clip, rest: false, ckpt: false, live: false, lock: false, synthetic, idle: 0, lastEditMs: S.clockMs };
         gestures.set(target, g);
     }
     return g;
@@ -598,6 +602,7 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
     const [comp, key] = splitFullKey(fullKey);
     const g = gestureFor(target, track, clip, true);
     g.idle = 0;
+    g.lastEditMs = S.clockMs;
     const isMidi = slot === 'midi';
     const norm = isMidi ? midiNorm(target, wire) : normValue(slot, comp, key, wire);
     const prevNorm = () => (isMidi ? midiNorm(target, prevWire) : normValue(slot, comp, key, prevWire));
@@ -762,7 +767,7 @@ function gesturesTick() {
             continue;
         }
         if (!g.synthetic) continue;
-        if (++g.idle < SYNTHETIC_GESTURE_IDLE_TICKS) continue;
+        if ((S.clockMs - (g.lastEditMs || 0)) < SYNTHETIC_GESTURE_IDLE_MS) continue;
         endGesture(target, g);
     }
 }
