@@ -3029,6 +3029,9 @@ function openInstrPicker() {
     const curV = instrValueFor(S.track);
     const curGen = GS.trackRoute[S.track] === 0 ? moduleIdOf(engineLoadedModule(S.slot, 'synth')) : '';
     let cur = rows.findIndex(r => !r.divider && (r.gen ? r.gen.id === curGen : r.v === curV));
+    /* A Schwung track with nothing loaded has no current entry: open on the
+     * first generator, which is the choice it is waiting for. */
+    if (cur < 0 && GS.trackRoute[S.track] === 0) cur = rows.findIndex(r => !!r.gen);
     if (cur < 0) cur = rows.findIndex(r => !r.divider);
     openEnumPicker('Instrument', rows.map(r => r.divider ? { divider: true } : r.label),
                    cur < 0 ? 0 : cur, (i) => commitInstrPick(rows[i]));
@@ -6400,7 +6403,10 @@ function renderBlocks() {
              * rides in the value like the old Move Generator row's did —
              * chevron and value are exclusive in drawKitList. */
             let txt = GS.trackPadMode[S.track] === PMC ? '-'
-                    : (route === 0 && !S.instrEditing) ? (r.gen ? r.gen + ' >' : 'Schwung')
+                    /* No generator yet reads as NOTHING, not "Schwung": the
+                     * route is bookkeeping the user never chose (Josh,
+                     * 2026-09-04) — what they have is no instrument. */
+                    : (route === 0 && !S.instrEditing) ? (r.gen ? r.gen + ' >' : '--')
                     : (route === 1 && !S.instrEditing) ? fmtInstr(v) + ' >'
                     : fmtInstr(v);
             return { label: r.label, hdr: true,
