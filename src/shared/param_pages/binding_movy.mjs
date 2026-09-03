@@ -334,7 +334,9 @@ function enterParamPages(slot, component, prefix, restorePageName, io, chrome, r
              */
             loadCard: (scriptPath, exportRef) => (
                 typeof ctx.loadCardScript === 'function'
-                    ? ctx.loadCardScript(currentSlot, component, scriptPath, exportRef)
+                    /* currentComponent, not the closed-over `component` — the
+                     * controller closes over its accessors. */
+                    ? ctx.loadCardScript(currentSlot, currentComponent, scriptPath, exportRef)
                     : null),
         }, io || {}));
     }

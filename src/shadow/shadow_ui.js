@@ -11793,12 +11793,23 @@ function resolveCanvasScriptPath(meta) {
  * it did not ship, which the caller reads as "no card" — a missing file is a
  * module bug, not a reason to fail a page.
  */
-function resolveCardScriptPath(scriptRef) {
+function resolveCardScriptPath(slot, component, scriptRef) {
     if (!scriptRef) return "";
     if (scriptRef.startsWith("/")) {
         return moduleFileExists(scriptRef) ? scriptRef : "";
     }
-    const moduleDir = getModuleBasePath(getHierarchyActiveModuleId());
+    /*
+     * ⚠ RESOLVED FROM THE SLOT AND COMPONENT THE GRID IS ON, never from
+     * getHierarchyActiveModuleId() — that reads the LIST editor's state, which
+     * is stale or empty while the knob grid is up. Using it resolved to "" and
+     * the card silently never loaded: no error, a cached null, a knob with no
+     * picture. davebox hid this by resolving from the live slot itself, so it
+     * worked there and not here — found on the device, not in review.
+     */
+    const prefix = getComponentParamPrefix(component);
+    if (!prefix || slot < 0) return "";
+    const moduleId = getSlotParam(slot, `${prefix}_module`) || "";
+    const moduleDir = getModuleBasePath(moduleId);
     if (!moduleDir) return "";
     const scriptPath = `${moduleDir}/${scriptRef}`;
     return moduleFileExists(scriptPath) ? scriptPath : "";
@@ -15684,7 +15695,7 @@ function drawHelpDetail() {
     _ctx.loadCardScript = (slot, component, scriptPath, exportRef) => {
         if (!scriptPath || !exportRef) return null;
         const loaded = loadCanvasOverlayScript(
-            resolveCardScriptPath(scriptPath), exportRef);
+            resolveCardScriptPath(slot, component, scriptPath), exportRef);
         const fn = loaded && loaded.overlay;
         return typeof fn === 'function' ? fn : null;
     };
