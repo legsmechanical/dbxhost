@@ -35,6 +35,13 @@ the section into a versioned heading at release time.
   lane from /16 to ×16, its loop following) — or Clear clip.
   Delete + click on the card clears the clip. Every operation is one undo.
   Smooth/Stepped moved here from the module editor.
+- **Switching clips lets the old clip's automation go.** Parameters return
+  to their resting values when a clip with automation hands over to another,
+  instead of staying where the old lanes left them.
+- **A Move track's sound menu has the Config door** (mode, layout,
+  transpose, velocity in), like a Schwung track's.
+- **"Sound Control" is "LFOs"** in the sound menu: that is what is behind it
+  now that knob assignments live on MACROS.
 - **The session mixer is automatable.** Turning a strip's knob while
   recording records that track's level, pan or send into its clip; a held
   automation shows the circle on the strip and the strip follows it during

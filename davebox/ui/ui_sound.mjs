@@ -2406,6 +2406,11 @@ function buildPickRows() {
         for (const lv of (S.bus.levels || [])) {
             rows.push({ kind: 'buslevel', label: lv.label, spec: lv });
         }
+        /* A Move TRACK's menu has the CONFIG door too (Josh, 2026-09-04): mode,
+         * layout, transpose, velocity in — davebox-side settings that apply to
+         * a Move track as much as a Schwung one. A Master/Send bus is not a
+         * track and has none. configRows reads davebox's own state only. */
+        if (S.bus.kind === 'move') rows.push({ kind: 'config', label: 'Config' });
     } else {
         rows.push({ kind: 'trackto', label: 'Instrument' });
         /* An EXT-routed track (MIDI out, or playing another track's instrument)
@@ -2434,7 +2439,9 @@ function buildPickRows() {
         }
         /* Doors last, presets last of all (Josh). "Presets" not "patches" in
          * user-facing text — the store is still the host's patches/ dir. */
-        rows.push({ kind: 'settings', label: 'Sound Control' });
+        /* 'LFOs', not 'Sound Control' (Josh, 2026-09-04): the Knobs row moved
+         * to the MACROS bank, so the LFOs are all that is behind this door. */
+        rows.push({ kind: 'settings', label: 'LFOs' });
         rows.push({ kind: 'config',   label: 'Config' });
         rows.push({ kind: 'patches',  label: 'Presets' });
     }
@@ -2946,7 +2953,7 @@ const VIEW_TREE = {
                            * over by ONE pixel; both then drop a crumb. 'Snd'
                            * saves 10px and both fit. 'Config' needs no such
                            * help: its own paths are 78px at the deepest. */
-                          crumb: () => (S.cfgWhich === 'config' ? 'Config' : 'Snd') },
+                          crumb: () => (S.cfgWhich === 'config' ? 'Config' : 'LFOs') },
     /* The MACROS page is a root: its assign screens float over it. */
     [VIEW_MACROS]:      { parent: null,            float: false, crumb: () => 'Macros' },
     [VIEW_KNOBS]:       { parent: VIEW_MACROS,     float: true,  crumb: () => 'Knobs' },

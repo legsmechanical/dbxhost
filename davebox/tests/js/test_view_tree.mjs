@@ -157,8 +157,8 @@ step('⭑ a ROOT screen has an empty path', () => {
      * not a tabled view, it is the fallback root everything falls back to. */
     setView(VIEW_SLOTCFG);
     const path = snd.soundViewPath();
-    if (path.length !== 1 || path[0] !== 'Snd')
-        throw new Error(`SLOTCFG should be its own single crumb, got ${JSON.stringify(path)}`);
+    if (path.length !== 1 || path[0] !== 'LFOs')   /* 'LFOs' since 2026-09-04: the Knobs row moved to MACROS */
+        throw new Error(`SLOTCFG should be its own single crumb (LFOs), got ${JSON.stringify(path)}`);
 });
 
 step('⭑⭑ the STACK depth counts floating ancestors, stopping at a full screen', () => {

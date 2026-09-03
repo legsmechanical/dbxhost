@@ -97,9 +97,9 @@ grep -q "kind !== 'div'" ui/ui_sound.mjs \
 n=$(grep -c "kind !== 'div'" ui/ui_sound.mjs || true)
 [ "$n" -ge 1 ] && ok "pickStep knows what a rule is" \
                || bad "pickStep no longer recognises a rule row"
-grep -q "kind: 'settings', label: 'Sound Control'" ui/ui_sound.mjs \
-    && ok "the settings door is Sound Control (knobs are direct access, not modulation)" \
-    || bad "the Sound Control door is gone or renamed"
+grep -q "kind: 'settings', label: 'LFOs'" ui/ui_sound.mjs \
+    && ok "the settings door is LFOs (2026-09-04: the Knobs row moved to MACROS, the LFOs are all that is behind it)" \
+    || bad "the LFOs door is gone or renamed"
 
 echo "session-view level knob (both flavours):"
 # A Move-routed track is a mixer position exactly like a chain slot, so its
