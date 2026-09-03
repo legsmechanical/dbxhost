@@ -105,10 +105,15 @@ What A costs, stated so it is not rediscovered as a bug:
   route in and out of a mapping — legs, ranges, labels and removal all live there. ⚠ This is the
   ASSIGN gesture only: Shift + TURN on a pitch-bend macro still LATCHES the bend (`pbShiftTurned`),
   which is a value gesture, not an assignment one, and is untouched.
-- **Label.** ✅ AUTO is built (`Cutoff+1`, first leg's short name + the count; the K-list row
-  adds `~` when any leg is ranged). ⏳ OPEN: the **custom** label behind a text-entry row is not
-  built — it needs a keyboard screen and Josh has not asked for one. The auto label has been
-  legible in every case so far.
+- **Label.** ✅ RULED and built (Josh, 2026-09-05: *"auto-label is fine"*, then *"just do
+  Mac[n]"* numbered *"sequentially increasing … on the bank"*). Two strings, matched to the room
+  each slot has: the CELL slug is `MAC<ordinal>` — the knob's position among the bank's multi
+  knobs, an IDENTIFIER — and the TOUCHED HEADER says what it DRIVES (`Cutf +2`). The K-list row
+  carries both plus `~` for a range. ⚠ Four characters is the slug budget; two earlier forms
+  died on it or on ambiguity (`Cutf+2` too long, `MLT<param count>` not unique). ⚠ The ordinal
+  RENUMBERS when a knob stops being multi — positional, by Josh's ruling.
+  🚫 The **custom** label behind a text-entry row is DROPPED — Josh is happy with auto, so it is
+  not "open", it is decided. Do not re-propose the keyboard screen.
 - **Rings** (`registerRingCells`): `v` for multi-leg, the target's norm for one-leg — the same
   rule as the widget.
 

@@ -222,6 +222,18 @@ CC 71-78 branch). Until 2026-08-14 nothing on screen named that mapping.
   assignment list is the only route in, and a commit always lands back on it.
   (Shift + *turn* on a pitch-bend macro still latches the bend — a value
   gesture, not an assign one.)
+- ⭑ **A multi-target knob is named twice** (Josh, 2026-09-05: *"just do Mac[n]"*, numbered
+  *"sequentially increasing … on the bank"*):
+  - CELL slug — `macroMultiLabel(track, i)` → `MAC<ordinal>`, the knob's **position among the
+    bank's multi knobs** (`macroMultiOrdinal`), so it is an IDENTIFIER. ⚠ 4 characters is that
+    slot's budget (`shortLabel`'s default cap); `MAC8` is the worst case and fits. Two earlier
+    forms failed here: `CUTF+2` (six chars, trimmed on device) and `MLT<param count>` (four
+    three-leg knobs all read the same).
+  - TOUCHED HEADER — `macroMultiName` → `CUTF +2`: wide, so it says what the knob DRIVES rather
+    than repeating the slug.
+  - K-list row — both, plus `~` for a range: `MAC1 Cutf+2~`.
+  ⚠ The ordinal is POSITIONAL and therefore RENUMBERS when a knob stops being multi. Josh's
+  call; numbering by knob index would be stable but loses "how many macros do I have".
 - ⭑⭑ **THE LINE IS "SEVERAL TARGETS", NOT "HAS A RANGE"** (Josh, 2026-09-05). `macroMulti(mp)`
   is `legs.length > 1` and NOTHING else:
   - **one leg, ranged or not** = the PLAIN path plus a clamp (`legClamp`/`legSteps`/`legBounds`).

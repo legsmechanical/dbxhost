@@ -1372,8 +1372,11 @@ voice, four clicks a waveform — and follows automation playback like any other
 macro. The range only decides how far it can go.
 
 Once a knob drives **more than one** thing it can't show any one parameter's
-dial, so it shows **its own position** as a percentage, labelled with the first
-target and how many others ride with it (`Cutf+2`). During playback it follows
+dial, so it shows **its own position** as a percentage, under a short name of
+its own: `MAC1`, `MAC2` and so on, numbered across the bank in knob order.
+Touch it and the header says what it drives (`CUTF +2`). If you take a knob
+back down to a single target the rest renumber, so `MAC2` can become `MAC1`.
+During playback it follows
 the first target it can reach, which is the right answer whenever you recorded
 the macro as one gesture — all its parameters came from the same knob position.
 

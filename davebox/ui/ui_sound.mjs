@@ -3046,7 +3046,9 @@ function knobRowLabel(i, a) {
     /* One RANGED target still names its target — it IS that parameter, just
      * with less travel — and only adds the `~`. */
     if (legs.length <= 1) return knobAsnLabel(a) + ranged;
-    return legShortName(legs[0]) + ' +' + (legs.length - 1) + ranged;
+    /* A multi knob: its identifier, then what it drives. This row is the one
+     * you scan to find a knob, and it is wide enough for both. */
+    return macroMultiLabel(S.track, i) + ' ' + legShortName(legs[0]) + '+' + (legs.length - 1) + ranged;
 }
 
 /* Commit the picked target into the leg the picker was opened FOR
@@ -3650,12 +3652,36 @@ function legNormToV(leg, n) {
     if (!span) return 0;
     return Math.max(0, Math.min(1, (n - leg.lo) / span));
 }
-/* The auto label for a mapped knob: the first addressable leg's short name,
- * plus how many others ride with it. §5's custom label lands with the list. */
-function macroMultiLabel(mp) {
+/* ── WHAT A MULTI-TARGET KNOB IS CALLED (Josh, 2026-09-05) ─────────────────
+ * *"just do Mac[n]"*, numbered *"sequentially increasing … on the bank"* — so
+ * a multi knob's slug is `MAC1`, `MAC2`, … **by its position among the multi
+ * knobs of this bank**, not by how many parameters it drives. That is what
+ * makes it an IDENTIFIER: the first form, `MLT<param count>`, left four
+ * three-leg knobs on one page all reading the same thing.
+ *
+ * Four characters is the slug's budget (`shortLabel`'s default cap, and the
+ * reason the very first form `CUTF+2` was being trimmed on the device).
+ * `MAC8` fits — a bank has eight knobs, so the ordinal never reaches two
+ * digits.
+ *
+ * ⚠ The ordinal is POSITIONAL, so it renumbers: if K1 and K4 are multi and
+ * K1's second leg is removed, K4 becomes MAC1. That is inherent to counting
+ * them and it is Josh's call — numbering by KNOB index instead (K4 → MAC4)
+ * would be stable but loses "how many macros do I have".
+ *
+ * The TOUCHED HEADER is wide, so it complements the slug rather than repeating
+ * it: the slug says WHICH knob, the header says what it DRIVES (`CUTF +2`). */
+function macroMultiOrdinal(track, i) {
+    const st = macroStore(track);
+    let n = 0;
+    for (let j = 0; j <= i && j < 8; j++) if (macroMulti(st[j])) n++;
+    return n;
+}
+function macroMultiLabel(track, i) { return 'MAC' + macroMultiOrdinal(track, i); }
+function macroMultiName(mp) {
     const L = macroLegs(mp);
     const first = L[0] ? legShortName(L[0]) : '';
-    return L.length > 1 ? (first + '+' + (L.length - 1)) : first;
+    return L.length > 1 ? (first + ' +' + (L.length - 1)) : first;
 }
 function legShortName(leg) {
     if (leg.kind === 'level') { const s = LEVEL_KNOB_SPECS[macroLevelIdx(leg)]; return s ? s.label : 'Lvl'; }
@@ -4372,7 +4398,7 @@ function macroCells(track, live) {
         if (macroMulti(mp)) {
             if (!macroMappingLive(mp)) { cells.push(unassigned()); continue; }
             const v = live ? mp.v : null;
-            const cellM = { kind: 'arc', label: upper(macroMultiLabel(mp)), name: upper(macroMultiLabel(mp)),
+            const cellM = { kind: 'arc', label: upper(macroMultiLabel(t, i)), name: upper(macroMultiName(mp)),
                             text: v == null ? '--' : Math.round(v * 100) + '%', norm: v == null ? 0 : v };
             if (live) {
                 for (const leg of mp.legs) {

@@ -826,7 +826,7 @@ step('⭑⭑ a MULTI knob FOLLOWS ITS ANCHOR — and a SLOW turn on a coarse anc
            '⭑ twenty slow detent-pairs ACCUMULATED (expected ~' + (20 / 255).toFixed(3) +
            '), got ' + moved.toFixed(4) + ' — a v reset each poll would stall here');
 });
-step('⭑ a mapped knob draws as its own arc, labelled by its first leg + the count', () => {
+step('⭑ a MULTI knob draws as its own arc, slugged MAC<n> by position on the bank, header says what it drives', () => {
     GS.trackMacros[2][0] = { v: 0.5, legs: [
         { kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.2, hi: 0.8 },
         { kind: 'level', key: 'volume', lo: 0, hi: 1 },
@@ -836,7 +836,31 @@ step('⭑ a mapped knob draws as its own arc, labelled by its first leg + the co
     assert(d.kind === 'arc', 'an arc, not the target\'s own widget — got ' + d.kind);
     assert(Math.abs(d.norm - 0.5) < 0.001, 'drawn at v, got ' + d.norm);
     assert(d.text === '50%', 'reads as a percentage of the KNOB, got ' + d.text);
-    assert(/\+1$/.test(d.label), 'labelled with the leg count, got ' + d.label);
+    /* ⭑ Josh, 2026-09-05: the CELL slug is `Mac[n]`, numbered by POSITION among
+     * the bank's multi knobs — an identifier, not a count. ⚠ Four characters
+     * is the slot's budget (shortLabel's default cap): the first form `CUTF+2`
+     * was six and got trimmed on the device, which started all this. */
+    assert(d.label === 'MAC1', 'the FIRST multi knob on the bank is MAC1, got ' + d.label);
+    assert(d.label.length <= 4, 'and it FITS the four-character slug budget, got ' + d.label.length);
+    /* The touched header complements the slug rather than repeating it: the
+     * slug says which knob, the header says what it drives. */
+    assert(/\+1$/.test(d.name) && d.name !== d.label,
+           'the header says what it DRIVES, got ' + d.name);
+    /* ⭑ THE ORDINAL IS THE POINT: a second multi knob is MAC2, so two of them
+     * on one page are told apart. The old `MLT<param count>` form gave both
+     * the same slug — which is why this changed. */
+    GS.trackMacros[2][4] = { v: 0.25, legs: [
+        { kind: 'chain', comp: 'synth', key: 'voices', lo: 0, hi: 1 },
+        { kind: 'chain', comp: 'fx2', key: 'room_size', lo: 0, hi: 1 },
+    ]};
+    ticks(8);
+    assert(M().drawn[0].label === 'MAC1' && M().drawn[4].label === 'MAC2',
+           'two multi knobs read MAC1 and MAC2, got ' + M().drawn[0].label + ' / ' + M().drawn[4].label);
+    /* And it RENUMBERS when one stops being multi — positional, by Josh's
+     * ruling; stated here so the behaviour is a decision, not a surprise. */
+    GS.trackMacros[2][0] = null; ticks(6);
+    assert(M().drawn[4].label === 'MAC1', 'the survivor becomes MAC1, got ' + M().drawn[4].label);
+    GS.trackMacros[2][4] = null;
 });
 step('⭑ Delete + touch a mapped knob clears EVERY leg\'s lane, not just the first', () => {
     GS.playing = true; auto.automationNoteWrite();
