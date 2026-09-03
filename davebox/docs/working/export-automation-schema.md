@@ -1,5 +1,14 @@
 # Export: where automation can live in a Move Song.abl
 
+> 🔴 **CORRECTED 2026-09-05, same day, by Josh: *"are you saying alsbundle files require
+> automation to tied to notes?"* — NO, and §5 originally implied it. Move RECORDS PARAMETER
+> AUTOMATION NATIVELY** (Move manual: select a device in Device View, press Record, turn an
+> encoder), so clip-level automation certainly exists in the format. `clip.envelopes` was `[]` in
+> all 23 files here for a mundane reason — **none of those sets has any automation recorded.**
+> Most are davebox exports, which write none; the device sets are davebox's own. I turned "I have
+> no examples" into "the format cannot do it". The unblock is therefore the ORIGINAL one and it
+> was right all along: **record automation on the Move, save, and read that Song.abl.** See §5.
+
 **Status: FINDINGS ONLY (2026-09-05). Nothing built.** The export half of sequence item 9 was
 deferred because "the Set's schema is undocumented". It is now HALF answered — the field names are
 known, and one of the three candidate encodings is ruled out — but the decisive question needs a
@@ -89,35 +98,39 @@ Times are in beats: 0, 1, 1.5, 2.5, 3, 4.
 So it says **what Josh wants to SEE when the export lands in Live** — a CC envelope and a bend
 envelope on the clip — and says nothing about how `Song.abl` should encode that.
 
-## 5. The three candidate encodings — and the one question that decides it
+## 5. Which container davebox should write — and how to settle it
 
 The plan (`param-automation-plan.md` P7) reads: *"EXPORT (→ Live, MIDI): cc:/at entries render
 into the non-destructive renderers (:258-459, :939); chain-param entries omitted (no MIDI
-representation)."* Those renderers emit **notes**, which points at (A).
+representation)."*
 
-- **(A) Per-note `automations`.** `at` → `Pressure`; `cc:N` → the CC-number key; `pb` →
-  `PitchBend`. ✅ The encoding demonstrably EXISTS in the schema and in real Move files, and
-  Live's importer reads it. Times are note-relative (§3).
-  ⚠ The cost: davebox's automation is a CLIP-level lane, and this is a PER-NOTE container, so a
-  lane has to be sliced per note and re-based to each note's start — and automation in the gaps
-  between notes has nowhere to go.
-- **(B) Clip `envelopes` with a `parameterId`.** Only meaningful for a target that IS a Move
-  device parameter. `cc:`/`at`/`pb` never are, and chain params are explicitly omitted by the
-  plan. 🚫 Dead for the targets we export.
-- **(C) Live-side MIDI-track envelopes**, as in the reference file. 🚫 Not expressible in
-  `Song.abl`; needs the Live→Move direction, which does not exist.
+- **(A) Per-note `automations`** — `at` → `Pressure`, `cc:N` → the CC-number key, `pb` →
+  `PitchBend`. ✅ Exists and is populated in real files. Times note-relative (§3).
+  ⚠ Awkward fit: davebox's automation is a CLIP-level lane, so it would have to be sliced per
+  note and re-based, and automation in the gaps between notes has nowhere to go.
+- **(B) Clip `envelopes`** — `{parameterId, breakpoints}`. ⭐ **This is very probably the right
+  answer and was wrongly dismissed.** Move records parameter automation itself, so Move writes
+  this container; we simply have no file that contains one, which is why `parameterId`'s referent
+  is still unknown. 🚫 The earlier claim that it "targets device parameters only, so cc:/at have
+  no clip-level home" was an INFERENCE FROM ABSENCE and is retracted.
+- **(C) Live-side MIDI-track envelopes**, as in the reference `.als`. 🚫 Still dead, and this one
+  IS evidenced: Live can READ `.ablbundle` (`NFile::SIsInUnpackedAblBundle`) but there is no
+  "export set to Move" anywhere in its binary, and Ableton document that Live Sets cannot be
+  transferred to Move. Its JSON writer (`PersistenceSave.cpp`) serves `devicePreset.json` —
+  presets, which ARE exportable to Move — not `song.json`.
 
-**❓ THE OPEN QUESTION (Josh, sixty seconds, on the Mac — not the Move):** open a
-davebox-exported `.ablbundle` in Live 12 and confirm whether per-note `automations` survive into
-something visible. If they do, (A) is the path and the work is well-defined. If they do not, the
-honest answer is that **davebox cannot export CC/AT automation into a Move set at all**, and item
-9 should be closed as not-possible rather than left open.
+**❓ THE UNBLOCK — 60 seconds ON THE MOVE (not the Mac):** record automation on any Move device
+parameter (Device View → Record → turn an encoder), save the set. Then read that `Song.abl` — it
+is pulled straight off the device, no Move Manager needed:
+`scp "ableton@<ip>:/data/UserData/UserLibrary/Sets/<uuid>/Project N/Song.abl" .`
+That one file shows `clip.envelopes` in use and what `parameterId` refers to, which is the whole
+question the deferral was about.
 
-**❓ Also open, and it changes (A)'s value:** does Move itself ever WRITE `clip.envelopes`? All 23
-local files say `[]`. If Move never emits them, that container may be import-only, which would
-also explain why nothing we have shows one.
+**❓ Then one narrower question remains:** whether an envelope target can be a MIDI CC / pitch
+bend, or only a device parameter. The example above will probably answer that too — and if it is
+device-parameters-only, (A) becomes the fallback for `cc:`/`at`/`pb` rather than the plan.
 
-## 6. If (A) is confirmed, the shape of the work
+## 6. If it turns out to be (A), the shape of the work
 
 1. `render_melodic_clip`'s scratch format (`EXPORT_RENDER_PATH`) carries `tick pitch …` per note.
    Check whether it already has a field that could carry per-note automation before adding one.
