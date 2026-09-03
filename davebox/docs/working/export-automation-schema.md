@@ -448,4 +448,56 @@ schema, not in any sample, **and rejected when tried**.
 5. Omit chain params, bank params and Module Level entirely (§5c) — by construction, not as a
    limitation to apologise for. Say so in the manual.
 
+## 7. ⚠⚠ THE `.als` PIVOT — why it is far bigger than it looks
+
+**P6 did not load.** The P0 base plus only `MidiControllers` + two clip envelopes, in the
+reference set's own language, was rejected — so MIDI clip envelopes are not expressible in `.abl`,
+now on an isolated test rather than a shotgun (P4's fault, Josh: *"you put every param in there
+without real pre-verification"*).
+
+Josh then proposed exporting **Ableton native `.als`** instead, with
+`~/Desktop/P0_control Project/P0_control.als` as the reference — **produced by opening P0 in Live
+and using "Collect All and Save"** (his note).
+
+### 🔴 The reframe: that file is Live's OUTPUT, not a format we can author
+
+- **Today davebox copies arbitrary Move device JSON VERBATIM** — `resolveTrack` does
+  `movDevices = deepClone(mt.devices)` — and **Live translates it on import, for free.**
+- **`P0_control.als` is 1.14 MB** (66 KB gzipped) because it holds Live's *translated result* for
+  one specific set: Drift, a drum rack with 16 cells, reverb, saturator, and 1057
+  `MidiControllers`/`ControllerTargets` lines.
+- ⇒ **Emitting `.als` means reimplementing Live's Move-device importer** — every device kind,
+  parameter by parameter — not filling in a template. And **every Move firmware release that adds
+  a device would break it.** That is the deal, and it is not the one it looks like.
+
+### The sample story also splits, and "Collect All" hides it
+
+Every `FileRef` in the reference is `RelativePathType 6` with
+`RelativePath "ABL Assets/Factory/…"` — **User-Library-relative**. Collect All did NOT copy them,
+because factory content is left as a library reference. So:
+- factory kits resolve on any machine that has the Move/ABL Assets pack — fine;
+- **a sample the user RECORDED on Move does not**, and would need bundling into a Project folder
+  with project-relative paths — a second pipeline beside `pack.py`'s `collectSamples`, which
+  already does exactly this job for the `.abl` route.
+
+### The three honest options
+
+1. ⭐ **Test per-note automation first — it was never actually tried.** Every probe so far
+   (P4/P5/P6) tested CLIP ENVELOPES. `notes[].automations` keyed `PitchBend` / `Pressure` / a CC
+   number is the format's own MIDI vocabulary, is populated in real Move files, and has never
+   been probed. **`P7_pernote_pb_cc11.ablbundle` is built and waiting.** If Live opens it with
+   visible CC 11 on those notes, the `.abl` route carries MIDI and **the pivot is unnecessary** —
+   the only question left would be whether Live routes per-note CC to external MIDI out, which is
+   a routing setting, not a format limit.
+2. **A POST-PROCESSOR, not an `.als` exporter.** User opens the bundle in Live (Live does the
+   device translation, free), saves as `.als`, then a small script injects `MidiControllers` +
+   `ClipEnvelope` XML into that saved file. ⭑ The `.als` schema for exactly that is FULLY KNOWN —
+   Josh's reference **is** the spec, down to `ControllerTargets.0` = pitch bend and `.13` = CC 11.
+   Uglier workflow; roughly a hundred lines instead of a device translator.
+3. **Ship the mixer half now** (fully specified, §5f) and leave MIDI. Already ruled once; may be
+   re-ruled given what the pivot costs.
+
+🚫 **What is NOT on the list: davebox writing `.als` directly.** Not because it is unpleasant, but
+because it means owning Move→Live device translation forever.
+
 Related: `param-automation-plan.md` §P7, `ui_export.mjs`, `dsp/seq8_bake.c:228-459` and `:926`.
