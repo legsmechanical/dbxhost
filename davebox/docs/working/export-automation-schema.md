@@ -381,7 +381,7 @@ Live's `Log.txt` gained 577 lines across the four imports and none of them menti
 3. Combined with §5e.3, the mixer half of the ruled scope (§5c) is **fully specified**: dB for
    volume over −70…+6, −50…+50 for pan, the `{value, id}` + envelope mechanism for both.
 
-## 5g. ❓ MIDI is the ONLY thing left, and it may not be expressible
+## 5g. 🚫 CONFIRMED BY TEST: MIDI clip envelopes are NOT expressible in `.abl`
 
 The id mechanism needs a **leaf to stamp**. The mixer had one (`mixer.volume`). A MIDI message
 does not: the sampled schema's entire track- and clip-level vocabulary is
@@ -396,12 +396,44 @@ keyed `PitchBend`, `Pressure`, and CC numbers, populated in real Move files, wit
 number` / `Duplicate CC number` among Live's own reader errors. That is not a workaround for a
 limitation I invented earlier; it is how `.abl` represents MIDI automation.
 
+### The test that settled it (2026-09-05)
+
+Josh asked the right question — *"doesn't the reference i gave you with pitchbend and cc11 show
+exactly how midi envelopes work?"* and *"i'm assuming the only issue is with knowing how the
+params are enumerated in the file?"* It does show exactly that, **for `.als`**; and my earlier
+"there is nothing to try" was wrong, because P2 had just proved Live accepts `{value, id}` on
+`mixer.volume` **despite that shape appearing in no sample**. Absence from the corpus had already
+misled me three times, so this was tested rather than asserted.
+
+Two probes, each declaring 131 MIDI controller targets on the track in exactly the `.als` layout
+(index 0 = pitch bend, index 2+N = CC N, which is how CC 11 landed at index 13), with clip
+envelopes pointing at CC 11 and pitch bend:
+
+| probe | key tried | result |
+|---|---|---|
+| `P4_midi_midiControllers` | `track.midiControllers` | 🚫 **"Unknown id"** |
+| `P4_midi_controllerTargets` | `track.controllerTargets` | 🚫 **"Unknown id"** |
+
+Live ignored the key, so the envelopes had nothing to resolve against. ⭐ **This is a real
+negative, not a silent one** — P3 established that a bad envelope produces exactly this dialog,
+and P2 established that a good one opens cleanly.
+
+⇒ **`.als` and `.abl` are two serialisations of the same model with DIFFERENT COVERAGE.** A Live
+desktop set gives a MIDI track 131 automatable controller targets; the `.abl` reader has no such
+vocabulary — its entire MIDI vocabulary (`PitchBend`, `Pressure`, CC numbers) belongs to the
+**per-note** container. Four independent lines now agree: not in the reader's strings, not in the
+schema, not in any sample, **and rejected when tried**.
+
 **Josh's call, and it is a real trade:**
 1. **Ship the mixer half only.** Volume/pan/sends automation carries; `cc:`/`at`/`pb` do not.
    Honest, small, and available immediately.
-2. **Add per-note `automations` for the MIDI kinds.** ⚠ A clip-level lane must be sliced per note
-   and re-based to each note's start, and automation falling BETWEEN notes is dropped. Whether
-   that is musically acceptable is his judgement, not mine.
+2. **Add per-note `automations` for the MIDI kinds.** ⚠⚠ TWO costs, and the second may kill it:
+   (a) a clip-level lane must be sliced per note and re-based to each note's start, so automation
+   falling BETWEEN notes is dropped — fine for dense playing, poor for a slow sweep under sparse
+   notes; and (b) **per-note automation is MPE-style per-note expression, not a CC lane** — so it
+   is not obvious that Live would even send it out as CC 11 / channel aftertouch to external gear,
+   which is the whole point of davebox's MIDI targets. ❓ That would need its own probe before
+   committing to the work.
 3. **Both.**
 
 ## 6. The shape of the work (§5e answered; only the §5g ruling outstanding)
