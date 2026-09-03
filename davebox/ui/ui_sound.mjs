@@ -74,7 +74,7 @@ import { parseValue, stepValue, commitString, renderCellsForBank,
     formatValue, toRenderCell } from './ui_cells.mjs';
 import {
     drawKitBankPage, drawKitHeader, drawKitHeaderParamPages,
-    drawKitSectionPicker, drawKitList, drawKitListOverlay,
+    drawKitSectionPicker, drawKitList, drawKitListOverlay, drawKitHintRow, MV_FOOTER_Y,
     kitUseLayout,
     drawKitStackedList, drawKitBackdropDim, drawKitCrumbs, kitStackBox,
     MV_BAR_Y,
@@ -6428,9 +6428,32 @@ function renderBlocks() {
                  value: (r.bypassed ? 'B ' : '') + String(r.name || '-').toUpperCase() };
     };
     /* This screen was the TEST CASE for the menu type rule (2026-08-27); the
-     * rule is drawKitList's default now, so there is nothing to pass. */
-    drawKitList(S.pickRows.map(_cell), S.pickRow, {});   /* the menu type rule is the default now */
+     * rule is drawKitList's default now, so there is nothing to pass.
+     * ⭑ The FOOTER (Josh, 2026-09-04): the same pill band the bank cards wear,
+     * saying what the click and the Shift chord do on the row you are on —
+     * the two gestures with no on-screen trace. The band is RESERVED on every
+     * row (one list row fewer) so the list does not resize under the cursor;
+     * rows with nothing to say leave it clear. */
+    drawKitList(S.pickRows.map(_cell), S.pickRow, { h: MV_FOOTER_Y - 1 - 11 });
+    drawKitHintRow(MV_FOOTER_Y, menuRowHints(S.pickRows[S.pickRow]));
 }
+
+/* The sound menu's footer hints for ONE row — the decision, apart from the
+ * drawing, so a test can pin it. Rows with the click/Shift+click grammar say
+ * both; a row where only one of the two does anything says that one. */
+function menuRowHints(r) {
+    if (!r) return [];
+    if (r.kind === 'trackto') {
+        if (GS.trackPadMode[S.track] === PMC) return [];
+        const route = GS.trackRoute[S.track];
+        if (route === 2) return [['SHFT', 'CHANGE']];            /* nothing to enter */
+        if (route === 0 && !r.gen) return [['CLK', 'CHOOSE']];  /* no generator yet */
+        return [['CLK', 'EDIT'], ['SHFT', 'CHANGE']];
+    }
+    if (r.kind === 'block') return r.name ? [['CLK', 'EDIT'], ['SHFT', 'CHANGE']] : [['CLK', 'ADD']];
+    return [];
+}
+export function soundMenuHintsForTest() { return menuRowHints(S.pickRows[S.pickRow]); }
 
 function renderBuses() {
     /* A FULL SCREEN, exactly the SOUND + CONFIG menu's dress (Josh,

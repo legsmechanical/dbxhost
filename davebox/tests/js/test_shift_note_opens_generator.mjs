@@ -151,6 +151,11 @@ step('⭑ a TAP opens the track\'s SOUND + CONFIG menu', () => {
     const st = sound.soundPickStateForTest();
     if (st.kinds[st.row] !== 'trackto')
         throw new Error('the tap landed on row ' + st.row + ' (' + st.kinds[st.row] + '), not Instrument');
+    /* ⭑ The FOOTER says what the two traceless gestures do here (Josh,
+     * 2026-09-04: "click to edit" / "shift click to change"). */
+    const h = JSON.stringify(sound.soundMenuHintsForTest());
+    if (h !== JSON.stringify([['CLK', 'EDIT'], ['SHFT', 'CHANGE']]))
+        throw new Error('Instrument row footer: ' + h);
 });
 
 step('⭑⭑ ...and tapping again does NOT close — the gesture is a DESTINATION', () => {
@@ -562,6 +567,9 @@ step('choosing a GENERATOR as the Instrument makes the track Schwung and loads i
          * made); Shift+click opens the picker. It opens on the CURRENT value
          * (MIDI Ch 1); one step left crosses the divider onto the generator
          * group's only entry. */
+        /* ...and the footer says only the Shift chord does anything here. */
+        if (JSON.stringify(sound.soundMenuHintsForTest()) !== JSON.stringify([['SHFT', 'CHANGE']]))
+            throw new Error('MIDI destination footer: ' + JSON.stringify(sound.soundMenuHintsForTest()));
         cc(3, 127); cc(3, 0); ticks(1);            /* CONTROL: plain click does nothing */
         if (sound.soundEnumPickForTest())
             throw new Error('a plain click on a MIDI destination opened the picker');

@@ -23,6 +23,8 @@ the section into a versioned heading at release time.
   MIDI destination), Shift + click opens the picker. The picker lists Move 1-4, every Schwung generator
   by name, MIDI channels 1-16 and the tracks you can follow, in four groups
   with a line between them — choosing a generator loads it straight away.
+  The sound menu's footer now says what click and Shift + click do on the
+  row you're on.
 - **The MACROS bank.** One step past SOUND + CONFIG on the jog: eight knobs
   you assign to any parameter of the track's sound — a synth or effect
   parameter, a level, or one of dAVEBOx's own bank knobs — drawn with the
