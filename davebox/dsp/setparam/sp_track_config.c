@@ -108,6 +108,9 @@ static int sp_track_config(sp_ctx_t *cx) {
             /* Preview queued clip pfx for JS display while stopped.
              * Safe: render loop exits immediately when !inst->playing. */
             if (!inst->playing) {
+                /* A direct clip select (SPI thread): the old clip's automation
+                 * lets go — served by the audio thread next block. */
+                if (tr->active_clip != (uint8_t)new_cidx) pa_release_request(inst, tidx, (int)tr->active_clip);
                 tr->active_clip = (uint8_t)new_cidx;
                 pfx_sync_from_clip(tr);
             }
