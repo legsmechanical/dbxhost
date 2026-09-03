@@ -697,21 +697,47 @@ const seedLanes = (...targets) => {
  * mapping is seeded directly. What is pinned here is the TURN LAW and Josh's
  * ruling A: a mapped turn writes every leg through its own range and records
  * every leg on its OWN lane — there is no macro lane. */
-step('⭑ a RANGED one-leg macro: the knob sweeps only lo..hi of the target, not its whole range', () => {
+step('⭑ a RANGED one-leg macro is the PLAIN path plus a CLAMP: it keeps the target\'s feel and cannot leave lo..hi', () => {
     enterTrack(2);
     snd.soundSetBank(BANK_MACROS); ticks(4);
-    /* cutoff is 0..1; this leg is 0.2..0.6, so a knob at the top must land on
-     * 0.6 and at the bottom on 0.2 — never 1.0 or 0. */
+    /* cutoff is 0..1; this leg is 0.2..0.6. ⭑ ONE target, so there is nothing
+     * to disagree with and no knob position to store — the knob steps the
+     * parameter exactly as an unranged macro would and simply stops at the
+     * bounds. (Deriving a position from the value and stepping THAT is the
+     * slow-knob trap: 255 positions across an 8-value int and every detent is
+     * eaten by rounding.) */
     GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.2, hi: 0.6 }] };
     writes = []; ticks(4);
-    assert(GS.trackMacros[2][0].v != null, 'v seeded from the target, got ' + GS.trackMacros[2][0].v);
-    turnBy(0, 900); ticks(2);                                  /* far past the top */
-    assert(GS.trackMacros[2][0].v === 1, 'the knob pins at the top, got ' + GS.trackMacros[2][0].v);
+    for (let n = 0; n < 12; n++) { turnBy(0, 63); ticks(1); }       /* far past the top */
     assert(Math.abs(parseFloat(lastWrite('synth:cutoff')) - 0.6) < 0.01,
-           'the TARGET stops at hi=0.6, got ' + lastWrite('synth:cutoff'));
-    turnBy(0, -900); ticks(2);
+           'the target stops at hi=0.6, got ' + lastWrite('synth:cutoff'));
+    for (let n = 0; n < 12; n++) { turnBy(0, -63); ticks(1); }
     assert(Math.abs(parseFloat(lastWrite('synth:cutoff')) - 0.2) < 0.01,
            'and at lo=0.2, got ' + lastWrite('synth:cutoff'));
+    assert(GS.trackMacros[2][0].v == null, 'a one-leg mapping never needs a knob position, got v=' + GS.trackMacros[2][0].v);
+});
+step('⭑⭑ a RANGED INT keeps the INT feel: two detents a voice, not 255 positions across eight (the slow-knob law)', () => {
+    /* voices is 1..8 declaring step 1. The range 0.25..0.75 quantises to the
+     * int grid: 3..6. If this were driven through a 0..1 knob position, one
+     * voice would take ~64 detents and small turns would move nothing at all. */
+    ASSIGN['synth:voices'] = '4';
+    GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'synth', key: 'voices', lo: 0.25, hi: 0.75 }] };
+    ticks(6); writes = [];
+    turnBy(0, 2); ticks(2);
+    assert(lastWrite('synth:voices') === '5', '⭑ TWO detents = one voice, got ' + lastWrite('synth:voices'));
+    for (let n = 0; n < 4; n++) { turnBy(0, 20); ticks(1); }
+    assert(lastWrite('synth:voices') === '6', 'clamped at the top of the range (6 of 1..8), got ' + lastWrite('synth:voices'));
+    for (let n = 0; n < 6; n++) { turnBy(0, -20); ticks(1); }
+    assert(lastWrite('synth:voices') === '3', 'and at the bottom (3), got ' + lastWrite('synth:voices'));
+});
+step('⭑ a RANGED one-leg macro FOLLOWS playback — one target, so there is always a right answer', () => {
+    ASSIGN['synth:cutoff'] = '0.4830';
+    GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.2, hi: 0.8 }] };
+    snd.soundSetViewForTest(VIEW_MACROS); ticks(6);
+    ASSIGN['synth:cutoff'] = '0.7000';                  /* as automation would */
+    GS.playing = true; ticks(16); GS.playing = false;
+    assert(Math.abs(M().vals[0] - 0.70) < 0.001,
+           '⭑ the widget followed the parameter, got ' + M().vals[0]);
 });
 step('⭑ an INVERTED leg (lo > hi): turning the knob UP moves the target DOWN (Josh §6.4)', () => {
     GS.trackMacros[2][0] = { v: 0.5, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.9, hi: 0.1 }] };
@@ -763,24 +789,42 @@ step('⭑⭑ RULING A: a mapped turn records EVERY leg on its own lane — there
     assert(!tgs.some(k => /^mac:/.test(k)), '⭑ and there is NO mac: lane — ruling A');
     GS.playing = false;
 });
-step('⚠ the POLL SKIPS a mapped knob: automation moving a leg does NOT move the knob (design §3.2)', () => {
-    GS.trackMacros[2][0] = { v: 0.25, legs: [
+step('⭑⭑ a MULTI knob FOLLOWS ITS ANCHOR — and a SLOW turn on a coarse anchor still accumulates', () => {
+    /* ⚠ This step replaced "the poll SKIPS a mapped knob". It skipped every
+     * ranged knob too, which was over-cautious: only a MULTI knob has legs
+     * that can disagree, and even then a recorded macro sweep wrote them all
+     * from one `v`, so the first addressable leg IS the answer in the case
+     * that actually happens. */
+    GS.trackMacros[2][0] = { v: null, legs: [
         { kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0, hi: 1 },
         { kind: 'level', key: 'volume', lo: 0, hi: 1 },
     ]};
-    ticks(4);
-    const before = GS.trackMacros[2][0].v;
-    ASSIGN['synth:cutoff'] = '0.95';                 /* as automation or a module UI would */
-    GS.playing = true; ticks(12); GS.playing = false;
-    assert(GS.trackMacros[2][0].v === before,
-           '⭑ v is the AUTHORITY and did not follow the target, got ' + GS.trackMacros[2][0].v + ' was ' + before);
-    /* ⚠ Positive control: a PLAIN macro on the same page still follows, so the
-     * skip above is the mapped rule and not a dead poll. */
-    GS.trackMacros[2][2] = { v: null, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0, hi: 1 }] };
-    ticks(6);
-    ASSIGN['synth:cutoff'] = '0.10';
+    ASSIGN['synth:cutoff'] = '0.2500';
+    snd.soundSetViewForTest(VIEW_MACROS); ticks(8);
+    ASSIGN['synth:cutoff'] = '0.9500';                  /* automation moves the anchor */
     GS.playing = true; ticks(16); GS.playing = false;
-    assert(Math.abs(M().vals[2] - 0.10) < 0.001, 'control: a PLAIN macro DOES follow, got ' + M().vals[2]);
+    assert(Math.abs(GS.trackMacros[2][0].v - 0.95) < 0.02,
+           '⭑ v followed the anchor leg, got ' + GS.trackMacros[2][0].v);
+    assert(Math.abs(M().drawn[0].norm - 0.95) < 0.02, 'and the arc moved with it, got ' + M().drawn[0].norm);
+
+    /* ⚠⚠ THE TRAP the anchor poll could have introduced: re-deriving `v` on
+     * every poll would snap it to the anchor's own grid between detents, and a
+     * slow turn on a COARSE anchor would never advance. voices (1..8) is as
+     * coarse as it gets: two detents at a time, each separated by more than
+     * the hand window, twenty times. */
+    ASSIGN['synth:voices'] = '4';
+    GS.trackMacros[2][0] = { v: null, legs: [
+        { kind: 'chain', comp: 'synth', key: 'voices', lo: 0, hi: 1 },
+        { kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0, hi: 1 },
+    ]};
+    ticks(10);
+    const v0 = GS.trackMacros[2][0].v;
+    assert(v0 != null, 'seeded, got ' + v0);
+    for (let n = 0; n < 20; n++) { turnBy(0, 2); ticks(34); }      /* each gap > MACRO_HAND_MS */
+    const moved = GS.trackMacros[2][0].v - v0;
+    assert(moved > 15 / 255,
+           '⭑ twenty slow detent-pairs ACCUMULATED (expected ~' + (20 / 255).toFixed(3) +
+           '), got ' + moved.toFixed(4) + ' — a v reset each poll would stall here');
 });
 step('⭑ a mapped knob draws as its own arc, labelled by its first leg + the count', () => {
     GS.trackMacros[2][0] = { v: 0.5, legs: [
@@ -872,22 +916,27 @@ step('⭑ an ENUM leg takes a SUB-RANGE of its option list (Josh §6.5) — the 
     assert(vals.every(v => v >= 1 && v <= 2),
            '⭑ only the top half of the option list is reachable, got ' + JSON.stringify([...new Set(vals)]));
 });
-step('⭑⭑ ADDING A RANGE MOVES NOTHING: v is seeded by inverting the leg\'s current value through it', () => {
-    /* The whole reason legNormToV exists. cutoff sits at 0.4830; wrapping it
-     * in a 0.2..0.8 range must NOT snap it — the first turn continues from
-     * where the parameter already was, one step at a time. */
+step('⭑⭑ ADDING A RANGE MOVES NOTHING, and the first turn continues by ONE STEP', () => {
+    /* A value already inside the range is untouched — the clamp only bites at
+     * the bounds — so wrapping a live parameter in a range is silent. */
     ASSIGN['synth:cutoff'] = '0.4830';
     GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.2, hi: 0.8 }] };
-    ticks(8);
-    const v = GS.trackMacros[2][0].v;
-    const seeded = 0.2 + v * 0.6;
-    assert(Math.abs(seeded - 0.4830) < 0.01,
-           'v inverts back to where the parameter already is (' + seeded.toFixed(3) + '), got v=' + v);
-    writes = [];
+    ticks(8); writes = [];
+    ticks(4);
+    assert(!writes.some(w => w.key === 'synth:cutoff'),
+           'adding the range wrote nothing at all, got ' + JSON.stringify(writes));
     turnBy(0, 2); ticks(2);                                        /* ONE step */
     const first = parseFloat(lastWrite('synth:cutoff'));
     assert(Math.abs(first - 0.4830) < 0.02,
            '⭑ the first turn CONTINUES from 0.483, it does not jump — got ' + first);
+    /* ⚠ A value OUTSIDE the range clamps in on the first turn: that is the
+     * constraint doing its job, not a jump to be designed away. */
+    ASSIGN['synth:cutoff'] = '0.9500';
+    GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.2, hi: 0.6 }] };
+    ticks(8);
+    turnBy(0, 2); ticks(2);
+    assert(parseFloat(lastWrite('synth:cutoff')) <= 0.601,
+           'a value above the range is pulled into it, got ' + lastWrite('synth:cutoff'));
 });
 step('⭑ Mute + touch a mapped knob RECOUNTS: legs that disagree all end up the same way', () => {
     GS.trackMacros[2][0] = { v: 0.3, legs: [

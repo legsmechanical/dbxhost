@@ -712,6 +712,16 @@ const S = {
      * "GS.trackMidiVals changed" and riding it would be a lie to the next
      * reader — and the only thing persisting `v` at all. */
     macDirty: false,
+    /* ⭑ A per-knob signature of its MAPPING's shape. The cells and values
+     * cached for a knob belong to the legs that were there when they were
+     * read, and the store can change under them without going through the
+     * commit that clears them — a PROJECT LOAD replaces GS.trackMacros
+     * wholesale. A stale cell is not an error: the knob just stops writing,
+     * silently. One string per knob per tick is the cheapest honest answer. */
+    macShape: ['', '', '', '', '', '', '', ''],
+    /* The last value we saw on a MULTI knob's anchor leg, so the poll can tell
+     * "something else moved it" from "that is our own write echoing back". */
+    macAnchorVal: [null, null, null, null, null, null, null, null],
     levelPoll: 0,               /* the SOUND + CONFIG card's round-robin re-read cursor */
     midiValsDirty: false,       /* a MIDI knob moved: sidecar write owed (on release) */
     pbShiftTurned: false,       /* this touch turned the bend with Shift: latch on release */
@@ -1488,13 +1498,15 @@ function levelSeedIfNeeded() {
     S.levelPending = 0;
 }
 /* MIDI handler: cache + queue + the automation owner. */
-function onLevelTurn(idx, delta) {
+function onLevelTurn(idx, delta, bounds) {
     const m = levelKnobSpec(idx);
     if (!m) return;
     const prev = S.levelVals[idx];
     let v = prev + delta * m.step;
     if (v < 0) v = 0;
     if (v > m.max) v = m.max;
+    /* A macro leg's range, when one is set (ui_sound's legBounds). */
+    if (bounds) v = Math.max(bounds[0], Math.min(bounds[1], v));
     v = Math.round(v * 1000) / 1000;
     if (v === prev) return;
     S.levelVals[idx] = v;
@@ -3028,10 +3040,13 @@ function knobAsnLabel(a) {
 function knobRowLabel(i, a) {
     const mp = macroMapping(i);
     const legs = macroLegs(mp);
-    if (legs.length <= 1 && !macroMapped(mp)) return knobAsnLabel(a);
-    const extra = legs.length > 1 ? ' +' + (legs.length - 1) : '';
-    const ranged = legs.some(l => l.lo !== 0 || l.hi !== 1) ? '~' : '';
-    return legShortName(legs[0]) + extra + ranged;
+    const ranged = legs.some(legRanged) ? '~' : '';
+    /* One target at whole range is exactly what it always was. */
+    if (legs.length <= 1 && !ranged) return knobAsnLabel(a);
+    /* One RANGED target still names its target — it IS that parameter, just
+     * with less travel — and only adds the `~`. */
+    if (legs.length <= 1) return knobAsnLabel(a) + ranged;
+    return legShortName(legs[0]) + ' +' + (legs.length - 1) + ranged;
 }
 
 /* Commit the picked target into the leg the picker was opened FOR
@@ -3073,7 +3088,7 @@ function commitKnobAssignment(target, param) {
      * quick-assign retired), so a commit lands back on the list it came from:
      * the LEG list when the knob has legs to show, the K-list otherwise. */
     S.knobLegIdx = -1;
-    if (macroLegs(store[i]).length > 1 || (store[i] && macroMapped(store[i]))) {
+    if (macroMulti(store[i]) || macroLegs(store[i]).some(legRanged)) {
         S.knobLegRow = Math.min(S.knobLegRow, knobLegRows().length - 1);
         S.view = VIEW_KNOBLEGS;
     } else S.view = VIEW_KNOBS;
@@ -3500,10 +3515,34 @@ function macroTarget(i, track) { return macroLeg0(macroMapping(i, track)); }
  *   2. A range is BAKED into a recorded lane. Re-ranging a leg does not
  *      re-shape data already recorded, and (Josh's §6.2 ruling) does not move
  *      the target either — it takes effect on the NEXT turn of that knob. */
-function macroMapped(mp) {
-    const L = macroLegs(mp);
-    return L.length > 1 || (L.length === 1 && (L[0].lo !== 0 || L[0].hi !== 1));
+function macroMulti(mp) { return macroLegs(mp).length > 1; }
+/* A leg that does not use its target's whole range. ⭑ On a ONE-leg mapping
+ * this is NOT the `v` machinery — see the turn law: a single ranged leg is the
+ * PLAIN path plus a clamp, so it keeps the plain path's FEEL (two detents a
+ * voice on an int, four a step on an enum). Deriving a knob position from the
+ * value and stepping THAT would put 255 positions across an 8-value target and
+ * every detent would be eaten by rounding — the slow-knob law, predictable by
+ * arithmetic ([[schwung-canvaskit-continuous-cell-default-is-the-slow-law]]). */
+function legRanged(leg) { return !!leg && (leg.lo !== 0 || leg.hi !== 1); }
+/* A leg's range as ABSOLUTE bounds on its target, quantised to the target's
+ * own grid so an int or enum bound lands on a real value. Ordered, because
+ * `lo > hi` is the inverted leg and the BOUNDS do not invert — the direction
+ * does (the turn flips the step's sign). */
+function legBounds(leg, min, max, cell) {
+    const span = max - min;
+    let a = min + Math.min(leg.lo, leg.hi) * span;
+    let b = min + Math.max(leg.lo, leg.hi) * span;
+    if (cell) { a = clampValue(cell, a); b = clampValue(cell, b); }
+    return [a, b];
 }
+/* Apply a leg's range to a value the plain path just stepped. */
+function legClamp(v, leg, min, max, cell) {
+    if (!legRanged(leg) || v == null) return v;
+    const [a, b] = legBounds(leg, min, max, cell);
+    return Math.max(a, Math.min(b, v));
+}
+/* An inverted leg turns the other way. */
+function legSteps(leg, steps) { return (leg.lo > leg.hi) ? -steps : steps; }
 /* Any leg addressable here — the mapped equivalent of macroLive. */
 function macroMappingLive(mp) { return macroLegs(mp).some(l => macroLive(l)); }
 /* True while any addressable CHAIN leg's previous value is still unread — the
@@ -3577,25 +3616,30 @@ function legWriteNorm(t, leg, f, cell, prev) {
 /* READ a leg's current value back as a 0..1 fraction of its own range — how
  * `v` is seeded, so nothing jumps the moment a range or a second leg is
  * added. The chain kind is the only one that costs a round trip. */
-function legReadNorm(t, leg, cell) {
-    if (leg.kind === 'level') {
-        const li = macroLevelIdx(leg), spec = li >= 0 ? levelKnobSpec(li) : null;
-        return (spec && spec.max > 0) ? Math.max(0, Math.min(1, S.levelVals[li] / spec.max)) : null;
-    }
-    if (leg.kind === 'bank') {
-        const meta = bankMacroMeta(leg, t);
-        if (!meta || meta.max === meta.min) return null;
-        return Math.max(0, Math.min(1, (bankMacroValue(leg, t) - meta.min) / (meta.max - meta.min)));
-    }
-    if (leg.kind === 'midi') {
-        const max = midiTargetMax(leg.target);
-        return max > 0 ? Math.max(0, Math.min(1, midiVal(t, leg.target) / max)) : null;
-    }
-    if (!cell || cell.vanished || cell.max === cell.min) return null;
-    const raw = parseValue(cell, engineGet(S.slot, leg.comp, leg.key));
-    if (raw == null) return null;
-    return Math.max(0, Math.min(1, (raw - cell.min) / (cell.max - cell.min)));
+function legReadRaw(t, leg, cell) {
+    if (leg.kind === 'level') { const li = macroLevelIdx(leg); return (li >= 0 && levelKnobSpec(li)) ? S.levelVals[li] : null; }
+    if (leg.kind === 'bank') return bankMacroMeta(leg, t) ? bankMacroValue(leg, t) : null;
+    if (leg.kind === 'midi') return midiTargetOnRoute(leg.target, t) ? midiVal(t, leg.target) : null;
+    if (!cell || cell.vanished) return null;
+    return parseValue(cell, engineGet(S.slot, leg.comp, leg.key));   /* ⚠ a round trip */
 }
+/* That raw value as a 0..1 fraction of the leg's target's own range. */
+function legRawToNorm(t, leg, cell, raw) {
+    if (raw == null) return null;
+    let min = 0, max = 1;
+    if (leg.kind === 'level') { const s2 = levelKnobSpec(macroLevelIdx(leg)); if (!s2) return null; max = s2.max; }
+    else if (leg.kind === 'bank') { const m2 = bankMacroMeta(leg, t); if (!m2) return null; min = m2.min; max = m2.max; }
+    else if (leg.kind === 'midi') { max = midiTargetMax(leg.target); }
+    else { if (!cell || cell.vanished) return null; min = cell.min; max = cell.max; }
+    if (max === min) return null;
+    return Math.max(0, Math.min(1, (raw - min) / (max - min)));
+}
+function legReadNorm(t, leg, cell) {
+    return legRawToNorm(t, leg, cell, legReadRaw(t, leg, cell));
+}
+/* A MULTI knob's ANCHOR: the first leg it can actually address. `v` follows
+ * this leg, and a turn then imposes `v` on all of them. */
+function macroAnchorIdx(mp) { return macroLegs(mp).findIndex(l => macroLive(l)); }
 /* Invert a leg's own fraction back through its range to the KNOB's position —
  * the seed of `v` from leg 0. A whole-range leg is the identity; an inverted
  * leg (lo > hi) inverts here too, which is what keeps "adding a range does not
@@ -3608,7 +3652,7 @@ function legNormToV(leg, n) {
 }
 /* The auto label for a mapped knob: the first addressable leg's short name,
  * plus how many others ride with it. §5's custom label lands with the list. */
-function macroMappedLabel(mp) {
+function macroMultiLabel(mp) {
     const L = macroLegs(mp);
     const first = L[0] ? legShortName(L[0]) : '';
     return L.length > 1 ? (first + '+' + (L.length - 1)) : first;
@@ -4001,7 +4045,10 @@ function macroTurn(idx, delta) {
     if (m.kind === 'midi' && m.target === 'pb' && S.shiftHeld) S.pbShiftTurned = true;
     if (m.kind === 'level') {
         const li = macroLevelIdx(m);
-        if (li >= 0 && levelKnobSpec(li)) onLevelTurn(li, delta);
+        const spec = li >= 0 ? levelKnobSpec(li) : null;
+        /* A LEVEL macro is the level's own knob — its feel, its step. A range
+         * only bounds where it can go (and flips it, if inverted). */
+        if (spec) onLevelTurn(li, legSteps(m, delta), legRanged(m) ? legBounds(m, 0, spec.max) : null);
         return;
     }
     /* A bank macro: detents accumulate as for a chain param (its drain is in
@@ -4011,6 +4058,25 @@ function macroTurn(idx, delta) {
      * canvaskit rule, and the part that makes a knob feel right. */
     if (dir !== S.macLastDir[idx]) { S.knobAccum[idx] = 0; S.macLastDir[idx] = dir; }
     S.knobAccum[idx] += delta;
+}
+
+/* Everything about a mapping that the caches depend on. */
+function macroShapeOf(mp) {
+    return macroLegs(mp).map(l =>
+        l.kind + '|' + (l.comp || '') + '|' + (l.key || l.target || (l.bank + ':' + l.k)) +
+        '|' + l.lo + '|' + l.hi).join(',');
+}
+/* Drop a knob's cached cells and values if its mapping is not the one they
+ * were read for. Returns true when it dropped something. */
+function macroShapeSync(i, mp) {
+    const sig = macroShapeOf(mp);
+    if (S.macShape[i] === sig) return false;
+    S.macShape[i] = sig;
+    S.macCells[i] = null; S.macVals[i] = null;
+    S.macLegCells[i] = null; S.macLegVals[i] = null;
+    S.macAnchorVal[i] = null;
+    S.knobAccum[i] = 0; S.macLastDir[i] = 0;
+    return true;
 }
 
 const MACRO_READS_PER_TICK = 2;
@@ -4029,6 +4095,7 @@ function macroTick() {
         for (let i = 0; i < 8; i++) { S.macVals[i] = null; S.macCells[i] = null; S.macLegCells[i] = null; S.macLegVals[i] = null; S.knobAccum[i] = 0; S.macLastDir[i] = 0; }
     }
     let reads = 0;
+    for (let i = 0; i < 8; i++) if (macroShapeSync(i, store[i])) S.dirty = true;
     /* Bank targets: the bank's values re-read once per seed (readBankParams
      * is a round trip per bank), then live off davebox's own mirrors. */
     if (!S.macBanksRead) {
@@ -4046,26 +4113,17 @@ function macroTick() {
      * time — after that `v` is the authority and nothing here reads again. */
     for (let i = 0; i < 8 && reads < MACRO_READS_PER_TICK; i++) {
         const mp = store[i];
-        if (!macroMapped(mp)) continue;
+        if (!macroMulti(mp)) continue;
         const legs = mp.legs;
-        /* ⚠ The per-leg caches must follow the mapping's SHAPE, not just its
-         * existence. A project load replaces GS.trackMacros wholesale without
-         * going through the commit that clears these, so a stale array left a
-         * chain leg with the previous mapping's (null) cell — and the drain,
-         * which waits for every chain leg's cell, then waited forever: the
-         * knob simply stopped writing, with nothing logged. Length catches a
-         * whole new mapping; the per-leg key catches a re-point. */
-        if (!S.macLegCells[i] || S.macLegCells[i].length !== legs.length) {
+        /* macroShapeSync above has already dropped these if the mapping
+         * changed, so allocating is all that is left. */
+        if (!S.macLegCells[i]) {
             S.macLegCells[i] = new Array(legs.length).fill(null);
             S.macLegVals[i] = new Array(legs.length).fill(null);
         }
         for (let j = 0; j < legs.length && reads < MACRO_READS_PER_TICK; j++) {
             const leg = legs[j];
-            const cached = S.macLegCells[i][j];
-            if (cached && cached.key !== undefined && cached.key !== leg.key) {
-                S.macLegCells[i][j] = null; S.macLegVals[i][j] = null;
-            }
-            if (leg.kind !== 'chain') { S.macLegCells[i][j] = null; continue; }
+            if (leg.kind !== 'chain') continue;
             if (!S.knobMeta[leg.comp]) {
                 let list = [];
                 try { list = JSON.parse(engineGet(S.slot, leg.comp, 'chain_params') || '[]') || []; }
@@ -4103,7 +4161,7 @@ function macroTick() {
     }
     for (let i = 0; i < 8 && reads < MACRO_READS_PER_TICK; i++) {
         const m = macroLeg0(store[i]);
-        if (!m || m.kind !== 'chain' || macroMapped(store[i])) continue;
+        if (!m || m.kind !== 'chain' || macroMulti(store[i])) continue;
         if (!S.knobMeta[m.comp]) {
             let list = [];
             try { list = JSON.parse(engineGet(S.slot, m.comp, 'chain_params') || '[]') || []; }
@@ -4123,7 +4181,7 @@ function macroTick() {
     for (let i = 0; i < 8; i++) {
         if (!S.knobAccum[i]) continue;
         const mp = store[i];
-        if (macroMapped(mp)) {
+        if (macroMulti(mp)) {
             /* THE MAPPED TURN. The knob's own travel law — the float law, 255
              * positions at 2 detents — applied to `v`, then every leg written
              * through its range. Each leg records its own lane (ruling A). */
@@ -4147,6 +4205,10 @@ function macroTick() {
                                          S.macLegVals[i] ? S.macLegVals[i][j] : null);
                 if (got != null && S.macLegVals[i]) S.macLegVals[i][j] = got;
             }
+            /* Remember the anchor's new value so the poll can tell our own
+             * write from someone else's. */
+            const aj = macroAnchorIdx(mp);
+            if (aj >= 0 && S.macLegVals[i]) S.macAnchorVal[i] = S.macLegVals[i][aj];
             S.macDirty = true;                          /* `v` is sidecar state */
             S.dirty = true;
             continue;
@@ -4163,7 +4225,9 @@ function macroTick() {
             if (!steps) continue;
             if (m.target === 'pb') GS.pbSpring = null;        /* the hand owns it again */
             const cur = midiVal(S.track, m.target);
-            const nv = Math.max(0, Math.min(midiTargetMax(m.target), cur + steps * step));
+            const mx = midiTargetMax(m.target);
+            let nv = Math.max(0, Math.min(mx, cur + legSteps(m, steps) * step));
+            nv = Math.round(legClamp(nv, m, 0, mx));
             if (nv !== cur) { midiSendValue(S.track, m.target, nv, cur, true); S.dirty = true; }
             continue;
         }
@@ -4176,7 +4240,8 @@ function macroTick() {
             while (S.knobAccum[i] <= -tr.sens) { steps--; S.knobAccum[i] += tr.sens; }
             if (!steps) continue;
             const cur = bankMacroValue(m);
-            const nv = Math.max(meta.min, Math.min(meta.max, cur + steps * tr.step));
+            let nv = Math.max(meta.min, Math.min(meta.max, cur + legSteps(m, steps) * tr.step));
+            nv = Math.round(legClamp(nv, m, meta.min, meta.max));
             if (nv !== cur) {
                 bankMacroWrite(m, nv);
                 /* A bank param is an automation target too (seq:<t>:<key>):
@@ -4195,7 +4260,13 @@ function macroTick() {
         while (S.knobAccum[i] <= -sens) { steps--; S.knobAccum[i] += sens; }
         if (!steps) continue;
         const cur = S.macVals[i];
-        const next = stepValue(cell, cur, steps);
+        /* ⭑ A RANGED single leg is this path plus a CLAMP — never the `v`
+         * machinery. It keeps the target's own feel (two detents a voice, four
+         * an enum step) and simply cannot leave lo..hi; an inverted leg flips
+         * the step's sign. §6.5 falls out of the clamp landing on the enum's
+         * own grid. A value already outside the range clamps in on the first
+         * turn, which is the constraint doing its job. */
+        const next = legClamp(stepValue(cell, cur, legSteps(m, steps)), m, cell.min, cell.max, cell);
         if (next === cur) continue;
         S.macVals[i] = next;                             /* optimistic, drawn now */
         const wire = commitString(cell, next), prevWire = commitString(cell, cur);
@@ -4221,11 +4292,32 @@ function macroPollTick() {
     if (!GS.playing && (S.macPollTick % MACRO_POLL_EVERY_STOPPED)) return;
     for (let n = 0; n < 8; n++) {
         const i = (S.macPoll + n) % 8;
-        /* ⚠ A MAPPED knob is SKIPPED (design §3.2): `v` is the authority and
-         * cannot be inferred back from legs that may disagree. Automation
-         * moving the targets therefore does not move this knob — the stated
-         * cost of ruling A, not an oversight. */
-        if (macroMapped(store[i])) continue;
+        /* ⭑ A MULTI knob FOLLOWS ITS ANCHOR (its first addressable leg). Its
+         * legs can disagree, so there is no position that is exactly right —
+         * but a recorded macro sweep wrote every leg from one `v`, so in the
+         * case that actually happens they agree and the anchor IS the answer.
+         *
+         * ⚠⚠ Re-derive ONLY when the anchor moved to a value we did not write.
+         * Doing it every poll would reset `v` to the anchor's own grid, and a
+         * slow turn on a coarse anchor (one detent every 300 ms) would then
+         * lose its progress between detents and never advance. Our own write
+         * is remembered in macAnchorVal, so it reads as "no change". */
+        if (macroMulti(store[i])) {
+            const mp = store[i];
+            if (i === S.touchedIdx || (S.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
+            const j = macroAnchorIdx(mp);
+            if (j < 0 || !S.macLegCells[i]) continue;
+            const leg = mp.legs[j], c = S.macLegCells[i][j];
+            const raw = legReadRaw(S.track, leg, c);
+            if (raw == null) continue;
+            S.macPoll = i + 1;
+            if (raw === S.macAnchorVal[i]) break;              /* our own write, or nothing moved */
+            S.macAnchorVal[i] = raw;
+            if (S.macLegVals[i]) S.macLegVals[i][j] = raw;
+            const nv = legNormToV(leg, legRawToNorm(S.track, leg, c, raw));
+            if (nv != null && nv !== mp.v) { mp.v = nv; S.dirty = true; }
+            break;
+        }
         const m = macroLeg0(store[i]), cell = S.macCells[i];
         /* A LEVEL macro re-reads the level's own cache (Josh, 2026-09-03: a
          * bus-pan macro "records and plays back but the widget never moves"
@@ -4277,10 +4369,10 @@ function macroCells(track, live) {
          * arc of its own position under its own label (design §3.1) — and the
          * automation dot is ON if ANY leg is automated, because ruling A puts
          * the lanes on the legs. */
-        if (macroMapped(mp)) {
+        if (macroMulti(mp)) {
             if (!macroMappingLive(mp)) { cells.push(unassigned()); continue; }
             const v = live ? mp.v : null;
-            const cellM = { kind: 'arc', label: upper(macroMappedLabel(mp)), name: upper(macroMappedLabel(mp)),
+            const cellM = { kind: 'arc', label: upper(macroMultiLabel(mp)), name: upper(macroMultiLabel(mp)),
                             text: v == null ? '--' : Math.round(v * 100) + '%', norm: v == null ? 0 : v };
             if (live) {
                 for (const leg of mp.legs) {
