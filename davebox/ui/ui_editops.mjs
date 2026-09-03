@@ -21,8 +21,8 @@ import { effectiveClip, invalidateLEDCache, forceRedraw } from './ui_leds.mjs';
 import { refreshPerClipBankParams, resetPerClipBankParamsToDefault,
     refreshSeqNotesIfCurrent, _focusedClipIsEmpty } from './ui_dsp_bridge.mjs';
 
-/* Record a MELODIC clip whose automation mirror (trackCCAutoBits / clipCCVal /
- * clipAtHas) the editop cannot fill purely in JS — pollDSP's local-rev path
+/* Record a MELODIC clip whose automation mirror (clipAtHas) the editop cannot
+ * fill purely in JS — pollDSP's local-rev path
  * re-reads exactly these clips (automation fields only) once the DSP applies the
  * edit. Drum clips are skipped: their content is re-synced via pendingDrumResync.
  * This, together with the `_local: true` flag on the queued command, replaces the
@@ -146,9 +146,7 @@ export function clearClip(t, ac, keepPlaying) {
     S.clipLengthManuallySet[t][ac] = false;
     S.clipAdaptiveMode[t][ac]      = false;
     /* Clip clear now also wipes all automation DSP-side — mirror it so the
-     * AUTOMATION-bank indicators + CC values reflect the clear immediately. */
-    S.trackCCAutoBits[t][ac] = 0;
-    S.clipCCVal[t][ac] = new Array(8).fill(-1);
+     * AUTOMATION-bank indicators reflect the clear immediately. */
     S.clipAtHas[t][ac] = false;
     invalidateLEDCache();
     /* Re-read steps from DSP 2 ticks later so step LEDs catch up after _clear
@@ -207,11 +205,6 @@ export function hardResetClip(t, ac) {
     S.clipNonEmpty[t][ac] = false;
     S.clipTPS[t][ac] = 24;
     S.clipLengthManuallySet[t][ac] = false;
-    for (var _k = 0; _k < 8; _k++) {
-        S.ccLaneLoopStart[t][ac][_k] = 0;
-        S.ccLaneLength[t][ac][_k]    = 0;
-        S.ccLaneTps[t][ac][_k]       = 0;
-    }
     if (ac === S.trackActiveClip[t]) {
         S.trackCurrentPage[t] = 0;
         S.seqActiveNotes.clear(); S.seqLastStep = -1; S.seqNoteOnClipTick = -1;
@@ -230,11 +223,6 @@ export function copyClip(srcT, srcC, dstT, dstC) {
     S.clipLoopStart[dstT][dstC] = S.clipLoopStart[srcT][srcC];
     S.clipNonEmpty[dstT][dstC] = S.clipNonEmpty[srcT][srcC];
     S.clipTPS[dstT][dstC] = S.clipTPS[srcT][srcC];
-    for (var _k = 0; _k < 8; _k++) {
-        S.ccLaneLoopStart[dstT][dstC][_k] = S.ccLaneLoopStart[srcT][srcC][_k];
-        S.ccLaneLength[dstT][dstC][_k]    = S.ccLaneLength[srcT][srcC][_k];
-        S.ccLaneTps[dstT][dstC][_k]       = S.ccLaneTps[srcT][srcC][_k];
-    }
     if (dstC === S.trackActiveClip[dstT]) {
         S.seqActiveNotes.clear(); S.seqLastStep = -1;
         refreshPerClipBankParams(dstT);
@@ -253,11 +241,6 @@ export function cutClip(srcT, srcC, dstT, dstC) {
     S.clipLoopStart[dstT][dstC] = S.clipLoopStart[srcT][srcC];
     S.clipNonEmpty[dstT][dstC] = S.clipNonEmpty[srcT][srcC];
     S.clipTPS[dstT][dstC] = S.clipTPS[srcT][srcC];
-    for (var _k = 0; _k < 8; _k++) {
-        S.ccLaneLoopStart[dstT][dstC][_k] = S.ccLaneLoopStart[srcT][srcC][_k];
-        S.ccLaneLength[dstT][dstC][_k]    = S.ccLaneLength[srcT][srcC][_k];
-        S.ccLaneTps[dstT][dstC][_k]       = S.ccLaneTps[srcT][srcC][_k];
-    }
     if (dstC === S.trackActiveClip[dstT]) {
         S.seqActiveNotes.clear(); S.seqLastStep = -1;
         refreshPerClipBankParams(dstT);
@@ -267,11 +250,6 @@ export function cutClip(srcT, srcC, dstT, dstC) {
     S.clipLoopStart[srcT][srcC] = 0;
     S.clipNonEmpty[srcT][srcC] = false;
     S.clipTPS[srcT][srcC] = 24;
-    for (var _k2 = 0; _k2 < 8; _k2++) {
-        S.ccLaneLoopStart[srcT][srcC][_k2] = 0;
-        S.ccLaneLength[srcT][srcC][_k2]    = 0;
-        S.ccLaneTps[srcT][srcC][_k2]       = 0;
-    }
     if (srcC === S.trackActiveClip[srcT]) {
         S.seqActiveNotes.clear(); S.seqLastStep = -1; S.seqNoteOnClipTick = -1;
         resetPerClipBankParamsToDefault(srcT);
@@ -291,11 +269,6 @@ export function copyRow(srcRow, dstRow) {
         S.clipNonEmpty[t][dstRow] = S.clipNonEmpty[t][srcRow];
         S.clipTPS[t][dstRow] = S.clipTPS[t][srcRow];
         S.drumClipNonEmpty[t][dstRow] = S.drumClipNonEmpty[t][srcRow];
-        for (var _k = 0; _k < 8; _k++) {
-            S.ccLaneLoopStart[t][dstRow][_k] = S.ccLaneLoopStart[t][srcRow][_k];
-            S.ccLaneLength[t][dstRow][_k]    = S.ccLaneLength[t][srcRow][_k];
-            S.ccLaneTps[t][dstRow][_k]       = S.ccLaneTps[t][srcRow][_k];
-        }
         if (dstRow === S.trackActiveClip[t]) {
             S.seqActiveNotes.clear(); S.seqLastStep = -1;
             refreshPerClipBankParams(t);
@@ -320,11 +293,6 @@ export function cutRow(srcRow, dstRow) {
         S.clipNonEmpty[t][dstRow] = S.clipNonEmpty[t][srcRow];
         S.clipTPS[t][dstRow] = S.clipTPS[t][srcRow];
         S.drumClipNonEmpty[t][dstRow] = S.drumClipNonEmpty[t][srcRow];
-        for (var _k = 0; _k < 8; _k++) {
-            S.ccLaneLoopStart[t][dstRow][_k] = S.ccLaneLoopStart[t][srcRow][_k];
-            S.ccLaneLength[t][dstRow][_k]    = S.ccLaneLength[t][srcRow][_k];
-            S.ccLaneTps[t][dstRow][_k]       = S.ccLaneTps[t][srcRow][_k];
-        }
         if (dstRow === S.trackActiveClip[t]) {
             S.seqActiveNotes.clear(); S.seqLastStep = -1;
             refreshPerClipBankParams(t);
@@ -338,11 +306,6 @@ export function cutRow(srcRow, dstRow) {
         S.clipNonEmpty[t][srcRow] = false;
         S.clipTPS[t][srcRow] = 24;
         S.drumClipNonEmpty[t][srcRow] = false;
-        for (var _k2 = 0; _k2 < 8; _k2++) {
-            S.ccLaneLoopStart[t][srcRow][_k2] = 0;
-            S.ccLaneLength[t][srcRow][_k2]    = 0;
-            S.ccLaneTps[t][srcRow][_k2]       = 0;
-        }
         if (srcRow === S.trackActiveClip[t]) {
             S.seqActiveNotes.clear(); S.seqLastStep = -1; S.seqNoteOnClipTick = -1;
             resetPerClipBankParamsToDefault(t);
@@ -632,21 +595,6 @@ export function doDoubleFill() {
             forceRedraw();
         }
     }
-}
-
-export function doLaneDoubleFill() {
-    var _t = S.activeTrack, _ac = effectiveClip(_t), _l = S.ccActiveLane[_t];
-    var _len = S.ccLaneLength[_t][_ac][_l] || S.clipLength[_t][_ac];
-    if (_len * 2 > 256) {
-        showActionPopup('LANE FULL');
-        return;
-    }
-    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
-    S.ccLaneLength[_t][_ac][_l] = _len * 2;
-    var _pre = 't' + _t + '_c' + _ac + '_k' + _l;
-    S.pendingDefaultSetParams.push({ key: _pre + '_cc_lane_double_fill', val: '1' });
-    showActionPopup('LANE LOOP', 'DOUBLED');
-    forceRedraw();
 }
 
 /* Reset NOTE FX, HARMZ, and MIDI DLY banks to DSP defaults for track t.

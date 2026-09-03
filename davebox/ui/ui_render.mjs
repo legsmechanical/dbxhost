@@ -13,7 +13,7 @@ import { SESS_KNOB_MODES } from './ui_engine.mjs';
 import {
     BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
-    POLL_INTERVAL, SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
+    SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
     col4, col5, pixelPrint, pixelPrintC,
     fmtSign, fmtStretch, fmtLen, fmtRes, fmtPct, fmtBool, fmtGateMod,
     fmtArpRate, fmtVelOverride, fmtPlayDir, fmtRevStyle,
@@ -33,7 +33,7 @@ import {
     drawGlobalMenu, drawStateWipeConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
     drawConvertToDrumConfirm, drawConvertToConductConfirm, drawMenuInfo,
     drawLgtoConfirm, drawBakeConfirm, drawSnapshotPicker,
-    drawClearAutoMenu, drawBakeSceneConfirm, drawXposeConfirm, drawBpmLine,
+    drawBakeSceneConfirm, drawXposeConfirm, drawBpmLine,
     drawProjectPadPicker
 } from './ui_dialogs.mjs';
 import { isBooleanPair } from './ui_cells.mjs';
@@ -631,12 +631,6 @@ const PERF_MOD_NAMES = [
     '½time','3Skip','Phnm','Sprs','Gltch','Stggr','Shfl','Back',
 ];
 
-/* Format CC number as a 4-char display label: CC7→"CC7 ", CC74→"CC74", C100→"C100" */
-function fmtCCLabel(cc) {
-    const n = (cc | 0);
-    return n >= 100 ? 'C' + n : 'CC' + n;
-}
-
 function midiNoteName(n) {
     const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
     return names[n % 12] + (Math.floor(n / 12) - 1);
@@ -1179,7 +1173,7 @@ export function bankCardVisible() {
 
 export function soundModeCovered() {
     return !!(S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox ||
-        S.projectPadPicker || S.clearAutoMenu || S.pendingSceneBakePicker ||
+        S.projectPadPicker || S.pendingSceneBakePicker ||
         S.mergePlacing || S.mergeNoticePending || S.pendingMergePlacement ||
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
         S.confirmStateWipe || S.bpmMoveInfo || S.recordBlockedDialog ||
@@ -1320,149 +1314,44 @@ function drawHeldStepPage() {
     /* The footer says what the jog does HERE: on the reveal it goes back; on
      * the STEP bank under a hold it does nothing (bankPageHints drops the pair). */
     const _footer = (S.stepReveal && S.activeBank !== BANK_STEP) ? [['JOG', 'BACK']] : bankPageHints(BANK_STEP);
-        if (S.activeBank === 6) {
-            /* CC bank step-hold: compact graph + knob values */
-            var _t6s = S.activeTrack, _ac6s = effectiveClip(_t6s);
-            var _gLane6 = S.ccActiveLane[_t6s];
-            var _gEffLen6 = S.ccLaneLength[_t6s][_ac6s][_gLane6] || S.clipLength[_t6s][_ac6s];
-            var _gLTps6 = S.ccLaneTps[_t6s][_ac6s][_gLane6] || (S.clipTPS[_t6s][_ac6s] || 24);
-            /* Compact graph (12px) just above progress bar */
-            var _sgBarY = 60, _sgBarH = 3;
-            var _sgH = 12, _sgY = _sgBarY - _sgH - 2;
-            var _sgPages = Math.ceil(_gEffLen6 / 16);
-            var _sgKey = 'sg_' + _t6s + '_' + _ac6s + '_' + _gLane6 + '_' + _gEffLen6;
-            if (_sgKey !== S.ccGraphOvKey || (S.tickCount % POLL_INTERVAL) === 0) {
-                S.ccGraphOvData = [];
-                for (var _sgp = 0; _sgp < _sgPages; _sgp++) {
-                    var _sgRaw = host_module_get_param('t' + _t6s + '_c' + _ac6s + '_ccsv_' + _gLane6 + '_' + _sgp);
-                    if (_sgRaw) {
-                        var _sgParts = _sgRaw.split(' ');
-                        for (var _sgs = 0; _sgs < 16 && _sgp * 16 + _sgs < _gEffLen6; _sgs++)
-                            S.ccGraphOvData.push(_sgs < _sgParts.length ? parseInt(_sgParts[_sgs], 10) : 255);
-                    }
-                }
-                S.ccGraphOvKey = _sgKey;
-            }
-            fill_rect(0, _sgY, 128, 1, 1);
-            fill_rect(0, _sgY + _sgH - 1, 128, 1, 1);
-            fill_rect(0, _sgY, 1, _sgH, 1);
-            fill_rect(127, _sgY, 1, _sgH, 1);
-            var _sgDLen = S.ccGraphOvData.length || 1;
-            var _sgDrawY = _sgY + 2, _sgDrawH = _sgH - 4;
-            var _sgPrevPy = -1;
-            for (var _sgc = 1; _sgc < 127; _sgc++) {
-                var _sgIdx = Math.floor(_sgc * _sgDLen / 128);
-                var _sgv = _sgIdx < S.ccGraphOvData.length ? S.ccGraphOvData[_sgIdx] : -1;
-                if (_sgv >= 0 && _sgv <= 127) {
-                    var _sgpy = _sgDrawY + _sgDrawH - 1 - Math.round(_sgv * (_sgDrawH - 1) / 127);
-                    if (_sgPrevPy >= 0 && _sgPrevPy !== _sgpy) {
-                        var _sgyMin = Math.min(_sgPrevPy, _sgpy);
-                        var _sgyMax = Math.max(_sgPrevPy, _sgpy);
-                        fill_rect(_sgc, _sgyMin, 1, _sgyMax - _sgyMin + 1, 1);
-                    } else {
-                        fill_rect(_sgc, _sgpy, 1, 1, 1);
-                    }
-                    _sgPrevPy = _sgpy;
-                } else {
-                    _sgPrevPy = -1;
-                }
-            }
-            /* Step position indicator on graph — white vertical line */
-            var _sgSx = Math.min(126, Math.max(1, Math.floor(S.heldStep * 126 / _sgDLen) + 1));
-            fill_rect(_sgSx, _sgY + 1, 1, _sgH - 2, 1);
-            /* Step header: MCU font, white on black, separator line */
-            pixelPrint(1, 1, 'Step ' + (S.heldStep + 1), 1);
-            var _pnLbl = '';
-            var _pnK = S.knobTouched >= 0 ? S.knobTouched : _gLane6;
-            if (S.trackCCType[_t6s][_pnK] === 2)
-                _pnLbl = S.schLabel[_t6s][_pnK] || ('Sch' + S.trackCCAssign[_t6s][_pnK]);
-            if (_pnLbl) pixelPrint(128 - _pnLbl.length * 6 - 1, 1, _pnLbl, 1);
-            fill_rect(0, 7, 128, 1, 1);
-            /* 8 knobs in 2 rows of 4 (standard font) */
-            for (var _k6 = 0; _k6 < 8; _k6++) {
-                var _col6 = _k6 % 4, _row6 = Math.floor(_k6 / 4);
-                var _x6 = 4 + _col6 * 31, _y6 = 11 + _row6 * 18;
-                var _hi6 = (S.knobTouched === _k6) || (S.ccActiveLane[_t6s] === _k6);
-                if (_hi6) fill_rect(_x6 - 1, _y6 - 1, 29, 18, 1);
-                var _lbl6 = S.trackCCType[_t6s][_k6] === 2 ? ('Sch' + S.trackCCAssign[_t6s][_k6])
-                          : S.trackCCType[_t6s][_k6] === 1 ? 'AT'
-                          : (S.trackCCAssign[_t6s][_k6] > 0 ? 'C' + S.trackCCAssign[_t6s][_k6] : '--');
-                var _vs6;
-                if (S.ccStepEditSet[_k6]) {
-                    _vs6 = String(S.ccStepEditVal[_k6]);
-                } else {
-                    var _cv6 = S.ccStepEditComputed[_k6];
-                    _vs6 = (_cv6 >= 0 && _cv6 <= 127) ? '(' + _cv6 + ')' : '--';
-                }
-                print(_x6, _y6, col4(_lbl6), _hi6 ? 0 : 1);
-                print(_x6, _y6 + 9, col5(_vs6), _hi6 ? 0 : 1);
-            }
-            /* Progress bar */
-            var _sgWP = Math.max(1, Math.ceil(_gEffLen6 / 16));
-            var _sgVP = Math.max(0, Math.min(S.trackCurrentPage[_t6s], _sgWP - 1));
-            var _sgSG = 1, _sgSW = Math.max(2, Math.floor((120 - (_sgWP - 1) * _sgSG) / _sgWP));
-            var _sgPP = -1;
-            if (S.playing) {
-                var _sgProg = (S.masterPos % (_gEffLen6 * _gLTps6)) / (_gEffLen6 * _gLTps6);
-                _sgPP = Math.floor(_sgProg * _sgWP);
-            }
-            for (var _sgPg = 0; _sgPg < _sgWP; _sgPg++) {
-                var _sgx = 4 + _sgPg * (_sgSW + _sgSG);
-                if (_sgPg === _sgVP) fill_rect(_sgx, _sgBarY, _sgSW, _sgBarH, 1);
-                else if (_sgPg === _sgPP) {
-                    fill_rect(_sgx, _sgBarY, _sgSW, 1, 1);
-                    fill_rect(_sgx, _sgBarY + _sgBarH - 1, _sgSW, 1, 1);
-                    fill_rect(_sgx, _sgBarY, 1, _sgBarH, 1);
-                    fill_rect(_sgx + _sgSW - 1, _sgBarY, 1, _sgBarH, 1);
-                } else fill_rect(_sgx, _sgBarY + _sgBarH - 1, _sgSW, 1, 1);
-            }
-            if (S.playing) {
-                var _sgBW = _sgWP * (_sgSW + _sgSG) - _sgSG;
-                var _sgDX = 4 + Math.floor(_sgProg * _sgBW);
-                var _sgVS = 4 + _sgVP * (_sgSW + _sgSG);
-                fill_rect(_sgDX, _sgBarY, 1, _sgBarH, (_sgDX >= _sgVS && _sgDX < _sgVS + _sgSW) ? 0 : 1);
-            }
-            return true;
-        } else {
-        /* Canvaskit step editors (drum + melodic). The kit fonts don't map
-         * the formatters' em dash — normalize to "--". */
-        const _dash = (s) => s === '—' ? '--' : s;
-        const _stepTitle = 'Step ' + (S.heldStep + 1);
-        if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
-            /* Drum step edit: K1 Leng, K2 Vel, K3 Nudg, K5 Iter, K6 Prob, K7 Ratch. */
-            const t = S.activeTrack;
-            if (S.heldStepNotes.length > 0) {
-                const tps   = S.drumLaneTPS[t] || 24;
-                const _gateSteps = S.stepEditGate / tps;
-                const cells = heldStepCells();
-                drawStepEditKitPage(_stepTitle, cells, null, _footer);
-            } else {
-                drawStepEditKitPage(_stepTitle, null, null, _footer);
-            }
-            return true;
-        }
-        const ac        = effectiveClip(S.activeTrack);
+    /* Canvaskit step editors (drum + melodic). The kit fonts don't map
+     * the formatters' em dash — normalize to "--". */
+    const _dash = (s) => s === '—' ? '--' : s;
+    const _stepTitle = 'Step ' + (S.heldStep + 1);
+    if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
+        /* Drum step edit: K1 Leng, K2 Vel, K3 Nudg, K5 Iter, K6 Prob, K7 Ratch. */
+        const t = S.activeTrack;
         if (S.heldStepNotes.length > 0) {
-            /* Melodic step edit: K1 Note + K2 Oct share the merged note box
-             * (same idiom as the drum NOTE FX lane box); K3 Leng, K4 Vel,
-             * K5 Nudg, K6 Iter, K7 Prob, K8 Ratch. */
-            const root = S.heldStepNotes[0];
-            const noteName = midiNoteName(root);
-            /* extra notes on the step ride alongside the name as "+2" */
-            const noteSub = S.heldStepNotes.length > 1
-                ? '+' + (S.heldStepNotes.length - 1) : '';
-            const noteLabel = noteSub ? noteName + noteSub : noteName;
-            const tps = S.clipTPS[S.activeTrack][ac] || 24;
+            const tps   = S.drumLaneTPS[t] || 24;
             const _gateSteps = S.stepEditGate / tps;
             const cells = heldStepCells();
-            drawStepEditKitPage(_stepTitle, cells, { name: noteName, sub: noteSub }, _footer);
-            return true;
-        } else if (S.stepWasEmpty) {
+            drawStepEditKitPage(_stepTitle, cells, null, _footer);
+        } else {
             drawStepEditKitPage(_stepTitle, null, null, _footer);
-            return true;
         }
-        /* non-empty step, notes still loading at hold threshold — fall through to bank/header */
-    } /* end else (non-bank-6 step edit) */
+        return true;
+    }
+    const ac        = effectiveClip(S.activeTrack);
+    if (S.heldStepNotes.length > 0) {
+        /* Melodic step edit: K1 Note + K2 Oct share the merged note box
+         * (same idiom as the drum NOTE FX lane box); K3 Leng, K4 Vel,
+         * K5 Nudg, K6 Iter, K7 Prob, K8 Ratch. */
+        const root = S.heldStepNotes[0];
+        const noteName = midiNoteName(root);
+        /* extra notes on the step ride alongside the name as "+2" */
+        const noteSub = S.heldStepNotes.length > 1
+            ? '+' + (S.heldStepNotes.length - 1) : '';
+        const noteLabel = noteSub ? noteName + noteSub : noteName;
+        const tps = S.clipTPS[S.activeTrack][ac] || 24;
+        const _gateSteps = S.stepEditGate / tps;
+        const cells = heldStepCells();
+        drawStepEditKitPage(_stepTitle, cells, { name: noteName, sub: noteSub }, _footer);
+        return true;
+    } else if (S.stepWasEmpty) {
+        drawStepEditKitPage(_stepTitle, null, null, _footer);
+        return true;
+    }
+    /* non-empty step, notes still loading at hold threshold — fall through to bank/header */
     return false;
 }
 
@@ -1525,7 +1414,6 @@ function drawUIBody() {
     if (S.daveBox) { drawDaveBox(); return; }
     if (S.snapshotPicker) { drawSnapshotPicker(); return; }
     if (S.projectPadPicker) { drawProjectPadPicker(); return; }
-    if (S.clearAutoMenu) { drawClearAutoMenu(); return; }
     if (S.pendingSceneBakePicker) {
         clear_screen();
         drawMenuHeader('BAKE SCENE');
@@ -1809,7 +1697,7 @@ function drawUIBody() {
             print(_l4x, 52, 'Steps: ', 1);
             print(_nvX, 52, steps + '/256', 0);
         }
-        if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank !== 6) {
+        if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
             const t   = S.activeTrack;
             const len = S.drumLaneLength[t];
             if (S.activeBank === 7) {
@@ -1823,40 +1711,6 @@ function drawUIBody() {
             print(_loopX2, 22, _loopL2, 1);
             print(_loopX3, 34, _loopL3, 1);
             _drawLoopSteps(len);
-        } else if (S.activeBank === 6) {
-            var _t_l = S.activeTrack;
-            var _ac_l = effectiveClip(_t_l);
-            var _ccL_l = S.ccActiveLane[_t_l];
-            var _llen_l = S.ccLaneLength[_t_l][_ac_l][_ccL_l];
-            var _ltps_l = S.ccLaneResTps[_t_l][_ac_l][_ccL_l] || S.ccLaneTps[_t_l][_ac_l][_ccL_l];
-            var _lbl_l = S.trackCCType[_t_l][_ccL_l] === 2
-                       ? ('Sch' + S.trackCCAssign[_t_l][_ccL_l])
-                       : fmtCCLabel(S.trackCCAssign[_t_l][_ccL_l]);
-            var _resN = _ltps_l === 12 ? '1/32' : _ltps_l === 48 ? '1/8'
-                      : _ltps_l === 96 ? '1/4' : _ltps_l === 384 ? '1bar' : '1/16';
-            var _lcHdr = 'Lane config: K' + (_ccL_l + 1) + '-' + _lbl_l;
-            pixelPrint(Math.floor((128 - _lcHdr.length * 6) / 2), 4, _lcHdr, 1);
-            fill_rect(0, 15, 128, 1, 1);
-            pixelPrint(1, 18, 'STEP BTN=Leng by page', 1);
-            pixelPrint(1, 25, 'JOG TURN=Leng by step', 1);
-            var _zoomTps_l = S.ccLaneTps[_t_l][_ac_l][_ccL_l] || (S.clipTPS[_t_l][_ac_l] || 24);
-            var _zoomN = _zoomTps_l === 12 ? '1/32' : _zoomTps_l === 48 ? '1/8'
-                       : _zoomTps_l === 96 ? '1/4' : _zoomTps_l === 384 ? '1bar' : '1/16';
-            var _resLabel = 'Resolution: <';
-            var _resValX = 1 + _resLabel.length * 6;
-            var _resValW = _resN.length * 6 + 2;
-            pixelPrint(1, 34, _resLabel, 1);
-            fill_rect(_resValX - 1, 33, _resValW, 7, 1);
-            pixelPrint(_resValX, 34, _resN, 0);
-            pixelPrint(_resValX + _resValW, 34, '>', 1);
-            var _zoomLabel = 'Zoom: +';
-            var _zoomValX = 1 + _zoomLabel.length * 6;
-            var _zoomValW = _zoomN.length * 6 + 2;
-            pixelPrint(1, 41, _zoomLabel, 1);
-            fill_rect(_zoomValX - 1, 40, _zoomValW, 7, 1);
-            pixelPrint(_zoomValX, 41, _zoomN, 0);
-            pixelPrint(_zoomValX + _zoomValW, 41, '-', 1);
-            _drawLoopSteps(_llen_l > 0 ? _llen_l : S.clipLength[_t_l][_ac_l]);
         } else {
             const ac_l    = effectiveClip(S.activeTrack);
             const steps_l = S.clipLength[S.activeTrack][ac_l];
@@ -1938,142 +1792,6 @@ function drawUIBody() {
         return;
     }
 
-    /* Auto bank display: lane info + automation graph + progress bar.
-     * (While SOUND + CONFIG is up, activeBank is BANK_SOUND — not 6 — so the
-     * fallback overview takes the default branches by construction.)
-     *
-     * ⚠ NO LONGER PERSISTENT (Josh, 2026-09-01, the one law: a bank is
-     * visually active only in bank mode or under a knob-touch peek). The old
-     * always-on idle graph is what he could not back out of on device —
-     * landing on AUTOMATION kept the graph up with Back unable to move the
-     * bank. The graph is now bank 6's IN-MODE screen: latched shows it, a
-     * touched knob swaps to the knob card (the branch above), Shift still
-     * stands it down for the track-switch read-out (Josh, 2026-08-24), and
-     * idle falls to the overview like every other bank. */
-    if (bank === 6 && S.bankCardLatched && !S.loopHeld && S.knobTouched < 0 && !S.shiftHeld) {
-        var _gt = S.activeTrack;
-        var _gac = effectiveClip(_gt);
-        var _gLane = S.ccActiveLane[_gt];
-        var _gLbl = S.trackCCType[_gt][_gLane] === 2
-                  ? ('Sch' + S.trackCCAssign[_gt][_gLane])
-                  : fmtCCLabel(S.trackCCAssign[_gt][_gLane]);
-        var _gParam = S.trackCCType[_gt][_gLane] === 2
-                    ? (S.schLabel[_gt][_gLane] || '') : '';
-        var _gEffLen = S.ccLaneLength[_gt][_gac][_gLane] || S.clipLength[_gt][_gac];
-        var _gDispTps = S.ccLaneTps[_gt][_gac][_gLane] || (S.clipTPS[_gt][_gac] || 24);
-        var _gLTps = S.ccLaneResTps[_gt][_gac][_gLane] || _gDispTps;
-        var _gResN = _gLTps === 12 ? '1/32' : _gLTps === 48 ? '1/8'
-                   : _gLTps === 96 ? '1/4' : _gLTps === 384 ? '1bar' : '1/16';
-        drawBankHeadingInverted(BANKS[6].name);
-        /* Lane info rows */
-        var _gVal = S.playing ? S.trackCCLiveVal[_gt][_gLane] : S.clipCCVal[_gt][_gac][_gLane];
-        var _gValStr = (_gVal >= 0 && _gVal <= 127) ? String(_gVal) : '--';
-        var _gLine1L = 'K' + (_gLane + 1) + ' ' + _gLbl + ': ';
-        mvPrint(4, 13, _gLine1L, 1);
-        var _gValX = 4 + mvWidth(_gLine1L) + 1;
-        mvPrint(_gValX, 13, _gValStr, 1);
-        fill_rect(_gValX, 19, mvWidth(_gValStr), 1, 1);
-        if (_gParam) {
-            var _gPTrunc = _gParam.length > 12 ? _gParam.substring(0, 12) : _gParam;
-            mvPrint(128 - mvWidth(_gPTrunc) - 2, 13, _gPTrunc, 1);
-        }
-        var _gZoomTps = S.ccLaneTps[_gt][_gac][_gLane] || (S.clipTPS[_gt][_gac] || 24);
-        var _gZoomN = _gZoomTps === 12 ? '1/32' : _gZoomTps === 48 ? '1/8'
-                    : _gZoomTps === 96 ? '1/4' : _gZoomTps === 384 ? '1bar' : '1/16';
-        var _gResStr = 'Res: ' + _gResN;
-        var _gZoomStr = 'Zoom: ' + _gZoomN;
-        mvPrint(4, 23, _gResStr, 1);
-        mvPrint(128 - mvWidth(_gZoomStr) - 4, 23, _gZoomStr, 1);
-        /* Automation graph: 128px wide, just above progress bar */
-        var _gBarY = 60, _gBarH = 3;
-        var _gH = 24, _gY = _gBarY - _gH - 3;
-        var _gPages = Math.ceil(_gEffLen / 16);
-        var _gCTps = S.clipTPS[_gt][_gac] || 24;
-        var _gTotalSteps = _gEffLen;
-        var _gKey = 'g_' + _gt + '_' + _gac + '_' + _gLane + '_' + _gEffLen;
-        if (_gKey !== S.ccGraphOvKey || (S.tickCount % POLL_INTERVAL) === 0) {
-            S.ccGraphOvData = [];
-            for (var _gp = 0; _gp < _gPages; _gp++) {
-                var _gRaw = host_module_get_param('t' + _gt + '_c' + _gac + '_ccsv_' + _gLane + '_' + _gp);
-                if (_gRaw) {
-                    var _gParts = _gRaw.split(' ');
-                    for (var _gs = 0; _gs < 16 && _gp * 16 + _gs < _gTotalSteps; _gs++)
-                        S.ccGraphOvData.push(_gs < _gParts.length ? parseInt(_gParts[_gs], 10) : 255);
-                }
-            }
-            S.ccGraphOvKey = _gKey;
-        }
-        /* Render graph: black background, 1px white border, white line */
-        fill_rect(0, _gY, 128, 1, 1);
-        fill_rect(0, _gY + _gH - 1, 128, 1, 1);
-        fill_rect(0, _gY, 1, _gH, 1);
-        fill_rect(127, _gY, 1, _gH, 1);
-        var _gDataLen = S.ccGraphOvData.length || 1;
-        var _gDrawY = _gY + 2, _gDrawH = _gH - 4;
-        var _gPrevPy = -1;
-        for (var _gc = 1; _gc < 127; _gc++) {
-            var _gIdx = Math.floor(_gc * _gDataLen / 128);
-            var _gv = _gIdx < S.ccGraphOvData.length ? S.ccGraphOvData[_gIdx] : -1;
-            if (_gv >= 0 && _gv <= 127) {
-                var _gpy = _gDrawY + _gDrawH - 1 - Math.round(_gv * (_gDrawH - 1) / 127);
-                if (_gPrevPy >= 0 && _gPrevPy !== _gpy) {
-                    var _gyMin = Math.min(_gPrevPy, _gpy);
-                    var _gyMax = Math.max(_gPrevPy, _gpy);
-                    fill_rect(_gc, _gyMin, 1, _gyMax - _gyMin + 1, 1);
-                } else {
-                    fill_rect(_gc, _gpy, 1, 1, 1);
-                }
-                _gPrevPy = _gpy;
-            } else {
-                _gPrevPy = -1;
-            }
-        }
-        /* Live playhead — white vertical line at the current loop position (melodic + drum) */
-        if (S.playing) {
-            var _gPhDen = _gEffLen * _gLTps;
-            var _gPhFrac = _gPhDen > 0 ? (S.masterPos % _gPhDen) / _gPhDen : 0;
-            var _gPhX = Math.max(1, Math.min(126, Math.round(_gPhFrac * 128)));
-            fill_rect(_gPhX, _gY + 1, 1, _gH - 2, 1);
-        }
-        /* Step-hold position indicator — black vertical line on graph */
-        if (S.heldStep >= 0) {
-            var _gSx = Math.floor(S.heldStep * 128 / _gDataLen);
-            if (_gSx > 127) _gSx = 127;
-            fill_rect(_gSx, _gY, 1, _gH, 0);
-        }
-        /* Progress bar — lane-aware */
-        var _gWinPages = Math.max(1, Math.ceil(_gEffLen / 16));
-        var _gViewPage = Math.max(0, Math.min(S.trackCurrentPage[_gt], _gWinPages - 1));
-        var _gSegGap = 1;
-        var _gSegW = Math.max(2, Math.floor((120 - (_gWinPages - 1) * _gSegGap) / _gWinPages));
-        var _gPlayPage = -1;
-        if (S.playing) {
-            var _gProg2 = (S.masterPos % (_gEffLen * _gLTps)) / (_gEffLen * _gLTps);
-            _gPlayPage = Math.floor(_gProg2 * _gWinPages);
-        }
-        for (var _gPg = 0; _gPg < _gWinPages; _gPg++) {
-            var _gx = 4 + _gPg * (_gSegW + _gSegGap);
-            if (_gPg === _gViewPage) {
-                fill_rect(_gx, _gBarY, _gSegW, _gBarH, 1);
-            } else if (_gPg === _gPlayPage) {
-                fill_rect(_gx, _gBarY, _gSegW, 1, 1);
-                fill_rect(_gx, _gBarY + _gBarH - 1, _gSegW, 1, 1);
-                fill_rect(_gx, _gBarY, 1, _gBarH, 1);
-                fill_rect(_gx + _gSegW - 1, _gBarY, 1, _gBarH, 1);
-            } else {
-                fill_rect(_gx, _gBarY + _gBarH - 1, _gSegW, 1, 1);
-            }
-        }
-        /* Playhead dot on progress bar */
-        if (S.playing) {
-            var _gBarW = _gWinPages * (_gSegW + _gSegGap) - _gSegGap;
-            var _gDotX = 4 + Math.floor(_gProg2 * _gBarW);
-            var _gViewStart = 4 + _gViewPage * (_gSegW + _gSegGap);
-            var _gOnSolid = _gDotX >= _gViewStart && _gDotX < _gViewStart + _gSegW;
-            fill_rect(_gDotX, _gBarY, 1, _gBarH, _gOnSolid ? 0 : 1);
-        }
-        return;
-    }
 
     /* Conductor banks (Responder/Octave/When): per-track 2x4 grid, shown on knob
      * touch / bank-select timeout; idle falls through to the resting overview like
@@ -2324,87 +2042,6 @@ function drawUIBody() {
                 mvPrint(_nx, _numY, _num, 1);
             }
         }
-        } else if (bank === 6) {
-        /* CC PARAM bank overview: label = CC# or "AT" (aftertouch); value =
-         * stopped → clip resting value or "—"; playing → defined value at the
-         * playhead or "—". Active lane cell is always highlighted. */
-        const t  = S.activeTrack;
-        const ac = effectiveClip(t);
-        drawBankHeadingInverted(S.altMode ? 'ASSIGN' : BANKS[6].name);
-        /* Active lane = touched knob, else the persistent active lane — drives the graph. */
-        const _ovLane = S.knobTouched >= 0 ? S.knobTouched : S.ccActiveLane[t];
-        /* Compact knobs: 2 rows of 4 (geometry mirrors the step-hold view) to free
-         * the lower third for the automation graph. */
-        for (let k = 0; k < 8; k++) {
-            const colX = 4 + (k % 4) * 31;
-            const rowY = 11 + (k < 4 ? 0 : 18);
-            const touchedHi = (S.knobTouched === k) || (S.ccActiveLane[t] === k);
-            const lbl = S.trackCCType[t][k] === 2 ? ('Sch' + S.trackCCAssign[t][k])
-                      : S.trackCCType[t][k] === 1 ? 'AT' : fmtCCLabel(S.trackCCAssign[t][k]);
-            const rawV = S.playing ? S.trackCCLiveVal[t][k] : S.clipCCVal[t][ac][k];
-            const val  = (rawV >= 0 && rawV <= 127) ? String(rawV) : '--';
-            if (S.altMode) {
-                /* ASSIGN: label half always highlighted (turning retargets CC/AT);
-                 * value half highlighted only when touched. */
-                fill_rect(colX - 1, rowY - 1, 29, 9, 1);
-                if (touchedHi) fill_rect(colX - 1, rowY + 8, 29, 9, 1);
-                mvPrint(colX, rowY + 1,  lbl, 0);
-                mvPrint(colX, rowY + 10, val, touchedHi ? 0 : 1);
-            } else {
-                if (touchedHi) fill_rect(colX - 1, rowY - 1, 29, 18, 1);
-                mvPrint(colX, rowY + 1,  lbl, touchedHi ? 0 : 1);
-                mvPrint(colX, rowY + 10, val, touchedHi ? 0 : 1);
-            }
-        }
-        /* Touch-activated automation graph of the active lane (12px, ported from
-         * the step-hold view) — follows the touched/active knob's lane. */
-        {
-            const _gEffLen = S.ccLaneLength[t][ac][_ovLane] || S.clipLength[t][ac];
-            const _gY = 46, _gH = 12;
-            const _gPages = Math.ceil(_gEffLen / 16);
-            const _gKey = 'sg_' + t + '_' + ac + '_' + _ovLane + '_' + _gEffLen;
-            if (_gKey !== S.ccGraphOvKey || (S.tickCount % POLL_INTERVAL) === 0) {
-                S.ccGraphOvData = [];
-                for (let _gp = 0; _gp < _gPages; _gp++) {
-                    const _gRaw = host_module_get_param('t' + t + '_c' + ac + '_ccsv_' + _ovLane + '_' + _gp);
-                    if (_gRaw) {
-                        const _gParts = _gRaw.split(' ');
-                        for (let _gs = 0; _gs < 16 && _gp * 16 + _gs < _gEffLen; _gs++)
-                            S.ccGraphOvData.push(_gs < _gParts.length ? parseInt(_gParts[_gs], 10) : 255);
-                    }
-                }
-                S.ccGraphOvKey = _gKey;
-            }
-            fill_rect(0, _gY, 128, 1, 1);
-            fill_rect(0, _gY + _gH - 1, 128, 1, 1);
-            fill_rect(0, _gY, 1, _gH, 1);
-            fill_rect(127, _gY, 1, _gH, 1);
-            const _dLen = S.ccGraphOvData.length || 1;
-            const _dY = _gY + 2, _dH = _gH - 4;
-            let _prevPy = -1;
-            for (let _gc = 1; _gc < 127; _gc++) {
-                const _idx = Math.floor(_gc * _dLen / 128);
-                const _gv = _idx < S.ccGraphOvData.length ? S.ccGraphOvData[_idx] : -1;
-                if (_gv >= 0 && _gv <= 127) {
-                    const _py = _dY + _dH - 1 - Math.round(_gv * (_dH - 1) / 127);
-                    if (_prevPy >= 0 && _prevPy !== _py)
-                        fill_rect(_gc, Math.min(_prevPy, _py), 1, Math.abs(_py - _prevPy) + 1, 1);
-                    else
-                        fill_rect(_gc, _py, 1, 1, 1);
-                    _prevPy = _py;
-                } else {
-                    _prevPy = -1;
-                }
-            }
-            /* Live playhead — white vertical line at the current loop position (melodic + drum) */
-            if (S.playing) {
-                const _pvSpeed = S.ccLaneResTps[t][ac][_ovLane] || S.ccLaneTps[t][ac][_ovLane] || (S.clipTPS[t][ac] || 24);
-                const _pvDen = _gEffLen * _pvSpeed;
-                const _pvFrac = _pvDen > 0 ? (S.masterPos % _pvDen) / _pvDen : 0;
-                const _pvX = Math.max(1, Math.min(126, Math.round(_pvFrac * 128)));
-                fill_rect(_pvX, _gY + 1, 1, _gH - 2, 1);
-            }
-        }
         } else if (S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM && bank === 1) {
         /* Melodic NOTE FX: K1=Oct, K2=Ofs, K3=Vel, K4=Qnt, K5=Len, K6=>Gate,
          * K7=blocked, K8=Rnd — canvaskit grid (proportional labels, so
@@ -2531,7 +2168,7 @@ function drawUIBody() {
         const bankName  = S.activeBank === 7
             ? (Math.floor(S.clockMs / 220) % 2 === 0 ? 'ALL' : '   ') + ' LANES'
             : _bnStatic;
-        (S.activeBank === 5 || S.activeBank === 6 ? drawBankHeadingInverted : drawBankHeading)(bankName, false, true);
+        (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankName, false, true);
         /* info row sits at y=12 — 2px clear of the header rule on row 9 */
         pixelPrint(4, 12, bankGroup + '  Pad:' + name + oct + ' (' + note + ')', 1);
         const laneBit = 1 << lane;
@@ -2567,7 +2204,7 @@ function drawUIBody() {
         const keyScl  = NOTE_KEYS[S.padKey] + ' ' + (SCALE_DISPLAY[S.padScale] || '?');
         const CHAR_W  = 6;
         const keySclX = 128 - 4 - keyScl.length * CHAR_W;
-        (S.activeBank === 5 || S.activeBank === 6 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(S.activeTrack, S.activeBank) + recTag, false, true);
+        (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(S.activeTrack, S.activeBank) + recTag, false, true);
         /* info row sits at y=12 — 2px clear of the header rule on row 9 */
         pixelPrint(4, 12, octStr, 1);
         if (S.bankParams[S.activeTrack][5][0]) {

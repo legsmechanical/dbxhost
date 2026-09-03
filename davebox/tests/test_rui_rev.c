@@ -108,66 +108,6 @@ int main(void) {
      * 30s (the manager backstop). Each assertion pins the bump.
      * ================================================================ */
 
-    /* ---- sp_track_ccauto.c: track-level knob assign/type (t6) ---- */
-    {
-        unsigned r = rev(h);
-        hx_set_param(h, "t6_cc_assign", "0 10");
-        HX_ASSERT(rev(h) == r + 1, "cc_assign must bump rui_rev");
-    }
-    {
-        unsigned r = rev(h);
-        hx_set_param(h, "t6_cc_type_assign", "1 0 20");
-        HX_ASSERT(rev(h) == r + 1, "cc_type_assign must bump rui_rev");
-    }
-    {
-        unsigned r = rev(h);
-        hx_set_param(h, "t6_cc_type", "2 1");
-        HX_ASSERT(rev(h) == r + 1, "cc_type must bump rui_rev");
-    }
-    /* cc_send is a live transmit, not stored automation -- must NOT bump. */
-    {
-        unsigned r = rev(h);
-        hx_set_param(h, "t6_cc_send", "0 64");
-        HX_ASSERT(rev(h) == r, "cc_send must NOT bump rui_rev (live transmit only)");
-    }
-
-    /* ---- sp_track_ccauto.c: clip-scoped automation edits (t6, clip 3) ---- */
-    {
-        unsigned r = rev(h);
-        hx_set_param(h, "t6_cc_rest", "3 4 50");
-        HX_ASSERT(rev(h) == r + 1, "cc_rest must bump rui_rev");
-    }
-    {
-        unsigned r = rev(h);
-        hx_set_param(h, "t6_cc_auto_set", "3 4 100 60");
-        HX_ASSERT(rev(h) == r + 1, "cc_auto_set must bump rui_rev");
-    }
-    {
-        unsigned r = rev(h);
-        hx_set_param(h, "t6_cc_auto_set2", "3 4 0 50 70");
-        HX_ASSERT(rev(h) == r + 1, "cc_auto_set2 must bump rui_rev");
-    }
-    {
-        unsigned r = rev(h);
-        hx_set_param(h, "t6_cc_auto_clear_k", "3 4");
-        HX_ASSERT(rev(h) == r + 1, "cc_auto_clear_k must bump rui_rev");
-    }
-    {
-        unsigned r = rev(h);
-        hx_set_param(h, "t6_cc_auto_clear_range", "3 4 0 50");
-        HX_ASSERT(rev(h) == r + 1, "cc_auto_clear_range must bump rui_rev");
-    }
-    {
-        unsigned r = rev(h);
-        hx_set_param(h, "t6_cc_auto_clear_step", "3 0 50");
-        HX_ASSERT(rev(h) == r + 1, "cc_auto_clear_step must bump rui_rev");
-    }
-    {
-        unsigned r = rev(h);
-        hx_set_param(h, "t6_cc_auto_clear", "3");
-        HX_ASSERT(rev(h) == r + 1, "cc_auto_clear must bump rui_rev");
-    }
-
     /* ---- sp_globals_edit.c: clip_copy/drum_clip_copy/drum_clip_cut mark the
      * DESTINATION clip (drum_clip_cut also marks SRC, since it clears it --
      * two rui_mark calls => +2). row_clear spans all tracks at one clip
@@ -258,21 +198,6 @@ int main(void) {
         r = rev(h);
         hx_set_param(h, "t2_c5_loop_set", "8");
         HX_ASSERT(rev(h) == r + 1, "_loop_set (not recording) must bump rui_rev");
-    }
-    {
-        unsigned r;
-        r = rev(h); hx_set_param(h, "t2_c5_k2_cc_loop_set", "4");
-        HX_ASSERT(rev(h) == r + 1, "_k2_cc_loop_set must bump rui_rev");
-        r = rev(h); hx_set_param(h, "t2_c5_k2_cc_lane_length", "5");
-        HX_ASSERT(rev(h) == r + 1, "_cc_lane_length must bump rui_rev");
-        r = rev(h); hx_set_param(h, "t2_c5_k2_cc_lane_tps", "48");
-        HX_ASSERT(rev(h) == r + 1, "_cc_lane_tps must bump rui_rev");
-        r = rev(h); hx_set_param(h, "t2_c5_k2_cc_lane_res_tps", "48");
-        HX_ASSERT(rev(h) == r + 1, "_cc_lane_res_tps must bump rui_rev");
-        r = rev(h); hx_set_param(h, "t2_c5_k2_cc_lane_reset", "1");
-        HX_ASSERT(rev(h) == r + 1, "_cc_lane_reset must bump rui_rev");
-        r = rev(h); hx_set_param(h, "t2_c5_k2_cc_lane_double_fill", "1");
-        HX_ASSERT(rev(h) == r + 1, "_cc_lane_double_fill must bump rui_rev");
     }
     {
         unsigned r;

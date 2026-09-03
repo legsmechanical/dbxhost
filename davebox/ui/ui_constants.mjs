@@ -400,8 +400,11 @@ export const BANKS = [
         p('Sync', 'Sync to Clock', 'tarp_sync',       'track', 0,   1,   1,  fmtBool,     16),
         p('Latch', 'Latch',         'tarp_latch',      'track', 0,   1,   0,  fmtBool,     16),
     ]},
-    /* 6 — AUTO (pad 98) — per-clip CC + aftertouch (+ PB later) automation; custom handling, no DSP-wired knobs */
-    { name: 'AUTOMATION', knobs: [_X, _X, _X, _X, _X, _X, _X, _X] },
+    /* 6 — RETIRED. The old AUTO / CC-lane bank; deleted in P8 (2026-09-03) and
+     * off every jog walk since 2026-09-03 (a stored 6 restores as
+     * BANK_AUTOMATION). The INDEX must stay so BANKS[7]..BANKS[14] keep their
+     * numbers — all stubs, so a stray read draws nothing. */
+    { name: 'AUTO (retired)', knobs: [_X, _X, _X, _X, _X, _X, _X, _X] },
     /* 7 — ALL LANES (drum pad 92) — macro controls across all 32 drum lanes.
      * K1=Res (all-lane resolution, custom), K2=Stch, K3=Shft (alt=Nudge),
      * K4=Qnt (custom), K5=VelIn (custom), K6=InQ (custom),
@@ -508,12 +511,6 @@ export const POLL_INTERVAL = 4;
 export const CC_SCRATCH_PALETTE_BASE = 51;  /* 51-58: per-knob value brightness (knob LEDs) */
 export const OOB_SCRATCH_PALETTE     = 50;  /* scratch index for 50%-white OOB step LEDs */
 export const BEAT_MARKER_PALETTE     = 49;  /* scratch index for 10%-white beat marker LEDs */
-export const CC_GRADIENT_BASE        = 59;  /* 59-61: active-lane step-LED gradient (3 levels) */
-export const CC_GRADIENT_LEVELS      = 3;
-/* Brightness scalars per gradient level (value 0 = dim floor, 127 = full).
- * The LEDs can't resolve many white brightness steps, so we use just 3
- * widely-separated levels: dim / mid / full. */
-export const CC_GRADIENT_SCALARS     = [0.30, 0.60, 1.0];
 /* Hold a step + jog: right REVEALS the STEP bank, left RETURNS; a second detent
  * inside this window is the same flick, not a second instruction. */
 export const STEP_REVEAL_DEBOUNCE_MS = 150;

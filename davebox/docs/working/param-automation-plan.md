@@ -213,11 +213,17 @@ survive with length-pinning (seq8_bake.c:735-748), all target kinds. EXPORT (→
 cc:/at entries render into the non-destructive renderers (:258-459, :939); chain-param
 entries omitted (no MIDI representation).
 
-**P8 — Deletion sweep.** Per the inventory (worklog 2026-09-02): + `ui_export.mjs`,
-`ui_input_cc.mjs`, `ui.js` (rev-1 list was short). Capture re-pointed at the new writer;
-AT + drum lanes preserved; rui_cc/web_ui_seq band editor **dropped from v1 explicitly**
-(spec §5.3 permits; re-point is a follow-up front); MANUAL-SA §11 rewrite; REMOTE_UI.md;
-CHANGELOG Removed.
+**P8 — Deletion sweep. ✅ BUILT (2026-09-03).** The CC-lane system is gone from the module
+UI, the DSP, the remote UI and the docs: bank 6's branches, the CLEAR AUTOMATION modal,
+`cc_auto_t` and its helpers, `sp_track_ccauto.c`, the `_cc_*` getters and set keys, the
+`rui_cc`/`rui_ccmeta` snapshot fields and the browser's band editor. State stopped
+serializing cc lanes; loading is unchanged (v=36, key-addressed, so an old project's cc
+keys are simply never read). AT lanes and drum lanes were preserved whole, per Josh.
+`BANKS[6]` survives as an all-stub `AUTO (retired)` entry so the later bank indices hold.
+MANUAL-SA §11 rewritten around the store, REMOTE_UI.md rows dropped, CHANGELOG Removed
+added. Tests: `test_drum_cc_automation.c` deleted; bake-parity D3, capture case 4, the
+rui_cc budget case, the sp_track_ccauto rev/domain blocks and the `_kN_cc_*` pins
+re-anchored or dropped. Suite rc=0.
 
 ## 2. Standing risks
 - Write budget vs. dense multi-param automation: the budget + staleness round-robin degrades

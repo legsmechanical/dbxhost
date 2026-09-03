@@ -41,7 +41,7 @@ import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { daveBoxRotate } from './ui_daves.mjs';
 import {
-    closeClearAutoMenu, projectPickerTextEntryMidi,
+    projectPickerTextEntryMidi,
     projectPadPickerTap, projectPadPickerRotate, projectPadPickerClick
 } from './ui_dialogs.mjs';
 import { MoveShift } from '/data/UserData/schwung/shared/constants.mjs';
@@ -496,14 +496,6 @@ function _onMidiInternalImpl(data) {
     if ((status & 0xF0) === 0xB0 && d1 === 79 && !S.shiftHeld) return;
     if (((status & 0xF0) === 0x90 || (status & 0xF0) === 0x80) && d1 === 8) return;
 
-    /* AUTO-bank Delete-tap detection: any input other than the Delete button
-     * itself while Delete is armed disqualifies the tap, so Delete+jog /
-     * Delete+knob / Delete+step keep their combos and don't also open the
-     * CLEAR AUTOMATION menu on release. */
-    if (S.deleteTapArmed && (status & 0x80) &&
-            !((status & 0xF0) === 0xB0 && d1 === MoveDelete))
-        S.deleteTapArmed = false;   /* (status & 0x80) ignores the Move's null/heartbeat (0x00) messages */
-
     /* Snapshot picker is a mid-session modal: swallow all input except the jog
      * (CC 3 click + CC 14 rotate, → _onCC_jog) and Note/Session (CC 50, closes
      * it), so pads/steps/transport/knobs can't edit the underlying clip while
@@ -512,23 +504,6 @@ function _onMidiInternalImpl(data) {
         const _ccPick = (status & 0xF0) === 0xB0 &&
             (d1 === 3 || d1 === MoveMainKnob || d1 === MoveNoteSession);
         if (!_ccPick) return;
-    }
-
-    /* CLEAR AUTOMATION modal: swallow all input except the jog (CC 3 click +
-     * CC 14 rotate, → _onCC_jog / MoveMainKnob). Exits without changing anything:
-     * Note/Session (the menu button), or tapping Delete again. */
-    if (S.clearAutoMenu) {
-        /* ⚠ Note/Session no longer closes it HERE — it falls through to the
-         * escape, which closes this and anything else open in one pass. Closing
-         * one level here would disagree with the law the moment a dialog sat
-         * over the menu. Tapping Delete again still closes it. */
-        if ((status & 0xF0) === 0xB0 && d2 === 127 && d1 === MoveDelete) {
-            closeClearAutoMenu();
-            return;
-        }
-        const _ccMenu = (status & 0xF0) === 0xB0 &&
-            (d1 === 3 || d1 === MoveMainKnob || d1 === MoveNoteSession);
-        if (!_ccMenu) return;
     }
 
     /* While session overview is held, swallow everything except CC 50 release and Up/Down scroll. */
@@ -622,12 +597,6 @@ function _onMidiInternalImpl(data) {
                         else             setTrackMute(d1, !S.trackMuted[d1]);
                         invalidateLEDCache();
                     }
-                    /* CC bank: touching a knob makes it the active lane (persistent
-                     * — drives the step-LED gradient and highlighted overview cell). */
-                    if (S.activeBank === 6) {
-                        S.ccActiveLane[S.activeTrack] = d1;
-                        invalidateLEDCache();
-                    }
                     /* Perf view: touch knob k toggles looper for track k */
                     if (S.perfViewLocked) {
                         const _lt = d1;
@@ -636,16 +605,6 @@ function _onMidiInternalImpl(data) {
                         applyTrackConfig(_lt, 'track_looper', _newLooper);
                         showActionPopup('LOOPER ' + (_newLooper ? 'ON' : 'OFF'), 'TRACK ' + (_lt + 1));
                         setButtonLED(71 + _lt, _newLooper ? trackColor(_lt) : LED_OFF, true);
-                    }
-                    /* CC bank: Delete+touch clears this knob's automation + resting value → "—" */
-                    if (S.activeBank === 6 && S.deleteHeld && !S.shiftHeld) {
-                        const _dt = S.activeTrack, _dac = effectiveClip(_dt);
-                        S.trackCCAutoBits[_dt][_dac] &= ~(1 << d1);
-                        S.trackCCLiveVal[_dt][d1] = -1;
-                        S.clipCCVal[_dt][_dac][d1] = -1;
-                        host_module_set_param('t' + _dt + '_cc_auto_clear_k', _dac + ' ' + d1);
-                        showActionPopup('CC', 'CLEAR');
-                        invalidateLEDCache();
                     }
                     /* SEQ ARP K5 / TRACK ARP K5 touch: switch pads to vel-slider editor immediately. */
                     if ((S.activeBank === 4 && d1 === 4) || (S.activeBank === 5 && d1 === 4)) forceRedraw();

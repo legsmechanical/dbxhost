@@ -27,7 +27,7 @@ int main(void) {
     HX_ASSERT(h, "create failed");
 
     /* Populate enough that the digest carries real content: notes across
-     * clips, a non-default length/loop window, automation, and track config. */
+     * clips, a non-default length/loop window, and track config. */
     hx_set_param(h, "t0_c0_step_0_toggle", "60 100");
     hx_set_param(h, "t0_c0_step_5_toggle", "64 90");
     hx_set_param(h, "t0_c1_step_3_toggle", "67 80");
@@ -35,7 +35,6 @@ int main(void) {
     hx_set_param(h, "t0_c1_loop_start", "4");
     hx_set_param(h, "t0_pad_octave", "3");
     hx_set_param(h, "t0_channel", "5");
-    hx_set_param(h, "t0_c0_cc_lane_loops", "0 8 24 24 2 4 12 12 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0");
 
     static char digest[65536];
     int dn = hx_get_param(h, "t0_digest", digest, (int)sizeof(digest));

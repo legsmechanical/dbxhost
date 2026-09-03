@@ -256,18 +256,8 @@ static void convert_track_to_conduct(seq8_instance_t *inst, int t) {
      * (notes[], steps[], step_iter, step_random) is left untouched. */
     for (c = 0; c < NUM_CLIPS; c++) {
         clip_pfx_params_init(&tr->clips[c].pfx_params);
-        cc_auto_reset(&tr->clip_cc_auto[c]);
         at_auto_reset(&tr->clip_at_auto[c]);
     }
-    memset(tr->cc_auto_last_sent, 0xFF, 8);
-    memset(tr->cc_auto_cur_val, 0xFF, 8);
-    /* Reset CC latch-recording state (mirrors create_instance seq8.c:6246-6249).
-     * If converted mid-recording, a stale cc_was_recording=1 would make the next
-     * tick run cc_finalize_latch against the just-cleared automation. */
-    tr->cc_latched       = 0;
-    tr->cc_was_recording = 0;
-    tr->cc_prev_ct       = 0;
-    memset(tr->cc_latch_last_snap, 0xFF, sizeof(tr->cc_latch_last_snap));
     memset(tr->at_last_sent, 0xFF, AT_MAX_LANES);
     tr->at_last_clip = 0xFF;
 

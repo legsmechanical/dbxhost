@@ -847,7 +847,7 @@ function openTrackGear(t,anchor){
 }
 function selectClip(t,c){
   R.setParam(P+`t${t}_c${c}_ruisel`,"");
-  selNote=null; selStep=-1; selDrum=null; allLanes=false; ccSel=-1;   /* new clip → drop selections + All-Lanes + automation focus */
+  selNote=null; selStep=-1; selDrum=null; allLanes=false;   /* new clip → drop selections + All-Lanes */
   if(M){ M.sel.t=t; M.sel.c=c; renderSession(); renderChrome(); }
   /* selection is not an edit — pull the newly-selected clip promptly */
   suppressRefreshUntil=0; setTimeout(refresh,30);
@@ -865,15 +865,10 @@ function selectClip(t,c){
  * mouse keeps right-click/alt delete + wheel-scroll + ctrl-wheel zoom. */
 const cv=document.getElementById("rollcanvas"), ctx=cv.getContext("2d");
 const vc=document.getElementById("velcanvas"), vctx=vc.getContext("2d");
-const ac=document.getElementById("autocanvas"), actx=ac.getContext("2d");
-let AVW=880, AVH=70;
-let ccSel=-1;                    /* focused automation lane (knob index) or -1 */
 /* collapsible band state (persisted like the accordion prefs, dbx_*Open) */
-let velOpen=true, autoOpen=false;
+let velOpen=true;
 try{ const v=localStorage.getItem("dbx_velOpen"); if(v!=null) velOpen=JSON.parse(v); }catch(e){}
-try{ const v=localStorage.getItem("dbx_autoOpen"); if(v!=null) autoOpen=JSON.parse(v); }catch(e){}
-function saveBands(){ try{ localStorage.setItem("dbx_velOpen",JSON.stringify(velOpen));
-  localStorage.setItem("dbx_autoOpen",JSON.stringify(autoOpen)); }catch(e){} }
+function saveBands(){ try{ localStorage.setItem("dbx_velOpen",JSON.stringify(velOpen)); }catch(e){} }
 let selStep=-1;   /* selected step index for the step-param editor (or -1) */
 const NOTE_NAMES=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const noteName=n=>NOTE_NAMES[((n%12)+12)%12]+(Math.floor(n/12)-1);
@@ -923,11 +918,9 @@ let loopEmitT=0;
 function setLoop(ls,len,commit){ ls=Math.max(0,Math.min(255,ls|0)); len=Math.max(1,len|0); if(ls+len>256) len=256-ls;
   if(isDrum()){ if(M.laneInfo){ M.laneInfo.ls=ls; M.laneInfo.len=len; } } else { M.clip.ls=ls; M.clip.len=len; }
   clampScroll();
-  /* automation focus: the brace edits the focused CC lane's loop instead of the clip's */
   /* drum: All-Lanes mode sets every lane's loop (matches the drum panel's loop-start
    * slider laneEmit(...,"all_lanes_loop_set")); single-lane writes the selected lane. */
-  const key=(!isDrum()&&ccSel>=0)?`t${M.sel.t}_c${ccClip()}_k${ccSel}_cc_loop_set`
-    :isDrum()?(allLanes?`t${M.sel.t}_all_lanes_loop_set`:`t${M.sel.t}_l${M.sel.lane}_loop_set`)
+  const key=isDrum()?(allLanes?`t${M.sel.t}_all_lanes_loop_set`:`t${M.sel.t}_l${M.sel.lane}_loop_set`)
     :`t${M.sel.t}_c${M.sel.c}_loop_set`;
   const n=now(); if(commit||n-loopEmitT>55){ loopEmitT=n; R.setParam(P+key,String(ls*65536+len)); afterEdit(); }
   if(commit) pullSoon(); }
@@ -977,17 +970,6 @@ function layout(){
   VVW=Math.max(300,vw.clientWidth||VW); VVH=vw.clientHeight||56;
   vc.style.width=VVW+"px"; vc.style.height=VVH+"px"; vc.width=Math.round(VVW*dpr); vc.height=Math.round(VVH*dpr);
   vctx.setTransform(dpr,0,0,dpr,0,0);
-  /* ⚠ Sized like the velocity lane above — FALL BACK on a zero measurement, do
-   * not skip. This used to be gated on `aw.clientHeight>0`, so a single layout()
-   * that measured 0 (the lane is revealed and measured in the same synchronous
-   * block when a CC chip is clicked) left the canvas at 0x0 FOREVER: drawAuto()
-   * then painted into nothing and the automation lane opened blank — indistin-
-   * guishable from "the button did nothing". Its velocity sibling one line up
-   * always had the fallback; this was the odd one out. */
-  const aw=document.getElementById("autowrap");
-  if(aw && aw.style.display!=="none"){ AVW=Math.max(300,aw.clientWidth||VW); AVH=aw.clientHeight||72;
-    ac.style.width=AVW+"px"; ac.style.height=AVH+"px"; ac.width=Math.round(AVW*dpr); ac.height=Math.round(AVH*dpr);
-    actx.setTransform(dpr,0,0,dpr,0,0); }
   if(!M) return;
   /* on a fresh clip selection: fit the clip width and re-center on content */
   const ck=M.sel.t+":"+M.sel.c+":"+(isDrum()?"d":"m");
@@ -1031,7 +1013,6 @@ function draw(){
   ctx.beginPath(); ctx.moveTo(GUTTER+0.5,0); ctx.lineTo(GUTTER+0.5,VH);
   ctx.moveTo(0,RULER+0.5); ctx.lineTo(VW,RULER+0.5); ctx.stroke();
   drawVel();
-  drawAuto();
 }
 function drawPitchBodies(){ const [r0,r1]=visRows(), sk=(M.glob?M.glob.key:0)%12;
   for(let r=r0;r<=r1;r++){ const p=rowList[r], s=((p%12)+12)%12, blk=BLACK_KEY[s], y=yOfRow(r);
@@ -1431,141 +1412,16 @@ function vAdjust(mx,my){ const drum=isDrum();
   else { emit("note_vel",`${n.tick} ${n.pitch} ${vel}`); selNote={tick:n.tick,pitch:n.pitch}; }
   renderNoteEdit(); }
 
-/* ================= automation band (CC lanes, melodic-only) =================
- * Mirrors the velocity strip: same x = tick→px via the shared ruler/zoom; y maps
- * 0..127 over the band height. One focused lane at a time (ccSel) gated by
- * tN_cC_cc_focus; the device streams that lane's breakpoints as rui_cc. Edits use
- * the verified tN_cc_auto_* keys; the model is mutated optimistically (like notes)
- * so the curve follows the gesture before the device round-trips. */
-/* CC automation is track-level; melodic sources it from the selected clip, drum
- * mode from the track's ACTIVE clip (rui_index ac). All CC writes target ccClip(). */
-function ccClip(){ if(!M) return 0;
-  if(isDrum()){ const tr=M.tracks[M.sel.t]; return tr?tr.ac:M.sel.c; } return M.sel.c; }
+/* ================= band visibility =================
+ * The velocity strip's show/hide. (The CC-automation band that used to live
+ * beside it went with the CC lanes in P8 — automation is the parameter store,
+ * edited on the device's AUTOMATION bank.) */
 function bandsApply(){
-  const drum=isDrum();
   const vh=document.getElementById("velhdr"), vw=document.getElementById("velwrap");
   if(vh) vh.querySelector(".tw").textContent=velOpen?"▼":"▶";
   if(vw) vw.style.display=velOpen?"block":"none";
-  const ah=document.getElementById("autohdr"), ap=document.getElementById("autopick"),
-        actl=document.getElementById("autoctl"), aw=document.getElementById("autowrap");
-  /* automation is shown for drum tracks too (engine supports track-level CC, keyed
-   * by the active clip) — no longer hidden in drum mode */
-  if(ah){ ah.style.display="flex"; ah.querySelector(".tw").textContent=autoOpen?"▼":"▶"; }
-  const show=autoOpen;
-  if(ap) ap.style.display=show?"flex":"none";
-  if(actl) actl.style.display=(show&&ccSel>=0)?"flex":"none";
-  if(aw) aw.style.display=(show&&ccSel>=0)?"block":"none";
 }
-function ccLabel(m){ return m.type===1?"Aft":m.type===2?"Schw":("CC"+(m.assign|0)); }
-function renderCcPicker(){
-  const el=document.getElementById("autopick"); if(!el) return;
-  if(!autoOpen){ el.innerHTML=""; return; }
-  const meta=(M&&M.ccmeta)||[];
-  let html="";
-  for(let k=0;k<8;k++){ const m=meta[k]||{assign:0,type:0,hasdata:false,cur:255};
-    const assigned=(m.type|0)!==0||(m.assign|0)>0;
-    const cur=(m.cur!=null&&m.cur!==255)?String(m.cur):"";
-    html+=`<button class="ccslot${k===ccSel?" sel":""}${assigned?"":" off"}" data-k="${k}" title="Knob ${k+1} — ${ccLabel(m)}">`+
-      `<span class="ccn">${ccLabel(m)}</span>`+(m.hasdata?`<span class="ccdot"></span>`:"")+
-      (cur?`<span class="ccv">${cur}</span>`:"")+`</button>`; }
-  el.innerHTML=html;
-  el.querySelectorAll(".ccslot").forEach(b=>b.onclick=()=>focusCc(+b.dataset.k));
-  const hs=document.getElementById("autohsum");
-  if(hs) hs.textContent=(ccSel>=0)?ccLabel(meta[ccSel]||{assign:0,type:0}):"";
-}
-function focusCc(k){ if(!M) return; ccSel=(ccSel===k?-1:k);
-  R.setParam(P+`t${M.sel.t}_c${ccClip()}_cc_focus`,String(ccSel)); afterEdit(); pullSoon();
-  renderCcPicker(); renderCcCtl(); bandsApply(); layout(); drawAuto(); }
-function renderCcCtl(){
-  const el=document.getElementById("autoctl"); if(!el) return;
-  /* don't clobber an in-progress edit of a control input (poll re-render) */
-  if(document.activeElement && document.activeElement.closest && document.activeElement.closest("#autoctl")) return;
-  if(!autoOpen||ccSel<0||!M){ el.innerHTML=""; el.style.display="none"; return; }
-  el.style.display="flex";
-  const m=(M.ccmeta&&M.ccmeta[ccSel])||{assign:0,type:0,rest:255};
-  const restv=(m.rest!=null&&m.rest!==255)?m.rest:"";
-  el.innerHTML=
-    `<span class="cclab">Lane ${ccSel+1}</span>`+
-    `<label>Type <select id="ccType"><option value="0"${(m.type|0)===0?" selected":""}>CC</option>`+
-      `<option value="2"${(m.type|0)===2?" selected":""}>Schw</option>`+
-      `<option value="1"${(m.type|0)===1?" selected":""}>Aft</option></select></label>`+
-    `<label>CC# <input id="ccNum" type="number" min="0" max="127" value="${m.assign|0}" style="width:54px;text-align:right"></label>`+
-    `<label>Rest <input id="ccRest" type="number" min="0" max="127" placeholder="—" value="${restv}" style="width:54px;text-align:right"></label>`+
-    `<button class="sm danger" id="ccClr" title="Erase this lane's automation">Clear lane</button>`;
-  const assign=()=>{ const ty=+el.querySelector("#ccType").value,
-      cc=Math.max(0,Math.min(127,+el.querySelector("#ccNum").value|0));
-    R.setParam(P+`t${M.sel.t}_cc_type_assign`,`${ccSel} ${ty} ${cc}`); afterEdit(); pullSoon(); };
-  el.querySelector("#ccType").onchange=assign;
-  el.querySelector("#ccNum").onchange=assign;
-  el.querySelector("#ccRest").onchange=e=>{ const s=e.target.value;
-    const v=(s===""||s==null)?128:Math.max(0,Math.min(127,+s|0));
-    R.setParam(P+`t${M.sel.t}_cc_rest`,`${ccClip()} ${ccSel} ${v}`); afterEdit(); pullSoon(); };
-  el.querySelector("#ccClr").onclick=()=>{ R.setParam(P+`t${M.sel.t}_cc_auto_clear_k`,`${ccClip()} ${ccSel}`);
-    if(M.cc&&M.cc.k===ccSel) M.cc.points=[]; afterEdit(); pullSoon(); drawAuto(); };
-}
-const AVPAD=5;   /* top inset; ccVofY MUST use this so it stays the exact inverse of ccYofV */
-const ccYofV=v=>AVH-3-(Math.max(0,Math.min(127,v))/127)*(AVH-8);
-const ccVofY=y=>Math.max(0,Math.min(127,Math.round((1-(y-AVPAD)/(AVH-8))*127)));
-function drawAuto(){
-  if(!autoOpen||ccSel<0||!M) return;
-  actx.clearRect(0,0,AVW,AVH); actx.fillStyle="#0e1014"; actx.fillRect(0,0,AVW,AVH);
-  /* musical step grid (mirror drawVel) */
-  const tps=gridTps(), len=gridLen();
-  for(let s=0;s<=len;s+=4){ const x=xOfTick(s*tps); if(x<GUTTER||x>AVW) continue;
-    actx.strokeStyle=(s%16===0)?"#262c36":"#1a1e25"; actx.beginPath(); actx.moveTo(x,0); actx.lineTo(x,AVH); actx.stroke(); }
-  const meta=(M.ccmeta&&M.ccmeta[ccSel])||{assign:0,type:0,rest:255}, accent=rollAccent();
-  /* resting-value baseline (dashed) */
-  if(meta.rest!=null&&meta.rest!==255){ const yr=ccYofV(meta.rest);
-    actx.strokeStyle="rgba(90,96,108,0.6)"; actx.setLineDash([4,4]); actx.beginPath();
-    actx.moveTo(GUTTER,yr); actx.lineTo(AVW,yr); actx.stroke(); actx.setLineDash([]); }
-  const pts=(M.cc&&M.cc.k===ccSel)?M.cc.points:[];
-  if(pts.length){ actx.strokeStyle=hexA(accent,0.9); actx.lineWidth=2; actx.beginPath();
-    pts.forEach((p,i)=>{ const x=xOfTick(p.tick), y=ccYofV(p.val); if(i===0)actx.moveTo(x,y); else actx.lineTo(x,y); });
-    actx.stroke();
-    pts.forEach(p=>{ const x=xOfTick(p.tick), y=ccYofV(p.val); if(x<GUTTER-5||x>AVW+5) return;
-      actx.fillStyle=accent; actx.beginPath(); actx.arc(x,y,4.5,0,7); actx.fill(); }); }
-  /* faint value reference lines at 127 / 64 / 0 */
-  [127,64,0].forEach(v=>{ const y=ccYofV(v);
-    actx.strokeStyle="rgba(74,85,110,0.35)"; actx.beginPath(); actx.moveTo(GUTTER,y); actx.lineTo(AVW,y); actx.stroke(); });
-  /* gutter label painted last (sits above the grid) */
-  actx.fillStyle="#171a20"; actx.fillRect(0,0,GUTTER,AVH);
-  actx.fillStyle="#5a606c"; actx.font="9px ui-monospace,monospace"; actx.textBaseline="middle";
-  actx.fillText(ccLabel(meta),6,AVH/2);
-  /* value axis in the gutter */
-  actx.font="8px ui-monospace,monospace"; actx.textAlign="right";
-  actx.fillText("127",GUTTER-3,Math.max(6,ccYofV(127)));
-  actx.fillText("0",GUTTER-3,Math.min(AVH-5,ccYofV(0)));
-  actx.textAlign="left";
-}
-/* edit gestures (draw / drag / erase) — driven by the roll's tool state */
-function ccPointAt(mx){ if(!M.cc||M.cc.k!==ccSel) return null; let best=null,bd=1e9;
-  M.cc.points.forEach(p=>{ const d=Math.abs(xOfTick(p.tick)-mx); if(d<bd){bd=d;best=p;} });
-  return (best&&bd<=10)?best:null; }
-function ccLocalSet(tick,val){ if(!M.cc||M.cc.k!==ccSel) M.cc={k:ccSel,points:[]};
-  const i=M.cc.points.findIndex(p=>p.tick===tick); if(i>=0)M.cc.points[i].val=val; else M.cc.points.push({tick,val});
-  M.cc.points.sort((a,b)=>a.tick-b.tick); }
-function ccLocalClear(tick){ if(M.cc&&M.cc.k===ccSel) M.cc.points=M.cc.points.filter(p=>p.tick!==tick); }
-function ccSetEmit(tick,val){ R.setParam(P+`t${M.sel.t}_cc_auto_set`,`${ccClip()} ${ccSel} ${tick} ${val}`); afterEdit(); }
-function ccClearEmit(t1,t2){ R.setParam(P+`t${M.sel.t}_cc_auto_clear_range`,`${ccClip()} ${ccSel} ${t1} ${t2==null?t1:t2}`); afterEdit(); }
-let adrag=null, ccEmitT=0, ccLast=null;
-function localXYa(e){ const r=ac.getBoundingClientRect(); return [e.clientX-r.left,e.clientY-r.top]; }
-ac.addEventListener("pointerdown",e=>{ if(!M||ccSel<0) return; try{ac.setPointerCapture(e.pointerId);}catch(_){}
-  const [x,y]=localXYa(e); if(x<GUTTER) return; dragging=true;
-  const erase=tool==="erase"||(e.pointerType==="mouse"&&(e.button===2||e.altKey));
-  const hit=ccPointAt(x);
-  if(erase){ if(hit){ ccLocalClear(hit.tick); drawAuto(); ccClearEmit(hit.tick); pullSoon(); } adrag=null; return; }
-  if(hit){ const ex=M.cc.points.find(p=>p.tick===hit.tick); adrag={tick:hit.tick}; ccLast={tick:hit.tick,val:ex?ex.val:0}; return; }
-  const tk=Math.max(0,Math.min(maxEditTick()-1,snap(tickOfX(x),e.shiftKey))), v=ccVofY(y);
-  ccLocalSet(tk,v); drawAuto(); ccSetEmit(tk,v); adrag={tick:tk}; ccLast={tick:tk,val:v}; });
-ac.addEventListener("pointermove",e=>{ if(!adrag||!M||ccSel<0) return; const [x,y]=localXYa(e);
-  const nt=Math.max(0,Math.min(maxEditTick()-1,snap(tickOfX(x),e.shiftKey))), nv=ccVofY(y);
-  if(nt!==adrag.tick){ ccLocalClear(adrag.tick); ccClearEmit(adrag.tick); }
-  ccLocalSet(nt,nv); adrag.tick=nt; ccLast={tick:nt,val:nv}; drawAuto();
-  const n=now(); if(n-ccEmitT>55){ ccEmitT=n; ccSetEmit(nt,nv); } });
-function endAuto(e){ if(adrag){ if(ccLast) ccSetEmit(ccLast.tick,ccLast.val); adrag=null; ccLast=null; pullSoon(); }
-  dragging=false; try{ac.releasePointerCapture(e.pointerId);}catch(_){} }
-ac.addEventListener("pointerup",endAuto); ac.addEventListener("pointercancel",endAuto);
-ac.addEventListener("contextmenu",e=>e.preventDefault());
+
 
 /* ---------- apply incoming snapshot ---------- */
 let autoLaneKey="";   /* track which drum clip we auto-selected a lane for (fire once per clip) */
@@ -1639,7 +1495,7 @@ function applyParams(params){
    * from the device (which may not bump rev), so an on melodic track ALWAYS folds. */
   const foldSig=(M.glob&&M.glob.scaleAware?1:0)+":"+(M.scaleMask?M.scaleMask.map(b=>b?1:0).join(""):"");
   renderChrome(); renderSession();
-  bandsApply(); renderCcPicker(); renderCcCtl();
+  bandsApply();
   if(M.rev!==prevRev || selKey!==prevSel || foldSig!==lastFoldSig){ lastRev=M.rev; lastSelKey=selKey; lastFoldSig=foldSig;
     layout(); renderSidePanels(); }
   draw();
@@ -1659,11 +1515,6 @@ vc.addEventListener("pointermove",e=>{ if(!M) return; const r=vc.getBoundingClie
   let best=null,bd=1e9; notes.forEach(n=>{ const d=Math.abs(xOfTick(n.tick)-x); if(d<bd){bd=d;best=n;} });
   laneTipShow(e,(best&&bd<=22)?("Vel "+best.vel):("Vel "+velOfY(y))); });
 vc.addEventListener("pointerleave",laneTipHide);
-ac.addEventListener("pointermove",e=>{ if(!M||ccSel<0) return; const r=ac.getBoundingClientRect();
-  const x=e.clientX-r.left,y=e.clientY-r.top; if(x<GUTTER){ laneTipHide(); return; }
-  const hit=ccPointAt(x);
-  laneTipShow(e,(hit?hit.val:Math.max(0,Math.min(127,ccVofY(y))))+(hit?" ●":"")); });
-ac.addEventListener("pointerleave",laneTipHide);
 /* drag the handle at a lane's top edge to resize it (persisted) */
 document.querySelectorAll(".lane-rs").forEach(h=>{
   const wrap=document.getElementById(h.dataset.for), key="dbx_h_"+h.dataset.for;
@@ -1674,7 +1525,7 @@ document.querySelectorAll(".lane-rs").forEach(h=>{
     rs={y:e.clientY,h:wrap.getBoundingClientRect().height}; h.classList.add("on"); });
   h.addEventListener("pointermove",e=>{ if(!rs) return;
     const nh=Math.max(40,Math.min(280,rs.h+(rs.y-e.clientY)));
-    wrap.style.flexBasis=nh+"px"; layout(); draw(); drawVel(); drawAuto(); });
+    wrap.style.flexBasis=nh+"px"; layout(); draw(); drawVel(); });
   const end=e=>{ if(!rs) return; rs=null; h.classList.remove("on");
     localStorage.setItem(key,String(Math.round(wrap.getBoundingClientRect().height))); };
   h.addEventListener("pointerup",end); h.addEventListener("pointercancel",end);
@@ -1699,10 +1550,8 @@ document.getElementById("snap").onchange=()=>draw();   /* grid's fine tier follo
   st.classList.add("on");
   st.onclick=()=>{ sess.classList.toggle("collapsed"); st.classList.toggle("on",!sess.classList.contains("collapsed")); };
 })();
-/* collapsible velocity / automation band headers */
+/* collapsible velocity band header */
 document.getElementById("velhdr").onclick=()=>{ velOpen=!velOpen; saveBands(); bandsApply(); if(M){ layout(); draw(); } };
-document.getElementById("autohdr").onclick=()=>{ autoOpen=!autoOpen; saveBands(); bandsApply();
-  renderCcPicker(); renderCcCtl(); if(M){ layout(); draw(); } };
 bandsApply();   /* initial show/hide from persisted prefs (before first model) */
 /* The H+/H-/V+/V- buttons are gone (2026-08-20): the drag strips at the roll's
  * top and left edges and Ctrl(+Shift)+wheel already did the same job, so they

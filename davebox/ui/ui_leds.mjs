@@ -13,7 +13,7 @@ import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell } from './ui_
 import { automationStateFor } from './ui_automation.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import {
-    White, Red, Green, Blue, DarkBlue, LightGrey, DarkGrey, Cyan, PurpleBlue, VividYellow,
+    White, Red, Green, Blue, DarkBlue, LightGrey, DarkGrey, Cyan, PurpleBlue,
     DeepRed, DeepGreen, DeepMagenta, Mustard
 } from '/data/UserData/schwung/shared/constants.mjs';
 import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
@@ -117,14 +117,8 @@ export function updateStepLEDs() {
                 setLED(16 + p, color);
             }
         } else {
-            var _ccLen = 0, _ccLs = 0;
-            if (S.activeBank === 6) {
-                var _ccL = S.ccActiveLane[t];
-                _ccLen = S.ccLaneLength[t][ac][_ccL];
-                _ccLs  = S.ccLaneLoopStart[t][ac][_ccL] | 0;
-            }
-            const len    = _ccLen > 0 ? _ccLen : S.clipLength[t][ac];
-            const lsBase = _ccLen > 0 ? _ccLs : (S.clipLoopStart[t][ac] | 0);
+            const len    = S.clipLength[t][ac];
+            const lsBase = S.clipLoopStart[t][ac] | 0;
             const steps  = S.clipSteps[t][ac];
             const startPage = lsBase >> 4;
             const endPage   = startPage + Math.ceil(len / 16) - 1;
@@ -181,10 +175,8 @@ export function updateStepLEDs() {
         }
     }
 
-    /* Drum mode: step buttons show active lane's steps — identical visualization to melodic.
-     * On the AUTO bank (6) drum falls through to the CC-automation gradient block below,
-     * so drum AUTO shows the CC gradient/playhead, not drum-lane state (parity w/ melodic). */
-    if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank !== 6) {
+    /* Drum mode: step buttons show active lane's steps — identical visualization to melodic. */
+    if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
         const t    = S.activeTrack;
         const lane = S.activeDrumLane[t];
         const ls   = S.drumLaneSteps[t][lane];
@@ -236,78 +228,6 @@ export function updateStepLEDs() {
         if (S.copyHeld && S.copySrc && (S.copySrc.kind === 'step' || S.copySrc.kind === 'cut_step') && Math.floor(S.copySrc.absStep / 16) === page) {
             const btnIdx = S.copySrc.absStep % 16;
             setLED(16 + btnIdx, (Math.floor(S.clockMs / 220) % 2) ? White : LED_OFF);
-        }
-        return;
-    }
-
-    /* CC bank: step LEDs show the active lane's automation as a warm gradient
-     * (7 levels: val=0 → dim, rising through yellow/orange/red to full white).
-     * "—"=off; playhead = track color; out-of-window = DarkGrey. */
-    if (S.activeBank === 6) {
-        const CC_GRAD = [76, 29, 29, 3, 4, 67, 127];
-        const t    = S.activeTrack;
-        const c    = ac;
-        const lane = S.ccActiveLane[t] | 0;
-        /* trackCurrentPage drives the displayed page on the AUTO bank for both
-         * melodic AND drum (page-nav + step-press route through the CC path on
-         * bank 6 so the per-CC-lane loop window works identically to melodic). */
-        const pg   = S.trackCurrentPage[t];
-        const csCC = S.trackCurrentStep[t];
-        var _ccLenCC = S.ccLaneLength[t][c][lane];
-        var _ccLsCC  = _ccLenCC > 0 ? (S.ccLaneLoopStart[t][c][lane] | 0)
-                                     : (S.clipLoopStart[t][c] | 0);
-        var _ccWinEnd = _ccLsCC + (_ccLenCC > 0 ? _ccLenCC : S.clipLength[t][c]);
-        var _ccPlayStep = -1;
-        if (S.playing) {
-            var _dispTps = S.ccLaneTps[t][c][lane] || (S.clipTPS[t][c] || 24);
-            var _speedTps = S.ccLaneResTps[t][c][lane] || _dispTps;
-            var _effLen = _ccLenCC > 0 ? _ccLenCC : S.clipLength[t][c];
-            var _lLenTicks = _effLen * _speedTps;
-            var _lTickPos = S.masterPos % _lLenTicks;
-            var _progress = _lTickPos / _lLenTicks;
-            _ccPlayStep = _ccLsCC + Math.floor(_progress * _effLen);
-        }
-        const key = t + '_' + c + '_' + lane + '_' + pg;
-        if (key !== S.ccGradKey || (S.tickCount % POLL_INTERVAL) === 0) {
-            var raw = host_module_get_param('t' + t + '_c' + c + '_ccsv_' + lane + '_' + pg);
-            if (raw) {
-                var parts = raw.split(' ');
-                for (let s = 0; s < 16; s++) {
-                    var v = s < parts.length ? parseInt(parts[s], 10) : 255;
-                    S.ccGradVals[s] = (v >= 0 && v <= 127) ? v : 255;
-                }
-            }
-            var bpRaw = host_module_get_param('t' + t + '_c' + c + '_ccbp_' + lane + '_' + pg);
-            if (bpRaw) {
-                var bpParts = bpRaw.split(' ');
-                for (let s = 0; s < 16; s++)
-                    S.ccGradHasBP[s] = s < bpParts.length ? (bpParts[s] === '1') : false;
-            } else {
-                for (let s = 0; s < 16; s++) S.ccGradHasBP[s] = false;
-            }
-            S.ccGradKey = key;
-        }
-        const _blip = (S.clockMs % 440) < 37;
-        const baseCC = pg * 16;
-        for (let i = 0; i < 16; i++) {
-            const absStep = baseCC + i;
-            let color;
-            if (absStep < _ccLsCC || absStep >= _ccWinEnd) {
-                color = DarkGrey;
-            } else if (absStep === _ccPlayStep) {
-                color = White;
-            } else {
-                const v = S.ccGradVals[i];
-                if (v >= 0 && v <= 127) {
-                    if (_blip && S.ccGradHasBP[i]) { color = LED_OFF; }
-                    else {
-                    const level = v === 0 ? 0 : Math.min(6, 1 + Math.floor((v - 1) * 6 / 127));
-                    color = CC_GRAD[level]; }
-                } else {
-                    color = LED_OFF;
-                }
-            }
-            setLED(16 + i, color);
         }
         return;
     }
@@ -642,30 +562,6 @@ export function updateTrackLEDs() {
             for (let i = 0; i < 32; i++) {
                 const col = i % 8;
                 const row = Math.floor(i / 8);
-                if (S.activeBank === 6) {
-                    /* AUTO bank: the drum pads still PLAY their drum sounds (handled
-                     * in _onPadPressTrackView) but are not lane-selectors here. Left
-                     * 4x4 (lane/sound pads): the active lane = bright track color, any
-                     * lane actually sounding = dim track color, the rest = gray (light
-                     * if the lane has hits, dark if empty). Right 4x4 (perf/vel area):
-                     * LEDs off. */
-                    let g6;
-                    if (col < 4) {
-                        const lane6 = S.drumLanePage[t] * 16 + row * 4 + col;
-                        const note6 = S.drumLaneNote[t][lane6];
-                        if (lane6 === selLane) {
-                            g6 = trackColor(t);
-                        } else if (S.liveActiveNotes.has(note6) || S.seqActiveNotes.has(note6)) {
-                            g6 = trackDimColor(t);
-                        } else {
-                            g6 = S.drumLaneHasNotes[t][lane6] ? 118 : 124;
-                        }
-                    } else {
-                        g6 = LED_OFF;
-                    }
-                    cachedSetLED(TRACK_PAD_BASE + i, g6);
-                    continue;
-                }
                 let color;
                 if (col < 4) {
                     const lane = S.drumLanePage[t] * 16 + row * 4 + col;
@@ -753,9 +649,8 @@ export function updateTrackLEDs() {
                 cachedSetLED(TRACK_PAD_BASE + i, color);
             }
         } else {
-        const _autoGrey    = S.activeBank === 6;
-        const rootColor    = _autoGrey ? 118 : (_inCoRunPad ? DarkGrey : trackColor(S.activeTrack));
-        const nonRootColor = _autoGrey ? 124 : (_inCoRunPad ? trackDimColor(S.activeTrack) : DarkGrey);
+        const rootColor    = _inCoRunPad ? DarkGrey : trackColor(S.activeTrack);
+        const nonRootColor = _inCoRunPad ? trackDimColor(S.activeTrack) : DarkGrey;
         const _tarpActive = (S.bankParams[S.activeTrack][5][7] | 0) !== 0 &&
                             (S.bankParams[S.activeTrack][5][0] | 0) !== 0;
         const _tarpHeld = _tarpActive ? S.tarpHeldNotes[S.activeTrack] : null;
@@ -795,7 +690,7 @@ export function updateTrackLEDs() {
              * in Move's editor. Matches the drum flavour, where the selected
              * lane already takes the real track colour. */
             color = (sounding || inHeld || inLatch)
-                    ? (_autoGrey ? 120 : (_inCoRunPad ? trackColor(S.activeTrack) : White))
+                    ? (_inCoRunPad ? trackColor(S.activeTrack) : White)
                   : (chromatic && !inScale) ? LED_OFF
                   : (S.padNoteMap[i] % 12 === _effKey ? rootColor : nonRootColor);
             cachedSetLED(TRACK_PAD_BASE + i, color);
@@ -867,20 +762,6 @@ export function updateTrackLEDs() {
             const isDirty = (S.drumRepeatVelScale[S.activeTrack][lane][k] !== 100) ||
                             (S.drumRepeatNudge[S.activeTrack][lane][k] !== 0);
             ledVal = isDirty ? White : LED_OFF;
-        } else if (S.activeBank === 6) {
-            /* Solid colors: red = recording, green = automation playing back,
-             * yellow = automation exists, white = resting value set, off = empty. */
-            const _t6 = S.activeTrack, _c6 = effectiveClip(_t6);
-            const _autoHas = (S.trackCCAutoBits[_t6][_c6] >> k) & 1;
-            if (S.recordArmed) {
-                ledVal = Red;
-            } else if (S.playing && _autoHas) {
-                ledVal = Green;
-            } else if (_autoHas) {
-                ledVal = VividYellow;
-            } else {
-                ledVal = S.clipCCVal[_t6][_c6][k] >= 0 ? White : LED_OFF;
-            }
         } else if (ringCellsFor(S.activeBank)) {
             /* The kit-page banks (STEP, SOUND + CONFIG, MACROS): the ring
              * rides the SAME cell the page draws — same ramps as the param
@@ -1114,12 +995,12 @@ export function forceRedraw() {
 }
 
 export function bankHasAltParams(t, bank) {
-    if (S.trackPadMode[t] === PAD_MODE_DRUM) return bank === 0 || bank === 5 || bank === 6 || bank === 7;
+    if (S.trackPadMode[t] === PAD_MODE_DRUM) return bank === 0 || bank === 5 || bank === 7;
     /* Melodic CLIP(0), NOTE FX(1), DELAY(3), SEQ ARP(4), ARP IN(5), AUTO/CC(6).
      * Banks 4/5 use stepIntervalMode (Arp Steps overlay) rather than altMode —
      * the arrow still shows their toggle-availability, and altIndicatorActive()
      * reflects which underlying flag is on. */
-    return bank === 0 || bank === 1 || bank === 3 || bank === 4 || bank === 5 || bank === 6;
+    return bank === 0 || bank === 1 || bank === 3 || bank === 4 || bank === 5;
 }
 
 /* Returns true when the current bank's alt indicator should flash. For melodic

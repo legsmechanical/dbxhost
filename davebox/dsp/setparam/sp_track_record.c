@@ -92,7 +92,6 @@ static int sp_track_record(sp_ctx_t *cx) {
                 undo_begin_single(inst, tidx, snap_clip);
             /* Fresh recording session: clear pass mask so existing notes play back */
             memset(tr->live_recorded_steps, 0, 32);
-            memset(tr->cc_auto_touch_frame, 0, sizeof(tr->cc_auto_touch_frame));
             /* PHASE-1: clear inbound press/release slots so a stale active=1
              * from a prior recording session can't leak into this pass. */
             memset(inst->on_midi_press_active[tidx], 0, sizeof(inst->on_midi_press_active[tidx]));

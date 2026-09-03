@@ -252,10 +252,6 @@ GS.snapshotPicker = { mode: 'load', sel: 1, confirm: null, snaps: [
 globalThis.clear_screen(); dlg.drawSnapshotPicker();
 shoot('sweep', 'Snapshot picker', 'was the last hand-rolled list in the tree');
 
-GS.clearAutoMenu = { at: true, cc: false, sel: 0 };
-globalThis.clear_screen(); dlg.drawClearAutoMenu();
-shoot('sweep', 'Clear automation', 'checkboxes collided with the [edit] grammar');
-
 S_EXPORT: {
     GS.exportDonePath = 'UserLibrary/Samples/dAVEBOx/2026-08-15/bounce-take-04.wav';
     GS.exportDoneMissing = 0;

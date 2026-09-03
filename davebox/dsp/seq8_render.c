@@ -194,18 +194,6 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
     inst->block_count++;
     if (frames > 0) inst->rui_frames += (uint64_t)frames;  /* device clock (remote UI) */
 
-    /* CC latch: on the recording 1->0 edge (any stop path — transport stop,
-     * disarm, restart) finalize the latch (decimate latched lanes + clear).
-     * Runs every block BEFORE the early returns below, since on transport-stop
-     * the sequencer loop never runs. */
-    { int _ft;
-      for (_ft = 0; _ft < NUM_TRACKS; _ft++) {
-          seq8_track_t *_ftr = &inst->tracks[_ft];
-          if (_ftr->cc_was_recording && !_ftr->recording) cc_finalize_latch(_ftr);
-          _ftr->cc_was_recording = _ftr->recording;
-      }
-    }
-
     /* Advance sample counters and fire queued events for all tracks. */
     int t;
     for (t = 0; t < NUM_TRACKS; t++) {
@@ -670,9 +658,6 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                 if (tr->queued_clip >= 0 && !tr->pending_page_stop &&
                     inst->global_tick % QUANT_STEPS[inst->launch_quant] == 0) {
                     silence_track_notes_v2(inst, tr);
-                    /* Finalize CC latch on the OLD clip before switching, so a
-                     * clip change doesn't carry overwrite into the new clip. */
-                    cc_finalize_latch(tr);
                     /* The OLD clip's automation lets go before the new clip
                      * takes over (Josh, 2026-09-04: "an empty clip loads with
                      * the same automation" — the parameters sat where the old
@@ -708,7 +693,6 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                         }
                     }
                     if (tr->record_armed) {
-                        memset(tr->cc_auto_touch_frame, 0, sizeof(tr->cc_auto_touch_frame));
                         memset(tr->drum_last_rec_step, 0xFF, sizeof(tr->drum_last_rec_step));
                         tr->recording    = 1;
                         tr->record_armed = 0;
@@ -750,7 +734,6 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                     tr->clip_playing      = 0;
                     silence_track_notes_v2(inst, tr);
                     if (tr->queued_clip >= 0) {
-                        cc_finalize_latch(tr);  /* finalize latch on old clip before switch */
                         if (tr->active_clip != (uint8_t)tr->queued_clip) pa_release_track(inst, t, (int)tr->active_clip);
                         tr->active_clip  = (uint8_t)tr->queued_clip;
                         tr->queued_clip  = -1;
@@ -779,7 +762,6 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                             }
                         }
                         if (tr->record_armed) {
-                            memset(tr->cc_auto_touch_frame, 0, sizeof(tr->cc_auto_touch_frame));
                             memset(tr->drum_last_rec_step, 0xFF, sizeof(tr->drum_last_rec_step));
                             tr->recording    = 1;
                             tr->record_armed = 0;
@@ -949,13 +931,10 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
             tarp_tick(inst, tr);
             arp_tick(inst, tr);
 
-            /* CC automation playback + latch recording (melodic clips only). A
-             * knob latched (turned during recording) overwrites its lane along
-             * the playhead; untouched knobs keep playing their automation. */
+            /* Parameter + aftertouch automation playback. */
             if (tr->clip_playing &&
                 (tr->pad_mode != PAD_MODE_DRUM || tr->drum_clips[tr->active_clip])) {
                 clip_t    *_acl = &tr->clips[tr->active_clip];
-                cc_auto_t *_ca  = &tr->clip_cc_auto[tr->active_clip];
                 uint32_t   _tps = _acl->ticks_per_step;
                 uint32_t   _abs_tick = (uint32_t)inst->global_tick * (uint32_t)TICKS_PER_STEP
                                    + (uint32_t)inst->master_tick_in_step;
@@ -968,50 +947,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                                   ? ((uint32_t)_acl->loop_start * _tps
                                      + (_winlen ? (_abs_tick % _winlen) : 0))
                                   : ((uint32_t)tr->current_step * _tps + tr->tick_in_step);
-                uint32_t   _ws  = (uint32_t)_acl->loop_start * _tps;
-                uint32_t   _we  = (uint32_t)(_acl->loop_start + _acl->length) * _tps;
-                int _kp;
-                for (_kp = 0; _kp < 8; _kp++) {
-                    int _def;
-                    uint32_t _lws = _ws, _lwe = _we, _lct = _ct;
-                    if (_ca->lane_length[_kp] > 0 || _ca->lane_tps[_kp] > 0
-                        || _ca->lane_res_tps[_kp] > 0) {
-                        uint32_t _disp_tps = _ca->lane_tps[_kp] > 0
-                                           ? _ca->lane_tps[_kp] : _tps;
-                        uint32_t _speed_tps = _ca->lane_res_tps[_kp] > 0
-                                            ? _ca->lane_res_tps[_kp] : _disp_tps;
-                        uint32_t _elen = _ca->lane_length[_kp] > 0
-                                       ? _ca->lane_length[_kp] : _acl->length;
-                        uint32_t _cycle = (uint32_t)_elen * _speed_tps;
-                        uint32_t _data_len = (uint32_t)_elen * _disp_tps;
-                        _lws = (uint32_t)_ca->lane_loop_start[_kp] * _disp_tps;
-                        _lwe = _lws + _data_len;
-                        uint32_t _prog = _abs_tick % _cycle;
-                        _lct = _lws + (uint32_t)((uint64_t)_prog * _data_len / _cycle);
-                    }
-                    int _ov = cc_auto_eval(_ca, _kp, _lct, _lws, _lwe, &_def);
-                    /* A latched knob is actively being recorded: report the live
-                     * value being written (not the playhead eval, which trails
-                     * the just-written point) so the JS cc_cur_vals poll keeps
-                     * the right accumulator base, and suppress the playback emit
-                     * — cc_send already sounds the turn live. */
-                    if (tr->recording && ((tr->cc_latched >> _kp) & 1)) {
-                        tr->cc_auto_cur_val[_kp] = tr->cc_live_val[_kp];
-                        continue;
-                    }
-                    /* Capture the defined output value for the display. 0xFF = "—". */
-                    tr->cc_auto_cur_val[_kp] = _def ? (uint8_t)_ov : 0xFF;
-                    /* "—" (nothing defined here): send nothing — receiver holds
-                     * its last value, so the loop carries over (opt-out of reset). */
-                    if (!_def) continue;
-                    uint8_t _sv = (uint8_t)_ov;
-                    if (_sv != tr->cc_auto_last_sent[_kp]) {
-                        tr->cc_auto_last_sent[_kp] = _sv;
-                        cc_emit(tr, _kp, _sv);
-                    }
-                }
-                /* Per-parameter automation (Front 3). Same playhead the CC lanes
-                 * use, so both timelines agree; it reads its own store and
+                /* Per-parameter automation (Front 3). It reads its own store and
                  * either emits the MIDI targets itself or stages the rest for
                  * JS. pa_playback_scan is audio-thread safe — it allocates
                  * nothing and discards any pass a concurrent edit overlapped. */
@@ -1021,35 +957,6 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                  * the same playhead, one cell at a time. */
                 pa_record_tick(inst, tr, t, (int)tr->active_clip, _ct, _tps, _winlen);
 
-                /* Latch recording: overwrite each latched lane along the playhead
-                 * with the current live value (one point per 1/32 cell, clearing
-                 * whatever was there). Continues even when the knob isn't moving,
-                 * until recording stops (finalized at the 1->0 edge above). */
-                if (tr->recording && tr->cc_latched) {
-                    int _kt;
-                    for (_kt = 0; _kt < 8; _kt++) {
-                        if (!((tr->cc_latched >> _kt) & 1)) continue;
-                        uint32_t _rec_tick;
-                        if (_ca->lane_length[_kt] > 0) {
-                            uint32_t _ltps = _ca->lane_tps[_kt] > 0
-                                           ? _ca->lane_tps[_kt] : _tps;
-                            uint32_t _llen = (uint32_t)_ca->lane_length[_kt] * _ltps;
-                            _rec_tick = _abs_tick % _llen;
-                        } else {
-                            _rec_tick = _ct;
-                        }
-                        uint32_t _snap = (_rec_tick / 12) * 12;
-                        if (_snap == tr->cc_latch_last_snap[_kt]) continue;
-                        /* Loop-wrap → decimate (collapse collinear points) */
-                        if (_rec_tick < tr->cc_latch_last_snap[_kt])
-                            cc_auto_decimate(_ca, _kt);
-                        tr->cc_latch_last_snap[_kt] = _snap;
-                        uint16_t _s = (uint16_t)(_snap <= 65534 ? _snap : 65534);
-                        cc_auto_clear_range(_ca, _kt, _s, (uint16_t)(_s + 11));
-                        cc_auto_set_point(_ca, _kt, _s, tr->cc_live_val[_kt]);
-                    }
-                    inst->state_dirty = 1;
-                }
                 /* Pad-pressure aftertouch automation playback (interpolated;
                  * independent of the live AftTch toggle — recorded AT always
                  * plays). Per-lane emit-on-change; cache reset on clip change. */

@@ -71,9 +71,10 @@ assign `tidx`/`tr`/`sub` onto `cx`, 9 `tN_` dispatches).
   has a catch-all (`sp_track_misc`'s unconditional `pfx_set`), the handler must `return 1` on
   guard-match even for an unknown sub-op — `return 0` only when the guard itself fails. Otherwise
   an unknown `tN_lL_*` key falls through and the catch-all mis-handles it.
-  ⚠⚠ **CORRECTION (2026-09-02): this file used to end that rule with "`sp_track_config` and
-  `sp_track_ccauto` return 0 on no-match precisely because they have no catch-all downstream."
-  That is FALSE, and it is the kind of false that reads as reassurance.** Both are dispatched
+  ⚠⚠ **CORRECTION (2026-09-02): this file used to end that rule with "`sp_track_config` (and
+  the since-deleted `sp_track_ccauto`) return 0 on no-match precisely because they have no
+  catch-all downstream." That is FALSE, and it is the kind of false that reads as reassurance.**
+  It is dispatched
   *before* `sp_track_misc` (`seq8_set_param.c` ~1195 vs ~1246), so the catch-all IS downstream of
   them. What falling through actually costs, measured: `pfx_set` is inert for a sub-op that
   matches no play-effects parameter (so the damage needs a NAME COLLISION), but the tail's other

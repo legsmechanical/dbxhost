@@ -1004,58 +1004,57 @@ only while a repeat mode is active.
 
 # 11. Automation
 
-<img src="img/bank-auto.png" width="384" alt="AUTOMATION bank: eight lanes labelled with CC, AT, and Sch targets, and a curve with a playhead">
+<img src="img/bank-auto.png" width="384" alt="AUTOMATION bank: the list of what is automated in the clip">
 
-Each of the eight knobs drives an **automation lane** — a recordable stream of
-control-change or aftertouch data that plays back with the clip. A lane holds up to
-1024 points, smoothly joined, plus an optional resting value it returns to each
-loop. The bank works the same on melodic and drum clips.
+**Anything you can turn, you can automate.** Automation in dAVEBOx is per
+*parameter*, not per lane: a synth or effect parameter, a level, one of the
+bank knobs, or a MIDI target. There is no separate lane to arm and no separate
+place to draw — the knob that plays the parameter is the knob that records it.
 
-## 11.1 Choosing what a lane sends
+## 11.1 Making it
 
-**Click the jog** to enter assign mode, then turn a knob to pick its target:
-aftertouch (`AT`), a CC number (`CC0`–`CC127`), or — on a Schwung-routed track — a
-Schwung chain knob (`Sch1`–`Sch8`). The target applies to the whole track. A lane
-starts at `—` (sends nothing); turn up from there to reach 0.
+Two ways, both covered where the knobs are:
 
-## 11.2 Resting values and recording
+- **Record it.** With the transport playing and Record armed, turn a knob and
+  the move is written at the playhead, loop after loop, until you stop.
+  Parameters you don't touch keep what they had. See
+  [Recording](#64-recording).
+- **Lock a step.** Hold a step and turn a knob and that step takes a **lock** —
+  a value the parameter jumps to when the step plays. See
+  [Editing notes](#63-editing-notes).
 
-A plain turn (no step held) sets the lane's **resting value** while stopped, and
-sends it live. With the transport playing and **Record armed**, turning a knob
-records — it writes the knob's value at the playhead and keeps writing, loop after
-loop, until you stop. Lanes you don't touch keep what they had.
+Which knobs? The ones on the module editor's pages, the levels on
+**SOUND + CONFIG** and in the session mixer, the eight **MACROS** — and, through
+a macro, dAVEBOx's own bank knobs. See
+[Parameter banks](#35-parameter-banks) and [Effects](#10-effects).
 
-## 11.3 Editing and clearing
+An automated knob says so where it lives: a dot on its cell, and a blinking
+ring. **Mute + touch** mutes that parameter's automation; **Delete + touch**
+clears it.
 
-Hold a step to see each lane's value there and turn a knob to drop a point,
-starting from the shown value. Clearing:
+## 11.2 The AUTOMATION bank
 
-| Gesture | Clears |
-|---|---|
-| **Delete** (tap) | Opens a menu to clear AT and/or CC |
-| **Delete + knob** | That lane |
-| **Delete + step** | Every lane at that step |
-| **Delete + jog click** | All automation in the clip |
+**AUTOMATION** is the last bank on the jog: the **list of everything automated
+in the current clip** — parameters, levels, MIDI targets, and the pads'
+aftertouch — each with its state (ON, OFF, or SMTH). Its knobs do nothing; the
+jog is the whole surface.
 
-## 11.4 Per-lane loops
+**Click the jog** for the menu, turn to a row and click for its operations:
+**Delete**, **Mute** / **Unmute**, **Smooth** / **Stepped** (on parameters that
+can ramp), **Loop** (that parameter's own loop length in steps, or CLIP to
+follow the clip), and **Rate** (/16 to ×16, the loop stretching to match). The
+last row is **Clear clip**, and **Delete + click** on the card does the same.
+Every operation is one undo, and **Back** closes one layer at a time. Conductor
+tracks don't have this bank. The full description is in
+[Parameter banks](#35-parameter-banks).
 
-A lane can loop independently of the clip — a short filter sweep under a long
-melody, say. **Hold Loop on this bank** (the last-touched knob is the lane):
+## 11.3 MIDI targets
 
-| Gesture | Sets |
-|---|---|
-| Step buttons | Loop length, by page |
-| Jog | Loop length, ±1 step |
-| Left / Right | Resolution (below) |
-| + / − | Zoom (below) |
-
-### Resolution & zoom
-
-- **Resolution** sets how fast the lane plays through its steps — the same
-  recorded data, cycled faster or slower (a 16-step lane at 1/8 takes twice as long
-  as at 1/16).
-- **Zoom** sets the step-grid density — more or fewer steps over the same time
-  span. Your recorded points keep their exact positions; the grid moves around them.
+A macro can point at **Aftertouch** or **Pitch Bend** on any track, and at any
+**MIDI CC** on a MIDI track. They record, lock, mute and clear like any other
+parameter and appear in the AUTOMATION list by name — see
+[the MACROS bank](#the-macros-bank). Aftertouch played from the pads is
+recorded on its own and shows in the list as its own row.
 
 ---
 
@@ -1700,8 +1699,8 @@ focused; flashing = playing (1/8) or queued (1/16).
 **Step buttons** — Track View: white = playhead, track color = filled step, dim =
 beat markers. Session View: red = rows in view, white = out-of-view content.
 
-**Knob LEDs** — lit when a parameter is off default. On the [AUTO bank](#11-automation),
-white = resting value, yellow = has automation, red = recording, green = playback.
+**Knob LEDs** — lit when a parameter is off default; a knob whose parameter is
+[automated](#11-automation) in this clip blinks its ring.
 
 **Screen header** — the active track's number sits inside a box; a muted track's
 number blinks, and a soloed track's number shows filled in. The bank strip on the

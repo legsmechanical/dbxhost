@@ -21,13 +21,21 @@ let painted = 0;
 const px = (x, y, c) => { if (x >= 0 && x < 128 && y >= 0 && y < 64) { fb[y * 128 + x] = c ? 1 : 0; painted++; } };
 const sets = [];
 let LIST = '';
+/* The AUTOMATION bank polls tN_cC_at_has every poll (ui_dsp_bridge) since the
+ * old bank 6 was deleted, so the stub must answer it or the poll clears the
+ * aftertouch row back off the card. */
+let AT_HAS = '';
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false; globalThis.host_write_file = () => true;
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;
-globalThis.host_module_set_param = (k, v) => { sets.push(k + '=' + v); };
+globalThis.host_module_set_param = (k, v) => { sets.push(k + '=' + v);
+    if (/_at_clear$/.test(k)) AT_HAS = ''; };
 function dec(blob) { const out = []; if (!blob) return out; let nl = blob.indexOf('\n'); const n = parseInt(blob.slice(0, nl), 10) || 0; let p = nl + 1; for (let i = 0; i < n; i++) { const e = blob.indexOf('\n', p); const len = parseInt(blob.slice(p, e), 10) || 0; p = e + 1; out.push(blob.slice(p, p + len)); p += len; } return out; }
-globalThis.host_module_set_params = (blob) => { const it = dec(blob); for (let i = 0; i + 1 < it.length; i += 2) sets.push(it[i] + '=' + it[i + 1]); return true; };
-globalThis.host_module_get_param = (k) => (k === 'pa_list' ? LIST : '');
+globalThis.host_module_set_params = (blob) => { const it = dec(blob);
+    for (let i = 0; i + 1 < it.length; i += 2) { sets.push(it[i] + '=' + it[i + 1]);
+        if (/_at_clear$/.test(it[i])) AT_HAS = ''; } return true; };
+globalThis.host_module_get_param = (k) => (k === 'pa_list' ? LIST
+    : /_at_has$/.test(k) ? AT_HAS : '');
 globalThis.shadow_get_param = (slot, key) => {
     if (key === 'synth:chain_params') return JSON.stringify([{ key: 'cutoff', name: 'Cutoff', type: 'float', min: 0, max: 1 }, { key: 'voices', name: 'Voices', type: 'int', min: 1, max: 8 }]);
     return '';
@@ -80,7 +88,7 @@ step('AUTOMATION is bank 14, last on the melodic and drum walks; the old bank 6 
 step('the card lists the clip\'s automation from the owner\'s cache: labels, ON/OFF/SMTH, the pads\' aftertouch as its own row; the knobs are a no-op', () => {
     LIST = '0 0 1 8 0:synth:cutoff 0\n0 0 2 3 0:synth:voices 48\n0 0 1 2 0:slot:volume 0\n1 0 1 2 1:synth:cutoff 0\n';
     auto.automationRefreshPresence();
-    S.clipAtHas[T][C] = true;
+    S.clipAtHas[T][C] = true; AT_HAS = '1';
     S.activeBank = BANK_AUTOMATION; S.trackActiveBank[T] = BANK_AUTOMATION; S.bankCardLatched = true;
     const rows = ab.autoBankRows(T, C);
     assert(rows.length === 4, 'three entries of THIS clip + aftertouch, got ' + JSON.stringify(rows.map(r => r.label)));

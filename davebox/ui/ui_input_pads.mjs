@@ -37,7 +37,7 @@ import { handoffRecordingToTrack, recordNoteOn, recordNoteOff,
     stepRecPadPress, stepRecPadRelease } from './ui_record.mjs';
 import { setTrackMute, setTrackSolo, clearClip, hardResetClip, copyClip, cutClip,
     copyDrumLane, cutDrumLane, copyDrumClip, cutDrumClip, copyStep, cutStep, clearStep,
-    showModePopup, allLanesGate, doDoubleFill, doLaneDoubleFill,
+    showModePopup, allLanesGate, doDoubleFill,
     _switchActiveTrack, stepHoldCheckpoint } from './ui_editops.mjs';
 
 /* Performance Mode state. Session View + Loop held → pad grid shows Perf Mode.
@@ -976,7 +976,6 @@ function _doShiftStepCommon(idx) {
  * route through the new atomic `*_loop_set` DSP keys so there is exactly one
  * DSP write path. Packed encoding mirrors seq8_set_param.c: ls<<16 | length. */
 function _fireLoopWindowSet(track, ctx, startStep, lenSteps) {
-    if (ctx === 3) { _fireLoopWindowSetCC(track, startStep, lenSteps); return; }
     const packed = (startStep << 16) | (lenSteps & 0xFFFF);
     if (ctx === 0) {
         /* Melodic per-active-clip */
@@ -1015,26 +1014,9 @@ function _fireLoopWindowSet(track, ctx, startStep, lenSteps) {
     }
 }
 
-function _fireLoopWindowSetCC(track, startStep, lenSteps) {
-    var ac = effectiveClip(track);
-    var lane = S.ccActiveLane[track];
-    S.ccLaneLoopStart[track][ac][lane] = startStep;
-    S.ccLaneLength[track][ac][lane] = lenSteps;
-    var packed = (startStep << 16) | (lenSteps & 0xFFFF);
-    host_module_set_param('t' + track + '_c' + ac + '_k' + lane + '_cc_loop_set', String(packed));
-    var startPage = startStep >> 4;
-    var lastPage  = startPage + ((lenSteps + 15) >> 4) - 1;
-    if (S.trackCurrentPage[track] < startPage) S.trackCurrentPage[track] = startPage;
-    else if (S.trackCurrentPage[track] > lastPage) S.trackCurrentPage[track] = lastPage;
-}
-
 /* Snapshot the gesture context at press-time so a later release fires in the
  * same context the user started in (immune to track/lane/bank flips). */
 function _loopGestureCtxFor(track) {
-    /* AUTO bank (6) edits per-CC-lane loop windows on BOTH melodic and drum
-     * tracks — each automation param lane has its own independent loop length,
-     * so the Loop+step gesture targets the active CC lane, not the drum lane. */
-    if (S.activeBank === 6) return 3;
     if (S.trackPadMode[track] !== PAD_MODE_DRUM) return 0;
     return S.activeBank === 7 ? 2 : 1;
 }
@@ -1065,17 +1047,7 @@ export function _resolveLoopGesture(fireFallback) {
     if (fired) { forceRedraw(); return; }
     if (fireFallback) {
         var currentLs, currentLen;
-        if (ctx === 3) {
-            var _ccLane = S.ccActiveLane[trk];
-            currentLs  = S.ccLaneLoopStart[trk][clip][_ccLane] | 0;
-            currentLen = S.ccLaneLength[trk][clip][_ccLane] | 0;
-            if (currentLen === 0) {
-                var _cTps = S.clipTPS[trk][clip] || 24;
-                var _lTps = S.ccLaneTps[trk][clip][_ccLane] || _cTps;
-                currentLs  = Math.round((S.clipLoopStart[trk][clip] | 0) * _cTps / _lTps);
-                currentLen = Math.max(1, Math.round(S.clipLength[trk][clip] * _cTps / _lTps));
-            }
-        } else if (ctx === 0) {
+        if (ctx === 0) {
             currentLs  = S.clipLoopStart[trk][clip] | 0;
             currentLen = S.clipLength[trk][clip] | 0;
         } else {
@@ -1185,7 +1157,7 @@ export function _onStepButtons(d1, d2) {
             S.loopGestureFired = false;
             S.loopGestureCtx   = _loopGestureCtxFor(t);
             S.loopGestureTrack = t;
-            S.loopGestureClip  = (S.loopGestureCtx === 0 || S.loopGestureCtx === 3) ? effectiveClip(t) : -1;
+            S.loopGestureClip  = (S.loopGestureCtx === 0) ? effectiveClip(t) : -1;
             S.loopGestureLane  = (S.loopGestureCtx === 1) ? S.activeDrumLane[t] : -1;
             forceRedraw();
         } else if (idx !== S.loopGestureStart) {
@@ -1228,31 +1200,15 @@ export function _onStepButtons(d1, d2) {
         }
         /* other S.copySrc kinds: swallow — don't mix copy types */
     } else if (S.deleteHeld) {
-        /* Delete + step button (Track View): clear all notes from that step.
-         * On the CC bank (melodic), instead clear all knobs' points in the step.
-         * And, on every bank alike, every parameter's automation LOCK at that
-         * step (spec §6.3) — automation is per clip, not per bank. */
+        /* Delete + step button (Track View): clear all notes from that step,
+         * and every parameter's automation LOCK at that step (spec §6.3) —
+         * automation is per clip, not per bank. */
         {
             const _t = S.activeTrack, _ac = effectiveClip(_t);
             const _abs = (S.trackPadMode[_t] === PAD_MODE_DRUM ? S.drumStepPage[_t] : S.trackCurrentPage[_t]) * 16 + idx;
             automationClearStep(_t, _ac, _abs);
         }
-        if (S.activeBank === 6) {
-            var t = S.activeTrack, ac = effectiveClip(t);
-            var absIdx = S.trackCurrentPage[t] * 16 + idx;
-            var _ccL_d = S.ccActiveLane[t];
-            var _ltps_d = S.ccLaneTps[t][ac][_ccL_d];
-            var tps = (_ltps_d > 0) ? _ltps_d : (S.clipTPS[t][ac] || 24);
-            var t1 = absIdx * tps, t2 = Math.min(65535, t1 + tps - 1);
-            S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
-            host_module_set_param('t' + t + '_cc_auto_clear_step', ac + ' ' + t1 + ' ' + t2);
-            /* DSP may have emptied some lanes — refresh auto bits / rest on next tick
-             * (get_param is null from this MIDI handler). */
-            S.pendingCCBitsRefresh = ac;
-            showActionPopup('CC STEP', 'CLEAR');
-            invalidateLEDCache();
-            forceRedraw();
-        } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
+        if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
             /* Drum mode: clear step in active lane */
             const t       = S.activeTrack;
             const lane    = S.activeDrumLane[t];
@@ -1308,16 +1264,10 @@ export function _onStepButtons(d1, d2) {
             S.bankParams[t][5][0] = nextStyle;
             applyBankParam(t, 5, 0, nextStyle);
         } else if (idx === 14) {
-            /* Step 15: double-and-fill. On the AUTO bank (6) this doubles the active
-             * CC param lane's loop + fills (per-lane, track-type-agnostic) on BOTH
-             * melodic and drum; elsewhere it doubles the clip/drum-lane window. */
-            if (S.activeBank === 6) {
-                doLaneDoubleFill();
-            } else {
-                doDoubleFill();
-            }
-        } else if (idx === 15 && S.activeBank !== 6) {
-            /* Step 16: set quantize to 100% (not on auto bank) */
+            /* Step 15: double-and-fill: doubles the clip/drum-lane window. */
+            doDoubleFill();
+        } else if (idx === 15) {
+            /* Step 16: set quantize to 100% */
             if (isDrum) {
                 if (S.activeBank === 7) {
                     /* ALL LANES: quantize all drum lanes */
@@ -1432,33 +1382,25 @@ export function _onStepButtons(d1, d2) {
             if (_stepState === 0) {
                 S.stepWasEmpty  = true;
                 S.heldStepNotes = [];
-                if (S.activeBank === 6) {
-                    S.ccStepEditActive = true;
-                } else {
-                    S.stepEditVel   = 100;
-                    S.stepEditGate  = 12;
-                    S.stepEditNudge = 0;
-                    S.stepEditIter  = 0;
-                    S.stepEditRand  = 0;
-                    S.stepEditRatch = 0;
-                }
+                S.stepEditVel   = 100;
+                S.stepEditGate  = 12;
+                S.stepEditNudge = 0;
+                S.stepEditIter  = 0;
+                S.stepEditRand  = 0;
+                S.stepEditRatch = 0;
             } else {
                 S.stepWasEmpty  = false;
                 S.heldStepNotes = [];   /* populated at hold threshold from tick context */
-                if (S.activeBank === 6) {
-                    S.ccStepEditActive = true;
-                } else {
-                    S.stepEditVel   = 100;
-                    S.stepEditGate  = 12;
-                    S.stepEditNudge = 0;
-                    S.stepEditIter  = 0;
-                    S.stepEditRand  = 0;
-                    S.stepEditRatch = 0;
-                }
+                S.stepEditVel   = 100;
+                S.stepEditGate  = 12;
+                S.stepEditNudge = 0;
+                S.stepEditIter  = 0;
+                S.stepEditRand  = 0;
+                S.stepEditRatch = 0;
             }
             /* Chord-first: pads were held before this step was pressed.
              * Store full context now — tick() may run after heldStep is cleared on quick release. */
-            if (S.liveActiveNotes.size > 0 && S.activeBank !== 6 &&
+            if (S.liveActiveNotes.size > 0 &&
                     S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM) {
                 S.pendingChordToStep  = {
                     t:       S.activeTrack,

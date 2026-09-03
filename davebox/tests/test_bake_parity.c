@@ -48,21 +48,13 @@ int main(void) {
     }
     hx_destroy(h);
 
-    /* ---- D3: loop-unroll bake pins inherit-length CC lanes to the pre-bake
-     * clip length so automation keeps its cadence. */
+    /* ---- D3 (P7): the store's automation SURVIVES a loop-unroll bake, pinned
+     * to the pre-bake length (16 steps x 24 = 384 lane ticks) so it keeps
+     * looping in step with the notes the user heard; an entry that already had
+     * its own window is left alone. */
     h = hx_create(NULL);
     inst = (seq8_instance_t *)h->inst;
     hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
-    {
-        cc_auto_t *ca = &inst->tracks[1].clip_cc_auto[0];
-        ca->count[2] = 1; ca->ticks[2][0] = 0; ca->vals[2][0] = 90;
-        ca->lane_length[2] = 0;               /* inherit clip length */
-        ca->count[5] = 0; ca->lane_length[5] = 0;   /* empty lane: untouched */
-    }
-    /* P7: the store's automation SURVIVES the bake, pinned to the pre-bake
-     * length (16 steps x 24 = 384 lane ticks) so it keeps looping in step with
-     * the notes the user heard; a lane that already had its own window is left
-     * alone. */
     hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 0 23 8000");
     hx_set_param(h, "t1_pa_set2", "0 1:synth:reso 0 23 8000");
     hx_set_param(h, "t1_pa_loop", "0 1:synth:reso 96 0 0");
@@ -73,13 +65,7 @@ int main(void) {
         HX_ASSERT(strstr(_pl, "1 0 1 1 1:synth:cutoff 384 0"), "P7: a clip-following entry is pinned to the pre-bake length (384)");
         HX_ASSERT(strstr(_pl, "1 0 1 1 1:synth:reso 96 0"), "P7: an entry with its own window keeps it");
     }
-    {
-        clip_t *cl = &inst->tracks[1].clips[0];
-        cc_auto_t *ca = &inst->tracks[1].clip_cc_auto[0];
-        HX_ASSERT(cl->length == 32, "D3: bake did not unroll to 32 steps");
-        HX_ASSERT(ca->lane_length[2] == 16, "D3: active CC lane not pinned to pre-bake length");
-        HX_ASSERT(ca->lane_length[5] == 0, "D3: empty CC lane should stay inherit");
-    }
+    HX_ASSERT(inst->tracks[1].clips[0].length == 32, "D3: bake did not unroll to 32 steps");
     hx_destroy(h);
 
     /* ---- D5 + echo-gate parity: scale-aware delay feedback.
@@ -116,6 +102,6 @@ int main(void) {
     }
     hx_destroy(h);
 
-    printf("PASS: bake_parity (D1 retrigger, D3 cc-lane pin, D5 primary-delta, D6 zero-gate)\n");
+    printf("PASS: bake_parity (D1 retrigger, D5 primary-delta, D6 zero-gate)\n");
     return 0;
 }

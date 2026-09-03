@@ -35,7 +35,7 @@ import {
 } from './ui_constants.mjs';
 import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 
-import { S, CC_ASSIGN_DEFAULTS } from './ui_state.mjs';
+import { S } from './ui_state.mjs';
 import { slotIndex, syncLinkAudioRoutingFromRoutes,
          invalidateLinkAudioRoutingCache } from './ui_engine.mjs';
 import { clipHasContent, _clipIsEmpty } from './ui_pure.mjs';
@@ -254,12 +254,12 @@ export function resetPerClipBankParamsToDefault(t) {
     S.screenDirty = true;
 }
 
-/* Re-read ONLY the per-clip automation mirror (cc_auto_bits / cc_rest / at_has)
+/* Re-read ONLY the per-clip automation mirror (at_has)
  * for the melodic clips a local editop touched. Used by pollDSP's local-rev path
  * in place of the DSP FULL-digest self-resync: copy/cut/clear/row editops set
  * steps/length/tps/loop/nonEmpty in JS themselves, but cannot know the resulting
- * automation state (the DSP copies/wipes cc lanes) — so we read just those three
- * fields here. Bounded to S.localEditTouched (≤16 clips), ~3 get_params each.
+ * automation state (the DSP copies/wipes it) — so we read just that field here.
+ * Bounded to S.localEditTouched (≤16 clips), one get_param each.
  * Runs from tick (pollDSP) where get_param is legal. */
 function localAutomationResync() {
     const touched = S.localEditTouched;
@@ -267,16 +267,6 @@ function localAutomationResync() {
     for (let i = 0; i < touched.length; i++) {
         const t = touched[i].t, c = touched[i].c;
         if (t < 0 || t >= NUM_TRACKS || c < 0 || c >= NUM_CLIPS) continue;
-        const _abits = host_module_get_param('t' + t + '_c' + c + '_cc_auto_bits');
-        S.trackCCAutoBits[t][c] = _abits !== null ? (parseInt(_abits, 10) || 0) : 0;
-        const _arest = host_module_get_param('t' + t + '_c' + c + '_cc_rest');
-        if (_arest) {
-            const _arp = _arest.split(' ');
-            for (let k = 0; k < 8; k++) {
-                const rv = parseInt(_arp[k], 10);
-                S.clipCCVal[t][c][k] = (rv >= 0 && rv <= 127) ? rv : -1;
-            }
-        }
         const _ath = host_module_get_param('t' + t + '_c' + c + '_at_has');
         S.clipAtHas[t][c] = (_ath !== null && parseInt(_ath, 10) === 1);
     }
@@ -364,7 +354,7 @@ export function tickPrefetch() {
     if ((S.tickCount % 5) === 0) keys.push('pad_dispatch_muted', 'pad_note_map_0');
     if ((S.tickCount % POLL_INTERVAL) === 0) {
         for (const k of POLL_KEYS) keys.push(k);
-        if (S.activeBank === 6) keys.push('t' + lt + '_c' + effectiveClip(lt) + '_at_has');
+        if (S.activeBank === BANK_AUTOMATION) keys.push('t' + lt + '_c' + effectiveClip(lt) + '_at_has');
         /* A drum track's lane playhead is read every poll (pollDSP). */
         if (S.trackPadMode[lt] === PAD_MODE_DRUM) keys.push('t' + lt + '_l' + S.activeDrumLane[lt] + '_current_step');
         if (S.recordArmed && S.recordArmedTrack >= 0) keys.push('t' + S.recordArmedTrack + '_recording_pending_page');
@@ -443,7 +433,7 @@ export function pollDSP() {
         }
     }
     /* Keep the AUTOMATION-bank AT indicator live (it appears as you record). */
-    if (S.activeBank === 6) {
+    if (S.activeBank === BANK_AUTOMATION) {
         const _at = S.activeTrack, _ac = effectiveClip(_at);
         const _ah = pget('t' + _at + '_c' + _ac + '_at_has');
         if (_ah !== null) S.clipAtHas[_at][_ac] = (parseInt(_ah, 10) === 1);
@@ -727,19 +717,8 @@ export function pollDSP() {
         const _sfac = effectiveClip(_sft);
         if (S.clipSeqFollow[_sft][_sfac] && S.trackClipPlaying[_sft]) {
             var newPage;
-            if (S.activeBank === 6) {
-                var _ccLsf = S.ccActiveLane[_sft];
-                var _dispTpsSf = S.ccLaneTps[_sft][_sfac][_ccLsf] || (S.clipTPS[_sft][_sfac] || 24);
-                var _lTpsSf = S.ccLaneResTps[_sft][_sfac][_ccLsf] || _dispTpsSf;
-                var _effLenSf = S.ccLaneLength[_sft][_sfac][_ccLsf] || S.clipLength[_sft][_sfac];
-                var _lLenTicksSf = _effLenSf * _lTpsSf;
-                var _progressSf = (S.masterPos % _lLenTicksSf) / _lLenTicksSf;
-                var _laneStep = Math.floor(_progressSf * _effLenSf);
-                newPage = Math.floor(_laneStep / 16);
-            } else {
-                var _cs = S.trackCurrentStep[_sft];
-                if (_cs >= 0) newPage = Math.floor(_cs / 16);
-            }
+            var _cs = S.trackCurrentStep[_sft];
+            if (_cs >= 0) newPage = Math.floor(_cs / 16);
             if (newPage !== undefined && newPage !== S.trackCurrentPage[_sft]) {
                 S.trackCurrentPage[_sft] = newPage;
                 S.screenDirty = true;
@@ -969,48 +948,6 @@ export function readBankParams(t, bankIdx) {
             if (v.length >= 24) {
                 for (let k = 0; k < 7; k++) S.bankParams[t][4][k] = parseInt(v[17 + k], 10) | 0;
             }
-        }
-        return;
-    }
-    /* CC PARAM bank: read all 8 CC assignments + per-knob type from DSP */
-    if (bankIdx === 6) {
-        const raw = dspGet('t' + t + '_cc_assigns');
-        if (raw) {
-            const parts = raw.split(' ');
-            for (let k = 0; k < 8; k++)
-                S.trackCCAssign[t][k] = parseInt(parts[k], 10) || CC_ASSIGN_DEFAULTS[k];
-        }
-        const typs = dspGet('t' + t + '_cc_types');
-        if (typs) {
-            const tp = typs.split(' ');
-            for (let k = 0; k < 8; k++) S.trackCCType[t][k] = parseInt(tp[k], 10) || 0;
-        }
-        /* Default Schwung-routed tracks to Sch1-8 when all lanes are at factory CC defaults.
-         * Deferred one-per-tick via pendingDefaultSetParams to avoid coalescing. */
-        if (S.trackRoute[t] === 0 &&
-                S.trackCCType[t].every(function(tp) { return tp === 0; })) {
-            for (let k = 0; k < 8; k++) {
-                S.trackCCType[t][k] = 2;
-                S.trackCCAssign[t][k] = k + 1;
-                S.schLabel[t][k] = null;
-                S.pendingDefaultSetParams.push({ key: 't' + t + '_cc_type_assign', val: k + ' 2 ' + (k + 1) });
-            }
-        }
-        for (let c = 0; c < NUM_CLIPS; c++) {
-            const bits = dspGet('t' + t + '_c' + c + '_cc_auto_bits');
-            S.trackCCAutoBits[t][c] = bits !== null ? (parseInt(bits, 10) || 0) : 0;
-            /* Per-clip resting values ("—"=255 → -1). */
-            const rest = dspGet('t' + t + '_c' + c + '_cc_rest');
-            if (rest) {
-                const rp = rest.split(' ');
-                for (let k = 0; k < 8; k++) {
-                    const rv = parseInt(rp[k], 10);
-                    S.clipCCVal[t][c][k] = (rv >= 0 && rv <= 127) ? rv : -1;
-                }
-            }
-            /* Aftertouch automation presence (for the AUTOMATION-bank indicator). */
-            const ath = dspGet('t' + t + '_c' + c + '_at_has');
-            S.clipAtHas[t][c] = (ath !== null && parseInt(ath, 10) === 1);
         }
         return;
     }
@@ -1696,16 +1633,6 @@ function _syncClipsFromDspInner() {
                 const tpsVal = parseInt(tpsRaw, 10);
                 S.clipTPS[t][c] = TPS_VALUES.indexOf(tpsVal) >= 0 ? tpsVal : 24;
             }
-            var ccll = dspGet('t' + t + '_c' + c + '_cc_lane_loops');
-            if (ccll) {
-                var _vals = ccll.split(' ');
-                for (var _k = 0; _k < 8 && _k * 4 + 3 < _vals.length; _k++) {
-                    S.ccLaneLoopStart[t][c][_k] = parseInt(_vals[_k * 4], 10) | 0;
-                    S.ccLaneLength[t][c][_k]    = parseInt(_vals[_k * 4 + 1], 10) | 0;
-                    S.ccLaneTps[t][c][_k]       = parseInt(_vals[_k * 4 + 2], 10) | 0;
-                    S.ccLaneResTps[t][c][_k]    = parseInt(_vals[_k * 4 + 3], 10) | 0;
-                }
-            }
         }
         const ac2 = dspGet('t' + t + '_active_clip');
         if (ac2 !== null && ac2 !== undefined) {
@@ -1715,6 +1642,13 @@ function _syncClipsFromDspInner() {
         const po = dspGet('t' + t + '_pad_octave');
         if (po !== null && po !== undefined) S.padOctave[t] = parseInt(po, 10) | 0;
         readTrackConfig(t);
+        /* Aftertouch automation presence, per clip — the AUTOMATION bank's AT
+         * row reads it. Was carried by readBankParams(t, 6) until the old
+         * CC-lane bank was deleted (P8). */
+        for (let c = 0; c < NUM_CLIPS; c++) {
+            const _ath0 = dspGet('t' + t + '_c' + c + '_at_has');
+            S.clipAtHas[t][c] = (_ath0 !== null && parseInt(_ath0, 10) === 1);
+        }
         for (let b = 0; b < 7; b++) readBankParams(t, b);
         readTarpStepVel(t);
         readDrumRepeatRates(t);
@@ -1822,16 +1756,6 @@ export function syncClipsTargeted(infoStr) {
                 S.clipTPS[t][c] = TPS_VALUES.indexOf(tpsVal) >= 0 ? tpsVal : 24;
             }
             if (c === S.trackActiveClip[t]) refreshPerClipBankParams(t);
-        }
-        const _abits = host_module_get_param('t' + t + '_c' + c + '_cc_auto_bits');
-        S.trackCCAutoBits[t][c] = _abits !== null ? (parseInt(_abits, 10) || 0) : 0;
-        const _arest = host_module_get_param('t' + t + '_c' + c + '_cc_rest');
-        if (_arest) {
-            const _arp = _arest.split(' ');
-            for (let k = 0; k < 8; k++) {
-                const rv = parseInt(_arp[k], 10);
-                S.clipCCVal[t][c][k] = (rv >= 0 && rv <= 127) ? rv : -1;
-            }
         }
         const _ath = host_module_get_param('t' + t + '_c' + c + '_at_has');
         S.clipAtHas[t][c] = (_ath !== null && parseInt(_ath, 10) === 1);

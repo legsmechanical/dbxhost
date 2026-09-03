@@ -1,4 +1,4 @@
-import { S, CC_ASSIGN_DEFAULTS } from './ui_state.mjs';
+import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { NUM_TRACKS, NUM_CLIPS, DRUM_LANES, BANKS, ACTION_POPUP_MS,
          VOL_CARD_TICKS } from './ui_constants.mjs';
@@ -379,18 +379,6 @@ export function doClearSession() {
         S.trackVelOverride[_t] = 0; S.trackLooper[_t] = 1;
         S.trackOctave[_t] = 0;
         S.drumVelZoneArmed[_t] = false;
-        S.trackCCAssign[_t] = CC_ASSIGN_DEFAULTS.slice();
-        S.trackCCType[_t]   = new Array(8).fill(0);
-        S.clipCCVal[_t]     = Array.from({length: NUM_CLIPS}, () => new Array(8).fill(-1));
-        S.trackCCAutoBits[_t] = new Array(NUM_CLIPS).fill(0);
-        S.trackCCLiveVal[_t] = new Array(8).fill(-1);
-        S.ccActiveLane[_t]  = 0;
-        for (var _c2 = 0; _c2 < NUM_CLIPS; _c2++)
-            for (var _k = 0; _k < 8; _k++) {
-                S.ccLaneLoopStart[_t][_c2][_k] = 0;
-                S.ccLaneLength[_t][_c2][_k]    = 0;
-                S.ccLaneTps[_t][_c2][_k]       = 0;
-            }
         for (let _b = 3; _b <= 4; _b++) {
             for (let _k = 0; _k < 8; _k++) {
                 const _pm = BANKS[_b].knobs[_k];

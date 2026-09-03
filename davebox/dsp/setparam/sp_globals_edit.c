@@ -52,7 +52,6 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             dst->active = src->active;
             clip_migrate_to_notes(dst);
             clip_copy_cond_fields(dst, src);
-            inst->tracks[dstT].clip_cc_auto[dstC] = inst->tracks[srcT].clip_cc_auto[srcC];
             inst->tracks[dstT].clip_at_auto[dstC] = inst->tracks[srcT].clip_at_auto[srcC];
             pa_copy_clip(inst, srcT, srcC, dstT, dstC);
             if ((int)inst->tracks[dstT].active_clip == dstC)
@@ -95,7 +94,6 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             dst->active = src->active;
             clip_migrate_to_notes(dst);
             clip_copy_cond_fields(dst, src);
-            inst->tracks[t].clip_cc_auto[dstRow] = inst->tracks[t].clip_cc_auto[srcRow];
             pa_copy_clip(inst, t, srcRow, t, dstRow);
             inst->tracks[t].clip_at_auto[dstRow] = inst->tracks[t].clip_at_auto[srcRow];
             if ((int)inst->tracks[t].active_clip == dstRow)
@@ -196,13 +194,11 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             dst->active = src->active;
             clip_migrate_to_notes(dst);
             clip_copy_cond_fields(dst, src);
-            dstTr->clip_cc_auto[dstC] = srcTr->clip_cc_auto[srcC];
             pa_move_clip(inst, srcT, srcC, dstT, dstC);
             dstTr->clip_at_auto[dstC] = srcTr->clip_at_auto[srcC];
             if ((int)dstTr->active_clip == dstC) pfx_sync_from_clip(dstTr);
             silence_track_notes_v2(inst, srcTr);
             clip_init(src);
-            cc_auto_reset(&srcTr->clip_cc_auto[srcC]);
             at_auto_reset(&srcTr->clip_at_auto[srcC]);
             if ((int)srcTr->active_clip == srcC) pfx_sync_from_clip(srcTr);
             srcTr->rec_pending_count = 0;
@@ -247,13 +243,11 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             dst->active = src->active;
             clip_migrate_to_notes(dst);
             clip_copy_cond_fields(dst, src);
-            tr->clip_cc_auto[dstRow] = tr->clip_cc_auto[srcRow];
             pa_move_clip(inst, t, srcRow, t, dstRow);
             tr->clip_at_auto[dstRow] = tr->clip_at_auto[srcRow];
             if ((int)tr->active_clip == dstRow) pfx_sync_from_clip(tr);
             silence_track_notes_v2(inst, tr);
             clip_init(src);
-            cc_auto_reset(&tr->clip_cc_auto[srcRow]);
             at_auto_reset(&tr->clip_at_auto[srcRow]);
             if ((int)tr->active_clip == srcRow) pfx_sync_from_clip(tr);
             tr->rec_pending_count = 0;
@@ -566,7 +560,6 @@ static int sp_globals_edit(sp_ctx_t *cx) {
         for (i = 0; i < (int)inst->undo_clip_count; i++) {
             int t = (int)inst->undo_clip_tracks[i], c = (int)inst->undo_clip_indices[i];
             memcpy(&inst->redo_clips[i], &inst->tracks[t].clips[c], sizeof(clip_t));
-            memcpy(&inst->redo_auto_cc[i], &inst->tracks[t].clip_cc_auto[c], sizeof(cc_auto_t));
             pa_undo_capture(inst, inst->redo_pa[i], &inst->redo_pa_count[i],
                             &inst->redo_pa_partial[i], t, c);
             memcpy(&inst->redo_auto_at[i], &inst->tracks[t].clip_at_auto[c], sizeof(at_auto_t));
@@ -577,7 +570,6 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                            inst->undo_clip_count);
         for (i = 0; i < (int)inst->undo_clip_count; i++) {
             int t = (int)inst->undo_clip_tracks[i], c = (int)inst->undo_clip_indices[i];
-            memcpy(&inst->tracks[t].clip_cc_auto[c], &inst->undo_auto_cc[i], sizeof(cc_auto_t));
             /* ⚠ One clip too big to capture disables the automation restore for
              * the WHOLE operation — see pa_undo_restore's note. Restoring some
              * clips of a cut and not others destroys what it was protecting. */
@@ -586,10 +578,8 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                                       pa_undo_any_partial(inst->undo_pa_partial,
                                                           (int)inst->undo_clip_count)), t, c);
             memcpy(&inst->tracks[t].clip_at_auto[c], &inst->undo_auto_at[i], sizeof(at_auto_t));
-            if ((int)inst->tracks[t].active_clip == c) {
-                memset(inst->tracks[t].cc_auto_last_sent, 0xFF, 8);
+            if ((int)inst->tracks[t].active_clip == c)
                 memset(inst->tracks[t].at_last_sent, 0xFF, AT_MAX_LANES);
-            }
         }
         inst->undo_valid = 0;
         /* Also restore drum rows if snapshotted alongside melodic row undo */
@@ -699,7 +689,6 @@ static int sp_globals_edit(sp_ctx_t *cx) {
         for (i = 0; i < (int)inst->redo_clip_count; i++) {
             int t = (int)inst->redo_clip_tracks[i], c = (int)inst->redo_clip_indices[i];
             memcpy(&inst->undo_clips[i], &inst->tracks[t].clips[c], sizeof(clip_t));
-            memcpy(&inst->undo_auto_cc[i], &inst->tracks[t].clip_cc_auto[c], sizeof(cc_auto_t));
             pa_undo_capture(inst, inst->undo_pa[i], &inst->undo_pa_count[i],
                             &inst->undo_pa_partial[i], t, c);
             memcpy(&inst->undo_auto_at[i], &inst->tracks[t].clip_at_auto[c], sizeof(at_auto_t));
@@ -710,16 +699,13 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                            inst->redo_clip_count);
         for (i = 0; i < (int)inst->redo_clip_count; i++) {
             int t = (int)inst->redo_clip_tracks[i], c = (int)inst->redo_clip_indices[i];
-            memcpy(&inst->tracks[t].clip_cc_auto[c], &inst->redo_auto_cc[i], sizeof(cc_auto_t));
             pa_undo_restore(inst, inst->redo_pa[i], inst->redo_pa_count[i],
                             (uint8_t)(inst->redo_pa_partial[i] ||
                                       pa_undo_any_partial(inst->redo_pa_partial,
                                                           (int)inst->redo_clip_count)), t, c);
             memcpy(&inst->tracks[t].clip_at_auto[c], &inst->redo_auto_at[i], sizeof(at_auto_t));
-            if ((int)inst->tracks[t].active_clip == c) {
-                memset(inst->tracks[t].cc_auto_last_sent, 0xFF, 8);
+            if ((int)inst->tracks[t].active_clip == c)
                 memset(inst->tracks[t].at_last_sent, 0xFF, AT_MAX_LANES);
-            }
         }
         inst->redo_valid = 0;
         /* Also restore drum rows if snapshotted alongside melodic row redo */

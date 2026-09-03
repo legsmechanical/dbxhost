@@ -51,10 +51,6 @@ if (!window.schwungRemote) {
     "delay_retrig","seq_arp_style","seq_arp_rate","seq_arp_octaves","seq_arp_gate","seq_arp_steps_mode",
     "seq_arp_retrigger","seq_arp_sync"];
   const pfx=[0,0,100,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,100,0,1,0]; // sensible defaults
-  /* mock CC automation: 8 knob lanes (knob 0 seeded with a little curve) + focus */
-  let ccFocus=-1;
-  const ccLanes={0:[[0,40],[96,90],[192,60],[288,110]]};
-  const CC_ASSIGN=[7,74,71,73,72,91,93,10];
   /* mock conductor: selected track (1) is the conductor of clip 0, all tracks set
    * as responders so the responder panel + grid badges preview on a plain browser. */
   const cond={trk:6,clip:0,lock:0,resp:Array.from({length:8},()=>({resp:1,oct:0,when:0}))};
@@ -76,14 +72,10 @@ if (!window.schwungRemote) {
       KV["overtake_dsp:rui_dnotes"]=drum.map((l,i)=>l.hits.length?i+"|"+l.hits.map(h=>h.tick+":"+h.vel+":"+h.gate).join(","):null)
                                  .filter(Boolean).join(";");
       KV["overtake_dsp:rui_notes"]="";
-      delete KV["overtake_dsp:rui_ccmeta"]; delete KV["overtake_dsp:rui_cc"];
     } else {
       KV["overtake_dsp:rui_clip"]=clipLen+":24:"+clipLs+":"+clipDir;
       KV["overtake_dsp:rui_notes"]=mel.map(n=>n.tick+":"+n.pitch+":"+n.vel+":"+n.gate+";").join("");
       KV["overtake_dsp:rui_pfx"]=pfx.join(":");
-      KV["overtake_dsp:rui_ccmeta"]=Array.from({length:8},(_,k)=>
-        [ CC_ASSIGN[k], 0, (ccLanes[k]&&ccLanes[k].length?1:0), 255, 255, 0,0,0,0 ].join(",")).join(";");
-      KV["overtake_dsp:rui_cc"]= ccFocus>=0 ? ccFocus+"|"+(ccLanes[ccFocus]||[]).map(p=>p[0]+":"+p[1]).join(",") : "";
       delete KV["overtake_dsp:rui_dlanes"]; delete KV["overtake_dsp:rui_dnotes"];
     }
     KV["overtake_dsp:rui_cond"]=cond.trk+":"+cond.clip+":"+cond.lock+
@@ -111,14 +103,6 @@ if (!window.schwungRemote) {
       if(/^(chain|move_fx):/.test(k)){ KV[k]=String(v); return; }
       /* transport start/stop — flip the preview playing state */
       if(/(^|:)transport$/.test(k)){ mockPlay=(String(v)==="play")?1:0; rev++; rebuild(); return; }
-      /* CC automation (Task 1 keys) — keep the preview curve live */
-      if(/_cc_focus$/.test(k)){ ccFocus=+v; rev++; rebuild(); return; }
-      if(/_cc_auto_set$/.test(k)){ const a=String(v).split(/\s+/).map(Number); const kn=a[1],tk=a[2],vl=a[3];
-        const L=ccLanes[kn]||(ccLanes[kn]=[]); const i=L.findIndex(p=>p[0]===tk); if(i>=0)L[i][1]=vl; else L.push([tk,vl]);
-        L.sort((x,y)=>x[0]-y[0]); rev++; rebuild(); return; }
-      if(/_cc_auto_clear_range$/.test(k)){ const a=String(v).split(/\s+/).map(Number); const kn=a[1],t1=a[2],t2=a[3];
-        if(ccLanes[kn]) ccLanes[kn]=ccLanes[kn].filter(p=>p[0]<t1||p[0]>t2); rev++; rebuild(); return; }
-      if(/_cc_auto_clear_k$/.test(k)){ const a=String(v).split(/\s+/).map(Number); ccLanes[a[1]]=[]; rev++; rebuild(); return; }
       /* conductor responder edits — mutate the mock cond so the panel reflects them */
       if(/_cond_lock$/.test(k)){ cond.lock=+v?1:0; rev++; rebuild(); return; }
       if((m=k.match(/_cond_(resp|when)$/))){ const a=String(v).split(/\s+/).map(Number);
@@ -256,14 +240,6 @@ function launchScene(c){ R.setParam(P+"launch_scene", String(c)); afterEdit(); }
 function launchClip(t,c){ R.setParam(P+`t${t}_launch_clip`, String(c)); afterEdit(); }
 
 /* ---------- parse flat snapshot fields ---------- */
-/* CC automation meta: 8 knob groups joined by ";", each
- * "assign,type,hasdata,rest,curval,ls,len,tps,restps" (rest/cur 255 = unset). */
-function parseCcMeta(s){ if(!s) return []; return s.split(";").map(g=>{
-  const a=g.split(",").map(Number);
-  return {assign:a[0],type:a[1],hasdata:!!a[2],rest:a[3],cur:a[4],ls:a[5],len:a[6],tps:a[7],restps:a[8]}; }); }
-/* focused knob's breakpoints: "k|tick:val,tick:val,..." (empty when no focus) */
-function parseCc(s){ if(!s) return null; const [k,pts]=s.split("|");
-  return {k:+k, points:(pts||"").split(",").filter(Boolean).map(p=>{const [t,v]=p.split(":").map(Number); return {tick:t,val:v};})}; }
 /* conductor/responder map: header "condTrk:condClip:lock" + 8 ";resp,oct,when"
  * groups (one per track). No conductor → "-1:-1:0" (no groups). */
 function parseCond(s){ if(!s) return {trk:-1, resp:[]};
@@ -328,14 +304,12 @@ function parseModel(){
   draw_src.split(";").filter(Boolean).forEach(tok=>{
     const a=tok.split(":").map(Number); stepTrig[a[0]]={iter:a[1]|0,rand:a[2]|0,ratch:a[3]|0,nudge:a[4]|0};
   });
-  const ccmeta=parseCcMeta(get("rui_ccmeta")||"");
-  const cc=parseCc(get("rui_cc")||"");
-  /* rui_trunc:1 when the DSP snapshot dropped notes/CC points at the 64KB budget
+  /* rui_trunc:1 when the DSP snapshot dropped notes at the 64KB budget
    * (dense clip) — drives a non-blocking "some notes hidden" badge. Absent/0 = clean. */
   const trunc = (+(get("rui_trunc")||0))?1:0;
   return {rev:+(get("rui_rev")||0), play:{on:pon,tick:ptick,bpm:pbpm,dev:pdev},
           sel:{t:st,c:sc,lane:sl}, clip:{len:cl,tps:ct,ls:cls,dir:cd}, tracks, notes,
-          dlanes, dnotes, pfx, glob, scaleMask, laneInfo, stepTrig, ccmeta, cc, trunc,
+          dlanes, dnotes, pfx, glob, scaleMask, laneInfo, stepTrig, trunc,
           cond: parseCond(get("rui_cond")||"")};
 }
 const isDrum = ()=> M && M.tracks[M.sel.t] && M.tracks[M.sel.t].pm===1;

@@ -23,19 +23,6 @@
  * key/scale change and transposes every melodic clip, so it must run after all
  * per-clip note tokens in the table have already been asserted.
  *
- * Phase 4B group 2 prep: the sp_track_ccauto group's 11 keys are characterized
- * the same way. Serialized-token keys (cc_assign, cc_type, cc_auto_set point)
- * are table rows; the rest — cc_send (emitted CC + recording latch),
- * cc_type_assign, cc_rest (V=255 unset / V<128 emit / active-clip reset),
- * cc_auto_set2 flat-hold, and the four clears (clear_k / clear_range /
- * clear_step / clear) plus range guards — are white-box asserts in a SECOND
- * block after the track-config one. That block clears/inspects the MIDI
- * capture buffer and so must run after every table row that asserts on
- * captured MIDI. It works entirely on track 7 (melodic, ROUTE_SCHWUNG ->
- * internal MIDI capture; default channel == track index == 7; default
- * cc_type 0 / cc_assign = CC_ASSIGN_DEFAULT; active_clip 0), with distinct
- * clip/knob magic numbers per key so nothing collides.
- *
  * Phase 4B group 3 prep: the tN_lL_* drum-lane group (35 lane sub-keys + the
  * nested _step_S_* parser + the drum-alloc-on-first-lane-write trigger) is
  * characterized as a FOURTH white-box block (all white-box blocks run after
@@ -59,8 +46,8 @@
  * drum_clips allocated) for the two drum-clip variants (_drum_clear /
  * _drum_reset). Neither track is asserted after this block, so the magic
  * clip/step/knob indices here are collision-safe. Pins are direct struct
- * inspection (notes[]/steps[]/step arrays, clip_cc_auto[] lane fields, cond_
- * fields, pfx_params, rui_sel_ / rui_cc_focus) rather than serialized tokens: per-clip
+ * inspection (notes[]/steps[]/step arrays, cond_
+ * fields, pfx_params, rui_sel_) rather than serialized tokens: per-clip
  * note/step content is far more robustly pinned by reading the clip_t than by
  * the sparse serialization. One distinct clip per concern. Serialized-token
  * coverage for this group already lives in the table (t5_c0_step_0_toggle/_gate/
@@ -73,7 +60,7 @@
  * track_vel_override) is characterized as a SIXTH white-box block (blocks run
  * after the table, in file order). It runs on a DEDICATED track (t2): track 0 is the harness's default
  * DRUM track, so t2 is used as a melodic track whose prior touches
- * (channel/tvo/cc-auto/launch) don't intersect this group's keys and whose tarp
+ * (channel/tvo/launch) don't intersect this group's keys and whose tarp
  * state is pristine at block entry. The block forces t2's active_clip back to 0
  * (an earlier immediate-launch left it at 5) so the active-clip resolution keys
  * hit a clean clip. The block is self-contained: resolution/tarp/pad_octave pins
@@ -118,7 +105,7 @@
  * is characterized as an EIGHTH white-box block (all white-box blocks run after
  * the table, in file order; this is currently the last). It runs on a DEDICATED
  * track (t7): melodic, default ROUTE_SCHWUNG -> HX_MIDI_INTERNAL capture, channel
- * 7 (tr->channel == track index) -- the same known-emitting track the cc-auto
+ * 7 (tr->channel == track index) -- the same known-emitting track the automation
  * block used, and nothing asserts t7 after this block, so its live sends are
  * collision-safe. ORDER inside the block is load-bearing: live_notes/live_at run
  * FIRST while inst->dsp_inbound_enabled==0, because the padmap push sets
@@ -241,15 +228,6 @@ int main(void) {
         { "t3_solo",                 "1",         "\"solo\":\"00010000\"",  "solo" },
         { "t1_tarp_on",              "1",         "\"t1_taon\":1",          "tarp (TRACK ARP)" },
         { "t2_track_vel_override",   "123",       "\"t2_tvo\":123",         "velocity override" },
-        { "t3_cc_rest",              "1 2 55",    "\"t3c1cr2\":55",         "cc-automation (rest val)" },
-        /* cc-auto group serialized tokens (Phase 4B group 2 prep). Distinct
-         * track/knob/clip from every other row so they never collide.
-         * cc_assign knob3 default (CC_ASSIGN_DEFAULT[3]) is 73; 45 differs so
-         * it serializes. cc_type knob5 default 0; 1 serializes. */
-        { "t2_cc_assign",            "3 45",      "\"t2cca3\":45",          "cc-auto (cc_assign token)" },
-        { "t2_cc_type",              "5 1",       "\"t2cct5\":1",           "cc-auto (cc_type token)" },
-        /* cc_auto_set point: token = "t<trk>c<clip>ck<knob>":"tick:val;" */
-        { "t2_cc_auto_set",          "2 4 300 88","\"t2c2ck4\":\"300:88;\"", "cc-auto (auto point token)" },
     };
     char blob[65536];
     int i, n;
@@ -400,151 +378,6 @@ int main(void) {
     HX_ASSERT(inst->solo[5] == 0, "precondition: t5 solo clear");
     hx_set_param(h, "t5_solo", "1");
     HX_ASSERT(inst->solo[5] == 0, "solo must be inert on a Conductor track");
-
-    /* ---- CC-auto group white-box pins (Phase 4B group 2 prep). Runs after the table:
-     * these are self-contained (own track/clip/knob magic numbers) and some
-     * emit MIDI, so they clear/inspect the capture buffer and must not run
-     * before rows that assert on captured MIDI. Track 7 is melodic + default
-     * ROUTE_SCHWUNG (emits via midi_send_internal -> HX_MIDI_INTERNAL) with
-     * default channel 7 (tr->channel == track index) and default cc_type=0 /
-     * cc_assign = CC_ASSIGN_DEFAULT. active_clip is 0. ---- */
-    {
-        seq8_track_t *ct = &inst->tracks[7];
-
-        /* cc_send "K V": emits the knob's CC live + latches into recording.
-         * knob0: cc_type 0, cc_assign 7 -> CC 0xB7 07 100 on the internal bus. */
-        ct->recording = 0; ct->cc_latched = 0;
-        hx_clear_capture(h);
-        hx_set_param(h, "t7_cc_send", "0 100");
-        HX_ASSERT(ct->cc_live_val[0] == 100, "cc_send: cc_live_val[0]=100");
-        {
-            int found = 0, j;
-            for (j = 0; j < hx_stub_event_count(); j++) {
-                const hx_midi_event *e = hx_stub_event(j);
-                if (e->kind == HX_MIDI_INTERNAL && e->bytes[1] == 0xB7 &&
-                    e->bytes[2] == 7 && e->bytes[3] == 100) found = 1;
-            }
-            HX_ASSERT(found, "cc_send: emitted CC 0xB7 07 100 on internal route");
-        }
-        /* recording latch: first turn while record-armed sets the knob's
-         * cc_latched bit + resets its cc_latch_last_snap to 0xFFFFFFFF. */
-        ct->recording = 1; ct->cc_latched = 0;
-        hx_set_param(h, "t7_cc_send", "1 90");
-        HX_ASSERT((ct->cc_latched >> 1) & 1, "cc_send latch: knob1 bit set while recording");
-        HX_ASSERT(ct->cc_latch_last_snap[1] == 0xFFFFFFFFu, "cc_send latch: snap reset to 0xFFFFFFFF");
-        ct->recording = 0; ct->cc_latched = 0;   /* disarm for the rest */
-
-        /* cc_rest "C K V": V>=128 => unset (0xFF, no MIDI); V<128 => set +
-         * cc_live + emit, and on the active clip resets cc_auto_last_sent. */
-        hx_set_param(h, "t7_cc_rest", "0 2 60");
-        HX_ASSERT(ct->clip_cc_auto[0].rest_val[2] == 60, "cc_rest: set rest_val=60");
-        hx_clear_capture(h);
-        hx_set_param(h, "t7_cc_rest", "0 2 255");
-        HX_ASSERT(ct->clip_cc_auto[0].rest_val[2] == 0xFF, "cc_rest: V=255 -> 0xFF (unset)");
-        HX_ASSERT(hx_stub_event_count() == 0, "cc_rest: V=255 emits no MIDI");
-        ct->cc_auto_last_sent[2] = 50;
-        hx_clear_capture(h);
-        hx_set_param(h, "t7_cc_rest", "0 2 44");
-        HX_ASSERT(ct->clip_cc_auto[0].rest_val[2] == 44, "cc_rest: V<128 rest_val=44");
-        HX_ASSERT(ct->cc_live_val[2] == 44, "cc_rest: V<128 cc_live_val=44");
-        HX_ASSERT(ct->cc_auto_last_sent[2] == 0xFF, "cc_rest: active clip resets cc_auto_last_sent");
-        {
-            int found = 0, j;
-            for (j = 0; j < hx_stub_event_count(); j++) {
-                const hx_midi_event *e = hx_stub_event(j);
-                /* cc_assign[2] default = 71 */
-                if (e->kind == HX_MIDI_INTERNAL && e->bytes[1] == 0xB7 &&
-                    e->bytes[2] == 71 && e->bytes[3] == 44) found = 1;
-            }
-            HX_ASSERT(found, "cc_rest: V<128 emits CC 0xB7 71 44");
-        }
-
-        /* cc_type_assign "K T A": atomic type + assign write. */
-        hx_set_param(h, "t7_cc_type_assign", "6 2 99");
-        HX_ASSERT(ct->cc_type[6] == 2,  "cc_type_assign: cc_type[6]=2");
-        HX_ASSERT(ct->cc_assign[6] == 99, "cc_type_assign: cc_assign[6]=99");
-
-        /* cc_auto_set "C K T V": one interpolation point. */
-        hx_set_param(h, "t7_cc_auto_set", "3 5 400 66");
-        HX_ASSERT(ct->clip_cc_auto[3].count[5] == 1, "cc_auto_set: count=1");
-        HX_ASSERT(ct->clip_cc_auto[3].ticks[5][0] == 400, "cc_auto_set: tick=400");
-        HX_ASSERT(ct->clip_cc_auto[3].vals[5][0] == 66, "cc_auto_set: val=66");
-
-        /* cc_auto_set2 "C K T1 T2 V": clear-range-then-two-endpoints (flat hold).
-         * An interior point inside (T1,T2) is dropped; endpoints written at V. */
-        hx_set_param(h, "t7_cc_auto_set", "4 6 50 30");   /* interior point */
-        HX_ASSERT(ct->clip_cc_auto[4].count[6] == 1, "cc_auto_set2 setup: interior point");
-        hx_set_param(h, "t7_cc_auto_set2", "4 6 0 100 77");
-        HX_ASSERT(ct->clip_cc_auto[4].count[6] == 2, "cc_auto_set2: interior dropped, 2 endpoints");
-        HX_ASSERT(ct->clip_cc_auto[4].ticks[6][0] == 0 &&
-                  ct->clip_cc_auto[4].ticks[6][1] == 100, "cc_auto_set2: endpoint ticks 0,100");
-        HX_ASSERT(ct->clip_cc_auto[4].vals[6][0] == 77 &&
-                  ct->clip_cc_auto[4].vals[6][1] == 77, "cc_auto_set2: both endpoints = 77");
-        /* T1==T2 writes a single point (only one set_point call). */
-        hx_set_param(h, "t7_cc_auto_set2", "4 6 200 200 88");
-        HX_ASSERT(ct->clip_cc_auto[4].count[6] == 3, "cc_auto_set2: T1==T2 adds one point");
-        HX_ASSERT(ct->clip_cc_auto[4].ticks[6][2] == 200 &&
-                  ct->clip_cc_auto[4].vals[6][2] == 88, "cc_auto_set2: T1==T2 point=200:88");
-
-        /* cc_auto_clear_k "C K": zeroes count + resets rest to 0xFF; on the
-         * active clip also resets cc_auto_last_sent. */
-        hx_set_param(h, "t7_cc_auto_set", "0 3 120 55");
-        hx_set_param(h, "t7_cc_rest", "0 3 40");
-        HX_ASSERT(ct->clip_cc_auto[0].count[3] == 1, "cc_auto_clear_k setup: point present");
-        ct->cc_auto_last_sent[3] = 20;
-        hx_set_param(h, "t7_cc_auto_clear_k", "0 3");
-        HX_ASSERT(ct->clip_cc_auto[0].count[3] == 0, "cc_auto_clear_k: count zeroed");
-        HX_ASSERT(ct->clip_cc_auto[0].rest_val[3] == 0xFF, "cc_auto_clear_k: rest -> 0xFF");
-        HX_ASSERT(ct->cc_auto_last_sent[3] == 0xFF, "cc_auto_clear_k: active clip last_sent reset");
-
-        /* cc_auto_clear_range "C K T1 T2": drops only in-range points, keeps
-         * out-of-range points and the resting value. */
-        hx_set_param(h, "t7_cc_auto_set", "5 7 10 11");
-        hx_set_param(h, "t7_cc_auto_set", "5 7 50 22");
-        hx_set_param(h, "t7_cc_auto_set", "5 7 90 33");
-        hx_set_param(h, "t7_cc_rest", "5 7 60");
-        HX_ASSERT(ct->clip_cc_auto[5].count[7] == 3, "cc_auto_clear_range setup: 3 points");
-        hx_set_param(h, "t7_cc_auto_clear_range", "5 7 40 60");
-        HX_ASSERT(ct->clip_cc_auto[5].count[7] == 2, "cc_auto_clear_range: in-range point dropped");
-        HX_ASSERT(ct->clip_cc_auto[5].ticks[7][0] == 10 &&
-                  ct->clip_cc_auto[5].ticks[7][1] == 90, "cc_auto_clear_range: keeps out-of-range 10,90");
-        HX_ASSERT(ct->clip_cc_auto[5].rest_val[7] == 60, "cc_auto_clear_range: keeps rest value");
-
-        /* cc_auto_clear_step "C T1 T2": drops in-range points across ALL 8 knobs. */
-        hx_set_param(h, "t7_cc_auto_set", "6 0 30 15");
-        hx_set_param(h, "t7_cc_auto_set", "6 1 30 25");
-        HX_ASSERT(ct->clip_cc_auto[6].count[0] == 1 &&
-                  ct->clip_cc_auto[6].count[1] == 1, "cc_auto_clear_step setup: 2 knobs armed");
-        hx_set_param(h, "t7_cc_auto_clear_step", "6 20 40");
-        HX_ASSERT(ct->clip_cc_auto[6].count[0] == 0 &&
-                  ct->clip_cc_auto[6].count[1] == 0, "cc_auto_clear_step: all knobs cleared in range");
-
-        /* cc_auto_clear "C": full reset of clip C (points + rest -> "—"); on the
-         * active clip also memsets cc_auto_last_sent to 0xFF. */
-        hx_set_param(h, "t7_cc_auto_set", "6 2 44 55");
-        hx_set_param(h, "t7_cc_rest", "6 2 70");
-        HX_ASSERT(ct->clip_cc_auto[6].count[2] == 1 &&
-                  ct->clip_cc_auto[6].rest_val[2] == 70, "cc_auto_clear setup: point + rest");
-        hx_set_param(h, "t7_cc_auto_clear", "6");
-        HX_ASSERT(ct->clip_cc_auto[6].count[2] == 0, "cc_auto_clear: points zeroed");
-        HX_ASSERT(ct->clip_cc_auto[6].rest_val[2] == 0xFF, "cc_auto_clear: rest -> 0xFF");
-        memset(ct->cc_auto_last_sent, 10, 8);
-        hx_set_param(h, "t7_cc_auto_clear", "0");   /* clip 0 is active */
-        HX_ASSERT(ct->cc_auto_last_sent[0] == 0xFF &&
-                  ct->cc_auto_last_sent[7] == 0xFF, "cc_auto_clear: active clip memsets last_sent");
-
-        /* Range guards: out-of-range knob (k=8) and clip index are no-ops. */
-        {
-            uint8_t a0 = ct->cc_assign[0];
-            hx_set_param(h, "t7_cc_assign", "8 20");     /* k>7 -> return before write */
-            HX_ASSERT(ct->cc_assign[0] == a0, "cc_assign: knob 8 is a no-op (no clobber)");
-        }
-        {
-            uint16_t c00 = ct->clip_cc_auto[0].count[0];
-            hx_set_param(h, "t7_cc_auto_set", "99 0 10 50"); /* clip>=NUM_CLIPS -> return */
-            HX_ASSERT(ct->clip_cc_auto[0].count[0] == c00, "cc_auto_set: clip index OOB is a no-op");
-        }
-    }
 
     /* ---- Drum-lane white-box pins (Phase 4B group 3 prep). Runs after the table:
      * self-contained on a dedicated drum track (t3, melodic until this block's
@@ -836,8 +669,8 @@ int main(void) {
     /* ---- Per-clip white-box pins (Phase 4B group 4 prep). Runs after the table:
      * self-contained on a dedicated MELODIC track (t4) + the group-3 DRUM track
      * (t3) for the drum-clip variants. Characterizes the whole tN_cC_* block —
-     * ruisel/cc_focus, remote-UI note ops, the nested _step_S_* parser, per-clip
-     * resolution/dir/loop_set/length clamps, the _kN_cc_* lane loop sub-block,
+     * ruisel, remote-UI note ops, the nested _step_S_* parser, per-clip
+     * resolution/dir/loop_set/length clamps,
      * pfx_set, conductor fields, and the three clears + at/drum clears. One
      * distinct clip per concern so nothing collides. ---- */
     {
@@ -851,16 +684,6 @@ int main(void) {
                   inst->rui_sel_lane == 5, "_ruisel: track/clip/lane stored");
         hx_set_param(h, "t4_c9_ruisel", "-1");
         HX_ASSERT(inst->rui_sel_lane == -1, "_ruisel: '-' arg => lane -1 (melodic)");
-
-        /* _cc_focus "<k>": gate rui_cc to knob k (-1 = none); k>=8 => -1. Bumps rev. */
-        {
-            uint32_t rev0 = inst->rui_rev;
-            hx_set_param(h, "t4_c9_cc_focus", "3");
-            HX_ASSERT(inst->rui_cc_focus == 3, "_cc_focus: knob 3 gated");
-            HX_ASSERT(inst->rui_rev == rev0 + 1, "_cc_focus: bumps rui_rev");
-            hx_set_param(h, "t4_c9_cc_focus", "99");
-            HX_ASSERT(inst->rui_cc_focus == -1, "_cc_focus: k>=8 => -1 (none)");
-        }
 
         /* Remote-UI melodic note ops: notes[] keyed on (tick, pitch). */
         {
@@ -980,29 +803,6 @@ int main(void) {
             /* _length clamps to max_len = SEQ_STEPS - loop_start (=255 here). */
             hx_set_param(h, "t4_c15_length", "500");
             HX_ASSERT(c15->length == SEQ_STEPS - 1, "_length: clamps to SEQ_STEPS - loop_start");
-        }
-
-        /* _kN_cc_* per-clip CC-lane loop sub-block: writes clip_cc_auto[cidx]'s
-         * lane_loop_start/lane_length/lane_tps/lane_res_tps (knob k). */
-        {
-            cc_auto_t *ca = &mt->clip_cc_auto[10];
-            hx_set_param(h, "t4_c10_k2_cc_loop_set", "196616");   /* ls=3 len=8 */
-            HX_ASSERT(ca->lane_loop_start[2] == 3 && ca->lane_length[2] == 8,
-                      "_k2_cc_loop_set: lane ls=3 len=8");
-            hx_set_param(h, "t4_c10_k2_cc_lane_length", "5");
-            HX_ASSERT(ca->lane_length[2] == 5, "_k2_cc_lane_length: ->5");
-            hx_set_param(h, "t4_c10_k2_cc_lane_tps", "48");       /* valid TPS */
-            HX_ASSERT(ca->lane_tps[2] == 48, "_k2_cc_lane_tps: 48 accepted");
-            hx_set_param(h, "t4_c10_k2_cc_lane_tps", "50");       /* invalid TPS -> 0 */
-            HX_ASSERT(ca->lane_tps[2] == 0, "_k2_cc_lane_tps: non-TPS value => 0");
-            hx_set_param(h, "t4_c10_k2_cc_lane_res_tps", "96");
-            HX_ASSERT(ca->lane_res_tps[2] == 96, "_k2_cc_lane_res_tps: 96");
-            hx_set_param(h, "t4_c10_k2_cc_lane_double_fill", "1"); /* len 5->10 (no points) */
-            HX_ASSERT(ca->lane_length[2] == 10, "_k2_cc_lane_double_fill: length 5->10");
-            hx_set_param(h, "t4_c10_k2_cc_lane_reset", "1");
-            HX_ASSERT(ca->lane_loop_start[2] == 0 && ca->lane_length[2] == 0 &&
-                      ca->lane_tps[2] == 0 && ca->lane_res_tps[2] == 0,
-                      "_k2_cc_lane_reset: all four lane fields zeroed");
         }
 
         /* _pfx_set: routes a pfx key to this clip's pfx_params (any clip). */
@@ -1827,8 +1627,8 @@ int main(void) {
      * pfx_*_reset keys). These are BARE tN_ keys operating on
      * tr->clips[active_clip] (NO cC prefix -- DISTINCT from sp_track_clip's
      * tN_cC_* keys, which target an explicit clip). Runs on dedicated MELODIC
-     * track t7: t7's prior touches were the group-2 cc-auto block (clip_cc_auto
-     * lanes) and the group-7 live block (live/padmap paths) — never the clip_t
+     * track t7: t7's prior touches were the group-7 live block (live/padmap
+     * paths) — never the clip_t
      * note/step arrays (except c0 via xpose), so clips 1..9 are pristine. active_clip is struct-set per concern to a
      * distinct clip, with distinct magic numbers, so nothing chains. Nothing
      * asserts t7 after this block. OUT OF SCOPE (RT/transport): current_step /
@@ -2797,16 +2597,13 @@ int main(void) {
     printf("PASS: set_param domain snapshot (%d domains + transport)\n", i);
     printf("PASS: track-config white-box pins "
            "(xpose/launch/stop/deactivate/route/channel/looper/mute-solo/conduct)\n");
-    printf("PASS: cc-auto white-box pins "
-           "(cc_send/latch, cc_rest, cc_type_assign, cc_auto_set/set2/clear_k/"
-           "clear_range/clear_step/clear, range guards)\n");
     printf("PASS: drum-lane white-box pins "
            "(alloc-trigger/lane_note, note-ops, step-parser, clip config, "
            "clear/hard_reset, double_fill/beat_stretch/clock_shift/nudge, "
            "pfx/lgto, copy_to/cut_to, euclid, mute/solo, repeat-groove, lane guard)\n");
     printf("PASS: per-clip white-box pins "
-           "(ruisel/cc_focus, note-ops, step-parser, resolution/dir, "
-           "loop_set/length clamps, cc-lane sub-block, pfx_set, conductor fields, "
+           "(ruisel, note-ops, step-parser, resolution/dir, "
+           "loop_set/length clamps, pfx_set, conductor fields, "
            "clear/clear_keep/hard_reset, at_clear, drum_clear/drum_reset)\n");
     printf("PASS: track-config2 white-box pins "
            "(clip_resolution/_zoom + recording guard, pad_octave clamp, tarp_* "

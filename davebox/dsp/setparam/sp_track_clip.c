@@ -54,14 +54,6 @@ static int sp_track_clip(sp_ctx_t *cx) {
             return 1;
         }
 
-        /* tN_cC_cc_focus "<k>" — gate rui_cc to knob k (-1 = none); bump rev to force re-read. */
-        if (!strcmp(p, "_cc_focus")) {
-            int k = val ? my_atoi(val) : -1;
-            inst->rui_cc_focus = (k >= 0 && k < 8) ? (int8_t)k : -1;
-            rui_mark(inst, tidx, cidx);
-            return 1;
-        }
-
         /* Remote-UI piano-roll note edits (melodic clip). Each writes notes[]
          * directly then re-derives steps[] via clip_note_finalize. */
         if (!strcmp(p, "_note_add"))    { if (clip_note_apply_op(cl, 'a', val)) clip_note_finalize(inst, cl, tidx, cidx); return 1; }
@@ -534,135 +526,6 @@ static int sp_track_clip(sp_ctx_t *cx) {
             inst->state_dirty = 1;
             return 1;
         }
-        if (p[0] == '_' && p[1] == 'k' && p[2] >= '0' && p[2] <= '7') {
-            int _kidx = p[2] - '0';
-            cc_auto_t *_ca = &tr->clip_cc_auto[cidx];
-            if (!strcmp(p + 3, "_cc_loop_set")) {
-                long packed = 0;
-                const char *vp = val;
-                while (*vp == ' ') vp++;
-                while (*vp >= '0' && *vp <= '9') packed = packed * 10 + (*vp++ - '0');
-                int ls  = (int)((packed >> 16) & 0xFFFF);
-                int len = (int)(packed & 0xFFFF);
-                if (len < 0) len = 0;
-                if (ls < 0) ls = 0;
-                if (ls > SEQ_STEPS - 1) ls = SEQ_STEPS - 1;
-                if (len > 0 && ls + len > SEQ_STEPS) len = SEQ_STEPS - ls;
-                _ca->lane_loop_start[_kidx] = (uint16_t)ls;
-                _ca->lane_length[_kidx] = (uint16_t)len;
-                rui_mark(inst, tidx, cidx);
-                inst->state_dirty = 1;
-                return 1;
-            }
-            if (!strcmp(p + 3, "_cc_lane_length")) {
-                int len = (int)strtol(val, NULL, 10);
-                if (len < 0) len = 0;
-                uint16_t ls = _ca->lane_loop_start[_kidx];
-                if (len > 0 && (int)ls + len > SEQ_STEPS) len = SEQ_STEPS - (int)ls;
-                _ca->lane_length[_kidx] = (uint16_t)len;
-                rui_mark(inst, tidx, cidx);
-                inst->state_dirty = 1;
-                return 1;
-            }
-            if (!strcmp(p + 3, "_cc_lane_tps")) {
-                int tps_val = (int)strtol(val, NULL, 10);
-                if (tps_val == 0) {
-                    _ca->lane_tps[_kidx] = 0;
-                } else {
-                    int vi, valid = 0;
-                    for (vi = 0; vi < 6; vi++)
-                        if (tps_val == (int)TPS_VALUES[vi]) { valid = 1; break; }
-                    _ca->lane_tps[_kidx] = valid ? (uint16_t)tps_val : 0;
-                }
-                rui_mark(inst, tidx, cidx);
-                inst->state_dirty = 1;
-                return 1;
-            }
-            if (!strcmp(p + 3, "_cc_lane_res_tps")) {
-                int tps_val = (int)strtol(val, NULL, 10);
-                if (tps_val == 0) {
-                    _ca->lane_res_tps[_kidx] = 0;
-                } else {
-                    int vi, valid = 0;
-                    for (vi = 0; vi < 6; vi++)
-                        if (tps_val == (int)TPS_VALUES[vi]) { valid = 1; break; }
-                    _ca->lane_res_tps[_kidx] = valid ? (uint16_t)tps_val : 0;
-                }
-                rui_mark(inst, tidx, cidx);
-                inst->state_dirty = 1;
-                return 1;
-            }
-            if (!strcmp(p + 3, "_cc_lane_reset")) {
-                undo_begin_single(inst, tidx, cidx);
-                _ca->lane_loop_start[_kidx] = 0;
-                _ca->lane_length[_kidx] = 0;
-                _ca->lane_tps[_kidx] = 0;
-                _ca->lane_res_tps[_kidx] = 0;
-                rui_mark(inst, tidx, cidx);
-                inst->state_dirty = 1;
-                return 1;
-            }
-            if (!strcmp(p + 3, "_cc_lane_double_fill")) {
-                undo_begin_single(inst, tidx, cidx);
-                uint16_t _old_len = _ca->lane_length[_kidx];
-                if (_old_len == 0) _old_len = cl->length;
-                uint16_t _ltps = _ca->lane_tps[_kidx] > 0
-                               ? _ca->lane_tps[_kidx] : cl->ticks_per_step;
-                uint32_t _half_ticks = (uint32_t)_old_len * _ltps;
-                uint16_t _new_len = (uint16_t)(_old_len * 2);
-                if (_new_len > SEQ_STEPS) return 1;
-                int _n = (int)_ca->count[_kidx];
-                /* Add seam point at the boundary: evaluate what the loop
-                 * would produce at the last tick of the first half, so the
-                 * wrap-back transition is captured as an explicit point. */
-                if (_n > 0 && _n < CC_AUTO_MAX_POINTS) {
-                    uint32_t _seam_t = _half_ticks > 0 ? _half_ticks - 1 : 0;
-                    int _has_seam = 0, _si;
-                    for (_si = 0; _si < _n; _si++)
-                        if (_ca->ticks[_kidx][_si] == (uint16_t)_seam_t) { _has_seam = 1; break; }
-                    if (!_has_seam) {
-                        int _def;
-                        int _sv = cc_auto_eval(_ca, _kidx, _seam_t, 0, _half_ticks, &_def);
-                        if (_def && _sv >= 0 && _sv <= 127) {
-                            cc_auto_set_point(_ca, _kidx, (uint16_t)_seam_t, (uint8_t)_sv);
-                            _n = (int)_ca->count[_kidx];
-                        }
-                    }
-                }
-                int _added = 0;
-                int _orig_n = _n;
-                for (int _i = 0; _i < _orig_n && _n + _added < CC_AUTO_MAX_POINTS; _i++) {
-                    uint16_t _ot = _ca->ticks[_kidx][_i];
-                    if (_ot >= _half_ticks) continue;
-                    uint32_t _nt = (uint32_t)_ot + _half_ticks;
-                    if (_nt > 65535) continue;
-                    _ca->ticks[_kidx][_n + _added] = (uint16_t)_nt;
-                    _ca->vals[_kidx][_n + _added]  = _ca->vals[_kidx][_i];
-                    _added++;
-                }
-                _ca->count[_kidx] = (uint16_t)(_n + _added);
-                /* Sort the combined array (insertion sort — small N) */
-                { int _total = (int)_ca->count[_kidx];
-                  int _j;
-                  for (_j = 1; _j < _total; _j++) {
-                      uint16_t _kt = _ca->ticks[_kidx][_j];
-                      uint8_t  _kv = _ca->vals[_kidx][_j];
-                      int _jj = _j - 1;
-                      while (_jj >= 0 && _ca->ticks[_kidx][_jj] > _kt) {
-                          _ca->ticks[_kidx][_jj + 1] = _ca->ticks[_kidx][_jj];
-                          _ca->vals[_kidx][_jj + 1]  = _ca->vals[_kidx][_jj];
-                          _jj--;
-                      }
-                      _ca->ticks[_kidx][_jj + 1] = _kt;
-                      _ca->vals[_kidx][_jj + 1]  = _kv;
-                  }
-                }
-                _ca->lane_length[_kidx] = _new_len;
-                rui_mark(inst, tidx, cidx);
-                inst->state_dirty = 1;
-                return 1;
-            }
-        }
         if (!strncmp(p, "_pfx_set", 8) && p[8] == '\0') {
             /* tN_cC_pfx_set "key value" — apply pfx param to this clip's
              * pfx_params (any clip, not just active). Mirrors drum-lane
@@ -743,8 +606,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
             cl->note_count = 0;
             memset(cl->notes, 0, sizeof(cl->notes));
             cl->occ_dirty = 1;
-            /* Clip clear also removes all automation (CC + AT, + PB later). */
-            cc_auto_reset(&tr->clip_cc_auto[cidx]);
+            /* Clip clear also removes the clip's aftertouch automation. */
             at_auto_reset(&tr->clip_at_auto[cidx]);
             memset(tr->at_last_sent, 0xFF, AT_MAX_LANES);
             /* Deactivate track if the cleared clip is active or queued */
@@ -785,8 +647,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
             cl->note_count = 0;
             memset(cl->notes, 0, sizeof(cl->notes));
             cl->occ_dirty = 1;
-            /* Clip clear also removes all automation (CC + AT, + PB later). */
-            cc_auto_reset(&tr->clip_cc_auto[cidx]);
+            /* Clip clear also removes the clip's aftertouch automation. */
             at_auto_reset(&tr->clip_at_auto[cidx]);
             memset(tr->at_last_sent, 0xFF, AT_MAX_LANES);
             silence_track_notes_v2(inst, tr);
@@ -803,7 +664,6 @@ static int sp_track_clip(sp_ctx_t *cx) {
             undo_begin_single(inst, tidx, cidx);
             silence_track_notes_v2(inst, tr);
             clip_init(cl);
-            cc_auto_reset(&tr->clip_cc_auto[cidx]);
             at_auto_reset(&tr->clip_at_auto[cidx]);
             if ((int)tr->active_clip == cidx)
                 pfx_sync_from_clip(tr);

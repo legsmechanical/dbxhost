@@ -21,7 +21,7 @@ import {
     dropSnapshots, applySnapshotToLive, loadSelectedCurrentProject,
     readActiveSet
 } from './ui_persistence.mjs';
-import { effectiveClip, invalidateLEDCache } from './ui_leds.mjs';
+import { invalidateLEDCache } from './ui_leds.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
     closeTextEntry,
@@ -454,27 +454,6 @@ export function drawSnapshotPicker() {
     }), p.sel, { emptyMsg: 'No states', hostLabels: false });
 }
 
-/* CLEAR AUTOMATION modal — checkable AT / PB(disabled) / CC + a CLEAR action. */
-export function drawClearAutoMenu() {
-    clear_screen();
-    const m = S.clearAutoMenu;
-    if (!m) return;
-    /* ⚠ The checkboxes were `[x]` / `[ ]`, which COLLIDES with the kit grammar:
-     * square brackets mean "this value is being edited" everywhere else
-     * (UI_LANGUAGE §6), so a checked box read as a row mid-edit. On / Off in the
-     * value column says the same thing in the app's own vocabulary — and Pitch
-     * bend, which is an unimplemented placeholder, takes the `-` that §6
-     * reserves for unavailable, since 1-bit has no way to grey a row out. */
-    drawKitHeader('CLEAR AUTOMATION', false);
-    drawKitList([
-        { label: 'Aftertouch',     hdr: true, value: m.at ? 'On' : 'Off' },
-        { label: 'Pitch bend',     hdr: true, value: '-' },
-        { label: 'Control Change', hdr: true, value: m.cc ? 'On' : 'Off' },
-        { label: 'Clear',          hdr: true },
-        { label: 'Cancel',         hdr: true },
-    ], m.sel, {});
-}
-
 export function drawBakeSceneConfirm() {
     clear_screen();
     drawMenuHeader('BAKE SCENE?');
@@ -613,57 +592,6 @@ export function snapshotPickerClick() {
         p.confirm = { kind: 'load', sel: 1, targetId: snap.id };
     } else {
         p.confirm = { kind: 'overwrite', sel: 1, targetId: snap.id };
-    }
-    S.screenDirty = true;
-}
-
-/* ---- CLEAR AUTOMATION menu (Delete-tap on the AUTO bank) ---- */
-export function openClearAutoMenu() {
-    S.clearAutoMenu = { sel: 0, at: false, cc: false };
-    S.screenDirty = true;
-}
-
-export function closeClearAutoMenu() {
-    S.clearAutoMenu = null;
-    S.screenDirty = true;
-}
-
-export function clearAutoMenuRotate(delta) {
-    const m = S.clearAutoMenu;
-    if (!m || delta === 0) return;
-    m.sel = (m.sel + (delta > 0 ? 1 : 4)) % 5;   /* 0=AT 1=PB 2=CC 3=CLEAR 4=Cancel */
-    S.screenDirty = true;
-}
-
-export function clearAutoMenuClick() {
-    const m = S.clearAutoMenu;
-    if (!m) return;
-    if (m.sel === 0) { m.at = !m.at; }              /* Aftertouch (AT) */
-    else if (m.sel === 1) { /* Pitch bend (PB) — placeholder, not selectable */ }
-    else if (m.sel === 2) { m.cc = !m.cc; }         /* Control Change (CC) — all CC data */
-    else if (m.sel === 4) { closeClearAutoMenu(); return; }   /* Cancel */
-    else {                                           /* CLEAR — execute */
-        const t = S.activeTrack, c = effectiveClip(t);
-        if (m.cc) {
-            S.trackCCAutoBits[t][c] = 0;
-            S.trackCCLiveVal[t] = new Array(8).fill(-1);
-            S.clipCCVal[t][c] = new Array(8).fill(-1);
-            S.pendingDefaultSetParams.push({ key: 't' + t + '_cc_auto_clear', val: String(c) });
-        }
-        if (m.at) {
-            S.clipAtHas[t][c] = false;
-            S.pendingDefaultSetParams.push({ key: 't' + t + '_c' + c + '_at_clear', val: '1' });
-        }
-        const done = [];
-        if (m.at) done.push('AT');
-        if (m.cc) done.push('CC');
-        if (done.length) {
-            S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
-        }
-        closeClearAutoMenu();
-        invalidateLEDCache();
-        showActionPopup('CLEARED', done.length ? done.join(' ') : 'NOTHING');
-        return;
     }
     S.screenDirty = true;
 }
