@@ -186,23 +186,6 @@
   .bandhdr .bl{font-weight:600}
   .bandhdr .bsum{margin-left:auto;color:var(--faint);font:11px ui-monospace,monospace;
     text-transform:none;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}
-  #autowrap{flex:0 0 72px;border-top:1px solid #000;background:#0e1014;position:relative;overflow:hidden;touch-action:none}
-  #autocanvas{display:block;position:absolute;left:0;top:0;touch-action:none;cursor:crosshair}
-  #autopick{flex:0 0 auto;display:flex;gap:4px;padding:4px 6px 4px 8px;background:#0e1014;
-    border-top:1px solid #000;overflow-x:auto}
-  .ccslot{flex:0 0 auto;display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:var(--rad-sm);
-    background:var(--ctl);border:1px solid var(--ctl-br);color:var(--dim);font-size:11px;cursor:pointer;
-    font-variant-numeric:tabular-nums;white-space:nowrap}
-  .ccslot:hover{border-color:#48515f;color:var(--ink)}
-  .ccslot.sel{border-color:var(--accent);color:var(--accent);background:#13312f}
-  .ccslot.off{opacity:.5}
-  .ccslot .ccdot{width:5px;height:5px;border-radius:50%;background:var(--accent)}
-  .ccslot .ccv{color:var(--faint);font-size:10px}
-  #autoctl{display:none;gap:8px 12px;align-items:center;flex-wrap:wrap;padding:5px 8px;
-    background:#0e1014;border-top:1px solid #000}
-  #autoctl label{font-size:11.5px}
-  #autoctl .cclab{font:11px ui-monospace,monospace;color:var(--accent);font-weight:700}
-  #autoctl input,#autoctl select{padding:4px 6px;font-size:11.5px}
   /* ---------- inspector (accordion) ---------- */
   #side{flex:0 0 296px;background:var(--panel);border-left:1px solid #000;overflow:auto;padding:0}
   .sec{border-bottom:1px solid var(--line)}
@@ -529,10 +512,6 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
       </div>
       <div class="bandhdr" id="velhdr" title="Show / hide the velocity lane"><span class="tw">▼</span><span class="bl">Velocity</span></div>
       <div id="velwrap"><div class="lane-rs" data-for="velwrap" title="drag to resize"></div><canvas id="velcanvas"></canvas></div>
-      <div class="bandhdr" id="autohdr" title="Show / hide CC automation (per clip)"><span class="tw">▶</span><span class="bl">Automation</span><span class="bsum" id="autohsum"></span></div>
-      <div id="autopick"></div>
-      <div id="autoctl"></div>
-      <div id="autowrap"><div class="lane-rs" data-for="autowrap" title="drag to resize"></div><canvas id="autocanvas"></canvas></div>
       <div id="editbar">
         <div id="noteedit" class="ebgrp"></div>
         <div id="stepedit" class="ebgrp"></div>
