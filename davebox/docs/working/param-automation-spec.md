@@ -102,9 +102,9 @@ exact shape — see the board).
   copy carry automation, as built.
 - **Hold a step, see the locks**: while a step is held, the module editor and MACROS show each
   parameter's value AT THAT STEP. **Clear the clip**: a menu action, with Delete + jog-click on
-  the AUTOMATION card as its shortcut. **Quick assign on MACROS**: Shift + touch a macro knob
-  picks its target without leaving the bank (the one place the Shift+touch assign flow
-  survives). "Go to the parameter" from the AUTOMATION menu: only if it is easy. No "writing"
+  the AUTOMATION card as its shortcut. ~~**Quick assign on MACROS**~~: Shift + touch a macro
+  knob picked its target without leaving the bank — **RETIRED 2026-09-05** (Josh): the bank's
+  own assignment list is the one route. "Go to the parameter" from the AUTOMATION menu: only if it is easy. No "writing"
   ring colour while recording (declined).
 - **Hold on an empty step (c)** ⭑RULED (Josh, 2026-09-02 midday, supersedes the Note-knob
   line): **a hold never creates a note; pressing a note pad while the step is held creates

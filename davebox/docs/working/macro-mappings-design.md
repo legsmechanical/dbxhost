@@ -1,7 +1,7 @@
 # Macro mappings — several targets on one knob, each with a range
 
-**Status: DESIGN ONLY (2026-09-04 night, sequence item 8). Nothing built. Needs Josh's rulings
-on the questions in §6 before code.** Josh's ask (2026-09-03, with the bank-param keep-list):
+**Status: RULED (Josh, 2026-09-05) — §6 is now a list of RULINGS, not questions. Building in
+§7's order.** Josh's ask (2026-09-03, with the bank-param keep-list):
 *"something for the future that may be worth keeping in mind: I eventually want to be able to
 assign multiple parameters to a single macro knob and constrain their min and max values."*
 
@@ -55,28 +55,27 @@ decisions:
    rule must be written down in the poll, not discovered.
 3. **What automation records — see §4.**
 
-## 4. Automation identity (the ruling that matters most)
+## 4. Automation identity — RULED: record the LEGS (A)
 
-Two coherent options; they cannot both be true for one slot.
+**Josh, 2026-09-05: A. A turn writes every leg's target, and each leg records its own lane
+exactly as it does today.** There is no `mac:` target kind, the automation owner does not change,
+and the AUTOMATION bank, the bank cards, Delete/Mute and the module editor's dot all keep seeing
+the targets they already see. The rejected alternative (a `mac:<t>:<k>` lane whose playback drove
+the legs live) is not built and should not be re-proposed without a fresh ruling.
 
-- **A. Record the LEGS (today's law, extended).** A turn writes every leg's target, and each leg
-  records its own lane exactly as it does now. `+` nothing new in the owner, the AUTOMATION
-  bank, the bank cards, Delete/Mute, the module editor's dot: they all already see the targets.
-  `−` a 3-leg macro sweep records 3 lanes; smoothing / muting the *gesture* means editing 3
-  lanes; and a lane recorded THROUGH a range plays back the range's output, which is right, but
-  turning the range later does not re-shape old data (it is baked into the lane).
-- **B. Record the MACRO (`mac:<t>:<k>`, a new target kind in the owner).** One lane of `v`;
-  playback drives the legs through their ranges live, so re-ranging re-shapes playback.
-  `+` one gesture, one lane, ranges are live. `−` a NEW target kind in `ui_automation.mjs`
-  (`pushPair` branch + applier, like `seq:`), the AUTOMATION bank must label it, the bank cards
-  and module editor cannot show "this param is automated" for the legs (the dot would have to
-  be derived), and a leg's target automated directly AND through a macro has two writers —
-  the exact thing the one-writer rule forbids, so one must win (proposal: the direct lane).
+What A costs, stated so it is not rediscovered as a bug:
 
-**Recommendation: A for a one-leg mapping (unchanged), B for a multi-leg one — and the moment a
-second leg is added, the slot's existing lanes stay where they are (on the targets).** It keeps
-today's world untouched and gives the multi-leg case the thing it exists for (a live mapping).
-The cost is that the owner learns one more target kind (`mac:`), the same size as `seq:` was.
+- A three-leg sweep records THREE lanes. Smoothing or muting the *gesture* means editing three
+  lanes; there is no one object that is "the macro's automation".
+- **A range is BAKED into the lane at record time.** A lane recorded through `lo..hi` plays back
+  the range's output — correct — but re-ranging the leg later does not re-shape data already
+  recorded. Only new turns use the new range.
+- **⚠ A multi-leg macro's knob does not follow playback, so the first turn after playback
+  JUMPS.** `v` is authoritative and the poll skips multi-leg slots (§3.2), so automation moving
+  the legs' targets leaves `v` where the hand left it; the next turn writes
+  `lo + v·(hi − lo)` from that stale `v`. A one-leg mapping is unaffected — it keeps today's
+  path, where the poll holds the value current. No soft-takeover is built; that would be a
+  separate ruling.
 
 ## 5. Surface
 
@@ -85,24 +84,37 @@ The cost is that the owner learns one more target kind (`mac:`), the same size a
   same target picker as today, Shift+click to remove. `lo`/`hi` are two more rows under a leg,
   adjusted in place (continuous, per the enum-vs-continuous law); the widget previews the leg
   as they move. No new screen: the list gets deeper, not wider.
-- **Shift+touch quick-assign** stays: on an EMPTY slot it makes a one-leg mapping; on an
-  occupied slot it ADDS a leg (today it replaces). Q6.3 asks whether that is what Josh wants.
+- **Shift+touch quick-assign is RETIRED** (Josh, 2026-09-05: *"i don't think we need shift +
+  knob gesture at all anymore since macro assignment is more easily available from macro bank.
+  we can handle anything we need from the assignment menu"*). The assignment list is the ONE
+  route in and out of a mapping — legs, ranges, labels and removal all live there. ⚠ This is the
+  ASSIGN gesture only: Shift + TURN on a pitch-bend macro still LATCHES the bend (`pbShiftTurned`),
+  which is a value gesture, not an assignment one, and is untouched.
 - **Label.** A multi-leg slot needs a name; proposal: auto (`Cutoff+1`, first leg + count)
   with the text-entry keyboard behind the row for a custom one. Persisted in the sidecar.
 - **Rings** (`registerRingCells`): `v` for multi-leg, the target's norm for one-leg — the same
   rule as the widget.
 
-## 6. Questions for Josh (rulings needed before building)
+## 6. Rulings (Josh, 2026-09-05)
 
-1. §4: leg-lanes (A), macro-lane (B), or the split (A for one leg, B for many)?
-2. Should re-ranging a leg move the target NOW (apply `v` through the new range immediately)
-   or only on the next turn? (Proposal: now — a range edit is a turn of that leg.)
-3. Shift+touch on an occupied slot: replace (today) or add a leg?
-4. Is an inverted range (`lo > hi`) wanted, or should the list refuse it? (Proposal: allow.)
-5. Ranges on enum targets: a sub-range of the option list, or all-or-nothing? (Proposal:
-   sub-range — `lo..hi` picks the option span; it falls out of the fraction model for free.)
-6. Does a bank-kind leg (`seq:`) participate, or only chain/level/MIDI? (Proposal: all kinds —
-   the leg is today's record plus two numbers; nothing kind-specific.)
+1. §4 — **A: record the LEGS.** Every leg records its own lane; no macro lane, no `mac:` kind.
+   (He rejected both the split and B.)
+2. Re-ranging a leg — **it does NOT move the target now.** A range edit takes effect on the
+   NEXT turn of that knob. (The proposal was "apply now"; he unticked it.)
+3. Shift+touch — **the gesture is retired entirely**, not re-specced. See §5.
+4. Inverted ranges (`lo > hi`) — **allowed.** Turn the knob up, that target goes down.
+5. Enum legs — **a sub-range** of the option list, not all-or-nothing.
+6. Leg kinds — **all of them**: chain, level, MIDI and bank (`seq:`). A leg is today's target
+   record plus two numbers; nothing is kind-specific.
+
+Decisions NOT put to Josh (mine, each pinned in a test rather than left as prose):
+
+- **Seeding `v`** when a slot first becomes multi-leg or ranged: inverse-map the FIRST leg's
+  current value through its range and clamp to 0..1, so nothing jumps at the moment of adding.
+- **Patch-load merge** with a multi-leg mapping: the patch's `knob_N` replaces the FIRST
+  chain-kind leg's TARGET and keeps its range and the other legs; if the mapping has no chain
+  leg, the patch's target is PREPENDED as one. The one-leg case is byte-for-byte today's.
+- **The chain mirror** writes the first chain-kind leg (§2 already says this).
 
 ## 7. Order of work once ruled
 

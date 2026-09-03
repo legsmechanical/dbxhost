@@ -346,8 +346,8 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   all-lane direction). A macro *is* the parameter it points at: turn it and the module
   editor shows the change, record it and it records as that parameter, hold a
   step and it locks that step. **Click the jog** for the assignment list
-  (`K1`..`K8`, each naming its target), or **Shift + touch a knob** to assign
-  that knob without leaving the page. A knob with no target reads `--`; a
+  (`K1`..`K8`, each naming its target) — that list is where every mapping is
+  made and changed. A knob with no target reads `--`; a
   target that no longer exists (the module was swapped) reads UNASSIGNED.
   On a track left on MACROS the knobs are the macros from the track overview
   too, and touching one peeks the page. Conductor tracks don't have it either.
@@ -1335,9 +1335,6 @@ Pick a knob, pick a block (or a **bank**, or **Levels**), pick a parameter, and
 you're back on the list with the mapping made. The block list names the modules themselves, with a `>` marking
 each one as a door into its parameters; if the same module is loaded in two FX
 slots, the slot is shown beside the name so you can tell them apart.
-**Shift + touch a knob** goes straight to assigning that knob — no menu-walking —
-and lands you back on the page.
-
 Every knob sweeps its whole range in the same gesture, whatever the parameter's
 units — a filter cutoff and a 0.5-to-20-second reverb size take the same turn,
 and it's the same turn a fader takes in the session mixer. Turning faster moves

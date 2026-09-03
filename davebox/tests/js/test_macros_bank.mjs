@@ -376,25 +376,23 @@ step('holding Mute paints the eight knob rings on MACROS (the paint runs outside
     cc(88, 0); ticks(1);
 });
 
-/* ---- quick assign, the levels as targets, unassigned knobs --------------- */
-step('⭑ QUICK ASSIGN: Shift + touch K6 opens ITS target picker; Levels → Volume; the commit lands back on the PAGE', () => {
+/* ---- the retired quick-assign gesture, the levels as targets ------------ */
+step('⭑ Shift + touch a macro knob does NOTHING (the quick-assign gesture is RETIRED, Josh 2026-09-05)', () => {
     snd.soundSetViewForTest(VIEW_MACROS);
-    shift(true); touch(5, true); ticks(1); touch(5, false); shift(false);
-    assert(snd.soundViewForTest() === 12 && M().cursor === 5, 'K6 target picker, view ' + snd.soundViewForTest() + ' cursor ' + M().cursor);
-    assert(M().quick, 'flagged quick');
-    const targets = snd.soundKnobTargetsForTest();
-    const ti = targets.findIndex(t => t.name === 'Levels');
-    assert(ti >= 0, 'Levels offered as a target');
-    for (let i = 0; i < ti; i++) jog(1);
-    click(); ticks(1);
-    const rows = snd.soundKnobParamsForTest();
-    assert(rows.some(p => p.label === 'Module Level') && rows[0].label === 'Volume', 'the five levels, got ' + JSON.stringify(rows.map(p => p.label)));
-    click(); ticks(1);
-    assert(snd.soundViewForTest() === VIEW_MACROS, 'quick assign returns to the page, view ' + snd.soundViewForTest());
+    shift(true); touch(5, true); ticks(1); touch(5, false); shift(false); ticks(1);
+    assert(snd.soundViewForTest() === VIEW_MACROS,
+           'stays on the page, no picker — view ' + snd.soundViewForTest());
+    assert(GS.trackMacros[2][5] === null, 'and nothing was assigned, got ' + JSON.stringify(GS.trackMacros[2][5]));
+});
+step('the LIST route is the one way in: K6 → Levels → Volume, and the commit lands on the K-LIST', () => {
+    assignVia(5, 'Levels', 'Volume');
+    assert(snd.soundViewForTest() === VIEW_KNOBS,
+           'a commit always returns to the list now, view ' + snd.soundViewForTest());
     const st = GS.trackMacros[2][5];
     assert(st && st.kind === 'level' && st.key === 'volume', 'K6 = level volume, got ' + JSON.stringify(st));
     ticks(1);
     assert(lastWrite('knob_6_clear') === '1', 'a level macro has no chain form: mirrored as CLEAR');
+    back(); assert(snd.soundViewForTest() === VIEW_MACROS, 'Back returns to the page');
 });
 step('⭑ a PATCH LOAD merges the chain store back: chain slots win, an empty chain slot keeps a level macro', () => {
     /* The patch brought knob 1 → fx2:room_size and cleared knob 4; knob 6 (a

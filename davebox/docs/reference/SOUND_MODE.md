@@ -216,10 +216,12 @@ CC 71-78 branch). Until 2026-08-14 nothing on screen named that mapping.
   never a second timer. ⭑ The value is *seeded* on touch (the step law needs a
   base to add to) but stays hidden until the knob MOVES — touch orients, turn
   reveals.
-- **Shift + touch** opens that knob's assign flow directly (`openKnobEditor`
-  then `S.knobIdx` then `openKnobTargets` — in that order; the editor resets the
-  cursor). It runs the full eight-knob read first so committing lands on a KNOBS
-  list with no unread rows rendering as `(None)`.
+- ⚠ **Shift + touch is NOT an assign gesture** — it used to open that knob's
+  target flow directly, and was RETIRED (Josh, 2026-09-05: assignment is easy
+  enough from the bank's own list). Shift is free on a macro touch; the jog-click
+  assignment list is the only route in, and a commit always lands back on it.
+  (Shift + *turn* on a pitch-bend macro still latches the bend — a value
+  gesture, not an assign one.)
 
 ⚠⚠ **The card's gate is the SAME predicate as the turn-forwarding branch** —
 non-EDIT view, `!S.bus && S.slot >= 0`, minus the assign screens themselves.

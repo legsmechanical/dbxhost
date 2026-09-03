@@ -692,7 +692,6 @@ const S = {
     midiValsDirty: false,       /* a MIDI knob moved: sidecar write owed (on release) */
     pbShiftTurned: false,       /* this touch turned the bend with Shift: latch on release */
     bankHome: BANK_SOUND,       /* which bank identity the open mode carries */
-    asnQuick: false,            /* opened by Shift+touch: the commit lands on the page */
 
     /* LFO editor (P7 absorb): lfoN:* slot params, values cached at open and
      * kept current optimistically on edit (reads are SHM round-trips). */
@@ -818,7 +817,7 @@ export function soundMacrosForTest() {
     return {
         active: macrosActive(), view: S.view, bankHome: S.bankHome,
         store: macroStore().slice(), cells: S.macCells.slice(), vals: S.macVals.slice(),
-        accum: S.knobAccum.slice(), cursor: S.knobIdx, quick: S.asnQuick,
+        accum: S.knobAccum.slice(), cursor: S.knobIdx,
         drawn: macroCells(S.track, true),
     };
 }
@@ -1032,7 +1031,7 @@ function takeBankIdentity(track, bank) {
 export function soundSetBank(bank) {
     if (!S.active || soundIsGlobal() || S.track < 0 || !isSoundBank(bank)) return;
     if (GS.trackPadMode[S.track] === PMC) return;
-    if (bank === BANK_MACROS) { S.view = VIEW_MACROS; S.asnQuick = false; }
+    if (bank === BANK_MACROS) S.view = VIEW_MACROS;
     else if (S.bankHome === BANK_MACROS || S.view === VIEW_MACROS) S.view = VIEW_PROMPT;
     S.bankHome = bank;
     GS.activeBank = bank;
@@ -2925,9 +2924,9 @@ function commitKnobAssignment(target, param) {
      * tick re-seeds both. */
     S.macCells[i] = null; S.macVals[i] = null; S.knobAccum[i] = 0; S.macLastDir[i] = 0;
     writeSidecar();
-    /* Quick assign (Shift+touch) lands back on the PAGE; the list flow, on the list. */
-    S.view = S.asnQuick ? VIEW_MACROS : VIEW_KNOBS;
-    S.asnQuick = false;
+    /* The assignment list is the ONE route in (Josh, 2026-09-05: Shift+touch
+     * quick-assign retired), so a commit always lands back on the list. */
+    S.view = VIEW_KNOBS;
 }
 
 /* ── where a screen SITS in the tree ───────────────────────────────────────
@@ -3262,8 +3261,9 @@ function renderKnobParam() {
  * underlying parameter, no macro lane, and the module editor reflects it
  * because it is the same parameter. Jog-click opens the assign list (the
  * chain's knob-assign menu, moved here from Sound Control → Knobs, which is
- * gone); Shift + touch a knob picks THAT knob's target without leaving the
- * bank; Mute/Delete + touch are the automation gestures every knob has.
+ * gone) and is the ONE route to a target — Shift+touch quick-assign was
+ * retired 2026-09-05; Mute/Delete + touch are the automation gestures every
+ * knob has.
  *
  * THE STORE is davebox's (GS.trackMacros, sidecar `mac`) — see ui_state for
  * why not the chain DSP's own knob_N mappings: a target need not live in a
@@ -4531,7 +4531,7 @@ function runAction(a) {
     }
     else if (a.t === 'slotcfg')  openSlotCfg(a.keep, a.which);
     else if (a.t === 'knobs')    openKnobEditor();
-    else if (a.t === 'knobasn')  { openKnobEditor(); S.knobIdx = a.knob; S.asnQuick = !!a.quick; openKnobTargets(); }
+    else if (a.t === 'knobasn')  { openKnobEditor(); S.knobIdx = a.knob; openKnobTargets(); }
     else if (a.t === 'knobtarget') openKnobTargets();
     else if (a.t === 'knobparam')  openKnobParams(a.target);
     else if (a.t === 'lfo')      openLfoEditor(a.lfo | 0);
@@ -5414,7 +5414,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
         if (S.view === VIEW_PROMPT) { S.view = VIEW_BLOCKS; S.dirty = true; return true; }
         /* MACROS: the click opens the assign list, which floats over the page
          * (no engine reads — the list is the store). */
-        if (S.view === VIEW_MACROS) { S.asnQuick = false; openKnobEditor(); S.dirty = true; return true; }
+        if (S.view === VIEW_MACROS) { openKnobEditor(); S.dirty = true; return true; }
         if (S.view === VIEW_ENUM) { closeEnumPicker(true); return true; }
         if (S.view === VIEW_SLOTCFG) {
             const row = S.slotRows[S.slotCfgIdx];
@@ -5777,7 +5777,6 @@ export function soundOnCC(d1, d2, decodeDelta) {
             /* The list floats over the MACROS page; Back returns to it. The
              * store was written at each commit (sidecar), nothing to flush. */
             S.view = VIEW_MACROS;
-            S.asnQuick = false;
         } else if (S.view === VIEW_LFO) {
             if (S.lfoEditing) S.lfoEditing = false;
             else S.pendingAction = { t: 'slotcfg', keep: true };
@@ -5889,26 +5888,16 @@ export function soundOnNote(status, d1, d2) {
 
     const on = (status === 0x90 && d2 >= 64);
 
-    /* Touch orients — and Shift+touch goes straight to the assignment.
+    /* Touch ORIENTS, and that is all it does on MACROS.
      *
-     * The long way round is the menu -> Sound Control -> Knobs... -> row N ->
-     * Target, which is four screens to answer a question you asked by putting
-     * your hand on the knob. Both live on the PRESS: a release-triggered jump
-     * would fire after the hand has already moved on.
-     *
-     * ⭑ The assign route goes through openKnobEditor (all eight assignments)
-     * rather than the one knob it needs, because committing lands you on the
-     * KNOBS list — which would otherwise render seven unread rows as "(None)". */
+     * ⚠ Shift+touch quick-assign is RETIRED (Josh, 2026-09-05: "i don't think
+     * we need shift + knob gesture at all anymore since macro assignment is
+     * more easily available from macro bank"). The assignment list — jog-click
+     * on the page — is the ONE route to a knob's target, and it is where legs,
+     * ranges and labels will live. Shift is free on a macro touch again; do
+     * not re-hang an assign flow on it. (Shift + TURN on a pitch-bend macro
+     * still LATCHES the bend: that is a VALUE gesture, not an assign one.) */
     if (macrosActive()) {
-        if (on && S.shiftHeld) {
-            /* QUICK ASSIGN (spec §2): Shift + touch picks THIS knob's target
-             * without leaving the bank — the one place the Shift+touch assign
-             * flow survives. Tick-run: the target list probes components. */
-            S.pendingAction = { t: 'knobasn', knob: d1, quick: true };
-            GS.bankCardLatched = true;      /* from the overview: the page shows after the pick */
-            S.dirty = true;
-            return true;
-        }
         /* A MACRO's touch is an automation gesture, exactly as an editor
          * knob's: Delete+touch clears, Mute+touch deactivates/reactivates
          * (and marks the Mute a modifier), and the touch itself opens/closes
