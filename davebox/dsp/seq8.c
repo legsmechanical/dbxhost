@@ -1593,6 +1593,7 @@ static void pa_serialize(seq8_instance_t *inst, FILE *fp);
 static void pa_parse(seq8_instance_t *inst, const char *buf, size_t blen);
 static void pa_reset_all(seq8_instance_t *inst);
 static void pa_copy_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc);
+static void pa_pin_clip_length(seq8_instance_t *inst, int track, int clip, uint32_t old_ticks);
 static void pa_move_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc);
 static void pa_undo_capture(seq8_instance_t *inst, pa_entry_t *dst, uint8_t *count,
                             uint8_t *partial, int t, int c);

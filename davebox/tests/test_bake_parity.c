@@ -59,7 +59,20 @@ int main(void) {
         ca->lane_length[2] = 0;               /* inherit clip length */
         ca->count[5] = 0; ca->lane_length[5] = 0;   /* empty lane: untouched */
     }
+    /* P7: the store's automation SURVIVES the bake, pinned to the pre-bake
+     * length (16 steps x 24 = 384 lane ticks) so it keeps looping in step with
+     * the notes the user heard; a lane that already had its own window is left
+     * alone. */
+    hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 0 23 8000");
+    hx_set_param(h, "t1_pa_set2", "0 1:synth:reso 0 23 8000");
+    hx_set_param(h, "t1_pa_loop", "0 1:synth:reso 96 0 0");
     hx_set_param(h, "bake", "1 0 0 2 0 0");   /* loops=2 -> 32 steps */
+    {
+        char _pl[4096];
+        hx_get_param(h, "pa_list", _pl, sizeof(_pl));
+        HX_ASSERT(strstr(_pl, "1 0 1 1 1:synth:cutoff 384 0"), "P7: a clip-following entry is pinned to the pre-bake length (384)");
+        HX_ASSERT(strstr(_pl, "1 0 1 1 1:synth:reso 96 0"), "P7: an entry with its own window keeps it");
+    }
     {
         clip_t *cl = &inst->tracks[1].clips[0];
         cc_auto_t *ca = &inst->tracks[1].clip_cc_auto[0];

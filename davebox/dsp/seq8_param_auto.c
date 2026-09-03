@@ -252,6 +252,28 @@ static void pa_entry_retire(pa_entry_t *e) {
     __atomic_store_n(&e->release, 1, __ATOMIC_RELEASE);
 }
 
+/* BAKE (P7, 2026-09-04): a clip about to be UNROLLED to a new length keeps
+ * its automation aligned by pinning every entry that followed the clip
+ * (loop_len == 0) to the PRE-bake length, in lane ticks — the same pin the
+ * CC lanes get. The store is per (track, clip) and untouched by clip_init,
+ * so this is the whole of "automation survives a bake". SPI thread (the
+ * bake runs from set_param): takes the writer lock. */
+static void pa_pin_clip_length(seq8_instance_t *inst, int track, int clip, uint32_t old_ticks) {
+    if (!old_ticks) return;
+    pa_lock(inst);
+    pa_write_begin(inst);
+    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+        pa_entry_t *e = &inst->pa_entries[i];
+        if (!e->used || e->track != track || e->clip != clip || !e->count) continue;
+        if (e->loop_len) continue;                       /* already its own window */
+        e->loop_len = (uint16_t)(old_ticks > 0xFFFFu ? 0xFFFFu : old_ticks);
+        e->loop_off = 0;
+        inst->pa_dirty = 1;
+    }
+    pa_write_end(inst);
+    pa_unlock(inst);
+}
+
 static void pa_clear_track_clip(seq8_instance_t *inst, int track, int clip) {
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
         pa_entry_t *e = &inst->pa_entries[i];

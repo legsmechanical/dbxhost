@@ -745,6 +745,8 @@ static void bake_clip(seq8_instance_t *inst, int t, int c, int loops, int wrap,
         for (_k = 0; _k < 8; _k++)
             if (_ca->count[_k] > 0 && _ca->lane_length[_k] == 0)
                 _ca->lane_length[_k] = cl->length;
+        /* ...and the PARAM AUTOMATION store's entries, the same pin (P7). */
+        pa_pin_clip_length(inst, t, c, (uint32_t)cl->length * (uint32_t)cl->ticks_per_step);
     }
     clip_init(cl);
     cl->ticks_per_step = tps;
