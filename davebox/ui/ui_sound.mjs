@@ -707,6 +707,11 @@ const S = {
     knobLegRow: 0,
     knobLegIdx: -1,
     knobLegEditing: false,
+    /* A mapped knob's `v` lives in the STORE, so a sweep dirties the sidecar
+     * the way a MIDI knob's value does. ⚠ Its own flag: `midiValsDirty` means
+     * "GS.trackMidiVals changed" and riding it would be a lie to the next
+     * reader — and the only thing persisting `v` at all. */
+    macDirty: false,
     levelPoll: 0,               /* the SOUND + CONFIG card's round-robin re-read cursor */
     midiValsDirty: false,       /* a MIDI knob moved: sidecar write owed (on release) */
     pbShiftTurned: false,       /* this touch turned the bend with Shift: latch on release */
@@ -3501,6 +3506,21 @@ function macroMapped(mp) {
 }
 /* Any leg addressable here — the mapped equivalent of macroLive. */
 function macroMappingLive(mp) { return macroLegs(mp).some(l => macroLive(l)); }
+/* True while any addressable CHAIN leg's previous value is still unread — the
+ * mapped turn must not run before then (its prev goes to the automation owner
+ * as the lane's rest point). */
+function macroLegsUnseeded(i, mp) {
+    const legs = macroLegs(mp), cells = S.macLegCells[i], vals = S.macLegVals[i];
+    if (!cells || !vals) return true;
+    for (let j = 0; j < legs.length; j++) {
+        if (legs[j].kind !== 'chain') continue;
+        const c = cells[j];
+        if (!c) return true;                       /* metadata not in yet */
+        if (c.vanished || MACRO_UNTURNABLE[c.kind]) continue;   /* never written anyway */
+        if (vals[j] == null) return true;
+    }
+    return false;
+}
 /* A leg's chain cell, or null: only chain legs have one. Kept per LEG (not
  * per knob) because two legs on one knob can be different components. */
 function legCell(leg) { return leg && leg.kind === 'chain' ? macroCellFor(leg) : null; }
@@ -4028,10 +4048,24 @@ function macroTick() {
         const mp = store[i];
         if (!macroMapped(mp)) continue;
         const legs = mp.legs;
-        if (!S.macLegCells[i]) { S.macLegCells[i] = new Array(legs.length).fill(null); S.macLegVals[i] = new Array(legs.length).fill(null); }
+        /* ⚠ The per-leg caches must follow the mapping's SHAPE, not just its
+         * existence. A project load replaces GS.trackMacros wholesale without
+         * going through the commit that clears these, so a stale array left a
+         * chain leg with the previous mapping's (null) cell — and the drain,
+         * which waits for every chain leg's cell, then waited forever: the
+         * knob simply stopped writing, with nothing logged. Length catches a
+         * whole new mapping; the per-leg key catches a re-point. */
+        if (!S.macLegCells[i] || S.macLegCells[i].length !== legs.length) {
+            S.macLegCells[i] = new Array(legs.length).fill(null);
+            S.macLegVals[i] = new Array(legs.length).fill(null);
+        }
         for (let j = 0; j < legs.length && reads < MACRO_READS_PER_TICK; j++) {
             const leg = legs[j];
-            if (leg.kind !== 'chain') continue;
+            const cached = S.macLegCells[i][j];
+            if (cached && cached.key !== undefined && cached.key !== leg.key) {
+                S.macLegCells[i][j] = null; S.macLegVals[i][j] = null;
+            }
+            if (leg.kind !== 'chain') { S.macLegCells[i][j] = null; continue; }
             if (!S.knobMeta[leg.comp]) {
                 let list = [];
                 try { list = JSON.parse(engineGet(S.slot, leg.comp, 'chain_params') || '[]') || []; }
@@ -4040,13 +4074,31 @@ function macroTick() {
                 reads++; S.dirty = true;
             }
             if (!S.macLegCells[i][j]) S.macLegCells[i][j] = legCell(leg);
+            /* ⚠ EVERY chain leg's value, not just leg 0's. A leg writes its
+             * PREVIOUS value to the automation owner as the rest point, and an
+             * unread prev used to go out as `''` — which normValue turns into
+             * 0, i.e. the parameter's MINIMUM, silently. A lane would then rest
+             * at 0.5 for a 0.5..20 reverb instead of where it actually was. */
+            const c = S.macLegCells[i][j];
+            if (c && !c.vanished && S.macLegVals[i][j] == null && reads < MACRO_READS_PER_TICK) {
+                S.macLegVals[i][j] = parseValue(c, engineGet(S.slot, leg.comp, leg.key));
+                reads++; S.dirty = true;
+            }
         }
+        /* `v` is seeded from the first ADDRESSABLE leg — leg 0 may be a
+         * vanished module or an off-route target, and forcing v to 0 there
+         * would move every other leg to the bottom on the next turn. With
+         * none addressable, v stays null and the detents wait. */
         if (mp.v == null && reads < MACRO_READS_PER_TICK) {
-            const n = legReadNorm(S.track, legs[0], S.macLegCells[i][0]);
-            if (legs[0].kind === 'chain') reads++;
-            mp.v = legNormToV(legs[0], n);
-            if (mp.v == null) mp.v = 0;
-            S.dirty = true;
+            for (let j = 0; j < legs.length; j++) {
+                if (!macroLive(legs[j])) continue;
+                const n = legReadNorm(S.track, legs[j], S.macLegCells[i][j]);
+                if (n == null) continue;
+                if (legs[j].kind === 'chain') reads++;
+                mp.v = legNormToV(legs[j], n);
+                S.dirty = true;
+                break;
+            }
         }
     }
     for (let i = 0; i < 8 && reads < MACRO_READS_PER_TICK; i++) {
@@ -4080,7 +4132,11 @@ function macroTick() {
             while (S.knobAccum[i] >= tr.sens) { steps++; S.knobAccum[i] -= tr.sens; }
             while (S.knobAccum[i] <= -tr.sens) { steps--; S.knobAccum[i] += tr.sens; }
             if (!steps) continue;
-            if (mp.v == null) continue;                 /* not seeded yet: the detents wait */
+            /* ⚠ WAIT until v and every addressable chain leg's previous value
+             * are known — the detents ACCUMULATE meanwhile, exactly as the
+             * plain path's do while its reads are in flight. Turning early
+             * would record a rest point of `''` (see the seed above). */
+            if (mp.v == null || macroLegsUnseeded(i, mp)) { S.knobAccum[i] += steps * tr.sens; continue; }
             const nv = Math.max(0, Math.min(1, mp.v + steps / tr.positions));
             if (nv === mp.v) continue;
             mp.v = nv;
@@ -4091,7 +4147,7 @@ function macroTick() {
                                          S.macLegVals[i] ? S.macLegVals[i][j] : null);
                 if (got != null && S.macLegVals[i]) S.macLegVals[i][j] = got;
             }
-            S.midiValsDirty = true;                     /* a MIDI leg's value is sidecar state */
+            S.macDirty = true;                          /* `v` is sidecar state */
             S.dirty = true;
             continue;
         }
@@ -4939,7 +4995,6 @@ function runAction(a) {
     }
     else if (a.t === 'slotcfg')  openSlotCfg(a.keep, a.which);
     else if (a.t === 'knobs')    openKnobEditor();
-    else if (a.t === 'knobasn')  { openKnobEditor(); S.knobIdx = a.knob; openKnobTargets(); }
     else if (a.t === 'knobtarget') openKnobTargets();
     else if (a.t === 'knobparam')  openKnobParams(a.target);
     else if (a.t === 'lfo')      openLfoEditor(a.lfo | 0);
@@ -6346,6 +6401,16 @@ export function soundOnNote(status, d1, d2) {
          * loop is the old single-target path for it, unchanged. */
         const t = S.track, c = effectiveClip(t);
         let cleared = false, toggled = null;
+        /* One reading of the gesture for the whole knob, taken BEFORE any leg
+         * moves: if nothing is active, Mute+touch turns them all ON; otherwise
+         * it turns them all OFF. (Mirrors the shared-exclusive-group rule:
+         * recompute, never assign per member.) */
+        const wantActive = !macroLegs(macroMapping(d1)).some(l => {
+            if (!macroLive(l)) return false;
+            const r = macroAutoRef(l, t); if (!r) return false;
+            const st = automationStateFor(t, c, r.slot === 'midi' ? r.fullKey : r.slot + ':' + r.fullKey);
+            return !!(st && st.active);
+        });
         for (const m of macroLegs(macroMapping(d1))) {
             const ref = macroLive(m) ? macroAutoRef(m) : null;
             if (!ref) continue;
@@ -6359,8 +6424,17 @@ export function soundOnNote(status, d1, d2) {
                     if (automationClearKey(t, c, target)) cleared = true;
                 } else if (S.muteHeld) {
                     GS.muteUsedAsModifier = true;
-                    const r = automationToggleActive(t, c, target);
-                    if (r !== null && toggled === null) toggled = r;
+                    /* ⚠ RECOUNT, never toggle each leg on its own: a mapped
+                     * knob whose legs disagree would otherwise SWAP them and
+                     * the popup would name whichever came first. The gesture
+                     * means one thing — "this knob's automation off" — so any
+                     * active leg makes it a deactivate, and only when none is
+                     * active does it turn them all back on. */
+                    const st = automationStateFor(t, c, target);
+                    if (st && st.active !== wantActive) {
+                        const r = automationToggleActive(t, c, target);
+                        if (r !== null) toggled = r;
+                    } else if (st && toggled === null) toggled = st.active;
                 }
             } else if (m.kind === 'level') {
                 flushLevelSave();
@@ -6370,7 +6444,7 @@ export function soundOnNote(status, d1, d2) {
         /* ONE popup for the gesture, however many lanes it reached. */
         if (cleared) showActionPopup('AUTOMATION', 'CLEARED');
         else if (toggled !== null) showActionPopup('AUTOMATION', toggled ? 'ON' : 'OFF');
-        if (!on && S.midiValsDirty) { S.midiValsDirty = false; writeSidecar(); }
+        if (!on && (S.midiValsDirty || S.macDirty)) { S.midiValsDirty = false; S.macDirty = false; writeSidecar(); }
         S.dirty = true;
     }
     /* A LEVEL knob's touch is an automation gesture, exactly as an editor

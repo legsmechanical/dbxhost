@@ -681,8 +681,13 @@ const liveTargets = () => modSets.filter(x => /^t2_pa_live=/.test(x))
 const seedLanes = (...targets) => {
     const prevGet = globalThis.host_module_get_param;
     const clip = ledsMod.effectiveClip(2);
+    /* A target may be given as `'<target>'` (active) or `['<target>', 0]`. */
+    const line = (t) => {
+        const [tg, act] = Array.isArray(t) ? t : [t, 1];
+        return '2 ' + clip + ' ' + (act ? 1 : 0) + ' 4 ' + tg + ' 0 0';
+    };
     globalThis.host_module_get_param = (k) => (k === 'pa_list'
-        ? targets.map(t => '2 ' + clip + ' 1 4 ' + t + ' 0 0').join('\n') + '\n' : prevGet(k));
+        ? targets.map(line).join('\n') + '\n' : prevGet(k));
     auto.automationRefreshPresence();
     globalThis.host_module_get_param = prevGet;
 };
@@ -811,6 +816,107 @@ step('⭑ Delete + touch a mapped knob clears EVERY leg\'s lane, not just the fi
     GS.trackMacros[2][0] = null; GS.trackMacros[2][2] = null;
 });
 
+step('⚠⚠ a leg\'s FIRST turn reports a REAL previous value, never `\'\'` (which normValue reads as the parameter MINIMUM)', () => {
+    /* The bug this pins: only leg 0 was seeded, so legs 1..n went to the
+     * automation owner with prevWire `''` on their first turn. normValue does
+     * not reject that — it parses NaN, falls back to 0, and writes the lane's
+     * REST at the parameter's minimum. A 0.5..20 reverb would rest at 0.5.
+     * Silent, and only visible as a wrong override-resume much later. */
+    GS.playing = true; auto.automationNoteWrite();
+    GS.trackMacros[2][0] = { v: null, legs: [
+        { kind: 'chain', comp: 'synth', key: 'cutoff',    lo: 0, hi: 1 },
+        { kind: 'chain', comp: 'fx2',   key: 'room_size', lo: 0, hi: 1 },
+    ]};
+    ticks(8);                                          /* the seed: BOTH legs' values */
+    modSets.length = 0;
+    touch(0, true); turnBy(0, 30); ticks(3); touch(0, false); ticks(2);
+    GS.playing = false;
+    const rests = modSets.filter(x => /^t2_pa_rest=/.test(x));
+    const lives = modSets.filter(x => /^t2_pa_live=/.test(x));
+    assert(lives.length >= 2, 'both legs wrote, got ' + JSON.stringify(modSets.slice(0, 8)));
+    /* Whatever carries the rest point, no leg may carry an EMPTY value. */
+    for (const w of rests.concat(lives)) {
+        const parts = w.split('=')[1].split(' ');
+        assert(parts.length >= 2 && parts[1] !== '' && !isNaN(parseFloat(parts[1])),
+               'a numeric value, got ' + JSON.stringify(w));
+    }
+    /* ⭑ The discriminating one: room_size rests where it WAS (0.75 of 0.5..20
+     * ≈ 0.013 normalised is nowhere near 0), not at its minimum. */
+    const rs = rests.find(x => /room_size/.test(x));
+    if (rs) assert(parseFloat(rs.split(' ').pop()) > 0,
+                   'the rest is where the parameter WAS, not its minimum — got ' + rs);
+});
+step('⭑ MIDI and BANK legs ride a mapped turn too (Josh §6.6: every kind can be a leg)', () => {
+    if (!GS.bankParams) GS.bankParams = Array.from({ length: 8 }, () => Array.from({ length: BANKS.length }, () => new Array(8).fill(0)));
+    GS.bankParams[2][1][5] = 100;
+    GS.trackMacros[2][0] = { v: 0, legs: [
+        { kind: 'bank', bank: 1, k: 5, lo: 0, hi: 1 },
+        { kind: 'midi', target: 'at', lo: 0, hi: 1 },
+    ]};
+    hostSets.length = 0; ticks(5);
+    turnBy(0, 60); ticks(3);
+    assert(hostSets.some(x => /^t2_pa_midi_out=at /.test(x)),
+           'the MIDI leg sent, got ' + JSON.stringify(hostSets.filter(x => /midi_out/.test(x))));
+    assert(GS.bankParams[2][1][5] !== 100, 'the BANK leg moved, still ' + GS.bankParams[2][1][5]);
+});
+step('⭑ an ENUM leg takes a SUB-RANGE of its option list (Josh §6.5) — the sweep never reaches Saw', () => {
+    /* shape = Saw/Square/Tri (indices 0..2). lo 0.5 hi 1 is the top half of
+     * the list, so a full sweep must only ever write 1 or 2. */
+    ASSIGN['synth:shape'] = 'Tri';
+    GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'synth', key: 'shape', lo: 0.5, hi: 1 }] };
+    ticks(6); writes = [];
+    for (let n = 0; n < 8; n++) { turnBy(0, -60); ticks(2); }      /* all the way down */
+    for (let n = 0; n < 8; n++) { turnBy(0, 60); ticks(2); }       /* and back up */
+    const vals = wrote('synth:shape').map(w => parseInt(w.val, 10));
+    assert(vals.length > 0, 'the enum leg was written, got none');
+    assert(vals.every(v => v >= 1 && v <= 2),
+           '⭑ only the top half of the option list is reachable, got ' + JSON.stringify([...new Set(vals)]));
+});
+step('⭑⭑ ADDING A RANGE MOVES NOTHING: v is seeded by inverting the leg\'s current value through it', () => {
+    /* The whole reason legNormToV exists. cutoff sits at 0.4830; wrapping it
+     * in a 0.2..0.8 range must NOT snap it — the first turn continues from
+     * where the parameter already was, one step at a time. */
+    ASSIGN['synth:cutoff'] = '0.4830';
+    GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.2, hi: 0.8 }] };
+    ticks(8);
+    const v = GS.trackMacros[2][0].v;
+    const seeded = 0.2 + v * 0.6;
+    assert(Math.abs(seeded - 0.4830) < 0.01,
+           'v inverts back to where the parameter already is (' + seeded.toFixed(3) + '), got v=' + v);
+    writes = [];
+    turnBy(0, 2); ticks(2);                                        /* ONE step */
+    const first = parseFloat(lastWrite('synth:cutoff'));
+    assert(Math.abs(first - 0.4830) < 0.02,
+           '⭑ the first turn CONTINUES from 0.483, it does not jump — got ' + first);
+});
+step('⭑ Mute + touch a mapped knob RECOUNTS: legs that disagree all end up the same way', () => {
+    GS.trackMacros[2][0] = { v: 0.3, legs: [
+        { kind: 'chain', comp: 'synth', key: 'cutoff',    lo: 0, hi: 1 },
+        { kind: 'chain', comp: 'fx2',   key: 'room_size', lo: 0, hi: 1 },
+    ]};
+    ticks(6);
+    /* Seed the owner with the two legs DISAGREEING: leg 1 active, leg 2 off. */
+    const clip = ledsMod.effectiveClip(2);
+    seedLanes('2:synth:cutoff', ['2:fx2:room_size', 0]);
+    assert(auto.automationStateFor(2, clip, '2:synth:cutoff'),
+           'precondition: leg 1 has a lane at clip ' + clip);
+    assert(auto.automationStateFor(2, clip, '2:synth:cutoff').active, 'precondition: leg 1 ACTIVE');
+    assert(!auto.automationStateFor(2, clip, '2:fx2:room_size').active, 'precondition: leg 2 OFF');
+    /* ⚠ Read the DSP WRITES, not the state map: a tick refreshes presence from
+     * `pa_list`, which this rig answers empty, so the map is gone by then. */
+    modSets.length = 0;
+    cc(88, 127); touch(0, true); ticks(1); touch(0, false); cc(88, 0); ticks(1);
+    const acts = modSets.filter(x => /^t2_pa_active=/.test(x));
+    /* One leg was active, so the gesture means OFF for the whole knob: leg 1
+     * is switched off and leg 2 — already off — is LEFT ALONE. A per-leg
+     * toggle would have written a `1` for leg 2 and swapped them. */
+    assert(acts.some(x => /2:synth:cutoff 0$/.test(x)), 'leg 1 switched OFF, got ' + JSON.stringify(acts));
+    assert(!acts.some(x => / 1$/.test(x)),
+           '⭑ nothing was switched ON — the gesture RECOUNTS, it does not toggle each leg, got ' + JSON.stringify(acts));
+    assert(!acts.some(x => /room_size/.test(x)), 'the already-off leg was left alone, got ' + JSON.stringify(acts));
+    GS.trackMacros[2][0] = null;
+});
+
 /* ---- THE LEG LIST: where a mapping is actually built --------------------- */
 /* Josh retired Shift+touch on the grounds that "we can handle anything we need
  * from the assignment menu" (2026-09-05), so this list is the ONLY way a macro
@@ -925,6 +1031,33 @@ step('⭑ Shift + click a leg REMOVES it; removing the last leg leaves the knob 
     assert(GS.trackMacros[2][0] === null, 'the last leg removed leaves the slot null, got ' + JSON.stringify(GS.trackMacros[2][0]));
     ticks(2);
     assert(M().drawn[0].text === '--', 'and the page reads `--` again, got ' + JSON.stringify(M().drawn[0]));
+});
+step('⭑ the leg list RENDERS — three legs is 10 rows and the screen still draws (structure is not pixels)', () => {
+    /* ⚠ Every other assertion here reads knobLegRows(), which is a description
+     * of the screen, not the screen. Ten rows is more than the list shows at
+     * once, so this is the one that would catch a list that silently draws
+     * nothing (or throws) once the mapping outgrows a page. */
+    GS.trackMacros[2][0] = { v: 0.5, legs: [
+        { kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.2, hi: 0.8 },
+        { kind: 'level', key: 'volume', lo: 0, hi: 1 },
+        { kind: 'midi', target: 'at', lo: 1, hi: 0 },
+    ]};
+    snd.soundSetViewForTest(VIEW_MACROS);
+    click();                                            /* K-list */
+    snd.soundSetLegRowForTest(0);
+    for (let i = 0; i < 0; i++) jog(1);
+    click(); ticks(1);                                  /* the assigned knob ENTERS */
+    assert(snd.soundViewForTest() === VIEW_KNOBLEGS, 'on the leg list, view ' + snd.soundViewForTest());
+    assert(legRows().length === 10, 'three legs = 9 rows + add, got ' + legRows().length);
+    px.length = 0; fills.length = 0;
+    draw();
+    assert(px.length + fills.length > 40, 'the leg list drew something, got ' + (px.length + fills.length));
+    /* And scrolled to the bottom, where a naive list would run off the box. */
+    snd.soundSetLegRowForTest(9);
+    px.length = 0; fills.length = 0;
+    draw();
+    assert(px.length + fills.length > 40, 'the LAST row draws too, got ' + (px.length + fills.length));
+    GS.trackMacros[2][0] = null;
 });
 step('⭑ the K-list row says what a mapped knob DRIVES, and a plain one still names its target', () => {
     GS.trackMacros[2][0] = { v: 0.5, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0, hi: 1 }] };
