@@ -122,6 +122,10 @@ the section into a versioned heading at release time.
   gesture already jumped straight to a track's sound editor in Track view; in
   Session view it now jumps to the session's own effects, from wherever you are.
 ### Fixes (pending)
+- **Loading a project stops the one you are leaving.** The outgoing project
+  used to keep playing behind the Loading screen, and a note could be left
+  hanging on a Schwung synth across the switch. Load now stops the transport
+  first (and Move's, when following its clock), then saves, then switches.
 - **Very large projects could lose music when saved.** A project past a certain
   size was cut short on its way out of the sequencer and written to disk
   truncated — it reopened quietly missing notes, with nothing reported. Projects

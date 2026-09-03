@@ -75,6 +75,14 @@ globalThis.host_ext_midi_remap_clear = () => {};
 globalThis.host_ext_midi_remap_set = () => {};
 globalThis.host_ext_midi_remap_enable = () => {};
 globalThis.shadow_get_shift_held = () => 1;
+/* The tick's own reads/writes (the stop-before-save steps at the end drive it). */
+globalThis.host_module_get_params = () => '';
+globalThis.host_module_set_params = () => true;
+globalThis.shadow_get_params = () => '';
+globalThis.shadow_set_params = () => true;
+globalThis.host_autosave_hold = () => {};
+globalThis.pixel_print = () => {};
+globalThis.move_midi_external_send = () => {};
 
 /* ⚠ Everything below lives in main(): the bundler emits CJS, where a top-level
  * await is a build error, not a runtime one — the test simply never runs. */
@@ -191,6 +199,69 @@ step('a held Delete still wins over Shift', () => {
     if (S.pendingProjectSwitch === 1)
         throw new Error('Shift+Delete+tap loaded the project instead of arming the delete');
     S.deleteHeld = false;
+});
+
+/* 2026-09-04 (sequence item 6) — Josh, 2026-09-02: "loading a new project
+ * should immediately stop transport on current project." The stop must reach
+ * the DSP on a tick of its OWN, ahead of the save; the switch follows the save.
+ * ⚠ tick() swallows errors, so every assertion here is POSITIVE (a set_param
+ * that was SENT), never "nothing happened". */
+const sent = [];
+globalThis.host_module_set_param = (k, v) => { sent.push(k + '=' + v); };
+globalThis.shadow_select_arm = () => {};
+globalThis.host_suspend_overtake = () => {};
+const { _tickImpl } = await import('../../ui/ui_tick.mjs');
+const { BANKS } = await import('../../ui/ui_constants.mjs');
+if (!S.bankParams) S.bankParams = Array.from({ length: 8 }, () => Array.from({ length: BANKS.length }, () => new Array(8).fill(0)));
+function tickOnce() { sent.length = 0; _tickImpl(); return sent.slice(); }
+function settle() {
+    S.projectPadPicker = null; S.awaitingProjectSelect = false; S.bootSplashMs = 0;
+    S.pendingSuspendSave = false; S.pendingStopBeforeSave = false;
+    S.pendingProjectSwitch = null; S.pendingProjectRelaunch = null;
+    S.pendingExitAfterSave = false; S.pendingHideAfterSave = false;
+    S.ledInitComplete = true; S.exitFarewell = 0;
+}
+
+step('control: switching while STOPPED saves on the first tick, no transport write', () => {
+    settle();
+    S.projectPadPicker = mkPicker(0); S.shiftHeld = true; S.playing = false;
+    projectPadPickerTap(1);
+    if (S.pendingProjectSwitch !== 1) throw new Error('no switch requested');
+    if (S.pendingStopBeforeSave) throw new Error('a stop was queued while stopped');
+    const t1 = tickOnce();
+    if (t1.indexOf('save=1') < 0) throw new Error('tick 1 did not save: ' + JSON.stringify(t1));
+    if (t1.some((s) => s.indexOf('transport=') === 0)) throw new Error('a transport write while stopped: ' + JSON.stringify(t1));
+    S.pendingProjectSwitch = null;       /* do not let the rig park itself */
+});
+
+step('switching while PLAYING: stop on tick 1 (alone), save on tick 2, switch on tick 3', () => {
+    settle();
+    S.projectPadPicker = mkPicker(0); S.shiftHeld = true; S.playing = true;
+    projectPadPickerTap(1);
+    if (S.pendingProjectSwitch !== 1) throw new Error('no switch requested');
+    if (!S.pendingStopBeforeSave) throw new Error('the stop was not queued');
+    const t1 = tickOnce();
+    if (t1.indexOf('transport=stop') < 0) throw new Error('tick 1 did not stop: ' + JSON.stringify(t1));
+    if (t1.indexOf('save=1') >= 0) throw new Error('the save shared the stop\'s tick (coalescing): ' + JSON.stringify(t1));
+    if (S.playing) throw new Error('the JS mirror still says playing');
+    if (S.pendingProjectSwitch !== 1) throw new Error('the switch fired before the save');
+    const t2 = tickOnce();
+    if (t2.indexOf('save=1') < 0) throw new Error('tick 2 did not save: ' + JSON.stringify(t2));
+    if (S.pendingProjectSwitch !== 1) throw new Error('the switch fired with the save');
+    tickOnce();
+    if (S.pendingProjectSwitch !== null) throw new Error('tick 3 did not fire the switch');
+});
+
+step('the RELAUNCH door (a project created this session) stops first too', () => {
+    settle();
+    S.projectPadPicker = mkPicker(0); S.shiftHeld = true; S.playing = true;
+    S.projectsCreatedThisSession = [1];
+    projectPadPickerTap(1);
+    if (S.pendingProjectRelaunch !== 1) throw new Error('no relaunch requested');
+    if (!S.pendingStopBeforeSave) throw new Error('the stop was not queued on the relaunch door');
+    const t1 = tickOnce();
+    if (t1.indexOf('transport=stop') < 0) throw new Error('tick 1 did not stop: ' + JSON.stringify(t1));
+    S.projectsCreatedThisSession = []; S.pendingProjectRelaunch = null;
 });
 
 if (failed) process.exit(1);

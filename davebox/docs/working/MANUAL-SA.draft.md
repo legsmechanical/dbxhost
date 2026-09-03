@@ -185,7 +185,9 @@ pad per project, 32 slots:
   exists, the screen says **Select project** until you tap a pad.
 - **Tap a project** to select it — the screen switches to that project. Turn the
   jog wheel to choose a row, click to select. A tap never loads by itself — Load
-  does (a moment of "Loading...", then you're in).
+  does (a moment of "Loading...", then you're in). If the project you are
+  leaving is playing, Load stops it first — every note released, and Move
+  stopped with it when dAVEBOx is following Move's clock.
   - **Rename** opens the on-screen keyboard. Renaming the *open* project
     restarts the session in place (a few seconds, like switching projects).
   - **Color** lists the palette — the jog wheel moves down it and the pad

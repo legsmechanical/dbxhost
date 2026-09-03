@@ -2173,7 +2173,14 @@ export function _tickImpl() {
      * Quit/Shift+Back use the else-if branches below so the exit/hide call
      * only runs on a tick AFTER the save set_param has reached DSP — same-tick
      * exit would tear the module down before the buffer processes the save. */
-    if (S.pendingSuspendSave) {
+    if (S.pendingStopBeforeSave) {
+        /* A project switch while playing: the stop takes this tick alone so
+         * the save below cannot coalesce it (same buffer = last write wins);
+         * the save then fires next tick, the switch the tick after. */
+        S.pendingStopBeforeSave = false;
+        host_module_set_param('transport', 'stop');
+        S.playing = false;
+    } else if (S.pendingSuspendSave) {
         S.pendingSuspendSave = false;
         host_module_set_param('save', '1');
     } else if (S.pendingExitAfterSave) {

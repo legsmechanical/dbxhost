@@ -922,6 +922,17 @@ function _pppLoad(p, k) {
      * loaded to save, and writing would clobber the project we are leaving. */
     closeProjectPadPicker();
     showActionPopup('OPENING', 'PROJECT');
+    /* ⭑ STOP THE OUTGOING PROJECT FIRST (Josh, 2026-09-02: "loading a new
+     * project should immediately stop transport on current project"). The
+     * switch parks us with the DSP still rolling — Move kept playing the old
+     * set behind the Loading screen, and the eventual state_load zeroes
+     * `playing` WITHOUT note-offs (it must not panic mid-load), so a chain
+     * synth could hold a note across the swap. A real transport stop releases
+     * every voice and, under clock-follow, asks Move to stop too. It is a
+     * pending flag, not a call: from this MIDI-handler context the tick's own
+     * `save` set_param could coalesce it away — the drain gives it a tick of
+     * its own ahead of the save, and the switch fires the tick after that. */
+    if (S.playing) S.pendingStopBeforeSave = true;
     saveState();
     /* ⚠⚠ A project CREATED THIS SESSION cannot be reached by the select
      * actuator. Move enumerates its sets at LAUNCH, so a set made since then is

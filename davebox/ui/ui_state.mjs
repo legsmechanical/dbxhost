@@ -614,6 +614,7 @@ export const S = {
      * the splash does NOT re-show on resume. Decremented in tick(). */
     bootSplashMs: 2000,        /* ms of splash left; counted down by the tick's clock */
     pendingSuspendSave: false,
+    pendingStopBeforeSave: false,  /* project switch while PLAYING: a transport stop on its OWN tick ahead of the save (Josh 2026-09-02: "loading a new project should immediately stop transport on current project") */
     pendingExitAfterSave: false,   /* drained one tick after pendingSuspendSave fires; calls host_exit_module */
     exitFarewell: 0,               /* >0: EXITING screen up, counting down to the teardown cmd; -1: cmd fired, tick frozen */
     pendingHideAfterSave: false,   /* drained one tick after pendingSuspendSave fires; calls host_hide_module */
