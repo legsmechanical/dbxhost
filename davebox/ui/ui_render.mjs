@@ -583,11 +583,13 @@ function drawMetroIndicator() {
     const METRO_LABELS = [null, 'Cnt-In', 'Play', 'Always'];
     const label = METRO_LABELS[S.metronomeOn];
     if (label) {
+        /* Stock face (Josh, 2026-09-05: "replace any mcu font with the little
+         * stock font" on both overviews); row 2 of the overview sits at y=19. */
         const tx = 8;
-        const tw = label.length * 6;
-        fill_rect(4, 23, 2, 2, 1);           /* left dot */
-        pixelPrint(tx, 22, label, 1);
-        fill_rect(tx + tw + 2, 23, 2, 2, 1); /* right dot */
+        const tw = text_width(label);
+        fill_rect(4, 22, 2, 2, 1);           /* left dot */
+        print(tx, 19, label, 1);
+        fill_rect(tx + tw + 2, 22, 2, 2, 1); /* right dot */
     }
     if (S.sessionView) {
         /* ⚠ Was a parallel 4-entry literal — the gateway made sessKnobMode
@@ -597,10 +599,11 @@ function drawMetroIndicator() {
          * mode table itself, the one owner; the gateway carries 'FX'. */
         const _sm = SESS_KNOB_MODES[S.sessKnobMode];
         const ml = (_sm && _sm.short) || 'Vol';
-        const mx = 128 - ml.length * 6;
-        pixelPrint(mx, 22, ml, 1);
+        print(128 - 4 - text_width(ml), 19, ml, 1);       /* stock face, row 2 (2026-09-05) */
     }
-    /* Velocity / Fixed/Adaptive indicators (track view only, y=22) */
+    /* Velocity / Fixed/Adaptive indicators (track view only, row 2 at y=19,
+     * right-aligned in the stock face; Fix/Adap hugs the right edge, the
+     * velocity word sits mid-row) */
     if (!S.sessionView) {
         const t  = S.activeTrack;
         const ac = (!S.playing && S.trackQueuedClip[t] >= 0) ? S.trackQueuedClip[t] : S.trackActiveClip[t];
@@ -608,12 +611,9 @@ function drawMetroIndicator() {
         const _isEmpty7  = _isDrum7 ? !S.drumClipNonEmpty[t][ac] : !S.clipNonEmpty[t][ac];
         const _manualL7  = _isDrum7 ? S.drumLaneLengthManuallySet[t] : S.clipLengthManuallySet[t][ac];
         /* Velocity input indicator (between metro and fixed/adap) */
-        pixelPrint(67, 22, fmtVelOverride(S.trackVelOverride[t]), 1);
-        if (_isEmpty7 && !_manualL7) {
-            pixelPrint(103, 22, 'Adap', 1);
-        } else {
-            pixelPrint(109, 22, 'Fix', 1);
-        }
+        print(67, 19, fmtVelOverride(S.trackVelOverride[t]), 1);
+        const _fa = (_isEmpty7 && !_manualL7) ? 'Adap' : 'Fix';
+        print(128 - 4 - text_width(_fa), 19, _fa, 1);
     }
 }
 
@@ -875,6 +875,37 @@ function drawSessionOverview() {
 
 /* Track-number row: active track has a box (1px border + 1px pad around number).
  * Muted = inverted. Soloed = blink. */
+/* THE OVERVIEW'S LOWER HALF (Josh, 2026-09-05), shared by the track overviews
+ * and the session view: the track row, the scene letters in the STOCK face, and
+ * the hint footer on row 57 — which is why the position bar moved up to 52.
+ * Rows, top to bottom: header 0-6 · info 9-15 (+rule 17) · row 2 19-25 ·
+ * track boxes 29-40 · scene letters 42-50 · position bar 52-55 · footer 57-63. */
+export const OVW_TRACK_ROW_Y = 31, OVW_SCENE_Y = 43;
+function drawOverviewTracks(hints) {
+    drawTrackRow(OVW_TRACK_ROW_Y);
+    for (let t = 0; t < NUM_TRACKS; t++) {
+        const cx = t * 16 + 5;
+        const ac = S.trackActiveClip[t];
+        const hasData = S.trackPadMode[t] === PAD_MODE_DRUM
+            ? S.drumClipNonEmpty[t][ac]
+            : S.clipNonEmpty[t][ac];
+        const isActive = (S.trackClipPlaying[t] || S.trackWillRelaunch[t] || (S.trackQueuedClip[t] >= 0)) && hasData;
+        if (isActive) {
+            fill_rect(cx - 1, OVW_SCENE_Y - 1, 9, 9, 1);
+            print(cx, OVW_SCENE_Y, SCENE_LETTERS[ac], 0);
+        } else {
+            print(cx, OVW_SCENE_Y, SCENE_LETTERS[ac], 1);
+        }
+    }
+    drawKitHintRow(MV_FOOTER_Y, hints);
+}
+/* What the jog does at rest on each overview — the footer says only what is
+ * true HERE (the canon): in track view it walks the banks and a click opens the
+ * card; in session view it walks the mixer mode and a click latches the mixer. */
+function overviewHints() {
+    return S.sessionView ? [['JOG', 'MIX'], ['CLK', 'MIX']] : [['JOG', 'BANK'], ['CLK', 'BANK']];
+}
+
 function drawTrackRow(y) {
     const soloBlinkOn = Math.floor(S.clockMs / 220) % 2 === 0;
     for (let _t = 0; _t < NUM_TRACKS; _t++) {
@@ -1086,7 +1117,7 @@ function drawPositionBar(t) {
     const cs = S.trackCurrentStep[t];
     const playPage = (S.playing && S.trackClipPlaying[t] && cs >= lsBase && cs < lsBase + len)
                    ? Math.floor((cs - lsBase) / 16) : -1;
-    const barY = 57, barH = 5, segGap = 1;
+    const barY = 52, barH = 4, segGap = 1;   /* 2026-09-05: the hint footer owns row 57 */
     const segW   = Math.max(2, Math.floor((120 - (winPages - 1) * segGap) / winPages));
     const startX = 4;
     for (let pg = 0; pg < winPages; pg++) {
@@ -1582,21 +1613,7 @@ function drawUIBody() {
         }
         drawWordmark('d' + dA + 'V' + dE + 'B' + dO + 'x');
         drawMetroIndicator();
-        drawTrackRow(35);
-        for (let t = 0; t < NUM_TRACKS; t++) {
-            const cx = t * 16 + 5;
-            const ac = S.trackActiveClip[t];
-            const hasData = S.trackPadMode[t] === PAD_MODE_DRUM
-                ? S.drumClipNonEmpty[t][ac]
-                : S.clipNonEmpty[t][ac];
-            const isActive = (S.trackClipPlaying[t] || S.trackWillRelaunch[t] || (S.trackQueuedClip[t] >= 0)) && hasData;
-            if (isActive) {
-                fill_rect(cx - 1, 46, 9, 7, 1);
-                pixelPrint(cx, 47, SCENE_LETTERS[ac], 0);
-            } else {
-                pixelPrint(cx, 47, SCENE_LETTERS[ac], 1);
-            }
-        }
+        drawOverviewTracks(overviewHints());
         return;
     }
 
@@ -2162,31 +2179,17 @@ function drawUIBody() {
             ? (Math.floor(S.clockMs / 220) % 2 === 0 ? 'ALL' : '   ') + ' LANES'
             : _bnStatic;
         (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankName, false, true);
-        /* info row sits at y=12 — 2px clear of the header rule on row 9 */
-        pixelPrint(4, 12, bankGroup + '  Pad:' + name + oct + ' (' + note + ')', 1);
+        /* info row at y=9, in the STOCK face (2026-09-05) — 2px clear of the header */
+        print(4, 9, bankGroup + '  Pad:' + name + oct + ' (' + note + ')', 1);
         const laneBit = 1 << lane;
         if (S.drumLaneSolo[t] & laneBit) {
-            pixelPrint(128 - 4 - 6 * 6, 22, 'SOLOED', 1);
+            print(128 - 4 - text_width('SOLOED'), 19, 'SOLOED', 1);
         } else if (S.drumLaneMute[t] & laneBit) {
             if (Math.floor(S.clockMs / 440) % 2 === 0)
-                pixelPrint(128 - 4 - 5 * 6, 22, 'MUTED', 1);
+                print(128 - 4 - text_width('MUTED'), 19, 'MUTED', 1);
         }
         drawMetroIndicator();
-        drawTrackRow(35);
-        for (let _t = 0; _t < NUM_TRACKS; _t++) {
-            const _cx = _t * 16 + 5;
-            const _ac = S.trackActiveClip[_t];
-            const _hasData = S.trackPadMode[_t] === PAD_MODE_DRUM
-                ? S.drumClipNonEmpty[_t][_ac]
-                : S.clipNonEmpty[_t][_ac];
-            const _isActive = (S.trackClipPlaying[_t] || S.trackWillRelaunch[_t] || (S.trackQueuedClip[_t] >= 0)) && _hasData;
-            if (_isActive) {
-                fill_rect(_cx - 1, 46, 9, 7, 1);
-                pixelPrint(_cx, 47, SCENE_LETTERS[_ac], 0);
-            } else {
-                pixelPrint(_cx, 47, SCENE_LETTERS[_ac], 1);
-            }
-        }
+        drawOverviewTracks(overviewHints());
         drawDrumPositionBar(t);
     } else {
         /* State 4: normal Track View */
@@ -2195,40 +2198,27 @@ function drawUIBody() {
         const oct     = S.trackOctave[S.activeTrack];
         const octStr  = 'Oct:' + (oct >= 0 ? '+' : '') + oct;
         const keyScl  = NOTE_KEYS[S.padKey] + ' ' + (SCALE_DISPLAY[S.padScale] || '?');
-        const CHAR_W  = 6;
-        const keySclX = 128 - 4 - keyScl.length * CHAR_W;
+        const keySclW = text_width(keyScl);
+        const keySclX = 128 - 4 - keySclW;
         (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(S.activeTrack, S.activeBank) + recTag, false, true);
-        /* info row sits at y=12 — 2px clear of the header rule on row 9 */
-        pixelPrint(4, 12, octStr, 1);
+        /* info row at y=9, in the STOCK face (Josh, 2026-09-05) — 2px clear of
+         * the header; the 5x7 glyphs end at y=15 and the scale rule sits at 17. */
+        print(4, 9, octStr, 1);
         if (S.bankParams[S.activeTrack][5][0]) {
+            const arpW = text_width('Arp');
             if (S.bankParams[S.activeTrack][5][7]) {
-                /* Latch on: invert 'Arp' (black on white chip) — pixelPrint
-                 * uses a 5x5 glyph with 6px step; 'Arp' spans x=52..68, y=12..16.
-                 * Chip pads 1px around: x=51..69 (w=19), y=11..17 (h=7). */
-                fill_rect(51, 11, 19, 7, 1);
-                pixelPrint(52, 12, 'Arp', 0);
+                /* Latch on: invert 'Arp' (black on white chip), 1px pad around
+                 * the 5x7 glyphs at (52, 9). */
+                fill_rect(51, 8, arpW + 2, 9, 1);
+                print(52, 9, 'Arp', 0);
             } else {
-                pixelPrint(52, 12, 'Arp', 1);
+                print(52, 9, 'Arp', 1);
             }
         }
-        pixelPrint(keySclX, 12, keyScl, 1);
-        if (S.scaleAware) fill_rect(keySclX, 17, keyScl.length * CHAR_W, 1, 1);
+        print(keySclX, 9, keyScl, 1);
+        if (S.scaleAware) fill_rect(keySclX, 17, keySclW, 1, 1);
         drawMetroIndicator();
-        drawTrackRow(35);
-        for (let t = 0; t < NUM_TRACKS; t++) {
-            const _cx = t * 16 + 5;
-            const _ac = S.trackActiveClip[t];
-            const _hasData = S.trackPadMode[t] === PAD_MODE_DRUM
-                ? S.drumClipNonEmpty[t][_ac]
-                : S.clipNonEmpty[t][_ac];
-            const _isActive = (S.trackClipPlaying[t] || S.trackWillRelaunch[t] || (S.trackQueuedClip[t] >= 0)) && _hasData;
-            if (_isActive) {
-                fill_rect(_cx - 1, 46, 9, 7, 1);
-                pixelPrint(_cx, 47, SCENE_LETTERS[_ac], 0);
-            } else {
-                pixelPrint(_cx, 47, SCENE_LETTERS[_ac], 1);
-            }
-        }
+        drawOverviewTracks(overviewHints());
         drawPositionBar(S.activeTrack);
     }
 }
@@ -2242,7 +2232,7 @@ function drawDrumPositionBar(t) {
     const cs        = S.drumCurrentStep[t];
     const playPage  = (S.playing && S.trackClipPlaying[t] && cs >= lsBase && cs < lsBase + len)
                     ? Math.floor((cs - lsBase) / 16) : -1;
-    const barY = 57, barH = 5, segGap = 1;
+    const barY = 52, barH = 4, segGap = 1;   /* 2026-09-05: the hint footer owns row 57 */
     const segW   = Math.max(2, Math.floor((120 - (winPages - 1) * segGap) / winPages));
     const startX = 4;
     for (let pg = 0; pg < winPages; pg++) {
