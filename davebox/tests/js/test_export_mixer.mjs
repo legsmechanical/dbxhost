@@ -66,7 +66,39 @@ assert(m.volume === 0.0,
        '🐞 the default track volume is UNITY (0.0 dB), not the old normalised 0.6137250661849976');
 assert(m.volume !== 0.6137250661849976, '…and specifically not that value again');
 assert(m.pan === 0.0, 'the default pan is centre');
-assert(Array.isArray(m.sends), 'sends is an array (empty until the return tracks exist)');
+assert(Array.isArray(m.sends) && m.sends.length === 2,
+       'the default mixer now carries TWO send entries — one per return track');
+assert(m.sends.every(x => x.amount === -70),
+       '…both silent, so a default export sends nothing anywhere');
+
+/* ---- the two return tracks, and the sends that depend on them ----------- */
+/* ⭑ Josh's ruling: an export carries two EMPTY return tracks so the two sends
+ * populate. Live asserts sends().size() == numReturnTracks, so these two
+ * numbers are a CONTRACT — if they ever disagree, Live refuses the whole set
+ * and the export is dead on arrival, with no partial failure to notice. */
+const R = xp.exportReturnsForTest();
+assert(R.names.length === 2, 'exactly TWO return tracks — davebox has Send A and Send B');
+assert(R.tracks.length === R.sends.length,
+       '⭑⭑ the return count and the per-track send count MATCH — Live refuses the set otherwise');
+assert(R.tracks.every(t => Array.isArray(t.devices) && t.devices.length === 0),
+       '⭑ the returns are EMPTY (Josh) — verified by probe that Live accepts a return with no device, ' +
+       'unlike an ordinary track');
+assert(R.tracks.every(t => t.mixer && t.mixer.volume === 0.0 && Array.isArray(t.mixer.sends)),
+       'a return track has its own mixer at unity, and sends of its own');
+assert(R.tracks[0].name === 'A Reverb' && R.tracks[1].name === 'B Delay', 'named A and B');
+
+/* A send amount is dB on the SAME scale as volume — measured twice: P10a wrote
+ * 0.0/0.5/1.0/50.0 and Live read all four as MAXIMUM (everything >= 0 clamps),
+ * then P11 wrote -70/-12/-6/0 and they read off / low / half / full. */
+assert(R.sends.every(s2 => s2.isEnabled === true), 'both sends are enabled');
+assert(R.sends.every(s2 => s2.amount === -70), 'and silent by default (-70 dB, not 0 which is FULL send)');
+const sf = R.sendsFor([1.0, 0.5]);
+assert(near(sf[0].amount, 0.0) && near(sf[1].amount, -6.021),
+       '⭑ a send level converts through the SAME dB curve as volume, got ' + JSON.stringify(sf.map(x => x.amount)));
+/* ⚠ The trap this pins: 0 dB is FULL send, not silence. Writing davebox's
+ * default send level (gain 0) as a raw 0 would open every send wide. */
+assert(R.sendsFor([0, 0])[0].amount === -70,
+       '⚠ a gain of ZERO is -70 dB (silent) — NOT 0.0, which would be a full send');
 
 if (failed) { console.log('FAIL: export mixer value space'); process.exit(1); }
 console.log('PASS: the export\'s mixer value space — dB volume, ±50 pan, unity default');

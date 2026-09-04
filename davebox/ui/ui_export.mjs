@@ -216,7 +216,10 @@ function resolveTrack(t, ctx) {
         if (mt && Array.isArray(mt.devices) && mt.devices.length >= 1 && mt.devices[0] && mt.devices[0].kind) {
             const preset = mt.devices[0].name || dbName;
             let mixer = null;
-            if (mt.mixer) { mixer = deepClone(mt.mixer); mixer.sends = []; }  /* returnTracks is [] */
+            /* ⭑ The Move set's own sends are meaningless here — a Move set has
+             * no return tracks, so its array is empty. Ours must match OUR two
+             * returns or Live refuses the set. */
+            if (mt.mixer) { mixer = deepClone(mt.mixer); mixer.sends = defaultSends(null); }
             const movDevices = deepClone(mt.devices);
             collectSamples(movDevices, ctx);   /* bundle + rewrite sampleUris (Move instruments only) */
             return {
@@ -298,10 +301,53 @@ function panToAbl(pan) {
 }
 export function exportMixerConvForTest() { return { gainToDb, panToAbl, ABL_VOL_MIN_DB, ABL_VOL_MAX_DB, ABL_PAN_FULL }; }
 
+/* ── TWO RETURN TRACKS, AND WHY THEY ARE NOT OPTIONAL ──────────────────────
+ * ⭑ RULED (Josh, 2026-09-05): *"an exported set needs to carry to empty return
+ * tracks so that the 2 sends populate in each track."* davebox has Send A and
+ * Send B, and a send has nowhere to go without a return — Live asserts the two
+ * agree (`sends().size() == numReturnTracks`), so a track's `sends` array was
+ * previously written EMPTY and no send level could round-trip at all, static or
+ * automated.
+ *
+ * EMPTY is deliberate: the returns carry no devices, so a send lands in silence
+ * until the user drops an effect on it. The point is that the send LEVELS and
+ * their automation survive the trip. ⭑ Verified by probe (P10a): Live opens a
+ * set whose return tracks have `devices: []` — despite rejecting an ordinary
+ * TRACK with no device, which is why the export carries a Dummy Drift on those.
+ *
+ * ⚠ A send `amount` is DECIBELS, like `volume` — measured, not assumed. P10a
+ * wrote 0.0/0.5/1.0/50.0 and Live read ALL FOUR as maximum (everything >= 0 dB
+ * clamps); P11 then wrote -70/-12/-6/0 and they read off / low / half / full.
+ * So sends reuse gainToDb and need no constant of their own: davebox's send
+ * range is a gain of 0..1, i.e. -inf..0 dB, which never reaches the top. */
+const EXPORT_RETURNS = ['A Reverb', 'B Delay'];
+
+function emptyReturnTrack(name, color) {
+    return {
+        name: name, color: color, isSelected: false,
+        devices: [],                                  /* empty by ruling — see above */
+        mixer: { pan: 0.0, 'solo-cue': false, speakerOn: true, volume: 0.0, sends: [] },
+    };
+}
+/* One send entry per return track. Silent (-70 dB) unless a caller supplies
+ * levels — davebox's own Send A/B live in its level store, which this module
+ * cannot reach yet; the automation lanes write them regardless. */
+function defaultSends(levels) {
+    return EXPORT_RETURNS.map(function(_, i) {
+        const g = levels && levels.length > i ? levels[i] : 0;
+        return { isEnabled: true, amount: gainToDb(g) };
+    });
+}
+
 function defaultMixer() {
-    return { pan: 0.0, 'solo-cue': false, speakerOn: true, volume: 0.0, sends: [] };
+    return { pan: 0.0, 'solo-cue': false, speakerOn: true, volume: 0.0, sends: defaultSends(null) };
 }
 export function exportDefaultMixerForTest() { return defaultMixer(); }
+export function exportReturnsForTest() {
+    return { names: EXPORT_RETURNS.slice(),
+             tracks: EXPORT_RETURNS.map((n, i) => emptyReturnTrack(n, i + 1)),
+             sends: defaultSends(null), sendsFor: (l) => defaultSends(l) };
+}
 
 /* Ableton clips forbid two same-pitch notes overlapping (or starting at the
  * same time) — illegal there, though fine as live MIDI. The baked "what you
@@ -450,7 +496,7 @@ function buildSong(bpm, ctx) {
         scale: 'Major',           /* TODO Phase 3: map S.padScale -> Ableton scale-name vocab */
         melodicLayout: 'inKey',
         tracks: tracks,
-        returnTracks: [],
+        returnTracks: EXPORT_RETURNS.map((n, i) => emptyReturnTrack(n, i + 1)),
         masterTrack: ctx.master,
         scenes: scenes,
         grooves: [],
