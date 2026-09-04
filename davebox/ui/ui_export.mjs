@@ -19,7 +19,7 @@
 
 import { S, conductorTrackIdx } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { slotIndex, DAVEBOX_HOST_DIR, SLOT_LEVEL_MAX, engineGet } from './ui_engine.mjs';
+import { slotIndex, DAVEBOX_HOST_DIR, SLOT_LEVEL_MAX, engineGet, engineGetSlotParam } from './ui_engine.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_MS, PAD_MODE_CONDUCT } from './ui_constants.mjs';
 
@@ -561,6 +561,10 @@ function defaultMixer() {
     return { pan: 0.0, 'solo-cue': false, speakerOn: true, volume: 0.0, sends: defaultSends(null) };
 }
 export function exportDefaultMixerForTest() { return defaultMixer(); }
+export function exportSendLevelsForTest(mixer, levels) {
+    mixer.sends = defaultSends(levels);
+    return mixer;
+}
 export function exportReturnsForTest() {
     return { names: EXPORT_RETURNS.slice(),
              tracks: EXPORT_RETURNS.map((n, i) => emptyReturnTrack(n, i + 1)),
@@ -750,6 +754,22 @@ function paPrepareTrack(t, r, ctx) {
  * placement killed the entire set, with no partial load and nothing in the log.
  * Bisected against a real export (V1/V2 loaded, V3 did not) and settled by
  * probe V4. */
+/* The track's RESTING send levels, read off its chain slot. davebox stores them
+ * as a linear gain 0..1 (`LEVEL_KNOB_SPECS`), which defaultSends converts to dB.
+ *
+ * ⭑ Without this the sends exported SILENT even when the user had set them:
+ * `defaultSends(null)` writes -70, and the automation lanes only cover a send
+ * that was automated. A set with a static reverb send lost it entirely.
+ * Two reads per track, once per export — the whole thing is a one-shot. */
+function trackSendLevels(t) {
+    const ts = slotIndex(t);
+    const g = (key) => {
+        const v = parseFloat(engineGetSlotParam(ts, key));
+        return isFinite(v) && v > 0 ? v : 0;
+    };
+    return [g('send_a'), g('send_b')];
+}
+
 function paStampMixer(mixer, ids) {
     for (const field in ids) {
         if (field === 'send_a' || field === 'send_b') {
@@ -770,6 +790,12 @@ export function exportStampForTest(mixer, ids) { return paStampMixer(mixer, ids)
  * second implementation would pass its pins while the real path drifted. */
 export function exportSchwungNameForTest(mod, internal, rec, patchName, dbName) {
     return schwungTrackName(mod, internal, rec, patchName, dbName);
+}
+
+/* Overwrite a mixer's send amounts with the track's own resting levels. */
+function withSendLevels(mixer, t) {
+    mixer.sends = defaultSends(trackSendLevels(t));
+    return mixer;
 }
 
 function buildTrack(t, ctx) {
@@ -802,7 +828,9 @@ function buildTrack(t, ctx) {
         midiInputMode: 'auto',
         midiOutputEndpoint: null,
         devices: r.devices,
-        mixer: paStampMixer(r.mixer || defaultMixer(), ctx.paMixerIds[t] || {})
+        /* Resting send levels first, then the automation stamp — the stamp
+         * KEEPS whatever amount it finds, so the order matters. */
+        mixer: paStampMixer(withSendLevels(r.mixer || defaultMixer(), t), ctx.paMixerIds[t] || {})
     };
 }
 

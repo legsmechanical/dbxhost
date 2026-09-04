@@ -249,6 +249,21 @@ assert(/return schwungTrackName\(mod, internal, rec, patchName, dbName\);/.test(
 assert(/const name = schwungTrackName\(/.test(src) && /'preset_name'/.test(src),
        '…and resolveTrack calls it, reading the module\'s preset_name');
 
+/* ---- resting send LEVELS carry ------------------------------------------ */
+/* ⚠ Without this the sends exported SILENT even when set: defaultSends(null)
+ * writes -70, and the automation lanes only cover a send that was AUTOMATED.
+ * A set with a static reverb send lost it entirely. */
+const sl = xp.exportSendLevelsForTest({ sends: [] }, [1.0, 0.5]);
+assert(sl.sends.length === 2, 'still one entry per return track');
+assert(near(sl.sends[0].amount, 0.0), 'a full send level (gain 1.0) exports as 0 dB');
+assert(near(sl.sends[1].amount, -6.021), 'and half gain as -6.02 dB — the same curve as volume');
+assert(xp.exportSendLevelsForTest({ sends: [] }, [0, 0]).sends[0].amount === -70,
+       'an unset send is -70, not 0 — which would be a FULL send');
+assert(/mixer\.sends = defaultSends\(trackSendLevels\(t\)\)/.test(src),
+       'the export reads the track\'s own slot levels, not a constant');
+assert(/paStampMixer\(withSendLevels\(/.test(src),
+       '⭑ levels are applied BEFORE the automation stamp — the stamp keeps the amount it finds');
+
 /* ---- the placeholder rack is DEACTIVATED -------------------------------- */
 /* Josh: a dummy stands in for an instrument that could not come across, so it
  * must not PLAY. An enabled Drift pad sounds plausible while being no part of
