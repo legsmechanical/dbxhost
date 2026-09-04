@@ -1191,3 +1191,57 @@ read as a coverage hole, exactly like the prefetch's two guards.
 "at least": the cached-key skip is invisible on the happy path, and without it a
 plain page costs 16 reads — twice the entry budget, and a mutant that survived
 the first version of this test.
+
+### A module's OTHER draw surface is a CARD, and it floats
+
+`card_script` on a parameter gives a module the page: a bordered picture,
+centred, raised while that knob is held or has just been turned, and gone on
+release. `param_card.mjs` owns the frame and the module owns the inside. See
+`docs/MODULES.md` for the author-facing contract.
+
+**Why a surface at all.** The grid's business is eight values at once, in a
+17×15 box each. A card answers a different question — *what does THIS value
+mean* — for the one knob under a finger, and only for as long as the gesture.
+
+**It FLOATS, and that is why it needs no `clearScreen`.** The enum peek beside it
+is full-screen on purpose and therefore cannot draw without the frame owner's
+clear. A card blanks its own rect with `fillRect`, keeps the page visible around
+it, and so stays drawable by an embedded consumer that owns no frame at all —
+which keeps the library's "no file here clears the screen" contract without an
+exception. The peek wins when both could show: a card is an aid to reading one
+value; the peek is the list of values you are moving between.
+
+**A drawer cannot name a screen pixel.** It is handed a `frameCtx` scoped to the
+inside of the card, so `(0,0)` is its own top-left and there is no accessor that
+reaches absolute space. Two reasons, and the second is the sharp one: a card's
+size is declared **per parameter** (`card_w` / `card_h`, clamped to the panel),
+so absolute coordinates authored against one card are wrong on the next — and a
+floating card that could paint outside its border would eat the page it exists
+to float over. `tests/host/test_param_card.sh` pins it by drawing
+`(-5, -5, 200, 200)` and asserting nothing outside the card is lit and the frame
+*counted* the overflow.
+
+⭑ `frame_ctx.mjs` comes from upstream's module-supplied-widget work, where a
+custom cell widget is held to the same rule. Only the file is here; the cell
+widgets are not. It exposes `fillRect` / `print` / `textWidth`, so a drawer that
+wants `line` or `setPixel` falls back to `fillRect` — a Bresenham built on it
+still clips correctly.
+
+**Centred, not anchored to the touched cell.** A cell is 30px wide and a card is
+not, so anchoring would put most cards off the edge and the rest in a different
+place per knob — a picture that moves while you read it.
+
+**No timer of its own.** `s.touched` is already "the knob being held, or the one
+just turned": a hold sets `turnClaimMs` to 0 so it never expires, a release
+clears it at once, and a turn no finger registered on expires through
+`TURN_CLAIM_MS`. Every other follow-the-knob surface here obeys that law and a
+second one would drift from it.
+
+**The load is off the draw path, and a null answer is cached.** Nothing
+module-side is resident while the grid is up and the host loader has no cache, so
+loading from `renderOverlays` would evaluate a module script on every frame of a
+turn. `warmCard` runs from touch and from a turn, once per spec per session,
+caching the failures too.
+
+**Default-off.** A host with no `loadCard` in its io draws no card even for a
+declaring parameter, and a parameter that declares nothing is untouched.
