@@ -150,6 +150,50 @@ assert(near(PA.paValueFor(cls('pb'), 8192), 0, 1),
 assert(near(PA.paValueFor(cls('pb'), 0), -8192, 1) && near(PA.paValueFor(cls('pb'), 16383), 8191, 1),
        '…and spans ±8192 signed, which probe P8a confirmed and P8b (unsigned) disproved');
 
+/* ---- the emitters: envelopes and per-note ------------------------------- */
+/* ⭑ Ids are DOCUMENT-WIDE and sequential from 2 — grooveId takes 1, and real
+ * Move files run 2 upward straight ACROSS track boundaries. A per-track counter
+ * would collide and Live would resolve the wrong parameter, silently. */
+const volLane = { track: 2, clip: 0, target: '2:slot:volume',
+                  points: [{tick:0,val:16383},{tick:192,val:8192},{tick:384,val:0}] };
+const bps = PA.paBreakpoints(volLane, cls('2:slot:volume'));
+assert(bps.length === 3, 'one breakpoint per stored point');
+assert(near(bps[0].time, 0) && near(bps[1].time, 2) && near(bps[2].time, 4),
+       '⭑ times are CLIP-RELATIVE BEATS — tick 192 is beat 2 at 96 ticks/beat, got ' +
+       JSON.stringify(bps.map(b2 => b2.time)));
+assert(near(bps[0].value, 6, 0.03) && near(bps[1].value, 0, 0.01) && bps[2].value === -70,
+       'and values run +6 dB -> unity -> silence');
+
+/* sampling between points, which is what a per-note slice depends on */
+assert(PA.paSampleAt(volLane.points, 96) === 12287.5, 'a lane samples linearly between its points');
+assert(PA.paSampleAt(volLane.points, -50) === 16383, 'before the first point it holds the first value');
+assert(PA.paSampleAt(volLane.points, 9999) === 0, 'and after the last, the last');
+
+/* ⭑⭑ THE CHANNEL-CURVE-ON-EVERY-NOTE TRICK (Josh): AT and PB are channel-level
+ * on davebox, so one curve is stamped on EVERY note. A note starting mid-sweep
+ * must START AT THE RIGHT VALUE — that is the whole point of re-basing, and
+ * the thing a naive "write the lane from 0" would get wrong. */
+const notes = [{ noteNumber: 60, startTime: 0, duration: 1 },
+               { noteNumber: 64, startTime: 2, duration: 1 }];
+const atLane = { track: 3, clip: 0, target: 'at',
+                 points: [{tick:0,val:0},{tick:384,val:16383}] };   /* 0 -> 127 over 4 beats */
+PA.paAttachPerNote(notes, atLane, cls('at'), 2);
+assert(notes[0].automations && notes[0].automations.Pressure, 'note 1 got Pressure');
+assert(notes[1].automations && notes[1].automations.Pressure, 'note 2 got it too — EVERY note carries the channel curve');
+const n2 = notes[1].automations.Pressure;
+assert(near(n2[0].time, 0), 'note 2\'s automation is re-based to its OWN start');
+assert(n2[0].value > 50,
+       '⭑ …and starts at the value the channel curve HAD THERE (~64), not at 0 — got ' + n2[0].value);
+assert(notes[0].automations.Pressure[0].value === 0, 'while note 1, at the start, does begin at 0');
+
+/* pitch bend scales into Live's fixed ±48 span; ±2 semis is a 24th of it */
+const pbNotes = [{ noteNumber: 60, startTime: 0, duration: 4 }];
+PA.paAttachPerNote(pbNotes, { track: 1, clip: 0, target: 'pb',
+                              points: [{tick:0,val:16383}] }, cls('pb'), 2);
+const pbv = pbNotes[0].automations.PitchBend[0].value;
+assert(near(pbv, 8191 * 2 / 48, 1),
+       '⭑ a full bend at ±2 semitones is ~341, not 8191 — Live\'s span is a fixed ±48 (probe P9a)');
+
 if (failed) { console.log('FAIL: export mixer value space'); process.exit(1); }
 console.log('PASS: the export\'s mixer value space — dB volume, ±50 pan, unity default');
 }

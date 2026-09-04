@@ -231,7 +231,8 @@ function resolveTrack(t, ctx) {
                 devices: movDevices,
                 name: preset,
                 color: defaultColor,   /* dB track color (not the Move track's own color) */
-                mixer: mixer
+                mixer: mixer,
+                isMove: true           /* pitch bend exports on Move tracks only */
             };
         }
         return dummy(dbName, defaultColor);   /* Move-routed but no matching Move track */
@@ -428,8 +429,79 @@ function parsePaDump(body) {
     }
     return lanes;
 }
+
+/* ── EMITTING IT ───────────────────────────────────────────────────────────
+ * Two shapes, because Ableton has two containers and they are not
+ * interchangeable (docs §5d/§5g):
+ *
+ *   a MIXER lane -> a CLIP ENVELOPE. The automated field on the track's mixer
+ *     becomes `{value, id}` and the clip carries
+ *     `{parameterId, breakpoints, region: null}`. ⚠ Ids are DOCUMENT-WIDE and
+ *     sequential from 2 (1 is taken by grooveId), so the counter lives on the
+ *     song, not the track — Charles's example sets run 2..9 straight across
+ *     track boundaries.
+ *
+ *   AT / PB -> PER-NOTE automation, written to EVERY note. Josh: both are
+ *     CHANNEL-level on davebox, so stamping one curve on all notes reproduces
+ *     channel behaviour — and the usual objection (automation between notes is
+ *     lost) costs nothing here, because neither is audible with no note
+ *     sounding. Probe P8a confirmed it renders as ONE continuous curve.
+ */
+
+/* Sample a lane at a clip tick, linearly between its points. */
+function paSampleAt(points, tick) {
+    if (!points.length) return 0;
+    if (tick <= points[0].tick) return points[0].val;
+    const last = points[points.length - 1];
+    if (tick >= last.tick) return last.val;
+    for (let i = 1; i < points.length; i++) {
+        const a2 = points[i - 1], b2 = points[i];
+        if (tick <= b2.tick) {
+            if (b2.tick === a2.tick) return b2.val;
+            return a2.val + (b2.val - a2.val) * (tick - a2.tick) / (b2.tick - a2.tick);
+        }
+    }
+    return last.val;
+}
+
+/* A mixer lane -> Ableton breakpoints, times in CLIP-RELATIVE BEATS. */
+function paBreakpoints(lane, what) {
+    return lane.points.map(function(pt) {
+        return { time: Math.round((pt.tick / PA_TICKS_PER_BEAT) * 1e6) / 1e6,
+                 value: paValueFor(what, pt.val) };
+    });
+}
+
+/* A channel lane -> per-note automation, sliced to each note's extent and
+ * re-based to its own start, so a note beginning mid-sweep starts at the right
+ * value. Sample points are the lane's own breakpoints inside the note plus the
+ * note's two edges. `notes` are the RENDERED notes (post-pfx, legalized), in
+ * BEATS — the automation must ride the notes that are actually exported. */
+function paAttachPerNote(notes, lane, what, semis) {
+    for (let i = 0; i < notes.length; i++) {
+        const n = notes[i];
+        const st = n.startTime * PA_TICKS_PER_BEAT, du = n.duration * PA_TICKS_PER_BEAT;
+        const times = { 0: 1 };
+        times[n.duration] = 1;
+        for (let k = 0; k < lane.points.length; k++) {
+            const rel = (lane.points[k].tick - st) / PA_TICKS_PER_BEAT;
+            if (rel > 0 && rel < n.duration) times[rel] = 1;
+        }
+        const bps = Object.keys(times).map(Number).sort(function(x, y) { return x - y; })
+            .map(function(rel) {
+                let v = paValueFor(what, paSampleAt(lane.points, st + rel * PA_TICKS_PER_BEAT));
+                if (what.key === 'PitchBend') v = v * semis / 48;   /* ±48 is Live's fixed MPE span */
+                return { time: Math.round(rel * 1e6) / 1e6, value: Math.round(v * 1e4) / 1e4 };
+            });
+        if (!bps.length) continue;
+        if (!n.automations) n.automations = {};
+        n.automations[what.key] = bps;
+    }
+}
+
 export function exportPaForTest() {
-    return { parsePaDump, classifyPaTarget, paValueFor, PA_VAL_MAX, PA_TICKS_PER_BEAT };
+    return { parsePaDump, classifyPaTarget, paValueFor, paSampleAt, paBreakpoints,
+             paAttachPerNote, PA_VAL_MAX, PA_TICKS_PER_BEAT };
 }
 
 function defaultMixer() {
@@ -484,7 +556,7 @@ function legalizeNotes(notes) {
  * total = content extent (region.end), cycle = default loop brace (region.loop.end)
  * — Phase 4b bakes several cycles (random/delay) and parks the brace on cycle 1
  * so the extra content is revealed by dragging the brace open in Live. */
-function buildClip(t, c, isDrum) {
+function buildClip(t, c, isDrum, ctx) {
     /* Apply-Conductor variant: for melodic responder tracks (not drum, not the
      * Conductor track itself) when the user opted in. DSP folds per-scene only
      * where the conductor clip has notes + the responder is on; otherwise it
@@ -528,6 +600,9 @@ function buildClip(t, c, isDrum) {
     const legal = legalizeNotes(notes);   /* remove illegal same-pitch overlaps */
     if (legal.length === 0) return null;
 
+    /* ⭑ Automation rides the RENDERED notes, not the written ones — `legal`
+     * is post-pfx and legalized, and is what actually ships. */
+    paDecorateClip(t, c, legal, ctx);
     const endBeats  = (span > 0 ? span : 96) / 96;     /* content extent (N cycles) */
     const loopBeats = (cycle > 0 ? cycle : span) / 96; /* default brace = one cycle */
     return {
@@ -544,8 +619,88 @@ function buildClip(t, c, isDrum) {
     };
 }
 
+/* Attach this clip's automation: per-note for AT/PB, and a clip envelope for
+ * every automated mixer field (whose id was allocated on the track). Mutates
+ * `notes` and stashes the envelopes for buildClip to hang on the clip. */
+function paDecorateClip(t, c, notes, ctx) {
+    ctx.paEnvelopes = [];
+    if (!ctx || !ctx.paLanes) return;
+    for (let i = 0; i < ctx.paLanes.length; i++) {
+        const lane = ctx.paLanes[i];
+        if (lane.track !== t || lane.clip !== c) continue;
+        const what = classifyPaTarget(lane.target);
+        if (!what) continue;
+        if (what.kind === 'note') {
+            /* ⭑ Pitch bend is MOVE TRACKS ONLY (Josh): a Schwung track exports
+             * as a Drift dummy, so its real synth — and therefore the bend
+             * range that gave the gesture its size — is not in the set at all,
+             * and there is no honest number to scale to. */
+            if (what.key === 'PitchBend' && !ctx.paBendSemis[t]) continue;
+            paAttachPerNote(notes, lane, what, ctx.paBendSemis[t] || 2);
+        } else {
+            const id = ctx.paMixerIds[t] && ctx.paMixerIds[t][what.field];
+            if (!id) continue;
+            ctx.paEnvelopes.push({ parameterId: id,
+                                   breakpoints: paBreakpoints(lane, what),
+                                   region: null });
+        }
+    }
+}
+
+/* Which mixer fields this track automates anywhere, and the bend range its
+ * instrument declares. Called once per track BEFORE its clips are built,
+ * because the id must exist on the mixer before a clip can point at it. */
+function paPrepareTrack(t, r, ctx) {
+    ctx.paMixerIds[t] = {};
+    ctx.paBendSemis[t] = 0;
+    if (!ctx.paLanes) return;
+    /* A Move track's own instrument says what a full bend SOUNDED like on the
+     * Move; Live ignores the parameter for per-note expression, so we read it
+     * and scale the values instead (probes P9a/P9b). */
+    if (r.isMove) {
+        let semis = 0;
+        (function walk(o) {
+            if (!o || typeof o !== 'object') return;
+            if (Array.isArray(o)) { for (const v of o) walk(v); return; }
+            for (const k in o) {
+                if (k === 'Global_PitchBendRange') {
+                    const v = o[k];
+                    const n = (v && typeof v === 'object') ? Number(v.value) : Number(v);
+                    if (isFinite(n) && n > 0) semis = n;
+                } else walk(o[k]);
+            }
+        })(r.devices);
+        ctx.paBendSemis[t] = semis || 2;
+    }
+    for (let i = 0; i < ctx.paLanes.length; i++) {
+        const lane = ctx.paLanes[i];
+        if (lane.track !== t) continue;
+        const what = classifyPaTarget(lane.target);
+        if (!what || what.kind !== 'mixer') continue;
+        if (!ctx.paMixerIds[t][what.field]) ctx.paMixerIds[t][what.field] = ctx.nextPaId++;
+    }
+}
+
+/* Stamp `{value, id}` on each automated mixer field, keeping the value the
+ * mixer already carried — automation does not replace the resting value. */
+function paStampMixer(mixer, ids) {
+    for (const field in ids) {
+        if (field === 'send_a' || field === 'send_b') {
+            const idx = field === 'send_a' ? 0 : 1;
+            const cur = (mixer.sends && mixer.sends[idx]) || { isEnabled: true, amount: -70 };
+            mixer.sends[idx] = { isEnabled: true, amount: cur.amount, id: ids[field] };
+        } else {
+            const cur = mixer[field];
+            mixer[field] = { value: (cur && typeof cur === 'object') ? cur.value : cur, id: ids[field] };
+        }
+    }
+    return mixer;
+}
+
 function buildTrack(t, ctx) {
     const r = resolveTrack(t, ctx);
+    /* Ids must exist on the mixer before any clip can point at one. */
+    paPrepareTrack(t, r, ctx);
     /* Melodic tracks bake clip notes via _export; drum tracks flatten their
      * polymetric lanes via _export_drum. DSP is authoritative — empty clips
      * return count 0 → empty slot. The Conductor track emits no MIDI of its
@@ -555,7 +710,8 @@ function buildTrack(t, ctx) {
     const isDrum = !isConductor && !!(S.trackPadMode && S.trackPadMode[t] !== 0);
     const clipSlots = [];
     for (let i = 0; i < EXPORT_SCENES; i++) {
-        const clip = isConductor ? null : buildClip(t, i, isDrum);
+        const clip = isConductor ? null : buildClip(t, i, isDrum, ctx);
+        if (clip && ctx.paEnvelopes && ctx.paEnvelopes.length) clip.envelopes = ctx.paEnvelopes;
         clipSlots.push({ hasStop: true, clip: clip });
     }
     return {
@@ -571,11 +727,24 @@ function buildTrack(t, ctx) {
         midiInputMode: 'auto',
         midiOutputEndpoint: null,
         devices: r.devices,
-        mixer: r.mixer || defaultMixer()
+        mixer: paStampMixer(r.mixer || defaultMixer(), ctx.paMixerIds[t] || {})
     };
 }
 
 function buildSong(bpm, ctx) {
+    /* ⭑ ONE read for the whole project (see the DSP's `pa_export`), before any
+     * track is built — the id counter runs document-wide, so it cannot be
+     * per-track. Starts at 2: `grooveId` uses 1, and real Move files number
+     * from 2 upward. */
+    ctx.paLanes = [];
+    ctx.paMixerIds = {};
+    ctx.paBendSemis = {};
+    ctx.nextPaId = 2;
+    const lanes = parseInt(host_module_get_param('pa_export'), 10);
+    if (isFinite(lanes) && lanes > 0) {
+        const body = host_read_file(EXPORT_PA_PATH);
+        if (body) ctx.paLanes = parsePaDump(body);
+    }
     const tracks = [];
     for (let t = 0; t < NUM_TRACKS; t++) tracks.push(buildTrack(t, ctx));
     const scenes = [];
