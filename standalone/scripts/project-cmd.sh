@@ -591,10 +591,17 @@ do_delete() { # index
     # place. `relaunch_patch.sh` runs in exactly that window — no process holding
     # the directory, and no dying Move able to save the set back into existence.
     #
-    # The session comes back on the LOWEST remaining project, or, if that was the
-    # last one, on the picker (`reselect`), which is also what a fresh install
-    # shows. The guard below still stands for every path that has NOT arranged
-    # this — it is the accident that is refused, not the intent.
+    # The session comes back on the PICKER with nothing chosen (`reselect`) —
+    # Josh, 2026-09-05: "deleting an active session ... automatically loads
+    # another project. it shouldn't. it should land on project manager page
+    # with nothing loaded." Until then it auto-landed on the lowest remaining
+    # project, which read as the delete having picked a project for you.
+    # The lowest remaining index is STILL written when one exists, because Move
+    # itself needs a valid boot set underneath the picker (its own index would
+    # otherwise name the set we just removed); the marker is what keeps davebox
+    # from loading it — the same shape as a fresh install. The guard below still
+    # stands for every path that has NOT arranged this — it is the accident that
+    # is refused, not the intent.
     _open_del=""
     [ -f "$ACTIVE_SET_PATH" ] && _open_del="$(head -n 1 "$ACTIVE_SET_PATH" | tr -d '[:space:]')"
     if [ -n "$_open_del" ] && [ -d "$SETS_DIR/$_open_del" ] && \
@@ -631,9 +638,8 @@ PYEOF
         printf 'sync\n' >> "$DBX_DIR/relaunch_patch.sh"
         if [ "$_next_idx" -ge 0 ] 2>/dev/null; then
             printf '%s\n' "$_next_idx" > "$DBX_DIR/relaunch_song_index"
-        else
-            : > "$DBX_DIR/relaunch_reselect"
         fi
+        : > "$DBX_DIR/relaunch_reselect"
         : > "$DBX_DIR/relaunch_requested"
         setsid sh -c '
           sleep 1

@@ -67,8 +67,13 @@ grep -q "^sync$" "$T/lib/.dbx/relaunch_patch.sh" 2>/dev/null \
     && ok "the session is asked to restart" \
     || bad "no relaunch requested — the session would sit on a deleted project"
 [ "$(cat "$T/lib/.dbx/relaunch_song_index" 2>/dev/null)" = "1" ] \
-    && ok "it comes back on the lowest REMAINING project" \
-    || bad "wrong landing index: $(cat "$T/lib/.dbx/relaunch_song_index" 2>/dev/null)"
+    && ok "Move gets a valid boot set underneath: the lowest REMAINING project" \
+    || bad "wrong boot index: $(cat "$T/lib/.dbx/relaunch_song_index" 2>/dev/null)"
+# Josh, 2026-09-05: the delete must NOT pick a project for you — the session
+# comes back on the picker with nothing loaded, even when projects remain.
+[ -f "$T/lib/.dbx/relaunch_reselect" ] \
+    && ok "...but the picker is re-armed, so nothing is LOADED (Josh, 2026-09-05)" \
+    || bad "no reselect marker — the delete auto-loaded another project"
 
 # --- 2. the queued command is CORRECT, not merely present ------------------
 sh "$T/lib/.dbx/relaunch_patch.sh"
