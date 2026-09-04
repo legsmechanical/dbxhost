@@ -9,9 +9,13 @@
 import { S, PERF_FACTORY_PRESETS } from './ui_state.mjs';
 import { drawDaveBox } from './ui_daves.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
-import { SESS_KNOB_MODES } from './ui_engine.mjs';
+import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev } from './ui_engine.mjs';
+import { instrValueFor } from './ui_dsp_bridge.mjs';
+import { moduleIdOf } from './ui_discover.mjs';
+import { schSlotForTrack } from './ui_corun.mjs';
 import {
     BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION,
+    INSTR_SCHWUNG, INSTR_MOVE_MAX, INSTR_MIDI_CH, INSTR_TRACK,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
     SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
     col4, col5, pixelPrint, pixelPrintC,
@@ -20,7 +24,7 @@ import {
     fmtDly, fmtArpStyle, fmtArpSteps, fmtDiq, fmtPlain, fmtLgto, fmtPitchRnd
 } from './ui_constants.mjs';
 import {
-    drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitAltArrow,
+    drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitBankHeader,
     kitUseLayout,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
     drawVFader, mvPrint, mvWidth, rectOutline, plotLine,
@@ -56,47 +60,45 @@ import { drawMenuHeader } from '/data/UserData/schwung/shared/menu_layout.mjs';
 /* Parameter bank definitions                                           */
 /* ------------------------------------------------------------------ */
 
-/* Bank-position indicator: the canvaskit page bar on row 9 — one segment per
- * bank in the cycle, the ACTIVE segment dotted (replaces the old tick strip).
- * The alt-arrow affordance sits at the header's top-right corner. hdrFilled =
- * the header bar is filled white (arrow inks black). */
-function drawBankHeaderRight(showTrack, hdrFilled) {
-    if (S.sessionView) return;
-    if (bankHasAltParams(S.activeTrack, S.activeBank)) {
-        drawAltArrow(121, hdrFilled, altIndicatorActive(S.activeTrack, S.activeBank));
-    }
+/* THE BANK HEADER (Josh, 2026-09-05): [glyph] NAME ............ T3 [OB]
+ *
+ * The glyph on the left says what the bank CONTROLS; the far right names the
+ * TRACK and, in brackets, its INSTRUMENT. The track is there because of the
+ * LATCH — a latched card holds the screen indefinitely and the track row is
+ * out of sight (2026-08-25); it used to be a 'Tr3 - ' prefix on the left. The
+ * alt-param chevron that sat at x=121 is gone, and with it the fixed text
+ * budget: drawKitBankHeader measures the right label and gives the name the
+ * rest. The STEP, SOUND + CONFIG and MACROS pages wear the same header
+ * (2026-09-03: "just like pre-existing ones"). */
+export function bankHeaderGlyph(bank) {
+    if (bank === BANK_SOUND) return 'audio';
+    if (bank === BANK_MACROS || bank === BANK_AUTOMATION) return 'perf';
+    return 'seq';        /* clip, lanes, note fx, harmony, delay, arps, step, drum, conductor */
 }
-
-/* Canvaskit chrome: resting header = white-on-black bank name (ALL CAPS, 6x6
- * header font); the "inverted" variant (secondary banks: ARP IN / AUTO) is a
- * filled white bar with black text. */
-/* Every bank card names its TRACK first (Josh, 2026-08-25): "TR3 NOTE FX".
- *
- * ⚠ Because of the LATCH — a latched card holds the screen indefinitely, and
- * the track overview is what used to tell you which track you were on. Without
- * this you can sit on a bank page for as long as you like with no way to know.
- *
- * ⚠⚠ The budget is NOT the full header width. The alt-param arrow is drawn at
- * x=121, INSIDE this band, so the text has to stop before it — BANK_HDR_TEXT_W
- * below. Trimming to the full 124 (what drawKitHeader does by default) lets a
- * long title slide under the arrow, which was already true before this prefix
- * and is what Josh caught.
- *
- * With 'Tr<n> - ' the widest bank name has to fit 117px, which is why
- * SEQUENCE ARP became SEQ ARP (Josh offered the rename when the long form did
- * not fit). Measured, not guessed — measure again before adding a longer
- * bank name. */
-/* Text starts at x=2 and the alt arrow starts at x=121, so 118px of text ends
- * at x=119 and leaves column 120 clear. ⚠ Derived from the two positions, not a
- * margin picked by eye — the first value here was 117 from an invented 2px gap,
- * and it failed the Conductor's 'C-RESPONDER' by exactly one pixel. */
-export const BANK_HDR_TEXT_W = 118;
-
-
-/* Exported: every bank card names its track first — the STEP, SOUND + CONFIG
- * and MACROS pages included (Josh, 2026-09-03: "just like pre-existing ones"). */
-export function bankHeadingPrefix() {
-    return 'Tr' + (S.activeTrack + 1) + ' - ';
+/* The right label. `bare` = the resting track overview, whose TRACK ROW already
+ * names the track (Josh, 2026-08-31: "it's redundant") — it keeps only the
+ * instrument. Session view has no track to name. */
+export function bankHeaderRight(bare) {
+    if (S.sessionView) return '';
+    const instr = '[' + (S.instrAbbrev || '--') + ']';
+    return bare ? instr : 'T' + (S.activeTrack + 1) + ' ' + instr;
+}
+/* The instrument abbreviation for the active track — a CACHE, refreshed by the
+ * tick once a second and forced (`S.instrAbbrevAt = 0`) on a track switch or
+ * an instrument change. The header draws every frame; the module id is a
+ * shadow_get_param round-trip (~2.9 ms), which must never sit on a draw path. */
+export function refreshInstrAbbrev() {
+    const t = S.activeTrack;
+    const v = instrValueFor(t) | 0;
+    let a = '--';
+    if (v === INSTR_SCHWUNG) {
+        const ref = engineLoadedModule(schSlotForTrack(t), 'synth');
+        a = ref ? engineModuleAbbrev(moduleIdOf(ref)) : '--';
+    } else if (v >= 0 && v <= INSTR_MOVE_MAX)                a = 'MV' + (v + 1);
+    else if (v >= INSTR_MIDI_CH && v <= INSTR_MIDI_CH + 15)  a = 'CH' + (v - INSTR_MIDI_CH + 1);
+    else if (v >= INSTR_TRACK && v <= INSTR_TRACK + 7)       a = 'TR' + (v - INSTR_TRACK + 1);
+    S.instrAbbrev = String(a || '--').toUpperCase();
+    S.instrAbbrevAt = S.clockMs + 1000;
 }
 
 /* The automation circle on a bank card's cell, for a knob on the seq: list. */
@@ -110,24 +112,20 @@ function markSeqAuto(cell, bank, k, altMode) {
 
 function drawBankHeading(name, showTrack, bareHdr) {
     /* bareHdr: the resting track overview draws the TRACK ROW, which already
-     * names the active track, so its header drops the Tr<n> prefix (Josh,
-     * 2026-08-31: "it's redundant — you can see active track on the track
-     * number row"). Bank cards keep it: a latched card holds the screen with
-     * no track row in sight, which is why the prefix exists (2026-08-25). */
-    drawKitHeader(bankHeadingText(name, bareHdr), false, BANK_HDR_TEXT_W);
-    drawBankHeaderRight(showTrack, true);
+     * names the active track (Josh, 2026-08-31: "it's redundant — you can see
+     * active track on the track number row") — its right label keeps only the
+     * instrument. Bank cards name the track: a latched card holds the screen
+     * with no track row in sight (2026-08-25). */
+    drawKitBankHeader(bankHeadingText(name), bankHeaderGlyph(S.activeBank), bankHeaderRight(bareHdr));
 }
-/* The heading STRING: prefix + name, with the Conductor's "C-" blink (phase
- * driven in the tick loop; the header font is fixed-advance so the name stays
- * steady). Split out so a page that must NOT draw the alt arrow (the STEP
- * page: the reveal is pinned pixel-equal to the bank's own frame, and the
- * arrow belongs to the bank underneath) can draw the same text. */
-function bankHeadingText(name, bareHdr) {
-    const pfx = bareHdr ? '' : bankHeadingPrefix();
+/* The heading STRING: the name, with the Conductor's "C-" blink (phase driven
+ * in the tick loop; the header font is fixed-advance so the name stays
+ * steady). Split out so the STEP page can draw the same text. */
+function bankHeadingText(name) {
     if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT &&
             name.charAt(0) === 'C' && name.charAt(1) === '-')
-        return pfx + (S._altBlinkPhase !== 1 ? 'C-' : '  ') + name.slice(2);
-    return pfx + name;
+        return (S._altBlinkPhase !== 1 ? 'C-' : '  ') + name.slice(2);
+    return name;
 }
 
 /* Vestigial: secondary banks (LIVE ARP / AUTOMATION / REPEAT GROOVE) now use
@@ -279,9 +277,10 @@ function drawStepEditKitPage(title, cells, noteBox, footer) {
     if (touched) {
         drawKitTouchedHeader(touched.name);
     } else {
-        /* The bank heading, prefix and Conductor blink included — `title` is
-         * the bank's plain name; the Conductor's C- form comes from the walk. */
-        drawKitHeader(bankHeadingText(bankDisplayName(S.trackPadMode[S.activeTrack], BANK_STEP), false), false, BANK_HDR_TEXT_W);
+        /* The bank heading, Conductor blink included — `title` is the bank's
+         * plain name; the Conductor's C- form comes from the walk. */
+        drawKitBankHeader(bankHeadingText(bankDisplayName(S.trackPadMode[S.activeTrack], BANK_STEP)),
+                          'seq', bankHeaderRight(false));
         fill_rect(0, 9, 128, 1, 1);   /* solid rule (no bank context here) */
     }
     if (!cells) {
@@ -553,15 +552,8 @@ function drawKitPage(name, cells, inverted, footer) {
     drawKitEnumOverlay(cells, _ovi);
 }
 
-/* Down-arrow affordance for banks that expose alt params. Always drawn in the
- * header text color (steady) when alt mode is off; flashes on/off ~2x/sec when
- * alt mode is on. `hdrBgWhite` true = header background is white (so arrow draws
- * black); false = header background is black (so arrow draws white). The blink
- * phase is set in the tick loop (S._altBlinkPhase) which also marks the screen
- * dirty so the animation runs while idle. */
-function drawAltArrow(x, hdrBgWhite, on) {
-    drawKitAltArrow(x, hdrBgWhite, on, S._altBlinkPhase === 1);
-}
+/* (drawAltArrow — the alt-param chevron — retired 2026-09-05 with the bank
+ * header layout; alt mode itself is unchanged.) */
 
 /* (drawStepEditHeader retired 2026-07-18 — the step editors now use the
  * canvaskit chrome via drawStepEditKitPage.) */

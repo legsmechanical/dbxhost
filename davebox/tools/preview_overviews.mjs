@@ -44,11 +44,12 @@ globalThis.host_read_file = () => '';
 const { S } = await import('../ui/ui_state.mjs');
 const render = await import('../ui/ui_render.mjs');
 
-S.stateLoading = false; S.bootSplashTicks = 0; S.awaitingProjectSelect = false;
+S.stateLoading = false; S.bootSplashMs = 0; S.awaitingProjectSelect = false;
 S.ledInitComplete = true; S.activeTrack = 3; S.tickCount = 100;
 S.bankParams = Array.from({length:8},()=>Array.from({length:12},()=>new Array(8).fill(0)));
 S.bankParams[3][5][0] = 1;          /* Arp available, so the chip shows */
 S.metronomeOn = 2;                  /* 'Play' */
+S.instrAbbrev = 'OBXD';              /* the header's [instrument] cache, as the tick would fill it */
 S.trackVelOverride[3] = 0;
 S.scaleAware = true;
 for (let t=0;t<8;t++){ S.trackActiveClip[t] = t % 4; S.clipNonEmpty[t][t%4] = true; }

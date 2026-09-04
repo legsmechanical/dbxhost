@@ -453,6 +453,10 @@ export const S = {
      * the exit it guards ('suspend' | 'quit') or is null; the Yes/No row follows
      * the universal convention (0 = Yes, 1 = No) and opens on No. */
     confirmExit: null,
+    /* The bank header's [instrument] abbreviation for the ACTIVE track — a cache
+     * (ui_render.refreshInstrAbbrev), never a read on the draw path. */
+    instrAbbrev: '--',
+    instrAbbrevAt: 0,
     confirmExitSel: 1,
     confirmStateWipeSel: 1,   /* 0=Yes, 1=No (default) */
     /* Keys->Drums track conversion confirm dialog (transient, not persisted). */

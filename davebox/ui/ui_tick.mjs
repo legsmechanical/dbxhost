@@ -44,7 +44,7 @@ import { effectiveClip, updateStepLEDs, updateSessionLEDs, updateTrackLEDs, flas
     buildLedInitQueue, drainLedInit } from './ui_leds.mjs';
 import { schSlotForTrack, schSlotsForTrack, schSlotMasksAllTracks } from './ui_corun.mjs';
 import { pollPendingExport } from './ui_export.mjs';
-import { drawUI, sessMixerVisible } from './ui_render.mjs';
+import { drawUI, sessMixerVisible, refreshInstrAbbrev } from './ui_render.mjs';
 import { pollDSP,
     refreshPerClipBankParams, refreshDrumLaneBankParams, refreshSeqNotesIfCurrent,
     syncClipsFromDsp, syncClipsTargeted, syncMuteSoloFromDsp, restoreUiSidecar,
@@ -375,6 +375,9 @@ export function _tickImpl() {
         if (S.bootSplashMs > 0) S.bootSplashMs = Math.max(0, S.bootSplashMs - _dtMs);
     }
     tickPrefetch();                              /* the tick's one read — see ui_dsp_bridge */
+    /* The bank header's [instrument]: one shadow read a second, or at once after
+     * a track switch / instrument change (S.instrAbbrevAt = 0). Never per frame. */
+    if (S.clockMs >= S.instrAbbrevAt) refreshInstrAbbrev();
     checkBackHold();   /* self-managed Back: fire suspend once a held Back crosses the long-press threshold */
     checkShiftNoteHold();  /* Shift+Note/Session: the HOLD fires at the threshold, not on release */
 

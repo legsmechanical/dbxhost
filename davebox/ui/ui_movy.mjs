@@ -1565,6 +1565,42 @@ export function drawKitHeader(text, invert, maxW) {
     }
 }
 
+/* ---- the BANK header (Josh, 2026-09-05) ----
+ * [glyph] NAME .................. T3 [OB]
+ * A glyph on the left says what the bank CONTROLS — sequencer elements (♫),
+ * audio elements (bars), performance elements (a knob) — the track number and
+ * the instrument abbreviation sit on the far right, and the alt-param chevron
+ * is gone. Filled band, the 4x5 face, glyphs 5 rows at y=1 like the text.
+ * The name's budget is whatever the two ends leave it — measured, not a
+ * constant, so a long right label can never run under the name. */
+const KIT_BANK_GLYPHS = {
+    seq:   ['..####', '..#..#', '..#..#', '##..##', '##..##'],   /* a beamed pair of notes */
+    audio: ['....#',  '..#.#',  '..#.#',  '#.#.#',  '#.#.#' ],   /* rising bars */
+    perf:  ['.###.',  '#..##',  '#.#.#',  '#...#',  '.###.' ],   /* a knob with its pointer */
+};
+export function kitBankGlyphWidth(kind) {
+    const g = KIT_BANK_GLYPHS[kind];
+    return g ? Math.max(...g.map((r) => r.length)) : 0;
+}
+export function drawKitBankGlyph(kind, x, y, color) {
+    const g = KIT_BANK_GLYPHS[kind];
+    if (!g) return;
+    for (let j = 0; j < g.length; j++)
+        for (let i = 0; i < g[j].length; i++)
+            if (g[j][i] === '#') set_pixel(x + i, y + j, color);
+}
+export function drawKitBankHeader(name, glyph, right) {
+    fill_rect(0, 0, SCREEN_W, MV_HDR_H, 1);
+    let x = 2;
+    const gw = kitBankGlyphWidth(glyph);
+    if (gw) { drawKitBankGlyph(glyph, x, 1, 0); x += gw + 3; }
+    const r = String(right == null ? '' : right).toUpperCase();
+    const rw = r ? fontWidth4x5(r) : 0;
+    if (r) fontPrint4x5(SCREEN_W - 2 - rw, 1, r, 0);
+    const budget = SCREEN_W - 2 - x - (r ? rw + 4 : 0);
+    fontPrint4x5(x, 1, fit4x5(String(name).toUpperCase(), budget), 0);
+}
+
 /* Touched header: the bar drops out and the param NAME renders centered in
  * white — the state flip is the touch feedback; the label strip below shows
  * the VALUE. No page bar in this state. */
@@ -2978,7 +3014,8 @@ export function drawKitListOverlay(options, sel, opts) {
 
 /* ---- full page ----
  * opts: { headerText, headerInvert, pageIdx, pageCount (bar; omit to skip),
- *         touchedIdx, altArrowShow, altArrowOn, altArrowHidden (blink phase) }
+ *         touchedIdx, headerGlyph + headerRight (the BANK header: glyph on the
+ *         left, track + instrument on the right — see drawKitBankHeader) }
  * Touched non-blank cell with a `name` swaps the header to the inverted
  * centered param name and suppresses the page bar. */
 /* ⚠ THIS FUNCTION DOES NOT CHOOSE A LAYOUT, deliberately. It is SHARED — sound
@@ -3009,9 +3046,9 @@ export function drawKitBankPage(cells, opts) {
     } else if (touched) {
         drawKitTouchedHeader(touched.name);
     } else {
-        drawKitHeader(opts.headerText, opts.headerInvert, opts.headerMaxW);
+        if (opts.headerGlyph) drawKitBankHeader(opts.headerText, opts.headerGlyph, opts.headerRight);
+        else drawKitHeader(opts.headerText, opts.headerInvert, opts.headerMaxW);
         if (opts.pageCount > 0) drawKitPageBar(opts.pageIdx | 0, opts.pageCount, opts.pageGroups);
-        if (opts.altArrowShow) drawKitAltArrow(SCREEN_W - 7, !opts.headerInvert, !!opts.altArrowOn, opts.altArrowHidden);
     }
     drawKitCells(cells, t, opts.env, opts.filt, opts.eq, opts.samp,
                  opts.anim, opts.nowMs);
@@ -3394,12 +3431,6 @@ export function drawKitList(rows, sel, opts) {
     return start;
 }
 
-/* Down-arrow affordance for banks with alt params, in the header's top-right.
- * `onFill` = header background is filled white (arrow draws black). */
-export function drawKitAltArrow(x, onFill, on, blinkHidden) {
-    if (on && blinkHidden) return;
-    const fg = onFill ? 0 : 1;
-    fill_rect(x,     2, 5, 1, fg);
-    fill_rect(x + 1, 3, 3, 1, fg);
-    fill_rect(x + 2, 4, 1, 1, fg);
-}
+/* (drawKitAltArrow, the alt-param chevron in the header's top-right, retired
+ * 2026-09-05 with the bank header's glyph/track/instrument layout — Josh: "get
+ * rid of the alt down arrow indicator on headers".) */

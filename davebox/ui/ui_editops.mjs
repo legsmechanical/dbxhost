@@ -491,6 +491,7 @@ export function _switchActiveTrack(newT) {
      * be reached: the entry below re-opens the screen. */
     S.trackActiveBank[S.activeTrack] = S.activeBank;
     S.activeTrack = newT | 0;
+    S.instrAbbrevAt = 0;                  /* the header's [instrument] follows the track */
     S.activeBank = S.trackActiveBank[S.activeTrack] | 0;
     /* IN BANK MODE ONLY: a track recorded on SOUND + CONFIG needs its gateway
      * card re-opened — sound mode standing at its prompt (BANKS[11] is a stub,

@@ -41,7 +41,7 @@ import { nowMs } from './ui_clock.mjs';
  * safe because both sides only call the binding inside function bodies, never
  * at module-init time — the same contract the ui_record ↔ ui_dsp_bridge cycle
  * documents. bankCardVisible is the ONE owner of card visibility. */
-import { bankCardVisible, sessMixerVisible, bankHeadingPrefix, BANK_HDR_TEXT_W } from './ui_render.mjs';
+import { bankCardVisible, sessMixerVisible, bankHeaderRight } from './ui_render.mjs';
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
@@ -4465,7 +4465,7 @@ function renderMacros() {
     clear_screen();
     kitUseLayout('bank');
     drawKitBankPage(macroCells(S.track, true), {
-        headerText: bankHeadingPrefix() + 'MACROS', headerInvert: false, headerMaxW: BANK_HDR_TEXT_W,
+        headerText: 'MACROS', headerGlyph: 'perf', headerRight: bankHeaderRight(false),
         touchedIdx: S.touchedIdx,
         footer: macroCardHints(),
     });
@@ -4484,7 +4484,7 @@ export function renderMacrosPeek(track) {
     kitUseLayout('bank');
     const live = S.active && S.track === track;
     drawKitBankPage(macroCells(track, live), {
-        headerText: bankHeadingPrefix() + 'MACROS', headerInvert: false, headerMaxW: BANK_HDR_TEXT_W,
+        headerText: 'MACROS', headerGlyph: 'perf', headerRight: bankHeaderRight(false),
         touchedIdx: live ? S.touchedIdx : -1,
         footer: macroCardHints(),
     });
@@ -5250,6 +5250,7 @@ function applyModulePick(mod) {
      * module id. Same key, different currency — loading a bus by id silently
      * does nothing, which is the kind of failure you debug for an hour. */
     engineLoadModule(S.slot, S.comp, S.bus ? (mod.path || '') : mod.id);
+    GS.instrAbbrevAt = 0;                 /* the header's [instrument] re-reads next tick */
     /* The chain host instantiates asynchronously — discovering immediately
      * returns null metadata and the module looks empty. */
     S.pendingDiscover = 6;
@@ -6998,16 +6999,16 @@ function renderPrompt() {
         /* A MIDI track: the standard controllers and the clip's Program /
          * Bank; the door is the footer's CLK MENU (spec §2b). */
         drawKitBankPage(midiMixCells(), {
-            headerText: bankHeadingPrefix() + 'SOUND+CFG', headerInvert: false, headerMaxW: BANK_HDR_TEXT_W,
+            headerText: 'SOUND+CFG', headerGlyph: 'audio', headerRight: bankHeaderRight(false),
             touchedIdx: S.touchedIdx,
             footer: levelCardHints(),
         });
         return;
     }
-    /* ⚠ 'SOUND+CFG': with the track prefix the full name is 139px against the
-     * 118px band (measured) — the same budget that made SEQUENCE ARP SEQ ARP. */
+    /* ⚠ 'SOUND+CFG': the full name does not fit beside "T3 [OBXD]" on the right
+     * (measured) — the same budget that made SEQUENCE ARP SEQ ARP. */
     drawKitBankPage(levelCells(), {
-        headerText: bankHeadingPrefix() + 'SOUND+CFG', headerInvert: false, headerMaxW: BANK_HDR_TEXT_W,
+        headerText: 'SOUND+CFG', headerGlyph: 'audio', headerRight: bankHeaderRight(false),
         touchedIdx: S.touchedIdx,
         footer: levelCardHints(),
     });

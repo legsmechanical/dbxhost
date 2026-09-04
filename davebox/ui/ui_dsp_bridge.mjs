@@ -1094,6 +1094,7 @@ export function applyTrackConfig(t, key, val) {
     else if (key === 'midi_to')         S.trackMidiTo[t] = val | 0;
     else if (key === 'route') {
         S.trackRoute[t] = val;
+        S.instrAbbrevAt = 0;              /* the bank header's [instrument] re-reads */
         /* Link Audio rebuild is derived from routing, not a setting — a track
          * routed to Move needs its audio back through that Move bus. */
         syncLinkAudioRoutingFromRoutes(S.trackRoute);
