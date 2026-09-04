@@ -318,6 +318,7 @@ export function makeCell(key, meta) {
             key, label, short: shortLabel(label), kind: 'tog', type: 'enum',
             min: 0, max: 1, step: 1, sens: SENS_DELIBERATE,
             options: options && options.length === 2 ? options : ['Off', 'On'],
+            short_options: meta.short_options || null,
         };
     }
 
@@ -332,6 +333,10 @@ export function makeCell(key, meta) {
             min: 0, max: n - 1, step: 1,
             sens: n <= 2 ? SENS_DELIBERATE : SENS_PICK,
             options,
+            /* The SQUARE's text only — options stay full everywhere else,
+             * including the picker overlay and the held-knob header, which
+             * exist precisely to show the whole value. */
+            short_options: meta.short_options || null,
             /* Editing this param changes WHICH params the module exposes
              * (e.g. an effect selector whose choice swaps the whole knob set)
              * — the sound menu re-discovers after such a write. Opt-in via
@@ -1132,6 +1137,14 @@ export function discover(slot, comp) {
             max:  cp.max  != null ? cp.max  : (hierMeta && hierMeta.max),
             step: cp.step != null ? cp.step : (hierMeta && hierMeta.step),
             options: cp.options || (hierMeta && hierMeta.options) || null,
+            /* The enum SQUARE is three characters a line, so a module whose
+             * options are words needs a parallel short form or two different
+             * choices can render as literally the same cell — RRVerb-10's
+             * "M-Tap 1" and "M-Tap 2" both reduce to M / TAP. It is dropped
+             * here and the collision was invisible on this surface while the
+             * generated grid showed it correctly. */
+            short_options: cp.short_options
+                || (hierMeta && hierMeta.short_options) || null,
             root: cp.root, filter: cp.filter, start_path: cp.start_path,
         };
         seen[key] = true;

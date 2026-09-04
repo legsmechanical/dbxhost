@@ -173,6 +173,20 @@ export function toRenderCell(cell, value, rawValue, modValue) {
     const sel = (cell.options && value != null) ? Math.round(value) : -1;
     /* Render-side option list for the picker overlay (hdrPrint). */
     const opts = cell.options ? cell.options.map(up) : null;
+    /*
+     * `sq` is the SQUARE's text and nothing else's.
+     *
+     * drawEnumSquare breaks a value onto two lines of at most three characters,
+     * so "M-Tap 1" and "M-Tap 2" both come out M / TAP — two different choices
+     * as the same cell. A module may declare a parallel short form; when it
+     * does, the square uses it while `text` and `options` stay full, because the
+     * picker overlay and the held-knob header exist to show the whole value.
+     * Absent (the usual case) this is null and the square breaks the value
+     * itself, exactly as before.
+     */
+    const sq = (cell.short_options && sel >= 0
+                && cell.short_options[sel] != null)
+        ? up(cell.short_options[sel]) : null;
 
     switch (cell.kind) {
         case 'tog':
@@ -191,13 +205,13 @@ export function toRenderCell(cell, value, rawValue, modValue) {
                  * other named enum. It is the same widget a 3-option enum gets,
                  * which is right — "two named choices" and "five named choices"
                  * differ in count, not in kind. */
-                return { kind: 'enumsq', label, name, text, options: opts, sel };
+                return { kind: 'enumsq', label, name, text, sq, options: opts, sel };
             }
             return { kind: 'pill', label, name, text, norm: value ? 1 : 0,
                      options: opts, sel };
 
         case 'enumc':
-            return { kind: 'enumsq', label, name, text, options: opts, sel };
+            return { kind: 'enumsq', label, name, text, sq, options: opts, sel };
 
         case 'len':
             return { kind: 'frac', label, name, text, options: opts, sel };
