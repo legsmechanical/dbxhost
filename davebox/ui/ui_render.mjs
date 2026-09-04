@@ -632,7 +632,7 @@ function drawMetroIndicator() {
         const _manualL7  = _isDrum7 ? S.drumLaneLengthManuallySet[t] : S.clipLengthManuallySet[t][ac];
         /* Velocity input indicator (between metro and fixed/adap) */
         ovwPrint(67, 17, fmtVelOverride(S.trackVelOverride[t]), 1);
-        const _fa = (_isEmpty7 && !_manualL7) ? 'Adap' : 'Fix';
+        const _fa = (_isEmpty7 && !_manualL7) ? 'Adap' : 'Fixed';   /* the full word fits beside LIVE (Josh, 2026-09-05) */
         ovwPrint(128 - 4 - ovwWidth(_fa), 17, _fa, 1);
     }
 }
@@ -932,8 +932,11 @@ function drawOverviewTracks(hints) {
  * true HERE (the canon): in track view it walks the banks and a click opens the
  * card; in session view it walks the mixer mode and a click latches the mixer. */
 function overviewHints() {
-    /* CLK says EDIT, not BANK — the jog pair already names the bank (Josh). */
-    return [['JOG', 'BANK'], ['CLK', 'EDIT']];   /* both views (Josh: the session jog hint says BANK too) */
+    /* CLK says EDIT, not BANK — the jog pair already names the bank (Josh); the
+     * MENU pair names the OTHER overview a Note/Session tap switches to (Josh,
+     * 2026-09-05: "MENU:[TRACK/GRID]"). */
+    /* TRK, not TRACK: MENU TRACK is 53px and the row has 45 left (measured). */
+    return [['JOG', 'BANK'], ['CLK', 'EDIT'], ['MENU', S.sessionView ? 'TRK' : 'GRID']];
 }
 
 function drawTrackRow(y) {

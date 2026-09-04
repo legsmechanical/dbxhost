@@ -2436,7 +2436,12 @@ export function drawKitHintRow(y, hints) {
     let x = 1;
     for (const h of flow) {
         const w = hintPairWidth(h[0], h[1]);
-        if (x + w > limit) break;             /* the fit rule: middles lose */
+        /* The fit rule: middles lose. A pair's width carries its trailing gap,
+         * which the LAST pair on a row with no BACK pinned does not need — the
+         * panel edge is the gap (2026-09-05: JOG BANK · CLK EDIT · MENU GRID is
+         * 129 with it, 125 without). */
+        const need = back ? w : w - MV_HINT_GAP;
+        if (x + need > limit) break;
         drawPair(x, h);
         x += w;
         drawn++;
