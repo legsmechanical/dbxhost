@@ -225,26 +225,29 @@ assert(twice.sends[0].amount.value === -70 && twice.sends[0].amount.id === 8, '�
  * what the track actually was — and the old `SCH-<patch name>` was usually just
  * `SCH-`, because the chain config carries only {name, channel,
  * forward_channel} and that name is empty unless somebody set one. */
-const nm = xp.exportSchwungNameForTest;
-assert(nm('nusaw', { name: 'Big Lead', mod: 'nusaw' }, '', 'dB 3') === 'SCH-nusaw - Big Lead',
-       '⭑ SCH- prefix, then module and preset — the prefix is the only thing marking it a Schwung track');
-assert(nm('nusaw', null, '', 'dB 3') === 'SCH-nusaw', 'module alone when no preset is loaded');
-assert(nm('nusaw', { name: '  ', mod: 'nusaw' }, '', 'dB 3') === 'SCH-nusaw', 'a blank preset name is not a name');
-assert(nm('', null, 'Patch7', 'dB 3') === 'SCH-Patch7', 'no module: the old chain-patch fallback survives');
-assert(nm('', null, '', 'dB 3') === 'dB 3', 'and with nothing at all, the dB N placeholder');
+const nm = xp.exportSchwungNameForTest;   /* (mod, internal, rec, patchName, dbName) */
+assert(nm('nusaw', 'Big Lead', null, '', 'dB 3') === 'SCH-nusaw - Big Lead',
+       '⭑ the MODULE\'S OWN patch name is what Josh expected to see');
+assert(nm('nusaw', '', { name: 'Saved Thing', mod: 'nusaw' }, '', 'dB 3') === 'SCH-nusaw - Saved Thing',
+       '…and a davebox user-preset file is the fallback when the module exposes none');
+assert(nm('nusaw', 'Internal', { name: 'Saved', mod: 'nusaw' }, '', 'dB 3') === 'SCH-nusaw - Internal',
+       'with both, the module\'s own patch wins');
+assert(nm('nusaw', '', null, '', 'dB 3') === 'SCH-nusaw',
+       '⚠ module alone is the COMMON case — only ~4 of 30 modules expose a preset bank at all');
+assert(nm('nusaw', '   ', null, '', 'dB 3') === 'SCH-nusaw', 'a blank patch name is not a name');
+assert(nm('', '', null, 'Patch7', 'dB 3') === 'SCH-Patch7', 'no module: the old chain-patch fallback survives');
+assert(nm('', '', null, '', 'dB 3') === 'dB 3', 'and with nothing at all, the dB N placeholder');
 /* ⚠ THE GUARD: a preset record made against a DIFFERENT module must not label
- * this one — the same rule ui_sound's presetRecord() applies, because a stale
- * record would otherwise put another module's preset name on this track. */
-assert(nm('obxd', { name: 'Big Lead', mod: 'nusaw' }, '', 'dB 3') === 'SCH-obxd',
+ * this one — the same rule ui_sound's presetRecord() applies. */
+assert(nm('obxd', '', { name: 'Big Lead', mod: 'nusaw' }, '', 'dB 3') === 'SCH-obxd',
        '⭑ a STALE preset record is dropped — the module is shown alone, not mislabelled');
-assert(nm('obxd', { name: 'Sub', mod: 'obxd' }, '', 'dB 3') === 'SCH-obxd - Sub', '…while a matching one is used');
-/* ⭑ And the hook must BE the function the export calls, not a copy of it —
- * a second implementation would pass these pins while the real path drifted. */
+assert(nm('obxd', '', { name: 'Sub', mod: 'obxd' }, '', 'dB 3') === 'SCH-obxd - Sub', '…while a matching one is used');
+/* ⭑ And the hook must BE the function the export calls, not a copy of it. */
 const src = (await import('node:fs')).readFileSync('ui/ui_export.mjs', 'utf8');
-assert(/return schwungTrackName\(mod, rec, patchName, dbName\);/.test(src),
+assert(/return schwungTrackName\(mod, internal, rec, patchName, dbName\);/.test(src),
        'the test hook delegates to the real function');
-assert(/const name = schwungTrackName\(/.test(src),
-       '…and resolveTrack calls that same function');
+assert(/const name = schwungTrackName\(/.test(src) && /'preset_name'/.test(src),
+       '…and resolveTrack calls it, reading the module\'s preset_name');
 
 /* ---- the placeholder rack is DEACTIVATED -------------------------------- */
 /* Josh: a dummy stands in for an instrument that could not come across, so it

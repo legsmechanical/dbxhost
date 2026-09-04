@@ -201,13 +201,26 @@ function collectSamples(node, ctx) {
  * ⚠ The preset name is dropped when the record was made against a DIFFERENT
  * module — the same guard ui_sound's presetRecord() applies, because a stale
  * record would otherwise label this module with another one's preset. */
-function schwungTrackName(mod, rec, patchName, dbName) {
+/* `mod` is the loaded module; `internal` is the module's OWN current patch name
+ * (its `preset_name` param); `rec` is davebox's record of a user preset FILE
+ * loaded onto the slot; `patchName` is the chain config's slot name.
+ *
+ * ⭑ The module's internal patch wins (Josh expected that one), then the user
+ * preset. ⚠ Most modules expose neither: `preset_name` only answers on a module
+ * declaring a baked preset bank — 4 of ~30 installed, per ui_discover's
+ * findPresetSpec — so the common result is the module name alone, and that is
+ * not a failure to chase. */
+function schwungTrackName(mod, internal, rec, patchName, dbName) {
     /* ⭑ The `SCH-` prefix stays (Josh): in Live the track is a Drift
      * placeholder like any other, so the name is the only thing saying it was a
      * Schwung track rather than a Move one. */
-    const preset = (rec && rec.name && (!rec.mod || !mod || rec.mod === mod))
+    const inner = internal ? String(internal).trim() : '';
+    /* A record made against a DIFFERENT module is not this module's preset —
+     * the same guard ui_sound's presetRecord() applies. */
+    const userPreset = (rec && rec.name && (!rec.mod || !mod || rec.mod === mod))
         ? String(rec.name).trim() : '';
-    if (mod && preset) return 'SCH-' + mod + ' - ' + preset;
+    const patch = inner || userPreset;
+    if (mod && patch) return 'SCH-' + mod + ' - ' + patch;
     if (mod) return 'SCH-' + mod;
     if (patchName) return 'SCH-' + patchName;       /* no module: the old fallback */
     return dbName;
@@ -282,8 +295,12 @@ function resolveTrack(t, ctx) {
         const ts = slotIndex(t);
         const cfg = (ctx.chainCfg && Array.isArray(ctx.chainCfg.patches))
             ? ctx.chainCfg.patches[ts] : null;
+        /* `preset_name` is the DEFAULT name_param for a module's baked preset
+         * bank (ui_discover's findPresetSpec). A module without one answers
+         * empty, which costs a single read and degrades to the module name. */
         const name = schwungTrackName(
             String(engineGet(ts, 'synth', 'module') || '').trim(),
+            engineGet(ts, 'synth', 'preset_name'),
             S.presetRec && S.presetRec[ts + ':synth'],
             cfg && cfg.name, dbName);
         return dummy(name, defaultColor);
@@ -751,8 +768,8 @@ function paStampMixer(mixer, ids) {
 export function exportStampForTest(mixer, ids) { return paStampMixer(mixer, ids); }
 /* The test hook is the SAME function the export calls — not a copy of it. A
  * second implementation would pass its pins while the real path drifted. */
-export function exportSchwungNameForTest(mod, rec, patchName, dbName) {
-    return schwungTrackName(mod, rec, patchName, dbName);
+export function exportSchwungNameForTest(mod, internal, rec, patchName, dbName) {
+    return schwungTrackName(mod, internal, rec, patchName, dbName);
 }
 
 function buildTrack(t, ctx) {
