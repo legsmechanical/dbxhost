@@ -39,8 +39,8 @@ export const DAVE_SCAN_MAX = DAVE_FOOTER_H;          /* 64 - (64 - 18) */
 /* No hold anywhere — a continuous slow bounce (Josh corrected the first
  * ruling: "the bounce SHOULDN'T hold at top/bottom"). Kept as a knob so a
  * future hold is one number, not machinery. */
-const SCAN_HOLD_TICKS = 0;
-const SCAN_STEP_TICKS = 12;                          /* ~128 ms per pixel */
+const SCAN_HOLD_MS = 0;
+const SCAN_STEP_MS = 128;                            /* per pixel, on the one clock */
 
 const SEEN_PATH = '/data/UserData/dbx-host/daves-seen.txt';
 
@@ -73,7 +73,7 @@ export function openDaveBox() {
         showActionPopup('DAVE BOX', 'No Daves yet');
         return false;
     }
-    S.daveBox = { list: list, idx: 0, yOff: 0, dir: 1, holdT: 0, stepT: 0 };
+    S.daveBox = { list: list, idx: 0, yOff: 0, dir: 1, holdUntil: 0, stepAt: S.clockMs };
     S.globalMenuOpen = false;
     forceRedraw();
     return true;
@@ -90,7 +90,7 @@ export function daveBoxRotate(delta) {
     const n = d.list.length;
     d.idx = ((d.idx + (delta > 0 ? 1 : -1)) % n + n) % n;
     /* A fresh Dave scans from the top — and is already moving. */
-    d.yOff = 0; d.dir = 1; d.holdT = 0; d.stepT = 0;
+    d.yOff = 0; d.dir = 1; d.holdUntil = 0; d.stepAt = S.clockMs;
     forceRedraw();
 }
 
@@ -99,12 +99,12 @@ export function daveBoxRotate(delta) {
 export function daveBoxTick() {
     const d = S.daveBox;
     if (!d) return;
-    if (d.holdT > 0) { d.holdT--; return; }
-    if (++d.stepT < SCAN_STEP_TICKS) return;
-    d.stepT = 0;
+    if (S.clockMs < d.holdUntil) return;
+    if (S.clockMs - d.stepAt < SCAN_STEP_MS) return;
+    d.stepAt = S.clockMs;
     d.yOff += d.dir;
-    if (d.yOff >= DAVE_SCAN_MAX) { d.yOff = DAVE_SCAN_MAX; d.dir = -1; d.holdT = SCAN_HOLD_TICKS; }
-    else if (d.yOff <= 0)        { d.yOff = 0;            d.dir = 1;  d.holdT = SCAN_HOLD_TICKS; }
+    if (d.yOff >= DAVE_SCAN_MAX) { d.yOff = DAVE_SCAN_MAX; d.dir = -1; d.holdUntil = S.clockMs + SCAN_HOLD_MS; }
+    else if (d.yOff <= 0)        { d.yOff = 0;            d.dir = 1;  d.holdUntil = S.clockMs + SCAN_HOLD_MS; }
     forceRedraw();
 }
 

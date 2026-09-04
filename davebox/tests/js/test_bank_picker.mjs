@@ -110,7 +110,7 @@ function reset() {
     S.sessionView = false; S.globalMenuOpen = false;
     S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
     S.awaitingProjectSelect = false; S.loopHeld = false; S.shiftHeld = false;
-    S.bankPickerSel = -1; S.bankPickerIdleTick = -1; S.bankCardLatched = false;
+    S.bankPickerSel = -1; S.bankCardLatched = false;
     S.activeTrack = 2; S.activeBank = 0;
     for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackPadMode[t] = 0; S.trackActiveBank[t] = 0; }
     if (!S.bankParams) S.bankParams = Array.from({ length: 8 }, () =>

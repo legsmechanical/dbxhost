@@ -699,7 +699,7 @@ function modalDialogUp() {
      * about picking a bank, so an open picker closes uncommitted, exactly as
      * Shift+jog abandons it. */
     if (d1 === 3 && d2 === 127 && S.shiftHeld && !S.sessionView && !soundActive()) {
-        if (S.bankPickerSel >= 0) { S.bankPickerSel = -1; S.bankPickerIdleTick = -1; }
+        if (S.bankPickerSel >= 0) { S.bankPickerSel = -1; }
         S.screenDirty = true;
         return;
     }
@@ -940,7 +940,6 @@ function modalDialogUp() {
                      * a gesture you walked away from must not apply itself. */
                     if (S.bankPickerSel >= 0) {
                         S.bankPickerSel = -1;
-                        S.bankPickerIdleTick = -1;
                     }
                     const next = Math.min(NUM_TRACKS - 1, Math.max(0, S.activeTrack + delta));
                     if (next !== S.activeTrack) {

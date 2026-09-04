@@ -158,7 +158,7 @@ step('⭑ the level CARD shows — the same one sound mode draws, over any scree
     vol(1); globalThis.tick();
     if (S.tvCardUntil < 0)
         throw new Error('no level card was raised by a Shift+Volume turn');
-    if (S.tvCardUntil <= S.tickCount)
+    if (S.tvCardUntil <= S.clockMs)
         throw new Error('the card was raised already expired');
     /* Named with its track: the card can be raised from a bank, the mixer or a
      * module editor, so the value alone does not say whose it is. */

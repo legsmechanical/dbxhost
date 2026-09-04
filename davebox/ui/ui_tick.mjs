@@ -20,7 +20,6 @@ import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter
 import {
     MoveNoteSession, MoveUndo, MoveLoop, MoveCopy, MoveRec, MoveCapture, MoveSample,
     LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
-    BANK_PICKER_SETTLE_TICKS,
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND, BANK_MACROS, isSoundBank,
     POLL_INTERVAL,
@@ -75,7 +74,11 @@ const STEP_SAVE_FLASH_MS = 425;  /* double-blink on step button LEDs after save 
  * to its Set Overview -> replay the pad -> load the set -> resume), so this is
  * roughly double: too short re-opens the race it exists to close, and the only
  * cost of too long is a slower recovery from a handoff that genuinely died. */
-const SELECT_HANDOFF_TICKS = 1400;
+const SELECT_HANDOFF_MS = 15000;
+/* ⚠ This was 1400 TICKS ("~15 s at 94 Hz"). At the ~340 Hz tick that had become
+ * ~4 s — SHORTER than the 6.5 s measured handoff, so the watchdog could fire
+ * mid-handoff again: the exact wedge test_select_handoff_watchdog pins. The
+ * window is a millisecond deadline now. */
 /* ~500ms at 94Hz. How long the session-view level must sit still before the
  * chain state is written. Comfortably longer than the gaps inside one turn
  * (encoder messages come in bursts), short enough that a save always lands well
@@ -592,7 +595,7 @@ export function _tickImpl() {
      * wake us). The timeout is generously above that — expiring early would
      * re-introduce the very race it exists to prevent — and its only job is to
      * make sure a handoff that never lands cannot disable the watchdog forever. */
-    if (S.selectHandoffTicks > 0) S.selectHandoffTicks--;
+    if (S.selectHandoffUntil > 0 && S.clockMs >= S.selectHandoffUntil) S.selectHandoffUntil = 0;
 
     /* PROJECTS pad picker: modifier releases cancel its two-step flows, and
      * a live rename keyboard gets its tick (pad-typing timers + redraw). */
@@ -623,7 +626,7 @@ export function _tickImpl() {
      * and the open re-lists projects, so a spurious re-arm costs nothing.
      * _pppFailOpen still backstops the case where the picker cannot open at
      * all, so this cannot spin forever. */
-    /* ⚠ `S.selectHandoffTicks` is the load-bearing one, added 2026-08-11 after
+    /* ⚠ `S.selectHandoffUntil` is the load-bearing one, added 2026-08-11 after
      * this watchdog was caught FIRING DURING A HANDOFF and wedging the session
      * (device trace: actuator armed at T, this line at T+73ms). davebox declares
      * `suspend_keeps_js`, so its tick keeps running while it is parked for the
@@ -637,7 +640,7 @@ export function _tickImpl() {
      * The lesson is the general one: this is a repair for a DEAD END, so it
      * must not run while the thing that would end it is still in flight. */
     if (S.awaitingProjectSelect && !S.projectPadPicker &&
-            S.selectHandoffTicks === 0 &&
+            S.selectHandoffUntil === 0 &&
             !S.pendingOpenProjectPicker && !S.pendingSetLoad &&
             S.pendingProjectSwitch === null &&
             !S.confirmStateWipe &&
@@ -812,7 +815,7 @@ export function _tickImpl() {
              * window here rather than on resume: a resume can also arrive with
              * nothing loaded (backing out of the gate), and that case must go
              * back to being the watchdog's to repair. */
-            S.selectHandoffTicks = 0;
+            S.selectHandoffUntil = 0;
             const _svm = host_module_get_param('state_version_mismatch');
             if (_svm && parseInt(_svm, 10) === 1 && !S.confirmStateWipe) {
                 S.confirmStateWipe = true;
@@ -1278,27 +1281,10 @@ export function _tickImpl() {
          * copied across — the rig calls the engine straight from its MIDI
          * handler, and a sequencer cannot. Placed after pollDSP() and before
          * the LED/draw block, so its dirty flag reaches this tick's draw. */
-        /* Bank-picker SETTLE fallback — it ABANDONS.
-         *
-         * The gesture normally ends when you let go of the jog wheel. But a
-         * turn can arrive with no touch at all — the capacitive read can miss a
-         * quick flick, and the remote UI has no wheel — and a picker with no way
-         * to close would sit over the screen forever, swallowing the jog. So an
-         * idle selection commits itself.
-         *
-         * ⚠⚠ It CLOSES the picker, it does not choose. Only the jog click
-         * applies a bank (Josh, 2026-08-25), and a timeout is the one caller
-         * that fires with nobody asking — committing there meant a picker you
-         * forgot about quietly changed your bank.
-         *
-         * Gated on the touch being UP, so it can never pre-empt a hand that is
-         * still on the wheel. */
-        if (S.bankPickerSel >= 0 && !S.jogTouched && S.bankPickerIdleTick >= 0 &&
-                (S.tickCount - S.bankPickerIdleTick) > BANK_PICKER_SETTLE_TICKS) {
-            S.bankPickerSel = -1;
-            S.bankPickerIdleTick = -1;
-            S.screenDirty = true;
-        }
+        /* (The bank-picker SETTLE timeout that used to sit here is gone: its
+         * idle stamp stopped being written when the picker overlay retired —
+         * `95e858e7`, 2026-08-31, the bank walk is DIRECT — so it could never
+         * fire. Removed 2026-09-05 rather than converted to milliseconds.) */
 
         /* ⭑ THE INVARIANT, scoped to BANK MODE: with the bank view open,
          * activeBank === BANK_SOUND MEANS the gateway card is the screen —
@@ -2132,7 +2118,7 @@ export function _tickImpl() {
          * while parked (`suspend_keeps_js`), so the SELECT-BEFORE-LOAD watchdog
          * gets a look in as soon as the next tick, and mid-handoff it would
          * read this as a dead end and re-arm the picker over the resume. */
-        S.selectHandoffTicks = SELECT_HANDOFF_TICKS;
+        S.selectHandoffUntil = nowMs() + SELECT_HANDOFF_MS;
         shadow_select_arm(_psw);
         host_suspend_overtake();
         return;

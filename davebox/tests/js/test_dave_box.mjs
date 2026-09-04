@@ -89,6 +89,11 @@ step('the album lists collected Daves in permanent order, junk and dupes tolerat
     daves.closeDaveBox();
 });
 
+/* The scan steps on the one CLOCK (ms), not on tick count (2026-09-05) — so a
+ * test tick advances S.clockMs by one old-rate tick (~10.6 ms); 12 of them
+ * cross the 128 ms per-pixel step exactly as 12 ticks used to. */
+function dtick() { S.clockMs += 10.7; daves.daveBoxTick(); }
+
 step('⭐ the SCAN loops top to bottom and back, and the WHOLE image gets its turn', () => {
     /* Josh, 2026-08-31: the footer obscured too much — the frame pans behind
      * it so every row is eventually visible. Coverage is the claim, so the
@@ -98,18 +103,18 @@ step('⭐ the SCAN loops top to bottom and back, and the WHOLE image gets its tu
     if (S.daveBox.yOff !== 0) throw new Error('did not start at the top');
     /* ⭑ IMMEDIATE: no opening hold — the first glide step lands within one
      * step period (Josh: "it shouldn't wait to scroll"). */
-    for (let t = 0; t < 12; t++) daves.daveBoxTick();
+    for (let t = 0; t < 12; t++) dtick();
     if (S.daveBox.yOff !== 1) throw new Error('the scan waited to start (yOff=' + S.daveBox.yOff + ')');
     const offs = new Set();
-    for (let t = 0; t < 1400; t++) { daves.daveBoxTick(); offs.add(S.daveBox.yOff); }
+    for (let t = 0; t < 1400; t++) { dtick(); offs.add(S.daveBox.yOff); }
     for (let o = 0; o <= daves.DAVE_SCAN_MAX; o++)
         if (!offs.has(o)) throw new Error('offset ' + o + ' never reached — rows stay hidden');
     if (Math.max(...offs) > daves.DAVE_SCAN_MAX || Math.min(...offs) < 0)
         throw new Error('scan escaped its range');
     /* browsing restarts the scan at the top */
-    for (let t = 0; t < 400; t++) daves.daveBoxTick();
+    for (let t = 0; t < 400; t++) dtick();
     if (S.daveBox.yOff === 0) { /* may legitimately be 0 mid-loop; force off-top */ }
-    while (S.daveBox.yOff === 0) daves.daveBoxTick();
+    while (S.daveBox.yOff === 0) dtick();
     daves.daveBoxRotate(1);
     if (S.daveBox.yOff !== 0) throw new Error('a fresh Dave did not start at the top');
     daves.closeDaveBox();

@@ -1,7 +1,7 @@
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { NUM_TRACKS, NUM_CLIPS, DRUM_LANES, BANKS, ACTION_POPUP_MS,
-         VOL_CARD_TICKS } from './ui_constants.mjs';
+         VOL_CARD_MS } from './ui_constants.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 
 /* Basename prefix for every file this module owns. Mirrors the C-side
@@ -143,12 +143,12 @@ export function loadSelectedCurrentProject() {
 /* Shift+Volume's level card. Sibling of showActionPopup, deliberately NOT built
  * on it: a popup is two lines of text that defers to held gestures, and this has
  * to be the same boxed level-with-a-bar sound mode shows, over any screen, while
- * the gesture is still being held. ~1s after the last turn, matching sound
- * mode's own VOL_SHOW_TICKS so the two behave identically. */
+ * the gesture is still being held. 1 s after the last turn, matching sound
+ * mode's own VOL_SHOW_MS so the two behave identically. */
 export function showTrackVolCard(text, frac) {
     S.tvCardText = text;
     S.tvCardFrac = frac;
-    S.tvCardUntil = S.tickCount + VOL_CARD_TICKS;
+    S.tvCardUntil = nowMs() + VOL_CARD_MS;
     S.screenDirty = true;
 }
 

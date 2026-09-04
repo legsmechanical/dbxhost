@@ -1195,7 +1195,7 @@ export function soundModeCovered() {
  * Sound mode keeps drawing its OWN read-out through the same drawLevelCard, so
  * the two are one card by construction; this one covers everywhere else. */
 function drawTrackVolCard() {
-    if (S.tvCardUntil < 0 || S.tickCount > S.tvCardUntil) return;
+    if (S.tvCardUntil < 0 || S.clockMs > S.tvCardUntil) return;
     drawLevelCard(S.tvCardText, S.tvCardFrac);
 }
 

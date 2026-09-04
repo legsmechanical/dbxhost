@@ -267,10 +267,11 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
       VIEW_KNOBLEGS = 20;
 
 /* Chain-patch file ops (save_patch / delete_patch) are DSP-side and async —
- * the file appears/vanishes a beat after the request. Re-read the list once
- * this many ticks after a mutation so it shows the store's truth, not the
- * optimistic edit. (~320ms at ~94Hz.) */
-const PATCH_RELIST_TICKS = 30;
+ * the file appears/vanishes a beat after the request. Re-read the list this
+ * long after a mutation so it shows the store's truth, not the optimistic
+ * edit. Milliseconds on the one clock — a tick count here shrank to ~90 ms
+ * when the tick sped up (the 09-02 timing class). */
+const PATCH_RELIST_MS = 320;
 
 /* ---- slot settings ----
  *
@@ -464,10 +465,10 @@ const NUM_KNOBS = 8;
  *  menu  — hand the slot to Schwung's own chain editor: the full module
  *          hierarchy, for everything the canvas pages don't surface. */
 
-/* ~160ms at davebox's ~94Hz tick. The host uses 7 ticks at ~44Hz for the same
- * feel; copying the NUMBER rather than the duration would make preview twice
- * as twitchy here. */
-const PREVIEW_DELAY_TICKS = 15;
+/* Audition debounce. The host uses 7 ticks at ~44Hz (~160 ms) for the same
+ * feel; the DURATION is what carries, so it is milliseconds — as a tick count
+ * it had shrunk to ~44 ms, auditioning nearly every row a jog passed over. */
+const PREVIEW_DELAY_MS = 160;
 const BAKED_SCAN_PER_TICK = 2;        /* while PLAYING: same SHM budget as the write drain */
 const BAKED_SCAN_PER_TICK_IDLE = 12;  /* stopped: nothing competes for the tick */
 const SAVE_ROW = 0;
@@ -476,17 +477,21 @@ const SAVE_ROW = 0;
  * is SLOT_LEVEL_STEP, shared with the session-view knobs so both feel the same;
  * its header explains why the step is as fine as it is. */
 const VOL_MIN = 0, VOL_MAX = SLOT_LEVEL_MAX, VOL_STEP = SLOT_LEVEL_STEP;
-const VOL_SHOW_TICKS = 94;      /* ~1s readout after the last turn */
+const VOL_SHOW_MS = 1000;       /* readout lingers 1 s after the last turn */
 
-/* Poll cadences, in ticks (~94Hz). Deliberately slower than the lab rig's flat
- * 8 — davebox's tick is already busy, so idle refresh is cheap and the
- * responsive cases (entry, bank change, touch) are handled by explicit repolls. */
-const POLL_IDLE_TICKS = 24;
-/* How long to watch for a vouched pad press to move the module's focus (~300ms
- * at 94Hz). Generous on purpose: the cost is one get_param every other tick and
- * it stops the moment focus moves, whereas giving up early is the failure that
- * reads as "the tap did nothing". */
-const PAD_WATCH_TICKS = 28;
+/* Idle poll cadence, in milliseconds. Deliberately slower than the lab rig —
+ * davebox's tick is already busy, so idle refresh is cheap and the responsive
+ * cases (entry, bank change, touch) are handled by explicit repolls. ⚠ This was
+ * 24 TICKS (~255 ms at the old 94 Hz); at the ~340 Hz tick that became ~70 ms —
+ * 3.6× the idle round-trips (~2.9 ms each) for nothing. */
+const POLL_IDLE_MS = 255;
+/* How long to watch for a vouched pad press to move the module's focus.
+ * Generous on purpose: the cost is one get_param every other tick and it stops
+ * the moment focus moves, whereas giving up early is the failure that reads as
+ * "the tap did nothing" — which is exactly what the old 28-tick window had
+ * become (~80 ms) once the tick sped up. The DEADLINE is milliseconds; the
+ * every-other-tick read cadence stays a tick parity. */
+const PAD_WATCH_MS = 300;
 /* ⚠ `shadow_set_param` returns FALSE when the mailbox never goes idle — the
  * write is dropped, silently. Everything else here is a knob edit that the next
  * detent or the idle poll repairs; the vouch is a one-shot with a deadline, so
@@ -582,7 +587,9 @@ const S = {
     /* After a vouch we WATCH for the module's focus to move rather than reading
      * once at a fixed delay — see the tick. `padWatchFrom` is where focus sat
      * before the vouch, so "not there yet" is distinguishable from "it moved". */
-    padWatchLeft: 0,
+    padWatchUntil: -1,          /* ms deadline of the pad watch; -1 = none */
+    padWatchPhase: 0,           /* read on every OTHER tick of the watch */
+    lastIdlePollMs: 0,          /* when the idle value poll last ran */
     padWatchFrom: -1,
     padLastSeen: -1,            /* last selection we READ; the vouch's baseline */
     /* The note-naming key last DISCOVERED. Outside sound mode no discovery has
@@ -611,7 +618,7 @@ const S = {
      * original can't be captured — better no preview than no way back. */
     origState: null,
     previewIdx: -1,
-    previewDelay: 0,
+    previewAt: -1,              /* ms at which the debounced audition fires; -1 = none */
 
     /* Shift+click on a preset asks to delete it; plain click loads. */
     confirmDel: false,
@@ -748,7 +755,7 @@ const S = {
     patchMsg: '',
     patchConfirm: null,         /* {t:'overwrite'|'delete', index, name} */
     patchConfirmIdx: 0,
-    patchRelist: 0,             /* ticks until a post-mutation re-list */
+    patchRelistAt: -1,          /* ms at which the post-mutation re-list runs; -1 = none */
 
     shiftHeld: false,
     tickCount: 0,
@@ -1140,7 +1147,7 @@ export function soundRetarget(track, slot) {
      * name cache, a half-open dialog, a browser position. None of it transfers. */
     S.origState = null;
     S.previewIdx = -1;
-    S.previewDelay = 0;
+    S.previewAt = -1;
     S.confirmDel = false;
     dropBakedNames();
     S.fileState = null;
@@ -1161,7 +1168,7 @@ export function soundRetarget(track, slot) {
      * key — the silent kind of wrong. */
     S.livePress = null;
     S.padVouch = false;
-    S.padWatchLeft = 0;
+    S.padWatchUntil = -1;
     S.padVouchTries = 0;
     S.pollCursor = -1;
     S.blockNames = [];
@@ -1301,7 +1308,7 @@ export function soundExit(opts) {
     /* An in-flight vouch is DROPPED, not flushed. Its whole meaning is "focus
      * the pad I am looking at right now", and we are no longer looking. */
     S.padVouch = false;
-    S.padWatchLeft = 0;
+    S.padWatchUntil = -1;
     S.padVouchTries = 0;
     S.pollCursor = -1;
     S.dirty = true;
@@ -1643,7 +1650,7 @@ function onVolumeTurn(delta) {
     if (v === S.volLevel) return;
     S.volLevel = v;
     S.volDirtySave = true;
-    S.volShownUntil = S.tickCount + VOL_SHOW_TICKS;
+    S.volShownUntil = nowMs() + VOL_SHOW_MS;
     /* Queued, NOT written here — this runs in the MIDI handler and
      * engineSetSlotParam is a synchronous SHM round-trip. A single flag is
      * enough: the level is one value, so a fast spin coalesces to one write per
@@ -1781,13 +1788,13 @@ function openUserPresets() {
 function captureOriginal() {
     S.origState = engineGetState(S.slot, S.comp) || null;
     S.previewIdx = -1;
-    S.previewDelay = 0;
+    S.previewAt = -1;
 }
 
 function revertOriginal() {
     if (S.origState !== null) engineSetState(S.slot, S.comp, S.origState);
     S.previewIdx = -1;
-    S.previewDelay = 0;
+    S.previewAt = -1;
 }
 
 function applyUserPreset(listIdx) {
@@ -1932,7 +1939,7 @@ function openChainPatches() {
     S.patchIdx = (cur >= 0) ? cur + 2 : (S.patchNames.length ? 2 : 0);
     S.patchMsg = '';
     S.patchConfirm = null;
-    S.patchRelist = 0;
+    S.patchRelistAt = -1;
     S.view = VIEW_PATCHES;
     log('chain patches: ' + S.patchNames.length + ' in store');
 }
@@ -1993,7 +2000,7 @@ function doChainPatchSave(rawName, overwriteIndex) {
          * truth arrives on the delayed re-list. */
         S.patchNames.push(name);
     }
-    S.patchRelist = PATCH_RELIST_TICKS;
+    S.patchRelistAt = nowMs() + PATCH_RELIST_MS;
 }
 
 function doChainPatchDelete(index) {
@@ -2004,13 +2011,14 @@ function doChainPatchDelete(index) {
     if (name === S.patchCur) S.patchCur = '';
     S.patchNames.splice(index, 1);
     if (S.patchIdx > S.patchNames.length + 1) S.patchIdx = S.patchNames.length + 1;
-    S.patchRelist = PATCH_RELIST_TICKS;
+    S.patchRelistAt = nowMs() + PATCH_RELIST_MS;
 }
 
 /* Post-mutation re-list once the DSP has had time to touch the files. */
 function tickChainPatches() {
-    if (S.patchRelist <= 0) return;
-    if (--S.patchRelist > 0) return;
+    if (S.patchRelistAt < 0) return;
+    if (S.clockMs < S.patchRelistAt) return;
+    S.patchRelistAt = -1;
     if (S.view !== VIEW_PATCHES) return;
     S.patchNames = host_patch_list();
     S.patchCur = host_patch_current(S.slot);
@@ -5178,7 +5186,7 @@ function runDiscovery() {
     S.livePress = livePressSpec(res.levels);
     if (S.livePress && S.livePress.noteParam) S.lastNoteParam = S.livePress.noteParam;
     S.padVouch = false;
-    S.padWatchLeft = 0;
+    S.padWatchUntil = -1;
     S.padVouchTries = 0;
     S.pollCursor = -1;
     /* Seed the baseline here, where a get_param is legal — the first press
@@ -5425,7 +5433,8 @@ export function soundVouchLivePress(track, note) {
     if (track !== S.track) return;         /* editing some other track's chain */
 
     S.padWatchFrom = S.padLastSeen;        /* NOT a get_param: null from here */
-    S.padWatchLeft = PAD_WATCH_TICKS;
+    S.padWatchUntil = nowMs() + PAD_WATCH_MS;
+    S.padWatchPhase = 0;
     S.padVouchTries = 0;
 
     /* ⭑ Tell a hosted canvas a pad was TAPPED.
@@ -5962,7 +5971,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
                      * has no sound of its own, so landing there puts the
                      * original back rather than leaving the last preview up. */
                     S.previewIdx = (next === SAVE_ROW) ? -1 : next;
-                    S.previewDelay = PREVIEW_DELAY_TICKS;
+                    S.previewAt = nowMs() + PREVIEW_DELAY_MS;
                     S.presetMsg = '';
                 }
             }
@@ -5976,7 +5985,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
                 if (next !== S.bakedIdx) {
                     S.bakedIdx = next;
                     S.previewIdx = next;
-                    S.previewDelay = PREVIEW_DELAY_TICKS;
+                    S.previewAt = nowMs() + PREVIEW_DELAY_MS;
                     S.presetMsg = '';
                 }
             }
@@ -6800,12 +6809,17 @@ export function soundTick() {
      * letting a preview interleave would fight it for the same index param. */
     if (S.bakedScan >= 0) { stepBakedScan(); return; }
 
-    /* Debounced audition. */
-    if (S.previewDelay > 0 && --S.previewDelay === 0 && S.previewIdx >= 0) {
-        if (S.view === VIEW_PRESET_BAKED) applyBaked(S.previewIdx);
-        else if (S.view === VIEW_PRESET_LIST) applyUserPreset(S.previewIdx);
-        S.dirty = true;
-    } else if (S.previewDelay === 0 && S.previewIdx === -1 &&
+    /* Debounced audition — fires once its deadline passes; a row with no
+     * sound of its own (the save row) lets the deadline lapse and falls to the
+     * restore branch on the next tick. */
+    if (S.previewAt >= 0 && S.clockMs >= S.previewAt) {
+        S.previewAt = -1;
+        if (S.previewIdx >= 0) {
+            if (S.view === VIEW_PRESET_BAKED) applyBaked(S.previewIdx);
+            else if (S.view === VIEW_PRESET_LIST) applyUserPreset(S.previewIdx);
+            S.dirty = true;
+        }
+    } else if (S.previewAt < 0 && S.previewIdx === -1 &&
                S.view === VIEW_PRESET_LIST && S.userIdx === SAVE_ROW &&
                S.origState !== null) {
         /* Parked on the save row: make sure what you hear is the sound that
@@ -6833,7 +6847,7 @@ export function soundTick() {
             S.padVouch = false;
             S.padVouchTries = 0;
         }
-    } else if (S.padWatchLeft > 0) {
+    } else if (S.padWatchUntil >= 0) {
         /* WATCH for the change; never read once at a fixed delay. The note and
          * the vouch reach the module by different paths with different
          * latencies, so there is no tick at which the answer is reliably ready
@@ -6842,21 +6856,26 @@ export function soundTick() {
          * exactly the "a tap does nothing, holding works" report: holding just
          * kept you looking long enough for the idle poll to land.
          *
-         * Every OTHER tick: ~21ms of granularity is imperceptible and halves
-         * the cost of a drum roll, which re-arms this on every hit. */
-        S.padWatchLeft--;
+         * Every OTHER tick: a few ms of granularity is imperceptible and halves
+         * the cost of a drum roll, which re-arms this on every hit. The window
+         * itself is a millisecond deadline (PAD_WATCH_MS). */
+        const expired = S.clockMs >= S.padWatchUntil;
+        S.padWatchPhase ^= 1;
         /* A module may vouch without publishing a selection (press declared,
          * select not). There is then nothing to watch, so fall back to one
          * refresh late enough for the module to have acted — the pages ride the
          * alias, so re-reading their values is all they need. */
         if (!S.livePress.selectParam) {
-            if (S.padWatchLeft === 0) followLiveSelection(-1);
-        } else if ((S.padWatchLeft & 1) === 0) {
-            const now = readLiveSelection();
-            if (now >= 0 && now !== S.padWatchFrom) {
-                S.padWatchLeft = 0;
-                followLiveSelection(now);
+            if (expired) { S.padWatchUntil = -1; followLiveSelection(-1); }
+        } else {
+            if (S.padWatchPhase === 0) {
+                const now = readLiveSelection();
+                if (now >= 0 && now !== S.padWatchFrom) {
+                    S.padWatchUntil = -1;
+                    followLiveSelection(now);
+                }
             }
+            if (expired && S.padWatchUntil >= 0) S.padWatchUntil = -1;
         }
     }
 
@@ -6910,7 +6929,8 @@ export function soundTick() {
      * second set of ~2.6 ms round-trips for numbers nothing renders. Param
      * reads — not draw CPU — are the expensive half of a hosted frame. */
     if (S.view === VIEW_EDIT && !S.hosted && S.banks.length && !S.pendingWrites.length &&
-        S.tickCount % POLL_IDLE_TICKS === 0) {
+        (S.clockMs - S.lastIdlePollMs) >= POLL_IDLE_MS) {
+        S.lastIdlePollMs = S.clockMs;
         pollValues(false);
     }
 }
@@ -8053,7 +8073,7 @@ export function soundRender() {
             !soundIsGlobal() && !S.enterSession &&
             !S.instrEditing && !S.busLevelEditing &&
             S.touchedIdx < 0 && !S.volTouched &&
-            !(S.volShownUntil >= 0 && S.tickCount <= S.volShownUntil) &&
+            !(S.volShownUntil >= 0 && S.clockMs <= S.volShownUntil) &&
             !bankCardVisible())
         return false;
     if (S.view === VIEW_PROMPT) renderPrompt();
@@ -8085,6 +8105,6 @@ export function soundRender() {
     else renderEdit();
     /* The level readout wins: it is the same box in the same place, and the
      * volume knob is a deliberate second gesture on top of this one. */
-    if (S.volShownUntil >= 0 && S.tickCount <= S.volShownUntil) drawVolReadout();
+    if (S.volShownUntil >= 0 && S.clockMs <= S.volShownUntil) drawVolReadout();
     return true;
 }
