@@ -19,7 +19,7 @@
 
 import { S, conductorTrackIdx } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { slotIndex, DAVEBOX_HOST_DIR, SLOT_LEVEL_MAX } from './ui_engine.mjs';
+import { slotIndex, DAVEBOX_HOST_DIR, SLOT_LEVEL_MAX, engineGet } from './ui_engine.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_MS, PAD_MODE_CONDUCT } from './ui_constants.mjs';
 
@@ -194,6 +194,22 @@ function collectSamples(node, ctx) {
  * Falls back to the Dummy Drift (name
  * "dB N") whenever no concrete source is found. trackChannel is 1-based; Move
  * tracks listen on the 0-based channel (channel-1). */
+/* What an exported Schwung track is CALLED: the module, and the user preset on
+ * it — "Nusaw - Big Lead". A Schwung track exports as a Drift placeholder, so
+ * the name is the only record of what the track actually was.
+ *
+ * ⚠ The preset name is dropped when the record was made against a DIFFERENT
+ * module — the same guard ui_sound's presetRecord() applies, because a stale
+ * record would otherwise label this module with another one's preset. */
+function schwungTrackName(mod, rec, patchName, dbName) {
+    const preset = (rec && rec.name && (!rec.mod || !mod || rec.mod === mod))
+        ? String(rec.name).trim() : '';
+    if (mod && preset) return mod + ' - ' + preset;
+    if (mod) return mod;
+    if (patchName) return 'SCH-' + patchName;       /* no module: the old fallback */
+    return dbName;
+}
+
 function resolveTrack(t, ctx) {
     const route = (S.trackRoute && S.trackRoute[t] !== undefined) ? S.trackRoute[t] : ROUTE_SCHWUNG;
     const ch    = (S.trackChannel && S.trackChannel[t]) ? S.trackChannel[t] : (t + 1);  /* 1-based */
@@ -239,17 +255,25 @@ function resolveTrack(t, ctx) {
     }
 
     if (route === ROUTE_SCHWUNG) {
-        /* patches[] is index-ordered per slot; the track addresses its slot
-         * directly (no channel matching). */
-        let name = dbName;
-        if (ctx.chainCfg && Array.isArray(ctx.chainCfg.patches)) {
-            /* The slot IS the track index — a track owns its instrument, so
-             * there is no stored value to fall back from and no mapping to
-             * wrap. slotIndex stays as the bound, not as a resolution step. */
-            const ts = slotIndex(t);
-            const p = ctx.chainCfg.patches[ts];
-            if (p) name = 'SCH-' + (p.name || '');
-        }
+        /* ⭑ NAME IT AFTER WHAT IT PLAYS (Josh, 2026-09-05): the module, and the
+         * user preset on it — "Nusaw - Big Lead". A Schwung track exports as a
+         * Drift placeholder, so the NAME is the only record of what the track
+         * actually was, and `SCH-` + the chain patch name was usually just
+         * `SCH-`: that config carries only {name, channel, forward_channel} and
+         * the name is empty unless somebody set one.
+         *
+         * The module is READ LIVE rather than taken from the preset record —
+         * the record is davebox's note of which preset file is loaded, and its
+         * `mod` can be stale. Same guard ui_sound's presetRecord() applies: a
+         * record made against a different module is not this module's preset,
+         * so its name is dropped rather than shown against the wrong thing. */
+        const ts = slotIndex(t);
+        const cfg = (ctx.chainCfg && Array.isArray(ctx.chainCfg.patches))
+            ? ctx.chainCfg.patches[ts] : null;
+        const name = schwungTrackName(
+            String(engineGet(ts, 'synth', 'module') || '').trim(),
+            S.presetRec && S.presetRec[ts + ':synth'],
+            cfg && cfg.name, dbName);
         return dummy(name, defaultColor);
     }
 
@@ -713,6 +737,11 @@ function paStampMixer(mixer, ids) {
     return mixer;
 }
 export function exportStampForTest(mixer, ids) { return paStampMixer(mixer, ids); }
+/* The test hook is the SAME function the export calls — not a copy of it. A
+ * second implementation would pass its pins while the real path drifted. */
+export function exportSchwungNameForTest(mod, rec, patchName, dbName) {
+    return schwungTrackName(mod, rec, patchName, dbName);
+}
 
 function buildTrack(t, ctx) {
     const r = resolveTrack(t, ctx);
