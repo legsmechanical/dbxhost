@@ -11,6 +11,7 @@ import { drawDaveBox } from './ui_daves.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
 import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev } from './ui_engine.mjs';
 import { instrValueFor } from './ui_dsp_bridge.mjs';
+import { fontPrint4x5, fontWidth4x5 } from './ui_fonts_pp.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
@@ -586,10 +587,10 @@ function drawMetroIndicator() {
         /* Stock face (Josh, 2026-09-05: "replace any mcu font with the little
          * stock font" on both overviews); row 2 of the overview sits at y=19. */
         const tx = 8;
-        const tw = text_width(label);
-        fill_rect(4, 22, 2, 2, 1);           /* left dot */
-        print(tx, 19, label, 1);
-        fill_rect(tx + tw + 2, 22, 2, 2, 1); /* right dot */
+        const tw = ovwWidth(label);
+        fill_rect(4, 19, 2, 2, 1);           /* left dot */
+        ovwPrint(tx, 17, label, 1);
+        fill_rect(tx + tw + 2, 19, 2, 2, 1); /* right dot */
     }
     if (S.sessionView) {
         /* ⚠ Was a parallel 4-entry literal — the gateway made sessKnobMode
@@ -599,7 +600,7 @@ function drawMetroIndicator() {
          * mode table itself, the one owner; the gateway carries 'FX'. */
         const _sm = SESS_KNOB_MODES[S.sessKnobMode];
         const ml = (_sm && _sm.short) || 'Vol';
-        print(128 - 4 - text_width(ml), 19, ml, 1);       /* stock face, row 2 (2026-09-05) */
+        ovwPrint(128 - 4 - ovwWidth(ml), 17, ml, 1);   /* the small header face, row 2 */
     }
     /* Velocity / Fixed/Adaptive indicators (track view only, row 2 at y=19,
      * right-aligned in the stock face; Fix/Adap hugs the right edge, the
@@ -611,9 +612,9 @@ function drawMetroIndicator() {
         const _isEmpty7  = _isDrum7 ? !S.drumClipNonEmpty[t][ac] : !S.clipNonEmpty[t][ac];
         const _manualL7  = _isDrum7 ? S.drumLaneLengthManuallySet[t] : S.clipLengthManuallySet[t][ac];
         /* Velocity input indicator (between metro and fixed/adap) */
-        print(67, 19, fmtVelOverride(S.trackVelOverride[t]), 1);
+        ovwPrint(67, 17, fmtVelOverride(S.trackVelOverride[t]), 1);
         const _fa = (_isEmpty7 && !_manualL7) ? 'Adap' : 'Fix';
-        print(128 - 4 - text_width(_fa), 19, _fa, 1);
+        ovwPrint(128 - 4 - ovwWidth(_fa), 17, _fa, 1);
     }
 }
 
@@ -878,9 +879,16 @@ function drawSessionOverview() {
 /* THE OVERVIEW'S LOWER HALF (Josh, 2026-09-05), shared by the track overviews
  * and the session view: the track row, the scene letters in the STOCK face, and
  * the hint footer on row 57 — which is why the position bar moved up to 52.
- * Rows, top to bottom: header 0-6 · info 9-15 (+rule 17) · row 2 19-25 ·
- * track boxes 29-40 · scene letters 42-50 · position bar 52-55 · footer 57-63. */
-export const OVW_TRACK_ROW_Y = 31, OVW_SCENE_Y = 43;
+ * Josh, 2026-09-05 (second pass): the two rows under the header and the clip
+ * letters use the SMALL HEADER FACE (font4x5) — only the track numbers keep the
+ * stock 5x7. Rows, top to bottom: header 0-6 · info 9-13 (+rule 15) · row 2
+ * 17-21 · track boxes 27-38 · scene letters 41-45 · position bar 50-53 ·
+ * footer 57-63. */
+export const OVW_TRACK_ROW_Y = 29, OVW_SCENE_Y = 41;
+/* The small header face has NO lowercase (drawKitHeader uppercases for the same
+ * reason) — so every overview string goes through these two. */
+function ovwPrint(x, y, str, color) { fontPrint4x5(x, y, String(str).toUpperCase(), color); }
+function ovwWidth(str) { return fontWidth4x5(String(str).toUpperCase()); }
 function drawOverviewTracks(hints) {
     drawTrackRow(OVW_TRACK_ROW_Y);
     for (let t = 0; t < NUM_TRACKS; t++) {
@@ -890,11 +898,13 @@ function drawOverviewTracks(hints) {
             ? S.drumClipNonEmpty[t][ac]
             : S.clipNonEmpty[t][ac];
         const isActive = (S.trackClipPlaying[t] || S.trackWillRelaunch[t] || (S.trackQueuedClip[t] >= 0)) && hasData;
+        /* the letter is centred under its track number: 4x5 glyphs are 4 wide
+         * where the 5x7 digits are 5, hence the half-pixel nudge to cx */
         if (isActive) {
-            fill_rect(cx - 1, OVW_SCENE_Y - 1, 9, 9, 1);
-            print(cx, OVW_SCENE_Y, SCENE_LETTERS[ac], 0);
+            fill_rect(cx - 1, OVW_SCENE_Y - 2, 7, 9, 1);
+            ovwPrint(cx, OVW_SCENE_Y, SCENE_LETTERS[ac], 0);
         } else {
-            print(cx, OVW_SCENE_Y, SCENE_LETTERS[ac], 1);
+            ovwPrint(cx, OVW_SCENE_Y, SCENE_LETTERS[ac], 1);
         }
     }
     drawKitHintRow(MV_FOOTER_Y, hints);
@@ -903,7 +913,8 @@ function drawOverviewTracks(hints) {
  * true HERE (the canon): in track view it walks the banks and a click opens the
  * card; in session view it walks the mixer mode and a click latches the mixer. */
 function overviewHints() {
-    return S.sessionView ? [['JOG', 'MIX'], ['CLK', 'MIX']] : [['JOG', 'BANK'], ['CLK', 'BANK']];
+    /* CLK says EDIT, not BANK — the jog pair already names the bank (Josh). */
+    return S.sessionView ? [['JOG', 'MIX'], ['CLK', 'EDIT']] : [['JOG', 'BANK'], ['CLK', 'EDIT']];
 }
 
 function drawTrackRow(y) {
@@ -1117,7 +1128,7 @@ function drawPositionBar(t) {
     const cs = S.trackCurrentStep[t];
     const playPage = (S.playing && S.trackClipPlaying[t] && cs >= lsBase && cs < lsBase + len)
                    ? Math.floor((cs - lsBase) / 16) : -1;
-    const barY = 52, barH = 4, segGap = 1;   /* 2026-09-05: the hint footer owns row 57 */
+    const barY = 50, barH = 4, segGap = 1;   /* 2026-09-05: the hint footer owns row 57 */
     const segW   = Math.max(2, Math.floor((120 - (winPages - 1) * segGap) / winPages));
     const startX = 4;
     for (let pg = 0; pg < winPages; pg++) {
@@ -2180,13 +2191,13 @@ function drawUIBody() {
             : _bnStatic;
         (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankName, false, true);
         /* info row at y=9, in the STOCK face (2026-09-05) — 2px clear of the header */
-        print(4, 9, bankGroup + '  Pad:' + name + oct + ' (' + note + ')', 1);
+        ovwPrint(4, 9, bankGroup + '  Pad:' + name + oct + ' (' + note + ')', 1);
         const laneBit = 1 << lane;
         if (S.drumLaneSolo[t] & laneBit) {
-            print(128 - 4 - text_width('SOLOED'), 19, 'SOLOED', 1);
+            ovwPrint(128 - 4 - ovwWidth('SOLOED'), 17, 'SOLOED', 1);
         } else if (S.drumLaneMute[t] & laneBit) {
             if (Math.floor(S.clockMs / 440) % 2 === 0)
-                print(128 - 4 - text_width('MUTED'), 19, 'MUTED', 1);
+                ovwPrint(128 - 4 - ovwWidth('MUTED'), 17, 'MUTED', 1);
         }
         drawMetroIndicator();
         drawOverviewTracks(overviewHints());
@@ -2198,25 +2209,25 @@ function drawUIBody() {
         const oct     = S.trackOctave[S.activeTrack];
         const octStr  = 'Oct:' + (oct >= 0 ? '+' : '') + oct;
         const keyScl  = NOTE_KEYS[S.padKey] + ' ' + (SCALE_DISPLAY[S.padScale] || '?');
-        const keySclW = text_width(keyScl);
+        const keySclW = ovwWidth(keyScl);
         const keySclX = 128 - 4 - keySclW;
         (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(S.activeTrack, S.activeBank) + recTag, false, true);
-        /* info row at y=9, in the STOCK face (Josh, 2026-09-05) — 2px clear of
-         * the header; the 5x7 glyphs end at y=15 and the scale rule sits at 17. */
-        print(4, 9, octStr, 1);
+        /* info row at y=9 in the small header face (Josh, 2026-09-05) — 2px
+         * clear of the header; the glyphs end at y=13 and the scale rule is 15. */
+        ovwPrint(4, 9, octStr, 1);
         if (S.bankParams[S.activeTrack][5][0]) {
-            const arpW = text_width('Arp');
+            const arpW = ovwWidth('Arp');
             if (S.bankParams[S.activeTrack][5][7]) {
                 /* Latch on: invert 'Arp' (black on white chip), 1px pad around
-                 * the 5x7 glyphs at (52, 9). */
-                fill_rect(51, 8, arpW + 2, 9, 1);
-                print(52, 9, 'Arp', 0);
+                 * the 4x5 glyphs at (52, 9). */
+                fill_rect(51, 8, arpW + 2, 7, 1);
+                ovwPrint(52, 9, 'Arp', 0);
             } else {
-                print(52, 9, 'Arp', 1);
+                ovwPrint(52, 9, 'Arp', 1);
             }
         }
-        print(keySclX, 9, keyScl, 1);
-        if (S.scaleAware) fill_rect(keySclX, 17, keySclW, 1, 1);
+        ovwPrint(keySclX, 9, keyScl, 1);
+        if (S.scaleAware) fill_rect(keySclX, 15, keySclW, 1, 1);
         drawMetroIndicator();
         drawOverviewTracks(overviewHints());
         drawPositionBar(S.activeTrack);
@@ -2232,7 +2243,7 @@ function drawDrumPositionBar(t) {
     const cs        = S.drumCurrentStep[t];
     const playPage  = (S.playing && S.trackClipPlaying[t] && cs >= lsBase && cs < lsBase + len)
                     ? Math.floor((cs - lsBase) / 16) : -1;
-    const barY = 52, barH = 4, segGap = 1;   /* 2026-09-05: the hint footer owns row 57 */
+    const barY = 50, barH = 4, segGap = 1;   /* 2026-09-05: the hint footer owns row 57 */
     const segW   = Math.max(2, Math.floor((120 - (winPages - 1) * segGap) / winPages));
     const startX = 4;
     for (let pg = 0; pg < winPages; pg++) {
