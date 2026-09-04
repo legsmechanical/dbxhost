@@ -1519,8 +1519,15 @@ directly (transport stopped). Download it from the Schwung web manager
 (`move.local:7700`) in your browser. It opens as **8 MIDI tracks × 16 scene slots**
 with tempo and key.
 
-- **Move-routed tracks** export the real Move instrument, preset, and color;
-  Schwung and External tracks get a placeholder.
+- **Move-routed tracks** export the real Move instrument, preset, and color.
+- **Schwung and External tracks get a placeholder**, and it arrives **switched
+  off** — the notes are all there, but nothing plays until you drop your own
+  instrument in. An enabled placeholder would play a pad that was never part of
+  your music, which is worse than silence because it sounds plausible.
+- **Schwung tracks are named for what they played** — `SCH-nusaw`, or
+  `SCH-nusaw - Big Lead` when the module reports a patch name. Most modules
+  don't have an internal patch list, so the module name alone is normal.
+- **Send levels come across**, along with two empty return tracks to send to.
 - **Notes are baked** — each clip exports what you hear, effects rendered, delay
   tails wrapped, drum polymeters flattened, and randomized clips written as several
   loops of variation.

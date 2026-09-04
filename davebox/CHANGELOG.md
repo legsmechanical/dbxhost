@@ -26,6 +26,11 @@ the section into a versioned heading at release time.
   parameters and dAVEBOx's own bank parameters do not carry: the Move set format
   has no clip-level place for a CC, and the others have no instrument in Live to
   land on. See the manual, §15.3.
+- **Exported tracks say what they were.** A Schwung track is named for its
+  module and, where the module reports one, its patch — `SCH-nusaw - Big Lead`.
+  The placeholder instrument on Schwung, External and unmatched-Move tracks now
+  arrives **deactivated**, so a clip cannot play a stand-in pad that was never
+  part of the music.
 - **Fixed:** every exported track was 0.61 dB loud. The mixer's volume field is
   decibels and the export was writing a normalised fader position into it.
 - **One Instrument row, one picker.** The Generator row is gone from the
