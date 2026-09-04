@@ -447,6 +447,13 @@ export const S = {
     /* State version mismatch confirm dialog — shown when DSP detects an
      * old-format state file. Yes = wipe + clean start; No = exit module. */
     confirmStateWipe: false,
+    /* CONFIRM BEFORE EXIT (Josh, 2026-09-05: "add confirmation before davebox
+     * exit"). Every way out of the session — hold-Back, the menu's Suspend and
+     * Quit, the host's Shift+Back — raises this modal first. `confirmExit` names
+     * the exit it guards ('suspend' | 'quit') or is null; the Yes/No row follows
+     * the universal convention (0 = Yes, 1 = No) and opens on No. */
+    confirmExit: null,
+    confirmExitSel: 1,
     confirmStateWipeSel: 1,   /* 0=Yes, 1=No (default) */
     /* Keys->Drums track conversion confirm dialog (transient, not persisted). */
     confirmConvertToDrum: false,
@@ -613,7 +620,7 @@ export const S = {
      * A COUNTDOWN, not a boolean, because it suppresses that watchdog: if the
      * handoff never lands there would otherwise be nothing left to recover the
      * session. It expires on its own and the watchdog takes over again. */
-    selectHandoffTicks: 0,
+    selectHandoffUntil: 0,      /* ms deadline of the select handoff window; 0 = none */
     /* SELECT-BEFORE-LOAD: true = NO project is loaded and the user has yet to
      * choose one. Mirrors the DSP's awaiting_select, which is the authority
      * (it decided at create_instance); init() reads it back rather than
@@ -749,7 +756,6 @@ export const S = {
      * touch at all (the capacitive read can miss a quick flick, and the remote
      * UI has no wheel), and a picker with no way to close would sit over the
      * screen forever. Committing on settle is the floor, not the design. */
-    bankPickerIdleTick: -1,
     /* Bank card LATCH (Shift + jog click, 2026-08-25). Latched, the bank's page
      * holds the screen instead of standing down to the track overview after its
      * window expires. Unlatched is exactly today's behaviour.

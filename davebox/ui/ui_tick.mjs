@@ -53,7 +53,7 @@ import { pollDSP,
     pendingDrumNoteOffs, _drumRecNoteOns, _drumRecNoteOffs } from './ui_dsp_bridge.mjs';
 import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes, stepRecExit } from './ui_record.mjs';
 import { xposeCancelPreview } from './ui_xpose.mjs';
-import { checkBackHold, checkShiftNoteHold, backTapWouldAct, applyShiftEdge } from './ui_input_cc.mjs';
+import { checkBackHold, checkShiftNoteHold, backTapWouldAct, applyShiftEdge, raiseExitConfirm } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
@@ -306,9 +306,9 @@ var _lastSessionView = false;
  * down around a live screen. Returns true = exit owned and in flight. */
 export function requestSessionExit() {
     if (S.exitFarewell !== 0 || S.pendingExitAfterSave) return true;  /* already leaving */
-    saveState();                       /* sets pendingSuspendSave */
-    S.pendingExitAfterSave = true;     /* drained one tick after the save fires */
-    S.globalMenuOpen = false;
+    /* Confirm first (Josh, 2026-09-05); the modal's Yes runs exitSessionNow().
+     * Still "taken": the host must not tear the stack down under the dialog. */
+    raiseExitConfirm('quit');
     return true;
 }
 

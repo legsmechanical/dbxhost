@@ -269,6 +269,19 @@ function _onCC_jog(d1, d2) {
         return;
     }
 
+    /* Confirm-before-exit: Yes runs the exit that was asked for, No stays. */
+    if (d1 === 3 && d2 === 127 && S.confirmExit) {
+        const kind = S.confirmExit;
+        S.confirmExit = null;
+        if (S.confirmExitSel === 0) {
+            if (kind === 'quit') exitSessionNow();
+            else _suspendModule();
+        }
+        S.screenDirty = true;
+        forceRedraw();
+        return;
+    }
+
     /* BPM-controlled-by-Move info: jog click = OK (dismiss). */
     if (d1 === 3 && d2 === 127 && S.bpmMoveInfo) {
         S.bpmMoveInfo = false;
@@ -779,6 +792,14 @@ function modalDialogUp() {
             const delta = decodeDelta(d2);
             if (delta !== 0) {
                 S.confirmStateWipeSel = S.confirmStateWipeSel === 0 ? 1 : 0;
+                S.screenDirty = true;
+            }
+            return;
+        }
+        if (S.confirmExit) {
+            const delta = decodeDelta(d2);
+            if (delta !== 0) {
+                S.confirmExitSel = S.confirmExitSel === 0 ? 1 : 0;
                 S.screenDirty = true;
             }
             return;
@@ -1708,6 +1729,7 @@ function _cancelMergeCountIn() {
  * Hold-to-suspend works regardless and is not reflected here.) */
 export function backTapWouldAct() {
     if (S.confirmStateWipe) return false;
+    if (S.confirmExit) return true;         /* Back = No */
     if (S.projectPadPicker) {
         const _p = S.projectPadPicker;
         /* An open overlay always peels; the bare grid closes unless the
@@ -1758,7 +1780,7 @@ function noOverviewYet() {
      * a project is chosen. Back declines on both for the same reason.
      * ⚠ Note/Session used to exit the module from the state-wipe confirm; Josh
      * ruled that out 2026-09-02 — a button meaning "go home" must not quit. */
-    return !!(S.confirmStateWipe || (S.projectPadPicker && S.awaitingProjectSelect));
+    return !!(S.confirmStateWipe || S.confirmExit || (S.projectPadPicker && S.awaitingProjectSelect));
 }
 
 export function atOverview() {
@@ -1901,6 +1923,8 @@ function _backTap() {
     /* Boot-time decision modals (incompatible-state wipe, set-inherit picker):
      * leave to their own jog-click flow; Back must not act underneath them. */
     if (S.confirmStateWipe) return;
+    /* The exit confirm: Back is No — you stay exactly where you were. */
+    if (S.confirmExit) { S.confirmExit = null; S.screenDirty = true; return; }
 
     /* 1. Transient dialogs / pickers / modes (one open at a time). */
     if (S.stepRecActive) {
@@ -2209,8 +2233,35 @@ export function checkBackHold() {
     if ((S.clockMs - S.backPressTick) >= BACK_HOLD_MS) {
         S.backHoldFired = true;
         S.backPressTick = -1;
-        _suspendModule();
+        raiseExitConfirm('suspend');
     }
+}
+
+/* CONFIRM BEFORE EXIT (Josh, 2026-09-05). Every door out of the session comes
+ * through here — hold-Back and the menu's Suspend (kind 'suspend'), the menu's
+ * Quit and the host's Shift+Back (kind 'quit') — and the exit itself only runs
+ * from the modal's Yes (the jog-click handler above). A standalone modal, the
+ * `confirmStateWipe` shape, because hold-Back arrives from anywhere and the
+ * user must land back exactly where they were on No. Idempotent: a second
+ * request while it is up changes nothing. */
+export function raiseExitConfirm(kind) {
+    if (S.confirmExit) return;
+    S.confirmExit = kind === 'quit' ? 'quit' : 'suspend';
+    S.confirmExitSel = 1;               /* opens on No */
+    S.globalMenuOpen = false;
+    S.screenDirty = true;
+    forceRedraw();
+}
+
+/* The Quit body, unchanged from what the menu's Quit and the host's Shift+Back
+ * used to run directly: save, then leave a tick later so the save lands. In a
+ * standalone session this hands the device back to stock; under stock it
+ * unloads dAVEBOx (the launcher's marker decides, at exit time). */
+export function exitSessionNow() {
+    if (S.exitFarewell !== 0 || S.pendingExitAfterSave) return;   /* already leaving */
+    saveState();                       /* sets pendingSuspendSave */
+    S.pendingExitAfterSave = true;     /* drained one tick after the save fires */
+    S.globalMenuOpen = false;
 }
 
 function _onCC_transport(d1, d2) {
@@ -3643,7 +3694,7 @@ function _onCC_knobs(d1, d2) {
             }
             return;
         }
-        if (S.globalMenuOpen || S.tapTempoOpen || S.confirmBake || S.confirmClearSession || S.confirmConvertToDrum || S.confirmConvertToConduct || S.menuInfoLines.length > 0 || S.confirmExport || S.exportDoneDialog || S.recordBlockedDialog || S.confirmStateWipe || S.bpmMoveInfo) return;
+        if (S.globalMenuOpen || S.tapTempoOpen || S.confirmBake || S.confirmClearSession || S.confirmConvertToDrum || S.confirmConvertToConduct || S.menuInfoLines.length > 0 || S.confirmExport || S.exportDoneDialog || S.recordBlockedDialog || S.confirmStateWipe || S.confirmExit || S.bpmMoveInfo) return;
         const knobIdx = d1 - 71;
         S.knobTouched          = knobIdx;
         S.knobTurnedTick[knobIdx] = nowMs();

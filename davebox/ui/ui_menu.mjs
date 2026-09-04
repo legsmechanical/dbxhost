@@ -220,15 +220,16 @@ function buildGlobalMenuItems() {
             S.globalMenuOpen = false;
         }),
         createAction('Suspend session', function() {
-            /* Park dAVEBOx in the background (same as hold-Back):
-             * save, then host_suspend_overtake one tick later via pendingSuspendManaged. */
-            saveState();                       /* sets pendingSuspendSave */
-            S.pendingSuspendManaged = true;    /* drained one tick after save fires */
+            /* Park dAVEBOx in the background (same as hold-Back) — after the
+             * exit confirm (Josh, 2026-09-05); Yes runs _suspendModule. */
+            S.confirmExit = 'suspend'; S.confirmExitSel = 1;
             S.globalMenuOpen = false;
         }),
         createAction('Quit', function() {
-            saveState();                       /* sets pendingSuspendSave */
-            /* In a standalone session dAVEBOx IS the session — the user launched
+            /* Confirm first (Josh, 2026-09-05); Yes runs exitSessionNow():
+             * save, then the exit a tick later so the save lands.
+             *
+             * In a standalone session dAVEBOx IS the session — the user launched
              * straight into it and there is no shadow UI worth returning to. So
              * Quit leaves the whole host and hands the device back to stock
              * Schwung, matching what Shift+Back does there.
@@ -240,7 +241,7 @@ function buildGlobalMenuItems() {
              *
              * Either way we save first, and either way the exit happens a tick
              * later so the save actually lands. */
-            S.pendingExitAfterSave = true;     /* drained one tick after save fires */
+            S.confirmExit = 'quit'; S.confirmExitSel = 1;
             S.globalMenuOpen = false;
         }),
         /* ── the easter egg lives past the exit rows, behind its own rule

@@ -313,6 +313,25 @@ function drawGlobalMenuList() {
  * is pressed on a clip / lane in any non-Forward direction or Audio reverse
  * style. OK dismisses; BAKE NOW opens the standard bake confirm dialog
  * pre-targeted at the active clip / drum lane. */
+/* Confirm before leaving the session. Same chassis as the other Yes/No modals;
+ * the copy names what the user is about to do in their own terms (a session is
+ * parked or left — never "overtake" or a host word). */
+export function drawExitConfirm() {
+    clear_screen();
+    if (S.confirmExit === 'quit') {
+        drawMenuHeader('QUIT dAVEBOx?');
+        print(4, 16, 'Save and leave the', 1);
+        print(4, 25, 'session? The device', 1);
+        print(4, 34, 'returns to Move.', 1);
+    } else {
+        drawMenuHeader('SUSPEND SESSION?');
+        print(4, 16, 'Save and park', 1);
+        print(4, 25, 'dAVEBOx in the', 1);
+        print(4, 34, 'background?', 1);
+    }
+    drawYesNoRow(S.confirmExitSel);
+}
+
 export function drawStateWipeConfirm() {
     clear_screen();
     drawMenuHeader('INCOMPATIBLE STATE');
