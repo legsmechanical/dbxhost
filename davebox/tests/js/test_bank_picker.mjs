@@ -210,14 +210,14 @@ step('⭑ the bank card names its TRACK, so a latched card still says where you 
     /* 2026-09-05: the track moved to the FAR RIGHT with the instrument in
      * brackets, behind a sequencer glyph on the left — the whole band is the
      * reference now (no chevron shares it any more). */
-    kit.drawKitBankHeader(BANKS[1].name, 'seq', 'T5 [' + S.instrAbbrev + ']');
+    kit.drawKitBankHeader(BANKS[1].name, 'seq', 'T5[' + S.instrAbbrev + ']');
     const want = fb.slice(0, FBW * 8);
 
     for (let y = 0; y < 8; y++)
         for (let x = 0; x < FBW; x++) {
             const i = y * FBW + x;
             if (got[i] !== want[i])
-                throw new Error('the header is not "♫ ' + BANKS[1].name + ' … T5 [' + S.instrAbbrev +
+                throw new Error('the header is not "♫ ' + BANKS[1].name + ' … T5[' + S.instrAbbrev +
                                 ']" — first difference at x=' + x + ' y=' + y);
         }
 });
@@ -250,7 +250,7 @@ step('⚠ control: the same comparison FAILS without the prefix', () => {
     kit.drawKitBankHeader(BANKS[1].name, 'seq', '');
     const bare = fb.slice(0, FBW * 8);
     fb.fill(0);
-    kit.drawKitBankHeader(BANKS[1].name, 'seq', 'T5 [' + S.instrAbbrev + ']');
+    kit.drawKitBankHeader(BANKS[1].name, 'seq', 'T5[' + S.instrAbbrev + ']');
     const prefixed = fb.slice(0, FBW * 8);
     let same = true;
     for (let i = 0; i < bare.length; i++) if (bare[i] !== prefixed[i]) { same = false; break; }

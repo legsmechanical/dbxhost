@@ -1566,7 +1566,7 @@ export function drawKitHeader(text, invert, maxW) {
 }
 
 /* ---- the BANK header (Josh, 2026-09-05) ----
- * [glyph] NAME .................. T3 [OB]
+ * [glyph] NAME .................. T3[OB]
  * A glyph on the left says what the bank CONTROLS — sequencer elements (♫),
  * audio elements (bars), performance elements (a knob) — the track number and
  * the instrument abbreviation sit on the far right, and the alt-param chevron

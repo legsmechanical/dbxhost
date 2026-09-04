@@ -102,7 +102,7 @@ const G4 = [
     [5, 0, 4, 5, 1, 1, 6, 8, 8],        /* \ */
     [4, 0, 3, 5, 2, 5, 0, 0, 0],        /* ^ */
     /* Square brackets — davebox's own addition (2026-09-05): the bank header
-     * carries the instrument abbreviation as "T3 [OB]". Upstream font4x5 has
+     * carries the instrument abbreviation as "T3[OB]". Upstream font4x5 has
      * only parentheses; these are the same 2px-wide idiom, squared off. */
     [3, 0, 2, 5, 3, 1, 1, 1, 3],        /* [ */
     [3, 0, 2, 5, 3, 2, 2, 2, 3],        /* ] */

@@ -60,7 +60,7 @@ import { drawMenuHeader } from '/data/UserData/schwung/shared/menu_layout.mjs';
 /* Parameter bank definitions                                           */
 /* ------------------------------------------------------------------ */
 
-/* THE BANK HEADER (Josh, 2026-09-05): [glyph] NAME ............ T3 [OB]
+/* THE BANK HEADER (Josh, 2026-09-05): [glyph] NAME ............ T3[OB]
  *
  * The glyph on the left says what the bank CONTROLS; the far right names the
  * TRACK and, in brackets, its INSTRUMENT. The track is there because of the
@@ -81,7 +81,7 @@ export function bankHeaderGlyph(bank) {
 export function bankHeaderRight(bare) {
     if (S.sessionView) return '';
     const instr = '[' + (S.instrAbbrev || '--') + ']';
-    return bare ? instr : 'T' + (S.activeTrack + 1) + ' ' + instr;
+    return bare ? instr : 'T' + (S.activeTrack + 1) + instr;   /* T3[OBXD] — no space (Josh) */
 }
 /* The instrument abbreviation for the active track — a CACHE, refreshed by the
  * tick once a second and forced (`S.instrAbbrevAt = 0`) on a track switch or
