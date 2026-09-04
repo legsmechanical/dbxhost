@@ -936,7 +936,13 @@ function overviewHints() {
      * MENU pair names the OTHER overview a Note/Session tap switches to (Josh,
      * 2026-09-05: "MENU:[TRACK/GRID]"). */
     /* TRK, not TRACK: ≡ TRACK would not fit beside the other two pairs (measured). */
-    /* The key is the ≡ printed on the button, not the word MENU (Josh). */
+    /* The key is the ≡ printed on the button, not the word MENU (Josh).
+     * SHIFT HELD: the row names the Shift chords instead (Josh, 2026-09-05:
+     * "trk/sess change to config/fx when shift is held") — Shift+jog steps the
+     * track in every view, Shift+≡ opens the track's SOUND + CONFIG menu in
+     * track view and the MASTER / SEND FX list in session view. No CLK pair:
+     * Shift+click is nothing here. */
+    if (S.shiftHeld) return [['JOG', 'TRACK'], ['\u2261', S.sessionView ? 'FX' : 'CONFIG']];
     return [['JOG', 'BANK'], ['CLK', 'EDIT'], ['\u2261', S.sessionView ? 'TRK' : 'SESS']];
 }
 

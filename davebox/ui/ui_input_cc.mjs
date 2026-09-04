@@ -1212,6 +1212,7 @@ export function applyBankPick(rest) {
  * predicted exactly this for the held-modifier flags and was waiting for a repro. */
 export function applyShiftEdge(held) {
     S.shiftHeld = held;
+    S.screenDirty = true;      /* the overview footer names the Shift chords while it is held (2026-09-05) */
     S.shiftTrackLEDActive = held;
         /* Shift IS the volume-knob claim (Josh, 2026-08-24): while held, Move's
          * native main output stands aside and CC 79 becomes the ACTIVE TRACK's

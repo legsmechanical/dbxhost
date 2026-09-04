@@ -2396,8 +2396,15 @@ export const MV_FOOTER_CANON = Object.freeze({
  * gesture with no on-screen trace first, and keep the action to one short word:
  * "PRESETS" costs 15px more than "PRESET" and takes a second hint down with it.
  * Do not add a fifth pair expecting it to show. */
+/* The one non-text key: Move's menu button carries a ≡, and the footer draws it
+ * as bars (see drawKitHintRow) as wide as a three-letter key so the pills match. */
+export const HINT_MENU_KEY = '\u2261';
+const HINT_MENU_KEY_W = 13;   /* JOG and CLK measure 14 in the 4x5 face */
+function hintKeyWidth(key) {
+    return key === HINT_MENU_KEY ? HINT_MENU_KEY_W : fontWidth4x5(key);
+}
 export function hintPairWidth(key, action) {
-    return fontWidth4x5(String(key).toUpperCase()) + MV_HINT_PAD + MV_HINT_GAP
+    return hintKeyWidth(String(key).toUpperCase()) + MV_HINT_PAD + MV_HINT_GAP
          + fontWidth4x5(String(action).toUpperCase()) + MV_HINT_GAP;
 }
 
@@ -2421,11 +2428,20 @@ export function drawKitHintRow(y, hints) {
 
     const drawPair = (x, h) => {
         const key = String(h[0]).toUpperCase(), action = String(h[1]).toUpperCase();
-        const kw = fontWidth4x5(key);
+        const kw = hintKeyWidth(key);
         const pw = kw + MV_HINT_PAD * 2, ph = MV_FOOTER_H;
         fill_rect(x, ty - 1, pw, ph, 1);
         if (pw >= 3) notchCorners(x, ty - 1, pw, ph);
-        fontPrint4x5(x + MV_HINT_PAD, ty, key, 0);
+        if (key === HINT_MENU_KEY) {
+            /* The ≡ printed on Move's menu button: the glyph at its own size,
+             * CENTRED in a pill as wide as JOG's and CLK's (Josh, 2026-09-05:
+             * "the pill it sits in should remain similarly sized to the others";
+             * "hamburger icon's prior size was better"). */
+            const gw = fontWidth4x5(key);
+            fontPrint4x5(x + MV_HINT_PAD + Math.floor((kw - gw) / 2), ty, key, 0);
+        } else {
+            fontPrint4x5(x + MV_HINT_PAD, ty, key, 0);
+        }
         fontPrint4x5(x + kw + MV_HINT_PAD + MV_HINT_GAP, ty, action, 1);
     };
 

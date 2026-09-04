@@ -65,6 +65,9 @@ function draw(slug){ globalThis.clear_screen(); render.drawUI(); shoot(slug); }
 S.sessionView = false; S.activeBank = 0; S.bankSelectTick = -1; S.jogTouched = false;
 draw('track-overview');
 
+/* TRACK VIEW with SHIFT held — the footer names the Shift chords. */
+S.shiftHeld = true; draw('track-overview-shift'); S.shiftHeld = false;
+
 /* BANK CARD, LATCHED — the flashing frame, both phases. */
 S.sessionView = false; S.activeBank = 1; S.bankSelectTick = S.tickCount;
 S.bankCardLatched = true;
