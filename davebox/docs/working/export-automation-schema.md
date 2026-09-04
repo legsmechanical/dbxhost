@@ -540,6 +540,34 @@ since those already get Drift dummies today.
 3. **Ship the mixer half now** (fully specified, §5f) and leave MIDI. Already ruled once; may be
    re-ruled given what the pivot costs.
 
+## 9. ✅ SHIPPED AND DEVICE-VERIFIED (2026-09-05) — Josh: *"all good!"*
+
+Built over five commits (`b4869361`, `230274b2`, `9386142d`, `466862a3`, `40651742`), suite green
+throughout, deployed and confirmed by a real export opened in Live.
+
+**What carries:** mixer volume / pan / both sends as clip envelopes; aftertouch on every track;
+pitch bend on Move-routed tracks, scaled to that instrument's own `Global_PitchBendRange`. Plus
+two empty return tracks, which also makes a STATIC send level round-trip for the first time.
+
+⭑⭑ **THE RULE that cost the one failed attempt: an id goes on THE THING THAT HOLDS THE VALUE,
+never the container.** Volume and pan are plain numbers → the number becomes `{value, id}`. A send
+is `{isEnabled, amount}` → **`amount`** becomes `{value, id}` and the entry keeps its shape.
+
+⚠⚠ **One wrong placement rejects the ENTIRE document.** Live answers
+*"Error loading document: Unknown id"*, refuses the whole set, loads nothing partially, and logs
+nothing. Everything else in that export was correct — ids allocated document-wide from 2, every
+reference defined and in the right place, parser and beat arithmetic right.
+
+⭑ **How it was found, which is the reusable part:** by bisecting Josh's ACTUAL export rather than
+re-reading the code. Strip it back to volume only (loaded), add pan (loaded), add sends (failed) —
+which simultaneously PROVED pan works as an automation target, something only its static scale had
+been established for. Then two candidate shapes, and V4 loaded. Four clicks, no theorising.
+
+🔴 **And the honest pattern across the whole feature:** every value in it was measured off the
+device or a probe — dB volume, ±50 pan, dB sends, signed bend, 1:1 aftertouch, clip-relative
+beats, 96 ticks/beat. **The single thing I invented rather than measured is the single thing that
+broke.**
+
 ## 8. ⭐⭐ RULED (Josh, 2026-09-05): SHIP WHAT THE BUNDLE CAN DO
 
 > *"you know what? let's just go with what we can do through ablbundle."*
