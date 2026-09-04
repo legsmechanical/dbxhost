@@ -936,7 +936,7 @@ function overviewHints() {
      * MENU pair names the OTHER overview a Note/Session tap switches to (Josh,
      * 2026-09-05: "MENU:[TRACK/GRID]"). */
     /* TRK, not TRACK: MENU TRACK is 53px and the row has 45 left (measured). */
-    return [['JOG', 'BANK'], ['CLK', 'EDIT'], ['MENU', S.sessionView ? 'TRK' : 'GRID']];
+    return [['JOG', 'BANK'], ['CLK', 'EDIT'], ['MENU', S.sessionView ? 'TRK' : 'SESS']];
 }
 
 function drawTrackRow(y) {
