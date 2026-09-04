@@ -6420,6 +6420,51 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         return snprintf(out, out_len, "%d", v);
     }
 
+    /* pa_export: EVERY automation lane's POINTS, for the Ableton export.
+     *
+     * pa_list gives each lane's point COUNT but never the points, so the curves
+     * were unreachable from JS entirely — the export could see that a parameter
+     * was automated and not what it did. This is the read that fixes that.
+     *
+     * ⚠ It writes a FILE rather than answering into `out`, for the same reason
+     * the note render does (EXPORT_RENDER_PATH): the get_param buffer is 16 KB
+     * and the worst case here is 160 entries x 512 points, on the order of a
+     * megabyte. `out` gets only the lane count, so a caller can tell "no
+     * automation" from "the file is stale".
+     *
+     * ONE call for the whole project, matching pa_list's rationale: a round
+     * trip measured 2852 us on device, so a per-lane read would cost more than
+     * the export's whole note render.
+     *
+     * Format — one lane per line, points space-separated after a `|`:
+     *   "<track> <clip> <target> <flags> <loop_len> <resolution>|<tick>:<val> ..."
+     * `tick` is a CLIP TICK (96 per beat, as the note render uses) and `val` is
+     * 14-bit normalized 0..PA_VAL_MAX for every target kind — JS maps it to
+     * wire units, since only JS has the metadata that defines them. A target
+     * never contains a space or a `|`. */
+    if (!strcmp(key, "pa_export")) {
+        int lanes = 0;
+        if (out_len > 0) out[0] = '\0';
+        if (!inst) return 0;
+        FILE *pf = fopen(EXPORT_PA_PATH, "w");
+        if (!pf) return snprintf(out, out_len, "-1");   /* JS treats <0 as "could not read" */
+        pa_lock(inst);                      /* the latch may be writing */
+        for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+            pa_entry_t *e = &inst->pa_entries[i];
+            if (!e->used || !e->count) continue;
+            fprintf(pf, "%d %d %s %d %d %d|",
+                    (int)e->track, (int)e->clip, inst->pa_targets[e->target],
+                    (int)e->flags, (int)e->loop_len, (int)e->resolution);
+            for (int k = 0; k < (int)e->count && k < PA_ENTRY_POINTS; k++)
+                fprintf(pf, "%u:%u ", (unsigned)e->points[k].tick, (unsigned)e->points[k].val);
+            fputc('\n', pf);
+            lanes++;
+        }
+        pa_unlock(inst);
+        fclose(pf);
+        return snprintf(out, out_len, "%d", lanes);
+    }
+
     if (!strcmp(key, "pa_list")) {
         int n = 0;
         /* Terminate up front: a project with no automation must hand back an

@@ -19,7 +19,7 @@
 
 import { S, conductorTrackIdx } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { slotIndex, DAVEBOX_HOST_DIR } from './ui_engine.mjs';
+import { slotIndex, DAVEBOX_HOST_DIR, SLOT_LEVEL_MAX } from './ui_engine.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_MS, PAD_MODE_CONDUCT } from './ui_constants.mjs';
 
@@ -41,6 +41,11 @@ const EXPORT_SCENES     = NUM_CLIPS;   /* dAVEBOx clip N -> scene N */
  * EXPORT_RENDER_PATH in dsp/seq8.c). Inside staging → cleaned with it.
  * Sidesteps the 16KB get_param cap. */
 const EXPORT_RENDER_PATH = EXPORT_STAGING + '/render.txt';
+/* Companion to the render: every automation lane's POINTS, written by the DSP's
+ * `pa_export` (must match EXPORT_PA_PATH in dsp/seq8_bake.c). Same reason for a
+ * file rather than a get_param answer — the worst case is 160 lanes x 512
+ * points, far past the 16KB cap. */
+const EXPORT_PA_PATH = EXPORT_STAGING + '/automation.txt';
 
 /* Source-side reads for route-aware instrument mapping (Phase 2). */
 const EXPORT_SETS_BASE_DIR    = '/data/UserData/UserLibrary/Sets';
@@ -337,6 +342,94 @@ function defaultSends(levels) {
         const g = levels && levels.length > i ? levels[i] : 0;
         return { isEnabled: true, amount: gainToDb(g) };
     });
+}
+
+/* ── READING davebox's AUTOMATION FOR EXPORT ───────────────────────────────
+ * The DSP stores every lane as `{tick, val}` pairs where `tick` is a CLIP TICK
+ * (96 per beat, as the note render uses) and `val` is 14-bit normalized
+ * 0..PA_VAL_MAX for EVERY target kind — the store has no per-target metadata,
+ * so only JS can turn a point back into wire units. That is what this does.
+ *
+ * ⭑ Which targets survive the trip is a ruling, not a limitation to apologise
+ * for (docs/working/export-automation-schema.md §5c/§8): the test is whether
+ * the target EXISTS in Live.
+ *   mixer volume / pan / send A / send B -> clip envelopes on the track mixer
+ *   aftertouch, pitch bend               -> per-note automation (channel-level
+ *                                           on davebox, so written to EVERY note)
+ *   everything else                      -> dropped: a chain param has no
+ *                                           Schwung module in Live to land on,
+ *                                           a bank param has no equivalent at
+ *                                           all, and a CC has no clip-level
+ *                                           MIDI target in the format. */
+const PA_VAL_MAX = 16383;          /* mirrors dsp/seq8_param_auto.h */
+const PA_TICKS_PER_BEAT = 96;      /* mirrors the note render's ÷96 */
+
+/* A lane's target string, as ui_automation writes it:
+ *   "<slot>:slot:<key>" / "<slot>:move_fx:<n>:<key>"  a mixer level
+ *   "at" | "pb" | "cc:<n>"                            a raw MIDI target
+ *   "seq:<track>:<key>"                               a davebox bank param
+ * Returns what the export should DO with it, or null to drop it. */
+function classifyPaTarget(target) {
+    if (target === 'at') return { kind: 'note', key: 'Pressure', max: 127 };
+    if (target === 'pb') return { kind: 'note', key: 'PitchBend', max: PA_VAL_MAX };
+    if (target.indexOf('cc:') === 0) return null;      /* no clip-level MIDI target exists */
+    if (target.indexOf('seq:') === 0) return null;     /* davebox's own sequencer params */
+    const m = /:(?:slot|move_fx:\d+):(volume|pan|send_a|send_b)$/.exec(target);
+    if (m) return { kind: 'mixer', field: m[1] };
+    return null;                                       /* a chain param: no module in Live */
+}
+
+/* 14-bit normalized -> the value Ableton wants, per field. The normalization is
+ * a fraction of the PARAMETER's own range (ui_automation's normValue), so each
+ * case restores its range first and then converts. */
+function paValueFor(what, norm) {
+    const f = Math.max(0, Math.min(1, Number(norm) / PA_VAL_MAX));
+    if (what.kind === 'note') {
+        /* pb: davebox stores 0..16383 with 8192 centre; Live wants SEMITONES,
+         * signed, over a fixed ±48 — the instrument's own bend range is
+         * IGNORED for per-note expression (probes P9a/P9b). The caller supplies
+         * `semis` (a Move track's own Global_PitchBendRange); a Schwung track
+         * does not export bend at all, because no instrument survives to define
+         * what it should sound like. */
+        if (what.key === 'PitchBend') return (f * PA_VAL_MAX) - 8192;
+        return Math.round(f * what.max);               /* Pressure: 0..127, 1:1 */
+    }
+    if (what.field === 'pan') return panToAbl(f);      /* davebox pan is 0..1 */
+    if (what.field === 'volume') return gainToDb(f * SLOT_LEVEL_MAX);
+    return gainToDb(f);                                /* sends: gain 0..1 */
+}
+
+/* Parse the DSP's dump. One lane per line:
+ *   "<track> <clip> <target> <flags> <loop_len> <resolution>|<tick>:<val> ..."
+ * Tolerant by design — a torn last line is dropped rather than throwing, since
+ * the alternative is losing a whole export to one bad byte. */
+function parsePaDump(body) {
+    const lanes = [];
+    if (!body) return lanes;
+    const lines = String(body).split('\n');
+    for (let i = 0; i < lines.length; i++) {
+        const bar = lines[i].indexOf('|');
+        if (bar < 0) continue;
+        const head = lines[i].slice(0, bar).split(' ');
+        if (head.length < 3) continue;
+        const track = parseInt(head[0], 10), clip = parseInt(head[1], 10), target = head[2];
+        if (!isFinite(track) || !isFinite(clip) || !target) continue;
+        const points = [];
+        const toks = lines[i].slice(bar + 1).split(' ');
+        for (let k = 0; k < toks.length; k++) {
+            if (!toks[k]) continue;
+            const c = toks[k].indexOf(':');
+            if (c < 0) continue;
+            const tick = parseInt(toks[k].slice(0, c), 10);
+            const val  = parseInt(toks[k].slice(c + 1), 10);
+            if (isFinite(tick) && isFinite(val)) points.push({ tick: tick, val: val });
+        }
+        if (points.length) lanes.push({ track: track, clip: clip, target: target, points: points });
+    }
+    return lanes;
+}
+export function exportPaForTest() {
+    return { parsePaDump, classifyPaTarget, paValueFor, PA_VAL_MAX, PA_TICKS_PER_BEAT };
 }
 
 function defaultMixer() {

@@ -100,6 +100,56 @@ assert(near(sf[0].amount, 0.0) && near(sf[1].amount, -6.021),
 assert(R.sendsFor([0, 0])[0].amount === -70,
        '⚠ a gain of ZERO is -70 dB (silent) — NOT 0.0, which would be a full send');
 
+/* ---- reading davebox's automation dump ---------------------------------- */
+/* ⚠ SLOT_LEVEL_MAX must be IMPORTED here, not just mentioned in a comment —
+ * `node --check` passes either way and the failure is a runtime ReferenceError
+ * inside the export, i.e. an export that silently produces nothing. */
+const PA = xp.exportPaForTest();
+assert(PA.PA_VAL_MAX === 16383, 'values are 14-bit normalized, matching dsp/seq8_param_auto.h');
+assert(PA.PA_TICKS_PER_BEAT === 96, 'and ticks are 96 to the beat, matching the note render');
+
+/* the parser */
+const dump = [
+  '2 0 2:slot:volume 1 0 0|0:16383 192:8192 384:0 ',
+  '2 0 2:slot:pan 1 0 0|0:0 384:16383 ',
+  '3 1 at 1 0 0|0:0 96:16383 ',
+  '3 1 pb 1 0 0|0:8192 96:0 ',
+  '2 0 2:synth:cutoff 1 0 0|0:100 ',      /* a chain param — must be DROPPED */
+  '2 0 cc:11 1 0 0|0:100 ',               /* a CC — must be DROPPED */
+  '2 0 seq:2:noteFX_gate 1 0 0|0:100 ',   /* a bank param — must be DROPPED */
+  'this line is torn and has no bar',
+].join('\n');
+const lanes = PA.parsePaDump(dump);
+assert(lanes.length === 7, 'parsed every well-formed lane and dropped the torn one, got ' + lanes.length);
+assert(lanes[0].track === 2 && lanes[0].clip === 0 && lanes[0].target === '2:slot:volume', 'lane header parsed');
+assert(lanes[0].points.length === 3 && lanes[0].points[1].tick === 192 && lanes[0].points[1].val === 8192,
+       'points parsed as {tick, val}');
+
+/* ⭑ classification IS the export's scope ruling, in code */
+const cls = (t) => PA.classifyPaTarget(t);
+assert(cls('2:slot:volume').kind === 'mixer' && cls('2:slot:volume').field === 'volume', 'a slot level is a mixer envelope');
+assert(cls('2:move_fx:3:pan').field === 'pan', '…and so is a Move bus level');
+assert(cls('at').kind === 'note' && cls('at').key === 'Pressure', 'aftertouch is per-note Pressure');
+assert(cls('pb').kind === 'note' && cls('pb').key === 'PitchBend', 'pitch bend is per-note PitchBend');
+assert(cls('cc:11') === null, '⭑ a CC is DROPPED — the format has no clip-level MIDI target');
+assert(cls('2:synth:cutoff') === null, '⭑ a chain param is DROPPED — no Schwung module exists in Live');
+assert(cls('seq:2:noteFX_gate') === null, '⭑ a bank param is DROPPED — nothing in Live receives it');
+
+/* value conversion, against the measured constants */
+const vol = cls('2:slot:volume'), pan = cls('2:slot:pan'), snd = cls('2:slot:send_a');
+assert(near(PA.paValueFor(vol, 16383), 6.0, 0.03), 'a full-scale volume point is +6 dB (davebox gain 2.0)');
+assert(near(PA.paValueFor(vol, 8192), 0.0, 0.01), '⭑ HALF-scale is UNITY — davebox gain 1.0 is 0 dB, not half a dB');
+assert(PA.paValueFor(vol, 0) === -70, 'a zero point is silence');
+assert(near(PA.paValueFor(pan, 0), -50) && near(PA.paValueFor(pan, 16383), 50), 'pan spans ±50');
+assert(near(PA.paValueFor(pan, 8192), 0, 0.01), 'and centres at 0');
+assert(near(PA.paValueFor(snd, 16383), 0.0), 'a full send is 0 dB');
+assert(PA.paValueFor(snd, 0) === -70, 'a zero send is -70, not 0 (which would be FULL)');
+assert(PA.paValueFor(cls('at'), 16383) === 127 && PA.paValueFor(cls('at'), 0) === 0, 'aftertouch is 0..127, 1:1');
+assert(near(PA.paValueFor(cls('pb'), 8192), 0, 1),
+       '⭑ pitch bend CENTRES at 0 — davebox stores 8192 centre, Live wants signed');
+assert(near(PA.paValueFor(cls('pb'), 0), -8192, 1) && near(PA.paValueFor(cls('pb'), 16383), 8191, 1),
+       '…and spans ±8192 signed, which probe P8a confirmed and P8b (unsigned) disproved');
+
 if (failed) { console.log('FAIL: export mixer value space'); process.exit(1); }
 console.log('PASS: the export\'s mixer value space — dB volume, ±50 pan, unity default');
 }

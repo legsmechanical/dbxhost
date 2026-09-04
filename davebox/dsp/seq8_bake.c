@@ -236,6 +236,9 @@ static uint32_t bake_apply_quantize(uint32_t tick, uint16_t tps, uint16_t length
  * render writes notes here and get_param returns only the small header, JS reads
  * this file (host_read_file handles up to 4MB; a single clip is well under). */
 #define EXPORT_RENDER_PATH "/data/UserData/schwung/davebox-exports/staging/render.txt"
+/* Companion to the note render: every automation lane's points, same staging
+ * dir so the export's existing cleanup removes it too. See `pa_export`. */
+#define EXPORT_PA_PATH     "/data/UserData/schwung/davebox-exports/staging/automation.txt"
 
 /* Non-destructive melodic clip render for Ableton export. MIRROR of the
  * bake_clip compute (lines ~6160-6250) — KEEP IN SYNC if the bake math changes.
