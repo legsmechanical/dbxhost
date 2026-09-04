@@ -682,13 +682,29 @@ function paPrepareTrack(t, r, ctx) {
 }
 
 /* Stamp `{value, id}` on each automated mixer field, keeping the value the
- * mixer already carried — automation does not replace the resting value. */
+ * mixer already carried — automation does not replace the resting value.
+ *
+ * ⭑⭑ THE RULE, learned the hard way (2026-09-05): the id goes on THE THING
+ * THAT HOLDS THE VALUE, never on the container around it. Volume and pan are
+ * plain numbers, so the number becomes `{value, id}`. A send is
+ * `{isEnabled, amount}` — so it is `amount` that becomes `{value, id}`, and the
+ * send entry keeps its own shape.
+ *
+ * ⚠ The first version hung the id on the send ENTRY (`{isEnabled, amount, id}`)
+ * by analogy with the mixer fields, and Live rejected the whole document with
+ * "Error loading document: Unknown id" — the one error it gives for an envelope
+ * pointing at nothing. Everything else in the export was correct; one wrong
+ * placement killed the entire set, with no partial load and nothing in the log.
+ * Bisected against a real export (V1/V2 loaded, V3 did not) and settled by
+ * probe V4. */
 function paStampMixer(mixer, ids) {
     for (const field in ids) {
         if (field === 'send_a' || field === 'send_b') {
             const idx = field === 'send_a' ? 0 : 1;
             const cur = (mixer.sends && mixer.sends[idx]) || { isEnabled: true, amount: -70 };
-            mixer.sends[idx] = { isEnabled: true, amount: cur.amount, id: ids[field] };
+            const amt = (cur.amount && typeof cur.amount === 'object') ? cur.amount.value : cur.amount;
+            mixer.sends[idx] = { isEnabled: cur.isEnabled !== false,
+                                 amount: { value: amt, id: ids[field] } };
         } else {
             const cur = mixer[field];
             mixer[field] = { value: (cur && typeof cur === 'object') ? cur.value : cur, id: ids[field] };
@@ -696,6 +712,7 @@ function paStampMixer(mixer, ids) {
     }
     return mixer;
 }
+export function exportStampForTest(mixer, ids) { return paStampMixer(mixer, ids); }
 
 function buildTrack(t, ctx) {
     const r = resolveTrack(t, ctx);

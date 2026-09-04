@@ -194,6 +194,31 @@ const pbv = pbNotes[0].automations.PitchBend[0].value;
 assert(near(pbv, 8191 * 2 / 48, 1),
        '⭑ a full bend at ±2 semitones is ~341, not 8191 — Live\'s span is a fixed ±48 (probe P9a)');
 
+/* ---- WHERE the id goes, which is the whole ballgame --------------------- */
+/* ⭑⭑ The id belongs on THE THING THAT HOLDS THE VALUE, never the container.
+ * ⚠ Getting this wrong on ONE field kills the ENTIRE document — Live answers
+ * "Error loading document: Unknown id", refuses the whole set, and logs
+ * nothing. There is no partial load and no clue which field did it. */
+const stamped = xp.exportStampForTest(
+    { pan: 0.0, 'solo-cue': false, speakerOn: true, volume: -3.0,
+      sends: [{ isEnabled: true, amount: -70 }, { isEnabled: true, amount: -12 }] },
+    { volume: 2, pan: 3, send_a: 4, send_b: 5 });
+assert(stamped.volume && stamped.volume.value === -3.0 && stamped.volume.id === 2,
+       'volume becomes {value, id}, KEEPING its resting value');
+assert(stamped.pan && stamped.pan.value === 0.0 && stamped.pan.id === 3, 'pan likewise');
+assert(stamped.sends[0].amount && typeof stamped.sends[0].amount === 'object',
+       '⭑ a send stamps its AMOUNT, not the send entry — the entry keeps {isEnabled, amount}');
+assert(stamped.sends[0].amount.value === -70 && stamped.sends[0].amount.id === 4,
+       '…as {value, id}, keeping the resting amount, got ' + JSON.stringify(stamped.sends[0]));
+assert(stamped.sends[1].amount.value === -12 && stamped.sends[1].amount.id === 5, 'and send B');
+assert(stamped.sends[0].id === undefined,
+       '⚠ the id is NOT on the send entry — that shape loaded as "Unknown id" and killed the set');
+assert(stamped.sends[0].isEnabled === true, 'isEnabled survives the stamp');
+/* stamping twice must be idempotent — a re-export must not nest {value:{value:…}} */
+const twice = xp.exportStampForTest(stamped, { volume: 9, send_a: 8 });
+assert(twice.volume.value === -3.0 && twice.volume.id === 9, 're-stamping keeps the value, not a nested object');
+assert(twice.sends[0].amount.value === -70 && twice.sends[0].amount.id === 8, '…and the same for a send');
+
 if (failed) { console.log('FAIL: export mixer value space'); process.exit(1); }
 console.log('PASS: the export\'s mixer value space — dB volume, ±50 pan, unity default');
 }
