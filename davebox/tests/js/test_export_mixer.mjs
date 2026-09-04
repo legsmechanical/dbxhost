@@ -226,18 +226,18 @@ assert(twice.sends[0].amount.value === -70 && twice.sends[0].amount.id === 8, '�
  * `SCH-`, because the chain config carries only {name, channel,
  * forward_channel} and that name is empty unless somebody set one. */
 const nm = xp.exportSchwungNameForTest;
-assert(nm('nusaw', { name: 'Big Lead', mod: 'nusaw' }, '', 'dB 3') === 'nusaw - Big Lead',
-       'module and preset together');
-assert(nm('nusaw', null, '', 'dB 3') === 'nusaw', 'module alone when no preset is loaded');
-assert(nm('nusaw', { name: '  ', mod: 'nusaw' }, '', 'dB 3') === 'nusaw', 'a blank preset name is not a name');
+assert(nm('nusaw', { name: 'Big Lead', mod: 'nusaw' }, '', 'dB 3') === 'SCH-nusaw - Big Lead',
+       '⭑ SCH- prefix, then module and preset — the prefix is the only thing marking it a Schwung track');
+assert(nm('nusaw', null, '', 'dB 3') === 'SCH-nusaw', 'module alone when no preset is loaded');
+assert(nm('nusaw', { name: '  ', mod: 'nusaw' }, '', 'dB 3') === 'SCH-nusaw', 'a blank preset name is not a name');
 assert(nm('', null, 'Patch7', 'dB 3') === 'SCH-Patch7', 'no module: the old chain-patch fallback survives');
 assert(nm('', null, '', 'dB 3') === 'dB 3', 'and with nothing at all, the dB N placeholder');
 /* ⚠ THE GUARD: a preset record made against a DIFFERENT module must not label
  * this one — the same rule ui_sound's presetRecord() applies, because a stale
  * record would otherwise put another module's preset name on this track. */
-assert(nm('obxd', { name: 'Big Lead', mod: 'nusaw' }, '', 'dB 3') === 'obxd',
+assert(nm('obxd', { name: 'Big Lead', mod: 'nusaw' }, '', 'dB 3') === 'SCH-obxd',
        '⭑ a STALE preset record is dropped — the module is shown alone, not mislabelled');
-assert(nm('obxd', { name: 'Sub', mod: 'obxd' }, '', 'dB 3') === 'obxd - Sub', '…while a matching one is used');
+assert(nm('obxd', { name: 'Sub', mod: 'obxd' }, '', 'dB 3') === 'SCH-obxd - Sub', '…while a matching one is used');
 /* ⭑ And the hook must BE the function the export calls, not a copy of it —
  * a second implementation would pass these pins while the real path drifted. */
 const src = (await import('node:fs')).readFileSync('ui/ui_export.mjs', 'utf8');
@@ -245,6 +245,15 @@ assert(/return schwungTrackName\(mod, rec, patchName, dbName\);/.test(src),
        'the test hook delegates to the real function');
 assert(/const name = schwungTrackName\(/.test(src),
        '…and resolveTrack calls that same function');
+
+/* ---- the placeholder rack is DEACTIVATED -------------------------------- */
+/* Josh: a dummy stands in for an instrument that could not come across, so it
+ * must not PLAY. An enabled Drift pad sounds plausible while being no part of
+ * the music, which is worse than silence. */
+assert(/dev\.parameters\.Enabled = false;/.test(src),
+       '⭑ every placeholder rack is written with its device activator OFF');
+assert(/function dummy\(name, color\)[\s\S]{0,400}?Enabled = false/.test(src),
+       '…and it happens in dummy(), so it covers Schwung, Move-unmatched, Ext AND Conductor');
 
 if (failed) { console.log('FAIL: export mixer value space'); process.exit(1); }
 console.log('PASS: the export\'s mixer value space — dB volume, ±50 pan, unity default');

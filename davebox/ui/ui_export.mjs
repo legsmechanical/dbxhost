@@ -202,10 +202,13 @@ function collectSamples(node, ctx) {
  * module — the same guard ui_sound's presetRecord() applies, because a stale
  * record would otherwise label this module with another one's preset. */
 function schwungTrackName(mod, rec, patchName, dbName) {
+    /* ⭑ The `SCH-` prefix stays (Josh): in Live the track is a Drift
+     * placeholder like any other, so the name is the only thing saying it was a
+     * Schwung track rather than a Move one. */
     const preset = (rec && rec.name && (!rec.mod || !mod || rec.mod === mod))
         ? String(rec.name).trim() : '';
-    if (mod && preset) return mod + ' - ' + preset;
-    if (mod) return mod;
+    if (mod && preset) return 'SCH-' + mod + ' - ' + preset;
+    if (mod) return 'SCH-' + mod;
     if (patchName) return 'SCH-' + patchName;       /* no module: the old fallback */
     return dbName;
 }
@@ -216,9 +219,18 @@ function resolveTrack(t, ctx) {
     const dbName       = 'dB ' + (t + 1);
     const defaultColor = DB_TRACK_COLORS[t % DB_TRACK_COLORS.length];
 
+    /* ⭑ A PLACEHOLDER LOADS DEACTIVATED (Josh, 2026-09-05). Every dummy here
+     * stands in for an instrument that could not come across — a Schwung
+     * module, an unmatched Move track, an external device, or the silent
+     * Conductor. Leaving it enabled means the clip PLAYS, as a Drift pad that
+     * was never part of the music, which is worse than silence: it sounds
+     * plausible. Deactivated, the notes are all there and audible the moment
+     * the user drops in a real instrument.
+     * `Enabled` is the rack's own device-activator parameter. */
     function dummy(name, color) {
         const dev = deepClone(ctx.drift);
         dev.name = name;
+        if (dev.parameters) dev.parameters.Enabled = false;
         return {
             devices: [dev],
             name: name,
