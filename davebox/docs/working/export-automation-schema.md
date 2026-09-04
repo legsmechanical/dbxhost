@@ -540,6 +540,103 @@ since those already get Drift dummies today.
 3. **Ship the mixer half now** (fully specified, §5f) and leave MIDI. Already ruled once; may be
    re-ruled given what the pivot costs.
 
+## 8. ⭐⭐ RULED (Josh, 2026-09-05): SHIP WHAT THE BUNDLE CAN DO
+
+> *"you know what? let's just go with what we can do through ablbundle."*
+
+**The export stays `.ablbundle` / `Song.abl`. MIDI automation does not export.** This closes the
+whole thread; the `.als` pivot is DECLINED, not deferred.
+
+### What ships — FINAL (Josh, 2026-09-05)
+
+⭐ **Josh's insight recovered AT and PB after I had written both off:** *"can't we do at and pb?
+both are channel level on davebox and all we have to do is build that against all notes."* Right —
+and it dissolves the objection I had been repeating, because **AT and PB only matter WHILE A NOTE
+SOUNDS**, so "automation between notes is lost" costs nothing for these two. It only ever applied
+to CC. Proven by probe P8a: the channel curve, sliced per note and re-based, renders in Live as
+ONE CONTINUOUS bend across the clip, not as per-note fragments.
+
+| davebox target | exports | how |
+|---|---|---|
+| `at` (aftertouch) | ✅ **everywhere** | per-note `Pressure`, **0…127, NO CONVERSION** (davebox's own range). Confirmed by probe |
+| `pb` (pitch bend) | ✅ **MOVE TRACKS ONLY** | per-note `PitchBend`, **SIGNED −8192…+8191** (`value − 8192`; probe P8a right, unsigned P8b wrong), scaled to the instrument's own `Global_PitchBendRange` |
+| `pb` on a **Schwung** track | 🚫 **RULED OUT (Josh)** | the real synth is not in the export (it becomes a Drift dummy) and davebox never knew its bend range — it only sends the message and lets the instrument decide. No correct scaling exists, so do not invent one |
+| `level` → volume | ✅ | `mixer.volume` `{value, id}` + envelope; **dB −70…+6**, `20·log10(gain)` |
+| `level` → pan | ✅ | `mixer.pan` likewise; **−50…+50**, `(pan − 0.5) × 100` |
+| `level` → send A / B | ✅ | same, **after** the two empty return tracks exist |
+| `level` → Module Level | 🚫 | inside a Schwung chain, no destination |
+| `cc:<n>` | 🚫 | **the only real casualty** — no clip-level MIDI target, and CC is not a per-note key |
+| `chain`, `bank` (`seq:`) | 🚫 | no Schwung modules in Live |
+
+⚠ **AT still exports on Schwung tracks**, and deliberately: unlike bend it has **no range
+ambiguity** — 0…127 means the same thing to any instrument, so the gesture survives the swap to a
+Drift dummy intact. Bend is different only because its *magnitude* is instrument-defined.
+
+### ✅ PITCH-BEND SCALING — PINNED BY PROBE (P9a / P9b)
+
+| probe | what it did | result |
+|---|---|---|
+| **P9a** values scaled `×2/48`, instrument range untouched | | ✅ **bends by about a WHOLE TONE** |
+| **P9b** values raw, `Global_PitchBendRange` forced to 12 | | 🚫 **still a four-octave swoop** |
+
+⇒ **Per-note `PitchBend` is SEMITONES over a FIXED ±48 range. Scaling the VALUES is the only
+lever; `Global_PitchBendRange` is IGNORED for per-note expression.**
+
+```js
+// davebox pb is unsigned 14-bit, centre PB_CENTRE (8192)
+const semis = moveInstrumentBendRange;          // read per track; 2 in every set seen
+const value = (pb - 8192) * semis / 48;
+```
+
+⭑ The instrument's `Global_PitchBendRange` is still what we READ — it says what the bend SOUNDED
+like on Move — even though Live ignores it here. That is Josh's *"scale appropriately b/c it
+matches what move is already doing inherently"*, with the number taken from the instrument rather
+than assumed.
+
+⚠ Two probe-authoring traps hit on the way, both caught before they wasted a test: the first
+attempt set the range parameter on a DRUM RACK (which has none — 0 params touched), and the
+second used a clip with ZERO NOTES, so there was nothing to carry per-note automation. **A probe
+must assert its own preconditions**; both now do, and refuse to write a file that would test
+nothing ([[a-check-that-cries-wolf-is-worse-than-none]]).
+
+
+
+| davebox target | exports | how |
+|---|---|---|
+| `level` → volume | ✅ | `mixer.volume` as `{value, id}` + clip envelope; **dB, −70…+6**, `gain→dB = 20·log10(g)` |
+| `level` → pan | ✅ | `mixer.pan` likewise; **−50…+50**, `(pan − 0.5) × 100` |
+| `level` → send A / B | ✅ | same, **after** the two empty return tracks exist |
+| `level` → Module Level | 🚫 | ruled out — inside a Schwung chain, no destination |
+| `cc:` only | 🚫 | superseded — see the FINAL table above; `at`/`pb` DO export via per-note |
+| `chain`, `bank` (`seq:`) | 🚫 | no Schwung modules in Live |
+
+### Why `.als` was declined — record this so it is not re-proposed
+
+It IS authorable (the roster is fifteen native-Live device kinds, not an open set — the earlier
+"reimplementing Live's importer" claim was wrong and Josh was right to push back). It was declined
+on **cost against benefit**: a fifteen-entry device mapping table, plus a second sample pipeline
+for user-recorded samples, plus ongoing maintenance every time Move firmware adds a device —
+all to carry **MIDI automation alone**. Everything else already exports.
+
+### The work, in order
+
+1. 🐞 **Fix the volume bug FIRST — one line, independent of everything else.**
+   `defaultMixer()` writes `volume: 0.6137250661849976`, i.e. **+0.61 dB** in a dB field, so every
+   export today is fractionally loud. Should be `0.0`.
+2. **Two EMPTY return tracks** + two `sends` entries per track (`returnTracks: []` and
+   `mixer.sends = []` are currently written deliberately; Live asserts the counts agree). ⭑ This
+   stands alone and fixes STATIC send levels too, which cannot round-trip today either.
+   ⚠ If an import then fails, suspect that a return track needs a device — the export already
+   carries a Dummy Drift on every regular track because Live rejects a track with no device.
+3. **Mixer automation**: allocate `id`s document-wide from a counter (2 upward), stamp
+   `{value, id}` on the automated mixer field, emit `clip.envelopes` with `parameterId`,
+   `breakpoints` and `region: null`, times in **clip-relative beats**.
+4. **Manual + CHANGELOG**: say plainly that mixer automation exports and MIDI automation does
+   not, and why (the format has no clip-level MIDI target). One line, not an apology.
+
+⚠ Test the result by OPENING IT (the P0…P7 loop) — Live reports a bad envelope as a DIALOG, not
+in `Log.txt`, so a green suite proves nothing here.
+
 ### ⭐ RECOMMENDED: davebox writes `.als` — staged
 
 Now that `.abl` is ruled out for MIDI and the roster is known to be finite, this is the route.

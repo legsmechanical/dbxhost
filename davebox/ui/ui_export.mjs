@@ -260,9 +260,48 @@ function showStopTransportNotice() {
 
 /* ---- Song.abl authoring -------------------------------------------------- */
 
-function defaultMixer() {
-    return { pan: 0.0, 'solo-cue': false, speakerOn: true, volume: 0.6137250661849976, sends: [] };
+/* ── THE MIXER'S VALUES ARE ENGINEERING UNITS, NOT NORMALISED ──────────────
+ * Measured, not guessed (2026-09-05) — Josh set track 1 to minimum and track 2
+ * to maximum on the Move and we read the resulting Song.abl:
+ *
+ *   volume : DECIBELS over -70 … +6, with 0.0 UNITY (-70 stands in for -inf).
+ *            Corroborated three ways: his untouched tracks, Charles's example
+ *            sets, and the master track all read 0.0.
+ *   pan    : -50 … +50, confirmed by probe (±50 reads hard over, ±1 near
+ *            centre). Left is NEGATIVE.
+ *
+ * ⚠ davebox's own levels are a LINEAR GAIN (`SLOT_LEVEL_MAX` = 2, 1.0 unity),
+ * and its pan is 0…1 with 0.5 centre, so both need converting on the way out —
+ * see gainToDb / panToAbl. The gain range maps almost exactly: 2.0 = +6.02 dB
+ * against Move's +6.0.
+ *
+ * 🐞 This is also where a real bug lived until 2026-09-05: the default was
+ * `0.6137250661849976`, which in a DECIBEL field is +0.61 dB — so every export
+ * came out fractionally loud. It looks like a normalised 0…1 fader position
+ * written into a field that wanted dB. Unity is 0.0. */
+const ABL_VOL_MIN_DB = -70.0, ABL_VOL_MAX_DB = 6.0, ABL_PAN_FULL = 50.0;
+
+/* davebox linear gain (0 … SLOT_LEVEL_MAX) -> Ableton dB. Gain 0 is silence,
+ * which the format spells -70 rather than -Infinity. */
+function gainToDb(gain) {
+    const g = Number(gain);
+    if (!isFinite(g) || g <= 0) return ABL_VOL_MIN_DB;
+    const db = 20 * Math.log10(g);
+    return Math.max(ABL_VOL_MIN_DB, Math.min(ABL_VOL_MAX_DB, Math.round(db * 1e4) / 1e4));
 }
+/* davebox pan (0 … 1, 0.5 centre) -> Ableton -50 … +50, left negative. */
+function panToAbl(pan) {
+    const p = Number(pan);
+    if (!isFinite(p)) return 0.0;
+    const v = (Math.max(0, Math.min(1, p)) - 0.5) * 2 * ABL_PAN_FULL;
+    return Math.round(v * 1e4) / 1e4;
+}
+export function exportMixerConvForTest() { return { gainToDb, panToAbl, ABL_VOL_MIN_DB, ABL_VOL_MAX_DB, ABL_PAN_FULL }; }
+
+function defaultMixer() {
+    return { pan: 0.0, 'solo-cue': false, speakerOn: true, volume: 0.0, sends: [] };
+}
+export function exportDefaultMixerForTest() { return defaultMixer(); }
 
 /* Ableton clips forbid two same-pitch notes overlapping (or starting at the
  * same time) — illegal there, though fine as live MIDI. The baked "what you
