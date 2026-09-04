@@ -935,8 +935,9 @@ function overviewHints() {
     /* CLK says EDIT, not BANK — the jog pair already names the bank (Josh); the
      * MENU pair names the OTHER overview a Note/Session tap switches to (Josh,
      * 2026-09-05: "MENU:[TRACK/GRID]"). */
-    /* TRK, not TRACK: MENU TRACK is 53px and the row has 45 left (measured). */
-    return [['JOG', 'BANK'], ['CLK', 'EDIT'], ['MENU', S.sessionView ? 'TRK' : 'SESS']];
+    /* TRK, not TRACK: ≡ TRACK would not fit beside the other two pairs (measured). */
+    /* The key is the ≡ printed on the button, not the word MENU (Josh). */
+    return [['JOG', 'BANK'], ['CLK', 'EDIT'], ['\u2261', S.sessionView ? 'TRK' : 'SESS']];
 }
 
 function drawTrackRow(y) {
