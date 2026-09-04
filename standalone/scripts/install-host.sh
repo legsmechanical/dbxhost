@@ -87,9 +87,10 @@ fi
 
 # ⚠ heal must already be setuid-root, or the shim cannot be mirrored into /usr/lib
 # and the launcher will correctly refuse to start.
-if ! $SSH "test -u '$DBX_DIR/bin/$DBX_HEAL_NAME'" 2>/dev/null; then
-    echo "ERROR: $DBX_DIR/bin/$DBX_HEAL_NAME is not setuid-root." >&2
-    echo "       Run the one-time root step:  ssh root@${MOVE_HOST} 'sh $DBX_DIR/bless.sh'" >&2
+if ! $SSH "test -u '$DBX_HEAL'" 2>/dev/null; then
+    echo "ERROR: $DBX_HEAL is not setuid-root." >&2
+    echo "       Either stock's schwung-heal blesses a staged helper (schwung#419) — stage it and" >&2
+    echo "       launch dAVEBOx once — or run the manual root step:  ssh root@${MOVE_HOST} 'sh $DBX_DIR/bless.sh'" >&2
     exit 1
 fi
 
@@ -413,12 +414,11 @@ done
 # davebox-heal; the failure then surfaced as a confusing "No such file" from the
 # line below, AFTER the deploy had reported progress, and recovering needed root.
 # Fail here with something actionable instead.
-if ! $SSH "test -u '$DBX_DIR/bin/$DBX_HEAL_NAME'" 2>/dev/null; then
+if ! $SSH "test -u '$DBX_HEAL'" 2>/dev/null; then
     echo "" >&2
-    echo "ERROR: $DBX_HEAL_NAME is missing or no longer setuid AFTER the payload deploy." >&2
-    echo "       The payload must never replace bin/ wholesale — the build's bin/ does" >&2
-    echo "       not contain $DBX_HEAL_NAME (it is built separately)." >&2
-    echo "  Recover:  scp standalone/build/$DBX_HEAL_NAME ableton@<host>:$DBX_DIR/bin/" >&2
+    echo "ERROR: $DBX_HEAL is missing or no longer setuid AFTER the payload deploy." >&2
+    echo "       (It lives in the launcher module's bin/, outside the payload, since 2026-09-05.)" >&2
+    echo "  Recover:  scp standalone/build/$DBX_HEAL_NAME ableton@<host>:$DBX_HEAL_DIR/$DBX_HEAL_NAME.new" >&2
     echo "            ssh root@<host> 'sh $DBX_DIR/bless.sh'" >&2
     exit 1
 fi
@@ -429,12 +429,13 @@ fi
 #
 # ⚠ Staged AFTER the payload deploy, on purpose. Staging it before meant the
 # payload swap deleted the .new file along with the rest of bin/.
+$SSH "mkdir -p '$DBX_HEAL_DIR'"
 scp -q "$HERE/build/$DBX_HEAL_NAME" \
-    "${MOVE_USER}@${MOVE_HOST}:$DBX_DIR/bin/${DBX_HEAL_NAME}.new"
+    "${MOVE_USER}@${MOVE_HOST}:$DBX_HEAL_DIR/${DBX_HEAL_NAME}.new"
 
 # --- heal: self-update, then mirror the shim into /usr/lib -----------------
 say ""; say "--- heal self-update + shim mirror (no root needed)"
-$SSH "'$DBX_DIR/bin/$DBX_HEAL_NAME'" || {
+$SSH "'$DBX_HEAL'" || {
     echo "ERROR: $DBX_HEAL_NAME failed — the launcher will refuse to start." >&2
     echo "       Restore from a backup or re-run the root step." >&2
     exit 1; }

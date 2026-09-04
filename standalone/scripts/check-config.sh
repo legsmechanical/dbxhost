@@ -37,7 +37,16 @@ check "launch.sh LD_PRELOAD soname"    "$HERE/scripts/launch.sh"   "LD_PRELOAD=$
 check "heal.c installs that soname"    "$HERE/src/davebox-heal.c"  "/usr/lib/$DBX_SHIM_SONAME"
 check "bless.sh carries DBX_DIR"       "$HERE/scripts/install-privileged.sh" "DBX_DIR=$DBX_DIR"
 check "bless.sh heal name"             "$HERE/scripts/install-privileged.sh" "DBX_HEAL_NAME=$DBX_HEAL_NAME"
+check "bless.sh heal dir"              "$HERE/scripts/install-privileged.sh" "DBX_HEAL_DIR=$DBX_HEAL_DIR"
 check "bless.sh soname"                "$HERE/scripts/install-privileged.sh" "DBX_SHIM_SONAME=$DBX_SHIM_SONAME"
+# The helper's HOME (2026-09-05): the launcher module's bin/ in stock's tools tree,
+# where schwung#419 blesses a staged heal.new. Every caller hardcodes it.
+check "heal.c fallback HEAL_DIR"       "$HERE/src/davebox-heal.c"  "\"$DBX_HEAL_DIR\""
+check "heal.c installs as heal"        "$HERE/src/davebox-heal.c"  'HEAL_DIR "/heal"'
+check "launch.sh heal path"            "$HERE/scripts/launch.sh"   "HEAL=$DBX_HEAL"
+check "set-swap heal path"             "$HERE/scripts/set-swap.sh" "$DBX_HEAL"
+check "heal restore-unit verb"         "$HERE/src/davebox-heal.c"  "--install-restore-unit"
+check "bless.sh calls the verb"        "$HERE/scripts/install-privileged.sh" "--install-restore-unit"
 
 # The bind-mount swap (Phase A, 2026-08-12). set-swap.sh asks davebox-heal to
 # mount/unmount, and heal hardcodes BOTH paths — so a DBX_DIR change that misses
@@ -51,7 +60,6 @@ check "heal mount verb"                "$HERE/src/davebox-heal.c"   "--mount-set
 check "heal umount verb"               "$HERE/src/davebox-heal.c"   "--umount-sets"
 check "set-swap calls the mount verb"  "$HERE/scripts/set-swap.sh"  "--mount-sets"
 check "set-swap calls the umount verb" "$HERE/scripts/set-swap.sh"  "--umount-sets"
-check "set-swap heal path"             "$HERE/scripts/set-swap.sh"  '$DBX_DIR/bin/davebox-heal'
 
 # ⭑ The reserved per-project state subdir (Phase B, state-co-location): the ONE
 # name every consumer must agree on. The C side and JS side WRITE state under

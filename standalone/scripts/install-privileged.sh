@@ -30,52 +30,41 @@ set -e
 # would fail. config.sh is still authoritative; scripts/check-config.sh pins this
 # line against it so the two cannot drift.
 DBX_DIR=/data/UserData/dbx-host
-DBX_HEAL_NAME=davebox-heal
+DBX_HEAL_DIR=/data/UserData/schwung/modules/tools/davebox-sa/bin
+DBX_HEAL_NAME=heal
 DBX_SHIM_SONAME=davebox-shim.so
 
-HEAL_SRC=$DBX_DIR/bin/$DBX_HEAL_NAME
-HEAL_DST=$DBX_DIR/bin/$DBX_HEAL_NAME
+# The helper lives in the LAUNCHER MODULE's bin/ (2026-09-05) — the path stock's
+# own schwung-heal blesses a staged `heal.new` at (charlesvestal/schwung#419),
+# which is what makes a ZERO-SSH install possible once that ships. This script is
+# the manual route for a stock host that predates it: the same result, by hand.
+HEAL_DST=$DBX_HEAL_DIR/$DBX_HEAL_NAME
+HEAL_NEW=$DBX_HEAL_DIR/$DBX_HEAL_NAME.new
 
 [ "$(id -u)" = "0" ] || { echo "must run as root" >&2; exit 1; }
-[ -f "$HEAL_SRC" ]   || { echo "no davebox-heal at $HEAL_SRC" >&2; exit 1; }
+if [ -f "$HEAL_NEW" ] && [ ! -f "$HEAL_DST" ]; then
+    mv -f "$HEAL_NEW" "$HEAL_DST"          # a staged helper nobody has blessed yet
+fi
+if [ ! -f "$HEAL_DST" ]; then
+    echo "no heal at $HEAL_DST" >&2
+    [ -f "$DBX_DIR/bin/davebox-heal" ] && echo "  (an OLD-layout $DBX_DIR/bin/davebox-heal exists — re-run the installer, which stages the helper in the module dir)" >&2
+    exit 1
+fi
 
 chown root:root "$HEAL_DST"
 chmod 4755 "$HEAL_DST"
 echo "installed $HEAL_DST"
 ls -la "$HEAL_DST"
 
-# Prime it once so the shim is in place immediately.
+# Prime it once so the shim is in place immediately (a missing shim source is
+# tolerated: on a fresh device the payload may not be there yet).
 echo "priming:"
-"$HEAL_DST"
-ls -la "/usr/lib/$DBX_SHIM_SONAME"
+"$HEAL_DST" || true
+ls -la "/usr/lib/$DBX_SHIM_SONAME" 2>/dev/null || true
 
 # --- boot recovery for the project-library swap ------------------------------
-# A standalone session swaps Move's set library for its own project library
-# (Design B — the session never touches native sets, only relocates them).
-# If the device hard-reboots mid-session, Sets/ still holds the projects and
-# the native sets sit in the stash. Nothing is lost, but stock would boot
-# showing the wrong library. This oneshot runs the swap engine's `recover`
-# verb before move-launcher starts, so a power cycle ALWAYS yields stock Move
-# with the user's own sets — no expert knowledge, no residue.
-#
-# Runs as ableton (every file involved lives under /data and is
-# ableton-owned); root is only needed here, once, to install the unit.
-# The engine is a no-op when the swap state is "none" — every ordinary boot.
-cat > /etc/systemd/system/davebox-restore.service <<UNIT
-[Unit]
-Description=davebox: restore native set library after an interrupted session
-Before=move-launcher.service
-ConditionPathExists=$DBX_DIR/scripts/set-swap.sh
-
-[Service]
-Type=oneshot
-User=ableton
-ExecStart=/bin/sh $DBX_DIR/scripts/set-swap.sh recover
-RemainAfterExit=no
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-systemctl daemon-reload
-systemctl enable davebox-restore.service
+# The unit is written by heal itself now (`--install-restore-unit`, 2026-09-05),
+# so the launcher can install it without root once the helper is blessed; here
+# it runs as root, which is also fine. See davebox-heal.c RESTORE_UNIT_TEXT.
+"$HEAL_DST" --install-restore-unit
 echo "installed davebox-restore.service (boot recovery for the library swap)"

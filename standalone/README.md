@@ -51,7 +51,7 @@ The launcher mechanism is already upstream. There is nothing to get merged.
 | `module/module.json` | the `dAVEBOx SA` launcher manifest |
 | `scripts/install-module.sh` | installs the launcher into stock's tools dir (no root) |
 | `scripts/build-host.sh` | builds this host with `config.sh`'s dir + SHM namespace |
-| `scripts/build-heal.sh` | cross-compiles `davebox-heal` with `-DDBX_DIR` from `config.sh` |
+| `scripts/build-heal.sh` | cross-compiles `davebox-heal.c` (installed as `heal`) with `-DDBX_DIR`/`-DHEAL_DIR` from `config.sh` |
 | `scripts/install-host.sh` | **build + deploy the host in one command** (the dev loop) |
 | `scripts/check-config.sh` | fails if a literal copy drifted from `config.sh` |
 | `scripts/select-list.sh` | set-select actuator: writes `select_list.json` (pad index → set name) |
@@ -280,11 +280,11 @@ Session-scoped files (all under `$DBX_DIR`, cleared on session exit):
   `/bin/true` is not AT_SECURE, so an absolute-path preload succeeds there and
   proves nothing.
 - **⚠⚠ Never `chown -R` the install tree.** It strips the setuid bit *and* root
-  ownership from `bin/davebox-heal`, which then cannot pause the watchdog, and
+  ownership from the helper (`modules/tools/davebox-sa/bin/heal`), which then cannot pause the watchdog, and
   the launcher correctly refuses to start. Deploy `bin/` separately, or re-run
   `install-privileged.sh` afterwards — it is idempotent and cheap. This is the
   same chown-clears-setuid trap the helper documents internally, applied to the
   helper itself.
 - **A refusal to launch is usually this.** `launch.log` says "could not pause
-  move-launcher — refusing to launch"; check `ls -la bin/davebox-heal` expecting
+  move-launcher — refusing to launch"; check `ls -la /data/UserData/schwung/modules/tools/davebox-sa/bin/heal` expecting
   `-rwsr-xr-x root root`.

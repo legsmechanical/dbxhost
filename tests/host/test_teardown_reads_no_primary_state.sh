@@ -21,9 +21,8 @@ fail() { echo "FAIL: $1" >&2; exit 1; }
 
 # 1. No C-side teardown participant references the primary/service model —
 #    it lives entirely in shadow_ui.js.
-for f in src/schwung_shim.c src/shadow/shadow_ui.c src/standalone/davebox-heal.c \
-         standalone/src/davebox-heal.c; do
-  [ -f "$f" ] || continue
+for f in src/schwung_shim.c src/shadow/shadow_ui.c standalone/src/davebox-heal.c; do
+  [ -f "$f" ] || fail "$f is missing — this grep read nothing (a stale path here once made the test pass vacuously)"
   rg -q 'primarySurface|primaryStack|PRIMARY_SERVICES|host_open_service|host_register_primary' "$f" \
     && fail "$f (teardown-adjacent C) references primary-surface state"
 done

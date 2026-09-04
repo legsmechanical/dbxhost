@@ -43,7 +43,16 @@ DBX_SHM_PREFIX=/dbxhost-
 DBX_SHIM_SONAME=davebox-shim.so
 
 # The setuid-root helper that mirrors the shim into /usr/lib.
-DBX_HEAL_NAME=davebox-heal
+# The privileged helper lives in the LAUNCHER MODULE's dir inside STOCK's tools
+# tree (2026-09-05), because that is where stock's own schwung-heal blesses a
+# staged helper (charlesvestal/schwung#419: modules/tools/<id>/bin/heal.new →
+# bin/heal root 04755). Ours self-updates from the same stage. The source file
+# stays src/davebox-heal.c; the INSTALLED name is `heal`, as the convention says.
+DBX_STOCK_DIR=/data/UserData/schwung
+DBX_LAUNCHER_ID=davebox-sa
+DBX_HEAL_DIR=$DBX_STOCK_DIR/modules/tools/$DBX_LAUNCHER_ID/bin
+DBX_HEAL_NAME=heal
+DBX_HEAL=$DBX_HEAL_DIR/$DBX_HEAL_NAME
 
 # Session liveness lock. The launcher takes an exclusive flock on this file
 # and holds it for the life of the session, with the supervisor PID as the

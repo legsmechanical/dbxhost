@@ -36,6 +36,7 @@
 
 setsid --wait bash -c '
   DBX_DIR=/data/UserData/dbx-host
+  HEAL=/data/UserData/schwung/modules/tools/davebox-sa/bin/heal   # the blessed helper (2026-09-05: inside the launcher module dir; no apostrophes in this body)
   LOG=$DBX_DIR/launch.log
   exec >>"$LOG" 2>&1
   echo "=== davebox host launch $(date) ==="
@@ -106,7 +107,7 @@ setsid --wait bash -c '
     # ⭑ Placed in refuse() rather than at each call site on purpose: a new
     # refusal path added later inherits the cleanup instead of forgetting it.
     sh "$DBX_DIR/scripts/set-swap.sh" exit >/dev/null 2>&1 || true
-    $DBX_DIR/bin/davebox-heal --resume-launcher || true
+    $HEAL --resume-launcher || true
     exit 1
   }
 
@@ -140,7 +141,7 @@ setsid --wait bash -c '
     sh "$DBX_DIR/scripts/quiesce-stock.sh"
   else
     echo "entry: stock stack already gone (caller pre-killed it) -- pausing the watchdog before it respawns"
-    $DBX_DIR/bin/davebox-heal --pause-launcher || \
+    $HEAL --pause-launcher || \
       echo "WARNING: could not pause move-launcher early; a respawn may flash native Move"
   fi
 
@@ -241,7 +242,7 @@ setsid --wait bash -c '
   # a unit, so davebox-heal (setuid root, hardcoded unit name) does it.
   # Runs AFTER quiesce by design: stopping the unit TERMs its whole cgroup,
   # which would have killed shadow_ui before it saved.
-  if ! $DBX_DIR/bin/davebox-heal --pause-launcher; then
+  if ! $HEAL --pause-launcher; then
     refuse "could not pause move-launcher (stock would respawn alongside us)"
   fi
 
@@ -335,7 +336,7 @@ setsid --wait bash -c '
   # both paths. Refusing to launch on failure is deliberate: without a valid
   # preload MoveOriginal comes up silently WITHOUT Schwung, which is a far more
   # confusing failure than not launching at all.
-  if ! $DBX_DIR/bin/davebox-heal; then
+  if ! $HEAL; then
     refuse "davebox-heal failed"     # refuse() undoes the swap
   fi
 
@@ -549,7 +550,7 @@ setsid --wait bash -c '
   # is what that wait was always for.
   if command grep -q "already running" /data/UserData/schwung/launch-standalone.sh 2>/dev/null; then
     echo "caller guards its Move restart -- resuming the watchdog and holding until Move is up"
-    $DBX_DIR/bin/davebox-heal --resume-launcher
+    $HEAL --resume-launcher
     _wait=0
     while [ "$_wait" -lt 75 ]; do
       if pidof MoveOriginal >/dev/null 2>&1; then
