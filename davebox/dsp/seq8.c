@@ -133,6 +133,9 @@
 #define ROUTE_SCHWUNG  0   /* host->midi_send_internal_slot → addressed chain slot */
 #define ROUTE_MOVE     1   /* host->midi_inject_to_move → Move native tracks */
 #define ROUTE_EXTERNAL 2   /* USB-A out: host->midi_send_external → shim audio-thread SPSC ring */
+#define ROUTE_NONE     3   /* no instrument (Josh, 2026-09-05): the pattern plays, nothing is emitted;
+                            * the track's chain slot is PARKED, not destroyed (TRACK_OWNS_ITS_INSTRUMENT
+                            * decision 1) — midi_dest_resolve drops every event before any route sees it */
 
 /* Pad input modes */
 #define PAD_MODE_MELODIC_SCALE  0   /* isomorphic 4ths diatonic layout */
@@ -1590,6 +1593,9 @@ typedef struct {
 static midi_dest_t midi_dest_resolve(uint8_t route, uint8_t slot, uint8_t midi_to) {
     midi_dest_t d;
     d.route = route; d.slot = slot; d.channel = MIDI_DEST_KEEP_CH; d.emit = 1;
+    /* NONE: the one gate for notes, drum lanes, panic and the stop-time offs —
+     * every dispatch site reads d.emit before touching a route. */
+    if (route == ROUTE_NONE) { d.emit = 0; return d; }
     /* `midi_to` means something only on a MIDI track — exactly where the row
      * that sets it is shown. Gating HERE rather than clearing it on every route
      * change is what makes a leftover target harmless: picking `Move 2` on a
@@ -5625,6 +5631,7 @@ static int pfx_get(seq8_track_t *tr, const char *key, char *out, int out_len) {
 
     if (!strcmp(key, "route"))
         return snprintf(out, out_len, "%s",
+                        fx->route == ROUTE_NONE     ? "none"     :
                         fx->route == ROUTE_EXTERNAL ? "external" :
                         fx->route == ROUTE_MOVE     ? "move"     : "schwung");
 

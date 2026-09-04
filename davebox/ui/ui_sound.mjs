@@ -48,7 +48,7 @@ import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
 import { instrOptions, instrPickerRows, fmtInstr, INSTR_SCHWUNG, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
          BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
-         PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD } from './ui_constants.mjs';
+         PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, ROUTE_NONE } from './ui_constants.mjs';
 import { applyTrackConfig, applyBankParam, readBankParams } from './ui_dsp_bridge.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -2476,7 +2476,7 @@ function buildPickRows() {
          * placeholder: it is what an EXT track HAS, and it is the row you need
          * to route it back. Track Control stays open on these tracks precisely
          * so that is reachable (see the follow in ui_tick). */
-        if (GS.trackRoute[S.track] === 2) { S.pickRows = rows; S.pickRow = 0; return; }
+        if (GS.trackRoute[S.track] === 2 || GS.trackRoute[S.track] === ROUTE_NONE) { S.pickRows = rows; S.pickRow = 0; return; }   /* NONE: even less than EXT — just the row that picks one */
         /* ⭑ No Generator row (Josh, 2026-09-04): the INSTRUMENT row is the
          * generator's door now — click enters it, Shift+click picks another —
          * exactly the block row's own grammar, on the row that names it. */
@@ -2837,10 +2837,11 @@ function knobTargetList() {
         targets.push({ id, name: String(name), slot: label });
     };
     const midiTrack = S.track >= 0 && GS.trackRoute[S.track] === 2;
+    const noneTrack = S.track >= 0 && GS.trackRoute[S.track] === ROUTE_NONE;   /* no instrument at all (2026-09-05) */
     if (S.bus) {
         /* A Move bus: its insert FX are the components (`move_fx:N:fxK`). */
         for (const n of BUS_BLOCKS) probe(S.bus.prefix + 'fx' + n, 'FX' + n);
-    } else if (!midiTrack) {
+    } else if (!midiTrack && !noneTrack) {
         probe('midi_fx1', 'MIDI FX');
         probe('synth', 'Synth');
         for (let i = 1; i <= 4; i++) probe('fx' + i, 'FX' + i);
@@ -2860,7 +2861,7 @@ function knobTargetList() {
             rows.push({ id: 'bank:' + e.bank, name: BANKS[e.bank].name });
         }
     }
-    if (!midiTrack) rows.push({ id: LEVEL_TARGET, name: 'Levels' });   /* a MIDI track has no chain */
+    if (!midiTrack && !noneTrack) rows.push({ id: LEVEL_TARGET, name: 'Levels' });   /* a MIDI or NONE track has no chain */
     return rows;
 }
 

@@ -22,8 +22,7 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND, BANK_MACROS, isSoundBank,
-    POLL_INTERVAL,
-} from './ui_constants.mjs';
+    POLL_INTERVAL, ROUTE_NONE } from './ui_constants.mjs';
 
 import { S, standDownBankDisplay } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -1482,7 +1481,11 @@ export function _tickImpl() {
              * its own, so take it from the source of truth rather than assuming
              * the two agree. Everywhere else: the active track, as before. */
             const _tvT = S.moveCoRunTrack >= 0 ? S.moveCoRunTrack : S.activeTrack;
-            if (S.trackRoute[_tvT] === 2) {
+            if (S.trackRoute[_tvT] === ROUTE_NONE) {
+                /* NONE: a fader that moved nothing audible is a dead control —
+                 * say so once per gesture, like a MIDI follower (2026-09-05). */
+                if (!S.tvExtWarned) { S.tvExtWarned = true; showActionPopup('NO INSTRUMENT', 'NO VOLUME'); }
+            } else if (S.trackRoute[_tvT] === 2) {
                 /* A MIDI-routed track's volume IS standard MIDI volume: send
                  * CC 7 on the track's channel out the port (Josh, 2026-08-24).
                  * One CC per detent, 0-127, seeded from the session-local

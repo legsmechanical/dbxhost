@@ -597,8 +597,11 @@ static void seq8_load_state(seq8_instance_t *inst) {
             json_get_int(buf, key, t), 0, 15);
 
         snprintf(key, sizeof(key), "t%d_rt", t);
+        /* ⚠ The upper bound is the LAST route, ROUTE_NONE — a clamp to
+         * ROUTE_EXTERNAL here turned a saved NONE track into an EXTERNAL one on
+         * load, silently (the one data-losing edge of adding a route). */
         inst->tracks[t].pfx.route = (uint8_t)clamp_i(
-            json_get_int(buf, key, ROUTE_SCHWUNG), ROUTE_SCHWUNG, ROUTE_EXTERNAL);
+            json_get_int(buf, key, ROUTE_SCHWUNG), ROUTE_SCHWUNG, ROUTE_NONE);
 
         /* The slot is NOT loaded. It is the track index, set at init and never
          * varied, so a stored `t%d_sl` can only disagree with the model — and

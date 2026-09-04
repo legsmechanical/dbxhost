@@ -113,7 +113,7 @@ if (!window.schwungRemote) {
       if((m=k.match(/t(\d+)_launch_clip$/))){ const tk=tracks[+m[1]];
         if(tk){ tk.pl=1; tk.ac=Math.max(0,+v|0); tk.qc=-1; } rev++; rebuild(); return; }
       if((m=k.match(/t(\d+)_(mute|solo)$/))){ tracks[+m[1]][m[2]]=+v?1:0; rev++; rebuild(); return; }
-      if((m=k.match(/t(\d+)_route$/))){ const r={schwung:0,move:1,external:2}[v];
+      if((m=k.match(/t(\d+)_route$/))){ const r={schwung:0,move:1,external:2,none:3}[v];
         if(r!=null) tracks[+m[1]].route=r; rev++; rebuild(); return; }
       if((m=k.match(/t(\d+)_channel$/))){ tracks[+m[1]].chan=Math.max(1,Math.min(16,+v|0)); rev++; rebuild(); return; }
       if((m=k.match(/t(\d+)_slot$/))){ tracks[+m[1]].slot=Math.max(0,Math.min(window.CHAIN_SLOTS-1,+v|0)); rev++; rebuild(); return; }

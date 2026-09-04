@@ -31,8 +31,7 @@ import {
     NUM_TRACKS, NUM_CLIPS, NUM_STEPS, DRUM_LANES, POLL_INTERVAL,
     TPS_VALUES, BANKS, PAD_MODE_DRUM, BANK_SOUND, isSoundBank, BANK_AUTOMATION,
     INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK,
-    MoveRec, LED_OFF, parseActionRaw
-} from './ui_constants.mjs';
+    MoveRec, LED_OFF, parseActionRaw, INSTR_NONE, ROUTE_NONE } from './ui_constants.mjs';
 import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 
 import { S } from './ui_state.mjs';
@@ -1019,7 +1018,7 @@ function readTrackConfig(t) {
     /* No tN_slot read: the slot IS the track index now. It was a stored
      * per-track choice until a track owned its instrument. */
     const rt = dspGet('t' + t + '_route');
-    if (rt !== null && rt !== undefined) S.trackRoute[t] = rt === 'external' ? 2 : rt === 'move' ? 1 : 0;
+    if (rt !== null && rt !== undefined) S.trackRoute[t] = rt === 'none' ? ROUTE_NONE : rt === 'external' ? 2 : rt === 'move' ? 1 : 0;
     /* 0 = plays its own instrument; 1..8 = plays that track's (`MIDI to Track N`). */
     const mt = dspGet('t' + t + '_midi_to');
     if (mt !== null && mt !== undefined) S.trackMidiTo[t] = parseInt(mt, 10) | 0;
@@ -1053,6 +1052,7 @@ function readTrackConfig(t) {
  * `Track to` — so it lives here, beside the setter it drives, and neither
  * screen owns the rules. */
 export function instrValueFor(t) {
+    if (S.trackRoute[t] === ROUTE_NONE) return INSTR_NONE;
     if (S.trackRoute[t] === 2) {
         const mt = S.trackMidiTo[t] | 0;
         if (mt > 0) return INSTR_TRACK + (mt - 1);
@@ -1069,6 +1069,7 @@ export function instrValueFor(t) {
 export function applyInstrChoice(t, v) {
     v = v | 0;
     if (v === INSTR_SCHWUNG) { applyTrackConfig(t, 'route', 0); return; }
+    if (v === INSTR_NONE)    { applyTrackConfig(t, 'route', ROUTE_NONE); return; }   /* channel / midi_to untouched: coming back finds them */
     if (v >= INSTR_TRACK) {
         applyTrackConfig(t, 'midi_to', v - INSTR_TRACK + 1);
         applyTrackConfig(t, 'route', 2);
@@ -1087,7 +1088,7 @@ export function applyInstrChoice(t, v) {
 
 export function applyTrackConfig(t, key, val) {
     let strVal;
-    if (key === 'route') strVal = val === 2 ? 'external' : val === 1 ? 'move' : 'schwung';
+    if (key === 'route') strVal = val === ROUTE_NONE ? 'none' : val === 2 ? 'external' : val === 1 ? 'move' : 'schwung';
     else strVal = String(val);
     host_module_set_param('t' + t + '_' + key, strVal);
     if (key === 'channel')              S.trackChannel[t] = val;
@@ -1239,6 +1240,9 @@ export function queueLiveNoteOff(t, pitch, ext) {
 export function liveSendNote(t, type, pitch, vel, rawVel, ext) {
     const ch    = (S.trackChannel[t] - 1) & 0x0F;
     const route = S.trackRoute[t];
+    /* NONE has nowhere to send a live note — not even the parked chain, which
+     * is exactly what falling into the Schwung branch below would do. */
+    if (route === ROUTE_NONE) return;
     const status = type | ch;
     /* PHASE-1: dead on patched Schwung (Bundle 1 gate skips note dispatch
      * for liveSendNote; Bundle 2B applies VelIn in DSP on_midi via

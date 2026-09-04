@@ -25,8 +25,7 @@ import {
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
-    fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool
-} from './ui_constants.mjs';
+    fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
@@ -2180,6 +2179,9 @@ if (S.trackRoute[_gt] === 1) {
     enterMoveNativeCoRun(_gt);
 } else if (S.trackRoute[_gt] === 2) {
     showActionPopup('MIDI TRACK', 'No generator to edit');
+} else if (S.trackRoute[_gt] === ROUTE_NONE) {
+    /* NONE: nothing to open — never the parked chain (2026-09-05). */
+    showActionPopup('NO INSTRUMENT', 'Pick one in Sound');
 } else {
     /* An EMPTY generator opens the module picker itself (Josh, 2026-08-27)
      * with 'SELECT GENERATOR' over it — soundOpenGenerator always succeeds,
