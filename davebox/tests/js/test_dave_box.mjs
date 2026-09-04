@@ -19,9 +19,12 @@ function step(label, fn) {
 
 const sets = [];
 let seenFileContent = null;      /* null = file absent */
+let prefFileContent = null;      /* the Daves switch file; null = absent = OFF */
 globalThis.host_system_cmd = () => 0;
-globalThis.host_read_file = (p) => (p.indexOf('daves-seen') >= 0 && seenFileContent !== null) ? seenFileContent : '';
-globalThis.host_file_exists = (p) => (p.indexOf('daves-seen') >= 0 && seenFileContent !== null);
+globalThis.host_read_file = (p) => (p.indexOf('daves-seen') >= 0 && seenFileContent !== null) ? seenFileContent
+                                 : (p.indexOf('daves-window') >= 0 && prefFileContent !== null) ? prefFileContent : '';
+globalThis.host_file_exists = (p) => (p.indexOf('daves-seen') >= 0 && seenFileContent !== null)
+                                  || (p.indexOf('daves-window') >= 0 && prefFileContent !== null);
 globalThis.host_write_file = () => true;
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;
 globalThis.host_module_set_param = (k, v) => { sets.push([k, v]); };
@@ -218,7 +221,32 @@ step('⭐ the run cache reproduces the BITS for every row of every frame (positi
     if (daves.frameRowRuns(0, 5) !== daves.frameRowRuns(0, 5)) throw new Error('rows are re-encoded per call');
 });
 
+step('⭐ the DAVES SWITCH: default OFF (no file) → no window; On deals; Off clears mid-play; persisted device-global', () => {
+    seenFileContent = '1\n';
+    prefFileContent = null; S.daveWindowOn = null;
+    if (daves.daveWindowOn() !== false) throw new Error('absent pref file must read OFF');
+    S.playing = true; S.bannerDave = -1; daves.bannerDaveSync();
+    if (S.bannerDave !== -1) throw new Error('switch OFF still dealt a Dave: ' + S.bannerDave);
+    const writes = [];
+    globalThis.host_write_file = (p, c) => { writes.push([p, c]); if (p.indexOf('daves-window') >= 0) prefFileContent = c; return true; };
+    daves.setDaveWindowOn(true);
+    if (!writes.find(w => w[0].indexOf('/dbx-host/daves-window.txt') >= 0 && w[1].trim() === '1'))
+        throw new Error('On did not persist to the device-global pref file: ' + JSON.stringify(writes));
+    daves.bannerDaveSync();
+    if (S.bannerDave !== 0) throw new Error('switch ON did not deal on the next poll, got ' + S.bannerDave);
+    daves.setDaveWindowOn(false);
+    if (S.bannerDave !== -1) throw new Error('Off mid-play must clear the Dave at once');
+    if (prefFileContent.trim() !== '0') throw new Error('Off did not persist');
+    /* A fresh read (module reload) honours the file. */
+    prefFileContent = '1\n'; S.daveWindowOn = null;
+    if (daves.daveWindowOn() !== true) throw new Error('pref file "1" must read ON');
+    prefFileContent = '0\n'; S.daveWindowOn = null;
+    if (daves.daveWindowOn() !== false) throw new Error('pref file "0" must read OFF');
+    S.playing = false; S.bannerDave = -1;
+});
+
 step('⭐ banner pick: dealt from the COLLECTION on the Play edge, held while playing, cleared on Stop', () => {
+    S.daveWindowOn = true;                        /* the switch is ON for this step */
     seenFileContent = '3\n7\n7\n1\n';          /* collected: 1, 3, 7 */
     const want = new Set([0, 2, 6]);              /* dave_num 1,3,7 -> frame idx 0,2,6 */
     const origRandom = Math.random;
@@ -247,7 +275,7 @@ step('⭐ banner pick: dealt from the COLLECTION on the Play edge, held while pl
 });
 
 step('⭐ banner draw: black 12px window, the slice inside it, NO wordmark while playing', () => {
-    S.daveBox = null; S.sessionView = true; S.playing = true; S.bannerDave = 0;
+    S.daveBox = null; S.sessionView = true; S.playing = true; S.bannerDave = 0; S.daveWindowOn = true;
     /* Clear the gates a prior step may have left: the empty-album popup, a
      * mixer peek, a farewell. */
     S.actionPopupEndTick = -1; S.sessMixerLatched = false; S.knobTouched = -1; S.exitFarewell = 0;
@@ -284,7 +312,15 @@ step('⭐ banner draw: black 12px window, the slice inside it, NO wordmark while
     if (!fills.find(f => f.x === 0 && f.y === 0 && f.w === 128 && f.h === 12 && f.v === 1))
         throw new Error('stopped banner lost its white bar');
     if (!px.some(p => p.y < 12)) throw new Error('stopped banner lost its wordmark');
-    S.sessionView = false;
+    /* Switch OFF while PLAYING: the static wordmark, and no letter dance —
+     * the bar is a fixed picture whatever the tick says. */
+    S.daveWindowOn = false; S.playing = true; S.bannerDave = -1;
+    const shot = (pos) => { S.masterPos = pos; clear_screen(); render.drawUI(); return JSON.stringify(px.filter(p => p.y < 12)); };
+    if (!px) throw new Error('no pixel spy');
+    const a = shot(0), b = shot(96), c = shot(48);
+    if (a !== b || a !== c) throw new Error('with the switch OFF the header still animates with the tick');
+    if (!fills.find(f => f.x === 0 && f.y === 0 && f.w === 128 && f.h === 12 && f.v === 1)) throw new Error('OFF while playing lost the white bar');
+    S.playing = false; S.sessionView = false;
 });
 
 step('"Open Your Dave Box" is the LAST menu row, behind a divider — and it opens the album', () => {
@@ -295,9 +331,12 @@ step('"Open Your Dave Box" is the LAST menu row, behind a divider — and it ope
     const last = items[items.length - 1];
     if (!last || last.label !== 'Open Your Dave Box')
         throw new Error('last row is ' + JSON.stringify(last && last.label) + ', not the Dave Box');
-    const before = items[items.length - 2];
+    const sw = items[items.length - 2];
+    if (!sw || sw.label !== 'Daves')
+        throw new Error('the row above the Dave Box must be the Daves switch, got ' + JSON.stringify(sw && sw.label));
+    const before = items[items.length - 3];
     if (!before || before.type !== 'divider')
-        throw new Error('no divider ahead of the Dave Box row (got ' + JSON.stringify(before && before.type) + ')');
+        throw new Error('no divider ahead of the Daves rows (got ' + JSON.stringify(before && before.type) + ')');
     last.onAction();
     if (!S.daveBox) throw new Error('the door did not open the album');
     if (S.globalMenuOpen) throw new Error('opening the album left the menu up');

@@ -23,7 +23,7 @@ import {
 import { NOTE_KEYS, SCALE_NAMES } from './ui_constants.mjs';
 
 import { S } from './ui_state.mjs';
-import { openDaveBox } from './ui_daves.mjs';
+import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
 import { saveState, showActionPopup, loadSnapshotManifest } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { forceRedraw } from './ui_leds.mjs';
@@ -248,6 +248,14 @@ function buildGlobalMenuItems() {
          * (Josh, device pass 2026-08-31): the album for the launch-splash
          * gacha — every Dave ever dealt, jog-driven. ui_daves.mjs. */
         createDivider(),
+        /* The Daves switch (Josh, 2026-09-05): On = a collected Dave scrolls
+         * through the session banner while playing; Off = the static wordmark.
+         * Default Off; device-global, beside the collection. */
+        createToggle('Daves', {
+            get: function() { return daveWindowOn(); },
+            set: function(v) { setDaveWindowOn(v); },
+            onLabel: 'On', offLabel: 'Off'
+        }),
         createAction('Open Your Dave Box', function() {
             openDaveBox();     /* closes the menu itself when it opens */
         }),

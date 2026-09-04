@@ -87,7 +87,7 @@ draw('session-overview');
 /* SESSION VIEW while the transport runs — a collected Dave scrolls through the
  * banner window. The pick is random on device; pin it here so the render is
  * reproducible (frame 0, a quarter of the way down the first bar). */
-S.playing = true; S.masterPos = 96; S.bannerDave = 0;
+S.playing = true; S.masterPos = 96; S.bannerDave = 0; S.daveWindowOn = true;
 draw('session-overview-playing');
 
 /* SESSION MIXER PAGES, latched (jog click from the overview): the fader row

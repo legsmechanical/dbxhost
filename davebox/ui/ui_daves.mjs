@@ -43,6 +43,10 @@ const SCAN_HOLD_MS = 0;
 const SCAN_STEP_MS = 128;                            /* per pixel, on the one clock */
 
 const SEEN_PATH = '/data/UserData/dbx-host/daves-seen.txt';
+/* The Daves switch, beside the collection: device-global like the album (a
+ * preference of the user's, not a song's; the deploy merges file-by-file so it
+ * survives updates). Absent file = OFF (Josh, 2026-09-05: "default is off"). */
+const WINDOW_PREF_PATH = '/data/UserData/dbx-host/daves-window.txt';
 
 /* dave_num -> frame index, from the pool's own statement. A number in the
  * seen file that no longer maps (a Dave removed from the pool) is skipped —
@@ -167,7 +171,8 @@ function blitFrameRows(idx, srcY0, dstY0, rows) {
  * rate gives roughly a pixel per redraw at ordinary tempos, and a pure
  * function of masterPos is what lets the offline renderers draw exactly what
  * the device draws. Full width, wordmark gone for the duration. A new Dave is
- * dealt on every Play. */
+ * dealt on every Play. Behind the Daves switch (global menu, default OFF):
+ * off keeps the static wordmark. */
 export const BANNER_H = 12;                      /* ui_render's MARK_BAR_H imports this */
 export const BANNER_TRAVEL = 64 - BANNER_H;      /* 52 rows of travel */
 export const TICKS_PER_BAR = 96 * 4;             /* PPQN 96, 4/4 */
@@ -182,12 +187,35 @@ export function bannerDaveYOff(masterPos) {
     return down ? y : BANNER_TRAVEL - y;
 }
 
+/* The Daves switch. Read once, lazily; written on every change. */
+export function daveWindowOn() {
+    if (S.daveWindowOn === null) {
+        let on = false;
+        try {
+            on = host_file_exists(WINDOW_PREF_PATH) &&
+                 String(host_read_file(WINDOW_PREF_PATH) || '').trim() === '1';
+        } catch (e) { on = false; }
+        S.daveWindowOn = on;
+    }
+    return S.daveWindowOn;
+}
+export function setDaveWindowOn(v) {
+    S.daveWindowOn = !!v;
+    /* A failed write is the one way the switch forgets itself at the next
+     * launch while looking perfect in-session — say so (reaches debug.log). */
+    let wrote = false;
+    try { wrote = !!host_write_file(WINDOW_PREF_PATH, S.daveWindowOn ? '1\n' : '0\n'); } catch (e) { wrote = false; }
+    if (!wrote) console.log('[daves] could not persist the Daves switch to ' + WINDOW_PREF_PATH);
+    if (!S.daveWindowOn) S.bannerDave = -1;
+    forceRedraw();
+}
+
 /* Keep S.bannerDave in step with the transport. Called on every DSP poll,
  * right after S.playing lands: a rising edge deals a random collected Dave
  * (one file read per Play), stopping clears it. Nothing collected leaves it
  * at -1 and the banner falls back to the wordmark. */
 export function bannerDaveSync() {
-    if (!S.playing) { S.bannerDave = -1; return; }
+    if (!S.playing || !daveWindowOn()) { S.bannerDave = -1; return; }
     if (S.bannerDave >= 0) return;
     const list = seenFrameIndices();
     if (!list.length) return;
