@@ -25,7 +25,12 @@
 
 import { automationInvalidateMeta } from './ui_automation.mjs';
 import { engineDescribe, engineLoadKitStructure, engineLoadedModule,
-         engineHostsOwnUi } from './ui_engine.mjs';
+         engineGetChainParam, engineHostsOwnUi } from './ui_engine.mjs';
+/* The host's own evaluator, imported rather than ported — it lives in shared/,
+ * so this path and the param_pages path answer `visible_if` with exactly the
+ * same code. pp_ctx.mjs already wires the same function for the grid. */
+import { evaluateVisibility }
+    from '/data/UserData/schwung/shared/param_pages/visibility.mjs';
 
 export const CELLS_PER_BANK = 8;
 
@@ -649,13 +654,55 @@ export function childLevelKeys(lvl) {
     return out;
 }
 
-function knobEntries(lvl) {
+/*
+ * ⚠⚠ `visible_if`, ON THIS PATH TOO.
+ *
+ * A module may gate a param on another param's value — echidna-fx expresses its
+ * whole per-effect-type layout that way, 215 gates over four slots. The grid
+ * (param_pages) has always honoured it; THIS path did not, so a Move-bus insert
+ * showed every variant's params at once, flat. That is not a cosmetic
+ * difference: it is 42 candidate knobs where the module means to show 6.
+ *
+ * The gate lives on the level's `params[]` entry, while `knobs[]` is bare key
+ * strings — so the two have to be joined before anything can be filtered.
+ *
+ * ⚠ Evaluated at DISCOVERY, not at draw. That is only correct because a param
+ * which changes the visible SET declares `reload_level`, and ui_sound's cell
+ * handler re-runs discovery synchronously on such a write. A module that gates
+ * on a param WITHOUT that flag will look stale here until something else forces
+ * a reload — the module has to declare it; nothing in this file can infer it.
+ */
+function gateOf(lvl, key) {
+    for (const p of ((lvl && lvl.params) || []))
+        if (p && typeof p === 'object' && p.key === key && p.visible_if) return p.visible_if;
+    return null;
+}
+
+/* `io` is passed explicitly rather than kept in a module global: it is exactly
+ * what makes this testable without an engine, and a global would outlive the
+ * discover() that set it and evaluate the NEXT module's gates against this
+ * one's values. A null io means "show everything" — what every caller outside
+ * discover() gets, and what this file did before. */
+function isVisible(io, lvl, key) {
+    if (!io) return true;
+    const cond = gateOf(lvl, key);
+    if (!cond) return true;
+    try { return !!evaluateVisibility(io, cond, lvl); }
+    catch (e) {
+        /* A gate we cannot answer must SHOW the control, never hide it: a
+         * missing knob is unrecoverable from the UI, an extra one is only
+         * noise. */
+        return true;
+    }
+}
+
+function knobEntries(lvl, io) {
     const out = [];
     const knobs = (lvl && lvl.knobs) || [];
     if (!Array.isArray(knobs)) return out;
     for (const k of knobs) {
         const key = (typeof k === 'string') ? k : (k && k.key);
-        if (key) out.push({ key, meta: (typeof k === 'object') ? k : null });
+        if (key && isVisible(io, lvl, key)) out.push({ key, meta: (typeof k === 'object') ? k : null });
     }
     return out;
 }
@@ -807,7 +854,7 @@ export function modeRows(modes, levels) {
     return rows;
 }
 
-export function buildLevelPages(allLevels, rootKey) {
+export function buildLevelPages(allLevels, rootKey, io) {
     const out = [];
     const rootLevel = allLevels[rootKey];
     if (!rootLevel) return out;
@@ -822,7 +869,7 @@ export function buildLevelPages(allLevels, rootKey) {
     const nameOf = (key, lvl) => (lvl && lvl.name) || navLabel[key] || (lvl && lvl.label) || key;
 
     const sigOf = (entries) => entries.map(e => e.pkey || e.key).join(' ');
-    const rendered = new Set([sigOf(knobEntries(rootLevel))]);
+    const rendered = new Set([sigOf(knobEntries(rootLevel, io))]);
     const visited = new Set([rootKey]);
 
     function visit(key, prefix, transparent) {
@@ -832,7 +879,7 @@ export function buildLevelPages(allLevels, rootKey) {
         if (!lvl) return;
 
         const name = nameOf(key, lvl);
-        const entries = knobEntries(lvl);
+        const entries = knobEntries(lvl, io);
         /* Repeated elements become one page per element. The host shows a
          * selector list instead, but these pages are FLAT — a selector has
          * nowhere to live here, and eight "Part n" pages is the only shape in
@@ -875,7 +922,7 @@ export function buildLevelPages(allLevels, rootKey) {
 
     /* Rule 6: orphan levels no edge reaches. */
     for (const key of Object.keys(allLevels)) {
-        if (!visited.has(key) && knobEntries(allLevels[key]).length) visit(key, null, false);
+        if (!visited.has(key) && knobEntries(allLevels[key], io).length) visit(key, null, false);
     }
     return out;
 }
@@ -1105,6 +1152,15 @@ export function discover(slot, comp) {
      * cached about this slot's parameter ranges is now about a module that
      * may no longer be there. */
     automationInvalidateMeta(slot);
+    /* Arm the visible_if evaluator for this slot/component. Same three members
+     * pp_ctx.mjs gives the grid, so both paths answer a gate identically.
+     * Cleared in the finally below: a stale io would evaluate the NEXT module's
+     * gates against this one's values. */
+    const visIo = {
+        prefix: comp,
+        getParam: (fullKey) => engineGetChainParam(slot, fullKey),
+        childIndexOf: () => 0,
+    };
     const { chainParams, hierarchy, diag } = engineDescribe(slot, comp);
 
     /* chain_params is the AUTHORITY for value metadata. ui_hierarchy only
@@ -1168,11 +1224,11 @@ export function discover(slot, comp) {
     if (root) {
         /* Root's own knobs are the "Main" page; every other reachable level
          * comes from the walk (which already deduped against root's key list). */
-        const rootEntries = keysOf(root.knobs);
+        const rootEntries = keysOf(root.knobs).filter(e => isVisible(visIo, root, e.key));
         if (rootEntries.length) {
             addLevel(banks, root.name || 'Main', rootEntries.map(e => cellFor(e.key, e.meta)));
         }
-        for (const page of buildLevelPages(levels, rootKey)) {
+        for (const page of buildLevelPages(levels, rootKey, visIo)) {
             addLevel(banks, page.name,
                      page.entries.map(e => cellFor(e.key, e.meta, e.pkey)));
         }
