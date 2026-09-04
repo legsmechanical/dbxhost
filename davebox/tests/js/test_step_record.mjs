@@ -308,16 +308,18 @@ step('⭐ Shift+SAMPLE is DECLINED over an open session — no merge can open un
     rest();
 });
 
-step('⭐ entry DECLINES from behind another screen: sound mode and modal covers', () => {
-    /* Review finding, verified: sound mode never consumes CC 86 and the modal
-     * set draws over everything — an entry here would open INVISIBLY, burn the
-     * one undo checkpoint, and let pads write real steps behind a dialog. */
+step('⭐ entry from UNDER sound mode is allowed; from behind a MODAL it declines', () => {
+    /* Josh, 2026-09-05: "step record should be available from any place in
+     * track view" — including under a module editor (pass-through is the
+     * contract). A modal is different: it draws over everything, so an entry
+     * there would open INVISIBLY, burn the one undo checkpoint, and let pads
+     * write real steps behind a dialog. */
     rest();
     const snd = await_snd;
     snd.soundEnter(T, T);
     S.bankCardLatched = true;                 /* a CARD up; an unlatched prompt is RESTING = the overview (2026-09-03) */
     S.shiftHeld = true; cc(C.MoveRec, 127); cc(C.MoveRec, 0); S.shiftHeld = false;
-    if (S.stepRecActive) throw new Error('entered behind sound mode');
+    if (!S.stepRecActive) throw new Error('did not enter under sound mode (ruled 2026-09-05: anywhere in track view)');
     S.bankCardLatched = false;
     snd.soundExit();
     rest();

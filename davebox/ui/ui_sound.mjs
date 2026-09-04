@@ -2300,6 +2300,10 @@ export function soundGestureReturn() {
         S.dirty = true;
     } else {
         soundExit({ landOn: g.bank });        /* out, onto the bank you pressed from */
+        /* ...and onto the SCREEN you pressed from (Josh, 2026-09-05: "back should
+         * land you on the previous screen you were on"): a latched bank CARD
+         * comes back as the card, not as the overview with that bank recorded. */
+        if (g.latched) { GS.bankCardLatched = true; armBankDisplay(); }
     }
     return true;
 }
@@ -5673,6 +5677,10 @@ function hostedTakes(d1, d2) {
      * to every CC would eat it in the editor alone. Pinned by
      * test_shift_volume_everywhere. */
     if (d1 === 49 || d1 === 88 || d1 === 79) return false;
+    /* Note/Session (50) and Shift+Record (86) are davebox's from EVERYWHERE in
+     * track view (Josh, 2026-09-05): the instrument shortcut and step record
+     * must work from inside a hosted editor too. */
+    if (d1 === 50 || (d1 === 86 && GS.shiftHeld)) return false;
     if (typeof S.hosted.onMidi !== 'function') return false;
     try {
         return S.hosted.onMidi(hostedCtx(), { data: [0xB0, d1, d2] }) === true;
@@ -5759,6 +5767,11 @@ export function soundOnCC(d1, d2, decodeDelta) {
                 return true;
             }
             /* No layer: fall through to davebox's own Back below. */
+        } else if (d1 === 50 || (d1 === 86 && GS.shiftHeld)) {
+            /* Note/Session and Shift+Record stay davebox's inside the editor
+             * (Josh, 2026-09-05: the shortcut and step record work from
+             * everywhere in track view) — never offered to the binding. */
+            return false;
         } else if (handleParamPagesMidi([0xB0, d1, d2])) {
             S.dirty = true;
             return true;

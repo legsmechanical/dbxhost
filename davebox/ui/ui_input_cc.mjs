@@ -2173,7 +2173,8 @@ if (!wantInstrument) {
 S.genReturn = { track: _gt,
                 wasActive: soundOpen(),
                 view: soundOpen() ? soundViewForTest() : -1,
-                bank: S.activeBank | 0 };
+                bank: S.activeBank | 0,
+                latched: !!S.bankCardLatched };   /* the card vs the overview (2026-09-05) */
 if (S.trackRoute[_gt] === 1) {
     enterMoveNativeCoRun(_gt);
 } else if (S.trackRoute[_gt] === 2) {
@@ -2484,13 +2485,17 @@ function _onCC_transport(d1, d2) {
      * the resting state of a melodic/MIDI track with the transport stopped;
      * an ineligible press says why instead of dying silently. */
     if (d1 === MoveRec && d2 === 127 && S.shiftHeld) {
-        /* ⚠ Not from behind another screen: sound mode never consumes CC 86
-         * and soundModeCovered()'s modal set draws over everything, so without
-         * these two gates a session could open INVISIBLY — pads then write
-         * real steps while the user answers a dialog, and the one undo
-         * checkpoint is burned (review finding, verified both ways). Silent
-         * decline: a popup would be as hidden as the session. */
-        if (soundActive() || soundModeCovered()) return;
+        /* ⚠ Not from behind a MODAL: soundModeCovered()'s set draws over
+         * everything, so without this gate a session could open INVISIBLY —
+         * pads then write real steps while the user answers a dialog, and the
+         * one undo checkpoint is burned (review finding). Silent decline: a
+         * popup would be as hidden as the session.
+         * ⭑ Sound mode is NOT a cover any more (Josh, 2026-09-05: "step record
+         * should be available from any place in track view" — including under
+         * a module editor; pass-through is the contract, and the pads still
+         * reach ui_input_pads under it). The popup and the cursor draw over
+         * the editor like every other popup. */
+        if (soundModeCovered()) return;
         /* ⚠ dspMergeState is a pollDSP MIRROR of a queued merge_arm (one-per-tick
          * drain + roundtrip), so it reads 0 for several ticks after a count-in
          * starts — the count-in flags are the only timely evidence. */

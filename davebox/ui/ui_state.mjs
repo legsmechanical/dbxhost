@@ -713,7 +713,7 @@ export const S = {
      * SOUND + CONFIG writes nothing and the exit would land on a stale origin
      * from an earlier entry — the exact "banks land somewhere I did not leave
      * them" bug the crumb was invented to cure. */
-    genReturn: null,            /* {track, wasActive, bank} | null */
+    genReturn: null,            /* {track, wasActive, view, bank, latched} | null */
     /* ONE-SHOT: "the next jog release must not tear the bank window down".
      * Set by the sound-mode top-edge exit, which is a real bank ARRIVAL made
      * mid-turn — so by the time the finger lifts, standDownBankDisplay's

@@ -598,6 +598,34 @@ step('choosing a GENERATOR as the Instrument makes the track Schwung and loads i
     }
 });
 
+step('⭑ Back out of a HOLD-opened editor lands on the latched CARD you pressed from (2026-09-05)', () => {
+    /* Josh: "after entering instrument editor from shift+hold note/session,
+     * back should land you on the previous screen you were on". The crumb
+     * carried the bank but not the LATCH, so a hold from a bank card came back
+     * to the overview with that bank recorded — a screen you were not on. */
+    S.sessionView = false; S.activeTrack = 0; S.trackRoute[0] = 0;
+    if (sound.soundOpen()) sound.soundExit();
+    S.activeBank = 3; S.bankCardLatched = true;
+    shiftNoteHold(); ticks(3);
+    if (!sound.soundOpen()) throw new Error('the hold did not open the editor');
+    /* ⚠ In this rig nothing stands the latch down while the editor is up, so
+     * the restore below would be a no-op and this step could not fail (the
+     * first cut survived its mutation). Stand it down here — whatever does so
+     * on the device (a walk, a stand-down, a hosted canvas) — so the CRUMB is
+     * what brings the card back, provably. */
+    S.bankCardLatched = false;
+    let guard = 0;
+    while (sound.soundOpen() && guard++ < 6) {
+        globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveBack, 127]));
+        globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveBack, 0]));
+        ticks(2);
+    }
+    if (sound.soundOpen()) throw new Error('Back never left the editor');
+    if (S.activeBank !== 3) throw new Error('landed on bank ' + S.activeBank + ', pressed from 3');
+    if (!S.bankCardLatched) throw new Error('the CARD was latched when pressed; Back landed on the overview');
+    S.bankCardLatched = false;
+});
+
 if (failed) process.exit(1);
 console.log('test_shift_note_opens_generator: PASS');
 }
