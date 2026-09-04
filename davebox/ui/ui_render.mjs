@@ -612,9 +612,10 @@ function drawMetroIndicator() {
          * incomplete session view... only the count-in indicator'). Read the
          * mode table itself, the one owner; the gateway carries 'FX'. */
         const _sm = SESS_KNOB_MODES[S.sessKnobMode];
-        const ml = (_sm && _sm.short) || 'Vol';
-        /* "< SNDA >", underlined (Josh, 2026-09-05): the arrows say this is what
-         * the jog scrolls, the rule matches the key/scale rule in track view. */
+        const ml = (_sm && _sm.label) || 'VOLUME';
+        /* "< SEND A >", underlined (Josh, 2026-09-05): the arrows say this is what
+         * the jog scrolls, the rule matches the key/scale rule in track view.
+         * The full label, not the short one — there is room beside the metro. */
         const lab = '< ' + ml + ' >';
         const lw = ovwWidth(lab), lx = 128 - 4 - lw;
         ovwPrint(lx, 17, lab, 1);
