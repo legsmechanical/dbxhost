@@ -7,7 +7,7 @@
  */
 
 import { S, PERF_FACTORY_PRESETS } from './ui_state.mjs';
-import { drawDaveBox } from './ui_daves.mjs';
+import { drawDaveBox, drawBannerDave, BANNER_H } from './ui_daves.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
 import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev } from './ui_engine.mjs';
 import { instrValueFor } from './ui_dsp_bridge.mjs';
@@ -845,7 +845,7 @@ function kitCellForKnob(knob, val) {
  * advance MINUS the trailing gap (6, not 7). Every letter lost a pixel and the
  * word closed up: "squashed and blurry" (Josh, on hardware). Measure a STRING
  * with hdrWidth, never a character as if it were a cell. */
-const MARK_BAR_H = 12;
+const MARK_BAR_H = BANNER_H;   /* one owner of the 12: the window IS the bar */
 
 function drawWordmark(mark) {
     hdrPrint(Math.round((128 - hdrWidth(mark)) / 2), 3, mark, 0);
@@ -1636,22 +1636,24 @@ function drawUIBody() {
             }
             return;
         }
-        /* dAVEBOx banner — white bar, letters animated when transport running.
+        /* dAVEBOx banner — the white bar carrying the wordmark while stopped.
+         * While the transport runs the bar becomes a WINDOW (Josh, 2026-09-05):
+         * a random collected Dave scrolls behind it, one bar down and one bar
+         * up, and the wordmark is gone for the duration — full width, no mark.
+         * The letter-swap dance that used to run here ('@', '3', 'o' on the
+         * beat) retired with it.
+         *
          * The wordmark is set in the BIG font (Josh, 2026-08-25, picking it off
          * the rendered candidates). It is the only large face that keeps the
          * mark's own casing: the movy font scaled up is a caps design and reads
          * DAVEBOX, and the 6x6 bank-heading font is no bigger than the 5x7 the
          * bar used before. */
-        fill_rect(0, 0, 128, MARK_BAR_H, 1);
-        let dA, dE, dO;
-        if (S.playing) {
-            dA = (Math.floor(S.masterPos /  96) % 2 === 0) ? 'A' : '@';
-            dE = (Math.floor(S.masterPos /  48) % 2 === 0) ? '3' : 'E';
-            dO = (Math.floor(S.masterPos / 192) % 2 === 0) ? 'O' : 'o';
+        if (S.playing && S.bannerDave >= 0) {
+            drawBannerDave();
         } else {
-            dA = 'A'; dE = 'E'; dO = 'O';
+            fill_rect(0, 0, 128, MARK_BAR_H, 1);
+            drawWordmark('dAVEBOx');
         }
-        drawWordmark('d' + dA + 'V' + dE + 'B' + dO + 'x');
         drawMetroIndicator();
         drawOverviewTracks(overviewHints());
         return;

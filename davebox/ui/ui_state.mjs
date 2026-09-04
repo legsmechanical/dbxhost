@@ -283,6 +283,7 @@ export const S = {
     flashEighth: false,
     flashSixteenth: false,
     masterPos: 0,
+    bannerDave: -1,      /* frame index of the Dave scrolling in the session banner while playing; -1 = none (stopped, or nothing collected). Picked on the play edge by bannerDaveSync. */
     dspLooperState: 0,
     dspMergeState: 0,
     dspMergeDstClip: 0,

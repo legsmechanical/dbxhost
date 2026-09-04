@@ -108,6 +108,100 @@ export function daveBoxTick() {
     forceRedraw();
 }
 
+/* Run-length blit of `rows` rows of a 128x64 1-bit frame: screen row dstY0+i
+ * shows image row srcY0+i. The same shape the host's drawCustomSplash uses —
+ * far fewer host calls than per-pixel set_pixel. Lit bits only: the caller
+ * owns the background.
+ *
+ * The runs are ENCODED ONCE per frame and cached (frameRuns): a redraw pays
+ * only the fill_rect calls, never the 128-pixel bit scan per row. The banner
+ * redraws ~23 times a second on the screen the user performs on, so the scan
+ * was the one cost in the path that could be removed for free. */
+const RUN_CACHE = new Map();     /* frame index -> [row][x0, w, x0, w, ...] */
+
+function frameRuns(idx) {
+    let rows = RUN_CACHE.get(idx);
+    if (rows) return rows;
+    const bits = SPLASH_FRAMES[idx];
+    rows = new Array(64);
+    for (let y = 0; y < 64; y++) {
+        const runs = [];
+        let runStart = -1;
+        const rowOff = y * 16;
+        for (let x = 0; x < 128; x++) {
+            const bit = (bits[rowOff + (x >> 3)] >> (7 - (x & 7))) & 1;
+            if (bit) {
+                if (runStart < 0) runStart = x;
+            } else if (runStart >= 0) {
+                runs.push(runStart, x - runStart);
+                runStart = -1;
+            }
+        }
+        if (runStart >= 0) runs.push(runStart, 128 - runStart);
+        rows[y] = runs;
+    }
+    RUN_CACHE.set(idx, rows);
+    return rows;
+}
+
+/* Exposed for the tests' positive control: the cache must reproduce the bits. */
+export function frameRowRuns(idx, y) { return frameRuns(idx)[y]; }
+
+function blitFrameRows(idx, srcY0, dstY0, rows) {
+    const enc = frameRuns(idx);
+    for (let i = 0; i < rows; i++) {
+        const runs = enc[srcY0 + i], y = dstY0 + i;
+        for (let k = 0; k < runs.length; k += 2) fill_rect(runs[k], y, runs[k + 1], 1, 1);
+    }
+}
+
+/* ── the BANNER WINDOW (Josh, 2026-09-05: "instead of that dance ... a random
+ * collected dave scroll up and down within the header space ... like you're
+ * peeking through a window where the header is") ──
+ *
+ * While the transport runs, the session banner's 12px bar shows a 12-row
+ * slice of one collected Dave, and the slice travels the whole frame: top to
+ * bottom over one bar, bottom to top over the next, bar after bar. Position
+ * is DERIVED from the DSP's master tick, never accumulated: the tick resets
+ * on Play (so the pass starts at the top and stays bar-aligned), the poll
+ * rate gives roughly a pixel per redraw at ordinary tempos, and a pure
+ * function of masterPos is what lets the offline renderers draw exactly what
+ * the device draws. Full width, wordmark gone for the duration. A new Dave is
+ * dealt on every Play. */
+export const BANNER_H = 12;                      /* ui_render's MARK_BAR_H imports this */
+export const BANNER_TRAVEL = 64 - BANNER_H;      /* 52 rows of travel */
+export const TICKS_PER_BAR = 96 * 4;             /* PPQN 96, 4/4 */
+
+/* Image row shown at the top of the window for a master tick position. Even
+ * bars (counting from Play) glide down, odd bars glide back up. */
+export function bannerDaveYOff(masterPos) {
+    const pos = (masterPos >>> 0);
+    const phase = (pos % TICKS_PER_BAR) / TICKS_PER_BAR;
+    const down = Math.floor(pos / TICKS_PER_BAR) % 2 === 0;
+    const y = Math.floor(phase * BANNER_TRAVEL);
+    return down ? y : BANNER_TRAVEL - y;
+}
+
+/* Keep S.bannerDave in step with the transport. Called on every DSP poll,
+ * right after S.playing lands: a rising edge deals a random collected Dave
+ * (one file read per Play), stopping clears it. Nothing collected leaves it
+ * at -1 and the banner falls back to the wordmark. */
+export function bannerDaveSync() {
+    if (!S.playing) { S.bannerDave = -1; return; }
+    if (S.bannerDave >= 0) return;
+    const list = seenFrameIndices();
+    if (!list.length) return;
+    S.bannerDave = list[Math.floor(Math.random() * list.length)];
+}
+
+/* The banner as a window: black behind, then the 12-row slice. */
+export function drawBannerDave() {
+    const idx = S.bannerDave;
+    if (idx < 0 || idx >= SPLASH_FRAMES.length) return;
+    fill_rect(0, 0, 128, BANNER_H, 0);
+    blitFrameRows(idx, bannerDaveYOff(S.masterPos), 0, BANNER_H);
+}
+
 /* The footer, as data — the draw path prints pixels no test can read.
  * Two lines (mock variant D, Josh's pick): the NAME in header caps, and the
  * meta line with number-of-total and rarity. */
@@ -126,25 +220,9 @@ export function drawDaveBox() {
     const d = S.daveBox;
     if (!d) return;
     clear_screen();
-    /* Run-length blit, the same shape the host's drawCustomSplash uses —
-     * far fewer host calls than per-pixel set_pixel. Screen row y shows image
-     * row y + yOff, so the scan slides the frame up behind the footer and
-     * every row gets its turn in the window. */
-    const bits = SPLASH_FRAMES[d.list[d.idx]];
-    for (let y = 0; y < 64 - DAVE_FOOTER_H; y++) {
-        let runStart = -1;
-        const rowOff = (y + d.yOff) * 16;
-        for (let x = 0; x < 128; x++) {
-            const bit = (bits[rowOff + (x >> 3)] >> (7 - (x & 7))) & 1;
-            if (bit) {
-                if (runStart < 0) runStart = x;
-            } else if (runStart >= 0) {
-                fill_rect(runStart, y, x - runStart, 1, 1);
-                runStart = -1;
-            }
-        }
-        if (runStart >= 0) fill_rect(runStart, y, 128 - runStart, 1, 1);
-    }
+    /* Screen row y shows image row y + yOff, so the scan slides the frame up
+     * behind the footer and every row gets its turn in the window. */
+    blitFrameRows(d.list[d.idx], d.yOff, 0, 64 - DAVE_FOOTER_H);
     /* The footer (mock variant D): cleared 18px band, name in the 6x6 header
      * caps, meta line in the small movy face beneath. */
     const name = daveBoxName(), meta = daveBoxMeta();

@@ -46,6 +46,7 @@ const { S } = await import('../../ui/ui_state.mjs');
 const daves = await import('../../ui/ui_daves.mjs');
 const splash = await import('../../ui/ui_splash.mjs');
 const menuMod = await import('../../ui/ui_menu.mjs');
+const render = await import('../../ui/ui_render.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 2;
@@ -161,6 +162,129 @@ step('the footer band OVERLAYS the image: cleared 18px band, name + meta pixels 
     const bandClear = fills.findIndex((f) => f.y === 46 && f.h === 18 && f.v === 0);
     if (bandClear < 0) throw new Error('no band clear at max offset');
     daves.closeDaveBox();
+});
+
+/* ── the BANNER WINDOW: while the transport runs, the session banner shows a
+ * 12-row slice of a random collected Dave, travelling top→bottom over one bar
+ * and back over the next. Position is a pure function of the master tick. */
+step('⭐ banner scroll: down over bar 1, back up over bar 2, whole frame covered, bar-aligned', () => {
+    const T = daves.TICKS_PER_BAR, TR = daves.BANNER_TRAVEL;
+    if (T !== 384) throw new Error('a 4/4 bar at PPQN 96 is 384 ticks, got ' + T);
+    if (daves.BANNER_H !== 12) throw new Error('the banner is 12px, got ' + daves.BANNER_H);
+    if (TR !== 52) throw new Error('travel must show every row: 64 - 12 = 52, got ' + TR);
+    if (daves.bannerDaveYOff(0) !== 0) throw new Error('Play starts at the top');
+    if (daves.bannerDaveYOff(T - 1) !== TR - 1) throw new Error('end of bar 1 is at the bottom');
+    if (daves.bannerDaveYOff(T) !== TR) throw new Error('bar 2 starts at the bottom');
+    if (daves.bannerDaveYOff(2 * T - 1) !== 1) throw new Error('end of bar 2 is back at the top');
+    if (daves.bannerDaveYOff(2 * T) !== 0) throw new Error('bar 3 restarts the cycle');
+    /* Monotonic within a bar, and never outside the frame. */
+    let prev = -1;
+    for (let p = 0; p < T; p++) {
+        const y = daves.bannerDaveYOff(p);
+        if (y < prev) throw new Error('bar 1 went UP at tick ' + p);
+        if (y < 0 || y > TR) throw new Error('offset ' + y + ' would read past the frame');
+        prev = y;
+    }
+    prev = TR + 1;
+    for (let p = T; p < 2 * T; p++) {
+        const y = daves.bannerDaveYOff(p);
+        if (y > prev) throw new Error('bar 2 went DOWN at tick ' + p);
+        prev = y;
+    }
+    /* The extremes are reached AT the bar line: row 63 shows at the start of
+     * bar 2, row 0 at the start of bar 3 (bar 1 ends one row short of the
+     * bottom and bar 2 one row short of the top — the reversal is continuous). */
+    if (daves.bannerDaveYOff(T) + daves.BANNER_H !== 64) throw new Error('the bottom row is never shown');
+});
+
+step('⭐ the run cache reproduces the BITS for every row of every frame (positive control)', () => {
+    let runsTotal = 0;
+    for (let i = 0; i < splash.SPLASH_FRAMES.length; i++) {
+        const bits = splash.SPLASH_FRAMES[i];
+        for (let y = 0; y < 64; y++) {
+            const runs = daves.frameRowRuns(i, y);
+            const row = new Array(128).fill(0);
+            for (let k = 0; k < runs.length; k += 2)
+                for (let x = runs[k]; x < runs[k] + runs[k + 1]; x++) row[x] = 1;
+            for (let x = 0; x < 128; x++) {
+                const bit = (bits[y * 16 + (x >> 3)] >> (7 - (x & 7))) & 1;
+                if (bit !== row[x]) throw new Error('frame ' + i + ' row ' + y + ' x ' + x + ': cache ' + row[x] + ' bits ' + bit);
+            }
+            runsTotal += runs.length / 2;
+        }
+    }
+    if (runsTotal === 0) throw new Error('no runs at all — the control saw nothing');
+    /* Same object back: encoded once, not per call. */
+    if (daves.frameRowRuns(0, 5) !== daves.frameRowRuns(0, 5)) throw new Error('rows are re-encoded per call');
+});
+
+step('⭐ banner pick: dealt from the COLLECTION on the Play edge, held while playing, cleared on Stop', () => {
+    seenFileContent = '3\n7\n7\n1\n';          /* collected: 1, 3, 7 */
+    const want = new Set([0, 2, 6]);              /* dave_num 1,3,7 -> frame idx 0,2,6 */
+    const origRandom = Math.random;
+    try {
+        S.playing = false; daves.bannerDaveSync();
+        if (S.bannerDave !== -1) throw new Error('stopped must clear the pick, got ' + S.bannerDave);
+        Math.random = () => 0.99;                 /* last of the list */
+        S.playing = true; daves.bannerDaveSync();
+        if (S.bannerDave !== 6) throw new Error('expected the last collected frame (6), got ' + S.bannerDave);
+        Math.random = () => 0.0;                  /* would be frame 0 — but the pick is HELD */
+        daves.bannerDaveSync();
+        if (S.bannerDave !== 6) throw new Error('a poll mid-play redealt the Dave: ' + S.bannerDave);
+        S.playing = false; daves.bannerDaveSync();
+        if (S.bannerDave !== -1) throw new Error('Stop did not clear the pick');
+        S.playing = true; daves.bannerDaveSync();
+        if (S.bannerDave !== 0) throw new Error('a new Play must deal anew, got ' + S.bannerDave);
+        /* Every possible deal is a COLLECTED Dave. */
+        for (let r = 0; r < 1; r += 0.05) {
+            Math.random = () => r; S.playing = false; daves.bannerDaveSync(); S.playing = true; daves.bannerDaveSync();
+            if (!want.has(S.bannerDave)) throw new Error('dealt an uncollected frame ' + S.bannerDave);
+        }
+        /* Nothing collected: no pick, banner falls back to the wordmark. */
+        seenFileContent = null; S.playing = false; daves.bannerDaveSync(); S.playing = true; daves.bannerDaveSync();
+        if (S.bannerDave !== -1) throw new Error('an empty collection must leave -1, got ' + S.bannerDave);
+    } finally { Math.random = origRandom; S.playing = false; S.bannerDave = -1; }
+});
+
+step('⭐ banner draw: black 12px window, the slice inside it, NO wordmark while playing', () => {
+    S.daveBox = null; S.sessionView = true; S.playing = true; S.bannerDave = 0;
+    /* Clear the gates a prior step may have left: the empty-album popup, a
+     * mixer peek, a farewell. */
+    S.actionPopupEndTick = -1; S.sessMixerLatched = false; S.knobTouched = -1; S.exitFarewell = 0;
+    S.masterPos = 96;                              /* a quarter through bar 1 -> row 13 */
+    const yOff = daves.bannerDaveYOff(96);
+    if (yOff !== 13) throw new Error('quarter bar should sit at row 13, got ' + yOff);
+    clear_screen();
+    render.drawUI();
+    const bg = fills.find(f => f.x === 0 && f.y === 0 && f.w === 128 && f.h === 12 && f.v === 0);
+    if (!bg) throw new Error('the banner window is not cleared to black');
+    const white = fills.find(f => f.x === 0 && f.y === 0 && f.w === 128 && f.h === 12 && f.v === 1);
+    if (white) throw new Error('the white wordmark bar is still drawn while playing');
+    const inBar = fills.filter(f => f.v === 1 && f.h === 1 && f.y < 12);
+    if (!inBar.length) throw new Error('no image runs landed inside the window');
+    if (inBar.some(f => f.y < 0 || f.y >= 12)) throw new Error('a run escaped the window');
+    /* The runs must be frame 0's rows 13..24, run-length encoded. Re-derive
+     * row 13's first lit run from the bits and find it. */
+    const bits = splash.SPLASH_FRAMES[0];
+    let x0 = -1, x1 = -1;
+    for (let x = 0; x < 128; x++) {
+        const bit = (bits[yOff * 16 + (x >> 3)] >> (7 - (x & 7))) & 1;
+        if (bit && x0 < 0) x0 = x;
+        if (!bit && x0 >= 0) { x1 = x; break; }
+    }
+    if (x0 >= 0) {
+        if (x1 < 0) x1 = 128;
+        if (!inBar.find(f => f.y === 0 && f.x === x0 && f.w === x1 - x0))
+            throw new Error('window row 0 does not carry image row ' + yOff);
+    }
+    /* No hdrPrint ink in the bar: the wordmark is gone. */
+    if (px.some(p => p.y < 12)) throw new Error('glyph pixels drawn inside the window — the wordmark survived');
+    /* Stopped: the white bar and the mark are back. */
+    S.playing = false; S.bannerDave = -1; clear_screen(); render.drawUI();
+    if (!fills.find(f => f.x === 0 && f.y === 0 && f.w === 128 && f.h === 12 && f.v === 1))
+        throw new Error('stopped banner lost its white bar');
+    if (!px.some(p => p.y < 12)) throw new Error('stopped banner lost its wordmark');
+    S.sessionView = false;
 });
 
 step('"Open Your Dave Box" is the LAST menu row, behind a divider — and it opens the album', () => {

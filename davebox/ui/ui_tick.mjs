@@ -28,7 +28,7 @@ import {
 import { S, standDownBankDisplay } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { tickPrefetch, dget } from './ui_dsp_bridge.mjs';
-import { daveBoxTick } from './ui_daves.mjs';
+import { daveBoxTick, bannerDaveSync } from './ui_daves.mjs';
 import { automationTick, automationPollWarnings } from './ui_automation.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
 import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, readActiveSet,
@@ -1134,7 +1134,7 @@ export function _tickImpl() {
             }
         }
 
-        if ((S.tickCount % POLL_INTERVAL) === 0) { pollDSP(); S.screenDirty = true; }
+        if ((S.tickCount % POLL_INTERVAL) === 0) { pollDSP(); bannerDaveSync(); S.screenDirty = true; }
 
         /* Per-parameter automation: drain what the DSP staged and push what it
          * cannot write itself. EVERY tick, not on the POLL_INTERVAL cadence —
