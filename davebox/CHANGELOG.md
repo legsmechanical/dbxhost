@@ -17,6 +17,17 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Automation exports to Live.** An exported set now carries volume, pan and
+  both send levels as clip automation, plus aftertouch on every track and pitch
+  bend on Move-routed tracks (scaled to that instrument's own bend range). The
+  set also arrives with two empty return tracks, so Send A and Send B have
+  somewhere to go — which also means a static send level round-trips for the
+  first time. CC automation, pitch bend on Schwung tracks, Schwung module
+  parameters and dAVEBOx's own bank parameters do not carry: the Move set format
+  has no clip-level place for a CC, and the others have no instrument in Live to
+  land on. See the manual, §15.3.
+- **Fixed:** every exported track was 0.61 dB loud. The mixer's volume field is
+  decibels and the export was writing a normalised fader position into it.
 - **One Instrument row, one picker.** The Generator row is gone from the
   sound menu. The Instrument row names what the track plays; click enters
   its editor (a Schwung generator's pages, or Move's own editor; nothing on a

@@ -1526,9 +1526,37 @@ with tempo and key.
   loops of variation.
 - An **Apply Conductor?** step works as it does for [bake](#151-bake), and never
   changes your live set.
+- **Automation comes too** — see below.
 
 The bundle carries its own samples. Requires **Live 12.1+** for Move Drum Racks;
 export is one-way.
+
+### What automation carries
+
+The set arrives with two empty return tracks, so each track's Send A and Send B
+have somewhere to go — drop whatever effect you like on them.
+
+**These carry:**
+
+- **Volume, pan and both sends** — as clip automation on the track's mixer.
+- **Aftertouch** on any track.
+- **Pitch bend** on Move-routed tracks, scaled to that instrument's own bend
+  range so it sounds the way it did on the Move.
+
+**These don't, and it isn't a bug we're going to fix:**
+
+- **CC automation.** A Move set has no place to put a CC curve — the format
+  simply has no such thing.
+- **Pitch bend on Schwung tracks.** How far a bend goes is decided by the synth,
+  and a Schwung track exports as a placeholder instrument, so there's no honest
+  amount to bend by.
+- **Anything you automated inside a Schwung module**, and dAVEBOx's own bank
+  parameters. Neither exists in Live, so there's nothing for them to land on.
+
+Aftertouch and pitch bend are written onto the notes themselves rather than as a
+separate lane. That's how the format stores them, and it sounds the same — with
+one consequence worth knowing: they only exist while a note is sounding, which
+is also the only time you could hear them.
 
 ---
 
