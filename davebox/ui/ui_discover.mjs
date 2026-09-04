@@ -1159,6 +1159,15 @@ export function discover(slot, comp) {
     const visIo = {
         prefix: comp,
         getParam: (fullKey) => engineGetChainParam(slot, fullKey),
+        /* ⚠ A LIE FOR `child_prefix` LEVELS, AND A DELIBERATE ONE — say so
+         * rather than let it read as support.
+         *
+         * A repeated element (minijv's 8 parts) becomes one page per index here,
+         * but knobEntries() runs ONCE for the level, before that loop, so a gate
+         * inside a child level would be answered against element 0 for every
+         * page. No module currently pairs child_prefix WITH visible_if, so this
+         * is unreached; if one ever does, the fix is to evaluate per index
+         * inside visit()'s spec loop, not to widen this stub. */
         childIndexOf: () => 0,
     };
     const { chainParams, hierarchy, diag } = engineDescribe(slot, comp);
