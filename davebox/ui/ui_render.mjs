@@ -117,7 +117,9 @@ function drawBankHeading(name, showTrack, bareHdr) {
      * active track on the track number row") — its right label keeps only the
      * instrument. Bank cards name the track: a latched card holds the screen
      * with no track row in sight (2026-08-25). */
-    drawKitBankHeader(bankHeadingText(name), bankHeaderGlyph(S.activeBank), bankHeaderRight(bareHdr));
+    /* session view's mixer pages are AUDIO banks whatever the track's bank is */
+    drawKitBankHeader(bankHeadingText(name), S.sessionView ? 'audio' : bankHeaderGlyph(S.activeBank),
+                      bankHeaderRight(bareHdr));
 }
 /* The heading STRING: the name, with the Conductor's "C-" blink (phase driven
  * in the tick loop; the header font is fixed-advance so the name stays
@@ -382,6 +384,14 @@ function drawSessionMixerPage() {
     if (touched) drawKitTouchedHeader(touched.name + '  ' + touched.text);
     else drawBankHeading(mode.label, false);
     drawKitCells(cells, t);
+    drawKitHintRow(MV_FOOTER_Y, sessionMixerHints());
+}
+/* The session mixer pages wear the bank-card chassis (Josh, 2026-09-05: "aligned
+ * with track bank UI organization and aesthetics"): the glyph header, the kit
+ * cells, and the footer canon — the jog walks the banks, Back leaves. A click on
+ * these pages does nothing (only the gateway takes one), so no CLK pair. */
+function sessionMixerHints() {
+    return [['JOG', 'BANK'], ['BACK', 'OUT']];
 }
 
 /* Levels get their OWN layout: eight tall faders in one row, not the 4x2 kit
@@ -401,8 +411,11 @@ function drawSessionFaderRow(cells, mode) {
     const touched = (t >= 0 && cells[t] && cells[t].name) ? cells[t] : null;
     if (touched) drawKitTouchedHeader(touched.name + '  ' + touched.text);
     else drawBankHeading(mode.label, false);
+    drawKitHintRow(MV_FOOTER_Y, sessionMixerHints());
 
-    const COLW = 128 / 8, FW = 8, TOP = 14, BOT = 54, LBL_Y = 56;
+    /* BOT/LBL_Y moved up 7 rows on 2026-09-05 so the hint footer (row 57) fits
+     * under the labels, as on every other bank card. */
+    const COLW = 128 / 8, FW = 8, TOP = 14, BOT = 47, LBL_Y = 49;
     const unity = mode.max > 0 ? (1.0 / mode.max) : -1;
     /* TURNING is what asks for a number. The strip being moved swaps its track
      * number for its VALUE and swaps back once the turn goes quiet; touch alone
@@ -600,7 +613,12 @@ function drawMetroIndicator() {
          * mode table itself, the one owner; the gateway carries 'FX'. */
         const _sm = SESS_KNOB_MODES[S.sessKnobMode];
         const ml = (_sm && _sm.short) || 'Vol';
-        ovwPrint(128 - 4 - ovwWidth(ml), 17, ml, 1);   /* the small header face, row 2 */
+        /* "< SNDA >", underlined (Josh, 2026-09-05): the arrows say this is what
+         * the jog scrolls, the rule matches the key/scale rule in track view. */
+        const lab = '< ' + ml + ' >';
+        const lw = ovwWidth(lab), lx = 128 - 4 - lw;
+        ovwPrint(lx, 17, lab, 1);
+        fill_rect(lx, 23, lw, 1, 1);
     }
     /* Velocity / Fixed/Adaptive indicators (track view only, row 2 at y=19,
      * right-aligned in the stock face; Fix/Adap hugs the right edge, the
@@ -914,7 +932,7 @@ function drawOverviewTracks(hints) {
  * card; in session view it walks the mixer mode and a click latches the mixer. */
 function overviewHints() {
     /* CLK says EDIT, not BANK — the jog pair already names the bank (Josh). */
-    return S.sessionView ? [['JOG', 'MIX'], ['CLK', 'EDIT']] : [['JOG', 'BANK'], ['CLK', 'EDIT']];
+    return [['JOG', 'BANK'], ['CLK', 'EDIT']];   /* both views (Josh: the session jog hint says BANK too) */
 }
 
 function drawTrackRow(y) {

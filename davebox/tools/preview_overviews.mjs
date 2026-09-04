@@ -85,6 +85,16 @@ draw('session-overview');
 S.playing = true; S.masterPos = 96;
 draw('session-overview-playing');
 
+/* SESSION MIXER PAGES, latched (jog click from the overview): the fader row
+ * and the pan arcs — bank-card chassis (glyph header, footer canon). */
+S.playing = false; S.sessMixerLatched = true;
+for (let t = 0; t < 8; t++) { S.sessVolSlots[t] = 1 << t; S.sessVolBus[t] = 0; S.sessVolLevel[t] = [1.0, 0.8, 1.2, 0.5, 1.0, 0.0, 1.5, 0.9][t]; }
+S.trackRoute[6] = 2; S.trackMidiTo[6] = 3;      /* a routed track: the X box */
+S.sessKnobMode = 0; draw('session-mixer-volume');
+S.sessKnobMode = 1; for (let t = 0; t < 8; t++) S.sessVolLevel[t] = [0.5, 0.2, 0.8, 0.5, 0.65, 0.5, 0.5, 0.35][t];
+draw('session-mixer-pan');
+S.sessMixerLatched = false;
+
 function writePng(fbuf,outPath){
   const iw=W*SCALE+2*PAD, ih=H*SCALE+2*PAD; const img=Buffer.alloc(iw*ih*4);
   for(let i=0;i<iw*ih;i++){img[i*4]=MAT[0];img[i*4+1]=MAT[1];img[i*4+2]=MAT[2];img[i*4+3]=255;}

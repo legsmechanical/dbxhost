@@ -50,7 +50,10 @@ const labelSpan = (col) => {
     const lo = col * 16, hi = col * 16 + 15;          /* THIS column only — a wider
                                                       * window catches the neighbours' digits
                                                       * and every case measures the same. */
-    const xs = px.filter((p) => p.y >= 55 && p.y <= 64 && p.x >= lo && p.x <= hi).map((p) => p.x);
+    /* the label row: LBL_Y-1 .. LBL_Y+7 (48..56) — it moved up on 2026-09-05 so the
+     * hint footer fits on row 57, which this band must NOT include (footer pills
+     * are glyphs too). */
+    const xs = px.filter((p) => p.y >= 48 && p.y <= 56 && p.x >= lo && p.x <= hi).map((p) => p.x);
     return xs.length ? Math.max(...xs) - Math.min(...xs) + 1 : 0;
 };
 globalThis.clear_screen = () => { fills = []; prints = []; px = []; };
@@ -190,7 +193,7 @@ else bad('a positionless strip keeps its number', `${spanBlank}px of ink`);
 S.sessKnobMode = 0; S.knobTouched = 2; S.jogTouched = false; S.bankSelectTick = 1;
 S.sessVolLastKnob = 2; S.sessVolLastTurn = 1000; S.tickCount = 1000;
 draw();
-const band = (col) => fills.filter((f) => f.y === 55 && f.h === 9 &&
+const band = (col) => fills.filter((f) => f.y === 48 && f.h === 9   /* LBL_Y-1: the labels sit above the row-57 footer (2026-09-05) */ &&
                                           f.x >= col * 16 - 8 && f.x <= col * 16 + 20);
 if (band(2).length > 0) ok('the live value sits on a filled highlight block');
 else bad('the live value sits on a filled highlight block', 'no fill behind it');
