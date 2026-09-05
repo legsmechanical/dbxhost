@@ -48,6 +48,15 @@
 #define PA_LANE_CLOCK_RESET_ALL(inst) do { for (int _pt = 0; _pt < NUM_TRACKS; _pt++) PA_LANE_CLOCK_RESET(&(inst)->tracks[_pt]); } while (0)
 
 #define PA_LIVE_MAX          8   /* targets one track can have under a hand at once */
+/* pa_store_full is a REASON, not a bit (2026-09-05): JS turns it into words on
+ * the OLED. A refused write used to be one console line nobody saw, and Josh
+ * spent an evening on "automation isn't being recorded — sometimes it works".
+ * It was the 64-target table, filled by a session of experimenting: targets
+ * were never freed and a cleared lane kept its entry as a zombie. */
+#define PA_FULL_ENTRIES      1   /* PA_MAX_ENTRIES (track,clip,target) triples */
+#define PA_FULL_TARGETS      2   /* PA_MAX_TARGETS distinct parameters */
+#define PA_FULL_POINTS       3   /* PA_ENTRY_POINTS in one lane */
+#define PA_FULL_HANDS        4   /* PA_LIVE_MAX targets under a hand on one track */
 #define PA_LIVE_RECORD       1   /* the knob is writing along the playhead */
 #define PA_LIVE_OVERRIDE     2   /* the knob is overriding; automation resumes on release */
 
