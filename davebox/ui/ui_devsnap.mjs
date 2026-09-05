@@ -30,7 +30,7 @@ import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { NUM_TRACKS, DRUM_LANES } from './ui_constants.mjs';
 import { setTrackMute, setTrackSolo } from './ui_editops.mjs';
-import { showActionPopup, deviceSnapDir } from './ui_persistence.mjs';
+import { showActionPopup, showActionPopupFor, deviceSnapDir } from './ui_persistence.mjs';
 import { engineGet, engineSet, engineGetSlotParam, engineSetSlotParam, moveBusComp,
          moveBusForChannel } from './ui_engine.mjs';
 import { midiVal, midiSendValue } from './ui_sound.mjs';
@@ -38,6 +38,9 @@ import { forceRedraw, invalidateLEDCache } from './ui_leds.mjs';
 
 export const DEVSNAP_SLOTS   = 16;
 export const DEVSNAP_HOLD_MS = 450;     /* = BACK_HOLD_MS: a deliberate long-press */
+/* A SAVED / RESTORED card is a result to read, not a flash: the default popup
+ * (520 ms) was "gone before you can read it" (Josh, 2026-09-05, device). */
+export const DEVSNAP_CARD_MS = 1500;
 const LEVEL_KEYS = ['volume', 'pan', 'send_a', 'send_b'];
 /* A level that read back as nothing is NOT a level (isFinite(null) is true —
  * JSON turns NaN into null on the way through the file). */
@@ -65,7 +68,10 @@ export function devSnapEnter() {
     if (d.open) return;
     d.open = true;
     devSnapScan();
-    showActionPopup('SNAPSHOTS', 'Tap recall', 'Hold save');
+    /* No entry popup: the layer names itself on screen for as long as it is
+     * open (the SNAPSHOTS row under the banner, ui_render) and the footer
+     * carries the gestures. A 520 ms flash of the same words was too quick to
+     * help (Josh, 2026-09-05, device). */
     invalidateLEDCache();
     forceRedraw();
 }
@@ -161,7 +167,7 @@ export function devSnapSave(n) {
     const json = { v: 2, mixer: mixerCapture(), mutes: mutesCapture(), taken: Date.now() };
     if (!host_write_file(dir + '/davebox.json', JSON.stringify(json))) { showActionPopup('SNAPSHOT', 'Save failed'); return false; }
     d.slots[n] = true; d.last = n;
-    showActionPopup('SNAPSHOT ' + (n + 1), 'SAVED', res.skipped ? res.skipped + ' skipped' : undefined);
+    showActionPopupFor(DEVSNAP_CARD_MS, 'SNAPSHOT ' + (n + 1), 'SAVED', res.skipped ? res.skipped + ' skipped' : undefined);
     S.stepSaveFlashStartTick = S.clockMs;
     invalidateLEDCache(); forceRedraw();
     return true;
@@ -193,7 +199,7 @@ function devSnapFinish() {
     catch (e) { console.log('[devsnap] mixer/mutes apply failed: ' + e); }
     d.recalling = -1; d.recallDir = null; d.recallJson = null; d.last = n;
     const skipped = status && status.skipped ? status.skipped + ' skipped' : undefined;
-    showActionPopup('SNAPSHOT ' + (n + 1), 'RESTORED', skipped);
+    showActionPopupFor(DEVSNAP_CARD_MS, 'SNAPSHOT ' + (n + 1), 'RESTORED', skipped);
     invalidateLEDCache(); forceRedraw();
     return applied;
 }

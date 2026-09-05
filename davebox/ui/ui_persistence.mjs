@@ -155,11 +155,21 @@ export function showTrackVolCard(text, frac) {
 }
 
 export function showActionPopup(...lines) {
+    showActionPopupFor(ACTION_POPUP_MS, ...lines);
+}
+
+/* The same popup, held for `ms`. The default ACTION_POPUP_MS is a glance —
+ * right for "CLEARED" after a gesture you just made, too short for a result
+ * you have to READ (Josh, 2026-09-05, the snapshot recall: "gone before you
+ * can read it"). ⚠ An optional line passed as undefined/null is DROPPED, not
+ * printed: the renderer prints whatever is in the array, and a
+ * `cond ? text : undefined` third line read "undefined" on the device. */
+export function showActionPopupFor(ms, ...lines) {
     S.actionPopupHighlight = -1;
     S.actionPopupGauge = -1;
     S.actionPopupGaugeMark = -1;
-    S.actionPopupLines   = lines;
-    S.actionPopupEndTick = nowMs() + ACTION_POPUP_MS;
+    S.actionPopupLines   = lines.filter((l) => l !== undefined && l !== null);
+    S.actionPopupEndTick = nowMs() + ms;
     S.screenDirty = true;
 }
 
