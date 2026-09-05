@@ -118,23 +118,15 @@ step('a plain touch (no modifier) changes nothing', () => {
     if (S.trackMuted[4]) throw new Error('a plain touch muted the track');
 });
 
-step('⭑ Mute + touch DEACTIVATES the strip\'s automation, marks the Mute a modifier, and the release does not mute the track', () => {
+step('⭑ Mute + touch on an AUTOMATED strip MUTES the track and leaves the lane alone (Josh, 2026-09-05: "mute touch to mute track is the thing we need to keep")', () => {
     S.muteUsedAsModifier = false;
-    cc(MUTE, 127);
-    note(4, true); note(4, false);
-    if (!S.muteUsedAsModifier) throw new Error('Mute was not marked a modifier');
-    const st = A.automationStateFor(4, S.trackActiveClip[4] | 0, '4:slot:volume');
-    if (!st || st.active) throw new Error('the lane is still active: ' + JSON.stringify(st));
-    if (!S.actionPopupLines || S.actionPopupLines.join(' ').indexOf('OFF') < 0) throw new Error('no OFF popup: ' + JSON.stringify(S.actionPopupLines));
-    cc(MUTE, 0);
-    if (S.trackMuted[4]) throw new Error('the Mute release muted the track');
-});
-
-step('⭑ ...and Mute + touch again REACTIVATES it', () => {
     cc(MUTE, 127); note(4, true); note(4, false); cc(MUTE, 0);
+    if (!S.trackMuted[4]) throw new Error('Mute+touch on an automated strip did not mute the track');
     const st = A.automationStateFor(4, S.trackActiveClip[4] | 0, '4:slot:volume');
-    if (!st || !st.active) throw new Error('the lane did not reactivate: ' + JSON.stringify(st));
-    if (S.actionPopupLines.join(' ').indexOf('ON') < 0) throw new Error('no ON popup');
+    if (!st || !st.active) throw new Error('Mute+touch toggled the lane: ' + JSON.stringify(st));
+    if (S.actionPopupLines && S.actionPopupLines.join(' ').match(/AUTOMATION|OFF/)) throw new Error('an automation popup fired: ' + JSON.stringify(S.actionPopupLines));
+    cc(MUTE, 127); note(4, true); note(4, false); cc(MUTE, 0);      /* unmute */
+    if (S.trackMuted[4]) throw new Error('second Mute+touch did not unmute');
 });
 
 step('⭑ the ring LED of an ACTIVE lane BLINKS at the 440 ms law; a plain strip does not', () => {
@@ -156,11 +148,11 @@ step('⭑ the ring LED of an ACTIVE lane BLINKS at the 440 ms law; a plain strip
 });
 
 step('⭑ an INACTIVE lane keeps a steady ring', () => {
-    cc(MUTE, 127); note(4, true); note(4, false); cc(MUTE, 0);      /* deactivate again */
+    A.automationToggleActive(4, S.trackActiveClip[4] | 0, '4:slot:volume');   /* deactivate (the AUTOMATION bank's op) */
     const ring = (ms) => { S.clockMs = ms; L.invalidateLEDCache(); ledPk = []; L.updateTrackLEDs(); const v = Object.assign({}, lastRing); for (const p of ledPk) if ((p[1] & 0xF0) === 0xB0 && p[2] >= 71 && p[2] <= 78) v[p[2] - 71] = p[3]; lastRing = v; return v; };
     const a = ring(2000), b = ring(2440);
     if (a[4] === undefined || a[4] === 0 || a[4] !== b[4]) throw new Error('inactive lane ring not steady: ' + a[4] + ' / ' + b[4]);
-    cc(MUTE, 127); note(4, true); note(4, false); cc(MUTE, 0);      /* back on */
+    A.automationToggleActive(4, S.trackActiveClip[4] | 0, '4:slot:volume');   /* back on */
 });
 
 step('⭑ Mute + touch on a strip with NO automation keeps its session meaning: mute the track', () => {

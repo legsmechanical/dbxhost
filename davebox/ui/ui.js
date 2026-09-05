@@ -36,7 +36,7 @@ import { nowMs } from './ui_clock.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
 import { showActionPopup, readActiveSet, resolveSetLoadDecision } from './ui_persistence.mjs';
-import { automationParamTouch, automationClearKey, automationToggleActive, automationStateFor } from './ui_automation.mjs';
+import { automationParamTouch, automationClearKey, automationToggleActive } from './ui_automation.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { daveBoxRotate } from './ui_daves.mjs';
@@ -578,45 +578,28 @@ function _onMidiInternalImpl(data) {
                             automationParamTouch(_t, _c, 'seq', _tg.slice(4), true);
                         }
                     }
-                    /* The session strip's automation gestures — the SAME as a
-                     * track-view knob's (Josh, 2026-09-05: "they should work
-                     * just like the track view knobs, including the delete/mute
-                     * led rings"): Delete + touch clears the strip's automation
-                     * in the track's clip, Mute + touch deactivates / reactivates
-                     * it (and marks the Mute a modifier), and the touch itself
-                     * opens the gesture. ONE popup for the gesture, however many
-                     * targets the strip has; the toggle RECOUNTS like a macro's
-                     * legs — any active lane makes it a deactivate. Mute + touch
-                     * on a strip with NO automation keeps its older session
-                     * meaning, mute / solo the track (2026-09-04). */
-                    let _sessAutoHandled = false;
+                    /* The session strip's automation gestures (2026-09-04, re-ruled
+                     * 2026-09-05): Delete + touch clears the strip's automation in
+                     * the track's clip, and the touch itself opens the gesture.
+                     * ⚠ NO Mute + touch automation toggle here — Josh: "mute touch
+                     * to mute track is the thing we need to keep", and Shift+Mute
+                     * is already SOLO, so the chord has no free meaning in session
+                     * view; a strip's lane is switched on/off from the AUTOMATION
+                     * bank instead. The ring blink and the fader mark still show
+                     * the lane. ONE popup for the clear, however many targets. */
                     if (S.sessionView) {
                         const _mode = SESS_KNOB_MODES[S.sessKnobMode];
                         if (_mode && _mode.widget !== 'gateway') {
                             const _c = effectiveClip(d1);
-                            const _tgs = sessStripTargets(S, d1, _mode.key);
-                            let _cleared = false, _toggled = null;
-                            const _anyActive = _tgs.some(tg => { const st = automationStateFor(d1, _c, tg.target); return !!(st && st.active); });
-                            const _anyAuto   = _tgs.some(tg => !!automationStateFor(d1, _c, tg.target));
-                            for (const tg of _tgs) {
-                                if (S.deleteHeld) {
-                                    if (automationClearKey(d1, _c, tg.target)) _cleared = true;
-                                } else if (S.muteHeld && _anyAuto) {
-                                    S.muteUsedAsModifier = true;
-                                    const st = automationStateFor(d1, _c, tg.target);
-                                    if (st && st.active === _anyActive) {
-                                        const r = automationToggleActive(d1, _c, tg.target);
-                                        if (r !== null) _toggled = r;
-                                    } else if (st && _toggled === null) _toggled = st.active;
-                                }
+                            let _cleared = false;
+                            for (const tg of sessStripTargets(S, d1, _mode.key)) {
+                                if (S.deleteHeld && automationClearKey(d1, _c, tg.target)) _cleared = true;
                                 automationParamTouch(d1, _c, tg.slot, tg.fullKey, true);
                             }
                             if (_cleared) showActionPopup('AUTOMATION', 'CLEARED');
-                            else if (_toggled !== null) showActionPopup('AUTOMATION', _toggled ? 'ON' : 'OFF');
-                            if (S.muteHeld && _anyAuto) _sessAutoHandled = true;
                         }
                     }
-                    if (S.sessionView && S.muteHeld && !_sessAutoHandled) {
+                    if (S.sessionView && S.muteHeld) {
                         if (S.shiftHeld) setTrackSolo(d1, !S.trackSoloed[d1]);
                         else             setTrackMute(d1, !S.trackMuted[d1]);
                         invalidateLEDCache();
