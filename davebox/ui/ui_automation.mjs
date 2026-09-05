@@ -709,7 +709,13 @@ export function automationSmoothable(slot, fullKey) {
     if (slot === 'midi' || midiTargetIsMidi(fullKey)) return true;   /* a controller sweep ramps */
     const [comp, key] = splitFullKey(fullKey);
     const p = componentMeta(slot, comp)[key];
-    return !p || p.type === 'float' || p.type === undefined;
+    /* Every NUMERIC parameter ramps (device, 2026-09-05: "smooth option is
+     * missing" — the tested synth declares cutoff as an int 0..127, and the
+     * row was floats-only). The lane interpolates in its own 14-bit domain and
+     * the wire value is rounded on the way out, so an int ramps in steps of
+     * one. Only a choice (enum) or a switch (bool) has nothing between its
+     * values. */
+    return !p || (p.type !== 'enum' && p.type !== 'bool');
 }
 
 /* Knob touched + jog click: stepped hold vs linear, per parameter per clip. */
