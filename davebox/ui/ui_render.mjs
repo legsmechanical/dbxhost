@@ -864,7 +864,16 @@ export function drawNoticeCard(lines) {
     const y = Math.max(0, Math.floor((64 - h) / 2));
     fill_rect(CARD_X, y, CARD_W, h, 0);
     draw_rect(CARD_X, y, CARD_W, h, 1);
-    for (let i = 0; i < n; i++) print(CARD_X + CARD_PAD, y + CARD_PAD + i * CARD_LINE_H, String(lines[i]), 1);
+    /* Every line CENTRED in the box, horizontally as well as vertically (Josh,
+     * 2026-09-05: "any notices … should always have the text centered
+     * horizontally and vertically in the box"). The box is sized to its
+     * lines, so the block is centred by construction; each line is measured
+     * with the host's own text_width and placed on the box's axis. */
+    for (let i = 0; i < n; i++) {
+        const t = String(lines[i]);
+        const w = Math.min(CARD_W - 4, text_width(t));
+        print(CARD_X + Math.floor((CARD_W - w) / 2), y + CARD_PAD + i * CARD_LINE_H, t, 1);
+    }
 }
 
 function drawSessionOverview() {
