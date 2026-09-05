@@ -115,6 +115,14 @@ const STATES = [
     ['sound mode',                () => { S.bankCardLatched = true; snd.soundEnter(S.activeTrack, 0); }],
 ];
 
+step('⭑ the TAP-vs-HOLD threshold is a deliberate hold, not a flick (Josh, 2026-09-05: "too easy to peek when trying to toggle")', () => {
+    const src = readFileSync('ui/ui_input_cc.mjs', 'utf8');   /* run.sh runs from davebox/ */
+    const m = /const NOTE_SESSION_HOLD_MS = (\d+);/.exec(src);
+    if (!m) throw new Error('NOTE_SESSION_HOLD_MS not found');
+    const ms = parseInt(m[1], 10);
+    if (ms < 300 || ms > 600) throw new Error('NOTE_SESSION_HOLD_MS=' + ms + ' — a toggle tap must not read as a peek (300..600)');
+});
+
 step('⭐ ONE PRESS returns to the overview from every non-overview state', () => {
     for (const [name, arrange] of STATES) {
         rest();
