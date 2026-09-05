@@ -37,6 +37,10 @@ import {
 } from '/data/UserData/schwung/shared/chain_ui_views.mjs';
 
 import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
+/* Snapshot / recall — the PURE half (parsers, the restore planner, the bulk
+ * packing). The host bindings below drive it; dAVEBOx owns the gesture. */
+import { parseSlotSnapshot, parseBusSnapshot, planRestore, batchWrites, bulkEncodeItems }
+    from '/data/UserData/schwung/shared/snapshot.mjs';
 /* The ONE definition of "this two-state control is a momentary button", shared
  * with the param-pages knob grid. See isTriggerParam below for why this file
  * cannot settle the question from `access` alone. */
@@ -206,7 +210,7 @@ import {
 import {
     paramPagesEnabled, enterParamPages, exitParamPages, paramPagesActive,
     tickParamPages, drawParamPages, handleParamPagesMidi,
-    paramPagesComponent, paramPagesSlot, clearParamPagesTouch,
+    paramPagesComponent, paramPagesSlot, clearParamPagesTouch, paramPagesRefreshTrailing,
     PARAM_VIEW_LIST, PARAM_VIEW_KNOBS
 } from './shadow_ui_param_pages.mjs';
 /* One definition of the `visible_if` rule and its value helpers, shared with
@@ -4402,6 +4406,12 @@ function loadOvertakeModule(moduleInfo, skipOvertake) {
          * autosave is deferred (edits stay marked; the transition flushes
          * still run). For a module whose performance must not share the SPI
          * thread with a slot serialization. Cleared on unload. */
+        /* Snapshot / recall for the overtake module (item 18a). dAVEBOx owns
+         * the gesture and the directory; the host owns capture and the
+         * state-only recall. See the block above saveOneDirtyUnit. */
+        globalThis.host_snapshot_take   = function(dir) { return hostSnapshotTake(String(dir || "")); };
+        globalThis.host_snapshot_recall = function(dir) { return hostSnapshotRecall(String(dir || "")); };
+        globalThis.host_snapshot_status = function() { return hostSnapshotStatus(); };
         globalThis.host_autosave_hold = function(on) {
             autosaveHold = !!on;
         };
@@ -5257,7 +5267,13 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
  * the overtake autosave to spread a multi-slot flush across ticks — each slot
  * costs several get_param round-trips, so writing four at once inside one tick
  * would stall the overtake tool's frame. */
-function autosaveAllSlots(onlySlot) {
+/* `forSnapshot`: a snapshot TAKE is an explicit gesture with no second chance,
+ * so it writes with whatever the state reads answered (three retries each,
+ * see getSlotStateWithRetry) rather than the autosave's bail-and-preserve —
+ * a preserved file would copy STALE state into the snapshot and call it
+ * current. A position whose read failed carries no state and the recall
+ * counts it as "nostate" (upstream #385's rule). */
+function autosaveAllSlots(onlySlot, forSnapshot) {
     /* Tracks whether the requested slot was actually written. Several paths
      * below `continue` deliberately (preset audition, a shim-reported-empty
      * slot, a state read that timed out) — all of them correct, all of them
@@ -5343,7 +5359,7 @@ function autosaveAllSlots(onlySlot) {
 
         const currentSig = getSlotModuleSignature(i);
         const moduleChanged = currentSig !== lastSavedSlotSignature[i];
-        const patchJson = buildSlotPatchJson(i, slots[i].name || "Untitled", true, moduleChanged);
+        const patchJson = buildSlotPatchJson(i, slots[i].name || "Untitled", !forSnapshot, moduleChanged);
         if (!patchJson) continue;
 
         /* Wrap with name, version, modified flag */
@@ -5397,6 +5413,170 @@ function saveAllFxBusConfigs() {
  * Each bus is persisted through its OWN saver rather than the editor's
  * dispatcher: activeFxBus reflects whichever bus was last opened on screen,
  * which is unrelated to the bus that actually changed. */
+/* ==========================================================================
+ * SNAPSHOT / RECALL — host bindings for the overtake module (item 18a,
+ * 2026-09-05; ported from upstream #385 minus its gesture, toast and flags).
+ *
+ * TAKE reuses the autosave writers VERBATIM and copies the files they write
+ * into `dir` — one serializer, not two. RECALL parses those files, plans
+ * (shared/snapshot.mjs: id-guard, tri-state, counted skips) and puts the
+ * STATE back through one bulk SET per slot per host tick — never load_file
+ * (that reinstantiates and cuts tails), never N fire-and-forget SETs (one
+ * frame each, and the mailbox stomp window between them). The job is
+ * budgeted across ticks so a full rig never stalls the UI in one frame.
+ * ========================================================================== */
+const SNAPSHOT_BULK_BYTES = 60000;      /* under the 64 KB mailbox value */
+let snapshotRecallJob = null;           /* { dir, batches, i, restored, skipped, reasons } */
+
+function snapshotFileNames() {
+    const names = [];
+    for (let i = 0; i < SHADOW_UI_SLOTS; i++) names.push("/slot_" + i + ".json");
+    for (let i = 0; i < 4; i++) names.push("/master_fx_" + i + ".json");
+    for (const b of SEND_FX_BUSES)
+        for (let s = 0; s < SEND_FX_SLOTS_JS; s++) names.push("/send_fx_" + b + "_" + s + ".json");
+    for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++)
+        for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) names.push("/move_fx_" + sl + "_" + b + ".json");
+    return names;
+}
+
+/* prefix -> module id loaded RIGHT NOW, for every position a snapshot can
+ * name. Slots and Master come from the mirrors JS already keeps; a send or
+ * Move bus position has no mirror, so its `:name` is read — only for the
+ * positions the snapshot actually holds (the caller passes them), never all 24. */
+function snapshotLiveIds(busPrefixes) {
+    const live = {};
+    for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+        const cfg = chainConfigs[i] || createEmptyChainConfig();
+        live[i + ":synth"]    = (cfg.synth  && cfg.synth.module)  || "";
+        live[i + ":midi_fx1"] = (cfg.midiFx && cfg.midiFx.module) || "";
+        for (let k = 1; k <= 4; k++) {
+            const c = cfg["fx" + k];
+            live[i + ":fx" + k] = (c && c.module) || "";
+        }
+    }
+    for (let i = 1; i <= 4; i++)
+        live["master_fx:fx" + i] = (masterFxConfig["fx" + i] || {}).module || "";
+    for (const pfx of (busPrefixes || [])) {
+        if (pfx in live) continue;
+        const name = shadow_get_param(0, pfx + ":name");
+        live[pfx] = (name === null || name === undefined) ? "" : String(name);
+    }
+    return live;
+}
+
+function hostSnapshotTake(dir) {
+    if (!dir || typeof dir !== "string") return JSON.stringify({ ok: false, error: "no dir" });
+    if (typeof host_ensure_dir === "function") host_ensure_dir(dir);
+    /* Flush live state to the set dir through the normal writers. The slot
+     * writer is asked NOT to bail on a failed read (see autosaveAllSlots). */
+    autosaveAllSlots(undefined, true);
+    saveMasterFxChainConfig(true);
+    saveSendFxChainConfig();
+    saveMoveFxChainConfig();
+    /* Then copy. host_write_file is temp-then-rename, so a failed take leaves
+     * the previous snapshot's file whole. */
+    let copied = 0, positions = 0;
+    for (const name of snapshotFileNames()) {
+        let content = null;
+        try { content = host_read_file(activeSlotStateDir + name); } catch (e) { content = null; }
+        if (content && content.length > 3) positions++;
+        if (host_write_file(dir + name, content || "{}\n")) copied++;
+    }
+    debugLog("snapshot: took " + copied + "/" + snapshotFileNames().length + " files (" +
+             positions + " occupied) into " + dir);
+    return JSON.stringify({ ok: copied === snapshotFileNames().length, copied, positions });
+}
+
+function snapshotRecords(dir) {
+    const records = [];
+    const busPrefixes = [];
+    const read = (name) => { try { return host_read_file(dir + name); } catch (e) { return null; } };
+    /* Slot records carry a per-slot prefix so one flat liveIds map can address
+     * all eight slots plus the buses without nine separate plans. */
+    for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+        const content = read("/slot_" + i + ".json");
+        if (!content) continue;
+        for (const r of parseSlotSnapshot(content))
+            records.push({ ...r, slot: i, prefix: i + ":" + r.prefix, key: r.prefix });
+    }
+    const bus = (name, pfx) => {
+        const content = read(name);
+        if (!content) return;
+        for (const r of parseBusSnapshot(content, pfx)) {
+            records.push({ ...r, slot: 0, key: pfx });
+            if (pfx.indexOf("master_fx:") !== 0) busPrefixes.push(pfx);
+        }
+    };
+    for (let i = 0; i < 4; i++) bus("/master_fx_" + i + ".json", "master_fx:fx" + (i + 1));
+    for (const b of SEND_FX_BUSES)
+        for (let s = 0; s < SEND_FX_SLOTS_JS; s++) bus("/send_fx_" + b + "_" + s + ".json", "send_fx:" + b + ":fx" + (s + 1));
+    for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++)
+        for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) bus("/move_fx_" + sl + "_" + b + ".json", "move_fx:" + (sl + 1) + ":fx" + (b + 1));
+    return { records, busPrefixes };
+}
+
+function hostSnapshotRecall(dir) {
+    if (!dir || typeof dir !== "string") return JSON.stringify({ ok: false, error: "no dir" });
+    if (snapshotRecallJob) return JSON.stringify({ ok: false, error: "recall in progress", pending: true });
+    const { records, busPrefixes } = snapshotRecords(dir);
+    if (records.length === 0) {
+        debugLog("snapshot: recall found nothing in " + dir);
+        return JSON.stringify({ ok: false, error: "no snapshot", restored: 0, skipped: 0, reasons: [] });
+    }
+    const plan = planRestore(records, snapshotLiveIds(busPrefixes));
+    for (const r of plan.reasons) {
+        debugLog("snapshot: skipped " + r.prefix + " (" + r.reason +
+                 (r.was ? ", was " + r.was : "") + (r.now ? ", now " + r.now : "") + ")");
+    }
+    const batches = batchWrites(plan.writes, SNAPSHOT_BULK_BYTES);
+    snapshotRecallJob = { dir, batches, i: 0, restored: 0, failed: 0,
+                          skipped: plan.skipped, reasons: plan.reasons, total: plan.writes.length };
+    /* One batch NOW — a one-slot rig recalls in the call — the rest per tick. */
+    snapshotRecallTick();
+    return JSON.stringify(hostSnapshotStatus() === "null" ? { ok: true, pending: false } :
+                          Object.assign(JSON.parse(hostSnapshotStatus()), { ok: true }));
+}
+
+/* Drive the job: ONE bulk SET per tick. Runs from the host tick before the
+ * autosave (so a recall's dirtying lands in the same pass). Cheap when idle. */
+function snapshotRecallTick() {
+    const job = snapshotRecallJob;
+    if (!job) return;
+    if (job.i < job.batches.length) {
+        const b = job.batches[job.i++];
+        let ok = false;
+        try { ok = !!shadow_set_params(b.slot, "chain:", bulkEncodeItems(b.items), false); }
+        catch (e) { ok = false; }
+        if (ok) job.restored += b.positions.length;
+        else {
+            job.failed += b.positions.length;
+            for (const p of b.positions) job.reasons.push({ prefix: p, reason: "refused" });
+            debugLog("snapshot: bulk SET refused for slot " + b.slot + " (" + b.positions.join(",") + ")");
+        }
+    }
+    if (job.i >= job.batches.length) {
+        /* Every value a knob path is holding describes the sound from before
+         * the recall (upstream's hardware lesson: the first turn after a
+         * recall departed from the PRE-recall number and wrote the tweak back
+         * over what had just been restored). Drop the caches. */
+        invalidateKnobValueCache();
+        paramPagesRefreshTrailing();     /* the grid's "My Presets" rides on the state blob just replaced */
+        needsRedraw = true;
+        debugLog("snapshot: restored " + job.restored + ", skipped " + (job.skipped + job.failed));
+        snapshotRecallJob = null;
+        snapshotLastResult = { ok: true, pending: false, restored: job.restored,
+                               skipped: job.skipped + job.failed, reasons: job.reasons };
+    }
+}
+let snapshotLastResult = null;
+
+function hostSnapshotStatus() {
+    const job = snapshotRecallJob;
+    if (job) return JSON.stringify({ ok: true, pending: true, done: job.i, total: job.batches.length,
+                                     restored: job.restored, skipped: job.skipped + job.failed });
+    return snapshotLastResult ? JSON.stringify(snapshotLastResult) : "null";
+}
+
 function saveOneDirtyUnit() {
     for (let slot = 0; slot < SHADOW_UI_SLOTS; slot++) {
         if (autosaveDirtySlots & (1 << slot)) {
@@ -16996,6 +17176,10 @@ globalThis.tick = function() {
      * write into the new set, whereas clearing could drop a real edit. */
     {
         const nowMs = Date.now();
+        /* A recall in flight: ONE bulk SET per tick. Outside the autosave's
+         * suppression window on purpose — a set change suppresses SAVES, not
+         * a restore the user just asked for. */
+        snapshotRecallTick();
         if (nowMs >= autosaveSuppressUntil &&
             typeof shadow_take_dirty_slots === "function") {
             const justDirtied = shadow_take_dirty_slots();
