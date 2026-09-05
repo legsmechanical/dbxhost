@@ -25,6 +25,7 @@ globalThis.host_module_set_param = () => {};
 globalThis.host_module_get_param = () => '';
 globalThis.shadow_get_param = () => '';
 globalThis.shadow_set_param = () => {};
+globalThis.shadow_restore_knob_leds = () => {};
 globalThis.host_vol_block = () => {};
 globalThis.host_edit_cc_block = () => {};
 globalThis.clear_screen = () => {};
@@ -241,12 +242,32 @@ step('⭑ Schwung → Move: lands on the Move track\'s bus MENU (its inserts are
 
 step('⭑ prompt → Move: the bank PROMPT follows as the prompt; MACROS → MACROS on a Move track too', () => {
     enterMenu(2);
+    /* In BANK MODE (the card latched): the prompt and MACROS are screens you are
+     * IN. Unlatched they are the RESTING state, which a switch does not follow
+     * (see the fast-scroll step below). */
+    S.bankCardLatched = true;
     snd.soundQueueActionForTest({ t: 'view', view: VIEW_PROMPT }); globalThis.tick();
     editops._switchActiveTrack(6); settle();
     if (view() !== VIEW_PROMPT) throw new Error('view ' + view() + ', expected the bus prompt');
     snd.soundQueueActionForTest({ t: 'view', view: VIEW_MACROS }); globalThis.tick();
     editops._switchActiveTrack(2); settle();
     if (view() !== VIEW_MACROS) throw new Error('MACROS did not follow off a Move bus: view ' + view());
+    S.bankCardLatched = false;
+    snd.soundExit();
+});
+
+step('⭑ Shift+JOG from inside the EDITOR steps the track and lands in the new track\'s editor (Josh, 2026-09-05)', () => {
+    /* The device gesture, not a direct _switchActiveTrack call: the grid used
+     * to swallow Shift+jog for its section jump, so the switch never happened
+     * from the editor at all. */
+    enterEditor(2);
+    const v0 = view();
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 49, 127]));   /* Shift down */
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 14, 1]));     /* jog +1 */
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 49, 0]));     /* Shift up */
+    settle();
+    if (S.activeTrack !== 3) throw new Error('Shift+jog in the editor did not step the track: ' + S.activeTrack + ' shift=' + S.shiftHeld + ' view=' + view() + ' pick=' + JSON.stringify(snd.soundPickStateForTest().shift));
+    if (!snd.soundOpen() || view() !== v0) throw new Error('the editor did not follow: open=' + snd.soundOpen() + ' view=' + view() + ' (was ' + v0 + ')');
     snd.soundExit();
 });
 
@@ -266,6 +287,27 @@ step('⚠ outside sound mode a switch opens NOTHING (as before)', () => {
     globalThis.tick();
     if (snd.soundOpen()) throw new Error('an editor opened from a plain switch');
     if (S.activeBank !== S.trackActiveBank[3]) throw new Error('bank ' + S.activeBank);
+});
+
+step('⚠⚠ a FAST Shift+scroll across a track recorded on SOUND + CONFIG does not drag the menu along (device, 2026-09-05)', () => {
+    /* At rest on the overview. Track 4 was left on the sound bank: arriving
+     * there opens its gateway SILENTLY (resting — the 09-03 law). The old
+     * follow read that resting screen as "open" and, on the next detent,
+     * followed into track 5's MENU — the "kicked into the sound menu" Josh saw
+     * only when scrolling fast (slow: the resting screen stood down between
+     * detents). Three switches in one tick, no tick between. */
+    S.trackActiveBank[4] = 11;           /* BANK_SOUND */
+    S.trackActiveBank[5] = 0; S.trackActiveBank[6] = 0;
+    S.activeTrack = 3; S.activeBank = S.trackActiveBank[3] = 1;
+    editops._switchActiveTrack(4);
+    globalThis.tick();                                   /* the resting gateway lands */
+    if (!snd.soundOpen() || snd.soundActive()) throw new Error('arrival on a sound-bank track must be a RESTING open, got open=' + snd.soundOpen() + ' active=' + snd.soundActive());
+    editops._switchActiveTrack(5);
+    editops._switchActiveTrack(6);
+    globalThis.tick(); globalThis.tick();
+    if (snd.soundActive()) throw new Error('the fast scroll landed in an ACTIVE sound screen — the menu was dragged along');
+    if (S.activeTrack !== 6) throw new Error('track ' + S.activeTrack);
+    if (S.activeBank !== 0) throw new Error('bank ' + S.activeBank + ' — track 6 was on bank 0');
 });
 
 step('⚠ the tick\'s own follow backstop is quiet after a synchronous follow (no double retarget)', () => {

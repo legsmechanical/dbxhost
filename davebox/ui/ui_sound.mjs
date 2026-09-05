@@ -5915,6 +5915,15 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * (Josh, 2026-09-05: the shortcut and step record work from
              * everywhere in track view) — never offered to the binding. */
             return false;
+        } else if (d1 === 14 && GS.shiftHeld && !S.busLevelEditing && !soundIsGlobal()) {
+            /* ⭑ Shift+jog in the EDITOR = SWITCH TRACK, the editor following
+             * (Josh, 2026-09-05: "shift + scroll in a module editor doesn't
+             * change tracks and land on the next track's instrument editor
+             * like it should"). The grid used to take this chord for its own
+             * section jump; declining it here hands it to davebox's jog
+             * handler, whose switch FOLLOWS into the new track's editor (item
+             * 20). Sections stay reachable by the plain jog's page walk. */
+            return false;
         } else if (handleParamPagesMidi([0xB0, d1, d2])) {
             S.dirty = true;
             return true;
@@ -6012,18 +6021,17 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * — so it too falls through to the track switch and rebuilds for the new
          * track. Same shape, so the two screens cannot drift apart.
          *
-         * ⚠ MENU ONLY. Inside a module's editor Shift+jog already JUMPS
-         * SECTIONS (see the `S.shiftHeld && S.sections.length > 1` branch
-         * below), which is a different, established meaning; stealing it there
-         * would trade one gesture for another. Level editing is excluded for the
-         * same reason — mid-edit the jog belongs to the value in hand.
+         * (Since 2026-09-05 the EDITOR declines it too — see the pp branch
+         * above — so Shift+jog switches tracks from the grid as well, the
+         * editor following. Level editing is still excluded: mid-edit the jog
+         * belongs to the value in hand.)
          *
          * ⚠ And not on a GLOBAL bus (Master/Send FX): those are entered from the
          * session FX list, not from a track, so there is no track to step. That
          * is also why tick's follow is gated on !soundIsGlobal(). */
-        if (S.shiftHeld && S.view === VIEW_BLOCKS && !S.busLevelEditing &&
+        if (S.shiftHeld && (S.view === VIEW_BLOCKS || S.view === VIEW_EDIT) && !S.busLevelEditing &&
                 !soundIsGlobal()) {
-            return false;                              /* davebox steps the track */
+            return false;                              /* davebox steps the track (the editor too, 2026-09-05) */
         }
         const delta = decodeDelta(d2);
         if (!delta) return true;

@@ -497,7 +497,15 @@ export function _switchActiveTrack(newT) {
      * "every track scrolled onto reports SOUND + CONFIG" worry that the 08-24
      * close answered is accepted with the ruling: the bank is recorded per
      * track, and that IS where those tracks were left. */
-    const _follow = soundOpen() && !soundIsGlobal() && !isTextEntryActive() &&
+    /* ⚠ ACTIVE, not merely OPEN (device, 2026-09-05: "if I hold shift and
+     * scroll quickly through tracks I get kicked into the sound menu … doesn't
+     * happen if I scroll slowly"). Both sound banks open AT REST — a track
+     * recorded on SOUND + CONFIG shows its gateway silently when you arrive
+     * (soundResting). A fast scroll crosses such a track, the resting gateway
+     * lands, and the NEXT detent then read "sound is open" and FOLLOWED — into
+     * the following track's menu, active. Resting is not a screen you are in;
+     * the follow is only for a screen you are in. */
+    const _follow = soundActive() && !soundIsGlobal() && !isTextEntryActive() &&
                     S.trackPadMode[newT | 0] !== PAD_MODE_CONDUCT;
     if (soundOpen() && !soundIsGlobal() && !_follow) soundExit({ leaving: true });
     /* Records BANK_SOUND like any other bank now (Josh, 2026-08-25) — the old
