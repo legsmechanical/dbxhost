@@ -1,7 +1,7 @@
 import { JSDOM } from 'jsdom';
 import { installCanvasStub } from './ctxstub.mjs';
-const html = await (await fetch('http://localhost:8199/web_ui.html')).text();
-const dom = new JSDOM(html,{url:'http://localhost:8199/web_ui.html',runScripts:'dangerously',
+const html = await (await fetch('http://127.0.0.1:8199/web_ui.html')).text();
+const dom = new JSDOM(html,{url:'http://127.0.0.1:8199/web_ui.html',runScripts:'dangerously',
   resources:'usable',pretendToBeVisual:true,beforeParse(w){installCanvasStub(w);}});
 const {window}=dom;
 for(let i=0;i<100&&typeof window.chainParams!=="object";i++) await new Promise(r=>setTimeout(r,100));
