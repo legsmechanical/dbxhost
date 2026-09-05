@@ -128,11 +128,30 @@ export function parseMasterFxSnapshot(json, slotIdx) {
  *             the log can say which)
  *
  * An EMPTY position in the snapshot is not a miss.
+ *
+ * ADDED SINCE THE SAVE (Josh, 2026-09-05): an FX position that holds a module
+ * now and held nothing when the snapshot was taken has no record, so a plain
+ * recall would leave it exactly as it is — a master reverb added after the
+ * save stays ON in every older snapshot, forever. Such a position is written
+ * BYPASSED (its state untouched) and listed in `added`, so the UI can say so.
+ * Only FX positions: a synth that appeared since is the track's business (the
+ * module mutes that track itself). Bypass is ordinary state, so a later
+ * snapshot saves it and restores it like anything else.
  */
+export function isFxPosition(prefix) {
+    return /(^|:)(midi_)?fx\d+$/.test(String(prefix || ""));
+}
+export function splitPrefix(prefix) {
+    const m = /^(\d+):(.+)$/.exec(String(prefix || ""));
+    return m ? { slot: parseInt(m[1], 10), key: m[2] } : { slot: 0, key: String(prefix || "") };
+}
 export function planRestore(records, liveIds) {
     const writes = [];
     const reasons = [];
+    const added = [];
     const live = liveIds || {};
+    const have = new Set();
+    for (const r of records) if (r && r.moduleId) have.add(r.prefix);
 
     for (const r of records) {
         if (!r || !r.moduleId) continue;            /* empty in snapshot */
@@ -150,8 +169,15 @@ export function planRestore(records, liveIds) {
         writes.push({ prefix: r.prefix, state: r.state, bypassed: r.bypassed,
                       slot: r.slot, key: r.key });
     }
+    for (const pfx of Object.keys(live)) {
+        const now = live[pfx];
+        if (!now || have.has(pfx) || !isFxPosition(pfx)) continue;
+        const { slot, key } = splitPrefix(pfx);
+        writes.push({ prefix: pfx, state: null, bypassed: 1, slot, key });
+        added.push({ prefix: pfx, now });
+    }
     const skipped = reasons.length;
-    return { writes, skipped, reasons };
+    return { writes, skipped, reasons, added };
 }
 
 /* The wire form of a BULK request (request_type 3/4, see shim_handle_param_bulk):
@@ -190,7 +216,11 @@ export function batchWrites(writes, maxBytes) {
     let cur = null;
     for (const w of writes) {
         const slot = w.slot | 0;
-        const items = [w.key + ":state", w.state, w.key + ":bypassed", String(w.bypassed)];
+        /* A write with no state is a bypass-only write (a position added since
+         * the save): the module's own state must not be touched. */
+        const items = (w.state === null || w.state === undefined)
+            ? [w.key + ":bypassed", String(w.bypassed)]
+            : [w.key + ":state", w.state, w.key + ":bypassed", String(w.bypassed)];
         const bytes = items.reduce((n, it) => n + utf8Len(it) + 8, 0);
         if (cur && (cur.slot !== slot || cur.bytes + bytes > cap)) { out.push(cur); cur = null; }
         if (!cur) cur = { slot, items: [], positions: [], bytes: 0 };
@@ -203,8 +233,10 @@ export function batchWrites(writes, maxBytes) {
 }
 
 /* The words a UI shows for a recall. A perfect recall reports no number. */
-export function recallMessage(skipped) {
-    return (skipped > 0)
-        ? ["restored", `${skipped} skipped`]
-        : ["restored"];
+export function recallMessage(skipped, added, muted) {
+    const out = ["restored"];
+    if (skipped > 0) out.push(`${skipped} skipped`);
+    if (added > 0) out.push(`${added} new fx bypassed`);
+    if (muted > 0) out.push(`${muted} track${muted === 1 ? "" : "s"} muted`);
+    return out;
 }

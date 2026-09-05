@@ -5449,6 +5449,8 @@ function snapshotLiveIds(busPrefixes) {
         const cfg = chainConfigs[i] || createEmptyChainConfig();
         live[i + ":synth"]    = (cfg.synth  && cfg.synth.module)  || "";
         live[i + ":midi_fx1"] = (cfg.midiFx && cfg.midiFx.module) || "";
+        /* The second MIDI FX has no config field of its own — read it. */
+        live[i + ":midi_fx2"] = String(getSlotParam(i, "midi_fx2:module") || "");
         for (let k = 1; k <= 4; k++) {
             const c = cfg["fx" + k];
             live[i + ":fx" + k] = (c && c.module) || "";
@@ -5456,7 +5458,17 @@ function snapshotLiveIds(busPrefixes) {
     }
     for (let i = 1; i <= 4; i++)
         live["master_fx:fx" + i] = (masterFxConfig["fx" + i] || {}).module || "";
-    for (const pfx of (busPrefixes || [])) {
+    /* EVERY bus position, not only those the snapshot recorded (Josh,
+     * 2026-09-05): a position with a module now and no record is "added since
+     * the save" and gets bypassed by the plan. The host keeps no in-memory
+     * config for the send / Move buses, so this is one name read per position
+     * (8 + 16) — on a recall only, inside the freeze Josh accepted for it. */
+    const busAll = [];
+    for (const b of SEND_FX_BUSES)
+        for (let s = 0; s < SEND_FX_SLOTS_JS; s++) busAll.push("send_fx:" + b + ":fx" + (s + 1));
+    for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++)
+        for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) busAll.push("move_fx:" + (sl + 1) + ":fx" + (b + 1));
+    for (const pfx of busAll.concat(busPrefixes || [])) {
         if (pfx in live) continue;
         const name = shadow_get_param(0, pfx + ":name");
         live[pfx] = (name === null || name === undefined) ? "" : String(name);
@@ -5528,8 +5540,10 @@ function hostSnapshotRecall(dir) {
         debugLog("snapshot: skipped " + r.prefix + " (" + r.reason +
                  (r.was ? ", was " + r.was : "") + (r.now ? ", now " + r.now : "") + ")");
     }
+    for (const a of (plan.added || []))
+        debugLog("snapshot: " + a.prefix + " holds " + a.now + " which was not there at the save — bypassing it");
     const batches = batchWrites(plan.writes, SNAPSHOT_BULK_BYTES);
-    snapshotRecallJob = { dir, batches, i: 0, restored: 0, failed: 0,
+    snapshotRecallJob = { dir, batches, i: 0, restored: 0, failed: 0, added: plan.added || [],
                           skipped: plan.skipped, reasons: plan.reasons, total: plan.writes.length };
     /* INSTANT (Josh, 2026-09-05: "I'm fine with a brief screen freeze if that's
      * the trade-off for instant recall"): every batch is written back-to-back
@@ -5570,7 +5584,8 @@ function snapshotRecallTick() {
         debugLog("snapshot: restored " + job.restored + ", skipped " + (job.skipped + job.failed));
         snapshotRecallJob = null;
         snapshotLastResult = { ok: true, pending: false, restored: job.restored,
-                               skipped: job.skipped + job.failed, reasons: job.reasons };
+                               skipped: job.skipped + job.failed, reasons: job.reasons,
+                               added: job.added.length, addedList: job.added.map((a) => a.prefix) };
     }
 }
 let snapshotLastResult = null;

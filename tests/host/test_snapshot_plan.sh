@@ -60,12 +60,19 @@ const live = {
     fx1:      "cloudseed",    /* unchanged     -> write   */
     fx2:      "denis",        /* no state      -> skipped */
     fx3:      "verglas",      /* unchanged     -> write   */
-    fx4:      "ottx"          /* unchanged     -> write   */
+    fx4:      "ottx",         /* unchanged     -> write   */
     /* master_fx:fx3 absent    -> removed      -> skipped */
+    midi_fx2: "arp",          /* ADDED since   -> bypass-only write, listed */
+    "master_fx:fx1": "mverb"  /* ADDED since   -> bypass-only write, listed */
 };
 const plan = planRestore(recs.concat(mfx), live);
-eq("writes only the matched, state-bearing positions",
-   plan.writes.map(w => w.prefix), ["synth", "fx1", "fx3", "fx4"]);
+eq("writes the matched, state-bearing positions, then the positions ADDED since the save",
+   plan.writes.map(w => w.prefix), ["synth", "fx1", "fx3", "fx4", "midi_fx2", "master_fx:fx1"]);
+eq("an added position is written bypassed with NO state", plan.writes.slice(-2).map(w => [w.state, w.bypassed]), [[null, 1], [null, 1]]);
+eq("added positions are listed with what they hold", plan.added, [{ prefix: "midi_fx2", now: "arp" }, { prefix: "master_fx:fx1", now: "mverb" }]);
+eq("a SYNTH that appeared since is not bypassed (the track owns that)",
+   planRestore([], { "3:synth": "braids", "3:fx2": "ottx" }).writes.map(w => [w.prefix, w.slot, w.key]), [["3:fx2", 3, "fx2"]]);
+eq("a bus prefix splits to slot 0 and itself", planRestore([], { "send_fx:b:fx2": "ottx" }).writes.map(w => [w.slot, w.key]), [[0, "send_fx:b:fx2"]]);
 eq("skipped counts every position that did not come back", plan.skipped, 3);
 eq("reasons are attributable",
    plan.reasons.map(r => [r.prefix, r.reason]),
@@ -85,6 +92,8 @@ eq("one batch per slot, in write order", b.map(x => [x.slot, x.positions]),
    [[2, ["2:synth", "2:fx1"]], [5, ["5:synth"]], [0, ["master_fx:fx1"]]]);
 eq("a batch carries state AND bypass per position, as key/value pairs",
    b[0].items, ["synth:state", "S", "synth:bypassed", "0", "fx1:state", "F", "fx1:bypassed", "1"]);
+eq("a bypass-only write (added since the save) carries NO state item",
+   batchWrites([{ prefix: "2:fx3", slot: 2, key: "fx3", state: null, bypassed: 1 }], 60000)[0].items, ["fx3:bypassed", "1"]);
 const big = "x".repeat(50000);
 const b2 = batchWrites([{ prefix: "1:synth", slot: 1, key: "synth", state: big, bypassed: 0 },
                         { prefix: "1:fx1",   slot: 1, key: "fx1",   state: big, bypassed: 0 }], 60000);
@@ -98,6 +107,7 @@ eq("a non-ASCII value is measured in UTF-8 bytes", bulkEncodeItems(["é"]), "1\n
 
 eq("clean recall message", recallMessage(0), ["restored"]);
 eq("lossy recall message", recallMessage(3), ["restored", "3 skipped"]);
+eq("recall message names what was bypassed and muted", recallMessage(0, 2, 1), ["restored", "2 new fx bypassed", "1 track muted"]);
 
 if (fails) { console.error(`\n${fails} assertion(s) failed`); process.exit(1); }
 console.log("PASS: test_snapshot_plan");
