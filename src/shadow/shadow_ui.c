@@ -28,6 +28,7 @@
 #include "host/js_display.h"
 #include "host/shadow_constants.h"
 #include "host/shadow_param_queue.h"
+#include "host/shadow_param_ring.h"
 #include "host/shadow_shm_util.h"
 #include "host/js_host_common.h"
 #include "host/shadow_midi_inject_writer.h"
@@ -49,6 +50,7 @@ static schwung_ext_midi_remap_t *ext_midi_remap = NULL;
 static shadow_screenreader_t *shadow_screenreader = NULL;
 static shadow_overlay_state_t *shadow_overlay = NULL;
 static web_write_dirty_t *web_write_dirty = NULL; /* shim's autosave hints for web-originated writes */
+static web_param_set_ring_t *shadow_param_write = NULL; /* the param WRITE LANE to the shim (shadow_param_ring.h); NULL or unready = every write takes the mailbox */
 
 static int global_exit_flag = 0;
 static uint8_t last_midi_ready = 0;
@@ -98,6 +100,11 @@ static int open_shadow_shm(void) {
     shadow_overlay = (shadow_overlay_state_t *)shadow_shm_map(SHM_SHADOW_OVERLAY, SHADOW_OVERLAY_BUFFER_SIZE, 0, 0);
 
     web_write_dirty = (web_write_dirty_t *)shadow_shm_map(SHM_WEB_WRITE_DIRTY, sizeof(web_write_dirty_t), 0, 0);
+    /* Optional: an older shim has no write lane; a missing segment (or one
+     * without the shim's handshake byte) leaves every write on the mailbox. */
+    shadow_param_write = (web_param_set_ring_t *)shadow_shm_map(SHM_SHADOW_PARAM_WRITE, sizeof(web_param_set_ring_t), 0, 0);
+    if (shadow_param_write && !spw_ready(shadow_param_write))
+        unified_log("shadow_ui", LOG_LEVEL_DEBUG, "param write lane mapped but no consumer handshake — mailbox only");
     if (shadow_overlay) {
         unified_log("shadow_ui", LOG_LEVEL_DEBUG, "Shadow overlay shm mapped: %p", shadow_overlay);
     }
@@ -888,6 +895,17 @@ static int shadow_set_param_common(int slot, const char *key, const char *value,
     const int overtake_fire_and_forget = !force_blocking && (shadow_control && shadow_control->overtake_mode >= 2);
 
     if (overtake_fire_and_forget) {
+        /* THE WRITE LANE (2026-09-05): a small fire-and-forget SET goes to the
+         * ring the shim drains ahead of the mailbox every frame — a burst of
+         * detents costs one frame, not one per detent, and reads never wait
+         * behind it. Only while the pending queue is EMPTY: the queue is the
+         * ordered fallback (ring full, oversize value, no lane), and a ring
+         * write overtaking a queued older write to the same key would land
+         * the stale value last. */
+        if (spw_ready(shadow_param_write) && spq_count(&g_param_pending) == 0 &&
+                spw_push(shadow_param_write, (uint8_t)slot, key, value)) {
+            return 1;
+        }
         /* Fire-and-forget: the UI thread must not block on a rapid encoder
          * stream — and it must not STOMP either. This used to wait 8 ms for
          * the mailbox and then overwrite whatever was still in it: a second
