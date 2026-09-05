@@ -855,6 +855,14 @@ if [ -d ./standalone ]; then
     # Called by EVERY installer that writes an owned file, as its last step.
     cp ./standalone/scripts/record-manifest.sh ./build/scripts/
     chmod +x ./build/scripts/record-manifest.sh
+    # The layout + bootstrap (2026-09-05, the zero-SSH install): layout-install.sh
+    # lays a payload into $DBX_DIR on the device (install-host.sh runs it from the
+    # stage; bootstrap.sh runs it from the launcher module's payload/ on first
+    # launch). Both read the lists from config.sh, shipped beside them.
+    cp ./standalone/scripts/layout-install.sh ./build/scripts/
+    cp ./standalone/scripts/bootstrap.sh ./build/scripts/
+    cp ./standalone/config.sh ./build/scripts/config.sh
+    chmod +x ./build/scripts/layout-install.sh ./build/scripts/bootstrap.sh
     chmod +x ./build/scripts/quiesce-stock.sh ./build/scripts/exit-to-stock.sh \
              ./build/scripts/set-swap.sh ./build/scripts/project-cmd.sh \
              ./build/scripts/select-list.sh ./build/scripts/select-hook.sh

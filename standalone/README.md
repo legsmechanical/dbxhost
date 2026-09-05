@@ -51,7 +51,7 @@ The launcher mechanism is already upstream. There is nothing to get merged.
 | `module/module.json` | the `dAVEBOx SA` launcher manifest |
 | `scripts/install-module.sh` | installs the launcher into stock's tools dir (no root) |
 | `scripts/build-host.sh` | builds this host with `config.sh`'s dir + SHM namespace |
-| `scripts/build-heal.sh` | cross-compiles `davebox-heal` with `-DDBX_DIR` from `config.sh` |
+| `scripts/build-heal.sh` | cross-compiles `davebox-heal.c` (installed as `heal`) with `-DDBX_DIR`/`-DHEAL_DIR` from `config.sh` |
 | `scripts/install-host.sh` | **build + deploy the host in one command** (the dev loop) |
 | `scripts/check-config.sh` | fails if a literal copy drifted from `config.sh` |
 | `scripts/select-list.sh` | set-select actuator: writes `select_list.json` (pad index → set name) |
@@ -143,12 +143,29 @@ new hardcoded stock-tree literal for a private state family in `shadow_ui.js`.
 
 ## Install
 
-```sh
-# once, ever — needs root
-ssh root@move.local 'sh /data/UserData/dbx-host/bless.sh'
-```
+**Users:** install the *dAVEBOx* tool from the catalog, then **Tools → dAVEBOx**.
+The first launch installs everything else (2026-09-05, the zero-SSH install):
 
-Then launch davebox from the Schwung Tools menu.
+1. `launch.sh` finds the helper unblessed or the install dir missing and runs the
+   payload's `scripts/bootstrap.sh` — BEFORE anything touches the stock stack.
+2. `bootstrap.sh` stages `bin/heal.new` in the module dir and asks **stock's**
+   `schwung-heal` to bless it (charlesvestal/schwung#419: `modules/tools/<id>/bin/heal.new`
+   → `bin/heal` root 04755). No bless → it stops there and names the manual step.
+3. `scripts/layout-install.sh` lays `payload/` into `$DBX_DIR` (merge-not-replace,
+   workspace separation, the modules/ mirror — the same script `install-host.sh` runs).
+4. `heal --install-restore-unit` installs the boot-recovery unit; `sa-build.json` is stamped.
+
+The helper lives at `modules/tools/davebox-sa/bin/heal` — ableton owns that dir,
+so a stock or catalog reinstall of the module can un-setuid it; the launcher treats
+"not setuid" as a re-bless condition on every launch, not a first-run one.
+
+**A stock Schwung older than #419** cannot bless a tool helper. The manual route is
+`layout-install.sh` (as ableton or root) followed by `bless.sh` as root — see the
+root README. `install-privileged.sh` is what lands as `bless.sh`.
+
+**Developers:** `install-sa.sh` (build + deploy over SSH to an existing install);
+`build-sa-release.sh` assembles the catalog tarball (`davebox-sa-module.tar.gz`) the
+release workflow attaches; `release.json` at the repo root points the manager at it.
 
 ## The watchdog
 
@@ -280,11 +297,11 @@ Session-scoped files (all under `$DBX_DIR`, cleared on session exit):
   `/bin/true` is not AT_SECURE, so an absolute-path preload succeeds there and
   proves nothing.
 - **⚠⚠ Never `chown -R` the install tree.** It strips the setuid bit *and* root
-  ownership from `bin/davebox-heal`, which then cannot pause the watchdog, and
+  ownership from the helper (`modules/tools/davebox-sa/bin/heal`), which then cannot pause the watchdog, and
   the launcher correctly refuses to start. Deploy `bin/` separately, or re-run
   `install-privileged.sh` afterwards — it is idempotent and cheap. This is the
   same chown-clears-setuid trap the helper documents internally, applied to the
   helper itself.
 - **A refusal to launch is usually this.** `launch.log` says "could not pause
-  move-launcher — refusing to launch"; check `ls -la bin/davebox-heal` expecting
+  move-launcher — refusing to launch"; check `ls -la /data/UserData/schwung/modules/tools/davebox-sa/bin/heal` expecting
   `-rwsr-xr-x root root`.

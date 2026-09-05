@@ -62,7 +62,7 @@ ACTIVE_SET_PATH="${ACTIVE_SET_PATH:-$DBX_DIR/active_set.txt}"
 
 # The privileged helper. Overridable ONLY so the tests can inject a stub — on
 # device this is the setuid binary and nothing else.
-HEAL_BIN="${HEAL_BIN:-$DBX_DIR/bin/davebox-heal}"
+HEAL_BIN="${HEAL_BIN:-/data/UserData/schwung/modules/tools/davebox-sa/bin/heal}"   # the blessed helper lives in the launcher module (2026-09-05)
 
 # Legacy drain (see do_exit): the pre-mount scheme's stash. Sets found here are
 # the user's, left behind by a session that entered under the old code.

@@ -81,13 +81,49 @@
 #endif
 #define SRC_SHIM     DBX_DIR "/schwung-shim.so"
 #define DST_SHIM     "/usr/lib/davebox-shim.so"
-#define SELF_PATH    DBX_DIR "/bin/davebox-heal"
-#define SELF_STAGED  DBX_DIR "/bin/davebox-heal.new"
+/* Where this binary LIVES (2026-09-05): inside the launcher module's dir in
+ * STOCK's tools tree — because that is the one place stock's own schwung-heal
+ * will bless a staged helper (charlesvestal/schwung#419: `bin/heal.new` →
+ * `bin/heal`, root 04755). Our self-update stages at the same path, so both the
+ * first bless (stock heal) and every later update (this binary) are one copy.
+ * ⚠ ableton owns the directory: a stock reinstall or a catalog reinstall of the
+ * launcher module can remove or un-setuid this file. The launcher treats "heal
+ * not setuid" as a re-bless condition on EVERY launch, never as first-run. */
+#ifndef HEAL_DIR
+#define HEAL_DIR     "/data/UserData/schwung/modules/tools/davebox-sa/bin"
+#endif
+#define SELF_PATH    HEAL_DIR "/heal"
+#define SELF_STAGED  HEAL_DIR "/heal.new"
 
 /* The one unit we are allowed to touch, and the only binary we will exec.
  * Both hardcoded: this helper must never be steerable at a different service. */
+#ifndef SYSTEMCTL
 #define SYSTEMCTL    "/usr/bin/systemctl"
+#endif
 #define MOVE_UNIT    "move-launcher.service"
+
+/* The ONE unit this helper may INSTALL (2026-09-05, `--install-restore-unit`):
+ * boot recovery for the project-library swap. It used to be written by bless.sh
+ * as root over SSH — the last root step a zero-SSH install had left. The text is
+ * a compile-time constant; the path is overridable only for the test build. */
+#ifndef RESTORE_UNIT_PATH
+#define RESTORE_UNIT_PATH "/etc/systemd/system/davebox-restore.service"
+#endif
+#define RESTORE_UNIT_NAME "davebox-restore.service"
+static const char RESTORE_UNIT_TEXT[] =
+    "[Unit]\n"
+    "Description=davebox: restore native set library after an interrupted session\n"
+    "Before=move-launcher.service\n"
+    "ConditionPathExists=" DBX_DIR "/scripts/set-swap.sh\n"
+    "\n"
+    "[Service]\n"
+    "Type=oneshot\n"
+    "User=ableton\n"
+    "ExecStart=/bin/sh " DBX_DIR "/scripts/set-swap.sh recover\n"
+    "RemainAfterExit=no\n"
+    "\n"
+    "[Install]\n"
+    "WantedBy=multi-user.target\n";
 
 /* The ONLY bind mount this helper may make: this install's project library,
  * over Move's (non-configurable) set library. Both hardcoded — see the note
@@ -190,14 +226,18 @@ static int copy_atomic(const char *src, const char *dst, mode_t perms,
  * The verb is chosen from a fixed pair by the caller's flag — never passed
  * through as a string — and the unit and systemctl path are compile-time
  * constants, so this cannot be aimed at another service. */
-static int launcher_unit(const char *verb) {
+/* Run systemctl with a verb and an optional unit, both compile-time or
+ * closed-set constants, and wait. Shared by the launcher pause/resume and the
+ * restore-unit install. */
+static int systemctl_run(const char *verb, const char *unit) {
     pid_t pid = fork();
     if (pid < 0) {
         fprintf(stderr, "davebox-heal: fork: %s\n", strerror(errno));
         return -1;
     }
     if (pid == 0) {
-        execl(SYSTEMCTL, "systemctl", verb, MOVE_UNIT, (char *)NULL);
+        if (unit) execl(SYSTEMCTL, "systemctl", verb, unit, (char *)NULL);
+        else      execl(SYSTEMCTL, "systemctl", verb, (char *)NULL);
         _exit(127);
     }
     int st = 0;
@@ -208,10 +248,52 @@ static int launcher_unit(const char *verb) {
     }
     if (!WIFEXITED(st) || WEXITSTATUS(st) != 0) {
         fprintf(stderr, "davebox-heal: systemctl %s %s failed (status %d)\n",
-                verb, MOVE_UNIT, st);
+                verb, unit ? unit : "", st);
         return -1;
     }
-    fprintf(stderr, "davebox-heal: %s %s\n", verb, MOVE_UNIT);
+    fprintf(stderr, "davebox-heal: systemctl %s %s\n", verb, unit ? unit : "");
+    return 0;
+}
+static int launcher_unit(const char *verb) { return systemctl_run(verb, MOVE_UNIT); }
+
+/* Install the boot-recovery unit (see RESTORE_UNIT_TEXT): write it atomically
+ * when its content differs, then daemon-reload + enable. Idempotent — every
+ * launch may call this; a device that already has it does one compare and two
+ * cheap systemctl calls. Runs as ableton in the unit; root only writes it. */
+static int install_restore_unit(void) {
+    int need = 1;
+    {
+        FILE *f = fopen(RESTORE_UNIT_PATH, "r");
+        if (f) {
+            char cur[sizeof(RESTORE_UNIT_TEXT) + 64];
+            size_t n = fread(cur, 1, sizeof(cur) - 1, f);
+            fclose(f);
+            cur[n] = 0;
+            if (n == sizeof(RESTORE_UNIT_TEXT) - 1 && memcmp(cur, RESTORE_UNIT_TEXT, n) == 0) need = 0;
+        }
+    }
+    if (need) {
+        char tmp[512];
+        int n = snprintf(tmp, sizeof(tmp), "%s.heal-tmp", RESTORE_UNIT_PATH);
+        if (n < 0 || (size_t)n >= sizeof(tmp)) return -1;
+        int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd < 0) { fprintf(stderr, "davebox-heal: open %s: %s\n", tmp, strerror(errno)); return -1; }
+        size_t off = 0, len = sizeof(RESTORE_UNIT_TEXT) - 1;
+        while (off < len) {
+            ssize_t w = write(fd, RESTORE_UNIT_TEXT + off, len - off);
+            if (w < 0) { if (errno == EINTR) continue; close(fd); unlink(tmp); return -1; }
+            off += (size_t)w;
+        }
+        if (fsync(fd) < 0) { /* rename is the durability point */ }
+        if (close(fd) < 0 || rename(tmp, RESTORE_UNIT_PATH) < 0) {
+            fprintf(stderr, "davebox-heal: install %s: %s\n", RESTORE_UNIT_PATH, strerror(errno));
+            unlink(tmp);
+            return -1;
+        }
+        fprintf(stderr, "davebox-heal: wrote %s\n", RESTORE_UNIT_PATH);
+    }
+    if (systemctl_run("daemon-reload", NULL) != 0) return -1;
+    if (systemctl_run("enable", RESTORE_UNIT_NAME) != 0) return -1;
     return 0;
 }
 
@@ -329,12 +411,14 @@ static int dst_setuid_ok(const char *path) {
 }
 
 int main(int argc, char **argv) {
+#ifndef HEAL_TESTING
     if (setgid(0) < 0) { /* non-fatal */ }
     if (setuid(0) < 0 && geteuid() != 0) {
         fprintf(stderr, "davebox-heal: not root (euid=%d) — setuid bit missing?\n",
                 geteuid());
         return 1;
     }
+#endif
 
     /* Exactly one optional flag, matched against a closed set. Anything else is
      * a bug or an attack; never ignore it. Note the flags select a hardcoded
@@ -352,9 +436,11 @@ int main(int argc, char **argv) {
             return sets_mount() == 0 ? 0 : 2;
         if (strcmp(argv[1], "--umount-sets") == 0)
             return sets_umount() == 0 ? 0 : 2;
+        if (strcmp(argv[1], "--install-restore-unit") == 0)
+            return install_restore_unit() == 0 ? 0 : 2;
         fprintf(stderr, "davebox-heal: unknown argument %s (expected "
-                        "--pause-launcher, --resume-launcher, --mount-sets "
-                        "or --umount-sets)\n", argv[1]);
+                        "--pause-launcher, --resume-launcher, --mount-sets, "
+                        "--umount-sets or --install-restore-unit)\n", argv[1]);
         return 1;
     }
 

@@ -72,3 +72,58 @@ jobs:
       # that bumps module-catalog.json `host.latest_version` (which is what
       # schwung-manager actually reads to offer the update) also updates
       # release.json to the same version. See the release checklist in CLAUDE.md.
+
+  # ------------------------------------------------------------------ davebox-sa
+  # The CATALOG tarball for the launcher module (2026-09-05, the zero-SSH
+  # install): one archive carrying the whole SA deliverable — the dbx-host host
+  # build, the heal helper (unblessed), the chain host and the davebox sequencer
+  # module — laid out by standalone/scripts/build-sa-release.sh so the first
+  # launch from stock's Tools menu installs it with no SSH. release.json at the
+  # repo root points the manager at this asset; keep its version == module.json.
+  davebox-sa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: npm, cache-dependency-path: davebox/package-lock.json }
+      - name: Version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "$VERSION" > src/host/version.txt
+          MJ="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' standalone/module/module.json | head -1)"
+          RJ="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' release.json | head -1)"
+          echo "tag $VERSION · module.json $MJ · release.json $RJ"
+          [ "$MJ" = "$RJ" ] || { echo "module.json and release.json disagree"; exit 1; }
+      - name: Build schwung-manager (Go, for the dbx-host tree)
+        run: |
+          mkdir -p build
+          cd schwung-manager
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o ../build/schwung-manager -ldflags="-s -w" .
+      - name: Build the dbx-host host (docker, DBX SHM prefix)
+        run: ./standalone/scripts/build-host.sh
+      - name: Build the heal helper
+        run: ./standalone/scripts/build-heal.sh
+      - name: Build the davebox module
+        run: |
+          cd davebox && npm ci --no-audit --no-fund && bash scripts/build_sound.sh
+      - name: Assemble the catalog tarball
+        run: |
+          ./standalone/scripts/build-sa-release.sh .
+          tar -tzf davebox-sa-module.tar.gz | grep -c . 
+          tar -tzf davebox-sa-module.tar.gz | grep -x 'davebox-sa/payload/bin/heal'
+          tar -tzf davebox-sa-module.tar.gz | grep -x 'davebox-sa/payload/scripts/bootstrap.sh'
+          ls -la davebox-sa-module.tar.gz
+      - name: Attach to the release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: davebox-sa-module.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -38,7 +38,7 @@ echo "=== davebox-heal ($CC, DBX_DIR=$DBX_DIR) ==="
 # implicit declaration of a function taking uid_t/gid_t is exactly the kind of
 # thing that must not be papered over in a setuid-root binary.
 "$CC" -O2 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -static \
-      -DDBX_DIR="\"$DBX_DIR\"" \
+      -DDBX_DIR="\"$DBX_DIR\"" -DHEAL_DIR="\"$DBX_HEAL_DIR\"" \
       -o "$OUT/$DBX_HEAL_NAME" "$HERE/src/davebox-heal.c"
 
 echo "built $OUT/$DBX_HEAL_NAME"

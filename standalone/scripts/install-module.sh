@@ -39,6 +39,14 @@ scp -q "$tmp/$MODULE_ID/module.json" "$HOST:$STOCK_TOOLS/$MODULE_ID/module.json"
 scp -q "$tmp/$MODULE_ID/standalone"  "$HOST:$STOCK_TOOLS/$MODULE_ID/standalone"
 # scp does not preserve the executable bit reliably across these paths.
 ssh "${HOST%%:*}" "chmod +x '$STOCK_TOOLS/$MODULE_ID/standalone'"
+# The privileged helper is STAGED here too (2026-09-05): stock's schwung-heal
+# (schwung#419) or our own blessed heal installs bin/heal.new → bin/heal. Never
+# ship a pre-blessed `heal` — the manager chowns a module dir on install.
+if [ -f "$HERE/build/heal" ]; then
+    ssh "${HOST%%:*}" "mkdir -p '$STOCK_TOOLS/$MODULE_ID/bin'"
+    scp -q "$HERE/build/heal" "$HOST:$STOCK_TOOLS/$MODULE_ID/bin/heal.new"
+    echo "Staged bin/heal.new (blessed by heal on the next launch)."
+fi
 
 echo "Installed. It appears in stock Schwung's Tools menu as 'dAVEBOx'."
 echo "A host restart is required before a newly added module is discovered."
