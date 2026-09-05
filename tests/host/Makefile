@@ -52,7 +52,8 @@ TARGETS = $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_shadow_param_queue \
           $(BUILD_DIR)/test_json_tiny \
           $(BUILD_DIR)/test_shadow_param_ring \
-          $(BUILD_DIR)/test_control_layout
+          $(BUILD_DIR)/test_control_layout \
+          $(BUILD_DIR)/test_chain_clock_state
 
 .PHONY: all test clean
 
@@ -119,6 +120,7 @@ $(BUILD_DIR)/test_forward_channel: test_forward_channel.c ../../src/host/forward
 $(BUILD_DIR)/test_shadow_param_queue: test_shadow_param_queue.c ../../src/host/shadow_param_queue.h ../../src/host/shadow_constants.h | $(BUILD_DIR)
 $(BUILD_DIR)/test_json_tiny: test_json_tiny.c ../../src/host/json_tiny.h | $(BUILD_DIR)
 $(BUILD_DIR)/test_control_layout: test_control_layout.c ../../src/host/shadow_constants.h | $(BUILD_DIR)
+$(BUILD_DIR)/test_chain_clock_state: test_chain_clock_state.c ../../src/modules/chain/dsp/chain_clock_state.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 -include $(TARGETS:=.d)

@@ -7,11 +7,11 @@
 #include "chain_internal.h"
 #include "chain_pre_inject.h"
 
-/* Clock availability state for sync-aware MIDI FX (arp, etc.). */
-static int g_clock_output_enabled = 1;              /* midiClockMode == "output" */
-static int g_clock_transport_running = 0;           /* Start/Continue seen without Stop */
-static uint64_t g_clock_last_tick_ms = 0;           /* Last 0xF8 tick timestamp */
-static uint64_t g_clock_next_refresh_ms = 0;        /* Settings.json refresh gate */
+/* Clock availability state for sync-aware MIDI FX (arp, etc.) — host-wide by
+ * nature (one Move transport) and ATOMIC since 2026-09-05: written from every
+ * slot's on_midi, read from any sub-plugin's render; see chain_clock_state.h. */
+#include "chain_clock_state.h"
+static chain_clock_state_t g_clock = CHAIN_CLOCK_STATE_INIT;
 
 static int chain_read_clock_output_enabled(void) {
     FILE *f = fopen(MOVE_SETTINGS_JSON_PATH, "r");
@@ -76,9 +76,9 @@ static int chain_read_clock_output_enabled(void) {
 }
 
 static void chain_refresh_clock_output_enabled(uint64_t now_ms) {
-    if (now_ms < g_clock_next_refresh_ms) return;
-    g_clock_output_enabled = chain_read_clock_output_enabled();
-    g_clock_next_refresh_ms = now_ms + CLOCK_SETTINGS_REFRESH_MS;
+    if (now_ms < atomic_load_explicit(&g_clock.next_refresh_ms, memory_order_acquire)) return;
+    atomic_store_explicit(&g_clock.output_enabled, chain_read_clock_output_enabled(), memory_order_release);
+    atomic_store_explicit(&g_clock.next_refresh_ms, now_ms + CLOCK_SETTINGS_REFRESH_MS, memory_order_release);
 }
 
 int chain_get_clock_status(void) {
@@ -91,40 +91,15 @@ int chain_get_clock_status(void) {
      * Clock Out preference — otherwise, with Clock Out off, we'd always report
      * UNAVAILABLE and clock-driven plugins (e.g. breakbeat treats UNAVAILABLE
      * as "keep running") would never see transport STOP. */
-    int have_clock = (g_clock_last_tick_ms > 0) &&
-                     ((now_ms - g_clock_last_tick_ms) <= CLOCK_TICK_STALE_MS);
-
-    if (g_clock_transport_running && have_clock) {
-        return MOVE_CLOCK_STATUS_RUNNING;
-    }
-
-    /* Ticks aren't arriving. If we've ever seen the transport (a prior tick) or
-     * Clock Out is explicitly enabled, this is a real STOP. Stop is reported
-     * instantly when Move emits 0xFC on cable 0, otherwise within
-     * CLOCK_TICK_STALE_MS via tick staleness. Only when no clock has EVER
-     * arrived AND Clock Out is off do we genuinely not know — report
-     * UNAVAILABLE so the plugin free-runs (legacy behaviour). */
-    if (g_clock_last_tick_ms > 0 || g_clock_output_enabled) {
-        return MOVE_CLOCK_STATUS_STOPPED;
-    }
-
-    return MOVE_CLOCK_STATUS_UNAVAILABLE;
+    /* The whole decision lives in chain_clock_state.h (pure, unit-tested);
+     * the comments that used to sit here moved with it. */
+    return chain_clock_status(&g_clock, now_ms, CLOCK_TICK_STALE_MS);
 }
 
 static void chain_update_clock_runtime(const uint8_t *msg, int len) {
     if (!msg || len < 1) return;
 
-    uint8_t status = msg[0];
-    uint64_t now_ms = get_time_ms();
-
-    if (status == 0xF8) {          /* MIDI Clock tick */
-        g_clock_last_tick_ms = now_ms;
-    } else if (status == 0xFA || status == 0xFB) {  /* Start / Continue */
-        g_clock_transport_running = 1;
-        if (g_clock_last_tick_ms == 0) g_clock_last_tick_ms = now_ms;
-    } else if (status == 0xFC) {   /* Stop */
-        g_clock_transport_running = 0;
-    }
+    chain_clock_on_realtime(&g_clock, msg[0], get_time_ms());
 }
 
 
