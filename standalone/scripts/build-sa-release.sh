@@ -48,7 +48,9 @@ mkdir -p "$P/bin" "$P/modules/tools"
 cp "$HERE/module/module.json" "$M/module.json"
 cp "$HERE/scripts/launch.sh" "$M/standalone"; chmod +x "$M/standalone"
 # the host tree, minus what is shared or linked on the device
-rsync -a --exclude='/modules' --exclude='/presets' --exclude='/patches' --exclude='/.deploy-stage' \
+# tests/ is the developer suite; it never runs on a user's device (and MUST not —
+# its fixtures resolve real paths). Dropped from the catalog tarball (Josh, 2026-09-05).
+rsync -a --exclude='/modules' --exclude='/presets' --exclude='/patches' --exclude='/.deploy-stage' --exclude='/tests' \
       "$BUILD_DIR/" "$P/"
 cp -R "$BUILD_DIR/modules/chain" "$P/modules/chain"
 cp -R "$DAVEBOX_DIST" "$P/modules/tools/davebox-sound"

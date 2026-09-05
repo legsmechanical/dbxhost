@@ -13,6 +13,7 @@ printf x > "$B/schwung"; printf x > "$B/shadow/shadow_ui"; printf x > "$B/bin/sc
 cp standalone/scripts/layout-install.sh standalone/scripts/bootstrap.sh "$B/scripts/"; cp standalone/config.sh "$B/scripts/config.sh"
 cp standalone/scripts/install-privileged.sh "$B/bless.sh"
 printf x > "$B/modules/chain/dsp.so"; printf x > "$B/modules/audio_fx/verb/x"; printf x > "$B/presets/p"; printf x > "$B/help/a.md"
+mkdir -p "$B/tests/host"; printf x > "$B/tests/host/t.sh"; for i in 0 1 2; do printf x > "$B/splash-$i.hex"; done
 D="$T/dist"; mkdir -p "$D"; printf '{"id":"davebox-sound","version":"9.9"}' > "$D/module.json"; printf x > "$D/dsp.so"; printf x > "$D/ui.js"
 printf 'HEAL' > "$T/heal"
 echo "build-sa-release.sh:"
@@ -34,6 +35,8 @@ has "davebox-sa/payload/bless.sh" && ok "bless.sh rides along for a pre-#419 sto
 printf '%s\n' "$L" | grep -q "payload/presets/" && bad "presets shipped (shared content — a link, never a copy)" || ok "no presets in the payload"
 printf '%s\n' "$L" | grep -q "payload/patches/" && bad "patches shipped" || ok "no patches in the payload"
 printf '%s\n' "$L" | grep -q "payload/modules/audio_fx" && bad "a stock module category shipped" || ok "no stock module categories"
+printf '%s\n' "$L" | grep -q "payload/tests/" && bad "the developer test suite shipped (Josh, 2026-09-05: drop tests)" || ok "no tests/ in the payload"
+has "davebox-sa/payload/splash-2.hex" && ok "the splash pool (the daves) still ships (Josh: keep the daves)" || bad "a splash hex is missing"
 echo "release.json:"
 rv="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' release.json | head -1)"; mv="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' standalone/module/module.json | head -1)"
 [ -n "$rv" ] && [ "$rv" = "$mv" ] && ok "release.json version ($rv) == module.json version" || bad "release.json ($rv) vs module.json ($mv)"
