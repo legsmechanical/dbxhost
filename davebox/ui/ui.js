@@ -246,6 +246,22 @@ globalThis.init = function () {
      * products. State loads (S.stateLoading) still show the artwork. */
     S.bootSplashMs = 0;
 
+    /* PREFLIGHT (Josh, 2026-09-05, hygiene): launch.sh runs preflight.sh in
+     * the background and it writes $DBX_DIR/preflight_failed when the stock
+     * install no longer matches what we share with it — and nothing ever
+     * SHOWED it; the report sat in preflight_report.txt for an ssh nobody
+     * made. ONE read at init (never per tick); the launcher owns and clears
+     * the flag, we only look. Shown on the project picker until it closes. */
+    S.preflightNotice = null;
+    try {
+        if (host_file_exists('/data/UserData/dbx-host/preflight_failed')) {
+            const rep = String(host_read_file('/data/UserData/dbx-host/preflight_report.txt') || '');
+            const first = rep.split('\n').find(l => l.indexOf('FAIL') === 0);
+            S.preflightNotice = first ? first.replace(/^FAIL\s*/, '') : 'install check failed — see preflight_report.txt';
+            console.log('[dbx] preflight: ' + S.preflightNotice);
+        }
+    } catch (e) { S.preflightNotice = null; }
+
     /* Detect set mismatch: compare active_set.txt UUID with what the DSP currently has loaded.
      * Works regardless of JS context lifetime — no cross-init state needed.
      * If they differ, DSP has old set's data: save it, then load the active set. */

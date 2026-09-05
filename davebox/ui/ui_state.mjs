@@ -78,6 +78,7 @@ export const PERF_FACTORY_PRESETS = [
 ];
 
 export const S = {
+    preflightNotice: null,  /* the launcher's preflight found PROBLEMS: first FAIL line of preflight_report.txt, read ONCE at init, shown on the project picker until it closes (Josh, 2026-09-05) */
     swingAmt: 0,
     swingRes: 0,
     inpQuant: false,

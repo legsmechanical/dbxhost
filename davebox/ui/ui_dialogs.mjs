@@ -14,7 +14,7 @@ import { formatItemValue, isDivider } from '/data/UserData/schwung/shared/menu_i
 /* The KIT chassis. ui_movy is pure — no imports, no state — so pulling it in
  * here cannot cycle. See docs/UI_LANGUAGE.md: a list of the app's own structure
  * renders on the kit; the host chassis is for dialogs. */
-import { drawKitHeader, drawKitBrandHeader, drawKitList, fitHdr, hdrWidth,
+import { MV_FOOTER_Y, drawKitHeader, drawKitBrandHeader, drawKitList, fitHdr, hdrWidth,
          drawKitStackedList, drawKitBackdropDim, drawKitCrumbs } from './ui_movy.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
@@ -1354,6 +1354,20 @@ function _drawProjectPadPicker_impl() {
     drawKitList([], -1, { emptyMsg: 'Select project', emptyHdr: true, hostLabels: false });
 }
 
+/* The launcher's preflight found PROBLEMS (see ui.js init): ONE line in the
+ * footer row, over whatever picker screen is up — the picker opens on the
+ * current project's MENU, not on the empty list, so the line is drawn AFTER
+ * the guarded draw rather than inside one branch of it. Truncated to the
+ * width; suppressed while a name is being typed. The picker is the one screen
+ * every launch passes through, so this is where a broken install is seen. */
+function _drawPreflightNotice() {
+    const p = S.projectPadPicker;
+    if (!p || !S.preflightNotice || p.renameActive) return;
+    const msg = ('PREFLIGHT: ' + S.preflightNotice).toUpperCase();
+    fill_rect(0, MV_FOOTER_Y - 1, 128, 64 - (MV_FOOTER_Y - 1), 0);
+    print(2, MV_FOOTER_Y, msg.length > 21 ? msg.slice(0, 20) + '~' : msg, 1);
+}
+
 /* Fail-SAFE wrappers: see the banner above. */
 function _pppGuard(name, impl, args) {
     try { return impl.apply(null, args); }
@@ -1378,7 +1392,7 @@ export function openProjectPadPicker()      { return _pppGuard('open',  _openPro
 export function closeProjectPadPicker()     { return _pppGuard('close', _closeProjectPadPicker_impl, []); }
 export function projectPadPickerTap(k)      { return _pppGuard('tap',   _projectPadPickerTap_impl, [k]); }
 export function projectPadPickerModifiers() { return _pppGuard('mods',  _projectPadPickerModifiers_impl, []); }
-export function drawProjectPadPicker()      { return _pppGuard('draw',  _drawProjectPadPicker_impl, []); }
+export function drawProjectPadPicker()      { const r = _pppGuard('draw',  _drawProjectPadPicker_impl, []); _drawPreflightNotice(); return r; }
 export function projectPadPickerClick()     { return _pppGuard('click', _projectPadPickerClick_impl, []); }
 export function projectPadPickerRotate(d)   { return _pppGuard('rot',   _projectPadPickerRotate_impl, [d]); }
 export function projectPadPickerBack()      { return _pppGuard('back',  _projectPadPickerBack_impl, []); }
