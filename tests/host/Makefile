@@ -48,7 +48,8 @@ TARGETS = $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_overtake_native_led_repaint \
           $(BUILD_DIR)/test_link_peer_name \
           $(BUILD_DIR)/test_forward_channel \
-          $(BUILD_DIR)/test_link_audio_backlog_trim
+          $(BUILD_DIR)/test_link_audio_backlog_trim \
+          $(BUILD_DIR)/test_shadow_param_queue
 
 .PHONY: all test clean
 
@@ -112,6 +113,8 @@ $(BUILD_DIR)/test_link_audio_backlog_trim: test_link_audio_backlog_trim.c | $(BU
 
 $(BUILD_DIR)/test_forward_channel: test_forward_channel.c ../../src/host/forward_channel.h ../../src/host/shadow_chain_types.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -o $@ $<
+$(BUILD_DIR)/test_shadow_param_queue: test_shadow_param_queue.c ../../src/host/shadow_param_queue.h ../../src/host/shadow_constants.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 -include $(TARGETS:=.d)
 
