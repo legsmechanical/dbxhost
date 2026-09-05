@@ -129,7 +129,7 @@ step('⭑ Schwung → MIDI from the EDITOR: the NO INSTRUMENT EDITOR screen for 
     if (snd.noEditorWords(4) !== 'MIDI track') throw new Error('words: ' + snd.noEditorWords(4));
     backTap(); globalThis.tick();
     if (view() !== VIEW_BLOCKS) throw new Error('Back did not land on the menu: view ' + view());
-    if (kinds() !== 'trackto,config') throw new Error('rows: ' + kinds());
+    if (!/^trackto(,block)+,config$/.test(kinds())) throw new Error('rows: ' + kinds());   /* item 15: + MIDI FX rows */
 });
 
 step('⭑ from that MENU a further switch FOLLOWS to the new track\'s MENU (09-05: under everything)', () => {
@@ -268,7 +268,7 @@ step('⭑ the walk goes ON from the message: → another unsupported track shows
 step('⚠ from the MENU (not the editor) a switch onto a MIDI track still lands on its menu directly', () => {
     enterMenu(2);
     editops._switchActiveTrack(4); globalThis.tick();
-    if (view() !== VIEW_BLOCKS || kinds() !== 'trackto,config') throw new Error('view ' + view() + ' rows ' + kinds());
+    if (view() !== VIEW_BLOCKS || !/^trackto(,block)+,config$/.test(kinds())) throw new Error('view ' + view() + ' rows ' + kinds());
     snd.soundExit();
 });
 

@@ -84,7 +84,9 @@ step('a MIDI-routed track\'s menu is its destination + the CONFIG door, nothing 
     if (S.trackRoute[1] !== 2) throw new Error('route=' + S.trackRoute[1]);
     S.activeTrack = 1;
     const k = menuFor(1);
-    if (k.join(',') !== 'trackto,config') throw new Error('rows: ' + k.join(','));
+    /* Item 15 (2026-09-05): the MIDI FX block row(s) sit between — the track's
+     * notes run through its parked slot's MIDI FX and out the port. */
+    if (!/^trackto(,block)+,config$/.test(k.join(','))) throw new Error('rows: ' + k.join(','));
 });
 step('a NONE track stays collapsed to the row that picks an instrument', () => {
     B.applyInstrChoice(2, C.INSTR_NONE);
