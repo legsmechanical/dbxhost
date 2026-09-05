@@ -36,6 +36,21 @@ void *shadow_shm_map(const char *name, size_t size, int create, int zero)
         close(fd);
         return NULL;
     }
+    if (!create) {
+        /* ATTACH: the segment outlives the processes, so a consumer built
+         * against a bigger layout can meet a segment a smaller producer
+         * created. mmap would hand it back regardless and every access past
+         * the file's end is SIGBUS. Refuse instead — the feature goes quiet
+         * and the log says why (2026-09-05, with the CONTROL_BUFFER_SIZE bump). */
+        struct stat st;
+        if (fstat(fd, &st) == 0 && (size_t)st.st_size < size) {
+            unified_log("shm", LOG_LEVEL_ERROR,
+                        "shm %s is %lld bytes, %zu wanted — layout mismatch, refusing to map",
+                        name, (long long)st.st_size, size);
+            close(fd);
+            return NULL;
+        }
+    }
     void *map = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     close(fd);
     if (map == MAP_FAILED) {
