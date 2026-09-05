@@ -139,7 +139,7 @@ step_('⭑ holding Capture past the threshold OPENS the layer, and the release r
     if (!D.devSnapOpen()) throw new Error('the layer did not open after ' + D.DEVSNAP_HOLD_MS + ' ms');
     if (!S.captureUsedAsModifier) throw new Error('Capture not marked used — the release would run the tap');
     const h = JSON.stringify(D.devSnapHints());
-    if (h.indexOf('SAVE') < 0 || h.indexOf('RECALL') < 0) throw new Error('footer does not name the layer: ' + h);
+    if (h !== JSON.stringify([['STEP TAP', 'RECALL'], ['HOLD', 'STORE']])) throw new Error('footer (Josh, 2026-09-05: Step tap:recall · Hold:store): ' + h);
     /* No entry flash (Josh, 2026-09-05): the SNAPSHOTS row + footer name the mode. */
     if (S.actionPopupEndTick >= 0 && S.actionPopupLines.some((l) => /SNAPSHOTS/.test(String(l))))
         throw new Error('the entry popup is back: ' + JSON.stringify(S.actionPopupLines));
