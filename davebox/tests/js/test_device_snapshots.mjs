@@ -101,6 +101,7 @@ const D = await import('../../ui/ui_devsnap.mjs');
 const P = await import('../../ui/ui_persistence.mjs');
 const scene = await import('../../ui/ui_scene.mjs');
 const E = await import('../../ui/ui_editops.mjs');
+globalThis.__renderForTest = await import('../../ui/ui_render.mjs');
 const { White, DarkGrey, Cyan } = await import('/data/UserData/schwung/shared/constants.mjs');
 
 function ticks(n) { for (let i = 0; i < n; i++) tickmod._tickImpl(); }
@@ -295,6 +296,25 @@ step_('⭑ TRACK view: holding Capture opens THIS TRACK\'s layer; the header nam
     if (D.devSnapTrack() !== -1) throw new Error('session layer opened as a track layer');
     if (D.devSnapState().slots[4]) throw new Error('the device layer shows the track slot');
     capture(false); advance(20);
+});
+
+step_('⭑ the layer COVERS sound mode while open, and a store/recall card draws above ANY screen (Josh, 2026-09-05)', () => {
+    const R = globalThis.__renderForTest;
+    S.sessionView = false; S.activeTrack = 0;
+    capture(true); advance(700);
+    if (!D.devSnapOpen()) throw new Error('layer did not open');
+    if (!R.soundModeCovered()) throw new Error('an open layer does not cover sound mode — its steps would go to the editor');
+    capture(false); advance(20);
+    /* a card notice, then a frame drawn in TRACK view on a bank screen: the card's box is drawn */
+    P.showActionPopupFor(1500, 'SNAPSHOT 1', 'SAVED');
+    let boxes = 0; const _dr = globalThis.draw_rect; globalThis.draw_rect = (x, y, w, h, c) => { if (x === 6 && w === 116) boxes++; _dr(x, y, w, h, c); };
+    S.activeBank = 1; R.drawUI();
+    S.sessionView = true; R.drawUI();
+    globalThis.draw_rect = _dr;
+    if (boxes < 2) throw new Error('the card was not drawn above both views: ' + boxes);
+    /* a plain popup is NOT a card */
+    P.showActionPopup('UNDO');
+    if (S.actionPopupCard) throw new Error('a plain popup was flagged as a card');
 });
 
 if (failed) process.exit(1);

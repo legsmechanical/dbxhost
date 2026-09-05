@@ -1279,7 +1279,7 @@ export function bankCardVisible() {
 }
 
 export function soundModeCovered() {
-    return !!(S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox ||
+    return !!(devSnapOpen() || S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox ||
         S.projectPadPicker || S.pendingSceneBakePicker ||
         S.mergePlacing || S.mergeNoticePending || S.pendingMergePlacement ||
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
@@ -1348,6 +1348,12 @@ export function drawUI() {
     drawBankLatchBox();
     drawTrackVolCard();
     drawBankPicker();
+    /* THE NOTICE CARD, above everything (Josh, 2026-09-05: "the confirmation
+     * overlays pop up wherever you are when you save/recall, same for session
+     * view"): a card notice is drawn here, last, whatever screen the body
+     * chose — a bank, an editor, the session mixer, a dialog. */
+    if (S.actionPopupCard && S.actionPopupEndTick >= 0 && S.clockMs <= S.actionPopupEndTick && S.actionPopupLines.length)
+        drawNoticeCard(S.actionPopupLines);
 }
 
 /* The held step's page: the STEP bank's layout with THAT step's values. Drawn
@@ -1650,7 +1656,7 @@ function drawUIBody() {
          * window … but it's just a full screen"): the underlay draws as usual
          * and the card sits on top, below. The gauge popup keeps its full
          * screen — the bar wants the room. */
-        const _card = (S.actionPopupEndTick >= 0 && S.actionPopupGauge < 0) ? S.actionPopupLines : null;
+        const _card = (S.actionPopupEndTick >= 0 && S.actionPopupGauge < 0 && !S.actionPopupCard) ? S.actionPopupLines : null;
         if (S.actionPopupEndTick >= 0 && !_card) {
             const _n = S.actionPopupLines.length;
             {
@@ -1723,7 +1729,7 @@ function drawUIBody() {
     }
 
     /* Action confirmation pop-up: ~500ms; defers to step edit and active-knob bank overview */
-    if (S.actionPopupEndTick >= 0 && S.heldStep < 0 && S.knobTouched < 0) {
+    if (S.actionPopupEndTick >= 0 && S.heldStep < 0 && S.knobTouched < 0 && !S.actionPopupCard) {
         if (S.actionPopupHighlight >= 0 && S.actionPopupLines.length >= 3) {
             const _title = S.actionPopupLines[0];
             const _tw = _title.length * 6;

@@ -164,6 +164,7 @@ export function showTrackVolCard(text, frac) {
 
 export function showActionPopup(...lines) {
     showActionPopupFor(ACTION_POPUP_MS, ...lines);
+    S.actionPopupCard = false;
 }
 
 /* The same popup, held for `ms`. The default ACTION_POPUP_MS is a glance —
@@ -178,6 +179,9 @@ export function showActionPopupFor(ms, ...lines) {
     S.actionPopupGaugeMark = -1;
     S.actionPopupLines   = lines.filter((l) => l !== undefined && l !== null);
     S.actionPopupEndTick = nowMs() + ms;
+    /* A timed notice is a CARD, drawn above whatever screen is up (ui_render
+     * drawUI); the plain popup keeps each view's own placement. */
+    S.actionPopupCard = true;
     S.screenDirty = true;
 }
 
