@@ -24,7 +24,7 @@ import {
     fmtArpRate, fmtVelOverride, fmtPlayDir, fmtRevStyle,
     fmtDly, fmtArpStyle, fmtArpSteps, fmtDiq, fmtPlain, fmtLgto, fmtPitchRnd
 } from './ui_constants.mjs';
-import {
+import { drawAutoMarkAt,
     drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitBankHeader,
     kitUseLayout,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
@@ -445,8 +445,14 @@ function drawSessionFaderRow(cells, mode) {
             const xa = fx + 1, xb = fx + FW - 2, ya = TOP + 12, yb = BOT - 12;
             plotLine(xa, ya, xb, yb, 1);
             plotLine(xb, ya, xa, yb, 1);
-        } else if (c.kind !== 'blank')
+        } else if (c.kind !== 'blank') {
             drawVFader(fx, TOP, FW, BOT - TOP, c.norm || 0, unity);
+            /* The automation mark, as every kit cell carries it (filled =
+             * active, empty = deactivated): the arc modes get it from the kit
+             * grid; the fader row draws it above the fader (Josh, 2026-09-05:
+             * session knobs at parity with the track-view knobs). */
+            if (c.auto === 'auto' || c.auto === 'auto-off') drawAutoMarkAt(fx + (FW >> 1), TOP - 4, c.auto === 'auto');
+        }
         if (valueLive && lk === i && c.kind !== 'blank' && c.kind !== 'xbox') continue;  /* drawn last */
         const lbl = String(i + 1);
         const lw = mvWidth(lbl);
