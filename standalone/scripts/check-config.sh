@@ -44,6 +44,7 @@ check "bless.sh soname"                "$HERE/scripts/install-privileged.sh" "DB
 check "heal.c fallback HEAL_DIR"       "$HERE/src/davebox-heal.c"  "\"$DBX_HEAL_DIR\""
 check "heal.c installs as heal"        "$HERE/src/davebox-heal.c"  'HEAL_DIR "/heal"'
 check "launch.sh heal path"            "$HERE/scripts/launch.sh"   "HEAL=$DBX_HEAL"
+check "launch.sh module dir"           "$HERE/scripts/launch.sh"   "MOD=$DBX_STOCK_DIR/modules/tools/$DBX_LAUNCHER_ID"
 check "set-swap heal path"             "$HERE/scripts/set-swap.sh" "$DBX_HEAL"
 check "heal restore-unit verb"         "$HERE/src/davebox-heal.c"  "--install-restore-unit"
 check "bless.sh calls the verb"        "$HERE/scripts/install-privileged.sh" "--install-restore-unit"

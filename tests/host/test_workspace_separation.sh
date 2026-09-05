@@ -85,8 +85,16 @@ re-examine whether dbx-host still needs to own modules/chain"
 [ "${DBX_PRIVATE_STATE:-}" = "slot_state active_set.txt shadow_chain_config.json shadow_config.json" ] ||
   fail "DBX_PRIVATE_STATE drifted: '${DBX_PRIVATE_STATE:-}'"
 
-grep -q 'DBX_SHARED_LINKS' "$inst"  || fail "install-host.sh does not consume DBX_SHARED_LINKS"
-grep -q 'DBX_PRIVATE_STATE' "$inst" || fail "install-host.sh does not consume DBX_PRIVATE_STATE"
+# The consumer moved (2026-09-05): the device-side layout is ONE script,
+# layout-install.sh, which install-host.sh runs from the stage and the first-launch
+# bootstrap runs from the launcher module's payload. Pin both halves of that.
+lay=standalone/scripts/layout-install.sh
+grep -q 'DBX_SHARED_LINKS' "$lay"  || fail "layout-install.sh does not consume DBX_SHARED_LINKS"
+grep -q 'DBX_PRIVATE_STATE' "$lay" || fail "layout-install.sh does not consume DBX_PRIVATE_STATE"
+grep -q 'DBX_OWNED_MODULE_DIRS' "$lay" || fail "layout-install.sh does not consume DBX_OWNED_MODULE_DIRS"
+grep -q 'layout-install.sh' "$inst" || fail "install-host.sh no longer runs layout-install.sh — the two deploy paths have diverged"
+grep -q 'layout-install.sh' standalone/scripts/bootstrap.sh || fail "bootstrap.sh no longer runs layout-install.sh"
+grep -q 'layout-install.sh' scripts/build.sh || fail "build.sh does not stage layout-install.sh into the payload"
 
 # The C side must publish the install dir to every JS context.
 grep -q '"HOST_INSTALL_DIR", JS_NewString(ctx, SCHWUNG_INSTALL_DIR)' "$common" ||

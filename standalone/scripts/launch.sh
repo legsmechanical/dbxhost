@@ -117,6 +117,23 @@ setsid --wait bash -c '
   # confuse a build that predates the retirement.)
   rm -f "$DBX_DIR/standalone_active"
 
+  # ZERO-SSH INSTALL (2026-09-05). If the helper is not blessed or the install
+  # dir is not there, the launcher module payload installs it: bless first via
+  # stock heal (schwung#419), then the payload, then the restore unit. Runs
+  # BEFORE anything touches the stock stack, so a refusal leaves stock exactly
+  # as it was. Cheap stats on every other launch. A stock/catalog reinstall of
+  # the module can un-setuid the helper, so this is not a first-run check.
+  MOD=/data/UserData/schwung/modules/tools/davebox-sa
+  if [ ! -u "$HEAL" ] || [ ! -x "$DBX_DIR/schwung" ] || [ ! -f "$DBX_DIR/sa-build.json" ]; then
+    ts "bootstrap needed (helper blessed: $([ -u "$HEAL" ] && echo yes || echo no); install present: $([ -x "$DBX_DIR/schwung" ] && echo yes || echo no))"
+    if [ -f "$MOD/payload/scripts/bootstrap.sh" ]; then
+      sh "$MOD/payload/scripts/bootstrap.sh" || refuse "bootstrap refused -- see the lines above"
+    else
+      refuse "no blessed helper and no payload to install from ($MOD/payload)"
+    fi
+    ts "bootstrap done"
+  fi
+
 
   # OBSERVE the stack rather than assuming it, because which variant of
   # launch-standalone.sh is installed decides what we inherit (see the header).

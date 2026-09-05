@@ -275,122 +275,13 @@ done
 #
 # So: copy file-by-file into existing directories, replacing files atomically and
 # leaving anything the build does not ship untouched.
-$SSH "set -eu
-  cd '$STAGE'
-  # help/ is the one directory that may be MIRRORED rather than merged: it is
-  # wholly generated from the manual (see the step above) and shares nothing
-  # with stock, so a chapter that was renamed or dropped must not linger on the
-  # device forever. Scoped to *.md under help/ — this is NOT a loosening of the
-  # merge rule that protects bin/ and its setuid helper.
-  if [ -d ./help ]; then rm -f '$DBX_DIR'/help/*.md 2>/dev/null || true; fi
-  # Directories first: merge their CONTENTS recursively.
-  find . -type d -mindepth 1 | while read -r d; do mkdir -p '$DBX_DIR/'\"\${d#./}\"; done
-  find . -type f | while read -r f; do
-    rel=\"\${f#./}\"
-    dst='$DBX_DIR/'\"\$rel\"
-    # Atomic per file: land beside the target, then rename over it. A plain copy
-    # onto a mapped binary hits ETXTBSY or truncates it.
-    cp -f \"\$f\" \"\$dst.deploying\"
-    chmod --reference=\"\$f\" \"\$dst.deploying\" 2>/dev/null || chmod 755 \"\$dst.deploying\"
-    mv -f \"\$dst.deploying\" \"\$dst\"
-  done
-  cd '$DBX_DIR' && rm -rf '$STAGE'
-  chmod +x '$DBX_DIR/schwung' '$DBX_DIR/shadow/shadow_ui' 2>/dev/null || true
-  chmod +x '$DBX_DIR'/scripts/*.sh '$DBX_DIR/bless.sh' 2>/dev/null || true
-"
-say "      payload in place"
-
-# --- workspace separation ---------------------------------------------------
-# dAVEBOx SA is a SEPARATE WORKSPACE from stock Schwung: host state never
-# crosses installs, while installed content (modules/presets/patches) is shared.
-# See the DBX_SHARED_LINKS / DBX_PRIVATE_STATE comment in config.sh. This step
-# enforces both shapes on every deploy — a name in the private list that is a
-# symlink would silently fuse the two hosts' workspaces again (the JS and C
-# halves both resolve it into the stock tree), and a shared name that became a
-# real directory silently un-shares the user's content.
-say ""; say "--- enforcing workspace separation (state private, content shared)"
-$SSH "set -eu
-  cd '$DBX_DIR'
-  STOCK=/data/UserData/schwung
-  TS=\$(date +%Y%m%d)
-  # Shared content: must be a link into the stock tree.
-  for name in $DBX_SHARED_LINKS; do
-    target=\"\$STOCK/\$name\"
-    if [ -L \"\$name\" ]; then
-      [ \"\$(readlink \"\$name\")\" = \"\$target\" ] && { echo \"      ok (shared): \$name\"; continue; }
-      rm \"\$name\"
-    elif [ -e \"\$name\" ]; then
-      mv \"\$name\" \"\$name.unshared-\$TS\"
-      echo \"      moved aside: \$name -> \$name.unshared-\$TS (was a real copy)\"
-    fi
-    ln -s \"\$target\" \"\$name\"
-    echo \"      linked (shared): \$name\"
-  done
-  # Private state: must be REAL. A leftover symlink is removed; if it resolved
-  # somewhere, that content is left untouched where it lives — this install
-  # starts its own copy rather than adopting the other workspace's state.
-  for name in $DBX_PRIVATE_STATE; do
-    if [ -L \"\$name\" ]; then
-      rm \"\$name\"
-      echo \"      un-linked (private): \$name\"
-    fi
-    case \"\$name\" in
-      *.*) : ;;                    # files appear on first write
-      *)   mkdir -p \"\$name\" ;;  # dirs must exist for the C side's loaders
-    esac
-  done
-  # modules/: a REAL directory this install owns. Every stock category is
-  # symlinked (so the user's content and stock's updates are shared), EXCEPT the
-  # ones we ship ourselves, which must be OUR build. See the DBX_OWNED_MODULE_DIRS
-  # comment in config.sh for the regression that made this necessary — a stock
-  # v1.0.0 update replaced the chain DSP under a bare symlink and every slot in
-  # every project read as empty, with no error anywhere and identical module.json.
-  if [ -L modules ]; then rm modules; echo '      un-linked: modules (was a bare symlink into stock)'; fi
-  mkdir -p modules
-  # A category is SPLIT when it contains an owned module (\"tools/x\"); it is
-  # WHOLLY OURS when named outright (\"chain\"). Anything else is one symlink.
-  for cat in \$(cd \"\$STOCK/modules\" 2>/dev/null && ls -1); do
-    whole=0; split=0
-    for own in $DBX_OWNED_MODULE_DIRS; do
-      [ \"\$cat\" = \"\$own\" ] && whole=1
-      case \"\$own\" in \"\$cat\"/*) split=1 ;; esac
-    done
-    if [ \"\$whole\" = 1 ]; then
-      [ -L \"modules/\$cat\" ] && rm \"modules/\$cat\"
-      mkdir -p \"modules/\$cat\"
-      echo \"      ours (whole): modules/\$cat\"
-      continue
-    fi
-    if [ \"\$split\" = 1 ]; then
-      # Real dir: one symlink per stock entry, our own copies placed after.
-      [ -L \"modules/\$cat\" ] && rm \"modules/\$cat\"
-      mkdir -p \"modules/\$cat\"
-      for ent in \$(cd \"\$STOCK/modules/\$cat\" 2>/dev/null && ls -1); do
-        isown=0
-        for own in $DBX_OWNED_MODULE_DIRS; do
-          [ \"\$cat/\$ent\" = \"\$own\" ] && isown=1
-        done
-        [ \"\$isown\" = 1 ] && continue
-        t=\"\$STOCK/modules/\$cat/\$ent\"
-        if [ -L \"modules/\$cat/\$ent\" ] && [ \"\$(readlink \"modules/\$cat/\$ent\")\" = \"\$t\" ]; then continue; fi
-        rm -rf \"modules/\$cat/\$ent\"
-        ln -s \"\$t\" \"modules/\$cat/\$ent\"
-      done
-      echo \"      split (stock linked, ours real): modules/\$cat\"
-      continue
-    fi
-    target=\"\$STOCK/modules/\$cat\"
-    if [ -L \"modules/\$cat\" ] && [ \"\$(readlink \"modules/\$cat\")\" = \"\$target\" ]; then continue; fi
-    rm -rf \"modules/\$cat\"
-    ln -s \"\$target\" \"modules/\$cat\"
-    echo \"      linked (shared): modules/\$cat\"
-  done
-  for own in $DBX_OWNED_MODULE_DIRS; do
-    if [ -L \"modules/\$own\" ]; then rm \"modules/\$own\"; fi
-    mkdir -p \"modules/\$own\"
-    echo \"      ours (pinned): modules/\$own\"
-  done
-"
+# ⭑ The device-side layout — merge-not-replace, workspace separation, the
+# modules/ mirror — is ONE script since 2026-09-05, shipped in the payload
+# (scripts/layout-install.sh) so the first-launch bootstrap and this dev loop
+# lay the tree by the same rules. Its header carries the regressions behind each
+# rule. It runs from the STAGE, then the stage goes.
+say ""; say "--- laying the payload (layout-install.sh: merge, workspace separation, modules mirror)"
+$SSH "sh '$STAGE/scripts/layout-install.sh' '$STAGE' '$DBX_DIR' /data/UserData/schwung && rm -rf '$STAGE'"
 
 # Our own module categories, deployed from THIS build — never from the stock tree.
 say ""; say "--- installing the module categories this host owns"
