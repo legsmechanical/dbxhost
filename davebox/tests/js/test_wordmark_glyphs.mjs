@@ -5,7 +5,9 @@
  * codepoint and advances — no throw, no warning, nothing in a log. When the
  * wordmark moved to this font on 2026-08-25 the animation swapped 'A' for '@',
  * which was unmapped: the letter simply DISAPPEARED for half of every bar, and
- * only a rendered picture showed it. A width check cannot catch it either —
+ * only a rendered picture showed it. (That letter-swap dance retired on
+ * 2026-09-05 — while playing, the banner is now a window onto a collected Dave,
+ * see test_dave_box — so only the RESTING mark is pinned here.) A width check cannot catch it either —
  * hdrWidth returns the same 6 for a mapped glyph and for the fallback.
  *
  * So the observable is INK: draw the glyph and count pixels.
@@ -29,33 +31,13 @@ function inkOf(ch) {
     return n;
 }
 
-/* The resting mark and every letter the transport animation can swap in. */
+/* The resting mark. */
 const REST = ['d', 'A', 'V', 'E', 'B', 'O', 'x'];
-const ALTS = ['@', '3', 'o'];
 
 step('⭑ every letter of the resting wordmark renders', () => {
     for (const ch of REST)
         if (inkOf(ch) === 0)
             throw new Error(JSON.stringify(ch) + ' draws NOTHING — it is unmapped in the heading font');
-});
-
-step('⭑ every ANIMATED substitute renders (the @ that vanished)', () => {
-    for (const ch of ALTS)
-        if (inkOf(ch) === 0)
-            throw new Error(JSON.stringify(ch) + ' draws NOTHING — the letter would vanish ' +
-                            'for half of every bar while the transport runs');
-});
-
-step('⭑ the swapped glyph is VISIBLY different from what it replaces', () => {
-    /* A caps-only font maps lowercase to its capital, so O -> o rendered
-     * identically: the animation "worked" and showed nothing. Same ink count
-     * from the same face is the signature of that. */
-    for (const [from, to] of [['A', '@'], ['E', '3'], ['O', 'o']]) {
-        if (inkOf(from) === inkOf(to))
-            throw new Error(from + ' -> ' + to + ' draws the same ink (' + inkOf(to) +
-                            ') — the swap is invisible, which is how the caps ' +
-                            'fallback hid itself');
-    }
 });
 
 step('⚠ control: an unmapped codepoint really does draw nothing', () => {

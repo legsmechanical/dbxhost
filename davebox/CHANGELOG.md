@@ -17,6 +17,14 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **A Dave in the window.** Flip **Daves** to On in the global menu (it sits
+  just above Open Your Dave Box; off by default) and, while the transport
+  runs, the dAVEBOx banner in Session view becomes a window: one of your
+  collected Daves scrolls past behind it, top to bottom over one bar and back
+  up over the next, in time with the tempo. A new Dave is dealt every time
+  you press Play. Stop, and the wordmark returns. With Daves off the banner
+  is a plain static header. (The old on-the-beat letter dance is gone either
+  way.) The switch is remembered across projects.
 - **Automation exports to Live.** An exported set now carries volume, pan and
   both send levels as clip automation, plus aftertouch on every track and pitch
   bend on Move-routed tracks (scaled to that instrument's own bend range). The
