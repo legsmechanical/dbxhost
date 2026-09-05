@@ -44,7 +44,7 @@ import { nowMs } from './ui_clock.mjs';
 import { bankCardVisible, sessMixerVisible, bankHeaderRight } from './ui_render.mjs';
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
-import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
+import { instrValueFor, applyInstrChoice, syncMidiViaSlot } from './ui_dsp_bridge.mjs';
 import { instrOptions, instrPickerRows, fmtInstr, INSTR_SCHWUNG, INSTR_NONE, INSTR_MIDI_CH, NUM_CLIPS, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
          BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
@@ -2663,6 +2663,14 @@ function buildPickRows() {
          * screen is its destination plus the CONFIG door, exactly as a Move
          * track's is. configRows itself decides which rows a MIDI track gets. */
         if (GS.trackRoute[S.track] === 2) {
+            /* ITEM 15 (Josh, 2026-09-05): a MIDI track's notes run THROUGH its
+             * parked slot's MIDI FX and out the port, so the MIDI FX block rows
+             * are its to load and edit. No Generator, no audio FX, no levels —
+             * nothing of the slot's SOUND is on the port. */
+            for (const i of S.blockRows) {
+                if (!/^midi_fx/.test(BLOCKS[i].comp)) continue;
+                rows.push({ kind: 'block', comp: BLOCKS[i].comp, label: BLOCKS[i].label, blockIdx: i });
+            }
             rows.push({ kind: 'config', label: 'Config' });
             S.pickRows = rows; S.pickRow = 0; return;
         }
@@ -5583,6 +5591,9 @@ function applyModulePick(mod) {
      * does nothing, which is the kind of failure you debug for an hour. */
     engineLoadModule(S.slot, S.comp, S.bus ? (mod.path || '') : mod.id);
     GS.instrAbbrevAt = 0;                 /* the header's [instrument] re-reads next tick */
+    /* Item 15: a MIDI FX loaded (or emptied) on a MIDI track's parked slot
+     * changes whether its stream may go through the slot. */
+    if (!S.bus && /^midi_fx/.test(S.comp) && S.track >= 0 && GS.trackRoute[S.track] === 2) syncMidiViaSlot(S.track);
     /* The chain host instantiates asynchronously — discovering immediately
      * returns null metadata and the module looks empty. */
     S.pendingDiscover = 6;

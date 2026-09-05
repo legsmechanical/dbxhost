@@ -10,6 +10,12 @@
 #ifndef CHAIN_INTERNAL_H
 #define CHAIN_INTERNAL_H
 
+/* midi_out values (2026-09-05). */
+#define CHAIN_MIDI_OUT_SYNTH    0
+#define CHAIN_MIDI_OUT_EXTERNAL 1
+#define CHAIN_MIDI_OUT_BOTH     2
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -219,6 +225,8 @@ typedef struct {
     int receive_channel;   /* PATCH_CHANNEL_UNSET=absent, 0=All, 1-16=specific channel */
     int forward_channel;   /* PATCH_CHANNEL_UNSET=absent, -2=passthrough, -1=auto, 0-15=channel */
     int midi_fx_pre_mode;  /* 0 = Post (default), 1 = Pre (additive inject to Move MIDI_IN) */
+    int midi_out;          /* CHAIN_MIDI_OUT_* — where the post-MIDI-FX stream goes (absence = synth) */
+    int midi_out_channel;  /* -1 = as-is, 0-15 = rewrite the channel nibble on the way out */
     lfo_state_t lfos[LFO_COUNT];  /* LFO configuration */
 } patch_info_t;
 
@@ -345,6 +353,15 @@ typedef struct chain_instance {
      * native instrument on the slot's forward_channel plays it additively).
      * Only meaningful when a MIDI FX is loaded. */
     int midi_fx_pre_mode;
+
+    /* Where the post-MIDI-FX stream goes (2026-09-05, item 15): the slot's
+     * synth (default), the USB-A port (external — the synth stays silent), or
+     * both. `external` is what lets a sequencer's MIDI track run through this
+     * slot's MIDI FX and out the cable. midi_out_channel rewrites the channel
+     * nibble on the way out (the host's per-slot remap has already put the
+     * slot's forward channel on the stream; a MIDI track wants ITS channel). */
+    int midi_out;
+    int midi_out_channel;   /* -1 = as-is, 0-15 */
 
     /* Cached "pre_capable" hint from the loaded MIDI FX module.json.
      * Informs the Shadow UI default on first placement; does not gate the

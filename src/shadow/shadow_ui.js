@@ -5254,6 +5254,14 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
     const preMode = getSlotParam(slotIndex, "midi_fx_pre_mode");
     if (preMode !== null) patch.midi_fx_pre_mode = parseInt(preMode) ? 1 : 0;
 
+    /* Include the MIDI OUT sink (synth / external / both) and its channel —
+     * a sequencer's MIDI track routes through this slot's MIDI FX and out the
+     * port (item 15, 2026-09-05). Stored as the numbers the chain parses. */
+    const midiOut = getSlotParam(slotIndex, "midi_out");
+    if (midiOut !== null) patch.midi_out = midiOut === "external" ? 1 : midiOut === "both" ? 2 : 0;
+    const midiOutCh = getSlotParam(slotIndex, "midi_out_channel");
+    if (midiOutCh !== null) patch.midi_out_channel = parseInt(midiOutCh);
+
     /* Include knob mappings */
     const knobMappingsJson = getSlotParam(slotIndex, "knob_mappings");
     if (knobMappingsJson) {

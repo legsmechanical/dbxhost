@@ -792,6 +792,20 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
         inst->dirty = 0;
         malloc_trim(0);
     }
+    else if (strcmp(key, "midi_out") == 0) {
+        /* synth | external | both, or 0 | 1 | 2 (item 15, 2026-09-05). */
+        int m = CHAIN_MIDI_OUT_SYNTH;
+        if (val) {
+            if      (strcmp(val, "external") == 0 || strcmp(val, "1") == 0) m = CHAIN_MIDI_OUT_EXTERNAL;
+            else if (strcmp(val, "both") == 0     || strcmp(val, "2") == 0) m = CHAIN_MIDI_OUT_BOTH;
+        }
+        if (m != inst->midi_out) { inst->midi_out = m; inst->dirty = 1; }
+    }
+    else if (strcmp(key, "midi_out_channel") == 0) {
+        int ch = val ? atoi(val) : -1;
+        if (ch < -1 || ch > 15) ch = -1;
+        if (ch != inst->midi_out_channel) { inst->midi_out_channel = ch; inst->dirty = 1; }
+    }
     else if (strcmp(key, "midi_fx_pre_mode") == 0) {
         int new_mode = (val && atoi(val)) ? 1 : 0;
         if (new_mode != inst->midi_fx_pre_mode) {
@@ -1355,6 +1369,13 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
     }
     if (strcmp(key, "midi_fx_pre_mode") == 0) {
         return snprintf(buf, buf_len, "%d", inst->midi_fx_pre_mode ? 1 : 0);
+    }
+    if (strcmp(key, "midi_out") == 0) {
+        return snprintf(buf, buf_len, "%s", inst->midi_out == CHAIN_MIDI_OUT_EXTERNAL ? "external"
+                                          : inst->midi_out == CHAIN_MIDI_OUT_BOTH ? "both" : "synth");
+    }
+    if (strcmp(key, "midi_out_channel") == 0) {
+        return snprintf(buf, buf_len, "%d", inst->midi_out_channel);
     }
     if (strcmp(key, "midi_fx:pre_capable") == 0) {
         /* Hint from the loaded MIDI FX's module.json. Aggregated as OR

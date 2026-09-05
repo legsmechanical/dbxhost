@@ -36,7 +36,7 @@ import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 
 import { S } from './ui_state.mjs';
 import { slotIndex, syncLinkAudioRoutingFromRoutes,
-         invalidateLinkAudioRoutingCache } from './ui_engine.mjs';
+         invalidateLinkAudioRoutingCache, engineLoadedModule, engineSetChainParam } from './ui_engine.mjs';
 import { clipHasContent, _clipIsEmpty } from './ui_pure.mjs';
 import { showActionPopup, writeSidecar, uuidToStatePath, uuidToUiStatePath,
          uuidToNewProjectPath } from './ui_persistence.mjs';
@@ -1091,7 +1091,7 @@ export function applyTrackConfig(t, key, val) {
     if (key === 'route') strVal = val === ROUTE_NONE ? 'none' : val === 2 ? 'external' : val === 1 ? 'move' : 'schwung';
     else strVal = String(val);
     host_module_set_param('t' + t + '_' + key, strVal);
-    if (key === 'channel')              S.trackChannel[t] = val;
+    if (key === 'channel')            { S.trackChannel[t] = val; if (S.trackRoute[t] === 2) syncMidiViaSlot(t); }
     else if (key === 'midi_to')         S.trackMidiTo[t] = val | 0;
     else if (key === 'route') {
         S.trackRoute[t] = val;
@@ -1102,6 +1102,7 @@ export function applyTrackConfig(t, key, val) {
         /* Move route offers only Off/Poly aftertouch — normalize a lingering
          * Channel selection so the AftTch menu + send stay in sync. */
         if (val === 1 && S.trackAtMode[t] === 2) { S.trackAtMode[t] = 1; writeSidecar(); }
+        syncMidiViaSlot(t);               /* item 15: the parked slot's midi_out follows the route */
     }
     else if (key === 'pad_mode') {
         S.trackPadMode[t] = val;
@@ -1136,6 +1137,28 @@ export function applyTrackConfig(t, key, val) {
 }
 
 /* Send a single param change to DSP and apply any JS-side side-effects. */
+/* ITEM 15 (Josh, 2026-09-05, option A): a MIDI track's stream runs THROUGH its
+ * parked chain slot's MIDI FX and out the USB port. Three facts have to agree,
+ * and this is the one place that sets all three:
+ *   - the slot's `midi_out`: external while the track is MIDI-routed AND a MIDI
+ *     FX is loaded there (an empty slot is not dispatched to — the host only
+ *     addresses a slot that holds a module), synth otherwise;
+ *   - the slot's `midi_out_channel`: the track's channel, so the wire carries
+ *     it (the host's per-slot remap has put the slot's forward channel on the
+ *     stream by then);
+ *   - the DSP's `tN_midi_via_slot`: 1 = send into the slot, 0 = straight out.
+ * Called on every route or channel change, after a MIDI FX load/unload on a
+ * MIDI track, and once per project load. Nothing per tick. */
+export function syncMidiViaSlot(t) {
+    const slot = slotIndex(t);
+    const midi = S.trackRoute[t] === 2;
+    const hasFx = midi && !!(engineLoadedModule(slot, 'midi_fx1') || engineLoadedModule(slot, 'midi_fx2'));
+    engineSetChainParam(slot, 'midi_out', hasFx ? 'external' : 'synth');
+    engineSetChainParam(slot, 'midi_out_channel', hasFx ? String(((S.trackChannel[t] | 0) - 1 + 16) % 16) : '-1');
+    host_module_set_param('t' + t + '_midi_via_slot', hasFx ? '1' : '0');
+    return hasFx;
+}
+
 export function applyBankParam(t, bankIdx, knobIdx, val) {
     const pm = BANKS[bankIdx].knobs[knobIdx];
     if (!pm || pm.scope === 'stub') return;
@@ -1639,6 +1662,9 @@ export function syncClipsFromDsp() {
      * on it, and a get_param is a quarter of a tick. */
     automationInvalidateMeta();      /* a project load can swap every slot's module */
     automationRefreshPresence();
+    /* Item 15: the MIDI-through-slot facts are runtime-only on the DSP side —
+     * re-derive them for every MIDI track from what its slot holds now. */
+    for (let t = 0; t < NUM_TRACKS; t++) if (S.trackRoute[t] === 2) syncMidiViaSlot(t);
 }
 
 function _syncClipsFromDspInner() {

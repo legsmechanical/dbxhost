@@ -222,5 +222,14 @@ static int sp_track_config(sp_ctx_t *cx) {
         return 1;
     }
 
+    /* tN_midi_via_slot: a MIDI track's stream goes through its parked slot's
+     * MIDI FX (item 15). Runtime only — never dirties the state; JS re-derives
+     * it on every load from what the slot holds. */
+    if (!strcmp(sub, "midi_via_slot")) {
+        uint8_t v = (uint8_t)(my_atoi(val) ? 1 : 0);
+        tr->pfx.midi_via_slot = v;       /* the emitter reads the TRACK's flag for every lane */
+        return 1;
+    }
+
     return 0;
 }

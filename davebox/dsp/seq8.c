@@ -437,6 +437,13 @@ typedef struct {
     /* Global MIDI Looper: 1 = this track's post-fx output is captured by the
      * looper and silenced during playback; 0 = bypass entirely. Default 1. */
     uint8_t      looper_on;
+    /* ROUTE_EXTERNAL through the parked chain slot (item 15, 2026-09-05): 1 =
+     * this track's port-bound stream goes INTO its slot (midi_send_internal_slot)
+     * so the slot's MIDI FX shape it and the chain's `midi_out` sends it on;
+     * 0 = straight to the port as before. JS sets it — it knows whether the
+     * slot has a MIDI FX loaded (an empty slot is not dispatched to). Runtime
+     * only, re-derived on every project load. */
+    uint8_t      midi_via_slot;
     uint8_t      track_idx;  /* 0..NUM_TRACKS-1; back-pointer for looper events */
     /* Output-pitch refcount: counts how many distinct chain sources (input pads
      * × HARMZ copies + delay echoes + arp emits) are currently sounding each
@@ -1999,6 +2006,18 @@ static void pfx_emit(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
         if (!g_host->midi_inject_to_move) return;
         uint8_t pkt[4] = { (uint8_t)(0x20 | (status >> 4)), status, d1, d2 };
         g_host->midi_inject_to_move(pkt, 4);
+        return;
+    }
+    if (dst.route == ROUTE_EXTERNAL && dst.route == fx->route &&
+            g_inst && fx->track_idx < NUM_TRACKS && g_inst->tracks[fx->track_idx].pfx.midi_via_slot) {
+        /* THROUGH THE PARKED SLOT (item 15): the slot's MIDI FX shape the
+         * stream and the chain's `midi_out = external` puts it on the port
+         * with this track's channel. Only when JS says the slot can take it
+         * (a MIDI FX is loaded there — an empty slot is not dispatched to). */
+        if (g_host->midi_send_internal_slot) {
+            const uint8_t msg[4] = { (uint8_t)(status >> 4), status, d1, d2 };
+            g_host->midi_send_internal_slot((int)fx->slot, msg, 4);
+        }
         return;
     }
     if (dst.route == ROUTE_EXTERNAL) {
@@ -5641,6 +5660,8 @@ static int pfx_get(seq8_track_t *tr, const char *key, char *out, int out_len) {
 
     if (!strcmp(key, "track_looper"))
         return snprintf(out, out_len, "%d", (int)fx->looper_on);
+    if (!strcmp(key, "midi_via_slot"))
+        return snprintf(out, out_len, "%d", (int)fx->midi_via_slot);
 
     /* Batch read: per-clip pfx params. Fields 0-16: NOTE FX K0-K4, HARMZ K0-K3,
      * MIDI DLY K0-K7 (legacy 17). Fields 17-23: SEQ ARP K1-K7 (style/rate/

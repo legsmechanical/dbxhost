@@ -32,6 +32,16 @@ static void drum_pfx_emit(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2
         g_host->midi_inject_to_move(pkt, 4);
         return;
     }
+    if (dst.route == ROUTE_EXTERNAL && dst.route == px->route &&
+            px->track_idx < NUM_TRACKS && g_inst->tracks[px->track_idx].pfx.midi_via_slot) {
+        /* THROUGH THE PARKED SLOT (item 15) — the track's flag covers its
+         * drum lanes; see pfx_emit's branch of the same name. */
+        if (g_host->midi_send_internal_slot) {
+            const uint8_t msg[4] = { (uint8_t)(status >> 4), status, d1, d2 };
+            g_host->midi_send_internal_slot((int)px->slot, msg, 4);
+        }
+        return;
+    }
     if (dst.route == ROUTE_EXTERNAL) {
         /* See pfx_emit ROUTE_EXTERNAL branch. Cable-2 nibble for USB-A out. */
         if (g_host->midi_send_external) {
