@@ -611,6 +611,7 @@ static void pa_serialize_locked(seq8_instance_t *inst, FILE *fp) {
         if (e->loop_off)   fprintf(fp, ",\"lo\":%d", (int)e->loop_off);
         if (e->resolution) fprintf(fp, ",\"rs\":%d", (int)e->resolution);
         if (e->scale_off)  fprintf(fp, ",\"sc\":%d", pa_scale_pct(e));   /* sparse: 100 % writes nothing */
+        if (e->scale_ctr1) fprintf(fp, ",\"cc\":%d", (int)e->scale_ctr1 - 1);   /* bipolar centre; absent = unipolar */
         fprintf(fp, ",\"p\":\"");
         for (int j = 0; j < e->count; j++)
             fprintf(fp, "%u:%u;", (unsigned)e->points[j].tick, (unsigned)e->points[j].val);
@@ -680,6 +681,8 @@ static void pa_parse_locked(seq8_instance_t *inst, const char *buf, size_t blen)
                     if (sc < PA_SCALE_MIN) sc = PA_SCALE_MIN;
                     if (sc > PA_SCALE_MAX) sc = PA_SCALE_MAX;
                     e->scale_off = (int8_t)(sc - 100);
+                    int cc = pa_json_int(obj, end, "cc", -1);     /* absent = unipolar */
+                    e->scale_ctr1 = (cc >= 0 && cc <= PA_VAL_MAX) ? (uint16_t)(cc + 1) : 0;
                 }
                 const char *pp = strstr(obj, "\"p\":\"");
                 if (pp && pp < end) {

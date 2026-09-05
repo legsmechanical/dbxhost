@@ -749,12 +749,36 @@ export function automationSetRate(track, clip, target, code, checkpoint) {
 }
 /* THE SCALE (Josh, 2026-09-05): 0..200 %, applied by the DSP at playback and
  * export; the points stay as recorded, so 100 % is exactly what was there. */
+/* A BIPOLAR parameter's centre, 14-bit, or null for a unipolar one (Josh,
+ * 2026-09-05, automating pan: "scale toward center and out rather than full
+ * knob travel"). Only JS has the metadata, so JS names the centre and the DSP
+ * scales the lane's distance from it. Bipolar means: a mixer PAN (0..1,
+ * centre 0.5), pitch bend (centre 8192), a parameter whose declared range
+ * straddles zero (centre 0), or one that declares a `center`. */
+export function automationBipolarCenter(target) {
+    if (midiTargetIsMidi(target)) return target === 'pb' ? 8192 : null;
+    const m = target.split(':');
+    if (m.length < 3 || m[0] === 'seq' || m[0] === 'bus') return null;
+    const slot = parseInt(m[0], 10);
+    const comp = m.slice(1, -1).join(':');
+    const key  = m[m.length - 1];
+    if (isNaN(slot)) return null;
+    if (key === 'pan' && isLevelComponent(comp)) return normValue(slot, comp, key, '0.5');
+    const p = componentMeta(slot, comp)[key];
+    if (!p) return null;
+    if (typeof p.center === 'number') return normValue(slot, comp, key, String(p.center));
+    if (typeof p.min === 'number' && typeof p.max === 'number' && p.min < 0 && p.max > 0)
+        return normValue(slot, comp, key, '0');
+    return null;
+}
+
 export function automationSetScale(track, clip, target, pct, checkpoint) {
     const s = automationStateFor(track, clip, target);
     if (!s) return false;
     const v = Math.max(0, Math.min(200, pct | 0));
     if (checkpoint !== false) queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
-    queueSet('t' + track + '_pa_scale', clip + ' ' + target + ' ' + v);
+    const ctr = automationBipolarCenter(target);
+    queueSet('t' + track + '_pa_scale', clip + ' ' + target + ' ' + v + (ctr === null ? '' : ' ' + ctr));
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.scale = v;
     return true;

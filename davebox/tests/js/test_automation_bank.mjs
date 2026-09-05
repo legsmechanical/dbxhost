@@ -184,6 +184,21 @@ step('Smooth/Stepped is an op HERE (floats only): cutoff offers it, voices (int)
     assert(sets.some(x => x === 't0_pa_scale=0 0:synth:cutoff 0'), '0 % is a real value, written as 0');
     sets.length = 0;
     back(); ticks(1); assert(!menu().scaleEdit && menu().ops, 'Back leaves the scale edit, ops stay');
+    /* BIPOLAR (Josh, 2026-09-05): a PAN lane's scale carries the centre as a
+     * 4th token (0.5 → 8192 in 14 bits) so the DSP scales toward centre; the
+     * cutoff writes above carried none — a unipolar lane scales from zero. */
+    assert(auto.automationBipolarCenter('0:slot:pan') === 8192, 'pan is bipolar with centre 0.5 = 8192, got ' + auto.automationBipolarCenter('0:slot:pan'));
+    assert(auto.automationBipolarCenter('0:synth:cutoff') === null, 'cutoff (0..1) is unipolar');
+    assert(auto.automationBipolarCenter('pb') === 8192, 'pitch bend is bipolar at 8192');
+    sets.length = 0;
+    assert(auto.automationSetScale(0, 0, '0:synth:voices', 120, false), 'voices lane is listed');
+    ticks(2);                                             /* the module writes flush on the tick */
+    assert(sets.some(x => x === 't0_pa_scale=0 0:synth:voices 120'), 'voices (unipolar, int 1..8): three tokens, got ' + JSON.stringify(sets));
+    LIST = '0 0 1 8 0:synth:cutoff 0\n0 0 2 3 0:synth:voices 48\n0 0 1 2 0:slot:volume 0\n0 0 1 2 0:slot:pan 0\n1 0 1 2 1:synth:cutoff 0\n';
+    auto.automationRefreshPresence(); sets.length = 0;
+    assert(auto.automationSetScale(0, 0, '0:slot:pan', 50, false), 'pan lane is listed');
+    ticks(2);
+    assert(sets.some(x => x === 't0_pa_scale=0 0:slot:pan 50 8192'), 'pan (bipolar): the centre rides as the 4th token, got ' + JSON.stringify(sets));
     /* The list carries the percent as an 8th field; an older DSP omits it and that is 100. */
     LIST = '0 0 1 8 0:synth:cutoff 0 0 150\n0 0 2 3 0:synth:voices 48\n';
     auto.automationRefreshPresence();

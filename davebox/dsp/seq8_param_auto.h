@@ -112,13 +112,28 @@ typedef struct {
      * (playback) and on the way OUT (pa_export), out = clamp(v * pct / 100).
      * -100..+100 ⇒ 0..200 %. */
     int8_t   scale_off;
+    /* BIPOLAR (Josh, 2026-09-05, automating pan: "scale toward center and out
+     * rather than full knob travel"). A parameter with a centre — pan, pitch,
+     * anything whose range straddles a rest point — scales its DISTANCE FROM
+     * THAT CENTRE, not its distance from zero. Only JS knows a parameter's
+     * centre (the DSP holds 14-bit values and no metadata), so JS sends it
+     * with the scale as an optional 4th token of pa_scale. Stored as centre+1
+     * so a zeroed entry — every fresh one, every v1 file — reads as UNIPOLAR. */
+    uint16_t scale_ctr1;
     pa_point_t points[PA_ENTRY_POINTS];
 } pa_entry_t;
 
 #define PA_SCALE_MIN   0
 #define PA_SCALE_MAX 200
 static inline int pa_scale_pct(const pa_entry_t *e) { return 100 + (int)e->scale_off; }
+/* The lane's law: unipolar out = clamp(v × pct / 100); bipolar
+ * out = clamp(c + (v − c) × pct / 100). 100 % is the identity either way. */
 static inline uint16_t pa_scaled(const pa_entry_t *e, uint16_t v) {
+    if (e->scale_ctr1) {
+        int32_t c = (int32_t)e->scale_ctr1 - 1;
+        int32_t s = c + ((int32_t)v - c) * (int32_t)pa_scale_pct(e) / 100;
+        return (uint16_t)(s < 0 ? 0 : s > PA_VAL_MAX ? PA_VAL_MAX : s);
+    }
     uint32_t s = (uint32_t)v * (uint32_t)pa_scale_pct(e) / 100u;
     return (uint16_t)(s > PA_VAL_MAX ? PA_VAL_MAX : s);
 }
