@@ -613,6 +613,8 @@ export const S = {
      * confirm } where confirm is null or { kind:'load'|'overwrite'|'wipe',
      * sel:1(=No default), targetId, wipeIds }. */
     snapshotPicker: null,
+    devSnap: null,           /* device-wide snapshots layer (ui_devsnap.mjs); lazily built */
+    captureHeldAt: -1,       /* ms the Capture press landed; the hold opens the snapshot layer */
     /* PROJECTS pad picker (v3): dAVEBOx draws the picker itself — 32 pads =
      * 32 project slots (pad k ↔ user.song-index k, same mapping the host
      * actuator replays). null = closed; else { projects, byIndex, current,

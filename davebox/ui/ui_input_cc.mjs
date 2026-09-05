@@ -63,6 +63,7 @@ import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
  * the screen can disagree. */
 import { bankCardVisible, sessMixerVisible, soundModeCovered } from './ui_render.mjs';
 import { closeDaveBox } from './ui_daves.mjs';
+import { devSnapOpen, devSnapLeave } from './ui_devsnap.mjs';
 import { applyTrackConfig, readBankParams, applyBankParam,
     refreshPerClipBankParams, resyncDrumTrack,
     unlatchAllTracks, queueLiveNoteOff } from './ui_dsp_bridge.mjs';
@@ -1324,6 +1325,7 @@ function _onCC_buttons(d1, d2) {
         if (d2 === 127) {
             S.captureHeld           = true;
             S.captureUsedAsModifier = false;
+            S.captureHeldAt         = nowMs();   /* the hold → the snapshot layer (ui_devsnap) */
             /* Press also cancels in-flight bake dialogs — symmetric with
              * Sample's press behavior. (Scene-bake-picker cancel lives in the
              * any-button guard in _onCCMsg; merge-placement cancel is Record.) */
@@ -1334,6 +1336,11 @@ function _onCC_buttons(d1, d2) {
             forceRedraw();
         } else {
             S.captureHeld = false;
+            S.captureHeldAt = -1;
+            /* The SNAPSHOT layer (item 18): Capture held past the threshold in
+             * session view opened it (ui_tick), and marked Capture used, so the
+             * release below does nothing but close the layer. */
+            if (devSnapOpen()) devSnapLeave();
             /* Bare-tap release — Capture is CAPTURE-ONLY (bake lives on
              * Sample, Live Merge on Shift+Record):
              *   Shift+Capture          → discard buffered capture input (Move parity)

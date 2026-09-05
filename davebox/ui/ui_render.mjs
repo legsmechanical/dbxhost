@@ -8,6 +8,7 @@
 
 import { S, PERF_FACTORY_PRESETS } from './ui_state.mjs';
 import { drawDaveBox } from './ui_daves.mjs';
+import { devSnapOpen, devSnapHints } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
 import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev } from './ui_engine.mjs';
 import { instrValueFor } from './ui_dsp_bridge.mjs';
@@ -943,6 +944,7 @@ function overviewHints() {
      * track in every view, Shift+≡ opens the track's SOUND + CONFIG menu in
      * track view and the MASTER / SEND FX list in session view. No CLK pair:
      * Shift+click is nothing here. */
+    if (S.sessionView && devSnapOpen()) return devSnapHints();   /* the snapshot layer (item 18) */
     if (S.shiftHeld) return [['JOG', 'TRACK'], ['\u2261', S.sessionView ? 'FX' : 'CONFIG']];
     return [['JOG', 'BANK'], ['CLK', 'EDIT'], ['\u2261', S.sessionView ? 'TRK' : 'SESS']];
 }
