@@ -411,10 +411,16 @@ function configRows(t) {
         min: 0, max: 127, step: 1, int: true, fmt: fmtVelOverride,
         get: () => GS.trackVelOverride[t] | 0,
         set: (v) => applyTrackConfig(t, 'track_vel_override', v) });
-    rows.push({ key: 'looper', label: 'Looper',
-        opts: [0, 1], fmt: (v) => (v ? 'On' : 'Off'),
-        get: () => (GS.trackLooper[t] !== 0 ? 1 : 0),
-        set: (v) => applyTrackConfig(t, 'track_looper', v ? 1 : 0) });
+    /* The looper records the track's OWN instrument; a MIDI-routed track's
+     * sound lives in whatever is on the other end of the cable, so the row
+     * would promise a capture that cannot happen. Every other row here is a
+     * property of the note stream and applies (Josh's default, 2026-09-05). */
+    if (GS.trackRoute[t] !== 2) {
+        rows.push({ key: 'looper', label: 'Looper',
+            opts: [0, 1], fmt: (v) => (v ? 'On' : 'Off'),
+            get: () => (GS.trackLooper[t] !== 0 ? 1 : 0),
+            set: (v) => applyTrackConfig(t, 'track_looper', v ? 1 : 0) });
+    }
     /* Pad pressure: owned by the repeat-velocity system on drum tracks, so the
      * row is hidden there. Move takes poly AT only. */
     if (GS.trackPadMode[t] !== PMD) {
@@ -806,6 +812,10 @@ export function soundPickStateForTest() {
  * drawn but never that they say the right thing — this pins the decision, and
  * the render test pins that the draw path runs. Exposes no mutation. */
 export function soundInflightForTest() { return S.inflight; }
+/* The CONFIG / SOUND CONTROL screen's rows, by key — which rows a track gets is
+ * a decision per route (a MIDI track has no Looper), and this is how a test
+ * reads that decision without rendering. */
+export function soundSlotRowsForTest() { return S.slotRows.map(r => r.key); }
 /* The hosted canvas's ctx, for the read-shield behaviour test. Exposes the same
  * object the kit is handed — nothing a test could not already reach by faking a
  * kit module, minus the fixture. */
@@ -2486,7 +2496,18 @@ function buildPickRows() {
          * placeholder: it is what an EXT track HAS, and it is the row you need
          * to route it back. Track Control stays open on these tracks precisely
          * so that is reachable (see the follow in ui_tick). */
-        if (GS.trackRoute[S.track] === 2 || GS.trackRoute[S.track] === ROUTE_NONE) { S.pickRows = rows; S.pickRow = 0; return; }   /* NONE: even less than EXT — just the row that picks one */
+        if (GS.trackRoute[S.track] === ROUTE_NONE) { S.pickRows = rows; S.pickRow = 0; return; }   /* NONE: even less than EXT — just the row that picks one */
+        /* A MIDI-routed track has no chain and no bus, but it IS a track, and
+         * davebox's own per-track settings — mode, layout, transpose, velocity
+         * in, aftertouch — apply to a note stream leaving the port as much as
+         * to one entering a chain (Josh, 2026-09-05, item 14: "anything from
+         * the other track type sound menus that would also apply"). So the
+         * screen is its destination plus the CONFIG door, exactly as a Move
+         * track's is. configRows itself decides which rows a MIDI track gets. */
+        if (GS.trackRoute[S.track] === 2) {
+            rows.push({ kind: 'config', label: 'Config' });
+            S.pickRows = rows; S.pickRow = 0; return;
+        }
         /* ⭑ No Generator row (Josh, 2026-09-04): the INSTRUMENT row is the
          * generator's door now — click enters it, Shift+click picks another —
          * exactly the block row's own grammar, on the row that names it. */
