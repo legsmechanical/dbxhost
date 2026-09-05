@@ -1130,7 +1130,26 @@ const SPLASH_TOTAL_TICKS = SPLASH_PRE_HOLD_TICKS + SPLASH_TENSION_TICKS +
  * used to be shown by quiesce-stock.sh from the instant the tool was picked,
  * so it had the whole teardown to itself; here it shares the boot splash, and
  * roughly the first third reads the same way without delaying the session. */
-const SPLASH_ART_TICKS = Math.floor(SPLASH_TOTAL_TICKS / 3);
+/* ⚠ MILLISECONDS, not ticks (2026-09-05). This was SPLASH_TOTAL_TICKS / 3 —
+ * "roughly the first third" — which was ~1.3 s and, being tick-counted, moved
+ * with the tick rate. On the launch branch where stock PRE-KILLS the stack
+ * (every launch since the v1.2.0 stock tree) quiesce never paints the artwork
+ * for the whole teardown, so this stage is the ONLY time the Dave is on
+ * screen — and Josh saw it as "the dave splash lingered longer before, now it's
+ * short". The hold is a deadline on the wall clock; SPLASH_TOTAL_TICKS still
+ * paces the animation underneath, and the splash cannot END before the art
+ * deadline has passed. A button press still skips it. */
+const SPLASH_ART_MS = 2500;
+let splashArtUntilMs = 0;      /* Date.now() deadline; 0 = not yet armed */
+/* The session boot's LED blank. On the pre-kill launch branch nothing has
+ * blanked the pads since stock died: they hold the lit stock menu until the
+ * overtake init's own clearLedBatch, seconds later, behind the splash (Josh,
+ * 2026-09-05: "LEDs used to go unlit immediately when davebox was launched
+ * from stock; they linger for a while now"). So the splash phase clears them
+ * FIRST, in the same batches, gated on customSplash — i.e. on boot_tool.json,
+ * a SESSION boot. A plain stock boot never enters this: Move owns those LEDs
+ * and a blank there would wipe its menu. */
+let bootLedsCleared = false;
 
 const SPLASH_CIRCLE_PATH = "/data/UserData/schwung/host/logo-circle.png";
 const SPLASH_LOGO_PATH = "/data/UserData/schwung/host/logo-text.png";
@@ -16701,7 +16720,17 @@ globalThis.tick = function() {
     /* Splash screen on boot */
     if (splashActive) {
         splashTick++;
-        if (splashTick >= SPLASH_TOTAL_TICKS) {
+        ensureCustomSplash();
+        if (customSplash && !bootLedsCleared) {
+            /* LEDs first — before the artwork, before anything. See
+             * bootLedsCleared. ledClearIndex is left where the batches end so
+             * the overtake init's own pass starts over (it resets it itself). */
+            bootLedsCleared = clearLedBatch();
+            if (bootLedsCleared) ledClearIndex = 0;
+        }
+        if (customSplashArt && splashArtUntilMs === 0) splashArtUntilMs = Date.now() + SPLASH_ART_MS;
+        if (splashTick >= SPLASH_TOTAL_TICKS &&
+                (!customSplashArt || Date.now() >= splashArtUntilMs)) {
             splashActive = false;
             if (shimBootstrapNeeded && !shimBootstrapPromptShown) {
                 /* One-shot repair prompt: the live entrypoint at /opt/move/Move
@@ -16750,7 +16779,7 @@ globalThis.tick = function() {
             /* Artwork for the opening beat, then the text screen — the two
              * stages the launch always had. The artwork carries no caption:
              * it is a picture, and the version belongs on the text screen. */
-            if (customSplashArt && splashTick < SPLASH_ART_TICKS) {
+            if (customSplashArt && Date.now() < splashArtUntilMs) {
                 drawCustomSplash(customSplashArt, "");
             } else if (customSplash) {
                 drawCustomSplash();
