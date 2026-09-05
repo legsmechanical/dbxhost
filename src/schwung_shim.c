@@ -56,7 +56,6 @@
 #include "host/shadow_transport.h"
 #include "host/shadow_set_pages.h"
 #include "host/shim_worker.h"
-#include "host/shadow_param_ring.h"
 #include "host/shadow_dbus.h"
 #include "host/shadow_chain_mgmt.h"
 #include "host/shadow_link_audio.h"
@@ -144,8 +143,6 @@ static shadow_ui_state_t *shadow_ui_state = NULL;
 
 static shadow_param_t *shadow_param = NULL;
 static web_param_set_ring_t *web_param_set_shm = NULL;       /* Web UI → shim param set ring */
-static web_param_set_ring_t *shadow_param_write_shm = NULL;   /* shadow_ui → shim: the param WRITE LANE (shadow_param_ring.h) */
-static unsigned param_write_drained_total = 0;                /* diagnostics: entries applied since launch */
 static web_param_notify_ring_t *web_param_notify_shm = NULL;  /* Shim → web UI param change ring */
 static web_write_dirty_t *web_write_dirty_shm = NULL;         /* Shim → shadow_ui autosave dirty hints */
 static shadow_screenreader_t *shadow_screenreader_shm = NULL;  /* Forward declaration for D-Bus handler */
@@ -3533,16 +3530,6 @@ static void init_shadow_shm(void)
     web_param_set_shm = (web_param_set_ring_t *)shadow_shm_map(SHM_WEB_PARAM_SET,
                                                                sizeof(web_param_set_ring_t), 1, 1);
 
-    /* The param WRITE LANE (shadow_ui → shim, fire-and-forget SETs; see
-     * shadow_param_ring.h). Zeroed on create, then the HANDSHAKE version is
-     * published: a producer that does not see it keeps every write on the
-     * mailbox, so an old shadow_ui and a new shim (or the reverse) never
-     * misroute a write. */
-    shadow_param_write_shm = (web_param_set_ring_t *)shadow_shm_map(SHM_SHADOW_PARAM_WRITE,
-                                                                     sizeof(web_param_set_ring_t), 1, 1);
-    if (shadow_param_write_shm)
-        __atomic_store_n(&shadow_param_write_shm->reserved[1], (uint8_t)SHADOW_PARAM_WRITE_VERSION, __ATOMIC_RELEASE);
-
     /* Create/open web param notify ring (shim → web UI, push changes) */
     web_param_notify_shm = (web_param_notify_ring_t *)shadow_shm_map(SHM_WEB_PARAM_NOTIFY,
                                                                      sizeof(web_param_notify_ring_t), 1, 1);
@@ -3949,35 +3936,6 @@ static void shadow_swap_display(void)
 /* Callback for chain_mgmt: BPM query via sampler_get_bpm(NULL). */
 static float shim_get_bpm(void) {
     return sampler_get_bpm(NULL);
-}
-
-/* =========================================================================
- * The param WRITE LANE: drain shadow_ui's fire-and-forget SETs
- * =========================================================================
- * Runs at the top of the param phase, BEFORE the mailbox is serviced, so a
- * write pushed before a read is applied before that read is answered —
- * ordering by construction (shadow_param_ring.h). Every entry takes the SAME
- * route a mailbox SET takes: overtake keys straight to the overtake DSP,
- * everything else through shadow_direct_set_param. No dirty hint here — the
- * producer is shadow_ui itself, which marks its own autosave masks when it
- * pushes (shadow_set_param_common). SPI thread; a set_param is microseconds,
- * so a full ring (32) drains in one pass. */
-static void shadow_param_write_apply(void *ctx, const web_param_set_entry_t *e) {
-    (void)ctx;
-    if (strncmp(e->key, "overtake_dsp:", 13) == 0) {
-        if (overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->set_param)
-            overtake_dsp_gen->set_param(overtake_dsp_gen_inst, e->key + 13, e->value);
-        else if (overtake_dsp_fx && overtake_dsp_fx_inst && overtake_dsp_fx->set_param)
-            overtake_dsp_fx->set_param(overtake_dsp_fx_inst, e->key + 13, e->value);
-        return;
-    }
-    shadow_direct_set_param(e->slot, e->key, e->value);
-}
-static void shadow_drain_param_write(void) {
-    static uint8_t tail; static int tail_init = 0;
-    if (!shadow_param_write_shm) return;
-    param_write_drained_total += spw_drain(shadow_param_write_shm, &tail, &tail_init,
-                                           WEB_PARAM_SET_ENTRIES, shadow_param_write_apply, NULL);
 }
 
 /* =========================================================================
@@ -5680,7 +5638,6 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
     TIME_SECTION_START();
     /* param.serve span is emitted inside the handler, parented to the JS
      * param.get span via the SHM-propagated trace context (Phase 2b). */
-    shadow_drain_param_write();    /* the WRITE LANE first: a write pushed before a read lands before it */
     shadow_inprocess_handle_param_request();
     shadow_drain_web_param_set();  /* Web UI fire-and-forget param sets */
     shadow_overtake_rui_probe();   /* Remote-UI push: overtake rui_poll → notify ring */
@@ -9049,14 +9006,6 @@ static void *spi_timing_logger_thread(void *arg)
             unified_log("spi_timing", LOG_LEVEL_DEBUG,
                 "UI-MIDI ring drops: sticky=%u yield=%u",
                 ui_midi_drop_sticky, ui_midi_drop_yield);
-            /* The param WRITE LANE: entries applied since launch (cumulative,
-             * like the drops above — the difference between two lines 5 s
-             * apart is the rate). A knob burst that went this way shows here
-             * instead of as one mailbox frame per detent. */
-            unified_log("spi_timing", LOG_LEVEL_DEBUG,
-                "param write lane: drained=%u pending=%u",
-                param_write_drained_total,
-                shadow_param_write_shm ? spw_count(shadow_param_write_shm) : 0u);
             /* THE load line. `total` above is dominated by the blocking ioctl
              * and barely moves with load; this one is the work we actually do
              * and the only one worth judging headroom from. */

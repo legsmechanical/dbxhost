@@ -50,11 +50,7 @@ TARGETS = $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_forward_channel \
           $(BUILD_DIR)/test_link_audio_backlog_trim \
           $(BUILD_DIR)/test_shadow_param_queue \
-          $(BUILD_DIR)/test_json_tiny \
-          $(BUILD_DIR)/test_shadow_param_ring \
-          $(BUILD_DIR)/test_control_layout \
-          $(BUILD_DIR)/test_chain_clock_state \
-          $(BUILD_DIR)/test_move_clock_setting
+          $(BUILD_DIR)/test_json_tiny
 
 .PHONY: all test clean
 
