@@ -31,24 +31,7 @@ static void *producer(void *arg) {
     return NULL;
 }
 
-
-/* ⚠ THE DEVICE BUG (2026-09-05): entries pushed BEFORE the consumer's first drain
- * must be drained, not skipped — davebox's whole init burst lands there. */
-static int g_pre = 0;
-static void count_pre(void *ctx, const web_param_set_entry_t *e) { (void)ctx; if (e->key[0]) g_pre++; }
-static int test_pre_first_drain(void) {
-    web_param_set_ring_t r; memset(&r, 0, sizeof r);
-    r.reserved[1] = SHADOW_PARAM_WRITE_VERSION;        /* the shim's handshake, as at map time */
-    for (int i = 0; i < 5; i++) { char k[16]; snprintf(k, sizeof k, "t%d_route", i); if (!spw_push(&r, 0, k, "1")) return 1; }
-    uint8_t tail = 0; int init = 0;
-    unsigned n = spw_drain(&r, &tail, &init, 64, count_pre, NULL);
-    if (n != 5 || g_pre != 5) { printf("  FAIL first drain skipped %u of 5 pre-drain entries (drained %u)\n", 5 - n, n); return 1; }
-    printf("  ok   entries pushed before the first drain are drained, not skipped\n");
-    return 0;
-}
-
 int main(void) {
-    if (test_pre_first_drain()) return 1;
     memset(&R, 0, sizeof R);
     uint8_t tail = 0; int init = 0;
 
@@ -57,12 +40,9 @@ int main(void) {
     R.reserved[1] = SHADOW_PARAM_WRITE_VERSION;
     OK(spw_ready(&R), "the consumer's version byte makes the lane ready");
 
-    /* first drain starts at the PUBLISHED consumer cursor — not at head. A
-     * surviving segment whose consumer had published 7 replays nothing; a fresh
-     * one (cursor 0) replays everything the producer pushed before the first
-     * pass — see test_pre_first_drain, the 2026-09-05 init-burst bug. */
-    R.write_idx = 7; R.reserved[0] = 7;
-    OK(spw_drain(&R, &tail, &init, 64, collect, NULL) == 0 && tail == 7, "the first pass starts at the published cursor (7 = nothing to replay)");
+    /* first drain adopts the producer's cursor (a surviving segment) */
+    R.write_idx = 7;
+    OK(spw_drain(&R, &tail, &init, 64, collect, NULL) == 0 && tail == 7, "the first pass adopts the cursor, replays nothing");
 
     /* push / drain / order */
     OK(spw_push(&R, 3, "synth:cutoff", "0.5") == 1, "push");

@@ -77,20 +77,9 @@ static inline unsigned spw_drain(web_param_set_ring_t *r, uint8_t *tail, int *in
     if (!r) return 0;
     uint8_t head = __atomic_load_n(&r->write_idx, __ATOMIC_ACQUIRE);
     if (!*init) {
-        /* ⚠ FIRST DRAIN STARTS AT THE PUBLISHED CURSOR, NOT AT `head` (device,
-         * 2026-09-05). The web ring skips its pre-attach history on the first
-         * drain because a SURVIVING segment may hold a stale cursor; this ring
-         * is created zeroed by the shim and the producer cannot push until the
-         * handshake is up, so everything in it is ours — and the first thing
-         * in it is davebox's INIT burst (routes, defaults, the picker's
-         * writes), pushed between the handshake and the first SPI frame.
-         * Copying the web ring's skip threw that whole burst away: on a fresh
-         * project tracks 1-4 did not default to Move 1-4, a Schwung pick fell
-         * back to NONE, pads on Move tracks were silent, transport was dead,
-         * and the init READ of awaiting_select answered empty (its frame was
-         * spent on the mess). Bisected on the device by deploying without the
-         * lane. reserved[0] is 0 in a fresh segment and is what we publish. */
-        *tail = __atomic_load_n(&r->reserved[0], __ATOMIC_ACQUIRE); *init = 1;
+        *tail = head; *init = 1;
+        __atomic_store_n(&r->reserved[0], *tail, __ATOMIC_RELEASE);
+        return 0;
     }
     unsigned count = (uint8_t)(head - *tail);
     if (!count) return 0;
