@@ -465,6 +465,13 @@ export const S = {
     instrAbbrev: '--',
     instrAbbrevAt: 0,
     confirmExitSel: 1,
+    /* Item 16 (Josh, 2026-09-05): changing a track's instrument TYPE (Schwung /
+     * Move / MIDI / none) clears the macros and automation the new type cannot
+     * play, so it asks first. `{track, v, route, macros, lanes, typeName}` while
+     * the modal is up; null otherwise. Raised only when something WOULD be
+     * cleared — a change that costs nothing asks nothing. */
+    confirmTypeChange: null,
+    confirmTypeChangeSel: 1,
     confirmStateWipeSel: 1,   /* 0=Yes, 1=No (default) */
     /* Keys->Drums track conversion confirm dialog (transient, not persisted). */
     confirmConvertToDrum: false,
