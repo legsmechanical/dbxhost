@@ -8,6 +8,7 @@
 
 import { S, PERF_FACTORY_PRESETS } from './ui_state.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H } from './ui_daves.mjs';
+import { devSnapOpen, devSnapHints } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
 import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev } from './ui_engine.mjs';
 import { instrValueFor } from './ui_dsp_bridge.mjs';
@@ -858,6 +859,29 @@ function drawWordmark(mark) {
     hdrPrint(Math.round((128 - hdrWidth(mark)) / 2), 3, mark, 0);
 }
 
+/* The notice CARD: a black box with a white 1px border, centred, one line of
+ * the stock face per entry, over whatever the session view is showing. Up to
+ * five lines fill the panel exactly (5 × 11 + 9 = 64). */
+const CARD_LINE_H = 11, CARD_PAD = 5, CARD_W = 116, CARD_X = 6;
+export function drawNoticeCard(lines) {
+    const n = Math.min(5, lines.length);
+    if (!n) return;
+    const h = n * CARD_LINE_H + CARD_PAD * 2 - 1;
+    const y = Math.max(0, Math.floor((64 - h) / 2));
+    fill_rect(CARD_X, y, CARD_W, h, 0);
+    draw_rect(CARD_X, y, CARD_W, h, 1);
+    /* Every line CENTRED in the box, horizontally as well as vertically (Josh,
+     * 2026-09-05: "any notices … should always have the text centered
+     * horizontally and vertically in the box"). The box is sized to its
+     * lines, so the block is centred by construction; each line is measured
+     * with the host's own text_width and placed on the box's axis. */
+    for (let i = 0; i < n; i++) {
+        const t = String(lines[i]);
+        const w = Math.min(CARD_W - 4, text_width(t));
+        print(CARD_X + Math.floor((CARD_W - w) / 2), y + CARD_PAD + i * CARD_LINE_H, t, 1);
+    }
+}
+
 function drawSessionOverview() {
     /* White background everywhere; current scene group band stays black. */
     fill_rect(0, 0, 128, 64, 1);
@@ -949,6 +973,7 @@ function overviewHints() {
      * track in every view, Shift+≡ opens the track's SOUND + CONFIG menu in
      * track view and the MASTER / SEND FX list in session view. No CLK pair:
      * Shift+click is nothing here. */
+    if (S.sessionView && devSnapOpen()) return devSnapHints();   /* the snapshot layer (item 18) */
     if (S.shiftHeld) return [['JOG', 'TRACK'], ['\u2261', S.sessionView ? 'FX' : 'CONFIG']];
     return [['JOG', 'BANK'], ['CLK', 'EDIT'], ['\u2261', S.sessionView ? 'TRK' : 'SESS']];
 }
@@ -1608,9 +1633,15 @@ function drawUIBody() {
             drawSessionMixerPage();
             return;
         }
-        if (S.actionPopupEndTick >= 0) {
+        /* A plain notice (no gauge) is a CARD over the session view, not a
+         * screen of its own (Josh, 2026-09-05: "I was thinking of a pop-up
+         * window … but it's just a full screen"): the underlay draws as usual
+         * and the card sits on top, below. The gauge popup keeps its full
+         * screen — the bar wants the room. */
+        const _card = (S.actionPopupEndTick >= 0 && S.actionPopupGauge < 0) ? S.actionPopupLines : null;
+        if (S.actionPopupEndTick >= 0 && !_card) {
             const _n = S.actionPopupLines.length;
-            if (S.actionPopupGauge >= 0) {
+            {
                 /* Gauge popup: text sits high so the bar owns the lower half.
                  * Same geometry as sound mode's level read-out, so the two
                  * levels look like the same control seen from two places. */
@@ -1627,20 +1658,6 @@ function drawUIBody() {
                     const _mx = _bx + 1 + Math.round((_bw - 2) * S.actionPopupGaugeMark);
                     fill_rect(_mx, _by - 4, 1, 3, 1);
                 }
-            } else if (_n >= 4) {
-                print(4, 14, S.actionPopupLines[0], 1);
-                print(4, 25, S.actionPopupLines[1], 1);
-                print(4, 36, S.actionPopupLines[2], 1);
-                print(4, 47, S.actionPopupLines[3], 1);
-            } else if (_n === 3) {
-                print(4, 17, S.actionPopupLines[0], 1);
-                print(4, 29, S.actionPopupLines[1], 1);
-                print(4, 41, S.actionPopupLines[2], 1);
-            } else if (_n === 2) {
-                print(4, 22, S.actionPopupLines[0], 1);
-                print(4, 34, S.actionPopupLines[1], 1);
-            } else {
-                print(4, 28, S.actionPopupLines[0], 1);
             }
             return;
         }
@@ -1662,8 +1679,18 @@ function drawUIBody() {
             fill_rect(0, 0, 128, MARK_BAR_H, 1);
             drawWordmark('dAVEBOx');
         }
-        drawMetroIndicator();
+        /* THE SNAPSHOT LAYER NAMES ITSELF (Josh, 2026-09-05, device): while
+         * Capture is held past the threshold, the row under the banner reads
+         * SNAPSHOTS in the bank-heading face, centred, in place of the
+         * metronome word — a mode you are in, not a flash you missed. */
+        if (devSnapOpen()) {
+            const _sn = 'SNAPSHOTS';
+            hdrPrint(Math.round((128 - hdrWidth(_sn)) / 2), 16, _sn, 1);
+        } else {
+            drawMetroIndicator();
+        }
         drawOverviewTracks(overviewHints());
+        if (_card) drawNoticeCard(_card);
         return;
     }
 

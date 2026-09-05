@@ -33,6 +33,8 @@ const SETS_DIR    = '/data/UserData/UserLibrary/Sets';
 const DBX_SUBDIR  = 'dAVEBOx';
 
 function setStateDir(uuid) { return SETS_DIR + '/' + uuid + '/' + DBX_SUBDIR; }
+/* Device-wide snapshots (item 18): one dir per slot beside the live state. */
+export function deviceSnapDir(uuid, n) { return setStateDir(uuid) + '/snapshots/' + (n | 0); }
 
 /* Every JS write below an existing project's dir goes through here first. The
  * DSP's own save creates the subdir itself (ensure_parent_dir, seq8_state.c);
@@ -153,11 +155,21 @@ export function showTrackVolCard(text, frac) {
 }
 
 export function showActionPopup(...lines) {
+    showActionPopupFor(ACTION_POPUP_MS, ...lines);
+}
+
+/* The same popup, held for `ms`. The default ACTION_POPUP_MS is a glance —
+ * right for "CLEARED" after a gesture you just made, too short for a result
+ * you have to READ (Josh, 2026-09-05, the snapshot recall: "gone before you
+ * can read it"). ⚠ An optional line passed as undefined/null is DROPPED, not
+ * printed: the renderer prints whatever is in the array, and a
+ * `cond ? text : undefined` third line read "undefined" on the device. */
+export function showActionPopupFor(ms, ...lines) {
     S.actionPopupHighlight = -1;
     S.actionPopupGauge = -1;
     S.actionPopupGaugeMark = -1;
-    S.actionPopupLines   = lines;
-    S.actionPopupEndTick = nowMs() + ACTION_POPUP_MS;
+    S.actionPopupLines   = lines.filter((l) => l !== undefined && l !== null);
+    S.actionPopupEndTick = nowMs() + ms;
     S.screenDirty = true;
 }
 
