@@ -178,7 +178,12 @@ function renderSound() {
 
   const route = sndRoute(t);
   if (route === 2) {
-    chain.appendChild(sndStaticCard("MIDI", "sends MIDI out — nothing to edit here"));
+    /* ITEM 15 (2026-09-05): a MIDI track's notes run THROUGH its parked slot's
+     * MIDI FX and out the port, so the MIDI FX block is its to load and edit —
+     * the device's MIDI-track menu shows exactly that row. No instrument, no
+     * audio FX: nothing of the slot's sound is on the port. */
+    chain.appendChild(sndStaticCard("MIDI", "sends MIDI out on ch. " + (trk.chan || "?") + " — through the MIDI FX below"));
+    chain.appendChild(sndCard(t, "midi_fx1", "MIDI FX"));
     return;
   }
   if (route === 3) {

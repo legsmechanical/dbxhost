@@ -22,7 +22,13 @@ window.location.hash='#sound'; await sleep(600);
 d.querySelectorAll('.sndchip')[T].dispatchEvent(new window.Event('click',{bubbles:true})); await sleep(700);
 out.soundRole=d.querySelector('#sound .sndcard-static .sndrole')&&d.querySelector('#sound .sndcard-static .sndrole').textContent;
 out.soundLiveCards=d.querySelectorAll('#sound .sndcard:not(.sndcard-static)').length;
+/* ITEM 15: a MIDI track's Sound view = the MIDI card + its MIDI FX card, no instrument */
+const M2=6; window.schwungRemote.setParam('overtake_dsp:t'+M2+'_route','external'); await sleep(1500);
+window.location.hash='#sound'; await sleep(400);
+d.querySelectorAll('.sndchip')[M2].dispatchEvent(new window.Event('click',{bubbles:true})); await sleep(700);
+out.midiRoles=[...d.querySelectorAll('#sound .sndcard .sndrole')].map(e=>e.textContent).join(',');
 const fails=[];
+if(!/^MIDI,MIDI FX$/.test(out.midiRoles)) fails.push('MIDI track sound cards '+JSON.stringify(out.midiRoles)+' (want MIDI + MIDI FX, no instrument)');
 if(!/\bNone\b/.test(out.seqLabel)) fails.push('seq label '+JSON.stringify(out.seqLabel));
 if(!/(^|,)none(,|$)/.test(out.gearOptions)) fails.push('gear has no None option: '+out.gearOptions);
 if(out.gearValue!=='none') fails.push('gear value '+out.gearValue);
