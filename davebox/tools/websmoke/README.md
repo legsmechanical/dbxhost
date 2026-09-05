@@ -24,6 +24,12 @@ sample data and `setParam` writes are inspectable via the mock.
 
 ## The traps this rig already paid for — don't rediscover them
 
+- **Use `127.0.0.1`, never `localhost`, in the smokes' URLs** (2026-09-05). On node 25
+  `localhost` goes through the network-family autoselection path and undici dies
+  with `EINVAL setTypeOfService` on EVERY attempt — the run.sh retry loop then
+  reports "harness never produced a clean load" for a smoke whose page is fine.
+  All kept smokes were switched; a new smoke copies their fetch/URL lines.
+
 - **`preview_server.py` must speak HTTP/1.1 keep-alive** (and it does).
   Python's stock `http.server` default is HTTP/1.0 close-per-request, and
   node's fetch/undici *intermittently drops whole script loads* against it —

@@ -669,7 +669,8 @@ function renderSession(){
     const instShort=trk.pm===2?"Conductor"   /* its instrument row is inert — say what it IS */
       :trk.route===0?(mixKV["chain:"+t+":synth_name"]||mixKV["chain:"+t+":synth_module"]||"Synth")
       :trk.route===1?("Move "+moveBusForChannel(trk.chan))
-      :trk.route===2?("MIDI Ch."+trk.chan):null;
+      :trk.route===2?("MIDI Ch."+trk.chan)
+      :trk.route===3?"None":null;   /* NONE (item 13): a track with nothing to play */
     const lbl=(instShort!=null)?`${t+1} - ${instShort}`:(trk.pm===1?"D":trk.pm===2?"C":"M")+(t+1);
     const ttl=(instShort!=null)?`Track ${t+1} → ${instShort}`:`track ${t+1}`;
     /* conductor / responder indicator (rui_cond): "C" on the conductor track,
@@ -812,12 +813,12 @@ function openTrackGear(t,anchor){
   closeTrackGear();
   if(wasOpen) return;                       /* second click on same gear → toggle closed */
   const tr=M.tracks[t]; if(!tr) return;
-  const routeVal = tr.route===2?"external":tr.route===0?"schwung":"move";
+  const routeVal = tr.route===2?"external":tr.route===0?"schwung":tr.route===3?"none":"move";
   const el=document.createElement("div"); el.className="trkgear"; el.dataset.t=String(t);
   el.innerHTML=
     `<h4>Track ${t+1}</h4>`+
     `<div class="tgrow"><span>Instrument</span><select id="tgRoute" class="full">`+
-      `<option value="schwung">Schwung</option><option value="move">Move</option><option value="external">MIDI</option>`+
+      `<option value="none">None</option><option value="schwung">Schwung</option><option value="move">Move</option><option value="external">MIDI</option>`+
       `</select></div>`+
     `<div class="tgrow"><span>MIDI Channel</span><select id="tgChan" class="full">`+
       Array.from({length:16},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join("")+`</select></div>`+
