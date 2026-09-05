@@ -163,7 +163,12 @@ export function planRestore(records, liveIds) {
             continue;
         }
         if (r.state === null) {
+            /* No state to restore — but the BYPASS is still ours to set (Josh,
+             * 2026-09-05: "fx bypass state for all slots needs to be saved
+             * too", so a snapshot taken with the effect live un-bypasses what
+             * an older one bypassed). Counted as nostate, written bypass-only. */
             reasons.push({ prefix: r.prefix, reason: "nostate", was: r.moduleId });
+            writes.push({ prefix: r.prefix, state: null, bypassed: r.bypassed, slot: r.slot, key: r.key });
             continue;
         }
         writes.push({ prefix: r.prefix, state: r.state, bypassed: r.bypassed,

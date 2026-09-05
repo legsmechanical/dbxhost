@@ -66,8 +66,9 @@ const live = {
     "master_fx:fx1": "mverb"  /* ADDED since   -> bypass-only write, listed */
 };
 const plan = planRestore(recs.concat(mfx), live);
-eq("writes the matched, state-bearing positions, then the positions ADDED since the save",
-   plan.writes.map(w => w.prefix), ["synth", "fx1", "fx3", "fx4", "midi_fx2", "master_fx:fx1"]);
+eq("writes the matched positions (a no-state module still gets its BYPASS), then the positions ADDED since the save",
+   plan.writes.map(w => w.prefix), ["synth", "fx1", "fx2", "fx3", "fx4", "midi_fx2", "master_fx:fx1"]);
+eq("the no-state position writes bypass only, with the SAVED value", plan.writes[2], { prefix: "fx2", state: null, bypassed: 0, slot: undefined, key: undefined });
 eq("an added position is written bypassed with NO state", plan.writes.slice(-2).map(w => [w.state, w.bypassed]), [[null, 1], [null, 1]]);
 eq("added positions are listed with what they hold", plan.added, [{ prefix: "midi_fx2", now: "arp" }, { prefix: "master_fx:fx1", now: "mverb" }]);
 eq("a SYNTH that appeared since is not bypassed (the track owns that)",
