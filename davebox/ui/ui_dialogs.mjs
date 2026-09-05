@@ -332,6 +332,20 @@ export function drawExitConfirm() {
     drawYesNoRow(S.confirmExitSel);
 }
 
+/* Item 16: the instrument TYPE change is destructive — say what goes. */
+export function drawTypeChangeConfirm() {
+    clear_screen();
+    const c = S.confirmTypeChange;
+    drawMenuHeader('CHANGE TO ' + (c ? c.typeName : '') + '?');
+    const parts = [];
+    if (c && c.macros) parts.push(c.macros + (c.macros === 1 ? ' macro' : ' macros'));
+    if (c && c.lanes)  parts.push(c.lanes + (c.lanes === 1 ? ' lane' : ' lanes'));
+    print(4, 16, parts.join(', '), 1);
+    print(4, 25, 'of automation will', 1);
+    print(4, 34, 'be cleared.', 1);
+    drawYesNoRow(S.confirmTypeChangeSel);
+}
+
 export function drawStateWipeConfirm() {
     clear_screen();
     drawMenuHeader('INCOMPATIBLE STATE');

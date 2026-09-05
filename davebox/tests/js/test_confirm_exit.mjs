@@ -172,9 +172,9 @@ step('a second request while the modal is up changes nothing', () => {
 });
 step('knobs and Note/Session are declined under the modal (source pins)', () => {
     const src = readFileSync('ui/ui_input_cc.mjs', 'utf8');
-    if (!/S\.confirmStateWipe \|\| S\.confirmExit \|\| S\.bpmMoveInfo\) return;/.test(src))
+    if (!/S\.confirmStateWipe \|\| S\.confirmExit \|\| (S\.confirmTypeChange \|\| )?S\.bpmMoveInfo\) return;/.test(src))
         throw new Error('knob guard does not list confirmExit');
-    if (!/S\.confirmStateWipe \|\| S\.confirmExit \|\| \(S\.projectPadPicker/.test(src))
+    if (!/S\.confirmStateWipe \|\| S\.confirmExit \|\| (S\.confirmTypeChange \|\| )?\(S\.projectPadPicker/.test(src))
         throw new Error('Note/Session decline does not list confirmExit');
 });
 

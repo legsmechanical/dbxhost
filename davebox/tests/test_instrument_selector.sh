@@ -39,8 +39,12 @@ grep -q "^export function applyInstrChoice" ui/ui_dsp_bridge.mjs \
 # destination lives only on Track Control. The helper stays in ui_dsp_bridge
 # regardless — it is what stopped the rules being copied when there WERE two
 # screens, and it is what any future second caller must use.
-grep -q "applyInstrChoice(S.track, S.instrSel)" ui/ui_sound.mjs \
-    && ok "Track Control's Track to row commits through applyInstrChoice" \
+# Since item 16 (2026-09-05) the row commits through requestInstrChange, which
+# asks first when the TYPE changes and then reaches applyInstrChoice itself.
+grep -q "requestInstrChange(S.track, S.instrSel)" ui/ui_sound.mjs \
+    && grep -q "^function applyInstrChangeNow" ui/ui_sound.mjs \
+    && awk '/^function applyInstrChangeNow/,/^}/' ui/ui_sound.mjs | grep -q "applyInstrChoice(track, v)" \
+    && ok "Track Control's Track to row commits through requestInstrChange -> applyInstrChoice" \
     || bad "Track Control no longer commits through applyInstrChoice"
 grep -qE "create(Enum|Value)\('Instr'" ui/ui_menu.mjs \
     && bad "the destination row is back in the global menu — two homes again" \

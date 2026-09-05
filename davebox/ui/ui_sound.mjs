@@ -45,7 +45,7 @@ import { bankCardVisible, sessMixerVisible, bankHeaderRight } from './ui_render.
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
-import { instrOptions, instrPickerRows, fmtInstr, INSTR_SCHWUNG, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
+import { instrOptions, instrPickerRows, fmtInstr, INSTR_SCHWUNG, INSTR_NONE, INSTR_MIDI_CH, NUM_CLIPS, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
          BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, ROUTE_NONE } from './ui_constants.mjs';
@@ -54,7 +54,7 @@ import { registerRingCells } from './ui_knob_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationRegisterSeqApply, automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
-         automationClearKey } from './ui_automation.mjs';
+         automationClearKey, automationEntriesFor } from './ui_automation.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { MoveKnob1, Red, White } from '/data/UserData/schwung/shared/constants.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -3431,15 +3431,137 @@ function commitInstrPick(r) {
 }
 
 function commitInstrChoice() {
-    if (S.instrSel !== instrValueFor(S.track)) {
-        applyInstrChoice(S.track, S.instrSel);
-        /* The screen must FOLLOW the new destination immediately — a track just
-         * switched to MIDI has no chain to show, and a switch between Schwung
-         * and Move changes flavour entirely. tick's follow only fires when the
-         * TRACK changes, and it did not; without this you had to leave and
-         * re-enter to see the change. Deferred because re-entry reads params. */
-        S.pendingAction = { t: 'reflavour' };
+    if (S.instrSel !== instrValueFor(S.track)) requestInstrChange(S.track, S.instrSel);
+    S.dirty = true;
+}
+
+/* ── ITEM 16 (Josh, 2026-09-05): a change of instrument TYPE is destructive ──
+ * "When instrument is changed from a schwung generator to a move track or midi
+ * track, incompatible macros and automations need to be cleared. Give users a
+ * warning and ask for confirmation before switching instrument TYPE."
+ *
+ * The TYPE is the route: Schwung chain / Move bus / MIDI out / none. A change
+ * WITHIN a type (generator A → B, bus 1 → 2, channel 1 → 2) is not one and
+ * asks nothing. What the new type cannot play is decided by ONE function,
+ * targetCompatible, from the DESTINATION's capability — so the same rule
+ * serves macro legs and automation lanes, and every direction of change:
+ *   · chain params (synth / fxN)       → Schwung only
+ *   · chain MIDI FX params (midi_fxN)  → Schwung, and MIDI (item 15 = A: a
+ *                                        MIDI track routes through its parked
+ *                                        slot's MIDI FX)
+ *   · Move bus FX params (move_fx:N:fxM) → Move only
+ *   · the levels (slot:/move_fx:N: volume pan send_a send_b) → Schwung and
+ *                                        Move (both have a strip)
+ *   · seq: (davebox's own bank params)  → every type
+ *   · MIDI targets: at / pb            → every type but none; cc:N → MIDI only
+ */
+const ROUTE_TYPE_NAMES = { 0: 'SCHWUNG', 1: 'MOVE TRACK', 2: 'MIDI TRACK', 3: 'NO INSTRUMENT' };
+export function routeForInstr(v) {
+    v = v | 0;
+    if (v === INSTR_SCHWUNG) return 0;
+    if (v === INSTR_NONE) return ROUTE_NONE;
+    if (v >= INSTR_MIDI_CH) return 2;      /* a channel or a followed track */
+    return 1;
+}
+const LEVEL_KEYS = { volume: 1, pan: 1, send_a: 1, send_b: 1 };
+/* `target` in the automation store's grammar: "<slot>:<comp>:<key>",
+ * "seq:<track>:<key>", or a bare MIDI target (at / pb / cc:N). */
+export function targetCompatible(target, newRoute) {
+    const t = String(target || '');
+    if (t.indexOf('seq:') === 0) return true;
+    if (midiTargetIsMidi(t)) return midiTargetCC(t) >= 0 ? newRoute === 2 : newRoute !== ROUTE_NONE;
+    const parts = t.split(':');
+    if (parts.length < 3) return true;                 /* not a shape this rule knows: leave it */
+    const comp = parts.slice(1, -1).join(':'), key = parts[parts.length - 1];
+    return compCompatible(comp, key, newRoute);
+}
+function compCompatible(comp, key, newRoute) {
+    if (comp === 'slot' || /^move_fx:\d+$/.test(comp))
+        return LEVEL_KEYS[key] ? (newRoute === 0 || newRoute === 1) : (comp === 'slot' ? newRoute === 0 : newRoute === 1);
+    if (/^move_fx:\d+:fx\d+$/.test(comp)) return newRoute === 1;
+    if (/^midi_fx\d+$/.test(comp)) return newRoute === 0 || newRoute === 2;
+    if (comp === 'synth' || /^fx\d+$/.test(comp)) return newRoute === 0;
+    return true;
+}
+/* A macro LEG: chain / level / bank / midi (see the mapping model). */
+export function legCompatible(leg, newRoute) {
+    if (!leg) return true;
+    if (leg.kind === 'bank') return true;
+    if (leg.kind === 'midi') return targetCompatible(leg.target, newRoute);
+    if (leg.kind === 'level') return newRoute === 0 || newRoute === 1;
+    if (leg.kind === 'chain') return compCompatible(leg.comp, leg.key, newRoute);
+    return true;
+}
+/* What a change of `track` to `newRoute` would clear — from JS state only. */
+export function typeChangeImpact(track, newRoute) {
+    const legs = [];                                    /* [knobIdx, legIdx] */
+    const store = GS.trackMacros[track] || [];
+    for (let i = 0; i < store.length; i++) {
+        const mp = store[i]; if (!mp || !mp.legs) continue;
+        for (let l = 0; l < mp.legs.length; l++) if (!legCompatible(mp.legs[l], newRoute)) legs.push([i, l]);
     }
+    const lanes = [];                                   /* [clip, target] */
+    for (let c = 0; c < NUM_CLIPS; c++)
+        for (const e of automationEntriesFor(track, c)) if (!targetCompatible(e.target, newRoute)) lanes.push([c, e.target]);
+    return { legs, lanes, macros: legs.length, lanesN: lanes.length };
+}
+/* The picker's commit: a same-type change or a cost-free one applies at once;
+ * a destructive one asks first (S.confirmTypeChange, drawn by ui_dialogs,
+ * answered in ui_input_cc — the confirm-exit modal's shape). */
+export function requestInstrChange(track, v) {
+    const newRoute = routeForInstr(v);
+    if (newRoute !== (GS.trackRoute[track] | 0)) {
+        const im = typeChangeImpact(track, newRoute);
+        if (im.macros || im.lanesN) {
+            GS.confirmTypeChange = { track, v, route: newRoute, macros: im.macros, lanes: im.lanesN,
+                                     typeName: ROUTE_TYPE_NAMES[newRoute] || '?' };
+            GS.confirmTypeChangeSel = 1;                /* opens on No */
+            S.dirty = true;
+            return false;
+        }
+    }
+    applyInstrChangeNow(track, v);
+    return true;
+}
+function applyInstrChangeNow(track, v) {
+    applyInstrChoice(track, v);
+    /* The screen must FOLLOW the new destination immediately — a track just
+     * switched to MIDI has no chain to show, and a switch between Schwung
+     * and Move changes flavour entirely. tick's follow only fires when the
+     * TRACK changes, and it did not; without this you had to leave and
+     * re-enter to see the change. Deferred because re-entry reads params. */
+    if (S.active && S.track === track) S.pendingAction = { t: 'reflavour' };
+    S.dirty = true;
+}
+/* Yes: the change, then the clearing — legs out of their mappings (an empty
+ * mapping becomes null), lanes through automationClearKey in EVERY clip (the
+ * store is per clip). One sidecar write. */
+export function performTypeChange(c) {
+    if (!c) return;
+    const im = typeChangeImpact(c.track, c.route);     /* recomputed: state may have moved */
+    applyInstrChangeNow(c.track, c.v);
+    const store = GS.trackMacros[c.track];
+    if (store && im.legs.length) {
+        const drop = new Map();
+        for (const [i, l] of im.legs) { if (!drop.has(i)) drop.set(i, new Set()); drop.get(i).add(l); }
+        for (const [i, set] of drop) {
+            const mp = store[i]; if (!mp) continue;
+            const legs = mp.legs.filter((_, l) => !set.has(l));
+            store[i] = legs.length ? { v: mp.v, legs } : null;
+            if (S.track === c.track) {
+                S.knobAsn[i] = asnFromMacro(macroLeg0(store[i]));
+                macroMirrorToChain(i, store[i]);
+            }
+        }
+        writeSidecar();
+    }
+    for (const [clip, target] of im.lanes) automationClearKey(c.track, clip, target);
+    S.dirty = true;
+}
+/* No: nothing changed; the picker comes back where it was. */
+export function cancelTypeChange(c) {
+    S.genAfterReflavour = null;
+    if (c && S.active && S.track === c.track) S.pendingAction = { t: 'instrpick' };
     S.dirty = true;
 }
 
