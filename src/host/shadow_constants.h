@@ -36,6 +36,7 @@
 #define SHM_TEST_STREAM_MIDI_OUT SCHWUNG_SHM_PREFIX "test-stream-midi-out" /* Shim → schwung-testd MIDI_OUT events (E2E test bus, dev-only) */
 #define SHM_DISPLAY_LIVE SCHWUNG_SHM_PREFIX "display-live"    /* Live display for remote viewer */
 #define SHM_WEB_PARAM_SET SCHWUNG_SHM_PREFIX "web-param-set"   /* Web UI → shim param set ring */
+#define SHM_SHADOW_PARAM_WRITE SCHWUNG_SHM_PREFIX "param-write" /* shadow_ui → shim fire-and-forget SETs (the WRITE LANE, 2026-09-05; same layout as the web ring — web_param_set_ring_t) */
 #define SHM_WEB_PARAM_NOTIFY SCHWUNG_SHM_PREFIX "web-param-notify" /* Shim → web UI param change ring */
 #define SHM_WEB_WRITE_DIRTY SCHWUNG_SHM_PREFIX "web-write-dirty" /* Shim → shadow_ui autosave dirty hints */
 
@@ -74,6 +75,12 @@
 #define WEB_PARAM_KEY_LEN     64
 #define WEB_PARAM_VALUE_LEN   256    /* Most values are short; hierarchy uses the old channel */
 #define WEB_PARAM_SET_ENTRIES 32     /* Max pending set requests */
+/* The param WRITE LANE (shadow_ui → shim) reuses web_param_set_ring_t and this
+ * entry count: one entry per detent, drained in one frame. reserved[1] of the
+ * ring header is the consumer's HANDSHAKE byte — the shim writes this version
+ * when it maps the segment; a producer that does not see it keeps every write
+ * on the mailbox (an old shim, or a segment left by a dead one). */
+#define SHADOW_PARAM_WRITE_VERSION 1
 #define WEB_PARAM_NOTIFY_ENTRIES 64  /* Max pending change notifications */
 
 /* ============================================================================

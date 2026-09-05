@@ -47,7 +47,8 @@ TARGETS = $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_fx_midi_filter \
           $(BUILD_DIR)/test_overtake_native_led_repaint \
           $(BUILD_DIR)/test_link_peer_name \
-          $(BUILD_DIR)/test_shadow_param_queue
+          $(BUILD_DIR)/test_shadow_param_queue \
+          $(BUILD_DIR)/test_shadow_param_ring
 
 .PHONY: all test clean
 
