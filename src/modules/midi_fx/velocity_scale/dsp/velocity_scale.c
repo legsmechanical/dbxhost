@@ -12,22 +12,10 @@
 #include <stdio.h>
 #include <math.h>
 #include "host/midi_fx_api_v1.h"
+#include "host/json_tiny.h"
 #include "host/plugin_api_v1.h"
 
 /* JSON helpers for state parsing */
-static int json_get_int(const char *json, const char *key, int *out) {
-    if (!json || !key || !out) return 0;
-    char search[64];
-    snprintf(search, sizeof(search), "\"%s\"", key);
-    const char *pos = strstr(json, search);
-    if (!pos) return 0;
-    const char *colon = strchr(pos, ':');
-    if (!colon) return 0;
-    colon++;
-    while (*colon && (*colon == ' ' || *colon == '\t')) colon++;
-    *out = atoi(colon);
-    return 1;
-}
 
 typedef struct {
     int vel_min;  /* 1-127 */
@@ -180,17 +168,17 @@ static void velocity_scale_set_param(void *instance, const char *key, const char
     }
     else if (strcmp(key, "state") == 0) {
         int v;
-        if (json_get_int(val, "min", &v)) {
+        if (json_tiny_get_int(val, "min", &v)) {
             if (v < 1) v = 1;
             if (v > 127) v = 127;
             inst->vel_min = v;
         }
-        if (json_get_int(val, "max", &v)) {
+        if (json_tiny_get_int(val, "max", &v)) {
             if (v < 1) v = 1;
             if (v > 127) v = 127;
             inst->vel_max = v;
         }
-        if (json_get_int(val, "curve", &v)) {
+        if (json_tiny_get_int(val, "curve", &v)) {
             if (v < -100) v = -100;
             if (v > 100) v = 100;
             inst->curve = v;

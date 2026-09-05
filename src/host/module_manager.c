@@ -9,6 +9,7 @@
 #include <dlfcn.h>
 #include <sys/stat.h>
 #include "module_manager.h"
+#include "json_tiny.h"
 
 /* Simple JSON parsing helpers (minimal, for module.json only) */
 static int json_get_string(const char *json, const char *key, char *out, int out_len) {
@@ -33,23 +34,6 @@ static int json_get_string(const char *json, const char *key, char *out, int out
     }
     out[i] = '\0';
     return i;
-}
-
-static int json_get_int(const char *json, const char *key, int *out) {
-    char search[128];
-    snprintf(search, sizeof(search), "\"%s\"", key);
-
-    const char *pos = strstr(json, search);
-    if (!pos) return -1;
-
-    pos = strchr(pos + strlen(search), ':');
-    if (!pos) return -1;
-
-    /* Skip whitespace */
-    while (*pos && (*pos == ':' || *pos == ' ' || *pos == '\t' || *pos == '\n')) pos++;
-
-    *out = atoi(pos);
-    return 0;
 }
 
 static int json_get_bool(const char *json, const char *key, int *out) {
@@ -162,7 +146,7 @@ static int parse_module_json(const char *module_dir, module_info_t *info) {
 
     /* API version */
     info->api_version = 1;
-    json_get_int(json, "api_version", &info->api_version);
+    json_tiny_get_int(json, "api_version", &info->api_version);
 
     /* Capabilities */
     json_get_bool(json, "audio_out", &info->cap_audio_out);

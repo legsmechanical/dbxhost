@@ -5,6 +5,7 @@
  */
 
 #include "chain_internal.h"
+#include "host/json_tiny.h"
 
 static int json_hex_digit(char c) {
     if (c >= '0' && c <= '9') return c - '0';
@@ -139,22 +140,9 @@ int json_get_string(const char *json, const char *key, char *out, int out_len) {
 
 /* Simple JSON integer extraction - finds "key": number */
 int json_get_int(const char *json, const char *key, int *out) {
-    char search[128];
-    snprintf(search, sizeof(search), "\"%s\"", key);
-
-    const char *pos = strstr(json, search);
-    if (!pos) return -1;
-
-    /* Find the colon after the key */
-    pos = strchr(pos + strlen(search), ':');
-    if (!pos) return -1;
-
-    /* Skip whitespace */
-    while (*pos && (*pos == ' ' || *pos == '\t' || *pos == ':')) pos++;
-
-    /* Parse integer */
-    *out = atoi(pos);
-    return 0;
+    /* Exported contract (chain_internal.h): 0 when found, -1 when not.
+     * The body lives in host/json_tiny.h — one parser for five callers. */
+    return json_tiny_get_int(json, key, out) ? 0 : -1;
 }
 
 /* Simple JSON boolean extraction - finds "key": true|false.
