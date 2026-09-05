@@ -783,15 +783,26 @@ static uint32_t shadow_param_drain_pending(void) {
  * its own key. So the wait drains as it goes. */
 static int shadow_param_wait_idle(int timeout_ms) {
     int timeout = shadow_param_timeout_to_polls(timeout_ms);
+    /* ⚠ THE DRAIN IS BOUNDED (device, 2026-09-05). Draining "as it goes" with
+     * no limit made a READ wait behind every queued write — a burst of
+     * fire-and-forget SETs could eat a GET's whole 100 ms budget, and a GET
+     * that times out answers null, which the module then read as "nothing
+     * there" (the automation list wiped itself that way). So a caller spends
+     * at most HALF its patience clearing the backlog, then takes the mailbox
+     * as soon as it is free; what is still queued stays queued and goes
+     * afterwards — nothing is lost, only an old unrelated write may land
+     * after a newer read, which is exactly the fire-and-forget contract. */
+    int drain_budget = timeout / 2;
     for (;;) {
         if (shadow_param_mailbox_idle()) {
-            if (shadow_param_drain_pending() == 0 && shadow_param_mailbox_idle()) return 1;
+            if (spq_count(&g_param_pending) == 0 || drain_budget <= 0) return 1;
+            shadow_param_drain_pending();          /* one entry; the mailbox is busy now */
         }
         if (timeout <= 0) break;
         usleep(SHADOW_PARAM_POLL_US);
-        timeout--;
+        timeout--; if (drain_budget > 0) drain_budget--;
     }
-    return shadow_param_mailbox_idle() && spq_count(&g_param_pending) == 0;
+    return shadow_param_mailbox_idle();
 }
 
 static int shadow_param_wait_response(uint32_t req_id, int timeout_ms) {

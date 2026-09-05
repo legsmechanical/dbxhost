@@ -35,7 +35,8 @@ ncommit=$(grep -c '__atomic_store_n(&shadow_param->request_type, (uint8_t)1, __A
 # blocking callers drain first: wait_idle drains as it goes
 wi=$(awk '/^static int shadow_param_wait_idle\(/{f=1} f{print} f&&/^}/{exit}' "$C")
 echo "$wi" | grep -q 'shadow_param_drain_pending()' && say "ok   — wait_idle drains the pending queue before answering idle" || bad "wait_idle does not drain"
-echo "$wi" | grep -q 'spq_count(&g_param_pending) == 0' && say "ok   — ...and idle means EMPTY queue too" || bad "wait_idle can answer idle with writes pending"
+echo "$wi" | grep -q 'drain_budget' && say "ok   — ...but the drain is BOUNDED: a read never spends its whole patience behind queued writes" || bad "wait_idle drains unbounded (a GET can time out behind a burst)"
+echo "$wi" | grep -q 'timeout / 2' && say "ok   — ...at most half the caller's timeout" || bad "drain budget is not half the timeout"
 
 # the main loop drains every iteration, before MIDI and tick
 loop=$(awk '/while \(!global_exit_flag\) \{/{f=1} f{print} f&&/callGlobalFunction\(ctx, &JSTick, 0\)/{exit}' "$C")
