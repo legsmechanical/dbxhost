@@ -57,6 +57,21 @@ int main(void) {
     OK(spq_offer(&q, 0, 0, "synth:state", big) == SPQ_FALLBACK, "a value at or over SPQ_VALUE_MAX falls back");
     OK(spq_count(&q) == 0, "...and is not queued truncated");
 
+    /* LAST WRITER WINS PER KEY: a burst to one key is ONE queued entry with the
+     * newest value, in its original position; other keys keep their order. */
+    OK(spq_offer(&q, 0, 0, "synth:cutoff", "0.10") == SPQ_QUEUED, "burst: first write queues");
+    OK(spq_offer(&q, 0, 1, "slot:volume", "0.9") == SPQ_QUEUED, "...a second key queues behind it");
+    for (int i = 11; i <= 60; i++) { char v[16]; snprintf(v, sizeof v, "0.%02d", i); assert(spq_offer(&q, 0, 0, "synth:cutoff", v) == SPQ_QUEUED); }
+    OK(spq_count(&q) == 2, "fifty more writes to the same key add NOTHING to the backlog");
+    OK(q.coalesced == 50, "...and are counted as coalesced");
+    h = spq_peek(&q);
+    OK(h && strcmp(h->key, "synth:cutoff") == 0 && strcmp(h->value, "0.60") == 0, "the head is the burst key with the NEWEST value, still first");
+    spq_pop(&q); h = spq_peek(&q);
+    OK(h && strcmp(h->key, "slot:volume") == 0, "the other key kept its place behind it");
+    spq_pop(&q);
+    OK(spq_offer(&q, 0, 1, "synth:cutoff", "0.5") == SPQ_QUEUED && spq_offer(&q, 0, 2, "synth:cutoff", "0.6") == SPQ_QUEUED && spq_count(&q) == 2, "the same key on two SLOTS is two entries");
+    spq_pop(&q); spq_pop(&q);
+
     /* wraparound keeps order */
     for (int round = 0; round < 3; round++) {
         for (int i = 0; i < 50; i++) { char k[32]; snprintf(k, sizeof k, "r%d-%d", round, i); assert(spq_push(&q, 0, k, "v")); }
