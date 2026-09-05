@@ -47,6 +47,7 @@ typedef struct {
     uint32_t count;
     uint32_t fallbacks;         /* offers that could not queue (full / too long) */
     uint32_t queued_total;      /* diagnostics: how often the queue saved a write */
+    uint32_t coalesced;         /* diagnostics: writes folded into a queued entry for the same key */
 } spq_t;
 
 /* What the caller should do with a fire-and-forget SET. */
@@ -60,8 +61,24 @@ static inline uint32_t spq_count(const spq_t *q) { return q->count; }
 
 static inline int spq_push(spq_t *q, uint8_t slot, const char *key, const char *value) {
     if (!key || !value) return 0;
-    if (q->count >= SPQ_CAP) return 0;
     if (strlen(key) >= SPQ_KEY_LEN || strlen(value) >= SPQ_VALUE_MAX) return 0;
+    /* LAST WRITER WINS PER KEY (device, 2026-09-05: "the dave window hangs for
+     * a bit coming back from lots of twisting on session view knobs"). A fast
+     * twist is a burst of writes to ONE key, and only the newest value means
+     * anything — queueing every detent made a read after the burst wait
+     * behind a pile of stale values. A write to a key already queued replaces
+     * that entry's value in place, keeping its position, so the backlog can
+     * never exceed the number of distinct keys touched. This is exactly the
+     * coalescing the old stomp did by accident, minus the loss. */
+    for (uint32_t i = 0; i < q->count; i++) {
+        spq_entry_t *e = &q->e[(q->head + i) % SPQ_CAP];
+        if (e->slot == slot && strcmp(e->key, key) == 0) {
+            strncpy(e->value, value, SPQ_VALUE_MAX - 1); e->value[SPQ_VALUE_MAX - 1] = '\0';
+            q->coalesced++;
+            return 1;
+        }
+    }
+    if (q->count >= SPQ_CAP) return 0;
     spq_entry_t *ent = &q->e[(q->head + q->count) % SPQ_CAP];
     ent->slot = slot;
     strncpy(ent->key, key, SPQ_KEY_LEN - 1);     ent->key[SPQ_KEY_LEN - 1] = '\0';
