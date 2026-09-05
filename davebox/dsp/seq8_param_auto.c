@@ -206,21 +206,87 @@ static pa_entry_t *pa_find(seq8_instance_t *inst, int track, int clip, int targe
 /* Find or create. Returns NULL when the store is full — the caller reports
  * that; it must never be silent, or a user records automation that is not
  * being kept. */
+static void pa_entry_free(pa_entry_t *e);   /* defined below */
+
+/* Is `target` referenced by any live hand on any track? (A hand's target must
+ * keep its name while the hand is down — pa_live_end looks it up.) */
+static int pa_target_in_hand(const seq8_instance_t *inst, int target) {
+    for (int t = 0; t < NUM_TRACKS; t++)
+        for (int k = 0; k < PA_LIVE_MAX; k++) {
+            const pa_live_t *l = &inst->pa_live[t][k];
+            if (l->used && l->target == target) return 1;
+        }
+    return 0;
+}
+
+/* Free every target name no entry and no hand refers to. The table used to
+ * grow for the life of the project: a session of recording, clearing and
+ * re-recording different parameters filled its 64 slots and every NEW
+ * parameter was then refused, project-wide — the "automation isn't being
+ * recorded, sometimes it works" of 2026-09-05. Caller holds the writer lock. */
+static void pa_targets_gc(seq8_instance_t *inst) {
+    for (int t = 0; t < PA_MAX_TARGETS; t++) {
+        if (!inst->pa_targets[t][0]) continue;
+        int held = pa_target_in_hand(inst, t);
+        for (int i = 0; !held && i < PA_MAX_ENTRIES; i++) {
+            const pa_entry_t *e = &inst->pa_entries[i];
+            if (e->used && e->target == t) held = 1;
+        }
+        if (!held) inst->pa_targets[t][0] = '\0';
+    }
+}
+
+/* A ZOMBIE is a retired lane: used, no points, its release already served —
+ * kept only so a later automation of the same target knows its rest. When the
+ * pool is full a zombie is the one thing worth evicting: nothing lists,
+ * plays or serializes it. Its target may then be unreferenced; gc it. */
+static int pa_target_referenced(const seq8_instance_t *inst, int target) {
+    if (pa_target_in_hand(inst, target)) return 1;
+    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+        const pa_entry_t *e = &inst->pa_entries[i];
+        if (e->used && e->target == target) return 1;
+    }
+    return 0;
+}
+
+/* `keep` is the target the caller is about to give the freed slot — interned a
+ * moment ago with no entry yet, so a blanket gc would free its name. Only the
+ * zombie's own target is reconsidered. */
+static pa_entry_t *pa_evict_zombie(seq8_instance_t *inst, int keep) {
+    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+        pa_entry_t *e = &inst->pa_entries[i];
+        if (!e->used || e->count) continue;
+        if (__atomic_load_n(&e->release, __ATOMIC_ACQUIRE)) continue;   /* rest not yet re-asserted */
+        if (pa_target_in_hand(inst, e->target)) continue;
+        int zt = e->target;
+        pa_entry_free(e);
+        if (zt != keep && zt >= 0 && zt < PA_MAX_TARGETS && !pa_target_referenced(inst, zt))
+            inst->pa_targets[zt][0] = '\0';
+        return e;
+    }
+    return NULL;
+}
+
 static pa_entry_t *pa_get(seq8_instance_t *inst, int track, int clip, int target) {
     pa_entry_t *e = pa_find(inst, track, clip, target);
     if (e) return e;
     if (target < 0) return NULL;
-    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
-        e = &inst->pa_entries[i];
-        if (e->used) continue;
-        memset(e, 0, sizeof(*e));
-        e->used   = 1;
-        e->track  = (uint8_t)track;
-        e->clip   = (uint8_t)clip;
-        e->target = (uint16_t)target;
-        e->flags  = PA_FLAG_ACTIVE;
-        e->rest   = PA_VAL_UNSET;
-        return e;
+    for (int pass = 0; pass < 2; pass++) {
+        for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+            e = &inst->pa_entries[i];
+            if (e->used) continue;
+            memset(e, 0, sizeof(*e));
+            e->used   = 1;
+            e->track  = (uint8_t)track;
+            e->clip   = (uint8_t)clip;
+            e->target = (uint16_t)target;
+            e->flags  = PA_FLAG_ACTIVE;
+            e->rest   = PA_VAL_UNSET;
+            return e;
+        }
+        /* Full: make room by evicting one zombie, then look again. */
+        if (pass == 0 && pa_evict_zombie(inst, target)) continue;
+        break;
     }
     return NULL;
 }
@@ -279,6 +345,7 @@ static void pa_clear_track_clip(seq8_instance_t *inst, int track, int clip) {
         pa_entry_t *e = &inst->pa_entries[i];
         if (e->used && e->track == track && e->clip == clip) pa_entry_free(e);
     }
+    pa_targets_gc(inst);
 }
 
 /* Caller holds the seqlock. */
@@ -336,9 +403,9 @@ static void pa_copy_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc) 
         pa_entry_t *e = &inst->pa_entries[i];
         if (!e->used || e->track != st || e->clip != sc) continue;
         int tgt = pa_target_retrack(inst, e->target, st, dt);
-        if (tgt < 0) { inst->pa_store_full = 1; break; }
+        if (tgt < 0) { inst->pa_store_full = PA_FULL_TARGETS; break; }
         pa_entry_t *n = pa_get(inst, dt, dc, tgt);
-        if (!n) { inst->pa_store_full = 1; break; }   /* pool exhausted: say so */
+        if (!n) { inst->pa_store_full = PA_FULL_ENTRIES; break; }   /* pool exhausted: say so */
         *n = *e;                                      /* points, flags, rest, window */
         n->track  = (uint8_t)dt;
         n->clip   = (uint8_t)dc;
@@ -407,7 +474,7 @@ static void pa_undo_restore(seq8_instance_t *inst, const pa_entry_t *src, uint8_
     pa_clear_track_clip(inst, t, c);
     for (int i = 0; i < count; i++) {
         pa_entry_t *n = pa_get(inst, t, c, src[i].target);
-        if (!n) { inst->pa_store_full = 1; break; }
+        if (!n) { inst->pa_store_full = PA_FULL_ENTRIES; break; }
         *n = src[i];
         n->track = (uint8_t)t;
         n->clip  = (uint8_t)c;
@@ -667,7 +734,7 @@ static void pa_parse_locked(seq8_instance_t *inst, const char *buf, size_t blen)
              * automation than this build can. Report it — dropping silently
              * would look like the automation was never there, and the next save
              * would make that permanent. */
-            if (!e) inst->pa_store_full = 1;
+            if (!e) inst->pa_store_full = PA_FULL_ENTRIES;
             if (e) {
                 e->flags      = (uint8_t)flags;
                 e->rest       = (rest >= 0) ? (uint16_t)rest : PA_VAL_UNSET;
@@ -785,7 +852,7 @@ static void pa_live_set(seq8_instance_t *inst, seq8_track_t *tr, int track,
             __atomic_store_n(&l->used, 1, __ATOMIC_RELEASE);
             break;
         }
-        if (!l) return;                       /* more than PA_LIVE_MAX hands */
+        if (!l) { inst->pa_store_full = PA_FULL_HANDS; return; }   /* more than PA_LIVE_MAX hands */
     } else if (!hold_only) {
         /* An existing hand: Record may have been PUNCHED in or out under it
          * (Josh, 2026-09-03: "live recording seems flakey when punching in
@@ -837,11 +904,11 @@ static void pa_record_tick(seq8_instance_t *inst, seq8_track_t *tr, int track, i
         uint32_t snap = (ct / cell) * cell;
         (void)clip_ticks; (void)tr;
         if (e && l->last_snap == snap) { pa_write_end(inst); pa_unlock(inst); continue; }
-        if (!e) inst->pa_store_full = 1;
+        if (!e) inst->pa_store_full = PA_FULL_ENTRIES;
         else {
             uint16_t s = (uint16_t)(snap > 0xFFFFu - cell ? 0xFFFFu - cell : snap);
             pa_clear_range(e, s, (uint16_t)(s + cell - 1));
-            if (!pa_set_point(e, s, l->val)) inst->pa_store_full = 1;
+            if (!pa_set_point(e, s, l->val)) inst->pa_store_full = PA_FULL_POINTS;
             /* A recording is a sweep, and a sweep sampled every half step and
              * held is a 16-steps-a-second staircase on a filter. So what the
              * hand recorded plays back SMOOTH: interpolated between the cells
@@ -979,12 +1046,12 @@ static void pa_write_cell(seq8_instance_t *inst, int track, int clip, const char
     pa_lock(inst);
     pa_write_begin(inst);
     pa_entry_t *e = pa_get(inst, track, clip, id);
-    if (!e) inst->pa_store_full = 1;
+    if (!e) inst->pa_store_full = PA_FULL_ENTRIES;
     else {
         uint32_t snap = (tick / cell) * cell;
         uint16_t s = (uint16_t)(snap > 0xFFFFu - cell ? 0xFFFFu - cell : snap);
         pa_clear_range(e, s, (uint16_t)(s + cell - 1));
-        if (!pa_set_point(e, s, val)) inst->pa_store_full = 1;
+        if (!pa_set_point(e, s, val)) inst->pa_store_full = PA_FULL_POINTS;
         e->flags |= PA_FLAG_SMOOTH;                /* a pressure sweep, like a knob's */
         inst->pa_dirty = 1; inst->state_dirty = 1;
     }

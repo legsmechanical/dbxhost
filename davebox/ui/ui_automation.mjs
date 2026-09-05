@@ -340,15 +340,24 @@ export function automationRegisterSeqApply(fn) { seqApplier = fn; }
 /* The drain: ONE bulk GET carrying the staged values and the three flags the
  * DSP can only report. */
 const DRAIN_KEYS = ['pa_pending', 'pa_store_full', 'pa_ring_dropped', 'pa_owner_conflict'];
+/* pa_store_full reason codes — PA_FULL_* in dsp/seq8_param_auto.h. */
+export const AUTOMATION_FULL_REASONS = {
+    1: 'too many lanes (160)',      /* PA_MAX_ENTRIES: (track, clip, param) triples */
+    2: 'too many params (64)',      /* PA_MAX_TARGETS: distinct parameters in the project */
+    3: 'lane full (512 points)',    /* PA_ENTRY_POINTS */
+    4: 'too many hands (8)',        /* PA_LIVE_MAX per track */
+};
 const FLAG_KEYS  = DRAIN_KEYS.slice(1);
 
 function takeFlags(vals, offset) {
-    const f = { full: vals[offset] === '1', dropped: vals[offset + 1] === '1',
+    /* `full` is a REASON code since 2026-09-05 (1 pool, 2 targets, 3 points, 4
+     * hands), not a bit — a refused write used to be one console line. */
+    const f = { full: parseInt(vals[offset] || '0', 10) || 0, dropped: vals[offset + 1] === '1',
                 owner: parseInt(vals[offset + 2] || '0', 10) || 0 };
     /* Sticky until reported: a flag seen on one drain and reported on a later
      * poll must not be lost to a drain in between. */
     if (!lastFlags) lastFlags = f;
-    else { lastFlags.full = lastFlags.full || f.full; lastFlags.dropped = lastFlags.dropped || f.dropped;
+    else { if (f.full) lastFlags.full = f.full; lastFlags.dropped = lastFlags.dropped || f.dropped;
            if (f.owner) lastFlags.owner = f.owner; }
 }
 
@@ -476,9 +485,15 @@ export function automationPollWarnings() {
     const f = lastFlags;
     lastFlags = null;
     if (!f) return null;
-    if (f.full)    console.log('[dbx] automation store full — a write was refused');
     if (f.dropped) console.log('[dbx] automation queue overflowed — a staged value was dropped');
     if (f.owner > 0) { console.log('[auto] write REFUSED — target owned by track ' + f.owner); return ['Already automated', 'by track ' + f.owner]; }
+    if (f.full) {
+        /* ON THE SCREEN, not the log (Josh, 2026-09-05: "a lot of automation
+         * isn't being recorded … sometimes it works"). Each limit has a name. */
+        const why = AUTOMATION_FULL_REASONS[f.full] || 'store full';
+        console.log('[auto] write REFUSED — ' + why);
+        return ['Automation full', why];
+    }
     return null;
 }
 
