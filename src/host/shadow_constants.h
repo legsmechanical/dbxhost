@@ -55,7 +55,27 @@
  * MIDI_OUT must be bounded by this to avoid corrupting the display. */
 #define HW_MIDI_OUT_SIZE    80
 #define DISPLAY_BUFFER_SIZE 1024  /* 128x64 @ 1bpp = 1024 bytes */
-#define CONTROL_BUFFER_SIZE 88  /* +select_phase/select_launch (set-select actuator); static-asserted below */
+/*
+ * The control segment. 256 bytes for a struct that currently uses 88.
+ *
+ * It was 88 — not a designed size, just wherever the struct happened to end
+ * after the last field was added, with an `==` assert that had to be bumped
+ * by hand each time. That made it read as FULL: adding a byte failed the
+ * assert, which looked like a hard limit (upstream squeezed a setting into
+ * two spare bits of ui_flags_ext for exactly that reason).
+ *
+ * IT COSTS NOTHING. /dev/shm is tmpfs and allocates by page: a segment
+ * declaring 88 bytes occupies 4096. Anything up to a page is free.
+ *
+ * RESIZING IS A LAYOUT CHANGE: the segment outlives the processes, so a new
+ * consumer can meet a stale short one. shadow_shm_map() fstats on attach and
+ * REFUSES rather than handing back a mapping whose tail is SIGBUS — the
+ * feature goes quiet and logs why. Deploy the shim and shadow_ui together, as
+ * install-sa.sh does. Growing is the safe direction for the other order: an
+ * old consumer asking for 88 attaches to a 256-byte segment quite happily.
+ * (Taken from upstream #385, 2026-09-05, ahead of the snapshot host port.)
+ */
+#define CONTROL_BUFFER_SIZE 256
 /* Sized against shadow_ui_state_t, which grows with the slot count: 280 B at 4
  * slots, 552 B at 8. This is the ONE seam in the whole slot-count change that
  * fails LOUDLY — the static assert below — which is exactly why every other
@@ -68,7 +88,10 @@
 /* MIDI inject ring capacity is SHADOW_MIDI_INJECT_SLOTS (defined with the
  * struct below) — the old flat byte-buffer size is gone. */
 #define SHADOW_SCREENREADER_BUFFER_SIZE 8448  /* Screen reader message buffer */
-#define SHADOW_OVERLAY_BUFFER_SIZE 256        /* Overlay state buffer */
+/* Overlay state. 512 for a struct that uses 256 — same reasoning as
+ * CONTROL_BUFFER_SIZE above, and the same zero cost. It was exactly 256 with
+ * an `==` assert, so it read as full for the same wrong reason. */
+#define SHADOW_OVERLAY_BUFFER_SIZE 512
 
 /* Web UI ring buffer sizes */
 #define WEB_PARAM_KEY_LEN     64
@@ -924,11 +947,11 @@ typedef struct test_stream_shm {
 
 /* Compile-time size checks */
 typedef char test_stream_size_check[(sizeof(test_stream_shm_t) == 16 + TEST_STREAM_CAPACITY * 8) ? 1 : -1];
-typedef char shadow_control_size_check[(sizeof(shadow_control_t) == CONTROL_BUFFER_SIZE) ? 1 : -1];
+typedef char shadow_control_size_check[(sizeof(shadow_control_t) <= CONTROL_BUFFER_SIZE) ? 1 : -1];
 typedef char shadow_ui_state_size_check[(sizeof(shadow_ui_state_t) <= SHADOW_UI_BUFFER_SIZE) ? 1 : -1];
 typedef char shadow_param_size_check[(sizeof(shadow_param_t) <= SHADOW_PARAM_BUFFER_SIZE) ? 1 : -1];
 typedef char shadow_screenreader_size_check[(sizeof(shadow_screenreader_t) <= SHADOW_SCREENREADER_BUFFER_SIZE) ? 1 : -1];
-typedef char shadow_overlay_size_check[(sizeof(shadow_overlay_state_t) == SHADOW_OVERLAY_BUFFER_SIZE) ? 1 : -1];
+typedef char shadow_overlay_size_check[(sizeof(shadow_overlay_state_t) <= SHADOW_OVERLAY_BUFFER_SIZE) ? 1 : -1];
 typedef char schwung_ext_midi_remap_size_check[(sizeof(schwung_ext_midi_remap_t) == 64) ? 1 : -1];
 
 #endif /* SHADOW_CONSTANTS_H */
