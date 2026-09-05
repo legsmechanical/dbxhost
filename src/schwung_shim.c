@@ -1595,6 +1595,7 @@ static void shadow_overtake_dsp_load(const char *path) {
     overtake_host_api.audio_in_offset = MOVE_AUDIO_IN_OFFSET;
     overtake_host_api.log = shadow_log;
     overtake_host_api.midi_send_internal = overtake_midi_send_internal;
+    overtake_host_api.clock_output_enabled = shim_clock_output_enabled_get;
     overtake_host_api.midi_send_internal_slot = overtake_midi_send_internal_slot;
     overtake_host_api.midi_send_external = overtake_midi_send_external;
     overtake_host_api.get_bpm = shim_get_bpm;

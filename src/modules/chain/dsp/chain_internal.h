@@ -61,8 +61,8 @@
 /* Optional file-based debug tracing for chain parsing/preset save diagnostics. */
 #define CHAIN_DEBUG_FLAG_PATH SCHWUNG_INSTALL_DIR "/chain_debug_on"
 #define CHAIN_DEBUG_LOG_PATH SCHWUNG_INSTALL_DIR "/chain_debug.log"
-#define MOVE_SETTINGS_JSON_PATH "/data/UserData/settings/Settings.json"
-#define CLOCK_SETTINGS_MAX_BYTES (256 * 1024)
+/* MOVE_SETTINGS_JSON_PATH / CLOCK_SETTINGS_MAX_BYTES moved to host/move_clock_setting.h
+ * (2026-09-05): the chain no longer reads the file — the host worker does. */
 #define CLOCK_SETTINGS_REFRESH_MS 1000
 #define CLOCK_TICK_STALE_MS 750
 
@@ -495,6 +495,7 @@ CHAIN_INTERNAL void chain_mod_update_base_from_set_param(chain_instance_t *inst,
 
 /* chain_midi.c */
 CHAIN_INTERNAL int chain_get_clock_status(void);
+CHAIN_INTERNAL const host_api_v1_t *chain_host_api(void);   /* the host api handed to init (may be NULL in tests) */
 CHAIN_INTERNAL int v2_load_midi_fx(chain_instance_t *inst, const char *fx_name);
 CHAIN_INTERNAL int v2_load_midi_fx_slot(chain_instance_t *inst, int slot, const char *fx_name);
 CHAIN_INTERNAL void v2_unload_midi_fx_slot(chain_instance_t *inst, int slot);

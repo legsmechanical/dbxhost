@@ -32,6 +32,13 @@
 
 extern volatile uint32_t shim_debug_flags;
 
+/* Move's "MIDI Clock Out" preference (Settings.json midiClockMode), read by
+ * the worker once a second and PUBLISHED here; the RT path and the chain host
+ * read the word, never the file (2026-09-05 — the chain used to fopen it from
+ * the SPI callback). 1 = output / unknown / unavailable, 0 = off / input. */
+extern volatile int shim_clock_output_enabled;
+int shim_clock_output_enabled_get(void);
+
 /* Atomically test-and-clear a one-shot flag. Returns nonzero if it was set. */
 static inline int shim_debug_flag_consume(uint32_t bit) {
     return (__sync_fetch_and_and(&shim_debug_flags, ~bit) & bit) != 0;

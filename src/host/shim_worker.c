@@ -16,7 +16,10 @@
 #include "unified_log.h"
 
 #include "host/schwung_paths.h"
+#include "move_clock_setting.h"
 volatile uint32_t shim_debug_flags = 0;
+volatile int shim_clock_output_enabled = 1;
+int shim_clock_output_enabled_get(void) { return __atomic_load_n(&shim_clock_output_enabled, __ATOMIC_ACQUIRE); }
 volatile int shim_pending_sysex_inject = -1;
 volatile int shim_inject_boot_jack = -1;
 volatile int shim_jack_persist = -1;
@@ -76,6 +79,10 @@ static const flag_spec_t FLAGS[] = {
 };
 
 static void poll_flags(void) {
+    /* Move's MIDI Clock Out preference — file I/O HERE, on the worker, once a
+     * second; the chain's clock status reads the published word. */
+    __atomic_store_n(&shim_clock_output_enabled,
+                     move_clock_output_enabled_read(MOVE_SETTINGS_JSON_PATH), __ATOMIC_RELEASE);
     for (size_t i = 0; i < sizeof(FLAGS) / sizeof(FLAGS[0]); i++) {
         int present = (access(FLAGS[i].path, F_OK) == 0);
         if (FLAGS[i].oneshot) {
