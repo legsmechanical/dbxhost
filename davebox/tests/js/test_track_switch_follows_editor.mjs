@@ -1,7 +1,10 @@
 /* tests/js/test_track_switch_follows_editor.mjs — ITEM 20 (Josh, 2026-09-05:
- * "Yes, follow into the editor"). A track switch made from INSIDE a module
- * editor lands in the NEW track's editor, route-aware; from every other sound
- * screen the 08-24 close still applies; outside sound mode nothing opens.
+ * "Yes, follow into the editor", then "tracks should switch under everything
+ * except where it just doesn't make any sense"). A track switch made from ANY
+ * sound-mode screen lands on the same KIND of screen on the new track where
+ * it has one (editor → editor, menu → menu, CONFIG → CONFIG, LFO → LFO,
+ * MACROS → MACROS, prompt → prompt), route-aware; a global bus and a Conduct
+ * target still close; outside sound mode nothing opens.
  *
  * Drives `_switchActiveTrack` directly — it is the ONE dispatch every switch
  * site (Shift+jog, Shift+pad, launchers, remote UI) goes through — and reads
@@ -67,7 +70,9 @@ const snd = await import('../../ui/ui_sound.mjs');
 const { BANK_SOUND, ROUTE_NONE, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
 const editops = await import('../../ui/ui_editops.mjs');
 
-const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_PROMPT = 18;   /* ui_sound's own numbering */
+const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_SLOTCFG = 8, VIEW_BUSES = 9, VIEW_LFO = 14,
+      VIEW_ENUM = 17, VIEW_PROMPT = 18, VIEW_MACROS = 19;   /* ui_sound's own numbering */
+const fs = () => snd.soundFollowStateForTest();
 const view = () => snd.soundPickStateForTest().view;
 const kinds = () => snd.soundPickStateForTest().kinds.join(',');
 
@@ -122,10 +127,98 @@ step('⭑ Schwung → MIDI: lands on the MIDI track\'s MENU (Instrument + Config
     if (kinds() !== 'trackto,config') throw new Error('rows: ' + kinds());
 });
 
-step('⚠ from that MENU a further switch CLOSES (the 08-24 rule stands off the editor)', () => {
+step('⭑ from that MENU a further switch FOLLOWS to the new track\'s MENU (09-05: under everything)', () => {
     editops._switchActiveTrack(2);
-    if (snd.soundOpen()) throw new Error('followed from a menu — every track scrolled onto would report SOUND + CONFIG');
-    if (S.activeBank !== S.trackActiveBank[2]) throw new Error('the new track did not land on its own bank');
+    if (!snd.soundOpen() || snd.soundTrack() !== 2) throw new Error('the menu did not follow');
+    globalThis.tick();
+    if (view() !== VIEW_BLOCKS) throw new Error('view ' + view() + ' — a menu switch lands on the menu, not the editor');
+    if (kinds().indexOf('trackto') !== 0) throw new Error('rows: ' + kinds());
+    snd.soundExit();
+});
+
+/* Open a screen on track t through the same actions the jog would queue. */
+/* soundEnter lands on the bank PROMPT (the bank is a door, 08-28); the click that
+ * opens the menu is a view change, queued here the way the prompt's click does it. */
+function enterMenu(t) { S.activeTrack = t; snd.soundEnter(t, t); globalThis.tick(); snd.soundQueueActionForTest({ t: 'view', view: VIEW_BLOCKS }); globalThis.tick(); if (view() !== VIEW_BLOCKS) throw new Error('control: menu did not open (view ' + view() + ')'); }
+function enterConfig(t) { enterMenu(t); snd.soundQueueActionForTest({ t: 'slotcfg', which: 'config' }); globalThis.tick(); if (view() !== VIEW_SLOTCFG) throw new Error('control: CONFIG did not open (view ' + view() + ')'); }
+function settle() { globalThis.tick(); globalThis.tick(); globalThis.tick(); }
+
+step('⭑ CONFIG → CONFIG: Schwung to Schwung lands on the new track\'s CONFIG screen', () => {
+    enterConfig(2);
+    editops._switchActiveTrack(3);
+    if (!snd.soundOpen() || snd.soundTrack() !== 3) throw new Error('did not follow');
+    settle();
+    if (view() !== VIEW_SLOTCFG || fs().cfgWhich !== 'config') throw new Error('view ' + view() + ' which ' + fs().cfgWhich);
+});
+
+step('⭑ CONFIG → CONFIG: Schwung to a MIDI track lands on ITS CONFIG (item 14 gave it one)', () => {
+    editops._switchActiveTrack(4);
+    if (!snd.soundOpen() || snd.soundTrack() !== 4) throw new Error('did not follow');
+    settle();
+    if (view() !== VIEW_SLOTCFG || fs().cfgWhich !== 'config') throw new Error('view ' + view() + ' which ' + fs().cfgWhich);
+});
+
+step('⭑ CONFIG → NONE: a NONE track has no config — its Instrument-only menu', () => {
+    editops._switchActiveTrack(5);
+    if (!snd.soundOpen() || snd.soundTrack() !== 5) throw new Error('did not follow');
+    settle();
+    if (view() !== VIEW_BLOCKS || kinds() !== 'trackto') throw new Error('view ' + view() + ' rows ' + kinds());
+    snd.soundExit();
+});
+
+step('⭑ the LFOs screen → a MIDI track has no LFOs: its menu; → Schwung: the LFOs screen again', () => {
+    enterMenu(2);
+    snd.soundQueueActionForTest({ t: 'slotcfg', which: 'sound' }); globalThis.tick();
+    if (view() !== VIEW_SLOTCFG || fs().cfgWhich !== 'sound') throw new Error('control: LFOs screen did not open');
+    editops._switchActiveTrack(4); settle();
+    if (view() !== VIEW_BLOCKS) throw new Error('a MIDI track showed an LFOs screen (view ' + view() + ')');
+    editops._switchActiveTrack(3); settle();
+    if (view() !== VIEW_BLOCKS) throw new Error('from a menu the switch should land on the menu, view ' + view());
+    snd.soundExit();
+});
+
+step('⭑ an LFO editor → the SAME LFO on the new Schwung track; its target picker collapses to it', () => {
+    enterMenu(2);
+    snd.soundQueueActionForTest({ t: 'slotcfg', which: 'sound' }); globalThis.tick();
+    snd.soundQueueActionForTest({ t: 'lfo', lfo: 1 }); globalThis.tick();
+    if (view() !== VIEW_LFO || fs().lfoNum !== 1) throw new Error('control: LFO 2 did not open (view ' + view() + ')');
+    editops._switchActiveTrack(3); settle();
+    if (view() !== VIEW_LFO || fs().lfoNum !== 1) throw new Error('view ' + view() + ' lfo ' + fs().lfoNum);
+    snd.soundQueueActionForTest({ t: 'lfotarget' }); globalThis.tick();
+    editops._switchActiveTrack(2); settle();
+    if (view() !== VIEW_LFO || fs().lfoNum !== 1) throw new Error('the target picker did not collapse to LFO 2: view ' + view());
+    snd.soundExit();
+});
+
+step('⭑ an open ENUM PICKER closes WITHOUT committing and the switch follows its parent (the menu)', () => {
+    enterMenu(2);
+    snd.soundQueueActionForTest({ t: 'instrpick' }); globalThis.tick();
+    if (view() !== VIEW_ENUM || fs().enumPick !== 'Instrument') throw new Error('control: the picker did not open');
+    const routeBefore = S.trackRoute[2];
+    editops._switchActiveTrack(3); settle();
+    if (S.trackRoute[2] !== routeBefore) throw new Error('the picker COMMITTED on a track switch');
+    if (fs().enumPick !== null) throw new Error('the picker is still open on the new track');
+    if (view() !== VIEW_BLOCKS) throw new Error('view ' + view());
+    snd.soundExit();
+});
+
+step('⭑ MACROS → MACROS, prompt → prompt', () => {
+    enterMenu(2);
+    snd.soundQueueActionForTest({ t: 'view', view: VIEW_MACROS }); globalThis.tick();
+    editops._switchActiveTrack(3); settle();
+    if (view() !== VIEW_MACROS) throw new Error('MACROS did not follow: view ' + view());
+    snd.soundQueueActionForTest({ t: 'view', view: VIEW_PROMPT }); globalThis.tick();
+    editops._switchActiveTrack(2); settle();
+    if (view() !== VIEW_PROMPT) throw new Error('the prompt did not follow: view ' + view());
+    snd.soundExit();
+});
+
+step('⚠ the Session FX gateway is GLOBAL: the switch keeps it open, unchanged', () => {
+    enterMenu(2);
+    snd.soundQueueActionForTest({ t: 'view', view: VIEW_BUSES }); globalThis.tick();
+    editops._switchActiveTrack(3); settle();
+    if (view() !== VIEW_BUSES) throw new Error('the gateway was left: view ' + view());
+    snd.soundExit();
 });
 
 step('⭑ Schwung → NONE: lands on the Instrument-only menu', () => {
@@ -137,12 +230,23 @@ step('⭑ Schwung → NONE: lands on the Instrument-only menu', () => {
     snd.soundExit();
 });
 
-step('⭑ Schwung → Move: lands on the Move track\'s bus (its prompt), not the sequencer', () => {
+step('⭑ Schwung → Move: lands on the Move track\'s bus MENU (its inserts are its editable sound), not the sequencer', () => {
     enterEditor(2);
     editops._switchActiveTrack(6);
     if (!snd.soundOpen() || snd.soundTrack() !== 6) throw new Error('did not follow');
     if (snd.soundIsGlobal()) throw new Error('landed on a GLOBAL bus');
+    if (view() !== VIEW_BLOCKS) throw new Error('view ' + view() + ', expected the bus menu');
+    snd.soundExit();
+});
+
+step('⭑ prompt → Move: the bank PROMPT follows as the prompt; MACROS → MACROS on a Move track too', () => {
+    enterMenu(2);
+    snd.soundQueueActionForTest({ t: 'view', view: VIEW_PROMPT }); globalThis.tick();
+    editops._switchActiveTrack(6); settle();
     if (view() !== VIEW_PROMPT) throw new Error('view ' + view() + ', expected the bus prompt');
+    snd.soundQueueActionForTest({ t: 'view', view: VIEW_MACROS }); globalThis.tick();
+    editops._switchActiveTrack(2); settle();
+    if (view() !== VIEW_MACROS) throw new Error('MACROS did not follow off a Move bus: view ' + view());
     snd.soundExit();
 });
 
