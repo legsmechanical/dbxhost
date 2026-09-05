@@ -13,7 +13,7 @@ import {
 } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { soundActive, soundOpen, soundExit, soundIsGlobal } from './ui_sound.mjs';
+import { soundActive, soundOpen, soundExit, soundIsGlobal, soundInEditor, soundFollowTrack } from './ui_sound.mjs';
 import { stepRecExit } from './ui_record.mjs';
 import { clipHasContent } from './ui_pure.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -460,8 +460,9 @@ export function _switchActiveTrack(newT) {
      * cursor, journal and checkpoint are all per-clip. Any track switch ends
      * it (the ONE owner is ui_record; this is a dispatch, not a writer). */
     stepRecExit();
-    /* A track switch LEAVES sound mode — every route, no exceptions (Josh,
-     * 2026-08-24). SOUND + CONFIG is a BANK and a bank is per-track, so the new
+    /* A track switch LEAVES sound mode from every screen but a module EDITOR
+     * (Josh, 2026-08-24, amended 2026-09-05 — see _follow below). SOUND +
+     * CONFIG is a BANK and a bank is per-track, so the new
      * track lands on ITS bank; and because the bank RECORDS ITSELF in
      * trackActiveBank like every other one (Josh, 2026-08-25), "the new track
      * was left on SOUND + CONFIG" is just its stored bank reading BANK_SOUND —
@@ -484,7 +485,15 @@ export function _switchActiveTrack(newT) {
      * keeps the outgoing track's bank on BANK_SOUND instead of handing it back.
      * Before the switch, so sound mode's queued writes flush while the outgoing
      * track is still their target. */
-    if (soundOpen() && !soundIsGlobal()) soundExit({ leaving: true });
+    /* ⭑ EXCEPT from inside a module EDITOR (item 20, Josh, 2026-09-05: "Yes,
+     * follow into the editor"): the switch FOLLOWS — the new track's editor
+     * opens (route-aware; a MIDI or NONE track lands on its menu, a Move track
+     * on its bus). The 08-24 close stands everywhere else in sound mode: it
+     * was the MENU scroll that made every track report SOUND + CONFIG, and the
+     * menu still closes. A Conduct track has no sound to follow into. */
+    const _follow = soundInEditor() &&
+                    S.trackPadMode[newT | 0] !== PAD_MODE_CONDUCT;
+    if (soundOpen() && !soundIsGlobal() && !_follow) soundExit({ leaving: true });
     /* Records BANK_SOUND like any other bank now (Josh, 2026-08-25) — the old
      * guard here existed only because the identity was transient and writing it
      * would have stranded the track on a bank the jog could not reach. It can
@@ -507,7 +516,12 @@ export function _switchActiveTrack(newT) {
      * handler already declines when sound mode is still open, so the routes
      * that FOLLOW the track (Shift+pad, launchers, remote UI) are unaffected.
      * SILENT: arriving is not a bank gesture, so the display window stays shut. */
-    if (isSoundBank(S.activeBank)) {
+    if (_follow) {
+        /* The follow takes the bank identity for the new track itself
+         * (takeBankIdentity inside the retarget), so the recorded bank and the
+         * open screen move together — the same law as every other arrival. */
+        soundFollowTrack(S.activeTrack);
+    } else if (isSoundBank(S.activeBank)) {
         S.pendingSoundEnterTrack = S.activeTrack;
         S.pendingSoundEnterSilent = true;
         S.pendingSoundEnterMacros = (S.activeBank === BANK_MACROS);

@@ -1101,6 +1101,37 @@ function soundOriginBank(track) {
     return (typeof o === 'number' && o >= 0 && !isSoundBank(o)) ? (o | 0) : BANK_SOUND_PREV;
 }
 
+/* ⭑ ITEM 20 (Josh, 2026-09-05: "Yes, follow into the editor"). A track switch
+ * made from INSIDE a module editor lands in the NEW track's editor. The 08-24
+ * ruling ("a track switch always LEAVES sound mode") stands for every other
+ * screen — the menu, the prompt, a browser, the macros page — because that is
+ * where the complaint came from: scrolling tracks from the menu made every
+ * track report SOUND + CONFIG. The editor is different: you are comparing two
+ * sounds, and being dumped to the sequencer is the wrong answer.
+ *
+ * "Inside an editor" is VIEW_EDIT (the param-pages grid and the hosted canvas
+ * both run under it) or a dive-out the grid still owns (an enum list, a
+ * keyboard). Not a global bus: Master/Send FX are not a track's sound. */
+export function soundInEditor() {
+    return !!(S.active && !soundIsGlobal() &&
+              (S.view === VIEW_EDIT || (ppOn && ppOwnsView())));
+}
+
+/* The follow itself, route-aware, the same choice tick's reconcile and the
+ * `reflavour` action make: a Move-routed track's sound is its bus, a Schwung
+ * one's is its chain. A track with NO chain of its own — MIDI out, NONE — has
+ * no editor to land in, so its MENU is the destination (item 13's Instrument
+ * row, item 14's Instrument + Config); keepPlace is turned off for it, or the
+ * retarget would reopen the PARKED chain's editor on a track that is not
+ * playing it. Synchronous, on the switch edge: no per-tick read, and the
+ * tick's own follow sees track === soundTrack() and stays quiet. */
+export function soundFollowTrack(track) {
+    if (GS.trackRoute[track] === 1) { soundEnterMove(track); return; }
+    if (GS.trackRoute[track] !== 0) S.view = VIEW_BLOCKS;
+    clearBusContext();
+    soundRetarget(track, slotIndex(track));
+}
+
 export function soundRetarget(track, slot) {
     flushForRetarget();
     takeBankIdentity(track, S.bankHome);
