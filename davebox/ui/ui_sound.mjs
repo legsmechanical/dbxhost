@@ -1205,6 +1205,11 @@ export function soundFollowTrack(track) {
         keepAudition();
     const route = GS.trackRoute[track];
     const plan = followPlan(S.view, route);
+    /* S1 INSTRUMENTATION (device, 2026-09-05): the NONE-track and fast-scroll
+     * caveats pass in the harness — log the plan and every landing so ONE
+     * repro on the device names the path. debug.log only. */
+    log('follow: track ' + track + ' route ' + route + ' from view ' + S.view + ' plan ' + JSON.stringify(plan) +
+        ' pending ' + (S.pendingAction ? S.pendingAction.t : '-') + ' active ' + S.active);
     /* ⚠ ARRIVING IS NOT A BANK GESTURE (the "silent on return" law, 08-25):
      * a follow must not open the bank display window over the track overview
      * mid-switch, so the stamp the entry paths write is put back afterwards. */
@@ -1247,6 +1252,7 @@ export function soundFollowTrack(track) {
 function landOnNoEditor() {
     if (S.noEditorComp === undefined || S.noEditorComp === null) S.noEditorComp = S.comp || 'synth';
     const th = { t: 'view', view: VIEW_NOEDITOR };
+    log('follow: landOnNoEditor pending ' + (S.pendingAction ? JSON.stringify(S.pendingAction) : '-') + ' view ' + S.view);
     if (S.pendingAction) S.pendingAction = Object.assign({}, S.pendingAction, { then: th });
     else { S.view = VIEW_NOEDITOR; S.dirty = true; }
 }
@@ -1398,6 +1404,10 @@ function clearBusContext() {
  *                                here.
  */
 export function soundExit(opts) {
+    /* S1 INSTRUMENTATION: "a fast scroll can dump you to the track overview" —
+     * name who closed sound mode. debug.log only; exits are rare. */
+    log('exit: view ' + S.view + ' track ' + S.track + ' opts ' + JSON.stringify(opts || null) + ' from ' +
+        String(new Error().stack || '').split('\n').slice(2, 5).map((l) => l.trim()).join(' | '));
     const _opts = (opts && typeof opts === 'object') ? opts : {};
     const _leaving = _opts.leaving === true;
     /* Any exit at all spends the gesture crumb. A crumb that outlives its screen
@@ -5328,8 +5338,11 @@ function retargetOpen(picker) {
  * follow onto a Move track lands via soundEnterMove's `names` action, and the
  * no-editor screen has to be queued behind that one too. */
 function runAction(a) {
+    const _v0 = S.view;
     runActionBody(a);
     if (a.then && a.t !== 'retarget') S.pendingAction = a.then;   /* retarget chains it itself */
+    log('action ' + a.t + (a.view !== undefined ? '(' + a.view + ')' : '') + ': view ' + _v0 + ' -> ' + S.view +
+        ' track ' + S.track + ' slot ' + S.slot + ' next ' + (S.pendingAction ? S.pendingAction.t : '-'));
 }
 
 function runActionBody(a) {
