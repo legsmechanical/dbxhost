@@ -163,6 +163,49 @@ step('Smooth/Stepped is an op HERE (every numeric param): cutoff offers it, voic
     cc(14, 127); cc(14, 127); cc(14, 127); ticks(1);
     assert(menu().rateVal === 1, 'clamps at /16, got ' + menu().rateVal);
     back(); ticks(1); assert(!menu().rateEdit && menu().ops, 'Back leaves the edit, ops stay');
+    /* SCALE (Josh, 2026-09-05: 0-200 %): same shape as Loop and Rate. The DSP
+     * applies it at playback/export; the bank only writes the percent. */
+    const si = menu().ops.rows.findIndex(o => o.op === 'scale');
+    assert(si >= 0 && menu().ops.rows[si].value === '100%', 'Scale row reads 100% by default, got ' + JSON.stringify(menu().ops.rows[si]));
+    while (menu().ops.sel < si) cc(14, 1);
+    click(); ticks(1);
+    assert(menu().scaleEdit === true, 'Scale: click edits');
+    sets.length = 0;
+    cc(14, 2); ticks(2);                                  /* +2 % */
+    assert(sets.some(x => x === 't0_pa_scale=0 0:synth:cutoff 102'), '+2 detents = 102 %, got ' + JSON.stringify(sets));
+    assert(sets.filter(x => x.startsWith('t0_c0_undo_checkpoint=')).length === 1, 'one checkpoint for the session');
+    assert(menu().ops.rows[si].value === '102%', 'the row reads back the new percent');
+    for (let i = 0; i < 120; i++) cc(14, 1);
+    ticks(40);                                            /* the set queue drains per tick */
+    assert(menu().scaleVal === 200, 'clamps at 200 %, got ' + menu().scaleVal);
+    for (let i = 0; i < 250; i++) cc(14, 127);
+    ticks(80);
+    assert(menu().scaleVal === 0, 'clamps at 0 %, got ' + menu().scaleVal);
+    assert(sets.some(x => x === 't0_pa_scale=0 0:synth:cutoff 0'), '0 % is a real value, written as 0');
+    sets.length = 0;
+    back(); ticks(1); assert(!menu().scaleEdit && menu().ops, 'Back leaves the scale edit, ops stay');
+    /* BIPOLAR (Josh, 2026-09-05): a PAN lane's scale carries the centre as a
+     * 4th token (0.5 → 8192 in 14 bits) so the DSP scales toward centre; the
+     * cutoff writes above carried none — a unipolar lane scales from zero. */
+    assert(auto.automationBipolarCenter('0:slot:pan') === 8192, 'pan is bipolar with centre 0.5 = 8192, got ' + auto.automationBipolarCenter('0:slot:pan'));
+    assert(auto.automationBipolarCenter('0:synth:cutoff') === null, 'cutoff (0..1) is unipolar');
+    assert(auto.automationBipolarCenter('pb') === 8192, 'pitch bend is bipolar at 8192');
+    sets.length = 0;
+    assert(auto.automationSetScale(0, 0, '0:synth:voices', 120, false), 'voices lane is listed');
+    ticks(2);                                             /* the module writes flush on the tick */
+    assert(sets.some(x => x === 't0_pa_scale=0 0:synth:voices 120'), 'voices (unipolar, int 1..8): three tokens, got ' + JSON.stringify(sets));
+    LIST = '0 0 1 8 0:synth:cutoff 0\n0 0 2 3 0:synth:voices 48\n0 0 1 2 0:slot:volume 0\n0 0 1 2 0:slot:pan 0\n1 0 1 2 1:synth:cutoff 0\n';
+    auto.automationRefreshPresence(); sets.length = 0;
+    assert(auto.automationSetScale(0, 0, '0:slot:pan', 50, false), 'pan lane is listed');
+    ticks(2);
+    assert(sets.some(x => x === 't0_pa_scale=0 0:slot:pan 50 8192'), 'pan (bipolar): the centre rides as the 4th token, got ' + JSON.stringify(sets));
+    /* The list carries the percent as an 8th field; an older DSP omits it and that is 100. */
+    LIST = '0 0 1 8 0:synth:cutoff 0 0 150\n0 0 2 3 0:synth:voices 48\n';
+    auto.automationRefreshPresence();
+    assert(auto.automationStateFor(0, 0, '0:synth:cutoff').scale === 150, 'pa_list field 8 is the scale');
+    assert(auto.automationStateFor(0, 0, '0:synth:voices').scale === 100, 'absent = 100 %');
+    LIST = '0 0 1 8 0:synth:cutoff 0\n0 0 2 3 0:synth:voices 48\n0 0 1 2 0:slot:volume 0\n1 0 1 2 1:synth:cutoff 0\n';
+    auto.automationRefreshPresence();
     back(); ticks(1);
     const vi = ab.autoBankRows(T, C).findIndex(r => r.label === 'Syn>Voices');
     if (vi >= 0) { menu().sel = vi; click(); ticks(1); ops = menu().ops.rows.map(o => o.op); assert(ops.indexOf('smooth') >= 0, 'an int offers Smooth too (2026-09-05: every numeric param ramps)'); back(); ticks(1); }

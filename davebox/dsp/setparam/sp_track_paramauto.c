@@ -4,7 +4,7 @@
  * compile or lint this file on its own.
  *
  * Covers: pa_set, pa_set2, pa_clear_key, pa_clear_step, pa_clear, pa_active,
- * pa_smooth, pa_rest, pa_rest_move, pa_loop, pa_live, pa_hold, pa_live_end.
+ * pa_smooth, pa_rest, pa_rest_move, pa_loop, pa_scale, pa_live, pa_hold, pa_live_end.
  *
  * The dispatcher holds the writer lock and the seqlock around this handler.
  *
@@ -275,6 +275,31 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
             e->loop_len   = (uint16_t)len;
             e->loop_off   = (uint16_t)off;
             e->resolution = (uint16_t)res;
+            pa_mark_dirty(inst);
+        }
+        return 1;
+    }
+
+    /* pa_scale: "<clip> <target> <pct> [<centre14>]" — the lane's scale,
+     * 0..200 %, applied at playback and export; the points stay as recorded.
+     * The optional 4th token names a BIPOLAR parameter's centre (14-bit): the
+     * lane then scales its distance from that centre. Absent = the lane keeps
+     * whatever centre it had (none, for a unipolar parameter). */
+    if (!strcmp(sub, "pa_scale")) {
+        int clip = 0, pct = 100, ctr = -1;
+        PA_SKIP_SPACE(p); PA_UINT(p, clip);
+        PA_TARGET(p, tgt);
+        PA_SKIP_SPACE(p); PA_UINT(p, pct);
+        PA_SKIP_SPACE(p);
+        if (*p >= '0' && *p <= '9') { PA_UINT(p, ctr); }
+        if (clip < 0 || clip >= NUM_CLIPS) return 1;
+        if (pct < PA_SCALE_MIN) pct = PA_SCALE_MIN;
+        if (pct > PA_SCALE_MAX) pct = PA_SCALE_MAX;
+        pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_id(inst, tgt));
+        if (e) {
+            e->scale_off = (int8_t)(pct - 100);
+            if (ctr >= 0) e->scale_ctr1 = (uint16_t)((ctr > PA_VAL_MAX ? PA_VAL_MAX : ctr) + 1);
+            e->last_sent_valid = 0;          /* playback re-asserts at the new scale */
             pa_mark_dirty(inst);
         }
         return 1;
