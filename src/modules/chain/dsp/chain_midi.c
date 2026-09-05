@@ -742,10 +742,30 @@ void v2_on_midi(void *instance, const uint8_t *msg, int len, int source) {
     int out_lens[MIDI_FX_MAX_OUT_MSGS];
     int out_count = v2_process_midi_fx(inst, msg, len, out_msgs, out_lens, MIDI_FX_MAX_OUT_MSGS);
 
-    /* Send processed messages to synth */
-    for (int i = 0; i < out_count; i++) {
-        if (inst->synth_plugin_v2 && inst->synth_instance && inst->synth_plugin_v2->on_midi) {
-            inst->synth_plugin_v2->on_midi(inst->synth_instance, out_msgs[i], out_lens[i], source);
+    /* Send processed messages to synth — unless this slot's stream is bound
+     * for the PORT (midi_out = external; item 15, 2026-09-05). */
+    if (inst->midi_out != CHAIN_MIDI_OUT_EXTERNAL) {
+        for (int i = 0; i < out_count; i++) {
+            if (inst->synth_plugin_v2 && inst->synth_instance && inst->synth_plugin_v2->on_midi) {
+                inst->synth_plugin_v2->on_midi(inst->synth_instance, out_msgs[i], out_lens[i], source);
+            }
+        }
+    }
+    /* ...and/or out the USB-A port, as USB-MIDI packets on cable 2, the
+     * channel rewritten when the slot says so (the host's per-slot remap has
+     * already put the slot's forward channel on the stream; a sequencer's
+     * MIDI track wants ITS channel on the wire). Realtime-safe: the ring is
+     * the same SPSC ring the overtake DSP writes. */
+    if (inst->midi_out != CHAIN_MIDI_OUT_SYNTH && inst->host && inst->host->midi_send_external) {
+        for (int i = 0; i < out_count; i++) {
+            uint8_t st = out_msgs[i][0];
+            if (st < 0x80) continue;
+            if (st < 0xF0 && inst->midi_out_channel >= 0)
+                st = (uint8_t)((st & 0xF0) | (inst->midi_out_channel & 0x0F));
+            const uint8_t pkt[4] = { (uint8_t)(0x20 | (st >> 4)), st,
+                                     out_lens[i] > 1 ? out_msgs[i][1] : 0,
+                                     out_lens[i] > 2 ? out_msgs[i][2] : 0 };
+            inst->host->midi_send_external(pkt, 4);
         }
     }
 

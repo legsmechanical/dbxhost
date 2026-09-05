@@ -1415,6 +1415,7 @@ int shadow_inprocess_load_chain(void) {
     shadow_host_api.get_bpm = host.get_bpm;  /* Tempo query for LFO sync */
     shadow_host_api.get_beat_position = host.get_beat_position;  /* transport phase for LFO sync */
     shadow_host_api.midi_inject_to_move = shadow_chain_midi_inject;
+    shadow_host_api.midi_send_external = host.midi_send_external;   /* USB-A out for `midi_out` (item 15) */
     shadow_host_api.slot_recv_channel = shadow_chain_slot_recv_channel;
 
     move_plugin_init_v2_fn init_v2 = (move_plugin_init_v2_fn)dlsym(

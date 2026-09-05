@@ -1130,6 +1130,7 @@ int v2_parse_patch_file(chain_instance_t *inst, const char *path, patch_info_t *
     /* Mark channel fields as absent; json_get_int only overwrites if present. */
     patch->receive_channel = PATCH_CHANNEL_UNSET;
     patch->forward_channel = PATCH_CHANNEL_UNSET;
+    patch->midi_out_channel = -1;          /* as-is unless the patch says otherwise */
 
     /* Parse name */
     json_get_string(json, "name", patch->name, MAX_NAME_LEN);
@@ -1716,6 +1717,9 @@ int v2_parse_patch_file(chain_instance_t *inst, const char *path, patch_info_t *
 
     /* Parse midi_fx_pre_mode (top-level; absence = Post). */
     json_get_int(json, "midi_fx_pre_mode", &patch->midi_fx_pre_mode);
+    /* midi_out / midi_out_channel (top-level; absence = synth / as-is). */
+    json_get_int(json, "midi_out", &patch->midi_out);
+    json_get_int(json, "midi_out_channel", &patch->midi_out_channel);
 
     /* Parse LFO config: "lfos": { "lfo1": { ... }, "lfo2": ... } */
     const char *lfos_pos = strstr(json, "\"lfos\"");
@@ -1994,6 +1998,8 @@ int v2_load_patch(chain_instance_t *inst, int patch_idx) {
     if (rc == 0) {
         inst->current_patch = patch_idx;
         inst->midi_fx_pre_mode = inst->patches[patch_idx].midi_fx_pre_mode ? 1 : 0;
+        inst->midi_out = inst->patches[patch_idx].midi_out;
+        inst->midi_out_channel = inst->patches[patch_idx].midi_out_channel;
         inst->dirty = 0;
     }
     return rc;

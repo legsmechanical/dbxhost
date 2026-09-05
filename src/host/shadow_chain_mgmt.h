@@ -92,6 +92,13 @@ typedef struct {
      * Pushes the changed value to the web param notify ring for real-time
      * browser updates. May be NULL if web ring is not available. */
     void (*on_param_changed)(uint8_t slot, const char *key, const char *value);
+
+    /* USB-A MIDI out (cable 2): the shim's audio-thread-safe ring. Handed to
+     * every chain slot's host API so a slot with `midi_out` = external/both
+     * can send its post-MIDI-FX stream out the port (2026-09-05, dAVEBOx
+     * item 15: a MIDI track routes through its parked slot's MIDI FX).
+     * NULL on a host without the ring; the chain then keeps the stream. */
+    int (*midi_send_external)(const uint8_t *msg, int len);
 } chain_mgmt_host_t;
 
 /* ============================================================================
