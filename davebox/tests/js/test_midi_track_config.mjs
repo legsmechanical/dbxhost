@@ -92,12 +92,12 @@ step('a NONE track stays collapsed to the row that picks an instrument', () => {
     const k = menuFor(2);
     if (k.join(',') !== 'trackto') throw new Error('rows: ' + k.join(','));
 });
-step('the MIDI track\'s CONFIG screen: mode, layout, transpose, velin, afttch — and NO looper', () => {
+step('the MIDI track\'s CONFIG screen: mode, layout, transpose, velin, LOOPER, afttch (Josh, 09-05: the looper is a MIDI looper)', () => {
     S.activeTrack = 1;
     const keys = configRowsFor(1);
     for (const want of ['mode', 'layout', 'transpose', 'velin', 'afttch'])
         if (!keys.includes(want)) throw new Error('missing ' + want + ' in ' + keys.join(','));
-    if (keys.includes('looper')) throw new Error('Looper offered to a MIDI track: ' + keys.join(','));
+    if (!keys.includes('looper')) throw new Error('Looper missing on a MIDI track (it loops the note stream): ' + keys.join(','));
     if (sound.soundPickStateForTest().view === 0) throw new Error('the config door did not open');
 });
 step('CONTROL: the same screen on a Schwung track still has the Looper', () => {

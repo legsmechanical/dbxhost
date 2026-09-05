@@ -411,16 +411,15 @@ function configRows(t) {
         min: 0, max: 127, step: 1, int: true, fmt: fmtVelOverride,
         get: () => GS.trackVelOverride[t] | 0,
         set: (v) => applyTrackConfig(t, 'track_vel_override', v) });
-    /* The looper records the track's OWN instrument; a MIDI-routed track's
-     * sound lives in whatever is on the other end of the cable, so the row
-     * would promise a capture that cannot happen. Every other row here is a
-     * property of the note stream and applies (Josh's default, 2026-09-05). */
-    if (GS.trackRoute[t] !== 2) {
-        rows.push({ key: 'looper', label: 'Looper',
-            opts: [0, 1], fmt: (v) => (v ? 'On' : 'Off'),
-            get: () => (GS.trackLooper[t] !== 0 ? 1 : 0),
-            set: (v) => applyTrackConfig(t, 'track_looper', v ? 1 : 0) });
-    }
+    /* Every row here is a property of the NOTE STREAM, the looper included:
+     * it is a MIDI looper (seq8_looper.c), so a MIDI-routed track's notes loop
+     * out the cable exactly as a Schwung track's loop into its chain. Josh,
+     * 2026-09-05: "looper should work with midi tracks" — the first cut hid
+     * the row on the belief that it captured the instrument's SOUND. */
+    rows.push({ key: 'looper', label: 'Looper',
+        opts: [0, 1], fmt: (v) => (v ? 'On' : 'Off'),
+        get: () => (GS.trackLooper[t] !== 0 ? 1 : 0),
+        set: (v) => applyTrackConfig(t, 'track_looper', v ? 1 : 0) });
     /* Pad pressure: owned by the repeat-velocity system on drum tracks, so the
      * row is hidden there. Move takes poly AT only. */
     if (GS.trackPadMode[t] !== PMD) {
