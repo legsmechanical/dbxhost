@@ -86,7 +86,12 @@ const LOOP_TAP_MS  = 425;
 const STRETCH_BLOCKED_MS = 1500;
 
 /* Session overview overlay (hold CC 50) */
-const NOTE_SESSION_HOLD_MS = 120;    /* matching STEP_HOLD_MS */
+/* The Note/Session TAP-vs-HOLD threshold: a release before it toggles the
+ * view; past it the view was a momentary PEEK and the release switches back.
+ * Was 120 ms ("matching STEP_HOLD_MS") — Josh, 2026-09-05: "it's too easy to
+ * peek now when you're trying to toggle." A deliberate toggle tap is well under
+ * 250 ms; a peek is a hold you notice. Milliseconds on the one clock. */
+const NOTE_SESSION_HOLD_MS = 350;
 const BACK_HOLD_MS = 450;            /* a deliberate long-press on Back = suspend from anywhere (vs a short tap = back out one UI level) */
 
 /* ⭑ ONE owner of "finish a Key/Scale pick". Their menu `set()` is a live
