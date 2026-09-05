@@ -190,11 +190,14 @@ export function bannerDaveYOff(masterPos) {
 /* The Daves switch. Read once, lazily; written on every change. */
 export function daveWindowOn() {
     if (S.daveWindowOn === null) {
-        let on = false;
+        /* DEFAULT ON (Josh, 2026-09-05: "put the daves on by default"): no pref
+         * file yet means the switch has never been touched, and the window is
+         * the shipped look. Only an explicit '0' turns it off. */
+        let on = true;
         try {
-            on = host_file_exists(WINDOW_PREF_PATH) &&
-                 String(host_read_file(WINDOW_PREF_PATH) || '').trim() === '1';
-        } catch (e) { on = false; }
+            if (host_file_exists(WINDOW_PREF_PATH))
+                on = String(host_read_file(WINDOW_PREF_PATH) || '').trim() !== '0';
+        } catch (e) { on = true; }
         S.daveWindowOn = on;
     }
     return S.daveWindowOn;
