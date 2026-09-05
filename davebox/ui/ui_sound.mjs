@@ -542,6 +542,7 @@ const S = {
      * was EMPTY, rather than by choosing to browse. '' = the ordinary case. */
     browsePrompt: '',
     genAfterReflavour: null,       /* one-shot: a generator picked for a track that had to become Schwung first (see the reflavour action) */
+    followDest: null,              /* the view an IN-FLIGHT follow will land on (see effectiveView) — null when no follow is queued */
 
     blockIdx: 1,                /* default to SYNTH, the common case */
     comp: 'synth',
@@ -902,7 +903,32 @@ export function soundMacrosForTest() {
  * page while the card is not visible). */
 export function soundOpen() { return S.active; }
 export function soundResting() {
+    /* A follow in flight is never at rest, whatever S.view says mid-chain: a
+     * fast Shift+scroll crossing a Move track passed through its PROMPT
+     * between two detents, read as resting, and the next detent CLOSED sound
+     * mode — the overview dump (device, 2026-09-05). */
+    if (followInFlight()) return false;
     return !!(S.active && (S.view === VIEW_MACROS || S.view === VIEW_PROMPT) && !soundIsGlobal() && !GS.bankCardLatched);
+}
+/* Where the screen is GOING, not where it is. Every follow lands through a
+ * queued action (retarget → then), so between two detents faster than a tick
+ * S.view holds an intermediate state — VIEW_BLOCKS from a retarget, VIEW_PROMPT
+ * from a Move entry — and a plan read off it forgot it was walking editors:
+ * a fast Shift+scroll from an editor landed on the MENU, and onto a NONE track
+ * on its menu instead of the message (device, 2026-09-05; reproduced by
+ * test_track_switch_follows_editor_cc). The plan reads the destination. */
+function followInFlight() { return !!(S.pendingAction && S.followDest !== null && S.followDest !== undefined); }
+function effectiveView() { return followInFlight() ? S.followDest : S.view; }
+function followDestOf(plan) {
+    if (plan.editor) return VIEW_EDIT;
+    if (plan.noEditor) return VIEW_NOEDITOR;
+    const th = plan.then;
+    if (!th) return VIEW_BLOCKS;
+    if (th.t === 'view') return th.view | 0;
+    if (th.t === 'slotcfg') return VIEW_SLOTCFG;
+    if (th.t === 'lfo') return VIEW_LFO;
+    if (th.t === 'knobs') return VIEW_KNOBS;
+    return VIEW_BLOCKS;
 }
 export function soundActive() { return S.active && !soundResting(); }
 /* Sound mode is open ON ITS ROOT SCREEN — the block picker, i.e. what the bank
@@ -1204,7 +1230,8 @@ export function soundFollowTrack(track) {
     if (S.view === VIEW_PRESET_SRC || S.view === VIEW_PRESET_LIST || S.view === VIEW_PRESET_BAKED)
         keepAudition();
     const route = GS.trackRoute[track];
-    const plan = followPlan(S.view, route);
+    const plan = followPlan(effectiveView(), route);
+    S.followDest = followDestOf(plan);
     /* S1 INSTRUMENTATION (device, 2026-09-05): the NONE-track and fast-scroll
      * caveats pass in the harness — log the plan and every landing so ONE
      * repro on the device names the path. debug.log only. */
@@ -1486,6 +1513,7 @@ export function soundExit(opts) {
     S.bankHome = BANK_SOUND;
     clearBusContext();
     S.pendingAction = null;
+    S.followDest = null;
     S.pendingDiscover = 0;
     /* An in-flight vouch is DROPPED, not flushed. Its whole meaning is "focus
      * the pad I am looking at right now", and we are no longer looking. */
@@ -7047,6 +7075,7 @@ export function soundTick() {
             const a = S.pendingAction;
             S.pendingAction = null;
             runAction(a);
+            if (!S.pendingAction) S.followDest = null;   /* the follow has landed */
         }
         /* ⚠⚠ AND DISCOVERY — the FOURTH thing this early return stranded, and
          * the only one that writes something WRONG rather than doing nothing.
@@ -7169,6 +7198,7 @@ export function soundTick() {
         const a = S.pendingAction;
         S.pendingAction = null;
         runAction(a);
+        if (!S.pendingAction) S.followDest = null;       /* the follow has landed */
     }
 
     tickChainPatches();
