@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "host/midi_fx_api_v1.h"
+#include "host/json_tiny.h"
 #include "host/plugin_api_v1.h"
 
 #define SAMPLE_RATE 44100
@@ -36,19 +37,6 @@ static int json_get_string(const char *json, const char *key, char *out, int out
     return len;
 }
 
-static int json_get_int(const char *json, const char *key, int *out) {
-    if (!json || !key || !out) return 0;
-    char search[64];
-    snprintf(search, sizeof(search), "\"%s\"", key);
-    const char *pos = strstr(json, search);
-    if (!pos) return 0;
-    const char *colon = strchr(pos, ':');
-    if (!colon) return 0;
-    colon++;
-    while (*colon && (*colon == ' ' || *colon == '\t')) colon++;
-    *out = atoi(colon);
-    return 1;
-}
 
 typedef enum {
     CHORD_NONE = 0,
@@ -479,7 +467,7 @@ static void chord_set_param(void *instance, const char *key, const char *val) {
             else if (strcmp(type_str, "octave") == 0) inst->type = CHORD_OCTAVE;
             else if (strcmp(type_str, "add9") == 0) inst->type = CHORD_ADD9;
         }
-        if (json_get_int(val, "strum", &strum_val)) {
+        if (json_tiny_get_int(val, "strum", &strum_val)) {
             if (strum_val < 0) strum_val = 0;
             if (strum_val > 100) strum_val = 100;
             inst->strum_ms = strum_val;

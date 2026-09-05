@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "host/midi_fx_api_v1.h"
+#include "host/json_tiny.h"
 #include "host/plugin_api_v1.h"
 
 #define MAX_ARP_NOTES 16
@@ -50,19 +51,6 @@ static int json_get_string(const char *json, const char *key, char *out, int out
     return len;
 }
 
-static int json_get_int(const char *json, const char *key, int *out) {
-    if (!json || !key || !out) return 0;
-    char search[64];
-    snprintf(search, sizeof(search), "\"%s\"", key);
-    const char *pos = strstr(json, search);
-    if (!pos) return 0;
-    const char *colon = strchr(pos, ':');
-    if (!colon) return 0;
-    colon++;
-    while (*colon && (*colon == ' ' || *colon == '\t')) colon++;
-    *out = atoi(colon);
-    return 1;
-}
 
 typedef enum {
     ARP_OFF = 0,
@@ -489,7 +477,7 @@ static void arp_set_param(void *instance, const char *key, const char *val) {
             else if (strcmp(mode_str, "up_down") == 0) inst->mode = ARP_UPDOWN;
             else if (strcmp(mode_str, "random") == 0) inst->mode = ARP_RANDOM;
         }
-        if (json_get_int(val, "bpm", &bpm_val)) {
+        if (json_tiny_get_int(val, "bpm", &bpm_val)) {
             if (bpm_val < 40) bpm_val = 40;
             if (bpm_val > 240) bpm_val = 240;
             inst->bpm = bpm_val;
