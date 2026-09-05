@@ -250,7 +250,7 @@ function buildGlobalMenuItems() {
         createDivider(),
         /* The Daves switch (Josh, 2026-09-05): On = a collected Dave scrolls
          * through the session banner while playing; Off = the static wordmark.
-         * Default ON (Josh, 2026-09-05); device-global, beside the collection. */
+         * Default OFF (Josh, 2026-09-05); device-global, beside the collection. */
         createToggle('Daves', {
             get: function() { return daveWindowOn(); },
             set: function(v) { setDaveWindowOn(v); },
