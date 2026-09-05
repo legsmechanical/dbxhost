@@ -284,6 +284,19 @@ step('⚠ CONTROL: the two lengths really do differ', () => {
                         ' — the duration is being ignored');
 });
 
+step('⭑ a NONE track: the HOLD opens the INSTRUMENT PICKER over its menu (Josh, 2026-09-05)', () => {
+    /* Nothing to edit and never the parked chain — so the hold lands on the one
+     * choice the track is waiting for, instead of a popup that only named the gap. */
+    sound.soundExit(); ticks(4);
+    S.trackRoute[0] = 3;                 /* ROUTE_NONE */
+    shiftNoteHold(); ticks(6);
+    const v = sound.soundPickStateForTest().view;
+    if (v !== 17) throw new Error('the hold on a NONE track landed on view ' + v + ', not the enum picker (17)');
+    const pk = sound.soundPickStateForTest().enumPick;
+    if (pk !== 'Instrument') throw new Error('the picker open is not the Instrument picker: ' + JSON.stringify(pk));
+    S.trackRoute[0] = 0; sound.soundExit(); ticks(4);
+});
+
 step('a MIDI-routed track opens nothing and says why — on the HOLD', () => {
     /* ⚠ The HOLD is what reaches an instrument, so the hold is what has to
      * refuse. A TAP opens SOUND + CONFIG for ANY route: a MIDI track has that
@@ -454,10 +467,11 @@ step('⚠ control: with no gesture crumb, Menu is NOT a closer', () => {
      * leave from a close. A LEAVE keeps the track recorded on SOUND + CONFIG
      * (the screen is waiting when you return); a CLOSE resets it. Josh's 08-25
      * words are exactly this: "without resetting the track's current bank place". */
-    if (S.trackActiveBank[0] !== BANK_SOUND)
-        throw new Error('the track stopped being recorded on SOUND + CONFIG (bank ' +
-                        S.trackActiveBank[0] + ') — Menu acted as a CLOSER without a gesture ' +
-                        'crumb, reversing the 08-25 retirement');
+    /* RE-PINNED 2026-09-05: a gesture entry no longer RECORDS the bank (only the
+     * jog does), so leave-vs-close is read off the LIVE bank: a LEAVE keeps the
+     * SOUND + CONFIG identity on the mirror, a CLOSE hands the origin back. */
+    if (S.activeBank !== BANK_SOUND)
+        throw new Error('Menu acted as a CLOSER without a gesture crumb (bank ' + S.activeBank + '), reversing the 08-25 retirement');
 });
 
 /* CONTROL 2 — the crumb cannot outlive its screen and strand a stale return. */
@@ -478,10 +492,8 @@ step('⚠ control: leaving by any other route SPENDS the crumb', () => {
     ticks(4);
     menuPress();
     ticks(4);
-    if (S.trackActiveBank[0] !== BANK_SOUND)
-        throw new Error('a STALE crumb from an earlier gesture drove this exit (landed on bank ' +
-                        S.trackActiveBank[0] + ') — that is the "banks land somewhere I did not ' +
-                        'leave them" bug the crumb exists to avoid');
+    if (S.activeBank !== BANK_SOUND)
+        throw new Error('a STALE crumb from an earlier gesture drove this exit (landed on bank ' + S.activeBank + ') — the "banks land somewhere I did not leave them" bug the crumb exists to avoid');
 });
 
 /* ⭑ AN EMPTY GENERATOR OPENS THE PICKER (Josh, 2026-08-27). It used to drop you

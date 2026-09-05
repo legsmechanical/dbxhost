@@ -578,18 +578,25 @@ function _onMidiInternalImpl(data) {
                             automationParamTouch(_t, _c, 'seq', _tg.slice(4), true);
                         }
                     }
-                    /* The session strip's automation gestures (2026-09-04):
-                     * Delete + touch clears the strip's automation in the
-                     * track's clip; the touch itself opens the gesture. Mute +
-                     * touch keeps its session meaning (mute / solo the track). */
+                    /* The session strip's automation gestures (2026-09-04, re-ruled
+                     * 2026-09-05): Delete + touch clears the strip's automation in
+                     * the track's clip, and the touch itself opens the gesture.
+                     * ⚠ NO Mute + touch automation toggle here — Josh: "mute touch
+                     * to mute track is the thing we need to keep", and Shift+Mute
+                     * is already SOLO, so the chord has no free meaning in session
+                     * view; a strip's lane is switched on/off from the AUTOMATION
+                     * bank instead. The ring blink and the fader mark still show
+                     * the lane. ONE popup for the clear, however many targets. */
                     if (S.sessionView) {
                         const _mode = SESS_KNOB_MODES[S.sessKnobMode];
                         if (_mode && _mode.widget !== 'gateway') {
                             const _c = effectiveClip(d1);
+                            let _cleared = false;
                             for (const tg of sessStripTargets(S, d1, _mode.key)) {
-                                if (S.deleteHeld && automationClearKey(d1, _c, tg.target)) showActionPopup('AUTOMATION', 'CLEARED');
+                                if (S.deleteHeld && automationClearKey(d1, _c, tg.target)) _cleared = true;
                                 automationParamTouch(d1, _c, tg.slot, tg.fullKey, true);
                             }
+                            if (_cleared) showActionPopup('AUTOMATION', 'CLEARED');
                         }
                     }
                     if (S.sessionView && S.muteHeld) {

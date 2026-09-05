@@ -107,6 +107,10 @@ const click = () => { cc(3, 127); cc(3, 0); globalThis.tick(); };
 const turn  = (d) => { touch(true); jog(d); globalThis.tick(); click(); touch(false); globalThis.tick(); };
 
 function reset() {
+    /* A track switch FOLLOWS in sound mode since 2026-09-05 (item 20), so a
+     * step that switched tracks leaves sound mode OPEN; the next step starts
+     * closed, like the device does after Back. */
+    if (snd.soundOpen()) snd.soundExit();
     S.sessionView = false; S.globalMenuOpen = false;
     S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
     S.awaitingProjectSelect = false; S.loopHeld = false; S.shiftHeld = false;

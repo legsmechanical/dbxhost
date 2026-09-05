@@ -2553,7 +2553,11 @@ export function drawKitHeaderParamPages(left, right, inverted) {
  * never sets it draws exactly the pixels it drew before. Top-right of the
  * widget box, any kind. */
 function drawAutoMark(col, rowY, filled) {
-    const cx = col * MV_CELL_W + MV_CELL_W - 4, cy = rowY + 2;
+    drawAutoMarkAt(col * MV_CELL_W + MV_CELL_W - 4, rowY + 2, filled);
+}
+/* The same mark at an explicit centre — the session FADER row has no kit cell
+ * to anchor to (16px columns, not 32), so it places the circle itself. */
+export function drawAutoMarkAt(cx, cy, filled) {
     set_pixel(cx - 1, cy - 2, 1); set_pixel(cx, cy - 2, 1); set_pixel(cx + 1, cy - 2, 1);
     set_pixel(cx - 2, cy - 1, 1); set_pixel(cx + 2, cy - 1, 1);
     set_pixel(cx - 2, cy,     1); set_pixel(cx + 2, cy,     1);

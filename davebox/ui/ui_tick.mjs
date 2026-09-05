@@ -22,8 +22,7 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND, BANK_MACROS, isSoundBank,
-    POLL_INTERVAL,
-} from './ui_constants.mjs';
+    POLL_INTERVAL, ROUTE_NONE } from './ui_constants.mjs';
 
 import { S, standDownBankDisplay } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -57,7 +56,7 @@ import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
          SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS, SESS_KNOB_MODES } from './ui_engine.mjs';
-import { soundActive, soundOpen, soundResting, soundEnter, soundEnterMove, soundExit,
+import { soundEntryRecords, soundActive, soundOpen, soundResting, soundEnter, soundEnterMove, soundExit,
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
     soundEnteredInSession, soundConsumeLedDirty,
     soundConsumeCoRunRequest, soundShowMenu, soundSetBank, midiVal, midiSendValue } from './ui_sound.mjs';
@@ -1331,7 +1330,10 @@ export function _tickImpl() {
             S.pendingSoundEnterSilent = false;
             const _macros = S.pendingSoundEnterMacros;
             S.pendingSoundEnterMacros = false;
+            const _record = S.pendingSoundEnterRecord;
+            S.pendingSoundEnterRecord = false;
             if (_st === S.activeTrack && !soundOpen()) {
+                soundEntryRecords(_record);          /* only the jog's walk records (2026-09-05) */
                 /* The ROUTE picks the flavour: a Move-routed track's sound is
                  * its Move instrument bus, a Schwung-routed one's is its chain.
                  * Slot is addressed directly per track — always resolvable. */
@@ -1344,7 +1346,8 @@ export function _tickImpl() {
                 if (_wantMenu) soundShowMenu();
                 /* The bank named MACROS: the same entry, landing on its page
                  * (the second identity of sound mode — see BANK_MACROS). */
-                else if (_macros) soundSetBank(BANK_MACROS);
+                else if (_macros) soundSetBank(BANK_MACROS, _record);
+                soundEntryRecords(false);
                 /* A RETURN, not a gesture: the user switched tracks, they did
                  * not ask to see this screen. Both entry paths stamp the bank
                  * display window unconditionally (Shift+Note NEEDS that — see
@@ -1482,7 +1485,11 @@ export function _tickImpl() {
              * its own, so take it from the source of truth rather than assuming
              * the two agree. Everywhere else: the active track, as before. */
             const _tvT = S.moveCoRunTrack >= 0 ? S.moveCoRunTrack : S.activeTrack;
-            if (S.trackRoute[_tvT] === 2) {
+            if (S.trackRoute[_tvT] === ROUTE_NONE) {
+                /* NONE: a fader that moved nothing audible is a dead control —
+                 * say so once per gesture, like a MIDI follower (2026-09-05). */
+                if (!S.tvExtWarned) { S.tvExtWarned = true; showActionPopup('NO INSTRUMENT', 'NO VOLUME'); }
+            } else if (S.trackRoute[_tvT] === 2) {
                 /* A MIDI-routed track's volume IS standard MIDI volume: send
                  * CC 7 on the track's channel out the port (Josh, 2026-08-24).
                  * One CC per detent, 0-127, seeded from the session-local

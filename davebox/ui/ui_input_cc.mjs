@@ -25,8 +25,7 @@ import {
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
-    fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool
-} from './ui_constants.mjs';
+    fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
@@ -54,7 +53,7 @@ import { automationParamEdit } from './ui_automation.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { bankKnobLockTurn } from './ui_sound.mjs';
-import { soundActive, soundOpen, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator,
+import { soundActive, soundOpen, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, soundEnterBuses } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
@@ -1167,6 +1166,7 @@ export function applyBankPick(rest) {
             S.lastSentMenuEditValue = null;
             S.pendingSoundEnterTrack = t;
             S.pendingSoundEnterMacros = (next === BANK_MACROS);
+            S.pendingSoundEnterRecord = true;        /* the jog walked here: this entry records the bank */
             if (rest) S.pendingSoundEnterSilent = true; else armBankDisplay();
         } else if (next !== S.activeBank) {
             soundSetBank(next);
@@ -2180,6 +2180,12 @@ if (S.trackRoute[_gt] === 1) {
     enterMoveNativeCoRun(_gt);
 } else if (S.trackRoute[_gt] === 2) {
     showActionPopup('MIDI TRACK', 'No generator to edit');
+} else if (S.trackRoute[_gt] === ROUTE_NONE) {
+    /* NONE: nothing to edit and never the parked chain — the hold opens the
+     * INSTRUMENT PICKER over the track's menu (Josh, 2026-09-05; the first cut
+     * showed a NO INSTRUMENT popup, which named the gap without offering the
+     * way out). */
+    soundOpenInstrPicker(_gt);
 } else {
     /* An EMPTY generator opens the module picker itself (Josh, 2026-08-27)
      * with 'SELECT GENERATOR' over it — soundOpenGenerator always succeeds,

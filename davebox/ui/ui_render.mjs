@@ -16,7 +16,7 @@ import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
     BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION,
-    INSTR_SCHWUNG, INSTR_MOVE_MAX, INSTR_MIDI_CH, INSTR_TRACK,
+    INSTR_SCHWUNG, INSTR_MOVE_MAX, INSTR_MIDI_CH, INSTR_TRACK, INSTR_NONE,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
     SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
     col4, col5, pixelPrint, pixelPrintC,
@@ -24,7 +24,7 @@ import {
     fmtArpRate, fmtVelOverride, fmtPlayDir, fmtRevStyle,
     fmtDly, fmtArpStyle, fmtArpSteps, fmtDiq, fmtPlain, fmtLgto, fmtPitchRnd
 } from './ui_constants.mjs';
-import {
+import { drawAutoMarkAt,
     drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitBankHeader,
     kitUseLayout,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
@@ -98,6 +98,7 @@ export function refreshInstrAbbrev() {
     } else if (v >= 0 && v <= INSTR_MOVE_MAX)                a = 'MV' + (v + 1);
     else if (v >= INSTR_MIDI_CH && v <= INSTR_MIDI_CH + 15)  a = 'CH' + (v - INSTR_MIDI_CH + 1);
     else if (v >= INSTR_TRACK && v <= INSTR_TRACK + 7)       a = 'TR' + (v - INSTR_TRACK + 1);
+    else if (v === INSTR_NONE)                               a = 'NONE';   /* a track with nothing to play (item 13) */
     S.instrAbbrev = String(a || '--').toUpperCase();
     S.instrAbbrevAt = S.clockMs + 1000;
 }
@@ -444,8 +445,14 @@ function drawSessionFaderRow(cells, mode) {
             const xa = fx + 1, xb = fx + FW - 2, ya = TOP + 12, yb = BOT - 12;
             plotLine(xa, ya, xb, yb, 1);
             plotLine(xb, ya, xa, yb, 1);
-        } else if (c.kind !== 'blank')
+        } else if (c.kind !== 'blank') {
             drawVFader(fx, TOP, FW, BOT - TOP, c.norm || 0, unity);
+            /* The automation mark, as every kit cell carries it (filled =
+             * active, empty = deactivated): the arc modes get it from the kit
+             * grid; the fader row draws it above the fader (Josh, 2026-09-05:
+             * session knobs at parity with the track-view knobs). */
+            if (c.auto === 'auto' || c.auto === 'auto-off') drawAutoMarkAt(fx + (FW >> 1), TOP - 4, c.auto === 'auto');
+        }
         if (valueLive && lk === i && c.kind !== 'blank' && c.kind !== 'xbox') continue;  /* drawn last */
         const lbl = String(i + 1);
         const lw = mvWidth(lbl);

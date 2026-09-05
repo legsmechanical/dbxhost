@@ -44,6 +44,13 @@ export function armBankDisplay() {
     S.bankDisplayArmedTick = S.tickCount;    /* "armed this pass" is a tick identity */
 }
 
+/* A FOLLOW arrival (item 20, 2026-09-05) is not a bank gesture: sound mode's
+ * entry paths arm the window as they always did, and the follow puts it back
+ * where it was — the "silent on return" law (08-25), owned here like every
+ * other write to the field. Read before the entry, restore after. */
+export function bankDisplayStamp() { return S.bankSelectTick; }
+export function restoreBankDisplay(stamp) { S.bankSelectTick = stamp; }
+
 export function standDownBankDisplay(force) {
     if (!force) {
         if (S.bankDisplayArmedTick === S.tickCount) return;   /* armed this pass */
@@ -775,6 +782,7 @@ export const S = {
 
     pendingSoundEnterSilent: false, /* the queued entry is a RETURN, not a gesture — do not open the bank display window */
     pendingSoundEnterMacros: false, /* the queued entry lands on the MACROS page, not the SOUND + CONFIG prompt */
+    pendingSoundEnterRecord: false,  /* the JOG's bank walk queued this entry: the only entry that RECORDS the bank on the track (Josh, 2026-09-05) */
     pendingSoundEnterTrack: -1, /* Sound mode entry queued from the Shift-release dispatch or the track menu. Entry's shadow_get/set_param traffic must run on the tick budget — hence the deferral. */
     pendingUndoSync: 0,
     pendingDefaultSetParams: [],
