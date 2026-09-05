@@ -56,7 +56,7 @@ import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
          SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS, SESS_KNOB_MODES } from './ui_engine.mjs';
-import { soundActive, soundOpen, soundResting, soundEnter, soundEnterMove, soundExit,
+import { soundEntryRecords, soundActive, soundOpen, soundResting, soundEnter, soundEnterMove, soundExit,
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
     soundEnteredInSession, soundConsumeLedDirty,
     soundConsumeCoRunRequest, soundShowMenu, soundSetBank, midiVal, midiSendValue } from './ui_sound.mjs';
@@ -1330,7 +1330,10 @@ export function _tickImpl() {
             S.pendingSoundEnterSilent = false;
             const _macros = S.pendingSoundEnterMacros;
             S.pendingSoundEnterMacros = false;
+            const _record = S.pendingSoundEnterRecord;
+            S.pendingSoundEnterRecord = false;
             if (_st === S.activeTrack && !soundOpen()) {
+                soundEntryRecords(_record);          /* only the jog's walk records (2026-09-05) */
                 /* The ROUTE picks the flavour: a Move-routed track's sound is
                  * its Move instrument bus, a Schwung-routed one's is its chain.
                  * Slot is addressed directly per track — always resolvable. */
@@ -1343,7 +1346,8 @@ export function _tickImpl() {
                 if (_wantMenu) soundShowMenu();
                 /* The bank named MACROS: the same entry, landing on its page
                  * (the second identity of sound mode — see BANK_MACROS). */
-                else if (_macros) soundSetBank(BANK_MACROS);
+                else if (_macros) soundSetBank(BANK_MACROS, _record);
+                soundEntryRecords(false);
                 /* A RETURN, not a gesture: the user switched tracks, they did
                  * not ask to see this screen. Both entry paths stamp the bank
                  * display window unconditionally (Shift+Note NEEDS that — see

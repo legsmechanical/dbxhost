@@ -1166,6 +1166,7 @@ export function applyBankPick(rest) {
             S.lastSentMenuEditValue = null;
             S.pendingSoundEnterTrack = t;
             S.pendingSoundEnterMacros = (next === BANK_MACROS);
+            S.pendingSoundEnterRecord = true;        /* the jog walked here: this entry records the bank */
             if (rest) S.pendingSoundEnterSilent = true; else armBankDisplay();
         } else if (next !== S.activeBank) {
             soundSetBank(next);

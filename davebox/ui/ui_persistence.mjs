@@ -1,6 +1,6 @@
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { NUM_TRACKS, NUM_CLIPS, DRUM_LANES, BANKS, ACTION_POPUP_MS,
+import { isSoundBank, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, BANKS, ACTION_POPUP_MS,
          VOL_CARD_MS } from './ui_constants.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 
@@ -195,7 +195,10 @@ export function writeSidecar() {
      * exception here is exactly why it did not: trackActiveBank stayed on the
      * bank you walked through (AUTOMATION), and that stale value is what the
      * exit restore, the co-run landing and the next launch all read. */
-    S.trackActiveBank[S.activeTrack] = S.activeBank;
+    /* ...except a sound bank reached by GESTURE, which is not the track's bank
+     * (Josh, 2026-09-05) — only the jog's walk records those. */
+    if (!isSoundBank(S.activeBank) || S.bankCardLatched)
+        S.trackActiveBank[S.activeTrack] = S.activeBank;
     ensureStateDir(S.currentSetUuid);
     host_write_file(uuidToUiStatePath(S.currentSetUuid), JSON.stringify({
         v: 9, at: S.activeTrack, ac: S.trackActiveClip.slice(), sv: S.sessionView ? 1 : 0,
