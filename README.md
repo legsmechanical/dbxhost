@@ -36,23 +36,36 @@ workspace and swaps it in only while a session runs.
 
 ## Installing
 
-> ⚠ **No packaged first-time install yet.** dAVEBOx is developed and used
-> daily, but the install story is currently a developer deploy loop, not a
-> product installer — a proper one is planned.
+dAVEBOx installs like any other Schwung module, and the first launch does the
+rest itself:
+
+1. In stock Schwung's web manager (`http://move.local:7700`), install
+   **dAVEBOx** from the catalog (it is a *tool*).
+2. On the Move: **Tools menu → dAVEBOx**. The first launch lays the dAVEBOx
+   host beside stock, asks stock Schwung's own helper to bless dAVEBOx's, and
+   installs the boot-recovery service — about a minute, once. Every later launch
+   is a launch.
 
 Prerequisites: an Ableton Move with [stock
-Schwung](https://github.com/charlesvestal/schwung) installed and SSH access.
+Schwung](https://github.com/charlesvestal/schwung) installed, at a version that
+carries [schwung#419](https://github.com/charlesvestal/schwung/pull/419) (the
+"bless a tool's helper" step). On an older stock Schwung the first launch stops
+before touching anything and the launch log names the one manual command:
 
-What exists today, in `standalone/scripts/`:
+```sh
+# only on a stock Schwung older than #419 — once, as root
+ssh root@move.local 'sh /data/UserData/schwung/modules/tools/davebox-sa/payload/scripts/layout-install.sh \
+    /data/UserData/schwung/modules/tools/davebox-sa/payload /data/UserData/dbx-host /data/UserData/schwung && \
+    sh /data/UserData/dbx-host/bless.sh'
+```
 
-- `install-sa.sh` — builds and deploys the whole deliverable (host + module)
-  to an existing dAVEBOx install; this is the update path.
-- `install-privileged.sh` — the one root step, run **once, ever, on the
-  device** (it lands there as `bless.sh`). It installs only the small heal
-  helper; the file documents exactly what it does and why root is needed.
-- First-time bootstrap (getting the tree onto a fresh device so the two
-  scripts above have something to update) is not yet scripted end-to-end —
-  if you want to run dAVEBOx before the installer lands, open an issue.
+Stock Schwung is never modified — dAVEBOx runs Move under its own build beside
+it, and a reboot always returns to stock.
+
+Developers: `standalone/scripts/install-sa.sh` builds and deploys the whole
+deliverable over SSH to an existing install (the update loop);
+`standalone/scripts/build-sa-release.sh` assembles the catalog tarball the
+release workflow publishes. See `standalone/README.md`.
 
 Once installed: stock Schwung's **Tools menu → dAVEBOx** starts a session;
 **Shift + Back** (or Quit in the Settings menu) hands the device back to

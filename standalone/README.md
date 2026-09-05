@@ -143,12 +143,29 @@ new hardcoded stock-tree literal for a private state family in `shadow_ui.js`.
 
 ## Install
 
-```sh
-# once, ever — needs root
-ssh root@move.local 'sh /data/UserData/dbx-host/bless.sh'
-```
+**Users:** install the *dAVEBOx* tool from the catalog, then **Tools → dAVEBOx**.
+The first launch installs everything else (2026-09-05, the zero-SSH install):
 
-Then launch davebox from the Schwung Tools menu.
+1. `launch.sh` finds the helper unblessed or the install dir missing and runs the
+   payload's `scripts/bootstrap.sh` — BEFORE anything touches the stock stack.
+2. `bootstrap.sh` stages `bin/heal.new` in the module dir and asks **stock's**
+   `schwung-heal` to bless it (charlesvestal/schwung#419: `modules/tools/<id>/bin/heal.new`
+   → `bin/heal` root 04755). No bless → it stops there and names the manual step.
+3. `scripts/layout-install.sh` lays `payload/` into `$DBX_DIR` (merge-not-replace,
+   workspace separation, the modules/ mirror — the same script `install-host.sh` runs).
+4. `heal --install-restore-unit` installs the boot-recovery unit; `sa-build.json` is stamped.
+
+The helper lives at `modules/tools/davebox-sa/bin/heal` — ableton owns that dir,
+so a stock or catalog reinstall of the module can un-setuid it; the launcher treats
+"not setuid" as a re-bless condition on every launch, not a first-run one.
+
+**A stock Schwung older than #419** cannot bless a tool helper. The manual route is
+`layout-install.sh` (as ableton or root) followed by `bless.sh` as root — see the
+root README. `install-privileged.sh` is what lands as `bless.sh`.
+
+**Developers:** `install-sa.sh` (build + deploy over SSH to an existing install);
+`build-sa-release.sh` assembles the catalog tarball (`davebox-sa-module.tar.gz`) the
+release workflow attaches; `release.json` at the repo root points the manager at it.
 
 ## The watchdog
 

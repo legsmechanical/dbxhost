@@ -1,7 +1,7 @@
 {
   "id": "davebox-sa",
   "name": "dAVEBOx",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "abbrev": "dAVEBOx",
   "description": "Restart Move under the davebox Schwung host and open dAVEBOx. Stock Schwung is untouched and returns on exit or reboot.",
   "author": "legsmechanical",
