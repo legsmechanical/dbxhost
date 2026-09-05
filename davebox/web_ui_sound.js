@@ -181,6 +181,12 @@ function renderSound() {
     chain.appendChild(sndStaticCard("MIDI", "sends MIDI out — nothing to edit here"));
     return;
   }
+  if (route === 3) {
+    /* NONE (item 13, 2026-09-05): the pattern plays, nothing is emitted, the
+     * chain slot is PARKED — never show its cards as if they played. */
+    chain.appendChild(sndStaticCard("NONE", "no instrument — pick one in the track's settings"));
+    return;
+  }
   if (route === 1) {
     const bus = moveBusForChannel(trk.chan);
     chain.appendChild(sndStaticCard("INSTRUMENT", "Move " + bus + " — edit on device"));

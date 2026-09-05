@@ -64,6 +64,7 @@ function mixPrefixFor(t) {
   const route = trk.route === undefined ? 0 : trk.route;
   if (route === 1) return "move_fx:" + moveBusForChannel(trk.chan) + ":";
   if (route === 2) return null;                 /* MIDI out — no audio here */
+  if (route === 3) return null;                 /* NONE — nothing plays; the chain is parked */
   return "chain:" + t + ":";
 }
 function mixInstLabel(t) {
@@ -72,6 +73,7 @@ function mixInstLabel(t) {
   const route = trk.route === undefined ? 0 : trk.route;
   if (route === 1) return "Move " + moveBusForChannel(trk.chan);
   if (route === 2) return "MIDI";
+  if (route === 3) return "None";
   const name = mixKV["chain:" + t + ":synth_name"] || mixKV["chain:" + t + ":synth_module"];
   return name || "no instrument";
 }
