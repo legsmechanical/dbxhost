@@ -200,6 +200,7 @@ static int sp_track_config(sp_ctx_t *cx) {
         if (!strcmp(val, "schwung"))      rt = ROUTE_SCHWUNG;
         else if (!strcmp(val, "move"))    rt = ROUTE_MOVE;
         else if (!strcmp(val, "external")) rt = ROUTE_EXTERNAL;
+        else if (!strcmp(val, "none"))    rt = ROUTE_NONE;
         else return 1;
         tr->pfx.route = rt;
         { int _rl; for (_rl = 0; _rl < DRUM_LANES; _rl++) tr->drum_lane_pfx[_rl].route = rt; }

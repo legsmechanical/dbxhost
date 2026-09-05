@@ -127,10 +127,17 @@ export const INSTR_MOVE_MAX   = 3;      /* 0..3 = Move 1..4 */
 export const INSTR_SCHWUNG    = 4;
 export const INSTR_MIDI_CH    = 10;     /* +0..15 = MIDI Ch 1..16 */
 export const INSTR_TRACK      = 30;     /* +0..7  = Track 1..8   */
+/* NONE (Josh, 2026-09-05: "add none option for instrument selection"): a track
+ * with NO instrument — the pattern still plays, nothing is emitted, the chain
+ * slot is parked. Outside every band, and NOT the unseeded `--`: a track the
+ * user emptied and a track not yet read must never look the same. */
+export const INSTR_NONE       = 40;
+export const ROUTE_NONE       = 3;      /* S.trackRoute value; DSP `t<N>_route` = 'none' */
 
 export function fmtInstr(v) {
     v = v | 0;
     if (v === INSTR_SCHWUNG) return 'Schwung';
+    if (v === INSTR_NONE)    return 'None';
     /* Each band is bounded at BOTH ends. An open-ended `>=` would format a
      * stray value as a plausible destination that does not exist ("MIDI Ch 17"),
      * which is worse than showing it is wrong. */
@@ -171,6 +178,9 @@ export function instrOptions(routes, self) {
  * unrepresentable here too. */
 export function instrPickerRows(routes, self, gens) {
     const rows = [];
+    /* None first (Josh, 2026-09-05), behind its own divider. */
+    rows.push({ v: INSTR_NONE, label: fmtInstr(INSTR_NONE) });
+    rows.push({ divider: true });
     for (let m = 0; m <= INSTR_MOVE_MAX; m++) rows.push({ v: m, label: fmtInstr(m) });
     rows.push({ divider: true });
     for (const g of (gens || [])) rows.push({ gen: g, label: String(g.name || g.id) });

@@ -284,6 +284,19 @@ step('⚠ CONTROL: the two lengths really do differ', () => {
                         ' — the duration is being ignored');
 });
 
+step('⭑ a NONE track: the HOLD opens the INSTRUMENT PICKER over its menu (Josh, 2026-09-05)', () => {
+    /* Nothing to edit and never the parked chain — so the hold lands on the one
+     * choice the track is waiting for, instead of a popup that only named the gap. */
+    sound.soundExit(); ticks(4);
+    S.trackRoute[0] = 3;                 /* ROUTE_NONE */
+    shiftNoteHold(); ticks(6);
+    const v = sound.soundPickStateForTest().view;
+    if (v !== 17) throw new Error('the hold on a NONE track landed on view ' + v + ', not the enum picker (17)');
+    const pk = sound.soundPickStateForTest().enumPick;
+    if (pk !== 'Instrument') throw new Error('the picker open is not the Instrument picker: ' + JSON.stringify(pk));
+    S.trackRoute[0] = 0; sound.soundExit(); ticks(4);
+});
+
 step('a MIDI-routed track opens nothing and says why — on the HOLD', () => {
     /* ⚠ The HOLD is what reaches an instrument, so the hold is what has to
      * refuse. A TAP opens SOUND + CONFIG for ANY route: a MIDI track has that

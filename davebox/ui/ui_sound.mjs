@@ -48,7 +48,7 @@ import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
 import { instrOptions, instrPickerRows, fmtInstr, INSTR_SCHWUNG, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
          BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
-         PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD } from './ui_constants.mjs';
+         PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, ROUTE_NONE } from './ui_constants.mjs';
 import { applyTrackConfig, applyBankParam, readBankParams } from './ui_dsp_bridge.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -411,6 +411,11 @@ function configRows(t) {
         min: 0, max: 127, step: 1, int: true, fmt: fmtVelOverride,
         get: () => GS.trackVelOverride[t] | 0,
         set: (v) => applyTrackConfig(t, 'track_vel_override', v) });
+    /* Every row here is a property of the NOTE STREAM, the looper included:
+     * it is a MIDI looper (seq8_looper.c), so a MIDI-routed track's notes loop
+     * out the cable exactly as a Schwung track's loop into its chain. Josh,
+     * 2026-09-05: "looper should work with midi tracks" — the first cut hid
+     * the row on the belief that it captured the instrument's SOUND. */
     rows.push({ key: 'looper', label: 'Looper',
         opts: [0, 1], fmt: (v) => (v ? 'On' : 'Off'),
         get: () => (GS.trackLooper[t] !== 0 ? 1 : 0),
@@ -797,7 +802,8 @@ export function soundPickStateForTest() {
      * checked here, not on the global: the global is already false by then, and
      * it is this re-read that would resurrect it. */
     return { kinds: S.pickRows.map(r => r.kind), comps: S.pickRows.map(r => r.comp || null),
-             row: S.pickRow, view: S.view, shift: S.shiftHeld };
+             row: S.pickRow, view: S.view, shift: S.shiftHeld,
+             enumPick: S.enumPick ? S.enumPick.label : null };
 }
 
 /* Read-only view of the knob HUD's CONTENT decision, for tests. The card's text
@@ -805,6 +811,10 @@ export function soundPickStateForTest() {
  * drawn but never that they say the right thing — this pins the decision, and
  * the render test pins that the draw path runs. Exposes no mutation. */
 export function soundInflightForTest() { return S.inflight; }
+/* The CONFIG / SOUND CONTROL screen's rows, by key — which rows a track gets is
+ * a decision per route (a MIDI track has no Looper), and this is how a test
+ * reads that decision without rendering. */
+export function soundSlotRowsForTest() { return S.slotRows.map(r => r.key); }
 /* The hosted canvas's ctx, for the read-shield behaviour test. Exposes the same
  * object the kit is handed — nothing a test could not already reach by faking a
  * kit module, minus the fixture. */
@@ -1089,6 +1099,37 @@ export function soundSetBank(bank) {
 function soundOriginBank(track) {
     const o = GS.trackSoundOrigin[track];
     return (typeof o === 'number' && o >= 0 && !isSoundBank(o)) ? (o | 0) : BANK_SOUND_PREV;
+}
+
+/* ⭑ ITEM 20 (Josh, 2026-09-05: "Yes, follow into the editor"). A track switch
+ * made from INSIDE a module editor lands in the NEW track's editor. The 08-24
+ * ruling ("a track switch always LEAVES sound mode") stands for every other
+ * screen — the menu, the prompt, a browser, the macros page — because that is
+ * where the complaint came from: scrolling tracks from the menu made every
+ * track report SOUND + CONFIG. The editor is different: you are comparing two
+ * sounds, and being dumped to the sequencer is the wrong answer.
+ *
+ * "Inside an editor" is VIEW_EDIT (the param-pages grid and the hosted canvas
+ * both run under it) or a dive-out the grid still owns (an enum list, a
+ * keyboard). Not a global bus: Master/Send FX are not a track's sound. */
+export function soundInEditor() {
+    return !!(S.active && !soundIsGlobal() &&
+              (S.view === VIEW_EDIT || (ppOn && ppOwnsView())));
+}
+
+/* The follow itself, route-aware, the same choice tick's reconcile and the
+ * `reflavour` action make: a Move-routed track's sound is its bus, a Schwung
+ * one's is its chain. A track with NO chain of its own — MIDI out, NONE — has
+ * no editor to land in, so its MENU is the destination (item 13's Instrument
+ * row, item 14's Instrument + Config); keepPlace is turned off for it, or the
+ * retarget would reopen the PARKED chain's editor on a track that is not
+ * playing it. Synchronous, on the switch edge: no per-tick read, and the
+ * tick's own follow sees track === soundTrack() and stays quiet. */
+export function soundFollowTrack(track) {
+    if (GS.trackRoute[track] === 1) { soundEnterMove(track); return; }
+    if (GS.trackRoute[track] !== 0) S.view = VIEW_BLOCKS;
+    clearBusContext();
+    soundRetarget(track, slotIndex(track));
 }
 
 export function soundRetarget(track, slot) {
@@ -2310,6 +2351,15 @@ export function soundGestureReturn() {
 
 export function soundGestureArmed() { return !!GS.genReturn; }
 
+/* Shift+hold Note/Session on a NONE track (Josh, 2026-09-05: "hold
+ * shift+note/session should open the instrument picker"): there is nothing to
+ * edit and never the parked chain, so the hold lands on the one choice the
+ * track is waiting for — the menu with the picker already open over it. */
+export function soundOpenInstrPicker(track) {
+    soundEnter(track, slotIndex(track));
+    S.pendingAction = { t: 'instrpick' };
+}
+
 export function soundOpenGenerator(track) {
     soundEnter(track, slotIndex(track));
     if (!engineLoadedModule(S.slot, 'synth')) {
@@ -2476,7 +2526,18 @@ function buildPickRows() {
          * placeholder: it is what an EXT track HAS, and it is the row you need
          * to route it back. Track Control stays open on these tracks precisely
          * so that is reachable (see the follow in ui_tick). */
-        if (GS.trackRoute[S.track] === 2) { S.pickRows = rows; S.pickRow = 0; return; }
+        if (GS.trackRoute[S.track] === ROUTE_NONE) { S.pickRows = rows; S.pickRow = 0; return; }   /* NONE: even less than EXT — just the row that picks one */
+        /* A MIDI-routed track has no chain and no bus, but it IS a track, and
+         * davebox's own per-track settings — mode, layout, transpose, velocity
+         * in, aftertouch — apply to a note stream leaving the port as much as
+         * to one entering a chain (Josh, 2026-09-05, item 14: "anything from
+         * the other track type sound menus that would also apply"). So the
+         * screen is its destination plus the CONFIG door, exactly as a Move
+         * track's is. configRows itself decides which rows a MIDI track gets. */
+        if (GS.trackRoute[S.track] === 2) {
+            rows.push({ kind: 'config', label: 'Config' });
+            S.pickRows = rows; S.pickRow = 0; return;
+        }
         /* ⭑ No Generator row (Josh, 2026-09-04): the INSTRUMENT row is the
          * generator's door now — click enters it, Shift+click picks another —
          * exactly the block row's own grammar, on the row that names it. */
@@ -2837,10 +2898,11 @@ function knobTargetList() {
         targets.push({ id, name: String(name), slot: label });
     };
     const midiTrack = S.track >= 0 && GS.trackRoute[S.track] === 2;
+    const noneTrack = S.track >= 0 && GS.trackRoute[S.track] === ROUTE_NONE;   /* no instrument at all (2026-09-05) */
     if (S.bus) {
         /* A Move bus: its insert FX are the components (`move_fx:N:fxK`). */
         for (const n of BUS_BLOCKS) probe(S.bus.prefix + 'fx' + n, 'FX' + n);
-    } else if (!midiTrack) {
+    } else if (!midiTrack && !noneTrack) {
         probe('midi_fx1', 'MIDI FX');
         probe('synth', 'Synth');
         for (let i = 1; i <= 4; i++) probe('fx' + i, 'FX' + i);
@@ -2860,7 +2922,7 @@ function knobTargetList() {
             rows.push({ id: 'bank:' + e.bank, name: BANKS[e.bank].name });
         }
     }
-    if (!midiTrack) rows.push({ id: LEVEL_TARGET, name: 'Levels' });   /* a MIDI track has no chain */
+    if (!midiTrack && !noneTrack) rows.push({ id: LEVEL_TARGET, name: 'Levels' });   /* a MIDI or NONE track has no chain */
     return rows;
 }
 

@@ -218,8 +218,9 @@ int main(void) {
         { "t4_route",                "external",  "\"t4_rt\":2",            "track config (route)" },
         { "t4_route",                "schwung",   "\"t4_rt\":0",            "track config (route schwung)" },
         { "t4_route",                "move",      "\"t4_rt\":1",            "track config (route move)" },
-        /* invalid route value = no-op: t4 stays at move (rt=1) from the row above */
-        { "t4_route",                "bogus",     "\"t4_rt\":1",            "track config (route invalid no-op)" },
+        { "t4_route",                "none",      "\"t4_rt\":3",            "track config (route none, 2026-09-05)" },
+        /* invalid route value = no-op: t4 stays at none (rt=3) from the row above */
+        { "t4_route",                "bogus",     "\"t4_rt\":3",            "track config (route invalid no-op)" },
         /* channel: 1-indexed in -> 0-indexed stored (10 -> 9) */
         { "t1_channel",              "10",        "\"t1_ch\":9",            "track config (channel)" },
         /* track_looper: default 1 is sparse (unwritten); =0 is serialized */
@@ -341,8 +342,11 @@ int main(void) {
     HX_ASSERT(inst->tracks[4].pfx.route == ROUTE_EXTERNAL, "route: pfx.route");
     HX_ASSERT(inst->tracks[4].drum_lane_pfx[0].route == ROUTE_EXTERNAL, "route: lane0 fanout");
     HX_ASSERT(inst->tracks[4].drum_lane_pfx[DRUM_LANES-1].route == ROUTE_EXTERNAL, "route: lane31 fanout");
+    hx_set_param(h, "t4_route", "none");
+    HX_ASSERT(inst->tracks[4].pfx.route == ROUTE_NONE, "route: none is a route (2026-09-05)");
+    HX_ASSERT(inst->tracks[4].drum_lane_pfx[DRUM_LANES-1].route == ROUTE_NONE, "route: none fans out to the lanes");
     hx_set_param(h, "t4_route", "zzz");   /* invalid: no-op */
-    HX_ASSERT(inst->tracks[4].pfx.route == ROUTE_EXTERNAL, "route: invalid value is a no-op");
+    HX_ASSERT(inst->tracks[4].pfx.route == ROUTE_NONE, "route: invalid value is a no-op");
 
     /* channel: 1-indexed in -> 0-indexed stored, clamped 0..15. */
     hx_set_param(h, "t2_channel", "10");

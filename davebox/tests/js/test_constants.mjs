@@ -2,7 +2,7 @@
  * ui_constants.mjs, ahead of the Phase 1 ui_pure.mjs move. */
 import { parseActionRaw, col4, col5, fmtNote, fmtArpOct, fmtRoute,
          fmtRes, fmtPct, fmtBool, fmtGateMod, fmtDiq, fmtStretch, fmtLen,
-         fmtInstr, instrOptions, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK,
+         fmtInstr, instrOptions, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK, INSTR_NONE,
          NOTE_KEYS } from '../../ui/ui_constants.mjs';
 
 let failed = 0;
@@ -42,6 +42,9 @@ eq(fmtInstr(INSTR_MIDI_CH), 'MIDI Ch 1', 'fmtInstr first MIDI channel');
 eq(fmtInstr(INSTR_MIDI_CH + 15), 'MIDI Ch 16', 'fmtInstr last MIDI channel');
 eq(fmtInstr(INSTR_TRACK), 'Track 1', 'fmtInstr first track target');
 eq(fmtInstr(INSTR_TRACK + 7), 'Track 8', 'fmtInstr last track target');
+eq(fmtInstr(INSTR_NONE), 'None', 'fmtInstr NONE (2026-09-05) — a word, never the unseeded --');
+eq(fmtInstr(INSTR_NONE - 1), '?', 'the value below NONE is still a gap');
+eq(fmtInstr(INSTR_NONE + 1), '?', 'the value above NONE is still a gap');
 /* The bands are separated by gaps ON PURPOSE — a stray value must land in a gap
  * and read as unknown, never as a valid different destination. */
 eq(fmtInstr(5), '?', 'a value in the gap is not silently a destination');
