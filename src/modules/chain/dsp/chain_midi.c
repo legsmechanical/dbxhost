@@ -13,71 +13,22 @@
 #include "chain_clock_state.h"
 static chain_clock_state_t g_clock = CHAIN_CLOCK_STATE_INIT;
 
-static int chain_read_clock_output_enabled(void) {
-    FILE *f = fopen(MOVE_SETTINGS_JSON_PATH, "r");
-    if (!f) return 1;  /* Avoid false warnings if settings file is unavailable. */
+/* The host api handed to init lives in chain_host.c; a fixture that compiles
+ * this file alone (tests/host) gets this WEAK stand-in, which reads as "no
+ * host" → clock output enabled, the old unreadable-file default. */
+__attribute__((weak)) const host_api_v1_t *chain_host_api(void) { return NULL; }
 
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (size <= 0 || size > CLOCK_SETTINGS_MAX_BYTES) {
-        fclose(f);
-        return 1;
-    }
-
-    char *json = malloc((size_t)size + 1);
-    if (!json) {
-        fclose(f);
-        return 1;
-    }
-
-    size_t nread = fread(json, 1, (size_t)size, f);
-    if (nread == 0 && ferror(f)) {
-        free(json);
-        fclose(f);
-        return 1;
-    }
-    json[nread] = '\0';
-    fclose(f);
-
-    const char *key = "\"midiClockMode\"";
-    char *pos = strstr(json, key);
-    if (!pos) {
-        free(json);
-        return 1;
-    }
-
-    pos = strchr(pos + strlen(key), ':');
-    if (!pos) {
-        free(json);
-        return 1;
-    }
-
-    while (*pos == ':' || *pos == ' ' || *pos == '\t' || *pos == '\n' || *pos == '\r') pos++;
-    if (*pos != '"') {
-        free(json);
-        return 1;
-    }
-    pos++;
-
-    char mode[32];
-    int i = 0;
-    while (*pos && *pos != '"' && i < (int)sizeof(mode) - 1) {
-        mode[i++] = *pos++;
-    }
-    mode[i] = '\0';
-
-    free(json);
-
-    if (strcmp(mode, "output") == 0) return 1;
-    if (strcmp(mode, "off") == 0) return 0;
-    if (strcmp(mode, "input") == 0) return 0;
-    return 1;  /* Unknown value: avoid false warnings. */
-}
-
+/* ⚠ NO FILE I/O HERE (2026-09-05). This used to fopen Settings.json every
+ * second — from whichever thread asked the clock status, i.e. the SPI
+ * callback (REALTIME_SAFETY.md §1). The HOST's worker reads the file now and
+ * publishes a word; we take it through host_api_v1.clock_output_enabled. A
+ * host without the callback (an older shim, the test harness) means
+ * "enabled", exactly what an unreadable file meant before. */
 static void chain_refresh_clock_output_enabled(uint64_t now_ms) {
     if (now_ms < atomic_load_explicit(&g_clock.next_refresh_ms, memory_order_acquire)) return;
-    atomic_store_explicit(&g_clock.output_enabled, chain_read_clock_output_enabled(), memory_order_release);
+    const host_api_v1_t *h = chain_host_api();
+    int en = (h && h->clock_output_enabled) ? h->clock_output_enabled() : 1;
+    atomic_store_explicit(&g_clock.output_enabled, en, memory_order_release);
     atomic_store_explicit(&g_clock.next_refresh_ms, now_ms + CLOCK_SETTINGS_REFRESH_MS, memory_order_release);
 }
 

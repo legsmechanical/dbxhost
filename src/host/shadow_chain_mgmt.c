@@ -13,6 +13,7 @@
 #include <strings.h>  /* strcasecmp */
 
 #include "shadow_chain_mgmt.h"
+#include "shim_worker.h"
 #include "master_fx_saved_state.h" /* object or opaque-string state at boot */
 #include "shadow_set_pages.h"
 #include "shadow_sampler.h"
@@ -1416,6 +1417,7 @@ int shadow_inprocess_load_chain(void) {
     shadow_host_api.get_beat_position = host.get_beat_position;  /* transport phase for LFO sync */
     shadow_host_api.midi_inject_to_move = shadow_chain_midi_inject;
     shadow_host_api.slot_recv_channel = shadow_chain_slot_recv_channel;
+    shadow_host_api.clock_output_enabled = shim_clock_output_enabled_get;   /* the worker's cached word */
 
     move_plugin_init_v2_fn init_v2 = (move_plugin_init_v2_fn)dlsym(
         shadow_dsp_handle, MOVE_PLUGIN_INIT_V2_SYMBOL);

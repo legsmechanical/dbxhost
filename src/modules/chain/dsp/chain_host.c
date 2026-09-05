@@ -13,6 +13,7 @@
 
 /* Host API provided by main host */
 static const host_api_v1_t *g_host = NULL;
+const host_api_v1_t *chain_host_api(void) { return g_host; }
 
 
 /* Logging helper */
