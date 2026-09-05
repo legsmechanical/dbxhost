@@ -146,6 +146,16 @@ let stateByKey = new Map();
 const stateKey = (track, clip, target) => track + ' ' + clip + ' ' + target;
 
 function parseList(list) {
+    /* ⚠ A FAILED READ IS NOT "NO AUTOMATION" (device, 2026-09-05). The read is
+     * one param round-trip and it can time out (a busy frame, a backlog in the
+     * mailbox); host_module_get_param then answers null. Treating that as an
+     * empty list wiped the map while the DSP still held — and played — every
+     * lane: the bank showed nothing, and "clear all" (which sends only what
+     * the map lists) sent NOTHING, so the automation could never be cleared
+     * again short of a reload. Keep what we know until a read SUCCEEDS; the
+     * next refresh is one tick away. An empty STRING is a real answer
+     * (the DSP terminates an empty list explicitly) and clears the map. */
+    if (list === null || list === undefined) { listStale = true; return; }
     stateByKey = new Map();
     if (!list) return;
     for (const line of list.split('\n')) {
@@ -164,7 +174,7 @@ function parseList(list) {
  * One round-trip per project load, against one per tick if we guessed. */
 export function automationRefreshPresence() {
     const list = host_module_get_param('pa_list');
-    anyAutomation = !!(list && list.length);
+    if (list !== null && list !== undefined) anyAutomation = !!(list && list.length);
     parseList(list);
 }
 
