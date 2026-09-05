@@ -160,13 +160,24 @@ fi
 
 cd "$REPO_ROOT"
 
-# Incremental build helper: skip compilation if target is newer than all sources
+# Incremental build helper: skip compilation if target is newer than all sources.
+#
+# ⚠ HEADERS COUNT (2026-09-05). Callers list their .c files; a change in a
+# header they include never appeared in that list, so a host-only deploy
+# shipped a shadow_ui compiled BEFORE the change — same md5 as the previous
+# build, caught only by comparing hashes. Rather than teach every call site
+# its include closure, any header under src/ newer than the target forces the
+# rebuild. Over-rebuilding costs seconds; a stale binary costs a wrong
+# device pass.
 needs_rebuild() {
     local target="$1"; shift
     [ ! -f "$target" ] && return 0
     for src in "$@"; do
         [ "$src" -nt "$target" ] && return 0
     done
+    if [ -n "$(find src -name '*.h' -newer "$target" -print -quit 2>/dev/null)" ]; then
+        return 0
+    fi
     return 1
 }
 
