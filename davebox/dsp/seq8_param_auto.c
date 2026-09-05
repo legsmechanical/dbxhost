@@ -610,6 +610,7 @@ static void pa_serialize_locked(seq8_instance_t *inst, FILE *fp) {
         if (e->loop_len)   fprintf(fp, ",\"ll\":%d", (int)e->loop_len);
         if (e->loop_off)   fprintf(fp, ",\"lo\":%d", (int)e->loop_off);
         if (e->resolution) fprintf(fp, ",\"rs\":%d", (int)e->resolution);
+        if (e->scale_off)  fprintf(fp, ",\"sc\":%d", pa_scale_pct(e));   /* sparse: 100 % writes nothing */
         fprintf(fp, ",\"p\":\"");
         for (int j = 0; j < e->count; j++)
             fprintf(fp, "%u:%u;", (unsigned)e->points[j].tick, (unsigned)e->points[j].val);
@@ -674,6 +675,12 @@ static void pa_parse_locked(seq8_instance_t *inst, const char *buf, size_t blen)
                 e->loop_len   = (uint16_t)pa_json_int(obj, end, "ll", 0);
                 e->loop_off   = (uint16_t)pa_json_int(obj, end, "lo", 0);
                 e->resolution = (uint16_t)pa_json_int(obj, end, "rs", 0);
+                {   /* absent (every file before 2026-09-05) = 100 % */
+                    int sc = pa_json_int(obj, end, "sc", 100);
+                    if (sc < PA_SCALE_MIN) sc = PA_SCALE_MIN;
+                    if (sc > PA_SCALE_MAX) sc = PA_SCALE_MAX;
+                    e->scale_off = (int8_t)(sc - 100);
+                }
                 const char *pp = strstr(obj, "\"p\":\"");
                 if (pp && pp < end) {
                     pp += 5;
@@ -921,6 +928,7 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
 
         uint16_t v;
         if (!pa_eval(e, pa_entry_tick(e, ct, clip_ticks, tr->pa_cycle), &v)) continue;
+        v = pa_scaled(e, v);                 /* the lane's scale, 100 % = identity */
         if (e->last_sent_valid && e->last_sent == v) continue;   /* unchanged */
 
         int cc = 0;

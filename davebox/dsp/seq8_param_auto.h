@@ -104,8 +104,24 @@ typedef struct {
      * stages the rest on its next block and clears this. Its own byte, not a
      * flag bit, so the two threads never read-modify-write the same byte. */
     uint8_t  release;
+    /* THE SCALE (Josh, 2026-09-05: "automation scale 0-200 % that scales the
+     * value of all automation on the lane up or down"). Stored as percent
+     * MINUS 100, so a zeroed entry — every entry a v1 file loads, and every
+     * fresh one — is 100 % and bit-identical to before this field existed.
+     * The recorded points are never touched: the scale is applied at EVAL
+     * (playback) and on the way OUT (pa_export), out = clamp(v * pct / 100).
+     * -100..+100 ⇒ 0..200 %. */
+    int8_t   scale_off;
     pa_point_t points[PA_ENTRY_POINTS];
 } pa_entry_t;
+
+#define PA_SCALE_MIN   0
+#define PA_SCALE_MAX 200
+static inline int pa_scale_pct(const pa_entry_t *e) { return 100 + (int)e->scale_off; }
+static inline uint16_t pa_scaled(const pa_entry_t *e, uint16_t v) {
+    uint32_t s = (uint32_t)v * (uint32_t)pa_scale_pct(e) / 100u;
+    return (uint16_t)(s > PA_VAL_MAX ? PA_VAL_MAX : s);
+}
 
 
 #endif /* SEQ8_PARAM_AUTO_H */

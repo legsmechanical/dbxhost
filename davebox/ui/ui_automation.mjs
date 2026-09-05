@@ -154,9 +154,13 @@ function parseList(list) {
         if (f.length < 5) continue;
         /* "<track> <clip> <flags> <count> <target> [<loop_len>]" — a target
          * never contains a space (the DSP reads it as one token). */
+        /* The scale (2026-09-05) is the 8th field; an older DSP omits it and
+         * that means 100 %. A present 0 is a real 0 %. */
+        const sc = f.length > 7 ? parseInt(f[7], 10) : NaN;
         stateByKey.set(stateKey(f[0], f[1], f[4]),
                        { flags: parseInt(f[2], 10) | 0, count: parseInt(f[3], 10) | 0,
-                         loop: parseInt(f[5], 10) | 0, res: parseInt(f[6], 10) | 0 });
+                         loop: parseInt(f[5], 10) | 0, res: parseInt(f[6], 10) | 0,
+                         scale: isFinite(sc) ? sc : 100 });
     }
 }
 
@@ -172,7 +176,8 @@ export function automationRefreshPresence() {
 export function automationStateFor(track, clip, target) {
     const s = stateByKey.get(stateKey(track, clip, target));
     if (!s || !s.count) return null;
-    return { active: !!(s.flags & 1), smooth: !!(s.flags & 2), count: s.count, loop: s.loop | 0, res: s.res | 0 };
+    return { active: !!(s.flags & 1), smooth: !!(s.flags & 2), count: s.count, loop: s.loop | 0, res: s.res | 0,
+             scale: isFinite(s.scale) ? s.scale : 100 };
 }
 /* Every automated target of one clip — the AUTOMATION bank's list. */
 export function automationEntriesFor(track, clip) {
@@ -181,7 +186,7 @@ export function automationEntriesFor(track, clip) {
     for (const [k, s] of stateByKey) {
         if (k.indexOf(pfx) !== 0 || !s.count) continue;
         out.push({ target: k.slice(pfx.length), active: !!(s.flags & 1), smooth: !!(s.flags & 2),
-                   count: s.count, loop: s.loop | 0, res: s.res | 0 });
+                   count: s.count, loop: s.loop | 0, res: s.res | 0, scale: isFinite(s.scale) ? s.scale : 100 });
     }
     return out;
 }
@@ -740,6 +745,18 @@ export function automationSetRate(track, clip, target, code, checkpoint) {
     queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' ' + (s.loop | 0) + ' 0 ' + c);
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.res = c;
+    return true;
+}
+/* THE SCALE (Josh, 2026-09-05): 0..200 %, applied by the DSP at playback and
+ * export; the points stay as recorded, so 100 % is exactly what was there. */
+export function automationSetScale(track, clip, target, pct, checkpoint) {
+    const s = automationStateFor(track, clip, target);
+    if (!s) return false;
+    const v = Math.max(0, Math.min(200, pct | 0));
+    if (checkpoint !== false) queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    queueSet('t' + track + '_pa_scale', clip + ' ' + target + ' ' + v);
+    const cur = stateByKey.get(stateKey(track, clip, target));
+    if (cur) cur.scale = v;
     return true;
 }
 /* The AUTOMATION bank's Clear clip: every parameter's automation in the clip,

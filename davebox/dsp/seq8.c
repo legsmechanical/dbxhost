@@ -6394,8 +6394,9 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
     /* pa_list: every automated (track, clip, target) with its flags and point
      * count — one round trip for the whole project, because a per-entry read
      * would cost an SPI frame each. Format, one entry per line:
-     *   "<track> <clip> <flags> <count> <target> <loop_len> <resolution>"
-     * (loop_len and the rate code appended 2026-09-03 for the AUTOMATION bank; a
+     *   "<track> <clip> <flags> <count> <target> <loop_len> <resolution> <scale%>"
+     * (loop_len and the rate code appended 2026-09-03 for the AUTOMATION bank,
+     * the scale percent 2026-09-05; a
      * target never contains a space, so a reader that stops at the target is
      * unaffected). */
     /* pa_owner <target>: the track that owns this target (has automation on
@@ -6437,7 +6438,8 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
      * the export's whole note render.
      *
      * Format — one lane per line, points space-separated after a `|`:
-     *   "<track> <clip> <target> <flags> <loop_len> <resolution>|<tick>:<val> ..."
+     *   "<track> <clip> <target> <flags> <loop_len> <resolution> <scale%>|<tick>:<val> ..."
+     * `val` has the lane's SCALE already applied (2026-09-05), as playback does.
      * `tick` is a CLIP TICK (96 per beat, as the note render uses) and `val` is
      * 14-bit normalized 0..PA_VAL_MAX for every target kind — JS maps it to
      * wire units, since only JS has the metadata that defines them. A target
@@ -6452,11 +6454,13 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         for (int i = 0; i < PA_MAX_ENTRIES; i++) {
             pa_entry_t *e = &inst->pa_entries[i];
             if (!e->used || !e->count) continue;
-            fprintf(pf, "%d %d %s %d %d %d|",
+            fprintf(pf, "%d %d %s %d %d %d %d|",
                     (int)e->track, (int)e->clip, inst->pa_targets[e->target],
-                    (int)e->flags, (int)e->loop_len, (int)e->resolution);
+                    (int)e->flags, (int)e->loop_len, (int)e->resolution, pa_scale_pct(e));
+            /* The SCALE is applied here, as it is at playback: what leaves in
+             * the export is what the lane plays, not the raw points. */
             for (int k = 0; k < (int)e->count && k < PA_ENTRY_POINTS; k++)
-                fprintf(pf, "%u:%u ", (unsigned)e->points[k].tick, (unsigned)e->points[k].val);
+                fprintf(pf, "%u:%u ", (unsigned)e->points[k].tick, (unsigned)pa_scaled(e, e->points[k].val));
             fputc('\n', pf);
             lanes++;
         }
@@ -6478,10 +6482,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         for (int i = 0; i < PA_MAX_ENTRIES; i++) {
             pa_entry_t *e = &inst->pa_entries[i];
             if (!e->used || !e->count) continue;
-            int w = snprintf(out + n, (size_t)(out_len - n), "%d %d %d %d %s %d %d\n",
+            int w = snprintf(out + n, (size_t)(out_len - n), "%d %d %d %d %s %d %d %d\n",
                              (int)e->track, (int)e->clip, (int)e->flags,
                              (int)e->count, inst->pa_targets[e->target],
-                             (int)e->loop_len, (int)e->resolution);
+                             (int)e->loop_len, (int)e->resolution, pa_scale_pct(e));
             if (w < 0 || n + w >= out_len) {
                 /* snprintf has already written a truncated line; cut it back
                  * off, or a C-string reader sees a torn entry past the length
