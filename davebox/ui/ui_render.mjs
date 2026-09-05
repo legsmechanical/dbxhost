@@ -1664,7 +1664,16 @@ function drawUIBody() {
             fill_rect(0, 0, 128, MARK_BAR_H, 1);
             drawWordmark('dAVEBOx');
         }
-        drawMetroIndicator();
+        /* THE SNAPSHOT LAYER NAMES ITSELF (Josh, 2026-09-05, device): while
+         * Capture is held past the threshold, the row under the banner reads
+         * SNAPSHOTS in the bank-heading face, centred, in place of the
+         * metronome word — a mode you are in, not a flash you missed. */
+        if (devSnapOpen()) {
+            const _sn = 'SNAPSHOTS';
+            hdrPrint(Math.round((128 - hdrWidth(_sn)) / 2), 16, _sn, 1);
+        } else {
+            drawMetroIndicator();
+        }
         drawOverviewTracks(overviewHints());
         return;
     }

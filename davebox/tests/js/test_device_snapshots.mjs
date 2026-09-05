@@ -81,7 +81,8 @@ const files = {};
 let recallPending = false;
 globalThis.host_snapshot_take   = (dir) => { snapCalls.push(['take', dir]); return JSON.stringify({ ok: true, skipped: 0, positions: 12 }); };
 globalThis.host_snapshot_recall = (dir) => { snapCalls.push(['recall', dir]); recallPending = true; return JSON.stringify({ ok: true, pending: true }); };
-globalThis.host_snapshot_status = () => JSON.stringify({ pending: recallPending, skipped: 1 });
+let statusSkipped = 1;
+globalThis.host_snapshot_status = () => JSON.stringify({ pending: recallPending, skipped: statusSkipped });
 globalThis.host_file_exists = (p) => Object.prototype.hasOwnProperty.call(files, p) && files[p] !== '';
 globalThis.host_write_file = (p, c) => { files[p] = c; writes.push('FILE ' + p); return true; };
 globalThis.host_read_file = (p) => (files[p] !== undefined ? files[p] : '');
@@ -139,6 +140,9 @@ step_('⭑ holding Capture past the threshold OPENS the layer, and the release r
     if (!S.captureUsedAsModifier) throw new Error('Capture not marked used — the release would run the tap');
     const h = JSON.stringify(D.devSnapHints());
     if (h.indexOf('SAVE') < 0 || h.indexOf('RECALL') < 0) throw new Error('footer does not name the layer: ' + h);
+    /* No entry flash (Josh, 2026-09-05): the SNAPSHOTS row + footer name the mode. */
+    if (S.actionPopupEndTick >= 0 && S.actionPopupLines.some((l) => /SNAPSHOTS/.test(String(l))))
+        throw new Error('the entry popup is back: ' + JSON.stringify(S.actionPopupLines));
 });
 
 step_('⭑ HOLD a step = SAVE: the host takes into the slot dir and davebox writes its json (mixer, every kind of track)', () => {
@@ -181,6 +185,18 @@ step_('⭑ TAP a filled step = RECALL: the host recalls that dir; davebox applie
     if (!writes.includes('t1_mute=1')) throw new Error('track 2 mute not re-applied: ' + JSON.stringify(writes.filter(w => /_mute=|_solo=/.test(w))));
     if (!writes.includes('t3_solo=1')) throw new Error('track 4 solo not re-applied');
     if (!S.trackMuted[1] || !S.trackSoloed[3]) throw new Error('mirror not updated');
+    const lines = S.actionPopupLines.map(String);
+    if (lines[0] !== 'SNAPSHOT 3' || lines[1] !== 'RESTORED' || lines[2] !== '1 skipped') throw new Error('RESTORED card: ' + JSON.stringify(lines));
+    if (S.actionPopupEndTick < S.clockMs + D.DEVSNAP_CARD_MS - 50) throw new Error('the RESTORED card is a glance, not a card');
+});
+
+step_('⚠ RESTORED with NOTHING skipped: two lines, never the word "undefined" (device, 2026-09-05)', () => {
+    statusSkipped = 0;
+    step(2, true); advance(100); step(2, false); advance(20);   /* the stub marks the recall pending */
+    recallPending = false; advance(30);                           /* the host says done */
+    const lines = S.actionPopupLines.map(String);
+    if (lines.length !== 2 || lines.some((l) => /undefined|null/.test(l))) throw new Error('card: ' + JSON.stringify(lines));
+    statusSkipped = 1;
 });
 
 step_('a tap on an EMPTY step does nothing', () => {
