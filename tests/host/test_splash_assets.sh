@@ -94,20 +94,20 @@ grep -q 'pick-splash\.py' scripts/build.sh \
 grep -q 'splash-pool\.tsv' scripts/build.sh \
     && ok "...and build.sh ships the pool manifest" \
     || bad "splash-pool.tsv never reaches the device — both dealers fall back, nothing records"
-# The pool manifest: one row per frame, weights sane, DAVIES rarest.
+# The pool manifest: one row per frame, weights sane, DAVE DAVIES rarest.
 pool=standalone/assets/splash-pool.tsv
 frames=$(ls standalone/assets/splash-[0-9]*.hex | wc -l | tr -d ' ')
 rows=$(wc -l < "$pool" | tr -d ' ')
 [ "$rows" = "$frames" ] \
     && ok "splash-pool.tsv covers all $frames frames" \
     || bad "splash-pool.tsv has $rows rows for $frames frames"
-# Tier law: weights are exactly the three tier values; DAVIES holds rare.
+# Tier law: weights are exactly the three tier values; DAVE DAVIES holds rare.
 awk -F'\t' '{ if ($3!=1 && $3!=0.5 && $3!=0.3) exit 1 }' "$pool" \
     && ok "every weight is a known tier (1 / 0.5 / 0.3)" \
     || bad "a weight outside the tier set leaked into splash-pool.tsv"
-awk -F'\t' '$4=="DAVIES"{d=$3} END{exit !(d==0.3)}' "$pool" \
-    && ok "DAVIES holds the rare tier" \
-    || bad "DAVIES is not at the rare weight in splash-pool.tsv"
+awk -F'\t' '$4=="DAVE DAVIES"{d=$3} END{exit !(d==0.3)}' "$pool" \
+    && ok "DAVE DAVIES holds the rare tier" \
+    || bad "DAVE DAVIES is not at the rare weight in splash-pool.tsv"
 # The host-side dealer (pre-kill branch) reads the same pool — the old
 # for-i<10 literal capped a 31-frame pool at ten and must not return.
 grep -q 'splash-pool\.tsv' src/shadow/shadow_ui.js \
