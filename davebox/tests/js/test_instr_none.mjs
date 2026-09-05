@@ -67,6 +67,7 @@ await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const C = await import('../../ui/ui_constants.mjs');
 const B = await import('../../ui/ui_dsp_bridge.mjs');
+const R = await import('../../ui/ui_render.mjs');
 
 function step(l, fn) {
     if (fn && fn.constructor && fn.constructor.name === 'AsyncFunction') throw new Error('async step');
@@ -122,6 +123,13 @@ step('CONTROL: a live note on a MIDI-routed track leaves davebox', () => {
 step('a live note on the NONE track emits NOTHING — not even into the parked chain', () => {
     const n = emissions(0);
     if (n !== 0) throw new Error(n + ' emissions from a NONE track');
+});
+step('the bank header names a NONE track [NONE], never the unseeded [--]', () => {
+    /* refreshInstrAbbrev is the one cache behind every header's right label
+     * (T1, 2026-09-05); track 0 is still NONE here. */
+    S.activeTrack = 0;
+    R.refreshInstrAbbrev();
+    if (S.instrAbbrev !== 'NONE') throw new Error('instrAbbrev=' + JSON.stringify(S.instrAbbrev));
 });
 step('coming back to Schwung finds the same channel (parked, not destroyed)', () => {
     const ch = S.trackChannel[0];
