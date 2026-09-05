@@ -110,7 +110,12 @@ process.stderr.write('\\n  STALE BUNDLE — refusing to run.\\n'+
 process.exit(2);}
 }catch(_){/* guard must never be the reason a test cannot run */}})();`;
 
-const outDir = '/tmp/davebox-js-tests';
+/* ⚠ PER-TREE, not one shared /tmp dir (2026-09-05). Two worktrees running the
+ * suite at once wrote the same bundle paths, and a test in one tree ran the
+ * OTHER tree's code — a "failure" that no source in the failing tree contained.
+ * run.sh / run-one.sh derive the dir from the tree's own path and export it;
+ * the fallback here is only for a direct `node build.mjs`. */
+const outDir = process.env.DAVEBOX_JS_TEST_DIR || '/tmp/davebox-js-tests';
 const tests = globSync(path.join(repoRoot, 'tests/js/test_*.mjs'));
 
 for (const t of tests) {
