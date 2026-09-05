@@ -60,15 +60,15 @@ S.bankParams = Array.from({ length: 8 }, () =>
 const cc   = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 const note = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([d2 > 0 ? 0x90 : 0x80, d1, d2]));
 
-step('pool sanity: 31 daves, unique permanent numbers, DAVIES is the rare one', () => {
+step('pool sanity: 31 daves, unique permanent numbers, DAVE DAVIES is the rare one', () => {
     if (splash.DAVES.length !== splash.SPLASH_COUNT) throw new Error('DAVES/frames misaligned');
     const ns = splash.DAVES.map((d) => d.n);
     if (new Set(ns).size !== ns.length) throw new Error('duplicate dave_num');
-    const davies = splash.DAVES.find((d) => d.name === 'DAVIES');
-    if (!davies) throw new Error('no DAVIES');
+    const davies = splash.DAVES.find((d) => d.name === 'DAVE DAVIES');
+    if (!davies) throw new Error('no DAVE DAVIES');
     for (const d of splash.DAVES)
-        if (d.name !== 'DAVIES' && d.w < davies.w)
-            throw new Error(d.name + ' is rarer than DAVIES (' + d.w + ' < ' + davies.w + ')');
+        if (d.name !== 'DAVE DAVIES' && d.w < davies.w)
+            throw new Error(d.name + ' is rarer than DAVE DAVIES (' + d.w + ' < ' + davies.w + ')');
     if (!(davies.w < 1.0)) throw new Error('DAVIES not rarer than a common');
 });
 
@@ -86,7 +86,7 @@ step('the album lists collected Daves in permanent order, junk and dupes tolerat
     const wantM = ['< DAVE 1/' + T + ' \u00b7 COMMON >', '< DAVE 3/' + T + ' \u00b7 COMMON >',
                    '< DAVE 21/' + T + ' \u00b7 RARE >'];
     if (JSON.stringify(metas) !== JSON.stringify(wantM)) throw new Error(JSON.stringify(metas));
-    if (names[2] !== 'DAVIES') throw new Error('name line wrong: ' + JSON.stringify(names));
+    if (names[2] !== 'DAVE DAVIES') throw new Error('name line wrong: ' + JSON.stringify(names));
     if (daves.daveBoxMeta() !== wantM[0]) throw new Error('did not wrap forward');
     daves.daveBoxRotate(-1);
     if (daves.daveBoxMeta() !== wantM[2]) throw new Error('did not wrap backward');
