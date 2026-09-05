@@ -38,6 +38,7 @@ globalThis.host_module_set_params = () => true;   /* the strip's turn reaches th
 globalThis.host_module_get_param = () => '';
 globalThis.shadow_get_param = (slot, key) => {
     reads.push(key);
+    if (PARAM_VALUES[slot + ':' + key] !== undefined) return PARAM_VALUES[slot + ':' + key];   /* per-slot override */
     return PARAM_VALUES[key] !== undefined ? PARAM_VALUES[key] : '';
 };
 globalThis.shadow_set_param = (slot, key, val) => { writes.push(key + '=' + val); };
@@ -81,8 +82,8 @@ const files = {};
 let recallPending = false;
 globalThis.host_snapshot_take   = (dir) => { snapCalls.push(['take', dir]); return JSON.stringify({ ok: true, skipped: 0, positions: 12 }); };
 globalThis.host_snapshot_recall = (dir) => { snapCalls.push(['recall', dir]); recallPending = true; return JSON.stringify({ ok: true, pending: true }); };
-let statusSkipped = 1;
-globalThis.host_snapshot_status = () => JSON.stringify({ pending: recallPending, skipped: statusSkipped });
+let statusSkipped = 1, statusAdded = 0;
+globalThis.host_snapshot_status = () => JSON.stringify({ pending: recallPending, skipped: statusSkipped, added: statusAdded, addedList: statusAdded ? ['master_fx:fx1'] : [] });
 globalThis.host_file_exists = (p) => Object.prototype.hasOwnProperty.call(files, p) && files[p] !== '';
 globalThis.host_write_file = (p, c) => { files[p] = c; writes.push('FILE ' + p); return true; };
 globalThis.host_read_file = (p) => (files[p] !== undefined ? files[p] : '');
@@ -117,6 +118,7 @@ step_('setup: session view, a project, three kinds of track', () => {
     S.awaitingProjectSelect = false; S.ledInitComplete = true; S.sessionView = true; S.activeTrack = 0;
     S.currentSetUuid = 'aaaa-bbbb'; S.clockFollowTicks = true;
     S.trackRoute[0] = 0; S.trackRoute[1] = 1; S.trackChannel[1] = 0; S.trackRoute[2] = 2;
+    S.trackRoute[3] = 0; PARAM_VALUES['synth:module'] = 'nusaw'; PARAM_VALUES['3:synth:module'] = '';   /* track 4: a Schwung track with NO synth */
     PARAM_VALUES['slot:volume'] = '0.8'; PARAM_VALUES['slot:pan'] = '0.5'; PARAM_VALUES['slot:send_a'] = '0.1'; PARAM_VALUES['slot:send_b'] = '0';
     ticks(4);
     if (D.devSnapOpen()) throw new Error('layer open at rest');
@@ -160,6 +162,8 @@ step_('⭑ HOLD a step = SAVE: the host takes into the slot dir and davebox writ
     /* Mutes ride too (Josh, 2026-09-05). */
     if (!json.mutes || !Array.isArray(json.mutes.mute)) throw new Error('no mutes in davebox.json');
     if (json.mutes.mute[1] !== true || json.mutes.solo[3] !== true) throw new Error('mutes not captured: ' + JSON.stringify(json.mutes));
+    /* Which tracks HAD an instrument (Josh, 2026-09-05): Move + MIDI always, Schwung when a synth is loaded. */
+    if (JSON.stringify(json.instr.slice(0, 4)) !== JSON.stringify([true, true, true, false])) throw new Error('instr not captured: ' + JSON.stringify(json.instr));
     if (!D.devSnapState().slots[2]) throw new Error('slot 2 not marked filled');
 });
 
@@ -188,6 +192,19 @@ step_('⭑ TAP a filled step = RECALL: the host recalls that dir; davebox applie
     const lines = S.actionPopupLines.map(String);
     if (lines[0] !== 'SNAPSHOT 3' || lines[1] !== 'RESTORED' || lines[2] !== '1 skipped') throw new Error('RESTORED card: ' + JSON.stringify(lines));
     if (S.actionPopupEndTick < S.clockMs + D.DEVSNAP_CARD_MS - 50) throw new Error('the RESTORED card is a glance, not a card');
+});
+
+step_('⭑ a recall WARNS: fx added since the save are bypassed (host count), and a track that was empty then and has a synth now is MUTED (Josh, 2026-09-05)', () => {
+    statusSkipped = 0; statusAdded = 2;
+    PARAM_VALUES['3:synth:module'] = 'braids';                 /* a synth landed on track 4 after the save */
+    S.trackMuted[3] = false; writes.length = 0;
+    step(2, true); advance(100); step(2, false); advance(20);
+    recallPending = false; advance(30);
+    if (!writes.includes('t3_mute=1') || !S.trackMuted[3]) throw new Error('track 4 not muted: ' + JSON.stringify(writes.filter(w => /_mute=/.test(w))));
+    const lines = S.actionPopupLines.map(String);
+    if (JSON.stringify(lines) !== JSON.stringify(['SNAPSHOT 3', 'RESTORED', '2 new FX bypassed', '1 empty track muted'])) throw new Error('warning card: ' + JSON.stringify(lines));
+    if (S.actionPopupEndTick < S.clockMs + D.DEVSNAP_WARN_MS - 50) throw new Error('a warning must hold longer than a plain card');
+    statusAdded = 0; PARAM_VALUES['3:synth:module'] = '';
 });
 
 step_('⚠ RESTORED with NOTHING skipped: two lines, never the word "undefined" (device, 2026-09-05)', () => {
