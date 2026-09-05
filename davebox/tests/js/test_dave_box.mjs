@@ -221,22 +221,26 @@ step('⭐ the run cache reproduces the BITS for every row of every frame (positi
     if (daves.frameRowRuns(0, 5) !== daves.frameRowRuns(0, 5)) throw new Error('rows are re-encoded per call');
 });
 
-step('⭐ the DAVES SWITCH: default OFF (no file) → no window; On deals; Off clears mid-play; persisted device-global', () => {
+step('⭐ the DAVES SWITCH: default ON (no file) → the window deals; Off clears mid-play; On deals again; persisted device-global', () => {
     seenFileContent = '1\n';
     prefFileContent = null; S.daveWindowOn = null;
-    if (daves.daveWindowOn() !== false) throw new Error('absent pref file must read OFF');
+    if (daves.daveWindowOn() !== true) throw new Error('absent pref file must read ON (the default, Josh 2026-09-05)');
     S.playing = true; S.bannerDave = -1; daves.bannerDaveSync();
-    if (S.bannerDave !== -1) throw new Error('switch OFF still dealt a Dave: ' + S.bannerDave);
+    if (S.bannerDave !== 0) throw new Error('the default-ON switch did not deal on the first poll, got ' + S.bannerDave);
     const writes = [];
     globalThis.host_write_file = (p, c) => { writes.push([p, c]); if (p.indexOf('daves-window') >= 0) prefFileContent = c; return true; };
+    daves.setDaveWindowOn(false);
+    if (S.bannerDave !== -1) throw new Error('Off mid-play must clear the Dave at once');
+    if (!writes.find(w => w[0].indexOf('/dbx-host/daves-window.txt') >= 0 && w[1].trim() === '0'))
+        throw new Error('Off did not persist to the device-global pref file: ' + JSON.stringify(writes));
+    daves.bannerDaveSync();
+    if (S.bannerDave !== -1) throw new Error('switch OFF still dealt a Dave: ' + S.bannerDave);
     daves.setDaveWindowOn(true);
-    if (!writes.find(w => w[0].indexOf('/dbx-host/daves-window.txt') >= 0 && w[1].trim() === '1'))
-        throw new Error('On did not persist to the device-global pref file: ' + JSON.stringify(writes));
+    if (prefFileContent.trim() !== '1') throw new Error('On did not persist');
     daves.bannerDaveSync();
     if (S.bannerDave !== 0) throw new Error('switch ON did not deal on the next poll, got ' + S.bannerDave);
     daves.setDaveWindowOn(false);
-    if (S.bannerDave !== -1) throw new Error('Off mid-play must clear the Dave at once');
-    if (prefFileContent.trim() !== '0') throw new Error('Off did not persist');
+    if (prefFileContent.trim() !== '0') throw new Error('Off did not persist (second time)');
     /* A fresh read (module reload) honours the file. */
     prefFileContent = '1\n'; S.daveWindowOn = null;
     if (daves.daveWindowOn() !== true) throw new Error('pref file "1" must read ON');
