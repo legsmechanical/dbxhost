@@ -1139,7 +1139,7 @@ const SPLASH_TOTAL_TICKS = SPLASH_PRE_HOLD_TICKS + SPLASH_TENSION_TICKS +
  * short". The hold is a deadline on the wall clock; SPLASH_TOTAL_TICKS still
  * paces the animation underneath, and the splash cannot END before the art
  * deadline has passed. A button press still skips it. */
-const SPLASH_ART_MS = 2500;
+const SPLASH_ART_MS = 1500;
 let splashArtUntilMs = 0;      /* Date.now() deadline; 0 = not yet armed */
 /* The session boot's LED blank. On the pre-kill launch branch nothing has
  * blanked the pads since stock died: they hold the lit stock menu until the
