@@ -28,6 +28,7 @@ import { S, standDownBankDisplay } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { tickPrefetch, dget } from './ui_dsp_bridge.mjs';
 import { daveBoxTick, bannerDaveSync } from './ui_daves.mjs';
+import { devSnapOpen, devSnapEnter, devSnapTick, devSnapSave, DEVSNAP_HOLD_MS } from './ui_devsnap.mjs';
 import { automationTick, automationPollWarnings } from './ui_automation.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
 import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, readActiveSet,
@@ -1094,6 +1095,16 @@ export function _tickImpl() {
             S.stepSaveFlashEndTick   = -1;
             S.stepSaveFlashStartTick = -1;
         }
+        /* THE SNAPSHOT LAYER (item 18): Capture held past the threshold in
+         * session view, nothing else pressed meanwhile (a Capture+row / +pad
+         * marks it used and keeps its meaning). Opening marks Capture used so
+         * the release runs no tap action. */
+        if (S.captureHeld && S.sessionView && !S.captureUsedAsModifier && !devSnapOpen() &&
+                S.captureHeldAt >= 0 && (S.clockMs - S.captureHeldAt) >= DEVSNAP_HOLD_MS) {
+            S.captureUsedAsModifier = true;
+            devSnapEnter();
+        }
+        devSnapTick();
         /* Session view hold-to-save: fire exactly when threshold reached, not on release */
         if (S.sessionStepHeld >= 0) {
             const _ssh = S.sessionStepHeld;
@@ -1105,6 +1116,8 @@ export function _tickImpl() {
                 if (_ctx === 1) {
                     S.perfSnapshots[_ssh] = S.perfModsToggled | S.perfModsHeld;
                     showActionPopup('PERF PRESET', 'SAVED');
+                } else if (_ctx === 3) {
+                    devSnapSave(_ssh);                       /* the device snapshot layer */
                 } else {
                     const drumEffMutes = [];
                     for (let _t = 0; _t < NUM_TRACKS; _t++) {

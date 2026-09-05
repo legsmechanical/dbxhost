@@ -33,6 +33,8 @@ const SETS_DIR    = '/data/UserData/UserLibrary/Sets';
 const DBX_SUBDIR  = 'dAVEBOx';
 
 function setStateDir(uuid) { return SETS_DIR + '/' + uuid + '/' + DBX_SUBDIR; }
+/* Device-wide snapshots (item 18): one dir per slot beside the live state. */
+export function deviceSnapDir(uuid, n) { return setStateDir(uuid) + '/snapshots/' + (n | 0); }
 
 /* Every JS write below an existing project's dir goes through here first. The
  * DSP's own save creates the subdir itself (ensure_parent_dir, seq8_state.c);

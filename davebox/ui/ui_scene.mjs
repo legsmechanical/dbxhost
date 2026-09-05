@@ -1,6 +1,7 @@
 import { S } from './ui_state.mjs';
 import { NUM_TRACKS, LED_OFF, LED_STEP_CURSOR, PAD_MODE_DRUM } from './ui_constants.mjs';
-import { White, VividYellow, DarkGrey } from '/data/UserData/schwung/shared/constants.mjs';
+import { White, VividYellow, DarkGrey, Cyan } from '/data/UserData/schwung/shared/constants.mjs';
+import { devSnapOpen, devSnapLedFor } from './ui_devsnap.mjs';
 import { setLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 
 export function trackClipHasContent(t, sceneIdx) {
@@ -49,7 +50,11 @@ export function updateSceneMapLEDs() {
     if (!S.ledInitComplete) return;
     for (let i = 0; i < 16; i++) {
         let color;
-        if (S.muteHeld && S.sessionView) {
+        if (devSnapOpen() && S.sessionView) {
+            /* The snapshot layer: filled = teal, the last recalled = white,
+             * empty = dim, the one being recalled blinks. */
+            color = devSnapLedFor(i, { filled: Cyan, white: White, dim: DarkGrey, off: LED_OFF });
+        } else if (S.muteHeld && S.sessionView) {
             color = S.snapshots[i] !== null ? VividYellow : DarkGrey;
         } else {
             const inView     = i >= S.sceneRow && i < S.sceneRow + 4;

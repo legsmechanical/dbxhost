@@ -15,6 +15,7 @@ import {
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { automationClearStep } from './ui_automation.mjs';
+import { devSnapOpen, devSnapClear, devSnapRecall } from './ui_devsnap.mjs';
 import { drumPadToLane, drumPadToVelZone, drumVelZoneToVelocity, _clipIsEmpty,
     clipHasContent, effectiveVelocity, stepEntryVelocity,
     ARP_VEL_CANON, arpVelLevel, VEL_THRU } from './ui_pure.mjs';
@@ -1090,7 +1091,9 @@ export function _onStepButtons(d1, d2) {
     const idx = d1 - 16;
     /* Delete+step in session view: clear perf preset or mute snapshot slot immediately. */
     if (S.sessionView && S.deleteHeld) {
-        if (S.loopHeld || S.perfViewLocked) {
+        if (devSnapOpen()) {
+            devSnapClear(idx);
+        } else if (S.loopHeld || S.perfViewLocked) {
             S.perfSnapshots[idx] = 0;
             if (S.perfRecalledSlot === idx) { S.perfRecalledSlot = -1; S.perfModsToggled = 0; sendPerfMods(); }
             showActionPopup('PERF PRESET', 'CLEARED');
@@ -1130,6 +1133,14 @@ export function _onStepButtons(d1, d2) {
             S.mergePlacingScene = true;
             S.pendingDefaultSetParams.push({ key: 'merge_place_row', val: String(idx) });
             S.screenDirty = true;
+            return;
+        }
+        if (devSnapOpen()) {
+            /* The snapshot layer: the 16 steps are the 16 device snapshots —
+             * the mute-snapshot grammar, tap/hold decided on release / the tick. */
+            S.stepBtnPressedTick[idx] = nowMs();
+            S.sessionStepHeld         = idx;
+            S.sessionStepHeldCtx      = 3;  /* device snapshot */
             return;
         }
         if (S.muteHeld) {
@@ -1565,7 +1576,9 @@ export function _onPadRelease(status, d1, d2) {
             S.sessionStepHeld    = -1;
             S.sessionStepHeldCtx = 0;
             S.stepBtnPressedTick[btn] = -1;
-            if (ctx === 1) {
+            if (ctx === 3) {
+                devSnapRecall(btn);                          /* a tap on a device snapshot */
+            } else if (ctx === 1) {
                 /* Perf recall */
                 if (S.perfRecalledSlot === btn) {
                     S.perfRecalledSlot = -1;
