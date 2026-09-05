@@ -11,6 +11,7 @@ import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
 import { arpVelLevel } from './ui_pure.mjs';
 import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell } from './ui_knob_leds.mjs';
 import { automationStateFor } from './ui_automation.mjs';
+import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import {
     White, Red, Green, Blue, DarkBlue, LightGrey, DarkGrey, Cyan, PurpleBlue,
@@ -755,6 +756,22 @@ export function updateTrackLEDs() {
                 ledVal = LED_OFF;
             } else {
                 ledVal = _tc;
+            }
+            /* The strip's automation, on the ring as on a bank card's (Josh,
+             * 2026-09-05: parity "including the delete/mute led rings"): an
+             * ACTIVE lane blinks the ring at the 440 ms law; an inactive one
+             * shows the plain colour, exactly like the kit-page banks. The
+             * mute / solo colours above still apply where no lane exists.
+             * Map lookups only — sessStripTargets and automationStateFor read
+             * no host state. Computed once per frame across the eight strips. */
+            if (k === 0) {
+                const _m = SESS_KNOB_MODES[S.sessKnobMode];
+                S._sessRingAuto = (_m && _m.widget !== 'gateway') ? _m.key : null;
+            }
+            if (S._sessRingAuto && !_isMuted) {
+                const _tgs = sessStripTargets(S, k, S._sessRingAuto);
+                const _st = _tgs.length ? automationStateFor(k, effectiveClip(k), _tgs[0].target) : null;
+                if (_st && _st.active && (Math.floor(S.clockMs / 440) % 2)) ledVal = LED_OFF;
             }
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 5) {
             /* Repeat Groove: lit when step k has non-default vel scale or nudge */
