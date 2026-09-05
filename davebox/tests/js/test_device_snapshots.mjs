@@ -162,8 +162,6 @@ step_('⭑ HOLD a step = SAVE: the host takes into the slot dir and davebox writ
     /* Mutes ride too (Josh, 2026-09-05). */
     if (!json.mutes || !Array.isArray(json.mutes.mute)) throw new Error('no mutes in davebox.json');
     if (json.mutes.mute[1] !== true || json.mutes.solo[3] !== true) throw new Error('mutes not captured: ' + JSON.stringify(json.mutes));
-    /* Which tracks HAD an instrument (Josh, 2026-09-05): Move + MIDI always, Schwung when a synth is loaded. */
-    if (JSON.stringify(json.instr.slice(0, 4)) !== JSON.stringify([true, true, true, false])) throw new Error('instr not captured: ' + JSON.stringify(json.instr));
     if (!D.devSnapState().slots[2]) throw new Error('slot 2 not marked filled');
 });
 
@@ -194,15 +192,15 @@ step_('⭑ TAP a filled step = RECALL: the host recalls that dir; davebox applie
     if (S.actionPopupEndTick < S.clockMs + D.DEVSNAP_CARD_MS - 50) throw new Error('the RESTORED card is a glance, not a card');
 });
 
-step_('⭑ a recall WARNS: fx added since the save are bypassed (host count), and a track that was empty then and has a synth now is MUTED (Josh, 2026-09-05)', () => {
+step_('⭑ a recall WARNS: fx added since the save are bypassed (the host count); a track that gained a synth is NOT muted (reverted, Josh 2026-09-05)', () => {
     statusSkipped = 0; statusAdded = 2;
     PARAM_VALUES['3:synth:module'] = 'braids';                 /* a synth landed on track 4 after the save */
     S.trackMuted[3] = false; writes.length = 0;
     step(2, true); advance(100); step(2, false); advance(20);
     recallPending = false; advance(30);
-    if (!writes.includes('t3_mute=1') || !S.trackMuted[3]) throw new Error('track 4 not muted: ' + JSON.stringify(writes.filter(w => /_mute=/.test(w))));
+    if (writes.includes('t3_mute=1') || S.trackMuted[3]) throw new Error('track 4 was muted — that behaviour was reverted');
     const lines = S.actionPopupLines.map(String);
-    if (JSON.stringify(lines) !== JSON.stringify(['SNAPSHOT 3', 'RESTORED', '2 new FX bypassed', '1 empty track muted'])) throw new Error('warning card: ' + JSON.stringify(lines));
+    if (JSON.stringify(lines) !== JSON.stringify(['SNAPSHOT 3', 'RESTORED', '2 new FX bypassed'])) throw new Error('warning card: ' + JSON.stringify(lines));
     if (S.actionPopupEndTick < S.clockMs + D.DEVSNAP_WARN_MS - 50) throw new Error('a warning must hold longer than a plain card');
     statusAdded = 0; PARAM_VALUES['3:synth:module'] = '';
 });

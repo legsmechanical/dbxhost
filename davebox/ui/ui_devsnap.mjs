@@ -28,11 +28,11 @@
  */
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { NUM_TRACKS, DRUM_LANES, ROUTE_NONE } from './ui_constants.mjs';
+import { NUM_TRACKS, DRUM_LANES } from './ui_constants.mjs';
 import { setTrackMute, setTrackSolo } from './ui_editops.mjs';
 import { showActionPopup, showActionPopupFor, deviceSnapDir } from './ui_persistence.mjs';
 import { engineGet, engineSet, engineGetSlotParam, engineSetSlotParam, moveBusComp,
-         moveBusForChannel, engineLoadedModule } from './ui_engine.mjs';
+         moveBusForChannel } from './ui_engine.mjs';
 import { midiVal, midiSendValue } from './ui_sound.mjs';
 import { forceRedraw, invalidateLEDCache } from './ui_leds.mjs';
 
@@ -41,7 +41,7 @@ export const DEVSNAP_HOLD_MS = 450;     /* = BACK_HOLD_MS: a deliberate long-pre
 /* A SAVED / RESTORED card is a result to read, not a flash: the default popup
  * (520 ms) was "gone before you can read it" (Josh, 2026-09-05, device). */
 export const DEVSNAP_CARD_MS = 1500;
-/* A recall that had to BYPASS or MUTE something is a warning to read. */
+/* A recall that had to BYPASS something is a warning to read. */
 export const DEVSNAP_WARN_MS = 3500;
 const LEVEL_KEYS = ['volume', 'pan', 'send_a', 'send_b'];
 /* A level that read back as nothing is NOT a level (isFinite(null) is true —
@@ -135,36 +135,6 @@ function mutesApply(m) {
     return n;
 }
 
-/* Does this track have an instrument RIGHT NOW? A Move or MIDI track always
- * has one (its bus, its cable); a Schwung track when a synth is loaded; a
- * NONE track never. Recorded at TAKE so a recall can tell "empty then, has
- * one now" — Josh, 2026-09-05: "muting any instrument track that was empty",
- * because a synth added after the save has no record and would play on,
- * untouched, in every older snapshot. */
-function hasInstrument(t) {
-    const r = S.trackRoute[t] | 0;
-    if (r === 1 || r === 2) return true;
-    if (r === ROUTE_NONE) return false;
-    return !!engineLoadedModule(t, 'synth');
-}
-function instrCapture() {
-    const out = [];
-    for (let t = 0; t < NUM_TRACKS; t++) out.push(hasInstrument(t));
-    return out;
-}
-/* Tracks empty at the take that hold an instrument now: MUTE them (through the
- * Mute button's own setter, so it shows on the button and rides the next
- * snapshot like any mute). Returns how many. Older json (no `instr`) mutes
- * nothing — it cannot know. */
-function instrApply(instr) {
-    if (!Array.isArray(instr)) return 0;
-    let n = 0;
-    for (let t = 0; t < NUM_TRACKS && t < instr.length; t++) {
-        if (instr[t] === false && hasInstrument(t) && !S.trackMuted[t]) { setTrackMute(t, true); n++; }
-    }
-    return n;
-}
-
 function mixerApply(tracks) {
     if (!Array.isArray(tracks)) return 0;
     let n = 0;
@@ -196,7 +166,7 @@ export function devSnapSave(n) {
     let res = null;
     try { res = JSON.parse(host_snapshot_take(dir) || 'null'); } catch (e) { res = null; }
     if (!res || !res.ok) { showActionPopup('SNAPSHOT', 'Save failed'); return false; }
-    const json = { v: 3, mixer: mixerCapture(), mutes: mutesCapture(), instr: instrCapture(), taken: Date.now() };
+    const json = { v: 3, mixer: mixerCapture(), mutes: mutesCapture(), taken: Date.now() };
     if (!host_write_file(dir + '/davebox.json', JSON.stringify(json))) { showActionPopup('SNAPSHOT', 'Save failed'); return false; }
     d.slots[n] = true; d.last = n;
     showActionPopupFor(DEVSNAP_CARD_MS, 'SNAPSHOT ' + (n + 1), 'SAVED', res.skipped ? res.skipped + ' skipped' : undefined);
@@ -226,13 +196,12 @@ function devSnapFinish() {
     const n = d.recalling;
     let status = null;
     try { status = JSON.parse(host_snapshot_status() || 'null'); } catch (e) { status = null; }
-    let applied = 0, muted = 0;
+    let applied = 0;
     try { applied = d.recallJson ? mixerApply(d.recallJson.mixer) + mutesApply(d.recallJson.mutes) : 0; }
     catch (e) { console.log('[devsnap] mixer/mutes apply failed: ' + e); }
-    /* AFTER the saved mutes land, so a track empty at the take ends up muted
-     * whatever its saved mute said. */
-    try { muted = d.recallJson ? instrApply(d.recallJson.instr) : 0; }
-    catch (e) { console.log('[devsnap] instr apply failed: ' + e); }
+    /* (A track empty at the take that holds a synth now is left alone — the
+     * mute for that was built and REVERTED the same day, Josh: "there's
+     * really no reason to mute the tracks re: the instruments".) */
     d.recalling = -1; d.recallDir = null; d.recallJson = null; d.last = n;
     /* The card: what came back, then what the recall had to DO about things
      * that were not there at the save (Josh, 2026-09-05: "pop a warning up"). */
@@ -240,10 +209,9 @@ function devSnapFinish() {
     const lines = ['SNAPSHOT ' + (n + 1), 'RESTORED'];
     if (status && status.skipped) lines.push(status.skipped + ' skipped');
     if (added) lines.push(added + ' new FX bypassed');
-    if (muted) lines.push(muted + (muted === 1 ? ' empty track muted' : ' empty tracks muted'));
-    if (added || muted) console.log('[devsnap] recall ' + (n + 1) + ': bypassed ' + added + ' fx added since the save' +
-                                    (status && status.addedList ? ' (' + status.addedList.join(' ') + ')' : '') + ', muted ' + muted + ' track(s) empty then');
-    showActionPopupFor((added || muted) ? DEVSNAP_WARN_MS : DEVSNAP_CARD_MS, ...lines);
+    if (added) console.log('[devsnap] recall ' + (n + 1) + ': bypassed ' + added + ' fx added since the save' +
+                           (status && status.addedList ? ' (' + status.addedList.join(' ') + ')' : ''));
+    showActionPopupFor(added ? DEVSNAP_WARN_MS : DEVSNAP_CARD_MS, ...lines);
     invalidateLEDCache(); forceRedraw();
     return applied;
 }
