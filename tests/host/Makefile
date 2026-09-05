@@ -46,7 +46,8 @@ TARGETS = $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_master_fx_saved_state \
           $(BUILD_DIR)/test_fx_midi_filter \
           $(BUILD_DIR)/test_overtake_native_led_repaint \
-          $(BUILD_DIR)/test_link_peer_name
+          $(BUILD_DIR)/test_link_peer_name \
+          $(BUILD_DIR)/test_shadow_param_queue
 
 .PHONY: all test clean
 
@@ -102,6 +103,9 @@ $(BUILD_DIR)/test_midi_in_compact: test_midi_in_compact.c ../../src/host/shadow_
 # split that way; upstream's are not).
 $(BUILD_DIR)/test_overtake_native_led_repaint: test_overtake_native_led_repaint.c ../../src/host/shadow_led_queue.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -D_POSIX_C_SOURCE=200809L $(INCLUDES) -I../../src $(filter %.c,$^) -o $@ $(LDFLAGS)
+
+$(BUILD_DIR)/test_shadow_param_queue: test_shadow_param_queue.c ../../src/host/shadow_param_queue.h ../../src/host/shadow_constants.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 -include $(TARGETS:=.d)
 

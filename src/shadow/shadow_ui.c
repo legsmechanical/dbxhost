@@ -27,6 +27,7 @@
 
 #include "host/js_display.h"
 #include "host/shadow_constants.h"
+#include "host/shadow_param_queue.h"
 #include "host/shadow_shm_util.h"
 #include "host/js_host_common.h"
 #include "host/shadow_midi_inject_writer.h"
@@ -734,13 +735,63 @@ static uint32_t shadow_param_next_request_id(void) {
     return shadow_param_request_seq;
 }
 
+/* The pending queue behind the mailbox — see host/shadow_param_queue.h for
+ * the bug it closes (a second fire-and-forget SET used to STOMP an unconsumed
+ * one after 8 ms). Main-thread only. */
+static spq_t g_param_pending;
+
+static inline int shadow_param_mailbox_idle(void) {
+    return __atomic_load_n(&shadow_param->request_type, __ATOMIC_ACQUIRE) == 0;
+}
+
+/* Write ONE set request into the (idle) mailbox. Shared by the direct path,
+ * the drain, and the fallback so there is exactly one place that knows the
+ * mailbox's commit protocol. */
+static uint32_t shadow_param_commit_set(int slot, const char *key, const char *value) {
+    uint32_t req_id = shadow_param_next_request_id();
+    strncpy(shadow_param->key, key, SHADOW_PARAM_KEY_LEN - 1);
+    shadow_param->key[SHADOW_PARAM_KEY_LEN - 1] = '\0';
+    strncpy(shadow_param->value, value, SHADOW_PARAM_VALUE_LEN - 1);
+    shadow_param->value[SHADOW_PARAM_VALUE_LEN - 1] = '\0';
+    shadow_param->slot = (uint8_t)slot;
+    shadow_param->response_ready = 0;
+    shadow_param->error = 0;
+    shadow_param->response_id = 0;
+    shadow_param->request_id = req_id;
+    /* Release-store the commit flag so the shim's acquire-load sees all the
+     * request fields written above (incl. trace context) before it acts. */
+    __atomic_store_n(&shadow_param->request_type, (uint8_t)1, __ATOMIC_RELEASE);  /* SET */
+    return req_id;
+}
+
+/* Commit the head of the pending queue if the mailbox is idle. At most ONE
+ * per call — the mailbox holds one request and the shim services it once per
+ * SPI frame, so draining is naturally paced by the frame. Returns how many
+ * are still pending. Cheap when empty: one acquire-load, one compare. */
+static uint32_t shadow_param_drain_pending(void) {
+    if (spq_count(&g_param_pending) && shadow_param_mailbox_idle()) {
+        const spq_entry_t *ent = spq_peek(&g_param_pending);
+        shadow_param_commit_set(ent->slot, ent->key, ent->value);
+        spq_pop(&g_param_pending);
+    }
+    return spq_count(&g_param_pending);
+}
+
+/* Wait for the mailbox to be free FOR THE CALLER — which means the pending
+ * queue must be empty too: a blocking GET or SET that took the mailbox ahead
+ * of queued writes would reorder them, and a read could overtake a write to
+ * its own key. So the wait drains as it goes. */
 static int shadow_param_wait_idle(int timeout_ms) {
     int timeout = shadow_param_timeout_to_polls(timeout_ms);
-    while (shadow_param->request_type != 0 && timeout > 0) {
+    for (;;) {
+        if (shadow_param_mailbox_idle()) {
+            if (shadow_param_drain_pending() == 0 && shadow_param_mailbox_idle()) return 1;
+        }
+        if (timeout <= 0) break;
         usleep(SHADOW_PARAM_POLL_US);
         timeout--;
     }
-    return shadow_param->request_type == 0;
+    return shadow_param_mailbox_idle() && spq_count(&g_param_pending) == 0;
 }
 
 static int shadow_param_wait_response(uint32_t req_id, int timeout_ms) {
@@ -825,45 +876,37 @@ static int shadow_set_param_common(int slot, const char *key, const char *value,
 
     const int overtake_fire_and_forget = !force_blocking && (shadow_control && shadow_control->overtake_mode >= 2);
 
-    if (!overtake_fire_and_forget) {
-        if (!shadow_param_wait_idle(timeout_ms)) {
-            return 0;
-        }
-    } else {
-        /* Fire-and-forget must still not STOMP a pending request from the
-         * other mailbox producer (schwung-manager: a browser edit SET or a
-         * snapshot GET) — a blind overwrite kills that request and the
-         * manager burns its full 500ms response timeout (observed as dropped
-         * remote-UI edits). Mailbox holds are ≤1 SPI frame, so a short
-         * bounded wait clears nearly every collision; on timeout we still
-         * claim the slot so the device UI can never block indefinitely. */
-        shadow_param_wait_idle(8);
-    }
-
-    uint32_t req_id = shadow_param_next_request_id();
-
-    /* Copy key and value to shared memory */
-    strncpy(shadow_param->key, key, SHADOW_PARAM_KEY_LEN - 1);
-    shadow_param->key[SHADOW_PARAM_KEY_LEN - 1] = '\0';
-    strncpy(shadow_param->value, value, SHADOW_PARAM_VALUE_LEN - 1);
-    shadow_param->value[SHADOW_PARAM_VALUE_LEN - 1] = '\0';
-
-    /* Set up request */
-    shadow_param->slot = (uint8_t)slot;
-    shadow_param->response_ready = 0;
-    shadow_param->error = 0;
-    shadow_param->response_id = 0;
-    shadow_param->request_id = req_id;
-    /* Release-store the commit flag so the shim's acquire-load sees all the
-     * request fields written above (incl. trace context) before it acts. */
-    __atomic_store_n(&shadow_param->request_type, (uint8_t)1, __ATOMIC_RELEASE);  /* SET */
-
-    /* In overtake module mode, keep this fire-and-forget so rapid encoder
-     * streams do not block UI rendering. */
     if (overtake_fire_and_forget) {
+        /* Fire-and-forget: the UI thread must not block on a rapid encoder
+         * stream — and it must not STOMP either. This used to wait 8 ms for
+         * the mailbox and then overwrite whatever was still in it: a second
+         * SET in the same tick lost the first whenever the SPI thread was
+         * late (device-diagnosed 2026-08-23), and the other producer's
+         * request (schwung-manager) died to a 500 ms timeout. Now the write
+         * is QUEUED, in order, and committed by the next drain — the main
+         * loop's, or any blocking caller's. Only an oversize value or a full
+         * queue takes the old path, and that is counted. */
+        spq_action_t act = spq_offer(&g_param_pending, shadow_param_mailbox_idle(),
+                                     (uint8_t)slot, key, value);
+        if (act == SPQ_COMMIT_NOW) {
+            shadow_param_commit_set(slot, key, value);
+            return 1;
+        }
+        if (act == SPQ_QUEUED) {
+            shadow_param_drain_pending();   /* the head goes now if it can */
+            return 1;
+        }
+        /* SPQ_FALLBACK: the bounded wait, then claim — never block the UI. */
+        shadow_param_wait_idle(8);
+        shadow_param_commit_set(slot, key, value);
         return 1;
     }
 
+    if (!shadow_param_wait_idle(timeout_ms)) {
+        return 0;
+    }
+    /* wait_idle drained the pending queue, so this write lands in order. */
+    uint32_t req_id = shadow_param_commit_set(slot, key, value);
     return shadow_param_wait_response(req_id, timeout_ms) > 0;
 }
 
@@ -2990,6 +3033,10 @@ int main(int argc, char *argv[]) {
             }
             break;
         }
+
+        /* Pending param writes go first: one per idle mailbox, paced by the
+         * SPI frame. Free when the queue is empty (see shadow_param_queue.h). */
+        if (shadow_param) shadow_param_drain_pending();
 
         /* Process incoming MIDI BEFORE tick() so that the current frame's
          * drawUI() reflects the latest input (knob CCs, button presses).
