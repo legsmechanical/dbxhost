@@ -401,7 +401,7 @@ const DEFAULT_SLOTS = [
 
 /* View constants */
 const VIEWS = {
-    /* (SLOTS root view DELETED in P5 — sound mode + chain_editor_view cover
+    /* (SLOTS root view DELETED in P5 — sound mode + the chain editor cover
      * it; the parking/fallback view is now TOOLS.) */
     CHAIN_EDIT: "chainedit",  // Horizontal chain component editor
     CHAIN_SETTINGS: "chainsettings", // Chain settings (volume, channels, knob mapping)
@@ -485,14 +485,16 @@ const PRIMARY_SERVICES = {
             suppress_sysex: 0,
         }),
     },
-    chain_editor_view: { kind: "overlay", enter: function(o) { enterChainEdit((o && o.slot) | 0); } },
     master_fx:       { kind: "overlay", enter: function() { enterMasterFxSettings(); } },
     global_settings: { kind: "overlay", enter: function() { enterGlobalSettings(); } },
     fx_picker:       { kind: "overlay", enter: function() { enterFxBusPicker(); } },
     /* (knob_editor / lfo_editor direct-entry services DELETED in P7: the
      * primary module absorbed both editors natively — it reads/writes the
-     * same knob_N_* / lfoN:* chain params directly. The host's own editors
-     * remain reachable through chain_editor_view's Chain Settings rows.) */
+     * same knob_N_* / lfoN:* chain params directly. The chain_editor_view
+     * service went the same way 2026-09-05: no primary ever opened it by id
+     * — davebox opens only move_native — and enterChainEdit stays reachable
+     * from the host's own screens (the patch browser, the slot list), which
+     * is where the Chain Settings rows still live.) */
 };
 
 function primaryStackTopIsOverlay() {
