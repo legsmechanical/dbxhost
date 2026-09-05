@@ -150,7 +150,10 @@ step('source pins: the screens that collapse for NONE, and the DSP gate', () => 
     const sp = readFileSync('dsp/setparam/sp_track_config.c', 'utf8');
     if (!/"none"\)\)\s+rt = ROUTE_NONE;/.test(sp)) throw new Error('the setter does not accept "none"');
     const cc = readFileSync('ui/ui_input_cc.mjs', 'utf8');
-    if (!/=== ROUTE_NONE\) \{\s*\/\*[^]*?\*\/\s*showActionPopup\('NO INSTRUMENT'/.test(cc)) throw new Error('the Shift+hold gesture would open the parked generator on a NONE track');
+    /* Josh, 2026-09-05: the hold opens the INSTRUMENT PICKER — never the parked
+     * generator, never a popup that only names the gap. */
+    if (!/=== ROUTE_NONE\) \{\s*\/\*[^]*?\*\/\s*soundOpenInstrPicker\(_gt\);/.test(cc)) throw new Error('the Shift+hold gesture on a NONE track does not open the instrument picker');
+    if (/=== ROUTE_NONE\) \{[^}]*soundOpenGenerator/.test(cc)) throw new Error('the Shift+hold gesture would open the parked generator on a NONE track');
     const web = readFileSync('web_ui_core.js', 'utf8');
     if (!/none:3/.test(web)) throw new Error('the remote UI decode leaves a NONE track stale');
 });

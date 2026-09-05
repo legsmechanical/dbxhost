@@ -797,7 +797,8 @@ export function soundPickStateForTest() {
      * checked here, not on the global: the global is already false by then, and
      * it is this re-read that would resurrect it. */
     return { kinds: S.pickRows.map(r => r.kind), comps: S.pickRows.map(r => r.comp || null),
-             row: S.pickRow, view: S.view, shift: S.shiftHeld };
+             row: S.pickRow, view: S.view, shift: S.shiftHeld,
+             enumPick: S.enumPick ? S.enumPick.label : null };
 }
 
 /* Read-only view of the knob HUD's CONTENT decision, for tests. The card's text
@@ -2309,6 +2310,15 @@ export function soundGestureReturn() {
 }
 
 export function soundGestureArmed() { return !!GS.genReturn; }
+
+/* Shift+hold Note/Session on a NONE track (Josh, 2026-09-05: "hold
+ * shift+note/session should open the instrument picker"): there is nothing to
+ * edit and never the parked chain, so the hold lands on the one choice the
+ * track is waiting for — the menu with the picker already open over it. */
+export function soundOpenInstrPicker(track) {
+    soundEnter(track, slotIndex(track));
+    S.pendingAction = { t: 'instrpick' };
+}
 
 export function soundOpenGenerator(track) {
     soundEnter(track, slotIndex(track));

@@ -53,7 +53,7 @@ import { automationParamEdit } from './ui_automation.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { bankKnobLockTurn } from './ui_sound.mjs';
-import { soundActive, soundOpen, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator,
+import { soundActive, soundOpen, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, soundEnterBuses } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
@@ -2180,8 +2180,11 @@ if (S.trackRoute[_gt] === 1) {
 } else if (S.trackRoute[_gt] === 2) {
     showActionPopup('MIDI TRACK', 'No generator to edit');
 } else if (S.trackRoute[_gt] === ROUTE_NONE) {
-    /* NONE: nothing to open — never the parked chain (2026-09-05). */
-    showActionPopup('NO INSTRUMENT', 'Pick one in Sound');
+    /* NONE: nothing to edit and never the parked chain — the hold opens the
+     * INSTRUMENT PICKER over the track's menu (Josh, 2026-09-05; the first cut
+     * showed a NO INSTRUMENT popup, which named the gap without offering the
+     * way out). */
+    soundOpenInstrPicker(_gt);
 } else {
     /* An EMPTY generator opens the module picker itself (Josh, 2026-08-27)
      * with 'SELECT GENERATOR' over it — soundOpenGenerator always succeeds,
