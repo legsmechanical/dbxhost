@@ -5531,10 +5531,13 @@ function hostSnapshotRecall(dir) {
     if (!dir || typeof dir !== "string") return JSON.stringify({ ok: false, error: "no dir" });
     if (snapshotRecallJob) return JSON.stringify({ ok: false, error: "recall in progress", pending: true });
     const { records, busPrefixes } = snapshotRecords(dir);
-    if (records.length === 0) {
-        debugLog("snapshot: recall found nothing in " + dir);
-        return JSON.stringify({ ok: false, error: "no snapshot", restored: 0, skipped: 0, reasons: [] });
-    }
+    /* ⚠ ZERO RECORDS IS A SNAPSHOT, NOT A FAILURE (device, 2026-09-05): a new
+     * project whose tracks are all Move-routed and whose buses were empty at
+     * the take has nothing for the host to restore — and davebox's own half
+     * (mixer, Move bus levels) still applies, and every FX position that
+     * holds a module NOW was added since the save and gets bypassed by the
+     * plan. Treating it as "no snapshot" read as RECALL FAILED on every tap. */
+    if (records.length === 0) debugLog("snapshot: no host records in " + dir + " — davebox's half and the added-since bypasses still apply");
     const plan = planRestore(records, snapshotLiveIds(busPrefixes));
     for (const r of plan.reasons) {
         debugLog("snapshot: skipped " + r.prefix + " (" + r.reason +
