@@ -127,7 +127,7 @@ step('jog click: the MENU (cursor); click a row: its OPS; Delete runs with a che
     assert(!menu().ops && menu().menu, 'back on the menu');
     assert(!ab.autoBankRows(T, C).some(r => r.target === target), 'the row is gone from the list');
 });
-step('Smooth/Stepped is an op HERE (floats only): cutoff offers it, voices (int) does not; Loop edits in steps and writes pa_loop in ticks', () => {
+step('Smooth/Stepped is an op HERE (every numeric param): cutoff offers it, voices (int) too; Loop edits in steps and writes pa_loop in ticks', () => {
     S.clipTPS[T][C] = 24; S.clipLength[T][C] = 16;
     const rows = ab.autoBankRows(T, C);
     const ci = rows.findIndex(r => r.label === 'Syn>Cutoff');
@@ -165,7 +165,7 @@ step('Smooth/Stepped is an op HERE (floats only): cutoff offers it, voices (int)
     back(); ticks(1); assert(!menu().rateEdit && menu().ops, 'Back leaves the edit, ops stay');
     back(); ticks(1);
     const vi = ab.autoBankRows(T, C).findIndex(r => r.label === 'Syn>Voices');
-    if (vi >= 0) { menu().sel = vi; click(); ticks(1); ops = menu().ops.rows.map(o => o.op); assert(ops.indexOf('smooth') < 0, 'an int offers no Smooth'); back(); ticks(1); }
+    if (vi >= 0) { menu().sel = vi; click(); ticks(1); ops = menu().ops.rows.map(o => o.op); assert(ops.indexOf('smooth') >= 0, 'an int offers Smooth too (2026-09-05: every numeric param ramps)'); back(); ticks(1); }
 });
 step('Back closes one layer at a time: ops → menu → card → out of bank mode', () => {
     menu().sel = 0; click(); ticks(1); assert(menu().ops, 'ops open');
