@@ -542,6 +542,7 @@ const S = {
      * was EMPTY, rather than by choosing to browse. '' = the ordinary case. */
     browsePrompt: '',
     genAfterReflavour: null,       /* one-shot: a generator picked for a track that had to become Schwung first (see the reflavour action) */
+    followDest: null,              /* the view an IN-FLIGHT follow will land on (see effectiveView) — null when no follow is queued */
 
     blockIdx: 1,                /* default to SYNTH, the common case */
     comp: 'synth',
@@ -840,6 +841,9 @@ export function soundBusLevelEditingForTest(v) {
 }
 export function soundPendingActionForTest() { return S.pendingAction; }
 export function soundQueueActionForTest(a) { S.pendingAction = a; }
+/* Audition test hooks: arm a preview baseline as the preset list would, and read it back. */
+export function soundArmAuditionForTest(origBlob, previewIdx) { S.origState = origBlob; S.previewIdx = previewIdx | 0; S.previewAt = 0; }
+export function soundAuditionStateForTest() { return { hasOriginal: S.origState !== null, previewIdx: S.previewIdx }; }
 /* The param-pages editor's live state: whether it took the screen, and the page
  * the jog is on. Pins the OUTCOME (which pages exist) rather than ppApplies()'s
  * boolean — a gate can be right while the plan it produces is wrong. */
@@ -899,7 +903,32 @@ export function soundMacrosForTest() {
  * page while the card is not visible). */
 export function soundOpen() { return S.active; }
 export function soundResting() {
+    /* A follow in flight is never at rest, whatever S.view says mid-chain: a
+     * fast Shift+scroll crossing a Move track passed through its PROMPT
+     * between two detents, read as resting, and the next detent CLOSED sound
+     * mode — the overview dump (device, 2026-09-05). */
+    if (followInFlight()) return false;
     return !!(S.active && (S.view === VIEW_MACROS || S.view === VIEW_PROMPT) && !soundIsGlobal() && !GS.bankCardLatched);
+}
+/* Where the screen is GOING, not where it is. Every follow lands through a
+ * queued action (retarget → then), so between two detents faster than a tick
+ * S.view holds an intermediate state — VIEW_BLOCKS from a retarget, VIEW_PROMPT
+ * from a Move entry — and a plan read off it forgot it was walking editors:
+ * a fast Shift+scroll from an editor landed on the MENU, and onto a NONE track
+ * on its menu instead of the message (device, 2026-09-05; reproduced by
+ * test_track_switch_follows_editor_cc). The plan reads the destination. */
+function followInFlight() { return !!(S.pendingAction && S.followDest !== null && S.followDest !== undefined); }
+function effectiveView() { return followInFlight() ? S.followDest : S.view; }
+function followDestOf(plan) {
+    if (plan.editor || plan.fromEditor) return VIEW_EDIT;
+    if (plan.noEditor) return VIEW_NOEDITOR;
+    const th = plan.then;
+    if (!th) return VIEW_BLOCKS;
+    if (th.t === 'view') return th.view | 0;
+    if (th.t === 'slotcfg') return VIEW_SLOTCFG;
+    if (th.t === 'lfo') return VIEW_LFO;
+    if (th.t === 'knobs') return VIEW_KNOBS;
+    return VIEW_BLOCKS;
 }
 export function soundActive() { return S.active && !soundResting(); }
 /* Sound mode is open ON ITS ROOT SCREEN — the block picker, i.e. what the bank
@@ -1154,8 +1183,8 @@ export function soundInEditor() {
  * cause problems, or isn't feasible"). The switch lands on the SAME KIND of
  * screen on the new track, where that track has one:
  *   editor (and its dive-outs: hierarchy menu, file browser, the preset
- *     screens) → the same block's editor; the audition is REVERTED first, as
- *     Back would — a preview is not a choice
+ *     screens) → the same block's editor; a running audition is KEPT (Josh,
+ *     2026-09-05: it is what you are hearing) and becomes the preset record
  *   menu / module browser / slot presets → the menu
  *   CONFIG → the new track's CONFIG (a MIDI track has one, item 14); the LFOs
  *     screen → only a Schwung track has LFOs, else its menu
@@ -1174,11 +1203,14 @@ function followPlan(fromView, route) {
     const isEditorish = v === VIEW_EDIT || v === VIEW_MENU || v === VIEW_FILE ||
         v === VIEW_PRESET_SRC || v === VIEW_PRESET_LIST || v === VIEW_PRESET_BAKED ||
         v === VIEW_NOEDITOR || (ppOn && ppOwnsView());
-    /* From an EDITOR (or the no-editor screen a walk is passing through): a
-     * Schwung track → its editor; anything else has no editor → the MESSAGE
-     * screen, not its menu (Josh, 2026-09-05: "No instrument editor for
-     * <type> / Press back for track sound & config"). */
-    if (isEditorish) return { editor: chain, noEditor: !chain, then: null };
+    /* ⭑ RULED (Josh, 2026-09-05, after the build-23 pass: "there's too much
+     * to account for with all the different track types"): from an EDITOR (or
+     * any of its dive-outs) the switch lands on the new track's SOUND MENU, on
+     * its INSTRUMENT row — every track kind, every route. No editor reopened,
+     * no message screen. `fromEditor` keeps the rule live across a fast burst
+     * (followDestOf reads it as VIEW_EDIT), so the last track of a burst lands
+     * the same way the first would have. */
+    if (isEditorish) return { editor: false, noEditor: false, fromEditor: true, then: { t: 'instrrow' } };
     if (v === VIEW_SLOTCFG) {
         if (chain) return { editor: false, then: { t: 'slotcfg', which: S.cfgWhich } };
         if (route === 2 && S.cfgWhich === 'config') return { editor: false, then: { t: 'slotcfg', which: 'config' } };
@@ -1199,9 +1231,15 @@ export function soundFollowTrack(track) {
      * switch is not a click), and its parent decides the destination. */
     if (S.view === VIEW_ENUM) closeEnumPicker(false);
     if (S.view === VIEW_PRESET_SRC || S.view === VIEW_PRESET_LIST || S.view === VIEW_PRESET_BAKED)
-        revertOriginal();
+        keepAudition();
     const route = GS.trackRoute[track];
-    const plan = followPlan(S.view, route);
+    const plan = followPlan(effectiveView(), route);
+    S.followDest = followDestOf(plan);
+    /* S1 INSTRUMENTATION (device, 2026-09-05): the NONE-track and fast-scroll
+     * caveats pass in the harness — log the plan and every landing so ONE
+     * repro on the device names the path. debug.log only. */
+    log('follow: track ' + track + ' route ' + route + ' from view ' + S.view + ' plan ' + JSON.stringify(plan) +
+        ' pending ' + (S.pendingAction ? S.pendingAction.t : '-') + ' active ' + S.active);
     /* ⚠ ARRIVING IS NOT A BANK GESTURE (the "silent on return" law, 08-25):
      * a follow must not open the bank display window over the track overview
      * mid-switch, so the stamp the entry paths write is put back afterwards. */
@@ -1211,12 +1249,14 @@ export function soundFollowTrack(track) {
          * KIND of screen it has — its menu (with CONFIG behind it), its MACROS
          * page, the gateway — or its prompt, which is where soundEnterMove lands. */
         soundEnterMove(track);
-        if (plan.noEditor) { landOnNoEditor(); restoreBankDisplay(stamp); return; }
         const th = plan.then;
         if (th && th.t === 'view' && (th.view === VIEW_MACROS || th.view === VIEW_BUSES)) S.view = th.view;
         else if (!(th && th.t === 'view' && th.view === VIEW_PROMPT)) {
             soundShowMenu();
             if (th && th.t === 'slotcfg' && th.which === 'config') S.pendingAction = th;
+            /* From an editor: the Instrument row, queued behind the bus entry's
+             * own `names` action so it is not overwritten a tick later. */
+            if (th && th.t === 'instrrow') S.pendingAction = Object.assign({}, S.pendingAction, { then: th });
         }
         restoreBankDisplay(stamp);
         return;
@@ -1224,28 +1264,10 @@ export function soundFollowTrack(track) {
     /* soundRetarget keeps your place inside a block only when it sees
      * VIEW_EDIT; every other source lands on the menu and `then` takes it on. */
     S.view = plan.editor ? VIEW_EDIT : VIEW_BLOCKS;
-    /* Walking ON from the message screen onto a Schwung track reopens the
-     * block the walk LEFT (a Move detour resets S.comp to the bus's). */
-    if (plan.editor && S.noEditorComp) { S.comp = S.noEditorComp; }
-    if (plan.editor) S.noEditorComp = null;
     clearBusContext();
     soundRetarget(track, slotIndex(track));
-    /* MIDI / NONE reached from an editor: the retarget parks us on the menu;
-     * the screen you see is the message, Back turns it into that menu. */
-    if (plan.noEditor && route !== 0) landOnNoEditor();
-    else if (plan.then) S.pendingAction = Object.assign({}, S.pendingAction, { then: plan.then });
+    if (plan.then) S.pendingAction = Object.assign({}, S.pendingAction, { then: plan.then });
     restoreBankDisplay(stamp);
-}
-
-/* The retarget / bus entry queues its own action (retargetOpen lands on the
- * menu on the NEXT tick), so the message view must be queued BEHIND it — set
- * directly it would be overwritten a tick later, which is exactly what the
- * first cut did. With nothing queued it can land now. */
-function landOnNoEditor() {
-    if (S.noEditorComp === undefined || S.noEditorComp === null) S.noEditorComp = S.comp || 'synth';
-    const th = { t: 'view', view: VIEW_NOEDITOR };
-    if (S.pendingAction) S.pendingAction = Object.assign({}, S.pendingAction, { then: th });
-    else { S.view = VIEW_NOEDITOR; S.dirty = true; }
 }
 
 /* The words of the no-editor screen, from the track's route. */
@@ -1395,6 +1417,10 @@ function clearBusContext() {
  *                                here.
  */
 export function soundExit(opts) {
+    /* S1 INSTRUMENTATION: "a fast scroll can dump you to the track overview" —
+     * name who closed sound mode. debug.log only; exits are rare. */
+    log('exit: view ' + S.view + ' track ' + S.track + ' opts ' + JSON.stringify(opts || null) + ' from ' +
+        String(new Error().stack || '').split('\n').slice(2, 5).map((l) => l.trim()).join(' | '));
     const _opts = (opts && typeof opts === 'object') ? opts : {};
     const _leaving = _opts.leaving === true;
     /* Any exit at all spends the gesture crumb. A crumb that outlives its screen
@@ -1473,6 +1499,7 @@ export function soundExit(opts) {
     S.bankHome = BANK_SOUND;
     clearBusContext();
     S.pendingAction = null;
+    S.followDest = null;
     S.pendingDiscover = 0;
     /* An in-flight vouch is DROPPED, not flushed. Its whole meaning is "focus
      * the pad I am looking at right now", and we are no longer looking. */
@@ -1962,6 +1989,21 @@ function captureOriginal() {
 
 function revertOriginal() {
     if (S.origState !== null) engineSetState(S.slot, S.comp, S.origState);
+    S.previewIdx = -1;
+    S.previewAt = -1;
+}
+
+/* A track switch mid-audition KEEPS the previewed sound (Josh, 2026-09-05:
+ * "20) shouldn't be reverted" — it is what you are hearing). The captured
+ * original is dropped so nothing later resurrects it, and if the preview was
+ * a named user preset it becomes the slot's preset record, exactly as a
+ * click would have made it. Back inside the list still reverts, as before. */
+function keepAudition() {
+    if (S.origState === null && S.previewIdx < 0) return;
+    const p = S.previewIdx > 0 ? S.userPresets[S.previewIdx - 1] : null;
+    if (p) setPresetRecord({ name: p.name, path: p.path, mod: S.moduleId,
+                             hash: hashState(engineGetState(S.slot, S.comp)) });
+    S.origState = null;
     S.previewIdx = -1;
     S.previewAt = -1;
 }
@@ -5310,8 +5352,11 @@ function retargetOpen(picker) {
  * follow onto a Move track lands via soundEnterMove's `names` action, and the
  * no-editor screen has to be queued behind that one too. */
 function runAction(a) {
+    const _v0 = S.view;
     runActionBody(a);
     if (a.then && a.t !== 'retarget') S.pendingAction = a.then;   /* retarget chains it itself */
+    log('action ' + a.t + (a.view !== undefined ? '(' + a.view + ')' : '') + ': view ' + _v0 + ' -> ' + S.view +
+        ' track ' + S.track + ' slot ' + S.slot + ' next ' + (S.pendingAction ? S.pendingAction.t : '-'));
 }
 
 function runActionBody(a) {
@@ -5325,6 +5370,16 @@ function runActionBody(a) {
         if (a.then) S.pendingAction = a.then;
     }
     else if (a.t === 'view')    { S.view = a.view | 0; S.dirty = true; }
+    else if (a.t === 'instrrow') {
+        /* The sound menu on its INSTRUMENT row (the follow's landing from an
+         * editor, Josh 2026-09-05). Rows rebuilt first: the track may have
+         * changed kind since the picker last listed them. */
+        S.view = VIEW_BLOCKS;
+        buildPickRows();
+        const i = S.pickRows.findIndex((r) => r.kind === 'trackto');
+        S.pickRow = i >= 0 ? i : 0;
+        S.dirty = true;
+    }
     else if (a.t === 'open')    openBlock(a.comp);
     else if (a.t === 'browse')  openBrowse(a.comp, a.prompt);
     else if (a.t === 'instrpick') openInstrPicker();
@@ -7016,6 +7071,7 @@ export function soundTick() {
             const a = S.pendingAction;
             S.pendingAction = null;
             runAction(a);
+            if (!S.pendingAction) S.followDest = null;   /* the follow has landed */
         }
         /* ⚠⚠ AND DISCOVERY — the FOURTH thing this early return stranded, and
          * the only one that writes something WRONG rather than doing nothing.
@@ -7138,6 +7194,7 @@ export function soundTick() {
         const a = S.pendingAction;
         S.pendingAction = null;
         runAction(a);
+        if (!S.pendingAction) S.followDest = null;       /* the follow has landed */
     }
 
     tickChainPatches();
