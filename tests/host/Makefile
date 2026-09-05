@@ -47,7 +47,8 @@ TARGETS = $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_fx_midi_filter \
           $(BUILD_DIR)/test_overtake_native_led_repaint \
           $(BUILD_DIR)/test_link_peer_name \
-          $(BUILD_DIR)/test_chain_clock_state
+          $(BUILD_DIR)/test_chain_clock_state \
+          $(BUILD_DIR)/test_move_clock_setting
 
 .PHONY: all test clean
 
@@ -105,6 +106,9 @@ $(BUILD_DIR)/test_overtake_native_led_repaint: test_overtake_native_led_repaint.
 	$(CC) $(CFLAGS) $(DEPFLAGS) -D_POSIX_C_SOURCE=200809L $(INCLUDES) -I../../src $(filter %.c,$^) -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_chain_clock_state: test_chain_clock_state.c ../../src/modules/chain/dsp/chain_clock_state.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+
+$(BUILD_DIR)/test_move_clock_setting: test_move_clock_setting.c ../../src/host/move_clock_setting.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 -include $(TARGETS:=.d)
