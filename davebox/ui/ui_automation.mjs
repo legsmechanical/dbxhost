@@ -386,7 +386,7 @@ function flushModuleWrites() {
     if (!moduleWrites.length) return;
     const batch = moduleWrites.slice(0, BULK_MAX_PAIRS);
     const ok = host_module_set_params(bulkPairs(batch));
-    if (!ok) return;                         /* try again next tick, same order */
+    if (!ok) { console.log('[auto] bulk SET refused (' + batch.length + ' pairs) — retrying next tick'); return; }   /* same order */
     moduleWrites = moduleWrites.slice(batch.length);
     liveSlot = new Map();                    /* indices are stale either way */
     for (let i = 0; i < moduleWrites.length; i++)
@@ -478,7 +478,7 @@ export function automationPollWarnings() {
     if (!f) return null;
     if (f.full)    console.log('[dbx] automation store full — a write was refused');
     if (f.dropped) console.log('[dbx] automation queue overflowed — a staged value was dropped');
-    if (f.owner > 0) return ['Already automated', 'by track ' + f.owner];
+    if (f.owner > 0) { console.log('[auto] write REFUSED — target owned by track ' + f.owner); return ['Already automated', 'by track ' + f.owner]; }
     return null;
 }
 
@@ -639,6 +639,7 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
         S.stepHoldPromote = true;
         queueSet('t' + track + '_pa_set2', clip + ' ' + target + ' ' + from + ' ' + to + ' ' + norm);
         automationNoteWrite();
+        console.log('[auto] p-lock t' + track + ' c' + clip + ' step ' + S.heldStep + ' ' + target + ' = ' + norm);
         return;
     }
 
@@ -662,6 +663,7 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
      * ends (endGesture) — a wrong "no automation" here would leave a fresh
      * recording silent until the next project sync. */
     automationNoteWrite();
+    if (!g.live) console.log('[auto] live t' + track + ' c' + clip + ' ' + target + ' rec=' + (S.recordArmed ? 1 : 0) + ' playing=' + (S.playing ? 1 : 0));
     g.live = true;
     queueSet('t' + track + '_pa_live', target + ' ' + norm, track + ' ' + target);
 }
