@@ -14,6 +14,7 @@ import {
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { soundActive, soundOpen, soundExit, soundIsGlobal, soundInEditor, soundFollowTrack } from './ui_sound.mjs';
+import { isTextEntryActive } from '/data/UserData/schwung/shared/text_entry.mjs';
 import { stepRecExit } from './ui_record.mjs';
 import { clipHasContent } from './ui_pure.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -460,8 +461,8 @@ export function _switchActiveTrack(newT) {
      * cursor, journal and checkpoint are all per-clip. Any track switch ends
      * it (the ONE owner is ui_record; this is a dispatch, not a writer). */
     stepRecExit();
-    /* A track switch LEAVES sound mode from every screen but a module EDITOR
-     * (Josh, 2026-08-24, amended 2026-09-05 — see _follow below). SOUND +
+    /* A track switch used to LEAVE sound mode from every screen (Josh,
+     * 2026-08-24); since 2026-09-05 it FOLLOWS — see _follow below. SOUND +
      * CONFIG is a BANK and a bank is per-track, so the new
      * track lands on ITS bank; and because the bank RECORDS ITSELF in
      * trackActiveBank like every other one (Josh, 2026-08-25), "the new track
@@ -485,13 +486,18 @@ export function _switchActiveTrack(newT) {
      * keeps the outgoing track's bank on BANK_SOUND instead of handing it back.
      * Before the switch, so sound mode's queued writes flush while the outgoing
      * track is still their target. */
-    /* ⭑ EXCEPT from inside a module EDITOR (item 20, Josh, 2026-09-05: "Yes,
-     * follow into the editor"): the switch FOLLOWS — the new track's editor
-     * opens (route-aware; a MIDI or NONE track lands on its menu, a Move track
-     * on its bus). The 08-24 close stands everywhere else in sound mode: it
-     * was the MENU scroll that made every track report SOUND + CONFIG, and the
-     * menu still closes. A Conduct track has no sound to follow into. */
-    const _follow = soundInEditor() &&
+    /* ⭑ THE FOLLOW (item 20, Josh, 2026-09-05: "Yes, follow into the editor",
+     * then, from the batch pass: "tracks should switch under everything except
+     * where it just doesn't make any sense, would cause problems, or isn't
+     * feasible"): from EVERY sound-mode screen the switch FOLLOWS onto the
+     * same kind of screen on the new track — see soundFollowTrack's plan. The
+     * 08-24 close survives in exactly three places: a GLOBAL bus (not a
+     * track's sound), a Conduct target (no sound to follow into), and while
+     * the on-screen keyboard is up (an uncommitted name would be lost). The
+     * "every track scrolled onto reports SOUND + CONFIG" worry that the 08-24
+     * close answered is accepted with the ruling: the bank is recorded per
+     * track, and that IS where those tracks were left. */
+    const _follow = soundOpen() && !soundIsGlobal() && !isTextEntryActive() &&
                     S.trackPadMode[newT | 0] !== PAD_MODE_CONDUCT;
     if (soundOpen() && !soundIsGlobal() && !_follow) soundExit({ leaving: true });
     /* Records BANK_SOUND like any other bank now (Josh, 2026-08-25) — the old

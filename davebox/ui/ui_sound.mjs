@@ -35,7 +35,7 @@ import {
  * under a different name deliberately — the two are easy to confuse, and
  * confusing them is exactly what broke the bypass gesture. Used only for the
  * Back long-press, which davebox owns module-wide. */
-import { armBankDisplay, standDownBankDisplay, S as GS } from './ui_state.mjs';
+import { armBankDisplay, standDownBankDisplay, bankDisplayStamp, restoreBankDisplay, S as GS } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 /* ⚠ Deliberate import cycle with ui_render (it imports soundRender from here);
  * safe because both sides only call the binding inside function bodies, never
@@ -1125,11 +1125,86 @@ export function soundInEditor() {
  * retarget would reopen the PARKED chain's editor on a track that is not
  * playing it. Synchronous, on the switch edge: no per-tick read, and the
  * tick's own follow sees track === soundTrack() and stays quiet. */
+/* ⭑ FOLLOW FROM ANYWHERE (Josh, 2026-09-05, extending item 20: "tracks should
+ * switch under everything except where it just doesn't make any sense, would
+ * cause problems, or isn't feasible"). The switch lands on the SAME KIND of
+ * screen on the new track, where that track has one:
+ *   editor (and its dive-outs: hierarchy menu, file browser, the preset
+ *     screens) → the same block's editor; the audition is REVERTED first, as
+ *     Back would — a preview is not a choice
+ *   menu / module browser / slot presets → the menu
+ *   CONFIG → the new track's CONFIG (a MIDI track has one, item 14); the LFOs
+ *     screen → only a Schwung track has LFOs, else its menu
+ *   an LFO editor → the same LFO on the new track (Schwung), else its menu; its
+ *     target/param sub-pickers collapse to that LFO
+ *   MACROS → MACROS; the K-list and its sub-pickers → the K-list
+ *   the bank prompt → the prompt; the Session FX gateway → the gateway (global,
+ *     not per track)
+ *   an open enum picker → CLOSED without committing, then its parent's rule
+ * A Move-routed destination is its bus (soundEnterMove), whatever the source.
+ * The whole decision is taken on the switch edge from S.view — no per-tick
+ * read — and lands through ONE retarget action plus an optional `then`. */
+function followPlan(fromView, route) {
+    const v = fromView;
+    const chain = route === 0;
+    const isEditorish = v === VIEW_EDIT || v === VIEW_MENU || v === VIEW_FILE ||
+        v === VIEW_PRESET_SRC || v === VIEW_PRESET_LIST || v === VIEW_PRESET_BAKED ||
+        (ppOn && ppOwnsView());
+    if (isEditorish) return { editor: chain, then: null };
+    if (v === VIEW_SLOTCFG) {
+        if (chain) return { editor: false, then: { t: 'slotcfg', which: S.cfgWhich } };
+        if (route === 2 && S.cfgWhich === 'config') return { editor: false, then: { t: 'slotcfg', which: 'config' } };
+        return { editor: false, then: null };
+    }
+    if (v === VIEW_LFO || v === VIEW_LFO_TARGET || v === VIEW_LFO_PARAM)
+        return { editor: false, then: chain ? { t: 'lfo', lfo: S.lfoNum | 0 } : null };
+    if (v === VIEW_MACROS) return { editor: false, then: { t: 'view', view: VIEW_MACROS } };
+    if (v === VIEW_KNOBS || v === VIEW_KNOBLEGS || v === VIEW_KNOB_TARGET || v === VIEW_KNOB_PARAM)
+        return { editor: false, then: { t: 'knobs' } };
+    if (v === VIEW_PROMPT) return { editor: false, then: { t: 'view', view: VIEW_PROMPT } };
+    if (v === VIEW_BUSES) return { editor: false, then: { t: 'view', view: VIEW_BUSES } };
+    return { editor: false, then: null };            /* menu, browser, slot presets */
+}
+
 export function soundFollowTrack(track) {
-    if (GS.trackRoute[track] === 1) { soundEnterMove(track); return; }
-    if (GS.trackRoute[track] !== 0) S.view = VIEW_BLOCKS;
+    /* Dive-outs first: a picker mid-choice closes WITHOUT committing (the
+     * switch is not a click), and its parent decides the destination. */
+    if (S.view === VIEW_ENUM) closeEnumPicker(false);
+    if (S.view === VIEW_PRESET_SRC || S.view === VIEW_PRESET_LIST || S.view === VIEW_PRESET_BAKED)
+        revertOriginal();
+    const route = GS.trackRoute[track];
+    const plan = followPlan(S.view, route);
+    /* ⚠ ARRIVING IS NOT A BANK GESTURE (the "silent on return" law, 08-25):
+     * a follow must not open the bank display window over the track overview
+     * mid-switch, so the stamp the entry paths write is put back afterwards. */
+    const stamp = bankDisplayStamp();
+    if (route === 1) {
+        /* A Move track's sound is its bus: enter it, then land on the same
+         * KIND of screen it has — its menu (with CONFIG behind it), its MACROS
+         * page, the gateway — or its prompt, which is where soundEnterMove lands. */
+        soundEnterMove(track);
+        const th = plan.then;
+        if (th && th.t === 'view' && (th.view === VIEW_MACROS || th.view === VIEW_BUSES)) S.view = th.view;
+        else if (!(th && th.t === 'view' && th.view === VIEW_PROMPT)) {
+            soundShowMenu();
+            if (th && th.t === 'slotcfg' && th.which === 'config') S.pendingAction = th;
+        }
+        restoreBankDisplay(stamp);
+        return;
+    }
+    /* soundRetarget keeps your place inside a block only when it sees
+     * VIEW_EDIT; every other source lands on the menu and `then` takes it on. */
+    S.view = plan.editor ? VIEW_EDIT : VIEW_BLOCKS;
     clearBusContext();
     soundRetarget(track, slotIndex(track));
+    if (plan.then) S.pendingAction = Object.assign({}, S.pendingAction, { then: plan.then });
+    restoreBankDisplay(stamp);
+}
+
+/* Read-only, for tests: where a follow landed. */
+export function soundFollowStateForTest() {
+    return { view: S.view, cfgWhich: S.cfgWhich, lfoNum: S.lfoNum | 0,
+             enumPick: S.enumPick ? S.enumPick.label : null };
 }
 
 export function soundRetarget(track, slot) {
@@ -5180,7 +5255,13 @@ function runAction(a) {
     if (a.t === 'names')        refreshBlockNames();
     else if (a.t === 'bus')     enterBus(a.bus);
     else if (a.t === 'leavebus') leaveBus();
-    else if (a.t === 'retarget') retargetOpen(a.picker);
+    else if (a.t === 'retarget') {
+        retargetOpen(a.picker);
+        /* A follow's second step (followPlan): the screen the retarget cannot
+         * reach by itself. One action, next tick, after discovery is queued. */
+        if (a.then) S.pendingAction = a.then;
+    }
+    else if (a.t === 'view')    { S.view = a.view | 0; S.dirty = true; }
     else if (a.t === 'open')    openBlock(a.comp);
     else if (a.t === 'browse')  openBrowse(a.comp, a.prompt);
     else if (a.t === 'instrpick') openInstrPicker();

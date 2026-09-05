@@ -167,7 +167,7 @@ step('...and it clamps at the last track rather than wrapping', () => {
     S.activeTrack = 2;
 });
 
-step('⭑ Shift+jog CLOSES sound mode — the new track keeps its OWN bank', () => {
+step('⭑ Shift+jog FOLLOWS (2026-09-05) — the new Move track lands on ITS bus, on SOUND + CONFIG', () => {
     /* Josh, 2026-08-24: "switching a track from the sound+config bank causes
      * ALL tracks to land on the sound+config bank when scrolling through them."
      *
@@ -209,14 +209,20 @@ step('⭑ Shift+jog CLOSES sound mode — the new track keeps its OWN bank', () 
 
     if (S.activeTrack !== 6)
         throw new Error('control failed: the track did not step (' + S.activeTrack + ')');
-    if (snd.soundActive())
-        throw new Error('sound mode followed the track — every track scrolled onto ' +
-                        'would report SOUND + CONFIG');
-    if (S.activeBank !== 3)
-        throw new Error("the new track did not land on its OWN bank: expected 3, got " +
-                        S.activeBank + (S.activeBank === 11 ? ' (still SOUND + CONFIG)' : ''));
+    /* ⭑ RE-RULED 2026-09-05 (item 20, Josh: "tracks should switch under
+     * everything except where it just doesn't make any sense"): the switch
+     * FOLLOWS. Every track scrolled onto DOES report SOUND + CONFIG — accepted
+     * with the ruling: the bank is recorded per track and that is where those
+     * tracks were left. The 08-24 worry is answered by the memory, not by
+     * closing the screen. */
+    if (!snd.soundActive())
+        throw new Error('sound mode CLOSED on the switch — the retired 08-24 rule');
+    if (S.activeBank !== 11)
+        throw new Error('the new track did not land on SOUND + CONFIG: bank ' + S.activeBank);
+    if (snd.soundTrack() !== 6) throw new Error('sound mode still on track ' + snd.soundTrack());
     if (_stamp >= 0)
         throw new Error('the switch re-opened the bank display window (tick ' + _stamp + ')');
+    snd.soundExit();
 
     S.trackRoute[5] = 0; S.trackRoute[6] = 0;
     S.trackActiveBank[5] = 0; S.trackActiveBank[6] = 0;
@@ -269,10 +275,10 @@ step('⭑ ...but the track REMEMBERS it: leave and come back and SOUND + CONFIG 
     S.bankCardLatched = true;
 
     shift(true);
-    turn(); globalThis.tick();                 /* 2 -> 3: closes, per the rule above */
+    turn(); globalThis.tick();                 /* 2 -> 3: FOLLOWS (2026-09-05) */
     if (S.activeTrack !== 3) throw new Error('control: did not step to 3');
-    if (snd.soundActive()) throw new Error('control: it followed instead of closing');
-    if (S.activeBank !== 1) throw new Error('control: track 3 did not get its own bank');
+    if (!snd.soundActive()) throw new Error('control: the switch closed instead of following');
+    if (S.activeBank !== BANK_SOUND) throw new Error('control: track 3 did not land on SOUND + CONFIG');
 
     /* ...and back onto track 2, the one that was LEFT on the bank. Shift never
      * lifts in between: this is one continuous scroll out and back, the gesture
@@ -384,13 +390,18 @@ step('⭑ Shift+PAD means exactly what Shift+jog means — one rule, every route
                                                 * only here (the one law) */
 
     shift(true);
+    /* The Shift edge clears the window (both edges do); with the switch now
+     * FOLLOWING, nothing else clears the stamp soundEnter above legitimately
+     * wrote, so mirror the edge here or the read below sees that entry's stamp. */
+    S.bankSelectTick = -1;
     padSelect(4); globalThis.tick();
     if (S.activeTrack !== 4)
         throw new Error('control: Shift+pad did not select track 4 (' + S.activeTrack + ')');
-    if (snd.soundActive())
-        throw new Error('Shift+pad still FOLLOWED the track — it must mean what the jog means');
-    if (S.activeBank !== 1)
-        throw new Error('track 4 did not get its own bank: ' + S.activeBank);
+    /* One rule, every route — and since 2026-09-05 that rule is the FOLLOW. */
+    if (!snd.soundActive())
+        throw new Error('Shift+pad CLOSED sound mode — it must mean what the jog means, which follows now');
+    if (S.activeBank !== BANK_SOUND)
+        throw new Error('track 4 did not land on SOUND + CONFIG: ' + S.activeBank);
 
     /* ...and back onto track 2, which was LEFT on the bank: it returns. */
     padSelect(2); globalThis.tick();
