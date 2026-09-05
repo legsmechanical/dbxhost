@@ -11,8 +11,8 @@ whole discipline — a **watermark** plus a short table, replacing the 11-patch 
 
 | | |
 |---|---|
-| **Last upstream commit reviewed** | `120ba662` — *docs: point README and MODULES.md at the provenance policy (#196)*, 2026-08-04 |
-| **Reviewed on** | 2026-08-08 |
+| **Last upstream commit reviewed** | `a25af5b8` — *release 1.2.0 (#417)*, 2026-09-04 |
+| **Reviewed on** | 2026-09-05 (survey: `_worklogs/specs/upstream-1.2.0-survey.md`; the 08-29 backport series covered up to v1.1.0) |
 | **Merge base** | `a46f32b2` — *Merge pull request #179: bump host to 0.11.6*, 2026-07-19 |
 
 To advance it:
@@ -35,6 +35,23 @@ than leaving them unlisted, so "not applied" is never ambiguous with "not looked
 | `82cc1dac`, `120ba662` | Contribution-provenance policy docs | **Skipped** — upstream project governance, no code. |
 
 Those 10 commits touch **no** `src/` or `schwung-manager/` file, so nothing was owed.
+
+### Reviewed 2026-09-05 — v1.1.1 → v1.2.0 (21 real commits)
+
+| Upstream | What | Decision |
+|---|---|---|
+| `a86d4428` #399 | Preset browser asked for the wrong name key, then latched the blank | **Taken** (cherry-pick) |
+| `c145d512` #402 | Relative CC decoded only ±1 — accelerated encoders lost every fast turn | **Taken** (cherry-pick) |
+| `0d5d193e` #384 | Tool time estimate never read `processing_ratio` | **Taken** (cherry-pick) |
+| `b2c1b744` #394 | Forward-channel Auto asks the module | **Taken** (cherry-pick; Makefile TARGETS kept as the fork's list + `test_forward_channel`) |
+| `39f60cbd` #407 | Link Audio: bound the backlog so a module load cannot park Move's audio 85 ms | **Taken** (cherry-pick; same Makefile resolution) |
+| `dc73d948` #404 | Two knob multipliers are a MAX; an enum counts detents | **Held** (Josh) — folds into the KNOB FEEL item so one curve is tuned, not two |
+| `a6fc6235` #415 | Enum list drew through device globals | **Deferred** to the param-pages library sync (file diverged) |
+| `98b5c3c7` #393, `2ff52653` #387, `51c11134` #389, `ccbe11ac` `57c3d13c` #411, `c315b95d` #385 | CPU monitor, defaults on, metronome, pad_layout/voices, snapshot recall | **Later, as roadmap items** (snapshot recall = board item 18's mechanism) |
+| `5b6d4b18` #386, `121a79b6` #397 | Track tap = Stay; long-press Track toggles layers | **Assess first** — gesture surfaces davebox owns |
+| `2272a1eb` #392 | Save Stems | **Skipped** — overlaps davebox's export pipeline |
+| `c8cb169e` #405, `e36e8ab5` #410, `cfb9db55` #414 | drawCell frame, module card, frame_ctx primitives | **Already have** (this fork's own work, merged upstream; #414 to reconcile in the library sync) |
+| `949af236` #413, `bfcb2011` #382, `a25af5b8` #417 | Test card, release commits | **Skipped** — no code owed |
 
 > ⚠ The module catalog is fetched from **upstream's** `module-catalog.json` at a hardcoded URL, so
 > catalog edits made in this fork do nothing. Shipping a module means a public repo, a release, and
