@@ -6403,8 +6403,22 @@ function getWavDurationSec(filePath) {
  * SpleeterRT (3-stem): ~0.5x realtime on Move's Cortex-A72.
  * Spleeter TFLite (4-stem): ~3.0x realtime. */
 function getToolProcessingRatio() {
+    /* A tool's wall time relative to the input's duration, used only for the
+     * "about N remaining" estimate.
+     *
+     * Order matters: a per-engine value is more specific than the module's, and
+     * a module that ships several engines (each with its own speed) declares
+     * both. tool_config.processing_ratio was declared by stems from the start
+     * but never read here — and because the value it declared, 0.5, happened to
+     * equal the hardcoded default below, the field looked like it worked. It
+     * only showed up when stems corrected itself to a measured figure and the
+     * estimate did not move. */
     if (toolSelectedEngine && toolSelectedEngine.processing_ratio) {
         return toolSelectedEngine.processing_ratio;
+    }
+    if (toolActiveTool && toolActiveTool.tool_config &&
+        toolActiveTool.tool_config.processing_ratio) {
+        return toolActiveTool.tool_config.processing_ratio;
     }
     return 0.5;  /* default for legacy/unknown engines */
 }
@@ -12269,8 +12283,15 @@ function drawHierarchyEditor() {
         /* Draw preset browser UI */
         const centerY = 32;
 
-        /* Re-fetch preset count if zero (module may still be loading) */
-        if (hierEditorPresetCount === 0 && hierEditorLevel && hierEditorHierarchy && hierEditorHierarchy.levels) {
+        /* Re-resolve while EITHER the count or the name is still missing.
+         *
+         * It used to run only while the count was zero, so a name read that
+         * timed out once was cached as "" and never asked for again -- the
+         * browser sat on a blank name until the user left the level and came
+         * back. A read that did not answer must not latch, and the count is
+         * not the only read here that can fail to answer. */
+        if ((hierEditorPresetCount === 0 || !hierEditorPresetName)
+            && hierEditorLevel && hierEditorHierarchy && hierEditorHierarchy.levels) {
             const levelDef = hierEditorHierarchy.levels[hierEditorLevel];
             if (levelDef && levelDef.count_param) {
                 const retryPrefix = getComponentParamPrefix(hierEditorComponent);
@@ -12280,6 +12301,12 @@ function drawHierarchyEditor() {
                     hierEditorPresetCount = newCount;
                     const presetStr = getSlotParam(hierEditorSlot, `${retryPrefix}:${levelDef.list_param}`);
                     hierEditorPresetIndex = presetStr ? parseInt(presetStr) : 0;
+                }
+                /* Independently of the count: the name can be the half that
+                 * is missing, and a module that answers the count from one
+                 * table and the name from another will hand them over on
+                 * different frames. */
+                if (!hierEditorPresetName) {
                     const nameParam = levelDef.name_param || "preset_name";
                     hierEditorPresetName = getSlotParam(hierEditorSlot, `${retryPrefix}:${nameParam}`) || "";
                 }
@@ -12296,7 +12323,18 @@ function drawHierarchyEditor() {
              * transient state (e.g. "Loading... <name> <spinner>") that
              * updates without requiring another preset-change. Falls back to
              * the cached value while the IPC read settles. */
-            const freshPresetName = getSlotParam(hierEditorSlot, `${prefix}:preset_name`);
+            /* The LEVEL'S name_param, not the literal "preset_name".
+             *
+             * Hardcoding it meant this refresh asked for a key that only
+             * modules using the default name ever had. Everything else --
+             * JE-8086's patch_name / performance_name among them -- got an
+             * empty answer every frame and fell back to the value cached on
+             * entry, so the name could never change without leaving the
+             * level and coming back. */
+            const drawLevelDef = (hierEditorHierarchy && hierEditorHierarchy.levels)
+                ? hierEditorHierarchy.levels[hierEditorLevel] : null;
+            const drawNameParam = (drawLevelDef && drawLevelDef.name_param) || "preset_name";
+            const freshPresetName = getSlotParam(hierEditorSlot, `${prefix}:${drawNameParam}`);
             const presetNameForDraw = (freshPresetName && freshPresetName.length > 0)
                 ? freshPresetName : hierEditorPresetName;
             const name = truncateText(presetNameForDraw || "(unnamed)", 22);
