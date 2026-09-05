@@ -10,7 +10,8 @@
  *   menu row        → jog click → the row's OPERATIONS, floating over the list:
  *                                  Delete · Mute/Unmute · Smooth/Stepped (floats)
  *                                  · Loop (clip, or N steps — click to edit,
- *                                  turn, click to set)
+ *                                  turn, click to set) · Scale (0-200 %, same
+ *                                  shape: the lane's values up or down)
  *   Delete + click on the card    → CLEAR CLIP, the shortcut
  *   Back                          → ops → menu → card → (davebox's own: out)
  *
@@ -32,7 +33,8 @@ import { BANK_AUTOMATION, midiTargetIsMidi } from './ui_constants.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey,
          automationToggleActive, automationToggleSmooth, automationSmoothable,
-         automationSetLoop, automationSetRate, automationRateText, automationClearClip } from './ui_automation.mjs';
+         automationSetLoop, automationSetRate, automationRateText, automationSetScale,
+         automationClearClip } from './ui_automation.mjs';
 import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
          drawBrackets, kitUseLayout, MV_FOOTER_Y } from './ui_movy.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -48,7 +50,7 @@ function st() {
     return S.autoBank;
 }
 export function autoBankReset() {
-    if (S.autoBank) { S.autoBank.menu = false; S.autoBank.ops = null; S.autoBank.loopEdit = false; S.autoBank.rateEdit = false; }
+    if (S.autoBank) { S.autoBank.menu = false; S.autoBank.ops = null; S.autoBank.loopEdit = false; S.autoBank.rateEdit = false; S.autoBank.scaleEdit = false; }
 }
 export function autoBankMenuOpen() { return !!(S.autoBank && (S.autoBank.menu || S.autoBank.ops)); }
 
@@ -58,7 +60,8 @@ export function autoBankRows(track, clip) {
     const rows = [];
     for (const e of automationEntriesFor(track, clip)) {
         rows.push({ kind: 'entry', target: e.target, label: automationTargetLabel(e.target),
-                    active: e.active, smooth: e.smooth, count: e.count, loop: e.loop, res: e.res });
+                    active: e.active, smooth: e.smooth, count: e.count, loop: e.loop, res: e.res,
+                    scale: isFinite(e.scale) ? e.scale : 100 });
     }
     rows.sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
     if (S.clipAtHas[track] && S.clipAtHas[track][clip]) rows.push({ kind: 'at', label: 'Aftertouch (pads)' });
@@ -70,6 +73,7 @@ function rowValue(r) {
     return r.smooth ? 'SMTH' : 'ON';
 }
 function loopText(steps) { return steps > 0 ? (steps + ' ST') : 'CLIP'; }
+function scaleText(pct) { return (isFinite(pct) ? pct : 100) + '%'; }
 
 /* Loop length in STEPS for the row (the store keeps ticks). */
 function rowLoopSteps(track, clip, r) {
@@ -87,6 +91,7 @@ function opsFor(track, clip, r) {
         ops.push({ op: 'smooth', label: r.smooth ? 'Stepped' : 'Smooth' });
     ops.push({ op: 'loop', label: 'Loop', value: loopText(rowLoopSteps(track, clip, r)) });
     ops.push({ op: 'rate', label: 'Rate', value: automationRateText(r.res) });
+    ops.push({ op: 'scale', label: 'Scale', value: scaleText(r.scale) });
     return ops;
 }
 
@@ -110,13 +115,14 @@ export function drawAutomationBankBody() {
     if (a.ops) {
         const ors = a.ops.rows.map((o, i) => ({
             label: o.label,
-            value: (o.op === 'loop' || o.op === 'rate')
-                ? ((a.loopEdit || a.rateEdit) && i === a.ops.sel ? '<' + o.value + '>' : o.value) : undefined,
+            value: (o.op === 'loop' || o.op === 'rate' || o.op === 'scale')
+                ? ((a.loopEdit || a.rateEdit || a.scaleEdit) && i === a.ops.sel ? '<' + o.value + '>' : o.value) : undefined,
         }));
         drawKitBackdropDim(0, LIST_TOP, 128, MV_FOOTER_Y - LIST_TOP);
         drawKitStackedList(1, ors, a.ops.sel, {});
         hints = a.loopEdit ? [['JOG', 'LEN'], ['CLK', 'DONE'], ['BACK', 'DONE']]
               : a.rateEdit ? [['JOG', 'RATE'], ['CLK', 'DONE'], ['BACK', 'DONE']]
+              : a.scaleEdit ? [['JOG', 'PCT'], ['CLK', 'DONE'], ['BACK', 'DONE']]
                            : [['CLK', 'DO'], ['JOG', 'OP'], ['BACK', 'LIST']];
     } else if (a.menu) {
         hints = [['CLK', 'OPS'], ['JOG', 'ROW'], ['BACK', 'CARD']];
@@ -137,7 +143,7 @@ export function autoBankClick() {
     if (a.sel >= rows.length) { autoBankClearClip(); return; }      /* the Clear clip row */
     const r = rows[a.sel];
     a.ops = { rows: opsFor(t, c, r), sel: 0, row: r };
-    a.loopEdit = false; a.rateEdit = false;
+    a.loopEdit = false; a.rateEdit = false; a.scaleEdit = false;
 }
 function runOp(t, c, a) {
     const o = a.ops.rows[a.ops.sel], r = a.ops.row;
@@ -154,6 +160,12 @@ function runOp(t, c, a) {
         /* Same shape as Loop: click to edit, every turn applies, click/Back leaves. */
         if (!a.rateEdit) { a.rateEdit = true; a.rateVal = (r.res >= 1 && r.res <= 9) ? r.res : 5; a.rateCkpt = false; return; }
         a.rateEdit = false; a.ops = null;
+        return;
+    }
+    if (o.op === 'scale') {
+        /* Same shape again: click to edit, every detent applies 1 %, click/Back leaves. */
+        if (!a.scaleEdit) { a.scaleEdit = true; a.scaleVal = isFinite(r.scale) ? r.scale : 100; a.scaleCkpt = false; return; }
+        a.scaleEdit = false; a.ops = null;
         return;
     }
     if (r.kind === 'at') {
@@ -183,6 +195,18 @@ export function autoBankJog(delta) {
     if (!a.menu && !a.ops) return false;
     const t = S.activeTrack, c = effectiveClip(t);
     if (a.ops) {
+        if (a.scaleEdit) {
+            const nv = Math.max(0, Math.min(200, a.scaleVal + delta));
+            if (nv !== a.scaleVal) {
+                a.scaleVal = nv;
+                automationSetScale(t, c, a.ops.row.target, nv, !a.scaleCkpt);
+                a.scaleCkpt = true;
+                a.ops.row.scale = nv;
+                const sr = a.ops.rows.find(x => x.op === 'scale');
+                if (sr) sr.value = scaleText(nv);
+            }
+            return true;
+        }
         if (a.rateEdit) {
             const nv = Math.max(1, Math.min(9, a.rateVal + delta));
             if (nv !== a.rateVal) {
@@ -222,6 +246,7 @@ export function autoBankBack() {
     const a = st();
     if (a.loopEdit) { a.loopEdit = false; return true; }
     if (a.rateEdit) { a.rateEdit = false; return true; }
+    if (a.scaleEdit) { a.scaleEdit = false; return true; }
     if (a.ops) { a.ops = null; return true; }
     if (a.menu) { a.menu = false; return true; }
     return false;
