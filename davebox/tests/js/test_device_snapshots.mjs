@@ -149,7 +149,10 @@ step_('⭑ holding Capture past the threshold OPENS the layer, and the release r
 
 step_('⭑ HOLD a step = SAVE: the host takes into the slot dir and davebox writes its json (mixer, every kind of track)', () => {
     snapCalls.length = 0; writes.length = 0;
-    S.trackMuted[1] = true; S.trackSoloed[3] = true;           /* a mute and a solo to carry */
+    S.trackMuted[1] = true; S.trackSoloed[3] = true;           /* mutes are NOT carried (Josh, 09-05 late) */
+    PARAM_VALUES['synth:chain_params'] = JSON.stringify([{ key: 'cutoff', min: 0, max: 1 }, { key: 'reso', min: 0, max: 1 }]);
+    PARAM_VALUES['synth:cutoff'] = '0.42'; PARAM_VALUES['synth:reso'] = '0.7';
+    S.trackPadMode[0] = 0; S.bankParams[0][1][0] = 2;           /* track 1 MELODIC, NOTE FX Oct = +2 (a sequencer setting) */
     step(2, true); advance(800); step(2, false); advance(20);
     const take = snapCalls.find(c => c[0] === 'take');
     if (!take) throw new Error('host_snapshot_take not called: ' + JSON.stringify(snapCalls));
@@ -159,9 +162,13 @@ step_('⭑ HOLD a step = SAVE: the host takes into the slot dir and davebox writ
     const t0 = json.mixer[0], t2 = json.mixer[2];
     if (t0.route !== 0 || t0.volume !== 0.8 || t0.send_a !== 0.1) throw new Error('Schwung track levels not captured: ' + JSON.stringify(t0));
     if (t2.route !== 2 || typeof t2.cc7 !== 'number') throw new Error('MIDI track cc7 not captured: ' + JSON.stringify(t2));
-    /* Mutes ride too (Josh, 2026-09-05). */
-    if (!json.mutes || !Array.isArray(json.mutes.mute)) throw new Error('no mutes in davebox.json');
-    if (json.mutes.mute[1] !== true || json.mutes.solo[3] !== true) throw new Error('mutes not captured: ' + JSON.stringify(json.mutes));
+    if (json.mutes) throw new Error('mutes are in the snapshot — ruled OUT (Josh, 2026-09-05 late)');
+    /* THE PARAM LIST (Josh: "any automatable param"): every loaded module's chain_params values, by slot and component… */
+    const p0 = json.params && json.params[0] && json.params[0].synth;
+    if (!p0 || p0.module !== 'nusaw' || p0.values.cutoff !== '0.42' || p0.values.reso !== '0.7') throw new Error('module params not captured: ' + JSON.stringify(json.params && json.params[0]));
+    if (json.params[3] && json.params[3].synth) throw new Error('an EMPTY slot captured params');
+    /* …and the sequencer's bank-knob settings per track. */
+    if (!json.seq || json.seq[0].noteFX_octave !== 2) throw new Error('sequencer settings not captured: ' + JSON.stringify(json.seq && json.seq[0]));
     if (!D.devSnapState().slots[2]) throw new Error('slot 2 not marked filled');
 });
 
@@ -174,7 +181,8 @@ step_('⭑ LEDs: the saved slot is WHITE (last), empties DIM', () => {
 step_('⭑ TAP a filled step = RECALL: the host recalls that dir; davebox applies its mixer once the host says done', () => {
     snapCalls.length = 0; writes.length = 0;
     S.trackRoute[0] = 0;
-    S.trackMuted[1] = false; S.trackSoloed[3] = false;         /* changed since the save */
+    S.trackMuted[1] = false; S.trackSoloed[3] = false;         /* changed since the save — and must STAY so */
+    S.bankParams[0][1][0] = 0;                                  /* the Oct setting moved since the save */
     step(2, true); advance(100); step(2, false); advance(20);
     const rc = snapCalls.find(c => c[0] === 'recall');
     if (!rc || rc[1] !== P.deviceSnapDir('aaaa-bbbb', 2)) throw new Error('host_snapshot_recall not called with the slot dir: ' + JSON.stringify(snapCalls));
@@ -183,10 +191,10 @@ step_('⭑ TAP a filled step = RECALL: the host recalls that dir; davebox applie
     recallPending = false; advance(30);
     if (D.devSnapState().recalling !== -1) throw new Error('recall did not finish when the host said done');
     if (!writes.some(w => w.indexOf('slot:volume=0.800') >= 0)) throw new Error('Schwung level not re-applied: ' + JSON.stringify(writes.slice(0, 12)));
-    /* the mutes come back through the Mute button's own setters */
-    if (!writes.includes('t1_mute=1')) throw new Error('track 2 mute not re-applied: ' + JSON.stringify(writes.filter(w => /_mute=|_solo=/.test(w))));
-    if (!writes.includes('t3_solo=1')) throw new Error('track 4 solo not re-applied');
-    if (!S.trackMuted[1] || !S.trackSoloed[3]) throw new Error('mirror not updated');
+    /* mutes are NOT touched by a recall (Josh, 2026-09-05 late) */
+    if (writes.some(w => /_mute=|_solo=/.test(w)) || S.trackMuted[1] || S.trackSoloed[3]) throw new Error('a recall touched mutes: ' + JSON.stringify(writes.filter(w => /_mute=|_solo=/.test(w))));
+    /* the sequencer setting comes back through the bank knob's own path */
+    if (S.bankParams[0][1][0] !== 2) throw new Error('sequencer Oct setting not restored: ' + S.bankParams[0][1][0]);
     const lines = S.actionPopupLines.map(String);
     if (lines[0] !== 'SNAPSHOT 3' || lines[1] !== 'RESTORED' || lines[2] !== '1 skipped') throw new Error('RESTORED card: ' + JSON.stringify(lines));
     if (S.actionPopupEndTick < S.clockMs + D.DEVSNAP_CARD_MS - 50) throw new Error('the RESTORED card is a glance, not a card');

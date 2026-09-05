@@ -422,9 +422,37 @@ export function engineVolBlock(on) {
  * is defined shim-side and undocumented in the JS contract, so this loops for
  * now. Callers already treat it as one call, so switching to the bulk path
  * later is a change to this function alone. */
+/* One `chain:` BULK_GET per ≤60 keys (the shim caps a bulk at 64 items): the
+ * wire form is "<n>\n" then n × "<len>\n<bytes>", both ways; lengths are
+ * BYTES, so a value with non-ASCII is measured as UTF-8. A null answer (a
+ * mailbox timeout, an old host) falls back to one read per key — correct,
+ * just slow, and logged once. */
+const BULK_MAX = 60;
+function utf8Len(s) { let n = 0; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); if (c < 0x80) n += 1; else if (c < 0x800) n += 2; else if (c >= 0xD800 && c <= 0xDBFF) { n += 4; i++; } else n += 3; } return n; }
+function bulkEncode(items) { let s = items.length + '\n'; for (const it of items) s += utf8Len(it) + '\n' + it; return s; }
+/* Decode by BYTES: the host counts UTF-8 bytes, JS strings count code units. */
+function bulkDecode(blob) {
+    const bytes = new TextEncoder().encode(blob), dec = new TextDecoder();
+    let p = 0;
+    const readLen = () => { let n = 0, any = false; while (p < bytes.length && bytes[p] >= 48 && bytes[p] <= 57) { n = n * 10 + (bytes[p] - 48); p++; any = true; } if (!any || bytes[p] !== 10) return -1; p++; return n; };
+    const count = readLen(); if (count < 0) return null;
+    const out = [];
+    for (let i = 0; i < count; i++) { const n = readLen(); if (n < 0 || p + n > bytes.length) return null; out.push(dec.decode(bytes.subarray(p, p + n))); p += n; }
+    return out;
+}
+let bulkGetWarned = false;
 export function engineGetMany(slot, comp, keys) {
     const out = {};
-    for (const k of keys) out[k] = engineGet(slot, comp, k);
+    for (let i = 0; i < keys.length; i += BULK_MAX) {
+        const chunk = keys.slice(i, i + BULK_MAX);
+        const full = chunk.map((k) => comp + ':' + k);
+        let vals = null;
+        try { const r = shadow_get_params(slot, 'chain:', bulkEncode(full)); vals = r ? bulkDecode(String(r)) : null; }
+        catch (e) { vals = null; }
+        if (vals && vals.length === chunk.length) { for (let j = 0; j < chunk.length; j++) out[chunk[j]] = vals[j]; continue; }
+        if (!bulkGetWarned) { bulkGetWarned = true; console.log('[engine] chain bulk GET unavailable — reading one key at a time'); }
+        for (const k of chunk) out[k] = engineGet(slot, comp, k);
+    }
     return out;
 }
 

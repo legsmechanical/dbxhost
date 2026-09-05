@@ -7,9 +7,15 @@
  * files), THE MIXER (every track's level/pan/sends, read here), and the macro
  * knobs' POSITIONS (the values their targets sit at — chain and level legs are
  * already in those files; bank legs are davebox's own params, kept here).
- * Mutes RIDE TOO (Josh, 2026-09-05: "device snapshots should include mutes"):
- * track mute/solo and the drum lanes' mute masks, applied through the same
- * setters the Mute button uses. Mute snapshots keep their own faster grammar.
+ * MUTES DO NOT RIDE (Josh, 2026-09-05 late: "take mutes out of snapshots" —
+ * mute snapshots own mutes; the two systems must not fight).
+ * THE PARAM LIST rides (Josh: "any automatable param, in fact"): every loaded
+ * module's chain_params values per slot and component, read in ONE bulk GET
+ * per component, and the sequencer's bank-knob settings per track. Recall
+ * replays the host's opaque state blobs (exact, instant) and re-applies the
+ * sequencer values; the module values are what a MORPH will interpolate
+ * later (the spec's 18b) — stored raw, with the module id, so they can be
+ * normalised against chain_params when that lands.
  *
  * THE LAYER (session view): hold CAPTURE for DEVSNAP_HOLD_MS with no other
  * gesture and the 16 step buttons become the 16 snapshot slots — exactly the
@@ -29,11 +35,10 @@
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { NUM_TRACKS, DRUM_LANES } from './ui_constants.mjs';
-import { setTrackMute, setTrackSolo } from './ui_editops.mjs';
 import { showActionPopup, showActionPopupFor, deviceSnapDir } from './ui_persistence.mjs';
 import { engineGet, engineSet, engineGetSlotParam, engineSetSlotParam, moveBusComp,
-         moveBusForChannel } from './ui_engine.mjs';
-import { midiVal, midiSendValue } from './ui_sound.mjs';
+         moveBusForChannel, engineLoadedModule, engineDescribe, engineGetMany } from './ui_engine.mjs';
+import { midiVal, midiSendValue, seqAutoSnapshot, seqAutoRestore } from './ui_sound.mjs';
 import { forceRedraw, invalidateLEDCache } from './ui_leds.mjs';
 
 export const DEVSNAP_SLOTS   = 16;
@@ -107,31 +112,49 @@ function mixerCapture() {
     }
     return tracks;
 }
-/* Mutes: what the Mute button and mute snapshots hold — track mute/solo and the
- * drum lanes' mute masks. Applied through the same setters the button uses so
- * the DSP hears exactly what a press would say. */
-function mutesCapture() {
-    return { mute: S.trackMuted.slice(), solo: S.trackSoloed.slice(),
-             drumLaneMute: Array.from(S.drumLaneMute, (m) => m >>> 0) };
+/* ---- the parameter list --------------------------------------------------- */
+const COMPS = ['synth', 'midi_fx1', 'midi_fx2', 'fx1', 'fx2', 'fx3', 'fx4'];
+/* chain_params is static per module: its key list is cached by module id, so
+ * a take reads the description once per distinct module, ever. */
+const keysByModule = {};
+function paramKeysFor(slot, comp, moduleId) {
+    if (keysByModule[moduleId]) return keysByModule[moduleId];
+    let keys = [];
+    try {
+        const d = engineDescribe(slot, comp);
+        if (d && Array.isArray(d.chainParams)) for (const cp of d.chainParams) if (cp && cp.key) keys.push(cp.key);
+    } catch (e) { keys = []; }
+    keysByModule[moduleId] = keys;
+    return keys;
 }
-function mutesApply(m) {
-    if (!m || !Array.isArray(m.mute)) return 0;
-    let n = 0;
+export function paramKeysCacheResetForTest() { for (const k in keysByModule) delete keysByModule[k]; }
+/* Per Schwung track: { comp: { module, values: { key: raw } } } for every
+ * loaded component. Cost: one bulk GET per loaded component (≤60 keys each). */
+function paramsCapture() {
+    const tracks = [];
     for (let t = 0; t < NUM_TRACKS; t++) {
-        const solo = !!(m.solo && m.solo[t]), mute = !!m.mute[t];
-        if (!!S.trackSoloed[t] !== solo) { setTrackSolo(t, solo); n++; }
-        if (!!S.trackMuted[t] !== mute) { setTrackMute(t, mute); n++; }
-        if (Array.isArray(m.drumLaneMute) && typeof m.drumLaneMute[t] === 'number') {
-            const want = m.drumLaneMute[t] >>> 0, have = (S.drumLaneMute[t] | 0) >>> 0;
-            if (want !== have) {
-                for (let l = 0; l < DRUM_LANES; l++) {
-                    const w = (want >>> l) & 1, h = (have >>> l) & 1;
-                    if (w !== h) host_module_set_param('t' + t + '_l' + l + '_mute', w ? '1' : '0');
-                }
-                S.drumLaneMute[t] = want; n++;
+        const e = {};
+        if ((S.trackRoute[t] | 0) === 0) {
+            for (const comp of COMPS) {
+                const id = engineLoadedModule(t, comp);
+                if (!id) continue;
+                const keys = paramKeysFor(t, comp, id);
+                e[comp] = { module: id, values: keys.length ? engineGetMany(t, comp, keys) : {} };
             }
         }
+        tracks.push(e);
     }
+    return tracks;
+}
+function seqCapture() {
+    const out = [];
+    for (let t = 0; t < NUM_TRACKS; t++) out.push(seqAutoSnapshot(t));
+    return out;
+}
+function seqApply(list) {
+    if (!Array.isArray(list)) return 0;
+    let n = 0;
+    for (let t = 0; t < NUM_TRACKS && t < list.length; t++) n += seqAutoRestore(t, list[t]);
     return n;
 }
 
@@ -166,7 +189,7 @@ export function devSnapSave(n) {
     let res = null;
     try { res = JSON.parse(host_snapshot_take(dir) || 'null'); } catch (e) { res = null; }
     if (!res || !res.ok) { showActionPopup('SNAPSHOT', 'Save failed'); return false; }
-    const json = { v: 3, mixer: mixerCapture(), mutes: mutesCapture(), taken: Date.now() };
+    const json = { v: 4, mixer: mixerCapture(), params: paramsCapture(), seq: seqCapture(), taken: Date.now() };
     if (!host_write_file(dir + '/davebox.json', JSON.stringify(json))) { showActionPopup('SNAPSHOT', 'Save failed'); return false; }
     d.slots[n] = true; d.last = n;
     showActionPopupFor(DEVSNAP_CARD_MS, 'SNAPSHOT ' + (n + 1), 'SAVED', res.skipped ? res.skipped + ' skipped' : undefined);
@@ -197,11 +220,11 @@ function devSnapFinish() {
     let status = null;
     try { status = JSON.parse(host_snapshot_status() || 'null'); } catch (e) { status = null; }
     let applied = 0;
-    try { applied = d.recallJson ? mixerApply(d.recallJson.mixer) + mutesApply(d.recallJson.mutes) : 0; }
-    catch (e) { console.log('[devsnap] mixer/mutes apply failed: ' + e); }
-    /* (A track empty at the take that holds a synth now is left alone — the
-     * mute for that was built and REVERTED the same day, Josh: "there's
-     * really no reason to mute the tracks re: the instruments".) */
+    try { applied = d.recallJson ? mixerApply(d.recallJson.mixer) + seqApply(d.recallJson.seq) : 0; }
+    catch (e) { console.log('[devsnap] mixer/seq apply failed: ' + e); }
+    /* Mutes are NOT in a snapshot (Josh, 2026-09-05 late), and a track that
+     * gained a synth since the take is left alone. Module values are not
+     * applied from the list — the host's state blobs already restored them. */
     d.recalling = -1; d.recallDir = null; d.recallJson = null; d.last = n;
     /* The card: what came back, then what the recall had to DO about things
      * that were not there at the save (Josh, 2026-09-05: "pop a warning up"). */
