@@ -238,5 +238,8 @@ export function devSnapLedFor(i, colors) {
 export function devSnapHints() {
     const d = st();
     if (d.recalling >= 0) return [['SNAP', 'RECALLING']];
-    return [['TAP', 'RECALL'], ['HOLD', 'SAVE'], ['DEL', 'CLEAR']];
+    /* Josh, 2026-09-05: "Step tap:recall" "Hold:store". Measured: the two pairs
+     * are 123 px of 128; a third (DEL CLEAR) does not fit and the row's fit
+     * rule would drop it anyway, so Delete+step stays an unlabelled gesture. */
+    return [['STEP TAP', 'RECALL'], ['HOLD', 'STORE']];
 }
