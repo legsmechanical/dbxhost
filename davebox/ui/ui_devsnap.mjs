@@ -7,7 +7,9 @@
  * files), THE MIXER (every track's level/pan/sends, read here), and the macro
  * knobs' POSITIONS (the values their targets sit at — chain and level legs are
  * already in those files; bank legs are davebox's own params, kept here).
- * Mutes stay with mute snapshots.
+ * Mutes RIDE TOO (Josh, 2026-09-05: "device snapshots should include mutes"):
+ * track mute/solo and the drum lanes' mute masks, applied through the same
+ * setters the Mute button uses. Mute snapshots keep their own faster grammar.
  *
  * THE LAYER (session view): hold CAPTURE for DEVSNAP_HOLD_MS with no other
  * gesture and the 16 step buttons become the 16 snapshot slots — exactly the
@@ -26,7 +28,8 @@
  */
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { NUM_TRACKS } from './ui_constants.mjs';
+import { NUM_TRACKS, DRUM_LANES } from './ui_constants.mjs';
+import { setTrackMute, setTrackSolo } from './ui_editops.mjs';
 import { showActionPopup, deviceSnapDir } from './ui_persistence.mjs';
 import { engineGet, engineSet, engineGetSlotParam, engineSetSlotParam, moveBusComp,
          moveBusForChannel } from './ui_engine.mjs';
@@ -96,6 +99,34 @@ function mixerCapture() {
     }
     return tracks;
 }
+/* Mutes: what the Mute button and mute snapshots hold — track mute/solo and the
+ * drum lanes' mute masks. Applied through the same setters the button uses so
+ * the DSP hears exactly what a press would say. */
+function mutesCapture() {
+    return { mute: S.trackMuted.slice(), solo: S.trackSoloed.slice(),
+             drumLaneMute: Array.from(S.drumLaneMute, (m) => m >>> 0) };
+}
+function mutesApply(m) {
+    if (!m || !Array.isArray(m.mute)) return 0;
+    let n = 0;
+    for (let t = 0; t < NUM_TRACKS; t++) {
+        const solo = !!(m.solo && m.solo[t]), mute = !!m.mute[t];
+        if (!!S.trackSoloed[t] !== solo) { setTrackSolo(t, solo); n++; }
+        if (!!S.trackMuted[t] !== mute) { setTrackMute(t, mute); n++; }
+        if (Array.isArray(m.drumLaneMute) && typeof m.drumLaneMute[t] === 'number') {
+            const want = m.drumLaneMute[t] >>> 0, have = (S.drumLaneMute[t] | 0) >>> 0;
+            if (want !== have) {
+                for (let l = 0; l < DRUM_LANES; l++) {
+                    const w = (want >>> l) & 1, h = (have >>> l) & 1;
+                    if (w !== h) host_module_set_param('t' + t + '_l' + l + '_mute', w ? '1' : '0');
+                }
+                S.drumLaneMute[t] = want; n++;
+            }
+        }
+    }
+    return n;
+}
+
 function mixerApply(tracks) {
     if (!Array.isArray(tracks)) return 0;
     let n = 0;
@@ -127,7 +158,7 @@ export function devSnapSave(n) {
     let res = null;
     try { res = JSON.parse(host_snapshot_take(dir) || 'null'); } catch (e) { res = null; }
     if (!res || !res.ok) { showActionPopup('SNAPSHOT', 'Save failed'); return false; }
-    const json = { v: 1, mixer: mixerCapture(), taken: Date.now() };
+    const json = { v: 2, mixer: mixerCapture(), mutes: mutesCapture(), taken: Date.now() };
     if (!host_write_file(dir + '/davebox.json', JSON.stringify(json))) { showActionPopup('SNAPSHOT', 'Save failed'); return false; }
     d.slots[n] = true; d.last = n;
     showActionPopup('SNAPSHOT ' + (n + 1), 'SAVED', res.skipped ? res.skipped + ' skipped' : undefined);
@@ -158,8 +189,8 @@ function devSnapFinish() {
     let status = null;
     try { status = JSON.parse(host_snapshot_status() || 'null'); } catch (e) { status = null; }
     let applied = 0;
-    try { applied = d.recallJson ? mixerApply(d.recallJson.mixer) : 0; }
-    catch (e) { console.log('[devsnap] mixer apply failed: ' + e); }
+    try { applied = d.recallJson ? mixerApply(d.recallJson.mixer) + mutesApply(d.recallJson.mutes) : 0; }
+    catch (e) { console.log('[devsnap] mixer/mutes apply failed: ' + e); }
     d.recalling = -1; d.recallDir = null; d.recallJson = null; d.last = n;
     const skipped = status && status.skipped ? status.skipped + ' skipped' : undefined;
     showActionPopup('SNAPSHOT ' + (n + 1), 'RESTORED', skipped);

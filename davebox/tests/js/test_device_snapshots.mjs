@@ -33,7 +33,7 @@ globalThis.host_file_exists = () => false;
 globalThis.host_write_file = () => true;
 globalThis.host_ensure_dir = () => true;
 globalThis.host_remove_dir = () => true;
-globalThis.host_module_set_param = () => {};
+globalThis.host_module_set_param = (k, v) => { writes.push(k + '=' + v); };
 globalThis.host_module_set_params = () => true;   /* the strip's turn reaches the automation owner (2026-09-04) */
 globalThis.host_module_get_param = () => '';
 globalThis.shadow_get_param = (slot, key) => {
@@ -143,6 +143,7 @@ step_('⭑ holding Capture past the threshold OPENS the layer, and the release r
 
 step_('⭑ HOLD a step = SAVE: the host takes into the slot dir and davebox writes its json (mixer, every kind of track)', () => {
     snapCalls.length = 0; writes.length = 0;
+    S.trackMuted[1] = true; S.trackSoloed[3] = true;           /* a mute and a solo to carry */
     step(2, true); advance(800); step(2, false); advance(20);
     const take = snapCalls.find(c => c[0] === 'take');
     if (!take) throw new Error('host_snapshot_take not called: ' + JSON.stringify(snapCalls));
@@ -152,6 +153,9 @@ step_('⭑ HOLD a step = SAVE: the host takes into the slot dir and davebox writ
     const t0 = json.mixer[0], t2 = json.mixer[2];
     if (t0.route !== 0 || t0.volume !== 0.8 || t0.send_a !== 0.1) throw new Error('Schwung track levels not captured: ' + JSON.stringify(t0));
     if (t2.route !== 2 || typeof t2.cc7 !== 'number') throw new Error('MIDI track cc7 not captured: ' + JSON.stringify(t2));
+    /* Mutes ride too (Josh, 2026-09-05). */
+    if (!json.mutes || !Array.isArray(json.mutes.mute)) throw new Error('no mutes in davebox.json');
+    if (json.mutes.mute[1] !== true || json.mutes.solo[3] !== true) throw new Error('mutes not captured: ' + JSON.stringify(json.mutes));
     if (!D.devSnapState().slots[2]) throw new Error('slot 2 not marked filled');
 });
 
@@ -164,6 +168,7 @@ step_('⭑ LEDs: the saved slot is WHITE (last), empties DIM', () => {
 step_('⭑ TAP a filled step = RECALL: the host recalls that dir; davebox applies its mixer once the host says done', () => {
     snapCalls.length = 0; writes.length = 0;
     S.trackRoute[0] = 0;
+    S.trackMuted[1] = false; S.trackSoloed[3] = false;         /* changed since the save */
     step(2, true); advance(100); step(2, false); advance(20);
     const rc = snapCalls.find(c => c[0] === 'recall');
     if (!rc || rc[1] !== P.deviceSnapDir('aaaa-bbbb', 2)) throw new Error('host_snapshot_recall not called with the slot dir: ' + JSON.stringify(snapCalls));
@@ -172,6 +177,10 @@ step_('⭑ TAP a filled step = RECALL: the host recalls that dir; davebox applie
     recallPending = false; advance(30);
     if (D.devSnapState().recalling !== -1) throw new Error('recall did not finish when the host said done');
     if (!writes.some(w => w.indexOf('slot:volume=0.800') >= 0)) throw new Error('Schwung level not re-applied: ' + JSON.stringify(writes.slice(0, 12)));
+    /* the mutes come back through the Mute button's own setters */
+    if (!writes.includes('t1_mute=1')) throw new Error('track 2 mute not re-applied: ' + JSON.stringify(writes.filter(w => /_mute=|_solo=/.test(w))));
+    if (!writes.includes('t3_solo=1')) throw new Error('track 4 solo not re-applied');
+    if (!S.trackMuted[1] || !S.trackSoloed[3]) throw new Error('mirror not updated');
 });
 
 step_('a tap on an EMPTY step does nothing', () => {
