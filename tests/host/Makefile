@@ -67,7 +67,8 @@ TARGETS = $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_param_lane_policy \
           $(BUILD_DIR)/test_dirty_policy \
           $(BUILD_DIR)/test_loaded_set_policy \
-          $(BUILD_DIR)/test_chain_idle_tick
+          $(BUILD_DIR)/test_chain_idle_tick \
+          $(BUILD_DIR)/test_chain_clock_state
 
 .PHONY: all test clean
 
@@ -151,6 +152,9 @@ $(BUILD_DIR)/test_control_layout: test_control_layout.c ../../src/host/shadow_co
 # instead of src/host.
 $(BUILD_DIR)/test_chain_idle_tick: test_chain_idle_tick.c ../../src/modules/chain/dsp/chain_idle_tick.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -I../../src/modules/chain/dsp $< -o $@ $(LDFLAGS)
+
+$(BUILD_DIR)/test_chain_clock_state: test_chain_clock_state.c ../../src/modules/chain/dsp/chain_clock_state.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_shadow_param_queue: test_shadow_param_queue.c ../../src/host/shadow_param_queue.h ../../src/host/shadow_constants.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
