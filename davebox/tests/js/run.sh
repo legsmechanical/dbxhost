@@ -5,11 +5,15 @@
 # with a resolve plugin instead), run under node.
 set -e
 cd "$(dirname "$0")/../.."
-mkdir -p /tmp/davebox-js-tests
+# One bundle dir PER TREE (2026-09-05): a shared /tmp/davebox-js-tests let two
+# worktrees' suites overwrite each other's bundles mid-run, so a test in one
+# tree executed the other tree's code. The dir is derived from this tree's path.
+export DAVEBOX_JS_TEST_DIR="${DAVEBOX_JS_TEST_DIR:-/tmp/davebox-js-tests-$(printf %s "$PWD" | cksum | cut -d" " -f1)}"
+mkdir -p "$DAVEBOX_JS_TEST_DIR"
 node tests/js/build.mjs
 fail=0
 for t in tests/js/test_*.mjs; do
-  out="/tmp/davebox-js-tests/$(basename "$t" .mjs).js"
+  out="$DAVEBOX_JS_TEST_DIR/$(basename "$t" .mjs).js"
   if node "$out"; then echo "PASS: $(basename "$t")"; else echo "FAIL: $(basename "$t")"; fail=1; fi
 done
 # ⚠ This is a SUBSET. CI runs davebox/tests/run.sh, which is these plus the

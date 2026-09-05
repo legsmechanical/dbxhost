@@ -18,5 +18,7 @@ case "$name" in test_*) ;; *) name="test_$name" ;; esac
     ls tests/js/test_*.mjs | sed 's#tests/js/##; s#\.mjs##; s#^#  #' >&2
     exit 2
 }
+export DAVEBOX_JS_TEST_DIR="${DAVEBOX_JS_TEST_DIR:-/tmp/davebox-js-tests-$(printf %s "$PWD" | cksum | cut -d" " -f1)}"   # per tree, same law as run.sh
+mkdir -p "$DAVEBOX_JS_TEST_DIR"
 node tests/js/build.mjs >/dev/null
-exec node "/tmp/davebox-js-tests/$name.js"
+exec node "$DAVEBOX_JS_TEST_DIR/$name.js"
