@@ -74,7 +74,7 @@ import { discover, deriveSections, activeSection, filterVizFor,
 import { parseValue, stepValue, commitString, clampValue, renderCellsForBank,
     formatValue, toRenderCell } from './ui_cells.mjs';
 import {
-    drawKitBankPage, drawKitHeader, drawKitHeaderParamPages,
+    drawKitBankPage, drawKitHeader, drawKitBankHeader, drawKitHeaderParamPages,
     drawKitSectionPicker, drawKitList, drawKitListOverlay, drawKitHintRow, MV_FOOTER_Y,
     kitUseLayout,
     drawKitStackedList, drawKitBackdropDim, drawKitCrumbs, kitStackBox,
@@ -7269,6 +7269,11 @@ function renderNoEditor() {
     drawKitHintRow(MV_FOOTER_Y, [['BACK', 'MENU']]);
 }
 
+/* What renderBlocks last drew as its header — for tests; the kit's drawers
+ * cannot be intercepted through an ES import. */
+let lastMenuHeader = null;
+export function soundMenuHeaderForTest() { return lastMenuHeader; }
+
 function renderBlocks() {
     clear_screen();
     /* ⚠ BANK's map, explicitly. This screen is the last segment of the jog's
@@ -7290,10 +7295,23 @@ function renderBlocks() {
      * is 119px at every track number. The square-bracket form measured 125px
      * and would have lost its last letter even if the glyphs had existed. (An
      * earlier Move-bus title, "MOVE 2 - TRACK CONTROL", was 153px.) */
-    drawKitHeader((S.bus && S.bus.kind !== 'move')
-        ? S.bus.title
-        : 'SOUND + CONFIG', false);   /* no track marker (Josh, 2026-08-23) —
-                                       * a bank heading, like the clip banks' */
+    if (S.bus && S.bus.kind !== 'move') {
+        /* A GLOBAL bus (Master / Send FX) is not a track: its own title. */
+        drawKitHeader(S.bus.title, false);
+        lastMenuHeader = { name: S.bus.title, glyph: null, right: '' };
+    } else {
+        /* ⭑ The track header, exactly as a bank card wears it (Josh,
+         * 2026-09-05: "sound menu should show the track number on the header
+         * along with the instrument abbreviation just like track view banks"):
+         * the audio glyph, the bank's name, and T<n>[ABBR] at the right through
+         * the SAME helpers the cards use — bankHeaderRight reads the tick's
+         * cached abbreviation, so nothing here costs a round-trip. This header
+         * stands under the CONFIG / SOUND CONTROL stacks too (renderInChain
+         * dims and stacks over it), so those screens carry it as well.
+         * (Before: 'SOUND + CONFIG' with no track marker, 2026-08-23.) */
+        drawKitBankHeader('SOUND+CFG', 'audio', bankHeaderRight(false));
+        lastMenuHeader = { name: 'SOUND+CFG', glyph: 'audio', right: bankHeaderRight(false) };
+    }
     /* The bank-position bar, continued: this screen is the LAST segment of the
      * jog's bank cycle, so it keeps the same indicator the clip banks carry —
      * the strip reads as one. Track flavour only (a session bus is not a bank),
