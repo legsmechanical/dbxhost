@@ -840,6 +840,9 @@ export function soundBusLevelEditingForTest(v) {
 }
 export function soundPendingActionForTest() { return S.pendingAction; }
 export function soundQueueActionForTest(a) { S.pendingAction = a; }
+/* Audition test hooks: arm a preview baseline as the preset list would, and read it back. */
+export function soundArmAuditionForTest(origBlob, previewIdx) { S.origState = origBlob; S.previewIdx = previewIdx | 0; S.previewAt = 0; }
+export function soundAuditionStateForTest() { return { hasOriginal: S.origState !== null, previewIdx: S.previewIdx }; }
 /* The param-pages editor's live state: whether it took the screen, and the page
  * the jog is on. Pins the OUTCOME (which pages exist) rather than ppApplies()'s
  * boolean — a gate can be right while the plan it produces is wrong. */
@@ -1154,8 +1157,8 @@ export function soundInEditor() {
  * cause problems, or isn't feasible"). The switch lands on the SAME KIND of
  * screen on the new track, where that track has one:
  *   editor (and its dive-outs: hierarchy menu, file browser, the preset
- *     screens) → the same block's editor; the audition is REVERTED first, as
- *     Back would — a preview is not a choice
+ *     screens) → the same block's editor; a running audition is KEPT (Josh,
+ *     2026-09-05: it is what you are hearing) and becomes the preset record
  *   menu / module browser / slot presets → the menu
  *   CONFIG → the new track's CONFIG (a MIDI track has one, item 14); the LFOs
  *     screen → only a Schwung track has LFOs, else its menu
@@ -1199,7 +1202,7 @@ export function soundFollowTrack(track) {
      * switch is not a click), and its parent decides the destination. */
     if (S.view === VIEW_ENUM) closeEnumPicker(false);
     if (S.view === VIEW_PRESET_SRC || S.view === VIEW_PRESET_LIST || S.view === VIEW_PRESET_BAKED)
-        revertOriginal();
+        keepAudition();
     const route = GS.trackRoute[track];
     const plan = followPlan(S.view, route);
     /* ⚠ ARRIVING IS NOT A BANK GESTURE (the "silent on return" law, 08-25):
@@ -1962,6 +1965,21 @@ function captureOriginal() {
 
 function revertOriginal() {
     if (S.origState !== null) engineSetState(S.slot, S.comp, S.origState);
+    S.previewIdx = -1;
+    S.previewAt = -1;
+}
+
+/* A track switch mid-audition KEEPS the previewed sound (Josh, 2026-09-05:
+ * "20) shouldn't be reverted" — it is what you are hearing). The captured
+ * original is dropped so nothing later resurrects it, and if the preview was
+ * a named user preset it becomes the slot's preset record, exactly as a
+ * click would have made it. Back inside the list still reverts, as before. */
+function keepAudition() {
+    if (S.origState === null && S.previewIdx < 0) return;
+    const p = S.previewIdx > 0 ? S.userPresets[S.previewIdx - 1] : null;
+    if (p) setPresetRecord({ name: p.name, path: p.path, mod: S.moduleId,
+                             hash: hashState(engineGetState(S.slot, S.comp)) });
+    S.origState = null;
     S.previewIdx = -1;
     S.previewAt = -1;
 }

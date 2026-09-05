@@ -303,6 +303,23 @@ step('⭑ Shift+JOG from inside the EDITOR steps the track and lands in the new 
     snd.soundExit();
 });
 
+step('⭑ a switch mid-AUDITION keeps the previewed sound — it is what you are hearing (Josh, 2026-09-05)', () => {
+    enterEditor(2);
+    snd.soundQueueActionForTest({ t: 'view', view: 4 /* VIEW_PRESET_LIST */ }); globalThis.tick();
+    snd.soundArmAuditionForTest('ORIG-BLOB', 1);            /* as the list does on a scroll */
+    if (!snd.soundAuditionStateForTest().hasOriginal) throw new Error('control: audition not armed');
+    const stateWrites = [];
+    const _ssp = globalThis.shadow_set_param;
+    globalThis.shadow_set_param = (slot, key, val) => { if (String(key).indexOf(':state') >= 0) stateWrites.push(key + '=' + val); return _ssp(slot, key, val); };
+    editops._switchActiveTrack(3); settle();
+    globalThis.shadow_set_param = _ssp;
+    if (stateWrites.some(w => w.indexOf('ORIG-BLOB') >= 0)) throw new Error('the audition was REVERTED on the switch: ' + JSON.stringify(stateWrites));
+    const a = snd.soundAuditionStateForTest();
+    if (a.hasOriginal || a.previewIdx >= 0) throw new Error('the audition baseline was left armed: ' + JSON.stringify(a));
+    if (!snd.soundOpen()) throw new Error('the follow did not happen');
+    snd.soundExit();
+});
+
 step('⚠ a Conduct track has no sound to follow into: the switch closes', () => {
     enterEditor(2);
     editops._switchActiveTrack(7);
