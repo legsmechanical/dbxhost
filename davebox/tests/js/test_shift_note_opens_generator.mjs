@@ -467,10 +467,11 @@ step('⚠ control: with no gesture crumb, Menu is NOT a closer', () => {
      * leave from a close. A LEAVE keeps the track recorded on SOUND + CONFIG
      * (the screen is waiting when you return); a CLOSE resets it. Josh's 08-25
      * words are exactly this: "without resetting the track's current bank place". */
-    if (S.trackActiveBank[0] !== BANK_SOUND)
-        throw new Error('the track stopped being recorded on SOUND + CONFIG (bank ' +
-                        S.trackActiveBank[0] + ') — Menu acted as a CLOSER without a gesture ' +
-                        'crumb, reversing the 08-25 retirement');
+    /* RE-PINNED 2026-09-05: a gesture entry no longer RECORDS the bank (only the
+     * jog does), so leave-vs-close is read off the LIVE bank: a LEAVE keeps the
+     * SOUND + CONFIG identity on the mirror, a CLOSE hands the origin back. */
+    if (S.activeBank !== BANK_SOUND)
+        throw new Error('Menu acted as a CLOSER without a gesture crumb (bank ' + S.activeBank + '), reversing the 08-25 retirement');
 });
 
 /* CONTROL 2 — the crumb cannot outlive its screen and strand a stale return. */
@@ -491,10 +492,8 @@ step('⚠ control: leaving by any other route SPENDS the crumb', () => {
     ticks(4);
     menuPress();
     ticks(4);
-    if (S.trackActiveBank[0] !== BANK_SOUND)
-        throw new Error('a STALE crumb from an earlier gesture drove this exit (landed on bank ' +
-                        S.trackActiveBank[0] + ') — that is the "banks land somewhere I did not ' +
-                        'leave them" bug the crumb exists to avoid');
+    if (S.activeBank !== BANK_SOUND)
+        throw new Error('a STALE crumb from an earlier gesture drove this exit (landed on bank ' + S.activeBank + ') — the "banks land somewhere I did not leave them" bug the crumb exists to avoid');
 });
 
 /* ⭑ AN EMPTY GENERATOR OPENS THE PICKER (Josh, 2026-08-27). It used to drop you

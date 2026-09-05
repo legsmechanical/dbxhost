@@ -387,12 +387,15 @@ step('⭑⭑ the bank RECORDS ITSELF: sidecar write + Shift+jog track switch', (
     if (S.trackActiveBank[2] !== BANK_SOUND)
         throw new Error('leaving forgot the bank on track 2: ' + S.trackActiveBank[2]);
     /* ⭑ 2026-09-05 (item 20, Josh: "tracks should switch under everything"):
-     * the switch FOLLOWS — sound mode stays open on track 3, which is now
-     * RECORDED on SOUND + CONFIG like the track it came from. The 08-24 close
-     * is retired for this route too. */
+     * the switch FOLLOWS — sound mode stays open on track 3 with the identity
+     * ON — but (RE-RULED the same day: "NOTHING should set a bank other than
+     * the usual bank jog") track 3 is NOT recorded on SOUND + CONFIG by the
+     * follow: it keeps its own bank (2). Track 2 keeps SOUND + CONFIG because
+     * the JOG put it there. */
     if (!snd.soundActive()) throw new Error('sound mode CLOSED on the Shift+jog switch — the 08-24 rule, not the 09-05 one');
-    if (S.activeBank !== BANK_SOUND || S.trackActiveBank[3] !== BANK_SOUND)
-        throw new Error('the follow did not land track 3 on SOUND + CONFIG: bank ' + S.activeBank + ' recorded ' + S.trackActiveBank[3]);
+    if (S.activeBank !== BANK_SOUND) throw new Error('the follow did not carry the identity: bank ' + S.activeBank);
+    if (S.trackActiveBank[3] !== 2)
+        throw new Error('the follow RECORDED the sound bank on track 3 (' + S.trackActiveBank[3] + ') — only the jog records a bank');
     snd.soundExit();
 });
 

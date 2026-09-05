@@ -245,20 +245,14 @@ step('⚠ a CLAMPED Shift+jog must NOT close sound mode (nothing moved)', () => 
     S.activeTrack = 2; S.activeBank = 0;
 });
 
-step('⭑ ...but the track REMEMBERS it: leave and come back and SOUND + CONFIG is there', () => {
-    /* Josh, on device: "sound+config doesn't stick when i leave the track and
-     * come back. it lands on automation instead."
-     *
-     * The completion of "a bank is per-track". `trackActiveBank` used to skip
-     * BANK_SOUND — it stored the jog-reachable clip bank and it is what the
-     * sidecar serializes — so on the way back it handed over the bank you jog
-     * right FROM (AUTOMATION). Josh ruled the fix on 2026-08-25: the bank
-     * RECORDS ITSELF like all the others, and the screen is re-entered when the
-     * track comes back on it.
-     *
-     * ⭑ SILENT on return. Arriving is not a bank gesture, so the display window
-     * must stay shut — otherwise the screen pops up over the track overview
-     * mid-switch, which is exactly what the display-law fix removed. */
+step('⭑ the follow does NOT record SOUND + CONFIG on the tracks it lands on — only the jog records a bank (Josh, 2026-09-05)', () => {
+    /* RE-RULED 2026-09-05 (was the 08-25 "records itself like every other bank"
+     * law): "an instrument editor isn't the sound and config bank. Sound config
+     * is just a way to get there. NOTHING should set a bank other than the usual
+     * bank jog." So a Shift+jog walk through the sound screen changes what is
+     * OPEN, never what each track REMEMBERS; passed-through tracks keep their
+     * banks by construction. Only a JOG walk (bank mode latched, the bank
+     * walk in ui_input_cc) writes trackActiveBank. */
     snd.soundExit();
     for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackSoundOrigin[t] = -1; }
     S.trackActiveBank[2] = 6;                  /* track 2 starts on AUTOMATION */
@@ -266,55 +260,41 @@ step('⭑ ...but the track REMEMBERS it: leave and come back and SOUND + CONFIG 
     S.activeTrack = 2;
     S.activeBank = 6;
     S.ledInitComplete = true;
+    S.bankCardLatched = false;                 /* a GESTURE entry, not the jog */
     snd.soundEnter(2, 2);
-    if (S.activeBank !== BANK_SOUND) throw new Error('control: identity not taken');
-    /* ⭑ IN BANK MODE for the whole scroll: since THE ONE LAW (2026-09-01) the
-     * screen only re-opens on a switch while the bank view is open — at rest a
-     * remembered SOUND + CONFIG shows the overview like every other bank. The
-     * rest flavour is asserted at the end of this step. */
-    S.bankCardLatched = true;
+    if (S.activeBank !== BANK_SOUND) throw new Error('control: identity not taken for the OPEN mode');
+    if (S.trackActiveBank[2] !== 6) throw new Error('a gesture entry RECORDED the bank on track 2: ' + S.trackActiveBank[2]);
+    snd.soundShowMenu();                       /* a screen you are IN (the prompt at rest would not follow) */
 
     shift(true);
     turn(); globalThis.tick();                 /* 2 -> 3: FOLLOWS (2026-09-05) */
+    shift(false);
     if (S.activeTrack !== 3) throw new Error('control: did not step to 3');
     if (!snd.soundActive()) throw new Error('control: the switch closed instead of following');
-    if (S.activeBank !== BANK_SOUND) throw new Error('control: track 3 did not land on SOUND + CONFIG');
-
-    /* ...and back onto track 2, the one that was LEFT on the bank. Shift never
-     * lifts in between: this is one continuous scroll out and back, the gesture
-     * Josh described. */
-    S.bankSelectTick = -1;                     /* what the Shift edge's clear leaves */
-    send(14, 127); globalThis.tick();          /* 3 -> 2 */
-    const _stamp = S.bankSelectTick;           /* ⚠⚠ read with Shift still DOWN */
-    shift(false);
-    if (S.activeTrack !== 2)
-        throw new Error('did not step back to track 2 (' + S.activeTrack + ')');
-    if (!snd.soundActive())
-        throw new Error('SOUND + CONFIG did not stick — the track came back closed');
-    if (S.activeBank !== BANK_SOUND)
-        throw new Error('came back on bank ' + S.activeBank +
-                        (S.activeBank === 6 ? ' (AUTOMATION — the origin, Josh\'s report)' : ''));
-    if (_stamp >= 0)
-        throw new Error('the return opened the bank display window (tick ' + _stamp +
-                        ') — the screen pops up over the track overview mid-switch');
+    if (S.trackActiveBank[2] !== 6) throw new Error('leaving track 2 recorded the sound bank on it: ' + S.trackActiveBank[2]);
+    if (S.trackActiveBank[3] !== 1) throw new Error('the follow recorded the sound bank on track 3: ' + S.trackActiveBank[3]);
     snd.soundExit();
 
-    /* ⭑⭑ AND AT REST the same return keeps the screen CLOSED (the one law):
-     * the bank is still remembered, but the overview is what shows — holding
-     * sound mode open here is what defeated the jog click's !soundActive()
-     * gate (the S+C-as-active-bank bug). */
-    S.bankCardLatched = false;
-    S.trackActiveBank[2] = BANK_SOUND;
+    /* At rest, coming back to track 2 lands on ITS bank (AUTOMATION) — nothing
+     * re-opens, nothing was remembered. */
     S.activeTrack = 3; S.activeBank = 1;
     shift(true);
     send(14, 127); globalThis.tick();          /* 3 -> 2, at rest */
     shift(false);
     globalThis.tick();
     if (S.activeTrack !== 2) throw new Error('control: did not step back to 2 at rest');
-    if (S.activeBank !== BANK_SOUND)
-        throw new Error('rest return forgot the bank: ' + S.activeBank);
-    if (snd.soundActive())
-        throw new Error('rest return re-opened the screen — the one law says overview');
+    if (S.activeBank !== 6) throw new Error('track 2 came back on bank ' + S.activeBank + ', not its own AUTOMATION');
+    if (snd.soundOpen()) throw new Error('the return opened sound mode — nothing was recorded, nothing should re-open');
+
+    /* ⭑ The JOG still records: latched bank mode walking onto SOUND + CONFIG is
+     * the one writer — pinned here so the rule is not "never", it is "the jog". */
+    S.bankCardLatched = true;
+    S.activeBank = BANK_SOUND; S.trackActiveBank[2] = BANK_SOUND;   /* what the bank walk writes (ui_input_cc) */
+    snd.soundEnter(2, 2);
+    shift(true); turn(); globalThis.tick(); shift(false);           /* 2 -> 3 in bank mode */
+    if (S.trackActiveBank[2] !== BANK_SOUND) throw new Error('the jog-recorded bank was lost on the way out: ' + S.trackActiveBank[2]);
+    snd.soundExit();
+    S.bankCardLatched = false;
 });
 
 step('⚠ a track CLOSED deliberately does not come back on SOUND + CONFIG', () => {
@@ -327,8 +307,11 @@ step('⚠ a track CLOSED deliberately does not come back on SOUND + CONFIG', () 
     S.activeBank = 6;                          /* the live mirror agrees — it is
                                                 * what the entry reads as the origin */
     snd.soundEnter(2, 2);
-    if (S.trackActiveBank[2] !== BANK_SOUND)
-        throw new Error('control: entering did not record the bank');
+    /* RE-RULED 2026-09-05: a gesture entry does not record the bank at all,
+     * so the close has nothing to hand back — the pin below is that it stays
+     * on the bank it was entered from, either way. */
+    if (S.trackActiveBank[2] !== 6)
+        throw new Error('control: entering by gesture recorded the bank: ' + S.trackActiveBank[2]);
     snd.soundExit();                           /* the deliberate close (Back) */
     /* ⭑ THE INVARIANT THIS STEP IS FOR is that the track stops being recorded on
      * SOUND + CONFIG — without it the recording is write-only and every track you

@@ -508,11 +508,13 @@ export function _switchActiveTrack(newT) {
     const _follow = soundActive() && !soundIsGlobal() && !isTextEntryActive() &&
                     S.trackPadMode[newT | 0] !== PAD_MODE_CONDUCT;
     if (soundOpen() && !soundIsGlobal() && !_follow) soundExit({ leaving: true });
-    /* Records BANK_SOUND like any other bank now (Josh, 2026-08-25) — the old
-     * guard here existed only because the identity was transient and writing it
-     * would have stranded the track on a bank the jog could not reach. It can
-     * be reached: the entry below re-opens the screen. */
-    S.trackActiveBank[S.activeTrack] = S.activeBank;
+    /* The outgoing track remembers its bank — unless that bank is SOUND +
+     * CONFIG / MACROS reached by a GESTURE (Shift+hold, Shift+pad, a follow),
+     * which never records (Josh, 2026-09-05: "NOTHING should set a bank other
+     * than the usual bank jog"). Latched bank mode means the jog walked there,
+     * and that does record, like every other bank (08-25). */
+    if (!isSoundBank(S.activeBank) || S.bankCardLatched)
+        S.trackActiveBank[S.activeTrack] = S.activeBank;
     S.activeTrack = newT | 0;
     S.instrAbbrevAt = 0;                  /* the header's [instrument] follows the track */
     S.activeBank = S.trackActiveBank[S.activeTrack] | 0;

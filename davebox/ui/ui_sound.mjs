@@ -264,7 +264,14 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
        * own 09-04 door language decides when it opens: a knob with a choice
        * already made is ENTERED by a click, an empty one goes straight to
        * choosing, exactly as the Instrument row does. */
-      VIEW_KNOBLEGS = 20;
+      VIEW_KNOBLEGS = 20,
+      /* ⭑ NO INSTRUMENT EDITOR (Josh, 2026-09-05, item 20): a track switch made
+       * from a Schwung instrument EDITOR landed on a track that has none — a
+       * Move-routed, MIDI or NONE track. Not a popup: a screen that holds
+       * until Back (→ that track's sound menu) or the next switch, so a
+       * Shift+jog walk through such tracks reads as "no editor here, keep
+       * going" instead of dumping you into a menu you did not ask for. */
+      VIEW_NOEDITOR = 21;
 
 /* Chain-patch file ops (save_patch / delete_patch) are DSP-side and async —
  * the file appears/vanishes a beat after the request. Re-read the list this
@@ -959,7 +966,7 @@ export function soundShowMenu() {
     /* The menu is SOUND + CONFIG's: asked for from the MACROS identity (the
      * Shift+Note gesture on a track resting there), the bank switches first
      * so Back out of the menu lands on the card the menu belongs to. */
-    if (S.bankHome === BANK_MACROS) soundSetBank(BANK_SOUND);
+    if (S.bankHome === BANK_MACROS) soundSetBank(BANK_SOUND, false);   /* a gesture asked: no recording (2026-09-05) */
     S.view = VIEW_BLOCKS;
     S.dirty = true;
 }
@@ -1061,6 +1068,12 @@ function flushForRetarget() {
  * used to carry implicitly; it now has its own store, trackSoundOrigin.
  * Conductor tracks keep their own bank: they have no sound bank in the cycle,
  * and their screens key on banks 0/8/9/10. */
+/* Set by the tick around an entry the JOG's bank walk queued (see
+ * pendingSoundEnterRecord): that entry records the bank on the track; every
+ * other entry — a gesture — does not. */
+let entryRecords = false;
+export function soundEntryRecords(on) { entryRecords = !!on; }
+
 function takeBankIdentity(track, bank) {
     if (GS.trackPadMode[track] === PMC) return;
     const b = isSoundBank(bank) ? bank : BANK_SOUND;
@@ -1071,7 +1084,16 @@ function takeBankIdentity(track, bank) {
         GS.trackSoundOrigin[track] = GS.activeBank | 0;
     S.bankHome = b;
     GS.activeBank = b;
-    GS.trackActiveBank[track] = b;
+    if (entryRecords) GS.trackActiveBank[track] = b;   /* the JOG's walk, and only it */
+    /* ⭑ Otherwise NOT RECORDED (Josh, 2026-09-05: "an instrument editor isn't the sound
+     * and config bank. Sound config is just a way to get there. NOTHING should
+     * set a bank other than the usual bank jog."). Entering by gesture —
+     * Shift+hold Note/Session, Shift+pad, the follow, a launcher, the remote
+     * UI — takes the identity for the OPEN mode (bankHome, the live mirror)
+     * but leaves the track's remembered bank alone; only the jog's bank walk
+     * writes trackActiveBank (ui_input_cc). This reverses the 08-25 "records
+     * itself like every other bank" law for gesture entries — see
+     * schwung-sound-config-is-a-recorded-bank (RE-RULED). */
 }
 
 /* ⭑ Sound mode's SECOND identity (spec §2): SOUND + CONFIG and MACROS are two
@@ -1080,14 +1102,16 @@ function takeBankIdentity(track, bank) {
  * the walk between them is a screen switch, and the exit restore, the track
  * switch and the sidecar read whichever is recorded. Closed, the walk queues
  * an entry that lands here (ui_tick consumes pendingSoundEnterMacros). */
-export function soundSetBank(bank) {
+/* `record` (default true): the bank WALK between the two identities records
+ * the bank like every jog step; a gesture path passes false. */
+export function soundSetBank(bank, record = true) {
     if (!S.active || soundIsGlobal() || S.track < 0 || !isSoundBank(bank)) return;
     if (GS.trackPadMode[S.track] === PMC) return;
     if (bank === BANK_MACROS) S.view = VIEW_MACROS;
     else if (S.bankHome === BANK_MACROS || S.view === VIEW_MACROS) S.view = VIEW_PROMPT;
     S.bankHome = bank;
     GS.activeBank = bank;
-    GS.trackActiveBank[S.track] = bank;
+    if (record) GS.trackActiveBank[S.track] = bank;
     S.touchedIdx = -1;
     S.dirty = true;
 }
@@ -1149,8 +1173,12 @@ function followPlan(fromView, route) {
     const chain = route === 0;
     const isEditorish = v === VIEW_EDIT || v === VIEW_MENU || v === VIEW_FILE ||
         v === VIEW_PRESET_SRC || v === VIEW_PRESET_LIST || v === VIEW_PRESET_BAKED ||
-        (ppOn && ppOwnsView());
-    if (isEditorish) return { editor: chain, then: null };
+        v === VIEW_NOEDITOR || (ppOn && ppOwnsView());
+    /* From an EDITOR (or the no-editor screen a walk is passing through): a
+     * Schwung track → its editor; anything else has no editor → the MESSAGE
+     * screen, not its menu (Josh, 2026-09-05: "No instrument editor for
+     * <type> / Press back for track sound & config"). */
+    if (isEditorish) return { editor: chain, noEditor: !chain, then: null };
     if (v === VIEW_SLOTCFG) {
         if (chain) return { editor: false, then: { t: 'slotcfg', which: S.cfgWhich } };
         if (route === 2 && S.cfgWhich === 'config') return { editor: false, then: { t: 'slotcfg', which: 'config' } };
@@ -1183,6 +1211,7 @@ export function soundFollowTrack(track) {
          * KIND of screen it has — its menu (with CONFIG behind it), its MACROS
          * page, the gateway — or its prompt, which is where soundEnterMove lands. */
         soundEnterMove(track);
+        if (plan.noEditor) { landOnNoEditor(); restoreBankDisplay(stamp); return; }
         const th = plan.then;
         if (th && th.t === 'view' && (th.view === VIEW_MACROS || th.view === VIEW_BUSES)) S.view = th.view;
         else if (!(th && th.t === 'view' && th.view === VIEW_PROMPT)) {
@@ -1195,10 +1224,34 @@ export function soundFollowTrack(track) {
     /* soundRetarget keeps your place inside a block only when it sees
      * VIEW_EDIT; every other source lands on the menu and `then` takes it on. */
     S.view = plan.editor ? VIEW_EDIT : VIEW_BLOCKS;
+    /* Walking ON from the message screen onto a Schwung track reopens the
+     * block the walk LEFT (a Move detour resets S.comp to the bus's). */
+    if (plan.editor && S.noEditorComp) { S.comp = S.noEditorComp; }
+    if (plan.editor) S.noEditorComp = null;
     clearBusContext();
     soundRetarget(track, slotIndex(track));
-    if (plan.then) S.pendingAction = Object.assign({}, S.pendingAction, { then: plan.then });
+    /* MIDI / NONE reached from an editor: the retarget parks us on the menu;
+     * the screen you see is the message, Back turns it into that menu. */
+    if (plan.noEditor && route !== 0) landOnNoEditor();
+    else if (plan.then) S.pendingAction = Object.assign({}, S.pendingAction, { then: plan.then });
     restoreBankDisplay(stamp);
+}
+
+/* The retarget / bus entry queues its own action (retargetOpen lands on the
+ * menu on the NEXT tick), so the message view must be queued BEHIND it — set
+ * directly it would be overwritten a tick later, which is exactly what the
+ * first cut did. With nothing queued it can land now. */
+function landOnNoEditor() {
+    if (S.noEditorComp === undefined || S.noEditorComp === null) S.noEditorComp = S.comp || 'synth';
+    const th = { t: 'view', view: VIEW_NOEDITOR };
+    if (S.pendingAction) S.pendingAction = Object.assign({}, S.pendingAction, { then: th });
+    else { S.view = VIEW_NOEDITOR; S.dirty = true; }
+}
+
+/* The words of the no-editor screen, from the track's route. */
+export function noEditorWords(track) {
+    const r = GS.trackRoute[track];
+    return r === 1 ? 'Move track' : r === 2 ? 'MIDI track' : r === ROUTE_NONE ? 'no instrument' : 'this track';
 }
 
 /* Read-only, for tests: where a follow landed. */
@@ -3293,6 +3346,8 @@ const VIEW_TREE = {
                           crumb: () => 'LFO ' + (S.lfoNum + 1) },
     [VIEW_KNOBLEGS]:    { parent: VIEW_KNOBS,      float: true,
                           crumb: () => 'K' + (S.knobIdx + 1) },
+    [VIEW_NOEDITOR]:    { parent: VIEW_BLOCKS,     float: false,
+                          crumb: () => 'NO EDITOR' },
     [VIEW_KNOB_TARGET]: { parent: VIEW_KNOBS,      float: true, backPure: true,
                           crumb: () => 'K' + (S.knobIdx + 1) },
     [VIEW_KNOB_PARAM]:  { parent: VIEW_KNOB_TARGET, float: true, backPure: true,
@@ -5251,7 +5306,15 @@ function retargetOpen(picker) {
     }
 }
 
+/* `then` is honoured for EVERY action (2026-09-05), not only the retarget: a
+ * follow onto a Move track lands via soundEnterMove's `names` action, and the
+ * no-editor screen has to be queued behind that one too. */
 function runAction(a) {
+    runActionBody(a);
+    if (a.then && a.t !== 'retarget') S.pendingAction = a.then;   /* retarget chains it itself */
+}
+
+function runActionBody(a) {
     if (a.t === 'names')        refreshBlockNames();
     else if (a.t === 'bus')     enterBus(a.bus);
     else if (a.t === 'leavebus') leaveBus();
@@ -6029,10 +6092,11 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * ⚠ And not on a GLOBAL bus (Master/Send FX): those are entered from the
          * session FX list, not from a track, so there is no track to step. That
          * is also why tick's follow is gated on !soundIsGlobal(). */
-        if (S.shiftHeld && (S.view === VIEW_BLOCKS || S.view === VIEW_EDIT) && !S.busLevelEditing &&
-                !soundIsGlobal()) {
+        if (S.shiftHeld && (S.view === VIEW_BLOCKS || S.view === VIEW_EDIT || S.view === VIEW_NOEDITOR) &&
+                !S.busLevelEditing && !soundIsGlobal()) {
             return false;                              /* davebox steps the track (the editor too, 2026-09-05) */
         }
+        if (S.view === VIEW_NOEDITOR) return true;     /* nothing to scroll on the message */
         const delta = decodeDelta(d2);
         if (!delta) return true;
         if (S.view === VIEW_BUSES) {
@@ -6204,6 +6268,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
             return true;
         }
         if (S.view === VIEW_PROMPT) { S.view = VIEW_BLOCKS; S.dirty = true; return true; }
+        if (S.view === VIEW_NOEDITOR) { soundShowMenu(); return true; }   /* the click means what Back means here */
         /* MACROS: the click opens the assign list, which floats over the page
          * (no engine reads — the list is the store). */
         if (S.view === VIEW_MACROS) { openKnobEditor(); S.dirty = true; return true; }
@@ -6520,6 +6585,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.touchedIdx = -1;
             S.presetMsg = '';
             S.dirty = true;
+            return true;
+        }
+        if (S.view === VIEW_NOEDITOR) {
+            /* "Press back for track sound & config" — the menu of the track you
+             * arrived on (its bus menu for a Move track, Instrument (+ Config)
+             * for MIDI / NONE). */
+            soundShowMenu();
             return true;
         }
         if (S.view === VIEW_BLOCKS) {
@@ -7181,6 +7253,20 @@ function renderPrompt() {
      * [n] sound & config'"). */
     centreText(MV_ROW1_Y + 2, 'CLICK TO ENTER');
     centreText(MV_ROW1_Y + 12, 'TRACK ' + (S.track + 1) + ' SOUND & CONFIG');
+}
+
+/* The NO INSTRUMENT EDITOR screen: the bank header (track + instrument, like
+ * every card), two centred lines, and a footer that names the one way on. */
+function renderNoEditor() {
+    clear_screen();
+    kitUseLayout('bank');
+    drawKitBankHeader('SOUND+CFG', 'audio', bankHeaderRight(false));
+    centreText(MV_ROW1_Y - 8, 'NO INSTRUMENT EDITOR');
+    centreText(MV_ROW1_Y + 2, 'FOR ' + noEditorWords(S.track).toUpperCase());
+    centreText(MV_ROW1_Y + 14, 'PRESS BACK FOR TRACK');
+    centreText(MV_ROW1_Y + 24, 'SOUND & CONFIG');
+    fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0);
+    drawKitHintRow(MV_FOOTER_Y, [['BACK', 'MENU']]);
 }
 
 function renderBlocks() {
@@ -8242,6 +8328,7 @@ export function soundRender() {
             !bankCardVisible())
         return false;
     if (S.view === VIEW_PROMPT) renderPrompt();
+    else if (S.view === VIEW_NOEDITOR) renderNoEditor();
     else if (S.view === VIEW_MACROS) renderMacros();
     else if (S.view === VIEW_BLOCKS) renderBlocks();
     else if (S.view === VIEW_BROWSE) renderBrowse();
