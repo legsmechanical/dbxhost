@@ -24,6 +24,7 @@ printf 'payload verb\n' > "$SRC/modules/audio_fx/verb/x"  # must NOT be copied (
 # an existing install with history
 mkdir -p "$DBX/bin" "$DBX/help" "$DBX/presets"
 printf 'old\n' > "$DBX/bin/keepme"                        # not in the payload: must survive (merge)
+touch "$DBX/bin/davebox-heal" "$DBX/bin/davebox-heal.new"   # the pre-09-05 helper path
 printf 'stale\n' > "$DBX/help/old.md"                     # help is MIRRORED: must go
 printf 'copy\n' > "$DBX/presets/local.json"               # a real copy of a shared dir: moved aside
 ln -s "$STOCK/active_set.txt" "$DBX/active_set.txt"       # private state as a link: un-linked
@@ -33,6 +34,7 @@ echo "layout-install.sh:"
 sh "$SRC/scripts/layout-install.sh" "$SRC" "$DBX" "$STOCK" > "$T/out" 2>&1 || { bad "exit $?: $(tail -3 "$T/out")"; }
 [ -x "$DBX/schwung" ] && ok "payload files land (schwung, executable)" || bad "schwung missing"
 [ -f "$DBX/bin/keepme" ] && ok "MERGE: a file the payload does not ship survives" || bad "bin/ was replaced"
+[ ! -e "$DBX/bin/davebox-heal" ] && [ ! -e "$DBX/bin/davebox-heal.new" ] && ok "RETIRE: the old bin/davebox-heal[.new] is removed (helper lives in the module dir now)" || bad "stale davebox-heal survived"
 [ -f "$DBX/bin/schwung-heal" ] && ok "bin/ gained the payload's files beside it" || bad "bin merge failed"
 [ ! -f "$DBX/help/old.md" ] && [ -f "$DBX/help/ch1.md" ] && ok "help/ is MIRRORED (stale page gone, new page in)" || bad "help mirror"
 [ -L "$DBX/presets" ] && [ "$(readlink "$DBX/presets")" = "$STOCK/presets" ] && ok "presets is a link into stock" || bad "presets not linked"

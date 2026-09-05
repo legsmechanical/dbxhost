@@ -58,6 +58,13 @@ done
 chmod +x "$DBX_DIR/schwung" "$DBX_DIR/shadow/shadow_ui" 2>/dev/null || true
 chmod +x "$DBX_DIR"/scripts/*.sh "$DBX_DIR/bless.sh" 2>/dev/null || true
 echo "      payload in place"
+# The privileged helper moved into the launcher module dir (2026-09-05, the
+# zero-SSH install); an install laid by the old layout still carries the old
+# setuid binary here, blessed once by bless.sh and now referenced by nothing.
+# A root 04755 file nothing runs is not something to leave lying around.
+for stale in davebox-heal davebox-heal.new; do
+    if [ -e "$DBX_DIR/bin/$stale" ]; then rm -f "$DBX_DIR/bin/$stale"; echo "      retired: bin/$stale (the helper lives in the launcher module dir now)"; fi
+done
 
 # ---- 2. workspace separation ------------------------------------------------
 cd "$DBX_DIR"
