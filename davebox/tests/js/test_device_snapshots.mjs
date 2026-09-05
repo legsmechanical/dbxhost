@@ -100,6 +100,7 @@ const tickmod = await import('../../ui/ui_tick.mjs');
 const D = await import('../../ui/ui_devsnap.mjs');
 const P = await import('../../ui/ui_persistence.mjs');
 const scene = await import('../../ui/ui_scene.mjs');
+const E = await import('../../ui/ui_editops.mjs');
 const { White, DarkGrey, Cyan } = await import('/data/UserData/schwung/shared/constants.mjs');
 
 function ticks(n) { for (let i = 0; i < n; i++) tickmod._tickImpl(); }
@@ -211,6 +212,32 @@ step_('⭑ a recall WARNS: fx added since the save are bypassed (the host count)
     if (JSON.stringify(lines) !== JSON.stringify(['SNAPSHOT 3', 'RESTORED', '2 new FX bypassed'])) throw new Error('warning card: ' + JSON.stringify(lines));
     if (S.actionPopupEndTick < S.clockMs + D.DEVSNAP_WARN_MS - 50) throw new Error('a warning must hold longer than a plain card');
     statusAdded = 0; PARAM_VALUES['3:synth:module'] = '';
+});
+
+step_('⭑ a recall is an UNDO unit: the live state was taken into the hidden before-dir first; Undo recalls it, Redo re-applies the slot (Josh, 2026-09-05)', () => {
+    statusSkipped = 0; statusAdded = 0; snapCalls.length = 0; recallPending = false;
+    S.undoAvailable = false; S.undoSnapshot = null; S.redoSnapshot = null;
+    step(2, true); advance(100); step(2, false); advance(20);
+    recallPending = false; advance(30);
+    const undoDir = P.deviceSnapUndoDir('aaaa-bbbb');
+    const take = snapCalls.findIndex(c => c[0] === 'take' && c[1] === undoDir);
+    const rc = snapCalls.findIndex(c => c[0] === 'recall' && c[1] === P.deviceSnapDir('aaaa-bbbb', 2));
+    if (take < 0 || rc < 0 || take > rc) throw new Error('the before-take did not precede the recall: ' + JSON.stringify(snapCalls));
+    if (!S.undoAvailable || !S.undoSnapshot || S.undoSnapshot.n !== 2) throw new Error('recall did not register as an undo unit: ' + JSON.stringify(S.undoSnapshot));
+    /* Undo: the before-dir comes back; no DSP undo is sent */
+    snapCalls.length = 0; writes.length = 0;
+    cc(56, 127); advance(20); recallPending = false; advance(30);   /* MoveUndo = 56 */
+    if (!snapCalls.some(c => c[0] === 'recall' && c[1] === undoDir)) throw new Error('Undo did not recall the before-dir: ' + JSON.stringify(snapCalls));
+    if (writes.includes('undo_restore=1')) throw new Error('Undo sent the DSP undo as well');
+    if (S.undoAvailable || !S.redoAvailable || !S.redoSnapshot) throw new Error('undo/redo state after Undo: ' + S.undoAvailable + '/' + S.redoAvailable);
+    /* Redo: the slot again */
+    snapCalls.length = 0;
+    cc(49, 127); cc(56, 127); cc(49, 0); advance(20); recallPending = false; advance(30);   /* Shift+Undo */
+    if (!snapCalls.some(c => c[0] === 'recall' && c[1] === P.deviceSnapDir('aaaa-bbbb', 2))) throw new Error('Redo did not re-apply the slot: ' + JSON.stringify(snapCalls));
+    if (!S.undoAvailable || S.redoAvailable) throw new Error('state after Redo');
+    /* A DSP edit on top forgets the snapshot undo */
+    E.noteUndoUnit();
+    if (S.undoSnapshot) throw new Error('a DSP undo unit did not forget the snapshot undo');
 });
 
 step_('⚠ RESTORED with NOTHING skipped: two lines, never the word "undefined" (device, 2026-09-05)', () => {

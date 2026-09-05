@@ -7,6 +7,7 @@
 
 import { NUM_TRACKS, NUM_CLIPS, PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE } from './ui_constants.mjs';
 import { S, conductorTrackIdx } from './ui_state.mjs';
+import { noteUndoUnit } from './ui_editops.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw } from './ui_leds.mjs';
@@ -40,7 +41,7 @@ export function commitSceneBake(clipIdx, loops, wrap, apply) {
         key: 'bake_scene',
         val: clipIdx + ' ' + loops + ' ' + (wrap ? 1 : 0) + ' ' + (apply ? 1 : 0)
     });
-    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
     showActionPopup('SCENE', 'BAKED');
     S.pendingSceneBakeResync = 2;
     S.pendingSceneBakeClip   = clipIdx;

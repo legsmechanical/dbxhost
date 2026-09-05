@@ -39,7 +39,7 @@ import { handoffRecordingToTrack, recordNoteOn, recordNoteOff,
 import { setTrackMute, setTrackSolo, clearClip, hardResetClip, copyClip, cutClip,
     copyDrumLane, cutDrumLane, copyDrumClip, cutDrumClip, copyStep, cutStep, clearStep,
     showModePopup, allLanesGate, doDoubleFill,
-    _switchActiveTrack, stepHoldCheckpoint } from './ui_editops.mjs';
+    _switchActiveTrack, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
 
 /* Performance Mode state. Session View + Loop held → pad grid shows Perf Mode.
  * S.perfStack: currently-held R0 length pads (same stack semantics as old looper
@@ -78,7 +78,7 @@ function _onPadPressTrackView(status, d1, d2) {
             const t    = S.activeTrack;
             const lane = drumPadToLane(padIdx);
             if (lane >= 0 && lane < DRUM_LANES) {
-                S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+                noteUndoUnit(); S.undoSeqArpSnapshot = null;
                 host_module_set_param('t' + t + '_l' + lane + '_hard_reset', '1');
                 setActiveDrumLane(t, lane);
                 S.drumLaneLength[t]     = 16;
@@ -116,7 +116,7 @@ function _onPadPressTrackView(status, d1, d2) {
             const t    = S.activeTrack;
             const lane = drumPadToLane(padIdx);
             if (lane >= 0 && lane < DRUM_LANES) {
-                S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+                noteUndoUnit(); S.undoSeqArpSnapshot = null;
                 host_module_set_param('t' + t + '_l' + lane + '_clear', '1');
                 setActiveDrumLane(t, lane);
                 for (let s = 0; s < 256; s++) S.drumLaneSteps[t][lane][s] = '0';

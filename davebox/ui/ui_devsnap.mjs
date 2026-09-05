@@ -35,7 +35,8 @@
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { NUM_TRACKS, DRUM_LANES } from './ui_constants.mjs';
-import { showActionPopup, showActionPopupFor, deviceSnapDir } from './ui_persistence.mjs';
+import { showActionPopup, showActionPopupFor, deviceSnapDir, deviceSnapUndoDir } from './ui_persistence.mjs';
+import { markSnapshotUndo } from './ui_editops.mjs';
 import { engineGet, engineSet, engineGetSlotParam, engineSetSlotParam, moveBusComp,
          moveBusForChannel, engineLoadedModule, engineDescribe, engineGetMany } from './ui_engine.mjs';
 import { midiVal, midiSendValue, seqAutoSnapshot, seqAutoRestore } from './ui_sound.mjs';
@@ -55,7 +56,7 @@ const num = (v) => (typeof v === 'number' && isFinite(v));
 
 function st() {
     if (!S.devSnap) S.devSnap = { open: false, slots: new Array(DEVSNAP_SLOTS).fill(false),
-                                  last: -1, recalling: -1, recallDir: null, recallJson: null, since: 0 };
+                                  last: -1, recalling: -1, recallDir: null, recallJson: null, recallUndo: null, since: 0 };
     return S.devSnap;
 }
 export function devSnapOpen()   { return !!(S.devSnap && S.devSnap.open); }
@@ -181,16 +182,23 @@ function mixerApply(tracks) {
 }
 
 /* ---- the gestures ---------------------------------------------------------- */
-export function devSnapSave(n) {
-    const d = st();
-    if (!S.currentSetUuid) { showActionPopup('SNAPSHOT', 'No project'); return false; }
-    const dir = slotDir(n);
+/* The take itself: the host's files plus davebox.json into `dir`. Shared by a
+ * slot save and the hidden before-take a recall makes for Undo. */
+function takeInto(dir) {
     host_ensure_dir(dir);
     let res = null;
     try { res = JSON.parse(host_snapshot_take(dir) || 'null'); } catch (e) { res = null; }
-    if (!res || !res.ok) { showActionPopup('SNAPSHOT', 'Save failed'); return false; }
+    if (!res || !res.ok) return null;
     const json = { v: 4, mixer: mixerCapture(), params: paramsCapture(), seq: seqCapture(), taken: Date.now() };
-    if (!host_write_file(dir + '/davebox.json', JSON.stringify(json))) { showActionPopup('SNAPSHOT', 'Save failed'); return false; }
+    if (!host_write_file(dir + '/davebox.json', JSON.stringify(json))) return null;
+    return res;
+}
+
+export function devSnapSave(n) {
+    const d = st();
+    if (!S.currentSetUuid) { showActionPopup('SNAPSHOT', 'No project'); return false; }
+    const res = takeInto(slotDir(n));
+    if (!res) { showActionPopup('SNAPSHOT', 'Save failed'); return false; }
     d.slots[n] = true; d.last = n;
     showActionPopupFor(DEVSNAP_CARD_MS, 'SNAPSHOT ' + (n + 1), 'SAVED', res.skipped ? res.skipped + ' skipped' : undefined);
     S.stepSaveFlashStartTick = S.clockMs;
@@ -198,19 +206,51 @@ export function devSnapSave(n) {
     return true;
 }
 
-export function devSnapRecall(n) {
+/* Recall `dir`. `undo` = { before, after, n } registers the recall as the
+ * thing Undo returns from; null for an undo/redo recall itself (which must
+ * not register a unit of its own — that would be undo-of-undo). */
+function recallDir(dir, n, undo) {
     const d = st();
-    if (!d.slots[n]) return false;
     if (d.recalling >= 0) return false;                  /* one at a time */
-    const dir = slotDir(n);
     let json = null;
     try { json = JSON.parse(host_read_file(dir + '/davebox.json') || 'null'); } catch (e) { json = null; }
     let res = null;
     try { res = JSON.parse(host_snapshot_recall(dir) || 'null'); } catch (e) { res = null; }
     if (!res || !res.ok) { showActionPopup('SNAPSHOT ' + (n + 1), 'Recall failed'); return false; }
-    d.recalling = n; d.recallDir = dir; d.recallJson = json; d.since = nowMs();
+    d.recalling = n; d.recallDir = dir; d.recallJson = json; d.since = nowMs(); d.recallUndo = undo || null;
     if (!res.pending) devSnapFinish();
     invalidateLEDCache(); forceRedraw();
+    return true;
+}
+
+export function devSnapRecall(n) {
+    const d = st();
+    if (!d.slots[n]) return false;
+    if (d.recalling >= 0) return false;
+    /* UNDO (Josh, 2026-09-05): the live state goes into the hidden before-dir
+     * first, so Undo can bring it back and Redo can re-apply the slot. A
+     * failed before-take does not block the recall — it just leaves no undo. */
+    let before = null;
+    if (S.currentSetUuid) { const u = deviceSnapUndoDir(S.currentSetUuid); if (takeInto(u)) before = u; }
+    return recallDir(slotDir(n), n, before ? { before, after: slotDir(n), n } : null);
+}
+
+/* The Undo button on a recall: back to the before-take. Redo re-applies the
+ * slot. Both go through the ordinary recall (host blobs + davebox's half). */
+export function devSnapUndo() {
+    const u = S.undoSnapshot;
+    if (!u) return false;
+    if (!recallDir(u.before, u.n, null)) return false;
+    S.undoSnapshot = null; S.redoSnapshot = u;
+    S.undoAvailable = false; S.redoAvailable = true;
+    return true;
+}
+export function devSnapRedo() {
+    const u = S.redoSnapshot;
+    if (!u) return false;
+    if (!recallDir(u.after, u.n, null)) return false;
+    S.redoSnapshot = null; S.undoSnapshot = u;
+    S.undoAvailable = true; S.redoAvailable = false;
     return true;
 }
 
@@ -225,7 +265,9 @@ function devSnapFinish() {
     /* Mutes are NOT in a snapshot (Josh, 2026-09-05 late), and a track that
      * gained a synth since the take is left alone. Module values are not
      * applied from the list — the host's state blobs already restored them. */
-    d.recalling = -1; d.recallDir = null; d.recallJson = null; d.last = n;
+    const undo = d.recallUndo;
+    d.recalling = -1; d.recallDir = null; d.recallJson = null; d.recallUndo = null; d.last = n;
+    if (undo) markSnapshotUndo(undo.before, undo.after, undo.n);
     /* The card: what came back, then what the recall had to DO about things
      * that were not there at the save (Josh, 2026-09-05: "pop a warning up"). */
     const added = status && status.added ? status.added | 0 : 0;

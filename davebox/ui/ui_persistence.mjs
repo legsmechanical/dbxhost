@@ -35,6 +35,10 @@ const DBX_SUBDIR  = 'dAVEBOx';
 function setStateDir(uuid) { return SETS_DIR + '/' + uuid + '/' + DBX_SUBDIR; }
 /* Device-wide snapshots (item 18): one dir per slot beside the live state. */
 export function deviceSnapDir(uuid, n) { return setStateDir(uuid) + '/snapshots/' + (n | 0); }
+/* The hidden "before" take a recall makes so Undo can return to it (Josh,
+ * 2026-09-05: "can we just make recall subject to undo?"). One dir, rewritten
+ * by every recall; never listed as a slot. */
+export function deviceSnapUndoDir(uuid) { return setStateDir(uuid) + '/snapshots/undo'; }
 
 /* Every JS write below an existing project's dir goes through here first. The
  * DSP's own save creates the subdir itself (ensure_parent_dir, seq8_state.c);

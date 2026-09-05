@@ -12,6 +12,7 @@ import {
 } from './ui_constants.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { S } from './ui_state.mjs';
+import { noteUndoUnit } from './ui_editops.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { invalidateLEDCache, effectiveClip, forceRedraw } from './ui_leds.mjs';
@@ -337,7 +338,7 @@ export function stepRecPadPress(pitch, vel) {
         S.clipNonEmpty[t][ac] = true;
         if (!S.stepRecDidWrite) {
             S.stepRecDidWrite = true;
-            S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+            noteUndoUnit(); S.undoSeqArpSnapshot = null;
         }
     }
     invalidateLEDCache();

@@ -33,6 +33,16 @@ function _markLocalTouch(t, c) {
     S.localEditTouched.push({ t, c });
 }
 
+/* ONE place marks "there is something to undo" (2026-09-05): every edit that
+ * the DSP checkpoints, and — since snapshots — a recall. A DSP unit forgets a
+ * pending SNAPSHOT undo (the snapshot's before-state is older than the edit
+ * now on top of it); the recall registers itself through markSnapshotUndo. */
+export function noteUndoUnit() { S.undoAvailable = true; S.redoAvailable = false; S.undoSnapshot = null; S.redoSnapshot = null; }
+export function markSnapshotUndo(before, after, n) {
+    S.undoSnapshot = { before, after, n }; S.redoSnapshot = null;
+    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+}
+
 export function setTrackMute(t, on) {
     S.trackMuted[t] = on;
     if (on && S.trackSoloed[t]) {
@@ -80,11 +90,11 @@ export function stepHoldCheckpoint(t) {
         host_module_set_param('t' + t + '_drum_undo_checkpoint', '1');
     else
         host_module_set_param('t' + t + '_c' + effectiveClip(t) + '_undo_checkpoint', '1');
-    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
 }
 
 export function clearStep(t, ac, absIdx) {
-    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 't' + t + '_c' + ac + '_step_' + absIdx + '_clear', val: '1', _local: true });
     S.clipSteps[t][ac][absIdx] = 0;
     if (S.clipNonEmpty[t][ac]) S.clipNonEmpty[t][ac] = clipHasContent(t, ac);
@@ -105,7 +115,7 @@ export function showModePopup(title, items, activeIdx) {
  * down to a single survivor, eating the queued _clear. clearDrainHold defers
  * the drain by one tick so _clear lands in a clean buffer. */
 export function clearClip(t, ac, keepPlaying) {
-    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
     /* Clip CLEAR semantics: wipe step note data AND reset length + loop window
      * to the fresh-clip default so the emptied clip returns to ADAPTIVE mode for
      * the next recording (adaptive = empty + length-not-manually-set). Preserve
@@ -174,7 +184,7 @@ export function clearClip(t, ac, keepPlaying) {
 
 /* Full factory reset: clip_init on DSP + JS mirror cleared. Track View only. */
 export function hardResetClip(t, ac) {
-    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
     if (S.trackPadMode[t] === PAD_MODE_DRUM) {
         /* Drum clip reset: clip_init all 32 lanes; midi_note preserved */
         S.pendingDefaultSetParams.unshift({ key: 't' + t + '_c' + ac + '_drum_reset', val: '1', _local: true });
@@ -216,7 +226,7 @@ export function hardResetClip(t, ac) {
 /* Copy clip src→dst (single atomic DSP write, JS mirror update). */
 export function copyClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
-    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'clip_copy', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
     _markLocalTouch(dstT, dstC);   /* dst automation copied DSP-side; re-read to mirror */
     S.clipSteps[dstT][dstC] = S.clipSteps[srcT][srcC].slice();
@@ -233,7 +243,7 @@ export function copyClip(srcT, srcC, dstT, dstC) {
 /* Cut clip: copy src→dst then hard-reset src (single atomic DSP write, JS mirror update). */
 export function cutClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
-    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'clip_cut', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
     _markLocalTouch(dstT, dstC);   /* dst gets src's automation, src cleared — re-read both */
     _markLocalTouch(srcT, srcC);
@@ -260,7 +270,7 @@ export function cutClip(srcT, srcC, dstT, dstC) {
 /* Copy all 8 tracks for a scene row (single atomic DSP write, JS mirror update). */
 export function copyRow(srcRow, dstRow) {
     if (srcRow === dstRow) return;
-    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'row_copy', val: `${srcRow} ${dstRow}`, _local: true });
     for (let t = 0; t < NUM_TRACKS; t++) {
         _markLocalTouch(t, dstRow);   /* dst automation copied DSP-side; re-read to mirror */
@@ -283,7 +293,7 @@ export function copyRow(srcRow, dstRow) {
 /* Cut row: copy all tracks src→dst then hard-reset src (single atomic DSP write, JS mirror update). */
 export function cutRow(srcRow, dstRow) {
     if (srcRow === dstRow) return;
-    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'row_cut', val: `${srcRow} ${dstRow}`, _local: true });
     for (let t = 0; t < NUM_TRACKS; t++) {
         _markLocalTouch(t, dstRow);   /* dst gets src's automation, src cleared — re-read both */
@@ -319,7 +329,7 @@ export function cutRow(srcRow, dstRow) {
 
 /* Copy step src→dst within same clip (single atomic DSP write, JS mirror update). */
 export function copyStep(t, ac, srcAbs, dstAbs) {
-    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
     if (S.trackPadMode[t] === PAD_MODE_DRUM) {
         const lane = S.activeDrumLane[t];
         S.pendingDefaultSetParams.push({ key: 't' + t + '_l' + lane + '_step_' + srcAbs + '_copy_to', val: String(dstAbs), _local: true });
@@ -361,7 +371,7 @@ export function cutStep(t, ac, srcAbs, dstAbs) {
 /* Copy active clip's lane srcLane to dstLane (same track, preserves dst midi_note). */
 export function copyDrumLane(t, srcLane, dstLane) {
     if (srcLane === dstLane) return;
-    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 't' + t + '_l' + srcLane + '_copy_to', val: String(dstLane), _local: true });
     const steps = S.drumLaneSteps[t];
     for (let s = 0; s < 256; s++) steps[dstLane][s] = steps[srcLane][s];
@@ -380,7 +390,7 @@ export function copyDrumLane(t, srcLane, dstLane) {
 /* Cut active clip's lane srcLane into dstLane (copy then clear src). */
 export function cutDrumLane(t, srcLane, dstLane) {
     if (srcLane === dstLane) return;
-    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 't' + t + '_l' + srcLane + '_cut_to', val: String(dstLane), _local: true });
     const steps = S.drumLaneSteps[t];
     for (let s = 0; s < 256; s++) { steps[dstLane][s] = steps[srcLane][s]; steps[srcLane][s] = '0'; }
@@ -405,7 +415,7 @@ export function cutDrumLane(t, srcLane, dstLane) {
 /* Copy all 32 lanes of drum_clips[srcC] on srcT to drum_clips[dstC] on dstT; preserve dst midi_notes. */
 export function copyDrumClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
-    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'drum_clip_copy', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
     S.drumClipNonEmpty[dstT][dstC] = S.drumClipNonEmpty[srcT][srcC];
     if (dstC === S.trackActiveClip[dstT]) { S.pendingDrumResync = 2; S.pendingDrumResyncTrack = dstT; }
@@ -414,7 +424,7 @@ export function copyDrumClip(srcT, srcC, dstT, dstC) {
 /* Cut all 32 lanes of drum_clips[srcC] on srcT into drum_clips[dstC] on dstT; undo dst only. */
 export function cutDrumClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
-    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'drum_clip_cut', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
     S.drumClipNonEmpty[dstT][dstC] = S.drumClipNonEmpty[srcT][srcC];
     S.drumClipNonEmpty[srcT][srcC] = false;
@@ -431,7 +441,7 @@ export function cutDrumClip(srcT, srcC, dstT, dstC) {
 
 /* Clear all 8 tracks for a scene row (single atomic DSP write, JS mirror update). */
 export function clearRow(rowIdx) {
-    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'row_clear', val: String(rowIdx), _local: true });
     for (let t = 0; t < NUM_TRACKS; t++) {
         _markLocalTouch(t, rowIdx);   /* automation wiped DSP-side; re-read to mirror */
@@ -583,7 +593,7 @@ export function doDoubleFill() {
     const _t = S.activeTrack;
     if (S.trackPadMode[_t] === PAD_MODE_DRUM && S.activeBank === 7) {
         if (allLanesGate()) return;
-        S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+        noteUndoUnit(); S.undoSeqArpSnapshot = null;
         host_module_set_param('t' + _t + '_all_lanes_double_fill', '1');
         S.pendingDrumResync = 2; S.pendingDrumResyncTrack = _t;
         showActionPopup('LOOP', 'DOUBLED');
@@ -600,7 +610,7 @@ export function doDoubleFill() {
         if ((S.drumLaneLoopStart[_t] | 0) + _len * 2 > 256) {
             showActionPopup('CLIP FULL');
         } else {
-            S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+            noteUndoUnit(); S.undoSeqArpSnapshot = null;
             host_module_set_param('t' + _t + '_l' + _l + '_loop_double_fill', '1');
             S.drumLaneLength[_t] = _len * 2;
             S.pendingDrumResync      = 2;
@@ -615,7 +625,7 @@ export function doDoubleFill() {
         if ((S.clipLoopStart[_t][_ac] | 0) + _len * 2 > 256) {
             showActionPopup('CLIP FULL');
         } else {
-            S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+            noteUndoUnit(); S.undoSeqArpSnapshot = null;
             host_module_set_param('t' + _t + '_loop_double_fill', '1');
             S.clipLength[_t][_ac] = _len * 2;
             S.pendingStepsReread      = 2;
@@ -636,7 +646,7 @@ export function doDoubleFill() {
  * override is queued after the reset so it lands on a later tick (DSP zeros
  * delay_level during the reset). */
 export function resetFxBanks(t) {
-    S.undoAvailable = true; S.redoAvailable = false;
+    noteUndoUnit();
     if (S.trackPadMode[t] === PAD_MODE_DRUM) {
         const lane = S.activeDrumLane[t];
         S.pendingDefaultSetParams.push({ key: 't' + t + '_l' + lane + '_pfx_reset', val: '1' });
@@ -677,7 +687,7 @@ export function resetFxBanks(t) {
  * arp_init_defaults + held-buffer clear + silence. JS mirrors are
  * zeroed in parallel so the bank overview reflects defaults immediately. */
 export function resetTarp(t) {
-    S.undoAvailable = true; S.redoAvailable = false;
+    noteUndoUnit();
     S.pendingDefaultSetParams.push({ key: 't' + t + '_tarp_reset', val: '1' });
     for (let k = 0; k < 8; k++) {
         const pm = BANKS[5].knobs[k];
@@ -695,7 +705,7 @@ export function resetTarp(t) {
 export function resetSingleFxBank(t, bankIdx) {
     const dspCmd = { 1: 'pfx_noteFx_reset', 2: 'pfx_harm_reset', 3: 'pfx_delay_reset' }[bankIdx];
     if (!dspCmd) return;
-    S.undoAvailable = true; S.redoAvailable = false;
+    noteUndoUnit();
     if (S.trackPadMode[t] === PAD_MODE_DRUM) {
         const lane = S.activeDrumLane[t];
         /* Defer the reset push (same coalescing concern as resetFxBanks). */
