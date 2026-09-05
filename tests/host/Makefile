@@ -49,7 +49,8 @@ TARGETS = $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_link_peer_name \
           $(BUILD_DIR)/test_forward_channel \
           $(BUILD_DIR)/test_link_audio_backlog_trim \
-          $(BUILD_DIR)/test_control_layout
+          $(BUILD_DIR)/test_control_layout \
+          $(BUILD_DIR)/test_shadow_param_queue
 
 .PHONY: all test clean
 
@@ -115,6 +116,9 @@ $(BUILD_DIR)/test_forward_channel: test_forward_channel.c ../../src/host/forward
 	$(CC) $(CFLAGS) -o $@ $<
 
 $(BUILD_DIR)/test_control_layout: test_control_layout.c ../../src/host/shadow_constants.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+
+$(BUILD_DIR)/test_shadow_param_queue: test_shadow_param_queue.c ../../src/host/shadow_param_queue.h ../../src/host/shadow_constants.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 -include $(TARGETS:=.d)
