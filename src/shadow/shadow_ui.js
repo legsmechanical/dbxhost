@@ -5531,14 +5531,19 @@ function hostSnapshotRecall(dir) {
     const batches = batchWrites(plan.writes, SNAPSHOT_BULK_BYTES);
     snapshotRecallJob = { dir, batches, i: 0, restored: 0, failed: 0,
                           skipped: plan.skipped, reasons: plan.reasons, total: plan.writes.length };
-    /* One batch NOW — a one-slot rig recalls in the call — the rest per tick. */
-    snapshotRecallTick();
-    return JSON.stringify(hostSnapshotStatus() === "null" ? { ok: true, pending: false } :
-                          Object.assign(JSON.parse(hostSnapshotStatus()), { ok: true }));
+    /* INSTANT (Josh, 2026-09-05: "I'm fine with a brief screen freeze if that's
+     * the trade-off for instant recall"): every batch is written back-to-back
+     * in THIS call — one bulk SET per slot, each one SPI frame — so a full rig
+     * lands in a few tens of milliseconds and the UI freezes for exactly that
+     * long. The per-tick budget that used to spread it out is gone; the job
+     * object stays so the finish work (cache drop, grid refresh, the result)
+     * runs once, in one place, and status answers "done" the moment we return. */
+    while (snapshotRecallJob) snapshotRecallTick();
+    return JSON.stringify(Object.assign(JSON.parse(hostSnapshotStatus()), { ok: true }));
 }
 
-/* Drive the job: ONE bulk SET per tick. Runs from the host tick before the
- * autosave (so a recall's dirtying lands in the same pass). Cheap when idle. */
+/* Drive the job: one bulk SET per step. Called back-to-back by hostSnapshotRecall
+ * (instant recall) — the tick hook only ever finds it idle now and is harmless. */
 function snapshotRecallTick() {
     const job = snapshotRecallJob;
     if (!job) return;
