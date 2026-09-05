@@ -38,8 +38,8 @@ function _markLocalTouch(t, c) {
  * pending SNAPSHOT undo (the snapshot's before-state is older than the edit
  * now on top of it); the recall registers itself through markSnapshotUndo. */
 export function noteUndoUnit() { S.undoAvailable = true; S.redoAvailable = false; S.undoSnapshot = null; S.redoSnapshot = null; }
-export function markSnapshotUndo(before, after, n) {
-    S.undoSnapshot = { before, after, n }; S.redoSnapshot = null;
+export function markSnapshotUndo(before, after, n, track) {
+    S.undoSnapshot = { before, after, n, track: (track === undefined) ? -1 : track }; S.redoSnapshot = null;
     S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
 }
 

@@ -80,8 +80,8 @@ globalThis.host_ext_midi_remap_enable = () => {};
 const snapCalls = [];
 const files = {};
 let recallPending = false;
-globalThis.host_snapshot_take   = (dir) => { snapCalls.push(['take', dir]); return JSON.stringify({ ok: true, skipped: 0, positions: 12 }); };
-globalThis.host_snapshot_recall = (dir) => { snapCalls.push(['recall', dir]); recallPending = true; return JSON.stringify({ ok: true, pending: true }); };
+globalThis.host_snapshot_take   = (dir, slot) => { snapCalls.push(['take', dir, slot]); return JSON.stringify({ ok: true, skipped: 0, positions: 12 }); };
+globalThis.host_snapshot_recall = (dir, slot) => { snapCalls.push(['recall', dir, slot]); recallPending = true; return JSON.stringify({ ok: true, pending: true }); };
 let statusSkipped = 1, statusAdded = 0;
 globalThis.host_snapshot_status = () => JSON.stringify({ pending: recallPending, skipped: statusSkipped, added: statusAdded, addedList: statusAdded ? ['master_fx:fx1'] : [] });
 globalThis.host_file_exists = (p) => Object.prototype.hasOwnProperty.call(files, p) && files[p] !== '';
@@ -268,11 +268,33 @@ step_('⭑ releasing Capture CLOSES the layer, and steps are scene rows again', 
     if (S.sessionStepHeld !== -1) throw new Error('a step hold survived');
 });
 
-step_('⚠ the layer never opens in TRACK view', () => {
-    S.sessionView = false;
+step_('⭑ TRACK view: holding Capture opens THIS TRACK\'s layer; the header names it; hold a step = a track take (that slot only); tap = a track recall (Josh, 2026-09-05)', () => {
+    S.sessionView = false; S.activeTrack = 0;
     capture(true); advance(700);
-    if (D.devSnapOpen()) throw new Error('opened in track view');
-    capture(false); advance(20); S.sessionView = true;
+    if (!D.devSnapOpen() || D.devSnapTrack() !== 0) throw new Error('track layer did not open: open=' + D.devSnapOpen() + ' track=' + D.devSnapTrack());
+    if (D.devSnapTitle() !== 'T1 SNAPSHOTS') throw new Error('title: ' + D.devSnapTitle());
+    snapCalls.length = 0; writes.length = 0;
+    step(4, true); advance(800); step(4, false); advance(20);
+    const take = snapCalls.find(c => c[0] === 'take');
+    if (!take || take[1] !== P.trackSnapDir('aaaa-bbbb', 0, 4)) throw new Error('track take dir: ' + JSON.stringify(snapCalls));
+    if (take[2] !== 0) throw new Error('the host take was not filtered to slot 0: ' + JSON.stringify(take));
+    const json = JSON.parse(files[take[1] + '/davebox.json']);
+    if (json.track !== 0 || !json.mixer[0] || json.mixer[1] !== null || json.seq[1] !== null) throw new Error('a track take kept other tracks: ' + JSON.stringify(json).slice(0, 200));
+    if (!D.devSnapState().slots[4]) throw new Error('slot 5 not marked filled on the track layer');
+    snapCalls.length = 0;
+    step(4, true); advance(100); step(4, false); advance(20); recallPending = false; advance(30);
+    const rc = snapCalls.find(c => c[0] === 'recall');
+    if (!rc || rc[1] !== P.trackSnapDir('aaaa-bbbb', 0, 4) || rc[2] !== 0) throw new Error('track recall: ' + JSON.stringify(snapCalls));
+    if (!snapCalls.some(c => c[0] === 'take' && c[1] === P.trackSnapUndoDir('aaaa-bbbb', 0))) throw new Error('no before-take for the track recall');
+    if (!S.undoSnapshot || S.undoSnapshot.track !== 0) throw new Error('track recall not registered for undo: ' + JSON.stringify(S.undoSnapshot));
+    capture(false); advance(20);
+    if (D.devSnapOpen()) throw new Error('track layer still open after Capture release');
+    /* back in session view the DEVICE layer's slots are its own again */
+    S.sessionView = true;
+    capture(true); advance(700);
+    if (D.devSnapTrack() !== -1) throw new Error('session layer opened as a track layer');
+    if (D.devSnapState().slots[4]) throw new Error('the device layer shows the track slot');
+    capture(false); advance(20);
 });
 
 if (failed) process.exit(1);

@@ -1089,11 +1089,19 @@ export function _onStepButtons(d1, d2) {
     if (S.tapTempoOpen) return;
     if (d2 > 0 && S.shiftTrackLEDActive) { S.shiftTrackLEDActive = false; S.screenDirty = true; }
     const idx = d1 - 16;
+    /* THE SNAPSHOT LAYER, either view: the 16 steps are the 16 snapshots —
+     * Delete+step clears now; a press defers to release / the tick for the
+     * tap (recall) / hold (save) decision, the mute-snapshot grammar. */
+    if (devSnapOpen()) {
+        if (S.deleteHeld) { devSnapClear(idx); forceRedraw(); return; }
+        S.stepBtnPressedTick[idx] = nowMs();
+        S.sessionStepHeld         = idx;
+        S.sessionStepHeldCtx      = 3;  /* device / track snapshot */
+        return;
+    }
     /* Delete+step in session view: clear perf preset or mute snapshot slot immediately. */
     if (S.sessionView && S.deleteHeld) {
-        if (devSnapOpen()) {
-            devSnapClear(idx);
-        } else if (S.loopHeld || S.perfViewLocked) {
+        if (S.loopHeld || S.perfViewLocked) {
             S.perfSnapshots[idx] = 0;
             if (S.perfRecalledSlot === idx) { S.perfRecalledSlot = -1; S.perfModsToggled = 0; sendPerfMods(); }
             showActionPopup('PERF PRESET', 'CLEARED');
@@ -1133,14 +1141,6 @@ export function _onStepButtons(d1, d2) {
             S.mergePlacingScene = true;
             S.pendingDefaultSetParams.push({ key: 'merge_place_row', val: String(idx) });
             S.screenDirty = true;
-            return;
-        }
-        if (devSnapOpen()) {
-            /* The snapshot layer: the 16 steps are the 16 device snapshots —
-             * the mute-snapshot grammar, tap/hold decided on release / the tick. */
-            S.stepBtnPressedTick[idx] = nowMs();
-            S.sessionStepHeld         = idx;
-            S.sessionStepHeldCtx      = 3;  /* device snapshot */
             return;
         }
         if (S.muteHeld) {

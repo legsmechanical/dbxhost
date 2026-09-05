@@ -39,6 +39,10 @@ export function deviceSnapDir(uuid, n) { return setStateDir(uuid) + '/snapshots/
  * 2026-09-05: "can we just make recall subject to undo?"). One dir, rewritten
  * by every recall; never listed as a slot. */
 export function deviceSnapUndoDir(uuid) { return setStateDir(uuid) + '/snapshots/undo'; }
+/* TRACK snapshots (Josh, 2026-09-05): the same layer from TRACK view, saving and
+ * recalling one track's params only. Per project, per track. */
+export function trackSnapDir(uuid, track, n) { return setStateDir(uuid) + '/snapshots/t' + (track | 0) + '/' + (n | 0); }
+export function trackSnapUndoDir(uuid, track) { return setStateDir(uuid) + '/snapshots/t' + (track | 0) + '/undo'; }
 
 /* Every JS write below an existing project's dir goes through here first. The
  * DSP's own save creates the subdir itself (ensure_parent_dir, seq8_state.c);

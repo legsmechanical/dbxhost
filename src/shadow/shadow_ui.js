@@ -4428,8 +4428,10 @@ function loadOvertakeModule(moduleInfo, skipOvertake) {
         /* Snapshot / recall for the overtake module (item 18a). dAVEBOx owns
          * the gesture and the directory; the host owns capture and the
          * state-only recall. See the block above saveOneDirtyUnit. */
-        globalThis.host_snapshot_take   = function(dir) { return hostSnapshotTake(String(dir || "")); };
-        globalThis.host_snapshot_recall = function(dir) { return hostSnapshotRecall(String(dir || "")); };
+        /* Optional 2nd arg: a chain SLOT — the take copies only that slot's file and the
+         * recall plans only that slot's positions (TRACK snapshots, Josh 2026-09-05). */
+        globalThis.host_snapshot_take   = function(dir, slot) { return hostSnapshotTake(String(dir || ""), slotArg(slot)); };
+        globalThis.host_snapshot_recall = function(dir, slot) { return hostSnapshotRecall(String(dir || ""), slotArg(slot)); };
         globalThis.host_snapshot_status = function() { return hostSnapshotStatus(); };
         globalThis.host_autosave_hold = function(on) {
             autosaveHold = !!on;
@@ -5447,6 +5449,7 @@ function saveAllFxBusConfigs() {
 const SNAPSHOT_BULK_BYTES = 60000;      /* under the 64 KB mailbox value */
 let snapshotRecallJob = null;           /* { dir, batches, i, restored, skipped, reasons } */
 
+function slotArg(v) { const n = (v === undefined || v === null || v === "") ? -1 : (v | 0); return (n >= 0 && n < SHADOW_UI_SLOTS) ? n : -1; }
 function snapshotFileNames() {
     const names = [];
     for (let i = 0; i < SHADOW_UI_SLOTS; i++) names.push("/slot_" + i + ".json");
@@ -5462,9 +5465,10 @@ function snapshotFileNames() {
  * name. Slots and Master come from the mirrors JS already keeps; a send or
  * Move bus position has no mirror, so its `:name` is read — only for the
  * positions the snapshot actually holds (the caller passes them), never all 24. */
-function snapshotLiveIds(busPrefixes) {
+function snapshotLiveIds(busPrefixes, onlySlot) {
     const live = {};
     for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+        if (onlySlot >= 0 && i !== onlySlot) continue;
         const cfg = chainConfigs[i] || createEmptyChainConfig();
         live[i + ":synth"]    = (cfg.synth  && cfg.synth.module)  || "";
         live[i + ":midi_fx1"] = (cfg.midiFx && cfg.midiFx.module) || "";
@@ -5475,6 +5479,7 @@ function snapshotLiveIds(busPrefixes) {
             live[i + ":fx" + k] = (c && c.module) || "";
         }
     }
+    if (onlySlot >= 0) return live;                /* a track recall: that slot only, no bus reads */
     for (let i = 1; i <= 4; i++)
         live["master_fx:fx" + i] = (masterFxConfig["fx" + i] || {}).module || "";
     /* EVERY bus position, not only those the snapshot recorded (Josh,
@@ -5495,42 +5500,45 @@ function snapshotLiveIds(busPrefixes) {
     return live;
 }
 
-function hostSnapshotTake(dir) {
+function hostSnapshotTake(dir, onlySlot) {
     if (!dir || typeof dir !== "string") return JSON.stringify({ ok: false, error: "no dir" });
     if (typeof host_ensure_dir === "function") host_ensure_dir(dir);
+    if (onlySlot === undefined) onlySlot = -1;
     /* Flush live state to the set dir through the normal writers. The slot
-     * writer is asked NOT to bail on a failed read (see autosaveAllSlots). */
-    autosaveAllSlots(undefined, true);
-    saveMasterFxChainConfig(true);
-    saveSendFxChainConfig();
-    saveMoveFxChainConfig();
+     * writer is asked NOT to bail on a failed read (see autosaveAllSlots). A
+     * TRACK take flushes and copies that one slot, nothing else. */
+    autosaveAllSlots(onlySlot >= 0 ? onlySlot : undefined, true);
+    if (onlySlot < 0) { saveMasterFxChainConfig(true); saveSendFxChainConfig(); saveMoveFxChainConfig(); }
+    const names = onlySlot >= 0 ? ["/slot_" + onlySlot + ".json"] : snapshotFileNames();
     /* Then copy. host_write_file is temp-then-rename, so a failed take leaves
      * the previous snapshot's file whole. */
     let copied = 0, positions = 0;
-    for (const name of snapshotFileNames()) {
+    for (const name of names) {
         let content = null;
         try { content = host_read_file(activeSlotStateDir + name); } catch (e) { content = null; }
         if (content && content.length > 3) positions++;
         if (host_write_file(dir + name, content || "{}\n")) copied++;
     }
-    debugLog("snapshot: took " + copied + "/" + snapshotFileNames().length + " files (" +
-             positions + " occupied) into " + dir);
-    return JSON.stringify({ ok: copied === snapshotFileNames().length, copied, positions });
+    debugLog("snapshot: took " + copied + "/" + names.length + " files (" +
+             positions + " occupied) into " + dir + (onlySlot >= 0 ? " (slot " + onlySlot + ")" : ""));
+    return JSON.stringify({ ok: copied === names.length, copied, positions });
 }
 
-function snapshotRecords(dir) {
+function snapshotRecords(dir, onlySlot) {
     const records = [];
     const busPrefixes = [];
     const read = (name) => { try { return host_read_file(dir + name); } catch (e) { return null; } };
     /* Slot records carry a per-slot prefix so one flat liveIds map can address
      * all eight slots plus the buses without nine separate plans. */
     for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+        if (onlySlot >= 0 && i !== onlySlot) continue;
         const content = read("/slot_" + i + ".json");
         if (!content) continue;
         for (const r of parseSlotSnapshot(content))
             records.push({ ...r, slot: i, prefix: i + ":" + r.prefix, key: r.prefix });
     }
     const bus = (name, pfx) => {
+        if (onlySlot >= 0) return;                 /* a track snapshot has no bus half */
         const content = read(name);
         if (!content) return;
         for (const r of parseBusSnapshot(content, pfx)) {
@@ -5546,10 +5554,11 @@ function snapshotRecords(dir) {
     return { records, busPrefixes };
 }
 
-function hostSnapshotRecall(dir) {
+function hostSnapshotRecall(dir, onlySlot) {
     if (!dir || typeof dir !== "string") return JSON.stringify({ ok: false, error: "no dir" });
     if (snapshotRecallJob) return JSON.stringify({ ok: false, error: "recall in progress", pending: true });
-    const { records, busPrefixes } = snapshotRecords(dir);
+    if (onlySlot === undefined) onlySlot = -1;
+    const { records, busPrefixes } = snapshotRecords(dir, onlySlot);
     /* ⚠ ZERO RECORDS IS A SNAPSHOT, NOT A FAILURE (device, 2026-09-05): a new
      * project whose tracks are all Move-routed and whose buses were empty at
      * the take has nothing for the host to restore — and davebox's own half
@@ -5557,7 +5566,7 @@ function hostSnapshotRecall(dir) {
      * holds a module NOW was added since the save and gets bypassed by the
      * plan. Treating it as "no snapshot" read as RECALL FAILED on every tap. */
     if (records.length === 0) debugLog("snapshot: no host records in " + dir + " — davebox's half and the added-since bypasses still apply");
-    const plan = planRestore(records, snapshotLiveIds(busPrefixes));
+    const plan = planRestore(records, snapshotLiveIds(busPrefixes, onlySlot));
     for (const r of plan.reasons) {
         debugLog("snapshot: skipped " + r.prefix + " (" + r.reason +
                  (r.was ? ", was " + r.was : "") + (r.now ? ", now " + r.now : "") + ")");

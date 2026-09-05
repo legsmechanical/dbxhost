@@ -8,7 +8,7 @@
 
 import { S, PERF_FACTORY_PRESETS } from './ui_state.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H } from './ui_daves.mjs';
-import { devSnapOpen, devSnapHints } from './ui_devsnap.mjs';
+import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
 import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev } from './ui_engine.mjs';
 import { instrValueFor } from './ui_dsp_bridge.mjs';
@@ -855,6 +855,18 @@ function kitCellForKnob(knob, val) {
  * with hdrWidth, never a character as if it were a cell. */
 const MARK_BAR_H = BANNER_H;   /* one owner of the 12: the window IS the bar */
 
+/* Row 2 of an overview: the metronome word — or, while the snapshot layer is
+ * open, the layer's NAME in the bank-heading face, centred (Josh, 2026-09-05:
+ * a mode you are in, not a flash you missed). Both overviews. */
+function drawInfoRow2() {
+    if (devSnapOpen()) {
+        const _sn = devSnapTitle();
+        hdrPrint(Math.round((128 - hdrWidth(_sn)) / 2), 16, _sn, 1);
+    } else {
+        drawMetroIndicator();
+    }
+}
+
 function drawWordmark(mark) {
     hdrPrint(Math.round((128 - hdrWidth(mark)) / 2), 3, mark, 0);
 }
@@ -973,7 +985,7 @@ function overviewHints() {
      * track in every view, Shift+≡ opens the track's SOUND + CONFIG menu in
      * track view and the MASTER / SEND FX list in session view. No CLK pair:
      * Shift+click is nothing here. */
-    if (S.sessionView && devSnapOpen()) return devSnapHints();   /* the snapshot layer (item 18) */
+    if (devSnapOpen()) return devSnapHints();   /* the snapshot layer (item 18), either view */
     if (S.shiftHeld) return [['JOG', 'TRACK'], ['\u2261', S.sessionView ? 'FX' : 'CONFIG']];
     return [['JOG', 'BANK'], ['CLK', 'EDIT'], ['\u2261', S.sessionView ? 'TRK' : 'SESS']];
 }
@@ -1683,12 +1695,7 @@ function drawUIBody() {
          * Capture is held past the threshold, the row under the banner reads
          * SNAPSHOTS in the bank-heading face, centred, in place of the
          * metronome word — a mode you are in, not a flash you missed. */
-        if (devSnapOpen()) {
-            const _sn = 'SNAPSHOTS';
-            hdrPrint(Math.round((128 - hdrWidth(_sn)) / 2), 16, _sn, 1);
-        } else {
-            drawMetroIndicator();
-        }
+        drawInfoRow2();
         drawOverviewTracks(overviewHints());
         if (_card) drawNoticeCard(_card);
         return;
@@ -2265,7 +2272,7 @@ function drawUIBody() {
             if (Math.floor(S.clockMs / 440) % 2 === 0)
                 ovwPrint(128 - 4 - ovwWidth('MUTED'), 17, 'MUTED', 1);
         }
-        drawMetroIndicator();
+        drawInfoRow2();
         drawOverviewTracks(overviewHints());
         drawDrumPositionBar(t);
     } else {
@@ -2294,7 +2301,7 @@ function drawUIBody() {
         }
         ovwPrint(keySclX, 9, keyScl, 1);
         if (S.scaleAware) fill_rect(keySclX, 15, keySclW, 1, 1);
-        drawMetroIndicator();
+        drawInfoRow2();
         drawOverviewTracks(overviewHints());
         drawPositionBar(S.activeTrack);
     }
