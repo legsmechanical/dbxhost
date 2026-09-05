@@ -92,8 +92,16 @@ export function parseSlotSnapshot(json) {
 export function parseBusSnapshot(json, prefix) {
     let doc;
     try { doc = JSON.parse(json); } catch (e) { return []; }
-    if (!doc || !doc.id) return [];
-    return [record(prefix, doc.id, { state: doc.state }, doc.bypassed)];
+    /* ⚠ THE SPELLING DIFFERS BY WRITER (device, 2026-09-05): the send / Move
+     * savers write `id` AND `module_id`; the MASTER saver writes the shim's
+     * shape — `module_path` + `module_id`, no `id`, and `bypassed` only when
+     * it is 1. Requiring `id` made every master position parse as EMPTY, so a
+     * recall found "nothing at the save" there and bypassed the effect —
+     * including from a snapshot taken with it live. Josh caught it on the
+     * device; the fixture had used a shape no saver writes. */
+    const id = (doc && (doc.id || doc.module_id)) || "";
+    if (!id) return [];
+    return [record(prefix, id, { state: doc.state }, doc.bypassed)];
 }
 
 /* Parse one `master_fx_N.json`. `slotIdx` is 0-based; the param key is 1-based. */

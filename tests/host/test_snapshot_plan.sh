@@ -45,7 +45,11 @@ eq("no state key reads as null", recs[3].state, null);
 eq("malformed slot file yields nothing", parseSlotSnapshot("{not json"), []);
 eq("empty slot marker yields nothing", parseSlotSnapshot("{}"), []);
 
-const mfx = parseMasterFxSnapshot(JSON.stringify({ id: "mverb", path: "/x.so", state: { size: 9 } }), 2);
+/* The real shape the MASTER saver writes (copied from a device file, 2026-09-05): module_path + module_id, no id, bypassed only when 1. */
+const mfx = parseMasterFxSnapshot(JSON.stringify({ module_path: "/x/mverb.so", module_id: "mverb", state: { size: 9 } }), 2);
+eq("a master file with module_id and NO id still parses (the device shape)", mfx.length, 1);
+eq("...and an absent bypassed reads as 0", mfx[0].bypassed, 0);
+eq("...and a bypassed master file reads as 1", parseMasterFxSnapshot(JSON.stringify({ module_path: "/x/f.so", module_id: "filter", state: {}, bypassed: 1 }), 0)[0].bypassed, 1);
 eq("master fx prefix is 1-based", mfx.map(r => r.prefix), ["master_fx:fx3"]);
 eq("master fx state", mfx[0].state, JSON.stringify({ size: 9 }));
 eq("empty master position yields nothing", parseMasterFxSnapshot("{}", 0), []);
