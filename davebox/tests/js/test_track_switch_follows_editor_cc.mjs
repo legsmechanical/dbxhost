@@ -98,36 +98,30 @@ step('setup: routes — 2,3 Schwung · 4 MIDI · 5 NONE · 6 Move · 7 Schwung',
     if (!globalThis.onMidiMessageInternal) throw new Error('no CC entry point');
 });
 
-step('control: Shift+jog from the editor onto the next Schwung track opens ITS editor', () => {
+const row = () => snd.soundPickStateForTest().row;
+const kinds = () => snd.soundPickStateForTest().kinds.join(',');
+const onInstrumentRow = () => view() === VIEW_BLOCKS && kinds().split(',')[row()] === 'trackto';
+/* ⭑ RULED (Josh, 2026-09-05): from an editor, Shift+jog lands on the new track's
+ * sound menu, INSTRUMENT row — every track kind, slow or fast. */
+step('control: Shift+jog from the editor onto the next Schwung track lands on ITS menu, Instrument row', () => {
     enterEditor(2); settle();
     shift(true); jog(1); settle();
     if (S.activeTrack !== 3) throw new Error('track did not switch: ' + S.activeTrack);
-    if (view() !== VIEW_EDIT || snd.soundTrack() !== 3) throw new Error('view ' + view() + ' track ' + snd.soundTrack());
+    if (!onInstrumentRow() || snd.soundTrack() !== 3) throw new Error('view ' + view() + ' row ' + row() + ' track ' + snd.soundTrack());
 });
 
-step('⭑ device caveat (i): Shift+jog on through MIDI onto the NONE track → the MESSAGE, not the menu', () => {
+step('⭑ on through MIDI and onto NONE: each lands on its menu, Instrument row, and it STAYS', () => {
     jog(1); settle();                                   /* → 4 MIDI */
-    if (view() !== VIEW_NOEDITOR) throw new Error('MIDI: view ' + view());
+    if (!onInstrumentRow()) throw new Error('MIDI: view ' + view() + ' row ' + row());
     jog(1); settle();                                   /* → 5 NONE */
-    if (S.activeTrack !== 5) throw new Error('track ' + S.activeTrack);
-    if (view() !== VIEW_NOEDITOR) throw new Error('NONE landed on view ' + view() + ' (0 = the sound menu) — the device caveat');
-    for (let i = 0; i < 6; i++) globalThis.tick();     /* and it STAYS the message */
-    if (view() !== VIEW_NOEDITOR) throw new Error('NONE message replaced after more ticks: view ' + view());
+    if (S.activeTrack !== 5 || !onInstrumentRow()) throw new Error('NONE: view ' + view() + ' row ' + row());
+    for (let i = 0; i < 6; i++) globalThis.tick();
+    if (!onInstrumentRow()) throw new Error('replaced after more ticks: view ' + view());
     shift(false); settle();
-    if (view() !== VIEW_NOEDITOR) throw new Error('Shift release changed the view: ' + view());
+    if (!onInstrumentRow()) throw new Error('Shift release changed the view: ' + view());
 });
 
-step('⭑ device caveat (i), direct: editor → NONE in ONE detent (Schwung track 4 made NONE)', () => {
-    snd.soundExit(); settle();
-    S.trackRoute[4] = ROUTE_NONE;
-    enterEditor(3); settle();
-    shift(true); jog(1); settle();
-    if (S.activeTrack !== 4 || view() !== VIEW_NOEDITOR) throw new Error('track ' + S.activeTrack + ' view ' + view());
-    shift(false); settle();
-    S.trackRoute[4] = 2;
-});
-
-step('⭑ device caveat (ii): a FAST Shift+scroll (no tick between detents) from the editor across every kind keeps sound mode open on the last track', () => {
+step('⭑ a FAST Shift+scroll (no tick between detents) from the editor across every kind keeps sound mode open and lands on the last track\'s Instrument row', () => {
     snd.soundExit(); settle();
     enterEditor(2); settle();
     shift(true);
@@ -136,26 +130,25 @@ step('⭑ device caveat (ii): a FAST Shift+scroll (no tick between detents) from
     settle();
     if (S.activeTrack !== 7) throw new Error('track ' + S.activeTrack);
     if (!snd.soundOpen()) throw new Error('sound mode CLOSED after the burst settled — the overview dump');
-    if (view() !== VIEW_EDIT || snd.soundTrack() !== 7) throw new Error('view ' + view() + ' track ' + snd.soundTrack());
+    if (!onInstrumentRow() || snd.soundTrack() !== 7) throw new Error('view ' + view() + ' row ' + row() + ' track ' + snd.soundTrack());
     shift(false); settle();
 });
 
-step('⭑ device caveat (ii), the other way: fast burst BACK through NONE/MIDI onto Schwung 3', () => {
+step('⭑ fast burst BACK through Move/NONE/MIDI onto Schwung 3: its menu, Instrument row', () => {
     shift(true);
     jog(-1); jog(-1); jog(-1); jog(-1);                /* 7 → 3 */
     settle();
-    if (S.activeTrack !== 3) throw new Error('track ' + S.activeTrack);
-    if (!snd.soundOpen()) throw new Error('sound mode CLOSED — the overview dump');
-    if (view() !== VIEW_EDIT) throw new Error('view ' + view());
+    if (S.activeTrack !== 3 || !snd.soundOpen()) throw new Error('track ' + S.activeTrack + ' open ' + snd.soundOpen());
+    if (!onInstrumentRow()) throw new Error('view ' + view() + ' row ' + row());
     shift(false); settle();
 });
 
-step('⭑ fast burst that ENDS on the NONE track: the message, sound mode open', () => {
+step('⭑ fast burst that ENDS on the NONE track: its Instrument-only menu', () => {
     shift(true);
     jog(1); jog(1);                                    /* 3 → 5 */
     settle();
     if (S.activeTrack !== 5 || !snd.soundOpen()) throw new Error('track ' + S.activeTrack + ' open ' + snd.soundOpen());
-    if (view() !== VIEW_NOEDITOR) throw new Error('view ' + view());
+    if (!onInstrumentRow() || kinds() !== 'trackto') throw new Error('view ' + view() + ' rows ' + kinds());
     shift(false); settle();
 });
 

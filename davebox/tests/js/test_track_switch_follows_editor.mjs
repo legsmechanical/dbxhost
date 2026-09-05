@@ -104,14 +104,17 @@ step('setup: routes — 2,3 Schwung · 4 MIDI · 5 NONE · 6 Move · 7 Conduct',
     S.clipSteps[3][0][0] = 1;
 });
 
-step('⭑ Schwung → Schwung: the switch from an EDITOR lands in the new track\'s editor', () => {
+/* ⭑ RULED (Josh, 2026-09-05, after the build-23 pass): from an EDITOR the switch
+ * lands on the new track's SOUND MENU on its INSTRUMENT row — every track kind. */
+const onInstrumentRow = () => view() === VIEW_BLOCKS && kinds().split(',')[snd.soundPickStateForTest().row] === 'trackto';
+step('⭑ Schwung → Schwung: the switch from an EDITOR lands on the new track\'s sound menu, INSTRUMENT row', () => {
     enterEditor(2);
     editops._switchActiveTrack(3);
     if (S.activeTrack !== 3) throw new Error('the track did not switch');
     if (!snd.soundOpen()) throw new Error('sound mode CLOSED — the 08-24 rule, not the 09-05 one');
     if (snd.soundTrack() !== 3) throw new Error('sound mode still points at track ' + snd.soundTrack());
-    globalThis.tick();                              /* the retarget action resolves */
-    if (view() !== VIEW_EDIT) throw new Error('landed on view ' + view() + ', not the editor');
+    settle();                                       /* the retarget action, then the instrument row */
+    if (!onInstrumentRow()) throw new Error('landed on view ' + view() + ' row ' + snd.soundPickStateForTest().row + ' (' + kinds() + '), not the Instrument row');
     if (S.activeBank !== BANK_SOUND) throw new Error('the bank identity did not follow (' + S.activeBank + ')');
     if (S.trackActiveBank[3] === BANK_SOUND) throw new Error('the follow RECORDED the sound bank on track 3 — only the jog records a bank (Josh, 2026-09-05)');
 });
@@ -121,15 +124,19 @@ step('...and the sequencer underneath is untouched', () => {
     if (S.clipSteps[3][0][0] !== 1) throw new Error('a clip step changed');
 });
 
-step('⭑ Schwung → MIDI from the EDITOR: the NO INSTRUMENT EDITOR screen for a "MIDI track"; Back → its menu (Josh, 2026-09-05)', () => {
+step('⭑ menu → MIDI: from that menu the switch lands on the MIDI track\'s menu', () => {
     editops._switchActiveTrack(4);
     if (!snd.soundOpen() || snd.soundTrack() !== 4) throw new Error('did not follow');
-    settle();                                        /* the retarget lands, then the message view queued behind it */
-    if (view() !== VIEW_NOEDITOR) throw new Error('view ' + view() + ' — a MIDI track has no editor: the message screen, not its menu');
-    if (snd.noEditorWords(4) !== 'MIDI track') throw new Error('words: ' + snd.noEditorWords(4));
-    backTap(); globalThis.tick();
-    if (view() !== VIEW_BLOCKS) throw new Error('Back did not land on the menu: view ' + view());
+    settle();
+    if (view() !== VIEW_BLOCKS) throw new Error('view ' + view());
     if (kinds() !== 'trackto,config') throw new Error('rows: ' + kinds());
+});
+step('⭑ Schwung → MIDI from the EDITOR: the MIDI track\'s menu, Instrument row (no message screen — Josh, 2026-09-05)', () => {
+    enterEditor(2);
+    editops._switchActiveTrack(4);
+    if (!snd.soundOpen() || snd.soundTrack() !== 4) throw new Error('did not follow');
+    settle();
+    if (!onInstrumentRow() || kinds() !== 'trackto,config') throw new Error('view ' + view() + ' row ' + snd.soundPickStateForTest().row + ' rows ' + kinds());
 });
 
 step('⭑ from that MENU a further switch FOLLOWS to the new track\'s MENU (09-05: under everything)', () => {
@@ -227,41 +234,35 @@ step('⚠ the Session FX gateway is GLOBAL: the switch keeps it open, unchanged'
     snd.soundExit();
 });
 
-step('⭑ Schwung → NONE from the EDITOR: the message says "no instrument"; Back → the Instrument-only menu', () => {
+step('⭑ Schwung → NONE from the EDITOR: the Instrument-only menu, on its row', () => {
     enterEditor(2);
     editops._switchActiveTrack(5);
     if (!snd.soundOpen() || snd.soundTrack() !== 5) throw new Error('did not follow');
     settle();
-    if (view() !== VIEW_NOEDITOR) throw new Error('view ' + view());
-    if (snd.noEditorWords(5) !== 'no instrument') throw new Error('words: ' + snd.noEditorWords(5));
-    backTap(); globalThis.tick();
-    if (view() !== VIEW_BLOCKS || kinds() !== 'trackto') throw new Error('view ' + view() + ' rows ' + kinds());
+    if (!onInstrumentRow() || kinds() !== 'trackto') throw new Error('view ' + view() + ' rows ' + kinds());
     snd.soundExit();
 });
 
-step('⭑ Schwung → Move from the EDITOR: the message says "Move track"; Back → its bus MENU (not global)', () => {
+step('⭑ Schwung → Move from the EDITOR: its bus MENU (not global), Instrument row', () => {
     enterEditor(2);
     editops._switchActiveTrack(6);
     if (!snd.soundOpen() || snd.soundTrack() !== 6) throw new Error('did not follow');
     if (snd.soundIsGlobal()) throw new Error('landed on a GLOBAL bus');
     settle();
-    if (view() !== VIEW_NOEDITOR) throw new Error('view ' + view());
-    if (snd.noEditorWords(6) !== 'Move track') throw new Error('words: ' + snd.noEditorWords(6));
-    backTap(); globalThis.tick();
-    if (view() !== VIEW_BLOCKS) throw new Error('Back did not land on the bus menu: view ' + view());
+    if (!onInstrumentRow()) throw new Error('view ' + view() + ' row ' + snd.soundPickStateForTest().row + ' rows ' + kinds());
     snd.soundExit();
 });
 
-step('⭑ the walk goes ON from the message: → another unsupported track shows it again; → a Schwung track opens its EDITOR', () => {
+step('⭑ the walk goes ON from that menu: every further track lands on ITS menu (a Schwung track does NOT reopen an editor)', () => {
     enterEditor(2);
     editops._switchActiveTrack(4); settle();
-    if (view() !== VIEW_NOEDITOR) throw new Error('control: message not shown for the MIDI track');
+    if (!onInstrumentRow()) throw new Error('control: MIDI track not on its Instrument row');
     editops._switchActiveTrack(5); settle();
-    if (view() !== VIEW_NOEDITOR || snd.soundTrack() !== 5) throw new Error('walking on to NONE: view ' + view() + ' track ' + snd.soundTrack());
+    if (view() !== VIEW_BLOCKS || snd.soundTrack() !== 5) throw new Error('walking on to NONE: view ' + view() + ' track ' + snd.soundTrack());
     editops._switchActiveTrack(6); settle();
-    if (view() !== VIEW_NOEDITOR || snd.soundTrack() !== 6) throw new Error('walking on to Move: view ' + view());
+    if (view() !== VIEW_BLOCKS || snd.soundTrack() !== 6) throw new Error('walking on to Move: view ' + view());
     editops._switchActiveTrack(3); settle();
-    if (view() !== VIEW_EDIT || snd.soundTrack() !== 3) throw new Error('walking on to a Schwung track did not open its editor: view ' + view());
+    if (view() !== VIEW_BLOCKS || snd.soundTrack() !== 3) throw new Error('walking on to a Schwung track reopened something: view ' + view());
     snd.soundExit();
 });
 
@@ -288,7 +289,7 @@ step('⭑ prompt → Move: the bank PROMPT follows as the prompt; MACROS → MAC
     snd.soundExit();
 });
 
-step('⭑ Shift+JOG from inside the EDITOR steps the track and lands in the new track\'s editor (Josh, 2026-09-05)', () => {
+step('⭑ Shift+JOG from inside the EDITOR steps the track and lands on the new track\'s menu, Instrument row (Josh, 2026-09-05)', () => {
     /* The device gesture, not a direct _switchActiveTrack call: the grid used
      * to swallow Shift+jog for its section jump, so the switch never happened
      * from the editor at all. */
@@ -299,7 +300,7 @@ step('⭑ Shift+JOG from inside the EDITOR steps the track and lands in the new 
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 49, 0]));     /* Shift up */
     settle();
     if (S.activeTrack !== 3) throw new Error('Shift+jog in the editor did not step the track: ' + S.activeTrack + ' shift=' + S.shiftHeld + ' view=' + view() + ' pick=' + JSON.stringify(snd.soundPickStateForTest().shift));
-    if (!snd.soundOpen() || view() !== v0) throw new Error('the editor did not follow: open=' + snd.soundOpen() + ' view=' + view() + ' (was ' + v0 + ')');
+    if (!snd.soundOpen() || !onInstrumentRow()) throw new Error('did not land on the Instrument row: open=' + snd.soundOpen() + ' view=' + view() + ' (was ' + v0 + ') row ' + snd.soundPickStateForTest().row);
     snd.soundExit();
 });
 
@@ -364,8 +365,11 @@ step('⚠ the tick\'s own follow backstop is quiet after a synchronous follow (n
     editops._switchActiveTrack(3);
     const pa = snd.soundPendingActionForTest();
     if (!pa || pa.t !== 'retarget') throw new Error('expected the retarget action queued once, got ' + JSON.stringify(pa));
+    globalThis.tick();                              /* the retarget runs; it chains its own `then` (the Instrument row) */
+    const then = snd.soundPendingActionForTest();
+    if (!then || then.t !== 'instrrow') throw new Error('expected the retarget to chain the Instrument-row landing, got ' + JSON.stringify(then));
     globalThis.tick();
-    if (snd.soundPendingActionForTest()) throw new Error('a second action was queued: ' + JSON.stringify(snd.soundPendingActionForTest()));
+    if (snd.soundPendingActionForTest()) throw new Error('a third action was queued: ' + JSON.stringify(snd.soundPendingActionForTest()));
     snd.soundExit();
 });
 

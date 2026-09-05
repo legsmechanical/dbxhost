@@ -920,7 +920,7 @@ export function soundResting() {
 function followInFlight() { return !!(S.pendingAction && S.followDest !== null && S.followDest !== undefined); }
 function effectiveView() { return followInFlight() ? S.followDest : S.view; }
 function followDestOf(plan) {
-    if (plan.editor) return VIEW_EDIT;
+    if (plan.editor || plan.fromEditor) return VIEW_EDIT;
     if (plan.noEditor) return VIEW_NOEDITOR;
     const th = plan.then;
     if (!th) return VIEW_BLOCKS;
@@ -1203,11 +1203,14 @@ function followPlan(fromView, route) {
     const isEditorish = v === VIEW_EDIT || v === VIEW_MENU || v === VIEW_FILE ||
         v === VIEW_PRESET_SRC || v === VIEW_PRESET_LIST || v === VIEW_PRESET_BAKED ||
         v === VIEW_NOEDITOR || (ppOn && ppOwnsView());
-    /* From an EDITOR (or the no-editor screen a walk is passing through): a
-     * Schwung track → its editor; anything else has no editor → the MESSAGE
-     * screen, not its menu (Josh, 2026-09-05: "No instrument editor for
-     * <type> / Press back for track sound & config"). */
-    if (isEditorish) return { editor: chain, noEditor: !chain, then: null };
+    /* ⭑ RULED (Josh, 2026-09-05, after the build-23 pass: "there's too much
+     * to account for with all the different track types"): from an EDITOR (or
+     * any of its dive-outs) the switch lands on the new track's SOUND MENU, on
+     * its INSTRUMENT row — every track kind, every route. No editor reopened,
+     * no message screen. `fromEditor` keeps the rule live across a fast burst
+     * (followDestOf reads it as VIEW_EDIT), so the last track of a burst lands
+     * the same way the first would have. */
+    if (isEditorish) return { editor: false, noEditor: false, fromEditor: true, then: { t: 'instrrow' } };
     if (v === VIEW_SLOTCFG) {
         if (chain) return { editor: false, then: { t: 'slotcfg', which: S.cfgWhich } };
         if (route === 2 && S.cfgWhich === 'config') return { editor: false, then: { t: 'slotcfg', which: 'config' } };
@@ -1246,12 +1249,14 @@ export function soundFollowTrack(track) {
          * KIND of screen it has — its menu (with CONFIG behind it), its MACROS
          * page, the gateway — or its prompt, which is where soundEnterMove lands. */
         soundEnterMove(track);
-        if (plan.noEditor) { landOnNoEditor(); restoreBankDisplay(stamp); return; }
         const th = plan.then;
         if (th && th.t === 'view' && (th.view === VIEW_MACROS || th.view === VIEW_BUSES)) S.view = th.view;
         else if (!(th && th.t === 'view' && th.view === VIEW_PROMPT)) {
             soundShowMenu();
             if (th && th.t === 'slotcfg' && th.which === 'config') S.pendingAction = th;
+            /* From an editor: the Instrument row, queued behind the bus entry's
+             * own `names` action so it is not overwritten a tick later. */
+            if (th && th.t === 'instrrow') S.pendingAction = Object.assign({}, S.pendingAction, { then: th });
         }
         restoreBankDisplay(stamp);
         return;
@@ -1259,29 +1264,10 @@ export function soundFollowTrack(track) {
     /* soundRetarget keeps your place inside a block only when it sees
      * VIEW_EDIT; every other source lands on the menu and `then` takes it on. */
     S.view = plan.editor ? VIEW_EDIT : VIEW_BLOCKS;
-    /* Walking ON from the message screen onto a Schwung track reopens the
-     * block the walk LEFT (a Move detour resets S.comp to the bus's). */
-    if (plan.editor && S.noEditorComp) { S.comp = S.noEditorComp; }
-    if (plan.editor) S.noEditorComp = null;
     clearBusContext();
     soundRetarget(track, slotIndex(track));
-    /* MIDI / NONE reached from an editor: the retarget parks us on the menu;
-     * the screen you see is the message, Back turns it into that menu. */
-    if (plan.noEditor && route !== 0) landOnNoEditor();
-    else if (plan.then) S.pendingAction = Object.assign({}, S.pendingAction, { then: plan.then });
+    if (plan.then) S.pendingAction = Object.assign({}, S.pendingAction, { then: plan.then });
     restoreBankDisplay(stamp);
-}
-
-/* The retarget / bus entry queues its own action (retargetOpen lands on the
- * menu on the NEXT tick), so the message view must be queued BEHIND it — set
- * directly it would be overwritten a tick later, which is exactly what the
- * first cut did. With nothing queued it can land now. */
-function landOnNoEditor() {
-    if (S.noEditorComp === undefined || S.noEditorComp === null) S.noEditorComp = S.comp || 'synth';
-    const th = { t: 'view', view: VIEW_NOEDITOR };
-    log('follow: landOnNoEditor pending ' + (S.pendingAction ? JSON.stringify(S.pendingAction) : '-') + ' view ' + S.view);
-    if (S.pendingAction) S.pendingAction = Object.assign({}, S.pendingAction, { then: th });
-    else { S.view = VIEW_NOEDITOR; S.dirty = true; }
 }
 
 /* The words of the no-editor screen, from the track's route. */
@@ -5384,6 +5370,16 @@ function runActionBody(a) {
         if (a.then) S.pendingAction = a.then;
     }
     else if (a.t === 'view')    { S.view = a.view | 0; S.dirty = true; }
+    else if (a.t === 'instrrow') {
+        /* The sound menu on its INSTRUMENT row (the follow's landing from an
+         * editor, Josh 2026-09-05). Rows rebuilt first: the track may have
+         * changed kind since the picker last listed them. */
+        S.view = VIEW_BLOCKS;
+        buildPickRows();
+        const i = S.pickRows.findIndex((r) => r.kind === 'trackto');
+        S.pickRow = i >= 0 ? i : 0;
+        S.dirty = true;
+    }
     else if (a.t === 'open')    openBlock(a.comp);
     else if (a.t === 'browse')  openBrowse(a.comp, a.prompt);
     else if (a.t === 'instrpick') openInstrPicker();
