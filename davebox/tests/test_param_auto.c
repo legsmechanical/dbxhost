@@ -122,11 +122,55 @@ int main(void) {
             pa_set(h, 0, 0, tgt, 0, 100);
         }
         hx_get_param(h, "pa_store_full", full, sizeof(full));
-        HX_ASSERT(full[0] == '1', "running out of distinct targets must be reported");
+        HX_ASSERT(full[0] == '2', "running out of distinct targets must be reported AS the target table (reason 2)");
         hx_get_param(h, "pa_store_full", full, sizeof(full));
         HX_ASSERT(full[0] == '0', "reading the flag clears it");
-        OK("the target table reports when it is full, and the flag clears on read");
+        OK("the target table reports when it is full, with its reason, and the flag clears on read");
+
+        /* ⚠ THE 2026-09-05 BUG: targets were NEVER freed within a project, so a
+         * session of record / clear / record-something-else filled the 64 and
+         * every new parameter was refused, project-wide. Clearing the clip that
+         * held them must give the names back. */
+        hx_set_param(h, "t0_pa_clear", "0");
+        pa_set(h, 0, 0, "0:fx1:after_clear", 0, 100);
+        hx_get_param(h, "pa_store_full", full, sizeof(full));
+        HX_ASSERT(full[0] == '0', "after clearing the clip, a NEW target is accepted again (targets gc)");
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "0:fx1:after_clear") != NULL, "...and it is really there");
+        OK("clear-all frees the target names its lanes held");
         hx_destroy(h);
+
+        /* A ZOMBIE (a retired lane: used, no points) must not hold the pool
+         * hostage: when the pool is full a zombie is evicted for a new lane.
+         * 160 lanes from 16 targets (the target table stays well under 64). */
+        h = hx_create(NULL);
+        for (int t = 0; t < NUM_TRACKS; t++)
+            for (int c = 0; c < NUM_CLIPS; c++) {
+                snprintf(tgt, sizeof(tgt), "%d:fx1:a", t);
+                pa_set(h, t, c, tgt, 0, 100);                  /* 8 x 16 = 128 */
+            }
+        for (int t = 0; t < NUM_TRACKS; t++)
+            for (int c = 0; c < 4; c++) {
+                snprintf(tgt, sizeof(tgt), "%d:fx1:b", t);
+                pa_set(h, t, c, tgt, 0, 100);                  /* + 8 x 4 = 160 */
+            }
+        hx_get_param(h, "pa_store_full", full, sizeof(full));
+        HX_ASSERT(full[0] == '0', "160 lanes fit exactly");
+        pa_set(h, 1, 5, "1:fx1:c", 0, 100);
+        hx_get_param(h, "pa_store_full", full, sizeof(full));
+        HX_ASSERT(full[0] == '1', "the 161st lane is refused, and says it is the POOL (reason 1)");
+        /* Retire one (Delete + knob touch): it stays as a zombie until the audio
+         * thread has put the parameter back to rest — render so it does. */
+        hx_set_param(h, "t0_pa_clear_key", "0 0:fx1:a");
+        hx_render(h, 2);
+        pa_set(h, 1, 5, "1:fx1:c", 0, 100);
+        hx_get_param(h, "pa_store_full", full, sizeof(full));
+        HX_ASSERT(full[0] == '0', "a full pool evicts a zombie for a new lane instead of refusing");
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "1 5 1 1 1:fx1:c") != NULL, "...and the new lane is there");
+        OK("a full pool reuses a retired lane");
+        hx_destroy(h);
+        h = hx_create(NULL);
 
         /* The ENTRY pool: ONE target per track automated in every clip, so
          * the target table stays small and the pool is what runs out. (One
@@ -171,7 +215,7 @@ int main(void) {
         for (int i = 0; i < PA_ENTRY_POINTS + 16; i++)
             pa_set(h, 0, 0, "cc:74", i, 1000 + i);
         hx_get_param(h, "pa_store_full", full, sizeof(full));
-        HX_ASSERT(full[0] == '1', "running past an entry's point cap must be reported");
+        HX_ASSERT(full[0] == '3', "running past an entry's point cap must be reported AS the lane's cap (reason 3)");
         OK("a recording that outgrows one parameter's point cap is REPORTED");
         hx_destroy(h);
     }

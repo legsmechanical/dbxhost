@@ -66,10 +66,11 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         PA_SKIP_SPACE(p); PA_UINT(p, v);
         if (clip < 0 || clip >= NUM_CLIPS) return 1;
         int id = pa_target_id(inst, tgt);
+        if (id < 0) { inst->pa_store_full = PA_FULL_TARGETS; return 1; }
         if (!pa_may_write(inst, tidx, id)) return 1;
         pa_entry_t *e = pa_get(inst, tidx, clip, id);
-        if (!e) { inst->pa_store_full = 1; return 1; }
-        if (!pa_set_point(e, (uint16_t)tick, (uint16_t)v)) inst->pa_store_full = 1;
+        if (!e) { inst->pa_store_full = PA_FULL_ENTRIES; return 1; }
+        if (!pa_set_point(e, (uint16_t)tick, (uint16_t)v)) inst->pa_store_full = PA_FULL_POINTS;
         e->last_sent_valid = 0;   /* the knob that wrote this also moved the live value */
         pa_mark_dirty(inst);
         return 1;
@@ -87,11 +88,12 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         PA_SKIP_SPACE(p); PA_UINT(p, v);
         if (clip < 0 || clip >= NUM_CLIPS || to < from) return 1;
         int id = pa_target_id(inst, tgt);
+        if (id < 0) { inst->pa_store_full = PA_FULL_TARGETS; return 1; }
         if (!pa_may_write(inst, tidx, id)) return 1;
         pa_entry_t *e = pa_get(inst, tidx, clip, id);
-        if (!e) { inst->pa_store_full = 1; return 1; }
+        if (!e) { inst->pa_store_full = PA_FULL_ENTRIES; return 1; }
         pa_clear_range(e, (uint16_t)from, (uint16_t)to);
-        if (!pa_set_point(e, (uint16_t)from, (uint16_t)v)) inst->pa_store_full = 1;
+        if (!pa_set_point(e, (uint16_t)from, (uint16_t)v)) inst->pa_store_full = PA_FULL_POINTS;
         e->last_sent_valid = 0;   /* see pa_set */
         pa_mark_dirty(inst);
         return 1;
@@ -107,7 +109,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         PA_TARGET(p, tgt);
         PA_SKIP_SPACE(p); PA_UINT(p, v);
         int id = pa_target_id(inst, tgt);
-        if (id < 0) { inst->pa_store_full = 1; return 1; }
+        if (id < 0) { inst->pa_store_full = PA_FULL_TARGETS; return 1; }
         if (!pa_may_write(inst, tidx, id)) return 1;
         if (v > PA_VAL_MAX) v = PA_VAL_MAX;
         pa_live_set(inst, tr, tidx, id, (uint16_t)v, 0);
@@ -122,7 +124,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
     if (!strcmp(sub, "pa_hold")) {
         PA_TARGET(p, tgt);
         int id = pa_target_id(inst, tgt);
-        if (id < 0) { inst->pa_store_full = 1; return 1; }
+        if (id < 0) { inst->pa_store_full = PA_FULL_TARGETS; return 1; }
         pa_live_set(inst, tr, tidx, id, 0, 1);
         return 1;
     }
@@ -146,7 +148,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         PA_SKIP_SPACE(p); PA_UINT(p, v);
         if (clip < 0 || clip >= NUM_CLIPS) return 1;
         pa_entry_t *e = pa_get(inst, tidx, clip, pa_target_id(inst, tgt));
-        if (!e) { inst->pa_store_full = 1; return 1; }
+        if (!e) { inst->pa_store_full = PA_FULL_ENTRIES; return 1; }
         if (e->rest == PA_VAL_UNSET) { e->rest = (uint16_t)v; pa_mark_dirty(inst); }
         return 1;
     }
