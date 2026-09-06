@@ -1116,9 +1116,9 @@ export function _onStepButtons(d1, d2) {
     /* Perf Mode: step buttons are preset snapshot slots — defer to release for
      * tap/hold decision. */
     if (S.sessionView && (S.loopHeld || S.perfViewLocked)) {
-        S.stepBtnPressedTick[idx] = nowMs();
-        S.sessionStepHeld         = idx;
-        S.sessionStepHeldCtx      = 1;  /* perf */
+        if (S.shiftHeld) { perfPresetSave(idx); forceRedraw(); return; }
+        perfPresetRecall(idx);
+        forceRedraw();
         return;
     }
     if (S.sessionView) {
@@ -1617,6 +1617,25 @@ function muteSnapSave(idx) {
     S.stepSaveFlashStartTick = S.clockMs;
     S.stepSaveFlashEndTick   = S.clockMs + STEP_SAVE_FLASH_MS;
 }
+function perfPresetSave(idx) {
+    S.perfSnapshots[idx] = S.perfModsToggled | S.perfModsHeld;
+    showActionPopup('PERF PRESET', 'SAVED');
+    S.stepSaveFlashStartTick = S.clockMs;
+    S.stepSaveFlashEndTick   = S.clockMs + STEP_SAVE_FLASH_MS;
+}
+/* Perf recall is a TOGGLE: pressing the slot you are already on clears it.
+ * That was true on the release and stays true on the press — the gesture moved,
+ * the meaning did not. */
+function perfPresetRecall(idx) {
+    if (S.perfRecalledSlot === idx) {
+        S.perfRecalledSlot = -1;
+        S.perfModsToggled  = 0;
+    } else {
+        S.perfRecalledSlot = idx;
+        S.perfModsToggled  = S.perfSnapshots[idx];
+    }
+    sendPerfMods();
+}
 function muteSnapRecall(idx) {
     if (S.snapshots[idx] === null || S.snapshots[idx] === undefined) return;
     const snap = S.snapshots[idx];
@@ -1634,28 +1653,12 @@ function muteSnapRecall(idx) {
 /* Step button release: tap-toggle if within threshold, always exit step edit */
     if (d1 >= 16 && d1 <= 31) {
         const btn = d1 - 16;
-        /* Session view hold-to-save: if still pending (tick hasn't fired save yet) → tap recall */
-        if (S.sessionStepHeld === btn) {
-            const ctx = S.sessionStepHeldCtx;
-            S.sessionStepHeld    = -1;
-            S.sessionStepHeldCtx = 0;
-            S.stepBtnPressedTick[btn] = -1;
-            if (ctx === 1) {
-                /* Perf recall */
-                if (S.perfRecalledSlot === btn) {
-                    S.perfRecalledSlot = -1;
-                    S.perfModsToggled  = 0;
-                } else {
-                    S.perfRecalledSlot = btn;
-                    S.perfModsToggled  = S.perfSnapshots[btn];
-                }
-                sendPerfMods();
-            }
-            /* ctx 3 (snapshot layer) and ctx 2 (mute) no longer reach here —
-             * both commit on the PRESS now. Only perf presets still defer. */
-            forceRedraw();
-            return;
-        }
+        /* ⭐ NOTHING defers to the release any more. All three step-slot
+         * surfaces — the snapshot layer, the mute states and the perf presets —
+         * commit on the PRESS (see the grammar note above), so the
+         * sessionStepHeld / sessionStepHeldCtx deferral this block used to
+         * service has no writer left. Removing the reader with it, rather than
+         * leaving a branch that can never be taken. */
         if (btn === S.heldStepBtn) {
             if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank !== 6) {
                 /* Drum step release: tap toggles, hold-release exits + vel confirm */

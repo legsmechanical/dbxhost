@@ -306,7 +306,17 @@ step_('⭑ DELETE + step clears the slot', () => {
 step_('⭑ releasing Capture CLOSES the layer, and steps are scene rows again', () => {
     capture(false); advance(20);
     if (D.devSnapOpen()) throw new Error('layer still open after Capture release');
-    if (S.sessionStepHeld !== -1) throw new Error('a step hold survived');
+    /* ⚠ This used to assert S.sessionStepHeld === -1, i.e. that the tap/hold
+     * DEFERRAL had not leaked past the layer. That state is gone — every
+     * step-slot surface commits on the press now — so the assertion would be
+     * checking an undefined field forever. The claim in the title is tested
+     * directly instead: a step outside the layer is a SCENE, not a recall. */
+    snapCalls.length = 0; writes.length = 0;
+    step(2, true); advance(20); step(2, false); advance(20);
+    if (snapCalls.some(c => c[0] === 'recall'))
+        throw new Error('a step still recalled after the layer closed: ' + JSON.stringify(snapCalls));
+    if (!writes.some(w => String(w).indexOf('launch_scene') >= 0))
+        throw new Error('a step outside the layer should launch a scene: ' + JSON.stringify(writes));
 });
 
 step_('⭑ TRACK view: holding Capture opens THIS TRACK\'s layer; the header names it; hold a step = a track take (that slot only); tap = a track recall (Josh, 2026-09-05)', () => {

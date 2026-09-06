@@ -19,7 +19,7 @@ import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter
 
 import {
     MoveNoteSession, MoveUndo, MoveLoop, MoveCopy, MoveRec, MoveCapture, MoveSample,
-    LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES, STEP_SAVE_FLASH_MS,
+    LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND, BANK_MACROS, isSoundBank,
     POLL_INTERVAL, ROUTE_NONE } from './ui_constants.mjs';
@@ -66,7 +66,6 @@ import { enterMoveNativeCoRun } from './ui_corun.mjs';
 const BANK_DISPLAY_MS = 1000;
 const KNOB_TURN_HIGHLIGHT_MS = 600;               /* highlight after turn without touch */
 const STEP_HOLD_MS       = 120;  /* below = tap, at/above = hold (ms off ui_clock, never ticks). Josh 2026-09-02: shorter than the old 200 ms, longer than the accidental ~55 */
-const STEP_SAVE_HOLD_MS  = 750;
 /* How long a select HANDOFF may be in flight before the SELECT-BEFORE-LOAD
  * watchdog is allowed to treat the session as stranded again. ~15s at the 94Hz
  * device tick. The handoff itself measured ~6.5s on hardware (arm -> walk Move
@@ -1105,30 +1104,16 @@ export function _tickImpl() {
             devSnapEnter(S.sessionView ? -1 : S.activeTrack);
         }
         devSnapTick();
-        /* Session view hold-to-save: fire exactly when threshold reached, not on release */
-        if (S.sessionStepHeld >= 0) {
-            const _ssh = S.sessionStepHeld;
-            if (S.clockMs - S.stepBtnPressedTick[_ssh] >= STEP_SAVE_HOLD_MS) {
-                const _ctx = S.sessionStepHeldCtx;
-                S.sessionStepHeld    = -1;
-                S.sessionStepHeldCtx = 0;
-                S.stepBtnPressedTick[_ssh] = -1;
-                /* ⚠ ONLY perf presets still hold-to-save. The snapshot layer
-                 * (ctx 3) and the mute snapshots (ctx 2) commit on the PRESS
-                 * now — Shift+step saves, a bare press recalls — because a
-                 * tap/hold decision cannot fire on the press, and that wait
-                 * WAS most of what a recall felt like (Josh, 2026-09-06:
-                 * "recall on note on is a must"). See the grammar note in
-                 * ui_input_pads.mjs. */
-                if (_ctx === 1) {
-                    S.perfSnapshots[_ssh] = S.perfModsToggled | S.perfModsHeld;
-                    showActionPopup('PERF PRESET', 'SAVED');
-                }
-                S.stepSaveFlashStartTick = S.clockMs;
-                S.stepSaveFlashEndTick   = S.clockMs + STEP_SAVE_FLASH_MS;
-                forceRedraw();
-            }
-        }
+        /* ⭐ THE HOLD-TO-SAVE DEFERRAL IS GONE (Josh, 2026-09-06). All three
+         * step-slot surfaces — the snapshot layer, the mute states and the perf
+         * presets — now commit on the PRESS: Shift+step saves, a bare press
+         * recalls, Delete+step clears. A tap/hold decision cannot fire on the
+         * press (it has to wait to learn which gesture it was), and that wait
+         * was most of what a recall FELT like. Nothing sets sessionStepHeld any
+         * more, so nothing here has to watch for it. See the grammar note in
+         * ui_input_pads.mjs.
+         *
+         * STEP_SAVE_HOLD_MS went with it — it had no other reader. */
 
         if ((S.tickCount % POLL_INTERVAL) === 0) { pollDSP(); bannerDaveSync(); S.screenDirty = true; }
 

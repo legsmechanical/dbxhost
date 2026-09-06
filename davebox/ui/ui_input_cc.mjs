@@ -1411,7 +1411,6 @@ function _onCC_buttons(d1, d2) {
                         S.heldStep        = -1; S.heldStepBtn = -1; S.stepReveal = false;
                         S.heldStepNotes   = []; S.stepWasEmpty = false;
                         S.stepWasHeld     = false;
-                        S.sessionStepHeld = -1; S.sessionStepHeldCtx = 0;
                     }
                     invalidateLEDCache();
                     S.screenDirty = true;
@@ -1689,8 +1688,6 @@ function _onCC_buttons(d1, d2) {
             S.stepWasEmpty       = false;
             S.stepWasHeld        = false;
             S.stepBtnPressedTick.fill(-1);
-            S.sessionStepHeld    = -1;
-            S.sessionStepHeldCtx = 0;
         } else {
             S.loopJogActive = false;
             /* Loop released before the held start step — treat as aborted
@@ -4405,8 +4402,6 @@ function _switchViewCleanup() {
     S.stepWasEmpty       = false;
     S.stepWasHeld        = false;
     S.stepBtnPressedTick.fill(-1);
-    S.sessionStepHeld    = -1;
-    S.sessionStepHeldCtx = 0;
     /* Leaving Session View stops any active loop; mods/latch persist. */
     if (!S.sessionView && (S.perfViewLocked || S.perfStack.length > 0)) {
         const _hadLoop = S.perfStack.length > 0;

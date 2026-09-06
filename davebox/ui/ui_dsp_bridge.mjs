@@ -601,7 +601,6 @@ export function pollDSP() {
                 S.heldStep        = -1; S.heldStepBtn = -1; S.stepReveal = false;
                 S.heldStepNotes   = []; S.stepWasEmpty = false;
                 S.stepWasHeld     = false;
-                S.sessionStepHeld = -1; S.sessionStepHeldCtx = 0;
                 invalidateLEDCache();
             }
         } else {
