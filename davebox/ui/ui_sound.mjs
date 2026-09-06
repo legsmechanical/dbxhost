@@ -833,6 +833,13 @@ export function soundBusCountForTest() { return FX_BUSES.length; }
 /* What the editor believes is loaded. Stale after a swap is the whole bug the
  * pendingDiscover rescue fixes, and it is not visible through any other export. */
 export function soundModuleIdForTest() { return S.moduleId; }
+/* WHICH COMPONENT the editor is pointed at. ⚠ `soundModuleIdForTest` alone
+ * cannot answer "did this block load": S.moduleId is only ever cleared by
+ * soundRetarget and runDiscovery, so it SURVIVES soundExit and a test that
+ * asserts on it after a re-entry may be reading the previous screen's module.
+ * That is a real trap — it made a control step in test_sound_bus_editor pass
+ * against stale state. The pair (comp, moduleId) is the honest answer. */
+export function soundCompForTest() { return S.comp; }
 /* The knob grid's current page (level + name) while the editor is up, else null. */
 export function soundEditorPageForTest() { return ppOn ? currentParamPage() : null; }
 export function soundQueueDiscoverForTest(n) { S.pendingDiscover = n | 0; }
@@ -857,7 +864,7 @@ export function soundPPForTest() {
         /* ⭑ The TERMS, so a test can prove which one decided. A control that
          * asserts only `!applies` passes for any reason at all — including a
          * precondition it lost by accident. */
-        terms: { flag: PP_EDITOR, active: S.active, busOk: !S.bus || S.bus.kind === 'global',
+        terms: { flag: PP_EDITOR, active: S.active,
                  slot: S.slot >= 0, notHosted: !S.hosted, moduleId: !!S.moduleId },
     };
 }
@@ -7986,17 +7993,23 @@ function ppHasLayer() {
  * jog walk instead of hiding behind a jog-click, `visible_if` starts folding
  * controls away, and the knob rings light.
  *
- * ⚠ Move buses stay out as a SCOPING choice, not an impossibility — Josh ruled
- * "master/send", so that is what shipped. Their FX inserts are ordinary audio_fx
- * modules that would plan fine (see FX_BUSES' neighbours above: they "ride the
- * same machinery"); it is only Move's GENERATOR row, its own voice reached
- * through co-run, that has nothing to plan from. So the same reverb gets the
- * grid and My Presets on Master and the older editor on a Move bus — a known
- * inconsistency, and the reason this is worth revisiting rather than a wall.
+ * ⭐⭐ AND MOVE BUSES TOO, as of Josh's 2026-09-06 ruling: "param pages should be
+ * the model for module editing across the board." The bus gate is GONE, not
+ * widened — there is no flavour of bus left that edits an insert differently.
+ * Until now the same reverb wore the grid on Master and the older list editor
+ * on a track's Move FX bus, which the previous note here called "a known
+ * inconsistency"; that is what the ruling closes.
+ *
+ * ⚠ WHAT KEEPS MOVE'S OWN VOICE OUT is not the bus, and never was — it is
+ * `S.moduleId`. Move's generator is reached through the `trackto` (Instrument)
+ * row, which hands over to co-run and never enters VIEW_EDIT with a module
+ * loaded, so there is nothing for `runDiscovery` to name and the term below is
+ * false on its own. The bus test was standing in front of a check that already
+ * held, which is why removing it is safe rather than merely permitted.
+ *
  * ⚠ And not a module drawing its OWN canvas, which already owns the whole frame. */
 function ppApplies() {
-    const busOk = !S.bus || S.bus.kind === 'global';
-    return PP_EDITOR && S.active && busOk && S.slot >= 0 && !S.hosted && !!S.moduleId;
+    return PP_EDITOR && S.active && S.slot >= 0 && !S.hosted && !!S.moduleId;
 }
 
 /* ⚠ THE PREFIX IS S.comp, AND THAT IS LOAD-BEARING. The binding hands the io
