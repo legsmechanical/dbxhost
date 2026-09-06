@@ -92,9 +92,10 @@ globalThis.host_snapshot_recall = (dir, slot, undoDir) => {
     if (undoDir) snapCalls.push(['take', undoDir, slot]);
     snapCalls.push(['recall', dir, slot]);
     recallPending = true;
-    return JSON.stringify({ ok: true, pending: true, undoOk: !!undoDir });
+    return JSON.stringify({ ok: true, pending: true, undoOk: !!undoDir && !undoTakeFails });
 };
 let statusSkipped = 1, statusAdded = 0;
+let undoTakeFails = false;   /* the host could not write the before-image */
 globalThis.host_snapshot_status = () => JSON.stringify({ pending: recallPending, skipped: statusSkipped, added: statusAdded, addedList: statusAdded ? ['master_fx:fx1'] : [] });
 globalThis.host_file_exists = (p) => Object.prototype.hasOwnProperty.call(files, p) && files[p] !== '';
 globalThis.host_write_file = (p, c) => { files[p] = c; writes.push('FILE ' + p); return true; };
@@ -251,6 +252,25 @@ step_('⭑ a recall is an UNDO unit: the live state was taken into the hidden be
     /* A DSP edit on top forgets the snapshot undo */
     E.noteUndoUnit();
     if (S.undoSnapshot) throw new Error('a DSP undo unit did not forget the snapshot undo');
+});
+
+/* A before-image that did not land must leave NO undo unit. The recall still
+ * happens — a failed before-take never blocked it — but offering Undo when
+ * there is nothing to go back to would restore whatever the undo dir last
+ * held, which is a DIFFERENT project's state. The host reports `undoOk` for
+ * exactly this; before it existed the davebox side inferred success from its
+ * own take call, which no longer happens here. */
+step_('⭑ a before-image that FAILED leaves no undo unit — the recall still runs', () => {
+    statusSkipped = 0; statusAdded = 0; snapCalls.length = 0; recallPending = false;
+    S.undoAvailable = false; S.undoSnapshot = null; S.redoSnapshot = null;
+    undoTakeFails = true;
+    step(2, true); advance(100); step(2, false); advance(20);
+    recallPending = false; advance(30);
+    undoTakeFails = false;
+    if (!snapCalls.some(c => c[0] === 'recall' && c[1] === P.deviceSnapDir('aaaa-bbbb', 2)))
+        throw new Error('the recall itself must still happen: ' + JSON.stringify(snapCalls));
+    if (S.undoAvailable || S.undoSnapshot)
+        throw new Error('a failed before-image still registered an undo unit: ' + JSON.stringify(S.undoSnapshot));
 });
 
 step_('⚠ RESTORED with NOTHING skipped: two lines, never the word "undefined" (device, 2026-09-05)', () => {
