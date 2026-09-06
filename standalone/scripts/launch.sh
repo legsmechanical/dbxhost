@@ -124,12 +124,30 @@ setsid --wait bash -c '
   # as it was. Cheap stats on every other launch. A stock/catalog reinstall of
   # the module can un-setuid the helper, so this is not a first-run check.
   MOD=/data/UserData/schwung/modules/tools/davebox-sa
-  if [ ! -u "$HEAL" ] || [ ! -x "$DBX_DIR/schwung" ] || [ ! -f "$DBX_DIR/sa-build.json" ]; then
-    ts "bootstrap needed (helper blessed: $([ -u "$HEAL" ] && echo yes || echo no); install present: $([ -x "$DBX_DIR/schwung" ] && echo yes || echo no))"
+  # ⚠ TWO DIFFERENT SITUATIONS (device, 2026-09-06). An install that merely lost
+  # its blessed helper (a stock reinstall resets the bit) is RE-BLESSED here,
+  # in place, from the helper it already has -- the payload is NOT consulted:
+  # the module dir may carry an old catalog payload, and handing it to
+  # bootstrap.sh laid 0.1.0 over a developer build. bootstrap.sh is for the
+  # case where there is NO install at all.
+  if [ -x "$DBX_DIR/schwung" ] && [ -f "$DBX_DIR/sa-build.json" ]; then
+    if [ ! -u "$HEAL" ]; then
+      ts "helper not blessed, install present -- re-blessing in place (no payload)"
+      if [ ! -f "$MOD/bin/heal.new" ]; then
+        if [ -f "$HEAL" ]; then cp -f "$HEAL" "$MOD/bin/heal.new"
+        elif [ -f "$MOD/payload/bin/heal" ]; then mkdir -p "$MOD/bin" && cp -f "$MOD/payload/bin/heal" "$MOD/bin/heal.new"
+        else refuse "no helper to re-bless ($HEAL missing and no payload/bin/heal)"; fi
+      fi
+      [ -x /data/UserData/schwung/bin/schwung-heal ] && /data/UserData/schwung/bin/schwung-heal >/dev/null 2>&1 || true
+      [ -u "$HEAL" ] || refuse "this stock Schwung cannot bless the helper (predates schwung#419); as root: sh $DBX_DIR/bless.sh"
+      ts "re-blessed: $(ls -la "$HEAL")"
+    fi
+  else
+    ts "no install at $DBX_DIR -- bootstrap (helper blessed: $([ -u "$HEAL" ] && echo yes || echo no))"
     if [ -f "$MOD/payload/scripts/bootstrap.sh" ]; then
       sh "$MOD/payload/scripts/bootstrap.sh" || refuse "bootstrap refused -- see the lines above"
     else
-      refuse "no blessed helper and no payload to install from ($MOD/payload)"
+      refuse "no install and no payload to install from ($MOD/payload)"
     fi
     ts "bootstrap done"
   fi

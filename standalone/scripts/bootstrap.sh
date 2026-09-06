@@ -58,7 +58,22 @@ fi
 # ---- 2. payload ----------------------------------------------------------------
 want="$(cat "$PAYLOAD/sa-version.txt" 2>/dev/null || echo unknown)"
 have="$(sed -n 's/.*"version":"\([^"]*\)".*/\1/p' "$DBX_DIR/sa-build.json" 2>/dev/null || true)"
-if [ ! -x "$DBX_DIR/schwung" ] || [ ! -d "$DBX_DIR/shadow" ] || [ "$want" != "${have:-}" ]; then
+# ⚠ WHEN TO LAY THE PAYLOAD (device, 2026-09-06): only when there is NO install,
+# or when BOTH stamps are release versions (x.y.z) and the payload is NEWER.
+# "any mismatch → reinstall" laid a stale 0.1.0 catalog payload over a
+# developer build (stamped with a git sha) the moment its helper lost setuid
+# to a stock reinstall — the whole dev tree replaced on a launch. A dev stamp
+# is never replaced here; a release is never downgraded.
+is_release() { echo "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; }
+newer() {  # $1 newer than $2, both x.y.z
+    [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$1" ] && [ "$1" != "$2" ]
+}
+lay=0
+if [ ! -x "$DBX_DIR/schwung" ] || [ ! -d "$DBX_DIR/shadow" ]; then lay=1
+elif is_release "$want" && is_release "${have:-}" && newer "$want" "$have"; then lay=1; say "upgrade: $have -> $want"
+elif [ "$want" != "${have:-}" ]; then say "install present ($have) is not the payload ($want) — keeping it (dev build or newer release)"
+fi
+if [ "$lay" = 1 ]; then
     if [ ! -d "$PAYLOAD" ]; then
         say "REFUSING: no install at $DBX_DIR and no payload at $PAYLOAD"
         exit 1
@@ -72,8 +87,10 @@ fi
 # ---- 3. boot-recovery unit -------------------------------------------------------
 "$HEAL" --install-restore-unit || { say "REFUSING: could not install the restore unit"; exit 1; }
 
-# ---- 4. stamp ----------------------------------------------------------------------
-printf '{"version":"%s","host":1,"davebox":1,"installed":"%s","by":"bootstrap"}\n' \
-    "$want" "$(date -Iseconds 2>/dev/null || date)" > "$DBX_DIR/sa-build.json"
+# ---- 4. stamp (only for an install THIS run laid; a kept install keeps its stamp) ------
+if [ "$lay" = 1 ]; then
+    printf '{"version":"%s","host":1,"davebox":1,"installed":"%s","by":"bootstrap"}\n' \
+        "$want" "$(date -Iseconds 2>/dev/null || date)" > "$DBX_DIR/sa-build.json"
+fi
 say "done ($want)"
 exit 0

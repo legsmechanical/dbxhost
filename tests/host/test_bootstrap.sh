@@ -53,6 +53,23 @@ echo "second launch:"
 : > "$T/f/mod/bin/heal.log"
 rc=$(run)
 [ "$rc" = 0 ] && grep -q "install present (v-test)" "$T/out" && ok "install present → payload not re-laid" || bad "re-laid or failed: $(cat "$T/out")"
+echo "a DEV install is never replaced (device, 2026-09-06):"
+printf '{"version":"3b281910","host":1,"davebox":1,"installed":"x","by":"install-sa"}\n' > "$T/f/dbx/sa-build.json"
+printf 'dev-host\n' > "$T/f/dbx/schwung"; chmod 755 "$T/f/dbx/schwung"
+rc=$(run)
+[ "$rc" = 0 ] && [ "$(cat "$T/f/dbx/schwung")" = "dev-host" ] && grep -q '"version":"3b281910"' "$T/f/dbx/sa-build.json" && ok "a sha-stamped install stays, stamp untouched" || bad "the dev install was replaced: $(cat "$T/out")"
+echo "a NEWER release is never downgraded; an OLDER one is upgraded:"
+printf '{"version":"9.9.9","host":1,"davebox":1,"installed":"x","by":"bootstrap"}\n' > "$T/f/dbx/sa-build.json"; printf 'newer\n' > "$T/f/dbx/schwung"
+printf '0.2.0\n' > "$T/f/mod/payload/sa-version.txt"
+rc=$(run)
+[ "$rc" = 0 ] && [ "$(cat "$T/f/dbx/schwung")" = "newer" ] && ok "9.9.9 kept against a 0.2.0 payload" || bad "downgraded: $(cat "$T/out")"
+printf '{"version":"0.1.0","host":1,"davebox":1,"installed":"x","by":"bootstrap"}\n' > "$T/f/dbx/sa-build.json"
+rc=$(run)
+[ "$rc" = 0 ] && [ "$(cat "$T/f/dbx/schwung")" = "host" ] && grep -q '"version":"0.2.0"' "$T/f/dbx/sa-build.json" && ok "0.1.0 upgraded to the 0.2.0 payload" || bad "not upgraded: $(cat "$T/out")"
+echo "the LAUNCHER re-blesses an existing install in place, and calls bootstrap only with no install:"
+L=standalone/scripts/launch.sh
+grep -q 're-blessing in place (no payload)' "$L" && ok "launch.sh re-blesses without the payload" || bad "no in-place re-bless"
+awk '/no install at \$DBX_DIR -- bootstrap/{f=1} f&&/bootstrap.sh/{print; exit}' "$L" | grep -q 'bootstrap.sh' && ok "bootstrap.sh is reached only on the no-install branch" || bad "bootstrap reachable with an install present"
 echo "a stock heal that cannot bless (pre-#419):"
 mk cannot
 rc=$(run)
