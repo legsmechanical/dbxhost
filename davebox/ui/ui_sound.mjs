@@ -8240,9 +8240,10 @@ function ppIo() {
 /* Installed once, at module load. The host fills its ctx from shadow_ui.js at
  * init for the same reason: the binding reads these INSIDE function bodies, so
  * they only have to exist by the time the editor is entered.
- * ⚠⚠ The member list is not ours to choose — it is whatever the vendored
- * binding reads, and test_param_pages_vendor.sh fails if this and
- * pp_ctx.mjs's PP_CTX_MEMBERS / PP_CTX_ABSENT stop agreeing with it. */
+ * ⚠⚠ The member list is not ours to choose — it is whatever the shared binding
+ * (param_pages/binding_movy.mjs) reads off ctx, and test_param_pages_vendor.sh
+ * fails if this literal, pp_ctx.mjs's PP_CTX_MEMBERS / PP_CTX_ABSENT and the
+ * binding's own code stop agreeing. It reads all three as CODE. */
 installPpCtx({
     /* The header names the MODULE, not the patch (Josh, 2026-08-31: no preset
      * name in the editor breadcrumb). Stock keeps the patch name because its

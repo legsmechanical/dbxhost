@@ -23,11 +23,13 @@
  * import ui_sound.mjs back.
  *
  * ⚠⚠ THE SET OF MEMBERS IS NOT OURS TO CHOOSE. It is whatever
- * src/shadow/shadow_ui_param_pages.mjs reads off `ctx`, and that file is
- * vendored verbatim -- so if it grows a member and this does not, the editor
- * loses a behaviour silently (most of the reads are `typeof === 'function'`
- * guarded, so a missing member is a quiet fallback, not an error).
- * `tests/host/test_param_pages_vendor.sh (⚠ NOT IN THE TREE — the pin this cites was never written or was lost; the ctx contract is currently unpinned)` extracts the reads from the binding's
+ * src/shared/param_pages/binding_movy.mjs reads off `ctx` — the binding itself,
+ * which davebox IMPORTS rather than copies (shadow_ui_param_pages.mjs is now a
+ * four-line shim that creates the shadow UI's instance over its own ctx). If
+ * the binding grows a member and this does not, the editor loses a behaviour
+ * silently: most of the reads are `typeof === 'function'` guarded, so a missing
+ * member is a quiet fallback, not an error.
+ * `tests/host/test_param_pages_vendor.sh` extracts the reads from the binding's
  * CODE and fails if this file does not answer them.
  */
 
@@ -42,11 +44,11 @@ export function installPpCtx(members) {
 }
 
 /* ===========================================================================
- * THE CONTRACT — every member src/shadow/shadow_ui_param_pages.mjs reads off
- * `ctx`, with what it is used for and what davebox must answer with. Kept here
- * because the binding is vendored verbatim and therefore carries no davebox
+ * THE CONTRACT — every member src/shared/param_pages/binding_movy.mjs reads
+ * off `ctx`, with what it is used for and what davebox must answer with. Kept
+ * here because the binding is shared code and therefore carries no davebox
  * notes of its own, and pinned member-for-member by
- * tests/host/test_param_pages_vendor.sh (⚠ NOT IN THE TREE — the pin this cites was never written or was lost; the ctx contract is currently unpinned), which reads the list out of the
+ * tests/host/test_param_pages_vendor.sh, which reads the list out of the
  * binding's CODE rather than out of this comment.
  *
  * ⚠⚠ MOST OF THESE READS ARE `typeof === 'function'` GUARDED. A member davebox
@@ -146,7 +148,7 @@ export function installPpCtx(members) {
  * the editor silently drops whatever that member does, and the drop looks like
  * a design choice. A list in a COMMENT cannot be checked, and this repo has
  * twice shipped a source pin that passed because it was reading prose rather
- * than code. tests/host/test_param_pages_vendor.sh (⚠ NOT IN THE TREE — the pin this cites was never written or was lost; the ctx contract is currently unpinned) reads THESE arrays, the
+ * than code. tests/host/test_param_pages_vendor.sh reads THESE arrays, the
  * binding's own code, AND what ui_sound actually installs, and fails if any two
  * disagree. */
 export const PP_CTX_MEMBERS = [
