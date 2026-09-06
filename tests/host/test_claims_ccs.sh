@@ -50,7 +50,11 @@ command grep -q 'claim_press_blocked\[d1\] =' "$shim" \
   || fail "the per-button press latch is gone from the firmware filter"
 command grep -A1 'claim_press_blocked\[d1\] =' "$shim" | command grep -q 'claim_cc_set(d1)' \
   || fail "the press latch is not derived from the claim bitmap -- that is #154 again"
-if command grep -B2 -A2 'claim_press_blocked\[d1\] =' "$shim" | command grep -q 'shadow_display_mode'; then
+# Scoped to the filter block: a +-2 line window also matched `==` on the
+# `[d1] =` prefix once the #435 demotion existed, and failed a correct tree.
+press_block=$(sed -n '/A CLAIMED button: withheld from Move firmware ONLY while/,/Filter Menu unless long-press mode/p' "$shim")
+[ -n "$press_block" ] || fail "the firmware-filter claim block is gone"
+if echo "$press_block" | command grep -q 'shadow_display_mode'; then
   fail "the claim site tests the display, not the claim -- the #175 revert exists because of exactly this"
 fi
 echo "  ok  the firmware filter withholds a button only under the runtime claim"
@@ -96,6 +100,31 @@ command grep -q 'CC_CLAIM_VIEWS\[VIEWS.PARAM_PAGES\] = true' "$ui_js" \
 command grep -B3 'memset((void \*)shadow_control->claim_cc_bits, 0' "$shim" | command grep -q 'prev_display_mode && !shadow_display_mode' \
   || fail "the shim does not drop the claims when the shadow display closes -- a crashed shadow_ui strands Move's buttons"
 echo "  ok  claims are reconciled from metadata in one place and dropped by the shim on display close"
+
+# ---- 6. a held button survives the display close; a failed read claims nothing (upstream #435)
+command grep -q '#define CLAIM_LATCH_HELD     2' "$shim" || fail "the press latch has no HELD state -- a release owed to a claimed press cannot be told from a stale latch"
+command grep -B1 -A3 'if (prev_display_mode && !shadow_display_mode) {' "$shim" | command grep -q 'claim_cc_bits' \
+  || fail "the display-close edge no longer drops the claim bitmap"
+if sed -n '/if (prev_display_mode && !shadow_display_mode) {/,/^        }/p' "$shim" | command grep -q 'memset(claim_press_blocked'; then
+  fail "the display-close edge clears the WHOLE press latch -- a held claimed button then hands Move a lone release (Delete deleted a clip)"
+fi
+sed -n '/if (prev_display_mode && !shadow_display_mode) {/,/^        }/p' "$shim" | command grep -q '!= CLAIM_LATCH_HELD) claim_press_blocked\[c\] = CLAIM_LATCH_NONE' \
+  || fail "the display-close edge does not spare a HELD latch"
+drain=$(sed -n '/CLAIM-LATCH DRAIN/,/^                }/p' "$shim")
+[ -n "$drain" ] || fail "no claim-latch drain in the post-ioctl scan"
+echo "$drain" | command grep -q 'claim_press_blocked\[d1\] == CLAIM_LATCH_HELD' || fail "the drain is not gated on HELD -- it would eat the next press"
+echo "$drain" | command grep -q 'midi_in_swallow(shadow + MIDI_IN_OFFSET, src, j);' || fail "the drain does not swallow through midi_in_swallow (both mailboxes)"
+dl=$(command grep -n 'CLAIM-LATCH DRAIN' "$shim" | head -1 | cut -d: -f1)
+cl=$(command grep -n 'shadow_midi_in_compact(global_mmap_addr + MIDI_IN_OFFSET);' "$shim" | head -1 | cut -d: -f1)
+[ "$dl" -lt "$cl" ] || fail "the drain sits after compaction -- index pairing is broken"
+command grep -A2 'claim_press_blocked\[d1\] =$' "$shim" | command grep -q 'CLAIM_LATCH_HELD : CLAIM_LATCH_NONE' || fail "a claimed press is not latched as HELD"
+command grep -q 'if (d2 == 0 && claim_press_blocked\[d1\] == CLAIM_LATCH_HELD)' "$shim" || fail "a release does not demote HELD to RELEASED"
+n=$(command grep -c 'if (raw === null || raw === undefined) return;' "$ui_js" || true)
+[ "$n" -eq 2 ] || fail "reconcileCcClaim must guard BOTH module-id reads against a failed read (found $n)"
+command grep -B2 'ccClaimKey = key;' "$ui_js" | command grep -q 'moduleId = raw;' || fail "ccClaimKey is latched before the module-id read -- a failed read would make 'no claim' permanent"
+command grep -q 'metadata read for ${moduleId} failed' "$ui_js" || fail "a thrown metadata read is cached as 'no claim' for the session"
+command grep -q '^function hierarchyActiveModuleIdRaw() {' "$ui_js" || fail "no null-preserving module-id lookup for the claim reconcile"
+echo "  ok  a held claimed button keeps its latch across a display close and is drained; a failed read retries instead of claiming nothing"
 
 # ---- docs say what the code does ---------------------------------------------
 command grep -q '| `claims_ccs` |' "$docs" || fail "docs/MODULES.md capability table has no claims_ccs row"

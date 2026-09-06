@@ -130,6 +130,32 @@ command grep -A1 '^function exitParamPages() {' "$pp" | command grep -q 'reconci
   || fail "exitParamPages does not clear pad_observe -- leaving the grid would keep pads streaming into the UI ring"
 command grep -q 'return controller.vouchLivePress();' "$pp" \
   || fail "handleParamPagesMidi does not vouch on a pad note-on"
+# RESTATED, not memoised (upstream 90cbe206): the shim drops pad_observe on its
+# own when the display closes and never tells JS, so a JS mirror goes stale.
+if sed -n '/^function reconcilePadObserve/,/^}/p' "$pp" | command grep -q 'padObserveOn'; then
+  fail "reconcilePadObserve memoises against a JS mirror -- stale after the first Menu dismiss, live presses die silently"
+fi
+command grep -q 'isHardwarePadPress(data) && controller.livePressParam()' "$pp" \
+  || fail "the call site hand-rolls the pad-press predicate instead of running page_input's"
+node -e '
+import("./src/shared/param_pages/page_input.mjs").then((PI) => {
+  const f = PI.isHardwarePadPress;
+  const cases = [
+    [[0x90, 70, 100], true,  "a pad note-on"],
+    [[0x80, 70, 0],   false, "a note-off"],
+    [[0x90, 70, 0],   false, "a velocity-0 note-on (Move sends releases this way too)"],
+    [[0x90, 16, 100], false, "a step button note"],
+    [[0x90, 3, 100],  false, "a knob-touch note"],
+    [[0xB0, 70, 127], false, "a CC"],
+    [[0x90, 67, 100], false, "a note just below the pad range"],
+    [[0x90, 100, 100], false, "a note just above the pad range"],
+  ];
+  let bad = 0;
+  for (const [d, want, label] of cases) if (f(new Uint8Array(d)) !== want) { console.log("FAIL: " + label + " -> " + f(new Uint8Array(d))); bad++; }
+  if (bad) process.exit(1);
+  console.log("  ok  only a pad note-on with velocity vouches; releases, steps, touches and CCs do not");
+}).catch((e) => { console.log("FAIL: " + (e && e.stack || e)); process.exit(1); });
+' || fail "predicate half"
 echo "  ok  pad_observe follows the grid: on while a declaring component is shown, off on exit"
 
 echo "PASS: test_child_press_param"

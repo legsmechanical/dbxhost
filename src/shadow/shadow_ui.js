@@ -2743,6 +2743,20 @@ function evaluateVisibilityConditionForContext(slot, componentPrefix, condition,
  * detent of a gating knob and a blocking read per condition froze the OLED). */
 const VIS_CACHE_TTL_MS = 250;
 const visReadCache = new Map();
+/* The LISTED key behind a resolved visibility key: the level's param whose
+ * normalised, per-instance form is `fullKey` (upstream #440's invert, in this
+ * fork's shape -- the fork has no separate generic-key table, so the invert
+ * walks the level's own list through the same normaliser the resolve used).
+ * Falls back to the prefix-stripped key, which is right for a level with no
+ * children. */
+function gridListedKeyFor(levelDef, childIdx, prefix, fullKey) {
+    const params = (levelDef && Array.isArray(levelDef.params)) ? levelDef.params : [];
+    for (const p of params) {
+        const k = extractHierarchyParamKey(p);
+        if (k && normalizeVisibilityConditionKey(prefix, levelDef, childIdx, k) === fullKey) return k;
+    }
+    return (prefix && fullKey.startsWith(`${prefix}:`)) ? fullKey.slice(prefix.length + 1) : fullKey;
+}
 function getSlotParamCached(slot, key, tag) {
     const id = (tag || "") + "|" + slot + "|" + key;
     const now = Date.now();
@@ -2765,15 +2779,29 @@ function evaluateVisibilityCondition(condition, levelDef) {
     if (view === VIEWS.PARAM_PAGES && paramPagesActive()) {
         const comp = paramPagesComponent();
         const gslot = paramPagesSlot();
+        const gridPrefix = getComponentParamPrefix(comp);
         const lvlName = paramPagesLevelNameOf(levelDef);
+        const childIdx = lvlName ? paramPagesChildIndex(lvlName) : -1;
         const read = (s, k) => {
-            const held = paramPagesCachedValue(k);
+            /*
+             * ...and the cache is asked with the LISTED key, never the one
+             * that arrived (upstream #440).
+             *
+             * `k` has been through normalizeVisibilityConditionKey, so on a
+             * child level it is CONCRETE ("pad3_type"), while the controller
+             * keys its values by what the level LISTS ("type"). Asking with
+             * the concrete key missed every single time, so a per-instance
+             * condition never hit the cache and paid the blocking read this
+             * branch is here to avoid -- silent, because a miss still answers
+             * CORRECTLY, only slowly. The invert uses the same level and index
+             * as the resolve did, so the value it finds belongs to the
+             * instance the grid is showing. */
+            const held = paramPagesCachedValue(gridListedKeyFor(levelDef, childIdx, gridPrefix, k));
             if (held !== undefined) return held;
             return getSlotParamCached(s, k, `grid:${s}:${comp}`);
         };
         return evaluateVisibilityConditionForContext(
-            gslot, getComponentParamPrefix(comp), condition, levelDef,
-            lvlName ? paramPagesChildIndex(lvlName) : -1, read);
+            gslot, gridPrefix, condition, levelDef, childIdx, read);
     }
     const prefix = getComponentParamPrefix(hierEditorComponent);
     return evaluateVisibilityConditionForContext(
@@ -11899,7 +11927,12 @@ function moduleFileExists(path) {
     }
 }
 
-function getHierarchyActiveModuleId() {
+/* The same lookup, with the tri-state INTACT on the slot path: null = the
+ * read did not complete. getHierarchyActiveModuleId below is the `|| ""` view
+ * of it, which is what every caller that only wants a name should use.
+ * reconcileCcClaim wants the third answer, because "the read failed" and
+ * "there is no module" lead to opposite decisions there (upstream #435). */
+function hierarchyActiveModuleIdRaw() {
     if (hierEditorSlot < 0 || !hierEditorComponent) return "";
     if (hierEditorIsMasterFx) {
         /* FX-bus components (master/send/move FX) serve `:module` as the FULL
@@ -11919,7 +11952,11 @@ function getHierarchyActiveModuleId() {
 
     const prefix = getComponentParamPrefix(hierEditorComponent);
     if (!prefix) return "";
-    return getSlotParam(hierEditorSlot, `${prefix}_module`) || "";
+    return getSlotParam(hierEditorSlot, `${prefix}_module`);
+}
+
+function getHierarchyActiveModuleId() {
+    return hierarchyActiveModuleIdRaw() || "";
 }
 
 /* ── Button claims: capabilities.claims_ccs / claims_edit_ccs ─────────────────
@@ -12005,7 +12042,15 @@ function moduleClaimedCcs(moduleId) {
         if (typeof host_get_module_metadata === "function") {
             meta = host_get_module_metadata(moduleId);
         }
-    } catch (e) { meta = null; }
+    } catch (e) {
+        /* The read threw -- that is news about the CHANNEL, not about the
+         * module. Answer "no claim" for this tick and leave the cache empty so
+         * the next reconcile asks again; caching it would make one bad read
+         * permanent for the session. A metadata object that simply declares no
+         * capability is a real answer and IS cached below (upstream #435). */
+        debugLog(`claims_ccs: metadata read for ${moduleId} failed (${e}) -- not cached`);
+        return "";
+    }
     const caps = (meta && meta.capabilities) || {};
     const want = new Set();
     if (caps.claims_edit_ccs) for (const cc of EDIT_CCS) want.add(cc);
@@ -12043,14 +12088,31 @@ function reconcileCcClaim() {
         ? (view + "|" + coRunView + "|" + slot + "|" + comp)
         : "";
     if (key === ccClaimKey) return;
-    ccClaimKey = key;
+    /* THE READ COMES FIRST, AND null IS NOT AN ANSWER (upstream #435).
+     *
+     * getSlotParam is the tri-state: null means the read did not complete (the
+     * claim was refused, or the response timed out), "" means served-but-empty.
+     * Collapsing them with `|| ""` reads as "this component has no module", so
+     * the claim is dropped -- and latching ccClaimKey before the read made that
+     * verdict permanent for the whole visit to the screen, with Delete going
+     * back to Move. That is the failure the capability exists to prevent.
+     *
+     * So the key is latched only once an answer is in hand; a failed read
+     * leaves it alone and the next tick asks again. */
     let moduleId = "";
     if (onScreen && onGrid) {
         const prefix = getComponentParamPrefix(comp);
-        moduleId = prefix ? (getSlotParam(slot, `${prefix}_module`) || "") : "";
+        if (prefix) {
+            const raw = getSlotParam(slot, `${prefix}_module`);
+            if (raw === null || raw === undefined) return;   /* retry next tick */
+            moduleId = raw;
+        }
     } else if (onScreen) {
-        moduleId = getHierarchyActiveModuleId();
+        const raw = hierarchyActiveModuleIdRaw();
+        if (raw === null || raw === undefined) return;       /* retry next tick */
+        moduleId = raw;
     }
+    ccClaimKey = key;
     let claim = onScreen ? moduleClaimedCcs(moduleId) : "";
     if (primaryEditCcClaim) {
         const set = new Set(claim ? claim.split(",").map(Number) : []);

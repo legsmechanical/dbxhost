@@ -30,6 +30,27 @@ export const BACK_CC = 51;
 export const MUTE_CC = 88;
 export const TOUCH_NOTE_FIRST = 0;
 export const TOUCH_NOTE_LAST = 7;
+export const PAD_NOTE_FIRST = 68;
+export const PAD_NOTE_LAST = 99;
+
+/**
+ * Is this message a FINGER hitting a pad? (upstream #426 follow-up 90cbe206)
+ *
+ * The one thing the grid does with a pad note, and the only one it can: it
+ * vouches for the gesture to a module that declared `child_press_param`.
+ * `decodeInput` returns null for pads on purpose and must keep doing so, so
+ * this is a separate question with a separate answer, not an intent. It lives
+ * HERE rather than at the call site because each of its three conditions is a
+ * bug somebody would otherwise ship unnoticed: a note-off or a velocity-0
+ * note-on (Move sends releases in both forms) vouched as a press moves the
+ * focus twice per hit; steps, tracks and knob touches are notes on the same
+ * cable; a CC is never a pad.
+ */
+export function isHardwarePadPress(data) {
+    if (!data || data.length < 3) return false;
+    const st = data[0] & 0xF0, d1 = data[1], d2 = data[2];
+    return st === 0x90 && d2 > 0 && d1 >= PAD_NOTE_FIRST && d1 <= PAD_NOTE_LAST;
+}
 
 /**
  * @param {number[]|Uint8Array} data  [status, d1, d2]

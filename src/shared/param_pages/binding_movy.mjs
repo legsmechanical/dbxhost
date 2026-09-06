@@ -33,7 +33,7 @@ export { LAYOUT_LIST };
 /* Re-exported so the LIST editor waits out the same module-side debounce the
  * grid does, from the same number. Two hand-written 500s would drift. */
 export { CONTRACT_SETTLE_MS };
-import { decodeInput, applyInput } from '/data/UserData/schwung/shared/param_pages/page_input.mjs';
+import { decodeInput, applyInput, isHardwarePadPress } from '/data/UserData/schwung/shared/param_pages/page_input.mjs';
 import { PAGE_KNOBS, PAGE_MENU, PAGE_PRESET, PAGE_ITEMS } from '/data/UserData/schwung/shared/param_pages/page_plan.mjs';
 import { LAYOUT_MOVY, normalizedOf }
     from '/data/UserData/schwung/shared/param_pages/render_page_movy.mjs';
@@ -515,12 +515,17 @@ function paramPagesRepaintKnobs() {
  * Reconciled every tick from the controller's livePressParam() and dropped on
  * exit; the shim also drops it when the shadow display closes. Passive — pads
  * keep playing — so the only cost of being on is one UI ring event per press. */
-let padObserveOn = false;
+/* STATED UNCONDITIONALLY, never memoised against a JS-side mirror (upstream
+ * #426 follow-up 90cbe206). The shim drops pad_observe on its OWN authority --
+ * the shadow display closes from several sites in the SPI callback that never
+ * tell JS -- so a mirror here goes stale the first time the user dismisses
+ * with Menu, and a reconcile that trusts it then skips the write that would
+ * turn the feature back on: live presses stop for the rest of the session,
+ * silently. js_host_pad_observe is idempotent and logs only on a transition,
+ * precisely so a caller may restate this every tick: one native call and one
+ * SHM byte store. */
 function reconcilePadObserve(want) {
     if (typeof host_pad_observe !== 'function') return;
-    want = !!want;
-    if (want === padObserveOn) return;
-    padObserveOn = want;
     host_pad_observe(want ? 1 : 0);
 }
 function tickParamPages() {
@@ -1216,7 +1221,7 @@ function handleParamPagesMidi(data) {
      * the declared param, once per note-on. Passive: the note is not consumed
      * here — the pad already played; a module that declared nothing gets no
      * write and the event goes on to the next handler (upstream #426). */
-    if ((data[0] & 0xF0) === 0x90 && data[1] >= 68 && data[1] <= 99 && data[2] > 0 && controller.livePressParam()) {
+    if (isHardwarePadPress(data) && controller.livePressParam()) {
         return controller.vouchLivePress();
     }
 

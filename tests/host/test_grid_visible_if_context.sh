@@ -29,8 +29,20 @@ command grep -q 'paramPagesLevelNameOf, paramPagesCachedValue,' "$ui" || fail "s
 command grep -q 'levelNameOf: (def)' src/shared/param_pages/page_controller.mjs || fail "the controller has no levelNameOf"
 command grep -q 'valueOf: (k)' src/shared/param_pages/page_controller.mjs || fail "the controller has no valueOf"
 command grep -q '^        paramPagesCachedValue,' "$bm" && command grep -q '^        paramPagesLevelNameOf,' "$bm" || fail "the binding does not expose the two helpers"
-echo "$body" | command grep -q 'paramPagesCachedValue(k)' || fail "the grid evaluator does not consult the controller's own values first"
+echo "$body" | command grep -q 'paramPagesCachedValue(gridListedKeyFor(' || fail "the grid evaluator does not consult the controller's own values first"
 echo "$body" | command grep -q 'getSlotParamCached(' || fail "a cache miss on the grid goes to an uncached blocking read"
 if echo "$body" | command grep -q '[^a-zA-Z]getSlotParam(' ; then fail "the grid branch still reads through the uncached getSlotParam"; fi
 echo "  ok  visible_if on the knob grid resolves against the grid's own slot and component, cache-first"
+# ---- the cache is asked with the LISTED key (upstream #440) ----------------------
+command grep -q 'paramPagesCachedValue(gridListedKeyFor(levelDef, childIdx, gridPrefix, k))' src/shadow/shadow_ui.js \
+  || fail "the grid asks its value cache with the CONCRETE key -- a per-instance visible_if never hits it and pays the blocking read"
+node -e '
+import("./src/shared/param_pages/visibility.mjs").then((V) => {
+  /* the invert must round-trip the normaliser: listed -> concrete -> listed */
+  const lvl = { child_prefix: "pad", child_count: 4, params: [{ key: "type" }, "vol"] };
+  const full = V.normalizeVisibilityConditionKey("synth", lvl, 3, "type");
+  if (typeof full !== "string" || full.indexOf("pad3") < 0) { console.log("FAIL: normaliser did not produce a per-instance key: " + full); process.exit(1); }
+  console.log("  ok  the normaliser resolves a listed key per instance, so the invert has something to walk back");
+}).catch((e) => { console.log("FAIL: " + (e && e.stack || e)); process.exit(1); });
+' || fail "visibility half"
 echo "PASS: test_grid_visible_if_context"
