@@ -890,7 +890,14 @@ function drawInfoRow2() {
         const _top = S.sessionView ? MARK_BAR_H : MV_BAR_Y;
         const _h = OVW_TRACK_ROW_Y - _top - 1;      /* 1px clear of the track row */
         const _on = Math.floor(S.clockMs / DEVSNAP_BLINK_MS) % 2 === 0;
-        if (_on) fill_rect(0, _top, 128, _h, 1);
+        /* ⚠ ALWAYS fill, both phases — black on the off phase, not "no fill"
+         * (Josh, device 2026-09-06: "the octave/scale/key indicators shouldn't
+         * exist at all when in snapshot mode"). Filling only on the ON phase
+         * left track view's oct/arp/key row and its scale rule, drawn earlier
+         * in the same frame, showing THROUGH the band for half of every blink
+         * cycle. The band did not cover them; it covered them intermittently,
+         * which is worse than not covering them at all. */
+        fill_rect(0, _top, 128, _h, _on ? 1 : 0);
         hdrPrint(Math.round((128 - hdrWidth(_sn)) / 2),
                  _top + Math.floor((_h - 6) / 2), _sn, _on ? 0 : 1);
     } else {

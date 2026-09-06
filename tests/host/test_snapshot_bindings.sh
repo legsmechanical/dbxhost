@@ -175,6 +175,20 @@ for f in snapshotRecords snapshotLiveIds hostSnapshotTake; do
     echo "$rec" | grep -q "$f(.*effBus" && say "ok   — ...and $f is given effBus, not moveBus" || bad "$f still gets the raw moveBus"
 done
 
+# ---- the snapshot band must clear its area on BOTH blink phases -------------
+# Filling only on the ON phase left track view's oct/arp/key row showing
+# through for half of every cycle (Josh, device: "the octave/scale/key
+# indicators shouldn't exist at all when in snapshot mode"). This lives in
+# davebox, so it is pinned from here rather than in the host suite.
+RJS=davebox/ui/ui_render.mjs
+band=$(awk '/^function drawInfoRow2\(/{f=1} f{print} f&&/^}/{exit}' "$RJS")
+echo "$band" | grep -q 'fill_rect(0, _top, 128, _h, _on ? 1 : 0);' \
+    && say "ok   — the band fills on BOTH phases (black when off), so nothing shows through" \
+    || bad "the band fills only on one phase — the info row would show through half the time"
+echo "$band" | grep -qE '^\s*if \(_on\) fill_rect' \
+    && bad "the fill is still conditional on the blink phase" \
+    || say "ok   — ...the fill is not gated on the phase"
+
 # control: a bare tick body must fail the bulk pin
 echo "function snapshotRecallTick() {}" | grep -q 'shadow_set_params' && bad "control: an empty tick passed" || say "ok   — control: an empty tick fails the pin"
 
