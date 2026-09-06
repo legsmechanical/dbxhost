@@ -73,11 +73,27 @@ echo "$take" | grep -q 'const names = onlySlot >= 0 ? \["/slot_" + onlySlot + ".
     && say "ok   — the name list is the FULL set, never scope.names (the reused undo dir must be fully rewritten)" \
     || bad "the copy loop iterates a scoped name list — stale files would survive in the undo dir"
 echo "$take" | grep -q 'if (host_write_file(dir + name, content || "{}\\n")) copied++;' \
-    && say "ok   — every name is WRITTEN; only the CONTENT is scoped" || bad "a name can be skipped by the writer"
+    && say "ok   — an out-of-scope name is blanked to {}, not left holding the last take" || bad "a name can be skipped by the writer"
 # The write must sit OUTSIDE the in-scope branch, or out-of-scope names go unwritten.
 echo "$take" | awk '/if \(!inScope \|\| inScope.has\(name\)\)/{d=1} d&&/^        \}/{d=0; next} d&&/host_write_file/{print "INSIDE"}' | grep -q INSIDE \
     && bad "host_write_file is inside the in-scope branch — out-of-scope names would not be cleared" \
     || say "ok   — the write is outside the in-scope guard, so out-of-scope names are cleared to {}"
+# ---- the clear is a DELTA, and an UNKNOWN dir must still be cleared whole ----
+# Blanking all 34 out-of-scope files cost 86-96 ms through host_write_file (a
+# python proxy on the same fs had said 3-9 ms, and was out by ~10x). Only names
+# THIS PROCESS knows it left blank may be skipped: a dir we have not written
+# may hold a previous session's files, which is the staleness being prevented.
+echo "$take" | grep -q 'const prevHeld = snapshotDirWritten.get(dir) || null;' \
+    && say "ok   — the clear is a delta against what this process last wrote" || bad "no delta record"
+echo "$take" | grep -q 'else if (prevHeld && !prevHeld.has(name)) {' \
+    && say "ok   — ...and a name is skipped ONLY when prevHeld is known AND says it is blank" \
+    || bad "a name can be skipped without a known prevHeld — an unknown dir would keep stale files"
+echo "$take" | grep -q 'snapshotDirWritten.set(dir, held);' && say "ok   — the record is updated after every take" || bad "the delta record is never updated"
+grep -q 'const snapshotDirWritten = new Map();' "$JS" && say "ok   — the record is per-DIR (session and each track keep their own undo dir)" || bad "no per-dir record"
+! grep -q 'snapshotDirWritten.*host_write_file\|host_write_file.*snapshotDirWritten' "$JS" \
+    && say "ok   — control: the record is not persisted, so a restart re-clears in full" || bad "the delta record is persisted"
+echo "$take" | grep -q 'ok: copied === wrote' \
+    && say "ok   — ok reflects the writes ATTEMPTED, so a skipped blank is not a missing file" || bad "ok still counts the full name list"
 
 # ---- the id-guard needs a FRESH mirror -------------------------------------
 # The before-take used to run first and resync all 8 signatures as a side

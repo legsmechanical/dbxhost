@@ -5521,6 +5521,11 @@ function saveAllFxBusConfigs() {
  * ========================================================================== */
 const SNAPSHOT_BULK_BYTES = 60000;      /* under the 64 KB mailbox value */
 let snapshotRecallJob = null;           /* { dir, batches, i, restored, skipped, reasons } */
+/* dir -> Set of names this PROCESS last wrote real content into. Lets a take
+ * blank only what falls out of scope instead of rewriting every empty file;
+ * a dir absent from the map is unknown and gets the full clear. Not persisted
+ * on purpose — after a restart we cannot know what is on disk. */
+const snapshotDirWritten = new Map();
 
 function slotArg(v) { const n = (v === undefined || v === null || v === "") ? -1 : (v | 0); return (n >= 0 && n < SHADOW_UI_SLOTS) ? n : -1; }
 function snapshotFileNames() {
@@ -5624,24 +5629,45 @@ function hostSnapshotTake(dir, onlySlot, scope) {
      * The unscoped take used to make that impossible by rewriting all 36 files
      * every time; scoping the copy would have reintroduced it through a side
      * door. Writing "{}\n" for the out-of-scope names costs nothing worth
-     * counting — the whole copy phase measured 3-9 ms — and "{}\n" parses to
-     * ZERO records in both parseSlotSnapshot and parseBusSnapshot, which is
-     * exactly right: the recall is not touching those positions, so Undo has
-     * nothing to put back there. The 475 ms was always the FLUSH, and the
-     * flush is still scoped. */
+     * counting IF it is only done when needed, and "{}\n" parses to ZERO
+     * records in both parseSlotSnapshot and parseBusSnapshot, which is exactly
+     * right: the recall is not touching those positions, so Undo has nothing
+     * to put back there. The 475 ms was always the FLUSH, and the flush is
+     * still scoped.
+     *
+     * ⚠ "costs nothing" was measured with the WRONG instrument the first time.
+     * A python read+write of all 37 files on the device's own ext4 is 3-9 ms,
+     * and that was quoted as the cost — but through host_write_file (QuickJS
+     * binding, temp-then-rename per file) the same 36 files measured 86-96 ms
+     * on device. The proxy was out by ~10x, and the clear became the single
+     * largest phase of the gesture.
+     *
+     * So the clear is now a DELTA. snapshotDirWritten remembers which names
+     * this process last wrote real content into for a given dir; the next take
+     * blanks only those that fall out of scope, and leaves names already known
+     * empty alone. A dir this process has not written before is unknown — it
+     * may hold a previous session's files, which is exactly the staleness this
+     * whole block exists to prevent — so the FIRST take into it still clears
+     * everything. Steady state is 0-2 writes instead of 34. */
     const names = onlySlot >= 0 ? ["/slot_" + onlySlot + ".json"] : snapshotFileNames();
     const inScope = scope ? new Set(scope.names) : null;
+    const prevHeld = snapshotDirWritten.get(dir) || null;   /* null = unknown, clear all */
     /* Then copy. host_write_file is temp-then-rename, so a failed take leaves
      * the previous snapshot's file whole. */
-    let copied = 0, positions = 0;
+    let copied = 0, wrote = 0, positions = 0;
+    const held = new Set();
     for (const name of names) {
         let content = null;
         if (!inScope || inScope.has(name)) {
             try { content = host_read_file(activeSlotStateDir + name); } catch (e) { content = null; }
-            if (content && content.length > 3) positions++;
+            if (content && content.length > 3) { positions++; held.add(name); }
+        } else if (prevHeld && !prevHeld.has(name)) {
+            continue;         /* already blank from our own last take — leave it */
         }
+        wrote++;
         if (host_write_file(dir + name, content || "{}\n")) copied++;
     }
+    snapshotDirWritten.set(dir, held);
     /* Phase timings, so a slow take names its phase instead of us inferring it
      * from a total (device, 2026-09-06 — the slot/bus split had to be guessed
      * from a track take once already). */
@@ -5650,8 +5676,13 @@ function hostSnapshotTake(dir, onlySlot, scope) {
              (scope ? " [scoped: " + scope.slots.length + " slot(s)" +
                       (scope.master ? " master" : "") + (scope.send ? " send" : "") +
                       (scope.move ? " move" : "") + "]" : "") +
-             " — slots " + (t1 - t0) + " ms, buses " + (t2 - t1) + " ms, copy " + (Date.now() - t2) + " ms");
-    return JSON.stringify({ ok: copied === names.length, copied, positions });
+             " — slots " + (t1 - t0) + " ms, buses " + (t2 - t1) + " ms, copy " + (Date.now() - t2) +
+             " ms (" + wrote + " written, " + (names.length - wrote) + " already blank)");
+    /* `ok` is about the writes we ATTEMPTED — a name skipped because it is
+     * already blank is a success, not a missing file. (It also stops `ok`
+     * being vacuously true for an empty scope, which it was when `names` was
+     * the scoped list.) */
+    return JSON.stringify({ ok: copied === wrote, copied, wrote, positions });
 }
 
 function snapshotRecords(dir, onlySlot) {
