@@ -591,11 +591,6 @@ Only consume Back while you actually have somewhere to go back *to*. If `handleB
 always returns truthy the user can never leave your module via Back — it is the only
 host-processed exit in this screen, so the sole remaining way out is to exit shadow mode.
 
-#### Copy / Delete / Undo (`capabilities.claims_edit_ccs`)
-
-CC 56 (Undo), CC 60 (Copy) and CC 119 (Delete) reach Move firmware by default
-and are **not** forwarded to modules. A module that wants them for its own
-gestures opts in:
 #### Claiming buttons (`capabilities.claims_ccs`, `claims_edit_ccs`)
 
 Move's buttons reach Move firmware by default and are **not** forwarded to
@@ -604,7 +599,6 @@ modules. A module that wants some of them for its own gestures opts in:
 ```json
 {
   "capabilities": {
-    "claims_edit_ccs": true
     "claims_edit_ccs": true,
     "claims_ccs": [85, 58]
   }
@@ -1276,6 +1270,48 @@ For modules with fixed parameters, define in capabilities:
   }
 }
 ```
+
+#### Copying and clearing an instance — hold Copy or Delete, then pick
+
+A drum rack's oldest gesture: hold **Copy**, hit a pad, hit another, and the
+second now sounds like the first. The knob grid offers it to any child level,
+once the module has claimed the buttons (`capabilities.claims_edit_ccs`; Move
+keeps them otherwise):
+
+- **Hold Copy** on an instance's page: that instance is the source. Every
+  instance that becomes focused while Copy is held — a pad hit through
+  `child_index_param` (the param a module writes to say which instance it is
+  on, so the grid follows the played pad), or a pick from the instance list —
+  is pasted into.
+- **Hold Delete**: every instance that becomes focused is cleared.
+- **Undo** puts back the last instance overwritten (one level).
+
+What is copied is the level's **`child_copy_keys`**, in declared order (that
+is also the write order, so list the sample first), or the level's own params
+when none are declared. Declare the list: "what the page shows" is a weak
+default. A pad's level-affecting params with no cell — a gain, a velocity
+depth — would be skipped and the copy would be quieter than its source, and
+a key that is a *pointer* (a position within this pad's folder, an identity
+like its note) must not be copied at all.
+
+```json
+"pads": {
+  "child_prefix": "pad", "child_count": 32,
+  "child_index_param": "ui_current_pad",
+  "child_copy_keys": ["sample", "start", "end", "transpose", "gain", "volume", "pan"],
+  "knobs": ["start", "end", "transpose", "volume", "pan"]
+}
+```
+
+Clear writes each key's declared `default`; a key without one is left alone,
+and a filepath without one is written `""`. The focused instance itself is
+not touched by Delete going down — only the instances you pick while holding
+it — so a pad already on screen is cleared by picking another first.
+
+In a dAVEBOx session the same gesture works on the module's page in sound
+mode: the three buttons are the module's while a claiming module's page is
+up, and dAVEBOx's own Undo, Copy and Delete return the moment you leave it.
+Shift+Copy and Shift+Delete stay the session's snapshot store and recall.
 
 ### Dynamic Definition (get_param)
 

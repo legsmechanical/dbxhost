@@ -1220,6 +1220,18 @@ function handleParamPagesMidi(data) {
         return controller.vouchLivePress();
     }
 
+    /* Undo / Copy / Delete reach the grid only for a module that claimed them
+     * (capabilities.claims_edit_ccs -- the shim withholds them from the
+     * shadow UI otherwise, and dAVEBOx's sound mode checks the claim before
+     * offering them). They drive the instance copy/clear gesture -- hold Copy
+     * or Delete, then pick an instance -- and nothing else on the grid wants
+     * them. Not consumed on a page that has no instance to copy, so the event
+     * falls through as before (upstream #429). */
+    if (data.length >= 3 && (data[0] & 0xF0) === 0xB0 &&
+        (data[1] === 56 || data[1] === 60 || data[1] === 119)) {
+        return controller.onEditCc(data[1], data[2] > 0);
+    }
+
     const nowMsProbe = Date.now();
     _midiCount++;
     if (!_midiWindowStart) _midiWindowStart = nowMsProbe;

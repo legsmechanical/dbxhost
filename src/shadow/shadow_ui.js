@@ -11982,6 +11982,19 @@ function setPrimaryEditCcClaim(on) {
     ccClaimKey = null;                       /* force the next reconcile to recompute */
 }
 
+/* The tool-facing runtime claim on the edit trio. A tool that shows a module's
+ * UI on its OWN screens (the host's entry-condition table lists host views,
+ * so it cannot see that) raises the claim here while such a module is up and
+ * drops it when the screen closes; the next tick's reconcile applies it as
+ * the same union term the primary engine's `edit_cc_block` op feeds. A plain
+ * global, like host_register_primary: tool and shadow_ui share one context.
+ * (This replaces the retired C binding of the same name, which wrote a
+ * dedicated register the #425 bitmap made redundant.) */
+globalThis.host_edit_cc_block = function(on) {
+    setPrimaryEditCcClaim(on);
+    return true;
+};
+
 /* The sorted, host-permitted list of CCs `moduleId` claims, as a string
  * ("" = none). Cached per module: the lookup is a file read. */
 function moduleClaimedCcs(moduleId) {
