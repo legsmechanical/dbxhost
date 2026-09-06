@@ -3,7 +3,8 @@
 This document describes the JavaScript API available for developing Schwung modules.
 
 > **`[FORK-ONLY]`** marks a binding that exists **only in this fork**, not in
-> upstream Schwung. There are three: `host_vol_block`, `host_edit_cc_block` and
+> upstream Schwung. There are three: `host_vol_block`, `host_edit_cc_block` (a
+> JS global in `shadow_ui.js` since the #425 claims bitmap, not a C binding) and
 > `host_canvas_input`. (`host_build_info` was deleted in P3 of the
 > re-architecture — one repo ships host and module together, so there is no
 > version skew left to report.) Derive that list from the `JS_SetPropertyStr`
@@ -291,17 +292,20 @@ host_vol_block(bool)          // [FORK-ONLY] Claim the master volume knob: suppr
 host_edit_cc_block(bool)      // [FORK-ONLY] Claim Undo (56) / Copy (60) / Delete (119)
                               // so they reach the module instead of Move firmware.
                               // Runtime complement to capabilities.claims_edit_ccs,
-                              // which the host raises for its OWN screens (CANVAS /
-                              // HIERARCHY_EDITOR / COMPONENT_EDIT / COMPONENT_PARAMS).
-                              // A tool showing another module's UI is not in that
+                              // which the host raises for its OWN screens (the knob
+                              // grid / CANVAS / HIERARCHY_EDITOR / COMPONENT_*). A
+                              // tool showing another module's UI is not in that
                               // table -- the view is the tool's own overtake view and
                               // the host cannot know a module's UI is on screen -- so
-                              // the tool must raise the claim itself while it owns the
-                              // display, and drop it when it stops.
-                              // Reconcile on CHANGE only: the host is not told the
-                              // current state, so calling it every tick spams the
-                              // shim. Release still reaches the consumer that got the
-                              // press even if the claim is dropped in between.
+                              // the tool raises the claim itself while it owns the
+                              // display, and drops it when it stops.
+                              // Since #425 this is a JS global in shadow_ui.js (tool
+                              // and shadow UI share one context), a UNION term in the
+                              // one claims reconcile (host_claim_ccs) rather than a
+                              // register of its own; applied on the next tick.
+                              // Reconcile on CHANGE only. Release still reaches the
+                              // consumer that got the press even if the claim is
+                              // dropped in between (the shim latches it).
 host_autosave_hold(on)        // While on, the host DEFERS its mid-session slot/bus
                               // autosave (edits stay marked and are written once the
                               // hold lifts; set change / suspend / exit still flush

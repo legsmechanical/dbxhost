@@ -871,8 +871,10 @@ export const S = {
     pendingClearLengthTrack: -1, /* deferred length-reset after clip clear (avoids coalescing with clear cmd) */
     pendingClearLengthClip: -1,
     sessionViewMomentary: false, /* true while NoteSession is held and switched view temporarily */
-    sessionStepHeld: -1,       /* step button (0-15) held in session view awaiting tap/hold decision */
-    sessionStepHeldCtx: 0,     /* 1=perf preset, 2=mute snapshot */
+    /* sessionStepHeld / sessionStepHeldCtx are GONE (Josh, 2026-09-06): the
+     * tap/hold deferral they existed for is retired — every step-slot surface
+     * commits on the PRESS now. Removed rather than left at -1 forever, so the
+     * next reader does not go looking for the decision they used to carry. */
     stepSaveFlashStartTick: -1, /* tick when hold-save flash began */
     stepSaveFlashEndTick: -1,  /* step button LEDs double-blink through this tick after save */
     drumHeldReadPending: false, /* occupied drum step held: real vel/gate/etc. read deferred to tick (get_param null in MIDI context) */

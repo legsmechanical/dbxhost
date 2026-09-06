@@ -4342,6 +4342,42 @@ static void shim_handle_param_bulk_chain(void) {
     shadow_param->error = 0; shadow_param->result_len = 0;
 }
 
+/* `chain:` BULK_GET for the chain slot named by ->slot: "<n>\n" then n keys,
+ * each "<len>\n<bytes>"; the response is the same framing with n values,
+ * written back into ->value (request copied out first, as the overtake
+ * BULK_GET does). Each key goes through shadow_direct_get_param — the same
+ * resolution a single GET gets — so a snapshot's parameter capture costs one
+ * SPI frame per ~60 keys, not one per key (2026-09-05). */
+static void shim_handle_param_bulk_chain_get(void) {
+    uint8_t slot = shadow_param->slot;
+    size_t rlen = strnlen(shadow_param->value, SHADOW_PARAM_VALUE_LEN - 1);
+    memcpy(s_bulk_req, shadow_param->value, rlen);
+    s_bulk_req[rlen] = '\0';
+    const char *p = s_bulk_req, *end = s_bulk_req + rlen;
+    int count = 0; { int any = 0;
+        while (p < end && *p >= '0' && *p <= '9') { count = count*10 + (*p-'0'); p++; any = 1; }
+        if (!any || p >= end || *p != '\n') { shadow_param->error = 22; shadow_param->result_len = -1; return; }
+        p++;
+    }
+    if (count < 0 || count > SHADOW_BULK_MAX_ITEMS) { shadow_param->error = 22; shadow_param->result_len = -1; return; }
+    char *out = shadow_param->value;
+    int   off = snprintf(out, SHADOW_PARAM_VALUE_LEN, "%d\n", count);
+    char  keybuf[SHADOW_PARAM_KEY_LEN];
+    for (int i = 0; i < count; i++) {
+        int klen = 0, vlen = 0;
+        const char *k = bulk_next(&p, end, &klen);
+        if (k && klen > 0 && klen < (int)sizeof keybuf) {
+            memcpy(keybuf, k, (size_t)klen); keybuf[klen] = '\0';
+            int r = shadow_direct_get_param(slot, keybuf, s_bulk_val, SHADOW_PARAM_VALUE_LEN);
+            if (r > 0) vlen = (r >= SHADOW_PARAM_VALUE_LEN) ? SHADOW_PARAM_VALUE_LEN - 1 : r;
+        }
+        int noff = bulk_put(out, off, SHADOW_PARAM_VALUE_LEN, s_bulk_val, vlen);
+        if (noff < 0) { shadow_param->error = 22; shadow_param->result_len = -1; return; }
+        off = noff;
+    }
+    shadow_param->error = 0; shadow_param->result_len = off;
+}
+
 /* Callback for chain_mgmt: handle shim-specific param prefixes.
  * Reads/writes shadow_param->key/value/error/result_len directly.
  * Returns 1 if handled, 0 if not. */
@@ -4352,6 +4388,10 @@ static int shim_handle_param_special(uint8_t req_type, uint32_t req_id) {
     /* chain: — a BULK_SET for the chain slot named by ->slot. */
     if (req_type == 4 && strcmp(key, "chain:") == 0) {
         shim_handle_param_bulk_chain();
+        return 1;
+    }
+    if (req_type == 3 && strcmp(key, "chain:") == 0) {
+        shim_handle_param_bulk_chain_get();
         return 1;
     }
 
@@ -6880,8 +6920,62 @@ static void shim_block_cable2_in_sh_midi(uint8_t *sh_midi) {
  * forward-to-shadow_ui site; the filter runs first in the frame, so the forward
  * site sees this frame's decision. Index: 0=Undo, 1=Copy, 2=Delete.
  * Touched only from the SPI callback (single thread) — no locking needed. */
-static uint8_t edit_cc_press_blocked[3] = { 0, 0, 0 };
-#define EDIT_CC_INDEX(cc) ((cc) == CC_UNDO ? 0 : (cc) == CC_COPY ? 1 : 2)
+
+/* Button-claim press latch -- see the filter site in shim_post_transfer.
+ * Records, per CC, whether the module received its PRESS, so the same consumer
+ * receives its RELEASE even if the claim (capabilities.claims_ccs) changes
+ * mid-hold. Read by both the Move-firmware filter and the forward-to-shadow_ui
+ * site; the filter runs first in the frame, so the forward site sees this
+ * frame's decision. Touched only from the SPI callback -- no locking. */
+/*
+ * THREE states, not two, and the third is what makes the display-close edge
+ * safe (upstream #435). Both non-zero values mean "this button's press was
+ * claimed" -- which is all the forward site asks -- but only HELD means the
+ * button is still down. The distinction exists because the latch is
+ * deliberately NOT cleared on release (the forward site runs later in the same
+ * frame and must route the release the way the press went), so "non-zero"
+ * outlives the hold and cannot by itself answer "is a release still owed?". */
+#define CLAIM_LATCH_NONE     0
+#define CLAIM_LATCH_RELEASED 1   /* last press was claimed; button is up */
+#define CLAIM_LATCH_HELD     2   /* claimed press delivered, release still owed */
+static uint8_t claim_press_blocked[128];
+
+/* Swallow one MIDI_IN packet from BOTH mailboxes. A zeroed slot is a
+ * TERMINATOR for every reader (Move's firmware and ours), so zeroing only the
+ * hardware copy hides everything behind it from our own readers without
+ * blocking Move at all. Index-paired, and safe only because
+ * the MIDI_IN compaction runs LAST in shim_post_transfer: nothing may move a
+ * slot between the two writes. Takes both bases so it stays usable from loops
+ * that offset their own pointer. (upstream #435) */
+static inline void midi_in_swallow(uint8_t *shadow_midi_in, uint8_t *hw_midi_in, int j)
+{
+    if (shadow_midi_in) {
+        shadow_midi_in[j] = 0; shadow_midi_in[j + 1] = 0;
+        shadow_midi_in[j + 2] = 0; shadow_midi_in[j + 3] = 0;
+    }
+    if (hw_midi_in) {
+        hw_midi_in[j] = 0; hw_midi_in[j + 1] = 0;
+        hw_midi_in[j + 2] = 0; hw_midi_in[j + 3] = 0;
+    }
+}
+
+/* Controls the host owns and a module may NEVER claim: how you leave the
+ * screen (Menu, Back, Shift), what the host routes itself (jog, the eight
+ * knobs, the master knob, the track buttons), and Mute, on which Move-native
+ * Mute+Pad depends. A claim on one of these is ignored here whatever shadow_ui
+ * wrote, so the shim stays correct even against a UI that forgot the list. */
+static int claim_denied_cc(uint8_t cc) {
+    if (cc == CC_SHIFT || cc == CC_MENU || cc == CC_BACK) return 1;
+    if (cc == CC_JOG_WHEEL || cc == CC_JOG_CLICK) return 1;
+    if (cc >= CC_KNOB1 && cc <= CC_KNOB8) return 1;
+    if (cc == CC_MASTER_KNOB || cc == CC_MUTE) return 1;
+    if (cc >= 40 && cc <= 43) return 1;                 /* track buttons */
+    if (cc == CC_MIC_IN_DETECT || cc == CC_LINE_OUT_DETECT) return 1;
+    return 0;
+}
+static inline int claim_cc_set(uint8_t cc) {
+    return shadow_control && ((shadow_control->claim_cc_bits[cc >> 3] >> (cc & 7)) & 1);
+}
 
 static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, int size)
 {
@@ -7104,19 +7198,40 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
      * exited (or crashed) before reconciling it to 0 would otherwise leave
      * Move's Undo / Copy / Delete captured with nothing left to deliver them
      * to. Same reasoning as the runtime-claim drops on overtake exit above:
-     * this edge covers EVERY exit path. Also disarms the press latch so a release arriving after the
-     * display closed is routed to Move, matching where its press went.
-     * Runs unconditionally — the filter itself is inside the shadow_display_mode
-     * branch below, so this must not be. */
+     * this edge covers EVERY exit path. Also disarms the press latch so a
+     * release arriving after the display closed is routed to Move, matching
+     * where its press went. Runs unconditionally -- the filter itself is inside
+     * the shadow_display_mode branch below, so this must not be. */
     {
         static int prev_display_mode = 0;
         if (prev_display_mode && !shadow_display_mode) {
-            if (shadow_control) shadow_control->edit_cc_block = 0;
-            edit_cc_press_blocked[0] = 0;
-            edit_cc_press_blocked[1] = 0;
-            edit_cc_press_blocked[2] = 0;
+            if (shadow_control) memset((void *)shadow_control->claim_cc_bits, 0, sizeof(shadow_control->claim_cc_bits));
+            /* A BUTTON STILL HELD KEEPS ITS LATCH (upstream #435). Clearing
+             * the whole array here looks like the tidy thing and is a
+             * stuck-button bug: that press was withheld from Move, so
+             * releasing the latch hands Move a lone button-up for a key it
+             * never saw go down, and Move acts on it -- Delete being the
+             * member of the trio that acts destructively. Hold Copy on a
+             * claiming module's grid, dismiss the shadow UI, let go: that is
+             * the whole repro. The owed releases are drained in the post-ioctl
+             * scan (the claim-latch drain), which is also the only thing that
+             * retires a HELD latch once the filter has stopped running. */
+            for (int c = 0; c < 128; c++) {
+                if (claim_press_blocked[c] != CLAIM_LATCH_HELD) claim_press_blocked[c] = CLAIM_LATCH_NONE;
+            }
         }
         prev_display_mode = shadow_display_mode;
+    }
+    /* Drop pad observation when the shadow display goes away (upstream #426):
+     * it only means anything while the knob grid is on screen, and a
+     * shadow_ui that exited before reconciling it to 0 would keep every pad
+     * press streaming into a UI ring nobody drains. Same edge as above. */
+    {
+        static int prev_display_mode_observe = 0;
+        if (prev_display_mode_observe && !shadow_display_mode && shadow_control) {
+            shadow_control->pad_observe = 0;
+        }
+        prev_display_mode_observe = shadow_display_mode;
     }
 
     /* Boot jack-state re-assert: worker arms shim_inject_boot_jack ~5 s after
@@ -7287,30 +7402,51 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                         if (d1 == CC_JOG_WHEEL || d1 == CC_JOG_CLICK || d1 == CC_BACK) {
                             filter = 1;
                         }
-                        /* Undo/Copy/Delete: blocked from Move firmware ONLY while
-                         * the module on screen has claimed them
-                         * (shadow_control->edit_cc_block, reconciled by shadow_ui
-                         * from capabilities.claims_edit_ccs). Without the claim
-                         * they pass through untouched, so Move keeps its native
-                         * Undo during ordinary chain use — that is precisely what
-                         * the unconditional version (PR #154) broke and why it was
-                         * reverted (PR #175). Forwarded to the shadow UI under the
-                         * same flag by the post-ioctl loop.
-                         * (Mute/CC 88 is deliberately NOT claimable — Move-native
-                         * Mute+Pad depends on it reaching firmware.) */
-                        if (d1 == CC_UNDO || d1 == CC_COPY || d1 == CC_DELETE) {
-                            /* Latched at the press so a claim changing MID-HOLD
-                             * cannot desync Move's view of the button — see
-                             * shadow_edit_cc_route() in shadow_constants.h, which
-                             * the forward-to-shadow_ui site below also calls. */
-                            if (shadow_edit_cc_route(d2 > 0,
-                                                     shadow_control->edit_cc_block,
-                                                     &edit_cc_press_blocked[EDIT_CC_INDEX(d1)])) {
-                                filter = 1;
+                        /* A CLAIMED button: withheld from Move firmware ONLY while
+                         * the module on screen has claimed it
+                         * (shadow_control->claim_cc_bits, reconciled by shadow_ui
+                         * from capabilities.claims_ccs / claims_edit_ccs). Unclaimed
+                         * it passes through untouched, so Move keeps its native
+                         * Undo during ordinary chain use -- precisely what the
+                         * unconditional version (#154) broke and why it was
+                         * reverted (#175). Forwarded to the shadow UI under the
+                         * same latch by the post-ioctl loop. The host-owned
+                         * controls (claim_denied_cc) can never be claimed. */
+                        if (d1 < 128) {
+                            /* Latch per button so a claim that changes MID-HOLD
+                             * cannot desync Move's view of the button: whoever
+                             * received the PRESS also receives the RELEASE.
+                             * Without this, a claim engaging between press and
+                             * release leaves Move believing the button is still
+                             * held, and a claim dropping mid-hold delivers Move an
+                             * orphan release. */
+                            if (d2 > 0) {
+                                /* Shift+<button> is the host's own vocabulary
+                                 * (Shift+Copy / Shift+Delete = snapshot and
+                                 * recall, handled and swallowed in the post-ioctl
+                                 * loop). A press with Shift held is never claimed:
+                                 * the module gets the BARE buttons only. */
+                                claim_press_blocked[d1] =
+                                    (claim_cc_set(d1) && !claim_denied_cc(d1) && !shadow_shift_held)
+                                        ? CLAIM_LATCH_HELD : CLAIM_LATCH_NONE;
                             }
+                            if (claim_press_blocked[d1]) filter = 1;
+                            /* The hold ends here. Demoted rather than cleared:
+                             * the forward site below still needs a non-zero
+                             * latch this frame to route the release to the
+                             * module, but the button is no longer down, so the
+                             * display-close edge must not keep swallowing it. */
+                            if (d2 == 0 && claim_press_blocked[d1] == CLAIM_LATCH_HELD) {
+                                claim_press_blocked[d1] = CLAIM_LATCH_RELEASED;
+                            }
+                            /* Deliberately NOT cleared on release: the latch is
+                             * re-armed by the next press, which keeps it valid
+                             * for the forward-to-shadow_ui site that runs LATER
+                             * in this same frame and must route the release the
+                             * same way it routed the press. */
                         }
-                        /* Filter Menu while shadow UI is shown */
-                        if (d1 == CC_MENU) {
+                        /* Filter Menu unless long-press mode dismisses shadow on tap */
+                        if (d1 == CC_MENU && !LONG_PRESS_ACTIVE()) {
                             filter = 1;
                         }
                         /* Filter knob CCs when shift held */
@@ -8374,21 +8510,38 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                  * - CC 40-43 (track buttons)
                  * - CC 71-78 (knobs)
                  * - CC 88 (mute) — used as a modifier for Mute+JogClick module bypass
-                 * - CC 56/60/119 (undo/copy/delete) — ONLY while the module on
-                 *   screen has claimed them via capabilities.claims_edit_ccs.
-                 *   Blocked from Move firmware under the same flag in the filter
-                 *   above, so a claimed press drives the module and nothing else.
-                 *   Unclaimed, they are not forwarded and reach Move unchanged. */
-                int is_edit_cc = (d1 == CC_UNDO || d1 == CC_COPY || d1 == CC_DELETE);
+                 * - any CC the module on screen has CLAIMED (capabilities.claims_ccs
+                 *   / claims_edit_ccs), by the latch the firmware filter above set
+                 *   on its press -- so a claimed press drives the module and
+                 *   nothing else. Unclaimed, a button is not forwarded and reaches
+                 *   Move unchanged. */
                 int forward_to_shadow = (d1 == 14 || d1 == 3 || d1 == 51 ||
                                          (d1 >= 40 && d1 <= 43) || (d1 >= 71 && d1 <= 78) ||
                                          d1 == 88 ||
-                                         (is_edit_cc &&
-                                          shadow_edit_cc_route(0, 0,
-                                              &edit_cc_press_blocked[EDIT_CC_INDEX(d1)])));
+                                         (d1 < 128 && claim_press_blocked[d1]));
 
                 if (forward_to_shadow && shadow_ui_midi_shm) {
                     shadow_ui_midi_publish(0x0B, status, d1, d2);
+                }
+
+                /* CLAIM-LATCH DRAIN (upstream #435). A claimed press withheld
+                 * from Move while the display was up owes Move nothing but
+                 * silence on its release -- and the filter that would have
+                 * supplied that silence lives inside the shadow_display_mode
+                 * block, which has stopped running. So swallow the owed events
+                 * here, where the walk is unconditional, and retire the latch
+                 * on the release that closes the hold.
+                 *
+                 * Gated on HELD, never on "non-zero": the latch survives a
+                 * release on purpose, and swallowing on that would eat the
+                 * button's NEXT press with the display closed and the claim
+                 * long gone. Sits after the forward above so a shadow_ui still
+                 * alive pairs the release, and before the MIDI_IN compaction,
+                 * which must stay last. */
+                if (!shadow_display_mode && d1 < 128 &&
+                    claim_press_blocked[d1] == CLAIM_LATCH_HELD) {
+                    midi_in_swallow(shadow + MIDI_IN_OFFSET, src, j);
+                    if (d2 == 0) claim_press_blocked[d1] = CLAIM_LATCH_NONE;
                 }
 
                 /* Mute (CC 88) is passed through to Move firmware unconditionally,
@@ -8466,6 +8619,14 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                  * which the sequencer cannot produce. */
                 if (d1 >= 68 && d1 <= 99 && shadow_ui_midi_shm &&
                     shadow_control && shadow_control->canvas_input) {
+                    shadow_ui_midi_publish((type == 0x90) ? 0x09 : 0x08, status, d1, d2);
+                }
+                /* pad_observe (upstream #426): the knob grid asked to be told about
+                 * LIVE presses. The same passive forward as the canvas — no
+                 * `continue`, the pad still plays — and not doubled when a canvas
+                 * is up too. */
+                if (shadow_control && shadow_control->pad_observe && !shadow_control->canvas_input &&
+                    d1 >= 68 && d1 <= 99 && shadow_ui_midi_shm) {
                     shadow_ui_midi_publish((type == 0x90) ? 0x09 : 0x08, status, d1, d2);
                 }
 

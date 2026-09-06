@@ -39,7 +39,7 @@ import {
 import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
 /* Snapshot / recall — the PURE half (parsers, the restore planner, the bulk
  * packing). The host bindings below drive it; dAVEBOx owns the gesture. */
-import { parseSlotSnapshot, parseBusSnapshot, planRestore, batchWrites, bulkEncodeItems }
+import { parseSlotSnapshot, parseBusSnapshot, planRestore, batchWrites, bulkEncodeItems, scopeForWrites }
     from '/data/UserData/schwung/shared/snapshot.mjs';
 /* The ONE definition of "this two-state control is a momentary button", shared
  * with the param-pages knob grid. See isTriggerParam below for why this file
@@ -211,8 +211,12 @@ import {
     paramPagesEnabled, enterParamPages, exitParamPages, paramPagesActive,
     tickParamPages, drawParamPages, handleParamPagesMidi,
     paramPagesComponent, paramPagesSlot, clearParamPagesTouch, paramPagesRefreshTrailing,
+    paramPagesChildIndex, paramPagesLevelNameOf, paramPagesCachedValue,
     PARAM_VIEW_LIST, PARAM_VIEW_KNOBS
 } from './shadow_ui_param_pages.mjs';
+/* Container + sample decoding for the fullscreen wave editor, shared with the
+ * sample cell's peak reader so the two never disagree about a file. */
+import { locateAudioData, sampleReader, sampleBytesFor } from '/data/UserData/schwung/shared/param_pages/wav_format.mjs';
 /* One definition of the `visible_if` rule and its value helpers, shared with
  * every other consumer of the param-pages library — see visibility.mjs. */
 import { evaluateVisibility, parseMetaBool, parseMetaNumber,
@@ -515,7 +519,7 @@ const PRIMARY_EFFECTORS = {
     skip_led_clear:(o) => { if (typeof shadow_set_skip_led_clear === "function") shadow_set_skip_led_clear(o.on); },
     suppress_sysex:(o) => { if (typeof shadow_set_overtake_suppress_sysex === "function") shadow_set_overtake_suppress_sysex(o.on); },
     vol_block:     (o) => { if (typeof host_vol_block === "function") host_vol_block(o.on); },
-    edit_cc_block: (o) => { if (typeof host_edit_cc_block === "function") host_edit_cc_block(o.on); },
+    edit_cc_block: (o) => setPrimaryEditCcClaim(o.on),
     pad_block:     (o) => { if (typeof host_pad_block === "function") host_pad_block(o.on); },
     canvas_input:  (o) => { if (typeof host_canvas_input === "function") host_canvas_input(o.on); },
     passthrough:   (o) => {
@@ -2728,15 +2732,80 @@ function formatCanvasDisplayValue(rawValue, meta) {
  *
  * The four helpers this file still uses elsewhere (parseMetaBool and friends)
  * come from there too now, so there is exactly one definition of each. */
-function evaluateVisibilityConditionForContext(slot, componentPrefix, condition, levelDef, childIndex) {
+function evaluateVisibilityConditionForContext(slot, componentPrefix, condition, levelDef, childIndex, read) {
     return evaluateVisibility({
         prefix: componentPrefix,
-        getParam: (fullKey) => getSlotParam(slot, fullKey),
+        getParam: (fullKey) => (typeof read === "function") ? read(slot, fullKey) : getSlotParam(slot, fullKey),
         childIndexOf: () => childIndex,
     }, condition, levelDef);
 }
 
+/* A short-lived read cache for the grid's visibility conditions: a miss in the
+ * controller's own values goes to ONE blocking read per key per window, not
+ * one per re-plan (upstream #427's getSlotParamCached; a re-plan follows every
+ * detent of a gating knob and a blocking read per condition froze the OLED). */
+const VIS_CACHE_TTL_MS = 250;
+const visReadCache = new Map();
+/* The LISTED key behind a resolved visibility key: the level's param whose
+ * normalised, per-instance form is `fullKey` (upstream #440's invert, in this
+ * fork's shape -- the fork has no separate generic-key table, so the invert
+ * walks the level's own list through the same normaliser the resolve used).
+ * Falls back to the prefix-stripped key, which is right for a level with no
+ * children. */
+function gridListedKeyFor(levelDef, childIdx, prefix, fullKey) {
+    const params = (levelDef && Array.isArray(levelDef.params)) ? levelDef.params : [];
+    for (const p of params) {
+        const k = extractHierarchyParamKey(p);
+        if (k && normalizeVisibilityConditionKey(prefix, levelDef, childIdx, k) === fullKey) return k;
+    }
+    return (prefix && fullKey.startsWith(`${prefix}:`)) ? fullKey.slice(prefix.length + 1) : fullKey;
+}
+function getSlotParamCached(slot, key, tag) {
+    const id = (tag || "") + "|" + slot + "|" + key;
+    const now = Date.now();
+    const hit = visReadCache.get(id);
+    if (hit && (now - hit.at) < VIS_CACHE_TTL_MS) return hit.v;
+    const v = getSlotParam(slot, key);
+    visReadCache.set(id, { v, at: now });
+    if (visReadCache.size > 512) visReadCache.clear();
+    return v;
+}
 function evaluateVisibilityCondition(condition, levelDef) {
+    /* ⚠ THE KNOB GRID IS A CALLER TOO (upstream #427, 2026-09-06): the
+     * controller's `visible` hook lands here, and the grid keeps its OWN slot
+     * and component — enterParamPages never sets hierEditor*. Read against
+     * the list editor's identity, every condition on the grid resolved on a
+     * stale or -1 slot, got null and FAILED OPEN: a level meant to collapse
+     * to the armed type's cells showed all of them. On the grid, the grid's
+     * identity is the context, per-instance keys through its child index by
+     * level NAME, cache-first reads. */
+    if (view === VIEWS.PARAM_PAGES && paramPagesActive()) {
+        const comp = paramPagesComponent();
+        const gslot = paramPagesSlot();
+        const gridPrefix = getComponentParamPrefix(comp);
+        const lvlName = paramPagesLevelNameOf(levelDef);
+        const childIdx = lvlName ? paramPagesChildIndex(lvlName) : -1;
+        const read = (s, k) => {
+            /*
+             * ...and the cache is asked with the LISTED key, never the one
+             * that arrived (upstream #440).
+             *
+             * `k` has been through normalizeVisibilityConditionKey, so on a
+             * child level it is CONCRETE ("pad3_type"), while the controller
+             * keys its values by what the level LISTS ("type"). Asking with
+             * the concrete key missed every single time, so a per-instance
+             * condition never hit the cache and paid the blocking read this
+             * branch is here to avoid -- silent, because a miss still answers
+             * CORRECTLY, only slowly. The invert uses the same level and index
+             * as the resolve did, so the value it finds belongs to the
+             * instance the grid is showing. */
+            const held = paramPagesCachedValue(gridListedKeyFor(levelDef, childIdx, gridPrefix, k));
+            if (held !== undefined) return held;
+            return getSlotParamCached(s, k, `grid:${s}:${comp}`);
+        };
+        return evaluateVisibilityConditionForContext(
+            gslot, gridPrefix, condition, levelDef, childIdx, read);
+    }
     const prefix = getComponentParamPrefix(hierEditorComponent);
     return evaluateVisibilityConditionForContext(
         hierEditorSlot,
@@ -4428,8 +4497,19 @@ function loadOvertakeModule(moduleInfo, skipOvertake) {
         /* Snapshot / recall for the overtake module (item 18a). dAVEBOx owns
          * the gesture and the directory; the host owns capture and the
          * state-only recall. See the block above saveOneDirtyUnit. */
-        globalThis.host_snapshot_take   = function(dir) { return hostSnapshotTake(String(dir || "")); };
-        globalThis.host_snapshot_recall = function(dir) { return hostSnapshotRecall(String(dir || "")); };
+        /* Optional 2nd arg: a chain SLOT — the take copies only that slot's file and the
+         * recall plans only that slot's positions (TRACK snapshots, Josh 2026-09-05). */
+        /* Optional 3rd arg to recall: the dir to take the Undo before-image
+         * into, scoped to the positions the recall will write (2026-09-06). */
+        /* 3rd arg to take / 4th to recall: the track's own Move FX bus (1-based;
+         * 0 = none). A track occupies one mixer position and a Move-routed
+         * track's is that bus, so a track snapshot has to carry it. */
+        globalThis.host_snapshot_take   = function(dir, slot, moveBus) {
+            return hostSnapshotTake(String(dir || ""), slotArg(slot), null, moveBus | 0);
+        };
+        globalThis.host_snapshot_recall = function(dir, slot, undoDir, moveBus) {
+            return hostSnapshotRecall(String(dir || ""), slotArg(slot), undoDir ? String(undoDir) : "", moveBus | 0);
+        };
         globalThis.host_snapshot_status = function() { return hostSnapshotStatus(); };
         globalThis.host_autosave_hold = function(on) {
             autosaveHold = !!on;
@@ -5446,7 +5526,17 @@ function saveAllFxBusConfigs() {
  * ========================================================================== */
 const SNAPSHOT_BULK_BYTES = 60000;      /* under the 64 KB mailbox value */
 let snapshotRecallJob = null;           /* { dir, batches, i, restored, skipped, reasons } */
+/* "<dir>|<onlySlot>" -> Set of names this PROCESS last wrote real content into.
+ * Lets a take blank only what falls out of scope instead of rewriting every
+ * empty file; a key absent from the map is unknown and gets the full clear.
+ * Not persisted on purpose — after a restart we cannot know what is on disk.
+ * Never evicted either, which is deliberate and harmless: keys embed the set
+ * uuid, so a project switch only ADDS keys (it can never mis-resolve one), and
+ * the count is bounded by the dirs actually taken into — 16 device slots plus
+ * an undo dir, plus 17 per track. */
+const snapshotDirWritten = new Map();
 
+function slotArg(v) { const n = (v === undefined || v === null || v === "") ? -1 : (v | 0); return (n >= 0 && n < SHADOW_UI_SLOTS) ? n : -1; }
 function snapshotFileNames() {
     const names = [];
     for (let i = 0; i < SHADOW_UI_SLOTS; i++) names.push("/slot_" + i + ".json");
@@ -5458,13 +5548,43 @@ function snapshotFileNames() {
     return names;
 }
 
+/* A TRACK's own Move FX bus, as file names and as prefixes (bus is 1-BASED, as
+ * davebox's moveBusForChannel returns it; the files and the saver are 0-based).
+ *
+ * A track occupies ONE mixer position and which one depends on its route: a
+ * Schwung track is chain slot t, a Move track is this bus. Capturing only the
+ * slot meant a Move-routed track's snapshot restored its FADER but not the
+ * effects on it (Josh, 2026-09-06: "track snapshots should include track
+ * bus") — the levels were already in davebox.json, the FX blocks were in
+ * nothing.
+ *
+ * ⚠ Deliberately the track's OWN bus only — never send A/B and never master
+ * (Josh, same ruling: "no master bus/return params"). Those are SHARED across
+ * tracks, so folding them into a track snapshot would mean recalling one track
+ * silently changed another track's reverb. */
+function moveBusFileNames(bus) {
+    const out = [];
+    const sl = (bus | 0) - 1;
+    if (sl < 0 || sl >= MOVE_FX_SLOTS_JS) return out;
+    for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) out.push("/move_fx_" + sl + "_" + b + ".json");
+    return out;
+}
+function moveBusPrefixes(bus) {
+    const out = [];
+    const sl = (bus | 0) - 1;
+    if (sl < 0 || sl >= MOVE_FX_SLOTS_JS) return out;
+    for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) out.push("move_fx:" + (sl + 1) + ":fx" + (b + 1));
+    return out;
+}
+
 /* prefix -> module id loaded RIGHT NOW, for every position a snapshot can
  * name. Slots and Master come from the mirrors JS already keeps; a send or
  * Move bus position has no mirror, so its `:name` is read — only for the
  * positions the snapshot actually holds (the caller passes them), never all 24. */
-function snapshotLiveIds(busPrefixes) {
+function snapshotLiveIds(busPrefixes, onlySlot, moveBus) {
     const live = {};
     for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+        if (onlySlot >= 0 && i !== onlySlot) continue;
         const cfg = chainConfigs[i] || createEmptyChainConfig();
         live[i + ":synth"]    = (cfg.synth  && cfg.synth.module)  || "";
         live[i + ":midi_fx1"] = (cfg.midiFx && cfg.midiFx.module) || "";
@@ -5474,6 +5594,15 @@ function snapshotLiveIds(busPrefixes) {
             const c = cfg["fx" + k];
             live[i + ":fx" + k] = (c && c.module) || "";
         }
+    }
+    if (onlySlot >= 0) {
+        /* A track recall reads its OWN bus and nothing else — four name reads,
+         * not the 24 a session recall does. */
+        for (const pfx of moveBusPrefixes(moveBus)) {
+            const name = shadow_get_param(0, pfx + ":name");
+            live[pfx] = (name === null || name === undefined) ? "" : String(name);
+        }
+        return live;
     }
     for (let i = 1; i <= 4; i++)
         live["master_fx:fx" + i] = (masterFxConfig["fx" + i] || {}).module || "";
@@ -5495,42 +5624,165 @@ function snapshotLiveIds(busPrefixes) {
     return live;
 }
 
-function hostSnapshotTake(dir) {
-    if (!dir || typeof dir !== "string") return JSON.stringify({ ok: false, error: "no dir" });
-    if (typeof host_ensure_dir === "function") host_ensure_dir(dir);
-    /* Flush live state to the set dir through the normal writers. The slot
-     * writer is asked NOT to bail on a failed read (see autosaveAllSlots). */
-    autosaveAllSlots(undefined, true);
-    saveMasterFxChainConfig(true);
-    saveSendFxChainConfig();
-    saveMoveFxChainConfig();
-    /* Then copy. host_write_file is temp-then-rename, so a failed take leaves
-     * the previous snapshot's file whole. */
-    let copied = 0, positions = 0;
-    for (const name of snapshotFileNames()) {
-        let content = null;
-        try { content = host_read_file(activeSlotStateDir + name); } catch (e) { content = null; }
-        if (content && content.length > 3) positions++;
-        if (host_write_file(dir + name, content || "{}\n")) copied++;
-    }
-    debugLog("snapshot: took " + copied + "/" + snapshotFileNames().length + " files (" +
-             positions + " occupied) into " + dir);
-    return JSON.stringify({ ok: copied === snapshotFileNames().length, copied, positions });
+/* The capture scope for the Undo before-image, as file names this file can
+ * copy. The DERIVATION is pure and lives in shared/snapshot.mjs
+ * (scopeForWrites), where it is unit-tested; all this adds is the mapping from
+ * families to the on-disk names, which needs this file's own layout
+ * constants. */
+function snapshotScopeForWrites(writes) {
+    const sc = scopeForWrites(writes, SHADOW_UI_SLOTS);
+    const names = [];
+    for (const i of sc.slots) names.push("/slot_" + i + ".json");
+    if (sc.master) for (let i = 0; i < 4; i++) names.push("/master_fx_" + i + ".json");
+    if (sc.send) for (const b of SEND_FX_BUSES)
+        for (let s = 0; s < SEND_FX_SLOTS_JS; s++) names.push("/send_fx_" + b + "_" + s + ".json");
+    if (sc.move) for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++)
+        for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) names.push("/move_fx_" + sl + "_" + b + ".json");
+    return { slots: sc.slots, master: sc.master, send: sc.send, move: sc.move, names };
 }
 
-function snapshotRecords(dir) {
+/* `scope` (optional) restricts the flush and the copy — see
+ * snapshotScopeForWrites. null means the whole device, which is what a
+ * user-facing save still takes. */
+function hostSnapshotTake(dir, onlySlot, scope, moveBus) {
+    if (!dir || typeof dir !== "string") return JSON.stringify({ ok: false, error: "no dir" });
+    if (typeof host_ensure_dir === "function") host_ensure_dir(dir);
+    if (onlySlot === undefined) onlySlot = -1;
+    /* Flush live state to the set dir through the normal writers. The slot
+     * writer is asked NOT to bail on a failed read (see autosaveAllSlots). A
+     * TRACK take flushes and copies that one slot plus, for a Move-routed
+     * track, its own bus — see moveBusFileNames. */
+    const t0 = Date.now();
+    if (scope) { for (const i of scope.slots) autosaveAllSlots(i, true); }
+    else autosaveAllSlots(onlySlot >= 0 ? onlySlot : undefined, true);
+    const t1 = Date.now();
+    if (onlySlot >= 0) {
+        /* A TRACK take flushes its own bus and nothing else. saveMoveFxChainConfig
+         * already takes a 0-based bus filter, so this is ONE bus (4 positions),
+         * not the 16 the session path walks — a track recall must not get
+         * slower for gaining its bus. Skipped when the scope says the plan
+         * writes no bus position. */
+        if (moveBusFileNames(moveBus).length && (!scope || scope.move)) saveMoveFxChainConfig((moveBus | 0) - 1);
+    } else if (scope) {
+        if (scope.master) saveMasterFxChainConfig(true);
+        if (scope.send)   saveSendFxChainConfig();
+        if (scope.move)   saveMoveFxChainConfig();
+    } else {
+        saveMasterFxChainConfig(true); saveSendFxChainConfig(); saveMoveFxChainConfig();
+    }
+    const t2 = Date.now();
+    /* ⚠⚠ EVERY name is WRITTEN, even when the flush was scoped — only the
+     * CONTENT is scoped. The Undo dir is a single reused path per project
+     * (davebox's undoDir()), nothing ever clears it, and no host binding
+     * removes a file. So a take that writes only its in-scope names leaves the
+     * PREVIOUS recall's files sitting in the dir, and Undo reads the dir with
+     * snapshotRecords(), which walks every name regardless of what was last
+     * written — it would restore slots the recall never touched, to a state
+     * from some earlier recall, and across reboots.
+     *
+     * The unscoped take used to make that impossible by rewriting all 36 files
+     * every time; scoping the copy would have reintroduced it through a side
+     * door. Writing "{}\n" for the out-of-scope names costs nothing worth
+     * counting IF it is only done when needed, and "{}\n" parses to ZERO
+     * records in both parseSlotSnapshot and parseBusSnapshot, which is exactly
+     * right: the recall is not touching those positions, so Undo has nothing
+     * to put back there. The 475 ms was always the FLUSH, and the flush is
+     * still scoped.
+     *
+     * ⚠ "costs nothing" was measured with the WRONG instrument the first time.
+     * A python read+write of all 37 files on the device's own ext4 is 3-9 ms,
+     * and that was quoted as the cost — but through host_write_file (QuickJS
+     * binding, temp-then-rename per file) the same 36 files measured 86-96 ms
+     * on device. The proxy was out by ~10x, and the clear became the single
+     * largest phase of the gesture.
+     *
+     * So the clear is now a DELTA. snapshotDirWritten remembers which names
+     * this process last wrote real content into for a given dir; the next take
+     * blanks only those that fall out of scope, and leaves names already known
+     * empty alone. A dir this process has not written before is unknown — it
+     * may hold a previous session's files, which is exactly the staleness this
+     * whole block exists to prevent — so the FIRST take into it still clears
+     * everything. Steady state is 0-2 writes instead of 34. */
+    const names = onlySlot >= 0
+        ? ["/slot_" + onlySlot + ".json"].concat(moveBusFileNames(moveBus))
+        : snapshotFileNames();
+    const inScope = scope ? new Set(scope.names) : null;
+    const prevHeld = snapshotDirWritten.get(dir + "|" + onlySlot + "|" + (moveBus | 0)) || null;   /* null = unknown, clear all */
+    /* Then copy. host_write_file is temp-then-rename, so a failed take leaves
+     * the previous snapshot's file whole. */
+    let copied = 0, wrote = 0, positions = 0;
+    const held = new Set();
+    for (const name of names) {
+        let content = null;
+        if (!inScope || inScope.has(name)) {
+            try { content = host_read_file(activeSlotStateDir + name); } catch (e) { content = null; }
+            if (content && content.length > 3) { positions++; held.add(name); }
+        } else if (prevHeld && !prevHeld.has(name)) {
+            continue;         /* already blank from our own last take — leave it */
+        }
+        wrote++;
+        /* ⚠ A FAILED write means the file still holds whatever it held —
+         * host_write_file is temp-then-rename, so a failure leaves the previous
+         * content WHOLE. Recording it as blank would poison the record for the
+         * rest of the process: the next take would skip it as "already blank"
+         * and Undo would restore a state from two recalls ago, and it would
+         * never self-heal because only an UNKNOWN dir gets the full clear.
+         * In-scope names are already added to `held` from the read, which is
+         * the safe direction; this is the blanking path's half of that. */
+        if (host_write_file(dir + name, content || "{}\n")) copied++;
+        else held.add(name);
+    }
+    /* ⚠ The key must name EVERY input the NAME LIST depends on, because the
+     * skip above reads "absent from prevHeld" as "we blanked it" — which is
+     * only true while the list is fixed for a key. It depends on onlySlot (a
+     * track take's list is its slot, a session take's is 36) AND on moveBus (a
+     * Move-routed track's list is its slot plus four bus files; the same track
+     * on route 0 is the slot alone).
+     *
+     * Keyed on the dir alone, one `host_snapshot_take(D, 3)` would claim the
+     * other 35 names are blank forever. Keyed without the bus, a track that
+     * changes route between recalls leaves its old bus files unblanked and
+     * then SKIPPED — Undo would restore that bus from two recalls ago. Both
+     * were found by review rather than by these tests. */
+    snapshotDirWritten.set(dir + "|" + onlySlot + "|" + (moveBus | 0), held);
+    /* Phase timings, so a slow take names its phase instead of us inferring it
+     * from a total (device, 2026-09-06 — the slot/bus split had to be guessed
+     * from a track take once already). */
+    debugLog("snapshot: took " + copied + "/" + names.length + " files (" +
+             positions + " occupied) into " + dir + (onlySlot >= 0 ? " (slot " + onlySlot + ")" : "") +
+             (scope ? " [scoped: " + scope.slots.length + " slot(s)" +
+                      (scope.master ? " master" : "") + (scope.send ? " send" : "") +
+                      (scope.move ? " move" : "") + "]" : "") +
+             " — slots " + (t1 - t0) + " ms, buses " + (t2 - t1) + " ms, copy " + (Date.now() - t2) +
+             " ms (" + wrote + " written, " + (names.length - wrote) + " already blank)");
+    /* `ok` is about the writes we ATTEMPTED — a name skipped because it is
+     * already blank is a success, not a missing file. This replaced
+     * `copied === names.length`, which counted names that were never
+     * attempted. ⚠ It is NOT a guard against a vacuous true: in the steady
+     * state an empty scope writes nothing and `0 === 0` still reports ok, and
+     * that is correct — nothing needed doing. The undo unit it authorises is
+     * davebox's own mixer/seq half, which was written separately. */
+    return JSON.stringify({ ok: copied === wrote, copied, wrote, positions });
+}
+
+function snapshotRecords(dir, onlySlot, moveBus) {
     const records = [];
     const busPrefixes = [];
     const read = (name) => { try { return host_read_file(dir + name); } catch (e) { return null; } };
     /* Slot records carry a per-slot prefix so one flat liveIds map can address
      * all eight slots plus the buses without nine separate plans. */
     for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+        if (onlySlot >= 0 && i !== onlySlot) continue;
         const content = read("/slot_" + i + ".json");
         if (!content) continue;
         for (const r of parseSlotSnapshot(content))
             records.push({ ...r, slot: i, prefix: i + ":" + r.prefix, key: r.prefix });
     }
+    const trackBusNames = onlySlot >= 0 ? moveBusFileNames(moveBus) : null;
     const bus = (name, pfx) => {
+        /* A track snapshot carries ONE bus — its own — and no send or master
+         * (Josh, 2026-09-06). A session snapshot carries them all. */
+        if (trackBusNames && trackBusNames.indexOf(name) < 0) return;
         const content = read(name);
         if (!content) return;
         for (const r of parseBusSnapshot(content, pfx)) {
@@ -5546,10 +5798,49 @@ function snapshotRecords(dir) {
     return { records, busPrefixes };
 }
 
-function hostSnapshotRecall(dir) {
+/* `undoDir` (optional): take the Undo before-image as part of THIS call,
+ * scoped to the positions the plan is about to write.
+ *
+ * It lives here rather than in davebox's gesture for two reasons, both about
+ * the cost that made recall feel slow on the device (2026-09-06):
+ *   1. the SCOPE is `plan.writes`, which only exists once the plan is built;
+ *   2. building the plan needs snapshotLiveIds(), whose bus half is ~24 name
+ *      reads over SPI. Done as two separate host calls, the before-take and
+ *      the recall each paid for their own live reads AND the take captured all
+ *      36 positions. One call computes the live map once and captures only
+ *      what it is about to overwrite.
+ * The take necessarily happens BEFORE any write — that is the whole contract
+ * of a before-image. `undoOk` in the result says whether Undo has something to
+ * go back to; davebox registers the undo unit only when it is true. */
+function hostSnapshotRecall(dir, onlySlot, undoDir, moveBus) {
     if (!dir || typeof dir !== "string") return JSON.stringify({ ok: false, error: "no dir" });
     if (snapshotRecallJob) return JSON.stringify({ ok: false, error: "recall in progress", pending: true });
-    const { records, busPrefixes } = snapshotRecords(dir);
+    if (onlySlot === undefined) onlySlot = -1;
+    /* ⚠ MIGRATION. A track snapshot taken before track snapshots carried a bus
+     * has no move_fx files at all. Reading the live bus ids anyway would make
+     * planRestore treat all four positions as "added since the save" and
+     * BYPASS every FX block on that track's bus — on the user's existing
+     * snapshots, the moment they recall one. The same applies to a snapshot
+     * taken while the track was route 0 or 2.
+     *
+     * A snapshot that HAS a bus half always has all four files, even when the
+     * positions are empty (the take writes "{}\n"), so their presence is the
+     * format test. Absent, the bus is dropped from this recall entirely and
+     * the old behaviour is preserved exactly. */
+    let effBus = moveBus | 0;
+    if (onlySlot >= 0 && effBus > 0) {
+        let hasBusHalf = false;
+        for (const n of moveBusFileNames(effBus)) {
+            let c = null;
+            try { c = host_read_file(dir + n); } catch (e) { c = null; }
+            if (c) { hasBusHalf = true; break; }
+        }
+        if (!hasBusHalf) {
+            debugLog("snapshot: " + dir + " has no bus half (pre-bus track snapshot) — recalling the slot only");
+            effBus = 0;
+        }
+    }
+    const { records, busPrefixes } = snapshotRecords(dir, onlySlot, effBus);
     /* ⚠ ZERO RECORDS IS A SNAPSHOT, NOT A FAILURE (device, 2026-09-05): a new
      * project whose tracks are all Move-routed and whose buses were empty at
      * the take has nothing for the host to restore — and davebox's own half
@@ -5557,7 +5848,46 @@ function hostSnapshotRecall(dir) {
      * holds a module NOW was added since the save and gets bypassed by the
      * plan. Treating it as "no snapshot" read as RECALL FAILED on every tap. */
     if (records.length === 0) debugLog("snapshot: no host records in " + dir + " — davebox's half and the added-since bypasses still apply");
-    const plan = planRestore(records, snapshotLiveIds(busPrefixes));
+    /* ⚠ The id-guard compares against the chainConfigs MIRROR, and the mirror
+     * has to be fresh or the guard is worse than useless: a stale id that
+     * still matches the snapshot lets a state blob be written into a module
+     * that is no longer there.
+     *
+     * This used to be free and accidental. The before-take ran FIRST and its
+     * autosaveAllSlots() called refreshSlotModuleSignature() on all 8 slots,
+     * so the mirror was always resynced immediately before liveIds was built.
+     * Folding the take into this function inverted that order, and the only
+     * other refresh is a periodic ~30-tick sweep — so the guarantee was lost
+     * without anything saying so.
+     *
+     * It is restored for the slots the SNAPSHOT NAMES rather than all eight:
+     * those are the only ones whose recorded module id is compared against a
+     * live one, and they are the case where staleness actually corrupts. A
+     * signature is 6 get_params, so all eight would cost ~48 SPI round-trips
+     * — a third of the saving this change exists for — to close a window the
+     * periodic sweep already bounds. Slots absent from the snapshot are only
+     * consulted for "added since the save", whose worst case is an FX left
+     * un-bypassed. */
+    /* ⚠ A BUS record carries slot: 0 (snapshotRecords), so filter on the
+     * prefix, not the index — refreshing on a bus record would resync slot 0
+     * for a snapshot that never mentions it. */
+    const seen = [];
+    for (const r of records) {
+        const p = String((r && r.prefix) || "");
+        if (p.indexOf("master_fx:") === 0 || p.indexOf("send_fx:") === 0 || p.indexOf("move_fx:") === 0) continue;
+        const i = r.slot | 0;
+        if (i >= 0 && i < SHADOW_UI_SLOTS && seen.indexOf(i) < 0) { seen.push(i); refreshSlotModuleSignature(i); }
+    }
+    const plan = planRestore(records, snapshotLiveIds(busPrefixes, onlySlot, effBus));
+    /* The before-image, scoped to what the plan will actually touch. */
+    let undoOk = false;
+    if (undoDir) {
+        let res = null;
+        try { res = JSON.parse(hostSnapshotTake(undoDir, onlySlot, snapshotScopeForWrites(plan.writes), effBus)); }
+        catch (e) { res = null; }
+        undoOk = !!(res && res.ok);
+        if (!undoOk) debugLog("snapshot: before-take for undo FAILED into " + undoDir + " — recall proceeds without an undo");
+    }
     for (const r of plan.reasons) {
         debugLog("snapshot: skipped " + r.prefix + " (" + r.reason +
                  (r.was ? ", was " + r.was : "") + (r.now ? ", now " + r.now : "") + ")");
@@ -5575,7 +5905,7 @@ function hostSnapshotRecall(dir) {
      * object stays so the finish work (cache drop, grid refresh, the result)
      * runs once, in one place, and status answers "done" the moment we return. */
     while (snapshotRecallJob) snapshotRecallTick();
-    return JSON.stringify(Object.assign(JSON.parse(hostSnapshotStatus()), { ok: true }));
+    return JSON.stringify(Object.assign(JSON.parse(hostSnapshotStatus()), { ok: true, undoOk }));
 }
 
 /* Drive the job: one bulk SET per step. Called back-to-back by hostSnapshotRecall
@@ -11236,105 +11566,28 @@ function wavContentToBytes(content) {
     return null;
 }
 
-function wavByteAt(bytes, idx) {
-    if (!bytes || idx < 0 || idx >= bytes.length) return 0;
-    return bytes[idx] & 0xff;
-}
-
-function wavReadChunkId(bytes, idx) {
-    return String.fromCharCode(
-        wavByteAt(bytes, idx),
-        wavByteAt(bytes, idx + 1),
-        wavByteAt(bytes, idx + 2),
-        wavByteAt(bytes, idx + 3)
-    );
-}
-
-function wavReadU16LE(bytes, idx) {
-    return wavByteAt(bytes, idx) | (wavByteAt(bytes, idx + 1) << 8);
-}
-
-function wavReadS16LE(bytes, idx) {
-    const v = wavReadU16LE(bytes, idx);
-    return v > 0x7fff ? v - 0x10000 : v;
-}
-
-function wavReadU32LE(bytes, idx) {
-    return (wavByteAt(bytes, idx) |
-        (wavByteAt(bytes, idx + 1) << 8) |
-        (wavByteAt(bytes, idx + 2) << 16) |
-        (wavByteAt(bytes, idx + 3) << 24)) >>> 0;
-}
-
-function wavReadF32LE(bytes, idx) {
-    if (!bytes || idx < 0 || idx + 4 > bytes.length) return 0;
-    try {
-        const view = new DataView(bytes.buffer, bytes.byteOffset || 0, bytes.byteLength || bytes.length);
-        return view.getFloat32(idx, true);
-    } catch (e) {
-        return 0;
-    }
-}
-
-function wavFindRiffOffset(bytes) {
-    if (!bytes || bytes.length < 12) return -1;
-    if (wavReadChunkId(bytes, 0) === "RIFF" && wavReadChunkId(bytes, 8) === "WAVE") return 0;
-
-    const limit = Math.min(bytes.length - 12, 4096);
-    for (let i = 0; i <= limit; i++) {
-        if (wavReadChunkId(bytes, i) === "RIFF" && wavReadChunkId(bytes, i + 8) === "WAVE") {
-            return i;
-        }
-    }
-    return -1;
-}
-
+/*
+ * The editor holds the WHOLE file, so it sweeps the data once here rather than
+ * streaming it like the sample cell does. Which bytes those are, and how a
+ * sample is encoded, is the shared question -- wav_format.mjs answers it for
+ * both, which is what keeps the cell and the editor reading the same files.
+ */
 function parseWavPositionPeaks(content, width) {
     const bytes = wavContentToBytes(content);
     if (!bytes || bytes.length < 44) return { error: "file too small", points: [] };
 
-    const riffOffset = wavFindRiffOffset(bytes);
-    if (riffOffset < 0) return { error: "not a wav file", points: [] };
+    const located = locateAudioData(bytes);
+    if (located.error) return { error: located.error, points: [] };
 
-    let fmtOffset = -1;
-    let dataOffset = -1;
-    let dataSize = 0;
-    let cursor = riffOffset + 12;
-
-    while (cursor + 8 <= bytes.length) {
-        const chunkId = wavReadChunkId(bytes, cursor);
-        const chunkSize = wavReadU32LE(bytes, cursor + 4);
-        const chunkData = cursor + 8;
-        const chunkEnd = chunkData + chunkSize;
-        const available = Math.max(0, bytes.length - chunkData);
-
-        if (chunkId === "fmt " && available >= 16) {
-            fmtOffset = chunkData;
-        } else if (chunkId === "data") {
-            dataOffset = chunkData;
-            dataSize = Math.min(chunkSize, available);
-            break;
-        }
-
-        if (chunkEnd <= chunkData || chunkEnd > bytes.length) break;
-        cursor = chunkEnd + (chunkSize % 2);
-    }
-
-    if (fmtOffset < 0 || dataOffset < 0 || dataSize <= 0) {
-        return { error: "missing wav chunks", points: [] };
-    }
-
-    const audioFmt = wavReadU16LE(bytes, fmtOffset);
-    const channels = Math.max(1, wavReadU16LE(bytes, fmtOffset + 2));
-    const bits = wavReadU16LE(bytes, fmtOffset + 14);
-    const blockAlign = Math.max(1, wavReadU16LE(bytes, fmtOffset + 12));
-    if (audioFmt !== 1 && audioFmt !== 3) return { error: "unsupported wav codec", points: [] };
-    if (!((audioFmt === 1 && (bits === 8 || bits === 16)) || (audioFmt === 3 && bits === 32))) {
-        return { error: "unsupported wav format", points: [] };
-    }
-
-    const sampleBytes = bits / 8;
-    const effectiveBlockAlign = blockAlign > 0 ? blockAlign : Math.max(1, channels * sampleBytes);
+    const read = sampleReader(located.kind);
+    if (!read) return { error: "unsupported format", points: [] };
+    const sampleBytes = sampleBytesFor(located.kind);
+    const effectiveBlockAlign = located.blockAlign > 0 ? located.blockAlign : Math.max(1, located.channels * sampleBytes);
+    const dataOffset = located.dataOffset;
+    /* Declared length, clamped to what the file actually carries: a truncated
+     * take must draw the part that is there, not stop at the header. */
+    const dataSize = Math.min(located.dataSize, Math.max(0, bytes.length - dataOffset));
+    if (dataSize <= 0) return { error: "missing wav chunks", points: [] };
     const frameCount = Math.max(1, Math.floor(dataSize / effectiveBlockAlign));
     const points = new Array(width).fill(0);
     const dataEnd = dataOffset + dataSize;
@@ -11349,15 +11602,7 @@ function parseWavPositionPeaks(content, width) {
         for (let frame = start; frame < end; frame += stride) {
             const base = dataOffset + frame * effectiveBlockAlign;
             if (base + sampleBytes > dataEnd) break;
-            let sample = 0;
-            if (audioFmt === 1 && bits === 16) {
-                sample = wavReadS16LE(bytes, base) / 32768;
-            } else if (audioFmt === 1 && bits === 8) {
-                sample = (wavByteAt(bytes, base) - 128) / 128;
-            } else if (audioFmt === 3 && bits === 32) {
-                sample = wavReadF32LE(bytes, base);
-            }
-            const abs = Math.abs(sample);
+            const abs = Math.abs(read(bytes, base));
             if (abs > maxAbs) maxAbs = abs;
         }
 
@@ -11786,7 +12031,12 @@ function moduleFileExists(path) {
     }
 }
 
-function getHierarchyActiveModuleId() {
+/* The same lookup, with the tri-state INTACT on the slot path: null = the
+ * read did not complete. getHierarchyActiveModuleId below is the `|| ""` view
+ * of it, which is what every caller that only wants a name should use.
+ * reconcileCcClaim wants the third answer, because "the read failed" and
+ * "there is no module" lead to opposite decisions there (upstream #435). */
+function hierarchyActiveModuleIdRaw() {
     if (hierEditorSlot < 0 || !hierEditorComponent) return "";
     if (hierEditorIsMasterFx) {
         /* FX-bus components (master/send/move FX) serve `:module` as the FULL
@@ -11806,78 +12056,176 @@ function getHierarchyActiveModuleId() {
 
     const prefix = getComponentParamPrefix(hierEditorComponent);
     if (!prefix) return "";
-    return getSlotParam(hierEditorSlot, `${prefix}_module`) || "";
+    return getSlotParam(hierEditorSlot, `${prefix}_module`);
 }
 
-/* ── Edit-CC claim: Undo (CC 56) / Copy (CC 60) / Delete (CC 119) ────────────
+function getHierarchyActiveModuleId() {
+    return hierarchyActiveModuleIdRaw() || "";
+}
+
+/* ── Button claims: capabilities.claims_ccs / claims_edit_ccs ─────────────────
  *
- * A module declaring `capabilities.claims_edit_ccs` gets these three buttons
- * delivered to it while its UI is on screen, and Move firmware does not see
- * them for that window — so a hold-Copy + tap-pad style gesture cannot also
- * copy a Move clip behind the screen.
+ * A module declaring `capabilities.claims_ccs` (a list of CC numbers) or the
+ * shorthand `claims_edit_ccs: true` (Undo 56, Copy 60, Delete 119) gets those
+ * buttons delivered to it while its UI is on screen, and Move firmware does
+ * not see them for that window -- so a hold-Copy + tap-pad style gesture
+ * cannot also copy a Move clip behind the screen.
  *
- * ⚠ ENTRY-CONDITION TABLE. Every screen that may hold the claim, what opens it,
+ * ⚠ ENTRY-CONDITION TABLE. Every screen that may hold a claim, what opens it,
  * and where that condition is re-checked. A new screen wanting these buttons
  * declares itself HERE:
  *
  *   screen                       opened by                    re-checked in
  *   ──────────────────────────   ──────────────────────────   ─────────────────
- *   CANVAS (fullscreen)          a canvas param opened on a   reconcileEditCcClaim()
- *   CANVAS (co-run overlay)      component whose module        — and ONLY there
- *   HIERARCHY_EDITOR             declares claims_edit_ccs
+ *   PARAM_PAGES (the knob grid)  a component whose module     reconcileCcClaim()
+ *   HIERARCHY_EDITOR             declares a claim              -- and ONLY there
  *   COMPONENT_EDIT
  *   COMPONENT_PARAMS
+ *   CANVAS (fullscreen)          a canvas param opened on
+ *   CANVAS (co-run overlay)      such a component
  *
  * The claim is re-derived in ONE place from what is on screen right now, never
- * bookkept at the flag's write sites. That is the whole design: the host's
- * earlier attempt (PR #154) blocked these three unconditionally whenever the
- * shadow display was up, and was reverted (PR #175) because it stole Move's
- * native Undo during ordinary chain use.
+ * bookkept at the flag's write sites. That is the whole design: #154 blocked
+ * Undo/Copy/Delete unconditionally whenever the shadow display was up, and was
+ * reverted (#175) because it stole Move's native Undo during ordinary chain
+ * use. The revert asked for a capability opt-in; this is it.
  *
- * The shim independently drops the claim when the shadow display closes, so a
- * shadow_ui that exits or crashes without reconciling cannot strand it. */
-const EDIT_CC_CLAIM_VIEWS = {};
-EDIT_CC_CLAIM_VIEWS[VIEWS.CANVAS] = true;
-EDIT_CC_CLAIM_VIEWS[VIEWS.HIERARCHY_EDITOR] = true;
-EDIT_CC_CLAIM_VIEWS[VIEWS.COMPONENT_EDIT] = true;
-EDIT_CC_CLAIM_VIEWS[VIEWS.COMPONENT_PARAMS] = true;
+ * The shim independently drops every claim when the shadow display closes, so
+ * a shadow_ui that exits or crashes without reconciling cannot strand one; it
+ * also refuses the host-owned controls below whatever is written. */
+const CC_CLAIM_VIEWS = {};
+CC_CLAIM_VIEWS[VIEWS.PARAM_PAGES] = true;
+CC_CLAIM_VIEWS[VIEWS.HIERARCHY_EDITOR] = true;
+CC_CLAIM_VIEWS[VIEWS.COMPONENT_EDIT] = true;
+CC_CLAIM_VIEWS[VIEWS.COMPONENT_PARAMS] = true;
+CC_CLAIM_VIEWS[VIEWS.CANVAS] = true;
 
-let editCcClaimCache = {};
-let editCcClaimKey = null;
-let editCcClaimed = false;
+/* The controls the host owns: how you leave a screen (Shift 49, Menu 50,
+ * Back 51), what the host routes itself (jog 14/3, knobs 71-78, master 79,
+ * tracks 40-43) and Mute 88 (Move-native Mute+Pad). Mirrors claim_denied_cc in
+ * the shim, which is the enforcing copy; this one only tells the author. */
+const CC_CLAIM_DENIED = new Set([49, 50, 51, 14, 3, 71, 72, 73, 74, 75, 76, 77, 78, 79, 88, 40, 41, 42, 43, 114, 115]);
+const EDIT_CCS = [56, 60, 119];
 
-function moduleClaimsEditCcs(moduleId) {
-    if (!moduleId) return false;
-    if (moduleId in editCcClaimCache) return editCcClaimCache[moduleId];
+let ccClaimCache = {};
+let ccClaimKey = null;
+let ccClaimed = "";
+/* This fork's primary-surface engine (shadow_ui_primary.mjs, P4a) may hold the
+ * edit buttons for the tool that owns the surface — its `edit_cc_block` op
+ * used to write a dedicated register. Under upstream's bitmap (#425) it is a
+ * UNION term in the one reconcile below, so neither owner can strand or
+ * clobber the other's claim. */
+let primaryEditCcClaim = false;
+function setPrimaryEditCcClaim(on) {
+    const v = !!on;
+    if (v === primaryEditCcClaim) return;
+    primaryEditCcClaim = v;
+    ccClaimKey = null;                       /* force the next reconcile to recompute */
+}
+
+/* The tool-facing runtime claim on the edit trio. A tool that shows a module's
+ * UI on its OWN screens (the host's entry-condition table lists host views,
+ * so it cannot see that) raises the claim here while such a module is up and
+ * drops it when the screen closes; the next tick's reconcile applies it as
+ * the same union term the primary engine's `edit_cc_block` op feeds. A plain
+ * global, like host_register_primary: tool and shadow_ui share one context.
+ * (This replaces the retired C binding of the same name, which wrote a
+ * dedicated register the #425 bitmap made redundant.) */
+globalThis.host_edit_cc_block = function(on) {
+    setPrimaryEditCcClaim(on);
+    return true;
+};
+
+/* The sorted, host-permitted list of CCs `moduleId` claims, as a string
+ * ("" = none). Cached per module: the lookup is a file read. */
+function moduleClaimedCcs(moduleId) {
+    if (!moduleId) return "";
+    if (moduleId in ccClaimCache) return ccClaimCache[moduleId];
     let meta = null;
     try {
         if (typeof host_get_module_metadata === "function") {
             meta = host_get_module_metadata(moduleId);
         }
-    } catch (e) { meta = null; }
-    const v = !!(meta && meta.capabilities && meta.capabilities.claims_edit_ccs);
-    editCcClaimCache[moduleId] = v;
+    } catch (e) {
+        /* The read threw -- that is news about the CHANNEL, not about the
+         * module. Answer "no claim" for this tick and leave the cache empty so
+         * the next reconcile asks again; caching it would make one bad read
+         * permanent for the session. A metadata object that simply declares no
+         * capability is a real answer and IS cached below (upstream #435). */
+        debugLog(`claims_ccs: metadata read for ${moduleId} failed (${e}) -- not cached`);
+        return "";
+    }
+    const caps = (meta && meta.capabilities) || {};
+    const want = new Set();
+    if (caps.claims_edit_ccs) for (const cc of EDIT_CCS) want.add(cc);
+    if (Array.isArray(caps.claims_ccs)) {
+        for (const v of caps.claims_ccs) {
+            const cc = Number(v);
+            if (Number.isInteger(cc) && cc >= 0 && cc < 128) want.add(cc);
+        }
+    }
+    const denied = [...want].filter((cc) => CC_CLAIM_DENIED.has(cc));
+    if (denied.length) {
+        debugLog(`claims_ccs: ${moduleId} asked for host-owned CC(s) ${denied.join(",")} -- ignored`);
+        for (const cc of denied) want.delete(cc);
+    }
+    const v = [...want].sort((a, b) => a - b).join(",");
+    ccClaimCache[moduleId] = v;
     return v;
 }
 
-function reconcileEditCcClaim() {
-    if (typeof host_edit_cc_block !== "function") return;
-    const onScreen = !!EDIT_CC_CLAIM_VIEWS[view] ||
+function reconcileCcClaim() {
+    if (typeof host_claim_ccs !== "function") return;
+    const onScreen = !!CC_CLAIM_VIEWS[view] ||
         (coRunUiActive() && coRunView === VIEWS.CANVAS);
-    /* Cheap identity of "whose UI is on screen". getHierarchyActiveModuleId()
-     * costs a blocking get_param round-trip (~2.6 ms), so it is consulted only
-     * when this tuple changes — not on every one of the ~44 ticks/sec. A module
+    /* Cheap identity of "whose UI is on screen". The module-id read costs a
+     * blocking get_param round-trip (~2.8 ms), so it is consulted only when
+     * this tuple changes -- not on every one of the ~44 ticks/sec. A module
      * SWAP always transits COMPONENT_SELECT, which moves `view`, so the tuple
-     * catches swaps too. */
+     * catches swaps too. The knob grid keeps its own slot/component
+     * (enterParamPages never touches hierEditorSlot), so on that view the
+     * identity comes from the grid. */
+    const onGrid = view === VIEWS.PARAM_PAGES && paramPagesActive();
+    const slot = onGrid ? paramPagesSlot() : hierEditorSlot;
+    const comp = onGrid ? paramPagesComponent() : hierEditorComponent;
     const key = onScreen
-        ? (view + "|" + coRunView + "|" + hierEditorSlot + "|" + hierEditorComponent)
+        ? (view + "|" + coRunView + "|" + slot + "|" + comp)
         : "";
-    if (key === editCcClaimKey) return;
-    editCcClaimKey = key;
-    const claim = onScreen && moduleClaimsEditCcs(getHierarchyActiveModuleId());
-    if (claim === editCcClaimed) return;
-    editCcClaimed = claim;
-    host_edit_cc_block(claim ? 1 : 0);
+    if (key === ccClaimKey) return;
+    /* THE READ COMES FIRST, AND null IS NOT AN ANSWER (upstream #435).
+     *
+     * getSlotParam is the tri-state: null means the read did not complete (the
+     * claim was refused, or the response timed out), "" means served-but-empty.
+     * Collapsing them with `|| ""` reads as "this component has no module", so
+     * the claim is dropped -- and latching ccClaimKey before the read made that
+     * verdict permanent for the whole visit to the screen, with Delete going
+     * back to Move. That is the failure the capability exists to prevent.
+     *
+     * So the key is latched only once an answer is in hand; a failed read
+     * leaves it alone and the next tick asks again. */
+    let moduleId = "";
+    if (onScreen && onGrid) {
+        const prefix = getComponentParamPrefix(comp);
+        if (prefix) {
+            const raw = getSlotParam(slot, `${prefix}_module`);
+            if (raw === null || raw === undefined) return;   /* retry next tick */
+            moduleId = raw;
+        }
+    } else if (onScreen) {
+        const raw = hierarchyActiveModuleIdRaw();
+        if (raw === null || raw === undefined) return;       /* retry next tick */
+        moduleId = raw;
+    }
+    ccClaimKey = key;
+    let claim = onScreen ? moduleClaimedCcs(moduleId) : "";
+    if (primaryEditCcClaim) {
+        const set = new Set(claim ? claim.split(",").map(Number) : []);
+        for (const cc of EDIT_CCS) set.add(cc);
+        claim = [...set].sort((a, b) => a - b).join(",");
+    }
+    if (claim === ccClaimed) return;
+    ccClaimed = claim;
+    host_claim_ccs(claim ? claim.split(",").map(Number) : []);
 }
 
 function getModuleBasePath(moduleId) {
@@ -16883,10 +17231,10 @@ function dispatchCoRunDraw() {
 
 let lastDrawError = null;  /* one-shot log guard for the tick draw catch */
 globalThis.tick = function() {
-    /* Undo/Copy/Delete claim, re-derived from whatever is on screen. Kept at the
-     * top of the tick as the SINGLE re-check point for that entry condition —
-     * see the table above reconcileEditCcClaim(). */
-    reconcileEditCcClaim();
+    /* Button claims, re-derived from whatever is on screen. Kept at the top of
+     * the tick as the SINGLE re-check point for that entry condition -- see the
+     * table above reconcileCcClaim(). */
+    reconcileCcClaim();
 
     /* Background tick for JS-suspended overtake modules.
      * Each parked module's tick() keeps firing so it can emit MIDI or advance

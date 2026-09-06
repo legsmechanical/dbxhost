@@ -33,7 +33,7 @@ export { LAYOUT_LIST };
 /* Re-exported so the LIST editor waits out the same module-side debounce the
  * grid does, from the same number. Two hand-written 500s would drift. */
 export { CONTRACT_SETTLE_MS };
-import { decodeInput, applyInput } from '/data/UserData/schwung/shared/param_pages/page_input.mjs';
+import { decodeInput, applyInput, isHardwarePadPress } from '/data/UserData/schwung/shared/param_pages/page_input.mjs';
 import { PAGE_KNOBS, PAGE_MENU, PAGE_PRESET, PAGE_ITEMS } from '/data/UserData/schwung/shared/param_pages/page_plan.mjs';
 import { LAYOUT_MOVY, normalizedOf }
     from '/data/UserData/schwung/shared/param_pages/render_page_movy.mjs';
@@ -389,6 +389,7 @@ function enterParamPages(slot, component, prefix, restorePageName, io, chrome, r
 }
 
 function exitParamPages() {
+    reconcilePadObserve(false);
     /*
      * GIVE THE RINGS BACK, DO NOT JUST TURN THEM OFF.
      *
@@ -481,6 +482,14 @@ function paramPagesChildIndex(level) {
     return (typeof controller.childIndexOf === "function")
         ? controller.childIndexOf(level) : -1;
 }
+/** The grid's own value for `key`, or undefined (see controller.valueOf). */
+function paramPagesCachedValue(key) {
+    return (controller && typeof controller.valueOf === "function") ? controller.valueOf(key) : undefined;
+}
+/** The name of a level the grid holds, from its definition; "" if not held. */
+function paramPagesLevelNameOf(levelDef) {
+    return (controller && typeof controller.levelNameOf === "function") ? controller.levelNameOf(levelDef) : "";
+}
 
 /** The full parameter key under physical knob `slot` on the current page,
  *  or null. See controller.fullKeyAt. */
@@ -502,8 +511,26 @@ function paramPagesRepaintKnobs() {
  * finishing an async ROM or sample load republishes a larger tree) and advances
  * the staggered read cursor by exactly one param.
  */
+/* Whether the shim is forwarding hardware pad notes to us (upstream #426).
+ * Reconciled every tick from the controller's livePressParam() and dropped on
+ * exit; the shim also drops it when the shadow display closes. Passive — pads
+ * keep playing — so the only cost of being on is one UI ring event per press. */
+/* STATED UNCONDITIONALLY, never memoised against a JS-side mirror (upstream
+ * #426 follow-up 90cbe206). The shim drops pad_observe on its OWN authority --
+ * the shadow display closes from several sites in the SPI callback that never
+ * tell JS -- so a mirror here goes stale the first time the user dismisses
+ * with Menu, and a reconcile that trusts it then skips the write that would
+ * turn the feature back on: live presses stop for the rest of the session,
+ * silently. js_host_pad_observe is idempotent and logs only on a transition,
+ * precisely so a caller may restate this every tick: one native call and one
+ * SHM byte store. */
+function reconcilePadObserve(want) {
+    if (typeof host_pad_observe !== 'function') return;
+    host_pad_observe(want ? 1 : 0);
+}
 function tickParamPages() {
     if (!controller) return;
+    reconcilePadObserve(!!controller.livePressParam());
 
     /* Only re-plan on the loading->ready edge; re-planning every frame would
      * reset values and the cursor continuously.
@@ -1190,6 +1217,25 @@ let _midiWindowStart = 0, _midiCount = 0, _knobTurnCount = 0;
  */
 function handleParamPagesMidi(data) {
     if (!controller) return false;
+    /* A LIVE pad press (the shim forwards 68-99 under pad_observe): vouch to
+     * the declared param, once per note-on. Passive: the note is not consumed
+     * here — the pad already played; a module that declared nothing gets no
+     * write and the event goes on to the next handler (upstream #426). */
+    if (isHardwarePadPress(data) && controller.livePressParam()) {
+        return controller.vouchLivePress();
+    }
+
+    /* Undo / Copy / Delete reach the grid only for a module that claimed them
+     * (capabilities.claims_edit_ccs -- the shim withholds them from the
+     * shadow UI otherwise, and dAVEBOx's sound mode checks the claim before
+     * offering them). They drive the instance copy/clear gesture -- hold Copy
+     * or Delete, then pick an instance -- and nothing else on the grid wants
+     * them. Not consumed on a page that has no instance to copy, so the event
+     * falls through as before (upstream #429). */
+    if (data.length >= 3 && (data[0] & 0xF0) === 0xB0 &&
+        (data[1] === 56 || data[1] === 60 || data[1] === 119)) {
+        return controller.onEditCc(data[1], data[2] > 0);
+    }
 
     const nowMsProbe = Date.now();
     _midiCount++;
@@ -1420,8 +1466,10 @@ function paramPagesMenuEntered() {
         handleParamPagesMidi,
         headerTitle,
         paramPagesActive,
+        paramPagesCachedValue,
         paramPagesChildIndex,
         paramPagesComponent,
+        paramPagesLevelNameOf,
         paramPagesEnabled,
         paramPagesExitMenu,
         paramPagesFooterHints,

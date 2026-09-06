@@ -11,6 +11,7 @@ import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
 import { arpVelLevel } from './ui_pure.mjs';
 import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell } from './ui_knob_leds.mjs';
 import { automationStateFor } from './ui_automation.mjs';
+import { devSnapOpen, devSnapLedFor } from './ui_devsnap.mjs';
 import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import {
@@ -72,6 +73,12 @@ export function trackDimColor(t) { return TRACK_DIM_COLORS[t]; }
 
 export function updateStepLEDs() {
     if (!S.ledInitComplete) return;
+    /* THE SNAPSHOT LAYER in track view: the 16 steps show the track's slots
+     * (session view paints the same through updateSceneMapLEDs). */
+    if (devSnapOpen() && !S.sessionView) {
+        for (let i = 0; i < 16; i++) setLED(16 + i, devSnapLedFor(i, { filled: Cyan, white: White, dim: DarkGrey, off: LED_OFF }));
+        return;
+    }
 
     /* ⚠ NO co-run branch here any more (Josh, 2026-08-24). This used to blank
      * every step button and blink Step 3 as an "Edit Slot/Synth" affordance —

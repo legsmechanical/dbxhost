@@ -560,7 +560,8 @@ const S = {
     hostedPage: {},             /* "slot:comp:module" -> persisted bank index */
     hostedOpened: false,        /* onOpen fired for THIS block yet? */
     /* Whether WE currently hold the host's edit-CC claim. Mirrors what we last
-     * told host_edit_cc_block, so reconcile only calls on a real change. */
+     * told host_edit_cc_block (the shadow UI's tool-facing global over the
+     * claims union), so reconcile only calls on a real change. */
     editCcClaimed: false,
 
     values: {},
@@ -831,6 +832,8 @@ export function soundBusCountForTest() { return FX_BUSES.length; }
 /* What the editor believes is loaded. Stale after a swap is the whole bug the
  * pendingDiscover rescue fixes, and it is not visible through any other export. */
 export function soundModuleIdForTest() { return S.moduleId; }
+/* The knob grid's current page (level + name) while the editor is up, else null. */
+export function soundEditorPageForTest() { return ppOn ? currentParamPage() : null; }
 export function soundQueueDiscoverForTest(n) { S.pendingDiscover = n | 0; }
 /* ⚠ busLevelEditing lives on sound mode's OWN S, not the global one — a rig
  * that sets it through ui_state is writing a different object entirely (the
@@ -1460,7 +1463,7 @@ export function soundExit(opts) {
      * rings lit — the same class as the 08-26 linger, which was a missed
      * teardown rather than a painter bug. Asked of the BINDING, not of ppOn: if
      * the two ever disagree the binding's answer is the one that owns the LEDs. */
-    if (ppOn || paramPagesActive()) { exitParamPages(); ppOn = false; }
+    if (ppOn || paramPagesActive()) { exitParamPages(); ppOn = false; ppEditLatched.clear(); }
     /* ⚠ The editor's navigation crumbs die with the session. A stale one would
      * swallow a Back or retrace to a screen from a previous visit — the failure
      * this whole pass was about, arriving by a different door. */
@@ -4211,6 +4214,42 @@ automationRegisterSeqApply((track, key, val) => {
     return true;
 });
 
+/* The SEQUENCER's automatable settings for a track, as a snapshot sees them
+ * (Josh, 2026-09-05: a snapshot holds "any automatable param, in fact"): every
+ * SEQ_AUTO_TARGETS key that is ON for the track's pad mode → its value. The
+ * restore writes through the bank knob's own path, exactly as automation
+ * playback does, and skips a key whose value already matches. */
+export function seqAutoSnapshot(track) {
+    const out = {};
+    for (const key in SEQ_AUTO_TARGETS) {
+        const st = SEQ_AUTO_TARGETS[key];
+        if (!bankMacroOnMode(st.bank, GS.trackPadMode[track])) continue;
+        const m = { kind: 'bank', bank: st.bank, k: st.k };
+        if (st.alt) m.alt = st.alt;
+        const v = bankMacroValue(m, track);
+        if (isFinite(v)) out[key] = v | 0;
+    }
+    return out;
+}
+export function seqAutoRestore(track, map) {
+    if (!map || typeof map !== 'object') return 0;
+    let n = 0;
+    for (const key in map) {
+        const st = SEQ_AUTO_TARGETS[key];
+        const val = map[key];
+        if (!st || !isFinite(val)) continue;
+        if (!bankMacroOnMode(st.bank, GS.trackPadMode[track])) continue;
+        const nv = Math.max(st.min, Math.min(st.max, val | 0));
+        const m = { kind: 'bank', bank: st.bank, k: st.k };
+        if (st.alt) m.alt = st.alt;
+        if (bankMacroValue(m, track) === nv) continue;
+        bankMacroWriteFor(track, m, nv);
+        n++;
+    }
+    if (n) GS.screenDirty = true;
+    return n;
+}
+
 /* A bank card's knob turned UNDER A HELD STEP (Josh, 2026-09-03: "a held step
  * plus a turn locks the knob if it is an automation target"): one whole step
  * per detent — deliberate, no accumulation — written live through the bank's
@@ -5889,7 +5928,10 @@ function drainForcedPoll() {
 function readLiveSelection() {
     const spec = S.livePress;
     if (!spec || !spec.selectParam) return -1;
-    const idx = parseInt(engineGet(S.slot, S.comp, spec.selectParam), 10);
+    /* The wire value is in the MODULE's numbering (child_index_base; pads are
+     * 1..16); zero-based here, like the page engine's childIndexFromWire. */
+    const raw = parseInt(engineGet(S.slot, S.comp, spec.selectParam), 10);
+    const idx = isFinite(raw) ? raw - (spec.indexBase | 0) : -1;
     const ok = (idx >= 0 && idx < spec.count) ? idx : -1;
     /* Remembered because the vouch is raised from the MIDI handler, where a
      * get_param silently returns null — so the baseline for "did focus move?"
@@ -6164,6 +6206,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * handler, whose switch FOLLOWS into the new track's editor (item
              * 20). Sections stay reachable by the plain jog's page walk. */
             return false;
+        } else if (d1 === 56 || d1 === 60 || d1 === 119) {
+            /* The edit trio: the module's while its claim holds (see
+             * ppEditRoute), else they fall out of this chain to davebox's own
+             * handling -- Delete's modifier tracking below, Undo and Copy in
+             * ui_input_cc. Never the generic forward: the binding would take
+             * them for an unclaiming module too. */
+            if (ppEditRoute(d1, d2)) { S.dirty = true; return true; }
         } else if (handleParamPagesMidi([0xB0, d1, d2])) {
             S.dirty = true;
             return true;
@@ -7093,8 +7142,36 @@ export function soundOnNote(status, d1, d2) {
  * was reverted (PR #175). Hence: re-checked every tick, and forced OFF in
  * soundExit, which is the one path the tick cannot cover because it stops. */
 function editCcClaimWanted() {
-    return !!(S.active && S.view === VIEW_EDIT && S.hosted &&
+    return !!(S.active && S.view === VIEW_EDIT && (S.hosted || ppOn) &&
               engineClaimsEditCcs(S.comp, S.moduleId));
+}
+
+/* Undo / Copy / Delete on the KNOB GRID of a module that claimed them: the
+ * instance copy/clear gesture (hold Copy or Delete, then pick a pad; Undo puts
+ * the last one back -- upstream #429, page_controller.onEditCc). davebox
+ * receives every CC as the tool, so the claim is checked HERE before the
+ * button is offered: a module that declared nothing keeps davebox's own Undo,
+ * Copy and the Delete modifier exactly as before. Shift+Copy / Shift+Delete
+ * stay davebox's snapshot store/recall over any module (the same rule the
+ * shim applies for the shadow UI's own screens).
+ *
+ * ⚠ Press/release are LATCHED per button, as the shim does: the release goes
+ * to whoever took the press. A release handed to the binding after davebox
+ * saw the press would leave copyHeld/deleteHeld set forever; a release kept
+ * from the binding would leave its gesture armed. */
+const ppEditLatched = new Set();
+function ppEditRoute(d1, d2) {
+    const down = d2 >= 64;
+    if (!down) {
+        if (!ppEditLatched.delete(d1)) return false;
+        handleParamPagesMidi([0xB0, d1, d2]);
+        return true;
+    }
+    if (GS.shiftHeld) return false;
+    if (!engineClaimsEditCcs(S.comp, S.moduleId)) return false;
+    if (!handleParamPagesMidi([0xB0, d1, d2])) return false;
+    ppEditLatched.add(d1);
+    return true;
 }
 
 function reconcileEditCcClaim(force) {
@@ -7213,7 +7290,7 @@ export function soundTick() {
          * too, and it was equally stale). */
         if (S.pendingDiscover > 0 && --S.pendingDiscover === 0) {
             runDiscovery();
-            if (ppOn) { exitParamPages(); ppOn = false; S.dirty = true; }
+            if (ppOn) { exitParamPages(); ppOn = false; ppEditLatched.clear(); S.dirty = true; }
         }
         return;
     }
@@ -7964,7 +8041,7 @@ function ppSync() {
         /* Consumed on arrival, not on departure: the dive target IS VIEW_EDIT,
          * so the first tick back here is the one that must not re-enter. */
         ppSuppressOnce = false;
-        if (ppOn) { exitParamPages(); ppOn = false; S.dirty = true; }
+        if (ppOn) { exitParamPages(); ppOn = false; ppEditLatched.clear(); S.dirty = true; }
         return;
     }
     const want = ppApplies() && (S.view === VIEW_EDIT || (ppOn && ppOwnsView()));
@@ -7974,7 +8051,7 @@ function ppSync() {
             /* Back leaves the editor for the block picker — davebox's own
              * destination, unchanged from what renderEdit's footer promises. */
             returnView: VIEW_BLOCKS,
-            onExit: () => { ppOn = false; },
+            onExit: () => { ppOn = false; ppEditLatched.clear(); },
         });
         ppOn = true;
         S.dirty = true;
@@ -7984,7 +8061,7 @@ function ppSync() {
         const pg = currentParamPage();
         ppRestorePage = (pg && pg.name) ? { slot: S.slot, comp: S.comp, name: pg.name } : null;
         exitParamPages();
-        ppOn = false;
+        ppOn = false; ppEditLatched.clear();
         S.dirty = true;
     }
 }
@@ -8275,7 +8352,7 @@ installPpCtx({
     openParamEditor: (slot, fullKey, meta) => {
         clearParamPagesTouch();
         exitParamPages();
-        ppOn = false;
+        ppOn = false; ppEditLatched.clear();
         ppSuppressOnce = true;
         ppDivedOut = true;
         S.pendingDiscover = 1;      /* davebox's own editor needs its banks */

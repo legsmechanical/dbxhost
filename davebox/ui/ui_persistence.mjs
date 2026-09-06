@@ -35,6 +35,14 @@ const DBX_SUBDIR  = 'dAVEBOx';
 function setStateDir(uuid) { return SETS_DIR + '/' + uuid + '/' + DBX_SUBDIR; }
 /* Device-wide snapshots (item 18): one dir per slot beside the live state. */
 export function deviceSnapDir(uuid, n) { return setStateDir(uuid) + '/snapshots/' + (n | 0); }
+/* The hidden "before" take a recall makes so Undo can return to it (Josh,
+ * 2026-09-05: "can we just make recall subject to undo?"). One dir, rewritten
+ * by every recall; never listed as a slot. */
+export function deviceSnapUndoDir(uuid) { return setStateDir(uuid) + '/snapshots/undo'; }
+/* TRACK snapshots (Josh, 2026-09-05): the same layer from TRACK view, saving and
+ * recalling one track's params only. Per project, per track. */
+export function trackSnapDir(uuid, track, n) { return setStateDir(uuid) + '/snapshots/t' + (track | 0) + '/' + (n | 0); }
+export function trackSnapUndoDir(uuid, track) { return setStateDir(uuid) + '/snapshots/t' + (track | 0) + '/undo'; }
 
 /* Every JS write below an existing project's dir goes through here first. The
  * DSP's own save creates the subdir itself (ensure_parent_dir, seq8_state.c);
@@ -156,6 +164,7 @@ export function showTrackVolCard(text, frac) {
 
 export function showActionPopup(...lines) {
     showActionPopupFor(ACTION_POPUP_MS, ...lines);
+    S.actionPopupCard = false;
 }
 
 /* The same popup, held for `ms`. The default ACTION_POPUP_MS is a glance —
@@ -170,6 +179,9 @@ export function showActionPopupFor(ms, ...lines) {
     S.actionPopupGaugeMark = -1;
     S.actionPopupLines   = lines.filter((l) => l !== undefined && l !== null);
     S.actionPopupEndTick = nowMs() + ms;
+    /* A timed notice is a CARD, drawn above whatever screen is up (ui_render
+     * drawUI); the plain popup keeps each view's own placement. */
+    S.actionPopupCard = true;
     S.screenDirty = true;
 }
 

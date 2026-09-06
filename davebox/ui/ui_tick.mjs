@@ -28,7 +28,7 @@ import { S, standDownBankDisplay } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { tickPrefetch, dget } from './ui_dsp_bridge.mjs';
 import { daveBoxTick, bannerDaveSync } from './ui_daves.mjs';
-import { devSnapOpen, devSnapEnter, devSnapTick, devSnapSave, DEVSNAP_HOLD_MS } from './ui_devsnap.mjs';
+import { devSnapOpen, devSnapEnter, devSnapTick, DEVSNAP_HOLD_MS } from './ui_devsnap.mjs';
 import { automationTick, automationPollWarnings } from './ui_automation.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
 import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, readActiveSet,
@@ -66,8 +66,6 @@ import { enterMoveNativeCoRun } from './ui_corun.mjs';
 const BANK_DISPLAY_MS = 1000;
 const KNOB_TURN_HIGHLIGHT_MS = 600;               /* highlight after turn without touch */
 const STEP_HOLD_MS       = 120;  /* below = tap, at/above = hold (ms off ui_clock, never ticks). Josh 2026-09-02: shorter than the old 200 ms, longer than the accidental ~55 */
-const STEP_SAVE_HOLD_MS  = 750;
-const STEP_SAVE_FLASH_MS = 425;  /* double-blink on step button LEDs after save */
 /* How long a select HANDOFF may be in flight before the SELECT-BEFORE-LOAD
  * watchdog is allowed to treat the session as stranded again. ~15s at the 94Hz
  * device tick. The handoff itself measured ~6.5s on hardware (arm -> walk Move
@@ -1099,52 +1097,23 @@ export function _tickImpl() {
          * session view, nothing else pressed meanwhile (a Capture+row / +pad
          * marks it used and keeps its meaning). Opening marks Capture used so
          * the release runs no tap action. */
-        if (S.captureHeld && S.sessionView && !S.captureUsedAsModifier && !devSnapOpen() &&
+        if (S.captureHeld && !S.captureUsedAsModifier && !devSnapOpen() &&
                 S.captureHeldAt >= 0 && (S.clockMs - S.captureHeldAt) >= DEVSNAP_HOLD_MS) {
             S.captureUsedAsModifier = true;
-            devSnapEnter();
+            /* Session view: the DEVICE layer. Track view: THIS track's layer (Josh, 2026-09-05). */
+            devSnapEnter(S.sessionView ? -1 : S.activeTrack);
         }
         devSnapTick();
-        /* Session view hold-to-save: fire exactly when threshold reached, not on release */
-        if (S.sessionStepHeld >= 0) {
-            const _ssh = S.sessionStepHeld;
-            if (S.clockMs - S.stepBtnPressedTick[_ssh] >= STEP_SAVE_HOLD_MS) {
-                const _ctx = S.sessionStepHeldCtx;
-                S.sessionStepHeld    = -1;
-                S.sessionStepHeldCtx = 0;
-                S.stepBtnPressedTick[_ssh] = -1;
-                if (_ctx === 1) {
-                    S.perfSnapshots[_ssh] = S.perfModsToggled | S.perfModsHeld;
-                    showActionPopup('PERF PRESET', 'SAVED');
-                } else if (_ctx === 3) {
-                    devSnapSave(_ssh);                       /* the device snapshot layer */
-                } else {
-                    const drumEffMutes = [];
-                    for (let _t = 0; _t < NUM_TRACKS; _t++) {
-                        const mMask = S.drumLaneMute[_t];
-                        const sMask = S.drumLaneSolo[_t];
-                        let effMask = mMask;
-                        if (sMask) {
-                            let notSoloed = 0;
-                            for (let _l = 0; _l < DRUM_LANES; _l++) {
-                                if (!(sMask & (1 << _l))) notSoloed |= (1 << _l);
-                            }
-                            effMask = (mMask | notSoloed) >>> 0;
-                        }
-                        drumEffMutes.push(effMask >>> 0);
-                    }
-                    S.snapshots[_ssh] = { mute: S.trackMuted.slice(), solo: S.trackSoloed.slice(), drumEffMute: drumEffMutes };
-                    const mStr = S.trackMuted.map(function(m) { return m ? '1' : '0'; }).join(' ');
-                    const sStr = S.trackSoloed.map(function(s) { return s ? '1' : '0'; }).join(' ');
-                    const dStr = drumEffMutes.join(' ');
-                    host_module_set_param('snap_save', _ssh + ' ' + mStr + ' ' + sStr + ' ' + dStr);
-                    showActionPopup('MUTE STATE', 'SAVED');
-                }
-                S.stepSaveFlashStartTick = S.clockMs;
-                S.stepSaveFlashEndTick   = S.clockMs + STEP_SAVE_FLASH_MS;
-                forceRedraw();
-            }
-        }
+        /* ⭐ THE HOLD-TO-SAVE DEFERRAL IS GONE (Josh, 2026-09-06). All three
+         * step-slot surfaces — the snapshot layer, the mute states and the perf
+         * presets — now commit on the PRESS: Shift+step saves, a bare press
+         * recalls, Delete+step clears. A tap/hold decision cannot fire on the
+         * press (it has to wait to learn which gesture it was), and that wait
+         * was most of what a recall FELT like. Nothing sets sessionStepHeld any
+         * more, so nothing here has to watch for it. See the grammar note in
+         * ui_input_pads.mjs.
+         *
+         * STEP_SAVE_HOLD_MS went with it — it had no other reader. */
 
         if ((S.tickCount % POLL_INTERVAL) === 0) { pollDSP(); bannerDaveSync(); S.screenDirty = true; }
 

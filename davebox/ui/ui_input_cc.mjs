@@ -63,7 +63,7 @@ import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
  * the screen can disagree. */
 import { bankCardVisible, sessMixerVisible, soundModeCovered } from './ui_render.mjs';
 import { closeDaveBox } from './ui_daves.mjs';
-import { devSnapOpen, devSnapLeave } from './ui_devsnap.mjs';
+import { devSnapOpen, devSnapLeave, devSnapUndo, devSnapRedo } from './ui_devsnap.mjs';
 import { applyTrackConfig, readBankParams, applyBankParam,
     refreshPerClipBankParams, resyncDrumTrack,
     unlatchAllTracks, queueLiveNoteOff } from './ui_dsp_bridge.mjs';
@@ -76,7 +76,7 @@ import { setTrackMute, setTrackSolo, clearAllMuteSolo,
     clearClip, hardResetClip, copyClip, cutClip, copyRow, cutRow,
     copyDrumClip, cutDrumClip, clearRow,
     _switchActiveTrack, allLanesGate,
-    resetFxBanks, resetTarp, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint } from './ui_editops.mjs';
+    resetFxBanks, resetTarp, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
 import { _resolveLoopGesture } from './ui_input_pads.mjs';
 
 /* View lock: double-tap Loop keeps Perf Mode alive after Loop is released.
@@ -251,7 +251,7 @@ function _onCC_jog(d1, d2) {
                 S.pendingStepsRereadTrack = _t;
                 S.pendingStepsRereadClip  = S.trackActiveClip[_t];
             }
-            S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+            noteUndoUnit(); S.undoSeqArpSnapshot = null;
             showActionPopup('LGTO', 'APPLIED');
         }
         S.screenDirty = true;
@@ -342,7 +342,7 @@ function _onCC_jog(d1, d2) {
                         key: 'bake',
                         val: S.confirmBakeTrack + ' ' + S.confirmBakeClip + ' ' + S.confirmBakeDrumMode + ' ' + _loops + _laneArg + ' ' + _wrap
                     });
-                    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+                    noteUndoUnit(); S.undoSeqArpSnapshot = null;
                     showActionPopup('BAKED', _loops + 'x');
                     S.pendingBankRefresh = S.confirmBakeTrack;
                     if (S.confirmBakeClip === S.trackActiveClip[S.confirmBakeTrack]) {
@@ -354,7 +354,7 @@ function _onCC_jog(d1, d2) {
                         key: 'bake',
                         val: S.confirmBakeTrack + ' ' + S.confirmBakeClip + ' 0 ' + _loops + ' 0 ' + _wrap
                     });
-                    S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+                    noteUndoUnit(); S.undoSeqArpSnapshot = null;
                     showActionPopup('BAKED', _loops + 'x');
                     S.pendingBankRefresh      = S.confirmBakeTrack;
                     S.pendingStepsReread      = 2;
@@ -380,7 +380,7 @@ function _onCC_jog(d1, d2) {
         } else if (!S.confirmBakeIsDrum) {
             if (S.confirmBakeSel === 0) {
                 host_module_set_param('bake', S.confirmBakeTrack + ' ' + S.confirmBakeClip);
-                S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+                noteUndoUnit(); S.undoSeqArpSnapshot = null;
                 showActionPopup('BAKED');
                 S.pendingBankRefresh = S.confirmBakeTrack;
                 S.pendingStepsReread      = 2;
@@ -1411,7 +1411,6 @@ function _onCC_buttons(d1, d2) {
                         S.heldStep        = -1; S.heldStepBtn = -1; S.stepReveal = false;
                         S.heldStepNotes   = []; S.stepWasEmpty = false;
                         S.stepWasHeld     = false;
-                        S.sessionStepHeld = -1; S.sessionStepHeldCtx = 0;
                     }
                     invalidateLEDCache();
                     S.screenDirty = true;
@@ -1689,8 +1688,6 @@ function _onCC_buttons(d1, d2) {
             S.stepWasEmpty       = false;
             S.stepWasHeld        = false;
             S.stepBtnPressedTick.fill(-1);
-            S.sessionStepHeld    = -1;
-            S.sessionStepHeldCtx = 0;
         } else {
             S.loopJogActive = false;
             /* Loop released before the held start step — treat as aborted
@@ -2314,6 +2311,18 @@ function _onCC_transport(d1, d2) {
     if (S.awaitingProjectSelect) return;
     /* Undo button: press = undo; Shift+Undo = redo */
     if (d1 === MoveUndo && d2 === 127) {
+        /* A snapshot recall is an undo unit (Josh, 2026-09-05): Undo returns to
+         * the hidden before-take, Redo re-applies the slot. The DSP's own
+         * undo is not sent — the recall never touched a clip. */
+        if (S.shiftHeld && S.redoSnapshot) {
+            if (devSnapRedo()) showActionPopup('REDO', 'SNAPSHOT ' + (S.undoSnapshot.n + 1));
+            S.screenDirty = true; return;
+        }
+        if (!S.shiftHeld && S.undoSnapshot) {
+            const _n = S.undoSnapshot.n;
+            if (devSnapUndo()) showActionPopup('UNDO', 'SNAPSHOT ' + (_n + 1));
+            S.screenDirty = true; return;
+        }
         if (S.shiftHeld) {
             if (S.redoAvailable) {
                 if (S.redoSeqArpSnapshot) {
@@ -2617,7 +2626,7 @@ function _onCC_transport(d1, d2) {
             S.pendingPrerollNotes       = [];
             S.pendingPrerollToggleQueue = [];
             host_module_set_param('record_count_in', String(S.activeTrack));
-            S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+            noteUndoUnit(); S.undoSeqArpSnapshot = null;
             setButtonLED(MoveRec, Red);
             /* Adaptive mode: entered when count-in finishes (transport start edge in tick) */
         } else {
@@ -2645,7 +2654,7 @@ function _onCC_transport(d1, d2) {
             if (_adaptive) S.clipAdaptiveMode[_at][_ac] = true;
             setButtonLED(MoveRec, Red);
             host_module_set_param('t' + _at + '_recording', '1');
-            S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+            noteUndoUnit(); S.undoSeqArpSnapshot = null;
         }
         } /* end arming else (direction-gated) */
     }
@@ -4393,8 +4402,6 @@ function _switchViewCleanup() {
     S.stepWasEmpty       = false;
     S.stepWasHeld        = false;
     S.stepBtnPressedTick.fill(-1);
-    S.sessionStepHeld    = -1;
-    S.sessionStepHeldCtx = 0;
     /* Leaving Session View stops any active loop; mods/latch persist. */
     if (!S.sessionView && (S.perfViewLocked || S.perfStack.length > 0)) {
         const _hadLoop = S.perfStack.length > 0;

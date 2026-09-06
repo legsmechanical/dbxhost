@@ -162,6 +162,11 @@ void shadow_master_fx_lfo_tick(int frames);
 
 /* Direct param set (web UI ring buffer — doesn't touch shadow_param_t) */
 void shadow_direct_set_param(uint8_t slot, const char *key, const char *value);
+/* Direct get_param for a chain slot, no shared-memory mailbox: slot-level keys
+ * (slot:volume …) then the slot's plugin (synth:cutoff …). Returns the value
+ * length, or -1. The `chain:` BULK_GET loops this — one SPI frame for a whole
+ * parameter list instead of one per key (a snapshot's param capture, 2026-09-05). */
+int shadow_direct_get_param(uint8_t slot, const char *key, char *out, int cap);
 
 /* Legacy single-slot macros */
 #define shadow_master_fx_handle (shadow_master_fx_slots[0].handle)

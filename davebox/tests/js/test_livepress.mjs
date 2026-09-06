@@ -44,6 +44,11 @@ eq(childSpec(dr32).count, 32, 'dr32 count read');
  * addressing a key nothing answers. */
 eq(childSpec({ child_prefix: 'pad', child_count: 4, child_press_param: true }).pressParam,
    '', 'non-string press param is not a declaration');
+/* the #426 alignment: upstream's child_index_param is the focus source, this fork's child_select_param the fallback; the base rides along */
+eq(childSpec({ child_prefix: 'pad', child_count: 4, child_index_param: 'ui_current_pad', child_select_param: 'old' }).selectParam, 'ui_current_pad', 'child_index_param wins over child_select_param');
+eq(childSpec({ child_prefix: 'pad', child_count: 4, child_select_param: 'old' }).selectParam, 'old', 'child_select_param still read when it is all a module declares');
+eq(childSpec({ child_prefix: 'pad', child_count: 16, child_index_param: 'p', child_index_base: 1 }).indexBase, 1, 'child_index_base is carried (pads count from 1)');
+eq(childSpec({ child_prefix: 'pad', child_count: 4, child_index_param: 'p' }).indexBase, 0, 'no base declared = 0');
 eq(childSpec({ child_prefix: 'pad', child_count: 4, child_select_param: 7 }).selectParam,
    '', 'non-string select param is not a declaration');
 

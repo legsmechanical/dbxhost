@@ -34,6 +34,11 @@ export const LEDS_PER_FRAME      = 8;
 export const NUM_TRACKS          = 8;
 export const NUM_CLIPS           = 16;
 export const DRUM_LANES          = 32;
+/* Double-blink on the step LEDs after a slot SAVE. Shared: the save now fires
+ * from the press handler (ui_input_pads) for snapshots and mute states, and
+ * still from the tick (ui_tick) for perf presets, so a file-local const in
+ * either one would be a second declaration waiting to drift. */
+export const STEP_SAVE_FLASH_MS  = 425;
 export const DRUM_BASE_NOTE      = 36;
 /* DSP state-format version — mirrors `v=36` in dsp/seq8.c. Bump BOTH together.
  * Snapshots store the version they were saved at; a mismatch marks them
