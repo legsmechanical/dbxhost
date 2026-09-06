@@ -5650,7 +5650,8 @@ function hostSnapshotTake(dir, onlySlot, scope, moveBus) {
     if (onlySlot === undefined) onlySlot = -1;
     /* Flush live state to the set dir through the normal writers. The slot
      * writer is asked NOT to bail on a failed read (see autosaveAllSlots). A
-     * TRACK take flushes and copies that one slot, nothing else. */
+     * TRACK take flushes and copies that one slot plus, for a Move-routed
+     * track, its own bus — see moveBusFileNames. */
     const t0 = Date.now();
     if (scope) { for (const i of scope.slots) autosaveAllSlots(i, true); }
     else autosaveAllSlots(onlySlot >= 0 ? onlySlot : undefined, true);
@@ -5706,7 +5707,7 @@ function hostSnapshotTake(dir, onlySlot, scope, moveBus) {
         ? ["/slot_" + onlySlot + ".json"].concat(moveBusFileNames(moveBus))
         : snapshotFileNames();
     const inScope = scope ? new Set(scope.names) : null;
-    const prevHeld = snapshotDirWritten.get(dir + "|" + onlySlot) || null;   /* null = unknown, clear all */
+    const prevHeld = snapshotDirWritten.get(dir + "|" + onlySlot + "|" + (moveBus | 0)) || null;   /* null = unknown, clear all */
     /* Then copy. host_write_file is temp-then-rename, so a failed take leaves
      * the previous snapshot's file whole. */
     let copied = 0, wrote = 0, positions = 0;
@@ -5731,14 +5732,19 @@ function hostSnapshotTake(dir, onlySlot, scope, moveBus) {
         if (host_write_file(dir + name, content || "{}\n")) copied++;
         else held.add(name);
     }
-    /* ⚠ Keyed on the dir AND onlySlot, because the NAME LIST depends on
-     * onlySlot: a track take's list is one file, a session take's is 36.
-     * Recorded under the dir alone, a single `host_snapshot_take(D, 3)` would
-     * claim the other 35 names are blank and they would never be cleared
-     * again. davebox never mixes the two for one dir, but host_snapshot_take
-     * is a public binding and that invariant lives in the other half of the
-     * repo, so it is not this function's to assume. */
-    snapshotDirWritten.set(dir + "|" + onlySlot, held);
+    /* ⚠ The key must name EVERY input the NAME LIST depends on, because the
+     * skip above reads "absent from prevHeld" as "we blanked it" — which is
+     * only true while the list is fixed for a key. It depends on onlySlot (a
+     * track take's list is its slot, a session take's is 36) AND on moveBus (a
+     * Move-routed track's list is its slot plus four bus files; the same track
+     * on route 0 is the slot alone).
+     *
+     * Keyed on the dir alone, one `host_snapshot_take(D, 3)` would claim the
+     * other 35 names are blank forever. Keyed without the bus, a track that
+     * changes route between recalls leaves its old bus files unblanked and
+     * then SKIPPED — Undo would restore that bus from two recalls ago. Both
+     * were found by review rather than by these tests. */
+    snapshotDirWritten.set(dir + "|" + onlySlot + "|" + (moveBus | 0), held);
     /* Phase timings, so a slow take names its phase instead of us inferring it
      * from a total (device, 2026-09-06 — the slot/bus split had to be guessed
      * from a track take once already). */
@@ -5810,7 +5816,31 @@ function hostSnapshotRecall(dir, onlySlot, undoDir, moveBus) {
     if (!dir || typeof dir !== "string") return JSON.stringify({ ok: false, error: "no dir" });
     if (snapshotRecallJob) return JSON.stringify({ ok: false, error: "recall in progress", pending: true });
     if (onlySlot === undefined) onlySlot = -1;
-    const { records, busPrefixes } = snapshotRecords(dir, onlySlot, moveBus);
+    /* ⚠ MIGRATION. A track snapshot taken before track snapshots carried a bus
+     * has no move_fx files at all. Reading the live bus ids anyway would make
+     * planRestore treat all four positions as "added since the save" and
+     * BYPASS every FX block on that track's bus — on the user's existing
+     * snapshots, the moment they recall one. The same applies to a snapshot
+     * taken while the track was route 0 or 2.
+     *
+     * A snapshot that HAS a bus half always has all four files, even when the
+     * positions are empty (the take writes "{}\n"), so their presence is the
+     * format test. Absent, the bus is dropped from this recall entirely and
+     * the old behaviour is preserved exactly. */
+    let effBus = moveBus | 0;
+    if (onlySlot >= 0 && effBus > 0) {
+        let hasBusHalf = false;
+        for (const n of moveBusFileNames(effBus)) {
+            let c = null;
+            try { c = host_read_file(dir + n); } catch (e) { c = null; }
+            if (c) { hasBusHalf = true; break; }
+        }
+        if (!hasBusHalf) {
+            debugLog("snapshot: " + dir + " has no bus half (pre-bus track snapshot) — recalling the slot only");
+            effBus = 0;
+        }
+    }
+    const { records, busPrefixes } = snapshotRecords(dir, onlySlot, effBus);
     /* ⚠ ZERO RECORDS IS A SNAPSHOT, NOT A FAILURE (device, 2026-09-05): a new
      * project whose tracks are all Move-routed and whose buses were empty at
      * the take has nothing for the host to restore — and davebox's own half
@@ -5848,12 +5878,12 @@ function hostSnapshotRecall(dir, onlySlot, undoDir, moveBus) {
         const i = r.slot | 0;
         if (i >= 0 && i < SHADOW_UI_SLOTS && seen.indexOf(i) < 0) { seen.push(i); refreshSlotModuleSignature(i); }
     }
-    const plan = planRestore(records, snapshotLiveIds(busPrefixes, onlySlot, moveBus));
+    const plan = planRestore(records, snapshotLiveIds(busPrefixes, onlySlot, effBus));
     /* The before-image, scoped to what the plan will actually touch. */
     let undoOk = false;
     if (undoDir) {
         let res = null;
-        try { res = JSON.parse(hostSnapshotTake(undoDir, onlySlot, snapshotScopeForWrites(plan.writes), moveBus)); }
+        try { res = JSON.parse(hostSnapshotTake(undoDir, onlySlot, snapshotScopeForWrites(plan.writes), effBus)); }
         catch (e) { res = null; }
         undoOk = !!(res && res.ok);
         if (!undoOk) debugLog("snapshot: before-take for undo FAILED into " + undoDir + " — recall proceeds without an undo");

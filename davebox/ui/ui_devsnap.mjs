@@ -268,18 +268,39 @@ export function devSnapSave(n) {
  * and a parameter of that name would shadow it — a later edit calling it in
  * here would get "not a function", inside a try/catch that reads as a plain
  * "Recall failed". */
+/* The bus to recall INTO, guarded against the track having moved since the
+ * save. mixerApply already refuses to touch levels unless the saved `bus`
+ * matches the live one (a bus is shared, so writing the wrong one moves ANOTHER
+ * track's mix); the FX half must hold the same line, and it must SAY so rather
+ * than quietly restoring nothing — silence is what the neighbouring guards
+ * deliberately avoid. Returns the bus, or 0 with `moved` set. */
+function busForRecall(json) {
+    const cur = hostBusArg();
+    const t = st().track;
+    if (t < 0 || !cur) return { bus: cur, moved: false };
+    const m = json && Array.isArray(json.mixer) ? json.mixer[t] : null;
+    const saved = m && m.bus !== undefined ? (m.bus | 0) : 0;
+    if (saved && saved !== cur) return { bus: 0, moved: true, saved, cur };
+    return { bus: cur, moved: false };
+}
+
 function recallDir(dir, n, undo, undoDirPath) {
     const d = st();
     if (d.recalling >= 0) return false;                  /* one at a time */
     let json = null;
     try { json = JSON.parse(host_read_file(dir + '/davebox.json') || 'null'); } catch (e) { json = null; }
+    const bfr = busForRecall(json);
+    if (bfr.moved)
+        console.log('[devsnap] track ' + (st().track + 1) + ' was on bus ' + bfr.saved +
+                    ' at the save and is on bus ' + bfr.cur + ' now — its bus FX are NOT recalled');
     let res = null;
     const r0 = nowMs();
-    try { res = JSON.parse(host_snapshot_recall(dir, hostSlotArg(), undoDirPath || '', hostBusArg()) || 'null'); } catch (e) { res = null; }
+    try { res = JSON.parse(host_snapshot_recall(dir, hostSlotArg(), undoDirPath || '', bfr.bus) || 'null'); } catch (e) { res = null; }
     if (!res || !res.ok) { showActionPopup('SNAPSHOT ' + (n + 1), 'Recall failed'); return false; }
     console.log('[devsnap] host recall ' + (nowMs() - r0) + ' ms (' + (res.restored | 0) + ' restored)');
     if (undo && undoDirPath && !res.undoOk) undo = null;  /* no before-image → no undo unit */
     d.recalling = n; d.recallDir = dir; d.recallJson = json; d.since = nowMs(); d.recallUndo = undo || null;
+    d.recallBusMoved = !!bfr.moved;
     if (!res.pending) devSnapFinish();
     invalidateLEDCache(); forceRedraw();
     return true;
@@ -332,7 +353,8 @@ function devSnapFinish() {
      * gained a synth since the take is left alone. Module values are not
      * applied from the list — the host's state blobs already restored them. */
     const undo = d.recallUndo;
-    d.recalling = -1; d.recallDir = null; d.recallJson = null; d.recallUndo = null; d.last = n;
+    const busMoved = !!d.recallBusMoved;
+    d.recalling = -1; d.recallDir = null; d.recallJson = null; d.recallUndo = null; d.recallBusMoved = false; d.last = n;
     if (undo) markSnapshotUndo(undo.before, undo.after, undo.n, undo.track);
     /* The card: what came back, then what the recall had to DO about things
      * that were not there at the save (Josh, 2026-09-05: "pop a warning up"). */
@@ -340,9 +362,13 @@ function devSnapFinish() {
     const lines = ['SNAPSHOT ' + (n + 1), 'RESTORED'];
     if (status && status.skipped) lines.push(status.skipped + ' skipped');
     if (added) lines.push(added + ' new FX bypassed');
+    /* The track sits on a different bus than it did at the save, so its bus FX
+     * were left alone — a bus is shared, and writing the saved one would move
+     * another track's effects. Reported, not silent. */
+    if (busMoved) lines.push('bus moved: FX kept');
     if (added) console.log('[devsnap] recall ' + (n + 1) + ': bypassed ' + added + ' fx added since the save' +
                            (status && status.addedList ? ' (' + status.addedList.join(' ') + ')' : ''));
-    showActionPopupFor(added ? DEVSNAP_WARN_MS : DEVSNAP_CARD_MS, ...lines);
+    showActionPopupFor((added || busMoved) ? DEVSNAP_WARN_MS : DEVSNAP_CARD_MS, ...lines);
     invalidateLEDCache(); forceRedraw();
     return applied;
 }

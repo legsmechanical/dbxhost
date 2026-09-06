@@ -22,7 +22,7 @@ tick=$(awk '/^function snapshotRecallTick\(/{f=1} f{print} f&&/^}/{exit}' "$JS")
 echo "$tick" | grep -q 'shadow_set_params(b.slot, "chain:", bulkEncodeItems(b.items), false)' && say "ok   — a recall batch is ONE bulk SET per slot (non-transient, so autosave sees it)" || bad "recall does not use the bulk SET"
 echo "$rec" | grep -q 'while (snapshotRecallJob) snapshotRecallTick();' && say "ok   — INSTANT: every batch is written back-to-back inside the call (Josh: a brief freeze over a spread-out recall)" || bad "recall is not drained in the call"
 grep -q 'snapshotRecallTick();' "$JS" && [ "$(grep -c 'snapshotRecallTick();' "$JS")" -ge 2 ] && say "ok   — the job is driven from the host tick" || bad "tick hook missing"
-echo "$rec" | grep -q 'planRestore(records, snapshotLiveIds(busPrefixes, onlySlot, moveBus))' && say "ok   — the id-guard plan runs against the LIVE module ids" || bad "no id-guard"
+echo "$rec" | grep -q 'planRestore(records, snapshotLiveIds(busPrefixes, onlySlot, effBus))' && say "ok   — the id-guard plan runs against the LIVE module ids" || bad "no id-guard"
 echo "$tick" | grep -q 'invalidateKnobValueCache();' && say "ok   — knob caches are dropped after a recall (the first-turn snap-back lesson)" || bad "knob caches not invalidated"
 
 # take: through the autosave writers, without the bail, then copy atomically
@@ -39,7 +39,7 @@ grep -q 'flushed and renamed over the destination' src/host/js_host_common.c && 
 # exists once the plan is built, and because building the plan does the
 # expensive live-id read the before-take would otherwise repeat. Unscoped, the
 # before-take cost 475-492 ms on every recall on the device.
-echo "$rec" | grep -q 'hostSnapshotTake(undoDir, onlySlot, snapshotScopeForWrites(plan.writes), moveBus)' \
+echo "$rec" | grep -q 'hostSnapshotTake(undoDir, onlySlot, snapshotScopeForWrites(plan.writes), effBus)' \
     && say "ok   — the before-image is SCOPED to the positions the plan will write" \
     || bad "the before-take is not scoped to plan.writes"
 # Ordering is the whole contract of a before-image: it must precede the writes.
@@ -73,7 +73,7 @@ done
 # ⚠ The dir is no longer fully REWRITTEN — that is the delta below. What must
 # not change is that every name is CONSIDERED, so a name can only be left alone
 # by a deliberate, recorded decision rather than by never being looked at.
-echo "$take" | grep -q 'concat(moveBusFileNames(moveBus))' && echo "$take" | grep -q 'snapshotFileNames();' \
+echo "$take" | grep -qF 'const names = onlySlot >= 0' && echo "$take" | grep -qF '? ["/slot_" + onlySlot + ".json"].concat(moveBusFileNames(moveBus))' && echo "$take" | grep -qF ': snapshotFileNames();' \
     && say "ok   — the loop iterates the FULL name list, never scope.names (every name is considered)" \
     || bad "the copy loop iterates a scoped name list — stale files would survive in the undo dir"
 echo "$take" | grep -q 'if (host_write_file(dir + name, content || "{}\\n")) copied++;' \
@@ -87,7 +87,7 @@ echo "$take" | awk '/if \(!inScope \|\| inScope.has\(name\)\)/{d=1} d&&/^       
 # python proxy on the same fs had said 3-9 ms, and was out by ~10x). Only names
 # THIS PROCESS knows it left blank may be skipped: a dir we have not written
 # may hold a previous session's files, which is the staleness being prevented.
-echo "$take" | grep -q 'const prevHeld = snapshotDirWritten.get(dir + "|" + onlySlot) || null;' \
+echo "$take" | grep -qF 'const prevHeld = snapshotDirWritten.get(dir + "|" + onlySlot + "|" + (moveBus | 0))' \
     && say "ok   — the clear is a delta against what this process last wrote" || bad "no delta record"
 echo "$take" | grep -q 'else if (prevHeld && !prevHeld.has(name)) {' \
     && say "ok   — ...and a name is skipped ONLY when prevHeld is known AND says it is blank" \
@@ -100,9 +100,17 @@ grep -q 'const snapshotDirWritten = new Map();' "$JS" && say "ok   — the recor
 # neither identifier on that line. A check that cannot fail is worse than none
 # — it reads as coverage. The property it wanted is pinned positively instead:
 # the record is a plain in-memory Map declared with no serialiser.
-echo "$take" | grep -q 'snapshotDirWritten.set(dir + "|" + onlySlot, held);' \
-    && say "ok   — the record is keyed on dir AND onlySlot (the name list depends on it)" \
-    || bad "the record is keyed on the dir alone — a track take would claim the other 35 names are blank"
+# ⚠ The key must name EVERY input the NAME LIST depends on — dir, onlySlot AND
+# moveBus. The skip reads "absent from prevHeld" as "we blanked it", true only
+# while the list is fixed for a key. Keyed without the bus, a track that changes
+# route between recalls leaves its old bus files unblanked and then SKIPPED, and
+# Undo restores that bus from two recalls ago. (Both halves of this were found
+# by review; the onlySlot half first, then the bus half it reopened.)
+echo "$take" | grep -qF 'snapshotDirWritten.set(dir + "|" + onlySlot + "|" + (moveBus | 0), held);' \
+    && say "ok   — the record is keyed on dir, onlySlot AND moveBus (every input the name list depends on)" \
+    || bad "the delta key omits an input the name list depends on — stale files would be skipped"
+echo "$take" | grep -qF 'snapshotDirWritten.get(dir + "|" + onlySlot + "|" + (moveBus | 0))' \
+    && say "ok   — ...and the read uses the same composite key" || bad "the record is read under a different key than it is written"
 echo "$take" | grep -q 'else held.add(name);' \
     && say "ok   — a FAILED blanking write keeps the name marked held (temp-then-rename left it whole)" \
     || bad "a failed blanking write is recorded as blank — the record is poisoned for the process"
@@ -133,7 +141,7 @@ rec2=$(awk '/^function snapshotRecords\(/{f=1} f{print} f&&/^}/{exit}' "$JS")
 echo "$rec2" | grep -q 'trackBusNames && trackBusNames.indexOf(name) < 0' \
     && say "ok   — a track RECALL plans that bus's positions (it used to skip the bus half entirely)" \
     || bad "a track recall still has no bus half"
-echo "$rec" | grep -q 'snapshotLiveIds(busPrefixes, onlySlot, moveBus)' \
+echo "$rec" | grep -q 'snapshotLiveIds(busPrefixes, onlySlot, effBus)' \
     && say "ok   — ...and the id-guard reads that bus's live module ids" || bad "the track id-guard cannot see the bus"
 # ⚠ THE RULING: the track's OWN bus only. Sends and master are SHARED between
 # tracks, so recalling one track must never move another track's effects.
@@ -152,6 +160,20 @@ echo "$mbf" | grep -q 'sl < 0 || sl >= MOVE_FX_SLOTS_JS' \
 echo "$take" | grep -q 'saveMoveFxChainConfig((moveBus | 0) - 1)' \
     && say "ok   — a track take flushes ONE bus (the saver's 0-based filter), not all 16 positions" \
     || bad "a track take flushes every Move bus — the track recall would get slower for gaining its bus"
+
+# ---- MIGRATION: a pre-bus track snapshot must not bypass the whole bus ------
+# A track snapshot taken before track snapshots carried a bus has no move_fx
+# files. Reading the live bus ids anyway makes planRestore call all four
+# positions "added since the save" and BYPASS every FX block on that bus — on
+# the user's existing snapshots, the moment they recall one.
+echo "$rec" | grep -q 'let effBus = moveBus | 0;' \
+    && say "ok   — the recall computes an EFFECTIVE bus, not the raw one" || bad "no effective-bus migration guard"
+echo "$rec" | grep -q 'if (!hasBusHalf)' \
+    && say "ok   — a snapshot with no bus half drops the bus from the recall (old behaviour preserved)" \
+    || bad "a pre-bus snapshot would bypass every FX on the track's bus"
+for f in snapshotRecords snapshotLiveIds hostSnapshotTake; do
+    echo "$rec" | grep -q "$f(.*effBus" && say "ok   — ...and $f is given effBus, not moveBus" || bad "$f still gets the raw moveBus"
+done
 
 # control: a bare tick body must fail the bulk pin
 echo "function snapshotRecallTick() {}" | grep -q 'shadow_set_params' && bad "control: an empty tick passed" || say "ok   — control: an empty tick fails the pin"
