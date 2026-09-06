@@ -34,6 +34,35 @@ for w in saveMasterFxChainConfig saveSendFxChainConfig saveMoveFxChainConfig; do
 done
 grep -q 'flushed and renamed over the destination' src/host/js_host_common.c && say "ok   — host_write_file is temp-then-rename, so a failed take leaves the previous file whole" || bad "host_write_file is not atomic"
 
+# ---- the UNDO before-image is taken INSIDE the recall, and SCOPED ----------
+# It moved here (2026-09-06) because the scope is `plan.writes`, which only
+# exists once the plan is built, and because building the plan does the
+# expensive live-id read the before-take would otherwise repeat. Unscoped, the
+# before-take cost 475-492 ms on every recall on the device.
+echo "$rec" | grep -q 'hostSnapshotTake(undoDir, onlySlot, snapshotScopeForWrites(plan.writes))' \
+    && say "ok   — the before-image is SCOPED to the positions the plan will write" \
+    || bad "the before-take is not scoped to plan.writes"
+# Ordering is the whole contract of a before-image: it must precede the writes.
+before_line=$(echo "$rec" | grep -n 'hostSnapshotTake(undoDir' | head -1 | cut -d: -f1)
+write_line=$(echo "$rec" | grep -n 'snapshotRecallJob = {' | head -1 | cut -d: -f1)
+[ -n "$before_line" ] && [ -n "$write_line" ] && [ "$before_line" -lt "$write_line" ] \
+    && say "ok   — the before-image is taken BEFORE any write is queued (line $before_line < $write_line)" \
+    || bad "the before-take does not precede the writes"
+echo "$rec" | grep -q 'undoOk' && say "ok   — the recall reports whether the before-image landed, so davebox can skip a bogus undo unit" || bad "recall does not report undoOk"
+grep -q 'globalThis.host_snapshot_recall = function(dir, slot, undoDir)' "$JS" \
+    && say "ok   — the binding takes the undo dir as its 3rd arg" || bad "binding does not accept undoDir"
+# The scope DERIVATION is pure and unit-tested in test_snapshot_plan.sh; this
+# file only pins that shadow_ui.js uses it rather than reimplementing it.
+grep -q 'scopeForWrites' "$JS" && say "ok   — the scope derivation comes from shared/snapshot.mjs (one owner, tested standalone)" || bad "scopeForWrites not imported"
+scope=$(awk '/^function snapshotScopeForWrites\(/{f=1} f{print} f&&/^}/{exit}' "$JS")
+echo "$scope" | grep -q 'scopeForWrites(writes, SHADOW_UI_SLOTS)' && say "ok   — ...and the wrapper only maps families to file names" || bad "the wrapper re-derives the scope"
+# A scoped take must not flush what it was not asked for.
+echo "$take" | grep -q 'if (scope) { for (const i of scope.slots) autosaveAllSlots(i, true); }' \
+    && say "ok   — a scoped take flushes ONLY the slots in scope" || bad "a scoped take still flushes every slot"
+for fam in master send move; do
+    echo "$take" | grep -qE "if \(scope\.$fam\)" && say "ok   — the $fam saver runs only when the $fam family is in scope" || bad "the $fam saver is unconditional"
+done
+
 # control: a bare tick body must fail the bulk pin
 echo "function snapshotRecallTick() {}" | grep -q 'shadow_set_params' && bad "control: an empty tick passed" || say "ok   — control: an empty tick fails the pin"
 

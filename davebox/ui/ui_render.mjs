@@ -33,7 +33,7 @@ import { drawAutoMarkAt,
     drawLevelCard,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
-    drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y
+    drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y, MV_BAR_Y
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawExitConfirm, drawTypeChangeConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
@@ -858,10 +858,39 @@ const MARK_BAR_H = BANNER_H;   /* one owner of the 12: the window IS the bar */
 /* Row 2 of an overview: the metronome word — or, while the snapshot layer is
  * open, the layer's NAME in the bank-heading face, centred (Josh, 2026-09-05:
  * a mode you are in, not a flash you missed). Both overviews. */
+/* THE SNAPSHOT LAYER OWNS THE WHOLE BAND (Josh, 2026-09-06, device: "needs to
+ * take up both the rows between the header and track indicator … as it is now
+ * the snapshot indicator text bleeds into the first row after the header and
+ * it's hard to read … we should also make that indicator blink").
+ *
+ * The title used to be a bare 6px hdrPrint parked at y=16: it straddled the
+ * two rows of the band instead of sitting in either, and its descender crowded
+ * the track row's line. It now CLAIMS the band — from the bottom of whichever
+ * header this view drew down to the track indicator — and centres itself in
+ * it, so the mode reads as a mode rather than as a stray caption.
+ *
+ * The two views have different headers and the band is measured from each
+ * rather than hardcoded: session view's is the 12px banner (MARK_BAR_H), track
+ * view's is the kit bank heading whose rule sits at MV_BAR_Y. In track view
+ * that deliberately covers the oct/arp/key info row — while Capture is held
+ * that row is not what you are reading, and covering it makes the band
+ * identical in both views.
+ *
+ * BLINK: the band alternates between an inverted chip (black on white) and
+ * plain (white on black) on the file's standard 220 ms phase — the one the
+ * solo indicator and the step page's ALL prefix already use. Both halves of
+ * the cycle are legible, so it announces itself without ever being unreadable,
+ * which a simple on/off blink would be half the time. */
+const DEVSNAP_BLINK_MS = 220;
 function drawInfoRow2() {
     if (devSnapOpen()) {
         const _sn = devSnapTitle();
-        hdrPrint(Math.round((128 - hdrWidth(_sn)) / 2), 16, _sn, 1);
+        const _top = S.sessionView ? MARK_BAR_H : MV_BAR_Y;
+        const _h = OVW_TRACK_ROW_Y - _top - 1;      /* 1px clear of the track row */
+        const _on = Math.floor(S.clockMs / DEVSNAP_BLINK_MS) % 2 === 0;
+        if (_on) fill_rect(0, _top, 128, _h, 1);
+        hdrPrint(Math.round((128 - hdrWidth(_sn)) / 2),
+                 _top + Math.floor((_h - 6) / 2), _sn, _on ? 0 : 1);
     } else {
         drawMetroIndicator();
     }

@@ -81,7 +81,19 @@ const snapCalls = [];
 const files = {};
 let recallPending = false;
 globalThis.host_snapshot_take   = (dir, slot) => { snapCalls.push(['take', dir, slot]); return JSON.stringify({ ok: true, skipped: 0, positions: 12 }); };
-globalThis.host_snapshot_recall = (dir, slot) => { snapCalls.push(['recall', dir, slot]); recallPending = true; return JSON.stringify({ ok: true, pending: true }); };
+/* The 3rd arg is the Undo before-image dir: the host takes it INSIDE the
+ * recall, scoped to the positions the plan will write (2026-09-06), and
+ * reports back whether it landed. The stub models both — a recall asked for a
+ * before-image records the take, so a test can still see one happen. */
+globalThis.host_snapshot_recall = (dir, slot, undoDir) => {
+    /* The before-image is taken INSIDE the recall and strictly before any
+     * write — record it in that order, so the ordering assertion below still
+     * pins the real sequence of effects rather than the stub's convenience. */
+    if (undoDir) snapCalls.push(['take', undoDir, slot]);
+    snapCalls.push(['recall', dir, slot]);
+    recallPending = true;
+    return JSON.stringify({ ok: true, pending: true, undoOk: !!undoDir });
+};
 let statusSkipped = 1, statusAdded = 0;
 globalThis.host_snapshot_status = () => JSON.stringify({ pending: recallPending, skipped: statusSkipped, added: statusAdded, addedList: statusAdded ? ['master_fx:fx1'] : [] });
 globalThis.host_file_exists = (p) => Object.prototype.hasOwnProperty.call(files, p) && files[p] !== '';

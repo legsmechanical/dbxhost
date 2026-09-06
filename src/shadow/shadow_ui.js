@@ -39,7 +39,7 @@ import {
 import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
 /* Snapshot / recall — the PURE half (parsers, the restore planner, the bulk
  * packing). The host bindings below drive it; dAVEBOx owns the gesture. */
-import { parseSlotSnapshot, parseBusSnapshot, planRestore, batchWrites, bulkEncodeItems }
+import { parseSlotSnapshot, parseBusSnapshot, planRestore, batchWrites, bulkEncodeItems, scopeForWrites }
     from '/data/UserData/schwung/shared/snapshot.mjs';
 /* The ONE definition of "this two-state control is a momentary button", shared
  * with the param-pages knob grid. See isTriggerParam below for why this file
@@ -4496,8 +4496,12 @@ function loadOvertakeModule(moduleInfo, skipOvertake) {
          * state-only recall. See the block above saveOneDirtyUnit. */
         /* Optional 2nd arg: a chain SLOT — the take copies only that slot's file and the
          * recall plans only that slot's positions (TRACK snapshots, Josh 2026-09-05). */
+        /* Optional 3rd arg to recall: the dir to take the Undo before-image
+         * into, scoped to the positions the recall will write (2026-09-06). */
         globalThis.host_snapshot_take   = function(dir, slot) { return hostSnapshotTake(String(dir || ""), slotArg(slot)); };
-        globalThis.host_snapshot_recall = function(dir, slot) { return hostSnapshotRecall(String(dir || ""), slotArg(slot)); };
+        globalThis.host_snapshot_recall = function(dir, slot, undoDir) {
+            return hostSnapshotRecall(String(dir || ""), slotArg(slot), undoDir ? String(undoDir) : "");
+        };
         globalThis.host_snapshot_status = function() { return hostSnapshotStatus(); };
         globalThis.host_autosave_hold = function(on) {
             autosaveHold = !!on;
@@ -5566,16 +5570,47 @@ function snapshotLiveIds(busPrefixes, onlySlot) {
     return live;
 }
 
-function hostSnapshotTake(dir, onlySlot) {
+/* The capture scope for the Undo before-image, as file names this file can
+ * copy. The DERIVATION is pure and lives in shared/snapshot.mjs
+ * (scopeForWrites), where it is unit-tested; all this adds is the mapping from
+ * families to the on-disk names, which needs this file's own layout
+ * constants. */
+function snapshotScopeForWrites(writes) {
+    const sc = scopeForWrites(writes, SHADOW_UI_SLOTS);
+    const names = [];
+    for (const i of sc.slots) names.push("/slot_" + i + ".json");
+    if (sc.master) for (let i = 0; i < 4; i++) names.push("/master_fx_" + i + ".json");
+    if (sc.send) for (const b of SEND_FX_BUSES)
+        for (let s = 0; s < SEND_FX_SLOTS_JS; s++) names.push("/send_fx_" + b + "_" + s + ".json");
+    if (sc.move) for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++)
+        for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) names.push("/move_fx_" + sl + "_" + b + ".json");
+    return { slots: sc.slots, master: sc.master, send: sc.send, move: sc.move, names };
+}
+
+/* `scope` (optional) restricts the flush and the copy — see
+ * snapshotScopeForWrites. null means the whole device, which is what a
+ * user-facing save still takes. */
+function hostSnapshotTake(dir, onlySlot, scope) {
     if (!dir || typeof dir !== "string") return JSON.stringify({ ok: false, error: "no dir" });
     if (typeof host_ensure_dir === "function") host_ensure_dir(dir);
     if (onlySlot === undefined) onlySlot = -1;
     /* Flush live state to the set dir through the normal writers. The slot
      * writer is asked NOT to bail on a failed read (see autosaveAllSlots). A
      * TRACK take flushes and copies that one slot, nothing else. */
-    autosaveAllSlots(onlySlot >= 0 ? onlySlot : undefined, true);
-    if (onlySlot < 0) { saveMasterFxChainConfig(true); saveSendFxChainConfig(); saveMoveFxChainConfig(); }
-    const names = onlySlot >= 0 ? ["/slot_" + onlySlot + ".json"] : snapshotFileNames();
+    const t0 = Date.now();
+    if (scope) { for (const i of scope.slots) autosaveAllSlots(i, true); }
+    else autosaveAllSlots(onlySlot >= 0 ? onlySlot : undefined, true);
+    const t1 = Date.now();
+    if (scope) {
+        if (scope.master) saveMasterFxChainConfig(true);
+        if (scope.send)   saveSendFxChainConfig();
+        if (scope.move)   saveMoveFxChainConfig();
+    } else if (onlySlot < 0) {
+        saveMasterFxChainConfig(true); saveSendFxChainConfig(); saveMoveFxChainConfig();
+    }
+    const t2 = Date.now();
+    const names = scope ? scope.names
+                        : (onlySlot >= 0 ? ["/slot_" + onlySlot + ".json"] : snapshotFileNames());
     /* Then copy. host_write_file is temp-then-rename, so a failed take leaves
      * the previous snapshot's file whole. */
     let copied = 0, positions = 0;
@@ -5585,8 +5620,15 @@ function hostSnapshotTake(dir, onlySlot) {
         if (content && content.length > 3) positions++;
         if (host_write_file(dir + name, content || "{}\n")) copied++;
     }
+    /* Phase timings, so a slow take names its phase instead of us inferring it
+     * from a total (device, 2026-09-06 — the slot/bus split had to be guessed
+     * from a track take once already). */
     debugLog("snapshot: took " + copied + "/" + names.length + " files (" +
-             positions + " occupied) into " + dir + (onlySlot >= 0 ? " (slot " + onlySlot + ")" : ""));
+             positions + " occupied) into " + dir + (onlySlot >= 0 ? " (slot " + onlySlot + ")" : "") +
+             (scope ? " [scoped: " + scope.slots.length + " slot(s)" +
+                      (scope.master ? " master" : "") + (scope.send ? " send" : "") +
+                      (scope.move ? " move" : "") + "]" : "") +
+             " — slots " + (t1 - t0) + " ms, buses " + (t2 - t1) + " ms, copy " + (Date.now() - t2) + " ms");
     return JSON.stringify({ ok: copied === names.length, copied, positions });
 }
 
@@ -5620,7 +5662,21 @@ function snapshotRecords(dir, onlySlot) {
     return { records, busPrefixes };
 }
 
-function hostSnapshotRecall(dir, onlySlot) {
+/* `undoDir` (optional): take the Undo before-image as part of THIS call,
+ * scoped to the positions the plan is about to write.
+ *
+ * It lives here rather than in davebox's gesture for two reasons, both about
+ * the cost that made recall feel slow on the device (2026-09-06):
+ *   1. the SCOPE is `plan.writes`, which only exists once the plan is built;
+ *   2. building the plan needs snapshotLiveIds(), whose bus half is ~24 name
+ *      reads over SPI. Done as two separate host calls, the before-take and
+ *      the recall each paid for their own live reads AND the take captured all
+ *      36 positions. One call computes the live map once and captures only
+ *      what it is about to overwrite.
+ * The take necessarily happens BEFORE any write — that is the whole contract
+ * of a before-image. `undoOk` in the result says whether Undo has something to
+ * go back to; davebox registers the undo unit only when it is true. */
+function hostSnapshotRecall(dir, onlySlot, undoDir) {
     if (!dir || typeof dir !== "string") return JSON.stringify({ ok: false, error: "no dir" });
     if (snapshotRecallJob) return JSON.stringify({ ok: false, error: "recall in progress", pending: true });
     if (onlySlot === undefined) onlySlot = -1;
@@ -5633,6 +5689,15 @@ function hostSnapshotRecall(dir, onlySlot) {
      * plan. Treating it as "no snapshot" read as RECALL FAILED on every tap. */
     if (records.length === 0) debugLog("snapshot: no host records in " + dir + " — davebox's half and the added-since bypasses still apply");
     const plan = planRestore(records, snapshotLiveIds(busPrefixes, onlySlot));
+    /* The before-image, scoped to what the plan will actually touch. */
+    let undoOk = false;
+    if (undoDir) {
+        let res = null;
+        try { res = JSON.parse(hostSnapshotTake(undoDir, onlySlot, snapshotScopeForWrites(plan.writes))); }
+        catch (e) { res = null; }
+        undoOk = !!(res && res.ok);
+        if (!undoOk) debugLog("snapshot: before-take for undo FAILED into " + undoDir + " — recall proceeds without an undo");
+    }
     for (const r of plan.reasons) {
         debugLog("snapshot: skipped " + r.prefix + " (" + r.reason +
                  (r.was ? ", was " + r.was : "") + (r.now ? ", now " + r.now : "") + ")");
@@ -5650,7 +5715,7 @@ function hostSnapshotRecall(dir, onlySlot) {
      * object stays so the finish work (cache drop, grid refresh, the result)
      * runs once, in one place, and status answers "done" the moment we return. */
     while (snapshotRecallJob) snapshotRecallTick();
-    return JSON.stringify(Object.assign(JSON.parse(hostSnapshotStatus()), { ok: true }));
+    return JSON.stringify(Object.assign(JSON.parse(hostSnapshotStatus()), { ok: true, undoOk }));
 }
 
 /* Drive the job: one bulk SET per step. Called back-to-back by hostSnapshotRecall

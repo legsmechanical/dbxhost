@@ -201,22 +201,34 @@ function onlyTrack(list, t) { return t < 0 ? list : list.map((e, i) => (i === t 
  * (a recall restores from the host's blobs and the seq/mixer halves; the list
  * is for the morph, and Undo never morphs). Phase timings go to the log so a
  * slow take names its phase (device, 2026-09-06). */
+/* davebox's HALF of a take: the mixer, the seq values and (unless light) the
+ * param list, into davebox.json. Split out from takeInto because the Undo
+ * before-image no longer calls the host take at all — the host does its half
+ * INSIDE the recall, scoped to the positions it is about to write (2026-09-06;
+ * unscoped it cost 475-492 ms on every recall, which is what Josh felt). */
+function daveboxHalfInto(dir, light) {
+    const t = st().track;
+    const t0 = nowMs();
+    const mixer = onlyTrack(mixerCapture(), t);
+    const t1 = nowMs();
+    const params = light ? [] : onlyTrack(paramsCapture(), t);
+    const t2 = nowMs();
+    /* A TRACK take keeps only that track's entries; the appliers skip nulls. */
+    const json = { v: 4, track: t, mixer, params, seq: onlyTrack(seqCapture(), t), taken: Date.now() };
+    const ok = host_write_file(dir + '/davebox.json', JSON.stringify(json));
+    return { ok, mixer: t1 - t0, params: t2 - t1, write: nowMs() - t2 };
+}
+
 function takeInto(dir, light) {
     host_ensure_dir(dir);
-    const t = st().track;
     const t0 = nowMs();
     let res = null;
     try { res = JSON.parse(host_snapshot_take(dir, hostSlotArg()) || 'null'); } catch (e) { res = null; }
     if (!res || !res.ok) return null;
     const t1 = nowMs();
-    const mixer = onlyTrack(mixerCapture(), t);
-    const t2 = nowMs();
-    const params = light ? [] : onlyTrack(paramsCapture(), t);
-    const t3 = nowMs();
-    /* A TRACK take keeps only that track's entries; the appliers skip nulls. */
-    const json = { v: 4, track: t, mixer, params, seq: onlyTrack(seqCapture(), t), taken: Date.now() };
-    if (!host_write_file(dir + '/davebox.json', JSON.stringify(json))) return null;
-    console.log('[devsnap] take ' + (light ? '(light) ' : '') + 'host ' + (t1 - t0) + ' ms, mixer ' + (t2 - t1) + ' ms, params ' + (t3 - t2) + ' ms, write ' + (nowMs() - t3) + ' ms');
+    const half = daveboxHalfInto(dir, light);
+    if (!half.ok) return null;
+    console.log('[devsnap] take ' + (light ? '(light) ' : '') + 'host ' + (t1 - t0) + ' ms, mixer ' + half.mixer + ' ms, params ' + half.params + ' ms, write ' + half.write + ' ms');
     return res;
 }
 
@@ -235,16 +247,20 @@ export function devSnapSave(n) {
 /* Recall `dir`. `undo` = { before, after, n } registers the recall as the
  * thing Undo returns from; null for an undo/redo recall itself (which must
  * not register a unit of its own — that would be undo-of-undo). */
-function recallDir(dir, n, undo) {
+/* `undoDir` (optional): the host takes the scoped before-image inside the same
+ * call — see hostSnapshotRecall. `undo` is only registered if it reports back
+ * that the before-image is actually there. */
+function recallDir(dir, n, undo, undoDir) {
     const d = st();
     if (d.recalling >= 0) return false;                  /* one at a time */
     let json = null;
     try { json = JSON.parse(host_read_file(dir + '/davebox.json') || 'null'); } catch (e) { json = null; }
     let res = null;
     const r0 = nowMs();
-    try { res = JSON.parse(host_snapshot_recall(dir, hostSlotArg()) || 'null'); } catch (e) { res = null; }
+    try { res = JSON.parse(host_snapshot_recall(dir, hostSlotArg(), undoDir || '') || 'null'); } catch (e) { res = null; }
     if (!res || !res.ok) { showActionPopup('SNAPSHOT ' + (n + 1), 'Recall failed'); return false; }
     console.log('[devsnap] host recall ' + (nowMs() - r0) + ' ms (' + (res.restored | 0) + ' restored)');
+    if (undo && undoDir && !res.undoOk) undo = null;      /* no before-image → no undo unit */
     d.recalling = n; d.recallDir = dir; d.recallJson = json; d.since = nowMs(); d.recallUndo = undo || null;
     if (!res.pending) devSnapFinish();
     invalidateLEDCache(); forceRedraw();
@@ -258,9 +274,12 @@ export function devSnapRecall(n) {
     /* UNDO (Josh, 2026-09-05): the live state goes into the hidden before-dir
      * first, so Undo can bring it back and Redo can re-apply the slot. A
      * failed before-take does not block the recall — it just leaves no undo. */
+    /* davebox's half of the before-image is written here (mixer + seq, ~25 ms);
+     * the HOST's half happens inside the recall, scoped to the positions the
+     * plan will write. `light` still means no param list — Undo never morphs. */
     let before = null;
-    if (S.currentSetUuid) { const u = undoDir(); if (takeInto(u, true)) before = u; }
-    return recallDir(slotDir(n), n, before ? { before, after: slotDir(n), n, track: d.track } : null);
+    if (S.currentSetUuid) { const u = undoDir(); host_ensure_dir(u); if (daveboxHalfInto(u, true).ok) before = u; }
+    return recallDir(slotDir(n), n, before ? { before, after: slotDir(n), n, track: d.track } : null, before);
 }
 
 /* The Undo button on a recall: back to the before-take. Redo re-applies the

@@ -11,7 +11,7 @@ cd "$(dirname "$0")/../.."
 
 node --input-type=module -e '
 import { parseSlotSnapshot, parseBusSnapshot, parseMasterFxSnapshot, planRestore,
-         batchWrites, bulkEncodeItems, recallMessage }
+         batchWrites, bulkEncodeItems, recallMessage, scopeForWrites }
     from "./src/shared/snapshot.mjs";
 
 let fails = 0;
@@ -113,6 +113,38 @@ eq("a non-ASCII value is measured in UTF-8 bytes", bulkEncodeItems(["é"]), "1\n
 eq("clean recall message", recallMessage(0), ["restored"]);
 eq("lossy recall message", recallMessage(3), ["restored", "3 skipped"]);
 eq("recall message names what was bypassed and muted", recallMessage(0, 2, 1), ["restored", "2 new fx bypassed", "1 track muted"]);
+
+/* ---- the UNDO capture scope -------------------------------------------
+ * A recall takes a before-image so Undo can go back. Unscoped that flushed
+ * all 8 slots and ran all three bus savers (28 bus positions), costing
+ * 475-492 ms on EVERY recall on the device while the recall it protected
+ * restored ONE position. The scope is what makes Undo cheap, so what it
+ * INCLUDES and what it leaves out are both load-bearing. */
+eq("no writes: nothing is flushed and no bus saver runs",
+   scopeForWrites([], 8), { slots: [], master: false, send: false, move: false });
+eq("one slot write scopes to that slot alone — the 8-slot flush is the cost that was felt",
+   scopeForWrites([{ prefix: "3:synth", slot: 3 }], 8), { slots: [3], master: false, send: false, move: false });
+eq("several positions in one slot are still one slot",
+   scopeForWrites([{ prefix: "3:synth", slot: 3 }, { prefix: "3:fx1", slot: 3 }], 8).slots, [3]);
+eq("slots come back sorted, whatever order the writes arrived in",
+   scopeForWrites([{ prefix: "5:synth", slot: 5 }, { prefix: "1:fx2", slot: 1 }], 8).slots, [1, 5]);
+/* ⚠ The bus prefixes MUST be matched before the slot branch: a slot prefix is
+ * "<i>:<key>", so a bus record falling through would add a bogus slot. */
+eq("a master position pulls in the master saver ONLY",
+   scopeForWrites([{ prefix: "master_fx:fx1", slot: 0 }], 8), { slots: [], master: true, send: false, move: false });
+eq("a send position pulls in the send saver ONLY — and adds NO slot",
+   scopeForWrites([{ prefix: "send_fx:a:fx2", slot: 0 }], 8), { slots: [], master: false, send: true, move: false });
+eq("a Move position pulls in the Move saver ONLY — the 16-position walk is skipped otherwise",
+   scopeForWrites([{ prefix: "move_fx:2:fx3", slot: 0 }], 8), { slots: [], master: false, send: false, move: true });
+eq("one position in a family costs the whole family, because the saver is all-or-nothing",
+   scopeForWrites([{ prefix: "move_fx:1:fx1", slot: 0 }, { prefix: "move_fx:4:fx4", slot: 0 }], 8).move, true);
+eq("a mixed plan takes exactly the families it names, and no others",
+   scopeForWrites([{ prefix: "0:synth", slot: 0 }, { prefix: "master_fx:fx2", slot: 0 }], 8),
+   { slots: [0], master: true, send: false, move: false });
+eq("an out-of-range slot index is dropped rather than flushed",
+   scopeForWrites([{ prefix: "9:synth", slot: 9 }, { prefix: "-1:synth", slot: -1 }], 8).slots, []);
+eq("a null/undefined write list is empty scope, not a throw",
+   scopeForWrites(null, 8), { slots: [], master: false, send: false, move: false });
 
 if (fails) { console.error(`\n${fails} assertion(s) failed`); process.exit(1); }
 console.log("PASS: test_snapshot_plan");

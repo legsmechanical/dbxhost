@@ -253,3 +253,40 @@ export function recallMessage(skipped, added, muted) {
     if (muted > 0) out.push(`${muted} track${muted === 1 ? "" : "s"} muted`);
     return out;
 }
+
+/* THE CAPTURE SCOPE for an Undo before-image: which slots must be flushed and
+ * which bus FAMILIES saved, given the writes a recall is about to make.
+ *
+ * Undo only ever has to restore what the recall changes, so this is the whole
+ * cost of Undo — and it is not a micro-optimisation. Measured on the device
+ * (2026-09-06) an UNSCOPED before-take flushed all 8 slots and ran all three
+ * bus savers, which between them walk 28 positions (4 master + 8 send + 16
+ * Move), costing 475-492 ms on EVERY recall — while the recall it protected
+ * reported `restored 1`. The file copy was never the cost: the whole snapshot
+ * is 6.7 KB across 37 files and copies in 3-9 ms.
+ *
+ * A bus family is all-or-nothing because its SAVER is: saveSendFxChainConfig
+ * and saveMoveFxChainConfig each write every position they own in one pass, so
+ * naming one position in a family costs the whole family. Slots are per-slot.
+ *
+ * Pure, so it is tested standalone (test_snapshot_plan.sh) rather than grepped
+ * out of shadow_ui.js — the same split the planner already uses. */
+export function scopeForWrites(writes, nSlots) {
+    const slots = [];
+    let master = false, send = false, move = false;
+    const n = (nSlots | 0) > 0 ? (nSlots | 0) : 8;
+    for (const w of (writes || [])) {
+        const p = String((w && w.prefix) || "");
+        /* Bus prefixes are matched FIRST: a slot record's prefix is "<i>:<key>"
+         * and would otherwise fall through to a bogus slot index. */
+        if (p.indexOf("master_fx:") === 0) master = true;
+        else if (p.indexOf("send_fx:") === 0) send = true;
+        else if (p.indexOf("move_fx:") === 0) move = true;
+        else {
+            const i = (w && w.slot) | 0;
+            if (i >= 0 && i < n && slots.indexOf(i) < 0) slots.push(i);
+        }
+    }
+    slots.sort((a, b) => a - b);
+    return { slots, master, send, move };
+}
