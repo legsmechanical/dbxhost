@@ -2156,6 +2156,48 @@ int shadow_direct_get_param(uint8_t slot, const char *key, char *out, int cap) {
     if (slot >= SHADOW_CHAIN_INSTANCES) return -1;
     int len = shadow_handle_slot_param_get(slot, key, out, cap);
     if (len >= 0) return len;
+
+    /* ⚠ BUS-LEVEL Move FX params. These resolve in the single-request handler
+     * (shadow_inprocess_handle_param_request) and used to resolve NOWHERE else
+     * — so every one of them failed on this path, which is the one the `chain:`
+     * BULK GET uses.
+     *
+     * That was not a visible failure. shim_handle_param_bulk_chain_get leaves
+     * vlen at 0 when a key does not resolve, so an unresolved key comes back as
+     * an EMPTY VALUE with the item COUNT still correct; davebox's engineGetMany
+     * accepts any answer whose count matches, so its per-key fallback never
+     * fired and parseFloat("") silently dropped the level.
+     *
+     * The symptom on device (Josh, 2026-09-06): a Move-routed track's snapshot
+     * recorded only {"route":1,"bus":N} while a Schwung track recorded all four
+     * levels, so recalling a Move track restored no volume, pan or sends at
+     * all. It arrived when the mixer capture switched to one bulk read per
+     * track ("was four round trips") — the optimisation silently changed WHICH
+     * keys could be read.
+     *
+     * Read from the same shadow_move_fx_strip[] the single path reads, so the
+     * two cannot answer differently. */
+    if (strncmp(key, "move_fx:", 8) == 0) {
+        const char *rest = key + 8;
+        int sl = -1;
+        if (rest[0] >= '1' && rest[0] <= '4' && rest[1] == ':') { sl = rest[0] - '1'; rest += 2; }
+        if (sl >= 0) {
+            if (strcmp(rest, "volume") == 0 || strcmp(rest, "pan") == 0 ||
+                strcmp(rest, "send_a") == 0 || strcmp(rest, "send_b") == 0) {
+                float v = (rest[0] == 'v') ? shadow_move_fx_strip[sl].volume
+                        : (rest[0] == 'p') ? shadow_move_fx_strip[sl].pan
+                        : (rest[5] == 'a') ? shadow_move_fx_strip[sl].send_a
+                                           : shadow_move_fx_strip[sl].send_b;
+                return snprintf(out, cap, "%.3f", v);
+            }
+            if (strcmp(rest, "muted") == 0 || strcmp(rest, "soloed") == 0) {
+                return snprintf(out, cap, "%d",
+                    ((rest[0] == 'm') ? shadow_move_fx_strip[sl].muted
+                                      : shadow_move_fx_strip[sl].soloed) ? 1 : 0);
+            }
+        }
+    }
+
     if (!shadow_plugin_v2 || !shadow_plugin_v2->get_param || !shadow_chain_slots[slot].instance) return -1;
     len = shadow_plugin_v2->get_param(shadow_chain_slots[slot].instance, key, out, cap);
     if (len < 0) return -1;
