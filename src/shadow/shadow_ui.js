@@ -211,6 +211,7 @@ import {
     paramPagesEnabled, enterParamPages, exitParamPages, paramPagesActive,
     tickParamPages, drawParamPages, handleParamPagesMidi,
     paramPagesComponent, paramPagesSlot, clearParamPagesTouch, paramPagesRefreshTrailing,
+    paramPagesChildIndex, paramPagesLevelNameOf, paramPagesCachedValue,
     PARAM_VIEW_LIST, PARAM_VIEW_KNOBS
 } from './shadow_ui_param_pages.mjs';
 /* One definition of the `visible_if` rule and its value helpers, shared with
@@ -2728,15 +2729,52 @@ function formatCanvasDisplayValue(rawValue, meta) {
  *
  * The four helpers this file still uses elsewhere (parseMetaBool and friends)
  * come from there too now, so there is exactly one definition of each. */
-function evaluateVisibilityConditionForContext(slot, componentPrefix, condition, levelDef, childIndex) {
+function evaluateVisibilityConditionForContext(slot, componentPrefix, condition, levelDef, childIndex, read) {
     return evaluateVisibility({
         prefix: componentPrefix,
-        getParam: (fullKey) => getSlotParam(slot, fullKey),
+        getParam: (fullKey) => (typeof read === "function") ? read(slot, fullKey) : getSlotParam(slot, fullKey),
         childIndexOf: () => childIndex,
     }, condition, levelDef);
 }
 
+/* A short-lived read cache for the grid's visibility conditions: a miss in the
+ * controller's own values goes to ONE blocking read per key per window, not
+ * one per re-plan (upstream #427's getSlotParamCached; a re-plan follows every
+ * detent of a gating knob and a blocking read per condition froze the OLED). */
+const VIS_CACHE_TTL_MS = 250;
+const visReadCache = new Map();
+function getSlotParamCached(slot, key, tag) {
+    const id = (tag || "") + "|" + slot + "|" + key;
+    const now = Date.now();
+    const hit = visReadCache.get(id);
+    if (hit && (now - hit.at) < VIS_CACHE_TTL_MS) return hit.v;
+    const v = getSlotParam(slot, key);
+    visReadCache.set(id, { v, at: now });
+    if (visReadCache.size > 512) visReadCache.clear();
+    return v;
+}
 function evaluateVisibilityCondition(condition, levelDef) {
+    /* ⚠ THE KNOB GRID IS A CALLER TOO (upstream #427, 2026-09-06): the
+     * controller's `visible` hook lands here, and the grid keeps its OWN slot
+     * and component — enterParamPages never sets hierEditor*. Read against
+     * the list editor's identity, every condition on the grid resolved on a
+     * stale or -1 slot, got null and FAILED OPEN: a level meant to collapse
+     * to the armed type's cells showed all of them. On the grid, the grid's
+     * identity is the context, per-instance keys through its child index by
+     * level NAME, cache-first reads. */
+    if (view === VIEWS.PARAM_PAGES && paramPagesActive()) {
+        const comp = paramPagesComponent();
+        const gslot = paramPagesSlot();
+        const lvlName = paramPagesLevelNameOf(levelDef);
+        const read = (s, k) => {
+            const held = paramPagesCachedValue(k);
+            if (held !== undefined) return held;
+            return getSlotParamCached(s, k, `grid:${s}:${comp}`);
+        };
+        return evaluateVisibilityConditionForContext(
+            gslot, getComponentParamPrefix(comp), condition, levelDef,
+            lvlName ? paramPagesChildIndex(lvlName) : -1, read);
+    }
     const prefix = getComponentParamPrefix(hierEditorComponent);
     return evaluateVisibilityConditionForContext(
         hierEditorSlot,

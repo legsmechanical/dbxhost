@@ -4005,6 +4005,24 @@ export function createController(io = {}) {
          *  hand-off needs it: without it the editor re-asks which child,
          *  when the grid already knows. */
         childIndexOf: (level) => childIndexFor(level),
+        /** The value the grid HOLDS for a key (full or page-relative), or
+         *  undefined — every write it made and every key its cursor has read.
+         *  A visible_if evaluated on the grid asks here before any IPC (a
+         *  re-plan follows every detent of a gating knob). */
+        valueOf: (k) => {
+            if (k in s.values) return s.values[k];
+            const p = s.prefix ? s.prefix + ":" : "";
+            if (p && String(k).startsWith(p) && (String(k).slice(p.length) in s.values)) return s.values[String(k).slice(p.length)];
+            return undefined;
+        },
+        /** The NAME of a level given its definition object, "" if unknown —
+         *  a visible_if arrives with the level's def, the child index is by name. */
+        levelNameOf: (def) => {
+            const lv = s.hierarchy && s.hierarchy.levels;
+            if (!lv || !def) return "";
+            for (const n in lv) if (lv[n] === def) return n;
+            return "";
+        },
         get metaIndex() { return s.metaIndex; },
         /** True while `<prefix>:ui_hierarchy` could not be READ. The page set,
          *  if any, is the previous one — nothing here was planned from the

@@ -481,6 +481,14 @@ function paramPagesChildIndex(level) {
     return (typeof controller.childIndexOf === "function")
         ? controller.childIndexOf(level) : -1;
 }
+/** The grid's own value for `key`, or undefined (see controller.valueOf). */
+function paramPagesCachedValue(key) {
+    return (controller && typeof controller.valueOf === "function") ? controller.valueOf(key) : undefined;
+}
+/** The name of a level the grid holds, from its definition; "" if not held. */
+function paramPagesLevelNameOf(levelDef) {
+    return (controller && typeof controller.levelNameOf === "function") ? controller.levelNameOf(levelDef) : "";
+}
 
 /** The full parameter key under physical knob `slot` on the current page,
  *  or null. See controller.fullKeyAt. */
@@ -1420,8 +1428,10 @@ function paramPagesMenuEntered() {
         handleParamPagesMidi,
         headerTitle,
         paramPagesActive,
+        paramPagesCachedValue,
         paramPagesChildIndex,
         paramPagesComponent,
+        paramPagesLevelNameOf,
         paramPagesEnabled,
         paramPagesExitMenu,
         paramPagesFooterHints,
