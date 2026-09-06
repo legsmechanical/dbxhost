@@ -34,7 +34,7 @@
  */
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { NUM_TRACKS, DRUM_LANES } from './ui_constants.mjs';
+import { NUM_TRACKS, DRUM_LANES, STEP_SAVE_FLASH_MS } from './ui_constants.mjs';
 import { showActionPopup, showActionPopupFor, deviceSnapDir, deviceSnapUndoDir, trackSnapDir, trackSnapUndoDir } from './ui_persistence.mjs';
 import { markSnapshotUndo } from './ui_editops.mjs';
 import { engineGet, engineSet, engineSetSlotParam, moveBusComp,
@@ -253,7 +253,14 @@ export function devSnapSave(n) {
     if (!res) { showActionPopup('SNAPSHOT', 'Save failed'); return false; }
     d.slots[n] = true; d.last = n;
     showActionPopupFor(DEVSNAP_CARD_MS, 'SNAPSHOT ' + (n + 1), 'SAVED', res.skipped ? res.skipped + ' skipped' : undefined);
+    /* ⚠ BOTH ticks. The renderer needs the END (ui_leds: EndTick >= 0 && clockMs
+     * < EndTick && StartTick >= 0), and the tick's hold-to-save used to set it
+     * right after calling this. The save fires from the press handler now, so
+     * setting only the start left the LED flash dependent on a STALE EndTick
+     * from some earlier save — flashing sometimes, which reads as flaky
+     * hardware rather than a missing assignment. */
     S.stepSaveFlashStartTick = S.clockMs;
+    S.stepSaveFlashEndTick   = S.clockMs + STEP_SAVE_FLASH_MS;
     invalidateLEDCache(); forceRedraw();
     return true;
 }
@@ -408,8 +415,12 @@ export function devSnapTitle() { return st().track >= 0 ? 'T' + (st().track + 1)
 export function devSnapHints() {
     const d = st();
     if (d.recalling >= 0) return [['SNAP', 'RECALLING']];
-    /* Josh, 2026-09-05: "Step tap:recall" "Hold:store". Measured: the two pairs
-     * are 123 px of 128; a third (DEL CLEAR) does not fit and the row's fit
-     * rule would drop it anyway, so Delete+step stays an unlabelled gesture. */
-    return [['STEP TAP', 'RECALL'], ['HOLD', 'STORE']];
+    /* ⚠ HOLD no longer stores anything — Shift does (Josh, 2026-09-06). This
+     * footer is the layer's ONLY affordance, so leaving it saying HOLD would
+     * have made the one thing that tells you how to save the one thing that is
+     * wrong. Measured before: the two pairs are 123 px of 128, and SHIFT is
+     * one char shorter than STEP TAP's pair, so the row still fits; a third
+     * (DEL CLEAR) does not, and Delete+step stays an unlabelled gesture as
+     * it was. */
+    return [['STEP', 'RECALL'], ['SHIFT', 'STORE']];
 }

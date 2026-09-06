@@ -164,7 +164,9 @@ step_('⭑ holding Capture past the threshold OPENS the layer, and the release r
     if (!D.devSnapOpen()) throw new Error('the layer did not open after ' + D.DEVSNAP_HOLD_MS + ' ms');
     if (!S.captureUsedAsModifier) throw new Error('Capture not marked used — the release would run the tap');
     const h = JSON.stringify(D.devSnapHints());
-    if (h !== JSON.stringify([['STEP TAP', 'RECALL'], ['HOLD', 'STORE']])) throw new Error('footer (Josh, 2026-09-05: Step tap:recall · Hold:store): ' + h);
+    /* The footer is the layer's ONLY affordance, so it has to name the gesture
+     * that actually saves. HOLD stopped saving on 2026-09-06 (Shift does). */
+    if (h !== JSON.stringify([['STEP', 'RECALL'], ['SHIFT', 'STORE']])) throw new Error('footer (Josh, 2026-09-06: Step:recall · Shift:store): ' + h);
     /* No entry flash (Josh, 2026-09-05): the SNAPSHOTS row + footer name the mode. */
     if (S.actionPopupEndTick >= 0 && S.actionPopupLines.some((l) => /SNAPSHOTS/.test(String(l))))
         throw new Error('the entry popup is back: ' + JSON.stringify(S.actionPopupLines));
@@ -301,6 +303,49 @@ step_('⭑ DELETE + step clears the slot', () => {
     if (D.devSnapState().slots[2]) throw new Error('slot 2 still filled');
     scene.updateSceneMapLEDs();
     if (leds[18] !== DarkGrey) throw new Error('cleared slot led ' + leds[18]);
+});
+
+/* ⚠⚠ THE SCOPE TEST. muteSnapSave/Recall and perfPresetSave/Recall were first
+ * declared inside _onPadRelease's body, so they were invisible to
+ * _onStepButtons which calls them: every Mute+step and Loop+step press threw
+ * ReferenceError and abandoned the whole MIDI dispatch. The suite was GREEN —
+ * nothing drove either gesture, and the snapshot tests use the properly
+ * imported devSnapSave/devSnapRecall. `node --check` parses a nested
+ * declaration happily and the bundler does not care. Only exercising the
+ * gesture finds it, so these two rows exist to exercise it. */
+step_('⭑ MUTE+step is reachable: Shift saves, a bare press recalls (the helpers are at module scope)', () => {
+    capture(false); advance(20);                       /* out of the snapshot layer */
+    S.trackMuted[0] = true; S.trackMuted[1] = false;
+    cc(88, 127); advance(10);                          /* MoveMute = 88, held */
+    writes.length = 0;
+    cc(49, 127); step(3, true); advance(20); step(3, false); cc(49, 0); advance(20);   /* Shift+step = SAVE */
+    if (!S.snapshots[3]) throw new Error('Mute+Shift+step did not save a mute snapshot');
+    if (S.snapshots[3].mute[0] !== true) throw new Error('the saved mute state is wrong');
+    S.trackMuted[0] = false;                           /* change it, then recall */
+    step(3, true); advance(20); step(3, false); advance(20);
+    if (S.trackMuted[0] !== true) throw new Error('a bare Mute+step press did not recall the mute snapshot');
+    cc(88, 0); advance(10);
+});
+
+step_('⭑ LOOP+step (perf presets) is reachable, and recall still toggles', () => {
+    cc(58, 127); advance(10);                          /* MoveLoop = 58, held */
+    S.perfModsToggled = 0; S.perfModsHeld = 5; S.perfRecalledSlot = -1;
+    cc(49, 127); step(6, true); advance(20); step(6, false); cc(49, 0); advance(20);   /* Shift+step = SAVE */
+    if (S.perfSnapshots[6] !== 5) throw new Error('Loop+Shift+step did not save a perf preset: ' + S.perfSnapshots[6]);
+    S.perfModsToggled = 0;
+    step(6, true); advance(20); step(6, false); advance(20);
+    if (S.perfRecalledSlot !== 6 || S.perfModsToggled !== 5) throw new Error('Loop+step did not recall the perf preset');
+    step(6, true); advance(20); step(6, false); advance(20);   /* the toggle */
+    if (S.perfRecalledSlot !== -1 || S.perfModsToggled !== 0) throw new Error('pressing the recalled slot again should clear it');
+    /* ⚠ Leave perf mode OFF. Releasing Loop is not enough — perfViewLocked can
+     * latch and a LONG hold only clears loopHeld on the tap path, so a step
+     * press then still reads as a perf slot rather than a
+     * scene, which fails the NEXT row for a reason that has nothing to do with
+     * it. A row that dirties shared state has to clean it. */
+    cc(58, 0); advance(10);
+    S.loopHeld = false; S.perfViewLocked = false;
+    S.perfRecalledSlot = -1; S.perfModsToggled = 0; S.perfModsHeld = 0;
+    advance(10);
 });
 
 step_('⭑ releasing Capture CLOSES the layer, and steps are scene rows again', () => {

@@ -457,7 +457,11 @@ function bulkDecode(blob) {
 }
 export function bulkDecodeForTest(blob) { return bulkDecode(blob); }
 let bulkGetWarned = false;
-let bulkEmptyWarned = false;
+/* Components whose bulk answers came back entirely empty — the host cannot
+ * resolve that prefix, so go straight to the single-request path for them.
+ * ⚠ Separate from bulkGetWarned: consuming that flag here would have silenced
+ * the log for a later, genuine mailbox failure, which is a different fault. */
+const bulkEmptyComps = Object.create(null);
 export function engineGetMany(slot, comp, keys) {
     const out = {};
     for (let i = 0; i < keys.length; i += BULK_MAX) {
@@ -484,10 +488,16 @@ export function engineGetMany(slot, comp, keys) {
         if (vals && vals.length === chunk.length) {
             const allEmpty = chunk.length > 0 && vals.every((v) => v === '' || v === null || v === undefined);
             if (!allEmpty) { for (let j = 0; j < chunk.length; j++) out[chunk[j]] = vals[j]; continue; }
-            if (!bulkEmptyWarned) {
-                bulkEmptyWarned = true;
-                console.log('[engine] bulk GET answered every key EMPTY for "' + comp + '" — falling back per key');
-            }
+            /* ⚠ MEMOISED PER COMPONENT, because this sits on the recall path.
+             * A module that declares chain_params but implements get_param
+             * readback for none of them — the documented davebox trap — makes
+             * EVERY chunk all-empty, and paramsCapture reads up to 60 keys per
+             * component across 7 components and 8 tracks. Unmemoised that is
+             * ~60 x 2.9 ms per component per take, re-paid on every take, and a
+             * take is the before-image of every recall. Learn it once. */
+            if (bulkEmptyComps[comp]) { for (const k of chunk) out[k] = engineGet(slot, comp, k); continue; }
+            bulkEmptyComps[comp] = true;
+            console.log('[engine] bulk GET answered every key EMPTY for "' + comp + '" — falling back per key from now on');
         }
         if (!bulkGetWarned) { bulkGetWarned = true; console.log('[engine] chain bulk GET unavailable — reading one key at a time'); }
         for (const k of chunk) out[k] = engineGet(slot, comp, k);
