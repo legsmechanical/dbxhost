@@ -35,6 +35,7 @@ import {
 import { enumIndexOf } from "./param_meta.mjs";
 import { wavPeaks, resamplePeaks } from "./wav_peaks.mjs";
 import { observeLanded, easeOut, lerp } from "./anim_state.mjs";
+import { isCustomKind, drawCustom } from "./widget_registry.mjs";
 
 /* ------------------------------------------------------------- animation --
  *
@@ -534,7 +535,37 @@ function drawPartialEnv(ctx, leftX, xEnd, topY, baseY, present, roles, values, m
     const has = (r) => present.includes(r);
     const val = {};
     for (const r of present) val[r] = frac(metaIndex, roles[r], values);
-    const susY = has("sustain") ? baseY - Math.round(val.sustain * usableH) : baseY;
+
+    /*
+     * A RELEASE ROLE IS EVIDENCE OF A SUSTAIN STAGE, even with no sustain role.
+     *
+     * "No sustain role" was read as "sustain is zero". For an A/D envelope that
+     * is right -- a percussive shape decays to silence and there is nothing to
+     * release. It stops being right the moment `release` is declared, because
+     * release means "fall from the held level to zero": if the held level were
+     * already zero there would be nothing to release from and the role would be
+     * meaningless.
+     *
+     * So an A/D/R was drawn decaying to the floor, no plateau, and a release
+     * running along the bottom from one floor point to another -- a flat line.
+     * Reported against a Yamaha QY-70 editor, whose XG Multi Part offsets are
+     * EG Attack, EG Decay and EG Release and nothing else: the sustain LEVEL
+     * lives in the voice and is not addressable, but hold a note and it holds.
+     * The stage exists; the editor just cannot read its height.
+     *
+     * The height is therefore a PICTURE, not a measurement -- half scale, which
+     * leaves decay and release both clearly legible. Nothing reads it as a
+     * value: it is only geometry, and `val.sustain` stays undefined.
+     */
+    const IMPLIED_SUSTAIN = 0.5;
+    const impliedSustain = !has("sustain") && has("decay") && has("release");
+    /* A/D with no release must still fall to the floor -- that case was right. */
+    const susY = has("sustain") ? baseY - Math.round(val.sustain * usableH)
+               : impliedSustain ? baseY - Math.round(IMPLIED_SUSTAIN * usableH)
+               : baseY;
+    /* The plateau is what makes the stage visible as HELD rather than as a kink
+     * between two falls, so the implied case draws one too. */
+    const drawsPlateau = has("sustain") || impliedSustain;
 
     /*
      * ATTACK IS NOT GUARANTEED.
@@ -577,7 +608,7 @@ function drawPartialEnv(ctx, leftX, xEnd, topY, baseY, present, roles, values, m
     } else if (has("sustain")) {
         pts.push([cur, susY]);
     }
-    if (has("sustain")) {
+    if (drawsPlateau) {
         const plateauEnd = has("release") ? Math.round(leftX + span * 0.7) : rightX;
         if (plateauEnd > cur) { pts.push([plateauEnd, susY]); cur = plateauEnd; }
     }
@@ -599,7 +630,7 @@ function drawPartialEnv(ctx, leftX, xEnd, topY, baseY, present, roles, values, m
      * where braids showed it, since braids declares attack/decay/sustain and no
      * release. A boundary at the boundary of the picture marks nothing.
      */
-    if (has("sustain") && cur < rightX - 1) knockoutV(ctx, cur, susY + 1, baseY - 1);
+    if (drawsPlateau && cur < rightX - 1) knockoutV(ctx, cur, susY + 1, baseY - 1);
 }
 
 /* ----------------------------------------------------------------- filter */
@@ -1685,6 +1716,21 @@ const DRAW = {
  * ignore `anim`/`nowMs` when they do not animate.
  */
 export function drawVizGroup(ctx, rect, group, values, metaIndex, anim, nowMs, baseValues) {
+    /*
+     * A custom widget is tried first, and may decline -- an unregistered kind,
+     * or one disabled by a previous throw.
+     *
+     * DECLINING DRAWS NOTHING FOR THIS FRAME, and that is correct rather than a
+     * gap. The recovery is not here: it is in resolveViz, where a kind that has
+     * become unavailable stops claiming its keys, so the very next resolve hands
+     * them to the detector and the built-in draws over them. The alternative --
+     * reaching into the DRAW table for a guessed fallback right here -- would
+     * mean this function inventing a widget the resolver never chose.
+     */
+    if (isCustomKind(group.kind)) {
+        drawCustom(ctx, rect, group, values, metaIndex, anim, nowMs, baseValues);
+        return;
+    }
     const fn = DRAW[group.kind];
     if (fn) fn(ctx, rect, group, values, metaIndex, anim, nowMs, baseValues);
 }

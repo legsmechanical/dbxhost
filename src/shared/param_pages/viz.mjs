@@ -28,6 +28,7 @@
  */
 
 import { KIND_NUMBER, KIND_ENUM, KIND_OPAQUE, isTrigger } from "./param_meta.mjs";
+import { isCustomKind, isWidgetAvailable } from "./widget_registry.mjs";
 
 /* Matches render_page.mjs COLS. Not imported from there to avoid a cycle
  * (render_page imports this module to draw what it resolves). */
@@ -233,7 +234,26 @@ function collectDeclared(keys, metaIndex, invalid) {
             if (v.role) g.roles[v.role] = { key, slot, span: v.span !== false };
             if (v.kind && !g.kind) g.kind = v.kind;
         } else if (v.kind) {
-            singles.push({ kind: v.kind, key, slot });
+            /*
+             * A CUSTOM KIND CLAIMS NOTHING UNLESS IT CAN BE DRAWN.
+             *
+             * Returning here leaves the key in the detector pool, so an unknown
+             * or disabled widget degrades to the built-in one rather than to a
+             * hole. See widget_registry.mjs -- this is the fall-through for a
+             * typo, a failed load, an older host and a one-strike disable, all
+             * on one path.
+             *
+             * IT BELONGS HERE AND NOT IN THE SHARED WALK ABOVE. A group's kind
+             * may be declared on ANY member, so guarding before the v.group
+             * branch would drop only that member: the remaining roles would
+             * still form a group, inferKindFromRoles would name it, and an
+             * `attack` declaring an unavailable custom kind would silently
+             * become a THREE-cell envelope with its own key orphaned beside it.
+             * The group case is handled below, where the whole group can be
+             * abandoned at once.
+             */
+            if (isCustomKind(v.kind) && !isWidgetAvailable(v.kind)) return;
+            singles.push({ kind: v.kind, key, slot, extraKeys: declaredExtraKeys(v) });
         }
     });
 
@@ -245,6 +265,13 @@ function collectDeclared(keys, metaIndex, invalid) {
         const slots = spanning.map((r) => r.slot);
         const kind = g.kind || inferKindFromRoles(Object.keys(g.roles));
         if (!kind) continue;
+        /* Abandon the WHOLE group when its custom widget cannot be drawn, so
+         * every one of its keys reaches the detector together and is grouped
+         * as the built-in the author was decorating. Not recorded in `invalid`:
+         * an unavailable custom kind is LEGAL -- it is exactly what an older
+         * host sees reading a newer module -- and flagging it would make every
+         * forward-compatible module look broken. */
+        if (isCustomKind(kind) && !isWidgetAvailable(kind)) continue;
         if (!slots.length) {
             invalid.push({ group: g.groupId, kind, reason: "no spanning roles" });
             continue;
@@ -253,19 +280,67 @@ function collectDeclared(keys, metaIndex, invalid) {
             invalid.push({ group: g.groupId, kind, reason: "roles not adjacent on one row" });
             continue;
         }
-        out.push({
+        const built = {
             kind, group: g.groupId, roles: mapRoles(g.roles),
             keys: spanning.map((r) => r.key),
             ...span(slots), source: VIZ_SOURCE_DECLARED,
-        });
+        };
+        /* A group's kind may be declared on any member, so its extra keys may
+         * be too — take the first member that names some. */
+        for (const r of Object.values(g.roles)) {
+            const ek = declaredExtraKeys(r.viz);
+            if (ek) { built.extraKeys = ek; break; }
+        }
+        out.push(built);
     }
     for (const s of singles) {
-        out.push({
+        const g2 = {
             kind: s.kind, group: null, roles: { value: s.key }, keys: [s.key],
             slotStart: s.slot, slotSpan: 1, source: VIZ_SOURCE_DECLARED,
-        });
+        };
+        if (s.extraKeys && s.extraKeys.length) g2.extraKeys = s.extraKeys;
+        out.push(g2);
     }
     return { groups: out, excluded };
+}
+
+/*
+ * Off-page keys a MODULE says its widget needs.
+ *
+ * `extraKeys` already existed for exactly this shape, but only detectSample
+ * could set it, for an off-page filepath. The general problem is the same one:
+ * a widget's picture can depend on a value that has no cell on this page. Keys
+ * claim cells; a key with no cell cannot be a key; so it rides here and the
+ * controller adds it to the value rotation as one extra stop.
+ *
+ * Without it the only way to get a fact to a widget was to give it a knob --
+ * which is how a module ended up with a read-only cell existing purely to carry
+ * a value to the cell beside it, occupying one of eight slots on a 128x64
+ * screen to draw something nobody needed to see.
+ *
+ * ONE READ PER STOP, so this is not free: declare what the picture needs and
+ * nothing else. Capped, because a module asking for twenty keys would spend the
+ * page's whole read budget on one cell and starve every other value on screen.
+ *
+ * EXPORTED, because a widget is no longer the only thing that can declare them:
+ * an `as_page` canvas param takes `extra_keys` too, and it spends the SAME
+ * rotation on the SAME page. A second copy of the number is a second copy of
+ * the decision, and the canvas path shipped without one -- twenty keys were
+ * accepted, and a three-knob page went from refreshing a knob every 4 ticks to
+ * every 24.
+ */
+export const MAX_DECLARED_EXTRA_KEYS = 4;
+
+function declaredExtraKeys(v) {
+    const raw = v && (v.extra_keys || v.extraKeys);
+    if (!Array.isArray(raw)) return null;
+    const out = [];
+    for (const k of raw) {
+        if (typeof k !== "string" || !k) continue;
+        if (out.indexOf(k) < 0) out.push(k);
+        if (out.length >= MAX_DECLARED_EXTRA_KEYS) break;
+    }
+    return out.length ? out : null;
 }
 
 function mapRoles(roleMap) {

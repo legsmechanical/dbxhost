@@ -32,15 +32,19 @@
 
 import { planPages, pickMode, PAGE_KNOBS, PAGE_MENU, PAGE_PRESET, PAGE_ITEMS,
          buildTrailingPages, makeClaimer } from "./page_plan.mjs";
-import { resolveChildKey, childIndexParam, childIndexToWire, childIndexFromWire, childPressParam,
-         childLabel } from "./child_key.mjs";
-import { focusPressParamOf } from "./voices.mjs";
-import { buildMetaIndex, inferFromValue, isTurnable, flipsOnClick, enumIndexOf, KIND_ENUM, KIND_OPAQUE } from "./param_meta.mjs";
+import { resolveChildKey, childIndexParam, childIndexToWire, childIndexFromWire,
+         childName, childLabel, childPressParam } from "./child_key.mjs";
+import { focusParamOf, voicesOf, voiceIndexFromLevel,
+         voiceIndexFromWire, padLayoutOf, focusToken, focusPressParamOf } from "./voices.mjs";
+import { buildMetaIndex, inferFromValue, isTurnable, flipsOnClick, enumIndexOf, KIND_ENUM, KIND_OPAQUE
+} from "./param_meta.mjs";
 import { renderPage, renderPicker, renderHint, LAYOUT_DIAL } from "./render_page.mjs";
 import { renderPageMovy, drawFooter, drawHeader as drawHeaderMovy, drawBankBar,
          drawBrackets, drawPresetBody, displayValue, RULE_Y, LAYOUT_MOVY,
+         movyHeaderFor, labelForCell, normalizedOf, widgetKindFor,
          MENU_LIST_X, MENU_LIST_Y, MENU_LIST_W } from "./render_page_movy.mjs";
 import { resolveViz, vizDiveTarget, VIZ_SWITCH } from "./viz.mjs";
+import { widgetsGeneration } from "./widget_registry.mjs";
 import { createAnimState } from "./anim_state.mjs";
 import { drawMenuList } from "../menu_layout.mjs";
 import { drawEnumList } from "./enum_list.mjs";
@@ -363,12 +367,20 @@ export const TURN_CLAIM_MS = 1200;
  * a knob can be moved without the capacitive touch ever registering, which is
  * the same reason TURN_CLAIM_MS exists just above.
  *
- * 700 matches the chain editor card's KNOB_CARD_DECAY_MS. Deliberately NOT the
- * same variable: that card lives in the chain editor and this list on the knob
- * grid, so they never coexist, and one constant shared across two screens is a
- * coupling that reads as intent and is not.
+ * It must OUTLIVE TURN_CLAIM_MS (1200). The two are raised by the same detent
+ * and describe the same parameter -- the header names it, the list shows what
+ * is either side of it -- so a shorter peek takes the option list down while
+ * the header is still claiming the cell, and the screen answers half a
+ * question. Reported from the device as simply "the peek disappears too
+ * quickly".
+ *
+ * It USED to be 700, chosen to match the chain editor card's
+ * KNOB_CARD_DECAY_MS. That was a coincidence of two numbers rather than a
+ * shared rule -- the card lives in the chain editor and this list on the knob
+ * grid, so they never coexist -- and matching it bought nothing while costing
+ * the read. Still deliberately NOT the same variable, for that reason.
  */
-export const ENUM_PEEK_MS = 700;
+export const ENUM_PEEK_MS = 1500;
 
 /** How many times a page will re-read the contract waiting for late metadata. */
 export const META_RETRY_LIMIT = 8;
@@ -492,6 +504,26 @@ const TRIGGER_BURST_MAX = 4;
  * the cap sensor never saw.
  */
 const TRIGGER_KNOB_GESTURE_GAP_MS = 270;
+
+/*
+ * A page whose eight encoders address parameters.
+ *
+ * Normally that is exactly PAGE_KNOBS. A CUSTOM UI PAGE may also be a browser
+ * -- a module drawing its own preset picker, where jog steps presets and the
+ * knobs still edit the sound -- and that page has to be PAGE_PRESET for the
+ * jog, the enter/exit gesture and the announcements to work. It carries `keys`
+ * as well, and this is what lets those keys be turned.
+ *
+ * Deliberately narrow: it asks whether the page HAS keys, not what kind it is,
+ * so a preset or items page that carries none behaves exactly as before. That
+ * is the property that made this safe to relax at all -- twenty-two places
+ * branch on PAGE_KNOBS and only the three that mean "can this be turned or
+ * read" use this.
+ */
+function pageHasKnobs(p) {
+    return !!(p && Array.isArray(p.keys) && p.keys.length &&
+              (p.kind === PAGE_KNOBS || p.canvas));
+}
 
 export function createController(io = {}) {
     const getParam = io.getParam || (() => null);
@@ -617,6 +649,17 @@ export function createController(io = {}) {
         modCache: Object.create(null),
         /* Selected child per child-level, by level key. See childResolve(). */
         childIndex: Object.create(null),
+        /*
+         * The voice index syncVoiceFromModule last ACTED on, and the memoised
+         * voice list. The latch is what makes the follow an EDGE: all three
+         * focus inputs report a steady state, so without it a constant answer
+         * re-navigates on every rotation stop and the user cannot leave the
+         * page. Null means "nothing adopted yet", so the first answer after a
+         * component load still lands on the focused voice.
+         */
+        voiceLatch: null,
+        voiceCacheFor: undefined,
+        voiceCache: null,
         /* A page name to land on once the pages exist; see restorePage(). */
         restoreName: null,
         /* key -> live modulated ("effective") value, for the dot on the arc.
@@ -720,6 +763,16 @@ export function createController(io = {}) {
          * cleared on every enter, and nothing reads it unless the page it
          * belongs to is entered. */
         knobEditing: false,
+        /*
+         * Does this contract's levels get chunked into 8-key grid pages?
+         *
+         * A property of the CONTRACT, set by load(), not of the layout: the
+         * layout is LAYOUT_LIST whenever the screen reader is on or Param View
+         * says List, and un-paginating there would rearrange every module's
+         * pages behind a preference. Global Settings sets it false because its
+         * sections are one scrolling list each. Default true.
+         */
+        paginate: true,
         /* Every knob currently held, oldest first. See onKnobTouch. */
         touchOrder: [],
         /* ms at which a TURN claimed the header with nothing held, or 0.
@@ -836,16 +889,30 @@ export function createController(io = {}) {
         const pg = p || page();
         if (!pg) return null;
         if (!pg.childLevel || pg.kind !== PAGE_KNOBS) return pg.name;
-        const label = pg.childLevel.child_label || "Item";
-        const at = childIndexFor(pg.level) + 1;
+        const i = childIndexFor(pg.level);
+        /*
+         * A DECLARED name wins outright. `child_names: ["Kick", ...]` already
+         * reaches the instance picker through childLabel, so a module that
+         * named its pads got "Rim" in the list and "Pad 3" in the header of
+         * the page that list opened — the same instance under two names, one
+         * of them the one it asked not to be called.
+         *
+         * Only the NAME is shared, not the fallback NUMBER: childName is split
+         * out of childLabel precisely because the picker counts from 1 while
+         * childLabel counts from `child_index_base`, and minijv declares no
+         * base, so unifying the numbering would renumber its picker.
+         */
+        const at = i + 1;
+        const base = childName(pg.childLevel, i)
+            || `${pg.childLevel.child_label || "Item"} ${at}`;
         const siblings = s.pages.filter(
             (q) => q.level === pg.level && q.kind === PAGE_KNOBS);
         const ord = siblings.indexOf(pg);
-        return ord > 0 ? `${label} ${at} - ${ord + 1}` : `${label} ${at}`;
+        return ord > 0 ? `${base} - ${ord + 1}` : base;
     }
     const keyAt = (slot) => {
         const p = page();
-        return p && p.kind === PAGE_KNOBS ? (p.keys[slot] || null) : null;
+        return pageHasKnobs(p) ? (p.keys[slot] || null) : null;
     };
     const metaAt = (slot) => {
         const k = keyAt(slot);
@@ -857,8 +924,14 @@ export function createController(io = {}) {
      * Safe to call repeatedly — it rebuilds only when the declared contract
      * actually changed, and keeps the user's place when it does.
      */
-    function load({ slot = 0, component = "synth", prefix, mode, visible } = {}) {
+    function load({ slot = 0, component = "synth", prefix, mode, visible,
+                    paginate = true } = {}) {
         const nextPrefix = prefix || component;
+        /* Carried on the state so the two REPLAN paths (mode change, visible_if
+         * change) reach the planner with the same answer as the initial plan.
+         * They read s.lastLoadOpts for mode and visible; this is the third
+         * thing they must not forget, so it sits beside them. */
+        s.paginate = paginate !== false;
         /* Whether we are re-reading the SAME component decides what an
          * unresolved read may keep — see below. */
         const sameComponent = (s.slot === slot && s.component === component && s.prefix === nextPrefix);
@@ -869,6 +942,13 @@ export function createController(io = {}) {
         /* Likewise "we gave up on this one" — a new component gets a clean
          * slate, and the retry budget below is already per-component. */
         if (!sameComponent) s.contractGaveUp = false;
+        /* A different component is a different set of voices, so the index we
+         * last adopted names nothing here. Re-seeding to null is what lets the
+         * first answer from the NEW component navigate — arriving on the voice
+         * it says is focused is right; it is only the REPEATS that must do
+         * nothing. Deliberately not cleared on a same-component re-plan: the
+         * user is still standing where they navigated to. */
+        if (!sameComponent) s.voiceLatch = null;
         s.slot = slot;
         s.component = component;
         s.prefix = nextPrefix;
@@ -993,7 +1073,8 @@ export function createController(io = {}) {
             ? (sameComponent ? s.chainParams : null)
             : parse(rawChain);
         if (chainFailed && sameComponent) armContractSettle();
-        const planned = planPages({ hierarchy, chainParams, mode: activeMode, visible, trailingMenus: trailingMenus() });
+        const planned = planPages({ hierarchy, chainParams, mode: activeMode, visible,
+                                    trailingMenus: trailingMenus(), paginate: s.paginate });
         /* Retained so a visibility re-plan costs no extra device reads. */
         s.hierarchy = hierarchy;
         s.chainParams = chainParams;
@@ -1033,6 +1114,41 @@ export function createController(io = {}) {
         warmCurrentPage();
         announcePageChange();
         return true;
+    }
+
+    /**
+     * Every cached value is now wrong — re-read the page.
+     *
+     * For a change made to the module from OUTSIDE this controller while the
+     * grid is standing on a page. The snapshot recall is the case: it writes
+     * `<prefix>:state` for every position at once, so every value the grid
+     * holds describes the sound from before the gesture.
+     *
+     * Nothing reads on the draw path — values arrive on touch-down, on the
+     * rotation, or in the entry warm — which is why a stale cache is not
+     * merely a late repaint. `onKnobTurn` steps FROM the cached value, so the
+     * first knob move after a recall departed from the pre-recall number and
+     * wrote the tweak back over the thing that had just been restored.
+     * Reported from hardware as "my next knob move is from the pre-restore
+     * state".
+     *
+     * A preset Load does not need this only because it comes back through the
+     * browser, and the re-entry replans and re-warms. A recall happens under
+     * your hands with no re-entry at all.
+     *
+     * Drops the same three maps a child-instance change drops, for the same
+     * reason and with the same caveat: `pendingWrite` is deliberately FLUSHED
+     * rather than discarded, because a write still in flight belongs to the
+     * user's own gesture and dropping it cancels it. Then re-warms, bounded
+     * the way every other warm here is, so a module that has stopped
+     * answering costs one timeout rather than a page of them.
+     */
+    function revalue() {
+        flushDueWritesUnconditionally();
+        s.values = Object.create(null);
+        s.knobStates = Object.create(null);
+        s.pendingWrite = Object.create(null);
+        warmCurrentPage();
     }
 
     /**
@@ -1625,6 +1741,299 @@ export function createController(io = {}) {
         dropChildLevelCache(name);
     }
 
+    /*
+     * `voicesOf(s.hierarchy)`, memoised against the hierarchy OBJECT.
+     *
+     * Identity is the right key: s.hierarchy is replaced wholesale by load()
+     * and never mutated in place, so a new object IS a new contract, and a
+     * fingerprint comparison would be more code for the same answer.
+     */
+    function voiceList() {
+        if (s.voiceCacheFor !== s.hierarchy) {
+            s.voiceCacheFor = s.hierarchy;
+            s.voiceCache = s.hierarchy ? voicesOf(s.hierarchy) : [];
+        }
+        return s.voiceCache;
+    }
+
+    /**
+     * The param a LIVE pad press is reported through, or null -- the first
+     * child level declaring `child_press_param`, else the hierarchy's
+     * `focus_press_param` (child_key.mjs / voices.mjs). Memoised against the
+     * hierarchy OBJECT like voiceList: the host asks every tick to decide
+     * whether the shim should be forwarding pads at all.
+     *
+     * Not scoped to the CURRENT page on purpose. The grid follows the module's
+     * focus from any page (syncVoiceFromModule), so a hit while you are on the
+     * reverb page should still land you on the drum you hit -- which is what
+     * the module will do with the vouch. A level that declares it is the
+     * module saying "tell me about presses"; the page you happen to be on is
+     * not part of that request.
+     */
+    function livePressParam() {
+        if (s.livePressCacheFor !== s.hierarchy) {
+            s.livePressCacheFor = s.hierarchy;
+            let k = null;
+            const levels = (s.hierarchy && s.hierarchy.levels) || {};
+            for (const name of Object.keys(levels)) {
+                k = childPressParam(levels[name]);
+                if (k) break;
+            }
+            s.livePressCache = k || focusPressParamOf(s.hierarchy);
+        }
+        return s.livePressCache;
+    }
+
+    /**
+     * A FINGER hit a pad: say so. One write per press, note-on only -- the
+     * value is the vouch itself, and WHICH pad is the module's to pair with the
+     * note it receives (the pad-to-note map is Move's, not ours). Returns
+     * whether anything was written, so the caller can leave the event to the
+     * next handler when nothing asked for it.
+     */
+    function vouchLivePress() {
+        const k = livePressParam();
+        if (!k) return false;
+        setParam(`${s.prefix}:${k}`, "1");
+        return true;
+    }
+
+    /**
+     * Adopt the voice the MODULE says is focused — the SIBLING shape, and the
+     * note fallback for a module that declares neither focus param.
+     *
+     * EXACTLY ONE INPUT IS LIVE PER MODULE, and the priority is the whole
+     * point. The template shape is already served by syncChildIndexFromModule
+     * above and is deliberately untouched here: `child_index_param` IS that
+     * shape's focus input, so a module declaring it must never also be asked
+     * for `last_note`. That is enforced by NOT ISSUING THE READ rather than by
+     * ignoring the answer — two sources that are both consulted disagree the
+     * moment the module moves its focus without a note (a preset load,
+     * mrdrums' auto-select), and the disagreement LATCHES, because each source
+     * keeps re-asserting itself on the next rotation.
+     *
+     * THE FOLLOW DOES NOT BRANCH ON `pad_layout`, and that is deliberate: it
+     * follows whatever voices are declared, so a module that declares voices
+     * before settling its layout still works. `padLayoutOf` IS imported now,
+     * but only for the header minimap in padIconIndex — drawing a rack icon is
+     * a claim about the surface and belongs to the layout; following a voice
+     * is not. Do not add an `if (pad_layout !== "drums") return` here.
+     *
+     * Nothing here writes an LED or a MIDI byte. Move's firmware owns the pads;
+     * this path is a read plus a navigation.
+     *
+     * Rides the same stop as syncChildIndexFromModule — so it costs the
+     * rotation no stop of its own — and is likewise NOT gated on a settle
+     * window. A settle means a KNOB is being turned, and turning a knob does
+     * not change which pad you are editing; playing one does. Gating it would
+     * mean the grid refused to follow the pad you just hit for as long as your
+     * hand rested on a knob, which is precisely when it matters.
+     *
+     * IT IS AN EDGE, NOT A PIN — `s.voiceLatch`. The design says "HITTING a
+     * pad navigates the grid to that voice's page", which is an EVENT, and
+     * every one of the three inputs answers a STEADY STATE: `last_note` keeps
+     * reporting the kick long after you stopped playing it. Acting on the
+     * value rather than on its change re-navigated on every rotation stop, so
+     * a jog detent was undone two ticks later and the user could not leave the
+     * kick page at all — which on a 9W9 shape means Reverb, Delay and Main are
+     * unreachable, and those are exactly the pages that shape has. It also
+     * cost a warmCurrentPage() burst of IPC reads and made the screen reader
+     * speak BOTH pages on every detent.
+     *
+     * Compare syncChildIndexFromModule directly above: it changes an INDEX in
+     * place and never navigates, which is why running it on every stop is
+     * harmless and why it needs no latch.
+     *
+     * The latch seeds to null and no resolved index is null, so the FIRST
+     * answer after a component load still navigates — arriving on the focused
+     * voice is right. A null (unresolved) read returns BEFORE the latch is
+     * touched: clearing it would re-arm the yank on the next good read, so one
+     * timeout would resurrect the whole defect.
+     */
+    /**
+     * The header's pad minimap: which cell of Move's 4x4 drum rack is lit, or
+     * null to draw nothing.
+     *
+     * PHYSICAL, not the list position — the note minus the rack base, so the
+     * lit cell is where the pad sits under your hand. A map agreeing with the
+     * page order instead would be a second bank bar, and there is already one
+     * of those a row below.
+     *
+     * Gated on `pad_layout: "drums"` and NOT merely on "declares voices",
+     * because this is the one thing in Schwung's own UI the layout declaration
+     * drives: a chromatic module with per-zone notes is not a rack and must not
+     * grow a rack icon. It is also why the field is declared rather than
+     * inferred — see voices.mjs.
+     *
+     * Answers a NOTE, not a cell. Where note N sits on Move's rack is the
+     * RENDERER's fact — it owns the rack's base and its bottom-left origin —
+     * and computing a cell here would be a second copy of that geometry in a
+     * file whose constants are pinned precisely to stop rects being redefined.
+     * `-1` means "draw the empty box": we are on a rack but cannot place this
+     * voice.
+     *
+     * IT FOLLOWS THE PAGE YOU ARE ON, not the voice the module last focused.
+     *
+     * Those coincide whenever the follow moved you — it moves you TO that
+     * voice's page — but they part the moment you jog by hand, and then the
+     * map is answering a question you did not ask: it showed the pad the
+     * module thinks is focused while you were looking at a different drum.
+     * Reported from the device. The map means "the pad this page edits", and
+     * the page is the only thing that knows.
+     *
+     * That also makes the focused-voice bookkeeping redundant, so it is gone.
+     * The token still drives the follow; nothing tracks a resolved index any
+     * more, which removes the coupling that broke this once already (the latch
+     * became a string and the icon was still indexing an array with it).
+     *
+     * A child level answers for its CURRENT instance, so a rack page lights
+     * the pad you have selected within it. A page that is not a voice —
+     * Reverb, My Presets, Module — lights nothing, because it edits no pad.
+     *
+     * Costs no read: the page and the child index are both already in hand.
+     */
+    function padIconNote() {
+        if (!s.hierarchy || padLayoutOf(s.hierarchy) !== "drums") return null;
+        const voices = voiceList();
+        if (!voices.length) return null;
+        const p = page();
+        const lvl = p && p.level;
+        if (!lvl) return -1;
+        const ci = childIndexFor(lvl);
+        for (const v of voices) {
+            if (v.level !== lvl) continue;
+            if (v.childIndex === null || v.childIndex === ci) return v.note;
+        }
+        return -1;                    /* this page edits no pad */
+    }
+
+    function syncVoiceFromModule() {
+        const hier = s.hierarchy;
+        if (!hier) return;
+        /* The hierarchy is already in hand — re-reading `ui_hierarchy` here
+         * would cost a stop AND could answer a different tri-state than the
+         * page set was planned from. Memoised against the hierarchy OBJECT,
+         * which is stable for the plan's lifetime: this runs on every rotation
+         * stop, and mrdrums' 16 voices were 16 objects allocated and thrown
+         * away each time, most stops discarding them at the very next line. */
+        const voices = voiceList();
+        if (!voices.length) return;             /* opted out: costs nothing */
+
+        /*
+         * The template shape owns its focus. Nothing to do, and above all
+         * nothing to READ — see the priority note above.
+         *
+         * Scoped to the levels that actually CONTRIBUTE VOICES. Scanning every
+         * level in the file made one unrelated child level — an 8-instance LFO
+         * bank that happens to declare `child_index_param` — silently disable
+         * the follow for the whole module, sibling drum voices and all. The
+         * priority rule is about the level that owns the VOICES; a focus param
+         * on some other level is not a competing source for this one.
+         */
+        const levels = hier.levels || {};
+        for (const v of voices) {
+            if (childIndexParam(levels[v.level])) return;
+        }
+
+        /*
+         * THE MODULE OWNS THE FOCUS, AND NOTHING INFERS IT FROM WHAT IS PLAYED.
+         *
+         * There used to be a third input here: `synth:last_note`, the note the
+         * chain host last saw reach the synth. It is deleted, and the reason is
+         * decisive — A SEQUENCER PLAYS NOTES. With a pattern running, every hit
+         * is a note, so the grid would change page on every drum in the bar and
+         * the editor would be unusable exactly when you are listening to what
+         * you edited. "The pad you HIT" is a human gesture; "the note that
+         * SOUNDED" is not the same fact and cannot stand in for it.
+         *
+         * Nor can the two be told apart where it mattered. A pad press and a
+         * clip playing both arrive at the synth through Move's MIDI_OUT echo,
+         * tagged the same. Cable 0 does carry real presses — the shim routes
+         * them to the focused slot as MOVE_MIDI_SOURCE_INTERNAL — but only for
+         * a module that declares CAPTURE RULES, and a module able to do that is
+         * equally able to publish a focus param. The fallback bought nothing
+         * its own precondition did not already provide.
+         *
+         * 9W9 is the proof by construction: its `seq_voice` is written only by
+         * `set_param` from the UI and never inferred from MIDI, in a drum
+         * module with eleven voices and a note map of its own.
+         *
+         * `synth:last_note` still exists and is still served — it is a useful
+         * thing for a sequencer to ask — but NOTHING NAVIGATES ON IT.
+         */
+        const focusParam = focusParamOf(hier);
+        if (!focusParam) return;
+        const raw = getParam(`${s.prefix}:${focusParam}`);
+        /* "<count>:<level>" or a bare value — see focusToken. The COUNT is what
+         * makes re-hitting the pad you are already latched on work. */
+        const { token, value } = focusToken(raw);
+        /* A level NAME first — that is what the declaration documents — and a
+         * numeric voice index second, because a module may answer either and
+         * both are unambiguous. Both refuse a failed read. */
+        let vi = voiceIndexFromLevel(voices, value);
+        if (vi === null) vi = voiceIndexFromWire(voices, value);
+        /*
+         * TRI-STATE. null is "no information", never voice 0. Adopting the
+         * first voice because a read timed out would move the user off the
+         * pad they were editing, re-keying every page on screen and dropping
+         * its cached values — the same cost the child-index path refuses.
+         *
+         * Before the latch, so a failed read leaves the latch alone.
+         */
+        if (vi === null) return;
+
+        /*
+         * THE EDGE. A repeat of the answer we last acted on does nothing at
+         * all — no navigation, no warm, no announce.
+         *
+         * Latched on the TOKEN, not on the resolved voice. Where a module
+         * answers "<count>:<level>" the token carries the hit count, so
+         * hitting the SAME pad again is a new event and navigates; latching on
+         * the voice index made that a no-op, and the user who hit the kick,
+         * browsed to Reverb and hit the kick again stayed on Reverb. 9W9 has
+         * published a counter for exactly this reason since before the
+         * contract existed. A module answering a bare value latches on the
+         * value, which is the old behaviour exactly.
+         */
+        if (token === s.voiceLatch) return;
+        /* Latched on the ANSWER, not on the outcome: a voice we cannot route
+         * to below is still an answer we have dealt with, and re-deciding it
+         * every stop is the same waste. */
+        s.voiceLatch = token;
+
+        const v = voices[vi];
+        if (!v || !v.level) return;
+
+        if (v.childIndex !== null) {
+            /*
+             * A rack contributed by a CHILD level whose level names no
+             * `child_index_param` — examples/voice-poc's own `pads` level is
+             * exactly this shape (`child_note_base: 60`, no focus param), and
+             * the old bail discarded it, so the shipped example advertised a
+             * shape the feature structurally could not reach.
+             *
+             * Nothing else owns the focus here, so adopt it locally the way a
+             * pick from the instance list does — the index re-keys the level's
+             * pages, and the cached values belonged to the previous instance.
+             * A level that DOES declare child_index_param never gets here (we
+             * returned above); syncChildIndexFromModule stays its single owner.
+             */
+            if (childIndexFor(v.level) !== v.childIndex) {
+                s.childIndex[v.level] = v.childIndex;
+                dropChildLevelCache(v.level);
+            }
+        }
+
+        const cur = page();
+        if (cur && cur.level === v.level) return;   /* already there */
+        const target = s.pages.findIndex(
+            (q) => q && q.level === v.level && q.kind === PAGE_KNOBS);
+        if (target < 0) return;                 /* a voice with no grid page */
+        /* `remember: false`: the module named a voice, so land on that voice's
+         * page rather than on whatever page of that section was last visited. */
+        goToPage(target, { remember: false });
+    }
+
     function neighbourPrefetch(cur) {
         if (s.tickCount < (s.prefetchHoldUntil || 0)) return null;
         for (const k in s.settleUntil) {
@@ -1694,9 +2103,24 @@ export function createController(io = {}) {
         }
 
         const p = page();
-        if (p && p.kind === PAGE_PRESET) { tickPreset(p); return null; }
+        /*
+         * A MODULE-DRAWN BROWSER ticks BOTH lanes.
+         *
+         * An ordinary preset page has no knobs, so the preset lane is all there
+         * is and returning here is right. One that carries knobs must also run
+         * the value lane below, or its picture is drawn from values nobody ever
+         * fetched -- which showed as a face page reading the vowel it happened
+         * to inherit from a neighbouring page rather than the live one.
+         *
+         * Two reads per tick on that page instead of one. That is the cost of a
+         * screen that is a browser and a knob page at once, and it is bounded:
+         * only this page, only while it is up.
+         */
+        if (p && p.kind === PAGE_PRESET) { tickPreset(p); if (!p.canvas) return null; }
         if (p && p.kind === PAGE_ITEMS) { tickItems(p); return null; }
-        if (!p || p.kind !== PAGE_KNOBS || p.keys.length === 0) return null;
+        /* Reads AND live values: a custom browser page carrying knobs needs
+         * both, or its picture is drawn from values nobody ever fetched. */
+        if (!pageHasKnobs(p)) return null;
 
         refreshModulatedValues(p);
 
@@ -1716,6 +2140,21 @@ export function createController(io = {}) {
          * takes.
          */
         const extraKeys = vizEnabled ? vizExtraKeys() : [];
+        /* A module-drawn page can depend on read-only state that is not one of
+         * its encoder keys (animation snapshots are the motivating case).
+         * Read it on this same bounded rotation; never synchronously in draw. */
+        if (p.canvas && Array.isArray(p.canvas.extraKeys)) {
+            for (const k of p.canvas.extraKeys) {
+                if (!k || extraKeys.indexOf(k) >= 0) continue;
+                /* A key that already has a cell on this page is already in the
+                 * rotation. Declaring it here as well would buy nothing and
+                 * cost a second stop reading the same value -- the planner
+                 * cannot rule it out, because the canvas travels to the preset
+                 * browser too and the two pages carry different key lists. */
+                if (p.keys.indexOf(k) >= 0) continue;
+                extraKeys.push(k);
+            }
+        }
         /*
          * THE NEIGHBOUR LANE — why the incoming page arrives populated.
          *
@@ -1790,6 +2229,10 @@ export function createController(io = {}) {
              * and dropping its cached values -- because a read timed out.
              */
             syncChildIndexFromModule(p);
+            /* ...and, on the SAME stop, the sibling/note shapes. One of the
+             * two runs for any given module and never both — see the priority
+             * note on syncVoiceFromModule. */
+            syncVoiceFromModule();
             return null;
         }
         if (at > p.keys.length) {
@@ -1839,14 +2282,36 @@ export function createController(io = {}) {
          * On the cursor it costs one read per tick and the whole page is
          * current within `stops` ticks — under 0.2s, for a tick mark. */
         /* Kept as returned: a boolean draws the tilde, "auto"/"auto-off" the
-         * automation circle — see io.isModulated. */
-        { const m = isModulated(fullKey(key)); s.modCache[key] = (typeof m === "string") ? m : !!m; }
+         * automation circle — see io.isModulated. A string is a fork reading of
+         * the same cache slot, and it must survive the live-flag OR below. */
+        /*
+         * A MODULE MAY DECLARE A PARAM LIVE, and that is not the same question
+         * as "is something routed to it".
+         *
+         * `isModulated` asks the chain's modulation system, which knows about
+         * LFOs and macros. It cannot know that a synth drives its own vowel
+         * from pad pressure, or that a value moves for any other reason inside
+         * the module -- so a picture of that value sat frozen at whatever the
+         * knob last said while the sound changed underneath it.
+         *
+         * `"live": true` on the param says so. It costs what any modulated key
+         * costs: the effective value is refreshed EVERY TICK
+         * (refreshModulatedValues, MOD_FAST_READS_PER_TICK) rather than waiting
+         * for the value rotation, which is the whole point -- a rotation stop
+         * on an eight-knob page lands about four times a second, and an
+         * animation drawn from that is a slideshow.
+         */
+        {
+            const m = isModulated(fullKey(key));
+            const _lm = s.metaIndex ? s.metaIndex.getOrGuess(key) : null;
+            s.modCache[key] = (typeof m === "string") ? m : (!!m || !!(_lm && _lm.live === true));
+        }
 
-        /* For a modulated key the plain key returns the EFFECTIVE value — what
-         * the source is currently driving it to — and that belongs to the dot.
-         * The pointer wants the base, so ask for it directly. Same one read on
-         * the cursor either way; the extra cost of showing both values is the
-         * fast lane above, not this.
+        /* The pointer wants the base — what the user set — so ask for it
+         * directly. (Since #276 the plain key also answers with the base for
+         * a modulated target, but `:base` is the explicit ask and works
+         * against any chain host.) The driven value belongs to the dot,
+         * which reads `:effective` in refreshModulatedValues.
          *
          * `:base` is served by chain_mod_get_base_for_subkey and only exists
          * while a target is active, so fall back rather than blank the knob if
@@ -2861,7 +3326,28 @@ export function createController(io = {}) {
          * panel would replace something legible with something no more
          * informative, while hiding the rest of the row.
          */
-        if (meta.divable && meta.kind === KIND_ENUM
+        /*
+         * ...AND A LIST DOES NOT PEEK AT ALL.
+         *
+         * Same rule as drawnWide one paragraph down, applied to the whole
+         * layout instead of to one graphic: the peek exists because a 30px
+         * GRID CELL cannot show a word. A list row already prints the option
+         * in full, right-aligned beside its label, so the panel covers a
+         * legible answer with the same answer -- and takes the four rows
+         * around it with it.
+         *
+         * It is worst exactly where it is least needed. Global Settings is
+         * pinned to the list, and `skipback_shortcut` is two options: turning
+         * it blanked the screen to spell "Cap / Vol+Cap" over a row already
+         * reading "Skipback: Vol+Cap". Reported from the device as a menu that
+         * should not be there.
+         *
+         * Gated on s.layout rather than on knobsAsList(): the turn has already
+         * established that this is a knobs page with a key under the cursor,
+         * and the question here is only what the layout can SHOW.
+         */
+        if (s.layout !== LAYOUT_LIST
+            && meta.divable && meta.kind === KIND_ENUM
             && !drawnWide(key) && !drawnAsSwitch(key)
             && Array.isArray(meta.options) && meta.options.length >= 2) {
             const pi = Math.round(Number(value));
@@ -2968,6 +3454,7 @@ export function createController(io = {}) {
             mode: s.lastLoadOpts && s.lastLoadOpts.mode,
             visible: s.lastLoadOpts && s.lastLoadOpts.visible,
             trailingMenus: trailingMenus(),
+            paginate: s.paginate,
         });
         if (!planned.pages.length) return;   /* never plan from nothing */
         s.pages = planned.pages;
@@ -3018,6 +3505,7 @@ export function createController(io = {}) {
             mode: s.lastLoadOpts && s.lastLoadOpts.mode,
             visible: s.lastLoadOpts && s.lastLoadOpts.visible,
             trailingMenus: trailingMenus(),
+            paginate: s.paginate,
         });
         if (planned.pages.length !== oldPages.length ||
             planned.pages.some((p, i) => (p.keys || []).join() !== ((oldPages[i] || {}).keys || []).join())) {
@@ -3356,114 +3844,6 @@ export function createController(io = {}) {
         return true;
     }
 
-    /*
-     * A parameter's declared card drawer, or null.
-     *
-     * `card_script` is spelled like `canvas_script` — "file.js#exportName" —
-     * because a module author already knows that spelling and a second grammar
-     * for the same idea is a second thing to get wrong.
-     */
-    function cardSpec(meta) {
-        if (!meta) return null;
-        const spec = typeof meta.card_script === "string" ? meta.card_script.trim() : "";
-        if (!spec) return null;
-        const hash = spec.indexOf("#");
-        return hash < 0
-            ? { spec, path: spec, ref: "" }
-            : { spec, path: spec.slice(0, hash), ref: spec.slice(hash + 1) };
-    }
-
-    /*
-     * Load a declaring parameter's drawer, ONCE, off the draw path.
-     *
-     * Called from touch and from a turn -- the two events that can raise a card
-     * -- and never from renderOverlays. Nothing module-side is resident while
-     * the grid is up and the host loader has no cache of its own, so a load on
-     * the draw path would evaluate the script on every frame of a knob turn.
-     *
-     * A null answer is CACHED. A missing file, a bad export or a host with no
-     * loader must cost one attempt for the session, not one per touch.
-     */
-    function warmCard(slot) {
-        if (!loadCard) return;
-        const spec = cardSpec(metaAt(slot));
-        if (!spec || Object.prototype.hasOwnProperty.call(s.cardFns, spec.spec)) return;
-        let fn = null;
-        try {
-            fn = loadCard(spec.path, spec.ref);
-        } catch (e) {
-            fn = null;
-        }
-        s.cardFns[spec.spec] = typeof fn === "function" ? fn : null;
-    }
-
-    /** The loaded drawer for a param, or null. Never loads -- see warmCard. */
-    function cardFnFor(meta) {
-        const spec = cardSpec(meta);
-        if (!spec) return null;
-        const fn = s.cardFns[spec.spec];
-        return typeof fn === "function" ? fn : null;
-    }
-
-    /*
-     * WHAT render() DOES NOT DRAW, AND WHY IT CANNOT.
-     *
-     * render() paints a page into a rect the CALLER owns. Nothing in
-     * src/shared/param_pages/ clears the screen -- grep it, there is not one
-     * clear_screen in the whole library -- and that is the contract `rect` and
-     * `bands` depend on: a consumer hosting a page inside its own chrome
-     * (movy's header, a tool's status row) must get the body alone. See the
-     * bands comment in render().
-     *
-     * The enum peek is the opposite kind of screen: FULL, over the top, on
-     * purpose, because while you are turning a knob you are not reading the
-     * rest of the grid. It therefore cannot live inside render() -- it would
-     * ignore the caller's rect and blank a frame the caller composed -- and it
-     * lived in the host binding instead, where the clear was available.
-     *
-     * That made it INVISIBLE TO EVERY OTHER CONSUMER. A module binding
-     * page_controller from its own ui_chain.js calls render() and stops, which
-     * is what every line of the library suggests is the whole draw; the
-     * controller then tracks a peek on every enum detent that is never
-     * painted, and applyInput dutifully routes Back to dismissPeek() to take
-     * down a panel nobody can see. Silent, with no error, and not discoverable
-     * from the API -- CW-78 and 6W6 both shipped that way, with a correct
-     * integration in every other respect.
-     *
-     * So the obligation is a FUNCTION rather than a paragraph in a doc. A
-     * caller that owns the frame calls render() then renderOverlays(), and a
-     * caller embedding a page in its own chrome passes no clearScreen and
-     * simply gets nothing -- a full-screen overlay is meaningless there.
-     *
-     * `ctx` is render()'s, plus `clearScreen`. Returns true when something was
-     * drawn, so a caller that flushes conditionally can tell.
-     */
-    function renderOverlays(ctx, { clearScreen } = {}) {
-        const peek = enumPeek();
-        if (!peek) { const r = drawDeclaredCard(ctx); drawNotice(ctx); return r; }
-        /*
-         * No clear, no overlay. Drawing the list into a frame we may not blank
-         * would leave it interleaved with the grid underneath -- two screens at
-         * once, which is worse than the one we have.
-         */
-        if (typeof clearScreen !== "function") return false;
-        clearScreen();
-        drawEnumList(ctx, {
-            title: peek.title,
-            /* Not "SELECT". Nothing is being selected -- the value is already
-             * set -- and naming a gesture the screen does not have is how a
-             * user learns to press a button that does nothing. */
-            headerRight: "TURNING",
-            options: peek.options,
-            index: peek.index,
-            /* Cursor and live value are the SAME here, unlike the picker where
-             * the `*` marks what Back would return you to. */
-            markIndex: peek.index,
-            footer: [["TURN", "SET"]],
-        });
-        return true;
-    }
-
     /* -------------------------------------------------- instance copy/clear */
 
     /*
@@ -3490,9 +3870,7 @@ export function createController(io = {}) {
      *
      * The buttons reach the grid only for a module declaring
      * capabilities.claims_edit_ccs -- Move keeps them otherwise -- so a module
-     * opts in to this exactly by opting in to those buttons. (Upstream #429;
-     * in this fork the binding routes them, and dAVEBOx's sound mode routes
-     * them to the same controller while a claiming module's page is up.)
+     * opts in to this exactly by opting in to those buttons.
      */
     function instanceLevel() {
         const p = page();
@@ -3506,7 +3884,7 @@ export function createController(io = {}) {
     function wireFor(def, index, key) { return resolveChildKey(def, index, key) || key; }
     /*
      * WHICH INSTANCE THE MODULE IS ON *NOW*, not which one the rotation last
-     * heard about (upstream #438).
+     * heard about.
      *
      * `childIndexFor` answers from `s.childIndex`, which syncChildIndexFromModule
      * refreshes on ONE stop of the read rotation -- once every keys.length + 1
@@ -3602,7 +3980,7 @@ export function createController(io = {}) {
             return true;
         }
         const lvl = instanceLevel();
-        if (!lvl) return false;                      /* not on an instance page: inert, the event falls through */
+        if (!lvl) return false;                      /* not on an instance page: Move keeps it? no -- claimed; just inert */
         const keys = copyKeysFor(lvl.def);
         if (!keys.length) return false;
         const from = liveChildIndex(lvl.def, lvl.name);
@@ -3719,7 +4097,12 @@ export function createController(io = {}) {
              * only displays it. Gating it meant the dot froze for the whole
              * time you were turning the knob, which is exactly when you most
              * want to see where modulation is putting the param. */
-            const v = getParam(fullKey(key));
+            /* The plain key answers with the BASE for a modulated target
+             * (#276), so the driven value is asked for by name. Miss rule as
+             * for `:base` above: "" is an unserved key, not a value — fall
+             * back to the plain key rather than freeze the dot. */
+            let v = getParam(fullKey(key) + ":effective");
+            if (v === null || v === undefined || v === "") v = getParam(fullKey(key));
             if (v !== null && v !== undefined) s.modValues[key] = v;
         }
         s.modCursor = (s.modCursor + n) % modKeys.length;
@@ -3733,12 +4116,18 @@ export function createController(io = {}) {
     function setReveal(on) { s.revealValues = !!on; }
     function setDecorations(d) { s.decorations = d || null; }
 
-    /* Movy layout is a whole separate renderer (its own fixed-geometry header
-     * and knob grid, not a `layout` value render_page.mjs understands — see
-     * render_page_movy.mjs), so it does not take decorations (a sequencer's
-     * per-slot p-locks) or an embedding `rect`: it draws its own header full
-     * width, the way Movy itself always does. Anything using those keeps
-     * LAYOUT_DIAL/LAYOUT_BAR — see setLayout. */
+    /* Movy layout is a whole separate renderer (its own header and knob grid,
+     * not a `layout` value render_page.mjs understands — see
+     * render_page_movy.mjs). It used to refuse decorations and an embedding
+     * `rect`, which made it the one layout a sequencer could not use — and it
+     * is the layout the device actually draws, so "share the grid" meant
+     * "share every grid except the real one".
+     *
+     * Both now work: `movyBandLayout` places the bands into a rect and lets a
+     * caller take the body alone, and `drawKnobRow` reads per-slot
+     * decorations. The default path — no rect, no bands — reproduces the
+     * vertical rhythm table exactly and is pinned byte-identical by the render
+     * snapshots. */
     /*
      * `footer` is [key, action] hint pairs, most important first, supplied by
      * the CALLER — the gestures belong to whoever owns the input mapping, same
@@ -3759,10 +4148,13 @@ export function createController(io = {}) {
      * this page is something you can go into, and they are the same mark a
      * divable cell and an un-entered menu wear.
      */
-    function drawKnobsAsList(ctx, title, footer) {
+    /* `chrome` and `footerBand` are handed in by render() rather than rebuilt
+     * here: they are what decides whether the caller keeps its own header, and
+     * a second copy of that decision is the drift this file already argues
+     * against twice above. */
+    function drawKnobsAsList(ctx, title, footer, chrome, footerBand) {
         const mp = page();
-        drawHeaderMovy(ctx, title || "", pageLabel(mp), false);
-        drawBankBar(ctx, s.pageIndex | 0, Math.max(1, s.pages.length), pageGroups());
+        chrome(pageLabel(mp));
         const bottom = footer ? RULE_Y : 64;
         const entered = menuEntered();
         drawPageChromeList(ctx,
@@ -3775,21 +4167,65 @@ export function createController(io = {}) {
                          bottom - MENU_FRAME_Y - MENU_FRAME_BOTTOM_INSET,
                          MENU_BRACKET_LEN);
         }
-        if (footer) drawFooter(ctx, footer);
+        footerBand();
     }
 
-    function render(ctx, { title, rect, footer } = {}) {
+    function render(ctx, { title, rect, footer, bands } = {}) {
+        /* The frame this page was drawn into, remembered for renderOverlays.
+         * A floating card is centred in it -- on the panel for the full-screen
+         * host, and inside the embedded region for a tool that supplies a rect.
+         * Kept here rather than passed to renderOverlays so an existing caller
+         * needs no change. */
+        s.frameRect = rect || null;
         /* LAYOUT_LIST is LAYOUT_MOVY with one page kind arranged differently, so
          * it takes the same branch: the header, bank bar, footer, section
          * picker, menu, items and preset pages are all literally the same draws.
          * Only the knob page forks, and only at the last step. */
         if (s.layout === LAYOUT_MOVY || s.layout === LAYOUT_LIST) {
+            /*
+             * THE CHROME, ONCE, FOR EVERY PAGE KIND.
+             *
+             * The header and bank bar were drawn by six separate branches —
+             * menu, picker, items, preset, child, and the grid — each with its
+             * own copy of the same two calls. That was survivable while the
+             * only caller was our own full-screen host, and stopped being so
+             * the moment a tool wanted to keep its OWN header: `bands` was
+             * honoured by the knob grid alone, so a preset page embedded in
+             * movy drew Schwung's header over movy's and its list into rows
+             * movy had already used.
+             *
+             * A consumer asking for the body alone gets the body alone,
+             * whatever kind of page it happens to be on.
+             */
+            const wantHeader = !bands || bands.header !== false;
+            const wantBank   = !bands || bands.bank   !== false;
+            const wantFooter = !bands || bands.footer !== false;
+            const pageChrome = (right, inverted = false) => {
+                if (wantHeader) drawHeaderMovy(ctx, title || "", right, inverted);
+                if (wantBank) {
+                    drawBankBar(ctx, s.pageIndex | 0, Math.max(1, s.pages.length), pageGroups());
+                }
+            };
+            const footerBand = () => { if (footer && wantFooter) drawFooter(ctx, footer); };
             const drawGrid = () => {
-            if (knobsAsList()) { drawKnobsAsList(ctx, title, footer); return; }
+            if (knobsAsList()) { drawKnobsAsList(ctx, title, footer, pageChrome, footerBand); return; }
             renderPageMovy(ctx, {
                 page: page(), metaIndex: s.metaIndex, values: s.values,
                 title: title || "", pageIndex: s.pageIndex, pageCount: s.pages.length,
                 touched: s.hintLines ? -1 : s.touched,
+                /* A custom UI page's body drawer — inert for every ordinary
+                 * page. This layout is the one the device uses, so a page that
+                 * drew correctly under the dial renderer and not here would be
+                 * a page that works everywhere except on hardware. */
+                drawCanvasPage: drawCanvasPageBody,
+                /* Both undefined for the device's own full-screen draw, which
+                 * is what keeps that path byte-identical. */
+                rect, bands,
+                /* A sequencer's per-slot parameter locks. Graphics stand down
+                 * while these are live (see the `viz` argument below): a
+                 * picture spanning four cells cannot say which of them is
+                 * locked. */
+                decorations: s.decorations,
                 displayFor: formatValue
                     ? (key, raw, surface) => formatValue(fullKey(key), raw, surface)
                     : null,
@@ -3800,7 +4236,13 @@ export function createController(io = {}) {
                 modValues: s.modValues,
                 pageGroups: pageGroups(),
                 pageLabel: pageLabel(),
-                viz: vizEnabled ? vizGroups() : [],
+                padIcon: padIconNote(),
+                /* Graphics stand down while p-locks are live, the same rule the
+                 * dial/bar branch has always applied: one picture replacing
+                 * four cells cannot show which of the four is locked. Without
+                 * this the lock marks would land on cells whose widget had been
+                 * absorbed into a graphic. */
+                viz: (vizEnabled && !s.decorations) ? vizGroups() : [],
                 /*
                  * The trigger button's press animation. Both of these have to
                  * come from here: the renderer is pure and reads the clock off
@@ -3850,13 +4292,12 @@ export function createController(io = {}) {
                  * only difference is what the list holds.
                  */
                 const pbottom = footer ? RULE_Y : 64;
-                drawHeaderMovy(ctx, title || "", "SECTIONS", false);
-                drawBankBar(ctx, s.pageIndex | 0, Math.max(1, s.pages.length), pageGroups());
+                pageChrome("SECTIONS");
                 drawPageChromeList(ctx,
                     { x: MENU_LIST_X, y: MENU_LIST_Y,
                       w: MENU_LIST_W, h: pbottom - MENU_LIST_Y },
                     s.pickerEntries, s.pickerIndex);
-                if (footer) drawFooter(ctx, footer);
+                footerBand();
                 return;
             }
             const mp = page();
@@ -3864,8 +4305,7 @@ export function createController(io = {}) {
                 /* A real list, so it draws like a menu page: same chrome, same
                  * five rows, same rect. Inert it highlights nothing — the page
                  * is something you can go INTO, not something you are in. */
-                drawHeaderMovy(ctx, title || "", mp.name, false);
-                drawBankBar(ctx, s.pageIndex | 0, Math.max(1, s.pages.length), pageGroups());
+                pageChrome(mp.name);
                 const ibottom = footer ? RULE_Y : 64;
                 const ist = itemsState(mp) || { list: [], cursor: 0, current: -1 };
                 const entered = menuEntered();
@@ -3886,7 +4326,7 @@ export function createController(io = {}) {
                                  ibottom - MENU_FRAME_Y - MENU_FRAME_BOTTOM_INSET,
                                  MENU_BRACKET_LEN);
                 }
-                if (footer) drawFooter(ctx, footer);
+                footerBand();
                 return;
             }
             if (mp && mp.kind === PAGE_PRESET) {
@@ -3895,24 +4335,37 @@ export function createController(io = {}) {
                  * one of this module's pages rather than as somewhere else.
                  * That is the whole point: it used to eject into the list
                  * editor, which looks nothing like this. */
-                drawHeaderMovy(ctx, title || "", mp.name, false);
-                drawBankBar(ctx, s.pageIndex | 0, Math.max(1, s.pages.length), pageGroups());
+                pageChrome(mp.name);
                 const pbottom = footer ? RULE_Y : 64;
                 const prect = { x: MENU_FRAME_X, y: MENU_FRAME_Y,
                                 w: MENU_FRAME_W, h: pbottom - MENU_FRAME_Y - MENU_FRAME_BOTTOM_INSET };
                 const pst = presetState(mp) || {};
-                /* ⭑ THE LIST IS A DISPLAY CHANGE, NOT A SECOND MODE. The state
-                 * is the same one the single-name page uses — the level's index
-                 * and count — so the jog still walks presets exactly as before
-                 * and there is no new write path. All that differs is whether
-                 * the neighbours are drawn. Rendered through the same
-                 * drawPageChromeList every other list on the device uses, so a
-                 * preset list looks like a list rather than like this page. */
+                /*
+                 * A MODULE-DRAWN BROWSER paints the body itself. It is handed
+                 * the preset state as well as the values, because the thing it
+                 * is browsing is not a parameter and no read would find it --
+                 * "Fish, 2 of 12" lives in the controller, not on the wire.
+                 *
+                 * ⭑ THE NAME LIST IS A DISPLAY CHANGE, NOT A SECOND MODE (fork).
+                 * The state is the same one the single-name page uses — the
+                 * level's index and count — so the jog still walks presets
+                 * exactly as before and there is no new write path. All that
+                 * differs is whether the neighbours are drawn. It is rendered
+                 * through the same drawPageChromeList every other list on the
+                 * device uses. A module that draws its own browser outranks it:
+                 * the canvas IS the module saying what this page looks like.
+                 */
                 const pnames = presetNames
                     ? presetNames(mp, { entered: menuEntered(),
                                         index: pst.index | 0, count: pst.count | 0 })
                     : null;
-                if (Array.isArray(pnames) && pnames.length) {
+                if (mp.canvas) {
+                    drawCanvasPageBody(ctx, prect, mp.canvas, {
+                        touched: s.touched,
+                        preset: { name: pst.name, index: pst.index,
+                                  count: pst.count, entered: menuEntered() },
+                    });
+                } else if (Array.isArray(pnames) && pnames.length) {
                     drawPageChromeList(ctx, prect,
                         pnames.map((n, i) => ({ name: n || `Preset ${i + 1}` })),
                         pst.index | 0, { editMode: menuEntered() });
@@ -3929,7 +4382,7 @@ export function createController(io = {}) {
                                  pbottom - MENU_FRAME_Y - MENU_FRAME_BOTTOM_INSET,
                                  MENU_BRACKET_LEN);
                 }
-                if (footer) drawFooter(ctx, footer);
+                footerBand();
                 return;
             }
             if (mp && mp.kind === PAGE_MENU) {
@@ -3937,8 +4390,7 @@ export function createController(io = {}) {
                  * and the bank bar all stay put, so a menu reads as one of this
                  * module's pages rather than as somewhere else. header:false
                  * because that header is already drawn. */
-                drawHeaderMovy(ctx, title || "", mp.name, false);
-                drawBankBar(ctx, s.pageIndex | 0, Math.max(1, s.pages.length), pageGroups());
+                pageChrome(mp.name);
                 const bottom = footer ? RULE_Y : 64;
                 const entered = menuEntered();
                 /*
@@ -3963,7 +4415,7 @@ export function createController(io = {}) {
                                  bottom - MENU_FRAME_Y - MENU_FRAME_BOTTOM_INSET,
                                  MENU_BRACKET_LEN);
                 }
-                if (footer) drawFooter(ctx, footer);
+                footerBand();
                 return;
             }
             drawGrid();
@@ -3975,6 +4427,7 @@ export function createController(io = {}) {
                 page: page(), metaIndex: s.metaIndex, values: s.values,
                 title: title || "", pageIndex: s.pageIndex, pageCount: s.pages.length,
                 touched: -1, layout: s.layout, rect,
+                drawCanvasPage: drawCanvasPageBody,
             });
             renderHint(ctx, { rect, lines: s.hintLines.lines, title: s.hintLines.title });
             return;
@@ -3989,6 +4442,9 @@ export function createController(io = {}) {
             touched: s.touched, decorations: s.decorations,
             layout: s.layout, revealValues: s.revealValues, rect,
             modulated: (key) => !!s.modCache[key],
+            /* The live values, so a module-supplied widget can draw what the
+             * param is ACTUALLY doing rather than where its knob was left. */
+            modValues: s.modValues,
             /* Section ids for the page rule, so it groups the way Shift+jog
              * navigates. Cached — it only changes when the page set does. */
             pageGroups: pageGroups(),
@@ -3997,7 +4453,180 @@ export function createController(io = {}) {
              * which of them is locked, so graphics stand down while
              * decorations are active. */
             viz: (vizEnabled && !s.decorations) ? vizGroups() : [],
+            /*
+             * A CUSTOM UI PAGE's body drawer. Only a page carrying `canvas`
+             * uses it, so this is inert for every ordinary page — and absent
+             * when the host offers none, which is what makes a module's custom
+             * page degrade to an empty body rather than to a broken screen.
+             */
+            drawCanvasPage: drawCanvasPageBody,
         });
+    }
+
+    /*
+     * Draw a custom page's body, if the host can.
+     *
+     * The band comes from render_page (the area the eight cells would have
+     * used), so the header, the touch strip and the footer are the host's own
+     * and a module cannot paint over them.
+     */
+    /*
+     * Draw a custom page's body, if the host can.
+     *
+     * The band comes from the caller (render_page's cell area, or the preset
+     * page's own frame), so the header, the touch strip and the footer are the
+     * host's own and a module cannot paint over them.
+     */
+    function drawCanvasPageBody(ctx, band, canvas, extra) {
+        if (typeof io.drawCanvasPage !== "function") return;
+        io.drawCanvasPage(ctx, band, canvas, {
+            /*
+             * MERGED, like a graphic gets — a custom page is redrawn every tick
+             * precisely so it can show a live value move, and handing it the
+             * base would make that impossible by construction.
+             */
+            values: liveValues(),
+            /* The knob positions, for a page that wants to show both what is
+             * set and what is sounding. Same split as a widget's baseValues. */
+            base: s.values,
+            metaIndex: s.metaIndex,
+            keys: (page() || {}).keys || [],
+            touched: extra && typeof extra.touched === "number" ? extra.touched : -1,
+            /*
+             * Browser state, when this page IS the level's preset browser.
+             * Handed over because it is not a parameter: "Fish, 2 of 12" lives
+             * in the controller and no read would find it. Null otherwise.
+             */
+            preset: (extra && extra.preset) || null,
+            nowMs: now(),
+        });
+    }
+
+    /*
+     * Base values with any live/modulated ones merged over them.
+     *
+     * The same merge render_page_movy does for graphics, in ONE place so the
+     * card and the renderers cannot disagree about what a value is. Returns the
+     * base object untouched when nothing is live, so the common case allocates
+     * nothing.
+     */
+    function liveValues() {
+        for (const _k in s.modValues) return Object.assign({}, s.values, s.modValues);
+        return s.values;
+    }
+
+    /** True when the page on screen is drawn by the module. */
+    function onCanvasPage() {
+        const p = page();
+        return !!(p && p.canvas);
+    }
+
+    /*
+     * A parameter's declared card drawer, or null.
+     *
+     * `card_script` is spelled like `canvas_script` — "file.js#exportName" —
+     * because a module author already knows that spelling and a second grammar
+     * for the same idea is a second thing to get wrong.
+     */
+    function cardSpec(meta) {
+        if (!meta) return null;
+        const spec = typeof meta.card_script === "string" ? meta.card_script.trim() : "";
+        if (!spec) return null;
+        const hash = spec.indexOf("#");
+        return hash < 0
+            ? { spec, path: spec, ref: "" }
+            : { spec, path: spec.slice(0, hash), ref: spec.slice(hash + 1) };
+    }
+
+    /*
+     * Load a declaring parameter's drawer, ONCE, off the draw path.
+     *
+     * Called from touch and from a turn -- the two events that can raise a card
+     * -- and never from renderOverlays. Nothing module-side is resident while
+     * the grid is up and the host loader has no cache of its own, so a load on
+     * the draw path would evaluate the script on every frame of a knob turn.
+     *
+     * A null answer is CACHED. A missing file, a bad export or a host with no
+     * loader must cost one attempt for the session, not one per touch.
+     */
+    function warmCard(slot) {
+        if (!loadCard) return;
+        const spec = cardSpec(metaAt(slot));
+        if (!spec || Object.prototype.hasOwnProperty.call(s.cardFns, spec.spec)) return;
+        let fn = null;
+        try {
+            fn = loadCard(spec.path, spec.ref);
+        } catch (e) {
+            fn = null;
+        }
+        s.cardFns[spec.spec] = typeof fn === "function" ? fn : null;
+    }
+
+    /** The loaded drawer for a param, or null. Never loads -- see warmCard. */
+    function cardFnFor(meta) {
+        const spec = cardSpec(meta);
+        if (!spec) return null;
+        const fn = s.cardFns[spec.spec];
+        return typeof fn === "function" ? fn : null;
+    }
+
+    /*
+     * WHAT render() DOES NOT DRAW, AND WHY IT CANNOT.
+     *
+     * render() paints a page into a rect the CALLER owns. Nothing in
+     * src/shared/param_pages/ clears the screen -- grep it, there is not one
+     * clear_screen in the whole library -- and that is the contract `rect` and
+     * `bands` depend on: a consumer hosting a page inside its own chrome
+     * (movy's header, a tool's status row) must get the body alone. See the
+     * bands comment in render().
+     *
+     * The enum peek is the opposite kind of screen: FULL, over the top, on
+     * purpose, because while you are turning a knob you are not reading the
+     * rest of the grid. It therefore cannot live inside render() -- it would
+     * ignore the caller's rect and blank a frame the caller composed -- and it
+     * lived in the host binding instead, where the clear was available.
+     *
+     * That made it INVISIBLE TO EVERY OTHER CONSUMER. A module binding
+     * page_controller from its own ui_chain.js calls render() and stops, which
+     * is what every line of the library suggests is the whole draw; the
+     * controller then tracks a peek on every enum detent that is never
+     * painted, and applyInput dutifully routes Back to dismissPeek() to take
+     * down a panel nobody can see. Silent, with no error, and not discoverable
+     * from the API -- CW-78 and 6W6 both shipped that way, with a correct
+     * integration in every other respect.
+     *
+     * So the obligation is a FUNCTION rather than a paragraph in a doc. A
+     * caller that owns the frame calls render() then renderOverlays(), and a
+     * caller embedding a page in its own chrome passes no clearScreen and
+     * simply gets nothing -- a full-screen overlay is meaningless there.
+     *
+     * `ctx` is render()'s, plus `clearScreen`. Returns true when something was
+     * drawn, so a caller that flushes conditionally can tell.
+     */
+    function renderOverlays(ctx, { clearScreen } = {}) {
+        const peek = enumPeek();
+        if (!peek) { const r = drawDeclaredCard(ctx); drawNotice(ctx); return r; }
+        /*
+         * No clear, no overlay. Drawing the list into a frame we may not blank
+         * would leave it interleaved with the grid underneath -- two screens at
+         * once, which is worse than the one we have.
+         */
+        if (typeof clearScreen !== "function") return false;
+        clearScreen();
+        drawEnumList(ctx, {
+            title: peek.title,
+            /* Not "SELECT". Nothing is being selected -- the value is already
+             * set -- and naming a gesture the screen does not have is how a
+             * user learns to press a button that does nothing. */
+            headerRight: "TURNING",
+            options: peek.options,
+            index: peek.index,
+            /* Cursor and live value are the SAME here, unlike the picker where
+             * the `*` marks what Back would return you to. */
+            markIndex: peek.index,
+            footer: [["TURN", "SET"]],
+        });
+        return true;
     }
 
     /*
@@ -4031,12 +4660,27 @@ export function createController(io = {}) {
         return drawParamCard(ctx, {
             meta,
             draw,
+            /* Where the page actually is. Null for the full-screen host, which
+             * param_card reads as the whole panel. */
+            frame: s.frameRect || null,
             name: meta && (meta.name || meta.label) ? (meta.name || meta.label) : key,
             /* The SAME reading the header would show, through the one
              * formatter -- a card that spelled a value differently from the
              * strip above it would be a second formatter by another name. */
             value: knobRowValue(key),
             raw: s.values[key] === undefined ? null : s.values[key],
+            /*
+             * The whole page's values, so a card can read a sibling the way a
+             * cell widget always could -- see param_card's note.
+             *
+             * LIVE VALUES MERGED OVER THE BASE, exactly as a graphic gets them.
+             * A card is a picture of what a parameter MEANS, and for a param
+             * something else is driving, what it means is what it is DOING --
+             * not where its knob was left. `raw` stays the base, because that
+             * is the number the turn is editing.
+             */
+            values: liveValues(),
+            nowMs: now(),
             /*
              * ONE STRIKE. A drawer that threw is retired for the session rather
              * than re-entered up to sixty times a second, and the parameter
@@ -4051,10 +4695,11 @@ export function createController(io = {}) {
         });
     }
 
+
     let vizCache = null;
     function vizGroups() {
         const p = page();
-        if (!p || p.kind !== PAGE_KNOBS || !s.metaIndex) return [];
+        if (!pageHasKnobs(p) || !s.metaIndex) return [];
         /*
          * THE FOCUSED CHILD IS PART OF THE KEY.
          *
@@ -4068,7 +4713,13 @@ export function createController(io = {}) {
          * device as the waveform updating only after jogging away and back.
          */
         const childAt = p.childLevel ? childIndexFor(p.level) : -1;
-        const cacheKey = `${s.fingerprint}#${s.pageIndex}#${childAt}`;
+        /* AND THE WIDGET GENERATION. A module-supplied widget registers when
+         * its canvas.js loads, which is AFTER the first resolve of the page it
+         * belongs to -- so without this the page keeps being handed the
+         * pre-registration groups and the widget never appears. Same shape as
+         * the child-level alias bug above: a cache key that omits something the
+         * result depends on. */
+        const cacheKey = `${s.fingerprint}#${s.pageIndex}#${childAt}#${widgetsGeneration()}`;
         if (vizCache && vizCache.key === cacheKey) return vizCache.groups;
         const { groups } = resolveViz({ keys: p.keys, metaIndex: s.metaIndex, overrides: vizOverrides });
         vizCache = { key: cacheKey, groups };
@@ -4165,25 +4816,144 @@ export function createController(io = {}) {
         announce(announcePage(page(), s.pageIndex, s.pages.length, pageLabel()));
     }
 
-    function livePressParam() {
-        if (s.livePressCacheFor !== s.hierarchy) {
-            s.livePressCacheFor = s.hierarchy;
-            let k = null;
-            const levels = (s.hierarchy && s.hierarchy.levels) || {};
-            for (const name of Object.keys(levels)) { k = childPressParam(levels[name]); if (k) break; }
-            s.livePressCache = k || focusPressParamOf(s.hierarchy);
+    /**
+     * THE PAGE AS DATA, for a consumer that draws it itself.
+     *
+     * The third way to use this library. A module with no UI takes the whole
+     * stack and gets the grid; a tool that wants our drawing under its own
+     * chrome takes `render` with a rect; and a tool with its own look — a
+     * sequencer showing these params in its own style, next to its own
+     * transport — takes THIS, and draws nothing of ours.
+     *
+     * Everything above the pixels is still shared: the level walk, the
+     * metadata, the viz resolution, the staggered read cursor, the write and
+     * announce throttles, the contract tri-state and the placeholder retry. The
+     * renderer is the one layer where two projects diverging is harmless, and
+     * the derivation is the layer where it is not — schwung and movy
+     * independently found and fixed the same osirus "(loading)" bug because the
+     * derivation lived twice. See
+     * docs/plans/2026-08-28-param-pages-embeddable.md.
+     *
+     * NO DEVICE READ HAPPENS HERE, for the same reason it does not happen in a
+     * draw: values come out of `s.values`, filled by the read cursor. A param
+     * read is ~2.8 ms against a 1.68 ms whole-page render, so a consumer
+     * calling this every frame must not be paying IPC for it.
+     *
+     * `unresolved` is the tri-state, propagated rather than flattened: a failed
+     * `ui_hierarchy` read must not reach a consumer as "this module has no
+     * params". A caller seeing `unresolved: true` should hold its previous
+     * frame, exactly as our own host does.
+     *
+     * @param {object} [o]
+     * @param {string} [o.title]   left side of the header, as passed to render
+     * @param {Array}  [o.footer]  [key, action] hint pairs — echoed back, since
+     *                             the gestures belong to whoever owns the input
+     *                             mapping, not to this library
+     */
+    function describePage(o = {}) {
+        const p = page();
+        const header = movyHeaderFor({
+            page: p, metaIndex: s.metaIndex, values: s.values,
+            touched: s.touched, title: o.title || "", pageLabel: pageLabel(),
+            displayFor: formatValue
+                ? (key, raw, surface) => formatValue(fullKey(key), raw, surface)
+                : null,
+        });
+
+        const vm = {
+            header,
+            bank: {
+                index: s.pageIndex,
+                count: s.pages.length,
+                /* Section ids per page: pages sharing an id draw flush, so the
+                 * bar shows what Shift+jog steps through. */
+                groups: pageGroups(),
+            },
+            footer: o.footer || null,
+            page: p ? { name: p.name, kind: p.kind, level: p.level,
+                        childLevel: p.childLevel || null,
+                        childIndex: p.childLevel ? childIndexFor(p.level) : -1 } : null,
+            cells: [],
+            viz: [],
+            /* A failed contract read is not a statement about the module. */
+            unresolved: s.contractUnresolved,
+        };
+        if (!p || p.kind !== PAGE_KNOBS || !Array.isArray(p.keys)) return vm;
+
+        /* Which cells a graphic spans. A property of the PAGE, not of any
+         * param, which is why it is not part of widgetKindFor — a consumer that
+         * draws its own graphics can ignore `covered` and read `viz` instead. */
+        const groups = vizEnabled ? vizGroups() : [];
+        vm.viz = groups;
+        const covered = new Array(p.keys.length).fill(false);
+        for (const g of groups) {
+            if (!g || typeof g.slotStart !== "number") continue;
+            for (let i = g.slotStart; i < g.slotStart + g.slotSpan && i < covered.length; i++) {
+                covered[i] = true;
+            }
         }
-        return s.livePressCache;
-    }
-    function vouchLivePress() {
-        const k = livePressParam();
-        if (!k) return false;
-        setParam(`${s.prefix}:${k}`, "1");
-        return true;
+
+        for (let slot = 0; slot < p.keys.length; slot++) {
+            const key = p.keys[slot];
+            if (!key) { vm.cells.push(null); continue; }
+            const meta = s.metaIndex ? s.metaIndex.getOrGuess(key) : null;
+            const raw = s.values[key] === undefined ? null : s.values[key];
+            const dec = s.decorations ? s.decorations[slot] : null;
+            /* The cell form and the header form are different readings on
+             * purpose — a 30px label band and a strip with room. Same split
+             * `short_options` makes for enums. */
+            const cellV = formatValue ? formatValue(fullKey(key), raw, "cell") : null;
+            const headV = formatValue ? formatValue(fullKey(key), raw, "header") : null;
+            vm.cells.push({
+                slot,
+                key,
+                fullKey: fullKey(key),
+                /* The five-character mnemonic is a property of a 32px cell. A
+                 * consumer with a wider cell wants `name`. */
+                label: labelForCell(meta && (meta.label || meta.key) || key),
+                name: (meta && (meta.label || meta.key)) || key,
+                value: (cellV === null || cellV === undefined)
+                    ? displayValue(raw, meta) : String(cellV),
+                headerValue: (headV === null || headV === undefined)
+                    ? displayValue(raw, meta) : String(headV),
+                raw,
+                normalized: normalizedOf(meta, raw),
+                widget: widgetKindFor(meta),
+                kind: meta ? meta.kind : null,
+                options: (meta && meta.options) || null,
+                /* The abbreviated option set is deliberately NOT republished
+                 * here. It belongs to the three-character enum square and
+                 * nothing else — pinned by test_knobs_list_layout.sh, which
+                 * argues that the moment it is consulted outside that widget,
+                 * the long form stops being what every roomy surface shows. A
+                 * consumer that really is drawing a square can reach it through
+                 * `metaIndex`; the view model publishes the roomy reading. */
+                enumIndex: meta && meta.kind === KIND_ENUM ? enumIndexOf(meta, raw) : -1,
+                unit: (meta && meta.unit) || null,
+                readOnly: !!(meta && meta.readOnly),
+                writeOnly: !!(meta && meta.writeOnly),
+                turnable: isTurnable(meta),
+                /* Divability is a FOOTER fact on our grid, not a mark on the
+                 * cell — a consumer is free to mark it, but should know that
+                 * most divable cells wear nothing here. */
+                divable: !!(meta && meta.divable),
+                modulated: !!s.modCache[key],
+                touched: s.touchOrder ? s.touchOrder.indexOf(slot) >= 0 : s.touched === slot,
+                /* A sequencer's parameter lock for this SLOT. */
+                decoration: dec || null,
+                locked: !!(dec && dec.locked),
+                covered: covered[slot],
+            });
+        }
+        return vm;
     }
 
     return {
-        load, reloadIfChanged, tick, refreshTrailing,
+        /* True when the module draws this page's body — the host redraws
+         * every tick while it is up, so a custom page can animate. */
+        onCanvasPage,
+        load, reloadIfChanged, tick, refreshTrailing, revalue,
+        describePage,
         /* For a selection made OUTSIDE the controller — the list editor drives
          * the same modules through its own preset browser and has the same
          * race. Books the settle; costs nothing until it comes due. */
@@ -4222,6 +4992,10 @@ export function createController(io = {}) {
         setLayout, setReveal, setDecorations, render, renderOverlays,
         announceContents,
         get state() { return s; },
+        /* What the header minimap will light, so a test can assert on the
+         * ICON rather than on a field near it: asserting on state.focusedVoice
+         * passed while the icon was indexing the voice array with a token. */
+        get padIcon() { return padIconNote(); },
         get page() { return page(); },
         get pages() { return s.pages; },
         get pageIndex() { return s.pageIndex; },

@@ -41,10 +41,36 @@ export function childCount(level) {
     return hasChildren(level) ? Math.max(0, level.child_count | 0) : 0;
 }
 
-/** Human label for instance `i` — "Pad 3", "Tone 1". */
+/**
+ * Human label for instance `i` — "Pad 3", "Tone 1", or a declared name.
+ *
+ * `child_names` lets a drum module say "Kick" where the generated label can
+ * only say "Pad 1". It falls back PER ITEM rather than wholesale: a module
+ * that names its first four pads and leaves the rest keeps "Pad 5" for the
+ * others, so a partial declaration is an improvement rather than a trade.
+ */
 export function childLabel(level, i) {
-    const base = (level && level.child_label) || "Item";
-    return `${base} ${i + indexBase(level)}`;
+    return childName(level, i) || `${(level && level.child_label) || "Item"} ${i + indexBase(level)}`;
+}
+
+/**
+ * The name instance `i` DECLARES, or null if it declares none.
+ *
+ * Split out because two callers need "what is this instance called" and they
+ * disagree about the fallback NUMBER, which is a separate and older question:
+ * `childLabel` counts from `child_index_base`, while the grid's Selected-Pad
+ * page has always counted from 1 regardless. minijv's `part_selector` declares
+ * no base, so unifying the numbering would silently renumber its picker from
+ * "Part 1-8" to "Part 0-7" — a visible change nobody asked for.
+ *
+ * So the NAME is shared and the numbering fallbacks stay as they are. Sharing
+ * only the half that is genuinely one fact is what stops a module's declared
+ * "Kick" appearing in one list and "Pad 1" in another.
+ */
+export function childName(level, i) {
+    const names = level && level.child_names;
+    return (Array.isArray(names) && typeof names[i] === "string" && names[i].length)
+        ? names[i] : null;
 }
 
 function indexBase(level) {
@@ -123,6 +149,28 @@ export function childIndexParam(level) {
 }
 
 /**
+ * The param a LIVE pad press is reported through, or null.
+ *
+ * `child_index_param` lets the module OWN the focus; this is how the UI helps
+ * it move that focus for the one gesture nothing else can see. A drum module
+ * wants "the pad I just HIT", and by the time a note reaches it a hit and a
+ * sequenced note are the same bytes (Move turns the press into an ordinary
+ * note before playing it). The UI, and only the UI, still sees the raw pad
+ * event -- so while the grid shows a level declaring this, a physical press
+ * writes `"1"` here: "a finger did that". Not WHICH pad: the pad-to-note map
+ * is Move's (layout, octave), so the module pairs the vouch with the note it
+ * receives itself. See docs/MODULES.md, "Live presses".
+ *
+ * OPTIONAL. A level that does not declare it costs nothing: the shim never
+ * forwards a pad to the UI for it, and no write is ever made.
+ */
+export function childPressParam(level) {
+    if (!hasChildren(level)) return null;
+    const k = level && level.child_press_param;
+    return (typeof k === "string" && k.length) ? k : null;
+}
+
+/**
  * The wire value naming instance `i` — in the MODULE's numbering.
  *
  * `i` is zero-based everywhere inside the page engine; the module counts from
@@ -164,27 +212,5 @@ export function allChildKeys(level) {
         for (const k of childKeysFor(level, i)) out.add(k);
     }
     return out;
-}
-
-/**
- * The param a LIVE pad press is reported through, or null.
- *
- * `child_index_param` lets the module OWN the focus; this is how the UI helps
- * it move that focus for the one gesture nothing else can see. A drum module
- * wants "the pad I just HIT", and by the time a note reaches it a hit and a
- * sequenced note are the same bytes (Move turns the press into an ordinary
- * note before playing it). The UI, and only the UI, still sees the raw pad
- * event -- so while the grid shows a level declaring this, a physical press
- * writes `"1"` here: "a finger did that". Not WHICH pad: the pad-to-note map
- * is Move's (layout, octave), so the module pairs the vouch with the note it
- * receives itself. See docs/MODULES.md, "Live presses".
- *
- * OPTIONAL. A level that does not declare it costs nothing: the shim never
- * forwards a pad to the UI for it, and no write is ever made.
- */
-export function childPressParam(level) {
-    if (!hasChildren(level)) return null;
-    const k = level && level.child_press_param;
-    return (typeof k === "string" && k.length) ? k : null;
 }
 
