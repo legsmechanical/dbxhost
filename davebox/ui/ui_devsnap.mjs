@@ -37,7 +37,7 @@ import { nowMs } from './ui_clock.mjs';
 import { NUM_TRACKS, DRUM_LANES } from './ui_constants.mjs';
 import { showActionPopup, showActionPopupFor, deviceSnapDir, deviceSnapUndoDir, trackSnapDir, trackSnapUndoDir } from './ui_persistence.mjs';
 import { markSnapshotUndo } from './ui_editops.mjs';
-import { engineGet, engineSet, engineGetSlotParam, engineSetSlotParam, moveBusComp,
+import { engineGet, engineSet, engineSetSlotParam, moveBusComp,
          moveBusForChannel, engineLoadedModule, engineDescribe, engineGetMany } from './ui_engine.mjs';
 import { midiVal, midiSendValue, seqAutoSnapshot, seqAutoRestore } from './ui_sound.mjs';
 import { forceRedraw, invalidateLEDCache } from './ui_leds.mjs';
@@ -109,13 +109,15 @@ function mixerCapture() {
     for (let t = 0; t < NUM_TRACKS; t++) {
         const r = S.trackRoute[t] | 0;
         const e = { route: r };
+        /* ONE bulk read per track for its four levels (was four round trips). */
         if (r === 0) {
             e.slot = t;
-            for (const k of LEVEL_KEYS) { const v = parseFloat(engineGetSlotParam(t, k)); if (num(v)) e[k] = v; }
+            const got = engineGetMany(t, 'slot', LEVEL_KEYS);
+            for (const k of LEVEL_KEYS) { const v = parseFloat(got[k]); if (num(v)) e[k] = v; }
         } else if (r === 1) {
             const bus = moveBusForChannel(S.trackChannel[t]) | 0;
             e.bus = bus;
-            if (bus > 0) for (const k of LEVEL_KEYS) { const v = parseFloat(engineGet(0, moveBusComp(bus), k)); if (num(v)) e[k] = v; }
+            if (bus > 0) { const got = engineGetMany(0, moveBusComp(bus), LEVEL_KEYS); for (const k of LEVEL_KEYS) { const v = parseFloat(got[k]); if (num(v)) e[k] = v; } }
         } else if (r === 2) {
             e.cc7 = midiVal(t, 'cc:7'); e.cc10 = midiVal(t, 'cc:10');
         }
@@ -195,16 +197,26 @@ function mixerApply(tracks) {
 /* The take itself: the host's files plus davebox.json into `dir`. Shared by a
  * slot save and the hidden before-take a recall makes for Undo. */
 function onlyTrack(list, t) { return t < 0 ? list : list.map((e, i) => (i === t ? e : null)); }
-function takeInto(dir) {
+/* `light` = the before-take a recall makes for Undo: it skips the param LIST
+ * (a recall restores from the host's blobs and the seq/mixer halves; the list
+ * is for the morph, and Undo never morphs). Phase timings go to the log so a
+ * slow take names its phase (device, 2026-09-06). */
+function takeInto(dir, light) {
     host_ensure_dir(dir);
     const t = st().track;
+    const t0 = nowMs();
     let res = null;
     try { res = JSON.parse(host_snapshot_take(dir, hostSlotArg()) || 'null'); } catch (e) { res = null; }
     if (!res || !res.ok) return null;
+    const t1 = nowMs();
+    const mixer = onlyTrack(mixerCapture(), t);
+    const t2 = nowMs();
+    const params = light ? [] : onlyTrack(paramsCapture(), t);
+    const t3 = nowMs();
     /* A TRACK take keeps only that track's entries; the appliers skip nulls. */
-    const json = { v: 4, track: t, mixer: onlyTrack(mixerCapture(), t), params: onlyTrack(paramsCapture(), t),
-                   seq: onlyTrack(seqCapture(), t), taken: Date.now() };
+    const json = { v: 4, track: t, mixer, params, seq: onlyTrack(seqCapture(), t), taken: Date.now() };
     if (!host_write_file(dir + '/davebox.json', JSON.stringify(json))) return null;
+    console.log('[devsnap] take ' + (light ? '(light) ' : '') + 'host ' + (t1 - t0) + ' ms, mixer ' + (t2 - t1) + ' ms, params ' + (t3 - t2) + ' ms, write ' + (nowMs() - t3) + ' ms');
     return res;
 }
 
@@ -229,8 +241,10 @@ function recallDir(dir, n, undo) {
     let json = null;
     try { json = JSON.parse(host_read_file(dir + '/davebox.json') || 'null'); } catch (e) { json = null; }
     let res = null;
+    const r0 = nowMs();
     try { res = JSON.parse(host_snapshot_recall(dir, hostSlotArg()) || 'null'); } catch (e) { res = null; }
     if (!res || !res.ok) { showActionPopup('SNAPSHOT ' + (n + 1), 'Recall failed'); return false; }
+    console.log('[devsnap] host recall ' + (nowMs() - r0) + ' ms (' + (res.restored | 0) + ' restored)');
     d.recalling = n; d.recallDir = dir; d.recallJson = json; d.since = nowMs(); d.recallUndo = undo || null;
     if (!res.pending) devSnapFinish();
     invalidateLEDCache(); forceRedraw();
@@ -245,7 +259,7 @@ export function devSnapRecall(n) {
      * first, so Undo can bring it back and Redo can re-apply the slot. A
      * failed before-take does not block the recall — it just leaves no undo. */
     let before = null;
-    if (S.currentSetUuid) { const u = undoDir(); if (takeInto(u)) before = u; }
+    if (S.currentSetUuid) { const u = undoDir(); if (takeInto(u, true)) before = u; }
     return recallDir(slotDir(n), n, before ? { before, after: slotDir(n), n, track: d.track } : null);
 }
 

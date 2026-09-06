@@ -430,16 +430,32 @@ export function engineVolBlock(on) {
 const BULK_MAX = 60;
 function utf8Len(s) { let n = 0; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); if (c < 0x80) n += 1; else if (c < 0x800) n += 2; else if (c >= 0xD800 && c <= 0xDBFF) { n += 4; i++; } else n += 3; } return n; }
 function bulkEncode(items) { let s = items.length + '\n'; for (const it of items) s += utf8Len(it) + '\n' + it; return s; }
-/* Decode by BYTES: the host counts UTF-8 bytes, JS strings count code units. */
+/* Decode by BYTES: the host counts UTF-8 bytes, JS strings count code units.
+ * ⚠ No TextEncoder/TextDecoder here — QuickJS has neither, and the first cut
+ * threw on every call inside its try, so the bulk path silently fell back to
+ * one read per key (device, 2026-09-06: a 550 ms recall). The byte count is
+ * walked per code unit instead. */
 function bulkDecode(blob) {
-    const bytes = new TextEncoder().encode(blob), dec = new TextDecoder();
+    const s = String(blob);
     let p = 0;
-    const readLen = () => { let n = 0, any = false; while (p < bytes.length && bytes[p] >= 48 && bytes[p] <= 57) { n = n * 10 + (bytes[p] - 48); p++; any = true; } if (!any || bytes[p] !== 10) return -1; p++; return n; };
+    const readLen = () => { let n = 0, any = false; while (p < s.length && s.charCodeAt(p) >= 48 && s.charCodeAt(p) <= 57) { n = n * 10 + (s.charCodeAt(p) - 48); p++; any = true; } if (!any || s.charCodeAt(p) !== 10) return -1; p++; return n; };
     const count = readLen(); if (count < 0) return null;
     const out = [];
-    for (let i = 0; i < count; i++) { const n = readLen(); if (n < 0 || p + n > bytes.length) return null; out.push(dec.decode(bytes.subarray(p, p + n))); p += n; }
+    for (let i = 0; i < count; i++) {
+        const nb = readLen(); if (nb < 0) return null;
+        let bytes = 0; const start = p;
+        while (bytes < nb && p < s.length) {
+            const c = s.charCodeAt(p);
+            if (c < 0x80) bytes += 1; else if (c < 0x800) bytes += 2;
+            else if (c >= 0xD800 && c <= 0xDBFF) { bytes += 4; p++; } else bytes += 3;
+            p++;
+        }
+        if (bytes !== nb) return null;
+        out.push(s.slice(start, p));
+    }
     return out;
 }
+export function bulkDecodeForTest(blob) { return bulkDecode(blob); }
 let bulkGetWarned = false;
 export function engineGetMany(slot, comp, keys) {
     const out = {};
