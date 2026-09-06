@@ -389,6 +389,7 @@ function enterParamPages(slot, component, prefix, restorePageName, io, chrome, r
 }
 
 function exitParamPages() {
+    reconcilePadObserve(false);
     /*
      * GIVE THE RINGS BACK, DO NOT JUST TURN THEM OFF.
      *
@@ -510,8 +511,21 @@ function paramPagesRepaintKnobs() {
  * finishing an async ROM or sample load republishes a larger tree) and advances
  * the staggered read cursor by exactly one param.
  */
+/* Whether the shim is forwarding hardware pad notes to us (upstream #426).
+ * Reconciled every tick from the controller's livePressParam() and dropped on
+ * exit; the shim also drops it when the shadow display closes. Passive — pads
+ * keep playing — so the only cost of being on is one UI ring event per press. */
+let padObserveOn = false;
+function reconcilePadObserve(want) {
+    if (typeof host_pad_observe !== 'function') return;
+    want = !!want;
+    if (want === padObserveOn) return;
+    padObserveOn = want;
+    host_pad_observe(want ? 1 : 0);
+}
 function tickParamPages() {
     if (!controller) return;
+    reconcilePadObserve(!!controller.livePressParam());
 
     /* Only re-plan on the loading->ready edge; re-planning every frame would
      * reset values and the cursor continuously.
@@ -1198,6 +1212,13 @@ let _midiWindowStart = 0, _midiCount = 0, _knobTurnCount = 0;
  */
 function handleParamPagesMidi(data) {
     if (!controller) return false;
+    /* A LIVE pad press (the shim forwards 68-99 under pad_observe): vouch to
+     * the declared param, once per note-on. Passive: the note is not consumed
+     * here — the pad already played; a module that declared nothing gets no
+     * write and the event goes on to the next handler (upstream #426). */
+    if ((data[0] & 0xF0) === 0x90 && data[1] >= 68 && data[1] <= 99 && data[2] > 0 && controller.livePressParam()) {
+        return controller.vouchLivePress();
+    }
 
     const nowMsProbe = Date.now();
     _midiCount++;

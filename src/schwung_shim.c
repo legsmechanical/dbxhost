@@ -7140,6 +7140,17 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
         }
         prev_display_mode = shadow_display_mode;
     }
+    /* Drop pad observation when the shadow display goes away (upstream #426):
+     * it only means anything while the knob grid is on screen, and a
+     * shadow_ui that exited before reconciling it to 0 would keep every pad
+     * press streaming into a UI ring nobody drains. Same edge as above. */
+    {
+        static int prev_display_mode_observe = 0;
+        if (prev_display_mode_observe && !shadow_display_mode && shadow_control) {
+            shadow_control->pad_observe = 0;
+        }
+        prev_display_mode_observe = shadow_display_mode;
+    }
 
     /* Boot jack-state re-assert: worker arms shim_inject_boot_jack ~5 s after
      * start (Move firmware is up by then). Inject a CC 115 into Move's MIDI_IN
@@ -8497,6 +8508,14 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                  * which the sequencer cannot produce. */
                 if (d1 >= 68 && d1 <= 99 && shadow_ui_midi_shm &&
                     shadow_control && shadow_control->canvas_input) {
+                    shadow_ui_midi_publish((type == 0x90) ? 0x09 : 0x08, status, d1, d2);
+                }
+                /* pad_observe (upstream #426): the knob grid asked to be told about
+                 * LIVE presses. The same passive forward as the canvas — no
+                 * `continue`, the pad still plays — and not doubled when a canvas
+                 * is up too. */
+                if (shadow_control && shadow_control->pad_observe && !shadow_control->canvas_input &&
+                    d1 >= 68 && d1 <= 99 && shadow_ui_midi_shm) {
                     shadow_ui_midi_publish((type == 0x90) ? 0x09 : 0x08, status, d1, d2);
                 }
 

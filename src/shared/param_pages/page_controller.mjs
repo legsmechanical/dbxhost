@@ -32,8 +32,9 @@
 
 import { planPages, pickMode, PAGE_KNOBS, PAGE_MENU, PAGE_PRESET, PAGE_ITEMS,
          buildTrailingPages, makeClaimer } from "./page_plan.mjs";
-import { resolveChildKey, childIndexParam, childIndexToWire, childIndexFromWire }
+import { resolveChildKey, childIndexParam, childIndexToWire, childIndexFromWire, childPressParam }
     from "./child_key.mjs";
+import { focusPressParamOf } from "./voices.mjs";
 import { buildMetaIndex, inferFromValue, isTurnable, flipsOnClick, enumIndexOf, KIND_ENUM, KIND_OPAQUE } from "./param_meta.mjs";
 import { renderPage, renderPicker, renderHint, LAYOUT_DIAL } from "./render_page.mjs";
 import { renderPageMovy, drawFooter, drawHeader as drawHeaderMovy, drawBankBar,
@@ -3952,6 +3953,23 @@ export function createController(io = {}) {
         announce(announcePage(page(), s.pageIndex, s.pages.length, pageLabel()));
     }
 
+    function livePressParam() {
+        if (s.livePressCacheFor !== s.hierarchy) {
+            s.livePressCacheFor = s.hierarchy;
+            let k = null;
+            const levels = (s.hierarchy && s.hierarchy.levels) || {};
+            for (const name of Object.keys(levels)) { k = childPressParam(levels[name]); if (k) break; }
+            s.livePressCache = k || focusPressParamOf(s.hierarchy);
+        }
+        return s.livePressCache;
+    }
+    function vouchLivePress() {
+        const k = livePressParam();
+        if (!k) return false;
+        setParam(`${s.prefix}:${k}`, "1");
+        return true;
+    }
+
     return {
         load, reloadIfChanged, tick, refreshTrailing,
         /* For a selection made OUTSIDE the controller — the list editor drives
@@ -4005,6 +4023,19 @@ export function createController(io = {}) {
          *  hand-off needs it: without it the editor re-asks which child,
          *  when the grid already knows. */
         childIndexOf: (level) => childIndexFor(level),
+        /** The param a LIVE pad press is reported through, or null -- the
+         *  first child level declaring `child_press_param`, else the
+         *  hierarchy's `focus_press_param` (upstream #426). Memoised against
+         *  the hierarchy OBJECT: the host asks every tick whether the shim
+         *  should be forwarding pads at all. Not scoped to the current page:
+         *  a level that declares it is the module saying "tell me about
+         *  presses"; the page you are on is not part of that request. */
+        livePressParam: () => livePressParam(),
+        /** A FINGER hit a pad: say so. One write per press, note-on only --
+         *  the value is the vouch itself; WHICH pad is the module's to pair
+         *  with the note it receives (the pad-to-note map is Move's). Returns
+         *  whether anything was written. */
+        vouchLivePress: () => vouchLivePress(),
         /** The value the grid HOLDS for a key (full or page-relative), or
          *  undefined — every write it made and every key its cursor has read.
          *  A visible_if evaluated on the grid asks here before any IPC (a

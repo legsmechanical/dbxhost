@@ -355,6 +355,14 @@ typedef struct shadow_control_t {
      * binaries. Appending is free; inserting is not.
      */
     volatile uint8_t claim_cc_bits[16];
+    /*
+     * 1 = the shim ALSO forwards hardware pad notes (68-99) to the shadow UI,
+     * passively: nothing is blocked, the pad still plays. The knob grid sets it
+     * while the component on screen declared child_press_param /
+     * focus_press_param (upstream #426) and clears it when it leaves; the shim
+     * drops it when the display closes. APPENDED, like claim_cc_bits.
+     */
+    volatile uint8_t pad_observe;
 } shadow_control_t;
 
 /* select_launch sentinel: no trigger pending. */
