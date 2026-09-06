@@ -877,11 +877,13 @@ const MARK_BAR_H = BANNER_H;   /* one owner of the 12: the window IS the bar */
  * identical in both views.
  *
  * BLINK: the band alternates between an inverted chip (black on white) and
- * plain (white on black) on the file's standard 220 ms phase — the one the
- * solo indicator and the step page's ALL prefix already use. Both halves of
- * the cycle are legible, so it announces itself without ever being unreadable,
- * which a simple on/off blink would be half the time. */
-const DEVSNAP_BLINK_MS = 220;
+ * plain (white on black). Both halves of the cycle are legible, so it
+ * announces itself without ever being unreadable, which a simple on/off blink
+ * would be half the time. */
+const DEVSNAP_BLINK_MS = 440;   /* Josh, device 2026-09-06: "a bit slower" — the
+                                 * file's other blink rate, the one the drum
+                                 * lane's MUTED tag already uses, rather than a
+                                 * third number nothing else shares. */
 function drawInfoRow2() {
     if (devSnapOpen()) {
         const _sn = devSnapTitle();
