@@ -5521,10 +5521,14 @@ function saveAllFxBusConfigs() {
  * ========================================================================== */
 const SNAPSHOT_BULK_BYTES = 60000;      /* under the 64 KB mailbox value */
 let snapshotRecallJob = null;           /* { dir, batches, i, restored, skipped, reasons } */
-/* dir -> Set of names this PROCESS last wrote real content into. Lets a take
- * blank only what falls out of scope instead of rewriting every empty file;
- * a dir absent from the map is unknown and gets the full clear. Not persisted
- * on purpose — after a restart we cannot know what is on disk. */
+/* "<dir>|<onlySlot>" -> Set of names this PROCESS last wrote real content into.
+ * Lets a take blank only what falls out of scope instead of rewriting every
+ * empty file; a key absent from the map is unknown and gets the full clear.
+ * Not persisted on purpose — after a restart we cannot know what is on disk.
+ * Never evicted either, which is deliberate and harmless: keys embed the set
+ * uuid, so a project switch only ADDS keys (it can never mis-resolve one), and
+ * the count is bounded by the dirs actually taken into — 16 device slots plus
+ * an undo dir, plus 17 per track. */
 const snapshotDirWritten = new Map();
 
 function slotArg(v) { const n = (v === undefined || v === null || v === "") ? -1 : (v | 0); return (n >= 0 && n < SHADOW_UI_SLOTS) ? n : -1; }
@@ -5651,7 +5655,7 @@ function hostSnapshotTake(dir, onlySlot, scope) {
      * everything. Steady state is 0-2 writes instead of 34. */
     const names = onlySlot >= 0 ? ["/slot_" + onlySlot + ".json"] : snapshotFileNames();
     const inScope = scope ? new Set(scope.names) : null;
-    const prevHeld = snapshotDirWritten.get(dir) || null;   /* null = unknown, clear all */
+    const prevHeld = snapshotDirWritten.get(dir + "|" + onlySlot) || null;   /* null = unknown, clear all */
     /* Then copy. host_write_file is temp-then-rename, so a failed take leaves
      * the previous snapshot's file whole. */
     let copied = 0, wrote = 0, positions = 0;
@@ -5665,9 +5669,25 @@ function hostSnapshotTake(dir, onlySlot, scope) {
             continue;         /* already blank from our own last take — leave it */
         }
         wrote++;
+        /* ⚠ A FAILED write means the file still holds whatever it held —
+         * host_write_file is temp-then-rename, so a failure leaves the previous
+         * content WHOLE. Recording it as blank would poison the record for the
+         * rest of the process: the next take would skip it as "already blank"
+         * and Undo would restore a state from two recalls ago, and it would
+         * never self-heal because only an UNKNOWN dir gets the full clear.
+         * In-scope names are already added to `held` from the read, which is
+         * the safe direction; this is the blanking path's half of that. */
         if (host_write_file(dir + name, content || "{}\n")) copied++;
+        else held.add(name);
     }
-    snapshotDirWritten.set(dir, held);
+    /* ⚠ Keyed on the dir AND onlySlot, because the NAME LIST depends on
+     * onlySlot: a track take's list is one file, a session take's is 36.
+     * Recorded under the dir alone, a single `host_snapshot_take(D, 3)` would
+     * claim the other 35 names are blank and they would never be cleared
+     * again. davebox never mixes the two for one dir, but host_snapshot_take
+     * is a public binding and that invariant lives in the other half of the
+     * repo, so it is not this function's to assume. */
+    snapshotDirWritten.set(dir + "|" + onlySlot, held);
     /* Phase timings, so a slow take names its phase instead of us inferring it
      * from a total (device, 2026-09-06 — the slot/bus split had to be guessed
      * from a track take once already). */
@@ -5679,9 +5699,12 @@ function hostSnapshotTake(dir, onlySlot, scope) {
              " — slots " + (t1 - t0) + " ms, buses " + (t2 - t1) + " ms, copy " + (Date.now() - t2) +
              " ms (" + wrote + " written, " + (names.length - wrote) + " already blank)");
     /* `ok` is about the writes we ATTEMPTED — a name skipped because it is
-     * already blank is a success, not a missing file. (It also stops `ok`
-     * being vacuously true for an empty scope, which it was when `names` was
-     * the scoped list.) */
+     * already blank is a success, not a missing file. This replaced
+     * `copied === names.length`, which counted names that were never
+     * attempted. ⚠ It is NOT a guard against a vacuous true: in the steady
+     * state an empty scope writes nothing and `0 === 0` still reports ok, and
+     * that is correct — nothing needed doing. The undo unit it authorises is
+     * davebox's own mixer/seq half, which was written separately. */
     return JSON.stringify({ ok: copied === wrote, copied, wrote, positions });
 }
 

@@ -23,7 +23,14 @@ missing=0
 
 # Every device-absolute shared import across the host, the shared modules
 # themselves, the built-in modules, and davebox.
-imports=$(grep -rhoE "/data/UserData/schwung/shared/[A-Za-z0-9_.-]+\.mjs" \
+# ⚠ The character class MUST include "/" — without it this matched only
+# top-level shared modules and was BLIND to every subpackage import. Thirteen
+# `shared/param_pages/*.mjs` imports were invisible to the one test whose whole
+# job is to catch a shared import with nothing behind it (found by review,
+# 2026-09-06, when a fourteenth was added). The failure it exists to prevent —
+# shadow_ui.js dying at eval, so the session comes up with no UI at all and
+# `node --check` cannot see it — is exactly the failure it could not see.
+imports=$(grep -rhoE "/data/UserData/schwung/shared/[A-Za-z0-9_./-]+\.mjs" \
     src/shadow src/shared src/modules src/host davebox/ui davebox/tests 2>/dev/null | sort -u)
 
 if [ -z "$imports" ]; then
@@ -31,21 +38,43 @@ if [ -z "$imports" ]; then
   exit 1
 fi
 
+subpkg=0
 for imp in $imports; do
-  base=$(basename "$imp")
-  if [ -f "src/shared/$base" ]; then
-    echo "  ok   — $base"
+  # Keep the path BELOW shared/, not just the basename: a subpackage module
+  # must exist at its own path, and two packages may hold the same file name.
+  rel=${imp#/data/UserData/schwung/shared/}
+  if [ -f "src/shared/$rel" ]; then
+    echo "  ok   — $rel"
+    case "$rel" in */*) subpkg=$((subpkg+1));; esac
   else
-    echo "  FAIL — $base is imported but absent from src/shared" >&2
+    echo "  FAIL — $rel is imported but absent from src/shared" >&2
     missing=$((missing+1))
     fail=1
   fi
 done
 
+# Positive control for the regex fix above: subpackage imports DO exist in this
+# tree, so seeing none means the grep silently narrowed again rather than the
+# tree genuinely having none. A guard that reports clean because it stopped
+# looking is the failure mode this whole file is about.
+if [ "$subpkg" -eq 0 ]; then
+  echo "FAIL: matched no shared SUBPACKAGE imports (e.g. shared/param_pages/*.mjs) — the grep narrowed" >&2
+  fail=1
+else
+  echo "  ok   — $subpkg subpackage import(s) matched (the grep still sees below shared/)"
+fi
+
 # The build copies src/shared/*.mjs wholesale; if that ever became a hand-listed
 # set, a new shared module would be imported everywhere and shipped nowhere.
 if ! grep -q 'for f in ./src/shared/\*.mjs' scripts/build.sh; then
   echo "FAIL: scripts/build.sh no longer copies every src/shared/*.mjs — a new shared module may not ship" >&2
+  fail=1
+fi
+# ...and the SUBDIRECTORY loop, which is what actually ships param_pages/. The
+# top-level check above says nothing about it, so a subpackage could be
+# imported everywhere and shipped nowhere.
+if ! grep -q 'for d in ./src/shared/\*/' scripts/build.sh; then
+  echo "FAIL: scripts/build.sh no longer copies src/shared subpackages — a subpackage import may not ship" >&2
   fail=1
 fi
 

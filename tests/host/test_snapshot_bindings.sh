@@ -63,14 +63,18 @@ for fam in master send move; do
     echo "$take" | grep -qE "if \(scope\.$fam\)" && say "ok   — the $fam saver runs only when the $fam family is in scope" || bad "the $fam saver is unconditional"
 done
 
-# ---- the Undo dir is REUSED, so a scoped take must still write EVERY name ---
+# ---- the Undo dir is REUSED, so the take must CONSIDER every name ------------
 # Found by review, not by these tests: undoDir() is one fixed path per project,
 # nothing clears it, and no host binding removes a file. The unscoped take used
-# to rewrite all 36 files each time, which is what kept it clean. Scoping the
-# COPY would leave the previous recall's files in place, and Undo (which walks
-# every name via snapshotRecords) would restore slots the recall never touched.
+# to rewrite all 36 files each time, which is what kept it clean. Iterating a
+# SCOPED name list would leave the previous recall's files in place, and Undo
+# (which walks every name via snapshotRecords) would restore slots the recall
+# never touched.
+# ⚠ The dir is no longer fully REWRITTEN — that is the delta below. What must
+# not change is that every name is CONSIDERED, so a name can only be left alone
+# by a deliberate, recorded decision rather than by never being looked at.
 echo "$take" | grep -q 'const names = onlySlot >= 0 ? \["/slot_" + onlySlot + ".json"\] : snapshotFileNames();' \
-    && say "ok   — the name list is the FULL set, never scope.names (the reused undo dir must be fully rewritten)" \
+    && say "ok   — the loop iterates the FULL name list, never scope.names (every name is considered)" \
     || bad "the copy loop iterates a scoped name list — stale files would survive in the undo dir"
 echo "$take" | grep -q 'if (host_write_file(dir + name, content || "{}\\n")) copied++;' \
     && say "ok   — an out-of-scope name is blanked to {}, not left holding the last take" || bad "a name can be skipped by the writer"
@@ -83,15 +87,25 @@ echo "$take" | awk '/if \(!inScope \|\| inScope.has\(name\)\)/{d=1} d&&/^       
 # python proxy on the same fs had said 3-9 ms, and was out by ~10x). Only names
 # THIS PROCESS knows it left blank may be skipped: a dir we have not written
 # may hold a previous session's files, which is the staleness being prevented.
-echo "$take" | grep -q 'const prevHeld = snapshotDirWritten.get(dir) || null;' \
+echo "$take" | grep -q 'const prevHeld = snapshotDirWritten.get(dir + "|" + onlySlot) || null;' \
     && say "ok   — the clear is a delta against what this process last wrote" || bad "no delta record"
 echo "$take" | grep -q 'else if (prevHeld && !prevHeld.has(name)) {' \
     && say "ok   — ...and a name is skipped ONLY when prevHeld is known AND says it is blank" \
     || bad "a name can be skipped without a known prevHeld — an unknown dir would keep stale files"
-echo "$take" | grep -q 'snapshotDirWritten.set(dir, held);' && say "ok   — the record is updated after every take" || bad "the delta record is never updated"
+echo "$take" | grep -q 'snapshotDirWritten.set(' && say "ok   — the record is updated after every take" || bad "the delta record is never updated"
 grep -q 'const snapshotDirWritten = new Map();' "$JS" && say "ok   — the record is per-DIR (session and each track keep their own undo dir)" || bad "no per-dir record"
-! grep -q 'snapshotDirWritten.*host_write_file\|host_write_file.*snapshotDirWritten' "$JS" \
-    && say "ok   — control: the record is not persisted, so a restart re-clears in full" || bad "the delta record is persisted"
+# ⚠ There WAS a "control" here asserting the record is not persisted, as a
+# same-line grep for snapshotDirWritten near host_write_file. It could not
+# fire: any realistic persistence (host_write_file(dir + "/.held", ...)) names
+# neither identifier on that line. A check that cannot fail is worse than none
+# — it reads as coverage. The property it wanted is pinned positively instead:
+# the record is a plain in-memory Map declared with no serialiser.
+echo "$take" | grep -q 'snapshotDirWritten.set(dir + "|" + onlySlot, held);' \
+    && say "ok   — the record is keyed on dir AND onlySlot (the name list depends on it)" \
+    || bad "the record is keyed on the dir alone — a track take would claim the other 35 names are blank"
+echo "$take" | grep -q 'else held.add(name);' \
+    && say "ok   — a FAILED blanking write keeps the name marked held (temp-then-rename left it whole)" \
+    || bad "a failed blanking write is recorded as blank — the record is poisoned for the process"
 echo "$take" | grep -q 'ok: copied === wrote' \
     && say "ok   — ok reflects the writes ATTEMPTED, so a skipped blank is not a missing file" || bad "ok still counts the full name list"
 
