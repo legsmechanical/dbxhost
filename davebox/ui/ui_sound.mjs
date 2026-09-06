@@ -5889,7 +5889,10 @@ function drainForcedPoll() {
 function readLiveSelection() {
     const spec = S.livePress;
     if (!spec || !spec.selectParam) return -1;
-    const idx = parseInt(engineGet(S.slot, S.comp, spec.selectParam), 10);
+    /* The wire value is in the MODULE's numbering (child_index_base; pads are
+     * 1..16); zero-based here, like the page engine's childIndexFromWire. */
+    const raw = parseInt(engineGet(S.slot, S.comp, spec.selectParam), 10);
+    const idx = isFinite(raw) ? raw - (spec.indexBase | 0) : -1;
     const ok = (idx >= 0 && idx < spec.count) ? idx : -1;
     /* Remembered because the vouch is raised from the MIDI handler, where a
      * get_param silently returns null — so the baseline for "did focus move?"

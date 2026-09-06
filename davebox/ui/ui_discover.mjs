@@ -759,7 +759,12 @@ export function childSpec(lvl) {
         count,
         label: (typeof lvl.child_label === 'string' && lvl.child_label)
             ? lvl.child_label : 'Item',
-        selectParam: str(lvl.child_select_param),
+        /* The focus source is upstream's `child_index_param` (schwung #411, in
+         * 1.2.0), counted from `child_index_base`; this fork's own older
+         * spelling `child_select_param` is read as a fallback so a module that
+         * only declared that keeps working (2026-09-06, the #426 alignment). */
+        selectParam: str(lvl.child_index_param) || str(lvl.child_select_param),
+        indexBase: (typeof lvl.child_index_base === 'number') ? lvl.child_index_base : 0,
         pressParam: str(lvl.child_press_param),
         /* A host that EMITS the note can name the element outright — no vouch,
          * no correlation window, no race. Sequencers can; a canvas cannot. */
@@ -784,7 +789,7 @@ export function livePressSpec(levels) {
                       * invalidation. Dropping it here made the first hosted
                       * build wait for the kit's periodic flush instead. */
                      prefix: spec.prefix,
-                     selectParam: spec.selectParam, count: spec.count };
+                     selectParam: spec.selectParam, indexBase: spec.indexBase, count: spec.count };
         }
     }
     return null;
