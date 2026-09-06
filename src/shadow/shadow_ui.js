@@ -516,7 +516,7 @@ const PRIMARY_EFFECTORS = {
     skip_led_clear:(o) => { if (typeof shadow_set_skip_led_clear === "function") shadow_set_skip_led_clear(o.on); },
     suppress_sysex:(o) => { if (typeof shadow_set_overtake_suppress_sysex === "function") shadow_set_overtake_suppress_sysex(o.on); },
     vol_block:     (o) => { if (typeof host_vol_block === "function") host_vol_block(o.on); },
-    edit_cc_block: (o) => { if (typeof host_edit_cc_block === "function") host_edit_cc_block(o.on); },
+    edit_cc_block: (o) => setPrimaryEditCcClaim(o.on),
     pad_block:     (o) => { if (typeof host_pad_block === "function") host_pad_block(o.on); },
     canvas_input:  (o) => { if (typeof host_canvas_input === "function") host_canvas_input(o.on); },
     passthrough:   (o) => {
@@ -11922,75 +11922,131 @@ function getHierarchyActiveModuleId() {
     return getSlotParam(hierEditorSlot, `${prefix}_module`) || "";
 }
 
-/* ── Edit-CC claim: Undo (CC 56) / Copy (CC 60) / Delete (CC 119) ────────────
+/* ── Button claims: capabilities.claims_ccs / claims_edit_ccs ─────────────────
  *
- * A module declaring `capabilities.claims_edit_ccs` gets these three buttons
- * delivered to it while its UI is on screen, and Move firmware does not see
- * them for that window — so a hold-Copy + tap-pad style gesture cannot also
- * copy a Move clip behind the screen.
+ * A module declaring `capabilities.claims_ccs` (a list of CC numbers) or the
+ * shorthand `claims_edit_ccs: true` (Undo 56, Copy 60, Delete 119) gets those
+ * buttons delivered to it while its UI is on screen, and Move firmware does
+ * not see them for that window -- so a hold-Copy + tap-pad style gesture
+ * cannot also copy a Move clip behind the screen.
  *
- * ⚠ ENTRY-CONDITION TABLE. Every screen that may hold the claim, what opens it,
+ * ⚠ ENTRY-CONDITION TABLE. Every screen that may hold a claim, what opens it,
  * and where that condition is re-checked. A new screen wanting these buttons
  * declares itself HERE:
  *
  *   screen                       opened by                    re-checked in
  *   ──────────────────────────   ──────────────────────────   ─────────────────
- *   CANVAS (fullscreen)          a canvas param opened on a   reconcileEditCcClaim()
- *   CANVAS (co-run overlay)      component whose module        — and ONLY there
- *   HIERARCHY_EDITOR             declares claims_edit_ccs
+ *   PARAM_PAGES (the knob grid)  a component whose module     reconcileCcClaim()
+ *   HIERARCHY_EDITOR             declares a claim              -- and ONLY there
  *   COMPONENT_EDIT
  *   COMPONENT_PARAMS
+ *   CANVAS (fullscreen)          a canvas param opened on
+ *   CANVAS (co-run overlay)      such a component
  *
  * The claim is re-derived in ONE place from what is on screen right now, never
- * bookkept at the flag's write sites. That is the whole design: the host's
- * earlier attempt (PR #154) blocked these three unconditionally whenever the
- * shadow display was up, and was reverted (PR #175) because it stole Move's
- * native Undo during ordinary chain use.
+ * bookkept at the flag's write sites. That is the whole design: #154 blocked
+ * Undo/Copy/Delete unconditionally whenever the shadow display was up, and was
+ * reverted (#175) because it stole Move's native Undo during ordinary chain
+ * use. The revert asked for a capability opt-in; this is it.
  *
- * The shim independently drops the claim when the shadow display closes, so a
- * shadow_ui that exits or crashes without reconciling cannot strand it. */
-const EDIT_CC_CLAIM_VIEWS = {};
-EDIT_CC_CLAIM_VIEWS[VIEWS.CANVAS] = true;
-EDIT_CC_CLAIM_VIEWS[VIEWS.HIERARCHY_EDITOR] = true;
-EDIT_CC_CLAIM_VIEWS[VIEWS.COMPONENT_EDIT] = true;
-EDIT_CC_CLAIM_VIEWS[VIEWS.COMPONENT_PARAMS] = true;
+ * The shim independently drops every claim when the shadow display closes, so
+ * a shadow_ui that exits or crashes without reconciling cannot strand one; it
+ * also refuses the host-owned controls below whatever is written. */
+const CC_CLAIM_VIEWS = {};
+CC_CLAIM_VIEWS[VIEWS.PARAM_PAGES] = true;
+CC_CLAIM_VIEWS[VIEWS.HIERARCHY_EDITOR] = true;
+CC_CLAIM_VIEWS[VIEWS.COMPONENT_EDIT] = true;
+CC_CLAIM_VIEWS[VIEWS.COMPONENT_PARAMS] = true;
+CC_CLAIM_VIEWS[VIEWS.CANVAS] = true;
 
-let editCcClaimCache = {};
-let editCcClaimKey = null;
-let editCcClaimed = false;
+/* The controls the host owns: how you leave a screen (Shift 49, Menu 50,
+ * Back 51), what the host routes itself (jog 14/3, knobs 71-78, master 79,
+ * tracks 40-43) and Mute 88 (Move-native Mute+Pad). Mirrors claim_denied_cc in
+ * the shim, which is the enforcing copy; this one only tells the author. */
+const CC_CLAIM_DENIED = new Set([49, 50, 51, 14, 3, 71, 72, 73, 74, 75, 76, 77, 78, 79, 88, 40, 41, 42, 43, 114, 115]);
+const EDIT_CCS = [56, 60, 119];
 
-function moduleClaimsEditCcs(moduleId) {
-    if (!moduleId) return false;
-    if (moduleId in editCcClaimCache) return editCcClaimCache[moduleId];
+let ccClaimCache = {};
+let ccClaimKey = null;
+let ccClaimed = "";
+/* This fork's primary-surface engine (shadow_ui_primary.mjs, P4a) may hold the
+ * edit buttons for the tool that owns the surface — its `edit_cc_block` op
+ * used to write a dedicated register. Under upstream's bitmap (#425) it is a
+ * UNION term in the one reconcile below, so neither owner can strand or
+ * clobber the other's claim. */
+let primaryEditCcClaim = false;
+function setPrimaryEditCcClaim(on) {
+    const v = !!on;
+    if (v === primaryEditCcClaim) return;
+    primaryEditCcClaim = v;
+    ccClaimKey = null;                       /* force the next reconcile to recompute */
+}
+
+/* The sorted, host-permitted list of CCs `moduleId` claims, as a string
+ * ("" = none). Cached per module: the lookup is a file read. */
+function moduleClaimedCcs(moduleId) {
+    if (!moduleId) return "";
+    if (moduleId in ccClaimCache) return ccClaimCache[moduleId];
     let meta = null;
     try {
         if (typeof host_get_module_metadata === "function") {
             meta = host_get_module_metadata(moduleId);
         }
     } catch (e) { meta = null; }
-    const v = !!(meta && meta.capabilities && meta.capabilities.claims_edit_ccs);
-    editCcClaimCache[moduleId] = v;
+    const caps = (meta && meta.capabilities) || {};
+    const want = new Set();
+    if (caps.claims_edit_ccs) for (const cc of EDIT_CCS) want.add(cc);
+    if (Array.isArray(caps.claims_ccs)) {
+        for (const v of caps.claims_ccs) {
+            const cc = Number(v);
+            if (Number.isInteger(cc) && cc >= 0 && cc < 128) want.add(cc);
+        }
+    }
+    const denied = [...want].filter((cc) => CC_CLAIM_DENIED.has(cc));
+    if (denied.length) {
+        debugLog(`claims_ccs: ${moduleId} asked for host-owned CC(s) ${denied.join(",")} -- ignored`);
+        for (const cc of denied) want.delete(cc);
+    }
+    const v = [...want].sort((a, b) => a - b).join(",");
+    ccClaimCache[moduleId] = v;
     return v;
 }
 
-function reconcileEditCcClaim() {
-    if (typeof host_edit_cc_block !== "function") return;
-    const onScreen = !!EDIT_CC_CLAIM_VIEWS[view] ||
+function reconcileCcClaim() {
+    if (typeof host_claim_ccs !== "function") return;
+    const onScreen = !!CC_CLAIM_VIEWS[view] ||
         (coRunUiActive() && coRunView === VIEWS.CANVAS);
-    /* Cheap identity of "whose UI is on screen". getHierarchyActiveModuleId()
-     * costs a blocking get_param round-trip (~2.6 ms), so it is consulted only
-     * when this tuple changes — not on every one of the ~44 ticks/sec. A module
+    /* Cheap identity of "whose UI is on screen". The module-id read costs a
+     * blocking get_param round-trip (~2.8 ms), so it is consulted only when
+     * this tuple changes -- not on every one of the ~44 ticks/sec. A module
      * SWAP always transits COMPONENT_SELECT, which moves `view`, so the tuple
-     * catches swaps too. */
+     * catches swaps too. The knob grid keeps its own slot/component
+     * (enterParamPages never touches hierEditorSlot), so on that view the
+     * identity comes from the grid. */
+    const onGrid = view === VIEWS.PARAM_PAGES && paramPagesActive();
+    const slot = onGrid ? paramPagesSlot() : hierEditorSlot;
+    const comp = onGrid ? paramPagesComponent() : hierEditorComponent;
     const key = onScreen
-        ? (view + "|" + coRunView + "|" + hierEditorSlot + "|" + hierEditorComponent)
+        ? (view + "|" + coRunView + "|" + slot + "|" + comp)
         : "";
-    if (key === editCcClaimKey) return;
-    editCcClaimKey = key;
-    const claim = onScreen && moduleClaimsEditCcs(getHierarchyActiveModuleId());
-    if (claim === editCcClaimed) return;
-    editCcClaimed = claim;
-    host_edit_cc_block(claim ? 1 : 0);
+    if (key === ccClaimKey) return;
+    ccClaimKey = key;
+    let moduleId = "";
+    if (onScreen && onGrid) {
+        const prefix = getComponentParamPrefix(comp);
+        moduleId = prefix ? (getSlotParam(slot, `${prefix}_module`) || "") : "";
+    } else if (onScreen) {
+        moduleId = getHierarchyActiveModuleId();
+    }
+    let claim = onScreen ? moduleClaimedCcs(moduleId) : "";
+    if (primaryEditCcClaim) {
+        const set = new Set(claim ? claim.split(",").map(Number) : []);
+        for (const cc of EDIT_CCS) set.add(cc);
+        claim = [...set].sort((a, b) => a - b).join(",");
+    }
+    if (claim === ccClaimed) return;
+    ccClaimed = claim;
+    host_claim_ccs(claim ? claim.split(",").map(Number) : []);
 }
 
 function getModuleBasePath(moduleId) {
@@ -16996,10 +17052,10 @@ function dispatchCoRunDraw() {
 
 let lastDrawError = null;  /* one-shot log guard for the tick draw catch */
 globalThis.tick = function() {
-    /* Undo/Copy/Delete claim, re-derived from whatever is on screen. Kept at the
-     * top of the tick as the SINGLE re-check point for that entry condition —
-     * see the table above reconcileEditCcClaim(). */
-    reconcileEditCcClaim();
+    /* Button claims, re-derived from whatever is on screen. Kept at the top of
+     * the tick as the SINGLE re-check point for that entry condition -- see the
+     * table above reconcileCcClaim(). */
+    reconcileCcClaim();
 
     /* Background tick for JS-suspended overtake modules.
      * Each parked module's tick() keeps firing so it can emit MIDI or advance

@@ -336,6 +336,25 @@ typedef struct shadow_control_t {
      * two writes loses the pad and the run hangs (observed). shadow_select_arm
      * refuses a pad outside 0-31, so a run always has one. */
     volatile int8_t select_queue;
+    /*
+     * Runtime button claim: one bit per CC number (bit cc&7 of byte cc>>3).
+     * A set bit withholds that CC from Move firmware and forwards it to the
+     * shadow UI instead, so a module can build its own gestures on a button
+     * without a press ALSO firing Move's action behind the screen.
+     *
+     * Opt-in on purpose. #154 blocked Undo/Copy/Delete unconditionally whenever
+     * the shadow display was up and was reverted in #175 because it stole
+     * Move's native Undo during ordinary chain use. This is the runtime
+     * complement to the STATIC capabilities.claims_ccs / claims_edit_ccs:
+     * shadow_ui reconciles it from whichever module's UI is actually on
+     * screen, so Move keeps its own buttons everywhere else. The shim refuses
+     * bits for the controls the host itself owns (Shift, Menu, Back, jog,
+     * knobs, Mute, tracks) whatever is set here. Same shape as pad_block.
+     *
+     * APPENDED, like save_stems above: sizeof is a contract between two
+     * binaries. Appending is free; inserting is not.
+     */
+    volatile uint8_t claim_cc_bits[16];
 } shadow_control_t;
 
 /* select_launch sentinel: no trigger pending. */
@@ -518,30 +537,6 @@ static inline uint32_t corun_keep_mask(const volatile shadow_control_t *ctrl) {
     return ctrl ? ctrl->corun.keep_mask : 0;
 }
 
-/* ── Edit-CC (Undo/Copy/Delete) routing ──────────────────────────────────────
- * Single source of truth for "does this edit-CC event belong to the module or to
- * Move?", called by BOTH the sh_midi let-through filter and the
- * forward-to-shadow_ui site so the two can never disagree about one press.
- *
- * The routing is LATCHED at the press. A module's claim
- * (capabilities.claims_edit_ccs -> shadow_control->edit_cc_block) can change
- * while a button is physically held — the user navigates, a screen closes,
- * shadow_ui reconciles — and if press and release were routed independently,
- * a claim engaging mid-hold would leave Move believing the button is still down
- * (it saw the press, never the release), while a claim dropping mid-hold would
- * hand Move an orphan release it never saw pressed. So: whoever receives the
- * PRESS receives the RELEASE.
- *
- * `latched` is the caller's per-button state (index with EDIT_CC_INDEX). It is
- * deliberately NOT cleared on release — the next press re-arms it, which keeps
- * the value valid for the forward site that runs later in the same SPI frame.
- *
- * Returns 1 = the module owns this event (withhold from Move, forward to
- * shadow_ui); 0 = Move owns it. */
-static inline int shadow_edit_cc_route(int is_press, int claimed, uint8_t *latched) {
-    if (is_press) *latched = claimed ? 1 : 0;
-    return *latched ? 1 : 0;
-}
 
 /* Single source of truth for "who owns this event right now?". Both the sh_midi
  * let-through filter and the forward-to-shadow_ui suppress filter call this and

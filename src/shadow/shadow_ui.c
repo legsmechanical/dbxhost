@@ -2213,34 +2213,47 @@ static JSValue js_shadow_set_display_overlay(JSContext *ctx, JSValueConst this_v
 
 #define PREVIEW_CMD_PATH SCHWUNG_INSTALL_DIR "/preview_cmd_path.txt"
 
-/* host_edit_cc_block(enable) - claim Undo (CC 56), Copy (CC 60) and Delete
- * (CC 119) at runtime. Suppresses them from Move firmware and forwards them to
- * the shadow UI, so a module can use them for its own gestures without a press
- * ALSO firing Move's clip undo / copy / delete behind the screen. Twin of
- * host_pad_block; the runtime complement to the static
- * capabilities.claims_edit_ccs.
+/* host_claim_ccs([cc, ...]) - claim buttons at runtime. Every listed CC is
+ * withheld from Move firmware and forwarded to the shadow UI (the runtime
+ * complement to the static capabilities.claims_ccs / claims_edit_ccs), so a
+ * module can build gestures on them without a press ALSO firing Move's own
+ * action behind the screen. An empty array releases everything.
  *
- * Safe to call every tick: it is idempotent and only logs on a TRANSITION, so
- * the caller can reconcile it from whatever is on screen rather than tracking
- * the claim at each write site. Callers MUST drive it to 0 when they stop
- * wanting the buttons — nothing clears it on their behalf, and while it is set
- * Move's own Undo is unavailable. */
-static JSValue js_host_edit_cc_block(JSContext *ctx, JSValueConst this_val,
-                                     int argc, JSValueConst *argv) {
+ * Replaces the whole claim each call and logs only on a TRANSITION, so the
+ * caller reconciles it from whatever is on screen rather than tracking the
+ * claim at each write site. Callers MUST drive it to [] when they stop wanting
+ * the buttons -- nothing clears it on their behalf except the shim's own drop
+ * when the shadow display closes. The shim refuses the host-owned controls
+ * (Shift, Menu, Back, jog, knobs, Mute, tracks) whatever is listed. */
+static JSValue js_host_claim_ccs(JSContext *ctx, JSValueConst this_val,
+                                 int argc, JSValueConst *argv) {
     (void)this_val;
     if (argc < 1 || !shadow_control) return JS_FALSE;
-    int val = 0;
-    JS_ToInt32(ctx, &val, argv[0]);
-    uint8_t next = val ? 1 : 0;
-    if (shadow_control->edit_cc_block != next) {
-        shadow_control->edit_cc_block = next;
-        shadow_ui_log_line(next ? "shadow_ui: edit_cc_block ON"
-                                : "shadow_ui: edit_cc_block OFF");
+    uint8_t bits[16];
+    memset(bits, 0, sizeof(bits));
+    int n = 0;
+    if (JS_IsArray(ctx, argv[0])) {
+        JSValue lenv = JS_GetPropertyStr(ctx, argv[0], "length");
+        int len = 0;
+        JS_ToInt32(ctx, &len, lenv);
+        JS_FreeValue(ctx, lenv);
+        for (int i = 0; i < len && i < 128; i++) {
+            JSValue e = JS_GetPropertyUint32(ctx, argv[0], (uint32_t)i);
+            int cc = -1;
+            JS_ToInt32(ctx, &cc, e);
+            JS_FreeValue(ctx, e);
+            if (cc >= 0 && cc < 128) { bits[cc >> 3] |= (uint8_t)(1u << (cc & 7)); n++; }
+        }
+    }
+    if (memcmp((const void *)shadow_control->claim_cc_bits, bits, sizeof(bits)) != 0) {
+        memcpy((void *)shadow_control->claim_cc_bits, bits, sizeof(bits));
+        char line[64];
+        snprintf(line, sizeof(line), "shadow_ui: claim_ccs %s (%d)", n ? "ON" : "OFF", n);
+        shadow_ui_log_line(line);
     }
     return JS_TRUE;
 }
 
-/* host_pad_block(enable) - suppress pad notes from reaching Move firmware */
 static JSValue js_host_pad_block(JSContext *ctx, JSValueConst this_val,
                                   int argc, JSValueConst *argv) {
     (void)this_val;
@@ -2883,7 +2896,6 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     JS_SetPropertyStr(ctx, global_obj, "shadow_get_overlay_state", JS_NewCFunction(ctx, js_shadow_get_overlay_state, "shadow_get_overlay_state", 0));
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_display_overlay", JS_NewCFunction(ctx, js_shadow_set_display_overlay, "shadow_set_display_overlay", 5));
 
-    JS_SetPropertyStr(ctx, global_obj, "host_edit_cc_block", JS_NewCFunction(ctx, js_host_edit_cc_block, "host_edit_cc_block", 1));
 
     /* Register pad block function */
     JS_SetPropertyStr(ctx, global_obj, "host_pad_block", JS_NewCFunction(ctx, js_host_pad_block, "host_pad_block", 1));
@@ -2906,6 +2918,7 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
         JS_NewCFunction(ctx, js_shadow_select_ready, "shadow_select_ready", 0));
     JS_SetPropertyStr(ctx, global_obj, "shadow_select_headless",
         JS_NewCFunction(ctx, js_shadow_select_headless, "shadow_select_headless", 0));
+    JS_SetPropertyStr(ctx, global_obj, "host_claim_ccs", JS_NewCFunction(ctx, js_host_claim_ccs, "host_claim_ccs", 1));
 
     /* Register preview player functions */
     JS_SetPropertyStr(ctx, global_obj, "host_preview_play", JS_NewCFunction(ctx, js_host_preview_play, "host_preview_play", 1));
