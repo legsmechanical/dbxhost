@@ -27,7 +27,7 @@
  * vendored verbatim -- so if it grows a member and this does not, the editor
  * loses a behaviour silently (most of the reads are `typeof === 'function'`
  * guarded, so a missing member is a quiet fallback, not an error).
- * `tests/host/test_param_pages_vendor.sh` extracts the reads from the binding's
+ * `tests/host/test_param_pages_vendor.sh (⚠ NOT IN THE TREE — the pin this cites was never written or was lost; the ctx contract is currently unpinned)` extracts the reads from the binding's
  * CODE and fails if this file does not answer them.
  */
 
@@ -46,7 +46,7 @@ export function installPpCtx(members) {
  * `ctx`, with what it is used for and what davebox must answer with. Kept here
  * because the binding is vendored verbatim and therefore carries no davebox
  * notes of its own, and pinned member-for-member by
- * tests/host/test_param_pages_vendor.sh, which reads the list out of the
+ * tests/host/test_param_pages_vendor.sh (⚠ NOT IN THE TREE — the pin this cites was never written or was lost; the ctx contract is currently unpinned), which reads the list out of the
  * binding's CODE rather than out of this comment.
  *
  * ⚠⚠ MOST OF THESE READS ARE `typeof === 'function'` GUARDED. A member davebox
@@ -70,7 +70,13 @@ export function installPpCtx(members) {
  *       Draws the modulation mark on a cell. davebox knows its own LFO targets.
  *
  *   isMuteHeld() -> bool
- *       Mute + touch a knob = reset that param to its declared default.
+ *       ⚠ NOT "reset to default" any more, on either side. The library's own
+ *       Mute+touch reset was DROPPED upstream (9e4e0bad) and is not in this
+ *       tree — grep resetToDefault, there is nothing. davebox spends the
+ *       gesture on its own automation instead: Mute+touch TOGGLES the
+ *       parameter's automation on/off, Delete+touch CLEARS it
+ *       (ui_sound.mjs, automationToggleActive). The collision the two
+ *       meanings used to have went away with upstream's removal.
  *
  *   requestRedraw()
  *       -> S.dirty = true.
@@ -87,7 +93,8 @@ export function installPpCtx(members) {
  *       The header title. davebox has both readings already.
  *
  *   evaluateVisibilityCondition(condition, levelDef) -> bool
- *       🔴 KNOWN GAP, not yet answered. `visible_if` on a param or level. The
+ *       ✅ ANSWERED (ui_sound.mjs, `evaluateVisibilityCondition:` in
+ *       installPpCtx) through the ported evaluator in visibility.mjs. The
  *       host's evaluator is shadow_ui.js:2646-2700 and its four helpers
  *       (parseMetaBool / parseMetaNumber / compareConditionValue /
  *       normalizeVisibilityConditionKey) are host-only — none is in shared/ — so
@@ -98,12 +105,20 @@ export function installPpCtx(members) {
  *       written down rather than left to be noticed.
  *
  *   openParamEditor(slot, fullKey, meta)
- *       🔴 KNOWN GAP. A param the grid will not turn — filepath, canvas,
- *       wav_position, string — hands off to a fullscreen editor. davebox has
- *       file and text screens to point this at.
+ *       ✅ ANSWERED (ui_sound.mjs, `openParamEditor:` in installPpCtx). A param
+ *       the grid will not turn — filepath, canvas, wav_position, string, and a
+ *       long enum list — leaves the grid for davebox's OWN bank editor, which
+ *       is where its file browser, text entry and option list already live.
+ *       That is the same shape the fork host uses (its openParamEditorFromGrid
+ *       enters the hierarchy list editor), not a per-key editor built for the
+ *       grid. ⚠ What it does NOT do is open a fullscreen WAVE editor for a
+ *       sample: davebox has no such screen, which is why a click on a wave
+ *       cell appears to do nothing.
  *
  *   openEnumPicker(opts)
- *       🔴 KNOWN GAP. The fullscreen enum list. Drawable with the shared
+ *       DELIBERATELY ABSENT, as on the fork host: a long option list dives out
+ *       through openParamEditor to the bank editor, which has a picker.
+ *       The fullscreen enum list is otherwise drawable Drawable with the shared
  *       enum_list.mjs; the commit path goes back through the controller so the
  *       grid stays alive underneath.
  *
@@ -131,7 +146,7 @@ export function installPpCtx(members) {
  * the editor silently drops whatever that member does, and the drop looks like
  * a design choice. A list in a COMMENT cannot be checked, and this repo has
  * twice shipped a source pin that passed because it was reading prose rather
- * than code. tests/host/test_param_pages_vendor.sh reads THESE arrays, the
+ * than code. tests/host/test_param_pages_vendor.sh (⚠ NOT IN THE TREE — the pin this cites was never written or was lost; the ctx contract is currently unpinned) reads THESE arrays, the
  * binding's own code, AND what ui_sound actually installs, and fails if any two
  * disagree. */
 export const PP_CTX_MEMBERS = [

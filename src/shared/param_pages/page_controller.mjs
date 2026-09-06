@@ -4232,7 +4232,15 @@ export function createController(io = {}) {
                 /* Every knob under a finger inverts its label, not just the one
                  * the header is following. */
                 touchedSlots: s.hintLines ? [] : s.touchOrder,
-                modulated: (key) => !!s.modCache[key],
+                /* ⚠ NOT `!!`. The cache holds a STRING ("auto"/"auto-off")
+                 * for a host whose own automation drives this param, and the
+                 * movy renderer draws a filled/empty CIRCLE for those where a
+                 * chain modulation draws the tilde. Collapsing it here made
+                 * every automated param wear the tilde instead — a claim that
+                 * an LFO is routed to it, which is false — and made the two
+                 * automation states indistinguishable. Both renderers coerce
+                 * for themselves (render_page.mjs does its own `!!`). */
+                modulated: (key) => s.modCache[key] || false,
                 modValues: s.modValues,
                 pageGroups: pageGroups(),
                 pageLabel: pageLabel(),
@@ -4355,25 +4363,38 @@ export function createController(io = {}) {
                  * device uses. A module that draws its own browser outranks it:
                  * the canvas IS the module saying what this page looks like.
                  */
-                const pnames = presetNames
-                    ? presetNames(mp, { entered: menuEntered(),
-                                        index: pst.index | 0, count: pst.count | 0 })
-                    : null;
                 if (mp.canvas) {
                     drawCanvasPageBody(ctx, prect, mp.canvas, {
                         touched: s.touched,
                         preset: { name: pst.name, index: pst.index,
                                   count: pst.count, entered: menuEntered() },
                     });
-                } else if (Array.isArray(pnames) && pnames.length) {
-                    drawPageChromeList(ctx, prect,
-                        pnames.map((n, i) => ({ name: n || `Preset ${i + 1}` })),
-                        pst.index | 0, { editMode: menuEntered() });
                 } else {
-                    drawPresetBody(ctx, prect, {
-                        name: pst.name, index: pst.index, count: pst.count,
-                        entered: menuEntered(),
-                    });
+                    /*
+                     * ⚠⚠ ASKED ONLY WHEN THE ANSWER CAN BE DRAWN. `presetNames` is
+                     * not a getter: the host that answers it walks the presets to
+                     * learn their names, and on this device that walk LOADS each
+                     * one and is AUDIBLE (davebox: ensureBakedNames). Computing it
+                     * before the canvas branch, as a plain three-way precedence
+                     * reads most naturally, would start that walk behind a browser
+                     * the module is drawing itself and the names would then be
+                     * thrown away. A side-effecting hook has to be called inside
+                     * the branch that uses it, not above the branch.
+                     */
+                    const pnames = presetNames
+                        ? presetNames(mp, { entered: menuEntered(),
+                                            index: pst.index | 0, count: pst.count | 0 })
+                        : null;
+                    if (Array.isArray(pnames) && pnames.length) {
+                        drawPageChromeList(ctx, prect,
+                            pnames.map((n, i) => ({ name: n || `Preset ${i + 1}` })),
+                            pst.index | 0, { editMode: menuEntered() });
+                    } else {
+                        drawPresetBody(ctx, prect, {
+                            name: pst.name, index: pst.index, count: pst.count,
+                            entered: menuEntered(),
+                        });
+                    }
                 }
                 /* Inert: it wears the same brackets a divable cell and an
                  * un-entered menu wear, because it is the same offer. */
@@ -4441,7 +4462,8 @@ export function createController(io = {}) {
             title: title || "", pageIndex: s.pageIndex, pageCount: s.pages.length,
             touched: s.touched, decorations: s.decorations,
             layout: s.layout, revealValues: s.revealValues, rect,
-            modulated: (key) => !!s.modCache[key],
+            /* ⚠ NOT `!!` — see the note at the movy call site above. */
+            modulated: (key) => s.modCache[key] || false,
             /* The live values, so a module-supplied widget can draw what the
              * param is ACTUALLY doing rather than where its knob was left. */
             modValues: s.modValues,
