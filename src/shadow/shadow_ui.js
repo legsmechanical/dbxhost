@@ -4501,9 +4501,14 @@ function loadOvertakeModule(moduleInfo, skipOvertake) {
          * recall plans only that slot's positions (TRACK snapshots, Josh 2026-09-05). */
         /* Optional 3rd arg to recall: the dir to take the Undo before-image
          * into, scoped to the positions the recall will write (2026-09-06). */
-        globalThis.host_snapshot_take   = function(dir, slot) { return hostSnapshotTake(String(dir || ""), slotArg(slot)); };
-        globalThis.host_snapshot_recall = function(dir, slot, undoDir) {
-            return hostSnapshotRecall(String(dir || ""), slotArg(slot), undoDir ? String(undoDir) : "");
+        /* 3rd arg to take / 4th to recall: the track's own Move FX bus (1-based;
+         * 0 = none). A track occupies one mixer position and a Move-routed
+         * track's is that bus, so a track snapshot has to carry it. */
+        globalThis.host_snapshot_take   = function(dir, slot, moveBus) {
+            return hostSnapshotTake(String(dir || ""), slotArg(slot), null, moveBus | 0);
+        };
+        globalThis.host_snapshot_recall = function(dir, slot, undoDir, moveBus) {
+            return hostSnapshotRecall(String(dir || ""), slotArg(slot), undoDir ? String(undoDir) : "", moveBus | 0);
         };
         globalThis.host_snapshot_status = function() { return hostSnapshotStatus(); };
         globalThis.host_autosave_hold = function(on) {
@@ -5543,11 +5548,40 @@ function snapshotFileNames() {
     return names;
 }
 
+/* A TRACK's own Move FX bus, as file names and as prefixes (bus is 1-BASED, as
+ * davebox's moveBusForChannel returns it; the files and the saver are 0-based).
+ *
+ * A track occupies ONE mixer position and which one depends on its route: a
+ * Schwung track is chain slot t, a Move track is this bus. Capturing only the
+ * slot meant a Move-routed track's snapshot restored its FADER but not the
+ * effects on it (Josh, 2026-09-06: "track snapshots should include track
+ * bus") — the levels were already in davebox.json, the FX blocks were in
+ * nothing.
+ *
+ * ⚠ Deliberately the track's OWN bus only — never send A/B and never master
+ * (Josh, same ruling: "no master bus/return params"). Those are SHARED across
+ * tracks, so folding them into a track snapshot would mean recalling one track
+ * silently changed another track's reverb. */
+function moveBusFileNames(bus) {
+    const out = [];
+    const sl = (bus | 0) - 1;
+    if (sl < 0 || sl >= MOVE_FX_SLOTS_JS) return out;
+    for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) out.push("/move_fx_" + sl + "_" + b + ".json");
+    return out;
+}
+function moveBusPrefixes(bus) {
+    const out = [];
+    const sl = (bus | 0) - 1;
+    if (sl < 0 || sl >= MOVE_FX_SLOTS_JS) return out;
+    for (let b = 0; b < MOVE_FX_BLOCKS_JS; b++) out.push("move_fx:" + (sl + 1) + ":fx" + (b + 1));
+    return out;
+}
+
 /* prefix -> module id loaded RIGHT NOW, for every position a snapshot can
  * name. Slots and Master come from the mirrors JS already keeps; a send or
  * Move bus position has no mirror, so its `:name` is read — only for the
  * positions the snapshot actually holds (the caller passes them), never all 24. */
-function snapshotLiveIds(busPrefixes, onlySlot) {
+function snapshotLiveIds(busPrefixes, onlySlot, moveBus) {
     const live = {};
     for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
         if (onlySlot >= 0 && i !== onlySlot) continue;
@@ -5561,7 +5595,15 @@ function snapshotLiveIds(busPrefixes, onlySlot) {
             live[i + ":fx" + k] = (c && c.module) || "";
         }
     }
-    if (onlySlot >= 0) return live;                /* a track recall: that slot only, no bus reads */
+    if (onlySlot >= 0) {
+        /* A track recall reads its OWN bus and nothing else — four name reads,
+         * not the 24 a session recall does. */
+        for (const pfx of moveBusPrefixes(moveBus)) {
+            const name = shadow_get_param(0, pfx + ":name");
+            live[pfx] = (name === null || name === undefined) ? "" : String(name);
+        }
+        return live;
+    }
     for (let i = 1; i <= 4; i++)
         live["master_fx:fx" + i] = (masterFxConfig["fx" + i] || {}).module || "";
     /* EVERY bus position, not only those the snapshot recorded (Josh,
@@ -5602,7 +5644,7 @@ function snapshotScopeForWrites(writes) {
 /* `scope` (optional) restricts the flush and the copy — see
  * snapshotScopeForWrites. null means the whole device, which is what a
  * user-facing save still takes. */
-function hostSnapshotTake(dir, onlySlot, scope) {
+function hostSnapshotTake(dir, onlySlot, scope, moveBus) {
     if (!dir || typeof dir !== "string") return JSON.stringify({ ok: false, error: "no dir" });
     if (typeof host_ensure_dir === "function") host_ensure_dir(dir);
     if (onlySlot === undefined) onlySlot = -1;
@@ -5613,11 +5655,18 @@ function hostSnapshotTake(dir, onlySlot, scope) {
     if (scope) { for (const i of scope.slots) autosaveAllSlots(i, true); }
     else autosaveAllSlots(onlySlot >= 0 ? onlySlot : undefined, true);
     const t1 = Date.now();
-    if (scope) {
+    if (onlySlot >= 0) {
+        /* A TRACK take flushes its own bus and nothing else. saveMoveFxChainConfig
+         * already takes a 0-based bus filter, so this is ONE bus (4 positions),
+         * not the 16 the session path walks — a track recall must not get
+         * slower for gaining its bus. Skipped when the scope says the plan
+         * writes no bus position. */
+        if (moveBusFileNames(moveBus).length && (!scope || scope.move)) saveMoveFxChainConfig((moveBus | 0) - 1);
+    } else if (scope) {
         if (scope.master) saveMasterFxChainConfig(true);
         if (scope.send)   saveSendFxChainConfig();
         if (scope.move)   saveMoveFxChainConfig();
-    } else if (onlySlot < 0) {
+    } else {
         saveMasterFxChainConfig(true); saveSendFxChainConfig(); saveMoveFxChainConfig();
     }
     const t2 = Date.now();
@@ -5653,7 +5702,9 @@ function hostSnapshotTake(dir, onlySlot, scope) {
      * may hold a previous session's files, which is exactly the staleness this
      * whole block exists to prevent — so the FIRST take into it still clears
      * everything. Steady state is 0-2 writes instead of 34. */
-    const names = onlySlot >= 0 ? ["/slot_" + onlySlot + ".json"] : snapshotFileNames();
+    const names = onlySlot >= 0
+        ? ["/slot_" + onlySlot + ".json"].concat(moveBusFileNames(moveBus))
+        : snapshotFileNames();
     const inScope = scope ? new Set(scope.names) : null;
     const prevHeld = snapshotDirWritten.get(dir + "|" + onlySlot) || null;   /* null = unknown, clear all */
     /* Then copy. host_write_file is temp-then-rename, so a failed take leaves
@@ -5708,7 +5759,7 @@ function hostSnapshotTake(dir, onlySlot, scope) {
     return JSON.stringify({ ok: copied === wrote, copied, wrote, positions });
 }
 
-function snapshotRecords(dir, onlySlot) {
+function snapshotRecords(dir, onlySlot, moveBus) {
     const records = [];
     const busPrefixes = [];
     const read = (name) => { try { return host_read_file(dir + name); } catch (e) { return null; } };
@@ -5721,8 +5772,11 @@ function snapshotRecords(dir, onlySlot) {
         for (const r of parseSlotSnapshot(content))
             records.push({ ...r, slot: i, prefix: i + ":" + r.prefix, key: r.prefix });
     }
+    const trackBusNames = onlySlot >= 0 ? moveBusFileNames(moveBus) : null;
     const bus = (name, pfx) => {
-        if (onlySlot >= 0) return;                 /* a track snapshot has no bus half */
+        /* A track snapshot carries ONE bus — its own — and no send or master
+         * (Josh, 2026-09-06). A session snapshot carries them all. */
+        if (trackBusNames && trackBusNames.indexOf(name) < 0) return;
         const content = read(name);
         if (!content) return;
         for (const r of parseBusSnapshot(content, pfx)) {
@@ -5752,11 +5806,11 @@ function snapshotRecords(dir, onlySlot) {
  * The take necessarily happens BEFORE any write — that is the whole contract
  * of a before-image. `undoOk` in the result says whether Undo has something to
  * go back to; davebox registers the undo unit only when it is true. */
-function hostSnapshotRecall(dir, onlySlot, undoDir) {
+function hostSnapshotRecall(dir, onlySlot, undoDir, moveBus) {
     if (!dir || typeof dir !== "string") return JSON.stringify({ ok: false, error: "no dir" });
     if (snapshotRecallJob) return JSON.stringify({ ok: false, error: "recall in progress", pending: true });
     if (onlySlot === undefined) onlySlot = -1;
-    const { records, busPrefixes } = snapshotRecords(dir, onlySlot);
+    const { records, busPrefixes } = snapshotRecords(dir, onlySlot, moveBus);
     /* ⚠ ZERO RECORDS IS A SNAPSHOT, NOT A FAILURE (device, 2026-09-05): a new
      * project whose tracks are all Move-routed and whose buses were empty at
      * the take has nothing for the host to restore — and davebox's own half
@@ -5794,12 +5848,12 @@ function hostSnapshotRecall(dir, onlySlot, undoDir) {
         const i = r.slot | 0;
         if (i >= 0 && i < SHADOW_UI_SLOTS && seen.indexOf(i) < 0) { seen.push(i); refreshSlotModuleSignature(i); }
     }
-    const plan = planRestore(records, snapshotLiveIds(busPrefixes, onlySlot));
+    const plan = planRestore(records, snapshotLiveIds(busPrefixes, onlySlot, moveBus));
     /* The before-image, scoped to what the plan will actually touch. */
     let undoOk = false;
     if (undoDir) {
         let res = null;
-        try { res = JSON.parse(hostSnapshotTake(undoDir, onlySlot, snapshotScopeForWrites(plan.writes))); }
+        try { res = JSON.parse(hostSnapshotTake(undoDir, onlySlot, snapshotScopeForWrites(plan.writes), moveBus)); }
         catch (e) { res = null; }
         undoOk = !!(res && res.ok);
         if (!undoOk) debugLog("snapshot: before-take for undo FAILED into " + undoDir + " — recall proceeds without an undo");

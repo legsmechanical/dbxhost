@@ -22,7 +22,7 @@ tick=$(awk '/^function snapshotRecallTick\(/{f=1} f{print} f&&/^}/{exit}' "$JS")
 echo "$tick" | grep -q 'shadow_set_params(b.slot, "chain:", bulkEncodeItems(b.items), false)' && say "ok   — a recall batch is ONE bulk SET per slot (non-transient, so autosave sees it)" || bad "recall does not use the bulk SET"
 echo "$rec" | grep -q 'while (snapshotRecallJob) snapshotRecallTick();' && say "ok   — INSTANT: every batch is written back-to-back inside the call (Josh: a brief freeze over a spread-out recall)" || bad "recall is not drained in the call"
 grep -q 'snapshotRecallTick();' "$JS" && [ "$(grep -c 'snapshotRecallTick();' "$JS")" -ge 2 ] && say "ok   — the job is driven from the host tick" || bad "tick hook missing"
-echo "$rec" | grep -q 'planRestore(records, snapshotLiveIds(busPrefixes, onlySlot))' && say "ok   — the id-guard plan runs against the LIVE module ids" || bad "no id-guard"
+echo "$rec" | grep -q 'planRestore(records, snapshotLiveIds(busPrefixes, onlySlot, moveBus))' && say "ok   — the id-guard plan runs against the LIVE module ids" || bad "no id-guard"
 echo "$tick" | grep -q 'invalidateKnobValueCache();' && say "ok   — knob caches are dropped after a recall (the first-turn snap-back lesson)" || bad "knob caches not invalidated"
 
 # take: through the autosave writers, without the bail, then copy atomically
@@ -39,7 +39,7 @@ grep -q 'flushed and renamed over the destination' src/host/js_host_common.c && 
 # exists once the plan is built, and because building the plan does the
 # expensive live-id read the before-take would otherwise repeat. Unscoped, the
 # before-take cost 475-492 ms on every recall on the device.
-echo "$rec" | grep -q 'hostSnapshotTake(undoDir, onlySlot, snapshotScopeForWrites(plan.writes))' \
+echo "$rec" | grep -q 'hostSnapshotTake(undoDir, onlySlot, snapshotScopeForWrites(plan.writes), moveBus)' \
     && say "ok   — the before-image is SCOPED to the positions the plan will write" \
     || bad "the before-take is not scoped to plan.writes"
 # Ordering is the whole contract of a before-image: it must precede the writes.
@@ -49,7 +49,7 @@ write_line=$(echo "$rec" | grep -n 'snapshotRecallJob = {' | head -1 | cut -d: -
     && say "ok   — the before-image is taken BEFORE any write is queued (line $before_line < $write_line)" \
     || bad "the before-take does not precede the writes"
 echo "$rec" | grep -q 'undoOk' && say "ok   — the recall reports whether the before-image landed, so davebox can skip a bogus undo unit" || bad "recall does not report undoOk"
-grep -q 'globalThis.host_snapshot_recall = function(dir, slot, undoDir)' "$JS" \
+grep -q 'globalThis.host_snapshot_recall = function(dir, slot, undoDir, moveBus)' "$JS" \
     && say "ok   — the binding takes the undo dir as its 3rd arg" || bad "binding does not accept undoDir"
 # The scope DERIVATION is pure and unit-tested in test_snapshot_plan.sh; this
 # file only pins that shadow_ui.js uses it rather than reimplementing it.
@@ -73,7 +73,7 @@ done
 # ⚠ The dir is no longer fully REWRITTEN — that is the delta below. What must
 # not change is that every name is CONSIDERED, so a name can only be left alone
 # by a deliberate, recorded decision rather than by never being looked at.
-echo "$take" | grep -q 'const names = onlySlot >= 0 ? \["/slot_" + onlySlot + ".json"\] : snapshotFileNames();' \
+echo "$take" | grep -q 'concat(moveBusFileNames(moveBus))' && echo "$take" | grep -q 'snapshotFileNames();' \
     && say "ok   — the loop iterates the FULL name list, never scope.names (every name is considered)" \
     || bad "the copy loop iterates a scoped name list — stale files would survive in the undo dir"
 echo "$take" | grep -q 'if (host_write_file(dir + name, content || "{}\\n")) copied++;' \
@@ -121,6 +121,37 @@ plan_line=$(echo "$rec" | grep -n 'const plan = planRestore(' | head -1 | cut -d
     && say "ok   — ...and it precedes planRestore (line $refresh_line < $plan_line)" || bad "the refresh does not precede the plan"
 echo "$rec" | grep -q 'p.indexOf("master_fx:") === 0 || p.indexOf("send_fx:") === 0 || p.indexOf("move_fx:") === 0) continue;' \
     && say "ok   — a BUS record (slot: 0) does not spuriously resync slot 0" || bad "bus records resync slot 0"
+
+# ---- a TRACK snapshot carries its OWN bus, and ONLY its own -----------------
+# A track is one mixer position: a Schwung track is chain slot t, a MOVE track
+# is a Move FX bus. Capturing only the slot meant a Move-routed track's
+# snapshot restored its FADER but not the effects on it (Josh, 2026-09-06:
+# "track snapshots should include track bus").
+echo "$take" | grep -q 'concat(moveBusFileNames(moveBus))' \
+    && say "ok   — a track take copies its own bus's files alongside its slot" || bad "a track take copies the slot only"
+rec2=$(awk '/^function snapshotRecords\(/{f=1} f{print} f&&/^}/{exit}' "$JS")
+echo "$rec2" | grep -q 'trackBusNames && trackBusNames.indexOf(name) < 0' \
+    && say "ok   — a track RECALL plans that bus's positions (it used to skip the bus half entirely)" \
+    || bad "a track recall still has no bus half"
+echo "$rec" | grep -q 'snapshotLiveIds(busPrefixes, onlySlot, moveBus)' \
+    && say "ok   — ...and the id-guard reads that bus's live module ids" || bad "the track id-guard cannot see the bus"
+# ⚠ THE RULING: the track's OWN bus only. Sends and master are SHARED between
+# tracks, so recalling one track must never move another track's effects.
+lids=$(awk '/^function snapshotLiveIds\(/{f=1} f{print} f&&/^}/{exit}' "$JS")
+echo "$lids" | awk '/if \(onlySlot >= 0\) \{/{f=1} f{print} f&&/^    \}/{exit}' | grep -qE 'send_fx|master_fx' \
+    && bad "a track recall reads send/master ids — those are shared and must stay out" \
+    || say "ok   — a track recall reads NO send or master ids (shared, deliberately excluded)"
+mbf=$(awk '/^function moveBusFileNames\(/{f=1} f{print} f&&/^}/{exit}' "$JS")
+echo "$mbf" | grep -qE 'send_fx|master_fx' \
+    && bad "moveBusFileNames names a send or master file" \
+    || say "ok   — ...and the track's file list names no send or master file"
+echo "$mbf" | grep -q 'sl < 0 || sl >= MOVE_FX_SLOTS_JS' \
+    && say "ok   — an out-of-range or absent bus (route 0 / route 2) yields no files, not a bogus one" \
+    || bad "moveBusFileNames does not bound the bus"
+# A track take must not walk all 16 Move positions to capture its one bus.
+echo "$take" | grep -q 'saveMoveFxChainConfig((moveBus | 0) - 1)' \
+    && say "ok   — a track take flushes ONE bus (the saver's 0-based filter), not all 16 positions" \
+    || bad "a track take flushes every Move bus — the track recall would get slower for gaining its bus"
 
 # control: a bare tick body must fail the bulk pin
 echo "function snapshotRecallTick() {}" | grep -q 'shadow_set_params' && bad "control: an empty tick passed" || say "ok   — control: an empty tick fails the pin"

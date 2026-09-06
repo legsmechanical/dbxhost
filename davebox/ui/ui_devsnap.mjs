@@ -71,6 +71,20 @@ function undoDir()  { const t = st().track; return t >= 0 ? trackSnapUndoDir(S.c
 export function devSnapTrack() { return st().track; }
 /* The host's optional slot argument: a track layer takes/recalls that slot only. */
 function hostSlotArg() { const t = st().track; return t >= 0 ? t : undefined; }
+/* ...and the track's own Move FX bus, 1-based, 0 when it has none.
+ *
+ * A track is ONE mixer position: route 0 is chain slot t, route 1 is this bus,
+ * route 2 is a MIDI destination with no bus at all. The host cannot work this
+ * out — moveBusForChannel lives here — so it is passed in (Josh, 2026-09-06:
+ * "track snapshots should include track bus"). Only the track's OWN bus: send
+ * A/B and master are shared between tracks and stay out ("no master bus/return
+ * params"), or recalling one track would move another track's effects. */
+function hostBusArg() {
+    const t = st().track;
+    if (t < 0) return 0;                                   /* a session snapshot: all buses, by the session path */
+    if ((S.trackRoute[t] | 0) !== 1) return 0;             /* not Move-routed — its position is the chain slot */
+    return moveBusForChannel(S.trackChannel[t]) | 0;
+}
 
 /* Scan once: a slot exists when the host's first file does. */
 export function devSnapScan() {
@@ -223,7 +237,7 @@ function takeInto(dir, light) {
     host_ensure_dir(dir);
     const t0 = nowMs();
     let res = null;
-    try { res = JSON.parse(host_snapshot_take(dir, hostSlotArg()) || 'null'); } catch (e) { res = null; }
+    try { res = JSON.parse(host_snapshot_take(dir, hostSlotArg(), hostBusArg()) || 'null'); } catch (e) { res = null; }
     if (!res || !res.ok) return null;
     const t1 = nowMs();
     const half = daveboxHalfInto(dir, light);
@@ -261,7 +275,7 @@ function recallDir(dir, n, undo, undoDirPath) {
     try { json = JSON.parse(host_read_file(dir + '/davebox.json') || 'null'); } catch (e) { json = null; }
     let res = null;
     const r0 = nowMs();
-    try { res = JSON.parse(host_snapshot_recall(dir, hostSlotArg(), undoDirPath || '') || 'null'); } catch (e) { res = null; }
+    try { res = JSON.parse(host_snapshot_recall(dir, hostSlotArg(), undoDirPath || '', hostBusArg()) || 'null'); } catch (e) { res = null; }
     if (!res || !res.ok) { showActionPopup('SNAPSHOT ' + (n + 1), 'Recall failed'); return false; }
     console.log('[devsnap] host recall ' + (nowMs() - r0) + ' ms (' + (res.restored | 0) + ' restored)');
     if (undo && undoDirPath && !res.undoOk) undo = null;  /* no before-image → no undo unit */
