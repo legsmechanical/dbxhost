@@ -126,6 +126,14 @@ const note = (n, v) => globalThis.onMidiMessageInternal(new Uint8Array([v ? 0x90
 const capture = (down) => cc(52, down ? 127 : 0);      /* MoveCapture = 52 */
 const del = (down) => cc(119, down ? 127 : 0);          /* MoveDelete = 119 */
 const step = (i, down) => note(16 + i, down ? 127 : 0);   /* the step buttons are NOTES 16-31 */
+/* ── THE STEP-SLOT GRAMMAR (Josh, 2026-09-06) ────────────────────────────────
+ * plain press = RECALL (on the PRESS, not the release), Shift+press = SAVE,
+ * Delete+press = CLEAR. It replaced tap/hold because a tap/hold decision
+ * cannot commit on the press, so a recall could only fire on the RELEASE and
+ * the work started after the finger left: "recall on note on is a must."
+ * These two helpers are the gesture, so a future change to it edits one place. */
+const snapRecall = (i) => { step(i, true); advance(20); step(i, false); advance(20); };
+const snapSave   = (i) => { cc(49, 127); step(i, true); advance(20); step(i, false); cc(49, 0); advance(20); };
 function step_(label, fn) { try { fn(); ok(label); } catch (e) { bad(label, e); } }
 
 step_('setup: session view, a project, three kinds of track', () => {
@@ -162,13 +170,13 @@ step_('⭑ holding Capture past the threshold OPENS the layer, and the release r
         throw new Error('the entry popup is back: ' + JSON.stringify(S.actionPopupLines));
 });
 
-step_('⭑ HOLD a step = SAVE: the host takes into the slot dir and davebox writes its json (mixer, every kind of track)', () => {
+step_('⭑ SHIFT+step = SAVE: the host takes into the slot dir and davebox writes its json (mixer, every kind of track)', () => {
     snapCalls.length = 0; writes.length = 0;
     S.trackMuted[1] = true; S.trackSoloed[3] = true;           /* mutes are NOT carried (Josh, 09-05 late) */
     PARAM_VALUES['synth:chain_params'] = JSON.stringify([{ key: 'cutoff', min: 0, max: 1 }, { key: 'reso', min: 0, max: 1 }]);
     PARAM_VALUES['synth:cutoff'] = '0.42'; PARAM_VALUES['synth:reso'] = '0.7';
     S.trackPadMode[0] = 0; S.bankParams[0][1][0] = 2;           /* track 1 MELODIC, NOTE FX Oct = +2 (a sequencer setting) */
-    step(2, true); advance(800); step(2, false); advance(20);
+    snapSave(2);
     const take = snapCalls.find(c => c[0] === 'take');
     if (!take) throw new Error('host_snapshot_take not called: ' + JSON.stringify(snapCalls));
     if (take[1] !== P.deviceSnapDir('aaaa-bbbb', 2)) throw new Error('wrong dir ' + take[1]);
@@ -193,12 +201,12 @@ step_('⭑ LEDs: the saved slot is WHITE (last), empties DIM', () => {
     if (leds[16] !== DarkGrey) throw new Error('empty slot led ' + leds[16]);
 });
 
-step_('⭑ TAP a filled step = RECALL: the host recalls that dir; davebox applies its mixer once the host says done', () => {
+step_('⭑ a bare PRESS on a filled step = RECALL (fires on the press): the host recalls that dir; davebox applies its mixer once the host says done', () => {
     snapCalls.length = 0; writes.length = 0;
     S.trackRoute[0] = 0;
     S.trackMuted[1] = false; S.trackSoloed[3] = false;         /* changed since the save — and must STAY so */
     S.bankParams[0][1][0] = 0;                                  /* the Oct setting moved since the save */
-    step(2, true); advance(100); step(2, false); advance(20);
+    snapRecall(2);
     const rc = snapCalls.find(c => c[0] === 'recall');
     if (!rc || rc[1] !== P.deviceSnapDir('aaaa-bbbb', 2)) throw new Error('host_snapshot_recall not called with the slot dir: ' + JSON.stringify(snapCalls));
     if (D.devSnapState().recalling !== 2) throw new Error('not recalling while the host is pending');
@@ -219,7 +227,7 @@ step_('⭑ a recall WARNS: fx added since the save are bypassed (the host count)
     statusSkipped = 0; statusAdded = 2;
     PARAM_VALUES['3:synth:module'] = 'braids';                 /* a synth landed on track 4 after the save */
     S.trackMuted[3] = false; writes.length = 0;
-    step(2, true); advance(100); step(2, false); advance(20);
+    snapRecall(2);
     recallPending = false; advance(30);
     if (writes.includes('t3_mute=1') || S.trackMuted[3]) throw new Error('track 4 was muted — that behaviour was reverted');
     const lines = S.actionPopupLines.map(String);
@@ -231,7 +239,7 @@ step_('⭑ a recall WARNS: fx added since the save are bypassed (the host count)
 step_('⭑ a recall is an UNDO unit: the live state was taken into the hidden before-dir first; Undo recalls it, Redo re-applies the slot (Josh, 2026-09-05)', () => {
     statusSkipped = 0; statusAdded = 0; snapCalls.length = 0; recallPending = false;
     S.undoAvailable = false; S.undoSnapshot = null; S.redoSnapshot = null;
-    step(2, true); advance(100); step(2, false); advance(20);
+    snapRecall(2);
     recallPending = false; advance(30);
     const undoDir = P.deviceSnapUndoDir('aaaa-bbbb');
     const take = snapCalls.findIndex(c => c[0] === 'take' && c[1] === undoDir);
@@ -264,7 +272,7 @@ step_('⭑ a before-image that FAILED leaves no undo unit — the recall still r
     statusSkipped = 0; statusAdded = 0; snapCalls.length = 0; recallPending = false;
     S.undoAvailable = false; S.undoSnapshot = null; S.redoSnapshot = null;
     undoTakeFails = true;
-    step(2, true); advance(100); step(2, false); advance(20);
+    snapRecall(2);
     recallPending = false; advance(30);
     undoTakeFails = false;
     if (!snapCalls.some(c => c[0] === 'recall' && c[1] === P.deviceSnapDir('aaaa-bbbb', 2)))
@@ -275,7 +283,7 @@ step_('⭑ a before-image that FAILED leaves no undo unit — the recall still r
 
 step_('⚠ RESTORED with NOTHING skipped: two lines, never the word "undefined" (device, 2026-09-05)', () => {
     statusSkipped = 0;
-    step(2, true); advance(100); step(2, false); advance(20);   /* the stub marks the recall pending */
+    snapRecall(2);   /* the stub marks the recall pending */
     recallPending = false; advance(30);                           /* the host says done */
     const lines = S.actionPopupLines.map(String);
     if (lines.length !== 2 || lines.some((l) => /undefined|null/.test(l))) throw new Error('card: ' + JSON.stringify(lines));
@@ -284,7 +292,7 @@ step_('⚠ RESTORED with NOTHING skipped: two lines, never the word "undefined" 
 
 step_('a tap on an EMPTY step does nothing', () => {
     snapCalls.length = 0;
-    step(5, true); advance(100); step(5, false); advance(20);
+    snapRecall(5);
     if (snapCalls.length) throw new Error('recalled an empty slot: ' + JSON.stringify(snapCalls));
 });
 
@@ -307,7 +315,7 @@ step_('⭑ TRACK view: holding Capture opens THIS TRACK\'s layer; the header nam
     if (!D.devSnapOpen() || D.devSnapTrack() !== 0) throw new Error('track layer did not open: open=' + D.devSnapOpen() + ' track=' + D.devSnapTrack());
     if (D.devSnapTitle() !== 'T1 SNAPSHOTS') throw new Error('title: ' + D.devSnapTitle());
     snapCalls.length = 0; writes.length = 0;
-    step(4, true); advance(800); step(4, false); advance(20);
+    snapSave(4);
     const take = snapCalls.find(c => c[0] === 'take');
     if (!take || take[1] !== P.trackSnapDir('aaaa-bbbb', 0, 4)) throw new Error('track take dir: ' + JSON.stringify(snapCalls));
     if (take[2] !== 0) throw new Error('the host take was not filtered to slot 0: ' + JSON.stringify(take));
@@ -315,7 +323,7 @@ step_('⭑ TRACK view: holding Capture opens THIS TRACK\'s layer; the header nam
     if (json.track !== 0 || !json.mixer[0] || json.mixer[1] !== null || json.seq[1] !== null) throw new Error('a track take kept other tracks: ' + JSON.stringify(json).slice(0, 200));
     if (!D.devSnapState().slots[4]) throw new Error('slot 5 not marked filled on the track layer');
     snapCalls.length = 0;
-    step(4, true); advance(100); step(4, false); advance(20); recallPending = false; advance(30);
+    snapRecall(4); recallPending = false; advance(30);
     const rc = snapCalls.find(c => c[0] === 'recall');
     if (!rc || rc[1] !== P.trackSnapDir('aaaa-bbbb', 0, 4) || rc[2] !== 0) throw new Error('track recall: ' + JSON.stringify(snapCalls));
     if (!snapCalls.some(c => c[0] === 'take' && c[1] === P.trackSnapUndoDir('aaaa-bbbb', 0))) throw new Error('no before-take for the track recall');

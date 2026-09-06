@@ -8,14 +8,14 @@
  */
 
 import {
-    NUM_TRACKS, TRACK_PAD_BASE, DRUM_LANES,
+    NUM_TRACKS, TRACK_PAD_BASE, DRUM_LANES, STEP_SAVE_FLASH_MS,
     PAD_MODE_DRUM, PAD_MODE_CONDUCT, BANKS,
     NO_NOTE_FLASH_MS
 } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { automationClearStep } from './ui_automation.mjs';
-import { devSnapOpen, devSnapClear, devSnapRecall } from './ui_devsnap.mjs';
+import { devSnapOpen, devSnapClear, devSnapRecall, devSnapSave } from './ui_devsnap.mjs';
 import { drumPadToLane, drumPadToVelZone, drumVelZoneToVelocity, _clipIsEmpty,
     clipHasContent, effectiveVelocity, stepEntryVelocity,
     ARP_VEL_CANON, arpVelLevel, VEL_THRU } from './ui_pure.mjs';
@@ -1094,9 +1094,9 @@ export function _onStepButtons(d1, d2) {
      * tap (recall) / hold (save) decision, the mute-snapshot grammar. */
     if (devSnapOpen()) {
         if (S.deleteHeld) { devSnapClear(idx); forceRedraw(); return; }
-        S.stepBtnPressedTick[idx] = nowMs();
-        S.sessionStepHeld         = idx;
-        S.sessionStepHeldCtx      = 3;  /* device / track snapshot */
+        if (S.shiftHeld)  { devSnapSave(idx);  forceRedraw(); return; }
+        devSnapRecall(idx);            /* on the PRESS — see the grammar note below */
+        forceRedraw();
         return;
     }
     /* Delete+step in session view: clear perf preset or mute snapshot slot immediately. */
@@ -1144,10 +1144,11 @@ export function _onStepButtons(d1, d2) {
             return;
         }
         if (S.muteHeld) {
-            /* All 16 step buttons are snapshot slots — defer to release for tap/hold decision. */
-            S.stepBtnPressedTick[idx] = nowMs();
-            S.sessionStepHeld         = idx;
-            S.sessionStepHeldCtx      = 2;  /* mute */
+            /* All 16 step buttons are snapshot slots — same grammar as the
+             * snapshot layer: Shift saves, a bare press recalls immediately. */
+            if (S.shiftHeld) { muteSnapSave(idx); forceRedraw(); return; }
+            muteSnapRecall(idx);
+            forceRedraw();
             return;
         } else if (S.shiftHeld) {
             _doShiftStepCommon(idx);
@@ -1567,7 +1568,70 @@ export function _onPadRelease(status, d1, d2) {
         forceRedraw();
         return;
     }
-    /* Step button release: tap-toggle if within threshold, always exit step edit */
+    /* ── THE STEP-SLOT GRAMMAR (Josh, 2026-09-06) ────────────────────────────────
+ * Every surface where the 16 steps are SLOTS now reads the same way:
+ *
+ *     plain step   RECALL, on the PRESS
+ *     Shift+step   SAVE
+ *     Delete+step  CLEAR      (already true, and what the rest follows)
+ *
+ * It replaced tap-vs-hold, and the reason is latency, not tidiness. Tap/hold
+ * cannot commit on the press — it has to wait to learn which gesture it was —
+ * so a recall could only fire on the RELEASE, and the work then started after
+ * your finger left the button. Josh, on device: "recall on note on is a must."
+ * A comfortable tap is 60-120 ms, so that wait was most of what a recall felt
+ * like even after the capture itself came down to ~85 ms.
+ *
+ * Shift is free in each of these contexts for the same structural reason:
+ * every one of them is entered under its own held modifier (Capture for the
+ * snapshot layer, Mute for these), and that guard runs BEFORE session view's
+ * generic `else if (S.shiftHeld)` — so Shift inside them was never spoken for.
+ *
+ * ⚠ This deliberately diverges from the tap/hold "mute-snapshot grammar" the
+ * old comment named. Josh ruled the divergence away by moving the mute
+ * snapshots too: "we should make the mute snapshot gestures match as well for
+ * consistency." One grammar, or the exception teaches the wrong rule. */
+function muteSnapSave(idx) {
+    /* The EFFECTIVE drum mute: a lane that is not soloed while any lane is
+     * soloed is silent, and a snapshot has to record what you HEAR, not the
+     * two masks that produced it. */
+    const drumEffMutes = [];
+    for (let _t = 0; _t < NUM_TRACKS; _t++) {
+        const mMask = S.drumLaneMute[_t];
+        const sMask = S.drumLaneSolo[_t];
+        let effMask = mMask;
+        if (sMask) {
+            let notSoloed = 0;
+            for (let _l = 0; _l < DRUM_LANES; _l++) {
+                if (!(sMask & (1 << _l))) notSoloed |= (1 << _l);
+            }
+            effMask = (mMask | notSoloed) >>> 0;
+        }
+        drumEffMutes.push(effMask >>> 0);
+    }
+    S.snapshots[idx] = { mute: S.trackMuted.slice(), solo: S.trackSoloed.slice(), drumEffMute: drumEffMutes };
+    const mStr = S.trackMuted.map(function(m) { return m ? '1' : '0'; }).join(' ');
+    const sStr = S.trackSoloed.map(function(s) { return s ? '1' : '0'; }).join(' ');
+    host_module_set_param('snap_save', idx + ' ' + mStr + ' ' + sStr + ' ' + drumEffMutes.join(' '));
+    showActionPopup('MUTE STATE', 'SAVED');
+    S.stepSaveFlashStartTick = S.clockMs;
+    S.stepSaveFlashEndTick   = S.clockMs + STEP_SAVE_FLASH_MS;
+}
+function muteSnapRecall(idx) {
+    if (S.snapshots[idx] === null || S.snapshots[idx] === undefined) return;
+    const snap = S.snapshots[idx];
+    for (let _t = 0; _t < NUM_TRACKS; _t++) {
+        S.trackMuted[_t]  = snap.mute[_t];
+        S.trackSoloed[_t] = snap.solo[_t];
+        if (snap.drumEffMute) {
+            S.drumLaneMute[_t] = snap.drumEffMute[_t];
+            S.drumLaneSolo[_t] = 0;
+        }
+    }
+    S.pendingDefaultSetParams.push({ key: 'snap_load', val: String(idx) });
+}
+
+/* Step button release: tap-toggle if within threshold, always exit step edit */
     if (d1 >= 16 && d1 <= 31) {
         const btn = d1 - 16;
         /* Session view hold-to-save: if still pending (tick hasn't fired save yet) → tap recall */
@@ -1576,9 +1640,7 @@ export function _onPadRelease(status, d1, d2) {
             S.sessionStepHeld    = -1;
             S.sessionStepHeldCtx = 0;
             S.stepBtnPressedTick[btn] = -1;
-            if (ctx === 3) {
-                devSnapRecall(btn);                          /* a tap on a device snapshot */
-            } else if (ctx === 1) {
+            if (ctx === 1) {
                 /* Perf recall */
                 if (S.perfRecalledSlot === btn) {
                     S.perfRecalledSlot = -1;
@@ -1588,21 +1650,9 @@ export function _onPadRelease(status, d1, d2) {
                     S.perfModsToggled  = S.perfSnapshots[btn];
                 }
                 sendPerfMods();
-            } else {
-                /* Mute recall */
-                if (S.snapshots[btn] !== null) {
-                    const snap = S.snapshots[btn];
-                    for (let _t = 0; _t < NUM_TRACKS; _t++) {
-                        S.trackMuted[_t]  = snap.mute[_t];
-                        S.trackSoloed[_t] = snap.solo[_t];
-                        if (snap.drumEffMute) {
-                            S.drumLaneMute[_t] = snap.drumEffMute[_t];
-                            S.drumLaneSolo[_t] = 0;
-                        }
-                    }
-                    S.pendingDefaultSetParams.push({ key: 'snap_load', val: String(btn) });
-                }
             }
+            /* ctx 3 (snapshot layer) and ctx 2 (mute) no longer reach here —
+             * both commit on the PRESS now. Only perf presets still defer. */
             forceRedraw();
             return;
         }

@@ -19,7 +19,7 @@ import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter
 
 import {
     MoveNoteSession, MoveUndo, MoveLoop, MoveCopy, MoveRec, MoveCapture, MoveSample,
-    LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
+    LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES, STEP_SAVE_FLASH_MS,
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND, BANK_MACROS, isSoundBank,
     POLL_INTERVAL, ROUTE_NONE } from './ui_constants.mjs';
@@ -28,7 +28,7 @@ import { S, standDownBankDisplay } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { tickPrefetch, dget } from './ui_dsp_bridge.mjs';
 import { daveBoxTick, bannerDaveSync } from './ui_daves.mjs';
-import { devSnapOpen, devSnapEnter, devSnapTick, devSnapSave, DEVSNAP_HOLD_MS } from './ui_devsnap.mjs';
+import { devSnapOpen, devSnapEnter, devSnapTick, DEVSNAP_HOLD_MS } from './ui_devsnap.mjs';
 import { automationTick, automationPollWarnings } from './ui_automation.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
 import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, readActiveSet,
@@ -67,7 +67,6 @@ const BANK_DISPLAY_MS = 1000;
 const KNOB_TURN_HIGHLIGHT_MS = 600;               /* highlight after turn without touch */
 const STEP_HOLD_MS       = 120;  /* below = tap, at/above = hold (ms off ui_clock, never ticks). Josh 2026-09-02: shorter than the old 200 ms, longer than the accidental ~55 */
 const STEP_SAVE_HOLD_MS  = 750;
-const STEP_SAVE_FLASH_MS = 425;  /* double-blink on step button LEDs after save */
 /* How long a select HANDOFF may be in flight before the SELECT-BEFORE-LOAD
  * watchdog is allowed to treat the session as stranded again. ~15s at the 94Hz
  * device tick. The handoff itself measured ~6.5s on hardware (arm -> walk Move
@@ -1114,32 +1113,16 @@ export function _tickImpl() {
                 S.sessionStepHeld    = -1;
                 S.sessionStepHeldCtx = 0;
                 S.stepBtnPressedTick[_ssh] = -1;
+                /* ⚠ ONLY perf presets still hold-to-save. The snapshot layer
+                 * (ctx 3) and the mute snapshots (ctx 2) commit on the PRESS
+                 * now — Shift+step saves, a bare press recalls — because a
+                 * tap/hold decision cannot fire on the press, and that wait
+                 * WAS most of what a recall felt like (Josh, 2026-09-06:
+                 * "recall on note on is a must"). See the grammar note in
+                 * ui_input_pads.mjs. */
                 if (_ctx === 1) {
                     S.perfSnapshots[_ssh] = S.perfModsToggled | S.perfModsHeld;
                     showActionPopup('PERF PRESET', 'SAVED');
-                } else if (_ctx === 3) {
-                    devSnapSave(_ssh);                       /* the device snapshot layer */
-                } else {
-                    const drumEffMutes = [];
-                    for (let _t = 0; _t < NUM_TRACKS; _t++) {
-                        const mMask = S.drumLaneMute[_t];
-                        const sMask = S.drumLaneSolo[_t];
-                        let effMask = mMask;
-                        if (sMask) {
-                            let notSoloed = 0;
-                            for (let _l = 0; _l < DRUM_LANES; _l++) {
-                                if (!(sMask & (1 << _l))) notSoloed |= (1 << _l);
-                            }
-                            effMask = (mMask | notSoloed) >>> 0;
-                        }
-                        drumEffMutes.push(effMask >>> 0);
-                    }
-                    S.snapshots[_ssh] = { mute: S.trackMuted.slice(), solo: S.trackSoloed.slice(), drumEffMute: drumEffMutes };
-                    const mStr = S.trackMuted.map(function(m) { return m ? '1' : '0'; }).join(' ');
-                    const sStr = S.trackSoloed.map(function(s) { return s ? '1' : '0'; }).join(' ');
-                    const dStr = drumEffMutes.join(' ');
-                    host_module_set_param('snap_save', _ssh + ' ' + mStr + ' ' + sStr + ' ' + dStr);
-                    showActionPopup('MUTE STATE', 'SAVED');
                 }
                 S.stepSaveFlashStartTick = S.clockMs;
                 S.stepSaveFlashEndTick   = S.clockMs + STEP_SAVE_FLASH_MS;
