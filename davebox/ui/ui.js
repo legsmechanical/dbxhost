@@ -63,6 +63,30 @@ import { soundActive, soundOpen, soundResting, soundExit, soundOnCC, soundOnNote
 import { soundModeCovered } from './ui_render.mjs';
 import { _tickImpl, applyExtMidiRemap, requestSessionExit } from './ui_tick.mjs';
 
+/*
+ * ⚠⚠ THE WAVE PEAKS IO — WITHOUT THIS, EVERY SAMPLE WIDGET DRAWS NOTHING.
+ *
+ * `wav_peaks.mjs` reads a file through an INJECTED io and has none by default;
+ * `wav_io_qjs.mjs` is the QuickJS half that registers it, and it is separate
+ * precisely because it names the `std` and `os` modules, which would make the
+ * renderer unloadable under node (where every host test runs).
+ *
+ * The host registers it from shadow_ui.js. dAVEBOx never did — so in SA
+ * `fileSignature()` returned null for every path, `wavPeaksTick` cached the
+ * sample as `missing:<path>` with "file not found", and the module editor's
+ * sample widgets drew an empty box. ⚠ THE FAILURE IS SILENT AND LOOKS LIKE
+ * DATA: a sample whose io is missing is indistinguishable from a sample whose
+ * FILE is missing. Reported from the device as "no waveforms on the widgets"
+ * (Josh, DR32, 2026-09-06), and the reason the #434 wave-format port had no
+ * visible effect in SA.
+ *
+ * ⚠ IT BELONGS HERE, in the entry point, and nowhere else: this is the one
+ * davebox file no test imports (the ui_*.mjs modules import each other, never
+ * this one), which is the same property that makes shadow_ui.js the host's
+ * place for it. Side-effect import, no exports — it registers on load.
+ */
+import '/data/UserData/schwung/shared/param_pages/wav_io_qjs.mjs';
+
 /* ------------------------------------------------------------------ */
 /* UI state                                                             */
 /* ------------------------------------------------------------------ */

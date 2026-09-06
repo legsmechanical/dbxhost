@@ -7,8 +7,12 @@
  * under node, which is where every host test runs. So the dependency is
  * injected, and this is the only file in the tree that names them.
  *
- * NOTHING under tests/ may import this. It is pulled in once, from
- * src/shadow/shadow_ui_param_pages.mjs, which is device-only already.
+ * NOTHING under tests/ may import this. It is pulled in by the two ENTRY
+ * POINTS that are device-only already, once each: src/shadow/shadow_ui.js for
+ * the host, and davebox/ui/ui.js for dAVEBOx SA. (It used to say
+ * shadow_ui_param_pages.mjs; the import moved when the editor became a factory,
+ * and dAVEBOx had no registration at all until 2026-09-06 — every sample widget
+ * in SA drew an empty box and reported it as a missing file.)
  *
  * host_read_file is deliberately NOT used: it slurps the whole file, and a
  * multi-megabyte read inside one 60 Hz tick is exactly the input lag
