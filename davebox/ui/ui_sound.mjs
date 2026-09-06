@@ -101,7 +101,7 @@ import { bankCyclePos, bankCycleForMode } from './ui_pure.mjs';
 import { createParamPagesBinding }
     from '/data/UserData/schwung/shared/param_pages/binding_movy.mjs';
 import { ctx as ppCtx, installPpCtx } from './pp_ctx.mjs';
-import { evaluateVisibility }
+import { evaluateVisibility, normalizeVisibilityConditionKey }
     from '/data/UserData/schwung/shared/param_pages/visibility.mjs';
 /* The preset record's dirty test — SHARED with the host's editor (upstream
  * grew this module for exactly this bookkeeping), so the `*` means the same
@@ -118,7 +118,8 @@ const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         handleParamPagesMidi, paramPagesActive, paramPagesChildIndex,
         clearParamPagesTouch, currentParamPage,
         paramPagesPickerOpen, paramPagesMenuEntered,
-        paramPagesRefreshTrailing, paramPagesFullKeyAt, paramPagesRepaintKnobs } = PP;
+        paramPagesRefreshTrailing, paramPagesFullKeyAt, paramPagesRepaintKnobs,
+        paramPagesCachedValue, paramPagesLevelNameOf } = PP;
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* Chain blocks in signal order, across the audio-FX blocks the host routes.
@@ -8237,6 +8238,26 @@ function ppIo() {
     };
 }
 
+/*
+ * The key the CONTROLLER lists a condition's parameter under, given the
+ * resolved wire key. The inverse of normalizeVisibilityConditionKey, done by
+ * walking the level's declared params and asking which one resolves to the key
+ * we were handed — the same way the host does it, and the only way that works
+ * when the child prefix and the wire numbering disagree.
+ *
+ * Falls back to stripping the component prefix, which is right for every level
+ * that has no children.
+ */
+function ppListedKeyFor(levelDef, childIdx, prefix, fullKey) {
+    const params = (levelDef && Array.isArray(levelDef.params)) ? levelDef.params : [];
+    for (const p of params) {
+        const k = (typeof p === 'string') ? p : (p && p.key);
+        if (k && normalizeVisibilityConditionKey(prefix, levelDef, childIdx, k) === fullKey) return k;
+    }
+    return (prefix && String(fullKey).startsWith(prefix + ':'))
+        ? String(fullKey).slice(prefix.length + 1) : fullKey;
+}
+
 /* Installed once, at module load. The host fills its ctx from shadow_ui.js at
  * init for the same reason: the binding reads these INSIDE function bodies, so
  * they only have to exist by the time the editor is entered.
@@ -8303,11 +8324,49 @@ installPpCtx({
      * helpers live in shadow_ui.js rather than shared/ — see pp_visible.mjs.
      * Unanswered, the planner shows EVERYTHING, so davebox would display
      * controls a module folds away in its current mode. */
-    evaluateVisibilityCondition: (condition, levelDef) => evaluateVisibility({
-        prefix: S.comp,
-        getParam: (fullKey) => engineGetChainParam(S.slot, fullKey),
-        childIndexOf: (lvl) => paramPagesChildIndex(lvl),
-    }, condition, levelDef),
+    evaluateVisibilityCondition: (condition, levelDef) => {
+        /*
+         * ⚠⚠ THE INDEX IS FOUND FROM THE LEVEL'S NAME, NOT ITS DEFINITION.
+         * `controller.childIndexOf` looks the level up in a NAME-keyed map, so
+         * handing it the def object read `s.childIndex[<object>]` — undefined,
+         * which falls back to 0. Every visible_if on a child level therefore
+         * resolved against INSTANCE 0 whatever instance was on screen: on a
+         * drum module a pad's own condition was answered by pad 1's value; and
+         * where the module numbers its children from 1 the resolved key did not
+         * exist AT ALL, read "", compared FALSE, and every gated cell on that
+         * pad simply VANISHED. ⚠ Note the direction: an unserved key is "" and
+         * fails CLOSED here — only a null read fails open. The host takes the
+         * name first for exactly this reason (#427).
+         */
+        const lvlName = paramPagesLevelNameOf(levelDef);
+        const childIdx = lvlName ? paramPagesChildIndex(lvlName) : -1;
+        return evaluateVisibility({
+            prefix: S.comp,
+            /* Already resolved above — do not let the evaluator re-derive it. */
+            childIndexOf: () => childIdx,
+            /*
+             * ⚠⚠ CACHE FIRST. A blocking chain read is ~2.9 ms, and a re-plan
+             * evaluates every level and every gated param, so paying IPC here
+             * is paid once per condition per plan — the shape the host called
+             * out as freezing the OLED (#427). The grid already HOLDS these
+             * values: every write it made and every key its cursor has read.
+             *
+             * ⚠ And the cache is asked with the LISTED key, never the resolved
+             * one (#440). `fullKey` has been through
+             * normalizeVisibilityConditionKey, so on a child level it is
+             * CONCRETE ("pad3_type") while the controller keys its values by
+             * what the level LISTS ("type"). Asking with the concrete key
+             * misses every single time — silently, because a miss still
+             * answers CORRECTLY, only slowly.
+             */
+            getParam: (fullKey) => {
+                const held = paramPagesCachedValue(
+                    ppListedKeyFor(levelDef, childIdx, S.comp, fullKey));
+                if (held !== undefined) return held;
+                return engineGetChainParam(S.slot, fullKey);
+            },
+        }, condition, levelDef);
+    },
 
     /* The modulation dot and the label's `~`. Same two-step read the host does:
      * ask the target whether it is modulated, and for targets that do not
