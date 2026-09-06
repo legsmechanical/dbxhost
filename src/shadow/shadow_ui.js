@@ -5609,15 +5609,34 @@ function hostSnapshotTake(dir, onlySlot, scope) {
         saveMasterFxChainConfig(true); saveSendFxChainConfig(); saveMoveFxChainConfig();
     }
     const t2 = Date.now();
-    const names = scope ? scope.names
-                        : (onlySlot >= 0 ? ["/slot_" + onlySlot + ".json"] : snapshotFileNames());
+    /* ⚠⚠ EVERY name is WRITTEN, even when the flush was scoped — only the
+     * CONTENT is scoped. The Undo dir is a single reused path per project
+     * (davebox's undoDir()), nothing ever clears it, and no host binding
+     * removes a file. So a take that writes only its in-scope names leaves the
+     * PREVIOUS recall's files sitting in the dir, and Undo reads the dir with
+     * snapshotRecords(), which walks every name regardless of what was last
+     * written — it would restore slots the recall never touched, to a state
+     * from some earlier recall, and across reboots.
+     *
+     * The unscoped take used to make that impossible by rewriting all 36 files
+     * every time; scoping the copy would have reintroduced it through a side
+     * door. Writing "{}\n" for the out-of-scope names costs nothing worth
+     * counting — the whole copy phase measured 3-9 ms — and "{}\n" parses to
+     * ZERO records in both parseSlotSnapshot and parseBusSnapshot, which is
+     * exactly right: the recall is not touching those positions, so Undo has
+     * nothing to put back there. The 475 ms was always the FLUSH, and the
+     * flush is still scoped. */
+    const names = onlySlot >= 0 ? ["/slot_" + onlySlot + ".json"] : snapshotFileNames();
+    const inScope = scope ? new Set(scope.names) : null;
     /* Then copy. host_write_file is temp-then-rename, so a failed take leaves
      * the previous snapshot's file whole. */
     let copied = 0, positions = 0;
     for (const name of names) {
         let content = null;
-        try { content = host_read_file(activeSlotStateDir + name); } catch (e) { content = null; }
-        if (content && content.length > 3) positions++;
+        if (!inScope || inScope.has(name)) {
+            try { content = host_read_file(activeSlotStateDir + name); } catch (e) { content = null; }
+            if (content && content.length > 3) positions++;
+        }
         if (host_write_file(dir + name, content || "{}\n")) copied++;
     }
     /* Phase timings, so a slow take names its phase instead of us inferring it
@@ -5688,6 +5707,36 @@ function hostSnapshotRecall(dir, onlySlot, undoDir) {
      * holds a module NOW was added since the save and gets bypassed by the
      * plan. Treating it as "no snapshot" read as RECALL FAILED on every tap. */
     if (records.length === 0) debugLog("snapshot: no host records in " + dir + " — davebox's half and the added-since bypasses still apply");
+    /* ⚠ The id-guard compares against the chainConfigs MIRROR, and the mirror
+     * has to be fresh or the guard is worse than useless: a stale id that
+     * still matches the snapshot lets a state blob be written into a module
+     * that is no longer there.
+     *
+     * This used to be free and accidental. The before-take ran FIRST and its
+     * autosaveAllSlots() called refreshSlotModuleSignature() on all 8 slots,
+     * so the mirror was always resynced immediately before liveIds was built.
+     * Folding the take into this function inverted that order, and the only
+     * other refresh is a periodic ~30-tick sweep — so the guarantee was lost
+     * without anything saying so.
+     *
+     * It is restored for the slots the SNAPSHOT NAMES rather than all eight:
+     * those are the only ones whose recorded module id is compared against a
+     * live one, and they are the case where staleness actually corrupts. A
+     * signature is 6 get_params, so all eight would cost ~48 SPI round-trips
+     * — a third of the saving this change exists for — to close a window the
+     * periodic sweep already bounds. Slots absent from the snapshot are only
+     * consulted for "added since the save", whose worst case is an FX left
+     * un-bypassed. */
+    /* ⚠ A BUS record carries slot: 0 (snapshotRecords), so filter on the
+     * prefix, not the index — refreshing on a bus record would resync slot 0
+     * for a snapshot that never mentions it. */
+    const seen = [];
+    for (const r of records) {
+        const p = String((r && r.prefix) || "");
+        if (p.indexOf("master_fx:") === 0 || p.indexOf("send_fx:") === 0 || p.indexOf("move_fx:") === 0) continue;
+        const i = r.slot | 0;
+        if (i >= 0 && i < SHADOW_UI_SLOTS && seen.indexOf(i) < 0) { seen.push(i); refreshSlotModuleSignature(i); }
+    }
     const plan = planRestore(records, snapshotLiveIds(busPrefixes, onlySlot));
     /* The before-image, scoped to what the plan will actually touch. */
     let undoOk = false;

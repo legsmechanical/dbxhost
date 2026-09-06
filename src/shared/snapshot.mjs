@@ -277,8 +277,11 @@ export function scopeForWrites(writes, nSlots) {
     const n = (nSlots | 0) > 0 ? (nSlots | 0) : 8;
     for (const w of (writes || [])) {
         const p = String((w && w.prefix) || "");
-        /* Bus prefixes are matched FIRST: a slot record's prefix is "<i>:<key>"
-         * and would otherwise fall through to a bogus slot index. */
+        /* ⚠ Bus prefixes are matched FIRST, and the reason is the reverse of
+         * the obvious one: a BUS write carries `slot: 0` (snapshotRecords sets
+         * it, and splitPrefix defaults to it), so matching the families LAST
+         * would drop a bogus slot 0 into the scope and flush a slot the recall
+         * never writes. A real slot record's index is always correct. */
         if (p.indexOf("master_fx:") === 0) master = true;
         else if (p.indexOf("send_fx:") === 0) send = true;
         else if (p.indexOf("move_fx:") === 0) move = true;

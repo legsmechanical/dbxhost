@@ -250,17 +250,21 @@ export function devSnapSave(n) {
 /* `undoDir` (optional): the host takes the scoped before-image inside the same
  * call — see hostSnapshotRecall. `undo` is only registered if it reports back
  * that the before-image is actually there. */
-function recallDir(dir, n, undo, undoDir) {
+/* ⚠ `undoDirPath`, not `undoDir`: this module has a FUNCTION called undoDir()
+ * and a parameter of that name would shadow it — a later edit calling it in
+ * here would get "not a function", inside a try/catch that reads as a plain
+ * "Recall failed". */
+function recallDir(dir, n, undo, undoDirPath) {
     const d = st();
     if (d.recalling >= 0) return false;                  /* one at a time */
     let json = null;
     try { json = JSON.parse(host_read_file(dir + '/davebox.json') || 'null'); } catch (e) { json = null; }
     let res = null;
     const r0 = nowMs();
-    try { res = JSON.parse(host_snapshot_recall(dir, hostSlotArg(), undoDir || '') || 'null'); } catch (e) { res = null; }
+    try { res = JSON.parse(host_snapshot_recall(dir, hostSlotArg(), undoDirPath || '') || 'null'); } catch (e) { res = null; }
     if (!res || !res.ok) { showActionPopup('SNAPSHOT ' + (n + 1), 'Recall failed'); return false; }
     console.log('[devsnap] host recall ' + (nowMs() - r0) + ' ms (' + (res.restored | 0) + ' restored)');
-    if (undo && undoDir && !res.undoOk) undo = null;      /* no before-image → no undo unit */
+    if (undo && undoDirPath && !res.undoOk) undo = null;  /* no before-image → no undo unit */
     d.recalling = n; d.recallDir = dir; d.recallJson = json; d.since = nowMs(); d.recallUndo = undo || null;
     if (!res.pending) devSnapFinish();
     invalidateLEDCache(); forceRedraw();

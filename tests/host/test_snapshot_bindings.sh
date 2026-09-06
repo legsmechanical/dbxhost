@@ -63,6 +63,35 @@ for fam in master send move; do
     echo "$take" | grep -qE "if \(scope\.$fam\)" && say "ok   — the $fam saver runs only when the $fam family is in scope" || bad "the $fam saver is unconditional"
 done
 
+# ---- the Undo dir is REUSED, so a scoped take must still write EVERY name ---
+# Found by review, not by these tests: undoDir() is one fixed path per project,
+# nothing clears it, and no host binding removes a file. The unscoped take used
+# to rewrite all 36 files each time, which is what kept it clean. Scoping the
+# COPY would leave the previous recall's files in place, and Undo (which walks
+# every name via snapshotRecords) would restore slots the recall never touched.
+echo "$take" | grep -q 'const names = onlySlot >= 0 ? \["/slot_" + onlySlot + ".json"\] : snapshotFileNames();' \
+    && say "ok   — the name list is the FULL set, never scope.names (the reused undo dir must be fully rewritten)" \
+    || bad "the copy loop iterates a scoped name list — stale files would survive in the undo dir"
+echo "$take" | grep -q 'if (host_write_file(dir + name, content || "{}\\n")) copied++;' \
+    && say "ok   — every name is WRITTEN; only the CONTENT is scoped" || bad "a name can be skipped by the writer"
+# The write must sit OUTSIDE the in-scope branch, or out-of-scope names go unwritten.
+echo "$take" | awk '/if \(!inScope \|\| inScope.has\(name\)\)/{d=1} d&&/^        \}/{d=0; next} d&&/host_write_file/{print "INSIDE"}' | grep -q INSIDE \
+    && bad "host_write_file is inside the in-scope branch — out-of-scope names would not be cleared" \
+    || say "ok   — the write is outside the in-scope guard, so out-of-scope names are cleared to {}"
+
+# ---- the id-guard needs a FRESH mirror -------------------------------------
+# The before-take used to run first and resync all 8 signatures as a side
+# effect; folding it into the recall inverted that order.
+echo "$rec" | grep -q 'refreshSlotModuleSignature(i)' \
+    && say "ok   — the slots the snapshot names are resynced BEFORE the id-guard reads the mirror" \
+    || bad "the id-guard runs against a possibly-stale chainConfigs mirror"
+refresh_line=$(echo "$rec" | grep -n 'refreshSlotModuleSignature(i)' | head -1 | cut -d: -f1)
+plan_line=$(echo "$rec" | grep -n 'const plan = planRestore(' | head -1 | cut -d: -f1)
+[ -n "$refresh_line" ] && [ -n "$plan_line" ] && [ "$refresh_line" -lt "$plan_line" ] \
+    && say "ok   — ...and it precedes planRestore (line $refresh_line < $plan_line)" || bad "the refresh does not precede the plan"
+echo "$rec" | grep -q 'p.indexOf("master_fx:") === 0 || p.indexOf("send_fx:") === 0 || p.indexOf("move_fx:") === 0) continue;' \
+    && say "ok   — a BUS record (slot: 0) does not spuriously resync slot 0" || bad "bus records resync slot 0"
+
 # control: a bare tick body must fail the bulk pin
 echo "function snapshotRecallTick() {}" | grep -q 'shadow_set_params' && bad "control: an empty tick passed" || say "ok   — control: an empty tick fails the pin"
 
