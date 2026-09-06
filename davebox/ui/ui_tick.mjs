@@ -1099,10 +1099,11 @@ export function _tickImpl() {
          * session view, nothing else pressed meanwhile (a Capture+row / +pad
          * marks it used and keeps its meaning). Opening marks Capture used so
          * the release runs no tap action. */
-        if (S.captureHeld && S.sessionView && !S.captureUsedAsModifier && !devSnapOpen() &&
+        if (S.captureHeld && !S.captureUsedAsModifier && !devSnapOpen() &&
                 S.captureHeldAt >= 0 && (S.clockMs - S.captureHeldAt) >= DEVSNAP_HOLD_MS) {
             S.captureUsedAsModifier = true;
-            devSnapEnter();
+            /* Session view: the DEVICE layer. Track view: THIS track's layer (Josh, 2026-09-05). */
+            devSnapEnter(S.sessionView ? -1 : S.activeTrack);
         }
         devSnapTick();
         /* Session view hold-to-save: fire exactly when threshold reached, not on release */

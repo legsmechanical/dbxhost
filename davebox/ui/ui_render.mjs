@@ -8,7 +8,7 @@
 
 import { S, PERF_FACTORY_PRESETS } from './ui_state.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H } from './ui_daves.mjs';
-import { devSnapOpen, devSnapHints } from './ui_devsnap.mjs';
+import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
 import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev } from './ui_engine.mjs';
 import { instrValueFor } from './ui_dsp_bridge.mjs';
@@ -855,6 +855,18 @@ function kitCellForKnob(knob, val) {
  * with hdrWidth, never a character as if it were a cell. */
 const MARK_BAR_H = BANNER_H;   /* one owner of the 12: the window IS the bar */
 
+/* Row 2 of an overview: the metronome word — or, while the snapshot layer is
+ * open, the layer's NAME in the bank-heading face, centred (Josh, 2026-09-05:
+ * a mode you are in, not a flash you missed). Both overviews. */
+function drawInfoRow2() {
+    if (devSnapOpen()) {
+        const _sn = devSnapTitle();
+        hdrPrint(Math.round((128 - hdrWidth(_sn)) / 2), 16, _sn, 1);
+    } else {
+        drawMetroIndicator();
+    }
+}
+
 function drawWordmark(mark) {
     hdrPrint(Math.round((128 - hdrWidth(mark)) / 2), 3, mark, 0);
 }
@@ -973,7 +985,7 @@ function overviewHints() {
      * track in every view, Shift+≡ opens the track's SOUND + CONFIG menu in
      * track view and the MASTER / SEND FX list in session view. No CLK pair:
      * Shift+click is nothing here. */
-    if (S.sessionView && devSnapOpen()) return devSnapHints();   /* the snapshot layer (item 18) */
+    if (devSnapOpen()) return devSnapHints();   /* the snapshot layer (item 18), either view */
     if (S.shiftHeld) return [['JOG', 'TRACK'], ['\u2261', S.sessionView ? 'FX' : 'CONFIG']];
     return [['JOG', 'BANK'], ['CLK', 'EDIT'], ['\u2261', S.sessionView ? 'TRK' : 'SESS']];
 }
@@ -1267,7 +1279,7 @@ export function bankCardVisible() {
 }
 
 export function soundModeCovered() {
-    return !!(S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox ||
+    return !!(devSnapOpen() || S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox ||
         S.projectPadPicker || S.pendingSceneBakePicker ||
         S.mergePlacing || S.mergeNoticePending || S.pendingMergePlacement ||
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
@@ -1336,6 +1348,12 @@ export function drawUI() {
     drawBankLatchBox();
     drawTrackVolCard();
     drawBankPicker();
+    /* THE NOTICE CARD, above everything (Josh, 2026-09-05: "the confirmation
+     * overlays pop up wherever you are when you save/recall, same for session
+     * view"): a card notice is drawn here, last, whatever screen the body
+     * chose — a bank, an editor, the session mixer, a dialog. */
+    if (S.actionPopupCard && S.actionPopupEndTick >= 0 && S.clockMs <= S.actionPopupEndTick && S.actionPopupLines.length)
+        drawNoticeCard(S.actionPopupLines);
 }
 
 /* The held step's page: the STEP bank's layout with THAT step's values. Drawn
@@ -1638,7 +1656,7 @@ function drawUIBody() {
          * window … but it's just a full screen"): the underlay draws as usual
          * and the card sits on top, below. The gauge popup keeps its full
          * screen — the bar wants the room. */
-        const _card = (S.actionPopupEndTick >= 0 && S.actionPopupGauge < 0) ? S.actionPopupLines : null;
+        const _card = (S.actionPopupEndTick >= 0 && S.actionPopupGauge < 0 && !S.actionPopupCard) ? S.actionPopupLines : null;
         if (S.actionPopupEndTick >= 0 && !_card) {
             const _n = S.actionPopupLines.length;
             {
@@ -1683,12 +1701,7 @@ function drawUIBody() {
          * Capture is held past the threshold, the row under the banner reads
          * SNAPSHOTS in the bank-heading face, centred, in place of the
          * metronome word — a mode you are in, not a flash you missed. */
-        if (devSnapOpen()) {
-            const _sn = 'SNAPSHOTS';
-            hdrPrint(Math.round((128 - hdrWidth(_sn)) / 2), 16, _sn, 1);
-        } else {
-            drawMetroIndicator();
-        }
+        drawInfoRow2();
         drawOverviewTracks(overviewHints());
         if (_card) drawNoticeCard(_card);
         return;
@@ -1716,7 +1729,7 @@ function drawUIBody() {
     }
 
     /* Action confirmation pop-up: ~500ms; defers to step edit and active-knob bank overview */
-    if (S.actionPopupEndTick >= 0 && S.heldStep < 0 && S.knobTouched < 0) {
+    if (S.actionPopupEndTick >= 0 && S.heldStep < 0 && S.knobTouched < 0 && !S.actionPopupCard) {
         if (S.actionPopupHighlight >= 0 && S.actionPopupLines.length >= 3) {
             const _title = S.actionPopupLines[0];
             const _tw = _title.length * 6;
@@ -2265,7 +2278,7 @@ function drawUIBody() {
             if (Math.floor(S.clockMs / 440) % 2 === 0)
                 ovwPrint(128 - 4 - ovwWidth('MUTED'), 17, 'MUTED', 1);
         }
-        drawMetroIndicator();
+        drawInfoRow2();
         drawOverviewTracks(overviewHints());
         drawDrumPositionBar(t);
     } else {
@@ -2294,7 +2307,7 @@ function drawUIBody() {
         }
         ovwPrint(keySclX, 9, keyScl, 1);
         if (S.scaleAware) fill_rect(keySclX, 15, keySclW, 1, 1);
-        drawMetroIndicator();
+        drawInfoRow2();
         drawOverviewTracks(overviewHints());
         drawPositionBar(S.activeTrack);
     }

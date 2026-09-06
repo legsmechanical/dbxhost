@@ -422,9 +422,53 @@ export function engineVolBlock(on) {
  * is defined shim-side and undocumented in the JS contract, so this loops for
  * now. Callers already treat it as one call, so switching to the bulk path
  * later is a change to this function alone. */
+/* One `chain:` BULK_GET per ≤60 keys (the shim caps a bulk at 64 items): the
+ * wire form is "<n>\n" then n × "<len>\n<bytes>", both ways; lengths are
+ * BYTES, so a value with non-ASCII is measured as UTF-8. A null answer (a
+ * mailbox timeout, an old host) falls back to one read per key — correct,
+ * just slow, and logged once. */
+const BULK_MAX = 60;
+function utf8Len(s) { let n = 0; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); if (c < 0x80) n += 1; else if (c < 0x800) n += 2; else if (c >= 0xD800 && c <= 0xDBFF) { n += 4; i++; } else n += 3; } return n; }
+function bulkEncode(items) { let s = items.length + '\n'; for (const it of items) s += utf8Len(it) + '\n' + it; return s; }
+/* Decode by BYTES: the host counts UTF-8 bytes, JS strings count code units.
+ * ⚠ No TextEncoder/TextDecoder here — QuickJS has neither, and the first cut
+ * threw on every call inside its try, so the bulk path silently fell back to
+ * one read per key (device, 2026-09-06: a 550 ms recall). The byte count is
+ * walked per code unit instead. */
+function bulkDecode(blob) {
+    const s = String(blob);
+    let p = 0;
+    const readLen = () => { let n = 0, any = false; while (p < s.length && s.charCodeAt(p) >= 48 && s.charCodeAt(p) <= 57) { n = n * 10 + (s.charCodeAt(p) - 48); p++; any = true; } if (!any || s.charCodeAt(p) !== 10) return -1; p++; return n; };
+    const count = readLen(); if (count < 0) return null;
+    const out = [];
+    for (let i = 0; i < count; i++) {
+        const nb = readLen(); if (nb < 0) return null;
+        let bytes = 0; const start = p;
+        while (bytes < nb && p < s.length) {
+            const c = s.charCodeAt(p);
+            if (c < 0x80) bytes += 1; else if (c < 0x800) bytes += 2;
+            else if (c >= 0xD800 && c <= 0xDBFF) { bytes += 4; p++; } else bytes += 3;
+            p++;
+        }
+        if (bytes !== nb) return null;
+        out.push(s.slice(start, p));
+    }
+    return out;
+}
+export function bulkDecodeForTest(blob) { return bulkDecode(blob); }
+let bulkGetWarned = false;
 export function engineGetMany(slot, comp, keys) {
     const out = {};
-    for (const k of keys) out[k] = engineGet(slot, comp, k);
+    for (let i = 0; i < keys.length; i += BULK_MAX) {
+        const chunk = keys.slice(i, i + BULK_MAX);
+        const full = chunk.map((k) => comp + ':' + k);
+        let vals = null;
+        try { const r = shadow_get_params(slot, 'chain:', bulkEncode(full)); vals = r ? bulkDecode(String(r)) : null; }
+        catch (e) { vals = null; }
+        if (vals && vals.length === chunk.length) { for (let j = 0; j < chunk.length; j++) out[chunk[j]] = vals[j]; continue; }
+        if (!bulkGetWarned) { bulkGetWarned = true; console.log('[engine] chain bulk GET unavailable — reading one key at a time'); }
+        for (const k of chunk) out[k] = engineGet(slot, comp, k);
+    }
     return out;
 }
 

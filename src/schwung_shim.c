@@ -4342,6 +4342,42 @@ static void shim_handle_param_bulk_chain(void) {
     shadow_param->error = 0; shadow_param->result_len = 0;
 }
 
+/* `chain:` BULK_GET for the chain slot named by ->slot: "<n>\n" then n keys,
+ * each "<len>\n<bytes>"; the response is the same framing with n values,
+ * written back into ->value (request copied out first, as the overtake
+ * BULK_GET does). Each key goes through shadow_direct_get_param — the same
+ * resolution a single GET gets — so a snapshot's parameter capture costs one
+ * SPI frame per ~60 keys, not one per key (2026-09-05). */
+static void shim_handle_param_bulk_chain_get(void) {
+    uint8_t slot = shadow_param->slot;
+    size_t rlen = strnlen(shadow_param->value, SHADOW_PARAM_VALUE_LEN - 1);
+    memcpy(s_bulk_req, shadow_param->value, rlen);
+    s_bulk_req[rlen] = '\0';
+    const char *p = s_bulk_req, *end = s_bulk_req + rlen;
+    int count = 0; { int any = 0;
+        while (p < end && *p >= '0' && *p <= '9') { count = count*10 + (*p-'0'); p++; any = 1; }
+        if (!any || p >= end || *p != '\n') { shadow_param->error = 22; shadow_param->result_len = -1; return; }
+        p++;
+    }
+    if (count < 0 || count > SHADOW_BULK_MAX_ITEMS) { shadow_param->error = 22; shadow_param->result_len = -1; return; }
+    char *out = shadow_param->value;
+    int   off = snprintf(out, SHADOW_PARAM_VALUE_LEN, "%d\n", count);
+    char  keybuf[SHADOW_PARAM_KEY_LEN];
+    for (int i = 0; i < count; i++) {
+        int klen = 0, vlen = 0;
+        const char *k = bulk_next(&p, end, &klen);
+        if (k && klen > 0 && klen < (int)sizeof keybuf) {
+            memcpy(keybuf, k, (size_t)klen); keybuf[klen] = '\0';
+            int r = shadow_direct_get_param(slot, keybuf, s_bulk_val, SHADOW_PARAM_VALUE_LEN);
+            if (r > 0) vlen = (r >= SHADOW_PARAM_VALUE_LEN) ? SHADOW_PARAM_VALUE_LEN - 1 : r;
+        }
+        int noff = bulk_put(out, off, SHADOW_PARAM_VALUE_LEN, s_bulk_val, vlen);
+        if (noff < 0) { shadow_param->error = 22; shadow_param->result_len = -1; return; }
+        off = noff;
+    }
+    shadow_param->error = 0; shadow_param->result_len = off;
+}
+
 /* Callback for chain_mgmt: handle shim-specific param prefixes.
  * Reads/writes shadow_param->key/value/error/result_len directly.
  * Returns 1 if handled, 0 if not. */
@@ -4352,6 +4388,10 @@ static int shim_handle_param_special(uint8_t req_type, uint32_t req_id) {
     /* chain: — a BULK_SET for the chain slot named by ->slot. */
     if (req_type == 4 && strcmp(key, "chain:") == 0) {
         shim_handle_param_bulk_chain();
+        return 1;
+    }
+    if (req_type == 3 && strcmp(key, "chain:") == 0) {
+        shim_handle_param_bulk_chain_get();
         return 1;
     }
 

@@ -80,8 +80,8 @@ globalThis.host_ext_midi_remap_enable = () => {};
 const snapCalls = [];
 const files = {};
 let recallPending = false;
-globalThis.host_snapshot_take   = (dir) => { snapCalls.push(['take', dir]); return JSON.stringify({ ok: true, skipped: 0, positions: 12 }); };
-globalThis.host_snapshot_recall = (dir) => { snapCalls.push(['recall', dir]); recallPending = true; return JSON.stringify({ ok: true, pending: true }); };
+globalThis.host_snapshot_take   = (dir, slot) => { snapCalls.push(['take', dir, slot]); return JSON.stringify({ ok: true, skipped: 0, positions: 12 }); };
+globalThis.host_snapshot_recall = (dir, slot) => { snapCalls.push(['recall', dir, slot]); recallPending = true; return JSON.stringify({ ok: true, pending: true }); };
 let statusSkipped = 1, statusAdded = 0;
 globalThis.host_snapshot_status = () => JSON.stringify({ pending: recallPending, skipped: statusSkipped, added: statusAdded, addedList: statusAdded ? ['master_fx:fx1'] : [] });
 globalThis.host_file_exists = (p) => Object.prototype.hasOwnProperty.call(files, p) && files[p] !== '';
@@ -100,6 +100,8 @@ const tickmod = await import('../../ui/ui_tick.mjs');
 const D = await import('../../ui/ui_devsnap.mjs');
 const P = await import('../../ui/ui_persistence.mjs');
 const scene = await import('../../ui/ui_scene.mjs');
+const E = await import('../../ui/ui_editops.mjs');
+globalThis.__renderForTest = await import('../../ui/ui_render.mjs');
 const { White, DarkGrey, Cyan } = await import('/data/UserData/schwung/shared/constants.mjs');
 
 function ticks(n) { for (let i = 0; i < n; i++) tickmod._tickImpl(); }
@@ -149,7 +151,10 @@ step_('⭑ holding Capture past the threshold OPENS the layer, and the release r
 
 step_('⭑ HOLD a step = SAVE: the host takes into the slot dir and davebox writes its json (mixer, every kind of track)', () => {
     snapCalls.length = 0; writes.length = 0;
-    S.trackMuted[1] = true; S.trackSoloed[3] = true;           /* a mute and a solo to carry */
+    S.trackMuted[1] = true; S.trackSoloed[3] = true;           /* mutes are NOT carried (Josh, 09-05 late) */
+    PARAM_VALUES['synth:chain_params'] = JSON.stringify([{ key: 'cutoff', min: 0, max: 1 }, { key: 'reso', min: 0, max: 1 }]);
+    PARAM_VALUES['synth:cutoff'] = '0.42'; PARAM_VALUES['synth:reso'] = '0.7';
+    S.trackPadMode[0] = 0; S.bankParams[0][1][0] = 2;           /* track 1 MELODIC, NOTE FX Oct = +2 (a sequencer setting) */
     step(2, true); advance(800); step(2, false); advance(20);
     const take = snapCalls.find(c => c[0] === 'take');
     if (!take) throw new Error('host_snapshot_take not called: ' + JSON.stringify(snapCalls));
@@ -159,9 +164,13 @@ step_('⭑ HOLD a step = SAVE: the host takes into the slot dir and davebox writ
     const t0 = json.mixer[0], t2 = json.mixer[2];
     if (t0.route !== 0 || t0.volume !== 0.8 || t0.send_a !== 0.1) throw new Error('Schwung track levels not captured: ' + JSON.stringify(t0));
     if (t2.route !== 2 || typeof t2.cc7 !== 'number') throw new Error('MIDI track cc7 not captured: ' + JSON.stringify(t2));
-    /* Mutes ride too (Josh, 2026-09-05). */
-    if (!json.mutes || !Array.isArray(json.mutes.mute)) throw new Error('no mutes in davebox.json');
-    if (json.mutes.mute[1] !== true || json.mutes.solo[3] !== true) throw new Error('mutes not captured: ' + JSON.stringify(json.mutes));
+    if (json.mutes) throw new Error('mutes are in the snapshot — ruled OUT (Josh, 2026-09-05 late)');
+    /* THE PARAM LIST (Josh: "any automatable param"): every loaded module's chain_params values, by slot and component… */
+    const p0 = json.params && json.params[0] && json.params[0].synth;
+    if (!p0 || p0.module !== 'nusaw' || p0.values.cutoff !== '0.42' || p0.values.reso !== '0.7') throw new Error('module params not captured: ' + JSON.stringify(json.params && json.params[0]));
+    if (json.params[3] && json.params[3].synth) throw new Error('an EMPTY slot captured params');
+    /* …and the sequencer's bank-knob settings per track. */
+    if (!json.seq || json.seq[0].noteFX_octave !== 2) throw new Error('sequencer settings not captured: ' + JSON.stringify(json.seq && json.seq[0]));
     if (!D.devSnapState().slots[2]) throw new Error('slot 2 not marked filled');
 });
 
@@ -174,7 +183,8 @@ step_('⭑ LEDs: the saved slot is WHITE (last), empties DIM', () => {
 step_('⭑ TAP a filled step = RECALL: the host recalls that dir; davebox applies its mixer once the host says done', () => {
     snapCalls.length = 0; writes.length = 0;
     S.trackRoute[0] = 0;
-    S.trackMuted[1] = false; S.trackSoloed[3] = false;         /* changed since the save */
+    S.trackMuted[1] = false; S.trackSoloed[3] = false;         /* changed since the save — and must STAY so */
+    S.bankParams[0][1][0] = 0;                                  /* the Oct setting moved since the save */
     step(2, true); advance(100); step(2, false); advance(20);
     const rc = snapCalls.find(c => c[0] === 'recall');
     if (!rc || rc[1] !== P.deviceSnapDir('aaaa-bbbb', 2)) throw new Error('host_snapshot_recall not called with the slot dir: ' + JSON.stringify(snapCalls));
@@ -183,10 +193,10 @@ step_('⭑ TAP a filled step = RECALL: the host recalls that dir; davebox applie
     recallPending = false; advance(30);
     if (D.devSnapState().recalling !== -1) throw new Error('recall did not finish when the host said done');
     if (!writes.some(w => w.indexOf('slot:volume=0.800') >= 0)) throw new Error('Schwung level not re-applied: ' + JSON.stringify(writes.slice(0, 12)));
-    /* the mutes come back through the Mute button's own setters */
-    if (!writes.includes('t1_mute=1')) throw new Error('track 2 mute not re-applied: ' + JSON.stringify(writes.filter(w => /_mute=|_solo=/.test(w))));
-    if (!writes.includes('t3_solo=1')) throw new Error('track 4 solo not re-applied');
-    if (!S.trackMuted[1] || !S.trackSoloed[3]) throw new Error('mirror not updated');
+    /* mutes are NOT touched by a recall (Josh, 2026-09-05 late) */
+    if (writes.some(w => /_mute=|_solo=/.test(w)) || S.trackMuted[1] || S.trackSoloed[3]) throw new Error('a recall touched mutes: ' + JSON.stringify(writes.filter(w => /_mute=|_solo=/.test(w))));
+    /* the sequencer setting comes back through the bank knob's own path */
+    if (S.bankParams[0][1][0] !== 2) throw new Error('sequencer Oct setting not restored: ' + S.bankParams[0][1][0]);
     const lines = S.actionPopupLines.map(String);
     if (lines[0] !== 'SNAPSHOT 3' || lines[1] !== 'RESTORED' || lines[2] !== '1 skipped') throw new Error('RESTORED card: ' + JSON.stringify(lines));
     if (S.actionPopupEndTick < S.clockMs + D.DEVSNAP_CARD_MS - 50) throw new Error('the RESTORED card is a glance, not a card');
@@ -203,6 +213,32 @@ step_('⭑ a recall WARNS: fx added since the save are bypassed (the host count)
     if (JSON.stringify(lines) !== JSON.stringify(['SNAPSHOT 3', 'RESTORED', '2 new FX bypassed'])) throw new Error('warning card: ' + JSON.stringify(lines));
     if (S.actionPopupEndTick < S.clockMs + D.DEVSNAP_WARN_MS - 50) throw new Error('a warning must hold longer than a plain card');
     statusAdded = 0; PARAM_VALUES['3:synth:module'] = '';
+});
+
+step_('⭑ a recall is an UNDO unit: the live state was taken into the hidden before-dir first; Undo recalls it, Redo re-applies the slot (Josh, 2026-09-05)', () => {
+    statusSkipped = 0; statusAdded = 0; snapCalls.length = 0; recallPending = false;
+    S.undoAvailable = false; S.undoSnapshot = null; S.redoSnapshot = null;
+    step(2, true); advance(100); step(2, false); advance(20);
+    recallPending = false; advance(30);
+    const undoDir = P.deviceSnapUndoDir('aaaa-bbbb');
+    const take = snapCalls.findIndex(c => c[0] === 'take' && c[1] === undoDir);
+    const rc = snapCalls.findIndex(c => c[0] === 'recall' && c[1] === P.deviceSnapDir('aaaa-bbbb', 2));
+    if (take < 0 || rc < 0 || take > rc) throw new Error('the before-take did not precede the recall: ' + JSON.stringify(snapCalls));
+    if (!S.undoAvailable || !S.undoSnapshot || S.undoSnapshot.n !== 2) throw new Error('recall did not register as an undo unit: ' + JSON.stringify(S.undoSnapshot));
+    /* Undo: the before-dir comes back; no DSP undo is sent */
+    snapCalls.length = 0; writes.length = 0;
+    cc(56, 127); advance(20); recallPending = false; advance(30);   /* MoveUndo = 56 */
+    if (!snapCalls.some(c => c[0] === 'recall' && c[1] === undoDir)) throw new Error('Undo did not recall the before-dir: ' + JSON.stringify(snapCalls));
+    if (writes.includes('undo_restore=1')) throw new Error('Undo sent the DSP undo as well');
+    if (S.undoAvailable || !S.redoAvailable || !S.redoSnapshot) throw new Error('undo/redo state after Undo: ' + S.undoAvailable + '/' + S.redoAvailable);
+    /* Redo: the slot again */
+    snapCalls.length = 0;
+    cc(49, 127); cc(56, 127); cc(49, 0); advance(20); recallPending = false; advance(30);   /* Shift+Undo */
+    if (!snapCalls.some(c => c[0] === 'recall' && c[1] === P.deviceSnapDir('aaaa-bbbb', 2))) throw new Error('Redo did not re-apply the slot: ' + JSON.stringify(snapCalls));
+    if (!S.undoAvailable || S.redoAvailable) throw new Error('state after Redo');
+    /* A DSP edit on top forgets the snapshot undo */
+    E.noteUndoUnit();
+    if (S.undoSnapshot) throw new Error('a DSP undo unit did not forget the snapshot undo');
 });
 
 step_('⚠ RESTORED with NOTHING skipped: two lines, never the word "undefined" (device, 2026-09-05)', () => {
@@ -233,11 +269,52 @@ step_('⭑ releasing Capture CLOSES the layer, and steps are scene rows again', 
     if (S.sessionStepHeld !== -1) throw new Error('a step hold survived');
 });
 
-step_('⚠ the layer never opens in TRACK view', () => {
-    S.sessionView = false;
+step_('⭑ TRACK view: holding Capture opens THIS TRACK\'s layer; the header names it; hold a step = a track take (that slot only); tap = a track recall (Josh, 2026-09-05)', () => {
+    S.sessionView = false; S.activeTrack = 0;
     capture(true); advance(700);
-    if (D.devSnapOpen()) throw new Error('opened in track view');
-    capture(false); advance(20); S.sessionView = true;
+    if (!D.devSnapOpen() || D.devSnapTrack() !== 0) throw new Error('track layer did not open: open=' + D.devSnapOpen() + ' track=' + D.devSnapTrack());
+    if (D.devSnapTitle() !== 'T1 SNAPSHOTS') throw new Error('title: ' + D.devSnapTitle());
+    snapCalls.length = 0; writes.length = 0;
+    step(4, true); advance(800); step(4, false); advance(20);
+    const take = snapCalls.find(c => c[0] === 'take');
+    if (!take || take[1] !== P.trackSnapDir('aaaa-bbbb', 0, 4)) throw new Error('track take dir: ' + JSON.stringify(snapCalls));
+    if (take[2] !== 0) throw new Error('the host take was not filtered to slot 0: ' + JSON.stringify(take));
+    const json = JSON.parse(files[take[1] + '/davebox.json']);
+    if (json.track !== 0 || !json.mixer[0] || json.mixer[1] !== null || json.seq[1] !== null) throw new Error('a track take kept other tracks: ' + JSON.stringify(json).slice(0, 200));
+    if (!D.devSnapState().slots[4]) throw new Error('slot 5 not marked filled on the track layer');
+    snapCalls.length = 0;
+    step(4, true); advance(100); step(4, false); advance(20); recallPending = false; advance(30);
+    const rc = snapCalls.find(c => c[0] === 'recall');
+    if (!rc || rc[1] !== P.trackSnapDir('aaaa-bbbb', 0, 4) || rc[2] !== 0) throw new Error('track recall: ' + JSON.stringify(snapCalls));
+    if (!snapCalls.some(c => c[0] === 'take' && c[1] === P.trackSnapUndoDir('aaaa-bbbb', 0))) throw new Error('no before-take for the track recall');
+    if (!S.undoSnapshot || S.undoSnapshot.track !== 0) throw new Error('track recall not registered for undo: ' + JSON.stringify(S.undoSnapshot));
+    capture(false); advance(20);
+    if (D.devSnapOpen()) throw new Error('track layer still open after Capture release');
+    /* back in session view the DEVICE layer's slots are its own again */
+    S.sessionView = true;
+    capture(true); advance(700);
+    if (D.devSnapTrack() !== -1) throw new Error('session layer opened as a track layer');
+    if (D.devSnapState().slots[4]) throw new Error('the device layer shows the track slot');
+    capture(false); advance(20);
+});
+
+step_('⭑ the layer COVERS sound mode while open, and a store/recall card draws above ANY screen (Josh, 2026-09-05)', () => {
+    const R = globalThis.__renderForTest;
+    S.sessionView = false; S.activeTrack = 0;
+    capture(true); advance(700);
+    if (!D.devSnapOpen()) throw new Error('layer did not open');
+    if (!R.soundModeCovered()) throw new Error('an open layer does not cover sound mode — its steps would go to the editor');
+    capture(false); advance(20);
+    /* a card notice, then a frame drawn in TRACK view on a bank screen: the card's box is drawn */
+    P.showActionPopupFor(1500, 'SNAPSHOT 1', 'SAVED');
+    let boxes = 0; const _dr = globalThis.draw_rect; globalThis.draw_rect = (x, y, w, h, c) => { if (x === 6 && w === 116) boxes++; _dr(x, y, w, h, c); };
+    S.activeBank = 1; R.drawUI();
+    S.sessionView = true; R.drawUI();
+    globalThis.draw_rect = _dr;
+    if (boxes < 2) throw new Error('the card was not drawn above both views: ' + boxes);
+    /* a plain popup is NOT a card */
+    P.showActionPopup('UNDO');
+    if (S.actionPopupCard) throw new Error('a plain popup was flagged as a card');
 });
 
 if (failed) process.exit(1);

@@ -2150,6 +2150,20 @@ static void mfx_lfo_update_base_from_set_param(int slot_idx,
                                                const char *key,
                                                const char *value);
 
+int shadow_direct_get_param(uint8_t slot, const char *key, char *out, int cap) {
+    if (!out || cap <= 0) return -1;
+    out[0] = '\0';
+    if (slot >= SHADOW_CHAIN_INSTANCES) return -1;
+    int len = shadow_handle_slot_param_get(slot, key, out, cap);
+    if (len >= 0) return len;
+    if (!shadow_plugin_v2 || !shadow_plugin_v2->get_param || !shadow_chain_slots[slot].instance) return -1;
+    len = shadow_plugin_v2->get_param(shadow_chain_slots[slot].instance, key, out, cap);
+    if (len < 0) return -1;
+    if (len >= cap) len = cap - 1;
+    out[len] = '\0';
+    return len;
+}
+
 void shadow_direct_set_param(uint8_t slot, const char *key, const char *value) {
 
     /* Master FX params (web set-ring path). Web-originated sets arrive here via

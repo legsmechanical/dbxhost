@@ -4214,6 +4214,42 @@ automationRegisterSeqApply((track, key, val) => {
     return true;
 });
 
+/* The SEQUENCER's automatable settings for a track, as a snapshot sees them
+ * (Josh, 2026-09-05: a snapshot holds "any automatable param, in fact"): every
+ * SEQ_AUTO_TARGETS key that is ON for the track's pad mode → its value. The
+ * restore writes through the bank knob's own path, exactly as automation
+ * playback does, and skips a key whose value already matches. */
+export function seqAutoSnapshot(track) {
+    const out = {};
+    for (const key in SEQ_AUTO_TARGETS) {
+        const st = SEQ_AUTO_TARGETS[key];
+        if (!bankMacroOnMode(st.bank, GS.trackPadMode[track])) continue;
+        const m = { kind: 'bank', bank: st.bank, k: st.k };
+        if (st.alt) m.alt = st.alt;
+        const v = bankMacroValue(m, track);
+        if (isFinite(v)) out[key] = v | 0;
+    }
+    return out;
+}
+export function seqAutoRestore(track, map) {
+    if (!map || typeof map !== 'object') return 0;
+    let n = 0;
+    for (const key in map) {
+        const st = SEQ_AUTO_TARGETS[key];
+        const val = map[key];
+        if (!st || !isFinite(val)) continue;
+        if (!bankMacroOnMode(st.bank, GS.trackPadMode[track])) continue;
+        const nv = Math.max(st.min, Math.min(st.max, val | 0));
+        const m = { kind: 'bank', bank: st.bank, k: st.k };
+        if (st.alt) m.alt = st.alt;
+        if (bankMacroValue(m, track) === nv) continue;
+        bankMacroWriteFor(track, m, nv);
+        n++;
+    }
+    if (n) GS.screenDirty = true;
+    return n;
+}
+
 /* A bank card's knob turned UNDER A HELD STEP (Josh, 2026-09-03: "a held step
  * plus a turn locks the knob if it is an automation target"): one whole step
  * per detent — deliberate, no accumulation — written live through the bank's

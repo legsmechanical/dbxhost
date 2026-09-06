@@ -28,8 +28,7 @@ import {
     LED_OFF,
     NUM_TRACKS,
     TRACK_PAD_BASE,
-    BANKS, PAD_MODE_DRUM
-} from './ui_constants.mjs';
+    BANKS, PAD_MODE_DRUM, MoveCapture } from './ui_constants.mjs';
 
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -536,7 +535,13 @@ function _onMidiInternalImpl(data) {
      * STEP bank's page, left returns. Ahead of sound mode (which would page
      * the editor) and of the bank walk, and it swallows Shift+jog too. */
     if (status === 0xB0 && d1 === MoveMainKnob && S.heldStep >= 0 && heldStepJog(d2)) return;
-    const _soundSteers = soundActive() && !soundModeCovered();
+    /* ⭑ CAPTURE ALWAYS REACHES DAVEBOX (Josh, 2026-09-05: snapshots "can be
+     * taken from any track view"): the hold opens the snapshot layer from
+     * inside a module editor too, so the CC is never offered to sound mode.
+     * Once the layer is open it COVERS sound mode (soundModeCovered), and the
+     * steps, Delete and the release are davebox's for the duration. */
+    const _isCapture = (status === 0xB0 && d1 === MoveCapture);
+    const _soundSteers = soundActive() && !soundModeCovered() && !_isCapture;
     /* ⭑ RESTING on MACROS (sound mode open, unlatched — see soundResting):
      * ONLY the eight knobs and their touches reach sound mode, so the macros
      * work on the overview like any bank's knobs; the jog, Back and the rest

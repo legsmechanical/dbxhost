@@ -39,7 +39,7 @@ import { handoffRecordingToTrack, recordNoteOn, recordNoteOff,
 import { setTrackMute, setTrackSolo, clearClip, hardResetClip, copyClip, cutClip,
     copyDrumLane, cutDrumLane, copyDrumClip, cutDrumClip, copyStep, cutStep, clearStep,
     showModePopup, allLanesGate, doDoubleFill,
-    _switchActiveTrack, stepHoldCheckpoint } from './ui_editops.mjs';
+    _switchActiveTrack, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
 
 /* Performance Mode state. Session View + Loop held → pad grid shows Perf Mode.
  * S.perfStack: currently-held R0 length pads (same stack semantics as old looper
@@ -78,7 +78,7 @@ function _onPadPressTrackView(status, d1, d2) {
             const t    = S.activeTrack;
             const lane = drumPadToLane(padIdx);
             if (lane >= 0 && lane < DRUM_LANES) {
-                S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+                noteUndoUnit(); S.undoSeqArpSnapshot = null;
                 host_module_set_param('t' + t + '_l' + lane + '_hard_reset', '1');
                 setActiveDrumLane(t, lane);
                 S.drumLaneLength[t]     = 16;
@@ -116,7 +116,7 @@ function _onPadPressTrackView(status, d1, d2) {
             const t    = S.activeTrack;
             const lane = drumPadToLane(padIdx);
             if (lane >= 0 && lane < DRUM_LANES) {
-                S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;
+                noteUndoUnit(); S.undoSeqArpSnapshot = null;
                 host_module_set_param('t' + t + '_l' + lane + '_clear', '1');
                 setActiveDrumLane(t, lane);
                 for (let s = 0; s < 256; s++) S.drumLaneSteps[t][lane][s] = '0';
@@ -1089,11 +1089,19 @@ export function _onStepButtons(d1, d2) {
     if (S.tapTempoOpen) return;
     if (d2 > 0 && S.shiftTrackLEDActive) { S.shiftTrackLEDActive = false; S.screenDirty = true; }
     const idx = d1 - 16;
+    /* THE SNAPSHOT LAYER, either view: the 16 steps are the 16 snapshots —
+     * Delete+step clears now; a press defers to release / the tick for the
+     * tap (recall) / hold (save) decision, the mute-snapshot grammar. */
+    if (devSnapOpen()) {
+        if (S.deleteHeld) { devSnapClear(idx); forceRedraw(); return; }
+        S.stepBtnPressedTick[idx] = nowMs();
+        S.sessionStepHeld         = idx;
+        S.sessionStepHeldCtx      = 3;  /* device / track snapshot */
+        return;
+    }
     /* Delete+step in session view: clear perf preset or mute snapshot slot immediately. */
     if (S.sessionView && S.deleteHeld) {
-        if (devSnapOpen()) {
-            devSnapClear(idx);
-        } else if (S.loopHeld || S.perfViewLocked) {
+        if (S.loopHeld || S.perfViewLocked) {
             S.perfSnapshots[idx] = 0;
             if (S.perfRecalledSlot === idx) { S.perfRecalledSlot = -1; S.perfModsToggled = 0; sendPerfMods(); }
             showActionPopup('PERF PRESET', 'CLEARED');
@@ -1133,14 +1141,6 @@ export function _onStepButtons(d1, d2) {
             S.mergePlacingScene = true;
             S.pendingDefaultSetParams.push({ key: 'merge_place_row', val: String(idx) });
             S.screenDirty = true;
-            return;
-        }
-        if (devSnapOpen()) {
-            /* The snapshot layer: the 16 steps are the 16 device snapshots —
-             * the mute-snapshot grammar, tap/hold decided on release / the tick. */
-            S.stepBtnPressedTick[idx] = nowMs();
-            S.sessionStepHeld         = idx;
-            S.sessionStepHeldCtx      = 3;  /* device snapshot */
             return;
         }
         if (S.muteHeld) {
