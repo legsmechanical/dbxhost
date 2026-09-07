@@ -85,9 +85,23 @@ globalThis.__probe = (msg) => {
 };
 globalThis.shadow_get_param = (slot, key) => {
     seenKeys.push(String(key));
-    if (oracleServed && typeof key === 'string' && key.endsWith(':modulated'))
-        return modulatedKeys.has(key.slice(0, -':modulated'.length)) ? '1' : '0';
-    return (key in ASSIGN ? ASSIGN[key] : '');
+    const k = String(key);
+    if (oracleServed && k.endsWith(':modulated'))
+        return modulatedKeys.has(k.slice(0, -':modulated'.length)) ? '1' : '0';
+    /*
+     * ⚠⚠ `:effective` MUST ANSWER for a modulated key, for the same reason
+     * `:modulated` must. A chain host serves the driven value; a stub that
+     * returns '' sends `refreshModulatedValues` down its miss-fallback and
+     * costs a SECOND read the device never pays, so the budget would be
+     * calibrated against the rig's own gap. That mistake was made once already
+     * here with `:modulated` (2.58 vs the real 1.78) and this is the same shape
+     * one subkey over.
+     */
+    if (k.endsWith(':effective')) {
+        const base = k.slice(0, -':effective'.length);
+        if (modulatedKeys.has(base)) return '0.500';
+    }
+    return (k in ASSIGN ? ASSIGN[k] : '');
 };
 globalThis.shadow_set_param = (slot, key, val) => { ASSIGN[key] = String(val); return 1; };
 globalThis.shadow_get_params = () => '';
@@ -308,10 +322,18 @@ step('⭐⭐ marking params MODULATED costs a BOUNDED amount per tick', () => {
      * upstream library sync — I carried the memory of one branch into a test on
      * another. Not a defect; my premise.
      *
-     * ⚠ IT WILL CHANGE THESE NUMBERS WHEN THAT BRANCH MERGES: a modulated key
-     * will then cost `:effective` AND a plain-key fallback when that answers
-     * empty. Re-measure and re-cap here on the merge rather than raising the cap
-     * to make it pass.
+     * ⭑ MEASURED ON THE MERGE (int-0907): it did NOT change the number. A
+     * modulated key costs +1.20 reads/tick either way — on this tree the reads
+     * are `:effective` + `:modulated` + `:base` instead of the plain key, which
+     * is the same count. The cap did not move.
+     *
+     * ⚠⚠ IT LOOKED LIKE A REGRESSION FIRST (+2.18), and that was the RIG again:
+     * the stub did not answer `:effective`, so the refresh took a miss-fallback
+     * and paid a SECOND read the device never pays. Exactly the mistake already
+     * made here one subkey over with `:modulated` (2.58 vs the real 1.78). The
+     * stub answers both now. ⭑ The instinct to raise the cap and move on is
+     * what this note exists to stop: the number was right and the rig was
+     * wrong.
      *
      * ⭑ Traced by OBSERVATION — a probe hooked into the library through
      * `globalThis.__probe` and run under BUDGET_DEBUG — rather than by reading
