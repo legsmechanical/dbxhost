@@ -299,25 +299,23 @@ step('⭐⭐ marking params MODULATED costs a BOUNDED amount per tick', () => {
            'control: a modulated param must cost MORE per tick — if not, refreshModulatedValues '
            + 'is not being reached and this case is inert again');
     /*
-     * ⚠⚠ AN OPEN QUESTION THIS TEST FOUND AND DOES NOT ANSWER — recorded here
-     * rather than asserted, because I could not confirm the mechanism.
+     * ⭑ WHY `:effective` IS NOT IN THESE KEYS — asked, traced, and answered, so
+     * nobody re-opens it.
      *
-     * `refreshModulatedValues` is supposed to read `<key>:effective` once a tick
-     * for every modulated key on the page — that is what moves the driven-value
-     * DOT under an LFO. In this rig, with two page keys reporting modulated, the
-     * cost DOES rise (1.78 -> 2.98 reads/tick) but `:effective` is never asked
-     * for ONCE in 120 ticks. The whole rise is `:modulated` + `:base`, i.e. the
-     * value cursor, not the refresh.
+     * I expected the refresh to read `<key>:effective` once a tick, and it does
+     * not: on THIS tree `refreshModulatedValues` reads the PLAIN key. The
+     * `:effective` read is on the `param-pages-sync` branch, which brought the
+     * upstream library sync — I carried the memory of one branch into a test on
+     * another. Not a defect; my premise.
      *
-     * So either the refresh is not reached on this path, or `modCache` and
-     * `page.keys` are keyed differently and `modKeys` comes out empty. Both are
-     * worth knowing: if it is the second, the modulation dot is dead on the
-     * device too, and nothing on screen would say so.
+     * ⚠ IT WILL CHANGE THESE NUMBERS WHEN THAT BRANCH MERGES: a modulated key
+     * will then cost `:effective` AND a plain-key fallback when that answers
+     * empty. Re-measure and re-cap here on the merge rather than raising the cap
+     * to make it pass.
      *
-     * ⚠ It is NOT asserted either way. An assertion for a mechanism I have not
-     * traced is the exact failure this arc has been paying for — a claim that
-     * reads as verification. The BOUND below stands on measured numbers alone,
-     * and the question is on the board.
+     * ⭑ Traced by OBSERVATION — a probe hooked into the library through
+     * `globalThis.__probe` and run under BUDGET_DEBUG — rather than by reading
+     * the code a third time. Two readings had already produced the wrong answer.
      */
     /* The ceiling is what matters: marking params modulated must cost a BOUNDED
      * amount per tick, not an amount that grows with how many are modulated.
