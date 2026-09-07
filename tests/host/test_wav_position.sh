@@ -85,8 +85,38 @@ ok(!W.isWavPosition(null), "control: no meta is not a marker");
    * which is the failure, demonstrated rather than asserted about. */
   ok(Number(finest.toFixed(W.wavSetPrecision(plain))) === 0,
      "control: at the fixed-step precision that same detent rounds to NOTHING");
-  ok(W.wavSetPrecision(W.wavPositionMeta({ display_unit: "ms" })) === 0,
-     "milliseconds are written whole");
+  /* ⚠⚠ MILLISECONDS ARE NOT ALWAYS WHOLE, and assuming they were made Shift a
+   * dead encoder. MODULES.md`s own example declares start_ms with a 0.05 shift
+   * multiplier: whole-ms writes turn (100 + 0.05) back into "100". */
+  /* ⚠ Whole ONLY when nothing can make the step finer. Shift defaults to a 0.1
+   * multiplier, so a ms marker that does not opt out of it genuinely needs a
+   * decimal — the rule is "follow the finest step", not "ms is an integer". */
+  const msWhole = W.wavPositionMeta({ display_unit: "ms", step: 1,
+                                      shift_increment_multiplier: 1 });
+  ok(W.wavSetPrecision(msWhole) === 0,
+     "a ms marker whose finest step is 1 is written whole");
+  ok(W.wavSetPrecision(W.wavPositionMeta({ display_unit: "ms", step: 1 })) === 1,
+     "...and one with the DEFAULT 0.1 shift step is written to a decimal, or Shift is dead");
+  const msFine = W.wavPositionMeta({ display_unit: "ms", step: 1,
+                                     shift_increment_multiplier: 0.05 });
+  const msStep = W.wavKnobStep(msFine, 0, true);
+  ok(Number((100 + msStep).toFixed(W.wavSetPrecision(msFine))) !== 100,
+     "...but a ms marker with a FINE step keeps the decimals that step needs");
+
+  /* ⚠⚠ THE ZOOM THAT IS OFFERED, NOT THE ZOOM THAT IS DECLARED. A group gets
+   * the zoom knob whether or not a member declared enable_zoom, so a precision
+   * gated on the flag alone left the encoder dead above 32x. */
+  const grouped = W.wavPositionMeta({ step: 0.01, view_group: "loop" });
+  ok(W.wavZoomOffered(grouped, 3) === true,
+     "a group of 3 is offered zoom even with enable_zoom unset");
+  ok(W.wavZoomOffered(grouped, 1) === false, "control: a lone marker without the flag is not");
+  ok(W.wavZoomOffered(W.wavPositionMeta({ enable_zoom: true }), 1) === true,
+     "control: a lone marker WITH the flag is");
+  const gFinest = W.wavKnobStep(grouped, W.WAV_ZOOM_MAX, true);
+  ok(Number((0.5 + gFinest).toFixed(W.wavSetPrecision(grouped, { zoomable: true }))) !== 0.5,
+     "the finest grouped detent survives the write once precision follows the offer");
+  ok(Number((0.5 + gFinest).toFixed(W.wavSetPrecision(grouped))) === 0.5,
+     "control: gated on the FLAG alone, that same detent rounds away — the dead encoder");
 }
 
 /* ==================================================================== zoom */
@@ -227,15 +257,23 @@ ok(!W.isWavPosition(null), "control: no meta is not a marker");
    * at one zoom and 1px at the next, from the same file. Every peak must belong
    * to exactly one column, at every position, not just the one this test first
    * happened to try. */
-  let smeared = 0, missing = 0;
-  for (let at = 0; at < 100; at++) {
-    const one = new Array(100).fill(0); one[at] = 1;
-    const hit = W.wavWindowColumns(one, win, 10).filter((v) => v === 1).length;
-    if (hit > 1) smeared++;
-    if (hit === 0) missing++;
+  /* ⚠⚠ AT EVERY GEOMETRY, AND THE SHIPPING ONE FIRST. The first version of
+   * this test swept 100 peaks over 10 columns — which divides exactly, so every
+   * column boundary is an integer and the naive form cannot smear. It passed
+   * while the real screen (128 peaks over 120 columns) smeared 112 of 128.
+   * Measuring only where a bug cannot appear is not measuring. */
+  const GEOM = [[128, 120], [128, 122], [100, 10], [100, 7], [1000, 120], [128, 1]];
+  for (const [n, cw] of GEOM) {
+    let smeared = 0, missing = 0;
+    for (let at = 0; at < n; at++) {
+      const one = new Array(n).fill(0); one[at] = 1;
+      const hit = W.wavWindowColumns(one, win, cw).filter((v) => v === 1).length;
+      if (hit > 1) smeared++;
+      if (hit === 0) missing++;
+    }
+    ok(smeared === 0 && missing === 0,
+       `${n} peaks over ${cw} columns tile exactly (${smeared} smeared, ${missing} lost)`);
   }
-  ok(smeared === 0, "no peak lands in two columns (" + smeared + " of 100 smeared)");
-  ok(missing === 0, "and none is stepped over (" + missing + " of 100 lost)");
   const zoomed = W.wavWindowColumns(peaks, W.wavZoomWindow(0.5, 4, false), 10);
   ok(Math.max(...zoomed) === 1, "control: it is still there when zoomed in on");
   ok(W.wavWindowColumns([2, -3], win, 4).every((v) => v <= 1),

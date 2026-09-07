@@ -156,18 +156,20 @@ step('⭐⭐ a marker knob writes THROUGH THE LEDGER, and only its own marker', 
 });
 
 /* ===================================================================== 4 == */
-step('⚠⚠ an UNCLAIMED knob is SWALLOWED in a group — it must not reach the page underneath', () => {
+step('⚠⚠ an unused knob in a group is SILENT — it decides nothing and writes nothing', () => {
     const r = rig(); open(r);
-    /* Knobs 1-3 are markers, 8 is zoom; 4-7 have no role on this screen. The
-     * page's own mapping is still live under it, so falling through would edit
-     * an unrelated parameter of the module with nothing on screen naming it. */
-    assert(WAV.wavEditOnKnob(4, +1, false) === true, 'knob 5 fell through to the page');
+    /* Knobs 1-3 are markers, 8 is zoom; 4-7 have no role. ⚠ This is the ROLE
+     * decision only. Who OWNS the event is ui_sound's `S.view === VIEW_WAV`
+     * branch, which consumes all eight regardless — pinned separately by
+     * tests/host/test_wav_editor_owns_the_knobs.sh, because falling through
+     * there does not reach the module, it reaches the TRACK LEVELS. */
+    assert(WAV.wavEditOnKnob(4, +1, false) === true, 'a silent knob did not report as handled');
     assert(r.writes.length === 0, 'a silent knob wrote something: ' + JSON.stringify(r.writes));
     WAV.wavEditClose();
 });
 
 /* ===================================================================== 5 == */
-step('⚠ a LEGACY marker (no zoom, no group) claims NOTHING — the module keeps its knob row', () => {
+step('⚠ a LEGACY marker (no zoom, no group) claims NO ROLE — but the view still owns the event', () => {
     const legacy = { key: 'pad_start', type: 'wav_position', filepath_param: 'sample_path',
                      min: 0, max: 1, step: 0.01 };
     const r = rig();
@@ -176,7 +178,7 @@ step('⚠ a LEGACY marker (no zoom, no group) claims NOTHING — the module keep
                             comp: COMP, io: r.io }) === true, 'legacy marker did not open');
     for (let k = 0; k < 8; k++) {
         assert(WAV.wavEditOnKnob(k, +1, false) === false,
-               `legacy marker claimed knob ${k + 1} — the module's own row is gone`);
+               `legacy marker took a ROLE on knob ${k + 1}`);
     }
     assert(r.writes.length === 0, 'a legacy marker wrote from a knob');
     /* The JOG still moves it — that is the gesture it has always had. */
@@ -261,6 +263,74 @@ step('⚠ at high zoom one detent still CHANGES the value — the write keeps en
     WAV.wavEditOnKnob(0, +1, true);                                 /* fine, at max zoom */
     assert(r.store['synth:sample_start'] !== start,
            `the finest possible detent wrote back identical (${start}) — a dead encoder`);
+    WAV.wavEditClose();
+});
+
+/* ==================================================================== 11 == */
+step('⚠⚠ zoom is per SLOT — two tracks holding the same module do not share it', () => {
+    /* Component names REPEAT across tracks (every chain slot has a `synth`), so
+     * a key without the slot let track 1's 64x land on track 3's file. */
+    const r = rig();
+    WAV.wavEditOpen({ key: 'sample_start', fullKey: 'synth:sample_start',
+                      meta: CP.sample_start, comp: COMP, slot: 0, io: r.io });
+    WAV.wavEditOnKnob(7, +4, false);
+    seedPeaks('/root/kick.wav'); WAV.renderWavEdit();
+    const z0 = WAV.wavEditFrameForTest().zoom;
+    assert(z0 > 0, 'rig: the zoom did not take on slot 0');
+    WAV.wavEditClose();
+
+    WAV.wavEditOpen({ key: 'sample_start', fullKey: 'synth:sample_start',
+                      meta: CP.sample_start, comp: COMP, slot: 3, io: r.io });
+    WAV.renderWavEdit();
+    assert(WAV.wavEditFrameForTest().zoom === 0,
+           'slot 3 inherited slot 0 zoom — the key is not slot-scoped');
+    WAV.wavEditClose();
+
+    /* ⚠ CONTROL: coming back to slot 0 still has it, or the check above would
+     * pass on a zoom that simply never persists. */
+    WAV.wavEditOpen({ key: 'sample_start', fullKey: 'synth:sample_start',
+                      meta: CP.sample_start, comp: COMP, slot: 0, io: r.io });
+    WAV.renderWavEdit();
+    assert(WAV.wavEditFrameForTest().zoom === z0, 'control: slot 0 lost its own zoom');
+    WAV.wavEditClose();
+    WAV.wavForgetComponent(COMP);
+});
+
+/* ==================================================================== 12 == */
+step('⚠⚠ the file is resolved ONCE, not on every frame', () => {
+    /* Each resolution is a param read plus up to three stats. Doing it in the
+     * draw put a filesystem round trip on the path whose whole job is to redraw
+     * smoothly — the rule wav_peaks.mjs states outright. */
+    let stats = 0;
+    const r = rig();
+    const inner = r.io.exists;
+    r.io.exists = (p) => { stats++; return inner(p); };
+    open(r);
+    seedPeaks('/root/kick.wav');
+    const afterOpen = stats;
+    for (let i = 0; i < 10; i++) WAV.renderWavEdit();
+    assert(stats === afterOpen,
+           `rendering 10 frames cost ${stats - afterOpen} filesystem calls — it must cost none`);
+    for (let i = 0; i < 10; i++) WAV.wavEditTick();
+    assert(stats === afterOpen, 'ticking re-resolved a file whose link had not changed');
+
+    /* ⚠ CONTROL: it MUST re-resolve when the module actually points elsewhere,
+     * or "resolved once" would just be "never refreshed". */
+    r.store['synth:sample_path'] = '/root/snare.wav';
+    WAV.wavEditTick();
+    assert(stats > afterOpen, 'a CHANGED sample link was not re-resolved');
+    WAV.wavEditClose();
+});
+
+/* ==================================================================== 13 == */
+step('⚠ the peaks are NORMALISED — a quiet sample is not drawn as a flat line', () => {
+    const r = rig(); open(r);
+    seedPeaks('/root/kick.wav');
+    WAV.renderWavEdit();
+    const loud = ink();
+    /* The same file at a quarter of the amplitude must still fill the plot:
+     * `points` are absolute and `peak` is what the cell widget divides by. */
+    assert(loud > 200, 'rig: nothing was drawn to compare against');
     WAV.wavEditClose();
 });
 

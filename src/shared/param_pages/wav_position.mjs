@@ -195,14 +195,30 @@ function stepPrecision(step, fallback) {
  * marker sits still. It reads as a dead encoder, at exactly the zoom level
  * where precision was the point.
  */
-export function wavSetPrecision(meta) {
+export function wavSetPrecision(meta, { zoomable = null } = {}) {
     const unit = String((meta && meta.display_unit) || "percent").toLowerCase();
-    if (unit === "ms") return 0;
     const baseStep = Math.abs(numOf(meta && meta.step, 0.01));
     const fineStep = baseStep > 0 ? Math.abs(baseStep * wavShiftMultiplier(meta)) : 0;
     let effective = fineStep > 0 ? Math.min(baseStep || fineStep, fineStep) : baseStep;
-    if (meta && meta.enable_zoom) effective = effective / Math.pow(2, WAV_ZOOM_MAX);
-    const fallback = (unit === "sec" || unit === "s") ? 3 : 2;
+    /*
+     * ⚠⚠ THE ZOOM THAT IS OFFERED, NOT THE ZOOM THAT IS DECLARED. A group of two
+     * or more markers gets the zoom knob whether or not any member declared
+     * `enable_zoom` (see wavKnobRole), so gating this on the flag alone left a
+     * grouped marker with 3-decimal writes and a 256x knob: from 32x up, one
+     * detent rounded back to the value it started from and the encoder was
+     * dead. The caller passes what it actually offers.
+     */
+    const zooms = zoomable === null ? !!(meta && meta.enable_zoom) : !!zoomable;
+    if (zooms) effective = effective / Math.pow(2, WAV_ZOOM_MAX);
+    /*
+     * ⚠ MILLISECONDS ARE NOT ALWAYS WHOLE. Returning 0 here short-circuited
+     * before the shift and zoom divides, so MODULES.md's own example
+     * (`start_ms` with shift_increment_multiplier 0.05) wrote
+     * (100 + 0.05).toFixed(0) === "100" — Shift was a dead encoder at every
+     * zoom, and a plain turn was dead from 2x up. Whole milliseconds are the
+     * FLOOR now, not the answer.
+     */
+    const fallback = unit === "ms" ? 0 : ((unit === "sec" || unit === "s") ? 3 : 2);
     return Math.max(fallback, stepPrecision(effective, fallback));
 }
 
@@ -309,10 +325,16 @@ export function wavViewGroupMembers(params, group) {
         const meta = p && (p.meta || p);
         if (!meta || !isWavPosition(meta)) continue;
         if (String(meta.view_group || "") !== want) continue;
+        /* ⚠⚠ EXPANDED, not raw. A member's meta is used to clamp and to step, and
+         * a raw declaration may carry no `min`/`max` at all (MODULES.md lists
+         * them as optional) or hide `step`/`display_unit` inside `options`.
+         * Passing the raw object through meant `Number(undefined)` — NaN — in
+         * every clamp, so a grouped marker could be driven past its range
+         * forever while the drawn cursor pinned at the edge. */
         out.push({
             key: p.key !== undefined ? p.key : meta.key,
             fullKey: p.fullKey !== undefined ? p.fullKey : (p.key !== undefined ? p.key : meta.key),
-            meta,
+            meta: wavPositionMeta(meta),
             label: String(meta.marker_label
                 || (meta.name ? String(meta.name).slice(0, 2) : String(p.key || "").slice(0, 2))),
         });
@@ -321,6 +343,17 @@ export function wavViewGroupMembers(params, group) {
 }
 
 export const WAV_ZOOM_KNOB = 7;             /* the eighth encoder */
+
+/*
+ * Is the zoom knob offered for this parameter?
+ *
+ * ⭑ ONE PREDICATE, because two things must agree about it: the knob role table
+ * below, and `wavSetPrecision`. When they disagreed, a grouped marker was given
+ * a 256x zoom and 3-decimal writes, and the encoder went dead above 32x.
+ */
+export function wavZoomOffered(meta, memberCount) {
+    return (memberCount | 0) > 1 || !!(meta && meta.enable_zoom);
+}
 
 /*
  * What each encoder does while this screen is up.
@@ -445,12 +478,19 @@ export function wavWindowColumns(peaks, win, width) {
     for (let i = 0; i < w; i++) {
         const a = win.start + ((i / w) * win.span);
         const b = win.start + (((i + 1) / w) * win.span);
-        /* ⚠ HALF-OPEN, so the columns TILE the file: each source peak belongs
-         * to exactly one column. Inclusive spans (the obvious floor/ceil pair)
-         * overlap by one index at every boundary, which smears a one-sample
-         * transient across two columns and makes a drum hit look 2px wide at
-         * one zoom and 1px at the next. */
-        let lo = Math.floor(a * n);
+        /* ⚠⚠ HALF-OPEN, so the columns TILE the file: each source peak belongs
+         * to exactly one column. Inclusive spans smear a one-sample transient
+         * across two columns and make a drum hit look 2px wide at one zoom and
+         * 1px at the next.
+         *
+         * ⚠ `ceil` on the LOW edge, not `floor`. `floor(a*n)` re-reads the peak
+         * that `ceil(b*n)-1` already gave the previous column whenever the
+         * boundary is fractional — which is almost always. It tiles perfectly
+         * at 100 peaks over 10 columns and smears 112 of 128 at the geometry
+         * this actually ships with (128 peaks over 120 columns), so the first
+         * version of this passed its own test by being measured only where it
+         * could not fail. */
+        let lo = Math.ceil(a * n);
         let hi = Math.ceil(b * n) - 1;
         if (lo < 0) lo = 0;
         if (hi > n - 1) hi = n - 1;

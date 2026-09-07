@@ -24,20 +24,25 @@
  * `fill_rect`, `text_width`), implemented in C and installed on globalThis —
  * they are not importable, and ui_movy says so at the top of its own file. */
 import {
-    drawKitSampleSpan, drawKitHeaderParamPages, drawKitHintRow, drawKitCrumbs,
+    drawKitSampleSpan, drawKitHeaderParamPages, drawKitHintRow, MV_FOOTER_Y,
 } from './ui_movy.mjs';
 import {
     isWavPosition, wavPositionMeta, wavPositionText, wavPositionRatio, wavRatioKnown,
     wavSetPrecision, wavKnobStep, wavZoomWindow, wavZoomLabel, wavMarkerInWindow,
     wavViewGroupMembers, wavKnobRole, wavWindowColumns, resolveWavSourcePath,
-    wavBaseName, clampWavZoom, WAV_ZOOM_STEP, WAV_ZOOM_MAX, WAV_ZOOM_KNOB,
+    wavBaseName, clampWavZoom, wavZoomOffered,
+    WAV_ZOOM_STEP, WAV_ZOOM_MAX, WAV_ZOOM_KNOB,
 } from '/data/UserData/schwung/shared/param_pages/wav_position.mjs';
 import {
     wavPeaks, wavPeaksTick, wavPeaksDone,
 } from '/data/UserData/schwung/shared/param_pages/wav_peaks.mjs';
 
 /* The plot, in the panel between header and footer. */
-const PLOT_X = 3, PLOT_Y = 13, PLOT_W = 122, PLOT_H = 38;
+/* ⚠ The marker labels print ABOVE the plot, so PLOT_Y must leave room for them
+ * BELOW the header band (y 0..6) — at PLOT_Y 13 they landed at y=5, inside it.
+ * And the plot must end clear of the footer band at MV_FOOTER_Y. */
+const PLOT_X = 3, PLOT_Y = 16, PLOT_W = 122, PLOT_H = 36;
+const LABEL_Y = PLOT_Y - 8;
 
 /*
  * ⚠⚠ ZOOM IS PER GROUP AND SURVIVES THE SCREEN, but not the component.
@@ -49,8 +54,13 @@ const PLOT_X = 3, PLOT_Y = 13, PLOT_W = 122, PLOT_H = 38;
  * group, and `wavForgetComponent` is called when the editor leaves a component.
  */
 const zoomByGroup = new Map();
-const zoomKey = (comp, meta) =>
-    `${comp}::${(meta && meta.view_group) || (meta && meta.key) || ''}`;
+/* ⚠⚠ THE SLOT IS PART OF THE KEY. Component names REPEAT across tracks (every
+ * chain slot has a `synth`), so keying on component alone meant two tracks
+ * holding the same module shared one zoom entry: set 64x on track 1's sampler,
+ * open track 3's, and you land at 64x on a different file of a different
+ * length. */
+const zoomKey = (slot, comp, meta) =>
+    `${slot}::${comp}::${(meta && meta.view_group) || (meta && meta.key) || ''}`;
 
 /* The live screen, or null. Module-level like every other davebox view state. */
 let W = null;
@@ -63,9 +73,12 @@ export function wavEditState() { return W ? { ...W } : null; }
 export function wavEditFrameForTest() { return lastFrame; }
 
 /** Drop a component's zoom — call when the editor leaves that component. */
-export function wavForgetComponent(comp) {
+export function wavForgetComponent(comp, slot) {
+    const suffix = `::${comp}::`;
     for (const k of [...zoomByGroup.keys()]) {
-        if (k.startsWith(`${comp}::`)) zoomByGroup.delete(k);
+        if (slot === undefined ? k.includes(suffix) : k.startsWith(`${slot}${suffix}`)) {
+            zoomByGroup.delete(k);
+        }
     }
 }
 
@@ -82,13 +95,20 @@ export function wavForgetComponent(comp) {
  *   durationSec          -> number        0 when unknown
  *   crumbs               -> string[]      the path to this screen
  */
-export function wavEditOpen({ key, fullKey, meta, comp, io }) {
+export function wavEditOpen({ key, fullKey, meta, comp, slot = 0, io }) {
     const expanded = isWavPosition(meta) ? wavPositionMeta(meta) : null;
     if (!expanded) return false;
     const members = wavViewGroupMembers(io.params || [], expanded.view_group);
     W = {
-        key, fullKey, meta: expanded, comp, io,
+        key, fullKey, meta: expanded, comp, slot, io,
         members,
+        /* ⚠⚠ RESOLVED ONCE. Every resolution is one param read plus up to three
+         * `stat`s, and this used to run in the DRAW — per frame, plus once more
+         * per tick. A read on the draw path costs more than the whole page
+         * render, which is the rule wav_peaks.mjs and binding_movy both state
+         * outright. The link is re-checked once a tick against the RAW value
+         * (one read), and only re-resolved when that value actually changes. */
+        rawLink: null, path: '',
         /* The ACTIVE marker is an index into members, or -1 when this param is
          * not part of a group. A single marker is not member 0 of a group of
          * one: the knob roles differ, and conflating them is how a legacy
@@ -96,6 +116,7 @@ export function wavEditOpen({ key, fullKey, meta, comp, io }) {
         active: members.findIndex((m) => m.fullKey === fullKey),
         notice: null, noticeUntil: 0,
     };
+    refreshSourcePath();
     return true;
 }
 
@@ -116,12 +137,12 @@ function activeMarker() {
 
 function zoomOf() {
     if (!W) return 0;
-    return clampWavZoom(zoomByGroup.get(zoomKey(W.comp, W.meta)) || 0);
+    return clampWavZoom(zoomByGroup.get(zoomKey(W.slot, W.comp, W.meta)) || 0);
 }
 function setZoom(z) {
     if (!W) return;
     const v = clampWavZoom(z);
-    const k = zoomKey(W.comp, W.meta);
+    const k = zoomKey(W.slot, W.comp, W.meta);
     if (v <= 0) zoomByGroup.delete(k); else zoomByGroup.set(k, v);
 }
 
@@ -131,10 +152,29 @@ function notice(text, ms = 700) {
     W.noticeUntil = Date.now() + ms;
 }
 
-function sourcePath() {
-    if (!W) return '';
+/*
+ * The resolved file, from the cache. NEVER resolves — see `refreshSourcePath`.
+ * Safe to call from the draw path, which is the whole point.
+ */
+function sourcePath() { return W ? W.path : ''; }
+
+/*
+ * Re-resolve only when the module's own filepath value has CHANGED.
+ *
+ * One param read a tick to notice; the `stat`s only on a real change. The
+ * alternative — resolving in the draw — was a filesystem round trip per frame
+ * on a screen whose entire job is to redraw smoothly.
+ */
+function refreshSourcePath() {
+    if (!W) return;
     const a = activeMarker();
-    return resolveWavSourcePath(a.meta, {
+    const declared = String((a.meta && a.meta.filepath_param) || '').trim();
+    if (!declared) { W.rawLink = ''; W.path = ''; return; }
+    const linkedKey = declared.includes(':') ? declared : W.io.buildKey(declared);
+    const raw = W.io.getParam(linkedKey);
+    if (raw === W.rawLink) return;
+    W.rawLink = raw;
+    W.path = resolveWavSourcePath(a.meta, {
         getParam: W.io.getParam,
         metaOf: W.io.metaOf,
         buildKey: W.io.buildKey,
@@ -150,6 +190,7 @@ function sourcePath() {
  */
 export function wavEditTick() {
     if (!W) return;
+    refreshSourcePath();
     const path = sourcePath();
     if (!path) return;
     if (wavPeaksDone(path)) return;
@@ -204,7 +245,8 @@ function writeMarker(member, delta, shiftHeld) {
      * by less than a thousandth; rounded to the step's own precision it writes
      * back identical and the marker does not move — a dead encoder at exactly
      * the zoom where precision was the point. */
-    const text = next.toFixed(wavSetPrecision(meta));
+    const text = next.toFixed(
+        wavSetPrecision(meta, { zoomable: wavZoomOffered(W.meta, W.members.length) }));
     /* ⚠ Through davebox's LEDGER, never a raw engineSet: in overtake the host
      * has ~8 ms of mailbox patience and then STOMPS an unconsumed request, so a
      * per-detent write vanishes with nothing logged. */
@@ -279,7 +321,13 @@ export function renderWavEdit() {
     }
 
     const cache = wavPeaks(path);
-    const peaks = (cache && cache.points && cache.points.length) ? cache.points : null;
+    /* ⚠⚠ NORMALISED. `points` are absolute 0..1 sample peaks and `peak` is the
+     * file's loudest — the cell widget divides by it, and without that a sample
+     * peaking at 0.25 draws as a near-flat line here while filling its 15px
+     * knob cell. Same file, two pictures, and the fullscreen one looks broken. */
+    const rawPts = (cache && cache.points && cache.points.length) ? cache.points : null;
+    const norm = (cache && cache.peak > 0) ? cache.peak : 1;
+    const peaks = rawPts ? (norm === 1 ? rawPts : rawPts.map((v) => Math.min(1, v / norm))) : null;
     if (cache && cache.error) {
         centre(wavBaseName(path), 26);
         centre(String(cache.error), 36);
@@ -328,13 +376,15 @@ export function renderWavEdit() {
         marks.push({ key: m.key, pos: at.pos, off: at.off, active: isActive });
         const lbl = labelOf(m);
         const lx = Math.max(0, Math.min(128 - text_width(lbl), mx - Math.floor(text_width(lbl) / 2)));
-        print(lx, PLOT_Y - 8, lbl, 1);
+        print(lx, LABEL_Y, lbl, 1);
     }
 
     /* ⚠ A TIME MARKER WITH NO DURATION is not at the file start — it is
      * unplaceable, and drawing a confident cursor at 0 is the lie this says out
      * loud instead. */
-    if (!known) centre('no duration', PLOT_Y + PLOT_H + 1);
+        /* ⚠ Inside the plot, not under it: PLOT_Y + PLOT_H is already at the
+     * footer band, and this used to print straight over the hints. */
+    if (!known) centre('no duration', PLOT_Y + PLOT_H - 9);
 
     footer();
     lastFrame = { path, reason: null, markers: marks, zoom, window: win };
@@ -347,11 +397,17 @@ function centre(text, y) {
 }
 
 function footer() {
+    /* ⚠⚠ IN THE FOOTER BAND. The first cut sent this through drawKitCrumbs,
+     * which is anchored at y=0 and fills its box with ink 0 — so every detent
+     * and every touch erased the header's value readout AND all the marker
+     * labels for 700 ms, i.e. exactly while you were reading them. */
     if (W && W.notice && Date.now() < W.noticeUntil) {
-        drawKitCrumbs([W.notice]);
+        const t = String(W.notice).toUpperCase();
+        fill_rect(0, MV_FOOTER_Y, 128, 64 - MV_FOOTER_Y, 0);
+        print(Math.max(0, Math.floor((128 - text_width(t)) / 2)), MV_FOOTER_Y + 1, t, 1);
         return;
     }
     const hints = [['BACK', 'OUT'], ['JOG', 'MOVE']];
-    if (W && (W.members.length > 1 || W.meta.enable_zoom)) hints.push(['K8', 'ZOOM']);
+    if (W && wavZoomOffered(W.meta, W.members.length)) hints.push(['K8', 'ZOOM']);
     drawKitHintRow(null, hints);
 }

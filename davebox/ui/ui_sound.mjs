@@ -1312,6 +1312,10 @@ export function soundFollowStateForTest() {
 }
 
 export function soundRetarget(track, slot) {
+    /* ⚠⚠ BEFORE the slot moves — see wavEditCloseIfOpen. The wave editor holds
+     * a component and reads/writes against S.slot, so leaving it open across a
+     * retarget lands an edit on a track the user never opened. */
+    wavEditCloseIfOpen();
     flushForRetarget();
     takeBankIdentity(track, S.bankHome);
 
@@ -1450,6 +1454,7 @@ export function soundExit(opts) {
      * name who closed sound mode. debug.log only; exits are rare. */
     log('exit: view ' + S.view + ' track ' + S.track + ' opts ' + JSON.stringify(opts || null) + ' from ' +
         String(new Error().stack || '').split('\n').slice(2, 5).map((l) => l.trim()).join(' | '));
+    wavEditCloseIfOpen();      /* nothing may outlive sound mode itself */
     const _opts = (opts && typeof opts === 'object') ? opts : {};
     const _leaving = _opts.leaving === true;
     /* Any exit at all spends the gesture crumb. A crumb that outlives its screen
@@ -5628,7 +5633,7 @@ function runDiscovery() {
      * two-second loop means something else entirely on the eight-bar sample
      * that replaced it. Zoom survives leaving the SCREEN (or you lose it every
      * time you glance at another param) but never a module swap. */
-    if (id !== S.moduleId) wavForgetComponent(S.comp);
+    if (id !== S.moduleId) { wavEditCloseIfOpen(); wavForgetComponent(S.comp, S.slot); }
     S.moduleId = id;
     if (!id) { S.banks = []; S.sections = []; S.dirty = true; return; }
     const res = discover(S.slot, S.comp);
@@ -5780,6 +5785,30 @@ function trackInflight(slot, comp, key, val) {
 
 function inflightFor(slot, comp, key) {
     return S.inflight.find(w => w.key === key && w.comp === comp && w.slot === slot) || null;
+}
+
+/*
+ * THE VALUE THAT WILL STAND for a key — the queue first, then the engine.
+ *
+ * ⚠⚠ THE ENGINE IS STALE UNTIL THE QUEUE DRAINS. A write sits in
+ * `S.pendingWrites` (coalesced per key) for up to a tick, then in `S.inflight`
+ * for INFLIGHT_CONFIRM_TICKS more before the readback confirms it. Anything
+ * that computes its next value from a fresh `engineGet` in that window computes
+ * it from the value BEFORE the last edit — so a fast knob sweep advances by
+ * roughly one step per confirm cycle and the rest of the detents vanish into
+ * the coalescer, and a screen that redraws from the engine snaps the cursor
+ * back. That is the "the knob resets after I turn it" report.
+ */
+function settledValue(fullKeyOrBare, comp) {
+    const c = comp || S.comp;
+    const key = (typeof fullKeyOrBare === 'string' && fullKeyOrBare.startsWith(c + ':'))
+        ? fullKeyOrBare.slice(c.length + 1) : fullKeyOrBare;
+    for (const w of S.pendingWrites) {
+        if (w.key === key && w.comp === c && w.slot === S.slot) return w.val;
+    }
+    const f = inflightFor(S.slot, c, key);
+    if (f) return f.val;
+    return engineGet(S.slot, c, key);
 }
 
 /* Does the engine's readback SAY the write landed? Tolerant on purpose:
@@ -6292,15 +6321,26 @@ export function soundOnCC(d1, d2, decodeDelta) {
     }
 
     if (d1 >= 71 && d1 <= 78) {                        /* knobs 1-8 */
-        /* ⚠⚠ FIRST, and it must be: the wave editor claims knobs BY ROLE — the
-         * markers, the zoom, and SILENCE for the rest. Letting the level/macro
-         * owners below see an unclaimed encoder would edit an unrelated
-         * parameter of the module while the user is looking at a waveform, with
-         * nothing on screen naming it. A LEGACY marker claims nothing at all
-         * and falls through here, which is how those modules keep their row. */
+        /* ⚠⚠ THE WAVE EDITOR OWNS ALL EIGHT KNOBS, and it must — falling through
+         * does NOT hand the knob back to the module.
+         *
+         * By the time this screen is up, `openParamEditor` has already called
+         * exitParamPages() and cleared ppOn, so the module's own knob row is
+         * TORN DOWN. What is actually underneath is `levelsActive()`, which is
+         * true on any view that is not VIEW_EDIT — so an unclaimed encoder went
+         * to `onLevelTurn` and moved the TRACK'S CHAIN LEVEL, silently, on a
+         * screen showing a waveform. A single-marker module (no view_group,
+         * exactly the shape docs/MODULES.md documents) has no claimed knobs at
+         * all, so that was every one of K1-K7 on the commonest declaration.
+         *
+         * `wavEditOnKnob` still returns false for an unclaimed knob — the role
+         * table is the right place to decide what a knob DOES — but the view
+         * decides who the event belongs to, and it belongs here. */
         if (S.view === VIEW_WAV) {
             const delta = decodeDelta(d2);
-            if (wavEditOnKnob(d1 - 71, delta, S.shiftHeld)) { S.dirty = true; return true; }
+            if (delta) wavEditOnKnob(d1 - 71, delta, S.shiftHeld);
+            S.dirty = true;
+            return true;
         }
         if (S.view === VIEW_EDIT) {
             const delta = decodeDelta(d2);
@@ -8525,6 +8565,21 @@ installPpCtx({
 });
 
 /*
+ * ⚠⚠ THE EDITOR MUST NOT SURVIVE A RETARGET. `soundRetarget` moves S.slot (and
+ * can move S.comp) on the chain->chain path without touching S.view, and the
+ * queued action that changes the view only runs on a LATER tick. In that window
+ * the screen is still up and pointed at the old component: a read would go to
+ * the new slot with the old component's key, and a detent would queue a write
+ * against {slot: newSlot, comp: newComp} — landing an edit on a track the user
+ * never opened. Closing here makes the window empty rather than narrow.
+ */
+function wavEditCloseIfOpen() {
+    if (!wavEditActive()) return;
+    wavEditClose();
+    if (S.view === VIEW_WAV) { S.view = VIEW_EDIT; S.dirty = true; }
+}
+
+/*
  * Open the fullscreen sample-marker editor on one `wav_position` param.
  *
  * Everything davebox-specific is assembled here and injected; ui_wav.mjs holds
@@ -8557,8 +8612,14 @@ function openWavEditor(fullKey, meta) {
         fullKey,
         meta,
         comp: S.comp,
+        slot: S.slot,
         io: {
-            getParam: (k) => engineGetChainParam(S.slot, k),
+            /* ⚠⚠ THROUGH THE QUEUE, not straight at the engine — see
+             * settledValue. Reading the engine here made every detent compute
+             * its next value from the value before the last one, and the
+             * coalescer then kept only the newest of those: a fast sweep
+             * crawled and the drawn cursor snapped backwards. */
+            getParam: (k) => settledValue(k, S.comp),
             setParam: (k, v) => queueWrite(ppBare(k) || k, v),
             metaOf: (bare) => cp[bare] || null,
             buildKey: (bare) => `${S.comp}:${bare}`,
