@@ -5647,6 +5647,13 @@ function runActionBody(a) {
     else if (a.t === 'patchsavedo') doChainPatchSave(a.name, a.overwrite);
     else if (a.t === 'patchdel')    doChainPatchDelete(a.index);
     else if (a.t === 'file')     openFileBrowser(S.menuRowsCache[a.idx]);
+    else if (a.t === 'ppfile') {
+        /* The grid dived here for a FILE param: open its browser. Back returns
+         * to the grid through the ordinary dive-out crumb (ppDivedOut), the same
+         * way every other dive does. */
+        openFileBrowser({ key: a.bare, pkey: a.bare, cell: a.cell,
+                          raw: engineGetChainParam(S.slot, a.fileKey) || '' });
+    }
     else if (a.t === 'wavfile') {
         /* ⚠ The gesture and the open are a tick apart, so the screen may have
          * moved on — a Back in that window leaves the wave editor, and opening
@@ -8683,6 +8690,32 @@ installPpCtx({
          * the dive fired and landed somewhere with nothing to show. */
         if (isWavPosition(meta) && openWavEditor(fullKey, meta, divedFrom)) {
             S.view = VIEW_WAV;
+            S.dirty = true;
+            return;
+        }
+        /*
+         * ⭐ A FILEPATH PARAM OPENS ITS OWN BROWSER, not the editor's front page.
+         *
+         * ⚠⚠ REPORTED REPEATEDLY AND MIS-READ BY ME AS A WAVEFORM PROBLEM: "touch
+         * click into a browser (kit browser or sample) just sends me to the main
+         * edit bank." That is exactly what the fall-through below did — hand the
+         * COMPONENT to davebox's bank editor and land on its root, leaving the
+         * user to find the row they had just clicked. For a marker the dive got
+         * its own screen; for the file the click was answered with a different
+         * screen entirely.
+         *
+         * The browser is the screen that param means, so open it directly, with
+         * the same lookup and the same deferral the wave editor's Shift+click
+         * uses — `authoritativeMeta` because cpMap holds chain_params only and
+         * DR32 declares its kit and samples INLINE on a level, and the tick
+         * because opening reads a param and lists a directory, neither of which
+         * belongs on the MIDI path.
+         */
+        const fpBare = ppBare(fullKey) || fullKey;
+        const fpDecl = fpBare ? authoritativeMeta(fpBare, S.cpMap, S.levels) : null;
+        const fpCell = fpDecl ? makeCell(fpBare, fpDecl) : null;
+        if (fpCell && fpCell.kind === 'file') {
+            S.pendingAction = { t: 'ppfile', bare: fpBare, cell: fpCell, fileKey: fullKey };
             S.dirty = true;
             return;
         }

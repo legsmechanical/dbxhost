@@ -48,6 +48,22 @@ import { computePadNoteMap } from './ui_drummodel.mjs';
 import { effectiveClip, invalidateLEDCache, trackColor, forceRedraw, installFlagsWrap, buildLedInitQueue } from './ui_leds.mjs';
 import { initPrimarySurface } from './ui_corun.mjs';
 import { installReadMeter, readMeterTick, readMeterLine, readMeterReset } from './ui_readmeter.mjs';
+/*
+ * ⚠⚠ REGISTERED EXPLICITLY, through the SAME specifier the widgets import.
+ *
+ * The bare side-effect import below used to be the whole registration, and on
+ * device it put the reader in the wrong module instance: dAVEBOx resolved a
+ * real, existing sample and still reported "file not found" (measured
+ * 2026-09-07: exists=yes, peaksIo=NO), because two `wav_peaks.mjs` files live
+ * on the device — stock's tree and the SA tree — and the io module's own
+ * relative import reached one while ui_wav.mjs reached the other. Same module,
+ * fine on stock, dead in SA.
+ *
+ * Importing the io as a VALUE and registering it here makes the instance the
+ * one THIS bundle uses, by construction.
+ */
+import { setWavPeaksIO } from '/data/UserData/schwung/shared/param_pages/wav_peaks.mjs';
+import { WAV_QJS_IO } from '/data/UserData/schwung/shared/param_pages/wav_io_qjs.mjs';
 import { setTrackMute, setTrackSolo, stepHoldCheckpoint } from './ui_editops.mjs';
 import { applyTrackConfig,
     refreshSeqNotesIfCurrent,
@@ -360,6 +376,9 @@ globalThis.init = function () {
      * second wrap would double every number silently.
      */
     installReadMeter();
+    /* See the import: the registration must land in the instance the widgets
+     * read from, so it is done here rather than left to a side effect. */
+    setWavPeaksIO(WAV_QJS_IO);
 
     S._origClearScreen = clear_screen;
     S._wasSuspended    = false;

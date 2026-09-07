@@ -22,7 +22,25 @@ import * as std from "std";
 import * as os from "os";
 import { setWavPeaksIO } from "./wav_peaks.mjs";
 
-setWavPeaksIO({
+/*
+ * ⚠⚠ EXPORTED, NOT ONLY SELF-REGISTERED — and this is the whole bug.
+ *
+ * Registering from inside this module puts the reader into the `wav_peaks.mjs`
+ * instance THIS file resolves, via its own relative `./wav_peaks.mjs`. A
+ * consumer that reaches wav_peaks through a DIFFERENT specifier gets a
+ * different module instance with no reader in it, and the two cannot see each
+ * other. Measured on device 2026-09-07: dAVEBOx resolved a real, existing file
+ * and still reported "file not found" —
+ *   key=synth:pad0_sample_move  exists=yes  peaksIo=NO
+ * — with two different `wav_peaks.mjs` files present on disk (stock's tree and
+ * the SA tree, different md5s). Same module, works on stock, dead in SA.
+ *
+ * ⭑ So the io is now a VALUE a consumer registers with ITS OWN import. Module
+ * identity stops being an assumption the feature silently depends on. The
+ * self-registration below is kept so nothing that relies on it regresses; it is
+ * simply no longer the only route.
+ */
+export const WAV_QJS_IO = {
     open(path) {
         const f = std.open(path, "rb");
         if (!f) return null;
@@ -41,4 +59,8 @@ setWavPeaksIO({
         if (!st || st[1] !== 0 || !st[0]) return null;
         return { size: st[0].size || 0, mtime: st[0].mtime || 0 };
     },
-});
+};
+
+/* Kept: a consumer that reaches THIS module's wav_peaks instance still works
+ * exactly as before. It is no longer the only route — see the header. */
+setWavPeaksIO(WAV_QJS_IO);
