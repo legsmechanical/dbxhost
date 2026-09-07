@@ -124,6 +124,39 @@ ok(wavSiblingKey("synth:sample_start", "sample_start", "sample_path", "synth")
 ok(wavSiblingKey("synth:pad05_start", "start", "other:path", "synth") === "other:path",
    "control: a link that names its own component is taken as written");
 
+/* ⚠⚠ THE GENERALISATION THAT WAS SHIPPED AND REVERTED (2026-09-07). These are
+ * the cases whose absence let it through: a commit message said "six cases
+ * exercised" for cases run in a shell and never written down, and deleting the
+ * whole branch left all 161 host tests and the davebox suite GREEN.
+ *
+ * The tempting extension is "any index of the same prefix", so `pad4_start`
+ * naming `pad7_end` is left alone. It cannot be done from the instance string:
+ * `<prefix><index>_` is AMBIGUOUS once a prefix ends in a digit — `osc12_` is
+ * `osc`+12 or `osc1`+2 — so every regex shape recovers `osc` and STRIPS the
+ * scoping from a legitimately bare `osc1_freq`. Pinned as behaviour, so the
+ * next person to try it fails here instead of on a device. */
+ok(wavSiblingKey("synth:osc12_start", "start", "osc1_freq", "synth")
+   === "synth:osc12_osc1_freq",
+   "⚠ a bare sibling is scoped even when it LOOKS instance-shaped — the prefix " +
+   "is not recoverable from the instance string");
+ok(wavSiblingKey("synth:pad4_start", "start", "pad7_end", "synth")
+   === "synth:pad4_pad7_end",
+   "⚠ ...and the known cost of that: ANOTHER instance`s key is still prefixed. " +
+   "Doing it right needs the level`s own child_prefix, which this pure " +
+   "function deliberately does not take");
+/* A prefix carrying a regex metacharacter — the second defect in the reverted
+ * version, which interpolated a recovered head into `new RegExp` unescaped:
+ * `p+` mis-matched silently and `(` threw out of the resolve path. */
+{
+    let threw = null;
+    let out = null;
+    try { out = wavSiblingKey("synth:p(1_start", "start", "p1_sample", "synth"); }
+    catch (e) { threw = e; }
+    ok(!threw, "a child prefix containing a regex metacharacter does not THROW");
+    ok(out === "synth:p(1_p1_sample",
+       "...and is not mis-matched into stripping the scoping");
+}
+
 /* ================================================= it reaches an actual read */
 /* The resolver, driven by DR32`s real meta, with the reads it would make. */
 {

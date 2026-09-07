@@ -80,8 +80,13 @@ ok(/const ownBare = \(meta && meta\.key\) \|\|/.test(op),
    "⚠ ownBare is the marker`s DECLARED name, not its resolved key");
 ok(!/const ownBare = ppBare\(fullKey\) \|\| fullKey;/.test(op),
    "control: the form that made the scoping a no-op is gone");
-ok(!/fullKey:\s*`\$\{S\.comp\}:\$\{k\}`/.test(op),
-   "control: the component-scoped form is gone");
+/* ⚠ The component-scoped form is IN the code, deliberately — it is the `false`
+ * arm of the ternary above. This passes only because `fullKey:` is now followed
+ * by `scoped ?`, so what it blocks is an UNCONDITIONAL revert. Labelled for what
+ * it does: an earlier label said the form was "gone", which is false in a file a
+ * reader consults to learn what the pin means. */
+ok(!/fullKey:\s*`\$\{S\.comp\}:\$\{k\}`,/.test(op),
+   "control: the component-scoped form is only the unscoped ARM, never unconditional");
 
 /* ---- the screen must be able to say WHICH INSTANCE ---------------------- */
 /* ⚠⚠ "START" IS THE SAME HEADER ON ALL THIRTY-TWO OF DR32`S PADS. The editor

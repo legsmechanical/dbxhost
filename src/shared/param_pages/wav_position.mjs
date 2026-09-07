@@ -455,25 +455,30 @@ export function wavSiblingKey(markerFullKey, ownBare, declaredBare, prefix) {
      * already begins with it, the module has scoped it itself.
      */
     /*
-     * ⭑ ANY instance of the same repeated element, not only THIS one. The
-     * narrow test caught `p05_start` naming `p05_sample_path`, and missed
-     * `pad4_start` naming `pad7_end` — which came out `pad4_pad7_end`, a key no
-     * module serves. The instance we derived is `<prefix><index>_`; a declared
-     * key wearing the SAME prefix and any index is already scoped.
+     * ⚠⚠ ONLY THIS INSTANCE, and the narrower test is the CORRECT one — a
+     * generalisation was tried, shipped and reverted on 2026-09-07.
      *
-     * ⚠ Derived from the instance, never guessed. A blanket `^[a-z]+\d+_` test
-     * would strip the scoping from a legitimately bare `osc1_freq` on a child
-     * level — which is a real key shape — whereas this can only fire for the
-     * module's own child_prefix, where a leading `<prefix><digits>_` cannot
-     * mean anything else.
+     * The tempting extension is "any index of the same prefix", so that
+     * `pad4_start` naming `pad7_end` is left alone instead of becoming
+     * `pad4_pad7_end`. It cannot be done from here: the only thing this
+     * function has is the INSTANCE STRING, and `<prefix><index>_` is
+     * AMBIGUOUS the moment a prefix ends in a digit. `osc12_` is `osc` + 12 or
+     * `osc1` + 2, and nothing in the string distinguishes them — every regex
+     * shape (greedy, non-greedy, leading-non-digits) recovers `osc`, so a
+     * sibling declared `osc1_freq` on an `osc1`-prefixed level had its scoping
+     * silently STRIPPED and asked for a key no module serves. Interpolating the
+     * recovered head into a `new RegExp` was a second defect on top: a
+     * `child_prefix` of `p+` mis-matches and one containing `(` throws out of
+     * the resolve path.
+     *
+     * ⭑ Doing it properly needs the LEVEL'S OWN `child_prefix` — which the
+     * caller has and this pure function deliberately does not. Measured before
+     * reverting: the generalisation was a NO-OP across the whole fleet (every
+     * wav_position in 101 contracts, 6 child indices, every declared bare key —
+     * 5104 cases, zero differences), so it bought nothing and risked a wrong
+     * key. If a module ever needs it, pass the prefix in; do not re-derive it.
      */
-    if (instance) {
-        if (declared.startsWith(instance)) instance = "";
-        else {
-            const head = instance.match(/^([^0-9]+)[0-9]+_$/);
-            if (head && new RegExp("^" + head[1] + "[0-9]+_").test(declared)) instance = "";
-        }
-    }
+    if (instance && declared.startsWith(instance)) instance = "";
     return p ? `${p}:${instance}${declared}` : `${instance}${declared}`;
 }
 

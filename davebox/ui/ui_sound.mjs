@@ -8709,19 +8709,28 @@ function wavEditCloseIfOpen() {
     /*
      * ⚠⚠ AND SO DOES THE BROWSER IT OPENED. Clearing the crumb alone left the
      * user standing in a file browser built from the OLD component's
-     * `S.fileKey`, over the NEW slot — and `queueWrite` captures `S.slot` AT
-     * CALL TIME, so a pick made after the switch writes the old module's
-     * sample-path key into the track that replaced it. That is precisely the
-     * "lands an edit on a track the user never opened" this function's own
-     * header says it exists to prevent; closing the editor and not the screen
-     * left the window open one gesture wider.
+     * `S.fileKey`.
+     *
+     * ⚠ WHICH CALLER MAKES THAT DANGEROUS — corrected after an advisor pass
+     * traced it, because my first version of this comment named the wrong one.
+     * `soundRetarget` nulls `S.fileState` a few lines later in the SAME
+     * synchronous call, so there the browser was merely DEAD: `NO BROWSER` on
+     * screen and an inert click, bad but not a write. `soundExit` clears
+     * `S.active`, so nothing renders or dispatches. It is `runDiscovery` — a
+     * module SWAP — that leaves `fileState` intact, and there a pick writes the
+     * OLD module's sample-path key into the slot the new module now owns.
+     * `queueWrite` captures `S.slot` at call time (its own comment says so), so
+     * the write is real and lands. All three want the screen closed.
      *
      * ⚠ `ppDivedOut` goes with it. It is set alongside the errand at the dive
      * and cleared at every other exit; left standing, the next arrival at
      * VIEW_EDIT would silently eat one Back — the stale-crumb failure
-     * `soundExit` documents. `ppSuppressOnce` likewise, so the grid re-enters
-     * at once for the component we just moved to, the same as the Back and
-     * click exits do.
+     * `soundExit` documents. `ppSuppressOnce` goes too, for consistency with
+     * the Back and click exits.
+     * ⚠ It only BUYS anything at the `runDiscovery` site, and there just one
+     * tick: `soundRetarget` clears `S.moduleId`, which `ppApplies()` requires,
+     * and `soundExit` clears `S.active` and re-clears the flag itself. An
+     * earlier version of this said the grid re-enters at once, full stop.
      */
     if (S.view === VIEW_WAV || (hadErrand && S.view === VIEW_FILE)) {
         ppDivedOut = false;
@@ -8798,9 +8807,14 @@ function openWavEditor(fullKey, meta, divedFrom) {
      *
      * ⚠ The residue, stated rather than hidden: a marker on child level A and a
      * key listed on a different child level B would still take A's instance.
-     * No module in the fleet declares two child levels, and the member list is
-     * filtered to one `view_group` afterwards, so it is unreachable — but it is
-     * a narrowing, not a proof.
+     * ⚠⚠ AND THE REASON IT IS UNREACHABLE IS NOT THE ONE I FIRST WROTE. mrdrums
+     * DOES declare two child levels (`root` and `pad_settings`, 16 each). What
+     * holds today is that `childSpec()` recognises only `child_prefix`, while
+     * `child_key.mjs`'s `hasChildren()` and validate_contract also accept the
+     * `child_key_template` form mrdrums uses — so a template-shaped child level
+     * is not scoped here AT ALL. That is a GAP, not a guarantee: teach
+     * `childSpec` templates, which is an obvious follow-up, and this arms. The
+     * `view_group` filter below is the only thing genuinely holding it.
      */
     const pushDecl = (k, m, scoped) => {
         if (!k || seenDecl[k] || !m) return;
