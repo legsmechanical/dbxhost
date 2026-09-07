@@ -289,6 +289,15 @@ export function makeCell(key, meta) {
             fileRoot: meta.root || '/data/UserData',
             fileFilter: meta.filter || null,
             fileStartPath: meta.start_path || meta.root || '/data/UserData',
+            /* ⚠⚠ CARRY THE BEHAVIOUR, not only the listing. A cell that keeps
+             * root/filter/start_path and drops these two describes WHERE to
+             * browse and forgets WHAT BROWSING DOES — the browser then cannot
+             * audition and cannot run the module's hooks, and nothing anywhere
+             * reports a missing field. That is not hypothetical: 5 of the 100
+             * captured modules declare live_preview across 23 filepath params,
+             * and mrdrums declares browser_hooks on 17 of them. */
+            filePreview: meta.live_preview,
+            fileHooks: meta.browser_hooks || null,
         };
     }
 

@@ -67,6 +67,10 @@ import {
 import {
     buildFilepathBrowserState, refreshFilepathBrowser,
     moveFilepathBrowserSelection, activateFilepathBrowserItem,
+    /* The browser's BEHAVIOUR, which used to live only in the host's own screen
+     * — so dAVEBOx, which draws its own, silently had none of it. */
+    initFilepathPreview, armFilepathPreview, tickFilepathPreview,
+    syncFilepathPreviewToSelection, commitFilepathSelection, finishFilepathPreview,
 } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 import { discover, deriveSections, activeSection, filterVizFor,
     menuRows, menuCell, levelCommits, childSpec, modeRows, livePressSpec,
@@ -890,6 +894,30 @@ export function soundPPForTest() {
     };
 }
 export function soundValueForTest(key) { return S.values[key]; }
+
+/* The file browser, driveable off-device.
+ *
+ * ⚠⚠ IT HANDS BACK PRODUCTION'S OWN io OBJECT, never a stand-in. The whole
+ * reason this seam needed a test is that `queueWrite` returns UNDEFINED, which
+ * the shared code reads as "the write did not take" — a hand-written test io
+ * that returned true would prove the wiring correct and ship the bug. Same
+ * lesson as the wave editor's rig, which had no `siblingKey` and therefore
+ * asserted the fallback path was right.
+ *
+ * `leave` is the close every door goes through, and `state` is the live browser
+ * state so a test can read what the audition actually armed. */
+export function soundFileBrowserForTest() {
+    return {
+        io: FILE_BROWSER_PARAM_IO,
+        open: (row) => openFileBrowser(row),
+        activate: () => fileActivate(),
+        leave: () => leaveFileBrowser(),
+        state: () => S.fileState,
+        setContext: (slot, comp) => { S.slot = slot; S.comp = comp; },
+        pendingWrites: () => S.pendingWrites.map(w => [w.slot, w.comp, w.key, w.val]),
+        clearWrites: () => { S.pendingWrites.length = 0; },
+    };
+}
 /* The knob TARGET rows, built the way the picker builds them — the list is
  * assembled fresh on every open from live component probes, so this exercises
  * the real path rather than a copy of it. */
@@ -1384,6 +1412,10 @@ export function soundRetarget(track, slot) {
     S.previewAt = -1;
     S.confirmDel = false;
     dropBakedNames();
+    /* ⚠ A DROP, deliberately, not `leaveFileBrowser()`: `S.slot` moved a few
+     * lines above, so a restore issued here would write into the NEW track. The
+     * audition was already put back by `wavEditCloseIfOpen` at the top of this
+     * function, while the addressing was still the old track's. */
     S.fileState = null;
     S.menuStack = [];
     S.menuKey = null;
@@ -2410,15 +2442,62 @@ const FS_ADAPTER = {
     stat(path) { return os.stat(path); },
 };
 
+/* How the browser reads and writes a parameter.
+ *
+ * ⚠⚠ `setParam` MUST RETURN TRUTHY, and `queueWrite` returns undefined. To the
+ * shared code an undefined return means "the write did not take", so a preview
+ * would never record what it had set: it would re-write the same path on every
+ * pass and the cancel path would compare against a value that never moved.
+ * Returning true here is not a lie — the queue is last-writer-wins per key and
+ * always accepts — but it has to be SAID.
+ *
+ * ⭑ Bare hook keys stay bare (the browser is opened with an empty prefix) and
+ * are addressed against the component in scope AT CALL TIME, the same reason
+ * queueWrite captures the slot at call time: a browser can outlive the track it
+ * was opened on. A key that already names its component is split instead. */
+const FILE_BROWSER_PARAM_IO = {
+    getParam(key) {
+        const i = key.indexOf(':');
+        return i > 0 ? engineGet(S.slot, key.slice(0, i), key.slice(i + 1))
+                     : engineGet(S.slot, S.comp, key);
+    },
+    setParam(key, value) {
+        const i = key.indexOf(':');
+        if (i > 0) queueWrite(key.slice(i + 1), value, key.slice(0, i));
+        else queueWrite(key, value);
+        return true;
+    },
+};
+
 function openFileBrowser(row) {
     const c = row.cell;
     S.fileKey = row.pkey || row.key;
-    S.fileState = buildFilepathBrowserState({
+    const meta = {
         name: c.label, key: S.fileKey,
         root: c.fileRoot, filter: c.fileFilter, start_path: c.fileStartPath,
-    }, row.raw || '');
+        live_preview: c.filePreview, browser_hooks: c.fileHooks,
+    };
+    S.fileState = buildFilepathBrowserState(meta, row.raw || '');
+    /* Before the first listing: an on_open hook may set the very params
+     * (start_path) the listing is about to be read from. */
+    initFilepathPreview(S.fileState, meta, S.fileKey, row.raw || '', '', FILE_BROWSER_PARAM_IO);
     refreshFilepathBrowser(S.fileState, FS_ADAPTER);
+    syncFilepathPreviewToSelection(S.fileState, FILE_BROWSER_PARAM_IO);
     S.view = VIEW_FILE;
+}
+
+/* Leaving the browser, by ANY door — a pick, a Back, an errand returning, a
+ * module swapped underneath it. Either the pick stands, or every write the
+ * audition made is put back.
+ *
+ * ⭐ ONE OWNER, not a guard at each exit. VIEW_FILE has five doors and the
+ * count is not stable; a browser that left by an unguarded one would leave the
+ * previewed sample loaded and nothing would report it. Called from the tick,
+ * which sees the view change however it happened. */
+function leaveFileBrowser() {
+    if (!S.fileState) return;
+    finishFilepathPreview(S.fileState, FILE_BROWSER_PARAM_IO);
+    S.fileState = null;
 }
 
 /* ---- host capabilities ----
@@ -5288,8 +5367,13 @@ function startTextEdit(idx) {
 
 function fileActivate() {
     const res = activateFilepathBrowserItem(S.fileState);
-    if (res.action === 'open') { refreshFilepathBrowser(S.fileState, FS_ADAPTER); return; }
+    if (res.action === 'open') {
+        refreshFilepathBrowser(S.fileState, FS_ADAPTER);
+        syncFilepathPreviewToSelection(S.fileState, FILE_BROWSER_PARAM_IO);
+        return;
+    }
     if (res.action === 'select') {
+        commitFilepathSelection(S.fileState, res.value);
         queueWrite(S.fileKey, res.value);
         const row = S.menuRowsCache.find(r => (r.pkey || r.key) === S.fileKey);
         if (row) { row.raw = res.value; row.val = res.value; }
@@ -6574,6 +6658,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
             menuStep(delta);
         } else if (S.view === VIEW_FILE) {
             moveFilepathBrowserSelection(S.fileState, delta > 0 ? 1 : -1);
+            armFilepathPreview(S.fileState);
         } else if (S.view === VIEW_PRESET_BAKED) {
             if (S.bakedScan < 0) {
                 const next = listMove(S.bakedCount, S.bakedIdx, delta);
@@ -7440,6 +7525,22 @@ export function soundTick() {
      * blocked tick here overflows the input ring and drops note-offs, and a
      * dropped note-off is a stuck note in Move AND in the slot synth. */
     if (S.view === VIEW_WAV) wavEditTick();
+
+    /* ⭑ THE BROWSER'S AUDITION, and its close.
+     *
+     * The debounce is why this is a tick and not a jog handler: the parameter
+     * is only written once the highlight has RESTED, so scrolling a folder of
+     * 200 samples does not write 200 times.
+     *
+     * ⭐ And the close is here because VIEW_FILE has five doors — a pick, two
+     * errand returns, davebox's own Back, and a module swapped underneath it.
+     * Asking "is the browser still on screen" sees every one of them, including
+     * a door added later; a guard bolted to each exit sees only the ones
+     * somebody remembered. ⚠ A retarget is the exception and is handled at its
+     * own site: by the time it reaches here `S.slot` has already moved, so the
+     * restore would land on a track the user never opened. */
+    if (S.view === VIEW_FILE) tickFilepathPreview(S.fileState, FILE_BROWSER_PARAM_IO);
+    else if (S.fileState) leaveFileBrowser();
 
     /* ⭑ AHEAD of discovery: when the editor is on, davebox's own bank model is
      * not what is being drawn, and running both would pay for two contracts. */
@@ -8805,6 +8906,13 @@ function wavEditCloseIfOpen() {
      * and `soundExit` clears `S.active` and re-clears the flag itself. An
      * earlier version of this said the grid re-enters at once, full stop.
      */
+    /* ⚠⚠ AND THE AUDITION IS PUT BACK HERE, not by the tick — this runs BEFORE
+     * `S.slot` moves, and the tick runs after. A live preview writes the real
+     * parameter, so a restore issued a moment too late is a write into whatever
+     * track replaced this one. Unconditional on the errand, because davebox's
+     * OWN browse auditions too. */
+    if (S.view === VIEW_FILE) leaveFileBrowser();
+
     if (S.view === VIEW_WAV || (hadErrand && S.view === VIEW_FILE)) {
         ppDivedOut = false;
         ppSuppressOnce = false;
