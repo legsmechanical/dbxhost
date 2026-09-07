@@ -71,6 +71,18 @@ let modulatedKeys = new Set();
  * one tick out of a hundred and answers no for the wrong reason. Obtain the
  * value; do not infer it from a summary built for something else. */
 let seenKeys = [];
+/* A hook the library can be temporarily mutated to call, so a question about
+ * "does this code even run?" is answered by OBSERVATION rather than by reading.
+ * Inert unless BUDGET_DEBUG is set; prints once per distinct message so a
+ * per-tick probe does not produce 120 lines. */
+const probeSeen = new Set();
+globalThis.__probe = (msg) => {
+    if (!process.env.BUDGET_DEBUG) return;
+    const s = String(msg);
+    if (probeSeen.has(s) || probeSeen.size > 6) return;
+    probeSeen.add(s);
+    console.log('         PROBE ' + s.slice(0, 300));
+};
 globalThis.shadow_get_param = (slot, key) => {
     seenKeys.push(String(key));
     if (oracleServed && typeof key === 'string' && key.endsWith(':modulated'))
