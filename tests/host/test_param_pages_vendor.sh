@@ -23,7 +23,7 @@ command -v node >/dev/null 2>&1 || { echo "FAIL: node required"; exit 1; }
 
 node --input-type=module -e '
 import { readFileSync } from "node:fs";
-import { PP_CTX_MEMBERS, PP_CTX_ABSENT } from "./davebox/ui/pp_ctx.mjs";
+import { PP_CTX_MEMBERS, PP_CTX_ABSENT, PP_CTX_DEFERRED } from "./davebox/ui/pp_ctx.mjs";
 
 let fail = 0;
 const ok = (c, m) => { console.log((c ? "  ok  " : "FAIL ") + " — " + m); if (!c) fail++; };
@@ -37,7 +37,10 @@ const read = set((readFileSync(BINDING, "utf8").match(/\bctx\.[A-Za-z_][A-Za-z0-
 ok(read.size >= 12, "control: the binding reads a plausible number of ctx members (" + read.size + ")");
 
 /* ---- 2. what pp_ctx DECLARES ------------------------------------------ */
-const declared = set([...PP_CTX_MEMBERS, ...PP_CTX_ABSENT]);
+/* ⚠ THREE categories: answered by installPpCtx, deliberately absent, and
+ * supplied by the ENTRY POINT (the QuickJS reader, which ui_sound may not
+ * import). All three are DECLARED — that is the point of the pin. */
+const declared = set([...PP_CTX_MEMBERS, ...PP_CTX_ABSENT, ...PP_CTX_DEFERRED]);
 ok(PP_CTX_MEMBERS.length > 0 && PP_CTX_ABSENT.length > 0,
    "control: both contract arrays are populated");
 

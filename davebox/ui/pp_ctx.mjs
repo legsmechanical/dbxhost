@@ -38,6 +38,23 @@ export const ctx = {};
 /* Fill the seam. Called once from ui_sound.mjs at init, before any entry into
  * the editor. Assign rather than replace, so the object the vendored binding
  * captured at import time stays the one it reads. */
+/*
+ * The QuickJS file reader for sample waveforms, handed over by the ENTRY POINT.
+ *
+ * ⚠⚠ IT CANNOT BE IMPORTED HERE, OR IN ui_sound. `wav_io_qjs.mjs` names `std`
+ * and `os`, and `test_wav_peaks_io_registered.sh` pins that only the two
+ * device-only entry points may reference it — every JS test imports ui_sound,
+ * and a module that names those is unloadable under node. So the reader arrives
+ * as a VALUE from ui.js and is put on the ctx here.
+ *
+ * ⭑ Why it must reach the ctx at all: the binding registers it into the
+ * `wav_peaks` instance that the grid's PUMP and its DRAWER share, and nothing
+ * outside the library can reach that one. Registering only from ui.js reached a
+ * different instance — the fullscreen editor drew waveforms while every cell
+ * stayed flat.
+ */
+export function setPpWavPeaksIo(io) { ctx.wavPeaksIo = io; }
+
 export function installPpCtx(members) {
     for (const k of Object.keys(members || {})) ctx[k] = members[k];
     return ctx;
@@ -151,6 +168,14 @@ export function installPpCtx(members) {
  * than code. tests/host/test_param_pages_vendor.sh reads THESE arrays, the
  * binding's own code, AND what ui_sound actually installs, and fails if any two
  * disagree. */
+/*
+ * ⚠ `wavPeaksIo` is DELIBERATELY NOT IN THIS LIST. Everything here is a member
+ * `installPpCtx` supplies from ui_sound; the reader cannot come from there
+ * (ui_sound must never reference wav_io_qjs — it names std/os and every JS test
+ * imports ui_sound), so it arrives out of band from the entry point via
+ * `setPpWavPeaksIo`. Listing it would make this contract claim ui_sound answers
+ * something it must not.
+ */
 export const PP_CTX_MEMBERS = [
     'getSlotParam', 'setSlotParam', 'isMuteHeld', 'requestRedraw',
     'setView', 'VIEWS', 'getModuleAbbrev',
@@ -182,6 +207,22 @@ export const PP_CTX_MEMBERS = [
  * davebox answers by handing the component to its OWN editor, exactly as the
  * host hands it to the hierarchy list editor. The option list is reachable;
  * it is reached the way stock reaches it. */
+/*
+ * Members the ENTRY POINT supplies out of band, not `installPpCtx`.
+ *
+ * ⚠⚠ A THIRD CATEGORY EXISTS BECAUSE A REAL CONSTRAINT DOES. `wavPeaksIo` is
+ * the QuickJS file reader, and `wav_io_qjs.mjs` names `std`/`os`: only the two
+ * device-only entry points may reference it, because every JS test imports
+ * ui_sound and a module naming those is unloadable under node
+ * (`test_wav_peaks_io_registered.sh` pins exactly that). So ui.js hands it over
+ * through `setPpWavPeaksIo`.
+ *
+ * It is DECLARED rather than exempted: the binding reads it, so the contract
+ * has to name it, or the vendor pin cannot tell a deliberate out-of-band member
+ * from one somebody forgot.
+ */
+export const PP_CTX_DEFERRED = ['wavPeaksIo'];
+
 export const PP_CTX_ABSENT = [
     'getModuleDisplayName',
     'userPresetHeaderMark',

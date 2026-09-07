@@ -32,7 +32,14 @@ grep -q 'setWavPeaksIO' "$IO" \
 
 # ---- both entry points import it -------------------------------------------
 for entry in src/shadow/shadow_ui.js davebox/ui/ui.js; do
-  if grep -qE "^import +'/data/UserData/schwung/shared/param_pages/wav_io_qjs\.mjs';" "$entry"; then
+  # ⚠ EITHER FORM COUNTS. A bare side-effect import registers through the io
+  # module's own relative `./wav_peaks.mjs`; a NAMED import (`{ WAV_QJS_IO }`)
+  # lets the entry point register it explicitly, into the instance its own
+  # consumers use. The second exists because the first proved not to be enough:
+  # on a device carrying two installs the two resolved to different module
+  # instances, and every sample cell drew flat while the pump reported success.
+  # Requiring only the bare form would fail a tree that fixed exactly that.
+  if grep -qE "^import +('|\{ *WAV_QJS_IO *\} +from +')/data/UserData/schwung/shared/param_pages/wav_io_qjs\.mjs';" "$entry"; then
     ok y "$entry registers the wave-peaks io"
   else
     ok n "$entry does NOT import wav_io_qjs — its sample widgets will draw empty boxes"

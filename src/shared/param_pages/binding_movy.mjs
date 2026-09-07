@@ -47,7 +47,23 @@ import { invalidateLedCache } from '/data/UserData/schwung/shared/input_filter.m
  * under node by test_param_pages_view.sh and test_param_pages_io_forwarding.sh,
  * and wav_io_qjs names the `std`/`os` modules, which node has no idea about.
  * shadow_ui.js is the only file in the shadow UI that node never imports. */
-import { wavPeaksTick, wavPeaksDone } from '/data/UserData/schwung/shared/param_pages/wav_peaks.mjs';
+/*
+ * ⚠⚠ RELATIVE, like every other sibling in this directory — and it was ABSOLUTE
+ * until 2026-09-07, which cost two days.
+ *
+ * Two complete installs live on the device (stock's tree and the fork's), each
+ * with its own copy of this library, and an absolute
+ * `/data/UserData/schwung/shared/...` names the OTHER install. So this file
+ * reached one `wav_peaks.mjs` and `viz_draw.mjs` — which imports the same
+ * sibling as `./wav_peaks.mjs` — reached a different one. THE PUMP FILLED ONE
+ * MODULE INSTANCE AND THE DRAWER READ ANOTHER: every sample cell drew a flat
+ * line forever while the pump logged success on real, existing files.
+ *
+ * ⭑ The rule this file now follows: a sibling is imported by its RELATIVE path.
+ * An absolute specifier inside the library is an address in somebody else's
+ * install.
+ */
+import { wavPeaksTick, wavPeaksDone, setWavPeaksIO, wavPeaksHasIo } from './wav_peaks.mjs';
 import { VIZ_SAMPLE } from '/data/UserData/schwung/shared/param_pages/viz.mjs';
 import { flipsOnClick, isTurnable } from '/data/UserData/schwung/shared/param_pages/param_meta.mjs';
 import { announce } from '/data/UserData/schwung/shared/screen_reader.mjs';
@@ -298,6 +314,15 @@ function enterParamPages(slot, component, prefix, restorePageName, io, chrome, r
     /* Rebuild when the accessors change, not just when there is no controller:
      * it CLOSES OVER them, so one built for a module would keep reading the
      * module after a switch to slot settings. */
+    /*
+     * ⚠ The file reader is INJECTED here for the same reason it is injected at
+     * all: `wav_io_qjs.mjs` names QuickJS's `std`/`os` and importing it would
+     * make this file — and most of the renderer — unloadable under node, where
+     * every host test runs. The consumer hands the object over; this registers
+     * it into the instance the PUMP and the DRAWER share, which is the one that
+     * matters and the one nothing could reach from outside.
+     */
+    if (ctx && ctx.wavPeaksIo && !wavPeaksHasIo()) setWavPeaksIO(ctx.wavPeaksIo);
     if (!controller || controllerIo !== (io || null)) {
         controllerIo = io || null;
         /*

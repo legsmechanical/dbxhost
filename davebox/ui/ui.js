@@ -63,6 +63,7 @@ import { installReadMeter, readMeterTick, readMeterLine, readMeterReset } from '
  * one THIS bundle uses, by construction.
  */
 import { setWavPeaksIO, wavPeaksHasIo as wavPeaksHasIoDbg } from '/data/UserData/schwung/shared/param_pages/wav_peaks.mjs';
+import { setPpWavPeaksIo } from './pp_ctx.mjs';
 import { WAV_QJS_IO } from '/data/UserData/schwung/shared/param_pages/wav_io_qjs.mjs';
 import { setTrackMute, setTrackSolo, stepHoldCheckpoint } from './ui_editops.mjs';
 import { applyTrackConfig,
@@ -379,6 +380,9 @@ globalThis.init = function () {
     /* See the import: the registration must land in the instance the widgets
      * read from, so it is done here rather than left to a side effect. */
     setWavPeaksIO(WAV_QJS_IO);
+    /* ...and to the binding, for the instance the grid's pump and drawer share
+     * — a different one. See pp_ctx.setPpWavPeaksIo. */
+    setPpWavPeaksIo(WAV_QJS_IO);
     /* ⚠ TEMPORARY. The fullscreen editor draws waveforms and the CELL widgets do
      * not, and both now read the same wav_peaks instance — so the next guess
      * would be wrong again. One line per distinct sample path the grid's pump

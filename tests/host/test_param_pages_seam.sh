@@ -115,7 +115,7 @@ shape changed and this check is now blind"
 # ⚠ A comment claiming a member is handled is not a member being handled; this
 # repo has twice shipped a pin that passed by matching prose.
 arrays=$(nocomments < "$adapter" \
-         | sed -n '/PP_CTX_MEMBERS *= *\[/,/\]/p;/PP_CTX_ABSENT *= *\[/,/\]/p' \
+         | sed -n '/PP_CTX_MEMBERS *= *\[/,/\]/p;/PP_CTX_ABSENT *= *\[/,/\]/p;/PP_CTX_DEFERRED *= *\[/,/\]/p' \
          | grep -oE "'[A-Za-z_][A-Za-z0-9_]*'" | tr -d "'" | sort -u)
 [ -n "$arrays" ] || fail "$adapter declares no PP_CTX_MEMBERS / PP_CTX_ABSENT —
 the contract stopped being machine-readable and this check is now blind"
@@ -161,6 +161,23 @@ installed=$(grep -oE "^\s+[A-Za-z_][A-Za-z0-9_]*:" <<<"$install" | tr -d ' :' | 
 declared=$(nocomments < "$adapter" | sed -n '/PP_CTX_MEMBERS *= *\[/,/\]/p' \
            | grep -oE "'[A-Za-z_][A-Za-z0-9_]*'" | tr -d "'" | sort -u)
 
+# ⚠⚠ A THIRD CATEGORY: members the ENTRY POINT supplies, not installPpCtx.
+# `wavPeaksIo` is the QuickJS file reader, and only the two device-only entry
+# points may reference `wav_io_qjs.mjs` (it names std/os, and every JS test
+# imports ui_sound) — so ui.js hands it over via setPpWavPeaksIo. It is still
+# SUPPLIED by davebox, so parity below must count it; it is simply not installed
+# where the other members are, and checking it in the wrong place is what makes
+# a contract lie.
+deferred=$(nocomments < "$adapter" | sed -n '/PP_CTX_DEFERRED *= *\[/,/\]/p' \
+           | grep -oE "'[A-Za-z_][A-Za-z0-9_]*'" | tr -d "'" | sort -u)
+entry=davebox/ui/ui.js
+for d in $deferred; do
+  grep -q "setPpWavPeaksIo" "$entry" ||
+    fail "PP_CTX_DEFERRED names '$d' as supplied by the entry point, but $entry
+never hands it over. A deferred member nobody supplies is exactly the silent gap
+this contract exists to prevent."
+done
+
 for m in $declared; do
   grep -qx "$m" <<<"$installed" ||
     fail "PP_CTX_MEMBERS claims '$m' is answered, but $wiring never installs it.
@@ -199,13 +216,15 @@ host_src=$(nocomments < "$host")
 
 for m in $members; do
   if grep -qE "_ctx\.$m *=|Object\.defineProperty\(_ctx, *'$m'" <<<"$host_src"; then
-    grep -qx "$m" <<<"$declared" ||
+    grep -qx "$m" <<<"$declared
+$deferred" ||
       fail "the HOST supplies ctx.$m but davebox lists it as absent. Stock's
 editor has that behaviour and davebox's would not — and the binding's read is
 guarded, so it fails silently rather than loudly. Implement it in $wiring and
 move it to PP_CTX_MEMBERS."
   else
-    grep -qx "$m" <<<"$gaps" ||
+    grep -qx "$m" <<<"$gaps
+$deferred" ||
       fail "davebox supplies ctx.$m but this host does not — the two have drifted.
 ⭐ THE REMEDY IS USUALLY TO GROW THE HOST, NOT TO DROP IT FROM davebox.
 dbxhost is davebox's own host, maintained on a separate track precisely to serve
