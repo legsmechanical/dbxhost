@@ -57,7 +57,7 @@ import { automationRegisterSeqApply, automationParamEdit, automationParamTouch, 
          automationClearKey, automationEntriesFor } from './ui_automation.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { MoveKnob1, Red, White } from '/data/UserData/schwung/shared/constants.mjs';
-import { showActionPopup } from './ui_persistence.mjs';
+import { showActionPopup, showActionPopupFor } from './ui_persistence.mjs';
 import { writeSidecar } from './ui_persistence.mjs';
 import { requestTrackModeChange } from './ui_dialogs.mjs';
 import {
@@ -115,6 +115,12 @@ import {
 } from './ui_wav.mjs';
 import { isWavPosition, wavSiblingKey }
     from '/data/UserData/schwung/shared/param_pages/wav_position.mjs';
+/* The generic rule "do not open an editor on a component that reported a load
+ * failure, and say why". The host has always checked it; davebox never did, so
+ * a generator that failed to load gave you an editor for a module that is not
+ * running, silently. The rule is shared; the warning below is ours. */
+import { readComponentError }
+    from '/data/UserData/schwung/shared/component_error.mjs';
 import { evaluateVisibility, normalizeVisibilityConditionKey }
     from '/data/UserData/schwung/shared/param_pages/visibility.mjs';
 /* The preset record's dirty test — SHARED with the host's editor (upstream
@@ -924,6 +930,15 @@ export function soundVisibilityForTest() {
         directSet: (fullKey, val) => globalThis.shadow_set_param(S.slot, fullKey, val),
         setContext: (slot, comp) => { S.slot = slot; S.comp = comp; },
     };
+}
+
+/* The component-error read, driveable off-device. ⭐ Production's own function,
+ * not a restatement: a pin on the CALL SHAPE stayed green when the body was
+ * replaced with `return null` — the refusal was still spelled correctly and
+ * could never fire. Mutation found that; this closes it. */
+export function soundComponentErrorForTest(slot, comp) {
+    S.slot = slot;
+    return componentError(comp);
 }
 
 export function soundFileBrowserForTest() {
@@ -1960,8 +1975,31 @@ function openBlock(comp) {
     if (bi >= 0) S.blockIdx = bi;          /* meaningless on a bus, unused there */
     const id = engineLoadedModule(S.slot, S.comp);
     if (!id) { openBrowse(); return; }     /* empty block -> add something */
+    /*
+     * ⭐ THE MODULE MAY BE LOADED AND NOT RUNNING. The chain DSP publishes a
+     * load failure as a readable param, and until now davebox never asked — so
+     * a generator that could not find its assets handed you a full editor whose
+     * knobs moved and whose sound never arrived. Stock refuses with a warning;
+     * this is the same refusal.
+     *
+     * ⚠ It fails OPEN by construction (see component_error.mjs): only a
+     * non-empty error refuses. A key nobody serves reads "" and must not be
+     * mistaken for a failure, or a healthy module becomes uneditable.
+     */
+    const err = componentError(comp);
+    if (err) {
+        showActionPopupFor(4000, (engineModuleAbbrev(id) || 'MODULE') + ' FAILED', err);
+        return;
+    }
     S.view = VIEW_EDIT;
     runDiscovery();
+}
+
+/* The failure this component reports, or null. Reads at CALL TIME against the
+ * slot in scope — never a captured one. */
+function componentError(comp) {
+    return readComponentError(
+        (key) => engineGetSlotParam(S.slot, key), comp);
 }
 
 /* ---- presets ---- */
@@ -5802,7 +5840,9 @@ function runDiscovery() {
     S.modes = res.modes || null;
     S.modeParam = res.modeParam || '';
     S.cpMap = res.cpMap || null;
-    S.livePress = livePressSpec(res.levels);
+    /* ⚠ The HIERARCHY too: a sibling-shape module declares its press param
+     * there as `focus_press_param`, not on any level. */
+    S.livePress = livePressSpec(res.levels, res.hierarchy);
     if (S.livePress && S.livePress.noteParam) S.lastNoteParam = S.livePress.noteParam;
     S.padVouch = false;
     S.padWatchUntil = -1;

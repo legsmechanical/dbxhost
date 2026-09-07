@@ -150,6 +150,13 @@ import {
     setUuidIsProvisional
 } from '/data/UserData/schwung/shared/session_state.mjs';
 
+/* One definition of "which key does this component publish a load failure
+ * under, and does it have one". The rule was only here, so the second consumer
+ * (dAVEBOx, which draws its own screens) silently had no such check at all. The
+ * rule is shared now; the overlay below stays the host's own. */
+import { readComponentError }
+    from '/data/UserData/schwung/shared/component_error.mjs';
+
 /* Shared context for view modules */
 import { ctx as _ctx } from './shadow_ui_ctx.mjs';
 
@@ -3180,8 +3187,8 @@ function unloadModuleUi() {
 
 /* Check for synth error in a slot and show warning if found */
 function checkAndShowSynthError(slotIndex) {
-    const synthError = getSlotParam(slotIndex, "synth_error");
-    if (synthError && synthError.length > 0) {
+    const synthError = readComponentError((k) => getSlotParam(slotIndex, k), "synth");
+    if (synthError) {
         const synthName = getSlotParam(slotIndex, "synth:name") || "Synth";
         warningTitle = `${synthName} Warning`;
         warningLines = wrapText(synthError, 18);
@@ -3196,8 +3203,8 @@ function checkAndShowSynthError(slotIndex) {
 
 /* Check for MIDI FX warning in a slot and show warning if found */
 function checkAndShowMidiFxError(slotIndex) {
-    const midiFxError = getSlotParam(slotIndex, "midi_fx1:error");
-    if (midiFxError && midiFxError.length > 0) {
+    const midiFxError = readComponentError((k) => getSlotParam(slotIndex, k), "midi_fx1");
+    if (midiFxError) {
         const midiFxName = getSlotParam(slotIndex, "midi_fx1:name") || "MIDI FX";
         warningTitle = `${midiFxName} Warning`;
         warningLines = wrapText(midiFxError, 18);
@@ -15858,9 +15865,15 @@ function drawComponentEdit() {
 
     const centerY = 32;
 
-    /* Check for load error */
-    const synthError = getSlotParam(selectedSlot, "synth_error");
-    if (editingComponentKey === "synth" && synthError && synthError.length > 0) {
+    /* Check for load error.
+     * ⚠ Read only when it can matter. This used to read `synth_error` on every
+     * draw of this screen and then discard it unless the component was the
+     * generator — a blocking round trip per frame for a value that was usually
+     * thrown away. Same output, one fewer read. */
+    const synthError = (editingComponentKey === "synth")
+        ? readComponentError((k) => getSlotParam(selectedSlot, k), "synth")
+        : null;
+    if (synthError) {
         const titleText = "ERROR LOADING";
         const titleX = Math.floor((SCREEN_WIDTH - titleText.length * 5) / 2);
         print(titleX, centerY - 10, titleText, 1);
