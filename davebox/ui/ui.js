@@ -47,6 +47,7 @@ import { MoveShift } from '/data/UserData/schwung/shared/constants.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { effectiveClip, invalidateLEDCache, trackColor, forceRedraw, installFlagsWrap, buildLedInitQueue } from './ui_leds.mjs';
 import { initPrimarySurface } from './ui_corun.mjs';
+import { installReadMeter, readMeterTick, readMeterLine, readMeterReset } from './ui_readmeter.mjs';
 import { setTrackMute, setTrackSolo, stepHoldCheckpoint } from './ui_editops.mjs';
 import { applyTrackConfig,
     refreshSeqNotesIfCurrent,
@@ -319,12 +320,44 @@ globalThis.init = function () {
     S.ledInitIndex    = 0;
 
     installFlagsWrap();
+    /*
+     * ⭐ COUNT THE ROUND TRIPS. Every slow thing dAVEBOx has hit is the screen
+     * asking the engine for a value and waiting (~2.9 ms each, against a ~10.6 ms
+     * tick), and every fix so far has been found by reasoning backwards from a
+     * symptom — one of them after three wrong theories and a "150-270 reads per
+     * frame" figure that was INFERRED and then cited as if counted.
+     *
+     * ⚠ HERE, and only here. It wraps the host BINDINGS, so it sees davebox's
+     * own reads AND the vendored param-pages library's, which land on the same
+     * globals. Instrumenting call sites would miss the ones nobody remembers —
+     * which is where the surprises are. This is also the file no test imports,
+     * the same property that makes it the right home for the wave-peaks io.
+     * ⚠ Idempotent inside: `init()` re-runs in the SAME runtime on resume, and a
+     * second wrap would double every number silently.
+     */
+    installReadMeter();
 
     S._origClearScreen = clear_screen;
     S._wasSuspended    = false;
 };
 
-globalThis.tick = function () { try { _tickImpl(); } catch (e) { captureError('tick', e); } };
+/* One line every ~2 s at a ~10.6 ms tick. Logged unconditionally rather than
+ * only when it looks bad: a silent meter and a broken meter read the same, and
+ * a continuous baseline is what makes an INTERMITTENT stall legible — you scroll
+ * the log and watch the number rise as you open the screen that hurts.
+ * ⚠ console.log DOES reach debug.log ([[schwung-sa-log-map]]). */
+const READMETER_LOG_TICKS = 200;
+globalThis.tick = function () {
+    /* ⚠ The tick boundary is taken FIRST, so a tick that THROWS still has its
+     * reads counted — the catch below swallows into a file, and the ticks worth
+     * seeing are exactly the ones that failed. */
+    readMeterTick();
+    if ((S.tickCount | 0) % READMETER_LOG_TICKS === 0) {
+        console.log(readMeterLine());
+        readMeterReset();
+    }
+    try { _tickImpl(); } catch (e) { captureError('tick', e); }
+};
 
 /* Host's Shift+Back asks us to leave the session; owning it routes the
  * gesture through the same save → EXITING farewell → teardown staging as the
