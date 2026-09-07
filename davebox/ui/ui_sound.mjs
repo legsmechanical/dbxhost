@@ -106,8 +106,9 @@ import { ctx as ppCtx, installPpCtx } from './pp_ctx.mjs';
 import {
     wavEditOpen, wavEditClose, wavEditActive, wavEditTick, renderWavEdit,
     wavEditOnKnob, wavEditOnKnobTouch, wavEditOnJog, wavForgetComponent,
+    wavEditFileKey,
 } from './ui_wav.mjs';
-import { isWavPosition }
+import { isWavPosition, wavSiblingKey }
     from '/data/UserData/schwung/shared/param_pages/wav_position.mjs';
 import { evaluateVisibility, normalizeVisibilityConditionKey }
     from '/data/UserData/schwung/shared/param_pages/visibility.mjs';
@@ -6586,6 +6587,35 @@ export function soundOnCC(d1, d2, decodeDelta) {
         /* MACROS: the click opens the assign list, which floats over the page
          * (no engine reads — the list is the store). */
         if (S.view === VIEW_MACROS) { openKnobEditor(); S.dirty = true; return true; }
+        /* ⭑ SHIFT+CLICK OPENS THE FILE BROWSER for the sample this marker is a
+         * position IN — the route this screen took away. Before it existed, a
+         * click on a marker dived to the bank editor, which is where the
+         * browser lives; pointing that dive at a waveform removed the only way
+         * to CHANGE the sample ("no way to browse kits or samples", from the
+         * device). Same grammar as the Instrument row: click enters, Shift+click
+         * picks. */
+        if (S.view === VIEW_WAV && S.shiftHeld) {
+            const fileKey = wavEditFileKey();
+            const bare = fileKey ? (ppBare(fileKey) || fileKey) : null;
+            /* ⚠ The browser wants a davebox CELL (label, fileRoot, fileFilter,
+             * fileStartPath), not the raw chain_param — makeCell is what turns
+             * one into the other, and the names differ on both sides
+             * (`root` -> `fileRoot`). Handing it the raw declaration would open
+             * a browser rooted at undefined. */
+            const decl = bare ? (S.cpMap && S.cpMap[bare]) : null;
+            const cell = decl ? makeCell(bare, decl) : null;
+            if (bare && cell && cell.kind === 'file') {
+                wavEditClose();
+                ppSuppressOnce = false; ppDivedOut = true;
+                openFileBrowser({ key: bare, pkey: bare, cell,
+                                  raw: engineGetChainParam(S.slot, fileKey) || '' });
+                S.dirty = true;
+                return true;
+            }
+            /* No linked file to browse: say nothing and stay put rather than
+             * dropping the user somewhere they did not ask for. */
+            return true;
+        }
         /* Click leaves too, as the host's does: on this screen there is nothing
          * to confirm — every edit already landed — so the two exits are the
          * same exit rather than one of them being a commit. */
@@ -8623,6 +8653,15 @@ function openWavEditor(fullKey, meta) {
             setParam: (k, v) => queueWrite(ppBare(k) || k, v),
             metaOf: (bare) => cp[bare] || null,
             buildKey: (bare) => `${S.comp}:${bare}`,
+            /* ⚠⚠ THE SIBLING IS ON THIS INSTANCE, not on the component. A
+             * marker on a child level names its file by a BARE key — DR32's
+             * pads declare `"filepath_param": "sample_move"` — while the
+             * parameter that exists on the wire is `pad05_sample_move`.
+             * Scoping to the component alone asked for `synth:sample_move`,
+             * read empty, and the screen said "no sample linked" for a pad
+             * that was loaded and audibly playing. Reported from the device. */
+            siblingKey: (bare) => wavSiblingKey(fullKey, (meta && meta.key) || '',
+                                                bare, S.comp),
             exists: (path) => {
                 if (!path) return false;
                 try { const st = FS_ADAPTER.stat(path); return !!(st && st[1] === 0); }

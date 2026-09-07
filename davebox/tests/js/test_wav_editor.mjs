@@ -40,6 +40,7 @@ const ink = () => fb.reduce((n, v) => n + v, 0);
  * and a dynamic import would fail the BUILD rather than the test. */
 import * as WAV from '../../ui/ui_wav.mjs';
 import * as PEAKS from '/data/UserData/schwung/shared/param_pages/wav_peaks.mjs';
+import * as WP from '/data/UserData/schwung/shared/param_pages/wav_position.mjs';
 
 /* A three-marker group, the shape the fleet actually ships (sample_start +
  * loop_start + loop_end sharing view_group "loop"). */
@@ -341,6 +342,85 @@ step('⚠ the peaks are NORMALISED — a quiet sample is not drawn as a flat lin
     /* The same file at a quarter of the amplitude must still fill the plot:
      * `points` are absolute and `peak` is what the cell widget divides by. */
     assert(loud > 200, 'rig: nothing was drawn to compare against');
+    WAV.wavEditClose();
+});
+
+/* ==================================================================== 14 == */
+step('⭐⭐ A CHILD LEVEL: the marker finds ITS OWN pad\'s sample', () => {
+    /*
+     * ⚠⚠ THE GAP THAT SHIPPED. Every fixture above puts the marker and its file
+     * on one flat level, where the component prefix is the whole answer. A drum
+     * module is not that shape and never was: DR32 declares 32 pads
+     * (`child_prefix:"pad"`) whose markers name their file by the BARE key
+     * `sample_move`, while the parameter that exists on the wire is
+     * `pad05_sample_move`. Scoping to the component asked for
+     * `synth:sample_move`, read empty, and the screen said "no sample linked"
+     * for a pad that was loaded and audibly playing — on the only module it was
+     * ever going to be tried on.
+     *
+     * The suites, a six-pass adversarial review and twenty mutation tests all
+     * missed it, because every one of them used a fixture of my own shape.
+     */
+    const PAD = (idx) => ({
+        key: 'start', name: 'Start', type: 'wav_position', mode: 'start',
+        filepath_param: 'sample_move', min: 0, max: 1, step: 0.01,
+    });
+    const store = {
+        'synth:pad05_start': '0.25',
+        'synth:pad05_sample_move': '/root/snare.wav',
+        'synth:pad12_sample_move': '/root/hat.wav',
+        /* ⚠ CONTROL: the component-scoped key the broken code asked for really
+         * does not exist, so this test cannot pass by accident. */
+    };
+    const asked = [];
+    const io = {
+        getParam: (k) => { asked.push(k); return store[k]; },
+        setParam: () => {},
+        metaOf: (bare) => (bare === 'sample_move'
+            ? { key: 'sample_move', type: 'filepath', root: '/root' } : null),
+        buildKey: (bare) => `synth:${bare}`,
+        siblingKey: (bare) => WP.wavSiblingKey('synth:pad05_start', 'start', bare, 'synth'),
+        exists: (p) => p === '/root/snare.wav' || p === '/root/hat.wav',
+        params: [{ key: 'start', fullKey: 'synth:pad05_start', meta: PAD(5) }],
+        durationSec: 0,
+    };
+    WAV.wavEditOpen({ key: 'start', fullKey: 'synth:pad05_start', meta: PAD(5),
+                      comp: 'synth', slot: 0, io });
+    seedPeaks('/root/snare.wav');
+    WAV.renderWavEdit();
+    const f = WAV.wavEditFrameForTest();
+    assert(f.reason === null,
+           'the screen still cannot find this pad\'s sample: ' + f.reason);
+    assert(f.path === '/root/snare.wav',
+           'resolved the wrong file: ' + f.path);
+    assert(asked.includes('synth:pad05_sample_move'),
+           'it never asked for the pad-scoped key; asked: ' + asked.join(', '));
+    assert(!asked.includes('synth:sample_move'),
+           'it asked for the COMPONENT-scoped key — the bug that shipped');
+    /* And the browse route points at the same pad-scoped key. */
+    assert(WAV.wavEditFileKey() === 'synth:pad05_sample_move',
+           'the file browser would open the wrong key: ' + WAV.wavEditFileKey());
+    WAV.wavEditClose();
+});
+
+/* ==================================================================== 15 == */
+step('⚠ the editor offers a route to CHANGE the sample — the one it took away', () => {
+    /* Clicking a marker used to dive to the bank editor, which is where the
+     * file browser lives. Taking that dive for the waveform removed the only
+     * way to browse: "no way to browse kits or samples", from the device. */
+    const r = rig(); open(r);
+    assert(WAV.wavEditFileKey() === 'synth:sample_path',
+           'the editor cannot name the file to browse: ' + WAV.wavEditFileKey());
+    /* ⚠ CONTROL: a marker with no declared file offers no browse rather than
+     * opening a browser onto nothing. */
+    const bare = { key: 'lone', type: 'wav_position', min: 0, max: 1, step: 0.01 };
+    const r2 = rig();
+    r2.io.params = [{ key: 'lone', fullKey: 'synth:lone', meta: bare }];
+    WAV.wavEditClose();
+    WAV.wavEditOpen({ key: 'lone', fullKey: 'synth:lone', meta: bare,
+                      comp: COMP, slot: 0, io: r2.io });
+    assert(WAV.wavEditFileKey() === null,
+           'a marker with no filepath_param offered a browse anyway');
     WAV.wavEditClose();
 });
 

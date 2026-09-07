@@ -403,6 +403,46 @@ export function joinWavPath(base, leaf) {
     return `${String(base).replace(/\/+$/, "")}/${String(leaf).replace(/^\/+/, "")}`;
 }
 
+/*
+ * The wire key of a SIBLING parameter on the same instance.
+ *
+ * ⚠⚠ THE CHILD INDEX IS THE WHOLE PROBLEM. A marker on a child level declares
+ * its file by a BARE key — DR32's pads say `"filepath_param": "sample_move"` —
+ * but the parameter that actually exists on the wire is `pad05_sample_move`.
+ * Scoping the declared key to the component alone asks for `synth:sample_move`,
+ * which no module serves: the read comes back empty and the screen reports "no
+ * sample linked" for a pad that is loaded and audibly playing.
+ *
+ * ⭑ THE PREFIX IS TAKEN FROM THE MARKER'S OWN RESOLVED KEY rather than rebuilt
+ * from `child_prefix` and an index. The marker was handed to us already
+ * resolved (`pad05_start`) and it declares its own bare name (`start`), so the
+ * difference between them IS the instance prefix — whatever that module's
+ * numbering looks like, zero-padded or not, 0- or 1-based. Rebuilding it would
+ * be a second implementation of a convention we can simply read.
+ *
+ * @param {string} markerFullKey  the marker as addressed, e.g. "synth:pad05_start"
+ * @param {string} ownBare        what the marker calls itself, e.g. "start"
+ * @param {string} declaredBare   the sibling it names, e.g. "sample_move"
+ * @param {string} prefix         the component, e.g. "synth"
+ */
+export function wavSiblingKey(markerFullKey, ownBare, declaredBare, prefix) {
+    const declared = String(declaredBare || "");
+    if (!declared) return "";
+    /* Already fully qualified: the module named a component itself. */
+    if (declared.includes(":")) return declared;
+
+    const full = String(markerFullKey || "");
+    const own = String(ownBare || "");
+    const p = String(prefix || "");
+    const bare = (p && full.startsWith(p + ":")) ? full.slice(p.length + 1) : full;
+
+    let instance = "";
+    if (own && bare.length > own.length && bare.endsWith(own)) {
+        instance = bare.slice(0, bare.length - own.length);
+    }
+    return p ? `${p}:${instance}${declared}` : `${instance}${declared}`;
+}
+
 export function wavBaseName(path) {
     if (!path) return "";
     const idx = String(path).lastIndexOf("/");
@@ -431,10 +471,17 @@ export function resolveWavSourcePath(meta, io) {
     if (!declared || !io || typeof io.getParam !== "function") return "";
 
     /* A key that already names a component is used as-is; a bare one is scoped
-     * to whatever the caller is showing (component, child index). */
+     * to whatever the caller is showing — component AND CHILD INSTANCE.
+     *
+     * ⚠ `siblingKey` is preferred over `buildKey` precisely because a bare
+     * declaration on a child level means "this instance's", not "the
+     * component's": see wavSiblingKey. `buildKey` remains the fallback for a
+     * caller that has no marker identity to derive from. */
     const linkedKey = declared.includes(":")
         ? declared
-        : (typeof io.buildKey === "function" ? io.buildKey(declared) : declared);
+        : (typeof io.siblingKey === "function"
+            ? io.siblingKey(declared)
+            : (typeof io.buildKey === "function" ? io.buildKey(declared) : declared));
 
     const raw = normalizeWavPath(io.getParam(linkedKey) || "");
     if (!raw) return "";

@@ -69,6 +69,23 @@ let W = null;
 let lastFrame = null;
 
 export function wavEditActive() { return W !== null; }
+/*
+ * The FILE this screen is about, as a wire key — what a browser would edit.
+ *
+ * ⚠⚠ WHY THIS EXISTS. Before this screen, clicking a sample marker dived to
+ * davebox's bank editor, which is where the file browser lives. Taking that
+ * dive for the waveform removed the only route to CHANGING the sample:
+ * reported from the device as "no way to browse kits or samples". The editor
+ * has to offer the browse itself, so the host needs to know which key to open.
+ */
+export function wavEditFileKey() {
+    if (!W) return null;
+    const a = activeMarker();
+    const declared = String((a.meta && a.meta.filepath_param) || '').trim();
+    if (!declared) return null;
+    return declared.includes(':') ? declared
+         : (W.io.siblingKey ? W.io.siblingKey(declared) : W.io.buildKey(declared));
+}
 export function wavEditState() { return W ? { ...W } : null; }
 export function wavEditFrameForTest() { return lastFrame; }
 
@@ -89,7 +106,10 @@ export function wavForgetComponent(comp, slot) {
  *   getParam(fullKey)    -> string        a live read
  *   setParam(fullKey, v)                  MUST enter the write ledger, never engineSet
  *   metaOf(bareKey)      -> meta|null     for a filepath param's root/start_path
- *   buildKey(bareKey)    -> fullKey       scoped to the component/child on screen
+ *   buildKey(bareKey)    -> fullKey       scoped to the component
+ *   siblingKey(bareKey)  -> fullKey       scoped to the component AND INSTANCE —
+ *                                         a child level's bare declaration means
+ *                                         "this pad's", not "the component's"
  *   exists(path)         -> bool
  *   params               -> [{key, fullKey, meta}]  the level's params, IN ORDER
  *   durationSec          -> number        0 when unknown
@@ -170,7 +190,8 @@ function refreshSourcePath() {
     const a = activeMarker();
     const declared = String((a.meta && a.meta.filepath_param) || '').trim();
     if (!declared) { W.rawLink = ''; W.path = ''; return; }
-    const linkedKey = declared.includes(':') ? declared : W.io.buildKey(declared);
+    const linkedKey = declared.includes(':') ? declared
+        : (W.io.siblingKey ? W.io.siblingKey(declared) : W.io.buildKey(declared));
     const raw = W.io.getParam(linkedKey);
     if (raw === W.rawLink) return;
     W.rawLink = raw;
@@ -178,6 +199,12 @@ function refreshSourcePath() {
         getParam: W.io.getParam,
         metaOf: W.io.metaOf,
         buildKey: W.io.buildKey,
+        /* ⚠⚠ WITHOUT THIS the resolver falls back to buildKey, which scopes to
+         * the COMPONENT — and a child level's bare declaration means "this
+         * pad's". That is the whole DR32 bug. An earlier edit added it to a
+         * function that no longer existed in that shape, the replace matched
+         * nothing, reported success, and the fix was never in the tree. */
+        siblingKey: W.io.siblingKey,
         exists: W.io.exists,
     });
 }
@@ -314,7 +341,8 @@ export function renderWavEdit() {
     /* ⚠ NO FILE, NO PLOT — and say which, rather than drawing an empty frame
      * that reads as a silent sample. */
     if (!path) {
-        centre('No sample linked', 30);
+        centre('No sample linked', 26);
+        if (wavEditFileKey()) centre('shift+click to choose one', 37);
         footer();
         lastFrame = { path: '', reason: 'no file', markers: [] };
         return true;
@@ -408,6 +436,7 @@ function footer() {
         return;
     }
     const hints = [['BACK', 'OUT'], ['JOG', 'MOVE']];
+    if (W && wavEditFileKey()) hints.push(['SHFT CLK', 'FILE']);
     if (W && wavZoomOffered(W.meta, W.members.length)) hints.push(['K8', 'ZOOM']);
     drawKitHintRow(null, hints);
 }
