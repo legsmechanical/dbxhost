@@ -482,6 +482,21 @@ function paramPagesChildIndex(level) {
     return (typeof controller.childIndexOf === "function")
         ? controller.childIndexOf(level) : -1;
 }
+/*
+ * The DISPLAY label of the page the grid is on — "Pad 1", or "Kick" where the
+ * module named its children, rather than the raw page name.
+ *
+ * ⭑ FOR A CONSUMER THAT DIVES OUT OF THE GRID. A fullscreen editor opened from
+ * a cell has the param and nothing else, so on a repeated element it can only
+ * say "START" — which of thirty-two pads it belongs to is exactly the fact the
+ * page it came from was displaying. `controller.pageLabel` already resolves the
+ * declared child name and the "- 2" continuation suffix; without this it is
+ * reachable only from inside the library.
+ */
+function paramPagesPageLabel() {
+    return (controller && typeof controller.pageLabel === "function")
+        ? (controller.pageLabel() || "") : "";
+}
 /** The grid's own value for `key`, or undefined (see controller.valueOf). */
 function paramPagesCachedValue(key) {
     return (controller && typeof controller.valueOf === "function") ? controller.valueOf(key) : undefined;
@@ -1470,6 +1485,7 @@ function paramPagesMenuEntered() {
         paramPagesChildIndex,
         paramPagesComponent,
         paramPagesLevelNameOf,
+        paramPagesPageLabel,
         paramPagesEnabled,
         paramPagesExitMenu,
         paramPagesFooterHints,

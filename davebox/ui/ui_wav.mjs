@@ -86,6 +86,23 @@ export function wavEditFileKey() {
     return declared.includes(':') ? declared
          : (W.io.siblingKey ? W.io.siblingKey(declared) : W.io.buildKey(declared));
 }
+/*
+ * What this screen is called in a breadcrumb: the marker, and the instance it
+ * belongs to when there is one — "PAD 7 START".
+ *
+ * ⚠ NOT the header string. A header may spend the full 128px; a crumb shares
+ * 116px with the rest of the path, and `drawKitHeaderParamPages` truncates its
+ * own left side anyway. Both read from here so the two cannot drift, which is
+ * the failure this file has already had once with the marker LABEL.
+ */
+export function wavEditCrumb() {
+    if (!W) return '';
+    const a = activeMarker();
+    const where = W.crumbs && W.crumbs.length ? String(W.crumbs[W.crumbs.length - 1]) : '';
+    const what = labelOf({ ...a, label: null });
+    return where ? `${where} ${what}` : what;
+}
+
 export function wavEditState() { return W ? { ...W } : null; }
 export function wavEditFrameForTest() { return lastFrame; }
 
@@ -118,9 +135,12 @@ export function wavForgetComponent(comp, slot) {
 export function wavEditOpen({ key, fullKey, meta, comp, slot = 0, io }) {
     const expanded = isWavPosition(meta) ? wavPositionMeta(meta) : null;
     if (!expanded) return false;
+    /* The path to this screen, as the caller knows it — see wavEditCrumb. */
+    const crumbs = (io && Array.isArray(io.crumbs)) ? io.crumbs.slice() : [];
     const members = wavViewGroupMembers(io.params || [], expanded.view_group);
     W = {
         key, fullKey, meta: expanded, comp, slot, io,
+        crumbs,
         members,
         /* ⚠⚠ RESOLVED ONCE. Every resolution is one param read plus up to three
          * `stat`s, and this used to run in the DRAW — per frame, plus once more
@@ -335,7 +355,11 @@ export function renderWavEdit() {
     const path = sourcePath();
 
     const zoomSuffix = zoom > 0 ? ` ${wavZoomLabel(zoom)}` : '';
-    drawKitHeaderParamPages(labelOf({ ...a, label: null }),
+    /* ⭑ THE INSTANCE IS PART OF THE NAME. "START" alone does not say which of
+     * DR32's thirty-two pads you are trimming, and the page this screen was
+     * dived from was showing exactly that. The header fits its own left side
+     * and drops the pad first if the value needs the room. */
+    drawKitHeaderParamPages(wavEditCrumb(),
                             wavPositionText(raw, a.meta, dur) + zoomSuffix, true);
 
     /* ⚠ NO FILE, NO PLOT — and say which, rather than drawing an empty frame

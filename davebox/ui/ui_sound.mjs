@@ -107,7 +107,7 @@ import { ctx as ppCtx, installPpCtx } from './pp_ctx.mjs';
 import {
     wavEditOpen, wavEditClose, wavEditActive, wavEditTick, renderWavEdit,
     wavEditOnKnob, wavEditOnKnobTouch, wavEditOnJog, wavForgetComponent,
-    wavEditFileKey,
+    wavEditFileKey, wavEditCrumb,
 } from './ui_wav.mjs';
 import { isWavPosition, wavSiblingKey }
     from '/data/UserData/schwung/shared/param_pages/wav_position.mjs';
@@ -129,7 +129,8 @@ const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         clearParamPagesTouch, currentParamPage,
         paramPagesPickerOpen, paramPagesMenuEntered,
         paramPagesRefreshTrailing, paramPagesFullKeyAt, paramPagesRepaintKnobs,
-        paramPagesCachedValue, paramPagesLevelNameOf } = PP;
+        paramPagesCachedValue, paramPagesLevelNameOf,
+        paramPagesPageLabel } = PP;
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* Chain blocks in signal order, across the audio-FX blocks the host routes.
@@ -3459,6 +3460,15 @@ const VIEW_TREE = {
     [VIEW_ENUM]:        { parent: () => (S.enumPick ? S.enumPick.from : null),
                           float: true, backPure: true,
                           crumb: () => (S.enumPick ? S.enumPick.label : 'Value') },
+    /* ⚠ NOT `backPure`: Back from the waveform also closes the editor, clears
+     * the errand and hands the grid back its suppression flags, so it keeps its
+     * own branch — the table's own rule for a screen whose Back does more than
+     * step up. It is tabled for the other three things the table is: the
+     * breadcrumb path, the stack depth, and which screen is drawn underneath.
+     * ⚠ `float: false` for the LFO's reason — the content is not a list. An
+     * overlay box would cover the plot, which is the whole screen. */
+    [VIEW_WAV]:         { parent: VIEW_EDIT,       float: false,
+                          crumb: () => wavEditCrumb() || 'Wave' },
 };
 
 /* Applying an Instrument choice. Extracted so the PICKER and the old
@@ -8771,6 +8781,22 @@ function openWavEditor(fullKey, meta) {
             },
             params,
             durationSec: 0,
+            /*
+             * ⭑ WHICH PAD. The screen has the parameter and nothing else, so on
+             * a repeated element it could only say "START" — and DR32 has
+             * thirty-two of them. The page the dive came FROM was displaying
+             * exactly that fact, resolved (a declared child name where the
+             * module gave one, "Pad 7" where it did not), so it is taken from
+             * there rather than re-derived from the key.
+             *
+             * ⚠ READ BEFORE THE GRID IS GONE — `openParamEditor` has already
+             * called `exitParamPages()` by the time this runs, but the
+             * controller survives the exit; it is a NEW component that rebuilds
+             * it. The day that changes this reads "" and the header quietly
+             * loses the pad, so the test drives the real dive rather than the
+             * accessor.
+             */
+            crumbs: [modLabel(), paramPagesPageLabel()].filter(Boolean),
         },
     });
 }

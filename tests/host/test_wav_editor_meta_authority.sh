@@ -62,6 +62,20 @@ ok(/wavSiblingKey\(fullKey, ownBare, k, S\.comp\)/.test(op),
 ok(!/fullKey:\s*`\$\{S\.comp\}:\$\{k\}`/.test(op),
    "control: the component-scoped form is gone");
 
+/* ---- the screen must be able to say WHICH INSTANCE ---------------------- */
+/* ⚠⚠ "START" IS THE SAME HEADER ON ALL THIRTY-TWO OF DR32`S PADS. The editor
+ * has the parameter and nothing else, so the instance has to be handed to it —
+ * and it is taken from the page the dive came FROM, which was already
+ * displaying exactly that, resolved (a declared child name where the module
+ * gave one, "Pad 7" where it did not). Re-deriving it from the key would be a
+ * second implementation of a convention the grid already resolved.
+ * ⚠ Read while the controller is still alive: openParamEditor has called
+ * exitParamPages() by this point, and the controller survives that today. */
+ok(/crumbs: \[modLabel\(\), paramPagesPageLabel\(\)\]\.filter\(Boolean\)/.test(op),
+   "the editor is told which page it was dived from");
+ok(/paramPagesPageLabel/.test(strip(src).slice(0, strip(src).indexOf("} = PP;"))),
+   "control: paramPagesPageLabel is taken off the binding, not invented here");
+
 /* The Shift+click browse route. It lives in the click handler, so pin the one
  * statement rather than a whole function. */
 ok(/const decl = bare \? authoritativeMeta\(bare, S\.cpMap, S\.levels\) : null;/.test(strip(src)),
