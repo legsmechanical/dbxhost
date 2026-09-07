@@ -1317,8 +1317,15 @@ export function soundFollowStateForTest() {
 export function soundRetarget(track, slot) {
     /* ⚠⚠ BEFORE the slot moves — see wavEditCloseIfOpen. The wave editor holds
      * a component and reads/writes against S.slot, so leaving it open across a
-     * retarget lands an edit on a track the user never opened. */
-    wavEditCloseIfOpen();
+     * retarget lands an edit on a track the user never opened.
+     *
+     * ⚠ NOT ON A SESSION BUS. That path returns a few lines below WITHOUT
+     * moving `S.slot` or `S.comp` — its whole point is to leave the view alone
+     * — so there is no cross-track edit to prevent, and closing anyway tore the
+     * waveform down for nothing on EVERY track press while a session send was
+     * being edited. The guard is the same condition as that return, read here
+     * because `S.bus` cannot change in between. */
+    if (!(S.bus && S.bus.kind === 'global')) wavEditCloseIfOpen();
     flushForRetarget();
     takeBankIdentity(track, S.bankHome);
 
@@ -8711,16 +8718,18 @@ function wavEditCloseIfOpen() {
      * user standing in a file browser built from the OLD component's
      * `S.fileKey`.
      *
-     * ⚠ WHICH CALLER MAKES THAT DANGEROUS — corrected after an advisor pass
-     * traced it, because my first version of this comment named the wrong one.
-     * `soundRetarget` nulls `S.fileState` a few lines later in the SAME
-     * synchronous call, so there the browser was merely DEAD: `NO BROWSER` on
-     * screen and an inert click, bad but not a write. `soundExit` clears
-     * `S.active`, so nothing renders or dispatches. It is `runDiscovery` — a
-     * module SWAP — that leaves `fileState` intact, and there a pick writes the
-     * OLD module's sample-path key into the slot the new module now owns.
-     * `queueWrite` captures `S.slot` at call time (its own comment says so), so
-     * the write is real and lands. All three want the screen closed.
+     * ⚠ WHICH CALLER MAKES THAT DANGEROUS — corrected TWICE, because the first
+     * version named the wrong one and the second was true of only one path.
+     * `soundRetarget` nulls `S.fileState` a few lines later in the same
+     * synchronous call, so on its CHAIN path the browser was merely DEAD:
+     * `NO BROWSER` on screen and an inert click, bad but not a write. (Its
+     * session-bus path returns above that line — but it moves neither slot nor
+     * component, so nothing is mis-addressed there either, and it no longer
+     * reaches here at all.) `soundExit` clears `S.active`, so nothing renders
+     * or dispatches. It is `runDiscovery` — a module SWAP — that leaves
+     * `fileState` intact, and there a pick writes the OLD module's sample-path
+     * key into the slot the new module now owns. `queueWrite` captures `S.slot`
+     * at call time (its own comment says so), so the write is real and lands.
      *
      * ⚠ `ppDivedOut` goes with it. It is set alongside the errand at the dive
      * and cleared at every other exit; left standing, the next arrival at

@@ -140,6 +140,30 @@ ok(/wavErrand = false;/.test(act), "...and the crumb is dropped as it is spent")
     ok(/ppSuppressOnce = false;/.test(closer),
        "...and the grid is free to re-enter on the component we moved to");
 }
+/* ⚠ A SESSION BUS MUST NOT LOSE THE WAVEFORM. `soundRetarget` closes the editor
+ * before switching tracks, which is right on the chain path — but its
+ * session-bus branch returns a few lines below WITHOUT moving the slot or the
+ * component, so there is nothing to protect against and the close was pure
+ * loss: every track press tore the waveform down while you were editing a
+ * session send. Guarded on the same condition as that return.
+ *
+ * ⚠ THIS IS AN ORDER-AND-CONDITION PIN, and that is ALL it proves — the guard
+ * is spelled and it sits ahead of the retarget. It cannot show the editor
+ * survives; that needs the gesture rig this suite does not have yet. Said
+ * plainly, because a source pin read as a behaviour proof is how three bugs got
+ * through this arc. */
+{
+    const retarget = body("export function soundRetarget(");
+    ok(/if \(!\(S\.bus && S\.bus\.kind === .global.\)\) wavEditCloseIfOpen\(\);/.test(retarget),
+       "a session bus keeps its waveform across a track press");
+    const guardAt = retarget.search(/if \(!\(S\.bus && S\.bus\.kind === .global.\)\) wavEditCloseIfOpen/);
+    const flushAt = retarget.indexOf("flushForRetarget()");
+    ok(guardAt >= 0 && flushAt >= 0 && guardAt < flushAt,
+       "...and the close still happens BEFORE the slot moves, for the chain path");
+    ok(!/^\s*wavEditCloseIfOpen\(\);/m.test(retarget),
+       "control: no unguarded call survives beside it");
+}
+
 /* Both returns refuse a screen that is not there — belt to those braces. */
 ok(/if \(wavEditActive\(\)\) \{ S\.view = VIEW_WAV; S\.dirty = true; return true; \}/.test(src),
    "Back only goes to the waveform if the editor is still open");
