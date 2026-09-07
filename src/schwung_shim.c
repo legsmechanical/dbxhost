@@ -4142,6 +4142,28 @@ static const char *bulk_next(const char **pp, const char *end, int *out_len) {
 
 /* Append "<len>\n<bytes>" to out[off..cap); returns new offset, or -1 on
  * overflow. */
+/*
+ * A key the resolver did not understand, as distinct from one whose value is
+ * genuinely the empty string.
+ *
+ * ⚠⚠ WHY IT NEEDED ITS OWN MARKER. Until this existed an unresolved key came
+ * back as a zero-length VALUE with the item count still correct, so a
+ * well-formed reply full of "" was indistinguishable from a chunk of real empty
+ * values — and davebox's per-key fallback never fired. That is how every
+ * Move-bus level went missing from every snapshot for a day (device, 2026-09-06):
+ * the bulk and single resolvers do not cover the same prefixes, and the gap was
+ * SILENT by construction.
+ *
+ * `?` rather than a negative length because the reader's length parser already
+ * uses -1 as its own parse-error value; a second meaning on that channel is how
+ * an error becomes a datum.
+ */
+static int bulk_put_unresolved(char *out, int off, int cap) {
+    int hdr = snprintf(out + off, (size_t)(cap - off), "?\n");
+    if (hdr <= 0 || off + hdr > cap) return -1;
+    return off + hdr;
+}
+
 static int bulk_put(char *out, int off, int cap, const char *bytes, int len) {
     int hdr = snprintf(out + off, (size_t)(cap - off), "%d\n", len);
     if (hdr <= 0 || off + hdr + len > cap) return -1;
@@ -4212,13 +4234,22 @@ static void shim_handle_param_bulk(uint8_t req_type) {
     for (int i = 0; i < count; i++) {
         int klen = 0;
         const char *k = bulk_next(&p, end, &klen);
-        int vlen = 0;
+        int vlen = 0, resolved = 0;
         if (k && klen > 0 && klen < (int)sizeof keybuf && api->get_param) {
             memcpy(keybuf, k, (size_t)klen); keybuf[klen] = '\0';
             int r = api->get_param(inst, keybuf, s_bulk_val, SHADOW_PARAM_VALUE_LEN);
-            if (r > 0) vlen = (r >= SHADOW_PARAM_VALUE_LEN) ? SHADOW_PARAM_VALUE_LEN - 1 : r;
+            /* ⚠ Same reading as the chain handler: r == 0 is the empty string,
+             * an ANSWER; only r < 0 means the key is unknown. This handler had
+             * the identical fold and would have gone on reporting an unknown
+             * key as a blank value long after the other was fixed — which is
+             * how two copies of a rule drift. */
+            if (r >= 0) {
+                resolved = 1;
+                vlen = (r >= SHADOW_PARAM_VALUE_LEN) ? SHADOW_PARAM_VALUE_LEN - 1 : r;
+            }
         }
-        int noff = bulk_put(out, off, SHADOW_PARAM_VALUE_LEN, s_bulk_val, vlen);
+        int noff = resolved ? bulk_put(out, off, SHADOW_PARAM_VALUE_LEN, s_bulk_val, vlen)
+                            : bulk_put_unresolved(out, off, SHADOW_PARAM_VALUE_LEN);
         if (noff < 0) { shadow_param->error = 22; shadow_param->result_len = -1; return; }
         off = noff;
     }
@@ -4364,14 +4395,25 @@ static void shim_handle_param_bulk_chain_get(void) {
     int   off = snprintf(out, SHADOW_PARAM_VALUE_LEN, "%d\n", count);
     char  keybuf[SHADOW_PARAM_KEY_LEN];
     for (int i = 0; i < count; i++) {
-        int klen = 0, vlen = 0;
+        int klen = 0, vlen = 0, resolved = 0;
         const char *k = bulk_next(&p, end, &klen);
         if (k && klen > 0 && klen < (int)sizeof keybuf) {
             memcpy(keybuf, k, (size_t)klen); keybuf[klen] = '\0';
             int r = shadow_direct_get_param(slot, keybuf, s_bulk_val, SHADOW_PARAM_VALUE_LEN);
-            if (r > 0) vlen = (r >= SHADOW_PARAM_VALUE_LEN) ? SHADOW_PARAM_VALUE_LEN - 1 : r;
+            /*
+             * ⚠ r == 0 IS AN ANSWER — the empty string — and only r < 0 means
+             * "I do not know this key". Folding the two (the old `if (r > 0)`)
+             * is what made an unresolved key look like an empty value, so the
+             * caller could not tell a prefix the bulk path cannot resolve from
+             * a parameter that is genuinely blank.
+             */
+            if (r >= 0) {
+                resolved = 1;
+                vlen = (r >= SHADOW_PARAM_VALUE_LEN) ? SHADOW_PARAM_VALUE_LEN - 1 : r;
+            }
         }
-        int noff = bulk_put(out, off, SHADOW_PARAM_VALUE_LEN, s_bulk_val, vlen);
+        int noff = resolved ? bulk_put(out, off, SHADOW_PARAM_VALUE_LEN, s_bulk_val, vlen)
+                            : bulk_put_unresolved(out, off, SHADOW_PARAM_VALUE_LEN);
         if (noff < 0) { shadow_param->error = 22; shadow_param->result_len = -1; return; }
         off = noff;
     }
