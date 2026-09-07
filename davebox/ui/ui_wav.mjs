@@ -34,7 +34,7 @@ import {
     WAV_ZOOM_STEP, WAV_ZOOM_MAX, WAV_ZOOM_KNOB,
 } from '/data/UserData/schwung/shared/param_pages/wav_position.mjs';
 import {
-    wavPeaks, wavPeaksTick, wavPeaksDone, wavPeaksHasIo,
+    wavPeaks, wavPeaksTick, wavPeaksDone,
 } from '/data/UserData/schwung/shared/param_pages/wav_peaks.mjs';
 
 /* The plot, in the panel between header and footer. */
@@ -224,7 +224,6 @@ function refreshSourcePath() {
      * INSIDE it. Logged once per resolve (the guard above returns unless the
      * module's value actually changed), never per tick.
      */
-    const _dbgExists = (p) => { try { return W.io.exists(p) ? 'yes' : 'no'; } catch (e) { return 'threw:' + e; } };
     W.path = resolveWavSourcePath(a.meta, {
         getParam: W.io.getParam,
         metaOf: W.io.metaOf,
@@ -237,11 +236,6 @@ function refreshSourcePath() {
         siblingKey: W.io.siblingKey,
         exists: W.io.exists,
     });
-    console.log('[wav] key=' + linkedKey
-              + ' raw=' + JSON.stringify(raw)
-              + ' resolved=' + JSON.stringify(W.path)
-              + ' exists=' + _dbgExists(W.path)
-              + ' peaksIo=' + (wavPeaksHasIo && wavPeaksHasIo() ? 'yes' : 'no'));
 }
 
 /*
