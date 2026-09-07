@@ -56,8 +56,29 @@ function mrdrumsChildLevel() {
     return found;
 }
 
+const ENGINE_ERR = Object.create(null);
+globalThis.shadow_get_param = (slot, key) => {
+    const bare = String(key).replace(/^slot:/, '');
+    return Object.prototype.hasOwnProperty.call(ENGINE_ERR, bare) ? ENGINE_ERR[bare] : '';
+};
+globalThis.shadow_set_param = () => 1;
+globalThis.shadow_send_midi_to_dsp = () => {};
+for (const fn of ['set_pixel', 'fill_rect', 'draw_rect', 'stipple_rect', 'clear_screen',
+                  'print', 'pixel_print', 'flush_display'])
+    globalThis[fn] = () => {};
+globalThis.text_width = (t) => String(t).length * 6;
+for (const fn of ['host_write_file', 'host_read_file', 'host_file_exists', 'host_ensure_dir',
+                  'host_remove_dir', 'host_system_cmd', 'host_module_set_param',
+                  'host_module_get_param', 'host_send_midi', 'move_midi_inject_to_move',
+                  'host_set_led', 'set_led', 'host_get_setting', 'host_set_setting',
+                  'move_midi_internal_send', 'host_vol_block', 'host_edit_cc_block',
+                  'host_ext_midi_remap_clear', 'host_ext_midi_remap_set',
+                  'host_ext_midi_remap_enable'])
+    globalThis[fn] = () => (fn.indexOf('read') >= 0 || fn.indexOf('get') >= 0 ? '' : 0);
+
 async function main() {
 const { childSpec, childParamKey, livePressSpec, authoritativeMeta } = await import('../../ui/ui_discover.mjs');
+const snd = await import('../../ui/ui_sound.mjs');
 
 const LVL = mrdrumsChildLevel();
 
@@ -179,6 +200,28 @@ step('control: a real prefix level DOES still invert its per-instance key', () =
     const meta = authoritativeMeta('pad3_start', null, levels);
     assert(meta && meta.key === 'start',
            'the prefix inversion stopped working: ' + JSON.stringify(meta));
+});
+
+/* ---- a failed module is refused, not silently edited -------------------- */
+step('⭐ a component reporting a load failure is READ, not assumed healthy', () => {
+    ENGINE_ERR['synth_error'] = 'sample bank missing';
+    assert(snd.soundComponentErrorForTest(2, 'synth') === 'sample bank missing',
+           'davebox did not read the failure — the editor would open on a dead module');
+});
+
+step('...and a healthy component reads null', () => {
+    ENGINE_ERR['synth_error'] = '';
+    assert(snd.soundComponentErrorForTest(2, 'synth') === null,
+           'an empty error read as a failure — a working module would be uneditable');
+});
+
+step('⚠ an fx component uses its own namespaced key', () => {
+    ENGINE_ERR['synth_error'] = '';
+    ENGINE_ERR['fx1:error'] = 'no such plugin';
+    assert(snd.soundComponentErrorForTest(2, 'fx1') === 'no such plugin',
+           'an fx failure was not read from fx1:error');
+    assert(snd.soundComponentErrorForTest(2, 'synth') === null,
+           'the fx failure leaked onto the generator');
 });
 
 console.log(failed ? 'FAIL' : 'PASS');
