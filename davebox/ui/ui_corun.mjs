@@ -332,10 +332,16 @@ function cleanupAfterMoveNativeCoRun() {
      * teardown would have it undone underneath. A 'track' origin needs nothing:
      * closing the service already lands on track view.
      *
-     * Guarded on the route still being Move: the only way it changed is the
-     * global menu, which is unreachable during co-run, but re-entering a Move
-     * screen for a track that is no longer Move-routed would be a screen with
-     * nothing behind it. */
+     * Guarded on the route still being Move, because re-entering a Move screen
+     * for a track that is no longer Move-routed would be a screen with nothing
+     * behind it.
+     * ⚠ CORRECTED 2026-09-07: this used to say the route "can only have changed
+     * from the global menu, which is unreachable during co-run". That has been
+     * false since the Instrument row became the door (Josh, 2026-09-04) — its
+     * Shift+click picker changes the route from the SOUND MENU, and a Move
+     * track reached co-run through that very row. The guard was already right;
+     * only the reasoning had rotted. Do not lean on "the route cannot change
+     * here" anywhere else. */
     if (_origin === 'sound' && _originTrack >= 0 && S.trackRoute[_originTrack] === 1) {
         S.pendingSoundEnterTrack = _originTrack;
     }
