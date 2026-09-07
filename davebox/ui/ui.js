@@ -77,7 +77,8 @@ import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons } from './
 import { applyBankPick, heldStepJog } from './ui_input_cc.mjs';
 import { standDownBankDisplay } from './ui_state.mjs';
 import { _onCCMsg } from './ui_input_cc.mjs';
-import { soundActive, soundOpen, soundResting, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw } from './ui_sound.mjs';
+import { soundActive, soundOpen, soundResting, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw,
+         installGateMemoInvalidation } from './ui_sound.mjs';
 import { soundModeCovered } from './ui_render.mjs';
 import { _tickImpl, applyExtMidiRemap, requestSessionExit } from './ui_tick.mjs';
 
@@ -377,6 +378,11 @@ globalThis.init = function () {
      * second wrap would double every number silently.
      */
     installReadMeter();
+    /* ⭐ Gate values forget themselves whenever anything reaches the engine.
+     * Installed HERE, beside the read meter, and for the same reason: both wrap
+     * a host binding so no write call site can be forgotten. ⚠ After
+     * installReadMeter, so the meter still counts the writes it wraps. */
+    installGateMemoInvalidation();
     /* See the import: the registration must land in the instance the widgets
      * read from, so it is done here rather than left to a side effect. */
     setWavPeaksIO(WAV_QJS_IO);
