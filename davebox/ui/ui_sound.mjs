@@ -1500,7 +1500,7 @@ export function soundExit(opts) {
     /* ⚠ The editor's navigation crumbs die with the session. A stale one would
      * swallow a Back or retrace to a screen from a previous visit — the failure
      * this whole pass was about, arriving by a different door. */
-    ppAteBackPress = false; ppDivedOut = false; ppErrandView = null;
+    ppAteBackPress = false; ppDivedOut = false; ppErrandView = null; wavErrand = false;
     ppSuppressOnce = false; ppRestorePage = null;
     if (S.busLevelDirty) engineSaveState();
     S.active = false;
@@ -5275,7 +5275,13 @@ function fileActivate() {
         queueWrite(S.fileKey, res.value);
         const row = S.menuRowsCache.find(r => (r.pkey || r.key) === S.fileKey);
         if (row) { row.raw = res.value; row.val = res.value; }
-        S.view = VIEW_MENU;
+        /* ⭑ A PICK GOES BACK WHERE THE PICK WAS ASKED FOR. From the wave
+         * editor that is the waveform — which redraws on the new sample by
+         * itself, because refreshSourcePath is watching the value we just
+         * queued. VIEW_MENU is davebox's own answer and is still right for
+         * davebox's own browse. */
+        S.view = (wavErrand ? VIEW_WAV : VIEW_MENU);
+        wavErrand = false;
         S.presetMsg = '';
     }
 }
@@ -6613,7 +6619,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
             const decl = bare ? authoritativeMeta(bare, S.cpMap, S.levels) : null;
             const cell = decl ? makeCell(bare, decl) : null;
             if (bare && cell && cell.kind === 'file') {
-                wavEditClose();
+                wavErrand = true;
                 ppSuppressOnce = false; ppDivedOut = true;
                 openFileBrowser({ key: bare, pkey: bare, cell,
                                   raw: engineGetChainParam(S.slot, fileKey) || '' });
@@ -6629,6 +6635,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * same exit rather than one of them being a commit. */
         if (S.view === VIEW_WAV) {
             wavEditClose();
+            wavErrand = false;
             ppSuppressOnce = false; ppDivedOut = false;
             S.view = VIEW_EDIT; S.dirty = true;
             return true;
@@ -6910,8 +6917,21 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * contract every other dive-out has. It commits nothing on the way out
          * because it has committed every detent already (through the ledger),
          * so there is no cancel here and none is implied. */
+        /* ⭑ THE BROWSER THE WAVE EDITOR OPENED BACKS INTO THE WAVE EDITOR.
+         * Above the VIEW_WAV branch and above davebox's per-view tree, for the
+         * same reason ppErrandView is: the tree below steps up davebox's OWN
+         * screens, which is not the path you walked to get here. Nothing is
+         * committed or reverted — an un-picked browse simply leaves the value
+         * alone. */
+        if (S.view === VIEW_FILE && wavErrand) {
+            wavErrand = false;
+            S.view = VIEW_WAV;
+            S.dirty = true;
+            return true;
+        }
         if (S.view === VIEW_WAV) {
             wavEditClose();
+            wavErrand = false;
             ppSuppressOnce = false;   /* let ppSync re-enter the grid at once */
             ppDivedOut = false;
             S.view = VIEW_EDIT;
@@ -8128,6 +8148,24 @@ let ppDivedOut = false;
  * by screen: the rule is general, so the crumb is general. Anything the editor
  * opens sets this, and both the Back path and the renderer read it. */
 let ppErrandView = null;
+
+/*
+ * The file browser is up ON AN ERRAND FROM THE WAVE EDITOR, and Back or a pick
+ * belongs to that screen rather than to davebox's own tree.
+ *
+ * ⚠⚠ WITHOUT THIS BOTH EXITS STRAND YOU. `VIEW_FILE`'s Back steps to
+ * `VIEW_MENU` and `fileActivate` lands there too — davebox's hierarchy menu,
+ * which you did not come through, whose `S.menuRowsCache` was never built
+ * because the dive out of the grid never asked for a discover. You pick a
+ * sample and arrive at an empty list, with the waveform you were looking at
+ * gone.
+ *
+ * ⭑ The editor is deliberately left OPEN underneath (no `wavEditClose`), so
+ * coming back is a view change and nothing has to be rebuilt. Its own
+ * `refreshSourcePath` notices the new value on the next tick and re-streams
+ * the peaks, which is exactly the point of having gone.
+ */
+let wavErrand = false;
 
 /* Does the editor currently have a layer of its own for Back to close — an open
  * picker, or a menu/preset page you have entered? Only then does Back belong to
