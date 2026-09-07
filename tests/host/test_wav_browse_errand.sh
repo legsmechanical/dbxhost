@@ -40,6 +40,37 @@ const body = (needle) => {
 
 ok(/\blet wavErrand = false;/.test(src), "the errand crumb exists");
 
+/* ---- the OPEN is deferred to tick ---------------------------------------- */
+/* ⚠⚠ A BLOCKING READ AND A readdir INSIDE THE MIDI CC HANDLER stall the tick,
+ * and a stalled tick tail-drops the 64-slot input ring. The event most likely
+ * to be lost is a note RELEASE, which then sticks forever in Move AND in the
+ * slot synth. davebox states this doctrine in openChainPatches` own comment and
+ * follows it for its own file row (`{t: "file"}`); this gesture must too. */
+const shiftBranch = src.slice(src.indexOf("S.view === VIEW_WAV && S.shiftHeld"),
+                              src.indexOf("S.view === VIEW_WAV && S.shiftHeld") + 1400);
+ok(/S\.pendingAction = \{ t: .wavfile., bare, cell, fileKey \};/.test(shiftBranch),
+   "Shift+click QUEUES the browse rather than opening it");
+ok(shiftBranch.indexOf("openFileBrowser(") < 0,
+   "...the handler does not open the browser itself (readdir on the MIDI path)");
+ok(shiftBranch.indexOf("engineGetChainParam(") < 0,
+   "...nor take a blocking engine read on the MIDI path");
+/* The decision is still made here, and it is pure — both of these read state we
+ * already hold and touch no device. Pinned so a later "tidy" cannot move them
+ * into the tick and leave the gesture consuming a press it may not own. */
+ok(/authoritativeMeta\(bare, S\.cpMap, S\.levels\)/.test(shiftBranch) &&
+   /makeCell\(bare, decl\)/.test(shiftBranch),
+   "control: the pure decision — is there a file at all — stays in the handler");
+
+/* ⚠ The whole program is inside single quotes in the shell, so a JS string
+ * literal cannot contain one — match the action tag with a wildcard. */
+const actionAt = src.search(/a\.t === .wavfile./);
+const runAction = actionAt >= 0 ? src.slice(actionAt, actionAt + 500) : "";
+ok(actionAt >= 0, "the tick dispatches a `wavfile` action");
+ok(/if \(S\.view === VIEW_WAV\)/.test(runAction),
+   "⚠ the queued open is dropped if the waveform is gone by the time it runs");
+ok(/openFileBrowser\(\{ key: a\.bare/.test(runAction),
+   "control: the tick is what actually opens it");
+
 /* ---- the way out: the browser opens with the editor still alive ---------- */
 const nSetTrue = (src.match(/wavErrand = true;/g) || []).length;
 ok(nSetTrue === 1, "exactly one place sets the errand — the Shift+click browse (" + nSetTrue + ")");

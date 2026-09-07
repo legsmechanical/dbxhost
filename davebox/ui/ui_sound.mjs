@@ -5630,6 +5630,18 @@ function runActionBody(a) {
     else if (a.t === 'patchsavedo') doChainPatchSave(a.name, a.overwrite);
     else if (a.t === 'patchdel')    doChainPatchDelete(a.index);
     else if (a.t === 'file')     openFileBrowser(S.menuRowsCache[a.idx]);
+    else if (a.t === 'wavfile') {
+        /* ⚠ The gesture and the open are a tick apart, so the screen may have
+         * moved on — a Back in that window leaves the wave editor, and opening
+         * a browser over whatever came next would be a screen nobody asked
+         * for. The errand is only real if the waveform is still up. */
+        if (S.view === VIEW_WAV) {
+            wavErrand = true;
+            ppSuppressOnce = false; ppDivedOut = true;
+            openFileBrowser({ key: a.bare, pkey: a.bare, cell: a.cell,
+                              raw: engineGetChainParam(S.slot, a.fileKey) || '' });
+        }
+    }
     else if (a.t === 'textedit') startTextEdit(a.idx);
     S.dirty = true;
 }
@@ -6619,10 +6631,21 @@ export function soundOnCC(d1, d2, decodeDelta) {
             const decl = bare ? authoritativeMeta(bare, S.cpMap, S.levels) : null;
             const cell = decl ? makeCell(bare, decl) : null;
             if (bare && cell && cell.kind === 'file') {
-                wavErrand = true;
-                ppSuppressOnce = false; ppDivedOut = true;
-                openFileBrowser({ key: bare, pkey: bare, cell,
-                                  raw: engineGetChainParam(S.slot, fileKey) || '' });
+                /*
+                 * ⚠⚠ DEFERRED TO TICK, and this is the doctrine the rest of
+                 * this file already follows (openChainPatches' comment states
+                 * it, and davebox's OWN file row queues `{t:'file'}` rather
+                 * than opening inline). Opening here would run a BLOCKING
+                 * engine read AND a `readdir` inside the MIDI CC handler. A
+                 * blocked tick tail-drops the 64-slot input ring, and the
+                 * event most likely to be lost is a note RELEASE — which
+                 * sticks forever, in Move and in the slot synth both.
+                 *
+                 * What stays here is only the decision, which is pure: the
+                 * lookup and makeCell read state we already hold and touch no
+                 * device.
+                 */
+                S.pendingAction = { t: 'wavfile', bare, cell, fileKey };
                 S.dirty = true;
                 return true;
             }
