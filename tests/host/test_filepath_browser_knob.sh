@@ -105,11 +105,17 @@ import fs from "node:fs";
  * instead, so this still drives the shipped implementation rather than a
  * restatement of it. */
 const shared = fs.readFileSync("src/shared/filepath_browser.mjs", "utf8");
-const mv = shared.match(/export function moveFilepathBrowserSelection\(state, delta\) \{[\s\S]*?\n\}/);
-if (!mv) { console.error("FAIL: moveFilepathBrowserSelection not found in src/shared/filepath_browser.mjs"); process.exit(1); }
-const moveFilepathBrowserSelection = new Function(
-    mv[0].replace(/^export /, "") + "; return moveFilepathBrowserSelection;"
-)();
+const lift = (name, args) => {
+    const re = new RegExp("export function " + name + "\\(" + args + "\\) \\{[\\s\\S]*?\\n\\}");
+    const m = shared.match(re);
+    if (!m) { console.error("FAIL: " + name + " not found in src/shared/filepath_browser.mjs"); process.exit(1); }
+    return new Function(m[0].replace(/^export /, "") + "; return " + name + ";")();
+};
+const moveFilepathBrowserSelection = lift("moveFilepathBrowserSelection", "state, delta");
+/* The audition arm moved DOWN into the shared library with the rest of the
+ * behaviour of the browser, so a second consumer inherits it. It is lifted the
+ * way: this test still drives the shipped code, not a restatement of it. */
+const armFilepathPreview = lift("armFilepathPreview", "state");
 
 const src = fs.readFileSync("src/shadow/shadow_ui.js", "utf8");
 const m = src.match(/function filepathBrowserJog\(delta\) \{[\s\S]*?\n\}/);
@@ -131,9 +137,9 @@ const state = {
 };
 
 const jog = new Function(
-    "filepathBrowserState", "moveFilepathBrowserSelection", "announceMenuItem",
+    "filepathBrowserState", "moveFilepathBrowserSelection", "armFilepathPreview", "announceMenuItem",
     m[0] + "; return filepathBrowserJog;"
-)(state, moveFilepathBrowserSelection, (l, v) => announced.push(l));
+)(state, moveFilepathBrowserSelection, armFilepathPreview, (l, v) => announced.push(l));
 
 // A scroll moves the highlight, arms the audition, and speaks the row.
 jog(1);
