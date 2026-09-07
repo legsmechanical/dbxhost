@@ -36,7 +36,12 @@ for (;; i++) {
 const body = src.slice(at, i + 1);
 /* ⚠ CONTROL. A window that came back empty, or that swallowed the rest of the
  * file, would make every assertion below meaningless in opposite directions. */
-ok(body.length > 200 && body.length < 4000,
+/* ⚠ The ceiling is a SANITY range, not a budget. The window above is
+ * brace-MATCHED, so this control exists to catch the two ways extraction goes
+ * wrong — nothing, or the rest of the file — and a member that grew because it
+ * documents a measurement is neither. Raised 4000 -> 8000 on 2026-09-07 when
+ * the per-tick gate memo landed with the device histogram written beside it. */
+ok(body.length > 200 && body.length < 8000,
    "control: the extracted body is a plausible size (" + body.length + " chars)");
 ok(body.includes("evaluateVisibility("), "control: the body is the one that calls the evaluator");
 

@@ -906,6 +906,26 @@ export function soundValueForTest(key) { return S.values[key]; }
  *
  * `leave` is the close every door goes through, and `state` is the live browser
  * state so a test can read what the audition actually armed. */
+/* The `visible_if` adapter and its per-tick read memo, driveable off-device.
+ *
+ * ⭑ Hands back PRODUCTION'S adapter, not a copy: the thing being measured is
+ * how many reads it makes, and a restatement would measure the restatement. */
+export function soundVisibilityForTest() {
+    return {
+        /* Through the installed ctx — the same object the vendored planner
+         * calls, so this cannot drift from what actually runs. */
+        evaluate: (cond, levelDef) => ppCtx.evaluateVisibilityCondition(cond, levelDef),
+        dropMemo: () => ppCondReadsDrop(),
+        memoSize: () => ppCondReads.size,
+        write: (key, val) => queueWrite(key, val),
+        /* Straight at the binding, the way reload_level and the preset scan
+         * write — the paths that bypass the queue entirely. */
+        engineWrite: (fullKey, val) => globalThis.shadow_set_param(S.slot, fullKey, val),
+        directSet: (fullKey, val) => globalThis.shadow_set_param(S.slot, fullKey, val),
+        setContext: (slot, comp) => { S.slot = slot; S.comp = comp; },
+    };
+}
+
 export function soundFileBrowserForTest() {
     return {
         io: FILE_BROWSER_PARAM_IO,
@@ -6018,6 +6038,12 @@ function drainAndVerifyWrites() {
 /* `comp` defaults to the block being edited; the block PICKER passes one
  * explicitly, since there the cursor and S.comp are different things. */
 function queueWrite(key, val, comp) {
+    /* ⚠ NOT the invalidation that matters — this only QUEUES, so the value has
+     * not moved yet and the real drop happens at the write binding when the
+     * drain lands it. Kept because the grid's own cache is updated at queue
+     * time, so a gate read between here and the drain should not be answered
+     * from a value this call has already superseded on screen. */
+    ppCondReadsDrop();
     const c = comp || S.comp;
     for (const w of S.pendingWrites) {
         if (w.key === key && w.comp === c && w.slot === S.slot) { w.val = val; return; }
@@ -7508,6 +7534,15 @@ function reconcileEditCcClaim(force) {
 }
 
 export function soundTick() {
+    /* ⚠⚠ ABOVE EVERY EARLY RETURN, and that is the whole point. Placed after the
+     * `S.active` and text-entry guards, "lives exactly one tick" was false: the
+     * memo survived a whole Save-As keyboard session and every period sound mode
+     * was inactive, and a MIDI event arriving between `closeTextEntry` and the
+     * next tick would re-plan against values minutes old. Gate evaluation runs
+     * in MIDI-callback context, not only in the tick, so the gap is reachable.
+     * `test_gate_memo_lifetime.sh` asserts the POSITION, not merely the call. */
+    ppCondReadsDrop();
+
     /* Ahead of the S.active gate: leaving sound mode with the claim up would
      * strand it, and this is the cheap belt to soundExit's braces. */
     reconcileEditCcClaim(!S.active);
@@ -8345,6 +8380,65 @@ let wavErrand = false;
  * nothing to show — and Back from there walks davebox's OWN tree instead of the
  * one the user walked.
  */
+/* Values read to answer a `visible_if` gate, for the length of ONE TICK.
+ *
+ * ⚠ Keyed by the RESOLVED key (`pad3_type`), which is what the read uses — not
+ * by the listed key the grid's own cache is keyed on. Mixing the two is how the
+ * cache above missed every time before #440.
+ *
+ * ⚠ THE BUS IS IN THE KEY TOO, and that is hardening rather than a fix for a
+ * known break. Every bus sets `S.slot = 0`, which is also a real track slot;
+ * they stay distinct only because a bus component always carries its prefix
+ * (`master_fx:fx1`, `send_fx:a:fx1`) and never a bare `fx1`. That invariant
+ * holds today and nothing states it, so the key does not depend on it.
+ *
+ * ⚠⚠ THE SLOT AND COMPONENT ARE IN THE KEY, not merely assumed to be stable.
+ * Relying on the clears alone would leave one hole: `soundRetarget` moves
+ * `S.slot` in the middle of a tick, so a gate evaluated after it would be
+ * answered from the PREVIOUS track's value — a wrong set of controls on screen,
+ * with nothing logged. Putting the addressing in the key makes that
+ * unrepresentable instead of making it somebody's job to remember. */
+const ppCondReads = new Map();
+const ppCondReadKey = (fullKey) =>
+    S.slot + '\u0000' + (S.bus ? S.bus.id : '') + '\u0000' + S.comp + '\u0000' + fullKey;
+
+/* The one place it is emptied. */
+function ppCondReadsDrop() { if (ppCondReads.size) ppCondReads.clear(); }
+
+/*
+ * ⭐⭐ INVALIDATE AT THE BINDING, NOT AT THE CALL SITES — the same reasoning the
+ * read meter uses for counting, and for the same reason: a call site you forget
+ * is a call site you do not see.
+ *
+ * ⚠⚠ THIS REPLACES A COMMENT THAT WAS FLATLY FALSE. It claimed the drop covered
+ * "queueWrite, the module itself, and a reload_level re-plan". It covered
+ * `queueWrite` and nothing else, and `queueWrite` only QUEUES — the engine write
+ * happens later in `drainAndVerifyWrites`, so the forced re-read returned the
+ * value from BEFORE the write and memoised that across it. Meanwhile the paths
+ * the comment named by name are exactly the ones that bypass the queue and call
+ * `engineSet` directly: `reload_level` on a knob turn, the baked-preset
+ * scan/audition (which rewrites the whole param set, gate drivers included), and
+ * the hosted canvas. Every one of them could leave a gate answering from a stale
+ * value, and `replanIfCondition` CACHES the resulting plan — so the wrong set of
+ * cells stays on screen until the next condition change, not for a frame.
+ *
+ * Wrapping `shadow_set_param` makes the question moot: if a value reached the
+ * engine, the gates forget. ⚠ Idempotent — `init()` re-runs in the same runtime
+ * on resume, and a second wrap would be harmless but pointless.
+ */
+let ppWriteHookInstalled = false;
+export function installGateMemoInvalidation() {
+    if (ppWriteHookInstalled) return false;
+    const set = globalThis.shadow_set_param;
+    if (typeof set !== 'function') return false;
+    ppWriteHookInstalled = true;
+    globalThis.shadow_set_param = function () {
+        ppCondReadsDrop();
+        return set.apply(this, arguments);
+    };
+    return true;
+}
+
 let ppFileErrand = false;
 
 /* Does the editor currently have a layer of its own for Back to close — an open
@@ -8751,7 +8845,47 @@ installPpCtx({
                 const held = paramPagesCachedValue(
                     ppListedKeyFor(levelDef, childIdx, S.comp, fullKey));
                 if (held !== undefined) return held;
-                return engineGetChainParam(S.slot, fullKey);
+                /*
+                 * ⭐⭐ AND WHEN THE GRID DOES NOT HOLD IT, REMEMBER THE ANSWER
+                 * FOR THE REST OF THE TICK.
+                 *
+                 * The cache above only holds keys the grid DISPLAYS. A gate's
+                 * driver usually is not one — dr32's `send1_mode` decides which
+                 * cells exist and is itself on another page — so every one of
+                 * those conditions missed and paid a blocking read, on every
+                 * evaluation, of which a re-plan does one per param per level.
+                 *
+                 * MEASURED on device (readmeter, 09:45:07): a single tick of the
+                 * send picker made **2916 round trips**, `send1_mode` and
+                 * `send2_mode` **1120 times each**, `send2_sync` 448. The
+                 * arithmetic names the shape exactly — 112 evaluations, asking
+                 * the same handful of keys ten times over inside each. At
+                 * ~2.9 ms a trip that is over eight seconds in one tick, which
+                 * is why the picker reads as a hang rather than as lag.
+                 *
+                 * ⚠ ONE TICK IS THE LIFETIME, and it is chosen because it is
+                 * PROVABLE rather than because it is generous. A re-plan is
+                 * synchronous, so within it these values cannot change; a tick
+                 * is the smallest boundary that certainly contains one. Reading
+                 * a gate at most once per tick is also just the polling cadence
+                 * every other value here already gets.
+                 *
+                 * ⚠⚠ AND IT IS DROPPED WHENEVER ANY VALUE REACHES THE ENGINE.
+                 * The invalidation wraps `shadow_set_param` itself
+                 * (installGateMemoInvalidation) rather than sitting at the write
+                 * call sites, because `queueWrite` is far from the only way a
+                 * value moves: `reload_level` writes synchronously past the
+                 * queue, the baked-preset scan rewrites the whole param set, and
+                 * the hosted canvas writes directly. A whole-map drop costs one
+                 * Map alloc; being clever about which key to evict costs a stale
+                 * gate, which shows the wrong controls — and `replanIfCondition`
+                 * CACHES the plan, so a wrong one persists rather than flickers.
+                 */
+                const memoKey = ppCondReadKey(fullKey);
+                if (ppCondReads.has(memoKey)) return ppCondReads.get(memoKey);
+                const v = engineGetChainParam(S.slot, fullKey);
+                ppCondReads.set(memoKey, v);
+                return v;
             },
         }, condition, levelDef);
     },
