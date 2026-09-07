@@ -8422,20 +8422,40 @@ function ppCondReadsDrop() { if (ppCondReads.size) ppCondReads.clear(); }
  * value, and `replanIfCondition` CACHES the resulting plan — so the wrong set of
  * cells stays on screen until the next condition change, not for a frame.
  *
- * Wrapping `shadow_set_param` makes the question moot: if a value reached the
- * engine, the gates forget. ⚠ Idempotent — `init()` re-runs in the same runtime
- * on resume, and a second wrap would be harmless but pointless.
+ * Wrapping the write bindings makes the question moot: if a value reached the
+ * engine, the gates forget.
+ *
+ * ⚠⚠ BOTH BINDINGS, and the second one is not decoration. An earlier version of
+ * this wrapped `shadow_set_param` alone while the comment claimed "if a value
+ * reached the engine, the gates forget" — and `ui_automation.mjs` writes chain
+ * params through `shadow_set_params`, the BULK binding, on the automation
+ * playback path. So an automated gate driver moved without the gates forgetting.
+ * ⭑ That is the same failure as the comment this block replaced, one revision
+ * later: a claim written as absolute, with one path it did not cover. Stating an
+ * invariant is not establishing it.
+ *
+ * ⚠ Idempotent — `init()` re-runs in the same runtime on resume, and a second
+ * wrap would be harmless but pointless.
  */
 let ppWriteHookInstalled = false;
 export function installGateMemoInvalidation() {
     if (ppWriteHookInstalled) return false;
-    const set = globalThis.shadow_set_param;
-    if (typeof set !== 'function') return false;
+    const one = globalThis.shadow_set_param;
+    const many = globalThis.shadow_set_params;
+    if (typeof one !== 'function' && typeof many !== 'function') return false;
     ppWriteHookInstalled = true;
-    globalThis.shadow_set_param = function () {
-        ppCondReadsDrop();
-        return set.apply(this, arguments);
-    };
+    if (typeof one === 'function') {
+        globalThis.shadow_set_param = function () {
+            ppCondReadsDrop();
+            return one.apply(this, arguments);
+        };
+    }
+    if (typeof many === 'function') {
+        globalThis.shadow_set_params = function () {
+            ppCondReadsDrop();
+            return many.apply(this, arguments);
+        };
+    }
     return true;
 }
 

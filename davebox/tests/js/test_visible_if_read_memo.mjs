@@ -47,6 +47,12 @@ globalThis.shadow_get_param = (slot, key) => {
     return Object.prototype.hasOwnProperty.call(ENGINE, key) ? ENGINE[key] : '';
 };
 globalThis.shadow_set_param = (slot, key, val) => { ENGINE[key] = String(val); return 1; };
+/* The BULK writer. `ui_automation.mjs` writes chain params through this on the
+ * automation playback path, so a gate driver can move without ever touching
+ * `shadow_set_param` — which an earlier version of the invalidation missed
+ * while its comment claimed to cover every write. */
+globalThis.shadow_set_params = (slot, prefix, pairs) => { BULK_WRITES.push(pairs); return 1; };
+const BULK_WRITES = [];
 globalThis.shadow_send_midi_to_dsp = () => {};
 for (const fn of ['set_pixel', 'fill_rect', 'draw_rect', 'stipple_rect', 'clear_screen',
                   'print', 'pixel_print', 'flush_display'])
@@ -115,6 +121,17 @@ step('⭐⭐ a write that REACHES THE ENGINE flips the verdict, memo or no memo'
     V.engineWrite('synth:send1_mode', 'reverb');
     assert(V.evaluate(GATE, LEVEL) === false,
            'the gate still reads OPEN after the engine value changed — a stale memo');
+});
+
+step('⭐⭐ ...and a BULK write (automation playback) invalidates too', () => {
+    ENGINE['synth:send1_mode'] = 'delay';
+    V.dropMemo();
+    assert(V.evaluate(GATE, LEVEL) === true, 'precondition: the gate starts open');
+    /* Exactly what ui_automation.mjs does: the bulk binding, not the single. */
+    globalThis.shadow_set_params(2, 'chain:', 'send1_mode\u0000reverb', true);
+    ENGINE['synth:send1_mode'] = 'reverb';
+    assert(V.evaluate(GATE, LEVEL) === false,
+           'a bulk write left the gate answering from the pre-write value — the automation path');
 });
 
 step('⭐ ...including a write that bypasses queueWrite entirely (reload_level, preset scan)', () => {
