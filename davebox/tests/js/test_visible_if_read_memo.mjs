@@ -210,6 +210,42 @@ step('⭐ the measured worst tick: 2916 reads become 5', () => {
               + ` (~${(before * 2.9 / 1000).toFixed(1)}s -> ~${(reads.length * 2.9).toFixed(0)}ms)`);
 });
 
+/* ---- the modulation answer is cached, and a write must move it ---------- */
+step('⭐ the modulation answer is cached — it is not re-read every time', () => {
+    ENGINE['synth:cutoff:modulated'] = '0';
+    V.dropModMemo();
+    assert(V.isModulated(2, 'synth:cutoff') === false, 'precondition: starts unmodulated');
+    reads = [];
+    for (let i = 0; i < 50; i++) V.isModulated(2, 'synth:cutoff');
+    assert(reads.length === 0,
+           '50 asks cost ' + reads.length + ' reads — the answer is not being cached');
+});
+
+step('⭐⭐ assigning a modulator FLIPS it — a write invalidates the cached answer', () => {
+    /* ⚠ THE CORRECTNESS HALF. A stale dot is not a cosmetic miss: the grid uses
+     * this to decide whether a cell is showing a modulated value at all. You
+     * assign an LFO and the cell keeps saying "not modulated" until something
+     * else happens to invalidate. */
+    ENGINE['synth:cutoff:modulated'] = '0';
+    V.dropModMemo();
+    assert(V.isModulated(2, 'synth:cutoff') === false, 'precondition: unmodulated');
+    /* Establish the routing the way the UI does — through the write binding. */
+    globalThis.shadow_set_param(2, 'synth:lfo1:target', 'cutoff');
+    ENGINE['synth:cutoff:modulated'] = '1';
+    assert(V.isModulated(2, 'synth:cutoff') === true,
+           'the cell still reads UNMODULATED after the routing was written — a stale dot');
+});
+
+step('...and a BULK write invalidates it too (automation playback)', () => {
+    ENGINE['synth:cutoff:modulated'] = '1';
+    V.dropModMemo();
+    assert(V.isModulated(2, 'synth:cutoff') === true, 'precondition: modulated');
+    globalThis.shadow_set_params(2, 'chain:', 'lfo1:target\u0000none', true);
+    ENGINE['synth:cutoff:modulated'] = '0';
+    assert(V.isModulated(2, 'synth:cutoff') === false,
+           'a bulk write left the modulation dot standing');
+});
+
 console.log(failed ? 'FAIL' : 'PASS');
 process.exit(failed);
 }
