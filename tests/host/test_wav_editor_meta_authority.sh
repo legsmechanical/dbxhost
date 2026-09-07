@@ -59,6 +59,16 @@ ok(/for \(const k of Object\.keys\(cp\)\)/.test(op),
  * serves for every child-level sibling. */
 ok(/wavSiblingKey\(fullKey, ownBare, k, S\.comp\)/.test(op),
    "a member`s fullKey is scoped through wavSiblingKey, not `${S.comp}:${k}`");
+/* ⚠⚠ ...AND THE ARGUMENT, which is where it was wrong. `wavSiblingKey` derives
+ * the instance by subtracting the marker`s own bare NAME from its resolved key.
+ * `ownBare` was `ppBare(fullKey)` — the resolved key itself — so the
+ * subtraction had nothing to remove, `instance` was always "", and every member
+ * came out component-scoped: byte-identical to the code this replaced. The call
+ * above was spelled correctly throughout. */
+ok(/const ownBare = \(meta && meta\.key\) \|\|/.test(op),
+   "⚠ ownBare is the marker`s DECLARED name, not its resolved key");
+ok(!/const ownBare = ppBare\(fullKey\) \|\| fullKey;/.test(op),
+   "control: the form that made the scoping a no-op is gone");
 ok(!/fullKey:\s*`\$\{S\.comp\}:\$\{k\}`/.test(op),
    "control: the component-scoped form is gone");
 
@@ -71,10 +81,27 @@ ok(!/fullKey:\s*`\$\{S\.comp\}:\$\{k\}`/.test(op),
  * second implementation of a convention the grid already resolved.
  * ⚠ Read while the controller is still alive: openParamEditor has called
  * exitParamPages() by this point, and the controller survives that today. */
-ok(/crumbs: \[modLabel\(\), paramPagesPageLabel\(\)\]\.filter\(Boolean\)/.test(op),
+ok(/crumbs: \[modLabel\(\), divedFrom\]\.filter\(Boolean\)/.test(op),
    "the editor is told which page it was dived from");
 ok(/paramPagesPageLabel/.test(strip(src).slice(0, strip(src).indexOf("} = PP;"))),
    "control: paramPagesPageLabel is taken off the binding, not invented here");
+/* ⚠⚠ THE ORDER IS THE BUG, and a pin on the CALL cannot see it.
+ * `exitParamPages()` sets the binding`s `controller` to null, so every accessor
+ * on it answers "" afterwards. The first cut of this read the label INSIDE
+ * openWavEditor — three lines after the exit — with a comment asserting the
+ * controller survives. It does not: the header said the module name where it
+ * should have said the pad, the call was spelled perfectly, and this pin was
+ * green. */
+{
+    const dive = body("openParamEditor: (slot, fullKey, meta) =>");
+    const readAt = dive.indexOf("paramPagesPageLabel()");
+    const exitAt = dive.indexOf("exitParamPages()");
+    ok(readAt >= 0 && exitAt >= 0 && readAt < exitAt,
+       "⚠ the page label is read BEFORE exitParamPages() nulls the controller (" +
+       readAt + " < " + exitAt + ")");
+    ok(op.indexOf("paramPagesPageLabel") < 0,
+       "...and openWavEditor does NOT ask for it itself — by then it is always empty");
+}
 
 /* The Shift+click browse route. It lives in the click handler, so pin the one
  * statement rather than a whole function. */

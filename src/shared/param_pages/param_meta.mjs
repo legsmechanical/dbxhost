@@ -263,20 +263,30 @@ function normalize(key, raw) {
     /*
      * ⚠⚠ A MARKER IS EXPANDED HERE OR IT IS NEVER EXPANDED AT ALL.
      *
-     * The declaration a module writes is not the shape a consumer needs. Two
-     * of the fields the wave editor cannot work without are OPTIONAL in
-     * position: `mode` and `filepath_param` may sit at the top level (dr32) or
-     * inside `options` (mrdrums, and every module written against the older
-     * `ui_type` spelling). Copying `raw` through left the second group with
-     * `filepath_param === undefined` — measured — which reads on screen as
-     * "no sample linked" for a pad that is loaded and audibly playing, because
-     * a marker with no file is indistinguishable from a file that is missing.
+     * The declaration a module writes is not the shape a consumer needs.
+     * `wav_mode` — what `wavPositionMode()` reads, and what tells a `loop_end`
+     * from a plain position — was set by NOTHING before this, on either host:
+     * modules declare `mode`, every consumer reads `wav_mode`, and the two were
+     * never joined. DR32's `end` marker therefore read as "position", which is
+     * the wrong end of the file for `wavEndDefault` to seed from. Measured
+     * across the fleet, that is the ONLY field this recovers today.
      *
-     * ⭑ WHY IT WAS INVISIBLE FOR SO LONG: shadow_ui.js has its OWN expansion
-     * (`buildWavPositionParamMeta`) which the hierarchy LIST editor runs, so
-     * the same module behaved on the list screen and not on the knob grid. One
+     * ⚠ WHAT IT DOES *NOT* FIX, corrected 2026-09-07 after an advisor pass
+     * measured it: nothing in the 100-module device capture nests
+     * `filepath_param` or `mode` under `options`. An earlier version of this
+     * comment said mrdrums did — that came from a DUMP TOOL's serialisation
+     * (`schwung-movy/docs/module-dump`), not from the module, whose captured
+     * contract carries both at the top level. Old and new `buildMetaIndex` were
+     * run side by side over all 101 contracts and differ on `filepath_param` for
+     * none of them. The `optOf` reading is kept because MODULES.md permits
+     * either position and the older `ui_type` spelling is still live — but it is
+     * insurance, not a repair.
+     *
+     * ⭑ WHY IT IS STILL WORTH DOING: shadow_ui.js has its OWN expansion
+     * (`buildWavPositionParamMeta`) which the hierarchy LIST editor runs, so the
+     * same module behaved on the list screen and not on the knob grid. One
      * expansion, called from the one place both surfaces resolve metadata
-     * through, is what stops the two drifting again.
+     * through, is what stops the two drifting.
      *
      * ⚠ `type` is put BACK afterwards. The shared expansion returns the HOST'S
      * dialect (`type: "float"` + `ui_type: "wav_position"`) so it can replace
@@ -285,10 +295,14 @@ function normalize(key, raw) {
      * predicate both read it. `expanded_type` is set too, so `isWavPosition`
      * answers for either dialect.
      *
-     * ⚠ It cannot change `kind`. The expansion defaults min/max to 0..1, which
-     * would make an unranged marker `ranged` and therefore turnable — but no
-     * wav_position in the fleet omits them (44 declarations surveyed, 44 carry
-     * both), so the defaults are unreachable and this is not a widening.
+     * ⚠ IT CAN CHANGE `kind` FOR AN UNRANGED MARKER, and the previous wording
+     * of this comment denied it. The expansion defaults min/max to 0..1, which
+     * makes an otherwise unranged marker `ranged` and therefore a turnable
+     * KIND_NUMBER instead of KIND_OPAQUE. No wav_position in the SURVEYED fleet
+     * omits them — 21 in the capture plus DR32's two, all carrying min, max and
+     * step — so it is unreachable there, but a module outside that set would be
+     * affected. That is the host's own default, so the two hosts agree either
+     * way; it is stated rather than claimed impossible.
      */
     if (type === "wav_position") {
         Object.assign(meta, wavPositionMeta(meta), { type });

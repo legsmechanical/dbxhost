@@ -2329,10 +2329,27 @@ export function createController(io = {}) {
          * round trips where one would do, on exactly the params you are
          * touching while the take runs, at ~2.9 ms of SPI each.
          *
-         * ⭑ Nothing is lost by narrowing it. A param that is BOTH chain-
-         * modulated and automated already lost its boolean when the string was
-         * written over it one line above; the string is the whole reason this
-         * cannot be read as a flag.
+         * ⚠⚠ SOMETHING *IS* LOST, and an earlier version of this comment said
+         * otherwise. A param that is BOTH chain-modulated and automated keeps
+         * its cell MARK (the four other readers of this slot still use
+         * truthiness) but loses its live DRIVEN-VALUE DOT: no `:effective` is
+         * fetched and `refreshModulatedValues` deletes the stale one, so a
+         * widget reading `modValues` falls back to the resting knob value.
+         *
+         * It is not recoverable here. The consumer answers ONE value, and
+         * davebox's `isModulated` returns the automation string INSTEAD of
+         * asking its chain — deliberately, because asking costs up to three
+         * blocking reads per param. So by the time the string arrives the
+         * modulation fact was never gathered; the library cannot un-collapse
+         * what it was not told.
+         *
+         * ⭑ THE TRADE, taken deliberately: one param in an uncommon
+         * combination loses a moving dot, against ~2.4 wasted SPI round trips
+         * PER TICK on every automated param — which is a stall you can hear
+         * during a take, reported from the device. The real fix is the one the
+         * library's own comment names further down: publish effective values
+         * through SHM instead of polling for them. Until then this is a
+         * priced choice, not a free one.
          */
         if (s.modCache[key] === true) raw = getParam(fullKey(key) + ":base");
         /*

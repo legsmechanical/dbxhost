@@ -57,15 +57,39 @@ const indexOf = (m) => buildMetaIndex({ hierarchy: m.ui_hierarchy,
     ok(wavPositionMode(idx.get("end")) === "end", "DR32 `end` is an END marker, not a position");
 }
 
-/* ⚠⚠ mrdrums declares the SAME facts inside `options`, which is the other live
- * spelling. Reading only the top level returned undefined for both. */
+/* mrdrums is the OTHER live spelling — `type: float` + `ui_type` on its per-pad
+ * declarations, and a generic `pad_start` alias beside them.
+ *
+ * ⚠ CORRECTED 2026-09-07: an earlier version of this said mrdrums declares its
+ * extras inside `options` and that reading only the top level lost them. It
+ * does not — that shape came from a DUMP TOOL`s serialisation, not from the
+ * module, whose captured contract carries `filepath_param` at the top level.
+ * These two assertions are CONTROLS: they hold with or without the expansion.
+ * Only the `mode` -> `wav_mode` join below actually needs it. Said plainly
+ * because a control dressed as a proof is how a test starts lying. */
 {
     const idx = indexOf(modOf("mrdrums"));
     const m = idx.get("pad_start");
-    ok(isWavPosition(m), "mrdrums `pad_start` resolves as a marker");
-    ok(m.filepath_param === "pad_sample_path",
-       "...and its file link is read out of `options`, where mrdrums declares it");
-    ok(wavPositionMode(m) === "start", "...as is its mode");
+    ok(isWavPosition(m), "control: mrdrums `pad_start` resolves as a marker");
+    ok(m.filepath_param === "pad_sample_path", "control: ...with its file link intact");
+    ok(wavPositionMode(m) === "start", "⭑ ...and its mode reaches `wav_mode` — this needs the expansion");
+}
+/* ⭑ THE WHOLE MEASURED EFFECT, stated as a number rather than implied. Old and
+ * new resolution differ on ONE derived field across the fleet. */
+{
+    const lost = [];
+    for (const mod of (fleet.modules || [])) {
+        const idx = buildMetaIndex({ hierarchy: mod.ui_hierarchy,
+                                     chainParams: mod.chain_params || [] });
+        for (const k of idx.keys) {
+            const meta = idx.get(k);
+            if (!meta || !isWavPosition(meta)) continue;
+            /* `mode` is what modules declare; `wav_mode` is what consumers read.
+             * Nothing joined them before, on either host. */
+            if (meta.mode && !meta.wav_mode) lost.push(mod.id + ":" + k);
+        }
+    }
+    ok(lost.length === 0, "no marker in the fleet still has a `mode` its consumers cannot read");
 }
 
 /* mrsample is the third shape: the host dialect, everything at the top level. */

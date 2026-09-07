@@ -5290,7 +5290,7 @@ function fileActivate() {
          * itself, because refreshSourcePath is watching the value we just
          * queued. VIEW_MENU is davebox's own answer and is still right for
          * davebox's own browse. */
-        S.view = (wavErrand ? VIEW_WAV : VIEW_MENU);
+        S.view = (wavErrand && wavEditActive()) ? VIEW_WAV : VIEW_MENU;
         wavErrand = false;
         S.presetMsg = '';
     }
@@ -6958,9 +6958,10 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * alone. */
         if (S.view === VIEW_FILE && wavErrand) {
             wavErrand = false;
-            S.view = VIEW_WAV;
-            S.dirty = true;
-            return true;
+            /* ⚠ Only if the editor is STILL THERE. Belt to the braces above:
+             * a screen with no state behind it renders nothing and leaves the
+             * previous frame on the panel, which reads as a freeze. */
+            if (wavEditActive()) { S.view = VIEW_WAV; S.dirty = true; return true; }
         }
         if (S.view === VIEW_WAV) {
             wavEditClose();
@@ -8651,6 +8652,17 @@ installPpCtx({
      * hand the component to the editor that has the screens — rather than a
      * second set of editors built for the grid. */
     openParamEditor: (slot, fullKey, meta) => {
+        /*
+         * ⚠⚠ READ THE PAGE LABEL FIRST — `exitParamPages()` sets the binding's
+         * `controller` to NULL, and every accessor on it answers "" from then
+         * on. A previous cut of this read it inside `openWavEditor`, three
+         * lines below the exit, with a comment asserting the controller
+         * survives; it does not, so the header said the MODULE name where it
+         * should have said the pad. Caught by an advisor pass, invisible to a
+         * source pin (the call was spelled correctly) and to the JS test (its
+         * rig hands the crumbs in).
+         */
+        const divedFrom = paramPagesPageLabel();
         clearParamPagesTouch();
         exitParamPages();
         ppOn = false; ppEditLatched.clear();
@@ -8662,7 +8674,7 @@ installPpCtx({
          * the bank editor has never had one. That is the whole of Josh's "the
          * touch click gesture to enter full screen wave doesn't do anything":
          * the dive fired and landed somewhere with nothing to show. */
-        if (isWavPosition(meta) && openWavEditor(fullKey, meta)) {
+        if (isWavPosition(meta) && openWavEditor(fullKey, meta, divedFrom)) {
             S.view = VIEW_WAV;
             S.dirty = true;
             return;
@@ -8685,6 +8697,14 @@ installPpCtx({
 function wavEditCloseIfOpen() {
     if (!wavEditActive()) return;
     wavEditClose();
+    /* ⚠⚠ THE ERRAND DIES WITH THE EDITOR. On a browse the view is VIEW_FILE,
+     * not VIEW_WAV, so the branch below does not run — and a track switch or a
+     * module swap reaches here through `soundRetarget` / `runDiscovery` while
+     * the browser is up. Left set, the crumb outlives the screen that owns it:
+     * Back would return to a VIEW_WAV with no editor behind it (the renderer
+     * bails and the LAST FRAME freezes on the panel), and later davebox's OWN
+     * file browser would back into the waveform instead of its menu. */
+    wavErrand = false;
     if (S.view === VIEW_WAV) { S.view = VIEW_EDIT; S.dirty = true; }
 }
 
@@ -8708,7 +8728,7 @@ function wavEditCloseIfOpen() {
  * the host's existing one already disagrees with wav_format.mjs about 24-bit
  * and AIFF files — so it is a deliberate gap, not an oversight.
  */
-function openWavEditor(fullKey, meta) {
+function openWavEditor(fullKey, meta, divedFrom) {
     const cp = S.cpMap || {};
     /*
      * The declarations this component publishes, IN ORDER — which is the
@@ -8731,7 +8751,18 @@ function openWavEditor(fullKey, meta) {
      * sibling `end` belong to the same pad, and addressing the sibling as
      * `end` (or as the component's `end`) writes to a key no module serves.
      */
-    const ownBare = ppBare(fullKey) || fullKey;
+    /*
+     * ⚠⚠ `meta.key` FIRST, and this is the whole of the scoping.
+     * `wavSiblingKey` derives the instance by subtracting the marker's own bare
+     * NAME (`start`) from its resolved key (`pad4_start`). Passing
+     * `ppBare(fullKey)` passes `pad4_start` as the name too, the subtraction
+     * has nothing left to remove, and every member came out
+     * `${S.comp}:${k}` — byte-identical to the component-scoped form this
+     * replaced. A source pin on the call spelling cannot see that; only the
+     * ARGUMENT was wrong. The `siblingKey` member below always used `meta.key`,
+     * so the two were quietly disagreeing.
+     */
+    const ownBare = (meta && meta.key) || ppBare(fullKey) || fullKey;
     const seenDecl = Object.create(null);
     const params = [];
     const pushDecl = (k, m) => {
@@ -8789,14 +8820,12 @@ function openWavEditor(fullKey, meta) {
              * module gave one, "Pad 7" where it did not), so it is taken from
              * there rather than re-derived from the key.
              *
-             * ⚠ READ BEFORE THE GRID IS GONE — `openParamEditor` has already
-             * called `exitParamPages()` by the time this runs, but the
-             * controller survives the exit; it is a NEW component that rebuilds
-             * it. The day that changes this reads "" and the header quietly
-             * loses the pad, so the test drives the real dive rather than the
-             * accessor.
+             * ⚠⚠ PASSED IN, NOT READ HERE. `exitParamPages()` has already run
+             * by the time this function is called and it NULLS the binding's
+             * controller, so asking for the page label at this point returns
+             * "" — always. The caller reads it before the teardown.
              */
-            crumbs: [modLabel(), paramPagesPageLabel()].filter(Boolean),
+            crumbs: [modLabel(), divedFrom].filter(Boolean),
         },
     });
 }

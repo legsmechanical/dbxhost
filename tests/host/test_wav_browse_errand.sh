@@ -100,11 +100,29 @@ ok(backErrand >= 0 && backGeneric >= 0 && backErrand < backGeneric,
 
 /* ---- a pick -------------------------------------------------------------- */
 const act = body("function fileActivate(");
-ok(/S\.view = \(wavErrand \? VIEW_WAV : VIEW_MENU\);/.test(act),
+ok(/S\.view = \(wavErrand && wavEditActive\(\)\) \? VIEW_WAV : VIEW_MENU;/.test(act),
    "a PICK returns to the waveform too, and to VIEW_MENU otherwise");
 ok(/wavErrand = false;/.test(act), "...and the crumb is dropped as it is spent");
 
 /* ---- it cannot outlive the screen ---------------------------------------- */
+/* ⚠⚠ THE EXIT THAT A COUNT CANNOT SEE. `wavEditCloseIfOpen` is the ONE place
+ * that reconciles the editor`s lifetime — a track switch (`soundRetarget`) and a
+ * module swap (`runDiscovery`) both reach it — and on an errand the view is
+ * VIEW_FILE, not VIEW_WAV, so its own view branch does not run. Left set, the
+ * crumb outlives the screen it belongs to: Back lands on a VIEW_WAV whose
+ * renderer bails, leaving the PREVIOUS FRAME on the panel, and later davebox`s
+ * own file browser backs into the waveform instead of its menu.
+ * A count of `wavErrand = false;` sites cannot see a missing one — name it. */
+{
+    const closer = body("function wavEditCloseIfOpen(");
+    ok(/wavErrand = false;/.test(closer),
+       "the editor`s own lifetime reconcile drops the errand");
+    ok(closer.indexOf("wavErrand = false;") < closer.indexOf("if (S.view === VIEW_WAV)"),
+       "...unconditionally, ahead of the VIEW_WAV branch that does not run on an errand");
+}
+/* Both returns refuse a screen that is not there — belt to those braces. */
+ok(/if \(wavEditActive\(\)\) \{ S\.view = VIEW_WAV; S\.dirty = true; return true; \}/.test(src),
+   "Back only goes to the waveform if the editor is still open");
 const clears = (src.match(/wavErrand = false;/g) || []).length;
 ok(clears >= 4,
    "the crumb is cleared on every exit — pick, Back, the click exit and the " +
