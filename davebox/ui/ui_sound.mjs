@@ -101,6 +101,14 @@ import { bankCyclePos, bankCycleForMode } from './ui_pure.mjs';
 import { createParamPagesBinding }
     from '/data/UserData/schwung/shared/param_pages/binding_movy.mjs';
 import { ctx as ppCtx, installPpCtx } from './pp_ctx.mjs';
+/* The fullscreen sample-marker editor. Its arithmetic is shared with the host
+ * (`shared/param_pages/wav_position.mjs`); this is davebox's screen for it. */
+import {
+    wavEditOpen, wavEditClose, wavEditActive, wavEditTick, renderWavEdit,
+    wavEditOnKnob, wavEditOnKnobTouch, wavEditOnJog, wavForgetComponent,
+} from './ui_wav.mjs';
+import { isWavPosition }
+    from '/data/UserData/schwung/shared/param_pages/wav_position.mjs';
 import { evaluateVisibility, normalizeVisibilityConditionKey }
     from '/data/UserData/schwung/shared/param_pages/visibility.mjs';
 /* The preset record's dirty test — SHARED with the host's editor (upstream
@@ -272,7 +280,17 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
        * until Back (→ that track's sound menu) or the next switch, so a
        * Shift+jog walk through such tracks reads as "no editor here, keep
        * going" instead of dumping you into a menu you did not ask for. */
-      VIEW_NOEDITOR = 21;
+      VIEW_NOEDITOR = 21,
+      /* ⭑ The fullscreen SAMPLE MARKER editor (2026-09-06). A real view rather
+       * than a mode flag over the list: the host derives "am I in the wave
+       * editor" from three separate facts, and each of its ~12 input handlers
+       * then re-tests the selected row's type — miss one and a handler fires
+       * "sometimes". davebox gets a view id and one branch per handler.
+       * ⚠ 22, because 19 is VIEW_MACROS. These ids are declared across several
+       * lines in READING order, not numeric order, so "the next number" is not
+       * the one under the cursor — a first cut of this took 19 and would have
+       * made two unrelated screens the same screen. */
+      VIEW_WAV = 22;
 
 /* Chain-patch file ops (save_patch / delete_patch) are DSP-side and async —
  * the file appears/vanishes a beat after the request. Re-read the list this
@@ -5605,6 +5623,12 @@ function runActionBody(a) {
 
 function runDiscovery() {
     const id = moduleIdOf(engineLoadedModule(S.slot, S.comp));
+    /* ⚠ A DIFFERENT MODULE IN THIS COMPONENT MEANS A DIFFERENT FILE, so the
+     * wave editor's sticky zoom must not carry over: a 64x window onto a
+     * two-second loop means something else entirely on the eight-bar sample
+     * that replaced it. Zoom survives leaving the SCREEN (or you lose it every
+     * time you glance at another param) but never a module swap. */
+    if (id !== S.moduleId) wavForgetComponent(S.comp);
     S.moduleId = id;
     if (!id) { S.banks = []; S.sections = []; S.dirty = true; return; }
     const res = discover(S.slot, S.comp);
@@ -6268,6 +6292,16 @@ export function soundOnCC(d1, d2, decodeDelta) {
     }
 
     if (d1 >= 71 && d1 <= 78) {                        /* knobs 1-8 */
+        /* ⚠⚠ FIRST, and it must be: the wave editor claims knobs BY ROLE — the
+         * markers, the zoom, and SILENCE for the rest. Letting the level/macro
+         * owners below see an unclaimed encoder would edit an unrelated
+         * parameter of the module while the user is looking at a waveform, with
+         * nothing on screen naming it. A LEGACY marker claims nothing at all
+         * and falls through here, which is how those modules keep their row. */
+        if (S.view === VIEW_WAV) {
+            const delta = decodeDelta(d2);
+            if (wavEditOnKnob(d1 - 71, delta, S.shiftHeld)) { S.dirty = true; return true; }
+        }
         if (S.view === VIEW_EDIT) {
             const delta = decodeDelta(d2);
             if (delta) onKnobTurn(d1 - 71, delta);
@@ -6293,6 +6327,12 @@ export function soundOnCC(d1, d2, decodeDelta) {
             if (delta && levelPageSpec(d1 - 71)) onLevelTurn(d1 - 71, delta);
             return true;
         }
+        return true;
+    }
+
+    if (d1 === 14 && S.view === VIEW_WAV) {            /* jog moves the marker */
+        const delta = decodeDelta(d2);
+        if (wavEditOnJog(delta, S.shiftHeld)) { S.dirty = true; return true; }
         return true;
     }
 
@@ -6506,6 +6546,15 @@ export function soundOnCC(d1, d2, decodeDelta) {
         /* MACROS: the click opens the assign list, which floats over the page
          * (no engine reads — the list is the store). */
         if (S.view === VIEW_MACROS) { openKnobEditor(); S.dirty = true; return true; }
+        /* Click leaves too, as the host's does: on this screen there is nothing
+         * to confirm — every edit already landed — so the two exits are the
+         * same exit rather than one of them being a commit. */
+        if (S.view === VIEW_WAV) {
+            wavEditClose();
+            ppSuppressOnce = false; ppDivedOut = false;
+            S.view = VIEW_EDIT; S.dirty = true;
+            return true;
+        }
         if (S.view === VIEW_ENUM) { closeEnumPicker(true); return true; }
         if (S.view === VIEW_SLOTCFG) {
             const row = S.slotRows[S.slotCfgIdx];
@@ -6779,6 +6828,18 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * ⚠ Deliberately the tap only — the long-press suspend above stays
          * unclaimable, the same failsafe shape as the host's Shift+Back. */
         if (hostedBack()) return true;
+        /* ⭑ THE WAVE EDITOR RETURNS TO THE GRID IT WAS OPENED FROM — the same
+         * contract every other dive-out has. It commits nothing on the way out
+         * because it has committed every detent already (through the ledger),
+         * so there is no cancel here and none is implied. */
+        if (S.view === VIEW_WAV) {
+            wavEditClose();
+            ppSuppressOnce = false;   /* let ppSync re-enter the grid at once */
+            ppDivedOut = false;
+            S.view = VIEW_EDIT;
+            S.dirty = true;
+            return true;
+        }
         /* ⭐ ANY SCREEN THE EDITOR OPENED BACKS INTO THE EDITOR. Ahead of the
          * per-view branches below, because those step up davebox's OWN tree —
          * which is not the tree you walked when you arrived from a module page.
@@ -6982,6 +7043,14 @@ export function soundOnNote(status, d1, d2) {
      * The save flush that used to ride the touch RELEASE rides the Shift
      * release instead — soundVolGestureEnd, called by the MoveShift handler. */
     if (d1 > 7) return false;
+
+    /* ⭑ ON THE WAVE EDITOR A TOUCH SELECTS THAT MARKER, without moving it: the
+     * fastest way to put the cursor on another marker is to lay a finger on its
+     * encoder. Every other knob on that screen swallows the touch, for the same
+     * reason it swallows the turn. */
+    if (S.view === VIEW_WAV && status === 0x90 && d2 > 0) {
+        if (wavEditOnKnobTouch(d1)) { S.dirty = true; return true; }
+    }
 
     /* Knob touch is a NOTE, and hostedTakes() only forwards CCs — so a hosted
      * canvas never saw touch at all. Two symptoms on device, one cause: touching
@@ -7197,6 +7266,16 @@ export function soundTick() {
     S.tickCount++;
 
     if (isTextEntryActive()) { tickTextEntry(); return; }
+
+    /* ⭑ PUMP THE WAVE PEAKS, and ONLY while that screen is up.
+     *
+     * ⚠⚠ This is the whole reason davebox does not read the file the way the
+     * host does. `wavEditTick` advances a BOUNDED job — two blocks, capped at
+     * 2 MB total — so a long sample fills in over a few frames instead of
+     * stalling one. The host sweeps the entire file inside its DRAW call; a
+     * blocked tick here overflows the input ring and drops note-offs, and a
+     * dropped note-off is a stuck note in Move AND in the slot synth. */
+    if (S.view === VIEW_WAV) wavEditTick();
 
     /* ⭑ AHEAD of discovery: when the editor is on, davebox's own bank model is
      * not what is being drawn, and running both would pay for two contracts. */
@@ -8428,11 +8507,71 @@ installPpCtx({
         ppOn = false; ppEditLatched.clear();
         ppSuppressOnce = true;
         ppDivedOut = true;
+        /* ⭑ A SAMPLE MARKER GETS ITS OWN SCREEN (2026-09-06). Everything else
+         * still hands the component to the bank editor, which has the file,
+         * text and option screens — but a `wav_position` needs a WAVEFORM, and
+         * the bank editor has never had one. That is the whole of Josh's "the
+         * touch click gesture to enter full screen wave doesn't do anything":
+         * the dive fired and landed somewhere with nothing to show. */
+        if (isWavPosition(meta) && openWavEditor(fullKey, meta)) {
+            S.view = VIEW_WAV;
+            S.dirty = true;
+            return;
+        }
         S.pendingDiscover = 1;      /* davebox's own editor needs its banks */
         S.view = VIEW_EDIT;
         S.dirty = true;
     },
 });
+
+/*
+ * Open the fullscreen sample-marker editor on one `wav_position` param.
+ *
+ * Everything davebox-specific is assembled here and injected; ui_wav.mjs holds
+ * no davebox state and no arithmetic of its own.
+ *
+ * ⚠⚠ THE WRITE GOES THROUGH THE LEDGER. `queueWrite` -> drainAndVerifyWrites is
+ * not a nicety: `engineSet` is a raw fire-and-forget `shadow_set_param`, and in
+ * overtake the host has ~8 ms of mailbox patience before it STOMPS an
+ * unconsumed request. A marker edited per detent would lose writes exactly the
+ * way sound mode's did before the ledger existed, with nothing logged.
+ *
+ * ⚠ DURATION IS 0 — davebox has no WAV duration reader, deliberately. A
+ * `percent` marker (every one in the fleet today) needs none. A `ms`/`sec`
+ * marker will say "no duration" on screen rather than drawing a confident
+ * cursor at the file start, which is what the host does with the same missing
+ * fact. Adding a reader means adding a THIRD wav parser to this codebase, and
+ * the host's existing one already disagrees with wav_format.mjs about 24-bit
+ * and AIFF files — so it is a deliberate gap, not an oversight.
+ */
+function openWavEditor(fullKey, meta) {
+    const cp = S.cpMap || {};
+    /* Declaration order, which IS the marker/knob order — see
+     * wavViewGroupMembers. Object key order preserves chain_params' order
+     * because every key is a non-numeric string. */
+    const params = Object.keys(cp).map((k) => ({
+        key: k, fullKey: `${S.comp}:${k}`, meta: cp[k],
+    }));
+    return wavEditOpen({
+        key: ppBare(fullKey) || fullKey,
+        fullKey,
+        meta,
+        comp: S.comp,
+        io: {
+            getParam: (k) => engineGetChainParam(S.slot, k),
+            setParam: (k, v) => queueWrite(ppBare(k) || k, v),
+            metaOf: (bare) => cp[bare] || null,
+            buildKey: (bare) => `${S.comp}:${bare}`,
+            exists: (path) => {
+                if (!path) return false;
+                try { const st = FS_ADAPTER.stat(path); return !!(st && st[1] === 0); }
+                catch (e) { return false; }
+            },
+            params,
+            durationSec: 0,
+        },
+    });
+}
 
 function renderEdit() {
     clear_screen();
@@ -8692,6 +8831,7 @@ export function soundRender() {
     else if (S.view === VIEW_LFO) renderLfo();
     else if (S.view === VIEW_LFO_TARGET) renderLfoTarget();
     else if (S.view === VIEW_LFO_PARAM) renderLfoParam();
+    else if (S.view === VIEW_WAV) renderWavEdit();
     else if (S.view === VIEW_ENUM) renderEnumPick();
     else if (S.view === VIEW_PATCHES) renderChainPatches();
     else if (S.view === VIEW_BUSES) renderBuses();

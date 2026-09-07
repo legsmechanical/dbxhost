@@ -1958,14 +1958,26 @@ export function drawKitEqCurve(rowY, viz) {
  * `viz` = { start, count (default 2),
  *           peaks: number[] 0..1 (per-column half-amplitude, already
  *                  normalised — this file reads no files and does no I/O),
- *           pos, basePos, spray, loopStart, loopEnd  (all 0..1, optional) }
+ *           pos, basePos, spray, loopStart, loopEnd  (all 0..1, optional),
+ *           rect: {x, y, w, h} — OPTIONAL, and the only thing the fullscreen
+ *                  wave editor needs that a cell does not }
+ *
+ * ⭑ ONE DRAWER, TWO SIZES. `rect` overrides the cell derivation and nothing
+ * else: every marker, bracket, fence and the cursor's complement trick are
+ * computed from x0/w/topY/botY, so the whole body is size-agnostic already.
+ * The alternative was a second, fullscreen copy of this function — and the
+ * copy would have been the WORSE one, because the obvious `round(p*(w-1))`
+ * column formula (which is what the host's own fullscreen editor uses)
+ * disagrees with `colOf` below for a quarter of all positions.
  */
 export function drawKitSampleSpan(rowY, viz) {
+    const r = (viz && viz.rect) || null;
     const col = viz.start % 4;
     const count = viz.count || 2;
-    const x0 = col * MV_CELL_W + 1;
-    const w = count * MV_CELL_W - 2;
-    const topY = rowY + 1, botY = rowY + MV_KH - 2;
+    const x0 = r ? r.x : col * MV_CELL_W + 1;
+    const w = r ? r.w : count * MV_CELL_W - 2;
+    const topY = r ? r.y : rowY + 1;
+    const botY = r ? (r.y + r.h - 1) : rowY + MV_KH - 2;
     const midY = Math.round((topY + botY) / 2);
     const amp = (botY - topY) / 2;
 
