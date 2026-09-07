@@ -1509,6 +1509,7 @@ export function soundExit(opts) {
      * swallow a Back or retrace to a screen from a previous visit — the failure
      * this whole pass was about, arriving by a different door. */
     ppAteBackPress = false; ppDivedOut = false; ppErrandView = null; wavErrand = false;
+    ppFileErrand = false;
     ppSuppressOnce = false; ppRestorePage = null;
     if (S.busLevelDirty) engineSaveState();
     S.active = false;
@@ -5297,7 +5298,13 @@ function fileActivate() {
          * itself, because refreshSourcePath is watching the value we just
          * queued. VIEW_MENU is davebox's own answer and is still right for
          * davebox's own browse. */
-        S.view = (wavErrand && wavEditActive()) ? VIEW_WAV : VIEW_MENU;
+        /* ⭐ Back where the pick was ASKED FOR: the waveform if the wave editor
+         * sent us, the GRID if a grid cell did, and davebox's own menu only when
+         * davebox's own menu opened it. */
+        S.view = (wavErrand && wavEditActive()) ? VIEW_WAV
+               : (ppFileErrand ? VIEW_EDIT : VIEW_MENU);
+        if (ppFileErrand) { ppSuppressOnce = false; ppDivedOut = false; }
+        ppFileErrand = false;
         wavErrand = false;
         S.presetMsg = '';
     }
@@ -5648,6 +5655,7 @@ function runActionBody(a) {
     else if (a.t === 'patchdel')    doChainPatchDelete(a.index);
     else if (a.t === 'file')     openFileBrowser(S.menuRowsCache[a.idx]);
     else if (a.t === 'ppfile') {
+        ppFileErrand = true;
         /* The grid dived here for a FILE param: open its browser. Back returns
          * to the grid through the ordinary dive-out crumb (ppDivedOut), the same
          * way every other dive does. */
@@ -6970,6 +6978,16 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * screens, which is not the path you walked to get here. Nothing is
          * committed or reverted — an un-picked browse simply leaves the value
          * alone. */
+        /* The grid's own browse returns to the GRID — the same rule as the
+         * wave editor's, one screen up. */
+        if (S.view === VIEW_FILE && ppFileErrand) {
+            ppFileErrand = false;
+            ppSuppressOnce = false;   /* let ppSync re-enter the grid at once */
+            ppDivedOut = false;
+            S.view = VIEW_EDIT;
+            S.dirty = true;
+            return true;
+        }
         if (S.view === VIEW_FILE && wavErrand) {
             wavErrand = false;
             /* ⚠ Only if the editor is STILL THERE. Belt to the braces above:
@@ -8214,6 +8232,19 @@ let ppErrandView = null;
  * the peaks, which is exactly the point of having gone.
  */
 let wavErrand = false;
+/*
+ * The file browser is up ON AN ERRAND FROM THE PARAM GRID (a click on a
+ * filepath cell), and both its exits belong to the grid.
+ *
+ * ⚠⚠ WITHOUT THIS, reported from the device: picking a kit "sends you to a
+ * screen that says NO PARAMS, and backing out of that sends you to
+ * T1 > DR32 > PRESETS, and backing out of THAT puts you on main." Three screens
+ * the user never asked for, because `fileActivate` lands on VIEW_MENU — the
+ * bank editor's menu, whose banks were never discovered on this path, so it has
+ * nothing to show — and Back from there walks davebox's OWN tree instead of the
+ * one the user walked.
+ */
+let ppFileErrand = false;
 
 /* Does the editor currently have a layer of its own for Back to close — an open
  * picker, or a menu/preset page you have entered? Only then does Back belong to

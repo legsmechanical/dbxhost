@@ -62,7 +62,7 @@ import { installReadMeter, readMeterTick, readMeterLine, readMeterReset } from '
  * Importing the io as a VALUE and registering it here makes the instance the
  * one THIS bundle uses, by construction.
  */
-import { setWavPeaksIO } from '/data/UserData/schwung/shared/param_pages/wav_peaks.mjs';
+import { setWavPeaksIO, wavPeaksHasIo as wavPeaksHasIoDbg } from '/data/UserData/schwung/shared/param_pages/wav_peaks.mjs';
 import { WAV_QJS_IO } from '/data/UserData/schwung/shared/param_pages/wav_io_qjs.mjs';
 import { setTrackMute, setTrackSolo, stepHoldCheckpoint } from './ui_editops.mjs';
 import { applyTrackConfig,
@@ -379,6 +379,19 @@ globalThis.init = function () {
     /* See the import: the registration must land in the instance the widgets
      * read from, so it is done here rather than left to a side effect. */
     setWavPeaksIO(WAV_QJS_IO);
+    /* ⚠ TEMPORARY. The fullscreen editor draws waveforms and the CELL widgets do
+     * not, and both now read the same wav_peaks instance — so the next guess
+     * would be wrong again. One line per distinct sample path the grid's pump
+     * actually sees, so "is the pump running at all, and on what" is answered by
+     * observation. De-duplicated: it runs every tick. */
+    {
+        const seen = Object.create(null);
+        globalThis.__vizwav = (p) => {
+            if (seen[p]) return; seen[p] = 1;
+            console.log('[vizwav] pump path=' + JSON.stringify(p)
+                      + ' hasIo=' + (wavPeaksHasIoDbg && wavPeaksHasIoDbg() ? 'yes' : 'no'));
+        };
+    }
 
     S._origClearScreen = clear_screen;
     S._wasSuspended    = false;

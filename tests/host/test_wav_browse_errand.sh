@@ -100,8 +100,16 @@ ok(backErrand >= 0 && backGeneric >= 0 && backErrand < backGeneric,
 
 /* ---- a pick -------------------------------------------------------------- */
 const act = body("function fileActivate(");
-ok(/S\.view = \(wavErrand && wavEditActive\(\)\) \? VIEW_WAV : VIEW_MENU;/.test(act),
-   "a PICK returns to the waveform too, and to VIEW_MENU otherwise");
+/* ⭑ THREE destinations now, because a browse can be asked for from three
+ * places: the waveform sent us, a GRID cell sent us, or davebox`s own menu did.
+ * Landing a grid-originated pick on VIEW_MENU is what produced the device
+ * report "NO PARAMS, then PRESETS, then main" — three screens the user never
+ * asked for, because the bank editor`s banks were never discovered on that
+ * path. */
+ok(/S\.view = \(wavErrand && wavEditActive\(\)\) \? VIEW_WAV\s*\n?\s*: \(ppFileErrand \? VIEW_EDIT : VIEW_MENU\);/.test(act),
+   "a PICK returns where it was ASKED FOR — waveform, grid, or davebox`s menu");
+ok(/if \(ppFileErrand\) \{ ppSuppressOnce = false; ppDivedOut = false; \}/.test(act),
+   "...and a grid-originated pick lets the grid re-enter at once");
 ok(/wavErrand = false;/.test(act), "...and the crumb is dropped as it is spent");
 
 /* ---- it cannot outlive the screen ---------------------------------------- */
