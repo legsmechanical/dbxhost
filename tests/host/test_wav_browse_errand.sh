@@ -115,10 +115,30 @@ ok(/wavErrand = false;/.test(act), "...and the crumb is dropped as it is spent")
  * A count of `wavErrand = false;` sites cannot see a missing one — name it. */
 {
     const closer = body("function wavEditCloseIfOpen(");
-    ok(/wavErrand = false;/.test(closer),
-       "the editor`s own lifetime reconcile drops the errand");
-    ok(closer.indexOf("wavErrand = false;") < closer.indexOf("if (S.view === VIEW_WAV)"),
-       "...unconditionally, ahead of the VIEW_WAV branch that does not run on an errand");
+    const dropAt = closer.indexOf("wavErrand = false;");
+    const viewAt = closer.search(/if \(S\.view === VIEW_WAV/);
+    /* ⚠⚠ BOTH INDICES MUST BE FOUND FIRST. `indexOf` answers -1 for a string
+     * that is not there, and `-1 < 172` is TRUE — so an ordering assertion
+     * written as a bare comparison reports ok on the very tree where the
+     * statement was DELETED. Caught by an advisor pass running that exact
+     * mutation: the neighbour above fired and this one said ok. */
+    ok(dropAt >= 0, "the editor`s own lifetime reconcile drops the errand");
+    ok(viewAt >= 0, "control: the reconcile still has a view branch to be ahead of");
+    ok(dropAt >= 0 && viewAt >= 0 && dropAt < viewAt,
+       "...unconditionally, ahead of the view branch (" + dropAt + " < " + viewAt + ")");
+
+    /* ⚠⚠ AND THE BROWSER GOES WITH IT. Clearing the crumb alone left the user
+     * standing in a file browser built from the OLD component`s `S.fileKey`,
+     * over the NEW slot — and `queueWrite` captures `S.slot` AT CALL TIME, so a
+     * pick after the switch writes the old module`s key into the track that
+     * replaced it. That is the "lands an edit on a track the user never opened"
+     * this function`s own header exists to prevent. */
+    ok(/hadErrand && S\.view === VIEW_FILE/.test(closer),
+       "⭑ a browse open across a track switch is closed too, not just un-crumbed");
+    ok(/ppDivedOut = false;/.test(closer),
+       "...and the dive crumb goes with it — left set it would eat the next Back");
+    ok(/ppSuppressOnce = false;/.test(closer),
+       "...and the grid is free to re-enter on the component we moved to");
 }
 /* Both returns refuse a screen that is not there — belt to those braces. */
 ok(/if \(wavEditActive\(\)\) \{ S\.view = VIEW_WAV; S\.dirty = true; return true; \}/.test(src),

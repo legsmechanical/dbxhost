@@ -57,8 +57,19 @@ ok(/for \(const k of Object\.keys\(cp\)\)/.test(op),
 /* ⚠ A member`s address is its INSTANCE`s, not the component`s — the same rule
  * as the file link. Building it as `${S.comp}:${k}` wrote a key no module
  * serves for every child-level sibling. */
-ok(/wavSiblingKey\(fullKey, ownBare, k, S\.comp\)/.test(op),
-   "a member`s fullKey is scoped through wavSiblingKey, not `${S.comp}:${k}`");
+ok(/scoped \? wavSiblingKey\(fullKey, ownBare, k, S\.comp\) : `\$\{S\.comp\}:\$\{k\}`/.test(op),
+   "a member`s fullKey is instance-scoped through wavSiblingKey");
+/* ⚠⚠ ...ONLY FOR A REPEATED ELEMENT. Once the instance was genuinely non-empty
+ * (it had been "" — see below), scoping EVERY declaration prefixed
+ * component-wide chain_params too: DR32`s `kit` became `synth:pad4_kit`, a key
+ * no module serves. A chain_param is component-wide by definition; only a level
+ * that declares children lists TEMPLATES. The no-op was masking this, so the
+ * fix and the bug armed on the same trigger. */
+ok(/pushDecl\(k, cp\[k\], false\)/.test(op),
+   "⚠ chain_params are NOT instance-scoped — they are component-wide");
+ok(/const repeated = !!childSpec\(lvl\);/.test(op) &&
+   /pushDecl\(prm\.key, prm, repeated\)/.test(op),
+   "...and a level`s params are scoped only where the level declares children");
 /* ⚠⚠ ...AND THE ARGUMENT, which is where it was wrong. `wavSiblingKey` derives
  * the instance by subtracting the marker`s own bare NAME from its resolved key.
  * `ownBare` was `ppBare(fullKey)` — the resolved key itself — so the
@@ -79,8 +90,12 @@ ok(!/fullKey:\s*`\$\{S\.comp\}:\$\{k\}`/.test(op),
  * displaying exactly that, resolved (a declared child name where the module
  * gave one, "Pad 7" where it did not). Re-deriving it from the key would be a
  * second implementation of a convention the grid already resolved.
- * ⚠ Read while the controller is still alive: openParamEditor has called
- * exitParamPages() by this point, and the controller survives that today. */
+ * ⚠⚠ THE CONTROLLER DOES *NOT* SURVIVE THE EXIT — this comment used to say it
+ * did, which is the sentence that produced the bug the block below now pins.
+ * `exitParamPages()` ends with `controller = null`, so the read has to happen
+ * before the teardown, not after it. Left standing here for one commit after
+ * the code was corrected: the last copy of a false claim is still a false
+ * claim, and this file is where a reader comes to learn what the pin means. */
 ok(/crumbs: \[modLabel\(\), divedFrom\]\.filter\(Boolean\)/.test(op),
    "the editor is told which page it was dived from");
 ok(/paramPagesPageLabel/.test(strip(src).slice(0, strip(src).indexOf("} = PP;"))),

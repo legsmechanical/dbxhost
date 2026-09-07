@@ -8704,8 +8704,31 @@ function wavEditCloseIfOpen() {
      * Back would return to a VIEW_WAV with no editor behind it (the renderer
      * bails and the LAST FRAME freezes on the panel), and later davebox's OWN
      * file browser would back into the waveform instead of its menu. */
+    const hadErrand = wavErrand;
     wavErrand = false;
-    if (S.view === VIEW_WAV) { S.view = VIEW_EDIT; S.dirty = true; }
+    /*
+     * ⚠⚠ AND SO DOES THE BROWSER IT OPENED. Clearing the crumb alone left the
+     * user standing in a file browser built from the OLD component's
+     * `S.fileKey`, over the NEW slot — and `queueWrite` captures `S.slot` AT
+     * CALL TIME, so a pick made after the switch writes the old module's
+     * sample-path key into the track that replaced it. That is precisely the
+     * "lands an edit on a track the user never opened" this function's own
+     * header says it exists to prevent; closing the editor and not the screen
+     * left the window open one gesture wider.
+     *
+     * ⚠ `ppDivedOut` goes with it. It is set alongside the errand at the dive
+     * and cleared at every other exit; left standing, the next arrival at
+     * VIEW_EDIT would silently eat one Back — the stale-crumb failure
+     * `soundExit` documents. `ppSuppressOnce` likewise, so the grid re-enters
+     * at once for the component we just moved to, the same as the Back and
+     * click exits do.
+     */
+    if (S.view === VIEW_WAV || (hadErrand && S.view === VIEW_FILE)) {
+        ppDivedOut = false;
+        ppSuppressOnce = false;
+        S.view = VIEW_EDIT;
+        S.dirty = true;
+    }
 }
 
 /*
@@ -8765,15 +8788,34 @@ function openWavEditor(fullKey, meta, divedFrom) {
     const ownBare = (meta && meta.key) || ppBare(fullKey) || fullKey;
     const seenDecl = Object.create(null);
     const params = [];
-    const pushDecl = (k, m) => {
+    /*
+     * ⚠⚠ ONLY A REPEATED ELEMENT'S KEYS ARE INSTANCE-SCOPED. Scoping every
+     * declaration was wrong in the other direction: once the instance was
+     * genuinely non-empty it prefixed component-wide chain_params too, so
+     * DR32's `kit` became `synth:pad4_kit` — a key no module serves. A
+     * `chain_params` entry is component-wide by definition, and a flat level's
+     * params are too; only a level that declares children lists TEMPLATES.
+     *
+     * ⚠ The residue, stated rather than hidden: a marker on child level A and a
+     * key listed on a different child level B would still take A's instance.
+     * No module in the fleet declares two child levels, and the member list is
+     * filtered to one `view_group` afterwards, so it is unreachable — but it is
+     * a narrowing, not a proof.
+     */
+    const pushDecl = (k, m, scoped) => {
         if (!k || seenDecl[k] || !m) return;
         seenDecl[k] = 1;
-        params.push({ key: k, fullKey: wavSiblingKey(fullKey, ownBare, k, S.comp), meta: m });
+        params.push({
+            key: k,
+            fullKey: scoped ? wavSiblingKey(fullKey, ownBare, k, S.comp) : `${S.comp}:${k}`,
+            meta: m,
+        });
     };
-    for (const k of Object.keys(cp)) pushDecl(k, cp[k]);
+    for (const k of Object.keys(cp)) pushDecl(k, cp[k], false);
     for (const lvl of Object.values(S.levels || {})) {
+        const repeated = !!childSpec(lvl);
         for (const prm of ((lvl && lvl.params) || [])) {
-            if (prm && typeof prm === 'object' && !prm.level) pushDecl(prm.key, prm);
+            if (prm && typeof prm === 'object' && !prm.level) pushDecl(prm.key, prm, repeated);
         }
     }
     return wavEditOpen({

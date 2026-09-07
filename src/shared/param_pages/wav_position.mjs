@@ -454,7 +454,26 @@ export function wavSiblingKey(markerFullKey, ownBare, declaredBare, prefix) {
      * The test is the instance prefix we just derived: if the declared key
      * already begins with it, the module has scoped it itself.
      */
-    if (instance && declared.startsWith(instance)) instance = "";
+    /*
+     * ⭑ ANY instance of the same repeated element, not only THIS one. The
+     * narrow test caught `p05_start` naming `p05_sample_path`, and missed
+     * `pad4_start` naming `pad7_end` — which came out `pad4_pad7_end`, a key no
+     * module serves. The instance we derived is `<prefix><index>_`; a declared
+     * key wearing the SAME prefix and any index is already scoped.
+     *
+     * ⚠ Derived from the instance, never guessed. A blanket `^[a-z]+\d+_` test
+     * would strip the scoping from a legitimately bare `osc1_freq` on a child
+     * level — which is a real key shape — whereas this can only fire for the
+     * module's own child_prefix, where a leading `<prefix><digits>_` cannot
+     * mean anything else.
+     */
+    if (instance) {
+        if (declared.startsWith(instance)) instance = "";
+        else {
+            const head = instance.match(/^([^0-9]+)[0-9]+_$/);
+            if (head && new RegExp("^" + head[1] + "[0-9]+_").test(declared)) instance = "";
+        }
+    }
     return p ? `${p}:${instance}${declared}` : `${instance}${declared}`;
 }
 

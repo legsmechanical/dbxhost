@@ -269,7 +269,20 @@ function normalize(key, raw) {
      * modules declare `mode`, every consumer reads `wav_mode`, and the two were
      * never joined. DR32's `end` marker therefore read as "position", which is
      * the wrong end of the file for `wavEndDefault` to seed from. Measured
-     * across the fleet, that is the ONLY field this recovers today.
+     * across the fleet, that is the only field recovered from a module's own
+     * DECLARATION.
+     *
+     * ⚠ It is not the only field that CHANGES, and an earlier wording of this
+     * said it was. Old and new resolution were run side by side over all 101
+     * contracts: EIGHT fields differ, seven of them defaults being materialised
+     * where they had read `undefined` — `display_unit` ("percent", 20 markers),
+     * `enable_zoom` (false, 20), `expanded_type` ("wav_position", 23, and it is
+     * what `isWavPosition` reads), `marker_label` ("", 20),
+     * `shift_increment_multiplier` (0.1, 3), `ui_type` ("wav_position", 4),
+     * `view_group` ("", 20). Two of those are behavioural on the grid.
+     * ⭑ The `""`-instead-of-`undefined` pair was checked rather than assumed:
+     * `marker_label` and `view_group` both reach their consumers through `||`
+     * fallbacks, so no fallback is suppressed.
      *
      * ⚠ WHAT IT DOES *NOT* FIX, corrected 2026-09-07 after an advisor pass
      * measured it: nothing in the 100-module device capture nests
