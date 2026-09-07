@@ -2317,7 +2317,24 @@ export function createController(io = {}) {
          * while a target is active, so fall back rather than blank the knob if
          * the flag and the target ever disagree. */
         let raw = null;
-        if (s.modCache[key]) raw = getParam(fullKey(key) + ":base");
+        /*
+         * ⚠⚠ `=== true`, NOT TRUTHINESS, AND IT COSTS A LIVE TAKE.
+         *
+         * This slot is a TRI-STATE for a consumer that automates: davebox
+         * stores the STRING "auto" / "auto-off" in it to mark a param it is
+         * recording, and `"auto"` is truthy. So every automated param bought a
+         * `:base` read that nothing serves — `chain_mod_get_base_for_subkey`
+         * only answers while a MODULATION target is active — which misses,
+         * empties, and falls through to a SECOND read of the plain key. Two
+         * round trips where one would do, on exactly the params you are
+         * touching while the take runs, at ~2.9 ms of SPI each.
+         *
+         * ⭑ Nothing is lost by narrowing it. A param that is BOTH chain-
+         * modulated and automated already lost its boolean when the string was
+         * written over it one line above; the string is the whole reason this
+         * cannot be read as a flag.
+         */
+        if (s.modCache[key] === true) raw = getParam(fullKey(key) + ":base");
         /*
          * "" counts as a MISS, not as a value.
          *
@@ -4078,7 +4095,14 @@ export function createController(io = {}) {
     function refreshModulatedValues(p) {
         const modKeys = [];
         for (const k of p.keys) {
-            if (k && s.modCache[k]) modKeys.push(k);
+            /* ⚠⚠ `=== true` — see the `:base` read in refreshValues. An
+             * automated param wears the STRING "auto" here, and truthiness put
+             * it on this list: one `:effective` read PER TICK, forever, for a
+             * value no source is driving. noisemaker's Wave macro is the worst
+             * case — one automated param marks many as driven — and the
+             * symptom is what Josh reported, playing automation stalling while
+             * you operate the params. */
+            if (k && s.modCache[k] === true) modKeys.push(k);
         }
         if (!modKeys.length) {
             /* Nothing modulated: drop stale dots rather than leave them frozen
@@ -4106,9 +4130,11 @@ export function createController(io = {}) {
             if (v !== null && v !== undefined) s.modValues[key] = v;
         }
         s.modCursor = (s.modCursor + n) % modKeys.length;
-        /* A key that stopped being modulated keeps no dot. */
+        /* A key that stopped being modulated keeps no dot — and an automated
+         * one never had a dot to keep, so the same `=== true` reading applies
+         * or a stale value would sit on the arc forever. */
         for (const k in s.modValues) {
-            if (!s.modCache[k]) delete s.modValues[k];
+            if (s.modCache[k] !== true) delete s.modValues[k];
         }
     }
 
