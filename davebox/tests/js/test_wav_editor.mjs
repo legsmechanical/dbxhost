@@ -301,18 +301,28 @@ step('⚠⚠ the file is resolved ONCE, not on every frame', () => {
     /* Each resolution is a param read plus up to three stats. Doing it in the
      * draw put a filesystem round trip on the path whose whole job is to redraw
      * smoothly — the rule wav_peaks.mjs states outright. */
-    let stats = 0;
+    let stats = 0, linkReads = 0;
     const r = rig();
-    const inner = r.io.exists;
-    r.io.exists = (p) => { stats++; return inner(p); };
+    const innerExists = r.io.exists, innerGet = r.io.getParam;
+    r.io.exists = (p) => { stats++; return innerExists(p); };
+    /* ⚠ COUNT THE PARAM READ TOO, not just the stats. Re-resolving costs a read
+     * even when the answer has not changed, and a test that watched only the
+     * filesystem could not tell "resolved once" from "re-resolved cheaply" —
+     * which is exactly the mutation that survived the first time. */
+    r.io.getParam = (k) => { if (k === 'synth:sample_path') linkReads++; return innerGet(k); };
     open(r);
     seedPeaks('/root/kick.wav');
-    const afterOpen = stats;
+    const afterOpen = stats, linksAfterOpen = linkReads;
     for (let i = 0; i < 10; i++) WAV.renderWavEdit();
     assert(stats === afterOpen,
            `rendering 10 frames cost ${stats - afterOpen} filesystem calls — it must cost none`);
+    assert(linkReads === linksAfterOpen,
+           `rendering 10 frames read the sample link ${linkReads - linksAfterOpen} times — ` +
+           'the draw path must not resolve at all');
     for (let i = 0; i < 10; i++) WAV.wavEditTick();
     assert(stats === afterOpen, 'ticking re-resolved a file whose link had not changed');
+    assert(linkReads === linksAfterOpen + 10,
+           `the tick should check the link once each (got ${linkReads - linksAfterOpen} for 10)`);
 
     /* ⚠ CONTROL: it MUST re-resolve when the module actually points elsewhere,
      * or "resolved once" would just be "never refreshed". */
