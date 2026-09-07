@@ -922,6 +922,10 @@ export function soundVisibilityForTest() {
          * calls, so this cannot drift from what actually runs. */
         evaluate: (cond, levelDef) => ppCtx.evaluateVisibilityCondition(cond, levelDef),
         dropMemo: () => ppCondReadsDrop(),
+        /* The modulation answer, through the installed ctx — the same path the
+         * grid uses to decide whether to draw the dot and the `~`. */
+        isModulated: (slot, fullKey) => ppCtx.isParamModulated(slot, fullKey),
+        dropModMemo: () => ppModReadsDrop(),
         memoSize: () => ppCondReads.size,
         write: (key, val) => queueWrite(key, val),
         /* Straight at the binding, the way reload_level and the preset scan
@@ -1986,6 +1990,9 @@ function openBlock(comp) {
      * non-empty error refuses. A key nobody serves reads "" and must not be
      * mistaken for a failure, or a healthy module becomes uneditable.
      */
+    /* A different component, or the same one again: the previous decline said
+     * nothing about this contract. */
+    ppDeclinedDraw = false;
     const err = componentError(comp);
     if (err) {
         showActionPopupFor(4000, (engineModuleAbbrev(id) || 'MODULE') + ' FAILED', err);
@@ -7582,6 +7589,10 @@ export function soundTick() {
      * in MIDI-callback context, not only in the tick, so the gap is reachable.
      * `test_gate_memo_lifetime.sh` asserts the POSITION, not merely the call. */
     ppCondReadsDrop();
+    /* ⚠ The modulation cache is NOT dropped here — see ppModReads. Only the
+     * slow sweep, so a routing the module changed on its own cannot stay
+     * invisible forever. */
+    if ((S.tickCount % PP_MOD_SWEEP_TICKS) === 0) ppModReadsDrop();
 
     /* Ahead of the S.active gate: leaving sound mode with the claim up would
      * strand it, and this is the cheap belt to soundExit's braces. */
@@ -8353,18 +8364,58 @@ function pageGroups() {
  * edited, where the values come from, where Back goes. Everything you see and
  * touch inside is the vendored binding's.
  *
- * ⚠ OFF BY DEFAULT while it is wired. davebox's own editor (renderEdit below)
- * is still the shipped one; flipping PP_EDITOR swaps them, and both paths stay
- * whole so a device pass can A/B them. This is not a permanent switch — it
- * comes out with ui_discover's bank model when the swap is made.
- * ⭐ Before removing the flag: MEASURE THE TICK on device. The controller
- * staggers to ~1 get_param per tick, but an entry rebuild bursts, and a blocked
- * tick is how the input ring overflows and drops MIDI RELEASES
- * ([[schwung-blocked-tick-drops-midi-releases]]) — the 771 ms stall that
- * stranded the LEDs was exactly this shape. */
+ * ⚠⚠ THIS COMMENT SAID "OFF BY DEFAULT" WHILE THE FLAG WAS `true`, and it said
+ * so for long enough that an audit found it before a reader did. The grid IS the
+ * shipped editor. `renderEdit` below is the FALLBACK — reached when the grid
+ * declines a page, or when ppApplies() says no — not the default.
+ *
+ * ⭑ AND THE PRECONDITION IT NAMED WAS NEVER DISCHARGED, which is the part worth
+ * keeping. It said "before removing the flag: MEASURE THE TICK on device",
+ * because a blocked tick overflows the input ring and drops MIDI RELEASES
+ * ([[schwung-blocked-tick-drops-midi-releases]]). The flag went to `true`
+ * without that measurement — and the measurement, when it finally arrived on
+ * 2026-09-07, found dr32's send picker spending 2916 blocking reads in ONE tick
+ * (~8.4 s) from 112 planning passes. The comment predicted the exact failure and
+ * was overtaken anyway.
+ *
+ * ⭑ SO THE WARNING STANDS, restated as a live rule rather than as a gate on a
+ * flag that is already open: this path is measured by the read meter and by
+ * `tests/js/test_read_budget.mjs`, whose caps exist to fail when a screen starts
+ * asking the engine more than its budget. Do not raise a cap to make a screen
+ * pass. Both paths stay whole; the flag comes out with ui_discover's bank model
+ * when the swap is finished. */
 const PP_EDITOR = true;
 
+/* The uncached two-step read. Unchanged: ask the target, and for targets that
+ * do not implement `:modulated`, infer it by comparing the live value against
+ * its `:base`. ⚠ A missing `:base` means NOT modulated, never "assume yes" —
+ * the mark has to mean something. */
+function ppReadModulated(slot, fullKey) {
+    const flag = engineGetChainParam(slot, fullKey + ':modulated');
+    if (flag === '1') return true;
+    if (flag === '0') return false;
+    const base = engineGetChainParam(slot, fullKey + ':base');
+    if (base === null || base === undefined || base === '') return false;
+    const live = engineGetChainParam(slot, fullKey);
+    return live !== null && live !== undefined && live !== base;
+}
+
 let ppOn = false;
+/*
+ * The grid was asked to draw and said no.
+ *
+ * ⚠⚠ WHY THIS EXISTS. `drawParamPages()` returns false for a page kind it does
+ * not draw, and davebox fell through to its OWN editor while leaving `ppOn`
+ * true — so the screen was davebox's and the KNOBS were still the grid's. You
+ * look at one editor and turn the parameters of another, invisibly. The host
+ * does not have this: it calls `enterHierarchyEditorFromParamPages()` on the
+ * same decline, which hands the component over properly.
+ *
+ * ⭑ Recorded in the DRAW and acted on by `ppSync`, which is already the one
+ * owner of "should the grid be up". Tearing down from inside a draw would give
+ * the frame a side effect and put a second owner on the same state.
+ */
+let ppDeclinedDraw = false;
 /* ⭑ THE DIVE-OUT LATCH, and it mirrors the host's `suppressParamPagesOnce`
  * exactly. A param the grid will not turn hands off to davebox's own editor —
  * which is the SAME view the grid would otherwise claim, so without this the
@@ -8442,8 +8493,43 @@ const ppCondReads = new Map();
 const ppCondReadKey = (fullKey) =>
     S.slot + '\u0000' + (S.bus ? S.bus.id : '') + '\u0000' + S.comp + '\u0000' + fullKey;
 
-/* The one place it is emptied. */
-function ppCondReadsDrop() { if (ppCondReads.size) ppCondReads.clear(); }
+/*
+ * Is this parameter being driven by a modulator right now — the dot on the cell
+ * and the `~` on its label.
+ *
+ * ⚠ HALF THE SETTLED EDITOR'S READS WERE THIS. The measured budget for a
+ * settled editor is 1.78 blocking reads per tick, and asking `<key>:modulated`
+ * was about half of it — for an answer that changes only when a ROUTING
+ * changes, which is a deliberate act, not something that drifts.
+ *
+ * ⚠⚠ A LONGER LIFETIME THAN THE GATES, and my first attempt got this wrong in
+ * a way worth recording: I gave it the gates' per-tick lifetime "for symmetry"
+ * and it saved NOTHING — measured, still 1.78 reads/tick with
+ * `<key>:modulated` still top of the histogram. The two caches answer different
+ * shapes of question. A gate is asked many times INSIDE one tick (once per
+ * param per planning pass), so a per-tick memo collapses it. Modulation is
+ * asked about once per tick already, so a per-tick memo collapses nothing.
+ *
+ * So this one is invalidated by WRITES — which is where a routing actually
+ * changes — plus a slow sweep as the safety net for a routing the module
+ * changed on its own. ⚠ The sweep is not decoration: without it a module that
+ * moves its own modulation would show a stale dot until the next write, which
+ * could be never.
+ */
+const ppModReads = new Map();
+const PP_MOD_SWEEP_TICKS = 120;         /* ~1.3s at a 10.6ms tick */
+
+/* Gates: emptied every tick AND on every write. */
+function ppCondReadsDrop() {
+    if (ppCondReads.size) ppCondReads.clear();
+}
+
+/* Modulation: emptied on every write, and swept periodically. NOT per tick —
+ * that is the whole point, and it is why these are two functions rather than
+ * one. */
+function ppModReadsDrop() {
+    if (ppModReads.size) ppModReads.clear();
+}
 
 /*
  * ⭐⭐ INVALIDATE AT THE BINDING, NOT AT THE CALL SITES — the same reasoning the
@@ -8486,13 +8572,13 @@ export function installGateMemoInvalidation() {
     ppWriteHookInstalled = true;
     if (typeof one === 'function') {
         globalThis.shadow_set_param = function () {
-            ppCondReadsDrop();
+            ppCondReadsDrop(); ppModReadsDrop();
             return one.apply(this, arguments);
         };
     }
     if (typeof many === 'function') {
         globalThis.shadow_set_params = function () {
-            ppCondReadsDrop();
+            ppCondReadsDrop(); ppModReadsDrop();
             return many.apply(this, arguments);
         };
     }
@@ -8537,6 +8623,28 @@ function ppHasLayer() {
  * held, which is why removing it is safe rather than merely permitted.
  *
  * ⚠ And not a module drawing its OWN canvas, which already owns the whole frame. */
+/*
+ * 🅿️ PARKED, DELIBERATELY (Josh, 2026-09-07: "leave it alone but leave it
+ * recorded") — DO NOT "tidy" this by adding `paramPagesEnabled()`.
+ *
+ * This gate never consults Schwung's own **Param View** setting (Global
+ * Settings → Display → Param View), which chooses the knob GRID or a scrolling
+ * LIST for module parameters. The shared library already answers it —
+ * `paramPagesEnabled()` in binding_movy.mjs — so wiring it in here is a
+ * one-line change, and that is exactly the trap.
+ *
+ * ⚠⚠ ONLY THE GRID ANNOUNCES. `announce()` (shared/screen_reader.mjs) fires
+ * whenever the display mode says so, which holds during an SA session, so the
+ * shared grid DOES speak inside dAVEBOx — but `davebox/ui/` contains no
+ * screen-reader code of its own. Honouring the setting wholesale would move a
+ * speech user from "a screen that announces a page" to one that announces
+ * NOTHING. That is a regression the setting never asked for.
+ *
+ * Three ways back in, when we return to it: honour it for everyone · honour it
+ * only when speech is off · or give davebox's own editor an announce path FIRST
+ * and then honour it unconditionally. The third is the only one that costs a
+ * speech user nothing.
+ */
 function ppApplies() {
     return PP_EDITOR && S.active && S.slot >= 0 && !S.hosted && !!S.moduleId;
 }
@@ -8587,7 +8695,12 @@ function ppSync() {
         if (ppOn) { exitParamPages(); ppOn = false; ppEditLatched.clear(); S.dirty = true; }
         return;
     }
-    const want = ppApplies() && (S.view === VIEW_EDIT || (ppOn && ppOwnsView()));
+    /* ⚠ A grid that cannot draw this page does not get the input for it either.
+     * The flag is sticky for as long as this component's editor is open — the
+     * page it declined is still the page it would be handed — and is cleared
+     * when the editor is entered afresh (openBlock) or left below. */
+    const want = ppApplies() && !ppDeclinedDraw
+        && (S.view === VIEW_EDIT || (ppOn && ppOwnsView()));
     if (want && !ppOn) {
         enterParamPages(S.slot, S.comp, S.comp, ppRestoreFor(S.slot, S.comp), ppIo(), {
             label: modLabel(),
@@ -8607,6 +8720,8 @@ function ppSync() {
         ppOn = false; ppEditLatched.clear();
         S.dirty = true;
     }
+    /* Left the editor entirely: the decline belonged to that entry. */
+    if (S.view !== VIEW_EDIT && !(ppOn && ppOwnsView())) ppDeclinedDraw = false;
 }
 
 /* Re-read the user presets and rebuild the trailing pages from them.
@@ -8970,13 +9085,11 @@ installPpCtx({
                              scriptPath, exportRef),
 
     isParamModulated: (slot, fullKey) => {
-        const flag = engineGetChainParam(slot, fullKey + ':modulated');
-        if (flag === '1') return true;
-        if (flag === '0') return false;
-        const base = engineGetChainParam(slot, fullKey + ':base');
-        if (base === null || base === undefined || base === '') return false;
-        const live = engineGetChainParam(slot, fullKey);
-        return live !== null && live !== undefined && live !== base;
+        const memo = slot + '\u0000' + fullKey;
+        if (ppModReads.has(memo)) return ppModReads.get(memo);
+        const answer = ppReadModulated(slot, fullKey);
+        ppModReads.set(memo, answer);
+        return answer;
     },
 
     /* A param the grid will not turn — filepath, canvas, wav_position, string,
@@ -9526,10 +9639,19 @@ export function soundRender() {
     /* The editor draws the whole frame itself, header and footer included —
      * clear_screen() is its own first call, exactly as on the host. Falling
      * through to renderEdit when it declines is deliberate: it returns false
-     * for a page kind it does not draw, and davebox's own editor is still the
-     * shipped one behind PP_EDITOR. */
+     * for a page kind it does not draw, and davebox's own editor is the
+     * FALLBACK for that case. ⚠ It is not "the shipped one" — this comment used
+     * to say so, inheriting the same false claim as PP_EDITOR's own note. The
+     * grid is shipped; renderEdit catches what it will not draw. */
     else if (ppOn && drawParamPages()) { /* stock's editor drew it */ }
-    else renderEdit();
+    else {
+        /* ⚠⚠ IT DECLINED. Note it so ppSync takes the grid down on the next
+         * tick: without this the knobs keep going to a grid that is not on
+         * screen. Only when `ppOn` — the ordinary path here is simply
+         * davebox's own editor being the right one. */
+        if (ppOn) ppDeclinedDraw = true;
+        renderEdit();
+    }
     /* The level readout wins: it is the same box in the same place, and the
      * volume knob is a deliberate second gesture on top of this one. */
     if (S.volShownUntil >= 0 && S.clockMs <= S.volShownUntil) drawVolReadout();

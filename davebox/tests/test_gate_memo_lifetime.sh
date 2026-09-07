@@ -17,8 +17,44 @@ need() {
   else echo "  ok   — $2"; fi
 }
 
-need "function ppCondReadsDrop() { if (ppCondReads.size) ppCondReads.clear(); }" \
-     "the memo has ONE emptier, not a clear scattered across call sites"
+# ⭑ EACH CACHE HAS EXACTLY ONE EMPTIER, and there are legitimately TWO caches
+# with DIFFERENT lifetimes — which is the correction, not a loosening:
+#   gates      — emptied EVERY TICK and on every write (asked many times inside
+#                one tick, so a per-tick memo collapses the cost)
+#   modulation — emptied on every write and on a slow sweep only (asked about
+#                once per tick already, so a per-tick memo saved NOTHING —
+#                measured: still 1.78 reads/tick until the lifetime changed)
+# A single shared emptier was tried first and was a measured no-op.
+for pair in "ppCondReadsDrop ppCondReads" "ppModReadsDrop ppModReads"; do
+  set -- $pair
+  fn=$1; map=$2
+  body=$(awk -v fn="$fn" 'index($0, "function " fn "() {")==1{g=1} g{print} g && /^\}$/{exit}' "$f")
+  if [ -z "$body" ]; then
+    echo "FAIL: $fn not found — this pin is reading the wrong shape"; fail=1; continue
+  fi
+  outside=$(grep -c "${map}\.clear()" "$f")
+  inside=$(printf '%s\n' "$body" | grep -c "${map}\.clear()")
+  if [ "$outside" -ne "$inside" ]; then
+    echo "FAIL: $((outside - inside)) clear(s) of $map live OUTSIDE $fn —"
+    echo "      a second owner of the same state is how the two drift apart"
+    fail=1
+  else
+    echo "  ok   — $map is emptied only by $fn"
+  fi
+done
+
+# ⚠ AND THEY MUST NOT SHARE A LIFETIME. If the tick empties the modulation cache
+# too, the saving is gone and nothing says so — the suite stays green at the old
+# cost, which is exactly what happened on the first attempt.
+tickbody=$(awk '/^export function soundTick\(\) \{/{g=1} g{print} g && /^\}$/{exit}' "$f")
+if printf '%s\n' "$tickbody" | grep -Fq "ppModReadsDrop();" && \
+   ! printf '%s\n' "$tickbody" | grep -Fq "PP_MOD_SWEEP_TICKS"; then
+  echo "FAIL: the tick empties the modulation cache unconditionally — that is the"
+  echo "      per-tick lifetime that measured as a NO-OP (still 1.78 reads/tick)"
+  fail=1
+else
+  echo "  ok   — the modulation cache outlives the tick (swept, not cleared)"
+fi
 
 # ---- 1. the tick empties it, BEFORE any early return ----------------------
 #

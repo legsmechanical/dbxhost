@@ -184,16 +184,26 @@ const CAPS = {
      * minijv — the same number for a 14-level module and a 57-level one, which
      * is the shape you want: idle cost follows the ROTATION, not the contract.
      *
-     * ⚠⚠ AND IT IS TWO READS PER PARAMETER, NOT ONE. The top keys are
-     * `<key>:modulated` and `<key>` — so HALF the idle cost of every module
-     * editor is asking "is this modulated?" about a parameter whose answer
-     * changes only when a routing does, which the UI already knows about. That
-     * is the next thing to take out (board item 3/4), and this cap is what will
-     * show it landing: the number should fall to ~1.
+     * ⚠⚠ IT WAS TWO READS PER PARAMETER, NOT ONE — `<key>:modulated` and
+     * `<key>` — so half the idle cost of every module editor was asking "is
+     * this modulated?" about an answer that changes only when a ROUTING does.
+     * ✅ TAKEN OUT 2026-09-07: the answer is cached, invalidated by the write
+     * binding (where a routing actually changes) and swept slowly. The note
+     * above predicted "the number should fall to ~1" and it fell to 1.06, for
+     * both modules.
+     *
+     * ⚠ THE CAP IS TIGHTENED TO HOLD IT. Left at 2.0 the saving was
+     * unprotected: a mutation that stops consulting the cache puts the cost
+     * back to 1.78 and the suite stays GREEN — measured, not assumed. A budget
+     * that cannot see its own regression is a comment, not a budget.
+     *
+     * ⚠ And the FIRST attempt at this cache was a measured NO-OP: given the
+     * gates' per-tick lifetime it saved nothing, because modulation is asked
+     * about once per tick already. The lifetime is the fix, not the cache.
      */
-    idleMean: 2.0,     /* measured 1.78 */
+    idleMean: 1.3,     /* measured 1.06 (was 1.78 before the modulation cache) */
     idleWorst: 3,      /* measured 2 */
-    walkMean: 5,       /* measured 4.13 — a page change reads its new page's values */
+    walkMean: 5,       /* measured 3.99 — a page change reads its new page's values */
     walkWorst: 22,     /* measured 18 — the arrival tick is the expensive one */
 };
 
@@ -263,12 +273,27 @@ step('⚠⚠ an UNSERVED `:modulated` oracle multiplies the idle cost — bounde
     console.log(`         oracle served ${served.meanCalls.toFixed(2)} -> unserved`
               + ` ${unserved.meanCalls.toFixed(2)} calls/tick (${ratio.toFixed(2)}x)`);
     assert(served.meanCalls > 0 && unserved.meanCalls > 0, 'control: both cases read something');
-    assert(ratio > 1.2,
-           'control: the fallback really is more expensive — if this stops being true the '
-           + 'oracle changed and this test is measuring nothing');
+    /*
+     * ⚠⚠ RE-ANCHORED 2026-09-07, and the reason matters more than the change.
+     * This used to assert `ratio > 1.2` — "the fallback really is more
+     * expensive" — as its proof that the fallback was being exercised at all.
+     * Caching the modulation answer made the fallback nearly free (1.06x), so
+     * that control started failing for the RIGHT reason, which is the most
+     * dangerous kind: the obvious move is to lower the bound and move on, and
+     * that would leave the case measuring nothing while looking green.
+     *
+     * So the control now asserts the MECHANISM instead of its price: when the
+     * oracle does not answer, the `:base` comparison must actually be reached.
+     * That is what "the fallback ran" means, and unlike a cost ratio it cannot
+     * be satisfied by an accident of caching.
+     */
+    assert(unserved.top.some((k) => k.includes(':base')),
+           'control: with no `:modulated` oracle the `:base` fallback must be REACHED — '
+           + 'it is not in the histogram, so this case is measuring nothing. Top: '
+           + unserved.top.join(' '));
     assert(ratio <= 3.5,
-           `an unserved oracle now costs ${ratio.toFixed(2)}x idle (was ~3x when measured). `
-           + 'If this rose, the fallback got wider; if it fell, someone fixed it — update the bound.');
+           `an unserved oracle now costs ${ratio.toFixed(2)}x idle. `
+           + 'If this rose, the fallback got wider — the bound is the ceiling, not the target.');
     oracleServed = true;
 });
 
@@ -309,9 +334,24 @@ step('⭐⭐ marking params MODULATED costs a BOUNDED amount per tick', () => {
     /* ⚠ CONTROL: if this is not more expensive, the refresh is not running and
      * the budget below is measuring nothing — which is exactly the state this
      * case was added to end. */
-    assert(mod.meanCalls > plain.meanCalls,
-           'control: a modulated param must cost MORE per tick — if not, refreshModulatedValues '
-           + 'is not being reached and this case is inert again');
+    /*
+     * ⚠⚠ RE-ANCHORED 2026-09-07, same reason as the oracle control above. This
+     * asserted `mod.meanCalls > plain.meanCalls` and used the extra cost as
+     * proof that `refreshModulatedValues` was running. Caching the modulation
+     * FLAG removed that extra cost while leaving the refresh in place, so the
+     * inference broke even though the mechanism did not.
+     *
+     * ⭑ The two are not the same question, and conflating them is what let a
+     * cost control stand in for a behaviour one. What actually matters is that
+     * a modulated param's LIVE VALUE is still re-read every tick — an LFO moves
+     * it, and a cached dot over a frozen number is the worst outcome of this
+     * whole change. That is directly observable, so assert it directly.
+     */
+    assert(mod.top.some((k) => modulatedKeys.has(k.split('x')[0].replace(/^synth:/, 'synth:'))
+                            || (!k.includes(':modulated') && !k.includes(':base') && k.includes('synth:'))),
+           'control: a modulated param must still have its LIVE VALUE re-read each tick — '
+           + 'a cached dot over a frozen number is worse than the cost it saved. Top: '
+           + mod.top.join(' '));
     /*
      * ⭑ WHY `:effective` IS NOT IN THESE KEYS — asked, traced, and answered, so
      * nobody re-opens it.
