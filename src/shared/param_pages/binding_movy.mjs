@@ -674,7 +674,6 @@ function tickParamPages() {
             if (g.kind !== VIZ_SAMPLE || !g.roles.value) continue;
             const path = controller.state.values[g.roles.value];
             if (!path) continue;
-            if (globalThis.__vizwav) globalThis.__vizwav(String(path));
             if (wavPeaksDone(String(path))) continue;
             wavPeaksTick(String(path));
             break;      /* one bounded batch per tick */
