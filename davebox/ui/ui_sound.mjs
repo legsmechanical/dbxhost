@@ -8364,15 +8364,26 @@ function pageGroups() {
  * edited, where the values come from, where Back goes. Everything you see and
  * touch inside is the vendored binding's.
  *
- * ⚠ OFF BY DEFAULT while it is wired. davebox's own editor (renderEdit below)
- * is still the shipped one; flipping PP_EDITOR swaps them, and both paths stay
- * whole so a device pass can A/B them. This is not a permanent switch — it
- * comes out with ui_discover's bank model when the swap is made.
- * ⭐ Before removing the flag: MEASURE THE TICK on device. The controller
- * staggers to ~1 get_param per tick, but an entry rebuild bursts, and a blocked
- * tick is how the input ring overflows and drops MIDI RELEASES
- * ([[schwung-blocked-tick-drops-midi-releases]]) — the 771 ms stall that
- * stranded the LEDs was exactly this shape. */
+ * ⚠⚠ THIS COMMENT SAID "OFF BY DEFAULT" WHILE THE FLAG WAS `true`, and it said
+ * so for long enough that an audit found it before a reader did. The grid IS the
+ * shipped editor. `renderEdit` below is the FALLBACK — reached when the grid
+ * declines a page, or when ppApplies() says no — not the default.
+ *
+ * ⭑ AND THE PRECONDITION IT NAMED WAS NEVER DISCHARGED, which is the part worth
+ * keeping. It said "before removing the flag: MEASURE THE TICK on device",
+ * because a blocked tick overflows the input ring and drops MIDI RELEASES
+ * ([[schwung-blocked-tick-drops-midi-releases]]). The flag went to `true`
+ * without that measurement — and the measurement, when it finally arrived on
+ * 2026-09-07, found dr32's send picker spending 2916 blocking reads in ONE tick
+ * (~8.4 s) from 112 planning passes. The comment predicted the exact failure and
+ * was overtaken anyway.
+ *
+ * ⭑ SO THE WARNING STANDS, restated as a live rule rather than as a gate on a
+ * flag that is already open: this path is measured by the read meter and by
+ * `tests/js/test_read_budget.mjs`, whose caps exist to fail when a screen starts
+ * asking the engine more than its budget. Do not raise a cap to make a screen
+ * pass. Both paths stay whole; the flag comes out with ui_discover's bank model
+ * when the swap is finished. */
 const PP_EDITOR = true;
 
 /* The uncached two-step read. Unchanged: ask the target, and for targets that
@@ -8612,6 +8623,28 @@ function ppHasLayer() {
  * held, which is why removing it is safe rather than merely permitted.
  *
  * ⚠ And not a module drawing its OWN canvas, which already owns the whole frame. */
+/*
+ * 🅿️ PARKED, DELIBERATELY (Josh, 2026-09-07: "leave it alone but leave it
+ * recorded") — DO NOT "tidy" this by adding `paramPagesEnabled()`.
+ *
+ * This gate never consults Schwung's own **Param View** setting (Global
+ * Settings → Display → Param View), which chooses the knob GRID or a scrolling
+ * LIST for module parameters. The shared library already answers it —
+ * `paramPagesEnabled()` in binding_movy.mjs — so wiring it in here is a
+ * one-line change, and that is exactly the trap.
+ *
+ * ⚠⚠ ONLY THE GRID ANNOUNCES. `announce()` (shared/screen_reader.mjs) fires
+ * whenever the display mode says so, which holds during an SA session, so the
+ * shared grid DOES speak inside dAVEBOx — but `davebox/ui/` contains no
+ * screen-reader code of its own. Honouring the setting wholesale would move a
+ * speech user from "a screen that announces a page" to one that announces
+ * NOTHING. That is a regression the setting never asked for.
+ *
+ * Three ways back in, when we return to it: honour it for everyone · honour it
+ * only when speech is off · or give davebox's own editor an announce path FIRST
+ * and then honour it unconditionally. The third is the only one that costs a
+ * speech user nothing.
+ */
 function ppApplies() {
     return PP_EDITOR && S.active && S.slot >= 0 && !S.hosted && !!S.moduleId;
 }
@@ -9606,8 +9639,10 @@ export function soundRender() {
     /* The editor draws the whole frame itself, header and footer included —
      * clear_screen() is its own first call, exactly as on the host. Falling
      * through to renderEdit when it declines is deliberate: it returns false
-     * for a page kind it does not draw, and davebox's own editor is still the
-     * shipped one behind PP_EDITOR. */
+     * for a page kind it does not draw, and davebox's own editor is the
+     * FALLBACK for that case. ⚠ It is not "the shipped one" — this comment used
+     * to say so, inheriting the same false claim as PP_EDITOR's own note. The
+     * grid is shipped; renderEdit catches what it will not draw. */
     else if (ppOn && drawParamPages()) { /* stock's editor drew it */ }
     else {
         /* ⚠⚠ IT DECLINED. Note it so ppSync takes the grid down on the next

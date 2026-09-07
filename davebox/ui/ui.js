@@ -102,9 +102,27 @@ import { _tickImpl, applyExtMidiRemap, requestSessionExit } from './ui_tick.mjs'
  * ⚠ IT BELONGS HERE, in the entry point, and nowhere else: this is the one
  * davebox file no test imports (the ui_*.mjs modules import each other, never
  * this one), which is the same property that makes shadow_ui.js the host's
- * place for it. Side-effect import, no exports — it registers on load.
+ * place for it.
+ *
+ * ⚠⚠ THIS COMMENT USED TO SAY "side-effect import, NO EXPORTS — it registers on
+ * load", and half of that was false in the direction that gets working code
+ * deleted. The module DOES register on load — and it also EXPORTS `WAV_QJS_IO`,
+ * which this file imports by name above and hands over explicitly at init.
+ *
+ * ⭐ THE EXPLICIT HANDOVER IS NOT A DUPLICATE OF THE SELF-REGISTRATION. The
+ * device carries two complete installs, so a module reached by two different
+ * specifiers is two INSTANCES: the self-registration lands in whichever
+ * `wav_peaks` this import resolves to, and the grid's pump and drawer share a
+ * DIFFERENT one. That is exactly the bug that made every sample cell draw a
+ * flat line while the fullscreen editor drew fine (e744b404). Registering by
+ * VALUE — `setWavPeaksIO(WAV_QJS_IO)` and `setPpWavPeaksIo(WAV_QJS_IO)` at init
+ * — is what reaches the instance that matters.
+ *
+ * ⭑ So the bare side-effect import that used to sit here is GONE: the named
+ * import above loads the module (and runs its self-registration) already, and
+ * keeping a second line that looked like the mechanism was an invitation to
+ * delete the one that IS the mechanism.
  */
-import '/data/UserData/schwung/shared/param_pages/wav_io_qjs.mjs';
 
 /* ------------------------------------------------------------------ */
 /* UI state                                                             */
