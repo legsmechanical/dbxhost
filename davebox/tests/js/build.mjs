@@ -11,6 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../..');
 const stub = path.join(__dirname, 'stubs/shared_constants.mjs');
 const stdStub = path.join(__dirname, 'stubs/quickjs_std.mjs');
+const osStub = path.join(__dirname, 'stubs/quickjs_os.mjs');
 const DEVICE_PATH = '/data/UserData/schwung/shared/constants.mjs';
 
 const stubPlugin = {
@@ -38,6 +39,11 @@ const stubPlugin = {
         // real host file would fail to bundle and take every test that reaches
         // it down with it.
         build.onResolve({ filter: /^std$/ }, () => ({ path: stdStub }));
+        /* ⚠ `os` needs the same door. It had no stub until 2026-09-06, so a
+         * shared module naming it would have failed to BUNDLE — taking the
+         * whole JS suite down at once, not one test. wav_io_qjs.mjs names both
+         * `std` and `os`. */
+        build.onResolve({ filter: /^os$/ }, () => ({ path: osStub }));
     },
 };
 

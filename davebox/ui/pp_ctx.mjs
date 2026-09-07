@@ -23,10 +23,12 @@
  * import ui_sound.mjs back.
  *
  * ⚠⚠ THE SET OF MEMBERS IS NOT OURS TO CHOOSE. It is whatever
- * src/shadow/shadow_ui_param_pages.mjs reads off `ctx`, and that file is
- * vendored verbatim -- so if it grows a member and this does not, the editor
- * loses a behaviour silently (most of the reads are `typeof === 'function'`
- * guarded, so a missing member is a quiet fallback, not an error).
+ * src/shared/param_pages/binding_movy.mjs reads off `ctx` — the binding itself,
+ * which davebox IMPORTS rather than copies (shadow_ui_param_pages.mjs is now a
+ * four-line shim that creates the shadow UI's instance over its own ctx). If
+ * the binding grows a member and this does not, the editor loses a behaviour
+ * silently: most of the reads are `typeof === 'function'` guarded, so a missing
+ * member is a quiet fallback, not an error.
  * `tests/host/test_param_pages_vendor.sh` extracts the reads from the binding's
  * CODE and fails if this file does not answer them.
  */
@@ -36,15 +38,32 @@ export const ctx = {};
 /* Fill the seam. Called once from ui_sound.mjs at init, before any entry into
  * the editor. Assign rather than replace, so the object the vendored binding
  * captured at import time stays the one it reads. */
+/*
+ * The QuickJS file reader for sample waveforms, handed over by the ENTRY POINT.
+ *
+ * ⚠⚠ IT CANNOT BE IMPORTED HERE, OR IN ui_sound. `wav_io_qjs.mjs` names `std`
+ * and `os`, and `test_wav_peaks_io_registered.sh` pins that only the two
+ * device-only entry points may reference it — every JS test imports ui_sound,
+ * and a module that names those is unloadable under node. So the reader arrives
+ * as a VALUE from ui.js and is put on the ctx here.
+ *
+ * ⭑ Why it must reach the ctx at all: the binding registers it into the
+ * `wav_peaks` instance that the grid's PUMP and its DRAWER share, and nothing
+ * outside the library can reach that one. Registering only from ui.js reached a
+ * different instance — the fullscreen editor drew waveforms while every cell
+ * stayed flat.
+ */
+export function setPpWavPeaksIo(io) { ctx.wavPeaksIo = io; }
+
 export function installPpCtx(members) {
     for (const k of Object.keys(members || {})) ctx[k] = members[k];
     return ctx;
 }
 
 /* ===========================================================================
- * THE CONTRACT — every member src/shadow/shadow_ui_param_pages.mjs reads off
- * `ctx`, with what it is used for and what davebox must answer with. Kept here
- * because the binding is vendored verbatim and therefore carries no davebox
+ * THE CONTRACT — every member src/shared/param_pages/binding_movy.mjs reads
+ * off `ctx`, with what it is used for and what davebox must answer with. Kept
+ * here because the binding is shared code and therefore carries no davebox
  * notes of its own, and pinned member-for-member by
  * tests/host/test_param_pages_vendor.sh, which reads the list out of the
  * binding's CODE rather than out of this comment.
@@ -70,7 +89,13 @@ export function installPpCtx(members) {
  *       Draws the modulation mark on a cell. davebox knows its own LFO targets.
  *
  *   isMuteHeld() -> bool
- *       Mute + touch a knob = reset that param to its declared default.
+ *       ⚠ NOT "reset to default" any more, on either side. The library's own
+ *       Mute+touch reset was DROPPED upstream (9e4e0bad) and is not in this
+ *       tree — grep resetToDefault, there is nothing. davebox spends the
+ *       gesture on its own automation instead: Mute+touch TOGGLES the
+ *       parameter's automation on/off, Delete+touch CLEARS it
+ *       (ui_sound.mjs, automationToggleActive). The collision the two
+ *       meanings used to have went away with upstream's removal.
  *
  *   requestRedraw()
  *       -> S.dirty = true.
@@ -87,7 +112,8 @@ export function installPpCtx(members) {
  *       The header title. davebox has both readings already.
  *
  *   evaluateVisibilityCondition(condition, levelDef) -> bool
- *       🔴 KNOWN GAP, not yet answered. `visible_if` on a param or level. The
+ *       ✅ ANSWERED (ui_sound.mjs, `evaluateVisibilityCondition:` in
+ *       installPpCtx) through the ported evaluator in visibility.mjs. The
  *       host's evaluator is shadow_ui.js:2646-2700 and its four helpers
  *       (parseMetaBool / parseMetaNumber / compareConditionValue /
  *       normalizeVisibilityConditionKey) are host-only — none is in shared/ — so
@@ -98,12 +124,20 @@ export function installPpCtx(members) {
  *       written down rather than left to be noticed.
  *
  *   openParamEditor(slot, fullKey, meta)
- *       🔴 KNOWN GAP. A param the grid will not turn — filepath, canvas,
- *       wav_position, string — hands off to a fullscreen editor. davebox has
- *       file and text screens to point this at.
+ *       ✅ ANSWERED (ui_sound.mjs, `openParamEditor:` in installPpCtx). A param
+ *       the grid will not turn — filepath, canvas, wav_position, string, and a
+ *       long enum list — leaves the grid for davebox's OWN bank editor, which
+ *       is where its file browser, text entry and option list already live.
+ *       That is the same shape the fork host uses (its openParamEditorFromGrid
+ *       enters the hierarchy list editor), not a per-key editor built for the
+ *       grid. ⚠ What it does NOT do is open a fullscreen WAVE editor for a
+ *       sample: davebox has no such screen, which is why a click on a wave
+ *       cell appears to do nothing.
  *
  *   openEnumPicker(opts)
- *       🔴 KNOWN GAP. The fullscreen enum list. Drawable with the shared
+ *       DELIBERATELY ABSENT, as on the fork host: a long option list dives out
+ *       through openParamEditor to the bank editor, which has a picker.
+ *       The fullscreen enum list is otherwise drawable Drawable with the shared
  *       enum_list.mjs; the commit path goes back through the controller so the
  *       grid stays alive underneath.
  *
@@ -134,6 +168,14 @@ export function installPpCtx(members) {
  * than code. tests/host/test_param_pages_vendor.sh reads THESE arrays, the
  * binding's own code, AND what ui_sound actually installs, and fails if any two
  * disagree. */
+/*
+ * ⚠ `wavPeaksIo` is DELIBERATELY NOT IN THIS LIST. Everything here is a member
+ * `installPpCtx` supplies from ui_sound; the reader cannot come from there
+ * (ui_sound must never reference wav_io_qjs — it names std/os and every JS test
+ * imports ui_sound), so it arrives out of band from the entry point via
+ * `setPpWavPeaksIo`. Listing it would make this contract claim ui_sound answers
+ * something it must not.
+ */
 export const PP_CTX_MEMBERS = [
     'getSlotParam', 'setSlotParam', 'isMuteHeld', 'requestRedraw',
     'setView', 'VIEWS', 'getModuleAbbrev',
@@ -165,6 +207,22 @@ export const PP_CTX_MEMBERS = [
  * davebox answers by handing the component to its OWN editor, exactly as the
  * host hands it to the hierarchy list editor. The option list is reachable;
  * it is reached the way stock reaches it. */
+/*
+ * Members the ENTRY POINT supplies out of band, not `installPpCtx`.
+ *
+ * ⚠⚠ A THIRD CATEGORY EXISTS BECAUSE A REAL CONSTRAINT DOES. `wavPeaksIo` is
+ * the QuickJS file reader, and `wav_io_qjs.mjs` names `std`/`os`: only the two
+ * device-only entry points may reference it, because every JS test imports
+ * ui_sound and a module naming those is unloadable under node
+ * (`test_wav_peaks_io_registered.sh` pins exactly that). So ui.js hands it over
+ * through `setPpWavPeaksIo`.
+ *
+ * It is DECLARED rather than exempted: the binding reads it, so the contract
+ * has to name it, or the vendor pin cannot tell a deliberate out-of-band member
+ * from one somebody forgot.
+ */
+export const PP_CTX_DEFERRED = ['wavPeaksIo'];
+
 export const PP_CTX_ABSENT = [
     'getModuleDisplayName',
     'userPresetHeaderMark',

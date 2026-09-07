@@ -26,9 +26,10 @@
  * device's own print(), same as the dial/bar grid.
  */
 
-import { KIND_ENUM, KIND_OPAQUE, enumIndexOf, alsoOpens, opensOnClick } from "./param_meta.mjs";
+import { KIND_ENUM, KIND_OPAQUE, enumIndexOf, alsoOpens, opensOnClick,
+} from "./param_meta.mjs";
 import { formatParamValue } from "../param_format.mjs";
-import { asciiFold, fitText, shortenLabel, line, circle, notchCorners } from "./render_page.mjs";
+import { asciiFold, fitText, shortenLabel, line, circle, notchCorners, CHECKER } from "./render_page.mjs";
 import { drawVizGroup } from "./viz_draw.mjs";
 /* The DOOR rule, not a detector: this renderer never resolves viz (the caller
  * hands the groups in), it only asks whether a cell it is already drawing is
@@ -819,7 +820,7 @@ export const HEADER_GAP = 4;
 /** The title's floor: the old fixed 55%, so the worst case is what shipped. */
 export const HEADER_MIN_LEFT = Math.floor(W * 0.55);
 
-export function drawHeader(ctx, left, right, inverted = false) {
+export function drawHeader(ctx, left, right, inverted = false, padIcon = null) {
     /* font4x5, not the label face: the header is secondary text (the slot
      * title, the page name, and the touched parameter's full name and value),
      * so it can afford to be smaller than the thing you read at a glance. A
@@ -883,15 +884,92 @@ export function drawHeader(ctx, left, right, inverted = false) {
      * the title to nothing -- the right gives ground first. It is the old
      * 55%, so the worst case is exactly what shipped before.
      */
-    let r = right ? fit5(right, Math.floor(W * 0.6)) : "";
+    /*
+     * THE PAD ICON IS PINNED TO THE RIGHT EDGE, and that is the whole point of
+     * where it sits.
+     *
+     * movy draws it immediately before the right-hand text, so its x is
+     * `W - 2 - rightW - PAD_ICON_W` and it MOVES whenever that text changes
+     * width — and that text is the page name, which changes on every page.
+     * An indicator you consult at a glance has to be findable without reading
+     * the thing next to it; one that slides a dozen pixels as you jog is
+     * something you have to hunt for each time. Reported from the device as
+     * wanting it "in a stable place".
+     *
+     * So the icon owns the right edge and the page name is what gives ground,
+     * which is the right way round: the name is already elastic (it is fitted,
+     * truncated and abbreviated), and the icon is 6 pixels that mean nothing
+     * if they move.
+     */
+    const iconW = (padIcon !== null && padIcon !== undefined) ? PAD_ICON_W : 0;
+
+    /* Both budgets are measured against the icon, never assumed around it, or
+     * a long page name draws its last glyph through the box. */
+    let r = right ? fit5(right, Math.floor(W * 0.6) - iconW) : "";
     let rw = r ? fontWidth4x5(r) : 0;
-    if (rw && W - 4 - rw - HEADER_GAP < HEADER_MIN_LEFT) {
-        r = fit5(right, Math.max(0, W - 4 - HEADER_MIN_LEFT - HEADER_GAP));
+    if (rw && W - 4 - iconW - rw - HEADER_GAP < HEADER_MIN_LEFT) {
+        r = fit5(right, Math.max(0, W - 4 - iconW - HEADER_MIN_LEFT - HEADER_GAP));
         rw = r ? fontWidth4x5(r) : 0;
     }
-    const l = fit5(left, W - 4 - (rw ? rw + HEADER_GAP : 0));
+    const l = fit5(left, W - 4 - iconW - (rw ? rw + HEADER_GAP : 0));
     fontPrint4x5(ctx, 2, 1, l, color);
-    if (r) fontPrint4x5(ctx, W - rw - 2, 1, r, color);
+    /* The box sits PAD_ICON_MARGIN in from the edge; the rest of PAD_ICON_W is
+     * the gap the page name is held off by. */
+    if (iconW) drawPadGridIcon(ctx, W - PAD_ICON_MARGIN - 6, 0, padIcon, color);
+    if (r) fontPrint4x5(ctx, W - rw - 2 - iconW, 1, r, color);
+}
+
+/*
+ * Width the pad icon claims: the 6px box, a right margin off the screen edge,
+ * and a gap before the page name to its left.
+ *
+ * movy budgets 7 — the box plus one pixel — which puts the page name hard
+ * against the box and the box within a pixel of the panel edge. At 1 bit and
+ * no anti-aliasing a single dark column is not read as a gap, it is read as
+ * part of whichever shape is bigger, so the icon looked welded to the text.
+ * Reported from the device as wanting margin. HEADER_GAP is the separation the
+ * two text sides already use, so reusing it keeps one spacing in the band
+ * rather than inventing a second.
+ */
+export const PAD_ICON_MARGIN = 2;                       /* box → screen edge */
+export const PAD_ICON_W = 6 + PAD_ICON_MARGIN + HEADER_GAP;
+
+/**
+ * The pad minimap — Move's 4x4 drum rack, with the focused voice lit.
+ *
+ * Ported from schwung-movy's renderer/header.ts drawPadGridIcon, and it is a
+ * PHYSICAL map: `padIndex` is the voice's note minus the rack's base (36), so
+ * the lit cell is where the pad sits under your hand, not where the voice sits
+ * in a list. That is the whole point of it — a minimap that agreed with the
+ * page order rather than the hardware would be a second page indicator, and
+ * the bank bar is already that.
+ *
+ * Move's drum rack counts UP from the bottom-left (36 37 38 39 on the bottom
+ * row), which is why the row is subtracted: `y + rows - row` puts note 36 on
+ * the lowest interior row. Getting this upside down is invisible in a unit
+ * test and obvious the instant a hand is on the hardware.
+ *
+ * 6 wide, rows+2 tall — 6x6 for a 16-pad rack, which is exactly HEADER_H, so
+ * it fits the band without moving anything.
+ */
+export const DRUM_RACK_BASE_NOTE = 36;
+
+export function drawPadGridIcon(ctx, x, y, note, color = 1) {
+    const rows = 4;
+    const padIndex = (note === null || note === undefined || note < 0)
+        ? -1 : (note | 0) - DRUM_RACK_BASE_NOTE;
+    const w = 6, h = rows + 2;
+    ctx.fillRect(x, y, w, 1, color);
+    ctx.fillRect(x, y + h - 1, w, 1, color);
+    ctx.fillRect(x, y, 1, h, color);
+    ctx.fillRect(x + w - 1, y, 1, h, color);
+    /* Out of the rack draws the EMPTY box rather than a wrong cell: a module
+     * whose voice notes are not a contiguous 36.. block has no place on this
+     * map, and lighting the nearest cell would be a confident lie. */
+    if (!(padIndex >= 0 && padIndex < rows * 4)) return;
+    const row = Math.floor(padIndex / 4);
+    const col = padIndex % 4;
+    ctx.fillRect(x + 1 + col, y + rows - row, 1, 1, color);
 }
 
 /**
@@ -1482,7 +1560,7 @@ export function enumSquareWidth(text) {
  * behaviour it did not ask for. A missing `anim` is the normal case, not an
  * error.
  */
-export function drawEnumSquare(ctx, kx, ky, text, anim, nowMs, animKey, raw) {
+export function drawEnumSquare(ctx, kx, ky, text, anim, nowMs, animKey, raw, readOnly) {
     const h = BOX_H;
     const target = enumSquareWidth(text);
 
@@ -1510,10 +1588,46 @@ export function drawEnumSquare(ctx, kx, ky, text, anim, nowMs, animKey, raw) {
      * from both sides rather than sliding off its own cell. */
     const bx = kx + Math.floor((ENUM_W - w) / 2);
 
-    ctx.fillRect(bx, ky, w, 1, 1);
-    ctx.fillRect(bx, ky + h - 1, w, 1, 1);
-    ctx.fillRect(bx, ky, 1, h, 1);
-    ctx.fillRect(bx + w - 1, ky, 1, h, 1);
+    /*
+     * A READOUT DOTS THE FRAME IT HAS, rather than getting one added outside.
+     *
+     * The rule is "a readout is dotted", and where the stroke lives is the
+     * widget's business: a dial and a big number have no frame, so
+     * drawReadoutFrame adds one; the square already has one, so it dots that.
+     * Two dotted rectangles on one cell would be two ideas, not one.
+     *
+     * It is also the only version that WORKS HERE, and the measurement is the
+     * argument. The outer frame sits on the cell rect and the square's own
+     * frame occupies the same rows, so the wider the value the more of the
+     * mark the box absorbs:
+     *
+     *     value    box    pixels differing from the editable twin
+     *     G MAJ    28px    17      <- keydetect's real case
+     *     SAW      23px    23
+     *     ON       17px    27
+     *
+     * 17 pixels spread down two 15-row columns is not legible: side by side,
+     * the readout and the control were indistinguishable. And it fails exactly
+     * where the feature is for — keydetect's values are musical keys, always
+     * full width, and two of the three affected fleet modules are enums.
+     * Dotting the stroke inverts that gradient: a wider box has MORE perimeter
+     * to dot, so the strongest case is the common one.
+     *
+     * Same CHECKER lattice in ABSOLUTE coordinates as drawReadoutFrame, so a
+     * dotted square and a dotted added frame in adjacent cells share one phase
+     * — which is the whole reason the lattice is absolute, and it is what lets
+     * these be one treatment rather than two that happen to both be dotted.
+     */
+    if (readOnly) {
+        drawReadoutFrame(ctx, bx, ky, w, h);
+    } else {
+        ctx.fillRect(bx, ky, w, 1, 1);
+        ctx.fillRect(bx, ky + h - 1, w, 1, 1);
+        ctx.fillRect(bx, ky, 1, h, 1);
+        ctx.fillRect(bx + w - 1, ky, 1, h, 1);
+    }
+    /* Notched either way: the knockout is the SHAPE, and a readout is the same
+     * shape drawn in a lighter stroke. */
     notchCorners(ctx, bx, ky, w, h);
 
     /*
@@ -1903,6 +2017,107 @@ function drawAlsoOpensMark(ctx, g, col, rowY) {
 }
 
 /*
+ * "You can LOOK at this."
+ *
+ * A dotted 1px frame around the cell, for a param declared `access: "read"` —
+ * telemetry, not a control. The INPUT layer has honoured readOnly since it was
+ * added (shadow_ui.js's isReadoutParam shows the reading on a turn and writes
+ * nothing, refuses to open a picker on a click, and param_meta's isDivable /
+ * isTurnable both exclude it); the DRAW layer did not, so a readout was
+ * pixel-identical to a control. Reported from the device as a knob that "does
+ * not seem to do anything" — which is exactly right, and the picture was the
+ * only thing not saying so.
+ *
+ * FOR A FRAMELESS WIDGET ONLY — a dial, a big number. A widget that already
+ * has a stroke DOTS THE ONE IT HAS instead: the enum square in drawEnumSquare,
+ * and the opaque box not at all (see drawReadoutMark for both). The rule is "a
+ * readout is dotted"; where the stroke lives is the widget's business, and one
+ * cell never wears two dotted rectangles.
+ *
+ * IT WRAPS THE WIDGET; IT DOES NOT REPLACE IT. The value stays exactly where
+ * its own widget put it — an enum square, a big number, an arc knob — so this
+ * costs no centring work and cannot disagree with the thing it frames. The
+ * cell keeps its SHAPE and changes only its STROKE: the same kind of object,
+ * not editable, rather than a new form the reader has to learn.
+ *
+ * Rejected, so nobody re-litigates them:
+ *
+ *   inverted slab      inversion is already spent TWICE — the label band
+ *                      inverts for "a finger is on this knob", and a list row
+ *                      inverts for "this is the selection". A third meaning on
+ *                      the same treatment makes all three ambiguous.
+ *   corner brackets    already spoken for on knob pages: brackets mean "the
+ *                      knob works AND it opens something". A readout is the
+ *                      opposite claim, drawn identically.
+ *   a real meter       considered for 4K EQ's four peak params and deliberately
+ *                      deferred: a stereo peak meter is its own design job, and
+ *                      dotted covers every readout in the fleet today rather
+ *                      than one module's four.
+ *
+ * SAME RECT AS THE BRACKETS — cellLeft+1, BOX_H — so the two marks are the same
+ * frame drawn two ways rather than two frames at two insets, and adjacent
+ * readout cells (4K EQ has five in a row) keep a 2px gap instead of running
+ * into one continuous rule.
+ *
+ * Dotted on the CHECKER lattice in ABSOLUTE screen coordinates, not stepped by
+ * 2 from the frame's own origin. Same reason every fill in this subsystem is:
+ * two neighbouring frames share one lattice, so a row of readouts reads as a
+ * row of frames rather than as four strokes that disagree about phase. It also
+ * makes the corners fall out for free — a rect-relative step lands a dot on
+ * three corners and a gap on the fourth, depending on parity of w and h.
+ *
+ * MUST stay inside rowY..rowY+BOX_H-1, same as the brackets: one row of
+ * overflow lands on LBL0_Y and the frame merges into the label below.
+ *
+ * The arc knob's apex sits on rowY (KNOB_R 8, cy = rowY + 8), so the top edge
+ * grazes it at one pixel. That is checked in a render, not reasoned about — see
+ * tests/host/test_readout_frame.sh and the swatch in docs/MODULES.md.
+ */
+export function drawReadoutFrame(ctx, x, y, w, h) {
+    for (let i = 0; i < w; i++) {
+        if (CHECKER(x + i, y)) ctx.fillRect(x + i, y, 1, 1, 1);
+        if (CHECKER(x + i, y + h - 1)) ctx.fillRect(x + i, y + h - 1, 1, 1, 1);
+    }
+    for (let j = 1; j < h - 1; j++) {
+        if (CHECKER(x, y + j)) ctx.fillRect(x, y + j, 1, 1, 1);
+        if (CHECKER(x + w - 1, y + j)) ctx.fillRect(x + w - 1, y + j, 1, 1, 1);
+    }
+}
+
+/*
+ * NOT ON AN OPAQUE CELL, and for a sharper reason than the brackets' exclusion.
+ *
+ * `drawOpaqueBox` draws its own notched frame on the IDENTICAL rect — cellX+1,
+ * cellW-2, BOX_H — so the dots do not double a border the way the brackets
+ * would; they land invisibly on top of it, and the only place they show is the
+ * five-row CUT in its right edge where the chevron sits. Rendered, a read-only
+ * filepath was a normal opaque box with two stray pixels in its door. That is
+ * worse than no mark: it degrades the one widget that says which direction its
+ * door goes, in exchange for a mark nobody can see.
+ *
+ * No fleet module declares one — an opaque readout is close to a contradiction,
+ * since the whole point of KIND_OPAQUE is that its editor is elsewhere. If one
+ * ever needs marking, restyle that widget's own stroke; do not put a second
+ * frame on its rect.
+ */
+/**
+ * The per-cell readout mark, keyed on the widget. EXPORTED so the widget sheet
+ * draws the mark through the same rule the device does rather than
+ * re-implementing "which widgets get an outer frame" beside it — a second copy
+ * of that rule is exactly how a generated reference comes to document a
+ * drawing the grid does not make.
+ */
+export function drawReadoutMark(ctx, g, col, rowY, meta) {
+    const widget = widgetKindFor(meta);
+    if (widget === WIDGET_OPAQUE) return;
+    /* ONE DOTTED RECTANGLE PER CELL, NEVER TWO. The square dots its own stroke
+     * (see drawEnumSquare) — an outer frame as well would be two marks for one
+     * fact, and on a full-width value they would be one pixel apart. */
+    if (widget === WIDGET_ENUM) return;
+    drawReadoutFrame(ctx, cellLeft(g, col) + 1, rowY, g.cellW - 2, BOX_H);
+}
+
+/*
  * `anim` / `nowMs` / `animKey` are OPTIONAL and TRAILING, never a reorder: this
  * is exported and called from outside. Absent, every widget draws exactly as it
  * does today apart from the enum square's new static width, which is what keeps
@@ -1943,6 +2158,9 @@ export function drawKnobWidget(ctx, g, col, rowY, meta, raw, modRaw, liveRaw, ce
     /* Anything that cannot show two values at once shows the live one, so it
      * animates under modulation instead of freezing on the base. */
     const shown = (liveRaw === null || liveRaw === undefined) ? raw : liveRaw;
+    /* The cascade below IS widgetKindFor's cascade — asked, not restated, so a
+     * consumer drawing describePage()'s view model in its own style cannot
+     * reach a different verdict than this grid does. */
     const widget = widgetKindFor(meta);
     if (widget === WIDGET_OPAQUE) { drawOpaqueBox(ctx, kx, ky, shown, cellText); return; }
     /*
@@ -2000,7 +2218,7 @@ export function drawKnobWidget(ctx, g, col, rowY, meta, raw, modRaw, liveRaw, ce
         /* Its own centring — it reserves an ENUM_W slot, not KW, and sizes
          * itself inside it. */
         drawEnumSquare(ctx, cellLeft(g, col) + Math.floor((g.cellW - ENUM_W) / 2), ky, text,
-                       anim, nowMs, animKey, shown);
+                       anim, nowMs, animKey, shown, !!meta.readOnly);
         return;
     }
     /*
@@ -2199,7 +2417,7 @@ function resolveGeom(geom) {
  */
 export function drawKnobRow(ctx, o, row, rowY, lblY, geom) {
     const g = resolveGeom(geom);
-    const { page, metaIndex, values, touched, modulated, viz, modValues } = o;
+    const { page, metaIndex, values, touched, modulated, viz, modValues, decorations } = o;
     /*
      * EVERY held knob inverts, not just the one the header follows. A single
      * index could not express two fingers: touching a second knob overwrote it
@@ -2367,8 +2585,30 @@ export function drawKnobRow(ctx, o, row, rowY, lblY, geom) {
         const key = page.keys[slot];
         if (!key) continue;
         const meta = metaIndex.getOrGuess(key);
-        const raw = values ? values[key] : null;
         const isTouched = held.indexOf(slot) >= 0;
+        /*
+         * A SEQUENCER'S PARAMETER LOCK on this slot.
+         *
+         * Same two rules render_page.mjs already established for the dial/bar
+         * layout, so a p-lock does not mean two different things on two
+         * layouts: the decoration's `value` REPLACES the live one (on a held
+         * step you are looking at what the step will play, not at what the
+         * knob is set to now), and `locked` marks the cell.
+         *
+         * The MARK is where the two layouts diverge, and it has to. The dial
+         * layout inverts the label strip; this grid already spends that
+         * inversion on "a finger is on this knob", so reusing it would make a
+         * locked cell indistinguishable from a held one — and on the step-held
+         * view, where locks are read, several cells are locked and none is
+         * touched. The top-right 2x2 tick is likewise taken, by modulation.
+         * So a lock is the top-LEFT corner: the one unspent corner, mirroring
+         * the modulation tick across the cell.
+         */
+        const dec = decorations ? decorations[slot] : null;
+        const locked = !!(dec && dec.locked);
+        const decValue = (dec && dec.value !== undefined && dec.value !== null)
+            ? dec.value : undefined;
+        const raw = decValue !== undefined ? decValue : (values ? values[key] : null);
 
         /*
          * A value the HOST resolves, per surface. `displayFor` is the same
@@ -2390,9 +2630,24 @@ export function drawKnobRow(ctx, o, row, rowY, lblY, geom) {
              * draw what the device draws. Absent means "never lit". */
             const firedAt = (o.triggerFiredAt && o.triggerFiredAt[key]) || 0;
             const btnPhase = buttonPhase(firedAt, o.nowMs, isTouched);
+            /*
+             * A P-LOCK OUTRANKS THE LIVE VALUE, and overriding `raw` alone did
+             * not do it.
+             *
+             * Every widget that cannot show two values draws `liveRaw`, so with
+             * only `raw` decorated the knob went on pointing at whatever the
+             * device last reported — and because an untouched cell's label band
+             * shows the LABEL rather than the value, a p-lock changed no pixels
+             * at all. It looked like it worked because the graphics stand-down
+             * moved the screen at the same moment.
+             *
+             * The lock is what the step will play, so it wins over both the
+             * base and the modulated live value.
+             */
             drawKnobWidget(ctx, g, col, rowY, meta, raw,
                            modValues ? modValues[key] : undefined,
-                           liveValues ? liveValues[key] : undefined,
+                           decValue !== undefined ? decValue
+                               : (liveValues ? liveValues[key] : undefined),
                            cellText, btnPhase,
                            /* Optional: absent `o.anim` means no motion at all,
                             * and every widget still draws. */
@@ -2441,6 +2696,22 @@ export function drawKnobRow(ctx, o, row, rowY, lblY, geom) {
          */
         if (!covered[col] && alsoOpens(meta)) drawAlsoOpensMark(ctx, g, col, rowY);
 
+        /*
+         * THE READOUT FRAME. Uncovered cells only, for the same reason the
+         * door mark is: a cell inside a viz graphic is not standing on its
+         * own, and no fleet module puts a read-only param inside one — a
+         * group-level frame would be a picture of a case that does not exist.
+         * If one ever appears, mark the SPAN once (see the viz loop above),
+         * never the members.
+         */
+        if (!covered[col] && meta.readOnly) drawReadoutMark(ctx, g, col, rowY, meta);
+
+        /* The lock mark, mirroring the modulation tick across the cell. Drawn
+         * for a COVERED cell too: unlike the door affordance above, a lock is a
+         * fact about this one parameter, and the controller already stands
+         * graphics down while decorations are live precisely so a picture
+         * cannot hide which of the cells it spans is locked. */
+        if (locked) ctx.fillRect(cellLeft(g, col) + 1, rowY, 2, 2, 1);
 
         /*
          * `short_name` is for the CELL only -- the same split as short_options.
@@ -2582,7 +2853,7 @@ export const FOOTER_CANON = Object.freeze({
  * clear `RULE_Y .. FOOTER_Y + FOOTER_H` to erase it. It is no longer a row that
  * gets drawn on.
  */
-export function drawFooter(ctx, hints) {
+export function drawFooter(ctx, hints, o = {}) {
     if (!hints || !hints.length) return 0;
     const ty = FOOTER_Y + Math.floor((FOOTER_H - FONT4_HEIGHT) / 2);
 
@@ -2618,6 +2889,27 @@ export function drawFooter(ctx, hints) {
     };
 
     let drawn = 0;
+
+    /*
+     * backLeft: a caller (e.g. a sequencer lane) owns the right edge, so the
+     * back hint moves to the left and the remaining hints flow after it —
+     * the mirror image of the default arrangement, not a variant of it.
+     * Default behaviour below is untouched by this branch.
+     */
+    if (o.backLeft && back) {
+        let x = 1;
+        drawPair(x, back);
+        x += hintPairWidth(caps(back[0]), caps(back[1]));
+        drawn++;
+        for (const h of flow) {
+            if (x + hintPairWidth(caps(h[0]), caps(h[1])) > W) break;
+            drawPair(x, h);
+            x += hintPairWidth(caps(h[0]), caps(h[1]));
+            drawn++;
+        }
+        return drawn;
+    }
+
     /* Reserve the back hint's room BEFORE laying anything else out — that is
      * what makes the middle hints lose the fight for a narrow screen instead
      * of BACK losing it. */
@@ -2683,10 +2975,197 @@ export function drawPresetBody(ctx, rect, o) {
     }
 }
 
-export function renderPageMovy(ctx, o) {
+/* ------------------------------------------------------- embedding a page */
+
+/**
+ * A draw context shifted by (dx, dy).
+ *
+ * `drawHeader`, `drawBankBar` and `drawFooter` place themselves at absolute
+ * rows — the header fills from y=0, the footer sits flush to row 63 — because
+ * for the whole life of this renderer there was exactly one place a page could
+ * go. `drawKnobRow` is the exception: it already takes `rowY`/`lblY`, and
+ * `GRID_GEOM` already takes an origin and a cell width, because the chain
+ * editor's knob card needed the same row inside a bordered box.
+ *
+ * Rather than give the other three a `y` parameter each and thread it through
+ * their callers, the CONTEXT moves. Rule 5 of README.md — the draw context is
+ * injected, `{ fillRect, print, textWidth }` — is what makes that possible, and
+ * it keeps the change at the composition root instead of in every band.
+ *
+ * `textWidth` is passed straight through: a string's width does not depend on
+ * where it is drawn.
+ */
+export function translateCtx(ctx, dx, dy) {
+    if (!dx && !dy) return ctx;
+    return {
+        fillRect: (x, y, w, h, c) => ctx.fillRect(x + dx, y + dy, w, h, c),
+        print: (x, y, t, c) => ctx.print(x + dx, y + dy, t, c),
+        textWidth: (t) => ctx.textWidth(t),
+    };
+}
+
+/**
+ * The natural height of each band, from the vertical rhythm above.
+ *
+ * Read off that table rather than recomputed: header 0..5, bank bar on 6,
+ * two rows of gutter, then 15/7 for each widget/label pair, the rule, and a
+ * 7-row footer flush to the bottom edge.
+ */
+/*
+ * DERIVED FROM THE CONSTANTS, NOT FROM THE TABLE ABOVE THEM.
+ *
+ * The first cut read these off the vertical-rhythm comment — "0..5 header (6),
+ * bank bar on 6", and equal 2-row gutters. The comment describes the re-cut's
+ * intent; the constants are what the device draws, and they do not agree with
+ * it. HEADER_H and BAR_Y are both 7, so the bank bar sits on row 7, and the two
+ * gutters are 1 row and 2 rows rather than 2 and 2.
+ *
+ * Built from the constants, the default layout reproduces them BY
+ * CONSTRUCTION, so it cannot drift from the grid the device draws. Built from
+ * the prose it shifted the bank bar up a pixel — caught by
+ * test_knob_card.sh's geometry baseline, and NOT by the 1434 render
+ * snapshots, which do not pass a footer or exercise every band.
+ */
+export const BAND_H = Object.freeze({
+    header: BAR_Y,                              /* 7 — the header owns 0..BAR_Y-1 */
+    bank: 1,
+    gutter0: ROW0_Y - (BAR_Y + 1),              /* 1 */
+    gutter1: ROW1_Y - (LBL0_Y + LBL_H),         /* 2 */
+    widget: BOX_H,                              /* 15 */
+    label: LBL_H,                               /* 7 */
+    rule: FOOTER_Y - (LBL1_Y + LBL_H),          /* 2 — the rule row and its air */
+    footer: FOOTER_H,                           /* 7 */
+});
+
+/**
+ * WHERE EACH BAND GOES, given which of them are wanted and how much room there
+ * is.
+ *
+ * The point of the exercise: a tool with its own header and its own footer can
+ * ask for the BODY alone and get our widgets — the same knobs, enum squares,
+ * opaque doors and graphics the device draws — sitting under its chrome instead
+ * of ours. `bands` selects; `rect` says where.
+ *
+ * Omitted bands do not leave a hole. The stack closes up, so asking for the
+ * body alone puts knob row 0 at the top of the rect rather than 9 rows down
+ * where our header would have been. That is the whole reason this is a layout
+ * function and not four booleans consulted at four draw sites.
+ *
+ * A BAND THAT DOES NOT FIT IS STOOD DOWN, NOT CLIPPED. This mirrors what
+ * `renderPage` already does with graphics below `VIZ_ROWS + 1`: a widget whose
+ * body is a fixed 15 rows cannot degrade into 9, so drawing it there would put
+ * ink through the caller's own chrome. `fits` reports the verdict and `dropped`
+ * names what went, so a caller (and a test) can tell "drawn small" from
+ * "silently not drawn" — the distinction this repo keeps paying for elsewhere.
+ *
+ * @param {object} [o]
+ * @param {object} [o.bands]  { header, bank, body, footer } — default all true
+ * @param {object} [o.rect]   { x, y, w, h } — default the whole 128x64 screen
+ * @returns {{header:number|null, bank:number|null,
+ *            rows:Array<{rowY:number,lblY:number}>, footer:number|null,
+ *            x:number, cellW:number, fits:boolean, dropped:string[],
+ *            height:number}}
+ */
+export function movyBandLayout(o = {}) {
+    const rect = o.rect || { x: 0, y: 0, w: W, h: 64 };
+    const b = o.bands || {};
+    /*
+     * `bands` SAYS WHAT TO DRAW. `rect` SAYS WHERE TO LAY OUT. They are not the
+     * same question, and conflating them was a bug.
+     *
+     * Omitting a band used to close the stack up unconditionally, so a caller
+     * that kept its own header — the whole point of the band split — got the
+     * grid moved SEVEN ROWS UP, into the header it had just drawn. Every other
+     * page kind (menu, items, preset, child) draws at absolute coordinates and
+     * simply skips the chrome it was not asked for, so the knob grid was the
+     * one kind that relaid itself out and the one kind that collided.
+     *
+     * Reflow now happens only when a rect is actually supplied. Without one,
+     * every band keeps the position the vertical rhythm gives it and an omitted
+     * band is merely not drawn — which is what movy needs and what the other
+     * kinds already did.
+     */
+    const reflow = !!o.rect;
+    const want = {
+        header: b.header !== false,
+        bank: b.bank !== false,
+        body: b.body !== false,
+        footer: b.footer !== false,
+    };
+
+    /* What each requested band costs, top to bottom. The two gutters differ
+     * (1 above the first knob row, 2 above the second) — see BAND_H. */
+    const bodyH = BAND_H.gutter0 + BAND_H.widget + BAND_H.label
+                + BAND_H.gutter1 + BAND_H.widget + BAND_H.label;
+    let need = 0;
+    if (want.header) need += BAND_H.header;
+    if (want.bank) need += BAND_H.bank;
+    if (want.body) need += bodyH;
+    if (want.footer) need += BAND_H.rule + BAND_H.footer;
+
+    /* Drop from the OUTSIDE IN when the room is short: chrome before content.
+     * A body with no footer is still the page; a footer with no body is not. */
+    const dropped = [];
+    const order = ["footer", "bank", "header"];
+    for (const band of order) {
+        if (need <= rect.h) break;
+        if (!want[band]) continue;
+        want[band] = false;
+        dropped.push(band);
+        need -= band === "footer" ? (BAND_H.rule + BAND_H.footer) : BAND_H[band];
+    }
+    if (want.body && need > rect.h) {
+        want.body = false;
+        dropped.push("body");
+        need -= bodyH;
+    }
+
+    const out = { header: null, bank: null, rows: [], footer: null,
+                  x: rect.x, cellW: Math.floor(rect.w / 4),
+                  fits: dropped.length === 0, dropped, height: need };
+
+    if (!reflow) {
+        /* The vertical rhythm's own positions, drawn or skipped. */
+        if (want.header) out.header = 0;
+        if (want.bank) out.bank = BAR_Y;
+        if (want.body) {
+            out.rows.push({ rowY: ROW0_Y, lblY: LBL0_Y });
+            out.rows.push({ rowY: ROW1_Y, lblY: LBL1_Y });
+        }
+        if (want.footer) out.footer = FOOTER_Y;
+        return out;
+    }
+
+    let y = rect.y;
+    if (want.header) { out.header = y; y += BAND_H.header; }
+    if (want.bank) { out.bank = y; y += BAND_H.bank; }
+    if (want.body) {
+        for (const gut of [BAND_H.gutter0, BAND_H.gutter1]) {
+            y += gut;
+            out.rows.push({ rowY: y, lblY: y + BAND_H.widget });
+            y += BAND_H.widget + BAND_H.label;
+        }
+    }
+    if (want.footer) { y += BAND_H.rule; out.footer = y; }
+    return out;
+}
+
+/**
+ * WHAT THE HEADER SAYS — as data, so it can be drawn by somebody else.
+ *
+ * A held knob takes the header over: the strip becomes that param's full name
+ * and value, inverted. Otherwise it is the page's own title and label.
+ *
+ * Exported and consumed by `renderPageMovy` itself so there is one definition.
+ * A tool drawing our view model under its own chrome needs the same two
+ * strings, and a second copy of this rule would drift on the first change to
+ * either branch.
+ *
+ * @returns {{left: string, right: string|null, inverted: boolean}}
+ */
+export function movyHeaderFor(o) {
     const page = o.page;
     const touched = typeof o.touched === "number" ? o.touched : -1;
-
     if (touched >= 0 && page && page.keys && page.keys[touched] && o.metaIndex) {
         const hk = page.keys[touched];
         const m = o.metaIndex.getOrGuess(hk);
@@ -2694,29 +3173,86 @@ export function renderPageMovy(ctx, o) {
         /* "header", not "cell": this is the surface with room, and the whole
          * reason a host-resolved value has two forms at all. */
         const hv = o.displayFor ? o.displayFor(hk, v, "header") : null;
-        drawHeader(ctx, m.label || m.key,
-                   (hv === null || hv === undefined) ? displayValue(v, m) : String(hv), true);
-    } else {
-        /* pageLabel, not page.name: a page belonging to a CHILD level is
-         * named after WHICH CHILD it is showing, which the planned name
-         * cannot know. Falls back to the name for every other page. */
-        drawHeader(ctx, o.title || "",
-                   (o.pageLabel !== undefined && o.pageLabel !== null)
-                       ? o.pageLabel
-                       : (page ? page.name : null),
-                   false);
+        return {
+            left: m.label || m.key,
+            right: (hv === null || hv === undefined) ? displayValue(v, m) : String(hv),
+            inverted: true,
+        };
     }
-    drawBankBar(ctx, o.pageIndex | 0, Math.max(1, o.pageCount | 0), o.pageGroups);
+    /* pageLabel, not page.name: a page belonging to a CHILD level is
+     * named after WHICH CHILD it is showing, which the planned name
+     * cannot know. Falls back to the name for every other page. */
+    return {
+        left: o.title || "",
+        right: (o.pageLabel !== undefined && o.pageLabel !== null)
+            ? o.pageLabel
+            : (page ? page.name : null),
+        inverted: false,
+    };
+}
+
+export function renderPageMovy(ctx, o) {
+    const page = o.page;
+
+    /*
+     * The default layout REPRODUCES the vertical rhythm table exactly — header
+     * 0, bank bar 6, rows at 9/24 and 33/48, footer 57 — so a caller that
+     * passes neither `rect` nor `bands` takes the same path it always did.
+     * That is not a claim, it is what test_param_pages_render.sh's 1434
+     * snapshots check, and what `embedded` below keeps honest by leaving the
+     * geometry argument off entirely in the unembedded case.
+     */
+    const embedded = !!(o.rect || o.bands);
+    const L = movyBandLayout({ rect: o.rect, bands: o.bands });
+    const geom = embedded ? { x0: L.x, cellW: L.cellW } : undefined;
+
+    if (L.header !== null) {
+        const h = movyHeaderFor(o);
+        drawHeader(translateCtx(ctx, L.x, L.header), h.left, h.right, h.inverted,
+                   (o.padIcon === null || o.padIcon === undefined) ? null : (o.padIcon | 0));
+    }
+    if (L.bank !== null) {
+        drawBankBar(translateCtx(ctx, L.x, L.bank - BAR_Y),
+                    o.pageIndex | 0, Math.max(1, o.pageCount | 0), o.pageGroups);
+    }
+
+    const drawFooterBand = () => {
+        if (!o.footer || L.footer === null) return;
+        drawFooter(translateCtx(ctx, L.x, L.footer - FOOTER_Y), o.footer);
+    };
 
     if (!page || !page.keys) return;
-    const hasParams = page.keys.some(Boolean);
-    if (!hasParams) {
-        tzPrint(ctx, 2, ROW0_Y + 4, caps("No params"), 1);
-        if (o.footer) drawFooter(ctx, o.footer);
+    if (!L.rows.length) { drawFooterBand(); return; }
+
+    /*
+     * A CUSTOM UI PAGE: the module draws the body, this draws the chrome.
+     *
+     * IT HAS TO BE HERE AS WELL AS IN render_page.mjs. This is the layout the
+     * device actually uses -- "Knobs" in Param View -- and putting the branch
+     * only in the dial/bar renderer produced a Face page whose header said FACE
+     * and whose body was eight knobs, which is precisely what the first attempt
+     * shipped to hardware.
+     *
+     * The band is the two knob ROWS and nothing else, so the header, the bank
+     * bar and the footer above and below it are the host's own.
+     */
+    if (page.canvas && typeof o.drawCanvasPage === "function") {
+        const top = L.rows[0].rowY;
+        const bottom = L.footer !== null ? L.footer : (L.rows[1].lblY + FOOTER_Y);
+        const band = { x: L.x, y: top, w: L.cellW * 4, h: Math.max(0, bottom - top) };
+        if (band.h > 0) o.drawCanvasPage(ctx, band, page.canvas, { touched: o.touched, values: o.values });
+        drawFooterBand();
         return;
     }
 
-    drawKnobRow(ctx, o, 0, ROW0_Y, LBL0_Y);
-    drawKnobRow(ctx, o, 1, ROW1_Y, LBL1_Y);
-    if (o.footer) drawFooter(ctx, o.footer);
+    const hasParams = page.keys.some(Boolean);
+    if (!hasParams) {
+        tzPrint(ctx, L.x + 2, L.rows[0].rowY + 4, caps("No params"), 1);
+        drawFooterBand();
+        return;
+    }
+
+    drawKnobRow(ctx, o, 0, L.rows[0].rowY, L.rows[0].lblY, geom);
+    drawKnobRow(ctx, o, 1, L.rows[1].rowY, L.rows[1].lblY, geom);
+    drawFooterBand();
 }

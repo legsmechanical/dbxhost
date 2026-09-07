@@ -33,6 +33,8 @@ import { enumWiresNames } from "../param_format.mjs";
  * from the same inputs, and a key TYPE decides its fate at plan time.
  */
 import { hasChildren, resolveChildKey } from "./child_key.mjs";
+/* wav_position.mjs imports nothing either, so this cannot cycle. */
+import { wavPositionMeta } from "./wav_position.mjs";
 
 export const KIND_NUMBER = "number";
 /** A knob steps through discrete options — enum/toggle. */
@@ -257,6 +259,67 @@ function normalize(key, raw) {
     }
     if (!type) type = Array.isArray(meta.options) ? "enum" : "float";
     meta.type = type;
+
+    /*
+     * ⚠⚠ A MARKER IS EXPANDED HERE OR IT IS NEVER EXPANDED AT ALL.
+     *
+     * The declaration a module writes is not the shape a consumer needs.
+     * `wav_mode` — what `wavPositionMode()` reads, and what tells a `loop_end`
+     * from a plain position — was set by NOTHING before this, on either host:
+     * modules declare `mode`, every consumer reads `wav_mode`, and the two were
+     * never joined. DR32's `end` marker therefore read as "position", which is
+     * the wrong end of the file for `wavEndDefault` to seed from. Measured
+     * across the fleet, that is the only field recovered from a module's own
+     * DECLARATION.
+     *
+     * ⚠ It is not the only field that CHANGES, and an earlier wording of this
+     * said it was. Old and new resolution were run side by side over all 101
+     * contracts: EIGHT fields differ, seven of them defaults being materialised
+     * where they had read `undefined` — `display_unit` ("percent", 20 markers),
+     * `enable_zoom` (false, 20), `expanded_type` ("wav_position", 23, and it is
+     * what `isWavPosition` reads), `marker_label` ("", 20),
+     * `shift_increment_multiplier` (0.1, 3), `ui_type` ("wav_position", 4),
+     * `view_group` ("", 20). Two of those are behavioural on the grid.
+     * ⭑ The `""`-instead-of-`undefined` pair was checked rather than assumed:
+     * `marker_label` and `view_group` both reach their consumers through `||`
+     * fallbacks, so no fallback is suppressed.
+     *
+     * ⚠ WHAT IT DOES *NOT* FIX, corrected 2026-09-07 after an advisor pass
+     * measured it: nothing in the 100-module device capture nests
+     * `filepath_param` or `mode` under `options`. An earlier version of this
+     * comment said mrdrums did — that came from a DUMP TOOL's serialisation
+     * (`schwung-movy/docs/module-dump`), not from the module, whose captured
+     * contract carries both at the top level. Old and new `buildMetaIndex` were
+     * run side by side over all 101 contracts and differ on `filepath_param` for
+     * none of them. The `optOf` reading is kept because MODULES.md permits
+     * either position and the older `ui_type` spelling is still live — but it is
+     * insurance, not a repair.
+     *
+     * ⭑ WHY IT IS STILL WORTH DOING: shadow_ui.js has its OWN expansion
+     * (`buildWavPositionParamMeta`) which the hierarchy LIST editor runs, so the
+     * same module behaved on the list screen and not on the knob grid. One
+     * expansion, called from the one place both surfaces resolve metadata
+     * through, is what stops the two drifting.
+     *
+     * ⚠ `type` is put BACK afterwards. The shared expansion returns the HOST'S
+     * dialect (`type: "float"` + `ui_type: "wav_position"`) so it can replace
+     * that function verbatim; this library spells the same fact as
+     * `type: "wav_position"`, and page_plan's OPAQUE_TYPES and viz's marker
+     * predicate both read it. `expanded_type` is set too, so `isWavPosition`
+     * answers for either dialect.
+     *
+     * ⚠ IT CAN CHANGE `kind` FOR AN UNRANGED MARKER, and the previous wording
+     * of this comment denied it. The expansion defaults min/max to 0..1, which
+     * makes an otherwise unranged marker `ranged` and therefore a turnable
+     * KIND_NUMBER instead of KIND_OPAQUE. No wav_position in the SURVEYED fleet
+     * omits them — 21 in the capture plus DR32's two, all carrying min, max and
+     * step — so it is unreachable there, but a module outside that set would be
+     * affected. That is the host's own default, so the two hosts agree either
+     * way; it is stated rather than claimed impossible.
+     */
+    if (type === "wav_position") {
+        Object.assign(meta, wavPositionMeta(meta), { type });
+    }
 
     /* Display label. chain_params spells it `name`, inline entries `label`;
      * fall back to a de-underscored key the way the list editor does. */
@@ -657,6 +720,21 @@ export function isReadOnly(meta) { return !!meta && !!meta.readOnly; }
  * whichever convention that module speaks.
  */
 export function isTrigger(meta) { return !!meta && !!meta.writeOnly; }
+
+/*
+ * `widgetKindFor` USED TO LIVE HERE, and deliberately does not any more.
+ *
+ * This branch extracted it into param_meta.mjs while main extracted it into
+ * render_page_movy.mjs — the same refactor, for the same reason, twice, and the
+ * merge produced two exported definitions of it plus a set of WIDGET_*
+ * constants in each file. That is precisely the shape both copies were written
+ * to prevent, and it was a hard error rather than a subtle one: the renderer
+ * imported the name it also declared.
+ *
+ * The renderer's is the surviving one. It knows about WIDGET_BIGNUM, which this
+ * copy did not, so keeping this one would have silently demoted every big-number
+ * cell to a knob. Import it from `render_page_movy.mjs`.
+ */
 
 /**
  * One-shot repair for a param whose type/range we had to guess (`meta.guessed`).

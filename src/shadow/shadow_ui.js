@@ -226,7 +226,7 @@ import { evaluateVisibility, parseMetaBool, parseMetaNumber,
  * names the `std`/`os` MODULES, which node has no idea about, so it is
  * imported HERE -- shadow_ui.js is the one shadow file node never imports --
  * and never from shadow_ui_param_pages.mjs, which the host tests do load. */
-import '/data/UserData/schwung/shared/param_pages/wav_io_qjs.mjs';
+import { WAV_QJS_IO } from '/data/UserData/schwung/shared/param_pages/wav_io_qjs.mjs';
 
 import {
     NEUTRAL_CLAIMS as PRIMARY_NEUTRAL_CLAIMS,
@@ -16303,6 +16303,20 @@ function drawHelpDetail() {
     });
 
     /* Utility functions */
+    /*
+     * ⚠⚠ THE SAMPLE READER, HANDED TO THE BINDING — and the host needs it for
+     * the same reason dAVEBOx does, which is why it is here rather than left as
+     * a fork-only member.
+     *
+     * `wav_io_qjs.mjs` self-registers through its own RELATIVE `./wav_peaks.mjs`,
+     * which reaches whichever module instance THAT file resolved. The grid's
+     * peaks PUMP (binding_movy) and its DRAWER (viz_draw) share a different one
+     * whenever the two are reached by different specifiers — and on a device
+     * carrying two complete installs, they were. The binding registers whatever
+     * arrives here into the instance it and the drawer actually use, so the
+     * picture no longer depends on module identity working out.
+     */
+    _ctx.wavPeaksIo = WAV_QJS_IO;
     _ctx.setView = setView;
     _ctx.getSlotParam = getSlotParam;
     _ctx.setSlotParam = setSlotParam;

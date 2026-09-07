@@ -70,7 +70,8 @@ import {
 } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 import { discover, deriveSections, activeSection, filterVizFor,
     menuRows, menuCell, levelCommits, childSpec, modeRows, livePressSpec,
-    inferGuessedMeta, moduleIdOf, buildBrowseList, makeCell, shortLabel } from './ui_discover.mjs';
+    inferGuessedMeta, moduleIdOf, buildBrowseList, makeCell, shortLabel,
+    authoritativeMeta } from './ui_discover.mjs';
 import { parseValue, stepValue, commitString, clampValue, renderCellsForBank,
     formatValue, toRenderCell } from './ui_cells.mjs';
 import {
@@ -101,7 +102,16 @@ import { bankCyclePos, bankCycleForMode } from './ui_pure.mjs';
 import { createParamPagesBinding }
     from '/data/UserData/schwung/shared/param_pages/binding_movy.mjs';
 import { ctx as ppCtx, installPpCtx } from './pp_ctx.mjs';
-import { evaluateVisibility }
+/* The fullscreen sample-marker editor. Its arithmetic is shared with the host
+ * (`shared/param_pages/wav_position.mjs`); this is davebox's screen for it. */
+import {
+    wavEditOpen, wavEditClose, wavEditActive, wavEditTick, renderWavEdit,
+    wavEditOnKnob, wavEditOnKnobTouch, wavEditOnJog, wavForgetComponent,
+    wavEditFileKey, wavEditCrumb,
+} from './ui_wav.mjs';
+import { isWavPosition, wavSiblingKey }
+    from '/data/UserData/schwung/shared/param_pages/wav_position.mjs';
+import { evaluateVisibility, normalizeVisibilityConditionKey }
     from '/data/UserData/schwung/shared/param_pages/visibility.mjs';
 /* The preset record's dirty test — SHARED with the host's editor (upstream
  * grew this module for exactly this bookkeeping), so the `*` means the same
@@ -118,7 +128,9 @@ const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         handleParamPagesMidi, paramPagesActive, paramPagesChildIndex,
         clearParamPagesTouch, currentParamPage,
         paramPagesPickerOpen, paramPagesMenuEntered,
-        paramPagesRefreshTrailing, paramPagesFullKeyAt, paramPagesRepaintKnobs } = PP;
+        paramPagesRefreshTrailing, paramPagesFullKeyAt, paramPagesRepaintKnobs,
+        paramPagesCachedValue, paramPagesLevelNameOf,
+        paramPagesPageLabel } = PP;
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* Chain blocks in signal order, across the audio-FX blocks the host routes.
@@ -271,7 +283,17 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
        * until Back (→ that track's sound menu) or the next switch, so a
        * Shift+jog walk through such tracks reads as "no editor here, keep
        * going" instead of dumping you into a menu you did not ask for. */
-      VIEW_NOEDITOR = 21;
+      VIEW_NOEDITOR = 21,
+      /* ⭑ The fullscreen SAMPLE MARKER editor (2026-09-06). A real view rather
+       * than a mode flag over the list: the host derives "am I in the wave
+       * editor" from three separate facts, and each of its ~12 input handlers
+       * then re-tests the selected row's type — miss one and a handler fires
+       * "sometimes". davebox gets a view id and one branch per handler.
+       * ⚠ 22, because 19 is VIEW_MACROS. These ids are declared across several
+       * lines in READING order, not numeric order, so "the next number" is not
+       * the one under the cursor — a first cut of this took 19 and would have
+       * made two unrelated screens the same screen. */
+      VIEW_WAV = 22;
 
 /* Chain-patch file ops (save_patch / delete_patch) are DSP-side and async —
  * the file appears/vanishes a beat after the request. Re-read the list this
@@ -832,6 +854,13 @@ export function soundBusCountForTest() { return FX_BUSES.length; }
 /* What the editor believes is loaded. Stale after a swap is the whole bug the
  * pendingDiscover rescue fixes, and it is not visible through any other export. */
 export function soundModuleIdForTest() { return S.moduleId; }
+/* WHICH COMPONENT the editor is pointed at. ⚠ `soundModuleIdForTest` alone
+ * cannot answer "did this block load": S.moduleId is only ever cleared by
+ * soundRetarget and runDiscovery, so it SURVIVES soundExit and a test that
+ * asserts on it after a re-entry may be reading the previous screen's module.
+ * That is a real trap — it made a control step in test_sound_bus_editor pass
+ * against stale state. The pair (comp, moduleId) is the honest answer. */
+export function soundCompForTest() { return S.comp; }
 /* The knob grid's current page (level + name) while the editor is up, else null. */
 export function soundEditorPageForTest() { return ppOn ? currentParamPage() : null; }
 export function soundQueueDiscoverForTest(n) { S.pendingDiscover = n | 0; }
@@ -856,7 +885,7 @@ export function soundPPForTest() {
         /* ⭑ The TERMS, so a test can prove which one decided. A control that
          * asserts only `!applies` passes for any reason at all — including a
          * precondition it lost by accident. */
-        terms: { flag: PP_EDITOR, active: S.active, busOk: !S.bus || S.bus.kind === 'global',
+        terms: { flag: PP_EDITOR, active: S.active,
                  slot: S.slot >= 0, notHosted: !S.hosted, moduleId: !!S.moduleId },
     };
 }
@@ -1286,6 +1315,17 @@ export function soundFollowStateForTest() {
 }
 
 export function soundRetarget(track, slot) {
+    /* ⚠⚠ BEFORE the slot moves — see wavEditCloseIfOpen. The wave editor holds
+     * a component and reads/writes against S.slot, so leaving it open across a
+     * retarget lands an edit on a track the user never opened.
+     *
+     * ⚠ NOT ON A SESSION BUS. That path returns a few lines below WITHOUT
+     * moving `S.slot` or `S.comp` — its whole point is to leave the view alone
+     * — so there is no cross-track edit to prevent, and closing anyway tore the
+     * waveform down for nothing on EVERY track press while a session send was
+     * being edited. The guard is the same condition as that return, read here
+     * because `S.bus` cannot change in between. */
+    if (!(S.bus && S.bus.kind === 'global')) wavEditCloseIfOpen();
     flushForRetarget();
     takeBankIdentity(track, S.bankHome);
 
@@ -1424,6 +1464,7 @@ export function soundExit(opts) {
      * name who closed sound mode. debug.log only; exits are rare. */
     log('exit: view ' + S.view + ' track ' + S.track + ' opts ' + JSON.stringify(opts || null) + ' from ' +
         String(new Error().stack || '').split('\n').slice(2, 5).map((l) => l.trim()).join(' | '));
+    wavEditCloseIfOpen();      /* nothing may outlive sound mode itself */
     const _opts = (opts && typeof opts === 'object') ? opts : {};
     const _leaving = _opts.leaving === true;
     /* Any exit at all spends the gesture crumb. A crumb that outlives its screen
@@ -1467,7 +1508,8 @@ export function soundExit(opts) {
     /* ⚠ The editor's navigation crumbs die with the session. A stale one would
      * swallow a Back or retrace to a screen from a previous visit — the failure
      * this whole pass was about, arriving by a different door. */
-    ppAteBackPress = false; ppDivedOut = false; ppErrandView = null;
+    ppAteBackPress = false; ppDivedOut = false; ppErrandView = null; wavErrand = false;
+    ppFileErrand = false;
     ppSuppressOnce = false; ppRestorePage = null;
     if (S.busLevelDirty) engineSaveState();
     S.active = false;
@@ -3426,6 +3468,15 @@ const VIEW_TREE = {
     [VIEW_ENUM]:        { parent: () => (S.enumPick ? S.enumPick.from : null),
                           float: true, backPure: true,
                           crumb: () => (S.enumPick ? S.enumPick.label : 'Value') },
+    /* ⚠ NOT `backPure`: Back from the waveform also closes the editor, clears
+     * the errand and hands the grid back its suppression flags, so it keeps its
+     * own branch — the table's own rule for a screen whose Back does more than
+     * step up. It is tabled for the other three things the table is: the
+     * breadcrumb path, the stack depth, and which screen is drawn underneath.
+     * ⚠ `float: false` for the LFO's reason — the content is not a list. An
+     * overlay box would cover the plot, which is the whole screen. */
+    [VIEW_WAV]:         { parent: VIEW_EDIT,       float: false,
+                          crumb: () => wavEditCrumb() || 'Wave' },
 };
 
 /* Applying an Instrument choice. Extracted so the PICKER and the old
@@ -5242,7 +5293,19 @@ function fileActivate() {
         queueWrite(S.fileKey, res.value);
         const row = S.menuRowsCache.find(r => (r.pkey || r.key) === S.fileKey);
         if (row) { row.raw = res.value; row.val = res.value; }
-        S.view = VIEW_MENU;
+        /* ⭑ A PICK GOES BACK WHERE THE PICK WAS ASKED FOR. From the wave
+         * editor that is the waveform — which redraws on the new sample by
+         * itself, because refreshSourcePath is watching the value we just
+         * queued. VIEW_MENU is davebox's own answer and is still right for
+         * davebox's own browse. */
+        /* ⭐ Back where the pick was ASKED FOR: the waveform if the wave editor
+         * sent us, the GRID if a grid cell did, and davebox's own menu only when
+         * davebox's own menu opened it. */
+        S.view = (wavErrand && wavEditActive()) ? VIEW_WAV
+               : (ppFileErrand ? VIEW_EDIT : VIEW_MENU);
+        if (ppFileErrand) { ppSuppressOnce = false; ppDivedOut = false; }
+        ppFileErrand = false;
+        wavErrand = false;
         S.presetMsg = '';
     }
 }
@@ -5591,12 +5654,38 @@ function runActionBody(a) {
     else if (a.t === 'patchsavedo') doChainPatchSave(a.name, a.overwrite);
     else if (a.t === 'patchdel')    doChainPatchDelete(a.index);
     else if (a.t === 'file')     openFileBrowser(S.menuRowsCache[a.idx]);
+    else if (a.t === 'ppfile') {
+        ppFileErrand = true;
+        /* The grid dived here for a FILE param: open its browser. Back returns
+         * to the grid through the ordinary dive-out crumb (ppDivedOut), the same
+         * way every other dive does. */
+        openFileBrowser({ key: a.bare, pkey: a.bare, cell: a.cell,
+                          raw: engineGetChainParam(S.slot, a.fileKey) || '' });
+    }
+    else if (a.t === 'wavfile') {
+        /* ⚠ The gesture and the open are a tick apart, so the screen may have
+         * moved on — a Back in that window leaves the wave editor, and opening
+         * a browser over whatever came next would be a screen nobody asked
+         * for. The errand is only real if the waveform is still up. */
+        if (S.view === VIEW_WAV) {
+            wavErrand = true;
+            ppSuppressOnce = false; ppDivedOut = true;
+            openFileBrowser({ key: a.bare, pkey: a.bare, cell: a.cell,
+                              raw: engineGetChainParam(S.slot, a.fileKey) || '' });
+        }
+    }
     else if (a.t === 'textedit') startTextEdit(a.idx);
     S.dirty = true;
 }
 
 function runDiscovery() {
     const id = moduleIdOf(engineLoadedModule(S.slot, S.comp));
+    /* ⚠ A DIFFERENT MODULE IN THIS COMPONENT MEANS A DIFFERENT FILE, so the
+     * wave editor's sticky zoom must not carry over: a 64x window onto a
+     * two-second loop means something else entirely on the eight-bar sample
+     * that replaced it. Zoom survives leaving the SCREEN (or you lose it every
+     * time you glance at another param) but never a module swap. */
+    if (id !== S.moduleId) { wavEditCloseIfOpen(); wavForgetComponent(S.comp, S.slot); }
     S.moduleId = id;
     if (!id) { S.banks = []; S.sections = []; S.dirty = true; return; }
     const res = discover(S.slot, S.comp);
@@ -5748,6 +5837,30 @@ function trackInflight(slot, comp, key, val) {
 
 function inflightFor(slot, comp, key) {
     return S.inflight.find(w => w.key === key && w.comp === comp && w.slot === slot) || null;
+}
+
+/*
+ * THE VALUE THAT WILL STAND for a key — the queue first, then the engine.
+ *
+ * ⚠⚠ THE ENGINE IS STALE UNTIL THE QUEUE DRAINS. A write sits in
+ * `S.pendingWrites` (coalesced per key) for up to a tick, then in `S.inflight`
+ * for INFLIGHT_CONFIRM_TICKS more before the readback confirms it. Anything
+ * that computes its next value from a fresh `engineGet` in that window computes
+ * it from the value BEFORE the last edit — so a fast knob sweep advances by
+ * roughly one step per confirm cycle and the rest of the detents vanish into
+ * the coalescer, and a screen that redraws from the engine snaps the cursor
+ * back. That is the "the knob resets after I turn it" report.
+ */
+function settledValue(fullKeyOrBare, comp) {
+    const c = comp || S.comp;
+    const key = (typeof fullKeyOrBare === 'string' && fullKeyOrBare.startsWith(c + ':'))
+        ? fullKeyOrBare.slice(c.length + 1) : fullKeyOrBare;
+    for (const w of S.pendingWrites) {
+        if (w.key === key && w.comp === c && w.slot === S.slot) return w.val;
+    }
+    const f = inflightFor(S.slot, c, key);
+    if (f) return f.val;
+    return engineGet(S.slot, c, key);
 }
 
 /* Does the engine's readback SAY the write landed? Tolerant on purpose:
@@ -6260,6 +6373,27 @@ export function soundOnCC(d1, d2, decodeDelta) {
     }
 
     if (d1 >= 71 && d1 <= 78) {                        /* knobs 1-8 */
+        /* ⚠⚠ THE WAVE EDITOR OWNS ALL EIGHT KNOBS, and it must — falling through
+         * does NOT hand the knob back to the module.
+         *
+         * By the time this screen is up, `openParamEditor` has already called
+         * exitParamPages() and cleared ppOn, so the module's own knob row is
+         * TORN DOWN. What is actually underneath is `levelsActive()`, which is
+         * true on any view that is not VIEW_EDIT — so an unclaimed encoder went
+         * to `onLevelTurn` and moved the TRACK'S CHAIN LEVEL, silently, on a
+         * screen showing a waveform. A single-marker module (no view_group,
+         * exactly the shape docs/MODULES.md documents) has no claimed knobs at
+         * all, so that was every one of K1-K7 on the commonest declaration.
+         *
+         * `wavEditOnKnob` still returns false for an unclaimed knob — the role
+         * table is the right place to decide what a knob DOES — but the view
+         * decides who the event belongs to, and it belongs here. */
+        if (S.view === VIEW_WAV) {
+            const delta = decodeDelta(d2);
+            if (delta) wavEditOnKnob(d1 - 71, delta, S.shiftHeld);
+            S.dirty = true;
+            return true;
+        }
         if (S.view === VIEW_EDIT) {
             const delta = decodeDelta(d2);
             if (delta) onKnobTurn(d1 - 71, delta);
@@ -6285,6 +6419,12 @@ export function soundOnCC(d1, d2, decodeDelta) {
             if (delta && levelPageSpec(d1 - 71)) onLevelTurn(d1 - 71, delta);
             return true;
         }
+        return true;
+    }
+
+    if (d1 === 14 && S.view === VIEW_WAV) {            /* jog moves the marker */
+        const delta = decodeDelta(d2);
+        if (wavEditOnJog(delta, S.shiftHeld)) { S.dirty = true; return true; }
         return true;
     }
 
@@ -6498,6 +6638,63 @@ export function soundOnCC(d1, d2, decodeDelta) {
         /* MACROS: the click opens the assign list, which floats over the page
          * (no engine reads — the list is the store). */
         if (S.view === VIEW_MACROS) { openKnobEditor(); S.dirty = true; return true; }
+        /* ⭑ SHIFT+CLICK OPENS THE FILE BROWSER for the sample this marker is a
+         * position IN — the route this screen took away. Before it existed, a
+         * click on a marker dived to the bank editor, which is where the
+         * browser lives; pointing that dive at a waveform removed the only way
+         * to CHANGE the sample ("no way to browse kits or samples", from the
+         * device). Same grammar as the Instrument row: click enters, Shift+click
+         * picks. */
+        if (S.view === VIEW_WAV && S.shiftHeld) {
+            const fileKey = wavEditFileKey();
+            const bare = fileKey ? (ppBare(fileKey) || fileKey) : null;
+            /* ⚠ The browser wants a davebox CELL (label, fileRoot, fileFilter,
+             * fileStartPath), not the raw chain_param — makeCell is what turns
+             * one into the other, and the names differ on both sides
+             * (`root` -> `fileRoot`). Handing it the raw declaration would open
+             * a browser rooted at undefined. */
+            /* ⚠⚠ NOT `S.cpMap[bare]`. cpMap holds chain_params ONLY, and a
+             * module is free to declare its file inline on a level instead —
+             * DR32 does, so `sample_move` is not in cpMap and never was, and
+             * this branch fell through to the silent return below. Shift+click
+             * did nothing on the one module the gesture was written for.
+             * `authoritativeMeta` is the lookup the menu already uses: cpMap
+             * first, then the levels, then the repeated-element template. */
+            const decl = bare ? authoritativeMeta(bare, S.cpMap, S.levels) : null;
+            const cell = decl ? makeCell(bare, decl) : null;
+            if (bare && cell && cell.kind === 'file') {
+                /*
+                 * ⚠⚠ DEFERRED TO TICK, and this is the doctrine the rest of
+                 * this file already follows (openChainPatches' comment states
+                 * it, and davebox's OWN file row queues `{t:'file'}` rather
+                 * than opening inline). Opening here would run a BLOCKING
+                 * engine read AND a `readdir` inside the MIDI CC handler. A
+                 * blocked tick tail-drops the 64-slot input ring, and the
+                 * event most likely to be lost is a note RELEASE — which
+                 * sticks forever, in Move and in the slot synth both.
+                 *
+                 * What stays here is only the decision, which is pure: the
+                 * lookup and makeCell read state we already hold and touch no
+                 * device.
+                 */
+                S.pendingAction = { t: 'wavfile', bare, cell, fileKey };
+                S.dirty = true;
+                return true;
+            }
+            /* No linked file to browse: say nothing and stay put rather than
+             * dropping the user somewhere they did not ask for. */
+            return true;
+        }
+        /* Click leaves too, as the host's does: on this screen there is nothing
+         * to confirm — every edit already landed — so the two exits are the
+         * same exit rather than one of them being a commit. */
+        if (S.view === VIEW_WAV) {
+            wavEditClose();
+            wavErrand = false;
+            ppSuppressOnce = false; ppDivedOut = false;
+            S.view = VIEW_EDIT; S.dirty = true;
+            return true;
+        }
         if (S.view === VIEW_ENUM) { closeEnumPicker(true); return true; }
         if (S.view === VIEW_SLOTCFG) {
             const row = S.slotRows[S.slotCfgIdx];
@@ -6771,6 +6968,42 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * ⚠ Deliberately the tap only — the long-press suspend above stays
          * unclaimable, the same failsafe shape as the host's Shift+Back. */
         if (hostedBack()) return true;
+        /* ⭑ THE WAVE EDITOR RETURNS TO THE GRID IT WAS OPENED FROM — the same
+         * contract every other dive-out has. It commits nothing on the way out
+         * because it has committed every detent already (through the ledger),
+         * so there is no cancel here and none is implied. */
+        /* ⭑ THE BROWSER THE WAVE EDITOR OPENED BACKS INTO THE WAVE EDITOR.
+         * Above the VIEW_WAV branch and above davebox's per-view tree, for the
+         * same reason ppErrandView is: the tree below steps up davebox's OWN
+         * screens, which is not the path you walked to get here. Nothing is
+         * committed or reverted — an un-picked browse simply leaves the value
+         * alone. */
+        /* The grid's own browse returns to the GRID — the same rule as the
+         * wave editor's, one screen up. */
+        if (S.view === VIEW_FILE && ppFileErrand) {
+            ppFileErrand = false;
+            ppSuppressOnce = false;   /* let ppSync re-enter the grid at once */
+            ppDivedOut = false;
+            S.view = VIEW_EDIT;
+            S.dirty = true;
+            return true;
+        }
+        if (S.view === VIEW_FILE && wavErrand) {
+            wavErrand = false;
+            /* ⚠ Only if the editor is STILL THERE. Belt to the braces above:
+             * a screen with no state behind it renders nothing and leaves the
+             * previous frame on the panel, which reads as a freeze. */
+            if (wavEditActive()) { S.view = VIEW_WAV; S.dirty = true; return true; }
+        }
+        if (S.view === VIEW_WAV) {
+            wavEditClose();
+            wavErrand = false;
+            ppSuppressOnce = false;   /* let ppSync re-enter the grid at once */
+            ppDivedOut = false;
+            S.view = VIEW_EDIT;
+            S.dirty = true;
+            return true;
+        }
         /* ⭐ ANY SCREEN THE EDITOR OPENED BACKS INTO THE EDITOR. Ahead of the
          * per-view branches below, because those step up davebox's OWN tree —
          * which is not the tree you walked when you arrived from a module page.
@@ -6974,6 +7207,14 @@ export function soundOnNote(status, d1, d2) {
      * The save flush that used to ride the touch RELEASE rides the Shift
      * release instead — soundVolGestureEnd, called by the MoveShift handler. */
     if (d1 > 7) return false;
+
+    /* ⭑ ON THE WAVE EDITOR A TOUCH SELECTS THAT MARKER, without moving it: the
+     * fastest way to put the cursor on another marker is to lay a finger on its
+     * encoder. Every other knob on that screen swallows the touch, for the same
+     * reason it swallows the turn. */
+    if (S.view === VIEW_WAV && status === 0x90 && d2 > 0) {
+        if (wavEditOnKnobTouch(d1)) { S.dirty = true; return true; }
+    }
 
     /* Knob touch is a NOTE, and hostedTakes() only forwards CCs — so a hosted
      * canvas never saw touch at all. Two symptoms on device, one cause: touching
@@ -7189,6 +7430,16 @@ export function soundTick() {
     S.tickCount++;
 
     if (isTextEntryActive()) { tickTextEntry(); return; }
+
+    /* ⭑ PUMP THE WAVE PEAKS, and ONLY while that screen is up.
+     *
+     * ⚠⚠ This is the whole reason davebox does not read the file the way the
+     * host does. `wavEditTick` advances a BOUNDED job — two blocks, capped at
+     * 2 MB total — so a long sample fills in over a few frames instead of
+     * stalling one. The host sweeps the entire file inside its DRAW call; a
+     * blocked tick here overflows the input ring and drops note-offs, and a
+     * dropped note-off is a stuck note in Move AND in the slot synth. */
+    if (S.view === VIEW_WAV) wavEditTick();
 
     /* ⭑ AHEAD of discovery: when the editor is on, davebox's own bank model is
      * not what is being drawn, and running both would pay for two contracts. */
@@ -7964,6 +8215,37 @@ let ppDivedOut = false;
  * opens sets this, and both the Back path and the renderer read it. */
 let ppErrandView = null;
 
+/*
+ * The file browser is up ON AN ERRAND FROM THE WAVE EDITOR, and Back or a pick
+ * belongs to that screen rather than to davebox's own tree.
+ *
+ * ⚠⚠ WITHOUT THIS BOTH EXITS STRAND YOU. `VIEW_FILE`'s Back steps to
+ * `VIEW_MENU` and `fileActivate` lands there too — davebox's hierarchy menu,
+ * which you did not come through, whose `S.menuRowsCache` was never built
+ * because the dive out of the grid never asked for a discover. You pick a
+ * sample and arrive at an empty list, with the waveform you were looking at
+ * gone.
+ *
+ * ⭑ The editor is deliberately left OPEN underneath (no `wavEditClose`), so
+ * coming back is a view change and nothing has to be rebuilt. Its own
+ * `refreshSourcePath` notices the new value on the next tick and re-streams
+ * the peaks, which is exactly the point of having gone.
+ */
+let wavErrand = false;
+/*
+ * The file browser is up ON AN ERRAND FROM THE PARAM GRID (a click on a
+ * filepath cell), and both its exits belong to the grid.
+ *
+ * ⚠⚠ WITHOUT THIS, reported from the device: picking a kit "sends you to a
+ * screen that says NO PARAMS, and backing out of that sends you to
+ * T1 > DR32 > PRESETS, and backing out of THAT puts you on main." Three screens
+ * the user never asked for, because `fileActivate` lands on VIEW_MENU — the
+ * bank editor's menu, whose banks were never discovered on this path, so it has
+ * nothing to show — and Back from there walks davebox's OWN tree instead of the
+ * one the user walked.
+ */
+let ppFileErrand = false;
+
 /* Does the editor currently have a layer of its own for Back to close — an open
  * picker, or a menu/preset page you have entered? Only then does Back belong to
  * it; otherwise leaving is davebox's decision. */
@@ -7985,17 +8267,23 @@ function ppHasLayer() {
  * jog walk instead of hiding behind a jog-click, `visible_if` starts folding
  * controls away, and the knob rings light.
  *
- * ⚠ Move buses stay out as a SCOPING choice, not an impossibility — Josh ruled
- * "master/send", so that is what shipped. Their FX inserts are ordinary audio_fx
- * modules that would plan fine (see FX_BUSES' neighbours above: they "ride the
- * same machinery"); it is only Move's GENERATOR row, its own voice reached
- * through co-run, that has nothing to plan from. So the same reverb gets the
- * grid and My Presets on Master and the older editor on a Move bus — a known
- * inconsistency, and the reason this is worth revisiting rather than a wall.
+ * ⭐⭐ AND MOVE BUSES TOO, as of Josh's 2026-09-06 ruling: "param pages should be
+ * the model for module editing across the board." The bus gate is GONE, not
+ * widened — there is no flavour of bus left that edits an insert differently.
+ * Until now the same reverb wore the grid on Master and the older list editor
+ * on a track's Move FX bus, which the previous note here called "a known
+ * inconsistency"; that is what the ruling closes.
+ *
+ * ⚠ WHAT KEEPS MOVE'S OWN VOICE OUT is not the bus, and never was — it is
+ * `S.moduleId`. Move's generator is reached through the `trackto` (Instrument)
+ * row, which hands over to co-run and never enters VIEW_EDIT with a module
+ * loaded, so there is nothing for `runDiscovery` to name and the term below is
+ * false on its own. The bus test was standing in front of a check that already
+ * held, which is why removing it is safe rather than merely permitted.
+ *
  * ⚠ And not a module drawing its OWN canvas, which already owns the whole frame. */
 function ppApplies() {
-    const busOk = !S.bus || S.bus.kind === 'global';
-    return PP_EDITOR && S.active && busOk && S.slot >= 0 && !S.hosted && !!S.moduleId;
+    return PP_EDITOR && S.active && S.slot >= 0 && !S.hosted && !!S.moduleId;
 }
 
 /* ⚠ THE PREFIX IS S.comp, AND THAT IS LOAD-BEARING. The binding hands the io
@@ -8237,12 +8525,33 @@ function ppIo() {
     };
 }
 
+/*
+ * The key the CONTROLLER lists a condition's parameter under, given the
+ * resolved wire key. The inverse of normalizeVisibilityConditionKey, done by
+ * walking the level's declared params and asking which one resolves to the key
+ * we were handed — the same way the host does it, and the only way that works
+ * when the child prefix and the wire numbering disagree.
+ *
+ * Falls back to stripping the component prefix, which is right for every level
+ * that has no children.
+ */
+function ppListedKeyFor(levelDef, childIdx, prefix, fullKey) {
+    const params = (levelDef && Array.isArray(levelDef.params)) ? levelDef.params : [];
+    for (const p of params) {
+        const k = (typeof p === 'string') ? p : (p && p.key);
+        if (k && normalizeVisibilityConditionKey(prefix, levelDef, childIdx, k) === fullKey) return k;
+    }
+    return (prefix && String(fullKey).startsWith(prefix + ':'))
+        ? String(fullKey).slice(prefix.length + 1) : fullKey;
+}
+
 /* Installed once, at module load. The host fills its ctx from shadow_ui.js at
  * init for the same reason: the binding reads these INSIDE function bodies, so
  * they only have to exist by the time the editor is entered.
- * ⚠⚠ The member list is not ours to choose — it is whatever the vendored
- * binding reads, and test_param_pages_vendor.sh fails if this and
- * pp_ctx.mjs's PP_CTX_MEMBERS / PP_CTX_ABSENT stop agreeing with it. */
+ * ⚠⚠ The member list is not ours to choose — it is whatever the shared binding
+ * (param_pages/binding_movy.mjs) reads off ctx, and test_param_pages_vendor.sh
+ * fails if this literal, pp_ctx.mjs's PP_CTX_MEMBERS / PP_CTX_ABSENT and the
+ * binding's own code stop agreeing. It reads all three as CODE. */
 installPpCtx({
     /* The header names the MODULE, not the patch (Josh, 2026-08-31: no preset
      * name in the editor breadcrumb). Stock keeps the patch name because its
@@ -8302,11 +8611,49 @@ installPpCtx({
      * helpers live in shadow_ui.js rather than shared/ — see pp_visible.mjs.
      * Unanswered, the planner shows EVERYTHING, so davebox would display
      * controls a module folds away in its current mode. */
-    evaluateVisibilityCondition: (condition, levelDef) => evaluateVisibility({
-        prefix: S.comp,
-        getParam: (fullKey) => engineGetChainParam(S.slot, fullKey),
-        childIndexOf: (lvl) => paramPagesChildIndex(lvl),
-    }, condition, levelDef),
+    evaluateVisibilityCondition: (condition, levelDef) => {
+        /*
+         * ⚠⚠ THE INDEX IS FOUND FROM THE LEVEL'S NAME, NOT ITS DEFINITION.
+         * `controller.childIndexOf` looks the level up in a NAME-keyed map, so
+         * handing it the def object read `s.childIndex[<object>]` — undefined,
+         * which falls back to 0. Every visible_if on a child level therefore
+         * resolved against INSTANCE 0 whatever instance was on screen: on a
+         * drum module a pad's own condition was answered by pad 1's value; and
+         * where the module numbers its children from 1 the resolved key did not
+         * exist AT ALL, read "", compared FALSE, and every gated cell on that
+         * pad simply VANISHED. ⚠ Note the direction: an unserved key is "" and
+         * fails CLOSED here — only a null read fails open. The host takes the
+         * name first for exactly this reason (#427).
+         */
+        const lvlName = paramPagesLevelNameOf(levelDef);
+        const childIdx = lvlName ? paramPagesChildIndex(lvlName) : -1;
+        return evaluateVisibility({
+            prefix: S.comp,
+            /* Already resolved above — do not let the evaluator re-derive it. */
+            childIndexOf: () => childIdx,
+            /*
+             * ⚠⚠ CACHE FIRST. A blocking chain read is ~2.9 ms, and a re-plan
+             * evaluates every level and every gated param, so paying IPC here
+             * is paid once per condition per plan — the shape the host called
+             * out as freezing the OLED (#427). The grid already HOLDS these
+             * values: every write it made and every key its cursor has read.
+             *
+             * ⚠ And the cache is asked with the LISTED key, never the resolved
+             * one (#440). `fullKey` has been through
+             * normalizeVisibilityConditionKey, so on a child level it is
+             * CONCRETE ("pad3_type") while the controller keys its values by
+             * what the level LISTS ("type"). Asking with the concrete key
+             * misses every single time — silently, because a miss still
+             * answers CORRECTLY, only slowly.
+             */
+            getParam: (fullKey) => {
+                const held = paramPagesCachedValue(
+                    ppListedKeyFor(levelDef, childIdx, S.comp, fullKey));
+                if (held !== undefined) return held;
+                return engineGetChainParam(S.slot, fullKey);
+            },
+        }, condition, levelDef);
+    },
 
     /* The modulation dot and the label's `~`. Same two-step read the host does:
      * ask the target whether it is modulated, and for targets that do not
@@ -8350,16 +8697,267 @@ installPpCtx({
      * hand the component to the editor that has the screens — rather than a
      * second set of editors built for the grid. */
     openParamEditor: (slot, fullKey, meta) => {
+        /*
+         * ⚠⚠ READ THE PAGE LABEL FIRST — `exitParamPages()` sets the binding's
+         * `controller` to NULL, and every accessor on it answers "" from then
+         * on. A previous cut of this read it inside `openWavEditor`, three
+         * lines below the exit, with a comment asserting the controller
+         * survives; it does not, so the header said the MODULE name where it
+         * should have said the pad. Caught by an advisor pass, invisible to a
+         * source pin (the call was spelled correctly) and to the JS test (its
+         * rig hands the crumbs in).
+         */
+        const divedFrom = paramPagesPageLabel();
         clearParamPagesTouch();
         exitParamPages();
         ppOn = false; ppEditLatched.clear();
         ppSuppressOnce = true;
         ppDivedOut = true;
+        /* ⭑ A SAMPLE MARKER GETS ITS OWN SCREEN (2026-09-06). Everything else
+         * still hands the component to the bank editor, which has the file,
+         * text and option screens — but a `wav_position` needs a WAVEFORM, and
+         * the bank editor has never had one. That is the whole of Josh's "the
+         * touch click gesture to enter full screen wave doesn't do anything":
+         * the dive fired and landed somewhere with nothing to show. */
+        if (isWavPosition(meta) && openWavEditor(fullKey, meta, divedFrom)) {
+            S.view = VIEW_WAV;
+            S.dirty = true;
+            return;
+        }
+        /*
+         * ⭐ A FILEPATH PARAM OPENS ITS OWN BROWSER, not the editor's front page.
+         *
+         * ⚠⚠ REPORTED REPEATEDLY AND MIS-READ BY ME AS A WAVEFORM PROBLEM: "touch
+         * click into a browser (kit browser or sample) just sends me to the main
+         * edit bank." That is exactly what the fall-through below did — hand the
+         * COMPONENT to davebox's bank editor and land on its root, leaving the
+         * user to find the row they had just clicked. For a marker the dive got
+         * its own screen; for the file the click was answered with a different
+         * screen entirely.
+         *
+         * The browser is the screen that param means, so open it directly, with
+         * the same lookup and the same deferral the wave editor's Shift+click
+         * uses — `authoritativeMeta` because cpMap holds chain_params only and
+         * DR32 declares its kit and samples INLINE on a level, and the tick
+         * because opening reads a param and lists a directory, neither of which
+         * belongs on the MIDI path.
+         */
+        const fpBare = ppBare(fullKey) || fullKey;
+        const fpDecl = fpBare ? authoritativeMeta(fpBare, S.cpMap, S.levels) : null;
+        const fpCell = fpDecl ? makeCell(fpBare, fpDecl) : null;
+        if (fpCell && fpCell.kind === 'file') {
+            S.pendingAction = { t: 'ppfile', bare: fpBare, cell: fpCell, fileKey: fullKey };
+            S.dirty = true;
+            return;
+        }
         S.pendingDiscover = 1;      /* davebox's own editor needs its banks */
         S.view = VIEW_EDIT;
         S.dirty = true;
     },
 });
+
+/*
+ * ⚠⚠ THE EDITOR MUST NOT SURVIVE A RETARGET. `soundRetarget` moves S.slot (and
+ * can move S.comp) on the chain->chain path without touching S.view, and the
+ * queued action that changes the view only runs on a LATER tick. In that window
+ * the screen is still up and pointed at the old component: a read would go to
+ * the new slot with the old component's key, and a detent would queue a write
+ * against {slot: newSlot, comp: newComp} — landing an edit on a track the user
+ * never opened. Closing here makes the window empty rather than narrow.
+ */
+function wavEditCloseIfOpen() {
+    if (!wavEditActive()) return;
+    wavEditClose();
+    /* ⚠⚠ THE ERRAND DIES WITH THE EDITOR. On a browse the view is VIEW_FILE,
+     * not VIEW_WAV, so the branch below does not run — and a track switch or a
+     * module swap reaches here through `soundRetarget` / `runDiscovery` while
+     * the browser is up. Left set, the crumb outlives the screen that owns it:
+     * Back would return to a VIEW_WAV with no editor behind it (the renderer
+     * bails and the LAST FRAME freezes on the panel), and later davebox's OWN
+     * file browser would back into the waveform instead of its menu. */
+    const hadErrand = wavErrand;
+    wavErrand = false;
+    /*
+     * ⚠⚠ AND SO DOES THE BROWSER IT OPENED. Clearing the crumb alone left the
+     * user standing in a file browser built from the OLD component's
+     * `S.fileKey`.
+     *
+     * ⚠ WHICH CALLER MAKES THAT DANGEROUS — corrected TWICE, because the first
+     * version named the wrong one and the second was true of only one path.
+     * `soundRetarget` nulls `S.fileState` a few lines later in the same
+     * synchronous call, so on its CHAIN path the browser was merely DEAD:
+     * `NO BROWSER` on screen and an inert click, bad but not a write. (Its
+     * session-bus path returns above that line — but it moves neither slot nor
+     * component, so nothing is mis-addressed there either, and it no longer
+     * reaches here at all.) `soundExit` clears `S.active`, so nothing renders
+     * or dispatches. It is `runDiscovery` — a module SWAP — that leaves
+     * `fileState` intact, and there a pick writes the OLD module's sample-path
+     * key into the slot the new module now owns. `queueWrite` captures `S.slot`
+     * at call time (its own comment says so), so the write is real and lands.
+     *
+     * ⚠ `ppDivedOut` goes with it. It is set alongside the errand at the dive
+     * and cleared at every other exit; left standing, the next arrival at
+     * VIEW_EDIT would silently eat one Back — the stale-crumb failure
+     * `soundExit` documents. `ppSuppressOnce` goes too, for consistency with
+     * the Back and click exits.
+     * ⚠ It only BUYS anything at the `runDiscovery` site, and there just one
+     * tick: `soundRetarget` clears `S.moduleId`, which `ppApplies()` requires,
+     * and `soundExit` clears `S.active` and re-clears the flag itself. An
+     * earlier version of this said the grid re-enters at once, full stop.
+     */
+    if (S.view === VIEW_WAV || (hadErrand && S.view === VIEW_FILE)) {
+        ppDivedOut = false;
+        ppSuppressOnce = false;
+        S.view = VIEW_EDIT;
+        S.dirty = true;
+    }
+}
+
+/*
+ * Open the fullscreen sample-marker editor on one `wav_position` param.
+ *
+ * Everything davebox-specific is assembled here and injected; ui_wav.mjs holds
+ * no davebox state and no arithmetic of its own.
+ *
+ * ⚠⚠ THE WRITE GOES THROUGH THE LEDGER. `queueWrite` -> drainAndVerifyWrites is
+ * not a nicety: `engineSet` is a raw fire-and-forget `shadow_set_param`, and in
+ * overtake the host has ~8 ms of mailbox patience before it STOMPS an
+ * unconsumed request. A marker edited per detent would lose writes exactly the
+ * way sound mode's did before the ledger existed, with nothing logged.
+ *
+ * ⚠ DURATION IS 0 — davebox has no WAV duration reader, deliberately. A
+ * `percent` marker (every one in the fleet today) needs none. A `ms`/`sec`
+ * marker will say "no duration" on screen rather than drawing a confident
+ * cursor at the file start, which is what the host does with the same missing
+ * fact. Adding a reader means adding a THIRD wav parser to this codebase, and
+ * the host's existing one already disagrees with wav_format.mjs about 24-bit
+ * and AIFF files — so it is a deliberate gap, not an oversight.
+ */
+function openWavEditor(fullKey, meta, divedFrom) {
+    const cp = S.cpMap || {};
+    /*
+     * The declarations this component publishes, IN ORDER — which is the
+     * marker/knob order (see wavViewGroupMembers), so it is not cosmetic.
+     *
+     * ⚠⚠ BOTH SOURCES, because a module may declare a marker in either and
+     * DR32 declares its markers ONLY on the level, so cpMap saw none of them.
+     * chain_params keeps precedence — it is the authority for value metadata —
+     * and a level's inline params fill in what it omits.
+     *
+     * ⭑ WHAT THIS DOES AND DOES NOT CHANGE TODAY, measured over the 100-module
+     * contract capture: the only `view_group` in the fleet is mrsample's, and
+     * it is in chain_params, so no module's GROUPING moves. DR32 declares no
+     * view_group and still gets the LEGACY role, which is correct — it keeps
+     * its whole knob row. What the level source fixes is everything the list
+     * is asked FOR besides grouping, and the addressing below.
+     *
+     * ⚠ A member's `fullKey` is scoped the way the marker's own file is: a
+     * child level's bare key means THIS INSTANCE'S. `pad05_start` and a
+     * sibling `end` belong to the same pad, and addressing the sibling as
+     * `end` (or as the component's `end`) writes to a key no module serves.
+     */
+    /*
+     * ⚠⚠ `meta.key` FIRST, and this is the whole of the scoping.
+     * `wavSiblingKey` derives the instance by subtracting the marker's own bare
+     * NAME (`start`) from its resolved key (`pad4_start`). Passing
+     * `ppBare(fullKey)` passes `pad4_start` as the name too, the subtraction
+     * has nothing left to remove, and every member came out
+     * `${S.comp}:${k}` — byte-identical to the component-scoped form this
+     * replaced. A source pin on the call spelling cannot see that; only the
+     * ARGUMENT was wrong. The `siblingKey` member below always used `meta.key`,
+     * so the two were quietly disagreeing.
+     */
+    const ownBare = (meta && meta.key) || ppBare(fullKey) || fullKey;
+    const seenDecl = Object.create(null);
+    const params = [];
+    /*
+     * ⚠⚠ ONLY A REPEATED ELEMENT'S KEYS ARE INSTANCE-SCOPED. Scoping every
+     * declaration was wrong in the other direction: once the instance was
+     * genuinely non-empty it prefixed component-wide chain_params too, so
+     * DR32's `kit` became `synth:pad4_kit` — a key no module serves. A
+     * `chain_params` entry is component-wide by definition, and a flat level's
+     * params are too; only a level that declares children lists TEMPLATES.
+     *
+     * ⚠ The residue, stated rather than hidden: a marker on child level A and a
+     * key listed on a different child level B would still take A's instance.
+     * ⚠⚠ AND THE REASON IT IS UNREACHABLE IS NOT THE ONE I FIRST WROTE. mrdrums
+     * DOES declare two child levels (`root` and `pad_settings`, 16 each). What
+     * holds today is that `childSpec()` recognises only `child_prefix`, while
+     * `child_key.mjs`'s `hasChildren()` and validate_contract also accept the
+     * `child_key_template` form mrdrums uses — so a template-shaped child level
+     * is not scoped here AT ALL. That is a GAP, not a guarantee: teach
+     * `childSpec` templates, which is an obvious follow-up, and this arms. The
+     * `view_group` filter below is the only thing genuinely holding it.
+     */
+    const pushDecl = (k, m, scoped) => {
+        if (!k || seenDecl[k] || !m) return;
+        seenDecl[k] = 1;
+        params.push({
+            key: k,
+            fullKey: scoped ? wavSiblingKey(fullKey, ownBare, k, S.comp) : `${S.comp}:${k}`,
+            meta: m,
+        });
+    };
+    for (const k of Object.keys(cp)) pushDecl(k, cp[k], false);
+    for (const lvl of Object.values(S.levels || {})) {
+        const repeated = !!childSpec(lvl);
+        for (const prm of ((lvl && lvl.params) || [])) {
+            if (prm && typeof prm === 'object' && !prm.level) pushDecl(prm.key, prm, repeated);
+        }
+    }
+    return wavEditOpen({
+        key: ppBare(fullKey) || fullKey,
+        fullKey,
+        meta,
+        comp: S.comp,
+        slot: S.slot,
+        io: {
+            /* ⚠⚠ THROUGH THE QUEUE, not straight at the engine — see
+             * settledValue. Reading the engine here made every detent compute
+             * its next value from the value before the last one, and the
+             * coalescer then kept only the newest of those: a fast sweep
+             * crawled and the drawn cursor snapped backwards. */
+            getParam: (k) => settledValue(k, S.comp),
+            setParam: (k, v) => queueWrite(ppBare(k) || k, v),
+            /* ⚠ Levels too, not just chain_params — this is what supplies a
+             * filepath param's `root`/`start_path`, and DR32 declares its
+             * file inline. Without them a relative sample path had nothing to
+             * resolve against and the screen named a file it could not find. */
+            metaOf: (bare) => authoritativeMeta(bare, cp, S.levels),
+            buildKey: (bare) => `${S.comp}:${bare}`,
+            /* ⚠⚠ THE SIBLING IS ON THIS INSTANCE, not on the component. A
+             * marker on a child level names its file by a BARE key — DR32's
+             * pads declare `"filepath_param": "sample_move"` — while the
+             * parameter that exists on the wire is `pad05_sample_move`.
+             * Scoping to the component alone asked for `synth:sample_move`,
+             * read empty, and the screen said "no sample linked" for a pad
+             * that was loaded and audibly playing. Reported from the device. */
+            siblingKey: (bare) => wavSiblingKey(fullKey, (meta && meta.key) || '',
+                                                bare, S.comp),
+            exists: (path) => {
+                if (!path) return false;
+                try { const st = FS_ADAPTER.stat(path); return !!(st && st[1] === 0); }
+                catch (e) { return false; }
+            },
+            params,
+            durationSec: 0,
+            /*
+             * ⭑ WHICH PAD. The screen has the parameter and nothing else, so on
+             * a repeated element it could only say "START" — and DR32 has
+             * thirty-two of them. The page the dive came FROM was displaying
+             * exactly that fact, resolved (a declared child name where the
+             * module gave one, "Pad 7" where it did not), so it is taken from
+             * there rather than re-derived from the key.
+             *
+             * ⚠⚠ PASSED IN, NOT READ HERE. `exitParamPages()` has already run
+             * by the time this function is called and it NULLS the binding's
+             * controller, so asking for the page label at this point returns
+             * "" — always. The caller reads it before the teardown.
+             */
+            crumbs: [modLabel(), divedFrom].filter(Boolean),
+        },
+    });
+}
 
 function renderEdit() {
     clear_screen();
@@ -8619,6 +9217,7 @@ export function soundRender() {
     else if (S.view === VIEW_LFO) renderLfo();
     else if (S.view === VIEW_LFO_TARGET) renderLfoTarget();
     else if (S.view === VIEW_LFO_PARAM) renderLfoParam();
+    else if (S.view === VIEW_WAV) renderWavEdit();
     else if (S.view === VIEW_ENUM) renderEnumPick();
     else if (S.view === VIEW_PATCHES) renderChainPatches();
     else if (S.view === VIEW_BUSES) renderBuses();

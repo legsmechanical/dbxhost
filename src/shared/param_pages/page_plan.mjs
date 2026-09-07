@@ -19,7 +19,8 @@
  * (c) 2026 megadake, MIT — https://github.com/DimaDake/schwung-movy
  */
 
-import { hasChildren, childCount, childIndexParam } from "./child_key.mjs";
+import { hasChildren, childCount, childIndexParam, childName } from "./child_key.mjs";
+import { MAX_DECLARED_EXTRA_KEYS } from "./viz.mjs";
 
 /**
  * Every param key the hierarchy lists ANYWHERE — so the planner can ask
@@ -151,6 +152,48 @@ function keyOf(entry) {
 /* A nav entry points at another level and carries no param of its own. */
 function levelOf(entry) {
     return (entry && typeof entry === "object" && entry.level) ? entry.level : null;
+}
+
+/**
+ * A level's display name usually lives on the nav ENTRY that points at it, not
+ * on the level itself, so this collects labels from every level's nav entries.
+ * Nav label beats the level's own `label`: 24 levels across
+ * dexed/linein/minijv/obxd/sf2/sfz/nam disagree, and the nav label is the one
+ * users already see.
+ *
+ * Exported with `declaredLevelName` below because "what is this level called"
+ * is ONE fact with more than one consumer — the page title and the voice list
+ * — and a fact with several consumers written down in none of them is how the
+ * metronome and recall_quantize both got the same off-by-one. voices.mjs
+ * re-spelled two of the three sources as `level.name || levelKey` and the two
+ * measurably disagreed: a nav link `{level: "bd", label: "Bass Drum"}` gave the
+ * page header "Bass Drum" and the picker/voice list "bd", for the same thing.
+ */
+export function navLabelsOf(levels) {
+    const navLabel = Object.create(null);
+    for (const lvl of Object.values(levels || {})) {
+        for (const p of ((lvl && lvl.params) || [])) {
+            const target = levelOf(p);
+            if (target && p.label) navLabel[target] = p.label;
+        }
+    }
+    return navLabel;
+}
+
+/**
+ * The name a level DECLARES, from its three sources in priority order, or null
+ * when it declares none. Null is deliberate and load-bearing: the caller picks
+ * the fallback, and they differ — a page title prettifies the key ("osc1" ->
+ * "Osc1") while a voice name keeps the key verbatim, because a voice name is an
+ * identity a sequencer matches on, not chrome. Folding a fallback in here would
+ * force one of those on the other.
+ *
+ * `navLabel` is what navLabelsOf() returned for the same `levels` object;
+ * passing it in keeps this a pure function of its arguments and keeps the O(n)
+ * scan out of a per-level call.
+ */
+export function declaredLevelName(key, lvl, navLabel) {
+    return (lvl && lvl.name) || (navLabel && navLabel[key]) || (lvl && lvl.label) || null;
 }
 
 /* `children` is absent as null, missing, or the literal string "None" — dexed
@@ -372,8 +415,88 @@ export function levelShortNames(lvl) {
     return out;
 }
 
+/*
+ * Params a module wants drawn as a WHOLE PAGE of its own.
+ *
+ *     { "key": "face", "type": "canvas", "canvas_script": "canvas.js",
+ *       "canvas_overlay": "face_page", "as_page": true }
+ *
+ * Without `as_page` a canvas param is a CELL you click to dive into, which is
+ * the behaviour that already existed. With it, the level gains an extra page in
+ * the jog rotation carrying the level's own knobs -- so it is reached by paging
+ * rather than by diving, and the eight encoders do there exactly what they do
+ * on the level's grid.
+ */
+function declaredCanvasExtraKeys(p) {
+    const raw = Array.isArray(p.extra_keys) ? p.extra_keys
+              : (Array.isArray(p.extraKeys) ? p.extraKeys : null);
+    if (!raw) return [];
+    const out = [];
+    for (const k of raw) {
+        if (typeof k !== "string" || !k) continue;
+        if (out.indexOf(k) < 0) out.push(k);
+        if (out.length >= MAX_DECLARED_EXTRA_KEYS) break;
+    }
+    return out;
+}
+
+function canvasPageParams(chainParams) {
+    const out = new Map();
+    for (const p of chainParams || []) {
+        if (!p || typeof p.key !== "string") continue;
+        if (p.type !== "canvas") continue;
+        if (!(p.as_page === true || p.asPage === true)) continue;
+        out.set(p.key, {
+            key: p.key,
+            /* `preset_browser` merges this page WITH the level's preset browser
+             * instead of adding a second one -- see the emission below. */
+            presetBrowser: p.preset_browser === true || p.presetBrowser === true,
+            script: typeof p.canvas_script === "string" ? p.canvas_script : "canvas.js",
+            overlay: typeof p.canvas_overlay === "string" ? p.canvas_overlay
+                   : (typeof p.overlay === "string" ? p.overlay : ""),
+            /* Read-only values the picture needs but which must not become
+             * visible/turnable cells on the level grid. They join the normal
+             * staggered read rotation, never the draw path.
+             *
+             * Capped at the SAME four a widget's `viz.extra_keys` gets, and for
+             * the same reason: one read per stop, so an uncapped page spends
+             * its whole budget here and starves the knobs it is drawn beside.
+             * Measured on the uncapped version -- twenty keys took a
+             * three-knob page from a knob refresh every 4 ticks to every 24. */
+            extraKeys: declaredCanvasExtraKeys(p),
+            name: p.name || p.short_name || p.key,
+        });
+    }
+    return out;
+}
+
 export function planPages({ hierarchy, chainParams, mode, visible, unresolved,
-                            trailingMenus } = {}) {
+                            trailingMenus, paginate = true } = {}) {
+    /*
+     * `paginate: false` means "this level is ONE page, however long it is".
+     *
+     * Eight is the number of physical knobs, and chunking a level at eight is
+     * the GRID's constraint — it has eight cells and there is nowhere to put a
+     * ninth. A list has no such limit: it draws five rows of a page and scrolls
+     * the rest, and `knobRows()` reads the page's keys with no cap, so a page
+     * of any length lists correctly today.
+     *
+     * Global Settings is pinned to the list (`layout: LAYOUT_LIST`, see
+     * paramPagesLayout) and was still being planned as a grid, so a ninth
+     * param in a section silently became a second page named "<Section> - 2"
+     * holding one row — a jog step nobody chose, on a screen where the list
+     * was already scrolling. That is the grid's rule leaking into a screen the
+     * grid never draws.
+     *
+     * A property of the CONTRACT, exactly like the layout pin it accompanies,
+     * and NOT derived from the layout: the layout is also LAYOUT_LIST when the
+     * screen reader is on or Param View is set to List, and un-paginating every
+     * module in those cases would rearrange 95 modules' pages behind a
+     * preference. A module's pages are authored groupings; these are sections.
+     *
+     * Default true — every existing caller keeps the grid's chunking.
+     */
+    const perPage = paginate ? KNOBS_PER_PAGE : Infinity;
     const warnings = [];
     /* Whether a child level still needs a picker PAGE depends on the WHOLE
      * hierarchy, not on the level: the index param may be listed on a sibling
@@ -431,6 +554,7 @@ export function planPages({ hierarchy, chainParams, mode, visible, unresolved,
      * count and no level — hashing the length alone would call that unchanged
      * and leave the placeholder on screen for the rest of the session. */
     const fingerprint = fingerprintOf([hierarchy || null, chainParams || null, mode || null]);
+    const canvasPages = canvasPageParams(chainParams);
 
     /*
      * "the module declares no hierarchy" and "we could not READ the hierarchy"
@@ -506,7 +630,7 @@ export function planPages({ hierarchy, chainParams, mode, visible, unresolved,
         const keys = (chainParams || []).map((p) => p && p.key).filter(Boolean);
         if (keys.length === 0) return { pages: [], fingerprint, warnings: ["no ui_hierarchy and no chain_params"], conditionKeys: new Set() };
         warnings.push("no ui_hierarchy — paginated from chain_params");
-        const pages = chunk(keys, KNOBS_PER_PAGE).map((ks, i) => {
+        const pages = chunk(keys, perPage).map((ks, i) => {
             const name = i === 0 ? "Params" : `Params - ${i + 1}`;
             return { kind: PAGE_KNOBS, name, level: null,
                      keys: alignKnobs(ks, name), authored: false };
@@ -528,25 +652,14 @@ export function planPages({ hierarchy, chainParams, mode, visible, unresolved,
 
     const pages = [];
 
-    /* A level's display name usually lives on the nav entry that points at it,
-     * not on the level itself, so collect labels from every level's nav
-     * entries. Nav label beats the level's own `label`: 24 levels across
-     * dexed/linein/minijv/obxd/sf2/sfz/nam disagree, and the nav label is the
-     * one users already see. */
-    const navLabel = Object.create(null);
-    for (const lvl of Object.values(levels)) {
-        for (const p of ((lvl && lvl.params) || [])) {
-            const target = levelOf(p);
-            if (target && p.label) navLabel[target] = p.label;
-        }
-    }
+    const navLabel = navLabelsOf(levels);
     /* A level key is an internal identifier ("root", "patch_main", "osc1"); it
      * is only a last resort for a page title, and never raw — "osc1" reads as
      * "Osc1", not as a variable name. */
     const prettify = (key) => String(key)
         .replace(/[_-]+/g, " ")
         .replace(/\b[a-z]/g, (c) => c.toUpperCase());
-    const declaredName = (key, lvl) => (lvl && lvl.name) || navLabel[key] || (lvl && lvl.label) || null;
+    const declaredName = (key, lvl) => declaredLevelName(key, lvl, navLabel);
     const nameOf = (key, lvl) => declaredName(key, lvl) || prettify(key);
 
     /**
@@ -683,14 +796,49 @@ export function planPages({ hierarchy, chainParams, mode, visible, unresolved,
          * 13 nav entries and the preset triple), and a knob is the wrong control
          * for minijv's 2427 or surge's 675 presets. */
         if (lvl.list_param && lvl.count_param) {
+            /*
+             * A MODULE MAY DRAW ITS OWN BROWSER.
+             *
+             * A canvas page declaring `preset_browser` becomes THIS page rather
+             * than a second one beside it: same jog, same enter/exit, same
+             * announcements, but the module paints the body. A synth with a
+             * face per preset is a better picker than a row of text, and two
+             * pages -- one showing the character, one naming it -- would be two
+             * doors onto the same choice.
+             *
+             * It carries the level's knobs too, so the sound is still editable
+             * while you browse. See pageHasKnobs in page_controller.
+             */
+            let browserCanvas = null;
+            for (const key of paramKeys(lvl)) {
+                const cp2 = canvasPages.get(key);
+                if (cp2 && cp2.presetBrowser && !isHiddenParam(lvl, key, isVisible)) {
+                    browserCanvas = cp2;
+                    emitted.add(key);
+                    break;
+                }
+            }
             pages.push({
                 /* "Presets", not the level's name — the preset browser is a
-                 * different thing from the knob page that shares its level. */
+                 * different thing from the knob page that shares its level.
+                 * A module-drawn one takes the param's name instead, because
+                 * it IS that screen. */
                 kind: PAGE_PRESET,
-                name: claimName(declaredName(levelKey, lvl) && !isRoot ? nameOf(levelKey, lvl) : "Presets"),
+                name: claimName(browserCanvas ? browserCanvas.name
+                     : (declaredName(levelKey, lvl) && !isRoot ? nameOf(levelKey, lvl) : "Presets")),
                 level: levelKey,
                 listParam: lvl.list_param, countParam: lvl.count_param,
                 nameParam: lvl.name_param || "preset_name",
+                ...(browserCanvas ? {
+                    canvas: { key: browserCanvas.key, script: browserCanvas.script,
+                              overlay: browserCanvas.overlay,
+                              extraKeys: browserCanvas.extraKeys },
+                    keys: knobKeys(lvl).filter(
+                        (k) => !isHiddenParam(lvl, k, isVisible) && !selectorKeys.has(k))
+                        .slice(0, perPage === Infinity ? undefined : perPage),
+                    childLevel: hasChildren(lvl) ? lvl : null,
+                    shortNames: levelShortNames(lvl),
+                } : {}),
             });
         }
 
@@ -748,9 +896,21 @@ export function planPages({ hierarchy, chainParams, mode, visible, unresolved,
                 /* The SAME derived-list field the mode selector uses. One
                  * mechanism: the planner decides what the labels say, and
                  * itemsState never learns there are two kinds of source. */
+                /* A DECLARED name wins over the generated one. Without this the
+                 * page built its labels inline and never consulted the
+                 * declaration, so a module that named its pads still saw
+                 * "Pad 1 ... Pad 16" HERE while every other list showed "Kick".
+                 * The unit test passed throughout because it called childLabel
+                 * directly and never came through the planner.
+                 *
+                 * Only the NAME is shared: the trailing number stays 1-based
+                 * here, because childLabel counts from child_index_base and
+                 * minijv declares none -- so borrowing that too would renumber
+                 * its picker from Part 1-8 to Part 0-7. See childName. */
                 derivedLabels: Array.from(
                     { length: childCount(lvl) },
-                    (_, i) => `${lvl.child_label || "Item"} ${i + 1}`),
+                    (_, i) => childName(lvl, i)
+                        || `${lvl.child_label || "Item"} ${i + 1}`),
                 childOf: levelKey,
                 childLevel: lvl,
             });
@@ -798,6 +958,12 @@ export function planPages({ hierarchy, chainParams, mode, visible, unresolved,
             !isHiddenParam(lvl, k, isVisible) &&
             !selectorKeys.has(k) &&
             !/^ui_/.test(k) &&
+            /* A canvas PAGE key gets a page of its own below; a cell for it as
+             * well would be a second door to the same screen, and on a level
+             * whose knobs already fill the grid it lands as an overflow page
+             * holding one control. Reported from the device as "one page that
+             * is just the face". */
+            !canvasPages.has(k) &&
             !emitted.has(k));
 
         /* Dedupe applies to the AUTHORED key list only. 16 modules publish a
@@ -817,15 +983,26 @@ export function planPages({ hierarchy, chainParams, mode, visible, unresolved,
          * balancedChunk); the remainder is spread evenly so a level with nine
          * keys yields 8 + 1 rather than an orphan page holding one control —
          * and a level with seventeen yields 8 + 5 + 4 rather than 8 + 8 + 1. */
-        const parts = chunk(authoredKeys, KNOBS_PER_PAGE);
-        const spill = authoredKeys.length % KNOBS_PER_PAGE;
+        const parts = chunk(authoredKeys, perPage);
+        const spill = perPage === Infinity ? 0 : authoredKeys.length % perPage;
         if (spill > 0 && extraKeys.length > 0) {
             /* A partly-filled authored page absorbs overflow up to 8. */
-            const room = KNOBS_PER_PAGE - spill;
+            const room = perPage - spill;
             const take = extraKeys.splice(0, room);
             parts[parts.length - 1] = parts[parts.length - 1].concat(take);
         }
-        for (const p of balancedChunk(extraKeys, KNOBS_PER_PAGE)) parts.push(p);
+        /* Unpaginated, the extras join the authored page rather than starting
+         * one: the whole point is a single scrolling list per level, and
+         * balancedChunk with no bound would hand back one array anyway — but as
+         * a SECOND page, which is the thing being removed. */
+        if (perPage === Infinity) {
+            if (extraKeys.length) {
+                if (parts.length) parts[parts.length - 1] = parts[parts.length - 1].concat(extraKeys);
+                else parts.push(extraKeys.slice());
+            }
+        } else {
+            for (const p of balancedChunk(extraKeys, perPage)) parts.push(p);
+        }
 
         /*
          * A CHILD level's keys are TEMPLATES, not addresses.
@@ -874,6 +1051,50 @@ export function planPages({ hierarchy, chainParams, mode, visible, unresolved,
                      * false, including a page that mixes the two. */
                     authored: keys.every((k) => authored.includes(k)),
                 });
+            });
+        }
+
+        /*
+         * CUSTOM UI PAGES, after this level's grids and before its menu.
+         *
+         * A page the MODULE draws, carrying THIS LEVEL'S OWN KNOBS. That is the
+         * whole trick and it is why this is a PAGE_KNOBS page and not a new
+         * kind: reads, knob turns, touch, the touch strip, announce, dive
+         * targets and the list layout are twenty-two branches in the
+         * controller, and a new kind would have to be threaded through every
+         * one of them. As a knobs page it inherits all of it and only the
+         * picture differs.
+         *
+         * So a custom page is reached by PAGING, responds to the eight encoders
+         * exactly as the level's grid does, and wears the host's own header and
+         * footer. The module supplies the body and nothing else.
+         *
+         * `alignKnobs` is deliberately NOT applied: its business is reflowing
+         * cells so a graphic stays inside one row, and there are no cells here.
+         */
+        for (const key of paramKeys(lvl)) {
+            const cp = canvasPages.get(key);
+            if (!cp) continue;
+            if (isHiddenParam(lvl, key, isVisible)) continue;
+            /* Already merged into the level's preset browser above. */
+            if (cp.presetBrowser && lvl.list_param && lvl.count_param) continue;
+            emitted.add(key);
+            pages.push({
+                kind: PAGE_KNOBS,
+                name: claimName(cp.name || title),
+                level: levelKey,
+                /* The level's own knobs, so the mapping matches its grid. A
+                 * level with no knobs still gets the page -- it simply has
+                 * nothing to turn, which is a legitimate thing for a display
+                 * page to be. */
+                keys: authored.slice(0, perPage === Infinity ? authored.length : perPage),
+                childLevel: hasChildren(lvl) ? lvl : null,
+                shortNames: levelShortNames(lvl),
+                authored: true,
+                /* What makes it custom. render_page hands the module this and
+                 * the body band; everything else about the page is ordinary. */
+                canvas: { key: cp.key, script: cp.script, overlay: cp.overlay,
+                          extraKeys: cp.extraKeys },
             });
         }
 

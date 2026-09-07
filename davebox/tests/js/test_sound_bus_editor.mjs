@@ -169,7 +169,18 @@ const BUS_FX = {
         },
     }),
 };
-Object.assign(ASSIGN, BUS_FX);
+/* ...and the same module on a track's MOVE FX bus, so the two flavours can be
+ * compared against an identical hierarchy. `move_fx:` keys are 1-based and
+ * ignore the slot argument (ui_engine's moveBusComp). */
+const MOVE_FX = {
+    'move_fx:1:fx1:module': 'rrverb',
+    'move_fx:1:fx1:chain_params': BUS_FX['master_fx:fx1:chain_params'],
+    'move_fx:1:fx1:room_size': '4.0',
+    'move_fx:1:fx1:mix': '0.35',
+    'move_fx:1:fx1:state': '{"room_size":4,"mix":0.35}',
+    'move_fx:1:fx1:ui_hierarchy': BUS_FX['master_fx:fx1:ui_hierarchy'],
+};
+Object.assign(ASSIGN, BUS_FX, MOVE_FX);
 
 function enterMasterFxBlock() {
     GS.sessionView = false;
@@ -219,35 +230,78 @@ step('⭐ ...and it PLANS the trailing My Presets / Module pages', () => {
         throw new Error('no "Module" page on a Master FX insert — pages: ' + names.join(' / '));
 });
 
-step('⚠ CONTROL: a MOVE bus is still excluded — scoping, not impossibility', () => {
-    /* Without this, the step above would pass just as well against a gate that
-     * had been removed outright rather than narrowed to session buses. */
+step('⭐⭐ a MOVE FX insert opens the SAME editor — "param pages should be the model for module editing across the board" (Josh, 2026-09-06)', () => {
+    /* The last flavour of bus that edited an insert differently. Until this
+     * ruling the same reverb wore the knob grid on Master and the older list
+     * editor on a track's Move FX bus. */
     GS.sessionView = false;
-    GS.trackChannel[3] = 1;
+    GS.trackChannel[3] = 1;                /* -> move_fx:1 */
     GS.trackRoute[3] = 1;                  /* ROUTE_MOVE */
     GS.activeTrack = 3;
     snd.soundExit();
     snd.soundEnterMove(3);
     ticks(4);
     if (!snd.soundOpen()) throw new Error('rig: sound mode did not open on the Move track');
-    /* ⚠⚠ ASSERT THE OTHER TERMS FIRST. `!applies` alone is not a control — it is
-     * true for six different reasons, and this step only reaches the gate
-     * because S.moduleId happens to survive soundExit() (only soundRetarget and
-     * runDiscovery ever clear it). Add the obvious hygiene of clearing it on
-     * exit and this step would pass against a BROKEN gate. So require every
-     * term except busOk to be true, and the gate is then the only thing left
-     * that can decide. */
-    const t = pp().terms;
-    for (const [name, v] of Object.entries(t)) {
-        if (name === 'busOk') continue;
-        if (!v) throw new Error('control is VACUOUS: term "' + name + '" is false, so the ' +
-                                'busOk gate is not what decides this step');
+    /* A Move bus lands on the PROMPT, like a Schwung track — one click opens
+     * the menu, which leads with Instrument. Walk to the first FX row by its
+     * COMP rather than by a counted number of jogs: the row set has dividers in
+     * it and has grown twice already. */
+    cc(3, 127); cc(3, 0); ticks(3);
+    for (let guard = 0; ; guard++) {
+        const st = snd.soundPickStateForTest();
+        if (st.comps[st.row] === 'move_fx:1:fx1') break;
+        if (guard > 20) throw new Error('rig: never reached the FX 1 row — kinds: ' +
+                                        st.kinds.join(','));
+        cc(14, 1); ticks(1);
     }
-    if (t.busOk)
-        throw new Error('a MOVE bus was let into the param-pages editor — the gate was ' +
-                        'removed outright instead of narrowed to session buses');
-    if (pp().applies)
-        throw new Error('ppApplies() is true on a Move bus');
+    cc(3, 127); cc(3, 0);                  /* jog click -> open the FX 1 block */
+    ticks(6);                              /* discovery + ppSync + the planner */
+    const st = pp();
+    /* ⚠ ASSERT THE COMPONENT, not just the module id. S.moduleId survives
+     * soundExit (only soundRetarget and runDiscovery clear it), so an id alone
+     * can be the PREVIOUS screen's module and this step would be judging stale
+     * state rather than the Move bus. */
+    if (snd.soundCompForTest() !== 'move_fx:1:fx1')
+        throw new Error('rig: the editor is pointed at "' + snd.soundCompForTest() +
+                        '", not the Move bus FX 1 insert');
+    if (!snd.soundModuleIdForTest())
+        throw new Error('rig: no module loaded on the Move FX insert, so this step ' +
+                        'would judge the moduleId term rather than the bus');
+    if (!st.applies)
+        throw new Error('ppApplies() still excludes a Move bus — the busOk term is back');
+    if (!st.on)
+        throw new Error('the editor did not take the screen on a Move FX insert');
+});
+
+step('⚠ CONTROL: Move\'s OWN VOICE still does not get the grid — and moduleId is what stops it', () => {
+    /* ⚠⚠ WHAT THIS GUARDS. The gate was removed, not narrowed, so the only
+     * thing keeping Move's generator out is that nothing loads a module for it:
+     * its row hands over to co-run and never enters VIEW_EDIT with a module.
+     * If some later change starts naming a module there, the grid would try to
+     * plan a voice it cannot read — so the term is asserted, not assumed.
+     *
+     * ⚠ And the assertion is on the TERM, not on `!applies`: `!applies` is true
+     * for four different reasons and would pass for any of them. */
+    GS.sessionView = false;
+    GS.trackChannel[4] = 2;
+    GS.trackRoute[4] = 1;                  /* ROUTE_MOVE */
+    GS.activeTrack = 4;
+    snd.soundExit();
+    snd.soundEnterMove(4);
+    ticks(4);
+    /* Sit on the Instrument row — the generator door — and open it. */
+    cc(3, 127); cc(3, 0);
+    ticks(6);
+    /* ⚠⚠ The component is the honest reading here too: S.moduleId carries over
+     * from the step above, so asserting on it alone would fail for a reason
+     * that has nothing to do with the generator row. What must be true is that
+     * the Instrument row never points the editor at an FX component. */
+    const comp = snd.soundCompForTest();
+    if (/fx\d+$/.test(comp))
+        throw new Error('the Instrument row pointed the editor at an FX insert (' +
+                        comp + ') — it is supposed to hand over to co-run');
+    if (pp().on)
+        throw new Error('the grid took the screen on Move\'s own generator row');
 });
 
 step('⭐⭐ SAVE AS from the grid actually SAVES — pendingAction must drain while the editor is up', () => {

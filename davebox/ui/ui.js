@@ -47,6 +47,24 @@ import { MoveShift } from '/data/UserData/schwung/shared/constants.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { effectiveClip, invalidateLEDCache, trackColor, forceRedraw, installFlagsWrap, buildLedInitQueue } from './ui_leds.mjs';
 import { initPrimarySurface } from './ui_corun.mjs';
+import { installReadMeter, readMeterTick, readMeterLine, readMeterReset } from './ui_readmeter.mjs';
+/*
+ * ⚠⚠ REGISTERED EXPLICITLY, through the SAME specifier the widgets import.
+ *
+ * The bare side-effect import below used to be the whole registration, and on
+ * device it put the reader in the wrong module instance: dAVEBOx resolved a
+ * real, existing sample and still reported "file not found" (measured
+ * 2026-09-07: exists=yes, peaksIo=NO), because two `wav_peaks.mjs` files live
+ * on the device — stock's tree and the SA tree — and the io module's own
+ * relative import reached one while ui_wav.mjs reached the other. Same module,
+ * fine on stock, dead in SA.
+ *
+ * Importing the io as a VALUE and registering it here makes the instance the
+ * one THIS bundle uses, by construction.
+ */
+import { setWavPeaksIO } from '/data/UserData/schwung/shared/param_pages/wav_peaks.mjs';
+import { setPpWavPeaksIo } from './pp_ctx.mjs';
+import { WAV_QJS_IO } from '/data/UserData/schwung/shared/param_pages/wav_io_qjs.mjs';
 import { setTrackMute, setTrackSolo, stepHoldCheckpoint } from './ui_editops.mjs';
 import { applyTrackConfig,
     refreshSeqNotesIfCurrent,
@@ -62,6 +80,30 @@ import { _onCCMsg } from './ui_input_cc.mjs';
 import { soundActive, soundOpen, soundResting, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw } from './ui_sound.mjs';
 import { soundModeCovered } from './ui_render.mjs';
 import { _tickImpl, applyExtMidiRemap, requestSessionExit } from './ui_tick.mjs';
+
+/*
+ * ⚠⚠ THE WAVE PEAKS IO — WITHOUT THIS, EVERY SAMPLE WIDGET DRAWS NOTHING.
+ *
+ * `wav_peaks.mjs` reads a file through an INJECTED io and has none by default;
+ * `wav_io_qjs.mjs` is the QuickJS half that registers it, and it is separate
+ * precisely because it names the `std` and `os` modules, which would make the
+ * renderer unloadable under node (where every host test runs).
+ *
+ * The host registers it from shadow_ui.js. dAVEBOx never did — so in SA
+ * `fileSignature()` returned null for every path, `wavPeaksTick` cached the
+ * sample as `missing:<path>` with "file not found", and the module editor's
+ * sample widgets drew an empty box. ⚠ THE FAILURE IS SILENT AND LOOKS LIKE
+ * DATA: a sample whose io is missing is indistinguishable from a sample whose
+ * FILE is missing. Reported from the device as "no waveforms on the widgets"
+ * (Josh, DR32, 2026-09-06), and the reason the #434 wave-format port had no
+ * visible effect in SA.
+ *
+ * ⚠ IT BELONGS HERE, in the entry point, and nowhere else: this is the one
+ * davebox file no test imports (the ui_*.mjs modules import each other, never
+ * this one), which is the same property that makes shadow_ui.js the host's
+ * place for it. Side-effect import, no exports — it registers on load.
+ */
+import '/data/UserData/schwung/shared/param_pages/wav_io_qjs.mjs';
 
 /* ------------------------------------------------------------------ */
 /* UI state                                                             */
@@ -319,12 +361,49 @@ globalThis.init = function () {
     S.ledInitIndex    = 0;
 
     installFlagsWrap();
-
+    /*
+     * ⭐ COUNT THE ROUND TRIPS. Every slow thing dAVEBOx has hit is the screen
+     * asking the engine for a value and waiting (~2.9 ms each, against a ~10.6 ms
+     * tick), and every fix so far has been found by reasoning backwards from a
+     * symptom — one of them after three wrong theories and a "150-270 reads per
+     * frame" figure that was INFERRED and then cited as if counted.
+     *
+     * ⚠ HERE, and only here. It wraps the host BINDINGS, so it sees davebox's
+     * own reads AND the vendored param-pages library's, which land on the same
+     * globals. Instrumenting call sites would miss the ones nobody remembers —
+     * which is where the surprises are. This is also the file no test imports,
+     * the same property that makes it the right home for the wave-peaks io.
+     * ⚠ Idempotent inside: `init()` re-runs in the SAME runtime on resume, and a
+     * second wrap would double every number silently.
+     */
+    installReadMeter();
+    /* See the import: the registration must land in the instance the widgets
+     * read from, so it is done here rather than left to a side effect. */
+    setWavPeaksIO(WAV_QJS_IO);
+    /* ...and to the binding, for the instance the grid's pump and drawer share
+     * — a different one. See pp_ctx.setPpWavPeaksIo. */
+    setPpWavPeaksIo(WAV_QJS_IO);
     S._origClearScreen = clear_screen;
     S._wasSuspended    = false;
 };
 
-globalThis.tick = function () { try { _tickImpl(); } catch (e) { captureError('tick', e); } };
+/* One line every ~2 s at a ~10.6 ms tick. Logged unconditionally rather than
+ * only when it looks bad: a silent meter and a broken meter read the same, and
+ * a continuous baseline is what makes an INTERMITTENT stall legible — you scroll
+ * the log and watch the number rise as you open the screen that hurts.
+ * ⚠ console.log DOES reach debug.log ([[schwung-sa-log-map]]). */
+const READMETER_LOG_TICKS = 200;
+globalThis.tick = function () {
+    /* ⚠ The tick boundary is taken FIRST, so a tick that THROWS still has its
+     * reads counted — the catch below swallows into a file, and the ticks worth
+     * seeing are exactly the ones that failed. */
+    readMeterTick();
+    if ((S.tickCount | 0) % READMETER_LOG_TICKS === 0) {
+        console.log(readMeterLine());
+        readMeterReset();
+    }
+    try { _tickImpl(); } catch (e) { captureError('tick', e); }
+};
 
 /* Host's Shift+Back asks us to leave the session; owning it routes the
  * gesture through the same save → EXITING farewell → teardown staging as the
