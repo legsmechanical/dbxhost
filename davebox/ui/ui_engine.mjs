@@ -442,6 +442,14 @@ function bulkDecode(blob) {
     const count = readLen(); if (count < 0) return null;
     const out = [];
     for (let i = 0; i < count; i++) {
+        /* ⚠⚠ `?` MEANS THE HOST DID NOT RESOLVE THAT KEY, which is a different
+         * fact from a value that is the empty string — and until the host said
+         * so the two were the same bytes on the wire. A `null` here is what lets
+         * engineGetMany fall back for that ONE key instead of guessing from
+         * whether the whole chunk came back blank. */
+        if (s.charCodeAt(p) === 63 /* ? */ && s.charCodeAt(p + 1) === 10) {
+            p += 2; out.push(null); continue;
+        }
         const nb = readLen(); if (nb < 0) return null;
         let bytes = 0; const start = p;
         while (bytes < nb && p < s.length) {
@@ -486,6 +494,20 @@ export function engineGetMany(slot, comp, keys) {
          * the per-key path (which goes through the single-request handler, a
          * different and more complete resolver) is worth the round trips. */
         if (vals && vals.length === chunk.length) {
+            /* ⭐ THE HOST NOW SAYS WHICH KEYS IT COULD NOT RESOLVE (a `?` item),
+             * so those and only those take the single-request path — which goes
+             * through a different and more complete resolver. Before this the
+             * only signal was "the WHOLE chunk came back blank", so a chunk that
+             * mixed resolvable and unresolvable keys silently dropped the
+             * second kind. That mixture is exactly what a bus component is. */
+            let unresolved = 0;
+            for (let j = 0; j < chunk.length; j++) if (vals[j] === null) unresolved++;
+            if (unresolved > 0 && unresolved < chunk.length) {
+                for (let j = 0; j < chunk.length; j++) {
+                    out[chunk[j]] = (vals[j] === null) ? engineGet(slot, comp, chunk[j]) : vals[j];
+                }
+                continue;
+            }
             const allEmpty = chunk.length > 0 && vals.every((v) => v === '' || v === null || v === undefined);
             if (!allEmpty) { for (let j = 0; j < chunk.length; j++) out[chunk[j]] = vals[j]; continue; }
             /* ⚠ MEMOISED PER COMPONENT, because this sits on the recall path.
