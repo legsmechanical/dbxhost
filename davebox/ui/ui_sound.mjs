@@ -5802,7 +5802,9 @@ function runDiscovery() {
     S.modes = res.modes || null;
     S.modeParam = res.modeParam || '';
     S.cpMap = res.cpMap || null;
-    S.livePress = livePressSpec(res.levels);
+    /* ⚠ The HIERARCHY too: a sibling-shape module declares its press param
+     * there as `focus_press_param`, not on any level. */
+    S.livePress = livePressSpec(res.levels, res.hierarchy);
     if (S.livePress && S.livePress.noteParam) S.lastNoteParam = S.livePress.noteParam;
     S.padVouch = false;
     S.padWatchUntil = -1;

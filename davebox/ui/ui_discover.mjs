@@ -31,6 +31,28 @@ import { engineDescribe, engineLoadKitStructure, engineLoadedModule,
  * same code. pp_ctx.mjs already wires the same function for the grid. */
 import { evaluateVisibility }
     from '/data/UserData/schwung/shared/param_pages/visibility.mjs';
+/* ⭐⭐ THE CHILD/VOICE CONTRACT, IMPORTED RATHER THAN RE-DERIVED.
+ *
+ * These helpers used to be reimplemented here, and the re-implementation was a
+ * SUBSET — which is the whole failure mode this repo keeps paying for. It
+ * accepted `child_prefix` but not `child_key_template`, so a module declaring
+ * the template form got no child level at all and its per-instance params were
+ * unreachable; it ignored `child_names`, so a module naming its pads "Kick,
+ * Snare" listed them as "Pad 1..32" here and correctly on stock; and it built
+ * `<prefix><i>_<key>` directly, ignoring `child_index_base`,
+ * `child_index_digits` and `child_key_overrides`.
+ *
+ * ⚠ None of that announced itself. A key that does not exist reads "" — the
+ * screen is populated, plausible and wrong.
+ *
+ * `focusPressParamOf` is the sibling-shape spelling of `child_press_param`: a
+ * module whose voices are separate levels rather than one repeated level
+ * declares the press param on the HIERARCHY. Without it such a module's pads
+ * sound and nothing ever follows them. */
+import { hasChildren, childCount, childName, resolveChildKey }
+    from '/data/UserData/schwung/shared/param_pages/child_key.mjs';
+import { focusPressParamOf }
+    from '/data/UserData/schwung/shared/param_pages/voices.mjs';
 
 export const CELLS_PER_BANK = 8;
 
@@ -458,7 +480,11 @@ export function authoritativeMeta(key, cpMap, levels) {
     /* Repeated elements: strip `<prefix>` plus either an index or nothing. */
     for (const lvl of Object.values(levels || {})) {
         const spec = childSpec(lvl);
-        if (!spec || key.indexOf(spec.prefix) !== 0) continue;
+        /* ⚠ An EMPTY prefix would make `indexOf('') === 0` true for every key
+         * and hand back the first child level's param for anything. A
+         * template-shaped level has no literal namespace to strip, so it is
+         * skipped here rather than guessed at. */
+        if (!spec || !spec.prefix || key.indexOf(spec.prefix) !== 0) continue;
         let rest = key.slice(spec.prefix.length);
         while (rest.length && rest[0] >= '0' && rest[0] <= '9') rest = rest.slice(1);
         if (rest[0] !== '_') continue;
@@ -758,13 +784,21 @@ function knobEntries(lvl, io) {
  * module the tool holds the pads and the module's canvas never runs, so the
  * tool has to vouch in its place or the feature silently does nothing. */
 export function childSpec(lvl) {
-    const prefix = lvl && lvl.child_prefix;
-    if (typeof prefix !== 'string' || !prefix) return null;
-    const count = parseInt(lvl.child_count, 10);
+    /* ⭐ The shared predicate, not a local one. It accepts `child_key_template`
+     * as well as `child_prefix`; the local test required a prefix, so a
+     * template-shaped module had no child level, no instance picker and no
+     * reachable per-instance params — silently. */
+    if (!hasChildren(lvl)) return null;
+    const count = childCount(lvl);
     if (!(count > 0)) return null;
     const str = (v) => (typeof v === 'string' && v) ? v : '';
     return {
-        prefix,
+        /* ⚠ MAY BE EMPTY for a template-shaped level, and callers that do
+         * string surgery on it must check. Addressing goes through
+         * `childParamKey`, which handles every declared form; `prefix` survives
+         * only for the two places that need a literal namespace to scope a
+         * cache invalidation or to invert a key. */
+        prefix: (typeof lvl.child_prefix === 'string') ? lvl.child_prefix : '',
         count,
         label: (typeof lvl.child_label === 'string' && lvl.child_label)
             ? lvl.child_label : 'Item',
@@ -786,7 +820,7 @@ export function childSpec(lvl) {
  * it from a pad press without knowing or caring which screen is open, so it
  * must be findable without a level in hand. First declaration wins; nothing
  * sensible could come of two. */
-export function livePressSpec(levels) {
+export function livePressSpec(levels, hierarchy) {
     for (const key of Object.keys(levels || {})) {
         const spec = childSpec(levels[key]);
         if (spec && (spec.pressParam || spec.noteParam)) {
@@ -801,6 +835,25 @@ export function livePressSpec(levels) {
                      selectParam: spec.selectParam, indexBase: spec.indexBase, count: spec.count };
         }
     }
+    /*
+     * ⭐ THE SIBLING SHAPE, which has no repeated level to declare on.
+     *
+     * A module whose voices are separate levels puts the press param on the
+     * HIERARCHY as `focus_press_param` — the shared priority rule is "the first
+     * child level declaring `child_press_param`, ELSE the hierarchy's
+     * `focus_press_param`" (page_controller). This walked levels only, so such
+     * a module's pads sounded and nothing ever followed them, while the same
+     * module worked on stock's grid.
+     *
+     * ⚠ There is no level, prefix or count to carry here, and that is correct
+     * rather than incomplete: the declaration is module-wide. Callers that scope
+     * by prefix must tolerate its absence.
+     */
+    const focusPress = focusPressParamOf(hierarchy);
+    if (focusPress) {
+        return { levelKey: null, pressParam: focusPress, noteParam: '',
+                 prefix: '', selectParam: '', indexBase: 0, count: 0 };
+    }
     return null;
 }
 
@@ -808,9 +861,14 @@ export function livePressSpec(levels) {
  * unchanged when the level has no children or none is selected, so callers can
  * route every read and write through it unconditionally. */
 export function childParamKey(lvl, childIndex, key) {
-    const spec = childSpec(lvl);
-    if (!spec || !(childIndex >= 0)) return key;
-    return spec.prefix + childIndex + '_' + key;
+    if (!childSpec(lvl) || !(childIndex >= 0)) return key;
+    /* ⭐ `resolveChildKey` owns every declared form — `child_key_template`,
+     * `child_key_overrides`, `child_index_base` and `child_index_digits`. The
+     * local version built `<prefix><i>_<key>` and honoured none of them, so a
+     * module numbering its children from 1 had every per-instance read miss by
+     * one and answer "". `childIndex` is zero-based here, which is exactly what
+     * resolveChildKey documents itself as taking. */
+    return resolveChildKey(lvl, childIndex, key) || key;
 }
 
 /* ---- modes ------------------------------------------------------------
@@ -908,7 +966,9 @@ export function buildLevelPages(allLevels, rootKey, io) {
                 const sig = sigOf(kids);
                 if (rendered.has(sig)) continue;
                 rendered.add(sig);
-                const label = spec.label + ' ' + (i + 1);
+                /* The declared name, else the generated one — see the note at
+                 * the other child-row site about why the number stays `i + 1`. */
+                const label = childName(lvl, i) || (spec.label + ' ' + (i + 1));
                 out.push({ name: prefix ? prefix + '/' + label : label, entries: kids });
             }
         } else {
@@ -1378,6 +1438,10 @@ export function discover(slot, comp) {
          * doesn't map to one of the 8 knobs is invisible in them. The menu
          * walks these levels directly, which is the whole point of having it. */
         levels, rootKey, cpMap,
+        /* ⚠ Needed by `livePressSpec`: `focus_press_param` is declared on the
+         * HIERARCHY, not on a level, so a caller holding only `levels` cannot
+         * see it. */
+        hierarchy,
         /* A modes hierarchy has no `root` at all: its top level is a CHOICE of
          * level, and the mode you pick is also an engine setting. See modeRows. */
         modes: modeKeys(hierarchy, levels),
@@ -1427,7 +1491,16 @@ export function menuRows(levels, levelKey, cpMap, childIndex) {
     const spec = childSpec(lv);
     if (spec && !(childIndex >= 0)) {
         for (let i = 0; i < spec.count; i++) {
-            rows.push({ kind: 'child', childIndex: i, label: spec.label + ' ' + (i + 1) });
+            /* ⭐ The module's own name for this instance when it declares one.
+             * ⚠ The NUMBERING fallback stays `i + 1` deliberately, and is not
+             * `childLabel`: that counts from `child_index_base`, so a module
+             * declaring no base (minijv's part_selector) would silently
+             * renumber from "Part 1-8" to "Part 0-7". child_key.mjs splits
+             * `childName` from `childLabel` for exactly this reason — the name
+             * is one fact, the numbering fallback is an older and separate
+             * one. */
+            rows.push({ kind: 'child', childIndex: i,
+                        label: childName(lvl, i) || (spec.label + ' ' + (i + 1)) });
         }
         return rows;
     }
