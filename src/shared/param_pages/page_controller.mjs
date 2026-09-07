@@ -737,6 +737,10 @@ export function createController(io = {}) {
          * Cheaper and more exact than polling: only these keys can change what
          * is visible, and we already read every key on the page. */
         conditionKeys: new Set(),
+        /* A write touched a gate driver; tick() owes one plan. Coalesced,
+         * because an encoder sweep is a burst of writes and each one used to
+         * buy a whole planPages — measured at 112 passes in one tick. */
+        replanOwed: false,
         /* Instance copy / clear gesture (hold Copy or Delete, then pick an
          * instance) -- see onEditCc. `editUndo` is the one-level undo. */
         editGesture: null,
@@ -2054,6 +2058,11 @@ export function createController(io = {}) {
     function tick() {
         s.tickCount++;
         flushDueWrites();
+        /* ⭐ After flushDueWrites, which is itself a writer of condition keys —
+         * so its changes are folded into the same single plan rather than
+         * buying another one. Before everything else, because the guards below
+         * read `s.pages`. */
+        flushReplan();
         expireTurnClaim();
         serviceEditGesture();
 
@@ -3531,8 +3540,53 @@ export function createController(io = {}) {
         if (s.pageIndex >= s.pages.length) s.pageIndex = Math.max(0, s.pages.length - 1);
     }
 
+    /*
+     * ⭐⭐ A CONDITION CHANGED — PLAN ONCE FOR THE TICK, NOT ONCE PER WRITE.
+     *
+     * 🔴 MEASURED ON HARDWARE (dAVEBOx read meter, dr32's send picker):
+     * **2912 gate reads in a single tick.** The arithmetic divides exactly —
+     * dr32 evaluates 26 conditions per pass, and 2912 / 26 = **112 FULL
+     * PLANNING PASSES IN ONE TICK**. Not 112 params: 112 runs of planPages,
+     * each doing the level walk, the grouping, the row alignment and the
+     * fingerprint, on a device whose whole tick is 10.6 ms.
+     *
+     * The cause is that this used to plan SYNCHRONOUSLY on every write to a
+     * condition key, and an encoder sweep is a burst of CCs — this codebase
+     * already has that written down as the slow-knob law (a continuous cell
+     * emits 255x2 per sweep). One CC, one full re-plan. Turning the send-mode
+     * knob therefore re-planned the entire module about a hundred times before
+     * anything was drawn once.
+     *
+     * ⚠ MARKING IS NOT PLANNING. All this does is remember that a plan is owed;
+     * `flushReplan()` does it, from `tick()`, before anything is drawn.
+     *
+     * ⚠ THE KEY IS KEPT, not just a dirty bit. `s.conditionKeys` is REPLACED by
+     * the plan this will produce, so a key that gates something today may not
+     * be a condition key afterwards — the membership test has to happen against
+     * the set that was live when the write happened, which is now.
+     */
     function replanIfCondition(key) {
         if (!s.conditionKeys.has(key)) return;
+        s.replanOwed = true;
+    }
+
+    /*
+     * The plan the writes above asked for. At most one per tick, whatever the
+     * burst looked like.
+     *
+     * ⚠⚠ IT MUST RUN BEFORE THE FRAME IS DRAWN, and `tick()` is called before
+     * `render()` by both consumers. Deferring past the draw would show one frame
+     * of the pre-change layout every time a gate flips — the visible cost of
+     * getting this wrong is a flicker, where the visible cost of the old code
+     * was a hang.
+     */
+    function flushReplan() {
+        if (!s.replanOwed) return;
+        s.replanOwed = false;
+        replanNow();
+    }
+
+    function replanNow() {
         const oldPages = s.pages, oldIndex = s.pageIndex;
         const planned = planPages({
             hierarchy: s.hierarchy, chainParams: s.chainParams,
