@@ -34,7 +34,7 @@ import {
     WAV_ZOOM_STEP, WAV_ZOOM_MAX, WAV_ZOOM_KNOB,
 } from '/data/UserData/schwung/shared/param_pages/wav_position.mjs';
 import {
-    wavPeaks, wavPeaksTick, wavPeaksDone,
+    wavPeaks, wavPeaksTick, wavPeaksDone, wavPeaksHasIo,
 } from '/data/UserData/schwung/shared/param_pages/wav_peaks.mjs';
 
 /* The plot, in the panel between header and footer. */
@@ -215,6 +215,16 @@ function refreshSourcePath() {
     const raw = W.io.getParam(linkedKey);
     if (raw === W.rawLink) return;
     W.rawLink = raw;
+    /*
+     * ⚠⚠ A DIAGNOSTIC, and it earns its place. Three rounds of inference about
+     * why a loaded pad reports "file not found" were each wrong — the key is
+     * right, the file exists and is readable, the format is supported, the
+     * shared library on the device is the new one. Everything checkable from
+     * OUTSIDE the process says it should work, so the fact has to come from
+     * INSIDE it. Logged once per resolve (the guard above returns unless the
+     * module's value actually changed), never per tick.
+     */
+    const _dbgExists = (p) => { try { return W.io.exists(p) ? 'yes' : 'no'; } catch (e) { return 'threw:' + e; } };
     W.path = resolveWavSourcePath(a.meta, {
         getParam: W.io.getParam,
         metaOf: W.io.metaOf,
@@ -227,6 +237,11 @@ function refreshSourcePath() {
         siblingKey: W.io.siblingKey,
         exists: W.io.exists,
     });
+    console.log('[wav] key=' + linkedKey
+              + ' raw=' + JSON.stringify(raw)
+              + ' resolved=' + JSON.stringify(W.path)
+              + ' exists=' + _dbgExists(W.path)
+              + ' peaksIo=' + (wavPeaksHasIo && wavPeaksHasIo() ? 'yes' : 'no'));
 }
 
 /*

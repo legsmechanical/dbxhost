@@ -53,7 +53,18 @@ let IO = null;
  * @param {(path:string) => ({size:number, mtime:number}|null)} io.stat
  */
 export function setWavPeaksIO(io) { IO = io || null; }
-
+/*
+ * Has anyone registered the file IO?
+ *
+ * ⚠⚠ WORTH ITS OWN EXPORT because a MISSING READER and a MISSING FILE are
+ * indistinguishable downstream — both end as `missing:<path>` and "file not
+ * found" on screen. That has now cost two investigations: dAVEBOx drew no
+ * waveforms at all until 2026-09-06 because nothing registered one, and the
+ * same question came back a day later with no way to answer it from inside the
+ * running process. A consumer that can ask gets to say "no reader" instead of
+ * blaming the file.
+ */
+export function wavPeaksHasIo() { return !!IO; }
 /* --------------------------------------------------------------- decode */
 
 /* The containers and the sample formats are read by wav_format.mjs, which the
