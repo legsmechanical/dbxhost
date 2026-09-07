@@ -1,0 +1,1203 @@
+{
+ "_source": "Copied VERBATIM from schwung-dr32/src/module.json (version 0.2.0) \u2014 the capabilities block as the host serves it. Do not hand-edit: re-copy from the module.",
+ "id": "dr32",
+ "version": "0.2.0",
+ "ui_hierarchy": {
+  "pad_layout": "drums",
+  "levels": {
+   "root": {
+    "name": "Drum Rack 32",
+    "params": [
+     {
+      "level": "kit_src",
+      "label": "Kit"
+     },
+     {
+      "key": "ui_auto_select_pad",
+      "name": "Follow Pads",
+      "type": "enum",
+      "options": [
+       "on",
+       "off"
+      ],
+      "short_name": "FOLLW",
+      "viz": {
+       "kind": "switch"
+      }
+     },
+     {
+      "level": "pads",
+      "label": "Pads"
+     },
+     {
+      "level": "fx",
+      "label": "Effects"
+     },
+     {
+      "key": "master",
+      "name": "Master",
+      "type": "float",
+      "min": 0.0,
+      "max": 2.0,
+      "step": 0.02,
+      "short_name": "MASTR"
+     }
+    ],
+    "knobs": [
+     "master",
+     "ui_auto_select_pad"
+    ]
+   },
+   "pads": {
+    "name": "Pads",
+    "child_prefix": "pad",
+    "child_count": 32,
+    "child_label": "Pad",
+    "child_index_param": "ui_current_pad",
+    "child_note_base": 36,
+    "child_press_param": "ui_live_press",
+    "child_press_note_param": "ui_live_note",
+    "child_copy_keys": [
+     "sample_move",
+     "start",
+     "end",
+     "transpose",
+     "detune",
+     "choke",
+     "gain",
+     "cell_volume",
+     "vel_vol",
+     "attack",
+     "hold",
+     "decay",
+     "env_mode",
+     "volume",
+     "pan",
+     "punch",
+     "punch_time",
+     "filter_on",
+     "filter_type",
+     "cutoff",
+     "resonance",
+     "peak_gain",
+     "mod_target",
+     "mod_amount",
+     "pitch_env",
+     "send1",
+     "send2",
+     "fx_type",
+     "fx_p1",
+     "fx_p2"
+    ],
+    "params": [
+     {
+      "key": "sample_move",
+      "name": "Move",
+      "short_name": "MOVE",
+      "type": "filepath",
+      "root": "/data/CoreLibrary/Samples",
+      "start_path": "/data/CoreLibrary/Samples",
+      "filter": [
+       ".wav",
+       ".aif",
+       ".aiff"
+      ],
+      "live_preview": true,
+      "browser_hooks": {
+       "on_open": [
+        {
+         "key": "ui_auto_select_pad",
+         "value": "off",
+         "restore": true
+        }
+       ]
+      }
+     },
+     {
+      "key": "sample_user",
+      "name": "User",
+      "short_name": "USER",
+      "type": "filepath",
+      "root": "/data/UserData/UserLibrary/Samples",
+      "start_path": "/data/UserData/UserLibrary/Samples",
+      "filter": [
+       ".wav",
+       ".aif",
+       ".aiff"
+      ],
+      "live_preview": true,
+      "browser_hooks": {
+       "on_open": [
+        {
+         "key": "ui_auto_select_pad",
+         "value": "off",
+         "restore": true
+        }
+       ]
+      }
+     },
+     {
+      "key": "start",
+      "name": "Start",
+      "type": "wav_position",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "short_name": "STRT",
+      "mode": "start",
+      "display_unit": "percent",
+      "filepath_param": "sample_move",
+      "default": 0.0
+     },
+     {
+      "key": "end",
+      "name": "End",
+      "short_name": "END",
+      "type": "wav_position",
+      "mode": "end",
+      "display_unit": "percent",
+      "filepath_param": "sample_move",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 1.0
+     },
+     {
+      "key": "transpose",
+      "name": "Transpose",
+      "type": "int",
+      "min": -48,
+      "max": 48,
+      "unit": "st",
+      "short_name": "TRSP",
+      "default": 0
+     },
+     {
+      "key": "detune",
+      "name": "Detune",
+      "type": "float",
+      "min": -50.0,
+      "max": 50.0,
+      "step": 1.0,
+      "unit": "ct",
+      "short_name": "DETN",
+      "default": 0
+     },
+     {
+      "key": "choke",
+      "name": "Choke",
+      "type": "int",
+      "min": 0,
+      "max": 16,
+      "short_name": "CHOKE",
+      "default": 0
+     },
+     {
+      "key": "browse",
+      "name": "Browse Folder",
+      "short_name": "BRWS",
+      "type": "int",
+      "min": 0,
+      "max": 511,
+      "default": 0
+     },
+     {
+      "key": "attack",
+      "name": "Attack",
+      "type": "float",
+      "min": 0.0001,
+      "max": 20.0,
+      "step": 0.001,
+      "unit": "s",
+      "short_name": "ATK",
+      "viz": {
+       "group": "amp",
+       "role": "attack"
+      },
+      "default": 0.0001
+     },
+     {
+      "key": "decay",
+      "name": "Decay",
+      "type": "float",
+      "min": 0.001,
+      "max": 60.0,
+      "step": 0.01,
+      "unit": "s",
+      "short_name": "DCY",
+      "viz": {
+       "group": "amp",
+       "role": "decay"
+      },
+      "default": 1.0
+     },
+     {
+      "key": "hold",
+      "name": "Hold",
+      "type": "float",
+      "min": 0.001,
+      "max": 60.0,
+      "step": 0.01,
+      "unit": "s",
+      "short_name": "HOLD",
+      "default": 0.3
+     },
+     {
+      "key": "env_mode",
+      "name": "Envelope",
+      "type": "enum",
+      "options": [
+       "A-H-D",
+       "A-S-R"
+      ],
+      "short_name": "ENV",
+      "default": "A-H-D"
+     },
+     {
+      "key": "volume",
+      "name": "Volume",
+      "type": "float",
+      "min": -36.0,
+      "max": 12.0,
+      "step": 0.5,
+      "unit": "dB",
+      "short_name": "VOL",
+      "viz": {
+       "kind": "fader"
+      },
+      "default": 0.0
+     },
+     {
+      "key": "pan",
+      "name": "Pan",
+      "type": "float",
+      "min": -50.0,
+      "max": 50.0,
+      "step": 1.0,
+      "short_name": "PAN",
+      "default": 0.0
+     },
+     {
+      "key": "punch",
+      "name": "Punch",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 0.0,
+      "short_name": "PUNCH"
+     },
+     {
+      "key": "punch_time",
+      "name": "Punch Time",
+      "type": "float",
+      "min": 0.06,
+      "max": 1.0,
+      "step": 0.01,
+      "unit": "s",
+      "default": 0.3,
+      "short_name": "PTIME"
+     },
+     {
+      "key": "cutoff",
+      "name": "Filter Freq",
+      "type": "float",
+      "min": 30.0,
+      "max": 22000.0,
+      "step": 50.0,
+      "unit": "Hz",
+      "short_name": "CUT",
+      "viz": {
+       "group": "flt",
+       "role": "cutoff"
+      },
+      "default": 22000.0
+     },
+     {
+      "key": "resonance",
+      "name": "Filter Reso",
+      "type": "float",
+      "min": 0.0,
+      "max": 0.9,
+      "step": 0.01,
+      "short_name": "RES",
+      "viz": {
+       "group": "flt",
+       "role": "resonance"
+      },
+      "default": 0.0
+     },
+     {
+      "key": "filter_type",
+      "name": "Filter Type",
+      "type": "enum",
+      "options": [
+       "Lowpass 12dB",
+       "Lowpass",
+       "Highpass",
+       "Peak"
+      ],
+      "short_name": "TYPE",
+      "viz": {
+       "group": "flt",
+       "role": "mode"
+      },
+      "default": "Lowpass"
+     },
+     {
+      "key": "filter_on",
+      "name": "Filter On",
+      "short_name": "FILT",
+      "type": "int",
+      "min": 0,
+      "max": 1,
+      "viz": {
+       "kind": "switch"
+      },
+      "default": 0
+     },
+     {
+      "key": "send1",
+      "name": "Send 1",
+      "type": "float",
+      "min": -70.0,
+      "max": 6.0,
+      "step": 0.5,
+      "unit": "dB",
+      "short_name": "SEND1",
+      "default": -70.0
+     },
+     {
+      "key": "send2",
+      "name": "Send 2",
+      "type": "float",
+      "min": -70.0,
+      "max": 6.0,
+      "step": 0.5,
+      "unit": "dB",
+      "short_name": "SEND2",
+      "default": -70.0
+     }
+    ],
+    "knobs": [
+     "sample_move",
+     "sample_user",
+     "start",
+     "end",
+     "transpose",
+     "detune",
+     "choke",
+     "browse",
+     "attack",
+     "decay",
+     "hold",
+     "env_mode",
+     "volume",
+     "pan",
+     "punch",
+     "punch_time",
+     "cutoff",
+     "resonance",
+     "filter_type",
+     "filter_on",
+     "send1",
+     "send2"
+    ]
+   },
+   "send1": {
+    "name": "Send 1",
+    "params": [
+     {
+      "key": "send1_type",
+      "name": "Type",
+      "type": "enum",
+      "options": [
+       "Off",
+       "Plate",
+       "Spaces",
+       "Delay",
+       "Gated",
+       "Digital",
+       "Hall",
+       "NonLin",
+       "Native"
+      ],
+      "short_name": "TYPE"
+     },
+     {
+      "key": "send1_size",
+      "name": "Size",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "visible_if": {
+       "param": "send1_mode",
+       "not_equals": "Delay"
+      },
+      "short_name": "SIZE"
+     },
+     {
+      "key": "send1_damp",
+      "name": "Damping",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 0.3,
+      "visible_if": {
+       "param": "send1_mode",
+       "not_equals": "Delay"
+      },
+      "short_name": "DAMP"
+     },
+     {
+      "key": "send1_predelay",
+      "name": "Pre-delay",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 0.0,
+      "visible_if": {
+       "param": "send1_mode",
+       "not_equals": "Delay"
+      },
+      "short_name": "PRE"
+     },
+     {
+      "key": "send1_diffusion",
+      "name": "Diffusion",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 0.46,
+      "visible_if": {
+       "param": "send1_type",
+       "equals": "Native"
+      },
+      "short_name": "DIFF"
+     },
+     {
+      "key": "send1_decay",
+      "name": "Decay",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "visible_if": {
+       "param": "send1_mode",
+       "equals": "Verb"
+      },
+      "short_name": "DCY"
+     },
+     {
+      "key": "send1_hold",
+      "name": "Gate Hold",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "visible_if": {
+       "param": "send1_mode",
+       "equals": "Gate"
+      },
+      "short_name": "HOLD"
+     },
+     {
+      "key": "send1_tail",
+      "name": "Tail Decay",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 0.3,
+      "visible_if": {
+       "param": "send1_mode",
+       "equals": "Gate"
+      },
+      "short_name": "TAIL"
+     },
+     {
+      "key": "send1_length",
+      "name": "Length",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "visible_if": {
+       "param": "send1_mode",
+       "equals": "NonLin"
+      },
+      "short_name": "LEN"
+     },
+     {
+      "key": "send1_shape",
+      "name": "Shape",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 0.5,
+      "visible_if": {
+       "param": "send1_mode",
+       "equals": "NonLin"
+      },
+      "short_name": "SHAPE"
+     },
+     {
+      "key": "send1_release",
+      "name": "Release",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 0.28,
+      "visible_if": {
+       "param": "send1_env",
+       "equals": "Env"
+      },
+      "short_name": "REL"
+     },
+     {
+      "key": "send1_sync",
+      "name": "Time Mode",
+      "type": "enum",
+      "options": [
+       "Sync",
+       "Free"
+      ],
+      "visible_if": {
+       "param": "send1_mode",
+       "equals": "Delay"
+      },
+      "short_name": "SYNC"
+     },
+     {
+      "key": "send1_time_l",
+      "name": "Time L",
+      "type": "int",
+      "min": 1,
+      "max": 16,
+      "unit": "/16",
+      "visible_if": {
+       "param": "send1_sync",
+       "equals": "Sync"
+      },
+      "short_name": "L"
+     },
+     {
+      "key": "send1_time_r",
+      "name": "Time R",
+      "type": "int",
+      "min": 1,
+      "max": 16,
+      "unit": "/16",
+      "visible_if": {
+       "param": "send1_sync",
+       "equals": "Sync"
+      },
+      "short_name": "R"
+     },
+     {
+      "key": "send1_ms_l",
+      "name": "Time L",
+      "type": "float",
+      "min": 10.0,
+      "max": 2000.0,
+      "step": 1.0,
+      "unit": "ms",
+      "visible_if": {
+       "param": "send1_sync",
+       "equals": "Free"
+      },
+      "short_name": "L"
+     },
+     {
+      "key": "send1_ms_r",
+      "name": "Time R",
+      "type": "float",
+      "min": 10.0,
+      "max": 2000.0,
+      "step": 1.0,
+      "unit": "ms",
+      "visible_if": {
+       "param": "send1_sync",
+       "equals": "Free"
+      },
+      "short_name": "R"
+     },
+     {
+      "key": "send1_feedback",
+      "name": "Feedback",
+      "type": "float",
+      "min": 0.0,
+      "max": 0.95,
+      "step": 0.01,
+      "visible_if": {
+       "param": "send1_mode",
+       "equals": "Delay"
+      },
+      "short_name": "FDBK"
+     },
+     {
+      "key": "send1_tone",
+      "name": "Tone",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "visible_if": {
+       "param": "send1_mode",
+       "equals": "Delay"
+      },
+      "short_name": "TONE"
+     },
+     {
+      "key": "send1_pingpong",
+      "name": "Ping-Pong",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "visible_if": {
+       "param": "send1_mode",
+       "equals": "Delay"
+      },
+      "short_name": "PPONG"
+     },
+     {
+      "key": "send1_return",
+      "name": "Return",
+      "type": "float",
+      "min": 0.0,
+      "max": 2.0,
+      "step": 0.02,
+      "default": 1.0,
+      "short_name": "RET"
+     }
+    ],
+    "knobs": [
+     "send1_type",
+     "send1_size",
+     "send1_damp",
+     "send1_decay",
+     "send1_diffusion",
+     "send1_hold",
+     "send1_tail",
+     "send1_length",
+     "send1_shape",
+     "send1_release",
+     "send1_predelay",
+     "send1_sync",
+     "send1_time_l",
+     "send1_ms_l",
+     "send1_time_r",
+     "send1_ms_r",
+     "send1_feedback",
+     "send1_tone",
+     "send1_pingpong",
+     "send1_return"
+    ]
+   },
+   "send2": {
+    "name": "Send 2",
+    "params": [
+     {
+      "key": "send2_type",
+      "name": "Type",
+      "type": "enum",
+      "options": [
+       "Off",
+       "Plate",
+       "Spaces",
+       "Delay",
+       "Gated",
+       "Digital",
+       "Hall",
+       "NonLin",
+       "Native"
+      ],
+      "short_name": "TYPE"
+     },
+     {
+      "key": "send2_size",
+      "name": "Size",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "visible_if": {
+       "param": "send2_mode",
+       "not_equals": "Delay"
+      },
+      "short_name": "SIZE"
+     },
+     {
+      "key": "send2_damp",
+      "name": "Damping",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 0.3,
+      "visible_if": {
+       "param": "send2_mode",
+       "not_equals": "Delay"
+      },
+      "short_name": "DAMP"
+     },
+     {
+      "key": "send2_predelay",
+      "name": "Pre-delay",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 0.0,
+      "visible_if": {
+       "param": "send2_mode",
+       "not_equals": "Delay"
+      },
+      "short_name": "PRE"
+     },
+     {
+      "key": "send2_diffusion",
+      "name": "Diffusion",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 0.46,
+      "visible_if": {
+       "param": "send2_type",
+       "equals": "Native"
+      },
+      "short_name": "DIFF"
+     },
+     {
+      "key": "send2_decay",
+      "name": "Decay",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "visible_if": {
+       "param": "send2_mode",
+       "equals": "Verb"
+      },
+      "short_name": "DCY"
+     },
+     {
+      "key": "send2_hold",
+      "name": "Gate Hold",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "visible_if": {
+       "param": "send2_mode",
+       "equals": "Gate"
+      },
+      "short_name": "HOLD"
+     },
+     {
+      "key": "send2_tail",
+      "name": "Tail Decay",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 0.3,
+      "visible_if": {
+       "param": "send2_mode",
+       "equals": "Gate"
+      },
+      "short_name": "TAIL"
+     },
+     {
+      "key": "send2_length",
+      "name": "Length",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "visible_if": {
+       "param": "send2_mode",
+       "equals": "NonLin"
+      },
+      "short_name": "LEN"
+     },
+     {
+      "key": "send2_shape",
+      "name": "Shape",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 0.5,
+      "visible_if": {
+       "param": "send2_mode",
+       "equals": "NonLin"
+      },
+      "short_name": "SHAPE"
+     },
+     {
+      "key": "send2_release",
+      "name": "Release",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 0.28,
+      "visible_if": {
+       "param": "send2_env",
+       "equals": "Env"
+      },
+      "short_name": "REL"
+     },
+     {
+      "key": "send2_sync",
+      "name": "Time Mode",
+      "type": "enum",
+      "options": [
+       "Sync",
+       "Free"
+      ],
+      "visible_if": {
+       "param": "send2_mode",
+       "equals": "Delay"
+      },
+      "short_name": "SYNC"
+     },
+     {
+      "key": "send2_time_l",
+      "name": "Time L",
+      "type": "int",
+      "min": 1,
+      "max": 16,
+      "unit": "/16",
+      "visible_if": {
+       "param": "send2_sync",
+       "equals": "Sync"
+      },
+      "short_name": "L"
+     },
+     {
+      "key": "send2_time_r",
+      "name": "Time R",
+      "type": "int",
+      "min": 1,
+      "max": 16,
+      "unit": "/16",
+      "visible_if": {
+       "param": "send2_sync",
+       "equals": "Sync"
+      },
+      "short_name": "R"
+     },
+     {
+      "key": "send2_ms_l",
+      "name": "Time L",
+      "type": "float",
+      "min": 10.0,
+      "max": 2000.0,
+      "step": 1.0,
+      "unit": "ms",
+      "visible_if": {
+       "param": "send2_sync",
+       "equals": "Free"
+      },
+      "short_name": "L"
+     },
+     {
+      "key": "send2_ms_r",
+      "name": "Time R",
+      "type": "float",
+      "min": 10.0,
+      "max": 2000.0,
+      "step": 1.0,
+      "unit": "ms",
+      "visible_if": {
+       "param": "send2_sync",
+       "equals": "Free"
+      },
+      "short_name": "R"
+     },
+     {
+      "key": "send2_feedback",
+      "name": "Feedback",
+      "type": "float",
+      "min": 0.0,
+      "max": 0.95,
+      "step": 0.01,
+      "visible_if": {
+       "param": "send2_mode",
+       "equals": "Delay"
+      },
+      "short_name": "FDBK"
+     },
+     {
+      "key": "send2_tone",
+      "name": "Tone",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "visible_if": {
+       "param": "send2_mode",
+       "equals": "Delay"
+      },
+      "short_name": "TONE"
+     },
+     {
+      "key": "send2_pingpong",
+      "name": "Ping-Pong",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "visible_if": {
+       "param": "send2_mode",
+       "equals": "Delay"
+      },
+      "short_name": "PPONG"
+     },
+     {
+      "key": "send2_return",
+      "name": "Return",
+      "type": "float",
+      "min": 0.0,
+      "max": 2.0,
+      "step": 0.02,
+      "default": 1.0,
+      "short_name": "RET"
+     }
+    ],
+    "knobs": [
+     "send2_type",
+     "send2_size",
+     "send2_damp",
+     "send2_decay",
+     "send2_diffusion",
+     "send2_hold",
+     "send2_tail",
+     "send2_length",
+     "send2_shape",
+     "send2_release",
+     "send2_predelay",
+     "send2_sync",
+     "send2_time_l",
+     "send2_ms_l",
+     "send2_time_r",
+     "send2_ms_r",
+     "send2_feedback",
+     "send2_tone",
+     "send2_pingpong",
+     "send2_return"
+    ]
+   },
+   "fx": {
+    "name": "Effects",
+    "params": [
+     {
+      "level": "send1",
+      "label": "Send 1"
+     },
+     {
+      "level": "send2",
+      "label": "Send 2"
+     },
+     {
+      "level": "bus",
+      "label": "Drum Bus"
+     }
+    ],
+    "knobs": []
+   },
+   "kit_src": {
+    "name": "Kit",
+    "params": [
+     {
+      "key": "kit_move",
+      "name": "Move",
+      "type": "filepath",
+      "root": "/data/CoreLibrary/Track Presets/Drums",
+      "start_path": "/data/CoreLibrary/Track Presets/Drums",
+      "filter": [
+       ".ablpreset",
+       ".json"
+      ],
+      "live_preview": true,
+      "browser_hooks": {
+       "on_open": [
+        {
+         "key": "kit_mark",
+         "value": "1"
+        }
+       ],
+       "on_cancel": [
+        {
+         "key": "kit_restore",
+         "value": "1"
+        }
+       ],
+       "on_commit": [
+        {
+         "key": "kit_mark",
+         "value": "0"
+        }
+       ]
+      },
+      "viz": false
+     },
+     {
+      "key": "kit_user",
+      "name": "User",
+      "type": "filepath",
+      "root": "/data/UserData/UserLibrary/Track Presets",
+      "start_path": "/data/UserData/UserLibrary/Track Presets",
+      "filter": [
+       ".ablpreset",
+       ".json"
+      ],
+      "live_preview": true,
+      "browser_hooks": {
+       "on_open": [
+        {
+         "key": "kit_mark",
+         "value": "1"
+        }
+       ],
+       "on_cancel": [
+        {
+         "key": "kit_restore",
+         "value": "1"
+        }
+       ],
+       "on_commit": [
+        {
+         "key": "kit_mark",
+         "value": "0"
+        }
+       ]
+      },
+      "viz": false
+     }
+    ]
+   },
+   "bus": {
+    "name": "Drum Bus",
+    "params": [
+     {
+      "key": "bus_comp",
+      "name": "Compress",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 0.0,
+      "short_name": "COMP"
+     },
+     {
+      "key": "bus_crunch",
+      "name": "Crunch",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 0.0,
+      "short_name": "CRNCH"
+     },
+     {
+      "key": "bus_attack",
+      "name": "Attack",
+      "type": "float",
+      "min": -1.0,
+      "max": 1.0,
+      "step": 0.02,
+      "default": 0.0,
+      "short_name": "ATK",
+      "viz": false
+     },
+     {
+      "key": "bus_sustain",
+      "name": "Sustain",
+      "type": "float",
+      "min": -1.0,
+      "max": 1.0,
+      "step": 0.02,
+      "default": 0.0,
+      "short_name": "SUS",
+      "viz": false
+     },
+     {
+      "key": "bus_mix",
+      "name": "Dry/Wet",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 1.0,
+      "short_name": "MIX",
+      "viz": {
+       "kind": "fader"
+      }
+     }
+    ],
+    "knobs": [
+     "bus_comp",
+     "bus_crunch",
+     "bus_attack",
+     "bus_sustain",
+     "bus_mix"
+    ]
+   }
+  }
+ },
+ "chain_params": [
+  {
+   "key": "kit",
+   "name": "Kit",
+   "type": "filepath",
+   "root": "/data",
+   "start_path": "/data/UserData/UserLibrary/Track Presets",
+   "filter": [
+    ".ablpreset",
+    ".json"
+   ],
+   "default": "",
+   "live_preview": true,
+   "browser_hooks": {
+    "on_open": [
+     {
+      "key": "kit_mark",
+      "value": "1"
+     }
+    ],
+    "on_cancel": [
+     {
+      "key": "kit_restore",
+      "value": "1"
+     }
+    ],
+    "on_commit": [
+     {
+      "key": "kit_mark",
+      "value": "0"
+     }
+    ]
+   }
+  },
+  {
+   "key": "master",
+   "name": "Master",
+   "type": "float",
+   "min": 0.0,
+   "max": 2.0,
+   "step": 0.02,
+   "default": 1.0
+  }
+ ]
+}

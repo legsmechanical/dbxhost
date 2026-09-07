@@ -440,6 +440,21 @@ export function wavSiblingKey(markerFullKey, ownBare, declaredBare, prefix) {
     if (own && bare.length > own.length && bare.endsWith(own)) {
         instance = bare.slice(0, bare.length - own.length);
     }
+    /*
+     * ⚠⚠ A DECLARATION MAY ALREADY BE CONCRETE, and re-scoping one is not a
+     * near miss — it asks for a key no module serves.
+     *
+     * Both shapes are in the fleet and `param_meta` produces the second on
+     * purpose. mrdrums declares each pad separately, so `p05_start` names
+     * `"filepath_param": "p05_sample_path"` — already carrying the instance —
+     * while dr32's child level says `"sample_move"` and means "this pad's".
+     * Prefixing the first gave `p05_p05_sample_path`, which reads empty, which
+     * the screen reports as "no sample linked".
+     *
+     * The test is the instance prefix we just derived: if the declared key
+     * already begins with it, the module has scoped it itself.
+     */
+    if (instance && declared.startsWith(instance)) instance = "";
     return p ? `${p}:${instance}${declared}` : `${instance}${declared}`;
 }
 

@@ -70,7 +70,8 @@ import {
 } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 import { discover, deriveSections, activeSection, filterVizFor,
     menuRows, menuCell, levelCommits, childSpec, modeRows, livePressSpec,
-    inferGuessedMeta, moduleIdOf, buildBrowseList, makeCell, shortLabel } from './ui_discover.mjs';
+    inferGuessedMeta, moduleIdOf, buildBrowseList, makeCell, shortLabel,
+    authoritativeMeta } from './ui_discover.mjs';
 import { parseValue, stepValue, commitString, clampValue, renderCellsForBank,
     formatValue, toRenderCell } from './ui_cells.mjs';
 import {
@@ -6602,7 +6603,14 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * one into the other, and the names differ on both sides
              * (`root` -> `fileRoot`). Handing it the raw declaration would open
              * a browser rooted at undefined. */
-            const decl = bare ? (S.cpMap && S.cpMap[bare]) : null;
+            /* ⚠⚠ NOT `S.cpMap[bare]`. cpMap holds chain_params ONLY, and a
+             * module is free to declare its file inline on a level instead —
+             * DR32 does, so `sample_move` is not in cpMap and never was, and
+             * this branch fell through to the silent return below. Shift+click
+             * did nothing on the one module the gesture was written for.
+             * `authoritativeMeta` is the lookup the menu already uses: cpMap
+             * first, then the levels, then the repeated-element template. */
+            const decl = bare ? authoritativeMeta(bare, S.cpMap, S.levels) : null;
             const cell = decl ? makeCell(bare, decl) : null;
             if (bare && cell && cell.kind === 'file') {
                 wavEditClose();
@@ -8631,12 +8639,41 @@ function wavEditCloseIfOpen() {
  */
 function openWavEditor(fullKey, meta) {
     const cp = S.cpMap || {};
-    /* Declaration order, which IS the marker/knob order — see
-     * wavViewGroupMembers. Object key order preserves chain_params' order
-     * because every key is a non-numeric string. */
-    const params = Object.keys(cp).map((k) => ({
-        key: k, fullKey: `${S.comp}:${k}`, meta: cp[k],
-    }));
+    /*
+     * The declarations this component publishes, IN ORDER — which is the
+     * marker/knob order (see wavViewGroupMembers), so it is not cosmetic.
+     *
+     * ⚠⚠ BOTH SOURCES, because a module may declare a marker in either and
+     * DR32 declares its markers ONLY on the level, so cpMap saw none of them.
+     * chain_params keeps precedence — it is the authority for value metadata —
+     * and a level's inline params fill in what it omits.
+     *
+     * ⭑ WHAT THIS DOES AND DOES NOT CHANGE TODAY, measured over the 100-module
+     * contract capture: the only `view_group` in the fleet is mrsample's, and
+     * it is in chain_params, so no module's GROUPING moves. DR32 declares no
+     * view_group and still gets the LEGACY role, which is correct — it keeps
+     * its whole knob row. What the level source fixes is everything the list
+     * is asked FOR besides grouping, and the addressing below.
+     *
+     * ⚠ A member's `fullKey` is scoped the way the marker's own file is: a
+     * child level's bare key means THIS INSTANCE'S. `pad05_start` and a
+     * sibling `end` belong to the same pad, and addressing the sibling as
+     * `end` (or as the component's `end`) writes to a key no module serves.
+     */
+    const ownBare = ppBare(fullKey) || fullKey;
+    const seenDecl = Object.create(null);
+    const params = [];
+    const pushDecl = (k, m) => {
+        if (!k || seenDecl[k] || !m) return;
+        seenDecl[k] = 1;
+        params.push({ key: k, fullKey: wavSiblingKey(fullKey, ownBare, k, S.comp), meta: m });
+    };
+    for (const k of Object.keys(cp)) pushDecl(k, cp[k]);
+    for (const lvl of Object.values(S.levels || {})) {
+        for (const prm of ((lvl && lvl.params) || [])) {
+            if (prm && typeof prm === 'object' && !prm.level) pushDecl(prm.key, prm);
+        }
+    }
     return wavEditOpen({
         key: ppBare(fullKey) || fullKey,
         fullKey,
@@ -8651,7 +8688,11 @@ function openWavEditor(fullKey, meta) {
              * crawled and the drawn cursor snapped backwards. */
             getParam: (k) => settledValue(k, S.comp),
             setParam: (k, v) => queueWrite(ppBare(k) || k, v),
-            metaOf: (bare) => cp[bare] || null,
+            /* ⚠ Levels too, not just chain_params — this is what supplies a
+             * filepath param's `root`/`start_path`, and DR32 declares its
+             * file inline. Without them a relative sample path had nothing to
+             * resolve against and the screen named a file it could not find. */
+            metaOf: (bare) => authoritativeMeta(bare, cp, S.levels),
             buildKey: (bare) => `${S.comp}:${bare}`,
             /* ⚠⚠ THE SIBLING IS ON THIS INSTANCE, not on the component. A
              * marker on a child level names its file by a BARE key — DR32's

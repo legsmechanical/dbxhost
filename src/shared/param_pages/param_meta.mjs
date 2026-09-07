@@ -33,6 +33,8 @@ import { enumWiresNames } from "../param_format.mjs";
  * from the same inputs, and a key TYPE decides its fate at plan time.
  */
 import { hasChildren, resolveChildKey } from "./child_key.mjs";
+/* wav_position.mjs imports nothing either, so this cannot cycle. */
+import { wavPositionMeta } from "./wav_position.mjs";
 
 export const KIND_NUMBER = "number";
 /** A knob steps through discrete options — enum/toggle. */
@@ -257,6 +259,40 @@ function normalize(key, raw) {
     }
     if (!type) type = Array.isArray(meta.options) ? "enum" : "float";
     meta.type = type;
+
+    /*
+     * ⚠⚠ A MARKER IS EXPANDED HERE OR IT IS NEVER EXPANDED AT ALL.
+     *
+     * The declaration a module writes is not the shape a consumer needs. Two
+     * of the fields the wave editor cannot work without are OPTIONAL in
+     * position: `mode` and `filepath_param` may sit at the top level (dr32) or
+     * inside `options` (mrdrums, and every module written against the older
+     * `ui_type` spelling). Copying `raw` through left the second group with
+     * `filepath_param === undefined` — measured — which reads on screen as
+     * "no sample linked" for a pad that is loaded and audibly playing, because
+     * a marker with no file is indistinguishable from a file that is missing.
+     *
+     * ⭑ WHY IT WAS INVISIBLE FOR SO LONG: shadow_ui.js has its OWN expansion
+     * (`buildWavPositionParamMeta`) which the hierarchy LIST editor runs, so
+     * the same module behaved on the list screen and not on the knob grid. One
+     * expansion, called from the one place both surfaces resolve metadata
+     * through, is what stops the two drifting again.
+     *
+     * ⚠ `type` is put BACK afterwards. The shared expansion returns the HOST'S
+     * dialect (`type: "float"` + `ui_type: "wav_position"`) so it can replace
+     * that function verbatim; this library spells the same fact as
+     * `type: "wav_position"`, and page_plan's OPAQUE_TYPES and viz's marker
+     * predicate both read it. `expanded_type` is set too, so `isWavPosition`
+     * answers for either dialect.
+     *
+     * ⚠ It cannot change `kind`. The expansion defaults min/max to 0..1, which
+     * would make an unranged marker `ranged` and therefore turnable — but no
+     * wav_position in the fleet omits them (44 declarations surveyed, 44 carry
+     * both), so the defaults are unreachable and this is not a widening.
+     */
+    if (type === "wav_position") {
+        Object.assign(meta, wavPositionMeta(meta), { type });
+    }
 
     /* Display label. chain_params spells it `name`, inline entries `label`;
      * fall back to a de-underscored key the way the list editor does. */
